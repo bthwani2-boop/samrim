@@ -4,6 +4,12 @@ import { type BaseUnit, baseUnitLabel, type CatalogAttributeRule, type CatalogAt
 import { MobileStoreCatalogImportWorkspace } from "@bthwani/dsh/mobile/store-catalog-import";
 import { MobileStoreQuickPricesWorkspace } from "@bthwani/dsh/mobile/store-quick-prices";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import { useKeepAwake } from "expo-keep-awake";
+
+function AwakeWhileBarcodeScanning() {
+  useKeepAwake();
+  return null;
+}
 import * as Crypto from "expo-crypto";
 import * as DocumentPicker from "expo-document-picker";
 import { Image as ExpoImage } from "expo-image";
@@ -786,7 +792,7 @@ const theme = useAppearanceTheme();
         }}
       /> : null}
        {catalogReady && panel === "create" ? <View style={styles.searchRow}><TextInput accessibilityLabel="الباركود على العبوة أو رمز الصنف في هذا المتجر" autoCapitalize="characters" editable={!busy} onChangeText={(value) => { setIdentifier(value); setScanNotice(""); }} onSubmitEditing={() => void resolveIdentifier()} placeholder="امسح الباركود أو اكتب الرمز" returnKeyType="search" value={identifier} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={busy || !identifier.trim()} label="بحث عن المنتج" onPress={() => void resolveIdentifier()} variant="secondary" /><BthwaniButton disabled={busy} label={cameraOpen ? "إغلاق الكاميرا" : "مسح بالكاميرا"} onPress={async () => { if (cameraOpen) { setCameraOpen(false); return; } if (!cameraPermission?.granted) { const permission = await requestCameraPermission(); if (!permission.granted) { setError("يلزم السماح للكاميرا لمسح الباركود."); return; } } setCameraOpen(true); }} variant="secondary" /></View> : null}
-      {cameraOpen && panel === "create" ? <CameraView style={styles.camera} facing="back" barcodeScannerSettings={{ barcodeTypes: ["ean13", "ean8", "upc_a", "upc_e", "code128"] }} onBarcodeScanned={({ data }) => { setCameraOpen(false); void onBarcode(data); }} /> : null}
+      {cameraOpen && panel === "create" ? <><AwakeWhileBarcodeScanning /><CameraView style={styles.camera} facing="back" barcodeScannerSettings={{ barcodeTypes: ["ean13", "ean8", "upc_a", "upc_e", "code128"] }} onBarcodeScanned={({ data }) => { setCameraOpen(false); void onBarcode(data); }} /></> : null}
       {scanNotice && panel === "create" ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.muted}>{scanNotice}</Text> : null}
        {catalogReady && panel === "create" ? <View style={styles.searchRow}><TextInput accessibilityLabel="البحث في الكتالوج" editable={!busy} onChangeText={setQuery} onSubmitEditing={() => void searchProducts()} placeholder="ابحث باسم المنتج" returnKeyType="search" value={query} style={[styles.input, busy && styles.disabledInput]} />{query ? <BthwaniButton accessibilityLabel="مسح البحث" disabled={busy} label="مسح" onPress={() => { ++searchSequence.current; setQuery(""); setProducts([]); setProductNextCursor(""); setSearchSubmitted(false); setError(""); }} style={styles.clearSearch} variant="quiet" /> : null}<BthwaniButton busy={busy} disabled={busy} label="بحث" onPress={() => void searchProducts()} variant="secondary" /></View> : null}
       {panel === "create" && searchSubmitted && !products.length && !error ? <Text style={styles.muted}>لا توجد نتائج مطابقة. جرّب اسمًا آخر أو امسح البحث.</Text> : null}

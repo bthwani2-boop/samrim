@@ -1,7 +1,8 @@
 import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio";
-import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
 import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { useAppearanceTheme } from "./appearance";
+import { BthwaniIcon } from "./icons";
 
 type Phase = "starting" | "recording" | "sending" | "failed";
 

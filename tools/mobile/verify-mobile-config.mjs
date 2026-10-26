@@ -122,6 +122,11 @@ const servicePorts = new Set([
 ]);
 let failed = false;
 const workspaceConfig = fs.readFileSync(path.join(repoRoot, "pnpm-workspace.yaml"), "utf8");
+const catalogBlock = workspaceConfig.match(/^catalog:\r?\n([\s\S]*?)(?=^[^\s#][^\r\n]*:|$(?![\s\S]))/m)?.[1] ?? "";
+const catalog = new Map(
+  [...catalogBlock.matchAll(/^  ["']([^"']+)["']:\s*["']([^"']+)["']\s*$/gm)]
+    .map(([, name, version]) => [name, version]),
+);
 for (const setting of ["frozenLockfile", "saveExact"]) {
   if (!new RegExp(`^${setting}: true$`, "m").test(workspaceConfig)) {
     console.error(`pnpm-workspace.yaml must enable ${setting}`);
@@ -159,8 +164,10 @@ function checkDependencyPins(packagePath) {
         checkDependencyPins(dependencyPath);
         continue;
       }
-      const version = specifier.startsWith("npm:") ? specifier.slice(specifier.lastIndexOf("@") + 1) : specifier;
-      if (!/^\d+\.\d+\.\d+(?:-[\da-zA-Z.-]+)?(?:\+[\da-zA-Z.-]+)?$/.test(version)) {
+      const version = specifier === "catalog:"
+        ? catalog.get(name)
+        : specifier.startsWith("npm:") ? specifier.slice(specifier.lastIndexOf("@") + 1) : specifier;
+      if (!version || !/^\d+\.\d+\.\d+(?:-[\da-zA-Z.-]+)?(?:\+[\da-zA-Z.-]+)?$/.test(version)) {
         console.error(`${path.relative(repoRoot, packagePath)}: ${section}.${name} must use an exact version; found ${specifier}`);
         failed = true;
       }

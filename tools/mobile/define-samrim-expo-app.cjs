@@ -104,6 +104,7 @@ function buildPlugins(appKey, { cameraMode, locationMode }) {
         locationAlwaysAndWhenInUsePermission: PERMISSION_TEXT.captainBackground,
         isAndroidBackgroundLocationEnabled: true,
         isAndroidForegroundServiceEnabled: true,
+        isIosBackgroundLocationEnabled: true,
       } : {}),
     };
     plugins.push(["expo-location", locationOptions]);
@@ -111,10 +112,28 @@ function buildPlugins(appKey, { cameraMode, locationMode }) {
 
   if (cameraMode === "barcode") {
     plugins.push(["expo-camera", {
-      cameraPermission: "نحتاج الوصول إلى الكاميرا لمسح باركود المنتجات.",
-      microphonePermission: false,
+      cameraPermission: "نحتاج الوصول إلى الكاميرا لمسح باركود المنتجات أو التقاط صورة أو فيديو عند اختيارك.",
+      // The field barcode scanner has no audio use; partner voice messages use expo-audio.
+      microphonePermission: appKey === "app-field" ? false : undefined,
       recordAudioAndroid: false,
       barcodeScannerEnabled: true,
+    }]);
+  }
+
+  if (["app-client", "app-partner", "app-captain", "app-field"].includes(appKey)) {
+    plugins.push(["expo-image-picker", {
+      photosPermission: "نحتاج الوصول إلى الصور التي تختارها لمنتجاتك أو مرفقات طلباتك.",
+      cameraPermission: "نحتاج الوصول إلى الكاميرا فقط عندما تختار التقاط صورة أو فيديو.",
+      microphonePermission: appKey === "app-field" ? false : "نحتاج الوصول إلى الميكروفون فقط عند تسجيل رسالة صوتية أو فيديو.",
+    }]);
+  }
+
+  if (["app-client", "app-partner", "app-captain"].includes(appKey)) {
+    plugins.push(["expo-audio", {
+      microphonePermission: "نحتاج الوصول إلى الميكروفون فقط عند تسجيل رسالة صوتية.",
+      recordAudioAndroid: true,
+      enableBackgroundRecording: false,
+      enableBackgroundPlayback: false,
     }]);
   }
 
@@ -122,6 +141,21 @@ function buildPlugins(appKey, { cameraMode, locationMode }) {
     plugins.push(["expo-notifications", {
       defaultChannel: "order-classic-v1",
       sounds: ["./assets/sounds/order_classic.wav", "./assets/sounds/order_soft.wav", "./assets/sounds/order_urgent.wav"],
+    }]);
+  } else if (appKey === "app-field") {
+    // Field work notifications do not need the order alert sounds or microphone.
+    plugins.push(["expo-notifications", { defaultChannel: "field-work-v1" }]);
+  }
+  // Calendar is add-only on iOS: never request to read the user's schedule.
+  plugins.push(["expo-calendar", {
+    calendarPermission: "تسمح هذه الميزة بإضافة الموعد الذي تختاره إلى تقويمك.",
+    writeOnlyCalendarPermission: "إضافة موعد تختاره إلى التقويم دون قراءة مواعيدك.",
+    writeOnlyAccess: true,
+  }]);
+  if (appKey === "app-client" || appKey === "app-partner") {
+    // Contact selection must be initiated by the user; never enumerate contacts.
+    plugins.push(["expo-contacts", {
+      contactsPermission: "اختيار رقم صديق أو موظف لمشاركته أو دعوته بناءً على طلبك فقط.",
     }]);
   }
   plugins.push("expo-secure-store");
@@ -163,6 +197,9 @@ function defineSamrimExpoApp(appKey, options = {}) {
     ? "./google-services.json" : undefined;
   const android = {
     package: app.androidPackage,
+    // Contact selection never writes back to the phone's address book.
+    ...(["app-client", "app-partner"].includes(appKey)
+      ? { blockedPermissions: ["android.permission.WRITE_CONTACTS"] } : {}),
     ...(firebaseClientApps.includes(appKey) && (easFirebaseFile || localFirebaseFile)
       ? { googleServicesFile: easFirebaseFile || localFirebaseFile } : {}),
     ...(adaptiveIcon ? { adaptiveIcon: { foregroundImage: adaptiveIcon, backgroundColor: "#FFFFFF" } } : {}),

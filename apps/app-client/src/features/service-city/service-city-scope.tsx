@@ -3,7 +3,7 @@ import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native
 import type { ServiceCity } from "@bthwani/dsh";
 import * as SecureStore from "../../bootstrap/compatible-storage";
 import { createContext, type PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, AppState, Pressable, StyleSheet, Text, View } from "react-native";
 import { listActiveServiceCities } from "./service-city-client";
 import { persistCitySelection, readCitySelection } from "./service-city-preference";
 
@@ -36,25 +36,47 @@ export default function ServiceCityScope({ children }: PropsWithChildren) {
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [selectedCityID, setSelectedCityID] = useState<string | null>(null);
   const selectedCityRef = useRef<string | null>(null);
+  const refreshGenerationRef = useRef(0);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
 
   const refreshCities = useCallback(async () => {
+    const generation = ++refreshGenerationRef.current;
     setState("loading");
     try {
       const nextCities = await listActiveServiceCities();
+      if (generation !== refreshGenerationRef.current) return;
       const activeIDs = new Set(nextCities.map((city) => city.id));
       // A device preference is optional and cannot turn a valid DSH response into an outage.
       const nextSelection = await readCitySelection(SecureStore, PREFERENCE_KEY, activeIDs, selectedCityRef.current);
+      if (generation !== refreshGenerationRef.current) return;
       selectedCityRef.current = nextSelection;
       setCities(nextCities);
       setSelectedCityID(nextSelection);
       setState("ready");
     } catch {
-      setState("error");
+      if (generation === refreshGenerationRef.current) setState("error");
     }
   }, []);
 
   useEffect(() => { void refreshCities(); }, [refreshCities]);
+  useEffect(() => {
+    let wasBackgrounded = false;
+    const listener = AppState.addEventListener("change", (next) => {
+      if (next === "background" || next === "inactive") wasBackgrounded = true;
+      else if (next === "active" && wasBackgrounded) {
+        wasBackgrounded = false;
+        void refreshCities();
+      }
+    });
+    return () => listener.remove();
+  }, [refreshCities]);
+  useEffect(() => {
+    if (state !== "ready" || cities.length !== 0) return;
+    const timer = setInterval(() => {
+      if (AppState.currentState === "active") void refreshCities();
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, [cities.length, refreshCities, state]);
 
   const selectCity = useCallback(async (cityID: string) => {
     const normalized = cityID.trim();

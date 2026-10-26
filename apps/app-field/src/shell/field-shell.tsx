@@ -2,7 +2,7 @@ import { borders, radius, type resolveTheme, sizing, spacing, typography } from 
 import { BthwaniIcon, BthwaniIconButton, BthwaniSearchField, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type Href, useRouter } from "expo-router";
 import { type PropsWithChildren, type ReactNode, useEffect, useMemo, useRef } from "react";
-import { type ColorValue, ScrollView, StyleSheet, Text, type TextInput, View } from "react-native";
+import { type ColorValue, ScrollView, StyleSheet, Text, type TextInputInstance, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 type FieldSearchNavigation = {
@@ -59,7 +59,7 @@ function FieldHeader({ canSearch, title, routeName, headerRight, focus: rawFocus
   const focus = Array.isArray(rawFocus) ? rawFocus[0] : rawFocus;
   const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
   const isSearchOpen = focus === "search";
-  const searchInputRef = useRef<TextInput>(null);
+  const searchInputRef = useRef<TextInputInstance>(null);
 
   useEffect(() => {
     if (!isSearchOpen || !canSearch) return;

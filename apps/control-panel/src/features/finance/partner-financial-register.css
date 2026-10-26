@@ -17,3 +17,7 @@
 .pfr-detail>div{display:grid;gap:5px;min-width:160px;max-width:270px}.pfr-detail strong{font-size:.76rem;color:var(--muted,#687588)}.pfr-detail span{overflow-wrap:anywhere;font-size:.83rem}
 .pfr-bottom{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 @media(max-width:720px){.pfr-root{padding:10px}.pfr-field{flex:1 1 140px}.pfr-head{align-items:flex-start}}
+
+/* Keep 1000+ loaded ledger rows bounded without changing DSH pagination. */
+.pfr-virtualized{max-height:65vh;overflow:auto;overscroll-behavior:contain}
+.pfr-spacer td{padding:0!important;border:0!important;line-height:0}

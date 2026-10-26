@@ -5,7 +5,8 @@ param(
     [ValidatePattern("^app-(client|partner|captain|field)$")]
     [string] $App,
     [switch] $Submit,
-    [switch] $Wait
+    [switch] $Wait,
+    [switch] $OfflinePlan
 )
 
 Set-StrictMode -Version Latest
@@ -35,7 +36,7 @@ function Invoke-EasJson([string[]] $Arguments) {
     try {
         Push-Location $AppRoot
         try {
-            $Output = (& pnpm dlx ("eas-cli@" + $EasCliVersion) @Arguments 2> $ErrorFile | Out-String).Trim()
+            $Output = (& pnpm --config.strict-peer-dependencies=false dlx ("eas-cli@" + $EasCliVersion) @Arguments 2> $ErrorFile | Out-String).Trim()
             $Code = $LASTEXITCODE
         }
         finally {
@@ -55,7 +56,7 @@ function Invoke-EasJson([string[]] $Arguments) {
 function Invoke-EasText([string[]] $Arguments) {
     Push-Location $AppRoot
     try {
-        $Output = (& pnpm dlx ("eas-cli@" + $EasCliVersion) @Arguments 2>&1 | Out-String).Trim()
+        $Output = (& pnpm --config.strict-peer-dependencies=false dlx ("eas-cli@" + $EasCliVersion) @Arguments 2>&1 | Out-String).Trim()
         $Code = $LASTEXITCODE
     }
     finally {
@@ -85,12 +86,28 @@ if ($LASTEXITCODE -ne 0) { Fail "Dependency lock must match the committed manife
 if ($LASTEXITCODE -ne 0) { Fail "Mobile dependency/configuration preflight failed for $App." }
 
 $FirebaseEnabled = $App -in @("app-client", "app-partner", "app-captain")
-$IosEnabled = $App -in @("app-client", "app-partner")
+$IosEnabled = $App -in @("app-client", "app-partner", "app-captain", "app-field")
 if ($IosEnabled) {
     $IosProfile = $EasConfig.build.'ios-simulator'
     if ($null -eq $IosProfile -or [string]$IosProfile.extends -ne "development" -or -not [bool]$IosProfile.ios.simulator) {
         Fail "iOS development simulator profile is required for $App."
     }
+}
+if ($OfflinePlan) {
+    if ($Submit -or $Wait) { Fail "OfflinePlan does not accept Submit or Wait." }
+    $AndroidProfile = $EasConfig.build.development
+    if ($null -eq $AndroidProfile -or [string]$AndroidProfile.extends -ne "base" -or
+        -not [bool]$AndroidProfile.developmentClient -or
+        [string]$AndroidProfile.android.buildType -ne "apk") {
+        Fail "Android development APK profile is invalid for $App."
+    }
+    Write-Host "EAS_OFFLINE_PLAN=READY app=$App sourceSha=$LocalSha"
+    Write-Host "EAS_PLAN app=$App platform=android profile=development output=apk"
+    if ($IosEnabled) {
+        Write-Host "EAS_PLAN app=$App platform=ios profile=ios-simulator output=simulator"
+    }
+    Write-Host "EAS_CLOUD_CALLS=0 EAS_BUILDS_SUBMITTED=0 EAS_SECRETS_MATERIALIZED=0"
+    return
 }
 $RequiredInputs = @($CredentialVaultPath, $KeystoreVaultPath)
 if ($FirebaseEnabled) { $RequiredInputs += $FirebaseVaultPath }
@@ -203,7 +220,7 @@ try {
                     try {
                         Push-Location $BuildRoot
                         try {
-                            $Arguments = @("dlx", ("eas-cli@" + $Version), "build", "--platform", $Platform, "--profile", $Profile, "--non-interactive", "--json")
+                            $Arguments = @("--config.strict-peer-dependencies=false", "dlx", ("eas-cli@" + $Version), "build", "--platform", $Platform, "--profile", $Profile, "--non-interactive", "--json")
                             if (-not $MustWait) { $Arguments += "--no-wait" }
                             $Output = (& pnpm @Arguments 2> $ErrorFile | Out-String).Trim()
                             $Code = $LASTEXITCODE

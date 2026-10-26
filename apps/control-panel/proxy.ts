@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { verifySameOrigin } from "./src/server/security/csrf";
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -69,6 +69,9 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
+    // Always inspect API requests, even when clients send prefetch headers.
+    // The navigation-only prefetch optimization below must never bypass CSRF checks.
+    { source: "/api/:path*" },
     {
       source: "/((?!_next/static|_next/image|favicon.ico).*)",
       missing: [

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import vm from "node:vm";
-import ts from "typescript";
+import ts from "typescript-ast";
 
 const source = fs.readFileSync(path.resolve(import.meta.dirname, "../src/features/multi-store-checkout/multi-store-checkout.tsx"), "utf8");
 const ast = ts.createSourceFile("multi-store-checkout.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);

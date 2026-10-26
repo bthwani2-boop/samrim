@@ -1,11 +1,10 @@
-import { unregisterOwnPushDevice } from "../features/notifications/push-device";
-import * as Crypto from "expo-crypto";
-import * as SecureStore from "./compatible-storage";
-import { Platform } from "react-native";
-
 import {
   createManagedMobileIdentityBinding,
 } from "@bthwani/identity";
+import { unregisterOwnPushDevice } from "@bthwani/push-device";
+import * as Crypto from "expo-crypto";
+import { Platform } from "react-native";
+import * as SecureStore from "./compatible-storage";
 
 export const role = "partner" as const;
 export const surface = "app-partner" as const;
@@ -33,7 +32,7 @@ export const subscribeIdentitySession = runtime.subscribeIdentityState;
 export async function logoutIdentity() {
   try {
     const token = await runtime.getUsableAccessToken();
-    await unregisterOwnPushDevice(token);
+    await unregisterOwnPushDevice(token, process.env.EXPO_PUBLIC_DSH_API_URL);
   } catch { /* Preserve logout even if deregistration is offline. */ }
   return runtime.logoutIdentity();
 }

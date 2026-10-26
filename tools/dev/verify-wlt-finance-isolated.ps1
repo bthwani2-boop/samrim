@@ -1,5 +1,10 @@
 $ErrorActionPreference = 'Stop'
-Set-Location 'D:\samrim'
+$repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+Set-Location $repositoryRoot
+$dockerOS = @(docker info --format '{{.OSType}}' 2>$null)
+if ($LASTEXITCODE -ne 0 -or $dockerOS -notcontains 'linux') {
+  throw 'WLT_FINANCE_PROOF=BLOCKED Docker Linux Engine is unavailable; no test container or database was created.'
+}
 $name = 'bthwani-wlt-proof-isolated'
 $port = 15439
 $dbName = 'bthwani_wlt_finance_proof'

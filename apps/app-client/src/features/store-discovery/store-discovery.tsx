@@ -5,7 +5,7 @@ import { Image as ExpoImage } from "expo-image";
 import * as ExpoLinking from "expo-linking";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Animated, AppState, FlatList, I18nManager, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { AccessibilityInfo, Animated, AppState, FlatList, I18nManager, Platform, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
 import { ClientShareSheet, type ClientShareTarget } from "../sharing/client-share-sheet";
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
@@ -650,7 +650,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         onFavorite={() => { void toggleFavorite(store.id); }}
         promotionCount={store.promotionCount}
       /></View>}
-      ListEmptyComponent={directoryMode ? <StoreDirectoryStatus hasServiceCity={Boolean(selectedCityID)} kind={directoryStatusKind} query={query} selectedCategory={Boolean(selectedCategoryID)} onRetry={() => void load()} onClearSearch={() => { if (onSearchQueryChange) onSearchQueryChange(""); else router.setParams({ q: "" }); }} /> : null}
+      ListEmptyComponent={directoryMode ? <StoreDirectoryStatus hasServiceCity={Boolean(selectedCityID)} kind={directoryStatusKind} query={query} selectedCategory={Boolean(selectedCategoryID)} onRetry={() => void load()} onClearSearch={() => { if (onSearchQueryChange) onSearchQueryChange(""); else router.setParams({ q: "" }); }} /> : undefined}
       ListFooterComponent={<View style={styles.footer}>
         {directoryMode && state.kind === "ready" && state.nextCursor ? <>
           {loadMoreStoresError ? <Text accessibilityRole="alert" style={styles.error}>تعذر تحميل المزيد من المتاجر.</Text> : null}
@@ -923,7 +923,7 @@ function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label
   const [interacting, setInteracting] = useState(false);
   const [fadeFromUri, setFadeFromUri] = useState<string | null>(null);
   const fadeOpacity = useRef(new Animated.Value(0)).current;
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
   const offset = useRef(Animated.multiply(scrollX, I18nManager.isRTL ? -1 : 1)).current;
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);

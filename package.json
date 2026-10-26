@@ -2,13 +2,13 @@
   "name": "samrim",
   "version": "0.0.0",
   "private": true,
-  "packageManager": "pnpm@10.34.7",
+  "packageManager": "pnpm@12.15.0",
   "engines": {
     "node": ">=24.17.0 <25",
-    "pnpm": "10.34.7"
+    "pnpm": "12.15.0"
   },
   "scripts": {
-    "mobile:verify-config": "node tools/mobile/verify-mobile-config.mjs",
+    "mobile:verify-config": "node tools/mobile/verify-mobile-config.mjs && node --test tools/mobile/expo-package-policy.test.mjs tools/mobile/package-engine-policy.test.mjs",
     "mobile:build": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/build-development.ps1",
     "brand:check": "node tools/mobile/verify-brand-assets.mjs",
     "identity:blocklist:generate": "node services/identity/tools/generate-password-blocklist.mjs",
@@ -30,29 +30,15 @@
     "control": "pnpm --dir apps/control-panel dev",
     "scr": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/scr.ps1"
   },
-  "pnpm": {
-    "overrides": {
-      "uuid": "11.1.1",
-      "decode-uri-component": "0.5.0",
-      "nx>smol-toml": "1.9.0",
-      "shell-quote": "1.11.0",
-      "axios": "1.20.0",
-      "follow-redirects": "1.16.1",
-      "sharp": "0.35.5",
-      "source-map-js": "1.2.2",
-      "compression": "1.8.2",
-      "smol-toml": "1.9.0",
-      "brace-expansion": "5.0.12"
-    }
-  },
   "devDependencies": {
     "@biomejs/biome": "2.5.12",
-    "@expo/metro-config": "57.0.12",
+    "@expo/metro-config": "58.0.17",
     "@playwright/test": "1.63.0",
-    "expo": "57.0.31",
+    "expo": "58.0.19",
     "knip": "6.34.0",
-    "next": "16.3.8",
-    "nx": "23.2.1",
-    "typescript": "6.0.2"
+    "next": "16.4.3",
+    "nx": "24.0.1",
+    "typescript": "7.0.2",
+    "typescript-ast": "npm:typescript@6.0.2"
   }
 }

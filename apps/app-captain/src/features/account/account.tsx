@@ -1,8 +1,11 @@
+import * as Application from "expo-application";
+import * as Clipboard from "expo-clipboard";
+import * as Device from "expo-device";
 import { elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { AppearancePicker, BthwaniButton, BthwaniIcon, BthwaniNavigationRow, BthwaniSectionHeader, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type Href, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { getUsableIdentityAccessToken, logoutIdentity } from "../../bootstrap/identity";
 import { captainClient } from "../captain-operations/captain-client";
 import { StoreCaptainMemberships } from "../captain-operations/store-memberships";
@@ -114,6 +117,17 @@ export default function CaptainAccount() {
         <AppearancePicker title="مظهر التطبيق" helper="يُطبَّق التغيير مباشرة على كل شاشات التطبيق." />
       </BthwaniSurface>
 
+    <Pressable accessibilityRole="button" accessibilityLabel="نسخ معلومات إصدار التطبيق"
+      onPress={() => void Clipboard.setStringAsync([
+        "بثواني", Application.nativeApplicationVersion ?? "—",
+        "build:" + (Application.nativeBuildVersion ?? "—"),
+        Device.modelName ?? "جهاز غير معروف", Device.osVersion ?? "—",
+      ].join(" · ")).then(() => setNotice("تم نسخ معلومات إصدار التطبيق")).catch(() => setNotice("تعذر نسخ معلومات التطبيق"))}
+      style={{ paddingVertical: 7, alignItems: "center" }}>
+      <Text style={{ color: theme.colorMuted, fontSize: 12 }}>
+        {"إصدار التطبيق " + (Application.nativeApplicationVersion ?? "—") + " · نسخ معلومات الإصدار"}
+      </Text>
+    </Pressable>
       <BthwaniButton busy={busy} disabled={busy} label={busy ? "جارٍ تسجيل الخروج…" : "تسجيل الخروج"} onPress={() => void logout()} variant="secondary" />
       {notice ? <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text> : null}
     </View>

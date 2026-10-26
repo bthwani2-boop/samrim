@@ -7,7 +7,7 @@ import { PartnerNotificationsHeaderAction } from "../features/notifications/part
 import { dispatchPartnerProductAction } from "./partner-product-actions";
 
 import { type PropsWithChildren, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BackHandler, type ColorValue, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, type TextInput, View } from "react-native";
+import { BackHandler, type ColorValue, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, type TextInputInstance, View } from "react-native";
 import { usePartnerStoreScope } from "../features/partner-onboarding/partner-store-scope-context";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -71,7 +71,7 @@ function PartnerHeader({ title, isOrders, isProducts, isSubpage, returnTo, canSe
   const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
   const canSearch = canSearchOrders || isProducts;
   const isSearchOpen = canSearch && focus === "search";
-  const searchInputRef = useRef<TextInput>(null);
+  const searchInputRef = useRef<TextInputInstance>(null);
 
   useEffect(() => {
     if (!isSearchOpen) return;

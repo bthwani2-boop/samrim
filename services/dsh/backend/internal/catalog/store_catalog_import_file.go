@@ -68,12 +68,32 @@ func ParseStoreCatalogImportFile(filename string, data []byte) ([]StoreCatalogIm
 		if len(sheets) == 0 {
 			return nil, fmt.Errorf("%w: workbook has no worksheets", ErrStoreCatalogImportFile)
 		}
-		matrix, err = book.GetRows(sheets[0])
+		worksheetRows, err := book.Rows(sheets[0])
 		if err != nil {
 			return nil, fmt.Errorf("%w: worksheet could not be read", ErrStoreCatalogImportFile)
 		}
-		if len(matrix) > MaxStoreCatalogImportRows+1 {
-			return nil, fmt.Errorf("%w: maximum is %d data rows", ErrStoreCatalogImportFile, MaxStoreCatalogImportRows)
+		defer func() { _ = worksheetRows.Close() }()
+		matrix = make([][]string, 0, 64)
+		rowNumber, lastValueRow := 0, 0
+		for worksheetRows.Next() {
+			rowNumber++
+			if rowNumber > MaxStoreCatalogImportRows+1 {
+				return nil, fmt.Errorf("%w: maximum is %d data rows", ErrStoreCatalogImportFile, MaxStoreCatalogImportRows)
+			}
+			values, readErr := worksheetRows.Columns()
+			if readErr != nil {
+				return nil, fmt.Errorf("%w: worksheet could not be read", ErrStoreCatalogImportFile)
+			}
+			if len(values) > 0 {
+				if missing := rowNumber - lastValueRow - 1; missing > 0 {
+					matrix = append(matrix, make([][]string, missing)...)
+				}
+				matrix = append(matrix, values)
+				lastValueRow = rowNumber
+			}
+		}
+		if err := worksheetRows.Error(); err != nil {
+			return nil, fmt.Errorf("%w: worksheet could not be read", ErrStoreCatalogImportFile)
 		}
 	default:
 		return nil, fmt.Errorf("%w: only CSV and XLSX are supported", ErrStoreCatalogImportFile)

@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ActivityIndicator, Modal, Pressable, type PressableProps, type PressableStateCallbackType, type StyleProp, StyleSheet, Text, TextInput, type TextInputProps, View, type ViewProps, type ViewStyle } from "react-native";
+import { ActivityIndicator, Modal, Pressable, type PressableProps, type PressableStateCallbackType, type StyleProp, StyleSheet, Text, TextInput, type TextInputInstance, type TextInputProps, View, type ViewProps, type ViewStyle } from "react-native";
 
 import { borders, elevation, opacity, radius, sizing, spacing, type ThemeColors, typography } from "../tokens/index";
 import { useAppearanceTheme } from "./appearance";
@@ -143,7 +143,7 @@ export function BthwaniChip({ label, selected = false, icon, style, ...props }: 
   );
 }
 
-export function BthwaniSearchField({ value, onChangeText, placeholder, accessibilityLabel, onClear, containerStyle, inputRef, ...props }: Omit<TextInputProps, "style"> & { containerStyle?: StyleProp<ViewStyle>; inputRef?: React.Ref<TextInput>; onClear?: (() => void) | undefined }) {
+export function BthwaniSearchField({ value, onChangeText, placeholder, accessibilityLabel, onClear, containerStyle, inputRef, ...props }: Omit<TextInputProps, "style"> & { containerStyle?: StyleProp<ViewStyle>; inputRef?: React.Ref<TextInputInstance>; onClear?: (() => void) | undefined }) {
   const theme = useAppearanceTheme();
   const styles = React.useMemo(() => createPrimitiveStyles(theme), [theme]);
   const hasValue = Boolean(value);

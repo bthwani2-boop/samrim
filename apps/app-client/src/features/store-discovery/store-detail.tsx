@@ -6,7 +6,7 @@ import * as ExpoLinking from "expo-linking";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Alert, FlatList, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { AccessibilityInfo, Alert, FlatList, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Text, useWindowDimensions, View, type ViewInstance } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -95,7 +95,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [sheetMode, setSheetMode] = useState<"gallery" | "quick">("gallery");
   const [quickAnchorY, setQuickAnchorY] = useState<number | undefined>(undefined);
   const [gallerySourceRect, setGallerySourceRect] = useState<GallerySourceRect | undefined>();
-  const imageRefs = useRef<Map<string, View>>(new Map());
+  const imageRefs = useRef<Map<string, ViewInstance>>(new Map());
   const [gridMode, setGridMode] = useState(false);
   const detailRequestID = useRef(0);
   const [catalogQuery, setCatalogQuery] = useState("");
@@ -130,7 +130,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [bannerIndex, setBannerIndex] = useState(0);
   const [bannerPaused, setBannerPaused] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
-  const bannerRef = useRef<ScrollView | null>(null);
+  const bannerRef = useRef<ScrollViewInstance | null>(null);
   const { width: windowWidth } = useWindowDimensions();
   const [promotionLoading, setPromotionLoading] = useState(true);
   const [promotionError, setPromotionError] = useState(false);
@@ -884,8 +884,8 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           {state.catalog.nextCursor ? <BthwaniButton busy={loadingMore} disabled={catalogRefreshing} label="تحميل المزيد" onPress={() => void loadMore()} style={styles.loadMoreButton} variant="secondary" /> : null}
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           {favoriteLoadError ? <BthwaniSurface tone="inset" style={styles.favoriteNotice}><Text style={styles.muted}>تعذر تحديث حالة المفضلة من الخادم.</Text><BthwaniButton busy={favoriteLoading} label="إعادة المحاولة" onPress={() => void reloadFavorites()} variant="secondary" /></BthwaniSurface> : null}
-        </View> : null}
-        ListEmptyComponent={catalogRefreshing ? <View style={styles.pageLoading} accessibilityLabel="جارٍ تحميل منتجات التبويب"><BthwaniSkeleton height={112} /><BthwaniSkeleton height={112} /></View> : null}
+        </View> : undefined}
+        ListEmptyComponent={catalogRefreshing ? <View style={styles.pageLoading} accessibilityLabel="جارٍ تحميل منتجات التبويب"><BthwaniSkeleton height={112} /><BthwaniSkeleton height={112} /></View> : undefined}
       />
       <StoreProductSheet
         galleryOffers={[...state.catalog.offers, ...bannerOffers.filter((offer) => !state.catalog.offers.some((existing) => existing.offerId === offer.offerId))]}

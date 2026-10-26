@@ -474,14 +474,14 @@ export function FieldCases() {
     ListEmptyComponent={loading
       ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View>
       : <View style={styles.state}><Text style={styles.muted}>{error || emptyMessage}</Text>{error ? <BthwaniButton disabled={Boolean(busy)} label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /> : null}</View>}
-    ListFooterComponent={paginationFooter}
+    ListFooterComponent={paginationFooter ?? undefined}
     ListFooterComponentStyle={styles.caseListFooter}
     ListHeaderComponent={Boolean((error && cases.length > 0) || caseSelectionError || optionalMediaWarning || notice) ? <View style={styles.container}>
       {error && cases.length > 0 ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {caseSelectionError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{caseSelectionError}</Text><BthwaniButton label="إعادة فتح الطلب" onPress={() => setSelectionRetry((value) => value + 1)} variant="secondary" /></View> : null}
       {optionalMediaWarning ? <Text accessibilityRole="alert" style={styles.error}>تم إرسال طلب الانضمام وحفظ حالته، لكن لم يُؤكّد رفع بعض الصور الاختيارية. لا تعتبرها محفوظة؛ يمكن استكمال الشعار قبل نشر المتجر بالتنسيق مع فريق التشغيل.</Text> : null}
       {notice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}
-    </View> : null}
+    </View> : undefined}
     onRefresh={() => void load()}
     refreshing={loading && cases.length > 0}
     renderItem={renderCase}

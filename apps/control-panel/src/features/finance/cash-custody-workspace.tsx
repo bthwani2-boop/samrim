@@ -8,6 +8,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { responseMessage } from "../access/identity-error-message";
+import { useSession } from "../../session/session-provider";
+import { operatorRecoveryStorageKey } from "./operator-recovery-key";
 type Sort = "collected_asc" | "collected_desc";
 export type CashCustodyInitialQuery = Readonly<{ search: string; sort: Sort; cursor: string }>;
 type Props = Readonly<{ initialQuery: CashCustodyInitialQuery }>;
@@ -16,9 +18,11 @@ type RemittanceAttempt = Readonly<{ evidenceKey: string; evidenceCorrelation: st
 
 const cashCustodyRecoveryKey = "bthwani.finance.cash-custody.recovery.v1";
 
-function readCashCustodyRecovery(): Readonly<{ attempts: Map<string, RemittanceAttempt>; documentIds: Map<string, string>; fingerprints: Map<string, string> }> {
+function readCashCustodyRecovery(operatorActorId: string): Readonly<{ attempts: Map<string, RemittanceAttempt>; documentIds: Map<string, string>; fingerprints: Map<string, string> }> {
   try {
-    const raw = window.sessionStorage.getItem(cashCustodyRecoveryKey);
+    const key = operatorRecoveryStorageKey(cashCustodyRecoveryKey, operatorActorId);
+    if (!key) return { attempts: new Map(), documentIds: new Map(), fingerprints: new Map() };
+    const raw = window.sessionStorage.getItem(key);
     if (!raw) return { attempts: new Map(), documentIds: new Map(), fingerprints: new Map() };
     const parsed = JSON.parse(raw) as { version?: unknown; attempts?: unknown; documentIds?: unknown; fingerprints?: unknown };
     if (parsed.version !== 1) return { attempts: new Map(), documentIds: new Map(), fingerprints: new Map() };
@@ -56,6 +60,8 @@ function buildHref(pathname: string, query: CashCustodyInitialQuery) {
 }
 
 export function CashCustodyWorkspace({ initialQuery }: Props) {
+  const { state: operatorSession } = useSession();
+  const operatorActorId = operatorSession.kind === "authenticated" ? operatorSession.identity.subject.trim() : "";
   const router = useRouter();
   const pathname = usePathname() ?? "/finance/cash-custody";
   const cursorHistory = useRef<string[]>([]);
@@ -90,7 +96,9 @@ export function CashCustodyWorkspace({ initialQuery }: Props) {
 
   function persistRemittanceRecovery() {
     try {
-      window.sessionStorage.setItem(cashCustodyRecoveryKey, JSON.stringify({
+      const key = operatorRecoveryStorageKey(cashCustodyRecoveryKey, operatorActorId);
+      if (!key) return;
+      window.sessionStorage.setItem(key, JSON.stringify({
         version: 1,
         attempts: Object.fromEntries(remittanceAttempts.current),
         documentIds: receiptDocumentIdsRef.current,
@@ -249,13 +257,13 @@ export function CashCustodyWorkspace({ initialQuery }: Props) {
   };
 
   useEffect(() => {
-    const recovery = readCashCustodyRecovery();
+    const recovery = readCashCustodyRecovery(operatorActorId);
     remittanceAttempts.current = recovery.attempts;
     receiptFingerprints.current = recovery.fingerprints;
     const recoveredDocumentIds = Object.fromEntries(recovery.documentIds);
     receiptDocumentIdsRef.current = recoveredDocumentIds;
     setReceiptDocumentIds(recoveredDocumentIds);
-  }, []);
+  }, [operatorActorId]);
 
   useReadOnReturn(() => loadRegistry(), !loading && !busyRemittanceId && !Object.values(receiptFiles).some(Boolean));
 

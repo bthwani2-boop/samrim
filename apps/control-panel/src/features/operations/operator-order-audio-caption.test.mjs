@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 
 const require = createRequire(import.meta.url);
-const ts = require("typescript");
+const ts = require("typescript-ast");
 const compiled = ts.transpileModule(
   readFileSync(new URL("./operator-order-audio-caption.ts", import.meta.url), "utf8"),
   { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },

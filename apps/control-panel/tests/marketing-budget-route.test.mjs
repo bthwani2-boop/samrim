@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import path from "node:path";
 import vm from "node:vm";
-import ts from "typescript";
+import ts from "typescript-ast";
 
 // Exercise the real Next.js handler logic without a live operator session or
 // modifying DSH state. The DSH BFF boundary is replaced by a capturing stub.

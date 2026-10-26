@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import ts from "typescript";
+import ts from "typescript-ast";
 
 const src = readFileSync(new URL("./ui-switch.tsx", import.meta.url), "utf8");
 const consent = readFileSync(new URL("../../../../apps/app-client/src/features/account/marketing-contact-preference.tsx", import.meta.url), "utf8");

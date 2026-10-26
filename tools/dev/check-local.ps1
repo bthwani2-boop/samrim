@@ -48,6 +48,26 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect candidate governance scope.' }
         node tools/dev/check-encoding.mjs --base $governanceBase
         if ($LASTEXITCODE -ne 0) { throw 'Candidate UTF-8 integrity check failed.' }
+        node tools/dev/check-typescript-ast-tests.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'Candidate TypeScript AST regression tests failed.' }
+        node --test packages/push-device/src/push-device.test.mjs packages/push-device/src/alert-tone.test.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'Candidate native notification regression tests failed.' }
+        node --test tools/governance/check-service-import-boundaries.test.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'Candidate service import boundary tests failed.' }
+        node tools/governance/check-service-import-boundaries.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'Candidate service import boundaries failed.' }
+        node --test apps/control-panel/tests/finance-operator-recovery-scope.test.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'Candidate finance operator recovery isolation failed.' }
+        node --test tools/mobile/check-actor-scoped-navigation.test.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'Candidate mobile actor-scoped navigation failed.' }
+        node --test apps/app-client/src/features/cart-checkout/fulfillment-choice-session.test.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'Candidate customer fulfillment actor isolation failed.' }
+        node --test tools/mobile/check-client-partner-native-contract.test.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'Candidate client/partner native contract check failed.' }
+        node --test tools/mobile/check-captain-field-native-scope.test.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'Candidate captain/field native permission scope failed.' }
+        node --test tools/mobile/check-eas-offline-plan.test.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'Candidate EAS offline plan contract failed.' }
         if (@($candidateFiles | Where-Object { $_ -notmatch $governanceOnlyPattern }).Count -gt 0) {
             pnpm exec nx affected -t lint format-check typecheck contract build vet export-smoke --base=$governanceBase --head=$head --outputStyle=static --parallel=2 --nxBail=true
             if ($LASTEXITCODE -ne 0) { throw "VERIFY=FAIL exit=$LASTEXITCODE" }
@@ -78,6 +98,26 @@ try {
 
     node tools/dev/check-encoding.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Local UTF-8 integrity check failed.' }
+    node tools/dev/check-typescript-ast-tests.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Local TypeScript AST regression tests failed.' }
+    node --test packages/push-device/src/push-device.test.mjs packages/push-device/src/alert-tone.test.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Local native notification regression tests failed.' }
+    node --test tools/governance/check-service-import-boundaries.test.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Local service import boundary tests failed.' }
+    node tools/governance/check-service-import-boundaries.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Local service import boundaries failed.' }
+    node --test apps/control-panel/tests/finance-operator-recovery-scope.test.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Local finance operator recovery isolation failed.' }
+    node --test tools/mobile/check-actor-scoped-navigation.test.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Local mobile actor-scoped navigation failed.' }
+    node --test apps/app-client/src/features/cart-checkout/fulfillment-choice-session.test.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Local customer fulfillment actor isolation failed.' }
+    node --test tools/mobile/check-client-partner-native-contract.test.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Local client/partner native contract check failed.' }
+    node --test tools/mobile/check-captain-field-native-scope.test.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Local captain/field native permission scope failed.' }
+    node --test tools/mobile/check-eas-offline-plan.test.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Local EAS offline plan contract failed.' }
 
     $env:NX_NO_CLOUD = 'true'
 

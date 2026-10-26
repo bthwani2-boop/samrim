@@ -1,5 +1,6 @@
 import { BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import * as Location from "expo-location";
+import { useKeepAwake } from "expo-keep-awake";
 import { type CaptainAdmission, captainAdmissionStateLabel } from "@bthwani/dsh";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -11,6 +12,11 @@ import { createCaptainOperationStyles } from "./captain-operation-styles";
 import { publishCaptainPresence } from "./captain-presence-publisher";
 import { isCurrentCaptainActor } from "./captain-session-scope";
 import { hasBackgroundMissionConsent, setBackgroundMissionConsent } from "./captain-mission-location-background";
+
+function KeepMissionScreenAwake() {
+  useKeepAwake();
+  return null;
+}
 
 async function isPhoneLocationReady() {
   const [permission, services] = await Promise.all([
@@ -258,6 +264,7 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
   }
 
   if (overlay) return <View style={{ marginHorizontal: 12, paddingHorizontal: 12, paddingVertical: 10, gap: 7, borderRadius: 16, backgroundColor: "rgba(15,29,40,0.73)" }} accessibilityLabel="التحكم بالجاهزية على الخريطة">
+    {missionActive ? <KeepMissionScreenAwake /> : null}
     <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-around", gap: 10 }}>
       <View style={{ flex: 1, alignItems: "center", gap: 3 }}>
         <Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "700" }}>{missionActive ? "المهمة" : storeOnly ? "المتجر" : "التوفر"}</Text>

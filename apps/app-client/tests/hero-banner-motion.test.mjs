@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import ts from "typescript";
+import ts from "typescript-ast";
 import { wrapBannerIndex } from "../src/features/store-discovery/banner-loop.ts";
 
 const discovery = readFileSync(path.resolve(import.meta.dirname, "../src/features/store-discovery/store-discovery.tsx"), "utf8");

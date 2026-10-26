@@ -1,11 +1,16 @@
 import { BthwaniButton, BthwaniConfirmDialog, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { StoreAccessGrant, StoreAccessPermission } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
+import { normalizeYemenPhoneE164 } from "@bthwani/design-system";
+import { Contact } from "expo-contacts";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm, useWatch } from "react-hook-form";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
 
 import { usePartnerStoreScope } from "./partner-store-scope-context";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
+import { inviteDetailsSchema, type InviteDetails } from "./partner-store-invite-schema";
 import { storeInvitationReadbackConfirmed } from "./store-access-invite-readback";
 import { storeAccessPermissionsMutationIdentity, storeAccessPermissionsReadbackConfirmed, toggleStoreAccessPermission } from "./store-access-permission-toggle";
 import { createOwnStoreAccessInvitation, listOwnStoreAccessGrants, transitionOwnStoreAccessGrant, updateOwnStoreAccessPermissions } from "./store-readback-client";
@@ -65,8 +70,9 @@ export function PartnerStoreAccess({ storeID, showForm = true }: { storeID: stri
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [phone, setPhone] = useState("");
-  const [displayName, setDisplayName] = useState("");
+  const inviteForm = useForm<InviteDetails>({ resolver: zodResolver(inviteDetailsSchema), defaultValues: { phone: "", displayName: "" }, mode: "onChange" });
+  const phone = useWatch({ control: inviteForm.control, name: "phone" });
+  const displayName = useWatch({ control: inviteForm.control, name: "displayName" });
   const [storeSearch, setStoreSearch] = useState("");
   const [selectedStoreIDs, setSelectedStoreIDs] = useState<ReadonlyArray<string>>([]);
   const [selectedPermissions, setSelectedPermissions] = useState<ReadonlyArray<StoreAccessPermission>>(["orders"]);
@@ -123,7 +129,11 @@ export function PartnerStoreAccess({ storeID, showForm = true }: { storeID: stri
   }
 
   async function invite() {
-    if (busy || !phone.trim() || selectedPermissions.length === 0 || selectedStoreIDs.length === 0) return;
+    if (busy || selectedPermissions.length === 0 || selectedStoreIDs.length === 0) return;
+    if (!(await inviteForm.trigger())) {
+      setError("تحقق من الاسم ورقم الهاتف بصيغة دولية صحيحة، مثل +967771234567.");
+      return;
+    }
     setBusy(true);
     setError("");
     setNotice("");
@@ -159,8 +169,7 @@ export function PartnerStoreAccess({ storeID, showForm = true }: { storeID: stri
         setError(`لم يتأكد حفظ ${unconfirmedCount} دعوات. أعد المحاولة بنفس البيانات لإعادة استخدام مفاتيح المحاولات الأصلية.`);
       } else {
         inviteAttempt.current = null;
-        setPhone("");
-        setDisplayName("");
+        inviteForm.reset();
         setSelectedPermissions(["orders"]);
         setSelectedStoreIDs([storeID]);
       }
@@ -246,7 +255,7 @@ export function PartnerStoreAccess({ storeID, showForm = true }: { storeID: stri
   }
 
   return <View style={styles.container}>
-    {showForm ? <TeamInvitationCard busy={busy} choosePreset={choosePreset} filteredOwnedStores={filteredOwnedStores} onInvite={() => void invite()} onPhoneChange={(value) => { setPhone(value); inviteAttempt.current = null; }} onPermissionToggle={togglePermission} onStoreSearchChange={setStoreSearch} onTargetStoreToggle={toggleTargetStore} phone={phone} displayName={displayName} onDisplayNameChange={(value) => { setDisplayName(value); inviteAttempt.current = null; }} selectedPermissions={selectedPermissions} selectedStoreIDs={selectedStoreIDs} storeSearch={storeSearch} styles={styles} /> : null}
+    {showForm ? <TeamInvitationCard busy={busy} choosePreset={choosePreset} filteredOwnedStores={filteredOwnedStores} onInvite={() => void invite()} onPhoneChange={(value) => { inviteForm.setValue("phone", value, { shouldValidate: true, shouldDirty: true }); inviteAttempt.current = null; }} onPermissionToggle={togglePermission} onStoreSearchChange={setStoreSearch} onTargetStoreToggle={toggleTargetStore} phone={phone} displayName={displayName} onDisplayNameChange={(value) => { inviteForm.setValue("displayName", value, { shouldValidate: true, shouldDirty: true }); inviteAttempt.current = null; }} selectedPermissions={selectedPermissions} selectedStoreIDs={selectedStoreIDs} storeSearch={storeSearch} validInvite={inviteForm.formState.isValid} phoneError={inviteForm.formState.errors.phone?.message} nameError={inviteForm.formState.errors.displayName?.message} styles={styles} /> : null}
 
     {notice ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}
     {error && grantsForStoreID === storeID ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
@@ -254,9 +263,12 @@ export function PartnerStoreAccess({ storeID, showForm = true }: { storeID: stri
   </View>;
 }
 
-function TeamInvitationCard({ styles, busy, phone, onPhoneChange, displayName, onDisplayNameChange, storeSearch, onStoreSearchChange, filteredOwnedStores, selectedStoreIDs, onTargetStoreToggle, selectedPermissions, onPermissionToggle, choosePreset, onInvite }: Readonly<{
+function TeamInvitationCard({ styles, busy, validInvite, phoneError, nameError, phone, onPhoneChange, displayName, onDisplayNameChange, storeSearch, onStoreSearchChange, filteredOwnedStores, selectedStoreIDs, onTargetStoreToggle, selectedPermissions, onPermissionToggle, choosePreset, onInvite }: Readonly<{
   styles: ReturnType<typeof createPartnerSurfaceStyles>;
   busy: boolean;
+  validInvite: boolean;
+  phoneError?: string | undefined;
+  nameError?: string | undefined;
   phone: string;
   onPhoneChange: (value: string) => void;
   displayName: string;
@@ -273,11 +285,27 @@ function TeamInvitationCard({ styles, busy, phone, onPhoneChange, displayName, o
 }>) {
   const theme = useAppearanceTheme();
   const [showCustom, setShowCustom] = useState(false);
-  const canInvite = !busy && displayName.trim().length > 0 && phone.trim().length > 0 && selectedPermissions.length > 0 && selectedStoreIDs.length > 0;
+  const [contactError, setContactError] = useState("");
+  async function chooseContact() {
+    try {
+      const contact = await Contact.presentPicker();
+      if (!contact) return;
+      const phones = await contact.getPhones();
+      const number = phones.find((item) => item.number?.trim())?.number;
+      if (!number) { setContactError("لا يوجد رقم هاتف في جهة الاتصال المختارة."); return; }
+      onPhoneChange(normalizeYemenPhoneE164(number));
+      setContactError("");
+    } catch { setContactError("تعذر اختيار جهة الاتصال. أدخل الرقم يدويًا."); }
+  }
+  const canInvite = !busy && validInvite && selectedPermissions.length > 0 && selectedStoreIDs.length > 0;
   return <View style={styles.card}>
     <Text style={styles.value}>إضافة موظف</Text>
     <TextInput accessibilityLabel="اسم الموظف" editable={!busy} onChangeText={onDisplayNameChange} placeholder="اسم الموظف" placeholderTextColor={theme.colorMuted} style={styles.formInput} value={displayName} />
+    {nameError ? <Text accessibilityRole="alert" style={styles.error}>{nameError}</Text> : null}
     <TextInput accessibilityLabel="رقم هاتف الموظف" autoCapitalize="none" autoCorrect={false} editable={!busy} keyboardType="phone-pad" onChangeText={onPhoneChange} placeholder="رقم الهاتف" placeholderTextColor={theme.colorMuted} style={[styles.formInput, { textAlign: "left", writingDirection: "ltr" }]} value={phone} />
+    {phoneError ? <Text accessibilityRole="alert" style={styles.error}>{phoneError}</Text> : null}
+    <BthwaniButton disabled={busy} label="اختيار رقم من جهات الاتصال" onPress={() => void chooseContact()} variant="secondary" />
+    {contactError ? <Text accessibilityRole="alert" style={styles.error}>{contactError}</Text> : null}
     {filteredOwnedStores.length > 1 ? <>
       <Text style={styles.metaLabel}>المتاجر</Text>
       <TextInput accessibilityLabel="بحث المتاجر المملوكة" autoCapitalize="none" autoCorrect={false} editable={!busy} onChangeText={onStoreSearchChange} placeholder="بحث عن متجر" placeholderTextColor={theme.colorMuted} style={styles.formInput} value={storeSearch} />

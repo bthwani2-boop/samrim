@@ -2,6 +2,8 @@ import { borders, normalizeYemenPhoneE164, radius, type resolveTheme, spacing, t
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import { clientShareMessageLabel, createDshMobileClient, type ClientShareKind, type ClientShareMessage } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
+import { Contact } from "expo-contacts";
+import * as Clipboard from "expo-clipboard";
 import { useMemo, useRef, useState } from "react";
 import { KeyboardAvoidingView, Modal, Platform, Pressable, Share, StyleSheet, Text, TextInput, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
@@ -41,6 +43,23 @@ export function ClientShareSheet({ target, onClose }: { target: ClientShareTarge
       setError(code === "RATE_LIMITED" ? "وصلت إلى حد المشاركات. جرّب لاحقًا." : code === "INVALID_INPUT" ? "المحتوى لم يعد متاحًا للمشاركة أو البيانات غير صحيحة." : "لم نتأكد من إرسال المشاركة. أعد المحاولة دون تكرار الطلب.");
     } finally { setBusy(false); }
   }
+  async function chooseContact() {
+    try {
+      const selected = await Contact.presentPicker();
+      if (!selected) return;
+      const phones = await selected.getPhones();
+      const number = phones.find((item) => item.number?.trim())?.number;
+      if (!number) { setError("جهة الاتصال المختارة ليس لديها رقم هاتف."); return; }
+      setPhone(normalizeYemenPhoneE164(number));
+      idempotencyKey.current = "";
+      setError("");
+    } catch { setError("تعذر فتح جهات الاتصال. يمكنك كتابة الرقم يدويًا."); }
+  }
+  async function copyLink() {
+    if (!target) return;
+    try { await Clipboard.setStringAsync(target.link); setError(""); }
+    catch { setError("تعذر نسخ الرابط."); }
+  }
   async function shareOutside() {
     if (!target) return;
     try { await Share.share({ message: `${target.title}\n${target.link}`, title: target.title }); }
@@ -62,6 +81,7 @@ export function ClientShareSheet({ target, onClose }: { target: ClientShareTarge
         </> : <>
           <Text style={styles.label}>رقم الصديق أو القريب</Text>
           <TextInput style={styles.input} value={phone} onChangeText={(value)=>{setPhone(value);idempotencyKey.current="";}} keyboardType="phone-pad" autoComplete="tel" maxLength={20} placeholder="77xxxxxxx" placeholderTextColor={theme.colorMuted} accessibilityLabel="رقم الهاتف المسجل في بثواني" />
+          <Pressable accessibilityRole="button" disabled={busy} onPress={() => void chooseContact()} style={styles.outside}><Text style={styles.outsideText}>اختيار رقم من جهات الاتصال</Text></Pressable>
           <Text style={styles.label}>رسالة قصيرة</Text>
           <View style={styles.chips}>
             {(["LOOK","LIKE","OFFER","TRY"] as const).map((code)=><Pressable key={code} accessibilityRole="button" accessibilityState={{ selected: messageCode===code }} onPress={()=>{setMessageCode(code);idempotencyKey.current="";}} style={[styles.chip, messageCode===code && styles.selected]}>
@@ -70,6 +90,7 @@ export function ClientShareSheet({ target, onClose }: { target: ClientShareTarge
           </View>
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           <BthwaniButton label="إرسال المشاركة" busy={busy} disabled={!phoneValid || busy} onPress={()=>void send()} />
+          <Pressable accessibilityRole="button" onPress={() => void copyLink()} style={styles.outside}><Text style={styles.outsideText}>نسخ رابط المحتوى</Text></Pressable>
           <Pressable accessibilityRole="button" onPress={()=>void shareOutside()} style={styles.outside}><Text style={styles.outsideText}>مشاركة عبر تطبيق آخر</Text></Pressable>
         </>}
       </View>
