@@ -33,3 +33,17 @@ test("payout rejects identity switches while requesting the access token", () =>
   const persist = payout.indexOf("await SecureStore.setItemAsync(");
   assert.ok(actorSnapshot >= 0 && tokenAcquisition > actorSnapshot && actorRecheck > tokenAcquisition && persist > actorRecheck);
 });
+
+test("settlement intake preserves its durable retry key and hides readback if the actor changes after mutation", () => {
+  const intake = source.slice(source.indexOf("  const requestIntake = async ("), source.indexOf("  const destinationReady ="));
+  const mutation = intake.indexOf("await captainClient().createOwnSettlementIntake(");
+  const postMutationActorCheck = intake.indexOf("const actorAfterCreate = currentIdentityState();");
+  const readback = intake.indexOf("await captainClient().listOwnSettlementIntakes(token)");
+  const postReadbackActorCheck = intake.indexOf("const actorAfterReadback = currentIdentityState();");
+  const publish = intake.indexOf("setIntake(readback);");
+  const clearDurableAttempt = intake.indexOf("await SecureStore.deleteItemAsync(key);");
+  assert.ok(mutation >= 0 && postMutationActorCheck > mutation && readback > postMutationActorCheck);
+  assert.ok(postReadbackActorCheck > readback && publish > postReadbackActorCheck && clearDurableAttempt > publish);
+  assert.match(intake.slice(postMutationActorCheck, readback), /CAPTAIN_INTAKE_SESSION_CHANGED/);
+  assert.match(intake.slice(postReadbackActorCheck, publish), /CAPTAIN_INTAKE_SESSION_CHANGED/);
+});

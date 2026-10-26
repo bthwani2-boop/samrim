@@ -129,7 +129,17 @@ export function CaptainPayoutCard() {
       }
       setPendingIntakeAttempt(saved);
       const created = await captainClient().createOwnSettlementIntake(token, saved.mode, saved.amountMinor, saved.idempotencyKey, saved.correlationID);
+      const actorAfterCreate = currentIdentityState();
+      if (actorAfterCreate.kind !== "authenticated" ||
+          !isCurrentCaptainActor(actor.identity.subject.trim(), actorAfterCreate.identity.subject.trim())) {
+        throw new Error("CAPTAIN_INTAKE_SESSION_CHANGED");
+      }
       const readback = (await captainClient().listOwnSettlementIntakes(token)).intakes.find((item) => item.id === created.intake.id);
+      const actorAfterReadback = currentIdentityState();
+      if (actorAfterReadback.kind !== "authenticated" ||
+          !isCurrentCaptainActor(actor.identity.subject.trim(), actorAfterReadback.identity.subject.trim())) {
+        throw new Error("CAPTAIN_INTAKE_SESSION_CHANGED");
+      }
       if (!readback || readback.status !== "REQUESTED" || readback.resolvedAmountMinor !== created.intake.resolvedAmountMinor) throw new Error("SETTLEMENT_INTAKE_READBACK_MISMATCH");
       setIntake(readback);
       await SecureStore.deleteItemAsync(key);
