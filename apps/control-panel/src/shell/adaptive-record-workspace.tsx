@@ -1,7 +1,7 @@
 "use client";
 
-import { Button } from "antd";
-import { createContext, type KeyboardEvent, type PointerEvent, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { Button, Splitter } from "antd";
+import { createContext, type KeyboardEvent, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 type RecordView = Readonly<{ expanded: boolean; canExpand: boolean; toggleExpanded: () => void; expandForEditing: () => void }>;
 const ViewContext = createContext<RecordView | null>(null);
@@ -102,14 +102,8 @@ export function AdaptiveRecordWorkspace({ children, detail, open, preferenceKey,
     saveView(false, safe);
   };
 
-  const drag = (event: PointerEvent<HTMLHRElement>) => {
-    if (!rootRef.current || !split) return;
-    const rect = rootRef.current.getBoundingClientRect();
-    setPanelRatio((event.clientX - rect.left) / rect.width * 100);
-  };
-
-  const keyResize = (event: KeyboardEvent<HTMLHRElement>) => {
-    if (!split) return;
+  const keyResize = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!split || !event.target || !(event.target instanceof HTMLElement) || !event.target.matches(".adaptive-record-resizer")) return;
     const width = panelWidth / available * 100;
     const next = event.key === "ArrowLeft" ? width - 3 : event.key === "ArrowRight" ? width + 3 :
       event.key === "Home" ? 30 : event.key === "End" ? 60 : null;
@@ -118,21 +112,41 @@ export function AdaptiveRecordWorkspace({ children, detail, open, preferenceKey,
     setPanelRatio(next);
   };
 
-  return <div ref={rootRef} className="adaptive-record-workspace" data-open={open} data-split={split} data-full={expanded} data-detail-width={ratio}>
-    <div className="adaptive-record-registry">{children}</div>
-    {open ? <>
-      {split ? <hr className="adaptive-record-resizer" tabIndex={0}
-        aria-label="تغيير عرض ملف السجل" aria-orientation="vertical"
-        aria-valuemin={minimumRatio}
-        aria-valuemax={maximumRatio}
-        aria-valuenow={Math.round(panelWidth / available * 100)}
-        onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); drag(event); }}
-        onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) drag(event); }}
-        onKeyDown={keyResize} title="اسحب لتغيير عرض الملف أو استخدم أسهم لوحة المفاتيح" /> : null}
-      <ViewContext.Provider value={{ expanded, canExpand: available >= minimumListWidth + minimumDetailWidth + 8, toggleExpanded, expandForEditing }}>
+  useEffect(() => {
+    if (!split) return;
+    const handle = rootRef.current?.querySelector<HTMLElement>(".adaptive-record-resizer");
+    if (!handle) return;
+    handle.tabIndex = 0;
+    handle.setAttribute("aria-label", "\u062a\u063a\u064a\u064a\u0631 \u0639\u0631\u0636 \u0645\u0644\u0641 \u0627\u0644\u0633\u062c\u0644");
+  }, [split]);
+
+  const resize = (sizes: number[]) => {
+    const detailSize = sizes[1];
+    if (available <= 0 || typeof detailSize !== "number") return;
+    setRatio(detailSize / available * 100);
+  };
+
+  const resizeEnd = (sizes: number[]) => {
+    const detailSize = sizes[1];
+    if (available <= 0 || typeof detailSize !== "number") return;
+    setPanelRatio(detailSize / available * 100);
+  };
+
+  return <div ref={rootRef} className="adaptive-record-workspace" data-open={open} data-split={split} data-full={expanded} data-detail-width={ratio} onKeyDown={keyResize}>
+    {split ? <Splitter className="adaptive-record-splitter" orientation="horizontal" onResize={resize} onResizeEnd={resizeEnd}
+      classNames={{ dragger: "adaptive-record-resizer" }}>
+      <Splitter.Panel min={minimumListWidth}><div className="adaptive-record-registry">{children}</div></Splitter.Panel>
+      <Splitter.Panel min={minimumDetailWidth} max={preferredMaximumPanelWidth} size={panelWidth}>
+        <ViewContext.Provider value={{ expanded, canExpand: true, toggleExpanded, expandForEditing }}>
+          <div className="adaptive-record-detail">{detail}</div>
+        </ViewContext.Provider>
+      </Splitter.Panel>
+    </Splitter> : <>
+      <div className="adaptive-record-registry">{children}</div>
+      {open ? <ViewContext.Provider value={{ expanded, canExpand: available >= minimumListWidth + minimumDetailWidth + 8, toggleExpanded, expandForEditing }}>
         <div className="adaptive-record-detail">{detail}</div>
-      </ViewContext.Provider>
-    </> : null}
+      </ViewContext.Provider> : null}
+    </>}
   </div>;
 }
 

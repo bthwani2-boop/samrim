@@ -875,20 +875,15 @@
 
   /* Adaptive record files: one non-modal desktop split, one readable narrow-screen file. */
   .adaptive-record-workspace {
-    --adaptive-record-preferred-width: 40%;
     display: grid; direction: rtl; grid-template-columns: minmax(0, 1fr);
     min-inline-size: 0; gap: 0; align-items: start;
   }
-  .adaptive-record-workspace[data-detail-width="30"] { --adaptive-record-preferred-width: 30%; }
-  .adaptive-record-workspace[data-detail-width="35"] { --adaptive-record-preferred-width: 35%; }
-  .adaptive-record-workspace[data-detail-width="40"] { --adaptive-record-preferred-width: 40%; }
-  .adaptive-record-workspace[data-detail-width="45"] { --adaptive-record-preferred-width: 45%; }
-  .adaptive-record-workspace[data-detail-width="50"] { --adaptive-record-preferred-width: 50%; }
-  .adaptive-record-workspace[data-detail-width="55"] { --adaptive-record-preferred-width: 55%; }
-  .adaptive-record-workspace[data-detail-width="60"] { --adaptive-record-preferred-width: 60%; }
-  .adaptive-record-workspace[data-open="true"][data-split="true"][data-full="false"] {
-    grid-template-columns: minmax(0, 1fr) 8px clamp(440px, var(--adaptive-record-preferred-width), calc(100% - 518px));
+  .adaptive-record-workspace .adaptive-record-splitter {
+    inline-size: 100%; min-inline-size: 0; align-items: stretch; direction: rtl;
   }
+  .adaptive-record-workspace .adaptive-record-splitter > .ant-splitter-panel { min-inline-size: 0; }
+  .adaptive-record-workspace .adaptive-record-splitter > .ant-splitter-panel:first-child { min-inline-size: 510px; }
+  .adaptive-record-workspace .adaptive-record-splitter > .ant-splitter-panel:last-child { min-inline-size: 440px; }
   .adaptive-record-registry { min-inline-size: 0; }
   .adaptive-record-workspace .store-registry { min-inline-size: 0; }
   .adaptive-record-workspace[data-split="true"] .catalog-registry-table { table-layout: fixed; min-inline-size: 0; inline-size: 100%; }
@@ -902,11 +897,10 @@
   .adaptive-record-workspace[data-split="true"] .catalog-registry-table :is(th,td):nth-child(6) { inline-size: 12%; }
   .adaptive-record-workspace[data-split="true"] .catalog-registry-table :is(th,td):nth-child(8) { inline-size: 24%; }
   .adaptive-record-resizer {
-    margin: 0; border: 0;
-    inline-size: 8px; block-size: calc(100dvh - 96px);
-    min-block-size: 480px; position: sticky; inset-block-start: 76px;
-    background: var(--border-subtle); cursor: col-resize;
-    touch-action: none; outline-offset: -2px;
+    margin: 0; border: 0; flex: 0 0 8px !important;
+    block-size: calc(100dvh - 96px); min-block-size: 480px;
+    position: sticky; inset-block-start: 76px; background: var(--border-subtle);
+    cursor: col-resize; touch-action: none; outline-offset: -2px;
   }
   .adaptive-record-resizer::after {
     content: ""; position: absolute; inline-size: 3px; block-size: 48px;
