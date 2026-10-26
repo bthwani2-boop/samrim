@@ -1,42 +1,21 @@
 import { useAppearanceTheme } from "@bthwani/design-system/native";
-import { AuthenticatedMobileBoundary } from "@bthwani/identity/presentation";
-import { type Href, Tabs, usePathname, useRouter } from "expo-router";
-import { useCallback, useMemo } from "react";
+import { Tabs } from "expo-router";
+import { useMemo } from "react";
 import { Platform, useWindowDimensions } from "react-native";
-import { currentIdentityState, restoreIdentitySession, subscribeIdentitySession } from "../../src/bootstrap/identity";
-import ServiceCityScope from "../../src/features/service-city/service-city-scope";
 import { createClientTabOptions } from "../../src/shell/client-shell";
 
-const identity = { restoreIdentitySession, currentIdentityState, subscribe: subscribeIdentitySession };
-
 export default function ClientAppLayout() {
-  const router = useRouter();
-  const pathname = usePathname();
   const theme = useAppearanceTheme();
   const { width } = useWindowDimensions();
   const desktopWeb = Platform.OS === "web" && width >= 1024;
   const tabOptions = useMemo(() => createClientTabOptions(theme, desktopWeb), [theme, desktopWeb]);
-  const onUnauthenticated = useCallback(() => {
-    router.replace(pathname === "/" ? "/" : `/?returnTo=${encodeURIComponent(pathname)}` as Href);
-  }, [pathname, router]);
   const tabs = (
     <Tabs screenOptions={tabOptions}>
       <Tabs.Screen name="home" options={{ title: "الرئيسية", tabBarAccessibilityLabel: "الرئيسية" }} />
       <Tabs.Screen name="orders" options={{ headerShown: false, tabBarStyle: { display: "none" }, title: "الطلبات", tabBarAccessibilityLabel: "الطلبات" }} />
       <Tabs.Screen name="subscriptions" options={{ title: "الاشتراكات", tabBarAccessibilityLabel: "الاشتراكات" }} />
-      <Tabs.Screen name="wallet" options={{ href: null }} />
-      <Tabs.Screen name="wallet-cash-in" options={{ href: null, headerShown: false, tabBarStyle: { display: "none" } }} />
       <Tabs.Screen name="account" options={{ title: "الحساب", tabBarAccessibilityLabel: "الحساب" }} />
-      <Tabs.Screen name="addresses" options={{ href: null }} />
-      <Tabs.Screen name="cart/[storeId]" options={{ href: null, headerShown: false, tabBarStyle: { display: "none" } }} />
-      <Tabs.Screen name="multi-store-checkout" options={{ href: null, headerShown: false, tabBarStyle: { display: "none" } }} />
-      <Tabs.Screen name="orders/[orderId]" options={{ href: null, headerShown: false, tabBarStyle: { display: "none" } }} />
     </Tabs>
   );
-  const requiresAuthentication = pathname === "/orders" || pathname.startsWith("/orders/") || pathname.startsWith("/cart/") || pathname === "/multi-store-checkout" || pathname === "/wallet" || pathname === "/wallet-cash-in" || pathname === "/addresses";
-  return (
-    <ServiceCityScope>
-      {requiresAuthentication ? <AuthenticatedMobileBoundary binding={identity} onUnauthenticated={onUnauthenticated}>{tabs}</AuthenticatedMobileBoundary> : tabs}
-    </ServiceCityScope>
-  );
+  return tabs;
 }
