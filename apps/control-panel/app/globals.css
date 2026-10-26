@@ -2364,6 +2364,7 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
 @layer components {
   .partner-unified-toolbar { display:grid;grid-template-columns:minmax(210px,2fr) minmax(130px,1fr) minmax(145px,1fr) auto auto;align-items:end;gap:9px;margin-block:8px 4px; }
   .partner-unified-toolbar > .field-label { min-inline-size:0;max-inline-size:none; }
+  .partner-unified-toolbar > .field-label :is(.ant-select,.ant-input-search) { inline-size:100%;min-inline-size:0; }
   .partner-unified-toolbar :is(input,select) { inline-size:100%;max-inline-size:none; }
   .partner-unified-toolbar > button { min-block-size:44px;white-space:nowrap; }
   .partner-unified-extra { grid-column:1 / -1;display:flex;flex-wrap:wrap;gap:10px;align-items:end;border-block-start:1px solid var(--border-subtle);padding-block-start:8px; }
@@ -3110,10 +3111,10 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
 @layer composition {
   /* Partners: one search on all sizes; column filters on desktop, compact toolbar on mobile. */
   @media(min-width:701px) {
-    .partner-unified-toolbar > label.field-label:not(:first-child),
+    .partner-unified-toolbar > .field-label:not(:first-child),
     .partner-unified-toolbar > button[aria-expanded],
     .partner-unified-toolbar > .partner-unified-extra {display:none;}
-    .partner-unified-toolbar > label.field-label:first-child {flex:1 1 auto;min-inline-size:220px;}
+    .partner-unified-toolbar > .field-label:first-child {flex:1 1 auto;min-inline-size:220px;}
   }
 }
 

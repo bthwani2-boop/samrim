@@ -3,6 +3,7 @@
 import { fulfillmentModeLabel, type JoiningCaseSummary, joiningCaseStateLabel, type OperatorStoreSummary, publicationStateLabel, type StoreAccessGrant } from "@bthwani/dsh";
 import type { ActorRoleView } from "@bthwani/identity";
 import Link from "next/link";
+import { Input, Select } from "antd";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
@@ -322,32 +323,24 @@ export function PartnersWorkbench() {
         tabs={[{ key: "directory", label: "المتاجر والشركاء" }, { key: "joining", label: "طلبات الانضمام" }, { key: "access", label: "اعتمادات الوصول" }]}
         active={activeTab} onSelect={selectTab} />
       <section id="partners-workspace-panel" role="tabpanel" aria-labelledby={`partners-workspace-tab-${activeTab}`} className="partner-unified-tab-panel">
-      <form className="workspace-toolbar partner-unified-toolbar" noValidate onSubmit={(event) => { event.preventDefault(); navigate(activeTab, kind, status, city, sort, search.trim().slice(0,100)); }}>
-        <label className="field-label" htmlFor="partner-unified-search">{activeTab === "directory" ? "بحث في المتاجر والشركاء" : activeTab === "joining" ? "بحث في طلبات الانضمام" : "بحث في اعتمادات الوصول"}
-          <input id="partner-unified-search" type="search" value={search} maxLength={100} onChange={(event) => setSearch(event.target.value)} placeholder={activeTab === "directory" ? "المتجر أو الشريك أو رقم الهاتف" : activeTab === "joining" ? "اسم النشاط أو رقم الهاتف" : "اسم المتجر أو هاتف المدعو"} />
-        </label>
-        {activeTab === "directory" ? <>
-        <label className="field-label" htmlFor="partner-unified-kind">نوع السجل
-          <select id="partner-unified-kind" value={kind} onChange={(event) => navigate(activeTab, event.target.value as Kind, "", "", sort, appliedSearch)}>{kindOptions.map((t) => <option value={t.value} key={t.value}>{t.label}</option>)}</select>
-        </label>
-        </> : null}
-        <label className="field-label" htmlFor="partner-unified-status">الحالة
-          <select id="partner-unified-status" value={status} onChange={(event) => {
-            const next = event.target.value;
-            navigate(activeTab, kind, next, city, sort, appliedSearch);
-          }}>{statusOptions.map((s) => <option value={s.value} key={s.value}>{s.label}</option>)}</select>
-        </label>
-        <button type="submit" className="button button-secondary" disabled={loading}>بحث</button>
+      <form className="workspace-toolbar partner-unified-toolbar" noValidate onSubmit={(event) => event.preventDefault()}>
+        <div className="field-label"><label htmlFor="partner-unified-search">{activeTab === "directory" ? "بحث في المتاجر والشركاء" : activeTab === "joining" ? "بحث في طلبات الانضمام" : "بحث في اعتمادات الوصول"}</label>
+          <Input.Search id="partner-unified-search" aria-label={activeTab === "directory" ? "بحث في المتاجر والشركاء" : activeTab === "joining" ? "بحث في طلبات الانضمام" : "بحث في اعتمادات الوصول"} value={search} maxLength={100} onChange={(event) => setSearch(event.target.value)} onSearch={(value) => navigate(activeTab, kind, status, city, sort, value.trim().slice(0, 100))} placeholder={activeTab === "directory" ? "المتجر أو الشريك أو رقم الهاتف" : activeTab === "joining" ? "اسم النشاط أو رقم الهاتف" : "اسم المتجر أو هاتف المدعو"} allowClear enterButton="بحث" />
+        </div>
+        {activeTab === "directory" ? <div className="field-label"><label htmlFor="partner-unified-kind">نوع السجل</label>
+          <Select id="partner-unified-kind" aria-label="نوع السجل" value={kind} onChange={(value: Kind) => navigate(activeTab, value, "", "", sort, appliedSearch)} options={[...kindOptions]} />
+        </div> : null}
+        <div className="field-label"><label htmlFor="partner-unified-status">الحالة</label>
+          <Select id="partner-unified-status" aria-label="الحالة" value={status} onChange={(next: string) => navigate(activeTab, kind, next, city, sort, appliedSearch)} options={[...statusOptions]} />
+        </div>
         <button type="button" className="button button-secondary" aria-expanded={filtersOpen} onClick={() => setFiltersOpen(!filtersOpen)}>خيارات إضافية</button>
         {filtersOpen ? <div className="partner-unified-extra">
-          <label className="field-label" htmlFor="partner-unified-sort">ترتيب السجلات
-            <select id="partner-unified-sort" value={sort} onChange={(event) => navigate(activeTab, kind, status, city, event.target.value, appliedSearch)}><option value="newest">الأحدث أولًا</option><option value="oldest">الأقدم أولًا</option></select>
-          </label>
-          {activeTab === "directory" ? <label className="field-label" htmlFor="partner-unified-city">مدينة المتاجر فقط
-            <select id="partner-unified-city" value={city} onChange={(event) => navigate("directory", "store", status, event.target.value, sort, appliedSearch)}>
-              <option value="">كل المدن</option>{cities.map((entry) => <option key={entry.id} value={entry.id}>{entry.displayNameAr}</option>)}
-            </select>
-          </label> : null}
+          <div className="field-label"><label htmlFor="partner-unified-sort">ترتيب السجلات</label>
+            <Select id="partner-unified-sort" aria-label="ترتيب السجلات" value={sort} onChange={(value: string) => navigate(activeTab, kind, status, city, value, appliedSearch)} options={[{ value: "newest", label: "الأحدث أولًا" }, { value: "oldest", label: "الأقدم أولًا" }]} />
+          </div>
+          {activeTab === "directory" ? <div className="field-label"><label htmlFor="partner-unified-city">مدينة المتاجر فقط</label>
+            <Select id="partner-unified-city" aria-label="مدينة المتاجر فقط" value={city} onChange={(value: string) => navigate("directory", "store", status, value, sort, appliedSearch)} options={[{ value: "", label: "كل المدن" }, ...cities.map((entry) => ({ value: entry.id, label: entry.displayNameAr }))]} />
+          </div> : null}
         </div> : null}
       </form>
       {kind !== defaultKindByTab[activeTab] || status || city || appliedSearch ? <div className="partner-unified-active"><span>تم تطبيق مرشحات على العرض الحالي</span><button type="button" className="button button-secondary" onClick={() => { setSearch(""); navigate(activeTab, defaultKindByTab[activeTab], "", "", "newest", ""); }}>مسح المرشحات</button></div> : null}
