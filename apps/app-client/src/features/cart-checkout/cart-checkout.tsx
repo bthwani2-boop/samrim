@@ -464,6 +464,13 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
         setError("تعذر حفظ محاولة الطلب بأمان؛ لم يُرسل الطلب.");
         return;
       }
+      const currentIdentity = currentIdentityState();
+      if (currentIdentity.kind !== "authenticated" || currentIdentity.identity.subject.trim() !== actorID) {
+        // No request has been sent yet, so this actor-owned attempt is safe to discard.
+        try { await SecureStore.deleteItemAsync(storageKey); } catch { /* A later entry must not submit another actor's payment. */ }
+        setError("تغيرت جلسة العميل. لم يُرسل الطلب؛ تحقق من الحساب الحالي ثم أعد المحاولة.");
+        return;
+      }
       setPendingCheckout(attempt);
       try {
         const result = await client().checkoutCart(token, request, attempt.expectedCartVersion, attempt.idempotencyKey, attempt.correlationID);
