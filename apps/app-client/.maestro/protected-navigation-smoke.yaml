@@ -1,0 +1,51 @@
+# Read-only Android navigation regression check. Prerequisite: signed-in client on Home tab.
+# Never clears app state, submits an order, changes an address, or starts a wallet top-up.
+appId: com.bthwani.client
+name: Client protected navigation regression
+---
+- launchApp:
+    stopApp: false
+    clearState: false
+- extendedWaitUntil:
+    visible: "الحساب"
+    timeout: 15000
+- tapOn: "الحساب"
+- extendedWaitUntil:
+    visible: "حسابي"
+    timeout: 15000
+- tapOn: "عناوين التوصيل"
+- extendedWaitUntil:
+    visible: "عناوينك المملوكة"
+    timeout: 15000
+- back
+- extendedWaitUntil:
+    visible: "حسابي"
+    timeout: 15000
+- tapOn: "محفظتي"
+- extendedWaitUntil:
+    visible: ".*إضافة رصيد"
+    timeout: 15000
+- tapOn: ".*إضافة رصيد"
+- extendedWaitUntil:
+    visible: "مزود الشحن"
+    timeout: 15000
+- back
+- extendedWaitUntil:
+    visible: ".*إضافة رصيد"
+    timeout: 15000
+- back
+- extendedWaitUntil:
+    visible: "حسابي"
+    timeout: 15000
+- tapOn: "طلباتي"
+- extendedWaitUntil:
+    visible: "تصفية"
+    timeout: 15000
+- back
+- extendedWaitUntil:
+    visible: "الرئيسية"
+    timeout: 15000
+- tapOn: "الحساب"
+- extendedWaitUntil:
+    visible: "حسابي"
+    timeout: 15000
