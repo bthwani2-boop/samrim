@@ -4,11 +4,11 @@
 import { TextArea } from "@bthwani/design-system/web";
 import { formatMoney, type OperatorCustomerDailyActivity, type OperatorCustomerOrder, type OperatorCustomerOrderSummary, type OperatorCustomerOrdersResponse, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import type { ActorRoleView } from "@bthwani/identity";
+import { Tabs } from "antd";
 import Link from "next/link";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { identityFetch } from "../../session/identity-fetch";
 import { useSession } from "../../session/session-provider";
-import { RecordTabs } from "../shared/record-tabs";
 import { ActorWalletStatement } from "../finance/actor-wallet-statement";
 
 type CustomerOrder = OperatorCustomerOrder;
@@ -274,11 +274,10 @@ export function CustomerProfile({ actorId, embedded = false }: Readonly<{ actorI
         </div>
       </header>
 
-      <RecordTabs id="customer" ariaLabel="أقسام ملف العميل" className="customer-tab-strip"
-        tabs={visibleTabs.map(({ id: key, label }) => ({ key, label }))} active={shownTab} onSelect={selectTab}/>
-
-      <section role="tabpanel" id="customer-panel-overview" aria-labelledby="customer-tab-overview"
-        hidden={shownTab !== "overview"} className="customer-tab-panel bt-record-tabs-panel">
+      <Tabs aria-label="أقسام ملف العميل" className="customer-tab-strip" activeKey={shownTab} onChange={(key) => selectTab(key as Tab)}
+        destroyOnHidden={false} items={[
+          { key: "overview", label: tabs[0]!.label, children: (
+<section className="customer-tab-panel">
         <div className="customer-metric-grid">
           <Metric label="إجمالي الطلبات" value={summary ? arabicNumber.format(summary.totalOrders) : "—"} note="من بداية الحساب" />
           <Metric label="طلبات مكتملة" value={summary ? arabicNumber.format(summary.deliveredOrders) : "—"} note="تم التسليم فقط" />
@@ -314,16 +313,17 @@ export function CustomerProfile({ actorId, embedded = false }: Readonly<{ actorI
           </div>
         </div>
       </section>
-
-      <section role="tabpanel" id="customer-panel-orders" aria-labelledby="customer-tab-orders"
-        hidden={shownTab !== "orders"} className="customer-tab-panel bt-record-tabs-panel">
+) },
+          ...(canReadOrders ? [
+          { key: "orders", label: tabs[1]!.label, children: (
+<section className="customer-tab-panel">
         <Panel title="الطلبات" description="جميع طلبات هذا العميل عبر صفحات متتابعة، من الأحدث إلى الأقدم.">
           {renderOrders(false)}
         </Panel>
       </section>
-
-      <section role="tabpanel" id="customer-panel-performance" aria-labelledby="customer-tab-performance"
-        hidden={shownTab !== "performance"} className="customer-tab-panel bt-record-tabs-panel">
+) },
+          { key: "performance", label: tabs[2]!.label, children: (
+<section className="customer-tab-panel">
         {summary ? <>
           <div className="customer-metric-grid">
             <Metric label="إجمالي الطلبات" value={arabicNumber.format(summary.totalOrders)} note="تراكمي" />
@@ -366,9 +366,10 @@ export function CustomerProfile({ actorId, embedded = false }: Readonly<{ actorI
           </div>
         </> : <p className="customer-empty">{ordersLoading ? "جارٍ احتساب مؤشرات الأداء…" : ordersError || "لم تتوفر بيانات أداء معتمدة."}</p>}
       </section>
-
-      {canMarketing ? <section role="tabpanel" id="customer-panel-marketing" aria-labelledby="customer-tab-marketing"
-        hidden={shownTab !== "marketing"} className="customer-tab-panel bt-record-tabs-panel">
+) },
+          ] : []),
+          ...(canMarketing ? [{ key: "marketing", label: tabs[3]!.label, children: (
+<section className="customer-tab-panel">
         <div className="customer-metric-grid">
           <Metric label="شريحة النشاط الشرائي" value={purchaseSegment} note="استنتاج من آخر طلب موثق" />
           <Metric label="طلبات آخر 30 يومًا" value={summary ? arabicNumber.format(summary.last30Days) : "—"} note="عدد الطلبات المنشأة" />
@@ -391,10 +392,10 @@ export function CustomerProfile({ actorId, embedded = false }: Readonly<{ actorI
             <p className="customer-method-note">الانتقال إلى الحملات لا يضيف هذا العميل تلقائيًا إلى جمهور أي حملة.</p>
           </Panel>
         </div>
-      </section> : null}
-
-      <section role="tabpanel" id="customer-panel-account" aria-labelledby="customer-tab-account"
-        hidden={shownTab !== "account"} className="customer-tab-panel bt-record-tabs-panel">
+      </section>
+) }] : []),
+          { key: "account", label: tabs[4]!.label, children: (
+<section className="customer-tab-panel">
         <div className="customer-account-grid">
           <Panel title="الهوية والوصول" description="الحقائق المعتمدة لدى نظام الهوية.">
             <dl className="customer-profile-fields">
@@ -427,9 +428,9 @@ export function CustomerProfile({ actorId, embedded = false }: Readonly<{ actorI
           </Panel> : null}
         </div>
       </section>
-
-      {canFinance ? <section role="tabpanel" id="customer-panel-finance" aria-labelledby="customer-tab-finance"
-        hidden={shownTab !== "finance"} className="customer-tab-panel bt-record-tabs-panel">
+) },
+          ...(canFinance ? [{ key: "finance", label: tabs[5]!.label, children: (
+<section className="customer-tab-panel">
         <div className="customer-performance-grid">
           <Panel title="المحفظة والحركات المالية" description="الحقائق المالية لا تُشتق من مبلغ الطلب.">
             {shownTab === "finance" ? <ActorWalletStatement actorType="customer" actorId={actorId} /> : null}
@@ -438,7 +439,10 @@ export function CustomerProfile({ actorId, embedded = false }: Readonly<{ actorI
             <Link className="button button-secondary customer-finance-link" href="/finance/customer-withdrawals">فتح سجل السحوبات الاستثنائية ←</Link>
           </Panel>
         </div>
-      </section> : null}
+      </section>
+) }] : [])
+        ]}/>
+
     </> : null}
   </div>;
 }

@@ -1803,8 +1803,8 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
   .captain-profile-heroText p { margin-top:4px; font-size:12px; }
   .captain-profile-heroActions { margin-inline-start:auto; }
   .captain-profile-eyebrow { color:var(--interactive-text); font-size:11px; font-weight:750; }
-  .captain-profile-toolbar { display:flex; align-items:center; gap:8px; width:100%; min-width:0; border:1px solid var(--border-subtle); border-radius:10px; background:var(--surface-base); padding:4px 6px; }
-  .captain-profile-toolbar .captain-profile-tabs { flex:1 1 0; min-inline-size:0; margin:0; border:0; border-radius:0; background:transparent; padding-block:0; }
+  .captain-profile-tabs { min-inline-size:0; }
+  .captain-profile-tabs > .ant-tabs-nav { gap:8px; width:100%; min-width:0; border:1px solid var(--border-subtle); border-radius:10px; background:var(--surface-base); padding:4px 6px; }
   .captain-profile-toolbarActions { display:flex; gap:6px; flex:0 0 auto; align-items:center; border-inline-start:1px solid var(--border-subtle); padding-inline-start:7px; }
   .captain-profile-actionsMenu { position:relative; z-index:20; }
   .captain-profile-actionsMenu summary, .captain-profile-toolbarRefresh { display:inline-flex; min-height:40px; flex:0 0 auto; gap:6px; padding:8px 12px; align-items:center; justify-content:center; border:1px solid var(--border-subtle); border-radius:7px; background:var(--surface-muted); color:var(--color-primary); font:inherit; font-size:13px; font-weight:650; white-space:nowrap; cursor:pointer; }
@@ -1816,7 +1816,7 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
   .captain-profile-actionsList button { width:100%; border:0; border-radius:6px; text-align:start; min-height:38px; padding:8px 12px; background:transparent; color:var(--color-primary); font:inherit; font-size:13px; font-weight:650; cursor:pointer; }
   .captain-profile-actionsList button:hover:not(:disabled) { background:var(--surface-muted); color:var(--interactive-text); }
   .captain-profile-actionsList button:disabled { opacity:.45; cursor:not-allowed; }
-  @media (max-width:600px) { .captain-profile-toolbar { gap:5px; padding:3px 4px; } .captain-profile-toolbarActions { gap:4px; padding-inline-start:5px; } .captain-profile-actionsMenu summary, .captain-profile-toolbarRefresh { min-height:44px; padding:8px; font-size:12px; } }
+  @media (max-width:600px) { .captain-profile-tabs > .ant-tabs-nav { gap:5px; padding:3px 4px; } .captain-profile-toolbarActions { gap:4px; padding-inline-start:5px; } .captain-profile-actionsMenu summary, .captain-profile-toolbarRefresh { min-height:44px; padding:8px; font-size:12px; } }
   .captain-profile-confirm { display:flex; gap:13px; align-items:end; flex-wrap:wrap; padding:14px; background:var(--surface-muted); border:1px solid var(--border-subtle); border-radius:10px; }
   .captain-profile-confirmIntro { display:grid; gap:4px; flex:1 1 225px; font-size:13px; }
   .captain-profile-confirmIntro strong { font-size:14px; }
@@ -2074,34 +2074,6 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
   .bt-home-chart-unavailable,.bt-home-chart-emptyBar { padding: 30px 20px; color: var(--text-muted); font-size: 13px; }
   @media (max-width: 1140px) { .bt-home-chart-grid { grid-template-columns: minmax(0,1fr); } .bt-home-chart-chartArea { border-inline-end: 0; border-block-end: 1px solid var(--border-subtle); } }
   @media (max-width: 720px) { .bt-home-chart-heading { flex-direction: column; padding: 14px; gap: 4px; } .bt-home-chart-chartArea,.bt-home-chart-breakdown { padding: 14px; } .bt-home-chart-chartHeading strong { font-size: 21px; } .bt-home-chart-dayText { font-size: 10px; } .bt-home-chart-dayList { gap: 2px; } .bt-home-chart-dayList span { font-size: 9px; } }
-
-
-  /* src/features/shared/record-tabs.module.css (single-stylesheet owner) */
-  .bt-record-tabs-tabs {
-    display:flex; align-items:stretch; gap:var(--space-1); min-inline-size:0;
-    overflow-x:auto; overflow-y:hidden; padding:var(--space-1) var(--space-1) 0;
-    border:1px solid var(--border-subtle); border-radius:var(--radius-md);
-    background:var(--surface-base); scrollbar-width:thin;
-  }
-  .bt-record-tabs-tabs [role="tab"] {
-    display:inline-flex; flex:0 0 auto; align-items:center; justify-content:center; gap:var(--space-1);
-    min-block-size:40px; padding:var(--space-2) var(--space-3);
-    border:0; border-block-end:3px solid transparent; border-radius:var(--radius-xs) var(--radius-xs) 0 0;
-    background:transparent; color:var(--text-muted); font:inherit; font-size:var(--font-size-label);
-    font-weight:var(--font-weight-semibold); white-space:nowrap; cursor:pointer;
-  }
-  .bt-record-tabs-tabs [role="tab"]:hover { background:var(--surface-muted); color:var(--color-primary); }
-  .bt-record-tabs-tabs [role="tab"][aria-selected="true"] {
-    background:var(--surface-muted); border-block-end-color:var(--interactive-text);
-    color:var(--interactive-text); font-weight:var(--font-weight-bold);
-  }
-  .bt-record-tabs-tabs [role="tab"]:focus-visible { outline:2px solid var(--focus-ring); outline-offset:-3px; }
-  .bt-record-tabs-panel { display:grid; gap:var(--space-4); min-inline-size:0; padding-block-start:0; }
-  .bt-record-tabs-panel[hidden]{display:none}
-  @media(max-width:670px) {
-    .bt-record-tabs-tabs { padding-inline:var(--space-1); }
-    .bt-record-tabs-tabs [role="tab"] { min-block-size:var(--size-controlMd); }
-  }
 
 
   /* src/features/hr/employee-performance.module.css (single-stylesheet owner) */
@@ -3558,8 +3530,6 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
 .store-profile-operating-state[data-state="open"] { color: var(--success-text); background: var(--success-soft); }
 .store-profile-operating-state:focus-visible { outline: 2px solid var(--interactive-text); outline-offset: 2px; }
 
-.store-profile-navigation { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.store-profile-navigation .store-profile-sections { flex: 1; min-inline-size: 0; }
 .store-profile-section-picker { min-height: 38px; max-width: 220px; padding: 6px 10px; border-radius: 9px; border: 1px solid var(--border-subtle); background: var(--surface-base); color: var(--text-primary); cursor: pointer; }
 .store-profile-section-picker:focus-visible { outline: 2px solid var(--interactive-text); outline-offset: 2px; }
 .store-profile-context-links button { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-block-size: 43px; border-radius: 10px; padding-inline: 12px; border: 1px solid var(--border-subtle); background: var(--surface-base); color: var(--interactive-text); font-size: 12px; font-weight: 700; cursor: pointer; }
@@ -3567,31 +3537,11 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
 .store-profile-context-links button:focus-visible { outline: 2px solid var(--interactive-text); outline-offset: 2px; }
 @media(max-width:600px) { .store-profile-section-picker { max-width: none; width: 100%; } }
 
-/* Store profile: all primary destinations stay in ONE row.
-   Contextual links open these same panels rather than creating copies. */
-.store-profile-navigation { display: block; min-inline-size:0; }
-.store-profile-navigation .store-profile-sections {
-  display:grid;
-  grid-template-columns:repeat(7,minmax(0,1fr));
-  width:100%; min-inline-size:0; gap:2px; overflow:visible;
-}
-.store-profile-navigation[data-has-finance="false"] .store-profile-sections {
-  grid-template-columns:repeat(6,minmax(0,1fr));
-}
-.store-profile-navigation .store-profile-sections > button {
-  box-sizing:border-box; min-inline-size:0; max-inline-size:100%;
-  padding-inline:7px; gap:5px; font-size:12px;
-  justify-content:center; white-space:nowrap;
-}
-.store-profile-navigation .store-profile-sections > button .workspace-icon { inline-size:13px;block-size:13px; }
+/* Ant Design owns store profile tab overflow and responsive navigation. */
+.store-profile-navigation { display:block; min-inline-size:0; }
+.store-profile-navigation .store-profile-sections { width:100%; min-inline-size:0; }
 .store-profile-tab-panel > section { min-inline-size:0; }
 .store-profile-tab-panel .store-profile-tab-panel { padding-block:6px; }
-@media (max-width: 960px) {
-  .store-profile-navigation { overflow-x:auto; scrollbar-width:thin; }
-  .store-profile-navigation .store-profile-sections { min-inline-size:900px; }
-  .store-profile-navigation[data-has-finance="false"] .store-profile-sections { min-inline-size:780px; }
-}
-
 
 /* No empty grid columns from the previous large inspector layout. */
 .store-profile-content.store-sheet-dashboard {

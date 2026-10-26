@@ -3,7 +3,7 @@
 import { fulfillmentModeLabel, type JoiningCaseSummary, joiningCaseStateLabel, type OperatorStoreSummary, publicationStateLabel, type StoreAccessGrant } from "@bthwani/dsh";
 import type { ActorRoleView } from "@bthwani/identity";
 import Link from "next/link";
-import { Input, Select } from "antd";
+import { Input, Select, Tabs } from "antd";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
@@ -12,7 +12,6 @@ import { PageHeader } from "../../shell/page-header";
 import { PartnerDetailWorkspace } from "../partners/partner-detail-workspace";
 import { partnerErrorMessage } from "../partners/partner-error-message";
 import { RecordIndicator } from "../shared/record-indicator";
-import { RecordTabs } from "../shared/record-tabs";
 import { RegistryColumnHeader } from "../shared/registry-column-header";
 import { downloadRegistryCsv } from "../shared/registry-csv";
 import { useReadOnReturn } from "../shared/use-read-on-return";
@@ -315,14 +314,12 @@ export function PartnersWorkbench() {
       <PartnerDetailWorkspace key={actor.actorId} actorId={actor.actorId} embedded />
     </AdaptiveRecordPanel> : null;
 
-  const triggerKey = openStore ? `partner-store-${openStore}` : openCase ? `partner-case-${openCase}` : openGrant ? `partner-grant-${openGrant}` : openPartner ? `partner-actor-${openPartner}` : undefined;
-  return <AdaptiveRecordWorkspace open={Boolean(selectedId)} detail={detail} preferenceKey="partners-unified" {...(triggerKey ? { triggerKey } : {})} onClose={close}>
-    <section className="workspace-page partners-unified-workbench store-registry" aria-label="السجل الموحد للشركاء والمتاجر">
-      <PageHeader id="partners-unified-title" title="الشركاء والمتاجر" actions={activeTab === "joining" ? <Link className="button button-primary" href="/partners/new">+ طلب انضمام جديد</Link> : null} />
-      <RecordTabs id="partners-workspace" panelId="partners-workspace-panel" ariaLabel="أقسام الشركاء والمتاجر" className="partner-unified-section-tabs"
-        tabs={[{ key: "directory", label: "المتاجر والشركاء" }, { key: "joining", label: "طلبات الانضمام" }, { key: "access", label: "اعتمادات الوصول" }]}
-        active={activeTab} onSelect={selectTab} />
-      <section id="partners-workspace-panel" role="tabpanel" aria-labelledby={`partners-workspace-tab-${activeTab}`} className="partner-unified-tab-panel">
+  const workspaceTabs: ReadonlyArray<{ key: WorkspaceTab; label: string }> = [
+    { key: "directory", label: "\u0627\u0644\u0645\u062a\u0627\u062c\u0631 \u0648\u0627\u0644\u0634\u0631\u0643\u0627\u0621" },
+    { key: "joining", label: "\u0637\u0644\u0628\u0627\u062a \u0627\u0644\u0627\u0646\u0636\u0645\u0627\u0645" },
+    { key: "access", label: "\u0627\u0639\u062a\u0645\u0627\u062f\u0627\u062a \u0627\u0644\u0648\u0635\u0648\u0644" },
+  ];
+  const registryPanel = <section className="partner-unified-tab-panel">
       <form className="workspace-toolbar partner-unified-toolbar" noValidate onSubmit={(event) => event.preventDefault()}>
         <div className="field-label"><label htmlFor="partner-unified-search">{activeTab === "directory" ? "بحث في المتاجر والشركاء" : activeTab === "joining" ? "بحث في طلبات الانضمام" : "بحث في اعتمادات الوصول"}</label>
           <Input.Search id="partner-unified-search" aria-label={activeTab === "directory" ? "بحث في المتاجر والشركاء" : activeTab === "joining" ? "بحث في طلبات الانضمام" : "بحث في اعتمادات الوصول"} value={search} maxLength={100} onChange={(event) => setSearch(event.target.value)} onSearch={(value) => navigate(activeTab, kind, status, city, sort, value.trim().slice(0, 100))} placeholder={activeTab === "directory" ? "المتجر أو الشريك أو رقم الهاتف" : activeTab === "joining" ? "اسم النشاط أو رقم الهاتف" : "اسم المتجر أو هاتف المدعو"} allowClear enterButton="بحث" />
@@ -383,7 +380,13 @@ export function PartnersWorkbench() {
         <div><strong>التوصيل</strong><RecordIndicator legend icon="rider" label="توصيل بثواني" /><RecordIndicator legend icon="storeDelivery" label="توصيل المتجر" /><RecordIndicator legend icon="pickup" label="استلم بنفسك من المتجر" /></div>
       </aside></details> : null}
       <footer className="registry-footer"><CursorPagination page={page} nextCursor={nextCursor} disabled={loading || Boolean(busyGrant)} label="صفحات السجل الموحد للشركاء" /></footer>
-      </section>
+      </section>;
+
+  const triggerKey = openStore ? `partner-store-${openStore}` : openCase ? `partner-case-${openCase}` : openGrant ? `partner-grant-${openGrant}` : openPartner ? `partner-actor-${openPartner}` : undefined;
+  return <AdaptiveRecordWorkspace open={Boolean(selectedId)} detail={detail} preferenceKey="partners-unified" {...(triggerKey ? { triggerKey } : {})} onClose={close}>
+    <section className="workspace-page partners-unified-workbench store-registry" aria-label="السجل الموحد للشركاء والمتاجر">
+      <PageHeader id="partners-unified-title" title="الشركاء والمتاجر" actions={activeTab === "joining" ? <Link className="button button-primary" href="/partners/new">+ طلب انضمام جديد</Link> : null} />
+      <Tabs id="partners-workspace" activeKey={activeTab} onChange={(key) => { if (key === "directory" || key === "joining" || key === "access") selectTab(key); }} renderTabBar={(props, DefaultTabBar) => <DefaultTabBar {...{ ...props, "aria-label": "\u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u0634\u0631\u0643\u0627\u0621 \u0648\u0627\u0644\u0645\u062a\u0627\u062c\u0631" }} />} classNames={{ header: "partner-unified-section-tabs" }} items={workspaceTabs.map((tab) => ({ key: tab.key, label: tab.label, children: activeTab === tab.key ? registryPanel : null }))} />
     </section>
   </AdaptiveRecordWorkspace>;
 }
