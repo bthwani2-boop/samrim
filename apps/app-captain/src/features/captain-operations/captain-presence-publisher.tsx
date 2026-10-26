@@ -10,8 +10,11 @@ let lastSubmittedActor = "";
 async function sendCurrentPresence() {
   const before = currentIdentityState();
   if (before.kind !== "authenticated" || AppState.currentState !== "active") return;
-  const permission = await Location.getForegroundPermissionsAsync();
-  if (!permission.granted) return;
+  const [permission, locationServicesEnabled] = await Promise.all([
+    Location.getForegroundPermissionsAsync(),
+    Location.hasServicesEnabledAsync(),
+  ]);
+  if (!permission.granted || !locationServicesEnabled) return;
   const token = await getUsableIdentityAccessToken();
   const api = captainClient();
   const admission = await api.readOwnCaptainAdmission(token);
@@ -20,7 +23,7 @@ async function sendCurrentPresence() {
   if (!shouldPublishCaptainPresence(
     AppState.currentState === "active", permission.granted,
     current.kind === "authenticated" && current.identity.subject === before.identity.subject,
-    available,
+    available, locationServicesEnabled,
   )) return;
   const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
   const after = currentIdentityState();
