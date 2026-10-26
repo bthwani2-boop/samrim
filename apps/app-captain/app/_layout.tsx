@@ -27,10 +27,10 @@ export default function RootLayout() {
 }
 
 function RootNavigation() {
-  const { themeName } = useMobileAppearance();
+  const { themeName, theme } = useMobileAppearance();
   // A new session actor must not inherit React screen state or previous responses.
   const actorID = useSyncExternalStore(subscribeIdentitySession, currentMobileActorID, () => "");
-  return <><StatusBar style={themeName === "dark" ? "light" : "dark"} /><Stack key={actorID || "signed-out"} screenOptions={{ headerShown: false }}><Stack.Screen name="notifications" options={{ headerShown: false }} /></Stack></>;
+  return <><StatusBar style={themeName === "dark" ? "light" : "dark"} /><Stack key={actorID || "signed-out"} screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }}><Stack.Screen name="notifications" options={{ headerShown: false }} /></Stack></>;
 }
 
 function RootNetworkNotice() {

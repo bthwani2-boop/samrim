@@ -1,0 +1,30 @@
+# Read-only proof: navigation only. Never accepts offers or completes a delivery.
+appId: com.bthwani.captain
+name: Captain protected stack navigation
+---
+- launchApp:
+    stopApp: false
+    clearState: false
+- extendedWaitUntil:
+    visible: "الرئيسية"
+    timeout: 15000
+- tapOn: "حسابي"
+- extendedWaitUntil:
+    visible: "إدارة حساب الكابتن"
+    timeout: 15000
+- tapOn: "عروض التوصيل"
+- extendedWaitUntil:
+    visible: "عروض التوصيل"
+    timeout: 15000
+- tapOn: "عرض التوصيلات الحالية"
+- extendedWaitUntil:
+    visible: "التوصيلات الحالية"
+    timeout: 15000
+- back
+- extendedWaitUntil:
+    visible: "عروض التوصيل"
+    timeout: 15000
+- back
+- extendedWaitUntil:
+    visible: "إدارة حساب الكابتن"
+    timeout: 15000
