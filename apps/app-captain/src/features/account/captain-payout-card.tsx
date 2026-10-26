@@ -8,6 +8,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 
 import { useFocusEffect } from "expo-router";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { captainClient } from "../captain-operations/captain-client";
+import { isCurrentCaptainActor } from "../captain-operations/captain-session-scope";
 
 type PayoutAttempt = Readonly<{ mode: "FULL_AVAILABLE" | "SPECIFIED"; amountMinor?: number; idempotencyKey: string; correlationID: string }>;
 
@@ -55,12 +56,25 @@ export function CaptainPayoutCard() {
     }
     setBusy(true); setError(""); setNotice("");
     try {
+      const actorBeforeToken = currentIdentityState();
+      if (actorBeforeToken.kind !== "authenticated" || !actorBeforeToken.identity.subject.trim()) throw new Error("CAPTAIN_SESSION_REQUIRED");
       const token = await getUsableIdentityAccessToken();
       const actor = currentIdentityState();
-      if (actor.kind !== "authenticated" || !actor.identity.subject.trim()) throw new Error("CAPTAIN_SESSION_REQUIRED");
+      if (actor.kind !== "authenticated" ||
+          !isCurrentCaptainActor(actorBeforeToken.identity.subject.trim(), actor.identity.subject.trim())) {
+        throw new Error("CAPTAIN_PAYOUT_SESSION_CHANGED");
+      }
       const storageKey = `bthwani.captain.payout.pending.v1.${encodeURIComponent(actor.identity.subject)}`;
       const attempt = pendingAttempt ?? { mode, ...(parsed === undefined ? {} : { amountMinor: parsed }), idempotencyKey: `captain_payout_${Crypto.randomUUID()}`, correlationID: `captain_payout_corr_${Crypto.randomUUID()}` };
       await SecureStore.setItemAsync(storageKey, JSON.stringify(attempt));
+      const actorAfterPersist = currentIdentityState();
+      if (actorAfterPersist.kind !== "authenticated" ||
+          !isCurrentCaptainActor(actor.identity.subject.trim(), actorAfterPersist.identity.subject.trim())) {
+        // A newly persisted, unsent attempt is not a financial request.
+        // Preserve an older uncertain attempt rather than creating another key.
+        if (!pendingAttempt) await SecureStore.deleteItemAsync(storageKey).catch(() => {});
+        throw new Error("CAPTAIN_PAYOUT_SESSION_CHANGED");
+      }
       setPendingAttempt(attempt);
       const result = await captainClient().createOwnPayoutIntent(token, mode, parsed, attempt.idempotencyKey, attempt.correlationID);
       // An acknowledged mutation is not enough; verify the WLT read model and actor scope
@@ -98,8 +112,14 @@ export function CaptainPayoutCard() {
     try {
       const saved = pendingIntakeAttempt ?? { mode, ...(parsed === undefined ? {} : { amountMinor: parsed }), idempotencyKey: `captain_intake_${Crypto.randomUUID()}`, correlationID: `captain_intake_corr_${Crypto.randomUUID()}` };
       await SecureStore.setItemAsync(key, JSON.stringify(saved));
-      setPendingIntakeAttempt(saved);
       const token = await getUsableIdentityAccessToken();
+      const actorAfterPersist = currentIdentityState();
+      if (actorAfterPersist.kind !== "authenticated" ||
+          !isCurrentCaptainActor(actor.identity.subject.trim(), actorAfterPersist.identity.subject.trim())) {
+        if (!pendingIntakeAttempt) await SecureStore.deleteItemAsync(key).catch(() => {});
+        throw new Error("CAPTAIN_INTAKE_SESSION_CHANGED");
+      }
+      setPendingIntakeAttempt(saved);
       const created = await captainClient().createOwnSettlementIntake(token, saved.mode, saved.amountMinor, saved.idempotencyKey, saved.correlationID);
       const readback = (await captainClient().listOwnSettlementIntakes(token)).intakes.find((item) => item.id === created.intake.id);
       if (!readback || readback.status !== "REQUESTED" || readback.resolvedAmountMinor !== created.intake.resolvedAmountMinor) throw new Error("SETTLEMENT_INTAKE_READBACK_MISMATCH");
