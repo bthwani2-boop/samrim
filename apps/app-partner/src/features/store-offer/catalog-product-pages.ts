@@ -9,3 +9,11 @@ export function mergeCatalogProductPage(
   const seen = new Set(current.map((product) => product.id));
   return [...current, ...page.filter((product) => !seen.has(product.id))];
 }
+
+export function isCurrentCatalogProductRequest(requestSequence: number, currentSequence: number): boolean {
+  return requestSequence === currentSequence;
+}
+
+export function releaseCatalogProductPageRequest(activeSequence: number | null, requestSequence: number): number | null {
+  return activeSequence === requestSequence ? null : activeSequence;
+}
