@@ -27,5 +27,5 @@ function FieldTabs() {
     });
     return () => subscription.remove();
   }, [refresh]);
-  return <Tabs screenOptions={tabOptions}><Tabs.Screen name="home" options={{ title: "الرئيسية", tabBarAccessibilityLabel: "جاهزية الميدان" }} /><Tabs.Screen name="cases" options={eligible ? { title: "الشركاء", tabBarAccessibilityLabel: "الشركاء" } : { href: null }} /><Tabs.Screen name="invitations" options={{ href: null }} /><Tabs.Screen name="wallet" options={eligible ? { title: "المحفظة", tabBarAccessibilityLabel: "محفظة الميدان" } : { href: null }} /><Tabs.Screen name="account" options={{ href: null }} /><Tabs.Screen name="new-case" options={{ href: null }} /></Tabs>;
+  return <Tabs screenOptions={tabOptions}><Tabs.Screen name="home" options={{ title: "الرئيسية", tabBarAccessibilityLabel: "جاهزية الميدان" }} /><Tabs.Screen name="cases" options={eligible ? { title: "الشركاء", tabBarAccessibilityLabel: "الشركاء" } : { href: null }} /><Tabs.Screen name="invitations" options={{ href: null }} /><Tabs.Screen name="wallet" options={eligible ? { title: "المحفظة", tabBarAccessibilityLabel: "محفظة الميدان" } : { href: null }} /><Tabs.Screen name="account" options={{ title: "حسابي", tabBarAccessibilityLabel: "الحساب" }} /><Tabs.Screen name="new-case" options={{ href: null }} /></Tabs>;
 }

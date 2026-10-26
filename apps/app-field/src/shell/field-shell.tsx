@@ -18,7 +18,7 @@ export function FieldScrollScreen({ children }: PropsWithChildren) {
 
 export function createFieldTabOptions(theme: ReturnType<typeof resolveTheme>, canSearch: boolean) {
   const styles = createStyles(theme);
-  const icons = { home: "home", cases: "cases", invitations: "store", wallet: "wallet" } as const;
+  const icons = { home: "home", cases: "cases", invitations: "store", wallet: "wallet", account: "account" } as const;
   return ({ route }: { route: { name: string } }) => ({
     headerShown: true,
     headerTitle: fieldHeaderTitle(route.name),
@@ -68,7 +68,7 @@ function FieldHeader({ canSearch, title, routeName, headerRight, focus: rawFocus
   }, [canSearch, isSearchOpen]);
 
   const customAction = typeof headerRight === "function" ? (headerRight as () => ReactNode)() : headerRight as ReactNode;
-  return <View style={styles.header}>{isSearchOpen && canSearch ? <View style={styles.headerSearchActions}><BthwaniSearchField accessibilityLabel="البحث عن شريك" autoCapitalize="none" autoCorrect={false} containerStyle={styles.headerSearchField} inputRef={searchInputRef} maxLength={128} onChangeText={(value) => navigation.setParams({ q: value.slice(0, 128) })} onClear={() => navigation.setParams({ q: "" })} placeholder="ابحث باسم المالك أو النشاط أو المتجر أو الهاتف" returnKeyType="search" value={searchQuery.slice(0, 128)} /><BthwaniIconButton icon="close" label="إغلاق البحث" onPress={() => navigation.setParams({ focus: "", q: "" })} size={sizing.controlMd} tone="soft" /></View> : <><View style={styles.headerIdentity}><Text numberOfLines={1} style={styles.pageTitle}>{title}</Text></View><View style={styles.headerActions}>{customAction}{routeName !== "account" ? <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlSm} tone="soft" /> : null}{canSearch ? <BthwaniIconButton icon="search" label="البحث عن شريك" onPress={() => navigation.navigate("cases", { focus: "search" })} size={sizing.controlSm} tone="soft" /> : null}<BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/notifications" as Href)} size={sizing.controlSm} tone="soft" /></View></>}</View>;
+  return <View style={styles.header}>{isSearchOpen && canSearch ? <View style={styles.headerSearchActions}><BthwaniSearchField accessibilityLabel="البحث عن شريك" autoCapitalize="none" autoCorrect={false} containerStyle={styles.headerSearchField} inputRef={searchInputRef} maxLength={128} onChangeText={(value) => navigation.setParams({ q: value.slice(0, 128) })} onClear={() => navigation.setParams({ q: "" })} placeholder="ابحث باسم المالك أو النشاط أو المتجر أو الهاتف" returnKeyType="search" value={searchQuery.slice(0, 128)} /><BthwaniIconButton icon="close" label="إغلاق البحث" onPress={() => navigation.setParams({ focus: "", q: "" })} size={sizing.controlMd} tone="soft" /></View> : <><View style={styles.headerIdentity}><Text numberOfLines={1} style={styles.pageTitle}>{title}</Text></View><View style={styles.headerActions}>{customAction}{canSearch ? <BthwaniIconButton icon="search" label="البحث عن شريك" onPress={() => navigation.navigate("cases", { focus: "search" })} size={sizing.controlSm} tone="soft" /> : null}<BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/notifications" as Href)} size={sizing.controlSm} tone="soft" /></View></>}</View>;
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
