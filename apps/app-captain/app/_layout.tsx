@@ -7,18 +7,24 @@ import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-cont
 
 import { appearance } from "../src/bootstrap/appearance";
 import { currentIdentityState, subscribeIdentitySession } from "../src/bootstrap/identity";
+import { CaptainMissionLocationPublisher } from "../src/features/captain-operations/captain-mission-location-publisher";
+import { CaptainPresencePublisher } from "../src/features/captain-operations/captain-presence-publisher";
+import { OrderAlertMonitor } from "../src/features/notifications/order-alert-monitor";
+
 
 function currentMobileActorID(): string {
   const session = currentIdentityState();
   return session.kind === "authenticated" ? session.identity.subject.trim() : "";
 }
-import { OrderAlertMonitor } from "../src/features/notifications/order-alert-monitor";
+
 
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <AppearanceProvider controller={appearance}>
         <OrderAlertMonitor />
+        <CaptainPresencePublisher />
+        <CaptainMissionLocationPublisher />
         <RootNavigation />
         <RootNetworkNotice />
       </AppearanceProvider>
@@ -30,7 +36,7 @@ function RootNavigation() {
   const { themeName, theme } = useMobileAppearance();
   // A new session actor must not inherit React screen state or previous responses.
   const actorID = useSyncExternalStore(subscribeIdentitySession, currentMobileActorID, () => "");
-  return <><StatusBar style={themeName === "dark" ? "light" : "dark"} /><Stack key={actorID || "signed-out"} screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }}><Stack.Screen name="notifications" options={{ headerShown: false }} /></Stack></>;
+  return <><StatusBar style={themeName === "dark" ? "light" : "dark"} /><Stack key={actorID || "signed-out"} screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }}><Stack.Screen name="(app)" /><Stack.Screen name="offers" options={{ presentation: "card" }} /><Stack.Screen name="deliveries" options={{ presentation: "card" }} /><Stack.Screen name="notifications" options={{ headerShown: false, presentation: "card" }} /></Stack></>;
 }
 
 function RootNetworkNotice() {
