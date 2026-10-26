@@ -37,9 +37,7 @@ function Unavailable({ title, reason }: Readonly<{ title: string; reason: string
   return <Card title={title}><div className="store-profile-empty"><span aria-hidden="true">◇</span><p>{reason}</p></div></Card>;
 }
 function Panel({ id, selected, children }: Readonly<{ id: string; selected: boolean; children: ReactNode }>) {
-  const names: Readonly<Record<string, string>> = { products: "المنتجات", promotions: "العروض", customers: "العملاء", quality: "الجودة", ratings: "التقييمات", documents: "الوثائق", history: "السجل", finance: "المالية" };
-  return <section id={`store-profile-detail-${id}`} aria-label={names[id] ?? id} hidden={!selected}
-    className="store-profile-tab-panel">{selected ? children : null}</section>;
+  return selected ? <section data-panel={id} className="store-profile-tab-panel">{children}</section> : null;
 }
 
 const intakeWeekdays = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"] as const;

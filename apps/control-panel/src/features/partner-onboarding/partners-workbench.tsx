@@ -3,6 +3,7 @@
 import { fulfillmentModeLabel, type JoiningCaseSummary, joiningCaseStateLabel, type OperatorStoreSummary, publicationStateLabel, type StoreAccessGrant } from "@bthwani/dsh";
 import type { ActorRoleView } from "@bthwani/identity";
 import Link from "next/link";
+import { Input, Select, Tabs } from "antd";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
@@ -11,7 +12,6 @@ import { PageHeader } from "../../shell/page-header";
 import { PartnerDetailWorkspace } from "../partners/partner-detail-workspace";
 import { partnerErrorMessage } from "../partners/partner-error-message";
 import { RecordIndicator } from "../shared/record-indicator";
-import { RecordTabs } from "../shared/record-tabs";
 import { RegistryColumnHeader } from "../shared/registry-column-header";
 import { downloadRegistryCsv } from "../shared/registry-csv";
 import { useReadOnReturn } from "../shared/use-read-on-return";
@@ -314,40 +314,30 @@ export function PartnersWorkbench() {
       <PartnerDetailWorkspace key={actor.actorId} actorId={actor.actorId} embedded />
     </AdaptiveRecordPanel> : null;
 
-  const triggerKey = openStore ? `partner-store-${openStore}` : openCase ? `partner-case-${openCase}` : openGrant ? `partner-grant-${openGrant}` : openPartner ? `partner-actor-${openPartner}` : undefined;
-  return <AdaptiveRecordWorkspace open={Boolean(selectedId)} detail={detail} preferenceKey="partners-unified" {...(triggerKey ? { triggerKey } : {})} onClose={close}>
-    <section className="workspace-page partners-unified-workbench store-registry" aria-label="السجل الموحد للشركاء والمتاجر">
-      <PageHeader id="partners-unified-title" title="الشركاء والمتاجر" actions={activeTab === "joining" ? <Link className="button button-primary" href="/partners/new">+ طلب انضمام جديد</Link> : null} />
-      <RecordTabs id="partners-workspace" panelId="partners-workspace-panel" ariaLabel="أقسام الشركاء والمتاجر" className="partner-unified-section-tabs"
-        tabs={[{ key: "directory", label: "المتاجر والشركاء" }, { key: "joining", label: "طلبات الانضمام" }, { key: "access", label: "اعتمادات الوصول" }]}
-        active={activeTab} onSelect={selectTab} />
-      <section id="partners-workspace-panel" role="tabpanel" aria-labelledby={`partners-workspace-tab-${activeTab}`} className="partner-unified-tab-panel">
-      <form className="workspace-toolbar partner-unified-toolbar" noValidate onSubmit={(event) => { event.preventDefault(); navigate(activeTab, kind, status, city, sort, search.trim().slice(0,100)); }}>
-        <label className="field-label" htmlFor="partner-unified-search">{activeTab === "directory" ? "بحث في المتاجر والشركاء" : activeTab === "joining" ? "بحث في طلبات الانضمام" : "بحث في اعتمادات الوصول"}
-          <input id="partner-unified-search" type="search" value={search} maxLength={100} onChange={(event) => setSearch(event.target.value)} placeholder={activeTab === "directory" ? "المتجر أو الشريك أو رقم الهاتف" : activeTab === "joining" ? "اسم النشاط أو رقم الهاتف" : "اسم المتجر أو هاتف المدعو"} />
-        </label>
-        {activeTab === "directory" ? <>
-        <label className="field-label" htmlFor="partner-unified-kind">نوع السجل
-          <select id="partner-unified-kind" value={kind} onChange={(event) => navigate(activeTab, event.target.value as Kind, "", "", sort, appliedSearch)}>{kindOptions.map((t) => <option value={t.value} key={t.value}>{t.label}</option>)}</select>
-        </label>
-        </> : null}
-        <label className="field-label" htmlFor="partner-unified-status">الحالة
-          <select id="partner-unified-status" value={status} onChange={(event) => {
-            const next = event.target.value;
-            navigate(activeTab, kind, next, "", sort, appliedSearch);
-          }}>{statusOptions.map((s) => <option value={s.value} key={s.value}>{s.label}</option>)}</select>
-        </label>
-        <button type="submit" className="button button-secondary" disabled={loading}>بحث</button>
+  const workspaceTabs: ReadonlyArray<{ key: WorkspaceTab; label: string }> = [
+    { key: "directory", label: "\u0627\u0644\u0645\u062a\u0627\u062c\u0631 \u0648\u0627\u0644\u0634\u0631\u0643\u0627\u0621" },
+    { key: "joining", label: "\u0637\u0644\u0628\u0627\u062a \u0627\u0644\u0627\u0646\u0636\u0645\u0627\u0645" },
+    { key: "access", label: "\u0627\u0639\u062a\u0645\u0627\u062f\u0627\u062a \u0627\u0644\u0648\u0635\u0648\u0644" },
+  ];
+  const registryPanel = <section className="partner-unified-tab-panel">
+      <form className="workspace-toolbar partner-unified-toolbar" noValidate onSubmit={(event) => event.preventDefault()}>
+        <div className="field-label"><label htmlFor="partner-unified-search">{activeTab === "directory" ? "بحث في المتاجر والشركاء" : activeTab === "joining" ? "بحث في طلبات الانضمام" : "بحث في اعتمادات الوصول"}</label>
+          <Input.Search id="partner-unified-search" aria-label={activeTab === "directory" ? "بحث في المتاجر والشركاء" : activeTab === "joining" ? "بحث في طلبات الانضمام" : "بحث في اعتمادات الوصول"} value={search} maxLength={100} onChange={(event) => setSearch(event.target.value)} onSearch={(value) => navigate(activeTab, kind, status, city, sort, value.trim().slice(0, 100))} placeholder={activeTab === "directory" ? "المتجر أو الشريك أو رقم الهاتف" : activeTab === "joining" ? "اسم النشاط أو رقم الهاتف" : "اسم المتجر أو هاتف المدعو"} allowClear enterButton="بحث" />
+        </div>
+        {activeTab === "directory" ? <div className="field-label"><label htmlFor="partner-unified-kind">نوع السجل</label>
+          <Select id="partner-unified-kind" aria-label="نوع السجل" value={kind} onChange={(value: Kind) => navigate(activeTab, value, "", "", sort, appliedSearch)} options={[...kindOptions]} />
+        </div> : null}
+        <div className="field-label"><label htmlFor="partner-unified-status">الحالة</label>
+          <Select id="partner-unified-status" aria-label="الحالة" value={status} onChange={(next: string) => navigate(activeTab, kind, next, city, sort, appliedSearch)} options={[...statusOptions]} />
+        </div>
         <button type="button" className="button button-secondary" aria-expanded={filtersOpen} onClick={() => setFiltersOpen(!filtersOpen)}>خيارات إضافية</button>
         {filtersOpen ? <div className="partner-unified-extra">
-          <label className="field-label" htmlFor="partner-unified-sort">ترتيب السجلات
-            <select id="partner-unified-sort" value={sort} onChange={(event) => navigate(activeTab, kind, status, city, event.target.value, appliedSearch)}><option value="newest">الأحدث أولًا</option><option value="oldest">الأقدم أولًا</option></select>
-          </label>
-          {activeTab === "directory" ? <label className="field-label" htmlFor="partner-unified-city">مدينة المتاجر فقط
-            <select id="partner-unified-city" value={city} onChange={(event) => navigate("directory", "store", status, event.target.value, sort, appliedSearch)}>
-              <option value="">كل المدن</option>{cities.map((entry) => <option key={entry.id} value={entry.id}>{entry.displayNameAr}</option>)}
-            </select>
-          </label> : null}
+          <div className="field-label"><label htmlFor="partner-unified-sort">ترتيب السجلات</label>
+            <Select id="partner-unified-sort" aria-label="ترتيب السجلات" value={sort} onChange={(value: string) => navigate(activeTab, kind, status, city, value, appliedSearch)} options={[{ value: "newest", label: "الأحدث أولًا" }, { value: "oldest", label: "الأقدم أولًا" }]} />
+          </div>
+          {activeTab === "directory" ? <div className="field-label"><label htmlFor="partner-unified-city">مدينة المتاجر فقط</label>
+            <Select id="partner-unified-city" aria-label="مدينة المتاجر فقط" value={city} onChange={(value: string) => navigate("directory", "store", status, value, sort, appliedSearch)} options={[{ value: "", label: "كل المدن" }, ...cities.map((entry) => ({ value: entry.id, label: entry.displayNameAr }))]} />
+          </div> : null}
         </div> : null}
       </form>
       {kind !== defaultKindByTab[activeTab] || status || city || appliedSearch ? <div className="partner-unified-active"><span>تم تطبيق مرشحات على العرض الحالي</span><button type="button" className="button button-secondary" onClick={() => { setSearch(""); navigate(activeTab, defaultKindByTab[activeTab], "", "", "newest", ""); }}>مسح المرشحات</button></div> : null}
@@ -369,7 +359,7 @@ export function PartnersWorkbench() {
             </select></label>
           </RegistryColumnHeader> : <th scope="col">النوع والموقع</th>}
           {statusOptions.length > 1 ? <RegistryColumnHeader label="الحالة" active={Boolean(status)}>
-            <label>حالة السجل<select value={status} onChange={(event) => navigate(activeTab, kind, event.target.value, "", sort, appliedSearch)}>
+            <label>حالة السجل<select value={status} onChange={(event) => navigate(activeTab, kind, event.target.value, city, sort, appliedSearch)}>
               {statusOptions.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}
             </select></label>
           </RegistryColumnHeader> : <th scope="col">الحالة</th>}
@@ -390,7 +380,13 @@ export function PartnersWorkbench() {
         <div><strong>التوصيل</strong><RecordIndicator legend icon="rider" label="توصيل بثواني" /><RecordIndicator legend icon="storeDelivery" label="توصيل المتجر" /><RecordIndicator legend icon="pickup" label="استلم بنفسك من المتجر" /></div>
       </aside></details> : null}
       <footer className="registry-footer"><CursorPagination page={page} nextCursor={nextCursor} disabled={loading || Boolean(busyGrant)} label="صفحات السجل الموحد للشركاء" /></footer>
-      </section>
+      </section>;
+
+  const triggerKey = openStore ? `partner-store-${openStore}` : openCase ? `partner-case-${openCase}` : openGrant ? `partner-grant-${openGrant}` : openPartner ? `partner-actor-${openPartner}` : undefined;
+  return <AdaptiveRecordWorkspace open={Boolean(selectedId)} detail={detail} preferenceKey="partners-unified" {...(triggerKey ? { triggerKey } : {})} onClose={close}>
+    <section className="workspace-page partners-unified-workbench store-registry" aria-label="السجل الموحد للشركاء والمتاجر">
+      <PageHeader id="partners-unified-title" title="الشركاء والمتاجر" actions={activeTab === "joining" ? <Link className="button button-primary" href="/partners/new">+ طلب انضمام جديد</Link> : null} />
+      <Tabs id="partners-workspace" activeKey={activeTab} onChange={(key) => { if (key === "directory" || key === "joining" || key === "access") selectTab(key); }} renderTabBar={(props, DefaultTabBar) => <DefaultTabBar {...{ ...props, "aria-label": "\u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u0634\u0631\u0643\u0627\u0621 \u0648\u0627\u0644\u0645\u062a\u0627\u062c\u0631" }} />} classNames={{ header: "partner-unified-section-tabs" }} items={workspaceTabs.map((tab) => ({ key: tab.key, label: tab.label, children: activeTab === tab.key ? registryPanel : null }))} />
     </section>
   </AdaptiveRecordWorkspace>;
 }

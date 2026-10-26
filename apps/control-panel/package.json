@@ -12,6 +12,7 @@
     "typecheck": "next typegen && tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@ant-design/cssinjs": "2.1.2",
     "@bthwani/design-system": "workspace:*",
     "@bthwani/dsh": "workspace:*",
     "@bthwani/identity": "workspace:*",

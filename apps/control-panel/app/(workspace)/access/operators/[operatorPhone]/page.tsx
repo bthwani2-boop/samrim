@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { AccountAccessPanel, type ManagedOperatorStatus } from "../../../../../src/features/access/account-access-panel";
 import { EmployeePerformance } from "../../../../../src/features/hr/employee-performance";
-import { RecordTabPanel, RecordTabs } from "../../../../../src/features/shared/record-tabs";
+import { Tabs } from "antd";
 import type { HREmployee } from "../../../../../src/server/dsh/dsh-bff";
 import { identityFetch } from "../../../../../src/session/identity-fetch";
 import { useSession } from "../../../../../src/session/session-provider";
@@ -93,9 +93,9 @@ export default function OperatorProfilePage() {
       <Link href="/access?view=permissions" className="button button-secondary">العودة إلى الحسابات</Link>
     </header>
 
-    <RecordTabs id="operator-file" tabs={tabs} active={tab} onSelect={selectTab} />
+    <Tabs aria-label="أقسام الملف" activeKey={tab} onChange={selectTab} destroyOnHidden={false} items={[
 
-    <RecordTabPanel id="operator-file" tab="overview" active={tab === "overview"}>
+    { key: "overview", label: tabs[0]!.label, children: (<>
       <section className={"bt-operator-profile-metrics"} aria-label="مؤشرات هوية المشغّل">
         <div><span>حالة الحساب</span><strong>{status ? !status.securityEnabled ? "الهوية موقوفة" : !status.enabled ? "الدور موقوف" : !status.activated ? "بانتظار التفعيل" : "نشط" : "جارٍ التحقق"}</strong></div>
         <div><span>آخر دخول موثّق</span><strong>{formatDate(status?.lastAuthenticatedAt)}</strong></div>
@@ -131,9 +131,9 @@ export default function OperatorProfilePage() {
           </nav>
         </section>
       </div>
-    </RecordTabPanel>
+    </>) },
 
-    <RecordTabPanel id="operator-file" tab="performance" active={tab === "performance"}>
+    { key: "performance", label: tabs[1]!.label, children: (<>
       <section className={"bt-operator-profile-section"}>
         <div className={"bt-operator-profile-sectionHeader"}><h2>الأداء التشغيلي</h2><span>مصادر القياس</span></div>
         <p className={"bt-operator-profile-description"}>لا تتوفر حتى الآن بيانات منسوبة للمشغّل بشكل موثق لقياس الطلبات التي عالجها، أو زمن الاستجابة، أو جودة قراراته. لذلك لن تُعرض نسب نجاح أو درجات أداء مصطنعة. آخر تسجيل دخول ليس مؤشر إنتاجية.</p>
@@ -145,14 +145,14 @@ export default function OperatorProfilePage() {
       {canReadHR && employee && performanceOpened ? <section className={"bt-operator-profile-section"}>
         <EmployeePerformance employeeId={employee.id} />
       </section> : canReadHR && linkState === "loading" ? <p role="status">جارٍ التحقق من ارتباط الحضور الوظيفي…</p> : null}
-    </RecordTabPanel>
+    </>) },
 
-    <RecordTabPanel id="operator-file" tab="permissions" active={tab === "permissions"}>
+    { key: "permissions", label: tabs[2]!.label, forceRender: true, children: (<>
       <p className={"bt-operator-profile-description"}>التغييرات هنا تُقرأ وتُحفظ عبر Identity، مع إصدار الحالة وسبب القرار ومنع تعديل الصلاحيات الذاتية.</p>
       <div className={"bt-operator-profile-controls"}><AccountAccessPanel key={phone} embedded selectedPhone={phone} onActorResolved={resolveActor} onStatusResolved={resolveStatus} onClear={() => router.push("/access?view=permissions")} /></div>
-    </RecordTabPanel>
+    </>) },
 
-    <RecordTabPanel id="operator-file" tab="employment" active={tab === "employment"}>
+    { key: "employment", label: tabs[3]!.label, children: (<>
       <section className={"bt-operator-profile-section"}>
         <div className={"bt-operator-profile-sectionHeader"}><h2>السجل الوظيفي</h2><span>الموارد البشرية</span></div>
         {!canReadHR ? <p className={"bt-operator-profile-description"}>لا تملك صلاحية قراءة ملفات الموظفين؛ لا تُعرض بياناتهم من هوية التشغيل.</p> :
@@ -168,7 +168,8 @@ export default function OperatorProfilePage() {
             <Link className="button button-secondary" href={"/hr/employees/" + encodeURIComponent(employee.id)}>فتح ملف الموظف</Link>
           </> : <p className={"bt-operator-profile-description"}>{linkState === "loading" ? "جارٍ قراءة سجل الموارد البشرية…" : linkState === "failed" ? "تعذر التحقق من الارتباط، أعد فتح الملف للمحاولة." : "لا يوجد سجل موظف مرتبط بهذا المشغّل."}</p>}
       </section>
-    </RecordTabPanel>
+    </>) },
 
+      ]} />
   </div>;
 }

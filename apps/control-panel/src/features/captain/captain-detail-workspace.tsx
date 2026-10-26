@@ -5,14 +5,14 @@ import {
   captainAvailabilityStateLabel, formatMoney, orderStateLabel, payoutStatusLabel,
 } from "@bthwani/dsh";
 import type { ActorRoleView } from "@bthwani/identity";
+import { Tabs } from "antd";
 import Link from "next/link";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { PageHeader } from "../../shell/page-header";
 import { responseMessage } from "../access/identity-error-message";
-import { OfficialWalletDestinationManager } from "../finance/official-wallet-destination-manager";
 import { ActorWalletStatement } from "../finance/actor-wallet-statement";
-import { RecordTabs } from "../shared/record-tabs";
+import { OfficialWalletDestinationManager } from "../finance/official-wallet-destination-manager";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 
 type CaptainDetail = Readonly<{ captain: ActorRoleView; admission: CaptainAdmission | null }>;
@@ -278,67 +278,12 @@ export function CaptainDetailWorkspace({ actorId, embedded = false }: Readonly<{
   const reasonRequired = selectedAction !== null && ["activate", "disable", "availability", "reenroll"].includes(selectedAction);
   const selectedOption = actionOptions.find((option) => option.id === selectedAction);
 
-  return <section className="workspace-page captain-profile-page" aria-label="ملف الكابتن">
-    {!embedded ? <PageHeader id="captain-detail-title" title="ملف الكابتن" actions={<Link href="/captains" className="button button-secondary">كل الكباتن</Link>} /> : null}
-    {error ? <div className={"captain-profile-error"} role="alert">{error} <button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={() => void loadDetail()}>إعادة القراءة</button></div> : null}
-    {notice ? <p role="status" className="success-inline">{notice}</p> : null}
-    {loading && !detail ? <div className="collection-state" role="status">جارٍ قراءة الملف المعتمد…</div> : null}
-    {!loading && !detail ? <div className="collection-state">تعذر إظهار ملف الكابتن. ارجع إلى السجل أو أعد القراءة.</div> : null}
-    {detail && captain ? <>
-      <header className={"captain-profile-hero"}>
-        <div className={"captain-profile-avatar"} aria-hidden="true">{(admission?.fullNameAr || captain.fullNameAr || "ك").trim().slice(0, 1)}</div>
-        <div className={"captain-profile-heroText"}>
-          <h2>{admission?.fullNameAr || captain.fullNameAr || "الاسم غير مسجل"}</h2>
-          <a href={`tel:${captain.phoneE164}`}><bdi dir="ltr">{captain.phoneE164}</bdi></a>
-          <p>{status} · {admission ? captainAdmissionStateLabel(admission.state) : "ملف الأهلية غير متاح"}</p>
-        </div>
-        <div className={"captain-profile-heroActions"}>
-          <Link className="button button-secondary" href="/operations">العمليات</Link>
-        </div>
-      </header>
-
-      <div className="captain-profile-toolbar">
-      <RecordTabs id="captain" ariaLabel="أقسام ملف الكابتن" className="captain-profile-tabs"
-        tabs={captainTabs.map(({ id, label }) => ({ key: id, label }))} active={activeTab} onSelect={switchTab}/>
-        <div className="captain-profile-toolbarActions">
-          <details className="captain-profile-actionsMenu">
-            <summary aria-label="إدارة الكابتن">إدارة الكابتن</summary>
-            <fieldset className="captain-profile-actionsList">
-              <legend className="visually-hidden">إجراءات إدارة الكابتن</legend>
-              {actionOptions.map((option) => <button key={option.id} type="button"
-                aria-pressed={selectedAction === option.id}
-                disabled={Boolean(busy) || !option.enabled}
-                title={!option.enabled ? "الإجراء غير مسموح في حالة الحساب الحالية" : option.label}
-                onClick={(event) => {
-                  setSelectedAction(option.id); setReason(""); setError(""); setNotice("");
-                  event.currentTarget.closest("details")?.removeAttribute("open");
-                }}>{option.label}</button>)}
-            </fieldset>
-          </details>
-
-        </div>
-      </div>
-        {selectedAction && selectedOption?.enabled ? <form className="captain-profile-confirm" noValidate onSubmit={(event) => {
-          event.preventDefault();
-          if (selectedAction === "approve" || selectedAction === "review-profile" || selectedAction === "provision") void mutateAdmission(selectedAction);
-          else if (selectedAction) void mutate(selectedAction);
-        }}>
-          <div className="captain-profile-confirmIntro"><strong>تأكيد: {selectedOption.label}</strong><span>{selectedAction === "reenroll" ? "إعادة التسجيل تتطلب إكمال الكابتن التفعيل من تطبيقه." : "لن يُعلن النجاح حتى تتطابق القراءة التالية مع النتيجة المتوقعة."}</span></div>
-          {reasonRequired ? <label htmlFor="captain-action-reason">سبب الإجراء (5 أحرف على الأقل)
-            <input id="captain-action-reason" maxLength={500} value={reason} disabled={Boolean(busy)}
-              onChange={(event) => setReason(event.target.value)} placeholder="دوّن سببًا واضحًا لتوثيق قرار المشغّل" />
-          </label> : null}
-          <div className="captain-profile-confirmButtons">
-            <button type="submit" className="button button-primary" disabled={Boolean(busy) || (reasonRequired && (reason.trim().length < 5 || reason.trim().length > 500))}>تأكيد التنفيذ</button>
-            <button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={() => { setSelectedAction(null); setReason(""); }}>إلغاء</button>
-          </div>
-        </form> : null}
-      <div id={`captain-panel-${activeTab}`} role="tabpanel" aria-labelledby={`captain-tab-${activeTab}`} className={"captain-profile-tabPanel"}>
-
-
+  const renderTabContent = (tab: CaptainTab) => {
+    if (!detail || !captain) return null;
+    return (
       <div className="captain-profile-layout captain-profile-single">
-        <div className={activeTab === "orders" || activeTab === "history" ? "captain-profile-content captain-profile-contentWide" : "captain-profile-content"}>
-          {activeTab === "overview" ? <>
+        <div className={tab === "orders" || tab === "history" ? "captain-profile-content captain-profile-contentWide" : "captain-profile-content"}>
+          {tab === "overview" ? <>
           <ActorWalletStatement actorType="captain" actorId={actorId} />
             <section className="captain-profile-overviewMain" aria-labelledby="captain-overview-status">
               <div className="captain-profile-overviewHeading"><span className="captain-profile-eyebrow">حالة الكابتن الآن</span><h2 id="captain-overview-status">{ready ? "ملف معتمد ومفعّل" : "يتطلب متابعة تشغيلية"}</h2><p>{ready ? "تستطيع إدارة التوفر أو إيقاف الحساب مباشرة من شريط التحكم. لا تعني هذه الحالة اجتياز شرط رصيد المحفظة." : "راجع حالة الهوية والقبول والتفعيل قبل السماح بإسناد الطلبات."}</p></div>
@@ -364,7 +309,7 @@ export function CaptainDetailWorkspace({ actorId, embedded = false }: Readonly<{
               <div><div><strong>المالية</strong><p>{financeReady ? `المتاح للصرف: ${money(payout.eligibleAvailableMinor)}` : financeVisibility === "restricted" ? "صلاحية المالية مطلوبة" : "بانتظار بيانات المستحقات"}</p><small>منفصلة عن رصيد المحفظة التشغيلي</small></div><button type="button" className="button button-secondary" onClick={() => switchTab("finance")}>إدارة المالية</button></div>
             </section>
           </> : null}
-          {activeTab === "performance" ? <>
+          {tab === "performance" ? <>
             <Card title="المؤشرات المتاحة من الأنظمة">
               <dl className={"captain-profile-facts"}>
                 <Fact label="آخر فتح للتطبيق">{dateLabel(captain.lastAppOpenedAt)}</Fact>
@@ -387,7 +332,7 @@ export function CaptainDetailWorkspace({ actorId, embedded = false }: Readonly<{
               <p className={"captain-profile-hint"}>يلزم سجل عروض مُرسلة ومقبولة، ومهام إسناد وتسليم بأوقات فعلية، ومواعيد التوصيل الموعودة، وتقييمات موثقة. تُحسب النسب على فترة محددة وبمقامات واضحة بعد توافر تلك البيانات؛ لا تُعرض قيمة صفر أو 100% عند غياب المصدر.</p>
             </Card>
           </> : null}
-          {activeTab === "account" ? <Card title="البيانات والهوية" action={canEditName ? <button className="button button-secondary" type="button" onClick={() => setEditName(admission?.fullNameAr ?? "")}>تعديل اسم الملف</button> : null}>
+          {tab === "account" ? <Card title="البيانات والهوية" action={canEditName ? <button className="button button-secondary" type="button" onClick={() => setEditName(admission?.fullNameAr ?? "")}>تعديل اسم الملف</button> : null}>
             <dl className={"captain-profile-facts"}>
               <Fact label="الاسم">{admission?.fullNameAr || captain.fullNameAr || "غير مسجل"}</Fact>
               <Fact label="الهاتف"><bdi dir="ltr">{captain.phoneE164}</bdi></Fact>
@@ -404,7 +349,7 @@ export function CaptainDetailWorkspace({ actorId, embedded = false }: Readonly<{
             </div> : null}
           </Card> : null}
 
-          {activeTab === "account" ? <Card title="الانضمام وأهلية التوصيل">
+          {tab === "account" ? <Card title="الانضمام وأهلية التوصيل">
             <dl className={"captain-profile-facts"}>
               <Fact label="حالة القبول">{admission ? captainAdmissionStateLabel(admission.state) : "لا يوجد ملف أهلية مرتبط"}</Fact>
               <Fact label="مراجعة الملف">{admission ? admission.requiresProfileReview ? "يحتاج استكمالًا ومراجعة" : "لا توجد مراجعة معلقة" : "غير متاح"}</Fact>
@@ -415,7 +360,7 @@ export function CaptainDetailWorkspace({ actorId, embedded = false }: Readonly<{
             {admission?.requiresProfileReview ? <p className={"captain-profile-hint"}>الملف يتطلب مراجعة قبل إعادة تفعيل الدور. إجراءات الاعتماد متاحة من سجل القبول حسب المرحلة.</p> : null}
           </Card> : null}
 
-          {activeTab === "finance" ? <Card title="المستحقات والتسويات" action={<Link href={`/finance/beneficiary-settlement/captains?search=${encodeURIComponent(captain.phoneE164)}`} className="button button-secondary">فتح الإدارة المالية</Link>}>
+          {tab === "finance" ? <Card title="المستحقات والتسويات" action={<Link href={`/finance/beneficiary-settlement/captains?search=${encodeURIComponent(captain.phoneE164)}`} className="button button-secondary">فتح الإدارة المالية</Link>}>
             {financeVisibility === "loading" ? <p role="status" className={"captain-profile-hint"}>جارٍ قراءة البيانات المالية…</p> : null}
             {financeVisibility === "restricted" ? <p className={"captain-profile-hint"}>التفاصيل المالية لا تظهر دون صلاحية المالية. لا تُكشف بيانات التسويات عبر صلاحية العمليات وحدها.</p> : null}
             {financeVisibility === "error" ? <div className={"captain-profile-hint"}>{financeMessage} <button type="button" className="button button-secondary" onClick={() => void loadFinance()}>إعادة القراءة</button></div> : null}
@@ -437,7 +382,7 @@ export function CaptainDetailWorkspace({ actorId, embedded = false }: Readonly<{
             </> : null}
           </Card> : null}
 
-          {activeTab === "orders" ? <Card title="الطلبات والتسليم" action={<Link href="/operations" className="button button-secondary">إدارة الطلبات</Link>}>
+          {tab === "orders" ? <Card title="الطلبات والتسليم" action={<Link href="/operations" className="button button-secondary">إدارة الطلبات</Link>}>
             <p className={"captain-profile-hint"}>هذه الطلبات مرتبطة بقيود مالية للكابتن خلال آخر 30 يومًا، وليست العدد الكلي للتوصيلات أو سجل الإسناد المباشر.</p>
             {financeReady && relatedOrders.length > 0 ? <div className={"captain-profile-tableWrap"}><table className="operations-table"><thead><tr><th>المتجر</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody>
               {relatedOrders.slice(0, 25).map((entry) => <tr key={entry.transactionId}><td>{entry.order!.storeName}</td><td>{orderStateLabel(entry.order!.state as Parameters<typeof orderStateLabel>[0])}</td><td><Link href={`/operations/${encodeURIComponent(entry.order!.orderId)}`}>فتح الطلب</Link></td></tr>)}
@@ -445,7 +390,7 @@ export function CaptainDetailWorkspace({ actorId, embedded = false }: Readonly<{
             {financeReady && statement.nextCursor ? <p className={"captain-profile-hint"}>النتيجة جزئية: توجد صفحات أخرى في الكشف المالي. لا تُستخدم القائمة لإحصاء جميع التوصيلات.</p> : null}
           </Card> : null}
 
-          {activeTab === "finance" ? <Card title="المحفظة ووجهة صرف المستحقات">
+          {tab === "finance" ? <Card title="المحفظة ووجهة صرف المستحقات">
             <dl className={"captain-profile-facts"}>
               <Fact label="مزوّد المحفظة المُختار">{admission?.walletProviderKey || "غير محدد"}</Fact>
               <Fact label="وجهة الصرف الرسمية">{financeReady ? payout.destination?.beneficiaryName || "لم تُحدد وجهة صرف" : "—"}</Fact>
@@ -459,7 +404,7 @@ export function CaptainDetailWorkspace({ actorId, embedded = false }: Readonly<{
             <ActorWalletStatement actorType="captain" actorId={actorId} />
           </Card> : null}
 
-          {activeTab === "history" ? <Card title="سجل الملف والمرجعيات">
+          {tab === "history" ? <Card title="سجل الملف والمرجعيات">
             <details>
               <summary>مرجعيات الدعم والتدقيق</summary>
               <dl className={"captain-profile-facts"}>
@@ -478,7 +423,63 @@ export function CaptainDetailWorkspace({ actorId, embedded = false }: Readonly<{
 
 
       </div>
-      </div>
+    );
+  };
+
+  return <section className="workspace-page captain-profile-page" aria-label="ملف الكابتن">
+    {!embedded ? <PageHeader id="captain-detail-title" title="ملف الكابتن" actions={<Link href="/captains" className="button button-secondary">كل الكباتن</Link>} /> : null}
+    {error ? <div className={"captain-profile-error"} role="alert">{error} <button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={() => void loadDetail()}>إعادة القراءة</button></div> : null}
+    {notice ? <p role="status" className="success-inline">{notice}</p> : null}
+    {loading && !detail ? <div className="collection-state" role="status">جارٍ قراءة الملف المعتمد…</div> : null}
+    {!loading && !detail ? <div className="collection-state">تعذر إظهار ملف الكابتن. ارجع إلى السجل أو أعد القراءة.</div> : null}
+    {detail && captain ? <>
+      <header className={"captain-profile-hero"}>
+        <div className={"captain-profile-avatar"} aria-hidden="true">{(admission?.fullNameAr || captain.fullNameAr || "ك").trim().slice(0, 1)}</div>
+        <div className={"captain-profile-heroText"}>
+          <h2>{admission?.fullNameAr || captain.fullNameAr || "الاسم غير مسجل"}</h2>
+          <a href={`tel:${captain.phoneE164}`}><bdi dir="ltr">{captain.phoneE164}</bdi></a>
+          <p>{status} · {admission ? captainAdmissionStateLabel(admission.state) : "ملف الأهلية غير متاح"}</p>
+        </div>
+        <div className={"captain-profile-heroActions"}>
+          <Link className="button button-secondary" href="/operations">العمليات</Link>
+        </div>
+      </header>
+
+      <Tabs aria-label="أقسام ملف الكابتن" className="captain-profile-tabs" activeKey={activeTab} onChange={(key) => switchTab(validCaptainTab(key))}
+        destroyOnHidden={false} items={captainTabs.map(({ id, label }) => ({ key: id, label, children: renderTabContent(id) }))}
+        tabBarExtraContent={<div className="captain-profile-toolbarActions">
+          <details className="captain-profile-actionsMenu">
+            <summary aria-label="إدارة الكابتن">إدارة الكابتن</summary>
+            <fieldset className="captain-profile-actionsList">
+              <legend className="visually-hidden">إجراءات إدارة الكابتن</legend>
+              {actionOptions.map((option) => <button key={option.id} type="button"
+                aria-pressed={selectedAction === option.id}
+                disabled={Boolean(busy) || !option.enabled}
+                title={!option.enabled ? "الإجراء غير مسموح في حالة الحساب الحالية" : option.label}
+                onClick={(event) => {
+                  setSelectedAction(option.id); setReason(""); setError(""); setNotice("");
+                  event.currentTarget.closest("details")?.removeAttribute("open");
+                }}>{option.label}</button>)}
+            </fieldset>
+          </details>
+
+        </div>} />
+        {selectedAction && selectedOption?.enabled ? <form className="captain-profile-confirm" noValidate onSubmit={(event) => {
+          event.preventDefault();
+          if (selectedAction === "approve" || selectedAction === "review-profile" || selectedAction === "provision") void mutateAdmission(selectedAction);
+          else if (selectedAction) void mutate(selectedAction);
+        }}>
+          <div className="captain-profile-confirmIntro"><strong>تأكيد: {selectedOption.label}</strong><span>{selectedAction === "reenroll" ? "إعادة التسجيل تتطلب إكمال الكابتن التفعيل من تطبيقه." : "لن يُعلن النجاح حتى تتطابق القراءة التالية مع النتيجة المتوقعة."}</span></div>
+          {reasonRequired ? <label htmlFor="captain-action-reason">سبب الإجراء (5 أحرف على الأقل)
+            <input id="captain-action-reason" maxLength={500} value={reason} disabled={Boolean(busy)}
+              onChange={(event) => setReason(event.target.value)} placeholder="دوّن سببًا واضحًا لتوثيق قرار المشغّل" />
+          </label> : null}
+          <div className="captain-profile-confirmButtons">
+            <button type="submit" className="button button-primary" disabled={Boolean(busy) || (reasonRequired && (reason.trim().length < 5 || reason.trim().length > 500))}>تأكيد التنفيذ</button>
+            <button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={() => { setSelectedAction(null); setReason(""); }}>إلغاء</button>
+          </div>
+        </form> : null}
+
     </> : null}
   </section>;
 }

@@ -966,6 +966,9 @@ importers:
 
   apps/control-panel:
     dependencies:
+      '@ant-design/cssinjs':
+        specifier: 2.1.2
+        version: 2.1.2(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@bthwani/design-system':
         specifier: workspace:*
         version: link:../../packages/design-system

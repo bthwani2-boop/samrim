@@ -1,6 +1,5 @@
 /* Operations command: contextual navigation and progressive disclosure. */
-.ops-center .bt-command-nav{position:relative;z-index:1;overflow-x:auto;scrollbar-width:thin}
-.ops-center .bt-command-nav button{min-width:max-content}
+.ops-center .bt-command-nav{position:relative;z-index:1}
 .ops-center .ops-intervention-priority{display:grid;gap:11px;min-width:0}
 .ops-center .ops-intervention-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .ops-center .ops-intervention-tools button{min-height:40px;padding:8px 14px;color:#b9d0e8;background:#10253b;border:1px solid #2b425c;border-radius:8px;font:inherit;font-weight:700;font-size:12px;cursor:pointer}
@@ -38,7 +37,7 @@
 [data-theme="light"] .ops-coverage-unavailable p{color:#526b88}
 [data-theme="light"] .ops-center .ops-intervention-tools button{background:#fff;border-color:#ccd9e7;color:#334d6a}
 [data-theme="light"] .ops-center .ops-intervention-tools button.is-current{color:#b65626;border-color:#b65626}
-@media(max-width:760px){.ops-activity-surface-heading{display:grid}.ops-activity-full .ops-activity-map-canvas{height:370px}.ops-center .bt-command-nav button{min-height:44px}}
+@media(max-width:760px){.ops-activity-surface-heading{display:grid}.ops-activity-full .ops-activity-map-canvas{height:370px}}
 
 /* Primary roster first; advanced admission flows expand only when requested. */
 .ops-center .ops-captain-reveal{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;padding:11px 14px;background:#11253c;border:1px solid #29445e;border-radius:9px}
@@ -61,40 +60,17 @@
 .ops-center .ops-decision-heading h2{margin:0;color:inherit;font-size:17px;font-weight:780}
 .ops-center .ops-decision-heading p{font-size:12px;color:#b2c5da;margin:5px 0 0;line-height:1.8}
 .ops-center .ops-decision-scope{font-size:11px;color:#a7bdd5}
-.ops-center .ops-decision-switch{display:flex;gap:6px;padding:5px;border-radius:11px;background:#102238;border:1px solid #29425d;flex-wrap:wrap}
-.ops-center .ops-decision-switch button{flex:1;min-width:140px;min-height:42px;border:1px solid transparent;border-radius:8px;background:transparent;color:#cbdcf0;font:inherit;font-size:12px;font-weight:740;cursor:pointer}
-.ops-center .ops-decision-switch button.is-current{background:#22334b;border-color:#ff813f;color:#ffad7e}
-.ops-center .ops-decision-switch button:focus-visible{outline:2px solid #ffad7e;outline-offset:2px}
 .ops-center .ops-decision-description{font-size:11px;color:#a8bdd4;line-height:1.6;padding:0 4px}
 .ops-center .ops-decision-center .order-detail-panel{background:#101f33!important;border:1px solid #29425d!important;color:#eef5ff!important;border-radius:11px;padding:15px 17px;min-width:0}
 .ops-center .ops-decision-center .order-detail-panel :is(h2,h3,strong){color:#eff6ff}
 .ops-center .ops-decision-center .order-detail-panel :is(p,.muted,small){color:#afc4da}
-.ops-center .ops-case-queue>.action-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
-.ops-center .ops-case-queue>.action-row label{display:flex;align-items:center;gap:8px;font-size:11px}
-.ops-center .ops-case-queue>.action-row select{min-width:160px;background:#192d43;color:#f1f6ff;border:1px solid #37516b;min-height:36px;border-radius:7px}
 .ops-center .ops-case-queue h2{font-size:14px;margin:0}
-.ops-center .ops-case-count{font-size:11px;margin:4px 0 0}
-.ops-center .ops-case-queue .order-detail-list{display:grid;gap:0;padding:0;margin:0;list-style:none;min-width:0}
-.ops-center .ops-case-queue .order-detail-list .ops-case-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;min-width:0;padding:13px 14px;border:1px solid #2d445e;border-bottom:0;background:#13263c;border-radius:0}
-.ops-center .ops-case-queue .order-detail-list .ops-case-row:first-child{border-radius:9px 9px 0 0}
-.ops-center .ops-case-queue .order-detail-list .ops-case-row:last-child{border-bottom:1px solid #2d445e;border-radius:0 0 9px 9px}
-.ops-center .ops-case-queue .order-detail-list .ops-case-row.is-urgent{border-inline-start:3px solid #ef6475}
-.ops-center .ops-case-information{min-width:0;display:grid;gap:5px}
-.ops-center .ops-case-information strong{font-size:12px}
-.ops-center .ops-case-information p{font-size:11px;line-height:1.7;margin:0;overflow-wrap:anywhere}
-.ops-center .ops-case-queue .ops-case-row button{min-height:37px;background:#1d3651;color:#eef5ff;border:1px solid #3c5a78;border-radius:7px;white-space:nowrap}
-.ops-center .ops-case-queue .ops-case-row button:hover{border-color:#ff8c51}
 [data-theme="light"] .ops-center .ops-decision-center .order-detail-panel{background:#fff!important;border-color:#d6e1ee!important;color:#203a58!important}
 [data-theme="light"] .ops-center .ops-decision-center .order-detail-panel :is(h2,h3,strong){color:#203a58}
 [data-theme="light"] .ops-center .ops-decision-center .order-detail-panel :is(p,.muted,small){color:#486785}
-[data-theme="light"] .ops-center .ops-decision-switch,[data-theme="light"] .ops-center .ops-decision-heading{background:#fff;border-color:#d3deeb;color:#213a56}
+[data-theme="light"] .ops-center .ops-decision-heading{background:#fff;border-color:#d3deeb;color:#213a56}
 [data-theme="light"] .ops-center .ops-decision-heading p,[data-theme="light"] .ops-center .ops-decision-scope,[data-theme="light"] .ops-center .ops-decision-description{color:#57708c}
-[data-theme="light"] .ops-center .ops-decision-switch button{color:#354f6e}
-[data-theme="light"] .ops-center .ops-decision-switch button.is-current{background:#fff1e8;border-color:#c66131;color:#9d4521}
-[data-theme="light"] .ops-center .ops-case-queue .order-detail-list .ops-case-row{background:#f7faff;border-color:#cbd8e7}
-[data-theme="light"] .ops-center .ops-case-queue>.action-row select{background:#f8faff;color:#223d5b;border-color:#cbd8e7}
-[data-theme="light"] .ops-center .ops-case-queue .ops-case-row button{background:#eef3fb;color:#243e5b;border-color:#cbd8e7}
-@media(max-width:720px){.ops-center .ops-case-queue .order-detail-list .ops-case-row{grid-template-columns:1fr}.ops-center .ops-decision-heading{display:grid}}
+@media(max-width:720px){.ops-center .ops-decision-heading{display:grid}}
 
 .ops-center .ops-dispatch-center,.ops-center .ops-coverage-workspace{display:grid;gap:12px;min-width:0}
 .ops-center .ops-dispatch-stages{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;padding:5px;border:1px solid #2b4460;background:#102238;border-radius:11px;margin:0;min-width:0}
@@ -163,5 +139,4 @@
 @media(max-width:600px){.ops-center .ops-command-link-grid{grid-template-columns:1fr}}
 
 /* Retain the selected queue's unsaved inputs while removing hidden panels from layout. */
-.ops-center .ops-decision-pane[hidden]{display:none!important}
 .ops-center .ops-decision-pane{min-width:0}
