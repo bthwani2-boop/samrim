@@ -17,9 +17,5 @@ export default function PartnerTabsLayout() {
     <Tabs.Screen name="products" listeners={{ tabPress: (event) => { event.preventDefault(); dispatchPartnerProductAction("list"); router.replace("/products" as Href); } }} options={authority.canUse("products") ? { title: "المنتجات", tabBarAccessibilityLabel: "المنتجات" } : { href: null }} />
     <Tabs.Screen name="wallet" options={authority.canUse("wallet") ? { title: "المحفظة", tabBarAccessibilityLabel: "المحفظة" } : { href: null }} />
     <Tabs.Screen name="more" options={{ title: "المزيد", tabBarAccessibilityLabel: "الإدارة والإعدادات" }} />
-    <Tabs.Screen name="store" options={{ href: null }} />
-    <Tabs.Screen name="insights" options={{ href: null }} />
-    <Tabs.Screen name="account" options={{ href: null }} />
-    <Tabs.Screen name="onboarding" options={{ href: null }} />
   </Tabs>;
 }
