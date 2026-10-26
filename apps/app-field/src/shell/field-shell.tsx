@@ -71,6 +71,13 @@ function FieldHeader({ canSearch, title, routeName, headerRight, focus: rawFocus
   return <View style={styles.header}>{isSearchOpen && showSearch ? <View style={styles.headerSearchActions}><BthwaniSearchField accessibilityLabel="البحث عن شريك" autoCapitalize="none" autoCorrect={false} containerStyle={styles.headerSearchField} inputRef={searchInputRef} maxLength={128} onChangeText={(value) => navigation.setParams({ q: value.slice(0, 128) })} onClear={() => navigation.setParams({ q: "" })} placeholder="ابحث باسم المالك أو النشاط أو المتجر أو الهاتف" returnKeyType="search" value={searchQuery.slice(0, 128)} /><BthwaniIconButton icon="close" label="إغلاق البحث" onPress={() => navigation.setParams({ focus: "", q: "" })} size={sizing.controlMd} tone="soft" /></View> : <><View style={styles.headerIdentity}><Text numberOfLines={1} style={styles.pageTitle}>{title}</Text></View><View style={styles.headerActions}>{customAction}{showSearch ? <BthwaniIconButton icon="search" label="البحث عن شريك" onPress={() => navigation.navigate("cases", { focus: "search" })} size={sizing.controlSm} tone="soft" /> : null}<BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/notifications" as Href)} size={sizing.controlSm} tone="soft" /></View></>}</View>;
 }
 
+export function FieldStackHeader({ route, navigation, options }: { route: { name: string; params?: unknown }; navigation: { setParams: (params: { focus?: string; q?: string }) => void }; options: { headerTitle?: unknown; headerRight?: unknown } }) {
+  const theme = useAppearanceTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const params = route.params as { focus?: string | string[]; q?: string | string[] } | undefined;
+  const title = typeof options.headerTitle === "string" ? options.headerTitle : fieldHeaderTitle(route.name);
+  return <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><FieldHeader canSearch={false} title={title} routeName={route.name} headerRight={options.headerRight} focus={params?.focus} searchQuery={params?.q} navigation={navigation as FieldSearchNavigation} styles={styles} /></SafeAreaView>;
+}
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
     headerSafeArea: { backgroundColor: theme.surface },

@@ -1,0 +1,25 @@
+appId: com.bthwani.field
+name: Field account and partner stack navigation
+---
+- launchApp:
+    stopApp: false
+    clearState: false
+- extendedWaitUntil:
+    visible: "حسابي"
+    timeout: 20000
+- tapOn: "حسابي"
+- extendedWaitUntil:
+    visible: "حسب النظام"
+    timeout: 20000
+- tapOn: "جاهزية الميدان"
+- extendedWaitUntil:
+    visible: "إضافة شريك"
+    timeout: 20000
+- tapOn: "إضافة شريك"
+- extendedWaitUntil:
+    visible: "الخطوة 1 من 2 · المالك والمتجر"
+    timeout: 20000
+- back
+- extendedWaitUntil:
+    visible: "إضافة شريك"
+    timeout: 20000
