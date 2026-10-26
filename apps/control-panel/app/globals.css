@@ -73,7 +73,7 @@
   .workspace-main { min-inline-size: 0; padding: 24px; }
   .workspace-account-trigger { list-style: none; }
   .workspace-account-trigger::-webkit-details-marker { display: none; }
-  .workspace-global-search-content { inline-size: min(400px, calc(100vw - 48px)); max-block-size: calc(100dvh - 100px); overflow-y: auto; }
+  .workspace-global-search-content { inline-size: 100%; max-block-size: min(70dvh, 580px); overflow-y: auto; }
   .workspace-global-search-results { display: grid; gap: 8px; margin-block-start: 12px; }
   .workspace-global-search-results .ant-listy a { display: flex; justify-content: space-between; gap: 12px; padding: 9px; border-radius: 6px; }
   .workspace-global-search-results .ant-listy a:hover { background: var(--surface-muted); }

@@ -1,7 +1,7 @@
 "use client";
 
 import type { ActorIdentity } from "@bthwani/identity";
-import { Button, Empty, Input, Listy, Popover, Typography, type InputRef } from "antd";
+import { Button, Empty, Input, Listy, Modal, Typography, type InputRef } from "antd";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -37,22 +37,6 @@ export function WorkspaceGlobalSearch({
     setQuery("");
     if (restoreFocus) window.requestAnimationFrame(() => triggerRef.current?.focus());
   }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        close(true);
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open, close]);
 
   useEffect(() => {
     close();
@@ -108,28 +92,28 @@ export function WorkspaceGlobalSearch({
 
   return (
     <search className="workspace-search-control" aria-label="البحث في صفحات لوحة التحكم">
-      <Popover
+      <Button
+        ref={triggerRef}
+        type="text"
+        size="large"
+        aria-label="البحث في صفحات لوحة التحكم"
+        aria-expanded={open}
+        aria-controls="workspace-search-panel"
+        onClick={() => setOpen(true)}
+        icon={<svg aria-hidden="true" viewBox="0 0 24 24" focusable="false"><circle cx="10.8" cy="10.8" r="6.4" /><path d="m15.5 15.5 5 5" /></svg>}
+      />
+      <Modal
         open={open}
-        onOpenChange={(nextOpen) => {
-          if (nextOpen) setOpen(true);
-          else close();
-        }}
-        trigger="click"
-        placement="bottom"
-        arrow={false}
-        content={content}
-        getPopupContainer={() => document.getElementById("control-panel-overlay-root") ?? document.body}
+        title="البحث في لوحة التحكم"
+        footer={null}
+        width={560}
+        destroyOnHidden
+        onCancel={() => close(true)}
+        getContainer={() => document.getElementById("control-panel-overlay-root") ?? document.body}
+        afterOpenChange={(visible) => { if (visible) inputRef.current?.focus(); }}
       >
-        <Button
-          ref={triggerRef}
-          type="text"
-          size="large"
-          aria-label="البحث في صفحات لوحة التحكم"
-          aria-expanded={open}
-          aria-controls="workspace-search-panel"
-          icon={<svg aria-hidden="true" viewBox="0 0 24 24" focusable="false"><circle cx="10.8" cy="10.8" r="6.4" /><path d="m15.5 15.5 5 5" /></svg>}
-        />
-      </Popover>
+        {content}
+      </Modal>
     </search>
   );
 }

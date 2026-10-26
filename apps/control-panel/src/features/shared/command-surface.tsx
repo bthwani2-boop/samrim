@@ -1,5 +1,6 @@
 "use client";
 
+import { ConfigProvider, Tabs } from "antd";
 import type { ReactNode } from "react";
 import "./command-surface.css";
 
@@ -67,7 +68,25 @@ export function CommandSectionTabs<T extends string>({ label, active, tabs, onSe
   label: string; active: T; tabs: readonly Readonly<{id:T; label:string}>[]; onSelect: (next:T) => void;
 }>) {
   return <nav className="bt-command-nav" aria-label={label}>
-    {tabs.map(tab => <button type="button" key={tab.id} aria-current={active === tab.id ? "page" : undefined} onClick={() => onSelect(tab.id)}>{tab.label}</button>)}
+    <ConfigProvider theme={{ components: { Tabs: {
+      itemColor: "var(--btc-text)",
+      itemHoverColor: "var(--btc-orange)",
+      itemSelectedColor: "var(--btc-orange)",
+      inkBarColor: "var(--btc-orange)",
+    } } }}>
+      <Tabs
+        className="bt-command-section-tabs"
+        activeKey={active}
+        items={tabs.map(tab => ({ key: tab.id, label: tab.label }))}
+        onChange={(key) => {
+          const chosen = tabs.find(tab => tab.id === key);
+          if (chosen) onSelect(chosen.id);
+        }}
+        animated={false}
+        size="large"
+        tabBarGutter={12}
+      />
+    </ConfigProvider>
   </nav>;
 }
 

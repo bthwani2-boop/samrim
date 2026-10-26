@@ -1,6 +1,5 @@
 /* Operations command: contextual navigation and progressive disclosure. */
-.ops-center .bt-command-nav{position:relative;z-index:1;overflow-x:auto;scrollbar-width:thin}
-.ops-center .bt-command-nav button{min-width:max-content}
+.ops-center .bt-command-nav{position:relative;z-index:1}
 .ops-center .ops-intervention-priority{display:grid;gap:11px;min-width:0}
 .ops-center .ops-intervention-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .ops-center .ops-intervention-tools button{min-height:40px;padding:8px 14px;color:#b9d0e8;background:#10253b;border:1px solid #2b425c;border-radius:8px;font:inherit;font-weight:700;font-size:12px;cursor:pointer}
@@ -38,7 +37,7 @@
 [data-theme="light"] .ops-coverage-unavailable p{color:#526b88}
 [data-theme="light"] .ops-center .ops-intervention-tools button{background:#fff;border-color:#ccd9e7;color:#334d6a}
 [data-theme="light"] .ops-center .ops-intervention-tools button.is-current{color:#b65626;border-color:#b65626}
-@media(max-width:760px){.ops-activity-surface-heading{display:grid}.ops-activity-full .ops-activity-map-canvas{height:370px}.ops-center .bt-command-nav button{min-height:44px}}
+@media(max-width:760px){.ops-activity-surface-heading{display:grid}.ops-activity-full .ops-activity-map-canvas{height:370px}}
 
 /* Primary roster first; advanced admission flows expand only when requested. */
 .ops-center .ops-captain-reveal{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;padding:11px 14px;background:#11253c;border:1px solid #29445e;border-radius:9px}
