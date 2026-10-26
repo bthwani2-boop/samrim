@@ -14,10 +14,12 @@ let quoteNode;
 let verifiedQuoteNode;
 let refreshQuoteNode;
 let pendingTotalNode;
+let currentActorGuardNode;
 function visit(node) {
   if (ts.isFunctionDeclaration(node) && node.name?.text === "checkout") checkoutNode = node;
   if (ts.isFunctionDeclaration(node) && node.name?.text === "quoteMatchesCheckout") quoteNode = node;
   if (ts.isFunctionDeclaration(node) && node.name?.text === "pendingCheckoutHasAcceptedTotal") pendingTotalNode = node;
+  if (ts.isFunctionDeclaration(node) && node.name?.text === "checkoutAttemptBelongsToCurrentActor") currentActorGuardNode = node;
   if (ts.isVariableDeclaration(node) && node.name.getText(ast) === "verifiedQuote") verifiedQuoteNode = node;
   if (ts.isVariableDeclaration(node) && node.name.getText(ast) === "refreshQuote") refreshQuoteNode = node;
   ts.forEachChild(node, visit);
@@ -28,11 +30,13 @@ assert.ok(quoteNode, "checkout quote identity guard is required");
 assert.ok(verifiedQuoteNode?.initializer, "visible checkout quote derivation is required");
 assert.ok(refreshQuoteNode?.initializer, "quote request callback is required");
 assert.ok(pendingTotalNode, "pending checkout legacy accepted-total guard is required");
+assert.ok(currentActorGuardNode, "pending checkout recovery must revalidate its actor");
 const compilerOptions = { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None };
 const runnableQuote = ts.transpileModule(quoteNode.getText(ast), { compilerOptions }).outputText;
 const runnableHandler = ts.transpileModule(checkoutNode.getText(ast), { compilerOptions }).outputText;
 const quoteMatchesCheckout = vm.runInNewContext(`${runnableQuote}\nquoteMatchesCheckout`);
 const pendingCheckoutHasAcceptedTotal = vm.runInNewContext(`${ts.transpileModule(pendingTotalNode.getText(ast), { compilerOptions }).outputText}\npendingCheckoutHasAcceptedTotal`);
+const checkoutAttemptBelongsToCurrentActor = vm.runInNewContext(`${ts.transpileModule(currentActorGuardNode.getText(ast), { compilerOptions }).outputText}\ncheckoutAttemptBelongsToCurrentActor`);
 const visibleQuoteExpression = verifiedQuoteNode.initializer.getText(ast);
 const runnableVisibleQuote = ts.transpileModule(`function readVisibleQuote(readyCart, quote, storeId, pickupMode, serviceableAddressId, fulfillmentMode, appliedPromotionCode, storeAcceptingOrders = true) { return ${visibleQuoteExpression}; }`, { compilerOptions }).outputText;
 const readVisibleQuote = vm.runInNewContext(`${runnableQuote}\n${runnableVisibleQuote}\nreadVisibleQuote`);
@@ -95,6 +99,28 @@ function scenario({ accessToken, persist, submit, recover, isOffline = false } =
   const checkout = vm.runInNewContext(`${runnableQuote}\n${runnableHandler}\ncheckout`, context);
   return { checkout, counts, context, setActor: (next) => { actor = next; } };
 }
+
+test("pending recovery stops after an actor switch during canonical order readback", () => {
+  let activeActor = "client-1";
+  const guard = vm.runInNewContext(`${ts.transpileModule(currentActorGuardNode.getText(ast), { compilerOptions }).outputText}\ncheckoutAttemptBelongsToCurrentActor`, {
+    currentIdentityState: () => ({ kind: "authenticated", identity: { subject: activeActor } }),
+  });
+  assert.equal(guard("client-1"), true);
+  activeActor = "client-2";
+  assert.equal(guard("client-1"), false, "a recovered order/payment attempt must remain hidden from the new actor");
+
+  const load = source.slice(source.indexOf("const load = useCallback(async () => {"), source.indexOf("  }, [finishCheckout, readOrderForCart, refreshWallet, storeId]);"));
+  const orderRead = load.indexOf("await readOrderForCart(token, attempt.cartID)");
+  const ownerGuard = load.indexOf("!checkoutAttemptBelongsToCurrentActor(actorID)", orderRead);
+  const recoveredOrder = load.indexOf("if (existingOrder)", ownerGuard);
+  const retry = load.indexOf("client().checkoutCart(token, attempt.request", ownerGuard);
+  const retryReadback = load.indexOf("await readOrderForCart(token, attempt.cartID)", orderRead + 1);
+  const retryReadbackGuard = load.indexOf("!checkoutAttemptBelongsToCurrentActor(actorID)", retryReadback);
+  assert.ok(orderRead >= 0 && ownerGuard > orderRead && recoveredOrder > ownerGuard && retry > ownerGuard,
+    "revalidate the actor after initial readback and before exposing or retrying the former actor attempt");
+  assert.ok(retryReadback > retry && retryReadbackGuard > retryReadback,
+    "revalidate the actor after retry readback before exposing a recovered order");
+});
 
 test("confirmed offline state never creates an order or a pending payment attempt", async () => {
   const { checkout, counts, context } = scenario({ isOffline: true });

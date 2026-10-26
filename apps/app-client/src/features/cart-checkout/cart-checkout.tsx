@@ -23,6 +23,11 @@ function pendingCartCheckoutKey(actorID: string, storeID: string): string {
   return `bthwani.client.cart-checkout.pending.v1.${encodeURIComponent(actorID)}.${encodeURIComponent(storeID)}`;
 }
 
+function checkoutAttemptBelongsToCurrentActor(actorID: string): boolean {
+  const identity = currentIdentityState();
+  return identity.kind === "authenticated" && identity.identity.subject.trim() === actorID;
+}
+
 function parsePendingCartCheckout(raw: string | null, actorID: string, storeID: string): PendingCartCheckoutAttempt | null {
   if (!raw) return null;
   try {
@@ -205,6 +210,11 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
       const storageKey = pendingCartCheckoutKey(actorID, storeId);
       const rawAttempt = await SecureStore.getItemAsync(storageKey);
       if (!isCurrent()) return;
+      if (!checkoutAttemptBelongsToCurrentActor(actorID)) {
+        setBusy(false);
+        setState({ kind: "error" });
+        return;
+      }
       const attempt = parsePendingCartCheckout(rawAttempt, actorID, storeId);
       if (rawAttempt && !attempt) throw new Error("PENDING_CART_CHECKOUT_INVALID");
       if (attempt) {
@@ -212,11 +222,18 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
         setBusy(true);
         let existingOrder: Order | null = null;
         try { existingOrder = await readOrderForCart(token, attempt.cartID); } catch { /* Retry with the same durable idempotency facts below. */ }
-        if (existingOrder) {
-          await finishCheckout(existingOrder, token, storageKey, isCurrent);
+        if (!isCurrent() || !checkoutAttemptBelongsToCurrentActor(actorID)) {
+          if (isCurrent()) {
+            setPendingCheckout(null);
+            setBusy(false);
+            setState({ kind: "error" });
+          }
           return;
         }
-        if (!isCurrent()) return;
+        if (existingOrder) {
+          await finishCheckout(existingOrder, token, storageKey, () => isCurrent() && checkoutAttemptBelongsToCurrentActor(actorID));
+          return;
+        }
         if (!pendingCheckoutHasAcceptedTotal(attempt)) {
           // Keep the existing idempotency evidence until the canonical Order
           // can be read; do not mint a new order with an unaccepted amount.
@@ -226,12 +243,20 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
         }
         try {
           const result = await client().checkoutCart(token, attempt.request, attempt.expectedCartVersion, attempt.idempotencyKey, attempt.correlationID);
-          await finishCheckout(result.order, token, storageKey, isCurrent);
+          await finishCheckout(result.order, token, storageKey, () => isCurrent() && checkoutAttemptBelongsToCurrentActor(actorID));
           return;
         } catch (cause) {
           try { existingOrder = await readOrderForCart(token, attempt.cartID); } catch { existingOrder = null; }
+          if (!isCurrent() || !checkoutAttemptBelongsToCurrentActor(actorID)) {
+            if (isCurrent()) {
+              setPendingCheckout(null);
+              setBusy(false);
+              setState({ kind: "error" });
+            }
+            return;
+          }
           if (existingOrder) {
-            await finishCheckout(existingOrder, token, storageKey, isCurrent);
+            await finishCheckout(existingOrder, token, storageKey, () => isCurrent() && checkoutAttemptBelongsToCurrentActor(actorID));
             return;
           }
           if (definitiveCheckoutRejection(cause)) {
