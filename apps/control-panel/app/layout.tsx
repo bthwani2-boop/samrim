@@ -5,6 +5,8 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
 import { SessionProvider } from "../src/session/session-provider";
+import { AntDesignProvider } from "../src/shell/ant-design-provider";
+import { AntDesignStyleRegistry } from "../src/shell/ant-design-style-registry";
 
 export const metadata: Metadata = {
   title: { default: "بوابة المشغّل", template: "%s | بثواني" },
@@ -19,7 +21,14 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
       <head>
         <Script id="appearance-init" nonce={nonce} strategy="beforeInteractive">{`(() => { try { const value = window.localStorage.getItem("bthwani.control-panel.appearance"); if (value === "light" || value === "dark") document.documentElement.dataset.theme = value; } catch {} })();`}</Script>
       </head>
-      <body><SessionProvider>{children}</SessionProvider></body>
+      <body>
+        <AntDesignStyleRegistry nonce={nonce}>
+          <AntDesignProvider nonce={nonce}>
+            <SessionProvider>{children}</SessionProvider>
+          </AntDesignProvider>
+        </AntDesignStyleRegistry>
+        <div id="control-panel-overlay-root" />
+      </body>
     </html>
   );
 }

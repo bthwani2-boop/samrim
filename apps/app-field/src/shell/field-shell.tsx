@@ -18,7 +18,7 @@ export function FieldScrollScreen({ children }: PropsWithChildren) {
 
 export function createFieldTabOptions(theme: ReturnType<typeof resolveTheme>, canSearch: boolean) {
   const styles = createStyles(theme);
-  const icons = { home: "home", cases: "cases", invitations: "store", wallet: "wallet" } as const;
+  const icons = { home: "home", cases: "cases", wallet: "wallet", account: "account" } as const;
   return ({ route }: { route: { name: string } }) => ({
     headerShown: true,
     headerTitle: fieldHeaderTitle(route.name),
@@ -46,9 +46,8 @@ function fieldHeaderTitle(routeName: string) {
     home: "جاهزية الميدان",
     cases: "الشركاء",
     wallet: "المحفظة",
-    account: "الحساب",
+    account: "حسابي",
     notifications: "الإشعارات",
-    invitations: "دعوات الوصول للمتاجر",
     "new-case": "إضافة شريك",
   };
   return titles[routeName] ?? "الميدان";
@@ -59,18 +58,26 @@ function FieldHeader({ canSearch, title, routeName, headerRight, focus: rawFocus
   const focus = Array.isArray(rawFocus) ? rawFocus[0] : rawFocus;
   const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
   const isSearchOpen = focus === "search";
+  const showSearch = canSearch && routeName === "cases";
   const searchInputRef = useRef<TextInputInstance>(null);
 
   useEffect(() => {
-    if (!isSearchOpen || !canSearch) return;
+    if (!isSearchOpen || !showSearch) return;
     const timer = setTimeout(() => searchInputRef.current?.focus(), 50);
     return () => clearTimeout(timer);
-  }, [canSearch, isSearchOpen]);
+  }, [showSearch, isSearchOpen]);
 
   const customAction = typeof headerRight === "function" ? (headerRight as () => ReactNode)() : headerRight as ReactNode;
-  return <View style={styles.header}>{isSearchOpen && canSearch ? <View style={styles.headerSearchActions}><BthwaniSearchField accessibilityLabel="البحث عن شريك" autoCapitalize="none" autoCorrect={false} containerStyle={styles.headerSearchField} inputRef={searchInputRef} maxLength={128} onChangeText={(value) => navigation.setParams({ q: value.slice(0, 128) })} onClear={() => navigation.setParams({ q: "" })} placeholder="ابحث باسم المالك أو النشاط أو المتجر أو الهاتف" returnKeyType="search" value={searchQuery.slice(0, 128)} /><BthwaniIconButton icon="close" label="إغلاق البحث" onPress={() => navigation.setParams({ focus: "", q: "" })} size={sizing.controlMd} tone="soft" /></View> : <><View style={styles.headerIdentity}><Text numberOfLines={1} style={styles.pageTitle}>{title}</Text></View><View style={styles.headerActions}>{customAction}{routeName !== "account" ? <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlSm} tone="soft" /> : null}{canSearch ? <BthwaniIconButton icon="search" label="البحث عن شريك" onPress={() => navigation.navigate("cases", { focus: "search" })} size={sizing.controlSm} tone="soft" /> : null}<BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/notifications" as Href)} size={sizing.controlSm} tone="soft" /></View></>}</View>;
+  return <View style={styles.header}>{isSearchOpen && showSearch ? <View style={styles.headerSearchActions}><BthwaniSearchField accessibilityLabel="البحث عن شريك" autoCapitalize="none" autoCorrect={false} containerStyle={styles.headerSearchField} inputRef={searchInputRef} maxLength={128} onChangeText={(value) => navigation.setParams({ q: value.slice(0, 128) })} onClear={() => navigation.setParams({ q: "" })} placeholder="ابحث باسم المالك أو النشاط أو المتجر أو الهاتف" returnKeyType="search" value={searchQuery.slice(0, 128)} /><BthwaniIconButton icon="close" label="إغلاق البحث" onPress={() => navigation.setParams({ focus: "", q: "" })} size={sizing.controlMd} tone="soft" /></View> : <><View style={styles.headerIdentity}><Text numberOfLines={1} style={styles.pageTitle}>{title}</Text></View><View style={styles.headerActions}>{customAction}{showSearch ? <BthwaniIconButton icon="search" label="البحث عن شريك" onPress={() => navigation.navigate("cases", { focus: "search" })} size={sizing.controlSm} tone="soft" /> : null}<BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/notifications" as Href)} size={sizing.controlSm} tone="soft" /></View></>}</View>;
 }
 
+export function FieldStackHeader({ route, navigation, options }: { route: { name: string; params?: unknown }; navigation: { setParams: (params: { focus?: string; q?: string }) => void }; options: { headerTitle?: unknown; headerRight?: unknown } }) {
+  const theme = useAppearanceTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const params = route.params as { focus?: string | string[]; q?: string | string[] } | undefined;
+  const title = typeof options.headerTitle === "string" ? options.headerTitle : fieldHeaderTitle(route.name);
+  return <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><FieldHeader canSearch={false} title={title} routeName={route.name} headerRight={options.headerRight} focus={params?.focus} searchQuery={params?.q} navigation={navigation as FieldSearchNavigation} styles={styles} /></SafeAreaView>;
+}
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
     headerSafeArea: { backgroundColor: theme.surface },

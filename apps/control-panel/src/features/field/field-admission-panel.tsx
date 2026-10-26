@@ -3,11 +3,11 @@
 import { normalizeYemenPhoneE164, toAsciiDigits } from "@bthwani/design-system";
 import { type BeneficiaryPayoutState, type FieldAdmission, fieldAdmissionStateLabel, formatMoney, type JoiningCaseListResponse, joiningCaseStateLabel, type OperatorFieldLatestJoiningCase, officialWalletDestinationStatusLabel, payoutStatusLabel, type ServiceCity, type ServiceCityListResponse } from "@bthwani/dsh";
 import type { ActorRoleView } from "@bthwani/identity";
+import { Tabs } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
 import { responseMessage } from "../access/identity-error-message";
-import { RecordTabs } from "../shared/record-tabs";
 import { OfficialWalletDestinationManager } from "../finance/official-wallet-destination-manager";
 import { ActorWalletStatement } from "../finance/actor-wallet-statement";
 import { RecordIndicator } from "../shared/record-indicator";
@@ -998,26 +998,8 @@ function FieldRecordProfile({ item, data, onClose, onPrevious, onNext }: Readonl
     </div> : null}
   </section>;
 
-  return <AdaptiveRecordPanel title={name} subtitle="إدارة الميداني" onClose={onClose} onPrevious={onPrevious} onNext={onNext}>
-    <div className="field-profile-root" dir="rtl">
-      <header className="field-profile-hero">
-        <div className="field-profile-avatar" aria-hidden="true">{Array.from(name.trim())[0] ?? "م"}</div>
-        <div className="field-profile-identity">
-          <h2>{name}</h2><bdi dir="ltr">{phone}</bdi>
-          <div className="field-profile-states">
-            {admissionIndicator(admission)}
-            {field ? <RecordIndicator icon={!field.securityEnabled || !field.enabled ? "paused" : field.activatedAt ? "active" : "pending"} label={identityStatusLabel(field)} tone={!field.securityEnabled || !field.enabled ? "warning" : field.activatedAt ? "success" : "warning"} /> : <span className="muted">بانتظار إنشاء الحساب</span>}
-          </div>
-        </div>
-        <button className="button button-secondary field-profile-hero-action" type="button" onClick={() => selectTab("account")}>إدارة الملف</button>
-      </header>
-      {feedback && data.notice ? <output className="success-inline">{data.notice}</output> : null}
-      {feedback && data.error ? <p className="identity-error" role="alert">{data.error}</p> : null}
-      {busy ? <output className="muted">جارٍ تنفيذ الإجراء والتحقق من النتيجة…</output> : null}
-      <RecordTabs id={`field-${id}`} panelId={`field-${id}-panel`} ariaLabel="أقسام ملف الميداني" className="field-profile-tabs"
-        tabs={fieldRecordTabs.map(({ id: key, label }) => ({ key, label }))} active={activeTab} onSelect={selectTab}/>
-      <div id={`field-${id}-panel`} className="field-profile-tab-content" role="tabpanel" aria-labelledby={`field-${id}-tab-${activeTab}`}>
-        {activeTab === "overview" ? <div className="field-profile-stack">
+  const renderTabContent = (tab: FieldRecordTab) => <div id={`field-${id}-panel`} className="field-profile-tab-content">
+        {tab === "overview" ? <div className="field-profile-stack">
           {field ? <ActorWalletStatement actorType="field" actorId={field.actorId} /> : null}
           <dl className="field-profile-metrics">
             <div><dt>ملفات ضم الشركاء</dt><dd>{caseCount === undefined ? "—" : caseCount.toLocaleString("ar-YE")}</dd></div>
@@ -1044,7 +1026,7 @@ function FieldRecordProfile({ item, data, onClose, onPrevious, onNext }: Readonl
           </section> : null}
         </div> : null}
 
-        {activeTab === "stores" ? <div className="field-profile-stack">
+        {tab === "stores" ? <div className="field-profile-stack">
           <section className="field-profile-section">
             <header className="field-profile-section-heading"><div><h3>المتاجر وملفات ضم الشركاء</h3><p>سجل الميداني المثبت، مع متابعة حالة كل ملف عند مالكه.</p></div>
               {field ? <button className="button button-secondary" type="button" disabled={acquisitionBusy} onClick={() => data.onLoadAcquisitionCases(id)}>{acquisitionBusy ? "جارٍ التحديث…" : "تحديث الملفات"}</button> : null}
@@ -1057,7 +1039,7 @@ function FieldRecordProfile({ item, data, onClose, onPrevious, onNext }: Readonl
           </section>
         </div> : null}
 
-        {activeTab === "performance" ? <div className="field-profile-stack">
+        {tab === "performance" ? <div className="field-profile-stack">
           <section className="field-profile-section">
             <header className="field-profile-section-heading"><div><h3>الأداء الموثق</h3><p>تُعرض الوقائع المسجلة، لا درجات أو نسب تقييم مفترضة.</p></div>
               {field ? <button className="button button-secondary" type="button" onClick={() => selectTab("stores")}>مراجعة ملفات الضم</button> : null}
@@ -1077,9 +1059,9 @@ function FieldRecordProfile({ item, data, onClose, onPrevious, onNext }: Readonl
           </section>
         </div> : null}
 
-        {activeTab === "finance" ? field ? <FieldFinancialRecord key={id} actorId={id} /> : <div className="field-profile-section"><h3>المالية</h3><p className="muted">تظهر المستحقات بعد إنشاء حساب الميداني.</p></div> : null}
-        {activeTab === "account" ? accountControls : null}
-        {activeTab === "history" ? <section className="field-profile-section">
+        {tab === "finance" ? field ? <FieldFinancialRecord key={id} actorId={id} /> : <div className="field-profile-section"><h3>المالية</h3><p className="muted">تظهر المستحقات بعد إنشاء حساب الميداني.</p></div> : null}
+        {tab === "account" ? accountControls : null}
+        {tab === "history" ? <section className="field-profile-section">
           <header className="field-profile-section-heading"><div><h3>سجل الملف والتفعيل</h3><p>الأوقات والنسخة الحالية من المصادر المعتمدة.</p></div></header>
           <dl className="field-profile-facts">
             <div><dt>إنشاء الملف</dt><dd>{admission?.createdAt ? fieldTimestamp(admission.createdAt) : "غير مسجل"}</dd></div>
@@ -1090,7 +1072,25 @@ function FieldRecordProfile({ item, data, onClose, onPrevious, onNext }: Readonl
           </dl>
           <p className="muted">لا يُعرض سجل تغييرات تفصيلي دون مصدر تدقيق موثق.</p>
         </section> : null}
-      </div>
+      </div>;
+
+  return <AdaptiveRecordPanel title={name} subtitle="إدارة الميداني" onClose={onClose} onPrevious={onPrevious} onNext={onNext}>
+    <div className="field-profile-root" dir="rtl">
+      <header className="field-profile-hero">
+        <div className="field-profile-avatar" aria-hidden="true">{Array.from(name.trim())[0] ?? "م"}</div>
+        <div className="field-profile-identity">
+          <h2>{name}</h2><bdi dir="ltr">{phone}</bdi>
+          <div className="field-profile-states">
+            {admissionIndicator(admission)}
+            {field ? <RecordIndicator icon={!field.securityEnabled || !field.enabled ? "paused" : field.activatedAt ? "active" : "pending"} label={identityStatusLabel(field)} tone={!field.securityEnabled || !field.enabled ? "warning" : field.activatedAt ? "success" : "warning"} /> : <span className="muted">بانتظار إنشاء الحساب</span>}
+          </div>
+        </div>
+        <button className="button button-secondary field-profile-hero-action" type="button" onClick={() => selectTab("account")}>إدارة الملف</button>
+      </header>
+      {feedback && data.notice ? <output className="success-inline">{data.notice}</output> : null}
+      {feedback && data.error ? <p className="identity-error" role="alert">{data.error}</p> : null}
+      {busy ? <output className="muted">جارٍ تنفيذ الإجراء والتحقق من النتيجة…</output> : null}
+      <Tabs id={`field-${id}`} aria-label="\u0623\u0642\u0633\u0627\u0645 \u0645\u0644\u0641 \u0627\u0644\u0645\u064a\u062f\u0627\u0646\u064a" className="field-profile-tabs" activeKey={activeTab} onChange={(key) => selectTab(key as FieldRecordTab)} destroyOnHidden items={fieldRecordTabs.map(({ id: key, label }) => ({ key, label, children: renderTabContent(key) }))}/>
     </div>
   </AdaptiveRecordPanel>;
 }

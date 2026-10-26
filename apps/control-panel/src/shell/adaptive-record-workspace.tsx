@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, type KeyboardEvent, type PointerEvent, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { Button, Splitter } from "antd";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 type RecordView = Readonly<{ expanded: boolean; canExpand: boolean; toggleExpanded: () => void; expandForEditing: () => void }>;
 const ViewContext = createContext<RecordView | null>(null);
@@ -101,37 +102,53 @@ export function AdaptiveRecordWorkspace({ children, detail, open, preferenceKey,
     saveView(false, safe);
   };
 
-  const drag = (event: PointerEvent<HTMLHRElement>) => {
-    if (!rootRef.current || !split) return;
-    const rect = rootRef.current.getBoundingClientRect();
-    setPanelRatio((event.clientX - rect.left) / rect.width * 100);
+  useEffect(() => {
+    if (!split) return;
+    const handle = rootRef.current?.querySelector<HTMLElement>(".adaptive-record-resizer");
+    if (!handle) return;
+    handle.tabIndex = 0;
+    handle.setAttribute("aria-label", "\u062a\u063a\u064a\u064a\u0631 \u0639\u0631\u0636 \u0645\u0644\u0641 \u0627\u0644\u0633\u062c\u0644");
+    const keyResize = (event: globalThis.KeyboardEvent) => {
+      const width = panelWidth / available * 100;
+      const next = event.key === "ArrowLeft" ? width - 3 : event.key === "ArrowRight" ? width + 3 :
+        event.key === "Home" ? 30 : event.key === "End" ? 60 : null;
+      if (next === null) return;
+      event.preventDefault();
+      const safe = Math.round(Math.min(60, Math.max(30, next)) / 5) * 5;
+      setRatio(safe);
+      saveView(false, safe);
+    };
+    handle.addEventListener("keydown", keyResize);
+    return () => handle.removeEventListener("keydown", keyResize);
+  }, [available, panelWidth, saveView, split]);
+
+  const resize = (sizes: number[]) => {
+    const detailSize = sizes[1];
+    if (available <= 0 || typeof detailSize !== "number") return;
+    setRatio(detailSize / available * 100);
   };
 
-  const keyResize = (event: KeyboardEvent<HTMLHRElement>) => {
-    if (!split) return;
-    const width = panelWidth / available * 100;
-    const next = event.key === "ArrowLeft" ? width - 3 : event.key === "ArrowRight" ? width + 3 :
-      event.key === "Home" ? 30 : event.key === "End" ? 60 : null;
-    if (next === null) return;
-    event.preventDefault();
-    setPanelRatio(next);
+  const resizeEnd = (sizes: number[]) => {
+    const detailSize = sizes[1];
+    if (available <= 0 || typeof detailSize !== "number") return;
+    setPanelRatio(detailSize / available * 100);
   };
 
   return <div ref={rootRef} className="adaptive-record-workspace" data-open={open} data-split={split} data-full={expanded} data-detail-width={ratio}>
-    <div className="adaptive-record-registry">{children}</div>
-    {open ? <>
-      {split ? <hr className="adaptive-record-resizer" tabIndex={0}
-        aria-label="تغيير عرض ملف السجل" aria-orientation="vertical"
-        aria-valuemin={minimumRatio}
-        aria-valuemax={maximumRatio}
-        aria-valuenow={Math.round(panelWidth / available * 100)}
-        onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); drag(event); }}
-        onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) drag(event); }}
-        onKeyDown={keyResize} title="اسحب لتغيير عرض الملف أو استخدم أسهم لوحة المفاتيح" /> : null}
-      <ViewContext.Provider value={{ expanded, canExpand: available >= minimumListWidth + minimumDetailWidth + 8, toggleExpanded, expandForEditing }}>
+    {split ? <Splitter className="adaptive-record-splitter" orientation="horizontal" onResize={resize} onResizeEnd={resizeEnd}
+      classNames={{ dragger: "adaptive-record-resizer" }}>
+      <Splitter.Panel min={minimumListWidth}><div className="adaptive-record-registry">{children}</div></Splitter.Panel>
+      <Splitter.Panel min={minimumDetailWidth} max={preferredMaximumPanelWidth} size={panelWidth}>
+        <ViewContext.Provider value={{ expanded, canExpand: true, toggleExpanded, expandForEditing }}>
+          <div className="adaptive-record-detail">{detail}</div>
+        </ViewContext.Provider>
+      </Splitter.Panel>
+    </Splitter> : <>
+      <div className="adaptive-record-registry">{children}</div>
+      {open ? <ViewContext.Provider value={{ expanded, canExpand: available >= minimumListWidth + minimumDetailWidth + 8, toggleExpanded, expandForEditing }}>
         <div className="adaptive-record-detail">{detail}</div>
-      </ViewContext.Provider>
-    </> : null}
+      </ViewContext.Provider> : null}
+    </>}
   </div>;
 }
 
@@ -153,14 +170,14 @@ export function AdaptiveRecordPanel({ title, subtitle, children, actions, onClos
       </div>
       <div className="workspace-side-drawer-controls">
         {(onPrevious || onNext) ? <>
-          <button type="button" className="workspace-side-icon" disabled={!onPrevious} onClick={onPrevious} aria-label="السجل السابق" title="السجل السابق">›</button>
-          <button type="button" className="workspace-side-icon" disabled={!onNext} onClick={onNext} aria-label="السجل التالي" title="السجل التالي">‹</button>
+          <Button type="text" className="workspace-side-icon" disabled={!onPrevious} onClick={onPrevious} aria-label="السجل السابق" title="السجل السابق">›</Button>
+          <Button type="text" className="workspace-side-icon" disabled={!onNext} onClick={onNext} aria-label="السجل التالي" title="السجل التالي">‹</Button>
         </> : null}
-        {view?.canExpand ? <button type="button" className="workspace-side-icon adaptive-record-expand" onClick={view.toggleExpanded}
+        {view?.canExpand ? <Button type="text" className="workspace-side-icon adaptive-record-expand" onClick={view.toggleExpanded}
           aria-label={view.expanded ? "استعادة عرض القائمة والملف" : "توسيع ملف السجل"} title={view.expanded ? "استعادة القائمة" : "توسيع الملف"}>
           <span aria-hidden="true">{view.expanded ? "⤡" : "⤢"}</span>
-        </button> : null}
-        <button type="button" className="workspace-side-icon" onClick={onClose} aria-label="إغلاق التفاصيل" title="العودة إلى القائمة">×</button>
+        </Button> : null}
+        <Button type="text" className="workspace-side-icon" onClick={onClose} aria-label="إغلاق التفاصيل" title="العودة إلى القائمة">×</Button>
       </div>
     </header>
     <div className="workspace-side-drawer-scroll">{children}</div>

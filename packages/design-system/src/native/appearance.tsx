@@ -1,7 +1,8 @@
+import { Host, Picker } from "@expo/ui";
 import * as React from "react";
-import { Appearance, Pressable, StyleSheet, Text, View } from "react-native";
+import { Appearance, Text, View } from "react-native";
 import { isThemePreference, resolveTheme, resolveThemeName, type ThemeName, type ThemePreference } from "../theme/index";
-import { borders, opacity, radius, sizing, spacing, type ThemeColors, typography } from "../tokens/index";
+import type { ThemeColors } from "../tokens/index";
 
 type AppearanceStorage = {
   getItem: (key: string) => Promise<string | null>;
@@ -138,10 +139,9 @@ export const appearanceOptions: ReadonlyArray<{ value: ThemePreference; label: s
 ];
 
 export function AppearancePicker({ compact = false, title = "المظهر", helper = "اختر مظهر التطبيق" }: { compact?: boolean; title?: string; helper?: string }) {
-  const { preference, setPreference, theme } = useMobileAppearance();
+  const { preference, setPreference, theme, themeName } = useMobileAppearance();
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
-  const styles = React.useMemo(() => createAppearanceStyles(theme), [theme]);
 
   async function select(next: ThemePreference) {
     if (busy || next === preference) return;
@@ -157,46 +157,35 @@ export function AppearancePicker({ compact = false, title = "المظهر", help
   }
 
   return (
-    <View style={[styles.container, compact && styles.compactContainer]} accessibilityLabel={title}>
-      <Text style={[styles.title, compact && styles.compactTitle]}>{title}</Text>
-      {helper ? <Text style={styles.helper}>{helper}</Text> : null}
-      <View style={[styles.options, compact && styles.compactOptions]}>
-        {appearanceOptions.map((option) => {
-          const selected = preference === option.value;
-          return (
-            <Pressable
-              key={option.value}
-              accessibilityRole="radio"
-              accessibilityState={{ busy, disabled: busy, selected }}
-              disabled={busy}
-              onPress={() => void select(option.value)}
-              style={[styles.option, compact && styles.compactOption, selected && styles.selectedOption, busy && styles.disabledOption]}
-            >
-              <Text style={[styles.optionText, selected && styles.selectedOptionText]}>{option.label}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-      {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+    <View
+      accessibilityLabel={title}
+      style={{
+        alignItems: compact ? "center" : "stretch",
+        backgroundColor: theme.surface,
+        borderColor: theme.borderColor,
+        borderRadius: 12,
+        borderWidth: 1,
+        flexDirection: compact ? "row" : "column",
+        flexWrap: "wrap",
+        gap: 8,
+        padding: compact ? 8 : 12,
+      }}
+    >
+      <Text style={{ color: theme.color, flexShrink: 1, fontWeight: "600" }}>{title}</Text>
+      {helper ? <Text style={{ color: theme.colorMuted, flexShrink: 1 }}>{helper}</Text> : null}
+      <Host colorScheme={themeName} matchContents seedColor={theme.brandAction}>
+        <Picker
+          enabled={!busy}
+          selectedValue={preference}
+          onValueChange={(next) => { if (isThemePreference(next)) void select(next); }}
+          testID="appearance-theme-picker"
+        >
+          {appearanceOptions.map((option) => (
+            <Picker.Item key={option.value} label={option.label} value={option.value} />
+          ))}
+        </Picker>
+      </Host>
+      {error ? <Text accessibilityRole="alert" style={{ color: theme.danger }}>{error}</Text> : null}
     </View>
   );
-}
-
-function createAppearanceStyles(theme: ThemeColors) {
-  return StyleSheet.create({
-    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
-    compactContainer: { alignItems: "center", borderRadius: radius.md, flexDirection: "row", gap: spacing[2], justifyContent: "space-between", paddingHorizontal: spacing[2], paddingVertical: spacing[1] },
-    title: { ...typography.bodyStrong, color: theme.color },
-    compactTitle: { flexShrink: 1 },
-    helper: { ...typography.bodySm, color: theme.colorMuted },
-    options: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
-    compactOptions: { alignItems: "center", flexDirection: "row", flexWrap: "nowrap", gap: spacing[1] },
-    option: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
-    compactOption: { minHeight: sizing.controlSm, paddingHorizontal: spacing[2] },
-    selectedOption: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
-    disabledOption: { opacity: opacity.disabled },
-    optionText: { ...typography.bodySm, color: theme.color, textAlign: "center" },
-    selectedOptionText: { color: theme.interactiveText },
-    error: { ...typography.bodySm, color: theme.danger },
-  });
 }

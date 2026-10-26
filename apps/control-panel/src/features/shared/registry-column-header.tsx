@@ -1,95 +1,79 @@
 "use client";
 
-import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { Button, ConfigProvider, Flex, Popover, Typography } from "antd";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 
 /**
- * All-results options delegate to the server owner; page-only options must
- * announce their bounded scope. Popovers are portaled outside table scrollers.
+ * One accessible column-control popover across registries. The backend retains
+ * ownership of all-results filtering; page-only controls announce their scope.
  */
 export function RegistryColumnHeader({
   label, children, active = false, scope = "results",
 }: Readonly<{ label: string; children?: ReactNode; active?: boolean; scope?: "results" | "page" }>) {
   const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState<{ top: number; right: number } | null>(null);
-  const detailsRef = useRef<HTMLDetailsElement>(null);
-  const popoverRef = useRef<HTMLElement>(null);
-  const popoverId = useId();
-
-  const reposition = useCallback(() => {
-    const rect = detailsRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const popupWidth = Math.min(270, window.innerWidth - 16);
-    const right = Math.max(8, Math.min(window.innerWidth - rect.right, window.innerWidth - popupWidth - 8));
-    const top = rect.bottom + 6 <= window.innerHeight - 205 ? rect.bottom + 6 : Math.max(8, rect.top - 230);
-    setPosition({ top, right });
-  }, []);
-
-  useEffect(() => {
-    const closeOther = (event: Event) => {
-      if ((event as CustomEvent<string>).detail !== popoverId && detailsRef.current?.open) detailsRef.current.open = false;
-    };
-    window.addEventListener("registry-column-open", closeOther);
-    return () => window.removeEventListener("registry-column-open", closeOther);
-  }, [popoverId]);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popupId = useId();
 
   useEffect(() => {
     if (!open) return;
-    const dismiss = (event: PointerEvent) => {
-      const node = event.target;
-      if (!(node instanceof Node)) return;
-      if (detailsRef.current?.contains(node) || popoverRef.current?.contains(node)) return;
-      if (detailsRef.current) detailsRef.current.open = false;
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      setOpen(false);
+      window.requestAnimationFrame(() => triggerRef.current?.focus());
     };
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (detailsRef.current) detailsRef.current.open = false;
-      detailsRef.current?.querySelector("summary")?.focus();
-      event.stopPropagation();
-    };
-    window.addEventListener("pointerdown", dismiss, true);
-    window.addEventListener("keydown", handleEscape, true);
-    window.addEventListener("scroll", reposition, true);
-    window.addEventListener("resize", reposition);
-    return () => {
-      window.removeEventListener("pointerdown", dismiss, true);
-      window.removeEventListener("keydown", handleEscape, true);
-      window.removeEventListener("scroll", reposition, true);
-      window.removeEventListener("resize", reposition);
-    };
-  }, [open, reposition]);
+    document.addEventListener("keydown", onEscape);
+    return () => document.removeEventListener("keydown", onEscape);
+  }, [open]);
 
   if (!children) return <th scope="col">{label}</th>;
-  return <th scope="col" className="registry-column-head">
-    <details ref={detailsRef} className="registry-column-details" data-active={active ? "true" : undefined}
-      onToggle={(event) => {
-        setOpen(event.currentTarget.open);
-        if (event.currentTarget.open) {
-          window.dispatchEvent(new CustomEvent("registry-column-open", { detail: popoverId }));
-          reposition();
-        }
-      }}>
-      <summary aria-controls={open && position ? popoverId : undefined} title={"بحث أو تصفية أو ترتيب: " + label}>
-        <span>{label}</span>
-        <span className="registry-column-arrow" aria-hidden="true">⌄</span>
-        {active ? <span className="registry-column-active-mark" aria-hidden="true">•</span> : null}
-      </summary>
-    </details>
-    {open && position ? createPortal(
-      <section id={popoverId} ref={popoverRef} aria-label={"تصفية " + label}
-        className="registry-column-popover" dir="rtl"
-        style={{ top: position.top, right: position.right }}>
-        <div className="registry-column-controls">
-          <div className="registry-column-popover-heading">
-            <strong>{label}</strong>
-            <button type="button" aria-label={"إغلاق تصفية " + label}
-              onClick={() => { if (detailsRef.current) detailsRef.current.open = false; detailsRef.current?.querySelector("summary")?.focus(); }}>إغلاق</button>
-          </div>
-          <small>{scope === "page" ? "الصفحة الحالية فقط" : "كل النتائج المطابقة"}</small>
-          {children}
-        </div>
-      </section>,
-      document.body
-    ) : null}
-  </th>;
+
+  return (
+    <th scope="col" className="registry-column-head">
+      <Popover
+        open={open}
+        onOpenChange={setOpen}
+        placement="bottomRight"
+        trigger="click"
+        arrow={false}
+        autoAdjustOverflow
+        destroyOnHidden
+        getPopupContainer={() => document.getElementById("control-panel-overlay-root") ?? document.body}
+        content={(
+          <ConfigProvider getPopupContainer={(trigger) => trigger?.closest(".registry-column-panel") ?? document.body}>
+            <section id={popupId} className="registry-column-panel" aria-label={"تصفية " + label} dir="rtl"
+              style={{ width: "min(270px, calc(100vw - 32px))", maxHeight: "65vh", overflowY: "auto", padding: 4 }}>
+              <Flex vertical gap="small">
+                <Flex align="center" justify="space-between" gap="small">
+                  <Typography.Text strong>{label}</Typography.Text>
+                  <Button size="small" type="text" onClick={() => {
+                    setOpen(false);
+                    window.requestAnimationFrame(() => triggerRef.current?.focus());
+                  }}>إغلاق</Button>
+                </Flex>
+                <Typography.Text type="secondary">
+                  {scope === "page" ? "الصفحة الحالية فقط" : "كل النتائج المطابقة"}
+                </Typography.Text>
+                <div className="registry-column-controls">{children}</div>
+              </Flex>
+            </section>
+          </ConfigProvider>
+        )}
+      >
+        <Button
+          ref={triggerRef}
+          type="text"
+          title={"بحث أو تصفية أو ترتيب: " + label}
+          aria-label={"تصفية " + label}
+          aria-expanded={open}
+          aria-controls={open ? popupId : undefined}
+          data-active={active || undefined}
+          style={{ minHeight: 36, display: "inline-flex", alignItems: "center", gap: 5 }}
+        >
+          {label} <span aria-hidden="true">⌄</span>
+          {active ? <span aria-hidden="true">•</span> : null}
+        </Button>
+      </Popover>
+    </th>
+  );
 }

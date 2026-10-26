@@ -1,8 +1,9 @@
+import { Button, Host } from "@expo/ui";
 import * as Application from "expo-application";
 import * as Clipboard from "expo-clipboard";
 import * as Device from "expo-device";
 import { type resolveTheme, spacing, typography } from "@bthwani/design-system";
-import { AppearancePicker, BthwaniButton, BthwaniNavigationRow, useAppearanceTheme } from "@bthwani/design-system/native";
+import { AppearancePicker, BthwaniNavigationRow, useMobileAppearance } from "@bthwani/design-system/native";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -13,7 +14,7 @@ import { MarketingContactPreference } from "./marketing-contact-preference";
 
 export default function ClientAccount() {
   const router = useRouter();
-  const theme = useAppearanceTheme();
+  const { theme, themeName } = useMobileAppearance();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { cities, clearSelectedCity, selectedCityID } = useServiceCityScope();
   const [isAuthenticated, setIsAuthenticated] = useState(() => currentIdentityState().kind === "authenticated");
@@ -60,7 +61,11 @@ export default function ClientAccount() {
   return (
     <View style={styles.container} accessibilityLabel="الحساب">
       <Text style={styles.title}>حسابي</Text>
-      {!isAuthenticated ? <BthwaniButton label="تسجيل الدخول" onPress={() => router.replace("/?returnTo=/account" as Href)} /> : null}
+      {!isAuthenticated ? (
+        <Host colorScheme={themeName} matchContents seedColor={theme.brandAction}>
+          <Button label="تسجيل الدخول" onPress={() => router.replace("/?returnTo=/account" as Href)} testID="client-account-login" />
+        </Host>
+      ) : null}
       <View style={styles.actions}>
         <BthwaniNavigationRow compact description="" icon="orders" title="طلباتي" onPress={() => router.push("/orders" as Href)} />
         <BthwaniNavigationRow compact description="" icon="wallet" title="محفظتي" onPress={() => router.push((isAuthenticated ? "/wallet" : "/?returnTo=/wallet") as Href)} />
@@ -81,7 +86,11 @@ export default function ClientAccount() {
         {"إصدار التطبيق " + (Application.nativeApplicationVersion ?? "—") + " · نسخ معلومات الإصدار"}
       </Text>
     </Pressable>
-      {isAuthenticated ? <BthwaniButton busy={busy} disabled={busy} label="تسجيل الخروج" onPress={() => void logout()} variant="secondary" /> : null}
+      {isAuthenticated ? (
+        <Host colorScheme={themeName} matchContents seedColor={theme.brandAction}>
+          <Button disabled={busy} label={busy ? "جارٍ تسجيل الخروج…" : "تسجيل الخروج"} onPress={() => void logout()} testID="client-account-logout" variant="outlined" />
+        </Host>
+      ) : null}
       {notice ? <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text> : null}
     </View>
   );

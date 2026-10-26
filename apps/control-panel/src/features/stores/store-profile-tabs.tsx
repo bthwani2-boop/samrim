@@ -33,10 +33,7 @@ type Props = Readonly<{
 
 function Panel({ id, activeTab, children }: Readonly<{ id: string; activeTab: string; children: ReactNode }>) {
   const selected = activeTab === id;
-  return <section id={`store-profile-panel-${id}`} role="tabpanel"
-    aria-labelledby={`store-profile-tab-${id}`} hidden={!selected} className="store-profile-tab-panel">
-    {selected ? children : null}
-  </section>;
+  return selected ? <section className="store-profile-tab-panel">{children}</section> : null;
 }
 function Card({ title, children }: Readonly<{ title: string; children: ReactNode }>) {
   return <section className="store-profile-card"><header className="store-profile-card-header"><h3>{title}</h3></header>{children}</section>;

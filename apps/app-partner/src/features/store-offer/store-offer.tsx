@@ -22,6 +22,8 @@ import { onPartnerProductAction } from "../../shell/partner-product-actions";
 import { PartnerStorePromotionBanner } from "./partner-promotion-banner";
 import { StoreCatalogExportCard } from "./store-catalog-export";
 import { StoreProductTrash } from "./store-product-trash";
+import { isCurrentCatalogProductRequest, mergeCatalogProductPage, releaseCatalogProductPageRequest } from "./catalog-product-pages";
+import { acquireOfferMutation } from "./offer-mutation-lock";
 
 type OfferState = { kind: "loading" } | { kind: "ready"; offers: ReadonlyArray<CatalogStoreOffer>; proposals: ReadonlyArray<CatalogProductProposal> } | { kind: "error" };
 type QuantityPolicy = "DISCRETE" | "MEASURED" | "VARIABLE_MEASURE";
@@ -172,6 +174,7 @@ const theme = useAppearanceTheme();
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const searchSequence = useRef(0);
+  const productPageRequest = useRef<number | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<CatalogProduct | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<CatalogVariant | null>(null);
   const [priceMinor, setPriceMinor] = useState("");
@@ -196,6 +199,7 @@ const theme = useAppearanceTheme();
   const [proposalAttributeDrafts, setProposalAttributeDrafts] = useState<AttributeDrafts>({});
   const [proposalEnumOptions, setProposalEnumOptions] = useState<Readonly<Record<string, ReadonlyArray<string>>>>({});
   const [busy, setBusy] = useState(false);
+  const offerMutationLock = useRef(false);
   const [error, setError] = useState("");
   const [storeProductName, setStoreProductName] = useState("");
   const [storeProductDescription, setStoreProductDescription] = useState("");
@@ -315,12 +319,28 @@ const theme = useAppearanceTheme();
   }, [proposalCategoryID]);
 
   async function searchProducts(cursor = "", append = false) {
-    if (!catalogReady || !verticalId) return;
+    if (!catalogReady || !verticalId || (append && productPageRequest.current !== null)) return;
     const requestSequence = ++searchSequence.current;
+    if (append) productPageRequest.current = requestSequence;
+    else {
+      productPageRequest.current = null;
+      setProducts([]);
+      setProductNextCursor("");
+    }
     setSearchSubmitted(true);
     setError("");
-    try { const token = await getUsableIdentityAccessToken(); const result = await dshClient().listCatalogProducts(token, query, verticalId, 100, cursor); if (requestSequence === searchSequence.current) { setProducts((current) => append ? [...current, ...result.products] : result.products); setProductNextCursor(result.nextCursor ?? ""); } }
-    catch (nextError) { if (requestSequence === searchSequence.current) { reportError(nextError); setError(errorText(nextError)); } }
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const result = await dshClient().listCatalogProducts(token, query, verticalId, 100, cursor);
+      if (isCurrentCatalogProductRequest(requestSequence, searchSequence.current)) {
+        setProducts((current) => mergeCatalogProductPage(current, result.products, append));
+        setProductNextCursor(result.nextCursor ?? "");
+      }
+    } catch (nextError) {
+      if (isCurrentCatalogProductRequest(requestSequence, searchSequence.current)) { reportError(nextError); setError(errorText(nextError)); }
+    } finally {
+      if (append) productPageRequest.current = releaseCatalogProductPageRequest(productPageRequest.current, requestSequence);
+    }
   }
 
   async function resolveIdentifier(value = identifier) {
@@ -435,14 +455,15 @@ const theme = useAppearanceTheme();
   }
 
   async function updateOffer(offer: CatalogStoreOffer, publicationState: "draft" | "published" | "hidden", availability: boolean, nextInventoryPolicy: InventoryPolicy = offer.inventoryPolicy as InventoryPolicy, nextInventoryOnHandBaseUnits = offer.inventoryOnHandBaseUnits) {
-    if (busy) return;
+    const release = acquireOfferMutation(offerMutationLock);
+    if (!release || busy) { release?.(); return; }
     setBusy(true); setError("");
       try {
         const token = await getUsableIdentityAccessToken();
         const result = await dshClient().updateStoreOffer(token, storeId, offer.offerId, offer.priceMinor, publicationState, availability, offer.version, offer.quantityPolicy, offer.pricingBasis, offer.quantityMinBaseUnits, offer.quantityMaxBaseUnits, offer.quantityStepBaseUnits, offer.pricingUnitBaseUnits, nextInventoryPolicy, nextInventoryOnHandBaseUnits);
         setState((current) => current.kind === "ready" ? { ...current, offers: current.offers.map((item) => item.offerId === result.offer.offerId ? { ...result.offer, media: item.media, modifierGroups: item.modifierGroups } : item) } : current);
       }
-      catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
+      catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { release(); setBusy(false); }
   }
 
   async function saveSelectedStoreProduct() {

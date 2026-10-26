@@ -160,7 +160,7 @@ export function NotificationsInbox() {
         </View>
         <View style={styles.screenActions}>
           {authenticated ? <BthwaniIconButton disabled={Boolean(busy) || loading || loadingMore} icon="refresh" label="تحديث الإشعارات" onPress={() => void load(true)} size={sizing.controlSm} tone="soft" /> : null}
-          <BthwaniIconButton icon="back" label="العودة" onPress={() => router.back()} size={sizing.controlSm} tone="soft" />
+          <BthwaniIconButton icon="back" label="العودة" onPress={() => router.canGoBack() ? router.back() : router.replace("/home" as Href)} size={sizing.controlSm} tone="soft" />
         </View>
       </View>
 

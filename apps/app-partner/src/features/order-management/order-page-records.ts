@@ -5,3 +5,14 @@ export function mergeOrderPageRecords<T>(
 ): Readonly<Record<string, T>> {
   return append ? { ...current, ...page } : page;
 }
+
+export function tryAcquireOrderAction(locks: Set<string>, orderID: string): (() => void) | null {
+  if (locks.has(orderID)) return null;
+  locks.add(orderID);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    locks.delete(orderID);
+  };
+}

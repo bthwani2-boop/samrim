@@ -1,5 +1,6 @@
 "use client";
 
+import { Alert, Button, Empty, Flex, Listy, Select, Spin, Tag, Typography } from "antd";
 import { useCallback,useEffect,useRef,useState } from "react";
 import { formatOperatorCaseAge } from "./operator-case-age";
 
@@ -84,34 +85,78 @@ export function OperatorCaseInbox({onOpenOrder,refreshVersion,active=true}:Reado
    }catch{if(current===generation.current)setError("تعذر تحميل المزيد من الحالات.");}
    finally{setBusy(false);}
  }
- return <section className="order-detail-panel ops-case-queue" aria-labelledby="ops-case-inbox-title">
-   <div className="action-row">
-     <div><h2 id="ops-case-inbox-title">قائمة حالات التعثر</h2><p className="ops-case-count">{items.length} حالة ضمن السجلات المحمّلة · {items.filter(item=>!item.ownerActorId).length} دون مسؤول{cursor?" · توجد صفحة تالية":""}</p></div>
-     <label>المسؤولية
-       <select className="input" value={scope} disabled={busy} onChange={e=>setScope(e.target.value as Scope)}>
-         <option value="all">الحالات المفتوحة</option>
-         <option value="unassigned">دون مسؤول</option>
-         <option value="mine">مسندة إليّ</option>
-       </select>
-     </label>
-   </div>
-   {loading&&items.length===0?<p className="muted" role="status">جارٍ قراءة التعثر…</p>:null}
-   {error?<div className="managed-status managed-status-warning" role="alert">{error}
-     <button type="button" className="button button-secondary" disabled={loading} onClick={()=>void reload()}>إعادة القراءة</button>
-   </div>:null}
-   {!loading&&!error&&items.length===0?<p className="muted">لا توجد حالات بهذا التصنيف.</p>:null}
-   {items.length>0?<ul className="order-detail-list">
-     {items.map(item=><li key={item.id} className={"ops-case-row" + (item.priority==="URGENT"?" is-urgent":"")}>
-       <div className="ops-case-information">
-         <strong>{item.priority==="URGENT"?"عاجل · ":""}{labels[item.reason]??"تعثر"} · {item.state==="ACTION_REQUIRED"?"يتطلب إجراءً":item.state==="IN_PROGRESS"?"قيد المعالجة":"ينتظر الاستلام"}</strong>
-         <p>{item.nextAction}</p>
-         <p className="muted">طلب <span dir="ltr">{item.orderId.slice(-8)}</span> · {item.ownerActorId?"المسؤول: "+item.ownerActorId:"دون مسؤول"}{clock!==null?" · "+formatOperatorCaseAge(item.openedAt,clock):""}</p>
-       </div>
-       <button type="button" className="button button-secondary" onClick={()=>onOpenOrder(item.orderId)}>فتح الحالة</button>
-     </li>)}
-   </ul>:null}
-   {cursor?<button type="button" className="button button-secondary" disabled={loading||busy} onClick={()=>void more()}>
-     {busy?"جارٍ العرض…":"المزيد من حالات التعثر"}
-   </button>:null}
- </section>;
+ return (
+   <section className="order-detail-panel ops-case-queue" aria-labelledby="ops-case-inbox-title">
+     <Flex vertical gap="middle">
+       <Flex align="center" justify="space-between" gap="middle" wrap>
+         <div>
+           <h2 id="ops-case-inbox-title">قائمة حالات التعثر</h2>
+           <Typography.Text type="secondary">
+             {items.length} حالة ضمن السجلات المحمّلة · {items.filter(item=>!item.ownerActorId).length} دون مسؤول{cursor?" · توجد صفحة تالية":""}
+           </Typography.Text>
+         </div>
+         <Flex align="center" gap="small" wrap>
+           <label htmlFor="ops-case-scope">المسؤولية</label>
+           <Select<Scope>
+             id="ops-case-scope"
+             aria-label="تصفية حالات التعثر حسب المسؤولية"
+             value={scope}
+             disabled={busy}
+             onChange={setScope}
+             style={{ minWidth: 168 }}
+             options={[
+               { value: "all", label: "الحالات المفتوحة" },
+               { value: "unassigned", label: "دون مسؤول" },
+               { value: "mine", label: "مسندة إليّ" },
+             ]}
+           />
+         </Flex>
+       </Flex>
+       {loading&&items.length===0?(
+         <Flex align="center" gap="small" role="status">
+           <Spin size="small"/>
+           <Typography.Text type="secondary">جارٍ قراءة التعثر…</Typography.Text>
+         </Flex>
+       ):null}
+       {error?(
+         <Alert
+           type="warning"
+           showIcon
+           message={error}
+           action={<Button disabled={loading} onClick={()=>void reload()}>إعادة القراءة</Button>}
+         />
+       ):null}
+       {!loading&&!error&&items.length===0?<Empty description="لا توجد حالات بهذا التصنيف."/>:null}
+       {items.length>0?(
+         <Listy<Case>
+           items={[...items]}
+           rowKey="id"
+           itemRender={(item)=>(
+             <Flex align="center" justify="space-between" gap="middle" wrap data-testid="ops-case-item">
+               <Flex vertical gap="small" flex="1" style={{ minWidth: 200, overflowWrap: "anywhere" }}>
+                 <Flex align="center" gap="small" wrap>
+                   {item.priority==="URGENT"?<Tag color="red">عاجل</Tag>:null}
+                   <Typography.Text strong>
+                     {labels[item.reason]??"تعثر"} · {item.state==="ACTION_REQUIRED"?"يتطلب إجراءً":item.state==="IN_PROGRESS"?"قيد المعالجة":"ينتظر الاستلام"}
+                   </Typography.Text>
+                 </Flex>
+                 <Typography.Text>{item.nextAction}</Typography.Text>
+                 <Typography.Text type="secondary">
+                   طلب <bdi dir="ltr">{item.orderId.slice(-8)}</bdi> · {item.ownerActorId?"المسؤول: "+item.ownerActorId:"دون مسؤول"}
+                   {clock!==null?" · "+formatOperatorCaseAge(item.openedAt,clock):""}
+                 </Typography.Text>
+               </Flex>
+               <Button onClick={()=>onOpenOrder(item.orderId)} aria-label={"فتح الحالة للطلب "+item.orderId}>فتح الحالة</Button>
+             </Flex>
+           )}
+         />
+       ):null}
+       {cursor?(
+         <Button block loading={busy} disabled={loading} onClick={()=>void more()}>
+           المزيد من حالات التعثر
+         </Button>
+       ):null}
+     </Flex>
+   </section>
+ );
 }

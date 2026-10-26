@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { HREmployee } from "../../server/dsh/dsh-bff";
 import { identityFetch } from "../../session/identity-fetch";
 import { useSession } from "../../session/session-provider";
-import { RecordTabPanel, RecordTabs } from "../shared/record-tabs";
+import { Tabs } from "antd";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { EmployeeAccessRequest } from "./employee-access-request";
 import { EmployeeAttendance } from "./employee-attendance";
@@ -95,9 +95,9 @@ export function EmployeeProfileWorkspace({ employeeId, embedded = false }: Reado
         </div>
       </header>
 
-      <RecordTabs id="employee-file" tabs={tabs} active={tab} onSelect={selectTab} />
+      <Tabs aria-label="أقسام الملف" activeKey={tab} onChange={selectTab} destroyOnHidden={false} items={[
 
-      <RecordTabPanel id="employee-file" tab="overview" active={tab === "overview"}>
+      { key: "overview", label: tabs[0]!.label, children: (<>
         <section className={"bt-employee-profile-metrics"} aria-label="ملخص الموظف">
           <div><span>الحالة الوظيفية</span><strong>{employee.status === "active" ? "نشط" : "متوقف"}</strong></div>
           <div><span>وصول التشغيل</span><strong>{employee.operatorActorId ? "هوية مرتبطة" : "غير مرتبط"}</strong></div>
@@ -127,16 +127,16 @@ export function EmployeeProfileWorkspace({ employeeId, embedded = false }: Reado
           </div>
         </section>
         </div>
-      </RecordTabPanel>
+      </>) },
 
-      <RecordTabPanel id="employee-file" tab="employment" active={tab === "employment"}>
+      { key: "employment", label: tabs[1]!.label, children: (<>
         {visited.has("employment") ? <div className={"bt-employee-profile-columns"}>
           <section className={"bt-employee-profile-panel"}><EmployeeProfileEditor key={employee.id} employee={employee} colleagues={[]} onSaved={setEmployee} /></section>
           <section className={"bt-employee-profile-panel"}><EmployeeEmploymentStatus employee={employee} onSaved={setEmployee} /></section>
         </div> : null}
-      </RecordTabPanel>
+      </>) },
 
-      <RecordTabPanel id="employee-file" tab="attendance" active={tab === "attendance"}>
+      { key: "attendance", label: tabs[2]!.label, children: (<>
         {visited.has("attendance") ? <>
           <section className={"bt-employee-profile-panel"}><EmployeeAttendance employeeId={employee.id} /></section>
           <details className={"bt-employee-profile-section"}>
@@ -144,9 +144,9 @@ export function EmployeeProfileWorkspace({ employeeId, embedded = false }: Reado
             <section className={"bt-employee-profile-panel"}><EmployeePerformance employeeId={employee.id} /></section>
           </details>
         </> : null}
-      </RecordTabPanel>
+      </>) },
 
-      <RecordTabPanel id="employee-file" tab="access" active={tab === "access"}>
+      { key: "access", label: tabs[3]!.label, children: (<>
         {visited.has("access") ? <div className={"bt-employee-profile-columns"}>
           <section className={"bt-employee-profile-panel"}>
             <div className={"bt-employee-profile-sectionHead"}><h2>طلب الوصول</h2></div>
@@ -159,9 +159,9 @@ export function EmployeeProfileWorkspace({ employeeId, embedded = false }: Reado
             {employee.operatorActorId && employee.phoneE164 && canManageOperator ? <Link className="button button-secondary" href={"/access/operators/" + encodeURIComponent(employee.phoneE164)}>ملف الصلاحيات الكامل</Link> : null}
           </section>
         </div> : null}
-      </RecordTabPanel>
+      </>) },
 
-      <RecordTabPanel id="employee-file" tab="history" active={tab === "history"}>
+      { key: "history", label: tabs[4]!.label, children: (<>
         {visited.has("history") ? <section className={"bt-employee-profile-panel"}>
           <h2>سجل القرارات والتغييرات</h2>
           <EmployeeAuditHistory key={employee.id} employee={employee} />
@@ -171,7 +171,8 @@ export function EmployeeProfileWorkspace({ employeeId, embedded = false }: Reado
             <dt>إصدار السجل</dt><dd>{employee.version}</dd></dl></div>
           </details>
         </section> : null}
-      </RecordTabPanel>
+      </>) },
+      ]} />
     </> : null}
   </div>;
 }

@@ -126,7 +126,13 @@ export async function submitFieldCaseWithReadback(
   try {
     const canonical = await read();
     if (canonical.case.id !== caseID || canonical.case.origin !== "field") return { kind: "unconfirmed" };
-    return canonical.case.state === "draft" ? { kind: "draft", canonical } : { kind: "confirmed", canonical };
+    if (canonical.case.state === "draft") return { kind: "draft", canonical };
+    // Only submitted or later approved states confirm a recovered submission.
+    // A needs_correction readback must never be presented as successful.
+    if (canonical.case.state === "admission_requested" || canonical.case.state === "submitted" || canonical.case.state === "approved") {
+      return { kind: "confirmed", canonical };
+    }
+    return { kind: "unconfirmed" };
   } catch (cause) {
     console.warn("DSH Field submission readback unavailable", cause);
     return { kind: "unconfirmed" };

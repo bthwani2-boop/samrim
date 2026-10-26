@@ -1,4 +1,5 @@
 "use client";
+import { Alert, Button, Empty, Flex, Input, Listy, Spin, Typography } from "antd";
 import { useCallback, useEffect, useState } from "react";
 
 type PendingCancellation = Readonly<{
@@ -42,29 +43,78 @@ export function CancellationRequestInbox({onOpenOrder, refreshVersion, active=tr
     finally{setBusy(false)}
   }
 
-  return <section aria-labelledby="ops-cancellation-inbox-title" className="order-detail-panel">
-    <div className="action-row">
-      <h2 id="ops-cancellation-inbox-title">طلبات الإلغاء من العملاء ({items.length})</h2>
-
-    </div>
-    <p className="muted">الطلب لا يتوقف حتى تراجعه العمليات وتتخذ قرارًا. الإلغاء لا يضيف تعويضًا تلقائيًا للمحفظة.</p>
-    {error?<div role="alert"><p>{error}</p><button type="button" className="button button-secondary" disabled={loading||busy} onClick={()=>void load()}>إعادة المحاولة</button></div>:null}
-    {!items.length&&!loading&&!error?<p className="muted">لا توجد طلبات إلغاء بانتظار المراجعة.</p>:null}
-    {items.length?<ul className="order-detail-list">{items.map(item=><li key={item.id}>
-      <div><strong>طلب إلغاء</strong><p>{item.reason}</p><small>رقم الطلب: {item.orderId}</small></div>
-      <div className="action-row">
-        <button type="button" className="button button-primary" onClick={()=>onOpenOrder(item.orderId)}>مراجعة الطلب والإلغاء</button>
-        <button type="button" className="button button-secondary" onClick={()=>{setDeclining(item.id);setReason("")}}>رفض الطلب</button>
-      </div>
-      {declining===item.id?<div>
-        <label htmlFor="decline-cancellation-reason">سبب الرفض للعميل</label>
-        <textarea id="decline-cancellation-reason" value={reason} maxLength={500} rows={2}
-          onChange={event=>setReason(event.target.value)} />
-        <div className="action-row">
-          <button type="button" className="button button-primary" disabled={busy||Array.from(reason.trim()).length<12} onClick={()=>void decline(item.id)}>تسجيل الرفض</button>
-          <button type="button" className="button button-secondary" onClick={()=>setDeclining("")}>رجوع</button>
+  return (
+    <section aria-labelledby="ops-cancellation-inbox-title" className="order-detail-panel">
+      <Flex vertical gap="middle">
+        <div>
+          <h2 id="ops-cancellation-inbox-title">طلبات الإلغاء من العملاء ({items.length})</h2>
+          <Typography.Text type="secondary">
+            الطلب لا يتوقف حتى تراجعه العمليات وتتخذ قرارًا. الإلغاء لا يضيف تعويضًا تلقائيًا للمحفظة.
+          </Typography.Text>
         </div>
-      </div>:null}
-    </li>)}</ul>:null}
-  </section>;
+        {loading && !items.length ? (
+          <Flex align="center" gap="small" role="status">
+            <Spin size="small" />
+            <Typography.Text type="secondary">جارٍ قراءة طلبات الإلغاء…</Typography.Text>
+          </Flex>
+        ) : null}
+        {error ? (
+          <Alert
+            type="warning"
+            showIcon
+            message={error}
+            action={<Button disabled={loading || busy} onClick={() => void load()}>إعادة المحاولة</Button>}
+          />
+        ) : null}
+        {!items.length && !loading && !error ? <Empty description="لا توجد طلبات إلغاء بانتظار المراجعة." /> : null}
+        {items.length ? (
+          <Listy<PendingCancellation>
+            rowKey="id"
+            items={[...items]}
+            itemRender={(item) => (
+              <Flex vertical gap="middle" data-testid="ops-cancellation-item">
+                <Flex justify="space-between" align="center" gap="middle" wrap>
+                  <Flex vertical gap="small" flex="1" style={{ minWidth: 200, overflowWrap: "anywhere" }}>
+                    <Typography.Text strong>طلب إلغاء</Typography.Text>
+                    <Typography.Text>{item.reason}</Typography.Text>
+                    <Typography.Text type="secondary">رقم الطلب: <bdi dir="ltr">{item.orderId}</bdi></Typography.Text>
+                  </Flex>
+                  <Flex gap="small" wrap>
+                    <Button type="primary" onClick={() => onOpenOrder(item.orderId)}>مراجعة الطلب والإلغاء</Button>
+                    <Button disabled={busy} onClick={() => { setDeclining(item.id); setReason(""); }}>رفض الطلب</Button>
+                  </Flex>
+                </Flex>
+                {declining === item.id ? (
+                  <Flex vertical gap="small">
+                    <label htmlFor="decline-cancellation-reason">سبب الرفض للعميل</label>
+                    <Input.TextArea
+                      id="decline-cancellation-reason"
+                      value={reason}
+                      maxLength={500}
+                      rows={2}
+                      showCount
+                      aria-label="سبب الرفض للعميل"
+                      onChange={(event) => setReason(event.target.value)}
+                    />
+                    <Flex align="center" gap="small" wrap>
+                      <Button
+                        type="primary"
+                        danger
+                        loading={busy}
+                        disabled={Array.from(reason.trim()).length < 12}
+                        onClick={() => void decline(item.id)}
+                      >
+                        تسجيل الرفض
+                      </Button>
+                      <Button disabled={busy} onClick={() => setDeclining("")}>رجوع</Button>
+                    </Flex>
+                  </Flex>
+                ) : null}
+              </Flex>
+            )}
+          />
+        ) : null}
+      </Flex>
+    </section>
+  );
 }

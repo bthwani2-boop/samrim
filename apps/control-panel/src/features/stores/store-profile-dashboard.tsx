@@ -4,10 +4,10 @@ import { type JoiningCaseView, joiningCaseStateLabel, type OperatorOperationsSum
 import type { ActorRoleView } from "@bthwani/identity";
 import Link from "next/link";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { Tabs } from "antd";
 import { createPortal } from "react-dom";
 import { useAdaptiveRecordView } from "../../shell/adaptive-record-workspace";
 import { OperationalIcon, type OperationalIconName } from "../../shell/workspace-icon";
-import { RecordTabs } from "../shared/record-tabs";
 import { StoreImageEditor } from "./store-image-editor";
 import { PublicationIndicator } from "./store-indicators";
 import { StoreLogo } from "./store-logo";
@@ -120,6 +120,44 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
     ["quality", "العملاء والجودة"], ["documents", "الوثائق والسجل"],
     ...(canViewFinance ? [["finance", "المالية"] as const] : []),
   ];
+  const overview = (
+    <section className="store-profile-overview">
+    {canViewOperations ? <section id="store-profile-overview" className="store-profile-kpis" aria-label="مؤشرات طلبات المتجر">
+      <div className="store-profile-kpi"><div><span>طلبات تحتاج متابعة</span><strong>{orderSummary?.actionableCount ?? "—"}</strong></div></div>
+      <div className="store-profile-kpi"><div><span>بانتظار الإسناد</span><strong>{orderSummary?.awaitingDispatchCount ?? "—"}</strong></div></div>
+      <div className="store-profile-kpi"><div><span>الطلبات النشطة</span><strong>{orderSummary?.activeCount ?? "—"}</strong></div></div>
+    </section> : null}
+
+    <section className="store-profile-alert" data-ready={ready} aria-label="جاهزية نشر المتجر" id="store-onboarding-readiness">
+      <div>
+        <strong>{ready ? "متطلبات النشر مكتملة" : "متطلبات نشر تحتاج متابعة"}</strong>
+        <p>حالة النشر: {publication}. {ready ? "تُحدد إمكانية استقبال الطلبات بصورة مستقلة وفق حالة التشغيل." : "العوائق: " + (blockers.length || 1)}</p>
+      </div>
+      {!ready && blockers.length ? <details className="store-profile-readiness-detail">
+        <summary>عرض أسباب عدم الجاهزية</summary>
+        <ul>{blockers.map((reason) => <li key={reason}>{publicationReadinessBlockedReasonLabel(reason)}</li>)}</ul>
+      </details> : null}
+    </section>
+
+    <div className="store-profile-content store-sheet-dashboard">
+      <div className="store-profile-information"><ProfileCard title="بيانات المتجر" icon="⌂">
+        <dl className="store-profile-facts">
+          <Fact label="المالك"><Link href={"/partners/actors/" + encodeURIComponent(store.partnerActorId)}>{store.partnerName || caseView?.ownerFullName || "ملف الشريك"}</Link></Fact>
+          <Fact label="المدينة">{store.serviceCityName || "غير محددة"}</Fact>
+          <Fact label="النشاط">{store.primaryVerticalName || "غير محدد"}</Fact>
+        </dl>
+        {partnerError ? <p className="store-profile-minor-error">{partnerError}</p> : null}
+      </ProfileCard></div>
+      {canViewOperations ? <div className="store-profile-readiness"><ProfileCard title="طلبات المتجر" icon="▤">
+        <StoreOperationsPreview storeId={store.id} compact onSummary={setOrderSummary} />
+      </ProfileCard></div> : null}
+      <div className="store-profile-access"><ProfileCard title="حالة حساب الشريك" icon="○">
+        <div className="store-profile-state-row"><span>حساب المالك</span><strong>{accountState}</strong></div>
+        <Link className="store-profile-action-link" href={"/partners/actors/" + encodeURIComponent(store.partnerActorId)}>فتح ملف الشريك ←</Link>
+      </ProfileCard></div>
+    </div>
+    </section>
+  );
   return <div className="store-profile" data-managing={manageOpen}>
     <section className="store-profile-hero store-sheet-hero" aria-label="هوية المتجر">
       <div className="store-profile-hero-main">
@@ -156,48 +194,16 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
 
     {imageNotice ? <output className="store-profile-image-notice">{imageNotice}</output> : null}
     <div className="store-profile-navigation" data-has-finance={canViewFinance}>
-      <RecordTabs id="store-profile" ariaLabel="أقسام ملف المتجر" className="store-profile-sections"
-        tabs={tabs.map(([key, label]) => ({ key, label: <><OperationalIcon name={profileTabIcons[key] ?? "review"}/>{label}</> }))}
-        active={activeTab} onSelect={selectTab}/>
+      <Tabs id="store-profile" aria-label={"\u0623\u0642\u0633\u0627\u0645 \u0645\u0644\u0641 \u0627\u0644\u0645\u062a\u062c\u0631"} className="store-profile-sections" activeKey={activeTab} onChange={selectTab} size="small" tabBarGutter={8}
+        items={tabs.map(([key, label]) => ({
+          key,
+          label: <><OperationalIcon name={profileTabIcons[key] ?? "review"}/>{label}</>,
+          forceRender: key === "overview",
+          children: key === "overview" ? <>{overview}<StoreProfileTabs activeTab="overview" store={store} partner={partner} partnerError={partnerError}
+            canViewFinance={canViewFinance} canViewOperations={canViewOperations} manageOpen={manageOpen} openManagement={openEditor} management={management} onUpdated={onUpdated} onSelectTab={selectTab}/></> :
+            activeTab === key ? <StoreProfileTabs activeTab={key} store={store} partner={partner} partnerError={partnerError}
+              canViewFinance={canViewFinance} canViewOperations={canViewOperations} manageOpen={manageOpen} openManagement={openEditor} management={management} onUpdated={onUpdated} onSelectTab={selectTab}/> : null,
+        }))}/>
     </div>
-
-    <section id="store-profile-panel-overview" role="tabpanel" aria-labelledby="store-profile-tab-overview" hidden={activeTab !== "overview"} className="store-profile-overview">
-    {canViewOperations ? <section id="store-profile-overview" className="store-profile-kpis" aria-label="مؤشرات طلبات المتجر">
-      <div className="store-profile-kpi"><div><span>طلبات تحتاج متابعة</span><strong>{orderSummary?.actionableCount ?? "—"}</strong></div></div>
-      <div className="store-profile-kpi"><div><span>بانتظار الإسناد</span><strong>{orderSummary?.awaitingDispatchCount ?? "—"}</strong></div></div>
-      <div className="store-profile-kpi"><div><span>الطلبات النشطة</span><strong>{orderSummary?.activeCount ?? "—"}</strong></div></div>
-    </section> : null}
-
-    <section className="store-profile-alert" data-ready={ready} aria-label="جاهزية نشر المتجر" id="store-onboarding-readiness">
-      <div>
-        <strong>{ready ? "متطلبات النشر مكتملة" : "متطلبات نشر تحتاج متابعة"}</strong>
-        <p>حالة النشر: {publication}. {ready ? "تُحدد إمكانية استقبال الطلبات بصورة مستقلة وفق حالة التشغيل." : "العوائق: " + (blockers.length || 1)}</p>
-      </div>
-      {!ready && blockers.length ? <details className="store-profile-readiness-detail">
-        <summary>عرض أسباب عدم الجاهزية</summary>
-        <ul>{blockers.map((reason) => <li key={reason}>{publicationReadinessBlockedReasonLabel(reason)}</li>)}</ul>
-      </details> : null}
-    </section>
-
-    <div className="store-profile-content store-sheet-dashboard">
-      <div className="store-profile-information"><ProfileCard title="بيانات المتجر" icon="⌂">
-        <dl className="store-profile-facts">
-          <Fact label="المالك"><Link href={"/partners/actors/" + encodeURIComponent(store.partnerActorId)}>{store.partnerName || caseView?.ownerFullName || "ملف الشريك"}</Link></Fact>
-          <Fact label="المدينة">{store.serviceCityName || "غير محددة"}</Fact>
-          <Fact label="النشاط">{store.primaryVerticalName || "غير محدد"}</Fact>
-        </dl>
-        {partnerError ? <p className="store-profile-minor-error">{partnerError}</p> : null}
-      </ProfileCard></div>
-      {canViewOperations ? <div className="store-profile-readiness"><ProfileCard title="طلبات المتجر" icon="▤">
-        <StoreOperationsPreview storeId={store.id} compact onSummary={setOrderSummary} />
-      </ProfileCard></div> : null}
-      <div className="store-profile-access"><ProfileCard title="حالة حساب الشريك" icon="○">
-        <div className="store-profile-state-row"><span>حساب المالك</span><strong>{accountState}</strong></div>
-        <Link className="store-profile-action-link" href={"/partners/actors/" + encodeURIComponent(store.partnerActorId)}>فتح ملف الشريك ←</Link>
-      </ProfileCard></div>
-    </div>
-    </section>
-    <StoreProfileTabs activeTab={activeTab} store={store} partner={partner} partnerError={partnerError}
-      canViewFinance={canViewFinance} canViewOperations={canViewOperations} manageOpen={manageOpen} openManagement={openEditor} management={management} onUpdated={onUpdated} onSelectTab={selectTab} />
   </div>;
 }

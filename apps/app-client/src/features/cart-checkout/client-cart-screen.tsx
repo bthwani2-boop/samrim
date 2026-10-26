@@ -64,6 +64,8 @@ export default function ClientCartScreen() {
   }, []);
   const openRequiredAddress = useCallback(() => setExpandedAddresses(true), []);
   const loadRequestID = useRef(0);
+  const requestedFulfillmentModeRef = useRef(requestedFulfillmentMode);
+  requestedFulfillmentModeRef.current = requestedFulfillmentMode;
   const addressRequestID = useRef(0);
   const serviceabilityRequestID = useRef(0);
   const fulfillmentModeRef = useRef(fulfillmentMode);
@@ -102,13 +104,13 @@ export default function ClientCartScreen() {
       const enabledModes = availableCustomerFulfillmentModes(store.fulfillmentModes);
       const saved = await readSavedFulfillmentMode(storeId, selectedCityID, enabledModes);
       if (!isCurrent()) return;
-      const resolvedMode = resolveFulfillmentChoice(enabledModes, requestedFulfillmentMode, saved);
+      const resolvedMode = resolveFulfillmentChoice(enabledModes, requestedFulfillmentModeRef.current, saved);
       setFulfillmentMode(resolvedMode);
       setExpandedFulfillment(enabledModes.length > 1 && resolvedMode === null);
     } catch {
       if (isCurrent()) setState({ kind: "error" });
     }
-  }, [requestedFulfillmentMode, selectedCityID, storeId]);
+  }, [selectedCityID, storeId]);
 
   useFocusEffect(useCallback(() => {
     // A delivery-mode change should re-evaluate focus-sensitive address loading.
@@ -195,6 +197,7 @@ export default function ClientCartScreen() {
             </Pressable> : null}
           </View> : <PremiumFulfillmentSelector available={availableFulfillmentModes} selected={fulfillmentMode} onSelect={(mode) => {
             if (mode === fulfillmentMode) { setExpandedFulfillment(false); return; }
+            router.setParams({ fulfillmentMode: mode });
             serviceabilityRequestID.current += 1;
             setFulfillmentMode(mode);
             setExpandedFulfillment(false);

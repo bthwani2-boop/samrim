@@ -1,0 +1,43 @@
+# Read-only proof: route and tab navigation. Never accepts offers or completes a delivery.
+appId: com.bthwani.captain
+name: Captain protected stack navigation
+---
+- launchApp:
+    stopApp: false
+    clearState: false
+- openLink: "captain://home"
+- extendedWaitUntil:
+    visible: "الخريطة والمهمة الحالية"
+    timeout: 15000
+- tapOn: "حسابي"
+- extendedWaitUntil:
+    visible: "مساحات العمل"
+    timeout: 15000
+- tapOn: "عروض التوصيل"
+- extendedWaitUntil:
+    visible: "عروض التوصيل"
+    timeout: 15000
+- back
+- extendedWaitUntil:
+    visible: "مساحات العمل"
+    timeout: 15000
+- tapOn: "توصيلاتي"
+- extendedWaitUntil:
+    visible: "التوصيلات الحالية"
+    timeout: 15000
+- back
+- extendedWaitUntil:
+    visible: "مساحات العمل"
+    timeout: 15000
+- tapOn: "الخريطة والمهمة الحالية"
+- extendedWaitUntil:
+    visible: "التوفر"
+    timeout: 15000
+- openLink: "captain://offers?q=captain-navigation-smoke"
+- extendedWaitUntil:
+    visible: "عرض التوصيلات الحالية"
+    timeout: 20000
+- back
+- extendedWaitUntil:
+    visible: "التوفر"
+    timeout: 15000

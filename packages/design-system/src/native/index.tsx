@@ -6,4 +6,3 @@ export * from "./order-chat-audio-bubble";
 export * from "./order-chat-sheet";
 export * from "./order-chat-unread";
 export * from "./primitives";
-export * from "./ui-switch";

@@ -1,15 +1,15 @@
+import { Button, Host } from "@expo/ui";
 import * as Application from "expo-application";
 import * as Clipboard from "expo-clipboard";
 import * as Device from "expo-device";
 import { elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { AppearancePicker, BthwaniButton, BthwaniIcon, BthwaniNavigationRow, BthwaniSectionHeader, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { AppearancePicker, BthwaniIcon, BthwaniNavigationRow, BthwaniSectionHeader, BthwaniSurface, useMobileAppearance } from "@bthwani/design-system/native";
 import { type Href, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { getUsableIdentityAccessToken, logoutIdentity } from "../../bootstrap/identity";
 import { captainClient } from "../captain-operations/captain-client";
 import { StoreCaptainMemberships } from "../captain-operations/store-memberships";
-import { StoreAccessInvitationInbox } from "./store-access-invitations";
 
 const actions: ReadonlyArray<Readonly<{
   description: string;
@@ -24,7 +24,7 @@ const actions: ReadonlyArray<Readonly<{
 
 export default function CaptainAccount() {
   const router = useRouter();
-  const theme = useAppearanceTheme();
+  const { theme, themeName } = useMobileAppearance();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -101,21 +101,7 @@ export default function CaptainAccount() {
 
       <StoreCaptainMemberships />
 
-      <StoreAccessInvitationInbox />
-
-      <BthwaniSectionHeader title="مظهر التطبيق" subtitle="غيّر المظهر في أي وقت؛ ويُحفظ اختيارك على هذا الجهاز." />
-      <BthwaniSurface tone="raised" style={styles.appearancePanel}>
-        <View style={styles.appearanceHeading}>
-          <View style={styles.appearanceIcon}>
-            <BthwaniIcon name="appearance" color={theme.interactiveText} size={sizing.iconLg} />
-          </View>
-          <View style={styles.appearanceCopy}>
-            <Text style={styles.appearanceTitle}>اختيار النسق</Text>
-            <Text style={styles.appearanceHelper}>فاتح، داكن، أو حسب إعدادات النظام.</Text>
-          </View>
-        </View>
-        <AppearancePicker title="مظهر التطبيق" helper="يُطبَّق التغيير مباشرة على كل شاشات التطبيق." />
-      </BthwaniSurface>
+      <AppearancePicker compact title="المظهر" helper="" />
 
     <Pressable accessibilityRole="button" accessibilityLabel="نسخ معلومات إصدار التطبيق"
       onPress={() => void Clipboard.setStringAsync([
@@ -128,7 +114,9 @@ export default function CaptainAccount() {
         {"إصدار التطبيق " + (Application.nativeApplicationVersion ?? "—") + " · نسخ معلومات الإصدار"}
       </Text>
     </Pressable>
-      <BthwaniButton busy={busy} disabled={busy} label={busy ? "جارٍ تسجيل الخروج…" : "تسجيل الخروج"} onPress={() => void logout()} variant="secondary" />
+      <Host colorScheme={themeName} matchContents seedColor={theme.brandAction}>
+        <Button disabled={busy} label={busy ? "جارٍ تسجيل الخروج…" : "تسجيل الخروج"} onPress={() => void logout()} testID="captain-account-logout" variant="outlined" />
+      </Host>
       {notice ? <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text> : null}
     </View>
   );
@@ -147,12 +135,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     profileTitle: { ...typography.titleSm, color: theme.color },
     profileDescription: { ...typography.bodySm, color: theme.colorMuted },
     actions: { gap: spacing[2] },
-    appearancePanel: { borderRadius: radius.xl, gap: spacing[3], padding: spacing[4], ...elevation.raised },
-    appearanceHeading: { alignItems: "center", flexDirection: "row", gap: spacing[3] },
-    appearanceIcon: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.md, height: sizing.avatarMd, justifyContent: "center", width: sizing.avatarMd },
-    appearanceCopy: { flex: 1, gap: spacing[1] },
-    appearanceTitle: { ...typography.titleSm, color: theme.color },
-    appearanceHelper: { ...typography.bodySm, color: theme.colorMuted },
     notice: { ...typography.bodySm, color: theme.warning },
   });
 }

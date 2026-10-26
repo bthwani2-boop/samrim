@@ -15,6 +15,7 @@ function currentMobileActorID(): string {
 }
 import { AppKeyboardProvider } from "../src/bootstrap/keyboard-provider";
 import { OrderAlertMonitor } from "../src/features/notifications/order-alert-monitor";
+import ServiceCityScope from "../src/features/service-city/service-city-scope";
 
 export default function RootLayout() {
   useEffect(() => {
@@ -28,7 +29,7 @@ export default function RootLayout() {
       <AppKeyboardProvider>
       <AppearanceProvider controller={appearance}>
         <OrderAlertMonitor />
-        <RootNavigation />
+        <ServiceCityScope><RootNavigation /></ServiceCityScope>
         <RootNetworkNotice />
       </AppearanceProvider>
       </AppKeyboardProvider>
@@ -37,10 +38,10 @@ export default function RootLayout() {
 }
 
 function RootNavigation() {
-  const { themeName } = useMobileAppearance();
+  const { themeName, theme } = useMobileAppearance();
   // A new session actor must not inherit React screen state or previous responses.
   const actorID = useSyncExternalStore(subscribeIdentitySession, currentMobileActorID, () => "");
-  return <><StatusBar style={themeName === "dark" ? "light" : "dark"} /><Stack key={actorID || "signed-out"} screenOptions={{ headerShown: false }}><Stack.Screen name="notifications" options={{ headerShown: false }} /></Stack></>;
+  return <><StatusBar style={themeName === "dark" ? "light" : "dark"} /><Stack key={actorID || "signed-out"} screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }}><Stack.Screen name="notifications" options={{ headerShown: false }} /></Stack></>;
 }
 
 function RootNetworkNotice() {

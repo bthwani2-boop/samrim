@@ -1,8 +1,9 @@
+import { Button, Host } from "@expo/ui";
 import * as Application from "expo-application";
 import * as Clipboard from "expo-clipboard";
 import * as Device from "expo-device";
 import { type resolveTheme, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniIcon, type MobileIconName, useAppearanceTheme, useMobileAppearance } from "@bthwani/design-system/native";
+import { AppearancePicker, BthwaniButton, BthwaniIcon, type MobileIconName, useMobileAppearance } from "@bthwani/design-system/native";
 import type { PartnerStoreOperationalAvailabilityResponse, StoreAccessGrant, StoreImagesResponse } from "@bthwani/dsh";
 import { Image as ExpoImage } from "expo-image";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
@@ -29,8 +30,7 @@ function actorID() { const state=currentIdentityState(); return state.kind==="au
 
 export function PartnerMore() {
   const router=useRouter();
-  const theme=useAppearanceTheme();
-  const {preference,setPreference}=useMobileAppearance();
+  const {theme,themeName}=useMobileAppearance();
   const styles=useMemo(()=>createStyles(theme),[theme]);
   const {selectedStore,stores,state,reload}=usePartnerStoreScope();
   const [actor,setActor]=useState(actorID);
@@ -41,8 +41,6 @@ export function PartnerMore() {
   const [storeImages,setStoreImages]=useState<StoreImagesResponse|null>(null);
   const [coverFailed,setCoverFailed]=useState(false);
   const [logoFailed,setLogoFailed]=useState(false);
-  const [themeBusy,setThemeBusy]=useState(false);
-  const [themeError,setThemeError]=useState("");
   const [logoutBusy,setLogoutBusy]=useState(false);
   const [logoutError,setLogoutError]=useState("");
   const selectedID=selectedStore?.id;
@@ -114,12 +112,6 @@ export function PartnerMore() {
     if(item.section)router.push({pathname:"/store",params:{section:item.section,returnTo:"more"}} as Href);
     else if(item.href)router.push((String(item.href)+(String(item.href).includes("?")?"&":"?")+"returnTo=more") as Href);
   };
-  async function chooseTheme(next:typeof preference){
-    if(themeBusy||next===preference)return;
-    setThemeBusy(true);setThemeError("");
-    try{await setPreference(next);}catch{setThemeError("تعذر تغيير المظهر، أعد المحاولة.");}
-    finally{setThemeBusy(false);}
-  }
   async function logout(){
     if(logoutBusy)return;
     setLogoutBusy(true);setLogoutError("");
@@ -164,22 +156,7 @@ export function PartnerMore() {
       <View style={[styles.menuIcon,{backgroundColor:index%2===0?theme.actionSoft:theme.surfaceRaised}]}><BthwaniIcon name={item.icon} size={20} color={index%2===0?theme.brandAction:theme.color}/></View>
     </Pressable>)}</View>
     <PartnerPerformancePeek store={selectedStore}/>
-    <View style={styles.appearanceCard} accessibilityLabel="المظهر">
-      <View style={styles.appearanceHeading}>
-        <BthwaniIcon name="edit" size={18} color={theme.colorMuted}/>
-        <Text style={styles.utilityTitle}>المظهر</Text>
-      </View>
-      <View style={styles.appearanceSwitch} accessibilityLabel="اختيار المظهر">
-        {([{value:"system",label:"النظام"},{value:"dark",label:"داكن"},{value:"light",label:"فاتح"}] as const).map(option=><Pressable
-          key={option.value} accessibilityRole="radio" accessibilityLabel={option.label}
-          accessibilityState={{selected:preference===option.value,disabled:themeBusy}}
-          onPress={()=>void chooseTheme(option.value)} disabled={themeBusy}
-          style={[styles.appearanceSegment,preference===option.value&&styles.appearanceSegmentSelected]}>
-          <Text numberOfLines={1} style={[styles.appearanceSegmentText,preference===option.value&&styles.appearanceSegmentTextSelected]}>{option.label}</Text>
-        </Pressable>)}
-      </View>
-    </View>
-    {themeError?<Text accessibilityRole="alert" style={styles.error}>{themeError}</Text>:null}
+    <AppearancePicker compact title="المظهر" helper="" />
     <Pressable accessibilityRole="button" accessibilityLabel="نسخ معلومات إصدار التطبيق"
       onPress={() => void Clipboard.setStringAsync([
         "بثواني", Application.nativeApplicationVersion ?? "—",
@@ -192,7 +169,11 @@ export function PartnerMore() {
       </Text>
     </Pressable>
     {diagnosticNotice ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{diagnosticNotice}</Text> : null}
-    <View style={styles.logout}><BthwaniButton variant="secondary" label={logoutBusy?"جارٍ تسجيل الخروج":"تسجيل الخروج"} disabled={logoutBusy} busy={logoutBusy} onPress={()=>void logout()}/></View>
+    <View style={styles.logout}>
+      <Host colorScheme={themeName} matchContents seedColor={theme.brandAction}>
+        <Button disabled={logoutBusy} label={logoutBusy?"جارٍ تسجيل الخروج":"تسجيل الخروج"} onPress={()=>void logout()} testID="partner-more-logout" variant="outlined" />
+      </Host>
+    </View>
     {logoutError?<Text accessibilityRole="alert" style={styles.error}>{logoutError}</Text>:null}
   </View>;
 }
@@ -219,13 +200,5 @@ function createStyles(p:ReturnType<typeof resolveTheme>){return StyleSheet.creat
   grid:{flexDirection:"row",flexWrap:"wrap",gap:9,justifyContent:"space-between"},
   menuCard:{width:"48.5%",minHeight:64,padding:11,borderRadius:12,borderWidth:1,borderColor:p.borderColor,backgroundColor:p.surface,flexDirection:"row",justifyContent:"space-between",alignItems:"center",gap:6},
   menuLabel:{...typography.bodyStrong,color:p.color,fontSize:13,flex:1},menuIcon:{height:33,width:33,borderRadius:9,alignItems:"center",justifyContent:"center"},
-  appearanceCard:{minHeight:58,borderWidth:1,borderColor:p.borderColor,borderRadius:12,backgroundColor:p.surface,flexDirection:"row",alignItems:"center",gap:8,paddingHorizontal:10,paddingVertical:8},
-  appearanceHeading:{flexDirection:"row",alignItems:"center",gap:6},
-  appearanceSwitch:{flex:1,minWidth:0,flexDirection:"row",alignItems:"stretch",borderRadius:10,borderWidth:1,borderColor:p.borderColor,backgroundColor:p.surfaceRaised,padding:3,gap:2},
-  appearanceSegment:{flex:1,minWidth:0,minHeight:36,borderRadius:7,alignItems:"center",justifyContent:"center",paddingHorizontal:3},
-  appearanceSegmentSelected:{backgroundColor:p.actionSoft,borderWidth:1,borderColor:p.brandAction},
-  appearanceSegmentText:{...typography.caption,color:p.colorMuted,fontSize:12,fontWeight:"600"},
-  appearanceSegmentTextSelected:{color:p.brandAction,fontWeight:"800"},
-  utilityTitle:{...typography.bodyStrong,color:p.color,fontSize:13},
   logout:{paddingTop:7},error:{...typography.bodySm,color:p.warning},
 });}

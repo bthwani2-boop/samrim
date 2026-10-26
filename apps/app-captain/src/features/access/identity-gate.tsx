@@ -4,20 +4,21 @@ import {
   activateManagedIdentity,
   currentIdentityState,
   loginManagedIdentity,
+  recoverManagedIdentity,
   requestManagedActivation,
   requestManagedRecovery,
-  recoverManagedIdentity,
   restoreIdentitySession,
   role,
   subscribeIdentitySession,
   surface,
 } from "../../bootstrap/identity";
+import { captainReturnPathPattern } from "./captain-route";
 
 const identity = { role, surface, restoreIdentitySession, currentIdentityState, subscribe: subscribeIdentitySession, requestManagedActivation, activateManagedIdentity, loginManagedIdentity, requestManagedRecovery, recoverManagedIdentity };
 
 export default function IdentityGate() {
   const { returnTo } = useLocalSearchParams<{ returnTo?: string | string[] }>();
-  const safeReturnTo = resolveInternalReturnPath(returnTo, "/home", /^(?:\/home|\/notifications|\/offers|\/deliveries|\/wallet|\/account)$/u) as Href;
+  const safeReturnTo = resolveInternalReturnPath(returnTo, "/home", captainReturnPathPattern) as Href;
 
   return (
     <ManagedIdentityFlow

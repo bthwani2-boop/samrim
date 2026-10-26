@@ -1,16 +1,15 @@
+import { Button, Host } from "@expo/ui";
 import * as Application from "expo-application";
 import * as Clipboard from "expo-clipboard";
 import * as Device from "expo-device";
 import { radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { AppearancePicker, appearanceOptions, BthwaniButton, BthwaniIcon, BthwaniNavigationRow, BthwaniSurface, useAppearanceTheme, useMobileAppearance } from "@bthwani/design-system/native";
+import { AppearancePicker, BthwaniIcon, BthwaniSurface, useMobileAppearance } from "@bthwani/design-system/native";
 import { fieldAdmissionStateLabel } from "@bthwani/dsh";
-import { type Href, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { logoutIdentity } from "../../bootstrap/identity";
 import { fieldAdmissionActionability } from "../field-operations/field-eligibility";
 import { useOwnFieldAdmission } from "../field-operations/use-field-admission";
-import { StoreAccessInvitationSummary } from "./store-access-invitations";
 
 type OwnAdmissionState = ReturnType<typeof useOwnFieldAdmission>["state"];
 
@@ -22,18 +21,13 @@ function profileDescription(state: OwnAdmissionState, phone?: string | null): st
 }
 
 export default function FieldAccount() {
-  const router = useRouter();
-  const theme = useAppearanceTheme();
-  const appearance = useMobileAppearance();
+  const { theme, themeName } = useMobileAppearance();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
-  const [showAppearance, setShowAppearance] = useState(false);
   const { state: profileState, verification, refresh: refreshProfile } = useOwnFieldAdmission();
   const profile = profileState.kind === "ready" ? profileState.admission : null;
   const profileActionability = profile ? fieldAdmissionActionability(profile) : null;
-  const verifiedWorkspace = verification === "verified" && profileActionability === "available";
-  const appearanceLabel = appearanceOptions.find((option) => option.value === appearance.preference)?.label ?? "حسب النظام";
 
   async function logout() {
     if (busy) return;
@@ -60,13 +54,14 @@ export default function FieldAccount() {
           {verification === "failed" && profile ? <Text accessibilityRole="alert" style={styles.profileDescription}>تعذر تأكيد أهلية الميدان. الوظائف محجوبة حتى إعادة التحقق.</Text> : null}
         </View>
       </BthwaniSurface>
-      {profileState.kind === "missing" || profileState.kind === "error" || verification === "failed" ? <BthwaniButton label="إعادة التحقق من الأهلية" onPress={() => void refreshProfile()} variant="secondary" /> : null}
-
-      {verifiedWorkspace ? <StoreAccessInvitationSummary compact onPress={() => router.push("/invitations" as Href)} /> : null}
+      {profileState.kind === "missing" || profileState.kind === "error" || verification === "failed" ? (
+        <Host colorScheme={themeName} matchContents seedColor={theme.brandAction}>
+          <Button label="إعادة التحقق من الأهلية" onPress={() => void refreshProfile()} testID="field-retry-admission" variant="outlined" />
+        </Host>
+      ) : null}
 
       <View style={styles.settings}>
-        <BthwaniNavigationRow compact description={`المظهر الحالي: ${appearanceLabel}`} icon="appearance" title="مظهر التطبيق" onPress={() => setShowAppearance((current) => !current)} />
-        {showAppearance ? <AppearancePicker compact title="المظهر" helper="" /> : null}
+        <AppearancePicker compact title="المظهر" helper="" />
       </View>
 
     <Pressable accessibilityRole="button" accessibilityLabel="نسخ معلومات إصدار التطبيق"
@@ -81,7 +76,9 @@ export default function FieldAccount() {
       </Text>
     </Pressable>
       <View style={styles.footer}>
-        <BthwaniButton busy={busy} disabled={busy} label={busy ? "جارٍ تسجيل الخروج…" : "تسجيل الخروج"} onPress={() => void logout()} variant="secondary" />
+        <Host colorScheme={themeName} matchContents seedColor={theme.brandAction}>
+          <Button disabled={busy} label={busy ? "جارٍ تسجيل الخروج…" : "تسجيل الخروج"} onPress={() => void logout()} testID="field-account-logout" variant="outlined" />
+        </Host>
         {notice ? <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text> : null}
       </View>
     </View>

@@ -1,0 +1,26 @@
+# Read-only proof of Partner internal stack navigation. Do not modify store or submit orders.
+appId: com.bthwani.partner
+name: Partner internal stack navigation
+---
+- launchApp:
+    stopApp: false
+    clearState: false
+- extendedWaitUntil:
+    visible: "المزيد"
+    timeout: 15000
+- tapOn: "المزيد"
+- extendedWaitUntil:
+    visible: "الأداء"
+    timeout: 15000
+- tapOn: "الأداء"
+- extendedWaitUntil:
+    visible: "فرص لتحسين المبيعات"
+    timeout: 15000
+- back
+- extendedWaitUntil:
+    visible: "ملف المتجر والصور"
+    timeout: 15000
+- tapOn: "الطلبات"
+- extendedWaitUntil:
+    visible: "طلبات جديدة"
+    timeout: 15000

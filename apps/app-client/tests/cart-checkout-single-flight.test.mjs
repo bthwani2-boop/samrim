@@ -14,10 +14,12 @@ let quoteNode;
 let verifiedQuoteNode;
 let refreshQuoteNode;
 let pendingTotalNode;
+let currentActorGuardNode;
 function visit(node) {
   if (ts.isFunctionDeclaration(node) && node.name?.text === "checkout") checkoutNode = node;
   if (ts.isFunctionDeclaration(node) && node.name?.text === "quoteMatchesCheckout") quoteNode = node;
   if (ts.isFunctionDeclaration(node) && node.name?.text === "pendingCheckoutHasAcceptedTotal") pendingTotalNode = node;
+  if (ts.isFunctionDeclaration(node) && node.name?.text === "checkoutAttemptBelongsToCurrentActor") currentActorGuardNode = node;
   if (ts.isVariableDeclaration(node) && node.name.getText(ast) === "verifiedQuote") verifiedQuoteNode = node;
   if (ts.isVariableDeclaration(node) && node.name.getText(ast) === "refreshQuote") refreshQuoteNode = node;
   ts.forEachChild(node, visit);
@@ -28,17 +30,20 @@ assert.ok(quoteNode, "checkout quote identity guard is required");
 assert.ok(verifiedQuoteNode?.initializer, "visible checkout quote derivation is required");
 assert.ok(refreshQuoteNode?.initializer, "quote request callback is required");
 assert.ok(pendingTotalNode, "pending checkout legacy accepted-total guard is required");
+assert.ok(currentActorGuardNode, "pending checkout recovery must revalidate its actor");
 const compilerOptions = { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None };
 const runnableQuote = ts.transpileModule(quoteNode.getText(ast), { compilerOptions }).outputText;
 const runnableHandler = ts.transpileModule(checkoutNode.getText(ast), { compilerOptions }).outputText;
 const quoteMatchesCheckout = vm.runInNewContext(`${runnableQuote}\nquoteMatchesCheckout`);
 const pendingCheckoutHasAcceptedTotal = vm.runInNewContext(`${ts.transpileModule(pendingTotalNode.getText(ast), { compilerOptions }).outputText}\npendingCheckoutHasAcceptedTotal`);
+const checkoutAttemptBelongsToCurrentActor = vm.runInNewContext(`${ts.transpileModule(currentActorGuardNode.getText(ast), { compilerOptions }).outputText}\ncheckoutAttemptBelongsToCurrentActor`);
 const visibleQuoteExpression = verifiedQuoteNode.initializer.getText(ast);
 const runnableVisibleQuote = ts.transpileModule(`function readVisibleQuote(readyCart, quote, storeId, pickupMode, serviceableAddressId, fulfillmentMode, appliedPromotionCode, storeAcceptingOrders = true) { return ${visibleQuoteExpression}; }`, { compilerOptions }).outputText;
 const readVisibleQuote = vm.runInNewContext(`${runnableQuote}\n${runnableVisibleQuote}\nreadVisibleQuote`);
 
 function scenario({ accessToken, persist, submit, recover, isOffline = false } = {}) {
-  const counts = { token: 0, persist: 0, submit: 0, generatedIds: 0, pending: [], busy: [], errors: [] };
+  let actor = "client-1";
+  const counts = { token: 0, persist: 0, submit: 0, deletes: 0, generatedIds: 0, pending: [], busy: [], errors: [] };
   const context = {
     isOffline,
     checkoutSubmitting: { current: false },
@@ -46,7 +51,7 @@ function scenario({ accessToken, persist, submit, recover, isOffline = false } =
     serviceableAddressId: undefined,
     mutationBusy: false,
     state: { kind: "ready", cart: { id: "cart-1", version: 3, lines: [{}] } },
-    quote: { kind: "ready", quote: { cartId: "cart-1", storeId: "store-1", cartVersion: 3, addressId: "", fulfillmentMode: "CUSTOMER_PICKUP", promotionCode: "", totalAmountMinor: 200 } },
+    quote: { kind: "ready", quote: { cartId: "cart-1", storeId: "store-1", cartVersion: 3, addressId: "", fulfillmentMode: "CUSTOMER_PICKUP", promotionCode: "", subtotalMinor: 200, discountMinor: 0, deliveryFeeMinor: 0, totalAmountMinor: 200, currency: "YER" } },
     paymentChoice: "CASH",
     paymentSplit,
     customerNote: "",
@@ -66,7 +71,7 @@ function scenario({ accessToken, persist, submit, recover, isOffline = false } =
       counts.token++;
       return accessToken ? accessToken(counts.token) : "token";
     },
-    currentIdentityState: () => ({ kind: "authenticated", identity: { subject: "client-1" } }),
+    currentIdentityState: () => ({ kind: "authenticated", identity: { subject: actor } }),
     pendingCartCheckoutKey: (actorId, storeId) => `${actorId}:${storeId}`,
     Crypto: { randomUUID: () => String(++counts.generatedIds) },
     SecureStore: {
@@ -74,7 +79,7 @@ function scenario({ accessToken, persist, submit, recover, isOffline = false } =
         counts.persist++;
         if (persist) await persist(key, value, counts.persist);
       },
-      deleteItemAsync: async () => {},
+      deleteItemAsync: async () => { counts.deletes++; },
     },
     setPendingCheckout: (value) => counts.pending.push(value),
     client: () => ({
@@ -92,8 +97,30 @@ function scenario({ accessToken, persist, submit, recover, isOffline = false } =
     console: { error: () => {} },
   };
   const checkout = vm.runInNewContext(`${runnableQuote}\n${runnableHandler}\ncheckout`, context);
-  return { checkout, counts, context };
+  return { checkout, counts, context, setActor: (next) => { actor = next; } };
 }
+
+test("pending recovery stops after an actor switch during canonical order readback", () => {
+  let activeActor = "client-1";
+  const guard = vm.runInNewContext(`${ts.transpileModule(currentActorGuardNode.getText(ast), { compilerOptions }).outputText}\ncheckoutAttemptBelongsToCurrentActor`, {
+    currentIdentityState: () => ({ kind: "authenticated", identity: { subject: activeActor } }),
+  });
+  assert.equal(guard("client-1"), true);
+  activeActor = "client-2";
+  assert.equal(guard("client-1"), false, "a recovered order/payment attempt must remain hidden from the new actor");
+
+  const load = source.slice(source.indexOf("const load = useCallback(async () => {"), source.indexOf("  }, [finishCheckout, readOrderForCart, refreshWallet, storeId]);"));
+  const orderRead = load.indexOf("await readOrderForCart(token, attempt.cartID)");
+  const ownerGuard = load.indexOf("!checkoutAttemptBelongsToCurrentActor(actorID)", orderRead);
+  const recoveredOrder = load.indexOf("if (existingOrder)", ownerGuard);
+  const retry = load.indexOf("client().checkoutCart(token, attempt.request", ownerGuard);
+  const retryReadback = load.indexOf("await readOrderForCart(token, attempt.cartID)", orderRead + 1);
+  const retryReadbackGuard = load.indexOf("!checkoutAttemptBelongsToCurrentActor(actorID)", retryReadback);
+  assert.ok(orderRead >= 0 && ownerGuard > orderRead && recoveredOrder > ownerGuard && retry > ownerGuard,
+    "revalidate the actor after initial readback and before exposing or retrying the former actor attempt");
+  assert.ok(retryReadback > retry && retryReadbackGuard > retryReadback,
+    "revalidate the actor after retry readback before exposing a recovered order");
+});
 
 test("confirmed offline state never creates an order or a pending payment attempt", async () => {
   const { checkout, counts, context } = scenario({ isOffline: true });
@@ -151,6 +178,20 @@ test("unavailable selected wallet fails before creating a payment attempt", asyn
   assert.equal(counts.errors.length, 1);
 });
 
+test("actor switch during pending-attempt persistence never submits the previous actor payment", async () => {
+  let setActor;
+  const { checkout, counts, setActor: switchActor } = scenario({
+    persist: async () => { switchActor("client-2"); },
+  });
+  setActor = switchActor;
+  await checkout();
+  assert.equal(counts.persist, 1);
+  assert.equal(counts.deletes, 1);
+  assert.equal(counts.submit, 0, "an attempt persisted for the former actor must not reach checkout");
+  assert.equal(counts.pending.length, 0);
+  assert.ok(counts.errors.length > 0);
+  void setActor;
+});
 test("rapid taps before session/storage awaits create just one checkout identity", async () => {
   const { checkout, counts } = scenario();
   await Promise.all([checkout(), checkout(), checkout()]);
@@ -254,6 +295,22 @@ test("payment summary exposes only the quote matching the current checkout conte
   assert.equal(derive(current, "CUSTOMER_PICKUP", "NEW"), null);
   assert.equal(readVisibleQuote(context.state.cart, { kind: "loading" }, context.storeId, true, undefined, context.fulfillmentMode, ""), null);
   assert.equal(readVisibleQuote(null, { kind: "ready", quote: current }, context.storeId, true, undefined, context.fulfillmentMode, ""), null);
+});
+
+test("malformed quote prices never authorize checkout", async () => {
+  const { checkout, counts, context } = scenario();
+  const current = context.quote.quote;
+  for (const malformed of [
+    { ...current, totalAmountMinor: -1 },
+    { ...current, totalAmountMinor: 201 },
+    { ...current, discountMinor: 201 },
+    { ...current, deliveryFeeMinor: Number.MAX_SAFE_INTEGER + 1 },
+  ]) {
+    context.quote = { kind: "ready", quote: malformed };
+    await checkout();
+  }
+  assert.equal(counts.submit, 0, "invalid or inconsistent prices must never reach order submission");
+  assert.equal(counts.pending.length, 0, "invalid prices must not be persisted as accepted checkout attempts");
 });
 
 test("typing a coupon does not change the quote request until the applied coupon changes", async () => {
