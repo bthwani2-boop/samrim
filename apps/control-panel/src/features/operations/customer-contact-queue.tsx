@@ -1,5 +1,6 @@
 "use client";
 
+import { Alert, Button, Empty, Flex, Listy, Spin, Typography } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type ContactQueueItem = Readonly<{
@@ -86,24 +87,60 @@ export function CustomerContactQueue({ onOpenOrder, refreshVersion, active = tru
     }
   }
 
-  return <section className="order-detail-panel" aria-labelledby="ops-contact-queue-title">
-    <h2 id="ops-contact-queue-title">التحقق من العملاء الجدد</h2>
-    <p className="muted">طلبات تحتاج اتصال موظف العمليات. تأكيد المكالمة وحده لا يجعل الطلب ناجحًا؛ يحتسب النجاح بعد التسليم الموثق.</p>
-    {loading && items.length === 0 ? <p className="muted" role="status">جارٍ قراءة طلبات التحقق…</p> : null}
-    {error ? <div role="alert" className="managed-status managed-status-warning">
-      <p>{error}</p><button type="button" className="button button-secondary" disabled={loading} onClick={() => void reload()}>إعادة القراءة</button>
-    </div> : null}
-    {!loading && !error && items.length === 0 ? <p className="muted" role="status">لا توجد طلبات تحقق تحتاج اتصالًا ضمن هذا المصدر.</p> : null}
-    {items.length > 0 ? <ul className="order-detail-list">
-      {items.map((item) => <li key={item.orderId}>
-        <div><strong>{item.storeName}</strong>
-          <p className="muted">رقم الطلب: <span dir="ltr">{item.orderId.slice(-8)}</span> · {item.lastContactState === "NO_ANSWER" ? "سبق الاتصال دون رد" : item.lastContactState === "DENIED" ? "العميل لم يؤكد الطلب" : item.lastContactState === "WRONG_NUMBER" ? "رقم التواصل غير صحيح" : "لم يتم تأكيد الاتصال"}</p>
+  return (
+    <section className="order-detail-panel" aria-labelledby="ops-contact-queue-title">
+      <Flex vertical gap="middle">
+        <div>
+          <h2 id="ops-contact-queue-title">التحقق من العملاء الجدد</h2>
+          <Typography.Text type="secondary">
+            طلبات تحتاج اتصال موظف العمليات. تأكيد المكالمة وحده لا يجعل الطلب ناجحًا؛ يحتسب النجاح بعد التسليم الموثق.
+          </Typography.Text>
         </div>
-        <button type="button" className="button button-secondary" onClick={() => onOpenOrder(item.orderId)}>فتح الطلب وتسجيل الاتصال</button>
-      </li>)}
-    </ul> : null}
-    {nextCursor ? <div className="action-row"><button type="button" className="button button-secondary" disabled={loading || moreBusy} onClick={() => void loadMore()}>
-      {moreBusy ? "جارٍ عرض المزيد…" : "المزيد من طلبات التحقق"}
-    </button></div> : null}
-  </section>;
+        {loading && items.length === 0 ? (
+          <Flex align="center" gap="small" role="status">
+            <Spin size="small" />
+            <Typography.Text type="secondary">جارٍ قراءة طلبات التحقق…</Typography.Text>
+          </Flex>
+        ) : null}
+        {error ? (
+          <Alert
+            type="warning"
+            showIcon
+            message={error}
+            action={<Button disabled={loading} onClick={() => void reload()}>إعادة القراءة</Button>}
+          />
+        ) : null}
+        {!loading && !error && items.length === 0 ? (
+          <Empty description="لا توجد طلبات تحقق تحتاج اتصالًا ضمن هذا المصدر." />
+        ) : null}
+        {items.length > 0 ? (
+          <Listy<ContactQueueItem>
+            items={[...items]}
+            rowKey="orderId"
+            itemRender={(item) => (
+              <Flex align="center" justify="space-between" gap="middle" wrap data-testid="ops-contact-item">
+                <Flex vertical gap="small" flex="1" style={{ minWidth: 200, overflowWrap: "anywhere" }}>
+                  <Typography.Text strong>{item.storeName}</Typography.Text>
+                  <Typography.Text type="secondary">
+                    رقم الطلب: <bdi dir="ltr">{item.orderId.slice(-8)}</bdi> · {item.lastContactState === "NO_ANSWER"
+                      ? "سبق الاتصال دون رد" : item.lastContactState === "DENIED"
+                      ? "العميل لم يؤكد الطلب" : item.lastContactState === "WRONG_NUMBER"
+                      ? "رقم التواصل غير صحيح" : "لم يتم تأكيد الاتصال"}
+                  </Typography.Text>
+                </Flex>
+                <Button onClick={() => onOpenOrder(item.orderId)} aria-label={`فتح الطلب وتسجيل الاتصال ${item.orderId}`}>
+                  فتح الطلب وتسجيل الاتصال
+                </Button>
+              </Flex>
+            )}
+          />
+        ) : null}
+        {nextCursor ? (
+          <Button block loading={moreBusy} disabled={loading} onClick={() => void loadMore()}>
+            المزيد من طلبات التحقق
+          </Button>
+        ) : null}
+      </Flex>
+    </section>
+  );
 }
