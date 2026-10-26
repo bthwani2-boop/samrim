@@ -1,4 +1,5 @@
-import { BthwaniUiSwitch } from "@bthwani/design-system/native";
+import { Host, Switch } from "@expo/ui";
+import { useMobileAppearance } from "@bthwani/design-system/native";
 import * as Crypto from "expo-crypto";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
@@ -11,6 +12,7 @@ const base = (process.env.EXPO_PUBLIC_DSH_API_URL ?? "").trim().replace(/\/+$/, 
 const endpoint = base + "/dsh/client/marketing-consent/PUSH";
 
 export function MarketingContactPreference({ active }: Readonly<{ active: boolean }>) {
+  const { themeName, theme } = useMobileAppearance();
   const [consent, setConsent] = useState<Consent | null>(null);
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState("");
@@ -68,11 +70,14 @@ export function MarketingContactPreference({ active }: Readonly<{ active: boolea
       {notice ? <Text accessibilityRole="alert" style={{ fontSize: 12 }}>{notice}</Text> : null}
     </View>
     {pending || (!consent && !notice) ? <ActivityIndicator /> : null}
-    <BthwaniUiSwitch
-      label="السماح بتنبيهات العروض"
-      value={consent?.decision === "OPTED_IN"}
-      disabled={!consent || pending}
-      onValueChange={(next) => void update(next)}
-    />
+    <Host colorScheme={themeName} matchContents seedColor={theme.brandAction}>
+      <Switch
+        label="السماح بتنبيهات العروض"
+        value={consent?.decision === "OPTED_IN"}
+        disabled={!consent || pending}
+        onValueChange={(next) => void update(next)}
+        testID="client-marketing-push-consent-switch"
+      />
+    </Host>
   </View>;
 }
