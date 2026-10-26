@@ -47,7 +47,12 @@ function definitiveCheckoutRejection(error: unknown): boolean {
 }
 
 function quoteMatchesCheckout(quote: CheckoutQuote, cart: Cart, storeID: string, addressID: string, fulfillmentMode: FulfillmentMode, promotionCode: string): boolean {
-  return !cart.lines.some((line) => line.requiresReview)
+  const amounts = [quote.subtotalMinor, quote.discountMinor, quote.deliveryFeeMinor, quote.totalAmountMinor];
+  const validPrice = amounts.every((amount) => Number.isSafeInteger(amount) && amount >= 0)
+    && quote.discountMinor <= quote.subtotalMinor
+    && quote.totalAmountMinor === quote.subtotalMinor - quote.discountMinor + quote.deliveryFeeMinor;
+  return validPrice
+    && !cart.lines.some((line) => line.requiresReview)
     && quote.cartId === cart.id
     && quote.storeId === storeID
     && quote.cartVersion === cart.version

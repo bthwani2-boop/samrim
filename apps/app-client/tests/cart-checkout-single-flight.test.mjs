@@ -46,7 +46,7 @@ function scenario({ accessToken, persist, submit, recover, isOffline = false } =
     serviceableAddressId: undefined,
     mutationBusy: false,
     state: { kind: "ready", cart: { id: "cart-1", version: 3, lines: [{}] } },
-    quote: { kind: "ready", quote: { cartId: "cart-1", storeId: "store-1", cartVersion: 3, addressId: "", fulfillmentMode: "CUSTOMER_PICKUP", promotionCode: "", totalAmountMinor: 200 } },
+    quote: { kind: "ready", quote: { cartId: "cart-1", storeId: "store-1", cartVersion: 3, addressId: "", fulfillmentMode: "CUSTOMER_PICKUP", promotionCode: "", subtotalMinor: 200, discountMinor: 0, deliveryFeeMinor: 0, totalAmountMinor: 200, currency: "YER" } },
     paymentChoice: "CASH",
     paymentSplit,
     customerNote: "",
@@ -254,6 +254,22 @@ test("payment summary exposes only the quote matching the current checkout conte
   assert.equal(derive(current, "CUSTOMER_PICKUP", "NEW"), null);
   assert.equal(readVisibleQuote(context.state.cart, { kind: "loading" }, context.storeId, true, undefined, context.fulfillmentMode, ""), null);
   assert.equal(readVisibleQuote(null, { kind: "ready", quote: current }, context.storeId, true, undefined, context.fulfillmentMode, ""), null);
+});
+
+test("malformed quote prices never authorize checkout", async () => {
+  const { checkout, counts, context } = scenario();
+  const current = context.quote.quote;
+  for (const malformed of [
+    { ...current, totalAmountMinor: -1 },
+    { ...current, totalAmountMinor: 201 },
+    { ...current, discountMinor: 201 },
+    { ...current, deliveryFeeMinor: Number.MAX_SAFE_INTEGER + 1 },
+  ]) {
+    context.quote = { kind: "ready", quote: malformed };
+    await checkout();
+  }
+  assert.equal(counts.submit, 0, "invalid or inconsistent prices must never reach order submission");
+  assert.equal(counts.pending.length, 0, "invalid prices must not be persisted as accepted checkout attempts");
 });
 
 test("typing a coupon does not change the quote request until the applied coupon changes", async () => {
