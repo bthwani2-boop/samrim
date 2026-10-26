@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { WorkspaceRecordSearch } from "./workspace-record-search";
+import { shouldOpenWorkspaceSearch } from "./workspace-search-shortcut";
 
 type SearchEntry = Readonly<{ href: string; label: string; context: string; searchText: string }>;
 
@@ -41,6 +42,16 @@ export function WorkspaceGlobalSearch({
   useEffect(() => {
     close();
   }, [pathname, navigationOpen, accountOpen, identity?.subject, close]);
+
+  useEffect(() => {
+    const onSearchShortcut = (event: KeyboardEvent) => {
+      if (!shouldOpenWorkspaceSearch(event)) return;
+      event.preventDefault();
+      setOpen(true);
+    };
+    document.addEventListener("keydown", onSearchShortcut);
+    return () => document.removeEventListener("keydown", onSearchShortcut);
+  }, []);
 
   function navigate(href: string) {
     close();
@@ -99,6 +110,8 @@ export function WorkspaceGlobalSearch({
         aria-label="البحث في صفحات لوحة التحكم"
         aria-expanded={open}
         aria-controls="workspace-search-panel"
+        aria-keyshortcuts="Control+K Meta+K"
+        title="البحث (Ctrl+K)"
         onClick={() => setOpen(true)}
         icon={<svg aria-hidden="true" viewBox="0 0 24 24" focusable="false"><circle cx="10.8" cy="10.8" r="6.4" /><path d="m15.5 15.5 5 5" /></svg>}
       />
