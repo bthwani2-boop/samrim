@@ -1,6 +1,7 @@
 "use client";
 
 import type { Notification } from "@bthwani/dsh";
+import { Alert, Button, Empty, Spin } from "antd";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "../../shell/page-header";
@@ -138,17 +139,17 @@ export function OperatorNotifications() {
     <section className="workspace-page operator-notifications" aria-labelledby="notifications-title">
       <PageHeader title="الإشعارات" id="notifications-title" status={!loading && !error && unreadCount !== null ? <span className="state-pill">{unreadCount} إشعارات غير مقروءة</span> : null} />
 
-      {loading ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ تجهيز الإشعارات</strong></div> : null}
-      {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر قراءة الإشعارات</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={loading || refreshing || Boolean(pendingId)} onClick={() => void load(cursor, true)}>إعادة المحاولة</button></div> : null}
-      {!loading && !error && !items.length ? <div className="access-card operator-notifications-empty"><h2>لا توجد إشعارات حالياً</h2></div> : null}
+      {loading ? <div className="collection-state" role="status"><Spin /><strong>جارٍ تجهيز الإشعارات</strong></div> : null}
+      {error ? <Alert type="warning" showIcon message="تعذر قراءة الإشعارات" description={error} action={<Button disabled={loading || refreshing || Boolean(pendingId)} onClick={() => void load(cursor, true)}>إعادة المحاولة</Button>} /> : null}
+      {!loading && !error && !items.length ? <Empty description="لا توجد إشعارات حالياً" /> : null}
       {!loading && items.length ? <p className="operator-notification-page-status" role="status">عرض {Math.min(visibleLimit, items.length)} من {items.length} إشعارًا في الصفحة</p> : null}
       {!loading && visibleUnread.length ? <NotificationGroup title="الجديدة" count={unreadItems.length} items={visibleUnread} pendingId={pendingId} onMarkRead={markRead} /> : null}
       {!loading && visibleRead.length ? <NotificationGroup title="المقروءة" count={readItems.length} items={visibleRead} pendingId={pendingId} onMarkRead={markRead} /> : null}
-      {!loading && !error && visibleLimit < items.length ? <button type="button" className="button button-secondary operator-notification-show-more" onClick={() => setVisibleLimit((current) => current + 10)}>عرض ١٠ إشعارات إضافية</button> : null}
+      {!loading && !error && visibleLimit < items.length ? <Button className="operator-notification-show-more" onClick={() => setVisibleLimit((current) => current + 10)}>عرض ١٠ إشعارات إضافية</Button> : null}
       {!loading && (cursor || cursorStack.length > 0 || nextCursor) ? <nav className="operator-notification-pagination" aria-label="صفحات الإشعارات">
-        <button type="button" className="button button-secondary" disabled={loading || refreshing || Boolean(pendingId) || (cursorStack.length === 0 && !cursor)} onClick={() => { const previous = [...cursorStack]; const previousCursor = previous.pop() ?? ""; navigatePage(previousCursor, previous); }}>الأحدث</button>
+        <Button disabled={loading || refreshing || Boolean(pendingId) || (cursorStack.length === 0 && !cursor)} onClick={() => { const previous = [...cursorStack]; const previousCursor = previous.pop() ?? ""; navigatePage(previousCursor, previous); }}>الأحدث</Button>
         <span>صفحة {cursorStack.length + 1}</span>
-        <button type="button" className="button button-secondary" disabled={loading || refreshing || Boolean(pendingId) || !nextCursor} onClick={() => navigatePage(nextCursor, [...cursorStack, cursor])}>الأقدم</button>
+        <Button disabled={loading || refreshing || Boolean(pendingId) || !nextCursor} onClick={() => navigatePage(nextCursor, [...cursorStack, cursor])}>الأقدم</Button>
       </nav> : null}
     </section>
   );
@@ -177,7 +178,7 @@ function NotificationGroup({ title, count, items, pendingId, onMarkRead }: Reado
               <div className="operator-notification-actions">
                 {linkedRecordHref ? <Link className="operator-notification-action" href={linkedRecordHref}>فتح السجل</Link> : null}
                 {orderHref ? <Link className="operator-notification-action" href={orderHref} aria-label={`فتح الطلب المرتبط بإشعار ${notificationTitle(item)}`}>فتح الطلب</Link> : null}
-                {!item.readAt ? <button className="operator-notification-action" type="button" disabled={Boolean(pendingId)} onClick={() => void onMarkRead(item)} aria-label={`تمييز ${notificationTitle(item)} كمقروء`}>تمييز كمقروء</button> : null}
+                {!item.readAt ? <Button type="link" disabled={Boolean(pendingId)} onClick={() => void onMarkRead(item)} aria-label={`تمييز ${notificationTitle(item)} كمقروء`}>تمييز كمقروء</Button> : null}
               </div>
             </article>
           );
