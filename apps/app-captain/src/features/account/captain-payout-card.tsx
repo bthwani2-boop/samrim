@@ -3,12 +3,13 @@ import { BthwaniButton, BthwaniConfirmDialog, BthwaniSurface, useAppearanceTheme
 import { formatMoney, type BeneficiaryPayoutState, settlementIntakeStatusLabel, type SettlementIntake } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { captainClient } from "../captain-operations/captain-client";
 import { isCurrentCaptainActor } from "../captain-operations/captain-session-scope";
+import { claimCaptainPayoutSubmission } from "./captain-payout-submission-lock";
 
 type PayoutAttempt = Readonly<{ mode: "FULL_AVAILABLE" | "SPECIFIED"; amountMinor?: number; idempotencyKey: string; correlationID: string }>;
 
@@ -23,6 +24,7 @@ export function CaptainPayoutCard() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [pendingAttempt, setPendingAttempt] = useState<PayoutAttempt | null>(null);
+  const financialRequestInFlight = useRef(false);
   const [intake, setIntake] = useState<SettlementIntake | null>(null);
   const [pendingIntakeAttempt, setPendingIntakeAttempt] = useState<PayoutAttempt | null>(null);
   const [confirmIntakeMode, setConfirmIntakeMode] = useState<"FULL_AVAILABLE" | "SPECIFIED" | null>(null);
@@ -54,6 +56,8 @@ export function CaptainPayoutCard() {
       setError("أدخل مبلغ سحب صحيحًا.");
       return;
     }
+    const releaseFinancialRequest = claimCaptainPayoutSubmission(financialRequestInFlight);
+    if (!releaseFinancialRequest) return;
     setBusy(true); setError(""); setNotice("");
     try {
       const actorBeforeToken = currentIdentityState();
@@ -97,6 +101,8 @@ export function CaptainPayoutCard() {
     } catch (cause) {
       console.error("DSH captain payout intent failed", cause);
       setError(pendingAttempt ? "تحقق من الطلب السابق قبل إعادة المحاولة." : "تعذر طلب سحب الأرباح. تحقق من الرصيد ووجهة الصرف.");
+    } finally {
+      releaseFinancialRequest();
       setBusy(false);
     }
   };
@@ -107,6 +113,8 @@ export function CaptainPayoutCard() {
     if (mode === "SPECIFIED" && (!Number.isSafeInteger(parsed) || (parsed ?? 0) <= 0 || (parsed ?? 0) > state.eligibleAvailableMinor)) {
       setError("المبلغ يتجاوز الأرباح المتاحة للسحب."); return;
     }
+    const releaseFinancialRequest = claimCaptainPayoutSubmission(financialRequestInFlight);
+    if (!releaseFinancialRequest) return;
     const key = `bthwani.captain.settlement-intake.pending.v1.${encodeURIComponent(actor.identity.subject)}`;
     setBusy(true); setError(""); setNotice("");
     try {
@@ -131,7 +139,7 @@ export function CaptainPayoutCard() {
       setShowPartial(false);
     } catch {
       setError("تعذّر تأكيد الطلب؛ يمكن إعادة المحاولة بالمرجع نفسه دون تكرار.");
-    } finally { setBusy(false); }
+    } finally { releaseFinancialRequest(); setBusy(false); }
   };
   const destinationReady = state?.destination?.status === "ACTIVE_FOR_PAYOUT" &&
     state.destination.verificationStatus === "VERIFIED";
