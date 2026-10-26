@@ -5,13 +5,11 @@ import * as Device from "expo-device";
 import { radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { AppearancePicker, BthwaniIcon, BthwaniSurface, useMobileAppearance } from "@bthwani/design-system/native";
 import { fieldAdmissionStateLabel } from "@bthwani/dsh";
-import { type Href, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { logoutIdentity } from "../../bootstrap/identity";
 import { fieldAdmissionActionability } from "../field-operations/field-eligibility";
 import { useOwnFieldAdmission } from "../field-operations/use-field-admission";
-import { StoreAccessInvitationSummary } from "./store-access-invitations";
 
 type OwnAdmissionState = ReturnType<typeof useOwnFieldAdmission>["state"];
 
@@ -23,7 +21,6 @@ function profileDescription(state: OwnAdmissionState, phone?: string | null): st
 }
 
 export default function FieldAccount() {
-  const router = useRouter();
   const { theme, themeName } = useMobileAppearance();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [busy, setBusy] = useState(false);
@@ -31,7 +28,6 @@ export default function FieldAccount() {
   const { state: profileState, verification, refresh: refreshProfile } = useOwnFieldAdmission();
   const profile = profileState.kind === "ready" ? profileState.admission : null;
   const profileActionability = profile ? fieldAdmissionActionability(profile) : null;
-  const verifiedWorkspace = verification === "verified" && profileActionability === "available";
 
   async function logout() {
     if (busy) return;
@@ -63,8 +59,6 @@ export default function FieldAccount() {
           <Button label="إعادة التحقق من الأهلية" onPress={() => void refreshProfile()} testID="field-retry-admission" variant="outlined" />
         </Host>
       ) : null}
-
-      {verifiedWorkspace ? <StoreAccessInvitationSummary compact onPress={() => router.push("/invitations" as Href)} /> : null}
 
       <View style={styles.settings}>
         <AppearancePicker compact title="المظهر" helper="" />

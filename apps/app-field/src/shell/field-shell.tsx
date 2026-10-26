@@ -18,7 +18,7 @@ export function FieldScrollScreen({ children }: PropsWithChildren) {
 
 export function createFieldTabOptions(theme: ReturnType<typeof resolveTheme>, canSearch: boolean) {
   const styles = createStyles(theme);
-  const icons = { home: "home", cases: "cases", invitations: "store", wallet: "wallet", account: "account" } as const;
+  const icons = { home: "home", cases: "cases", wallet: "wallet", account: "account" } as const;
   return ({ route }: { route: { name: string } }) => ({
     headerShown: true,
     headerTitle: fieldHeaderTitle(route.name),
@@ -48,7 +48,6 @@ function fieldHeaderTitle(routeName: string) {
     wallet: "المحفظة",
     account: "حسابي",
     notifications: "الإشعارات",
-    invitations: "دعوات الوصول للمتاجر",
     "new-case": "إضافة شريك",
   };
   return titles[routeName] ?? "الميدان";
