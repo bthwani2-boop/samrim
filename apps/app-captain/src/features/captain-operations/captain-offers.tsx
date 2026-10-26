@@ -6,6 +6,7 @@ import { ActivityIndicator, Image, Text, View } from "react-native";
 
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
+import { claimCaptainOfferResponse } from "./captain-offer-response-guard";
 import { createCaptainOperationStyles } from "./captain-operation-styles";
 import { isCurrentCaptainActor } from "./captain-session-scope";
 
@@ -20,6 +21,7 @@ export function CaptainOffers({ compact = false, popup = false, suppressed = fal
   const [identityState, setIdentityState] = useState(currentIdentityState);
   const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
   const readSequence = useRef(0);
+  const responseInFlight = useRef(new Set<string>());
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -97,6 +99,7 @@ export function CaptainOffers({ compact = false, popup = false, suppressed = fal
 
   async function respond(offer: CaptainOffer, decision: "accept" | "reject") {
     if (busy || loading || !isCurrentCaptainActor(loadedActorID, activeActorID) || !offers.some((current) => current.id === offer.id && current.version === offer.version && current.state === "offered")) return;
+    if (!claimCaptainOfferResponse(responseInFlight.current, offer.id)) return;
     const actorID = loadedActorID;
     setBusy(offer.id);
     setError("");
@@ -120,6 +123,7 @@ export function CaptainOffers({ compact = false, popup = false, suppressed = fal
           ? "لم نتأكد من نتيجة الرد. راجع حالة العرض بعد إعادة القراءة، ثم تحقق من التوصيلات قبل أي محاولة جديدة."
           : "لم نتأكد من نتيجة الرد وتعذرت إعادة قراءة العروض. لا تعِد إرسال القرار حتى تظهر النتيجة المؤكدة تلقائيًا.");
     } finally {
+      responseInFlight.current.delete(offer.id);
       setBusy("");
     }
   }
