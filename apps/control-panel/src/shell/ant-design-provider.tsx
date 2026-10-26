@@ -38,6 +38,9 @@ export function AntDesignProvider({ children, nonce }: Readonly<{ children: Reac
         algorithm: mode === "dark" ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
         token: {
           colorPrimary: colors.brandAction,
+          colorLink: colors.brandAction,
+          colorLinkHover: colors.brandActionHover,
+          colorLinkActive: colors.brandActionPressed,
           colorText: colors.color,
           colorBgBase: colors.background,
           colorBgContainer: colors.surface,
