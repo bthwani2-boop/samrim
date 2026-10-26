@@ -1,7 +1,7 @@
 "use client";
 
 import type { ActorIdentity } from "@bthwani/identity";
-import { Menu, type MenuProps } from "antd";
+import { Breadcrumb, type BreadcrumbProps, Menu, type MenuProps } from "antd";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
@@ -53,25 +53,23 @@ function WorkspaceBreadcrumbs({ pathname, identity }: Readonly<{ pathname: strin
   const parentChild = currentWorkspaceChild(pathname, current);
   const detailLabel = dynamicWorkspaceRouteLabel(pathname);
   const showParentChild = Boolean(detailLabel && parentChild && parentChild.href !== current.href && parentChild.href !== pathname);
-  const isHome = current.href === "/workspace";
+  const items: NonNullable<BreadcrumbProps["items"]> = [];
+
+  if (current.href === "/workspace") {
+    items.push({ title: <span aria-current="page">{current.label}</span> });
+  } else {
+    items.push({ title: <Link href="/workspace">الرئيسية</Link> });
+    items.push({ title: child
+      ? <Link href={current.href}>{current.label}</Link>
+      : <span aria-current="page">{current.label}</span> });
+    if (showParentChild && parentChild) items.push({ title: <Link href={parentChild.href}>{parentChild.label}</Link> });
+    if (child) items.push({ title: <span aria-current="page">{detailLabel || child.label}</span> });
+  }
 
   return (
-    <nav className="workspace-breadcrumbs" aria-label="مسار الصفحة">
-      <ol>
-        {isHome ? (
-          <li aria-current="page"><span>{current.label}</span></li>
-        ) : (
-          <>
-            <li><Link href="/workspace">الرئيسية</Link></li>
-            <li>
-              {child ? <Link href={current.href}>{current.label}</Link> : <span aria-current="page">{current.label}</span>}
-            </li>
-            {showParentChild && parentChild ? <li><Link href={parentChild.href}>{parentChild.label}</Link></li> : null}
-            {child ? <li aria-current="page"><span>{detailLabel || child.label}</span></li> : null}
-          </>
-        )}
-      </ol>
-    </nav>
+    <div className="workspace-breadcrumbs" role="navigation" aria-label="مسار الصفحة">
+      <Breadcrumb items={items} />
+    </div>
   );
 }
 
