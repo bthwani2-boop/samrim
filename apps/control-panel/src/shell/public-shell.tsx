@@ -1,5 +1,6 @@
 "use client";
 
+import { Button, Result, Spin } from "antd";
 import { type ReactNode } from "react";
 function BrandHeader() {
   return (
@@ -34,12 +35,8 @@ export function ControlShell({
 export function LoadingState({ title = "جارٍ تجهيز لوحة التحكم", message = "نستعيد جلسة المشغل بأمان." }: Readonly<{ title?: string; message?: string }>) {
   return (
     <ControlShell className="state-shell">
-      <main className="state-content" aria-live="polite">
-        <section className="state-card">
-          <span className="loading-mark" aria-hidden="true" />
-          <h1>{title}</h1>
-          <p className="muted">{message}</p>
-        </section>
+      <main className="state-content" aria-live="polite" aria-busy="true">
+        <Result icon={<Spin size="large" />} title={title} subTitle={message} />
       </main>
     </ControlShell>
   );
@@ -48,16 +45,13 @@ export function LoadingState({ title = "جارٍ تجهيز لوحة التحك�
 export function UnavailableState({ message, onRetry, busy }: Readonly<{ message: string; onRetry: () => void; busy: boolean }>) {
   return (
     <ControlShell className="state-shell">
-      <main className="state-content">
-        <section className="state-card" role="alert">
-          <span className="state-icon state-icon-warning" aria-hidden="true">!</span>
-          <p className="eyebrow">الخدمة تحتاج انتباهاً</p>
-          <h1>تعذر الوصول إلى الهوية</h1>
-          <p className="muted">{message}</p>
-          <button type="button" className="button button-primary" disabled={busy} onClick={onRetry}>
-            {busy ? "جارٍ التحقق…" : "إعادة المحاولة"}
-          </button>
-        </section>
+      <main className="state-content" role="alert">
+        <Result
+          status="warning"
+          title="تعذر الوصول إلى الهوية"
+          subTitle={message}
+          extra={<Button type="primary" loading={busy} onClick={onRetry}>إعادة المحاولة</Button>}
+        />
       </main>
     </ControlShell>
   );
