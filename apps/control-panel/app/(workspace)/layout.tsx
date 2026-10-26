@@ -4,14 +4,14 @@ import type { ActorIdentity } from "@bthwani/identity";
 import { Menu, type MenuProps } from "antd";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { type FormEvent, type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
+import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 import { IdentitySurface } from "../../src/features/access/identity-surface";
-import { currentWorkspaceChild, currentWorkspaceDestination, dynamicWorkspaceRouteLabel, isCurrentWorkspaceDestination, isCurrentWorkspacePath, workspaceCatalogResources, workspaceDestinations, workspaceSearchEntries } from "../../src/navigation/workspace-registry";
+import { currentWorkspaceChild, currentWorkspaceDestination, dynamicWorkspaceRouteLabel, isCurrentWorkspaceDestination, workspaceCatalogResources, workspaceDestinations, workspaceSearchEntries } from "../../src/navigation/workspace-registry";
 import { useSession } from "../../src/session/session-provider";
 import { OperatorAccountDrawer } from "../../src/shell/operator-account-drawer";
 import { ControlShell, LoadingState, UnavailableState } from "../../src/shell/public-shell";
 import { WorkspaceIcon } from "../../src/shell/workspace-icon";
-import { WorkspaceRecordSearch } from "../../src/shell/workspace-record-search";
+import { WorkspaceGlobalSearch } from "../../src/shell/workspace-global-search";
 import { StoreCatalogWebMCPTools } from "../../src/features/webmcp/store-catalog-webmcp-tools";
 import { WorkspaceEntryWebMCPTools } from "../../src/features/webmcp/workspace-entry-tools";
 
@@ -93,63 +93,17 @@ function WorkspaceHeader({
   const router = useRouter();
   const { state } = useSession();
   const identity = state.kind === "authenticated" ? state.identity : null;
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const [accountOpen, setAccountOpen] = useState(false);
   const accountTriggerRef = useRef<HTMLButtonElement>(null);
-  const searchTriggerRef = useRef<HTMLButtonElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
   const searchEntries = identity
     ? workspaceSearchEntries.filter((entry) => canOpenWorkspaceRoute(identity, entry.href))
     : [];
-  const normalizedSearch = searchQuery.trim().toLocaleLowerCase("ar");
-  const searchResults = normalizedSearch
-    ? searchEntries.filter((entry) => entry.searchText.toLocaleLowerCase("ar").includes(normalizedSearch)).slice(0, 12)
-    : [];
-
-  useEffect(() => {
-    if (!searchOpen) return;
-    const frame = window.requestAnimationFrame(() => searchInputRef.current?.focus());
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setSearchOpen(false);
-      setSearchQuery("");
-      window.requestAnimationFrame(() => searchTriggerRef.current?.focus());
-    };
-    document.addEventListener("keydown", handleEscape);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      document.removeEventListener("keydown", handleEscape);
-    };
-  }, [searchOpen]);
-
-  useEffect(() => {
-    if (navOpen || pathname !== "") {
-      setSearchOpen(false);
-      setSearchQuery("");
-    }
-  }, [navOpen, pathname]);
-
   useEffect(() => {
     if (pathname || navOpen) setAccountOpen(false);
   }, [pathname, navOpen]);
 
-  function closeSearch(restoreFocus = false) {
-    setSearchOpen(false);
-    setSearchQuery("");
-    if (restoreFocus) window.requestAnimationFrame(() => searchTriggerRef.current?.focus());
-  }
-
-  function submitSearch(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const firstResult = searchResults[0];
-    if (!firstResult) return;
-    closeSearch();
-    router.push(firstResult.href);
-  }
-
   return (
-    <header className="workspace-header" data-search-open={searchOpen ? "true" : "false"}>
+    <header className="workspace-header">
       <Link className="brand-lockup brand-link" href="/workspace" aria-label="العودة إلى مساحة العمل">
         <span className="brand-rail" aria-hidden="true" />
         <span className="brand-name">بثواني</span>
@@ -174,41 +128,7 @@ function WorkspaceHeader({
             <span className="visually-hidden">سلة المحذوفات</span>
           </Link>
         ) : null}
-        <search className="workspace-search-control" aria-label="البحث في صفحات لوحة التحكم">
-          <button
-            ref={searchTriggerRef}
-            className="workspace-search-trigger"
-            type="button"
-            aria-label="البحث في صفحات لوحة التحكم"
-            aria-expanded={searchOpen}
-            aria-controls="workspace-search-panel"
-            onClick={() => {
-              if (searchOpen) closeSearch(true);
-              else setSearchOpen(true);
-            }}
-          >
-            <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
-              <circle cx="10.8" cy="10.8" r="6.4" />
-              <path d="m15.5 15.5 5 5" />
-            </svg>
-          </button>
-          {searchOpen ? (
-            <form className="workspace-search-form" noValidate onSubmit={submitSearch}>
-              <label className="visually-hidden" htmlFor="workspace-search-input">البحث في صفحات لوحة التحكم</label>
-              <input
-                ref={searchInputRef}
-                id="workspace-search-input"
-                type="search"
-                autoComplete="off"
-                placeholder="ابحث عن صفحة أو سجل"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-              />
-              {searchQuery ? <button type="button" className="workspace-search-close" aria-label="مسح نص البحث" onClick={() => { setSearchQuery(""); searchInputRef.current?.focus(); }}>×</button> : null}
-              <button type="button" className="workspace-search-close" aria-label="إغلاق البحث" onClick={() => closeSearch(true)}>×</button>
-            </form>
-          ) : null}
-        </search>
+        <WorkspaceGlobalSearch entries={searchEntries} identity={identity} pathname={pathname} navigationOpen={navOpen} accountOpen={accountOpen} />
         <button
           ref={accountTriggerRef}
           type="button"
@@ -218,7 +138,7 @@ function WorkspaceHeader({
           aria-haspopup="dialog"
           aria-expanded={accountOpen}
           aria-controls="operator-account-drawer"
-          onClick={() => { closeSearch(); setAccountOpen(current => !current); }}
+          onClick={() => setAccountOpen((current) => !current)}
         >
           <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3.5" /><path d="M5 20c.7-3.1 3.2-5 7-5s6.3 1.9 7 5" /></svg>
         </button>
@@ -240,34 +160,11 @@ function WorkspaceHeader({
           type="button"
           aria-controls="workspace-navigation"
           aria-expanded={navOpen}
-          onClick={() => {
-            closeSearch();
-            onOpenNavigation();
-          }}
+          onClick={onOpenNavigation}
         >
           <span aria-hidden="true">☰</span>
           <span className="visually-hidden">فتح مسارات العمل</span>
         </button>
-      </div>
-      <div id="workspace-search-panel" className="workspace-search-panel" hidden={!searchOpen}>
-        <div className="workspace-search-results" aria-live="polite">
-          {normalizedSearch ? searchResults.length ? (
-            <>
-              <p className="workspace-search-label">صفحات مطابقة</p>
-              <ul>
-                {searchResults.map((entry) => (
-                  <li key={entry.href}>
-                    <Link href={entry.href} aria-current={isCurrentWorkspacePath(pathname, entry.href) ? "page" : undefined} onClick={() => closeSearch()}>
-                      <span>{entry.label}</span>
-                      <small>{entry.context}</small>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : <p className="workspace-search-empty">لا توجد صفحات مطابقة.</p> : <p className="workspace-search-empty">اكتب اسم الصفحة أو المساحة للبحث.</p>}
-          {searchOpen && normalizedSearch && identity ? <WorkspaceRecordSearch key={identity.subject} query={searchQuery} identity={identity} onNavigate={() => closeSearch()} /> : null}
-        </div>
       </div>
     </header>
   );
