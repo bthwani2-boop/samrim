@@ -173,7 +173,7 @@
   .workspace-main tr:last-child > * { border-block-end: 0; }
   .workspace-main :is(th,td):has(> input[type="checkbox"]) { min-inline-size: 42px; inline-size: 42px; }
   .workspace-main td .field-label { min-inline-size: 150px; }
-  .pagination, .partner-registry-pagination, .joining-case-pagination, .cash-custody-pagination, .operator-notification-pagination, .catalog-import-store-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: end; gap: 10px; padding-block: 12px; font-size: 13px; }
+  .pagination, .partner-registry-pagination, .joining-case-pagination, .cash-custody-pagination, .catalog-import-store-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: end; gap: 10px; padding-block: 12px; font-size: 13px; }
   .store-registry-name { flex-wrap: nowrap; min-inline-size: 160px; }
   .store-registry-owner { margin-block-start: .25rem; font-size: .85em; }
   .store-registry-identity { display: flex; align-items: center; gap: 10px; min-inline-size: 190px; }
@@ -309,16 +309,6 @@
   .joining-case-queue { display: grid; gap: 12px; }
   .joining-case-queue-search > form { display: flex; align-items: end; gap: 8px; inline-size: 100%; }
 
-  .operator-notifications-summary, .operator-notification-group-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-  .operator-notification-list { display: grid; margin-block-start: 8px; border: 1px solid var(--border-subtle); border-radius: 10px; overflow: hidden; }
-  .operator-notification-card { display: flex; align-items: start; gap: 12px; inline-size: 100%; padding: 14px 16px; border: 0; border-block-end: 1px solid var(--border-subtle); background: var(--surface-base); color: var(--color-primary); text-align: start; }
-  .operator-notification-card:last-child { border: 0; }
-  .operator-notification-card:hover { background: var(--surface-muted); }
-  .operator-notification-copy { display: grid; flex: 1; gap: 4px; }
-  .operator-notification-copy :is(time,span), .operator-notification-kind, .operator-notification-state { font-size: 12px; color: var(--text-muted); }
-  .operator-notification-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: end; gap: 6px; }
-  .operator-notification-actions .button { inline-size: auto; min-inline-size: 0; white-space: nowrap; }
-  .operator-notification-card.is-unread { border-inline-start: 3px solid var(--action-bg); }
   .access-account-controls, .access-permission-edit-panel, .access-row-edit-fields { display: grid; gap: 10px; padding: 12px; }
   .access-permission-list { display: grid; grid-template-columns: repeat(auto-fit,minmax(170px,1fr)); gap: 8px; }
   .access-permission-item { display: flex; align-items: center; gap: 8px; padding: 8px; }
@@ -381,7 +371,7 @@
   .catalog-image-dialog::backdrop { background: color-mix(in srgb, var(--color-primary) 78%, transparent); }
   .catalog-image-dialog img { display: block; inline-size: 100%; block-size: auto; max-block-size: 80dvh; object-fit: contain; }
   .proposal-row { display: flex; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--surface-base); }
-  .proposal-list, .operator-notification-list { max-block-size: 70dvh; overflow: auto; }
+  .proposal-list { max-block-size: 70dvh; overflow: auto; }
   .operation-location-map iframe { display: block; border: 0; inline-size: 100%; block-size: 260px; border-radius: 8px; }
   .store-detail-overview { display: grid; grid-template-columns: auto 1fr; gap: 16px; }
   .workspace-nav-compact-toggle { display: inline-flex; align-items: center; justify-content: center; inline-size: 40px; min-block-size: 40px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--surface-base); color: var(--color-primary); cursor: pointer; }
@@ -529,9 +519,6 @@
     :is(.registry-toolbar,.workspace-toolbar,.partner-registry-toolbar,.catalog-registry-toolbar) > .field-label { max-inline-size: none; flex-basis: 140px; }
     .auth-layout { grid-template-columns: 1fr; gap: 16px; }
     h1 { font-size: 21px; }
-    .operator-notification-kind { display: none; }
-    .home-notification-link .operator-notification-kind { display: inline-flex; }
-    .operator-notification-actions { justify-content: start; }
   }
 }
 
@@ -559,28 +546,6 @@
   .access-summary-grid > article span { font-size: 12px; color: var(--text-muted); }
   .access-summary-grid > article strong { font-size: 22px; font-variant-numeric: tabular-nums; }
 }
-
-/* Notification action affordances share the single Control Panel stylesheet. */
-.operator-notification-card { flex-wrap: wrap; }
-.operator-notification-actions { gap: 8px; margin-inline-start: auto; }
-.operator-notification-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-block-size: 44px;
-  padding: 6px 10px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  background: var(--surface-base);
-  color: var(--color-primary);
-  font: inherit;
-  font-size: 13px;
-  text-decoration: none;
-  cursor: pointer;
-}
-.operator-notification-action:hover { background: var(--surface-muted); }
-.operator-notification-action:focus-visible { outline: 2px solid var(--action-bg); outline-offset: 2px; }
-.operator-notification-action:disabled { opacity: .55; cursor: not-allowed; }
 
 
 /* Operations: one unified workspace, no nested navigation. */
@@ -2881,7 +2846,6 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
   .partner-legend-details { margin-block:8px; }
   .partner-legend-details > summary { cursor:pointer; display:inline-flex; align-items:center; min-block-size:36px; padding:6px 11px; border:1px solid var(--border-subtle); border-radius:8px; color:var(--text-muted); }
   .partner-legend-details[open] > .partner-registry-legend { margin-block-start:8px; }
-  .operator-notification-show-more { margin-block:12px; }
   .policy-quick-peek-records li { line-height:1.6; overflow-wrap:anywhere; }
   .policy-quick-peek-history li { line-height:1.65; }
   .policy-quick-peek-subtitle, .policy-quick-peek-history small { font-size:12px; }
@@ -3415,7 +3379,7 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
     .panel,.access-card,.order-detail-panel,.partner-detail-section,.store-detail-section,
     .review-panel,.home-work-area,.access-workspace-section,.account-access-panel,
     .partner-case-summary,.partner-case-details,.partner-case-attachments,.partner-case-actions,
-    .finance-summary-card,.operator-notification-list,.store-advanced-settings,.field-workbench-pane
+    .finance-summary-card,.store-advanced-settings,.field-workbench-pane
   ) {
     background: var(--bt-workspace-panel);
     border: 1px solid var(--bt-card-edge,var(--border-subtle));
@@ -3560,7 +3524,7 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
     background: color-mix(in srgb,var(--bt-workspace-accent) 5%,var(--bt-workspace-panel));
   }
   .workspace-main:not([data-workspace-section="finance"]) :is(
-    .pagination,.partner-registry-pagination,.joining-case-pagination,.operator-notification-pagination
+    .pagination,.partner-registry-pagination,.joining-case-pagination
   ) {
     padding-block: 9px;
     gap: 7px;
@@ -3568,16 +3532,9 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
     color: var(--text-muted);
   }
   .workspace-main:not([data-workspace-section="finance"]) :is(
-    .operator-notification-card,.home-queue-shortcut,.home-record-link,.home-notification-link,
+    .home-queue-shortcut,.home-record-link,.home-notification-link,
     .joining-case-row-main
   ) { border-color: var(--border-subtle); }
-  .workspace-main:not([data-workspace-section="finance"]) .operator-notification-card {
-    padding: 11px 14px;
-    background: var(--bt-workspace-panel);
-  }
-  .workspace-main:not([data-workspace-section="finance"]) .operator-notification-card:hover {
-    background: var(--bt-workspace-pane-alt);
-  }
   .workspace-main:not([data-workspace-section="finance"]) :is(
     .home-queue-shortcut,.home-record-link
   ) { background: var(--bt-workspace-pane-alt);border-radius:8px; }
