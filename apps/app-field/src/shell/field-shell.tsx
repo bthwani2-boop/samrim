@@ -59,7 +59,7 @@ function FieldHeader({ canSearch, title, routeName, headerRight, focus: rawFocus
   const focus = Array.isArray(rawFocus) ? rawFocus[0] : rawFocus;
   const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
   const isSearchOpen = focus === "search";
-  const showSearch = canSearch && (routeName === "home" || routeName === "cases");
+  const showSearch = canSearch && routeName === "cases";
   const searchInputRef = useRef<TextInputInstance>(null);
 
   useEffect(() => {
