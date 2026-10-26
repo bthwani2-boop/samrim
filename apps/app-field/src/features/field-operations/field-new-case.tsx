@@ -11,6 +11,7 @@ import { ActivityIndicator, Image, Keyboard, ScrollView, type ScrollViewInstance
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
+import { tryAcquireFieldDraftMutation } from "./field-draft-mutation-lock";
 import { fieldDraftMatchesReadback, fieldDraftMediaUploadConfirmed, fieldReviewPhotoUploadConfirmed, fieldSubmitIdempotencyPayload, markFieldDraftReadbackUncertain, markFieldMediaReadbackUncertain, submitFieldCaseWithReadback } from "./field-draft-readback";
 import { fieldAdmissionActionability } from "./field-eligibility";
 import { fieldJoiningImageDimensionsSupported } from "./field-image-dimensions";
@@ -85,6 +86,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
   const scrollRef = useRef<ScrollViewInstance>(null);
   const keyboardTop = useRef<number | null>(null);
   const scrollOffset = useRef(0);
+  const draftMutationLock = useRef(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const ensureFocusedInputVisible = useCallback(() => {
@@ -395,6 +397,8 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
         ? { kind: createdCase.case.state === "needs_correction" ? "correct" : "update", caseID: createdCase.case.id, expectedVersion: createdCase.case.version, request, idempotencyKey: `field_joining_case_draft_update_${Crypto.randomUUID()}`, correlationID: `field_joining_case_draft_corr_${Crypto.randomUUID()}` }
         : { kind: "create", request, idempotencyKey: `field_joining_case_create_${Crypto.randomUUID()}`, correlationID: `field_joining_case_corr_${Crypto.randomUUID()}` };
     }
+    // Acquire only after synchronous validation; invalid input must not leave the lock held.
+    if (!tryAcquireFieldDraftMutation(draftMutationLock)) return;
     setPendingDraftAttempt(attempt);
     setBusy(true);
     setError("");
@@ -496,6 +500,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
                : code === "INVALID_INPUT" ? "رفض الخادم بعض بيانات المسودة. راجع الحقول المدخلة ثم أعد المحاولة." : "تعذر حفظ المسودة. تحقق من اتصال الخدمة وأعد المحاولة.");
       }
     } finally {
+      draftMutationLock.current = false;
       setBusy(false);
     }
   }
