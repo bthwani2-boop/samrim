@@ -15,14 +15,6 @@ export function RegistryColumnHeader({
   const popupId = useId();
 
   useEffect(() => {
-    const closeOther = (event: Event) => {
-      if ((event as CustomEvent<string>).detail !== popupId) setOpen(false);
-    };
-    window.addEventListener("bthwani-column-filter-open", closeOther);
-    return () => window.removeEventListener("bthwani-column-filter-open", closeOther);
-  }, [popupId]);
-
-  useEffect(() => {
     if (!open) return;
     const onEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
@@ -40,10 +32,7 @@ export function RegistryColumnHeader({
     <th scope="col" className="registry-column-head">
       <Popover
         open={open}
-        onOpenChange={(nextOpen) => {
-          if (nextOpen) window.dispatchEvent(new CustomEvent("bthwani-column-filter-open", { detail: popupId }));
-          setOpen(nextOpen);
-        }}
+        onOpenChange={setOpen}
         placement="bottomRight"
         trigger="click"
         arrow={false}
