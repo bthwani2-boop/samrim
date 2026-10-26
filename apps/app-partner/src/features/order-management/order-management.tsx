@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { OrderConversation } from "./order-conversation";
-import { mergeOrderPageRecords } from "./order-page-records";
+import { mergeOrderPageRecords, tryAcquireOrderAction } from "./order-page-records";
 
 function baseUrl(): string {
   const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -60,6 +60,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const fulfillableStoreIDs = useMemo(() => new Set(scopedStores.filter((store) => store.owned || store.permissions.includes("fulfillment")).map((store) => store.id)), [scopedStores]);
   const canFulfillOrder = useCallback((orderStoreID: string) => fulfillableStoreIDs.has(orderStoreID), [fulfillableStoreIDs]);
   const loadGeneration = useRef(0);
+  const orderActionLocks = useRef(new Set<string>());
   const [orders, setOrders] = useState<ReadonlyArray<Order>>([]);
   const [assignments, setAssignments] = useState<Readonly<Record<string, CaptainAssignment>>>({});
   const [storeCaptainsByStore, setStoreCaptainsByStore] = useState<Readonly<Record<string, ReadonlyArray<StoreCaptainChoice>>>>({});
@@ -173,10 +174,12 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
 
   async function transition(order: Order, requestedState = nextState(order)) {
     if (!requestedState || busy || loading) return;
+    const releaseAction = tryAcquireOrderAction(orderActionLocks.current, order.id);
+    if (!releaseAction) return;
     setBusy(order.id); setError("");
     try { const token = await getUsableIdentityAccessToken(); await client().transitionStoreOrder(token, order.storeId, order.id, { state: requestedState }, order.version); await load(); }
-    catch (cause) { console.error("DSH order transition failed", cause); setError("تعذر تنفيذ الإجراء؛ انتظر ظهور الحالة المؤكدة قبل إعادة المحاولة."); }
-    finally { setBusy(""); }
+    catch (cause) { console.error("DSH order transition failed", cause); await load(); setError("تعذر تأكيد نتيجة الإجراء؛ أُعيدت قراءة الحالة الحالية قبل أي إعادة محاولة."); }
+    finally { releaseAction(); setBusy(""); }
   }
 
   async function proposeAdjustment(order: Order, lineID: string, kind: OrderAdjustmentProposalRequest["kind"], actualQuantityBaseUnits?: number) {
