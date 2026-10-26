@@ -66,10 +66,10 @@ export function MarketingContactPreference({ active }: Readonly<{ active: boolea
   if (!active) return null;
   return <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingVertical: 12 }}>
     <View style={{ flex: 1, gap: 4 }}>
-      <Text style={{ fontSize: 12 }}>اختياري؛ لا يؤثر على إشعارات طلباتك</Text>
-      {notice ? <Text accessibilityRole="alert" style={{ fontSize: 12 }}>{notice}</Text> : null}
+      <Text style={{ color: theme.colorMuted, fontSize: 12 }}>اختياري؛ لا يؤثر على إشعارات طلباتك</Text>
+      {notice ? <Text accessibilityRole="alert" style={{ color: theme.danger, fontSize: 12 }}>{notice}</Text> : null}
     </View>
-    {pending || (!consent && !notice) ? <ActivityIndicator /> : null}
+    {pending || (!consent && !notice) ? <ActivityIndicator color={theme.brandAction} /> : null}
     <Host colorScheme={themeName} matchContents seedColor={theme.brandAction}>
       <Switch
         label="السماح بتنبيهات العروض"
