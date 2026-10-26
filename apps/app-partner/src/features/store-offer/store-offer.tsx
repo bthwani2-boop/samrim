@@ -22,6 +22,7 @@ import { onPartnerProductAction } from "../../shell/partner-product-actions";
 import { PartnerStorePromotionBanner } from "./partner-promotion-banner";
 import { StoreCatalogExportCard } from "./store-catalog-export";
 import { StoreProductTrash } from "./store-product-trash";
+import { mergeCatalogProductPage } from "./catalog-product-pages";
 
 type OfferState = { kind: "loading" } | { kind: "ready"; offers: ReadonlyArray<CatalogStoreOffer>; proposals: ReadonlyArray<CatalogProductProposal> } | { kind: "error" };
 type QuantityPolicy = "DISCRETE" | "MEASURED" | "VARIABLE_MEASURE";
@@ -172,6 +173,7 @@ const theme = useAppearanceTheme();
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const searchSequence = useRef(0);
+  const productPageRequest = useRef(false);
   const [selectedProduct, setSelectedProduct] = useState<CatalogProduct | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<CatalogVariant | null>(null);
   const [priceMinor, setPriceMinor] = useState("");
@@ -315,12 +317,23 @@ const theme = useAppearanceTheme();
   }, [proposalCategoryID]);
 
   async function searchProducts(cursor = "", append = false) {
-    if (!catalogReady || !verticalId) return;
+    if (!catalogReady || !verticalId || (append && productPageRequest.current)) return;
+    if (append) productPageRequest.current = true;
     const requestSequence = ++searchSequence.current;
     setSearchSubmitted(true);
     setError("");
-    try { const token = await getUsableIdentityAccessToken(); const result = await dshClient().listCatalogProducts(token, query, verticalId, 100, cursor); if (requestSequence === searchSequence.current) { setProducts((current) => append ? [...current, ...result.products] : result.products); setProductNextCursor(result.nextCursor ?? ""); } }
-    catch (nextError) { if (requestSequence === searchSequence.current) { reportError(nextError); setError(errorText(nextError)); } }
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const result = await dshClient().listCatalogProducts(token, query, verticalId, 100, cursor);
+      if (requestSequence === searchSequence.current) {
+        setProducts((current) => mergeCatalogProductPage(current, result.products, append));
+        setProductNextCursor(result.nextCursor ?? "");
+      }
+    } catch (nextError) {
+      if (requestSequence === searchSequence.current) { reportError(nextError); setError(errorText(nextError)); }
+    } finally {
+      if (append) productPageRequest.current = false;
+    }
   }
 
   async function resolveIdentifier(value = identifier) {
