@@ -93,6 +93,46 @@ func TestDevelopmentOperatorSessionUsesCanonicalInitialOperator(t *testing.T) {
 	}
 }
 
+func TestRevokeRoleSessionIsScopedToTargetActor(t *testing.T) {
+	ctx, db := newIsolatedIdentityDatabase(t)
+	view, err := actor.New(db, "").ProvisionFirstOperatorBootstrap(ctx, "operator-bootstrap", domain.ProvisionActorRoleInput{PhoneE164: "+15555550123"})
+	if err != nil {
+		t.Fatalf("provision isolated initial operator: %v", err)
+	}
+	service := New(db, []byte("01234567890123456789012345678901"), true, nil)
+	pair, err := service.CreateDevelopment(ctx, "operator", "operator-revocation-instance")
+	if err != nil {
+		t.Fatalf("create isolated operator session: %v", err)
+	}
+
+	if err := service.RevokeRoleSession(ctx, "act_unrelated_actor", "operator", pair.Identity.SessionID, "control-panel", "cross-actor-revoke", ""); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("cross-actor session revocation error = %v; want not found", err)
+	}
+	var revokedAt sql.NullTime
+	if err := db.QueryRowContext(ctx, "SELECT revoked_at FROM identity_sessions WHERE id=$1 AND actor_id=$2 AND role='operator'", pair.Identity.SessionID, view.ActorID).Scan(&revokedAt); err != nil {
+		t.Fatalf("read session after cross-actor revocation attempt: %v", err)
+	}
+	if revokedAt.Valid {
+		t.Fatal("cross-actor revocation changed the protected session")
+	}
+	if resolved, err := service.ResolveAccessToken(ctx, pair.AccessToken); err != nil || resolved.Subject != view.ActorID {
+		t.Fatalf("owner session after cross-actor attempt = %+v, %v; want active session for %q", resolved, err, view.ActorID)
+	}
+
+	if err := service.RevokeRoleSession(ctx, view.ActorID, "operator", pair.Identity.SessionID, "control-panel", "owner-revoke", ""); err != nil {
+		t.Fatalf("owner-scoped session revocation: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT revoked_at FROM identity_sessions WHERE id=$1 AND actor_id=$2 AND role='operator'", pair.Identity.SessionID, view.ActorID).Scan(&revokedAt); err != nil {
+		t.Fatalf("read owner-revoked session: %v", err)
+	}
+	if !revokedAt.Valid {
+		t.Fatal("owner-scoped revocation was not persisted")
+	}
+	if _, err := service.ResolveAccessToken(ctx, pair.AccessToken); !errors.Is(err, domain.ErrUnauthenticated) {
+		t.Fatalf("owner-revoked access token error = %v; want unauthenticated", err)
+	}
+}
+
 func newIsolatedIdentityDatabase(t *testing.T) (context.Context, *sql.DB) {
 	t.Helper()
 	databaseURL := strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
