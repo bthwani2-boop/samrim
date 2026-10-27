@@ -155,3 +155,37 @@ test('codex-worktree derives independent branches from the pinned SHA and denies
   assert.throws(() => createWorktreeForJob({ id: 'one', baseSha: fixture.sha, baseRepo: fixture.repo, worktreeRoot: fixture.worktreeRoot }), /directory already exists|branch already exists/);
   assert.throws(() => validateWorktreeBase({ baseRepo: fixture.repo, baseSha: '0'.repeat(40) }), /does not match local refs\/heads\/28/);
 });
+
+test('continuous supervisor syncs on start and durable task transitions, not each poll', async (t) => {
+  const { root, config } = sandbox(t, { pollMs: 100 });
+  const seen = [];
+  const controller = new AbortController();
+  const mgr = make(root, config, { sync: async () => { seen.push(fs.readdirSync(path.join(root, 'control', 'outcomes')).length); return { records: [] }; }, syncIntervalMs: 600000 });
+  setTimeout(() => controller.abort(), 340);
+  await mgr.serve({ signal: controller.signal });
+  assert.deepEqual(seen, [0]);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'control', 'ruflo-sync-status.json'))).status, 'pass');
+  assert.equal(fs.existsSync(path.join(root, 'control', 'supervisor.lock')), false);
+  enqueue(root, 'new-job');
+  const next = new AbortController();
+  setTimeout(() => next.abort(), 650);
+  await mgr.serve({ signal: next.signal });
+  assert.ok(seen.includes(1), 'durable completion triggered a Ruflo sync');
+  assert.equal(fs.readdirSync(path.join(root, 'control', 'claims')).length, 1);
+});
+
+test('Ruflo sync failure does not crash supervisor or rerun existing claims', async (t) => {
+  const { root, config } = sandbox(t, { pollMs: 100 });
+  enqueue(root, 'one');
+  let calls = 0;
+  const mgr = make(root, config, { sync: async () => { calls++; throw new Error('synthetic-mcp-error'); } });
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 450);
+  await mgr.serve({ signal: controller.signal });
+  assert.equal(calls, 1);
+  assert.equal(mgr.lastSync.status, 'failed');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'control', 'ruflo-sync-status.json'))).status, 'failed');
+  assert.equal(fs.readdirSync(path.join(root, 'control', 'claims')).length, 1);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'control', 'outcomes', 'one.json'))).status, 'completed');
+  assert.match(fs.readFileSync(path.join(root, 'control', 'ruflo-sync-errors.log'), 'utf8'), /synthetic-mcp-error/);
+});

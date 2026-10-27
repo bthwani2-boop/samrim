@@ -95,13 +95,18 @@ function systemCodexPresent(root, file) {
 }
 
 export class Supervisor {
-  constructor({ root, config, freeMem = () => os.freemem(), spawn = nodeSpawn, now = () => new Date().toISOString(), timeoutMs = 1800000, codexPath = SYSTEM_CODEX } = {}) {
+  constructor({ root, config, freeMem = () => os.freemem(), spawn = nodeSpawn, now = () => new Date().toISOString(), timeoutMs = 1800000, codexPath = SYSTEM_CODEX, sync = null, syncIntervalMs = 600000 } = {}) {
     if (typeof root !== 'string' || !path.isAbsolute(root)) throw new Error('runtime root must be an absolute path');
     this.root = path.resolve(root);
     this.config = config === undefined ? loadConfig(this.root) : validateConfig(config); this.freeMem = freeMem; this.spawn = spawn; this.now = now; this.timeoutMs = timeoutMs;
     this.codexPath = path.resolve(codexPath);
     if (!within(this.root, this.codexPath) && this.codexPath !== SYSTEM_CODEX) throw new Error('Only installed Codex or runtime-local test executable is allowed');
     this.lockPath = path.join(this.root, 'control', 'supervisor.lock'); this.lockToken = null; this.children = new Map(); this.stopping = false;
+    if (sync !== null && typeof sync !== 'function') throw new Error('sync must be a callable');
+    if (!Number.isSafeInteger(syncIntervalMs) || syncIntervalMs < 1000) throw new Error('syncIntervalMs must be at least 1000');
+    this.sync = sync;
+    this.syncDirty = true;
+    this.nextSyncAt = 0; this.syncIntervalMs = syncIntervalMs; this.lastSync = null;
   }
   archiveStaleLock() {
     const recoveryPath = `${this.lockPath}.recovery`, token = { pid: process.pid, nonce: crypto.randomUUID() };
@@ -184,7 +189,7 @@ export class Supervisor {
     const outcome = { id: job.id, kind: job.kind, status, recordedAt: this.now(), verifiedSource: details.verifiedSource ?? null,
       exitCode: details.exitCode ?? null, signal: details.signal ?? null, log: `runs/${job.id}/worker.log`,
       reviewRequired: ['ambiguous', 'needs_review', 'failed', 'blocked'].includes(status), ...details };
-    atomicJson(this.root, file, outcome); return outcome;
+    atomicJson(this.root, file, outcome); this.syncDirty = true; return outcome;
   }
   async launch(job) {
     const codex = job.kind !== 'isolated-fixture';
@@ -219,6 +224,7 @@ export class Supervisor {
     claim.workerPid = child.pid ?? null; claim.state = 'running'; claim.startedAt = this.now();
     if (worktree) Object.assign(claim, { worktree: worktree.worktree, branch: worktree.branch, baseSha: worktree.baseSha });
     atomicJson(this.root, claimPath, claim);
+    this.syncDirty = true;
     const completion = new Promise((resolve) => {
       let settled = false, timedOut = false, forceTimer;
       const finish = (code, signal, error = null) => {
@@ -254,18 +260,35 @@ export class Supervisor {
       return { before, batch: { launched: batch.launched.map(({ completion, ...item }) => item), skipped: batch.skipped }, outcomes, after: this.snapshot() };
     } finally { this.release(); }
   }
+  async reconcileRuflo() {
+    if (!this.sync || (Date.now() < this.nextSyncAt && (!this.syncDirty || this.lastSync?.status === 'failed'))) return;
+    this.syncDirty = false;
+    try {
+      const result = await this.sync();
+      this.lastSync = { status: 'pass', at: this.now(), records: result?.records?.length ?? null };
+      atomicJson(this.root, path.join(this.root, 'control', 'ruflo-sync-status.json'), this.lastSync);
+      this.nextSyncAt = Date.now() + this.syncIntervalMs;
+    } catch (error) {
+      this.syncDirty = true;
+      this.nextSyncAt = Date.now() + 60000;
+      this.lastSync = { status: 'failed', at: this.now(), error: String(error?.message ?? error) };
+      try { atomicJson(this.root, path.join(this.root, 'control', 'ruflo-sync-status.json'), this.lastSync); } catch {}
+      try { fs.appendFileSync(path.join(this.root, 'control', 'ruflo-sync-errors.log'), JSON.stringify(this.lastSync) + '\n'); } catch {}
+    }
+  }
   async serve({ signal } = {}) {
     this.acquire(); this.stopping = false; const stop = () => { this.stopping = true; }; signal?.addEventListener('abort', stop, { once: true });
     try {
       while (!this.stopping) {
         this.config = loadConfig(this.root);
-        if (this.config.enabled && this.config.dispatchEnabled) {
-          await this.dispatchBatch(); const pending = [...this.children.values()];
-          if (pending.length) await Promise.race([Promise.all(pending.map((item) => item.completion)), new Promise((resolve) => setTimeout(resolve, this.config.pollMs))]);
-          else await new Promise((resolve) => setTimeout(resolve, this.config.pollMs));
-        } else await new Promise((resolve) => setTimeout(resolve, this.config.pollMs));
+        if (this.config.enabled && this.config.dispatchEnabled) await this.dispatchBatch();
+        await this.reconcileRuflo();
+        const pending = [...this.children.values()];
+        if (pending.length) await Promise.race([Promise.all(pending.map((item) => item.completion)), new Promise((resolve) => setTimeout(resolve, this.config.pollMs))]);
+        else await new Promise((resolve) => setTimeout(resolve, this.config.pollMs));
       }
       await Promise.all([...this.children.values()].map((item) => item.completion));
+      await this.reconcileRuflo();
     } finally { signal?.removeEventListener('abort', stop); this.release(); }
   }
 }
@@ -286,7 +309,17 @@ async function cli() {
     const { command, root } = cliArgs(process.argv.slice(2)), config = loadConfig(root), supervisor = new Supervisor({ root, config });
     if (command === 'doctor' || command === 'status') console.log(JSON.stringify({ command, ...supervisor.snapshot() }, null, 2));
     else if (command === 'once') console.log(JSON.stringify(await supervisor.once(), null, 2));
-    else { const controller = new AbortController(); process.once('SIGINT', () => controller.abort()); process.once('SIGTERM', () => controller.abort()); await supervisor.serve({ signal: controller.signal }); }
+    else {
+      if (typeof config.rufloInstall !== 'string' || !path.isAbsolute(config.rufloInstall) ||
+          typeof config.rufloState !== 'string' || !path.isAbsolute(config.rufloState)) {
+        throw new Error('serve requires trusted absolute rufloInstall and rufloState settings in runtime config');
+      }
+      const { syncRufloOnce } = await import('./ruflo-sync.mjs');
+      supervisor.sync = () => syncRufloOnce({ root, install: config.rufloInstall, stateRoot: config.rufloState });
+      const controller = new AbortController();
+      process.once('SIGINT', () => controller.abort()); process.once('SIGTERM', () => controller.abort());
+      await supervisor.serve({ signal: controller.signal });
+    }
   } catch (error) { console.error(error.message); process.exitCode = 2; }
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await cli();

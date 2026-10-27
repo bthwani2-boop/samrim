@@ -50,8 +50,11 @@ function parseResponse(response) {
   const text = response.content?.find((item) => item.type === 'text')?.text;
   return text ? JSON.parse(text) : (response.structuredContent || {});
 }
-async function main() {
-  const { root, install, stateRoot } = parseArgs(process.argv.slice(2));
+export async function syncRufloOnce({ root, install, stateRoot } = {}) {
+  if (typeof root !== 'string' || !path.isAbsolute(root)) throw new Error('sync root must be absolute');
+  if (typeof install !== 'string' || !path.isAbsolute(install)) throw new Error('sync Ruflo install must be absolute');
+  if (typeof stateRoot !== 'string' || !path.isAbsolute(stateRoot)) throw new Error('sync trusted state root must be absolute');
+  root = path.resolve(root); install = path.resolve(install); stateRoot = path.resolve(stateRoot);
   fs.mkdirSync(root, { recursive: true });
   const state = stateRoot, control = path.join(root, 'control'), lock = path.join(control, 'ruflo-sync.lock');
   fs.mkdirSync(control, { recursive: true });
@@ -126,10 +129,14 @@ async function main() {
       }
       records.push({ id: job.id, taskId: task.taskId, desired });
     }
-    console.log(JSON.stringify({ sync: 'PASS', records }, null, 2));
+    return { sync: 'PASS', records };
   } finally {
     await client.close().catch(() => {});
     try { if (readJsonAt(root, lock).nonce === lockToken.nonce) fs.unlinkSync(lock); } catch {}
   }
 }
-main().catch((error) => { console.error('RUFLO_SYNC_FAILED', String(error)); process.exitCode = 1; });
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  syncRufloOnce(parseArgs(process.argv.slice(2)))
+    .then((result) => console.log(JSON.stringify(result, null, 2)))
+    .catch((error) => { console.error('RUFLO_SYNC_FAILED', String(error)); process.exitCode = 1; });
+}

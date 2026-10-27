@@ -72,3 +72,9 @@ The MCP SDK and Ruflo executable are resolved dynamically from that installation
 `node --test tools/dev/ruflo/supervisor.test.mjs` uses Node built-ins and temporary runtime roots. Its Git test initializes and commits an isolated repository under `tools/dev/ruflo/tests/`, then checks two independently modified worktrees from the same SHA, derived branches, collision denial, and wrong-SHA denial. It skips only when Git itself is unavailable. Tests never invoke Codex or connect to Ruflo.
 
 When preserving an existing Ruflo policy ledger across a runtime relocation, use the optional `--ruflo-state` flag with the original, verified state directory. Ruflo anchors are cryptographically bound to their real project-root path and may not be copied to a new root without an officially verified migration. Keep the copied untrusted state snapshot unused, and do not delete, rewrite, or bypass the trusted anchor mirror.
+
+### Single scheduled supervisor
+
+The supervisor now owns Ruflo synchronization in its running Node process. It reconciles on start and after durable claim/outcome transitions, with a ten-minute safety check and a sixty-second retry delay following errors. It does not need the old Windows sync task every two minutes. The queue/claims/outcomes remain canonical; Ruflo is their projection. Diagnostics: `control/ruflo-sync-status.json` and `control/ruflo-sync-errors.log` in the durable runtime.
+
+External runtime `config.json` must declare absolute `rufloInstall` (local Ruflo node_modules) and `rufloState` (the original cryptographically anchored state location). Never move/rebuild Ruflo's trust ledger by copying its files to a new path. The sole Windows scheduled supervisor can use a tested hidden WScript launcher, not PowerShell. Codex completion is still `needs_review`, never automatic merge.
