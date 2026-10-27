@@ -17,18 +17,20 @@ function assertNoLinks(root, target) {
   }
 }
 function parseArgs(argv) {
-  let root, install;
+  let root, install, stateRoot;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--root' && !root && argv[i + 1]) root = argv[++i];
     else if (argv[i] === '--ruflo-install' && !install && argv[i + 1]) install = argv[++i];
-    else throw new Error('usage: node ruflo-sync.mjs --root <absolute-runtime-root> --ruflo-install <absolute-node_modules-dir>');
+    else if (argv[i] === '--ruflo-state' && !stateRoot && argv[i + 1]) stateRoot = argv[++i];
+    else throw new Error('usage: node ruflo-sync.mjs --root <absolute-runtime-root> --ruflo-install <absolute-node_modules-dir> [--ruflo-state <original-trusted-state>]');
   }
   if (!root || !path.isAbsolute(root)) throw new Error('--root must be an absolute runtime root');
   if (!install || !path.isAbsolute(install)) throw new Error('--ruflo-install must be an absolute installed Ruflo node_modules directory');
   const runtimeRoot = path.resolve(root);
   const sourceRoot = path.resolve(SOURCE_DIR, '../../..');
   if (inside(sourceRoot, runtimeRoot)) throw new Error('--root must be outside the source repository');
-  return { root: runtimeRoot, install: path.resolve(install) };
+  if (stateRoot && !path.isAbsolute(stateRoot)) throw new Error('--ruflo-state must be absolute');
+  return { root: runtimeRoot, install: path.resolve(install), stateRoot: stateRoot ? path.resolve(stateRoot) : path.join(runtimeRoot, 'ruflo-state') };
 }
 function loadAuthorizedJobs(root) {
   const queue = path.join(root, 'queue'); assertNoLinks(root, queue);
@@ -49,11 +51,13 @@ function parseResponse(response) {
   return text ? JSON.parse(text) : (response.structuredContent || {});
 }
 async function main() {
-  const { root, install } = parseArgs(process.argv.slice(2));
+  const { root, install, stateRoot } = parseArgs(process.argv.slice(2));
   fs.mkdirSync(root, { recursive: true });
-  const state = path.join(root, 'ruflo-state'), control = path.join(root, 'control'), lock = path.join(control, 'ruflo-sync.lock');
-  fs.mkdirSync(control, { recursive: true }); fs.mkdirSync(state, { recursive: true });
-  assertNoLinks(root, control); assertNoLinks(root, state);
+  const state = stateRoot, control = path.join(root, 'control'), lock = path.join(control, 'ruflo-sync.lock');
+  fs.mkdirSync(control, { recursive: true });
+  assertNoLinks(root, control);
+  if (!fs.existsSync(state) || !fs.statSync(state).isDirectory()) throw new Error('trusted Ruflo state root is missing');
+  assertNoLinks(path.parse(state).root, state);
   const requireFromInstall = createRequire(path.join(install, 'package.json'));
   const { Client } = requireFromInstall('@modelcontextprotocol/sdk/client/index.js');
   const { StdioClientTransport } = requireFromInstall('@modelcontextprotocol/sdk/client/stdio.js');

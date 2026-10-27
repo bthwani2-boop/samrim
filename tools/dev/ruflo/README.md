@@ -70,3 +70,5 @@ The MCP SDK and Ruflo executable are resolved dynamically from that installation
 ## Tests
 
 `node --test tools/dev/ruflo/supervisor.test.mjs` uses Node built-ins and temporary runtime roots. Its Git test initializes and commits an isolated repository under `tools/dev/ruflo/tests/`, then checks two independently modified worktrees from the same SHA, derived branches, collision denial, and wrong-SHA denial. It skips only when Git itself is unavailable. Tests never invoke Codex or connect to Ruflo.
+
+When preserving an existing Ruflo policy ledger across a runtime relocation, use the optional `--ruflo-state` flag with the original, verified state directory. Ruflo anchors are cryptographically bound to their real project-root path and may not be copied to a new root without an officially verified migration. Keep the copied untrusted state snapshot unused, and do not delete, rewrite, or bypass the trusted anchor mirror.
