@@ -4,7 +4,7 @@
 import { fulfillmentModeLabel, type JoiningCaseView, joiningCaseStateLabel, type PartnerManagedStore, publicationStateLabel } from "@bthwani/dsh";
 import type { ActorRoleView } from "@bthwani/identity";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { PageHeader } from "../../shell/page-header";
 import { useReadOnReturn } from "../shared/use-read-on-return";
@@ -18,6 +18,11 @@ import { PartnerTeamWorkspace } from "./partner-team-workspace";
 type PartnerDetail = Readonly<{ partner: ActorRoleView; joiningCase: JoiningCaseView | null }>;
 type PartnerStoresPage = Readonly<{ stores: ReadonlyArray<PartnerManagedStore>; nextCursor?: string }>;
 type PartnerDetailTab = "profile" | "stores" | "team";
+type PartnerStoresRequest = Readonly<{ generation: number; actorId: string }>;
+
+export function isCurrentPartnerStoresRequest(request: PartnerStoresRequest, currentGeneration: number, currentActorId: string): boolean {
+  return request.generation === currentGeneration && request.actorId === currentActorId;
+}
 
 function partnerRequestError(cause: unknown, fallback: string): string {
   if (isRequestFailure(cause)) return cause.message;
@@ -38,6 +43,12 @@ export function PartnerDetailWorkspace({ actorId, embedded = false }: Readonly<{
   const [error, setError] = useState("");
   const [storesError, setStoresError] = useState("");
   const [notice, setNotice] = useState("");
+  const storesRequestGeneration = useRef(0);
+  const storesRequestActorId = useRef(actorId);
+  if (storesRequestActorId.current !== actorId) {
+    storesRequestActorId.current = actorId;
+    storesRequestGeneration.current++;
+  }
 
   const loadDetail = useCallback(async (showLoading = true): Promise<boolean> => {
     if (showLoading) setLoading(true);
@@ -54,6 +65,8 @@ export function PartnerDetailWorkspace({ actorId, embedded = false }: Readonly<{
   }, [actorId]);
 
   const loadStores = useCallback(async (cursor = "", pageStack: ReadonlyArray<string> = []) => {
+    const request = { generation: ++storesRequestGeneration.current, actorId };
+    const isCurrent = () => isCurrentPartnerStoresRequest(request, storesRequestGeneration.current, storesRequestActorId.current);
     setLoadingStores(true);
     setStoresError("");
     try {
@@ -62,14 +75,16 @@ export function PartnerDetailWorkspace({ actorId, embedded = false }: Readonly<{
       const response = await identityFetch(`/api/partners/roster/${encodeURIComponent(actorId)}/stores?${params}`, { cache: "no-store" });
       if (!response.ok) throw new Error(await partnerErrorMessage(response));
       const page = await response.json() as PartnerStoresPage;
+      if (!isCurrent()) return;
       setStores(page.stores);
       setStoresCursor(page.nextCursor ?? "");
       setStoresPageStack(pageStack);
     } catch (cause) {
+      if (!isCurrent()) return;
       setStoresError(partnerRequestError(cause, "تعذرت قراءة متاجر الشريك ."));
       setStores([]);
       setStoresCursor("");
-    } finally { setLoadingStores(false); }
+    } finally { if (isCurrent()) setLoadingStores(false); }
   }, [actorId]);
 
   useEffect(() => {
