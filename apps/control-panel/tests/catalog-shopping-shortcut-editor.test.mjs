@@ -67,3 +67,20 @@ test("editing a missing shortcut fails closed and scope changes cannot reinstate
   assert.match(workspace, /if \(request !== scopeRequest\.current\) throw new Error\(/);
   assert.match(workspace, /تعذر العثور على الاختصار المحدد/);
 });
+
+test("category choices stay bounded, searchable, cursor-backed, and recoverable", async () => {
+  const component = await readComponent();
+
+  assert.match(component, /async function readCategoryPage\(verticalId: string, search: string, cursor/);
+  assert.match(component, /status: "all", sort: "name_asc", limit: "50"/);
+  assert.match(component, /query\.set\("query", search\.trim\(\)\)/);
+  assert.match(component, /if \(cursor\) query\.set\("cursor", cursor\)/);
+  assert.doesNotMatch(component, /for \(let page = 0; page < 100/);
+  assert.match(component, /api\/catalog\/categories\/\$\{encodeURIComponent\(id\)\}/);
+  assert.match(component, /onSearch=\{\(value\) => void loadCategoryPage\(value\)\}/);
+  assert.match(component, /onChange=\{\(event\) => \{ setCategoryQuery\(event.target.value\); setCategoryCursor\(""\); \}\}/);
+  assert.match(component, /categoryCursor \? <Button[\s\S]*?loadCategoryPage\(categoryQuery, categoryCursor, true\)/);
+  assert.match(component, /categoryError \? <p role="alert"[\s\S]*?categoryRetry\.current/);
+  assert.match(component, /categories\.length === 0 \? <p role="status"/);
+  assert.match(component, /categoryRequestSequence\.current \+= 1/);
+});

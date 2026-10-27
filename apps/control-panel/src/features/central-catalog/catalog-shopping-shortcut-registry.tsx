@@ -7,7 +7,8 @@ import { useSession } from "../../session/session-provider";
 
 type Option = Readonly<{ id: string; nameAr: string; active: boolean; pathAr: string }>;
 type FormValues = Readonly<{ titleAr: string; ordinal: number; active: boolean; reason: string }>;
-type Options = Readonly<{ types: ReadonlyArray<CommercialStoreType>; categories: ReadonlyArray<Option> }>;
+type Options = Readonly<{ types: ReadonlyArray<CommercialStoreType>; categories: ReadonlyArray<Option>; selectedCategories: ReadonlyArray<Option>; nextCursor?: string }>;
+type CategoryDetailResponse = Readonly<{ category: CatalogCategoryListItem }>;
 type CategoryResponse = Readonly<{ categories: ReadonlyArray<CatalogCategoryListItem>; nextCursor?: string }>;
 
 function errorMessage(input: unknown): string {
@@ -18,24 +19,34 @@ function errorMessage(input: unknown): string {
   return "تعذر تنفيذ العملية. أعد المحاولة.";
 }
 
-async function readOptions(verticalId: string): Promise<Options> {
-  const typesResponse = await fetch(`/api/catalog/commercial-store-types?${new URLSearchParams({ verticalId, includeInactive: "true" })}`, { cache: "no-store" });
+function toOption(item: CatalogCategoryListItem): Option {
+  return { id: item.id, nameAr: item.nameAr, active: item.active, pathAr: item.pathAr };
+}
+
+async function readCategoryPage(verticalId: string, search: string, cursor = ""): Promise<CategoryResponse> {
+  const query = new URLSearchParams({ verticalId, status: "all", sort: "name_asc", limit: "50" });
+  if (search.trim()) query.set("query", search.trim());
+  if (cursor) query.set("cursor", cursor);
+  const response = await fetch(`/api/catalog/categories?${query}`, { cache: "no-store" });
+  const body = await response.json().catch(() => null) as CategoryResponse | { error?: unknown } | null;
+  if (!response.ok || !body || !("categories" in body)) throw new Error(errorMessage(body));
+  return body;
+}
+
+async function readOptions(verticalId: string, selectedCategoryIds: ReadonlyArray<string>): Promise<Options> {
+  const [typesResponse, categoryPage, selectedResponses] = await Promise.all([
+    fetch(`/api/catalog/commercial-store-types?${new URLSearchParams({ verticalId, includeInactive: "true" })}`, { cache: "no-store" }),
+    readCategoryPage(verticalId, ""),
+    Promise.all(selectedCategoryIds.map(async (id) => {
+      const response = await fetch(`/api/catalog/categories/${encodeURIComponent(id)}`, { cache: "no-store" });
+      const body = await response.json().catch(() => null) as CategoryDetailResponse | { error?: unknown } | null;
+      if (!response.ok || !body || !("category" in body)) throw new Error(errorMessage(body));
+      return body.category;
+    })),
+  ]);
   const typesBody = await typesResponse.json().catch(() => null) as { storeTypes?: ReadonlyArray<CommercialStoreType>; error?: unknown } | null;
   if (!typesResponse.ok || !typesBody?.storeTypes) throw new Error(errorMessage(typesBody));
-
-  const categories: Option[] = [];
-  let cursor = "";
-  for (let page = 0; page < 100; page += 1) {
-    const query = new URLSearchParams({ verticalId, status: "all", sort: "name_asc", limit: "100" });
-    if (cursor) query.set("cursor", cursor);
-    const response = await fetch(`/api/catalog/categories?${query}`, { cache: "no-store" });
-    const body = await response.json().catch(() => null) as CategoryResponse | { error?: unknown } | null;
-    if (!response.ok || !body || !("categories" in body)) throw new Error(errorMessage(body));
-    categories.push(...body.categories.map((item) => ({ id: item.id, nameAr: item.nameAr, active: item.active, pathAr: item.pathAr })));
-    cursor = body.nextCursor ?? "";
-    if (!cursor) return { types: typesBody.storeTypes, categories };
-  }
-  throw new Error("تعذر تحميل جميع الفئات. أعد المحاولة.");
+  return { types: typesBody.storeTypes, categories: categoryPage.categories.map(toOption), selectedCategories: selectedResponses.map(toOption), ...(categoryPage.nextCursor ? { nextCursor: categoryPage.nextCursor } : {}) };
 }
 
 export function CatalogShoppingShortcutEditor({ verticalId, initialShortcut, onSaved, onClose }: Readonly<{
@@ -49,6 +60,11 @@ export function CatalogShoppingShortcutEditor({ verticalId, initialShortcut, onS
   const [form] = Form.useForm<FormValues>();
   const [types, setTypes] = useState<ReadonlyArray<CommercialStoreType>>([]);
   const [categories, setCategories] = useState<ReadonlyArray<Option>>([]);
+  const [selectedCategories, setSelectedCategories] = useState<ReadonlyArray<Option>>([]);
+  const [categoryQuery, setCategoryQuery] = useState("");
+  const [categoryCursor, setCategoryCursor] = useState("");
+  const [categoryLoading, setCategoryLoading] = useState(false);
+  const [categoryError, setCategoryError] = useState("");
   const [typeIds, setTypeIds] = useState<ReadonlyArray<string>>(initialShortcut?.storeTypeIds ?? []);
   const [categoryIds, setCategoryIds] = useState<ReadonlyArray<string>>(initialShortcut?.categoryIds ?? []);
   const [loading, setLoading] = useState(true);
@@ -57,6 +73,8 @@ export function CatalogShoppingShortcutEditor({ verticalId, initialShortcut, onS
   const [saveError, setSaveError] = useState("");
   const [selectionError, setSelectionError] = useState("");
   const requestSequence = useRef(0);
+  const categoryRequestSequence = useRef(0);
+  const categoryRetry = useRef<Readonly<{ query: string; cursor: string; append: boolean }> | null>(null);
   const lifeSequence = useRef(0);
   const lifeScope = useRef(verticalId);
   const idempotency = useRef<Readonly<{ fingerprint: string; key: string }> | null>(null);
@@ -75,21 +93,47 @@ export function CatalogShoppingShortcutEditor({ verticalId, initialShortcut, onS
     setLoading(true);
     setLoadError("");
     try {
-      const options = await readOptions(verticalId);
+      const options = await readOptions(verticalId, initialShortcut?.categoryIds ?? []);
       if (request !== requestSequence.current) return;
       setTypes(options.types);
       setCategories(options.categories);
+      setSelectedCategories(options.selectedCategories);
+      setCategoryCursor(options.nextCursor ?? "");
     } catch (cause: unknown) {
       if (request === requestSequence.current) setLoadError(cause instanceof Error ? cause.message : "تعذرت قراءة خيارات الاختصار.");
     } finally {
       if (request === requestSequence.current) setLoading(false);
     }
-  }, [verticalId]);
+  }, [initialShortcut?.categoryIds, verticalId]);
 
   useEffect(() => {
     void loadOptions();
     return () => { requestSequence.current += 1; };
   }, [loadOptions]);
+
+  useEffect(() => () => {
+    categoryRequestSequence.current += 1;
+    categoryRetry.current = null;
+  }, []);
+
+  const loadCategoryPage = useCallback(async (search: string, cursor = "", append = false) => {
+    const request = ++categoryRequestSequence.current;
+    categoryRetry.current = { query: search, cursor, append };
+    setCategoryLoading(true);
+    setCategoryError("");
+    try {
+      const page = await readCategoryPage(verticalId, search, cursor);
+      if (request !== categoryRequestSequence.current) return;
+      const options = page.categories.map(toOption);
+      setCategories((current) => append ? [...new Map([...current, ...options].map((item) => [item.id, item])).values()] : options);
+      setCategoryCursor(page.nextCursor ?? "");
+      setSelectedCategories((current) => [...new Map([...current, ...options.filter((item) => categoryIds.includes(item.id))].map((item) => [item.id, item])).values()]);
+    } catch (cause: unknown) {
+      if (request === categoryRequestSequence.current) setCategoryError(cause instanceof Error ? cause.message : "\u062a\u0639\u0630\u0631 \u0628\u062d\u062b \u0627\u0644\u0641\u0626\u0627\u062a. \u0623\u0639\u062f \u0627\u0644\u0645\u062d\u0627\u0648\u0644\u0629.");
+    } finally {
+      if (request === categoryRequestSequence.current) setCategoryLoading(false);
+    }
+  }, [categoryIds, verticalId]);
 
   async function save(values: FormValues) {
     if (!canEdit || !verticalId || busy) return;
@@ -148,10 +192,14 @@ export function CatalogShoppingShortcutEditor({ verticalId, initialShortcut, onS
     }
     setSelectionError("");
     if (kind === "type") setTypeIds(selected);
-    else setCategoryIds(selected);
+    else {
+      setCategoryIds(selected);
+      setSelectedCategories((current) => current.filter((item) => selected.includes(item.id)));
+    }
   }
 
   const selectedTargets = typeIds.length + categoryIds.length;
+  const categoryChoices = [...new Map([...selectedCategories, ...categories].map((item) => [item.id, item])).values()];
   return <section className="catalog-taxonomy-section" aria-label="محرر اختصار التسوق">
     {loading ? <p role="status">جارٍ قراءة الأنواع والفئات…</p> : null}
     {loadError ? <div>
@@ -194,7 +242,9 @@ export function CatalogShoppingShortcutEditor({ verticalId, initialShortcut, onS
       <Form.Item label={`فئات المنتجات المناسبة (${categoryIds.length} محددة)`}>
         <details>
           <summary>اختيار فئات المنتجات</summary>
-          <Checkbox.Group value={[...categoryIds]} disabled={busy || !canEdit} options={categories
+          <Input.Search aria-label={"\u0628\u062d\u062b \u0641\u064a \u0627\u0644\u0641\u0626\u0627\u062a"} value={categoryQuery} onChange={(event) => { setCategoryQuery(event.target.value); setCategoryCursor(""); }} onSearch={(value) => void loadCategoryPage(value)} enterButton={"\u0628\u062d\u062b"} disabled={busy || !canEdit || categoryLoading} />
+          {categoryError ? <p role="alert" className="identity-error">{categoryError} <Button type="link" disabled={categoryLoading} onClick={() => { const retry = categoryRetry.current; if (retry) void loadCategoryPage(retry.query, retry.cursor, retry.append); }}>{"\u0625\u0639\u0627\u062f\u0629 \u0627\u0644\u0645\u062d\u0627\u0648\u0644\u0629"}</Button></p> : null}
+          <Checkbox.Group value={[...categoryIds]} disabled={busy || !canEdit || categoryLoading} options={categoryChoices
             .filter((item) => item.active || categoryIds.includes(item.id))
             .map((item) => ({
               label: `${item.pathAr || item.nameAr}${item.active ? "" : " (غير نشطة)"}`,
@@ -202,6 +252,9 @@ export function CatalogShoppingShortcutEditor({ verticalId, initialShortcut, onS
               disabled: !item.active && !categoryIds.includes(item.id),
             }))}
             onChange={(values) => changeTargets("category", values.map(String))} />
+          {categoryLoading ? <p role="status">{"\u062c\u0627\u0631\u064d \u0628\u062d\u062b \u0627\u0644\u0641\u0626\u0627\u062a\u2026"}</p> : null}
+          {categoryCursor ? <Button type="link" disabled={busy || !canEdit || categoryLoading} onClick={() => void loadCategoryPage(categoryQuery, categoryCursor, true)}>{"\u062a\u062d\u0645\u064a\u0644 \u0645\u0632\u064a\u062f \u0645\u0646 \u0627\u0644\u0641\u0626\u0627\u062a"}</Button> : null}
+          {!categoryLoading && !categoryError && categories.length === 0 ? <p role="status">{"\u0644\u0627 \u062a\u0648\u062c\u062f \u0641\u0626\u0627\u062a \u0645\u0637\u0627\u0628\u0642\u0629."}</p> : null}
         </details>
       </Form.Item>
       <p role={selectionError ? "alert" : "status"}>{selectionError || `المجموع: ${selectedTargets} من 25`}</p>
