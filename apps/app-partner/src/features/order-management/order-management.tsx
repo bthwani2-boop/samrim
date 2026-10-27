@@ -6,11 +6,11 @@ import { useIsFocused, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { usePartnerStoreScope } from "../partner-onboarding/partner-store-scope-context";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { OrderConversation } from "./order-conversation";
-import { mergeOrderPageRecords, tryAcquireOrderAction } from "./order-page-records";
+import { isCurrentOrderListRequest, mergeOrderPageRecords, tryAcquireOrderAction } from "./order-page-records";
 
 function baseUrl(): string {
   const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -84,15 +84,18 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
   useEffect(() => { const timer = setTimeout(() => setDebouncedSearch(searchQuery), 350); return () => clearTimeout(timer); }, [searchQuery]);
   const normalizedSearch = targetOrderId || debouncedSearch.trim();
+  const currentSession = currentIdentityState();
+  const unreadScope = currentSession.kind === "authenticated" ? currentSession.identity.subject.trim() : "";
+  const requestScopeKey = JSON.stringify([unreadScope, storeId ?? "", filter, normalizedSearch]);
+  const activeScopeKey = useRef(requestScopeKey);
   const getChatUnread = useCallback(async (orderId: string) => {
     const token = await getUsableIdentityAccessToken();
     return (await client().readOrderConversation(token, orderId, 1)).unreadCount;
   }, []);
-  const currentSession = currentIdentityState();
-  const unreadScope = currentSession.kind === "authenticated" ? currentSession.identity.subject.trim() : "";
   const unreadChatCounts = useOrderChatUnreadCounts(orders.map(order => order.id), unreadScope, isFocused, getChatUnread, chatOrderId);
 
   const load = useCallback(async (options: { append?: boolean; cursor?: string; quiet?: boolean } = {}) => {
+    if (requestScopeKey !== activeScopeKey.current) return;
     const generation = options.append ? loadGeneration.current : ++loadGeneration.current;
     if (options.append) setLoadingMore(true);
     else if (!options.quiet) {
@@ -112,7 +115,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
         ...(options.append && options.cursor ? { cursor: options.cursor } : {}),
         limit: 50,
       });
-      if (generation !== loadGeneration.current) return;
+      if (!isCurrentOrderListRequest(generation, requestScopeKey, loadGeneration.current, activeScopeKey.current)) return;
       setOrders((current) => options.append ? [...current, ...response.orders.filter((order) => !current.some((existing) => existing.id === order.id))] : response.orders);
       setAttention(response.attention);
       setCursor(response.nextCursor ?? "");
@@ -140,7 +143,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
         }
         })),
       ]);
-      if (generation !== loadGeneration.current) return;
+      if (!isCurrentOrderListRequest(generation, requestScopeKey, loadGeneration.current, activeScopeKey.current)) return;
       const captainEntries = membershipResults.flatMap((entry): ReadonlyArray<readonly [string, ReadonlyArray<StoreCaptainChoice>]> => entry.status === "fulfilled"
         ? [[entry.value[0], entry.value[1].flatMap((membership: StoreCaptainMembership) => membership.state === "active" && membership.captainActorId ? [{ actorId: membership.captainActorId, label: storeCaptainChoiceLabel(membership) }] : [])]]
         : []);
@@ -152,13 +155,42 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
       }
     } catch (cause) {
       console.error("DSH order list failed", cause);
-      if (generation === loadGeneration.current) setError("تعذر قراءة الطلبات. ستُعاد المحاولة تلقائيًا.");
+      if (isCurrentOrderListRequest(generation, requestScopeKey, loadGeneration.current, activeScopeKey.current)) setError("تعذر قراءة الطلبات. ستُعاد المحاولة تلقائيًا.");
     } finally {
-      if (generation === loadGeneration.current) { if (!options.quiet) setLoading(false); setLoadingMore(false); }
+      if (isCurrentOrderListRequest(generation, requestScopeKey, loadGeneration.current, activeScopeKey.current)) { if (!options.quiet) setLoading(false); setLoadingMore(false); }
     }
-  }, [canFulfillOrder, filter, normalizedSearch, storeId, targetOrderId]);
+  }, [canFulfillOrder, filter, normalizedSearch, requestScopeKey, storeId, targetOrderId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useLayoutEffect(() => {
+    activeScopeKey.current = requestScopeKey;
+    setOrders([]);
+    setAssignments({});
+    setStoreCaptainsByStore({});
+    setDispatchOffers({});
+    setAttention(null);
+    setCursor("");
+    setHasMore(false);
+    setLoading(true);
+    setLoadingMore(false);
+    setBusy("");
+    setError("");
+    setSidecarError("");
+    setExpandedOrderIds(new Set());
+    setChatOrderId("");
+    openedTargetRef.current = "";
+    setPickupCodes({});
+    setAdjustmentQuantities({});
+    setConfirmation(null);
+    return () => {
+      activeScopeKey.current = "";
+      loadGeneration.current += 1;
+    };
+  }, [requestScopeKey]);
+
+  useEffect(() => {
+    void load();
+    return () => { loadGeneration.current += 1; };
+  }, [load]);
   useEffect(() => {
     if (!targetOrderId || loading) return;
     const target = orders.find(order => order.id === targetOrderId);
@@ -178,8 +210,8 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
     if (!releaseAction) return;
     setBusy(order.id); setError("");
     try { const token = await getUsableIdentityAccessToken(); await client().transitionStoreOrder(token, order.storeId, order.id, { state: requestedState }, order.version); await load(); }
-    catch (cause) { console.error("DSH order transition failed", cause); await load(); setError("تعذر تأكيد نتيجة الإجراء؛ أُعيدت قراءة الحالة الحالية قبل أي إعادة محاولة."); }
-    finally { releaseAction(); setBusy(""); }
+    catch (cause) { console.error("DSH order transition failed", cause); await load(); if (requestScopeKey === activeScopeKey.current) setError("تعذر تأكيد نتيجة الإجراء؛ أُعيدت قراءة الحالة الحالية قبل أي إعادة محاولة."); }
+    finally { releaseAction(); if (requestScopeKey === activeScopeKey.current) setBusy(""); }
   }
 
   async function proposeAdjustment(order: Order, lineID: string, kind: OrderAdjustmentProposalRequest["kind"], actualQuantityBaseUnits?: number) {
@@ -189,12 +221,13 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
       const token = await getUsableIdentityAccessToken();
       const input: OrderAdjustmentProposalRequest = { orderLineId: lineID, kind, ...(actualQuantityBaseUnits === undefined ? {} : { actualQuantityBaseUnits }) };
       const result = await client().proposePartnerOrderAdjustment(token, order.storeId, order.id, input, order.version);
+      if (requestScopeKey !== activeScopeKey.current) return;
       setOrders((current) => current.map((item) => item.id === order.id ? result.order : item));
       setAdjustmentQuantities((current) => ({ ...current, [lineID]: "" }));
     } catch (cause) {
       console.error("DSH order adjustment proposal failed", cause);
-      setError("تعذر إرسال التعديل؛ تحقق من حالة الطلب بعد المزامنة التلقائية قبل إعادة المحاولة.");
-    } finally { setBusy(""); }
+      if (requestScopeKey === activeScopeKey.current) setError("تعذر إرسال التعديل؛ تحقق من حالة الطلب بعد المزامنة التلقائية قبل إعادة المحاولة.");
+    } finally { if (requestScopeKey === activeScopeKey.current) setBusy(""); }
   }
 
   function confirmRemoveLine(order: Order, lineID: string) {
@@ -208,10 +241,11 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
     try {
       const token = await getUsableIdentityAccessToken();
       await client().transitionStoreOrder(token, order.storeId, order.id, { state: "PICKED_UP", code }, order.version);
+      if (requestScopeKey !== activeScopeKey.current) return;
       setPickupCodes((current) => ({ ...current, [order.id]: "" }));
       await load();
-    } catch (cause) { console.error("DSH store pickup confirmation failed", cause); setError("تعذر تأكيد الاستلام؛ تحقق من الرمز والحالة الظاهرة قبل المحاولة مجددًا."); }
-    finally { setBusy(""); }
+    } catch (cause) { console.error("DSH store pickup confirmation failed", cause); if (requestScopeKey === activeScopeKey.current) setError("تعذر تأكيد الاستلام؛ تحقق من الرمز والحالة الظاهرة قبل المحاولة مجددًا."); }
+    finally { if (requestScopeKey === activeScopeKey.current) setBusy(""); }
   }
 
   async function confirmStoreCaptainCashHandoff(order: Order) {
@@ -221,8 +255,8 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
       const token = await getUsableIdentityAccessToken();
       await client().confirmPartnerCaptainCashHandoff(token, order.storeId, order.id, order.version);
       await load();
-    } catch (cause) { console.error("DSH Store Captain cash handoff confirmation failed", cause); setError("تعذر تأكيد استلام النقد؛ تحقق من الاستلام الفعلي وانتظر الحالة المؤكدة قبل المحاولة مجددًا."); }
-    finally { setBusy(""); }
+    } catch (cause) { console.error("DSH Store Captain cash handoff confirmation failed", cause); if (requestScopeKey === activeScopeKey.current) setError("تعذر تأكيد استلام النقد؛ تحقق من الاستلام الفعلي وانتظر الحالة المؤكدة قبل المحاولة مجددًا."); }
+    finally { if (requestScopeKey === activeScopeKey.current) setBusy(""); }
   }
 
   function markPickupNoShow(order: Order) {
@@ -234,8 +268,8 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
     if (!canFulfillOrder(order.storeId) || busy || loading || assignment.handoff.state !== "pending") return;
     setBusy(order.id); setError("");
     try { const token = await getUsableIdentityAccessToken(); await client().confirmCaptainStoreHandoff(token, order.storeId, order.id, assignment.id, assignment.handoff.version); await load(); }
-    catch (cause) { console.error("DSH Captain handoff failed", cause); setError("تعذر تأكيد جاهزية التسليم. أعد القراءة ثم حاول مرة أخرى."); }
-    finally { setBusy(""); }
+    catch (cause) { console.error("DSH Captain handoff failed", cause); if (requestScopeKey === activeScopeKey.current) setError("تعذر تأكيد جاهزية التسليم. أعد القراءة ثم حاول مرة أخرى."); }
+    finally { if (requestScopeKey === activeScopeKey.current) setBusy(""); }
   }
 
   async function dispatchToStoreCaptain(order: Order, captainActorId: string) {
@@ -244,10 +278,11 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
     try {
       const token = await getUsableIdentityAccessToken();
       const result = await client().createPartnerStoreCaptainDispatchOffer(token, order.storeId, order.id, { captainActorId }, order.version);
+      if (requestScopeKey !== activeScopeKey.current) return;
       setDispatchOffers((current) => ({ ...current, [order.id]: result.offer }));
       await load();
-    } catch (cause) { console.error("DSH Store Captain dispatch failed", cause); setError("تعذر إرسال الطلب إلى كابتن المتجر؛ تحقق من الحالة بعد المزامنة التلقائية قبل إعادة الإرسال."); }
-    finally { setBusy(""); }
+    } catch (cause) { console.error("DSH Store Captain dispatch failed", cause); if (requestScopeKey === activeScopeKey.current) setError("تعذر إرسال الطلب إلى كابتن المتجر؛ تحقق من الحالة بعد المزامنة التلقائية قبل إعادة الإرسال."); }
+    finally { if (requestScopeKey === activeScopeKey.current) setBusy(""); }
   }
 
   return (
