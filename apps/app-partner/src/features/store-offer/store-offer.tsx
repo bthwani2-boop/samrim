@@ -22,7 +22,7 @@ import { onPartnerProductAction } from "../../shell/partner-product-actions";
 import { PartnerStorePromotionBanner } from "./partner-promotion-banner";
 import { StoreCatalogExportCard } from "./store-catalog-export";
 import { StoreProductTrash } from "./store-product-trash";
-import { isCurrentCatalogProductRequest, mergeCatalogProductPage, releaseCatalogProductPageRequest } from "./catalog-product-pages";
+import { isCurrentCatalogProductRequest, mergeCatalogProductPage, releaseCatalogProductPageRequest, replaceCatalogProductInPage } from "./catalog-product-pages";
 import { acquireOfferMutation } from "./offer-mutation-lock";
 
 type OfferState = { kind: "loading" } | { kind: "ready"; offers: ReadonlyArray<CatalogStoreOffer>; proposals: ReadonlyArray<CatalogProductProposal> } | { kind: "error" };
@@ -472,7 +472,7 @@ const theme = useAppearanceTheme();
     try {
       const token = await getUsableIdentityAccessToken();
       const result = await dshClient().updateStoreScopedProduct(token, storeId, selectedProduct.id, { canonicalName: selectedProductName.trim(), description: selectedProductDescription.trim(), verticalId, scope: "STORE_SCOPED", active: selectedProduct.active, ...(selectedProductCategoryID === (selectedProduct.categoryIds[0] ?? "") ? {} : { categoryIds: selectedProductCategoryID ? [selectedProductCategoryID] : [] }) }, selectedProduct.version);
-      setSelectedProduct(result.product);
+      replaceProductInSearch(result.product);
       setSelectedProductName(result.product.canonicalName);
       setSelectedProductDescription(result.product.description ?? "");
       await load();
@@ -583,7 +583,7 @@ const theme = useAppearanceTheme();
   function replaceProductInSearch(product: CatalogProduct) {
     setSelectedProduct(product);
     setMediaDraft(product.media);
-    setProducts((current) => current.map((item) => item.id === product.id ? product : item));
+    setProducts((current) => replaceCatalogProductInPage(current, product));
   }
 
   function beginMediaMutation(): boolean {
