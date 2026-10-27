@@ -10,6 +10,7 @@ import { orderJourneyPresentation } from "./order-journey";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { isPartialOrderListEmpty, matchesOrderFilters, matchesOrderStatus, type OrderFulfillmentFilter } from "./order-list-filter";
 import { isClientActorScopeCurrent } from "./order-session-scope";
+import { acquireRepeatOrder, createRepeatOrderGate, invalidateRepeatOrderForActorChange, ownsRepeatOrder, releaseRepeatOrder } from "./repeat-order-gate";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const statusOptions = [
@@ -62,6 +63,7 @@ export default function ClientOrders() {
   const [fulfillmentFilter, setFulfillmentFilter] = useState<OrderFulfillmentFilter>("all");
   const [repeatingOrderID, setRepeatingOrderID] = useState("");
   const [repeatError, setRepeatError] = useState("");
+  const repeatOrderGate = useRef(createRepeatOrderGate());
   const selectedStatusLabel = statusOptions.find((option) => option.key === statusFilter)?.label ?? "الكل";
   const selectedFulfillmentLabel = fulfillmentOptions.find((option) => option.key === fulfillmentFilter)?.label ?? "كل الطرق";
   const filterButtonLabel = statusFilter !== "all" ? selectedStatusLabel : fulfillmentFilter !== "all" ? selectedFulfillmentLabel : "تصفية";
@@ -138,14 +140,16 @@ export default function ClientOrders() {
   }, [state, loadingMore, activeActorID]);
 
   const repeatOrder = useCallback(async (order: Order) => {
-    if (state.kind !== "ready" || !isClientActorScopeCurrent(state.actorID, activeActorID) || !hasCurrentOrdersActor(state.actorID) || repeatingOrderID || !order.lines.length) return;
+    if (state.kind !== "ready" || !isClientActorScopeCurrent(state.actorID, activeActorID) || !hasCurrentOrdersActor(state.actorID) || !order.lines.length) return;
     const actorID = state.actorID;
+    const lease = acquireRepeatOrder(repeatOrderGate.current, actorID, order.id);
+    if (!lease) return;
     setRepeatingOrderID(order.id);
     setRepeatError("");
     let appliedCount = 0;
     try {
       const token = await getUsableIdentityAccessToken();
-      if (!hasCurrentOrdersActor(actorID)) return;
+      if (!ownsRepeatOrder(repeatOrderGate.current, lease) || !hasCurrentOrdersActor(actorID)) return;
       let cart: Cart | null = null;
       try {
         cart = (await client().readOpenCart(token, order.storeId)).cart;
@@ -154,7 +158,7 @@ export default function ClientOrders() {
         if (!missingCart) throw error;
       }
 
-      if (!hasCurrentOrdersActor(actorID)) return;
+      if (!ownsRepeatOrder(repeatOrderGate.current, lease) || !hasCurrentOrdersActor(actorID)) return;
       const plan = order.lines.map((line) => {
         const existing = cart?.lines.find((cartLine) => cartLine.storeOfferId === line.storeOfferId);
         if (existing && !sameIDs(existing.selectedModifierOptionIds, line.selectedModifierOptionIds)) {
@@ -175,7 +179,7 @@ export default function ClientOrders() {
       let expectedVersion = cart?.version ?? 0;
       for (const item of plan) {
         if (item.error) continue;
-        if (!hasCurrentOrdersActor(actorID)) return;
+        if (!ownsRepeatOrder(repeatOrderGate.current, lease) || !hasCurrentOrdersActor(actorID)) return;
         const response = await client().upsertCartLine(token, {
           storeId: order.storeId,
           storeOfferId: item.storeOfferId,
@@ -185,18 +189,27 @@ export default function ClientOrders() {
         expectedVersion = response.cart.version;
         appliedCount += 1;
       }
-      if (!hasCurrentOrdersActor(actorID)) return;
+      if (!ownsRepeatOrder(repeatOrderGate.current, lease) || !hasCurrentOrdersActor(actorID)) return;
       router.push(`/cart/${encodeURIComponent(order.storeId)}?fulfillmentMode=${encodeURIComponent(order.fulfillmentMode)}` as Href);
     } catch (error) {
       console.error("DSH client order repeat failed", error);
-      if (!hasCurrentOrdersActor(actorID)) return;
+      if (!ownsRepeatOrder(repeatOrderGate.current, lease) || !hasCurrentOrdersActor(actorID)) return;
       setRepeatError(appliedCount ? `تعذر إكمال التكرار؛ أُضيف ${appliedCount} من ${order.lines.length} منتجات. راجع السلة قبل المتابعة.` : "تعذر تكرار الطلب. قد يتغير توفر المنتجات أو خياراتها؛ حدّث القائمة وحاول مجددًا.");
     } finally {
-      setRepeatingOrderID("");
+      if (releaseRepeatOrder(repeatOrderGate.current, lease)) {
+        setRepeatingOrderID((current) => repeatOrderGate.current.current === null && current === order.id ? "" : current);
+      }
     }
-  }, [activeActorID, repeatingOrderID, router, state]);
+  }, [activeActorID, router, state]);
 
-  useEffect(() => subscribeIdentitySession(setIdentityState), []);
+  useEffect(() => subscribeIdentitySession((next) => {
+    const nextActorID = next.kind === "authenticated" ? next.identity.subject.trim() : "";
+    const invalidated = invalidateRepeatOrderForActorChange(repeatOrderGate.current, nextActorID);
+    if (invalidated) {
+      setRepeatingOrderID((current) => repeatOrderGate.current.current === null && current === invalidated.orderID ? "" : current);
+    }
+    setIdentityState(next);
+  }), []);
   useEffect(() => {
     if (state.kind !== "ready" || !hasCurrentOrdersActor(state.actorID)) {
       setStoreIdentity({});
