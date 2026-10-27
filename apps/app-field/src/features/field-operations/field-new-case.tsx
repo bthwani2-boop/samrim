@@ -8,6 +8,7 @@ import * as Location from "expo-location";
 import { type Href, Link, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Keyboard, ScrollView, type ScrollViewInstance, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
@@ -873,7 +874,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
         </View>
       </ScrollView>
       {!keyboardVisible && admissionActionability === "available" && (!caseId || Boolean(createdCase)) ? (
-        <View style={{ backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, gap: spacing[2], paddingHorizontal: spacing[3], paddingVertical: spacing[2] }}>
+        <SafeAreaView edges={["bottom"]} style={{ backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, gap: spacing[2], paddingHorizontal: spacing[3], paddingVertical: spacing[2] }}>
           {draftConflictNeedsRead ? <BthwaniButton busy={busy} disabled={busy} label="إعادة قراءة المسودة" onPress={() => void rereadAfterDraftConflict()} variant="secondary" /> : null}
           <View style={{ flexDirection: "row", gap: spacing[2] }}>
             {activeStep > 0 ? <View style={{ flex: 1 }}><BthwaniButton label="السابق" disabled={formLocked} onPress={() => { setActiveStep((current) => current - 1); setError(""); }} variant="secondary" /></View> : null}
@@ -881,7 +882,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
             <View style={{ flex: 1 }}><BthwaniButton busy={busy} disabled={busy || draftConflictNeedsRead || (!pendingDraftAttempt && formLocked)} label={pendingDraftAttempt ? "تحقق من الحفظ" : createdCase?.case.state === "needs_correction" ? "تصحيح وإعادة إرسال" : draftConflict ? "حفظ التغييرات" : createdCase ? "حفظ التعديلات" : "حفظ المسودة"} onPress={() => void createCase()} variant="secondary" /></View>
             {activeStep === 1 && createdCase?.case.state !== "needs_correction" ? <View style={{ flex: 1 }}><BthwaniButton busy={busy} disabled={busy || draftConflictNeedsRead || (!pendingDraftAttempt && formLocked)} label="حفظ وإرسال للمراجعة" onPress={() => void createCase(true)} /></View> : null}
           </View>
-        </View>
+        </SafeAreaView>
       ) : null}
     </View>
   );
