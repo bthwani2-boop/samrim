@@ -95,7 +95,7 @@ function systemCodexPresent(root, file) {
 }
 
 export class Supervisor {
-  constructor({ root, config, freeMem = () => os.freemem(), spawn = nodeSpawn, now = () => new Date().toISOString(), timeoutMs = 1800000, codexPath = SYSTEM_CODEX, sync = null, syncIntervalMs = 600000 } = {}) {
+  constructor({ root, config, freeMem = () => os.freemem(), spawn = nodeSpawn, now = () => new Date().toISOString(), timeoutMs = 1800000, codexPath = SYSTEM_CODEX, sync = null, syncIntervalMs = 600000, syncTimeoutMs = 30000 } = {}) {
     if (typeof root !== 'string' || !path.isAbsolute(root)) throw new Error('runtime root must be an absolute path');
     this.root = path.resolve(root);
     this.config = config === undefined ? loadConfig(this.root) : validateConfig(config); this.freeMem = freeMem; this.spawn = spawn; this.now = now; this.timeoutMs = timeoutMs;
@@ -106,7 +106,8 @@ export class Supervisor {
     if (!Number.isSafeInteger(syncIntervalMs) || syncIntervalMs < 1000) throw new Error('syncIntervalMs must be at least 1000');
     this.sync = sync;
     this.syncDirty = true;
-    this.nextSyncAt = 0; this.syncIntervalMs = syncIntervalMs; this.lastSync = null;
+    if (!Number.isSafeInteger(syncTimeoutMs) || syncTimeoutMs < 100) throw new Error('syncTimeoutMs must be at least 100');
+    this.nextSyncAt = 0; this.syncIntervalMs = syncIntervalMs; this.syncTimeoutMs = syncTimeoutMs; this.lastSync = null;
   }
   archiveStaleLock() {
     const recoveryPath = `${this.lockPath}.recovery`, token = { pid: process.pid, nonce: crypto.randomUUID() };
@@ -264,7 +265,12 @@ export class Supervisor {
     if (!this.sync || (Date.now() < this.nextSyncAt && (!this.syncDirty || this.lastSync?.status === 'failed'))) return;
     this.syncDirty = false;
     try {
-      const result = await this.sync();
+      // Keep a live event-loop handle while MCP connects; fail in bounded time instead of Node exit 13.
+      let deadline;
+      const result = await Promise.race([
+        Promise.resolve().then(() => this.sync()),
+        new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error('Ruflo sync timed out')), this.syncTimeoutMs); })
+      ]).finally(() => clearTimeout(deadline));
       this.lastSync = { status: 'pass', at: this.now(), records: result?.records?.length ?? null };
       atomicJson(this.root, path.join(this.root, 'control', 'ruflo-sync-status.json'), this.lastSync);
       this.nextSyncAt = Date.now() + this.syncIntervalMs;
@@ -322,4 +328,6 @@ async function cli() {
     }
   } catch (error) { console.error(error.message); process.exitCode = 2; }
 }
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await cli();
+// Do not top-level-await cli(): cli dynamically imports ruflo-sync, which imports this module.
+// A top-level await creates a circular evaluation deadlock and Node exits with code 13.
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) void cli();

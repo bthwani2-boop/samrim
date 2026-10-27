@@ -189,3 +189,15 @@ test('Ruflo sync failure does not crash supervisor or rerun existing claims', as
   assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'control', 'outcomes', 'one.json'))).status, 'completed');
   assert.match(fs.readFileSync(path.join(root, 'control', 'ruflo-sync-errors.log'), 'utf8'), /synthetic-mcp-error/);
 });
+
+test('stalled Ruflo connection is bounded, keeps the agent supervisor alive, and records failure', async (t) => {
+  const { root, config } = sandbox(t, { pollMs: 100 });
+  const mgr = make(root, config, { sync: () => new Promise(() => {}), syncTimeoutMs: 110 });
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 350);
+  await mgr.serve({ signal: controller.signal });
+  assert.equal(mgr.lastSync.status, 'failed');
+  assert.match(mgr.lastSync.error, /timed out/);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'control', 'ruflo-sync-status.json'))).status, 'failed');
+  assert.equal(fs.existsSync(path.join(root, 'control', 'supervisor.lock')), false);
+});
