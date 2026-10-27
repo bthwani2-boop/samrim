@@ -6,9 +6,9 @@ import { useSession } from "../../session/session-provider";
 import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
 import { CatalogCategoryRegistry } from "./catalog-category-registry";
 import { CatalogCommercialStoreTypeRegistry } from "./catalog-commercial-store-type-registry";
-import { CatalogShoppingShortcutRegistry } from "./catalog-shopping-shortcut-registry";
-import { CatalogVerticalRegistry } from "./catalog-vertical-registry";
+import { CatalogShoppingShortcutEditor } from "./catalog-shopping-shortcut-registry";
 import { buildCategoryListParams, isLoadedViewSort, sortTaxonomyRows } from "./catalog-taxonomy-query";
+import { CatalogVerticalRegistry } from "./catalog-vertical-registry";
 
 type Kind = "vertical" | "type" | "category" | "shortcut";
 type Status = "all" | "active" | "inactive";
@@ -123,6 +123,17 @@ export function CatalogTaxonomyWorkspace() {
       });
   }, [verticalId, searchedQuery, status, pageSort, loadCategories, loadRelated]);
 
+  const refreshShortcut = useCallback(async (saved: ShoppingShortcut) => {
+    const request = scopeRequest.current;
+    const body = await readResponse<ShoppingShortcutListResponse>(
+      await fetch(`/api/catalog/shopping-shortcuts?${new URLSearchParams({ verticalId })}`, { cache: "no-store" }),
+    );
+    const current = body.shortcuts.find((shortcut) => shortcut.id === saved.id);
+    if (!current || current.version < saved.version) throw new Error("تعذر تأكيد قراءة الاختصار المحفوظ. احتفظنا بالمسودة؛ أعد المحاولة.");
+    if (request !== scopeRequest.current) throw new Error("تغير نطاق البيانات أثناء تأكيد الحفظ. أعد القراءة.");
+    setShortcuts(body.shortcuts);
+  }, [verticalId]);
+
   const refresh = useCallback(async () => {
     setError("");
     try {
@@ -152,6 +163,10 @@ export function CatalogTaxonomyWorkspace() {
     if (nextKind === "category" && id) setCategoryId(id);
   }
 
+  const shortcutToEdit = editor?.kind === "shortcut" && editor.id
+    ? shortcuts.find((shortcut) => shortcut.id === editor.id)
+    : undefined;
+
   return <AdaptiveRecordWorkspace preferenceKey="catalog-taxonomy" open={Boolean(editor)}
     triggerKey={editor ? editor.kind + ":" + (editor.id ?? "new") : ""}
     onClose={() => setEditor(null)}
@@ -168,8 +183,16 @@ export function CatalogTaxonomyWorkspace() {
             onFilter={(text, filter, _sort, cursor, append) => loadCategories(verticalId, text, filter, pageSort, cursor, append)}
             categoryId={categoryId} onCategoryChange={setCategoryId} loading={loadingScope} onSaved={refresh}
             onManageVerticals={() => openEditor("vertical")} editorOnly initialId={editor.id} onClose={() => setEditor(null)} /> : null}
-          {editor.kind === "shortcut" && verticalId ? <CatalogShoppingShortcutRegistry verticalId={verticalId}
-            editorOnly initialId={editor.id} onSaved={refresh} onClose={() => setEditor(null)} /> : null}
+          {editor.kind === "shortcut" && verticalId ? (
+            editor.id && !shortcutToEdit
+              ? <div role="alert" className="identity-error">
+                تعذر العثور على الاختصار المحدد. أعد قراءة القائمة قبل التحرير.
+                <button type="button" onClick={() => void refresh()}>إعادة القراءة</button>
+                <button type="button" onClick={() => setEditor(null)}>إغلاق</button>
+              </div>
+              : <CatalogShoppingShortcutEditor key={`${verticalId}:${editor.id ?? "new"}`} verticalId={verticalId}
+                initialShortcut={shortcutToEdit} onSaved={refreshShortcut} onClose={() => setEditor(null)} />
+          ) : null}
         </div>
     </AdaptiveRecordPanel> : null}>
   <section className="unified-taxonomy" aria-label="التصنيفات الموحدة">

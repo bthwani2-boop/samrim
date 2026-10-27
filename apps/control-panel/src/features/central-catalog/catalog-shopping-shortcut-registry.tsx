@@ -1,217 +1,223 @@
 "use client";
 
-import type { CatalogCategoryListItem, CommercialStoreType, ShoppingShortcut, ShoppingShortcutListResponse } from "@bthwani/dsh";
+import type { CatalogCategoryListItem, CommercialStoreType, ShoppingShortcut } from "@bthwani/dsh";
+import { Button, Checkbox, Form, Input, InputNumber } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
-import { RegistryColumnHeader } from "../shared/registry-column-header";
 
 type Option = Readonly<{ id: string; nameAr: string; active: boolean; pathAr: string }>;
-type RegistryRead = Readonly<{ categories: ReadonlyArray<CatalogCategoryListItem>; nextCursor?: string }>;
+type FormValues = Readonly<{ titleAr: string; ordinal: number; active: boolean; reason: string }>;
+type Options = Readonly<{ types: ReadonlyArray<CommercialStoreType>; categories: ReadonlyArray<Option> }>;
+type CategoryResponse = Readonly<{ categories: ReadonlyArray<CatalogCategoryListItem>; nextCursor?: string }>;
 
-function errorMessage(input: unknown) {
+function errorMessage(input: unknown): string {
   if (input && typeof input === "object" && "error" in input) {
     const error = (input as { error?: { message?: string } }).error;
-    if (typeof error?.message === "string") return error.message;
+    if (typeof error?.message === "string" && error.message.trim()) return error.message;
   }
-  return "تعذر حفظ اختصار التسوق. أعد القراءة وحاول مجددًا.";
+  return "تعذر تنفيذ العملية. أعد المحاولة.";
 }
 
-async function readOptions(verticalId: string) {
+async function readOptions(verticalId: string): Promise<Options> {
   const typesResponse = await fetch(`/api/catalog/commercial-store-types?${new URLSearchParams({ verticalId, includeInactive: "true" })}`, { cache: "no-store" });
-  const typesBody = await typesResponse.json() as { storeTypes?: ReadonlyArray<CommercialStoreType>; error?: unknown };
-  if (!typesResponse.ok || !typesBody.storeTypes) throw new Error(errorMessage(typesBody));
+  const typesBody = await typesResponse.json().catch(() => null) as { storeTypes?: ReadonlyArray<CommercialStoreType>; error?: unknown } | null;
+  if (!typesResponse.ok || !typesBody?.storeTypes) throw new Error(errorMessage(typesBody));
+
   const categories: Option[] = [];
   let cursor = "";
   for (let page = 0; page < 100; page += 1) {
     const query = new URLSearchParams({ verticalId, status: "all", sort: "name_asc", limit: "100" });
     if (cursor) query.set("cursor", cursor);
     const response = await fetch(`/api/catalog/categories?${query}`, { cache: "no-store" });
-    const body = await response.json() as RegistryRead | { error?: unknown };
-    if (!response.ok || !("categories" in body)) throw new Error(errorMessage(body));
+    const body = await response.json().catch(() => null) as CategoryResponse | { error?: unknown } | null;
+    if (!response.ok || !body || !("categories" in body)) throw new Error(errorMessage(body));
     categories.push(...body.categories.map((item) => ({ id: item.id, nameAr: item.nameAr, active: item.active, pathAr: item.pathAr })));
     cursor = body.nextCursor ?? "";
     if (!cursor) return { types: typesBody.storeTypes, categories };
   }
-  throw new Error("نتائج الفئات كثيرة ولم يكتمل تحميلها. استخدم البحث في إدارة الفئات أولًا.");
+  throw new Error("تعذر تحميل جميع الفئات. أعد المحاولة.");
 }
 
-export function CatalogShoppingShortcutRegistry({ verticalId, editorOnly = false, initialId, onSaved, onClose }: Readonly<{ verticalId: string; editorOnly?: boolean; initialId?: string | undefined; onSaved?: () => Promise<void>; onClose?: () => void }>) {
+export function CatalogShoppingShortcutEditor({ verticalId, initialShortcut, onSaved, onClose }: Readonly<{
+  verticalId: string;
+  initialShortcut?: ShoppingShortcut | undefined;
+  onSaved: (saved: ShoppingShortcut) => Promise<void>;
+  onClose: () => void;
+}>) {
   const { state } = useSession();
   const canEdit = state.kind === "authenticated" && state.identity.permissions?.includes("catalog") === true;
-  const [items, setItems] = useState<ReadonlyArray<ShoppingShortcut>>([]);
+  const [form] = Form.useForm<FormValues>();
   const [types, setTypes] = useState<ReadonlyArray<CommercialStoreType>>([]);
   const [categories, setCategories] = useState<ReadonlyArray<Option>>([]);
-  const [selected, setSelected] = useState<ShoppingShortcut | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [titleAr, setTitleAr] = useState("");
-  const [ordinal, setOrdinal] = useState(0);
-  const [active, setActive] = useState(true);
-  const [typeIds, setTypeIds] = useState<ReadonlyArray<string>>([]);
-  const [categoryIds, setCategoryIds] = useState<ReadonlyArray<string>>([]);
-  const [reason, setReason] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [listQuery,setListQuery]=useState("");
-  const [listStatus,setListStatus]=useState("all");
-  const visibleShortcuts=items.filter(item=>(!listQuery.trim()||item.titleAr.toLocaleLowerCase().includes(listQuery.trim().toLocaleLowerCase()))
-    && (listStatus==="all" || item.active === (listStatus==="active")));
-  const reloadSequence = useRef(0);
-  const initialized = useRef(false);
-
-  const clearEditor = useCallback(() => {
-    setSelected(null);
-    setTitleAr("");
-    setOrdinal(0);
-    setActive(true);
-    setTypeIds([]);
-    setCategoryIds([]);
-    setReason("");
-    setEditing(false);
-  }, []);
-
-  const reload = useCallback(async () => {
-    const sequence = ++reloadSequence.current;
-    if (!verticalId) { setItems([]); return; }
-    setLoading(true);
-    setError("");
-    try {
-      const [response, options] = await Promise.all([
-        fetch(`/api/catalog/shopping-shortcuts?${new URLSearchParams({ verticalId })}`, { cache: "no-store" }),
-        readOptions(verticalId),
-      ]);
-      const body = await response.json() as ShoppingShortcutListResponse | { error?: unknown };
-      if (!response.ok || !("shortcuts" in body)) throw new Error(errorMessage(body));
-      if (sequence !== reloadSequence.current) return;
-      setItems(body.shortcuts);
-      setTypes(options.types);
-      setCategories(options.categories);
-    } catch (cause) {
-      if (sequence === reloadSequence.current) setError(cause instanceof Error ? cause.message : "تعذر قراءة اختصارات التسوق.");
-    } finally { if (sequence === reloadSequence.current) setLoading(false); }
-  }, [verticalId]);
-
-  useEffect(() => { clearEditor(); setNotice(""); void reload(); }, [clearEditor, reload]);
-
-  const edit = useCallback((item: ShoppingShortcut) => {
-    setSelected(item);
-    setTitleAr(item.titleAr);
-    setOrdinal(item.ordinal);
-    setActive(item.active);
-    setTypeIds(item.storeTypeIds);
-    setCategoryIds(item.categoryIds);
-    setReason("");
-    setNotice("");
-    setError("");
-    setEditing(true);
-  }, []);
+  const [typeIds, setTypeIds] = useState<ReadonlyArray<string>>(initialShortcut?.storeTypeIds ?? []);
+  const [categoryIds, setCategoryIds] = useState<ReadonlyArray<string>>(initialShortcut?.categoryIds ?? []);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [selectionError, setSelectionError] = useState("");
+  const requestSequence = useRef(0);
+  const lifeSequence = useRef(0);
+  const lifeScope = useRef(verticalId);
+  const idempotency = useRef<Readonly<{ fingerprint: string; key: string }> | null>(null);
 
   useEffect(() => {
-    if (!editorOnly || initialized.current) return;
-    if (initialId) {
-      const item = items.find((entry) => entry.id === initialId);
-      if (!item) return;
-      initialized.current = true;
-      edit(item);
-    } else {
-      initialized.current = true;
-      clearEditor();
-      setEditing(true);
+    if (lifeScope.current !== verticalId) {
+      lifeScope.current = verticalId;
+      lifeSequence.current += 1;
     }
-  }, [editorOnly, initialId, items, clearEditor, edit]);
+  }, [verticalId]);
 
-  function toggle(id: string, current: ReadonlyArray<string>, set: (next: ReadonlyArray<string>) => void) {
-    set(current.includes(id) ? current.filter((value) => value !== id) : [...current, id]);
-  }
+  useEffect(() => () => { lifeSequence.current += 1; }, []);
 
-  async function save() {
-    if (!canEdit || !verticalId || saving) return;
-    if (titleAr.trim().length < 2 || typeIds.length + categoryIds.length === 0 ||
-        typeIds.length + categoryIds.length > 25 || reason.trim().length < 5 || ordinal < 0 || ordinal > 9999) {
-      setError("أدخل اسمًا وترتيبًا ومصدرًا واحدًا على الأقل وسببًا للتغيير من 5 أحرف.");
+  const loadOptions = useCallback(async () => {
+    const request = ++requestSequence.current;
+    setLoading(true);
+    setLoadError("");
+    try {
+      const options = await readOptions(verticalId);
+      if (request !== requestSequence.current) return;
+      setTypes(options.types);
+      setCategories(options.categories);
+    } catch (cause: unknown) {
+      if (request === requestSequence.current) setLoadError(cause instanceof Error ? cause.message : "تعذرت قراءة خيارات الاختصار.");
+    } finally {
+      if (request === requestSequence.current) setLoading(false);
+    }
+  }, [verticalId]);
+
+  useEffect(() => {
+    void loadOptions();
+    return () => { requestSequence.current += 1; };
+  }, [loadOptions]);
+
+  async function save(values: FormValues) {
+    if (!canEdit || !verticalId || busy) return;
+    const cleanTitle = values.titleAr.trim();
+    const reason = values.reason.trim();
+    const targetCount = typeIds.length + categoryIds.length;
+    if (cleanTitle.length < 2 || cleanTitle.length > 160 || !Number.isInteger(values.ordinal) || values.ordinal < 0 || values.ordinal > 9999 ||
+        targetCount === 0 || targetCount > 25 || reason.length < 5 || reason.length > 500) {
+      setSaveError("تحقق من الاسم والترتيب والمصادر وسبب التغيير قبل الحفظ.");
       return;
     }
-    setSaving(true);
-    setError("");
-    setNotice("");
+    setSaveError("");
+    setSelectionError("");
+    setBusy(true);
+    const body = {
+      verticalId,
+      titleAr: cleanTitle,
+      ordinal: values.ordinal,
+      active: values.active,
+      expectedVersion: initialShortcut?.version ?? 0,
+      storeTypeIds: [...typeIds],
+      categoryIds: [...categoryIds],
+      reason,
+    };
+    const fingerprint = JSON.stringify([initialShortcut?.id ?? "", body]);
+    if (idempotency.current?.fingerprint !== fingerprint) {
+      idempotency.current = { fingerprint, key: crypto.randomUUID() };
+    }
+    const life = lifeSequence.current;
     try {
-      const response = await fetch(selected
-        ? `/api/catalog/shopping-shortcuts/${encodeURIComponent(selected.id)}`
+      const response = await fetch(initialShortcut
+        ? `/api/catalog/shopping-shortcuts/${encodeURIComponent(initialShortcut.id)}`
         : "/api/catalog/shopping-shortcuts", {
-        method: selected ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
-        body: JSON.stringify({
-          verticalId, titleAr: titleAr.trim(), ordinal, active,
-          expectedVersion: selected?.version ?? 0,
-          storeTypeIds: [...typeIds], categoryIds: [...categoryIds], reason: reason.trim(),
-        }),
+        method: initialShortcut ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": idempotency.current.key },
+        body: JSON.stringify(body),
       });
-      const payload = await response.json() as { shortcut?: ShoppingShortcut; error?: unknown };
-      if (!response.ok || !payload.shortcut) throw new Error(errorMessage(payload));
-      setNotice(`تم حفظ الاختصار «${payload.shortcut.titleAr}».`);
-      clearEditor();
-      await reload();
-      if (editorOnly) { await onSaved?.(); onClose?.(); }
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "تعذر حفظ اختصار التسوق."); }
-    finally { setSaving(false); }
+      const payload = await response.json().catch(() => null) as { shortcut?: ShoppingShortcut; error?: unknown } | null;
+      if (!response.ok || !payload?.shortcut) throw new Error(errorMessage(payload));
+      if (life !== lifeSequence.current) return;
+      await onSaved(payload.shortcut);
+      if (life === lifeSequence.current) onClose();
+    } catch (cause: unknown) {
+      if (life === lifeSequence.current) setSaveError(cause instanceof Error ? cause.message : "تعذر حفظ اختصار التسوق. احتفظنا بالمسودة؛ أعد المحاولة.");
+    } finally {
+      if (life === lifeSequence.current) setBusy(false);
+    }
   }
 
-  return <section className="catalog-taxonomy-section" aria-labelledby="shopping-shortcut-heading">
-    {!editorOnly ? <div className="access-card-heading">
-      <h3 id="shopping-shortcut-heading">اختصارات التسوق للعملاء</h3>
-      <p className="muted">أسماء مبسطة تجمع أنواع متاجر أو فئات منتجات. لا تغيّر عمولات المتاجر أو تصنيفاتها الداخلية. تظهر للعملاء فقط عند وجود عروض مؤهلة.</p>
-      {!editing ? <button type="button" className="button button-primary" disabled={!canEdit || !verticalId || loading || saving} onClick={() => { clearEditor(); setEditing(true); }}>إضافة اختصار</button> : null}
+  function changeTargets(kind: "type" | "category", selected: ReadonlyArray<string>) {
+    const currentCount = typeIds.length + categoryIds.length;
+    const nextCount = selected.length + (kind === "type" ? categoryIds.length : typeIds.length);
+    if (nextCount > 25 && nextCount > currentCount) {
+      setSelectionError("يمكن اختيار 25 نوعًا وفئة كحد أقصى.");
+      return;
+    }
+    setSelectionError("");
+    if (kind === "type") setTypeIds(selected);
+    else setCategoryIds(selected);
+  }
+
+  const selectedTargets = typeIds.length + categoryIds.length;
+  return <section className="catalog-taxonomy-section" aria-label="محرر اختصار التسوق">
+    {loading ? <p role="status">جارٍ قراءة الأنواع والفئات…</p> : null}
+    {loadError ? <div>
+      <p className="identity-error" role="alert">{loadError}</p>
+      {!busy ? <Button type="link" onClick={() => void loadOptions()}>إعادة المحاولة</Button> : null}
+      <Button disabled={busy} onClick={onClose}>إلغاء</Button>
     </div> : null}
-    {error ? <p role="alert" className="identity-error">{error} <button type="button" onClick={() => void reload()}>إعادة القراءة</button></p> : null}
-    {notice ? <output className="managed-status managed-status-success">{notice}</output> : null}
-    {loading ? <output>جارٍ قراءة اختصارات التسوق ومصادرها…</output> : null}
-    {!loading && items.length === 0 && !error ? <p className="muted">لا توجد اختصارات لهذا المجال. لا تظهر اختصارات فارغة للعملاء.</p> : null}
-    {editing || (editorOnly && !initialId) ? <fieldset className="access-form catalog-shortcut-editor" aria-label="محرر اختصار التسوق">
-      <label className="field-label">اسم الاختصار الظاهر للعميل
-        <input disabled={saving || !canEdit} value={titleAr} maxLength={160} onChange={(event) => setTitleAr(event.target.value)} placeholder="لحوم ودجاج" />
-      </label>
-      <label className="field-label">ترتيب الظهور
-        <input type="number" min={0} max={9999} disabled={saving || !canEdit} value={ordinal} onChange={(event) => setOrdinal(Number(event.target.value))} />
-      </label>
-      <label className="field-label catalog-shortcut-active"><input type="checkbox" checked={active} disabled={saving || !canEdit} onChange={(event) => setActive(event.target.checked)} /> تفعيل الاختصار</label>
-      <details open><summary>أنواع المتاجر المناسبة ({typeIds.length} محدد)</summary>
-        <div>{types.filter((item) => item.active || typeIds.includes(item.id)).map((item) => <label className="field-label" key={item.id}>
-          <input type="checkbox" checked={typeIds.includes(item.id)} disabled={!canEdit || saving || (!item.active && !typeIds.includes(item.id))} onChange={() => toggle(item.id, typeIds, setTypeIds)} /> {item.nameAr}{!item.active ? " (غير نشط)" : ""}
-        </label>)}</div>
-      </details>
-      <details><summary>فئات المنتجات المناسبة ({categoryIds.length} محددة)</summary>
-        <div>{categories.filter((item) => item.active || categoryIds.includes(item.id)).map((item) => <label className="field-label" key={item.id}>
-          <input type="checkbox" checked={categoryIds.includes(item.id)} disabled={!canEdit || saving || (!item.active && !categoryIds.includes(item.id))} onChange={() => toggle(item.id, categoryIds, setCategoryIds)} /> {item.pathAr || item.nameAr}{!item.active ? " (غير نشطة)" : ""}
-        </label>)}</div>
-      </details>
-      <label className="field-label">سبب الإضافة أو التعديل
-        <textarea rows={2} value={reason} maxLength={500} disabled={!canEdit || saving} onChange={(event) => setReason(event.target.value)} />
-      </label>
+    <Form form={form} hidden={loading || Boolean(loadError)} layout="vertical" className="access-form"
+      initialValues={initialShortcut
+        ? { titleAr: initialShortcut.titleAr, ordinal: initialShortcut.ordinal, active: initialShortcut.active, reason: "" }
+        : { titleAr: "", ordinal: 0, active: true, reason: "" }}
+      onFinish={(values: FormValues) => void save(values)}>
+      <Form.Item label="اسم الاختصار الظاهر للعميل" name="titleAr" rules={[
+        { required: true, whitespace: true, message: "أدخل اسم الاختصار بالعربية." },
+        { min: 2, max: 160, whitespace: true, message: "يجب أن يتراوح الاسم بين حرفين و160 حرفًا." },
+      ]}>
+        <Input autoComplete="off" maxLength={160} disabled={busy || !canEdit} />
+      </Form.Item>
+      <Form.Item label="ترتيب الظهور" name="ordinal" rules={[
+        { required: true, type: "integer", min: 0, max: 9999, message: "أدخل ترتيبًا صحيحًا من 0 إلى 9999." },
+      ]}>
+        <InputNumber min={0} max={9999} precision={0} disabled={busy || !canEdit} style={{ width: "100%" }} />
+      </Form.Item>
+      <Form.Item name="active" valuePropName="checked">
+        <Checkbox disabled={busy || !canEdit}>تفعيل الاختصار</Checkbox>
+      </Form.Item>
+      <Form.Item label={`أنواع المتاجر المناسبة (${typeIds.length} محدد)`}>
+        <details open>
+          <summary>اختيار أنواع المتاجر</summary>
+          <Checkbox.Group value={[...typeIds]} disabled={busy || !canEdit} options={types
+            .filter((item) => item.active || typeIds.includes(item.id))
+            .map((item) => ({
+              label: `${item.nameAr}${item.active ? "" : " (غير نشط)"}`,
+              value: item.id,
+              disabled: !item.active && !typeIds.includes(item.id),
+            }))}
+            onChange={(values) => changeTargets("type", values.map(String))} />
+        </details>
+      </Form.Item>
+      <Form.Item label={`فئات المنتجات المناسبة (${categoryIds.length} محددة)`}>
+        <details>
+          <summary>اختيار فئات المنتجات</summary>
+          <Checkbox.Group value={[...categoryIds]} disabled={busy || !canEdit} options={categories
+            .filter((item) => item.active || categoryIds.includes(item.id))
+            .map((item) => ({
+              label: `${item.pathAr || item.nameAr}${item.active ? "" : " (غير نشطة)"}`,
+              value: item.id,
+              disabled: !item.active && !categoryIds.includes(item.id),
+            }))}
+            onChange={(values) => changeTargets("category", values.map(String))} />
+        </details>
+      </Form.Item>
+      <p role={selectionError ? "alert" : "status"}>{selectionError || `المجموع: ${selectedTargets} من 25`}</p>
+      <Form.Item label="سبب الإضافة أو التعديل" name="reason" rules={[
+        { required: true, whitespace: true, min: 5, max: 500, message: "أدخل سببًا واضحًا من 5 إلى 500 حرف." },
+      ]}>
+        <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} maxLength={500} disabled={busy || !canEdit} />
+      </Form.Item>
+      {saveError ? <p role="alert" className="identity-error">{saveError}</p> : null}
       <div className="catalog-registry-actions unified-taxonomy-save-actions">
-        <button type="button" className="button button-primary" disabled={!canEdit || saving} onClick={() => void save()}>{saving ? "جارٍ الحفظ…" : "حفظ الاختصار"}</button>
-        <button type="button" className="button button-secondary" disabled={saving} onClick={() => { clearEditor(); if (editorOnly) onClose?.(); }}>إلغاء</button>
+        <Button type="primary" htmlType="submit" loading={busy} disabled={!canEdit || loading}
+          onClick={() => { if (selectedTargets === 0) setSelectionError("اختر نوع متجر أو فئة واحدة على الأقل."); }}>
+          {busy ? "جارٍ الحفظ…" : "حفظ الاختصار"}
+        </Button>
+        <Button disabled={busy} onClick={onClose}>إلغاء</Button>
       </div>
-    </fieldset> : null}
-    {!editorOnly && items.length ? <div className="catalog-registry-table-wrap"><table className="catalog-registry-table">
-      <thead><tr>
-        <RegistryColumnHeader label="الاختصار" active={Boolean(listQuery)}>
-          <label>اسم الاختصار<input type="search" value={listQuery} onChange={e=>setListQuery(e.target.value)} /></label>
-        </RegistryColumnHeader>
-        <th scope="col">المصادر</th>
-        <RegistryColumnHeader label="الحالة" active={listStatus!=="all"}>
-          <label>الحالة<select value={listStatus} onChange={e=>setListStatus(e.target.value)}>
-            <option value="all">الجميع</option><option value="active">نشط</option><option value="inactive">معطل</option>
-          </select></label>
-        </RegistryColumnHeader>
-        <th scope="col">الإدارة</th>
-      </tr></thead>
-      <tbody>{visibleShortcuts.map((item) => <tr key={item.id}>
-        <td><strong>{item.titleAr}</strong></td>
-        <td>{item.storeTypeIds.length} نوع متجر، {item.categoryIds.length} فئة</td>
-        <td>{item.active ? "نشط" : "معطل"}</td>
-        <td><button type="button" className="catalog-row-action" disabled={saving || !canEdit} onClick={() => edit(item)}>تعديل</button></td>
-      </tr>)}{visibleShortcuts.length===0?<tr><td colSpan={4}>لا توجد اختصارات مطابقة.</td></tr>:null}</tbody>
-    </table></div> : null}
+    </Form>
   </section>;
 }
