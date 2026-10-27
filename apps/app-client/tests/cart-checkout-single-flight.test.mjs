@@ -351,6 +351,52 @@ test("typing a coupon does not change the quote request until the applied coupon
   assert.ok(!dependencies.includes("DRAFT99"));
 });
 
+test("late quote response cannot replace the quote for the latest cart version", async () => {
+  const expr = refreshQuoteNode.initializer.getText(ast);
+  const executable = ts.transpileModule(`const refreshQuote = ${expr};\nrefreshQuote;`, { compilerOptions }).outputText;
+  const requests = [];
+  const requestWaiters = [];
+  const waitForRequest = (count) => requests.length >= count ? Promise.resolve() : new Promise((resolve) => { requestWaiters[count] = resolve; });
+  const quoteStates = [];
+  const context = {
+    appliedPromotionCode: "",
+    fulfillmentMode: "CUSTOMER_PICKUP",
+    pickupMode: true,
+    quoteAddressID: "",
+    serviceableAddressId: undefined,
+    storeId: "store-1",
+    storeAcceptingOrders: true,
+    quoteRequestID: { current: 0 },
+    setQuote: (state) => quoteStates.push(state),
+    getUsableIdentityAccessToken: async () => "token",
+    client: () => ({ quoteCheckout: (_token, request, version) => new Promise((resolve) => {
+      requests.push({ request, version, resolve });
+      requestWaiters[requests.length]?.();
+    }) }),
+    useCallback: (callback) => callback,
+    console: { error: () => {} },
+  };
+  const refreshQuote = vm.runInNewContext(executable, context);
+  const firstStarted = waitForRequest(1);
+  const oldRequest = refreshQuote({ id: "cart-1", version: 3, lines: [] });
+  await firstStarted;
+  const secondStarted = waitForRequest(2);
+  const currentRequest = refreshQuote({ id: "cart-1", version: 4, lines: [] });
+  await secondStarted;
+  assert.equal(requests.length, 2);
+
+  const currentQuote = { cartId: "cart-1", cartVersion: 4, totalAmountMinor: 240 };
+  requests[1].resolve({ quote: currentQuote });
+  await currentRequest;
+  assert.equal(quoteStates.at(-1).kind, "ready");
+  assert.equal(quoteStates.at(-1).quote, currentQuote, "the latest cart version's quote is accepted");
+
+  requests[0].resolve({ quote: { cartId: "cart-1", cartVersion: 3, totalAmountMinor: 200 } });
+  await oldRequest;
+  assert.equal(quoteStates.at(-1).quote, currentQuote, "a late response for the stale cart version is ignored");
+  assert.equal(context.quoteRequestID.current, 2);
+});
+
 test("cart with unavailable modifier never calls the checkout quote API", async () => {
   const callbackSource = refreshQuoteNode.initializer.getText(ast);
   const executable = ts.transpileModule(`const refreshQuote = ${callbackSource};\nrefreshQuote;`, { compilerOptions }).outputText;
