@@ -137,10 +137,24 @@ func TestOrderHTTPRejectsAuthenticatedCrossActorReads(t *testing.T) {
 		if !strings.Contains(storeOwned.Body.String(), order) {
 			t.Fatalf("authorized Partner cannot read its Store Order: %s", storeOwned.Body.String())
 		}
-		call("orders-token-client-a", http.MethodGet, storePath, "", http.StatusForbidden)
+		if strings.Contains(storeOwned.Body.String(), "Proof address") {
+			t.Fatal("authorized Partner Store order response exposed the Client delivery address")
+		}
+		assertNoPrivateOrderData := func(actor string, response *httptest.ResponseRecorder) {
+			t.Helper()
+			for _, privateValue := range []string{order, "Proof address", "orders-http-payment"} {
+				if strings.Contains(response.Body.String(), privateValue) {
+					t.Errorf("denied Store order response for %s leaked private order data %q: %s", actor, privateValue, response.Body.String())
+				}
+			}
+		}
+		clientDenied := call("orders-token-client-a", http.MethodGet, storePath, "", http.StatusForbidden)
+		assertNoPrivateOrderData("owning Client", clientDenied)
 		call("orders-token-client-b", http.MethodGet, storePath, "", http.StatusNotFound)
-		call("orders-token-partner-b", http.MethodGet, storePath, "", http.StatusForbidden)
-		call("orders-token-partner-a", http.MethodGet, "/dsh/stores/other-store/orders/"+order, "", http.StatusForbidden)
+		unrelatedPartnerDenied := call("orders-token-partner-b", http.MethodGet, storePath, "", http.StatusForbidden)
+		assertNoPrivateOrderData("unrelated Partner", unrelatedPartnerDenied)
+		wrongStoreDenied := call("orders-token-partner-a", http.MethodGet, "/dsh/stores/other-store/orders/"+order, "", http.StatusForbidden)
+		assertNoPrivateOrderData("Partner using a non-matching Store", wrongStoreDenied)
 		call("", http.MethodGet, storePath, "", http.StatusUnauthorized)
 		listA := call("orders-token-client-a", http.MethodGet, "/dsh/orders", "", http.StatusOK)
 		listB := call("orders-token-client-b", http.MethodGet, "/dsh/orders", clientA, http.StatusOK)
