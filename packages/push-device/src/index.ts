@@ -8,6 +8,7 @@ import { Platform } from "react-native";
 const installationStorageKey = "bthwani.order-alert.installation-v1";
 let lastRegistered = { actor: "", expires: 0, tone: "", pushActive: false };
 let registrationInFlight: { actor: string; task: Promise<boolean> } | null = null;
+let pushActivityVersion = 0;
 
 export function hasNativeNotificationModules(): boolean {
   if (Platform.OS === "web") return false;
@@ -31,10 +32,38 @@ async function installationId(): Promise<string> {
 }
 
 export async function unregisterOwnPushDevice(accessToken: string, apiBaseUrl: string | undefined): Promise<void> {
-  if (Platform.OS === "web" || !accessToken) return;
+  if (Platform.OS === "web") return;
+  const activityVersion = ++pushActivityVersion;
+  const registeredActor = registrationInFlight?.actor ?? lastRegistered.actor;
   try {
-    // Do not allow an in-flight registration to re-bind the token after logout.
-    await registrationInFlight?.task.catch(() => false);
+    // Clear app-owned alerts before any network wait, even when no server token is available.
+    try {
+      if (hasNativeNotificationModules()) {
+        const Notifications = await import("expo-notifications");
+        if (activityVersion === pushActivityVersion) {
+          await Promise.allSettled([
+            Promise.resolve().then(() => Notifications.dismissAllNotificationsAsync()),
+            Promise.resolve().then(() => Notifications.cancelAllScheduledNotificationsAsync()),
+            Promise.resolve().then(() => Notifications.clearLastNotificationResponseAsync()),
+          ]);
+        }
+      }
+    } catch {
+      // An older native build may lack this module. Still revoke the server binding.
+    }
+    if (!accessToken) return;
+
+    // A registration request already in progress must settle before DELETE so it cannot re-bind after logout.
+    // The bound keeps logout responsive if a native token provider stalls before the request timeout applies.
+    const pendingRegistration = registrationInFlight?.task;
+    if (pendingRegistration) {
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        pendingRegistration.catch(() => false),
+        new Promise<void>((resolve) => { timeoutHandle = setTimeout(resolve, 10_000); }),
+      ]);
+      if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+    }
     const id = await SecureStore.getItemAsync(installationStorageKey);
     if (!id) return;
     await fetch(endpoint(apiBaseUrl) + "/" + encodeURIComponent(id), {
@@ -46,12 +75,16 @@ export async function unregisterOwnPushDevice(accessToken: string, apiBaseUrl: s
     // Logout must not be blocked by transport issues. The next actor's
     // registration replaces the old binding for this installation.
   } finally {
-    lastRegistered = { actor: "", expires: 0, tone: "", pushActive: false };
+    // A newer actor may have registered while deregistration was pending.
+    if (activityVersion === pushActivityVersion && lastRegistered.actor === registeredActor) {
+      lastRegistered = { actor: "", expires: 0, tone: "", pushActive: false };
+    }
   }
 }
 
 export function registerOwnPushDevice(accessToken: string, actor: string, tone: "classic" | "soft" | "urgent", stillCurrent: () => boolean, apiBaseUrl: string | undefined): Promise<boolean> {
   if (Platform.OS === "web" || !accessToken || !actor || !stillCurrent()) return Promise.resolve(false);
+  pushActivityVersion += 1;
   if (registrationInFlight?.actor === actor) return registrationInFlight.task;
   const previousTask = registrationInFlight?.task;
   const task = (async () => {
