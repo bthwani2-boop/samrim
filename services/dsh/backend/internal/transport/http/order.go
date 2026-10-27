@@ -337,12 +337,12 @@ func (s *OrderServer) read(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "an active client or partner session is required")
 		return
 	}
-	item, err := s.service.Read(r.Context(), bearerToken(r), r.PathValue("orderId"))
+	item, role, err := s.service.Read(r.Context(), bearerToken(r), r.PathValue("orderId"))
 	if err != nil {
 		writeOrderError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, contract.OrderResponse{Order: toOrder(item)})
+	writeJSON(w, http.StatusOK, contract.OrderResponse{Order: toOrderForRole(item, role)})
 }
 
 func (s *OrderServer) readConversation(w http.ResponseWriter, r *http.Request) {
@@ -728,7 +728,7 @@ func (s *OrderServer) readStore(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "partner session is required")
 		return
 	}
-	item, err := s.service.Read(r.Context(), bearerToken(r), r.PathValue("orderId"))
+	item, _, err := s.service.Read(r.Context(), bearerToken(r), r.PathValue("orderId"))
 	if err != nil {
 		writeOrderError(w, err)
 		return
@@ -832,6 +832,17 @@ func validOperatorOrderState(state string) bool {
 
 // The Partner surface needs order composition and payment facts, not the
 // customer's private destination for BThwani-delivered or pickup orders.
+func toOrderForRole(item postgres.OrderRecord, role string) contract.Order {
+	order := toOrder(item)
+	switch role {
+	case "client":
+		return order
+	case "partner":
+		return redactPartnerOrder(order)
+	default:
+		return contract.Order{}
+	}
+}
 func redactPartnerOrder(value contract.Order) contract.Order {
 	if value.FulfillmentMode != "PARTNER_CAPTAIN" {
 		value.AddressID = ""
