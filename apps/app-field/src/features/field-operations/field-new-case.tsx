@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Keyboard, ScrollView, type ScrollViewInstance, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
 import { tryAcquireFieldDraftMutation } from "./field-draft-mutation-lock";
 import { fieldDraftMatchesReadback, fieldDraftMediaUploadConfirmed, fieldReviewPhotoUploadConfirmed, fieldSubmitIdempotencyPayload, markFieldDraftReadbackUncertain, markFieldMediaReadbackUncertain, submitFieldCaseWithReadback } from "./field-draft-readback";
@@ -88,6 +88,10 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
   const keyboardTop = useRef<number | null>(null);
   const scrollOffset = useRef(0);
   const draftMutationLock = useRef(false);
+  const initialIdentity = currentIdentityState();
+  const actorScope = useRef({ subject: initialIdentity.kind === "authenticated" ? initialIdentity.identity.subject : "", revision: 0 });
+  const [actorRevision, setActorRevision] = useState(0);
+  const renderedActor = actorScope.current;
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const ensureFocusedInputVisible = useCallback(() => {
@@ -153,6 +157,35 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
   const [pendingImageAttempt, setPendingImageAttempt] = useState<PendingImageAttempt | null>(null);
   const preloadedVerticalID = useRef("");
   const commercialTypeReadSequence = useRef(0);
+  useEffect(() => subscribeIdentitySession((state) => {
+    const subject = state.kind === "authenticated" ? state.identity.subject : "";
+    if (actorScope.current.subject === subject) return;
+    actorScope.current = { subject, revision: actorScope.current.revision + 1 };
+    setActorRevision((current) => current + 1);
+    setInput(initialJoiningCaseInput());
+    setWorkingHoursByDay({});
+    setSameBusinessAndStore(false);
+    setSelectedProofType(null);
+    setActiveStep(0);
+    setProofDetailsDirty(false);
+    setDraftConflict(false);
+    setDraftConflictNeedsRead(false);
+    setSelectedStoreOrigin(null);
+    setShowLocationMap(false);
+    setCreatedCase(null);
+    setCaseLoading(Boolean(caseId));
+    setError("");
+    setLocationMessage("");
+    setLocationError("");
+    setLocationBusy(false);
+    setStoreImage(null);
+    setReviewPhoto(null);
+    setPendingReviewPhotoAttempt(null);
+    setPendingDraftAttempt(null);
+    setPendingImageAttempt(null);
+    preloadedVerticalID.current = "";
+    commercialTypeReadSequence.current += 1;
+  }), [caseId]);
   const formLocked = busy || caseLoading || Boolean(pendingDraftAttempt) || Boolean(createdCase && createdCase.case.state !== "draft" && createdCase.case.state !== "needs_correction");
   const phoneValid = /^\+[1-9]\d{7,14}$/.test(normalizeYemenPhoneE164(input.contactPhoneE164));
   const enteredHours = toStoreWorkingHoursIntervals(workingHoursByDay);
@@ -254,8 +287,9 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
     void (async () => {
       try {
         const token = await getUsableIdentityAccessToken();
+        if (!active || actorScope.current.revision !== actorRevision) return;
         const response = await fieldClient().readOwnFieldJoiningCase(token, caseId);
-        if (!active) return;
+        if (!active || actorScope.current.revision !== actorRevision) return;
         const current = response.case;
         if (current.state !== "draft" && current.state !== "needs_correction") {
           setError("هذا الطلب ليس مسودة أو طلبًا مُعادًا للتصحيح.");
@@ -294,15 +328,15 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
         } else setSelectedStoreOrigin(null);
         setCreatedCase(response);
       } catch (cause) {
-        if (!active) return;
+        if (!active || actorScope.current.revision !== actorRevision) return;
         console.warn("DSH Field draft reopen failed", cause);
         setError("تعذر قراءة المسودة. أعد المحاولة من قائمة الشركاء حتى تبقى البيانات السابقة محفوظة.");
       } finally {
-        if (active) setCaseLoading(false);
+        if (active && actorScope.current.revision === actorRevision) setCaseLoading(false);
       }
     })();
     return () => { active = false; };
-  }, [caseId, caseLoadRetry]);
+  }, [caseId, caseLoadRetry, actorRevision]);
 
   const loadCommercialTypes = useCallback(async (verticalId: string) => {
     const sequence = ++commercialTypeReadSequence.current;
@@ -342,6 +376,9 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
   }, [input.firstStoreVerticalId, loadCommercialTypes]);
 
   async function createCase(submitAfterSave = false) {
+    const actor = renderedActor;
+    const stillCurrent = () => actorScope.current === actor;
+    if (!actor.subject || !stillCurrent()) return;
     if (busy || draftConflictNeedsRead || (createdCase && createdCase.case.state !== "draft" && createdCase.case.state !== "needs_correction")) return;
     // Drafts may be incomplete, but nonempty fields must satisfy server limits.
     if (!pendingDraftAttempt) {
@@ -405,12 +442,14 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!stillCurrent()) return;
       const response = attempt.kind === "correct"
         ? await fieldClient().correctFieldJoiningCase(token, attempt.caseID, attempt.request, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID)
         : attempt.kind === "update"
           ? await fieldClient().updateFieldJoiningCaseDraft(token, attempt.caseID, attempt.request, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID)
           : await fieldClient().createFieldJoiningCase(token, attempt.request, attempt.idempotencyKey, attempt.correlationID);
       const canonical = await fieldClient().readOwnFieldJoiningCase(token, response.case.id).catch((cause: unknown) => { throw markFieldDraftReadbackUncertain(cause); });
+      if (!stillCurrent()) return;
       if (canonical.case.id !== response.case.id || !fieldDraftMatchesReadback(attempt.request, canonical.case, response.case.version, attempt.kind === "correct" ? "submitted" : "draft")) {
         throw new Error("FIELD_JOINING_CASE_CANONICAL_READBACK_MISMATCH");
       }
@@ -424,7 +463,9 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
       setPendingDraftAttempt(null);
       let optionalMediaUnconfirmed = false;
       if (attempt.kind !== "correct" && storeImage && isMediaProvenanceInputValid(storeImage.provenance)) {
+        if (!stillCurrent()) return;
         if (!await uploadStoreImage(canonical, storeImage)) optionalMediaUnconfirmed = true;
+        if (!stillCurrent()) return;
       }
       if (attempt.kind !== "correct" && storeImage && !isMediaProvenanceInputValid(storeImage.provenance)) {
         optionalMediaUnconfirmed = true;
@@ -433,7 +474,9 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
       if (attempt.kind !== "correct" && reviewPhoto) {
         try {
           const latest = await fieldClient().readOwnFieldJoiningCase(token, canonical.case.id);
+          if (!stillCurrent()) return;
           if (!await uploadReviewPhoto(latest, reviewPhoto)) optionalMediaUnconfirmed = true;
+          if (!stillCurrent()) return;
         } catch (cause) {
           console.warn("DSH Field optional review-photo preflight unavailable", cause);
           optionalMediaUnconfirmed = true;
@@ -446,6 +489,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
       }
       if (submitAfterSave) {
         const latest = await fieldClient().readOwnFieldJoiningCase(token, canonical.case.id);
+        if (!stillCurrent()) return;
         const missing = getFieldJoiningRequirements(latest.case).filter((item) => !item.saved);
         if (missing.length > 0) {
           setActiveStep(missing.some((item) => item.key === "basic") ? 0 : 1);
@@ -454,12 +498,14 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
           return;
         }
         const digest = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, fieldSubmitIdempotencyPayload(latest.case.id, latest.case.version));
+        if (!stillCurrent()) return;
         const outcome = await submitFieldCaseWithReadback(
           latest.case.id,
           () => fieldClient().submitFieldJoiningCase(token, latest.case.id, latest.case.version, `field_submit_${digest}`, `field_submit_corr_${digest}`),
           () => fieldClient().readOwnFieldJoiningCase(token, latest.case.id),
           isOutcomeUncertain,
         );
+        if (!stillCurrent()) return;
         if (outcome.kind !== "confirmed") {
           setCreatedCase(outcome.kind === "draft" ? outcome.canonical : latest);
           setError(outcome.kind === "draft"
@@ -472,6 +518,7 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
         router.replace({ pathname: "/cases", params: { caseId: outcome.canonical.case.id, ...(optionalMediaUnconfirmed ? { mediaWarning: "1" } : {}) } } as Href);
       }
     } catch (cause) {
+      if (!stillCurrent()) return;
       console.warn("DSH Field joining-case draft save failed", cause);
       if (isOutcomeUncertain(cause)) {
         setError("تعذر تأكيد الحفظ. أعد المحاولة بالبيانات نفسها للتحقق من النتيجة قبل بدء طلب آخر.");
@@ -507,38 +554,50 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
   }
 
   async function rereadAfterDraftConflict() {
-    if (busy || !createdCase) return;
+    const actor = renderedActor;
+    const stillCurrent = () => actorScope.current === actor;
+    if (!actor.subject || !stillCurrent() || busy || !createdCase) return;
     setBusy(true);
     try {
       const token = await getUsableIdentityAccessToken();
-      setCreatedCase(await fieldClient().readOwnFieldJoiningCase(token, createdCase.case.id));
+      if (!stillCurrent()) return;
+      const canonical = await fieldClient().readOwnFieldJoiningCase(token, createdCase.case.id);
+      if (!stillCurrent()) return;
+      setCreatedCase(canonical);
       setDraftConflictNeedsRead(false);
       setDraftConflict(true);
       setError("احتفظنا بمدخلاتك. حفظها الآن سيستبدل النسخة الأحدث من المسودة.");
     } catch (cause) {
+      if (!stillCurrent()) return;
       console.warn("DSH Field draft conflict retry failed", cause);
       setError("تعذر قراءة النسخة الأحدث. مدخلاتك ما تزال محفوظة هنا؛ أعد المحاولة عند توفر الاتصال.");
     } finally {
-      setBusy(false);
+      if (stillCurrent()) setBusy(false);
     }
   }
 
   async function requestCurrentLocation() {
-    if (formLocked || locationBusy) return;
+    const actor = renderedActor;
+    const stillCurrent = () => actorScope.current === actor;
+    if (!actor.subject || !stillCurrent() || formLocked || locationBusy) return;
     setLocationBusy(true);
     setLocationMessage("");
     setLocationError("");
     try {
       const permission = await Location.requestForegroundPermissionsAsync();
+      if (!stillCurrent()) return;
       if (permission.status !== "granted") {
         setLocationError("لم نتمكن من استخدام موقعك. افتح الخريطة لتحديد موقع المتجر يدويًا.");
         return;
       }
-      if (!(await Location.hasServicesEnabledAsync())) {
+      const servicesEnabled = await Location.hasServicesEnabledAsync();
+      if (!stillCurrent()) return;
+      if (!servicesEnabled) {
         setLocationError("خدمة الموقع غير مفعّلة. فعّلها أو افتح الخريطة وحدد موقع المتجر.");
         return;
       }
       const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      if (!stillCurrent()) return;
       const coordinate = { latitude: position.coords.latitude, longitude: position.coords.longitude };
       if (!Number.isFinite(coordinate.latitude) || !Number.isFinite(coordinate.longitude) || coordinate.latitude < -90 || coordinate.latitude > 90 || coordinate.longitude < -180 || coordinate.longitude > 180) {
         setLocationError("تعذر تحديد موقع صالح. افتح الخريطة وحدد موقع المتجر يدويًا.");
@@ -547,9 +606,10 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
       setSelectedStoreOrigin(coordinate);
       setLocationMessage("تم تحديد موقعك. إذا لم تكن داخل المتجر، افتح الخريطة وعدّل النقطة.");
     } catch {
+      if (!stillCurrent()) return;
       setLocationError("تعذر تحديد موقعك الآن. افتح الخريطة لتحديد موقع المتجر يدويًا.");
     } finally {
-      setLocationBusy(false);
+      if (stillCurrent()) setLocationBusy(false);
     }
   }
 
@@ -561,39 +621,51 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
   }
 
   async function pickStoreImage(source: "camera" | "library" = "library") {
-    if (busy || pendingImageAttempt) return;
+    const actor = renderedActor;
+    const stillCurrent = () => actorScope.current === actor;
+    if (!actor.subject || !stillCurrent() || busy || pendingImageAttempt) return;
     const permission = source === "camera" ? await ImagePicker.requestCameraPermissionsAsync() : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!stillCurrent()) return;
     if (!permission.granted) { setError(source === "camera" ? "يلزم السماح باستخدام الكاميرا لالتقاط صورة المتجر." : "يلزم السماح بالوصول إلى الصور لاختيار صورة المتجر."); return; }
     const result = source === "camera"
       ? await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 })
       : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
+    if (!stillCurrent()) return;
     if (result.canceled || !result.assets[0]?.uri) return;
     const asset = result.assets[0];
     try {
       const image = await prepareFieldPublicStoreImage(asset);
+      if (!stillCurrent()) return;
       setStoreImage({ ...image, source, provenance: fieldStoreImageProvenance(source, input.ownerFullName, admissionState.kind === "ready" ? admissionState.admission.fullNameAr ?? "" : "") });
       setError("");
     } catch (cause) {
+      if (!stillCurrent()) return;
       console.warn("Field store image preparation failed", cause);
       setError(cause instanceof Error && cause.message === "STORE_IMAGE_SIZE_INVALID" ? "يجب ألا يتجاوز حجم صورة المتجر 10 ميغابايت." : cause instanceof Error && cause.message === "STORE_IMAGE_DIMENSIONS_INVALID" ? "يجب أن تكون أبعاد صورة المتجر بين 1 و6000 بكسل للعرض والارتفاع." : cause instanceof Error && cause.message === "STORE_IMAGE_TYPE_INVALID" ? "صيغة صورة المتجر غير مدعومة. اختر صورة بصيغة JPG أو PNG." : "تعذر تجهيز صورة المتجر. اختر الصورة مرة أخرى.");
     }
   }
 
   async function pickReviewPhoto(source: "camera" | "library") {
-    if (formLocked) return;
+    const actor = renderedActor;
+    const stillCurrent = () => actorScope.current === actor;
+    if (!actor.subject || !stillCurrent() || formLocked) return;
     const permission = source === "camera" ? await ImagePicker.requestCameraPermissionsAsync() : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!stillCurrent()) return;
     if (!permission.granted) { setError("اسمح باستخدام الكاميرا أو الصور لاختيار صورة المتجر الاختيارية."); return; }
     const choice = source === "camera"
       ? await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7 })
       : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7 });
+    if (!stillCurrent()) return;
     if (choice.canceled || !choice.assets[0]?.uri) return;
     const asset = choice.assets[0];
     try {
       if (asset.fileSize && asset.fileSize > 10 * 1024 * 1024) throw new Error("SIZE");
       if (!fieldJoiningImageDimensionsSupported(asset.width, asset.height)) throw new Error("DIMENSIONS");
       const response = await fetch(asset.uri);
+      if (!stillCurrent()) return;
       if (!response.ok) throw new Error("READ");
       const blob = await response.blob();
+      if (!stillCurrent()) return;
       if (!blob.size || blob.size > 10 * 1024 * 1024) throw new Error("SIZE");
       const type = resolveJoiningCaseImageContentType(asset.mimeType, blob.type, asset.fileName, asset.uri);
       if (!type) throw new Error("TYPE");
@@ -601,28 +673,37 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
       setPendingReviewPhotoAttempt(null);
       setError("");
     } catch {
+      if (!stillCurrent()) return;
       setError("تعذر تجهيز الصورة الاختيارية. اختر صورة JPG أو PNG أصغر من 10 ميغابايت.");
     }
   }
 
   async function uploadReviewPhoto(current: JoiningCaseResponse, photo: DshImageUploadInput): Promise<boolean> {
+    const actor = renderedActor;
+    const stillCurrent = () => actorScope.current === actor;
+    if (!actor.subject || !stillCurrent()) return false;
     const attempt = pendingReviewPhotoAttempt?.caseID === current.case.id
       ? pendingReviewPhotoAttempt
       : { caseID: current.case.id, version: current.case.version, key: "field_review_photo_" + Crypto.randomUUID(), correlation: "field_review_corr_" + Crypto.randomUUID() };
     setPendingReviewPhotoAttempt(attempt);
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!stillCurrent()) return false;
       const saved = await fieldClient().uploadFieldJoiningCaseReviewPhoto(token, attempt.caseID, photo, attempt.version, attempt.key, attempt.correlation);
       const canonical = await fieldClient().readOwnFieldJoiningCase(token, attempt.caseID);
+      if (!stillCurrent()) return false;
       if (!fieldReviewPhotoUploadConfirmed(saved.case, canonical.case, attempt.caseID, attempt.version)) throw new Error("REVIEW_PHOTO_UNCONFIRMED");
       setCreatedCase(canonical);
       setReviewPhoto(null);
       setPendingReviewPhotoAttempt(null);
       return true;
     } catch (cause) {
+      if (!stillCurrent()) return false;
       try {
         const token = await getUsableIdentityAccessToken();
+        if (!stillCurrent()) return false;
         const latest = await fieldClient().readOwnFieldJoiningCase(token, attempt.caseID);
+        if (!stillCurrent()) return false;
         if (latest.case.id === attempt.caseID && latest.case.origin === "field") setCreatedCase(latest);
         // The boolean may refer to an older photo; retain this attempt for safe replay.
       } catch (readError) {
@@ -646,18 +727,24 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
   }
 
   async function uploadStoreImage(current: JoiningCaseResponse, image: StoreImageDraft, existingAttempt?: PendingImageAttempt): Promise<boolean> {
+    const actor = renderedActor;
+    const stillCurrent = () => actorScope.current === actor;
+    if (!actor.subject || !stillCurrent()) return false;
     const attempt = existingAttempt ?? { caseID: current.case.id, expectedVersion: current.case.version, image, idempotencyKey: `field_store_image_${Crypto.randomUUID()}`, correlationID: `field_store_image_corr_${Crypto.randomUUID()}` };
     setPendingImageAttempt(attempt);
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!stillCurrent()) return false;
       const uploaded = await fieldClient().uploadJoiningCaseStoreImage(token, attempt.caseID, attempt.image, attempt.image.provenance, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
       const canonical = await fieldClient().readOwnFieldJoiningCase(token, attempt.caseID).catch((cause: unknown) => { throw markFieldMediaReadbackUncertain(cause); });
+      if (!stillCurrent()) return false;
       if (!fieldDraftMediaUploadConfirmed(uploaded.case, canonical.case, "store", attempt.expectedVersion, attempt.caseID, attempt.image.provenance)) throw new Error("FIELD_MEDIA_UPLOAD_CANONICAL_READBACK_MISMATCH");
       setCreatedCase(canonical);
       setStoreImage(null);
       setPendingImageAttempt(null);
       return true;
     } catch (cause) {
+      if (!stillCurrent()) return false;
       console.warn("DSH Field store image upload failed", cause);
       if (dshErrorCode(cause) === "MEDIA_STORAGE_UNAVAILABLE") {
         setPendingImageAttempt(null);
@@ -671,7 +758,9 @@ export function FieldNewCase({ caseId }: Readonly<{ caseId: string }>) {
       setPendingImageAttempt(null);
       try {
         const token = await getUsableIdentityAccessToken();
+        if (!stillCurrent()) return false;
         const latest = await fieldClient().readOwnFieldJoiningCase(token, attempt.caseID);
+        if (!stillCurrent()) return false;
         setCreatedCase(latest);
       } catch (readError) {
         console.warn("DSH Field case reconciliation after image upload failed", readError);
