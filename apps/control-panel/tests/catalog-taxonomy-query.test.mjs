@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCategoryListParams, isLoadedViewSort, sortTaxonomyRows } from "../src/features/central-catalog/catalog-taxonomy-query.ts";
+import { buildCategoryListParams, canLoadMoreCategories, isLoadedViewSort, sortTaxonomyRows, taxonomyResultSummary } from "../src/features/central-catalog/catalog-taxonomy-query.ts";
 
 test("category list queries carry the selected server sort on first and cursor pages", () => {
   const queryName = "\u0634\u0627\u064a";
@@ -40,4 +40,18 @@ test("category rows keep canonical server order while mixed loaded rows sort onl
   assert.equal(isLoadedViewSort("all", false), false);
   assert.equal(isLoadedViewSort("category", true), false);
   assert.equal(isLoadedViewSort("type", true), false);
+});
+
+test("only taxonomy views that can load category pages report additional results", () => {
+  for (const kind of ["all", "category"]) {
+    assert.equal(canLoadMoreCategories(kind, true), true);
+    assert.equal(taxonomyResultSummary(100, kind, true), "100 عنصر محمّل؛ توجد فئات إضافية");
+    assert.equal(canLoadMoreCategories(kind, false), false);
+    assert.equal(taxonomyResultSummary(100, kind, false), "100 عنصر");
+  }
+
+  for (const kind of ["vertical", "type", "shortcut"]) {
+    assert.equal(canLoadMoreCategories(kind, true), false);
+    assert.equal(taxonomyResultSummary(7, kind, true), "7 عنصر");
+  }
 });

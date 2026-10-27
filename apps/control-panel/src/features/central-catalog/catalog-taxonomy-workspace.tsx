@@ -7,7 +7,13 @@ import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adapti
 import { CatalogCategoryRegistry } from "./catalog-category-registry";
 import { CatalogCommercialStoreTypeRegistry } from "./catalog-commercial-store-type-registry";
 import { CatalogShoppingShortcutEditor } from "./catalog-shopping-shortcut-registry";
-import { buildCategoryListParams, isLoadedViewSort, sortTaxonomyRows } from "./catalog-taxonomy-query";
+import {
+  buildCategoryListParams,
+  canLoadMoreCategories,
+  isLoadedViewSort,
+  sortTaxonomyRows,
+  taxonomyResultSummary,
+} from "./catalog-taxonomy-query";
 import { CatalogVerticalRegistry } from "./catalog-vertical-registry";
 
 type Kind = "vertical" | "type" | "category" | "shortcut";
@@ -238,7 +244,7 @@ export function CatalogTaxonomyWorkspace() {
     </div>
     {error ? <div className="identity-error" role="alert">{error} <button type="button" className="button button-secondary" onClick={() => void refresh()}>إعادة المحاولة</button></div> : null}
     <div className="unified-taxonomy-count">
-      <span>{loading || loadingScope ? "جارٍ تحميل التصنيفات…" : `${rows.length}${nextCursor ? "+" : ""} عنصر`}</span>
+      <span>{loading || loadingScope ? "جارٍ تحميل التصنيفات…" : taxonomyResultSummary(rows.length, kind, Boolean(nextCursor))}</span>
       {!verticalId ? <span>اختر مجالًا لعرض الأنواع والفئات والاختصارات التابعة له.</span> : null}
     </div>
     <div className="unified-taxonomy-table-wrap">
@@ -278,7 +284,7 @@ export function CatalogTaxonomyWorkspace() {
       </ul>
     </div>
     {isLoadedViewSort(kind, Boolean(nextCursor)) && pageSort !== "default" ? <p className="muted" role="status">يطبق الترتيب على العناصر المحمّلة فقط؛ حمّل المزيد لضم بقية الفئات.</p> : null}
-    {nextCursor && verticalId && (kind === "all" || kind === "category") ?
+    {verticalId && canLoadMoreCategories(kind, Boolean(nextCursor)) ?
       <button type="button" className="button button-secondary unified-taxonomy-more" disabled={loadingScope}
         onClick={() => void loadCategories(verticalId, searchedQuery, status, pageSort, nextCursor, true)}>تحميل المزيد من الفئات</button> : null}
   </section>

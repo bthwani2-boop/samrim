@@ -24,6 +24,16 @@ export function isLoadedViewSort(kind: TaxonomyKind, hasNextCursor: boolean): bo
   return kind === "all" && hasNextCursor;
 }
 
+export function canLoadMoreCategories(kind: TaxonomyKind, hasNextCursor: boolean): boolean {
+  return hasNextCursor && (kind === "all" || kind === "category");
+}
+
+export function taxonomyResultSummary(loadedCount: number, kind: TaxonomyKind, hasNextCursor: boolean): string {
+  return canLoadMoreCategories(kind, hasNextCursor)
+    ? `${loadedCount} عنصر محمّل؛ توجد فئات إضافية`
+    : `${loadedCount} عنصر`;
+}
+
 export function sortTaxonomyRows<T extends Readonly<{ nameAr: string }>>(
   rows: ReadonlyArray<T>,
   sort: TaxonomySort,
