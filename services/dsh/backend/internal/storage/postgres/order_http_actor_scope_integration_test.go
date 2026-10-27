@@ -131,6 +131,17 @@ func TestOrderHTTPRejectsAuthenticatedCrossActorReads(t *testing.T) {
 		call("orders-token-partner-a", http.MethodGet, path, "", http.StatusOK)
 		call("orders-token-partner-b", http.MethodGet, path, partnerA, http.StatusForbidden)
 		call("", http.MethodGet, path, clientA, http.StatusUnauthorized)
+		// A Client who owns this Order still cannot use the Partner-only Store route.
+		storePath := "/dsh/stores/" + store + "/orders/" + order
+		storeOwned := call("orders-token-partner-a", http.MethodGet, storePath, "", http.StatusOK)
+		if !strings.Contains(storeOwned.Body.String(), order) {
+			t.Fatalf("authorized Partner cannot read its Store Order: %s", storeOwned.Body.String())
+		}
+		call("orders-token-client-a", http.MethodGet, storePath, "", http.StatusForbidden)
+		call("orders-token-client-b", http.MethodGet, storePath, "", http.StatusNotFound)
+		call("orders-token-partner-b", http.MethodGet, storePath, "", http.StatusForbidden)
+		call("orders-token-partner-a", http.MethodGet, "/dsh/stores/other-store/orders/"+order, "", http.StatusForbidden)
+		call("", http.MethodGet, storePath, "", http.StatusUnauthorized)
 		listA := call("orders-token-client-a", http.MethodGet, "/dsh/orders", "", http.StatusOK)
 		listB := call("orders-token-client-b", http.MethodGet, "/dsh/orders", clientA, http.StatusOK)
 		if !strings.Contains(listA.Body.String(), order) || strings.Contains(listB.Body.String(), order) {

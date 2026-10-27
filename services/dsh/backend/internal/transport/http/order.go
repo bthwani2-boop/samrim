@@ -723,14 +723,25 @@ func orderSearchQuery(w http.ResponseWriter, r *http.Request) (string, bool) {
 	return query, true
 }
 
+func requirePartnerStoreOrderReadRole(w http.ResponseWriter, role string) bool {
+	if role != "partner" {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "partner session is required")
+		return false
+	}
+	return true
+}
+
 func (s *OrderServer) readStore(w http.ResponseWriter, r *http.Request) {
 	if bearerToken(r) == "" {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "partner session is required")
 		return
 	}
-	item, _, err := s.service.Read(r.Context(), bearerToken(r), r.PathValue("orderId"))
+	item, role, err := s.service.Read(r.Context(), bearerToken(r), r.PathValue("orderId"))
 	if err != nil {
 		writeOrderError(w, err)
+		return
+	}
+	if !requirePartnerStoreOrderReadRole(w, role) {
 		return
 	}
 	if item.StoreID != strings.TrimSpace(r.PathValue("storeId")) {
