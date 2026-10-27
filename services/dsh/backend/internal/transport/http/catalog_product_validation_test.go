@@ -34,6 +34,8 @@ func TestCatalogProductHandlersRejectInvalidFiltersBeforeReading(t *testing.T) {
 		{name: "registry category too long", path: "/dsh/catalog/product-registry?categoryId=" + strings.Repeat("c", 129)},
 		{name: "registry cursor too long", path: "/dsh/catalog/product-registry?cursor=" + strings.Repeat("c", 2049)},
 		{name: "registry limit too high", path: "/dsh/catalog/product-registry?limit=101"},
+		{name: "registry negative variant count", path: "/dsh/catalog/product-registry?minVariantCount=-1"},
+		{name: "registry malformed store count", path: "/dsh/catalog/product-registry?minStoreCount=1.5"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -56,7 +58,7 @@ func TestCatalogProductListsRequireTheirCanonicalSessions(t *testing.T) {
 		status int
 	}{
 		{name: "partner product list requires a partner session", path: "/dsh/catalog/products", status: http.StatusUnauthorized},
-		{name: "operator registry requires service authentication", path: "/dsh/catalog/product-registry", header: "Bearer wrong-token", status: http.StatusUnauthorized},
+		{name: "operator registry count filters require service authentication", path: "/dsh/catalog/product-registry?minVariantCount=2&minStoreCount=1", header: "Bearer wrong-token", status: http.StatusUnauthorized},
 		{name: "operator registry requires actor identity", path: "/dsh/catalog/product-registry", header: "Bearer " + strings.Repeat("s", 24), status: http.StatusBadRequest},
 		{name: "global category search requires service authentication", path: "/dsh/catalog/categories?status=all", status: http.StatusUnauthorized},
 		{name: "global category search requires actor identity", path: "/dsh/catalog/categories?status=all", header: "Bearer " + strings.Repeat("s", 24), status: http.StatusBadRequest},

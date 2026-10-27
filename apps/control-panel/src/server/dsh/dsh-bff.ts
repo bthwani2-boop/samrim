@@ -1314,7 +1314,7 @@ export async function listCatalogProducts(query: string, verticalId: string, cur
   return (await requestDshJson<CatalogProductListResponse>(dshOperationPaths.listCatalogProducts.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export async function listCatalogProductRegistry(filters: Readonly<{ query: string; verticalId: string; categoryId: string; active: string; sort: string; cursor: string }>, context: DshOperatorReadContext): Promise<CatalogProductRegistryResponse> {
+export async function listCatalogProductRegistry(filters: Readonly<{ query: string; verticalId: string; categoryId: string; active: string; sort: string; minVariantCount: string; minStoreCount: string; cursor: string }>, context: DshOperatorReadContext): Promise<CatalogProductRegistryResponse> {
   if (!context.operatorActorId.trim()) throw new Error("DSH_PRODUCT_REGISTRY_READ_INPUT_INVALID");
   const params = new URLSearchParams({ limit: "50" });
   if (filters.query.trim()) params.set("q", filters.query.trim());
@@ -1322,6 +1322,8 @@ export async function listCatalogProductRegistry(filters: Readonly<{ query: stri
   if (filters.categoryId.trim()) params.set("categoryId", filters.categoryId.trim());
   if (filters.active !== "all") params.set("active", filters.active);
   if (filters.sort !== "name_asc") params.set("sort", filters.sort);
+  if (filters.minVariantCount !== "0") params.set("minVariantCount", filters.minVariantCount);
+  if (filters.minStoreCount !== "0") params.set("minStoreCount", filters.minStoreCount);
   if (filters.cursor.trim()) params.set("cursor", filters.cursor.trim());
   const path = `${dshOperationPaths.listCatalogProductRegistry.path}?${params.toString()}`;
   return (await requestDshJson<CatalogProductRegistryResponse>(dshOperationPaths.listCatalogProductRegistry.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;

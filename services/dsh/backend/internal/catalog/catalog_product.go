@@ -69,11 +69,11 @@ func (s *Service) ListProductsForOperator(ctx context.Context, actingActorID, qu
 	return postgres.ListCatalogProducts(ctx, s.db, normalizeSearch(query), strings.TrimSpace(verticalID), false, limit, strings.TrimSpace(cursor))
 }
 
-func (s *Service) ListProductRegistryForOperator(ctx context.Context, actingActorID, query, verticalID, categoryID, active, sort string, limit int, cursor string) (postgres.CatalogProductRegistryPage, error) {
+func (s *Service) ListProductRegistryForOperator(ctx context.Context, actingActorID, query, verticalID, categoryID, active string, minVariantCount, minStoreCount int, sort string, limit int, cursor string) (postgres.CatalogProductRegistryPage, error) {
 	if err := s.requireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
 		return postgres.CatalogProductRegistryPage{}, err
 	}
-	return postgres.ListCatalogProductRegistry(ctx, s.db, normalizeSearch(query), strings.TrimSpace(verticalID), strings.TrimSpace(categoryID), strings.TrimSpace(active), strings.TrimSpace(sort), limit, strings.TrimSpace(cursor))
+	return postgres.ListCatalogProductRegistry(ctx, s.db, normalizeSearch(query), strings.TrimSpace(verticalID), strings.TrimSpace(categoryID), strings.TrimSpace(active), minVariantCount, minStoreCount, strings.TrimSpace(sort), limit, strings.TrimSpace(cursor))
 }
 
 func (s *Service) requireSharedProduct(ctx context.Context, productID string) error {

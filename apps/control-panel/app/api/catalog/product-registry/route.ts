@@ -21,6 +21,8 @@ export async function GET(request: Request) {
       categoryId: params.get("categoryId")?.trim() ?? "",
       active: params.get("active")?.trim() || "all",
       sort: params.get("sort")?.trim() || "name_asc",
+      minVariantCount: params.get("minVariantCount")?.trim() ?? "0",
+      minStoreCount: params.get("minStoreCount")?.trim() ?? "0",
       cursor: params.get("cursor")?.trim() ?? "",
     }, { operatorActorId: identity.subject });
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });

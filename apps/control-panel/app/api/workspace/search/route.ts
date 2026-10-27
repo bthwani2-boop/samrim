@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     } });
   }
   if (permissions.includes("catalog")) sources.push({ key: "products", label: "المنتجات", read: async () => {
-    const page = await listCatalogProductRegistry({ query, verticalId: "", categoryId: "", active: "all", sort: "name_asc", cursor: "" }, context);
+    const page = await listCatalogProductRegistry({ query, verticalId: "", categoryId: "", active: "all", sort: "name_asc", minVariantCount: "0", minStoreCount: "0", cursor: "" }, context);
     return page.products.slice(0, 5).map((item) => ({ label: item.canonicalName, href: `/catalog?mode=edit&productId=${encodeURIComponent(item.id)}` }));
   } });
   const results = await Promise.allSettled(sources.map((source) => source.read()));
