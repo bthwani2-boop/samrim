@@ -303,7 +303,7 @@ export function PartnersWorkbench() {
 
   const grant = selectedGrant?.kind === "access" ? selectedGrant.grant : null;
   const actor = selectedPartner?.kind === "partner" ? selectedPartner.actor : null;
-  const detail = openStore ? <StoreInspector storeId={openStore} onClose={close} onUpdated={() => void load()} /> :
+  const detail = openStore ? <StoreInspector key={openStore} storeId={openStore} onClose={close} onUpdated={() => void load()} /> :
     openCase ? <AdaptiveRecordPanel title="ملف طلب الانضمام" onClose={close}><JoiningCaseDetail key={openCase} caseId={openCase} embedded /></AdaptiveRecordPanel> :
     grant ? <AdaptiveRecordPanel title="مراجعة اعتماد الوصول" subtitle={grant.storeName} onClose={close}>
       <dl className="facts-grid"><div><dt>المتجر</dt><dd>{grant.storeName}</dd></div><div><dt>المدعو</dt><dd><bdi dir="ltr">{grant.delegatePhoneMasked || "محجوب"}</bdi></dd></div><div><dt>الصلاحيات المطلوبة</dt><dd>{grant.permissions.map((p) => permissionLabels[p] || "صلاحية إضافية").join("، ")}</dd></div><div><dt>تنتهي الدعوة</dt><dd>{date(grant.expiresAt)}</dd></div><div><dt>آخر تحديث</dt><dd>{date(grant.updatedAt)}</dd></div></dl>
