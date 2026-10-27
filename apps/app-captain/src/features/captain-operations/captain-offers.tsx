@@ -122,6 +122,8 @@ export function CaptainOffers({ compact = false, popup = false, suppressed = fal
       const current = currentIdentityState();
       if (current.kind !== "authenticated" || !isCurrentCaptainActor(actorID, current.identity.subject.trim())) return;
       const verified = await load();
+      const afterRead = currentIdentityState();
+      if (afterRead.kind !== "authenticated" || !isCurrentCaptainActor(actorID, afterRead.identity.subject.trim())) return;
       setError(insufficientFunds && verified
         ? "رصيد محفظتك المتاح لا يكفي لضمان التحصيل النقدي لهذا الطلب. لم يُقبل العرض؛ يلزم توفير الرصيد عبر قناة شحن معتمدة."
         : verified
