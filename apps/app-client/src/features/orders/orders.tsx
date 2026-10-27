@@ -8,7 +8,7 @@ import { Keyboard, Modal, Pressable, StyleSheet, Text, TextInput, View } from "r
 import { PremiumOrderProgress, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
 import { orderJourneyPresentation } from "./order-journey";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
-import { matchesOrderFilters, matchesOrderStatus, type OrderFulfillmentFilter } from "./order-list-filter";
+import { isPartialOrderListEmpty, matchesOrderFilters, matchesOrderStatus, type OrderFulfillmentFilter } from "./order-list-filter";
 import { isClientActorScopeCurrent } from "./order-session-scope";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -65,12 +65,6 @@ export default function ClientOrders() {
   const selectedStatusLabel = statusOptions.find((option) => option.key === statusFilter)?.label ?? "الكل";
   const selectedFulfillmentLabel = fulfillmentOptions.find((option) => option.key === fulfillmentFilter)?.label ?? "كل الطرق";
   const filterButtonLabel = statusFilter !== "all" ? selectedStatusLabel : fulfillmentFilter !== "all" ? selectedFulfillmentLabel : "تصفية";
-  const emptyStateTitle = search.trim() || fulfillmentFilter !== "all" ? "لا توجد طلبات مطابقة"
-    : statusFilter === "cancelled" ? "لا توجد طلبات ملغاة"
-    : statusFilter === "completed" ? "لا توجد طلبات مكتملة"
-    : statusFilter === "active" ? "لا توجد طلبات نشطة"
-    : state.kind === "ready" && state.orders.length === 0 ? "لا توجد طلبات بعد" : "لا توجد طلبات مطابقة";
-
   const load = useCallback(async () => {
     const sequence = ++loadSequence.current;
     pageSequence.current += 1;
@@ -103,6 +97,13 @@ export default function ClientOrders() {
       return !q || order.storeName.toLocaleLowerCase("ar").includes(q) || order.id.toLowerCase().includes(q);
     });
   }, [fulfillmentFilter, statusFilter, search, state]);
+  const partialEmpty = state.kind === "ready" && isPartialOrderListEmpty(visibleOrders.length, state.nextCursor);
+  const emptyStateTitle = partialEmpty ? "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0645\u0637\u0627\u0628\u0642\u0629 \u0636\u0645\u0646 \u0627\u0644\u0637\u0644\u0628\u0627\u062a \u0627\u0644\u0645\u062d\u0645\u0651\u0644\u0629"
+    : search.trim() || fulfillmentFilter !== "all" ? "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0645\u0637\u0627\u0628\u0642\u0629"
+    : statusFilter === "cancelled" ? "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0645\u0644\u063a\u0627\u0629"
+    : statusFilter === "completed" ? "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0645\u0643\u062a\u0645\u0644\u0629"
+    : statusFilter === "active" ? "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0646\u0634\u0637\u0629"
+    : state.kind === "ready" && state.orders.length === 0 ? "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0628\u0639\u062f" : "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0645\u0637\u0627\u0628\u0642\u0629";
 
   const getChatUnread = useCallback(async (orderId: string) => {
     const token = await getUsableIdentityAccessToken();
@@ -257,8 +258,8 @@ export default function ClientOrders() {
     {visibleOrders.length === 0 ? <BthwaniSurface tone="raised" style={styles.emptyState}>
       <BthwaniIcon name="orders" color={premium.orange} size={sizing.iconXl} />
       <Text style={styles.cardTitle}>{emptyStateTitle}</Text>
-      <Text style={styles.muted}>{state.orders.length === 0 && statusFilter === "all" && fulfillmentFilter === "all" && !search.trim() ? "ستظهر طلباتك هنا بعد تأكيدها." : "جرّب تغيير البحث أو التصفية."}</Text>
-      <BthwaniButton label={state.orders.length === 0 ? "استكشف المتاجر" : "عرض الكل"} onPress={() => state.orders.length === 0 ? router.push("/home" as Href) : (setSearch(""), setStatusFilter("all"), setFulfillmentFilter("all"))} />
+      <Text style={styles.muted}>{partialEmpty ? "\u0642\u062f \u062a\u062d\u062a\u0648\u064a \u0627\u0644\u0635\u0641\u062d\u0627\u062a \u0627\u0644\u0623\u0642\u062f\u0645 \u0639\u0644\u0649 \u0646\u062a\u0627\u0626\u062c. \u062d\u0645\u0651\u0644 \u0627\u0644\u0645\u0632\u064a\u062f \u0644\u0645\u062a\u0627\u0628\u0639\u0629 \u0627\u0644\u0628\u062d\u062b." : state.orders.length === 0 && statusFilter === "all" && fulfillmentFilter === "all" && !search.trim() ? "ستظهر طلباتك هنا بعد تأكيدها." : "جرّب تغيير البحث أو التصفية."}</Text>
+      <BthwaniButton label={state.orders.length === 0 && !state.nextCursor ? "استكشف المتاجر" : "عرض الكل"} onPress={() => state.orders.length === 0 && !state.nextCursor ? router.push("/home" as Href) : (setSearch(""), setStatusFilter("all"), setFulfillmentFilter("all"))} />
     </BthwaniSurface> : <View style={styles.list}>
       {visibleOrders.map((order) => {
         const journey = orderJourneyPresentation(order);

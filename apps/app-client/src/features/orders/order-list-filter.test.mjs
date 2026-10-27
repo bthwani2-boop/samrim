@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { matchesOrderFilters, matchesOrderStatus } from "./order-list-filter.ts";
+import { isPartialOrderListEmpty, matchesOrderFilters, matchesOrderStatus } from "./order-list-filter.ts";
 
 const makeOrder = (state, fulfillmentMode) => ({ state, fulfillmentMode });
 const fulfillmentModes = {
@@ -58,4 +58,17 @@ test("terminal order states remain visible for the correct fulfillment mode", ()
       assert.equal(matchesOrderFilters(makeOrder(state, mode), filter), true, state + " " + filter);
     }
   }
+});
+
+
+test("an empty loaded page with a cursor is only a partial empty state", () => {
+  assert.equal(isPartialOrderListEmpty(0, "older-orders-cursor"), true);
+});
+
+test("an empty order history without a cursor is a true empty state", () => {
+  assert.equal(isPartialOrderListEmpty(0, ""), false);
+});
+
+test("visible loaded orders are not an empty state even when older pages remain", () => {
+  assert.equal(isPartialOrderListEmpty(1, "older-orders-cursor"), false);
 });

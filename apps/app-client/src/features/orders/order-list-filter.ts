@@ -3,6 +3,10 @@ import type { Order } from "@bthwani/dsh";
 export type OrderFulfillmentFilter = "all" | "bthwani" | "store" | "pickup";
 export type OrderStatusFilter = "all" | "active" | "completed" | "cancelled";
 
+export function isPartialOrderListEmpty(visibleOrderCount: number, nextCursor: string): boolean {
+  return visibleOrderCount === 0 && nextCursor.trim().length > 0;
+}
+
 export function matchesOrderStatus(state: Order["state"], filter: OrderStatusFilter): boolean {
   if (filter === "all") return true;
   const cancelled = state === "CANCELLED" || state === "REJECTED" || state === "DELIVERY_FAILED";
