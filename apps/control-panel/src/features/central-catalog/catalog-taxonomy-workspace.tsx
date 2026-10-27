@@ -162,7 +162,7 @@ export function CatalogTaxonomyWorkspace() {
           {editor.kind === "vertical" ? <CatalogVerticalRegistry verticals={verticals} selectedVerticalId={verticalId}
             onSelectVertical={setVerticalId} onSaved={refresh} editorOnly initialId={editor.id} onClose={() => setEditor(null)} /> : null}
           {editor.kind === "type" && verticalId ? <CatalogCommercialStoreTypeRegistry verticals={verticals} verticalId={verticalId}
-            editorOnly initialId={editor.id} onSaved={refresh} onClose={() => setEditor(null)} /> : null}
+            initialId={editor.id} onSaved={refresh} onClose={() => setEditor(null)} /> : null}
           {editor.kind === "category" && verticalId ? <CatalogCategoryRegistry verticals={verticals} verticalId={verticalId}
             onVerticalChange={setVerticalId} categories={categories} nextCursor={nextCursor}
             onFilter={(text, filter, _sort, cursor, append) => loadCategories(verticalId, text, filter, pageSort, cursor, append)}
