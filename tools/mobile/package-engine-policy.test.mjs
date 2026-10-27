@@ -56,8 +56,8 @@ for (const [app, other] of Object.entries(extras)) {
     // Shared platform versions cannot drift as a side effect of a package-adoption roll-out.
     assert.equal(manifest.dependencies.react, "19.3.0");
     if (app === "control-panel") {
-      assert.equal(manifest.dependencies["@tanstack/react-table"], "8.21.3");
-      assert.equal(manifest.dependencies["@tanstack/react-virtual"], "3.14.22");
+      assert.equal(manifest.dependencies["@tanstack/react-table"], undefined, "AntD Table owns generic CP tables");
+      assert.equal(manifest.dependencies["@tanstack/react-virtual"], undefined, "AntD virtual replaces the legacy CP virtualizer");
     } else {
       assert.equal(manifest.dependencies.expo, "58.0.19");
       assert.equal(manifest.dependencies["react-native"], "0.88.0");
