@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -17,9 +18,9 @@ import (
 	transporthttp "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/transport/http"
 )
 
-// Validate actor-level HTTP order visibility against real SQL ownership rules.
-// No WLT money is mutated; the payment dependency must not be contacted for reads.
-func TestOrderHTTPRejectsAuthenticatedCrossActorReads(t *testing.T) {
+// Validate actor-level HTTP order scope and partner transition retries against real SQL ownership rules.
+// No WLT money is mutated; reads and Partner acceptance must not contact the payment dependency.
+func TestOrderHTTPActorScopeAndPartnerTransitionRetry(t *testing.T) {
 	url := strings.TrimSpace(os.Getenv("DSH_DATABASE_URL"))
 	if url == "" {
 		t.Skip("isolated DSH_DATABASE_URL required")
@@ -38,11 +39,13 @@ func TestOrderHTTPRejectsAuthenticatedCrossActorReads(t *testing.T) {
 		const partnerA = "orders-http-partner-a"
 		const partnerB = "orders-http-partner-b"
 		const store = "orders-http-store-a"
+		const otherStore = "orders-http-store-a-other"
 		const order = "orders-http-order-a"
 		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.service_cities(id,display_name_ar,active) VALUES('orders-http-city','مدينة الاختبار',true)"); err != nil {
 			t.Fatal(err)
 		}
 		insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{ID: store, PartnerActorID: partnerA, Name: "Orders HTTP Store", ServiceCityID: "orders-http-city"})
+		insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{ID: otherStore, PartnerActorID: partnerA, Name: "Orders HTTP Other Store", ServiceCityID: "orders-http-city"})
 		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commerce_carts(id,client_actor_id,store_id,state,version) VALUES('orders-http-cart',$1,$2,'checked_out',1)", clientA, store); err != nil {
 			t.Fatal(err)
 		}
@@ -121,6 +124,22 @@ func TestOrderHTTPRejectsAuthenticatedCrossActorReads(t *testing.T) {
 			}
 			return result
 		}
+		transition := func(storeID, state, key string, version, status int) *httptest.ResponseRecorder {
+			t.Helper()
+			path := "/dsh/stores/" + storeID + "/orders/" + order + "/transition"
+			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"state":"`+state+`"}`))
+			req.Header.Set("Authorization", "Bearer orders-token-partner-a")
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Idempotency-Key", key)
+			req.Header.Set("X-Correlation-ID", "orders-http-transition-correlation")
+			req.Header.Set("X-Expected-Version", strconv.Itoa(version))
+			result := httptest.NewRecorder()
+			mux.ServeHTTP(result, req)
+			if result.Code != status {
+				t.Fatalf("POST %s as Partner returned %d want %d: %s", path, result.Code, status, result.Body.String())
+			}
+			return result
+		}
 		path := "/dsh/orders/" + order
 		owned := call("orders-token-client-a", http.MethodGet, path, "", http.StatusOK)
 		if !strings.Contains(owned.Body.String(), order) {
@@ -156,6 +175,45 @@ func TestOrderHTTPRejectsAuthenticatedCrossActorReads(t *testing.T) {
 		wrongStoreDenied := call("orders-token-partner-a", http.MethodGet, "/dsh/stores/other-store/orders/"+order, "", http.StatusForbidden)
 		assertNoPrivateOrderData("Partner using a non-matching Store", wrongStoreDenied)
 		call("", http.MethodGet, storePath, "", http.StatusUnauthorized)
+		const transitionKey = "orders-http-partner-transition-1"
+		transition(otherStore, "PARTNER_ACCEPTED", transitionKey, 1, http.StatusForbidden)
+		var state string
+		var version int
+		if err := db.QueryRowContext(ctx, "SELECT state,version FROM dsh.commerce_orders WHERE id=$1", order).Scan(&state, &version); err != nil {
+			t.Fatal(err)
+		}
+		if state != "CREATED" || version != 1 {
+			t.Fatalf("cross-Store Partner transition changed the Order: state=%s version=%d", state, version)
+		}
+		var auditCount int
+		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM dsh.commerce_order_audit WHERE order_id=$1", order).Scan(&auditCount); err != nil {
+			t.Fatal(err)
+		}
+		if auditCount != 0 {
+			t.Fatalf("denied cross-Store transition wrote %d audit events", auditCount)
+		}
+
+		accepted := transition(store, "PARTNER_ACCEPTED", transitionKey, 1, http.StatusOK)
+		if strings.Contains(accepted.Body.String(), `"idempotentReplay":true`) || !strings.Contains(accepted.Body.String(), `"state":"PARTNER_ACCEPTED"`) {
+			t.Fatalf("authorized transition did not return its persisted first result: %s", accepted.Body.String())
+		}
+		replay := transition(store, "PARTNER_ACCEPTED", transitionKey, 1, http.StatusOK)
+		if !strings.Contains(replay.Body.String(), `"idempotentReplay":true`) || !strings.Contains(replay.Body.String(), `"state":"PARTNER_ACCEPTED"`) {
+			t.Fatalf("same authorized transition was not reported as an idempotent replay: %s", replay.Body.String())
+		}
+		transition(store, "PREPARING", transitionKey, 2, http.StatusConflict)
+		if err := db.QueryRowContext(ctx, "SELECT state,version FROM dsh.commerce_orders WHERE id=$1", order).Scan(&state, &version); err != nil {
+			t.Fatal(err)
+		}
+		if state != "PARTNER_ACCEPTED" || version != 2 {
+			t.Fatalf("conflicting retry changed the Order: state=%s version=%d", state, version)
+		}
+		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM dsh.commerce_order_audit WHERE order_id=$1", order).Scan(&auditCount); err != nil {
+			t.Fatal(err)
+		}
+		if auditCount != 1 {
+			t.Fatalf("idempotent replay or conflicting retry wrote duplicate audit events: got %d want 1", auditCount)
+		}
 		listA := call("orders-token-client-a", http.MethodGet, "/dsh/orders", "", http.StatusOK)
 		listB := call("orders-token-client-b", http.MethodGet, "/dsh/orders", clientA, http.StatusOK)
 		if !strings.Contains(listA.Body.String(), order) || strings.Contains(listB.Body.String(), order) {
