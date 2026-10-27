@@ -33,7 +33,7 @@ assert.ok(pendingTotalNode, "pending checkout legacy accepted-total guard is req
 assert.ok(currentActorGuardNode, "pending checkout recovery must revalidate its actor");
 const compilerOptions = { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None };
 const runnableQuote = ts.transpileModule(quoteNode.getText(ast), { compilerOptions }).outputText;
-const runnableHandler = ts.transpileModule(checkoutNode.getText(ast), { compilerOptions }).outputText;
+const runnableHandler = ts.transpileModule(`${currentActorGuardNode.getText(ast)}\n${checkoutNode.getText(ast)}`, { compilerOptions }).outputText;
 const quoteMatchesCheckout = vm.runInNewContext(`${runnableQuote}\nquoteMatchesCheckout`);
 const pendingCheckoutHasAcceptedTotal = vm.runInNewContext(`${ts.transpileModule(pendingTotalNode.getText(ast), { compilerOptions }).outputText}\npendingCheckoutHasAcceptedTotal`);
 const checkoutAttemptBelongsToCurrentActor = vm.runInNewContext(`${ts.transpileModule(currentActorGuardNode.getText(ast), { compilerOptions }).outputText}\ncheckoutAttemptBelongsToCurrentActor`);
@@ -43,7 +43,7 @@ const readVisibleQuote = vm.runInNewContext(`${runnableQuote}\n${runnableVisible
 
 function scenario({ accessToken, persist, submit, recover, isOffline = false } = {}) {
   let actor = "client-1";
-  const counts = { token: 0, persist: 0, submit: 0, deletes: 0, generatedIds: 0, pending: [], busy: [], errors: [] };
+  const counts = { token: 0, persist: 0, submit: 0, deletes: 0, finish: 0, generatedIds: 0, pending: [], busy: [], errors: [] };
   const context = {
     isOffline,
     checkoutSubmitting: { current: false },
@@ -88,7 +88,7 @@ function scenario({ accessToken, persist, submit, recover, isOffline = false } =
         return submit ? submit(...args) : { order: { id: "order-1" } };
       },
     }),
-    finishCheckout: async () => {},
+    finishCheckout: async () => { counts.finish++; },
     readOrderForCart: async () => recover ? recover() : null,
     definitiveCheckoutRejection: () => false,
     cartMutationErrorMessage: () => "retry",
@@ -120,6 +120,34 @@ test("pending recovery stops after an actor switch during canonical order readba
     "revalidate the actor after initial readback and before exposing or retrying the former actor attempt");
   assert.ok(retryReadback > retry && retryReadbackGuard > retryReadback,
     "revalidate the actor after retry readback before exposing a recovered order");
+});
+
+test("single-store checkout keeps a switched actor from seeing or clearing the prior actor's order", async () => {
+  const successful = scenario({ submit: async () => {
+    successful.setActor("client-2");
+    return { order: { id: "prior-actor-order" } };
+  } });
+  await successful.checkout();
+  assert.equal(successful.counts.submit, 1, "the in-flight request is not duplicated or rewritten");
+  assert.equal(successful.counts.finish, 0, "the prior actor's order must not be published to the new session");
+  assert.equal(successful.counts.deletes, 0, "retain the original actor's durable attempt for reconciliation");
+  assert.equal(successful.counts.pending.length, 1);
+  assert.match(successful.counts.errors.at(-1), /تغيّرت جلسة العميل/);
+
+  const readback = scenario({
+    submit: async () => {
+      throw new Error("UNKNOWN_OUTCOME");
+    },
+    recover: async () => {
+      readback.setActor("client-2");
+      return { id: "prior-actor-order" };
+    },
+  });
+  await readback.checkout();
+  assert.equal(readback.counts.finish, 0, "recovery readback must be actor-checked before publishing");
+  assert.equal(readback.counts.deletes, 0, "do not erase the prior actor's unresolved attempt");
+  assert.equal(readback.counts.pending.length, 1);
+  assert.match(readback.counts.errors.at(-1), /تغيّرت جلسة العميل/);
 });
 
 test("confirmed offline state never creates an order or a pending payment attempt", async () => {
