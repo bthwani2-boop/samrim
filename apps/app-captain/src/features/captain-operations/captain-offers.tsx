@@ -60,6 +60,14 @@ export function CaptainOffers({ compact = false, popup = false, suppressed = fal
 
   useEffect(() => subscribeIdentitySession(setIdentityState), []);
   useEffect(() => {
+    if (suppressed) {
+      readSequence.current += 1;
+      setOffers([]);
+      setLoadedActorID("");
+      setLoading(false);
+      setError("");
+      return;
+    }
     if (!activeActorID) {
       readSequence.current += 1;
       setOffers([]);
