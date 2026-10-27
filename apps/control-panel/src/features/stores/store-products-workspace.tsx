@@ -10,6 +10,11 @@ type Mode = "shared" | "local";
 type Attempt = { productKey: string; offerKey: string; correlation: string; fingerprint: string };
 type ProductVariantOption = { value: string; name: string; kind: "DISCRETE" | "MEASURED" | "VARIABLE_MEASURE"; unit: string };
 type BulkEntry = ProductVariantOption & {price: string};
+type SharedCatalogRequest = { version: number; storeId: string };
+
+function isCurrentSharedCatalogRequest(request: SharedCatalogRequest, current: SharedCatalogRequest): boolean {
+  return request.version === current.version && request.storeId === current.storeId;
+}
 
 const money = (amount: number) => new Intl.NumberFormat("ar-YE").format(amount) + " ر.ي";
 function createInput(variantId: string, priceMinor: number, kind: CreateStoreOfferRequest["quantityPolicy"]): CreateStoreOfferRequest {
@@ -55,6 +60,9 @@ export function StoreProductsWorkspace({storeId, verticalId,storeName}:{storeId:
   const [shared,setShared]=useState<ReadonlyArray<CatalogProduct>>([]);
   const [sharedCursor,setSharedCursor]=useState("");
   const [sharedLoading,setSharedLoading]=useState(false);
+  const sharedSearchVersion=useRef(0);
+  const sharedSearchStoreId=useRef(storeId);
+  if(sharedSearchStoreId.current!==storeId){sharedSearchStoreId.current=storeId;sharedSearchVersion.current++;}
   const [selection,setSelection]=useState("");
   const [bulkMode,setBulkMode]=useState(false);
   const [bulkEntries,setBulkEntries]=useState<Record<string,BulkEntry>>({});
@@ -98,14 +106,17 @@ export function StoreProductsWorkspace({storeId, verticalId,storeName}:{storeId:
   };void load();return ()=>controller.abort()},[storeId,cursor,refresh]);
 
   const find = useCallback(async(q:string,append=false,cursorValue="")=>{
+    const request={version:++sharedSearchVersion.current,storeId};
+    const isCurrent=()=>isCurrentSharedCatalogRequest(request,{version:sharedSearchVersion.current,storeId:sharedSearchStoreId.current});
     setSharedLoading(true);setError("");
     try{
       const params=new URLSearchParams({q:q.trim(),cursor:cursorValue});
       const value=await payload<CatalogProductListResponse>(await fetch("/api/stores/"+encodeURIComponent(storeId)+"/products?"+params,{cache:"no-store"}));
+      if(!isCurrent())return;
       setShared(current=>append?[...current,...value.products]:value.products);
       setSharedCursor(value.nextCursor??"");
-    } catch(e){setError(e instanceof Error?e.message:"تعذر البحث في المنتجات المشتركة")}
-    finally{setSharedLoading(false)}
+    } catch(e){if(isCurrent())setError(e instanceof Error?e.message:"تعذر البحث في المنتجات المشتركة")}
+    finally{if(isCurrent())setSharedLoading(false)}
   },[storeId]);
   useEffect(()=>{if(openAdd&&mode==="shared"&&shared.length===0&&!appliedSearch){void find("")}},[openAdd,mode,shared.length,appliedSearch,find]);
 
