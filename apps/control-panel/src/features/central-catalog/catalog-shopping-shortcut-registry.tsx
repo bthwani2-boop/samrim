@@ -4,6 +4,7 @@ import type { CatalogCategoryListItem, CommercialStoreType, ShoppingShortcut } f
 import { Button, Checkbox, Form, Input, InputNumber } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
+import { retainSelectedCategoryOptions } from "./catalog-shopping-shortcut-selection";
 
 type Option = Readonly<{ id: string; nameAr: string; active: boolean; pathAr: string }>;
 type FormValues = Readonly<{ titleAr: string; ordinal: number; active: boolean; reason: string }>;
@@ -127,7 +128,7 @@ export function CatalogShoppingShortcutEditor({ verticalId, initialShortcut, onS
       const options = page.categories.map(toOption);
       setCategories((current) => append ? [...new Map([...current, ...options].map((item) => [item.id, item])).values()] : options);
       setCategoryCursor(page.nextCursor ?? "");
-      setSelectedCategories((current) => [...new Map([...current, ...options.filter((item) => categoryIds.includes(item.id))].map((item) => [item.id, item])).values()]);
+      setSelectedCategories((current) => retainSelectedCategoryOptions(current, options, categoryIds));
     } catch (cause: unknown) {
       if (request === categoryRequestSequence.current) setCategoryError(cause instanceof Error ? cause.message : "\u062a\u0639\u0630\u0631 \u0628\u062d\u062b \u0627\u0644\u0641\u0626\u0627\u062a. \u0623\u0639\u062f \u0627\u0644\u0645\u062d\u0627\u0648\u0644\u0629.");
     } finally {
@@ -194,7 +195,7 @@ export function CatalogShoppingShortcutEditor({ verticalId, initialShortcut, onS
     if (kind === "type") setTypeIds(selected);
     else {
       setCategoryIds(selected);
-      setSelectedCategories((current) => current.filter((item) => selected.includes(item.id)));
+      setSelectedCategories((current) => retainSelectedCategoryOptions(current, categories, selected));
     }
   }
 
