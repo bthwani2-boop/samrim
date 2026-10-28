@@ -6,13 +6,16 @@ import test from "node:test";
 
 const root = process.cwd();
 const common = {
-  "@tanstack/react-query": "5.104.5",
-  "react-hook-form": "7.91.0",
   "zod": "4.6.7",
-  "@hookform/resolvers": "6.0.0",
   "date-fns": "4.4.0",
   "@date-fns/tz": "1.5.0",
 };
+const partnerForms = {
+  "@tanstack/react-query": "5.104.5",
+  "react-hook-form": "7.91.0",
+  "@hookform/resolvers": "6.0.0",
+};
+const catalogPackages = { ...common, ...partnerForms };
 const catalogYaml = fs.readFileSync(path.join(root, "pnpm-workspace.yaml"), "utf8");
 const catalogSection = catalogYaml.match(/^catalog:\r?\n([\s\S]*?)(?=^overrides:)/m)?.[1];
 assert.ok(catalogSection, "shared pnpm catalog must be present");
@@ -22,11 +25,10 @@ const sharedCatalog = new Map(
 const mobile = {
   "@shopify/flash-list": "2.3.2",
   "zustand": "5.0.16",
-  "xstate": "5.33.3",
 };
 const extras = {
   "app-client": { "react-native-reanimated-carousel": "5.2.0" },
-  "app-partner": {},
+  "app-partner": { ...partnerForms },
   "app-captain": {},
   "app-field": {},
   "control-panel": {
@@ -42,7 +44,7 @@ for (const [app, other] of Object.entries(extras)) {
       ? { zod: common.zod, "date-fns": common["date-fns"], "@date-fns/tz": common["@date-fns/tz"], ...other }
       : { ...common, ...mobile, ...other };
     for (const [name, pinnedVersion] of Object.entries(dependencies)) {
-      if (Object.hasOwn(common, name)) {
+      if (Object.hasOwn(catalogPackages, name)) {
         assert.equal(manifest.dependencies[name], "catalog:", app + " " + name);
         assert.equal(sharedCatalog.get(name), pinnedVersion, "shared catalog " + name);
       } else {
@@ -62,6 +64,12 @@ for (const [app, other] of Object.entries(extras)) {
       assert.equal(manifest.dependencies.expo, "58.0.19");
       assert.equal(manifest.dependencies["react-native"], "0.88.0");
       assert.equal(manifest.dependencies["@expo/ui"], "58.0.23");
+      assert.equal(manifest.dependencies.xstate, undefined, "unused XState must not be reintroduced");
+      if (app !== "app-partner") {
+        for (const unused of Object.keys(partnerForms)) {
+          assert.equal(manifest.dependencies[unused], undefined, `${app} does not consume ${unused}`);
+        }
+      }
     }
   });
 }
