@@ -11,6 +11,7 @@ func TestValidateFinancialProfile(t *testing.T) {
 	}{
 		{name: "field daily", origin: OriginField, period: SettlementDaily},
 		{name: "control panel monthly", origin: OriginControlPanel, period: SettlementMonthly},
+		{name: "verified self service weekly", origin: OriginSelfService, period: SettlementWeekly},
 		{name: "invalid origin", origin: "partner", period: SettlementWeekly, wantInvalid: true},
 		{name: "invalid period", origin: OriginField, period: "YEARLY", wantInvalid: true},
 	}

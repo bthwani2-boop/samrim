@@ -3641,7 +3641,7 @@ components:
       properties:
         joiningCaseId: { type: string, minLength: 1, maxLength: 128 }
         partnerActorId: { type: string, minLength: 1, maxLength: 128 }
-        origin: { type: string, enum: [field, control_panel] }
+        origin: { type: string, enum: [field, control_panel, self_service] }
         settlementPeriod: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
         termsPolicyVersion: { type: string, maxLength: 128, nullable: true, pattern: '^partner-financial-terms:v[1-9][0-9]*$' }
     PartnerFinancialProfile:
@@ -3652,7 +3652,7 @@ components:
         id: { type: string }
         joiningCaseId: { type: string }
         partnerActorId: { type: string }
-        origin: { type: string, enum: [field, control_panel] }
+        origin: { type: string, enum: [field, control_panel, self_service] }
         settlementPeriod: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
         termsPolicyVersion: { type: string, nullable: true }
         roundingUnitMinor: { type: integer, const: 50 }

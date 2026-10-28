@@ -57,6 +57,8 @@ func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/images", s.operatorStoreImages)
 	mux.HandleFunc("POST /dsh/operator/stores/{storeId}/images", s.operatorStoreImages)
 	mux.HandleFunc("POST /dsh/joining-cases", s.create)
+	mux.HandleFunc("GET /dsh/partner-applications/self", s.selfServiceApplication)
+	mux.HandleFunc("POST /dsh/partner-applications/self", s.selfServiceApplication)
 	mux.HandleFunc("GET /dsh/joining-cases", s.listForOperator)
 	mux.HandleFunc("GET /dsh/joining-cases/self", s.readForPartner)
 	mux.HandleFunc("GET /dsh/partners/actors/{actorId}/joining-case", s.readForPartnerActor)
@@ -391,6 +393,8 @@ func writeJoiningCaseError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "POLICY_VERSION_CONFLICT", "partner financial terms changed after they were read; reload the active policy")
 	case errors.Is(err, joiningcase.ErrOperatorNotActive):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active control operator session is required")
+	case errors.Is(err, joiningcase.ErrSelfServiceApplicantIdentityMismatch):
+		writeError(w, http.StatusConflict, "APPLICANT_IDENTITY_CHANGED", "the verified applicant account no longer matches this case")
 	case errors.Is(err, joiningcase.ErrPartnerSessionForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active app-partner session is required")
 	case errors.Is(err, joiningcase.ErrFieldSessionForbidden):

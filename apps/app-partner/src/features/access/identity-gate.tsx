@@ -1,5 +1,7 @@
 import { ManagedIdentityFlow, resolveInternalReturnPath } from "@bthwani/identity/presentation";
-import { type Href, Redirect, useLocalSearchParams } from "expo-router";
+import { BthwaniButton } from "@bthwani/design-system/native";
+import { View } from "react-native";
+import { type Href, Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   activateManagedIdentity,
   currentIdentityState,
@@ -17,14 +19,22 @@ const identity = { role, surface, restoreIdentitySession, currentIdentityState, 
 
 export default function IdentityGate() {
   const { returnTo } = useLocalSearchParams<{ returnTo?: string | string[] }>();
+  const router = useRouter();
   const safeReturnTo = resolveInternalReturnPath(returnTo, "/orders", /^(?:\/store|\/notifications|\/orders|\/products|\/wallet|\/more|\/account|\/onboarding)$/u) as Href;
 
   return (
-    <ManagedIdentityFlow
-      managedRole={role}
-      surface={surface}
-      binding={identity}
-      authenticatedContent={<Redirect href={safeReturnTo} />}
-    />
+    <View style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
+        <ManagedIdentityFlow
+          managedRole={role}
+          surface={surface}
+          binding={identity}
+          authenticatedContent={<Redirect href={safeReturnTo} />}
+        />
+      </View>
+      <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
+        <BthwaniButton label="انضم كمتجر جديد دون ميداني" variant="secondary" onPress={() => router.push("/apply" as Href)} />
+      </View>
+    </View>
   );
 }

@@ -293,6 +293,15 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.listPublicCatalogAttributeEnumOptions.path.replace("{attributeId}", encodeURIComponent(normalized));
       return (await publicRequest<CatalogAttributeEnumOptionListResponse>(path)).options;
     },
+    async readSelfServiceJoiningApplication(accessToken: string): Promise<JoiningCaseResponse> {
+      const op=dshOperationPaths.readSelfServiceJoiningApplication;
+      return userRequest<JoiningCaseResponse>(accessToken,op.path,op.method);
+    },
+    async createSelfServiceJoiningApplication(accessToken: string,input:CreateJoiningCaseRequest,idempotencyKey:string,correlationID:string):Promise<JoiningCaseResponse>{
+      if(!idempotencyKey.trim()||!correlationID.trim())throw new Error("DSH_JOINING_MUTATION_HEADERS_REQUIRED");
+      const op=dshOperationPaths.createSelfServiceJoiningApplication;
+      return userRequest<JoiningCaseResponse>(accessToken,op.path,op.method,input,{"Idempotency-Key":idempotencyKey.trim(),"X-Correlation-ID":correlationID.trim()});
+    },
     async readOwnJoiningCase(accessToken: string): Promise<JoiningCaseResponse> {
       return userRequest<JoiningCaseResponse>(accessToken, dshOperationPaths.readOwnJoiningCase.path, dshOperationPaths.readOwnJoiningCase.method);
     },

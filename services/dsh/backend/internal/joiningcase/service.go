@@ -82,7 +82,7 @@ func (s *Service) Submit(ctx context.Context, caseID string, expectedVersion int
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
-	canAdmit := (current.Case.Origin == "control_panel" && current.Case.State == "draft") || (current.Case.Origin == "field" && current.Case.State == "admission_requested")
+	canAdmit := ((current.Case.Origin == "control_panel" || current.Case.Origin == "self_service") && current.Case.State == "draft") || (current.Case.Origin == "field" && current.Case.State == "admission_requested")
 	if !canAdmit {
 		if current.Case.State != "submitted" {
 			return postgres.JoiningCaseResult{}, postgres.ErrJoiningCaseState
@@ -95,11 +95,25 @@ func (s *Service) Submit(ctx context.Context, caseID string, expectedVersion int
 	if err := postgres.ValidateJoiningCaseSubmissionReadiness(current.Case, expectedVersion); err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
+	var expectedApplicantID string
+	if current.Case.Origin == "self_service" {
+		expectedApplicantID, err = postgres.ReadSelfServiceApplicantBinding(ctx, s.db, caseID)
+		if err != nil {
+			return postgres.JoiningCaseResult{}, err
+		}
+		client, err := s.identity.ReadActorRole(ctx, expectedApplicantID, "client")
+		if err != nil {
+			return postgres.JoiningCaseResult{}, err
+		}
+		if client.ActorID != expectedApplicantID || client.PhoneE164 != current.Case.ContactPhoneE164 || client.Role != "client" || !client.Enabled || !client.SecurityEnabled {
+			return postgres.JoiningCaseResult{}, ErrSelfServiceApplicantIdentityMismatch
+		}
+	}
 	actorRole, err := s.identity.ProvisionPartnerWithContext(ctx, identityintegration.ActorInput{PhoneE164: current.Case.ContactPhoneE164}, correlationID, actingActorID)
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
-	if actorRole.Role != "partner" || strings.TrimSpace(actorRole.ActorID) == "" {
+	if actorRole.Role != "partner" || strings.TrimSpace(actorRole.ActorID) == "" || (expectedApplicantID != "" && actorRole.ActorID != expectedApplicantID) {
 		return postgres.JoiningCaseResult{}, ErrPartnerIdentityUnavailable
 	}
 	return postgres.SubmitJoiningCase(ctx, s.db, caseID, actorRole.ActorID, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseSubmit(caseID, actorRole.ActorID, expectedVersion), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))

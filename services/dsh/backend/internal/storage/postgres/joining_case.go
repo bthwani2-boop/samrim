@@ -119,7 +119,7 @@ type JoiningCaseRequest struct {
 
 type CreateJoiningCaseInput struct {
 	IdempotencyKey, RequestHash, ActingActorID, CorrelationID string
-	Origin, OriginatingFieldActorID                           string
+	Origin, OriginatingFieldActorID, ApplicantActorID         string
 	EvidenceKeyring                                           *JoiningCaseEvidenceKeyring
 	Request                                                   JoiningCaseRequest
 }
@@ -488,6 +488,7 @@ func createJoiningCase(ctx context.Context, db *sql.DB, input CreateJoiningCaseI
 	correlationID := input.CorrelationID
 	origin := input.Origin
 	originatingFieldActorID := input.OriginatingFieldActorID
+	applicantActorID := strings.TrimSpace(input.ApplicantActorID)
 	phone := input.Request.Phone
 	businessName := input.Request.BusinessName
 	firstStoreName := input.Request.FirstStoreName
@@ -500,10 +501,10 @@ func createJoiningCase(ctx context.Context, db *sql.DB, input CreateJoiningCaseI
 	if db == nil {
 		return JoiningCaseResult{}, errors.New("DSH database is nil")
 	}
-	if origin != "field" && origin != "control_panel" {
+	if origin != "field" && origin != "control_panel" && origin != "self_service" {
 		return JoiningCaseResult{}, ErrJoiningCaseState
 	}
-	if origin == "field" && strings.TrimSpace(originatingFieldActorID) == "" {
+	if (origin == "field" && strings.TrimSpace(originatingFieldActorID) == "") || (origin == "self_service" && (strings.TrimSpace(originatingFieldActorID) != "" || applicantActorID == "")) || (origin != "self_service" && applicantActorID != "") {
 		return JoiningCaseResult{}, ErrJoiningCaseState
 	}
 	if len(fulfillmentModes) == 0 {
@@ -552,7 +553,11 @@ func createJoiningCase(ctx context.Context, db *sql.DB, input CreateJoiningCaseI
 		return JoiningCaseResult{}, err
 	}
 	var existing string
-	if err := tx.QueryRowContext(ctx, "SELECT id FROM dsh.joining_cases WHERE contact_phone_e164=$1 AND state <> 'approved'", phone).Scan(&existing); err == nil {
+	duplicateQuery := "SELECT id FROM dsh.joining_cases WHERE contact_phone_e164=$1 AND state <> 'approved'"
+	if origin == "self_service" {
+		duplicateQuery = "SELECT id FROM dsh.joining_cases WHERE contact_phone_e164=$1"
+	}
+	if err := tx.QueryRowContext(ctx, duplicateQuery, phone).Scan(&existing); err == nil {
 		return JoiningCaseResult{}, ErrJoiningCaseExists
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return JoiningCaseResult{}, err
@@ -575,7 +580,7 @@ func createJoiningCase(ctx context.Context, db *sql.DB, input CreateJoiningCaseI
 	if strings.TrimSpace(input.Request.FirstStoreProofNumber) != "" && input.EvidenceKeyring == nil {
 		return JoiningCaseResult{}, errors.New("DSH joining-case evidence keyring is required")
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.joining_cases(id,contact_phone_e164,owner_full_name,business_name,first_store_name,first_store_address,first_store_working_hours,first_store_proof_type,first_store_notes,first_store_service_city_id,first_store_vertical_id,first_store_commercial_type_id,first_store_latitude,first_store_longitude,first_store_fulfillment_modes,originating_field_actor_id,origin,wallet_provider_key) VALUES($1,$2,NULLIF($3,''),$4,$5,NULLIF($6,''),NULLIF($7,'')::jsonb,NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),$12,$13,$14,$15,NULLIF($16,''),$17,NULLIF($18,''))`, caseID, phone, input.Request.OwnerFullName, businessName, firstStoreName, input.Request.FirstStoreAddress, string(input.Request.FirstStoreWorkingHours), input.Request.FirstStoreProofType, input.Request.FirstStoreNotes, serviceCityID, verticalID, commercialTypeID, latitude, longitude, pq.Array(fulfillmentModes), originatingFieldActorID, origin, input.Request.WalletProviderKey); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.joining_cases(id,contact_phone_e164,owner_full_name,business_name,first_store_name,first_store_address,first_store_working_hours,first_store_proof_type,first_store_notes,first_store_service_city_id,first_store_vertical_id,first_store_commercial_type_id,first_store_latitude,first_store_longitude,first_store_fulfillment_modes,originating_field_actor_id,origin,wallet_provider_key,applicant_actor_id) VALUES($1,$2,NULLIF($3,''),$4,$5,NULLIF($6,''),NULLIF($7,'')::jsonb,NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),$12,$13,$14,$15,NULLIF($16,''),$17,NULLIF($18,''),NULLIF($19,''))`, caseID, phone, input.Request.OwnerFullName, businessName, firstStoreName, input.Request.FirstStoreAddress, string(input.Request.FirstStoreWorkingHours), input.Request.FirstStoreProofType, input.Request.FirstStoreNotes, serviceCityID, verticalID, commercialTypeID, latitude, longitude, pq.Array(fulfillmentModes), originatingFieldActorID, origin, input.Request.WalletProviderKey, applicantActorID); err != nil {
 		return JoiningCaseResult{}, fmt.Errorf("create joining case: %w", err)
 	}
 	if strings.TrimSpace(input.Request.FirstStoreProofNumber) != "" {
@@ -668,7 +673,7 @@ func ValidateJoiningCaseSubmissionReadiness(current JoiningCaseRecord, expectedV
 	if current.Version != expectedVersion {
 		return ErrJoiningCaseVersion
 	}
-	canSubmit := (current.Origin == "control_panel" && current.State == "draft") || (current.Origin == "field" && current.State == "admission_requested")
+	canSubmit := ((current.Origin == "control_panel" || current.Origin == "self_service") && current.State == "draft") || (current.Origin == "field" && current.State == "admission_requested")
 	if !canSubmit {
 		return ErrJoiningCaseState
 	}

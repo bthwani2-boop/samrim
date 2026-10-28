@@ -38,6 +38,37 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
 
+  /dsh/partner-applications/self:
+    get:
+      operationId: readSelfServiceJoiningApplication
+      summary: Read only this verified Identity client account's self-service joining case
+      security: [{ userBearer: [] }]
+      responses:
+        "200": { description: Readback of the caller's canonical joining case., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+    post:
+      operationId: createSelfServiceJoiningApplication
+      summary: Start an eligible Partner application without a Field representative
+      description: Requires a verified Identity client session. DSH derives the applicant actor and checks that the supplied phone matches canonical Identity; this never grants Partner role, agreement approval or Store publication.
+      security: [{ userBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateJoiningCaseRequest" }
+      responses:
+        "201": { description: New self-service application, not an admitted Store., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
+        "200": { description: Idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
   /dsh/joining-cases/self:
     get:
       operationId: readOwnJoiningCase

@@ -64,7 +64,7 @@ OUTCOME: A legitimate prospect progresses through Field, Operator and Partner wo
 SURFACES: FIELD, OPERATOR, PARTNER, CLIENT
 OWNERS: IDENTITY, DSH, WLT
 CAPABILITIES: PARTNER_ONBOARDING_STORE_PUBLICATION, IDENTITY_ACTIVATION_SESSIONS, CENTRAL_CATALOG, STORE_COMMERCIAL_AGREEMENT
-ENTRY: Eligible Field standing or authorized Operator-originated joining work starts a prospective Partner case.
+ENTRY: Eligible Field standing, authorized Operator-originated joining work, or an Identity-verified self-service first-Store application starts a prospective Partner case.
 EXIT: The exact Store agreement is Partner-accepted and Finance-approved, initial catalog and final Operator readiness pass, and Store publication plus customer-safe readback are available.
 READBACK: Field, Operator and Partner read joining/publication state; Partner and Finance read the canonical agreement state; Client receives the resulting Store projection when catalog/serviceability visibility gates allow it.
 
@@ -74,6 +74,7 @@ READBACK: Field, Operator and Partner read joining/publication state; Partner an
 OPERATOR → Field candidate/standing
 DSH → Identity field-role request
 FIELD → JoiningCase work
+PROSPECT → optional verified self-service joining application without Field; DSH binds the canonical applicant actor and phone
 OPERATOR → review / correction / rejection / admission
 DSH → Identity partner-role request
 PARTNER → confirm/correct canonical onboarding data
@@ -92,7 +93,7 @@ Store publication is not current orderability. Durable enabled fulfillment modes
 
 ### Failure / recovery
 
-Missing/incompatible first-Store facts, correction loops, duplicate logical case, stale version, suspended Field, duplicate-actor risk, missing Partner acceptance, missing Finance approval and interrupted Identity/WLT handoff recover through canonical readback without rebinding the case, actor or agreement version. Missing or inactive agreement blocks publication.
+Missing/incompatible first-Store facts, correction loops, duplicate logical case, stale version, suspended Field, self-service Identity phone/actor mismatch, duplicate-actor risk, missing Partner acceptance, missing Finance approval and interrupted Identity/WLT handoff recover through canonical readback without rebinding the case, actor or agreement version. Missing or inactive agreement blocks publication.
 
 ### Negative space
 

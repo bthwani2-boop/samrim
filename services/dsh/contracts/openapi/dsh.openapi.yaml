@@ -127,6 +127,9 @@ paths:
   /dsh/joining-cases:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases"
 
+  /dsh/partner-applications/self:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1partner-applications~1self"
+
   /dsh/joining-cases/self:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1self"
 
@@ -1716,7 +1719,7 @@ components:
 
     JoiningCaseOrigin:
       type: string
-      enum: [field, control_panel]
+      enum: [field, control_panel, self_service]
 
     StoreImagesResponse:
       type: object
