@@ -1,11 +1,11 @@
-import { borders, radius, resolveTheme, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
+import { borders, radius, type resolveTheme, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniConfirmDialog, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { formatMoney, type BeneficiaryPayoutState, settlementIntakeStatusLabel, type SettlementIntake } from "@bthwani/dsh";
+import { type BeneficiaryPayoutState, formatMoney, type SettlementIntake, settlementIntakeStatusLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
+import { useFocusEffect } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { useFocusEffect } from "expo-router";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { captainClient } from "../captain-operations/captain-client";
 import { isCurrentCaptainActor } from "../captain-operations/captain-session-scope";
@@ -38,7 +38,7 @@ export function CaptainPayoutCard() {
         const raw = await SecureStore.getItemAsync(`bthwani.captain.payout.pending.v1.${encodeURIComponent(actor.identity.subject)}`);
         if (raw) setPendingAttempt(JSON.parse(raw) as PayoutAttempt);
         const savedIntake = await SecureStore.getItemAsync(`bthwani.captain.settlement-intake.pending.v1.${encodeURIComponent(actor.identity.subject)}`);
-        if (savedIntake) setPendingIntakeAttempt(JSON.parse(savedIntake) as PayoutAttempt);
+        setPendingIntakeAttempt(savedIntake ? JSON.parse(savedIntake) as PayoutAttempt : null);
       }
       setState((await captainClient().readOwnPayoutState(token)).state);
       setIntake((await captainClient().listOwnSettlementIntakes(token)).intakes[0] ?? null);
@@ -108,9 +108,10 @@ export function CaptainPayoutCard() {
   };
   const requestIntake = async (mode: "FULL_AVAILABLE" | "SPECIFIED") => {
     const actor = currentIdentityState();
-    if (actor.kind !== "authenticated" || !state || state.eligibleAvailableMinor <= 0) return;
-    const parsed = mode === "SPECIFIED" ? Number(toAsciiDigits(amount).replace(/[^0-9]/g, "")) : undefined;
-    if (mode === "SPECIFIED" && (!Number.isSafeInteger(parsed) || (parsed ?? 0) <= 0 || (parsed ?? 0) > state.eligibleAvailableMinor)) {
+    if (actor.kind !== "authenticated" || (!pendingIntakeAttempt && (!state || state.eligibleAvailableMinor <= 0))) return;
+    const effectiveMode = pendingIntakeAttempt?.mode ?? mode;
+    const parsed = pendingIntakeAttempt?.amountMinor ?? (effectiveMode === "SPECIFIED" ? Number(toAsciiDigits(amount).replace(/[^0-9]/g, "")) : undefined);
+    if (!pendingIntakeAttempt && effectiveMode === "SPECIFIED" && (!Number.isSafeInteger(parsed) || (parsed ?? 0) <= 0 || (parsed ?? 0) > (state?.eligibleAvailableMinor ?? 0))) {
       setError("المبلغ يتجاوز الأرباح المتاحة للسحب."); return;
     }
     const releaseFinancialRequest = claimCaptainPayoutSubmission(financialRequestInFlight);
@@ -118,7 +119,12 @@ export function CaptainPayoutCard() {
     const key = `bthwani.captain.settlement-intake.pending.v1.${encodeURIComponent(actor.identity.subject)}`;
     setBusy(true); setError(""); setNotice("");
     try {
-      const saved = pendingIntakeAttempt ?? { mode, ...(parsed === undefined ? {} : { amountMinor: parsed }), idempotencyKey: `captain_intake_${Crypto.randomUUID()}`, correlationID: `captain_intake_corr_${Crypto.randomUUID()}` };
+      const raw = await SecureStore.getItemAsync(key);
+      const stored = raw ? JSON.parse(raw) as PayoutAttempt : null;
+      if (pendingIntakeAttempt
+        ? !stored || stored.idempotencyKey !== pendingIntakeAttempt.idempotencyKey || stored.correlationID !== pendingIntakeAttempt.correlationID || stored.mode !== pendingIntakeAttempt.mode || stored.amountMinor !== pendingIntakeAttempt.amountMinor
+        : Boolean(stored)) throw new Error("CAPTAIN_INTAKE_STORED_ATTEMPT_CHANGED");
+      const saved = pendingIntakeAttempt ?? { mode: effectiveMode, ...(parsed === undefined ? {} : { amountMinor: parsed }), idempotencyKey: `captain_intake_${Crypto.randomUUID()}`, correlationID: `captain_intake_corr_${Crypto.randomUUID()}` };
       await SecureStore.setItemAsync(key, JSON.stringify(saved));
       const token = await getUsableIdentityAccessToken();
       const actorAfterPersist = currentIdentityState();
@@ -140,7 +146,7 @@ export function CaptainPayoutCard() {
           !isCurrentCaptainActor(actor.identity.subject.trim(), actorAfterReadback.identity.subject.trim())) {
         throw new Error("CAPTAIN_INTAKE_SESSION_CHANGED");
       }
-      if (!readback || readback.status !== "REQUESTED" || readback.resolvedAmountMinor !== created.intake.resolvedAmountMinor) throw new Error("SETTLEMENT_INTAKE_READBACK_MISMATCH");
+      if (readback?.status !== "REQUESTED" || readback.resolvedAmountMinor !== created.intake.resolvedAmountMinor) throw new Error("SETTLEMENT_INTAKE_READBACK_MISMATCH");
       setIntake(readback);
       await SecureStore.deleteItemAsync(key);
       setPendingIntakeAttempt(null);
@@ -180,6 +186,9 @@ export function CaptainPayoutCard() {
         {pendingAttempt ? <>
           <Text style={styles.muted}>طلب سابق قيد التأكيد.</Text>
           <BthwaniButton busy={busy} label="متابعة الطلب" onPress={() => void request(pendingAttempt.mode)} />
+        </> : pendingIntakeAttempt ? <>
+          <Text style={styles.muted}>لم يُحسم طلب التسوية السابق. تحقّق منه بالمرجع المحفوظ قبل إنشاء طلب جديد.</Text>
+          <BthwaniButton busy={busy} label="التحقق من طلب التسوية المحفوظ" onPress={() => void requestIntake(pendingIntakeAttempt.mode)} />
         </> : intake?.status === "REQUESTED" ? (
           <Text style={styles.muted}>طلب السحب قيد المراجعة.</Text>
         ) : eligible > 0 ? <>
