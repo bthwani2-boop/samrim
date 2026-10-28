@@ -31,9 +31,7 @@ const extras = {
   "app-partner": { ...partnerForms },
   "app-captain": {},
   "app-field": {},
-  "control-panel": {
-    "recharts": "3.10.1",
-  },
+  "control-panel": {},
 };
 for (const [app, other] of Object.entries(extras)) {
   test(app + " engine packages are pinned and independently resolvable", () => {
@@ -57,6 +55,7 @@ for (const [app, other] of Object.entries(extras)) {
     if (app === "control-panel") {
       assert.equal(manifest.dependencies["@tanstack/react-table"], undefined, "AntD Table owns generic CP tables");
       assert.equal(manifest.dependencies["@tanstack/react-virtual"], undefined, "AntD virtual replaces the legacy CP virtualizer");
+      assert.equal(manifest.dependencies.recharts, undefined, "unused Recharts must not be reintroduced alongside AntD");
       for (const unused of ["@hookform/resolvers", "@tanstack/react-query", "react-hook-form"]) {
         assert.equal(manifest.dependencies[unused], undefined, `${unused} is not used by the AntD control panel`);
       }
