@@ -24,43 +24,6 @@ type FieldServer struct {
 	publication *storepublication.Service
 }
 
-type fieldJoiningCaseDraftRequest struct {
-	contract.CreateFieldJoiningCaseDraftRequest
-	FirstStoreProofNumber *string  `json:"firstStoreProofNumber"`
-	FirstStoreLatitude    *float64 `json:"firstStoreLatitude"`
-	FirstStoreLongitude   *float64 `json:"firstStoreLongitude"`
-}
-
-func (input *fieldJoiningCaseDraftRequest) applyDraftScalars() bool {
-	if input.FirstStoreProofNumber != nil {
-		input.CreateFieldJoiningCaseDraftRequest.FirstStoreProofNumber = *input.FirstStoreProofNumber
-	}
-	if (input.FirstStoreLatitude == nil) != (input.FirstStoreLongitude == nil) {
-		return false
-	}
-	if input.FirstStoreLatitude == nil {
-		input.CreateFieldJoiningCaseDraftRequest.FirstStoreLatitude = 0
-		input.CreateFieldJoiningCaseDraftRequest.FirstStoreLongitude = 0
-	} else {
-		input.CreateFieldJoiningCaseDraftRequest.FirstStoreLatitude = *input.FirstStoreLatitude
-		input.CreateFieldJoiningCaseDraftRequest.FirstStoreLongitude = *input.FirstStoreLongitude
-	}
-	return true
-}
-
-func (input fieldJoiningCaseDraftRequest) createRequest() contract.CreateJoiningCaseRequest {
-	draft := input.CreateFieldJoiningCaseDraftRequest
-	return contract.CreateJoiningCaseRequest{
-		ContactPhoneE164: draft.ContactPhoneE164, OwnerFullName: draft.OwnerFullName, BusinessName: draft.BusinessName,
-		FirstStoreName: draft.FirstStoreName, WalletProviderKey: draft.WalletProviderKey, FirstStoreAddress: draft.FirstStoreAddress,
-		ServiceCityID: draft.ServiceCityID, FirstStoreVerticalID: draft.FirstStoreVerticalID,
-		FirstStoreCommercialTypeID: draft.FirstStoreCommercialTypeID, FirstStoreLatitude: draft.FirstStoreLatitude,
-		FirstStoreLongitude: draft.FirstStoreLongitude, FirstStoreWorkingHours: contract.StoreWeeklyWorkingHours{Intervals: draft.FirstStoreWorkingHours.Intervals},
-		FirstStoreProofType: draft.FirstStoreProofType, FirstStoreProofNumber: draft.FirstStoreProofNumber,
-		FirstStoreNotes: draft.FirstStoreNotes, FirstStoreFulfillmentModes: draft.FirstStoreFulfillmentModes,
-	}
-}
-
 func NewField(identityClient *identityintegration.Client, accessToken string, db *sql.DB, publication *storepublication.Service, evidenceKeys *postgres.JoiningCaseEvidenceKeyring) (*FieldServer, error) {
 	if publication == nil {
 		return nil, errors.New("Field publication service is required")
@@ -88,13 +51,11 @@ func (s *FieldServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/fields/me", s.readOwnAdmission)
 	mux.HandleFunc("POST /dsh/fields/{actorId}/identity-role", s.setRole)
 	mux.HandleFunc("POST /dsh/fields/{actorId}/reenrollment", s.authorizeReenrollment)
-	mux.HandleFunc("POST /dsh/field/joining-cases", s.createJoiningCase)
-	mux.HandleFunc("PATCH /dsh/field/joining-cases/{caseId}/draft", s.updateJoiningCaseDraft)
-	mux.HandleFunc("PATCH /dsh/field/joining-cases/{caseId}/correction", s.correctJoiningCase)
+	// The standalone Field app has been retired. Preserve historical case
+	// readback for existing Field identities, but do not admit new Field-app
+	// writes; current intake and correction live on Partner/Operator surfaces.
 	mux.HandleFunc("GET /dsh/field/joining-cases", s.listJoiningCases)
 	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}", s.readJoiningCase)
-	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/submit", s.submitJoiningCase)
-	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/review-photo", s.uploadReviewPhoto)
 }
 
 func (s *FieldServer) admit(w http.ResponseWriter, r *http.Request) {
@@ -325,95 +286,6 @@ func (s *FieldServer) authorizeReenrollment(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *FieldServer) createJoiningCase(w http.ResponseWriter, r *http.Request) {
-	if !authorizedFieldSession(w, r) {
-		return
-	}
-	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" || r.Header.Get("If-Match") != "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "client actor authority headers are forbidden")
-		return
-	}
-	correlation, idempotency, ok := requiredFieldMutationHeaders(w, r)
-	if !ok {
-		return
-	}
-	var input fieldJoiningCaseDraftRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	if !input.applyDraftScalars() {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "both firstStoreLatitude and firstStoreLongitude must be provided together")
-		return
-	}
-	result, err := s.service.CreateJoiningCaseDraft(r.Context(), bearerToken(r), idempotency, correlation, input.createRequest())
-	if err != nil {
-		writeFieldError(w, err)
-		return
-	}
-	writeFieldCaseResult(w, responseStatus(result.Replayed), result)
-}
-
-func (s *FieldServer) updateJoiningCaseDraft(w http.ResponseWriter, r *http.Request) {
-	if !authorizedFieldSession(w, r) {
-		return
-	}
-	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" || r.Header.Get("If-Match") != "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "client actor authority headers are forbidden")
-		return
-	}
-	correlation, idempotency, ok := requiredFieldMutationHeaders(w, r)
-	if !ok {
-		return
-	}
-	expectedVersion, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Version")))
-	if err != nil || expectedVersion < 1 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Expected-Version must be a positive integer")
-		return
-	}
-	var input fieldJoiningCaseDraftRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	if !input.applyDraftScalars() {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "both firstStoreLatitude and firstStoreLongitude must be provided together")
-		return
-	}
-	result, err := s.service.UpdateJoiningCaseDraft(r.Context(), bearerToken(r), r.PathValue("caseId"), expectedVersion, idempotency, correlation, input.createRequest(), input.FirstStoreProofNumber == nil)
-	if err != nil {
-		writeFieldError(w, err)
-		return
-	}
-	writeFieldCaseResult(w, responseStatus(result.Replayed), result)
-}
-
-func (s *FieldServer) correctJoiningCase(w http.ResponseWriter, r *http.Request) {
-	if !authorizedFieldSession(w, r) {
-		return
-	}
-	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" || r.Header.Get("If-Match") != "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "client actor authority headers are forbidden")
-		return
-	}
-	correlation, idempotency, expected, ok := requiredPartnerCaseHeaders(w, r)
-	if !ok {
-		return
-	}
-	var input fieldJoiningCaseDraftRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	if !input.applyDraftScalars() {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "both coordinates must be provided together")
-		return
-	}
-	result, err := s.service.CorrectJoiningCase(r.Context(), bearerToken(r), r.PathValue("caseId"), expected, idempotency, correlation, input.createRequest())
-	if err != nil {
-		writeFieldError(w, err)
-		return
-	}
-	writeFieldCaseResult(w, http.StatusOK, result)
-}
-
 func (s *FieldServer) listJoiningCases(w http.ResponseWriter, r *http.Request) {
 	if !authorizedFieldSession(w, r) {
 		return
@@ -458,42 +330,6 @@ func (s *FieldServer) readJoiningCase(w http.ResponseWriter, r *http.Request) {
 		readiness = &resolved
 	}
 	writeJSON(w, http.StatusOK, contract.JoiningCaseResponse{Case: toFieldJoiningCaseView(result, readiness), IdempotentReplay: result.Replayed})
-}
-
-func (s *FieldServer) submitJoiningCase(w http.ResponseWriter, r *http.Request) {
-	if !authorizedFieldSession(w, r) {
-		return
-	}
-	correlation, idempotency, expected, ok := requiredPartnerCaseHeaders(w, r)
-	if !ok {
-		return
-	}
-	result, err := s.service.SubmitJoiningCase(r.Context(), bearerToken(r), r.PathValue("caseId"), expected, idempotency, correlation)
-	if err != nil {
-		writeFieldError(w, err)
-		return
-	}
-	writeFieldCaseResult(w, http.StatusOK, result)
-}
-
-func (s *FieldServer) uploadReviewPhoto(w http.ResponseWriter, r *http.Request) {
-	if !authorizedFieldSession(w, r) {
-		return
-	}
-	correlation, idempotency, expected, ok := requiredPartnerCaseHeaders(w, r)
-	if !ok {
-		return
-	}
-	data, contentType, ok := readMultipartImageUpload(w, r, "optional review photo must be JPG or PNG under 10 MiB")
-	if !ok {
-		return
-	}
-	result, err := s.service.UploadReviewPhoto(r.Context(), bearerToken(r), r.PathValue("caseId"), idempotency, correlation, expected, contentType, data)
-	if err != nil {
-		writeFieldError(w, err)
-		return
-	}
-	writeFieldCaseResult(w, http.StatusOK, result)
 }
 
 func (s *FieldServer) authorizedService(w http.ResponseWriter, r *http.Request) bool {

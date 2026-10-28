@@ -49,47 +49,6 @@ func (s *Service) ReadStoreCommercialAgreementsForField(ctx context.Context, acc
 	return s.wlt.ReadStoreCommercialAgreements(ctx, joiningCase.Case.StoreID)
 }
 
-func (s *Service) ProposeStoreCommercialAgreementForField(ctx context.Context, accessToken, caseID string, input StoreCommercialAgreementProposalInput, idempotencyKey, correlationID string) (wltintegration.StoreCommercialAgreement, bool, error) {
-	fieldIdentity, err := s.requireField(ctx, accessToken)
-	if err != nil {
-		return wltintegration.StoreCommercialAgreement{}, false, err
-	}
-	if err := s.requireEligibleFieldActor(ctx, fieldIdentity.Subject); err != nil {
-		return wltintegration.StoreCommercialAgreement{}, false, err
-	}
-	caseID = strings.TrimSpace(caseID)
-	if caseID == "" || !validStoreAgreementMutationHeaders(idempotencyKey, correlationID) || !validStoreAgreementReason(input.Reason) || input.ExpectedCurrentVersion < 0 {
-		return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementInvalidInput
-	}
-	joiningCase, err := postgres.ReadJoiningCaseForField(ctx, s.db, fieldIdentity.Subject, caseID)
-	if err != nil {
-		return wltintegration.StoreCommercialAgreement{}, false, err
-	}
-	current := joiningCase.Case
-	if current.Origin != "field" || current.OriginatingFieldActorID != fieldIdentity.Subject || current.State != "approved" || current.Store == nil || current.Store.ID == "" || current.PartnerActorID == "" || current.Store.PartnerActorID != current.PartnerActorID {
-		return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementState
-	}
-	if !storeAllowsCommercialAgreementProposal(current.Store.PublicationState) {
-		return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementState
-	}
-	rates, err := normalizeStoreAgreementRates(current.Store.FulfillmentModes, input.Rates)
-	if err != nil {
-		return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementInvalidInput
-	}
-	// WLT owns agreement history, pending-state and version checks, plus replay.
-	agreement, replayed, err := s.wlt.ProposeStoreCommercialAgreement(ctx, wltintegration.ProposeStoreCommercialAgreementInput{
-		StoreID: current.Store.ID, PartnerActorID: current.PartnerActorID, Rates: rates,
-		ExpectedCurrentVersion: input.ExpectedCurrentVersion, Reason: input.Reason,
-	}, strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID), fieldIdentity.Subject)
-	if err != nil {
-		return wltintegration.StoreCommercialAgreement{}, false, err
-	}
-	if agreement.StoreID != current.Store.ID || agreement.PartnerActorID != current.PartnerActorID || agreement.ProposedByActorID != fieldIdentity.Subject || agreement.Status != "PROPOSED" {
-		return wltintegration.StoreCommercialAgreement{}, false, errors.New("WLT agreement proposal readback did not match the assigned joining case")
-	}
-	return agreement, replayed, nil
-}
-
 func storeAllowsCommercialAgreementProposal(publicationState string) bool {
 	// "hidden" is the state the publication endpoint writes when a Store leaves the
 	// storefront; "unpublished" is accepted for legacy rows.

@@ -2230,39 +2230,6 @@ paths:
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
-    post:
-      operationId: proposeFieldStoreCommercialAgreement
-      summary: Propose Store-specific rates for the assigned unpublished Store
-      security:
-        - userBearer: []
-      parameters:
-        - $ref: "../dsh.openapi.yaml#/components/parameters/JoiningCaseId"
-        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
-        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "../dsh.openapi.yaml#/components/schemas/StoreCommercialAgreementProposalRequest"
-      responses:
-        "201":
-          description: Field proposal and canonical agreement readback.
-          content:
-            application/json:
-              schema:
-                $ref: "../dsh.openapi.yaml#/components/schemas/StoreCommercialAgreementMutationResponse"
-        "200":
-          description: Idempotent proposal replay.
-          content:
-            application/json:
-              schema:
-                $ref: "../dsh.openapi.yaml#/components/schemas/StoreCommercialAgreementMutationResponse"
-        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
-        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
-        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
-        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
-
   /dsh/field/joining-cases/{caseId}/commercial-agreement-defaults:
     get:
       operationId: readFieldStoreCommercialAgreementDefaults

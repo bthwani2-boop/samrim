@@ -14,8 +14,9 @@ import (
 
 func (s *JoiningCaseServer) RegisterStoreCommercialAgreementRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}/commercial-agreements", s.readFieldStoreCommercialAgreements)
+	// Historical Field agreements remain readable; all new proposals must
+	// use the Operator Partners endpoint with independent Partner acceptance.
 	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}/commercial-agreement-defaults", s.readFieldStoreCommissionDefaults)
-	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/commercial-agreements", s.proposeFieldStoreCommercialAgreement)
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/commercial-agreements", s.readPartnerStoreCommercialAgreements)
 	mux.HandleFunc("POST /dsh/partner/stores/{storeId}/commercial-agreements/{agreementId}/accept", s.acceptPartnerStoreCommercialAgreement)
 	mux.HandleFunc("GET /dsh/operator/partners/stores/{storeId}/commercial-agreements", s.readPartnersStoreCommercialAgreements)
@@ -51,39 +52,6 @@ func (s *JoiningCaseServer) readFieldStoreCommercialAgreements(w http.ResponseWr
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, map[string]any{"agreements": agreements})
-}
-
-func (s *JoiningCaseServer) proposeFieldStoreCommercialAgreement(w http.ResponseWriter, r *http.Request) {
-	if !authorizedFieldSession(w, r) {
-		return
-	}
-	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" || r.Header.Get("If-Match") != "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "client actor authority headers are forbidden")
-		return
-	}
-	correlation, idempotency, ok := requiredFieldMutationHeaders(w, r)
-	if !ok {
-		return
-	}
-	var input struct {
-		Rates                  []wlt.StoreCommercialAgreementRate `json:"rates"`
-		ExpectedCurrentVersion int                                `json:"expectedCurrentVersion"`
-		Reason                 string                             `json:"reason"`
-	}
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	agreement, replayed, err := s.service.ProposeStoreCommercialAgreementForField(r.Context(), bearerToken(r), r.PathValue("caseId"), joiningcase.StoreCommercialAgreementProposalInput{Rates: input.Rates, ExpectedCurrentVersion: input.ExpectedCurrentVersion, Reason: input.Reason}, idempotency, correlation)
-	if err != nil {
-		writeStoreCommercialAgreementError(w, err)
-		return
-	}
-	status := http.StatusCreated
-	if replayed {
-		status = http.StatusOK
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, status, map[string]any{"agreement": agreement, "idempotentReplay": replayed})
 }
 
 func (s *JoiningCaseServer) readPartnersStoreCommercialAgreements(w http.ResponseWriter, r *http.Request) {

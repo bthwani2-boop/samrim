@@ -1061,17 +1061,9 @@ paths:
   /dsh/field/joining-cases/{caseId}:
     $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}"
 
-  /dsh/field/joining-cases/{caseId}/draft:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1draft"
 
-  /dsh/field/joining-cases/{caseId}/correction:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1correction"
 
-  /dsh/field/joining-cases/{caseId}/submit:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1submit"
 
-  /dsh/field/joining-cases/{caseId}/review-photo:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1review-photo"
 
   /dsh/fields/me/financial-summary:
     $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me~1financial-summary"

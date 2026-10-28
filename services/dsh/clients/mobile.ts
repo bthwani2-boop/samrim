@@ -679,13 +679,6 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.readFieldStoreCommercialAgreementDefaults.path.replace("{caseId}", encodeURIComponent(normalized));
       return userRequest<StoreTypeCommissionDefaultsResponse>(accessToken, path, dshOperationPaths.readFieldStoreCommercialAgreementDefaults.method);
     },
-    async proposeFieldStoreCommercialAgreement(accessToken: string, caseID: string, input: StoreCommercialAgreementProposalRequest, idempotencyKey?: string, correlationID?: string): Promise<StoreCommercialAgreementMutationResponse> {
-      const normalized = caseID.trim();
-      const reasonLength = Array.from(input.reason.trim()).length;
-      if (!normalized || input.expectedCurrentVersion < 0 || input.rates.length < 1 || input.rates.length > 3 || !Number.isSafeInteger(input.expectedCurrentVersion) || reasonLength < 8 || reasonLength > 500 || input.rates.some((rate) => !Number.isSafeInteger(rate.commissionRateBps) || rate.commissionRateBps < 0 || rate.commissionRateBps > 10000)) throw new Error("DSH_STORE_COMMERCIAL_AGREEMENT_PROPOSAL_INVALID");
-      const path = dshOperationPaths.proposeFieldStoreCommercialAgreement.path.replace("{caseId}", encodeURIComponent(normalized));
-      return userRequest<StoreCommercialAgreementMutationResponse>(accessToken, path, dshOperationPaths.proposeFieldStoreCommercialAgreement.method, input, mutationHeaders(idempotencyKey, correlationID));
-    },
     async listOwnStoreQuickPrices(accessToken: string, storeID: string, filters: Readonly<{ q?: string; categoryId?: string; availability?: "all" | "available" | "unavailable"; publicationState?: "all" | "draft" | "published" | "hidden"; limit?: number; cursor?: string }> = {}): Promise<CatalogStoreOfferListResponse> {
       const normalized = storeID.trim();
       if (!normalized) throw new Error("DSH_STORE_ID_REQUIRED");
@@ -1100,48 +1093,11 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalizedStore || !normalizedIdentifier || normalizedIdentifier.length > 128) throw new Error("DSH_STORE_CATALOG_IDENTIFIER_INVALID");
       return userRequest<CatalogIdentifierResolveResponse>(accessToken, dshOperationPaths.resolveCatalogIdentifier.path, dshOperationPaths.resolveCatalogIdentifier.method, { storeId: normalizedStore, identifierValue: normalizedIdentifier });
     },
-    async createFieldJoiningCase(accessToken: string, input: CreateFieldJoiningCaseDraftRequest, idempotencyKey?: string, correlationID?: string): Promise<JoiningCaseResponse> {
-      const contactPhoneE164 = normalizeYemenPhoneE164(input.contactPhoneE164);
-      if (!/^\+[1-9]\d{7,14}$/.test(contactPhoneE164)) throw new Error("DSH_FIELD_JOINING_CASE_INPUT_INVALID");
-      return userRequest<JoiningCaseResponse>(accessToken, dshOperationPaths.createFieldJoiningCase.path, dshOperationPaths.createFieldJoiningCase.method, { ...input, contactPhoneE164 }, mutationHeaders(idempotencyKey, correlationID));
-    },
-    async updateFieldJoiningCaseDraft(accessToken: string, caseID: string, input: CreateFieldJoiningCaseDraftRequest, expectedVersion: number, idempotencyKey?: string, correlationID?: string): Promise<JoiningCaseResponse> {
-      const normalized = caseID.trim();
-      const contactPhoneE164 = normalizeYemenPhoneE164(input.contactPhoneE164);
-      if (!normalized || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1 || !/^\+[1-9]\d{7,14}$/.test(contactPhoneE164)) throw new Error("DSH_FIELD_JOINING_CASE_INPUT_INVALID");
-      const path = dshOperationPaths.updateFieldJoiningCaseDraft.path.replace("{caseId}", encodeURIComponent(normalized));
-      return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.updateFieldJoiningCaseDraft.method, { ...input, contactPhoneE164 }, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) });
-    },
-    async correctFieldJoiningCase(accessToken: string, caseID: string, input: CreateFieldJoiningCaseDraftRequest, expectedVersion: number, idempotencyKey?: string, correlationID?: string): Promise<JoiningCaseResponse> {
-      const normalized = caseID.trim();
-      if (!normalized || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1) throw new Error("DSH_FIELD_JOINING_CASE_INPUT_INVALID");
-      const path = dshOperationPaths.correctFieldJoiningCase.path.replace("{caseId}", encodeURIComponent(normalized));
-      return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.correctFieldJoiningCase.method, input, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) });
-    },
     async readOwnFieldJoiningCase(accessToken: string, caseID: string): Promise<JoiningCaseResponse> {
       const normalized = caseID.trim();
       if (!normalized) throw new Error("DSH_FIELD_JOINING_CASE_ID_REQUIRED");
       const path = dshOperationPaths.readOwnFieldJoiningCase.path.replace("{caseId}", encodeURIComponent(normalized));
       return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.readOwnFieldJoiningCase.method);
-    },
-    async submitFieldJoiningCase(accessToken: string, caseID: string, expectedVersion: number, idempotencyKey?: string, correlationID?: string): Promise<JoiningCaseResponse> {
-      const normalized = caseID.trim();
-      if (!normalized || expectedVersion < 1) throw new Error("DSH_FIELD_JOINING_CASE_INPUT_INVALID");
-      const path = dshOperationPaths.submitFieldJoiningCase.path.replace("{caseId}", encodeURIComponent(normalized));
-      return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.submitFieldJoiningCase.method, undefined, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) });
-    },
-    async uploadFieldJoiningCaseReviewPhoto(accessToken: string, caseID: string, input: DshImageUploadInput, expectedVersion: number, idempotencyKey?: string, correlationID?: string): Promise<JoiningCaseResponse> {
-      const normalized = caseID.trim();
-      const uri = input.uri.trim();
-      if (!normalized || !uri || expectedVersion < 1) throw new Error("DSH_JOINING_CASE_REVIEW_PHOTO_INPUT_INVALID");
-      const fileName = input.name?.trim() || "joining-review-photo.jpg";
-      const mimeType = input.type?.trim() || "image/jpeg";
-      const form = input.nativeMultipartUpload ? undefined : new FormData();
-      if (form) form.append("file", joiningCaseImageMultipartPart(uri, fileName, mimeType, input.blob));
-      const path = dshOperationPaths.uploadFieldJoiningCaseReviewPhoto.path.replace("{caseId}", encodeURIComponent(normalized));
-      return userMultipartRequest(accessToken, path, dshOperationPaths.uploadFieldJoiningCaseReviewPhoto.method, form,
-        { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) },
-        input.nativeMultipartUpload, { fieldName: "file", fileName, mimeType, parameters: {} });
     },
     async readPartnerStoreImages(accessToken: string, storeID: string): Promise<StoreImagesResponse> {
       return userRequest<StoreImagesResponse>(accessToken,dshOperationPaths.readPartnerStoreImages.path.replace("{storeId}",encodeURIComponent(storeID.trim())),"GET");
