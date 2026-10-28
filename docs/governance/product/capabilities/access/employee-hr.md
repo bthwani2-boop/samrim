@@ -8,7 +8,7 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 ## Actors and identity
 
-A BThwani employee is a company employment relationship, whether the employee operates the Control Panel or works as non-operator staff. Staff/employee is not a high-level Identity role. Captains, field-acquisition representatives, Partners and Store staff are excluded unless an explicit, independently approved BThwani employment relationship exists. One employee record links to at most one canonical actor identity for operator access; no duplicate person account.
+A BThwani employee is a company employment relationship, whether the employee operates the Control Panel or works as non-operator staff. Staff/employee is not a high-level Identity role. Captains, Partners and Store staff are excluded unless an explicit, independently approved BThwani employment relationship exists. One employee record links to at most one canonical actor identity for operator access; no duplicate person account.
 
 ## Admission and operator privileges
 

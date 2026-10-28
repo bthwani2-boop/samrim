@@ -50,7 +50,7 @@ DSH owns joining-case and Partner/Store readiness, review/correction, submitted 
 - Store publication is distinct from serviceability, catalog/offer eligibility and current operational orderability;
 - customer-visible Store publication requires applicable Store publication, active Service City assignment and catalog publication gates; current orderability is evaluated separately;
 - Store publication requires an active Store-specific `STORE_COMMERCIAL_AGREEMENT` for its enabled fulfillment modes, explicit acceptance by the bound Partner owner of the exact agreement version, and Finance approval; Store Type suggestions, Store creation and catalog readiness cannot substitute for these gates;
-- The bound Partner manages the Store catalog before and after Go-Live through the Partner surface; Field admission and joining-case authority do not grant Store catalog writes;
+- The bound Partner manages the Store catalog before and after Go-Live through the Partner surface; joining-case authority alone does not grant Store catalog writes;
 - a published Store may remain customer-discoverable as closed/paused when current Product/experience policy allows, but checkout may not treat publication as proof that the Store can accept orders now;
 - trusted case/business scope is derived server-side, never granted by request input;
 - mutations are concurrency-safe, idempotent and attributable.
@@ -64,7 +64,7 @@ The following are **different admission/operation gates**, not one compulsory gl
 - **Partner role admission:** only the approved DSH joining/ownership or admitted Store-delegation eligibility may request the `partner` role from Identity; a candidate or phone input alone does not create Partner standing. Self-service first-Store applicants authenticate with the ordinary verified Identity client session for application submission only, with immutable applicant-actor binding and explicit Operator admission before Partner role provisioning.
 - **Store publication:** separate, later Store-specific agreement acceptance/Finance approval, admitted initial catalog readiness and final Operator readiness; creating a Field account, JoiningCase, Partner account or Store never implies publication or current orderability.
 
-Preparation of shared categories and representative shared Products before Partner onboarding may be chosen as `PROGRAM_ORDER` to make initial Store catalog work practical. It is **not** an additional hard dependency for standing Field admission or a requirement that every possible shared Product be pre-created. Keep existing valid cases, identities and versions when a reference registry gains values.
+Preparation of shared categories and representative shared Products before Partner onboarding may be chosen as `PROGRAM_ORDER` to make initial Store catalog work practical. It is **not** an additional hard dependency for Partner onboarding or a requirement that every possible shared Product be pre-created. Keep existing valid cases, identities and versions when a reference registry gains values.
 
 ## Minimal lifecycle
 
@@ -88,7 +88,7 @@ The joining form collects evidence type and number only. Physical-document verif
 
 ## Failure and recovery
 
-Duplicate logical case, duplicate-actor risk, missing required Service City/vertical/type, incompatible Store Type/Vertical, stale version, unauthorized cross-case access, incomplete prerequisites, correction loop and retry conflict recover through canonical DSH/Identity readback. A suspended or stale Field admission cannot originate joining work; restoring DSH standing and the applicable Identity role is an explicit authorized recovery. Recovery never guesses a Store classification or rebinds a case/Field admission to a different actor.
+Duplicate logical case, duplicate-actor risk, missing required Service City/vertical/type, incompatible Store Type/Vertical, stale version, unauthorized cross-case access, incomplete prerequisites, correction loop and retry conflict recover through canonical DSH/Identity readback. Retired Field admission is not a recovery entrance. Partner and Operator admission recover through their current canonical DSH and Identity paths; recovery never guesses a Store classification or rebinds a case to a different actor.
 
 ## Material participants
 
