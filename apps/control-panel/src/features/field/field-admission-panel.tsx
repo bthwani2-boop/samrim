@@ -338,7 +338,6 @@ function FieldAdmissionRoster(props: FieldAdmissionRosterProps) {
       const openedAt = item.account.lastAppOpenedAt ? Date.parse(item.account.lastAppOpenedAt) : NaN;
       if (activityFilter === "opened" && !Number.isFinite(openedAt)) return false;
       if (activityFilter === "never" && Number.isFinite(openedAt)) return false;
-      if (activityFilter === "recent" && (!Number.isFinite(openedAt) || Date.now() - openedAt > 30 * 24 * 60 * 60 * 1000)) return false;
       if (storeFilter === "has" && !item.account.latestStore) return false;
       if (storeFilter === "none" && item.account.latestStore) return false;
       if (storeFilter === "recent" && (!item.account.latestStore || Date.now() - Date.parse(item.account.latestStore.createdAt) > 30 * 24 * 60 * 60 * 1000)) return false;
@@ -425,8 +424,8 @@ function FieldAdmissionRoster(props: FieldAdmissionRosterProps) {
           <label htmlFor="field-city-filter">مدينة الخدمة<select id="field-city-filter" value={cityFilter} onChange={(event) => onCityFilterChange(event.target.value)}><option value="">كل المدن</option>{serviceCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
           <label htmlFor="field-provider-filter">مزوّد المحفظة<select id="field-provider-filter" value={providerFilter} onChange={(event) => setProviderFilter(event.target.value)}><option value="">كل المزوّدين</option>{walletProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.displayNameAr}</option>)}</select></label>
           <label htmlFor="field-admission-filter">أهلية النظام<select id="field-admission-filter" value={admissionFilter} onChange={(event) => setAdmissionFilter(event.target.value)}><option value="">كل الحالات</option><option value="none">لا توجد أهلية مرتبطة</option><option value="pending_review">بانتظار المراجعة</option><option value="pending_identity">بانتظار إنشاء الحساب</option><option value="eligible">مؤهل</option><option value="suspended">موقوفة</option></select></label>
-          <label htmlFor="field-access-filter">دخول التطبيق<select id="field-access-filter" value={accessFilter} onChange={(event) => onAccessFilterChange(event.target.value)}><option value="">كل الحسابات</option><option value="enabled">الدخول مفعّل</option><option value="disabled">الدخول موقوف</option></select></label>
-          <label htmlFor="field-activity-filter">فتح التطبيق<select id="field-activity-filter" value={activityFilter} onChange={(event) => setActivityFilter(event.target.value)}><option value="">كل الأنشطة</option><option value="opened">سبق فتح التطبيق</option><option value="recent">خلال 30 يومًا</option><option value="never">لم يفتح التطبيق</option></select></label>
+          <label htmlFor="field-access-filter">حالة الحساب<select id="field-access-filter" value={accessFilter} onChange={(event) => onAccessFilterChange(event.target.value)}><option value="">كل الحسابات</option><option value="enabled">الدخول مفعّل</option><option value="disabled">الدخول موقوف</option></select></label>
+          <label htmlFor="field-activity-filter">سجل التطبيق السابق<select id="field-activity-filter" value={activityFilter} onChange={(event) => setActivityFilter(event.target.value)}><option value="">كل الأنشطة</option><option value="opened">سبق فتح التطبيق السابق</option><option value="never">لم يفتح التطبيق السابق</option></select></label>
           <label htmlFor="field-store-filter">أحدث متجر<select id="field-store-filter" value={storeFilter} onChange={(event) => setStoreFilter(event.target.value)}><option value="">كل المتاجر</option><option value="has">أضاف متجرًا</option><option value="recent">خلال 30 يومًا</option><option value="none">لم يضف متجرًا</option></select></label>
           <label htmlFor="field-store-search">بحث باسم أحدث متجر<input id="field-store-search" type="search" placeholder="اسم المتجر" value={storeQuery} onChange={(event) => setStoreQuery(event.target.value)} /></label>
           <label htmlFor="field-journey-filter">ملفات ضم الشركاء<select id="field-journey-filter" value={journeyFilter} onChange={(event) => setJourneyFilter(event.target.value)}><option value="">كل الملفات</option><option value="has">لديه ملفات ضم</option><option value="none">بلا ملفات ضم</option><option value="needs_correction">أحدث ملف يحتاج تصحيحًا</option></select></label>
@@ -455,16 +454,16 @@ function FieldAdmissionRoster(props: FieldAdmissionRosterProps) {
               {sortButton("admission", "الأهلية")}
             </RegistryColumnHeader>
             <RegistryColumnHeader label="الوصول" active={Boolean(accessFilter)}>
-              <label>دخول التطبيق<select value={accessFilter} onChange={(event) => onAccessFilterChange(event.target.value)}>
+              <label>حالة الحساب<select value={accessFilter} onChange={(event) => onAccessFilterChange(event.target.value)}>
                 <option value="">كل الحسابات</option><option value="enabled">الدخول مفعّل</option><option value="disabled">الدخول موقوف</option>
               </select></label>
               {sortButton("access", "الوصول")}
             </RegistryColumnHeader>
-            <RegistryColumnHeader label="آخر فتح للتطبيق" active={Boolean(activityFilter)} scope="page">
+            <RegistryColumnHeader label="آخر فتح للتطبيق السابق" active={Boolean(activityFilter)} scope="page">
               <label>نشاط الصفحة<select value={activityFilter} onChange={(event) => setActivityFilter(event.target.value)}>
-                <option value="">كل الأنشطة</option><option value="opened">سبق فتح التطبيق</option><option value="recent">خلال 30 يومًا</option><option value="never">لم يفتح التطبيق</option>
+                <option value="">كل الأنشطة</option><option value="opened">سبق فتح التطبيق السابق</option><option value="never">لم يفتح التطبيق السابق</option>
               </select></label>
-              {sortButton("activity", "آخر فتح للتطبيق")}
+              {sortButton("activity", "آخر فتح للتطبيق السابق")}
             </RegistryColumnHeader>
             <RegistryColumnHeader label="ملفات الضم" active={Boolean(journeyFilter || journeyQuery)} scope="page">
               <label>ملفات الشركاء<select value={journeyFilter} onChange={(event) => setJourneyFilter(event.target.value)}>
@@ -1003,7 +1002,7 @@ function FieldRecordProfile({ item, data, onClose, onPrevious, onNext }: Readonl
           {field ? <ActorWalletStatement actorType="field" actorId={field.actorId} /> : null}
           <dl className="field-profile-metrics">
             <div><dt>ملفات ضم الشركاء</dt><dd>{caseCount === undefined ? "—" : caseCount.toLocaleString("ar-YE")}</dd></div>
-            <div><dt>آخر فتح للتطبيق</dt><dd className="field-profile-metric-small">{field?.lastAppOpenedAt ? fieldTimestamp(field.lastAppOpenedAt) : "غير مسجل"}</dd></div>
+            <div><dt>آخر فتح للتطبيق السابق</dt><dd className="field-profile-metric-small">{field?.lastAppOpenedAt ? fieldTimestamp(field.lastAppOpenedAt) : "غير مسجل"}</dd></div>
             <div><dt>أحدث متجر</dt><dd className="field-profile-metric-small">{field?.latestStore?.storeName ?? "لا يوجد"}</dd></div>
           </dl>
           <section className="field-profile-section">
@@ -1046,7 +1045,7 @@ function FieldRecordProfile({ item, data, onClose, onPrevious, onNext }: Readonl
             </header>
             <dl className="field-profile-metrics">
               <div><dt>ملفات الضم المسجلة</dt><dd>{caseCount === undefined ? "غير متاح" : caseCount.toLocaleString("ar-YE")}</dd></div>
-              <div><dt>آخر فتح للتطبيق</dt><dd className="field-profile-metric-small">{field?.lastAppOpenedAt ? fieldTimestamp(field.lastAppOpenedAt) : "غير مسجل"}</dd></div>
+              <div><dt>آخر فتح للتطبيق السابق</dt><dd className="field-profile-metric-small">{field?.lastAppOpenedAt ? fieldTimestamp(field.lastAppOpenedAt) : "غير مسجل"}</dd></div>
               <div><dt>آخر متجر أضافه</dt><dd className="field-profile-metric-small">{field?.latestStore?.storeName ?? "لا يوجد"}</dd></div>
             </dl>
             {cases ? <>
@@ -1067,7 +1066,7 @@ function FieldRecordProfile({ item, data, onClose, onPrevious, onNext }: Readonl
             <div><dt>إنشاء الملف</dt><dd>{admission?.createdAt ? fieldTimestamp(admission.createdAt) : "غير مسجل"}</dd></div>
             <div><dt>آخر تعديل</dt><dd>{admission?.updatedAt ? fieldTimestamp(admission.updatedAt) : "غير مسجل"}</dd></div>
             <div><dt>تفعيل الحساب</dt><dd>{field?.activatedAt ? fieldTimestamp(field.activatedAt) : "لم يُفعّل"}</dd></div>
-            <div><dt>آخر فتح للتطبيق</dt><dd>{field?.lastAppOpenedAt ? fieldTimestamp(field.lastAppOpenedAt) : "غير مسجل"}</dd></div>
+            <div><dt>آخر فتح للتطبيق السابق</dt><dd>{field?.lastAppOpenedAt ? fieldTimestamp(field.lastAppOpenedAt) : "غير مسجل"}</dd></div>
             <div><dt>نسخة الملف</dt><dd>{admission?.version ?? "—"}</dd></div>
           </dl>
           <p className="muted">لا يُعرض سجل تغييرات تفصيلي دون مصدر تدقيق موثق.</p>

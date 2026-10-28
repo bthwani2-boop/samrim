@@ -1,7 +1,7 @@
 import { normalizeYemenPhoneE164 } from "@bthwani/design-system";
 import { dshOperationPaths } from "./generated/dsh-operations";
 import type { ClientSharePage, ClientShareSendRequest, ClientShareSendResponse } from "./client-share-types";
-import type { AcceptStoreCaptainInvitationRequest, BeneficiaryFundingIntentResponse, BeneficiaryPayoutStateResponse, BeneficiaryWalletResponse, CampaignOptInRequest, CaptainAdmissionResponse, CaptainAssignmentListResponse, CaptainAssignmentResponse, CaptainAvailabilityRequest, CaptainCashRemittanceRequest, CaptainCashRemittanceResponse, CaptainCompletionRequest, CaptainDeliveryTaskResponse, CaptainOfferDecisionRequest, CaptainOfferListResponse, CaptainOpportunityHeatmap, CaptainOfferResponse, CartResponse, CashInFundingIntent, CashLiabilityResponse, CatalogAttributeEnumOptionListResponse, CatalogAttributeRuleListResponse, CatalogCategoryListResponse, CatalogIdentifierResolveResponse, CatalogImportCommitResponse, CatalogImportPreviewResponse, CatalogImportRunResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposal, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogProductResponse, CatalogQuickPriceCommitRequest, CatalogQuickPriceCommitResponse, CatalogStorefrontSectionListResponse, CatalogStorefrontSectionResponse, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogVariantResponse, CheckoutQuoteResponse, CheckoutRequest, ClientOpenCartListResponse, CommerceVerticalListResponse, CommercialStoreTypeListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, CreateFieldJoiningCaseDraftRequest, CreateJoiningCaseRequest, CreateOrderConversationMessageRequest, CreateOrderRatingRequest, CreatePromotionRequest, CreateStoreOfferRequest, DeliveryAddressListResponse, DeliveryAddressResponse, DeliveryProofResponse, DiscoveryContentEventRequest, DiscoveryContentListResponse, DiscoveryContentTargetResolution, FavoriteStoreListResponse, FavoriteStoreOfferListResponse, FavoriteStoreOfferResponse, FavoriteStoreResponse, FieldAcquisitionEntitlementPage, FieldAdmissionResponse, FieldFinancialSummaryResponse, FieldPayoutRequestHistoryPage, FieldWalletHistoryPage, JoiningCaseListResponse, JoiningCaseResponse, MarketingPublicationRequest, MarkOrderConversationReadRequest, MediaProvenanceInput, MultiStoreCheckoutRequest, MultiStoreCheckoutResponse, NotificationListResponse, NotificationReadResponse, OperatorPromotionRegistryResponse, OrderAdjustmentDecisionRequest, OrderAdjustmentProposalRequest, OrderConversationMessageResponse, OrderConversationPrivateMediaResponse, OrderConversationReadResponse, OrderConversationResponse, OrderListResponse, OrderRatingResponse, OrderResponse, OrderTransitionRequest, PartnerAccessibleStorePage, PartnerCampaignListResponse, PartnerCampaignOptInResponse, PartnerOrdersResponse, PartnerPayoutRequestCreateRequest, PartnerPayoutRequestResponse, PartnerPayoutSummaryResponse, PartnerScopedFinancialSummaryResponse, PartnerStoreOperationalAvailabilityMutationResponse, PartnerStoreOperationalAvailabilityResponse, PayoutRequest, PromotionListResponse, PromotionResponse, PublicCatalogResponse, PublicCatalogSearchResponse, PublicStoreOrderabilityResponse, PublicStoreView, PublishedStoreListResponse, ReplaceCatalogProductMediaRequest, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, SetStoreFulfillmentModesRequest, StoreAccessGrantActivationRequest, StoreAccessGrantListResponse, StoreAccessGrantMutationResponse, StoreAccessGrantPermissionsRequest, StoreAccessGrantTransitionRequest, StoreAccessInvitationCreateRequest, StoreAccessInvitationDecisionRequest, StoreAccessPermission, StoreCaptainDispatchRequest, StoreCaptainInvitationResponse, StoreCaptainMembershipListResponse, StoreCaptainMembershipResponse, StoreCaptainMembershipTransitionRequest, StoreCommercialAgreementListResponse, StoreCommercialAgreementMutationResponse, StoreCommercialAgreementProposalRequest, StoreDeliveryOriginResponse, StoreFulfillmentModesResponse, StoreImagesResponse, StoreOperationalAvailabilityRequest, StorePayoutRecipientListResponse, StorePayoutRecipientMutationResponse, StorePayoutRecipientRevertRequest, StorePayoutRecipientRevertResponse, StorePayoutRecipientSelectRequest, StoreTypeCommissionDefaultsResponse, UpdateCartLineRequest, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateDeliveryAddressRequest, UpdateStoreOfferRequest, UpsertCartLineRequest, WalletProviderListResponse } from "./generated/dsh-types";
+import type { AcceptStoreCaptainInvitationRequest, BeneficiaryFundingIntentResponse, BeneficiaryPayoutStateResponse, BeneficiaryWalletResponse, CampaignOptInRequest, CaptainAdmissionResponse, CaptainAssignmentListResponse, CaptainAssignmentResponse, CaptainAvailabilityRequest, CaptainCashRemittanceRequest, CaptainCashRemittanceResponse, CaptainCompletionRequest, CaptainDeliveryTaskResponse, CaptainOfferDecisionRequest, CaptainOfferListResponse, CaptainOpportunityHeatmap, CaptainOfferResponse, CartResponse, CashInFundingIntent, CashLiabilityResponse, CatalogAttributeEnumOptionListResponse, CatalogAttributeRuleListResponse, CatalogCategoryListResponse, CatalogIdentifierResolveResponse, CatalogImportCommitResponse, CatalogImportPreviewResponse, CatalogImportRunResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposal, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogProductResponse, CatalogQuickPriceCommitRequest, CatalogQuickPriceCommitResponse, CatalogStorefrontSectionListResponse, CatalogStorefrontSectionResponse, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogVariantResponse, CheckoutQuoteResponse, CheckoutRequest, ClientOpenCartListResponse, CommerceVerticalListResponse, CommercialStoreTypeListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, CreateJoiningCaseRequest, CreateOrderConversationMessageRequest, CreateOrderRatingRequest, CreatePromotionRequest, CreateStoreOfferRequest, DeliveryAddressListResponse, DeliveryAddressResponse, DeliveryProofResponse, DiscoveryContentEventRequest, DiscoveryContentListResponse, DiscoveryContentTargetResolution, FavoriteStoreListResponse, FavoriteStoreOfferListResponse, FavoriteStoreOfferResponse, FavoriteStoreResponse, JoiningCaseListResponse, JoiningCaseResponse, MarketingPublicationRequest, MarkOrderConversationReadRequest, MediaProvenanceInput, MultiStoreCheckoutRequest, MultiStoreCheckoutResponse, NotificationListResponse, NotificationReadResponse, OperatorPromotionRegistryResponse, OrderAdjustmentDecisionRequest, OrderAdjustmentProposalRequest, OrderConversationMessageResponse, OrderConversationPrivateMediaResponse, OrderConversationReadResponse, OrderConversationResponse, OrderListResponse, OrderRatingResponse, OrderResponse, OrderTransitionRequest, PartnerAccessibleStorePage, PartnerCampaignListResponse, PartnerCampaignOptInResponse, PartnerOrdersResponse, PartnerPayoutRequestCreateRequest, PartnerPayoutRequestResponse, PartnerPayoutSummaryResponse, PartnerScopedFinancialSummaryResponse, PartnerStoreOperationalAvailabilityMutationResponse, PartnerStoreOperationalAvailabilityResponse, PayoutRequest, PromotionListResponse, PromotionResponse, PublicCatalogResponse, PublicCatalogSearchResponse, PublicStoreOrderabilityResponse, PublicStoreView, PublishedStoreListResponse, ReplaceCatalogProductMediaRequest, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, SetStoreFulfillmentModesRequest, StoreAccessGrantActivationRequest, StoreAccessGrantListResponse, StoreAccessGrantMutationResponse, StoreAccessGrantPermissionsRequest, StoreAccessGrantTransitionRequest, StoreAccessInvitationCreateRequest, StoreAccessInvitationDecisionRequest, StoreAccessPermission, StoreCaptainDispatchRequest, StoreCaptainInvitationResponse, StoreCaptainMembershipListResponse, StoreCaptainMembershipResponse, StoreCaptainMembershipTransitionRequest, StoreCommercialAgreementMutationResponse, StoreCommercialAgreementProposalRequest, StoreDeliveryOriginResponse, StoreFulfillmentModesResponse, StoreImagesResponse, StoreOperationalAvailabilityRequest, StorePayoutRecipientListResponse, StorePayoutRecipientMutationResponse, StorePayoutRecipientRevertRequest, StorePayoutRecipientRevertResponse, StorePayoutRecipientSelectRequest, UpdateCartLineRequest, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateDeliveryAddressRequest, UpdateStoreOfferRequest, UpsertCartLineRequest, WalletProviderListResponse } from "./generated/dsh-types";
 import { joiningCaseImageMultipartPart } from "./joining-case-media";
 
 export type PartnerFinancialActivity = Readonly<{
@@ -422,31 +422,6 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.readOwnPartnerPayoutSummary.path + (query.size ? `?${query}` : "");
       return userRequest<PartnerPayoutSummaryResponse>(accessToken, path, dshOperationPaths.readOwnPartnerPayoutSummary.method);
     },
-    async readOwnFieldFinancialSummary(accessToken: string): Promise<FieldFinancialSummaryResponse> {
-      return userRequest<FieldFinancialSummaryResponse>(accessToken, dshOperationPaths.readOwnFieldFinancialSummary.path, dshOperationPaths.readOwnFieldFinancialSummary.method);
-    },
-    async listOwnFieldAcquisitionEntitlements(accessToken: string, limit = 50, cursor = ""): Promise<FieldAcquisitionEntitlementPage> {
-      const query = new URLSearchParams({ limit: String(limit) });
-      if (cursor.trim()) query.set("cursor", cursor.trim());
-      const path = `${dshOperationPaths.listOwnFieldAcquisitionEntitlements.path}?${query.toString()}`;
-      return userRequest<FieldAcquisitionEntitlementPage>(accessToken, path, dshOperationPaths.listOwnFieldAcquisitionEntitlements.method);
-    },
-    async listOwnFieldWalletHistory(accessToken: string, limit = 50, cursor = ""): Promise<FieldWalletHistoryPage> {
-      const normalizedCursor = cursor.trim();
-      if (!Number.isInteger(limit) || limit < 1 || limit > 100 || normalizedCursor.length > 512) throw new Error("DSH_FIELD_WALLET_HISTORY_QUERY_INVALID");
-      const query = new URLSearchParams({ limit: String(limit) });
-      if (normalizedCursor) query.set("cursor", normalizedCursor);
-      const path = `${dshOperationPaths.listOwnFieldWalletHistory.path}?${query.toString()}`;
-      return userRequest<FieldWalletHistoryPage>(accessToken, path, dshOperationPaths.listOwnFieldWalletHistory.method);
-    },
-    async listOwnFieldPayoutRequests(accessToken: string, limit = 50, cursor = ""): Promise<FieldPayoutRequestHistoryPage> {
-      const normalizedCursor = cursor.trim();
-      if (!Number.isInteger(limit) || limit < 1 || limit > 100 || normalizedCursor.length > 512) throw new Error("DSH_FIELD_PAYOUT_REQUEST_QUERY_INVALID");
-      const query = new URLSearchParams({ limit: String(limit) });
-      if (normalizedCursor) query.set("cursor", normalizedCursor);
-      const path = `${dshOperationPaths.listOwnFieldPayoutRequests.path}?${query.toString()}`;
-      return userRequest<FieldPayoutRequestHistoryPage>(accessToken, path, dshOperationPaths.listOwnFieldPayoutRequests.method);
-    },
     async readOwnPayoutState(accessToken: string): Promise<BeneficiaryPayoutStateResponse> {
       return userRequest<BeneficiaryPayoutStateResponse>(accessToken, dshOperationPaths.readOwnPayoutState.path, dshOperationPaths.readOwnPayoutState.method);
     },
@@ -666,18 +641,6 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!store || !run) throw new Error("DSH_STORE_CATALOG_IMPORT_SCOPE_INVALID");
       const path = dshOperationPaths.commitPartnerStoreCatalogImport.path.replace("{storeId}", encodeURIComponent(store)).replace("{runId}", encodeURIComponent(run));
       return userRequest<CatalogImportCommitResponse>(accessToken, path, dshOperationPaths.commitPartnerStoreCatalogImport.method, undefined, mutationHeaders(idempotencyKey, correlationID));
-    },
-    async readFieldStoreCommercialAgreements(accessToken: string, caseID: string): Promise<StoreCommercialAgreementListResponse> {
-      const normalized = caseID.trim();
-      if (!normalized) throw new Error("DSH_JOINING_CASE_ID_REQUIRED");
-      const path = dshOperationPaths.readFieldStoreCommercialAgreements.path.replace("{caseId}", encodeURIComponent(normalized));
-      return userRequest<StoreCommercialAgreementListResponse>(accessToken, path, dshOperationPaths.readFieldStoreCommercialAgreements.method);
-    },
-    async readFieldStoreCommercialAgreementDefaults(accessToken: string, caseID: string): Promise<StoreTypeCommissionDefaultsResponse> {
-      const normalized = caseID.trim();
-      if (!normalized) throw new Error("DSH_JOINING_CASE_ID_REQUIRED");
-      const path = dshOperationPaths.readFieldStoreCommercialAgreementDefaults.path.replace("{caseId}", encodeURIComponent(normalized));
-      return userRequest<StoreTypeCommissionDefaultsResponse>(accessToken, path, dshOperationPaths.readFieldStoreCommercialAgreementDefaults.method);
     },
     async listOwnStoreQuickPrices(accessToken: string, storeID: string, filters: Readonly<{ q?: string; categoryId?: string; availability?: "all" | "available" | "unavailable"; publicationState?: "all" | "draft" | "published" | "hidden"; limit?: number; cursor?: string }> = {}): Promise<CatalogStoreOfferListResponse> {
       const normalized = storeID.trim();
@@ -1074,30 +1037,11 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.completeCaptainAssignment.path.replace("{assignmentId}", encodeURIComponent(normalized));
       return userRequest<CaptainAssignmentResponse>(accessToken, path, dshOperationPaths.completeCaptainAssignment.method, { ...input, ...(input.deliveryProofCode === undefined ? {} : { deliveryProofCode: input.deliveryProofCode.trim() }) }, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) });
     },
-    async readOwnFieldAdmission(accessToken: string): Promise<FieldAdmissionResponse> {
-      return userRequest<FieldAdmissionResponse>(accessToken, dshOperationPaths.readOwnFieldAdmission.path, dshOperationPaths.readOwnFieldAdmission.method);
-    },
-    async listOwnFieldJoiningCases(accessToken: string, limit = 25, queryText = "", cursor = ""): Promise<JoiningCaseListResponse> {
-      const normalizedQuery = queryText.trim();
-      const normalizedCursor = cursor.trim();
-      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50 || Array.from(normalizedQuery).length > 128 || normalizedCursor.length > 2048) throw new Error("DSH_FIELD_JOINING_CASE_PAGE_INVALID");
-      const params = new URLSearchParams({ limit: String(limit) });
-      if (normalizedQuery) params.set("q", normalizedQuery);
-      if (normalizedCursor) params.set("cursor", normalizedCursor);
-      const path = `${dshOperationPaths.listOwnFieldJoiningCases.path}?${params.toString()}`;
-      return userRequest<JoiningCaseListResponse>(accessToken, path, dshOperationPaths.listOwnFieldJoiningCases.method);
-    },
     async resolveOwnStoreCatalogIdentifier(accessToken: string, storeID: string, identifierValue: string): Promise<CatalogIdentifierResolveResponse> {
       const normalizedStore = storeID.trim();
       const normalizedIdentifier = identifierValue.trim();
       if (!normalizedStore || !normalizedIdentifier || normalizedIdentifier.length > 128) throw new Error("DSH_STORE_CATALOG_IDENTIFIER_INVALID");
       return userRequest<CatalogIdentifierResolveResponse>(accessToken, dshOperationPaths.resolveCatalogIdentifier.path, dshOperationPaths.resolveCatalogIdentifier.method, { storeId: normalizedStore, identifierValue: normalizedIdentifier });
-    },
-    async readOwnFieldJoiningCase(accessToken: string, caseID: string): Promise<JoiningCaseResponse> {
-      const normalized = caseID.trim();
-      if (!normalized) throw new Error("DSH_FIELD_JOINING_CASE_ID_REQUIRED");
-      const path = dshOperationPaths.readOwnFieldJoiningCase.path.replace("{caseId}", encodeURIComponent(normalized));
-      return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.readOwnFieldJoiningCase.method);
     },
     async readPartnerStoreImages(accessToken: string, storeID: string): Promise<StoreImagesResponse> {
       return userRequest<StoreImagesResponse>(accessToken,dshOperationPaths.readPartnerStoreImages.path.replace("{storeId}",encodeURIComponent(storeID.trim())),"GET");

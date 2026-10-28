@@ -28,7 +28,7 @@ export type MobileIdentityRuntimeConfig = {
   explicitApiUrl?: string | undefined;
 };
 
-export type ManagedMobileRole = "partner" | "captain" | "field";
+export type ManagedMobileRole = "partner" | "captain";
 
 export type ManagedMobileIdentityRuntimeConfig = Omit<MobileIdentityRuntimeConfig, "role"> & {
   role: ManagedMobileRole;
@@ -101,10 +101,6 @@ export function createManagedMobileIdentityBinding(config: ManagedMobileIdentity
 
   return {
     ...runtime,
-    recordFieldAppOpened: async (): Promise<void> => {
-      const accessToken = await runtime.getUsableAccessToken();
-      await runtime.identityClient().recordFieldAppOpened(accessToken);
-    },
     requestManagedActivation: (phone: string) => runtime.identityClient().requestManagedActivation({ phone, role: config.role }),
     requestManagedRecovery: (phone: string) => runtime.identityClient().requestManagedRecovery({ phone, role: config.role }),
     recoverManagedIdentity: async (phone: string, verificationCode: string, password: string) => {
