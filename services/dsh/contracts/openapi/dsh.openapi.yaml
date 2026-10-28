@@ -383,6 +383,8 @@ paths:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1commercial-agreements~1{agreementId}~1accept"
   /dsh/operator/store-commercial-agreements:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1store-commercial-agreements"
+  /dsh/operator/partners/stores/{storeId}/commercial-agreements:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1partners~1stores~1{storeId}~1commercial-agreements"
   /dsh/operator/stores/{storeId}/commercial-agreements:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1commercial-agreements"
   /dsh/operator/stores/{storeId}/commercial-agreements/{agreementId}/decision:

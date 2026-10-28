@@ -9,6 +9,7 @@ import { partnerErrorMessage } from "../partners/partner-error-message";
 import { stablePartnerMutationHeaders } from "../partners/partner-request";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { StoreLogo } from "../stores/store-logo";
+import { StoreZeroCommissionProposal } from "./store-zero-commission-proposal";
 
 const fulfillmentModeOptions: ReadonlyArray<Readonly<{ value: StoreFulfillmentMode; label: string; description: string }>> = [
   { value: "BTHWANI_CAPTAIN", label: "توصيل بثواني", description: "المنصة تتولى إسناد التوصيل وإدارته." },
@@ -363,6 +364,7 @@ export function JoiningCaseDetail({ caseId, embedded = false }: { caseId: string
             {current.state === "needs_correction" ? <p>الحالة بانتظار تصحيح بيانات الشريك عبر المسار القانوني المتاح.</p> : null}
             {current.state === "approved" ? <>
               <p>تم اعتماد الانضمام. يُستكمل تفعيل الحساب من تطبيق الشريك، وتُدار جاهزية المتجر ونشره من ملف المتجر؛ الاعتماد لا يعني النشر للعملاء.</p>
+              {storeId ? <StoreZeroCommissionProposal storeId={storeId} modes={current.store?.fulfillmentModes ?? current.firstStoreFulfillmentModes} /> : null}
               <details className="partner-case-attachments"><summary>إرشادات تفعيل حساب الشريك</summary><p>يفتح صاحب المتجر تطبيق الشريك برقم الجوال المسجّل. عند أول تفعيل يختار «أول دخول»؛ وإن سبق التفعيل يسجّل الدخول أو يستعيد كلمة المرور. لا يحتاج إلى دعوة من تطبيق الميداني.</p></details>
               {current.financialProfileState === "REQUIRED" ? <>
                 <p className="managed-status managed-status-warning" role="status">{activeTermsPolicy ? "ستُربط شروط التسوية بهذه الحالة العالقة." : policyReadMessage || "يلزم وجود سياسة مالية نشطة وصلاحية المالية."}</p>

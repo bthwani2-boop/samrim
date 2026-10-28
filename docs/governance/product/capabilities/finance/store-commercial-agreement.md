@@ -12,7 +12,7 @@ Each Store's final Partner commission terms are explicit, accepted by that Store
 
 ## Ownership
 
-WLT owns agreement identity and versions, proposed rates, Partner acceptance, Finance approval, activation, effective and superseded facts and audit. DSH supplies canonical Store context, joining attribution and enabled fulfillment modes and performs the bounded operational handoff; DSH does not write financial rates. Field may propose initial terms for its authorized joining case. The bound Partner owner accepts exact terms. An authorized Finance actor approves them. ORDER_PAYMENT_COLLECTION alone resolves the active agreement for an applicable Order and owns that Order's immutable agreement snapshot.
+WLT owns agreement identity and versions, proposed rates, Partner acceptance, Finance approval, activation, effective and superseded facts and audit. DSH supplies canonical Store context, joining attribution and enabled fulfillment modes and performs the bounded operational handoff; DSH does not write financial rates. An active Operator with the Partners permission may propose Store-specific terms for an existing Store through DSH, independently of Field acquisition. The legacy Field-origin proposal path remains scoped to its authorized joining case until its consumers are migrated safely. The bound Partner owner accepts exact terms. An authorized Finance actor approves them. ORDER_PAYMENT_COLLECTION alone resolves the active agreement for an applicable Order and owns that Order's immutable agreement snapshot.
 
 ## Invariants
 
@@ -28,8 +28,10 @@ WLT owns agreement identity and versions, proposed rates, Partner acceptance, Fi
 - temporarily pausing/resuming a mode already durably admitted is operational state owned by `STORE_OPERATIONAL_AVAILABILITY` and does not create a new agreement version;
 - an operational toggle cannot activate a fulfillment mode absent from the Store's durable admitted mode policy and active agreement;
 - a Store Type-by-mode policy, if retained, is only a suggested negotiation starting value and never a fallback authority;
+- an initial Store agreement may have zero product commission for each admitted fulfillment mode; zero rates are explicit Store-specific financial facts, not an implied waiver of Partner acceptance or Finance approval;
+- a zero-commission proposal does not by itself create a timed promotion or authorize automatic paid conversion; a governed duration, effective date, consent evidence and applicable policy must exist before any later paid terms become active;
 - no more than one agreement version is active for a Store at a time;
-- Field can propose only for its authorized joining Store and cannot accept or approve terms on another actor's behalf;
+- a Partners Operator may propose but cannot accept for the Partner owner or approve for Finance; an originating Field proposer is restricted to that Field-owned joining case and cannot accept or approve on another actor's behalf;
 - retries, stale versions and concurrent transitions preserve one auditable result.
 
 ## Failure and recovery

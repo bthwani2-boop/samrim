@@ -962,6 +962,20 @@ export async function readOperatorFieldAcquisitionRewardPolicyByScope(scope: Fie
   return (await requestDshJson<FieldAcquisitionRewardPolicyResponse>(dshOperationPaths.readFieldAcquisitionRewardPolicyByScope.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
+export async function readPartnersStoreCommercialAgreements(storeId: string, context: DshOperatorReadContext): Promise<StoreCommercialAgreementListResponse> {
+  const id = storeId.trim();
+  if (!id || id.length > 128 || !context.operatorActorId.trim()) throw new Error("DSH_PARTNERS_STORE_AGREEMENT_READ_INPUT_INVALID");
+  const operation = dshOperationPaths.readPartnersStoreCommercialAgreements;
+  return (await requestDshJson<StoreCommercialAgreementListResponse>(operation.method, operation.path.replace("{storeId}", encodeURIComponent(id)), undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function proposePartnersStoreCommercialAgreement(storeId: string, rates: ReadonlyArray<Readonly<{ fulfillmentMode: "BTHWANI_CAPTAIN" | "PARTNER_CAPTAIN" | "CUSTOMER_PICKUP"; commissionRateBps: number }>>, expectedCurrentVersion: number, reason: string, context: JoiningCaseMutationContext): Promise<Readonly<{status:number;payload:StoreCommercialAgreementMutationResponse}>> {
+  const id = storeId.trim();
+  if (!id || id.length > 128 || !Number.isInteger(expectedCurrentVersion) || expectedCurrentVersion < 0 || !rates.length || rates.length > 3 || new Set(rates.map(rate => rate.fulfillmentMode)).size !== rates.length || rates.some(rate => !["BTHWANI_CAPTAIN","PARTNER_CAPTAIN","CUSTOMER_PICKUP"].includes(rate.fulfillmentMode) || !Number.isInteger(rate.commissionRateBps) || rate.commissionRateBps < 0 || rate.commissionRateBps > 10000) || Array.from(reason.trim()).length < 8 || Array.from(reason.trim()).length > 500) throw new Error("DSH_PARTNERS_STORE_AGREEMENT_PROPOSAL_INVALID");
+  validateAttributedMutationContext(context);
+  const operation = dshOperationPaths.proposePartnersStoreCommercialAgreement;
+  return requestDshJson<StoreCommercialAgreementMutationResponse>(operation.method, operation.path.replace("{storeId}", encodeURIComponent(id)), { rates, expectedCurrentVersion, reason: reason.trim() }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
 export async function readOperatorStoreCommercialAgreementQueue(limit: number, cursor: string, context: DshOperatorReadContext): Promise<FinanceStoreCommercialAgreementQueueResponse> {
   const normalizedCursor = cursor.trim();
   if (!context.operatorActorId.trim() || !Number.isInteger(limit) || limit < 1 || limit > 50 || normalizedCursor.length > 2048) throw new Error("DSH_STORE_COMMERCIAL_AGREEMENT_QUEUE_INPUT_INVALID");

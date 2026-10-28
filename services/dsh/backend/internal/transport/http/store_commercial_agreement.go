@@ -18,6 +18,8 @@ func (s *JoiningCaseServer) RegisterStoreCommercialAgreementRoutes(mux *http.Ser
 	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/commercial-agreements", s.proposeFieldStoreCommercialAgreement)
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/commercial-agreements", s.readPartnerStoreCommercialAgreements)
 	mux.HandleFunc("POST /dsh/partner/stores/{storeId}/commercial-agreements/{agreementId}/accept", s.acceptPartnerStoreCommercialAgreement)
+	mux.HandleFunc("GET /dsh/operator/partners/stores/{storeId}/commercial-agreements", s.readPartnersStoreCommercialAgreements)
+	mux.HandleFunc("POST /dsh/operator/partners/stores/{storeId}/commercial-agreements", s.proposePartnersStoreCommercialAgreement)
 	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/commercial-agreements", s.readFinanceStoreCommercialAgreements)
 	mux.HandleFunc("GET /dsh/operator/store-commercial-agreements", s.listFinanceStoreCommercialAgreements)
 	mux.HandleFunc("POST /dsh/operator/stores/{storeId}/commercial-agreements/{agreementId}/decision", s.decideFinanceStoreCommercialAgreement)
@@ -84,6 +86,52 @@ func (s *JoiningCaseServer) proposeFieldStoreCommercialAgreement(w http.Response
 	writeJSON(w, status, map[string]any{"agreement": agreement, "idempotentReplay": replayed})
 }
 
+func (s *JoiningCaseServer) readPartnersStoreCommercialAgreements(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	agreements, err := s.service.ReadStoreCommercialAgreementsForOperatorPartners(r.Context(), r.PathValue("storeId"), acting)
+	if err != nil {
+		writeStoreCommercialAgreementError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"agreements": agreements})
+}
+
+func (s *JoiningCaseServer) proposePartnersStoreCommercialAgreement(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting, correlation, idempotency, ok := requiredMutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input struct {
+		Rates                  []wlt.StoreCommercialAgreementRate `json:"rates"`
+		ExpectedCurrentVersion int                                `json:"expectedCurrentVersion"`
+		Reason                 string                             `json:"reason"`
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	agreement, replayed, err := s.service.ProposeStoreCommercialAgreementForOperatorPartners(r.Context(), r.PathValue("storeId"), acting, joiningcase.StoreCommercialAgreementProposalInput{
+		Rates: input.Rates, ExpectedCurrentVersion: input.ExpectedCurrentVersion, Reason: input.Reason,
+	}, idempotency, correlation)
+	if err != nil {
+		writeStoreCommercialAgreementError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if replayed {
+		status = http.StatusOK
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, status, map[string]any{"agreement": agreement, "idempotentReplay": replayed})
+}
 func (s *JoiningCaseServer) readPartnerStoreCommercialAgreements(w http.ResponseWriter, r *http.Request) {
 	agreements, err := s.service.ReadStoreCommercialAgreementsForPartner(r.Context(), bearerToken(r), r.PathValue("storeId"))
 	if err != nil {
