@@ -6,7 +6,7 @@ import { radius, type resolveTheme, sizing, spacing, typography } from "@bthwani
 import { AppearancePicker, BthwaniIcon, BthwaniSurface, useMobileAppearance } from "@bthwani/design-system/native";
 import { fieldAdmissionStateLabel } from "@bthwani/dsh";
 import { useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { logoutIdentity } from "../../bootstrap/identity";
 import { fieldAdmissionActionability } from "../field-operations/field-eligibility";
 import { useOwnFieldAdmission } from "../field-operations/use-field-admission";
@@ -64,17 +64,16 @@ export default function FieldAccount() {
         <AppearancePicker compact title="المظهر" helper="" />
       </View>
 
-    <Pressable accessibilityRole="button" accessibilityLabel="نسخ معلومات إصدار التطبيق"
-      onPress={() => void Clipboard.setStringAsync([
-        "بثواني", Application.nativeApplicationVersion ?? "—",
-        "build:" + (Application.nativeBuildVersion ?? "—"),
-        Device.modelName ?? "جهاز غير معروف", Device.osVersion ?? "—",
-      ].join(" · ")).then(() => setNotice("تم نسخ معلومات إصدار التطبيق")).catch(() => setNotice("تعذر نسخ معلومات التطبيق"))}
-      style={{ paddingVertical: 7, alignItems: "center" }}>
-      <Text style={{ color: theme.colorMuted, fontSize: 12 }}>
-        {"إصدار التطبيق " + (Application.nativeApplicationVersion ?? "—") + " · نسخ معلومات الإصدار"}
-      </Text>
-    </Pressable>
+    <Host colorScheme={themeName} matchContents seedColor={theme.brandAction}>
+      <Button variant="text" style={{ height: 48 }}
+        onPress={() => void Clipboard.setStringAsync([
+          "بثواني", Application.nativeApplicationVersion ?? "—",
+          "build:" + (Application.nativeBuildVersion ?? "—"),
+          Device.modelName ?? "جهاز غير معروف", Device.osVersion ?? "—",
+        ].join(" · ")).then(() => setNotice("تم نسخ معلومات إصدار التطبيق")).catch(() => setNotice("تعذر نسخ معلومات التطبيق"))}
+        label={"إصدار التطبيق " + (Application.nativeApplicationVersion ?? "—") + " · نسخ معلومات الإصدار"}
+        testID="field-copy-app-version" />
+    </Host>
       <View style={styles.footer}>
         <Host colorScheme={themeName} matchContents seedColor={theme.brandAction}>
           <Button disabled={busy} label={busy ? "جارٍ تسجيل الخروج…" : "تسجيل الخروج"} onPress={() => void logout()} testID="field-account-logout" variant="outlined" />
