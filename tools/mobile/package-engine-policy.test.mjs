@@ -27,7 +27,7 @@ const mobile = {
   "zustand": "5.0.16",
 };
 const extras = {
-  "app-client": { "react-native-reanimated-carousel": "5.2.0" },
+  "app-client": {},
   "app-partner": { ...partnerForms },
   "app-captain": {},
   "app-field": {},
@@ -72,15 +72,12 @@ for (const [app, other] of Object.entries(extras)) {
     }
   });
 }
-test("Reanimated Carousel is isolated to the client and remains an unactivated pilot", () => {
-  const carouselPath = path.join(root, "apps/app-client/package.json");
-  const manifest = JSON.parse(fs.readFileSync(carouselPath, "utf8"));
-  assert.equal(manifest.dependencies["react-native-reanimated-carousel"], "5.2.0");
-  for (const app of ["app-partner","app-captain","app-field"]) {
-    const other = JSON.parse(fs.readFileSync(path.join(root, "apps", app, "package.json"), "utf8"));
-    assert.equal(other.dependencies["react-native-reanimated-carousel"], undefined);
+test("unused Reanimated Carousel pilot is not bundled in any Expo app", () => {
+  for (const app of ["app-client", "app-partner", "app-captain", "app-field"]) {
+    const manifest = JSON.parse(fs.readFileSync(path.join(root, "apps", app, "package.json"), "utf8"));
+    assert.equal(manifest.dependencies["react-native-reanimated-carousel"], undefined, app);
   }
-  const banner = fs.readFileSync(path.join(root,"apps/app-client/src/features/store-discovery/looping-hero-banner.tsx"),"utf8");
+  const banner = fs.readFileSync(path.join(root, "apps/app-client/src/features/store-discovery/looping-hero-banner.tsx"), "utf8");
   assert.match(banner, /export function LoopingHeroBanner/);
   assert.doesNotMatch(banner, /react-native-reanimated-carousel/);
 });
