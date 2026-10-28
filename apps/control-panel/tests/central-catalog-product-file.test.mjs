@@ -16,3 +16,23 @@ test("each product row opens its existing adaptive product file from an accessib
   assert.match(component, /source/);
   assert.match(component, /catalog-mobile-open[\s\S]*?>ملف المنتج<\/button>/);
 });
+test("product editor shows core identity first and progressively discloses optional metadata", async () => {
+  const component = await readFile(componentPath, "utf8");
+  const editor = component.slice(component.indexOf('<div className="central-product-form">'), component.indexOf('</AdaptiveRecordPanel>'));
+  const vertical = editor.indexOf('id="catalog-vertical"');
+  const name = editor.indexOf('id="catalog-product-name"');
+  const description = editor.indexOf('id="catalog-product-description"');
+  const category = editor.indexOf('className="catalog-product-category-picker"');
+  const advanced = editor.indexOf('className="catalog-product-advanced"');
+  const brand = editor.indexOf('id="catalog-product-brand"');
+  const media = editor.indexOf('className="catalog-product-media-gallery"');
+  assert.ok(vertical >= 0 && vertical < name && name < description && description < category, "the next core entry is available before category details");
+  assert.ok(category < advanced && advanced < brand && brand < media, "optional metadata does not hide taxonomy, required attributes or media");
+  assert.ok(editor.includes('<details className="catalog-product-advanced" open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>'));
+  assert.match(editor, /id="catalog-measurement-kind"/);
+  assert.match(editor, /id="catalog-base-unit"/);
+  assert.match(editor, /id="catalog-identifier-value"/);
+  assert.match(component, /const saveProductDisabled = busy \\|\\| versionConflict[\\s\\S]*!form\\.canonicalName\\.trim\\(\\)[\\s\\S]*!form\\.verticalId[\\s\\S]*form\\.categoryIds\\.length === 0/);
+  assert.match(component, /"X-Expected-Version"/);
+  assert.match(component, /"Idempotency-Key"/);
+});
