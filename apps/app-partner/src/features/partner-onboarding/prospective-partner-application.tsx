@@ -3,7 +3,7 @@
 import { type CommerceVertical, type CommercialStoreType, createDshMobileClient, type CreateJoiningCaseRequest, type JoiningCaseResponse, joiningCaseStateLabel, type ServiceCity, type StoreFulfillmentMode } from "@bthwani/dsh";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { BthwaniMapCoordinate, BthwaniMapProps } from "@bthwani/design-system/native/map";
-import { toAsciiDigits } from "@bthwani/design-system";
+import { normalizeYemenPhoneE164, toAsciiDigits } from "@bthwani/design-system";
 import * as Crypto from "expo-crypto";
 import { useRouter } from "expo-router";
 import { type ComponentType, useCallback, useEffect, useMemo, useState } from "react";
@@ -62,6 +62,7 @@ export function ProspectivePartnerApplication(){
  const [notice,setNotice]=useState("");
  const [caseValue,setCaseValue]=useState<JoiningCaseResponse|null>(null);
  const [hasRead,setHasRead]=useState(false);
+ const [intakeStep,setIntakeStep]=useState<"basics"|"details">("basics");
  const [cities,setCities]=useState<readonly ServiceCity[]>([]);
  const [verticals,setVerticals]=useState<readonly CommerceVertical[]>([]);
  const [types,setTypes]=useState<readonly CommercialStoreType[]>([]);
@@ -107,7 +108,7 @@ export function ProspectivePartnerApplication(){
    else {setHasRead(false);setError(details(cause));}
   }finally{setLoading(false)}
  },[authenticated]);
- useEffect(()=>{if(authenticated){void load()}else{setCaseValue(null);setHasRead(false)}},[authenticated,load]);
+ useEffect(()=>{if(authenticated){void load()}else{setCaseValue(null);setHasRead(false);setIntakeStep("basics")}},[authenticated,load]);
  useEffect(()=>{
   if(!authenticated || caseValue)return;
   let active=true;
@@ -160,12 +161,12 @@ export function ProspectivePartnerApplication(){
   if(busy)return;
   setError("");setNotice("");
   const latitude=Number(toAsciiDigits(lat));const longitude=Number(toAsciiDigits(lng));
-  if(!ownerName.trim()||!storeName.trim()||!address.trim()||!city||!vertical||!storeType||!proofNumber.trim()||modes.length===0||
+  if(!/^\+[1-9]\d{7,14}$/.test(normalizeYemenPhoneE164(phone))||!ownerName.trim()||!storeName.trim()||!address.trim()||!city||!vertical||!storeType||!proofNumber.trim()||modes.length===0||
      !lat.trim()||!lng.trim()||!Number.isFinite(latitude)||!Number.isFinite(longitude)){
    setError("أكمل البيانات الأساسية واختر المدينة والمجال ونوع المتجر وطريقة التوصيل وحدد موقعه.");return;
   }
   const input:CreateJoiningCaseRequest={
-   contactPhoneE164:phone.trim(),ownerFullName:ownerName.trim(),businessName:storeName.trim(),firstStoreName:storeName.trim(),
+   contactPhoneE164:normalizeYemenPhoneE164(phone),ownerFullName:ownerName.trim(),businessName:storeName.trim(),firstStoreName:storeName.trim(),
    walletProviderKey:"",firstStoreAddress:address.trim(),serviceCityId:city,firstStoreVerticalId:vertical,firstStoreCommercialTypeId:storeType,
    firstStoreLatitude:latitude,firstStoreLongitude:longitude,firstStoreWorkingHours:{intervals:[]},
    firstStoreProofType:proofType,firstStoreProofNumber:proofNumber.trim(),firstStoreFulfillmentModes:modes,
@@ -219,6 +220,9 @@ export function ProspectivePartnerApplication(){
    <BthwaniButton label="تحديث حالة الطلب" variant="secondary" onPress={()=>void load()} disabled={loading}/>
   </View>:null}
   {authenticated&&!caseValue&&hasRead&&!loading?<View style={{gap:11}}>
+   {intakeStep==="basics"?<>
+   <Text style={styles.heading}>الخطوة ١ من ٢ · معلومات النشاط</Text>
+   <Text style={styles.muted}>أدخل بيانات صاحب النشاط والمتجر؛ يمكنك مراجعتها قبل الإرسال.</Text>
    {field("رقم الهاتف المرتبط بحسابك",phone,setPhone,false,"phone-pad")}
    <Text style={styles.muted}>اكتب نفس الرقم الذي سجلت به الدخول؛ ستتحقق Identity من تطابقه قبل إنشاء الطلب.</Text>
    {field("الاسم الكامل لصاحب النشاط",ownerName,setOwnerName)}
@@ -227,6 +231,15 @@ export function ProspectivePartnerApplication(){
    {select("مدينة الخدمة",cities.map(c=>({id:c.id,label:c.displayNameAr})),city,setCity)}
    {select("المجال التجاري",verticals.map(v=>({id:v.id,label:v.nameAr})),vertical,setVertical)}
    {select("نوع المتجر",types.map(t=>({id:t.id,label:t.nameAr})),storeType,setStoreType)}
+   <BthwaniButton label="متابعة إلى الموقع والإثبات" disabled={busy||loading} onPress={()=>{
+    if(!/^\+[1-9]\d{7,14}$/.test(normalizeYemenPhoneE164(phone))||ownerName.trim().length<2||storeName.trim().length<2||address.trim().length<4||!city||!vertical||!storeType){
+     setError("أدخل رقم هاتف حسابك واسم المالك والنشاط والعنوان، وحدد مدينة الخدمة والمجال ونوع المتجر.");return;
+    }
+    setError("");setIntakeStep("details");
+   }}/>
+   </>:<>
+   <Text style={styles.heading}>الخطوة ٢ من ٢ · الموقع والإثبات</Text>
+   <BthwaniButton label="العودة إلى معلومات النشاط" variant="secondary" onPress={()=>{setError("");setIntakeStep("basics")}} disabled={busy}/>
    <View style={{gap:8}}>
     <Text style={styles.text}>موقع المتجر</Text>
     <Text style={styles.muted}>حدد موقع متجرك على الخريطة؛ لا حاجة لإدخال إحداثيات يدويًا. موقع المتجر ليس موقع هاتفك بالضرورة.</Text>
@@ -242,6 +255,7 @@ export function ProspectivePartnerApplication(){
    {field("رقم وثيقة الإثبات",proofNumber,setProofNumber)}
    <View style={{gap:6}}><Text style={styles.text}>أوضاع التوصيل</Text>{MODES.map(m=><Pressable key={m.id} disabled={busy} accessibilityRole="checkbox" accessibilityState={{checked:modes.includes(m.id),disabled:busy}} style={[styles.choice,modes.includes(m.id)&&styles.selected]} onPress={()=>setModes(old=>old.includes(m.id)?old.filter(x=>x!==m.id):[...old,m.id])}><Text style={styles.text}>{modes.includes(m.id)?"✓ ":""}{m.label}</Text></Pressable>)}</View>
    <BthwaniButton label="إرسال طلب انضمام الشريك" disabled={busy} onPress={()=>void submit()}/>
+   </>}
   </View>:null}
   {authenticated?<BthwaniButton label="الخروج من حساب المتقدم" variant="secondary" onPress={()=>void logoutProspect()} disabled={busy}/>:null}
   {notice?<Text accessibilityRole="text" style={styles.muted}>{notice}</Text>:null}
