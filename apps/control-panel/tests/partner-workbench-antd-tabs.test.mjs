@@ -32,7 +32,7 @@ test("URL filters, private phone search and record details remain on their curre
   assert.match(source, /if \(nextCity\) url\.set\("serviceCityId", nextCity\)/);
   assert.match(source, /if \(nextQuery && !isPhone\(nextQuery\)\) url\.set\("q", nextQuery\)/);
   assert.match(source, /setPrivateSearch\(nextQuery\)/);
-  assert.match(source, /StoreInspector storeId=\{openStore\}/);
+  assert.match(source, /StoreInspector key=\{openStore\} storeId=\{openStore\}/);
   assert.match(source, /JoiningCaseDetail key=\{openCase\}/);
   assert.match(source, /PartnerDetailWorkspace key=\{actor\.actorId\}/);
   assert.match(source, /async function approve\(grant: StoreAccessGrant\)/);
