@@ -1448,85 +1448,6 @@ func (c *Client) ListPartnerCommissionReceivables(ctx context.Context, actingAct
 	return response, err
 }
 
-func (c *Client) CreateFieldAcquisitionRewardPolicy(ctx context.Context, input CreateFieldAcquisitionRewardPolicyInput) (FieldAcquisitionRewardPolicy, bool, error) {
-	body := map[string]any{"scopeType": strings.TrimSpace(input.ScopeType), "scopeId": strings.TrimSpace(input.ScopeID), "rewardMinor": input.RewardMinor, "roundingUnitMinor": input.RoundingUnitMinor, "expectedVersion": input.ExpectedVersion, "reason": strings.TrimSpace(input.Reason)}
-	var response fieldAcquisitionRewardPolicyResponse
-	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: "/wlt/v1/operator/field-acquisition-reward-policies", body: body, idempotencyKey: input.IdempotencyKey, correlationID: input.CorrelationID, expectedVersion: 0, actingActorID: input.ActingActorID, target: &response})
-	return response.Policy, response.IdempotentReplay, err
-}
-
-func (c *Client) ReadFieldAcquisitionRewardPolicyByScope(ctx context.Context, scopeType, scopeID string) (FieldAcquisitionRewardPolicy, error) {
-	query := url.Values{}
-	query.Set("scopeType", strings.TrimSpace(scopeType))
-	query.Set("scopeId", strings.TrimSpace(scopeID))
-	var response fieldAcquisitionRewardPolicyResponse
-	err := c.request(ctx, http.MethodGet, "/wlt/v1/operator/field-acquisition-reward-policies?"+query.Encode(), nil, "", "", 0, &response)
-	return response.Policy, err
-}
-
-func (c *Client) ReadFieldAcquisitionEntitlementByJoiningCase(ctx context.Context, joiningCaseID string) (FieldAcquisitionEntitlementReadback, error) {
-	var response fieldAcquisitionEntitlementReadbackResponse
-	err := c.request(ctx, http.MethodGet, "/wlt/v1/field-acquisition-entitlements/"+url.PathEscape(strings.TrimSpace(joiningCaseID)), nil, "", "", 0, &response)
-	return response.Entitlement, err
-}
-
-func (c *Client) ReadFieldFinancialSummary(ctx context.Context, fieldActorID string) (FieldFinancialSummary, error) {
-	var response fieldFinancialSummaryResponse
-	err := c.request(ctx, http.MethodGet, "/wlt/v1/fields/"+url.PathEscape(strings.TrimSpace(fieldActorID))+"/financial-summary", nil, "", "", 0, &response)
-	return response.Summary, err
-}
-
-func (c *Client) ListFieldAcquisitionEntitlements(ctx context.Context, fieldActorID, cursor string, limit int) (FieldAcquisitionEntitlementPage, error) {
-	query := url.Values{}
-	if strings.TrimSpace(cursor) != "" {
-		query.Set("cursor", strings.TrimSpace(cursor))
-	}
-	if limit > 0 {
-		query.Set("limit", strconv.Itoa(limit))
-	}
-	path := "/wlt/v1/fields/" + url.PathEscape(strings.TrimSpace(fieldActorID)) + "/acquisition-entitlements"
-	if encoded := query.Encode(); encoded != "" {
-		path += "?" + encoded
-	}
-	var response FieldAcquisitionEntitlementPage
-	err := c.request(ctx, http.MethodGet, path, nil, "", "", 0, &response)
-	return response, err
-}
-
-func (c *Client) ListFieldWalletHistory(ctx context.Context, fieldActorID, cursor string, limit int) (FieldWalletHistoryPage, error) {
-	query := url.Values{}
-	if strings.TrimSpace(cursor) != "" {
-		query.Set("cursor", strings.TrimSpace(cursor))
-	}
-	if limit > 0 {
-		query.Set("limit", strconv.Itoa(limit))
-	}
-	path := "/wlt/v1/fields/" + url.PathEscape(strings.TrimSpace(fieldActorID)) + "/wallet-history"
-	if encoded := query.Encode(); encoded != "" {
-		path += "?" + encoded
-	}
-	var response FieldWalletHistoryPage
-	err := c.request(ctx, http.MethodGet, path, nil, "", "", 0, &response)
-	return response, err
-}
-
-func (c *Client) ListFieldPayoutRequests(ctx context.Context, fieldActorID, cursor string, limit int) (FieldPayoutRequestPage, error) {
-	query := url.Values{}
-	if strings.TrimSpace(cursor) != "" {
-		query.Set("cursor", strings.TrimSpace(cursor))
-	}
-	if limit > 0 {
-		query.Set("limit", strconv.Itoa(limit))
-	}
-	path := "/wlt/v1/fields/" + url.PathEscape(strings.TrimSpace(fieldActorID)) + "/payout-requests"
-	if encoded := query.Encode(); encoded != "" {
-		path += "?" + encoded
-	}
-	var response FieldPayoutRequestPage
-	err := c.request(ctx, http.MethodGet, path, nil, "", "", 0, &response)
-	return response, err
-}
-
 func (c *Client) CreateOfficialWalletDestination(ctx context.Context, destination OfficialWalletDestination, identityFacts IdentityFacts, changeReason, verificationEvidenceReference, changeEvidenceReference, idempotencyKey, correlationID, actingActorID string) (OfficialWalletDestination, bool, error) {
 	body := map[string]any{
 		"actorType":                     strings.TrimSpace(destination.ActorType),
@@ -1707,26 +1628,6 @@ func (c *Client) ListBeneficiaryPayoutStates(ctx context.Context, actorType, sea
 	}
 	var response PayoutStateRegistry
 	err := c.requestWithActor(ctx, actorRequest{method: http.MethodGet, path: path, body: nil, idempotencyKey: "", correlationID: "", expectedVersion: 0, actingActorID: actingActorID, target: &response})
-	return response, err
-}
-
-func (c *Client) ReadFieldPayoutStatesBatch(ctx context.Context, actorIDs []string, actingActorID string) (FieldPayoutStatesBatch, error) {
-	if len(actorIDs) > 100 || strings.TrimSpace(actingActorID) == "" {
-		return FieldPayoutStatesBatch{}, ErrFieldPayoutBatchInvalidInput
-	}
-	for _, actorID := range actorIDs {
-		if strings.TrimSpace(actorID) == "" || len(strings.TrimSpace(actorID)) > 128 {
-			return FieldPayoutStatesBatch{}, ErrFieldPayoutBatchInvalidInput
-		}
-	}
-	var response FieldPayoutStatesBatch
-	err := c.requestWithActor(ctx, actorRequest{
-		method: http.MethodPost, path: "/wlt/v1/operator/field-payout-states:batch",
-		body: struct {
-			ActorIDs []string `json:"actorIds"`
-		}{ActorIDs: actorIDs},
-		actingActorID: actingActorID, target: &response,
-	})
 	return response, err
 }
 

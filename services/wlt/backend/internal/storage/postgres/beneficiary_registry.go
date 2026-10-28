@@ -118,16 +118,7 @@ func ListBeneficiaryPayoutStates(ctx context.Context, db *sql.DB, actorType, sea
 		if err != nil {
 			return nil, false, err
 		}
-		if item.kind == "field" {
-			financialSummary, err := ReadFieldFinancialSummary(ctx, db, item.id)
-			if err != nil {
-				return nil, false, err
-			}
-			acquiredStoreCount := financialSummary.PartnerCount
-			earnedMinor := financialSummary.EarnedMinor
-			state.AcquiredStoreCount = &acquiredStoreCount
-			state.EarnedMinor = &earnedMinor
-		}
+
 		result = append(result, BeneficiaryPayoutRegistryRecord{State: state, SortValue: item.sortValue})
 	}
 	return result, hasMore, nil

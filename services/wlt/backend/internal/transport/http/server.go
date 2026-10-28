@@ -131,11 +131,6 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/financial-summary", s.readPartnerFinancialSummary)
 	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/financial-activity", s.readPartnerActivity)
 	mux.HandleFunc("GET /wlt/v1/operator/partner-commission-receivables", s.listPartnerCommissionReceivables)
-	mux.HandleFunc("GET /wlt/v1/field-acquisition-entitlements/{joiningCaseId}", s.readFieldAcquisitionEntitlementByJoiningCase)
-	mux.HandleFunc("GET /wlt/v1/fields/{fieldActorId}/financial-summary", s.readFieldFinancialSummary)
-	mux.HandleFunc("GET /wlt/v1/fields/{fieldActorId}/wallet-history", s.readFieldWalletHistory)
-	mux.HandleFunc("GET /wlt/v1/fields/{fieldActorId}/payout-requests", s.listFieldPayoutRequests)
-	mux.HandleFunc("GET /wlt/v1/fields/{fieldActorId}/acquisition-entitlements", s.listFieldAcquisitionEntitlements)
 	mux.HandleFunc("POST /wlt/v1/operator/official-wallet-destinations", s.createOfficialWalletDestination)
 	mux.HandleFunc("POST /wlt/v1/operator/official-wallet-destinations/{destinationId}/verify", s.verifyOfficialWalletDestination)
 	mux.HandleFunc("POST /wlt/v1/operator/official-wallet-destinations/{destinationId}/activate", s.activateOfficialWalletDestination)
@@ -159,7 +154,6 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /wlt/v1/payout-state/{actorType}/{actorId}", s.readPayoutState)
 	mux.HandleFunc("GET /wlt/v1/operator/payout-requests", s.listPayoutRequests)
 	mux.HandleFunc("GET /wlt/v1/operator/beneficiaries", s.listBeneficiaryPayoutStates)
-	mux.HandleFunc("POST /wlt/v1/operator/field-payout-states:batch", s.readFieldPayoutStatesBatch)
 	mux.HandleFunc("GET /wlt/v1/operator/beneficiaries/{actorType}/{actorId}/financial-statement", s.readFinancialStatement)
 	mux.HandleFunc("GET /wlt/v1/operator/financial-statements", s.listFinancialStatementSummaries)
 	mux.HandleFunc("GET /wlt/v1/operator/payout-requests/{payoutId}", s.readOperatorPayoutRequest)
@@ -1295,36 +1289,6 @@ func (s *Server) readPartnerFinancialSummary(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, partnerFinancialSummaryResponse{Summary: view})
 }
 
-func (s *Server) readFieldAcquisitionEntitlementByJoiningCase(w http.ResponseWriter, r *http.Request) {
-	if !s.authorize(w, r) {
-		return
-	}
-	joiningCaseID := strings.TrimSpace(r.PathValue("joiningCaseId"))
-	if bounded := len(joiningCaseID); bounded < 1 || bounded > 128 {
-		writeFieldAcquisitionRewardError(w, postgres.ErrFieldAcquisitionEntitlementInvalid)
-		return
-	}
-	result, err := postgres.ReadFieldAcquisitionEntitlementByJoiningCase(r.Context(), s.db, joiningCaseID)
-	if err != nil {
-		writeFieldAcquisitionRewardError(w, err)
-		return
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, fieldAcquisitionEntitlementResponse{Entitlement: toFieldAcquisitionEntitlement(result)})
-}
-
-func (s *Server) readFieldFinancialSummary(w http.ResponseWriter, r *http.Request) {
-	if !s.authorize(w, r) {
-		return
-	}
-	result, err := postgres.ReadFieldFinancialSummary(r.Context(), s.db, r.PathValue("fieldActorId"))
-	if err != nil {
-		writeFieldAcquisitionRewardError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, fieldFinancialSummaryResponse{Summary: toFieldFinancialSummary(result)})
-}
-
 func (s *Server) createOfficialWalletDestination(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
@@ -1514,52 +1478,6 @@ func (s *Server) listBeneficiaryPayoutStates(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		result.NextCursor = base64.RawURLEncoding.EncodeToString(cursorBytes)
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, result)
-}
-
-func (s *Server) readFieldPayoutStatesBatch(w http.ResponseWriter, r *http.Request) {
-	if !s.authorize(w, r) || !s.requireActingOperator(w, r) {
-		return
-	}
-	var input fieldPayoutStatesBatchRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	actorIDs, validActorIDs := normalizeFieldPayoutBatchActorIDs(input.ActorIDs)
-	if !validActorIDs {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "field beneficiary batch actor ids are invalid")
-		return
-	}
-	result := fieldPayoutStatesBatchResponse{Beneficiaries: make([]payoutStateJSON, 0, len(actorIDs))}
-	for _, actorID := range actorIDs {
-		state, err := postgres.ReadPayoutState(r.Context(), s.db, "field", actorID)
-		if err != nil {
-			writePayoutError(w, err)
-			return
-		}
-		financialSummary, err := postgres.ReadFieldFinancialSummary(r.Context(), s.db, actorID)
-		if err != nil {
-			writePayoutError(w, err)
-			return
-		}
-		acquiredStoreCount := financialSummary.PartnerCount
-		earnedMinor := financialSummary.EarnedMinor
-		state.AcquiredStoreCount = &acquiredStoreCount
-		state.EarnedMinor = &earnedMinor
-		result.Beneficiaries = append(result.Beneficiaries, toPayoutState(state))
-	}
-	aggregate, err := postgres.ReadFieldFinanceAggregate(r.Context(), s.db)
-	if err != nil {
-		writePayoutError(w, err)
-		return
-	}
-	result.FieldFinanceSummary = fieldFinanceAggregateJSON{
-		Currency: "YER", FieldActorCount: aggregate.FieldActorCount,
-		AcquiredStoreCount: aggregate.AcquiredStoreCount, EarnedMinor: aggregate.EarnedMinor,
-		EligibleAvailableMinor: aggregate.EligibleAvailableMinor, HeldMinor: aggregate.HeldMinor,
-		PayoutRequestCount: aggregate.PayoutRequestCount, ActiveDestinationCount: aggregate.ActiveDestinationCount,
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, result)
@@ -1917,48 +1835,6 @@ func writePartnerCashCommissionError(w http.ResponseWriter, err error) {
 	default:
 		log.Printf("WLT Partner store cash commission persistence error: %T %v", err, err)
 		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT Partner commission persistence is unavailable")
-	}
-}
-
-func toFieldAcquisitionRewardPolicy(item postgres.FieldAcquisitionRewardPolicyRecord) fieldAcquisitionRewardPolicyJSON {
-	result := fieldAcquisitionRewardPolicyJSON{ID: item.ID, ScopeType: item.ScopeType, ScopeID: item.ScopeID, RewardMinor: item.RewardMinor, RoundingUnitMinor: item.RoundingUnitMinor, State: item.State, Version: item.Version, CreatedBy: item.CreatedBy, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano)}
-	if item.RetiredAt != nil {
-		value := item.RetiredAt.UTC().Format(time.RFC3339Nano)
-		result.RetiredAt = &value
-	}
-	return result
-}
-
-func toFieldAcquisitionEntitlement(item postgres.FieldAcquisitionEntitlementRecord) fieldAcquisitionEntitlementJSON {
-	return fieldAcquisitionEntitlementJSON{JoiningCaseID: item.JoiningCaseID, StoreID: item.StoreID, PartnerActorID: item.PartnerActorID, FieldActorID: item.FieldActorID, VerticalID: item.VerticalID, CommercialStoreTypeID: item.CommercialStoreTypeID, PolicyID: item.PolicyID, PolicyVersion: item.PolicyVersion, RewardMinor: item.RewardMinor, Currency: item.Currency, LedgerTransactionID: item.LedgerTransactionID, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano), EffectiveAt: item.EffectiveAt.UTC().Format(time.RFC3339Nano), Status: item.Status}
-}
-
-func toFieldFinancialSummary(item postgres.FieldFinancialSummaryRecord) fieldFinancialSummaryJSON {
-	result := fieldFinancialSummaryJSON{FieldActorID: item.FieldActorID, Currency: item.Currency, EarnedMinor: item.EarnedMinor, EntitlementMinor: item.EntitlementMinor, PartnerCount: item.PartnerCount}
-	if item.LastEarningAt != nil {
-		value := item.LastEarningAt.UTC().Format(time.RFC3339Nano)
-		result.LastEarningAt = &value
-	}
-	return result
-}
-
-func writeFieldAcquisitionRewardError(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, postgres.ErrFieldAcquisitionEntitlementNotFound):
-		writeError(w, http.StatusNotFound, "FIELD_ACQUISITION_ENTITLEMENT_NOT_FOUND", "no posted Field acquisition entitlement exists for this joining case")
-	case errors.Is(err, postgres.ErrFieldAcquisitionRewardPolicyNotFound):
-		writeError(w, http.StatusNotFound, "FIELD_ACQUISITION_POLICY_NOT_FOUND", "no active Field acquisition reward policy is available for this scope")
-	case errors.Is(err, postgres.ErrFieldAcquisitionRewardPolicyInvalidInput), errors.Is(err, postgres.ErrFieldAcquisitionEntitlementInvalid):
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Field acquisition reward facts are invalid")
-	case errors.Is(err, postgres.ErrFieldAcquisitionRewardPolicyExists), errors.Is(err, postgres.ErrFieldAcquisitionEntitlementExists):
-		writeError(w, http.StatusConflict, "FIELD_ACQUISITION_ENTITLEMENT_EXISTS", "the Field acquisition reward already exists")
-	case errors.Is(err, postgres.ErrVersionConflict):
-		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "the active Field reward policy changed after it was read")
-	case errors.Is(err, postgres.ErrIdempotencyConflict):
-		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different Field acquisition reward facts")
-	default:
-		log.Printf("WLT Field acquisition reward persistence error: %T %v", err, err)
-		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT Field acquisition reward persistence is unavailable")
 	}
 }
 

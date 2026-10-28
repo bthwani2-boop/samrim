@@ -577,15 +577,6 @@ export async function listOperatorBeneficiaryPayoutStates(actorType: Beneficiary
   return (await requestDshJson<OperatorBeneficiaryRegistryResponse>(dshOperationPaths.listOperatorBeneficiaryPayoutStates.method, `${dshOperationPaths.listOperatorBeneficiaryPayoutStates.path}?${query.toString()}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export async function listOperatorFieldFinanceRoster(search: string, status: string, admissionState: "all" | "eligible" | "suspended", cursor: string, limit: number, context: DshOperatorReadContext): Promise<OperatorFieldFinanceRosterResponse> {
-  if (!context.operatorActorId.trim() || search.trim().length > 100 || cursor.length > 512 || !Number.isInteger(limit) || limit < 1 || limit > 50 || !["", "NO_REQUEST", "HELD", "PREPARED", "APPROVED", "FROZEN", "EXECUTED", "COMPLETED", "EXCEPTION", "CANCELLED"].includes(status.trim().toUpperCase()) || !(admissionState === "all" || admissionState === "eligible" || admissionState === "suspended")) throw new Error("DSH_FIELD_FINANCE_ROSTER_INPUT_INVALID");
-  const query = new URLSearchParams({ limit: String(limit), admissionState });
-  if (search.trim()) query.set("search", search.trim());
-  if (status.trim()) query.set("status", status.trim().toUpperCase());
-  if (cursor.trim()) query.set("cursor", cursor.trim());
-  return (await requestDshJson<OperatorFieldFinanceRosterResponse>(dshOperationPaths.listOperatorFieldFinanceRoster.method, `${dshOperationPaths.listOperatorFieldFinanceRoster.path}?${query.toString()}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
-}
-
 export async function readOperatorDestination(actorType: BeneficiaryActorType, actorId: string, context: DshOperatorReadContext): Promise<OperatorDestinationResponse> {
 	if (!("customer" === actorType || "partner" === actorType || "captain" === actorType || "field" === actorType) || !actorId.trim() || !context.operatorActorId.trim()) throw new Error("DSH_DESTINATION_INPUT_INVALID");
   const path = dshOperationPaths.readOperatorOfficialWalletDestination.path.replace("{actorType}", encodeURIComponent(actorType)).replace("{actorId}", encodeURIComponent(actorId.trim()));
@@ -1818,7 +1809,7 @@ export async function readOperatorFinancialPolicyRegistry(context: DshOperatorRe
 
 export type OperatorPolicyChange = Readonly<{id:string;scopeId:string;version:number;actorId:string;createdAt:string;reason:string;field:string;before:string;after:string}>;
 export async function listOperatorPolicyHistory(key:string,scopeId:string,context:DshOperatorReadContext):Promise<Readonly<{items:readonly OperatorPolicyChange[]}>>{
-  if(!["service-cities","wallet-providers","delivery-fees","field-acquisition","partner-financial-terms","captain-minimum-balance"].includes(key)||scopeId.length>128)throw new Error("POLICY_HISTORY_INPUT_INVALID");
+  if(!["service-cities","wallet-providers","delivery-fees","partner-financial-terms","captain-minimum-balance"].includes(key)||scopeId.length>128)throw new Error("POLICY_HISTORY_INPUT_INVALID");
   const qs=new URLSearchParams({key,scopeId});
   return (await requestDshJson<Readonly<{items:readonly OperatorPolicyChange[]}>>("GET","/dsh/operator/policy-history?"+qs.toString(),undefined,{"X-Acting-Actor-ID":context.operatorActorId.trim()})).payload;
 }

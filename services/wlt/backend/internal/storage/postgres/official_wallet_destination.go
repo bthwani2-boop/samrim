@@ -162,7 +162,7 @@ func CreateOfficialWalletDestination(ctx context.Context, db *sql.DB, cipher *De
 	if !input.IdentityFacts.validFor(input.ActorType, input.ActorID) {
 		return OfficialWalletDestinationRecord{}, false, ErrReverificationRequired
 	}
-	if db == nil || cipher == nil || !validDestinationActor(input.ActorType) || boundedText(input.ActorID, 1, 128) == "" || boundedText(input.ProviderKey, 1, 64) == "" || boundedText(input.ChangeReason, 1, 512) == "" || boundedText(input.VerificationEvidenceReference, 1, 512) == "" || boundedText(input.ChangeEvidenceReference, 1, 512) == "" || boundedText(input.SubmittedBy, 1, 128) == "" || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
+	if db == nil || cipher == nil || input.ActorType == "field" || !validDestinationActor(input.ActorType) || boundedText(input.ActorID, 1, 128) == "" || boundedText(input.ProviderKey, 1, 64) == "" || boundedText(input.ChangeReason, 1, 512) == "" || boundedText(input.VerificationEvidenceReference, 1, 512) == "" || boundedText(input.ChangeEvidenceReference, 1, 512) == "" || boundedText(input.SubmittedBy, 1, 128) == "" || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
 		return OfficialWalletDestinationRecord{}, false, ErrDestinationInvalidInput
 	}
 	ciphertext, err := cipher.encrypt(input.IdentityFacts.PhoneE164)

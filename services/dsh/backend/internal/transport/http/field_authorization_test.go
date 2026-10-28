@@ -20,6 +20,8 @@ func TestRetiredFieldAndAcquisitionRoutesUnavailable(t *testing.T) {
 		{"GET", "/dsh/fields/me/acquisition-entitlements"},
 		{"GET", "/dsh/operator/fields/activity"},
 		{"GET", "/dsh/operator/fields/actor-1/acquisition-cases"},
+		{"GET", "/dsh/operator/fields/actor-1/financial-summary"},
+		{"GET", "/dsh/operator/field-finance-roster"},
 	} {
 		request := httptest.NewRequest(route.method, route.path, nil)
 		_, pattern := mux.Handler(request)
@@ -30,7 +32,6 @@ func TestRetiredFieldAndAcquisitionRoutesUnavailable(t *testing.T) {
 	for _, route := range []struct{ method, path string }{
 		{"GET", "/dsh/joining-cases/case-1"},
 		{"POST", "/dsh/operator/partners/stores/store-1/commercial-agreements"},
-		{"GET", "/dsh/operator/fields/actor-1/financial-summary"},
 	} {
 		request := httptest.NewRequest(route.method, route.path, nil)
 		_, pattern := mux.Handler(request)

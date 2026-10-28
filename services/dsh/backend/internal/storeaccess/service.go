@@ -346,7 +346,6 @@ func (s *Service) invitationActor(ctx context.Context, accessToken string) (stri
 		"client":  "app-client",
 		"partner": "app-partner",
 		"captain": "app-captain",
-		"field":   "app-field",
 	}
 	if actorID == "" || surfaceByRole[identity.Role] == "" || surfaceByRole[identity.Role] != identity.Surface {
 		return "", false, ErrInvitationActorSession

@@ -15,7 +15,6 @@ const pathModulePaths = [
   path.join(root, "services/dsh/contracts/openapi/paths/notifications.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/client-shares.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/captain.yaml"),
-  path.join(root, "services/dsh/contracts/openapi/paths/field.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/store-publication.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/store-availability.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/store-access.yaml"),

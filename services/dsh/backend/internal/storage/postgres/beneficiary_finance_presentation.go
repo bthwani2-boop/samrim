@@ -36,8 +36,6 @@ func ReadBeneficiaryFinanceDisplayNames(ctx context.Context, db *sql.DB, actorTy
 	switch actorType {
 	case "partner":
 		query = "SELECT partner_actor_id,COALESCE(business_name,'') FROM dsh.joining_cases WHERE partner_actor_id = ANY($1)"
-	case "field":
-		query = "SELECT actor_id,COALESCE(full_name_ar,'') FROM dsh.field_admissions WHERE actor_id = ANY($1)"
 	case "captain":
 		query = "SELECT actor_id,COALESCE(full_name_ar,'') FROM dsh.captain_admissions WHERE actor_id = ANY($1)"
 	default:

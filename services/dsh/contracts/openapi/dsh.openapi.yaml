@@ -61,7 +61,7 @@ paths:
         - name: key
           in: query
           required: true
-          schema: { type: string, enum: [service-cities, wallet-providers, delivery-fees, field-acquisition, partner-financial-terms, captain-minimum-balance] }
+          schema: { type: string, enum: [service-cities, wallet-providers, delivery-fees, partner-financial-terms, captain-minimum-balance] }
         - name: scopeId
           in: query
           schema: { type: string, maxLength: 128 }
@@ -854,8 +854,6 @@ paths:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1payout-requests"
   /dsh/operator/beneficiaries:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1beneficiaries"
-  /dsh/operator/field-finance-roster:
-    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1field-finance-roster"
   /dsh/operator/beneficiaries/{actorType}/{actorId}/financial-statement:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1beneficiaries~1{actorType}~1{actorId}~1financial-statement"
   /dsh/operator/financial-statements:
@@ -1016,9 +1014,6 @@ paths:
 
   /dsh/captains/{actorId}/reenrollment:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1{actorId}~1reenrollment"
-
-  /dsh/operator/fields/{fieldActorId}/financial-summary:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1fields~1{fieldActorId}~1financial-summary"
 
   /dsh/partners/me/stores/{storeId}/captain-memberships:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1partners~1me~1stores~1{storeId}~1captain-memberships"

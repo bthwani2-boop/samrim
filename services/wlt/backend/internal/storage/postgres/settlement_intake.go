@@ -72,7 +72,7 @@ func CreateSettlementIntake(ctx context.Context, db *sql.DB, input SettlementInt
 		}
 		input.AmountMinor = &sum
 	}
-	if db == nil || (input.ActorType != "field" && input.ActorType != "captain" && input.ActorType != "partner") ||
+	if db == nil || (input.ActorType != "captain" && input.ActorType != "partner") ||
 		boundedText(input.ActorID, 1, 128) == "" || boundedText(input.RequestedBy, 1, 128) == "" ||
 		(input.AmountMode != "FULL_AVAILABLE" && input.AmountMode != "SPECIFIED") ||
 		boundedText(input.IdempotencyKey, 8, 128) == "" || boundedText(input.CorrelationID, 8, 128) == "" ||

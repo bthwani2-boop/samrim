@@ -31,33 +31,8 @@ func NewFieldFinance(identity *identityintegration.Client, accessToken string, p
 }
 
 func (s *FieldFinanceServer) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /dsh/operator/fields/{fieldActorId}/financial-summary", s.readOperatorSummary)
 	mux.HandleFunc("GET /dsh/operator/policy-history", s.readPolicyHistory)
 	mux.HandleFunc("GET /dsh/operator/policy-registry", s.readOperatorPolicyRegistry)
-}
-
-func (s *FieldFinanceServer) readOperatorSummary(w http.ResponseWriter, r *http.Request) {
-	if !s.authorizeOperator(w, r) {
-		return
-	}
-	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if !s.requireOperator(w, r.Context(), acting) {
-		return
-	}
-	if !s.requirePermission(w, r.Context(), acting, "finance") {
-		return
-	}
-	fieldActorID := strings.TrimSpace(r.PathValue("fieldActorId"))
-	if fieldActorID == "" || len(fieldActorID) > 128 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "fieldActorId is required")
-		return
-	}
-	summary, err := s.payment.ReadFieldFinancialSummary(r.Context(), fieldActorID)
-	if err != nil {
-		writeWLTFinanceError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"summary": summary})
 }
 
 func (s *FieldFinanceServer) authorizeOperator(w http.ResponseWriter, r *http.Request) bool {
