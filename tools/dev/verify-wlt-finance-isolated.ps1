@@ -9,7 +9,10 @@ $name = 'bthwani-wlt-proof-isolated'
 $port = 15439
 $dbName = 'bthwani_wlt_finance_proof'
 $dbUser = 'finance_proof'
-$password = [Convert]::ToHexString([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(20))
+$passwordBytes = New-Object byte[] 20
+$random = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+try { $random.GetBytes($passwordBytes) } finally { $random.Dispose() }
+$password = ([BitConverter]::ToString($passwordBytes)).Replace('-', '')
 $databaseUrl = "postgres://$($dbUser):$($password)@127.0.0.1:$($port)/$($dbName)?sslmode=disable&connect_timeout=5"
 $existing = docker container ls --all --filter "name=^/$name$" --format "{{.Names}}"
 if($existing){throw 'Isolated finance test container already exists; refusing to replace it'}
