@@ -46,11 +46,11 @@ flowchart LR
     Operator --> BTH
 ~~~
 
-**Boundary:** The five personas are not five Products, five tenants or five independent business-data owners. External financial providers, notification transports and media providers are integration boundaries, not internal ledger or Order truth. Whether an external rail is currently integrated and usable must be established separately from executable evidence.
+**Boundary:** The human personas are not independent Products, tenants or business-data owners. Field acquisition remains an optional human channel managed through the Operator workspace, not a standalone deployable surface. External financial providers, notification transports and media providers are integration boundaries, not internal ledger or Order truth. Whether an external rail is currently integrated and usable must be established separately from executable evidence.
 
 ## 3. C2 — Containers (logical build/run decomposition)
 
-The inspected repository contains four mobile app hosts, one Operator web host, and three Go backend service owners. PostgreSQL/PostGIS and SeaweedFS appear in the local Compose configuration. The physical PostgreSQL instance is shared locally, but that does **not** grant cross-service permission to mutate another owner's facts.
+The current build exposes three mobile app hosts, one Operator web host, and three Go backend service owners. The field-acquisition activity, when used, is managed through Operator without a standalone mobile host. PostgreSQL/PostGIS and SeaweedFS appear in the local Compose configuration. The physical PostgreSQL instance is shared locally, but that does **not** grant cross-service permission to mutate another owner's facts.
 
 ~~~mermaid
 flowchart TB
@@ -58,7 +58,6 @@ flowchart TB
       ClientApp["Client · React Native / Expo"]
       PartnerApp["Partner · React Native / Expo"]
       CaptainApp["Captain · React Native / Expo"]
-      FieldApp["Field · React Native / Expo"]
       Control["Operator · Next.js Control Panel"]
     end
 
@@ -92,7 +91,7 @@ flowchart TB
 | Client | [apps/app-client](../apps/app-client/) |
 | Partner | [apps/app-partner](../apps/app-partner/) |
 | Captain | [apps/app-captain](../apps/app-captain/) |
-| Field | [apps/app-field](../apps/app-field/) |
+| Field acquisition (optional human channel; no standalone app) | DSH joining attribution and Operator workspace |
 | Operator | [apps/control-panel](../apps/control-panel/) |
 | Identity | [services/identity](../services/identity/) |
 | DSH | [services/dsh](../services/dsh/) |

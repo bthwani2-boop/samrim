@@ -26,7 +26,6 @@
     "client": "pnpm --dir apps/app-client dev",
     "partner": "pnpm --dir apps/app-partner dev",
     "captain": "pnpm --dir apps/app-captain dev",
-    "field": "pnpm --dir apps/app-field dev",
     "control": "pnpm --dir apps/control-panel dev",
     "scr": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/scr.ps1"
   },

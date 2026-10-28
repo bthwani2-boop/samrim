@@ -16,7 +16,6 @@ const expected = {
   "app-client": ["expo-web-browser", "expo-contacts", "expo-document-picker", "expo-store-review"],
   "app-partner": ["expo-contacts", "expo-document-picker", "expo-print", "expo-store-review", "expo-keep-awake"],
   "app-captain": ["expo-web-browser", "expo-document-picker", "expo-keep-awake"],
-  "app-field": ["expo-notifications", "expo-document-picker"],
 };
 
 for (const [app, additions] of Object.entries(expected)) {
@@ -30,7 +29,6 @@ for (const [app, additions] of Object.entries(expected)) {
   test(`${app} calendar is configured for iOS write-only`, () => {
     const config = defineSamrimExpoApp(app, { ...(app === "app-captain" ? { locationMode: "background", maps: true }
       : app === "app-client" ? { locationMode: "foreground", maps: true, web: true }
-      : app === "app-field" ? { locationMode: "foreground", maps: true, cameraMode: "barcode" }
       : { cameraMode: "barcode", web: true }) });
     const calendar = config.plugins.find((item) => Array.isArray(item) && item[0] === "expo-calendar");
     assert.ok(calendar);
@@ -39,11 +37,6 @@ for (const [app, additions] of Object.entries(expected)) {
       ["app-client", "app-partner"].includes(app));
     const contacts = config.plugins.some((item) => Array.isArray(item) && item[0] === "expo-contacts");
     assert.equal(contacts, ["app-client", "app-partner"].includes(app));
-    if (app === "app-field") {
-      const notifications = config.plugins.find((item) => Array.isArray(item) && item[0] === "expo-notifications");
-      assert.equal(notifications[1].defaultChannel, "field-work-v1");
-      assert.equal(notifications[1].sounds, undefined);
-    }
     assert.equal(config.platforms.includes("ios"), true);
     assert.equal(config.platforms.includes("android"), true);
   });

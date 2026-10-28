@@ -45,7 +45,7 @@ A delivery recipient may be a person other than the purchasing Client. A recipie
 
 A Surface is an actor-facing deployable presentation/composition host for admitted Product work.
 
-The five actor-facing surfaces are Client, Partner, Captain, Field and Operator. A Surface may own its shell, navigation, composition, transient presentation state and platform adapters. It never becomes the canonical owner of the business facts it renders or mutates.
+The four actor-facing surfaces are Client, Partner, Captain and Operator. Field acquisition is an optional human outreach channel, not a standalone deployable surface. Operator-assisted and Partner self-service first-Store intake both use the same DSH-owned joining lifecycle. Existing Field attribution and financial rights remain governed by DSH and WLT; retiring the mobile host does not erase the historical role, accounts, sessions or ledger. A Surface may own its shell, navigation, composition, transient presentation state and platform adapters. It never becomes the canonical owner of the business facts it renders or mutates.
 
 Brand unity does not imply identical information architecture or shell across roles.
 

@@ -17,7 +17,6 @@ const surfaceRoots=new Map([
   ["app-client",path.join(appsRoot,"app-client")],
   ["app-partner",path.join(appsRoot,"app-partner")],
   ["app-captain",path.join(appsRoot,"app-captain")],
-  ["app-field",path.join(appsRoot,"app-field")],
   ["control-panel",path.join(appsRoot,"control-panel")],
 ]);
 const requestedSurface=(process.argv[2]??"").trim();
@@ -50,7 +49,7 @@ function need(name){
 let cli;
 let args;
 
-if(/^app-(client|partner|captain|field)$/.test(surface)){
+if(/^app-(client|partner|captain)$/.test(surface)){
   const token=surface.replace(/[^A-Za-z0-9]/g,"_").toUpperCase();
   const port=need(`SAMRIM_${token}_METRO_PORT`);
   process.env.EXPO_NO_QR_CODE="1";

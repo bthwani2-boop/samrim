@@ -24,11 +24,9 @@ test("shared icon button exposes the same disabled state to touch, assistive tec
   assert.match(source, /iconButtonDisabled: \{ opacity: opacity\.disabled \}/);
 });
 
-test("busy customer favorites and field notification refresh use the shared disabled control", () => {
+test("busy customer favorites use the shared disabled control", () => {
   const customer = readFileSync(new URL("../../../../apps/app-client/src/features/store-discovery/store-detail.tsx", import.meta.url), "utf8");
-  const field = readFileSync(new URL("../../../../apps/app-field/src/features/notifications/notifications-inbox.tsx", import.meta.url), "utf8");
   assert.match(customer, /<BthwaniIconButton disabled=\{Boolean\(favoriteOfferBusyID\)\}/);
-  assert.match(field, /<BthwaniIconButton disabled=\{Boolean\(busy\) \|\| loading \|\| loadingMore\}/);
 });
 
 test("radio choices announce checked state instead of generic selection across mobile actors", () => {
@@ -44,7 +42,4 @@ test("radio choices announce checked state instead of generic selection across m
     assert.equal(states.length, expectedCount, `${path}: expected radio state coverage`);
     assert.ok(states.every(([, state]) => state === "checked"), `${path}: radio controls must expose checked`);
   }
-  const field = readFileSync(new URL("../../../../apps/app-field/src/features/field-operations/field-new-case.tsx", import.meta.url), "utf8");
-  assert.match(field, /<BthwaniChip key=\{provider\.key\} accessibilityRole="radio" disabled=\{formLocked\}/);
-  assert.match(field, /selected=\{input\.walletProviderKey === provider\.key\}/);
 });

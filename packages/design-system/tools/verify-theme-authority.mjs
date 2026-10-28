@@ -203,7 +203,7 @@ if (controlPanelPage.includes("visualTokens") || controlPanelPage.includes("styl
 }
 
 // 6. Check Mobile apps for dynamic adaptive StatusBar
-const mobileApps = ["app-client", "app-partner", "app-captain", "app-field"];
+const mobileApps = ["app-client", "app-partner", "app-captain"];
 for (const app of mobileApps) {
   const layout = read(`apps/${app}/app/_layout.tsx`);
   if (/style=["'](?:dark|light)["']/.test(layout)) {

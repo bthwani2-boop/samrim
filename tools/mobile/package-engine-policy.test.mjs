@@ -30,7 +30,6 @@ const extras = {
   "app-client": {},
   "app-partner": { ...partnerForms },
   "app-captain": {},
-  "app-field": {},
   "control-panel": {},
 };
 for (const [app, other] of Object.entries(extras)) {
@@ -73,7 +72,7 @@ for (const [app, other] of Object.entries(extras)) {
   });
 }
 test("unused Reanimated Carousel pilot is not bundled in any Expo app", () => {
-  for (const app of ["app-client", "app-partner", "app-captain", "app-field"]) {
+  for (const app of ["app-client", "app-partner", "app-captain"]) {
     const manifest = JSON.parse(fs.readFileSync(path.join(root, "apps", app, "package.json"), "utf8"));
     assert.equal(manifest.dependencies["react-native-reanimated-carousel"], undefined, app);
   }

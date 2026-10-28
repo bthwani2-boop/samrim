@@ -14,7 +14,6 @@ const PERMISSION_TEXT = {
 const MAP_KEY_NAMES = {
   "app-client": { android: "GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT", ios: "GOOGLE_MAPS_IOS_API_KEY" },
   "app-captain": { android: "GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN", ios: "GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN" },
-  "app-field": { android: "GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD", ios: "GOOGLE_MAPS_IOS_API_KEY" },
   "app-partner": { android: "GOOGLE_MAPS_ANDROID_API_KEY_APP_PARTNER", ios: "GOOGLE_MAPS_IOS_API_KEY" },
 };
 
@@ -113,18 +112,17 @@ function buildPlugins(appKey, { cameraMode, locationMode }) {
   if (cameraMode === "barcode") {
     plugins.push(["expo-camera", {
       cameraPermission: "نحتاج الوصول إلى الكاميرا لمسح باركود المنتجات أو التقاط صورة أو فيديو عند اختيارك.",
-      // The field barcode scanner has no audio use; partner voice messages use expo-audio.
-      microphonePermission: appKey === "app-field" ? false : undefined,
+      microphonePermission: undefined,
       recordAudioAndroid: false,
       barcodeScannerEnabled: true,
     }]);
   }
 
-  if (["app-client", "app-partner", "app-captain", "app-field"].includes(appKey)) {
+  if (["app-client", "app-partner", "app-captain"].includes(appKey)) {
     plugins.push(["expo-image-picker", {
       photosPermission: "نحتاج الوصول إلى الصور التي تختارها لمنتجاتك أو مرفقات طلباتك.",
       cameraPermission: "نحتاج الوصول إلى الكاميرا فقط عندما تختار التقاط صورة أو فيديو.",
-      microphonePermission: appKey === "app-field" ? false : "نحتاج الوصول إلى الميكروفون فقط عند تسجيل رسالة صوتية أو فيديو.",
+      microphonePermission: "نحتاج الوصول إلى الميكروفون فقط عند تسجيل رسالة صوتية أو فيديو.",
     }]);
   }
 
@@ -142,9 +140,6 @@ function buildPlugins(appKey, { cameraMode, locationMode }) {
       defaultChannel: "order-classic-v1",
       sounds: ["./assets/sounds/order_classic.wav", "./assets/sounds/order_soft.wav", "./assets/sounds/order_urgent.wav"],
     }]);
-  } else if (appKey === "app-field") {
-    // Field work notifications do not need the order alert sounds or microphone.
-    plugins.push(["expo-notifications", { defaultChannel: "field-work-v1" }]);
   }
   // Calendar is add-only on iOS: never request to read the user's schedule.
   plugins.push(["expo-calendar", {
