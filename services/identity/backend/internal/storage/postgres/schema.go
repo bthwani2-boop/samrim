@@ -8,10 +8,11 @@ import (
 )
 
 type schemaConstraint struct {
-	table      string
-	name       string
-	definition string
-	critical   bool
+	table              string
+	name               string
+	definition         string
+	restoredDefinition string
+	critical           bool
 }
 
 // identitySchemaConstraints is a release/readiness guard, not a migration
@@ -92,7 +93,7 @@ var identitySchemaConstraints = []schemaConstraint{
 	{table: "identity_actor_legal_name_versions", name: "identity_actor_legal_name_versions_submitted_by_actor_id_fkey", definition: "FOREIGN KEY (submitted_by_actor_id) REFERENCES identity_actors(id) ON DELETE RESTRICT", critical: true},
 	{table: "identity_actor_legal_name_versions", name: "identity_actor_legal_name_versions_verified_by_actor_id_fkey", definition: "FOREIGN KEY (verified_by_actor_id) REFERENCES identity_actors(id) ON DELETE RESTRICT", critical: true},
 	{table: "identity_actor_legal_name_versions", name: "identity_actor_legal_name_version_chk", definition: "CHECK ((version > 0))", critical: true},
-	{table: "identity_actor_legal_name_versions", name: "identity_actor_legal_name_parts_chk", definition: "CHECK ((((length(btrim(given_name)) >= 1) AND (length(btrim(given_name)) <= 80)) AND ((length(btrim(second_name)) >= 1) AND (length(btrim(second_name)) <= 80)) AND ((length(btrim(third_name)) >= 1) AND (length(btrim(third_name)) <= 80)) AND ((length(btrim(family_name)) >= 1) AND (length(btrim(family_name)) <= 80))))", critical: true},
+	{table: "identity_actor_legal_name_versions", name: "identity_actor_legal_name_parts_chk", definition: "CHECK ((((length(btrim(given_name)) >= 1) AND (length(btrim(given_name)) <= 80)) AND ((length(btrim(second_name)) >= 1) AND (length(btrim(second_name)) <= 80)) AND ((length(btrim(third_name)) >= 1) AND (length(btrim(third_name)) <= 80)) AND ((length(btrim(family_name)) >= 1) AND (length(btrim(family_name)) <= 80))))", restoredDefinition: "CHECK (((length(btrim(given_name)) >= 1) AND (length(btrim(given_name)) <= 80) AND ((length(btrim(second_name)) >= 1) AND (length(btrim(second_name)) <= 80)) AND ((length(btrim(third_name)) >= 1) AND (length(btrim(third_name)) <= 80)) AND ((length(btrim(family_name)) >= 1) AND (length(btrim(family_name)) <= 80))))", critical: true},
 	{table: "identity_actor_legal_name_versions", name: "identity_actor_legal_name_status_chk", definition: "CHECK ((status = ANY (ARRAY['PENDING_VERIFICATION'::text, 'VERIFIED'::text, 'REJECTED'::text])))", critical: true},
 	{table: "identity_actor_legal_name_versions", name: "identity_actor_legal_name_source_chk", definition: "CHECK ((source = 'GOVERNED_IDENTITY_DOCUMENT_REVIEW'::text))", critical: true},
 	{table: "identity_actor_legal_name_versions", name: "identity_actor_legal_name_evidence_chk", definition: "CHECK (((length(btrim(evidence_reference)) >= 1) AND (length(btrim(evidence_reference)) <= 512)))", critical: true},
@@ -173,7 +174,7 @@ ORDER BY c.relname, con.conname`)
 			continue
 		}
 		found[key] = true
-		if normalizeConstraintDefinition(definition) != normalizeConstraintDefinition(constraint.definition) {
+		if !matchesExpectedConstraintDefinition(definition, constraint) {
 			return fmt.Errorf("identity schema constraint drift at %s: got %q want %q", key, definition, constraint.definition)
 		}
 	}
@@ -187,6 +188,15 @@ ORDER BY c.relname, con.conname`)
 		return fmt.Errorf("required identity schema constraint missing: %s/%s", constraint.table, constraint.name)
 	}
 	return nil
+}
+
+// PostgreSQL 18 can reserialize the first BETWEEN-expanded AND pair after
+// pg_dump/pg_restore. Permit only the independently observed exact restored
+// rendering; changing any predicate or bound still fails closed.
+func matchesExpectedConstraintDefinition(actual string, constraint schemaConstraint) bool {
+	normalized := normalizeConstraintDefinition(actual)
+	return normalized == normalizeConstraintDefinition(constraint.definition) ||
+		(constraint.restoredDefinition != "" && normalized == normalizeConstraintDefinition(constraint.restoredDefinition))
 }
 
 func normalizeConstraintDefinition(value string) string {
