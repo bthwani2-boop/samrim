@@ -4,6 +4,15 @@ import test from "node:test";
 
 const source = readFileSync(new URL("./primitives.tsx", import.meta.url), "utf8");
 const iconButton = source.split("export function BthwaniIconButton(")[1]?.split("export function BthwaniChip(")[0];
+const button = source.split("export function BthwaniButton(")[1]?.split("export function BthwaniNavigationRow(")[0];
+
+test("busy shared buttons retain their accessible action name when the visible text becomes a spinner", () => {
+  assert.ok(button, "BthwaniButton must remain available to all mobile actors");
+  assert.match(button, /accessibilityLabel=\{props\.accessibilityLabel \?\? label\}/);
+  assert.match(button, /accessibilityState=\{\{ \.\.\.props\.accessibilityState, busy, disabled: blocked \}\}/);
+  assert.match(button, /disabled=\{blocked\}/);
+  assert.match(button, /busy \? <ActivityIndicator/);
+});
 
 test("shared icon button exposes the same disabled state to touch, assistive technology and styling", () => {
   assert.ok(iconButton, "BthwaniIconButton must remain available to mobile consumers");

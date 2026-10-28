@@ -49,6 +49,7 @@ export function BthwaniButton({ label, variant = "primary", busy = false, disabl
   return (
     <Pressable
       {...props}
+      accessibilityLabel={props.accessibilityLabel ?? label}
       accessibilityRole={props.accessibilityRole ?? "button"}
       accessibilityState={{ ...props.accessibilityState, busy, disabled: blocked }}
       disabled={blocked}
