@@ -146,7 +146,7 @@ export function BthwaniChip({ label, selected = false, icon, style, ...props }: 
     iconColor = theme.interactiveText;
   }
   return (
-    <Pressable {...props} accessibilityRole={props.accessibilityRole ?? "button"} accessibilityState={{ ...props.accessibilityState, disabled, selected }} disabled={disabled} style={(state) => [styles.chip, selected && styles.chipSelected, disabled && styles.chipDisabled, state.pressed && !disabled && styles.buttonPressed, resolvePressableStyle(style, state)]}>
+    <Pressable {...props} accessibilityRole={props.accessibilityRole ?? "button"} accessibilityState={{ ...props.accessibilityState, disabled, ...(props.accessibilityRole === "radio" ? { checked: selected } : { selected }) }} disabled={disabled} style={(state) => [styles.chip, selected && styles.chipSelected, disabled && styles.chipDisabled, state.pressed && !disabled && styles.buttonPressed, resolvePressableStyle(style, state)]}>
       {icon ? <BthwaniIcon name={icon} color={iconColor} size={sizing.iconSm} /> : null}
       <Text style={[styles.chipText, selected && styles.chipTextSelected, disabled && styles.chipTextDisabled]}>{label}</Text>
     </Pressable>

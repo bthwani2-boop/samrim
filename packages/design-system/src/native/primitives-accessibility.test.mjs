@@ -30,3 +30,21 @@ test("busy customer favorites and field notification refresh use the shared disa
   assert.match(customer, /<BthwaniIconButton disabled=\{Boolean\(favoriteOfferBusyID\)\}/);
   assert.match(field, /<BthwaniIconButton disabled=\{Boolean\(busy\) \|\| loading \|\| loadingMore\}/);
 });
+
+test("radio choices announce checked state instead of generic selection across mobile actors", () => {
+  assert.match(source, /props\.accessibilityRole === "radio" \? \{ checked: selected \} : \{ selected \}/);
+  const radioSurfaces = [
+    ["../../../../apps/app-client/src/features/wallet/cash-in-panel.tsx", 3],
+    ["../../../../apps/app-captain/src/features/wallet/cash-in-panel.tsx", 2],
+    ["../../../../apps/app-partner/src/features/store-offer/partner-store-reels.tsx", 2],
+  ];
+  for (const [path, expectedCount] of radioSurfaces) {
+    const content = readFileSync(new URL(path, import.meta.url), "utf8");
+    const states = [...content.matchAll(/accessibilityRole="radio"[\s\S]{0,180}?accessibilityState=\{\{\s*(checked|selected):/g)];
+    assert.equal(states.length, expectedCount, `${path}: expected radio state coverage`);
+    assert.ok(states.every(([, state]) => state === "checked"), `${path}: radio controls must expose checked`);
+  }
+  const field = readFileSync(new URL("../../../../apps/app-field/src/features/field-operations/field-new-case.tsx", import.meta.url), "utf8");
+  assert.match(field, /<BthwaniChip key=\{provider\.key\} accessibilityRole="radio" disabled=\{formLocked\}/);
+  assert.match(field, /selected=\{input\.walletProviderKey === provider\.key\}/);
+});

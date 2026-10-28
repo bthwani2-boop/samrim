@@ -168,7 +168,7 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
       <Text style={styles.note}>إلى أين ينتقل العميل من الفيديو؟</Text>
       <View style={styles.kindRow}>
         {(["STORE", "PRODUCT", "PROMOTION"] as const).map(kind =>
-          <Pressable key={kind} accessibilityRole="radio" accessibilityState={{ selected: targetType === kind }} onPress={() => selectKind(kind)} style={[styles.kind, targetType === kind && styles.kindSelected]}>
+          <Pressable key={kind} accessibilityRole="radio" accessibilityState={{ checked: targetType === kind }} onPress={() => selectKind(kind)} style={[styles.kind, targetType === kind && styles.kindSelected]}>
             <Text style={styles.kindText}>{targetLabels[kind]}</Text>
           </Pressable>
         )}
@@ -176,7 +176,7 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
       {targetType !== "STORE" ? <>
         <TextInput accessibilityLabel="البحث عن وجهة الفيديو" placeholder={targetType === "PRODUCT" ? "ابحث عن منتج متجرك" : "ابحث عن عرض متجرك"} value={targetSearch} onChangeText={setTargetSearch} style={styles.input} />
         {visibleTargets.map(target =>
-          <Pressable key={target.targetType + target.targetId} accessibilityRole="radio" accessibilityState={{ selected: targetId === target.targetId }} style={[styles.target, targetId === target.targetId && styles.kindSelected]} onPress={() => { setTargetId(target.targetId); attempt.current = null; }}>
+          <Pressable key={target.targetType + target.targetId} accessibilityRole="radio" accessibilityState={{ checked: targetId === target.targetId }} style={[styles.target, targetId === target.targetId && styles.kindSelected]} onPress={() => { setTargetId(target.targetId); attempt.current = null; }}>
             <Text style={styles.title} numberOfLines={1}>{target.label}</Text>
           </Pressable>
         )}
