@@ -468,10 +468,11 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
       let token: string;
       let actorID: string;
       try {
-        token = await getUsableIdentityAccessToken();
         const identity = currentIdentityState();
         if (identity.kind !== "authenticated" || !identity.identity.subject.trim()) throw new Error("CLIENT_SESSION_REQUIRED");
         actorID = identity.identity.subject.trim();
+        token = await getUsableIdentityAccessToken();
+        if (!checkoutAttemptBelongsToCurrentActor(actorID)) throw new Error("CLIENT_SESSION_CHANGED");
       } catch {
         setError("تعذر التحقق من جلسة العميل؛ لم يُرسل الطلب.");
         return;

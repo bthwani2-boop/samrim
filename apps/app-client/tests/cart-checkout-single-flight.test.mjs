@@ -220,6 +220,23 @@ test("actor switch during pending-attempt persistence never submits the previous
   assert.ok(counts.errors.length > 0);
   void setActor;
 });
+test("actor switch while acquiring checkout identity cannot rebind the prior actor quote", async () => {
+  let switchActor;
+  const changed = scenario({ accessToken: async () => {
+    switchActor("client-2");
+    return "client-2-token";
+  } });
+  switchActor = changed.setActor;
+  await changed.checkout();
+  assert.equal(changed.counts.persist, 0, "do not persist the prior actor cart and accepted quote under the new actor");
+  assert.equal(changed.counts.submit, 0, "do not submit old screen facts with the new actor token");
+  assert.equal(changed.counts.pending.length, 0);
+
+  const unchanged = scenario();
+  await unchanged.checkout();
+  assert.equal(unchanged.counts.persist, 1, "the same actor can still confirm the accepted quote");
+  assert.equal(unchanged.counts.submit, 1);
+});
 test("rapid taps before session/storage awaits create just one checkout identity", async () => {
   const { checkout, counts } = scenario();
   await Promise.all([checkout(), checkout(), checkout()]);
