@@ -10,8 +10,14 @@ import (
 	"unicode/utf8"
 )
 
-// AttributeJoiningCaseAcquisition records immutable acquisition provenance on
-// an Operator-owned case before Store approval; it does not change its origin.
+// CanAttributeJoiningCaseAcquisition is shared by the service preflight and
+// locked transaction to avoid authorizing a different origin or case state.
+func CanAttributeJoiningCaseAcquisition(c JoiningCaseRecord) bool {
+	return (c.Origin == "control_panel" || c.Origin == "self_service") && c.OriginatingFieldActorID == "" && c.StoreID == "" && (c.State == "draft" || c.State == "submitted" || c.State == "needs_correction")
+}
+
+// AttributeJoiningCaseAcquisition records immutable acquisition provenance
+// before Store approval; it does not change the original intake owner.
 func AttributeJoiningCaseAcquisition(ctx context.Context, db *sql.DB, caseID, fieldActorID, operatorActorID, reason string, expectedVersion int, idempotencyKey, correlationID string) (JoiningCaseResult, error) {
 	caseID, fieldActorID, operatorActorID, reason = strings.TrimSpace(caseID), strings.TrimSpace(fieldActorID), strings.TrimSpace(operatorActorID), strings.TrimSpace(reason)
 	if db == nil || caseID == "" || len(caseID) > 128 || fieldActorID == "" || len(fieldActorID) > 128 || operatorActorID == "" || expectedVersion < 1 || len(idempotencyKey) < 8 || len(idempotencyKey) > 128 || len(correlationID) < 8 || len(correlationID) > 128 || utf8.RuneCountInString(reason) < 8 || utf8.RuneCountInString(reason) > 400 {
@@ -55,7 +61,7 @@ func AttributeJoiningCaseAcquisition(ctx context.Context, db *sql.DB, caseID, fi
 	if c.Version != expectedVersion {
 		return JoiningCaseResult{}, ErrJoiningCaseVersion
 	}
-	if c.Origin != "control_panel" || c.OriginatingFieldActorID != "" || c.StoreID != "" || (c.State != "draft" && c.State != "submitted" && c.State != "needs_correction") {
+	if !CanAttributeJoiningCaseAcquisition(c) {
 		return JoiningCaseResult{}, ErrJoiningCaseState
 	}
 	var updatedID string

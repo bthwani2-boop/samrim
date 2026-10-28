@@ -8,7 +8,7 @@ import { partnerErrorMessage } from "../partners/partner-error-message";
 type EligibleField=Readonly<{actorId:string;name:string;phone:string}>;
 type FieldPageItem=Readonly<{kind?:string;account?:{actorId?:string;phoneE164?:string;enabled?:boolean;securityEnabled?:boolean;activatedAt?:string|null;admission?:{state?:string;fullNameAr?:string;allServiceCities?:boolean;serviceCityIds?:string[]}|null}}>;
 
-export function PartnerCaseFieldAttribution({caseId,serviceCityId,version,onUpdated}:Readonly<{caseId:string;serviceCityId:string;version:number;onUpdated:()=>void}>){
+export function PartnerCaseFieldAttribution({caseId,serviceCityId,version,origin,onUpdated}:Readonly<{caseId:string;serviceCityId:string;version:number;origin:"control_panel"|"self_service";onUpdated:()=>void}>){
   const {state}=useSession();
   const operatorId=state.kind==="authenticated"?state.identity.subject:"";
   const [query,setQuery]=useState("");
@@ -50,7 +50,7 @@ export function PartnerCaseFieldAttribution({caseId,serviceCityId,version,onUpda
       });
       if(!response.ok)throw new Error(await partnerErrorMessage(response));
       const result=await response.json() as {case?:{id?:string;origin?:string;originatingFieldActorId?:string;version?:number}};
-      if(result.case?.id!==caseId || result.case.origin!=="control_panel" || result.case.originatingFieldActorId!==selected || result.case.version!==version+1){
+      if(result.case?.id!==caseId || result.case.origin!==origin || result.case.originatingFieldActorId!==selected || result.case.version!==version+1){
         throw new Error("يجب إعادة قراءة الملف للتحقق من إسناد الميداني.");
       }
       setNotice("حُفظ إسناد الاستقطاب في ملف الشريك مع بقاء مسؤولية التسجيل لدى قسم الشركاء.");

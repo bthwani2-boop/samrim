@@ -8,7 +8,8 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
 
-// Operator-owned intake is attributed to a verified Field representative
+// A Partner joining case created through Operator or self-service intake may be
+// attributed to a verified Field representative without changing its owner.
 // without giving that Field representative ownership of the joining case.
 func (s *Service) AttributeFieldAcquisitionForOperator(ctx context.Context, caseID, fieldActorID, reason string, expectedVersion int, idempotencyKey, correlationID, operatorActorID string) (postgres.JoiningCaseResult, error) {
 	if err := s.requireOperator(ctx, operatorActorID); err != nil {
@@ -22,7 +23,7 @@ func (s *Service) AttributeFieldAcquisitionForOperator(ctx context.Context, case
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
-	if current.Case.Origin != "control_panel" || current.Case.StoreID != "" || current.Case.OriginatingFieldActorID != "" || current.Case.FirstStoreServiceCityID == "" {
+	if !postgres.CanAttributeJoiningCaseAcquisition(current.Case) || current.Case.FirstStoreServiceCityID == "" {
 		return postgres.JoiningCaseResult{}, postgres.ErrJoiningCaseState
 	}
 	role, err := s.identity.ReadActorRole(ctx, fieldActorID, "field")
