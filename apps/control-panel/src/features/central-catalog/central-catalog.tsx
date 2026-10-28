@@ -732,16 +732,18 @@ export function CentralCatalog() {
                   <option value="updated_desc">الأحدث أولًا</option><option value="updated_asc">الأقدم أولًا</option>
                 </select></label>
               </RegistryColumnHeader>
+              <th scope="col">ملف المنتج</th>
             </tr></thead>
             <tbody>
-              {loading && products.length === 0 ? <tr><td colSpan={7} className="catalog-table-state">جارٍ قراءة السجل…</td></tr> : null}
-              {!loading && !registryError && products.length === 0 ? <tr><td colSpan={7} className="catalog-table-state">لا توجد منتجات مطابقة للفلاتر.</td></tr> : null}
+              {loading && products.length === 0 ? <tr><td colSpan={8} className="catalog-table-state">جارٍ قراءة السجل…</td></tr> : null}
+              {!loading && !registryError && products.length === 0 ? <tr><td colSpan={8} className="catalog-table-state">لا توجد منتجات مطابقة للفلاتر.</td></tr> : null}
               {products.map((product) => <tr key={product.id} className={selected?.id === product.id ? "is-open" : ""}>
                 <td><div className="catalog-registry-product">{product.primaryImageUri ? <img className="catalog-registry-product-image" src={product.primaryImageUri} alt="" loading="lazy" /> : <span className="catalog-registry-product-placeholder" aria-hidden="true">{product.canonicalName.trim().slice(0, 1) || "•"}</span>}<span><button type="button" className="catalog-product-name-action" disabled={detailLoading} onClick={() => void selectProduct(product.id)} aria-label={"إدارة منتج " + product.canonicalName}>{product.canonicalName}</button>{product.brand ? <small>{product.brand}</small> : null}</span></div></td>
                 <td>{sharedVerticals.find((vertical) => vertical.id === product.verticalId)?.nameAr ?? "غير محدد"}</td>
                 <td><span className="catalog-row-categories" title={product.categoryNamesAr?.join("، ") || "لم تصنف الفئات بعد"}>{product.categoryNamesAr?.length ? product.categoryNamesAr.slice(0, 2).join("، ") : product.categoryIds.length ? "أسماء الفئات غير متاحة" : "غير مصنف"}{(product.categoryNamesAr?.length ?? 0) > 2 ? ` +${product.categoryNamesAr!.length - 2}` : ""}</span></td><td>{product.variantCount.toLocaleString("ar-YE")}</td><td>{product.storeCount.toLocaleString("ar-YE")}</td>
                 <td className="indicator-column"><ActivityIndicator active={product.active} inactiveLabel="معطل" /></td>
                 <td><time dateTime={product.updatedAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium" }).format(new Date(product.updatedAt))}</time></td>
+                 <td><button type="button" className="button button-secondary catalog-row-action" data-adaptive-record-trigger={`catalog-product-${product.id}`} disabled={detailLoading} aria-expanded={detailProductId === product.id && editorOpen} aria-label={`فتح ملف المنتج ${product.canonicalName}`} onClick={() => void selectProduct(product.id)}>ملف المنتج</button></td>
               </tr>)}
             </tbody>
           </table>
@@ -758,7 +760,7 @@ export function CentralCatalog() {
                 <span>{product.categoryNamesAr?.slice(0, 2).join("، ") || "غير مصنف"}</span>
                 <span>{product.variantCount.toLocaleString("ar-YE")} نسخ · {product.storeCount.toLocaleString("ar-YE")} متاجر</span>
               </div>
-              <button type="button" className="button button-secondary catalog-mobile-open" disabled={detailLoading} onClick={() => void selectProduct(product.id)} aria-label={`إدارة منتج ${product.canonicalName}`}>إدارة المنتج</button>
+              <button type="button" className="button button-secondary catalog-mobile-open" data-adaptive-record-trigger={`catalog-product-${product.id}`} disabled={detailLoading} aria-expanded={detailProductId === product.id && editorOpen} onClick={() => void selectProduct(product.id)} aria-label={`فتح ملف المنتج ${product.canonicalName}`}>ملف المنتج</button>
             </li>)}
             {loading && products.length === 0 ? <li role="status" className="collection-state">جارٍ قراءة المنتجات…</li> : null}
             {!loading && !registryError && products.length === 0 ? <li className="collection-state">لا توجد منتجات مطابقة.</li> : null}
