@@ -406,6 +406,21 @@ export async function readJoiningCase(caseId: string, context: DshOperatorReadCo
   return (await requestDshJson<JoiningCaseResponse>(dshOperationPaths.readJoiningCase.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
+export async function attributeJoiningCaseAcquisition(caseId: string, fieldActorId: string, reason: string, expectedVersion: number, context: JoiningCaseMutationContext): Promise<Readonly<{status: number;payload: JoiningCaseResponse}>> {
+  const id=caseId.trim();
+  const field=fieldActorId.trim();
+  const why=reason.trim();
+  if (!id || id.length>128 || !field || field.length>128 || !Number.isSafeInteger(expectedVersion) || expectedVersion<1 || Array.from(why).length<8 || Array.from(why).length>400) throw new Error("DSH_JOINING_ATTRIBUTION_INVALID");
+  validateAttributedMutationContext(context);
+  const operation=dshOperationPaths.attributeJoiningCaseAcquisition;
+  return requestDshJson<JoiningCaseResponse>(operation.method,operation.path.replace("{caseId}",encodeURIComponent(id)),{fieldActorId:field,reason:why},{
+    "X-Acting-Actor-ID":context.operatorActorId.trim(),
+    "X-Correlation-ID":context.correlationId.trim(),
+    "Idempotency-Key":context.idempotencyKey.trim(),
+    "X-Expected-Version":String(expectedVersion),
+  });
+}
+
 export async function readJoiningCaseForPartnerActor(actorId: string, context: DshOperatorReadContext): Promise<JoiningCaseResponse> {
   const normalized = actorId.trim();
   if (!normalized || normalized.length > 128 || !context.operatorActorId.trim()) throw new Error("DSH_PARTNER_JOINING_CASE_READ_INPUT_INVALID");

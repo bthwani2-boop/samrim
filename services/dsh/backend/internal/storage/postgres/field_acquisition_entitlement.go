@@ -26,7 +26,7 @@ func enqueueFieldAcquisitionRewardPublicationTx(ctx context.Context, tx *sql.Tx,
 	var fieldActorID, verticalID string
 	var joiningCaseID, partnerActorID string
 	var commercialStoreTypeID string
-	err := tx.QueryRowContext(ctx, `SELECT jc.id,jc.originating_field_actor_id,jc.partner_actor_id,s.primary_vertical_id,s.commercial_store_type_id FROM dsh.stores s JOIN dsh.joining_cases jc ON jc.store_id=s.id WHERE s.id=$1 AND jc.origin='field' AND jc.originating_field_actor_id IS NOT NULL AND jc.partner_actor_id IS NOT NULL`, strings.TrimSpace(storeID)).Scan(&joiningCaseID, &fieldActorID, &partnerActorID, &verticalID, &commercialStoreTypeID)
+	err := tx.QueryRowContext(ctx, `SELECT jc.id,jc.originating_field_actor_id,jc.partner_actor_id,s.primary_vertical_id,s.commercial_store_type_id FROM dsh.stores s JOIN dsh.joining_cases jc ON jc.store_id=s.id WHERE s.id=$1 AND jc.originating_field_actor_id IS NOT NULL AND jc.partner_actor_id IS NOT NULL`, strings.TrimSpace(storeID)).Scan(&joiningCaseID, &fieldActorID, &partnerActorID, &verticalID, &commercialStoreTypeID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}

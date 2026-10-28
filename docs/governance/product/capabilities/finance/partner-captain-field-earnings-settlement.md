@@ -40,6 +40,7 @@ WLT owns earnings ledger, beneficiary eligibility/holds, payout intent, official
 - recipient changes affect only future payout intents that have not been committed to an immutable snapshot; approved, executing, transferred and reconciled payouts retain their original beneficiary, destination and per-Store allocations;
 - aggregated owner readback preserves per-Store attribution; a payout spanning different recipients or destinations is partitioned into separate canonical groups/transfers, never one transfer to multiple recipients;
 - Field earning policy defines the qualifying event explicitly; attribution/publication alone does not silently become the permanent reward law;
+- an eligible acquisition referral is an auditable DSH-owned fact separate from whether Field or the Partners workspace created the joining case. Where the approved earning policy qualifies customer-visible publication, DSH emits that fact once with one immutable Field attribution. WLT prevents duplicate economic entitlements and retains all prior valid payouts and evidence. Re-attribution after Store admission or publication is prohibited;
 - Store-affiliated Partner Captain compensation and cash custody remain outside this capability and WLT unless a separately governed integration is explicitly admitted;
 - no surface edits ledger balances directly.
 

@@ -10,6 +10,7 @@ import { stablePartnerMutationHeaders } from "../partners/partner-request";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { StoreLogo } from "../stores/store-logo";
 import { StoreZeroCommissionProposal } from "./store-zero-commission-proposal";
+import { PartnerCaseFieldAttribution } from "./partner-case-field-attribution";
 
 const fulfillmentModeOptions: ReadonlyArray<Readonly<{ value: StoreFulfillmentMode; label: string; description: string }>> = [
   { value: "BTHWANI_CAPTAIN", label: "توصيل بثواني", description: "المنصة تتولى إسناد التوصيل وإدارته." },
@@ -337,6 +338,7 @@ export function JoiningCaseDetail({ caseId, embedded = false }: { caseId: string
           </details>
           <section id="joining-case-actions" className="partner-case-actions" aria-labelledby="joining-case-actions-heading">
             <h3 id="joining-case-actions-heading">الخطوة التالية والإجراءات</h3>
+            {current.origin === "control_panel" && !current.originatingFieldActorId && !storeId && ["draft", "submitted", "needs_correction"].includes(current.state) ? <PartnerCaseFieldAttribution caseId={caseId} serviceCityId={current.serviceCityId ?? ""} version={current.version} onUpdated={() => void readCase(false)} /> : null}
             {current.state === "draft" && current.origin === "field" ? <p>يستكمل الميداني الملف ثم يطلب قبول المشغّل؛ لا يُنشأ دور الشريك من تطبيق الميداني.</p> : null}
             {(current.state === "draft" || (current.state === "approved" && Boolean(current.store?.id))) ? <details className="partner-case-attachments">
               <summary>إدارة شعار المتجر وغلافه ومصدر الصور</summary>

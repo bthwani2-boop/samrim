@@ -1347,7 +1347,7 @@ func LockPartnerJoiningCase(ctx context.Context, db *sql.DB, actorID string) (*s
 }
 
 func ReadJoiningCaseForField(ctx context.Context, db *sql.DB, fieldActorID, caseID string) (JoiningCaseResult, error) {
-	caseRecord, err := readJoiningCaseRow(ctx, db.QueryRowContext(ctx, joiningCaseSelect+" WHERE c.originating_field_actor_id=$1 AND c.id=$2", strings.TrimSpace(fieldActorID), strings.TrimSpace(caseID)), false)
+	caseRecord, err := readJoiningCaseRow(ctx, db.QueryRowContext(ctx, joiningCaseSelect+" WHERE c.origin='field' AND c.originating_field_actor_id=$1 AND c.id=$2", strings.TrimSpace(fieldActorID), strings.TrimSpace(caseID)), false)
 	if errors.Is(err, sql.ErrNoRows) {
 		return JoiningCaseResult{}, ErrJoiningCaseNotFound
 	}
@@ -1378,7 +1378,7 @@ func ListJoiningCasesForField(ctx context.Context, db *sql.DB, fieldActorID, que
 	if err != nil {
 		return JoiningCaseListResult{}, err
 	}
-	query := `SELECT c.id,c.contact_phone_e164,c.business_name,c.first_store_name,c.partner_actor_id,c.originating_field_actor_id,c.origin,c.state,c.correction_reason,c.reviewed_by,c.version,c.created_at,c.updated_at,c.first_store_service_city_id,c.first_store_vertical_id,c.first_store_commercial_type_id,c.first_store_latitude,c.first_store_longitude,COALESCE(c.wallet_provider_key,'') FROM dsh.joining_cases c WHERE c.originating_field_actor_id=$1`
+	query := `SELECT c.id,c.contact_phone_e164,c.business_name,c.first_store_name,c.partner_actor_id,c.originating_field_actor_id,c.origin,c.state,c.correction_reason,c.reviewed_by,c.version,c.created_at,c.updated_at,c.first_store_service_city_id,c.first_store_vertical_id,c.first_store_commercial_type_id,c.first_store_latitude,c.first_store_longitude,COALESCE(c.wallet_provider_key,'') FROM dsh.joining_cases c WHERE c.origin='field' AND c.originating_field_actor_id=$1`
 	args := []any{fieldActorID}
 	if queryText != "" {
 		args = append(args, queryText)
