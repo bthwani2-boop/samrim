@@ -9,7 +9,7 @@ export async function GET(request:Request){
  const key=qs.get("key")??"";
  const scope=qs.get("scopeId")??"";
  if(key==="partner-financial-terms"&&!identity.permissions?.includes("finance"))return NextResponse.json({error:{code:"FORBIDDEN"}},{status:403});
- if(!["service-cities","wallet-providers","delivery-fees","field-acquisition","partner-financial-terms","captain-minimum-balance"].includes(key)||scope.length>128)
+ if(!["service-cities","wallet-providers","delivery-fees","partner-financial-terms","captain-minimum-balance"].includes(key)||scope.length>128)
   return NextResponse.json({error:{code:"INVALID_INPUT"}},{status:400});
  try{
   const result=await listOperatorPolicyHistory(key,scope,{operatorActorId:identity.subject});

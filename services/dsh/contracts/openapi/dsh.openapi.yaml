@@ -145,8 +145,6 @@ paths:
   /dsh/joining-cases/{caseId}/submit:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1submit"
 
-  /dsh/joining-cases/{caseId}/acquisition-attribution:
-    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1acquisition-attribution"
   /dsh/joining-cases/{caseId}/store-image:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1store-image"
 
@@ -1019,54 +1017,6 @@ paths:
   /dsh/captains/{actorId}/reenrollment:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1{actorId}~1reenrollment"
 
-  /dsh/fields/admissions:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions"
-
-  /dsh/fields/admissions/{admissionId}/profile:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}~1profile"
-
-  /dsh/fields/admissions/{admissionId}/profile-review:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}~1profile-review"
-
-  /dsh/fields/admissions/{admissionId}/approve:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}~1approve"
-
-  /dsh/fields/admissions/{admissionId}/provision:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}~1provision"
-
-  /dsh/fields/admissions/{admissionId}:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}"
-
-  /dsh/fields/actors/{actorId}/admission:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1actors~1{actorId}~1admission"
-
-  /dsh/fields/me:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me"
-
-  /dsh/fields/{actorId}/identity-role:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1{actorId}~1identity-role"
-
-  /dsh/fields/{actorId}/reenrollment:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1{actorId}~1reenrollment"
-
-
-
-
-
-
-
-  /dsh/fields/me/financial-summary:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me~1financial-summary"
-
-  /dsh/fields/me/acquisition-entitlements:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me~1acquisition-entitlements"
-
-  /dsh/fields/me/wallet-history:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me~1wallet-history"
-
-  /dsh/fields/me/payout-requests:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me~1payout-requests"
-
   /dsh/operator/fields/activity:
     $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1fields~1activity"
 
@@ -1075,9 +1025,6 @@ paths:
 
   /dsh/operator/fields/{fieldActorId}/acquisition-cases:
     $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1fields~1{fieldActorId}~1acquisition-cases"
-
-  /dsh/operator/field-acquisition-reward-policies:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1field-acquisition-reward-policies"
 
   /dsh/partners/me/stores/{storeId}/captain-memberships:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1partners~1me~1stores~1{storeId}~1captain-memberships"

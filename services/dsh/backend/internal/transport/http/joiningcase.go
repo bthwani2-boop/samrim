@@ -65,7 +65,6 @@ func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/partners/actors/{actorId}/stores", s.listPartnerStoresForOperator)
 	mux.HandleFunc("GET /dsh/joining-cases/{caseId}", s.readForOperator)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/submit", s.submit)
-	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/acquisition-attribution", s.attributeFieldAcquisition)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/store-image", s.uploadStoreProfileImage)
 	mux.HandleFunc("POST /dsh/operator/joining-cases/{caseId}/store-image", s.uploadOperatorStoreProfileImage)
 	mux.HandleFunc("GET /dsh/joining-cases/{caseId}/proof-image", s.downloadJoiningCaseProofImage)

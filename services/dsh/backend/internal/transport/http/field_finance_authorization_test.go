@@ -16,7 +16,7 @@ func TestFieldAcquisitionReadsRequireTheirCanonicalSessions(t *testing.T) {
 	}
 	mux := http.NewServeMux()
 	(&FieldFinanceServer{auth: authorizer}).Register(mux)
-	for _, path := range []string{"/dsh/fields/me/acquisition-entitlements", "/dsh/operator/fields/field-actor/acquisition-cases"} {
+	for _, path := range []string{"/dsh/operator/fields/field-actor/acquisition-cases"} {
 		t.Run(path, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodGet, path, nil)
 			response := httptest.NewRecorder()

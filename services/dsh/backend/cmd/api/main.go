@@ -152,10 +152,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fieldServer, err := transporthttp.NewField(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
-	if err != nil {
-		log.Fatal(err)
-	}
 	marketingServer, err := transporthttp.NewMarketingWithDependencies(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, mediaStore)
 	if err != nil {
 		log.Fatal(err)
@@ -201,7 +197,6 @@ func main() {
 		multiStoreCheckoutServer.Register(mux)
 		captainServer.Register(mux)
 		notificationServer.Register(mux)
-		fieldServer.Register(mux)
 		clientFavoritesServer.Register(mux)
 		hrServer.Register(mux)
 		marketingServer.Register(mux)

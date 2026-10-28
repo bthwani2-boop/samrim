@@ -131,8 +131,6 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/financial-summary", s.readPartnerFinancialSummary)
 	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/financial-activity", s.readPartnerActivity)
 	mux.HandleFunc("GET /wlt/v1/operator/partner-commission-receivables", s.listPartnerCommissionReceivables)
-	mux.HandleFunc("POST /wlt/v1/operator/field-acquisition-reward-policies", s.createFieldAcquisitionRewardPolicy)
-	mux.HandleFunc("GET /wlt/v1/operator/field-acquisition-reward-policies", s.readOperatorFieldAcquisitionRewardPolicy)
 	mux.HandleFunc("POST /wlt/v1/field-acquisition-entitlements/finalize", s.finalizeFieldAcquisitionEntitlement)
 	mux.HandleFunc("GET /wlt/v1/field-acquisition-entitlements/{joiningCaseId}", s.readFieldAcquisitionEntitlementByJoiningCase)
 	mux.HandleFunc("GET /wlt/v1/fields/{fieldActorId}/financial-summary", s.readFieldFinancialSummary)

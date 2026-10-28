@@ -18,8 +18,7 @@ export async function readFinancialPolicyPreviews(signal:AbortSignal,canReadTerm
  const result:Results={};
  if(registry.status==="fulfilled"&&registry.value.status===200){
   const data=registry.value.body as OperatorFinancialPolicyRegistry;
-  if(Array.isArray(data.deliveryFees)&&Array.isArray(data.fieldRewards)&&
-    Number.isSafeInteger(data.deliveryTotal)&&Number.isSafeInteger(data.fieldTotal)){
+  if(Array.isArray(data.deliveryFees)&&Number.isSafeInteger(data.deliveryTotal)){
    const global=data.deliveryFees.find(p=>p.id==="");
    const bandsSummary=(items:readonly {upToMeters:number|null;ratePerKmMinor:number}[])=>items.map((b,i)=>`${b.upToMeters===null?"∞":`${b.upToMeters/1000} كم`}: ${money(b.ratePerKmMinor)}/كم`).join(" · ");
    const visibleFees=data.deliveryFees.slice(0,5);
@@ -30,17 +29,10 @@ export async function readFinancialPolicyPreviews(signal:AbortSignal,canReadTerm
     records:visibleFees.map(p=>({id:p.id||"global",name:p.name,active:true,version:p.version,createdAt:p.createdAt,createdBy:p.createdBy,
       detail:bandsSummary(p.distanceBands)}))
    }};
-   const visibleRewards=data.fieldRewards.slice(0,5);
-   result["field-acquisition"]={kind:"ready",value:{
-    active:data.fieldTotal,inactive:null,
-    headline:data.fieldTotal===0?"لم تُعتمد مكافآت لأنواع المتاجر":`${data.fieldTotal} أنواع متاجر · ${visibleRewards.slice(0,2).map(p=>`${p.name}: ${money(p.rewardMinor)}`).join(" · ")}`,
-    note:data.fieldTotal>visibleRewards.length?"تظهر عينة فقط؛ جميع المبالغ محفوظة لدى WLT.":"المكافأة محددة بنوع المتجر التجاري (STORE_TYPE) فقط.",
-    records:visibleRewards.map(p=>({id:p.id,name:p.name,active:true,version:p.version,createdAt:p.createdAt,createdBy:p.createdBy,detail:money(p.rewardMinor)}))
-   }};
   }else{
-   result["delivery-fees"]=failure;result["field-acquisition"]=failure;
+   result["delivery-fees"]=failure;
   }
- }else{result["delivery-fees"]=failure;result["field-acquisition"]=failure;}
+ }else{result["delivery-fees"]=failure;}
  if(!canReadTerms){result["partner-financial-terms"]={kind:"restricted"}}
  else if(terms.status==="fulfilled"&&terms.value!==null){
   if(terms.value.status===404){result["partner-financial-terms"]={kind:"missing"}}

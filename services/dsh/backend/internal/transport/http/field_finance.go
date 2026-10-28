@@ -45,17 +45,11 @@ func NewFieldFinance(identity *identityintegration.Client, accessToken string, p
 }
 
 func (s *FieldFinanceServer) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /dsh/fields/me/financial-summary", s.readOwnSummary)
-	mux.HandleFunc("GET /dsh/fields/me/acquisition-entitlements", s.listOwnAcquisitionEntitlements)
-	mux.HandleFunc("GET /dsh/fields/me/wallet-history", s.listOwnWalletHistory)
-	mux.HandleFunc("GET /dsh/fields/me/payout-requests", s.listOwnPayoutRequests)
 	mux.HandleFunc("GET /dsh/operator/fields/activity", s.listOperatorFieldActivity)
 	mux.HandleFunc("GET /dsh/operator/fields/{fieldActorId}/acquisition-cases", s.listOperatorAcquisitionCases)
 	mux.HandleFunc("GET /dsh/operator/fields/{fieldActorId}/financial-summary", s.readOperatorSummary)
 	mux.HandleFunc("GET /dsh/operator/policy-history", s.readPolicyHistory)
 	mux.HandleFunc("GET /dsh/operator/policy-registry", s.readOperatorPolicyRegistry)
-	mux.HandleFunc("POST /dsh/operator/field-acquisition-reward-policies", s.createPolicy)
-	mux.HandleFunc("GET /dsh/operator/field-acquisition-reward-policies", s.readPolicyByScope)
 }
 
 func (s *FieldFinanceServer) listOperatorAcquisitionCases(w http.ResponseWriter, r *http.Request) {

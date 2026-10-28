@@ -12,7 +12,7 @@ Each Store's final Partner commission terms are explicit, accepted by that Store
 
 ## Ownership
 
-WLT owns agreement identity and versions, proposed rates, Partner acceptance, Finance approval, activation, effective and superseded facts and audit. DSH supplies canonical Store context, joining attribution and enabled fulfillment modes and performs the bounded operational handoff; DSH does not write financial rates. An active Operator with the Partners permission may propose Store-specific terms for an existing Store through DSH, independently of Field acquisition. The legacy Field-origin proposal path remains scoped to its authorized joining case until its consumers are migrated safely. The bound Partner owner accepts exact terms. An authorized Finance actor approves them. ORDER_PAYMENT_COLLECTION alone resolves the active agreement for an applicable Order and owns that Order's immutable agreement snapshot.
+WLT owns agreement identity and versions, proposed rates, Partner acceptance, Finance approval, activation, effective and superseded facts and audit. DSH supplies canonical Store context and enabled fulfillment modes and performs the bounded operational handoff; DSH does not write financial rates. An active Operator with the Partners permission may propose Store-specific terms for an existing Store through DSH, independently of any historical Field origin. The retired Field proposal path is no longer available. The bound Partner owner accepts exact terms. An authorized Finance actor approves them. ORDER_PAYMENT_COLLECTION alone resolves the active agreement for an applicable Order and owns that Order's immutable agreement snapshot.
 
 ## Invariants
 

@@ -917,46 +917,6 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PartnerCommissionRemittanceResponse' }
-  /wlt/v1/operator/field-acquisition-reward-policies:
-    get:
-      operationId: readActiveFieldAcquisitionRewardPolicyByScope
-      security: [{ serviceToken: [] }]
-      parameters:
-        - name: scopeType
-          in: query
-          required: true
-          schema: { type: string, enum: [VERTICAL] }
-        - name: scopeId
-          in: query
-          required: true
-          schema: { type: string, minLength: 1, maxLength: 128 }
-      responses:
-        '200':
-          description: Active policy for the exact scope.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/FieldAcquisitionRewardPolicyResponse' }
-        '404':
-          description: No active policy exists for this exact scope.
-    post:
-      operationId: createFieldAcquisitionRewardPolicy
-      security: [{ serviceToken: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/CreateFieldAcquisitionRewardPolicyRequest' }
-      responses:
-        '201':
-          description: Field acquisition reward policy created.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/FieldAcquisitionRewardPolicyResponse' }
-        '200':
-          description: Idempotent replay.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/FieldAcquisitionRewardPolicyResponse' }
   /wlt/v1/field-acquisition-entitlements/finalize:
     post:
       operationId: finalizeFieldAcquisitionEntitlement

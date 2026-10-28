@@ -71,32 +71,6 @@ func newFieldFinanceValidationServer(t *testing.T) (*httptest.Server, *identityi
 	return identityServer, identity, serviceAuth, mux
 }
 
-func TestFieldFinanceRejectsInvalidPolicyMutationsBeforeStorage(t *testing.T) {
-	_, _, _, mux := newFieldFinanceValidationServer(t)
-	cases := []struct {
-		name string
-		body string
-	}{
-		{name: "unsupported scope", body: `{"scopeType":"PARTNER","scopeId":"type-1","rewardMinor":100,"roundingUnitMinor":1,"expectedVersion":0,"reason":"test"}`},
-		{name: "missing store type id", body: `{"scopeType":"STORE_TYPE","rewardMinor":100,"roundingUnitMinor":1,"expectedVersion":0,"reason":"test"}`},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			request := httptest.NewRequest(http.MethodPost, "/dsh/operator/field-acquisition-reward-policies", strings.NewReader(tc.body))
-			request.Header.Set("Authorization", "Bearer "+strings.Repeat("s", 24))
-			request.Header.Set("X-Acting-Actor-ID", "operator")
-			request.Header.Set("X-Correlation-ID", "correlation-1")
-			request.Header.Set("Idempotency-Key", "idempotency-1")
-			request.Header.Set("Content-Type", "application/json")
-			response := httptest.NewRecorder()
-			mux.ServeHTTP(response, request)
-			if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "INVALID_INPUT") {
-				t.Fatalf("invalid policy scope response: got %d, body=%s", response.Code, response.Body.String())
-			}
-		})
-	}
-}
-
 func TestFieldFinanceRejectsInvalidPaginationAndActorScopes(t *testing.T) {
 	_, _, _, mux := newFieldFinanceValidationServer(t)
 	longActorID := strings.Repeat("f", 129)
@@ -107,12 +81,9 @@ func TestFieldFinanceRejectsInvalidPaginationAndActorScopes(t *testing.T) {
 		field  string
 		want   int
 	}{
-		{name: "field entitlement limit below range", method: http.MethodGet, path: "/dsh/fields/me/acquisition-entitlements?limit=0", field: "field", want: http.StatusBadRequest},
-		{name: "field entitlement limit above range", method: http.MethodGet, path: "/dsh/fields/me/acquisition-entitlements?limit=101", field: "field", want: http.StatusBadRequest},
 		{name: "operator case limit outside range", method: http.MethodGet, path: "/dsh/operator/fields/field-actor/acquisition-cases?limit=51", field: "operator", want: http.StatusBadRequest},
 		{name: "operator case cursor too long", method: http.MethodGet, path: "/dsh/operator/fields/field-actor/acquisition-cases?cursor=" + strings.Repeat("c", 513), field: "operator", want: http.StatusBadRequest},
 		{name: "operator summary actor too long", method: http.MethodGet, path: "/dsh/operator/fields/" + longActorID + "/financial-summary", field: "operator", want: http.StatusBadRequest},
-		{name: "reward policy scope type is canonical", method: http.MethodGet, path: "/dsh/operator/field-acquisition-reward-policies?scopeType=PARTNER&scopeId=type-1", field: "operator", want: http.StatusBadRequest},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -159,7 +130,6 @@ func TestFieldFinanceReadsCanonicalFieldAndOperatorSummaries(t *testing.T) {
 		auth   string
 		acting string
 	}{
-		{name: "field session summary", path: "/dsh/fields/me/financial-summary", auth: "Bearer field-session"},
 		{name: "operator summary", path: "/dsh/operator/fields/operator/financial-summary", auth: "Bearer " + strings.Repeat("s", 24), acting: "operator"},
 	}
 	for _, tc := range cases {
@@ -191,13 +161,9 @@ func TestFieldFinanceRequiresFieldSessionAndOperatorAuthority(t *testing.T) {
 		acting string
 		want   int
 	}{
-		{name: "field summary rejects missing session", path: "/dsh/fields/me/financial-summary", want: http.StatusUnauthorized},
-		{name: "field summary rejects another role", path: "/dsh/fields/me/financial-summary", auth: "Bearer partner-session", want: http.StatusForbidden},
-		{name: "field summary rejects token from another app", path: "/dsh/fields/me/financial-summary", auth: "Bearer wrong-field-surface", want: http.StatusForbidden},
 		{name: "operator summary rejects service unauthenticated", path: "/dsh/operator/fields/field-actor/financial-summary", auth: "Bearer invalid", acting: "operator", want: http.StatusUnauthorized},
 		{name: "operator summary requires actor", path: "/dsh/operator/fields/field-actor/financial-summary", auth: serviceToken, want: http.StatusBadRequest},
 		{name: "operator summary requires finance permission", path: "/dsh/operator/fields/field-actor/financial-summary", auth: serviceToken, acting: "restricted-operator", want: http.StatusForbidden},
-		{name: "policy lookup requires platform policy permission", path: "/dsh/operator/field-acquisition-reward-policies?scopeType=STORE_TYPE&scopeId=type-1", auth: serviceToken, acting: "restricted-operator", want: http.StatusForbidden},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

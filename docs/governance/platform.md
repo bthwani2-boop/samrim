@@ -15,17 +15,16 @@ Deployable host names, repository paths, package identities and current runtime 
 
 One natural person is represented cross-boundary by one permanent `actor_id`.
 
-The current high-level BThwani roles/personas are exactly:
+The currently admitted BThwani roles/personas are:
 
 - `client`;
 - `partner`;
 - `captain`;
-- `field`;
 - `operator`.
 
 One Human Actor may hold multiple roles. Role admission, credentials and sessions never create a second human identity.
 
-`field` means Partner Acquisition and Onboarding Representative only. It does not create a generic field-operations domain.
+The retired `field` role is a historical compatibility marker only; new admissions, rewards and independent Field sessions are not admitted.
 
 `operator` is the human persona for the Operator workspace. First-Operator bootstrap is a one-time Identity lifecycle, not a second role or Product layer.
 
@@ -45,7 +44,7 @@ A delivery recipient may be a person other than the purchasing Client. A recipie
 
 A Surface is an actor-facing deployable presentation/composition host for admitted Product work.
 
-The four actor-facing surfaces are Client, Partner, Captain and Operator. Field acquisition is an optional human outreach channel, not a standalone deployable surface. Operator-assisted and Partner self-service first-Store intake both use the same DSH-owned joining lifecycle. Existing Field attribution and financial rights remain governed by DSH and WLT; retiring the mobile host does not erase the historical role, accounts, sessions or ledger. A Surface may own its shell, navigation, composition, transient presentation state and platform adapters. It never becomes the canonical owner of the business facts it renders or mutates.
+The four actor-facing surfaces are Client, Partner, Captain and Operator. Partner self-service and Operator intake are the only current onboarding channels and share the DSH-owned joining lifecycle. Field applications, new acquisition attribution and new reward issuance are retired; pre-existing Identity, DSH and WLT facts remain auditable until obligations are legally resolved. A Surface may own its shell, navigation, composition, transient presentation state and platform adapters. It never becomes the canonical owner of the business facts it renders or mutates.
 
 Brand unity does not imply identical information architecture or shell across roles.
 

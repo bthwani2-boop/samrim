@@ -10,7 +10,6 @@ import { stablePartnerMutationHeaders } from "../partners/partner-request";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { StoreLogo } from "../stores/store-logo";
 import { StoreZeroCommissionProposal } from "./store-zero-commission-proposal";
-import { PartnerCaseFieldAttribution } from "./partner-case-field-attribution";
 import { canOperatorAdmitJoiningCase } from "./joining-case-admission-rules";
 
 const fulfillmentModeOptions: ReadonlyArray<Readonly<{ value: StoreFulfillmentMode; label: string; description: string }>> = [
@@ -324,7 +323,7 @@ export function JoiningCaseDetail({ caseId, embedded = false }: { caseId: string
               <div><dt>رقم الإثبات</dt><dd>{requestedProof ? <bdi dir="auto">{requestedProof.proofNumber}</bdi> : <><button type="button" className="button button-secondary" disabled={proofDetailsLoading} onClick={() => void readProofDetails()}>{proofDetailsLoading ? "جارٍ قراءة رقم الإثبات…" : requestedProofError ? "إعادة قراءة رقم الإثبات" : "عرض رقم الإثبات عند الحاجة"}</button>{requestedProofError ? <span role="alert">{requestedProofError}</span> : null}</>}</dd></div>
               <div><dt>طريقة التوصيل</dt><dd>{current.firstStoreFulfillmentModes.map((mode) => fulfillmentModeOptions.find((option) => option.value === mode)?.label ?? mode).join("، ") || "غير متاحة في بيانات الحالة القديمة"}</dd></div>
               <div><dt>ملاحظات</dt><dd>{current.firstStoreNotes === undefined ? "غير متاحة في بيانات الحالة القديمة" : current.firstStoreNotes?.trim() || "لا توجد ملاحظات"}</dd></div>
-              <div><dt>مصدر الحالة</dt><dd>{current.origin === "field" ? "تطبيق الميداني" : current.origin === "self_service" ? "التسجيل الذاتي الموثق" : "لوحة التحكم"}</dd></div>
+              <div><dt>مصدر الحالة</dt><dd>{current.origin === "field" ? "إحالة ميدانية تاريخية" : current.origin === "self_service" ? "التسجيل الذاتي الموثق" : "لوحة التحكم"}</dd></div>
               <div><dt>فترة التسوية</dt><dd>{current.settlementPeriod ? settlementPeriodLabel(current.settlementPeriod) : "لم تُثبت بعد"}</dd></div>
               <div><dt>شروط السياسة</dt><dd>{current.termsPolicyVersion ? <details><summary>مرجع السياسة المعتمدة</summary><bdi dir="ltr">{current.termsPolicyVersion}</bdi></details> : "لم تُربط بعد"}</dd></div>
               <div><dt>الحالة المالية</dt><dd>{financialProfileStateLabel(current.financialProfileState)}</dd></div>
@@ -334,8 +333,7 @@ export function JoiningCaseDetail({ caseId, embedded = false }: { caseId: string
           </details>
           <section id="joining-case-actions" className="partner-case-actions" aria-labelledby="joining-case-actions-heading">
             <h3 id="joining-case-actions-heading">الخطوة التالية والإجراءات</h3>
-            {(current.origin === "control_panel" || current.origin === "self_service") && !current.originatingFieldActorId && !storeId && ["draft", "submitted", "needs_correction"].includes(current.state) ? <PartnerCaseFieldAttribution caseId={caseId} serviceCityId={current.serviceCityId ?? ""} version={current.version} origin={current.origin === "self_service" ? "self_service" : "control_panel"} onUpdated={() => void readCase(false)} /> : null}
-            {current.state === "draft" && current.origin === "field" ? <p>يستكمل الميداني الملف ثم يطلب قبول المشغّل؛ لا يُنشأ دور الشريك من تطبيق الميداني.</p> : null}
+            {current.state === "draft" && current.origin === "field" ? <p>هذه حالة إحالة تاريخية. راجعها من لوحة التحكم وأكمل قبولها وفق صلاحيات قسم الشركاء؛ لم يعد هناك تطبيق ميداني مستقل.</p> : null}
             {(current.state === "draft" || (current.state === "approved" && Boolean(current.store?.id))) ? <details className="partner-case-attachments">
               <summary>إدارة شعار المتجر وغلافه ومصدر الصور</summary>
               <>
@@ -363,7 +361,7 @@ export function JoiningCaseDetail({ caseId, embedded = false }: { caseId: string
             {current.state === "approved" ? <>
               <p>تم اعتماد الانضمام. يُستكمل تفعيل الحساب من تطبيق الشريك، وتُدار جاهزية المتجر ونشره من ملف المتجر؛ الاعتماد لا يعني النشر للعملاء.</p>
               {storeId ? <StoreZeroCommissionProposal storeId={storeId} modes={current.store?.fulfillmentModes ?? current.firstStoreFulfillmentModes} /> : null}
-              <details className="partner-case-attachments"><summary>إرشادات تفعيل حساب الشريك</summary><p>يفتح صاحب المتجر تطبيق الشريك برقم الجوال المسجّل. عند أول تفعيل يختار «أول دخول»؛ وإن سبق التفعيل يسجّل الدخول أو يستعيد كلمة المرور. لا يحتاج إلى دعوة من تطبيق الميداني.</p></details>
+              <details className="partner-case-attachments"><summary>إرشادات تفعيل حساب الشريك</summary><p>يفتح صاحب المتجر تطبيق الشريك برقم الجوال المسجّل. عند أول تفعيل يختار «أول دخول»؛ وإن سبق التفعيل يسجّل الدخول أو يستعيد كلمة المرور. لا يحتاج إلى تطبيق ميداني أو دعوة منه.</p></details>
               {current.financialProfileState === "REQUIRED" ? <>
                 <p className="managed-status managed-status-warning" role="status">{canManageFinancialTerms ? (activeTermsPolicy ? "اربط شروط التسوية المعتمدة لإكمال تفعيل الملف المالي." : policyReadMessage || "يلزم وجود سياسة مالية نشطة.") : "الملف بانتظار إجراء مستقل من مشغّل لديه صلاحية المالية وسياسات المنصة."}</p>
                 {canManageFinancialTerms && !activeTermsPolicy ? <><Link className="button button-secondary" href="/policies?policy=partner-financial-terms&action=manage">فتح سياسة الشريك المالية</Link><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readFinancialTermsPolicy()}>إعادة قراءة السياسة النشطة</button></> : null}

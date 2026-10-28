@@ -568,9 +568,6 @@ func setStorePublication(ctx context.Context, db *sql.DB, storeID, requestedStat
 		return PublicationResult{}, fmt.Errorf("record store publication audit: %w", err)
 	}
 	if requestedState == "published" && store.PublicationState != "published" {
-		if err := enqueueFieldAcquisitionRewardPublicationTx(ctx, tx, storeID, correlationID); err != nil {
-			return PublicationResult{}, fmt.Errorf("enqueue Field acquisition reward publication: %w", err)
-		}
 		if err := enqueueStoreGoLiveNotificationsTx(ctx, tx, storeID); err != nil {
 			return PublicationResult{}, fmt.Errorf("enqueue store go-live notifications: %w", err)
 		}
