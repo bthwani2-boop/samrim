@@ -54,3 +54,42 @@ func TestOtherConstraintsDoNotAcceptRestoreRendering(t *testing.T) {
 		}
 	}
 }
+
+func TestRestoredVarcharAnyConstraintSerialization(t *testing.T) {
+	var activation schemaConstraint
+	for _, candidate := range identitySchemaConstraints {
+		if candidate.table == "identity_actor_roles" && candidate.name == "identity_actor_role_activation_check" {
+			activation = candidate
+			break
+		}
+	}
+	if activation.definition == "" {
+		t.Fatal("role activation constraint is missing")
+	}
+
+	// Independent pg_get_constraintdef output observed after a real PostgreSQL
+	// 18 pg_dump/pg_restore, not a string produced by the normalizer.
+	restored := `CHECK ((((role)::text = ANY (ARRAY[('partner'::character varying)::text, ('captain'::character varying)::text, ('field'::character varying)::text, ('operator'::character varying)::text])) OR (activated_at IS NULL)))`
+	cases := []struct {
+		name   string
+		actual string
+		want   bool
+	}{
+		{name: "canonical", actual: activation.definition, want: true},
+		{name: "observed restored array casts", actual: restored, want: true},
+		{name: "extra role", actual: strings.Replace(restored, "('operator'::character varying)::text]", "('operator'::character varying)::text, ('admin'::character varying)::text]", 1), want: false},
+		{name: "changed role", actual: strings.Replace(restored, "('partner'::character varying)::text", "('admin'::character varying)::text", 1), want: false},
+		{name: "omitted role", actual: strings.Replace(restored, "('field'::character varying)::text, ", "", 1), want: false},
+		{name: "different cast", actual: strings.Replace(restored, "('partner'::character varying)::text", "('partner'::text)::text", 1), want: false},
+		{name: "different ANY operator", actual: strings.Replace(restored, "ANY (ARRAY", "ALL (ARRAY", 1), want: false},
+		{name: "changed OR to AND", actual: strings.Replace(restored, " OR (activated_at IS NULL)", " AND (activated_at IS NULL)", 1), want: false},
+		{name: "forced unconditional approval", actual: restored + " OR TRUE", want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := matchesExpectedConstraintDefinition(tc.actual, activation); got != tc.want {
+				t.Fatalf("matchesExpectedConstraintDefinition() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

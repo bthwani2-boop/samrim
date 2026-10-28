@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -199,6 +200,36 @@ func matchesExpectedConstraintDefinition(actual string, constraint schemaConstra
 		(constraint.restoredDefinition != "" && normalized == normalizeConstraintDefinition(constraint.restoredDefinition))
 }
 
+// pg_dump/pg_restore may move the text[] cast from a varchar ARRAY to each
+// enumerated literal. Normalize only this representation of an ANY expression;
+// changing a literal, type, condition or bound still fails the schema guard.
+var (
+	anyVarcharTextArray  = regexp.MustCompile(`any \(\(array\[([^\]]+)\]\)::text\[\]\)|any \(array\[([^\]]+)\]\)`)
+	varcharLiteral       = regexp.MustCompile(`^'([a-z0-9_]+)'::character varying$`)
+	varcharAsTextLiteral = regexp.MustCompile(`^\('([a-z0-9_]+)'::character varying\)::text$`)
+)
+
 func normalizeConstraintDefinition(value string) string {
-	return strings.Join(strings.Fields(strings.ToLower(value)), " ")
+	compact := strings.Join(strings.Fields(strings.ToLower(value)), " ")
+	return anyVarcharTextArray.ReplaceAllStringFunc(compact, func(fragment string) string {
+		groups := anyVarcharTextArray.FindStringSubmatch(fragment)
+		elements := groups[1]
+		if elements == "" {
+			elements = groups[2]
+		}
+		parts := strings.Split(elements, ",")
+		values := make([]string, 0, len(parts))
+		for _, element := range parts {
+			element = strings.TrimSpace(element)
+			literal := varcharLiteral.FindStringSubmatch(element)
+			if literal == nil {
+				literal = varcharAsTextLiteral.FindStringSubmatch(element)
+			}
+			if literal == nil {
+				return fragment
+			}
+			values = append(values, "'"+literal[1]+"'")
+		}
+		return "any (array[" + strings.Join(values, ",") + "])"
+	})
 }
