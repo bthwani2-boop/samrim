@@ -1,5 +1,6 @@
 /* Independent, task-focused finance workspaces. The dashboard KPIs and charts are leadership-only. */
 .fs-page{display:grid;gap:14px;min-width:0;min-height:450px;color:var(--fr-text);padding-bottom:16px}
+.fs-wallet-view{min-inline-size:0;inline-size:100%}
 .fs-page :is(h2,h3,h4,p){margin:0}
 .fs-head{display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:63px}
 .fs-head h2{font-size:20px;line-height:1.5;font-weight:850}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Button, Flex, Input, Segmented, Table, Tag, Typography, type TableColumnsType } from "antd";
+import { Alert, Button, Flex, Grid, Input, Segmented, Table, Tag, Typography, type TableColumnsType } from "antd";
 import { financeAmount } from "./finance-amount";
 
 type ActorType = "customer" | "partner" | "captain" | "field";
@@ -112,21 +112,22 @@ export function FinanceWalletRegistry({ initialActorType = "customer", onClose }
     if (selected) void loadStatement(selected);
     return () => { detailID.current++; };
   }, [selected, loadStatement]);
+  const screens = Grid.useBreakpoint();
   const filtered = useMemo(() => items.filter((row) => [labelFor(row), row.actorId, row.phoneMasked ?? "", row.walletIdentifierMasked ?? ""].some((value) => value.toLocaleLowerCase("ar").includes(search.trim().toLocaleLowerCase("ar")))), [items, search]);
   const columns: TableColumnsType<WalletRow> = [
     {
       title: "صاحب المحفظة",
       key: "beneficiary",
-      render: (_, row) => <Button type="link" onClick={(event) => { selectionTrigger.current = event.currentTarget; setSelected(row); }}>
+      render: (_, row) => <Button type="link" className="fc-wallet-person-trigger" onClick={(event) => { selectionTrigger.current = event.currentTarget; setSelected(row); }}>
         <Flex vertical align="flex-start" gap={2}>
           <strong>{labelFor(row)}</strong>
-          <Typography.Text type="secondary" dir="auto">{row.actorId}</Typography.Text>
+          <Typography.Text type="secondary" dir="auto" className="fc-wallet-actor-id">{row.actorId}</Typography.Text>
         </Flex>
       </Button>,
     },
-    { title: "الرصيد الدفتري", dataIndex: "currentBalanceMinor", align: "end", render: (value: number) => <Typography.Text dir="ltr" style={{ fontVariantNumeric: "tabular-nums" }}>{money(value)}</Typography.Text> },
-    { title: "المحجوز", dataIndex: "heldMinor", align: "end", render: (value: number) => <Typography.Text dir="ltr" style={{ fontVariantNumeric: "tabular-nums" }}>{money(value)}</Typography.Text> },
-    { title: "المتاح", dataIndex: "availableMinor", align: "end", render: (value: number) => <Typography.Text strong dir="ltr" style={{ fontVariantNumeric: "tabular-nums" }}>{money(value)}</Typography.Text> },
+    { title: "الرصيد الدفتري", dataIndex: "currentBalanceMinor", align: "end", responsive: ["md"], render: (value: number) => <Typography.Text dir="ltr" style={{ fontVariantNumeric: "tabular-nums" }}>{money(value)}</Typography.Text> },
+    { title: "المحجوز", dataIndex: "heldMinor", align: "end", responsive: ["md"], render: (value: number) => <Typography.Text dir="ltr" style={{ fontVariantNumeric: "tabular-nums" }}>{money(value)}</Typography.Text> },
+    { title: "المتاح", dataIndex: "availableMinor", align: "end", responsive: ["md"], render: (value: number) => <Typography.Text strong dir="ltr" style={{ fontVariantNumeric: "tabular-nums" }}>{money(value)}</Typography.Text> },
     {
       title: "التفاصيل",
       key: "details",
@@ -162,7 +163,7 @@ export function FinanceWalletRegistry({ initialActorType = "customer", onClose }
           pagination={false}
           size="small"
           loading={loading}
-          scroll={{ x: "max-content", y: "65dvh" }}
+          scroll={screens.md ? { x: 980, y: "65dvh" } : { y: "65dvh" }}
           onRow={(row) => ({ "aria-selected": selected?.actorId === row.actorId })}
           locale={{ emptyText: "لا توجد محافظ مطابقة ضمن السجلات المحمّلة." }}
         /></section> : null}

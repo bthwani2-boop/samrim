@@ -73,6 +73,9 @@
 .fc-workflow-links button>span { margin-inline-start:8px;color:var(--fc-accent); }
 .fc-workflow-links button:hover { border-color:var(--fc-accent); }
 .fc-wallets { display:grid;gap:12px;padding:0 0 15px; }
+.fc-wallet-person-trigger { max-inline-size:100%;min-block-size:40px;block-size:auto;text-align:start;white-space:normal;padding-inline:0; }
+.fc-wallet-person-trigger .ant-flex { min-inline-size:0; }
+.fc-wallet-actor-id { min-inline-size:0;max-inline-size:100%;overflow-wrap:anywhere;white-space:normal; }
 .fc-actor-types { padding:0 16px; }
 .fc-wallets-layout { display:grid;grid-template-columns:minmax(0,1fr);gap:12px;padding:0 15px;align-items:start; }
 .fc-wallets-layout[data-detail="true"] { grid-template-columns:minmax(0,1.5fr) minmax(285px,.75fr); }

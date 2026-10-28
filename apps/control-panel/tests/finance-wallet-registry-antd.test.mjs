@@ -10,7 +10,7 @@ const [registry, financeStyles, specializedStyles] = await Promise.all([
 ]);
 
 test("wallet registry uses Ant Design controls and removes its duplicate generic controls", () => {
-  assert.match(registry, /import \{ Alert, Button, Flex, Input, Segmented, Table, Tag, Typography, type TableColumnsType \} from "antd"/);
+  assert.match(registry, /import \{ Alert, Button, Flex, Grid, Input, Segmented, Table, Tag, Typography, type TableColumnsType \} from "antd"/);
   for (const component of ["Segmented<ActorType>", "Input.Search", "<Table<WalletRow>", "<Tag", "<Button", "<Alert"]) {
     assert.ok(registry.includes(component), component + " owns the matching generic control");
   }
@@ -41,4 +41,9 @@ test("wallet loading, errors, RTL values, and inspector focus recovery remain ex
   assert.match(registry, /dir="ltr"/);
   assert.match(registry, /requestAnimationFrame\(\(\) => selectionTrigger\.current\?\.focus\(\)\)/);
   assert.match(registry, /لا تُنفذ أي تسوية من هذه المعاينة/);
+});
+
+test("wallet table uses bounded horizontal measurement, avoiding growing max-content width", () => {
+  assert.ok(registry.includes('scroll={screens.md ? { x: 980, y: "65dvh" } : { y: "65dvh" }}'));
+  assert.doesNotMatch(registry, /scroll=\{\{ x: "max-content"/);
 });
