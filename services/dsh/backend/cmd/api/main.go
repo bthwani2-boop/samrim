@@ -152,7 +152,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fieldServer, err := transporthttp.NewField(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, storePublication, joiningCaseEvidenceKeys)
+	fieldServer, err := transporthttp.NewField(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, joiningCaseEvidenceKeys)
 	if err != nil {
 		log.Fatal(err)
 	}

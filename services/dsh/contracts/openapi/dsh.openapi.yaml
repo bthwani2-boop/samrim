@@ -150,8 +150,6 @@ paths:
   /dsh/joining-cases/{caseId}/store-image:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1store-image"
 
-  /dsh/joining-cases/{caseId}/internal-photos:
-    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1internal-photos"
 
   /dsh/joining-cases/{caseId}/proof-image:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1proof-image"
@@ -378,10 +376,6 @@ paths:
   /dsh/stores/{storeId}/catalog/quick-prices/commit:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1catalog~1quick-prices~1commit"
 
-  /dsh/field/joining-cases/{caseId}/commercial-agreements:
-    $ref: "./paths/commerce.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1commercial-agreements"
-  /dsh/field/joining-cases/{caseId}/commercial-agreement-defaults:
-    $ref: "./paths/commerce.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1commercial-agreement-defaults"
   /dsh/partner/stores/{storeId}/commercial-agreements:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1commercial-agreements"
   /dsh/partner/stores/{storeId}/commercial-agreements/{agreementId}/accept:
@@ -1055,11 +1049,7 @@ paths:
   /dsh/fields/{actorId}/reenrollment:
     $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1{actorId}~1reenrollment"
 
-  /dsh/field/joining-cases:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases"
 
-  /dsh/field/joining-cases/{caseId}:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}"
 
 
 

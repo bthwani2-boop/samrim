@@ -13,10 +13,6 @@ import (
 )
 
 func (s *JoiningCaseServer) RegisterStoreCommercialAgreementRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}/commercial-agreements", s.readFieldStoreCommercialAgreements)
-	// Historical Field agreements remain readable; all new proposals must
-	// use the Operator Partners endpoint with independent Partner acceptance.
-	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}/commercial-agreement-defaults", s.readFieldStoreCommissionDefaults)
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/commercial-agreements", s.readPartnerStoreCommercialAgreements)
 	mux.HandleFunc("POST /dsh/partner/stores/{storeId}/commercial-agreements/{agreementId}/accept", s.acceptPartnerStoreCommercialAgreement)
 	mux.HandleFunc("GET /dsh/operator/partners/stores/{storeId}/commercial-agreements", s.readPartnersStoreCommercialAgreements)
@@ -26,32 +22,6 @@ func (s *JoiningCaseServer) RegisterStoreCommercialAgreementRoutes(mux *http.Ser
 	mux.HandleFunc("POST /dsh/operator/stores/{storeId}/commercial-agreements/{agreementId}/decision", s.decideFinanceStoreCommercialAgreement)
 	mux.HandleFunc("GET /dsh/operator/commercial-store-types/{commercialStoreTypeId}/commission-defaults", s.readFinanceStoreCommissionDefaults)
 	mux.HandleFunc("POST /dsh/operator/commercial-store-types/{commercialStoreTypeId}/commission-defaults", s.updateFinanceStoreCommissionDefault)
-}
-
-func (s *JoiningCaseServer) readFieldStoreCommissionDefaults(w http.ResponseWriter, r *http.Request) {
-	if !authorizedFieldSession(w, r) {
-		return
-	}
-	defaults, err := s.service.ReadStoreTypeCommissionDefaultsForField(r.Context(), bearerToken(r), r.PathValue("caseId"))
-	if err != nil {
-		writeStoreCommercialAgreementError(w, err)
-		return
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, defaults)
-}
-
-func (s *JoiningCaseServer) readFieldStoreCommercialAgreements(w http.ResponseWriter, r *http.Request) {
-	if !authorizedFieldSession(w, r) {
-		return
-	}
-	agreements, err := s.service.ReadStoreCommercialAgreementsForField(r.Context(), bearerToken(r), r.PathValue("caseId"))
-	if err != nil {
-		writeStoreCommercialAgreementError(w, err)
-		return
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, map[string]any{"agreements": agreements})
 }
 
 func (s *JoiningCaseServer) readPartnersStoreCommercialAgreements(w http.ResponseWriter, r *http.Request) {
@@ -279,7 +249,7 @@ func writeStoreCommercialAgreementError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "STATE_CONFLICT", "Store commercial agreement is not in the required state")
 	case errors.Is(err, joiningcase.ErrStoreAgreementForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the current actor cannot perform this Store commercial agreement action")
-	case errors.Is(err, joiningcase.ErrFieldSessionForbidden), errors.Is(err, joiningcase.ErrPartnerSessionForbidden):
+	case errors.Is(err, joiningcase.ErrPartnerSessionForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an eligible Field or Partner session is required")
 	case errors.Is(err, joiningcase.ErrOperatorNotActive):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active control operator session is required")

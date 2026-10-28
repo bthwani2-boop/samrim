@@ -303,43 +303,12 @@ func (s *Service) AuthorizeReenrollment(ctx context.Context, actorID, operatorAc
 	return lifecycle.Commit()
 }
 
-func (s *Service) ListJoiningCases(ctx context.Context, accessToken, queryText string, limit int, cursor string) (postgres.JoiningCaseListResult, error) {
-	identity, err := s.requireEligibleField(ctx, accessToken)
-	if err != nil {
-		return postgres.JoiningCaseListResult{}, err
-	}
-	return postgres.ListJoiningCasesForField(ctx, s.db, identity.Subject, queryText, limit, cursor)
-}
-
-func (s *Service) ReadJoiningCase(ctx context.Context, accessToken, caseID string) (postgres.JoiningCaseResult, error) {
-	identity, err := s.requireEligibleField(ctx, accessToken)
-	if err != nil {
-		return postgres.JoiningCaseResult{}, err
-	}
-	return postgres.ReadJoiningCaseForField(ctx, s.db, identity.Subject, caseID)
-}
-
 func (s *Service) requireField(ctx context.Context, accessToken string) (identityclient.ActorIdentity, error) {
 	identity, err := s.identity.ReadSession(ctx, strings.TrimSpace(accessToken))
 	if err != nil {
 		return identityclient.ActorIdentity{}, err
 	}
 	if identity.Role != "field" || identity.Surface != "app-field" || strings.TrimSpace(identity.Subject) == "" {
-		return identityclient.ActorIdentity{}, ErrFieldSessionForbidden
-	}
-	return identity, nil
-}
-
-func (s *Service) requireEligibleField(ctx context.Context, accessToken string) (identityclient.ActorIdentity, error) {
-	identity, err := s.requireField(ctx, accessToken)
-	if err != nil {
-		return identityclient.ActorIdentity{}, err
-	}
-	admission, err := postgres.ReadFieldAdmissionForActor(ctx, s.db, identity.Subject)
-	if err != nil {
-		return identityclient.ActorIdentity{}, err
-	}
-	if admission.State != "eligible" || admission.RequiresProfileReview || admission.FullNameAr == "" {
 		return identityclient.ActorIdentity{}, ErrFieldSessionForbidden
 	}
 	return identity, nil

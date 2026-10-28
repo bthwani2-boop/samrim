@@ -2212,43 +2212,6 @@ paths:
         "409":
           $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
 
-  /dsh/field/joining-cases/{caseId}/commercial-agreements:
-    get:
-      operationId: readFieldStoreCommercialAgreements
-      summary: Read Store agreement versions for the eligible Field actor's assigned joining case
-      security:
-        - userBearer: []
-      parameters:
-        - $ref: "../dsh.openapi.yaml#/components/parameters/JoiningCaseId"
-      responses:
-        "200":
-          description: Agreements for the assigned case's linked Store.
-          content:
-            application/json:
-              schema:
-                $ref: "../dsh.openapi.yaml#/components/schemas/StoreCommercialAgreementListResponse"
-        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
-        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
-        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
-  /dsh/field/joining-cases/{caseId}/commercial-agreement-defaults:
-    get:
-      operationId: readFieldStoreCommercialAgreementDefaults
-      summary: Read suggested rate defaults for the assigned joining case's commercial Store Type
-      security:
-        - userBearer: []
-      parameters:
-        - $ref: "../dsh.openapi.yaml#/components/parameters/JoiningCaseId"
-      responses:
-        "200":
-          description: Suggested defaults only; Store agreement terms remain authoritative.
-          content:
-            application/json:
-              schema:
-                $ref: "../dsh.openapi.yaml#/components/schemas/StoreTypeCommissionDefaultsResponse"
-        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
-        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
-        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
-
   /dsh/partner/stores/{storeId}/commercial-agreements:
     get:
       operationId: readPartnerStoreCommercialAgreements

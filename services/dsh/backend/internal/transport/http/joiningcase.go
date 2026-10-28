@@ -67,7 +67,6 @@ func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/submit", s.submit)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/acquisition-attribution", s.attributeFieldAcquisition)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/store-image", s.uploadStoreProfileImage)
-	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/internal-photos", s.uploadStoreInternalPhoto)
 	mux.HandleFunc("POST /dsh/operator/joining-cases/{caseId}/store-image", s.uploadOperatorStoreProfileImage)
 	mux.HandleFunc("GET /dsh/joining-cases/{caseId}/proof-image", s.downloadJoiningCaseProofImage)
 	mux.HandleFunc("GET /dsh/joining-cases/{caseId}/proof-details", s.readJoiningCaseProofDetails)
@@ -397,10 +396,8 @@ func writeJoiningCaseError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "APPLICANT_IDENTITY_CHANGED", "the verified applicant account no longer matches this case")
 	case errors.Is(err, joiningcase.ErrPartnerSessionForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active app-partner session is required")
-	case errors.Is(err, joiningcase.ErrFieldSessionForbidden):
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "an eligible app-field session is required")
 	case errors.Is(err, joiningcase.ErrStoreProfileMediaSessionForbidden):
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "an eligible Field or Partner session is required")
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active Partner session is required")
 	case errors.Is(err, postgres.ErrJoiningCaseServiceCity):
 		writeError(w, http.StatusConflict, "SERVICE_CITY_UNAVAILABLE", "an active service city is required")
 	case errors.Is(err, postgres.ErrCatalogVerticalNotFound):

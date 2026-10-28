@@ -28,27 +28,6 @@ func (s *JoiningCaseServer) uploadStoreProfileImage(w http.ResponseWriter, r *ht
 	s.writeResult(w, r, responseStatus(result.Replayed), result)
 }
 
-func (s *JoiningCaseServer) uploadStoreInternalPhoto(w http.ResponseWriter, r *http.Request) {
-	if bearerToken(r) == "" {
-		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "an authenticated Field session is required")
-		return
-	}
-	_, idempotency, expected, ok := requiredPartnerCaseHeaders(w, r)
-	if !ok {
-		return
-	}
-	data, contentType, valid := readMultipartImageUpload(w, r, "a valid internal Store image is required")
-	if !valid {
-		return
-	}
-	result, err := s.service.UploadStoreInternalPhoto(r.Context(), bearerToken(r), r.PathValue("caseId"), idempotency, expected, contentType, data)
-	if err != nil {
-		writeJoiningCaseError(w, err)
-		return
-	}
-	s.writeResult(w, r, responseStatus(result.Replayed), result)
-}
-
 func (s *JoiningCaseServer) uploadOperatorStoreProfileImage(w http.ResponseWriter, r *http.Request) {
 	if !s.auth.Authorized(r) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")

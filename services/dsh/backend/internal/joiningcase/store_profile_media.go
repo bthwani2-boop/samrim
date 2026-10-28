@@ -14,8 +14,7 @@ import (
 )
 
 var (
-	ErrFieldSessionForbidden             = errors.New("an eligible app-field session is required for this joining-case operation")
-	ErrStoreProfileMediaSessionForbidden = errors.New("an eligible Field or Partner session is required for this joining-case operation")
+	ErrStoreProfileMediaSessionForbidden = errors.New("an active Partner session is required for this joining-case operation")
 )
 
 func (s *Service) UploadStoreProfileImage(ctx context.Context, accessToken, caseID, idempotencyKey, correlationID string, expectedVersion int, contentType string, data []byte, provenance media.Provenance) (postgres.JoiningCaseResult, error) {
@@ -29,36 +28,12 @@ func (s *Service) UploadStoreMedia(ctx context.Context, accessToken, role, caseI
 	}
 	scope := ""
 	switch {
-	case identity.Role == "field" && identity.Surface == "app-field" && strings.TrimSpace(identity.Subject) != "":
-		scope = "field"
 	case identity.Role == "partner" && identity.Surface == "app-partner" && strings.TrimSpace(identity.Subject) != "":
 		scope = "partner"
 	default:
 		return postgres.JoiningCaseResult{}, ErrStoreProfileMediaSessionForbidden
 	}
 	return s.uploadStoreMedia(ctx, scope, identity.Subject, role, caseID, idempotencyKey, correlationID, expectedVersion, contentType, data, provenance)
-}
-
-func (s *Service) UploadStoreInternalPhoto(ctx context.Context, accessToken, caseID, idempotencyKey string, expectedVersion int, contentType string, data []byte) (postgres.JoiningCaseResult, error) {
-	identity, err := s.identity.ReadSession(ctx, strings.TrimSpace(accessToken))
-	if err != nil {
-		return postgres.JoiningCaseResult{}, err
-	}
-	if identity.Role != "field" || identity.Surface != "app-field" || strings.TrimSpace(identity.Subject) == "" {
-		return postgres.JoiningCaseResult{}, ErrFieldSessionForbidden
-	}
-	admission, err := postgres.ReadFieldAdmissionForActor(ctx, s.db, identity.Subject)
-	if err != nil {
-		return postgres.JoiningCaseResult{}, err
-	}
-	if admission.State != "eligible" || admission.RequiresProfileReview || strings.TrimSpace(admission.FullNameAr) == "" {
-		return postgres.JoiningCaseResult{}, ErrFieldSessionForbidden
-	}
-	actualType, _, _, err := media.ValidateImageBytes(data)
-	if err != nil || (strings.TrimSpace(contentType) != "" && strings.TrimSpace(contentType) != actualType) {
-		return postgres.JoiningCaseResult{}, ErrInvalidInput
-	}
-	return postgres.SaveStoreInternalPhoto(ctx, s.db, caseID, identity.Subject, expectedVersion, idempotencyKey, actualType, data)
 }
 
 func (s *Service) UploadStoreProfileImageForOperator(ctx context.Context, caseID, actingActorID, idempotencyKey, correlationID string, expectedVersion int, contentType string, data []byte, provenance media.Provenance) (postgres.JoiningCaseResult, error) {
@@ -90,21 +65,6 @@ func (s *Service) uploadStoreMedia(ctx context.Context, scope, actorID, role, ca
 	var current postgres.JoiningCaseResult
 	var err error
 	switch scope {
-	case "field":
-		admission, err := postgres.ReadFieldAdmissionForActor(ctx, s.db, actorID)
-		if err != nil {
-			return postgres.JoiningCaseResult{}, err
-		}
-		if admission.State != "eligible" || admission.RequiresProfileReview || strings.TrimSpace(admission.FullNameAr) == "" {
-			return postgres.JoiningCaseResult{}, ErrFieldSessionForbidden
-		}
-		current, err = postgres.ReadJoiningCaseForField(ctx, s.db, actorID, caseID)
-		if err != nil {
-			return postgres.JoiningCaseResult{}, err
-		}
-		if current.Case.State != "draft" {
-			return postgres.JoiningCaseResult{}, postgres.ErrStoreProfileMediaState
-		}
 	case "partner":
 		current, err = postgres.ReadJoiningCaseForPartner(ctx, s.db, actorID)
 		if errors.Is(err, postgres.ErrJoiningCaseNotFound) || (err == nil && current.Case.ID != caseID) {
@@ -179,8 +139,6 @@ func (s *Service) readStoreProfileImageCase(ctx context.Context, scope, actorID,
 	var result postgres.JoiningCaseResult
 	var err error
 	switch scope {
-	case "field":
-		result, err = postgres.ReadJoiningCaseForField(ctx, s.db, actorID, caseID)
 	case "partner":
 		result, err = postgres.ReadJoiningCaseForPartner(ctx, s.db, actorID)
 		if err == nil && result.Case.ID != caseID {

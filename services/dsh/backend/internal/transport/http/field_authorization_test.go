@@ -33,8 +33,6 @@ var fieldOperatorRoutes = []fieldRegisteredRoute{
 
 var fieldSessionRoutes = []fieldRegisteredRoute{
 	{method: "GET", path: "/dsh/fields/me"},
-	{method: "GET", path: "/dsh/field/joining-cases"},
-	{method: "GET", path: "/dsh/field/joining-cases/{caseId}"},
 }
 
 func fieldRegisteredRoutes(t *testing.T) []fieldRegisteredRoute {
@@ -119,12 +117,12 @@ func testFieldRoutesRejectUnauthenticated(t *testing.T, routes []fieldRegistered
 	}
 }
 
-// Retired mobile Field clients may read history, but must not create or mutate
-// joining cases or propose new Store terms after the host is removed.
-func TestRetiredFieldAppMutationRoutesAreUnavailable(t *testing.T) {
+// A retired Field host must not expose any joining-case or photo entrypoints.
+// Operator and Partner readers/writers preserve access to canonical history.
+func TestRetiredFieldAppRoutesAreUnavailable(t *testing.T) {
 	mux := nethttp.NewServeMux()
 	(&FieldServer{}).Register(mux)
-	(&JoiningCaseServer{}).RegisterStoreCommercialAgreementRoutes(mux)
+	(&JoiningCaseServer{}).Register(mux)
 	for _, route := range []fieldRegisteredRoute{
 		{method: "POST", path: "/dsh/field/joining-cases"},
 		{method: "PATCH", path: "/dsh/field/joining-cases/case-1/draft"},
@@ -132,23 +130,28 @@ func TestRetiredFieldAppMutationRoutesAreUnavailable(t *testing.T) {
 		{method: "POST", path: "/dsh/field/joining-cases/case-1/submit"},
 		{method: "POST", path: "/dsh/field/joining-cases/case-1/review-photo"},
 		{method: "POST", path: "/dsh/field/joining-cases/case-1/commercial-agreements"},
+		{method: "GET", path: "/dsh/field/joining-cases"},
+		{method: "GET", path: "/dsh/field/joining-cases/case-1"},
+		{method: "GET", path: "/dsh/field/joining-cases/case-1/commercial-agreements"},
+		{method: "GET", path: "/dsh/field/joining-cases/case-1/commercial-agreement-defaults"},
+		{method: "POST", path: "/dsh/joining-cases/case-1/internal-photos"},
 	} {
 		request := httptest.NewRequest(route.method, route.path, nil)
 		_, pattern := mux.Handler(request)
 		if pattern != "" {
-			t.Fatalf("retired Field writer is still routed: %s %s => %s", route.method, route.path, pattern)
+			t.Fatalf("retired Field-app entrypoint is still routed: %s %s => %s", route.method, route.path, pattern)
 		}
 	}
 	for _, route := range []fieldRegisteredRoute{
-		{method: "GET", path: "/dsh/field/joining-cases/case-1"},
-		{method: "GET", path: "/dsh/field/joining-cases/case-1/commercial-agreements"},
+		{method: "GET", path: "/dsh/joining-cases/case-1"},
+		{method: "GET", path: "/dsh/operator/partners/stores/store-1/commercial-agreements"},
 		{method: "POST", path: "/dsh/operator/partners/stores/store-1/commercial-agreements"},
 		{method: "POST", path: "/dsh/partner/stores/store-1/commercial-agreements/terms-1/accept"},
 	} {
 		request := httptest.NewRequest(route.method, route.path, nil)
 		_, pattern := mux.Handler(request)
 		if pattern == "" {
-			t.Errorf("required historical read or replacement writer disappeared: %s %s", route.method, route.path)
+			t.Errorf("required Operator/Partner read or writer disappeared: %s %s", route.method, route.path)
 		}
 	}
 }

@@ -3,7 +3,6 @@ package transporthttp
 import (
 	"database/sql"
 	"errors"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,20 +13,15 @@ import (
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/joiningcase"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storepublication"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
 type FieldServer struct {
-	auth        *auth.ServiceToken
-	service     *field.Service
-	publication *storepublication.Service
+	auth    *auth.ServiceToken
+	service *field.Service
 }
 
-func NewField(identityClient *identityintegration.Client, accessToken string, db *sql.DB, publication *storepublication.Service, evidenceKeys *postgres.JoiningCaseEvidenceKeyring) (*FieldServer, error) {
-	if publication == nil {
-		return nil, errors.New("Field publication service is required")
-	}
+func NewField(identityClient *identityintegration.Client, accessToken string, db *sql.DB, evidenceKeys *postgres.JoiningCaseEvidenceKeyring) (*FieldServer, error) {
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
 		return nil, err
@@ -36,7 +30,7 @@ func NewField(identityClient *identityintegration.Client, accessToken string, db
 	if err != nil {
 		return nil, err
 	}
-	return &FieldServer{auth: authorizer, service: service, publication: publication}, nil
+	return &FieldServer{auth: authorizer, service: service}, nil
 }
 
 func (s *FieldServer) Register(mux *http.ServeMux) {
@@ -51,11 +45,6 @@ func (s *FieldServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/fields/me", s.readOwnAdmission)
 	mux.HandleFunc("POST /dsh/fields/{actorId}/identity-role", s.setRole)
 	mux.HandleFunc("POST /dsh/fields/{actorId}/reenrollment", s.authorizeReenrollment)
-	// The standalone Field app has been retired. Preserve historical case
-	// readback for existing Field identities, but do not admit new Field-app
-	// writes; current intake and correction live on Partner/Operator surfaces.
-	mux.HandleFunc("GET /dsh/field/joining-cases", s.listJoiningCases)
-	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}", s.readJoiningCase)
 }
 
 func (s *FieldServer) admit(w http.ResponseWriter, r *http.Request) {
@@ -286,52 +275,6 @@ func (s *FieldServer) authorizeReenrollment(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *FieldServer) listJoiningCases(w http.ResponseWriter, r *http.Request) {
-	if !authorizedFieldSession(w, r) {
-		return
-	}
-	limit := 25
-	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
-		parsed, err := strconv.Atoi(raw)
-		if err != nil {
-			writeFieldError(w, postgres.ErrJoiningCaseInvalidLimit)
-			return
-		}
-		limit = parsed
-	}
-	result, err := s.service.ListJoiningCases(r.Context(), bearerToken(r), r.URL.Query().Get("q"), limit, r.URL.Query().Get("cursor"))
-	if err != nil {
-		writeFieldError(w, err)
-		return
-	}
-	items := make([]contract.JoiningCaseSummary, 0, len(result.Cases))
-	for _, item := range result.Cases {
-		items = append(items, contract.JoiningCaseSummary{ID: item.ID, ContactPhoneE164: item.ContactPhoneE164, BusinessName: item.BusinessName, FirstStoreName: item.FirstStoreName, WalletProviderKey: item.WalletProviderKey, ServiceCityID: item.FirstStoreServiceCityID, FirstStoreVerticalID: item.FirstStoreVerticalID, FirstStoreCommercialTypeID: item.FirstStoreCommercialTypeID, FirstStoreLatitude: nullableFloatValue(item.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(item.FirstStoreLongitude), Origin: contract.JoiningCaseOrigin(item.Origin), State: contract.JoiningCaseState(item.State), CorrectionReason: item.CorrectionReason, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
-	}
-	writeJSON(w, http.StatusOK, contract.JoiningCaseListResponse{Cases: items, NextCursor: result.NextCursor})
-}
-
-func (s *FieldServer) readJoiningCase(w http.ResponseWriter, r *http.Request) {
-	if !authorizedFieldSession(w, r) {
-		return
-	}
-	result, err := s.service.ReadJoiningCase(r.Context(), bearerToken(r), r.PathValue("caseId"))
-	if err != nil {
-		writeFieldError(w, err)
-		return
-	}
-	var readiness *storepublication.PublicationReadiness
-	if result.Case.Store != nil {
-		value, err := s.publication.ReadinessForStore(r.Context(), *result.Case.Store)
-		if err != nil {
-			log.Printf("Field Store publication readiness unavailable: %v", err)
-		}
-		resolved := fieldStoreReadiness(value, err)
-		readiness = &resolved
-	}
-	writeJSON(w, http.StatusOK, contract.JoiningCaseResponse{Case: toFieldJoiningCaseView(result, readiness), IdempotentReplay: result.Replayed})
-}
-
 func (s *FieldServer) authorizedService(w http.ResponseWriter, r *http.Request) bool {
 	if s.auth.Authorized(r) {
 		return true
@@ -346,41 +289,6 @@ func authorizedFieldSession(w http.ResponseWriter, r *http.Request) bool {
 	}
 	writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Field session is required")
 	return false
-}
-
-// Store readiness is advisory in the Field joining-case read. A downstream
-// readiness outage must not hide the canonical approved Store or imply readiness.
-func fieldStoreReadiness(value storepublication.PublicationReadiness, err error) storepublication.PublicationReadiness {
-	if err != nil {
-		return storepublication.PublicationReadiness{BlockedReason: "READINESS_UNAVAILABLE"}
-	}
-	return value
-}
-
-func toFieldJoiningCaseView(result postgres.JoiningCaseResult, readiness *storepublication.PublicationReadiness) contract.JoiningCaseView {
-	view := toJoiningCaseView(result.Case)
-	view.PartnerActorID = result.Case.PartnerActorID
-	view.ReviewedBy = result.Case.ReviewedBy
-	view.StoreProfileImage = toStoreProfileImage(result.Case.StoreProfileImage)
-	if result.Case.Store != nil && readiness != nil {
-		storeView := toStoreView(*result.Case.Store, *readiness)
-		view.Store = &storeView
-	}
-	return view
-}
-
-func writeFieldCaseResult(w http.ResponseWriter, status int, result postgres.JoiningCaseResult) {
-	writeJSON(w, status, contract.JoiningCaseResponse{Case: toFieldJoiningCaseView(result, nil), IdempotentReplay: result.Replayed})
-}
-
-func requiredFieldMutationHeaders(w http.ResponseWriter, r *http.Request) (string, string, bool) {
-	correlation := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
-	idempotency := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
-	if len(correlation) < 8 || len(correlation) > 128 || len(idempotency) < 8 || len(idempotency) > 128 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Correlation-ID and Idempotency-Key are required")
-		return "", "", false
-	}
-	return correlation, idempotency, true
 }
 
 func toFieldAdmission(value postgres.FieldAdmission) contract.FieldAdmission {
