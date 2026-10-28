@@ -11,6 +11,7 @@ import { useReadOnReturn } from "../shared/use-read-on-return";
 import { StoreLogo } from "../stores/store-logo";
 import { StoreZeroCommissionProposal } from "./store-zero-commission-proposal";
 import { PartnerCaseFieldAttribution } from "./partner-case-field-attribution";
+import { canOperatorAdmitJoiningCase } from "./joining-case-admission-rules";
 
 const fulfillmentModeOptions: ReadonlyArray<Readonly<{ value: StoreFulfillmentMode; label: string; description: string }>> = [
   { value: "BTHWANI_CAPTAIN", label: "توصيل بثواني", description: "المنصة تتولى إسناد التوصيل وإدارته." },
@@ -189,7 +190,7 @@ export function JoiningCaseDetail({ caseId, embedded = false }: { caseId: string
 
   async function submitCase() {
     const current = result?.case;
-    const canAdmit = current && ((current.origin === "control_panel" && current.state === "draft") || (current.origin === "field" && current.state === "admission_requested"));
+    const canAdmit = current && canOperatorAdmitJoiningCase(current.origin, current.state);
     if (!current || !canAdmit) return;
     setBusy(true);
     setError("");
@@ -328,7 +329,7 @@ export function JoiningCaseDetail({ caseId, embedded = false }: { caseId: string
               <div><dt>رقم الإثبات</dt><dd>{requestedProof ? <bdi dir="auto">{requestedProof.proofNumber}</bdi> : <><button type="button" className="button button-secondary" disabled={proofDetailsLoading} onClick={() => void readProofDetails()}>{proofDetailsLoading ? "جارٍ قراءة رقم الإثبات…" : requestedProofError ? "إعادة قراءة رقم الإثبات" : "عرض رقم الإثبات عند الحاجة"}</button>{requestedProofError ? <span role="alert">{requestedProofError}</span> : null}</>}</dd></div>
               <div><dt>طريقة التوصيل</dt><dd>{current.firstStoreFulfillmentModes.map((mode) => fulfillmentModeOptions.find((option) => option.value === mode)?.label ?? mode).join("، ") || "غير متاحة في بيانات الحالة القديمة"}</dd></div>
               <div><dt>ملاحظات</dt><dd>{current.firstStoreNotes === undefined ? "غير متاحة في بيانات الحالة القديمة" : current.firstStoreNotes?.trim() || "لا توجد ملاحظات"}</dd></div>
-              <div><dt>مصدر الحالة</dt><dd>{current.origin === "field" ? "تطبيق الميداني" : "لوحة التحكم"}</dd></div>
+              <div><dt>مصدر الحالة</dt><dd>{current.origin === "field" ? "تطبيق الميداني" : current.origin === "self_service" ? "التسجيل الذاتي الموثق" : "لوحة التحكم"}</dd></div>
               <div><dt>فترة التسوية</dt><dd>{current.settlementPeriod ? settlementPeriodLabel(current.settlementPeriod) : "لم تُثبت بعد"}</dd></div>
               <div><dt>شروط السياسة</dt><dd>{current.termsPolicyVersion ? <details><summary>مرجع السياسة المعتمدة</summary><bdi dir="ltr">{current.termsPolicyVersion}</bdi></details> : "لم تُربط بعد"}</dd></div>
               <div><dt>الحالة المالية</dt><dd>{financialProfileStateLabel(current.financialProfileState)}</dd></div>
@@ -355,7 +356,7 @@ export function JoiningCaseDetail({ caseId, embedded = false }: { caseId: string
                 <label className="action-row"><input type="checkbox" disabled={busy} checked={storeImageProvenance.rightsAttested} onChange={(event) => setStoreImageProvenance((currentValue) => ({ ...currentValue, rightsAttested: event.target.checked }))} /> أؤكد صحة مصدر الصورة وحق استخدامه</label>
               </>
             </details> : null}
-            {current.state === "draft" && current.origin === "control_panel" ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>إرسال الحالة للمراجعة وإنشاء دور الشريك</button> : null}
+            {current.state === "draft" && canOperatorAdmitJoiningCase(current.origin, current.state) ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>{current.origin === "self_service" ? "قبول طلب التسجيل الذاتي وإنشاء دور الشريك" : "إرسال الحالة للمراجعة وإنشاء دور الشريك"}</button> : null}
             {current.state === "admission_requested" && current.origin === "field" ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>قبول الإحالة وإنشاء دور الشريك</button> : null}
             {current.state === "submitted" ? <>
                {activeTermsPolicy ? <p className="managed-status managed-status-info">ستُعتمد شروط التسوية: {settlementPeriodLabel(activeTermsPolicy.settlementPeriod)}.</p> : <><output className="managed-status managed-status-warning">{policyReadMessage || "تُقرأ فترة التسوية من قسم السياسات؛ أما عمولة كل متجر فتُحسم في اتفاقيته الخاصة بعد تفاوض المالك وموافقة المالية."}</output><Link className="button button-secondary" href="/policies?policy=partner-financial-terms&action=manage">فتح شروط تسوية الشريك</Link><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readFinancialTermsPolicy()}>إعادة قراءة الشروط النشطة</button></>}
