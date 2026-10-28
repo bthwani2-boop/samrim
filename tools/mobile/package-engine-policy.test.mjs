@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import path from "node:path";
 import { createRequire } from "node:module";
+import path from "node:path";
 import test from "node:test";
 
 const root = process.cwd();
@@ -38,7 +38,9 @@ for (const [app, other] of Object.entries(extras)) {
     const filename = path.join(root, "apps", app, "package.json");
     const manifest = JSON.parse(fs.readFileSync(filename, "utf8"));
     const localRequire = createRequire(filename);
-    const dependencies = { ...common, ...(app === "control-panel" ? {} : mobile), ...other };
+    const dependencies = app === "control-panel"
+      ? { zod: common.zod, "date-fns": common["date-fns"], "@date-fns/tz": common["@date-fns/tz"], ...other }
+      : { ...common, ...mobile, ...other };
     for (const [name, pinnedVersion] of Object.entries(dependencies)) {
       if (Object.hasOwn(common, name)) {
         assert.equal(manifest.dependencies[name], "catalog:", app + " " + name);
@@ -53,6 +55,9 @@ for (const [app, other] of Object.entries(extras)) {
     if (app === "control-panel") {
       assert.equal(manifest.dependencies["@tanstack/react-table"], undefined, "AntD Table owns generic CP tables");
       assert.equal(manifest.dependencies["@tanstack/react-virtual"], undefined, "AntD virtual replaces the legacy CP virtualizer");
+      for (const unused of ["@hookform/resolvers", "@tanstack/react-query", "react-hook-form"]) {
+        assert.equal(manifest.dependencies[unused], undefined, `${unused} is not used by the AntD control panel`);
+      }
     } else {
       assert.equal(manifest.dependencies.expo, "58.0.19");
       assert.equal(manifest.dependencies["react-native"], "0.88.0");
