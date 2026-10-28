@@ -45,7 +45,7 @@ export function createPartnerTabOptions(theme: ReturnType<typeof resolveTheme>, 
     headerShown: route.name !== "more",
     header: ({ route: headerRoute, navigation }: { route: { name: string; params?: unknown }; navigation: unknown }) => {
       const params = headerRoute.params as { focus?: string | string[]; q?: string | string[]; returnTo?: string; panel?: string } | undefined;
-      return <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><PartnerHeader title={headerRoute.name === "orders" ? "الطلبات" : headerRoute.name === "products" ? ((headerRoute.params as { panel?: string } | undefined)?.panel === "tools" ? "الكتالوج" : "المنتجات") : headerRoute.name === "wallet" ? "المحفظة" : headerRoute.name === "insights" ? "الأداء" : headerRoute.name === "account" ? "الحساب" : headerRoute.name === "onboarding" ? "الانضمام" : headerRoute.name === "store" ? ((headerRoute.params as { section?: string } | undefined)?.section === "promotions" ? "العروض" : (headerRoute.params as { section?: string } | undefined)?.section === "team" ? "الفريق" : (headerRoute.params as { section?: string } | undefined)?.section === "settings" ? "ملف المتجر" : "التشغيل") : "المزيد"} isOrders={headerRoute.name === "orders"} isProducts={headerRoute.name === "products" && params?.panel !== "tools"} isSubpage={["store", "account", "onboarding", "insights"].includes(headerRoute.name) || (headerRoute.name === "products" && params?.panel === "tools")} returnTo={params?.returnTo} canSearchOrders={canSearchOrders && headerRoute.name === "orders"} focus={params?.focus} searchQuery={params?.q} navigation={navigation as PartnerSearchNavigation} styles={styles} /></SafeAreaView>;
+      return <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><PartnerHeader title={headerRoute.name === "orders" ? "الطلبات" : headerRoute.name === "products" ? ((headerRoute.params as { panel?: string } | undefined)?.panel === "tools" ? "الكتالوج" : "المنتجات") : headerRoute.name === "wallet" ? "المحفظة" : headerRoute.name === "insights" ? "الأداء" : headerRoute.name === "account" ? "الحساب" : headerRoute.name === "onboarding" ? "الانضمام" : headerRoute.name === "store" ? ((headerRoute.params as { section?: string } | undefined)?.section === "promotions" ? "العروض" : (headerRoute.params as { section?: string } | undefined)?.section === "team" ? "الفريق" : (headerRoute.params as { section?: string } | undefined)?.section === "settings" ? "ملف المتجر" : "التشغيل") : "المزيد"} isOrders={headerRoute.name === "orders"} isProducts={headerRoute.name === "products" && params?.panel !== "tools"} isCatalogSurface={headerRoute.name === "products"} isSubpage={["store", "account", "onboarding", "insights"].includes(headerRoute.name) || (headerRoute.name === "products" && params?.panel === "tools")} returnTo={params?.returnTo} canSearchOrders={canSearchOrders && headerRoute.name === "orders"} focus={params?.focus} searchQuery={params?.q} navigation={navigation as PartnerSearchNavigation} styles={styles} /></SafeAreaView>;
     },
     tabBarPosition: desktopWeb ? "right" as const : "bottom" as const,
     tabBarVariant: desktopWeb ? "material" as const : "uikit" as const,
@@ -62,10 +62,12 @@ export function createPartnerTabOptions(theme: ReturnType<typeof resolveTheme>, 
   });
 }
 
-function PartnerHeader({ title, isOrders, isProducts, isSubpage, returnTo, canSearchOrders, focus: rawFocus, searchQuery: rawQuery, navigation, styles }: { title: string; isOrders: boolean; isProducts: boolean; isSubpage: boolean; returnTo?: string | undefined; canSearchOrders: boolean; focus?: string | string[] | undefined; searchQuery?: string | string[] | undefined; navigation: PartnerSearchNavigation; styles: ReturnType<typeof createStyles> }) {
+function PartnerHeader({ title, isOrders, isProducts, isCatalogSurface, isSubpage, returnTo, canSearchOrders, focus: rawFocus, searchQuery: rawQuery, navigation, styles }: { title: string; isOrders: boolean; isProducts: boolean; isCatalogSurface: boolean; isSubpage: boolean; returnTo?: string | undefined; canSearchOrders: boolean; focus?: string | string[] | undefined; searchQuery?: string | string[] | undefined; navigation: PartnerSearchNavigation; styles: ReturnType<typeof createStyles> }) {
   const theme = useAppearanceTheme();
   const router = useRouter();
   const { stores, selectedStore, selectStore } = usePartnerStoreScope();
+  const scopedStores = isCatalogSurface ? stores.filter((store) => store.owned || store.permissions.includes("catalog")) : stores;
+  const selectedScopedStore = scopedStores.find((store) => store.id === selectedStore?.id);
   const [pickerOpen, setPickerOpen] = useState(false);
   const focus = Array.isArray(rawFocus) ? rawFocus[0] : rawFocus;
   const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
@@ -91,21 +93,21 @@ function PartnerHeader({ title, isOrders, isProducts, isSubpage, returnTo, canSe
         </View>
         <View style={styles.headerActions}>
           {isOrders ? <PartnerNotificationsHeaderAction /> : null}
-          {isProducts ? <>
+          {isProducts && selectedScopedStore ? <>
             <Pressable accessibilityRole="button" accessibilityLabel="إضافة منتج" onPress={() => dispatchPartnerProductAction("create")} style={[styles.productHeaderAction, styles.productHeaderPrimary]}><BthwaniIcon name="cart" size={15} color={theme.onAction} /><Text style={styles.productHeaderPrimaryLabel}>إضافة</Text></Pressable>
             <Pressable accessibilityRole="button" accessibilityLabel="تعديل المنتجات" onPress={() => dispatchPartnerProductAction("prices")} style={styles.productHeaderAction}><BthwaniIcon name="edit" size={15} color={theme.color} /><Text style={styles.productHeaderActionLabel}>تعديل</Text></Pressable>
           </> : null}
           {isSubpage && Platform.OS === "web" ? <BthwaniIconButton icon="back" label="رجوع" onPress={() => returnTo === "more" ? navigation.navigate("more") : navigation.canGoBack() ? navigation.goBack() : navigation.navigate("more")} size={sizing.controlSm} tone="soft" /> : null}
           {canSearch ? <BthwaniIconButton icon="search" label={isProducts ? "بحث المنتجات" : "البحث في الطلبات"} onPress={() => { if (isProducts) dispatchPartnerProductAction("list"); navigation.navigate(isProducts ? "products" : "orders", { focus: "search" }); }} size={sizing.controlSm} tone="soft" /> : null}
-          {stores.length > 1 ? <Pressable accessibilityRole="button" accessibilityLabel="تبديل المتجر" onPress={() => setPickerOpen(true)} style={styles.storePickerButton}><BthwaniIcon name="store" size={18} color={theme.brandAction} /><Text style={styles.pickerArrow}>⌄</Text></Pressable> : null}
+          {scopedStores.length > 1 ? <Pressable accessibilityRole="button" accessibilityLabel="تبديل المتجر" onPress={() => setPickerOpen(true)} style={styles.storePickerButton}><BthwaniIcon name="store" size={18} color={theme.brandAction} /><Text style={styles.pickerArrow}>⌄</Text></Pressable> : null}
         </View>
       </>}
     </View>
-    <Modal visible={pickerOpen && stores.length > 1} transparent animationType="fade" onRequestClose={() => setPickerOpen(false)}>
+    <Modal visible={pickerOpen && scopedStores.length > 1} transparent animationType="fade" onRequestClose={() => setPickerOpen(false)}>
       <View style={styles.pickerBackdrop}><View style={styles.pickerPanel}>
         <Text style={styles.pickerTitle}>اختيار المتجر</Text>
         <ScrollView accessibilityLabel="قائمة المتاجر" nestedScrollEnabled style={styles.pickerList} showsVerticalScrollIndicator>
-          {stores.map((store) => <Pressable key={store.id} accessibilityRole="button" accessibilityState={{ selected: store.id === selectedStore?.id }} onPress={() => { selectStore(store.id); setPickerOpen(false); }} style={styles.pickerStore}><Text style={styles.pickerStoreLabel}>{store.name}</Text>{store.id === selectedStore?.id ? <BthwaniIcon name="success" size={sizing.iconMd} /> : null}</Pressable>)}
+          {scopedStores.map((store) => <Pressable key={store.id} accessibilityRole="button" accessibilityState={{ selected: store.id === selectedStore?.id }} onPress={() => { selectStore(store.id); setPickerOpen(false); }} style={styles.pickerStore}><Text style={styles.pickerStoreLabel}>{store.name}</Text>{store.id === selectedStore?.id ? <BthwaniIcon name="success" size={sizing.iconMd} /> : null}</Pressable>)}
         </ScrollView>
         <Pressable accessibilityRole="button" onPress={() => setPickerOpen(false)} style={styles.pickerClose}><Text style={styles.pickerStoreLabel}>إغلاق</Text></Pressable>
       </View></View>
