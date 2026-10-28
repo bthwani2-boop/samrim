@@ -119,7 +119,7 @@ export function JoiningCaseDetail({ caseId, embedded = false }: { caseId: string
   }, [readCase, readOptions]);
 
   // Financial terms are only needed for approval or recovery, not for every draft visit.
-  const needsTerms = result?.case.state === "submitted" || (result?.case.state === "approved" && result?.case.financialProfileState === "REQUIRED");
+  const needsTerms = result?.case.state === "approved" && result?.case.financialProfileState === "REQUIRED";
   useEffect(() => {
     if (needsTerms) void readFinancialTermsPolicy();
   }, [needsTerms, readFinancialTermsPolicy]);
@@ -220,20 +220,15 @@ export function JoiningCaseDetail({ caseId, embedded = false }: { caseId: string
       setError("أدخل سبب التصحيح قبل إعادة الحالة.");
       return;
     }
-    if (decision === "approved" && (!canManageFinancialTerms || !activeTermsPolicy)) {
-      setError(policyReadMessage || "لا توجد سياسة مالية نشطة أو لا تملك صلاحية المالية.");
-      return;
-    }
     setBusy(true);
     setError("");
     try {
       const response = await fetch(`/api/partners/joining-cases/${encodeURIComponent(caseId)}/review`, {
         method: "POST",
-        headers: await stablePartnerMutationHeaders(`joining-case-review:${caseId}:${current.version}:${decision}:${correctionReason.trim()}:${decision === "approved" ? activeTermsPolicy?.policyVersion ?? "" : ""}`),
+        headers: await stablePartnerMutationHeaders(`joining-case-review:${caseId}:${current.version}:${decision}:${correctionReason.trim()}`),
         body: JSON.stringify({
           expectedVersion: current.version,
           decision,
-          ...(decision === "approved" && activeTermsPolicy ? { expectedTermsPolicyVersion: activeTermsPolicy.policyVersion } : {}),
           ...(correctionReason.trim() ? { correctionReason: correctionReason.trim() } : {}),
         }),
       });
@@ -359,9 +354,9 @@ export function JoiningCaseDetail({ caseId, embedded = false }: { caseId: string
             {current.state === "draft" && canOperatorAdmitJoiningCase(current.origin, current.state) ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>{current.origin === "self_service" ? "قبول طلب التسجيل الذاتي وإنشاء دور الشريك" : "إرسال الحالة للمراجعة وإنشاء دور الشريك"}</button> : null}
             {current.state === "admission_requested" && current.origin === "field" ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>قبول الإحالة وإنشاء دور الشريك</button> : null}
             {current.state === "submitted" ? <>
-               {activeTermsPolicy ? <p className="managed-status managed-status-info">ستُعتمد شروط التسوية: {settlementPeriodLabel(activeTermsPolicy.settlementPeriod)}.</p> : <><output className="managed-status managed-status-warning">{policyReadMessage || "تُقرأ فترة التسوية من قسم السياسات؛ أما عمولة كل متجر فتُحسم في اتفاقيته الخاصة بعد تفاوض المالك وموافقة المالية."}</output><Link className="button button-secondary" href="/policies?policy=partner-financial-terms&action=manage">فتح شروط تسوية الشريك</Link><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readFinancialTermsPolicy()}>إعادة قراءة الشروط النشطة</button></>}
+               <p className="managed-status managed-status-info">يستطيع قسم الشركاء اعتماد الانضمام وإنشاء المتجر الآن. يبقى الملف المالي غير مفعل حتى تربط المالية سياسة التسوية، ثم يقبل الشريك اتفاق عمولة المتجر وتوافق المالية عليه قبل النشر.</p>
               <label className="field-label" htmlFor="joining-correction">سبب التصحيح عند الحاجة<TextArea className="resize-none" id="joining-correction" disabled={busy} value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} /></label>
-              <button type="button" className="button button-primary" disabled={busy || !canManageFinancialTerms || !activeTermsPolicy} onClick={() => void reviewCase("approved")}>اعتماد الحالة وإنشاء المتجر بالشروط النشطة</button>
+              <button type="button" className="button button-primary" disabled={busy} onClick={() => void reviewCase("approved")}>اعتماد الانضمام وإنشاء المتجر (دون تفعيل مالي)</button>
               <button type="button" className="button button-secondary" disabled={busy} onClick={() => void reviewCase("needs_correction")}>إعادة للتصحيح</button>
             </> : null}
             {current.state === "needs_correction" ? <p>الحالة بانتظار تصحيح بيانات الشريك عبر المسار القانوني المتاح.</p> : null}
@@ -370,8 +365,8 @@ export function JoiningCaseDetail({ caseId, embedded = false }: { caseId: string
               {storeId ? <StoreZeroCommissionProposal storeId={storeId} modes={current.store?.fulfillmentModes ?? current.firstStoreFulfillmentModes} /> : null}
               <details className="partner-case-attachments"><summary>إرشادات تفعيل حساب الشريك</summary><p>يفتح صاحب المتجر تطبيق الشريك برقم الجوال المسجّل. عند أول تفعيل يختار «أول دخول»؛ وإن سبق التفعيل يسجّل الدخول أو يستعيد كلمة المرور. لا يحتاج إلى دعوة من تطبيق الميداني.</p></details>
               {current.financialProfileState === "REQUIRED" ? <>
-                <p className="managed-status managed-status-warning" role="status">{activeTermsPolicy ? "ستُربط شروط التسوية بهذه الحالة العالقة." : policyReadMessage || "يلزم وجود سياسة مالية نشطة وصلاحية المالية."}</p>
-                {!activeTermsPolicy ? <><Link className="button button-secondary" href="/policies?policy=partner-financial-terms&action=manage">فتح سياسة الشريك المالية</Link><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readFinancialTermsPolicy()}>إعادة قراءة السياسة النشطة</button></> : null}
+                <p className="managed-status managed-status-warning" role="status">{canManageFinancialTerms ? (activeTermsPolicy ? "اربط شروط التسوية المعتمدة لإكمال تفعيل الملف المالي." : policyReadMessage || "يلزم وجود سياسة مالية نشطة.") : "الملف بانتظار إجراء مستقل من مشغّل لديه صلاحية المالية وسياسات المنصة."}</p>
+                {canManageFinancialTerms && !activeTermsPolicy ? <><Link className="button button-secondary" href="/policies?policy=partner-financial-terms&action=manage">فتح سياسة الشريك المالية</Link><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readFinancialTermsPolicy()}>إعادة قراءة السياسة النشطة</button></> : null}
                 <button type="button" className="button button-primary" disabled={busy || !canManageFinancialTerms || !activeTermsPolicy} onClick={() => void bindFinancialTerms()}>استكمال الربط المالي وفق السياسة النشطة</button>
               </> : null}
             </> : null}

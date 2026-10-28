@@ -1132,13 +1132,6 @@ func ReviewJoiningCase(ctx context.Context, db *sql.DB, input ReviewJoiningCaseI
 		if _, err := tx.ExecContext(ctx, "DELETE FROM dsh.joining_case_review_photos WHERE joining_case_id=$1", caseID); err != nil {
 			return JoiningCaseResult{}, err
 		}
-		outboxID, outboxErr := newID("joining_financial")
-		if outboxErr != nil {
-			return JoiningCaseResult{}, outboxErr
-		}
-		if _, outboxErr = tx.ExecContext(ctx, `INSERT INTO dsh.joining_case_financial_profile_outbox(id,case_id,idempotency_key,request_hash,correlation_id,acting_actor_id,partner_actor_id,origin,settlement_period,terms_policy_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, outboxID, caseID, idempotencyKey, requestHash, correlationID, actingActorID, current.Case.PartnerActorID, current.Case.Origin, settlementPeriod, termsPolicyVersion); outboxErr != nil {
-			return JoiningCaseResult{}, outboxErr
-		}
 	}
 	if err := tx.Commit(); err != nil {
 		return JoiningCaseResult{}, err
@@ -1167,7 +1160,7 @@ func validateJoiningCaseReview(current JoiningCaseRecord, input ReviewJoiningCas
 	}
 	input.CorrectionReason = strings.TrimSpace(input.CorrectionReason)
 	input.SettlementPeriod = strings.ToUpper(strings.TrimSpace(input.SettlementPeriod))
-	if input.Decision == "approved" && ((input.SettlementPeriod != "DAILY" && input.SettlementPeriod != "WEEKLY" && input.SettlementPeriod != "MONTHLY") || !strings.HasPrefix(strings.TrimSpace(input.TermsPolicyVersion), "partner-financial-terms:v")) {
+	if input.SettlementPeriod != "" || strings.TrimSpace(input.TermsPolicyVersion) != "" {
 		return input, ErrJoiningCaseState
 	}
 	return input, nil
@@ -1735,9 +1728,8 @@ func updateJoiningCaseReviewStateTx(ctx context.Context, tx *sql.Tx, input updat
 	state, actorID, reviewedBy, correctionReason, storeID := input.State, input.ActorID, input.ReviewedBy, input.CorrectionReason, input.StoreID
 	settlementPeriod, termsPolicyVersion, expectedVersion := input.SettlementPeriod, input.TermsPolicyVersion, input.ExpectedVersion
 	financialProfileState := "REQUIRED"
-	if state == "approved" {
-		financialProfileState = "PENDING_BINDING"
-	}
+	// An approved Store is not financially eligible until Finance explicitly
+	// binds the current policy through BindApprovedJoiningCaseFinancialTerms.
 	row := tx.QueryRowContext(ctx, `UPDATE dsh.joining_cases SET partner_actor_id=NULLIF($2,''),state=$3,correction_reason=NULLIF($4,''),reviewed_by=NULLIF($5,''),store_id=NULLIF($6,''),settlement_period=CASE WHEN $3='approved' THEN NULLIF($7::text,'') ELSE NULL END,terms_policy_version=CASE WHEN $3='approved' THEN NULLIF($8::text,'') ELSE NULL END,financial_profile_id=NULL,financial_profile_state=$9,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$10 RETURNING id`, current.ID, actorID, state, correctionReason, reviewedBy, storeID, settlementPeriod, termsPolicyVersion, financialProfileState, expectedVersion)
 	var updatedID string
 	if err := row.Scan(&updatedID); err != nil {

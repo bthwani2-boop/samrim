@@ -226,7 +226,7 @@ func (s *JoiningCaseServer) review(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	decision := string(input.Decision)
-	result, err := s.service.Review(r.Context(), r.PathValue("caseId"), decision, input.CorrectionReason, input.ExpectedTermsPolicyVersion, expected, idempotency, acting, correlation)
+	result, err := s.service.Review(r.Context(), r.PathValue("caseId"), decision, input.CorrectionReason, expected, idempotency, acting, correlation)
 	if err != nil {
 		log.Printf("joining case review failed case=%s: %v", r.PathValue("caseId"), err)
 		writeJoiningCaseError(w, err)

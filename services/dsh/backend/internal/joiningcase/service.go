@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"log"
 	"math"
 	"strconv"
 	"strings"
@@ -119,7 +118,7 @@ func (s *Service) Submit(ctx context.Context, caseID string, expectedVersion int
 	return postgres.SubmitJoiningCase(ctx, s.db, caseID, actorRole.ActorID, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseSubmit(caseID, actorRole.ActorID, expectedVersion), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
 }
 
-func (s *Service) Review(ctx context.Context, caseID, decision, correctionReason, expectedTermsPolicyVersion string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.JoiningCaseResult, error) {
+func (s *Service) Review(ctx context.Context, caseID, decision, correctionReason string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.JoiningCaseResult, error) {
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
@@ -131,43 +130,11 @@ func (s *Service) Review(ctx context.Context, caseID, decision, correctionReason
 	if decision == "needs_correction" && (len(correctionReason) < 5 || len(correctionReason) > 500) {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
-	period := ""
-	policyVersion := ""
-	if decision == "approved" {
-		expectedTermsPolicyVersion = strings.TrimSpace(expectedTermsPolicyVersion)
-		if expectedTermsPolicyVersion == "" || len(expectedTermsPolicyVersion) > 128 {
-			return postgres.JoiningCaseResult{}, ErrInvalidInput
-		}
-		if err := s.identity.RequireOperatorPermission(ctx, strings.TrimSpace(actingActorID), "finance"); err != nil {
-			return postgres.JoiningCaseResult{}, err
-		}
-		policy, err := s.wlt.ReadPartnerFinancialTermsPolicy(ctx)
-		if err != nil {
-			return postgres.JoiningCaseResult{}, err
-		}
-		period = strings.ToUpper(strings.TrimSpace(policy.SettlementPeriod))
-		policyVersion = strings.TrimSpace(policy.PolicyVersion)
-		if policyVersion != expectedTermsPolicyVersion {
-			return postgres.JoiningCaseResult{}, ErrPartnerFinancialTermsPolicyStale
-		}
-		if (period != "DAILY" && period != "WEEKLY" && period != "MONTHLY") || len(policyVersion) > 128 || !strings.HasPrefix(policyVersion, "partner-financial-terms:v") {
-			return postgres.JoiningCaseResult{}, ErrInvalidInput
-		}
-	}
-	review := postgres.ReviewJoiningCaseInput{CaseID: caseID, Decision: decision, CorrectionReason: correctionReason, SettlementPeriod: period, TermsPolicyVersion: policyVersion, ExpectedVersion: expectedVersion, IdempotencyKey: strings.TrimSpace(idempotencyKey), ActingActorID: strings.TrimSpace(actingActorID), CorrelationID: strings.TrimSpace(correlationID)}
-	review.RequestHash = postgres.HashJoiningCaseReviewWithFinancialTerms(caseID, decision, correctionReason, expectedVersion, period, policyVersion)
-	result, err := postgres.ReviewJoiningCase(ctx, s.db, review)
-	if err != nil {
-		return postgres.JoiningCaseResult{}, err
-	}
-	if decision == "approved" && result.Case.FinancialProfileState != "ACTIVE" {
-		if syncErr := s.syncFinancialProfile(ctx, result.Case.ID); syncErr != nil {
-			log.Printf("joining case financial profile binding failed case=%s: %v", result.Case.ID, syncErr)
-			return result, syncErr
-		}
-		return postgres.ReadJoiningCase(ctx, s.db, result.Case.ID)
-	}
-	return result, nil
+	// Partners approves only admission. The financial profile remains REQUIRED
+	// until an independently authorized Finance actor binds the active policy.
+	review := postgres.ReviewJoiningCaseInput{CaseID: caseID, Decision: decision, CorrectionReason: correctionReason, ExpectedVersion: expectedVersion, IdempotencyKey: strings.TrimSpace(idempotencyKey), ActingActorID: strings.TrimSpace(actingActorID), CorrelationID: strings.TrimSpace(correlationID)}
+	review.RequestHash = postgres.HashJoiningCaseReviewWithFinancialTerms(caseID, decision, correctionReason, expectedVersion, "", "")
+	return postgres.ReviewJoiningCase(ctx, s.db, review)
 }
 
 func (s *Service) BindFinancialTerms(ctx context.Context, caseID, expectedTermsPolicyVersion string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.JoiningCaseResult, error) {

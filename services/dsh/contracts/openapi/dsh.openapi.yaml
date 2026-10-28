@@ -2272,10 +2272,6 @@ components:
           type: string
           nullable: true
           maxLength: 500
-        expectedTermsPolicyVersion:
-          type: string
-          minLength: 1
-          maxLength: 128
     BindJoiningCaseFinancialTermsRequest:
       type: object
       required: [expectedTermsPolicyVersion]
