@@ -207,7 +207,15 @@ export function ProspectivePartnerApplication(){
    <Text style={styles.heading}>طلبك الحالي</Text>
    <Text style={styles.text}>المتجر: {caseValue.case.firstStoreName}</Text>
    <Text style={styles.text}>الحالة: {joiningCaseStateLabel(caseValue.case.state)}</Text>
-   <Text style={styles.muted}>احتفظ بطلب واحد. عند اعتمادك يمكنك تنشيط حساب الشريك لاستكمال الكتالوج والموافقة على الشروط التجارية.</Text>
+   {caseValue.case.state==="needs_correction"?<>
+    <Text accessibilityRole="alert" style={styles.muted}>أُعيد طلبك للتصحيح. سجّل الدخول إلى حساب الشريك المرتبط برقمك، وراجع الملاحظات وأعد تقديم البيانات من شاشة الانضمام.</Text>
+    {caseValue.case.correctionReason?<Text style={styles.text}>سبب التصحيح: {caseValue.case.correctionReason}</Text>:null}
+    <BthwaniButton label="الانتقال إلى حساب الشريك لتصحيح الطلب" onPress={()=>router.back()} />
+   </>:caseValue.case.state==="approved"?<>
+    <Text style={styles.muted}>اعتمد قسم الشركاء طلبك. ادخل إلى حساب الشريك بنفس رقم الهاتف، ثم أكمل بيانات المتجر والكتالوج والاتفاق التجاري قبل طلب النشر.</Text>
+    <BthwaniButton label="الانتقال إلى حساب الشريك لإكمال المتجر" onPress={()=>router.back()} />
+   </>:caseValue.case.state==="submitted"?<Text style={styles.muted}>طلبك قيد مراجعة قسم الشركاء. لا ترسل طلبًا ثانيًا؛ ستظهر هنا حالة المراجعة والتصحيح عند تحديثها.</Text>
+   :<Text style={styles.muted}>طلبك محفوظ كمسودة وينتظر خطوة قبول أولية من قسم الشركاء. لا يلزم تسجيل طلب جديد.</Text>}
    <BthwaniButton label="تحديث حالة الطلب" variant="secondary" onPress={()=>void load()} disabled={loading}/>
   </View>:null}
   {authenticated&&!caseValue&&hasRead&&!loading?<View style={{gap:11}}>
