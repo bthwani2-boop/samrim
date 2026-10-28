@@ -232,7 +232,7 @@ export function PartnersWorkbench() {
       const c = row.case;
       return <tr key={rowId(row)} data-kind="joining">
         <th scope="row"><div className="store-registry-identity"><input type="checkbox" aria-label={"تحديد طلب " + c.businessName} checked={selected.has(rowId(row))} onChange={(event) => { const updated = new Set(selected); if (event.target.checked) updated.add(rowId(row)); else updated.delete(rowId(row)); setSelected(updated); }} /><span className="partner-attention-avatar" aria-hidden="true">+</span><div className="store-registry-identity-copy"><strong>{c.firstStoreName || c.businessName}</strong><small>{c.businessName}</small><a href={"tel:" + c.contactPhoneE164}><bdi dir="ltr">{c.contactPhoneE164}</bdi></a></div></div></th>
-        <td><div className="store-registry-cell-stack"><strong>طلب انضمام</strong><small>{c.origin === "field" ? "عبر الميداني" : "عبر المشغّل"}</small></div></td>
+        <td><div className="store-registry-cell-stack"><strong>طلب انضمام</strong><small>{c.origin === "field" ? "سجل تاريخي" : c.origin === "self_service" ? "تسجيل ذاتي" : "عبر المشغّل"}</small></div></td>
         <td><span className="partner-state-tag is-pending">{joiningCaseStateLabel(c.state)}</span></td>
         <td><div className="store-registry-cell-stack"><span>{c.state === "submitted" ? "ينتظر قرار المراجعة" : c.state === "admission_requested" ? "ينتظر قبول الإحالة" : c.state === "needs_correction" ? "ينتظر استكمال التصحيح" : c.state === "approved" ? "استكمال التفعيل" : "استكمال الطلب"}</span><small>إنشاء: {date(c.createdAt)}</small></div></td>
         <td><time dateTime={c.updatedAt}>{date(c.updatedAt)}</time></td>
@@ -279,7 +279,7 @@ export function PartnersWorkbench() {
     const state = row.kind === "joining" ? joiningCaseStateLabel(row.case.state) :
       row.kind === "access" ? "اعتماد دور معلق" : row.kind === "store" ? publicationStateLabel(row.store.publicationState) :
       row.actor.enabled && row.actor.securityEnabled ? "حساب مفعل" : "حساب موقوف";
-    const details = row.kind === "joining" ? (row.case.origin === "field" ? "عبر الميداني" : "عبر المشغّل") + " · آخر تحديث: " + date(row.case.updatedAt) :
+    const details = row.kind === "joining" ? (row.case.origin === "field" ? "سجل تاريخي" : row.case.origin === "self_service" ? "تسجيل ذاتي" : "عبر المشغّل") + " · آخر تحديث: " + date(row.case.updatedAt) :
       row.kind === "access" ? row.grant.permissions.map((p) => permissionLabels[p] || "صلاحية إضافية").join("، ") + " · انتهاء: " + date(row.grant.expiresAt) :
       row.kind === "store" ? [row.store.primaryVerticalName || "متجر", row.store.fulfillmentModes.map(fulfillmentModeLabel).join("، ") || "بدون توصيل", "تحديث: " + date(row.store.updatedAt)].join(" · ") : "لم يُربط متجر بهذا الحساب";
     const type = row.kind === "joining" ? "case" : row.kind === "access" ? "grant" : row.kind === "store" ? "inspect" : "actor";

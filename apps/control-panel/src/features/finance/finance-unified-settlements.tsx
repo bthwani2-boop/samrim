@@ -9,15 +9,15 @@ import { CustomerWithdrawalQueue } from "./customer-withdrawal-queue";
 import type { FinanceReferenceRow } from "./finance-reference-dashboard";
 import "./finance-unified-settlements.css";
 
-type Actor = "partner" | "captain" | "field";
+type Actor = "partner" | "captain";
 type Kind = "beneficiary" | "intake" | "batch" | "withdrawal";
-type Intake = Readonly<{ id: string; actorId: string; actorType: Actor; resolvedAmountMinor: number; currency: "YER"; createdAt: string }>;
+type Intake = Readonly<{ id: string; actorId: string; actorType: Actor | "field"; resolvedAmountMinor: number; currency: "YER"; createdAt: string }>;
 type RecordItem = Readonly<{
-  id: string; kind: Kind; actorType?: Actor | undefined; actorId?: string | undefined; name: string;
+  id: string; kind: Kind; actorType?: Actor | "field" | undefined; actorId?: string | undefined; name: string;
   amount?: number | undefined; held?: number | undefined; status: string; reference: string; reason: string;
   date?: string | undefined; beneficiary?: BeneficiaryPayoutState | undefined;
 }>;
-const actorNames: Record<Actor, string> = { partner: "الشريك", captain: "الكابتن", field: "الميداني" };
+const actorNames: Record<Actor | "field", string> = { partner: "الشريك", captain: "الكابتن", field: "سجل تاريخي" };
 const kindNames: Record<Kind, string> = { beneficiary: "المستحقات", intake: "طلبات التسوية", batch: "دفعات التحويل", withdrawal: "السحوبات الاستثنائية" };
 const financeStatus=(r:RecordItem)=>r.kind==="beneficiary"?(r.beneficiary?.latestPayout?.status ?? (r.amount && r.amount>0?"مؤهل":"لا توجد مستحقات")):r.status;
 const paramsFor=(record:RecordItem)=>({
@@ -39,7 +39,7 @@ export function FinanceUnifiedSettlements({rows,intakes,onChanged}:Readonly<{row
   const [selected,setSelected]=useState<string|null>(null);
   const [advanced,setAdvanced]=useState(false);
   const generation=useRef(0);
-  const actorTypes=useMemo<readonly Actor[]>(()=>actor==="all"?["partner","captain","field"]:[actor],[actor]);
+  const actorTypes=useMemo<readonly Actor[]>(()=>actor==="all"?["partner","captain"]:[actor],[actor]);
 
   const loadRoster=useCallback(async (append=false)=>{
     const seq=++generation.current;
@@ -117,7 +117,7 @@ export function FinanceUnifiedSettlements({rows,intakes,onChanged}:Readonly<{row
     <div className="fs-head"><div><h2>الصرف والتسويات</h2><p>سجل مالي واحد للمستحقات والدفعات والسحوبات؛ افتح التفاصيل عند الحاجة فقط.</p></div><span className="fs-period">الأرقام من المصادر المحمّلة · الصرف يخضع للصلاحيات</span></div>
     <div className="fu-toolbar">
       <label>نوع السجل<select aria-label="نوع السجل المالي" value={kind} onChange={e=>chooseKind(e.target.value as Kind)}><option value="beneficiary">المستحقات</option><option value="intake">طلبات التسوية</option><option value="batch">دفعات التحويل</option><option value="withdrawal">السحوبات الاستثنائية</option></select></label>
-      <label>صاحب المصلحة<select aria-label="نوع المستفيد" value={actor} onChange={e=>{setActor(e.target.value as Actor|"all");setSelected(null)}} disabled={kind==="batch"||kind==="withdrawal"}><option value="all">جميع الأطراف</option><option value="partner">الشركاء</option><option value="captain">الكباتن</option><option value="field">الميدانيون</option></select></label>
+      <label>صاحب المصلحة<select aria-label="نوع المستفيد" value={actor} onChange={e=>{setActor(e.target.value as Actor|"all");setSelected(null)}} disabled={kind==="batch"||kind==="withdrawal"}><option value="all">جميع الأطراف</option><option value="partner">الشركاء</option><option value="captain">الكباتن</option></select></label>
       <label>الحالة<select aria-label="حالة السجل" value={status} onChange={e=>setStatus(e.target.value)}><option value="all">جميع الحالات</option><option value="action">تحتاج مراجعة</option><option value="ready">مبلغ مؤهل</option><option value="held">مبلغ محجوز</option></select></label>
       <label className="fu-search">بحث<input type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="الاسم أو المرجع أو رقم العملية"/></label>
     </div>

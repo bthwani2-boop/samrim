@@ -698,7 +698,7 @@ export function BeneficiarySettlementWorkspace({ actorType, initialQuery }: Bene
   return <section className="beneficiary-settlement-workspace" aria-labelledby="beneficiary-settlement-title">
     <div className="finance-toolbar"><div><h2 id="beneficiary-settlement-title">{actorType === "field" ? "مستحقات الميداني" : "مستحقات وتسويات الشركاء والكباتن والميدان"}</h2></div>{registryError ? <button className="button button-secondary" type="button" onClick={() => void read({ status, search, sort, cursor })} disabled={registryLoading}>إعادة محاولة القراءة</button> : null}</div>
     {actorType === "field" ? <>
-      <p className="panel">الميداني مؤهل للاستحقاق بمجرد تفعيله. تُسجّل مكافأة كل متجر تلقائيًا بعد ظهوره للعملاء.</p>
+      <p className="panel">أرشيف مالي تاريخي فقط؛ أُوقف استقطاب الميدانيين وإصدار المكافآت الجديدة، ولا تُعتمد أي تسوية قديمة دون المراجعة المالية.</p>
       {registryLoading ? <p className="facts-grid" role="status">جارٍ تحميل سجل المستحقات…</p> : registryError ? <p className="facts-grid">ملخص الصفحة غير متاح حتى ينجح تحميل السجل.</p> : <>
         {fieldRosterTotalCount !== null ? <p className="section-heading" aria-live="polite">إجمالي الميدانيين المطابقين للبحث وفلتر التفعيل: {fieldRosterTotalCount.toLocaleString("ar-YE")} · العدد يشمل السجل قبل تطبيق فلتر طلب التسوية.</p> : null}
         <p className="facts-grid" aria-live="polite">صفوف هذه الصفحة: {filtered.length.toLocaleString("ar-YE")} ميداني · {acquiredStoreTotal.toLocaleString("ar-YE")} متجر مستحق · مكتسب {formatMoney(earnedLifetimeTotal, "YER")} · متاح {formatMoney(availableTotal, "YER")} · محجوز {formatMoney(heldTotal, "YER")} · {requestCount.toLocaleString("ar-YE")} طلب تسوية</p>

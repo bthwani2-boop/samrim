@@ -14,7 +14,7 @@ type WalletSummary = Readonly<{ actorId:string; actorType:ActorType; displayName
 type LedgerEntry = Readonly<{ transactionId:string; transactionType:string; direction:"CREDIT"|"DEBIT"; amountMinor:number; balanceAfterMinor:number; createdAt:string; sourceId:string; sourceType:string; order?:Readonly<{orderId:string;storeName:string}> }>;
 type Statement = Readonly<{ currentBalanceMinor:number; openingBalanceMinor:number; closingBalanceMinor:number; creditsMinor:number; debitsMinor:number; entries:readonly LedgerEntry[]; nextCursor?:string }>;
 type ViewProps = Readonly<{ rows:readonly FinanceReferenceRow[]; intakes:readonly Intake[]; hasMore:boolean; onOpenWorkflow:(workflow:FinanceReferenceWorkflow,row:FinanceReferenceRow|null)=>void; onReloadIntakes:()=>void }>;
-const actors:ReadonlyArray<{key:ActorType;label:string}> = [{key:"customer",label:"العملاء"},{key:"partner",label:"الشركاء"},{key:"captain",label:"الكباتن"},{key:"field",label:"الميدانيون"}];
+const actors:ReadonlyArray<{key:ActorType;label:string}> = [{key:"customer",label:"العملاء"},{key:"partner",label:"الشركاء"},{key:"captain",label:"الكباتن"},{key:"field",label:"أرشيف الميداني"}];
 const cashSources = [{key:"custody",label:"تحصيل COD"},{key:"commissions",label:"ذمم العمولات"}] as const;
 const num=(v:number)=>new Intl.NumberFormat("ar-YE",{maximumFractionDigits:0}).format(v);
 const money=(amount:number)=>financeAmount(amount);
