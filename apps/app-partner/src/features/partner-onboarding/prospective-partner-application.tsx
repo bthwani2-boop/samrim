@@ -2,11 +2,11 @@
 
 import { type CommerceVertical, type CommercialStoreType, createDshMobileClient, type CreateJoiningCaseRequest, type JoiningCaseResponse, joiningCaseStateLabel, type ServiceCity, type StoreFulfillmentMode } from "@bthwani/dsh";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
-import { BthwaniMap, type BthwaniMapCoordinate } from "@bthwani/design-system/native/map";
+import type { BthwaniMapCoordinate, BthwaniMapProps } from "@bthwani/design-system/native/map";
 import { toAsciiDigits } from "@bthwani/design-system";
 import * as Crypto from "expo-crypto";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ComponentType, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentProspectSession, loginProspect, logoutProspect, prospectAccessToken, registerProspect, requestProspectRegistration, restoreProspectSession, subscribeProspectSession } from "../../bootstrap/applicant-identity";
 import { listActiveServiceCities, listCatalogVerticals, listCommercialStoreTypes } from "./store-readback-client";
@@ -74,6 +74,9 @@ export function ProspectivePartnerApplication(){
  const [lat,setLat]=useState("");
  const [lng,setLng]=useState("");
  const [showLocationMap,setShowLocationMap]=useState(false);
+ const [MapComponent,setMapComponent]=useState<ComponentType<BthwaniMapProps>|null>(null);
+ const [mapLoading,setMapLoading]=useState(false);
+ const [mapError,setMapError]=useState("");
  const [manualCoordinateEntry,setManualCoordinateEntry]=useState(false);
  const [proofType,setProofType]=useState<CreateJoiningCaseRequest["firstStoreProofType"]>("IDENTITY_DOCUMENT");
  const [proofNumber,setProofNumber]=useState("");
@@ -118,6 +121,24 @@ export function ProspectivePartnerApplication(){
   void listCommercialStoreTypes(vertical).then(result=>{if(active)setTypes(result)}).catch(()=>{if(active)setError("تعذر تحميل أنواع المتاجر")});
   return()=>{active=false};
  },[vertical]);
+
+ async function toggleLocationMap(){
+  if(showLocationMap){setShowLocationMap(false);return;}
+  if(mapLoading)return;
+  if(MapComponent){setShowLocationMap(true);return;}
+  setMapLoading(true);setMapError("");
+  try{
+   // Native map availability depends on the installed Android binary.
+   // Loading it only on demand keeps registration usable in older builds.
+   const module=await import("@bthwani/design-system/native/map");
+   setMapComponent(()=>module.BthwaniMap);
+   setShowLocationMap(true);
+  }catch{
+   setShowLocationMap(false);
+   setManualCoordinateEntry(true);
+   setMapError("الخريطة غير متاحة في النسخة المثبتة. أدخل الإحداثيات يدويًا أو استخدم نسخة تدعم الخرائط.");
+  }finally{setMapLoading(false)}
+ }
 
  async function authenticate(){
   if(busy||!phone.trim()||!password)return;
@@ -201,8 +222,9 @@ export function ProspectivePartnerApplication(){
    <View style={{gap:8}}>
     <Text style={styles.text}>موقع المتجر</Text>
     <Text style={styles.muted}>حدد موقع متجرك على الخريطة؛ لا حاجة لإدخال إحداثيات يدويًا. موقع المتجر ليس موقع هاتفك بالضرورة.</Text>
-    <BthwaniButton label={showLocationMap?"إخفاء الخريطة":"تحديد موقع المتجر على الخريطة"} variant="secondary" onPress={()=>setShowLocationMap(value=>!value)} disabled={busy}/>
-    {showLocationMap?<BthwaniMap accessibilityLabel="خريطة تحديد موقع المتجر" selection={selectedOrigin} selectionTitle="موقع متجري" onSelectCoordinate={(point)=>{if(busy)return;setLat(String(point.latitude));setLng(String(point.longitude));setError("");}} height={280}/>:null}
+    <BthwaniButton label={mapLoading?"جارٍ تجهيز الخريطة":showLocationMap?"إخفاء الخريطة":"تحديد موقع المتجر على الخريطة"} variant="secondary" onPress={()=>void toggleLocationMap()} disabled={busy||mapLoading}/>
+    {mapError?<Text accessibilityRole="alert" style={styles.muted}>{mapError}</Text>:null}
+    {showLocationMap&&MapComponent?<MapComponent accessibilityLabel="خريطة تحديد موقع المتجر" selection={selectedOrigin} selectionTitle="موقع متجري" onSelectCoordinate={(point)=>{if(busy)return;setLat(String(point.latitude));setLng(String(point.longitude));setError("");}} height={280}/>:null}
     <BthwaniButton label={manualCoordinateEntry?"إخفاء إدخال الإحداثيات":"إدخال الإحداثيات يدويًا عند تعذر الخريطة"} variant="secondary" onPress={()=>setManualCoordinateEntry(value=>!value)} disabled={busy}/>
     {manualCoordinateEntry?<View style={{gap:8}}>{field("خط عرض المتجر",lat,setLat,false,"numbers-and-punctuation")}{field("خط طول المتجر",lng,setLng,false,"numbers-and-punctuation")}</View>:null}
     {selectedOrigin?<Text accessibilityLiveRegion="polite" style={styles.muted}>تم تحديد موقع المتجر. يمكنك تعديل النقطة قبل إرسال الطلب.</Text>:<Text style={styles.muted}>لم تحدد موقع المتجر بعد. اختر النقطة على الخريطة أو أدخل الإحداثيات عند تعذرها.</Text>}
