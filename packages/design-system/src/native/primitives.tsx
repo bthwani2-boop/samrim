@@ -118,8 +118,17 @@ export function BthwaniIconButton({ icon, label, tone = "surface", size = sizing
     primary: styles.iconButtonPrimary,
   };
   const toneStyle = toneStyles[tone];
+  const disabled = Boolean(props.disabled);
   return (
-    <Pressable {...props} accessibilityLabel={label} accessibilityRole={props.accessibilityRole ?? "button"} hitSlop={props.hitSlop ?? 4} style={(state) => [styles.iconButton, toneStyle, { height: size, width: size }, state.pressed && styles.buttonPressed, resolvePressableStyle(style, state)]}>
+    <Pressable
+      {...props}
+      accessibilityLabel={label}
+      accessibilityRole={props.accessibilityRole ?? "button"}
+      accessibilityState={{ ...props.accessibilityState, disabled }}
+      disabled={disabled}
+      hitSlop={props.hitSlop ?? 4}
+      style={(state) => [styles.iconButton, toneStyle, { height: size, width: size }, disabled && styles.iconButtonDisabled, state.pressed && !disabled && styles.buttonPressed, resolvePressableStyle(style, state)]}
+    >
       <BthwaniIcon name={icon} color={iconColor} size={sizing.iconMd} />
     </Pressable>
   );
@@ -223,6 +232,7 @@ function createPrimitiveStyles(theme: ThemeColors) {
     buttonTextDanger: { color: theme.danger },
     buttonTextDisabled: { color: theme.disabledText },
     iconButton: { alignItems: "center", borderRadius: radius.round, justifyContent: "center" },
+    iconButtonDisabled: { opacity: opacity.disabled },
     iconButtonSurface: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: borders.hairline },
     iconButtonSoft: { backgroundColor: theme.actionSoft },
     iconButtonPrimary: { backgroundColor: theme.actionBackground },
