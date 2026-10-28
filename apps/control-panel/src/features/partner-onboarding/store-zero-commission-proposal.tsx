@@ -4,6 +4,7 @@ import { type StoreFulfillmentMode } from "@bthwani/dsh";
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { stablePartnerMutationHeaders } from "../partners/partner-request";
+import { initialZeroCommissionProposalVersion } from "./initial-zero-commission-proposal";
 
 type Agreement = Readonly<{
   agreementId: string;
@@ -27,6 +28,7 @@ export function StoreZeroCommissionProposal({ storeId, modes }: Readonly<{storeI
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const url = `/api/partners/stores/${encodeURIComponent(storeId)}/commercial-agreements`;
+  const nextProposalVersion = agreements ? initialZeroCommissionProposalVersion(agreements) : null;
 
   const read = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch(url, { cache: "no-store", signal: signal ?? null });
@@ -52,19 +54,19 @@ export function StoreZeroCommissionProposal({ storeId, modes }: Readonly<{storeI
   }, [read]);
 
   async function propose() {
-    if (busy || !actorId || !agreements || agreements.length !== 0 || modes.length === 0) return;
+    if (busy || !actorId || nextProposalVersion === null || modes.length === 0) return;
     const distinct = [...new Set(modes)];
     if (distinct.length !== modes.length || distinct.some(mode => !(mode in labels))) return;
     setBusy(true);
     setError("");
     setNotice("");
     try {
-      const headers = await stablePartnerMutationHeaders(`initial-zero-commission:${actorId}:${storeId}`);
+      const headers = await stablePartnerMutationHeaders(`initial-zero-commission:${actorId}:${storeId}:${nextProposalVersion}`);
       const response = await fetch(url, {
         method: "POST", headers,
         body: JSON.stringify({
           rates: distinct.map(fulfillmentMode => ({ fulfillmentMode, commissionRateBps: 0 })),
-          expectedCurrentVersion: 0, reason,
+          expectedCurrentVersion: nextProposalVersion, reason,
         }),
       });
       if (!response.ok) throw new Error("PROPOSAL_REJECTED");
@@ -84,16 +86,19 @@ export function StoreZeroCommissionProposal({ storeId, modes }: Readonly<{storeI
 
   return <section className="access-card" aria-label="الاتفاق التجاري الأول للمتجر">
     <h4>الاتفاق التجاري الأول</h4>
-    {agreements === null ? <p role="status">جارٍ قراءة اتفاقات المتجر…</p> : agreements.length ? <>
-      <p>توجد {agreements.length} نسخة محفوظة. لا يمكن إنشاء عرض تأسيسي جديد فوق اتفاق موجود من هذا الإجراء.</p>
+    {agreements === null ? <p role="status">جارٍ قراءة اتفاقات المتجر…</p> : <>
+      {agreements.length ? <>
+      <p>توجد {agreements.length} نسخة محفوظة. لا تُستبدل أي اتفاقية نشطة أو قيد القبول بهذا العرض.</p>
       {agreements.map(item => <p key={item.agreementId}>النسخة {item.agreementVersion} · {item.status} · {item.rates.map(rate => `${labels[rate.fulfillmentMode] ?? rate.fulfillmentMode}: ${rate.commissionRateBps / 100}%`).join("، ")}</p>)}
-    </> : <>
-      <p>لا توجد اتفاقية لهذا المتجر. يمكن للشراكات اقتراح عمولة منتجات صفرية للأوضاع المفعّلة، دون تفعيلها تلقائيًا.</p>
+      </> : null}
+      {nextProposalVersion === null ? <p>لا يمكن تقديم عرض تأسيسي جديد أثناء وجود اتفاق قائم أو معلق. راجع حالته من قسم الشركاء أو المالية.</p> : <>
+      <p>{nextProposalVersion > 0 ? "رفضت المالية النسخ السابقة. راجع سبب الرفض وعالج نواقصها قبل إعادة الاقتراح؛ لن يُفعَّل العرض دون قبول جديد واعتماد جديد." : "لا توجد اتفاقية لهذا المتجر. يمكن للشراكات اقتراح عمولة منتجات صفرية للأوضاع المفعّلة، دون تفعيلها تلقائيًا."}</p>
       <p>{modes.map(mode => labels[mode] ?? mode).join("، ")}</p>
       <p>المدة التأسيسية وتاريخ الانتقال إلى اتفاق آخر غير محددين بهذا العرض؛ لا تُعلن مدة قبل اعتماد سياستها وتنفيذها.</p>
       <button type="button" className="button button-secondary" disabled={busy || !actorId || modes.length === 0} onClick={() => void propose()}>
-        {busy ? "جارٍ إرسال الاقتراح…" : "اقتراح اتفاق بعمولة 0%"}
+        {busy ? "جارٍ إرسال الاقتراح…" : nextProposalVersion > 0 ? "إعادة اقتراح عمولة 0% بعد التصحيح" : "اقتراح اتفاق بعمولة 0%"}
       </button>
+      </>}
     </>}
     {error ? <p role="alert" className="identity-error">{error} <button className="button button-secondary" type="button" disabled={busy} onClick={() => {setError("");void read().catch(() => setError("تعذرت إعادة القراءة."));}}>إعادة القراءة</button></p> : null}
     {notice ? <output>{notice}</output> : null}
