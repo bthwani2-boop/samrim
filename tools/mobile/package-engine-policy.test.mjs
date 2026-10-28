@@ -31,11 +31,6 @@ const extras = {
   "app-field": {},
   "control-panel": {
     "recharts": "3.10.1",
-    "@radix-ui/react-dialog": "1.3.1",
-    "@radix-ui/react-alert-dialog": "1.2.1",
-    "@radix-ui/react-select": "2.4.1",
-    "@radix-ui/react-dropdown-menu": "2.2.1",
-    "@radix-ui/react-popover": "1.3.1",
   },
 };
 for (const [app, other] of Object.entries(extras)) {
