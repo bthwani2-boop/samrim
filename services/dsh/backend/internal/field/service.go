@@ -23,16 +23,15 @@ var (
 )
 
 type Service struct {
-	identity     *identityintegration.Client
-	db           *sql.DB
-	evidenceKeys *postgres.JoiningCaseEvidenceKeyring
+	identity *identityintegration.Client
+	db       *sql.DB
 }
 
-func New(identity *identityintegration.Client, db *sql.DB, evidenceKeys *postgres.JoiningCaseEvidenceKeyring) (*Service, error) {
-	if identity == nil || db == nil || evidenceKeys == nil {
+func New(identity *identityintegration.Client, db *sql.DB) (*Service, error) {
+	if identity == nil || db == nil {
 		return nil, errors.New("Field configuration is invalid")
 	}
-	return &Service{identity: identity, db: db, evidenceKeys: evidenceKeys}, nil
+	return &Service{identity: identity, db: db}, nil
 }
 
 func (s *Service) Admit(ctx context.Context, fullNameAr, phone, serviceCityID, walletProviderKey string, allServiceCities bool, serviceCityIDs []string, idempotencyKey, actingActorID, correlationID string) (postgres.FieldAdmission, bool, error) {

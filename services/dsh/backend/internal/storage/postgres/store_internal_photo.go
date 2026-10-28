@@ -2,9 +2,7 @@ package postgres
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -18,70 +16,6 @@ type StoreInternalPhotoSummary struct {
 }
 
 const maxStoreInternalPhotos = 20
-
-func SaveStoreInternalPhoto(ctx context.Context, db *sql.DB, caseID, fieldActorID string, expectedVersion int, idempotencyKey, contentType string, data []byte) (JoiningCaseResult, error) {
-	caseID, fieldActorID, idempotencyKey = strings.TrimSpace(caseID), strings.TrimSpace(fieldActorID), strings.TrimSpace(idempotencyKey)
-	if db == nil || caseID == "" || fieldActorID == "" || len(idempotencyKey) < 8 || len(idempotencyKey) > 128 || expectedVersion < 1 || len(data) < 1 || len(data) > 10*1024*1024 || (contentType != "image/jpeg" && contentType != "image/png") {
-		return JoiningCaseResult{}, ErrJoiningCaseState
-	}
-	digest := sha256.Sum256(data)
-	contentSHA := hex.EncodeToString(digest[:])
-	requestHash := sha256.Sum256([]byte(strings.Join([]string{"store-internal-photo", caseID, fieldActorID, fmt.Sprint(expectedVersion), contentType, contentSHA}, "\x00")))
-	requestHashText := hex.EncodeToString(requestHash[:])
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return JoiningCaseResult{}, err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "dsh:store-internal-photo:idempotency:"+idempotencyKey); err != nil {
-		return JoiningCaseResult{}, err
-	}
-	var existingCaseID, existingHash string
-	err = tx.QueryRowContext(ctx, "SELECT joining_case_id,request_hash FROM dsh.store_internal_photos WHERE idempotency_key=$1", idempotencyKey).Scan(&existingCaseID, &existingHash)
-	if err == nil {
-		if existingCaseID != caseID || existingHash != requestHashText {
-			return JoiningCaseResult{}, ErrStoreProfileMediaIdempotency
-		}
-		if err := tx.Commit(); err != nil {
-			return JoiningCaseResult{}, err
-		}
-		result, err := ReadJoiningCaseForField(ctx, db, fieldActorID, caseID)
-		result.Replayed = true
-		return result, err
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return JoiningCaseResult{}, err
-	}
-	current, err := readJoiningCaseTx(ctx, tx, caseID)
-	if err != nil {
-		return JoiningCaseResult{}, err
-	}
-	if current.Case.Origin != "field" || current.Case.State != "draft" || current.Case.OriginatingFieldActorID != fieldActorID {
-		return JoiningCaseResult{}, ErrJoiningCasePartnerAccess
-	}
-	if current.Case.Version != expectedVersion {
-		return JoiningCaseResult{}, ErrJoiningCaseVersion
-	}
-	var count int
-	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM dsh.store_internal_photos WHERE joining_case_id=$1", caseID).Scan(&count); err != nil {
-		return JoiningCaseResult{}, err
-	}
-	if count >= maxStoreInternalPhotos {
-		return JoiningCaseResult{}, ErrStoreInternalPhotoLimit
-	}
-	idDigest := sha256.Sum256([]byte(caseID + "\x00" + idempotencyKey))
-	id := "store_internal_photo_" + hex.EncodeToString(idDigest[:])
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.store_internal_photos(id,joining_case_id,idempotency_key,request_hash,content_type,content_sha256,image_bytes,uploaded_by_field_actor_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, id, caseID, idempotencyKey, requestHashText, contentType, contentSHA, data, fieldActorID); err != nil {
-		return JoiningCaseResult{}, fmt.Errorf("save private store field photo: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, "UPDATE dsh.joining_cases SET version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$2", caseID, expectedVersion); err != nil {
-		return JoiningCaseResult{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return JoiningCaseResult{}, err
-	}
-	return ReadJoiningCaseForField(ctx, db, fieldActorID, caseID)
-}
 
 func AttachStoreInternalPhotosToStoreTx(ctx context.Context, tx *sql.Tx, caseID, storeID string) error {
 	if tx == nil || strings.TrimSpace(caseID) == "" || strings.TrimSpace(storeID) == "" {

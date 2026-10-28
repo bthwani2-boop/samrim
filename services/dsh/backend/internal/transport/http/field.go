@@ -21,12 +21,12 @@ type FieldServer struct {
 	service *field.Service
 }
 
-func NewField(identityClient *identityintegration.Client, accessToken string, db *sql.DB, evidenceKeys *postgres.JoiningCaseEvidenceKeyring) (*FieldServer, error) {
+func NewField(identityClient *identityintegration.Client, accessToken string, db *sql.DB) (*FieldServer, error) {
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
 		return nil, err
 	}
-	service, err := field.New(identityClient, db, evidenceKeys)
+	service, err := field.New(identityClient, db)
 	if err != nil {
 		return nil, err
 	}
