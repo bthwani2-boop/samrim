@@ -18,6 +18,8 @@ func TestRetiredFieldAndAcquisitionRoutesUnavailable(t *testing.T) {
 		{"GET", "/dsh/operator/field-acquisition-reward-policies"},
 		{"GET", "/dsh/fields/me/financial-summary"},
 		{"GET", "/dsh/fields/me/acquisition-entitlements"},
+		{"GET", "/dsh/operator/fields/activity"},
+		{"GET", "/dsh/operator/fields/actor-1/acquisition-cases"},
 	} {
 		request := httptest.NewRequest(route.method, route.path, nil)
 		_, pattern := mux.Handler(request)

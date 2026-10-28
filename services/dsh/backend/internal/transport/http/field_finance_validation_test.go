@@ -81,8 +81,6 @@ func TestFieldFinanceRejectsInvalidPaginationAndActorScopes(t *testing.T) {
 		field  string
 		want   int
 	}{
-		{name: "operator case limit outside range", method: http.MethodGet, path: "/dsh/operator/fields/field-actor/acquisition-cases?limit=51", field: "operator", want: http.StatusBadRequest},
-		{name: "operator case cursor too long", method: http.MethodGet, path: "/dsh/operator/fields/field-actor/acquisition-cases?cursor=" + strings.Repeat("c", 513), field: "operator", want: http.StatusBadRequest},
 		{name: "operator summary actor too long", method: http.MethodGet, path: "/dsh/operator/fields/" + longActorID + "/financial-summary", field: "operator", want: http.StatusBadRequest},
 	}
 	for _, tc := range cases {

@@ -3,16 +3,12 @@ package transporthttp
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
@@ -21,16 +17,6 @@ type FieldFinanceServer struct {
 	identity *identityintegration.Client
 	payment  *wlt.Client
 	db       *sql.DB
-}
-
-type fieldAcquisitionEntitlementView struct {
-	wlt.FieldAcquisitionEntitlement
-	StoreName string `json:"storeName"`
-}
-
-type fieldAcquisitionEntitlementPageView struct {
-	Entitlements []fieldAcquisitionEntitlementView `json:"entitlements"`
-	NextCursor   string                            `json:"nextCursor,omitempty"`
 }
 
 func NewFieldFinance(identity *identityintegration.Client, accessToken string, payment *wlt.Client, db *sql.DB) (*FieldFinanceServer, error) {
@@ -45,168 +31,9 @@ func NewFieldFinance(identity *identityintegration.Client, accessToken string, p
 }
 
 func (s *FieldFinanceServer) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /dsh/operator/fields/activity", s.listOperatorFieldActivity)
-	mux.HandleFunc("GET /dsh/operator/fields/{fieldActorId}/acquisition-cases", s.listOperatorAcquisitionCases)
 	mux.HandleFunc("GET /dsh/operator/fields/{fieldActorId}/financial-summary", s.readOperatorSummary)
 	mux.HandleFunc("GET /dsh/operator/policy-history", s.readPolicyHistory)
 	mux.HandleFunc("GET /dsh/operator/policy-registry", s.readOperatorPolicyRegistry)
-}
-
-func (s *FieldFinanceServer) listOperatorAcquisitionCases(w http.ResponseWriter, r *http.Request) {
-	if !s.authorizeOperator(w, r) {
-		return
-	}
-	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if !s.requireOperator(w, r.Context(), acting) {
-		return
-	}
-	if !s.requirePermission(w, r.Context(), acting, "partners") {
-		return
-	}
-	fieldActorID := strings.TrimSpace(r.PathValue("fieldActorId"))
-	if fieldActorID == "" || len(fieldActorID) > 128 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "fieldActorId is required")
-		return
-	}
-	limit := 25
-	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
-		parsed, err := strconv.Atoi(raw)
-		if err != nil || parsed < 1 || parsed > 50 {
-			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "limit must be between 1 and 50")
-			return
-		}
-		limit = parsed
-	}
-	cursor := r.URL.Query().Get("cursor")
-	if len(cursor) > 512 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "field acquisition case cursor is invalid")
-		return
-	}
-	page, err := postgres.ListJoiningCasesForField(r.Context(), s.db, fieldActorID, r.URL.Query().Get("q"), limit, cursor)
-	if err != nil {
-		if errors.Is(err, postgres.ErrJoiningCaseInvalidLimit) || errors.Is(err, postgres.ErrJoiningCaseInvalidSearch) || errors.Is(err, postgres.ErrJoiningCaseInvalidCursor) {
-			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "field acquisition case query is invalid")
-		} else {
-			writeError(w, http.StatusBadGateway, "FIELD_ACQUISITION_READ_UNAVAILABLE", "field acquisition cases could not be read")
-		}
-		return
-	}
-	items := make([]contract.JoiningCaseSummary, 0, len(page.Cases))
-	for _, item := range page.Cases {
-		items = append(items, contract.JoiningCaseSummary{ID: item.ID, ContactPhoneE164: item.ContactPhoneE164, BusinessName: item.BusinessName, FirstStoreName: item.FirstStoreName, WalletProviderKey: item.WalletProviderKey, ServiceCityID: item.FirstStoreServiceCityID, FirstStoreVerticalID: item.FirstStoreVerticalID, FirstStoreCommercialTypeID: item.FirstStoreCommercialTypeID, FirstStoreLatitude: nullableFloatValue(item.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(item.FirstStoreLongitude), Origin: contract.JoiningCaseOrigin(item.Origin), PartnerActorID: item.PartnerActorID, State: contract.JoiningCaseState(item.State), CorrectionReason: item.CorrectionReason, ReviewedBy: item.ReviewedBy, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, contract.JoiningCaseListResponse{Cases: items, NextCursor: page.NextCursor})
-}
-
-func (s *FieldFinanceServer) listOwnAcquisitionEntitlements(w http.ResponseWriter, r *http.Request) {
-	identity, ok := s.requireFieldSession(w, r)
-	if !ok {
-		return
-	}
-	limit := 50
-	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
-		parsed, err := strconv.Atoi(raw)
-		if err != nil || parsed < 1 || parsed > 100 {
-			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "limit must be between 1 and 100")
-			return
-		}
-		limit = parsed
-	}
-	page, err := s.payment.ListFieldAcquisitionEntitlements(r.Context(), identity.Subject, r.URL.Query().Get("cursor"), limit)
-	if err != nil {
-		writeWLTFinanceError(w, err)
-		return
-	}
-	view := fieldAcquisitionEntitlementPageView{Entitlements: make([]fieldAcquisitionEntitlementView, 0, len(page.Entitlements)), NextCursor: page.NextCursor}
-	for _, item := range page.Entitlements {
-		var storeName string
-		if err := s.db.QueryRowContext(r.Context(), `SELECT name FROM dsh.stores WHERE id=$1`, item.StoreID).Scan(&storeName); err != nil {
-			writeError(w, http.StatusBadGateway, "FINANCIAL_SOURCE_UNAVAILABLE", "the store for a field acquisition entitlement could not be read")
-			return
-		}
-		view.Entitlements = append(view.Entitlements, fieldAcquisitionEntitlementView{FieldAcquisitionEntitlement: item, StoreName: storeName})
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, view)
-}
-
-func (s *FieldFinanceServer) listOwnWalletHistory(w http.ResponseWriter, r *http.Request) {
-	identity, ok := s.requireFieldSession(w, r)
-	if !ok {
-		return
-	}
-	limit, cursor, valid := fieldFinancePageQuery(w, r)
-	if !valid {
-		return
-	}
-	page, err := s.payment.ListFieldWalletHistory(r.Context(), identity.Subject, cursor, limit)
-	if err != nil {
-		writeWLTFinanceError(w, err)
-		return
-	}
-	entries := make([]contract.FieldWalletHistoryEntry, 0, len(page.Entries))
-	for _, item := range page.Entries {
-		entries = append(entries, contract.FieldWalletHistoryEntry{
-			Type: item.Type, Direction: item.Direction, AmountMinor: int(item.AmountMinor),
-			Currency: item.Currency, CreatedAt: item.CreatedAt, BalanceAfterMinor: int(item.BalanceAfterMinor),
-		})
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, contract.FieldWalletHistoryPage{Currency: page.Currency, Entries: entries, NextCursor: page.NextCursor, Limit: page.Limit})
-}
-
-func (s *FieldFinanceServer) listOwnPayoutRequests(w http.ResponseWriter, r *http.Request) {
-	identity, ok := s.requireFieldSession(w, r)
-	if !ok {
-		return
-	}
-	limit, cursor, valid := fieldFinancePageQuery(w, r)
-	if !valid {
-		return
-	}
-	page, err := s.payment.ListFieldPayoutRequests(r.Context(), identity.Subject, cursor, limit)
-	if err != nil {
-		writeWLTFinanceError(w, err)
-		return
-	}
-	requests := make([]contract.FieldPayoutRequestHistoryEntry, 0, len(page.Requests))
-	for _, item := range page.Requests {
-		requests = append(requests, contract.FieldPayoutRequestHistoryEntry{Status: item.Status, AmountMinor: int(item.AmountMinor), Currency: item.Currency, CreatedAt: item.CreatedAt})
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, contract.FieldPayoutRequestHistoryPage{Requests: requests, NextCursor: page.NextCursor, Limit: page.Limit})
-}
-
-func fieldFinancePageQuery(w http.ResponseWriter, r *http.Request) (int, string, bool) {
-	limit := 50
-	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
-		parsed, err := strconv.Atoi(raw)
-		if err != nil || parsed < 1 || parsed > 100 {
-			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "limit must be between 1 and 100")
-			return 0, "", false
-		}
-		limit = parsed
-	}
-	cursor := r.URL.Query().Get("cursor")
-	if len(cursor) > 512 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "wallet history cursor is invalid")
-		return 0, "", false
-	}
-	return limit, cursor, true
-}
-
-func (s *FieldFinanceServer) readOwnSummary(w http.ResponseWriter, r *http.Request) {
-	identity, ok := s.requireFieldSession(w, r)
-	if !ok {
-		return
-	}
-	summary, err := s.payment.ReadFieldFinancialSummary(r.Context(), identity.Subject)
-	if err != nil {
-		writeWLTFinanceError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"summary": summary})
 }
 
 func (s *FieldFinanceServer) readOperatorSummary(w http.ResponseWriter, r *http.Request) {
@@ -231,28 +58,6 @@ func (s *FieldFinanceServer) readOperatorSummary(w http.ResponseWriter, r *http.
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"summary": summary})
-}
-
-func (s *FieldFinanceServer) requireActiveCommercialStoreType(w http.ResponseWriter, r *http.Request, typeID string) bool {
-	item, err := postgres.ReadCommercialStoreType(r.Context(), s.db, typeID)
-	if errors.Is(err, postgres.ErrCommercialStoreTypeNotFound) {
-		writeError(w, http.StatusNotFound, "COMMERCIAL_STORE_TYPE_NOT_FOUND", "the commercial store type was not found")
-		return false
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "COMMERCIAL_STORE_TYPE_READ_FAILED", "the commercial store type could not be verified")
-		return false
-	}
-	if !item.Active {
-		writeError(w, http.StatusBadRequest, "COMMERCIAL_STORE_TYPE_INACTIVE", "a reward policy can only be changed for an active commercial store type")
-		return false
-	}
-	vertical, err := postgres.ReadCommerceVertical(r.Context(), s.db, item.VerticalID)
-	if err != nil || !vertical.Active {
-		writeError(w, http.StatusBadRequest, "COMMERCIAL_STORE_TYPE_VERTICAL_INACTIVE", "a reward policy requires an active parent vertical")
-		return false
-	}
-	return true
 }
 
 func (s *FieldFinanceServer) authorizeOperator(w http.ResponseWriter, r *http.Request) bool {
@@ -290,22 +95,4 @@ func (s *FieldFinanceServer) requirePermission(w http.ResponseWriter, ctx contex
 
 func (s *FieldFinanceServer) requirePlatformPolicyPermission(w http.ResponseWriter, ctx context.Context, actorID string) bool {
 	return s.requirePermission(w, ctx, actorID, "platform_policies")
-}
-
-func (s *FieldFinanceServer) requireFieldSession(w http.ResponseWriter, r *http.Request) (identityclient.ActorIdentity, bool) {
-	token := bearerToken(r)
-	if token == "" {
-		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Field session is required")
-		return identityclient.ActorIdentity{}, false
-	}
-	identity, err := s.identity.ReadSession(r.Context(), token)
-	if err != nil {
-		writeIdentityError(w, err)
-		return identityclient.ActorIdentity{}, false
-	}
-	if identity.Role != "field" || !validOwnAppFinanceSession(identity) {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active app-field session is required")
-		return identityclient.ActorIdentity{}, false
-	}
-	return identity, true
 }

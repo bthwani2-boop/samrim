@@ -1,36 +1,4 @@
 paths:
-  /dsh/operator/fields/activity:
-    get:
-      operationId: listOperatorFieldActivity
-      summary: Read latest linked stores for a bounded set of Field actors
-      security:
-        - serviceBearer: []
-      parameters:
-        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
-        - name: fieldActorId
-          in: query
-          required: true
-          style: form
-          explode: true
-          description: Repeat for each Field actor; at most 50 unique actors are accepted.
-          schema:
-            type: array
-            minItems: 1
-            maxItems: 50
-            uniqueItems: true
-            items: { type: string, minLength: 1, maxLength: 128 }
-      responses:
-        "200":
-          description: Latest canonical store linked to a Field-originated joining case, if any.
-          content:
-            application/json:
-              schema:
-                $ref: "../dsh.openapi.yaml#/components/schemas/OperatorFieldActivityResponse"
-        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
-        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
-        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
-        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
-
   /dsh/operator/fields/{fieldActorId}/financial-summary:
     get:
       operationId: readOperatorFieldFinancialSummary
@@ -61,36 +29,3 @@ paths:
           $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
-
-  /dsh/operator/fields/{fieldActorId}/acquisition-cases:
-    get:
-      operationId: listOperatorFieldAcquisitionCases
-      summary: List Partner joining journeys attributed to a Field representative
-      security:
-        - serviceBearer: []
-      parameters:
-        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
-        - name: fieldActorId
-          in: path
-          required: true
-          schema: { type: string, minLength: 1, maxLength: 128 }
-        - name: q
-          in: query
-          schema: { type: string, maxLength: 100 }
-        - name: limit
-          in: query
-          schema: { type: integer, minimum: 1, maximum: 50, default: 25 }
-        - name: cursor
-          in: query
-          schema: { type: string, maxLength: 512 }
-      responses:
-        "200":
-          description: Canonical DSH joining cases created by this Field representative.
-          content:
-            application/json:
-              schema:
-                $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseListResponse"
-        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
-        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
-        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
-        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
