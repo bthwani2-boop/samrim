@@ -125,7 +125,7 @@ func roleSessionReady(role string, readiness roleSessionReadiness) bool {
 	switch role {
 	case "client":
 		return readiness.passwordCredential
-	case "partner", "captain", "field":
+	case "partner", "captain":
 		return readiness.activated && readiness.passwordCredential
 	case "operator":
 		return readiness.activated && readiness.passkeyCredential
@@ -214,6 +214,10 @@ JOIN identity_actor_roles r ON r.actor_id=s.actor_id AND r.role=s.role JOIN iden
 	if err != nil {
 		return domain.ActorIdentity{}, err
 	}
+	// The Field surface was retired. Previously issued tokens must not retain access.
+	if _, admitted := domain.SurfaceForRole(role); !admitted {
+		return domain.ActorIdentity{}, domain.ErrUnauthenticated
+	}
 	if _, err := s.db.ExecContext(ctx, "UPDATE identity_sessions SET last_used_at=clock_timestamp() WHERE id=$1 AND revoked_at IS NULL", sessionID); err != nil {
 		return domain.ActorIdentity{}, err
 	}
@@ -242,6 +246,9 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 	defer func() { _ = tx.Rollback() }()
 	var actorID, role string
 	if err := tx.QueryRowContext(ctx, "SELECT actor_id,role FROM identity_sessions WHERE id=$1", sessionID).Scan(&actorID, &role); err != nil {
+		return domain.TokenPair{}, domain.ErrInvalidRefresh
+	}
+	if _, admitted := domain.SurfaceForRole(role); !admitted {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
 	var securityEnabled bool

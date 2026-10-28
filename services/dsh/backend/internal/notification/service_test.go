@@ -7,7 +7,6 @@ func TestNotificationSessionRequiresExactRoleSurfacePair(t *testing.T) {
 		"client":   "app-client",
 		"partner":  "app-partner",
 		"captain":  "app-captain",
-		"field":    "app-field",
 		"operator": "control-panel",
 	}
 	for role, surface := range permitted {

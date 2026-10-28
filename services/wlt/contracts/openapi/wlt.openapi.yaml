@@ -917,26 +917,6 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PartnerCommissionRemittanceResponse' }
-  /wlt/v1/field-acquisition-entitlements/finalize:
-    post:
-      operationId: finalizeFieldAcquisitionEntitlement
-      security: [{ serviceToken: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/FinalizeFieldAcquisitionEntitlementRequest' }
-      responses:
-        '201':
-          description: Field acquisition entitlement finalized.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/FieldAcquisitionEntitlementResponse' }
-        '200':
-          description: Idempotent replay.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/FieldAcquisitionEntitlementResponse' }
   /wlt/v1/field-acquisition-entitlements/{joiningCaseId}:
     get:
       operationId: readFieldAcquisitionEntitlementByJoiningCase

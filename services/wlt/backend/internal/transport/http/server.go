@@ -131,7 +131,6 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/financial-summary", s.readPartnerFinancialSummary)
 	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/financial-activity", s.readPartnerActivity)
 	mux.HandleFunc("GET /wlt/v1/operator/partner-commission-receivables", s.listPartnerCommissionReceivables)
-	mux.HandleFunc("POST /wlt/v1/field-acquisition-entitlements/finalize", s.finalizeFieldAcquisitionEntitlement)
 	mux.HandleFunc("GET /wlt/v1/field-acquisition-entitlements/{joiningCaseId}", s.readFieldAcquisitionEntitlementByJoiningCase)
 	mux.HandleFunc("GET /wlt/v1/fields/{fieldActorId}/financial-summary", s.readFieldFinancialSummary)
 	mux.HandleFunc("GET /wlt/v1/fields/{fieldActorId}/wallet-history", s.readFieldWalletHistory)
@@ -1294,71 +1293,6 @@ func (s *Server) readPartnerFinancialSummary(w http.ResponseWriter, r *http.Requ
 	view := toPartnerFinancialSummary(result)
 	view.Stores = result.Stores
 	writeJSON(w, http.StatusOK, partnerFinancialSummaryResponse{Summary: view})
-}
-
-func (s *Server) createFieldAcquisitionRewardPolicy(w http.ResponseWriter, r *http.Request) {
-	if !s.authorize(w, r) {
-		return
-	}
-	correlation, idempotency, ok := mutationHeaders(w, r)
-	if !ok {
-		return
-	}
-	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if acting == "" || len(acting) > 128 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
-		return
-	}
-	var input createFieldAcquisitionRewardPolicyRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	result, replayed, err := postgres.CreateFieldAcquisitionRewardPolicy(r.Context(), s.db, postgres.CreateFieldAcquisitionRewardPolicyInput{ScopeType: input.ScopeType, ScopeID: input.ScopeID, RewardMinor: input.RewardMinor, RoundingUnitMinor: input.RoundingUnitMinor, ExpectedVersion: input.ExpectedVersion, Reason: input.Reason, CreatedBy: acting, IdempotencyKey: idempotency, CorrelationID: correlation})
-	if err != nil {
-		writeFieldAcquisitionRewardError(w, err)
-		return
-	}
-	status := http.StatusCreated
-	if replayed {
-		status = http.StatusOK
-	}
-	writeJSON(w, status, fieldAcquisitionRewardPolicyResponse{Policy: toFieldAcquisitionRewardPolicy(result), IdempotentReplay: replayed})
-}
-
-func (s *Server) readOperatorFieldAcquisitionRewardPolicy(w http.ResponseWriter, r *http.Request) {
-	if !s.authorize(w, r) {
-		return
-	}
-	result, err := postgres.ReadActiveFieldAcquisitionRewardPolicyByScope(r.Context(), s.db, r.URL.Query().Get("scopeType"), r.URL.Query().Get("scopeId"))
-	if err != nil {
-		writeFieldAcquisitionRewardError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, fieldAcquisitionRewardPolicyResponse{Policy: toFieldAcquisitionRewardPolicy(result)})
-}
-
-func (s *Server) finalizeFieldAcquisitionEntitlement(w http.ResponseWriter, r *http.Request) {
-	if !s.authorize(w, r) {
-		return
-	}
-	correlation, idempotency, ok := mutationHeaders(w, r)
-	if !ok {
-		return
-	}
-	var input finalizeFieldAcquisitionEntitlementRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	result, replayed, err := postgres.FinalizeFieldAcquisitionReward(r.Context(), s.db, postgres.FinalizeFieldAcquisitionRewardInput{JoiningCaseID: input.JoiningCaseID, StoreID: input.StoreID, PartnerActorID: input.PartnerActorID, FieldActorID: input.FieldActorID, VerticalID: input.VerticalID, CommercialStoreTypeID: input.CommercialStoreTypeID, IdempotencyKey: idempotency, CorrelationID: correlation})
-	if err != nil {
-		writeFieldAcquisitionRewardError(w, err)
-		return
-	}
-	status := http.StatusCreated
-	if replayed {
-		status = http.StatusOK
-	}
-	writeJSON(w, status, fieldAcquisitionEntitlementResponse{Entitlement: toFieldAcquisitionEntitlement(result), IdempotentReplay: replayed})
 }
 
 func (s *Server) readFieldAcquisitionEntitlementByJoiningCase(w http.ResponseWriter, r *http.Request) {

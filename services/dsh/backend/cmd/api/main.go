@@ -206,7 +206,6 @@ func main() {
 	}
 	if err := serviceruntime.RunWithRoutesAndReadinessAndWorker("dsh", "/dsh", "18080", register, readiness, func(ctx context.Context) {
 		go runFinancialProfileReconciliationLoop(ctx, time.Minute, joiningCaseServer.ReconcileFinancialProfiles)
-		go runFieldAcquisitionRewardReconciliationLoop(ctx, time.Minute, storePublication.ReconcileFieldAcquisitionRewards)
 		go runFinancialHandoffReconciliationLoop(ctx, 5*time.Second, financialHandoff.Reconcile)
 		go runCaptainAutomaticDispatchLoop(ctx, 30*time.Second, captainServer.ReconcileAutomaticDispatch)
 		if os.Getenv("DSH_EXPO_PUSH_ENABLED") == "true" {

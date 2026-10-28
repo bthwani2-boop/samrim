@@ -132,13 +132,6 @@ func TestReadFieldAcquisitionRewardPolicyContract(t *testing.T) {
 	}
 }
 
-func TestFinalizeFieldAcquisitionRewardContract(t *testing.T) {
-	entitlement, replay, err := newFieldFinanceClient(t).FinalizeFieldAcquisitionReward(context.Background(), FinalizeFieldAcquisitionRewardInput{JoiningCaseID: "case-1", StoreID: "store-1", PartnerActorID: "partner-1", FieldActorID: "field-1", VerticalID: "vertical-1", CommercialStoreTypeID: "type-1", IdempotencyKey: "entitlement-key", CorrelationID: "entitlement-correlation"})
-	if err != nil || replay || entitlement.LedgerTransactionID != "ledger-1" || entitlement.CommercialStoreTypeID != "type-1" {
-		t.Fatalf("finalize entitlement result: entitlement=%#v replay=%v err=%v", entitlement, replay, err)
-	}
-}
-
 func TestReadFieldAcquisitionEntitlementByJoiningCaseContract(t *testing.T) {
 	item, err := newFieldFinanceClient(t).ReadFieldAcquisitionEntitlementByJoiningCase(context.Background(), " case-1 ")
 	if err != nil || item.JoiningCaseID != "case-1" || item.Status != "POSTED" || item.PolicyVersion != 1 || item.EffectiveAt != item.CreatedAt || item.LedgerTransactionID != "ledger-1" {

@@ -11,7 +11,6 @@ export type IdentitySurface =
   | "app-client"
   | "app-partner"
   | "app-captain"
-  | "app-field"
   | "control-panel";
 
 export type IdentitySessionDegradedReason =
@@ -54,15 +53,14 @@ export type IdentityStorageError = Readonly<{
 const accessTokenSafetySkewMs = 60_000;
 const refreshRequestIdPattern = /^[A-Za-z0-9_-]{24,256}$/;
 
-const roleSurface: Readonly<Record<ActorType, IdentitySurface>> = Object.freeze({
+const roleSurface: Readonly<Partial<Record<ActorType, IdentitySurface>>> = Object.freeze({
   client: "app-client",
   partner: "app-partner",
   captain: "app-captain",
-  field: "app-field",
   operator: "control-panel",
 });
 
-export function identityRoleSurface(role: ActorType): IdentitySurface {
+export function identityRoleSurface(role: ActorType): IdentitySurface | undefined {
   return roleSurface[role];
 }
 

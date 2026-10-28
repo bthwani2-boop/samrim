@@ -3,14 +3,14 @@ package domain
 import "testing"
 
 func TestCanonicalRoleSurfaceMapping(t *testing.T) {
-	cases := map[string]string{"client": "app-client", "partner": "app-partner", "captain": "app-captain", "field": "app-field", "operator": "control-panel"}
+	cases := map[string]string{"client": "app-client", "partner": "app-partner", "captain": "app-captain", "operator": "control-panel"}
 	for role, expected := range cases {
 		actual, ok := SurfaceForRole(role)
 		if !ok || actual != expected {
 			t.Fatalf("role %s mapped to %q ok=%v; expected %q", role, actual, ok, expected)
 		}
 	}
-	for _, retired := range []string{"operator_owner", "employee"} {
+	for _, retired := range []string{"operator_owner", "employee", "field"} {
 		if _, ok := SurfaceForRole(retired); ok {
 			t.Fatalf("retired/noncanonical role %q must not map to a surface", retired)
 		}
@@ -18,7 +18,7 @@ func TestCanonicalRoleSurfaceMapping(t *testing.T) {
 }
 
 func TestTrustedCallerProvisionBoundary(t *testing.T) {
-	allowed := [][2]string{{"dsh", "partner"}, {"dsh", "captain"}, {"dsh", "field"}}
+	allowed := [][2]string{{"dsh", "partner"}, {"dsh", "captain"}}
 	for _, pair := range allowed {
 		if !CanProvisionRole(pair[0], pair[1]) {
 			t.Fatalf("expected %s to manage %s", pair[0], pair[1])
@@ -50,7 +50,7 @@ func TestTrustedCallerOperationBoundaries(t *testing.T) {
 }
 
 func TestManagedRoleBoundary(t *testing.T) {
-	for _, role := range []string{"partner", "captain", "field"} {
+	for _, role := range []string{"partner", "captain"} {
 		if !IsManagedRole(role) {
 			t.Fatalf("expected managed activation role %s", role)
 		}
@@ -63,7 +63,7 @@ func TestManagedRoleBoundary(t *testing.T) {
 }
 
 func TestManagedActivationRoleBoundary(t *testing.T) {
-	for _, role := range []string{"partner", "captain", "field"} {
+	for _, role := range []string{"partner", "captain"} {
 		if !IsManagedActivationRole(role) {
 			t.Fatalf("expected managed activation role %s", role)
 		}
@@ -129,13 +129,13 @@ func TestManagedRoleSecurityMutationBoundary(t *testing.T) {
 	if !CanSetRoleEnabled("dsh", "partner") || !CanSetRoleEnabled("dsh", "captain") {
 		t.Fatal("DSH must own managed-role security transitions")
 	}
-	if !CanSetRoleEnabled("dsh", "field") || CanSetRoleEnabled("control-panel", "partner") || CanSetRoleEnabled("control-panel", "captain") || CanSetRoleEnabled("control-panel", "field") {
+	if CanSetRoleEnabled("dsh", "field") || CanSetRoleEnabled("control-panel", "partner") || CanSetRoleEnabled("control-panel", "captain") || CanSetRoleEnabled("control-panel", "field") {
 		t.Fatal("managed-role security transitions must not bypass the owning DSH boundary")
 	}
 }
 
 func TestManagedRoleReenrollmentBoundary(t *testing.T) {
-	for _, role := range []string{"partner", "captain", "field"} {
+	for _, role := range []string{"partner", "captain"} {
 		if !CanAuthorizeReenrollment("dsh", role) {
 			t.Fatalf("DSH must authorize %s reenrollment after current domain eligibility is verified", role)
 		}
@@ -143,7 +143,7 @@ func TestManagedRoleReenrollmentBoundary(t *testing.T) {
 			t.Fatalf("Control Panel must not bypass DSH eligibility for %s reenrollment", role)
 		}
 	}
-	if CanAuthorizeReenrollment("identity", "partner") || CanAuthorizeReenrollment("dsh", "client") || CanAuthorizeReenrollment("dsh", "operator") {
+	if CanAuthorizeReenrollment("identity", "partner") || CanAuthorizeReenrollment("dsh", "client") || CanAuthorizeReenrollment("dsh", "operator") || CanAuthorizeReenrollment("dsh", "field") {
 		t.Fatal("reenrollment must remain limited to DSH-managed roles and their lifecycle owner")
 	}
 }

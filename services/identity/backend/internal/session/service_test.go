@@ -156,7 +156,7 @@ func TestRoleSessionReadyRequiresCanonicalEnrollmentFacts(t *testing.T) {
 		{name: "partner activated credential", role: "partner", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, activated: true, passwordCredential: true}, want: true},
 		{name: "partner pending activation", role: "partner", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, passwordCredential: true}, want: false},
 		{name: "captain activated credential", role: "captain", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, activated: true, passwordCredential: true}, want: true},
-		{name: "field activated credential", role: "field", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, activated: true, passwordCredential: true}, want: true},
+		{name: "field retired credential", role: "field", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, activated: true, passwordCredential: true}, want: false},
 		{name: "operator enrolled passkey", role: "operator", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, activated: true, passkeyCredential: true}, want: true},
 		{name: "operator bootstrap only", role: "operator", readiness: roleSessionReadiness{enabled: true, securityEnabled: true}, want: false},
 		{name: "disabled role", role: "captain", readiness: roleSessionReadiness{securityEnabled: true, activated: true, passwordCredential: true}, want: false},

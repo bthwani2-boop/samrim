@@ -1464,13 +1464,6 @@ func (c *Client) ReadFieldAcquisitionRewardPolicyByScope(ctx context.Context, sc
 	return response.Policy, err
 }
 
-func (c *Client) FinalizeFieldAcquisitionReward(ctx context.Context, input FinalizeFieldAcquisitionRewardInput) (FieldAcquisitionEntitlement, bool, error) {
-	body := map[string]any{"joiningCaseId": strings.TrimSpace(input.JoiningCaseID), "storeId": strings.TrimSpace(input.StoreID), "partnerActorId": strings.TrimSpace(input.PartnerActorID), "fieldActorId": strings.TrimSpace(input.FieldActorID), "verticalId": strings.TrimSpace(input.VerticalID), "commercialStoreTypeId": strings.TrimSpace(input.CommercialStoreTypeID)}
-	var response fieldAcquisitionEntitlementResponse
-	err := c.request(ctx, http.MethodPost, "/wlt/v1/field-acquisition-entitlements/finalize", body, input.IdempotencyKey, input.CorrelationID, 0, &response)
-	return response.Entitlement, response.IdempotentReplay, err
-}
-
 func (c *Client) ReadFieldAcquisitionEntitlementByJoiningCase(ctx context.Context, joiningCaseID string) (FieldAcquisitionEntitlementReadback, error) {
 	var response fieldAcquisitionEntitlementReadbackResponse
 	err := c.request(ctx, http.MethodGet, "/wlt/v1/field-acquisition-entitlements/"+url.PathEscape(strings.TrimSpace(joiningCaseID)), nil, "", "", 0, &response)
