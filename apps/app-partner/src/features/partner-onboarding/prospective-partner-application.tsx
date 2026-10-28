@@ -23,6 +23,8 @@ const PROOFS:readonly {id:CreateJoiningCaseRequest["firstStoreProofType"];label:
 ];
 function details(error:unknown):string{
  const data=error && typeof error==="object"?error as {code?:string;status?:number}:null;
+ if(data?.status===400)return "البيانات غير مكتملة أو لا تطابق متطلبات الخدمة؛ راجع العنوان والموقع والوثيقة والمدينة ونوع المتجر.";
+ if(data?.status===401)return "انتهت صلاحية جلسة المتقدم؛ سجل الدخول مجددًا ثم اقرأ طلبك.";
  if(data?.status===409)return "يوجد طلب انضمام أو بيانات سابقة لهذا الرقم، اقرأ طلبك أولاً أو تواصل مع قسم الشركاء.";
  if(data?.status===403)return "هوية المتقدم أو رقم الهاتف لا يطابق الحساب الموثق.";
  if(data?.status===404)return "لم يعثر النظام على الطلب. تحقق من الاتصال ثم أعد المحاولة.";
@@ -172,13 +174,14 @@ export function ProspectivePartnerApplication(){
   <BthwaniButton label="العودة لتسجيل دخول الشريك" onPress={()=>router.back()} variant="secondary"/>
   {restoring||loading?<ActivityIndicator accessibilityLabel="جارٍ التحقق من بيانات الطلب"/>:null}
   {!authenticated&&!restoring?<View style={{gap:10}}>
-   {select("لدي حساب موثق أم أريد التسجيل؟",[{id:"register" as const,label:"تسجيل رقم جديد"},{id:"login" as const,label:"الدخول بحساب موجود"}],mode,setMode)}
+   {select("لدي حساب موثق أم أريد التسجيل؟",[{id:"register" as const,label:"تسجيل رقم جديد"},{id:"login" as const,label:"الدخول بحساب موجود"}],mode,(next)=>{setMode(next);setProofRequested(false);setCode("");setError("");})}
    {field("رقم الهاتف",phone,(next)=>{setPhone(next);setProofRequested(false);setCode("");},false,"phone-pad")}
    {mode==="register"?<><BthwaniButton label="إرسال رمز التحقق" onPress={()=>void requestProof()} disabled={busy}/>{proofRequested?field("رمز التحقق",code,setCode,false,"numeric"):null}</>:null}
    {field("كلمة المرور",password,setPassword,true)}
    {mode==="register"?field("تأكيد كلمة المرور",passwordConfirmation,setPasswordConfirmation,true):null}
    <BthwaniButton label={busy?"جارٍ التحقق…":mode==="register"?"إثبات رقم الهاتف والمتابعة":"دخول المتقدم"} onPress={()=>void authenticate()} disabled={busy|| (mode==="register"&&!proofRequested)}/>
   </View>:null}
+  {authenticated&&!caseValue&&!hasRead&&!loading?<View style={{gap:8}}><Text accessibilityRole="alert" style={styles.muted}>تعذر التحقق من وجود طلب سابق. لن يتاح إنشاء طلب آخر قبل قراءة حالتك من المنصة.</Text><BthwaniButton label="إعادة التحقق من طلب الانضمام" variant="secondary" onPress={()=>void load()} disabled={busy}/></View>:null}
   {authenticated&&caseValue?<View style={{gap:9}}>
    <Text style={styles.heading}>طلبك الحالي</Text>
    <Text style={styles.text}>المتجر: {caseValue.case.firstStoreName}</Text>
@@ -187,7 +190,8 @@ export function ProspectivePartnerApplication(){
    <BthwaniButton label="تحديث حالة الطلب" variant="secondary" onPress={()=>void load()} disabled={loading}/>
   </View>:null}
   {authenticated&&!caseValue&&hasRead&&!loading?<View style={{gap:11}}>
-   {field("رقم الهاتف الموثق",phone,setPhone,false,"phone-pad")}
+   {field("رقم الهاتف المرتبط بحسابك",phone,setPhone,false,"phone-pad")}
+   <Text style={styles.muted}>اكتب نفس الرقم الذي سجلت به الدخول؛ ستتحقق Identity من تطابقه قبل إنشاء الطلب.</Text>
    {field("الاسم الكامل لصاحب النشاط",ownerName,setOwnerName)}
    {field("اسم النشاط والمتجر",storeName,setStoreName)}
    {field("عنوان المتجر",address,setAddress)}
@@ -206,7 +210,7 @@ export function ProspectivePartnerApplication(){
    </View>
    {select("نوع إثبات النشاط",PROOFS,proofType,setProofType)}
    {field("رقم وثيقة الإثبات",proofNumber,setProofNumber)}
-   <View style={{gap:6}}><Text style={styles.text}>أوضاع التوصيل</Text>{MODES.map(m=><Pressable key={m.id} accessibilityRole="checkbox" accessibilityState={{checked:modes.includes(m.id),disabled:busy}} style={[styles.choice,modes.includes(m.id)&&styles.selected]} onPress={()=>setModes(old=>old.includes(m.id)?old.filter(x=>x!==m.id):[...old,m.id])}><Text style={styles.text}>{modes.includes(m.id)?"✓ ":""}{m.label}</Text></Pressable>)}</View>
+   <View style={{gap:6}}><Text style={styles.text}>أوضاع التوصيل</Text>{MODES.map(m=><Pressable key={m.id} disabled={busy} accessibilityRole="checkbox" accessibilityState={{checked:modes.includes(m.id),disabled:busy}} style={[styles.choice,modes.includes(m.id)&&styles.selected]} onPress={()=>setModes(old=>old.includes(m.id)?old.filter(x=>x!==m.id):[...old,m.id])}><Text style={styles.text}>{modes.includes(m.id)?"✓ ":""}{m.label}</Text></Pressable>)}</View>
    <BthwaniButton label="إرسال طلب انضمام الشريك" disabled={busy} onPress={()=>void submit()}/>
   </View>:null}
   {authenticated?<BthwaniButton label="الخروج من حساب المتقدم" variant="secondary" onPress={()=>void logoutProspect()} disabled={busy}/>:null}
