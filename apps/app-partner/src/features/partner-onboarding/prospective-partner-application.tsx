@@ -2,6 +2,7 @@
 
 import { type CommerceVertical, type CommercialStoreType, createDshMobileClient, type CreateJoiningCaseRequest, type JoiningCaseResponse, joiningCaseStateLabel, type ServiceCity, type StoreFulfillmentMode } from "@bthwani/dsh";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniMap, type BthwaniMapCoordinate } from "@bthwani/design-system/native/map";
 import { toAsciiDigits } from "@bthwani/design-system";
 import * as Crypto from "expo-crypto";
 import { useRouter } from "expo-router";
@@ -70,9 +71,16 @@ export function ProspectivePartnerApplication(){
  const [address,setAddress]=useState("");
  const [lat,setLat]=useState("");
  const [lng,setLng]=useState("");
+ const [showLocationMap,setShowLocationMap]=useState(false);
+ const [manualCoordinateEntry,setManualCoordinateEntry]=useState(false);
  const [proofType,setProofType]=useState<CreateJoiningCaseRequest["firstStoreProofType"]>("IDENTITY_DOCUMENT");
  const [proofNumber,setProofNumber]=useState("");
  const [modes,setModes]=useState<StoreFulfillmentMode[]>(["BTHWANI_CAPTAIN"]);
+ const selectedOrigin=useMemo<BthwaniMapCoordinate|null>(()=>{
+  if(!lat.trim()||!lng.trim())return null;
+  const latitude=Number(toAsciiDigits(lat));const longitude=Number(toAsciiDigits(lng));
+  return Number.isFinite(latitude)&&Number.isFinite(longitude)&&latitude>=-90&&latitude<=90&&longitude>=-180&&longitude<=180?{latitude,longitude}:null;
+ },[lat,lng]);
 
  useEffect(()=>{
   let active=true;
@@ -90,9 +98,9 @@ export function ProspectivePartnerApplication(){
    if(result.case.origin!=="self_service")throw new Error("CASE_ORIGIN_MISMATCH");
    setCaseValue(result);
   }catch(cause){
-   if(cause && typeof cause==="object" && (cause as {status?:number}).status===404)setCaseValue(null);
-   else setError(details(cause));
-  }finally{setHasRead(true);setLoading(false)}
+   if(cause && typeof cause==="object" && (cause as {status?:number}).status===404){setCaseValue(null);setHasRead(true);}
+   else {setHasRead(false);setError(details(cause));}
+  }finally{setLoading(false)}
  },[authenticated]);
  useEffect(()=>{if(authenticated){void load()}else{setCaseValue(null);setHasRead(false)}},[authenticated,load]);
  useEffect(()=>{
@@ -154,7 +162,7 @@ export function ProspectivePartnerApplication(){
   }catch(cause){await load();setError(details(cause))}
   finally{setBusy(false)}
  }
- const field=(label:string,value:string,set:(value:string)=>void,secure=false,keyboard:"default"|"phone-pad"|"numeric"="default")=>
+ const field=(label:string,value:string,set:(value:string)=>void,secure=false,keyboard:"default"|"phone-pad"|"numeric"|"numbers-and-punctuation"="default")=>
   <View style={{gap:4}}><Text style={styles.text}>{label}</Text><TextInput accessibilityLabel={label} style={styles.input} value={value} onChangeText={set} editable={!busy} keyboardType={keyboard} secureTextEntry={secure} autoCapitalize="none"/></View>;
  const select=<T extends string>(label:string,items:readonly {id:T;label:string}[],value:T,set:(id:T)=>void)=>
   <View style={{gap:5}}><Text style={styles.text}>{label}</Text><View style={{gap:5}}>{items.map(item=><Pressable accessibilityRole="radio" accessibilityState={{checked:value===item.id,disabled:busy}} key={item.id} onPress={()=>set(item.id)} disabled={busy} style={[styles.choice,value===item.id&&styles.selected]}><Text style={styles.text}>{item.label}</Text></Pressable>)}</View></View>;
@@ -186,9 +194,16 @@ export function ProspectivePartnerApplication(){
    {select("مدينة الخدمة",cities.map(c=>({id:c.id,label:c.displayNameAr})),city,setCity)}
    {select("المجال التجاري",verticals.map(v=>({id:v.id,label:v.nameAr})),vertical,setVertical)}
    {select("نوع المتجر",types.map(t=>({id:t.id,label:t.nameAr})),storeType,setStoreType)}
-   {field("خط العرض لموقع المتجر",lat,setLat,false,"numeric")}
-   {field("خط الطول لموقع المتجر",lng,setLng,false,"numeric")}
-   <Text style={styles.muted}>يجب تحديد موقع المتجر بدقة. لن يُنشر المتجر إلا بعد اكتمال الصور والكتالوج والاتفاق المالي.</Text>
+   <View style={{gap:8}}>
+    <Text style={styles.text}>موقع المتجر</Text>
+    <Text style={styles.muted}>حدد موقع متجرك على الخريطة؛ لا حاجة لإدخال إحداثيات يدويًا. موقع المتجر ليس موقع هاتفك بالضرورة.</Text>
+    <BthwaniButton label={showLocationMap?"إخفاء الخريطة":"تحديد موقع المتجر على الخريطة"} variant="secondary" onPress={()=>setShowLocationMap(value=>!value)} disabled={busy}/>
+    {showLocationMap?<BthwaniMap accessibilityLabel="خريطة تحديد موقع المتجر" selection={selectedOrigin} selectionTitle="موقع متجري" onSelectCoordinate={(point)=>{if(busy)return;setLat(String(point.latitude));setLng(String(point.longitude));setError("");}} height={280}/>:null}
+    <BthwaniButton label={manualCoordinateEntry?"إخفاء إدخال الإحداثيات":"إدخال الإحداثيات يدويًا عند تعذر الخريطة"} variant="secondary" onPress={()=>setManualCoordinateEntry(value=>!value)} disabled={busy}/>
+    {manualCoordinateEntry?<View style={{gap:8}}>{field("خط عرض المتجر",lat,setLat,false,"numbers-and-punctuation")}{field("خط طول المتجر",lng,setLng,false,"numbers-and-punctuation")}</View>:null}
+    {selectedOrigin?<Text accessibilityLiveRegion="polite" style={styles.muted}>تم تحديد موقع المتجر. يمكنك تعديل النقطة قبل إرسال الطلب.</Text>:<Text style={styles.muted}>لم تحدد موقع المتجر بعد. اختر النقطة على الخريطة أو أدخل الإحداثيات عند تعذرها.</Text>}
+    <Text style={styles.muted}>الموقع الدقيق مطلوب لمراجعة المتجر؛ أما الصور والكتالوج والاتفاق المالي فتُستكمل قبل النشر.</Text>
+   </View>
    {select("نوع إثبات النشاط",PROOFS,proofType,setProofType)}
    {field("رقم وثيقة الإثبات",proofNumber,setProofNumber)}
    <View style={{gap:6}}><Text style={styles.text}>أوضاع التوصيل</Text>{MODES.map(m=><Pressable key={m.id} accessibilityRole="checkbox" accessibilityState={{checked:modes.includes(m.id),disabled:busy}} style={[styles.choice,modes.includes(m.id)&&styles.selected]} onPress={()=>setModes(old=>old.includes(m.id)?old.filter(x=>x!==m.id):[...old,m.id])}><Text style={styles.text}>{modes.includes(m.id)?"✓ ":""}{m.label}</Text></Pressable>)}</View>
