@@ -572,7 +572,7 @@ func (s *StorePublicationServer) searchPublicCatalog(w http.ResponseWriter, r *h
 		}
 		limit = parsed
 	}
-	if serviceCityID == "" || len(verticalID) > 128 || len(categoryID) > 128 || len(shortcutID) > 128 || query == "" || utf8.RuneCountInString(query) > 160 || len(cursor) > 1024 {
+	if serviceCityID == "" || len(verticalID) > 128 || len(categoryID) > 128 || len(shortcutID) > 128 || utf8.RuneCountInString(query) > 160 || len(cursor) > 1024 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog search scope or query is invalid")
 		return
 	}

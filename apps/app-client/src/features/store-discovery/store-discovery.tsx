@@ -4,14 +4,16 @@ import { availableCustomerFulfillmentModes, type CatalogCategory, type CatalogSt
 import { Image as ExpoImage } from "expo-image";
 import * as ExpoLinking from "expo-linking";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Animated, AppState, FlatList, I18nManager, Platform, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { type ComponentProps, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AccessibilityInfo, Animated, AppState, I18nManager, Platform, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import Reanimated, { runOnJS, type SharedValue, useAnimatedReaction, useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated";
 import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
 import { ClientShareSheet, type ClientShareTarget } from "../sharing/client-share-sheet";
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
 import { DiscoveryReelsViewer } from "./discovery-reels-viewer";
 import { normalizeDiscoveryTaxonomy } from "./discovery-taxonomy";
 import { LoopingHeroBanner } from "./looping-hero-banner";
+import { HomeProductFeed } from "./home-product-feed";
 import { PromotionCard } from "./promotion-card";
 import { StoreDirectoryCard } from "./store-directory-card";
 import { type BannerPresentation, listFavoriteStoreIDs, listOwnDeliveryAddresses, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, readPublicBannerPresentation, searchPublicCatalog, setFavoriteStore } from "./store-discovery-client";
@@ -55,7 +57,7 @@ function uniqueNearbyAddress(addresses: ReadonlyArray<DeliveryAddress>, cityID: 
   return eligible.length === 1 ? eligible[0] ?? null : null;
 }
 
-export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthentication, searchOpen, searchQuery, searchScope: controlledSearchScope, isScreenActive = true, onSearchOpenChange, onSearchScopeChange, onSearchQueryChange }: { isAuthenticated?: boolean; onRequireAuthentication?: (() => void) | undefined; searchOpen?: boolean; searchQuery?: string; searchScope?: "stores" | "products"; isScreenActive?: boolean; onSearchOpenChange?: (open: boolean) => void; onSearchScopeChange?: (scope: "stores" | "products") => void; onSearchQueryChange?: (query: string) => void }) {
+export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthentication, searchOpen, searchQuery, searchScope: controlledSearchScope, isScreenActive = true, onSearchOpenChange, onSearchScopeChange, onSearchQueryChange, homeScrollOffset, heroHeader }: { isAuthenticated?: boolean; onRequireAuthentication?: (() => void) | undefined; searchOpen?: boolean; searchQuery?: string; searchScope?: "stores" | "products"; isScreenActive?: boolean; onSearchOpenChange?: (open: boolean) => void; onSearchScopeChange?: (scope: "stores" | "products") => void; onSearchQueryChange?: (query: string) => void; homeScrollOffset?: SharedValue<number>; heroHeader?: ReactNode }) {
   const router = useRouter();
   const { q: rawQuery, focus: rawFocus, scope: rawScope } = useLocalSearchParams<{ q?: string | string[]; focus?: string | string[]; scope?: string | string[] }>();
   const routeQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
@@ -70,11 +72,18 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const theme = useAppearanceTheme();
   const { width: viewportWidth } = useWindowDimensions();
   const [discoveryContainerWidth, setDiscoveryContainerWidth] = useState(0);
-  const webColumns = Platform.OS === "web" ? (viewportWidth >= 1140 ? 3 : viewportWidth >= 730 ? 2 : 1) : 1;
-  const carouselCardWidth = Math.max(200, Math.min(((discoveryContainerWidth || viewportWidth) - spacing[4]) / (webColumns >= 2 ? 2 : 1), 560));
+  const webColumns = Platform.OS === "web" ? (viewportWidth >= 1140 ? 3 : viewportWidth >= 730 ? 2 : 1) : viewportWidth >= 360 ? 3 : viewportWidth >= 270 ? 2 : 1;
+  const carouselCardWidth = Math.max(200, Math.min(((discoveryContainerWidth || viewportWidth) - spacing[4]) / (Platform.OS === "web" && webColumns >= 2 ? 2 : 1), 560));
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<DiscoveryState>({ kind: "loading" });
   const [storeFilter, setStoreFilter] = useState<"all" | "newest" | "nearest" | "favorites">("all");
+  const [filtersPinned, setFiltersPinned] = useState(false);
+  const localScrollOffset = useSharedValue(0);
+  const activeScrollOffset = homeScrollOffset ?? localScrollOffset;
+  const homeScrollHandler = useAnimatedScrollHandler((event) => { activeScrollOffset.value = Math.max(0, event.contentOffset.y); });
+  useAnimatedReaction(() => activeScrollOffset.value > 330, (next, previous) => {
+    if (next !== previous) runOnJS(setFiltersPinned)(next);
+  });
   const [selectedVerticalID, setSelectedVerticalID] = useState("");
   const [selectedCategoryID, setSelectedCategoryID] = useState("");
   const [selectedShortcutID, setSelectedShortcutID] = useState("");
@@ -484,19 +493,23 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   }
 
   const storeRows = directoryMode && !directoryLoading ? filteredStores : [];
+  // Do not leave empty grid tracks when fewer stores are published in a city.
+  const gridColumns = directoryMode ? Math.min(webColumns, Math.max(1, filteredStores.length)) : webColumns;
 
   return (
-    <>
-    <FlatList
-      key={`${directoryMode ? "store-directory" : "product-search"}-${webColumns}`}
-      numColumns={webColumns}
-      columnWrapperStyle={webColumns > 1 ? styles.storeGridRow : undefined}
+    <View style={styles.discoveryRoot}>
+    <Reanimated.FlatList
+      key={`${directoryMode ? "store-directory" : "product-search"}-${gridColumns}`}
+      numColumns={gridColumns}
+      columnWrapperStyle={gridColumns > 1 ? styles.storeGridRow : undefined}
       accessibilityLabel={directoryMode ? "اكتشاف المتاجر" : "نتائج البحث"}
       contentContainerStyle={styles.screenContent}
       data={storeRows}
       keyExtractor={(store) => store.id}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
+      scrollEventThrottle={32}
+      onScroll={homeScrollHandler}
       ListHeaderComponent={<View
         style={styles.container}
         onLayout={(event) => {
@@ -509,7 +522,15 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         <BthwaniChip label="المنتجات" selected={searchScope === "products"} onPress={() => { if (onSearchScopeChange) onSearchScopeChange("products"); else router.setParams({ scope: "products" }); }} />
       </View> : null}
 
-      {showHomeMarketing && bannerContent.length ? <LoopingHeroBanner screenActive={isScreenActive} presentation={bannerPresentation} cardWidth={carouselCardWidth} items={bannerContent} onOpen={(item) => openDiscoveryContent(item.id)} label="البنرات الرئيسية" /> : null}
+      {showHomeMarketing && bannerContent.length ? <View style={{ width: Platform.OS === "web" ? carouselCardWidth : viewportWidth, alignSelf: "center" }}><LoopingHeroBanner screenActive={isScreenActive} presentation={bannerPresentation} cardWidth={Platform.OS === "web" ? carouselCardWidth : viewportWidth} items={bannerContent} onOpen={(item) => openDiscoveryContent(item.id)} label="البنرات الرئيسية" immersiveHeader={heroHeader} /></View> : heroHeader ?? null}
+      {showHomeMarketing ? <View style={styles.deliveryStrip} accessibilityLabel="معلومات التوصيل والعروض">
+        <View style={styles.deliveryStripIcon}><BthwaniIcon name="cart" color="#FFFFFF" size={sizing.iconLg}/></View>
+        <View style={styles.deliveryStripCopy}>
+          <Text style={styles.deliveryStripTitle}>تفاصيل التوصيل</Text>
+          <Text style={styles.deliveryStripHint}>تظهر الرسوم والعروض المتاحة قبل تأكيد الطلب</Text>
+        </View>
+      </View> : null}
+      {showHomeMarketing && marketing.promotions.length > 0 ? <View accessibilityLabel="العرض المنشور" style={styles.featuredPromotion}><PromotionCard promotion={marketing.promotions[0]!} /></View> : null}
 
       {taxonomy.verticals.length ? <View style={styles.categoryShortcutBlock} accessibilityLabel="المجالات التجارية الرئيسية">
         <ScrollView accessibilityLabel="المجالات التجارية" contentContainerStyle={styles.activityTiles} horizontal showsHorizontalScrollIndicator={false}>
@@ -524,25 +545,6 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         </ScrollView>
       </View> : null}
 
-      {showHomeMarketing && hasMarketingItems ? <View accessibilityLabel="العروض ومحتوى الاكتشاف" style={styles.marketingBlock}>
-        {carouselContent.length ? <>
-          <BthwaniSectionHeader title="مختارات وعروض" />
-          <DiscoveryMediaCarousel cardWidth={carouselCardWidth} items={carouselContent} styles={styles} theme={theme} onOpen={(item) => openDiscoveryContent(item.id)} label="شرائح العروض" />
-        </> : null}
-        {textContent.length ? <>
-          <BthwaniSectionHeader title="مختارات لك" subtitle="محتوى منشور من بثواني" />
-          <View style={styles.marketingList}>{textContent.map((item) => {
-            let contentKindLabel = "قصة قصيرة";
-            if (item.kind === "BANNER") contentKindLabel = "إعلان";
-            else if (item.kind === "CAROUSEL") contentKindLabel = "اختيارات";
-            return <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={`فتح محتوى ${item.titleAr}`} onPress={() => openDiscoveryContent(item.id)}><BthwaniSurface tone="inset" style={styles.marketingCard}><Text style={styles.eyebrow}>{contentKindLabel}</Text><Text style={styles.cardTitle}>{item.titleAr}</Text>{item.bodyAr ? <Text style={styles.muted}>{item.bodyAr}</Text> : null}<Text style={styles.mediaFallbackHint}>عرض التفاصيل والوجهة</Text></BthwaniSurface></Pressable>;
-          })}</View>
-        </> : null}
-        {marketing.promotions.length ? <>
-          <BthwaniSectionHeader title="عروض نشطة" subtitle="طبّق الرمز عند إتمام الطلب" />
-          <View style={styles.marketingList}>{marketing.promotions.map((promotion) => <PromotionCard key={promotion.id} promotion={promotion} />)}</View>
-        </> : null}
-      </View> : null}
       {selectedVertical && shoppingShortcuts.length > 0 ? <View style={styles.categoryShortcutBlock} accessibilityLabel={`تسوق حسب احتياجك في ${selectedVertical.nameAr}`}>
         <BthwaniSectionHeader title="تسوق حسب احتياجك" />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryShortcutContent}>
@@ -550,6 +552,15 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           {shoppingShortcuts.map((item) => <BthwaniChip key={item.id} label={item.titleAr} selected={selectedShortcutID === item.id} onPress={() => selectShortcut(item.id)} />)}
         </ScrollView>
       </View> : null}
+
+      {!searchIsActive ? <HomeProductFeed
+        cityID={selectedCityID}
+        verticalID={selectedVerticalID}
+        categoryID={selectedCategoryID}
+        shortcutID={selectedShortcutID}
+        isAuthenticated={isAuthenticated}
+        onRequireAuthentication={onRequireAuthentication}
+      /> : null}
 
       {!searchIsActive && marketing.error ? <Text accessibilityRole="alert" style={styles.error}>تعذر تحميل بعض العروض والمحتوى. يمكنك متابعة تصفح المتاجر.</Text> : null}
 
@@ -638,8 +649,9 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       </> : null}
 
 
+      {directoryMode && !searchIsActive ? <BthwaniSectionHeader title={selectedVertical ? `متاجر ${selectedVertical.nameAr}` : "اكتشف المتاجر"} subtitle="المتاجر المتاحة في مدينة الخدمة" /> : null}
       </View>}
-      renderItem={({ item: store }) => <View style={[styles.storeGridCell, webColumns === 2 && styles.storeGridCellHalf, webColumns === 3 && styles.storeGridCellThird]}><StoreDirectoryCard
+      renderItem={({ item: store, index }) => <View style={[styles.storeGridCell, gridColumns === 2 && styles.storeGridCellHalf, gridColumns === 3 && styles.storeGridCellThird]}><StoreDirectoryCard
         store={store}
         activityLabel={state.kind === "ready" ? state.verticals.find((vertical) => vertical.id === store.primaryVerticalId)?.nameAr ?? "" : ""}
         favorite={state.kind === "ready" && state.favoriteStoreIDs.includes(store.id)}
@@ -649,9 +661,30 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         onOpen={() => router.push(("/store/" + encodeURIComponent(store.id)) as Href)}
         onFavorite={() => { void toggleFavorite(store.id); }}
         promotionCount={store.promotionCount}
+        index={index}
+        compact={Platform.OS !== "web" && gridColumns === 3}
       /></View>}
       ListEmptyComponent={directoryMode ? <StoreDirectoryStatus hasServiceCity={Boolean(selectedCityID)} kind={directoryStatusKind} query={query} selectedCategory={Boolean(selectedCategoryID)} onRetry={() => void load()} onClearSearch={() => { if (onSearchQueryChange) onSearchQueryChange(""); else router.setParams({ q: "" }); }} /> : undefined}
       ListFooterComponent={<View style={styles.footer}>
+      {showHomeMarketing && hasMarketingItems ? <View accessibilityLabel="العروض ومحتوى الاكتشاف" style={styles.marketingBlock}>
+        {carouselContent.length ? <>
+          <BthwaniSectionHeader title="مختارات وعروض" />
+          <DiscoveryMediaCarousel cardWidth={carouselCardWidth} items={carouselContent} styles={styles} theme={theme} onOpen={(item) => openDiscoveryContent(item.id)} label="شرائح العروض" />
+        </> : null}
+        {textContent.length ? <>
+          <BthwaniSectionHeader title="مختارات لك" subtitle="محتوى منشور من بثواني" />
+          <View style={styles.marketingList}>{textContent.map((item) => {
+            let contentKindLabel = "قصة قصيرة";
+            if (item.kind === "BANNER") contentKindLabel = "إعلان";
+            else if (item.kind === "CAROUSEL") contentKindLabel = "اختيارات";
+            return <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={`فتح محتوى ${item.titleAr}`} onPress={() => openDiscoveryContent(item.id)}><BthwaniSurface tone="inset" style={styles.marketingCard}><Text style={styles.eyebrow}>{contentKindLabel}</Text><Text style={styles.cardTitle}>{item.titleAr}</Text>{item.bodyAr ? <Text style={styles.muted}>{item.bodyAr}</Text> : null}<Text style={styles.mediaFallbackHint}>عرض التفاصيل والوجهة</Text></BthwaniSurface></Pressable>;
+          })}</View>
+        </> : null}
+        {marketing.promotions.length > 1 ? <>
+          <BthwaniSectionHeader title="عروض أخرى" subtitle="طبّق الرمز عند إتمام الطلب" />
+          <View style={styles.marketingList}>{marketing.promotions.slice(1).map((promotion) => <PromotionCard key={promotion.id} promotion={promotion} />)}</View>
+        </> : null}
+      </View> : null}
         {directoryMode && state.kind === "ready" && state.nextCursor ? <>
           {loadMoreStoresError ? <Text accessibilityRole="alert" style={styles.error}>تعذر تحميل المزيد من المتاجر.</Text> : null}
           <BthwaniButton disabled={loadingMoreStores || directoryLoading} label={loadingMoreStores ? "جارٍ تحميل المزيد" : "تحميل المزيد من المتاجر"} onPress={() => void loadMoreStores()} variant="secondary" />
@@ -660,6 +693,12 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       </View>}
       style={styles.flatList}
     />
+    {filtersPinned && !searchIsActive && Platform.OS !== "web" ? <View style={styles.pinnedFilters} accessibilityLabel="فلاتر المجالات الثابتة">
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pinnedFilterRow}>
+        <BthwaniChip label="الكل" selected={!selectedVerticalID} onPress={() => selectVertical("")} />
+        {taxonomy.verticals.map((vertical) => <BthwaniChip key={vertical.id} label={vertical.nameAr} selected={selectedVerticalID === vertical.id} onPress={() => selectVertical(vertical.id)} />)}
+      </ScrollView>
+    </View> : null}
     <DiscoveryReelsViewer
       items={videoShorts}
       initialIndex={selectedReelIndex ?? 0}
@@ -675,7 +714,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       onShare={(item) => { setSelectedReelIndex(null); setShareTarget({kind:"CONTENT",id:item.id,title:item.titleAr,link:ExpoLinking.createURL(`discovery-content/${encodeURIComponent(item.id)}`)}); }}
     />
     <ClientShareSheet target={shareTarget} onClose={() => setShareTarget(null)} />
-    </>
+    </View>
   );
 }
 
@@ -815,10 +854,13 @@ function StoreDirectoryStatus({ hasServiceCity, kind, query, selectedCategory, o
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
-    container: { gap: spacing[4], paddingBottom: spacing[4], width: "100%" },
+    container: { gap: spacing[3], paddingBottom: spacing[2], width: "100%" },
+    discoveryRoot: { flex: 1 },
     flatList: { flex: 1 },
-    screenContent: { flexGrow: 1, alignSelf: "center", maxWidth: 1280, paddingBottom: spacing[5], paddingHorizontal: spacing[5], width: "100%" },
-    storeGridRow: { gap: spacing[3], marginBottom: spacing[3] },
+    pinnedFilters: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 5, backgroundColor: theme.surface, borderBottomColor: theme.borderColor, borderBottomWidth: borders.hairline, paddingVertical: spacing[1] },
+    pinnedFilterRow: { alignItems: "center", flexDirection: "row", gap: spacing[2], paddingHorizontal: spacing[3] },
+    screenContent: { flexGrow: 1, alignSelf: "center", maxWidth: 1280, paddingBottom: 140, paddingHorizontal: spacing[3], width: "100%" },
+    storeGridRow: { gap: spacing[2], marginBottom: spacing[2] },
     storeGridCell: { flex: 1, minWidth: 0 },
     storeGridCellHalf: { maxWidth: "49%" },
     storeGridCellThird: { maxWidth: "32.5%" },
@@ -879,18 +921,24 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     title: { ...typography.titleLg, color: theme.color, textAlign: "center" },
     muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: "center" },
     error: { ...typography.bodySm, color: theme.danger },
-    categoryShortcutBlock: { gap: spacing[1], paddingVertical: spacing[1] },
+    categoryShortcutBlock: { gap: 0, paddingTop: 0, paddingBottom: spacing[2] },
     categoryShortcutContent: { alignItems: "flex-start", gap: spacing[2], paddingHorizontal: spacing[1], paddingVertical: spacing[1] },
-    activityTiles: { alignItems: "center", gap: spacing[2], paddingHorizontal: spacing[1], paddingVertical: spacing[1] },
-    activityTile: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, flexDirection: "column", gap: spacing[1], minHeight: 68, minWidth: 78, justifyContent: "center", paddingHorizontal: spacing[2], paddingVertical: spacing[2] },
+    activityTiles: { alignItems: "center", gap: spacing[2], paddingHorizontal: spacing[1], paddingVertical: 0 },
+    activityTile: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[1], minHeight: 38, justifyContent: "center", paddingHorizontal: spacing[2], paddingVertical: 0 },
     activityTileSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
-    activityMark: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.md, height: sizing.avatarSm, justifyContent: "center", width: sizing.avatarSm },
+    activityMark: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.md, height: 24, justifyContent: "center", width: 24 },
     activityMarkWarm: { backgroundColor: theme.surfaceInset },
     activityMarkSelected: { backgroundColor: theme.interactiveText },
     activityInitial: { ...typography.titleSm, color: theme.interactiveText },
     activityTileName: { ...typography.label, color: theme.color, textAlign: "center" },
     activityTileNameSelected: { color: theme.interactiveText },
     categoryTreeEmpty: { ...typography.caption, color: theme.colorMuted, paddingHorizontal: spacing[2], paddingVertical: spacing[1] },
+    deliveryStrip: { backgroundColor: theme.actionSoft, borderColor: theme.borderColor, borderWidth: borders.hairline, borderRadius: radius.lg, marginTop: 0, marginBottom: spacing[2], padding: spacing[2], minHeight: 72, flexDirection: "row", alignItems: "center", gap: spacing[2] },
+    deliveryStripIcon: { backgroundColor: theme.brandAction, height: 44, width: 44, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
+    deliveryStripCopy: { flex: 1, gap: spacing[1], alignItems: "flex-end" },
+    deliveryStripTitle: { ...typography.bodyStrong, color: theme.color, textAlign: "right" },
+    deliveryStripHint: { ...typography.caption, color: theme.colorMuted, textAlign: "right" },
+    featuredPromotion: { marginVertical: spacing[1] },
     marketingBlock: { gap: spacing[3] },
     marketingList: { gap: spacing[2] },
     marketingCard: { borderRadius: radius.lg, gap: spacing[1], padding: spacing[3] },

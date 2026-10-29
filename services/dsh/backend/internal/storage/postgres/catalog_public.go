@@ -459,7 +459,7 @@ func SearchPublicCatalog(ctx context.Context, db *sql.DB, serviceCityID, vertica
 	if len(shortcutScope) == 1 {
 		shortcutID = strings.TrimSpace(shortcutScope[0])
 	}
-	if db == nil || serviceCityID == "" || query == "" || utf8.RuneCountInString(query) > 160 || len(verticalID) > 128 || len(categoryID) > 128 || len(shortcutID) > 128 || len(cursor) > 1024 || limit < 1 || limit > 50 {
+	if db == nil || serviceCityID == "" || utf8.RuneCountInString(query) > 160 || len(verticalID) > 128 || len(categoryID) > 128 || len(shortcutID) > 128 || len(cursor) > 1024 || limit < 1 || limit > 50 {
 		return PublicCatalogSearchRecord{}, errors.New("public catalog search input is invalid")
 	}
 	offers, nextCursor, err := listCustomerVisibleOffers(ctx, db, "", serviceCityID, verticalID, categoryID, "", query, "", limit, cursor, shortcutID)

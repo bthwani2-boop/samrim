@@ -1274,7 +1274,7 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
     async searchPublicCatalog(serviceCityID: string, query: string, categoryID = "", limit = 20, cursor = "", verticalID = "", shortcutID = ""): Promise<PublicCatalogSearchResponse> {
       const normalizedCity = serviceCityID.trim();
       const normalizedQuery = query.trim();
-      if (!normalizedCity || !normalizedQuery) throw new Error("DSH_CATALOG_SEARCH_SCOPE_REQUIRED");
+      if (!normalizedCity) throw new Error("DSH_CATALOG_SEARCH_SCOPE_REQUIRED");
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) throw new Error("DSH_CATALOG_SEARCH_LIMIT_INVALID");
       const params = new URLSearchParams({ serviceCityId: normalizedCity, q: normalizedQuery });
       if (categoryID.trim()) params.set("categoryId", categoryID.trim());

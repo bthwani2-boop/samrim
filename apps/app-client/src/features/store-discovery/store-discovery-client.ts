@@ -158,4 +158,35 @@ export async function addCatalogOfferToCart(
   return client().upsertCartLine(accessToken, { storeId: storeID, storeOfferId: offer.offerId, quantityBaseUnits, selectedModifierOptionIds }, expectedVersion);
 }
 
+/** Update one simple, discrete home offer using DSH's authoritative cart version. */
+export async function adjustSimpleOfferQuantity(storeID: string, offer: CatalogStoreOffer, direction: 1 | -1): Promise<CartResponse> {
+  if (offer.quantityPolicy !== "DISCRETE" || offer.modifierGroups.length > 0 || !offer.availability) {
+    throw new Error("HOME_OFFER_REQUIRES_DETAIL");
+  }
+  const accessToken = await getUsableIdentityAccessToken();
+  let current: CartResponse | null = null;
+  try {
+    current = await client().readOpenCart(accessToken, storeID);
+  } catch (error) {
+    const missing = error && typeof error === "object" && (error as { status?: unknown }).status === 404;
+    if (!missing) throw error;
+  }
+  const line = current?.cart.lines.find((item) => item.storeOfferId === offer.offerId);
+  if (direction === -1 && !line) throw new Error("HOME_OFFER_NOT_IN_CART");
+  if (direction === -1 && line && line.quantityBaseUnits <= offer.quantityMinBaseUnits) {
+    return client().removeCartLine(accessToken, line.id, current!.cart.version);
+  }
+  const quantityBaseUnits = line
+    ? line.quantityBaseUnits + direction * offer.quantityStepBaseUnits
+    : offer.quantityMinBaseUnits;
+  if (!Number.isSafeInteger(quantityBaseUnits) || quantityBaseUnits < offer.quantityMinBaseUnits || quantityBaseUnits > offer.quantityMaxBaseUnits) {
+    throw new Error("HOME_OFFER_QUANTITY_LIMIT");
+  }
+  return client().upsertCartLine(
+    accessToken,
+    { storeId: storeID, storeOfferId: offer.offerId, quantityBaseUnits, selectedModifierOptionIds: [] },
+    current?.cart.version ?? 0,
+  );
+}
+
 export { listOwnDeliveryAddresses };

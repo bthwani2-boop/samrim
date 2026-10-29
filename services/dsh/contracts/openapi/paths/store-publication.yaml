@@ -329,13 +329,14 @@ paths:
   /dsh/public/catalog/search:
     get:
       operationId: searchPublicCatalog
-      summary: Search customer-visible product offers across published stores in one active service city
+      summary: Browse or search customer-visible product offers across published stores in one active service city
       parameters:
         - $ref: "../dsh.openapi.yaml#/components/parameters/ServiceCityIdRequired"
         - name: q
           in: query
-          required: true
-          schema: { type: string, minLength: 1, maxLength: 160 }
+          required: false
+          description: Optional product-name prefix. When absent, returns a bounded, cursor-paginated public product feed.
+          schema: { type: string, maxLength: 160 }
         - name: categoryId
           in: query
           required: false

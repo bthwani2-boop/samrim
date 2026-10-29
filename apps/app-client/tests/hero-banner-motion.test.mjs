@@ -13,7 +13,7 @@ for (const [name, source] of [["store-discovery.tsx", discovery], ["looping-hero
 }
 
 test("home uses the independent banner instead of the RTL ScrollView carousel", () => {
-  assert.match(discovery, /<LoopingHeroBanner screenActive=\{isScreenActive\} presentation=\{bannerPresentation\} cardWidth=\{carouselCardWidth\} items=\{bannerContent\}/);
+  assert.match(discovery, /<LoopingHeroBanner screenActive=\{isScreenActive\} presentation=\{bannerPresentation\} cardWidth=\{Platform.OS === "web" \? carouselCardWidth : viewportWidth\} items=\{bannerContent\}/);
   assert.match(discovery, /<StoreDirectoryCard/);
   assert.doesNotMatch(hero, /<Animated\.ScrollView|onContentSizeChange|snapToInterval|physicalIndex/);
   assert.doesNotMatch(hero, /carouselDots|heroProgressTrack|heroPauseIcon/);
@@ -46,8 +46,11 @@ test("wraps from last to first indefinitely, including more than two banners", (
 });
 
 test("manual gestures can advance and reverse, while marketing modes remain respected", () => {
-  assert.match(hero, /PanResponder\.create/);
-  assert.match(hero, /gesture\.dx < 0 \? 1 : -1/);
+  assert.match(hero, /Gesture\.Pan\(\)/);
+  assert.match(hero, /\.activeOffsetX\(\[-14, 14\]\)/);
+  assert.match(hero, /\.failOffsetY\(\[-24, 24\]\)/);
+  assert.match(hero, /runOnJS\(completeSwipe\)\(event\.translationX\)/);
+  assert.match(hero, /deltaX < 0 \? 1 : -1/);
   assert.match(hero, /presentation\.mode === "CROSSFADE"/);
   assert.match(hero, /presentation\.mode === "STATIC"/);
   assert.match(hero, /recordDiscoveryImpression\(contentID\)/);
