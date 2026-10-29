@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -175,10 +176,16 @@ func (s *Server) verifyRootOwnerApprovalProof(w http.ResponseWriter, agreementID
 		writeError(w, http.StatusForbidden, "ROOT_OWNER_PROOF_INVALID", "Root Owner approval proof is invalid")
 		return false
 	}
-	facts, err := json.Marshal([]string{
-		"wlt-root-owner-approval-v1", strings.TrimSpace(agreementID), strconv.Itoa(input.ExpectedAgreementVersion),
+	modes := append([]string(nil), input.CurrentFulfillmentModes...)
+	for i := range modes {
+		modes[i] = strings.TrimSpace(modes[i])
+	}
+	sort.Strings(modes)
+	facts, err := json.Marshal([]any{
+		"wlt-root-owner-approval-v2", strings.TrimSpace(agreementID), strconv.Itoa(input.ExpectedAgreementVersion),
 		strings.ToUpper(strings.TrimSpace(input.Decision)), strings.TrimSpace(actorID),
 		strings.TrimSpace(input.Reason), strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID),
+		strings.TrimSpace(input.CurrentStorePartnerActorID), modes,
 	})
 	if err != nil {
 		writeError(w, http.StatusForbidden, "ROOT_OWNER_PROOF_INVALID", "Root Owner approval proof is invalid")

@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -980,10 +981,16 @@ func (c *Client) rootOwnerApprovalProof(agreementID string, input StoreCommercia
 	if len(c.rootApprovalProofSecret) < 32 {
 		return "", errors.New("Root Owner approval proof key is unavailable")
 	}
-	facts, err := json.Marshal([]string{
-		"wlt-root-owner-approval-v1", strings.TrimSpace(agreementID), strconv.Itoa(input.AgreementVersion),
+	modes := append([]string(nil), input.CurrentFulfillmentModes...)
+	for i := range modes {
+		modes[i] = strings.TrimSpace(modes[i])
+	}
+	sort.Strings(modes)
+	facts, err := json.Marshal([]any{
+		"wlt-root-owner-approval-v2", strings.TrimSpace(agreementID), strconv.Itoa(input.AgreementVersion),
 		strings.ToUpper(strings.TrimSpace(input.Decision)), strings.TrimSpace(actorID),
 		strings.TrimSpace(input.Reason), strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID),
+		strings.TrimSpace(input.CurrentStorePartnerActorID), modes,
 	})
 	if err != nil {
 		return "", err

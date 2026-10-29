@@ -16,12 +16,12 @@ func TestRootOwnerApprovalProofRequiresSeparateKeyAndExactFacts(t *testing.T) {
 	const actorID, agreementID, key, correlation = "root-operator", "agreement-123", "root-approval-operation", "root-correlation"
 	input := storeCommercialAgreementDecisionRequest{
 		RootOwnerSelfApproval: true, ExpectedAgreementVersion: 3,
-		Decision: "APPROVE", Reason: "reviewed agreed financial rates",
+		Decision: "APPROVE", Reason: "reviewed agreed financial rates", CurrentStorePartnerActorID: "partner-5", CurrentFulfillmentModes: []string{"PARTNER_CAPTAIN", "CUSTOMER_PICKUP"},
 	}
 	server := &Server{rootApprovalProofSecret: []byte(strings.Repeat("S", 40))}
-	facts, err := json.Marshal([]string{
-		"wlt-root-owner-approval-v1", agreementID, strconv.Itoa(input.ExpectedAgreementVersion),
-		input.Decision, actorID, input.Reason, key, correlation,
+	facts, err := json.Marshal([]any{
+		"wlt-root-owner-approval-v2", agreementID, strconv.Itoa(input.ExpectedAgreementVersion),
+		input.Decision, actorID, input.Reason, key, correlation, "partner-5", []string{"CUSTOMER_PICKUP", "PARTNER_CAPTAIN"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -44,6 +44,15 @@ func TestRootOwnerApprovalProofRequiresSeparateKeyAndExactFacts(t *testing.T) {
 		})
 	}
 	check("valid Identity-gated DSH proof", input, server, agreementID, key, correlation, true, 0)
+	reordered := input
+	reordered.CurrentFulfillmentModes = []string{"CUSTOMER_PICKUP", "PARTNER_CAPTAIN"}
+	check("canonical mode ordering", reordered, server, agreementID, key, correlation, true, 0)
+	changedPartner := input
+	changedPartner.CurrentStorePartnerActorID = "different-partner"
+	check("different Partner blocks approval", changedPartner, server, agreementID, key, correlation, false, http.StatusForbidden)
+	changedModes := input
+	changedModes.CurrentFulfillmentModes = []string{"CUSTOMER_PICKUP"}
+	check("different fulfillment modes block approval", changedModes, server, agreementID, key, correlation, false, http.StatusForbidden)
 	check("different agreement blocked", input, server, "other-agreement", key, correlation, false, http.StatusForbidden)
 	check("different idempotency blocked", input, server, agreementID, "other-operation", correlation, false, http.StatusForbidden)
 	check("different correlation blocked", input, server, agreementID, key, "other-correlation", false, http.StatusForbidden)

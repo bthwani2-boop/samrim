@@ -11,7 +11,7 @@ import (
 )
 
 func TestDSHRootOwnerProofBindsApprovedFinanceMutation(t *testing.T) {
-	input := StoreCommercialAgreementDecision{AgreementVersion: 5, Decision: "APPROVE", Reason: "Reviewed Store rates", RootOwnerSelfApproval: true}
+	input := StoreCommercialAgreementDecision{AgreementVersion: 5, Decision: "APPROVE", Reason: "Reviewed Store rates", RootOwnerSelfApproval: true, CurrentStorePartnerActorID: "partner-5", CurrentFulfillmentModes: []string{"PARTNER_CAPTAIN", "CUSTOMER_PICKUP"}}
 	client := &Client{rootApprovalProofSecret: []byte(strings.Repeat("S", 40))}
 	proof, err := client.rootOwnerApprovalProof("store-agreement", input, "root-idempotency", "root-correlation", "root-actor")
 	if err != nil {
@@ -21,7 +21,7 @@ func TestDSHRootOwnerProofBindsApprovedFinanceMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	facts, err := json.Marshal([]string{"wlt-root-owner-approval-v1", "store-agreement", strconv.Itoa(5), "APPROVE", "root-actor", "Reviewed Store rates", "root-idempotency", "root-correlation"})
+	facts, err := json.Marshal([]any{"wlt-root-owner-approval-v2", "store-agreement", strconv.Itoa(5), "APPROVE", "root-actor", "Reviewed Store rates", "root-idempotency", "root-correlation", "partner-5", []string{"CUSTOMER_PICKUP", "PARTNER_CAPTAIN"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,6 +29,12 @@ func TestDSHRootOwnerProofBindsApprovedFinanceMutation(t *testing.T) {
 	_, _ = mac.Write(facts)
 	if !hmac.Equal(bytes, mac.Sum(nil)) {
 		t.Fatal("DSH root proof is not bound to canonical mutation")
+	}
+	reordered := input
+	reordered.CurrentFulfillmentModes = []string{"CUSTOMER_PICKUP", "PARTNER_CAPTAIN"}
+	reorderedProof, err := client.rootOwnerApprovalProof("store-agreement", reordered, "root-idempotency", "root-correlation", "root-actor")
+	if err != nil || reorderedProof != proof {
+		t.Fatalf("mode order should be canonical: %v", err)
 	}
 	missingKey := &Client{}
 	if _, err := missingKey.rootOwnerApprovalProof("store-agreement", input, "root-idempotency", "root-correlation", "root-actor"); err == nil {
