@@ -20,7 +20,9 @@ test("marketing types have distinct eligible home placements without client-auth
   const categories = source.indexOf('accessibilityLabel="المجالات التجارية الرئيسية"');
   const carousel = source.indexOf('items={carouselContent}');
   const stories = source.indexOf('style={styles.storeFilterRow}');
-  assert.ok(banner > 0 && categories > banner && carousel > categories && stories > carousel);
+  const footer = source.indexOf("ListFooterComponent={<View style={styles.footer}>");
+  // Promotional media remain accessible after the merchant grid without displacing primary discovery.
+  assert.ok(banner > 0 && categories > banner && stories > categories && footer > stories && carousel > footer);
   assert.match(source, /showHomeMarketing && bannerContent.length/);
   assert.match(source, /showHomeMarketing && hasMarketingItems/);
   assert.match(source, /item\.mediaUri/);
