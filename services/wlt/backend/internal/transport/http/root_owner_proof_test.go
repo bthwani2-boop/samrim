@@ -68,3 +68,41 @@ func TestRootOwnerApprovalProofRequiresSeparateKeyAndExactFacts(t *testing.T) {
 	ordinary.RootOwnerApprovalProof = input.RootOwnerApprovalProof
 	check("unexpected proof blocked", ordinary, server, agreementID, key, correlation, false, http.StatusForbidden)
 }
+
+// DSH's independently generated wire vector is verified through the WLT HTTP
+// decoder and the production proof guard, without touching financial state.
+func TestRootOwnerDSHWireVectorAtWLTHTTPBoundary(t *testing.T) {
+	const vector = "3KBN5adhHYI6LaOr9bLx2VOuVhF6CQL7f0qkn5kmXKM"
+	const payload = "{\"expectedAgreementVersion\":3,\"decision\":\"APPROVE\",\"reason\":\"reviewed agreed financial rates\",\"rootOwnerSelfApproval\":true,\"rootOwnerApprovalProof\":\"" + vector + "\",\"currentStorePartnerActorId\":\"partner-5\",\"currentFulfillmentModes\":[\"PARTNER_CAPTAIN\",\"CUSTOMER_PICKUP\"]}"
+	server := &Server{rootApprovalProofSecret: []byte(strings.Repeat("S", 40))}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /wlt/v1/operator/store-commercial-agreements/{agreementId}/decision", func(w http.ResponseWriter, r *http.Request) {
+		var input storeCommercialAgreementDecisionRequest
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		if !server.verifyRootOwnerApprovalProof(w, r.PathValue("agreementId"), input, "root-operator", "root-approval-operation", "root-correlation") {
+			return
+		}
+		w.WriteHeader(http.StatusNoContent) // Storage deliberately not invoked.
+	})
+	for _, tc := range []struct {
+		name, body string
+		status     int
+	}{
+		{"canonical DSH-to-WLT wire proof", payload, http.StatusNoContent},
+		{"forged Partner in signed request", strings.Replace(payload, "partner-5", "partner-6", 1), http.StatusForbidden},
+		{"forged fulfillment policy", strings.Replace(payload, "PARTNER_CAPTAIN", "BTHWANI_CAPTAIN", 1), http.StatusForbidden},
+		{"forged signature", strings.Replace(payload, vector, "invalid", 1), http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodPost, "/wlt/v1/operator/store-commercial-agreements/agreement-123/decision", strings.NewReader(tc.body))
+			r.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, r)
+			if w.Code != tc.status {
+				t.Fatalf("WLT wire response = %d, want %d: %s", w.Code, tc.status, w.Body.String())
+			}
+		})
+	}
+}

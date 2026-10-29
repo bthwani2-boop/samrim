@@ -36,6 +36,16 @@ func TestDSHRootOwnerProofBindsApprovedFinanceMutation(t *testing.T) {
 	if err != nil || reorderedProof != proof {
 		t.Fatalf("mode order should be canonical: %v", err)
 	}
+	// Independent protocol vector consumed by the WLT HTTP boundary test.
+	wireDecision := StoreCommercialAgreementDecision{
+		AgreementVersion: 3, Decision: "APPROVE", Reason: "reviewed agreed financial rates",
+		RootOwnerSelfApproval: true, CurrentStorePartnerActorID: "partner-5",
+		CurrentFulfillmentModes: []string{"PARTNER_CAPTAIN", "CUSTOMER_PICKUP"},
+	}
+	wireProof, wireErr := client.rootOwnerApprovalProof("agreement-123", wireDecision, "root-approval-operation", "root-correlation", "root-operator")
+	if wireErr != nil || wireProof != "3KBN5adhHYI6LaOr9bLx2VOuVhF6CQL7f0qkn5kmXKM" {
+		t.Fatalf("DSH outbound protocol proof does not match WLT independent wire vector: %q, %v", wireProof, wireErr)
+	}
 	missingKey := &Client{}
 	if _, err := missingKey.rootOwnerApprovalProof("store-agreement", input, "root-idempotency", "root-correlation", "root-actor"); err == nil {
 		t.Fatal("Root Owner proof must fail closed without a separate key")
