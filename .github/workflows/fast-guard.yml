@@ -174,6 +174,7 @@ jobs:
           services/dsh/clients/cash-in-simulator.test.mjs
           apps/app-partner/src/features/order-management/order-page-records.test.mjs
           apps/app-partner/src/features/partner-onboarding/store-access-canonical-readback.test.mjs
+          tools/mobile/check-android-expo-readiness.test.mjs
           apps/control-panel/src/features/notifications/notification-operation-link.test.mjs
           apps/control-panel/src/features/notifications/notification-readback.test.mjs
           apps/control-panel/src/features/operations/operational-age.test.mjs
