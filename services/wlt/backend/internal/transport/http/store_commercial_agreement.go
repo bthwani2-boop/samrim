@@ -34,6 +34,7 @@ type proposeStoreCommercialAgreementRequest struct {
 }
 
 type storeCommercialAgreementDecisionRequest struct {
+	RootOwnerSelfApproval      bool     `json:"rootOwnerSelfApproval,omitempty"`
 	ExpectedAgreementVersion   int      `json:"expectedAgreementVersion"`
 	Decision                   string   `json:"decision"`
 	Reason                     string   `json:"reason"`
@@ -166,6 +167,7 @@ func (s *Server) decideStoreCommercialAgreement(w http.ResponseWriter, r *http.R
 	agreement, replayed, err := postgres.DecideStoreCommercialAgreement(r.Context(), s.db, postgres.StoreCommercialAgreementDecisionInput{
 		AgreementID: r.PathValue("agreementId"), ExpectedVersion: input.ExpectedAgreementVersion,
 		Decision: input.Decision, ActorID: actorID, Reason: input.Reason,
+		RootOwnerSelfApproval:      input.RootOwnerSelfApproval,
 		CurrentStorePartnerActorID: input.CurrentStorePartnerActorID, CurrentFulfillmentModes: input.CurrentFulfillmentModes,
 		IdempotencyKey: idempotencyKey, CorrelationID: correlationID,
 	})

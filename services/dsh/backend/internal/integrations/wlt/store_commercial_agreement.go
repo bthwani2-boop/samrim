@@ -51,6 +51,7 @@ type ProposeStoreCommercialAgreementInput struct {
 }
 
 type StoreCommercialAgreementDecision struct {
+	RootOwnerSelfApproval      bool
 	AgreementVersion           int
 	Decision                   string
 	Reason                     string
@@ -134,6 +135,7 @@ func (c *Client) DecideStoreCommercialAgreement(ctx context.Context, agreementID
 		"expectedAgreementVersion": input.AgreementVersion,
 		"decision":                 strings.ToUpper(strings.TrimSpace(input.Decision)),
 		"reason":                   strings.TrimSpace(input.Reason),
+		"rootOwnerSelfApproval":    input.RootOwnerSelfApproval,
 	}
 	if strings.TrimSpace(input.CurrentStorePartnerActorID) != "" || len(input.CurrentFulfillmentModes) > 0 {
 		body["currentStorePartnerActorId"] = strings.TrimSpace(input.CurrentStorePartnerActorID)

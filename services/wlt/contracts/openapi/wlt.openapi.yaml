@@ -3207,6 +3207,7 @@ components:
         decision: { type: string, enum: [APPROVE, REJECT] }
         reason: { type: string, minLength: 8, maxLength: 500 }
         currentStorePartnerActorId: { type: string, minLength: 1, maxLength: 128, description: Required for APPROVE; supplied by DSH from the current canonical Store owner. }
+        rootOwnerSelfApproval: { type: boolean, description: Internal DSH Identity-verified assertion that the acting Operator is the canonical initial Root Owner and may approve their own proposal. Never accepted from the browser. }
         currentFulfillmentModes:
           type: array
           minItems: 1

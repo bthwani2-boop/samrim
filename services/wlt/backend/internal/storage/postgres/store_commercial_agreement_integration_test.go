@@ -102,7 +102,14 @@ func TestStoreCommercialAgreementLifecycleAndOrderSnapshots(t *testing.T) {
 		AgreementID: first.AgreementID, ExpectedVersion: first.AgreementVersion, Decision: "APPROVE", ActorID: fieldID,
 		Reason: "Finance reviewed Store terms", IdempotencyKey: "wrong-finance-" + suffix, CorrelationID: "wrong-finance-correlation-" + suffix,
 	}); !errors.Is(err, ErrStoreCommercialAgreementState) {
-		t.Fatalf("proposer Finance decision error = %v, want separation state conflict", err)
+		t.Fatalf("ordinary proposer Finance decision error = %v, want separation state conflict", err)
+	}
+	if _, _, err := DecideStoreCommercialAgreement(scenario.ctx, scenario.db, StoreCommercialAgreementDecisionInput{
+		AgreementID: first.AgreementID, ExpectedVersion: first.AgreementVersion, Decision: "APPROVE", ActorID: partnerID,
+		RootOwnerSelfApproval: true, CurrentStorePartnerActorID: partnerID, CurrentFulfillmentModes: []string{"PARTNER_CAPTAIN"},
+		Reason: "Partner cannot self-approve", IdempotencyKey: "partner-finance-" + suffix, CorrelationID: "partner-finance-correlation-" + suffix,
+	}); !errors.Is(err, ErrStoreCommercialAgreementState) {
+		t.Fatalf("Partner cannot Finance-approve even with root assertion: %v", err)
 	}
 
 	allocation := func(orderID, externalReference, idem string) PaymentIntentRecord {
@@ -141,7 +148,21 @@ func TestStoreCommercialAgreementLifecycleAndOrderSnapshots(t *testing.T) {
 	}); !errors.Is(err, ErrStoreCommercialAgreementState) {
 		t.Fatalf("proposal while v2 awaits Finance error = %v, want state conflict", err)
 	}
-	second = decide(second, "APPROVE", "agreement-v2-finance")
+	if _, _, err := DecideStoreCommercialAgreement(scenario.ctx, scenario.db, StoreCommercialAgreementDecisionInput{
+		AgreementID: second.AgreementID, ExpectedVersion: second.AgreementVersion, Decision: "APPROVE", ActorID: fieldID,
+		CurrentStorePartnerActorID: partnerID, CurrentFulfillmentModes: []string{"PARTNER_CAPTAIN"},
+		Reason: "Ordinary proposer cannot approve", IdempotencyKey: "ordinary-proposer-" + suffix, CorrelationID: "ordinary-proposer-correlation-" + suffix,
+	}); !errors.Is(err, ErrStoreCommercialAgreementState) {
+		t.Fatalf("ordinary proposer self-approval error = %v, want state conflict", err)
+	}
+	second, replayed, err = DecideStoreCommercialAgreement(scenario.ctx, scenario.db, StoreCommercialAgreementDecisionInput{
+		AgreementID: second.AgreementID, ExpectedVersion: second.AgreementVersion, Decision: "APPROVE", ActorID: fieldID,
+		RootOwnerSelfApproval: true, CurrentStorePartnerActorID: partnerID, CurrentFulfillmentModes: []string{"PARTNER_CAPTAIN"},
+		Reason: "Root Owner reviewed own Store proposal", IdempotencyKey: "root-owner-finance-" + suffix, CorrelationID: "root-owner-finance-correlation-" + suffix,
+	})
+	if err != nil || replayed || second.FinanceApprovedByActorID == nil || *second.FinanceApprovedByActorID != fieldID {
+		t.Fatalf("Root Owner finance approval = %+v replayed=%t err=%v", second, replayed, err)
+	}
 	if second.Status != "ACTIVE" {
 		t.Fatalf("v2 agreement status = %s, want ACTIVE", second.Status)
 	}

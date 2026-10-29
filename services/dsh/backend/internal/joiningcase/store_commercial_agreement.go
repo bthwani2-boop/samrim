@@ -226,8 +226,17 @@ func (s *Service) DecideStoreCommercialAgreementForFinance(ctx context.Context, 
 	if selected == nil || selected.StoreID != storeID {
 		return wltintegration.StoreCommercialAgreement{}, false, postgres.ErrStoreNotFound
 	}
-	if actingActorID == selected.PartnerActorID || actingActorID == selected.ProposedByActorID {
+	if actingActorID == selected.PartnerActorID {
 		return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementForbidden
+	}
+	// Only the canonical initial Operator may approve a proposal they created.
+	// This assertion comes from Identity on each request, never from UI input.
+	input.RootOwnerSelfApproval = false
+	if actingActorID == selected.ProposedByActorID {
+		if err := s.identity.RequireOperatorProfileAdministrator(ctx, actingActorID); err != nil {
+			return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementForbidden
+		}
+		input.RootOwnerSelfApproval = true
 	}
 	if input.Decision == "APPROVE" {
 		currentStore, storeErr := postgres.ReadStore(ctx, s.db, storeID)

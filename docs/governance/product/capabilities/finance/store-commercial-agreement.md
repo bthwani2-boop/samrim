@@ -21,7 +21,7 @@ WLT owns agreement identity and versions, proposed rates, Partner acceptance, Fi
 - every durably enabled fulfillment mode has exactly one rate in an active agreement;
 - the lifecycle is `PROPOSED` → `PARTNER_ACCEPTED` → Finance-approved `ACTIVE` → `SUPERSEDED`;
 - silence, Store creation, role admission, catalog readiness or publication is not Partner acceptance;
-- only authorized Finance approval can activate an accepted version;
+- only authorized Finance approval can activate an accepted version; the canonical initial Operator (Root Owner) may Finance-approve a Store agreement they proposed themselves after Partner acceptance, when Identity confirms their administrator standing and Finance permission; other proposing Operators cannot self-approve;
 - each material term change creates a new version and historical evidence is immutable;
 - adding a fulfillment mode that changes commercial obligations requires a new agreement version containing that mode before DSH may treat it as durably enabled;
 - materially changing or removing an enabled mode's commercial terms also requires a new agreement version;
@@ -31,7 +31,7 @@ WLT owns agreement identity and versions, proposed rates, Partner acceptance, Fi
 - an initial Store agreement may have zero product commission for each admitted fulfillment mode; zero rates are explicit Store-specific financial facts, not an implied waiver of Partner acceptance or Finance approval;
 - a zero-commission proposal does not by itself create a timed promotion or authorize automatic paid conversion; a governed duration, effective date, consent evidence and applicable policy must exist before any later paid terms become active;
 - no more than one agreement version is active for a Store at a time;
-- a Partners Operator may propose but cannot accept for the Partner owner or approve for Finance; an originating Field proposer is restricted to that Field-owned joining case and cannot accept or approve on another actor's behalf;
+- a Partners Operator may propose but cannot accept for the Partner owner; Finance approval is separate except for the Root Owner exception above. Retired Field actors cannot propose or approve on another actor's behalf;
 - retries, stale versions and concurrent transitions preserve one auditable result.
 
 ## Failure and recovery

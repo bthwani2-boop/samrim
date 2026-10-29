@@ -40,7 +40,7 @@ try {
   $env:BTHWANI_EXPECTED_DATABASE_PORT = "$port"
   $env:BTHWANI_EXPECTED_DATABASE_NAME = $dbName
   $env:BTHWANI_EXPECTED_DATABASE_USER = $dbUser
-  & go test ./services/wlt/backend/internal/storage/postgres -run 'TestPartnerStoreFinanceAndRecipientSettlementLifecycle|TestCashIn' -v -count=1 -timeout 240s
+  & go test ./services/wlt/backend/internal/storage/postgres -run 'TestPartnerStoreFinanceAndRecipientSettlementLifecycle|TestCashIn|TestStoreCommercialAgreementLifecycleAndOrderSnapshots' -v -count=1 -timeout 240s
   if ($LASTEXITCODE -ne 0) {throw 'WLT finance integration tests failed'}
   Write-Output 'WLT_FINANCE_ISOLATED_TESTS=PASS'
 } catch {

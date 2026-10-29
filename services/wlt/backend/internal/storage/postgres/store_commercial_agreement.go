@@ -65,6 +65,7 @@ type ProposeStoreCommercialAgreementInput struct {
 }
 
 type StoreCommercialAgreementDecisionInput struct {
+	RootOwnerSelfApproval      bool
 	AgreementID                string
 	ExpectedVersion            int
 	Decision                   string
@@ -326,7 +327,7 @@ func DecideStoreCommercialAgreement(ctx context.Context, db *sql.DB, input Store
 		return StoreCommercialAgreementRecord{}, false, ErrStoreCommercialAgreementState
 	}
 	if item.Status != "PARTNER_ACCEPTED" || item.AgreementVersion != input.ExpectedVersion || item.PartnerAcceptedByActorID == nil ||
-		input.ActorID == item.ProposedByActorID || input.ActorID == *item.PartnerAcceptedByActorID {
+		(input.ActorID == item.ProposedByActorID && !input.RootOwnerSelfApproval) || input.ActorID == *item.PartnerAcceptedByActorID {
 		if item.AgreementVersion != input.ExpectedVersion {
 			return StoreCommercialAgreementRecord{}, false, ErrStoreCommercialAgreementVersion
 		}
