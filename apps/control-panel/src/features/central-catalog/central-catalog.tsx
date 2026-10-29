@@ -140,6 +140,7 @@ export function CentralCatalog() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteReason, setDeleteReason] = useState("");
   const [form, setForm] = useState<ProductForm>(emptyForm);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [appliedQuery, setAppliedQuery] = useState("");
   const [verticalFilter, setVerticalFilter] = useState("");
@@ -150,17 +151,6 @@ export function CentralCatalog() {
   const [viewMode, setViewMode] = useState<"table" | "gallery">("table");
   const [minVariants, setMinVariants] = useState("");
   const [minStores, setMinStores] = useState("");
-  const [pageCountSort, setPageCountSort] = useState<"default" | "variants_asc" | "variants_desc" | "stores_asc" | "stores_desc">("default");
-  const pageProducts = useMemo(() => {
-    const variantThreshold = minVariants.trim() && Number.isFinite(Number(minVariants)) ? Math.max(0, Number(minVariants)) : 0;
-    const storeThreshold = minStores.trim() && Number.isFinite(Number(minStores)) ? Math.max(0, Number(minStores)) : 0;
-    const result = products.filter((item) => item.variantCount >= variantThreshold && item.storeCount >= storeThreshold);
-    if (pageCountSort === "default") return result;
-    const factor = pageCountSort.endsWith("_asc") ? 1 : -1;
-    const field = pageCountSort.startsWith("variants") ? "variantCount" : "storeCount";
-    return result.sort((a, b) => factor * (a[field] - b[field]) || a.canonicalName.localeCompare(b.canonicalName, "ar"));
-  }, [products, minVariants, minStores, pageCountSort]);
-  const hasPageColumnFilters = Boolean(minVariants || minStores || pageCountSort !== "default");
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const orderedMedia = useMemo(() => [...(selected?.media ?? [])].sort((left, right) => left.ordinal - right.ordinal), [selected]);
   const previewMedia = previewIndex === null ? undefined : orderedMedia[previewIndex];
@@ -179,7 +169,7 @@ export function CentralCatalog() {
   const [nextCursor, setNextCursor] = useState("");
   const [registrySummary, setRegistrySummary] = useState<{ totalCount: number; measuredAt: string } | null>(null);
   const [registryError, setRegistryError] = useState("");
-  const cursorPage = useCursorPage("productCursor");
+  const cursorPage = useCursorPage("productCursor", JSON.stringify([appliedQuery, verticalFilter, categoryFilter, statusFilter, sort, minVariants, minStores]));
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [uploadRole, setUploadRole] = useState<"primary" | "gallery">("primary");
@@ -271,6 +261,8 @@ export function CentralCatalog() {
       if (appliedQuery.trim()) suffix.set("q", appliedQuery.trim());
       if (verticalFilter) suffix.set("verticalId", verticalFilter);
       if (categoryFilter) suffix.set("categoryId", categoryFilter);
+      if (minVariants.trim()) suffix.set("minVariantCount", minVariants.trim());
+      if (minStores.trim()) suffix.set("minStoreCount", minStores.trim());
       if (cursor) suffix.set("cursor", cursor);
       const response = await fetch(`/api/catalog/product-registry?${suffix.toString()}`, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
       const payload = await parseResponse<CatalogProductRegistryResponse>(response);
@@ -286,7 +278,7 @@ export function CentralCatalog() {
     } finally {
       if (requestSequence === listRequestSequence.current) setLoading(false);
     }
-  }, [appliedQuery, verticalFilter, categoryFilter, statusFilter, sort, cursorPage.cursor]);
+  }, [appliedQuery, verticalFilter, categoryFilter, statusFilter, sort, minVariants, minStores, cursorPage.cursor]);
   useReadOnReturn(() => load(cursorPage.cursor), cursorPage.ready && !editorOpen && !loading && !busy);
 
   useEffect(() => { void loadVerticals().catch((nextError) => setError(nextError instanceof Error ? nextError.message : "تعذر قراءة الفئات الرئيسية.")); }, [loadVerticals]);
@@ -362,6 +354,14 @@ export function CentralCatalog() {
     router.replace(href, { scroll: false });
   }
 
+  function clearProductPageCursor() {
+    cursorPage.clearForNavigation();
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("productCursor")) return;
+    url.searchParams.delete("productCursor");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+
   function closePreview() {
     previewDialogRef.current?.close();
     setPreviewIndex(null);
@@ -405,12 +405,12 @@ export function CentralCatalog() {
       const detail = await parseResponse<CatalogProduct>(response);
       if (requestSequence !== detailRequestSequence.current) return false;
       if (!detail || detail.id !== productId || !Array.isArray(detail.categoryIds) || !Array.isArray(detail.variants) || !Array.isArray(detail.attributes) || !Array.isArray(detail.media)) throw new Error("استجابة تفاصيل المنتج غير صالحة. أعد القراءة.");
-      setSelected(detail); setForm(toForm(detail)); setAttributeDrafts(attributeDraftsFromValues(detail)); setUploadFile(null); setUploadRole("primary");
+      setSelected(detail); setForm(toForm(detail)); setAttributeDrafts(attributeDraftsFromValues(detail)); setAdvancedOpen(true); setUploadFile(null); setUploadRole("primary");
       return true;
     } catch (nextError) { if (requestSequence === detailRequestSequence.current) setError(nextError instanceof Error ? nextError.message : "تعذر قراءة تفاصيل المنتج."); return false; }
     finally { if (requestSequence === detailRequestSequence.current) setDetailLoading(false); }
   }
-  function startCreate(updateLocation = true) { setDetailProductId(""); setVersionConflict(false); saveAttempt.current = null; setPreviewIndex(null); detailRequestSequence.current += 1; if (updateLocation) writeCatalogLocation({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort, mode: "create" }); setDetailLoading(false); setSelected(null); setEditorOpen(true); setForm(emptyForm); setAttributeDrafts({}); setUploadFile(null); setUploadRole("primary"); setNotice(""); setError(""); }
+  function startCreate(updateLocation = true) { setDetailProductId(""); setVersionConflict(false); saveAttempt.current = null; setPreviewIndex(null); detailRequestSequence.current += 1; if (updateLocation) writeCatalogLocation({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort, mode: "create" }); setDetailLoading(false); setSelected(null); setEditorOpen(true); setForm(emptyForm); setAttributeDrafts({}); setAdvancedOpen(false); setUploadFile(null); setUploadRole("primary"); setNotice(""); setError(""); }
 
   const restoreCatalogLocation = useEffectEvent(() => {
     const params = new URL(window.location.href).searchParams;
@@ -597,7 +597,7 @@ export function CentralCatalog() {
     attributeEditorContent = renderAttributeFields();
   }
 
-  const activeFilterCount = [verticalFilter, categoryFilter, statusFilter !== "all", sort !== "name_asc"].filter(Boolean).length;
+  const activeFilterCount = [verticalFilter, categoryFilter, statusFilter !== "all", sort !== "name_asc", minVariants, minStores].filter(Boolean).length;
   const hasCatalogFilters = activeFilterCount > 0 || Boolean(query || appliedQuery);
 
   let saveProductLabel = "إنشاء المنتج";
@@ -627,6 +627,8 @@ export function CentralCatalog() {
       <div className="access-card-heading"><h2 id="central-catalog-editor-title">بيانات المنتج</h2></div>
       <div className="central-product-form">
         <label className="field-label" htmlFor="catalog-vertical">المجال التجاري<select id="catalog-vertical" disabled={busy || selected !== null} value={form.verticalId} onChange={(event) => { setForm({ ...form, verticalId: event.target.value, categoryIds: [] }); setCategorySearch(""); setCategoryNextCursor(""); setCategories([]); setSelectedCategoryDetails([]); setAttributeDrafts({}); }}><option value="">اختر المجال التجاري</option>{sharedVerticals.map((vertical) => <option value={vertical.id} key={vertical.id}>{vertical.nameAr}</option>)}</select></label>
+        <label className="field-label" htmlFor="catalog-product-name">الاسم القياسي<input id="catalog-product-name" disabled={busy} value={form.canonicalName} onChange={(event) => setForm({ ...form, canonicalName: event.target.value })} /></label>
+        <label className="field-label" htmlFor="catalog-product-description">الوصف القياسي<TextArea className="resize-none" id="catalog-product-description" disabled={busy} maxLength={4000} rows={4} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
         <fieldset className="catalog-product-category-picker" disabled={busy || !form.verticalId} aria-describedby="catalog-category-help">
           <legend>الفئات المرتبطة بالمنتج</legend>
           <p id="catalog-category-help" className="muted">اختر فئة واحدة أو أكثر. الخصائص المطلوبة تتغير حسب الفئات المختارة.</p>
@@ -637,14 +639,17 @@ export function CentralCatalog() {
         </fieldset>
         {attributeEditorContent}
         {form.scope === "STORE_SCOPED" ? <p className="muted">هذا المنتج خاص بمتجر ويُدار من مساحة المتجر.</p> : null}
-        <label className="field-label" htmlFor="catalog-product-name">الاسم القياسي<input id="catalog-product-name" disabled={busy} value={form.canonicalName} onChange={(event) => setForm({ ...form, canonicalName: event.target.value })} /></label>
-        <label className="field-label" htmlFor="catalog-product-description">الوصف القياسي<TextArea className="resize-none" id="catalog-product-description" disabled={busy} maxLength={4000} rows={4} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
-        <label className="field-label" htmlFor="catalog-product-brand">العلامة<input id="catalog-product-brand" disabled={busy} value={form.brand} onChange={(event) => setForm({ ...form, brand: event.target.value })} /></label>
-        <label className="field-label" htmlFor="catalog-variant-title">عنوان النسخة<input id="catalog-variant-title" disabled={busy || selected !== null} value={form.variantTitle} onChange={(event) => setForm({ ...form, variantTitle: event.target.value })} placeholder="الافتراضي" /></label>
-        <label className="field-label" htmlFor="catalog-measurement-kind">سياسة القياس<select id="catalog-measurement-kind" disabled={busy || selected !== null} value={form.measurementKind} onChange={(event) => { const measurementKind = event.target.value as MeasurementKind; let baseUnit = form.baseUnit; if (measurementKind === "DISCRETE") baseUnit = "COUNT"; else if (form.baseUnit === "COUNT") baseUnit = "GRAM"; setForm({ ...form, measurementKind, baseUnit }); }}><option value="DISCRETE">عددي</option><option value="MEASURED">مقاس ثابت</option><option value="VARIABLE_MEASURE">مقاس متغير</option></select></label>
-        <label className="field-label" htmlFor="catalog-base-unit">الوحدة الأساسية<select id="catalog-base-unit" disabled={busy || selected !== null} value={form.baseUnit} onChange={(event) => setForm({ ...form, baseUnit: event.target.value as BaseUnit })}><option value="COUNT">قطعة</option><option value="GRAM">غرام</option><option value="MILLILITER">مل</option></select></label>
-        <label className="field-label" htmlFor="catalog-identifier">نوع الباركود أو رمز الصنف<select id="catalog-identifier" disabled={busy || selected !== null} value={form.identifierType} onChange={(event) => setForm({ ...form, identifierType: event.target.value })}><option value="GTIN">رقم المنتج العالمي</option><option value="EAN">باركود أوروبي</option><option value="UPC">باركود أمريكي</option><option value="SKU">رمز الصنف لدى المتجر</option><option value="LEGACY_BARCODE">باركود قديم</option></select></label>
-        <label className="field-label" htmlFor="catalog-identifier-value">الباركود أو رمز الصنف<input id="catalog-identifier-value" disabled={busy || selected !== null} value={form.identifierValue} onChange={(event) => setForm({ ...form, identifierValue: event.target.value })} /></label>
+        <details className="catalog-product-advanced" open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>
+          <summary>بيانات إضافية للمنتج (اختيارية)</summary>
+          <div className="catalog-product-advanced-fields">
+            <label className="field-label" htmlFor="catalog-product-brand">العلامة<input id="catalog-product-brand" disabled={busy} value={form.brand} onChange={(event) => setForm({ ...form, brand: event.target.value })} /></label>
+            <label className="field-label" htmlFor="catalog-variant-title">عنوان النسخة<input id="catalog-variant-title" disabled={busy || selected !== null} value={form.variantTitle} onChange={(event) => setForm({ ...form, variantTitle: event.target.value })} placeholder="الافتراضي" /></label>
+            <label className="field-label" htmlFor="catalog-measurement-kind">سياسة القياس<select id="catalog-measurement-kind" disabled={busy || selected !== null} value={form.measurementKind} onChange={(event) => { const measurementKind = event.target.value as MeasurementKind; let baseUnit = form.baseUnit; if (measurementKind === "DISCRETE") baseUnit = "COUNT"; else if (form.baseUnit === "COUNT") baseUnit = "GRAM"; setForm({ ...form, measurementKind, baseUnit }); }}><option value="DISCRETE">عددي</option><option value="MEASURED">مقاس ثابت</option><option value="VARIABLE_MEASURE">مقاس متغير</option></select></label>
+            <label className="field-label" htmlFor="catalog-base-unit">الوحدة الأساسية<select id="catalog-base-unit" disabled={busy || selected !== null} value={form.baseUnit} onChange={(event) => setForm({ ...form, baseUnit: event.target.value as BaseUnit })}><option value="COUNT">قطعة</option><option value="GRAM">غرام</option><option value="MILLILITER">مل</option></select></label>
+            <label className="field-label" htmlFor="catalog-identifier">نوع الباركود أو رمز الصنف<select id="catalog-identifier" disabled={busy || selected !== null} value={form.identifierType} onChange={(event) => setForm({ ...form, identifierType: event.target.value })}><option value="GTIN">رقم المنتج العالمي</option><option value="EAN">باركود أوروبي</option><option value="UPC">باركود أمريكي</option><option value="SKU">رمز الصنف لدى المتجر</option><option value="LEGACY_BARCODE">باركود قديم</option></select></label>
+            <label className="field-label" htmlFor="catalog-identifier-value">الباركود أو رمز الصنف<input id="catalog-identifier-value" disabled={busy || selected !== null} value={form.identifierValue} onChange={(event) => setForm({ ...form, identifierValue: event.target.value })} /></label>
+          </div>
+        </details>
         {selected ? <><div className="catalog-product-media-gallery">{orderedMedia.map((media, mediaIndex) => <figure key={media.role + ":" + media.ordinal + ":" + media.uri}><button type="button" className="catalog-media-preview-button" onClick={() => openPreview(mediaIndex)} aria-label={"تكبير " + (media.role === "primary" ? "الصورة الأساسية" : "صورة المعرض") + " لمنتج " + form.canonicalName}><img className="catalog-media-preview" src={media.uri} alt={(media.role === "primary" ? "الصورة الأساسية" : "صورة المعرض") + " لمنتج " + form.canonicalName} loading="lazy" /></button><figcaption>{media.role === "primary" ? "الصورة الأساسية" : "صورة المعرض " + media.ordinal}</figcaption></figure>)}{selected.media.length === 0 ? <p className="muted">لا توجد صور بعد. أنشئ المنتج أولًا ثم ارفع صورته هنا.</p> : null}</div><div className="catalog-media-upload"><label className="field-label" htmlFor="catalog-upload-role">موضع الصورة<select id="catalog-upload-role" disabled={busy} value={uploadRole} onChange={(event) => setUploadRole(event.target.value as "primary" | "gallery")}><option value="primary">الصورة الأساسية</option><option value="gallery">المعرض</option></select></label><label className="field-label" htmlFor="catalog-upload-file">ملف الصورة<input key={uploadInputKey} id="catalog-upload-file" disabled={busy} type="file" accept="image/jpeg,image/png" onChange={(event) => { setUploadFile(event.target.files?.[0] ?? null); setUploadProvenance({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false }); }} /></label><CatalogMediaProvenanceFields idPrefix="catalog-product-media" disabled={busy} value={uploadProvenance} onChange={setUploadProvenance} /><button type="button" className="button button-secondary" disabled={busy || versionConflict || !uploadFile || !isMediaProvenanceInputValid(uploadProvenance)} onClick={() => void uploadMedia()}>رفع الصورة وربطها</button></div></> : <p className="muted">بعد حفظ المنتج، افتح تفاصيله لإرفاق صورة من خلال مخزن الوسائط.</p>}
         {selected ? <label className="central-active-toggle"><input type="checkbox" disabled={busy} checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} /> المنتج نشط وقابل للاختيار</label> : null}
         {versionConflict && !error ? <p className="identity-error" role="alert">تغير المنتج. احتفظنا بتعديلاتك؛ تحميل النسخة الحالية يلغي التعديلات والملف المحدد.</p> : null}
@@ -672,7 +677,7 @@ export function CentralCatalog() {
               {filterCategoryLoading ? <span role="status" className="muted">جارٍ قراءة الفئات…</span> : filterCategoryNextCursor ? <button type="button" className="button button-quiet" onClick={() => void loadMoreFilterCategories()}>فئات إضافية</button> : null}
               <label>الحالة<select value={statusFilter} onChange={(event) => { const active = event.target.value; changeFilters({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active, sort }); setStatusFilter(active); }}><option value="all">كل الحالات</option><option value="active">نشط</option><option value="inactive">معطل</option></select></label>
               <label>الترتيب<select value={sort} onChange={(event) => { const sort = event.target.value; changeFilters({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort }); setSort(sort); }}><option value="name_asc">الاسم أ–ي</option><option value="name_desc">الاسم ي–أ</option><option value="updated_desc">الأحدث تعديلًا</option><option value="updated_asc">الأقدم تعديلًا</option></select></label>
-              {hasCatalogFilters ? <button type="button" className="button button-quiet catalog-clear-filters" onClick={() => { changeFilters({ query: "", verticalId: "", categoryId: "", active: "all", sort: "name_asc" }); setQuery(""); setAppliedQuery(""); setVerticalFilter(""); setCategoryFilter(""); setStatusFilter("all"); setSort("name_asc"); setFilterCategoryQuery(""); setFilterCategories([]); setFilterCategoryNextCursor(""); }}>مسح كل المرشحات</button> : null}
+              {hasCatalogFilters ? <button type="button" className="button button-quiet catalog-clear-filters" onClick={() => { changeFilters({ query: "", verticalId: "", categoryId: "", active: "all", sort: "name_asc" }); setQuery(""); setAppliedQuery(""); setVerticalFilter(""); setCategoryFilter(""); setStatusFilter("all"); setSort("name_asc"); setMinVariants(""); setMinStores(""); setFilterCategoryQuery(""); setFilterCategories([]); setFilterCategoryNextCursor(""); }}>مسح كل المرشحات</button> : null}
             </div>
           </details>
         </form>
@@ -684,7 +689,7 @@ export function CentralCatalog() {
           {!loading && !registryError ? <div className="catalog-selection-bar" aria-live="polite">
             <strong>{registrySummary ? registrySummary.totalCount.toLocaleString("ar-YE") : "—"} منتج مطابق</strong>
             <span>{products.length.toLocaleString("ar-YE")} في الصفحة</span>
-            {hasPageColumnFilters ? <span>معروض من الصفحة: {pageProducts.length.toLocaleString("ar-YE")} · مرشحات العدد تخص الصفحة الحالية</span> : null}
+
             {registrySummary ? <details className="catalog-result-source">
               <summary>مصدر البيانات</summary>
               <small>الكتالوج المركزي · آخر قراءة <time dateTime={registrySummary.measuredAt}>{new Date(registrySummary.measuredAt).toLocaleString("ar-YE", { timeZone: "UTC" })}</time> بالتوقيت العالمي</small>
@@ -711,16 +716,16 @@ export function CentralCatalog() {
                 </select></label>
                 {filterCategoryNextCursor ? <button type="button" disabled={filterCategoryLoading} onClick={() => void loadMoreFilterCategories()}>المزيد من الفئات</button> : null}
               </RegistryColumnHeader>
-              <RegistryColumnHeader label="النسخ" scope="page" active={Boolean(minVariants || pageCountSort.startsWith("variants"))}>
-                <label>الحد الأدنى للنسخ<input type="number" min="0" step="1" value={minVariants} onChange={(event) => setMinVariants(event.target.value)} /></label>
-                <label>ترتيب الصفحة<select value={pageCountSort.startsWith("variants") ? pageCountSort : "default"} onChange={(event) => setPageCountSort(event.target.value as typeof pageCountSort)}>
-                  <option value="default">بدون ترتيب إضافي</option><option value="variants_asc">الأقل أولًا</option><option value="variants_desc">الأكثر أولًا</option>
+              <RegistryColumnHeader label="النسخ" active={Boolean(minVariants || sort.startsWith("variants"))}>
+                <label>الحد الأدنى للنسخ<input type="number" min="0" step="1" value={minVariants} onChange={(event) => { setMinVariants(event.target.value); clearProductPageCursor(); }} /></label>
+                <label>ترتيب النتائج<select value={sort.startsWith("variants") ? sort : "default"} onChange={(event) => { const next = event.target.value; const nextSort = next === "default" ? "name_asc" : next; setSort(nextSort); changeFilters({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort: nextSort }); }}>
+                  <option value="default">ترتيب الاسم</option><option value="variants_asc">الأقل أولًا</option><option value="variants_desc">الأكثر أولًا</option>
                 </select></label>
               </RegistryColumnHeader>
-              <RegistryColumnHeader label="متاجر تعرضه" scope="page" active={Boolean(minStores || pageCountSort.startsWith("stores"))}>
-                <label>الحد الأدنى للمتاجر<input type="number" min="0" step="1" value={minStores} onChange={(event) => setMinStores(event.target.value)} /></label>
-                <label>ترتيب الصفحة<select value={pageCountSort.startsWith("stores") ? pageCountSort : "default"} onChange={(event) => setPageCountSort(event.target.value as typeof pageCountSort)}>
-                  <option value="default">بدون ترتيب إضافي</option><option value="stores_asc">الأقل أولًا</option><option value="stores_desc">الأكثر أولًا</option>
+              <RegistryColumnHeader label="متاجر تعرضه" active={Boolean(minStores || sort.startsWith("stores"))}>
+                <label>الحد الأدنى للمتاجر<input type="number" min="0" step="1" value={minStores} onChange={(event) => { setMinStores(event.target.value); clearProductPageCursor(); }} /></label>
+                <label>ترتيب النتائج<select value={sort.startsWith("stores") ? sort : "default"} onChange={(event) => { const next = event.target.value; const nextSort = next === "default" ? "name_asc" : next; setSort(nextSort); changeFilters({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort: nextSort }); }}>
+                  <option value="default">ترتيب الاسم</option><option value="stores_asc">الأقل أولًا</option><option value="stores_desc">الأكثر أولًا</option>
                 </select></label>
               </RegistryColumnHeader>
               <RegistryColumnHeader label="الحالة" active={statusFilter !== "all"}>
@@ -733,22 +738,23 @@ export function CentralCatalog() {
                   <option value="updated_desc">الأحدث أولًا</option><option value="updated_asc">الأقدم أولًا</option>
                 </select></label>
               </RegistryColumnHeader>
+              <th scope="col">ملف المنتج</th>
             </tr></thead>
             <tbody>
-              {loading && products.length === 0 ? <tr><td colSpan={7} className="catalog-table-state">جارٍ قراءة السجل…</td></tr> : null}
-              {hasPageColumnFilters && products.length > 0 && pageProducts.length === 0 ? <tr><td colSpan={7} className="catalog-table-state">لا توجد مطابقة في الصفحة الحالية. أزل مرشح النسخ أو المتاجر.</td></tr> : null}
-              {!loading && !registryError && products.length === 0 ? <tr><td colSpan={7} className="catalog-table-state">لا توجد منتجات مطابقة للفلاتر.</td></tr> : null}
-              {pageProducts.map((product) => <tr key={product.id} className={selected?.id === product.id ? "is-open" : ""}>
+              {loading && products.length === 0 ? <tr><td colSpan={8} className="catalog-table-state">جارٍ قراءة السجل…</td></tr> : null}
+              {!loading && !registryError && products.length === 0 ? <tr><td colSpan={8} className="catalog-table-state">لا توجد منتجات مطابقة للفلاتر.</td></tr> : null}
+              {products.map((product) => <tr key={product.id} className={selected?.id === product.id ? "is-open" : ""}>
                 <td><div className="catalog-registry-product">{product.primaryImageUri ? <img className="catalog-registry-product-image" src={product.primaryImageUri} alt="" loading="lazy" /> : <span className="catalog-registry-product-placeholder" aria-hidden="true">{product.canonicalName.trim().slice(0, 1) || "•"}</span>}<span><button type="button" className="catalog-product-name-action" disabled={detailLoading} onClick={() => void selectProduct(product.id)} aria-label={"إدارة منتج " + product.canonicalName}>{product.canonicalName}</button>{product.brand ? <small>{product.brand}</small> : null}</span></div></td>
                 <td>{sharedVerticals.find((vertical) => vertical.id === product.verticalId)?.nameAr ?? "غير محدد"}</td>
                 <td><span className="catalog-row-categories" title={product.categoryNamesAr?.join("، ") || "لم تصنف الفئات بعد"}>{product.categoryNamesAr?.length ? product.categoryNamesAr.slice(0, 2).join("، ") : product.categoryIds.length ? "أسماء الفئات غير متاحة" : "غير مصنف"}{(product.categoryNamesAr?.length ?? 0) > 2 ? ` +${product.categoryNamesAr!.length - 2}` : ""}</span></td><td>{product.variantCount.toLocaleString("ar-YE")}</td><td>{product.storeCount.toLocaleString("ar-YE")}</td>
                 <td className="indicator-column"><ActivityIndicator active={product.active} inactiveLabel="معطل" /></td>
                 <td><time dateTime={product.updatedAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium" }).format(new Date(product.updatedAt))}</time></td>
+                 <td><button type="button" className="button button-secondary catalog-row-action" data-adaptive-record-trigger={`catalog-product-${product.id}`} disabled={detailLoading} aria-expanded={detailProductId === product.id && editorOpen} aria-label={`فتح ملف المنتج ${product.canonicalName}`} onClick={() => void selectProduct(product.id)}>ملف المنتج</button></td>
               </tr>)}
             </tbody>
           </table>
           <ul className="catalog-registry-mobile" aria-label="منتجات الصفحة الحالية">
-            {pageProducts.map((product) => <li key={product.id} className="catalog-registry-mobile-card">
+            {products.map((product) => <li key={product.id} className="catalog-registry-mobile-card">
               <div className="catalog-registry-mobile-main">
                 <div className="catalog-registry-product">
                   {product.primaryImageUri ? <img className="catalog-registry-product-image" src={product.primaryImageUri} alt="" loading="lazy" /> : <span className="catalog-registry-product-placeholder" aria-hidden="true">{product.canonicalName.trim().slice(0, 1) || "•"}</span>}
@@ -760,7 +766,7 @@ export function CentralCatalog() {
                 <span>{product.categoryNamesAr?.slice(0, 2).join("، ") || "غير مصنف"}</span>
                 <span>{product.variantCount.toLocaleString("ar-YE")} نسخ · {product.storeCount.toLocaleString("ar-YE")} متاجر</span>
               </div>
-              <button type="button" className="button button-secondary catalog-mobile-open" disabled={detailLoading} onClick={() => void selectProduct(product.id)} aria-label={`إدارة منتج ${product.canonicalName}`}>إدارة المنتج</button>
+              <button type="button" className="button button-secondary catalog-mobile-open" data-adaptive-record-trigger={`catalog-product-${product.id}`} disabled={detailLoading} aria-expanded={detailProductId === product.id && editorOpen} onClick={() => void selectProduct(product.id)} aria-label={`فتح ملف المنتج ${product.canonicalName}`}>ملف المنتج</button>
             </li>)}
             {loading && products.length === 0 ? <li role="status" className="collection-state">جارٍ قراءة المنتجات…</li> : null}
             {!loading && !registryError && products.length === 0 ? <li className="collection-state">لا توجد منتجات مطابقة.</li> : null}
@@ -769,7 +775,7 @@ export function CentralCatalog() {
           {loading && products.length === 0 ? <p role="status">جارٍ قراءة السجل…</p> : null}
           {!loading && !registryError && products.length === 0 ? <p className="catalog-gallery-empty">لا توجد منتجات مطابقة للفلاتر.</p> : null}
           <ul className="catalog-product-gallery" aria-label="المنتجات في الصفحة الحالية">
-          {pageProducts.map((product) => <li className="catalog-gallery-card" key={product.id}>
+          {products.map((product) => <li className="catalog-gallery-card" key={product.id}>
             <button type="button" className="catalog-gallery-open" disabled={detailLoading} onClick={() => void selectProduct(product.id)} aria-label={`تفاصيل وصور ${product.canonicalName}`}>
               <ProductGalleryImage uri={product.primaryImageUri} name={product.canonicalName} />
               <strong>{product.canonicalName}</strong>

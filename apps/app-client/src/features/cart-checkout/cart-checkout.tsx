@@ -468,10 +468,11 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
       let token: string;
       let actorID: string;
       try {
-        token = await getUsableIdentityAccessToken();
         const identity = currentIdentityState();
         if (identity.kind !== "authenticated" || !identity.identity.subject.trim()) throw new Error("CLIENT_SESSION_REQUIRED");
         actorID = identity.identity.subject.trim();
+        token = await getUsableIdentityAccessToken();
+        if (!checkoutAttemptBelongsToCurrentActor(actorID)) throw new Error("CLIENT_SESSION_CHANGED");
       } catch {
         setError("تعذر التحقق من جلسة العميل؛ لم يُرسل الطلب.");
         return;
@@ -499,11 +500,24 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
       setPendingCheckout(attempt);
       try {
         const result = await client().checkoutCart(token, request, attempt.expectedCartVersion, attempt.idempotencyKey, attempt.correlationID);
-        await finishCheckout(result.order, token, storageKey);
+        const isCurrentActor = () => checkoutAttemptBelongsToCurrentActor(actorID);
+        if (!isCurrentActor()) {
+          setError("تغيّرت جلسة العميل. احتفظنا بمحاولة الطلب للتحقق من نتيجتها عند العودة إلى الحساب نفسه.");
+          return;
+        }
+        await finishCheckout(result.order, token, storageKey, isCurrentActor);
       } catch (cause) {
         console.error("DSH checkout failed", cause);
+        if (!checkoutAttemptBelongsToCurrentActor(actorID)) {
+          setError("تغيّرت جلسة العميل. احتفظنا بمحاولة الطلب للتحقق من نتيجتها عند العودة إلى الحساب نفسه.");
+          return;
+        }
         let existingOrder: Order | null = null;
         try { existingOrder = await readOrderForCart(token, attempt.cartID); } catch { /* Preserve the attempt whenever canonical readback is unavailable. */ }
+        if (!checkoutAttemptBelongsToCurrentActor(actorID)) {
+          setError("تغيّرت جلسة العميل. احتفظنا بمحاولة الطلب للتحقق من نتيجتها عند العودة إلى الحساب نفسه.");
+          return;
+        }
         if (existingOrder) await finishCheckout(existingOrder, token, storageKey);
         else if (definitiveCheckoutRejection(cause)) {
           try { await SecureStore.deleteItemAsync(storageKey); } catch { /* A future entry still checks canonical orders before retrying. */ }

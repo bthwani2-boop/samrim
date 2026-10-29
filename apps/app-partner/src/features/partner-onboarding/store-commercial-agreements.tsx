@@ -253,7 +253,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
       {readingCurrentStore && visibleAgreements === null ? <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة اتفاقيات المتجر" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الاتفاقيات…</Text></View> : null}
       {visibleError ? <Text accessibilityRole="alert" style={styles.error}>{visibleError}</Text> : null}
       {visibleNotice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{visibleNotice}</Text> : null}
-      {visibleAgreements?.length === 0 ? <Text style={styles.muted}>لا توجد اتفاقية بانتظارك الآن. يعمل الميداني على إعداد المقترح؛ ستظهر هنا عندما تُرسل. يمكنك تجهيز المنتجات والصور بالتوازي.</Text> : null}
+      {visibleAgreements?.length === 0 ? <Text style={styles.muted}>لا توجد اتفاقية بانتظارك الآن. يجهّز قسم الشركاء المقترح؛ ستظهر الشروط هنا لمراجعتها وقبولها قبل سريانها. يمكنك تجهيز المنتجات والصور بالتوازي.</Text> : null}
       {visibleAgreements?.map((agreement) => {
         const savedAttempt = scopedPendingAttempt?.agreementId === agreement.agreementId ? scopedPendingAttempt : null;
         const canAccept = agreement.status === "PROPOSED" && hasReviewableStoreAgreementRates(agreement) && pendingStorageReady && !loading && (!scopedPendingAttempt || Boolean(savedAttempt));

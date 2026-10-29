@@ -2,7 +2,6 @@ export const ANDROID_EXPO_APPS = {
   client: { packageName: "com.bthwani.client", requiredForProof: ["POST_NOTIFICATIONS", "ACCESS_FINE_LOCATION"] },
   partner: { packageName: "com.bthwani.partner", requiredForProof: ["POST_NOTIFICATIONS", "CAMERA"] },
   captain: { packageName: "com.bthwani.captain", requiredForProof: ["POST_NOTIFICATIONS", "ACCESS_FINE_LOCATION", "ACCESS_BACKGROUND_LOCATION"] },
-  field: { packageName: "com.bthwani.field", requiredForProof: ["CAMERA", "ACCESS_FINE_LOCATION"] },
 };
 
 /** An OS permission is missing, denied or granted. Never infer consent from a manifest. */

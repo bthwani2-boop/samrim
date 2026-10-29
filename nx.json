@@ -108,9 +108,6 @@
         "env": "GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN"
       },
       {
-        "env": "GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD"
-      },
-      {
         "env": "GOOGLE_MAPS_ANDROID_API_KEY_APP_PARTNER"
       },
       {

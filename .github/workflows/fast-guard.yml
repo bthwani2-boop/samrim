@@ -105,7 +105,7 @@ jobs:
           export BTHWANI_EXPECTED_DATABASE_USER=postgres
           export BTHWANI_EXPECTED_DATABASE_NAME=wlt_proof
           export WLT_TEST_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/wlt_proof?sslmode=disable"
-          (cd services/wlt/backend && go test ./internal/storage/postgres -run "^(TestFundedPromotionPaymentPersistedReplayHasOneFrozenSplit|TestFundedStoreCashCollectionPostsPlatformSubsidyExactlyOnce|TestFieldAcquisitionEntitlementPostgresLifecycle|TestConcurrentFieldAcquisitionReplayHasOneLedgerEffect|TestPartnerStoreFinanceAndRecipientSettlementLifecycle|TestSettlementIntakeWithoutDestinationPreservesFieldLedger|TestSettlementIntakePartnerStoreScopeWithoutHold)$" -count=1 -timeout 7m)
+          (cd services/wlt/backend && go test ./internal/storage/postgres -run "^(TestFundedPromotionPaymentPersistedReplayHasOneFrozenSplit|TestFundedStoreCashCollectionPostsPlatformSubsidyExactlyOnce|TestFieldAcquisitionEntitlementPostgresLifecycle|TestConcurrentFieldAcquisitionReplayHasOneLedgerEffect|TestPartnerStoreFinanceAndRecipientSettlementLifecycle|TestSettlementIntakeWithoutDestinationPreservesFieldLedger|TestSettlementIntakePartnerStoreScopeWithoutHold|TestStoreCommercialAgreementLifecycleAndOrderSnapshots|TestSelfServiceZeroCommissionAgreementAllFulfillmentModes)$" -count=1 -timeout 7m)
           unset WLT_TEST_DATABASE_URL
           export BTHWANI_EXPECTED_DATABASE_NAME=dsh_proof
           export DSH_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/dsh_proof?sslmode=disable"
@@ -116,6 +116,14 @@ jobs:
           export DSH_FINANCIAL_HANDOFF_TEST_DATABASE_URL="$DSH_DATABASE_URL"
           (cd services/dsh/backend && go test ./internal/storage/postgres -run '^(TestPartnerFinanceAndPayoutStoreAuthorityBoundary|TestCaptainParallelDispatchThreeOnlyOneWins|TestFinancialHandoffUnknownOutcomeAndConcurrentWorkers|TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay)$' -count=1 -timeout 9m)
           unset DSH_FINANCIAL_HANDOFF_TEST_DATABASE_URL
+          # Admission and prepublication visibility of both joining origins.
+          # The disposable PostgreSQL container owns an isolated parent database.
+          docker exec "$container" psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c "CREATE DATABASE dsh_join_qa;"
+          export BTHWANI_JOINING_QA_ISOLATED=1
+          export BTHWANI_EXPECTED_DATABASE_NAME=dsh_join_qa
+          export DSH_JOINING_QA_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/dsh_join_qa?sslmode=disable"
+          (cd services/dsh/backend && go test ./internal/storage/postgres -run TestSelfServiceCorrectionApprovalAndFinanceIsolationPostgres -count=1 -v -timeout 7m)
+          unset DSH_JOINING_QA_DATABASE_URL BTHWANI_JOINING_QA_ISOLATED
           # Existing end-to-end adapter proof needs two pristine databases and
           # the real WLT HTTP handler. Never point it at the durable local world.
           docker exec "$container" psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c "CREATE DATABASE wlt_a04_realfunding;"
@@ -166,6 +174,7 @@ jobs:
           services/dsh/clients/cash-in-simulator.test.mjs
           apps/app-partner/src/features/order-management/order-page-records.test.mjs
           apps/app-partner/src/features/partner-onboarding/store-access-canonical-readback.test.mjs
+          tools/mobile/check-android-expo-readiness.test.mjs
           apps/control-panel/src/features/notifications/notification-operation-link.test.mjs
           apps/control-panel/src/features/notifications/notification-readback.test.mjs
           apps/control-panel/src/features/operations/operational-age.test.mjs

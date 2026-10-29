@@ -499,12 +499,33 @@ func (s *CatalogServer) listProducts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, contract.CatalogProductListResponse{Products: values, NextCursor: page.NextCursor})
 }
 
+func catalogRegistryCountFilter(raw string) (int, error) {
+	if strings.TrimSpace(raw) == "" {
+		return 0, nil
+	}
+	value, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || value < 0 {
+		return 0, errors.New("count filter is invalid")
+	}
+	return value, nil
+}
+
 func (s *CatalogServer) listProductRegistry(w http.ResponseWriter, r *http.Request) {
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	verticalID := strings.TrimSpace(r.URL.Query().Get("verticalId"))
 	categoryID := strings.TrimSpace(r.URL.Query().Get("categoryId"))
 	active := strings.TrimSpace(r.URL.Query().Get("active"))
 	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
+	minVariantCount, err := catalogRegistryCountFilter(r.URL.Query().Get("minVariantCount"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "minVariantCount must be a non-negative integer")
+		return
+	}
+	minStoreCount, err := catalogRegistryCountFilter(r.URL.Query().Get("minStoreCount"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "minStoreCount must be a non-negative integer")
+		return
+	}
 	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
 	if len(cursor) > 2048 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cursor is too long")
@@ -527,7 +548,7 @@ func (s *CatalogServer) listProductRegistry(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
 		return
 	}
-	page, err := s.service.ListProductRegistryForOperator(r.Context(), actorID, query, verticalID, categoryID, active, sort, limit, cursor)
+	page, err := s.service.ListProductRegistryForOperator(r.Context(), actorID, query, verticalID, categoryID, active, minVariantCount, minStoreCount, sort, limit, cursor)
 	if err != nil {
 		writeCatalogError(w, err)
 		return

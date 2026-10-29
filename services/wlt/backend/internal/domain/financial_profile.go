@@ -8,6 +8,7 @@ import (
 const (
 	OriginField        = "field"
 	OriginControlPanel = "control_panel"
+	OriginSelfService  = "self_service"
 
 	SettlementDaily   = "DAILY"
 	SettlementWeekly  = "WEEKLY"
@@ -26,7 +27,7 @@ func ValidateFinancialProfile(joiningCaseID, partnerActorID, origin, settlementP
 	if bounded(joiningCaseID, 1, 128) == "" || bounded(partnerActorID, 1, 128) == "" {
 		return ErrFinancialProfileInvalidInput
 	}
-	if origin != OriginField && origin != OriginControlPanel {
+	if origin != OriginField && origin != OriginControlPanel && origin != OriginSelfService {
 		return ErrFinancialProfileInvalidInput
 	}
 	switch strings.TrimSpace(settlementPeriod) {

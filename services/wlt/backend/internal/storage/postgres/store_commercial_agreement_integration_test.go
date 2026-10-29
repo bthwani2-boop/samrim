@@ -102,7 +102,14 @@ func TestStoreCommercialAgreementLifecycleAndOrderSnapshots(t *testing.T) {
 		AgreementID: first.AgreementID, ExpectedVersion: first.AgreementVersion, Decision: "APPROVE", ActorID: fieldID,
 		Reason: "Finance reviewed Store terms", IdempotencyKey: "wrong-finance-" + suffix, CorrelationID: "wrong-finance-correlation-" + suffix,
 	}); !errors.Is(err, ErrStoreCommercialAgreementState) {
-		t.Fatalf("proposer Finance decision error = %v, want separation state conflict", err)
+		t.Fatalf("ordinary proposer Finance decision error = %v, want separation state conflict", err)
+	}
+	if _, _, err := DecideStoreCommercialAgreement(scenario.ctx, scenario.db, StoreCommercialAgreementDecisionInput{
+		AgreementID: first.AgreementID, ExpectedVersion: first.AgreementVersion, Decision: "APPROVE", ActorID: partnerID,
+		RootOwnerSelfApproval: true, CurrentStorePartnerActorID: partnerID, CurrentFulfillmentModes: []string{"PARTNER_CAPTAIN"},
+		Reason: "Partner cannot self-approve", IdempotencyKey: "partner-finance-" + suffix, CorrelationID: "partner-finance-correlation-" + suffix,
+	}); !errors.Is(err, ErrStoreCommercialAgreementState) {
+		t.Fatalf("Partner cannot Finance-approve even with root assertion: %v", err)
 	}
 
 	allocation := func(orderID, externalReference, idem string) PaymentIntentRecord {
@@ -141,10 +148,47 @@ func TestStoreCommercialAgreementLifecycleAndOrderSnapshots(t *testing.T) {
 	}); !errors.Is(err, ErrStoreCommercialAgreementState) {
 		t.Fatalf("proposal while v2 awaits Finance error = %v, want state conflict", err)
 	}
-	second = decide(second, "APPROVE", "agreement-v2-finance")
+	if _, _, err := DecideStoreCommercialAgreement(scenario.ctx, scenario.db, StoreCommercialAgreementDecisionInput{
+		AgreementID: second.AgreementID, ExpectedVersion: second.AgreementVersion, Decision: "APPROVE", ActorID: fieldID,
+		CurrentStorePartnerActorID: partnerID, CurrentFulfillmentModes: []string{"PARTNER_CAPTAIN"},
+		Reason: "Ordinary proposer cannot approve", IdempotencyKey: "ordinary-proposer-" + suffix, CorrelationID: "ordinary-proposer-correlation-" + suffix,
+	}); !errors.Is(err, ErrStoreCommercialAgreementState) {
+		t.Fatalf("ordinary proposer self-approval error = %v, want state conflict", err)
+	}
+	second, replayed, err = DecideStoreCommercialAgreement(scenario.ctx, scenario.db, StoreCommercialAgreementDecisionInput{
+		AgreementID: second.AgreementID, ExpectedVersion: second.AgreementVersion, Decision: "APPROVE", ActorID: fieldID,
+		RootOwnerSelfApproval: true, CurrentStorePartnerActorID: partnerID, CurrentFulfillmentModes: []string{"PARTNER_CAPTAIN"},
+		Reason: "Root Owner reviewed own Store proposal", IdempotencyKey: "root-owner-finance-" + suffix, CorrelationID: "root-owner-finance-correlation-" + suffix,
+	})
+	if err != nil || replayed || second.FinanceApprovedByActorID == nil || *second.FinanceApprovedByActorID != fieldID {
+		t.Fatalf("Root Owner finance approval = %+v replayed=%t err=%v", second, replayed, err)
+	}
 	if second.Status != "ACTIVE" {
 		t.Fatalf("v2 agreement status = %s, want ACTIVE", second.Status)
 	}
+	rootDecisionKey := "root-owner-finance-" + suffix
+	legacyRootHash := hashFacts("store-commercial-agreement-finance-decision-v1", second.AgreementID, formatInt(second.AgreementVersion), "APPROVE", fieldID, "Root Owner reviewed own Store proposal")
+	newRootHash := hashFacts("store-commercial-agreement-finance-decision-v2", second.AgreementID, formatInt(second.AgreementVersion), "APPROVE", fieldID, "Root Owner reviewed own Store proposal", "ROOT_OWNER_SELF_APPROVAL")
+	var eventReason, eventHash string
+	if err := scenario.db.QueryRowContext(scenario.ctx, "SELECT reason,request_hash FROM wlt.store_commercial_agreement_events WHERE idempotency_key=$1",
+		rootDecisionKey).Scan(&eventReason, &eventHash); err != nil || eventReason != "[ROOT_OWNER_SELF_APPROVAL] Root Owner reviewed own Store proposal" || eventHash != newRootHash || eventHash == legacyRootHash {
+		t.Fatalf("Root Owner exception must be auditable and hashed: reason=%q hash=%q err=%v", eventReason, eventHash, err)
+	}
+	rootReplay := StoreCommercialAgreementDecisionInput{
+		AgreementID: second.AgreementID, ExpectedVersion: second.AgreementVersion, Decision: "APPROVE", ActorID: fieldID,
+		RootOwnerSelfApproval: true, CurrentStorePartnerActorID: partnerID, CurrentFulfillmentModes: []string{"PARTNER_CAPTAIN"},
+		Reason: "Root Owner reviewed own Store proposal", IdempotencyKey: rootDecisionKey, CorrelationID: "root-owner-finance-correlation-" + suffix,
+	}
+	if item, replayed, err := DecideStoreCommercialAgreement(scenario.ctx, scenario.db, rootReplay); err != nil || !replayed || item.Status != "ACTIVE" {
+		t.Fatalf("Root Owner exception retry must be idempotent: %+v replayed=%t err=%v", item, replayed, err)
+	}
+	forgedMode := rootReplay
+	forgedMode.RootOwnerSelfApproval = false
+	if _, _, err := DecideStoreCommercialAgreement(scenario.ctx, scenario.db, forgedMode); !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("exception bit cannot be changed under the same key: %v", err)
+	}
+	// Keep the immutable audit event untouched. Historical replay is proven
+	// below with an append-only synthetic v1 fixture after the lifecycle count.
 	history, err := ReadStoreCommercialAgreements(scenario.ctx, scenario.db, storeID)
 	if err != nil || len(history) != 2 || history[0].Status != "SUPERSEDED" || history[1].Status != "ACTIVE" {
 		t.Fatalf("Store agreement history = %+v err=%v, want superseded v1 and active v2", history, err)
@@ -160,6 +204,14 @@ func TestStoreCommercialAgreementLifecycleAndOrderSnapshots(t *testing.T) {
 
 	third := propose(2, 2600, "agreement-v3")
 	third = accept(third, partnerID, "agreement-v3-accept")
+	if _, _, err := DecideStoreCommercialAgreement(scenario.ctx, scenario.db, StoreCommercialAgreementDecisionInput{
+		AgreementID: third.AgreementID, ExpectedVersion: third.AgreementVersion, Decision: "APPROVE", ActorID: financeID,
+		RootOwnerSelfApproval: true, CurrentStorePartnerActorID: partnerID, CurrentFulfillmentModes: []string{"PARTNER_CAPTAIN"},
+		Reason: "Only the proposer may assert a Root Owner exception", IdempotencyKey: "misused-root-flag-" + suffix,
+		CorrelationID: "misused-root-flag-correlation-" + suffix,
+	}); !errors.Is(err, ErrStoreCommercialAgreementState) {
+		t.Fatalf("Root Owner exception must reject actors who did not propose: %v", err)
+	}
 	third = decide(third, "REJECT", "agreement-v3-finance")
 	if third.Status != "FINANCE_REJECTED" || third.FinanceDecisionByActorID == nil || *third.FinanceDecisionByActorID != financeID ||
 		third.FinanceDecisionAt == nil || third.FinanceDecisionReason == nil || *third.FinanceDecisionReason != "Finance reviewed Store terms" {
@@ -208,6 +260,31 @@ func TestStoreCommercialAgreementLifecycleAndOrderSnapshots(t *testing.T) {
 	}
 	if eventCount != 10 { // v1 and v2 each have propose/accept/approve; v2 activation supersedes v1; v3 is rejected.
 		t.Fatalf("agreement lifecycle event count = %d, want 10", eventCount)
+	}
+	// Model an immutable historical v1 Root Owner approval record using a
+	// distinct fixture idempotency key. Do not UPDATE/DELETE any audit event.
+	legacyKey := "legacy-root-owner-finance-" + suffix
+	legacyTX, err := scenario.db.BeginTx(scenario.ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := insertStoreCommercialAgreementEvent(scenario.ctx, legacyTX, second.AgreementID,
+		"FINANCE_APPROVED", stringPointer("PARTNER_ACCEPTED"), "ACTIVE", fieldID, rootReplay.Reason,
+		legacyKey, legacyRootHash, rootReplay.CorrelationID); err != nil {
+		_ = legacyTX.Rollback()
+		t.Fatal(err)
+	}
+	if err := legacyTX.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	rootReplay.IdempotencyKey = legacyKey
+	legacyMissingAssertion := rootReplay
+	legacyMissingAssertion.RootOwnerSelfApproval = false
+	if _, _, err := DecideStoreCommercialAgreement(scenario.ctx, scenario.db, legacyMissingAssertion); !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("legacy Root Owner replay cannot omit authorization assertion: %v", err)
+	}
+	if item, replayed, err := DecideStoreCommercialAgreement(scenario.ctx, scenario.db, rootReplay); err != nil || !replayed || item.Status != "ACTIVE" {
+		t.Fatalf("legacy Root Owner approval replay must be preserved: %+v replayed=%t err=%v", item, replayed, err)
 	}
 }
 

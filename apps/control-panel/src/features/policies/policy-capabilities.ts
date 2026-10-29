@@ -33,12 +33,6 @@ export const policyCapabilities = [
     scope: "مدينة خدمة", owner: "WLT", createLabel: null, additionalPermission: null, list: null,
   },
   {
-    key: "field-acquisition", href: "/policies?policy=field-acquisition&action=manage", label: "استحقاق ضم الشريك للميداني",
-    description: "مكافأة ضم الشريك محددة بنوع المتجر التجاري (STORE_TYPE) فقط.",
-    icon: "field", context: "الميدان", summary: "مكافأة الميداني بحسب نوع المتجر التجاري",
-    scope: "نوع المتجر التجاري", owner: "WLT", createLabel: null, additionalPermission: null, list: null,
-  },
-  {
     key: "captain-minimum-balance", href: "/policies?policy=captain-minimum-balance", label: "الحد الأدنى لرصيد الكابتن",
     description: "حد الرصيد المتاح المطلوب لكابتن بثواني لاستقبال الطلبات بجميع طرق الدفع.",
     icon: "finance", context: "أهلية كابتن بثواني", summary: "حد الرصيد المتاح لجميع طرق الدفع",

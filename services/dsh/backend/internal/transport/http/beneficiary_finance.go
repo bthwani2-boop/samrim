@@ -297,7 +297,7 @@ func (s *BeneficiaryFinanceServer) readOperatorPayoutState(w http.ResponseWriter
 		return
 	}
 	actorType, actorID := strings.ToLower(strings.TrimSpace(r.PathValue("actorType"))), strings.TrimSpace(r.PathValue("actorId"))
-	if (actorType != "partner" && actorType != "captain" && actorType != "field") || actorID == "" || len(actorID) > 128 {
+	if (actorType != "partner" && actorType != "captain") || actorID == "" || len(actorID) > 128 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a valid actorType and actorId are required")
 		return
 	}
@@ -317,7 +317,7 @@ func (s *BeneficiaryFinanceServer) readOperatorDestination(w http.ResponseWriter
 		return
 	}
 	actorType, actorID := strings.ToLower(strings.TrimSpace(r.PathValue("actorType"))), strings.TrimSpace(r.PathValue("actorId"))
-	if (actorType != "customer" && actorType != "partner" && actorType != "captain" && actorType != "field") || actorID == "" || len(actorID) > 128 {
+	if (actorType != "customer" && actorType != "partner" && actorType != "captain") || actorID == "" || len(actorID) > 128 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a valid actorType and actorId are required")
 		return
 	}
@@ -339,7 +339,7 @@ func (s *BeneficiaryFinanceServer) readOperatorWalletProviderIntent(w http.Respo
 	}
 	actorType := strings.ToLower(strings.TrimSpace(r.PathValue("actorType")))
 	actorID := strings.TrimSpace(r.PathValue("actorId"))
-	if actorType != "partner" && actorType != "captain" && actorType != "field" || actorID == "" || len(actorID) > 128 {
+	if actorType != "partner" && actorType != "captain" || actorID == "" || len(actorID) > 128 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a valid actorType and actorId are required")
 		return
 	}
@@ -569,7 +569,7 @@ func validOwnAppFinanceSession(identity identityclient.ActorIdentity) bool {
 
 func validBeneficiaryFinanceSession(identity identityclient.ActorIdentity) bool {
 	role := strings.ToLower(strings.TrimSpace(identity.Role))
-	return (role == "partner" || role == "captain" || role == "field") && validOwnAppFinanceSession(identity)
+	return (role == "partner" || role == "captain") && validOwnAppFinanceSession(identity)
 }
 
 func (s *BeneficiaryFinanceServer) requireBeneficiarySession(w http.ResponseWriter, r *http.Request) (identityclient.ActorIdentity, bool) {
@@ -648,7 +648,7 @@ func requiredBeneficiaryFinanceMutationHeaders(w http.ResponseWriter, r *http.Re
 func payoutActorPath(w http.ResponseWriter, r *http.Request) (string, string, bool) {
 	actorType := strings.ToLower(strings.TrimSpace(r.PathValue("actorType")))
 	actorID := strings.TrimSpace(r.PathValue("actorId"))
-	if (actorType != "partner" && actorType != "captain" && actorType != "field") || actorID == "" || len(actorID) > 128 {
+	if (actorType != "partner" && actorType != "captain") || actorID == "" || len(actorID) > 128 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a valid actorType and actorId are required")
 		return "", "", false
 	}

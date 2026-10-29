@@ -27,14 +27,6 @@
         "app.config.ts"
       ]
     },
-    "apps/app-field": {
-      "entry": [
-        "index.js",
-        "app/**/*.ts",
-        "app/**/*.tsx",
-        "app.config.ts"
-      ]
-    },
     "apps/app-partner": {
       "entry": [
         "index.js",

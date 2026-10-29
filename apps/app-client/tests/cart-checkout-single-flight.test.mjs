@@ -33,7 +33,7 @@ assert.ok(pendingTotalNode, "pending checkout legacy accepted-total guard is req
 assert.ok(currentActorGuardNode, "pending checkout recovery must revalidate its actor");
 const compilerOptions = { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None };
 const runnableQuote = ts.transpileModule(quoteNode.getText(ast), { compilerOptions }).outputText;
-const runnableHandler = ts.transpileModule(checkoutNode.getText(ast), { compilerOptions }).outputText;
+const runnableHandler = ts.transpileModule(`${currentActorGuardNode.getText(ast)}\n${checkoutNode.getText(ast)}`, { compilerOptions }).outputText;
 const quoteMatchesCheckout = vm.runInNewContext(`${runnableQuote}\nquoteMatchesCheckout`);
 const pendingCheckoutHasAcceptedTotal = vm.runInNewContext(`${ts.transpileModule(pendingTotalNode.getText(ast), { compilerOptions }).outputText}\npendingCheckoutHasAcceptedTotal`);
 const checkoutAttemptBelongsToCurrentActor = vm.runInNewContext(`${ts.transpileModule(currentActorGuardNode.getText(ast), { compilerOptions }).outputText}\ncheckoutAttemptBelongsToCurrentActor`);
@@ -43,7 +43,7 @@ const readVisibleQuote = vm.runInNewContext(`${runnableQuote}\n${runnableVisible
 
 function scenario({ accessToken, persist, submit, recover, isOffline = false } = {}) {
   let actor = "client-1";
-  const counts = { token: 0, persist: 0, submit: 0, deletes: 0, generatedIds: 0, pending: [], busy: [], errors: [] };
+  const counts = { token: 0, persist: 0, submit: 0, deletes: 0, finish: 0, generatedIds: 0, pending: [], busy: [], errors: [] };
   const context = {
     isOffline,
     checkoutSubmitting: { current: false },
@@ -88,7 +88,7 @@ function scenario({ accessToken, persist, submit, recover, isOffline = false } =
         return submit ? submit(...args) : { order: { id: "order-1" } };
       },
     }),
-    finishCheckout: async () => {},
+    finishCheckout: async () => { counts.finish++; },
     readOrderForCart: async () => recover ? recover() : null,
     definitiveCheckoutRejection: () => false,
     cartMutationErrorMessage: () => "retry",
@@ -120,6 +120,34 @@ test("pending recovery stops after an actor switch during canonical order readba
     "revalidate the actor after initial readback and before exposing or retrying the former actor attempt");
   assert.ok(retryReadback > retry && retryReadbackGuard > retryReadback,
     "revalidate the actor after retry readback before exposing a recovered order");
+});
+
+test("single-store checkout keeps a switched actor from seeing or clearing the prior actor's order", async () => {
+  const successful = scenario({ submit: async () => {
+    successful.setActor("client-2");
+    return { order: { id: "prior-actor-order" } };
+  } });
+  await successful.checkout();
+  assert.equal(successful.counts.submit, 1, "the in-flight request is not duplicated or rewritten");
+  assert.equal(successful.counts.finish, 0, "the prior actor's order must not be published to the new session");
+  assert.equal(successful.counts.deletes, 0, "retain the original actor's durable attempt for reconciliation");
+  assert.equal(successful.counts.pending.length, 1);
+  assert.match(successful.counts.errors.at(-1), /تغيّرت جلسة العميل/);
+
+  const readback = scenario({
+    submit: async () => {
+      throw new Error("UNKNOWN_OUTCOME");
+    },
+    recover: async () => {
+      readback.setActor("client-2");
+      return { id: "prior-actor-order" };
+    },
+  });
+  await readback.checkout();
+  assert.equal(readback.counts.finish, 0, "recovery readback must be actor-checked before publishing");
+  assert.equal(readback.counts.deletes, 0, "do not erase the prior actor's unresolved attempt");
+  assert.equal(readback.counts.pending.length, 1);
+  assert.match(readback.counts.errors.at(-1), /تغيّرت جلسة العميل/);
 });
 
 test("confirmed offline state never creates an order or a pending payment attempt", async () => {
@@ -191,6 +219,23 @@ test("actor switch during pending-attempt persistence never submits the previous
   assert.equal(counts.pending.length, 0);
   assert.ok(counts.errors.length > 0);
   void setActor;
+});
+test("actor switch while acquiring checkout identity cannot rebind the prior actor quote", async () => {
+  let switchActor;
+  const changed = scenario({ accessToken: async () => {
+    switchActor("client-2");
+    return "client-2-token";
+  } });
+  switchActor = changed.setActor;
+  await changed.checkout();
+  assert.equal(changed.counts.persist, 0, "do not persist the prior actor cart and accepted quote under the new actor");
+  assert.equal(changed.counts.submit, 0, "do not submit old screen facts with the new actor token");
+  assert.equal(changed.counts.pending.length, 0);
+
+  const unchanged = scenario();
+  await unchanged.checkout();
+  assert.equal(unchanged.counts.persist, 1, "the same actor can still confirm the accepted quote");
+  assert.equal(unchanged.counts.submit, 1);
 });
 test("rapid taps before session/storage awaits create just one checkout identity", async () => {
   const { checkout, counts } = scenario();
@@ -349,6 +394,52 @@ test("typing a coupon does not change the quote request until the applied coupon
   assert.equal(quoteStates.at(-1).kind, "ready");
   assert.ok(dependencies.includes("SAVE10"));
   assert.ok(!dependencies.includes("DRAFT99"));
+});
+
+test("late quote response cannot replace the quote for the latest cart version", async () => {
+  const expr = refreshQuoteNode.initializer.getText(ast);
+  const executable = ts.transpileModule(`const refreshQuote = ${expr};\nrefreshQuote;`, { compilerOptions }).outputText;
+  const requests = [];
+  const requestWaiters = [];
+  const waitForRequest = (count) => requests.length >= count ? Promise.resolve() : new Promise((resolve) => { requestWaiters[count] = resolve; });
+  const quoteStates = [];
+  const context = {
+    appliedPromotionCode: "",
+    fulfillmentMode: "CUSTOMER_PICKUP",
+    pickupMode: true,
+    quoteAddressID: "",
+    serviceableAddressId: undefined,
+    storeId: "store-1",
+    storeAcceptingOrders: true,
+    quoteRequestID: { current: 0 },
+    setQuote: (state) => quoteStates.push(state),
+    getUsableIdentityAccessToken: async () => "token",
+    client: () => ({ quoteCheckout: (_token, request, version) => new Promise((resolve) => {
+      requests.push({ request, version, resolve });
+      requestWaiters[requests.length]?.();
+    }) }),
+    useCallback: (callback) => callback,
+    console: { error: () => {} },
+  };
+  const refreshQuote = vm.runInNewContext(executable, context);
+  const firstStarted = waitForRequest(1);
+  const oldRequest = refreshQuote({ id: "cart-1", version: 3, lines: [] });
+  await firstStarted;
+  const secondStarted = waitForRequest(2);
+  const currentRequest = refreshQuote({ id: "cart-1", version: 4, lines: [] });
+  await secondStarted;
+  assert.equal(requests.length, 2);
+
+  const currentQuote = { cartId: "cart-1", cartVersion: 4, totalAmountMinor: 240 };
+  requests[1].resolve({ quote: currentQuote });
+  await currentRequest;
+  assert.equal(quoteStates.at(-1).kind, "ready");
+  assert.equal(quoteStates.at(-1).quote, currentQuote, "the latest cart version's quote is accepted");
+
+  requests[0].resolve({ quote: { cartId: "cart-1", cartVersion: 3, totalAmountMinor: 200 } });
+  await oldRequest;
+  assert.equal(quoteStates.at(-1).quote, currentQuote, "a late response for the stale cart version is ignored");
+  assert.equal(context.quoteRequestID.current, 2);
 });
 
 test("cart with unavailable modifier never calls the checkout quote API", async () => {

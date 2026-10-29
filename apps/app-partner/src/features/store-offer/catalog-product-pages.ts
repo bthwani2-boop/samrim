@@ -10,6 +10,13 @@ export function mergeCatalogProductPage(
   return [...current, ...page.filter((product) => !seen.has(product.id))];
 }
 
+export function replaceCatalogProductInPage(
+  current: ReadonlyArray<CatalogProduct>,
+  updated: CatalogProduct,
+): ReadonlyArray<CatalogProduct> {
+  return current.map((product) => product.id === updated.id ? updated : product);
+}
+
 export function isCurrentCatalogProductRequest(requestSequence: number, currentSequence: number): boolean {
   return requestSequence === currentSequence;
 }

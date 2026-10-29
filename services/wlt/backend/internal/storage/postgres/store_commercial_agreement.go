@@ -65,6 +65,7 @@ type ProposeStoreCommercialAgreementInput struct {
 }
 
 type StoreCommercialAgreementDecisionInput struct {
+	RootOwnerSelfApproval      bool
 	AgreementID                string
 	ExpectedVersion            int
 	Decision                   string
@@ -296,7 +297,16 @@ func DecideStoreCommercialAgreement(ctx context.Context, db *sql.DB, input Store
 		!validMutationContext(input.IdempotencyKey, input.CorrelationID) {
 		return StoreCommercialAgreementRecord{}, false, ErrStoreCommercialAgreementInvalidInput
 	}
-	requestHash := hashFacts("store-commercial-agreement-finance-decision-v1", input.AgreementID, formatInt(input.ExpectedVersion), input.Decision, input.ActorID, input.Reason)
+	// Preserve legacy normal-decision idempotency while binding the exceptional
+	// Root Owner approval assertion into newly issued decision hashes.
+	legacyHash := hashFacts("store-commercial-agreement-finance-decision-v1", input.AgreementID, formatInt(input.ExpectedVersion), input.Decision, input.ActorID, input.Reason)
+	requestHash := legacyHash
+	if input.RootOwnerSelfApproval {
+		if input.Decision != "APPROVE" {
+			return StoreCommercialAgreementRecord{}, false, ErrStoreCommercialAgreementInvalidInput
+		}
+		requestHash = hashFacts("store-commercial-agreement-finance-decision-v2", input.AgreementID, formatInt(input.ExpectedVersion), input.Decision, input.ActorID, input.Reason, "ROOT_OWNER_SELF_APPROVAL")
+	}
 	eventType := "FINANCE_APPROVED"
 	if input.Decision == "REJECT" {
 		eventType = "FINANCE_REJECTED"
@@ -306,12 +316,35 @@ func DecideStoreCommercialAgreement(ctx context.Context, db *sql.DB, input Store
 		return StoreCommercialAgreementRecord{}, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if replay, err := readAgreementReplay(ctx, tx, input.IdempotencyKey, eventType, requestHash); err != nil {
+	replay, err := readAgreementReplay(ctx, tx, input.IdempotencyKey, eventType, requestHash)
+	if errors.Is(err, ErrIdempotencyConflict) && input.RootOwnerSelfApproval {
+		// Existing approvals used the v1 hash before the Root Owner exception was
+		// explicitly recorded. Accept a legacy replay only if its durable record
+		// independently proves the same self-approved decision.
+		older, legacyErr := readAgreementReplay(ctx, tx, input.IdempotencyKey, eventType, legacyHash)
+		if legacyErr == nil && older == input.AgreementID {
+			previous, readErr := readStoreCommercialAgreement(ctx, tx, older, false)
+			if readErr == nil && (previous.Status == "ACTIVE" || previous.Status == "SUPERSEDED") &&
+				previous.ProposedByActorID == input.ActorID &&
+				previous.FinanceApprovedByActorID != nil && *previous.FinanceApprovedByActorID == input.ActorID &&
+				previous.FinanceDecisionReason != nil && *previous.FinanceDecisionReason == input.Reason {
+				replay, err = older, nil
+			}
+		}
+	}
+	if err != nil {
 		return StoreCommercialAgreementRecord{}, false, err
-	} else if replay != "" {
+	}
+	if replay != "" {
 		item, err := readStoreCommercialAgreement(ctx, tx, replay, false)
 		if err != nil {
 			return StoreCommercialAgreementRecord{}, false, err
+		}
+		if input.Decision == "APPROVE" && !input.RootOwnerSelfApproval &&
+			item.FinanceApprovedByActorID != nil &&
+			item.ProposedByActorID == *item.FinanceApprovedByActorID &&
+			item.ProposedByActorID == input.ActorID {
+			return StoreCommercialAgreementRecord{}, false, ErrIdempotencyConflict
 		}
 		if err := tx.Commit(); err != nil {
 			return StoreCommercialAgreementRecord{}, false, err
@@ -326,7 +359,9 @@ func DecideStoreCommercialAgreement(ctx context.Context, db *sql.DB, input Store
 		return StoreCommercialAgreementRecord{}, false, ErrStoreCommercialAgreementState
 	}
 	if item.Status != "PARTNER_ACCEPTED" || item.AgreementVersion != input.ExpectedVersion || item.PartnerAcceptedByActorID == nil ||
-		input.ActorID == item.ProposedByActorID || input.ActorID == *item.PartnerAcceptedByActorID {
+		(input.ActorID == item.ProposedByActorID && !input.RootOwnerSelfApproval) ||
+		(input.RootOwnerSelfApproval && input.ActorID != item.ProposedByActorID) ||
+		input.ActorID == *item.PartnerAcceptedByActorID {
 		if item.AgreementVersion != input.ExpectedVersion {
 			return StoreCommercialAgreementRecord{}, false, ErrStoreCommercialAgreementVersion
 		}
@@ -366,7 +401,13 @@ func DecideStoreCommercialAgreement(ctx context.Context, db *sql.DB, input Store
 			FROM decision WHERE agreement.agreement_id=$1`, input.AgreementID, input.ActorID, input.Reason); err != nil {
 			return StoreCommercialAgreementRecord{}, false, err
 		}
-		if err := insertStoreCommercialAgreementEvent(ctx, tx, input.AgreementID, eventType, stringPointer("PARTNER_ACCEPTED"), "ACTIVE", input.ActorID, input.Reason, input.IdempotencyKey, requestHash, input.CorrelationID); err != nil {
+		eventReason := input.Reason
+		if input.RootOwnerSelfApproval {
+			// Keep the Finance decision reason intact while making the exceptional
+			// separation-of-duties waiver visible in the immutable WLT event.
+			eventReason = "[ROOT_OWNER_SELF_APPROVAL] " + eventReason
+		}
+		if err := insertStoreCommercialAgreementEvent(ctx, tx, input.AgreementID, eventType, stringPointer("PARTNER_ACCEPTED"), "ACTIVE", input.ActorID, eventReason, input.IdempotencyKey, requestHash, input.CorrelationID); err != nil {
 			return StoreCommercialAgreementRecord{}, false, err
 		}
 	}

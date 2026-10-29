@@ -40,7 +40,6 @@ export const workspaceFinanceResources = [
   { key: "partner-store-commissions", href: "/finance/partner-store-commissions", label: "اتفاقات المتاجر", description: "إدارة اتفاقية كل متجر ومراجعة النسب المقترحة للتفاوض حسب نوع المتجر." },
   { key: "beneficiary-settlement-partners", href: "/finance/beneficiary-settlement/partners", label: "مستحقات الشركاء", description: "سجل الشركاء وطلبات الصرف وتنفيذ الدفعات ومطابقتها." },
   { key: "beneficiary-settlement-captains", href: "/finance/beneficiary-settlement/captains", label: "مستحقات الكباتن", description: "سجل كباتن بثواني وطلبات الصرف وتنفيذ الدفعات ومطابقتها." },
-  { key: "beneficiary-settlement-field", href: "/finance/beneficiary-settlement/field", label: "مستحقات الميدان", description: "سجل الميدان وطلبات الصرف وتنفيذ الدفعات ومطابقتها." },
   { key: "customer-withdrawals", href: "/finance/customer-withdrawals", label: "سحوبات العملاء الاستثنائية", description: "طابور مالي نادر للتحقق من الوجهة وقبول طلب العميل أو رفضه." },
   { key: "partner-commission-receivables", href: "/finance/partner-commission-receivables", label: "تحصيل عمولة المنصة", description: "قراءة ذمم العمولة المستحقة على الشريك وتسجيل الحوالة المتحقق منها." }
 ] as const;
@@ -54,7 +53,6 @@ const financeWorkflowLinks = {
   "partner-store-commissions": "agreements",
   "beneficiary-settlement-partners": "settlement-partner",
   "beneficiary-settlement-captains": "settlement-captain",
-  "beneficiary-settlement-field": "settlement-field",
   "customer-withdrawals": "withdrawals",
   "partner-commission-receivables": "commissions",
 } as const satisfies Record<FinanceResourceKey, string>;
@@ -86,8 +84,7 @@ export const workspaceDestinations: readonly WorkspaceDestination[] = [
     label: "الشركاء",
     permission: "partners",
     children: [
-      { href: "/partners", label: "الشركاء والمتاجر", searchAliases: "سجل الشركاء سجل المتاجر حسابات الشركاء", showInWorkspaceNavigation: false },
-      { href: "/fields", label: "الميداني" }
+      { href: "/partners", label: "الشركاء والمتاجر", searchAliases: "سجل الشركاء سجل المتاجر حسابات الشركاء", showInWorkspaceNavigation: false }
     ]
   },
   { href: "/catalog", label: "الكتالوج", children: catalogChildren, permission: "catalog" },
@@ -137,7 +134,6 @@ export function currentWorkspaceDestination(pathname: string) {
 
 export function currentWorkspaceChild(pathname: string, destination: WorkspaceDestination) {
   if (destination.href === "/partners") {
-    if (isCurrentWorkspacePath(pathname, "/fields")) return destination.children.find((child) => child.href === "/fields") ?? null;
     // Detailed joining, account and access routes belong to the single partners workbench.
     return destination.children.find((child) => child.href === "/partners") ?? null;
   }

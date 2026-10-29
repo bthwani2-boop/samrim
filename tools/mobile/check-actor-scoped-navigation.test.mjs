@@ -5,7 +5,7 @@ import { test } from "node:test";
 import ts from "typescript-ast";
 
 const root = resolve(import.meta.dirname, "../..");
-const apps = ["app-client", "app-partner", "app-captain", "app-field"];
+const apps = ["app-client", "app-partner", "app-captain"];
 
 for (const app of apps) {
   test(app + " remounts routed React state whenever authenticated actor changes", () => {

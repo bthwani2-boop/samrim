@@ -143,3 +143,15 @@ func TestCanonicalActorResolutionIsNotAvailableToControlPanel(t *testing.T) {
 		t.Fatalf("Control Panel canonical Actor read error = %q, want FORBIDDEN", response.Body.String())
 	}
 }
+
+func TestRetiredFieldAppForegroundRouteIsNotRegistered(t *testing.T) {
+	handler := New(nil, nil, nil, nil, nil, Config{})
+	for _, method := range []string{http.MethodPost, http.MethodGet} {
+		request := httptest.NewRequest(method, "/auth/session/app-opened", nil)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("%s retired Field-app telemetry route returned %d, want 404", method, response.Code)
+		}
+	}
+}

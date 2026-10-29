@@ -183,7 +183,7 @@ export function CaptainCashInPanel() {
       </View> : null}
       {providerMockInDevelopment ? <View style={styles.simOptions}>
         {providers.map((provider) => <Pressable key={provider.key} accessibilityRole="radio" accessibilityLabel={provider.displayNameAr}
-          accessibilityState={{ selected: selectedProviderKey === provider.key }} onPress={() => setSelectedProviderKey(provider.key)}
+          accessibilityState={{ checked: selectedProviderKey === provider.key }} onPress={() => setSelectedProviderKey(provider.key)}
           style={[styles.simOption, selectedProviderKey === provider.key && styles.simOptionSelected]}>
           <Text style={styles.label}>{provider.displayNameAr}</Text>
         </Pressable>)}
@@ -198,7 +198,7 @@ export function CaptainCashInPanel() {
         {showTestOptions ? <View style={styles.simOptions} accessibilityLabel="نتيجة شحن الكابتن التجريبي">
           {cashInSimulatorOptions.map((option) =>
             <Pressable key={option.outcome} accessibilityRole="radio"
-              accessibilityState={{ selected: simulatorOutcome === option.outcome }}
+              accessibilityState={{ checked: simulatorOutcome === option.outcome }}
               onPress={() => setSimulatorOutcome(option.outcome)}
               style={[styles.simOption, simulatorOutcome === option.outcome && styles.simOptionSelected]}>
               <Text style={styles.label}>{option.label}</Text>

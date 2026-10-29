@@ -37,34 +37,34 @@ func New(identity *identityintegration.Client, db *sql.DB, payment *wlt.Client, 
 	return &Service{identity: identity, db: db, payment: payment, proofKeys: proofKeys}, nil
 }
 
-func (s *Service) Read(ctx context.Context, accessToken, orderID string) (postgres.OrderRecord, error) {
+func (s *Service) Read(ctx context.Context, accessToken, orderID string) (postgres.OrderRecord, string, error) {
 	identity, err := s.identity.ReadSession(ctx, strings.TrimSpace(accessToken))
 	if err != nil {
-		return postgres.OrderRecord{}, err
+		return postgres.OrderRecord{}, "", err
 	}
 	switch string(identity.Role) {
 	case "client":
 		if identity.Surface != "app-client" || strings.TrimSpace(identity.Subject) == "" {
-			return postgres.OrderRecord{}, ErrClientSessionForbidden
+			return postgres.OrderRecord{}, "", ErrClientSessionForbidden
 		}
-		return postgres.ReadOrderForClient(ctx, s.db, orderID, identity.Subject)
+		order, err := postgres.ReadOrderForClient(ctx, s.db, orderID, identity.Subject)
+		return order, "client", err
 	case "partner":
 		if identity.Surface != "app-partner" || strings.TrimSpace(identity.Subject) == "" {
-			return postgres.OrderRecord{}, ErrPartnerSessionForbidden
+			return postgres.OrderRecord{}, "", ErrPartnerSessionForbidden
 		}
 		order, err := postgres.ReadOrder(ctx, s.db, orderID)
 		if err != nil {
-			return postgres.OrderRecord{}, err
+			return postgres.OrderRecord{}, "", err
 		}
 		if err := s.requireOwnedStore(ctx, identity.Subject, order.StoreID); err != nil {
-			return postgres.OrderRecord{}, err
+			return postgres.OrderRecord{}, "", err
 		}
-		return order, nil
+		return order, "partner", nil
 	default:
-		return postgres.OrderRecord{}, ErrClientSessionForbidden
+		return postgres.OrderRecord{}, "", ErrClientSessionForbidden
 	}
 }
-
 func (s *Service) ReadClientDeliveryProof(ctx context.Context, accessToken, orderID string) (postgres.DeliveryProofRecord, error) {
 	identity, err := s.requireSession(ctx, accessToken, "client", "app-client")
 	if err != nil {

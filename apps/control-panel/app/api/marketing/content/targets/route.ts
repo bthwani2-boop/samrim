@@ -46,7 +46,7 @@ export async function GET(request: Request) {
       nextCursor = result.nextCursor ?? "";
     } else if (targetType === "PRODUCT") {
       if (query.length < 2) return NextResponse.json({ options, nextCursor }, { headers: { "Cache-Control": "no-store" } });
-      const result = await listCatalogProductRegistry({ query, verticalId: "", categoryId: "", active: "active", sort: "name_asc", cursor }, context);
+      const result = await listCatalogProductRegistry({ query, verticalId: "", categoryId: "", active: "active", sort: "name_asc", minVariantCount: "0", minStoreCount: "0", cursor }, context);
       options = result.products.map((product) => targetOption(product.id, product.canonicalName, product.brand));
       nextCursor = result.nextCursor ?? "";
     } else if (targetType === "CATEGORY") {

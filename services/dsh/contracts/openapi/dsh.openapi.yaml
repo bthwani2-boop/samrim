@@ -61,7 +61,7 @@ paths:
         - name: key
           in: query
           required: true
-          schema: { type: string, enum: [service-cities, wallet-providers, delivery-fees, field-acquisition, partner-financial-terms, captain-minimum-balance] }
+          schema: { type: string, enum: [service-cities, wallet-providers, delivery-fees, partner-financial-terms, captain-minimum-balance] }
         - name: scopeId
           in: query
           schema: { type: string, maxLength: 128 }
@@ -127,6 +127,9 @@ paths:
   /dsh/joining-cases:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases"
 
+  /dsh/partner-applications/self:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1partner-applications~1self"
+
   /dsh/joining-cases/self:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1self"
 
@@ -145,8 +148,6 @@ paths:
   /dsh/joining-cases/{caseId}/store-image:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1store-image"
 
-  /dsh/joining-cases/{caseId}/internal-photos:
-    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1internal-photos"
 
   /dsh/joining-cases/{caseId}/proof-image:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1proof-image"
@@ -373,16 +374,14 @@ paths:
   /dsh/stores/{storeId}/catalog/quick-prices/commit:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1catalog~1quick-prices~1commit"
 
-  /dsh/field/joining-cases/{caseId}/commercial-agreements:
-    $ref: "./paths/commerce.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1commercial-agreements"
-  /dsh/field/joining-cases/{caseId}/commercial-agreement-defaults:
-    $ref: "./paths/commerce.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1commercial-agreement-defaults"
   /dsh/partner/stores/{storeId}/commercial-agreements:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1commercial-agreements"
   /dsh/partner/stores/{storeId}/commercial-agreements/{agreementId}/accept:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1commercial-agreements~1{agreementId}~1accept"
   /dsh/operator/store-commercial-agreements:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1store-commercial-agreements"
+  /dsh/operator/partners/stores/{storeId}/commercial-agreements:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1partners~1stores~1{storeId}~1commercial-agreements"
   /dsh/operator/stores/{storeId}/commercial-agreements:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1commercial-agreements"
   /dsh/operator/stores/{storeId}/commercial-agreements/{agreementId}/decision:
@@ -855,8 +854,6 @@ paths:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1payout-requests"
   /dsh/operator/beneficiaries:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1beneficiaries"
-  /dsh/operator/field-finance-roster:
-    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1field-finance-roster"
   /dsh/operator/beneficiaries/{actorType}/{actorId}/financial-statement:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1beneficiaries~1{actorType}~1{actorId}~1financial-statement"
   /dsh/operator/financial-statements:
@@ -1017,78 +1014,6 @@ paths:
 
   /dsh/captains/{actorId}/reenrollment:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1{actorId}~1reenrollment"
-
-  /dsh/fields/admissions:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions"
-
-  /dsh/fields/admissions/{admissionId}/profile:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}~1profile"
-
-  /dsh/fields/admissions/{admissionId}/profile-review:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}~1profile-review"
-
-  /dsh/fields/admissions/{admissionId}/approve:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}~1approve"
-
-  /dsh/fields/admissions/{admissionId}/provision:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}~1provision"
-
-  /dsh/fields/admissions/{admissionId}:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}"
-
-  /dsh/fields/actors/{actorId}/admission:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1actors~1{actorId}~1admission"
-
-  /dsh/fields/me:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me"
-
-  /dsh/fields/{actorId}/identity-role:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1{actorId}~1identity-role"
-
-  /dsh/fields/{actorId}/reenrollment:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1{actorId}~1reenrollment"
-
-  /dsh/field/joining-cases:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases"
-
-  /dsh/field/joining-cases/{caseId}:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}"
-
-  /dsh/field/joining-cases/{caseId}/draft:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1draft"
-
-  /dsh/field/joining-cases/{caseId}/correction:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1correction"
-
-  /dsh/field/joining-cases/{caseId}/submit:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1submit"
-
-  /dsh/field/joining-cases/{caseId}/review-photo:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1review-photo"
-
-  /dsh/fields/me/financial-summary:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me~1financial-summary"
-
-  /dsh/fields/me/acquisition-entitlements:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me~1acquisition-entitlements"
-
-  /dsh/fields/me/wallet-history:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me~1wallet-history"
-
-  /dsh/fields/me/payout-requests:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me~1payout-requests"
-
-  /dsh/operator/fields/activity:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1fields~1activity"
-
-  /dsh/operator/fields/{fieldActorId}/financial-summary:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1fields~1{fieldActorId}~1financial-summary"
-
-  /dsh/operator/fields/{fieldActorId}/acquisition-cases:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1fields~1{fieldActorId}~1acquisition-cases"
-
-  /dsh/operator/field-acquisition-reward-policies:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1field-acquisition-reward-policies"
 
   /dsh/partners/me/stores/{storeId}/captain-memberships:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1partners~1me~1stores~1{storeId}~1captain-memberships"
@@ -1532,79 +1457,6 @@ components:
         status:
           type: string
 
-    FieldDraftWorkingHours:
-      type: object
-      required: [intervals]
-      additionalProperties: false
-      properties:
-        intervals:
-          type: array
-          maxItems: 28
-          items:
-            $ref: "#/components/schemas/StoreWorkingHoursInterval"
-
-    CreateFieldJoiningCaseDraftRequest:
-      type: object
-      required: [contactPhoneE164]
-      additionalProperties: false
-      properties:
-        contactPhoneE164:
-          type: string
-          description: Yemeni local number such as 777123456 or international number; normalized to E.164 before storage.
-          pattern: '^(?:[\+][1-9][0-9]{7,14}|00[1-9][0-9]{7,14}|967[0-9]{5,12}|0[1-9][0-9]{8}|7[0-9]{8})$'
-        ownerFullName:
-          type: string
-          minLength: 0
-          maxLength: 160
-        businessName:
-          type: string
-          minLength: 0
-          maxLength: 160
-        firstStoreName:
-          type: string
-          minLength: 0
-          maxLength: 160
-        walletProviderKey:
-          type: string
-          minLength: 0
-          maxLength: 64
-          description: Provider selected by the beneficiary at admission. Do not enter a wallet number or name here.
-        firstStoreAddress:
-          type: string
-          minLength: 0
-          maxLength: 500
-        serviceCityId:
-          type: string
-        firstStoreVerticalId:
-          type: string
-        firstStoreCommercialTypeId:
-          type: string
-        firstStoreLatitude:
-          type: number
-          minimum: -90
-          maximum: 90
-        firstStoreLongitude:
-          type: number
-          minimum: -180
-          maximum: 180
-        firstStoreWorkingHours:
-          $ref: "#/components/schemas/FieldDraftWorkingHours"
-        firstStoreProofType:
-          $ref: "#/components/schemas/JoiningCaseProofType"
-        firstStoreProofNumber:
-          type: string
-          minLength: 0
-          maxLength: 128
-        firstStoreNotes:
-          type: string
-          maxLength: 1000
-        firstStoreFulfillmentModes:
-          type: array
-          minItems: 0
-          uniqueItems: true
-          items:
-            $ref: "#/components/schemas/StoreFulfillmentMode"
-
     CreateJoiningCaseRequest:
       type: object
       required: [contactPhoneE164, ownerFullName, businessName, firstStoreName, walletProviderKey, firstStoreAddress, serviceCityId, firstStoreVerticalId, firstStoreCommercialTypeId, firstStoreLatitude, firstStoreLongitude, firstStoreWorkingHours, firstStoreProofType, firstStoreProofNumber, firstStoreFulfillmentModes]
@@ -1712,7 +1564,7 @@ components:
 
     JoiningCaseOrigin:
       type: string
-      enum: [field, control_panel]
+      enum: [field, control_panel, self_service]
 
     StoreImagesResponse:
       type: object
@@ -1912,6 +1764,10 @@ components:
         partnerActorId:
           type: string
           nullable: true
+        originatingFieldActorId:
+          type: string
+          nullable: true
+          description: Eligible Field attribution, independent of the joining-case origin and ownership.
         state:
           $ref: "#/components/schemas/JoiningCaseState"
         settlementPeriod:
@@ -2261,10 +2117,6 @@ components:
           type: string
           nullable: true
           maxLength: 500
-        expectedTermsPolicyVersion:
-          type: string
-          minLength: 1
-          maxLength: 128
     BindJoiningCaseFinancialTermsRequest:
       type: object
       required: [expectedTermsPolicyVersion]

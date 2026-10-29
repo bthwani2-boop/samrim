@@ -6,6 +6,15 @@ export function mergeOrderPageRecords<T>(
   return append ? { ...current, ...page } : page;
 }
 
+export function isCurrentOrderListRequest(
+  generation: number,
+  scopeKey: string,
+  currentGeneration: number,
+  currentScopeKey: string,
+): boolean {
+  return generation === currentGeneration && scopeKey === currentScopeKey;
+}
+
 export function tryAcquireOrderAction(locks: Set<string>, orderID: string): (() => void) | null {
   if (locks.has(orderID)) return null;
   locks.add(orderID);

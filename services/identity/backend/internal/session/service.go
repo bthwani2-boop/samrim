@@ -125,7 +125,7 @@ func roleSessionReady(role string, readiness roleSessionReadiness) bool {
 	switch role {
 	case "client":
 		return readiness.passwordCredential
-	case "partner", "captain", "field":
+	case "partner", "captain":
 		return readiness.activated && readiness.passwordCredential
 	case "operator":
 		return readiness.activated && readiness.passkeyCredential
@@ -214,6 +214,10 @@ JOIN identity_actor_roles r ON r.actor_id=s.actor_id AND r.role=s.role JOIN iden
 	if err != nil {
 		return domain.ActorIdentity{}, err
 	}
+	// The Field surface was retired. Previously issued tokens must not retain access.
+	if _, admitted := domain.SurfaceForRole(role); !admitted {
+		return domain.ActorIdentity{}, domain.ErrUnauthenticated
+	}
 	if _, err := s.db.ExecContext(ctx, "UPDATE identity_sessions SET last_used_at=clock_timestamp() WHERE id=$1 AND revoked_at IS NULL", sessionID); err != nil {
 		return domain.ActorIdentity{}, err
 	}
@@ -242,6 +246,9 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 	defer func() { _ = tx.Rollback() }()
 	var actorID, role string
 	if err := tx.QueryRowContext(ctx, "SELECT actor_id,role FROM identity_sessions WHERE id=$1", sessionID).Scan(&actorID, &role); err != nil {
+		return domain.TokenPair{}, domain.ErrInvalidRefresh
+	}
+	if _, admitted := domain.SurfaceForRole(role); !admitted {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
 	var securityEnabled bool
@@ -397,26 +404,6 @@ func (s *Service) ListRole(ctx context.Context, actorID, role string) ([]domain.
 		result = append(result, item)
 	}
 	return result, rows.Err()
-}
-
-func (s *Service) RecordFieldAppOpened(ctx context.Context, actorID, sessionID string) error {
-	result, err := s.db.ExecContext(ctx, `UPDATE identity_actor_roles r
-		SET last_app_opened_at=clock_timestamp()
-		FROM identity_actors a
-		WHERE r.actor_id=$1 AND r.role='field' AND r.enabled=true AND a.id=r.actor_id AND a.security_enabled=true
-		AND EXISTS (SELECT 1 FROM identity_sessions s WHERE s.id=$2 AND s.actor_id=r.actor_id AND s.role='field'
-			AND s.revoked_at IS NULL AND s.access_expires_at>clock_timestamp() AND s.absolute_expires_at>clock_timestamp())`, strings.TrimSpace(actorID), strings.TrimSpace(sessionID))
-	if err != nil {
-		return err
-	}
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if affected != 1 {
-		return domain.ErrUnauthenticated
-	}
-	return nil
 }
 
 func (s *Service) RevokeRoleSession(ctx context.Context, actorID, role, sessionID, principal, correlationID, operatorActorID string) error {

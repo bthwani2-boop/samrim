@@ -9,7 +9,6 @@ import (
 
 	wltintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
-	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
 var (
@@ -31,88 +30,10 @@ type StoreCommercialAgreementAcceptanceInput struct {
 	CorrelationID            string
 }
 
-func (s *Service) ReadStoreCommercialAgreementsForField(ctx context.Context, accessToken, caseID string) ([]wltintegration.StoreCommercialAgreement, error) {
-	fieldIdentity, err := s.requireField(ctx, accessToken)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.requireEligibleFieldActor(ctx, fieldIdentity.Subject); err != nil {
-		return nil, err
-	}
-	joiningCase, err := postgres.ReadJoiningCaseForField(ctx, s.db, fieldIdentity.Subject, strings.TrimSpace(caseID))
-	if err != nil {
-		return nil, err
-	}
-	if joiningCase.Case.StoreID == "" {
-		return []wltintegration.StoreCommercialAgreement{}, nil
-	}
-	return s.wlt.ReadStoreCommercialAgreements(ctx, joiningCase.Case.StoreID)
-}
-
-func (s *Service) ProposeStoreCommercialAgreementForField(ctx context.Context, accessToken, caseID string, input StoreCommercialAgreementProposalInput, idempotencyKey, correlationID string) (wltintegration.StoreCommercialAgreement, bool, error) {
-	fieldIdentity, err := s.requireField(ctx, accessToken)
-	if err != nil {
-		return wltintegration.StoreCommercialAgreement{}, false, err
-	}
-	if err := s.requireEligibleFieldActor(ctx, fieldIdentity.Subject); err != nil {
-		return wltintegration.StoreCommercialAgreement{}, false, err
-	}
-	caseID = strings.TrimSpace(caseID)
-	if caseID == "" || !validStoreAgreementMutationHeaders(idempotencyKey, correlationID) || !validStoreAgreementReason(input.Reason) || input.ExpectedCurrentVersion < 0 {
-		return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementInvalidInput
-	}
-	joiningCase, err := postgres.ReadJoiningCaseForField(ctx, s.db, fieldIdentity.Subject, caseID)
-	if err != nil {
-		return wltintegration.StoreCommercialAgreement{}, false, err
-	}
-	current := joiningCase.Case
-	if current.Origin != "field" || current.OriginatingFieldActorID != fieldIdentity.Subject || current.State != "approved" || current.Store == nil || current.Store.ID == "" || current.PartnerActorID == "" || current.Store.PartnerActorID != current.PartnerActorID {
-		return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementState
-	}
-	if !fieldMayProposeStoreAgreement(current.Store.PublicationState) {
-		return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementState
-	}
-	rates, err := normalizeStoreAgreementRates(current.Store.FulfillmentModes, input.Rates)
-	if err != nil {
-		return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementInvalidInput
-	}
-	// WLT owns agreement history, pending-state and version checks, plus replay.
-	agreement, replayed, err := s.wlt.ProposeStoreCommercialAgreement(ctx, wltintegration.ProposeStoreCommercialAgreementInput{
-		StoreID: current.Store.ID, PartnerActorID: current.PartnerActorID, Rates: rates,
-		ExpectedCurrentVersion: input.ExpectedCurrentVersion, Reason: input.Reason,
-	}, strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID), fieldIdentity.Subject)
-	if err != nil {
-		return wltintegration.StoreCommercialAgreement{}, false, err
-	}
-	if agreement.StoreID != current.Store.ID || agreement.PartnerActorID != current.PartnerActorID || agreement.ProposedByActorID != fieldIdentity.Subject || agreement.Status != "PROPOSED" {
-		return wltintegration.StoreCommercialAgreement{}, false, errors.New("WLT agreement proposal readback did not match the assigned joining case")
-	}
-	return agreement, replayed, nil
-}
-
-func fieldMayProposeStoreAgreement(publicationState string) bool {
+func storeAllowsCommercialAgreementProposal(publicationState string) bool {
 	// "hidden" is the state the publication endpoint writes when a Store leaves the
 	// storefront; "unpublished" is accepted for legacy rows.
 	return publicationState == "hidden" || publicationState == "unpublished" || publicationState == "published"
-}
-
-func (s *Service) ReadStoreTypeCommissionDefaultsForField(ctx context.Context, accessToken, caseID string) (wltintegration.StoreTypeCommissionDefaultsResponse, error) {
-	fieldIdentity, err := s.requireField(ctx, accessToken)
-	if err != nil {
-		return wltintegration.StoreTypeCommissionDefaultsResponse{}, err
-	}
-	if err := s.requireEligibleFieldActor(ctx, fieldIdentity.Subject); err != nil {
-		return wltintegration.StoreTypeCommissionDefaultsResponse{}, err
-	}
-	joiningCase, err := postgres.ReadJoiningCaseForField(ctx, s.db, fieldIdentity.Subject, strings.TrimSpace(caseID))
-	if err != nil {
-		return wltintegration.StoreTypeCommissionDefaultsResponse{}, err
-	}
-	typeID := strings.TrimSpace(joiningCase.Case.FirstStoreCommercialTypeID)
-	if typeID == "" {
-		return wltintegration.StoreTypeCommissionDefaultsResponse{}, ErrStoreAgreementState
-	}
-	return s.wlt.ReadStoreTypeCommissionDefaults(ctx, typeID)
 }
 
 func (s *Service) ReadStoreTypeCommissionDefaultsForFinance(ctx context.Context, commercialStoreTypeID, actingActorID string) (wltintegration.StoreTypeCommissionDefaultsResponse, error) {
@@ -148,6 +69,54 @@ func (s *Service) UpdateStoreTypeCommissionDefaultForFinance(ctx context.Context
 	})
 }
 
+func (s *Service) ReadStoreCommercialAgreementsForOperatorPartners(ctx context.Context, storeID, actingActorID string) ([]wltintegration.StoreCommercialAgreement, error) {
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return nil, err
+	}
+	storeID = strings.TrimSpace(storeID)
+	if storeID == "" || len(storeID) > 128 {
+		return nil, ErrStoreAgreementInvalidInput
+	}
+	store, err := postgres.ReadStore(ctx, s.db, storeID)
+	if err != nil {
+		return nil, err
+	}
+	return s.wlt.ReadStoreCommercialAgreements(ctx, store.ID)
+}
+
+// Operator Partners may propose, never accept on behalf of the Partner or
+// approve on behalf of Finance. WLT owns every agreement transition.
+func (s *Service) ProposeStoreCommercialAgreementForOperatorPartners(ctx context.Context, storeID, actingActorID string, input StoreCommercialAgreementProposalInput, idempotencyKey, correlationID string) (wltintegration.StoreCommercialAgreement, bool, error) {
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return wltintegration.StoreCommercialAgreement{}, false, err
+	}
+	storeID, actingActorID = strings.TrimSpace(storeID), strings.TrimSpace(actingActorID)
+	if storeID == "" || len(storeID) > 128 || !validStoreAgreementMutationHeaders(idempotencyKey, correlationID) || !validStoreAgreementReason(input.Reason) || input.ExpectedCurrentVersion < 0 {
+		return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementInvalidInput
+	}
+	store, err := postgres.ReadStore(ctx, s.db, storeID)
+	if err != nil {
+		return wltintegration.StoreCommercialAgreement{}, false, err
+	}
+	if store.PartnerActorID == "" || store.PartnerActorID == actingActorID || !storeAllowsCommercialAgreementProposal(store.PublicationState) {
+		return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementState
+	}
+	rates, err := normalizeStoreAgreementRates(store.FulfillmentModes, input.Rates)
+	if err != nil {
+		return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementInvalidInput
+	}
+	agreement, replayed, err := s.wlt.ProposeStoreCommercialAgreement(ctx, wltintegration.ProposeStoreCommercialAgreementInput{
+		StoreID: store.ID, PartnerActorID: store.PartnerActorID, Rates: rates,
+		ExpectedCurrentVersion: input.ExpectedCurrentVersion, Reason: input.Reason,
+	}, strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID), actingActorID)
+	if err != nil {
+		return wltintegration.StoreCommercialAgreement{}, false, err
+	}
+	if agreement.StoreID != store.ID || agreement.PartnerActorID != store.PartnerActorID || agreement.ProposedByActorID != actingActorID || agreement.Status != "PROPOSED" {
+		return wltintegration.StoreCommercialAgreement{}, false, errors.New("WLT agreement proposal readback does not match the authorized Partners operator")
+	}
+	return agreement, replayed, nil
+}
 func (s *Service) ReadStoreCommercialAgreementsForPartner(ctx context.Context, accessToken, storeID string) ([]wltintegration.StoreCommercialAgreement, error) {
 	partner, err := s.requirePartner(ctx, accessToken)
 	if err != nil {
@@ -257,8 +226,17 @@ func (s *Service) DecideStoreCommercialAgreementForFinance(ctx context.Context, 
 	if selected == nil || selected.StoreID != storeID {
 		return wltintegration.StoreCommercialAgreement{}, false, postgres.ErrStoreNotFound
 	}
-	if actingActorID == selected.PartnerActorID || actingActorID == selected.ProposedByActorID {
+	if actingActorID == selected.PartnerActorID {
 		return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementForbidden
+	}
+	// Only the canonical initial Operator may approve a proposal they created.
+	// This assertion comes from Identity on each request, never from UI input.
+	input.RootOwnerSelfApproval = false
+	if actingActorID == selected.ProposedByActorID {
+		if err := s.identity.RequireOperatorProfileAdministrator(ctx, actingActorID); err != nil {
+			return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementForbidden
+		}
+		input.RootOwnerSelfApproval = true
 	}
 	if input.Decision == "APPROVE" {
 		currentStore, storeErr := postgres.ReadStore(ctx, s.db, storeID)
@@ -315,28 +293,6 @@ func (s *Service) requireFinance(ctx context.Context, actorID string) error {
 		return ErrOperatorNotActive
 	}
 	return s.identity.RequireOperatorPermission(ctx, actorID, "finance")
-}
-
-func (s *Service) requireField(ctx context.Context, accessToken string) (identityclient.ActorIdentity, error) {
-	identity, err := s.identity.ReadSession(ctx, strings.TrimSpace(accessToken))
-	if err != nil {
-		return identityclient.ActorIdentity{}, err
-	}
-	if identity.Role != "field" || identity.Surface != "app-field" || strings.TrimSpace(identity.Subject) == "" {
-		return identityclient.ActorIdentity{}, ErrFieldSessionForbidden
-	}
-	return identity, nil
-}
-
-func (s *Service) requireEligibleFieldActor(ctx context.Context, actorID string) error {
-	admission, err := postgres.ReadFieldAdmissionForActor(ctx, s.db, strings.TrimSpace(actorID))
-	if err != nil {
-		return err
-	}
-	if admission.State != "eligible" || admission.RequiresProfileReview || admission.FullNameAr == "" {
-		return ErrFieldSessionForbidden
-	}
-	return nil
 }
 
 func normalizeStoreAgreementRates(storeModes []string, rates []wltintegration.StoreCommercialAgreementRate) ([]wltintegration.StoreCommercialAgreementRate, error) {

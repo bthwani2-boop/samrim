@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { dshErrorPayload, dshHttpStatus, isDshClientError, listOperatorBeneficiaryPayoutStates, listOperatorFieldFinanceRoster, type BeneficiaryRegistrySort } from "../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError, listOperatorBeneficiaryPayoutStates, type BeneficiaryRegistrySort } from "../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 
 export async function GET(request: Request) {
@@ -11,9 +11,10 @@ export async function GET(request: Request) {
   const limit = Number(query.get("limit") || "50");
   try {
     const actorType = query.get("actorType") ?? "";
-    const result = actorType === "field"
-      ? await listOperatorFieldFinanceRoster(query.get("search") ?? "", query.get("status") ?? "", (query.get("admissionState") ?? "all") as "all" | "eligible" | "suspended", query.get("cursor") ?? "", limit, { operatorActorId: identity.subject })
-      : await listOperatorBeneficiaryPayoutStates(actorType as "partner" | "captain" | "" , query.get("search") ?? "", query.get("status") ?? "", (query.get("sort") ?? "actor_asc") as BeneficiaryRegistrySort, query.get("cursor") ?? "", limit, { operatorActorId: identity.subject });
+    if (actorType !== "" && actorType !== "partner" && actorType !== "captain" && actorType !== "field") {
+      return NextResponse.json({ error: { code: "INVALID_INPUT", message: "Actor type must be partner, captain or historical field" } }, { status: 400 });
+    }
+    const result = await listOperatorBeneficiaryPayoutStates(actorType, query.get("search") ?? "", query.get("status") ?? "", (query.get("sort") ?? "actor_asc") as BeneficiaryRegistrySort, query.get("cursor") ?? "", limit, { operatorActorId: identity.subject });
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (!isDshClientError(error)) return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "تعذر قراءة سجل المستفيدين" } }, { status: 500 });

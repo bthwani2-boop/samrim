@@ -6,7 +6,6 @@ export type WorkspaceEntry = Readonly<{ href: string; label: string; context: st
 
 const categoryRoute = (href: string) => {
   const path = href.split("?")[0] ?? href;
-  if (path.startsWith("/fields")) return "/partners";
   const destination = workspaceDestinations
     .filter(entry => path === entry.href || path.startsWith(entry.href + "/"))
     .sort((a, b) => b.href.length - a.href.length)[0];
@@ -34,7 +33,7 @@ export function allowedWorkspaceEntries(identity: ActorIdentity): WorkspaceEntry
 
 /** Never use generic draft assistance to modify money, access, HR or order-sensitive screens. */
 export function canDraftWorkspaceFields(pathname: string): boolean {
-  return ["/catalog", "/partners", "/marketing", "/fields"].some(prefix =>
+  return ["/catalog", "/partners", "/marketing"].some(prefix =>
     pathname === prefix || pathname.startsWith(prefix + "/")
   ) && !pathname.startsWith("/partners/actors/");
 }

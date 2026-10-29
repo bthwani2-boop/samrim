@@ -6,7 +6,14 @@ import { useSession } from "../../session/session-provider";
 import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
 import { CatalogCategoryRegistry } from "./catalog-category-registry";
 import { CatalogCommercialStoreTypeRegistry } from "./catalog-commercial-store-type-registry";
-import { CatalogShoppingShortcutRegistry } from "./catalog-shopping-shortcut-registry";
+import { CatalogShoppingShortcutEditor } from "./catalog-shopping-shortcut-registry";
+import {
+  buildCategoryListParams,
+  canLoadMoreCategories,
+  isLoadedViewSort,
+  sortTaxonomyRows,
+  taxonomyResultSummary,
+} from "./catalog-taxonomy-query";
 import { CatalogVerticalRegistry } from "./catalog-vertical-registry";
 
 type Kind = "vertical" | "type" | "category" | "shortcut";
@@ -65,12 +72,10 @@ export function CatalogTaxonomyWorkspace() {
       .finally(() => setLoading(false));
   }, [loadVerticals]);
 
-  const loadCategories = useCallback(async (id: string, text: string, filterStatus: Status, cursor = "", append = false) => {
+  const loadCategories = useCallback(async (id: string, text: string, filterStatus: Status, sort: "default" | "name_asc" | "name_desc", cursor = "", append = false) => {
     const request = ++categoryRequest.current;
     if (!id) { setCategories([]); setNextCursor(""); return; }
-    const params = new URLSearchParams({ verticalId: id, status: filterStatus, sort: "name_asc", limit: "100" });
-    if (text.trim()) params.set("query", text.trim());
-    if (cursor) params.set("cursor", cursor);
+    const params = buildCategoryListParams({ verticalId: id, query: text, status: filterStatus, sort, cursor });
     try {
       const body = await readResponse<CatalogCategoryListResponse>(
         await fetch(`/api/catalog/categories?${params}`, { cache: "no-store" }),
@@ -118,20 +123,31 @@ export function CatalogTaxonomyWorkspace() {
     const request = ++scopeLoadRequest.current;
     setError("");
     setLoadingScope(true);
-    void Promise.all([loadCategories(verticalId, searchedQuery, status), loadRelated(verticalId)])
+    void Promise.all([loadCategories(verticalId, searchedQuery, status, pageSort), loadRelated(verticalId)])
       .finally(() => {
         if (request === scopeLoadRequest.current) setLoadingScope(false);
       });
-  }, [verticalId, searchedQuery, status, loadCategories, loadRelated]);
+  }, [verticalId, searchedQuery, status, pageSort, loadCategories, loadRelated]);
+
+  const refreshShortcut = useCallback(async (saved: ShoppingShortcut) => {
+    const request = scopeRequest.current;
+    const body = await readResponse<ShoppingShortcutListResponse>(
+      await fetch(`/api/catalog/shopping-shortcuts?${new URLSearchParams({ verticalId })}`, { cache: "no-store" }),
+    );
+    const current = body.shortcuts.find((shortcut) => shortcut.id === saved.id);
+    if (!current || current.version < saved.version) throw new Error("تعذر تأكيد قراءة الاختصار المحفوظ. احتفظنا بالمسودة؛ أعد المحاولة.");
+    if (request !== scopeRequest.current) throw new Error("تغير نطاق البيانات أثناء تأكيد الحفظ. أعد القراءة.");
+    setShortcuts(body.shortcuts);
+  }, [verticalId]);
 
   const refresh = useCallback(async () => {
     setError("");
     try {
-      await Promise.all([loadVerticals(), loadCategories(verticalId, searchedQuery, status), loadRelated(verticalId)]);
+      await Promise.all([loadVerticals(), loadCategories(verticalId, searchedQuery, status, pageSort), loadRelated(verticalId)]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "تعذّر تحديث القائمة.");
     }
-  }, [loadVerticals, loadCategories, loadRelated, verticalId, searchedQuery, status]);
+  }, [loadVerticals, loadCategories, loadRelated, verticalId, searchedQuery, status, pageSort]);
 
   const selectedVertical = verticals.find((v) => v.id === verticalId);
   const rows = useMemo((): CatalogRow[] => {
@@ -146,14 +162,16 @@ export function CatalogTaxonomyWorkspace() {
       && (!search || [item.nameAr, item.nameEn, item.context, kindLabels[item.kind]].some((value) => value.toLocaleLowerCase().includes(search))));
   }, [verticals, verticalId, types, categories, shortcuts, kind, status, searchedQuery, selectedVertical?.nameAr]);
 
-  const visibleRows = useMemo(() => loadingScope ? [] : pageSort === "default" ? rows : [...rows].sort((a,b) =>
-    (pageSort === "name_asc" ? 1 : -1) * a.nameAr.localeCompare(b.nameAr,"ar")
-  ), [rows,pageSort,loadingScope]);
+  const visibleRows = useMemo(() => loadingScope ? [] : sortTaxonomyRows(rows, pageSort, kind), [rows, pageSort, kind, loadingScope]);
   function openEditor(nextKind: Kind, id?: string) {
     setEditor({ kind: nextKind, id, sequence: ++serial.current });
     setChooseKind(false);
     if (nextKind === "category" && id) setCategoryId(id);
   }
+
+  const shortcutToEdit = editor?.kind === "shortcut" && editor.id
+    ? shortcuts.find((shortcut) => shortcut.id === editor.id)
+    : undefined;
 
   return <AdaptiveRecordWorkspace preferenceKey="catalog-taxonomy" open={Boolean(editor)}
     triggerKey={editor ? editor.kind + ":" + (editor.id ?? "new") : ""}
@@ -165,14 +183,22 @@ export function CatalogTaxonomyWorkspace() {
           {editor.kind === "vertical" ? <CatalogVerticalRegistry verticals={verticals} selectedVerticalId={verticalId}
             onSelectVertical={setVerticalId} onSaved={refresh} editorOnly initialId={editor.id} onClose={() => setEditor(null)} /> : null}
           {editor.kind === "type" && verticalId ? <CatalogCommercialStoreTypeRegistry verticals={verticals} verticalId={verticalId}
-            editorOnly initialId={editor.id} onSaved={refresh} onClose={() => setEditor(null)} /> : null}
+            initialId={editor.id} onSaved={refresh} onClose={() => setEditor(null)} /> : null}
           {editor.kind === "category" && verticalId ? <CatalogCategoryRegistry verticals={verticals} verticalId={verticalId}
             onVerticalChange={setVerticalId} categories={categories} nextCursor={nextCursor}
-            onFilter={(text, filter, _sort, cursor, append) => loadCategories(verticalId, text, filter, cursor, append)}
+            onFilter={(text, filter, _sort, cursor, append) => loadCategories(verticalId, text, filter, pageSort, cursor, append)}
             categoryId={categoryId} onCategoryChange={setCategoryId} loading={loadingScope} onSaved={refresh}
             onManageVerticals={() => openEditor("vertical")} editorOnly initialId={editor.id} onClose={() => setEditor(null)} /> : null}
-          {editor.kind === "shortcut" && verticalId ? <CatalogShoppingShortcutRegistry verticalId={verticalId}
-            editorOnly initialId={editor.id} onSaved={refresh} onClose={() => setEditor(null)} /> : null}
+          {editor.kind === "shortcut" && verticalId ? (
+            editor.id && !shortcutToEdit
+              ? <div role="alert" className="identity-error">
+                تعذر العثور على الاختصار المحدد. أعد قراءة القائمة قبل التحرير.
+                <button type="button" onClick={() => void refresh()}>إعادة القراءة</button>
+                <button type="button" onClick={() => setEditor(null)}>إغلاق</button>
+              </div>
+              : <CatalogShoppingShortcutEditor key={`${verticalId}:${editor.id ?? "new"}`} verticalId={verticalId}
+                initialShortcut={shortcutToEdit} onSaved={refreshShortcut} onClose={() => setEditor(null)} />
+          ) : null}
         </div>
     </AdaptiveRecordPanel> : null}>
   <section className="unified-taxonomy" aria-label="التصنيفات الموحدة">
@@ -204,9 +230,9 @@ export function CatalogTaxonomyWorkspace() {
           {(["vertical", "type", "category", "shortcut"] as const).map((item) => <option key={item} value={item}>{kindLabels[item]}</option>)}
         </select>
       </label>
-      <label>ترتيب القائمة
-        <select value={pageSort} onChange={(event) => setPageSort(event.target.value as typeof pageSort)}>
-          <option value="default">الترتيب الأصلي</option><option value="name_asc">الاسم أ–ي</option><option value="name_desc">الاسم ي–أ</option>
+      <label>{kind === "category" ? "ترتيب الفئات" : kind === "all" ? "ترتيب العرض" : "ترتيب العناصر"}
+        <select value={kind === "category" && pageSort === "default" ? "name_asc" : pageSort} onChange={(event) => setPageSort(event.target.value as typeof pageSort)}>
+          {kind !== "category" ? <option value="default">الترتيب الأصلي</option> : null}<option value="name_asc">الاسم أ–ي</option><option value="name_desc">الاسم ي–أ</option>
         </select>
       </label>
       <details className="unified-taxonomy-advanced"><summary className="button button-secondary">تصفية إضافية{status !== "all" ? " · مفعّلة" : ""}</summary><div>
@@ -218,7 +244,7 @@ export function CatalogTaxonomyWorkspace() {
     </div>
     {error ? <div className="identity-error" role="alert">{error} <button type="button" className="button button-secondary" onClick={() => void refresh()}>إعادة المحاولة</button></div> : null}
     <div className="unified-taxonomy-count">
-      <span>{loading || loadingScope ? "جارٍ تحميل التصنيفات…" : `${rows.length}${nextCursor ? "+" : ""} عنصر`}</span>
+      <span>{loading || loadingScope ? "جارٍ تحميل التصنيفات…" : taxonomyResultSummary(rows.length, kind, Boolean(nextCursor))}</span>
       {!verticalId ? <span>اختر مجالًا لعرض الأنواع والفئات والاختصارات التابعة له.</span> : null}
     </div>
     <div className="unified-taxonomy-table-wrap">
@@ -257,9 +283,10 @@ export function CatalogTaxonomyWorkspace() {
         {!loading && !loadingScope && rows.length === 0 ? <li className="collection-state">لا توجد نتائج مطابقة.</li> : null}
       </ul>
     </div>
-    {nextCursor && verticalId && (kind === "all" || kind === "category") ?
+    {isLoadedViewSort(kind, Boolean(nextCursor)) && pageSort !== "default" ? <p className="muted" role="status">يطبق الترتيب على العناصر المحمّلة فقط؛ حمّل المزيد لضم بقية الفئات.</p> : null}
+    {verticalId && canLoadMoreCategories(kind, Boolean(nextCursor)) ?
       <button type="button" className="button button-secondary unified-taxonomy-more" disabled={loadingScope}
-        onClick={() => void loadCategories(verticalId, searchedQuery, status, nextCursor, true)}>تحميل المزيد من الفئات</button> : null}
+        onClick={() => void loadCategories(verticalId, searchedQuery, status, pageSort, nextCursor, true)}>تحميل المزيد من الفئات</button> : null}
   </section>
   </AdaptiveRecordWorkspace>;
 }

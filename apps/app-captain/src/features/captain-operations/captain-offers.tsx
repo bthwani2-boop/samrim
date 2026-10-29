@@ -60,6 +60,14 @@ export function CaptainOffers({ compact = false, popup = false, suppressed = fal
 
   useEffect(() => subscribeIdentitySession(setIdentityState), []);
   useEffect(() => {
+    if (suppressed) {
+      readSequence.current += 1;
+      setOffers([]);
+      setLoadedActorID("");
+      setLoading(false);
+      setError("");
+      return;
+    }
     if (!activeActorID) {
       readSequence.current += 1;
       setOffers([]);
@@ -74,17 +82,22 @@ export function CaptainOffers({ compact = false, popup = false, suppressed = fal
   useEffect(() => {
     if (!isFocused || suppressed || !activeActorID || loadedActorID !== activeActorID || loading) return;
     let cancelled = false;
+    let refreshInFlight = false;
     const refresh = async () => {
-      if (busy) return;
+      if (busy || cancelled || refreshInFlight) return;
+      refreshInFlight = true;
+      const sequence = readSequence.current;
       try {
         const token = await getUsableIdentityAccessToken();
         const response = await captainClient().listOwnCaptainOffers(token);
         const session = currentIdentityState();
-        if (!cancelled && session.kind === "authenticated" && isCurrentCaptainActor(activeActorID, session.identity.subject.trim())) {
+        if (!cancelled && sequence === readSequence.current && session.kind === "authenticated" && isCurrentCaptainActor(activeActorID, session.identity.subject.trim())) {
           setOffers(response.offers);
         }
       } catch {
         // An interrupted background read preserves the previous visible state.
+      } finally {
+        refreshInFlight = false;
       }
     };
     const timer = setInterval(() => void refresh(), popup ? 2500 : 5000);
@@ -117,6 +130,8 @@ export function CaptainOffers({ compact = false, popup = false, suppressed = fal
       const current = currentIdentityState();
       if (current.kind !== "authenticated" || !isCurrentCaptainActor(actorID, current.identity.subject.trim())) return;
       const verified = await load();
+      const afterRead = currentIdentityState();
+      if (afterRead.kind !== "authenticated" || !isCurrentCaptainActor(actorID, afterRead.identity.subject.trim())) return;
       setError(insufficientFunds && verified
         ? "رصيد محفظتك المتاح لا يكفي لضمان التحصيل النقدي لهذا الطلب. لم يُقبل العرض؛ يلزم توفير الرصيد عبر قناة شحن معتمدة."
         : verified

@@ -9,7 +9,10 @@ $name = 'bthwani-wlt-proof-isolated'
 $port = 15439
 $dbName = 'bthwani_wlt_finance_proof'
 $dbUser = 'finance_proof'
-$password = [Convert]::ToHexString([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(20))
+$passwordBytes = New-Object byte[] 20
+$random = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+try { $random.GetBytes($passwordBytes) } finally { $random.Dispose() }
+$password = ([BitConverter]::ToString($passwordBytes)).Replace('-', '')
 $databaseUrl = "postgres://$($dbUser):$($password)@127.0.0.1:$($port)/$($dbName)?sslmode=disable&connect_timeout=5"
 $existing = docker container ls --all --filter "name=^/$name$" --format "{{.Names}}"
 if($existing){throw 'Isolated finance test container already exists; refusing to replace it'}
@@ -37,7 +40,7 @@ try {
   $env:BTHWANI_EXPECTED_DATABASE_PORT = "$port"
   $env:BTHWANI_EXPECTED_DATABASE_NAME = $dbName
   $env:BTHWANI_EXPECTED_DATABASE_USER = $dbUser
-  & go test ./services/wlt/backend/internal/storage/postgres -run 'TestPartnerStoreFinanceAndRecipientSettlementLifecycle|TestCashIn' -v -count=1 -timeout 240s
+  & go test ./services/wlt/backend/internal/storage/postgres -run 'TestPartnerStoreFinanceAndRecipientSettlementLifecycle|TestCashIn|TestStoreCommercialAgreementLifecycleAndOrderSnapshots' -v -count=1 -timeout 240s
   if ($LASTEXITCODE -ne 0) {throw 'WLT finance integration tests failed'}
   Write-Output 'WLT_FINANCE_ISOLATED_TESTS=PASS'
 } catch {

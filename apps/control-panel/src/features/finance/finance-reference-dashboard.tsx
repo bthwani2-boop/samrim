@@ -12,7 +12,7 @@ export type FinanceReferenceRow = Readonly<{
   id: string; subject: string; reference: string; category: string; state: string;
   amount: string; amountMinor?: number; priority: number; nextStep: string; date?: string;
 }>;
-export type FinanceReferenceWorkflow = "custody" | "commissions" | "batches" | "withdrawals" | "settlement-partner" | "settlement-captain" | "settlement-field" | "agreements";
+export type FinanceReferenceWorkflow = "custody" | "commissions" | "batches" | "withdrawals" | "settlement-partner" | "settlement-captain" | "agreements";
 export type FinanceReferenceTab = "command" | "wallets" | "activity" | "collection" | "settlements" | "reconcile" | "pending" | "reports";
 type ActorType = "customer" | "partner" | "captain" | "field";
 type WalletSummary = Readonly<{ actorId: string; currentBalanceMinor: number; heldMinor: number; availableMinor: number; creditsMinor: number; debitsMinor: number; currency: "YER" }>;
@@ -23,7 +23,7 @@ const groupDefinitions = [
   { type: "customer", name: "العملاء", icon: "users", color: "#2289ff" },
   { type: "partner", name: "الشركاء", icon: "store", color: "#ff8737" },
   { type: "captain", name: "الكباتن", icon: "truck", color: "#17c69a" },
-  { type: "field", name: "الميدانيون", icon: "user", color: "#ac65e9" },
+  { type: "field", name: "أرصدة تاريخية", icon: "user", color: "#ac65e9" },
 ] as const;
 const tabs = [
   { key: "command", label: "القيادة", icon: "dashboard" }, { key: "wallets", label: "المحافظ", icon: "wallet" },
@@ -34,7 +34,7 @@ const tabs = [
 const workflowLabels: Record<FinanceReferenceWorkflow, string> = {
   custody: "التحصيل النقدي والتوريدات", commissions: "ذمم عمولة المنصة", batches: "دفعات التحويل والمطابقة",
   withdrawals: "سحوبات العملاء", "settlement-partner": "مستحقات الشركاء",
-  "settlement-captain": "مستحقات الكباتن", "settlement-field": "مستحقات الميدانيين", agreements: "اتفاقات المتاجر",
+  "settlement-captain": "مستحقات الكباتن", agreements: "اتفاقات المتاجر",
 };
 const emptyGroups: readonly WalletGroup[] = groupDefinitions.map((group) => ({ type: group.type, name: group.name, amount: 0, count: 0, loaded: false, complete: false }));
 const number = (value: number) => new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
@@ -224,7 +224,7 @@ export function FinanceReferenceDashboard({ rows, errors, hasData, hasMore, onOp
           </div><div className="fr-table-foot"><span>{filtered.length?number((Math.min(page,pageCount)-1)*6+1)+"–"+number(Math.min(page*6,filtered.length))+" من "+number(filtered.length):"لا توجد سجلات"} {hasMore?"· بعض المصادر بها صفحات أخرى":""}</span><div className="fr-pages"><button type="button" disabled={page<=1} onClick={()=>setPage(p=>Math.max(1,p-1))}><Glyph name="chevron" size={13}/></button>{Array.from({length:Math.min(pageCount,5)},(_,i)=>i+1).map(n=><button key={n} type="button" aria-current={page===n?"page":undefined} onClick={()=>setPage(n)}>{n}</button>)}<button type="button" disabled={page>=pageCount} onClick={()=>setPage(p=>p+1)}><Glyph name="chevron" size={13}/></button></div></div>
         </section>
       </div>
-      {tab!=="command" ? <div className="fr-context-links">{(tab==="settlements"?["settlement-partner","settlement-captain","settlement-field","batches","withdrawals"]:tab==="collection"?["custody","commissions"]:tab==="reconcile"?["batches","custody","commissions"]:["custody","commissions","batches","withdrawals"]).map(w=><button key={w} type="button" onClick={()=>onOpenWorkflow(w as FinanceReferenceWorkflow,null)}>{workflowLabels[w as FinanceReferenceWorkflow]} ←</button>)}</div>:null}
+      {tab!=="command" ? <div className="fr-context-links">{(tab==="settlements"?["settlement-partner","settlement-captain","batches","withdrawals"]:tab==="collection"?["custody","commissions"]:tab==="reconcile"?["batches","custody","commissions"]:["custody","commissions","batches","withdrawals"]).map(w=><button key={w} type="button" onClick={()=>onOpenWorkflow(w as FinanceReferenceWorkflow,null)}>{workflowLabels[w as FinanceReferenceWorkflow]} ←</button>)}</div>:null}
       <p className="fr-integrity-note">مؤشرات هذه الشاشة محسوبة من البيانات المحمّلة؛ ليست أرصدة مدققة لكامل المنصة. الإجراءات الحساسة داخل سجلاتها المعتمدة.</p>
     </> : <FinanceSpecializedTab key={tab} tab={tab} rows={rows} intakes={intakes} hasMore={hasMore} onOpenWorkflow={onOpenWorkflow} onReloadIntakes={()=>void loadIntakes()}/>}
   </div>;

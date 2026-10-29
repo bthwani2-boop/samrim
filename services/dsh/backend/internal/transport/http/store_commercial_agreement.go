@@ -13,11 +13,10 @@ import (
 )
 
 func (s *JoiningCaseServer) RegisterStoreCommercialAgreementRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}/commercial-agreements", s.readFieldStoreCommercialAgreements)
-	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}/commercial-agreement-defaults", s.readFieldStoreCommissionDefaults)
-	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/commercial-agreements", s.proposeFieldStoreCommercialAgreement)
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/commercial-agreements", s.readPartnerStoreCommercialAgreements)
 	mux.HandleFunc("POST /dsh/partner/stores/{storeId}/commercial-agreements/{agreementId}/accept", s.acceptPartnerStoreCommercialAgreement)
+	mux.HandleFunc("GET /dsh/operator/partners/stores/{storeId}/commercial-agreements", s.readPartnersStoreCommercialAgreements)
+	mux.HandleFunc("POST /dsh/operator/partners/stores/{storeId}/commercial-agreements", s.proposePartnersStoreCommercialAgreement)
 	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/commercial-agreements", s.readFinanceStoreCommercialAgreements)
 	mux.HandleFunc("GET /dsh/operator/store-commercial-agreements", s.listFinanceStoreCommercialAgreements)
 	mux.HandleFunc("POST /dsh/operator/stores/{storeId}/commercial-agreements/{agreementId}/decision", s.decideFinanceStoreCommercialAgreement)
@@ -25,24 +24,13 @@ func (s *JoiningCaseServer) RegisterStoreCommercialAgreementRoutes(mux *http.Ser
 	mux.HandleFunc("POST /dsh/operator/commercial-store-types/{commercialStoreTypeId}/commission-defaults", s.updateFinanceStoreCommissionDefault)
 }
 
-func (s *JoiningCaseServer) readFieldStoreCommissionDefaults(w http.ResponseWriter, r *http.Request) {
-	if !authorizedFieldSession(w, r) {
+func (s *JoiningCaseServer) readPartnersStoreCommercialAgreements(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
 		return
 	}
-	defaults, err := s.service.ReadStoreTypeCommissionDefaultsForField(r.Context(), bearerToken(r), r.PathValue("caseId"))
-	if err != nil {
-		writeStoreCommercialAgreementError(w, err)
-		return
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, defaults)
-}
-
-func (s *JoiningCaseServer) readFieldStoreCommercialAgreements(w http.ResponseWriter, r *http.Request) {
-	if !authorizedFieldSession(w, r) {
-		return
-	}
-	agreements, err := s.service.ReadStoreCommercialAgreementsForField(r.Context(), bearerToken(r), r.PathValue("caseId"))
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	agreements, err := s.service.ReadStoreCommercialAgreementsForOperatorPartners(r.Context(), r.PathValue("storeId"), acting)
 	if err != nil {
 		writeStoreCommercialAgreementError(w, err)
 		return
@@ -51,15 +39,12 @@ func (s *JoiningCaseServer) readFieldStoreCommercialAgreements(w http.ResponseWr
 	writeJSON(w, http.StatusOK, map[string]any{"agreements": agreements})
 }
 
-func (s *JoiningCaseServer) proposeFieldStoreCommercialAgreement(w http.ResponseWriter, r *http.Request) {
-	if !authorizedFieldSession(w, r) {
+func (s *JoiningCaseServer) proposePartnersStoreCommercialAgreement(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
 		return
 	}
-	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" || r.Header.Get("If-Match") != "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "client actor authority headers are forbidden")
-		return
-	}
-	correlation, idempotency, ok := requiredFieldMutationHeaders(w, r)
+	acting, correlation, idempotency, ok := requiredMutationHeaders(w, r)
 	if !ok {
 		return
 	}
@@ -71,7 +56,9 @@ func (s *JoiningCaseServer) proposeFieldStoreCommercialAgreement(w http.Response
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	agreement, replayed, err := s.service.ProposeStoreCommercialAgreementForField(r.Context(), bearerToken(r), r.PathValue("caseId"), joiningcase.StoreCommercialAgreementProposalInput{Rates: input.Rates, ExpectedCurrentVersion: input.ExpectedCurrentVersion, Reason: input.Reason}, idempotency, correlation)
+	agreement, replayed, err := s.service.ProposeStoreCommercialAgreementForOperatorPartners(r.Context(), r.PathValue("storeId"), acting, joiningcase.StoreCommercialAgreementProposalInput{
+		Rates: input.Rates, ExpectedCurrentVersion: input.ExpectedCurrentVersion, Reason: input.Reason,
+	}, idempotency, correlation)
 	if err != nil {
 		writeStoreCommercialAgreementError(w, err)
 		return
@@ -83,7 +70,6 @@ func (s *JoiningCaseServer) proposeFieldStoreCommercialAgreement(w http.Response
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, status, map[string]any{"agreement": agreement, "idempotentReplay": replayed})
 }
-
 func (s *JoiningCaseServer) readPartnerStoreCommercialAgreements(w http.ResponseWriter, r *http.Request) {
 	agreements, err := s.service.ReadStoreCommercialAgreementsForPartner(r.Context(), bearerToken(r), r.PathValue("storeId"))
 	if err != nil {
@@ -263,8 +249,8 @@ func writeStoreCommercialAgreementError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "STATE_CONFLICT", "Store commercial agreement is not in the required state")
 	case errors.Is(err, joiningcase.ErrStoreAgreementForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the current actor cannot perform this Store commercial agreement action")
-	case errors.Is(err, joiningcase.ErrFieldSessionForbidden), errors.Is(err, joiningcase.ErrPartnerSessionForbidden):
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "an eligible Field or Partner session is required")
+	case errors.Is(err, joiningcase.ErrPartnerSessionForbidden):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active app-partner session is required")
 	case errors.Is(err, joiningcase.ErrOperatorNotActive):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active control operator session is required")
 	case errors.Is(err, postgres.ErrJoiningCaseNotFound), errors.Is(err, postgres.ErrStoreNotFound):

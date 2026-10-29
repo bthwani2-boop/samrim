@@ -47,3 +47,25 @@ test("settlement intake preserves its durable retry key and hides readback if th
   assert.match(intake.slice(postMutationActorCheck, readback), /CAPTAIN_INTAKE_SESSION_CHANGED/);
   assert.match(intake.slice(postReadbackActorCheck, publish), /CAPTAIN_INTAKE_SESSION_CHANGED/);
 });
+
+
+test("captain can resume a saved settlement intake without revalidating today's amount or creating a new key", () => {
+  const intake = source.slice(source.indexOf("  const requestIntake = async ("), source.indexOf("  const destinationReady ="));
+  assert.match(intake, /!pendingIntakeAttempt && \(!state \|\| state\.eligibleAvailableMinor <= 0\)/);
+  assert.match(intake, /pendingIntakeAttempt\?\.mode \?\? mode/);
+  assert.match(intake, /pendingIntakeAttempt\?\.amountMinor \?\?/);
+  assert.match(intake, /if \(!pendingIntakeAttempt && effectiveMode === "SPECIFIED"/);
+  assert.match(intake, /const saved = pendingIntakeAttempt \?\?/);
+  assert.match(intake, /createOwnSettlementIntake\(token, saved\.mode, saved\.amountMinor, saved\.idempotencyKey, saved\.correlationID\)/);
+  assert.match(source, /pendingIntakeAttempt \? <>[\s\S]*?label="التحقق من طلب التسوية المحفوظ"[\s\S]*?requestIntake\(pendingIntakeAttempt\.mode\)/);
+});
+
+
+test("captain refuses to replay an intake when the actor-scoped stored attempt differs", () => {
+  const intake = source.slice(source.indexOf("  const requestIntake = async ("), source.indexOf("  const destinationReady ="));
+  assert.match(intake, /const raw = await SecureStore\.getItemAsync\(key\)/);
+  assert.match(intake, /stored\.idempotencyKey !== pendingIntakeAttempt\.idempotencyKey/);
+  assert.match(intake, /stored\.mode !== pendingIntakeAttempt\.mode/);
+  assert.match(intake, /CAPTAIN_INTAKE_STORED_ATTEMPT_CHANGED/);
+  assert.ok(intake.indexOf("CAPTAIN_INTAKE_STORED_ATTEMPT_CHANGED") < intake.indexOf("createOwnSettlementIntake("));
+});

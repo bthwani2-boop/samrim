@@ -57,6 +57,8 @@ func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/images", s.operatorStoreImages)
 	mux.HandleFunc("POST /dsh/operator/stores/{storeId}/images", s.operatorStoreImages)
 	mux.HandleFunc("POST /dsh/joining-cases", s.create)
+	mux.HandleFunc("GET /dsh/partner-applications/self", s.selfServiceApplication)
+	mux.HandleFunc("POST /dsh/partner-applications/self", s.selfServiceApplication)
 	mux.HandleFunc("GET /dsh/joining-cases", s.listForOperator)
 	mux.HandleFunc("GET /dsh/joining-cases/self", s.readForPartner)
 	mux.HandleFunc("GET /dsh/partners/actors/{actorId}/joining-case", s.readForPartnerActor)
@@ -64,7 +66,6 @@ func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/joining-cases/{caseId}", s.readForOperator)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/submit", s.submit)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/store-image", s.uploadStoreProfileImage)
-	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/internal-photos", s.uploadStoreInternalPhoto)
 	mux.HandleFunc("POST /dsh/operator/joining-cases/{caseId}/store-image", s.uploadOperatorStoreProfileImage)
 	mux.HandleFunc("GET /dsh/joining-cases/{caseId}/proof-image", s.downloadJoiningCaseProofImage)
 	mux.HandleFunc("GET /dsh/joining-cases/{caseId}/proof-details", s.readJoiningCaseProofDetails)
@@ -223,7 +224,7 @@ func (s *JoiningCaseServer) review(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	decision := string(input.Decision)
-	result, err := s.service.Review(r.Context(), r.PathValue("caseId"), decision, input.CorrectionReason, input.ExpectedTermsPolicyVersion, expected, idempotency, acting, correlation)
+	result, err := s.service.Review(r.Context(), r.PathValue("caseId"), decision, input.CorrectionReason, expected, idempotency, acting, correlation)
 	if err != nil {
 		log.Printf("joining case review failed case=%s: %v", r.PathValue("caseId"), err)
 		writeJoiningCaseError(w, err)
@@ -390,12 +391,12 @@ func writeJoiningCaseError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "POLICY_VERSION_CONFLICT", "partner financial terms changed after they were read; reload the active policy")
 	case errors.Is(err, joiningcase.ErrOperatorNotActive):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active control operator session is required")
+	case errors.Is(err, joiningcase.ErrSelfServiceApplicantIdentityMismatch):
+		writeError(w, http.StatusConflict, "APPLICANT_IDENTITY_CHANGED", "the verified applicant account no longer matches this case")
 	case errors.Is(err, joiningcase.ErrPartnerSessionForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active app-partner session is required")
-	case errors.Is(err, joiningcase.ErrFieldSessionForbidden):
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "an eligible app-field session is required")
 	case errors.Is(err, joiningcase.ErrStoreProfileMediaSessionForbidden):
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "an eligible Field or Partner session is required")
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active Partner session is required")
 	case errors.Is(err, postgres.ErrJoiningCaseServiceCity):
 		writeError(w, http.StatusConflict, "SERVICE_CITY_UNAVAILABLE", "an active service city is required")
 	case errors.Is(err, postgres.ErrCatalogVerticalNotFound):

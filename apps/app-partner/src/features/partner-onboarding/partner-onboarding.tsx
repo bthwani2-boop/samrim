@@ -1,9 +1,11 @@
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type FulfillmentMode, joiningCaseStateLabel } from "@bthwani/dsh";
 import { useMemo } from "react";
+import { useRouter } from "expo-router";
 import { ActivityIndicator, Text, View } from "react-native";
 
 import { JoiningCaseCorrection } from "./joining-case-correction";
+import { partnerOnboardingNextStep } from "./partner-onboarding-next-step";
 import { usePartnerStoreContext } from "./partner-store-context";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 
@@ -14,12 +16,13 @@ function fulfillmentModeLabel(mode: FulfillmentMode): string {
 }
 
 export function PartnerOnboarding() {
-const theme = useAppearanceTheme();
+  const router = useRouter();
+  const theme = useAppearanceTheme();
   const { cities, citiesError, state, update, reload } = usePartnerStoreContext();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
 
   if (state.kind === "loading") return <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة بيانات الانضمام" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة بيانات الانضمام…</Text></View>;
-  if (state.kind === "empty") return <View style={styles.state}><Text style={styles.muted}>لم يُنشأ ملف الانضمام الأول للشريك بعد.</Text><BthwaniButton label="إعادة القراءة" onPress={() => void reload()} variant="secondary" /></View>;
+  if (state.kind === "empty") return <View style={styles.state}><Text style={styles.muted}>لا يوجد ملف انضمام مرتبط بحسابك حتى الآن. تواصل مع قسم الشركاء لبدء ملف موثق؛ لا يمكن إنشاء متجر من هذه الشاشة قبل التحقق من الهوية والأهلية.</Text><BthwaniButton label="إعادة القراءة" onPress={() => void reload()} variant="secondary" /></View>;
   if (state.kind === "error") return <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة بيانات الانضمام من المنصة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void reload()} variant="secondary" /></View>;
   const cityName = cities.find((city) => city.id === state.value.case.serviceCityId)?.displayNameAr || "مدينة غير محددة";
   return (
@@ -27,10 +30,13 @@ const theme = useAppearanceTheme();
       <Text style={styles.sectionTitle}>انضمام الشريك</Text>
       <Text selectable style={styles.value}>{state.value.case.businessName}</Text>
       <Text style={styles.muted}>الحالة: {joiningCaseStateLabel(state.value.case.state)}</Text>
+      <Text style={styles.value}>الإجراء التالي</Text>
+      <Text style={styles.muted}>{partnerOnboardingNextStep(state.value.case.state, Boolean(state.value.case.store?.id))}</Text>
       <Text style={styles.muted}>مدينة المتجر الأول: {cityName}</Text>
       <Text style={styles.muted}>طرق الاستلام في المتجر الأول: {state.value.case.firstStoreFulfillmentModes.map(fulfillmentModeLabel).join(" · ") || "لم تُحدد"}</Text>
       {citiesError ? <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة مدن الخدمة، لذلك قد لا يظهر اسم المدينة.</Text><BthwaniButton label="إعادة قراءة المدن" onPress={() => void reload()} variant="secondary" /></View> : null}
       <JoiningCaseCorrection cities={cities} value={state.value} onUpdated={update} />
+      {state.value.case.state === "approved" && state.value.case.store?.id ? <BthwaniButton label="فتح ملف المتجر والشروط التجارية" onPress={() => router.push("/store")} variant="secondary" /> : null}
     </View>
   );
 }

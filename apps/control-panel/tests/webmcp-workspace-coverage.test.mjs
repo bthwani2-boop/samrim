@@ -23,6 +23,7 @@ test("catalog-only operator sees catalog but not partners, financial or privileg
   assert.ok(links.includes("/catalog/products"));
   assert.ok(links.includes("/workspace"));
   assert.ok(!links.includes("/partners"));
+  assert.ok(!links.includes("/fields"));
   assert.ok(!links.some(link => link.startsWith("/finance")));
   assert.ok(!links.includes("/access"));
 });
@@ -32,6 +33,7 @@ test("finance query routes stay discoverable without leaking other sections", ()
   assert.ok(links.includes("/finance"));
   assert.ok(links.some(link => link.startsWith("/finance?workflow=")));
   assert.ok(!links.includes("/catalog"));
+  assert.ok(!links.some(link => link.includes("settlement-field")));
 });
 
 test("policy editor respects supplemental finance permission and access admin gate", () => {
@@ -49,9 +51,10 @@ test("draft staging never enters finance, policies, HR, operations or access", (
   for (const path of ["/finance","/finance/beneficiary-settlement","/policies","/hr","/operations","/access","/workspace","/partners/actors/123"]) {
     assert.equal(canDraftWorkspaceFields(path), false, path);
   }
-  for (const path of ["/catalog","/catalog/import","/partners","/partners/stores/123","/marketing/content","/fields"]) {
+  for (const path of ["/catalog","/catalog/import","/partners","/partners/stores/123","/marketing/content"]) {
     assert.equal(canDraftWorkspaceFields(path), true, path);
   }
+  assert.equal(canDraftWorkspaceFields("/fields"), false);
   assert.equal(canDraftWorkspaceFields("/catalogue"), false);
 });
 

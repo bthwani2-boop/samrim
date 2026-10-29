@@ -1,11 +1,20 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "node:test";
 
 const root = resolve(import.meta.dirname, "../..");
 const script = readFileSync(resolve(root, "tools/mobile/build-development.ps1"), "utf8");
-const sourceApps = ["app-client", "app-partner", "app-captain", "app-field"];
+const sourceApps = ["app-client", "app-partner", "app-captain"];
+
+test("retired Field host cannot re-enter the EAS build inventory", () => {
+  assert.equal(existsSync(resolve(root, "apps/app-field/mobile.config.json")), false);
+  assert.equal(existsSync(resolve(root, "apps/app-field/package.json")), false);
+  assert.equal(existsSync(resolve(root, "apps/app-field/eas.json")), false);
+  const lock = readFileSync(resolve(root, "pnpm-lock.yaml"), "utf8");
+  assert.doesNotMatch(lock, /^  apps\/app-field:\s*$/m);
+  assert.doesNotMatch(script, /app-field/);
+});
 
 test("offline plan must exit before all secret reads, cloud calls and build submission", () => {
   const start = script.indexOf("if ($OfflinePlan) {");
@@ -40,7 +49,7 @@ for (const app of sourceApps) {
 }
 
 test("every application is eligible for parallel Android and iOS submissions", () => {
-  assert.match(script, /\$IosEnabled = \$App -in @\("app-client", "app-partner", "app-captain", "app-field"\)/);
+  assert.match(script, /\$IosEnabled = \$App -in @\("app-client", "app-partner", "app-captain"\)/);
   for (const app of sourceApps) {
     const eas = JSON.parse(readFileSync(resolve(root, "apps", app, "eas.json"), "utf8"));
     assert.equal(eas.build["ios-simulator"].extends, "development", app);

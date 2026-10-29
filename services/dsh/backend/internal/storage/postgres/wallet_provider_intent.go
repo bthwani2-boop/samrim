@@ -42,8 +42,6 @@ func ReadWalletProviderIntent(ctx context.Context, db *sql.DB, actorType, actorI
 	switch actorType {
 	case "partner":
 		query = `SELECT id,COALESCE(wallet_provider_key,'') FROM dsh.joining_cases WHERE partner_actor_id=$1 AND state='approved'`
-	case "field":
-		query = `SELECT id,COALESCE(wallet_provider_key,'') FROM dsh.field_admissions WHERE actor_id=$1 AND state='eligible' AND requires_profile_review=false`
 	case "captain":
 		query = `SELECT id,COALESCE(wallet_provider_key,'') FROM dsh.captain_admissions WHERE actor_id=$1 AND state='eligible' AND requires_profile_review=false`
 	default:

@@ -15,7 +15,7 @@ func TestBeneficiaryFinanceSessionRequiresMatchingSurface(t *testing.T) {
 	}{
 		{"partner on partner app", "partner", "app-partner", "partner-1", true},
 		{"captain on captain app", "captain", "app-captain", "captain-1", true},
-		{"field on field app", "field", "app-field", "field-1", true},
+		{"retired field on field app", "field", "app-field", "field-1", false},
 		{"partner on field app", "partner", "app-field", "partner-1", false},
 		{"captain on field app", "captain", "app-field", "captain-1", false},
 		{"field on captain app", "field", "app-captain", "field-1", false},

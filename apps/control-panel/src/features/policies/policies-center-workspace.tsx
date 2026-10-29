@@ -18,7 +18,7 @@ const policyGroups:ReadonlyArray<{id:PolicyGroup;label:string}> = [
 ];
 function matchesPolicyGroup(key: PolicyResourceKey, group:PolicyGroup) {
   if(group==="all")return true;
-  if(group==="delivery")return ["delivery-fees","store-type-cancellation","field-acquisition"].includes(key);
+  if(group==="delivery")return ["delivery-fees","store-type-cancellation"].includes(key);
   if(group==="wallets")return ["wallet-providers","captain-minimum-balance","partner-financial-terms"].includes(key);
   return key==="service-cities";
 }
@@ -127,7 +127,7 @@ export function PoliciesCenterWorkspace() {
     if (!canRead) return;
     const controller=new AbortController();
     setPreviews(current=>({...current,
-      "delivery-fees":{kind:"loading"},"field-acquisition":{kind:"loading"},
+      "delivery-fees":{kind:"loading"},
       "partner-financial-terms":{kind:"loading"},"captain-minimum-balance":{kind:"loading"}
     }));
     if (previewRevision < 0) return; // The revision intentionally forces a canonical policy refetch.

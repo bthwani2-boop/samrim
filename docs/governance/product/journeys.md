@@ -21,7 +21,7 @@ JOURNEY
 ≠ OPERATOR WORKSPACE SECTION
 ```
 
-The actor-facing surfaces are exactly `CLIENT`, `PARTNER`, `CAPTAIN`, `FIELD` and `OPERATOR`. Identity, DSH, WLT, adapters and external providers are owners/systems/rails, never actor-facing surfaces.
+The actor-facing surfaces are exactly `CLIENT`, `PARTNER`, `CAPTAIN` and `OPERATOR`. Field is a retired historical role only, not a referral channel or deployable surface. Identity, DSH, WLT, adapters and external providers are owners/systems/rails, never actor-facing surfaces.
 
 Authentication/session is a prerequisite lane except where role admission is itself the Journey outcome. A surface is listed in `SURFACES` only when it materially participates in the Journey outcome; a merely possible exception or contextual target does not count. Single-surface or owner-internal work remains a supporting subflow, policy/control lane, projection or explicit non-goal.
 
@@ -29,10 +29,10 @@ Authentication/session is a prerequisite lane except where role admission is its
 
 JOURNEY_ID: MANAGED_PARTICIPANT_ADMISSION
 OUTCOME: An eligible managed participant becomes a canonically resolved actor with the admitted high-level role and a usable role-scoped surface session.
-SURFACES: OPERATOR, PARTNER, CAPTAIN, FIELD
+SURFACES: OPERATOR, PARTNER, CAPTAIN
 OWNERS: IDENTITY, DSH
 CAPABILITIES: IDENTITY_ACTIVATION_SESSIONS
-ENTRY: Authorized DSH domain admission or eligibility exists for Partner, Captain or Field.
+ENTRY: Authorized DSH domain admission or eligibility exists for a Partner or Captain. Historical Field identity/standing remains separately governed for attribution and rights.
 EXIT: The target role is admitted and its target surface can authenticate and read owner-backed standing state.
 READBACK: Identity role/session readback plus DSH domain-standing readback.
 
@@ -43,11 +43,11 @@ OPERATOR
 → DSH candidate / eligibility
 → authorized Identity role-admission request
 → Identity actor resolution + role admission
-→ target PARTNER / CAPTAIN / FIELD activation and authentication
+→ target PARTNER / CAPTAIN activation and authentication
 → DSH standing readback
 ```
 
-Partner, Captain and Field each use their own role-scoped session. Eligibility, role admission, activation, authentication and resource authorization remain distinct. Client self-registration and Operator bootstrap/recovery remain access subflows.
+Partner and Captain each use a role-scoped app session. Retired Field sessions are not accepted; archived ledger data is read through authorized Finance records only. Eligibility, role admission, activation, authentication and resource authorization remain distinct. Client self-registration and Operator bootstrap/recovery remain access subflows.
 
 ### Failure / recovery
 
@@ -60,20 +60,19 @@ No surface grants its own role. Current task assignment never substitutes for st
 ## PARTNER_TO_VISIBLE_STORE — acquisition to customer-visible Store
 
 JOURNEY_ID: PARTNER_TO_VISIBLE_STORE
-OUTCOME: A legitimate prospect progresses through Field, Operator and Partner work to one published Store only after its bound Partner owner accepts the exact Store Commercial Agreement and Finance approves it; the Client then receives the separate customer-safe visibility readback.
-SURFACES: FIELD, OPERATOR, PARTNER, CLIENT
+OUTCOME: A legitimate prospect progresses through Partner self-service or Operator-assisted intake to one published Store only after its bound Partner owner accepts the exact Store Commercial Agreement and Finance approves it; the Client then receives the separate customer-safe visibility readback. New Field referral attribution is prohibited; prior attribution is audit history only.
+SURFACES: OPERATOR, PARTNER, CLIENT
 OWNERS: IDENTITY, DSH, WLT
 CAPABILITIES: PARTNER_ONBOARDING_STORE_PUBLICATION, IDENTITY_ACTIVATION_SESSIONS, CENTRAL_CATALOG, STORE_COMMERCIAL_AGREEMENT
-ENTRY: Eligible Field standing or authorized Operator-originated joining work starts a prospective Partner case.
+ENTRY: An authorized Operator-originated joining case or an Identity-verified Partner self-service first-Store application starts the prospective case; no new Field attribution can be attached.
 EXIT: The exact Store agreement is Partner-accepted and Finance-approved, initial catalog and final Operator readiness pass, and Store publication plus customer-safe readback are available.
-READBACK: Field, Operator and Partner read joining/publication state; Partner and Finance read the canonical agreement state; Client receives the resulting Store projection when catalog/serviceability visibility gates allow it.
+READBACK: Operator and Partner read joining/publication state; Finance and Partner read the canonical agreement state; Client receives the Store projection when visibility gates pass. Operator Finance retains historical Field-attribution and ledger readback, not reward issuance.
 
 ### Frontstage and handoffs
 
 ```text
-OPERATOR → Field candidate/standing
-DSH → Identity field-role request
-FIELD → JoiningCase work
+PROSPECT → verified self-service first-Store application from Partner entrance; DSH binds the canonical applicant actor and phone
+OPERATOR → alternatively create a Partner joining case without any Field attribution
 OPERATOR → review / correction / rejection / admission
 DSH → Identity partner-role request
 PARTNER → confirm/correct canonical onboarding data
@@ -81,10 +80,10 @@ DSH → Store ownership + Service City + Commerce Vertical + Store Type + durabl
 WLT → Store-specific agreement proposal
 PARTNER → accept exact agreement version and rates
 FINANCE → approve; WLT activates only after both gates
-FIELD → authorized initial catalog work for the bound joining Store
+PARTNER / OPERATOR → authorized initial Store catalog and media readiness
 OPERATOR → final readiness and publication approval
 DSH → Store publication
-DSH → idempotent Partner Go-Live/catalog handoff and Field mission-complete notification from publication readback
+DSH → idempotent Partner Go-Live/catalog handoff without Field reward issuance
 CLIENT → customer-safe Store projection
 ```
 
@@ -92,7 +91,7 @@ Store publication is not current orderability. Durable enabled fulfillment modes
 
 ### Failure / recovery
 
-Missing/incompatible first-Store facts, correction loops, duplicate logical case, stale version, suspended Field, duplicate-actor risk, missing Partner acceptance, missing Finance approval and interrupted Identity/WLT handoff recover through canonical readback without rebinding the case, actor or agreement version. Missing or inactive agreement blocks publication.
+Missing/incompatible first-Store facts, correction loops, duplicate logical case, stale version, suspended Field, self-service Identity phone/actor mismatch, duplicate-actor risk, missing Partner acceptance, missing Finance approval and interrupted Identity/WLT handoff recover through canonical readback without rebinding the case, actor or agreement version. Missing or inactive agreement blocks publication.
 
 ### Negative space
 
@@ -130,20 +129,19 @@ No numeric capacity engine, mandatory daily check-in, queue forecaster or AI pre
 ## CATALOG_TO_CUSTOMER_OFFER — canonical catalog to customer-safe assortment
 
 JOURNEY_ID: CATALOG_TO_CUSTOMER_OFFER
-OUTCOME: Field's authorized initial onboarding and later Operator/Partner catalog work produce one DSH-governed customer-safe Store assortment without exposing internal ownership topology to the Client.
-SURFACES: FIELD, OPERATOR, PARTNER, CLIENT
+OUTCOME: Operator shared-catalog and Partner Store-catalog work produce one DSH-governed customer-safe Store assortment without exposing internal ownership topology to the Client.
+SURFACES: OPERATOR, PARTNER, CLIENT
 OWNERS: DSH
 CAPABILITIES: CENTRAL_CATALOG
-ENTRY: An authorized Field initial-catalog, Operator shared-catalog or Partner Store-assortment action begins.
+ENTRY: An authorized Operator shared-catalog or Partner Store-assortment action begins.
 EXIT: Eligible Product/Variant/StoreOffer content is published or intentionally remains ineligible.
-READBACK: Field receives authorized pre-Go-Live mutation readback, Operator/Partner receive their authorized mutation readback, and the Client storefront readback comes from DSH.
+READBACK: Operator/Partner receive their authorized mutation readback, and the Client storefront readback comes from DSH.
 
 ### Frontstage and handoffs
 
 ```text
 OPERATOR → vertical / taxonomy / shared Product / Variant / proposal review / import
-FIELD (before Go-Live, assigned Store only) → shared search/scan, initial StoreOffers, Store-local items, import and Shared proposals/corrections
-PARTNER (after Go-Live) → ongoing Store offers / local items / price / availability / section / modifier
+PARTNER (before and after Go-Live) → Store offers / local items / price / availability / section / modifier
 DSH → canonical validation + CUSTOMER_VISIBLE_OFFER evaluation
 CLIENT → coherent storefront assortment
 ```
@@ -157,7 +155,7 @@ Invalid taxonomy, identifier conflict, stale price/offer, invalid modifier/quant
 ### Negative space
 
 Catalog visibility does not prove Store orderability, serviceability or checkout eligibility. Catalog is not PIM/ERP/POS authority.
-Field initial write authority ends at Go-Live and is enforced by DSH; Field cannot approve or merge a Shared identity. A Store's customer-facing assortment may combine Shared and Store-scoped Products without exposing that ownership split.
+Field acquisition attribution grants no Store catalog write authority. Only authorized Partner/Operator paths manage catalog content. A Store's customer-facing assortment may combine Shared and Store-scoped Products without exposing that ownership split.
 
 ## DISCOVERY_TO_COMMERCE_ENTRY — governed discovery and promotion to valid target
 
@@ -486,27 +484,27 @@ Store-retained sale proceeds are not re-credited as a duplicate Partner wallet e
 ## BENEFICIARY_SETTLEMENT — earned entitlement to reconciled payout
 
 JOURNEY_ID: BENEFICIARY_SETTLEMENT
-OUTCOME: Eligible Partner, BThwani Captain or Field entitlement reaches an authorized reconciled payout/settlement result without surfaces becoming ledger writers; the first qualifying Field-attributed Store that becomes `STORE_CLIENT_VISIBLE` produces one acquisition earning per joining case.
-SURFACES: PARTNER, CAPTAIN, FIELD, OPERATOR
+OUTCOME: Eligible Partner, BThwani Captain or Field entitlement reaches an authorized reconciled payout/settlement result without surfaces becoming ledger writers; new Store publication does not create any Field acquisition earning.
+SURFACES: PARTNER, CAPTAIN, OPERATOR
 OWNERS: DSH, WLT
 CAPABILITIES: PARTNER_CAPTAIN_FIELD_EARNINGS_SETTLEMENT
 ENTRY: DSH qualifying evidence has produced a WLT entitlement eligible for settlement.
 EXIT: Payout is executed with immutable approved destination evidence and independently reconciled, or remains explicitly held/reconciling.
-READBACK: Beneficiary surface and Finance read canonical WLT settlement state.
+READBACK: Partner and Captain beneficiary surfaces plus Operator Finance read canonical WLT settlement state. Historical Field entitlements and payouts remain auditable through authorized Finance reads.
 
 ### Frontstage and handoffs
 
 ```text
 DSH qualifying event
 → WLT entitlement / eligibility / hold
-→ for the first qualifying `STORE_CLIENT_VISIBLE` Store only, WLT records exactly one Field acquisition earning per joining case
+→ previously posted Field earnings remain archived in WLT; new publication never posts Field rewards
 → PARTNER owner optionally assigns one eligible beneficiary to each Store; WLT records separate Store-scoped recipient assignments and resolves the beneficiary's verified destination
 → OPERATOR Finance preparation + approval + execution evidence
 → WLT preserves Store attribution and partitions payout groups by effective recipient and verified destination
 → independent reconciliation
 → WLT completion
-→ PARTNER / CAPTAIN / FIELD readback
-→ Field reward notification only after WLT entitlement readback
+→ PARTNER / CAPTAIN beneficiary readback; OPERATOR Finance reads historical Field earnings and payout
+→ no new Field notifications are issued
 ```
 
 ### Failure / recovery
@@ -515,7 +513,7 @@ Destination change, stale approval, duplicate execution, provider uncertainty an
 
 ### Negative space
 
-Store-affiliated Captain remuneration remains outside BThwani WLT earnings semantics. Field acquisition entitlement and payout are downstream of Store publication and never gate publication; repeated visibility or publication does not create another entitlement.
+Store-affiliated Captain remuneration remains outside BThwani WLT earnings semantics. Historical Field ledger entries do not gate Store publication; new visibility or publication cannot create a Field entitlement.
 
 ## Supporting subflows and cross-cutting lanes
 

@@ -23,7 +23,7 @@ const StoreCommercialAgreementWorkspace = dynamic(() => import("./store-commerci
 const StoreTypeCommissionDefaultWorkspace = dynamic(() => import("./store-type-commission-default-workspace").then((module) => module.StoreTypeCommissionDefaultWorkspace));
 
 type Source = "custody" | "commissions" | "batches" | "withdrawals";
-type Workflow = "custody" | "commissions" | "batches" | "withdrawals" | "settlement-partner" | "settlement-captain" | "settlement-field" | "agreements";
+type Workflow = "custody" | "commissions" | "batches" | "withdrawals" | "settlement-partner" | "settlement-captain" | "agreements";
 type FinancialRow = Readonly<{ amountMinor?: number;
   key: string;
   source: Source;
@@ -60,7 +60,6 @@ const workflowLabels: Record<Workflow, string> = {
   withdrawals: "سحوبات العملاء الاستثنائية",
   "settlement-partner": "مستحقات الشركاء",
   "settlement-captain": "مستحقات الكباتن",
-  "settlement-field": "مستحقات الميدانيين",
   agreements: "اتفاقات المتاجر",
 };
 
@@ -152,7 +151,7 @@ function FinanceTask({
     <StoreTypeCommissionDefaultWorkspace />
     <StoreCommercialAgreementWorkspace />
   </div>;
-  const actorType = workflow === "settlement-captain" ? "captain" : workflow === "settlement-field" ? "field" : "partner";
+  const actorType = workflow === "settlement-captain" ? "captain" : "partner";
   const view = workflow === "batches" ? "batches" : ["beneficiaries", "batches", "reconciliation"].includes(queryValue(query, "view"))
     ? queryValue(query, "view") as "beneficiaries" | "batches" | "reconciliation" : "beneficiaries";
   return <BeneficiarySettlementWorkspace actorType={actorType} initialQuery={{

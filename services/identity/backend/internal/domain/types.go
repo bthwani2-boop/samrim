@@ -378,7 +378,6 @@ var roleSurface = map[string]string{
 	"client":   "app-client",
 	"partner":  "app-partner",
 	"captain":  "app-captain",
-	"field":    "app-field",
 	"operator": "control-panel",
 }
 
@@ -391,7 +390,7 @@ func CanProvisionRole(caller, role string) bool {
 	role = strings.ToLower(strings.TrimSpace(role))
 	switch strings.ToLower(strings.TrimSpace(caller)) {
 	case "dsh":
-		return role == "partner" || role == "captain" || role == "field"
+		return role == "partner" || role == "captain"
 	default:
 		return false
 	}
@@ -406,9 +405,9 @@ func CanReadRole(caller, role string) bool {
 	role = strings.ToLower(strings.TrimSpace(role))
 	switch caller {
 	case "dsh":
-		return role == "partner" || role == "captain" || role == "field" || role == "operator"
+		return role == "partner" || role == "captain" || role == "operator"
 	case "control-panel":
-		return role == "client" || IsManagedRole(role) || role == "operator"
+		return role == "client" || role == "field" || IsManagedRole(role) || role == "operator"
 	default:
 		return false
 	}
@@ -445,7 +444,7 @@ func RequiresEnrollmentToken(role string) bool {
 
 func IsManagedRole(role string) bool {
 	switch strings.ToLower(strings.TrimSpace(role)) {
-	case "partner", "captain", "field":
+	case "partner", "captain":
 		return true
 	default:
 		return false

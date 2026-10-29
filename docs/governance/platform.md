@@ -15,21 +15,20 @@ Deployable host names, repository paths, package identities and current runtime 
 
 One natural person is represented cross-boundary by one permanent `actor_id`.
 
-The current high-level BThwani roles/personas are exactly:
+The currently admitted BThwani roles/personas are:
 
 - `client`;
 - `partner`;
 - `captain`;
-- `field`;
 - `operator`.
 
 One Human Actor may hold multiple roles. Role admission, credentials and sessions never create a second human identity.
 
-`field` means Partner Acquisition and Onboarding Representative only. It does not create a generic field-operations domain.
+The retired `field` role is a historical compatibility marker only; new admissions, rewards and independent Field sessions are not admitted.
 
 `operator` is the human persona for the Operator workspace. First-Operator bootstrap is a one-time Identity lifecycle, not a second role or Product layer.
 
-A BThwani **employee** is an HR employment relationship with a stable employee record, not an Identity role. A staff employee needs no platform account. Employee title, department and managerial seniority never grant Operator permissions. Captains, field-acquisition representatives, Partners and Store staff are not enrolled in BThwani HR merely because they participate in the platform. An employee approved for Operator access keeps any existing canonical Human Actor identity and receives only the separately authorized `operator` role.
+A BThwani **employee** is an HR employment relationship with a stable employee record, not an Identity role. A staff employee needs no platform account. Employee title, department and managerial seniority never grant Operator permissions. Captains, Partners and Store staff are not enrolled in BThwani HR merely because they participate in the platform. An employee approved for Operator access keeps any existing canonical Human Actor identity and receives only the separately authorized `operator` role.
 
 `partner` means Identity admission to the merchant-side Partner workspace. It does not by itself prove ownership of any Store. Store ownership and bounded Store operational authority are DSH-owned resource relationships. A Partner actor may own one Store, own several Stores, hold an explicit Store-scoped access grant for another Store, or combine those relationships without creating another role or identity.
 
@@ -45,7 +44,7 @@ A delivery recipient may be a person other than the purchasing Client. A recipie
 
 A Surface is an actor-facing deployable presentation/composition host for admitted Product work.
 
-The five actor-facing surfaces are Client, Partner, Captain, Field and Operator. A Surface may own its shell, navigation, composition, transient presentation state and platform adapters. It never becomes the canonical owner of the business facts it renders or mutates.
+The four actor-facing surfaces are Client, Partner, Captain and Operator. Partner self-service and Operator intake are the only current onboarding channels and share the DSH-owned joining lifecycle. Field applications, new acquisition attribution and new reward issuance are retired; pre-existing Identity, DSH and WLT facts remain auditable until obligations are legally resolved. A Surface may own its shell, navigation, composition, transient presentation state and platform adapters. It never becomes the canonical owner of the business facts it renders or mutates.
 
 Brand unity does not imply identical information architecture or shell across roles.
 

@@ -2,7 +2,7 @@ import { StoreWorkspace } from "../../../../../src/features/stores/store-workspa
 
 export default async function PartnerStorePage({ params }: { params: Promise<{ storeId: string }> }) {
   const { storeId } = await params;
-  return <StoreWorkspace storeId={storeId} />;
+  return <StoreWorkspace key={storeId} storeId={storeId} />;
 }
 
 export const metadata = { title: "ملف المتجر" };

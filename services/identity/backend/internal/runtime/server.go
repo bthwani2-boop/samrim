@@ -349,7 +349,6 @@ var developmentActorEnvironment = []struct {
 	{role: "client", name: "IDENTITY_DEVELOPMENT_CLIENT_ACTOR_ID"},
 	{role: "partner", name: "IDENTITY_DEVELOPMENT_PARTNER_ACTOR_ID"},
 	{role: "captain", name: "IDENTITY_DEVELOPMENT_CAPTAIN_ACTOR_ID"},
-	{role: "field", name: "IDENTITY_DEVELOPMENT_FIELD_ACTOR_ID"},
 	{role: "operator", name: "IDENTITY_DEVELOPMENT_OPERATOR_ACTOR_ID"},
 }
 

@@ -104,12 +104,52 @@ func TestConcurrentCaptainOffersYieldOneCODHoldAndReleasableWinner(t *testing.T)
 		}
 	}
 	checkActive(winning)
+	beforeRelease, err := ReadCaptainWalletState(s.ctx, s.db, winning)
+	if err != nil || beforeRelease.HeldMinor != 1000 || beforeRelease.AvailableMinor != 2000 {
+		t.Fatalf("winner wallet before release: %+v err=%v", beforeRelease, err)
+	}
+	var ledgerEntriesBefore int
+	var ledgerBalanceBefore int64
+	if err := s.db.QueryRowContext(s.ctx, `SELECT COUNT(*),COALESCE(SUM(CASE WHEN direction='CREDIT' THEN amount_minor ELSE -amount_minor END),0)
+		FROM wlt.ledger_entries WHERE account_code='CAPTAIN_WALLET' AND actor_type='captain' AND actor_id=$1 AND currency='YER'`, winning).
+		Scan(&ledgerEntriesBefore, &ledgerBalanceBefore); err != nil {
+		t.Fatalf("read winner ledger before release: %v", err)
+	}
 	released, repeated, err := ReleaseCaptainCOD(s.ctx, s.db, CaptainCODReservationInput{
 		OrderID: orderID, PaymentIntentID: payment.ID, CaptainActorID: winning,
 		IdempotencyKey: winning + "-release", CorrelationID: winning + "-release-correlation",
 	})
 	if err != nil || repeated || released.State != "RELEASED" || released.ID != winner.ID {
 		t.Fatalf("release first winner: %+v repeated=%t err=%v", released, repeated, err)
+	}
+	replayed, repeated, err := ReleaseCaptainCOD(s.ctx, s.db, CaptainCODReservationInput{
+		OrderID: orderID, PaymentIntentID: payment.ID, CaptainActorID: winning,
+		IdempotencyKey: winning + "-release-retry", CorrelationID: winning + "-release-retry-correlation",
+	})
+	if err != nil || !repeated || replayed.ID != winner.ID || replayed.State != "RELEASED" {
+		t.Fatalf("release retry after terminal state: %+v repeated=%t err=%v", replayed, repeated, err)
+	}
+	if _, _, err := FinalizeCaptainCOD(s.ctx, s.db, CaptainCODReservationInput{
+		OrderID: orderID, PaymentIntentID: payment.ID, CaptainActorID: winning,
+		IdempotencyKey: winning + "-finalize-after-release", CorrelationID: winning + "-finalize-after-release-correlation",
+	}); !errors.Is(err, ErrCaptainCODReservationState) {
+		t.Fatalf("released reservation must not debit Captain wallet: %v", err)
+	}
+	afterRelease, err := ReadCaptainWalletState(s.ctx, s.db, winning)
+	if err != nil || afterRelease.LedgerBalanceMinor != beforeRelease.LedgerBalanceMinor || afterRelease.HeldMinor != 0 ||
+		afterRelease.AvailableMinor != beforeRelease.AvailableMinor+beforeRelease.HeldMinor {
+		t.Fatalf("winner wallet after release: before=%+v after=%+v err=%v", beforeRelease, afterRelease, err)
+	}
+	var ledgerEntriesAfter int
+	var ledgerBalanceAfter int64
+	if err := s.db.QueryRowContext(s.ctx, `SELECT COUNT(*),COALESCE(SUM(CASE WHEN direction='CREDIT' THEN amount_minor ELSE -amount_minor END),0)
+		FROM wlt.ledger_entries WHERE account_code='CAPTAIN_WALLET' AND actor_type='captain' AND actor_id=$1 AND currency='YER'`, winning).
+		Scan(&ledgerEntriesAfter, &ledgerBalanceAfter); err != nil {
+		t.Fatalf("read winner ledger after release: %v", err)
+	}
+	if ledgerEntriesAfter != ledgerEntriesBefore || ledgerBalanceAfter != ledgerBalanceBefore || ledgerBalanceAfter != beforeRelease.LedgerBalanceMinor {
+		t.Fatalf("COD hold release changed Captain ledger: entries %d->%d balance %d->%d wallet=%d",
+			ledgerEntriesBefore, ledgerEntriesAfter, ledgerBalanceBefore, ledgerBalanceAfter, beforeRelease.LedgerBalanceMinor)
 	}
 	second, repeated, err := ReserveCaptainCOD(s.ctx, s.db, CaptainCODReservationInput{
 		OrderID: orderID, PaymentIntentID: payment.ID, CaptainActorID: losing,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alert, Button, Flex, Grid, Input, Segmented, Table, Tag, Typography, type TableColumnsType } from "antd";
 import { financeAmount } from "./finance-amount";
 
 type ActorType = "customer" | "partner" | "captain" | "field";
@@ -20,9 +21,9 @@ type Statement = Readonly<{
   openingBalanceMinor: number; closingBalanceMinor: number; currentBalanceMinor: number;
   creditsMinor: number; debitsMinor: number; entries: readonly StatementEntry[]; nextCursor?: string;
 }>;
-const actors: ReadonlyArray<Readonly<{ key: ActorType; label: string; icon: string }>> = [
-  { key: "customer", label: "العملاء", icon: "◉" }, { key: "partner", label: "الشركاء", icon: "▣" },
-  { key: "captain", label: "الكباتن", icon: "◈" }, { key: "field", label: "الميدانيون", icon: "✧" },
+const actors: Array<{ value: ActorType; label: string }> = [
+  { value: "customer", label: "العملاء" }, { value: "partner", label: "الشركاء" },
+  { value: "captain", label: "الكباتن" }, { value: "field", label: "الميدانيون" },
 ];
 
 export function money(minor: number): string {
@@ -62,6 +63,7 @@ export function FinanceWalletRegistry({ initialActorType = "customer", onClose }
   const [statementCursor, setStatementCursor] = useState("");
   const requestID = useRef(0);
   const detailID = useRef(0);
+  const selectionTrigger = useRef<HTMLElement | null>(null);
 
   const load = useCallback(async (type: ActorType, after = "") => {
     const request = ++requestID.current;
@@ -110,43 +112,77 @@ export function FinanceWalletRegistry({ initialActorType = "customer", onClose }
     if (selected) void loadStatement(selected);
     return () => { detailID.current++; };
   }, [selected, loadStatement]);
+  const screens = Grid.useBreakpoint();
   const filtered = useMemo(() => items.filter((row) => [labelFor(row), row.actorId, row.phoneMasked ?? "", row.walletIdentifierMasked ?? ""].some((value) => value.toLocaleLowerCase("ar").includes(search.trim().toLocaleLowerCase("ar")))), [items, search]);
+  const columns: TableColumnsType<WalletRow> = [
+    {
+      title: "صاحب المحفظة",
+      key: "beneficiary",
+      render: (_, row) => <Button type="link" className="fc-wallet-person-trigger" onClick={(event) => { selectionTrigger.current = event.currentTarget; setSelected(row); }}>
+        <Flex vertical align="flex-start" gap={2}>
+          <strong>{labelFor(row)}</strong>
+          <Typography.Text type="secondary" dir="auto" className="fc-wallet-actor-id">{row.actorId}</Typography.Text>
+        </Flex>
+      </Button>,
+    },
+    { title: "الرصيد الدفتري", dataIndex: "currentBalanceMinor", align: "end", responsive: ["md"], render: (value: number) => <Typography.Text dir="ltr" style={{ fontVariantNumeric: "tabular-nums" }}>{money(value)}</Typography.Text> },
+    { title: "المحجوز", dataIndex: "heldMinor", align: "end", responsive: ["md"], render: (value: number) => <Typography.Text dir="ltr" style={{ fontVariantNumeric: "tabular-nums" }}>{money(value)}</Typography.Text> },
+    { title: "المتاح", dataIndex: "availableMinor", align: "end", responsive: ["md"], render: (value: number) => <Typography.Text strong dir="ltr" style={{ fontVariantNumeric: "tabular-nums" }}>{money(value)}</Typography.Text> },
+    {
+      title: "التفاصيل",
+      key: "details",
+      render: (_, row) => <Button type="link" onClick={(event) => { selectionTrigger.current = event.currentTarget; setSelected(row); }}>فتح الكشف</Button>,
+    },
+  ];
+
+  const closeStatement = () => {
+    setSelected(null);
+    requestAnimationFrame(() => selectionTrigger.current?.focus());
+  };
 
   return <section className="fc-wallets" aria-label="محافظ أصحاب المصلحة">
     <div className="fc-section-heading">
       <div><h2>المحافظ وأصحابها</h2><p>أرصدة فعلية من دفتر WLT · آخر 30 يومًا للحركات · لا تشمل أرصدة مزودي الدفع الخارجيين</p></div>
-      {onClose ? <button type="button" className="fc-btn" onClick={onClose}>العودة إلى القيادة</button> : null}
+      {onClose ? <Button onClick={onClose}>العودة إلى القيادة</Button> : null}
     </div>
-    <fieldset className="fc-actor-types" style={{ border: 0, padding: 0, margin: 0 }} aria-label="صاحب المحفظة">
-      {actors.map((actor) => <button type="button" key={actor.key} aria-pressed={actorType === actor.key} onClick={() => { setSelected(null); setSearch(""); setActorType(actor.key); }}>
-        <span aria-hidden="true">{actor.icon}</span>{actor.label}
-      </button>)}
-    </fieldset>
+    <div className="fc-actor-types"><Segmented<ActorType> block options={actors} value={actorType} aria-label="صاحب المحفظة" onChange={(value) => { setSelected(null); setSearch(""); setActorType(value); }} /></div>
     <div className="fc-wallets-layout" data-detail={Boolean(selected)}>
       <div className="fc-register">
-        <div className="fc-toolbar"><label className="fc-search"><span aria-hidden="true">⌕</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ابحث في المحافظ المحمّلة بالاسم أو الرقم" aria-label="البحث في المحافظ المحمّلة" /></label><span className="fc-count">{items.length.toLocaleString("ar-YE")} سجل محمّل{cursor ? " · توجد صفحات أخرى" : ""}</span></div>
+        <Flex align="center" gap={8} wrap>
+          <Input.Search value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ابحث في المحافظ المحمّلة بالاسم أو الرقم" aria-label="البحث في المحافظ المحمّلة" allowClear style={{ flex: "1 1 220px", minWidth: 0 }} />
+          <Tag className="fc-count">{items.length.toLocaleString("ar-YE")} سجل محمّل{cursor ? " · توجد صفحات أخرى" : ""}</Tag>
+        </Flex>
         {loading ? <p className="fc-placeholder" role="status">جارٍ قراءة المحافظ...</p> : null}
-        {error ? <div className="fc-warning" role="alert">{error} <button type="button" onClick={() => void load(actorType)}>إعادة المحاولة</button></div> : null}
+        {error ? <Alert type="error" showIcon message={error} action={<Button type="link" onClick={() => void load(actorType)}>إعادة المحاولة</Button>} /> : null}
         {!loading && !error && filtered.length === 0 ? <p className="fc-placeholder">{search ? "لا توجد محافظ مطابقة ضمن السجلات المحمّلة." : "لا توجد محافظ مسجلة ضمن هذه الفئة في الفترة المحددة."}</p> : null}
-        {filtered.length > 0 ? <div className="fc-table-scroll"><table className="fc-table"><thead><tr><th>صاحب المحفظة</th><th>الرصيد الدفتري</th><th>المحجوز</th><th>المتاح</th><th>التفاصيل</th></tr></thead><tbody>
-          {filtered.map((row) => <tr key={row.actorId} aria-selected={selected?.actorId === row.actorId} ><td><button className="fc-person" type="button" onClick={() => setSelected(row)}><strong>{labelFor(row)}</strong><small dir="auto">{row.actorId}</small></button></td><td dir="ltr">{money(row.currentBalanceMinor)}</td><td dir="ltr">{money(row.heldMinor)}</td><td dir="ltr"><strong>{money(row.availableMinor)}</strong></td><td><button className="fc-inline-action" type="button" onClick={() => setSelected(row)}>فتح الكشف ←</button></td></tr>)}
-        </tbody></table></div> : null}
-        {cursor ? <div className="fc-register-footer"><span>استعرض الصفحات لاستكمال القائمة قبل استخلاص الإجماليات.</span><button type="button" className="fc-btn" disabled={loadingMore} onClick={() => void load(actorType, cursor)}>{loadingMore ? "جارٍ التحميل…" : "المزيد من المحافظ"}</button></div> : null}
+        {filtered.length > 0 && !error ? <section aria-label="قائمة المحافظ"><Table<WalletRow>
+          aria-label="قائمة المحافظ"
+          rowKey="actorId"
+          columns={columns}
+          dataSource={filtered}
+          pagination={false}
+          size="small"
+          loading={loading}
+          scroll={screens.md ? { x: 980, y: "65dvh" } : { y: "65dvh" }}
+          onRow={(row) => ({ "aria-selected": selected?.actorId === row.actorId })}
+          locale={{ emptyText: "لا توجد محافظ مطابقة ضمن السجلات المحمّلة." }}
+        /></section> : null}
+        {cursor ? <Flex className="fc-register-footer" align="center" justify="space-between" gap={8} wrap><span>استعرض الصفحات لاستكمال القائمة قبل استخلاص الإجماليات.</span><Button disabled={loadingMore} loading={loadingMore} onClick={() => void load(actorType, cursor)}>المزيد من المحافظ</Button></Flex> : null}
       </div>
       {selected ? <aside className="fc-wallet-inspector" aria-label="كشف محفظة محددة">
-        <div className="fc-inspector-header"><div><small>كشف محفظة معتمد</small><h3>{labelFor(selected)}</h3><span dir="auto">{selected.actorId}</span></div><button type="button" onClick={() => setSelected(null)} aria-label="إغلاق الكشف">×</button></div>
+        <div className="fc-inspector-header"><div><small>كشف محفظة معتمد</small><h3>{labelFor(selected)}</h3><span dir="auto">{selected.actorId}</span></div><Button type="text" size="small" onClick={closeStatement} aria-label="إغلاق الكشف">×</Button></div>
         <div className="fc-balance-hero"><small>الرصيد الدفتري الحالي</small><strong dir="ltr">{money(selected.currentBalanceMinor)}</strong></div>
         <div className="fc-mini-metrics"><div><small>محجوز</small><strong dir="ltr">{money(selected.heldMinor)}</strong></div><div><small>متاح</small><strong dir="ltr">{money(selected.availableMinor)}</strong></div></div>
         <div className="fc-mini-metrics"><div><small>إضافات الفترة</small><strong dir="ltr">{money(selected.creditsMinor)}</strong></div><div><small>خصومات الفترة</small><strong dir="ltr">{money(selected.debitsMinor)}</strong></div></div>
         <h4>الحركات المالية</h4>
         {statementLoading && !statement ? <p className="fc-placeholder">جارٍ قراءة الكشف...</p> : null}
-        {statementError ? <div className="fc-warning" role="alert">{statementError}<button type="button" onClick={() => void loadStatement(selected)}>إعادة المحاولة</button></div> : null}
+        {statementError ? <Alert type="error" showIcon message={statementError} action={<Button type="link" onClick={() => void loadStatement(selected)}>إعادة المحاولة</Button>} /> : null}
         {statement && entries.length === 0 ? <p className="fc-placeholder">لا توجد حركات ضمن الفترة.</p> : null}
         <div className="fc-statement-entries">{entries.map((entry) => <div key={entry.transactionId + ":" + entry.sourceId} className="fc-statement-entry">
           <div><strong>{entry.transactionType.replaceAll("_", " ")}</strong><small dir="auto">{entry.order?.storeName || entry.sourceId || entry.sourceType}</small><small>{new Date(entry.createdAt).toLocaleString("ar-YE")}</small></div>
           <span className={entry.direction === "CREDIT" ? "is-credit" : "is-debit"} dir="ltr">{entry.direction === "CREDIT" ? "+" : "−"} {money(entry.amountMinor)}</span>
         </div>)}</div>
-        {statementCursor ? <button type="button" className="fc-btn" disabled={statementLoading} onClick={() => void loadStatement(selected, statementCursor)}>{statementLoading ? "جارٍ التحميل…" : "المزيد من الحركات"}</button> : null}
+        {statementCursor ? <Button disabled={statementLoading} loading={statementLoading} onClick={() => void loadStatement(selected, statementCursor)}>المزيد من الحركات</Button> : null}
         <p className="fc-note">الرصيد الحالي قد يختلف عن الرصيد الختامي للفترة. لا تُنفذ أي تسوية من هذه المعاينة.</p>
       </aside> : null}
     </div>

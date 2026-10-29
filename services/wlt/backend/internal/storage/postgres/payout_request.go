@@ -70,6 +70,9 @@ func CreatePayoutIntent(ctx context.Context, db *sql.DB, cipher *DestinationCiph
 	if input.ActorType == "partner" {
 		return PayoutRequestRecord{}, false, ErrPartnerPayoutScopeRequired
 	}
+	if input.ActorType == "field" {
+		return PayoutRequestRecord{}, false, ErrPayoutInvalidInput
+	}
 	input.IdentityFacts = input.IdentityFacts.normalized()
 	input.AmountMode = strings.ToUpper(strings.TrimSpace(input.AmountMode))
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)

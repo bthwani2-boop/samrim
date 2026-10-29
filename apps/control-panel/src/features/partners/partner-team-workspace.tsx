@@ -1,7 +1,7 @@
 "use client";
 import type { StoreAccessGrant } from "@bthwani/dsh";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { identityFetch } from "../../session/identity-fetch";
 import type { OperatorPartnerTeamPage } from "../../server/dsh/dsh-bff";
 import { useReadOnReturn } from "../shared/use-read-on-return";
@@ -37,6 +37,13 @@ export function partnerTeamStateLabel(state:StoreAccessGrant["state"]):string {
 type Counts=OperatorPartnerTeamPage["counts"];
 const emptyCounts:Counts={total:0,active:0,pending:0,suspended:0};
 type Props=Readonly<{ownerId:string;storeId?:string;compact?:boolean}>;
+export function appendUniquePartnerTeamItems<T extends {id:string}>(current:ReadonlyArray<T>,incoming:ReadonlyArray<T>):ReadonlyArray<T> {
+ const ids=new Set(current.map(item=>item.id));
+ return [...current,...incoming.filter(item=>{if(ids.has(item.id))return false;ids.add(item.id);return true;})];
+}
+export function isCurrentPartnerTeamRequest(requestGeneration:number,currentGeneration:number):boolean {
+ return requestGeneration===currentGeneration;
+}
 export function PartnerTeamWorkspace({ownerId,storeId="",compact=false}:Props){
  const [items,setItems]=useState<ReadonlyArray<StoreAccessGrant>>([]);
  const [counts,setCounts]=useState<Counts>(emptyCounts);
@@ -46,23 +53,27 @@ export function PartnerTeamWorkspace({ownerId,storeId="",compact=false}:Props){
  const [error,setError]=useState("");
  const [history,setHistory]=useState(false);
  const [revision,setRevision]=useState(0);
+ const requestGeneration=useRef(0);
  const reload=useCallback(()=>setRevision(v=>v+1),[]);
- useEffect(()=>{
-  void revision; // Explicit team-roster invalidation trigger.
+ useLayoutEffect(()=>{
+  void revision; // Reload invalidates the current owner's prior reads.
+  const generation=++requestGeneration.current;
   let active=true;
-  setItems([]);setCounts(emptyCounts);setCursor("");setError("");setLoading(true);
+  // Clear previous owner's grants before the next scope can be painted.
+  setItems([]);setCounts(emptyCounts);setCursor("");setError("");setLoading(true);setLoadingMore(false);
   const query=new URLSearchParams({limit:compact?"3":"25"});
   if(storeId)query.set("storeId",storeId);
   void identityFetch("/api/partners/roster/"+encodeURIComponent(ownerId)+"/team?"+query,{cache:"no-store"})
    .then(async r=>{if(!r.ok)throw Error("تعذر تحميل عضويات الفريق. تحقق من الصلاحيات والخدمة.");return await r.json() as OperatorPartnerTeamPage;})
-   .then(page=>{if(!active)return;setItems(page.items);setCounts(page.counts);setCursor(page.nextCursor??"");})
-   .catch(e=>{if(active)setError(e instanceof Error?e.message:"تعذر تحميل فريق الشريك.");})
-   .finally(()=>{if(active)setLoading(false);});
-  return()=>{active=false;};
+   .then(page=>{if(!active||!isCurrentPartnerTeamRequest(generation,requestGeneration.current))return;setItems(page.items);setCounts(page.counts);setCursor(page.nextCursor??"");})
+   .catch(e=>{if(active&&isCurrentPartnerTeamRequest(generation,requestGeneration.current))setError(e instanceof Error?e.message:"تعذر تحميل فريق الشريك.");})
+   .finally(()=>{if(active&&isCurrentPartnerTeamRequest(generation,requestGeneration.current))setLoading(false);});
+  return()=>{active=false;if(isCurrentPartnerTeamRequest(generation,requestGeneration.current))requestGeneration.current++;};
  },[ownerId,storeId,compact,revision]);
  useReadOnReturn(reload,!loading&&!loadingMore);
  const loadMore=async()=>{
-  if(!cursor||loadingMore)return;
+  if(compact||!cursor||loadingMore)return;
+  const generation=requestGeneration.current;
   setLoadingMore(true);setError("");
   try{
    const query=new URLSearchParams({limit:"25",cursor});
@@ -70,10 +81,14 @@ export function PartnerTeamWorkspace({ownerId,storeId="",compact=false}:Props){
    const response=await identityFetch("/api/partners/roster/"+encodeURIComponent(ownerId)+"/team?"+query,{cache:"no-store"});
    if(!response.ok)throw Error("تعذر تحميل الصفحة التالية.");
    const page=await response.json() as OperatorPartnerTeamPage;
-   setItems(previous=>[...previous,...page.items.filter(item=>!previous.some(existing=>existing.id===item.id))]);
-   setCounts(page.counts);setCursor(page.nextCursor??"");
-  }catch(e){setError(e instanceof Error?e.message:"تعذر المتابعة.");}
-  finally{setLoadingMore(false);}
+   if(!isCurrentPartnerTeamRequest(generation,requestGeneration.current))return;
+   setItems(previous=>isCurrentPartnerTeamRequest(generation,requestGeneration.current)
+    ?appendUniquePartnerTeamItems(previous,page.items)
+    :previous);
+   setCounts(previous=>isCurrentPartnerTeamRequest(generation,requestGeneration.current)?page.counts:previous);
+   setCursor(previous=>isCurrentPartnerTeamRequest(generation,requestGeneration.current)?page.nextCursor??"":previous);
+  }catch(e){if(isCurrentPartnerTeamRequest(generation,requestGeneration.current))setError(e instanceof Error?e.message:"تعذر المتابعة.");}
+  finally{if(isCurrentPartnerTeamRequest(generation,requestGeneration.current))setLoadingMore(false);}
  };
  const base="/partners/actors/"+encodeURIComponent(ownerId);
  const teamUrl=base+"?view=team"+(storeId?"&storeId="+encodeURIComponent(storeId):"");

@@ -1,17 +1,19 @@
 "use client";
 
 import { formatMoney, type PartnerFinancialActivity, type PartnerFinancialActivityPage } from "@bthwani/dsh";
+import { Button, Table, type TableColumnsType, type TableProps } from "antd";
 import Link from "next/link";
-import { useReactTable, getCoreRowModel, type ColumnDef } from "@tanstack/react-table";
-import { useVirtualizer } from "@tanstack/react-virtual";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type MouseEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import "./partner-financial-register.css";
 
 type Filters = { storeId: string; kind: string; status: string; paymentMethod: string; period: string; search: string };
+type ActivityPageState = { queryKey: string; items: PartnerFinancialActivity[]; stores: NonNullable<PartnerFinancialActivityPage["stores"]>; cursor: string };
+type RequestState = { queryKey: string; loading: boolean; loadingMore: boolean; error: string; moreError: string };
 const defaults: Filters = { storeId: "", kind: "", status: "", paymentMethod: "", period: "month", search: "" };
 const kindOptions = [["", "كل الحركات"], ["ORDER", "مستحقات الطلبات"], ["PAYOUT", "صرف"], ["CASH_COMMISSION", "ذمم العمولة"]];
 const statusOptions = [["", "كل الحالات"], ["POSTED", "مثبت"], ["PENDING", "قيد الصرف"], ["COMPLETED", "مصروف"], ["EXCEPTION", "يحتاج مراجعة"], ["CANCELLED", "ملغى"]];
 const paymentOptions = [["", "كل طرق الدفع"], ["CASH_ON_DELIVERY", "نقدي عند التسليم"], ["CASH_AT_STORE", "نقدي للمتجر"], ["WALLET", "محفظة"], ["MIXED", "مختلط"]];
+
 function periodRange(period: string) {
   if (period === "all") return {};
   const now = new Date();
@@ -36,123 +38,153 @@ function currency(item: PartnerFinancialActivity) {
 function dateLabel(value: string) {
   return new Date(value).toLocaleString("ar-YE", { timeZone: "Asia/Aden", dateStyle: "medium", timeStyle: "short" });
 }
-const select = (name: string, options: string[][], value: string, update: (value: string) => void) =>
-  <label className="pfr-field"><span>{name}</span><select value={value} onChange={(event) => update(event.target.value)}>{options.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>;
+function activityKey(item: PartnerFinancialActivity) { return item.kind + ":" + item.id; }
+function isCurrentPartnerActivityRequest(requestId: number, currentRequestId: number, requestKey: string, currentKey: string): boolean {
+  return requestId === currentRequestId && requestKey === currentKey;
+}
+const columns: TableColumnsType<PartnerFinancialActivity> = [
+  { key: "reference", title: "التاريخ والمرجع", render: (_value, item) => <div className="pfr-reference"><strong>{dateLabel(item.createdAt)}</strong><small dir="auto">#{item.id}</small></div> },
+  { key: "kind", title: "نوع الحركة", render: (_value, item) => activityType(item) },
+  { key: "store", title: "المتجر / الدفع", render: (_value, item) => <>{item.storeName}<small className="pfr-block-muted">{item.paymentMethod ? ({ CASH_ON_DELIVERY: "نقدي عند التسليم", CASH_AT_STORE: "نقدي للمتجر", WALLET: "محفظة", MIXED: "مختلط" } as Record<string, string>)[item.paymentMethod] ?? item.paymentMethod : "—"}</small></> },
+  { key: "gross", title: "المنتجات", render: (_value, item) => item.kind === "PAYOUT" ? "—" : formatMoney(item.grossMinor, item.currency) },
+  { key: "commission", title: "العمولة", render: (_value, item) => item.kind === "PAYOUT" ? "—" : formatMoney(item.commissionMinor, item.currency) },
+  { key: "amount", title: "الصافي أو المستحق", render: (_value, item) => <strong className="pfr-money">{currency(item)}</strong> },
+  { key: "status", title: "الحالة", render: (_value, item) => <span className="pfr-state">{stateLabel(item)}</span> },
+];
+function select(name: string, options: string[][], value: string, update: (value: string) => void) {
+  return <label className="pfr-field"><span>{name}</span><select value={value} onChange={(event) => update(event.target.value)}>{options.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>;
+}
 
 export function PartnerFinancialRegister({ partnerActorId, storeId = "", compact = false }: { partnerActorId: string; storeId?: string; compact?: boolean }) {
   const [filters, setFilters] = useState<Filters>(defaults);
   const [search, setSearch] = useState("");
-  const [data, setData] = useState<PartnerFinancialActivityPage | null>(null);
-  const [items, setItems] = useState<PartnerFinancialActivity[]>([]);
-  const [cursor, setCursor] = useState("");
-  const [expanded, setExpanded] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  // Filtering, ordering and pagination belong to DSH, not to the local page.
-  const columns = useMemo<ColumnDef<PartnerFinancialActivity>[]>(() => [
-    { accessorKey: "createdAt", header: "Date" },
-    { accessorKey: "kind", header: "Activity" },
-    { accessorKey: "storeName", header: "Store" },
-    { accessorKey: "grossMinor", header: "Gross" },
-    { accessorKey: "commissionMinor", header: "Commission" },
-    { accessorKey: "amountMinor", header: "Amount" },
-    { accessorKey: "status", header: "Status" },
-  ], []);
-  const table = useReactTable({
-    data: items,
-    columns,
-    getRowId: (item) => item.kind + ":" + item.id,
-    getCoreRowModel: getCoreRowModel(),
-    manualPagination: true,
-    manualSorting: true,
-    manualFiltering: true,
-  });
-  const tableRows = table.getRowModel().rows;
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const virtualEnabled = tableRows.length > 60 && !expanded;
-  const rowVirtualizer = useVirtualizer({
-    count: virtualEnabled ? tableRows.length : 0,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => 62,
-    overscan: 8,
-  });
-  const virtualRows = rowVirtualizer.getVirtualItems();
-  const visibleRows = virtualEnabled ? virtualRows.map((row) => tableRows[row.index]).filter((row) => row !== undefined) : tableRows;
-  const topPadding = virtualEnabled ? (virtualRows[0]?.start ?? 0) : 0;
-  const bottomPadding = virtualEnabled ? Math.max(0, rowVirtualizer.getTotalSize() - (virtualRows.at(-1)?.end ?? 0)) : 0;
+  const [page, setPage] = useState<ActivityPageState | null>(null);
+  const [expanded, setExpanded] = useState<string[]>([]);
+  const [requestState, setRequestState] = useState<RequestState>({ queryKey: "", loading: true, loadingMore: false, error: "", moreError: "" });
+  const [retrySequence, setRetrySequence] = useState(0);
+  const queryKey = JSON.stringify([partnerActorId, storeId, compact, filters, retrySequence]);
+  const currentQueryKey = useRef(queryKey);
+  const requestGeneration = useRef(0);
+  const requestController = useRef<AbortController | null>(null);
+  const visiblePage = page?.queryKey === queryKey ? page : null;
+  const visibleRequest = requestState.queryKey === queryKey ? requestState : null;
+  const loading = visibleRequest?.loading ?? true;
+  const loadingMore = visibleRequest?.loadingMore ?? false;
+  const items = visiblePage?.items ?? [];
+  const cursor = visiblePage?.cursor ?? "";
+
+  useLayoutEffect(() => { currentQueryKey.current = queryKey; }, [queryKey]);
+  useEffect(() => {
+    const requestId = ++requestGeneration.current;
+    const controller = new AbortController();
+    requestController.current = controller;
+    const isCurrent = () => isCurrentPartnerActivityRequest(requestId, requestGeneration.current, queryKey, currentQueryKey.current);
+    const query = new URLSearchParams({ partnerActorId, limit: compact ? "5" : "25", ...periodRange(filters.period) });
+    if (storeId) query.set("storeId", storeId);
+    for (const field of ["storeId", "kind", "status", "paymentMethod", "search"] as const) if (filters[field] && !(storeId && field === "storeId")) query.set(field, filters[field]);
+    setPage({ queryKey, items: [], stores: [], cursor: "" });
+    setExpanded([]);
+    setRequestState({ queryKey, loading: true, loadingMore: false, error: "", moreError: "" });
+    void fetch("/api/finance/partner-activity?" + query, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("تعذرت قراءة الحركات المالية (" + response.status + ")");
+        return await response.json() as PartnerFinancialActivityPage;
+      })
+      .then((result) => {
+        if (!isCurrent()) return;
+        setPage((previous) => isCurrent() ? { queryKey, items: [...result.items], stores: result.stores ?? [], cursor: result.nextCursor ?? "" } : previous);
+      })
+      .catch((cause: unknown) => {
+        if (controller.signal.aborted || !isCurrent()) return;
+        setRequestState((previous) => isCurrent() ? { ...previous, queryKey, error: cause instanceof Error ? cause.message : "تعذرت قراءة الحركات" } : previous);
+      })
+      .finally(() => {
+        if (isCurrent()) setRequestState((previous) => isCurrent() ? { ...previous, queryKey, loading: false } : previous);
+      });
+    return () => {
+      controller.abort();
+      if (requestGeneration.current === requestId) requestGeneration.current += 1;
+      if (requestController.current === controller) requestController.current = null;
+    };
+  }, [partnerActorId, storeId, compact, filters, queryKey]);
 
   useEffect(() => {
     const timeout = setTimeout(() => setFilters((current) => ({ ...current, search: search.trim() })), 300);
     return () => clearTimeout(timeout);
   }, [search]);
-  useEffect(() => {
-    const controller = new AbortController();
-    const qs = new URLSearchParams({ partnerActorId, limit: compact ? "5" : "25", ...periodRange(filters.period) });
-    if (storeId) qs.set("storeId", storeId);
-    for (const field of ["storeId", "kind", "status", "paymentMethod", "search"] as const) if (filters[field] && !(storeId && field === "storeId")) qs.set(field, filters[field]);
-    setLoading(true); setItems([]); setCursor(""); setError(""); setExpanded("");
-    void fetch("/api/finance/partner-activity?" + qs, { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("تعذرت قراءة الحركات المالية (" + response.status + ")");
-        return await response.json() as PartnerFinancialActivityPage;
-      }).then((result) => { setData(result); setItems([...result.items]); setCursor(result.nextCursor ?? ""); })
-      .catch((cause) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "تعذرت قراءة الحركات"); })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, [filters, partnerActorId, storeId, compact]);
   const update = (key: keyof Filters, value: string) => setFilters((current) => ({ ...current, [key]: value }));
+
   async function more() {
-    if (!cursor || busy) return;
-    setBusy(true); setError("");
+    const controller = requestController.current;
+    const requestId = requestGeneration.current;
+    const requestKey = queryKey;
+    const requestCursor = cursor;
+    if (!controller || controller.signal.aborted || !requestCursor || loadingMore || loading) return;
+    const isCurrent = () => isCurrentPartnerActivityRequest(requestId, requestGeneration.current, requestKey, currentQueryKey.current);
+    setRequestState((previous) => isCurrent() && previous.queryKey === requestKey ? { ...previous, loadingMore: true, moreError: "" } : previous);
+    const query = new URLSearchParams({ partnerActorId, limit: "25", cursor: requestCursor, ...periodRange(filters.period) });
+    if (storeId) query.set("storeId", storeId);
+    for (const field of ["storeId", "kind", "status", "paymentMethod", "search"] as const) if (filters[field] && !(storeId && field === "storeId")) query.set(field, filters[field]);
     try {
-      const qs = new URLSearchParams({ partnerActorId, limit: "25", cursor, ...periodRange(filters.period) });
-      if (storeId) qs.set("storeId", storeId);
-      for (const field of ["storeId", "kind", "status", "paymentMethod", "search"] as const) if (filters[field] && !(storeId && field === "storeId")) qs.set(field, filters[field]);
-      const response = await fetch("/api/finance/partner-activity?" + qs, { cache: "no-store" });
+      const response = await fetch("/api/finance/partner-activity?" + query, { cache: "no-store", signal: controller.signal });
       if (!response.ok) throw new Error("تعذرت قراءة الصفحة التالية");
-      const page = await response.json() as PartnerFinancialActivityPage;
-      setItems((previous) => [...previous, ...page.items.filter((item) => !previous.some((old) => old.kind === item.kind && old.id === item.id))]);
-      setCursor(page.nextCursor ?? "");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "تعذرت قراءة الصفحة"); }
-    finally { setBusy(false); }
+      const nextPage = await response.json() as PartnerFinancialActivityPage;
+      if (!isCurrent()) return;
+      setPage((previous) => {
+        if (!isCurrent() || previous?.queryKey !== requestKey) return previous;
+        const known = new Set(previous.items.map(activityKey));
+        return { ...previous, items: [...previous.items, ...nextPage.items.filter((item) => !known.has(activityKey(item)))], cursor: nextPage.nextCursor ?? "" };
+      });
+    } catch (cause: unknown) {
+      if (!controller.signal.aborted && isCurrent()) setRequestState((previous) => isCurrent() && previous.queryKey === requestKey ? { ...previous, moreError: cause instanceof Error ? cause.message : "تعذرت قراءة الصفحة" } : previous);
+    } finally {
+      if (isCurrent()) setRequestState((previous) => isCurrent() && previous.queryKey === requestKey ? { ...previous, loadingMore: false } : previous);
+    }
   }
+
+  const retryPage = () => setRetrySequence((current) => current + 1);
+  const moreError = visibleRequest?.moreError ?? "";
+  const error = visibleRequest?.error ?? "";
+  const expandable: NonNullable<TableProps<PartnerFinancialActivity>["expandable"]> = {
+    expandedRowKeys: expanded,
+    onExpand: (isExpanded, item) => setExpanded(isExpanded ? [activityKey(item)] : []),
+    expandedRowRender: (item) => <ActivityDetails item={item} />,
+    rowExpandable: () => true,
+    expandIcon: ({ expanded: isExpanded, onExpand, record }) => <Button className="pfr-expand" type="text" size="small" aria-label={isExpanded ? "إخفاء التفاصيل" : "عرض التفاصيل"} aria-expanded={isExpanded} aria-controls={"pfr-detail-" + record.kind + "-" + record.id} onClick={(event: MouseEvent<HTMLElement>) => onExpand(record, event)}>{isExpanded ? "−" : "+"}</Button>,
+  };
+
   return <section className="pfr-root" aria-label="الحركات المالية للشريك">
-    <div className="pfr-head"><div><h3>الكشف المالي للمتاجر</h3><p>حركات موثقة من الدفتر المالي WLT، وليس تقديرات من الطلبات</p></div>
+    <div className="pfr-head"><div><h3>الكشف المالي للمتاجر</h3><p>حركات موثقة من الدفتر المالي WLT، وليست تقديرات من الطلبات</p></div>
       {compact ? <Link href={"/finance/partner-earnings?partnerActorId=" + encodeURIComponent(partnerActorId)} className="button button-secondary">فتح الإدارة المالية</Link> : null}
     </div>
     {!compact ? <div className="pfr-toolbar">
       <label className="pfr-field pfr-search"><span>بحث برقم الطلب أو الصرف</span><input value={search} onChange={(event) => setSearch(event.target.value)} type="search" maxLength={128} placeholder="ابحث في جميع الحركات..." /></label>
-      {select("الفترة", [["today","اليوم"],["week","7 أيام"],["month","هذا الشهر"],["all","كل الفترات"]], filters.period, (v) => update("period", v))}
-      {!storeId ? select("المتجر", [["","كل المتاجر"], ...((data?.stores ?? []).map((store) => [store.storeId, store.storeName]))], filters.storeId, (v) => update("storeId", v)) : null}
-      {select("نوع الحركة", kindOptions, filters.kind, (v) => update("kind", v))}
-      {select("الحالة", statusOptions, filters.status, (v) => update("status", v))}
-      {select("الدفع", paymentOptions, filters.paymentMethod, (v) => update("paymentMethod", v))}
+      {select("الفترة", [["today", "اليوم"], ["week", "7 أيام"], ["month", "هذا الشهر"], ["all", "كل الفترات"]], filters.period, (value) => update("period", value))}
+      {!storeId ? select("المتجر", [["", "كل المتاجر"], ...((visiblePage?.stores ?? []).map((store) => [store.storeId, store.storeName]))], filters.storeId, (value) => update("storeId", value)) : null}
+      {select("نوع الحركة", kindOptions, filters.kind, (value) => update("kind", value))}
+      {select("الحالة", statusOptions, filters.status, (value) => update("status", value))}
+      {select("الدفع", paymentOptions, filters.paymentMethod, (value) => update("paymentMethod", value))}
       <button className="button button-quiet" type="button" onClick={() => { setFilters(defaults); setSearch(""); }}>مسح الفلاتر</button>
     </div> : null}
-    {error ? <p className="state-error" role="alert">{error}</p> : null}
+    {error ? <div className="state-error pfr-error" role="alert"><span>{error}</span><Button onClick={retryPage}>إعادة المحاولة</Button></div> : null}
     {loading ? <p className="muted" role="status">جارٍ قراءة السجل المالي…</p> : null}
-    {!loading ? <div ref={scrollRef} className={virtualEnabled ? "pfr-table-wrap pfr-virtualized" : "pfr-table-wrap"}><table className="data-table pfr-table"><caption className="sr-only">قائمة الحركات المالية المسندة للمتاجر</caption>
-      <thead><tr><th scope="col">التاريخ والمرجع</th><th scope="col">نوع الحركة</th><th scope="col">المتجر / الدفع</th><th scope="col">المنتجات</th><th scope="col">العمولة</th><th scope="col">الصافي أو المستحق</th><th scope="col">الحالة</th></tr></thead>
-      <tbody>
-        {virtualEnabled && topPadding > 0 ? <tr className="pfr-spacer"><td colSpan={7} style={{ height: topPadding }} /></tr> : null}
-        {visibleRows.map((row) => <FragmentRow key={row.id} index={virtualEnabled ? row.index : undefined} measure={virtualEnabled ? rowVirtualizer.measureElement : undefined} item={row.original} open={expanded === row.id} toggle={() => setExpanded((current) => current === row.id ? "" : row.id)} />)}
-        {virtualEnabled && bottomPadding > 0 ? <tr className="pfr-spacer"><td colSpan={7} style={{ height: bottomPadding }} /></tr> : null}
-        {!items.length ? <tr><td colSpan={7}>لا توجد حركات مالية مطابقة لهذه الفلاتر.</td></tr> : null}
-      </tbody>
-    </table></div> : null}
-    <div className="pfr-bottom"><span className="muted">المعروض: {items.length.toLocaleString("ar-YE")}{cursor ? "+" : ""} حركة · التصفية على جميع السجلات</span>
-      {!compact && cursor ? <button className="button button-secondary" type="button" disabled={busy} onClick={() => void more()}>{busy ? "جارٍ التحميل..." : "تحميل المزيد"}</button> : null}</div>
+    <section className="pfr-table-wrap" aria-label="قائمة الحركات المالية المسندة للمتاجر">
+      <Table<PartnerFinancialActivity> className="pfr-table" columns={columns} dataSource={items} rowKey={activityKey} pagination={false} virtual={items.length > 60 && expanded.length === 0 && !compact} loading={loading} expandable={expandable} scroll={compact ? { x: 900 } : { x: 900, y: 620 }} locale={{ emptyText: loading ? " " : "لا توجد حركات مالية مطابقة لهذه الفلاتر." }} />
+    </section>
+    <div className="pfr-bottom">
+      <span className="muted">المعروض: {items.length.toLocaleString("ar-YE")}{cursor ? "+" : ""} حركة · التصفية على جميع السجلات</span>
+      {!compact && cursor ? <div className="pfr-more">{moreError ? <span role="alert">{moreError}</span> : null}<Button className="button-secondary" disabled={loadingMore || loading} onClick={() => void more()}>{loadingMore ? "جارٍ التحميل..." : moreError ? "إعادة المحاولة" : "تحميل المزيد"}</Button></div> : null}
+    </div>
   </section>;
 }
-function FragmentRow({ item, open, toggle, measure, index }: { item: PartnerFinancialActivity; open: boolean; toggle: () => void; measure?: ((element: Element | null) => void) | undefined; index?: number | undefined }) {
-  return <>
-    <tr data-index={index} ref={measure} className={open ? "pfr-active-row" : ""}>
-      <td><button type="button" className="pfr-open" aria-expanded={open} onClick={toggle}><strong>{dateLabel(item.createdAt)}</strong><small dir="auto">#{item.id}</small></button></td>
-      <td>{activityType(item)}</td><td>{item.storeName}<small className="pfr-block-muted">{item.paymentMethod ? ({ CASH_ON_DELIVERY: "نقدي عند التسليم", CASH_AT_STORE: "نقدي للمتجر", WALLET: "محفظة", MIXED: "مختلط" } as Record<string,string>)[item.paymentMethod] ?? item.paymentMethod : "—"}</small></td>
-      <td>{item.kind === "PAYOUT" ? "—" : formatMoney(item.grossMinor, item.currency)}</td><td>{item.kind === "PAYOUT" ? "—" : formatMoney(item.commissionMinor, item.currency)}</td>
-      <td className="pfr-money"><strong>{currency(item)}</strong></td><td><span className="pfr-state">{stateLabel(item)}</span></td>
-    </tr>
-    {open ? <tr><td colSpan={7}><div className="pfr-detail"><div><strong>مرجع العملية</strong><span dir="auto">{item.id}</span></div><div><strong>المتجر</strong><span>{item.storeName}</span></div><div><strong>نوع القيد</strong><span>{item.direction === "RECEIVABLE" ? "ذمة عمولة، ليست خصمًا من رصيد المتجر" : item.direction === "HOLD" ? "حجز مستحق، لم يُصرف بعد" : item.direction === "DEBIT" ? "صرف مكتمل" : item.direction === "NONE" ? "لا أثر مباشر على المحفظة" : "إضافة مثبتة لرصيد المستحقات"}</span></div>{item.offsetMinor ? <div><strong>مقاصة عمولة</strong><span>{formatMoney(item.offsetMinor, item.currency)}</span></div> : null}{item.ledgerTransactionId ? <div><strong>مرجع القيد المحاسبي</strong><span dir="auto">{item.ledgerTransactionId}</span></div> : null}</div></td></tr> : null}
-  </>;
+
+function ActivityDetails({ item }: { item: PartnerFinancialActivity }) {
+  const direction = item.direction === "RECEIVABLE" ? "ذمة عمولة، ليست خصمًا من رصيد المتجر" : item.direction === "HOLD" ? "حجز مستحق، لم يُصرف بعد" : item.direction === "DEBIT" ? "صرف مكتمل" : item.direction === "NONE" ? "لا أثر مباشر على المحفظة" : "إضافة مثبتة لرصيد المستحقات";
+  return <div className="pfr-detail" id={"pfr-detail-" + item.kind + "-" + item.id}>
+    <div><strong>مرجع العملية</strong><span dir="auto">{item.id}</span></div>
+    <div><strong>المتجر</strong><span>{item.storeName}</span></div>
+    <div><strong>نوع القيد</strong><span>{direction}</span></div>
+    {item.offsetMinor ? <div><strong>مقاصة عمولة</strong><span>{formatMoney(item.offsetMinor, item.currency)}</span></div> : null}
+    {item.ledgerTransactionId ? <div><strong>مرجع القيد المحاسبي</strong><span dir="auto">{item.ledgerTransactionId}</span></div> : null}
+  </div>;
 }

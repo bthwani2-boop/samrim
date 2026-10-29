@@ -45,14 +45,6 @@ func ReadWLTPolicyHistory(ctx context.Context, db *sql.DB, key, scopeID string) 
    FROM wlt.partner_financial_terms_policy_events e JOIN wlt.partner_financial_terms_policies p ON p.id=e.policy_id
    LEFT JOIN wlt.partner_financial_terms_policies old ON old.version=p.version-1
    WHERE ($1='' OR $1='global') ORDER BY e.created_at DESC,e.id DESC LIMIT 50`
-	case "field-acquisition":
-		field = "مكافأة نوع المتجر"
-		query = `SELECT p.id,p.scope_id,p.version,p.created_by,p.created_at,p.change_reason,
-   COALESCE(old.reward_minor::text,''),p.reward_minor::text
-   FROM wlt.field_acquisition_reward_policies p
-   LEFT JOIN wlt.field_acquisition_reward_policies old ON old.scope_type=p.scope_type AND old.scope_id=p.scope_id AND old.version=p.version-1
-   WHERE p.scope_type='STORE_TYPE' AND ($1='' OR p.scope_id=$1)
-   ORDER BY p.created_at DESC,p.id DESC LIMIT 50`
 	case "captain-minimum-balance":
 		field = "الحد الأدنى للرصيد المتاح"
 		query = `SELECT p.id,''::text,p.version,p.created_by,p.created_at,p.change_reason,

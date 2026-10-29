@@ -165,70 +165,86 @@ func TestSettlementIntakeRejectsCancelledPartnerPayout(t *testing.T) {
 	}
 }
 
-// The Field reward is posted by WLT using its normal policy/ledger journey.
-// A settlement intake must remain available even before a payout destination
-// exists, without moving any funds or creating an outstanding payout hold.
+// Historical Field reward ledger entries must remain auditable, while
+// retired Field actors cannot create any new settlement intake or payout.
+// This test uses isolated test-only historical fixtures; it must not re-enable
+// a production Field writer merely to make the legacy intake test pass.
 func TestSettlementIntakeWithoutDestinationPreservesFieldLedger(t *testing.T) {
 	s := newFieldAcquisitionScenario(t)
 	s.registerCleanup(t)
 	s.activePolicy = s.createAndReplacePolicy(t)
 	s.firstAward = s.createAndReplayFirstAward(t)
-	key := "field-intake-" + s.suffix
-	request := SettlementIntakeInput{ActorType: "field", ActorID: s.actorID, RequestedBy: s.actorID, AmountMode: "FULL_AVAILABLE",
-		IdempotencyKey: key, CorrelationID: "intake-correlation-" + s.suffix}
-	created, replayed, err := CreateSettlementIntake(s.ctx, s.db, request)
-	if err != nil || replayed || created.Status != "REQUESTED" || created.ResolvedAmountMinor != 1250 {
-		t.Fatalf("initial nonfinancial intake: %+v replay=%v err=%v", created, replayed, err)
+
+	before, err := ReadFieldFinancialSummary(s.ctx, s.db, s.actorID)
+	if err != nil || before.EarnedMinor != 1250 || before.EntitlementMinor != 1250 || before.PartnerCount != 1 {
+		t.Fatalf("historical Field financial readback before denied intake: %+v err=%v", before, err)
 	}
-	t.Cleanup(func() {
-		if _, err := s.db.ExecContext(s.ctx, "DELETE FROM wlt.beneficiary_settlement_intakes WHERE id=$1", created.ID); err != nil {
-			t.Errorf("cleanup intake: %v", err)
+	var ledgerEntriesBefore int
+	if err := s.db.QueryRowContext(s.ctx,
+		"SELECT COUNT(*) FROM wlt.ledger_entries WHERE account_code='FIELD_WALLET' AND actor_type='field' AND actor_id=$1",
+		s.actorID).Scan(&ledgerEntriesBefore); err != nil || ledgerEntriesBefore == 0 {
+		t.Fatalf("historical Field ledger must exist before denial: count=%d err=%v", ledgerEntriesBefore, err)
+	}
+
+	request := SettlementIntakeInput{
+		ActorType: "field", ActorID: s.actorID, RequestedBy: s.actorID,
+		AmountMode: "FULL_AVAILABLE", IdempotencyKey: "field-intake-" + s.suffix,
+		CorrelationID: "intake-correlation-" + s.suffix,
+	}
+	badAmount := int64(5)
+	for _, attempt := range []SettlementIntakeInput{
+		request, // first attempt
+		request, // replay must remain denied, not reuse a new intake
+		func() SettlementIntakeInput {
+			changed := request
+			changed.AmountMode = "SPECIFIED"
+			changed.AmountMinor = &badAmount
+			return changed
+		}(), // conflicting intent is still rejected without consuming the key
+		func() SettlementIntakeInput {
+			changed := request
+			changed.IdempotencyKey = "field-intake-another-" + s.suffix
+			return changed
+		}(), // a new idempotency key cannot bypass retirement
+	} {
+		created, replayed, err := CreateSettlementIntake(s.ctx, s.db, attempt)
+		if !errors.Is(err, ErrSettlementIntakeInvalid) || replayed || created.ID != "" {
+			t.Fatalf("retired Field must not open a settlement intake: result=%+v replayed=%v err=%v", created, replayed, err)
 		}
-	})
-	repeated, replayed, err := CreateSettlementIntake(s.ctx, s.db, request)
-	if err != nil || !replayed || repeated.ID != created.ID {
-		t.Fatalf("intake replay: %+v %v %v", repeated, replayed, err)
 	}
-	bad := request
-	bad.AmountMode = "SPECIFIED"
-	small := int64(5)
-	bad.AmountMinor = &small
-	if _, _, err := CreateSettlementIntake(s.ctx, s.db, bad); !errors.Is(err, ErrIdempotencyConflict) {
-		t.Fatalf("conflicting replay must fail: %v", err)
-	}
-	second := request
-	second.IdempotencyKey = "field-intake-duplicate-" + s.suffix
-	if _, _, err := CreateSettlementIntake(s.ctx, s.db, second); !errors.Is(err, ErrSettlementIntakeOpen) {
-		t.Fatalf("second pending request must fail: %v", err)
-	}
-	var holds int
-	if err := s.db.QueryRowContext(s.ctx, "SELECT COUNT(*) FROM wlt.payout_holds WHERE actor_type='field' AND actor_id=$1", s.actorID).Scan(&holds); err != nil || holds != 0 {
-		t.Fatalf("intake created payout holds: count=%d err=%v", holds, err)
-	}
-	var payoutCount int
-	if err := s.db.QueryRowContext(s.ctx, "SELECT COUNT(*) FROM wlt.payout_requests WHERE actor_type='field' AND actor_id=$1", s.actorID).Scan(&payoutCount); err != nil || payoutCount != 0 {
-		t.Fatalf("intake created actual payout: count=%d err=%v", payoutCount, err)
-	}
-	if _, err := ConvertSettlementIntake(s.ctx, s.db, created.ID, "payout-that-does-not-exist"); !errors.Is(err, ErrSettlementIntakeInvalid) {
-		t.Fatalf("conversion without verified held payout must fail: %v", err)
-	}
-	intakes, err := ListSettlementIntakes(s.ctx, s.db, "field", s.actorID, "REQUESTED", 50)
-	if err != nil || len(intakes) != 1 || intakes[0].ID != created.ID {
-		t.Fatalf("canonical inbox readback: %+v err=%v", intakes, err)
-	}
-	cancelled, err := CancelSettlementIntake(s.ctx, s.db, created.ID, "independent-finance-operator", "verified destination unavailable")
-	if err != nil || cancelled.Status != "CANCELLED" || cancelled.CancellationReason != "verified destination unavailable" || cancelled.CancelledAt == nil {
-		t.Fatalf("Finance cancellation reason/readback failed: %+v err=%v", cancelled, err)
-	}
-	second.CorrelationID = "field-second-correlation-" + s.suffix
-	newIntake, replay, err := CreateSettlementIntake(s.ctx, s.db, second)
-	if err != nil || replay || newIntake.Status != "REQUESTED" {
-		t.Fatalf("re-request after cancellation failed: %+v replay=%v err=%v", newIntake, replay, err)
-	}
-	t.Cleanup(func() {
-		_, e := s.db.ExecContext(context.Background(), "DELETE FROM wlt.beneficiary_settlement_intakes WHERE id=$1", newIntake.ID)
-		if e != nil {
-			t.Errorf("cleanup second intake: %v", e)
+
+	for _, table := range []string{
+		"wlt.beneficiary_settlement_intakes", "wlt.payout_holds", "wlt.payout_requests",
+	} {
+		var created int
+		switch table {
+		case "wlt.beneficiary_settlement_intakes":
+			err = s.db.QueryRowContext(s.ctx, "SELECT COUNT(*) FROM wlt.beneficiary_settlement_intakes WHERE actor_type='field' AND actor_id=$1", s.actorID).Scan(&created)
+		case "wlt.payout_holds":
+			err = s.db.QueryRowContext(s.ctx, "SELECT COUNT(*) FROM wlt.payout_holds WHERE actor_type='field' AND actor_id=$1", s.actorID).Scan(&created)
+		case "wlt.payout_requests":
+			err = s.db.QueryRowContext(s.ctx, "SELECT COUNT(*) FROM wlt.payout_requests WHERE actor_type='field' AND actor_id=$1", s.actorID).Scan(&created)
 		}
-	})
+		if err != nil || created != 0 {
+			t.Fatalf("retired Field must not create %s: count=%d err=%v", table, created, err)
+		}
+	}
+
+	after, err := ReadFieldFinancialSummary(s.ctx, s.db, s.actorID)
+	if err != nil || after.EarnedMinor != before.EarnedMinor ||
+		after.EntitlementMinor != before.EntitlementMinor ||
+		after.PartnerCount != before.PartnerCount {
+		t.Fatalf("denied Field intake changed historical financial summary: before=%+v after=%+v err=%v", before, after, err)
+	}
+	var ledgerEntriesAfter int
+	if err := s.db.QueryRowContext(s.ctx,
+		"SELECT COUNT(*) FROM wlt.ledger_entries WHERE account_code='FIELD_WALLET' AND actor_type='field' AND actor_id=$1",
+		s.actorID).Scan(&ledgerEntriesAfter); err != nil || ledgerEntriesAfter != ledgerEntriesBefore {
+		t.Fatalf("denied Field intake changed historical ledger: before=%d after=%d err=%v", ledgerEntriesBefore, ledgerEntriesAfter, err)
+	}
+	entries, err := ListFieldAcquisitionEntitlements(s.ctx, s.db, s.actorID, nil, "", 10)
+	if err != nil || len(entries.Entitlements) != 1 ||
+		entries.Entitlements[0].LedgerTransactionID != s.firstAward.LedgerTransactionID {
+		t.Fatalf("historical Field acquisition proof was lost: %+v err=%v", entries, err)
+	}
 }

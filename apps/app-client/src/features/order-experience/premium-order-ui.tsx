@@ -1,8 +1,8 @@
 import { type CustomerFulfillmentMode, fulfillmentModeLabel } from "@bthwani/dsh";
-import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { ThemeColors } from "@bthwani/design-system";
 import { useMemo } from "react";
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 
 /** The central Bthwani appearance is the sole owner of both color schemes. */
 export function premiumColors(theme: ThemeColors) {
@@ -86,22 +86,9 @@ export function PremiumStickyFooter({ amount, label, disabled, busy, detail, cap
       <Text numberOfLines={2} style={styles.amount}>{amount}</Text>
       {detail ? <Text style={styles.amountDetail}>{detail}</Text> : null}
     </View>
-    <View style={styles.primary}><PremiumGradientAction label={label} busy={Boolean(busy)} disabled={Boolean(disabled)} onPress={onPress}/></View>
+    <View style={styles.primary}><BthwaniButton label={label} busy={Boolean(busy)} disabled={Boolean(disabled)} onPress={onPress} style={styles.stickyButton} /></View>
   </View>;
 }
-export function PremiumGradientAction({ label, onPress, disabled = false, busy = false }: {
-  label: string; onPress: () => void; disabled?: boolean; busy?: boolean;
-}) {
-  const theme = useAppearanceTheme();
-  const premium = premiumColors(theme);
-  const styles = useMemo(() => createStyles(theme), [theme]);
-  return <View style={[styles.actionGradient, disabled && styles.actionDisabled, { backgroundColor: theme.actionBackground }]}>
-    <Pressable accessibilityRole="button" accessibilityState={{ disabled, busy }} disabled={disabled || busy} onPress={onPress} style={styles.actionHit}>
-      {busy ? <ActivityIndicator color={theme.onAction} /> : <Text style={styles.actionText}>{label}  ←</Text>}
-    </Pressable>
-  </View>;
-}
-
 export function PremiumOutlineAction({ label, onPress }: { label: string; onPress: () => void }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -113,10 +100,6 @@ export function PremiumOutlineAction({ label, onPress }: { label: string; onPres
 function createStyles(theme: ThemeColors) {
   const premium = premiumColors(theme);
   return StyleSheet.create({
-  actionGradient: { minHeight: 54, borderRadius: 14, overflow: "hidden", justifyContent: "center" },
-  actionHit: { minHeight: 54, alignItems: "center", justifyContent: "center", paddingHorizontal: 10 },
-  actionDisabled: { opacity: 0.55 },
-  actionText: { color: theme.onAction, fontWeight: "700", fontSize: 15, textAlign: "center" },
   outlineAction: { minHeight: 48, borderRadius: 13, borderColor: premium.coral, borderWidth: 1, backgroundColor: premium.background, alignItems: "center", justifyContent: "center", padding: 8 },
   outlineText: { color: premium.orange, fontSize: 14, fontWeight: "700", textAlign: "center" },
   storeRow: { flexDirection: "row", alignItems: "center", gap: 8 },
@@ -149,5 +132,6 @@ function createStyles(theme: ThemeColors) {
   amount: { color: premium.text, fontSize: 19, fontWeight: "800", textAlign: "right" },
   amountDetail: { color: premium.muted, fontSize: 10 },
   primary: { flex: 1 },
+  stickyButton: { minHeight: 54, width: "100%" },
 });
 }

@@ -35,7 +35,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	paymentClient, err := wlt.New(os.Getenv("DSH_WLT_API_BASE_URL"), os.Getenv("BTHWANI_ENV"), os.Getenv("WLT_DSH_SERVICE_TOKEN"))
+	paymentClient, err := wlt.New(os.Getenv("DSH_WLT_API_BASE_URL"), os.Getenv("BTHWANI_ENV"), os.Getenv("WLT_DSH_SERVICE_TOKEN"), os.Getenv("WLT_ROOT_OWNER_APPROVAL_PROOF_SECRET"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -152,10 +152,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fieldServer, err := transporthttp.NewField(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, storePublication, joiningCaseEvidenceKeys)
-	if err != nil {
-		log.Fatal(err)
-	}
 	marketingServer, err := transporthttp.NewMarketingWithDependencies(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, mediaStore)
 	if err != nil {
 		log.Fatal(err)
@@ -201,7 +197,6 @@ func main() {
 		multiStoreCheckoutServer.Register(mux)
 		captainServer.Register(mux)
 		notificationServer.Register(mux)
-		fieldServer.Register(mux)
 		clientFavoritesServer.Register(mux)
 		hrServer.Register(mux)
 		marketingServer.Register(mux)
@@ -211,7 +206,6 @@ func main() {
 	}
 	if err := serviceruntime.RunWithRoutesAndReadinessAndWorker("dsh", "/dsh", "18080", register, readiness, func(ctx context.Context) {
 		go runFinancialProfileReconciliationLoop(ctx, time.Minute, joiningCaseServer.ReconcileFinancialProfiles)
-		go runFieldAcquisitionRewardReconciliationLoop(ctx, time.Minute, storePublication.ReconcileFieldAcquisitionRewards)
 		go runFinancialHandoffReconciliationLoop(ctx, 5*time.Second, financialHandoff.Reconcile)
 		go runCaptainAutomaticDispatchLoop(ctx, 30*time.Second, captainServer.ReconcileAutomaticDispatch)
 		if os.Getenv("DSH_EXPO_PUSH_ENABLED") == "true" {

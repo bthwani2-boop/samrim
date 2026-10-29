@@ -3,14 +3,12 @@ package postgres
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -119,7 +117,7 @@ type JoiningCaseRequest struct {
 
 type CreateJoiningCaseInput struct {
 	IdempotencyKey, RequestHash, ActingActorID, CorrelationID string
-	Origin, OriginatingFieldActorID                           string
+	Origin, OriginatingFieldActorID, ApplicantActorID         string
 	EvidenceKeyring                                           *JoiningCaseEvidenceKeyring
 	Request                                                   JoiningCaseRequest
 }
@@ -137,14 +135,6 @@ type CorrectJoiningCaseInput struct {
 	ServiceCityID, VerticalID, CommercialTypeID   string
 	Latitude, Longitude                           float64
 	FulfillmentModes                              []string
-}
-
-type UpdateFieldJoiningCaseDraftInput struct {
-	CaseID, FieldActorID, IdempotencyKey, RequestHash, CorrelationID string
-	ExpectedVersion                                                  int
-	EvidenceKeyring                                                  *JoiningCaseEvidenceKeyring
-	PreserveProofNumber                                              bool
-	Request                                                          JoiningCaseRequest
 }
 
 type ReviewJoiningCaseInput struct {
@@ -220,10 +210,6 @@ func ValidateStoreWorkingHours(value json.RawMessage) bool {
 	return true
 }
 
-func HashFieldJoiningCaseAdmission(caseID, fieldActorID string, expectedVersion int) string {
-	return hashFacts("field-admission-request", caseID, fieldActorID, strconv.Itoa(expectedVersion))
-}
-
 func HashJoiningCaseCorrectAndResubmit(input CorrectJoiningCaseInput) string {
 	return hashFacts("correct-and-resubmit", input.CaseID, input.ActorID, input.OwnerFullName, input.BusinessName, input.FirstStoreName, input.FirstStoreAddress, string(input.FirstStoreWorkingHours), input.FirstStoreProofType, input.FirstStoreProofNumber, input.FirstStoreNotes, strconv.Itoa(input.ExpectedVersion), input.ServiceCityID, input.VerticalID, input.CommercialTypeID, formatCoordinate(input.Latitude), formatCoordinate(input.Longitude))
 }
@@ -242,245 +228,6 @@ func CreateJoiningCase(ctx context.Context, db *sql.DB, input CreateJoiningCaseI
 	return createJoiningCase(ctx, db, input)
 }
 
-func CreateJoiningCaseForField(ctx context.Context, db *sql.DB, input CreateJoiningCaseInput) (JoiningCaseResult, error) {
-	input.Origin = "field"
-	input.OriginatingFieldActorID = input.ActingActorID
-	return createJoiningCase(ctx, db, input)
-}
-
-func CreateFieldJoiningCaseDraft(ctx context.Context, db *sql.DB, input CreateJoiningCaseInput) (JoiningCaseResult, error) {
-	input.Origin = "field"
-	input.OriginatingFieldActorID = strings.TrimSpace(input.ActingActorID)
-	return createFieldJoiningCaseDraft(ctx, db, input)
-}
-
-func createFieldJoiningCaseDraft(ctx context.Context, db *sql.DB, input CreateJoiningCaseInput) (JoiningCaseResult, error) {
-	request := input.Request
-	input.OriginatingFieldActorID = strings.TrimSpace(input.OriginatingFieldActorID)
-	if db == nil || input.OriginatingFieldActorID == "" || strings.TrimSpace(input.ActingActorID) != input.OriginatingFieldActorID || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.RequestHash) < 1 || len(input.RequestHash) > 128 || len(strings.TrimSpace(input.CorrelationID)) < 8 || len(strings.TrimSpace(input.CorrelationID)) > 128 || request.Phone == "" {
-		return JoiningCaseResult{}, ErrJoiningCaseState
-	}
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return JoiningCaseResult{}, fmt.Errorf("begin Field joining-case draft: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	if err := lockJoiningCaseKey(ctx, tx, input.IdempotencyKey); err != nil {
-		return JoiningCaseResult{}, err
-	}
-	var storedHash, storedCaseID, operation string
-	err = tx.QueryRowContext(ctx, `SELECT request_hash,case_id,operation FROM dsh.joining_case_mutation_idempotency WHERE idempotency_key=$1 FOR UPDATE`, input.IdempotencyKey).Scan(&storedHash, &storedCaseID, &operation)
-	if err == nil {
-		if storedHash != input.RequestHash || operation != "create" {
-			return JoiningCaseResult{}, ErrJoiningCaseIdempotency
-		}
-		result, readErr := readJoiningCaseTx(ctx, tx, storedCaseID)
-		if readErr != nil {
-			return JoiningCaseResult{}, readErr
-		}
-		if result.Case.OriginatingFieldActorID != input.OriginatingFieldActorID {
-			return JoiningCaseResult{}, ErrJoiningCasePartnerAccess
-		}
-		if err := tx.Commit(); err != nil {
-			return JoiningCaseResult{}, err
-		}
-		result.Replayed = true
-		return result, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return JoiningCaseResult{}, fmt.Errorf("read joining-case draft idempotency: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "dsh:joining-case:phone:"+request.Phone); err != nil {
-		return JoiningCaseResult{}, err
-	}
-	var existing string
-	err = tx.QueryRowContext(ctx, `SELECT id FROM dsh.joining_cases WHERE contact_phone_e164=$1 AND state <> 'approved'`, request.Phone).Scan(&existing)
-	if err == nil {
-		return JoiningCaseResult{}, ErrJoiningCaseExists
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return JoiningCaseResult{}, err
-	}
-	caseID, err := newID("join")
-	if err != nil {
-		return JoiningCaseResult{}, err
-	}
-	if strings.TrimSpace(request.FirstStoreProofNumber) != "" && input.EvidenceKeyring == nil {
-		return JoiningCaseResult{}, errors.New("DSH joining-case evidence keyring is required")
-	}
-	var latitude, longitude any
-	if request.Latitude != 0 || request.Longitude != 0 {
-		latitude, longitude = request.Latitude, request.Longitude
-	}
-	workingHours := any(nil)
-	if len(request.FirstStoreWorkingHours) > 0 {
-		workingHours = string(request.FirstStoreWorkingHours)
-	}
-	var modes any = pq.Array(request.FulfillmentModes)
-	if request.FulfillmentModes == nil {
-		modes = pq.Array([]string{})
-	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO dsh.joining_cases(id,contact_phone_e164,owner_full_name,business_name,first_store_name,first_store_address,first_store_working_hours,first_store_proof_type,first_store_notes,first_store_service_city_id,first_store_vertical_id,first_store_commercial_type_id,first_store_latitude,first_store_longitude,first_store_fulfillment_modes,originating_field_actor_id,origin,wallet_provider_key) VALUES($1,$2,NULLIF($3,''),$4,$5,NULLIF($6,''),$7::jsonb,NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),NULLIF($12,''),$13,$14,$15,$16,'field',NULLIF($17,''))`, caseID, request.Phone, request.OwnerFullName, request.BusinessName, request.FirstStoreName, request.FirstStoreAddress, workingHours, request.FirstStoreProofType, request.FirstStoreNotes, request.ServiceCityID, request.VerticalID, request.CommercialTypeID, latitude, longitude, modes, input.OriginatingFieldActorID, request.WalletProviderKey)
-	if err != nil {
-		return JoiningCaseResult{}, fmt.Errorf("create Field joining-case draft: %w", err)
-	}
-	if strings.TrimSpace(request.FirstStoreProofNumber) != "" {
-		keyID, ciphertext, encryptErr := input.EvidenceKeyring.Encrypt(caseID, "proof-number", []byte(strings.TrimSpace(request.FirstStoreProofNumber)))
-		if encryptErr != nil {
-			return JoiningCaseResult{}, encryptErr
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.joining_case_private_evidence(joining_case_id,proof_number_key_id,proof_number_ciphertext) VALUES($1,$2,$3)`, caseID, keyID, ciphertext); err != nil {
-			return JoiningCaseResult{}, fmt.Errorf("store encrypted Field draft proof number: %w", err)
-		}
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.joining_case_mutation_idempotency(idempotency_key,request_hash,case_id,operation,result_version,result_state) VALUES($1,$2,$3,'create',1,'draft')`, input.IdempotencyKey, input.RequestHash, caseID); err != nil {
-		return JoiningCaseResult{}, err
-	}
-	if err := auditJoiningCaseTx(ctx, tx, "joining_case_created", input.IdempotencyKey, input.CorrelationID, input.ActingActorID, caseID, "", "draft", 1, input.RequestHash, "", "", ""); err != nil {
-		return JoiningCaseResult{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return JoiningCaseResult{}, err
-	}
-	result, err := ReadJoiningCase(ctx, db, caseID)
-	result.Replayed = false
-	return result, err
-}
-
-func UpdateFieldJoiningCaseDraft(ctx context.Context, db *sql.DB, input UpdateFieldJoiningCaseDraftInput) (JoiningCaseResult, error) {
-	input.CaseID, input.FieldActorID = strings.TrimSpace(input.CaseID), strings.TrimSpace(input.FieldActorID)
-	if db == nil || input.CaseID == "" || input.FieldActorID == "" || input.ExpectedVersion < 1 || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 || input.RequestHash == "" {
-		return JoiningCaseResult{}, ErrJoiningCaseState
-	}
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return JoiningCaseResult{}, fmt.Errorf("begin Field joining-case draft update: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	if err := lockJoiningCaseKey(ctx, tx, input.IdempotencyKey); err != nil {
-		return JoiningCaseResult{}, err
-	}
-	result, found, err := readJoiningCaseIdempotency(ctx, tx, input.IdempotencyKey, input.RequestHash, input.CaseID, "draft_update")
-	if err != nil {
-		return JoiningCaseResult{}, err
-	}
-	if found {
-		if result.Case.OriginatingFieldActorID != input.FieldActorID {
-			return JoiningCaseResult{}, ErrJoiningCasePartnerAccess
-		}
-		if err := tx.Commit(); err != nil {
-			return JoiningCaseResult{}, err
-		}
-		result.Replayed = true
-		return result, nil
-	}
-	current, err := readJoiningCaseTx(ctx, tx, input.CaseID)
-	if err != nil {
-		return JoiningCaseResult{}, err
-	}
-	if current.Case.Origin != "field" || current.Case.OriginatingFieldActorID != input.FieldActorID {
-		return JoiningCaseResult{}, ErrJoiningCasePartnerAccess
-	}
-	if current.Case.State != "draft" {
-		return JoiningCaseResult{}, ErrJoiningCaseState
-	}
-	if current.Case.Version != input.ExpectedVersion {
-		return JoiningCaseResult{}, ErrJoiningCaseVersion
-	}
-	request := input.Request
-	// Compare the encrypted number without leaking it into the public case view.
-	// An identical resubmission must not erase an already uploaded proof image.
-	proofNumber := strings.TrimSpace(request.FirstStoreProofNumber)
-	if current.Case.FirstStoreProofNumberPresent && request.FirstStoreProofType != current.Case.FirstStoreProofType && proofNumber == "" {
-		return JoiningCaseResult{}, ErrJoiningCaseState
-	}
-	numberChanged := false
-	if !input.PreserveProofNumber && proofNumber != "" {
-		if input.EvidenceKeyring == nil {
-			return JoiningCaseResult{}, errors.New("DSH joining-case evidence keyring is required")
-		}
-		var previousKeyID sql.NullString
-		var previousCiphertext []byte
-		readErr := tx.QueryRowContext(ctx, `SELECT proof_number_key_id,proof_number_ciphertext
-			FROM dsh.joining_case_private_evidence WHERE joining_case_id=$1`, input.CaseID).Scan(&previousKeyID, &previousCiphertext)
-		switch {
-		case errors.Is(readErr, sql.ErrNoRows):
-			numberChanged = true
-		case readErr != nil:
-			return JoiningCaseResult{}, fmt.Errorf("read existing encrypted proof number: %w", readErr)
-		default:
-			if !previousKeyID.Valid || len(previousCiphertext) == 0 {
-				numberChanged = true
-				break
-			}
-			previous, decryptErr := input.EvidenceKeyring.Decrypt(input.CaseID, "proof-number", previousKeyID.String, previousCiphertext)
-			if decryptErr != nil {
-				return JoiningCaseResult{}, decryptErr
-			}
-			numberChanged = subtle.ConstantTimeCompare(previous, []byte(proofNumber)) != 1
-		}
-	}
-	if request.Phone != current.Case.ContactPhoneE164 {
-		phones := []string{current.Case.ContactPhoneE164, request.Phone}
-		sort.Strings(phones)
-		for _, phone := range phones {
-			if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "dsh:joining-case:phone:"+phone); err != nil {
-				return JoiningCaseResult{}, err
-			}
-		}
-		var exists string
-		err := tx.QueryRowContext(ctx, `SELECT id FROM dsh.joining_cases WHERE contact_phone_e164=$1 AND id<>$2 AND state <> 'approved'`, request.Phone, input.CaseID).Scan(&exists)
-		if err == nil {
-			return JoiningCaseResult{}, ErrJoiningCaseExists
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return JoiningCaseResult{}, err
-		}
-	}
-	var latitude, longitude any
-	if request.Latitude != 0 || request.Longitude != 0 {
-		latitude, longitude = request.Latitude, request.Longitude
-	}
-	workingHours := any(nil)
-	if len(request.FirstStoreWorkingHours) > 0 {
-		workingHours = string(request.FirstStoreWorkingHours)
-	}
-	var modes any = pq.Array(request.FulfillmentModes)
-	if request.FulfillmentModes == nil {
-		modes = pq.Array([]string{})
-	}
-	updated, err := tx.ExecContext(ctx, `UPDATE dsh.joining_cases SET contact_phone_e164=$2,owner_full_name=NULLIF($3,''),business_name=$4,first_store_name=$5,wallet_provider_key=NULLIF($6,''),first_store_address=NULLIF($7,''),first_store_working_hours=$8::jsonb,first_store_proof_type=NULLIF($9,''),first_store_notes=NULLIF($10,''),first_store_service_city_id=NULLIF($11,''),first_store_vertical_id=NULLIF($12,''),first_store_commercial_type_id=NULLIF($13,''),first_store_latitude=$14,first_store_longitude=$15,first_store_fulfillment_modes=$16,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND originating_field_actor_id=$17 AND origin='field' AND state='draft' AND version=$18`, input.CaseID, request.Phone, request.OwnerFullName, request.BusinessName, request.FirstStoreName, request.WalletProviderKey, request.FirstStoreAddress, workingHours, request.FirstStoreProofType, request.FirstStoreNotes, request.ServiceCityID, request.VerticalID, request.CommercialTypeID, latitude, longitude, modes, input.FieldActorID, input.ExpectedVersion)
-	if err != nil {
-		return JoiningCaseResult{}, fmt.Errorf("update Field joining-case draft: %w", err)
-	}
-	if count, err := updated.RowsAffected(); err != nil || count != 1 {
-		return JoiningCaseResult{}, ErrJoiningCaseVersion
-	}
-	if numberChanged {
-		keyID, ciphertext, encryptErr := input.EvidenceKeyring.Encrypt(input.CaseID, "proof-number", []byte(strings.TrimSpace(request.FirstStoreProofNumber)))
-		if encryptErr != nil {
-			return JoiningCaseResult{}, encryptErr
-		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO dsh.joining_case_private_evidence(joining_case_id,proof_number_key_id,proof_number_ciphertext) VALUES($1,$2,$3) ON CONFLICT(joining_case_id) DO UPDATE SET proof_number_key_id=EXCLUDED.proof_number_key_id,proof_number_ciphertext=EXCLUDED.proof_number_ciphertext,updated_at=clock_timestamp()`, input.CaseID, keyID, ciphertext)
-		if err != nil {
-			return JoiningCaseResult{}, fmt.Errorf("update encrypted Field draft proof number: %w", err)
-		}
-	}
-	resultVersion := input.ExpectedVersion + 1
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.joining_case_mutation_idempotency(idempotency_key,request_hash,case_id,operation,result_version,result_state) VALUES($1,$2,$3,'draft_update',$4,'draft')`, input.IdempotencyKey, input.RequestHash, input.CaseID, resultVersion); err != nil {
-		return JoiningCaseResult{}, err
-	}
-	if err := auditJoiningCaseTx(ctx, tx, "joining_case_draft_updated", input.IdempotencyKey, input.CorrelationID, input.FieldActorID, input.CaseID, "draft", "draft", resultVersion, input.RequestHash, "", "", ""); err != nil {
-		return JoiningCaseResult{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return JoiningCaseResult{}, err
-	}
-	result, err = ReadJoiningCase(ctx, db, input.CaseID)
-	result.Replayed = false
-	return result, err
-}
-
 func createJoiningCase(ctx context.Context, db *sql.DB, input CreateJoiningCaseInput) (JoiningCaseResult, error) {
 	idempotencyKey := input.IdempotencyKey
 	requestHash := input.RequestHash
@@ -488,6 +235,7 @@ func createJoiningCase(ctx context.Context, db *sql.DB, input CreateJoiningCaseI
 	correlationID := input.CorrelationID
 	origin := input.Origin
 	originatingFieldActorID := input.OriginatingFieldActorID
+	applicantActorID := strings.TrimSpace(input.ApplicantActorID)
 	phone := input.Request.Phone
 	businessName := input.Request.BusinessName
 	firstStoreName := input.Request.FirstStoreName
@@ -500,10 +248,10 @@ func createJoiningCase(ctx context.Context, db *sql.DB, input CreateJoiningCaseI
 	if db == nil {
 		return JoiningCaseResult{}, errors.New("DSH database is nil")
 	}
-	if origin != "field" && origin != "control_panel" {
+	if origin != "control_panel" && origin != "self_service" {
 		return JoiningCaseResult{}, ErrJoiningCaseState
 	}
-	if origin == "field" && strings.TrimSpace(originatingFieldActorID) == "" {
+	if (origin == "self_service" && (strings.TrimSpace(originatingFieldActorID) != "" || applicantActorID == "")) || (origin == "control_panel" && (originatingFieldActorID != "" || applicantActorID != "")) {
 		return JoiningCaseResult{}, ErrJoiningCaseState
 	}
 	if len(fulfillmentModes) == 0 {
@@ -552,7 +300,11 @@ func createJoiningCase(ctx context.Context, db *sql.DB, input CreateJoiningCaseI
 		return JoiningCaseResult{}, err
 	}
 	var existing string
-	if err := tx.QueryRowContext(ctx, "SELECT id FROM dsh.joining_cases WHERE contact_phone_e164=$1 AND state <> 'approved'", phone).Scan(&existing); err == nil {
+	duplicateQuery := "SELECT id FROM dsh.joining_cases WHERE contact_phone_e164=$1 AND state <> 'approved'"
+	if origin == "self_service" {
+		duplicateQuery = "SELECT id FROM dsh.joining_cases WHERE contact_phone_e164=$1"
+	}
+	if err := tx.QueryRowContext(ctx, duplicateQuery, phone).Scan(&existing); err == nil {
 		return JoiningCaseResult{}, ErrJoiningCaseExists
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return JoiningCaseResult{}, err
@@ -575,7 +327,7 @@ func createJoiningCase(ctx context.Context, db *sql.DB, input CreateJoiningCaseI
 	if strings.TrimSpace(input.Request.FirstStoreProofNumber) != "" && input.EvidenceKeyring == nil {
 		return JoiningCaseResult{}, errors.New("DSH joining-case evidence keyring is required")
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.joining_cases(id,contact_phone_e164,owner_full_name,business_name,first_store_name,first_store_address,first_store_working_hours,first_store_proof_type,first_store_notes,first_store_service_city_id,first_store_vertical_id,first_store_commercial_type_id,first_store_latitude,first_store_longitude,first_store_fulfillment_modes,originating_field_actor_id,origin,wallet_provider_key) VALUES($1,$2,NULLIF($3,''),$4,$5,NULLIF($6,''),NULLIF($7,'')::jsonb,NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),$12,$13,$14,$15,NULLIF($16,''),$17,NULLIF($18,''))`, caseID, phone, input.Request.OwnerFullName, businessName, firstStoreName, input.Request.FirstStoreAddress, string(input.Request.FirstStoreWorkingHours), input.Request.FirstStoreProofType, input.Request.FirstStoreNotes, serviceCityID, verticalID, commercialTypeID, latitude, longitude, pq.Array(fulfillmentModes), originatingFieldActorID, origin, input.Request.WalletProviderKey); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.joining_cases(id,contact_phone_e164,owner_full_name,business_name,first_store_name,first_store_address,first_store_working_hours,first_store_proof_type,first_store_notes,first_store_service_city_id,first_store_vertical_id,first_store_commercial_type_id,first_store_latitude,first_store_longitude,first_store_fulfillment_modes,originating_field_actor_id,origin,wallet_provider_key,applicant_actor_id) VALUES($1,$2,NULLIF($3,''),$4,$5,NULLIF($6,''),NULLIF($7,'')::jsonb,NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),$12,$13,$14,$15,NULLIF($16,''),$17,NULLIF($18,''),NULLIF($19,''))`, caseID, phone, input.Request.OwnerFullName, businessName, firstStoreName, input.Request.FirstStoreAddress, string(input.Request.FirstStoreWorkingHours), input.Request.FirstStoreProofType, input.Request.FirstStoreNotes, serviceCityID, verticalID, commercialTypeID, latitude, longitude, pq.Array(fulfillmentModes), originatingFieldActorID, origin, input.Request.WalletProviderKey, applicantActorID); err != nil {
 		return JoiningCaseResult{}, fmt.Errorf("create joining case: %w", err)
 	}
 	if strings.TrimSpace(input.Request.FirstStoreProofNumber) != "" {
@@ -668,7 +420,7 @@ func ValidateJoiningCaseSubmissionReadiness(current JoiningCaseRecord, expectedV
 	if current.Version != expectedVersion {
 		return ErrJoiningCaseVersion
 	}
-	canSubmit := (current.Origin == "control_panel" && current.State == "draft") || (current.Origin == "field" && current.State == "admission_requested")
+	canSubmit := ((current.Origin == "control_panel" || current.Origin == "self_service") && current.State == "draft") || (current.Origin == "field" && current.State == "admission_requested")
 	if !canSubmit {
 		return ErrJoiningCaseState
 	}
@@ -706,69 +458,6 @@ func ValidateJoiningCaseIntakeReadiness(current JoiningCaseRecord) error {
 		return ErrJoiningCaseState
 	}
 	return nil
-}
-
-func RequestFieldJoiningCaseAdmission(ctx context.Context, db *sql.DB, caseID, fieldActorID string, expectedVersion int, idempotencyKey, requestHash, correlationID string) (JoiningCaseResult, error) {
-	if db == nil || strings.TrimSpace(fieldActorID) == "" || expectedVersion < 1 {
-		return JoiningCaseResult{}, ErrJoiningCaseState
-	}
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return JoiningCaseResult{}, fmt.Errorf("begin Field joining-case admission request: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	if err := lockJoiningCaseKey(ctx, tx, idempotencyKey); err != nil {
-		return JoiningCaseResult{}, err
-	}
-	result, found, err := readJoiningCaseIdempotency(ctx, tx, idempotencyKey, requestHash, caseID, "field-admission-request")
-	if err != nil {
-		return JoiningCaseResult{}, err
-	}
-	if found {
-		if result.Case.Origin != "field" || result.Case.OriginatingFieldActorID != strings.TrimSpace(fieldActorID) {
-			return JoiningCaseResult{}, ErrJoiningCasePartnerAccess
-		}
-		if err := tx.Commit(); err != nil {
-			return JoiningCaseResult{}, err
-		}
-		result.Replayed = true
-		return result, nil
-	}
-	current, err := readJoiningCaseTx(ctx, tx, caseID)
-	if errors.Is(err, ErrJoiningCaseNotFound) {
-		return JoiningCaseResult{}, err
-	}
-	if err != nil {
-		return JoiningCaseResult{}, err
-	}
-	if current.Case.Origin != "field" || current.Case.OriginatingFieldActorID != strings.TrimSpace(fieldActorID) {
-		return JoiningCaseResult{}, ErrJoiningCasePartnerAccess
-	}
-	if current.Case.Version != expectedVersion {
-		return JoiningCaseResult{}, ErrJoiningCaseVersion
-	}
-	if current.Case.State != "draft" {
-		return JoiningCaseResult{}, ErrJoiningCaseState
-	}
-	if err := ValidateJoiningCaseIntakeReadiness(current.Case); err != nil {
-		return JoiningCaseResult{}, err
-	}
-	updated, err := updateJoiningCaseStateTx(ctx, tx, current.Case, "admission_requested", "", "", "", "", expectedVersion)
-	if err != nil {
-		return JoiningCaseResult{}, err
-	}
-	if err := recordJoiningCaseMutationTx(ctx, tx, idempotencyKey, requestHash, updated, "field-admission-request"); err != nil {
-		return JoiningCaseResult{}, err
-	}
-	if err := auditJoiningCaseTx(ctx, tx, "joining_case_admission_requested", idempotencyKey, correlationID, fieldActorID, caseID, current.Case.State, updated.State, updated.Version, requestHash, "", "", ""); err != nil {
-		return JoiningCaseResult{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return JoiningCaseResult{}, err
-	}
-	result, err = ReadJoiningCase(ctx, db, caseID)
-	result.Replayed = false
-	return result, err
 }
 
 func CorrectAndResubmitJoiningCase(ctx context.Context, db *sql.DB, input CorrectJoiningCaseInput) (JoiningCaseResult, error) {
@@ -1127,13 +816,6 @@ func ReviewJoiningCase(ctx context.Context, db *sql.DB, input ReviewJoiningCaseI
 		if _, err := tx.ExecContext(ctx, "DELETE FROM dsh.joining_case_review_photos WHERE joining_case_id=$1", caseID); err != nil {
 			return JoiningCaseResult{}, err
 		}
-		outboxID, outboxErr := newID("joining_financial")
-		if outboxErr != nil {
-			return JoiningCaseResult{}, outboxErr
-		}
-		if _, outboxErr = tx.ExecContext(ctx, `INSERT INTO dsh.joining_case_financial_profile_outbox(id,case_id,idempotency_key,request_hash,correlation_id,acting_actor_id,partner_actor_id,origin,settlement_period,terms_policy_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, outboxID, caseID, idempotencyKey, requestHash, correlationID, actingActorID, current.Case.PartnerActorID, current.Case.Origin, settlementPeriod, termsPolicyVersion); outboxErr != nil {
-			return JoiningCaseResult{}, outboxErr
-		}
 	}
 	if err := tx.Commit(); err != nil {
 		return JoiningCaseResult{}, err
@@ -1162,7 +844,7 @@ func validateJoiningCaseReview(current JoiningCaseRecord, input ReviewJoiningCas
 	}
 	input.CorrectionReason = strings.TrimSpace(input.CorrectionReason)
 	input.SettlementPeriod = strings.ToUpper(strings.TrimSpace(input.SettlementPeriod))
-	if input.Decision == "approved" && ((input.SettlementPeriod != "DAILY" && input.SettlementPeriod != "WEEKLY" && input.SettlementPeriod != "MONTHLY") || !strings.HasPrefix(strings.TrimSpace(input.TermsPolicyVersion), "partner-financial-terms:v")) {
+	if input.SettlementPeriod != "" || strings.TrimSpace(input.TermsPolicyVersion) != "" {
 		return input, ErrJoiningCaseState
 	}
 	return input, nil
@@ -1344,107 +1026,6 @@ func LockPartnerJoiningCase(ctx context.Context, db *sql.DB, actorID string) (*s
 		return nil, "", 0, err
 	}
 	return tx, state, version, nil
-}
-
-func ReadJoiningCaseForField(ctx context.Context, db *sql.DB, fieldActorID, caseID string) (JoiningCaseResult, error) {
-	caseRecord, err := readJoiningCaseRow(ctx, db.QueryRowContext(ctx, joiningCaseSelect+" WHERE c.originating_field_actor_id=$1 AND c.id=$2", strings.TrimSpace(fieldActorID), strings.TrimSpace(caseID)), false)
-	if errors.Is(err, sql.ErrNoRows) {
-		return JoiningCaseResult{}, ErrJoiningCaseNotFound
-	}
-	if err != nil {
-		return JoiningCaseResult{}, err
-	}
-	caseRecord.StoreProfileImage, err = readStoreProfileMediaWithQuery(ctx, db, caseRecord.ID, caseRecord.StoreID, "primary")
-	if err != nil {
-		return JoiningCaseResult{}, err
-	}
-	caseRecord.StoreCoverImage, err = readStoreProfileMediaWithQuery(ctx, db, caseRecord.ID, caseRecord.StoreID, "cover")
-	if err != nil {
-		return JoiningCaseResult{}, err
-	}
-	return JoiningCaseResult{Case: caseRecord}, nil
-}
-
-func ListJoiningCasesForField(ctx context.Context, db *sql.DB, fieldActorID, queryText string, limit int, cursor string) (JoiningCaseListResult, error) {
-	fieldActorID = strings.TrimSpace(fieldActorID)
-	if db == nil || fieldActorID == "" || len(fieldActorID) > 128 || limit < 1 || limit > 50 {
-		return JoiningCaseListResult{}, ErrJoiningCaseInvalidLimit
-	}
-	queryText, err := normalizeJoiningCaseSearch(queryText)
-	if err != nil {
-		return JoiningCaseListResult{}, err
-	}
-	decoded, err := decodeJoiningCaseCursor(cursor, "field", "", queryText, "created_desc", fieldActorID)
-	if err != nil {
-		return JoiningCaseListResult{}, err
-	}
-	query := `SELECT c.id,c.contact_phone_e164,c.business_name,c.first_store_name,c.partner_actor_id,c.originating_field_actor_id,c.origin,c.state,c.correction_reason,c.reviewed_by,c.version,c.created_at,c.updated_at,c.first_store_service_city_id,c.first_store_vertical_id,c.first_store_commercial_type_id,c.first_store_latitude,c.first_store_longitude,COALESCE(c.wallet_provider_key,'') FROM dsh.joining_cases c WHERE c.originating_field_actor_id=$1`
-	args := []any{fieldActorID}
-	if queryText != "" {
-		args = append(args, queryText)
-		searchArg := len(args)
-		query += fmt.Sprintf(" AND (position($%d in lower(c.id::text))>0 OR position($%d in lower(c.contact_phone_e164))>0 OR position($%d in lower(c.owner_full_name))>0 OR position($%d in lower(c.business_name))>0 OR position($%d in lower(c.first_store_name))>0)", searchArg, searchArg, searchArg, searchArg, searchArg)
-	}
-	if decoded != nil {
-		args = append(args, decoded.CreatedAt, decoded.ID)
-		query += fmt.Sprintf(" AND (c.created_at,c.id)<($%d,$%d)", len(args)-1, len(args))
-	}
-	args = append(args, limit+1)
-	query += fmt.Sprintf(" ORDER BY c.created_at DESC,c.id DESC LIMIT $%d", len(args))
-	rows, err := db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return JoiningCaseListResult{}, fmt.Errorf("list Field joining cases: %w", err)
-	}
-	defer rows.Close()
-	items := make([]JoiningCaseRecord, 0, limit+1)
-	for rows.Next() {
-		var record JoiningCaseRecord
-		var actorID, originActorID, origin, correctionReason, reviewedBy, cityID, verticalID, commercialTypeID sql.NullString
-		var latitude, longitude sql.NullFloat64
-		if err := rows.Scan(&record.ID, &record.ContactPhoneE164, &record.BusinessName, &record.FirstStoreName, &actorID, &originActorID, &origin, &record.State, &correctionReason, &reviewedBy, &record.Version, &record.CreatedAt, &record.UpdatedAt, &cityID, &verticalID, &commercialTypeID, &latitude, &longitude, &record.WalletProviderKey); err != nil {
-			return JoiningCaseListResult{}, fmt.Errorf("scan Field joining case queue: %w", err)
-		}
-		if actorID.Valid {
-			record.PartnerActorID = actorID.String
-		}
-		if originActorID.Valid {
-			record.OriginatingFieldActorID = originActorID.String
-		}
-		if origin.Valid {
-			record.Origin = origin.String
-		}
-		if correctionReason.Valid {
-			record.CorrectionReason = correctionReason.String
-		}
-		if reviewedBy.Valid {
-			record.ReviewedBy = reviewedBy.String
-		}
-		if cityID.Valid {
-			record.FirstStoreServiceCityID = cityID.String
-		}
-		if verticalID.Valid {
-			record.FirstStoreVerticalID = verticalID.String
-		}
-		if commercialTypeID.Valid {
-			record.FirstStoreCommercialTypeID = commercialTypeID.String
-		}
-		record.FirstStoreLatitude = nullableFloat(latitude)
-		record.FirstStoreLongitude = nullableFloat(longitude)
-		items = append(items, record)
-	}
-	if err := rows.Err(); err != nil {
-		return JoiningCaseListResult{}, fmt.Errorf("read Field joining case queue: %w", err)
-	}
-	result := JoiningCaseListResult{Cases: items}
-	if len(items) > limit {
-		last := items[limit-1]
-		result.Cases = items[:limit]
-		result.NextCursor, err = encodeJoiningCaseCursor(joiningCaseCursor{Version: 1, Scope: "field", CreatedAt: last.CreatedAt, ID: last.ID, Sort: "created_desc", Query: queryText, FieldActorID: fieldActorID})
-		if err != nil {
-			return JoiningCaseListResult{}, err
-		}
-	}
-	return result, nil
 }
 
 const joiningCaseSelect = `SELECT c.id,c.contact_phone_e164,c.owner_full_name,c.business_name,c.first_store_name,c.first_store_address,c.first_store_working_hours,c.first_store_proof_type,c.first_store_notes,
@@ -1730,9 +1311,8 @@ func updateJoiningCaseReviewStateTx(ctx context.Context, tx *sql.Tx, input updat
 	state, actorID, reviewedBy, correctionReason, storeID := input.State, input.ActorID, input.ReviewedBy, input.CorrectionReason, input.StoreID
 	settlementPeriod, termsPolicyVersion, expectedVersion := input.SettlementPeriod, input.TermsPolicyVersion, input.ExpectedVersion
 	financialProfileState := "REQUIRED"
-	if state == "approved" {
-		financialProfileState = "PENDING_BINDING"
-	}
+	// An approved Store is not financially eligible until Finance explicitly
+	// binds the current policy through BindApprovedJoiningCaseFinancialTerms.
 	row := tx.QueryRowContext(ctx, `UPDATE dsh.joining_cases SET partner_actor_id=NULLIF($2,''),state=$3,correction_reason=NULLIF($4,''),reviewed_by=NULLIF($5,''),store_id=NULLIF($6,''),settlement_period=CASE WHEN $3='approved' THEN NULLIF($7::text,'') ELSE NULL END,terms_policy_version=CASE WHEN $3='approved' THEN NULLIF($8::text,'') ELSE NULL END,financial_profile_id=NULL,financial_profile_state=$9,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$10 RETURNING id`, current.ID, actorID, state, correctionReason, reviewedBy, storeID, settlementPeriod, termsPolicyVersion, financialProfileState, expectedVersion)
 	var updatedID string
 	if err := row.Scan(&updatedID); err != nil {

@@ -6,8 +6,7 @@ import type { FinanceResourceKey } from "../../../../../src/navigation/workspace
 const resources = {
   partners: { resource: "beneficiary-settlement-partners", actorType: "partner" },
   captains: { resource: "beneficiary-settlement-captains", actorType: "captain" },
-  field: { resource: "beneficiary-settlement-field", actorType: "field" },
-} as const satisfies Record<string, Readonly<{ resource: FinanceResourceKey; actorType: "partner" | "captain" | "field" }>>;
+} as const satisfies Record<string, Readonly<{ resource: FinanceResourceKey; actorType: "partner" | "captain" }>>;
 
 export default async function FinanceBeneficiarySettlementRegistryPage({
   params,

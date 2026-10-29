@@ -64,8 +64,8 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Candidate customer fulfillment actor isolation failed.' }
         node --test tools/mobile/check-client-partner-native-contract.test.mjs
         if ($LASTEXITCODE -ne 0) { throw 'Candidate client/partner native contract check failed.' }
-        node --test tools/mobile/check-captain-field-native-scope.test.mjs
-        if ($LASTEXITCODE -ne 0) { throw 'Candidate captain/field native permission scope failed.' }
+        node --test tools/mobile/check-captain-native-scope.test.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'Candidate captain native permission scope failed.' }
         node --test tools/mobile/check-eas-offline-plan.test.mjs
         if ($LASTEXITCODE -ne 0) { throw 'Candidate EAS offline plan contract failed.' }
         if (@($candidateFiles | Where-Object { $_ -notmatch $governanceOnlyPattern }).Count -gt 0) {
@@ -114,8 +114,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Local customer fulfillment actor isolation failed.' }
     node --test tools/mobile/check-client-partner-native-contract.test.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Local client/partner native contract check failed.' }
-    node --test tools/mobile/check-captain-field-native-scope.test.mjs
-    if ($LASTEXITCODE -ne 0) { throw 'Local captain/field native permission scope failed.' }
+    node --test tools/mobile/check-captain-native-scope.test.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Local captain native permission scope failed.' }
     node --test tools/mobile/check-eas-offline-plan.test.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Local EAS offline plan contract failed.' }
 

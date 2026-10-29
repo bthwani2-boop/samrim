@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/domain"
@@ -108,13 +109,57 @@ func TestCaptainCODCashDebitIsExactlyOnce(t *testing.T) {
 			if err != nil || replay || earning.DeliveryFeeMinor != 500 {
 				t.Fatalf("earning: %+v replay=%t err=%v", earning, replay, err)
 			}
-			settled, replay, err := FinalizeCaptainCOD(s.ctx, s.db, final)
-			if err != nil || replay || settled.State != "DEBITED" {
-				t.Fatalf("finalize: %+v replay=%t err=%v", settled, replay, err)
+			// Two workers can retry the same successful collection with distinct
+			// request keys after an ambiguous response. Only one may post the
+			// liability debit; the other must observe the terminal reservation.
+			finalAttempts := []CaptainCODReservationInput{final, final}
+			finalAttempts[1].IdempotencyKey = order + "-finalize-retry"
+			finalAttempts[1].CorrelationID = order + "-finalize-retry-correlation"
+			type finalizeResult struct {
+				input  CaptainCODReservationInput
+				item   CaptainCODReservationRecord
+				replay bool
+				err    error
 			}
-			again, replay, err := FinalizeCaptainCOD(s.ctx, s.db, final)
+			startFinalize := make(chan struct{})
+			results := make(chan finalizeResult, len(finalAttempts))
+			var finalizeWorkers sync.WaitGroup
+			for _, attempt := range finalAttempts {
+				finalizeWorkers.Add(1)
+				go func(input CaptainCODReservationInput) {
+					defer finalizeWorkers.Done()
+					<-startFinalize
+					item, replayed, err := FinalizeCaptainCOD(s.ctx, s.db, input)
+					results <- finalizeResult{input: input, item: item, replay: replayed, err: err}
+				}(attempt)
+			}
+			close(startFinalize)
+			finalizeWorkers.Wait()
+			close(results)
+			var settled CaptainCODReservationRecord
+			var winningInput CaptainCODReservationInput
+			freshFinalizations, terminalReplays := 0, 0
+			for result := range results {
+				if result.err != nil || result.item.State != "DEBITED" {
+					t.Fatalf("concurrent finalize: %+v replay=%t err=%v", result.item, result.replay, result.err)
+				}
+				if settled.ID != "" && result.item.ID != settled.ID {
+					t.Fatalf("concurrent finalize returned different reservations: %s and %s", settled.ID, result.item.ID)
+				}
+				settled = result.item
+				if result.replay {
+					terminalReplays++
+				} else {
+					freshFinalizations++
+					winningInput = result.input
+				}
+			}
+			if freshFinalizations != 1 || terminalReplays != 1 {
+				t.Fatalf("concurrent finalize outcomes: fresh=%d terminal_replays=%d", freshFinalizations, terminalReplays)
+			}
+			again, replay, err := FinalizeCaptainCOD(s.ctx, s.db, winningInput)
 			if err != nil || !replay || again.ID != settled.ID {
-				t.Fatalf("replayed debit: %+v replay=%t err=%v", again, replay, err)
+				t.Fatalf("idempotent debit replay: %+v replay=%t err=%v", again, replay, err)
 			}
 			wallet, err := ReadCaptainWalletState(s.ctx, s.db, captain)
 			if err != nil || wallet.HeldMinor != 0 || wallet.AvailableMinor != tc.captainFund+500-tc.cash {

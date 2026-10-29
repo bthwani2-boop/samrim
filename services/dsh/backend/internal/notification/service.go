@@ -114,7 +114,6 @@ func validNotificationSession(subject, role, surface string) bool {
 	case role == "client" && surface == "app-client":
 	case role == "partner" && surface == "app-partner":
 	case role == "captain" && surface == "app-captain":
-	case role == "field" && surface == "app-field":
 	case role == "operator" && surface == "control-panel":
 	default:
 		return false

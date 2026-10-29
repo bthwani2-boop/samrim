@@ -5,9 +5,11 @@ import { type Href, Link, useFocusEffect, useLocalSearchParams, useRouter } from
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
 import { useServiceCityScope } from "../service-city/service-city-scope";
 import { evaluateStoreServiceability, listOwnDeliveryAddresses, readPublishedStore } from "../store-discovery/store-discovery-client";
 import { CartCheckout, type CheckoutFooterState } from "./cart-checkout";
+import { isClientCartScopeCurrent, subscribeClientCartActorChanges } from "./cart-session-scope";
 import { readSavedFulfillmentMode, resolveFulfillmentChoice, saveFulfillmentMode } from "./fulfillment-choice";
 import { PremiumFulfillmentSelector, PremiumStickyFooter, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
 
@@ -44,6 +46,10 @@ export default function ClientCartScreen() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<CartScreenState>({ kind: "loading" });
+  const [actorScopeID, setActorScopeID] = useState(() => {
+    const identity = currentIdentityState();
+    return identity.kind === "authenticated" ? identity.identity.subject.trim() : "";
+  });
   const [addressesState, setAddressesState] = useState<AddressesState>({ kind: "idle", addresses: [] });
   const [serviceability, setServiceability] = useState<ServiceabilityState>({ kind: "idle" });
   const [fulfillmentMode, setFulfillmentMode] = useState<CustomerFulfillmentMode | null>(null);
@@ -68,14 +74,16 @@ export default function ClientCartScreen() {
   requestedFulfillmentModeRef.current = requestedFulfillmentMode;
   const addressRequestID = useRef(0);
   const serviceabilityRequestID = useRef(0);
+  const activeActorRef = useRef(actorScopeID);
   const fulfillmentModeRef = useRef(fulfillmentMode);
   fulfillmentModeRef.current = fulfillmentMode;
-  const scopeRef = useRef({ storeId, selectedCityID });
-  scopeRef.current = { storeId, selectedCityID };
+  const scopeRef = useRef({ storeId, selectedCityID, actorID: actorScopeID });
+  scopeRef.current = { storeId, selectedCityID, actorID: actorScopeID };
 
   const loadAddresses = useCallback(async () => {
     const requestID = ++addressRequestID.current;
-    const isCurrent = () => requestID === addressRequestID.current && scopeRef.current.storeId === storeId && scopeRef.current.selectedCityID === selectedCityID;
+    const actorID = scopeRef.current.actorID;
+    const isCurrent = () => requestID === addressRequestID.current && isClientCartScopeCurrent(actorID, scopeRef.current.actorID, storeId, scopeRef.current.storeId, selectedCityID ?? "", scopeRef.current.selectedCityID ?? "");
     setAddressesState((current) => ({ kind: "loading", addresses: current.addresses }));
     try {
       const response = await listOwnDeliveryAddresses();
@@ -87,8 +95,9 @@ export default function ClientCartScreen() {
 
   const load = useCallback(async () => {
     const requestID = ++loadRequestID.current;
+    const actorID = scopeRef.current.actorID;
     serviceabilityRequestID.current += 1;
-    const isCurrent = () => requestID === loadRequestID.current && scopeRef.current.storeId === storeId && scopeRef.current.selectedCityID === selectedCityID;
+    const isCurrent = () => requestID === loadRequestID.current && isClientCartScopeCurrent(actorID, scopeRef.current.actorID, storeId, scopeRef.current.storeId, selectedCityID ?? "", scopeRef.current.selectedCityID ?? "");
     if (!storeId.trim() || !selectedCityID) {
       if (isCurrent()) setState({ kind: "error" });
       return;
@@ -120,11 +129,35 @@ export default function ClientCartScreen() {
   }, [loadAddresses, state.kind, fulfillmentMode]));
 
   useEffect(() => {
-    void load();
+    const actorID = () => {
+      const session = currentIdentityState();
+      return session.kind === "authenticated" ? session.identity.subject.trim() : "";
+    };
+    const subscription = subscribeClientCartActorChanges(activeActorRef.current, actorID, (listener) => subscribeIdentitySession((nextSession) => {
+      const nextActorID = nextSession.kind === "authenticated" ? nextSession.identity.subject.trim() : "";
+      listener(nextActorID);
+    }), (nextActorID) => {
+      activeActorRef.current = nextActorID;
+      scopeRef.current.actorID = nextActorID;
+      loadRequestID.current += 1;
+      addressRequestID.current += 1;
+      serviceabilityRequestID.current += 1;
+      setActorScopeID(nextActorID);
+      setState({ kind: "loading" });
+      setAddressesState({ kind: "idle", addresses: [] });
+      setServiceability({ kind: "idle" });
+      setFulfillmentMode(null);
+      setExpandedAddresses(false);
+      setFooter(null);
+      if (nextActorID) void load();
+      else setState({ kind: "error" });
+    });
+    if (!subscription.changedDuringSync) void load();
     return () => {
       loadRequestID.current += 1;
       addressRequestID.current += 1;
       serviceabilityRequestID.current += 1;
+      subscription.unsubscribe();
     };
   }, [load]);
 
@@ -133,7 +166,8 @@ export default function ClientCartScreen() {
     const requestID = ++serviceabilityRequestID.current;
     const targetStoreID = state.store.id;
     const targetCityID = selectedCityID;
-    const isCurrent = () => requestID === serviceabilityRequestID.current && scopeRef.current.storeId === targetStoreID && scopeRef.current.selectedCityID === targetCityID;
+    const targetActorID = scopeRef.current.actorID;
+    const isCurrent = () => requestID === serviceabilityRequestID.current && isClientCartScopeCurrent(targetActorID, scopeRef.current.actorID, targetStoreID, scopeRef.current.storeId, targetCityID ?? "", scopeRef.current.selectedCityID ?? "");
     setServiceability({ kind: "loading", addressId });
     try {
       const result = await evaluateStoreServiceability(targetStoreID, addressId);
@@ -208,7 +242,7 @@ export default function ClientCartScreen() {
           }} />}
           {orderabilityHint ? <Text accessibilityRole="alert" style={styles.error}>{orderabilityHint}</Text> : null}
         </BthwaniSurface>
-        {fulfillmentMode ? <CartCheckout key={state.store.id} storeId={state.store.id} serviceCityId={selectedCityID ?? ""} addresses={addressesState.addresses} serviceableAddressId={serviceableAddressId} fulfillmentMode={fulfillmentMode} initialPromotionCode={requestedPromotionCode} onFooterChange={updateFooter} checkoutAction={checkoutAction}
+        {fulfillmentMode ? <CartCheckout key={`${state.store.id}:${actorScopeID}`} storeId={state.store.id} serviceCityId={selectedCityID ?? ""} addresses={addressesState.addresses} serviceableAddressId={serviceableAddressId} fulfillmentMode={fulfillmentMode} initialPromotionCode={requestedPromotionCode} onFooterChange={updateFooter} checkoutAction={checkoutAction}
           onRequiredAddress={openRequiredAddress} storeAcceptingOrders={!selectedOrderability || selectedOrderability.state === "OPEN_FOR_ORDERS"} onRefreshStore={load} addressSection={<>{fulfillmentMode !== null && fulfillmentMode !== "CUSTOMER_PICKUP" ? <BthwaniSurface tone="raised" style={styles.section}>
           <View style={styles.row}>
             <BthwaniIcon name="location" color={theme.interactiveText} size={sizing.iconLg}/>

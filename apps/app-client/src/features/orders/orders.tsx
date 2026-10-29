@@ -8,8 +8,9 @@ import { Keyboard, Modal, Pressable, StyleSheet, Text, TextInput, View } from "r
 import { PremiumOrderProgress, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
 import { orderJourneyPresentation } from "./order-journey";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
-import { matchesOrderFilters, matchesOrderStatus, type OrderFulfillmentFilter } from "./order-list-filter";
+import { isPartialOrderListEmpty, matchesOrderFilters, matchesOrderStatus, type OrderFulfillmentFilter } from "./order-list-filter";
 import { isClientActorScopeCurrent } from "./order-session-scope";
+import { acquireRepeatOrder, createRepeatOrderGate, invalidateRepeatOrderForActorChange, ownsRepeatOrder, releaseRepeatOrder } from "./repeat-order-gate";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const statusOptions = [
@@ -62,15 +63,10 @@ export default function ClientOrders() {
   const [fulfillmentFilter, setFulfillmentFilter] = useState<OrderFulfillmentFilter>("all");
   const [repeatingOrderID, setRepeatingOrderID] = useState("");
   const [repeatError, setRepeatError] = useState("");
+  const repeatOrderGate = useRef(createRepeatOrderGate());
   const selectedStatusLabel = statusOptions.find((option) => option.key === statusFilter)?.label ?? "الكل";
   const selectedFulfillmentLabel = fulfillmentOptions.find((option) => option.key === fulfillmentFilter)?.label ?? "كل الطرق";
   const filterButtonLabel = statusFilter !== "all" ? selectedStatusLabel : fulfillmentFilter !== "all" ? selectedFulfillmentLabel : "تصفية";
-  const emptyStateTitle = search.trim() || fulfillmentFilter !== "all" ? "لا توجد طلبات مطابقة"
-    : statusFilter === "cancelled" ? "لا توجد طلبات ملغاة"
-    : statusFilter === "completed" ? "لا توجد طلبات مكتملة"
-    : statusFilter === "active" ? "لا توجد طلبات نشطة"
-    : state.kind === "ready" && state.orders.length === 0 ? "لا توجد طلبات بعد" : "لا توجد طلبات مطابقة";
-
   const load = useCallback(async () => {
     const sequence = ++loadSequence.current;
     pageSequence.current += 1;
@@ -103,6 +99,13 @@ export default function ClientOrders() {
       return !q || order.storeName.toLocaleLowerCase("ar").includes(q) || order.id.toLowerCase().includes(q);
     });
   }, [fulfillmentFilter, statusFilter, search, state]);
+  const partialEmpty = state.kind === "ready" && isPartialOrderListEmpty(visibleOrders.length, state.nextCursor);
+  const emptyStateTitle = partialEmpty ? "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0645\u0637\u0627\u0628\u0642\u0629 \u0636\u0645\u0646 \u0627\u0644\u0637\u0644\u0628\u0627\u062a \u0627\u0644\u0645\u062d\u0645\u0651\u0644\u0629"
+    : search.trim() || fulfillmentFilter !== "all" ? "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0645\u0637\u0627\u0628\u0642\u0629"
+    : statusFilter === "cancelled" ? "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0645\u0644\u063a\u0627\u0629"
+    : statusFilter === "completed" ? "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0645\u0643\u062a\u0645\u0644\u0629"
+    : statusFilter === "active" ? "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0646\u0634\u0637\u0629"
+    : state.kind === "ready" && state.orders.length === 0 ? "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0628\u0639\u062f" : "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0645\u0637\u0627\u0628\u0642\u0629";
 
   const getChatUnread = useCallback(async (orderId: string) => {
     const token = await getUsableIdentityAccessToken();
@@ -137,14 +140,16 @@ export default function ClientOrders() {
   }, [state, loadingMore, activeActorID]);
 
   const repeatOrder = useCallback(async (order: Order) => {
-    if (state.kind !== "ready" || !isClientActorScopeCurrent(state.actorID, activeActorID) || !hasCurrentOrdersActor(state.actorID) || repeatingOrderID || !order.lines.length) return;
+    if (state.kind !== "ready" || !isClientActorScopeCurrent(state.actorID, activeActorID) || !hasCurrentOrdersActor(state.actorID) || !order.lines.length) return;
     const actorID = state.actorID;
+    const lease = acquireRepeatOrder(repeatOrderGate.current, actorID, order.id);
+    if (!lease) return;
     setRepeatingOrderID(order.id);
     setRepeatError("");
     let appliedCount = 0;
     try {
       const token = await getUsableIdentityAccessToken();
-      if (!hasCurrentOrdersActor(actorID)) return;
+      if (!ownsRepeatOrder(repeatOrderGate.current, lease) || !hasCurrentOrdersActor(actorID)) return;
       let cart: Cart | null = null;
       try {
         cart = (await client().readOpenCart(token, order.storeId)).cart;
@@ -153,7 +158,7 @@ export default function ClientOrders() {
         if (!missingCart) throw error;
       }
 
-      if (!hasCurrentOrdersActor(actorID)) return;
+      if (!ownsRepeatOrder(repeatOrderGate.current, lease) || !hasCurrentOrdersActor(actorID)) return;
       const plan = order.lines.map((line) => {
         const existing = cart?.lines.find((cartLine) => cartLine.storeOfferId === line.storeOfferId);
         if (existing && !sameIDs(existing.selectedModifierOptionIds, line.selectedModifierOptionIds)) {
@@ -174,7 +179,7 @@ export default function ClientOrders() {
       let expectedVersion = cart?.version ?? 0;
       for (const item of plan) {
         if (item.error) continue;
-        if (!hasCurrentOrdersActor(actorID)) return;
+        if (!ownsRepeatOrder(repeatOrderGate.current, lease) || !hasCurrentOrdersActor(actorID)) return;
         const response = await client().upsertCartLine(token, {
           storeId: order.storeId,
           storeOfferId: item.storeOfferId,
@@ -184,18 +189,27 @@ export default function ClientOrders() {
         expectedVersion = response.cart.version;
         appliedCount += 1;
       }
-      if (!hasCurrentOrdersActor(actorID)) return;
+      if (!ownsRepeatOrder(repeatOrderGate.current, lease) || !hasCurrentOrdersActor(actorID)) return;
       router.push(`/cart/${encodeURIComponent(order.storeId)}?fulfillmentMode=${encodeURIComponent(order.fulfillmentMode)}` as Href);
     } catch (error) {
       console.error("DSH client order repeat failed", error);
-      if (!hasCurrentOrdersActor(actorID)) return;
+      if (!ownsRepeatOrder(repeatOrderGate.current, lease) || !hasCurrentOrdersActor(actorID)) return;
       setRepeatError(appliedCount ? `تعذر إكمال التكرار؛ أُضيف ${appliedCount} من ${order.lines.length} منتجات. راجع السلة قبل المتابعة.` : "تعذر تكرار الطلب. قد يتغير توفر المنتجات أو خياراتها؛ حدّث القائمة وحاول مجددًا.");
     } finally {
-      setRepeatingOrderID("");
+      if (releaseRepeatOrder(repeatOrderGate.current, lease)) {
+        setRepeatingOrderID((current) => repeatOrderGate.current.current === null && current === order.id ? "" : current);
+      }
     }
-  }, [activeActorID, repeatingOrderID, router, state]);
+  }, [activeActorID, router, state]);
 
-  useEffect(() => subscribeIdentitySession(setIdentityState), []);
+  useEffect(() => subscribeIdentitySession((next) => {
+    const nextActorID = next.kind === "authenticated" ? next.identity.subject.trim() : "";
+    const invalidated = invalidateRepeatOrderForActorChange(repeatOrderGate.current, nextActorID);
+    if (invalidated) {
+      setRepeatingOrderID((current) => repeatOrderGate.current.current === null && current === invalidated.orderID ? "" : current);
+    }
+    setIdentityState(next);
+  }), []);
   useEffect(() => {
     if (state.kind !== "ready" || !hasCurrentOrdersActor(state.actorID)) {
       setStoreIdentity({});
@@ -257,8 +271,8 @@ export default function ClientOrders() {
     {visibleOrders.length === 0 ? <BthwaniSurface tone="raised" style={styles.emptyState}>
       <BthwaniIcon name="orders" color={premium.orange} size={sizing.iconXl} />
       <Text style={styles.cardTitle}>{emptyStateTitle}</Text>
-      <Text style={styles.muted}>{state.orders.length === 0 && statusFilter === "all" && fulfillmentFilter === "all" && !search.trim() ? "ستظهر طلباتك هنا بعد تأكيدها." : "جرّب تغيير البحث أو التصفية."}</Text>
-      <BthwaniButton label={state.orders.length === 0 ? "استكشف المتاجر" : "عرض الكل"} onPress={() => state.orders.length === 0 ? router.push("/home" as Href) : (setSearch(""), setStatusFilter("all"), setFulfillmentFilter("all"))} />
+      <Text style={styles.muted}>{partialEmpty ? "\u0642\u062f \u062a\u062d\u062a\u0648\u064a \u0627\u0644\u0635\u0641\u062d\u0627\u062a \u0627\u0644\u0623\u0642\u062f\u0645 \u0639\u0644\u0649 \u0646\u062a\u0627\u0626\u062c. \u062d\u0645\u0651\u0644 \u0627\u0644\u0645\u0632\u064a\u062f \u0644\u0645\u062a\u0627\u0628\u0639\u0629 \u0627\u0644\u0628\u062d\u062b." : state.orders.length === 0 && statusFilter === "all" && fulfillmentFilter === "all" && !search.trim() ? "ستظهر طلباتك هنا بعد تأكيدها." : "جرّب تغيير البحث أو التصفية."}</Text>
+      <BthwaniButton label={state.orders.length === 0 && !state.nextCursor ? "استكشف المتاجر" : "عرض الكل"} onPress={() => state.orders.length === 0 && !state.nextCursor ? router.push("/home" as Href) : (setSearch(""), setStatusFilter("all"), setFulfillmentFilter("all"))} />
     </BthwaniSurface> : <View style={styles.list}>
       {visibleOrders.map((order) => {
         const journey = orderJourneyPresentation(order);

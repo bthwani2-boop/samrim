@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const appKeys = ["app-captain", "app-client", "app-field", "app-partner"];
+const appKeys = ["app-captain", "app-client", "app-partner"];
 const assetNames = ["icon.png", "adaptive-icon.png", "splash-icon.png"];
 const mismatches = [];
 const assetsByRole = new Map();

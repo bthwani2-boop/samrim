@@ -199,7 +199,7 @@ export function JoiningCaseCreate() {
     const input = pendingAttempt?.input ?? currentInput;
     const isResumedAttempt = pendingAttempt !== null && pendingAttempt.input === null;
     const attempt: PendingJoiningCaseCreate = { ...metadata, input };
-    if (!isValidStoreWorkingHours(input.firstStoreWorkingHours.intervals)) {
+    if (input.firstStoreWorkingHours.intervals.length > 0 && !isValidStoreWorkingHours(input.firstStoreWorkingHours.intervals)) {
       setHoursExpanded(true);
       setError("حدد ساعات العمل أو راجع الفترات غير الصحيحة؛ يمكنك اختيار جدول الأسبوع المقترح ثم تعديله.");
       return;
@@ -354,7 +354,7 @@ export function JoiningCaseCreate() {
         <label className="field-label" htmlFor="joining-proof-type">نوع الإثبات<select id="joining-proof-type" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={proofType} onChange={(event) => setProofType(event.target.value as JoiningCaseProofType)}>{proofTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
         <label className="field-label" htmlFor="joining-proof-number">رقم الإثبات<input id="joining-proof-number" autoComplete="off" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={proofNumber} onChange={(event) => setProofNumber(event.target.value)} /></label>
         <label className="field-label" htmlFor="joining-notes">ملاحظات (اختياري)<TextArea className="resize-none" id="joining-notes" maxLength={1000} disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} /></label>
-        <p className="muted">أدخل إحداثيات المتجر من الخريطة أو تطبيق الميدان.</p>
+        <p className="muted">أدخل إحداثيات المتجر بعد تحديد موقعه على الخريطة؛ لا يلزم تطبيق ميداني مستقل.</p>
         <label className="field-label" htmlFor="joining-latitude">خط عرض موقع المتجر<input id="joining-latitude" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} inputMode="decimal" value={latitude} onChange={(event) => setLatitude(toAsciiDigits(event.target.value))} placeholder="مثال: 15.369445" /></label>
         <label className="field-label" htmlFor="joining-longitude">خط طول موقع المتجر<input id="joining-longitude" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} inputMode="decimal" value={longitude} onChange={(event) => setLongitude(toAsciiDigits(event.target.value))} placeholder="مثال: 44.191006" /></label>
         {Number.isFinite(Number(latitude)) && Number.isFinite(Number(longitude)) && latitude.trim() && longitude.trim() ? <a className="button button-secondary" href={`https://www.openstreetmap.org/?mlat=${encodeURIComponent(latitude)}&mlon=${encodeURIComponent(longitude)}#map=18/${encodeURIComponent(latitude)}/${encodeURIComponent(longitude)}`} target="_blank" rel="noreferrer">معاينة موقع المتجر على الخريطة</a> : null}

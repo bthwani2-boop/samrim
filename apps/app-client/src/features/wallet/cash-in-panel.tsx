@@ -344,14 +344,14 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds, initialAmountMi
         <Text style={styles.methodPrompt}>مزود الشحن</Text>
         {providersStatus === "loading" ? <ActivityIndicator accessibilityLabel="جارٍ قراءة مزودي الشحن" color={theme.actionBackground} /> : null}
         {providersStatus === "ready" && providers.length ? <View style={styles.providersGrid}>
-          {providers.map((provider) => <Pressable key={provider.key} disabled={!providerMockInDevelopment} onPress={() => setSelectedProviderKey(provider.key)} accessibilityRole="radio" accessibilityState={{ selected: providerMockInDevelopment && selectedProviderKey === provider.key }} accessibilityLabel={provider.displayNameAr} style={[styles.providerItem, !providerMockInDevelopment && styles.providerUnavailable, providerMockInDevelopment && selectedProviderKey === provider.key && styles.simOptionSelected]}>
+          {providers.map((provider) => <Pressable key={provider.key} disabled={!providerMockInDevelopment} onPress={() => setSelectedProviderKey(provider.key)} accessibilityRole="radio" accessibilityState={{ checked: providerMockInDevelopment && selectedProviderKey === provider.key, disabled: !providerMockInDevelopment }} accessibilityLabel={provider.displayNameAr} style={[styles.providerItem, !providerMockInDevelopment && styles.providerUnavailable, providerMockInDevelopment && selectedProviderKey === provider.key && styles.simOptionSelected]}>
             {provider.logoUri ? <Image source={{ uri: providerLogoUri(provider.logoUri) }} style={styles.providerLogo} resizeMode="contain" /> : <BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[5]} />}
             <View style={styles.providerCopy}><Text style={styles.providerName} numberOfLines={1}>{provider.displayNameAr}</Text><Text style={styles.muted}>{providerMockInDevelopment ? selectedProviderKey === provider.key ? "محدد للاختبار" : "مزود تجريبي متصل" : "غير متصل بالشحن"}</Text></View>
           </Pressable>)}
         </View> : null}
         {providersStatus === "error" ? <BthwaniButton label="إعادة قراءة المزودين" variant="secondary" onPress={() => void loadProviders()} /> : null}
         {providersStatus === "ready" && !providers.length ? <Text style={styles.muted}>لا يوجد مزود دفع متصل.</Text> : null}
-        {simulatorInDevelopment && !providerMockInDevelopment ? <Pressable accessibilityRole="radio" accessibilityState={{ selected: selectedProviderKey === "DEVELOPMENT_SIMULATOR" }}
+        {simulatorInDevelopment && !providerMockInDevelopment ? <Pressable accessibilityRole="radio" accessibilityState={{ checked: selectedProviderKey === "DEVELOPMENT_SIMULATOR" }}
           onPress={() => setSelectedProviderKey("DEVELOPMENT_SIMULATOR")} style={[styles.methodRow, selectedProviderKey !== "DEVELOPMENT_SIMULATOR" && styles.providerUnavailable]}>
           <Text style={styles.methodTitle}>محاكي WLT — اختبار فقط</Text>
           <Text style={styles.methodTitle}>{selectedProviderKey === "DEVELOPMENT_SIMULATOR" ? "◉" : "○"}</Text>
@@ -359,7 +359,7 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds, initialAmountMi
         <Text style={styles.methodPrompt}>{simulatorInDevelopment ? "تأكيد محاكاة الشحن" : "الشحن الإلكتروني"}</Text>
         {simulatorInDevelopment && !providerMockInDevelopment ? <View accessibilityLabel="نتيجة محاكاة الدفع" style={styles.simOptions}>
           {cashInSimulatorOptions.map((option) => <Pressable key={option.outcome} accessibilityRole="radio"
-            accessibilityState={{ selected: simulatorOutcome === option.outcome }} onPress={() => setSimulatorOutcome(option.outcome)}
+            accessibilityState={{ checked: simulatorOutcome === option.outcome }} onPress={() => setSimulatorOutcome(option.outcome)}
             style={[styles.simOption, simulatorOutcome === option.outcome && styles.simOptionSelected]}>
             <Text style={styles.simOptionText}>{option.label}</Text>
           </Pressable>)}

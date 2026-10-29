@@ -66,7 +66,7 @@ func (s *FieldFinanceServer) readPolicyHistory(w http.ResponseWriter, r *http.Re
 			writeError(w, http.StatusBadGateway, "DSH_STORAGE_UNAVAILABLE", "policy audit read unavailable")
 			return
 		}
-	} else if key == "delivery-fees" || key == "field-acquisition" || key == "partner-financial-terms" || key == "captain-minimum-balance" {
+	} else if key == "delivery-fees" || key == "partner-financial-terms" || key == "captain-minimum-balance" {
 		var err error
 		events, err = s.payment.ReadOperatorPolicyHistory(r.Context(), key, scope)
 		if err != nil {
