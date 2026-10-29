@@ -199,7 +199,7 @@ export function JoiningCaseCreate() {
     const input = pendingAttempt?.input ?? currentInput;
     const isResumedAttempt = pendingAttempt !== null && pendingAttempt.input === null;
     const attempt: PendingJoiningCaseCreate = { ...metadata, input };
-    if (!isValidStoreWorkingHours(input.firstStoreWorkingHours.intervals)) {
+    if (input.firstStoreWorkingHours.intervals.length > 0 && !isValidStoreWorkingHours(input.firstStoreWorkingHours.intervals)) {
       setHoursExpanded(true);
       setError("حدد ساعات العمل أو راجع الفترات غير الصحيحة؛ يمكنك اختيار جدول الأسبوع المقترح ثم تعديله.");
       return;
