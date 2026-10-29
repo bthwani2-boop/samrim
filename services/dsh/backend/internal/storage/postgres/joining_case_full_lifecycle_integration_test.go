@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -13,17 +14,76 @@ import (
 	_ "github.com/lib/pq"
 )
 
+func joiningQADatabaseIsolated(raw string, env func(string) string) bool {
+	if env("BTHWANI_JOINING_QA_ISOLATED") != "1" {
+		return false
+	}
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") || u.User == nil || u.Hostname() != "127.0.0.1" {
+		return false
+	}
+	// lib/pq accepts connection overrides in URL query parameters. Allow only
+	// non-routing options so a matching URL cannot redirect to a protected DB.
+	options, err := url.ParseQuery(u.RawQuery)
+	if err != nil {
+		return false
+	}
+	for key := range options {
+		if key != "sslmode" && key != "connect_timeout" {
+			return false
+		}
+	}
+	if u.Fragment != "" {
+		return false
+	}
+	local := u.Port() == "15440" && u.EscapedPath() == "/dsh_qa" && u.User.Username() == "qa_join"
+	ci := u.Port() == "19432" && u.EscapedPath() == "/dsh_join_qa" && u.User.Username() == "postgres" &&
+		env("BTHWANI_ENV") == "test" && env("BTHWANI_FINANCIAL_PROOF_ISOLATED") == "1"
+	return local || ci
+}
+
+func TestJoiningQADatabaseIsolationGuard(t *testing.T) {
+	for _, tc := range []struct {
+		name, target string
+		allow        bool
+	}{
+		{"CI exact", "postgres://postgres:secret@127.0.0.1:19432/dsh_join_qa?sslmode=disable", true},
+		{"local exact", "postgres://qa_join:secret@127.0.0.1:15440/dsh_qa?sslmode=disable", true},
+		{"backup database", "postgres://postgres:secret@127.0.0.1:19432/dsh_join_qa_backup?sslmode=disable", false},
+		{"backup local", "postgres://qa_join:secret@127.0.0.1:15440/dsh_qa_backup", false},
+		{"wrong hostname", "postgres://postgres:secret@localhost:19432/dsh_join_qa", false},
+		{"wrong port", "postgres://postgres:secret@127.0.0.1:19433/dsh_join_qa", false},
+		{"redirected host", "postgres://postgres:secret@127.0.0.1:19432/dsh_join_qa?host=production", false},
+		{"redirected database", "postgres://postgres:secret@127.0.0.1:19432/dsh_join_qa?dbname=production", false},
+		{"redirected port", "postgres://postgres:secret@127.0.0.1:19432/dsh_join_qa?port=5432", false},
+		{"invalid query", "postgres://postgres:secret@127.0.0.1:19432/dsh_join_qa?sslmode=disable%ZZ", false},
+		{"wrong user", "postgres://owner:secret@127.0.0.1:19432/dsh_join_qa", false},
+		{"wrong scheme", "http://postgres:secret@127.0.0.1:19432/dsh_join_qa", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := func(k string) string {
+				switch k {
+				case "BTHWANI_JOINING_QA_ISOLATED", "BTHWANI_FINANCIAL_PROOF_ISOLATED":
+					return "1"
+				case "BTHWANI_ENV":
+					return "test"
+				}
+				return ""
+			}
+			if got := joiningQADatabaseIsolated(tc.target, env); got != tc.allow {
+				t.Fatalf("allowed=%v want=%v", got, tc.allow)
+			}
+		})
+	}
+}
+
 func TestSelfServiceCorrectionApprovalAndFinanceIsolationPostgres(t *testing.T) {
 	// This integration proof must never share the durable development DB.
 	raw := strings.TrimSpace(os.Getenv("DSH_JOINING_QA_DATABASE_URL"))
 	if raw == "" {
 		t.Skip("dedicated joining QA database is not configured")
 	}
-	localIsolated := strings.Contains(raw, "127.0.0.1:15440/dsh_qa")
-	ciIsolated := strings.Contains(raw, "127.0.0.1:19432/dsh_join_qa") &&
-		os.Getenv("BTHWANI_ENV") == "test" &&
-		os.Getenv("BTHWANI_FINANCIAL_PROOF_ISOLATED") == "1"
-	if os.Getenv("BTHWANI_JOINING_QA_ISOLATED") != "1" || (!localIsolated && !ciIsolated) {
+	if !joiningQADatabaseIsolated(raw, os.Getenv) {
 		t.Fatal("refusing non-isolated joining database")
 	}
 	root, err := sql.Open("postgres", raw)
