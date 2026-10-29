@@ -32,7 +32,7 @@ test("product editor shows core identity first and progressively discloses optio
   assert.match(editor, /id="catalog-measurement-kind"/);
   assert.match(editor, /id="catalog-base-unit"/);
   assert.match(editor, /id="catalog-identifier-value"/);
-  assert.match(component, /const saveProductDisabled = busy \\|\\| versionConflict[\\s\\S]*!form\\.canonicalName\\.trim\\(\\)[\\s\\S]*!form\\.verticalId[\\s\\S]*form\\.categoryIds\\.length === 0/);
+  assert.match(component, /const saveProductDisabled = busy \|\| versionConflict[\s\S]*!form\.canonicalName\.trim\(\)[\s\S]*!form\.verticalId[\s\S]*form\.categoryIds\.length === 0/);
   assert.match(component, /"X-Expected-Version"/);
   assert.match(component, /"Idempotency-Key"/);
 });

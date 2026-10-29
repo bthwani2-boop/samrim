@@ -3603,8 +3603,8 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
 /* Order conversation: Ant Design owns the modal mechanics; DSH owns its contents. */
 @layer components {
   .operator-order-chat-trigger { display:inline-flex;align-items:center;gap:7px; }
-  .operator-order-chat-unread-badge { border-radius:12px;padding:2px 6px;background:var(--action,#e96831);color:#fff;font-size:11px;line-height:1.2; }
-  .operator-order-chat-modal .ant-modal-content { display:grid;grid-template-rows:auto minmax(0,1fr);max-block-size:min(90dvh,760px);min-block-size:min(65dvh,580px);overflow:hidden;padding:0;border:1px solid var(--border-subtle);border-radius:18px;background:var(--surface);color:var(--text);box-shadow:0 20px 80px #0008; }
+  .operator-order-chat-unread-badge { border-radius:12px;padding:2px 6px;background:var(--action-bg);color:var(--color-on-action);font-size:11px;line-height:1.2; }
+  .operator-order-chat-modal .ant-modal-content { display:grid;grid-template-rows:auto minmax(0,1fr);max-block-size:min(90dvh,760px);min-block-size:min(65dvh,580px);overflow:hidden;padding:0;border:1px solid var(--border-subtle);border-radius:18px;background:var(--surface-base);color:var(--color-primary);box-shadow:var(--shadow-card); }
   .operator-order-chat-modal .ant-modal-header { margin:0;padding:14px;border-block-end:1px solid var(--border-subtle);background:transparent; }
   .operator-order-chat-modal .ant-modal-title { white-space:normal; }
   .operator-order-chat-heading { display:flex;align-items:center;justify-content:space-between;gap:12px;direction:rtl; }

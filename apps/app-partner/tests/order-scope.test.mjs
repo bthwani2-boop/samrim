@@ -41,6 +41,9 @@ test("a quiet refresh invalidates an older append, and its own page remains curr
 
 test("real partner order list clears prior scope and prevents old mutations from restarting stale reads", () => {
   const source = readFileSync(new URL("../src/features/order-management/order-management.tsx", import.meta.url), "utf8");
+  assert.match(source, /function currentPartnerActor\(\): string \{[\s\S]*?currentIdentityState\(\)[\s\S]*?session\.identity\.subject\.trim\(\)/u);
+  assert.match(source, /useSyncExternalStore\(subscribeIdentitySession, currentPartnerActor, \(\) => ""\)/u);
+  assert.match(source, /const requestScopeKey = JSON\.stringify\(\[unreadScope, storeId \?\? "", filter, normalizedSearch\]\)/u);
   assert.match(source, /if \(requestScopeKey !== activeScopeKey\.current\) return;\s*const generation/u);
   assert.match(source, /useLayoutEffect\(\(\) => \{[\s\S]*?setOrders\(\[\]\);[\s\S]*?setAssignments\(\{\}\);[\s\S]*?setChatOrderId\(""\);/u);
   assert.match(source, /if \(!isCurrentOrderListRequest\(generation, requestScopeKey, loadGeneration\.current, activeScopeKey\.current\)\) return;/u);

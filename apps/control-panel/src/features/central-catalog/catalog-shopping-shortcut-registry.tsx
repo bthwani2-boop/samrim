@@ -89,12 +89,13 @@ export function CatalogShoppingShortcutEditor({ verticalId, initialShortcut, onS
 
   useEffect(() => () => { lifeSequence.current += 1; }, []);
 
+  const initialCategoryIds = useRef(initialShortcut?.categoryIds ?? []);
   const loadOptions = useCallback(async () => {
     const request = ++requestSequence.current;
     setLoading(true);
     setLoadError("");
     try {
-      const options = await readOptions(verticalId, initialShortcut?.categoryIds ?? []);
+      const options = await readOptions(verticalId, initialCategoryIds.current);
       if (request !== requestSequence.current) return;
       setTypes(options.types);
       setCategories(options.categories);
@@ -105,7 +106,7 @@ export function CatalogShoppingShortcutEditor({ verticalId, initialShortcut, onS
     } finally {
       if (request === requestSequence.current) setLoading(false);
     }
-  }, [initialShortcut?.categoryIds, verticalId]);
+  }, [verticalId]);
 
   useEffect(() => {
     void loadOptions();

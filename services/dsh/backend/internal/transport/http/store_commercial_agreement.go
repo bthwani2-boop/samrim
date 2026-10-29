@@ -250,7 +250,7 @@ func writeStoreCommercialAgreementError(w http.ResponseWriter, err error) {
 	case errors.Is(err, joiningcase.ErrStoreAgreementForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the current actor cannot perform this Store commercial agreement action")
 	case errors.Is(err, joiningcase.ErrPartnerSessionForbidden):
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "an eligible Field or Partner session is required")
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active app-partner session is required")
 	case errors.Is(err, joiningcase.ErrOperatorNotActive):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active control operator session is required")
 	case errors.Is(err, postgres.ErrJoiningCaseNotFound), errors.Is(err, postgres.ErrStoreNotFound):

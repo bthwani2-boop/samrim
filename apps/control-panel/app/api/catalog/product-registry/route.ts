@@ -14,6 +14,9 @@ export async function GET(request: Request) {
   const permissionDenied = operatorWorkspacePermissionDenied(identity, "catalog");
   if (permissionDenied) return permissionDenied;
   const params = new URL(request.url).searchParams;
+  const minVariantCount = params.get("minVariantCount")?.trim() || "0";
+  const minStoreCount = params.get("minStoreCount")?.trim() || "0";
+  if (!/^\d{1,6}$/.test(minVariantCount) || !/^\d{1,6}$/.test(minStoreCount)) return errorResponse("INVALID_INPUT", "minimum counts must be non-negative integers", 400);
   try {
     const result = await listCatalogProductRegistry({
       query: params.get("q")?.trim() ?? "",
@@ -21,8 +24,8 @@ export async function GET(request: Request) {
       categoryId: params.get("categoryId")?.trim() ?? "",
       active: params.get("active")?.trim() || "all",
       sort: params.get("sort")?.trim() || "name_asc",
-      minVariantCount: params.get("minVariantCount")?.trim() ?? "0",
-      minStoreCount: params.get("minStoreCount")?.trim() ?? "0",
+      minVariantCount,
+      minStoreCount,
       cursor: params.get("cursor")?.trim() ?? "",
     }, { operatorActorId: identity.subject });
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });

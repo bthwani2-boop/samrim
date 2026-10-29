@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import ts from "../../../node_modules/.pnpm/typescript@6.0.2/node_modules/typescript/lib/typescript.js";
+import ts from "typescript-ast";
 
 function keyedStoreElement(source, tagName) {
   const parsed = ts.createSourceFile("store-scope.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);

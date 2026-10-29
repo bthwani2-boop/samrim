@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { test } from "node:test";
-import ts from "../../../node_modules/.pnpm/typescript@6.0.2/node_modules/typescript/lib/typescript.js";
+import ts from "typescript-ast";
 
 const source = readFileSync(new URL("../src/features/stores/store-products-workspace.tsx", import.meta.url), "utf8");
 const parsed = ts.createSourceFile("store-products-workspace.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);

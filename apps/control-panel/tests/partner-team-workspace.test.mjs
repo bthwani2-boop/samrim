@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import path from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import vm from "node:vm";
-import ts from "../../../node_modules/.pnpm/typescript@6.0.2/node_modules/typescript/lib/typescript.js";
+import ts from "typescript-ast";
 
-const componentPath = path.resolve("apps/control-panel/src/features/partners/partner-team-workspace.tsx");
+const componentPath = fileURLToPath(new URL("../src/features/partners/partner-team-workspace.tsx", import.meta.url));
 const source = await readFile(componentPath, "utf8");
 const ast = ts.createSourceFile(componentPath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 

@@ -6,9 +6,9 @@ import { useIsFocused, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { usePartnerStoreScope } from "../partner-onboarding/partner-store-scope-context";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, AppState, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { OrderConversation } from "./order-conversation";
 import { isCurrentOrderListRequest, mergeOrderPageRecords, tryAcquireOrderAction } from "./order-page-records";
 
@@ -48,6 +48,11 @@ function storeCaptainChoiceLabel(membership: StoreCaptainMembership): string {
   return parts.join(" · ") || "كابتن المتجر";
 }
 
+function currentPartnerActor(): string {
+  const session = currentIdentityState();
+  return session.kind === "authenticated" ? session.identity.subject.trim() : "";
+}
+
 export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const theme = useAppearanceTheme();
   const insets=useSafeAreaInsets();
@@ -84,8 +89,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
   useEffect(() => { const timer = setTimeout(() => setDebouncedSearch(searchQuery), 350); return () => clearTimeout(timer); }, [searchQuery]);
   const normalizedSearch = targetOrderId || debouncedSearch.trim();
-  const currentSession = currentIdentityState();
-  const unreadScope = currentSession.kind === "authenticated" ? currentSession.identity.subject.trim() : "";
+  const unreadScope = useSyncExternalStore(subscribeIdentitySession, currentPartnerActor, () => "");
   const requestScopeKey = JSON.stringify([unreadScope, storeId ?? "", filter, normalizedSearch]);
   const activeScopeKey = useRef(requestScopeKey);
   const getChatUnread = useCallback(async (orderId: string) => {
