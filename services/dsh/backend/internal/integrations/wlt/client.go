@@ -3,7 +3,9 @@ package wlt
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -36,9 +38,10 @@ const (
 var ErrFieldPayoutBatchInvalidInput = errors.New("field payout state batch input is invalid")
 
 type Client struct {
-	baseURL      string
-	serviceToken string
-	httpClient   *http.Client
+	baseURL                 string
+	serviceToken            string
+	rootApprovalProofSecret []byte
+	httpClient              *http.Client
 }
 
 type actorRequest struct {
@@ -944,7 +947,7 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("WLT request failed with status %d and code %s: %s", e.Status, e.Code, e.Message)
 }
 
-func New(rawBaseURL, environment, serviceToken string) (*Client, error) {
+func New(rawBaseURL, environment, serviceToken string, rootApprovalProofSecrets ...string) (*Client, error) {
 	baseURL, err := ResolveBaseURL(rawBaseURL, environment)
 	if err != nil {
 		return nil, err
@@ -953,7 +956,41 @@ func New(rawBaseURL, environment, serviceToken string) (*Client, error) {
 	if serviceToken == "" {
 		return nil, errors.New("WLT service token is required")
 	}
-	return &Client{baseURL: baseURL, serviceToken: serviceToken, httpClient: &http.Client{Timeout: 8 * time.Second}}, nil
+	var proofKey []byte
+	if len(rootApprovalProofSecrets) > 1 {
+		return nil, errors.New("at most one Root Owner proof key is allowed")
+	}
+	if len(rootApprovalProofSecrets) == 1 {
+		key := strings.TrimSpace(rootApprovalProofSecrets[0])
+		if key != "" && len(key) < 32 {
+			return nil, errors.New("Root Owner proof key is too short")
+		}
+		proofKey = []byte(key)
+	}
+	return &Client{baseURL: baseURL, serviceToken: serviceToken, rootApprovalProofSecret: proofKey, httpClient: &http.Client{Timeout: 8 * time.Second}}, nil
+}
+
+// rootOwnerApprovalProof binds the DSH-verified Identity Root Owner decision to
+// the exact WLT mutation. The independent key prevents a bearer of the ordinary
+// DSH-WLT service token from forging a separation-of-duties exception.
+func (c *Client) rootOwnerApprovalProof(agreementID string, input StoreCommercialAgreementDecision, idempotencyKey, correlationID, actorID string) (string, error) {
+	if !input.RootOwnerSelfApproval {
+		return "", nil
+	}
+	if len(c.rootApprovalProofSecret) < 32 {
+		return "", errors.New("Root Owner approval proof key is unavailable")
+	}
+	facts, err := json.Marshal([]string{
+		"wlt-root-owner-approval-v1", strings.TrimSpace(agreementID), strconv.Itoa(input.AgreementVersion),
+		strings.ToUpper(strings.TrimSpace(input.Decision)), strings.TrimSpace(actorID),
+		strings.TrimSpace(input.Reason), strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID),
+	})
+	if err != nil {
+		return "", err
+	}
+	signature := hmac.New(sha256.New, c.rootApprovalProofSecret)
+	_, _ = signature.Write(facts)
+	return base64.RawURLEncoding.EncodeToString(signature.Sum(nil)), nil
 }
 
 func ResolveBaseURL(raw, environment string) (string, error) {

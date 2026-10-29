@@ -47,6 +47,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if err := server.ConfigureRootApprovalProofSecret(os.Getenv("WLT_ROOT_OWNER_APPROVAL_PROOF_SECRET")); err != nil {
+		log.Fatal(err)
+	}
 	if err := serviceruntime.RunWithRoutesAndReadiness("wlt", "/wlt", "18083", server.Register, func(ctx context.Context) error {
 		return postgres.VerifySchema(ctx, database, records)
 	}); err != nil {

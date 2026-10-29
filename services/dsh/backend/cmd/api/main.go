@@ -35,7 +35,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	paymentClient, err := wlt.New(os.Getenv("DSH_WLT_API_BASE_URL"), os.Getenv("BTHWANI_ENV"), os.Getenv("WLT_DSH_SERVICE_TOKEN"))
+	paymentClient, err := wlt.New(os.Getenv("DSH_WLT_API_BASE_URL"), os.Getenv("BTHWANI_ENV"), os.Getenv("WLT_DSH_SERVICE_TOKEN"), os.Getenv("WLT_ROOT_OWNER_APPROVAL_PROOF_SECRET"))
 	if err != nil {
 		log.Fatal(err)
 	}

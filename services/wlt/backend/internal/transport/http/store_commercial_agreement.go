@@ -1,7 +1,10 @@
 package http
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -35,6 +38,7 @@ type proposeStoreCommercialAgreementRequest struct {
 
 type storeCommercialAgreementDecisionRequest struct {
 	RootOwnerSelfApproval      bool     `json:"rootOwnerSelfApproval,omitempty"`
+	RootOwnerApprovalProof     string   `json:"rootOwnerApprovalProof,omitempty"`
 	ExpectedAgreementVersion   int      `json:"expectedAgreementVersion"`
 	Decision                   string   `json:"decision"`
 	Reason                     string   `json:"reason"`
@@ -152,6 +156,43 @@ func (s *Server) acceptStoreCommercialAgreement(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, storeCommercialAgreementResponse{Agreement: agreement, IdempotentReplay: replayed})
 }
 
+// verifyRootOwnerApprovalProof verifies the separate DSH-issued attestation.
+// DSH creates it only after Identity confirms the canonical Root Owner.
+func (s *Server) verifyRootOwnerApprovalProof(w http.ResponseWriter, agreementID string, input storeCommercialAgreementDecisionRequest, actorID, idempotencyKey, correlationID string) bool {
+	if !input.RootOwnerSelfApproval {
+		if input.RootOwnerApprovalProof != "" {
+			writeError(w, http.StatusForbidden, "ROOT_OWNER_PROOF_INVALID", "unexpected Root Owner proof")
+			return false
+		}
+		return true
+	}
+	if len(s.rootApprovalProofSecret) < 32 {
+		writeError(w, http.StatusServiceUnavailable, "ROOT_OWNER_PROOF_UNAVAILABLE", "Root Owner approval verification is unavailable")
+		return false
+	}
+	proof, err := base64.RawURLEncoding.DecodeString(input.RootOwnerApprovalProof)
+	if err != nil || len(proof) != sha256.Size {
+		writeError(w, http.StatusForbidden, "ROOT_OWNER_PROOF_INVALID", "Root Owner approval proof is invalid")
+		return false
+	}
+	facts, err := json.Marshal([]string{
+		"wlt-root-owner-approval-v1", strings.TrimSpace(agreementID), strconv.Itoa(input.ExpectedAgreementVersion),
+		strings.ToUpper(strings.TrimSpace(input.Decision)), strings.TrimSpace(actorID),
+		strings.TrimSpace(input.Reason), strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID),
+	})
+	if err != nil {
+		writeError(w, http.StatusForbidden, "ROOT_OWNER_PROOF_INVALID", "Root Owner approval proof is invalid")
+		return false
+	}
+	mac := hmac.New(sha256.New, s.rootApprovalProofSecret)
+	_, _ = mac.Write(facts)
+	if !hmac.Equal(proof, mac.Sum(nil)) {
+		writeError(w, http.StatusForbidden, "ROOT_OWNER_PROOF_INVALID", "Root Owner approval proof is invalid")
+		return false
+	}
+	return true
+}
+
 func (s *Server) decideStoreCommercialAgreement(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
@@ -162,6 +203,9 @@ func (s *Server) decideStoreCommercialAgreement(w http.ResponseWriter, r *http.R
 	}
 	var input storeCommercialAgreementDecisionRequest
 	if !decodeJSON(w, r, &input) {
+		return
+	}
+	if !s.verifyRootOwnerApprovalProof(w, r.PathValue("agreementId"), input, actorID, idempotencyKey, correlationID) {
 		return
 	}
 	agreement, replayed, err := postgres.DecideStoreCommercialAgreement(r.Context(), s.db, postgres.StoreCommercialAgreementDecisionInput{

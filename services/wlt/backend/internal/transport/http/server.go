@@ -23,6 +23,7 @@ import (
 type Server struct {
 	db                       *sql.DB
 	serviceToken             string
+	rootApprovalProofSecret  []byte
 	destinationEncryptionKey *postgres.DestinationCipher
 	financeEvidenceCipher    *postgres.DestinationCipher
 	cashInRail               cashin.CashInRail
@@ -45,6 +46,15 @@ func New(db *sql.DB, serviceToken, destinationEncryptionKey string, financeEvide
 		return nil, err
 	}
 	return &Server{db: db, serviceToken: strings.TrimSpace(serviceToken), destinationEncryptionKey: cipher, financeEvidenceCipher: evidenceCipher}, nil
+}
+
+func (s *Server) ConfigureRootApprovalProofSecret(secret string) error {
+	secret = strings.TrimSpace(secret)
+	if secret != "" && len(secret) < 32 {
+		return errors.New("Root Owner proof key is too short")
+	}
+	s.rootApprovalProofSecret = []byte(secret)
+	return nil
 }
 
 func NewWithCashInConfig(db *sql.DB, serviceToken, destinationEncryptionKey, financeEvidenceEncryptionKey, cashInMode, environment string, mockURL ...string) (*Server, error) {

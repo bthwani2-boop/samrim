@@ -278,6 +278,11 @@ func TestStoreCommercialAgreementLifecycleAndOrderSnapshots(t *testing.T) {
 		t.Fatal(err)
 	}
 	rootReplay.IdempotencyKey = legacyKey
+	legacyMissingAssertion := rootReplay
+	legacyMissingAssertion.RootOwnerSelfApproval = false
+	if _, _, err := DecideStoreCommercialAgreement(scenario.ctx, scenario.db, legacyMissingAssertion); !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("legacy Root Owner replay cannot omit authorization assertion: %v", err)
+	}
 	if item, replayed, err := DecideStoreCommercialAgreement(scenario.ctx, scenario.db, rootReplay); err != nil || !replayed || item.Status != "ACTIVE" {
 		t.Fatalf("legacy Root Owner approval replay must be preserved: %+v replayed=%t err=%v", item, replayed, err)
 	}

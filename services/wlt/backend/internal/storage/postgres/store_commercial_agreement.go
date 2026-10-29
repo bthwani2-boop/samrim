@@ -340,6 +340,12 @@ func DecideStoreCommercialAgreement(ctx context.Context, db *sql.DB, input Store
 		if err != nil {
 			return StoreCommercialAgreementRecord{}, false, err
 		}
+		if input.Decision == "APPROVE" && !input.RootOwnerSelfApproval &&
+			item.FinanceApprovedByActorID != nil &&
+			item.ProposedByActorID == *item.FinanceApprovedByActorID &&
+			item.ProposedByActorID == input.ActorID {
+			return StoreCommercialAgreementRecord{}, false, ErrIdempotencyConflict
+		}
 		if err := tx.Commit(); err != nil {
 			return StoreCommercialAgreementRecord{}, false, err
 		}

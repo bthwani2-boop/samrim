@@ -131,11 +131,18 @@ func (c *Client) AcceptStoreCommercialAgreement(ctx context.Context, agreementID
 }
 
 func (c *Client) DecideStoreCommercialAgreement(ctx context.Context, agreementID string, input StoreCommercialAgreementDecision, idempotencyKey, correlationID, actingActorID string) (StoreCommercialAgreement, bool, error) {
+	proof, err := c.rootOwnerApprovalProof(agreementID, input, idempotencyKey, correlationID, actingActorID)
+	if err != nil {
+		return StoreCommercialAgreement{}, false, err
+	}
 	body := map[string]any{
 		"expectedAgreementVersion": input.AgreementVersion,
 		"decision":                 strings.ToUpper(strings.TrimSpace(input.Decision)),
 		"reason":                   strings.TrimSpace(input.Reason),
 		"rootOwnerSelfApproval":    input.RootOwnerSelfApproval,
+	}
+	if proof != "" {
+		body["rootOwnerApprovalProof"] = proof
 	}
 	if strings.TrimSpace(input.CurrentStorePartnerActorID) != "" || len(input.CurrentFulfillmentModes) > 0 {
 		body["currentStorePartnerActorId"] = strings.TrimSpace(input.CurrentStorePartnerActorID)
@@ -143,7 +150,7 @@ func (c *Client) DecideStoreCommercialAgreement(ctx context.Context, agreementID
 	}
 	var response storeCommercialAgreementResponse
 	path := "/wlt/v1/operator/store-commercial-agreements/" + url.PathEscape(strings.TrimSpace(agreementID)) + "/decision"
-	err := c.requestWithActor(ctx, actorRequest{
+	err = c.requestWithActor(ctx, actorRequest{
 		method:         http.MethodPost,
 		path:           path,
 		body:           body,
