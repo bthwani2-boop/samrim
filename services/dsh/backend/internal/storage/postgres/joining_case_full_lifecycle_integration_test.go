@@ -19,8 +19,11 @@ func TestSelfServiceCorrectionApprovalAndFinanceIsolationPostgres(t *testing.T) 
 	if raw == "" {
 		t.Skip("dedicated joining QA database is not configured")
 	}
-	if os.Getenv("BTHWANI_JOINING_QA_ISOLATED") != "1" ||
-		!strings.Contains(raw, "127.0.0.1:15440/dsh_qa") {
+	localIsolated := strings.Contains(raw, "127.0.0.1:15440/dsh_qa")
+	ciIsolated := strings.Contains(raw, "127.0.0.1:19432/dsh_join_qa") &&
+		os.Getenv("BTHWANI_ENV") == "test" &&
+		os.Getenv("BTHWANI_FINANCIAL_PROOF_ISOLATED") == "1"
+	if os.Getenv("BTHWANI_JOINING_QA_ISOLATED") != "1" || (!localIsolated && !ciIsolated) {
 		t.Fatal("refusing non-isolated joining database")
 	}
 	root, err := sql.Open("postgres", raw)
@@ -160,6 +163,10 @@ func TestSelfServiceCorrectionApprovalAndFinanceIsolationPostgres(t *testing.T) 
 			t.Fatalf("one canonical Store required count=%d err=%v", storeCount, err)
 		}
 
+		if _, err := postgres.ReadPublishedStore(ctx, db, done.Case.StoreID, input.ServiceCityID); !errors.Is(err, postgres.ErrStoreNotFound) {
+			t.Fatalf("self-service approved Store leaked to customer before publication: %v", err)
+		}
+
 		// Operator-assisted intake is a separate admitted origin. The retired
 		// Field actor cannot become its origin through a caller-supplied value.
 		operatorInput := input
@@ -205,6 +212,9 @@ func TestSelfServiceCorrectionApprovalAndFinanceIsolationPostgres(t *testing.T) 
 		if err := db.QueryRowContext(ctx, "SELECT publication_state FROM dsh.stores WHERE id=$1",
 			operatorApproved.Case.StoreID).Scan(&publication); err != nil || publication == "published" {
 			t.Fatalf("Store must not auto-publish before agreement and readiness: %q err=%v", publication, err)
+		}
+		if _, err := postgres.ReadPublishedStore(ctx, db, operatorApproved.Case.StoreID, operatorInput.ServiceCityID); !errors.Is(err, postgres.ErrStoreNotFound) {
+			t.Fatalf("operator-created Store leaked to customer before publication: %v", err)
 		}
 	}, 5*60*1000000000)
 }
