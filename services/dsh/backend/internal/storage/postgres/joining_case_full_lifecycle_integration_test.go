@@ -159,5 +159,52 @@ func TestSelfServiceCorrectionApprovalAndFinanceIsolationPostgres(t *testing.T) 
 		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.stores WHERE partner_actor_id='qa-partner'").Scan(&storeCount); err != nil || storeCount != 1 {
 			t.Fatalf("one canonical Store required count=%d err=%v", storeCount, err)
 		}
+
+		// Operator-assisted intake is a separate admitted origin. The retired
+		// Field actor cannot become its origin through a caller-supplied value.
+		operatorInput := input
+		operatorInput.Phone = "+967700000011"
+		operatorInput.OwnerFullName = "QA Operator-Assisted Owner"
+		operatorInput.BusinessName = "QA Operator-Assisted Business"
+		operatorInput.FirstStoreName = "QA Operator-Assisted Store"
+		operatorInput.FirstStoreWorkingHours = nil // optional at intake, closed until configured
+		operatorCreate := postgres.CreateJoiningCaseInput{
+			Request: operatorInput, Origin: "field", OriginatingFieldActorID: "retired-field",
+			ActingActorID: "qa-operator-creator", EvidenceKeyring: keys,
+			IdempotencyKey: "qa-operator-create", RequestHash: postgres.HashJoiningCaseRequest(operatorInput),
+			CorrelationID: "qa-operator-create-correlation",
+		}
+		operatorDraft, err := postgres.CreateJoiningCase(ctx, db, operatorCreate)
+		if err != nil || operatorDraft.Case.State != "draft" || operatorDraft.Case.Origin != "control_panel" || operatorDraft.Case.OriginatingFieldActorID != "" {
+			t.Fatalf("operator intake must ignore retired Field origin: %+v err=%v", operatorDraft, err)
+		}
+		operatorSubmitted, err := postgres.SubmitJoiningCase(ctx, db, operatorDraft.Case.ID, "qa-operator-partner", operatorDraft.Case.Version,
+			"qa-operator-submit", postgres.HashJoiningCaseSubmit(operatorDraft.Case.ID, "qa-operator-partner", operatorDraft.Case.Version),
+			"qa-operator-creator", "qa-operator-submit-correlation")
+		if err != nil || operatorSubmitted.Case.State != "submitted" {
+			t.Fatalf("operator-submitted intake: %+v err=%v", operatorSubmitted, err)
+		}
+		operatorApproval := postgres.ReviewJoiningCaseInput{
+			CaseID: operatorDraft.Case.ID, Decision: "approved", ExpectedVersion: operatorSubmitted.Case.Version,
+			IdempotencyKey: "qa-operator-approve", ActingActorID: "qa-reviewer",
+			CorrelationID: "qa-operator-approval-correlation",
+		}
+		operatorApproval.RequestHash = postgres.HashJoiningCaseReviewWithFinancialTerms(
+			operatorDraft.Case.ID, "approved", "", operatorSubmitted.Case.Version, "", "")
+		operatorApproved, err := postgres.ReviewJoiningCase(ctx, db, operatorApproval)
+		if err != nil || operatorApproved.Case.State != "approved" || operatorApproved.Case.StoreID == "" ||
+			operatorApproved.Case.FinancialProfileState != "REQUIRED" {
+			t.Fatalf("operator approval must create one non-financial Store: %+v err=%v", operatorApproved, err)
+		}
+		var mode, schedule string
+		if err := db.QueryRowContext(ctx, "SELECT schedule_mode,weekly_schedule::text FROM dsh.store_operational_availability WHERE store_id=$1",
+			operatorApproved.Case.StoreID).Scan(&mode, &schedule); err != nil || mode != "WEEKLY" || schedule != "[]" {
+			t.Fatalf("omitted operator hours must leave Store closed: mode=%q schedule=%q err=%v", mode, schedule, err)
+		}
+		var publication string
+		if err := db.QueryRowContext(ctx, "SELECT publication_state FROM dsh.stores WHERE id=$1",
+			operatorApproved.Case.StoreID).Scan(&publication); err != nil || publication == "published" {
+			t.Fatalf("Store must not auto-publish before agreement and readiness: %q err=%v", publication, err)
+		}
 	}, 5*60*1000000000)
 }
