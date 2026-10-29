@@ -11,8 +11,8 @@ export async function GET(request: Request) {
   const limit = Number(query.get("limit") || "50");
   try {
     const actorType = query.get("actorType") ?? "";
-    if (actorType !== "" && actorType !== "partner" && actorType !== "captain") {
-      return NextResponse.json({ error: { code: "INVALID_INPUT", message: "Actor type must be partner or captain" } }, { status: 400 });
+    if (actorType !== "" && actorType !== "partner" && actorType !== "captain" && actorType !== "field") {
+      return NextResponse.json({ error: { code: "INVALID_INPUT", message: "Actor type must be partner, captain or historical field" } }, { status: 400 });
     }
     const result = await listOperatorBeneficiaryPayoutStates(actorType, query.get("search") ?? "", query.get("status") ?? "", (query.get("sort") ?? "actor_asc") as BeneficiaryRegistrySort, query.get("cursor") ?? "", limit, { operatorActorId: identity.subject });
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
