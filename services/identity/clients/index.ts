@@ -5,3 +5,4 @@ export * from "./url";
 export * from "./mobile";
 export * from "./password";
 export * from "./errors";
+export * from "./phone";

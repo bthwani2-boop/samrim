@@ -3,7 +3,8 @@
 import { type CommerceVertical, type CommercialStoreType, createDshMobileClient, type CreateJoiningCaseRequest, type JoiningCaseResponse, joiningCaseStateLabel, type ServiceCity, type StoreFulfillmentMode } from "@bthwani/dsh";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { BthwaniMapCoordinate, BthwaniMapProps } from "@bthwani/design-system/native/map";
-import { normalizeYemenPhoneE164, toAsciiDigits } from "@bthwani/design-system";
+import { toAsciiDigits } from "@bthwani/design-system";
+import { normalizeYemenPhoneE164 } from "@bthwani/identity/phone";
 import * as Crypto from "expo-crypto";
 import { useRouter } from "expo-router";
 import { type ComponentType, useCallback, useEffect, useMemo, useState } from "react";

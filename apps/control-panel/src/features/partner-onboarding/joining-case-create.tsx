@@ -1,6 +1,7 @@
 "use client";
 
-import { normalizeYemenPhoneE164, toAsciiDigits } from "@bthwani/design-system";
+import { toAsciiDigits } from "@bthwani/design-system";
+import { normalizeYemenPhoneE164 } from "@bthwani/identity/phone";
 import { TextArea } from "@bthwani/design-system/web";
 import { type CommerceVertical, type CommercialStoreType, type CreateJoiningCaseRequest, isValidStoreWorkingHours, type JoiningCaseProofType, type JoiningCaseResponse, type ServiceCity, type StoreWorkingHoursInterval } from "@bthwani/dsh";
 import Link from "next/link";

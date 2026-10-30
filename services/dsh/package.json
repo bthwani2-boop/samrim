@@ -10,26 +10,7 @@
       "default": "./clients/index.ts"
     }
   },
-  "peerDependencies": {
-    "@bthwani/design-system": "workspace:*",
-    "react": "19.3.0",
-    "react-native": "0.88.0"
-  },
-  "peerDependenciesMeta": {
-    "@bthwani/design-system": {
-      "optional": true
-    },
-    "react": {
-      "optional": true
-    },
-    "react-native": {
-      "optional": true
-    }
-  },
-  "devDependencies": {
-    "@bthwani/design-system": "workspace:*",
-    "@types/react": "19.3.0",
-    "react": "19.3.0",
-    "react-native": "0.88.0"
+  "dependencies": {
+    "@bthwani/identity": "workspace:*"
   }
 }

@@ -1,4 +1,5 @@
-import { borders, normalizeYemenPhoneE164, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
+import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
+import { normalizeYemenPhoneE164 } from "@bthwani/identity/phone";
 import { BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
 import { useMemo } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";

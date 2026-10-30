@@ -1,6 +1,7 @@
 "use client";
 
-import { normalizeYemenPhoneE164, toAsciiDigits } from "@bthwani/design-system";
+import { toAsciiDigits } from "@bthwani/design-system";
+import { normalizeYemenPhoneE164 } from "@bthwani/identity/phone";
 import { type CaptainAdmission, captainAdmissionStateLabel } from "@bthwani/dsh";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
