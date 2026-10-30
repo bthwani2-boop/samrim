@@ -1684,9 +1684,15 @@ func ConfirmStoreHandoff(ctx context.Context, db *sql.DB, orderID, storeID, assi
 		return CaptainAssignment{}, false, err
 	}
 	if replay != nil {
+		if replay.OrderID != orderID || replay.AssignmentID != assignmentID {
+			return CaptainAssignment{}, false, ErrCaptainOperationConflict
+		}
 		assignment, readErr := readCaptainAssignmentTx(ctx, tx, "id=$1", replay.AssignmentID)
 		if readErr != nil {
 			return CaptainAssignment{}, false, readErr
+		}
+		if assignment.OrderID != orderID || assignment.Handoff.StoreID != storeID {
+			return CaptainAssignment{}, false, ErrCaptainOperationConflict
 		}
 		if err := tx.Commit(); err != nil {
 			return CaptainAssignment{}, false, err

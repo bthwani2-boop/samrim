@@ -334,9 +334,30 @@ func TestCaptainParallelDispatchThreeOnlyOneWins(t *testing.T) {
 		if !errors.Is(foreignTaskErr, postgres.ErrCaptainDeliveryTaskNotFound) || foreignTask.AssignmentID != "" {
 			t.Fatalf("other Captain read assigned customer destination: %+v err=%v", foreignTask, foreignTaskErr)
 		}
-		var handoffVersion int
-		if err := db.QueryRowContext(ctx, "UPDATE dsh.captain_handoffs SET state='store_confirmed',store_confirmed_at=clock_timestamp(),version=version+1 WHERE assignment_id=$1 RETURNING version", assignmentID).Scan(&handoffVersion); err != nil {
-			t.Fatal(err)
+		// A replay must be scoped to the original Order and assignment even
+		// when the stored request hash (from an older client) omits Order ID.
+		const handoffKey = "dispatch-three-handoff"
+		handoffHash := postgres.HashCaptainHandoffRequest(assignmentID, storeID, 1)
+		handoff, replayed, err := postgres.ConfirmStoreHandoff(ctx, db, orderID, storeID, assignmentID, 1, handoffKey, handoffHash, "dispatch-three-partner", handoffKey)
+		if err != nil || replayed || handoff.Handoff.State != "store_confirmed" {
+			t.Fatalf("store handoff failed: %+v replay=%t err=%v", handoff, replayed, err)
+		}
+		handoffVersion := handoff.Handoff.Version
+		wrongOrder, wrongReplay, wrongErr := postgres.ConfirmStoreHandoff(ctx, db, orderID+"-other", storeID, assignmentID, 1, handoffKey, handoffHash, "dispatch-three-partner", handoffKey)
+		if !errors.Is(wrongErr, postgres.ErrCaptainOperationConflict) || wrongReplay || wrongOrder.ID != "" {
+			t.Fatalf("cross-order handoff replay leaked result: %+v replay=%t err=%v", wrongOrder, wrongReplay, wrongErr)
+		}
+		wrongAssignment, wrongReplay, wrongErr := postgres.ConfirmStoreHandoff(ctx, db, orderID, storeID, "another-assignment", 1, handoffKey, handoffHash, "dispatch-three-partner", handoffKey)
+		if !errors.Is(wrongErr, postgres.ErrCaptainOperationConflict) || wrongReplay || wrongAssignment.ID != "" {
+			t.Fatalf("cross-assignment handoff replay leaked result: %+v replay=%t err=%v", wrongAssignment, wrongReplay, wrongErr)
+		}
+		handoffReplay, replayed, replayErr := postgres.ConfirmStoreHandoff(ctx, db, orderID, storeID, assignmentID, 1, handoffKey, handoffHash, "dispatch-three-partner", handoffKey)
+		if replayErr != nil || !replayed || handoffReplay.ID != assignmentID || handoffReplay.Handoff.Version != handoffVersion {
+			t.Fatalf("own handoff replay lost result: %+v replay=%t err=%v", handoffReplay, replayed, replayErr)
+		}
+		var handoffAudits int
+		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM dsh.captain_audit WHERE assignment_id=$1 AND event_type='store_handoff_confirmed'", assignmentID).Scan(&handoffAudits); err != nil || handoffAudits != 1 {
+			t.Fatalf("handoff replay emitted an extra audit: count=%d err=%v", handoffAudits, err)
 		}
 		if _, err := db.ExecContext(ctx, "UPDATE dsh.captain_goods_custody_policies SET single_order_cap_minor=1000,concurrent_cap_minor=1000,version=version+1 WHERE id='platform'"); err != nil {
 			t.Fatal(err)
