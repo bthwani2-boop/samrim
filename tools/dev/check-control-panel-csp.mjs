@@ -1,8 +1,12 @@
 import { strict as assert } from "node:assert";
 
 const rawUrl = process.argv[2];
-const developmentMode = process.argv.slice(3).includes("--development");
-assert(rawUrl, "Usage: node tools/dev/check-control-panel-csp.mjs http://localhost:<port> [--development]");
+const flags = process.argv.slice(3);
+assert(flags.every((flag) => flag === "--development" || flag === "--production"), "Unsupported CSP mode flag");
+assert(!(flags.includes("--development") && flags.includes("--production")), "Conflicting CSP modes");
+// Loopback checks default to the active local-development mode. Production must be explicit.
+const developmentMode = !flags.includes("--production");
+assert(rawUrl, "Usage: node tools/dev/check-control-panel-csp.mjs http://localhost:<port> [--development|--production]");
 const origin = new URL(rawUrl);
 assert(origin.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(origin.hostname), "Only local HTTP proof targets are permitted");
 assert(origin.pathname === "/" && !origin.search && !origin.hash && !origin.username && !origin.password, "Pass a local origin without a path or credentials");

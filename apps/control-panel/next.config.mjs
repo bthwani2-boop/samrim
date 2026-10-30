@@ -60,10 +60,10 @@ const nextConfig = {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=(), payment=()",
           },
-          {
-            key: "Strict-Transport-Security",
-            value: "max-age=63072000; includeSubDomains; preload",
-          },
+          // Never persist HTTPS-only browser state for the local HTTP development origin.
+          ...(process.env.NODE_ENV === "production" && process.env.BTHWANI_ENV === "production"
+            ? [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }]
+            : []),
         ],
       },
     ];
