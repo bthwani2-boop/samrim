@@ -164,7 +164,7 @@ func TestLegacyPayoutSnapshotsResumeOnlyAfterSameDestinationReverification(t *te
 	if _, _, err := ApplyCashInFundingResult(scenario.ctx, scenario.db, ApplyCashInFundingResultInput{
 		FundingIntentID: funding.ID, Outcome: "SUCCESS",
 		ProviderTransactionReference: "legacy-payout-provider-" + scenario.suffix,
-		ActorID: "proof-synthetic-provider", IdempotencyKey: "legacy-payout-credit-" + scenario.suffix,
+		ActorID:                      "proof-synthetic-provider", IdempotencyKey: "legacy-payout-credit-" + scenario.suffix,
 		CorrelationID: "legacy-payout-credit-correlation-" + scenario.suffix,
 	}); err != nil {
 		t.Fatalf("credit current customer payout fixture: %v", err)
@@ -360,10 +360,10 @@ func TestRetiredFieldCannotCreateNewWalletDestinationOrPayout(t *testing.T) {
 	}
 	_, _, err = CreateOfficialWalletDestination(scenario.ctx, scenario.db, cipher, CreateOfficialWalletDestinationInput{
 		ActorType: "field", ActorID: facts.ActorID, ProviderKey: "YEMEN_MOBILE_WALLET", IdentityFacts: facts,
-		ChangeReason: "retired Field must not create a new destination",
+		ChangeReason:                  "retired Field must not create a new destination",
 		VerificationEvidenceReference: "retired-field-verification-" + scenario.suffix,
-		ChangeEvidenceReference: "retired-field-change-" + scenario.suffix,
-		SubmittedBy: "finance-operator", IdempotencyKey: "retired-field-destination-" + scenario.suffix,
+		ChangeEvidenceReference:       "retired-field-change-" + scenario.suffix,
+		SubmittedBy:                   "finance-operator", IdempotencyKey: "retired-field-destination-" + scenario.suffix,
 		CorrelationID: "retired-field-destination-correlation-" + scenario.suffix,
 	})
 	if !errors.Is(err, ErrDestinationInvalidInput) {
