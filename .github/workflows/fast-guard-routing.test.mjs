@@ -46,6 +46,7 @@ test("checkout and financial client changes select disposable PostgreSQL proof",
 
 test("financial integration proof cannot silently skip selected tests", () => {
   assert.match(workflow, /financial_go_proof\(\)/);
+  assert.match(workflow, /TestCaptainMissionLocationOwnerLatestAndTerminalPurge/);
   assert.match(workflow, /No financial integration test executed/);
   assert.match(workflow, /Financial integration test skipped/);
   assert.equal((workflow.match(/financial_go_proof services\/(?:wlt|dsh)\/backend/g) ?? []).length, 4);
