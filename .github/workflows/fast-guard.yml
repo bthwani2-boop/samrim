@@ -129,7 +129,7 @@ jobs:
           export BTHWANI_ENV=test
           export BTHWANI_FINANCIAL_PROOF_ISOLATED=1
           export DSH_FINANCIAL_HANDOFF_TEST_DATABASE_URL="$DSH_DATABASE_URL"
-          financial_go_proof services/dsh/backend ./internal/storage/postgres -run '^(TestPartnerFinanceAndPayoutStoreAuthorityBoundary|TestCaptainParallelDispatchThreeOnlyOneWins|TestStoreCaptainDispatchReadRespectsDelegation|TestOrderHTTPActorScopeAndPartnerTransitionRetry|TestNotificationsAreIsolatedByActorAndStore|TestCaptainMissionLocationOwnerLatestAndTerminalPurge|TestPendingCancellationRequestsPaginationOverHundred|TestFinancialHandoffUnknownOutcomeAndConcurrentWorkers|TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay)$' -count=1 -timeout 9m
+          financial_go_proof services/dsh/backend ./internal/storage/postgres -run '^(TestPartnerFinanceAndPayoutStoreAuthorityBoundary|TestCaptainParallelDispatchThreeOnlyOneWins|TestStoreCaptainDispatchReadRespectsDelegation|TestOrderHTTPActorScopeAndPartnerTransitionRetry|TestLocationHTTPRejectsAuthenticatedCrossActorAddressAndStoreAccess|TestNotificationsAreIsolatedByActorAndStore|TestCaptainMissionLocationOwnerLatestAndTerminalPurge|TestPendingCancellationRequestsPaginationOverHundred|TestFinancialHandoffUnknownOutcomeAndConcurrentWorkers|TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay)$' -count=1 -timeout 9m
           unset DSH_FINANCIAL_HANDOFF_TEST_DATABASE_URL
           # Admission and prepublication visibility of both joining origins.
           # The disposable PostgreSQL container owns an isolated parent database.
