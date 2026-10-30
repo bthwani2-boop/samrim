@@ -247,7 +247,7 @@ CLIENT / PARTNER / CAPTAIN → tracking/completion readback
 WLT → collection / receivable / earning effects
 ```
 
-Tracking is a DSH projection. Proof is bounded evidence validated by DSH; upload/UI success alone is never delivery truth. `CAPTAIN_BALANCE_FUNDING` remains a supporting balance/collateral subflow, not earnings or COD remittance.
+Tracking is a DSH projection. Proof is bounded evidence validated by DSH; upload/UI success alone is never delivery truth. `CAPTAIN_BALANCE_FUNDING` remains a supporting balance/collateral subflow, not earnings or COD settlement. For a cash-collecting BThwani Captain Order, WLT atomically reserves only the cash portion against posted Captain balance before the Captain accepts the offer. On proved collection and completed delivery, WLT posts delivery entitlement and debits that held cash amount exactly once while the Captain retains the physical cash; cancellation before collection releases the hold without a wallet debit. Captain Cash-In is a separate funding operation and cannot be treated as physical remittance or earnings. Historically `FINALIZED`/`REMITTED` COD obligations retain their evidence-bound Finance reconciliation route and must never be re-debited merely to fit the current model.
 
 ### Failure / recovery
 
@@ -442,25 +442,6 @@ Concurrent cancellation/fulfillment, stale adjustment, duplicate refund, unknown
 ### Negative space
 
 Customer balance withdrawal is not an Order exception and remains a separate supporting financial subflow. No generic returns/exchange/warranty platform is admitted.
-
-## CAPTAIN_COD_REMITTANCE — Captain cash receivable to reconciled closure
-
-JOURNEY_ID: CAPTAIN_COD_REMITTANCE
-OUTCOME: BThwani Captain-held COD cash is remitted through authorized Finance treatment until the WLT receivable/exposure is canonically closed.
-SURFACES: CAPTAIN, OPERATOR
-OWNERS: DSH, WLT
-CAPABILITIES: ORDER_PAYMENT_COLLECTION, PARTNER_CAPTAIN_EARNINGS_SETTLEMENT
-ENTRY: WLT has an open BThwani-Captain COD receivable backed by qualifying delivered-order evidence.
-EXIT: Authorized remittance evidence is independently reconciled and WLT closes the corresponding receivable/exposure.
-READBACK: Captain sees resulting liability/balance state; Finance reads canonical WLT reconciliation state.
-
-### Failure / recovery
-
-Partial/duplicate remittance, wrong reference, unknown provider/statement outcome and reconciliation mismatch remain explicit. Delivery completion alone never closes the receivable.
-
-### Negative space
-
-COD remittance is not Captain balance Cash-In and not Captain earnings payout.
 
 ## PARTNER_COMMISSION_REMITTANCE — Partner receivable to reconciled closure
 
