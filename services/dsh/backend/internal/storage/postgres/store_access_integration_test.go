@@ -151,8 +151,8 @@ func TestStoreCaptainDispatchReadRespectsDelegation(t *testing.T) {
 		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commerce_carts(id,client_actor_id,store_id,state,version) VALUES('delegated_dispatch_cart','delegated_dispatch_client',$1,'checked_out',1)", storeID); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,total_amount_minor,payment_cash_amount_minor,currency,version,fulfillment_mode)
-			VALUES($1,'delegated_dispatch_client',$2,'delegated_dispatch_cart','delegated_dispatch_address',1,'عنوان تجريبي',15.369,44.191,'delegated_dispatch_city','CITY_SCOPE_V1','SERVICEABLE',1,1,'READY_FOR_DISPATCH',1000,1000,'YER',1,'PARTNER_CAPTAIN')`, orderID, storeID); err != nil {
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,total_amount_minor,payment_cash_amount_minor,currency,version,fulfillment_mode,payment_method)
+			VALUES($1,'delegated_dispatch_client',$2,'delegated_dispatch_cart','delegated_dispatch_address',1,'عنوان تجريبي',15.369,44.191,'delegated_dispatch_city','CITY_SCOPE_V1','SERVICEABLE',1,1,'READY_FOR_DISPATCH',1000,1000,'YER',1,'PARTNER_CAPTAIN','CASH_AT_STORE')`, orderID, storeID); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_dispatch_offers(id,order_id,captain_actor_id,source_store_id,state,expires_at,idempotency_key,request_hash)
