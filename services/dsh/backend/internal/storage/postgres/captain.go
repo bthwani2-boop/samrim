@@ -1354,9 +1354,15 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 		return CaptainOfferResult{}, err
 	}
 	if replay != nil {
+		if replay.OfferID != offerID {
+			return CaptainOfferResult{}, ErrCaptainOperationConflict
+		}
 		offer, readErr := readCaptainOfferTx(ctx, tx, "offer.id=$1", offerID)
 		if readErr != nil {
 			return CaptainOfferResult{}, readErr
+		}
+		if offer.CaptainActorID != captainActorID {
+			return CaptainOfferResult{}, ErrCaptainOfferForbidden
 		}
 		if offer.State == "expired" {
 			return CaptainOfferResult{Offer: offer, Replayed: true}, ErrCaptainOfferExpired
@@ -1734,9 +1740,15 @@ func CompleteCaptainPickup(ctx context.Context, db *sql.DB, assignmentID, captai
 		return CaptainAssignment{}, false, err
 	}
 	if replay != nil {
+		if replay.AssignmentID != assignmentID {
+			return CaptainAssignment{}, false, ErrCaptainOperationConflict
+		}
 		assignment, readErr := readCaptainAssignmentTx(ctx, tx, "id=$1", replay.AssignmentID)
 		if readErr != nil {
 			return CaptainAssignment{}, false, readErr
+		}
+		if assignment.CaptainActorID != captainActorID {
+			return CaptainAssignment{}, false, ErrCaptainOfferForbidden
 		}
 		if err := tx.Commit(); err != nil {
 			return CaptainAssignment{}, false, err
