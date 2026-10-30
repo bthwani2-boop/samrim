@@ -1,13 +1,18 @@
 import { spawnSync } from "node:child_process";
-import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"../..");
 const packageName="com.bthwani.captain";
-const required=["android.permission.ACCESS_BACKGROUND_LOCATION","android.permission.FOREGROUND_SERVICE_LOCATION"];
+const required=[
+ "android.permission.ACCESS_BACKGROUND_LOCATION",
+ "android.permission.FOREGROUND_SERVICE_LOCATION",
+ // An older APK can declare both permissions but lack Expo TaskManager.
+ "expo.modules.taskmanager.TaskBroadcastReceiver",
+];
 
 export function evaluateCaptainNativePermissions(dumpsys){
- if(typeof dumpsys!=="string"||!dumpsys.includes("Package ["))return {status:"PACKAGE_NOT_INSTALLED",missing:required};
+ if(typeof dumpsys!=="string"||!dumpsys.includes(`Package [${packageName}]`))return {status:"PACKAGE_NOT_INSTALLED",missing:required};
  const missing=required.filter(p=>!dumpsys.includes(p));
  return {status:missing.length?"NATIVE_REBUILD_REQUIRED":"NATIVE_PERMISSION_DECLARATIONS_PRESENT",missing};
 }
@@ -32,9 +37,9 @@ if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.
    process.exitCode=2;
   }else{
    const proof=evaluateCaptainNativePermissions(result.stdout);
-   console.log("ANDROID_NATIVE_STATUS="+proof.status);
+   console.log(`ANDROID_NATIVE_STATUS=${proof.status}`);
    if(proof.missing.length){
-    console.log("MISSING_NATIVE_PERMISSIONS="+proof.missing.join(","));
+    console.log(`MISSING_NATIVE_REQUIREMENTS=${proof.missing.join(",")}`);
     console.log("NEXT_STEP=install updated Expo native APK/development build, then repeat this check and run mission background tests");
     process.exitCode=2;
    }else{
