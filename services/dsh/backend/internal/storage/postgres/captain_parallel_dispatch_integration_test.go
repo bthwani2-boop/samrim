@@ -289,6 +289,14 @@ func TestCaptainParallelDispatchThreeOnlyOneWins(t *testing.T) {
 		if err := db.QueryRowContext(ctx, "SELECT captain_actor_id FROM dsh.captain_dispatch_offers WHERE id=$1", newOffers[0]).Scan(&rejectingActor); err != nil {
 			t.Fatal(err)
 		}
+		// Reassignment can offer Captain 5 even if their earlier location was
+		// stale. Pick a distinct admitted Captain for every negative replay.
+		foreignCaptainFor := func(owner string) string {
+			if owner != "dispatch-captain-1" {
+				return "dispatch-captain-1"
+			}
+			return "dispatch-captain-2"
+		}
 		rejectionKey := "dispatch-three-second-batch-reject"
 		rejected, err := postgres.RespondToCaptainOffer(ctx, db, newOffers[0], rejectingActor, "reject", 1, rejectionKey, postgres.HashCaptainOfferResponse(newOffers[0], "reject", 1), rejectionKey)
 		if err != nil || rejected.Offer.State != "rejected" {
@@ -297,7 +305,7 @@ func TestCaptainParallelDispatchThreeOnlyOneWins(t *testing.T) {
 		// Idempotency is not authorization: another Captain must never be
 		// allowed to replay an offer decision, even with its exact key and facts.
 		requestHash := postgres.HashCaptainOfferResponse(newOffers[0], "reject", 1)
-		stolen, stolenErr := postgres.RespondToCaptainOffer(ctx, db, newOffers[0], "dispatch-captain-5", "reject", 1, rejectionKey, requestHash, rejectionKey)
+		stolen, stolenErr := postgres.RespondToCaptainOffer(ctx, db, newOffers[0], foreignCaptainFor(rejectingActor), "reject", 1, rejectionKey, requestHash, rejectionKey)
 		if !errors.Is(stolenErr, postgres.ErrCaptainOfferForbidden) || stolen.Offer.ID != "" || stolen.Assignment != nil {
 			t.Fatalf("cross-captain reject replay leaked result: %+v err=%v", stolen, stolenErr)
 		}
@@ -315,13 +323,14 @@ func TestCaptainParallelDispatchThreeOnlyOneWins(t *testing.T) {
 		if err := db.QueryRowContext(ctx, "SELECT captain_actor_id FROM dsh.captain_dispatch_offers WHERE id=$1", remaining[0]).Scan(&finalActor); err != nil {
 			t.Fatal(err)
 		}
+		strangerActor := foreignCaptainFor(finalActor)
 		key := "dispatch-three-final-accept"
 		finalAccept, err := postgres.RespondToCaptainOffer(ctx, db, remaining[0], finalActor, "accept", 1, key, postgres.HashCaptainOfferResponse(remaining[0], "accept", 1), key)
 		if err != nil || finalAccept.Assignment == nil {
 			t.Fatalf("second batch acceptance: %+v err=%v", finalAccept, err)
 		}
 		acceptHash := postgres.HashCaptainOfferResponse(remaining[0], "accept", 1)
-		stolenAccept, stolenErr := postgres.RespondToCaptainOffer(ctx, db, remaining[0], "dispatch-captain-5", "accept", 1, key, acceptHash, key)
+		stolenAccept, stolenErr := postgres.RespondToCaptainOffer(ctx, db, remaining[0], strangerActor, "accept", 1, key, acceptHash, key)
 		if !errors.Is(stolenErr, postgres.ErrCaptainOfferForbidden) || stolenAccept.Offer.ID != "" || stolenAccept.Assignment != nil {
 			t.Fatalf("cross-captain accept replay leaked assignment: %+v err=%v", stolenAccept, stolenErr)
 		}
@@ -330,7 +339,7 @@ func TestCaptainParallelDispatchThreeOnlyOneWins(t *testing.T) {
 			t.Fatalf("own accept replay must retain the assignment: %+v err=%v", legitimateAccept, replayErr)
 		}
 		assignmentID := finalAccept.Assignment.ID
-		foreignTask, foreignTaskErr := postgres.ReadCaptainDeliveryTask(ctx, db, assignmentID, "dispatch-captain-5")
+		foreignTask, foreignTaskErr := postgres.ReadCaptainDeliveryTask(ctx, db, assignmentID, strangerActor)
 		if !errors.Is(foreignTaskErr, postgres.ErrCaptainDeliveryTaskNotFound) || foreignTask.AssignmentID != "" {
 			t.Fatalf("other Captain read assigned customer destination: %+v err=%v", foreignTask, foreignTaskErr)
 		}
@@ -379,7 +388,7 @@ func TestCaptainParallelDispatchThreeOnlyOneWins(t *testing.T) {
 			t.Fatalf("covered pickup should succeed exactly once: %+v replay=%t err=%v", pickedUp, replayed, err)
 		}
 		pickupHash := postgres.HashCaptainPickupRequest(assignmentID, handoffVersion)
-		stolenPickup, replayedByStranger, stolenPickupErr := postgres.CompleteCaptainPickup(ctx, db, assignmentID, "dispatch-captain-5", handoffVersion, pickupKey, pickupHash, pickupKey)
+		stolenPickup, replayedByStranger, stolenPickupErr := postgres.CompleteCaptainPickup(ctx, db, assignmentID, strangerActor, handoffVersion, pickupKey, pickupHash, pickupKey)
 		if !errors.Is(stolenPickupErr, postgres.ErrCaptainOfferForbidden) || stolenPickup.ID != "" || replayedByStranger {
 			t.Fatalf("cross-captain pickup replay leaked custody: %+v replay=%t err=%v", stolenPickup, replayedByStranger, stolenPickupErr)
 		}
