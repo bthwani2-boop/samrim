@@ -42,7 +42,7 @@ function Panel({ id, selected, children }: Readonly<{ id: string; selected: bool
 
 const intakeWeekdays = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"] as const;
 
-export function StoreProfileLegacyTabs({ activeTab, store, partner, partnerError, canViewFinance, canViewOperations, manageOpen, openManagement, management }: StoreProfileTabsProps) {
+export function StoreProfileDetailPanels({ activeTab, store, partner, partnerError, canViewFinance, canViewOperations, manageOpen, openManagement, management }: StoreProfileTabsProps) {
   const joining = partner?.joiningCase;
   const account = partner?.partner;
   const hasOrigin = Boolean(store.deliveryOrigin);

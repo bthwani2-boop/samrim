@@ -3,7 +3,7 @@
 > **Artifact class:** NON-AUTHORITATIVE / DERIVED_ARCHITECTURE_VIEW
 > **Purpose:** Explain the existing BThwani boundaries and point to their canonical owners.
 > **Execution authority:** NONE · **Product admission authority:** NONE · **Implementation-state authority:** NONE
-> **Source inspection baseline:** local branch 16 at commit 0deb06fbafb2a2b94e2589a43c0b0164367042fa, 2026-10-13. The working tree had concurrent uncommitted changes. **This is not a live inventory or a claim that any journey has passed end-to-end tests.**
+> **Source basis:** The live canonical governance, service contracts and implementation must be read at the exact candidate HEAD before using this derived map. **This is not a runtime inventory or evidence that any journey passed end-to-end tests.**
 
 ## 1. How to read this document
 
@@ -29,28 +29,26 @@ Governance expresses approved meaning; executable code/configuration, contracts,
 
 ## 2. C1 — System context (logical)
 
-BThwani is **one** commerce/delivery Product serving five high-level human personas. A person retains one canonical actor identity even when admitted to multiple roles; Store ownership, employee relationships, delegated access and Store–Captain affiliation are separate domain facts.
+BThwani is **one** commerce/delivery Product serving four currently admitted high-level human personas. A person retains one canonical actor identity even when admitted to multiple roles; Store ownership, employee relationships, delegated access and Store–Captain affiliation are separate domain facts.
 
 ~~~mermaid
 flowchart LR
     Client["العميل / Client"]
     Partner["الشريك / Partner"]
     Captain["الكابتن / Captain"]
-    Field["الميداني / Field"]
     Operator["المشغّل / Operator"]
     BTH["BThwani\nمنصة تجارة وتوصيل واحدة"]
     Client --> BTH
     Partner --> BTH
     Captain --> BTH
-    Field --> BTH
     Operator --> BTH
 ~~~
 
-**Boundary:** The human personas are not independent Products, tenants or business-data owners. Field acquisition remains an optional human channel managed through the Operator workspace, not a standalone deployable surface. External financial providers, notification transports and media providers are integration boundaries, not internal ledger or Order truth. Whether an external rail is currently integrated and usable must be established separately from executable evidence.
+**Boundary:** The human personas are not independent Products, tenants or business-data owners. Field is retired: its historical attribution remains auditable, but new referrals and Field sessions are not admitted. Partner onboarding is through Partner self-service or authorized Operator intake. External financial providers, notification transports and media providers are integration boundaries, not internal ledger or Order truth. Whether an external rail is currently integrated and usable must be established separately from executable evidence.
 
 ## 3. C2 — Containers (logical build/run decomposition)
 
-The current build exposes three mobile app hosts, one Operator web host, and three Go backend service owners. The field-acquisition activity, when used, is managed through Operator without a standalone mobile host. PostgreSQL/PostGIS and SeaweedFS appear in the local Compose configuration. The physical PostgreSQL instance is shared locally, but that does **not** grant cross-service permission to mutate another owner's facts.
+The current build exposes three mobile app hosts, one Operator web host, and three Go backend service owners. Historical Field attribution is audit-only; Partner onboarding uses Partner self-service or authorized Operator intake. PostgreSQL/PostGIS and SeaweedFS appear in the local Compose configuration. The physical PostgreSQL instance is shared locally, but that does **not** grant cross-service permission to mutate another owner's facts.
 
 ~~~mermaid
 flowchart TB
@@ -91,7 +89,6 @@ flowchart TB
 | Client | [apps/app-client](../apps/app-client/) |
 | Partner | [apps/app-partner](../apps/app-partner/) |
 | Captain | [apps/app-captain](../apps/app-captain/) |
-| Field acquisition (optional human channel; no standalone app) | DSH joining attribution and Operator workspace |
 | Operator | [apps/control-panel](../apps/control-panel/) |
 | Identity | [services/identity](../services/identity/) |
 | DSH | [services/dsh](../services/dsh/) |
@@ -106,7 +103,7 @@ These entries point to *existing code directories*, not to a mandate to extract 
 | --- | --- |
 | Identity actor, authentication, session | [actor](../services/identity/backend/internal/actor/), [authentication](../services/identity/backend/internal/authentication/), [session](../services/identity/backend/internal/session/) |
 | Identity transport and persistent state | [transport](../services/identity/backend/internal/transport/), [storage](../services/identity/backend/internal/storage/) |
-| DSH joining/onboarding and Field operations | [joiningcase](../services/dsh/backend/internal/joiningcase/), [field](../services/dsh/backend/internal/field/) |
+| DSH Partner joining/onboarding | [joiningcase](../services/dsh/backend/internal/joiningcase/) |
 | DSH Store ownership/delegation, publication and live availability | [storeaccess](../services/dsh/backend/internal/storeaccess/), [storepublication](../services/dsh/backend/internal/storepublication/), [storeavailability](../services/dsh/backend/internal/storeavailability/) |
 | DSH catalog, cart, Store Order | [catalog](../services/dsh/backend/internal/catalog/), [cart](../services/dsh/backend/internal/cart/), [order](../services/dsh/backend/internal/order/) |
 | DSH geography and serviceability | [servicecity](../services/dsh/backend/internal/servicecity/), [serviceability](../services/dsh/backend/internal/serviceability/), [locationcore](../services/dsh/backend/internal/locationcore/) |
@@ -123,20 +120,23 @@ These entries point to *existing code directories*, not to a mandate to extract 
 - WLT owns payment, balances, commission, earnings, cash custody, reconciliation and Store Commercial Agreement state; a Store-facing screen does not gain financial write authority. See [Agreement](governance/product/capabilities/finance/store-commercial-agreement.md) and [Finance policy](../docs/governance/policies/finance.md).
 - One Store Order belongs to one Store. Parent multi-Store checkout is orchestration above independent Store Orders; its admission does **not** prove implementation completeness. See [Current Product](governance/product/overview.md).
 
-## 5. Dynamic example — Field acquisition to customer-visible Store
+## 5. Dynamic example — Partner admission to customer-visible Store
 
 This is a **governed business handoff model**, not a network trace or an E2E test report. Conditional gates and authorizations remain with their named owners.
 
 ~~~mermaid
 sequenceDiagram
-    participant F as Field
     participant O as Operator
     participant D as DSH
     participant I as Identity
     participant P as Partner
     participant W as WLT / Finance
     participant C as Client
-    F->>D: Submit bounded JoiningCase facts
+    alt Verified Partner self-service
+      P->>D: Submit first-Store application
+    else Authorized Operator intake
+      O->>D: Create Partner joining case without Field attribution
+    end
     O->>D: Review / correction / authorized admission
     D->>I: Request eligible Partner role admission
     I-->>D: Canonical actor / role outcome
@@ -154,7 +154,7 @@ Final publication additionally depends on admitted catalog, Service City and oth
 
 ## 6. Deployment view — current local Compose only
 
-[infra/local/compose/compose.yaml](../infra/local/compose/compose.yaml) defines, among others, persistent PostgreSQL, an object-media service, local Mailpit, backend runtime containers, and one-shot migration/bootstrap/access-setup jobs. The Client/Partner/Captain/Field Metro development servers and Next.js development host are started by separate repository commands, not represented above as additional backend services.
+[infra/local/compose/compose.yaml](../infra/local/compose/compose.yaml) defines, among others, persistent PostgreSQL, an object-media service, local Mailpit, backend runtime containers, and one-shot migration/bootstrap/access-setup jobs. The Client/Partner/Captain Metro development servers and Next.js development host are started by separate repository commands, not represented above as additional backend services.
 
 This does **not** specify staging/production topology, scalability capacity, current database row health, external financial connectivity or correctness of all local migrations. Read [runtime source](../tools/dev/dev.ps1) and actual runtime state before making operational claims.
 

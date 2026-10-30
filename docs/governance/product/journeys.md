@@ -91,7 +91,7 @@ Store publication is not current orderability. Durable enabled fulfillment modes
 
 ### Failure / recovery
 
-Missing/incompatible first-Store facts, correction loops, duplicate logical case, stale version, suspended Field, self-service Identity phone/actor mismatch, duplicate-actor risk, missing Partner acceptance, missing Finance approval and interrupted Identity/WLT handoff recover through canonical readback without rebinding the case, actor or agreement version. Missing or inactive agreement blocks publication.
+Missing/incompatible first-Store facts, correction loops, duplicate logical case, stale version, a historical Field-originated case requiring authorized correction without new attribution, self-service Identity phone/actor mismatch, duplicate-actor risk, missing Partner acceptance, missing Finance approval and interrupted Identity/WLT handoff recover through canonical readback without rebinding the case, actor or agreement version. Missing or inactive agreement blocks publication.
 
 ### Negative space
 

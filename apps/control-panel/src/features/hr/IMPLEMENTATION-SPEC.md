@@ -96,7 +96,7 @@ UI: directory with searchable filters and manageable table, compact row actions,
 
 **NEXT — Slice HR-001 Employee identity & directory (first engineering work after approval):**
 - Establish one canonical HR employee owner and durable employee ID with optional unique operator `actor_id` link; name/department/title/manager/status/location/start-date; immutable event audit; safe unique/migration/upgrade handling.
-- Reuse existing operator Identity admission, including protected Root Owner bootstrap, without changing the five high-level actor roles or creating accounts for non-operators.
+- Reuse existing operator Identity admission, including protected Root Owner bootstrap, without changing the four admitted high-level actor roles (client, partner, captain, operator), reviving the retired historical Field role, or creating accounts for non-operators.
 - Add top-level `الموارد البشرية` to Control Panel, employee directory and employee detail/overview; HR-authorized add employee action in `الموارد البشرية`, and link employee↔operator; HR-specific server permission for authorized read.
 - Audit current active operators and map them safely to exactly one employee if they are genuine BThwani employees. Never auto-create payroll/HR records for root merely because root exists or for captain/field actors. Backfill only from verified facts; unverified mappings need Root confirmation.
 - Align the current inline create form with deliberate entry UI, and preserve existing working operator flow. No salary/attendance mutations yet.
