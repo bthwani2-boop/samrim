@@ -17,6 +17,8 @@ coverage/
 # Tool caches and ephemeral evidence
 .nx/cache/
 .nx/workspace-data/
+# Preserve local Android QA captures without treating generated screenshots as source.
+.nx/*.png
 .sonar/
 .artifacts/
 .diagnostics/
