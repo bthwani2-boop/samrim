@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
-const composer = readFileSync(new URL("./order-chat-composer.tsx", import.meta.url), "utf8");
-const voice = readFileSync(new URL("./order-chat-voice-recorder.tsx", import.meta.url), "utf8");
+const composer = readFileSync(new URL("./conversation-composer.tsx", import.meta.url), "utf8");
+const voice = readFileSync(new URL("./conversation-voice-recorder.tsx", import.meta.url), "utf8");
 const surfaces = [
   "../../../../apps/app-client/src/features/orders",
   "../../../../apps/app-partner/src/features/order-management",
@@ -26,8 +26,17 @@ test("voice recording stays inline instead of opening the legacy form", () => {
     assert.match(voice, /accessibilityLabel=\{phase === "failed"/);
     assert.match(chat, /kind==="audio"\?"رسالة صوتية"/);
     assert.doesNotMatch(chat, /AUDIO_TRANSCRIPT_REQUIRED/);
-    assert.match(chat, /import\("@bthwani\/design-system\/native\/order-chat-voice-recorder"\)/);
+    assert.match(chat, /import\("@bthwani\/design-system\/native\/conversation-voice-recorder"\)/);
     assert.match(chat, /onVoice=\{\(\)=>setShowAudioControls\(true\)\}/);
     assert.match(chat, /onClose=\{\(\)=>setShowAudioControls\(false\)\}/);
+  }
+});
+
+test("shared composer contains no Order business contract and all apps use its generic name", () => {
+  assert.match(composer, /export function BthwaniConversationComposer/);
+  assert.doesNotMatch(composer, /BthwaniOrderChatComposer|DSH|orderId|orderReference/);
+  for (const surface of surfaces) {
+    const chat = readFileSync(new URL(surface + "/order-conversation.tsx", import.meta.url), "utf8");
+    assert.match(chat, /<BthwaniConversationComposer/);
   }
 });

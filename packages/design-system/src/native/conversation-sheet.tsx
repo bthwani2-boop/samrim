@@ -7,7 +7,8 @@ type Detail = Readonly<{ id?: string; label: string; value: string }>;
 type Props = PropsWithChildren<Readonly<{
   visible: boolean;
   onClose: () => void;
-  orderReference: string;
+  contextKey: string;
+  title: string;
   status: string;
   summary: string;
   quickFacts?: string;
@@ -16,13 +17,13 @@ type Props = PropsWithChildren<Readonly<{
   bottomInset?: number;
 }>>;
 
-/** Keep order context in the chat: one compact summary and optional inline disclosure. */
-export function BthwaniOrderChatSheet({
-  visible, onClose, orderReference, status, summary, quickFacts, total, details = [], bottomInset = 20, children,
+/** Present the caller's conversation context and optional inline details without owning domain data. */
+export function BthwaniConversationSheet({
+  visible, onClose, contextKey, title, status, summary, quickFacts, total, details = [], bottomInset = 20, children,
 }: Props) {
   const theme = useAppearanceTheme();
   const [expanded, setExpanded] = useState(false);
-  useEffect(() => { if (visible && orderReference) setExpanded(false); }, [orderReference, visible]);
+  useEffect(() => { if (visible && contextKey) setExpanded(false); }, [contextKey, visible]);
 
   return <Modal transparent statusBarTranslucent animationType="slide" visible={visible} onRequestClose={onClose}>
     <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
@@ -31,10 +32,10 @@ export function BthwaniOrderChatSheet({
         <View style={[styles.grabber, {backgroundColor: theme.borderColor}]}/>
         <View style={[styles.titleRow, {borderBottomColor: theme.borderColor}]}>
           <View style={styles.titleText}>
-            <Text style={[styles.title, {color: theme.color}]} numberOfLines={1}>محادثة الطلب #{orderReference}</Text>
+            <Text style={[styles.title, {color: theme.color}]} numberOfLines={1}>{title}</Text>
             <Text style={[styles.hint, {color: theme.colorMuted}]} numberOfLines={1}>{status}</Text>
           </View>
-          <Pressable accessibilityRole="button" accessibilityLabel="إغلاق محادثة الطلب" style={styles.close} onPress={onClose}>
+          <Pressable accessibilityRole="button" accessibilityLabel="إغلاق المحادثة" style={styles.close} onPress={onClose}>
             <Text style={[styles.closeText, {color: theme.colorMuted}]}>إغلاق</Text>
           </Pressable>
         </View>
@@ -42,7 +43,7 @@ export function BthwaniOrderChatSheet({
           <View style={styles.summaryRow}>
             <Text style={[styles.summaryMain, {color: theme.color}]} numberOfLines={1}>{summary}</Text>
             {total ? <Text style={[styles.total, {color: theme.color}]} numberOfLines={1}>{total}</Text> : null}
-            {details.length > 0 ? <Pressable accessibilityRole="button" accessibilityLabel={expanded ? "إخفاء تفاصيل الطلب" : "إظهار تفاصيل الطلب"}
+            {details.length > 0 ? <Pressable accessibilityRole="button" accessibilityLabel={expanded ? "إخفاء التفاصيل" : "إظهار التفاصيل"}
               accessibilityState={{expanded}} onPress={() => setExpanded(value => !value)} style={styles.detailsToggle}>
               <Text style={[styles.detailsLink, {color: theme.brandAction}]}>{expanded ? "أقل ⌃" : "تفاصيل ⌄"}</Text>
             </Pressable> : null}

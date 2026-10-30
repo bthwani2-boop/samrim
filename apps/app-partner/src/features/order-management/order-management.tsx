@@ -1,5 +1,5 @@
 import { borders, radius, sizing, type resolveTheme, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniConfirmDialog, BthwaniIcon, BthwaniOrderChatSheet, useOrderChatUnreadCounts, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniConfirmDialog, BthwaniIcon, BthwaniConversationSheet, useOrderChatUnreadCounts, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type CaptainAssignment, type CaptainOffer, captainHandoffStateLabel, createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderAdjustmentProposalRequest, type OrderTransitionRequest, orderStateLabel, paymentMethodLabel, paymentStateLabel, type StoreCaptainMembership } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useIsFocused, useLocalSearchParams } from "expo-router";
@@ -467,13 +467,13 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
                 </View>
               </View>
             </Modal>
-            <BthwaniOrderChatSheet visible={chatOrderId===order.id} bottomInset={insets.bottom} onClose={()=>setChatOrderId("")}
-              orderReference={order.id.slice(-8)} status={orderStateLabel(order.state)}
+            <BthwaniConversationSheet visible={chatOrderId===order.id} bottomInset={insets.bottom} onClose={()=>setChatOrderId("")}
+              contextKey={order.id} title={"محادثة الطلب #" + order.id.slice(-8)} status={orderStateLabel(order.state)}
               summary={order.storeName+" · "+order.lines.length+" أصناف"} quickFacts={order.lines.slice(0,2).map(line=>line.productName).join("، ")+(order.lines.length>2?"…":"")+" · "+(order.fulfillmentMode==="CUSTOMER_PICKUP"?"استلام":order.fulfillmentMode==="PARTNER_CAPTAIN"?"توصيل المتجر":"توصيل بثواني")}
               total={formatMoney(order.totalAmountMinor,order.currency)}
               details={[...order.lines.map(line=>({id:line.id,label:"صنف",value:line.productName})),{label:"التوصيل",value:order.fulfillmentMode==="CUSTOMER_PICKUP"?"استلام من المتجر":order.fulfillmentMode==="PARTNER_CAPTAIN"?"توصيل المتجر":"توصيل بثواني"},...(order.fulfillmentMode!=="CUSTOMER_PICKUP"?[{label:"العنوان",value:order.addressText}]:[]),...(order.customerNote?[{label:"ملاحظات",value:order.customerNote}]:[])]}>
               {chatOrderId===order.id?<OrderConversation orderId={order.id}/>:null}
-            </BthwaniOrderChatSheet>
+            </BthwaniConversationSheet>
           </View>
         );
       })}

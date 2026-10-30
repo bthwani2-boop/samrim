@@ -21,8 +21,8 @@ type Props = Readonly<{
   disabled?:boolean;
   canSend?:boolean;
 }>;
-/** Role choices are presentation only. DSH validates actual message recipients. */
-export function BthwaniOrderChatComposer({recipients,selected,onToggleRecipient,onSelectAll,body,onChangeText,onSend,onGallery,onCamera,onVoice,onVideo,audioControls,disabled=false,canSend=true}:Props) {
+/** Recipient choices are presentation only; the owning service authorizes delivery. */
+export function BthwaniConversationComposer({recipients,selected,onToggleRecipient,onSelectAll,body,onChangeText,onSend,onGallery,onCamera,onVoice,onVideo,audioControls,disabled=false,canSend=true}:Props) {
   const theme=useAppearanceTheme();
   const [recipientOpen,setRecipientOpen]=useState(false);
   const [attachmentsOpen,setAttachmentsOpen]=useState(false);

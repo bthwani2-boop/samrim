@@ -7,7 +7,7 @@ import { BthwaniIcon } from "./icons";
 type Phase = "starting" | "recording" | "sending" | "failed";
 
 /** Compact, inline voice composer. Mounting starts recording; Send stops and uploads the audio. */
-export default function OrderConversationAudioRecorder({
+export default function ConversationVoiceRecorder({
   disabled, onRecorded, onClose,
 }: Readonly<{
   disabled: boolean;

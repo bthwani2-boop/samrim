@@ -1,5 +1,5 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniIcon, BthwaniOrderChatSheet, BthwaniSectionHeader, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniIcon, BthwaniConversationSheet, BthwaniSectionHeader, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { BthwaniMap } from "@bthwani/design-system/native/map";
 import { cashCollectionPartyLabel, createDshMobileClient, type DeliveryProofResponse, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderRatingResponse, type PublicStoreView, orderStateLabel, orderPaymentDisclosure } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
@@ -367,12 +367,12 @@ export default function ClientOrderDetail() {
         <View style={styles.action}><BthwaniButton label={showConversation ? "إغلاق المحادثة" : "محادثة الطلب"} variant="primary" onPress={() => setShowConversation((value) => !value)}/></View>
         <View style={styles.action}><BthwaniButton label="المساعدة" variant="secondary" onPress={() => Alert.alert("مساعدة الطلب", "يمكنك متابعة المشكلة عبر محادثة الطلب أو طلب مراجعة الإلغاء حين يكون متاحًا.", [{ text: "إغلاق", style: "cancel" }, { text: "مراسلة الطلب", onPress: () => setShowConversation(true) }, ...(order.state !== "CREATED" && !completedState && !["CANCELLED", "REJECTED"].includes(order.state) ? [{ text: "مراجعة الإلغاء", onPress: () => setShowCancellationForm(true) }] : []) ])}/></View>
       </View>
-      <BthwaniOrderChatSheet visible={showConversation} bottomInset={insets.bottom} onClose={()=>setShowConversation(false)}
-        orderReference={order.id.slice(-8)} status={orderStateLabel(order.state)}
+      <BthwaniConversationSheet visible={showConversation} bottomInset={insets.bottom} onClose={()=>setShowConversation(false)}
+        contextKey={order.id} title={"محادثة الطلب #" + order.id.slice(-8)} status={orderStateLabel(order.state)}
         summary={order.storeName+" · "+order.lines.length+" أصناف"} quickFacts={order.lines.slice(0,2).map(line=>line.productName).join("، ")+(order.lines.length>2?"…":"")+" · "+journey.fulfillmentLabel}
         total={formatMoney(order.totalAmountMinor,order.currency)} details={[...order.lines.map(line=>({id:line.id,label:"صنف",value:line.productName})),{label:"التوصيل",value:journey.fulfillmentLabel},...(!isStorePickup?[{label:"العنوان",value:order.addressText}]:[]),...(order.customerNote?[{label:"ملاحظات",value:order.customerNote}]:[])]}>
         {showConversation?<OrderConversation orderId={order.id}/>:null}
-      </BthwaniOrderChatSheet>
+      </BthwaniConversationSheet>
       <View style={styles.status}>
         <Text style={styles.sectionTitle}>ملخص الدفع</Text>
         {journey.exception ? <BthwaniStatusBadge icon={statusIcon} label={orderStateLabel(order.state)} tone={statusTone} /> : null}

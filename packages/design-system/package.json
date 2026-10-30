@@ -22,10 +22,10 @@
       "browser": "./src/native/map.web.tsx",
       "default": "./src/native/map.tsx"
     },
-    "./native/order-chat-voice-recorder": {
-      "types": "./src/native/order-chat-voice-recorder.tsx",
-      "react-native": "./src/native/order-chat-voice-recorder.tsx",
-      "default": "./src/native/order-chat-voice-recorder.tsx"
+    "./native/conversation-voice-recorder": {
+      "types": "./src/native/conversation-voice-recorder.tsx",
+      "react-native": "./src/native/conversation-voice-recorder.tsx",
+      "default": "./src/native/conversation-voice-recorder.tsx"
     },
     "./native/order-chat-private-media": {
       "types": "./src/native/order-chat-private-media.tsx",
