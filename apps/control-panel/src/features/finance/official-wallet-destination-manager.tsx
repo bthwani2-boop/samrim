@@ -4,7 +4,7 @@ import type { OfficialWalletDestination } from "@bthwani/dsh";
 import { useState } from "react";
 import { useWalletProviders, walletProviderLabel } from "../wallet-provider/use-wallet-providers";
 
-type BeneficiaryActorType = "partner" | "captain" | "field";
+type BeneficiaryActorType = "partner" | "captain";
 type WalletIntent = Readonly<{ actorType: BeneficiaryActorType; actorId: string; providerKey: string; sourceId: string }>;
 type DestinationResponse = Readonly<{ destination: OfficialWalletDestination; idempotentReplay?: boolean }>;
 type IntentResponse = Readonly<{ intent: WalletIntent; operatorActorId: string }>;

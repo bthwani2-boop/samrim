@@ -12,30 +12,30 @@ import (
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
-type FieldFinanceServer struct {
+type OperatorPolicyServer struct {
 	auth     *auth.ServiceToken
 	identity *identityintegration.Client
 	payment  *wlt.Client
 	db       *sql.DB
 }
 
-func NewFieldFinance(identity *identityintegration.Client, accessToken string, payment *wlt.Client, db *sql.DB) (*FieldFinanceServer, error) {
+func NewOperatorPolicy(identity *identityintegration.Client, accessToken string, payment *wlt.Client, db *sql.DB) (*OperatorPolicyServer, error) {
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
 		return nil, err
 	}
 	if identity == nil || payment == nil || db == nil {
-		return nil, &identityclient.Error{Status: http.StatusInternalServerError, Code: "CONFIGURATION_ERROR", Message: "Field finance dependencies are required"}
+		return nil, &identityclient.Error{Status: http.StatusInternalServerError, Code: "CONFIGURATION_ERROR", Message: "operator policy dependencies are required"}
 	}
-	return &FieldFinanceServer{auth: authorizer, identity: identity, payment: payment, db: db}, nil
+	return &OperatorPolicyServer{auth: authorizer, identity: identity, payment: payment, db: db}, nil
 }
 
-func (s *FieldFinanceServer) Register(mux *http.ServeMux) {
+func (s *OperatorPolicyServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/operator/policy-history", s.readPolicyHistory)
 	mux.HandleFunc("GET /dsh/operator/policy-registry", s.readOperatorPolicyRegistry)
 }
 
-func (s *FieldFinanceServer) authorizeOperator(w http.ResponseWriter, r *http.Request) bool {
+func (s *OperatorPolicyServer) authorizeOperator(w http.ResponseWriter, r *http.Request) bool {
 	if s.auth.Authorized(r) {
 		return true
 	}
@@ -43,7 +43,7 @@ func (s *FieldFinanceServer) authorizeOperator(w http.ResponseWriter, r *http.Re
 	return false
 }
 
-func (s *FieldFinanceServer) requireOperator(w http.ResponseWriter, ctx context.Context, actorID string) bool {
+func (s *OperatorPolicyServer) requireOperator(w http.ResponseWriter, ctx context.Context, actorID string) bool {
 	if actorID == "" || len(actorID) > 128 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
 		return false
@@ -60,7 +60,7 @@ func (s *FieldFinanceServer) requireOperator(w http.ResponseWriter, ctx context.
 	return true
 }
 
-func (s *FieldFinanceServer) requirePermission(w http.ResponseWriter, ctx context.Context, actorID, permission string) bool {
+func (s *OperatorPolicyServer) requirePermission(w http.ResponseWriter, ctx context.Context, actorID, permission string) bool {
 	if err := s.identity.RequireOperatorPermission(ctx, actorID, permission); err != nil {
 		writeIdentityError(w, err)
 		return false
@@ -68,6 +68,6 @@ func (s *FieldFinanceServer) requirePermission(w http.ResponseWriter, ctx contex
 	return true
 }
 
-func (s *FieldFinanceServer) requirePlatformPolicyPermission(w http.ResponseWriter, ctx context.Context, actorID string) bool {
+func (s *OperatorPolicyServer) requirePlatformPolicyPermission(w http.ResponseWriter, ctx context.Context, actorID string) bool {
 	return s.requirePermission(w, ctx, actorID, "platform_policies")
 }

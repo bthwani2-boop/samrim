@@ -4,8 +4,8 @@ import { NextResponse } from "next/server";
 import { createOperatorDestination, dshErrorPayload, dshHttpStatus, isDshClientError, readOperatorDestination } from "../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 
-const destinationReadActorTypes = new Set(["customer", "partner", "captain", "field"]);
-const destinationCreateActorTypes = new Set(["partner", "captain", "field"]);
+const destinationReadActorTypes = new Set(["customer", "partner", "captain"]);
+const destinationCreateActorTypes = new Set(["partner", "captain"]);
 
 async function operator() {
   const identity = await readOperatorSession();
@@ -21,7 +21,7 @@ export async function GET(request: Request) {
   const actorType = query.get("actorType")?.trim() ?? "";
   const actorId = query.get("actorId")?.trim() ?? "";
   if (!destinationReadActorTypes.has(actorType) || !actorId) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "actorType and actorId are required" } }, { status: 400 });
-  try { return NextResponse.json(await readOperatorDestination(actorType as "customer" | "partner" | "captain" | "field", actorId, { operatorActorId: access.identity.subject }), { headers: { "Cache-Control": "no-store" } }); } catch (error) { return mapError(error, "destination read failed"); }
+  try { return NextResponse.json(await readOperatorDestination(actorType as "customer" | "partner" | "captain", actorId, { operatorActorId: access.identity.subject }), { headers: { "Cache-Control": "no-store" } }); } catch (error) { return mapError(error, "destination read failed"); }
 }
 
 export async function POST(request: Request) {
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
   const actorId = query.get("actorId")?.trim() ?? "";
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   if (!destinationCreateActorTypes.has(actorType) || !actorId || !body || Object.keys(body).some((key) => !["changeReason", "verificationEvidenceReference", "changeEvidenceReference"].includes(key)) || Object.keys(body).length !== 3 || Object.values(body).some((value) => typeof value !== "string" || !value.trim())) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "change reason and evidence references are required" } }, { status: 400 });
-  try { return NextResponse.json((await createOperatorDestination(actorType as "partner" | "captain" | "field", actorId, body as { changeReason: string; verificationEvidenceReference: string; changeEvidenceReference: string }, { operatorActorId: access.identity.subject, correlationId: request.headers.get("X-Correlation-ID")?.trim() || randomUUID(), idempotencyKey: request.headers.get("Idempotency-Key")?.trim() || randomUUID() })).payload, { status: 201 }); } catch (error) { return mapError(error, "destination creation failed"); }
+  try { return NextResponse.json((await createOperatorDestination(actorType as "partner" | "captain", actorId, body as { changeReason: string; verificationEvidenceReference: string; changeEvidenceReference: string }, { operatorActorId: access.identity.subject, correlationId: request.headers.get("X-Correlation-ID")?.trim() || randomUUID(), idempotencyKey: request.headers.get("Idempotency-Key")?.trim() || randomUUID() })).payload, { status: 201 }); } catch (error) { return mapError(error, "destination creation failed"); }
 }
 
 function mapError(error: unknown, message: string) {

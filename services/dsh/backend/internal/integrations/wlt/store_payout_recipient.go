@@ -50,7 +50,7 @@ type storePayoutRecipientRecordResponse struct {
 }
 
 // Store payout-recipient assignment states owned by WLT
-// (PARTNER_CAPTAIN_FIELD_EARNINGS_SETTLEMENT): absence of a row means DEFAULT_OWNER.
+// (PARTNER_CAPTAIN_EARNINGS_SETTLEMENT): absence of a row means DEFAULT_OWNER.
 const (
 	StorePayoutRecipientStateDefaultOwner   = "DEFAULT_OWNER"
 	StorePayoutRecipientStateSelectedStaff  = "SELECTED_VERIFIED_STAFF"

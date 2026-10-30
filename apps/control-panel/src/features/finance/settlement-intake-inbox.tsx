@@ -168,7 +168,7 @@ export function SettlementIntakeInbox({
           <section className="finance-review-section">
             <h3>مراجعة وجهة الصرف</h3>
             <p className="muted">افحص الوجهة المعتمدة وبيانات التحقق من سجلها الأصلي قبل الإحالة. لا ينفذ هذا الطلب تحويلًا مباشرًا.</p>
-            {reviewOpen ? <OfficialWalletDestinationManager key={selected.id} actorType={selected.actorType} actorId={selected.actorId} initiallyExpanded onReadinessChange={setWalletReady} /> :
+            {selected.actorType === "field" ? <p role="status" className="managed-status managed-status-info">مستحقات الميداني التاريخية محفوظة، لكن إعداد وجهة صرف جديدة أو تفعيلها غير متاح من هذه الشاشة.</p> : reviewOpen ? <OfficialWalletDestinationManager key={selected.id} actorType={selected.actorType} actorId={selected.actorId} initiallyExpanded onReadinessChange={setWalletReady} /> :
               <button type="button" className="button button-secondary finance-review-open-wallet" onClick={() => setReviewOpen(true)}>فتح مراجعة وجهة الصرف</button>}
           </section>
           <details className="finance-review-secondary" open={cancelOpen} onToggle={(event) => setCancelOpen(event.currentTarget.open)}>
@@ -183,7 +183,7 @@ export function SettlementIntakeInbox({
         <div className="finance-review-bottom">
           {error ? <p role="alert" className="identity-error">{error}</p> : null}
           {notice ? <p role="status" className="managed-status managed-status-info">{notice}</p> : null}
-          {reviewOpen && walletReady ? <button type="button" className="button button-primary" disabled={busyId !== null}
+          {selected.actorType === "field" ? <p role="status" className="finance-review-not-ready">المطالبة التاريخية متاحة للمراجعة أو الإلغاء وفق الصلاحيات؛ لا يمكن تحويلها إلى طلب صرف جديد من هذا المسار المتقاعد.</p> : reviewOpen && walletReady ? <button type="button" className="button button-primary" disabled={busyId !== null}
             onClick={() => void convert(selected.id)}>{busyId === selected.id ? "جارٍ التحقق…" : "التحقق والإحالة للصرف"}</button>
           : reviewOpen ? <p role="status" className="finance-review-not-ready">لا يمكن الإحالة بعد. اقرأ وجهة الصرف وأكمل التحقق والاعتماد المطلوبين في سجل المحفظة.</p>
           : <button type="button" className="button button-primary" onClick={() => setReviewOpen(true)}>مراجعة جهة الصرف</button>}

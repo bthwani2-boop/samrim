@@ -7,7 +7,7 @@ import (
 	"github.com/lib/pq"
 )
 
-func (s *FieldFinanceServer) readOperatorPolicyRegistry(w http.ResponseWriter, r *http.Request) {
+func (s *OperatorPolicyServer) readOperatorPolicyRegistry(w http.ResponseWriter, r *http.Request) {
 	if !s.authorizeOperator(w, r) {
 		return
 	}

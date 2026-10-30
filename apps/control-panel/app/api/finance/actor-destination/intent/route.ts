@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   const query = new URL(request.url).searchParams;
   const actorType = query.get("actorType")?.trim() ?? "";
   const actorId = query.get("actorId")?.trim() ?? "";
-  if (!(actorType === "partner" || actorType === "captain" || actorType === "field") || !actorId) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "actorType and actorId are required" } }, { status: 400 });
+  if (!(actorType === "partner" || actorType === "captain") || !actorId) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "actorType and actorId are required" } }, { status: 400 });
   try {
     const response = await readOperatorWalletProviderIntent(actorType, actorId, { operatorActorId: identity.subject });
     return NextResponse.json({ ...response, operatorActorId: identity.subject }, { headers: { "Cache-Control": "no-store" } });

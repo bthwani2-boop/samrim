@@ -30,7 +30,7 @@ Routing only; behavior remains in each capability owner. Journey participation i
 `STORE_COMMERCIAL_AGREEMENT` → `capabilities/finance/store-commercial-agreement.md`
 `CUSTOMER_BALANCE_FUNDING` → `capabilities/finance/customer-balance-funding.md`
 `CAPTAIN_BALANCE_FUNDING` → `capabilities/finance/captain-balance-funding.md`
-`PARTNER_CAPTAIN_FIELD_EARNINGS_SETTLEMENT` → `capabilities/finance/partner-captain-field-earnings-settlement.md`
+`PARTNER_CAPTAIN_EARNINGS_SETTLEMENT` → `capabilities/finance/partner-captain-earnings-settlement.md`
 `CUSTOMER_BALANCE_MANUAL_WITHDRAWAL` → `capabilities/finance/customer-balance-manual-withdrawal.md`
 
 New capability owners require authorized current Product need. An admitted capability may precede its implementation; admission never proves implementation completion.

@@ -8,7 +8,7 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 )
 
-func (s *FieldFinanceServer) readPolicyHistory(w http.ResponseWriter, r *http.Request) {
+func (s *OperatorPolicyServer) readPolicyHistory(w http.ResponseWriter, r *http.Request) {
 	if !s.authorizeOperator(w, r) {
 		return
 	}

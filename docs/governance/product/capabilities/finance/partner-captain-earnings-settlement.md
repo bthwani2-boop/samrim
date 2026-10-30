@@ -1,14 +1,14 @@
-# Partner, Captain and Field Earnings Settlement
+# Partner and Captain Earnings Settlement — Historical Field Obligations
 
 ARTIFACT_CLASS: DURABLE_PRODUCT_CAPABILITY_GOVERNANCE
-SEMANTIC_OWNER: docs/governance/product/capabilities/finance/partner-captain-field-earnings-settlement.md
+SEMANTIC_OWNER: docs/governance/product/capabilities/finance/partner-captain-earnings-settlement.md
 EXECUTION_AUTHORITY: NONE
 IMPLEMENTATION_STATE_AUTHORITY: NONE
-CAPABILITY_ID: PARTNER_CAPTAIN_FIELD_EARNINGS_SETTLEMENT
+CAPABILITY_ID: PARTNER_CAPTAIN_EARNINGS_SETTLEMENT
 
 ## Outcome
 
-Partner, BThwani Captain and Field financial entitlements are derived from their canonical qualifying events and move through one governed WLT payout/settlement lifecycle to reconciled completion or an explicit exception. The Operator Finance workspace presents separate beneficiary sections while sharing the payout, execution and reconciliation controls that have the same financial semantics.
+Current Partner and BThwani Captain entitlements are derived from admitted canonical qualifying events and use the governed WLT payout/settlement lifecycle. Previously accrued Field obligations remain available as historical financial readback for authorized Finance review, legally governed settlement or documented disposition; no new Field acquisition rewards, settlement intakes, wallet destinations or payout intents are admitted through the retired workflows. The Operator Finance workspace presents separate beneficiary sections while sharing the payout, execution and reconciliation controls that have the same financial semantics.
 
 ## Ownership
 
@@ -21,11 +21,11 @@ WLT owns earnings ledger, beneficiary eligibility/holds, payout intent, official
 - outstanding Partner commission receivables from Store-collected pickup cash reduce that Partner's later eligible earnings before payout; they never offset another Partner's entitlement;
 - a remaining Partner commission receivable may be cleared by a direct Partner remittance only after WLT records and reconciles the verified receipt;
 - Store-collected sale proceeds already retained by the Partner do not become a second WLT Partner wallet credit;
-- Partner/Captain/Field payout execution is currently a governed manual official-wallet transfer; a provider payout API is not implied;
+- Partner/Captain payout execution is currently a governed manual official-wallet transfer; historical Field obligations require separately reviewed disposition; a provider payout API is not implied;
 - each external transfer has transfer-specific receipt/evidence, while a period/batch statement is retained once and matched statement rows may be linked to multiple transfers;
 - generated spreadsheets are immutable execution artifacts and never a source of WLT financial truth;
 - Partner, BThwani Captain and Field surfaces do not create, update, deactivate, replace or select official-wallet destination master data; Finance owns the governed provisioning/change workflow;
-- official-wallet admission for Partner, BThwani Captain and Field collects a provider preference only. WLT derives the number and beneficiary name from current canonical Identity facts under `docs/governance/policies/finance.md`; stale Identity facts require reverification before payout approval or execution;
+- official-wallet admission for active Partner and BThwani Captain actors collects a provider preference only; historical Field destinations are retained without new provisioning. WLT derives the number and beneficiary name from current canonical Identity facts under `docs/governance/policies/finance.md`; stale Identity facts require reverification before payout approval or execution;
 - a derived wallet number may be shown read-only; it is never an editable destination input;
 - payout approval freezes an immutable beneficiary/destination/amount snapshot;
 - external execution evidence is independently verified/reconciled before completion;
@@ -39,8 +39,8 @@ WLT owns earnings ledger, beneficiary eligibility/holds, payout intent, official
 - a verified-phone or Identity change makes the affected destination require Finance reverification before a future payout; it never silently redirects a payout;
 - recipient changes affect only future payout intents that have not been committed to an immutable snapshot; approved, executing, transferred and reconciled payouts retain their original beneficiary, destination and per-Store allocations;
 - aggregated owner readback preserves per-Store attribution; a payout spanning different recipients or destinations is partitioned into separate canonical groups/transfers, never one transfer to multiple recipients;
-- Field earning policy defines the qualifying event explicitly; attribution/publication alone does not silently become the permanent reward law;
-- an eligible acquisition referral is an auditable DSH-owned fact separate from whether Field or the Partners workspace created the joining case. Where the approved earning policy qualifies customer-visible publication, DSH emits that fact once with one immutable Field attribution. WLT prevents duplicate economic entitlements and retains all prior valid payouts and evidence. Re-attribution after Store admission or publication is prohibited;
+- historical Field reward-policy versions remain audit evidence and never authorize a new reward;
+- an eligible acquisition referral is an auditable DSH-owned fact separate from whether Field or the Partners workspace created the joining case. Past qualifying publication events and immutable Field attributions are preserved as historical evidence; DSH emits no new Field acquisition entitlement. WLT prevents duplicate economic entitlements and retains all prior valid payouts and evidence. Re-attribution after Store admission or publication is prohibited;
 - Store-affiliated Partner Captain compensation and cash custody remain outside this capability and WLT unless a separately governed integration is explicitly admitted;
 - no surface edits ledger balances directly.
 

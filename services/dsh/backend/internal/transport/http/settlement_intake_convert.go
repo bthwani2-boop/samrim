@@ -8,6 +8,12 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
 
+// Converted historical Field payout records remain idempotent readback;
+// open Field intakes require separately reviewed disposition, not a new payout.
+func retiredFieldIntakeNeedsReview(actorType, status string) bool {
+	return actorType == "field" && status == "REQUESTED"
+}
+
 func (s *BeneficiaryFinanceServer) cancelOperatorSettlementIntake(w http.ResponseWriter, r *http.Request) {
 	if !s.authorizeAndRequireOperator(w, r) {
 		return
@@ -53,6 +59,10 @@ func (s *BeneficiaryFinanceServer) convertOperatorSettlementIntake(w http.Respon
 	}
 	if intake.Status == "CONVERTED" {
 		writeJSON(w, http.StatusOK, map[string]any{"intake": intake})
+		return
+	}
+	if retiredFieldIntakeNeedsReview(intake.ActorType, intake.Status) {
+		writeError(w, http.StatusConflict, "RETIRED_BENEFICIARY", "historical Field obligations require a separate Finance review; the retired workflow cannot create new payout intents")
 		return
 	}
 	if intake.Status != "REQUESTED" {
@@ -101,7 +111,7 @@ func (s *BeneficiaryFinanceServer) convertOperatorSettlementIntake(w http.Respon
 			return
 		}
 		payoutID = result.ID
-	} else if intake.ActorType == "captain" || intake.ActorType == "field" {
+	} else if intake.ActorType == "captain" {
 		facts, err := s.readCurrentOfficialWalletIdentityFacts(r.Context(), intake.ActorType, intake.ActorID, acting)
 		if err != nil {
 			writeOfficialWalletIdentityReadError(w, err)

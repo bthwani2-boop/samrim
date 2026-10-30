@@ -178,7 +178,7 @@ jobs:
           apps/control-panel/src/features/notifications/notification-operation-link.test.mjs
           apps/control-panel/src/features/notifications/notification-readback.test.mjs
           apps/control-panel/src/features/operations/operational-age.test.mjs
-          apps/control-panel/src/server/field/scoped-page.test.mjs
++[string][char]10
           apps/control-panel/tests/marketing-budget-route.test.mjs
 
       - name: Lint and typecheck affected projects
