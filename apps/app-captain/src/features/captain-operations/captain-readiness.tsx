@@ -47,7 +47,6 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
   const [hasActiveDelivery, setHasActiveDelivery] = useState(false);
   const [assignmentsUnknown, setAssignmentsUnknown] = useState(false);
   const [gpsReady, setGpsReady] = useState(false);
-  const [gpsChecked, setGpsChecked] = useState(false);
   const [backgroundConsent, setBackgroundConsent] = useState(false);
   const [backgroundBusy, setBackgroundBusy] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -59,11 +58,9 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
     try {
       const ready = await isPhoneLocationReady();
       setGpsReady(ready);
-      setGpsChecked(true);
       return ready;
     } catch {
       setGpsReady(false);
-      setGpsChecked(true);
       return false;
     }
   }, []);
@@ -178,10 +175,19 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
           return;
         }
         if (!(await Location.hasServicesEnabledAsync())) {
-          setGpsReady(false);
-          setError("خدمات GPS مغلقة. افتح مفتاح GPS أولًا.");
-          return;
+          try {
+            if (Platform.OS === "android") await Location.enableNetworkProviderAsync();
+            else await openPhoneLocationSettings();
+          } catch {
+            await openPhoneLocationSettings().catch(() => {});
+          }
+          if (!(await Location.hasServicesEnabledAsync())) {
+            setGpsReady(false);
+            setError("فعّل موقع الهاتف ثم اضغط التوفر مجددًا لإكمال التشغيل.");
+            return;
+          }
         }
+        setGpsReady(true);
       }
       const token = await getUsableIdentityAccessToken();
       const before = currentIdentityState();
@@ -201,49 +207,6 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
       setError(confirmed
         ? "تعذر تأكيد تغيير التوفر؛ اعتمد الحالة الظاهرة قبل المحاولة من جديد."
         : "تعذرت قراءة نتيجة تغيير التوفر، فلا ترسل طلبًا آخر حتى تُقرأ الحالة.");
-    } finally {
-      await refreshGps();
-      setBusy(false);
-    }
-  }
-
-  async function togglePhoneGps(next: boolean) {
-    if (busy) return;
-    setBusy(true);
-    setError("");
-    try {
-      if (!next) {
-        if (available) {
-          setError("أوقف التوفر أولًا قبل إيقاف GPS؛ حتى لا تُعرض عليك طلبات دون موقع.");
-          return;
-        }
-        // Android does not permit a third-party application to silently
-        // disable the device location provider. The Switch mirrors OS truth.
-        await openPhoneLocationSettings();
-        return;
-      }
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (!permission.granted) {
-        setError("امنح التطبيق إذن الموقع من إعدادات الهاتف.");
-        await Linking.openSettings();
-        return;
-      }
-      if (!(await Location.hasServicesEnabledAsync())) {
-        if (Platform.OS === "android") {
-          try { await Location.enableNetworkProviderAsync(); }
-          catch { await openPhoneLocationSettings(); }
-        } else {
-          await openPhoneLocationSettings();
-        }
-      }
-      const ready = await refreshGps();
-      if (!ready) setError("فعّل خدمات الموقع في إعدادات الهاتف؛ سيظهر المفتاح مفعّلًا عند نجاح ذلك.");
-      else if (available) {
-        try { await publishCaptainPresence(true); }
-        catch { setError("GPS يعمل، لكن تعذر تحديث موقع التوزيع. تحقق من الاتصال."); }
-      }
-    } catch {
-      setError("تعذر فتح إعدادات الموقع. يمكنك تشغيل GPS يدويًا من إعدادات الهاتف.");
     } finally {
       await refreshGps();
       setBusy(false);
@@ -275,15 +238,9 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
             onValueChange={(value) => void toggleAvailability(value)}
             trackColor={{ false: "#76818A", true: "#78D8A7" }}
             thumbColor={available ? "#087F46" : "#F9FAFB"} />}
-      </View>
-      <View style={{ width: 1, height: 35, backgroundColor: "rgba(255,255,255,0.25)" }} />
-      <View style={{ flex: 1, alignItems: "center", gap: 3 }}>
-        <Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "700" }}>GPS</Text>
-        <Switch accessibilityLabel="مفتاح GPS الهاتف" accessibilityRole="switch"
-          value={gpsReady} disabled={busy || !gpsChecked}
-          onValueChange={(value) => void togglePhoneGps(value)}
-          trackColor={{ false: "#76818A", true: "#78D8A7" }}
-          thumbColor={gpsReady ? "#087F46" : "#F9FAFB"} />
+        {!missionActive && !storeOnly ? <Text style={{ color: "#FFFFFF", fontSize: 11 }}>
+          {available ? (gpsReady ? "الموقع يعمل" : "شغّل GPS لمواصلة العمل") : "موقع التوزيع متوقف"}
+        </Text> : null}
       </View>
       <View style={{ width: 1, height: 35, backgroundColor: "rgba(255,255,255,0.25)" }} />
       <View style={{ flex: 1.2, gap: 5 }}>
@@ -335,19 +292,10 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
           thumbColor={available ? theme.success : theme.surface}
         />
       </View>
-      <View style={styles.readinessSwitchRow}>
-        <View style={styles.readinessHeroCopy}>
-          <Text style={styles.cardTitle}>GPS الهاتف</Text>
-          <Text style={styles.muted}>{gpsReady ? "الموقع يعمل" : gpsChecked ? "الموقع متوقف أو الإذن غير متاح" : "جارٍ التحقق من الموقع…"}</Text>
-        </View>
-        <Switch accessibilityLabel="مفتاح GPS الهاتف" accessibilityRole="switch"
-          value={gpsReady} disabled={busy || !gpsChecked}
-          onValueChange={(value) => void togglePhoneGps(value)}
-          trackColor={{ false: theme.borderColor, true: theme.successSoft }}
-          thumbColor={gpsReady ? theme.success : theme.surface}
-        />
-      </View>
-      <Text style={styles.muted}>مفتاح GPS يعكس حالة الهاتف، وقد يفتح إعدادات الموقع.</Text>
+      <Text style={styles.muted}>
+        {available ? (gpsReady ? "موقع التوزيع يعمل." : "موقع الهاتف غير متاح؛ شغّل GPS لاستمرار استقبال العروض.")
+          : "موقع التوزيع متوقف. سيطلب التطبيق تشغيل الموقع عند تفعيل التوفر."}
+      </Text>
       {newOffersBlockedByDelivery ? <Text style={styles.muted}>أكمل التوصيل الحالي أو عالج تعثره من التوصيلات قبل استقبال طلب جديد.</Text> : null}
       {newOffersBlockedByUnknownWork ? <Text style={styles.muted}>تعذرت قراءة التوصيلات؛ أعد فتح الرئيسية للتحقق.</Text> : null}
       {!eligible ? <Text style={styles.muted}>يُفعّل التوفر بعد اعتماد الكابتن.</Text> : null}
