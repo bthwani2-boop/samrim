@@ -31,11 +31,6 @@
       "types": "./src/native/order-chat-private-media.tsx",
       "react-native": "./src/native/order-chat-private-media.tsx",
       "default": "./src/native/order-chat-private-media.tsx"
-    },
-    "./native/order-alert-preferences": {
-      "types": "./src/native/order-alert-preferences.tsx",
-      "react-native": "./src/native/order-alert-preferences.tsx",
-      "default": "./src/native/order-alert-preferences.tsx"
     }
   },
   "scripts": {
@@ -55,8 +50,7 @@
     "expo-audio": "58.0.10",
     "expo-crypto": "58.0.7",
     "expo-file-system": "58.0.11",
-    "expo-video": "58.0.12",
-    "expo-notifications": "58.1.6"
+    "expo-video": "58.0.12"
   },
   "devDependencies": {
     "@expo/ui": "58.0.23",
@@ -69,8 +63,7 @@
     "expo-audio": "58.0.10",
     "expo-crypto": "58.0.7",
     "expo-file-system": "58.0.11",
-    "expo-video": "58.0.12",
-    "expo-notifications": "58.1.6"
+    "expo-video": "58.0.12"
   },
   "peerDependenciesMeta": {
     "@expo/ui": {
@@ -89,9 +82,6 @@
       "optional": true
     },
     "expo-video": {
-      "optional": true
-    },
-    "expo-notifications": {
       "optional": true
     }
   }

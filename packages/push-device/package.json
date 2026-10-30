@@ -16,9 +16,16 @@
     "./alert-tone": {
       "types": "./src/alert-tone.ts",
       "default": "./src/alert-tone.ts"
+    },
+    "./order-alert-preferences": {
+      "types": "./src/order-alert-preferences.tsx",
+      "react-native": "./src/order-alert-preferences.tsx",
+      "default": "./src/order-alert-preferences.tsx"
     }
   },
   "peerDependencies": {
+    "@bthwani/design-system": "workspace:*",
+    "react": "19.3.0",
     "expo": "58.0.19",
     "expo-constants": "58.0.13",
     "expo-crypto": "58.0.7",
@@ -27,6 +34,9 @@
     "react-native": "0.88.0"
   },
   "devDependencies": {
+    "@bthwani/design-system": "workspace:*",
+    "@types/react": "19.3.0",
+    "react": "19.3.0",
     "expo": "58.0.19",
     "expo-constants": "58.0.13",
     "expo-crypto": "58.0.7",

@@ -5,7 +5,7 @@ import { test } from "node:test";
 import ts from "typescript-ast";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const uiFile = path.resolve(root, "packages/design-system/src/native/order-alert-preferences.tsx");
+const uiFile = path.resolve(root, "packages/push-device/src/order-alert-preferences.tsx");
 const ui = readFileSync(uiFile, "utf8");
 const storageFile = path.resolve(root, "packages/push-device/src/alert-tone.ts");
 const storage = readFileSync(storageFile, "utf8");
@@ -46,12 +46,12 @@ for (const app of ["app-client", "app-partner", "app-captain"]) {
   const file = path.resolve(root, "apps", app, "src/features/notifications/order-alert-preferences.tsx");
   const source = readFileSync(file, "utf8");
 
-  test(app + " subscribes to identity changes and consumes the two canonical owners", () => {
+  test(app + " subscribes to identity changes and consumes the canonical push-device owner", () => {
     const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     assert.equal(ast.parseDiagnostics.length, 0);
     assert.match(source, /useSyncExternalStore\(subscribeIdentitySession, currentActorID, \(\) => ""\)/);
     assert.match(source, /from "@bthwani\/push-device\/alert-tone"/);
-    assert.match(source, /from "@bthwani\/design-system\/native\/order-alert-preferences"/);
+    assert.match(source, /from "@bthwani\/push-device\/order-alert-preferences"/);
     assert.match(source, /currentOrderAlertTone\(currentActorID\)/);
     assert.match(source, /state\.kind === "authenticated"/);
     assert.doesNotMatch(source, /getPermissionsAsync|requestPermissionsAsync|SecureStore|Crypto\.digestStringAsync/);

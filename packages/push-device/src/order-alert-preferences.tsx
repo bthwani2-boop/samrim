@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { AppState, Linking, Platform, Pressable, Text, View } from "react-native";
-import { useAppearanceTheme } from "./appearance";
-import { BthwaniButton } from "./primitives";
+import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
+import type { AlertTone } from "./alert-tone";
 
-export type AlertTone = "classic" | "soft" | "urgent";
+export type { AlertTone } from "./alert-tone";
 const names: Record<AlertTone, string> = { classic: "الأساسي", soft: "هادئ", urgent: "واضح" };
 const tones: readonly AlertTone[] = ["classic", "soft", "urgent"];
 export function BthwaniOrderAlertPreferences({
