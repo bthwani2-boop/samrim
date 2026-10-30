@@ -34,18 +34,27 @@ The recognizable signature is restrained deep-navy structure with controlled ora
 
 ## Brand anchors and color semantics
 
-The current durable brand anchors are:
+The five approved compiled-default brand anchors are:
 
-- structural navy `#0A2F5C`;
-- brand/action orange `#FF500D`;
-- warm light background `#FFFCF8`;
-- light primary surface `#FFFFFF`.
+- structural royal navy `#102B4E`;
+- vivid brand orange `#F36B21`;
+- pure white `#FFFFFF`;
+- light turquoise blue `#83DDF3`;
+- burgundy / deer-blood accent `#7B1E3A`.
+
+The light/dark semantic palettes, warm surfaces, accessible dark-orange actions, interaction feedback and gradients are derived from these defaults by the executable Design System. White text on vivid orange `#F36B21` is not WCAG AA for normal-sized text; use a validated contrast role such as `#C2410C` for white-text primary buttons.
 
 These anchors are durable brand decisions until an explicit brand decision changes them. Derived ramps, interaction shades, contrast adaptations, opacity, component-level colors and theme-specific values belong to the executable Design System rather than being mirrored here as a second token registry.
 
 Orange is intentional emphasis for brand and high-priority interaction, not decorative saturation across cards or chrome. Navy provides structure and identity, not a requirement to make every surface dark. Success, warning, danger and informational states use semantic state meaning and must not be overloaded with brand meaning.
 
 Color alone never carries material state or action meaning.
+
+### Compiled defaults and governed Studio overrides
+
+All four deployable surfaces retain these five compiled defaults, so their design does not depend on an API response, a persisted marketing configuration or connectivity. A later authorized Studio publication may replace **editable semantic presentation roles** with any validated color choices for light/dark and supported individual surfaces. Marketing and Content owns the editing entry point; its published theme state must have one lawful server owner, explicit Identity authorization, schema/version compatibility, preview separate from publication, audit, rollback, and safe restoration to compiled defaults. Per-operator appearance preference remains distinct from organization-wide published colors.
+
+Studio publication changes presentation, not permanent code defaults or mutable Identity, commerce, dispatch or WLT financial state. New roles/colors are not published if they obscure safety or financial meaning, fail applicable WCAG 2.2 AA contrast, break a consumer, or expose arbitrary CSS/JS. A client with no valid or compatible publication must render its compiled defaults without a crash; existing installed applications only accept the supported schema. This policy approves the brand direction and safe override boundary, not evidence that runtime Studio publication is implemented.
 
 ## Typography and numeric expression
 

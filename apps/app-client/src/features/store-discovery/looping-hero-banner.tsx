@@ -149,7 +149,7 @@ export function LoopingHeroBanner({
       {immersive ? <LinearGradient colors={colors} locations={[0, (height - mediaHeight) / height, 1]} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={{ position: "absolute", top: 0, bottom: 0, left: 0, right: 0 }} /> : null}
       {failedMedia.has(item.id + ":" + item.mediaUri)
         ? <View style={{ flex: 1, justifyContent: "center", backgroundColor: immersive ? "transparent" : "#192335", padding: spacing[3], marginTop: immersive ? height - mediaHeight : 0 }}><Text style={{ color: "#FFFFFF", textAlign: "center" }}>{item.titleAr}</Text></View>
-        : <ExpoImage cachePolicy="disk" source={{ uri: item.mediaUri }} contentFit="cover"
+        : <ExpoImage cachePolicy="disk" source={{ uri: item.mediaUri }} contentFit="contain"
           onLoad={() => setLoadedMedia((current) => {
             const key = item.id + ":" + item.mediaUri;
             return current.has(key) ? current : new Set(current).add(key);

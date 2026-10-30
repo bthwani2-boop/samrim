@@ -46,9 +46,9 @@ export function MarketingBannerPresentation({ images = [] }: { images?: Readonly
   return <section className="access-card work-stack" aria-label="التحكم بعرض بنرات الرئيسية">
     <div className="access-card-heading"><h2>بنرات الرئيسية</h2><p className="muted">تحكم مركزي بالحركة. الصور والوجهات والترتيب من سجل المحتوى أدناه.</p></div>
     {images.length ? <section className="work-stack" aria-label="معاينة البنرات المنشورة">
-      <div style={{ position: "relative", width: "100%", maxWidth: 420, aspectRatio: "1 / 1", overflow: "hidden", borderRadius: 14, background: "#0A2F5C" }}>
+      <div style={{ position: "relative", width: "100%", maxWidth: 420, aspectRatio: "1 / 1", overflow: "hidden", borderRadius: 14, background: "var(--brand-structure)" }}>
         {images.map((item, index) => <div key={item.id} style={{ position: "absolute", inset: 0, opacity: index === previewIndex % images.length ? 1 : 0, transform: mode === "CINEMATIC" && index !== previewIndex % images.length ? "translateX(7%)" : "translateX(0)", transition: mode === "STATIC" ? "none" : "opacity 550ms ease-in-out, transform 550ms ease-in-out", background: item.titleAr.includes("مقاضي") ? "linear-gradient(#195A54, #297A73, #56A59A)" : item.titleAr.includes("متاجر") ? "linear-gradient(#132E50, #1A4068, #4078A4)" : "linear-gradient(#A94316, #CB6131, #EFAD86)" }}>
-          <img src={item.mediaUri} alt={item.titleAr} style={{ position: "absolute", bottom: 0, left: 0, width: "100%", height: "57.14%", objectFit: "cover" }} />
+          <img src={item.mediaUri} alt={item.titleAr} style={{ position: "absolute", bottom: 0, left: 0, width: "100%", height: "57.14%", objectFit: "contain" }} />
           <div dir="rtl" aria-hidden="true" style={{ position: "absolute", insetInline: 0, top: 0, padding: 16, display: "grid", gap: 12, color: "white", pointerEvents: "none" }}>
             <strong style={{ fontSize: 25 }}>بثواني</strong>
             <span style={{ fontSize: 12 }}>مدينة الخدمة</span>

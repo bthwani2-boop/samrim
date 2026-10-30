@@ -1,7 +1,9 @@
 export const brandRoots = {
-  brandAction: "#FF500D",
+  brandAction: "#F36B21",
   surfaceBase: "#FFFFFF",
-  brandStructure: "#0A2F5C"
+  brandStructure: "#102B4E",
+  brandTurquoise: "#83DDF3",
+  brandBurgundy: "#7B1E3A"
 } as const;
 
 export type BrandRoot = keyof typeof brandRoots;
@@ -35,32 +37,32 @@ export function alpha(color: string, opacity: number): string {
 
 export const brandScale = {
   action: {
-    50: "#FFF3ED",
-    100: "#FFE2D4",
-    200: "#FFC0A3",
-    300: "#FF9A6B",
-    400: "#FF7138",
+    50: "#FFF7F0",
+    100: "#FDE9D9",
+    200: "#FBCBAD",
+    300: "#F8AB7D",
+    400: "#F58B50",
     500: brandRoots.brandAction,
-    600: "#E5480C",
-    700: "#B73809",
-    800: "#8C2B07",
-    900: "#641F05"
+    600: "#D95B19",
+    700: "#C2410C",
+    800: "#9A3412",
+    900: "#7C2D12"
   },
   structure: {
-    50: "#EEF5FC",
-    100: "#D8E7F7",
-    200: "#B4CFEA",
-    300: "#86AED8",
-    400: "#4E83BD",
-    500: "#275F96",
+    50: "#ECF3F8",
+    100: "#D8E5EF",
+    200: "#AEC9DD",
+    300: "#7AA5C5",
+    400: "#477DA5",
+    500: "#205677",
     600: brandRoots.brandStructure,
-    700: "#082744",
-    800: "#061D33",
-    900: "#041322"
+    700: "#0D2442",
+    800: "#0A1E37",
+    900: "#071628"
   },
   surface: {
     0: brandRoots.surfaceBase,
-    50: "#FFFCF8",
+    50: "#FFF7F0",
     100: "#F8F5F0",
     200: "#EFE9E0",
     300: "#E3DACE",
@@ -85,6 +87,8 @@ export const statusScale = {
 
 export const colorRoles = {
   brandAction: brandRoots.brandAction,
+  brandTurquoise: brandRoots.brandTurquoise,
+  brandBurgundy: brandRoots.brandBurgundy,
   brandActionHover: brandScale.action[600],
   brandActionPressed: brandScale.action[700],
   brandActionSoft: brandScale.action[50],
@@ -150,6 +154,8 @@ export const neutralScale = {
 export const lightThemeColors = {
   brandAction: colorRoles.brandAction,
   brandStructure: brandRoots.brandStructure,
+  brandTurquoise: colorRoles.brandTurquoise,
+  brandBurgundy: colorRoles.brandBurgundy,
   brandActionHover: colorRoles.brandActionHover,
   brandActionPressed: colorRoles.brandActionPressed,
   brandActionSoft: colorRoles.brandActionSoft,
@@ -191,12 +197,14 @@ export const lightThemeColors = {
   disabledText: brandScale.structure[500],
   onAction: brandRoots.surfaceBase,
   shadowColor: colorRoles.shadowBase,
-  shadowCard: "0 22px 60px rgba(10, 47, 92, 0.1)"
+  shadowCard: `0 22px 60px ${alpha(brandRoots.brandStructure, 0.1)}`
 } as const;
 
 export const darkThemeColors = {
   brandAction: colorRoles.brandAction,
   brandStructure: brandRoots.brandStructure,
+  brandTurquoise: colorRoles.brandTurquoise,
+  brandBurgundy: colorRoles.brandBurgundy,
   brandActionHover: brandScale.action[300],
   brandActionPressed: brandScale.action[200],
   brandActionSoft: alpha(brandRoots.brandAction, 0.18),

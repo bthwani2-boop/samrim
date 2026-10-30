@@ -30,7 +30,7 @@ export function HomeProductFeed({
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { width } = useWindowDimensions();
-  const columns = width >= 1050 ? 5 : width >= 720 ? 4 : width >= 350 ? 3 : 2;
+  const columns = width >= 1050 ? 5 : width >= 720 ? 4 : width >= 540 ? 3 : 2;
   const [state, setState] = useState<FeedState>({ kind: "loading" });
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState(false);
@@ -194,7 +194,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     count: { ...typography.caption, color: theme.colorMuted },
     grid: { flexDirection: "row-reverse", flexWrap: "wrap", justifyContent: "space-between", rowGap: spacing[3] },
     item: { gap: spacing[1], minWidth: 0 },
-    photoBox: { height: 116, borderRadius: radius.lg, backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: borders.hairline, overflow: "hidden" },
+    photoBox: { aspectRatio: 1, borderRadius: radius.lg, backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: borders.hairline, overflow: "hidden" },
     photo: { width: "100%", height: "100%" },
     fallback: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: theme.surfaceInset },
     plusWrap: { position: "absolute", bottom: spacing[1], left: spacing[1] },
@@ -207,7 +207,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     store: { ...typography.caption, color: theme.interactiveText, backgroundColor: theme.actionSoft, paddingHorizontal: spacing[1], borderRadius: radius.round, overflow: "hidden" },
     product: { ...typography.bodySm, color: theme.color, textAlign: "right", minHeight: 32 },
     variant: { ...typography.caption, color: theme.colorMuted, textAlign: "right" },
-    price: { ...typography.bodyStrong, color: theme.brandAction, textAlign: "right" },
+    price: { ...typography.bodyStrong, color: theme.interactiveText, textAlign: "right" },
     unavailable: { ...typography.caption, color: theme.warningText },
     status: { alignItems: "center", justifyContent: "center", gap: spacing[2], paddingVertical: spacing[4] },
     loading: { alignItems: "center", justifyContent: "center", gap: spacing[2], paddingVertical: spacing[4] },
