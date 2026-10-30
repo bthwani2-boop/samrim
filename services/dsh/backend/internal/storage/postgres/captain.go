@@ -1076,7 +1076,12 @@ func ReadStoreCaptainDispatchOffer(ctx context.Context, db *sql.DB, storeID, ord
 	err := db.QueryRowContext(ctx, `SELECT offer.id FROM dsh.captain_dispatch_offers offer
 		JOIN dsh.commerce_orders o ON o.id=offer.order_id
 		JOIN dsh.stores s ON s.id=o.store_id
-		WHERE offer.source_store_id=$1 AND offer.order_id=$2 AND s.partner_actor_id=$3 AND o.fulfillment_mode=$4
+		WHERE offer.source_store_id=$1 AND offer.order_id=$2 AND o.store_id=$1 AND o.fulfillment_mode=$4
+		AND (s.partner_actor_id=$3 OR EXISTS(
+			SELECT 1 FROM dsh.store_access_grants g
+			WHERE g.store_id=s.id AND g.delegate_actor_id=$3
+			AND g.state='active' AND 'fulfillment'=ANY(g.permissions)
+		))
 		ORDER BY offer.created_at DESC,offer.id DESC LIMIT 1`, storeID, orderID, partnerActorID, FulfillmentModePartnerCaptain).Scan(&offerID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CaptainOffer{}, ErrCaptainOfferNotFound
