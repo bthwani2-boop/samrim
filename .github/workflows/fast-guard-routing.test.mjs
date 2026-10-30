@@ -27,6 +27,23 @@ test("WLT contract-only changes schedule wallet financial proof and generated co
 test("Identity contract-only changes schedule identity and consumer verification", () => {
   requireGates("services/identity/contracts/openapi/identity.openapi.yaml", ["identity", "node"]);
 });
+test("checkout and financial client changes select disposable PostgreSQL proof", () => {
+  for (const file of [
+    "apps/app-client/src/features/cart-checkout/cart-checkout.tsx",
+    "apps/app-client/src/features/wallet/cash-in-panel.tsx",
+    "apps/app-client/src/features/orders/order-detail.tsx",
+    "apps/app-captain/src/features/wallet/cash-in-panel.tsx",
+    "apps/app-partner/src/features/account/partner-payout-card.tsx",
+    "apps/app-partner/src/features/order-management/order-management.tsx",
+    "services/dsh/clients/mobile.ts",
+    "services/wlt/clients/example.ts",
+  ]) {
+    requireGates(file, ["finance", "node"]);
+  }
+  requireGates("apps/app-client/src/features/store-discovery/store-detail.tsx", ["node"]);
+  assert.match(workflow, /TestCaptainWalletBalanceLockSerializesTransactions/);
+});
+
 test("unrelated docs are not misclassified as an executable service change", () => {
   requireGates("docs/reference/design/example.md", []);
 });
