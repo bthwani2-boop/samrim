@@ -8,11 +8,12 @@ const applications = ["app-client", "app-partner", "app-captain"];
 const owner = resolve(root, "packages/push-device/src/index.ts");
 const source = readFileSync(owner, "utf8");
 
-test("native push owner never excludes iOS and never registers on web", () => {
+test("shared native push owner retains iOS support and rejects web", () => {
+  // The native iOS/Android/web behavior, actor scoping, and bounded logout
+  // replay are tested by packages/push-device/src/push-device.test.mjs.
+  // Do not pin the number of guards or the asynchronous implementation shape.
   assert.doesNotMatch(source, /Platform\.OS\s*!==\s*"android"/);
-  assert.equal((source.match(/if \(Platform\.OS === "web" \|\| !accessToken/g) ?? []).length, 2);
-  assert.match(source, /await registrationInFlight\?\.task\.catch\(\(\) => false\)/);
-  assert.match(source, /if \(!stillCurrent\(\)\) return false/);
+  assert.match(source, /Platform\.OS\s*===\s*"web"/);
   assert.match(source, /Notifications\.getExpoPushTokenAsync\(\{ projectId \}\)/);
   assert.match(source, /Bearer \$\{accessToken\}/);
 });
@@ -38,9 +39,3 @@ for (const app of applications) {
     assert.doesNotMatch(login + monitor, /from ["'](?:\.\/|\.\.\/features\/notifications\/)push-device["']/);
   });
 }
-
-test("platform guard detects a regressed Android-only registration", () => {
-  const broken = source.replace('Platform.OS === "web"', 'Platform.OS !== "android"');
-  assert.notEqual(broken, source);
-  assert.match(broken, /Platform\.OS !== "android"/);
-});
