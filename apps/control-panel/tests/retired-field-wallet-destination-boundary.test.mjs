@@ -91,7 +91,7 @@ test("customer can read destination, never mutate; unauthenticated/unauthorized 
 });
 
 test("DSH BFF client functions reject retired Field at runtime even without route guard", async () => {
-  const file = new URL("../src/server/dsh/dsh-bff.ts", import.meta.url);
+  const file = new URL("../src/server/dsh/finance-bff.ts", import.meta.url);
   const names = ["readOperatorDestination", "readOperatorWalletProviderIntent", "createOperatorDestination", "verifyOperatorDestination", "activateOperatorDestination"];
   const calls = [];
   const ctx = {
