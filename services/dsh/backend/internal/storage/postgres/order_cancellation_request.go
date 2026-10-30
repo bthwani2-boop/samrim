@@ -3,6 +3,8 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -27,6 +29,34 @@ type CancellationRequestRecord struct {
 }
 
 const cancellationRequestColumns = "id,order_id,client_actor_id,reason,state,operator_actor_id,decision_reason,created_at,decided_at"
+
+type CancellationRequestPage struct {
+	Requests   []CancellationRequestRecord `json:"requests"`
+	NextCursor string                      `json:"nextCursor"`
+}
+
+type cancellationRequestCursor struct {
+	CreatedAt time.Time `json:"createdAt"`
+	ID        string    `json:"id"`
+}
+
+func encodeCancellationRequestCursor(item CancellationRequestRecord) string {
+	encoded, _ := json.Marshal(cancellationRequestCursor{CreatedAt: item.CreatedAt, ID: item.ID})
+	return base64.RawURLEncoding.EncodeToString(encoded)
+}
+
+func decodeCancellationRequestCursor(raw string) (cancellationRequestCursor, error) {
+	var cursor cancellationRequestCursor
+	if len(raw) > 512 {
+		return cursor, ErrCancellationRequestInvalid
+	}
+	encoded, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil || json.Unmarshal(encoded, &cursor) != nil || cursor.CreatedAt.IsZero() ||
+		cursor.ID == "" || len(cursor.ID) > 128 {
+		return cancellationRequestCursor{}, ErrCancellationRequestInvalid
+	}
+	return cursor, nil
+}
 
 type cancellationRequestScanner interface{ Scan(...any) error }
 
@@ -113,24 +143,41 @@ func ReadClientCancellationRequest(ctx context.Context, db *sql.DB, orderID, cli
 	}
 	return x, err
 }
-func ListPendingCancellationRequests(ctx context.Context, db *sql.DB, limit int) ([]CancellationRequestRecord, error) {
-	if limit < 1 || limit > 100 {
-		return nil, ErrCancellationRequestInvalid
+func ListPendingCancellationRequests(ctx context.Context, db *sql.DB, limit int, rawCursor string) (CancellationRequestPage, error) {
+	result := CancellationRequestPage{Requests: []CancellationRequestRecord{}}
+	if db == nil || limit < 1 || limit > 100 {
+		return result, ErrCancellationRequestInvalid
 	}
-	rows, err := db.QueryContext(ctx, "SELECT "+cancellationRequestColumns+" FROM dsh.order_cancellation_requests WHERE state='PENDING' ORDER BY created_at,id LIMIT $1", limit)
+	position := cancellationRequestCursor{CreatedAt: time.Unix(0, 0).UTC()}
+	if rawCursor != "" {
+		var err error
+		position, err = decodeCancellationRequestCursor(rawCursor)
+		if err != nil {
+			return result, err
+		}
+	}
+	rows, err := db.QueryContext(ctx, "SELECT "+cancellationRequestColumns+
+		" FROM dsh.order_cancellation_requests WHERE state='PENDING' AND (created_at,id)>($1,$2) ORDER BY created_at,id LIMIT $3",
+		position.CreatedAt, position.ID, limit+1)
 	if err != nil {
-		return nil, err
+		return result, err
 	}
 	defer rows.Close()
-	result := make([]CancellationRequestRecord, 0)
 	for rows.Next() {
 		x, err := scanCancellationRequest(rows)
 		if err != nil {
-			return nil, err
+			return result, err
 		}
-		result = append(result, x)
+		result.Requests = append(result.Requests, x)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
+	if len(result.Requests) > limit {
+		result.Requests = result.Requests[:limit]
+		result.NextCursor = encodeCancellationRequestCursor(result.Requests[limit-1])
+	}
+	return result, nil
 }
 func DeclineCancellationRequest(ctx context.Context, db *sql.DB, id, operatorID, reason string) (CancellationRequestRecord, error) {
 	reason = strings.TrimSpace(reason)

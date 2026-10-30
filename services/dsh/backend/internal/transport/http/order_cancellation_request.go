@@ -88,12 +88,17 @@ func (s *OrderServer) listOperatorCancellationRequests(w http.ResponseWriter, r 
 		}
 		limit = n
 	}
-	records, err := s.service.ListCancellationRequestsForOperator(r.Context(), actor, limit)
-	if err != nil {
-		writeOrderError(w, err)
+	cursor := r.URL.Query().Get("cursor")
+	if len(cursor) > 512 {
+		writeError(w, 400, "INVALID_INPUT", "invalid cancellation queue cursor")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"requests": records})
+	page, err := s.service.ListCancellationRequestsForOperator(r.Context(), actor, limit, cursor)
+	if err != nil {
+		writeCancellationRequestError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
 }
 func (s *OrderServer) declineOperatorCancellationRequest(w http.ResponseWriter, r *http.Request) {
 	if !s.auth.Authorized(r) {
