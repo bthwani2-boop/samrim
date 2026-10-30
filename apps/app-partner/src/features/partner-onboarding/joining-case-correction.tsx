@@ -56,7 +56,7 @@ function parseCoordinate(value: string): number | null {
 }
 
 function workingHoursIssue(intervals: ReadonlyArray<StoreWorkingHoursInterval>): string {
-  if (intervals.length === 0) return "أضف ساعات عمل ليوم واحد على الأقل؛ الأيام بلا فترات تُعد مغلقة.";
+  if (intervals.length === 0) return ""; // Omitted hours are valid at intake; the Store stays closed until scheduled.
   if (intervals.length > 28) return "الحد الأعلى 28 فترة عمل في الأسبوع.";
   const ranges: Array<{ start: number; end: number }> = [];
   for (const interval of intervals) {

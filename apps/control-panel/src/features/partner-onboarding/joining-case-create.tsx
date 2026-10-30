@@ -205,7 +205,7 @@ export function JoiningCaseCreate() {
       return;
     }
     if (!phoneE164Pattern.test(input.contactPhoneE164) || input.ownerFullName.trim().length < 2 || Array.from(input.walletProviderKey.trim()).length > 64 || /\p{Cc}/u.test(input.walletProviderKey) || input.businessName.length < 2 || input.firstStoreName.length < 2 || input.firstStoreAddress.trim().length < 4 || !input.serviceCityId || !input.firstStoreVerticalId || !input.firstStoreCommercialTypeId || input.firstStoreProofNumber.length < 1 || input.firstStoreFulfillmentModes.length === 0 || !latitude.trim() || !longitude.trim() || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180) {
-      setError("أكمل اسم المالك ورقم جواله وبيانات المتجر والموقع وساعات العمل والإثبات وطريقة التوصيل. المحفظة اختيارية.");
+      setError("أكمل اسم المالك ورقم جواله وبيانات المتجر والموقع والإثبات وطريقة التوصيل. ساعات العمل والمحفظة اختياريتان عند التقديم.");
       return;
     }
     setBusy(true);

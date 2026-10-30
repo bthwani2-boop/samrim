@@ -31,7 +31,6 @@ Start only the surface being developed:
 pnpm client
 pnpm partner
 pnpm captain
-pnpm field
 pnpm control
 ```
 
