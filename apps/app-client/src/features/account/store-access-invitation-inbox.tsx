@@ -1,8 +1,8 @@
 import { BthwaniButton, BthwaniSectionHeader, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
-import type { StoreAccessGrant } from "./generated/dsh-types";
-import { createDshMobileClient } from "./mobile";
+import type { StoreAccessGrant } from "@bthwani/dsh";
+import { createDshMobileClient } from "@bthwani/dsh";
 
 export type StoreAccessInvitationInboxProps = Readonly<{
   baseURL: string;

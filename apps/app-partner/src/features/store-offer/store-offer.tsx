@@ -1,8 +1,8 @@
 import { borders, radius, type resolveTheme, sizing, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type BaseUnit, baseUnitLabel, type CatalogAttributeRule, type CatalogAttributeValueInput, type CatalogCategoryListResponse, type CatalogIdentifierResolution, type CatalogMedia, type CatalogProduct, type CatalogProductProposal, type CatalogStorefrontSection, type CatalogStoreOffer, type CatalogVariant, type CommerceVertical, catalogProductProposalStateLabel, createDshMobileClient, type DshImageUploadInput, formatMoney, isMediaProvenanceInputValid, type MeasurementKind, type MediaProvenanceInput, measurementKindLabel as sharedMeasurementKindLabel, pricingBasisLabel as sharedPricingBasisLabel, quantityPolicyLabel as sharedQuantityPolicyLabel, storeOfferPublicationStateLabel } from "@bthwani/dsh";
-import { MobileStoreCatalogImportWorkspace } from "@bthwani/dsh/mobile/store-catalog-import";
-import { MobileStoreQuickPricesWorkspace } from "@bthwani/dsh/mobile/store-quick-prices";
+import { MobileStoreCatalogImportWorkspace } from "./mobile-store-catalog-import";
+import { MobileStoreQuickPricesWorkspace } from "./mobile-store-quick-prices";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useKeepAwake } from "expo-keep-awake";
 

@@ -2,9 +2,9 @@ import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
 
-import type { CatalogQuickPriceCommitRequest, CatalogQuickPriceCommitResponse, CatalogQuickPriceUpdate, CatalogStoreOffer } from "./generated/dsh-types";
-import { formatMoney } from "./presentation/order-presentation";
-import { createDshMobileClient } from "./mobile";
+import type { CatalogQuickPriceCommitRequest, CatalogQuickPriceCommitResponse, CatalogQuickPriceUpdate, CatalogStoreOffer } from "@bthwani/dsh";
+import { formatMoney } from "@bthwani/dsh";
+import { createDshMobileClient } from "@bthwani/dsh";
 
 type StoreQuickPricesScope = Readonly<{ kind: "PARTNER"; storeID: string }>;
 type QuickPriceChange = CatalogQuickPriceUpdate;

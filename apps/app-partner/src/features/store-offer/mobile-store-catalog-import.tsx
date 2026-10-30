@@ -2,8 +2,8 @@ import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native
 import { useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
-import type { CatalogImportCommitResponse, CatalogImportItem, CatalogImportPreviewResponse, CatalogImportRunResponse } from "./generated/dsh-types";
-import type { DshCatalogImportFileInput, createDshMobileClient } from "./mobile";
+import type { CatalogImportCommitResponse, CatalogImportItem, CatalogImportPreviewResponse, CatalogImportRunResponse } from "@bthwani/dsh";
+import type { DshCatalogImportFileInput, createDshMobileClient } from "@bthwani/dsh";
 
 type StoreCatalogImportScope = Readonly<{ kind: "PARTNER"; storeID: string }>;
 type StoreCatalogImportResult = CatalogImportPreviewResponse | CatalogImportRunResponse | CatalogImportCommitResponse;
