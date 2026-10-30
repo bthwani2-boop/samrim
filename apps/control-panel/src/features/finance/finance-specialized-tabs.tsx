@@ -5,7 +5,7 @@ import { FinanceWalletRegistry } from "./finance-wallet-registry";
 import { financeAmount } from "./finance-amount";
 import { FinanceUnifiedSettlements } from "./finance-unified-settlements";
 import { SettlementIntakeInbox } from "./settlement-intake-inbox";
-import type { FinanceReferenceRow, FinanceReferenceTab, FinanceReferenceWorkflow } from "./finance-reference-dashboard";
+import type { FinanceReferenceRow, FinanceReferenceTab, FinanceReferenceWorkflow } from "./finance-reference-types";
 import "./finance-specialized-tabs.css";
 
 type ActorType = "customer" | "partner" | "captain" | "field";

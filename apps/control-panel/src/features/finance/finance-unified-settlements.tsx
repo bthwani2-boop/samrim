@@ -6,7 +6,7 @@ import { financeAmount } from "./finance-amount";
 import { SettlementIntakeInbox } from "./settlement-intake-inbox";
 import { BeneficiarySettlementWorkspace } from "./beneficiary-settlement-workspace";
 import { CustomerWithdrawalQueue } from "./customer-withdrawal-queue";
-import type { FinanceReferenceRow } from "./finance-reference-dashboard";
+import type { FinanceReferenceRow } from "./finance-reference-types";
 import "./finance-unified-settlements.css";
 
 type Actor = "partner" | "captain" | "field";
