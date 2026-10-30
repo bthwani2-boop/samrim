@@ -54,11 +54,11 @@ func TestPendingCancellationRequestsPaginationOverHundred(t *testing.T) {
 			}
 			if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(
 				id,client_actor_id,store_id,cart_id,service_city_id,serviceability_store_version,
-				state,total_amount_minor,currency,version,payment_method,payment_state,
+				state,total_amount_minor,currency,version,payment_intent_id,payment_method,payment_state,
 				fulfillment_mode,payment_cash_amount_minor,cancellation_mode,cancellation_policy_version)
 				VALUES($1,'cancel-page-client','cancel-page-store',$2,'cancel-page-city',1,
-				'CREATED',1000,'YER',1,'CASH_AT_STORE','REQUIRES_COLLECTION',
-				'CUSTOMER_PICKUP',1000,'OPERATIONS_ONLY',1)`, orderID, cartID); err != nil {
+				'CREATED',1000,'YER',1,$3,'CASH_AT_STORE','REQUIRES_COLLECTION',
+				'CUSTOMER_PICKUP',1000,'OPERATIONS_ONLY',1)`, orderID, cartID, "cancel-page-intent-"+id); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := db.ExecContext(ctx, `INSERT INTO dsh.order_cancellation_requests(
