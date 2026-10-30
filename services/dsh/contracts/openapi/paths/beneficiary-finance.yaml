@@ -2,7 +2,7 @@ paths:
   /dsh/me/settlement-intakes:
     get:
       operationId: listOwnSettlementIntakes
-      summary: List the authenticated Captain or Field actor's pending and prior settlement requests
+      summary: List the authenticated BThwani Captain actor's pending and prior settlement requests
       security: [{ serviceBearer: [] }]
       responses:
         "200": { description: Canonical WLT settlement requests without implied holds or transfers. }

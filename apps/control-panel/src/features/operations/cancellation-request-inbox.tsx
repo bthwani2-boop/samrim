@@ -1,6 +1,6 @@
 "use client";
 import { Alert, Button, Empty, Flex, Input, Listy, Spin, Typography } from "antd";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type PendingCancellation = Readonly<{
   id:string; orderId:string; clientActorId:string; reason:string;
@@ -8,23 +8,61 @@ type PendingCancellation = Readonly<{
 }>;
 export function CancellationRequestInbox({onOpenOrder, refreshVersion, active=true}:Readonly<{onOpenOrder:(id:string)=>void; refreshVersion:number; active?:boolean}>) {
   const [items,setItems]=useState<readonly PendingCancellation[]>([]);
+  const [cursor,setCursor]=useState("");
   const [loading,setLoading]=useState(false);
+  const [loadingMore,setLoadingMore]=useState(false);
   const [error,setError]=useState("");
+  const generation=useRef(0);
   const [declining,setDeclining]=useState("");
   const [reason,setReason]=useState("");
   const [busy,setBusy]=useState(false);
+  const read=useCallback(async(next="")=>{
+    const query=new URLSearchParams({limit:"25"});
+    if(next) query.set("cursor",next);
+    const response=await fetch("/api/operations/cancellation-requests?"+query.toString(),
+      {cache:"no-store",signal:AbortSignal.timeout(12_000)});
+    if(!response.ok) throw new Error("تعذر قراءة طلبات الإلغاء");
+    const body=await response.json() as {requests?:PendingCancellation[];nextCursor?:string};
+    if(!Array.isArray(body.requests)||typeof body.nextCursor!=="string"||
+      !body.requests.every(item=>item&&typeof item.id==="string"&&typeof item.orderId==="string"&&item.state==="PENDING")){
+      throw new Error("بيانات طلبات الإلغاء غير صالحة");
+    }
+    return {requests:body.requests,nextCursor:body.nextCursor};
+  },[]);
   const load=useCallback(async()=>{
+    const current=++generation.current;
     setLoading(true);setError("");
     try {
-      const response=await fetch("/api/operations/cancellation-requests",{cache:"no-store"});
-      if(!response.ok) throw new Error("تعذر قراءة طلبات الإلغاء");
-      const body=await response.json() as {requests?:PendingCancellation[]};
-      if(!Array.isArray(body.requests)) throw new Error("بيانات طلبات الإلغاء غير صالحة");
-      setItems(body.requests.filter(item=>item.state==="PENDING"));
-    }catch(cause){setError(cause instanceof Error?cause.message:"تعذر عرض طلبات الإلغاء");setItems([])}
-    finally {setLoading(false)}
-  },[]);
-  useEffect(() => { if (active && refreshVersion >= 0) void load(); }, [load, refreshVersion, active]);
+      const page=await read();
+      if(current!==generation.current)return;
+      setItems(page.requests);setCursor(page.nextCursor);
+    }catch(cause){
+      if(current===generation.current){
+        setError(cause instanceof Error?cause.message:"تعذر عرض طلبات الإلغاء");
+        setItems([]);setCursor("");
+      }
+    }finally {if(current===generation.current)setLoading(false)}
+  },[read]);
+  useEffect(() => {
+    if (active && refreshVersion >= 0) void load();
+    return ()=>{generation.current+=1;};
+  }, [load, refreshVersion, active]);
+  async function more(){
+    if(!cursor||loading||loadingMore||busy)return;
+    const current=generation.current;
+    setLoadingMore(true);setError("");
+    try{
+      const page=await read(cursor);
+      if(current!==generation.current)return;
+      setItems(previous=>{
+        const ids=new Set(previous.map(item=>item.id));
+        return [...previous,...page.requests.filter(item=>!ids.has(item.id))];
+      });
+      setCursor(page.nextCursor);
+    }catch(cause){
+      if(current===generation.current)setError(cause instanceof Error?cause.message:"تعذر تحميل المزيد من الطلبات");
+    }finally{setLoadingMore(false)}
+  }
   useEffect(() => {
     if (!active) return;
     const timer = window.setInterval(() => { if (!document.hidden && !busy) void load(); }, 60_000);
@@ -47,7 +85,7 @@ export function CancellationRequestInbox({onOpenOrder, refreshVersion, active=tr
     <section aria-labelledby="ops-cancellation-inbox-title" className="order-detail-panel">
       <Flex vertical gap="middle">
         <div>
-          <h2 id="ops-cancellation-inbox-title">طلبات الإلغاء من العملاء ({items.length})</h2>
+          <h2 id="ops-cancellation-inbox-title">طلبات الإلغاء من العملاء ({items.length} محمّلة{cursor?" · يوجد المزيد":""})</h2>
           <Typography.Text type="secondary">
             الطلب لا يتوقف حتى تراجعه العمليات وتتخذ قرارًا. الإلغاء لا يضيف تعويضًا تلقائيًا للمحفظة.
           </Typography.Text>
@@ -113,6 +151,11 @@ export function CancellationRequestInbox({onOpenOrder, refreshVersion, active=tr
               </Flex>
             )}
           />
+        ) : null}
+        {cursor ? (
+          <Button block loading={loadingMore} disabled={loading||busy} onClick={()=>void more()}>
+            تحميل المزيد من طلبات الإلغاء
+          </Button>
         ) : null}
       </Flex>
     </section>

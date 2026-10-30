@@ -91,7 +91,7 @@ Store publication is not current orderability. Durable enabled fulfillment modes
 
 ### Failure / recovery
 
-Missing/incompatible first-Store facts, correction loops, duplicate logical case, stale version, suspended Field, self-service Identity phone/actor mismatch, duplicate-actor risk, missing Partner acceptance, missing Finance approval and interrupted Identity/WLT handoff recover through canonical readback without rebinding the case, actor or agreement version. Missing or inactive agreement blocks publication.
+Missing/incompatible first-Store facts, correction loops, duplicate logical case, stale version, a historical Field-originated case requiring authorized correction without new attribution, self-service Identity phone/actor mismatch, duplicate-actor risk, missing Partner acceptance, missing Finance approval and interrupted Identity/WLT handoff recover through canonical readback without rebinding the case, actor or agreement version. Missing or inactive agreement blocks publication.
 
 ### Negative space
 
@@ -227,7 +227,7 @@ JOURNEY_ID: BTHWANI_CAPTAIN_DELIVERY
 OUTCOME: A Partner-ready BThwani-Captain Order is accepted by an eligible Captain, transferred into canonical custody and completed to the Client with explicit tracking/proof and financial effects.
 SURFACES: PARTNER, CAPTAIN, CLIENT
 OWNERS: DSH, WLT
-CAPABILITIES: ORDER_LIFECYCLE, CAPTAIN_DISPATCH, STORE_CAPTAIN_HANDOFF, FINAL_MILE_DELIVERY, ORDER_PAYMENT_COLLECTION, CAPTAIN_BALANCE_FUNDING, PARTNER_CAPTAIN_FIELD_EARNINGS_SETTLEMENT
+CAPABILITIES: ORDER_LIFECYCLE, CAPTAIN_DISPATCH, STORE_CAPTAIN_HANDOFF, FINAL_MILE_DELIVERY, ORDER_PAYMENT_COLLECTION, CAPTAIN_BALANCE_FUNDING, PARTNER_CAPTAIN_EARNINGS_SETTLEMENT
 ENTRY: Partner has accepted/prepared an Order with fulfillment mode `BTHWANI_CAPTAIN` and marks it ready for dispatch.
 EXIT: Delivery reaches a legal terminal result and applicable WLT effects are committed or explicitly reconciling.
 READBACK: Partner, Captain and Client read one DSH delivery result; WLT financial readback remains separate.
@@ -247,7 +247,7 @@ CLIENT / PARTNER / CAPTAIN → tracking/completion readback
 WLT → collection / receivable / earning effects
 ```
 
-Tracking is a DSH projection. Proof is bounded evidence validated by DSH; upload/UI success alone is never delivery truth. `CAPTAIN_BALANCE_FUNDING` remains a supporting balance/collateral subflow, not earnings or COD remittance.
+Tracking is a DSH projection. Proof is bounded evidence validated by DSH; upload/UI success alone is never delivery truth. `CAPTAIN_BALANCE_FUNDING` remains a supporting balance/collateral subflow, not earnings or COD settlement. For a cash-collecting BThwani Captain Order, WLT atomically reserves only the cash portion against posted Captain balance before the Captain accepts the offer. On proved collection and completed delivery, WLT posts delivery entitlement and debits that held cash amount exactly once while the Captain retains the physical cash; cancellation before collection releases the hold without a wallet debit. Captain Cash-In is a separate funding operation and cannot be treated as physical remittance or earnings. Historically `FINALIZED`/`REMITTED` COD obligations retain their evidence-bound Finance reconciliation route and must never be re-debited merely to fit the current model.
 
 ### Failure / recovery
 
@@ -412,7 +412,7 @@ JOURNEY_ID: ORDER_ADJUSTMENT_EXCEPTION_REFUND
 OUTCOME: A material Order problem or legal post-confirmation change is resolved across affected participants without rewriting the original Order snapshot or hiding operational/financial consequences.
 SURFACES: CLIENT, PARTNER, CAPTAIN, OPERATOR
 OWNERS: DSH, WLT
-CAPABILITIES: ORDER_LIFECYCLE, ORDER_PAYMENT_COLLECTION, PARTNER_CAPTAIN_FIELD_EARNINGS_SETTLEMENT
+CAPABILITIES: ORDER_LIFECYCLE, ORDER_PAYMENT_COLLECTION, PARTNER_CAPTAIN_EARNINGS_SETTLEMENT
 ENTRY: A canonical Order encounters an allowed adjustment, cancellation, fulfillment failure, dispute or Order-bound financial exception.
 EXIT: Operational and financial outcomes are committed or explicitly remain reconciliation-required.
 READBACK: Affected surfaces read canonical DSH operational result and WLT financial result.
@@ -443,32 +443,13 @@ Concurrent cancellation/fulfillment, stale adjustment, duplicate refund, unknown
 
 Customer balance withdrawal is not an Order exception and remains a separate supporting financial subflow. No generic returns/exchange/warranty platform is admitted.
 
-## CAPTAIN_COD_REMITTANCE — Captain cash receivable to reconciled closure
-
-JOURNEY_ID: CAPTAIN_COD_REMITTANCE
-OUTCOME: BThwani Captain-held COD cash is remitted through authorized Finance treatment until the WLT receivable/exposure is canonically closed.
-SURFACES: CAPTAIN, OPERATOR
-OWNERS: DSH, WLT
-CAPABILITIES: ORDER_PAYMENT_COLLECTION, PARTNER_CAPTAIN_FIELD_EARNINGS_SETTLEMENT
-ENTRY: WLT has an open BThwani-Captain COD receivable backed by qualifying delivered-order evidence.
-EXIT: Authorized remittance evidence is independently reconciled and WLT closes the corresponding receivable/exposure.
-READBACK: Captain sees resulting liability/balance state; Finance reads canonical WLT reconciliation state.
-
-### Failure / recovery
-
-Partial/duplicate remittance, wrong reference, unknown provider/statement outcome and reconciliation mismatch remain explicit. Delivery completion alone never closes the receivable.
-
-### Negative space
-
-COD remittance is not Captain balance Cash-In and not Captain earnings payout.
-
 ## PARTNER_COMMISSION_REMITTANCE — Partner receivable to reconciled closure
 
 JOURNEY_ID: PARTNER_COMMISSION_REMITTANCE
 OUTCOME: A Partner commission receivable arising from Store-retained customer proceeds is settled or legally offset until WLT records canonical closure.
 SURFACES: PARTNER, OPERATOR
 OWNERS: DSH, WLT
-CAPABILITIES: ORDER_PAYMENT_COLLECTION, PARTNER_CAPTAIN_FIELD_EARNINGS_SETTLEMENT
+CAPABILITIES: ORDER_PAYMENT_COLLECTION, PARTNER_CAPTAIN_EARNINGS_SETTLEMENT
 ENTRY: WLT has an open Partner commission receivable from an eligible Store Order.
 EXIT: Authorized payment/offset is reconciled and WLT closes or updates the receivable.
 READBACK: Partner and Finance read the same WLT receivable result.
@@ -487,7 +468,7 @@ JOURNEY_ID: BENEFICIARY_SETTLEMENT
 OUTCOME: Eligible Partner, BThwani Captain or Field entitlement reaches an authorized reconciled payout/settlement result without surfaces becoming ledger writers; new Store publication does not create any Field acquisition earning.
 SURFACES: PARTNER, CAPTAIN, OPERATOR
 OWNERS: DSH, WLT
-CAPABILITIES: PARTNER_CAPTAIN_FIELD_EARNINGS_SETTLEMENT
+CAPABILITIES: PARTNER_CAPTAIN_EARNINGS_SETTLEMENT
 ENTRY: DSH qualifying evidence has produced a WLT entitlement eligible for settlement.
 EXIT: Payout is executed with immutable approved destination evidence and independently reconciled, or remains explicitly held/reconciling.
 READBACK: Partner and Captain beneficiary surfaces plus Operator Finance read canonical WLT settlement state. Historical Field entitlements and payouts remain auditable through authorized Finance reads.

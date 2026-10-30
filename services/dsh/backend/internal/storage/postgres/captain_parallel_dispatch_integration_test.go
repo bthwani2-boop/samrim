@@ -89,6 +89,25 @@ func TestCaptainParallelDispatchThreeOnlyOneWins(t *testing.T) {
 			if err := db.QueryRowContext(ctx, "SELECT captain_actor_id FROM dsh.captain_dispatch_offers WHERE id=$1", offeredID).Scan(&offeredActor); err != nil {
 				t.Fatal(err)
 			}
+			// Before acceptance, the offer may reveal only a coarse service
+			// region; never the customer's saved address or exact coordinates.
+			visible, err := postgres.ListCaptainOffers(ctx, db, offeredActor, 10)
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, candidate := range visible {
+				if candidate.ID != offeredID {
+					continue
+				}
+				found = true
+				if candidate.DeliveryAreaText != "مدينة اختبار" {
+					t.Fatalf("offer exposed an exact destination instead of the service region: %q", candidate.DeliveryAreaText)
+				}
+			}
+			if !found {
+				t.Fatalf("targeted Captain must be able to read own outstanding offer")
+			}
 			var stillFresh bool
 			if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM dsh.captain_presence_latest WHERE captain_actor_id=$1 AND updated_at>clock_timestamp()-interval '15 minutes')`, offeredActor).Scan(&stillFresh); err != nil || !stillFresh {
 				t.Fatalf("offered captain must retain fresh presence until resolved: %s fresh=%v err=%v", offeredActor, stillFresh, err)
@@ -270,10 +289,29 @@ func TestCaptainParallelDispatchThreeOnlyOneWins(t *testing.T) {
 		if err := db.QueryRowContext(ctx, "SELECT captain_actor_id FROM dsh.captain_dispatch_offers WHERE id=$1", newOffers[0]).Scan(&rejectingActor); err != nil {
 			t.Fatal(err)
 		}
+		// Reassignment can offer Captain 5 even if their earlier location was
+		// stale. Pick a distinct admitted Captain for every negative replay.
+		foreignCaptainFor := func(owner string) string {
+			if owner != "dispatch-captain-1" {
+				return "dispatch-captain-1"
+			}
+			return "dispatch-captain-2"
+		}
 		rejectionKey := "dispatch-three-second-batch-reject"
 		rejected, err := postgres.RespondToCaptainOffer(ctx, db, newOffers[0], rejectingActor, "reject", 1, rejectionKey, postgres.HashCaptainOfferResponse(newOffers[0], "reject", 1), rejectionKey)
 		if err != nil || rejected.Offer.State != "rejected" {
 			t.Fatalf("reject one offer = %+v err=%v", rejected, err)
+		}
+		// Idempotency is not authorization: another Captain must never be
+		// allowed to replay an offer decision, even with its exact key and facts.
+		requestHash := postgres.HashCaptainOfferResponse(newOffers[0], "reject", 1)
+		stolen, stolenErr := postgres.RespondToCaptainOffer(ctx, db, newOffers[0], foreignCaptainFor(rejectingActor), "reject", 1, rejectionKey, requestHash, rejectionKey)
+		if !errors.Is(stolenErr, postgres.ErrCaptainOfferForbidden) || stolen.Offer.ID != "" || stolen.Assignment != nil {
+			t.Fatalf("cross-captain reject replay leaked result: %+v err=%v", stolen, stolenErr)
+		}
+		legitimateReplay, replayErr := postgres.RespondToCaptainOffer(ctx, db, newOffers[0], rejectingActor, "reject", 1, rejectionKey, requestHash, rejectionKey)
+		if replayErr != nil || !legitimateReplay.Replayed || legitimateReplay.Offer.ID != newOffers[0] {
+			t.Fatalf("own reject replay must remain valid: %+v err=%v", legitimateReplay, replayErr)
 		}
 		remaining := readParallelOfferIDs(t, ctx, db, orderID)
 		if len(remaining) != 2 {
@@ -285,15 +323,50 @@ func TestCaptainParallelDispatchThreeOnlyOneWins(t *testing.T) {
 		if err := db.QueryRowContext(ctx, "SELECT captain_actor_id FROM dsh.captain_dispatch_offers WHERE id=$1", remaining[0]).Scan(&finalActor); err != nil {
 			t.Fatal(err)
 		}
+		strangerActor := foreignCaptainFor(finalActor)
 		key := "dispatch-three-final-accept"
 		finalAccept, err := postgres.RespondToCaptainOffer(ctx, db, remaining[0], finalActor, "accept", 1, key, postgres.HashCaptainOfferResponse(remaining[0], "accept", 1), key)
 		if err != nil || finalAccept.Assignment == nil {
 			t.Fatalf("second batch acceptance: %+v err=%v", finalAccept, err)
 		}
+		acceptHash := postgres.HashCaptainOfferResponse(remaining[0], "accept", 1)
+		stolenAccept, stolenErr := postgres.RespondToCaptainOffer(ctx, db, remaining[0], strangerActor, "accept", 1, key, acceptHash, key)
+		if !errors.Is(stolenErr, postgres.ErrCaptainOfferForbidden) || stolenAccept.Offer.ID != "" || stolenAccept.Assignment != nil {
+			t.Fatalf("cross-captain accept replay leaked assignment: %+v err=%v", stolenAccept, stolenErr)
+		}
+		legitimateAccept, replayErr := postgres.RespondToCaptainOffer(ctx, db, remaining[0], finalActor, "accept", 1, key, acceptHash, key)
+		if replayErr != nil || !legitimateAccept.Replayed || legitimateAccept.Assignment == nil || legitimateAccept.Assignment.ID != finalAccept.Assignment.ID {
+			t.Fatalf("own accept replay must retain the assignment: %+v err=%v", legitimateAccept, replayErr)
+		}
 		assignmentID := finalAccept.Assignment.ID
-		var handoffVersion int
-		if err := db.QueryRowContext(ctx, "UPDATE dsh.captain_handoffs SET state='store_confirmed',store_confirmed_at=clock_timestamp(),version=version+1 WHERE assignment_id=$1 RETURNING version", assignmentID).Scan(&handoffVersion); err != nil {
-			t.Fatal(err)
+		foreignTask, foreignTaskErr := postgres.ReadCaptainDeliveryTask(ctx, db, assignmentID, strangerActor)
+		if !errors.Is(foreignTaskErr, postgres.ErrCaptainDeliveryTaskNotFound) || foreignTask.AssignmentID != "" {
+			t.Fatalf("other Captain read assigned customer destination: %+v err=%v", foreignTask, foreignTaskErr)
+		}
+		// A replay must be scoped to the original Order and assignment even
+		// when the stored request hash (from an older client) omits Order ID.
+		const handoffKey = "dispatch-three-handoff"
+		handoffHash := postgres.HashCaptainHandoffRequest(assignmentID, storeID, 1)
+		handoff, replayed, err := postgres.ConfirmStoreHandoff(ctx, db, orderID, storeID, assignmentID, 1, handoffKey, handoffHash, "dispatch-three-partner", handoffKey)
+		if err != nil || replayed || handoff.Handoff.State != "store_confirmed" {
+			t.Fatalf("store handoff failed: %+v replay=%t err=%v", handoff, replayed, err)
+		}
+		handoffVersion := handoff.Handoff.Version
+		wrongOrder, wrongReplay, wrongErr := postgres.ConfirmStoreHandoff(ctx, db, orderID+"-other", storeID, assignmentID, 1, handoffKey, handoffHash, "dispatch-three-partner", handoffKey)
+		if !errors.Is(wrongErr, postgres.ErrCaptainOperationConflict) || wrongReplay || wrongOrder.ID != "" {
+			t.Fatalf("cross-order handoff replay leaked result: %+v replay=%t err=%v", wrongOrder, wrongReplay, wrongErr)
+		}
+		wrongAssignment, wrongReplay, wrongErr := postgres.ConfirmStoreHandoff(ctx, db, orderID, storeID, "another-assignment", 1, handoffKey, handoffHash, "dispatch-three-partner", handoffKey)
+		if !errors.Is(wrongErr, postgres.ErrCaptainOperationConflict) || wrongReplay || wrongAssignment.ID != "" {
+			t.Fatalf("cross-assignment handoff replay leaked result: %+v replay=%t err=%v", wrongAssignment, wrongReplay, wrongErr)
+		}
+		handoffReplay, replayed, replayErr := postgres.ConfirmStoreHandoff(ctx, db, orderID, storeID, assignmentID, 1, handoffKey, handoffHash, "dispatch-three-partner", handoffKey)
+		if replayErr != nil || !replayed || handoffReplay.ID != assignmentID || handoffReplay.Handoff.Version != handoffVersion {
+			t.Fatalf("own handoff replay lost result: %+v replay=%t err=%v", handoffReplay, replayed, replayErr)
+		}
+		var handoffAudits int
+		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM dsh.captain_audit WHERE assignment_id=$1 AND event_type='store_handoff_confirmed'", assignmentID).Scan(&handoffAudits); err != nil || handoffAudits != 1 {
+			t.Fatalf("handoff replay emitted an extra audit: count=%d err=%v", handoffAudits, err)
 		}
 		if _, err := db.ExecContext(ctx, "UPDATE dsh.captain_goods_custody_policies SET single_order_cap_minor=1000,concurrent_cap_minor=1000,version=version+1 WHERE id='platform'"); err != nil {
 			t.Fatal(err)
@@ -313,6 +386,15 @@ func TestCaptainParallelDispatchThreeOnlyOneWins(t *testing.T) {
 		pickedUp, replayed, err := postgres.CompleteCaptainPickup(ctx, db, assignmentID, finalActor, handoffVersion, pickupKey, postgres.HashCaptainPickupRequest(assignmentID, handoffVersion), pickupKey)
 		if err != nil || replayed || pickedUp.State != "in_custody" {
 			t.Fatalf("covered pickup should succeed exactly once: %+v replay=%t err=%v", pickedUp, replayed, err)
+		}
+		pickupHash := postgres.HashCaptainPickupRequest(assignmentID, handoffVersion)
+		stolenPickup, replayedByStranger, stolenPickupErr := postgres.CompleteCaptainPickup(ctx, db, assignmentID, strangerActor, handoffVersion, pickupKey, pickupHash, pickupKey)
+		if !errors.Is(stolenPickupErr, postgres.ErrCaptainOfferForbidden) || stolenPickup.ID != "" || replayedByStranger {
+			t.Fatalf("cross-captain pickup replay leaked custody: %+v replay=%t err=%v", stolenPickup, replayedByStranger, stolenPickupErr)
+		}
+		pickupReplay, replayedByOwner, pickupReplayErr := postgres.CompleteCaptainPickup(ctx, db, assignmentID, finalActor, handoffVersion, pickupKey, pickupHash, pickupKey)
+		if pickupReplayErr != nil || !replayedByOwner || pickupReplay.ID != pickedUp.ID {
+			t.Fatalf("own pickup replay must retain the same assignment: %+v replay=%t err=%v", pickupReplay, replayedByOwner, pickupReplayErr)
 		}
 	})
 }

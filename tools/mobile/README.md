@@ -19,11 +19,11 @@ Before claiming an existing Development Build remains compatible after a cutover
 
 ## Local development preparation
 
-`pnpm mobile:prepare -- --app app-client` validates only the selected app's external local signing inputs. It does not require EAS authentication, remote build inventory, a provider file, or a connected phone.
+`pnpm mobile:prepare -App app-client` validates only the selected app's external local signing inputs. It does not require EAS authentication, remote build inventory, a provider file, or a connected phone.
 
-Use `pnpm mobile:prepare -- --app app-client -Mode Eas` for authenticated target-scoped EAS fingerprint/build compatibility discovery. Use `-Mode InstallMatchingBuilds` only when downloading and installing a matching existing development build is the explicit device operation.
+Use `pnpm mobile:prepare -App app-client -Mode Eas` for authenticated target-scoped EAS fingerprint/build compatibility discovery. Use `-Mode InstallMatchingBuilds` only when downloading and installing a matching existing development build is the explicit device operation.
 
-Use `pnpm mobile:build -- --app app-captain` to check the selected app and discover a compatible finished/pending build. It does not submit a new build by default. Add `-Submit` only when a new remote Android development build for that app is intended. A compatible finished/pending build is reused even with `-Submit`. The command requires a clean committed candidate, checks the frozen lockfile and native dependencies locally, then checks app-owned EAS CLI/project binding and the native fingerprint. Reused-build output reports the current candidate separately from the reused build's actual source SHA. Before materialization, both repository destinations must be absent; each file is owned from its create operation and removed on every later failure or normal exit. Pre-existing repository material is never overwritten.
+Use `pnpm mobile:build -App app-captain` to check the selected app and discover a compatible finished/pending build. It does not submit a new build by default. Add `-Submit` only when a new remote Android development build for that app is intended. A compatible finished/pending build is reused even with `-Submit`. Add `-AndroidOnly` to discover or submit only an Android APK, without scheduling the optional iOS simulator build. The command requires a clean committed candidate, checks the frozen lockfile and native dependencies locally, then checks app-owned EAS CLI/project binding and the native fingerprint. Reused-build output reports the current candidate separately from the reused build's actual source SHA. Before materialization, both repository destinations must be absent; each file is owned from its create operation and removed on every later failure or normal exit. Pre-existing repository material is never overwritten.
 
 ## Dependency changes
 

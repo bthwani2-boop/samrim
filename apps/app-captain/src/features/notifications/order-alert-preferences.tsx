@@ -1,4 +1,4 @@
-import { BthwaniOrderAlertPreferences } from "@bthwani/design-system/native/order-alert-preferences";
+import { BthwaniOrderAlertPreferences } from "@bthwani/push-device/order-alert-preferences";
 import { currentOrderAlertTone, readAlertToneForActor, saveAlertToneForActor, type AlertTone } from "@bthwani/push-device/alert-tone";
 import { useSyncExternalStore } from "react";
 import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";

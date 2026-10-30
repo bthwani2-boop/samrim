@@ -51,7 +51,7 @@ Brand unity does not imply identical information architecture or shell across ro
 ## Canonical terms
 
 - **Human Actor** — one natural person represented by `actor_id`.
-- **Role** — high-level Identity admission such as client, partner, captain, field or operator.
+- **Role** — high-level Identity admission such as client, partner, captain or operator. `field` is retained only as a retired historical compatibility marker.
 - **Surface** — actor-facing presentation/composition host; never a business owner by itself.
 - **Partner** — authenticated Human Actor with the `partner` role; Store authority is separately determined by DSH ownership/grants.
 - **Captain** — authenticated Human Actor with the `captain` role; operational relationships are separate DSH facts.

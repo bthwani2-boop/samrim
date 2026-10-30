@@ -7,13 +7,8 @@ import { SettlementIntakeInbox } from "./settlement-intake-inbox";
 import "./finance-reference-dashboard.css";
 import "./finance-detail-unified.css";
 
-export type FinanceReferenceRow = Readonly<{
-  key: string; source: "custody" | "commissions" | "batches" | "withdrawals";
-  id: string; subject: string; reference: string; category: string; state: string;
-  amount: string; amountMinor?: number; priority: number; nextStep: string; date?: string;
-}>;
-export type FinanceReferenceWorkflow = "custody" | "commissions" | "batches" | "withdrawals" | "settlement-partner" | "settlement-captain" | "agreements";
-export type FinanceReferenceTab = "command" | "wallets" | "activity" | "collection" | "settlements" | "reconcile" | "pending" | "reports";
+import type { FinanceReferenceRow, FinanceReferenceWorkflow, FinanceReferenceTab } from "./finance-reference-types";
+export type { FinanceReferenceRow, FinanceReferenceWorkflow, FinanceReferenceTab } from "./finance-reference-types";
 type ActorType = "customer" | "partner" | "captain" | "field";
 type WalletSummary = Readonly<{ actorId: string; currentBalanceMinor: number; heldMinor: number; availableMinor: number; creditsMinor: number; debitsMinor: number; currency: "YER" }>;
 type WalletRegistry = Readonly<{ summaries: readonly WalletSummary[]; nextCursor?: string }>;

@@ -19,11 +19,11 @@ func (s *Service) ReadClientCancellationRequest(ctx context.Context, token, orde
 	}
 	return postgres.ReadClientCancellationRequest(ctx, s.db, orderID, actor)
 }
-func (s *Service) ListCancellationRequestsForOperator(ctx context.Context, actor string, limit int) ([]postgres.CancellationRequestRecord, error) {
+func (s *Service) ListCancellationRequestsForOperator(ctx context.Context, actor string, limit int, cursor string) (postgres.CancellationRequestPage, error) {
 	if err := s.requireOperatorPermission(ctx, actor, "operations"); err != nil {
-		return nil, err
+		return postgres.CancellationRequestPage{}, err
 	}
-	return postgres.ListPendingCancellationRequests(ctx, s.db, limit)
+	return postgres.ListPendingCancellationRequests(ctx, s.db, limit, cursor)
 }
 func (s *Service) DeclineCancellationRequestForOperator(ctx context.Context, actor, requestID, reason string) (postgres.CancellationRequestRecord, error) {
 	if err := s.requireOperatorPermission(ctx, actor, "operations"); err != nil {

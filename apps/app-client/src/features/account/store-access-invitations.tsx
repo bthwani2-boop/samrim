@@ -1,4 +1,4 @@
-import { StoreAccessInvitationInbox as DshStoreAccessInvitationInbox } from "@bthwani/dsh/mobile/store-access-invitations";
+import { StoreAccessInvitationInbox as DshStoreAccessInvitationInbox } from "./store-access-invitation-inbox";
 import * as Crypto from "expo-crypto";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 

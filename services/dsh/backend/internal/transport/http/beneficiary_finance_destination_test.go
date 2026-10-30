@@ -155,3 +155,35 @@ func TestOfficialWalletDestinationRequestRejectsClientIdentityFacts(t *testing.T
 		})
 	}
 }
+
+func TestPayoutActorPathRejectsRetiredFieldDestinations(t *testing.T) {
+	for _, tt := range []struct {
+		role string
+		ok   bool
+	}{
+		{role: "field", ok: false},
+		{role: "customer", ok: false},
+		{role: "partner", ok: true},
+		{role: "captain", ok: true},
+	} {
+		t.Run(tt.role, func(t *testing.T) {
+			r := httptest.NewRequest("POST", "/dsh/operator/beneficiary/destination", nil)
+			r.SetPathValue("actorType", tt.role)
+			r.SetPathValue("actorId", "actor-fixture")
+			w := httptest.NewRecorder()
+			role, actor, ok := payoutActorPath(w, r)
+			if ok != tt.ok {
+				t.Fatalf("payoutActorPath(%s) allowed=%t, want %t", tt.role, ok, tt.ok)
+			}
+			if tt.ok {
+				if role != tt.role || actor != "actor-fixture" {
+					t.Fatalf("accepted actor mismatch: role=%q actor=%q", role, actor)
+				}
+				return
+			}
+			if w.Code != 400 || !strings.Contains(w.Body.String(), "INVALID_INPUT") {
+				t.Fatalf("rejected actor response=%d body=%q, want INVALID_INPUT", w.Code, w.Body.String())
+			}
+		})
+	}
+}

@@ -13,13 +13,18 @@ type settlementIntakeInput struct {
 	AmountMinor *int64 `json:"amountMinor"`
 }
 
+// Only the active BThwani Captain actor can use the individual settlement queue.
+func activeIndividualSettlementActor(role string) bool {
+	return role == "captain"
+}
+
 func (s *BeneficiaryFinanceServer) createOwnSettlementIntake(w http.ResponseWriter, r *http.Request) {
 	identity, ok := s.requireBeneficiarySession(w, r)
 	if !ok {
 		return
 	}
-	if identity.Role != "field" && identity.Role != "captain" {
-		writeError(w, 403, "FORBIDDEN", "only field and BThwani captain sessions may submit individual settlement requests")
+	if !activeIndividualSettlementActor(identity.Role) {
+		writeError(w, 403, "FORBIDDEN", "only BThwani Captain sessions may submit individual settlement requests")
 		return
 	}
 	correlation, idempotency, ok := requiredBeneficiaryFinanceMutationHeaders(w, r)
@@ -50,7 +55,7 @@ func (s *BeneficiaryFinanceServer) listOwnSettlementIntakes(w http.ResponseWrite
 	if !ok {
 		return
 	}
-	if identity.Role != "field" && identity.Role != "captain" {
+	if !activeIndividualSettlementActor(identity.Role) {
 		writeError(w, 403, "FORBIDDEN", "this beneficiary must use Store-scoped settlement")
 		return
 	}

@@ -15,7 +15,7 @@
 | Domain / scope | Authoritative source | Source type | Reviewed date |
 |---|---|---|---|
 | Operator information architecture | `../../docs/governance/policies/experience.md` | Local approved policy | 2026-09-22 |
-| Partner onboarding and field admission | `../../docs/governance/product/capabilities/partner/partner-onboarding-store-publication.md` | Local approved capability | 2026-09-22 |
+| Partner self-service and Operator intake | `../../docs/governance/product/capabilities/partner/partner-onboarding-store-publication.md` | Local approved capability | 2026-09-22 |
 | Captain operations | `../../docs/governance/product/capabilities/fulfillment/captain-dispatch.md` | Local approved capability | 2026-09-22 |
 | Permission model | `services/identity` session contract and `src/session/session-provider.tsx` | Runtime/API evidence | 2026-09-22 |
 | Catalog lifecycle | `services/dsh/contracts/openapi` and `src/features/central-catalog` | API/implementation evidence | 2026-09-22 |
@@ -49,7 +49,7 @@
 
 ## Operational workbench acceptance (cross-center target)
 
-These are acceptance rules for **materially affected** operator registries, queues, files and drafts across Operations, Partners/Field, Catalog, Marketing, Finance, HR, Policies and Access. They do not assert the features already exist or require every surface to use the same table, panel, number of columns or update cadence. The durable behavioral owner is `docs/governance/policies/experience.md`; this section specifies Control Panel composition and executable proof.
+These are acceptance rules for **materially affected** operator registries, queues, files and drafts across Operations, Partners, Catalog, Marketing, Finance, HR, Policies and Access. They do not assert the features already exist or require every surface to use the same table, panel, number of columns or update cadence. The durable behavioral owner is `docs/governance/policies/experience.md`; this section specifies Control Panel composition and executable proof.
 
 - **Record-first rows:** Put the canonical record identity and any materially decisive authorized owner/relationship, contact, concise location with map action, main domain and business type, distinct account/publication/readiness states, and frequent safe actions where the operator can scan them. Fit fields to the job: do not manufacture unavailable addresses, contact data, store type names or status; the owning service must extend its bounded summary contract when the job needs those facts. Catalog product categories are not commercial Store Types. Use compact, comfortable views only when both materially improve use; keep essential data reachable in each.
 - **High-volume truth:** Search, filtering, sorting, counting and paging operate on the server's canonical result set with stable identity and deterministic order, including across sources when presented as a single sortable list. Do not pretend a stores-then-storeless-partners scan is one globally ordered list. State whether counts cover the page, filtered total or unknown. Prove thousands of representative rows without client download, N+1 identity/media calls, misleading gaps, skipped/duplicated pages or leaked private query/cursor data. Choose fixed first/next pages, keysets or a richer grid only as actual workload warrants.

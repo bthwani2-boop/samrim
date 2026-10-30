@@ -1,7 +1,7 @@
 import { BthwaniButton, BthwaniConfirmDialog, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { StoreAccessGrant, StoreAccessPermission } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { normalizeYemenPhoneE164 } from "@bthwani/design-system";
+import { normalizeYemenPhoneE164 } from "@bthwani/identity/phone";
 import { Contact } from "expo-contacts";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";

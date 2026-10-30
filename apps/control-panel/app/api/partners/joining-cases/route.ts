@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { normalizeYemenPhoneE164 } from "@bthwani/design-system";
+import { normalizeYemenPhoneE164 } from "@bthwani/identity/phone";
 import { isValidStoreWorkingHours, type CreateJoiningCaseRequest, type JoiningCaseState } from "@bthwani/dsh";
 import { NextResponse } from "next/server";
 

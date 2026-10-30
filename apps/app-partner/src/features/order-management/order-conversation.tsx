@@ -1,12 +1,12 @@
 import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniOrderChatComposer, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniConversationComposer, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { createDshMobileClient, createOrderConversationMessageAttempt, isDefinitiveDshMobileClientRejection, orderConversationMessageAttemptStorageKey, parseOrderConversationMessageAttempt, type OrderConversationMessageAttempt } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { File, Paths } from "expo-file-system";
 import * as SecureStore from "../../bootstrap/compatible-storage";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { OrderConversationMediaMessage } from "@bthwani/design-system/native/order-chat-private-media";
+import { BthwaniConversationMedia } from "@bthwani/design-system/native/conversation-private-media";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession, role } from "../../bootstrap/identity";
 
 function client() { const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim(); if (!value) throw new Error("DSH_BASE_URL_REQUIRED"); return createDshMobileClient(value, { cryptoRandomUUID: () => Crypto.randomUUID() }); }
@@ -28,7 +28,7 @@ async function readPrivateMedia(orderID: string, messageID: string) {
 
 // Delay loading the native recorder until requested; older dev builds retain text chat.
 const AudioRecorderControls = lazy(async () => {
-  try { return await import("@bthwani/design-system/native/order-chat-voice-recorder"); }
+  try { return await import("@bthwani/design-system/native/conversation-voice-recorder"); }
   catch { return { default: () => <Text>يتطلب تسجيل الصوت إصدار Android يحتوي مكتبة الصوت.</Text> }; }
 });
 
@@ -225,8 +225,8 @@ export function OrderConversation({ orderId }: { orderId: string }) {
     {state.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة المحادثة…</Text></View> : null}
     {state.kind === "error" ? <View style={styles.state}><Text style={styles.error}>تعذر قراءة المحادثة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" />{pendingAttempt ? <BthwaniButton busy={busy} disabled={busy || !attemptStorageReady} label="استعادة إرسال الرسالة المحفوظة" onPress={() => void retryPendingAttempt()} /> : null}</View> : null}
     {state.kind === "ready" ? <>
-      {<View style={{flex:1,minHeight:120}}>{!state.value.messages.length ? <Text style={styles.muted}>ابدأ المحادثة حول هذا الطلب.</Text> : <ScrollView style={styles.messageScroll} contentContainerStyle={styles.messages} keyboardShouldPersistTaps="handled">{state.value.messages.map((message) => message.mediaKind==="audio" ? <OrderConversationMediaMessage readPrivateMedia={readPrivateMedia} key={message.id} orderId={orderId} messageId={message.id} mediaKind="audio" mine={message.mine} sender={message.mine?"أنت":senderLabel(message.senderRole)} createdAt={message.createdAt} readAt={message.readAt} caption={message.body}/> : <View key={message.id} style={[styles.message, message.mine ? styles.mine : null]}><Text style={styles.sender}>{message.mine ? "أنت" : senderLabel(message.senderRole)}</Text><Text style={styles.body}>{message.body}</Text><OrderConversationMediaMessage readPrivateMedia={readPrivateMedia} orderId={orderId} messageId={message.id} mediaKind={message.mediaKind} /><Text style={styles.time}>{new Date(message.createdAt).toLocaleString("ar-YE")}</Text></View>)}</ScrollView>}</View>}
-      {pendingAttempt ? <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>المحاولة محفوظة لهذا الحساب والطلب. سنتحقق من نتيجتها قبل إعادة الإرسال.</Text><BthwaniButton busy={busy} disabled={busy || !attemptStorageReady} label="استعادة إرسال الرسالة المحفوظة" onPress={() => void retryPendingAttempt()} /></View> : state.value.canSend ? <BthwaniOrderChatComposer
+      {<View style={{flex:1,minHeight:120}}>{!state.value.messages.length ? <Text style={styles.muted}>ابدأ المحادثة حول هذا الطلب.</Text> : <ScrollView style={styles.messageScroll} contentContainerStyle={styles.messages} keyboardShouldPersistTaps="handled">{state.value.messages.map((message) => message.mediaKind==="audio" ? <BthwaniConversationMedia readPrivateMedia={readPrivateMedia} key={message.id} actorScope={activeActorID} contextKey={orderId} mediaId={message.id} mediaKind="audio" mine={message.mine} sender={message.mine?"أنت":senderLabel(message.senderRole)} createdAt={message.createdAt} readAt={message.readAt} caption={message.body}/> : <View key={message.id} style={[styles.message, message.mine ? styles.mine : null]}><Text style={styles.sender}>{message.mine ? "أنت" : senderLabel(message.senderRole)}</Text><Text style={styles.body}>{message.body}</Text><BthwaniConversationMedia readPrivateMedia={readPrivateMedia} actorScope={activeActorID} contextKey={orderId} mediaId={message.id} mediaKind={message.mediaKind} /><Text style={styles.time}>{new Date(message.createdAt).toLocaleString("ar-YE")}</Text></View>)}</ScrollView>}</View>}
+      {pendingAttempt ? <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>المحاولة محفوظة لهذا الحساب والطلب. سنتحقق من نتيجتها قبل إعادة الإرسال.</Text><BthwaniButton busy={busy} disabled={busy || !attemptStorageReady} label="استعادة إرسال الرسالة المحفوظة" onPress={() => void retryPendingAttempt()} /></View> : state.value.canSend ? <BthwaniConversationComposer
   recipients={recipientOptions} selected={selectedRecipients}
   onToggleRecipient={(value)=>{const target=recipientOptions.find(item=>item.role===value)?.role;if(!target)return;setSelectedRecipients(current=>current.includes(target)?current.filter(role=>role!==target):[...current,target]);}}
   onSelectAll={()=>setSelectedRecipients(recipientOptions.map(item=>item.role))}

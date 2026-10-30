@@ -11,9 +11,8 @@ import { StoreAvailabilityControls } from "./store-availability-controls";
 import { StoreBranchesPreview } from "./store-branches-preview";
 import { StoreModeControls } from "./store-mode-controls";
 import { StoreOperationsPreview } from "./store-operations-preview";
-
-const intakeWeekdays = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"] as const;
-import { StoreProfileLegacyTabs } from "./store-profile-legacy-tabs";
+import { joiningCaseIsoWeekdayLabels as intakeWeekdays } from "../partner-onboarding/joining-case-weekdays";
+import { StoreProfileDetailPanels } from "./store-profile-detail-panels";
 import { PartnerTeamWorkspace } from "../partners/partner-team-workspace";
 
 type Store = StorePublicationResponse["store"];
@@ -138,7 +137,7 @@ export function StoreProfileTabs({
     </nav> : null}
     {(["catalog", "quality", "documents", ...(canViewFinance ? ["finance"] : [])] as const).map((group) =>
       <Panel key={group} id={group} activeTab={activeTab}>
-        <StoreProfileLegacyTabs activeTab={group} store={store} partner={partner} partnerError={partnerError}
+        <StoreProfileDetailPanels activeTab={group} store={store} partner={partner} partnerError={partnerError}
           canViewFinance={canViewFinance} canViewOperations={canViewOperations} manageOpen={manageOpen}
           openManagement={openManagement} management={management} />
       </Panel>)}

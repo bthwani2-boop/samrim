@@ -1,6 +1,6 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const toolDir=path.dirname(fileURLToPath(import.meta.url));
@@ -38,6 +38,31 @@ for(const raw of fs.readFileSync(envPath,"utf8").split(/\r?\n/)){
   const separator=line.indexOf("=");
   if(separator<1) fail("LOCAL_ENV_INVALID");
   process.env[line.slice(0,separator).trim()]=line.slice(separator+1).trim();
+}
+
+// All four local surfaces must stay on the development environment and loopback APIs.
+if(process.env.BTHWANI_ENV!=="development") fail("LOCAL_RUNTIME_REQUIRES_DEVELOPMENT_ENV");
+if(process.env.NODE_ENV&&process.env.NODE_ENV!=="development") fail("LOCAL_RUNTIME_NODE_ENV_CONFLICT");
+for(const name of [
+  "IDENTITY_API_BASE_URL",
+  "DSH_API_BASE_URL",
+  "EXPO_PUBLIC_IDENTITY_API_URL",
+  "EXPO_PUBLIC_DSH_API_URL",
+  "CONTROL_PANEL_PUBLIC_ORIGIN",
+]){
+  const value=process.env[name]?.trim();
+  if(!value) fail(`LOCAL_RUNTIME_ORIGIN_REQUIRED name=${name}`);
+  let url;
+  try{url=new URL(value);}catch{fail(`LOCAL_RUNTIME_ORIGIN_INVALID name=${name}`);}
+  if(url.protocol!=="http:"||!["localhost","127.0.0.1","[::1]"].includes(url.hostname)||!url.port||
+    url.username||url.password||url.search||url.hash||
+    (name==="CONTROL_PANEL_PUBLIC_ORIGIN"&&url.pathname!=="/")){
+    fail(`LOCAL_RUNTIME_ORIGIN_MUST_BE_LOOPBACK name=${name}`);
+  }
+}
+if(process.argv.includes("--check-local-config")){
+  console.log(`LOCAL_RUNTIME_CONFIG=PASS mode=development surface=${surface} endpoints=loopback`);
+  process.exit(0);
 }
 
 function need(name){

@@ -1,4 +1,5 @@
-import { borders, normalizeYemenPhoneE164, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
+import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
+import { normalizeYemenPhoneE164 } from "@bthwani/identity/phone";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import { clientShareMessageLabel, createDshMobileClient, type ClientShareKind, type ClientShareMessage } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";

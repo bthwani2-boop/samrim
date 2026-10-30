@@ -42,5 +42,5 @@ function RootNavigation() {
 function RootNetworkNotice() {
   const { top } = useSafeAreaInsets();
   const { isConnected, isInternetReachable } = useNetworkState();
-  return <BthwaniNetworkStatusNotice top={top} offline={isConnected === false || isInternetReachable === false} />;
+  return <BthwaniNetworkStatusNotice top={top} offline={isConnected === false && isInternetReachable === false} />;
 }

@@ -1,17 +1,17 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniIcon, BthwaniOrderChatSheet, BthwaniSectionHeader, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniConversationSheet, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { BthwaniMap } from "@bthwani/design-system/native/map";
-import { cashCollectionPartyLabel, createDshMobileClient, type DeliveryProofResponse, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderRatingResponse, type PublicStoreView, orderStateLabel, orderPaymentDisclosure } from "@bthwani/dsh";
+import { cashCollectionPartyLabel, createDshMobileClient, type DeliveryProofResponse, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderRatingResponse, orderPaymentDisclosure, orderStateLabel, type PublicStoreView } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { PremiumOrderProgress, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
+import { PremiumOrderProgress, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
 import { OrderConversation } from "./order-conversation";
-import { clientOrderAuthenticationReturnPath, isClientOrderScopeCurrent } from "./order-session-scope";
 import { orderJourneyPresentation } from "./order-journey";
+import { clientOrderAuthenticationReturnPath, isClientOrderScopeCurrent } from "./order-session-scope";
 
 function baseUrl(): string {
   const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -367,12 +367,12 @@ export default function ClientOrderDetail() {
         <View style={styles.action}><BthwaniButton label={showConversation ? "إغلاق المحادثة" : "محادثة الطلب"} variant="primary" onPress={() => setShowConversation((value) => !value)}/></View>
         <View style={styles.action}><BthwaniButton label="المساعدة" variant="secondary" onPress={() => Alert.alert("مساعدة الطلب", "يمكنك متابعة المشكلة عبر محادثة الطلب أو طلب مراجعة الإلغاء حين يكون متاحًا.", [{ text: "إغلاق", style: "cancel" }, { text: "مراسلة الطلب", onPress: () => setShowConversation(true) }, ...(order.state !== "CREATED" && !completedState && !["CANCELLED", "REJECTED"].includes(order.state) ? [{ text: "مراجعة الإلغاء", onPress: () => setShowCancellationForm(true) }] : []) ])}/></View>
       </View>
-      <BthwaniOrderChatSheet visible={showConversation} bottomInset={insets.bottom} onClose={()=>setShowConversation(false)}
-        orderReference={order.id.slice(-8)} status={orderStateLabel(order.state)}
+      <BthwaniConversationSheet visible={showConversation} bottomInset={insets.bottom} onClose={()=>setShowConversation(false)}
+        contextKey={order.id} title={"محادثة الطلب #" + order.id.slice(-8)} status={orderStateLabel(order.state)}
         summary={order.storeName+" · "+order.lines.length+" أصناف"} quickFacts={order.lines.slice(0,2).map(line=>line.productName).join("، ")+(order.lines.length>2?"…":"")+" · "+journey.fulfillmentLabel}
         total={formatMoney(order.totalAmountMinor,order.currency)} details={[...order.lines.map(line=>({id:line.id,label:"صنف",value:line.productName})),{label:"التوصيل",value:journey.fulfillmentLabel},...(!isStorePickup?[{label:"العنوان",value:order.addressText}]:[]),...(order.customerNote?[{label:"ملاحظات",value:order.customerNote}]:[])]}>
         {showConversation?<OrderConversation orderId={order.id}/>:null}
-      </BthwaniOrderChatSheet>
+      </BthwaniConversationSheet>
       <View style={styles.status}>
         <Text style={styles.sectionTitle}>ملخص الدفع</Text>
         {journey.exception ? <BthwaniStatusBadge icon={statusIcon} label={orderStateLabel(order.state)} tone={statusTone} /> : null}
@@ -390,7 +390,8 @@ export default function ClientOrderDetail() {
       </View>
       <Text style={styles.sectionTitle}>المنتجات ({order.lines.length})</Text>
       {order.lines.length > 2 ? <Pressable accessibilityRole="button" accessibilityState={{ expanded: showAllItems }} onPress={() => setShowAllItems((value) => !value)} style={styles.itemsShowAll}><Text style={styles.itemsAction}>{showAllItems ? "إظهار عنصرين" : "عرض كل المنتجات"}</Text></Pressable> : null}
-      <View style={styles.lines}>{order.lines.slice(0, showAllItems ? undefined : 2).map((line) => <BthwaniSurface key={line.id} tone="base" style={styles.line}><View style={styles.lineTop}><Text style={styles.lineTitle} numberOfLines={2}>{line.productName}</Text><Text style={styles.linePrice}>{formatMoney(line.lineAmountMinor, line.currency)}</Text></View><Text style={styles.muted}>{formatQuantity(line.baseUnit, line.finalQuantityBaseUnits)}{line.modifierSnapshots.length ? ` · ${line.modifierSnapshots.map((modifier) => modifier.optionNameAr).join("، ")}` : ""}</Text></BthwaniSurface>)}</View>      {!["CANCELLED", "DELIVERED", "PICKED_UP", "REJECTED"].includes(order.state) &&
+      <View style={styles.lines}>{order.lines.slice(0, showAllItems ? undefined : 2).map((line) => <BthwaniSurface key={line.id} tone="base" style={styles.line}><View style={styles.lineTop}><Text style={styles.lineTitle} numberOfLines={2}>{line.productName}</Text><Text style={styles.linePrice}>{formatMoney(line.lineAmountMinor, line.currency)}</Text></View><Text style={styles.muted}>{formatQuantity(line.baseUnit, line.finalQuantityBaseUnits)}{line.modifierSnapshots.length ? ` · ${line.modifierSnapshots.map((modifier) => modifier.optionNameAr).join("، ")}` : ""}</Text></BthwaniSurface>)}</View>
+      {!["CANCELLED", "DELIVERED", "PICKED_UP", "REJECTED"].includes(order.state) &&
         (order.state !== "CREATED" || order.cancellationMode !== "CLIENT_BEFORE_ACCEPTANCE") ? (
           <BthwaniSurface tone="base" style={styles.cancellationSupport}>
             <Text style={styles.title}>طلب إلغاء</Text>

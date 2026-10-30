@@ -4,6 +4,7 @@ import { test } from "node:test";
 
 const read = path => readFileSync(new URL(path, import.meta.url), "utf8");
 const home = read("../src/features/store-discovery/store-discovery.tsx");
+const homeStyles = read("../src/features/store-discovery/store-discovery-styles.ts");
 const viewer = read("../src/features/store-discovery/discovery-reels-viewer.tsx");
 
 test("the home page exposes exactly one fixed reels button next to All", () => {
@@ -29,9 +30,10 @@ test("reels button remains mounted and does not move with horizontal filters", (
   assert.ok(home.includes('await listPublicDiscoveryContent(selectedCityID)'));
   assert.ok(home.includes('content: response.items'));
   assert.ok(home.includes('setSelectedReelIndex(0)'));
-  assert.ok(home.includes('storeFilterScroll: { flex: 1, minWidth: 0 }'));
-  assert.ok(home.includes('storeFilterRow: { flexDirection: "row"'));
-  assert.ok(home.includes('reelsFilterButton:'));
+  assert.ok(home.includes('import { createStyles } from "./store-discovery-styles";'));
+  assert.ok(homeStyles.includes('storeFilterScroll: { flex: 1, minWidth: 0 }'));
+  assert.ok(homeStyles.includes('storeFilterRow: { flexDirection: "row"'));
+  assert.ok(homeStyles.includes('reelsFilterButton:'));
   assert.ok(!home.includes("useVideoPlayer"));
   assert.ok(!home.includes("<HomeReelsEntry"));
 });

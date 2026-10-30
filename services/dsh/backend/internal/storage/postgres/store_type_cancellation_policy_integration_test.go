@@ -166,8 +166,8 @@ func TestStoreTypeCancellationPolicyAndLockedOrderTransition(t *testing.T) {
 		if _, err = postgres.ReadClientCancellationRequest(ctx, db, reviewedOrder, "foreign-client"); !errors.Is(err, postgres.ErrCancellationRequestNotFound) {
 			t.Fatalf("foreign actor read: %v", err)
 		}
-		queue, err := postgres.ListPendingCancellationRequests(ctx, db, 10)
-		if err != nil || len(queue) != 1 || queue[0].OrderID != reviewedOrder {
+		queue, err := postgres.ListPendingCancellationRequests(ctx, db, 10, "")
+		if err != nil || len(queue.Requests) != 1 || queue.Requests[0].OrderID != reviewedOrder || queue.NextCursor != "" {
 			t.Fatalf("operations intake queue: %+v %v", queue, err)
 		}
 		declined, err := postgres.DeclineCancellationRequest(ctx, db, first.ID, "cancel-proof-operator",
@@ -190,8 +190,8 @@ func TestStoreTypeCancellationPolicyAndLockedOrderTransition(t *testing.T) {
 		if err != nil || last.State != "APPROVED" || last.OperatorActorID == nil {
 			t.Fatalf("client cannot read accepted decision: %+v %v", last, err)
 		}
-		queue, err = postgres.ListPendingCancellationRequests(ctx, db, 10)
-		if err != nil || len(queue) != 0 {
+		queue, err = postgres.ListPendingCancellationRequests(ctx, db, 10, "")
+		if err != nil || len(queue.Requests) != 0 || queue.NextCursor != "" {
 			t.Fatalf("approved support still pending: %+v %v", queue, err)
 		}
 		var outbox, changes, audit int

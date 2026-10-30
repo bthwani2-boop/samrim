@@ -1,6 +1,7 @@
 import type { LayerGroup, Map as LeafletMap } from "leaflet";
 import { useEffect, useRef, useState } from "react";
 import type { BthwaniMapProps } from "./map";
+import { useAppearanceTheme } from "./appearance";
 import "leaflet/dist/leaflet.css";
 
 export type { BthwaniMapCircle, BthwaniMapCoordinate, BthwaniMapMarker, BthwaniMapProps } from "./map";
@@ -10,6 +11,7 @@ export function BthwaniMap({
   accessibilityLabel, markers = [], circles = [], selection, initialCoordinate,
   onSelectCoordinate, height = 220, edgeToEdge = false,
 }: BthwaniMapProps) {
+  const theme = useAppearanceTheme();
   const element = useRef<HTMLElement>(null);
   const initialView = useRef({
     coordinate: selection ?? initialCoordinate ?? markers[0]?.coordinate ?? { latitude: 15.5, longitude: 47.5 },
@@ -79,13 +81,13 @@ export function BthwaniMap({
         coordinates.push(point);
         const popup = document.createElement("span");
         popup.textContent = marker.description ? `${marker.title} — ${marker.description}` : marker.title;
-        L.circleMarker(point, { radius: 9, color: "#0A2F5C", fillColor: "#FF500D", fillOpacity: 1, weight: 2 })
+        L.circleMarker(point, { radius: 9, color: theme.brandStructure, fillColor: theme.brandAction, fillOpacity: 1, weight: 2 })
           .bindPopup(popup).addTo(layers);
       }
       if (selection) {
         const point: [number, number] = [selection.latitude, selection.longitude];
         coordinates.push(point);
-        L.circleMarker(point, { radius: 10, color: "#FFFFFF", fillColor: "#FF500D", fillOpacity: 1, weight: 3 }).addTo(layers);
+        L.circleMarker(point, { radius: 10, color: theme.surface, fillColor: theme.brandAction, fillOpacity: 1, weight: 3 }).addTo(layers);
         map.panTo(point, { animate: false });
       } else if (coordinates.length > 1) {
         map.fitBounds(L.latLngBounds(coordinates), { padding: [24, 24], maxZoom: 14, animate: false });
@@ -95,7 +97,7 @@ export function BthwaniMap({
       }
     });
     return () => { cancelled = true; };
-  }, [markers, circles, selection, mapReady]);
+  }, [markers, circles, selection, mapReady, theme.brandStructure, theme.brandAction, theme.surface]);
 
   return <section
     aria-label={accessibilityLabel}
@@ -108,7 +110,7 @@ export function BthwaniMap({
   >
     {unavailable ? <div dir="rtl" role="alert" style={{
       position: "absolute", zIndex: 1000, inset: 0, display: "grid",
-      placeItems: "center", color: "#0A2F5C", background: "#F1F3F5", padding: 16,
+      placeItems: "center", color: theme.color, background: theme.surface, padding: 16,
     }}>تعذر تحميل الخريطة. تحقق من الاتصال ثم أعد المحاولة.</div> : null}
   </section>;
 }

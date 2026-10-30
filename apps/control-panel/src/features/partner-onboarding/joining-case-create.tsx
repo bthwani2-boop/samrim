@@ -1,6 +1,7 @@
 "use client";
 
-import { normalizeYemenPhoneE164, toAsciiDigits } from "@bthwani/design-system";
+import { toAsciiDigits } from "@bthwani/design-system";
+import { normalizeYemenPhoneE164 } from "@bthwani/identity/phone";
 import { TextArea } from "@bthwani/design-system/web";
 import { type CommerceVertical, type CommercialStoreType, type CreateJoiningCaseRequest, isValidStoreWorkingHours, type JoiningCaseProofType, type JoiningCaseResponse, type ServiceCity, type StoreWorkingHoursInterval } from "@bthwani/dsh";
 import Link from "next/link";
@@ -8,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { partnerErrorMessage } from "../partners/partner-error-message";
+import { joiningCaseIsoWeekdayLabels as weekdays } from "./joining-case-weekdays";
 import type { WalletProviderOption } from "../wallet-provider/use-wallet-providers";
 
 const phoneE164Pattern = /^\+[1-9][0-9]{7,14}$/;
@@ -58,7 +60,6 @@ const proofTypeOptions: ReadonlyArray<{ value: JoiningCaseProofType; label: stri
   { value: "IDENTITY_DOCUMENT", label: "هوية" },
   { value: "PASSPORT", label: "جواز سفر" },
 ];
-const weekdays = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"] as const;
 
 function emptyWorkingHours(): StoreWorkingHoursInterval[] {
   return [];
@@ -205,7 +206,7 @@ export function JoiningCaseCreate() {
       return;
     }
     if (!phoneE164Pattern.test(input.contactPhoneE164) || input.ownerFullName.trim().length < 2 || Array.from(input.walletProviderKey.trim()).length > 64 || /\p{Cc}/u.test(input.walletProviderKey) || input.businessName.length < 2 || input.firstStoreName.length < 2 || input.firstStoreAddress.trim().length < 4 || !input.serviceCityId || !input.firstStoreVerticalId || !input.firstStoreCommercialTypeId || input.firstStoreProofNumber.length < 1 || input.firstStoreFulfillmentModes.length === 0 || !latitude.trim() || !longitude.trim() || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180) {
-      setError("أكمل اسم المالك ورقم جواله وبيانات المتجر والموقع وساعات العمل والإثبات وطريقة التوصيل. المحفظة اختيارية.");
+      setError("أكمل اسم المالك ورقم جواله وبيانات المتجر والموقع والإثبات وطريقة التوصيل. ساعات العمل والمحفظة اختياريتان عند التقديم.");
       return;
     }
     setBusy(true);

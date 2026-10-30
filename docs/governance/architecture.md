@@ -64,7 +64,7 @@ External financial providers are rails around WLT-owned financial truth and neve
 
 ## Surface boundary
 
-Actor-facing Client, Partner, Captain, Field and Operator surfaces are presentation/composition hosts. A host never becomes canonical owner because it renders or invokes a fact. Exact deployable host names and repository paths remain implementation truth.
+Actor-facing Client, Partner, Captain and Operator surfaces are presentation/composition hosts. A host never becomes canonical owner because it renders or invokes a fact. Exact deployable host names and repository paths remain implementation truth.
 
 A Partner session proves the admitted high-level role only. DSH independently authorizes Store ownership or explicit Store-scoped grant for every Store-scoped mutation. A Captain session similarly does not imply Store-Captain membership or platform-dispatch eligibility.
 

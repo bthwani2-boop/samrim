@@ -16,6 +16,10 @@
     "./presentation": {
       "types": "./clients/presentation/ManagedIdentityFlow.tsx",
       "default": "./clients/presentation/ManagedIdentityFlow.tsx"
+    },
+    "./phone": {
+      "types": "./clients/phone.ts",
+      "default": "./clients/phone.ts"
     }
   },
   "peerDependencies": {

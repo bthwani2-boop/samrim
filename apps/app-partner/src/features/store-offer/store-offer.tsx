@@ -1,8 +1,9 @@
-import { borders, radius, type resolveTheme, sizing, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
+import { createStyles } from "./store-offer-styles";
+import { toAsciiDigits } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type BaseUnit, baseUnitLabel, type CatalogAttributeRule, type CatalogAttributeValueInput, type CatalogCategoryListResponse, type CatalogIdentifierResolution, type CatalogMedia, type CatalogProduct, type CatalogProductProposal, type CatalogStorefrontSection, type CatalogStoreOffer, type CatalogVariant, type CommerceVertical, catalogProductProposalStateLabel, createDshMobileClient, type DshImageUploadInput, formatMoney, isMediaProvenanceInputValid, type MeasurementKind, type MediaProvenanceInput, measurementKindLabel as sharedMeasurementKindLabel, pricingBasisLabel as sharedPricingBasisLabel, quantityPolicyLabel as sharedQuantityPolicyLabel, storeOfferPublicationStateLabel } from "@bthwani/dsh";
-import { MobileStoreCatalogImportWorkspace } from "@bthwani/dsh/mobile/store-catalog-import";
-import { MobileStoreQuickPricesWorkspace } from "@bthwani/dsh/mobile/store-quick-prices";
+import { MobileStoreCatalogImportWorkspace } from "./mobile-store-catalog-import";
+import { MobileStoreQuickPricesWorkspace } from "./mobile-store-quick-prices";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useKeepAwake } from "expo-keep-awake";
 
@@ -16,7 +17,7 @@ import { Image as ExpoImage } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { onPartnerProductAction } from "../../shell/partner-product-actions";
 import { PartnerStorePromotionBanner } from "./partner-promotion-banner";
@@ -917,75 +918,7 @@ const theme = useAppearanceTheme();
   );
 }
 
-function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  return StyleSheet.create({
-    container: { gap: 8, paddingTop: 8, width: "100%" },
-    topActions: { flexDirection: "row", gap: 8 },
-    headerButton: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: 1, borderRadius: 13, flex: 1, minHeight: 43, paddingHorizontal: 8, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 },
-    headerButtonSelected: { borderColor: theme.brandAction },
-    headerButtonText: { ...typography.bodyStrong, color: theme.color, textAlign: "center" },
-    createButton: { backgroundColor: theme.brandAction, borderColor: theme.brandAction },
-    createButtonText: { ...typography.bodyStrong, color: theme.onAction, textAlign: "center" },
-    listSearch: { borderWidth: 1, borderColor: theme.borderColor, backgroundColor: theme.surface, borderRadius: 11, minHeight: 43, paddingHorizontal: 12, color: theme.color, textAlign: "right" },
-    filterRow: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 1 },
-    filterChip: { borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10, backgroundColor: theme.surface, paddingHorizontal: 12, minHeight: 34, justifyContent: "center", flexDirection: "row", alignItems: "center", gap: 5 },
-    filterChipActive: { borderColor: theme.brandAction, backgroundColor: theme.actionSoft },
-    filterText: { ...typography.caption, color: theme.colorMuted },
-    filterTextActive: { color: theme.brandAction, fontWeight: "800" },
-    filterModalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.48)" },
-    filterBackdropFill: { flex: 1 },
-    filterModalPanel: { backgroundColor: theme.surface, borderTopLeftRadius: 19, borderTopRightRadius: 19, padding: 16, gap: 8 },
-    filterModalTitle: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingBottom: 6 },
-    filterModalItem: { borderWidth: 1, borderColor: theme.borderColor, borderRadius: 11, minHeight: 43, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-    price: { ...typography.bodyStrong, fontWeight: "800", color: theme.color },
-    editLink: { flexDirection: "row", gap: 4, alignItems: "center", minHeight: 36, paddingHorizontal: 8, borderRadius: 9, borderColor: theme.borderColor, borderWidth: 1 },
-    editLabel: { ...typography.caption, color: theme.color },
-    state: { alignItems: "center", gap: spacing[2] },
-    title: { ...typography.titleLg, fontSize: 28, fontWeight: "800", color: theme.color },
-    muted: { ...typography.bodySm, color: theme.colorMuted },
-    selected: { ...typography.bodySm, color: theme.color },
-    searchRow: { flexDirection: "row", gap: spacing[2] },
-    camera: { borderRadius: radius.md, height: 230, overflow: "hidden", width: "100%" },
-    clearSearch: { alignItems: "center", justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[1] },
-    form: { gap: spacing[2] },
-    fieldLabel: { ...typography.label, color: theme.color },
-    choiceList: { gap: spacing[1] },
-    choiceRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing[1] },
-    warning: { ...typography.bodySm, color: theme.warning },
-    managementBlock: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
-    offerPicker: { gap: spacing[1] },
-    mediaManager: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
-    mediaRow: { alignItems: "center", borderColor: theme.borderColor, borderTopWidth: borders.hairline, flexDirection: "row", gap: spacing[1], paddingTop: spacing[2] },
-    mediaCopy: { flex: 1, gap: spacing[1] },
-    mediaImage: { backgroundColor: theme.surface, borderRadius: radius.sm, height: 56, width: 56 },
-    mediaUploadPreview: { alignItems: "center", flexDirection: "row", gap: spacing[2] },
-    provenanceFields: { borderColor: theme.borderColor, borderTopWidth: borders.hairline, gap: spacing[2], paddingTop: spacing[2] },
-    provenanceToggle: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
-    input: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.color, flex: 1, minHeight: sizing.controlMd, paddingHorizontal: spacing[2] },
-    numericInput: { textAlign: "left", writingDirection: "ltr" },
-    productList: { gap: spacing[2] },
-    product: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[2] },
-    productHeader: { alignItems: "center", flexDirection: "row", gap: spacing[2] },
-    productCopy: { flex: 1, gap: spacing[1] },
-    productImage: { backgroundColor: theme.surface, borderRadius: radius.sm, height: 52, width: 52 },
-    productImagePlaceholder: { alignItems: "center", backgroundColor: theme.surface, borderRadius: radius.sm, height: 52, justifyContent: "center", width: 52 },
-    offerImage: { backgroundColor: theme.surfaceRaised, borderRadius: 9, height: 58, width: 58 },
-    offerImagePlaceholder: { alignItems: "center", backgroundColor: theme.surfaceRaised, borderRadius: 9, height: 58, justifyContent: "center", width: 58 },
-    imagePlaceholderText: { ...typography.caption, color: theme.colorMuted, textAlign: "center" },
-    offerList: { gap: 8 },
-    inventoryBlock: { gap: spacing[1] },
-    item: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: 1, borderRadius: 12, gap: 4, padding: 8 },
-    offerIdentity: { alignItems: "center", flexDirection: "row", gap: 8 },
-    offerActionRow: { alignItems: "center", flexDirection: "row", gap: 4, minHeight: 35 },
-    compactAction: { minHeight: 32, paddingHorizontal: 8, borderRadius: 9, borderColor: theme.borderColor, borderWidth: 1, alignItems: "center", justifyContent: "center", gap: 4, flexDirection: "row" },
-    compactActionLabel: { ...typography.caption, color: theme.color },
-    availabilityLabel: { ...typography.caption, color: theme.colorMuted },
-    itemText: { flex: 1, gap: 1 },
-    itemTitle: { ...typography.bodyStrong, color: theme.color },
-    disabledInput: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground, color: theme.disabledText },
-    error: { ...typography.label, color: theme.danger },
-  });
-}
+
 
 function measurementKindLabel(kind: MeasurementKind, baseUnit?: BaseUnit): string {
   const label = sharedMeasurementKindLabel(kind);

@@ -124,7 +124,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fieldFinanceServer, err := transporthttp.NewFieldFinance(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), paymentClient, database)
+	operatorPolicyServer, err := transporthttp.NewOperatorPolicy(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), paymentClient, database)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func main() {
 		serviceabilityServer.Register(mux)
 		deliveryFeeServer.Register(mux)
 		partnerFinanceServer.Register(mux)
-		fieldFinanceServer.Register(mux)
+		operatorPolicyServer.Register(mux)
 		beneficiaryFinanceServer.Register(mux)
 		cartServer.Register(mux)
 		orderServer.Register(mux)

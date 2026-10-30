@@ -21,7 +21,7 @@ DSH owns conversation membership, message identity/content relation, read state,
 - senders select one or more operational recipients; DSH filters message reads and read receipts to only the sender, selected recipients and authorized operations;
 - authorized operations can review every Order message without opening a separate chat, while their composer is explicitly opt-in and requires operations permission;
 - an Order message, media item or support escalation cannot perform payment, payout, refund, settlement or custody state changes;
-- text is the baseline message type; messages may attach one image (JPEG/PNG/WebP, at most 3 MiB) or one voice recording (admitted MP4/M4A/3GPP/AAC/WebM, at most 1.5 MiB) after validating actual content;
+- text is the baseline message type; each message may attach one image (JPEG/PNG/WebP, at most 3 MiB), one voice recording (admitted MP4/M4A/3GPP/AAC/WebM, at most 1.5 MiB), or one operational video (MP4/WebM, at most 6 MiB), with declared type checked against the actual content; video remains Order-scoped private media subject to the same authorization, idempotency and lifecycle restrictions as other attachments;
 - message attachments are stored as private DSH data, without public object URLs; every retrieval checks the same order, current participant and per-message recipients; operations require explicit authorization;
 - a message and its attachment are inserted atomically, and retries preserve the original idempotency key, media content and recipients;
 - recording or playback requiring a new native mobile module is activated only on a compatible Android/iOS development build, without blocking text and photo chat on older builds;

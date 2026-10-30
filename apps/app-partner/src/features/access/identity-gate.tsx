@@ -1,6 +1,7 @@
 import { ManagedIdentityFlow, resolveInternalReturnPath } from "@bthwani/identity/presentation";
 import { BthwaniButton } from "@bthwani/design-system/native";
 import { View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { type Href, Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   activateManagedIdentity,
@@ -32,9 +33,9 @@ export default function IdentityGate() {
           authenticatedContent={<Redirect href={safeReturnTo} />}
         />
       </View>
-      <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
+      <SafeAreaView edges={["bottom"]} style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
         <BthwaniButton label="انضم كمتجر جديد دون ميداني" variant="secondary" onPress={() => router.push("/apply" as Href)} />
-      </View>
+      </SafeAreaView>
     </View>
   );
 }

@@ -17,3 +17,5 @@
 services/dsh/backend/internal/storage/postgres/migrations/109_partner_passport_proof_type.sql -text whitespace=cr-at-eol
 # v117 was also applied with CRLF; preserve its original adopted bytes.
 services/dsh/backend/internal/storage/postgres/migrations/117_hr_access_request_rejection.sql -text whitespace=cr-at-eol
+# v129 was adopted with CRLF as well; preserve the applied checksum exactly.
+services/dsh/backend/internal/storage/postgres/migrations/129_store_owned_media.sql -text whitespace=cr-at-eol

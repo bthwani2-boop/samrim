@@ -46,7 +46,9 @@ export function resolveTheme(name?: string | null): ThemeColors {
 export function themeToCssVariables(themeColors: ThemeColors): Record<string, string> {
   return {
     "--brand-action": themeColors.brandAction,
-    "--brand-structure": themeColors.structure,
+    "--brand-structure": themeColors.brandStructure,
+    "--brand-turquoise": themeColors.brandTurquoise,
+    "--brand-burgundy": themeColors.brandBurgundy,
     "--brand-action-hover": themeColors.brandActionHover,
     "--brand-action-pressed": themeColors.brandActionPressed,
     "--brand-action-soft": themeColors.brandActionSoft,

@@ -12,8 +12,8 @@ export async function POST(request: Request) {
   const actorType = query.get("actorType")?.trim() ?? "";
   const actorId = query.get("actorId")?.trim() ?? "";
   const destinationId = query.get("destinationId")?.trim() ?? "";
-  if (!["partner", "captain", "field"].includes(actorType) || !actorId || !destinationId) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "destination and actor are required" } }, { status: 400 });
-  try { return NextResponse.json(await activateOperatorDestination(actorType as "partner" | "captain" | "field", actorId, destinationId, { operatorActorId: identity.subject, correlationId: request.headers.get("X-Correlation-ID")?.trim() || randomUUID(), idempotencyKey: request.headers.get("Idempotency-Key")?.trim() || randomUUID() })); } catch (error) { return mapError(error, "destination activation failed"); }
+  if (!["partner", "captain"].includes(actorType) || !actorId || !destinationId) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "destination and actor are required" } }, { status: 400 });
+  try { return NextResponse.json(await activateOperatorDestination(actorType as "partner" | "captain", actorId, destinationId, { operatorActorId: identity.subject, correlationId: request.headers.get("X-Correlation-ID")?.trim() || randomUUID(), idempotencyKey: request.headers.get("Idempotency-Key")?.trim() || randomUUID() })); } catch (error) { return mapError(error, "destination activation failed"); }
 }
 
 function mapError(error: unknown, message: string) {

@@ -1,5 +1,5 @@
 import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSkeleton, BthwaniSurface, useOrderChatUnreadCounts, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSkeleton, BthwaniSurface, useConversationUnreadCounts, useAppearanceTheme } from "@bthwani/design-system/native";
 import { createDshMobileClient, formatMoney, formatOrderDate, fulfillmentModeLabel, orderPaymentDisclosure, paymentStateLabel, type Cart, type Order, type PublicStoreView, orderStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useIsFocused, useRouter } from "expo-router";
@@ -111,7 +111,7 @@ export default function ClientOrders() {
     const token = await getUsableIdentityAccessToken();
     return (await client().readOrderConversation(token, orderId, 1)).unreadCount;
   }, []);
-  const unreadChatCounts = useOrderChatUnreadCounts(visibleOrders.map(order => order.id), activeActorID, ordersFocused, getChatUnread);
+  const unreadChatCounts = useConversationUnreadCounts(visibleOrders.map(order => order.id), activeActorID, ordersFocused, getChatUnread);
 
   const loadMore = useCallback(async () => {
     if (state.kind !== "ready" || !state.nextCursor || loadingMore || !isClientActorScopeCurrent(state.actorID, activeActorID) || !hasCurrentOrdersActor(state.actorID)) return;

@@ -13,8 +13,8 @@ export async function POST(request: Request) {
   const actorId = query.get("actorId")?.trim() ?? "";
   const destinationId = query.get("destinationId")?.trim() ?? "";
   const body = await request.json().catch(() => null) as { evidenceReference?: unknown } | null;
-  if (!["partner", "captain", "field"].includes(actorType) || !actorId || !destinationId || typeof body?.evidenceReference !== "string" || !body.evidenceReference.trim()) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "destination and evidence are required" } }, { status: 400 });
-  try { return NextResponse.json(await verifyOperatorDestination(actorType as "partner" | "captain" | "field", actorId, destinationId, body.evidenceReference, { operatorActorId: identity.subject, correlationId: request.headers.get("X-Correlation-ID")?.trim() || randomUUID(), idempotencyKey: request.headers.get("Idempotency-Key")?.trim() || randomUUID() })); } catch (error) { return mapError(error, "destination verification failed"); }
+  if (!["partner", "captain"].includes(actorType) || !actorId || !destinationId || typeof body?.evidenceReference !== "string" || !body.evidenceReference.trim()) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "destination and evidence are required" } }, { status: 400 });
+  try { return NextResponse.json(await verifyOperatorDestination(actorType as "partner" | "captain", actorId, destinationId, body.evidenceReference, { operatorActorId: identity.subject, correlationId: request.headers.get("X-Correlation-ID")?.trim() || randomUUID(), idempotencyKey: request.headers.get("Idempotency-Key")?.trim() || randomUUID() })); } catch (error) { return mapError(error, "destination verification failed"); }
 }
 
 function mapError(error: unknown, message: string) {

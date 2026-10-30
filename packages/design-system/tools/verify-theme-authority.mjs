@@ -83,9 +83,27 @@ if (!themeIndexTs.includes("export function webFoundationToCssVariables")) {
 }
 
 // 2. Parity check on light and dark keys
-const { lightThemeColors, darkThemeColors } = await import("../src/tokens/colors.ts");
-const { generateThemeCss, isThemePreference, resolveThemeName, themePreferences, webFoundationToCssVariables } = await import("../src/theme/index.ts");
+const { brandRoots, lightThemeColors, darkThemeColors } = await import("../src/tokens/colors.ts");
+const { generateThemeCss, isThemePreference, resolveThemeName, themeToCssVariables, themePreferences, webFoundationToCssVariables } = await import("../src/theme/index.ts");
 const { toAsciiDigits } = await import("../src/tokens/formatting.ts");
+
+// The five approved compiled defaults must remain available without Studio or network.
+const approvedBrandRoots = {
+  brandStructure: "#102B4E",
+  brandAction: "#F36B21",
+  surfaceBase: "#FFFFFF",
+  brandTurquoise: "#83DDF3",
+  brandBurgundy: "#7B1E3A"
+};
+for (const [role, expected] of Object.entries(approvedBrandRoots)) {
+  if (brandRoots[role] !== expected) failures.push(`Unapproved compiled default ${role}: ${brandRoots[role]}`);
+}
+for (const mode of [lightThemeColors, darkThemeColors]) {
+  const css = themeToCssVariables(mode);
+  if (css["--brand-turquoise"] !== approvedBrandRoots.brandTurquoise) failures.push("Studio baseline turquoise projection missing");
+  if (css["--brand-burgundy"] !== approvedBrandRoots.brandBurgundy) failures.push("Studio baseline burgundy projection missing");
+}
+
 
 if (toAsciiDigits("١٢٣٤٥٦٧٨٩٠ ۱۲۳۴۵۶۷۸۹۰") !== "1234567890 1234567890") {
   failures.push("Design System ASCII digit normalization is incomplete");

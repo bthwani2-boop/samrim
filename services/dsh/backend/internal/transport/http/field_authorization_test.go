@@ -9,7 +9,7 @@ import (
 func TestRetiredFieldAndAcquisitionRoutesUnavailable(t *testing.T) {
 	mux := http.NewServeMux()
 	(&JoiningCaseServer{}).Register(mux)
-	(&FieldFinanceServer{}).Register(mux)
+	(&OperatorPolicyServer{}).Register(mux)
 	for _, route := range []struct{ method, path string }{
 		{"POST", "/dsh/joining-cases/case-1/acquisition-attribution"},
 		{"POST", "/dsh/fields/admissions"},
@@ -30,6 +30,8 @@ func TestRetiredFieldAndAcquisitionRoutesUnavailable(t *testing.T) {
 		}
 	}
 	for _, route := range []struct{ method, path string }{
+		{"GET", "/dsh/operator/policy-history"},
+		{"GET", "/dsh/operator/policy-registry"},
 		{"GET", "/dsh/joining-cases/case-1"},
 		{"POST", "/dsh/operator/partners/stores/store-1/commercial-agreements"},
 	} {
