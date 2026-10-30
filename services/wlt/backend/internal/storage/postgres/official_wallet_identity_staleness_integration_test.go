@@ -89,7 +89,7 @@ func TestLegacyRequestedCustomerWithdrawalReverifiesAndCapturesCurrentIdentity(t
 func TestOfficialWalletDestinationIsSuspendedWhenCurrentIdentityChanges(t *testing.T) {
 	scenario := newFieldAcquisitionScenario(t)
 	facts := validIdentityFactsFixture()
-	facts.ActorType = "field"
+	facts.ActorType = "customer"
 	facts.ActorID = "identity-stale-test-" + scenario.suffix
 	actorID := facts.ActorID
 	cipher, err := NewDestinationCipher("MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
@@ -97,7 +97,7 @@ func TestOfficialWalletDestinationIsSuspendedWhenCurrentIdentityChanges(t *testi
 		t.Fatalf("create destination cipher: %v", err)
 	}
 	destination, replayed, err := CreateOfficialWalletDestination(scenario.ctx, scenario.db, cipher, CreateOfficialWalletDestinationInput{
-		ActorType: "field", ActorID: actorID, ProviderKey: "YEMEN_MOBILE_WALLET", IdentityFacts: facts,
+		ActorType: "customer", ActorID: actorID, ProviderKey: "YEMEN_MOBILE_WALLET", IdentityFacts: facts,
 		ChangeReason: "initial official destination", VerificationEvidenceReference: "identity-stale-verification-" + scenario.suffix,
 		ChangeEvidenceReference: "identity-stale-change-" + scenario.suffix, SubmittedBy: "partner-operator",
 		IdempotencyKey: "identity-stale-create-" + scenario.suffix, CorrelationID: "identity-stale-create-correlation-" + scenario.suffix,
@@ -127,7 +127,7 @@ func TestOfficialWalletDestinationIsSuspendedWhenCurrentIdentityChanges(t *testi
 	changedFacts.PhoneE164 = "+967777000002"
 	changedFacts.ActorVersion++
 	if _, _, err := CreatePayoutIntent(scenario.ctx, scenario.db, cipher, PayoutIntentInput{
-		ActorType: "field", ActorID: actorID, AmountMode: "FULL_AVAILABLE", IdentityFacts: changedFacts,
+		ActorType: "customer", ActorID: actorID, AmountMode: "FULL_AVAILABLE", IdentityFacts: changedFacts,
 		IdempotencyKey: "identity-stale-payout-" + scenario.suffix, CorrelationID: "identity-stale-payout-correlation-" + scenario.suffix,
 	}); !errors.Is(err, ErrReverificationRequired) {
 		t.Fatalf("payout with changed official wallet identity error = %v, want reverification required", err)
@@ -147,19 +147,34 @@ func TestOfficialWalletDestinationIsSuspendedWhenCurrentIdentityChanges(t *testi
 
 func TestLegacyPayoutSnapshotsResumeOnlyAfterSameDestinationReverification(t *testing.T) {
 	scenario := newFieldAcquisitionScenario(t)
-	scenario.registerCleanup(t)
-	scenario.activePolicy = scenario.createAndReplacePolicy(t)
-	scenario.firstAward = scenario.createAndReplayFirstAward(t)
-
+	// Legacy identity-snapshot recovery must use an admitted beneficiary.
+	// Retired Field acquisition can no longer create new payout evidence.
+	scenario.actorID = "legacy-payout-customer-" + scenario.suffix
 	facts := validIdentityFactsFixture()
-	facts.ActorType = "field"
+	facts.ActorType = "customer"
 	facts.ActorID = scenario.actorID
+	funding, _, err := CreateCashInFundingIntent(scenario.ctx, scenario.db, CreateCashInFundingIntentInput{
+		ActorType: "customer", ActorID: scenario.actorID, AmountMinor: 2000, Currency: "YER",
+		ProviderKey: DevelopmentSimulatorProvider, IdempotencyKey: "legacy-payout-funding-" + scenario.suffix,
+		CorrelationID: "legacy-payout-funding-correlation-" + scenario.suffix,
+	})
+	if err != nil {
+		t.Fatalf("fund current customer payout fixture: %v", err)
+	}
+	if _, _, err := ApplyCashInFundingResult(scenario.ctx, scenario.db, ApplyCashInFundingResultInput{
+		FundingIntentID: funding.ID, Outcome: "SUCCESS",
+		ProviderTransactionReference: "legacy-payout-provider-" + scenario.suffix,
+		ActorID: "proof-synthetic-provider", IdempotencyKey: "legacy-payout-credit-" + scenario.suffix,
+		CorrelationID: "legacy-payout-credit-correlation-" + scenario.suffix,
+	}); err != nil {
+		t.Fatalf("credit current customer payout fixture: %v", err)
+	}
 	cipher, err := NewDestinationCipher("MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
 	if err != nil {
 		t.Fatalf("create destination cipher: %v", err)
 	}
 	destination, _, err := CreateOfficialWalletDestination(scenario.ctx, scenario.db, cipher, CreateOfficialWalletDestinationInput{
-		ActorType: "field", ActorID: scenario.actorID, ProviderKey: "YEMEN_MOBILE_WALLET", IdentityFacts: facts,
+		ActorType: "customer", ActorID: scenario.actorID, ProviderKey: "YEMEN_MOBILE_WALLET", IdentityFacts: facts,
 		ChangeReason: "legacy payout cutover fixture", VerificationEvidenceReference: "legacy-payout-cutover-verification-" + scenario.suffix,
 		ChangeEvidenceReference: "legacy-payout-cutover-change-" + scenario.suffix, SubmittedBy: "finance-wallet-submitter",
 		IdempotencyKey: "legacy-payout-cutover-destination-" + scenario.suffix, CorrelationID: "legacy-payout-cutover-destination-correlation-" + scenario.suffix,
@@ -219,7 +234,7 @@ func TestLegacyPayoutSnapshotsResumeOnlyAfterSameDestinationReverification(t *te
 	oneMinor := int64(1)
 	createIntent := func(key string) PayoutRequestRecord {
 		created, replayed, err := CreatePayoutIntent(scenario.ctx, scenario.db, cipher, PayoutIntentInput{
-			ActorType: "field", ActorID: scenario.actorID, AmountMode: "SPECIFIED", AmountMinor: &oneMinor, IdentityFacts: facts,
+			ActorType: "customer", ActorID: scenario.actorID, AmountMode: "SPECIFIED", AmountMinor: &oneMinor, IdentityFacts: facts,
 			IdempotencyKey: key + "-" + scenario.suffix, CorrelationID: key + "-correlation-" + scenario.suffix,
 		})
 		if err != nil || replayed || created.Status != "HELD" {
@@ -329,5 +344,52 @@ func TestLegacyPayoutSnapshotsResumeOnlyAfterSameDestinationReverification(t *te
 	}
 	if first.DestinationID != destination.ID || second.DestinationID != destination.ID || first.DestinationVersion != active.Version || second.DestinationVersion != active.Version {
 		t.Fatalf("legacy payout intents no longer reference their original destination: first=%+v second=%+v destination=%+v", first, second, active)
+	}
+}
+
+// New Field wallet destinations and payouts are retired even though historical
+// finance records remain preserved for governed readback and reconciliation.
+func TestRetiredFieldCannotCreateNewWalletDestinationOrPayout(t *testing.T) {
+	scenario := newFieldAcquisitionScenario(t)
+	facts := validIdentityFactsFixture()
+	facts.ActorType = "field"
+	facts.ActorID = "retired-field-payout-" + scenario.suffix
+	cipher, err := NewDestinationCipher("MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = CreateOfficialWalletDestination(scenario.ctx, scenario.db, cipher, CreateOfficialWalletDestinationInput{
+		ActorType: "field", ActorID: facts.ActorID, ProviderKey: "YEMEN_MOBILE_WALLET", IdentityFacts: facts,
+		ChangeReason: "retired Field must not create a new destination",
+		VerificationEvidenceReference: "retired-field-verification-" + scenario.suffix,
+		ChangeEvidenceReference: "retired-field-change-" + scenario.suffix,
+		SubmittedBy: "finance-operator", IdempotencyKey: "retired-field-destination-" + scenario.suffix,
+		CorrelationID: "retired-field-destination-correlation-" + scenario.suffix,
+	})
+	if !errors.Is(err, ErrDestinationInvalidInput) {
+		t.Fatalf("retired Field created a new destination: %v", err)
+	}
+	oneMinor := int64(1)
+	_, _, err = CreatePayoutIntent(scenario.ctx, scenario.db, cipher, PayoutIntentInput{
+		ActorType: "field", ActorID: facts.ActorID, AmountMode: "SPECIFIED", AmountMinor: &oneMinor,
+		IdentityFacts: facts, IdempotencyKey: "retired-field-payout-" + scenario.suffix,
+		CorrelationID: "retired-field-payout-correlation-" + scenario.suffix,
+	})
+	if !errors.Is(err, ErrPayoutInvalidInput) {
+		t.Fatalf("retired Field created a new payout: %v", err)
+	}
+	var destinations, payouts int
+	if err := scenario.db.QueryRowContext(scenario.ctx,
+		"SELECT count(*) FROM wlt.official_wallet_destinations WHERE actor_type='field' AND actor_id=$1",
+		facts.ActorID).Scan(&destinations); err != nil {
+		t.Fatal(err)
+	}
+	if err := scenario.db.QueryRowContext(scenario.ctx,
+		"SELECT count(*) FROM wlt.payout_requests WHERE actor_type='field' AND actor_id=$1",
+		facts.ActorID).Scan(&payouts); err != nil {
+		t.Fatal(err)
+	}
+	if destinations != 0 || payouts != 0 {
+		t.Fatalf("retired Field mutated financial state: destinations=%d payouts=%d", destinations, payouts)
 	}
 }
