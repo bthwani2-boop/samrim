@@ -14,13 +14,14 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/migrate
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/schema-verify ./cmd/schema-verify
 
 FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8
-ARG SAMRIM_SOURCE_REVISION=unverified
-LABEL org.opencontainers.image.revision=$SAMRIM_SOURCE_REVISION
+# Source revision is metadata: do not invalidate the costly FFmpeg OS dependency layer.
 RUN apk add --no-cache ca-certificates tzdata ffmpeg && addgroup -S dsh && adduser -S -G dsh dsh
 WORKDIR /app
 COPY --from=build /out/api /api
 COPY --from=build /out/migrate /migrate
 COPY --from=build /out/schema-verify /schema-verify
 USER dsh
+ARG SAMRIM_SOURCE_REVISION=unverified
+LABEL org.opencontainers.image.revision=$SAMRIM_SOURCE_REVISION
 EXPOSE 8080
 ENTRYPOINT ["/api"]
