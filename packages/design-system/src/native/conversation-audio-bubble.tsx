@@ -21,7 +21,7 @@ type Props = Readonly<{
 const bars = ([11, 19, 28, 35, 26, 17, 30, 38, 22, 13, 34, 27, 18, 39, 30, 23, 17, 32, 37, 25, 15, 28, 40, 34, 22, 14, 31, 36, 24, 18, 33, 26, 14, 30, 38, 23] as const)
   .map((height, index) => ({ id: `wave-${index}`, height }));
 
-export function BthwaniOrderChatAudioBubble({
+export function BthwaniConversationAudioBubble({
   mine, sender, sentAt, read, playing, loading,
   positionSeconds, durationSeconds, onPlayPause, onSeek, error,
 }: Props) {
