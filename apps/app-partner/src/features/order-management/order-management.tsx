@@ -1,5 +1,5 @@
 import { borders, radius, sizing, type resolveTheme, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniConfirmDialog, BthwaniIcon, BthwaniConversationSheet, useOrderChatUnreadCounts, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniConfirmDialog, BthwaniIcon, BthwaniConversationSheet, useConversationUnreadCounts, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type CaptainAssignment, type CaptainOffer, captainHandoffStateLabel, createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderAdjustmentProposalRequest, type OrderTransitionRequest, orderStateLabel, paymentMethodLabel, paymentStateLabel, type StoreCaptainMembership } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useIsFocused, useLocalSearchParams } from "expo-router";
@@ -96,7 +96,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
     const token = await getUsableIdentityAccessToken();
     return (await client().readOrderConversation(token, orderId, 1)).unreadCount;
   }, []);
-  const unreadChatCounts = useOrderChatUnreadCounts(orders.map(order => order.id), unreadScope, isFocused, getChatUnread, chatOrderId);
+  const unreadChatCounts = useConversationUnreadCounts(orders.map(order => order.id), unreadScope, isFocused, getChatUnread, chatOrderId);
 
   const load = useCallback(async (options: { append?: boolean; cursor?: string; quiet?: boolean } = {}) => {
     if (requestScopeKey !== activeScopeKey.current) return;

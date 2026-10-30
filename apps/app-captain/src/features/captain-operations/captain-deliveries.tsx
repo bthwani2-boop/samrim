@@ -1,4 +1,4 @@
-import { BthwaniButton, BthwaniConversationSheet, useOrderChatUnreadCounts, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniConversationSheet, useConversationUnreadCounts, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import { BthwaniMap } from "@bthwani/design-system/native/map";
 import { createDshMobileClient, type CaptainAssignment, type CaptainCompletionRequest, type CaptainDeliveryTask, captainAssignmentStateLabel, captainHandoffStateLabel, captainTaskProgressLabel, formatMoney, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
@@ -93,7 +93,7 @@ export function CaptainDeliveries() {
     if (!base) throw new Error("DSH_BASE_URL_REQUIRED");
     return (await createDshMobileClient(base,{cryptoRandomUUID:()=>Crypto.randomUUID()}).readOrderConversation(token,orderId,1)).unreadCount;
   }, []);
-  const unreadChatCounts = useOrderChatUnreadCounts(assignments.map(assignment => assignment.orderId), activeActorID, isFocused, getChatUnread, chatOrderId);
+  const unreadChatCounts = useConversationUnreadCounts(assignments.map(assignment => assignment.orderId), activeActorID, isFocused, getChatUnread, chatOrderId);
 
   const load = useCallback(async (quiet = false) => {
     const sequence = ++readSequence.current;
