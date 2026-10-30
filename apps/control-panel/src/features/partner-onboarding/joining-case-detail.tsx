@@ -11,6 +11,7 @@ import { useReadOnReturn } from "../shared/use-read-on-return";
 import { StoreLogo } from "../stores/store-logo";
 import { StoreZeroCommissionProposal } from "./store-zero-commission-proposal";
 import { canOperatorAdmitJoiningCase } from "./joining-case-admission-rules";
+import { joiningCaseIsoWeekdayLabels as weekdays } from "./joining-case-weekdays";
 
 const fulfillmentModeOptions: ReadonlyArray<Readonly<{ value: StoreFulfillmentMode; label: string; description: string }>> = [
   { value: "BTHWANI_CAPTAIN", label: "توصيل بثواني", description: "المنصة تتولى إسناد التوصيل وإدارته." },
@@ -24,8 +25,6 @@ const proofTypeLabels: Record<JoiningCaseProofType, string> = {
   FREELANCE_WORK_DOCUMENT: "وثيقة عمل حر (سجل قديم)",
   PASSPORT: "جواز سفر",
 };
-
-const weekdays = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"] as const;
 
 export function JoiningCaseDetail({ caseId, embedded = false }: { caseId: string; embedded?: boolean }) {
   const { state: sessionState } = useSession();

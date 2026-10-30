@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { partnerErrorMessage } from "../partners/partner-error-message";
+import { joiningCaseIsoWeekdayLabels as weekdays } from "./joining-case-weekdays";
 import type { WalletProviderOption } from "../wallet-provider/use-wallet-providers";
 
 const phoneE164Pattern = /^\+[1-9][0-9]{7,14}$/;
@@ -59,7 +60,6 @@ const proofTypeOptions: ReadonlyArray<{ value: JoiningCaseProofType; label: stri
   { value: "IDENTITY_DOCUMENT", label: "هوية" },
   { value: "PASSPORT", label: "جواز سفر" },
 ];
-const weekdays = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"] as const;
 
 function emptyWorkingHours(): StoreWorkingHoursInterval[] {
   return [];

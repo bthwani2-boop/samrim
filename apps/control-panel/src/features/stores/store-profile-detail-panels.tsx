@@ -10,6 +10,7 @@ import { StoreOperationsPreview } from "./store-operations-preview";
 import { StoreProductsWorkspace } from "./store-products-workspace";
 import { StoreOffersPreview } from "./store-offers-preview";
 import { PartnerFinancialRegister } from "../finance/partner-financial-register";
+import { joiningCaseIsoWeekdayLabels as intakeWeekdays } from "../partner-onboarding/joining-case-weekdays";
 
 type Store = StorePublicationResponse["store"];
 type StoreProfileTabsProps = Readonly<{
@@ -39,8 +40,6 @@ function Unavailable({ title, reason }: Readonly<{ title: string; reason: string
 function Panel({ id, selected, children }: Readonly<{ id: string; selected: boolean; children: ReactNode }>) {
   return selected ? <section data-panel={id} className="store-profile-tab-panel">{children}</section> : null;
 }
-
-const intakeWeekdays = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"] as const;
 
 export function StoreProfileDetailPanels({ activeTab, store, partner, partnerError, canViewFinance, canViewOperations, manageOpen, openManagement, management }: StoreProfileTabsProps) {
   const joining = partner?.joiningCase;

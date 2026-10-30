@@ -11,8 +11,7 @@ import { StoreAvailabilityControls } from "./store-availability-controls";
 import { StoreBranchesPreview } from "./store-branches-preview";
 import { StoreModeControls } from "./store-mode-controls";
 import { StoreOperationsPreview } from "./store-operations-preview";
-
-const intakeWeekdays = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"] as const;
+import { joiningCaseIsoWeekdayLabels as intakeWeekdays } from "../partner-onboarding/joining-case-weekdays";
 import { StoreProfileDetailPanels } from "./store-profile-detail-panels";
 import { PartnerTeamWorkspace } from "../partners/partner-team-workspace";
 
