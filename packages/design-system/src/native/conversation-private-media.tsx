@@ -1,7 +1,7 @@
 import type { AudioPlayer, AudioStatus } from "expo-audio";
 import * as Crypto from "expo-crypto";
 import { File, Paths } from "expo-file-system";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Image, Text, View } from "react-native";
 import { BthwaniConversationAudioBubble } from "./conversation-audio-bubble";
 import { BthwaniButton } from "./primitives";
@@ -52,6 +52,16 @@ export function BthwaniConversationMedia({
   const isCurrent = (requestedScope: string) =>
     alive.current && actorScope.length > 0 && scopeRef.current === requestedScope;
 
+  const releasePlayback = useCallback(() => {
+    audioSubscription.current?.remove();
+    audioSubscription.current = null;
+    try {player.current?.release();} catch {}
+    player.current = null;
+    playerScope.current = "";
+    try {local.current?.delete();} catch {}
+    local.current = null;
+  }, []);
+
   useEffect(() => {
     if (scopeRef.current !== scope) return;
     alive.current = true;
@@ -65,15 +75,9 @@ export function BthwaniConversationMedia({
     setDuration(durationFromCaption(caption));
     return () => {
       alive.current = false;
-      audioSubscription.current?.remove();
-      audioSubscription.current = null;
-      try {player.current?.release();} catch {}
-      player.current = null;
-      playerScope.current = "";
-      try {local.current?.delete();} catch {}
-      local.current = null;
+      releasePlayback();
     };
-  }, [scope, caption]);
+  }, [scope, caption, releasePlayback]);
 
   function updateAudio(status: AudioStatus) {
     if (!isCurrent(scope)) return;
@@ -94,13 +98,7 @@ export function BthwaniConversationMedia({
   async function toggleAudio() {
     if (loading.current || !isCurrent(scope)) return;
     setError("");
-    if (player.current && playerScope.current !== scope) {
-      audioSubscription.current?.remove();
-      audioSubscription.current = null;
-      try {player.current.release();} catch {}
-      player.current = null;
-      playerScope.current = "";
-    }
+    if (player.current && playerScope.current !== scope) releasePlayback();
     if (player.current) {
       try {
         if (playing) player.current.pause();
@@ -108,7 +106,12 @@ export function BthwaniConversationMedia({
           if (duration > 0 && position >= duration - 0.1) await player.current.seekTo(0);
           player.current.play();
         }
-      } catch {if (isCurrent(scope)) setError("تعذر تشغيل الصوت");}
+      } catch {
+        if (isCurrent(scope)) {
+          releasePlayback();
+          setError("تعذر تشغيل الصوت");
+        }
+      }
       return;
     }
     loading.current = true;
@@ -141,7 +144,10 @@ export function BthwaniConversationMedia({
       audioSubscription.current = instance.addListener("playbackStatusUpdate", updateAudio);
       instance.play();
     } catch {
-      if (isCurrent(scope)) setError("تعذر تشغيل الصوت، أعد المحاولة");
+      if (isCurrent(scope)) {
+        releasePlayback();
+        setError("تعذر تشغيل الصوت، أعد المحاولة");
+      }
     } finally {
       if (isCurrent(scope)) {
         loading.current = false;

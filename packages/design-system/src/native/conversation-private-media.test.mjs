@@ -56,3 +56,11 @@ test("negative fixture detects removing an actor guard", () => {
   assert.notEqual(unsafe, chat);
   assert.equal((unsafe.match(/PRIVATE_MEDIA_ACTOR_CHANGED/g) ?? []).length, 1);
 });
+
+test("failed audio setup releases the player and private cache file before a retry", () => {
+  assert.match(media, /const releasePlayback = useCallback\(\(\) => \{/);
+  assert.match(media, /audioSubscription\.current\?\.remove\(\)/);
+  assert.match(media, /player\.current\?\.release\(\)/);
+  assert.match(media, /local\.current\?\.delete\(\)/);
+  assert.match(media, /releasePlayback\(\);\s*setError\("تعذر تشغيل الصوت، أعد المحاولة"\)/);
+});
