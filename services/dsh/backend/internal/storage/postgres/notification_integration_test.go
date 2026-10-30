@@ -66,7 +66,7 @@ func TestNotificationsAreIsolatedByActorAndStore(t *testing.T) {
 		}
 		id := own.Items[0].ID
 		for _, denied := range []struct{ actor, role string }{
-			{otherClientID, "client"}, {otherPartnerID, "partner"}, {clientID, "captain"}, {clientID, "field"},
+			{otherClientID, "client"}, {otherPartnerID, "partner"}, {clientID, "captain"},
 		} {
 			result, err := postgres.ListNotifications(ctx, db, denied.actor, denied.role, 10, "")
 			if err != nil || len(result.Items) != 0 || result.UnreadCount != 0 {
@@ -75,6 +75,13 @@ func TestNotificationsAreIsolatedByActorAndStore(t *testing.T) {
 			if _, err := postgres.MarkNotificationRead(ctx, db, denied.actor, denied.role, id); !errors.Is(err, postgres.ErrNotificationNotFound) {
 				t.Fatalf("%s/%s marked another actor's notification read: %v", denied.role, denied.actor, err)
 			}
+		}
+		// The retired Field role is rejected, not treated as a valid but empty inbox.
+		if result, err := postgres.ListNotifications(ctx, db, clientID, "field", 10, ""); err == nil || len(result.Items) != 0 || result.UnreadCount != 0 {
+			t.Fatalf("retired Field read must fail closed: %+v err=%v", result, err)
+		}
+		if _, err := postgres.MarkNotificationRead(ctx, db, clientID, "field", id); !errors.Is(err, postgres.ErrNotificationNotFound) {
+			t.Fatalf("retired Field cannot mark notifications read: %v", err)
 		}
 		partner, err := postgres.ListNotifications(ctx, db, partnerID, "partner", 10, "")
 		if err != nil || len(partner.Items) != 1 {
