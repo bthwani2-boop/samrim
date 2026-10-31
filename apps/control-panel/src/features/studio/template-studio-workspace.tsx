@@ -2,10 +2,11 @@
 
 import { resolveTheme } from "@bthwani/design-system";
 import Link from "next/link";
-import { type CSSProperties, useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { PageHeader } from "../../shell/page-header";
 import { PublishedBannerSettings } from "./published-banner-settings";
+import { PublishedThemeSettings } from "./published-theme-settings";
 import {
   defaultStudioDraft,
   isStudioHex,
@@ -25,7 +26,7 @@ import {
 } from "./studio-draft";
 
 const storagePrefix = "bthwani-studio-private-draft-v1:";
-type EditorPanel = "sections" | "palette" | "published";
+type EditorPanel = "sections" | "palette" | "published" | "theme-publishing";
 const viewports: ReadonlyArray<{ id: StudioViewport; label: string }> = [
   { id: "desktop", label: "الحاسوب" }, { id: "tablet", label: "اللوحي" }, { id: "phone", label: "الهاتف" },
 ];
@@ -82,6 +83,23 @@ function PreviewSection({ section, draft, currentSlide, onSlideSelect }: Readonl
   </section>;
 }
 
+type SharedStudioRecord = Readonly<{
+  templateKey: "CLIENT_HOME";
+  document: StudioDraft | null;
+  version: number;
+  updatedByActorId: string;
+}>;
+
+function parseSharedRecord(input: unknown): SharedStudioRecord | null {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) return null;
+  const record = input as Record<string, unknown>;
+  if (record.templateKey !== "CLIENT_HOME" || !Number.isInteger(record.version) ||
+      Number(record.version) < 1 || typeof record.updatedByActorId !== "string") return null;
+  const document = record.document === null ? null : parseStudioDraft(record.document);
+  if (record.document !== null && !document) return null;
+  return { templateKey: "CLIENT_HOME", document, version: Number(record.version), updatedByActorId: record.updatedByActorId };
+}
+
 function Editor({ actorId }: Readonly<{ actorId: string }>) {
   const [draft, setDraft] = useState<StudioDraft>(defaultStudioDraft);
   const [hexInputs, setHexInputs] = useState(defaultStudioDraft().palette);
@@ -103,6 +121,34 @@ function Editor({ actorId }: Readonly<{ actorId: string }>) {
     return () => window.clearInterval(timer);
   }, [draft.autoplay, draft.slides.length, draft.intervalSeconds, draft.sections]);
   const [loadFailure, setLoadFailure] = useState(false);
+  const [shared, setShared] = useState<SharedStudioRecord | null>(null);
+  const [sharedBusy, setSharedBusy] = useState(false);
+  const [sharedError, setSharedError] = useState("");
+  const [sharedRefresh, setSharedRefresh] = useState(0);
+  const pendingSharedKey = useRef<string | null>(null);
+  const draftRevision = useRef(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    if (sharedRefresh > 0) setShared(null);
+    setSharedError("");
+    void (async () => {
+      try {
+        const response = await fetch("/api/marketing/studio-draft", { cache: "no-store", signal: controller.signal });
+        if (!response.ok) throw new Error("خدمة مسودات الفريق غير متاحة. المسودة المحلية لا تزال قابلة للتحرير.");
+        const body = await response.json() as unknown;
+        const record = parseSharedRecord(body);
+        if (!record) throw new Error("استجابة مسودات الفريق غير صالحة، ولم تُغيَّر مسودتك المحلية.");
+        if (!controller.signal.aborted) setShared(record);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setShared(null);
+          setSharedError(error instanceof Error ? error.message : "تعذر قراءة مسودة الفريق.");
+        }
+      }
+    })();
+    return () => controller.abort();
+  }, [sharedRefresh]);
 
   useEffect(() => {
     const key = storagePrefix + actorId;
@@ -133,6 +179,8 @@ function Editor({ actorId }: Readonly<{ actorId: string }>) {
   }, [dirty]);
 
   const change = (transform: (previous: StudioDraft) => StudioDraft) => {
+    draftRevision.current += 1;
+    pendingSharedKey.current = null;
     setDraft(transform);
     setDirty(true);
     setNotice("تغييرات غير محفوظة. المعاينة محلية وغير منشورة.");
@@ -164,8 +212,75 @@ function Editor({ actorId }: Readonly<{ actorId: string }>) {
       setNotice("حُفظت المسودة محليًا لهذا المشغّل في هذا المتصفح فقط. لم تُنشر.");
     } catch { setNotice("فشل الحفظ المحلي. لم تُنشر أي تغييرات."); }
   };
+  async function saveShared() {
+    const validated = parseStudioDraft(draft);
+    if (!validated || !shared || sharedBusy ||
+        studioPaletteNames.some((entry) => hexInputs[entry.key] !== draft.palette[entry.key])) {
+      setSharedError("تحقق من صلاحية الألوان ومن توفر إصدار مسودة الفريق قبل الحفظ.");
+      return;
+    }
+    const revisionAtStart = draftRevision.current;
+    const requestKey = pendingSharedKey.current ?? crypto.randomUUID();
+    pendingSharedKey.current = requestKey;
+    setSharedBusy(true);
+    setSharedError("");
+    try {
+      const response = await fetch("/api/marketing/studio-draft", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ document: validated, expectedVersion: shared.version, idempotencyKey: requestKey }),
+      });
+      if (!response.ok) {
+        if (response.status === 409) {
+          pendingSharedKey.current = null;
+          throw new Error("تغيّر إصدار مسودة الفريق من جلسة أخرى. حدّث الحالة وقارن التعديلات قبل إعادة الحفظ.");
+        }
+        throw new Error("تعذر حفظ مسودة الفريق. لم تُنشر تغييرات، ويمكن إعادة المحاولة.");
+      }
+      const body = await response.json() as { draft?: unknown };
+      const saved = parseSharedRecord(body.draft);
+      if (!saved || !saved.document) throw new Error("استجابة حفظ مسودة الفريق غير صالحة؛ تحقق من الحالة قبل إعادة المحاولة.");
+      setShared(saved);
+      pendingSharedKey.current = null;
+      if (revisionAtStart === draftRevision.current) {
+        try {
+          window.localStorage.setItem(storagePrefix + actorId, JSON.stringify(saved.document));
+          setDirty(false);
+          setNotice("حُفظت المسودة المشتركة على DSH وفي المتصفح. لم تُنشر للتطبيقات.");
+        } catch {
+          setDirty(false);
+          setNotice("حُفظت المسودة المشتركة على DSH؛ تعذر حفظ نسختها في هذا المتصفح.");
+        }
+      } else {
+        setNotice("حُفظت نسخة سابقة من المسودة على DSH؛ لديك تعديلات أحدث لم تُحفظ بعد.");
+      }
+    } catch (error) {
+      setSharedError(error instanceof Error ? error.message : "تعذر حفظ مسودة الفريق.");
+    } finally {
+      setSharedBusy(false);
+    }
+  }
+  function importShared() {
+    if (!shared?.document) return;
+    if (!window.confirm("استبدال معاينتك ومسودتك المحلية بمسودة الفريق؟ سيُستبدل الحفظ المحلي السابق لهذا المشغّل.")) return;
+    draftRevision.current += 1;
+    pendingSharedKey.current = null;
+    setDraft(shared.document);
+    setSlideIndex(0);
+    try {
+      window.localStorage.setItem(storagePrefix + actorId, JSON.stringify(shared.document));
+      setDirty(false);
+      setNotice("استُوردت مسودة الفريق إلى المعاينة والمسودة المحلية، دون نشر.");
+    } catch {
+      setDirty(true);
+      setNotice("استُوردت المسودة للمعاينة؛ فشل الحفظ المحلي. احفظها قبل إغلاق الصفحة.");
+    }
+  }
+
   const reset = () => {
     if (!window.confirm("استعادة الألوان والأقسام الافتراضية في المحرر؟ المسودة المحفوظة لن تُستبدل إلا بعد الضغط على حفظ المسودة.")) return;
+    draftRevision.current += 1;
+    pendingSharedKey.current = null;
     setDraft(defaultStudioDraft());
     setSlideIndex(0);
     setDirty(true);
@@ -193,14 +308,21 @@ function Editor({ actorId }: Readonly<{ actorId: string }>) {
     <div className="studio-topbar">
       <div className="studio-topbar-copy">
         <strong>قالب بثواني الافتراضي · رئيسية العميل</strong>
-        <p>تحرير تخطيطي ومعاينة فورية. النشر إلى التطبيقات يتطلب ربط DSH المعتمد.</p>
+        <p>تحرير تخطيطي ومعاينة فورية. نشر الألوان منفصل عن مسودة الأقسام والشرائح.</p>
       </div>
       <div className="studio-topbar-actions">
         <button type="button" className="button button-secondary" onClick={reset}>استعادة الافتراضي</button>
+        <button type="button" className="button button-secondary" disabled={sharedBusy} onClick={() => setSharedRefresh((value) => value + 1)}>تحديث حالة الفريق</button>
+        {shared?.document ? <button type="button" className="button button-secondary" disabled={sharedBusy} onClick={importShared}>استيراد مسودة الفريق</button> : null}
+        <button type="button" className="button button-primary" disabled={!shared || sharedBusy || studioPaletteNames.some((entry) => hexInputs[entry.key] !== draft.palette[entry.key])} onClick={() => void saveShared()}>{sharedBusy ? "جارٍ الحفظ…" : "حفظ مسودة الفريق"}</button>
         <button type="button" className="button button-primary" onClick={save} disabled={(!dirty && !loadFailure) || studioPaletteNames.some((entry) => hexInputs[entry.key] !== draft.palette[entry.key])}>حفظ المسودة محليًا</button>
       </div>
     </div>
     <p role="status" className="studio-status">{notice}</p>
+    <p role="status" className="studio-status">
+      {shared ? "مسودة الفريق: الإصدار " + shared.version + (shared.document ? " · قابلة للاستيراد" : " · لم تُحفظ بعد") : "لم تُحمَّل حالة مسودة الفريق بعد"}
+    </p>
+    {sharedError ? <p role="alert" className="studio-warning">{sharedError}</p> : null}
 
     <div className="studio-workbench">
       <aside className="studio-pane studio-section-pane" aria-label="أقسام القالب">
@@ -263,8 +385,9 @@ function Editor({ actorId }: Readonly<{ actorId: string }>) {
           <button type="button" role="tab" aria-selected={panel === "sections"} onClick={() => setPanel("sections")}>إعدادات القسم</button>
           <button type="button" role="tab" aria-selected={panel === "palette"} onClick={() => setPanel("palette")}>الألوان</button>
           <button type="button" role="tab" aria-selected={panel === "published"} onClick={() => setPanel("published")}>البنرات المنشورة</button>
+          <button type="button" role="tab" aria-selected={panel === "theme-publishing"} onClick={() => setPanel("theme-publishing")}>نشر ألوان التطبيقات</button>
         </div>
-        {panel === "published" ? <div role="tabpanel" className="studio-inspector-content">
+        {panel === "theme-publishing" ? <div role="tabpanel" className="studio-inspector-content"><PublishedThemeSettings shared={shared} /></div> : panel === "published" ? <div role="tabpanel" className="studio-inspector-content">
           <p className="studio-guidance">إعدادات حركة البنرات الفعلية من DSH، مستقلة عن مسودة تصميم القالب. يتطلب حفظها صلاحية التسويق ويُتحقق من الإصدار على الخادم.</p>
           <PublishedBannerSettings />
           <Link className="button button-secondary" href="/marketing?section=content">إدارة صور البنرات ووجهاتها</Link>
@@ -333,9 +456,9 @@ function Editor({ actorId }: Readonly<{ actorId: string }>) {
           </label>)}
           <p className="studio-contrast" role="status">تباين الكحلي مع الأبيض: {studioContrastRatio(draft.palette.navy, draft.palette.white).toFixed(2)}:1</p>
           {warnings.length ? <div role="alert" className="studio-warning">{warnings.map((warning) => <p key={warning}>{warning}</p>)}</div> : <p className="studio-valid">التباين الأساسي للنصوص مناسب لمعيار AA.</p>}
-          <p className="studio-guidance">تخصيص الألوان المنشور يحتاج عقدًا خادميًا وفحص جميع الأدوار الدلالية. لن تتحول المسودة إلى ثيم التطبيقات تلقائيًا.</p>
+          <p className="studio-guidance">لتفعيل هذه الألوان، احفظ مسودة الفريق ثم افتح تبويب «نشر ألوان التطبيقات». النشر لا ينقل أقسام الصفحة أو الشرائح.</p>
         </div>}
-        <div className="studio-inspector-footer"><span>حالة النشر: غير متصل بالخادم</span><button type="button" className="button button-primary" disabled title="النشر غير متاح حتى اكتمال صلاحيات وخدمة الاستوديو">النشر غير متاح</button></div>
+        <div className="studio-inspector-footer"><span>النشر منفصل عن الحفظ المحلي ومسودة الفريق</span><button type="button" className="button button-secondary" onClick={() => setPanel("theme-publishing")}>إدارة نشر الألوان</button></div>
       </aside>
     </div>
   </section>;

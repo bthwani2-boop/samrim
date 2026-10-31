@@ -17,7 +17,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 165
+const SchemaVersion = 167
 
 type MigrationRecord struct {
 	Version int
@@ -26,6 +26,9 @@ type MigrationRecord struct {
 }
 
 var requiredTables = []schemaRelationExpectation{
+	{name: "dsh.marketing_studio_publication_events", columns: []string{"idempotency_key", "request_hash", "template_key", "action", "expected_version", "result_version", "source_draft_version", "target_publication_version", "previous_palette_json", "result_palette_json", "acting_actor_id", "correlation_id", "created_at"}, constraints: []string{"marketing_studio_publication_events_pkey", "marketing_studio_pub_hash_chk", "marketing_studio_pub_action_chk", "marketing_studio_pub_expected_chk", "marketing_studio_pub_result_chk", "marketing_studio_pub_unique_version", "marketing_studio_pub_palette_chk"}, indexes: []string{"marketing_studio_pub_recent_idx"}},
+	{name: "dsh.marketing_studio_drafts", columns: []string{"template_key", "document_json", "version", "updated_by_actor_id", "updated_at", "published_palette_json", "publication_version", "published_at", "published_by_actor_id"}, constraints: []string{"marketing_studio_drafts_pkey", "marketing_studio_draft_key_chk", "marketing_studio_draft_version_chk", "marketing_studio_draft_json_chk", "marketing_studio_publication_version_chk", "marketing_studio_published_palette_chk"}},
+	{name: "dsh.marketing_studio_draft_events", columns: []string{"idempotency_key", "request_hash", "template_key", "expected_version", "result_version", "previous_document_json", "result_document_json", "acting_actor_id", "correlation_id", "created_at"}, constraints: []string{"marketing_studio_draft_events_pkey", "marketing_studio_event_hash_chk", "marketing_studio_event_expected_chk", "marketing_studio_event_result_chk"}, indexes: []string{"marketing_studio_events_recent_idx"}},
 	{name: "dsh.client_content_shares", columns: []string{"id", "sender_actor_id", "recipient_actor_id", "content_kind", "content_id", "message_code", "idempotency_key", "request_hash", "created_at", "read_at"}, constraints: []string{"client_content_shares_pkey", "client_content_shares_sender_idempotency_uq", "client_content_shares_distinct_actors_chk"}, indexes: []string{"client_content_shares_recipient_idx", "client_content_shares_sender_rate_idx"}},
 	{name: "dsh.client_share_blocks", columns: []string{"recipient_actor_id", "sender_actor_id", "created_at"}, constraints: []string{"client_share_blocks_pkey", "client_share_blocks_distinct_chk"}},
 	{name: "dsh.captain_delivery_arrivals", columns: []string{"id", "assignment_id", "order_id", "captain_actor_id", "arrived_at"}, constraints: []string{"captain_delivery_arrivals_pkey", "captain_delivery_arrivals_assignment_id_key"}, indexes: []string{"captain_delivery_arrivals_order_idx"}},

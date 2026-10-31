@@ -167,6 +167,17 @@ function refType(value) {
 }
 
 function propertyType(lines, context) {
+  // OpenAPI 3.1 represents a nullable reference as a JSON Schema union.
+  if (valueAfter(lines, "anyOf:", 10) !== null) {
+    const choices = lines.filter((line) => /^\s*-\s*\{/.test(line));
+    const refChoice = choices.find((line) => /^\s*-\s*\{\s*\$ref:/.test(line));
+    const nullChoice = choices.find((line) => /^\s*-\s*\{\s*type:\s*["']?null["']?\s*\}/.test(line));
+    const target = refChoice?.match(/\$ref:\s*["']([^"']+)["']/)?.[1];
+    if (choices.length !== 2 || !target || !nullChoice) {
+      throw new Error(context + " has unsupported anyOf union");
+    }
+    return refType(target) + " | null";
+  }
   const nullable = valueAfter(lines, "nullable:", 10) === "true";
   let rendered = "";
 
@@ -328,6 +339,16 @@ function goFieldName(name) {
 }
 
 function goPropertyType(lines, optional, context) {
+  if (valueAfter(lines, "anyOf:", 10) !== null) {
+    const choices = lines.filter((line) => /^\s*-\s*\{/.test(line));
+    const refChoice = choices.find((line) => /^\s*-\s*\{\s*\$ref:/.test(line));
+    const nullChoice = choices.find((line) => /^\s*-\s*\{\s*type:\s*["']?null["']?\s*\}/.test(line));
+    const target = refChoice?.match(/\$ref:\s*["']([^"']+)["']/)?.[1];
+    if (choices.length !== 2 || !target || !nullChoice) {
+      throw new Error(context + " has unsupported Go anyOf union");
+    }
+    return "*" + refType(target);
+  }
   const nullable = valueAfter(lines, "nullable:", 10) === "true";
   const pointer = valueAfter(lines, "x-go-pointer:", 10) === "true";
   const pointerType = pointer;
