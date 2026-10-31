@@ -9,11 +9,27 @@ const unavailable: Metadata = {
   robots: { index: false, follow: false },
 };
 
+function configuredPublicOrigin(value: string | undefined): string | undefined {
+  if (!value?.trim()) return undefined;
+  try {
+    const origin = new URL(value.trim());
+    const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(origin.hostname);
+    if (origin.protocol !== "https:" || loopback || origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) return undefined;
+    return origin.origin;
+  } catch { return undefined; }
+}
+
 function shareableCover(uri: string | undefined): string | undefined {
   if (!uri) return undefined;
   try {
     const url = new URL(uri);
-    return url.protocol === "https:" ? url.toString() : undefined;
+    const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    const localHost = hostname === "localhost" || hostname.endsWith(".localhost") ||
+      hostname.endsWith(".local") || hostname.endsWith(".internal");
+    const addressLiteral = hostname.includes(":") || /^\d+(?:\.\d+){3}$/.test(hostname) || /^\d+$/.test(hostname);
+    return url.protocol === "https:" && !url.username && !url.password && !localHost && !addressLiteral
+      ? url.toString()
+      : undefined;
   } catch { return undefined; }
 }
 
@@ -25,14 +41,15 @@ export async function readPublicStoreMetadata(
 ): Promise<Metadata> {
   if (!request || !apiURL || !/^[A-Za-z0-9._~-]{1,150}$/.test(storeId)) return unavailable;
   let cityId = "";
-  let publicOrigin = "";
   try {
     const incoming = new URL(request.url);
     if (incoming.protocol !== "https:" || ["localhost", "127.0.0.1", "[::1]"].includes(incoming.hostname)) return unavailable;
     cityId = incoming.searchParams.get("serviceCityId")?.trim() ?? "";
-    publicOrigin = incoming.origin;
   } catch { return unavailable; }
   if (!/^[A-Za-z0-9._~-]{1,150}$/.test(cityId)) return unavailable;
+  // Never derive canonical metadata from the request Host, which may be an untrusted alias.
+  const publicOrigin = configuredPublicOrigin(process.env.EXPO_PUBLIC_CLIENT_WEB_ORIGIN);
+  if (!publicOrigin) return unavailable;
   try {
     const base = new URL(apiURL);
     if (!["http:", "https:"].includes(base.protocol)) return unavailable;
@@ -44,7 +61,8 @@ export async function readPublicStoreMetadata(
     });
     if (!response.ok) return unavailable;
     const store = await response.json() as PublicStoreView;
-    if (store.id !== storeId || store.serviceCity?.id !== cityId || !store.name?.trim()) return unavailable;
+    if (store.id !== storeId || store.serviceCity?.id !== cityId || store.serviceCity.active !== true ||
+      !store.serviceCity.displayNameAr?.trim() || !store.name?.trim()) return unavailable;
     const title = `${store.name.trim()} | بثواني`;
     const description = `تصفح منتجات ${store.name.trim()} في ${store.serviceCity.displayNameAr} عبر بثواني.`;
     const image = shareableCover(store.storeCoverImage?.uri);
