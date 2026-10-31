@@ -43,3 +43,22 @@ test("an unavailable DSH service yields non-indexable metadata", async () => {
   const metadata = await readPublicStoreMetadata(request("?serviceCityId=" + cityId), storeId, "http://127.0.0.1:18080", async () => { throw new Error("unavailable"); });
   assert.equal(metadata.robots.index, false);
 });
+
+
+test("published Store gets a clean canonical URL and social preview without tracking parameters", async () => {
+  const req = request("?serviceCityId=" + cityId + "&utm_source=whatsapp&productId=offer_123");
+  const metadata = await readPublicStoreMetadata(req, storeId, "http://127.0.0.1:18080", async () => response(published));
+  const expected = "https://bthwani.test/store/store_example?serviceCityId=city_sanaa";
+  assert.equal(metadata.robots.index, true);
+  assert.equal(metadata.alternates.canonical, expected);
+  assert.equal(metadata.openGraph.url, expected);
+  assert.equal(metadata.twitter.card, "summary_large_image");
+  assert.equal(metadata.twitter.images, "https://media.bthwani.test/cover.png");
+});
+
+test("a local Store preview is never indexable or published as a social preview", async () => {
+  const local = new Request("http://localhost:18101/store/" + storeId + "?serviceCityId=" + cityId);
+  const metadata = await readPublicStoreMetadata(local, storeId, "http://127.0.0.1:18080", async () => { throw new Error("unexpected fetch"); });
+  assert.equal(metadata.robots.index, false);
+  assert.equal(metadata.openGraph, undefined);
+});

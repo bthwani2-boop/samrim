@@ -26,3 +26,17 @@ export function buildPartnerStorefrontURL(
     return null;
   }
 }
+
+/** WhatsApp handoff only for an already published public Store URL, never a local preview. */
+export function buildPartnerStoreWhatsAppURL(link: PartnerStorefrontURL | null, storeName: string): string | null {
+  if (!link || link.previewOnly) return null;
+  try {
+    const url = new URL(link.url);
+    if (url.protocol !== "https:" || url.username || url.password || ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) return null;
+    if (!/^\/store\/[A-Za-z0-9_-]{1,150}$/.test(url.pathname) || !url.searchParams.get("serviceCityId")) return null;
+    const title = storeName.trim().slice(0, 100) || "متجر على بثواني";
+    return `https://wa.me/?text=${encodeURIComponent(`${title}\n${url.toString()}`)}`;
+  } catch {
+    return null;
+  }
+}

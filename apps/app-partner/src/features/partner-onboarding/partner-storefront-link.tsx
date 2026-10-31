@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { Linking, Platform, Share, Text, View } from "react-native";
 
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
-import { buildPartnerStorefrontURL } from "./partner-storefront-url";
+import { buildPartnerStorefrontURL, buildPartnerStoreWhatsAppURL } from "./partner-storefront-url";
 
 export function PartnerStorefrontLink({ store }: Readonly<{ store: PartnerAccessibleStore }>) {
   const theme = useAppearanceTheme();
@@ -13,6 +13,7 @@ export function PartnerStorefrontLink({ store }: Readonly<{ store: PartnerAccess
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const link = buildPartnerStorefrontURL(store, process.env.EXPO_PUBLIC_CLIENT_WEB_ORIGIN, __DEV__);
+  const whatsAppURL = buildPartnerStoreWhatsAppURL(link, store.name);
 
   async function copy() {
     if (!link || busy) return;
@@ -34,6 +35,13 @@ export function PartnerStorefrontLink({ store }: Readonly<{ store: PartnerAccess
     catch { setNotice("تعذرت المشاركة. يمكنك نسخ الرابط بدلاً منها."); }
   }
 
+  async function shareViaWhatsApp() {
+    if (!whatsAppURL || busy) return;
+    setNotice("");
+    try { await Linking.openURL(whatsAppURL); }
+    catch { setNotice("تعذر فتح واتساب. يمكنك نسخ رابط المتجر ومشاركته يدويًا."); }
+  }
+
   return <View style={styles.card}>
     <Text style={styles.value}>رابط متجر {store.name}</Text>
     {store.publicationState !== "published"
@@ -45,6 +53,7 @@ export function PartnerStorefrontLink({ store }: Readonly<{ store: PartnerAccess
           <BthwaniButton label={link.previewOnly ? "فتح المعاينة" : "فتح المتجر"} variant="secondary" disabled={busy} onPress={() => void open()} />
           <BthwaniButton label={link.previewOnly ? "نسخ رابط المعاينة" : "نسخ الرابط"} disabled={busy} onPress={() => void copy()} />
           {!link.previewOnly && Platform.OS !== "web" ? <BthwaniButton label="مشاركة المتجر" variant="secondary" disabled={busy} onPress={() => void share()} /> : null}
+          {whatsAppURL ? <BthwaniButton label="مشاركة عبر واتساب" variant="secondary" disabled={busy} onPress={() => void shareViaWhatsApp()} /> : null}
         </View>
       </> : <Text style={styles.muted}>لم يُضبط رابط HTTPS العام لويب العميل بعد. لن نعرض رابط تطوير محليًا بوصفه رابطًا عامًا.</Text>}
     {notice ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}

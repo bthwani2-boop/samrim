@@ -25,8 +25,13 @@ export async function readPublicStoreMetadata(
 ): Promise<Metadata> {
   if (!request || !apiURL || !/^[A-Za-z0-9._~-]{1,150}$/.test(storeId)) return unavailable;
   let cityId = "";
-  try { cityId = new URL(request.url).searchParams.get("serviceCityId")?.trim() ?? ""; }
-  catch { return unavailable; }
+  let publicOrigin = "";
+  try {
+    const incoming = new URL(request.url);
+    if (incoming.protocol !== "https:" || ["localhost", "127.0.0.1", "[::1]"].includes(incoming.hostname)) return unavailable;
+    cityId = incoming.searchParams.get("serviceCityId")?.trim() ?? "";
+    publicOrigin = incoming.origin;
+  } catch { return unavailable; }
   if (!/^[A-Za-z0-9._~-]{1,150}$/.test(cityId)) return unavailable;
   try {
     const base = new URL(apiURL);
@@ -43,10 +48,15 @@ export async function readPublicStoreMetadata(
     const title = `${store.name.trim()} | بثواني`;
     const description = `تصفح منتجات ${store.name.trim()} في ${store.serviceCity.displayNameAr} عبر بثواني.`;
     const image = shareableCover(store.storeCoverImage?.uri);
+    // A stable canonical URL keeps the Service City, but drops tracking and deep-link parameters.
+    const canonicalURL = `${publicOrigin}/store/${encodeURIComponent(storeId)}?serviceCityId=${encodeURIComponent(cityId)}`;
     return {
       title,
       description,
-      openGraph: { title, description, url: request.url, type: "website", ...(image ? { images: image } : {}) },
+      robots: { index: true, follow: true },
+      alternates: { canonical: canonicalURL },
+      openGraph: { title, description, url: canonicalURL, type: "website", ...(image ? { images: image } : {}) },
+      twitter: { card: image ? "summary_large_image" : "summary", title, description, ...(image ? { images: image } : {}) },
     };
   } catch { return unavailable; }
 }
