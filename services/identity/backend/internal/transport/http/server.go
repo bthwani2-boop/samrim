@@ -354,7 +354,7 @@ func (s *Server) partnerWebCookies(w http.ResponseWriter, refreshToken, clientIn
 	} {
 		http.SetCookie(w, &http.Cookie{
 			Name: s.partnerCookieName(item.name), Value: item.value,
-			Path: "/", HttpOnly: true, Secure: !s.config.Development,
+			Path: "/", HttpOnly: true, Secure: true,
 			SameSite: http.SameSiteStrictMode, MaxAge: maxAge,
 		})
 	}
