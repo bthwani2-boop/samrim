@@ -692,6 +692,12 @@ paths:
   /dsh/orders/{orderId}/rating:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1rating"
 
+  /dsh/partner/stores/{storeId}/ratings:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1ratings"
+
+  /dsh/operator/stores/{storeId}/ratings:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1ratings"
+
   /dsh/notifications:
     $ref: "./paths/notifications.yaml#/paths/~1dsh~1notifications"
 
@@ -916,6 +922,9 @@ paths:
 
   /dsh/partner/stores/{storeId}/orders/summary:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1orders~1summary"
+
+  /dsh/operator/stores/{storeId}/orders/summary:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1orders~1summary"
 
   /dsh/partner/orders:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1partner~1orders"
@@ -7356,6 +7365,19 @@ components:
         idempotentReplay:
           type: boolean
 
+    StoreOrderRatingListResponse:
+      type: object
+      additionalProperties: false
+      required: [ratings]
+      properties:
+        ratings:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderRating"
+        nextCursor:
+          type: string
+          maxLength: 1024
+
     ManagedRoleMutationRequest:
       type: object
       required: [enabled]
@@ -9160,7 +9182,7 @@ components:
     PartnerStoreOrderSummary:
       type: object
       additionalProperties: false
-      required: [storeId, period, measuredAt, totalOrders, deliveredOrders, pickedUpOrders, cancelledOrders, rejectedOrders, deliveryFailedOrders, completedOrderValueMinor]
+      required: [storeId, period, measuredAt, totalOrders, deliveredOrders, pickedUpOrders, cancelledOrders, rejectedOrders, deliveryFailedOrders, completedOrderValueMinor, completedCustomers, returningCustomers]
       properties:
         storeId:
           type: string
@@ -9199,6 +9221,16 @@ components:
           format: int64
           minimum: 0
           description: Recorded DSH Order value for delivered or picked-up Orders; not revenue, payable cash, or WLT settlement.
+        completedCustomers:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Distinct customers with a delivered or picked-up order created in the selected period; no customer identities are exposed.
+        returningCustomers:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Customers with at least two delivered or picked-up orders created in the selected period for the same Store.
 
     PartnerStoreOrderSummaryResponse:
       type: object

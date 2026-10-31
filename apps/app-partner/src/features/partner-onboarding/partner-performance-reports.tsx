@@ -97,6 +97,8 @@ export function PartnerPerformanceReport({ store, view }: { store: PartnerAccess
   }, [store.id, view, cursor, allowed, retry]));
 
   useFocusEffect(useCallback(() => {
+    // Retry deliberately re-reads the same Store and selected period.
+    void retry;
     let active = true;
     setOrderSummary(null); setSummaryError("");
     if (view !== "orders" || !allowed) { setSummaryLoading(false); return () => { active = false; }; }
@@ -177,11 +179,13 @@ export function PartnerPerformanceReport({ store, view }: { store: PartnerAccess
           {[
             { label: "جميع طلبات الفترة", value: orderSummary.totalOrders.toLocaleString("ar-YE") },
             { label: "طلبات مكتملة", value: (orderSummary.deliveredOrders + orderSummary.pickedUpOrders).toLocaleString("ar-YE") },
+            { label: "عملاء أكملوا طلبًا", value: orderSummary.completedCustomers.toLocaleString("ar-YE") },
+            { label: "عملاء كرروا الشراء", value: orderSummary.returningCustomers.toLocaleString("ar-YE") },
             { label: "طلبات ملغاة أو مرفوضة", value: (orderSummary.cancelledOrders + orderSummary.rejectedOrders).toLocaleString("ar-YE") },
             { label: "قيمة الطلبات المكتملة المسجلة", value: formatMoney(orderSummary.completedOrderValueMinor, "YER") },
           ].map(item => <View key={item.label} style={styles.card}><Text style={styles.caption}>{item.label}</Text><Text style={styles.value}>{item.value}</Text></View>)}
         </View>
-        <Text style={styles.caption}>قيمة الطلبات في DSH لا تعني رصيدًا متاحًا أو مستحقات صافية؛ راجع الكشف المالي المعتمد من WLT.</Text>
+        <Text style={styles.caption}>مؤشرات العملاء تحسب المشترين الذين اكتملت طلباتهم خلال الفترة المختارة فقط؛ «كرروا الشراء» يعني طلبين مكتملين على الأقل للمتجر نفسه خلال هذه الفترة. لا تُعرض هويات العملاء. وقيمة الطلبات في DSH ليست رصيد WLT.</Text>
       </> : null}
     </View> : null}
     {!allowed ? <Text style={styles.warning}>لا تملك صلاحية قراءة هذا التقرير للمتجر المحدد.</Text> : null}

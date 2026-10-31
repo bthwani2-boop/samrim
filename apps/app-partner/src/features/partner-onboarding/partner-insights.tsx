@@ -9,6 +9,7 @@ import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { usePartnerStoreScope } from "./partner-store-scope-context";
 import { isOfferStockout } from "../store-offer/inventory-stockout";
 import { PartnerPerformanceReport } from "./partner-performance-reports";
+import { PartnerStoreRatings } from "./partner-store-ratings";
 
 type Snapshot = Readonly<{
   orders: PartnerOrderAttentionCounts | null;
@@ -25,7 +26,7 @@ export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: bool
   const theme = useAppearanceTheme();
   const router = useRouter();
   const { view } = useLocalSearchParams<{ view?: string }>();
-  const reportView = !embedded && (view === "orders" || view === "catalog") ? view : "overview";
+  const reportView = !embedded && (view === "orders" || view === "catalog" || view === "ratings") ? view : "overview";
   const { width } = useWindowDimensions();
   const desktopWeb = Platform.OS === "web" && width >= 1024;
   const { selectedStore } = usePartnerStoreScope();
@@ -122,7 +123,7 @@ export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: bool
     </Pressable>;
 
   const reportTabs = () => <View style={styles.actionRow} accessibilityLabel="أقسام الأداء والتقارير">
-    {([{ id: "overview", label: "نظرة عامة" }, ...(canOrders ? [{ id: "orders", label: "تقرير الطلبات" }] : []), ...(canCatalog ? [{ id: "catalog", label: "تقرير المنتجات" }] : [])] as const).map(item => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={item.label}
+    {([{ id: "overview", label: "نظرة عامة" }, ...(canOrders ? [{ id: "orders", label: "تقرير الطلبات" }, { id: "ratings", label: "تقييمات الطلبات" }] : []), ...(canCatalog ? [{ id: "catalog", label: "تقرير المنتجات" }] : [])] as const).map(item => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={item.label}
       accessibilityState={{ selected: reportView === item.id }} onPress={() => router.setParams({ view: item.id })}
       style={[styles.actionChip, reportView === item.id && { backgroundColor: theme.actionSoft, borderColor: theme.actionBackground }]}>
       <Text style={styles.actionLabel}>{item.label}</Text>
@@ -132,7 +133,7 @@ export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: bool
 
   if (!embedded && reportView !== "overview" && selectedStore) return <View style={styles.screen}>
     {reportTabs()}
-    <PartnerPerformanceReport key={selectedStore.id + reportView} store={selectedStore} view={reportView}/>
+    {reportView === "ratings" ? (canOrders ? <PartnerStoreRatings key={selectedStore.id} storeId={selectedStore.id}/> : <Text style={styles.body}>لا تملك صلاحية قراءة طلبات هذا المتجر.</Text>) : <PartnerPerformanceReport key={selectedStore.id + reportView} store={selectedStore} view={reportView}/>}
   </View>;
 
   return <View style={styles.screen}>

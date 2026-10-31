@@ -9,6 +9,8 @@ import { StoreBranchesPreview } from "./store-branches-preview";
 import { StoreOperationsPreview } from "./store-operations-preview";
 import { StoreProductsWorkspace } from "./store-products-workspace";
 import { StoreOffersPreview } from "./store-offers-preview";
+import { StoreOrderRatingsPreview } from "./store-order-ratings-preview";
+import { StoreCustomerActivitySummary } from "./store-customer-activity-summary";
 import { PartnerFinancialRegister } from "../finance/partner-financial-register";
 import { joiningCaseIsoWeekdayLabels as intakeWeekdays } from "../partner-onboarding/joining-case-weekdays";
 
@@ -141,8 +143,8 @@ export function StoreProfileDetailPanels({ activeTab, store, partner, partnerErr
 
     <Panel id="customers" selected={activeTab === "quality"}>
       <div className="store-profile-tab-grid">
-        <Unavailable title="عملاء هذا المتجر" reason="لا توجد قراءة مصرح بها تُعيد عملاء المتجر وتكرار طلباتهم مع حدود خصوصية مناسبة. لا يُكشف العميل أو رقم هاتفه من سجل عام."/>
-        <Card title="معلومات المتجر"><p className="store-profile-muted">عند توافر قراءة تحليلية آمنة ستظهر المقاييس الإجمالية ومعدل العودة والعملاء الجدد هنا، منفصلة عن هوية العميل الشخصية.</p></Card>
+        <Card title="نشاط عملاء هذا المتجر"><StoreCustomerActivitySummary key={store.id} storeId={store.id}/></Card>
+        <Card title="خصوصية العملاء"><p className="store-profile-muted">تعرض المؤشرات نشاط الطلبات المكتملة فقط، ولا تكشف قائمة أسماء العملاء أو أرقامهم أو بيانات التواصل. إدارة الهوية تبقى لدى Identity.</p></Card>
       </div>
     </Panel>
 
@@ -180,8 +182,8 @@ export function StoreProfileDetailPanels({ activeTab, store, partner, partnerErr
 
     <Panel id="ratings" selected={activeTab === "quality"}>
       <div className="store-profile-tab-grid">
-        <Unavailable title="تقييمات العملاء" reason="لا تتوفر قراءة مصرح بها لتقييمات عملاء هذا المتجر ومتوسطها وعددها. لا يمكن اعتماد تقييم ظاهر في نموذج تصميم على أنه بيانات النظام."/>
-        <Card title="حماية الخصوصية"><p className="store-profile-muted">عند توافر عقد معتمد ستعرض مؤشرات التقييم وملاحظات العملاء المخوّل بها فقط، مع الفصل بين تقييم المنتج والمتجر والكابتن.</p></Card>
+        <Card title="تقييمات الطلبات المكتملة"><StoreOrderRatingsPreview key={store.id} storeId={store.id}/></Card>
+        <Card title="حماية الخصوصية"><p className="store-profile-muted">تُعرض تقييمات الطلبات المصرح بها دون معرّف العميل أو هاتفه المحفوظين لدى المنصة؛ وقد يتضمن التعليق نصًا أدخله العميل بنفسه. تقييم المنتجات والكباتن والردود ليست جزءًا من هذه القراءة.</p></Card>
       </div>
     </Panel>
 

@@ -3,6 +3,8 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -128,4 +130,88 @@ func CreateClientOrderRating(ctx context.Context, db *sql.DB, orderID, clientAct
 		return OrderRatingRecord{}, false, err
 	}
 	return result, false, nil
+}
+
+type StoreOrderRatingPage struct {
+	Ratings    []OrderRatingRecord
+	NextCursor string
+}
+
+type storeOrderRatingCursor struct {
+	At      string `json:"at"`
+	OrderID string `json:"orderId"`
+}
+
+func decodeStoreOrderRatingCursor(raw string) (time.Time, string, error) {
+	if raw == "" {
+		return time.Time{}, "", nil
+	}
+	if len(raw) > 1024 {
+		return time.Time{}, "", ErrOrderRatingInvalid
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return time.Time{}, "", ErrOrderRatingInvalid
+	}
+	var cursor storeOrderRatingCursor
+	if err := json.Unmarshal(decoded, &cursor); err != nil || cursor.OrderID == "" || len(cursor.OrderID) > 128 {
+		return time.Time{}, "", ErrOrderRatingInvalid
+	}
+	at, err := time.Parse(time.RFC3339Nano, cursor.At)
+	if err != nil || at.IsZero() {
+		return time.Time{}, "", ErrOrderRatingInvalid
+	}
+	return at, cursor.OrderID, nil
+}
+
+func storeOrderRatingNextCursor(rating OrderRatingRecord) string {
+	encoded, _ := json.Marshal(storeOrderRatingCursor{At: rating.CreatedAt.UTC().Format(time.RFC3339Nano), OrderID: rating.OrderID})
+	return base64.RawURLEncoding.EncodeToString(encoded)
+}
+
+// ListStoreOrderRatings reads bounded, immutable Order feedback from the canonical
+// DSH Store; callers must first authorize the requested Store scope. No customer
+// actor identifiers or contact information are returned by transport.
+func ListStoreOrderRatings(ctx context.Context, db *sql.DB, storeID string, limit int, cursor string) (StoreOrderRatingPage, error) {
+	storeID = strings.TrimSpace(storeID)
+	if db == nil || storeID == "" || len(storeID) > 128 || limit < 1 || limit > 50 {
+		return StoreOrderRatingPage{}, ErrOrderRatingInvalid
+	}
+	before, beforeID, err := decodeStoreOrderRatingCursor(strings.TrimSpace(cursor))
+	if err != nil {
+		return StoreOrderRatingPage{}, err
+	}
+	query := `SELECT order_id,store_id,rating,review,created_at
+		FROM dsh.commerce_order_ratings WHERE store_id=$1`
+	args := []any{storeID}
+	if beforeID != "" {
+		query += ` AND (created_at,order_id) < ($2,$3)`
+		args = append(args, before, beforeID)
+	}
+	query += ` ORDER BY created_at DESC,order_id DESC LIMIT $` + strconv.Itoa(len(args)+1)
+	args = append(args, limit+1)
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return StoreOrderRatingPage{}, err
+	}
+	defer rows.Close()
+	page := StoreOrderRatingPage{Ratings: make([]OrderRatingRecord, 0, limit)}
+	for rows.Next() {
+		var rating OrderRatingRecord
+		if err := rows.Scan(&rating.OrderID, &rating.StoreID, &rating.Rating, &rating.Review, &rating.CreatedAt); err != nil {
+			return StoreOrderRatingPage{}, err
+		}
+		if rating.StoreID != storeID {
+			return StoreOrderRatingPage{}, ErrOrderRatingInvalid
+		}
+		if len(page.Ratings) == limit {
+			page.NextCursor = storeOrderRatingNextCursor(page.Ratings[limit-1])
+			break
+		}
+		page.Ratings = append(page.Ratings, rating)
+	}
+	if err := rows.Err(); err != nil {
+		return StoreOrderRatingPage{}, err
+	}
+	return page, nil
 }

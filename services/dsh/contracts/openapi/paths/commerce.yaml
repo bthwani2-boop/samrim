@@ -2508,3 +2508,89 @@ paths:
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/partner/stores/{storeId}/ratings:
+    get:
+      operationId: listPartnerStoreOrderRatings
+      summary: Read completed-Order feedback for an authorized Store without separate customer actor or contact fields
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 50 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 1024 }
+      responses:
+        "200":
+          description: Store-scoped Order ratings without separate customer actor or contact fields.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/StoreOrderRatingListResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+
+  /dsh/operator/stores/{storeId}/ratings:
+    get:
+      operationId: listOperatorStoreOrderRatings
+      summary: Read Store Order feedback without customer actor or contact fields for a permitted operator
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorId"
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 50 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 1024 }
+      responses:
+        "200":
+          description: Store-scoped Order ratings without separate customer actor or contact fields.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/StoreOrderRatingListResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+
+  /dsh/operator/stores/{storeId}/orders/summary:
+    get:
+      operationId: readOperatorStoreOrderSummary
+      summary: Read authorized Store-scoped operational Order and anonymous completed-customer totals
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorId"
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [7d, 30d, all]
+            default: 30d
+      responses:
+        "200":
+          description: Same canonical Store Order summary and completed-customer totals as Partner readback, subject to operator Partner permission.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/PartnerStoreOrderSummaryResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"

@@ -250,6 +250,8 @@ type PartnerStoreOrderSummary struct {
 	RejectedOrders           int64     `json:"rejectedOrders"`
 	DeliveryFailedOrders     int64     `json:"deliveryFailedOrders"`
 	CompletedOrderValueMinor int64     `json:"completedOrderValueMinor"`
+	CompletedCustomers       int64     `json:"completedCustomers"`
+	ReturningCustomers       int64     `json:"returningCustomers"`
 }
 
 func ReadPartnerStoreOrderSummary(ctx context.Context, db *sql.DB, storeID, period string, from *time.Time) (PartnerStoreOrderSummary, error) {
@@ -265,21 +267,31 @@ func ReadPartnerStoreOrderSummary(ctx context.Context, db *sql.DB, storeID, peri
 		fromArg = *from
 	}
 	result := PartnerStoreOrderSummary{StoreID: storeID, Period: period}
-	err := db.QueryRowContext(ctx, `SELECT
-		count(*),
-		count(*) FILTER (WHERE state='DELIVERED'),
-		count(*) FILTER (WHERE state='PICKED_UP'),
-		count(*) FILTER (WHERE state='CANCELLED'),
-		count(*) FILTER (WHERE state='REJECTED'),
-		count(*) FILTER (WHERE state='DELIVERY_FAILED'),
-		coalesce(sum(total_amount_minor) FILTER (WHERE state IN ('DELIVERED','PICKED_UP')),0)::bigint,
-		statement_timestamp()
-	FROM dsh.commerce_orders
-	WHERE store_id=$1 AND ($2::timestamptz IS NULL OR created_at >= $2::timestamptz)`,
+	err := db.QueryRowContext(ctx, `WITH scoped AS (
+		SELECT client_actor_id,state,total_amount_minor
+		FROM dsh.commerce_orders
+		WHERE store_id=$1 AND ($2::timestamptz IS NULL OR created_at >= $2::timestamptz)
+	), customers AS (
+		SELECT client_actor_id,count(*) AS completed_orders FROM scoped
+		WHERE state IN ('DELIVERED','PICKED_UP')
+		GROUP BY client_actor_id
+	)
+	SELECT
+		(SELECT count(*) FROM scoped),
+		(SELECT count(*) FROM scoped WHERE state='DELIVERED'),
+		(SELECT count(*) FROM scoped WHERE state='PICKED_UP'),
+		(SELECT count(*) FROM scoped WHERE state='CANCELLED'),
+		(SELECT count(*) FROM scoped WHERE state='REJECTED'),
+		(SELECT count(*) FROM scoped WHERE state='DELIVERY_FAILED'),
+		(SELECT coalesce(sum(total_amount_minor),0)::bigint FROM scoped WHERE state IN ('DELIVERED','PICKED_UP')),
+		(SELECT count(*) FROM customers),
+		(SELECT count(*) FROM customers WHERE completed_orders>1),
+		statement_timestamp()`,
 		storeID, fromArg).Scan(
 		&result.TotalOrders, &result.DeliveredOrders, &result.PickedUpOrders,
 		&result.CancelledOrders, &result.RejectedOrders, &result.DeliveryFailedOrders,
-		&result.CompletedOrderValueMinor, &result.MeasuredAt)
+		&result.CompletedOrderValueMinor, &result.CompletedCustomers, &result.ReturningCustomers,
+		&result.MeasuredAt)
 	if err != nil {
 		return PartnerStoreOrderSummary{}, fmt.Errorf("read partner Store order summary: %w", err)
 	}
