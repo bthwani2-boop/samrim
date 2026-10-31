@@ -12,7 +12,7 @@
     "contract": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "node services/identity/tools/generate-types.mjs --check"
+        "command": "node services/identity/tools/generate-types.mjs --check && node tools/dev/check-openapi.mjs identity"
       },
       "inputs": [
         "default",
@@ -24,7 +24,8 @@
         },
         {
           "runtime": "pnpm --version"
-        }
+        },
+        "{workspaceRoot}/tools/dev/check-openapi.mjs"
       ]
     },
     "lint": {

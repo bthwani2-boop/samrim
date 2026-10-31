@@ -5,11 +5,11 @@ paths:
       operationId: refreshSession
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/RefreshRequest" } } }
+        content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/RefreshRequest" } } }
       responses:
-        "200": { $ref: "#/components/responses/TokenPair" }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "200": { $ref: "../identity.openapi.yaml#/components/responses/TokenPair" }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
 
   /auth/logout:
     post:
@@ -18,7 +18,7 @@ paths:
       security: [{ accessToken: [] }]
       responses:
         "204": { description: Current session revoked. }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
 
   /auth/session:
     get:
@@ -28,8 +28,8 @@ paths:
       responses:
         "200":
           description: Current single-role session identity.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ActorIdentity" } } }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
+          content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/ActorIdentity" } } }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
 
   /auth/development/session:
     post:
@@ -46,14 +46,14 @@ paths:
               required: [role, clientInstanceId]
               properties:
                 role:
-                  $ref: "#/components/schemas/ActorType"
+                  $ref: "../identity.openapi.yaml#/components/schemas/ActorType"
                 clientInstanceId:
                   type: string
                   minLength: 8
                   maxLength: 256
       responses:
-        "200": { $ref: "#/components/responses/TokenPair" }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { $ref: "#/components/responses/Conflict" }
+        "200": { $ref: "../identity.openapi.yaml#/components/responses/TokenPair" }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../identity.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../identity.openapi.yaml#/components/responses/Conflict" }

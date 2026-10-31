@@ -96,7 +96,7 @@ function indentOf(line) {
 
 function dshOperations() {
   const operations = [];
-  for (const { source: moduleSource } of pathModuleSources) {
+  for (const { source: moduleSource } of [{ source }, ...pathModuleSources]) {
     let currentPath = null;
     let currentMethod = null;
     for (const line of moduleSource.split("\n")) {

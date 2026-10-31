@@ -5,5 +5,24 @@
   "tags": [
     "scope:wlt",
     "type:service"
-  ]
+  ],
+  "targets": {
+    "contract": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/dev/check-openapi.mjs wlt"
+      },
+      "inputs": [
+        "default",
+        "^default",
+        "{workspaceRoot}/tools/dev/check-openapi.mjs",
+        {
+          "runtime": "node --version"
+        },
+        {
+          "runtime": "pnpm --version"
+        }
+      ]
+    }
+  }
 }

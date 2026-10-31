@@ -480,23 +480,14 @@ paths:
               schema: { $ref: '#/components/schemas/DeliveryFeePolicyResponse' }
     post:
       operationId: createDeliveryFeePolicy
+      deprecated: true
+      description: Retired legacy delivery-fee policy mutation. Use distance-band fee policies.
       security: [{ serviceToken: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/CreateDeliveryFeePolicyRequest' }
       responses:
-        '201':
-          description: New immutable policy activated.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/DeliveryFeePolicyResponse' }
-        '200':
-          description: Idempotent replay.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/DeliveryFeePolicyResponse' }
+        '401':
+          description: Service authentication is required.
+        '410':
+          description: LEGACY_PRICING_DISABLED. No price policy is modified.
   /wlt/v1/operator/partner-financial-terms-policy:
     get:
       operationId: readPartnerFinancialTermsPolicy

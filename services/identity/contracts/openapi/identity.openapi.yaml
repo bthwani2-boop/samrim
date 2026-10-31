@@ -108,6 +108,9 @@ paths:
     $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1actors~1{actorId}~1roles~1{role}~1sessions"
   /internal/actors/{actorId}/roles/{role}/sessions/{sessionId}:
     $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1actors~1{actorId}~1roles~1{role}~1sessions~1{sessionId}"
+  /internal/client-share-recipient/resolve:
+    $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1client-share-recipient~1resolve"
+
 components:
   securitySchemes:
     accessToken: { type: http, scheme: bearer, bearerFormat: opaque }
@@ -985,6 +988,12 @@ components:
           additionalProperties: false
 
   responses:
+    PasskeyOptions:
+      description: Server-owned WebAuthn challenge options.
+      content: { application/json: { schema: { $ref: "#/components/schemas/PasskeyOptions" } } }
+    OperatorPasskeyRegistrationResponse:
+      description: Operator passkey registration or recovery result.
+      content: { application/json: { schema: { $ref: "#/components/schemas/OperatorPasskeyRegistrationResponse" } } }
     ChallengeIssued:
       description: Challenge-shaped acknowledgement; raw codes and provider delivery outcomes are not exposed.
       content: { application/json: { schema: { $ref: "#/components/schemas/Challenge" } } }

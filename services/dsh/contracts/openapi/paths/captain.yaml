@@ -728,7 +728,7 @@ paths:
     post:
       operationId: remitOwnCaptainCash
       deprecated: true
-      summary: Retired: Captain cash is settled directly from WLT wallet, not remitted to BThwani
+      summary: "Retired: Captain cash is settled directly from WLT wallet, not remitted to BThwani"
       security:
         - userBearer: []
       parameters:
@@ -1301,3 +1301,81 @@ paths:
           $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/captains/me/presence:
+    post:
+      operationId: updateCaptainPresence
+      summary: Update the authenticated on-duty Captain's dispatch position
+      security: [{ userBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [latitude, longitude]
+              properties:
+                latitude: { type: number }
+                longitude: { type: number }
+      responses:
+        "200":
+          description: Server-recorded presence update time.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [updatedAt]
+                properties:
+                  updatedAt: { type: string, format: date-time }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
+  /dsh/captains/me/assignments/{assignmentId}/arrive:
+    post:
+      operationId: recordCaptainDeliveryArrival
+      summary: Record arrival at the destination for the currently assigned in-custody delivery
+      security: [{ userBearer: [] }]
+      parameters:
+        - name: assignmentId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Canonical arrival time.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [arrivedAt]
+                properties:
+                  arrivedAt: { type: string, format: date-time }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
+  /dsh/captains/me/assignments/{assignmentId}/arrival:
+    get:
+      operationId: readCaptainDeliveryArrival
+      summary: Read the authenticated assigned Captain's recorded arrival
+      security: [{ userBearer: [] }]
+      parameters:
+        - name: assignmentId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Current arrival time or null if not recorded.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [arrivedAt]
+                properties:
+                  arrivedAt: { type: [string, "null"], format: date-time }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }

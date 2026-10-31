@@ -12,7 +12,7 @@ paths:
   /dsh/operator/distance-band-fee-policy:
     get:
       operationId: readOperatorDistanceBandFeePolicy
-      security: [{ serviceToken: [] }]
+      security: [{ serviceBearer: [] }]
       parameters:
         - { $ref: '#/components/parameters/ActingActorId' }
         - name: serviceCityId
@@ -23,11 +23,11 @@ paths:
         '404': { description: Policy has not been configured. }
     post:
       operationId: createOperatorDistanceBandFeePolicy
-      security: [{ serviceToken: [] }]
+      security: [{ serviceBearer: [] }]
       parameters:
         - { $ref: '#/components/parameters/ActingActorId' }
         - { $ref: '#/components/parameters/CorrelationId' }
-        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IdempotencyKeyRequired' }
       requestBody:
         required: true
         content:
@@ -55,7 +55,7 @@ paths:
   /dsh/operator/policy-history:
     get:
       operationId: readOperatorPolicyHistory
-      security: [{ serviceToken: [] }]
+      security: [{ serviceBearer: [] }]
       parameters:
         - { $ref: '#/components/parameters/ActingActorId' }
         - name: key
@@ -70,7 +70,7 @@ paths:
   /dsh/operator/policy-registry:
     get:
       operationId: readOperatorPolicyRegistry
-      security: [{ serviceToken: [] }]
+      security: [{ serviceBearer: [] }]
       parameters:
         - { $ref: '#/components/parameters/ActingActorId' }
       responses:
@@ -78,7 +78,7 @@ paths:
   /dsh/operator/captain-minimum-balance-policy:
     get:
       operationId: readOperatorCaptainMinimumBalancePolicy
-      security: [{ serviceToken: [] }]
+      security: [{ serviceBearer: [] }]
       parameters:
         - { $ref: '#/components/parameters/ActingActorId' }
       responses:
@@ -86,10 +86,10 @@ paths:
         '404': { description: No active policy. }
     post:
       operationId: createOperatorCaptainMinimumBalancePolicy
-      security: [{ serviceToken: [] }]
+      security: [{ serviceBearer: [] }]
       parameters:
         - { $ref: '#/components/parameters/ActingActorId' }
-        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IdempotencyKeyRequired' }
         - { $ref: '#/components/parameters/CorrelationId' }
       requestBody:
         required: true
@@ -108,7 +108,7 @@ paths:
   /dsh/operator/captain-minimum-balance-policy/history:
     get:
       operationId: listOperatorCaptainMinimumBalanceHistory
-      security: [{ serviceToken: [] }]
+      security: [{ serviceBearer: [] }]
       parameters:
         - { $ref: '#/components/parameters/ActingActorId' }
       responses:
@@ -1032,6 +1032,21 @@ paths:
 
   /dsh/captains/me/store-memberships/accept:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1store-memberships~1accept"
+
+  /dsh/captains/me/presence:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1presence"
+  /dsh/captains/me/assignments/{assignmentId}/arrive:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1arrive"
+  /dsh/captains/me/assignments/{assignmentId}/arrival:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1arrival"
+  /dsh/catalog/media/{key}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1media~1{key}"
+  /dsh/notifications/devices:
+    $ref: "./paths/notifications.yaml#/paths/~1dsh~1notifications~1devices"
+  /dsh/notifications/devices/{installationId}:
+    $ref: "./paths/notifications.yaml#/paths/~1dsh~1notifications~1devices~1{installationId}"
+  /dsh/operations/partners/{actorId}/team:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1operations~1partners~1{actorId}~1team"
 
 components:
   securitySchemes:

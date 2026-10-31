@@ -338,3 +338,49 @@ paths:
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operations/partners/{actorId}/team:
+    get:
+      operationId: listOperatorPartnerTeam
+      summary: Read canonical Partner Store access-team grants, counts and pagination as an authorized Operator
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - name: actorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: storeId
+          in: query
+          schema: { type: string, maxLength: 128 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 25 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 512 }
+      responses:
+        "200":
+          description: Actor-owned access grants with canonical totals, including pending and suspended.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, counts]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreAccessGrant" }
+                  nextCursor: { type: string }
+                  counts:
+                    type: object
+                    required: [total, active, pending, suspended]
+                    properties:
+                      total: { type: integer, minimum: 0 }
+                      active: { type: integer, minimum: 0 }
+                      pending: { type: integer, minimum: 0 }
+                      suspended: { type: integer, minimum: 0 }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
