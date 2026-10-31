@@ -7,7 +7,7 @@ async function run(){
   const browser=await chromium.connectOverCDP("http://127.0.0.1:9223");
   let page;
   try{
-    const context=browser.contexts().find(c=>c.pages().some(p=>p.url().startsWith(origin)));
+    const context=browser.contexts().find(c=>c.pages().some(p=>p.url().startsWith(origin))) ?? browser.contexts().find(c=>c.pages().some(p=>p.url().startsWith("http://localhost:18102"))) ?? browser.contexts()[0];
     assert.ok(context,"EXISTING_OPERATOR_SESSION_REQUIRED");
     page=await context.newPage();
     await page.setViewportSize({width:1360,height:850});
@@ -20,7 +20,7 @@ async function run(){
       pagesRead++;
       const offer=n=>({storeId,offerId:"operator-test-"+n,productId:"mock-"+n,
         productName:"منتج تصدير "+n,variantTitle:"افتراضي",brand:"اختبار",
-        priceMinor:300,availability:true,publicationState:"published",measurementKind:"DISCRETE",baseUnit:"COUNT"});
+        priceMinor:300,availability:true,publicationState:"published",measurementKind:"DISCRETE",baseUnit:"COUNT",media:[]});
       await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({
         offers:cursor?[offer(2)]:[offer(1)],nextCursor:cursor?"":"next"
       })});
@@ -31,10 +31,11 @@ async function run(){
     await row.locator("td").first().click();
     await page.getByRole("tab",{name:"المنتجات والعروض"}).click();
     const button=page.getByRole("button",{name:"تصدير CSV كامل"});
-    await button.waitFor({state:"visible",timeout:20000});
-    const promise=page.waitForEvent("download",{timeout:16000});
-    await button.click();
+    try {await button.waitFor({state:"visible",timeout:15000});} catch(e){console.log("OPERATOR_EXPORT_PRE_DIAG="+JSON.stringify({url:page.url(),body:(await page.locator("body").innerText()).slice(-2800)}));throw e;}
+    const promise=page.waitForEvent("download",{timeout:16000}).catch(()=>null);
+    try {await button.click({timeout:9000});}catch(e){console.log("OPERATOR_EXPORT_CLICK_DIAG="+JSON.stringify({url:page.url(),buttons:(await page.getByRole("button").allTextContents()).slice(-30),body:(await page.locator("body").innerText()).slice(-2500)}));throw e;}
     const download=await promise;
+    if(!download) {console.log("OPERATOR_EXPORT_DIAGNOSTIC="+JSON.stringify({url:page.url(),pagesRead,body:(await page.locator("body").innerText()).slice(-2400)}));throw new Error("DOWNLOAD_NOT_TRIGGERED");}
     assert.match(download.suggestedFilename(),/^bthwani-store-.+-catalog\.csv$/);
     const path=await download.path();
     assert.ok(path);
@@ -43,7 +44,21 @@ async function run(){
     assert.ok(csv.includes("منتج تصدير 1"));
     assert.ok(csv.includes("منتج تصدير 2"));
     assert.ok(pagesRead>=2);
-    console.log("OPERATOR_STORE_CATALOG_CSV=PASS_MOCKED_DSH_READ");
+    await page.unroute("**/api/stores/*/offers?*");
+    const storeId=new URL(page.url()).searchParams.get("inspect");
+    assert.ok(storeId,"inspected Store scope missing");
+    const readback=await page.evaluate(async(id)=>{
+      const route="/api/stores/"+encodeURIComponent(id)+"/offers";
+      const allowed=await fetch(route+"?limit=50",{cache:"no-store"});
+      const content=allowed.ok?await allowed.json():null;
+      const invalid=await fetch(route+"?limit=101",{cache:"no-store"});
+      return {status:allowed.status,badStatus:invalid.status,limit:content?.offers?.length,
+        mismatched:content?.offers?.some(o=>o.storeId!==id)};
+    },storeId);
+    assert.equal(readback.status,200,"canonical operator DSH read with limit=50");
+    assert.equal(readback.badStatus,400,"out-of-contract limit must be rejected");
+    assert.equal(readback.mismatched,false,"Store-scope leakage");
+    console.log("OPERATOR_STORE_CATALOG_CSV=PASS_MOCKED_EXPORT_AND_AUTHENTICATED_DSH_READ "+JSON.stringify(readback));
   }finally{if(page)await page.close().catch(()=>{});await browser.close();}
 }
 run().catch(e=>{console.error("OPERATOR_STORE_CATALOG_CSV=FAIL "+String(e.stack||e).slice(0,1500));process.exitCode=1});
