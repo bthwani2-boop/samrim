@@ -790,7 +790,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           </View>
           <View style={styles.storeInfoStat}>
             <Text style={styles.storeInfoStatLabel}>تقييم المتجر</Text>
-            <Text accessibilityLabel={"تقييم المتجر " + (state.store.ratingCount ? state.store.ratingAverage.toFixed(1) : "0.0") + " من خمسة، عدد المقيّمين " + state.store.ratingCount} style={styles.storeInfoStatValue}>{"★ " + (state.store.ratingCount ? state.store.ratingAverage.toFixed(1) : "0.0") + " · " + state.store.ratingCount + " تقييم"}</Text>
+            <Text
+              accessibilityLabel={state.store.ratingCount > 0 ? "تقييم المتجر " + state.store.ratingAverage.toFixed(1) + " من خمسة، عدد المقيّمين " + state.store.ratingCount : "لا توجد تقييمات للمتجر بعد"}
+              style={styles.storeInfoStatValue}
+            >{state.store.ratingCount > 0 ? "★ " + state.store.ratingAverage.toFixed(1) + " · " + state.store.ratingCount + " تقييم" : "لا توجد تقييمات بعد"}</Text>
           </View>
         </View>
         {availabilitySummary.reason ? <Text accessibilityRole="alert" style={styles.muted}>{availabilitySummary.reason}</Text> : null}
