@@ -23,8 +23,8 @@ These are visible labels, **not evidence** that all payment providers are live, 
 | ID | Visible menu entry | Verification |
 | --- | --- | --- |
 | E01 | لوحة التحكم | Screenshot + prior live DOM |
-| E02 | الطلبات | Sidebar only; inner routes NOT_RUN |
-| E03 | الكتالوج | Sidebar only; inner routes NOT_RUN |
+| E02 | الطلبات | Main orders and refunds list DOM observed read-only; actions NOT_RUN |
+| E03 | الكتالوج | Products, stock and product-questions list DOM observed read-only; mutations NOT_RUN |
 | E04 | العملاء | Sidebar only; inner routes NOT_RUN |
 | E05 | التسويق (PRO) | Sidebar only; locked flow NOT_RUN |
 | E06 | التقارير | Sidebar only; inner routes NOT_RUN |
@@ -41,7 +41,7 @@ These are visible labels, **not evidence** that all payment providers are live, 
 | E17 | مساعد الذكاء الاصطناعي (قريبًا) | Teaser only; NOT an observed working capability |
 | E18 | الاستيراد والتصدير | Sidebar only; action NOT_RUN |
 | E19 | الموظفون (PRO) | Sidebar only; role behavior NOT_RUN |
-| E20 | سجل النشاطات | Sidebar only; inner routes NOT_RUN |
+| E20 | سجل النشاطات | Activity list and filter controls observed read-only; audit integrity NOT_RUN |
 | E21 | سلة المحذوفات | Sidebar only; inner routes NOT_RUN |
 | E22 | نسخ رابط المتجر | Sidebar action visible; action NOT_RUN |
 
@@ -50,6 +50,22 @@ Other visible dashboard controls: search, theme, language, user menu, store togg
 ## RRDA public storefront — screenshot-observed
 
 Visible: brand/header, search, primary categories, homepage/shop/about/contact navigation, cart, notifications, account, favorites, locale, hero carousel (arrows/pause/action), category browsing, floating help/chat. Product detail, authenticated cart, payments, checkout, order submission, responsive behavior and negative/error states are NOT_RUN.
+
+## 2026-11-01 focused browser observations (read-only Playwright)
+
+These are pages of the user's current Elleen account and RRDA storefront, observed through the connected Edge session. They are not third-party backend, permissions, payment, or recovery proofs. No private code, internal API, paywall bypass, mutation, purchase, inventory change, or refund submission was attempted.
+
+| Surface | Visited route | OBSERVED UI and controls | NOT_TESTED |
+| --- | --- | --- | --- |
+| Orders | https://elleen.ye/admin/orders | Orders list with status groupings, search, payment and method filters, link to create an order, and refunds navigation | Order creation, state transitions, payment handling |
+| Refunds / returns | https://elleen.ye/admin/orders/refunds/list | الاستردادات والمرتجعات; all/pending/approved/completed/rejected groupings, reset filters and page size | Approval, refund calculations, ledger, authorization, reversal |
+| Products | https://elleen.ye/admin/catalog/products | Product list, category/brand filters, search, quick add and links to categories, brands, variations, stock, questions and reviews | Product mutation, variant persistence, stock effects |
+| Inventory | https://elleen.ye/admin/catalog/stock | إدارة المخزون; inventory settings link, stock summaries, add/remove stock buttons | Stock changes, concurrent reservation, history/audit |
+| Product questions | https://elleen.ye/admin/catalog/product-questions | أسئلة المنتج page and status filter | Moderation, notifications, answers, permissions |
+| Activity log | https://elleen.ye/admin/activity-logs | سجل النشاطات with date, action and category filters plus per-event change view buttons | Completeness, actor provenance, export, immutable audit |
+| RRDA catalog | https://rrda.elleen.ye/products | Category, brand, price and sort controls, quick view, favorites, product sharing, quick cart and back-in-stock notification buttons | Checkout, notifications delivery, account isolation, failed submissions |
+
+BThwani comparisons remain bounded: Store stock updates and stockout filtering already exist in Partner/DSH source; do not recreate those owners. Existing financial order adjustments and settlement code cannot be assumed to match Elleen's full refund workflow without a contract-and-ledger E2E inspection. Product questions are a visible competitor feature, not yet an independently approved BThwani capability. Activity-audit evidence is scoped to existing service/actor records, not proof of an Elleen-like global audit screen.
 
 ## BThwani impact routing — verified source existence only
 
@@ -67,4 +83,4 @@ Partner is one actor-facing workspace on mobile and web. Operator Partner Manage
 
 ## Current working boundary
 
-This reference is evidence only; it cannot activate Product capabilities. No external billing change is authorized by merely observing payment labels. Any subscription implementation must define Store-specific accepted versioned terms, period, invoice/retry/reversal/renewal, payment/settlement accounting, service authorization and independent finance review before release. The new branch's current delivered UI slice reads an existing agreement; it does not create subscription charges or change a real ledger.
+This reference is evidence only; it cannot activate Product capabilities. No external billing change is authorized by merely observing payment labels. Any subscription implementation must define Store-specific accepted versioned terms, period, invoice/retry/reversal/renewal, payment/settlement accounting, service authorization and independent finance review before release. Current Partner changes show existing agreement readback, correct partial catalog readiness, and tolerate unavailable Studio theme reads; they do not create subscription charges or change a real ledger.
