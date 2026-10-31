@@ -497,6 +497,18 @@ paths:
   /dsh/operator/marketing/banner-presentation:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1banner-presentation"
 
+  /dsh/operator/marketing/studio-draft:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1studio-draft"
+
+  /dsh/public/studio-theme:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1studio-theme"
+
+  /dsh/operator/marketing/studio-theme:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1studio-theme"
+
+  /dsh/operator/marketing/studio-theme/history:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1studio-theme~1history"
+
   /dsh/public/discovery-content:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1discovery-content"
 
@@ -1462,6 +1474,214 @@ components:
         claimedByMe: { type: boolean }
         claimedByOther: { type: boolean }
         claimExpiresAt: { type: string, format: date-time }
+    StudioThemePalette:
+      type: object
+      additionalProperties: false
+      required: [navy, orange, white, turquoise, burgundy]
+      properties:
+        navy:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        orange:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        white:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        turquoise:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        burgundy:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+    StudioThemePublication:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, templateKey, version, palette]
+      properties:
+        schemaVersion:
+          type: integer
+          enum: [1]
+        templateKey:
+          type: string
+          enum: [CLIENT_HOME]
+        version:
+          type: integer
+          minimum: 1
+        palette:
+          anyOf:
+            - { $ref: "#/components/schemas/StudioThemePalette" }
+            - { type: "null" }
+        publishedByActorId:
+          type: string
+    StudioThemePublicationRequest:
+      type: object
+      additionalProperties: false
+      required: [action, expectedDraftVersion, targetPublicationVersion]
+      properties:
+        action:
+          type: string
+          enum: [ACTIVATE_DRAFT, RESTORE_DEFAULTS, ROLLBACK]
+        expectedDraftVersion:
+          type: integer
+          minimum: 0
+        targetPublicationVersion:
+          type: integer
+          minimum: 0
+    StudioThemePublicationMutation:
+      type: object
+      additionalProperties: false
+      required: [publication, idempotentReplay]
+      properties:
+        publication:
+          $ref: "#/components/schemas/StudioThemePublication"
+        idempotentReplay:
+          type: boolean
+    StudioThemeHistoryItem:
+      type: object
+      additionalProperties: false
+      required: [version, action, publishedByActorId, createdAt]
+      properties:
+        version:
+          type: integer
+          minimum: 2
+        action:
+          type: string
+          enum: [ACTIVATE_DRAFT, RESTORE_DEFAULTS, ROLLBACK]
+        publishedByActorId:
+          type: string
+        createdAt:
+          type: string
+    StudioThemeHistory:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/StudioThemeHistoryItem"
+    StudioDraft:
+      type: object
+      additionalProperties: false
+      required: [templateKey, document, version, updatedByActorId]
+      properties:
+        templateKey:
+          type: string
+          enum: [CLIENT_HOME]
+        document:
+          anyOf:
+            - { $ref: "#/components/schemas/StudioDraftDocument" }
+            - { type: "null" }
+        version:
+          type: integer
+          minimum: 1
+        updatedByActorId:
+          type: string
+    StudioDraftDocument:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, sections, heroOptions, palette, slides, autoplay, intervalSeconds]
+      properties:
+        schemaVersion:
+          type: integer
+          enum: [2]
+        sections:
+          type: array
+          minItems: 12
+          maxItems: 12
+          items:
+            $ref: "#/components/schemas/StudioDraftSection"
+        heroOptions:
+          $ref: "#/components/schemas/StudioDraftHeroOptions"
+        palette:
+          $ref: "#/components/schemas/StudioDraftPalette"
+        slides:
+          type: array
+          minItems: 1
+          maxItems: 4
+          items:
+            $ref: "#/components/schemas/StudioDraftSlide"
+        autoplay:
+          type: boolean
+        intervalSeconds:
+          type: integer
+          minimum: 3
+          maximum: 10
+    StudioDraftSection:
+      type: object
+      additionalProperties: false
+      required: [id, visible, title, description, count]
+      properties:
+        id:
+          type: string
+          enum: [hero, benefits, services, stores, products, curated, banners, topSellers, promotions, testimonials, brands, trust]
+        visible:
+          type: boolean
+        title:
+          type: string
+          maxLength: 80
+        description:
+          type: string
+          maxLength: 180
+        count:
+          type: integer
+          minimum: 1
+          maximum: 8
+    StudioDraftHeroOptions:
+      type: object
+      additionalProperties: false
+      required: [height, align, showDescription, showButton, showDots]
+      properties:
+        height:
+          type: string
+          enum: [compact, regular, tall]
+        align:
+          type: string
+          enum: [start, center, end]
+        showDescription:
+          type: boolean
+        showButton:
+          type: boolean
+        showDots:
+          type: boolean
+    StudioDraftPalette:
+      type: object
+      additionalProperties: false
+      required: [navy, orange, white, turquoise, burgundy]
+      properties:
+        navy:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        orange:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        white:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        turquoise:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        burgundy:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+    StudioDraftSlide:
+      type: object
+      additionalProperties: false
+      required: [id, title, description, buttonLabel]
+      properties:
+        id:
+          type: string
+          pattern: "^slide-[1-9][0-9]{0,4}$"
+        title:
+          type: string
+          maxLength: 80
+        description:
+          type: string
+          maxLength: 180
+        buttonLabel:
+          type: string
+          maxLength: 40
     BannerPresentation:
       type: object
       required: [placement, mode, intervalSeconds, version]
