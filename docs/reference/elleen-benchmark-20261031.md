@@ -1,9 +1,11 @@
-# Elleen visual benchmark for BThwani — 2026-10-31
+# Elleen visual benchmark for BThwani — 2026-10-31 to 2026-11-01
 
 ARTIFACT_CLASS: NONAUTHORITATIVE_EXTERNAL_REFERENCE
 ADOPTION_AUTHORITY: NONE
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 REFERENCE_FRESHNESS: REVALIDATE_AT_USE
+
+The filename identifies the initial observation date (2026-10-31). Follow-up read-only inspections dated 2026-11-01 are identified below; they are not attributed to the initial capture.
 
 ## Verified access and evidence
 

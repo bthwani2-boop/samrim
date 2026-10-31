@@ -31,7 +31,7 @@ A recurring agreement must identify YER amount, billing period and time zone, ef
 ## Invariants
 
 - final terms are Store-specific; a Store's terms do not derive from another Store with the same commercial Store Type;
-- each version identifies Store, agreement version, status, proposer/provenance, enabled fulfillment modes and rates, Partner acceptance, Finance approval, effective/superseded facts, reason/audit and idempotency/correlation;
+- each version explicitly identifies Store, the selected commercial model (COMMISSION, SUBSCRIPTION, or HYBRID), agreement version, status, proposer/provenance, enabled fulfillment modes and rates, applicable recurring terms, Partner acceptance, Finance approval, effective/superseded facts, reason/audit and idempotency/correlation; a zero product commission never implies subscription;
 - every durably enabled fulfillment mode has exactly one explicit pricing/commission rule in the active agreement; SUBSCRIPTION contracts carry explicit zero product commission for each enabled mode rather than silently omitting pricing facts;
 - the lifecycle is `PROPOSED` → `PARTNER_ACCEPTED` → Finance-approved `ACTIVE` → `SUPERSEDED`;
 - silence, Store creation, role admission, catalog readiness or publication is not Partner acceptance;

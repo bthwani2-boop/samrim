@@ -30,7 +30,7 @@ function apiMessage(value: unknown) {
   return "تعذر تحميل سجل أنواع المتاجر.";
 }
 
-export function StoreTypeCommissionDefaultWorkspace() {
+export function StoreTypeCommissionDefaultWorkspace({ readOnly = false }: Readonly<{ readOnly?: boolean }>) {
   const [options, setOptions] = useState<ReadonlyArray<StoreTypeOption>>([]);
   const [selectedTypeID, setSelectedTypeID] = useState("");
   const [loadedTypeID, setLoadedTypeID] = useState("");
@@ -90,6 +90,7 @@ export function StoreTypeCommissionDefaultWorkspace() {
   }
 
   async function save(mode: FulfillmentMode) {
+    if (readOnly) return;
     const selected = defaults.find((item) => item.fulfillmentMode === mode);
     const percent = Number(rates[mode]);
     const suggestedCommissionRateBps = Math.round(percent * 100);
@@ -116,7 +117,7 @@ export function StoreTypeCommissionDefaultWorkspace() {
     <div className="section-heading">
       <div><h2 id="store-type-commission-default-title">نسب مقترحة حسب نوع المتجر</h2></div>
     </div>
-    <p className="muted">نسب مقترحة للتفاوض؛ لا تغيّر الاتفاقيات النافذة أو الطلبات السابقة، ولا تُطبّق تلقائيًا.</p>
+    <p className="muted">نسب مقترحة للتفاوض؛ لا تغيّر الاتفاقيات النافذة أو الطلبات السابقة، ولا تُطبّق تلقائيًا.{readOnly ? " عرض للقراءة فقط؛ التعديل متاح من قسم السياسات وفق الصلاحيات." : ""}</p>
     <div className="form-grid">
       <label className="field-label" htmlFor="store-type-commission-default-type"><span>نوع المتجر التجاري</span>
         <select id="store-type-commission-default-type" value={selectedTypeID} onChange={(event) => { setSelectedTypeID(event.target.value); setLoadedTypeID(""); setDefaults([]); setError(""); setMessage(""); }} disabled={busyMode !== null || options.length === 0}>
@@ -135,14 +136,14 @@ export function StoreTypeCommissionDefaultWorkspace() {
           const value = defaults.find((item) => item.fulfillmentMode === key);
           return <div className="form-section" key={key}>
             <div className="section-heading"><h3>{label}</h3><span className="status-badge">{value ? formatPercent(value.suggestedCommissionRateBps) : "بلا اقتراح"}</span></div>
-            <label className="field-label" htmlFor={`commission-default-rate-${key}`}>النسبة المقترحة (%)<input id={`commission-default-rate-${key}`} type="number" min="0" max="100" step="0.01" value={rates[key]} onChange={(event) => setRates((current) => ({ ...current, [key]: event.target.value }))} disabled={busyMode !== null} /></label>
+            {!readOnly ? <label className="field-label" htmlFor={`commission-default-rate-${key}`}>النسبة المقترحة (%)<input id={`commission-default-rate-${key}`} type="number" min="0" max="100" step="0.01" value={rates[key]} onChange={(event) => setRates((current) => ({ ...current, [key]: event.target.value }))} disabled={busyMode !== null} /></label> : null}
             {value ? <p className="muted">آخر تحديث: {formatTimestamp(value.updatedAt)}</p> : <span className="muted">اختياري</span>}
             {value?.changeReason ? <p className="muted">سبب آخر تغيير: {value.changeReason}</p> : null}
-            <div className="action-row"><button className="button button-primary" type="button" onClick={() => void save(key)} disabled={busyMode !== null || Array.from(reason.trim()).length < 8 || loadedTypeID !== selectedTypeID || rates[key] === ""}>{saveLabel(busyMode === key, value, label)}</button></div>
+            {!readOnly ? <div className="action-row"><button className="button button-primary" type="button" onClick={() => void save(key)} disabled={busyMode !== null || Array.from(reason.trim()).length < 8 || loadedTypeID !== selectedTypeID || rates[key] === ""}>{saveLabel(busyMode === key, value, label)}</button></div> : null}
           </div>;
         })}
       </fieldset>
-      <label className="field-label" htmlFor="store-type-commission-default-reason">سبب التغيير<TextArea aria-describedby="store-type-commission-default-reason-hint" className="resize-none" id="store-type-commission-default-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={8} maxLength={500} rows={3} disabled={busyMode !== null} placeholder="سبب تعديل النسبة المقترحة" /><small id="store-type-commission-default-reason-hint">٨–٥٠٠ حرف.</small></label>
+      {!readOnly ? <label className="field-label" htmlFor="store-type-commission-default-reason">سبب التغيير<TextArea aria-describedby="store-type-commission-default-reason-hint" className="resize-none" id="store-type-commission-default-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={8} maxLength={500} rows={3} disabled={busyMode !== null} placeholder="سبب تعديل النسبة المقترحة" /><small id="store-type-commission-default-reason-hint">٨–٥٠٠ حرف.</small></label> : null}
     </> : null}
     {error ? <p className="validation-error" role="alert">{error}</p> : null}
     {message ? <output className="success">{message}</output> : null}

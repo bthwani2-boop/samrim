@@ -20,6 +20,7 @@ const PartnerEarningsWorkspace = dynamic(() => import("./partner-earnings-worksp
 const CustomerWithdrawalQueue = dynamic(() => import("./customer-withdrawal-queue").then((module) => module.CustomerWithdrawalQueue));
 const BeneficiarySettlementWorkspace = dynamic(() => import("./beneficiary-settlement-workspace").then((module) => module.BeneficiarySettlementWorkspace));
 const StoreCommercialAgreementWorkspace = dynamic(() => import("./store-commercial-agreement-workspace").then((module) => module.StoreCommercialAgreementWorkspace));
+const StoreTypeCommissionDefaultWorkspace = dynamic(() => import("./store-type-commission-default-workspace").then((module) => module.StoreTypeCommissionDefaultWorkspace));
 
 type Source = "custody" | "commissions" | "batches" | "withdrawals";
 type Workflow = "custody" | "commissions" | "batches" | "withdrawals" | "settlement-partner" | "settlement-captain" | "agreements";
@@ -130,8 +131,8 @@ function workflowFor(row: FinancialRow): Workflow {
 }
 
 function FinanceTask({
-  workflow, row, query,
-}: Readonly<{ workflow: Workflow; row: FinancialRow | null; query: InitialQuery }>) {
+  workflow, row, query, canEditStoreTypePolicies,
+}: Readonly<{ workflow: Workflow; row: FinancialRow | null; query: InitialQuery; canEditStoreTypePolicies: boolean }>) {
   const search = queryValue(query, "search").trim().slice(0, 128);
   const cursor = queryValue(query, "cursor").slice(0, 1024);
   if (workflow === "custody") return <CashCustodyWorkspace initialQuery={{
@@ -147,7 +148,11 @@ function FinanceTask({
     cursor, intakeId: queryValue(query, "intakeId") || (row?.source === "withdrawals" ? row.id : ""),
   }} />;
   if (workflow === "agreements") return <div className="finance-center-tools">
-    <p className="muted">النسب التفاوضية حسب نوع المتجر تُدار من <a href="/policies?group=commercial&policy=store-type-commission-defaults&action=manage">سياسات المتاجر</a>، وتبقى موافقة الاتفاقية وتفعيلها لدى المالية.</p>
+    <p className="muted">النسب التفاوضية حسب نوع المتجر لا تُطبّق تلقائيًا. {canEditStoreTypePolicies ? <>لتعديلها، افتح <a href="/policies?group=commercial&policy=store-type-commission-defaults&action=manage">سياسات المتاجر</a>.</> : "يمكنك الاطلاع عليها هنا دون تعديلها."} وتبقى موافقة الاتفاقية وتفعيلها لدى المالية.</p>
+    <details className="access-card">
+      <summary>استعراض نسب المتاجر المقترحة (قراءة فقط)</summary>
+      <StoreTypeCommissionDefaultWorkspace readOnly />
+    </details>
     <StoreCommercialAgreementWorkspace />
   </div>;
   const actorType = workflow === "settlement-captain" ? "captain" : "partner";
@@ -218,6 +223,6 @@ export function FinanceCenterWorkspace({ initialQuery = {} }: Readonly<{ initial
   return <section className="workspace-page fc-reference-page" aria-label="المركز المالي">
     <FinanceReferenceDashboard initialTab={initialTab} rows={rows} errors={errors} hasData={Boolean(visible)} hasMore={hasMore} onOpenWorkflow={openTask}
       detailTitle={activeWorkflow ? workflowLabels[activeWorkflow] : undefined} onCloseDetail={closeTask}
-      detailPanel={activeWorkflow ? <FinanceTask workflow={activeWorkflow} row={activeRow} query={initialQuery} /> : undefined} />
+      detailPanel={activeWorkflow ? <FinanceTask workflow={activeWorkflow} row={activeRow} query={initialQuery} canEditStoreTypePolicies={state.identity.permissions?.includes("platform_policies") === true} /> : undefined} />
   </section>;
 }
