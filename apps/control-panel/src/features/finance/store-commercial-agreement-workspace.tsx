@@ -350,6 +350,15 @@ export function StoreCommercialAgreementWorkspace() {
       <p className="muted">قبول مالك المتجر: {formatTimestamp(selected.partnerAcceptedAt)}</p>
       <p className="muted">حالة الاتفاقية: {selected.effectiveAt ? `سارية منذ ${formatTimestamp(selected.effectiveAt)}` : "لم يبدأ سريانها بعد"}</p>
       <p className="muted">أنماط تنفيذ المتجر: {selected.fulfillmentModes.map(modeLabel).join("، ") || "غير محددة"}</p>
+      <h4>الشروط التجارية</h4>
+      <p className="muted">النموذج: {selected.commercialModel === "COMMISSION" ? "عمولة" : selected.commercialModel === "SUBSCRIPTION" ? "اشتراك" : "اشتراك وعمولة"}</p>
+      {selected.commercialModel !== "COMMISSION" ? <>
+        <p className="muted">الاشتراك: {selected.recurringAmountMinor.toLocaleString("ar-YE-u-nu-latn")} ريال يمني · {selected.billingPeriod === "MONTHLY" ? "شهري" : "سنوي"} · {selected.billingTimeZone}</p>
+        <p className="muted">استحقاق الفاتورة {selected.invoiceDueDays} يوم · السماح {selected.graceDays} يوم · التجديد {selected.renewalPolicy === "MANUAL" ? "يدوي" : "تلقائي"}</p>
+        <p className="muted">الإلغاء: {selected.terminationTerms}</p>
+        <p className="muted">التعديل والاسترداد: {selected.adjustmentTerms}</p>
+        <p className="validation-error" role="alert">اعتماد الاشتراك والهجين معطّل إلى حين اكتمال فوترة WLT والتسويات ومراجعتها المالية المستقلة.</p>
+      </> : null}
       <h4>النسب الدقيقة في الاتفاق</h4>
       <ul>{selected.fulfillmentModes.map((mode) => {
         const rate = selected.rates.find((item) => item.fulfillmentMode === mode);
@@ -373,7 +382,7 @@ export function StoreCommercialAgreementWorkspace() {
       {selected.status !== "PARTNER_ACCEPTED" || selected.partnerAcceptedByActorId !== selected.partnerActorId || selected.currentStoreOwnerActorId !== selected.partnerActorId || !selected.matchesCurrentFulfillmentModes ? <p className="validation-error" role="alert">لا يمكن اتخاذ القرار: يلزم اتفاق مقبول من المالك الحالي وبنسب مطابقة لأنماط المتجر الحالية.</p> : null}
       {pendingAttempt ? <p className="muted">توجد محاولة محفوظة؛ أكمل إعادة إرسالها أو تحقق من قراءتها قبل بدء قرار آخر.</p> : null}
       <div className="finance-toolbar">
-        <button className="button button-primary" type="button" onClick={() => beginDecision("APPROVE")} disabled={!pendingStorageReady || Boolean(pendingStorageError) || busy !== null || Boolean(pendingAttempt) || selected.status !== "PARTNER_ACCEPTED" || selected.partnerAcceptedByActorId !== selected.partnerActorId || selected.currentStoreOwnerActorId !== selected.partnerActorId || !selected.matchesCurrentFulfillmentModes || Array.from(reason.trim()).length < 8}>{busy === "APPROVE" ? "جارٍ الاعتماد…" : "اعتماد الاتفاق"}</button>
+        <button className="button button-primary" type="button" onClick={() => beginDecision("APPROVE")} disabled={selected.commercialModel !== "COMMISSION" || !pendingStorageReady || Boolean(pendingStorageError) || busy !== null || Boolean(pendingAttempt) || selected.status !== "PARTNER_ACCEPTED" || selected.partnerAcceptedByActorId !== selected.partnerActorId || selected.currentStoreOwnerActorId !== selected.partnerActorId || !selected.matchesCurrentFulfillmentModes || Array.from(reason.trim()).length < 8}>{busy === "APPROVE" ? "جارٍ الاعتماد…" : "اعتماد الاتفاق"}</button>
         <button className="button button-secondary" type="button" onClick={() => beginDecision("REJECT")} disabled={!pendingStorageReady || Boolean(pendingStorageError) || busy !== null || Boolean(pendingAttempt) || selected.status !== "PARTNER_ACCEPTED" || selected.partnerAcceptedByActorId !== selected.partnerActorId || selected.currentStoreOwnerActorId !== selected.partnerActorId || !selected.matchesCurrentFulfillmentModes || Array.from(reason.trim()).length < 8}>{busy === "REJECT" ? "جارٍ الرفض…" : "رفض الاتفاق"}</button>
       </div>
     </section> : null}

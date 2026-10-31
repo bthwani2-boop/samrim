@@ -3127,13 +3127,22 @@ components:
     StoreCommercialAgreement:
       type: object
       additionalProperties: false
-      required: [agreementId, storeId, partnerActorId, agreementVersion, status, createdAt, rates, proposedByActorId, proposedAt, partnerAcceptedByActorId, partnerAcceptedAt, financeApprovedByActorId, financeApprovedAt, financeDecisionByActorId, financeDecisionAt, effectiveAt, supersededAt, reason, financeDecisionReason]
+      required: [agreementId, storeId, partnerActorId, agreementVersion, status, createdAt, commercialModel, recurringAmountMinor, billingPeriod, billingTimeZone, invoiceDueDays, graceDays, renewalPolicy, terminationTerms, adjustmentTerms, rates, proposedByActorId, proposedAt, partnerAcceptedByActorId, partnerAcceptedAt, financeApprovedByActorId, financeApprovedAt, financeDecisionByActorId, financeDecisionAt, effectiveAt, supersededAt, reason, financeDecisionReason]
       properties:
         agreementId: { type: string }
         storeId: { type: string }
         partnerActorId: { type: string }
         agreementVersion: { type: integer, minimum: 1 }
         status: { type: string, enum: [PROPOSED, PARTNER_ACCEPTED, ACTIVE, FINANCE_REJECTED, SUPERSEDED] }
+        commercialModel: { type: string, enum: [COMMISSION, SUBSCRIPTION, HYBRID] }
+        recurringAmountMinor: { type: integer, minimum: 0, maximum: 100000000 }
+        billingPeriod: { type: string, enum: [NONE, MONTHLY, ANNUAL] }
+        billingTimeZone: { type: string, enum: [Asia/Aden] }
+        invoiceDueDays: { type: integer, minimum: 0, maximum: 30 }
+        graceDays: { type: integer, minimum: 0, maximum: 30 }
+        renewalPolicy: { type: string, enum: [NONE, MANUAL, AUTOMATIC] }
+        terminationTerms: { type: string }
+        adjustmentTerms: { type: string }
         createdAt: { type: string, format: date-time }
         rates:
           type: array
@@ -3173,6 +3182,15 @@ components:
       additionalProperties: false
       required: [storeId, partnerActorId, rates, expectedCurrentVersion, reason]
       properties:
+        commercialModel: { type: string, enum: [COMMISSION, SUBSCRIPTION, HYBRID] }
+        recurringAmountMinor: { type: integer, minimum: 0, maximum: 100000000 }
+        billingPeriod: { type: string, enum: [NONE, MONTHLY, ANNUAL] }
+        billingTimeZone: { type: string, enum: [Asia/Aden] }
+        invoiceDueDays: { type: integer, minimum: 0, maximum: 30 }
+        graceDays: { type: integer, minimum: 0, maximum: 30 }
+        renewalPolicy: { type: string, enum: [NONE, MANUAL, AUTOMATIC] }
+        terminationTerms: { type: string }
+        adjustmentTerms: { type: string }
         storeId: { type: string, minLength: 1, maxLength: 128 }
         partnerActorId: { type: string, minLength: 1, maxLength: 128 }
         rates:

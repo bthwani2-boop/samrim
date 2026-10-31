@@ -10,10 +10,12 @@ type Agreement = Readonly<{
   agreementId: string;
   status: string;
   agreementVersion: number;
+  commercialModel: "COMMISSION" | "SUBSCRIPTION" | "HYBRID";
+  recurringAmountMinor: number;
+  billingPeriod: "NONE" | "MONTHLY" | "ANNUAL";
   rates: readonly { fulfillmentMode: string; commissionRateBps: number }[];
 }>;
 
-const reason = "عرض تأسيسي بعمولة منتجات صفرية بانتظار قبول الشريك واعتماد المالية";
 const labels: Record<string, string> = {
   BTHWANI_CAPTAIN: "توصيل بثواني",
   PARTNER_CAPTAIN: "توصيل المتجر",
@@ -27,6 +29,16 @@ export function StoreZeroCommissionProposal({ storeId, modes }: Readonly<{storeI
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [commercialModel, setCommercialModel] = useState<"COMMISSION" | "SUBSCRIPTION" | "HYBRID">("COMMISSION");
+  const [commissionPercent, setCommissionPercent] = useState("0");
+  const [recurringAmount, setRecurringAmount] = useState("");
+  const [billingPeriod, setBillingPeriod] = useState<"MONTHLY" | "ANNUAL">("MONTHLY");
+  const [invoiceDueDays, setInvoiceDueDays] = useState("7");
+  const [graceDays, setGraceDays] = useState("3");
+  const [renewalPolicy, setRenewalPolicy] = useState<"MANUAL" | "AUTOMATIC">("MANUAL");
+  const [terminationTerms, setTerminationTerms] = useState("");
+  const [adjustmentTerms, setAdjustmentTerms] = useState("");
+  const [proposalReason, setProposalReason] = useState("اقتراح شروط تجارية بانتظار قبول الشريك واعتماد المالية");
   const url = `/api/partners/stores/${encodeURIComponent(storeId)}/commercial-agreements`;
   const nextProposalVersion = agreements ? initialZeroCommissionProposalVersion(agreements) : null;
 
@@ -57,27 +69,48 @@ export function StoreZeroCommissionProposal({ storeId, modes }: Readonly<{storeI
     if (busy || !actorId || nextProposalVersion === null || modes.length === 0) return;
     const distinct = [...new Set(modes)];
     if (distinct.length !== modes.length || distinct.some(mode => !(mode in labels))) return;
+    const percent = Number(commissionPercent);
+    const bps = Math.round(percent * 100);
+    const recurring = commercialModel !== "COMMISSION";
+    const amount = Number(recurringAmount);
+    const due = Number(invoiceDueDays);
+    const grace = Number(graceDays);
+    if (!Number.isFinite(percent) || bps < 0 || bps > 10000 || Math.abs(percent * 100 - bps) > 0.000001 ||
+      (commercialModel === "SUBSCRIPTION" && bps !== 0) || (commercialModel === "HYBRID" && bps === 0) ||
+      (recurring && (!Number.isSafeInteger(amount) || amount < 1 || amount > 100000000 ||
+        !Number.isSafeInteger(due) || due < 0 || due > 30 || !Number.isSafeInteger(grace) || grace < 0 || grace > 30 ||
+        Array.from(terminationTerms.trim()).length < 8 || Array.from(terminationTerms.trim()).length > 500 ||
+        Array.from(adjustmentTerms.trim()).length < 8 || Array.from(adjustmentTerms.trim()).length > 500)) ||
+      Array.from(proposalReason.trim()).length < 8 || Array.from(proposalReason.trim()).length > 500) {
+      setError("تحقق من النسبة والمبلغ وشروط العقد وسبب الاقتراح قبل الإرسال."); return;
+    }
+    const payload = {
+      commercialModel,
+      rates: distinct.map(fulfillmentMode => ({ fulfillmentMode, commissionRateBps: bps })),
+      expectedCurrentVersion: nextProposalVersion, reason: proposalReason.trim(),
+      ...(recurring ? { recurringAmountMinor: amount, billingPeriod, billingTimeZone: "Asia/Aden", invoiceDueDays: due,
+        graceDays: grace, renewalPolicy, terminationTerms: terminationTerms.trim(), adjustmentTerms: adjustmentTerms.trim() } : {}),
+    };
     setBusy(true);
     setError("");
     setNotice("");
     try {
-      const headers = await stablePartnerMutationHeaders(`initial-zero-commission:${actorId}:${storeId}:${nextProposalVersion}`);
+      const headers = await stablePartnerMutationHeaders("commercial-proposal:" + actorId + ":" + storeId + ":" + nextProposalVersion + ":" + JSON.stringify(payload));
       const response = await fetch(url, {
-        method: "POST", headers,
-        body: JSON.stringify({
-          rates: distinct.map(fulfillmentMode => ({ fulfillmentMode, commissionRateBps: 0 })),
-          expectedCurrentVersion: nextProposalVersion, reason,
-        }),
+        method: "POST", headers, body: JSON.stringify(payload),
       });
       if (!response.ok) throw new Error("PROPOSAL_REJECTED");
       const body = await response.json() as { agreement?: Agreement };
-      if (!body.agreement || body.agreement.status !== "PROPOSED" || body.agreement.rates.length !== distinct.length ||
-        body.agreement.rates.some(rate => rate.commissionRateBps !== 0 || !distinct.includes(rate.fulfillmentMode as StoreFulfillmentMode))) {
+      if (!body.agreement || body.agreement.status !== "PROPOSED" || body.agreement.commercialModel !== commercialModel ||
+        body.agreement.rates.length !== distinct.length || body.agreement.recurringAmountMinor !== (recurring ? amount : 0) ||
+        body.agreement.rates.some(rate => rate.commissionRateBps !== bps || !distinct.includes(rate.fulfillmentMode as StoreFulfillmentMode))) {
         throw new Error("PROPOSAL_READBACK_MISMATCH");
       }
       const actual = await read();
-      if (!actual.some(item => item.agreementId === body.agreement?.agreementId && item.status === "PROPOSED")) throw new Error("PROPOSAL_CANONICAL_READBACK_MISMATCH");
-      setNotice("تم إنشاء عرض بعمولة منتجات صفرية. ينتظر قبول صاحب المتجر ثم اعتماد المالية.");
+      if (!actual.some(item => item.agreementId === body.agreement?.agreementId && item.status === "PROPOSED" &&
+        item.commercialModel === commercialModel && item.recurringAmountMinor === (recurring ? amount : 0))) throw new Error("PROPOSAL_CANONICAL_READBACK_MISMATCH");
+      setNotice(recurring ? "حُفظ اقتراح الاشتراك أو الهجين بانتظار قبول صاحب المتجر. التحصيل والاعتماد المالي معطّلان حتى اكتمال الفوترة." :
+        "حُفظ اقتراح العمولة بانتظار قبول صاحب المتجر واعتماد المالية.");
     } catch {
       try { await read(); } catch { setAgreements(null); }
       setError("لم نؤكد نتيجة الاقتراح. أعد قراءة الاتفاقات أولًا؛ لا تُنشئ عرضًا ثانيًا قبل التحقق.");
@@ -85,18 +118,57 @@ export function StoreZeroCommissionProposal({ storeId, modes }: Readonly<{storeI
   }
 
   return <section className="access-card" aria-label="الاتفاق التجاري الأول للمتجر">
-    <h4>الاتفاق التجاري الأول</h4>
+    <h4>اقتراح الاتفاق التجاري للمتجر</h4>
     {agreements === null ? <p role="status">جارٍ قراءة اتفاقات المتجر…</p> : <>
       {agreements.length ? <>
       <p>توجد {agreements.length} نسخة محفوظة. لا تُستبدل أي اتفاقية نشطة أو قيد القبول بهذا العرض.</p>
-      {agreements.map(item => <p key={item.agreementId}>النسخة {item.agreementVersion} · {item.status} · {item.rates.map(rate => `${labels[rate.fulfillmentMode] ?? rate.fulfillmentMode}: ${rate.commissionRateBps / 100}%`).join("، ")}</p>)}
+      {agreements.map(item => <p key={item.agreementId}>النسخة {item.agreementVersion} · {item.status} · {item.commercialModel} {item.commercialModel !== "COMMISSION" ? "· " + item.recurringAmountMinor + " ريال " + item.billingPeriod : ""} · {item.rates.map(rate => labels[rate.fulfillmentMode] + ": " + (rate.commissionRateBps / 100) + "%").join("، ")}</p>)}
       </> : null}
       {nextProposalVersion === null ? <p>لا يمكن تقديم عرض تأسيسي جديد أثناء وجود اتفاق قائم أو معلق. راجع حالته من قسم الشركاء أو المالية.</p> : <>
-      <p>{nextProposalVersion > 0 ? "رفضت المالية النسخ السابقة. راجع سبب الرفض وعالج نواقصها قبل إعادة الاقتراح؛ لن يُفعَّل العرض دون قبول جديد واعتماد جديد." : "لا توجد اتفاقية لهذا المتجر. يمكن للشراكات اقتراح عمولة منتجات صفرية للأوضاع المفعّلة، دون تفعيلها تلقائيًا."}</p>
-      <p>{modes.map(mode => labels[mode] ?? mode).join("، ")}</p>
-      <p>المدة التأسيسية وتاريخ الانتقال إلى اتفاق آخر غير محددين بهذا العرض؛ لا تُعلن مدة قبل اعتماد سياستها وتنفيذها.</p>
+      <p>{nextProposalVersion > 0 ? "راجع سبب رفض الاتفاق السابق قبل تقديم نسخة جديدة." : "اختر النموذج التجاري؛ لا يسري قبل موافقة الشريك واعتماد المالية."}</p>
+      <p>أوضاع التنفيذ: {modes.map(mode => labels[mode] ?? mode).join("، ")}</p>
+      <div className="form-grid">
+        <label className="field-label" htmlFor="store-commercial-model">نموذج الاتفاق
+          <select id="store-commercial-model" value={commercialModel} onChange={event => { const value = event.target.value as "COMMISSION" | "SUBSCRIPTION" | "HYBRID"; setCommercialModel(value); if (value === "SUBSCRIPTION") setCommissionPercent("0"); }} disabled={busy}>
+            <option value="COMMISSION">عمولة فقط</option>
+            <option value="SUBSCRIPTION">اشتراك فقط دون عمولة منتجات</option>
+            <option value="HYBRID">اشتراك وعمولة</option>
+          </select>
+        </label>
+        {commercialModel !== "SUBSCRIPTION" ? <label className="field-label" htmlFor="store-commercial-rate">عمولة المنتجات (%) لكل أوضاع التنفيذ
+          <input id="store-commercial-rate" type="number" min={commercialModel === "HYBRID" ? "0.01" : "0"} max="100" step="0.01" value={commissionPercent} onChange={event => setCommissionPercent(event.target.value)} disabled={busy} />
+        </label> : <p>عمولة المنتجات صفر صراحةً في نموذج الاشتراك.</p>}
+        {commercialModel !== "COMMISSION" ? <>
+          <label className="field-label" htmlFor="store-commercial-amount">الاشتراك الدوري بالريال اليمني
+            <input id="store-commercial-amount" type="number" min="1" max="100000000" step="1" value={recurringAmount} onChange={event => setRecurringAmount(event.target.value)} disabled={busy} />
+          </label>
+          <label className="field-label" htmlFor="store-commercial-period">الدورية
+            <select id="store-commercial-period" value={billingPeriod} onChange={event => setBillingPeriod(event.target.value as "MONTHLY" | "ANNUAL")} disabled={busy}><option value="MONTHLY">شهري</option><option value="ANNUAL">سنوي</option></select>
+          </label>
+          <label className="field-label" htmlFor="store-commercial-due">أيام استحقاق الفاتورة
+            <input id="store-commercial-due" type="number" min="0" max="30" step="1" value={invoiceDueDays} onChange={event => setInvoiceDueDays(event.target.value)} disabled={busy} />
+          </label>
+          <label className="field-label" htmlFor="store-commercial-grace">أيام السماح
+            <input id="store-commercial-grace" type="number" min="0" max="30" step="1" value={graceDays} onChange={event => setGraceDays(event.target.value)} disabled={busy} />
+          </label>
+          <label className="field-label" htmlFor="store-commercial-renewal">التجديد
+            <select id="store-commercial-renewal" value={renewalPolicy} onChange={event => setRenewalPolicy(event.target.value as "MANUAL" | "AUTOMATIC")} disabled={busy}><option value="MANUAL">بمراجعة يدوية</option><option value="AUTOMATIC">تلقائي وفق الاتفاق</option></select>
+          </label>
+          <label className="field-label" htmlFor="store-commercial-termination">شروط الإلغاء
+            <textarea id="store-commercial-termination" rows={2} minLength={8} maxLength={500} value={terminationTerms} onChange={event => setTerminationTerms(event.target.value)} disabled={busy} />
+          </label>
+          <label className="field-label" htmlFor="store-commercial-adjustment">شروط التعديل أو الاسترداد
+            <textarea id="store-commercial-adjustment" rows={2} minLength={8} maxLength={500} value={adjustmentTerms} onChange={event => setAdjustmentTerms(event.target.value)} disabled={busy} />
+          </label>
+        </> : null}
+        <label className="field-label" htmlFor="store-commercial-proposal-reason">سبب الاقتراح
+          <textarea id="store-commercial-proposal-reason" rows={2} minLength={8} maxLength={500} value={proposalReason} onChange={event => setProposalReason(event.target.value)} disabled={busy} />
+        </label>
+      </div>
+      {commercialModel !== "COMMISSION" ? <p className="muted">الاشتراك والهجين اقتراحان قابلان للقبول فقط حاليًا؛ يمنع WLT الاعتماد والتحصيل حتى تنفيذ الفوترة والقيود والتسويات والمراجعة المستقلة.</p> :
+        <p className="muted">عمولة 0% ليست اشتراكًا ولا تتحول تلقائيًا إلى اتفاق مدفوع.</p>}
       <button type="button" className="button button-secondary" disabled={busy || !actorId || modes.length === 0} onClick={() => void propose()}>
-        {busy ? "جارٍ إرسال الاقتراح…" : nextProposalVersion > 0 ? "إعادة اقتراح عمولة 0% بعد التصحيح" : "اقتراح اتفاق بعمولة 0%"}
+        {busy ? "جارٍ إرسال الاقتراح…" : nextProposalVersion > 0 ? "إعادة اقتراح الاتفاق بعد التصحيح" : "اقتراح الاتفاق التجاري"}
       </button>
       </>}
     </>}

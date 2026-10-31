@@ -13,7 +13,7 @@ import {
   type StoreCommercialAgreement,
 } from "./store-commercial-agreement-client";
 
-const DEFAULT_ACCEPTANCE_REASON = "أوافق على نسب العمولة وشروط الاتفاقية المعروضة";
+const DEFAULT_ACCEPTANCE_REASON = "أوافق على النموذج التجاري وجميع شروط الاتفاقية المعروضة";
 
 type AcceptanceAttempt = Readonly<{
   agreementId: string;
@@ -58,6 +58,17 @@ function rateValue(commissionRateBps: number): string {
   return new Intl.NumberFormat("ar-YE-u-nu-latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(commissionRateBps / 100) + "%";
 }
 
+function commercialConsentSummary(agreement: StoreCommercialAgreement): string {
+  if (agreement.commercialModel === "COMMISSION") return "نموذج عمولة الطلبات. ";
+  const terms = agreement.commercialModel === "SUBSCRIPTION" ? "اشتراك دوري دون عمولة منتجات" : "اشتراك دوري مع عمولة منتجات";
+  return terms + ": " + agreement.recurringAmountMinor.toLocaleString("ar-YE-u-nu-latn") +
+    " ريال يمني، " + (agreement.billingPeriod === "MONTHLY" ? "شهريًا" : "سنويًا") +
+    " بتوقيت " + agreement.billingTimeZone + "، استحقاق " + agreement.invoiceDueDays +
+    " يوم، سماح " + agreement.graceDays + " يوم، تجديد " +
+    (agreement.renewalPolicy === "MANUAL" ? "يدوي" : "تلقائي") +
+    ". الإلغاء: " + agreement.terminationTerms + ". التعديل والاسترداد: " + agreement.adjustmentTerms +
+    ". لا يترتب تحصيل حتى تكتمل الفوترة والتسوية والمراجعة المستقلة. ";
+}
 function acceptanceErrorMessage(cause: unknown, hasSavedAttempt: boolean): string {
   if (cause && typeof cause === "object" && "status" in cause && (cause as { status?: unknown }).status === 409) {
     return "تغيرت بيانات الاتفاقية أو حالتها. أعد قراءتها قبل المتابعة.";
@@ -248,7 +259,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
       <View style={styles.heading}>
         <Text style={styles.eyebrow}>الشروط التجارية</Text>
         <Text style={styles.title}>اتفاقية المتجر</Text>
-        <Text style={styles.muted}>راجع النسبة المحددة لكل طريقة تشغيل. لا يتم قبول الاتفاقية إلا بعد تأكيدك الصريح.</Text>
+        <Text style={styles.muted}>راجع النموذج التجاري ومبلغ الاشتراك إن وجد ونسب التنفيذ. لا يسري أي اتفاق دون قبولك وموافقة المالية.</Text>
       </View>
       {readingCurrentStore && visibleAgreements === null ? <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة اتفاقيات المتجر" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الاتفاقيات…</Text></View> : null}
       {visibleError ? <Text accessibilityRole="alert" style={styles.error}>{visibleError}</Text> : null}
@@ -263,6 +274,14 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
               <Text style={styles.agreementTitle}>الاتفاقية التجارية</Text>
               <Text accessibilityRole="text" style={[styles.status, agreement.status === "ACTIVE" ? styles.active : agreement.status.includes("REJECT") ? styles.rejected : styles.pending]}>{statusLabel(agreement.status)}</Text>
             </View>
+            <Text style={styles.muted}>النموذج التجاري: {agreement.commercialModel === "COMMISSION" ? "عمولة" : agreement.commercialModel === "SUBSCRIPTION" ? "اشتراك" : "اشتراك وعمولة"}</Text>
+            {agreement.commercialModel !== "COMMISSION" ? <>
+              <Text selectable style={styles.rateValue}>الرسوم الدورية: {agreement.recurringAmountMinor.toLocaleString("ar-YE-u-nu-latn")} ريال يمني · {agreement.billingPeriod === "MONTHLY" ? "شهريًا" : "سنويًا"}</Text>
+              <Text style={styles.muted}>استحقاق الفاتورة: {agreement.invoiceDueDays} يوم · السماح: {agreement.graceDays} يوم · التجديد: {agreement.renewalPolicy === "MANUAL" ? "يدوي" : "تلقائي"}</Text>
+              <Text style={styles.muted}>الإلغاء: {agreement.terminationTerms}</Text>
+              <Text style={styles.muted}>التعديل أو الاسترداد: {agreement.adjustmentTerms}</Text>
+              <Text style={styles.muted}>التحصيل غير مفعل حتى اكتمال نظام الفوترة والمحاسبة والتحقق المستقل.</Text>
+            </> : null}
             {agreement.rates.length > 0 ? agreement.rates.map((rate) => (
               <View key={`${agreement.agreementId}:${rate.fulfillmentMode}`} style={styles.rateRow}>
                 <Text style={styles.rateLabel}>{modeLabel(rate.fulfillmentMode)}</Text>
@@ -270,7 +289,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
               </View>
             )) : <Text style={styles.error}>لا تحتوي الاتفاقية على معدلات تشغيل صالحة.</Text>}
             {agreement.status === "PROPOSED" ? <View style={styles.acceptance}>
-              <Text style={styles.muted}>راجع النسب أعلاه ثم اضغط «مراجعة وتأكيد القبول». يُسجل إقرارك باسمك، وبعده تعتمد المالية الاتفاقية قبل نشر المتجر.</Text>
+              <Text style={styles.muted}>راجع النموذج والمبالغ والشروط أعلاه قبل قبول الاتفاق؛ قبولك لا يبدأ تحصيل اشتراك غير مفعّل.</Text>
               {savedAttempt ? <Text style={styles.muted}>محاولة قبول سابقة غير محسومة؛ تحقق من نتيجتها قبل إعادة المحاولة.</Text> : null}
               <BthwaniButton
                 busy={busyAgreementID === agreement.agreementId}
@@ -287,7 +306,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
         busy={Boolean(agreementToConfirm && busyAgreementID === agreementToConfirm.agreementId)}
         confirmLabel="تأكيد قبول الاتفاقية"
         description={agreementToConfirm
-          ? `ستوافق على الاتفاقية التجارية. النسب: ${agreementToConfirm.rates.map((rate) => `${modeLabel(rate.fulfillmentMode)}: ${rateValue(rate.commissionRateBps)}${rate.fulfillmentMode === "PARTNER_CAPTAIN" ? ` · رسوم توصيل المتجر: ${rate.deliveryPricingMode === "FREE" ? "مجاني" : rate.deliveryPricingMode === "FIXED" ? `${rate.deliveryFixedFeeMinor ?? 0} ريال` : "حسب المسافة"}` : ""}${rate.deliveryMarkupMinor ? ` + ${rate.deliveryMarkupMinor} ريال هامش توصيل لبثواني` : ""}`).join("، ")}. بعد قبولك تراجعها الإدارة المالية قبل أن تصبح سارية.`
+          ? commercialConsentSummary(agreementToConfirm) + `النسب: ${agreementToConfirm.rates.map((rate) => `${modeLabel(rate.fulfillmentMode)}: ${rateValue(rate.commissionRateBps)}${rate.fulfillmentMode === "PARTNER_CAPTAIN" ? ` · رسوم توصيل المتجر: ${rate.deliveryPricingMode === "FREE" ? "مجاني" : rate.deliveryPricingMode === "FIXED" ? `${rate.deliveryFixedFeeMinor ?? 0} ريال` : "حسب المسافة"}` : ""}${rate.deliveryMarkupMinor ? ` + ${rate.deliveryMarkupMinor} ريال هامش توصيل لبثواني` : ""}`).join("، ")}. بعد قبولك تراجعها الإدارة المالية قبل أن تصبح سارية.`
           : ""}
         onCancel={() => setAgreementToConfirm(null)}
         onConfirm={() => {

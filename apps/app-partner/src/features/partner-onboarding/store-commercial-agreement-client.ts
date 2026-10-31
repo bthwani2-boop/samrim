@@ -15,6 +15,15 @@ export type StoreCommercialAgreement = Readonly<{
   storeId: string;
   partnerActorId: string;
   agreementVersion: number;
+  commercialModel: "COMMISSION" | "SUBSCRIPTION" | "HYBRID";
+  recurringAmountMinor: number;
+  billingPeriod: "NONE" | "MONTHLY" | "ANNUAL";
+  billingTimeZone: "Asia/Aden";
+  invoiceDueDays: number;
+  graceDays: number;
+  renewalPolicy: "NONE" | "MANUAL" | "AUTOMATIC";
+  terminationTerms: string;
+  adjustmentTerms: string;
   status: string;
   rates: ReadonlyArray<StoreCommercialAgreementRate>;
   partnerAcceptedByActorId?: string | null;
@@ -57,7 +66,17 @@ function isAgreement(value: unknown): value is StoreCommercialAgreement {
     typeof value.storeId !== "string" || !value.storeId.trim() ||
     typeof value.partnerActorId !== "string" || !value.partnerActorId.trim() ||
     !Number.isSafeInteger(value.agreementVersion) || Number(value.agreementVersion) < 1 ||
-    typeof value.status !== "string" || !Array.isArray(value.rates)) return false;
+    typeof value.status !== "string" || !Array.isArray(value.rates) ||
+    !["COMMISSION", "SUBSCRIPTION", "HYBRID"].includes(String(value.commercialModel)) ||
+    !Number.isSafeInteger(value.recurringAmountMinor) || Number(value.recurringAmountMinor) < 0 ||
+    !["NONE", "MONTHLY", "ANNUAL"].includes(String(value.billingPeriod)) ||
+    value.billingTimeZone !== "Asia/Aden" || !Number.isSafeInteger(value.invoiceDueDays) || !Number.isSafeInteger(value.graceDays) ||
+    !["NONE", "MANUAL", "AUTOMATIC"].includes(String(value.renewalPolicy)) ||
+    typeof value.terminationTerms !== "string" || typeof value.adjustmentTerms !== "string") return false;
+  if (value.commercialModel === "COMMISSION" && (value.recurringAmountMinor !== 0 || value.billingPeriod !== "NONE" || value.renewalPolicy !== "NONE")) return false;
+  if (value.commercialModel !== "COMMISSION" &&
+    (Number(value.recurringAmountMinor) <= 0 || value.billingPeriod === "NONE" || value.renewalPolicy === "NONE" ||
+    Array.from(value.terminationTerms.trim()).length < 8 || Array.from(value.adjustmentTerms.trim()).length < 8)) return false;
   return value.rates.every((rate) => isRecord(rate) && typeof rate.fulfillmentMode === "string" &&
     rate.fulfillmentMode.trim().length > 0 && Number.isSafeInteger(rate.commissionRateBps) &&
     Number(rate.commissionRateBps) >= 0 && Number(rate.commissionRateBps) <= 10_000);

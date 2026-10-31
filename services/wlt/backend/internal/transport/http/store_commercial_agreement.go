@@ -30,6 +30,15 @@ type storeCommercialAgreementPageResponse struct {
 }
 
 type proposeStoreCommercialAgreementRequest struct {
+	CommercialModel        string                                  `json:"commercialModel"`
+	RecurringAmountMinor   int64                                   `json:"recurringAmountMinor"`
+	BillingPeriod          string                                  `json:"billingPeriod"`
+	BillingTimeZone        string                                  `json:"billingTimeZone"`
+	InvoiceDueDays         int                                     `json:"invoiceDueDays"`
+	GraceDays              int                                     `json:"graceDays"`
+	RenewalPolicy          string                                  `json:"renewalPolicy"`
+	TerminationTerms       string                                  `json:"terminationTerms"`
+	AdjustmentTerms        string                                  `json:"adjustmentTerms"`
 	StoreID                string                                  `json:"storeId"`
 	PartnerActorID         string                                  `json:"partnerActorId"`
 	Rates                  []postgres.StoreCommercialAgreementRate `json:"rates"`
@@ -120,6 +129,10 @@ func (s *Server) proposeStoreCommercialAgreement(w http.ResponseWriter, r *http.
 	}
 	agreement, replayed, err := postgres.ProposeStoreCommercialAgreement(r.Context(), s.db, postgres.ProposeStoreCommercialAgreementInput{
 		StoreID: input.StoreID, PartnerActorID: input.PartnerActorID, Rates: input.Rates,
+		CommercialModel: input.CommercialModel, RecurringAmountMinor: input.RecurringAmountMinor,
+		BillingPeriod: input.BillingPeriod, BillingTimeZone: input.BillingTimeZone,
+		InvoiceDueDays: input.InvoiceDueDays, GraceDays: input.GraceDays, RenewalPolicy: input.RenewalPolicy,
+		TerminationTerms: input.TerminationTerms, AdjustmentTerms: input.AdjustmentTerms,
 		ExpectedCurrentVersion: input.ExpectedCurrentVersion, ActorID: actorID, Reason: input.Reason,
 		IdempotencyKey: idempotencyKey, CorrelationID: correlationID,
 	})
@@ -237,6 +250,8 @@ func writeStoreCommercialAgreementError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "store commercial agreement changed; reload before deciding")
 	case errors.Is(err, postgres.ErrStoreCommercialAgreementState):
 		writeError(w, http.StatusConflict, "STATE_CONFLICT", "store commercial agreement state does not allow this operation")
+	case errors.Is(err, postgres.ErrStoreCommercialAgreementBillingNotReady):
+		writeError(w, http.StatusConflict, "STORE_RECURRING_BILLING_NOT_READY", "WLT invoicing, collection reconciliation and balanced posting must be implemented before activation")
 	case errors.Is(err, postgres.ErrIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different agreement facts")
 	case errors.Is(err, postgres.ErrStoreCommercialAgreementUnavailable):
