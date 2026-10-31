@@ -1,7 +1,12 @@
 import { useLocalSearchParams } from "expo-router";
+import type { GenerateMetadataFunction } from "expo-router/server";
 
 import ClientStoreDetail from "../../src/features/store-discovery/store-detail";
 import { ClientPublicShell } from "../../src/shell/client-shell";
+import { readPublicStoreMetadata } from "../../src/features/store-discovery/public-store-metadata";
+
+export const generateMetadata: GenerateMetadataFunction = (request, params) =>
+  readPublicStoreMetadata(request ?? undefined, String(params.storeId ?? ""), process.env.EXPO_PUBLIC_DSH_API_URL);
 
 export default function ClientStoreRoute() {
   const { storeId: rawStoreId, categoryId: rawCategoryId, productId: rawProductId, promotionId: rawPromotionId } = useLocalSearchParams<{ storeId?: string | string[]; categoryId?: string | string[]; productId?: string | string[]; promotionId?: string | string[] }>();
