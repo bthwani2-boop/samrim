@@ -76,6 +76,11 @@ func TestStoreOrderRatingsPageIsScopedAndExcludesCustomerIdentity(t *testing.T) 
 			first.Ratings[0].OrderID != "review-a3" || first.Ratings[1].OrderID != "review-a2" {
 			t.Fatalf("incorrect first page or tied-timestamp ordering: %+v", first)
 		}
+		if first.Summary.TotalRatings != 3 || first.Summary.AverageRating != 2 ||
+			first.Summary.OneStar != 1 || first.Summary.TwoStars != 1 || first.Summary.ThreeStars != 1 ||
+			first.Summary.FourStars != 0 || first.Summary.FiveStars != 0 {
+			t.Fatalf("incorrect Store A summary independent of cursor: %+v", first.Summary)
+		}
 		for _, rating := range first.Ratings {
 			if rating.StoreID != "review-store-a" || rating.ClientActorID != "" {
 				t.Fatalf("Store scope or customer identity leaked: %+v", rating)
@@ -85,11 +90,15 @@ func TestStoreOrderRatingsPageIsScopedAndExcludesCustomerIdentity(t *testing.T) 
 		if err != nil {
 			t.Fatal(err)
 		}
+		if second.Summary != first.Summary {
+			t.Fatalf("Store summary changed when paging: %+v, %+v", first.Summary, second.Summary)
+		}
 		if len(second.Ratings) != 1 || second.Ratings[0].OrderID != "review-a1" || second.NextCursor != "" {
 			t.Fatalf("incorrect second page: %+v", second)
 		}
 		foreign, err := postgres.ListStoreOrderRatings(ctx, db, "review-store-b", 20, "")
-		if err != nil || len(foreign.Ratings) != 1 || foreign.Ratings[0].OrderID != "review-b1" {
+		if err != nil || len(foreign.Ratings) != 1 || foreign.Ratings[0].OrderID != "review-b1" ||
+			foreign.Summary.TotalRatings != 1 || foreign.Summary.AverageRating != 4 || foreign.Summary.FourStars != 1 {
 			t.Fatalf("Store B improperly includes another Store's data: %+v %v", foreign, err)
 		}
 		for _, cursor := range []string{"not-a-cursor", strings.Repeat("x", 1025)} {

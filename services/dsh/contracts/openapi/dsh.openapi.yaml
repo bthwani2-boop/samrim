@@ -7365,15 +7365,52 @@ components:
         idempotentReplay:
           type: boolean
 
+    StoreOrderRatingSummary:
+      type: object
+      additionalProperties: false
+      required: [totalRatings, averageRating, oneStar, twoStars, threeStars, fourStars, fiveStars]
+      properties:
+        totalRatings:
+          type: integer
+          format: int64
+          minimum: 0
+        averageRating:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 5
+        oneStar:
+          type: integer
+          format: int64
+          minimum: 0
+        twoStars:
+          type: integer
+          format: int64
+          minimum: 0
+        threeStars:
+          type: integer
+          format: int64
+          minimum: 0
+        fourStars:
+          type: integer
+          format: int64
+          minimum: 0
+        fiveStars:
+          type: integer
+          format: int64
+          minimum: 0
+
     StoreOrderRatingListResponse:
       type: object
       additionalProperties: false
-      required: [ratings]
+      required: [ratings, summary]
       properties:
         ratings:
           type: array
           items:
             $ref: "#/components/schemas/OrderRating"
+        summary:
+          $ref: "#/components/schemas/StoreOrderRatingSummary"
         nextCursor:
           type: string
           maxLength: 1024

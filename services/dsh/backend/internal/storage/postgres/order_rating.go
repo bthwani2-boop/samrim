@@ -132,9 +132,20 @@ func CreateClientOrderRating(ctx context.Context, db *sql.DB, orderID, clientAct
 	return result, false, nil
 }
 
+type StoreOrderRatingSummary struct {
+	TotalRatings  int64
+	AverageRating float64
+	OneStar       int64
+	TwoStars      int64
+	ThreeStars    int64
+	FourStars     int64
+	FiveStars     int64
+}
+
 type StoreOrderRatingPage struct {
 	Ratings    []OrderRatingRecord
 	NextCursor string
+	Summary    StoreOrderRatingSummary
 }
 
 type storeOrderRatingCursor struct {
@@ -181,6 +192,16 @@ func ListStoreOrderRatings(ctx context.Context, db *sql.DB, storeID string, limi
 	if err != nil {
 		return StoreOrderRatingPage{}, err
 	}
+	summary := StoreOrderRatingSummary{}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*)::bigint, COALESCE(AVG(rating)::double precision,0),
+		COUNT(*) FILTER (WHERE rating=1), COUNT(*) FILTER (WHERE rating=2),
+		COUNT(*) FILTER (WHERE rating=3), COUNT(*) FILTER (WHERE rating=4),
+		COUNT(*) FILTER (WHERE rating=5)
+		FROM dsh.commerce_order_ratings WHERE store_id=$1`, storeID).Scan(
+		&summary.TotalRatings, &summary.AverageRating, &summary.OneStar, &summary.TwoStars,
+		&summary.ThreeStars, &summary.FourStars, &summary.FiveStars); err != nil {
+		return StoreOrderRatingPage{}, err
+	}
 	query := `SELECT order_id,store_id,rating,review,created_at
 		FROM dsh.commerce_order_ratings WHERE store_id=$1`
 	args := []any{storeID}
@@ -195,7 +216,7 @@ func ListStoreOrderRatings(ctx context.Context, db *sql.DB, storeID string, limi
 		return StoreOrderRatingPage{}, err
 	}
 	defer rows.Close()
-	page := StoreOrderRatingPage{Ratings: make([]OrderRatingRecord, 0, limit)}
+	page := StoreOrderRatingPage{Ratings: make([]OrderRatingRecord, 0, limit), Summary: summary}
 	for rows.Next() {
 		var rating OrderRatingRecord
 		if err := rows.Scan(&rating.OrderID, &rating.StoreID, &rating.Rating, &rating.Review, &rating.CreatedAt); err != nil {

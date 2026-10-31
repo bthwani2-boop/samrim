@@ -1,6 +1,6 @@
 import { typography } from "@bthwani/design-system";
 import { useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, type OrderRating } from "@bthwani/dsh";
+import { createDshMobileClient, type OrderRating, type StoreOrderRatingSummary } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -35,6 +35,7 @@ export function PartnerStoreRatings({ storeId }: Readonly<{ storeId: string }>) 
   const [history, setHistory] = useState<ReadonlyArray<string>>([]);
   const [nextCursor, setNextCursor] = useState("");
   const [ratings, setRatings] = useState<ReadonlyArray<OrderRating>>([]);
+  const [summary, setSummary] = useState<StoreOrderRatingSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
@@ -48,7 +49,7 @@ export function PartnerStoreRatings({ storeId }: Readonly<{ storeId: string }>) 
   useFocusEffect(useCallback(() => {
     let active = true;
     void retry;
-    setRatings([]); setLoadedActor(""); setNextCursor(""); setError(""); setLoading(true);
+    setRatings([]); setSummary(null); setLoadedActor(""); setNextCursor(""); setError(""); setLoading(true);
     const base = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
     const actor = activeActor;
     const valid = () => {
@@ -62,8 +63,16 @@ export function PartnerStoreRatings({ storeId }: Readonly<{ storeId: string }>) 
       const api = createDshMobileClient(base, { cryptoRandomUUID: () => Crypto.randomUUID() });
       const response = await api.listPartnerStoreOrderRatings(token, storeId, PAGE_SIZE, cursor);
       if (!valid()) return;
-      if (!Array.isArray(response.ratings) || response.ratings.some(item => item.storeId !== storeId)) throw new Error("RATINGS_SCOPE_MISMATCH");
+      const stats = response.summary;
+      if (!Array.isArray(response.ratings) || response.ratings.some(item => item.storeId !== storeId) ||
+        !stats || !Number.isSafeInteger(stats.totalRatings) || stats.totalRatings < 0 ||
+        !Number.isFinite(stats.averageRating) || stats.averageRating < 0 || stats.averageRating > 5 ||
+        [stats.oneStar, stats.twoStars, stats.threeStars, stats.fourStars, stats.fiveStars].some(value => !Number.isSafeInteger(value) || value < 0) ||
+        stats.oneStar + stats.twoStars + stats.threeStars + stats.fourStars + stats.fiveStars !== stats.totalRatings) {
+        throw new Error("RATINGS_SCOPE_OR_SUMMARY_MISMATCH");
+      }
       setRatings(response.ratings);
+      setSummary(stats);
       setLoadedActor(actor);
       setNextCursor(response.nextCursor ?? "");
     })().catch(() => {
@@ -73,10 +82,19 @@ export function PartnerStoreRatings({ storeId }: Readonly<{ storeId: string }>) 
   }, [storeId, cursor, retry, activeActor]));
   const current = Boolean(activeActor) && loadedActor === activeActor;
   const visibleRatings = current ? ratings : [];
+  const visibleSummary = current ? summary : null;
 
   return <View style={styles.page} accessibilityLabel="تقييمات طلبات المتجر">
     <Text style={styles.title}>تقييمات الطلبات المكتملة</Text>
-    <Text style={styles.muted}>ملاحظات العملاء بعد اكتمال الطلب دون إظهار حساب العميل أو رقم التواصل المحفوظ. التعليق معروض كما كتبه العميل، ولا يمثل متوسط هذه الصفحة متوسط جميع الطلبات.</Text>
+    <Text style={styles.muted}>ملاحظات العملاء بعد اكتمال الطلب دون إظهار حساب العميل أو رقم التواصل المحفوظ. إجماليات النجوم محسوبة من كافة تقييمات هذا المتجر، لا من الصفحة الحالية.</Text>
+    {visibleSummary && !loading && !error ? <View style={styles.box} accessibilityLabel="ملخص جميع تقييمات المتجر">
+      <Text style={styles.title}>{visibleSummary.totalRatings ? visibleSummary.averageRating.toFixed(1) + " من 5" : "لا توجد تقييمات بعد"}</Text>
+      <Text style={styles.muted}>{visibleSummary.totalRatings.toLocaleString("ar-YE")} تقييمًا من طلبات مكتملة</Text>
+      {([5, 4, 3, 2, 1] as const).map(stars => <View key={stars} style={styles.actions}>
+        <Text style={styles.review}>{stars} نجوم</Text>
+        <Text style={styles.muted}>{(stars === 5 ? visibleSummary.fiveStars : stars === 4 ? visibleSummary.fourStars : stars === 3 ? visibleSummary.threeStars : stars === 2 ? visibleSummary.twoStars : visibleSummary.oneStar).toLocaleString("ar-YE")} تقييم</Text>
+      </View>)}
+    </View> : null}
     {!activeActor ? <Text style={styles.error}>يلزم تسجيل الدخول لقراءة التقييمات.</Text> : null}
     {activeActor && (loading || !current && !error) ? <ActivityIndicator accessibilityLabel="جارٍ تحميل التقييمات" color={theme.brandAction}/> : null}
     {activeActor && error ? <View style={styles.box}>

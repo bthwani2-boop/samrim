@@ -17,7 +17,7 @@ async function main() {
       requestStore=decodeURIComponent(url.pathname.split("/").at(-2));
       const body=foreign?{ratings:[{orderId:"foreign-order",storeId:"another-store",rating:1,review:"محتوى غير مصرح",createdAt:"2026-10-31T10:00:00Z"}]}:
         {ratings:[{orderId:"rating-test-1",storeId:requestStore,rating:5,review:"تقييم خدمة ممتازة",createdAt:"2026-10-31T10:00:00Z",clientActorId:"never-show-private"}],nextCursor:"next"};
-      await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(body)});
+      await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({...body,summary:{totalRatings:1,averageRating:5,oneStar:0,twoStars:0,threeStars:0,fourStars:0,fiveStars:1}})});
     });
     await page.goto(origin+"/partners?tab=directory",{waitUntil:"domcontentloaded",timeout:28000});
     const row=page.locator('tr[data-kind="store"]').first();
@@ -28,6 +28,7 @@ async function main() {
     const text=await page.locator("body").innerText();
     assert.ok(!text.includes("never-show-private"));
     assert.ok(requestStore.length>0);
+    await page.getByText("5.0 من 5",{exact:true}).waitFor({state:"visible",timeout:12000});
     foreign=true;
     await page.getByRole("button",{name:"التالي"}).click();
     await page.getByText("تعذرت قراءة تقييمات الطلبات.",{exact:false}).waitFor({state:"visible",timeout:12000});

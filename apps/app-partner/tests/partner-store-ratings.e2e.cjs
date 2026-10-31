@@ -15,11 +15,13 @@ async function main() {
       requestStore=decodeURIComponent(url.pathname.split("/").at(-2));
       const ratings=foreign?[{orderId:"foreign-order",storeId:"another-store",rating:1,review:"لا يجوز عرضه",createdAt:"2026-10-31T10:00:00Z"}]:
         [{orderId:"own-order",storeId:requestStore,rating:4,review:"تقييم طلب حقيقي تجريبي",createdAt:"2026-10-31T10:00:00Z",clientActorId:"client-private"}];
-      await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({ratings,nextCursor:foreign?"":"next"})});
+      await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({ratings,nextCursor:foreign?"":"next",summary:{totalRatings:1,averageRating:4,oneStar:0,twoStars:0,threeStars:0,fourStars:1,fiveStars:0}})});
     });
     await page.goto("http://localhost:18102/insights?view=ratings",{waitUntil:"domcontentloaded",timeout:28000});
     await page.getByText("تقييم طلب حقيقي تجريبي",{exact:true}).waitFor({state:"visible",timeout:18000});
     assert.ok(requestStore.length>0);
+    await page.getByText("4.0 من 5",{exact:true}).waitFor({state:"visible",timeout:10000});
+    assert.ok(await page.getByText("تقييمًا من طلبات مكتملة",{exact:false}).isVisible());
     assert.ok(!(await page.locator("body").innerText()).includes("client-private"));
     foreign=true;
     await page.getByRole("button",{name:"صفحة التقييمات التالية"}).click();

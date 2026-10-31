@@ -1,6 +1,16 @@
 const assert = require("node:assert/strict");
 const { chromium } = require("@playwright/test");
 
+function validateRatingSummary(data) {
+  const stats = data.summary;
+  assert.ok(stats, "canonical all-Store summary must exist");
+  assert.ok(Number.isSafeInteger(stats.totalRatings) && stats.totalRatings >= data.ratings.length);
+  assert.ok(Number.isFinite(stats.averageRating) && stats.averageRating >= 0 && stats.averageRating <= 5);
+  const distribution = [stats.oneStar, stats.twoStars, stats.threeStars, stats.fourStars, stats.fiveStars];
+  assert.ok(distribution.every(value => Number.isSafeInteger(value) && value >= 0));
+  assert.equal(distribution.reduce((sum, value) => sum + value, 0), stats.totalRatings);
+}
+
 async function run() {
   const browser = await chromium.connectOverCDP("http://127.0.0.1:9223");
   let operatorPage, partnerPage;
@@ -23,6 +33,7 @@ async function run() {
     assert.equal(operatorResult.status(),200,"authorized operator Store ratings read");
     const operatorPageData = await operatorResult.json();
     assert.ok(Array.isArray(operatorPageData.ratings));
+    validateRatingSummary(operatorPageData);
     assert.ok(operatorPageData.ratings.every(item => item.storeId === ownedOperatorStore));
     assert.ok(operatorPageData.ratings.every(item => !Object.prototype.hasOwnProperty.call(item,"clientActorId")));
 
@@ -48,6 +59,7 @@ async function run() {
     const authorizedStore = decodeURIComponent(path[path.indexOf("stores")+1]||"");
     assert.ok(authorizedStore);
     assert.ok(Array.isArray(partnerData.ratings));
+    validateRatingSummary(partnerData);
     assert.ok(partnerData.ratings.every(item=>item.storeId===authorizedStore));
     assert.ok(partnerData.ratings.every(item=>!Object.prototype.hasOwnProperty.call(item,"clientActorId")));
 

@@ -58,7 +58,7 @@ func TestStoreRatingsRoutesRejectUntrustedRequestsBeforeDataRead(t *testing.T) {
 
 func TestStoreRatingsTransportNeverExposesCustomerActorIdentity(t *testing.T) {
 	created := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
-	page := postgres.StoreOrderRatingPage{Ratings: []postgres.OrderRatingRecord{{
+	page := postgres.StoreOrderRatingPage{Summary: postgres.StoreOrderRatingSummary{TotalRatings: 1, AverageRating: 5, FiveStars: 1}, Ratings: []postgres.OrderRatingRecord{{
 		OrderID: "order-a", StoreID: "store-a", ClientActorID: "sensitive-client-actor",
 		Rating: 5, Review: "جيد", CreatedAt: created,
 	}}}
@@ -69,6 +69,9 @@ func TestStoreRatingsTransportNeverExposesCustomerActorIdentity(t *testing.T) {
 	}
 	if strings.Contains(string(bytes), "sensitive-client-actor") || strings.Contains(string(bytes), "clientActorId") {
 		t.Fatal("private customer actor leaked in ratings JSON")
+	}
+	if out.Summary.TotalRatings != 1 || out.Summary.FiveStars != 1 || out.Summary.AverageRating != 5 {
+		t.Fatalf("wrong all-Store rating summary: %+v", out.Summary)
 	}
 	if len(out.Ratings) != 1 || out.Ratings[0].StoreID != "store-a" {
 		t.Fatalf("incorrect scoped rating: %+v", out)

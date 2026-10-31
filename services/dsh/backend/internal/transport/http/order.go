@@ -565,7 +565,15 @@ func toStoreOrderRatingList(page postgres.StoreOrderRatingPage) contract.StoreOr
 	for _, rating := range page.Ratings {
 		items = append(items, toOrderRating(rating))
 	}
-	return contract.StoreOrderRatingListResponse{Ratings: items, NextCursor: page.NextCursor}
+	summary := contract.StoreOrderRatingSummary{}
+	summary.TotalRatings = int(page.Summary.TotalRatings)
+	summary.AverageRating = page.Summary.AverageRating
+	summary.OneStar = int(page.Summary.OneStar)
+	summary.TwoStars = int(page.Summary.TwoStars)
+	summary.ThreeStars = int(page.Summary.ThreeStars)
+	summary.FourStars = int(page.Summary.FourStars)
+	summary.FiveStars = int(page.Summary.FiveStars)
+	return contract.StoreOrderRatingListResponse{Ratings: items, Summary: summary, NextCursor: page.NextCursor}
 }
 
 func (s *OrderServer) listPartnerStoreRatings(w http.ResponseWriter, r *http.Request) {

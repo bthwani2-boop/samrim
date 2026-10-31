@@ -1,6 +1,6 @@
 "use client";
 
-import type { StoreOrderRatingListResponse } from "@bthwani/dsh";
+import type { StoreOrderRatingListResponse, StoreOrderRatingSummary } from "@bthwani/dsh";
 import { useEffect, useState } from "react";
 
 const PAGE_SIZE = 20;
@@ -15,6 +15,7 @@ export function StoreOrderRatingsPreview({ storeId }: Readonly<{ storeId: string
   const [history, setHistory] = useState<ReadonlyArray<string>>([]);
   const [nextCursor, setNextCursor] = useState("");
   const [items, setItems] = useState<StoreOrderRatingListResponse["ratings"]>([]);
+  const [summary, setSummary] = useState<StoreOrderRatingSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
@@ -26,6 +27,7 @@ export function StoreOrderRatingsPreview({ storeId }: Readonly<{ storeId: string
     setLoading(true);
     setError("");
     setItems([]);
+    setSummary(null);
     setNextCursor("");
     const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
     if (cursor) params.set("cursor", cursor);
@@ -36,8 +38,14 @@ export function StoreOrderRatingsPreview({ storeId }: Readonly<{ storeId: string
       })
       .then(page => {
         if (controller.signal.aborted) return;
-        if (!Array.isArray(page.ratings) || page.ratings.some(item => item.storeId !== storeId)) throw new Error("RATINGS_SCOPE_MISMATCH");
+        const stats = page.summary;
+        if (!Array.isArray(page.ratings) || page.ratings.some(item => item.storeId !== storeId) ||
+          !stats || !Number.isSafeInteger(stats.totalRatings) || stats.totalRatings < 0 ||
+          !Number.isFinite(stats.averageRating) || stats.averageRating < 0 || stats.averageRating > 5 ||
+          [stats.oneStar, stats.twoStars, stats.threeStars, stats.fourStars, stats.fiveStars].some(value => !Number.isSafeInteger(value) || value < 0) ||
+          stats.oneStar + stats.twoStars + stats.threeStars + stats.fourStars + stats.fiveStars !== stats.totalRatings) throw new Error("RATINGS_SCOPE_OR_SUMMARY_MISMATCH");
         setItems(page.ratings);
+        setSummary(stats);
         setNextCursor(page.nextCursor ?? "");
       })
       .catch(() => {
@@ -48,7 +56,16 @@ export function StoreOrderRatingsPreview({ storeId }: Readonly<{ storeId: string
   }, [storeId, cursor, retry]);
 
   return <section aria-label="تقييمات طلبات المتجر">
-    <p className="store-profile-muted">ملاحظات العملاء بعد اكتمال الطلب، دون إظهار معرّف العميل أو بيانات تواصله المحفوظة. التعليق كما كتبه العميل، والصفحة ليست متوسط جميع التقييمات.</p>
+    <p className="store-profile-muted">ملاحظات العملاء بعد اكتمال الطلب، دون إظهار معرّف العميل أو بيانات تواصله المحفوظة. إحصاءات النجوم تشمل جميع تقييمات المتجر ولا تتغير مع ترقيم الصفحات.</p>
+    {!loading && !error && summary ? <section className="store-profile-card" aria-label="ملخص جميع تقييمات المتجر">
+      <dl className="store-profile-facts">
+        <div><dt>متوسط المتجر</dt><dd>{summary.totalRatings ? summary.averageRating.toFixed(1) + " من 5" : "لا توجد تقييمات"}</dd></div>
+        <div><dt>إجمالي التقييمات</dt><dd>{summary.totalRatings.toLocaleString("ar-YE")}</dd></div>
+        {([5, 4, 3, 2, 1] as const).map(stars => <div key={stars}><dt>{stars} نجوم</dt>
+          <dd>{(stars === 5 ? summary.fiveStars : stars === 4 ? summary.fourStars : stars === 3 ? summary.threeStars : stars === 2 ? summary.twoStars : summary.oneStar).toLocaleString("ar-YE")}</dd>
+        </div>)}
+      </dl>
+    </section> : null}
     {loading ? <p role="status">جارٍ قراءة تقييمات المتجر…</p> : null}
     {error ? <p role="alert" className="identity-error">{error} <button type="button" className="button button-quiet" onClick={() => setRetry(value => value + 1)}>إعادة المحاولة</button></p> : null}
     {!loading && !error && items.length === 0 ? <p className="store-profile-empty">لا توجد تقييمات مكتملة معروضة لهذا المتجر.</p> : null}
