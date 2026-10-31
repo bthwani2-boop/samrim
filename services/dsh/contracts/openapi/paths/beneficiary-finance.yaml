@@ -76,7 +76,7 @@ paths:
         - { name: intakeId, in: path, required: true, schema: { type: string } }
       responses:
         "200": { description: Intake linked to a WLT canonical held payout. }
-        "409": { description: Destination, beneficiary, Store authority, or funds not ready. }
+        "409": { description: "Destination, beneficiary, Store authority, or funds not ready." }
   /dsh/operator/settlement-intakes/{intakeId}/cancel:
     post:
       operationId: cancelOperatorSettlementIntake

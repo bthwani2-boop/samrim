@@ -117,7 +117,7 @@ paths:
               properties:
                 reason: { type: string, enum: [""] }
       responses:
-        "200": { description: Category restored as inactive, with explicit reactivation available through category editor. }
+        "200": { description: "Category restored as inactive, with explicit reactivation available through category editor." }
         "409": { description: Version conflict. }
   /dsh/stores/{storeId}/trash:
     get:
@@ -1259,7 +1259,7 @@ paths:
         content:
           application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogQuickPriceCommitRequest" } }
       responses:
-        "200": { description: Each update reports applied, replayed, or stale-version conflict status., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogQuickPriceCommitResponse" } } } }
+        "200": { description: "Each update reports applied, replayed, or stale-version conflict status.", content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogQuickPriceCommitResponse" } } } }
         "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
 

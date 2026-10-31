@@ -87,6 +87,29 @@ function validate(owner) {
   }
   for (const [file, document] of documents) visit(document, file);
 
+  const allowedResponseKeys = new Set(["description", "headers", "content", "links", "$ref", "summary"]);
+  const allowedParameterKeys = new Set([
+    "name", "in", "description", "required", "deprecated", "allowEmptyValue", "style",
+    "explode", "allowReserved", "schema", "example", "examples", "content", "$ref", "summary",
+  ]);
+  function validateObjectKeys(object, allowed, location) {
+    if (!object || typeof object !== "object" || Array.isArray(object)) {
+      errors.push("Invalid OpenAPI object: " + location);
+      return;
+    }
+    for (const key of Object.keys(object)) {
+      if (!allowed.has(key) && !key.startsWith("x-")) {
+        errors.push("Unknown OpenAPI field " + key + " on " + location);
+      }
+    }
+  }
+  for (const [name, response] of Object.entries(entrypoint.components?.responses ?? {})) {
+    validateObjectKeys(response, allowedResponseKeys, "components.responses." + name);
+  }
+  for (const [name, parameter] of Object.entries(entrypoint.components?.parameters ?? {})) {
+    validateObjectKeys(parameter, allowedParameterKeys, "components.parameters." + name);
+  }
+
   const supportedMethods = new Set(["get", "post", "put", "patch", "delete", "head", "options", "trace"]);
   const schemeNames = new Set(Object.keys(entrypoint.components?.securitySchemes ?? {}));
   const operations = new Map();
@@ -125,6 +148,26 @@ function validate(owner) {
       }
       if (!operation.responses || Object.keys(operation.responses).length === 0) {
         errors.push("Missing responses: " + method + " " + urlPath);
+      }
+      for (const [status, response] of Object.entries(operation.responses ?? {})) {
+        validateObjectKeys(response, allowedResponseKeys, method + " " + urlPath + " responses." + status);
+      }
+      for (const [index, parameter] of (item.parameters ?? []).entries()) {
+        validateObjectKeys(parameter, allowedParameterKeys, method + " " + urlPath + " pathParameters." + index);
+      }
+      for (const [index, parameter] of (operation.parameters ?? []).entries()) {
+        validateObjectKeys(parameter, allowedParameterKeys, method + " " + urlPath + " parameters." + index);
+      }
+      const declaredParameters = [...(item.parameters ?? []), ...(operation.parameters ?? [])].map((parameter) => (
+        parameter.$ref ? resolveRef(sourceFile, parameter.$ref) : parameter
+      ));
+      for (const match of urlPath.matchAll(/\{([^}]+)\}/g)) {
+        const name = match[1];
+        if (!declaredParameters.some((parameter) => (
+          parameter?.name === name && parameter.in === "path" && parameter.required === true
+        ))) {
+          errors.push("Missing required path parameter {" + name + "} in " + method + " " + urlPath);
+        }
       }
       for (const security of operation.security ?? entrypoint.security ?? []) {
         for (const name of Object.keys(security)) {

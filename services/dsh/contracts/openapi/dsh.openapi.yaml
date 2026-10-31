@@ -74,7 +74,7 @@ paths:
       parameters:
         - { $ref: '#/components/parameters/ActingActorId' }
       responses:
-        '200': { description: WLT policy values joined with DSH names, without duplicated storage. }
+        '200': { description: "WLT policy values joined with DSH names, without duplicated storage." }
   /dsh/operator/captain-minimum-balance-policy:
     get:
       operationId: readOperatorCaptainMinimumBalancePolicy

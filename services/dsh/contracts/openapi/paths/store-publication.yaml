@@ -32,7 +32,7 @@ paths:
               properties:
                 reason: { type: string, minLength: 5, maxLength: 500 }
       responses:
-        "200": { description: Store archived and hidden, with audit record. }
+        "200": { description: "Store archived and hidden, with audit record." }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
   /dsh/operator/stores/{storeId}/restore:
     post:

@@ -1531,7 +1531,7 @@ paths:
             application/json:
               schema:
                 $ref: "../dsh.openapi.yaml#/components/schemas/OperatorOrderCasePage"
-        "400": { description: Invalid cursor, scope or limit. }
+        "400": { description: "Invalid cursor, scope or limit." }
         "401": { description: Authentication required. }
         "403": { description: Operations authorization required. }
 
@@ -1887,7 +1887,7 @@ paths:
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
-        "409": { description: Another operator owns the active claim, or stale/terminal order. }
+        "409": { description: "Another operator owns the active claim, or stale/terminal order." }
 
   /dsh/operator/cash-custody:
     get:
