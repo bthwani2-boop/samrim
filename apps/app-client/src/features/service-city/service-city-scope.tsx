@@ -45,7 +45,7 @@ export default function ServiceCityScope({ children }: PropsWithChildren) {
 
   const refreshCities = useCallback(async () => {
     const generation = ++refreshGenerationRef.current;
-    setState("loading");
+    // Foreground refresh must not unmount the navigator and reset the current route.
     try {
       const nextCities = await listActiveServiceCities();
       if (generation !== refreshGenerationRef.current) return;
@@ -60,7 +60,7 @@ export default function ServiceCityScope({ children }: PropsWithChildren) {
       setSelectedCityID(nextSelection);
       setState("ready");
     } catch {
-      if (generation === refreshGenerationRef.current) setState("error");
+      if (generation === refreshGenerationRef.current) setState((previous) => previous === "ready" ? previous : "error");
     }
   }, [linkedCityID]);
 
