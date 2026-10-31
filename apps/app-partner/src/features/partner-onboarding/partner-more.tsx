@@ -13,6 +13,7 @@ import { currentIdentityState, logoutIdentity, subscribeIdentitySession } from "
 import { PartnerPerformancePeek } from "./partner-performance-peek";
 import { usePartnerStoreScope } from "./partner-store-scope-context";
 import { PartnerStoreScopeSelector } from "./partner-store-scope-selector";
+import { PartnerStorefrontLink } from "./partner-storefront-link";
 import { onStoreAvailabilityChanged } from "./store-availability-events";
 import { listOwnStoreAccessInvitations, readOwnJoiningCase, readOwnStoreImages, readOwnStoreOperationalAvailability } from "./store-readback-client";
 
@@ -150,6 +151,7 @@ export function PartnerMore() {
         <Text style={styles.operationAction}>إدارة التشغيل ←</Text>
       </Pressable>:null}
     </View>:null}
+    {selectedStore ? <PartnerStorefrontLink key={selectedStore.id} store={selectedStore} /> : null}
     <View style={styles.grid}>{actions.map((item,index)=><Pressable key={item.label} accessibilityRole="button" accessibilityLabel={item.label}
       onPress={()=>open(item)} style={({pressed})=>[styles.menuCard,pressed&&{opacity:.7}]}>
       <Text style={styles.menuLabel}>{item.label}</Text>
