@@ -6,6 +6,7 @@ import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { PageHeader } from "../../shell/page-header";
 import { PublishedBannerSettings } from "./published-banner-settings";
+import { PublishedThemeSettings } from "./published-theme-settings";
 import {
   defaultStudioDraft,
   isStudioHex,
@@ -25,7 +26,7 @@ import {
 } from "./studio-draft";
 
 const storagePrefix = "bthwani-studio-private-draft-v1:";
-type EditorPanel = "sections" | "palette" | "published";
+type EditorPanel = "sections" | "palette" | "published" | "theme-publishing";
 const viewports: ReadonlyArray<{ id: StudioViewport; label: string }> = [
   { id: "desktop", label: "الحاسوب" }, { id: "tablet", label: "اللوحي" }, { id: "phone", label: "الهاتف" },
 ];
@@ -307,7 +308,7 @@ function Editor({ actorId }: Readonly<{ actorId: string }>) {
     <div className="studio-topbar">
       <div className="studio-topbar-copy">
         <strong>قالب بثواني الافتراضي · رئيسية العميل</strong>
-        <p>تحرير تخطيطي ومعاينة فورية. النشر إلى التطبيقات يتطلب ربط DSH المعتمد.</p>
+        <p>تحرير تخطيطي ومعاينة فورية. نشر الألوان منفصل عن مسودة الأقسام والشرائح.</p>
       </div>
       <div className="studio-topbar-actions">
         <button type="button" className="button button-secondary" onClick={reset}>استعادة الافتراضي</button>
@@ -384,8 +385,9 @@ function Editor({ actorId }: Readonly<{ actorId: string }>) {
           <button type="button" role="tab" aria-selected={panel === "sections"} onClick={() => setPanel("sections")}>إعدادات القسم</button>
           <button type="button" role="tab" aria-selected={panel === "palette"} onClick={() => setPanel("palette")}>الألوان</button>
           <button type="button" role="tab" aria-selected={panel === "published"} onClick={() => setPanel("published")}>البنرات المنشورة</button>
+          <button type="button" role="tab" aria-selected={panel === "theme-publishing"} onClick={() => setPanel("theme-publishing")}>نشر ألوان التطبيقات</button>
         </div>
-        {panel === "published" ? <div role="tabpanel" className="studio-inspector-content">
+        {panel === "theme-publishing" ? <div role="tabpanel" className="studio-inspector-content"><PublishedThemeSettings shared={shared} /></div> : panel === "published" ? <div role="tabpanel" className="studio-inspector-content">
           <p className="studio-guidance">إعدادات حركة البنرات الفعلية من DSH، مستقلة عن مسودة تصميم القالب. يتطلب حفظها صلاحية التسويق ويُتحقق من الإصدار على الخادم.</p>
           <PublishedBannerSettings />
           <Link className="button button-secondary" href="/marketing?section=content">إدارة صور البنرات ووجهاتها</Link>
@@ -454,9 +456,9 @@ function Editor({ actorId }: Readonly<{ actorId: string }>) {
           </label>)}
           <p className="studio-contrast" role="status">تباين الكحلي مع الأبيض: {studioContrastRatio(draft.palette.navy, draft.palette.white).toFixed(2)}:1</p>
           {warnings.length ? <div role="alert" className="studio-warning">{warnings.map((warning) => <p key={warning}>{warning}</p>)}</div> : <p className="studio-valid">التباين الأساسي للنصوص مناسب لمعيار AA.</p>}
-          <p className="studio-guidance">تخصيص الألوان المنشور يحتاج عقدًا خادميًا وفحص جميع الأدوار الدلالية. لن تتحول المسودة إلى ثيم التطبيقات تلقائيًا.</p>
+          <p className="studio-guidance">لتفعيل هذه الألوان، احفظ مسودة الفريق ثم افتح تبويب «نشر ألوان التطبيقات». النشر لا ينقل أقسام الصفحة أو الشرائح.</p>
         </div>}
-        <div className="studio-inspector-footer"><span>حالة النشر: غير متصل بالخادم</span><button type="button" className="button button-primary" disabled title="النشر غير متاح حتى اكتمال صلاحيات وخدمة الاستوديو">النشر غير متاح</button></div>
+        <div className="studio-inspector-footer"><span>النشر منفصل عن الحفظ المحلي ومسودة الفريق</span><button type="button" className="button button-secondary" onClick={() => setPanel("theme-publishing")}>إدارة نشر الألوان</button></div>
       </aside>
     </div>
   </section>;

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";
+import { readBoundedJson } from "../../../../src/server/security/read-bounded-json";
 import { dshErrorPayload, dshHttpStatus, isDshClientError, requestDshJson } from "../../../../src/server/dsh/dsh-bff";
 
 const responseHeaders = { "Cache-Control": "no-store" };
@@ -34,8 +35,9 @@ export async function PUT(request: Request) {
   const session = await authorizedActor();
   if (session.error) return session.error;
 
-  if (Number(request.headers.get("Content-Length") ?? "0") > 32 * 1024) return fail(413, "INVALID_INPUT");
-  const body = await request.json().catch(() => null) as {
+  const decoded = await readBoundedJson(request, 32 * 1024);
+  if (!decoded.ok) return fail(decoded.status, "INVALID_INPUT");
+  const body = decoded.value as {
     document?: unknown;
     expectedVersion?: unknown;
     idempotencyKey?: unknown;

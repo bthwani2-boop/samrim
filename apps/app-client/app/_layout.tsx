@@ -1,9 +1,11 @@
+import { parseStudioThemePublication } from "@bthwani/design-system";
+import { createDshMobileClient } from "@bthwani/dsh";
 import { AppearanceProvider, BthwaniNetworkStatusNotice, useMobileAppearance } from "@bthwani/design-system/native";
 import { useNetworkState } from "expo-network";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useSyncExternalStore } from "react";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { appearance } from "../src/bootstrap/appearance";
@@ -18,6 +20,27 @@ import { OrderAlertMonitor } from "../src/features/notifications/order-alert-mon
 import ServiceCityScope from "../src/features/service-city/service-city-scope";
 
 export default function RootLayout() {
+  useEffect(() => {
+    const baseUrl = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
+    if (!baseUrl) return;
+    let mounted = true;
+    let latestRequest = 0;
+    const api = createDshMobileClient(baseUrl);
+    const refresh = () => {
+      const requestId = ++latestRequest;
+      void api.readPublicStudioTheme().then((value) => {
+        if (!mounted || requestId !== latestRequest) return;
+        const published = parseStudioThemePublication(value);
+        // Unknown schemas or invalid palettes never replace compiled defaults.
+        appearance.setPublishedPalette(published?.palette ?? null);
+      }).catch(() => { /* Offline: retain last validated theme or compiled defaults. */ });
+    };
+    refresh();
+    const subscription = AppState.addEventListener("change", (next) => {
+      if (next === "active") refresh();
+    });
+    return () => { mounted = false; latestRequest++; subscription.remove(); };
+  }, []);
   useEffect(() => {
     if (Platform.OS === "web") {
       document.documentElement.lang = "ar";

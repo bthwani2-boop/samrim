@@ -500,6 +500,15 @@ paths:
   /dsh/operator/marketing/studio-draft:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1studio-draft"
 
+  /dsh/public/studio-theme:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1studio-theme"
+
+  /dsh/operator/marketing/studio-theme:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1studio-theme"
+
+  /dsh/operator/marketing/studio-theme/history:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1studio-theme~1history"
+
   /dsh/public/discovery-content:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1discovery-content"
 
@@ -1452,6 +1461,93 @@ components:
         claimedByMe: { type: boolean }
         claimedByOther: { type: boolean }
         claimExpiresAt: { type: string, format: date-time }
+    StudioThemePalette:
+      type: object
+      additionalProperties: false
+      required: [navy, orange, white, turquoise, burgundy]
+      properties:
+        navy:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        orange:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        white:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        turquoise:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        burgundy:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+    StudioThemePublication:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, templateKey, version, palette]
+      properties:
+        schemaVersion:
+          type: integer
+          enum: [1]
+        templateKey:
+          type: string
+          enum: [CLIENT_HOME]
+        version:
+          type: integer
+          minimum: 1
+        palette:
+          anyOf:
+            - { $ref: "#/components/schemas/StudioThemePalette" }
+            - { type: "null" }
+        publishedByActorId:
+          type: string
+    StudioThemePublicationRequest:
+      type: object
+      additionalProperties: false
+      required: [action, expectedDraftVersion, targetPublicationVersion]
+      properties:
+        action:
+          type: string
+          enum: [ACTIVATE_DRAFT, RESTORE_DEFAULTS, ROLLBACK]
+        expectedDraftVersion:
+          type: integer
+          minimum: 0
+        targetPublicationVersion:
+          type: integer
+          minimum: 0
+    StudioThemePublicationMutation:
+      type: object
+      additionalProperties: false
+      required: [publication, idempotentReplay]
+      properties:
+        publication:
+          $ref: "#/components/schemas/StudioThemePublication"
+        idempotentReplay:
+          type: boolean
+    StudioThemeHistoryItem:
+      type: object
+      additionalProperties: false
+      required: [version, action, publishedByActorId, createdAt]
+      properties:
+        version:
+          type: integer
+          minimum: 2
+        action:
+          type: string
+          enum: [ACTIVATE_DRAFT, RESTORE_DEFAULTS, ROLLBACK]
+        publishedByActorId:
+          type: string
+        createdAt:
+          type: string
+    StudioThemeHistory:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/StudioThemeHistoryItem"
     StudioDraft:
       type: object
       additionalProperties: false

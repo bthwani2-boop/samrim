@@ -24,9 +24,9 @@ func studioFixture(t *testing.T) json.RawMessage {
 	document := map[string]any{
 		"schemaVersion": 2, "sections": sections,
 		"heroOptions": map[string]any{"height": "regular", "align": "start", "showDescription": true, "showButton": true, "showDots": true},
-		"palette": map[string]string{"navy": "#102B4E", "orange": "#F36B21", "white": "#FFFFFF", "turquoise": "#83DDF3", "burgundy": "#7B1E3A"},
-		"slides": []map[string]any{{"id": "slide-1", "title": "بثواني", "description": "صنعاء", "buttonLabel": "استكشف"}},
-		"autoplay": true, "intervalSeconds": 5,
+		"palette":     map[string]string{"navy": "#102B4E", "orange": "#F36B21", "white": "#FFFFFF", "turquoise": "#83DDF3", "burgundy": "#7B1E3A"},
+		"slides":      []map[string]any{{"id": "slide-1", "title": "بثواني", "description": "صنعاء", "buttonLabel": "استكشف"}},
+		"autoplay":    true, "intervalSeconds": 5,
 	}
 	raw, err := json.Marshal(document)
 	if err != nil {
@@ -89,10 +89,10 @@ func TestStudioMigrationRegistered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != postgres.SchemaVersion || records[len(records)-1].Name != "166_marketing_studio_draft.sql" {
-		t.Fatalf("missing Studio migration v166; got %+v", records[len(records)-1])
+	if len(records) != postgres.SchemaVersion || records[len(records)-1].Name != "167_marketing_studio_publication.sql" {
+		t.Fatalf("missing Studio publication migration v167; got %+v", records[len(records)-1])
 	}
-	if len(statements) != postgres.SchemaVersion || !strings.Contains(statements[165], "marketing_studio_draft_events") {
+	if len(statements) != postgres.SchemaVersion || !strings.Contains(statements[165], "marketing_studio_draft_events") || !strings.Contains(statements[166], "marketing_studio_publication_events") {
 		t.Fatal("Studio migration SQL missing")
 	}
 }
@@ -260,10 +260,10 @@ func TestStudioDraftMigrationUpgradeFromV165(t *testing.T) {
 		}
 
 		if err := postgres.Migrate(ctx, db, records, migrations, testDeliveryProofKeyring(t)); err != nil {
-			t.Fatalf("upgrade from v165 to v166: %v", err)
+			t.Fatalf("upgrade from v165 to v167: %v", err)
 		}
 		var count, latest int
-		if err := db.QueryRowContext(ctx, "SELECT count(*), max(version) FROM dsh.schema_migrations").Scan(&count, &latest); err != nil || count != 166 || latest != 166 {
+		if err := db.QueryRowContext(ctx, "SELECT count(*), max(version) FROM dsh.schema_migrations").Scan(&count, &latest); err != nil || count != 167 || latest != 167 {
 			t.Fatalf("upgrade migration history: count=%d latest=%d err=%v", count, latest, err)
 		}
 		previous, err := postgres.ReadBannerPresentation(ctx, db)

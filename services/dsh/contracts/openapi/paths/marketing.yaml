@@ -127,11 +127,71 @@ paths:
               properties:
                 document: { $ref: "../dsh.openapi.yaml#/components/schemas/StudioDraftDocument" }
       responses:
-        "200": { description: Saved draft, version and idempotent replay flag }
+        "200": { description: "Saved draft, version and idempotent replay flag" }
         "400": { description: Studio draft input is invalid }
         "401": { description: Operator authentication is required }
         "403": { description: Operator marketing permission is required }
         "409": { description: Stale version or conflicting idempotency key }
+
+  /dsh/public/studio-theme:
+    get:
+      operationId: readPublicStudioTheme
+      summary: Read only the published visual palette, never the unpublished operator draft
+      responses:
+        "200":
+          description: Versioned public palette, null when compiled defaults apply
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StudioThemePublication" } } }
+
+  /dsh/operator/marketing/studio-theme:
+    get:
+      operationId: readOperatorStudioTheme
+      summary: Read the current published palette version and operator attribution
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+      responses:
+        "200":
+          description: Versioned published palette
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StudioThemePublication" } } }
+        "401": { description: Authentication required }
+        "403": { description: Marketing permission required }
+    put:
+      operationId: setOperatorStudioTheme
+      summary: Activate a saved draft palette, restore compiled defaults, or rollback to an earlier publication
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/StudioThemePublicationRequest"
+      responses:
+        "200":
+          description: Published or idempotently replayed palette mutation
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StudioThemePublicationMutation" } } }
+        "400": { description: Invalid palette or request }
+        "401": { description: Authentication required }
+        "403": { description: Marketing permission required }
+        "409": { description: Stale version or conflicting idempotency key }
+
+  /dsh/operator/marketing/studio-theme/history:
+    get:
+      operationId: readOperatorStudioThemeHistory
+      summary: List the latest 20 published theme revisions for operator rollback
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+      responses:
+        "200":
+          description: Published version history
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StudioThemeHistory" } } }
+        "401": { description: Authentication required }
+        "403": { description: Marketing permission required }
 
   /dsh/public/promotions:
     get:

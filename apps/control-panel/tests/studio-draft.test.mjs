@@ -86,7 +86,8 @@ test("studio is independently authorized and reuses the canonical DSH banner own
   assert.match(editor, /state\.identity\.role !== "operator"/);
   assert.match(editor, /!state\.identity\.permissions\?\.includes\("marketing"\)/);
   assert.match(editor, /storagePrefix \+ actorId/);
-  assert.match(editor, /النشر غير متاح/);
+  assert.match(editor, /PublishedThemeSettings shared=\{shared\}/);
+  assert.match(editor, /نشر ألوان التطبيقات/);
   assert.match(editor, /حفظ المسودة محليًا/);
   assert.match(editor, /PublishedBannerSettings/);
   const published = readFileSync(path.resolve(import.meta.dirname, "../src/features/studio/published-banner-settings.tsx"), "utf8");
