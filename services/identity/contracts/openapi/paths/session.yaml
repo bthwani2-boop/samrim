@@ -11,6 +11,25 @@ paths:
         "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
         "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
 
+  /auth/web/partner/session:
+    post:
+      tags: [session]
+      operationId: restorePartnerBrowserSession
+      description: Refresh an existing Partner browser session through an HttpOnly SameSite=Strict cookie from an explicitly approved Partner web origin. Response tokens are held in JavaScript memory only. No body is accepted.
+      responses:
+        "200": { $ref: "../identity.openapi.yaml#/components/responses/TokenPair" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+
+  /auth/web/partner/logout:
+    post:
+      tags: [session]
+      operationId: logoutPartnerBrowserSession
+      description: Clear Partner browser cookies and revoke the presented Bearer session when available, restricted to approved Partner web origins.
+      responses:
+        "204": { description: Partner browser session cookies cleared. }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+
   /auth/logout:
     post:
       tags: [session]

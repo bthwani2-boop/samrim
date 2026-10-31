@@ -50,9 +50,18 @@ func TestOrderRegisteredRoutesRejectUnauthenticatedRequests(t *testing.T) {
 	server.Register(mux)
 
 	routes := orderRegisteredRoutes(t)
-	// The private conversation media endpoint is part of the authenticated Order route census.
-	if len(routes) != 41 {
-		t.Fatalf("Order route census changed: got %d, want 41; review authentication for every new or removed route", len(routes))
+	// The Partner Store summary must remain inside the authenticated Order route census.
+	if len(routes) != 42 {
+		t.Fatalf("Order route census changed: got %d, want 42; review authentication for every new or removed route", len(routes))
+	}
+	foundPartnerSummary := false
+	for _, route := range routes {
+		if route.method == nethttp.MethodGet && route.path == "/dsh/partner/stores/{storeId}/orders/summary" {
+			foundPartnerSummary = true
+		}
+	}
+	if !foundPartnerSummary {
+		t.Fatal("Partner Store summary route is missing from authenticated Order route census")
 	}
 	for _, route := range routes {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {

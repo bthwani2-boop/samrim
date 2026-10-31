@@ -535,6 +535,8 @@ paths:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1discovery-targets"
   /dsh/partner/stores/{storeId}/discovery-content:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1discovery-content"
+  /dsh/partner/stores/{storeId}/discovery-content/{contentId}/analytics:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1discovery-content~1{contentId}~1analytics"
   /dsh/partner/stores/{storeId}/promotions:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1promotions"
   /dsh/partner/stores/{storeId}/promotions/{promotionId}/state:
@@ -911,6 +913,9 @@ paths:
 
   /dsh/stores/{storeId}/orders:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders"
+
+  /dsh/partner/stores/{storeId}/orders/summary:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1orders~1summary"
 
   /dsh/partner/orders:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1partner~1orders"
@@ -9152,6 +9157,57 @@ components:
           format: int64
           minimum: 0
 
+    PartnerStoreOrderSummary:
+      type: object
+      additionalProperties: false
+      required: [storeId, period, measuredAt, totalOrders, deliveredOrders, pickedUpOrders, cancelledOrders, rejectedOrders, deliveryFailedOrders, completedOrderValueMinor]
+      properties:
+        storeId:
+          type: string
+        period:
+          type: string
+          enum: [7d, 30d, all]
+        measuredAt:
+          type: string
+          format: date-time
+        totalOrders:
+          type: integer
+          format: int64
+          minimum: 0
+        deliveredOrders:
+          type: integer
+          format: int64
+          minimum: 0
+        pickedUpOrders:
+          type: integer
+          format: int64
+          minimum: 0
+        cancelledOrders:
+          type: integer
+          format: int64
+          minimum: 0
+        rejectedOrders:
+          type: integer
+          format: int64
+          minimum: 0
+        deliveryFailedOrders:
+          type: integer
+          format: int64
+          minimum: 0
+        completedOrderValueMinor:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Recorded DSH Order value for delivered or picked-up Orders; not revenue, payable cash, or WLT settlement.
+
+    PartnerStoreOrderSummaryResponse:
+      type: object
+      additionalProperties: false
+      required: [summary]
+      properties:
+        summary:
+          $ref: "#/components/schemas/PartnerStoreOrderSummary"
+
     PartnerOrdersResponse:
       type: object
       required: [orders, attention]
@@ -10917,7 +10973,7 @@ components:
         permissions:
           type: array
           minItems: 1
-          maxItems: 3
+          maxItems: 7
           uniqueItems: true
           items:
             $ref: "#/components/schemas/StoreAccessPermission"

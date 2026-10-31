@@ -196,6 +196,47 @@ func RecordCheckoutDiscoveryConversionTx(ctx context.Context, tx *sql.Tx, orderI
 	return err
 }
 
+// ListPartnerStoreContentAnalytics never exposes the existence or results of content
+// that was not submitted by the authorized Store. The caller must first perform
+// Store-scoped session/permission authorization in the DSH HTTP owner.
+func ListPartnerStoreContentAnalytics(ctx context.Context, db *sql.DB, storeID, contentID string) ([]DiscoveryContentAnalyticsRecord, bool, error) {
+	storeID = strings.TrimSpace(storeID)
+	contentID = strings.TrimSpace(contentID)
+	if db == nil || storeID == "" || contentID == "" || len(storeID) > 150 || len(contentID) > 128 {
+		return nil, false, ErrDiscoveryContentInvalid
+	}
+	// Bind ownership and aggregation in one PostgreSQL statement/snapshot.
+	// One LEFT JOIN row proves ownership even when the content has no events.
+	rows, err := db.QueryContext(ctx, `SELECT content.id, events.event_type, COUNT(events.id)
+		FROM dsh.discovery_content content
+		LEFT JOIN dsh.discovery_content_events events ON events.content_id=content.id
+		WHERE content.id=$1 AND content.source_store_id=$2 AND content.kind='SHORT_FORM'
+		GROUP BY content.id, events.event_type
+		ORDER BY events.event_type`, contentID, storeID)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	items := make([]DiscoveryContentAnalyticsRecord, 0)
+	belongs := false
+	for rows.Next() {
+		var id string
+		var eventType sql.NullString
+		var count int64
+		if err := rows.Scan(&id, &eventType, &count); err != nil {
+			return nil, false, err
+		}
+		belongs = true
+		if eventType.Valid {
+			items = append(items, DiscoveryContentAnalyticsRecord{ContentID: id, EventType: eventType.String, Count: count})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	return items, belongs, nil
+}
+
 func ListDiscoveryContentAnalytics(ctx context.Context, db *sql.DB, contentID string) ([]DiscoveryContentAnalyticsRecord, error) {
 	contentID = strings.TrimSpace(contentID)
 	if db == nil || contentID == "" || len(contentID) > 128 {

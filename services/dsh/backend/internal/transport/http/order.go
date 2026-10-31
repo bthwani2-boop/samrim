@@ -76,6 +76,7 @@ func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/operator/cash-remittances/{remittanceId}/reconcile", s.reconcileOperatorCashRemittance)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders", s.listStore)
 	mux.HandleFunc("GET /dsh/partner/orders", s.listPartnerOrders)
+	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/orders/summary", s.readPartnerStoreOrderSummary)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders/{orderId}", s.readStore)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/orders/{orderId}/adjustments", s.proposePartnerOrderAdjustment)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/orders/{orderId}/transition", s.transition)
@@ -686,6 +687,33 @@ func (s *OrderServer) listPartnerOrders(w http.ResponseWriter, r *http.Request) 
 			DeliveryRecovery: int(attention.DeliveryRecovery),
 		},
 	})
+}
+
+// This read is operational DSH Order state, not WLT financial settlement.
+func (s *OrderServer) readPartnerStoreOrderSummary(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "partner session is required")
+		return
+	}
+	storeID := strings.TrimSpace(r.PathValue("storeId"))
+	if storeID == "" || len(storeID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "storeId is invalid")
+		return
+	}
+	period := strings.TrimSpace(r.URL.Query().Get("period"))
+	if period == "" {
+		period = "30d"
+	}
+	if period != "7d" && period != "30d" && period != "all" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "period must be 7d, 30d or all")
+		return
+	}
+	summary, err := s.service.ReadPartnerStoreOrderSummary(r.Context(), bearerToken(r), storeID, period)
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"summary": summary})
 }
 
 func orderStateFilter(w http.ResponseWriter, r *http.Request) (string, bool) {

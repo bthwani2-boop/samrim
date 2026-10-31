@@ -50,7 +50,7 @@ function PartnerActorNavigation({ actorID, themeName }: { actorID: string; theme
   useEffect(() => () => { queryClient.clear(); }, [queryClient]);
   return <QueryClientProvider client={queryClient}>
     <StatusBar style={themeName === "dark" ? "light" : "dark"} />
-    <Stack key={actorID || "signed-out"} screenOptions={{ headerShown: false }}><Stack.Screen name="notifications" options={{ headerShown: false }} /></Stack>
+    <Stack key={actorID || "signed-out"} screenOptions={{ headerShown: false }} />
   </QueryClientProvider>;
 }
 

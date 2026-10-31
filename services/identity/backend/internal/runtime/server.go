@@ -44,6 +44,7 @@ type config struct {
 	trustedProxies         []*net.IPNet
 	internalTokens         map[string]string
 	allowedOrigins         map[string]bool
+	partnerWebOrigins      map[string]bool
 	delivery               challengedelivery.Sender
 	providerBudget         challenge.ProviderBudgetConfig
 	webauthnRPID           string
@@ -113,7 +114,7 @@ func Run(_, _, defaultPort string) error {
 		}
 		return postgres.VerifyMigrationHistory(ctx, db, migrationRecords)
 	}
-	handler := identityhttp.New(actors, authenticationService, challenges, sessions, passkeys, identityhttp.Config{InternalServiceTokens: cfg.internalTokens, AllowedOrigins: cfg.allowedOrigins, AbuseIPSecret: cfg.abuseIPSecret, TrustedProxies: cfg.trustedProxies, Readiness: readiness, Development: cfg.runtimeEnvironment == "development"})
+	handler := identityhttp.New(actors, authenticationService, challenges, sessions, passkeys, identityhttp.Config{InternalServiceTokens: cfg.internalTokens, AllowedOrigins: cfg.allowedOrigins, PartnerWebOrigins: cfg.partnerWebOrigins, AbuseIPSecret: cfg.abuseIPSecret, TrustedProxies: cfg.trustedProxies, Readiness: readiness, Development: cfg.runtimeEnvironment == "development"})
 	server := &http.Server{Addr: net.JoinHostPort(cfg.listenHost, cfg.port), Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -259,6 +260,18 @@ func loadConfig(defaultPort string) (config, error) {
 	if len(origins) == 0 {
 		return config{}, errors.New("IDENTITY_CORS_ALLOWED_ORIGINS is empty")
 	}
+	partnerWebOrigins := map[string]bool{}
+	for _, rawOrigin := range strings.Split(os.Getenv("IDENTITY_PARTNER_WEB_ORIGINS"), ",") {
+		origin := strings.TrimSpace(rawOrigin)
+		if origin == "" {
+			continue
+		}
+		parsed, err := url.Parse(origin)
+		if err != nil || parsed.Host == "" || parsed.String() != origin || !origins[origin] || (runtimeEnvironment == "production" && parsed.Scheme != "https") {
+			return config{}, errors.New("IDENTITY_PARTNER_WEB_ORIGINS must contain only trusted CORS origins and HTTPS in production")
+		}
+		partnerWebOrigins[origin] = true
+	}
 	trustedProxies := make([]*net.IPNet, 0)
 	rawProxies := os.Getenv("IDENTITY_TRUSTED_PROXY_IPS")
 	if strings.TrimSpace(rawProxies) == "" && (runtimeEnvironment == "local" || runtimeEnvironment == "test" || runtimeEnvironment == "development") {
@@ -339,7 +352,7 @@ func loadConfig(defaultPort string) (config, error) {
 	if len(webauthnOrigins) == 0 {
 		return config{}, errors.New("IDENTITY_WEBAUTHN_ALLOWED_ORIGINS is empty")
 	}
-	return config{port: port, listenHost: listenHost, runtimeEnvironment: runtimeEnvironment, databaseURL: databaseURL, maintenanceDatabaseURL: maintenanceDatabaseURL, autoMigrate: autoMigrate, migrationDir: migrationDir, retention: retention, challengeSecret: secret, abuseIPSecret: abuseSecret, trustedProxies: trustedProxies, internalTokens: tokens, allowedOrigins: origins, delivery: delivery, providerBudget: budget, webauthnRPID: webauthnRPID, webauthnOrigins: webauthnOrigins, developmentActorIDs: developmentActorIDs}, nil
+	return config{port: port, listenHost: listenHost, runtimeEnvironment: runtimeEnvironment, databaseURL: databaseURL, maintenanceDatabaseURL: maintenanceDatabaseURL, autoMigrate: autoMigrate, migrationDir: migrationDir, retention: retention, challengeSecret: secret, abuseIPSecret: abuseSecret, trustedProxies: trustedProxies, internalTokens: tokens, allowedOrigins: origins, partnerWebOrigins: partnerWebOrigins, delivery: delivery, providerBudget: budget, webauthnRPID: webauthnRPID, webauthnOrigins: webauthnOrigins, developmentActorIDs: developmentActorIDs}, nil
 }
 
 var developmentActorEnvironment = []struct {

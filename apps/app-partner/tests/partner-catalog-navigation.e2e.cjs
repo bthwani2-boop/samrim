@@ -1,0 +1,55 @@
+const assert = require("node:assert/strict");
+const { chromium } = require("@playwright/test");
+
+async function main() {
+  const browser = await chromium.connectOverCDP("http://127.0.0.1:9223");
+  let page;
+  try {
+    const context = browser.contexts().find(ctx => ctx.pages().some(tab => tab.url().startsWith("http://localhost:18102")));
+    assert.ok(context, "PARTNER_EDGE_SESSION_REQUIRED");
+    page = await context.newPage();
+    await page.setViewportSize({width:1360,height:860});
+    await page.goto("http://localhost:18102/more",{waitUntil:"domcontentloaded",timeout:20000});
+    const sidebar=page.locator('[aria-label="التنقل الرئيسي للشريك"]');
+    await sidebar.waitFor({state:"visible",timeout:12000});
+    await sidebar.getByRole("button",{name:"الكتالوج"}).waitFor({state:"visible",timeout:14000});
+    const catalog=sidebar.getByRole("button",{name:"الكتالوج"});
+    assert.equal(await catalog.getAttribute("aria-expanded"),"true");
+    for(const label of ["جميع المنتجات","نفاد المخزون","المنتجات غير المتاحة","الاستيراد والتصدير والأسعار"]) {
+      assert.equal(await sidebar.getByRole("link",{name:label}).isVisible(),true, label+" missing");
+    }
+    await catalog.click();
+    assert.equal(await catalog.getAttribute("aria-expanded"),"false");
+    assert.equal(await sidebar.getByRole("link",{name:"نفاد المخزون"}).count(),0);
+    await catalog.click();
+    assert.equal(await catalog.getAttribute("aria-expanded"),"true");
+    await sidebar.getByRole("link",{name:"نفاد المخزون"}).click();
+    await page.waitForURL(url=>url.pathname==="/products"&&url.searchParams.get("filter")==="stockout",{timeout:12000});
+    const filter=page.getByRole("button",{name:"تصفية حسب حالة المنتج"});
+    await filter.waitFor({state:"visible",timeout:14000});
+    await filter.click();
+    const stockout=page.getByRole("button",{name:"نفاد المخزون"}).last();
+    assert.equal(await stockout.getAttribute("aria-selected"),"true");
+    await page.getByRole("button",{name:"إغلاق التصفية"}).click();
+    await sidebar.getByRole("link",{name:"المنتجات غير المتاحة"}).click();
+    await page.waitForURL(url=>url.pathname==="/products"&&url.searchParams.get("filter")==="unavailable",{timeout:12000});
+    await filter.click();
+    const unavailable=page.getByRole("button",{name:"غير المتاحة"}).last();
+    assert.equal(await unavailable.getAttribute("aria-selected"),"true");
+    await page.getByRole("button",{name:"إغلاق التصفية"}).click();
+    const result=await page.evaluate(()=>{
+      const side=document.querySelector('[aria-label="التنقل الرئيسي للشريك"]')?.getBoundingClientRect();
+      return {route:location.pathname,filter:new URLSearchParams(location.search).get("filter"),
+      rtl:document.documentElement.dir,sidebarAtRight:!!side&&Math.abs(side.right-innerWidth)<6,
+      horizontalOverflow:document.documentElement.scrollWidth>innerWidth+2};
+    });
+    assert.equal(result.horizontalOverflow,false);
+    assert.equal(result.sidebarAtRight,true);
+    assert.equal(result.rtl,"rtl");
+    console.log("CATALOG_NAV=PASS "+JSON.stringify(result));
+  } finally {
+    if(page)await page.close().catch(()=>{});
+    await browser.close();
+  }
+}
+main().catch(e=>{console.error("CATALOG_NAV=FAIL "+String(e?.message||e).slice(0,600));process.exitCode=1;});

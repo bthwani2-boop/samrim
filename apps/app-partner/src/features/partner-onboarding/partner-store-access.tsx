@@ -338,13 +338,51 @@ function StoreGrantsCard({ styles, busy, grants, loading, onTransition, onPermis
 }>) {
   const theme = useAppearanceTheme();
   const [showHistory, setShowHistory] = useState(false);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<"all" | "active" | "pending" | "suspended">("all");
   const archived = grants.filter((item) => item.state === "revoked" || item.state === "declined" || item.state === "expired");
-  const visible = showHistory ? grants : grants.filter((item) => !archived.includes(item));
+  const current = showHistory ? grants : grants.filter((item) => !archived.includes(item));
+  const pending = (state: StoreAccessGrant["state"]) =>
+    state === "pending_acceptance" || state === "pending_role_admission" || state === "pending_partner_activation";
+  const query = search.trim().toLocaleLowerCase("ar");
+  const visible = current.filter((grant) => {
+    if (filter === "active" && grant.state !== "active") return false;
+    if (filter === "suspended" && grant.state !== "suspended") return false;
+    if (filter === "pending" && !pending(grant.state)) return false;
+    const haystack = [grant.displayNameAr, grant.delegateBeneficiaryName, grant.delegatePhoneMasked,
+      grantStateLabel(grant.state), permissionNames(grant.permissions)].filter(Boolean).join(" ").toLocaleLowerCase("ar");
+    return haystack.includes(query);
+  });
   return <View style={styles.card}>
-    <Text style={styles.value}>موظفو المتجر</Text>
+    <Text accessibilityRole="header" style={styles.value}>موظفو المتجر</Text>
+    {!loading ? <View style={styles.metaGrid}>
+      {[
+        { label: "نشط", count: grants.filter((grant) => grant.state === "active").length },
+        { label: "بانتظار التفعيل", count: grants.filter((grant) => pending(grant.state)).length },
+        { label: "موقوف", count: grants.filter((grant) => grant.state === "suspended").length },
+      ].map((item) => <View key={item.label} style={styles.metaItem}>
+        <Text style={styles.metaLabel}>{item.label}</Text><Text style={styles.value}>{item.count.toLocaleString("en-US")}</Text>
+      </View>)}
+    </View> : null}
+    {!loading && grants.length > 0 ? <>
+      <TextInput accessibilityLabel="بحث الموظفين في المتجر الحالي" autoCorrect={false} value={search} onChangeText={setSearch}
+        placeholder="ابحث بالاسم أو رقم الهاتف الظاهر أو الصلاحية" placeholderTextColor={theme.colorMuted} style={styles.formInput}/>
+      <View style={styles.choiceRow}>
+        {([
+          { key: "all", label: "الكل" }, { key: "active", label: "النشطون" },
+          { key: "pending", label: "الدعوات" }, { key: "suspended", label: "الموقوفون" },
+        ] as const).map((option) => <Pressable key={option.key} accessibilityRole="button"
+          accessibilityState={{ selected: filter === option.key }} onPress={() => setFilter(option.key)}
+          style={[styles.choice, filter === option.key && styles.choiceSelected]}>
+          <Text style={filter === option.key ? styles.choiceTextSelected : styles.choiceText}>{option.label}</Text>
+        </Pressable>)}
+      </View>
+      <Text style={styles.muted}>عرض {visible.length.toLocaleString("en-US")} من {current.length.toLocaleString("en-US")} سجل في المتجر المحدد</Text>
+    </> : null}
     {loading ? <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة صلاحيات المتجر" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الحالة المعتمدة…</Text></View> : null}
     {!loading && grants.length === 0 ? <Text style={styles.muted}>لا توجد صلاحيات مفوضة على هذا المتجر.</Text> : null}
     {visible.map((grant) => <StoreAccessGrantCard busy={busy} grant={grant} key={[grant.id, grant.version].join(":")} onPermissions={(next) => onPermissions(grant, next)} onTransition={(next) => onTransition(grant, next)} />)}
+    {!loading && current.length > 0 && visible.length === 0 ? <Text style={styles.muted}>لا توجد نتائج مطابقة للبحث أو التصفية.</Text> : null}
     {archived.length > 0 ? <Pressable accessibilityRole="button" accessibilityState={{ expanded: showHistory }} onPress={() => setShowHistory((value) => !value)}>
       <Text style={styles.muted}>{showHistory ? "إخفاء السجل" : "سجل العضويات السابقة (" + archived.length + ")"}</Text>
     </Pressable> : null}

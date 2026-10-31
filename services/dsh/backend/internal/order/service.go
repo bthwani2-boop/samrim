@@ -277,6 +277,50 @@ func (s *Service) ListForAuthorizedPartnerStores(ctx context.Context, accessToke
 	return page, counts, nil
 }
 
+func partnerOrderSummaryStart(period string, now time.Time) (*time.Time, error) {
+	switch period {
+	case "all":
+		return nil, nil
+	case "7d":
+		start := now.UTC().Add(-7 * 24 * time.Hour)
+		return &start, nil
+	case "30d":
+		start := now.UTC().Add(-30 * 24 * time.Hour)
+		return &start, nil
+	default:
+		return nil, postgres.ErrPartnerOrdersInvalidQuery
+	}
+}
+
+// ReadPartnerStoreOrderSummary authorizes every Store through the same DSH
+// owner/grant boundary as the Partner Order list, before touching its counts.
+func (s *Service) ReadPartnerStoreOrderSummary(ctx context.Context, accessToken, storeID, period string) (postgres.PartnerStoreOrderSummary, error) {
+	actorID, err := s.requireSession(ctx, accessToken, "partner", "app-partner")
+	if err != nil {
+		return postgres.PartnerStoreOrderSummary{}, err
+	}
+	storeID = strings.TrimSpace(storeID)
+	authorized, err := postgres.ListPartnerOrdersAuthorizedStoreIDs(ctx, s.db, actorID)
+	if err != nil {
+		return postgres.PartnerStoreOrderSummary{}, err
+	}
+	permitted := false
+	for _, id := range authorized {
+		if id == storeID {
+			permitted = true
+			break
+		}
+	}
+	if !permitted {
+		return postgres.PartnerStoreOrderSummary{}, ErrStoreOwnershipForbidden
+	}
+	from, err := partnerOrderSummaryStart(period, time.Now())
+	if err != nil {
+		return postgres.PartnerStoreOrderSummary{}, err
+	}
+	return postgres.ReadPartnerStoreOrderSummary(ctx, s.db, storeID, period, from)
+}
+
 func (s *Service) ListOpenCasesForOperator(ctx context.Context, actorID, scope string, limit int, cursor string) (postgres.OpsCasePage, error) {
 	if err := s.requireOperatorPermission(ctx, actorID, "operations"); err != nil {
 		return postgres.OpsCasePage{}, err

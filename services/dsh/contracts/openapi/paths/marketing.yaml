@@ -629,6 +629,25 @@ paths:
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
 
+  /dsh/partner/stores/{storeId}/discovery-content/{contentId}/analytics:
+    get:
+      operationId: listPartnerStoreContentAnalytics
+      summary: Read only own Store short-form media impression, click, and attributed created-order counts
+      description: Requires an authenticated Partner session with Store-scoped promotions authority. A media item must have source_store_id matching the requested Store; another Store's content is never exposed. CONVERSION counts created orders attributed by DSH and does not imply completed sales or earnings.
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ContentId"
+      responses:
+        "200":
+          description: Own Store content-scoped analytics.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/DiscoveryContentAnalyticsListResponse" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/partner/stores/{storeId}/promotions:
     get:
       operationId: listPartnerStorePromotions

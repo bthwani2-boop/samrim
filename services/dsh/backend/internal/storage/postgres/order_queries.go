@@ -237,6 +237,55 @@ func CountPartnerOrderAttention(ctx context.Context, db *sql.DB, storeIDs []stri
 	return counts, nil
 }
 
+// PartnerStoreOrderSummary is an operational, whole-Store aggregate over
+// canonical DSH Orders. The recorded Order value is not WLT settlement or revenue.
+type PartnerStoreOrderSummary struct {
+	StoreID                  string    `json:"storeId"`
+	Period                   string    `json:"period"`
+	MeasuredAt               time.Time `json:"measuredAt"`
+	TotalOrders              int64     `json:"totalOrders"`
+	DeliveredOrders          int64     `json:"deliveredOrders"`
+	PickedUpOrders           int64     `json:"pickedUpOrders"`
+	CancelledOrders          int64     `json:"cancelledOrders"`
+	RejectedOrders           int64     `json:"rejectedOrders"`
+	DeliveryFailedOrders     int64     `json:"deliveryFailedOrders"`
+	CompletedOrderValueMinor int64     `json:"completedOrderValueMinor"`
+}
+
+func ReadPartnerStoreOrderSummary(ctx context.Context, db *sql.DB, storeID, period string, from *time.Time) (PartnerStoreOrderSummary, error) {
+	storeID = strings.TrimSpace(storeID)
+	if db == nil || storeID == "" || len(storeID) > 128 {
+		return PartnerStoreOrderSummary{}, ErrPartnerOrdersScopeInvalid
+	}
+	if period != "7d" && period != "30d" && period != "all" {
+		return PartnerStoreOrderSummary{}, ErrPartnerOrdersInvalidQuery
+	}
+	var fromArg any
+	if from != nil {
+		fromArg = *from
+	}
+	result := PartnerStoreOrderSummary{StoreID: storeID, Period: period}
+	err := db.QueryRowContext(ctx, `SELECT
+		count(*),
+		count(*) FILTER (WHERE state='DELIVERED'),
+		count(*) FILTER (WHERE state='PICKED_UP'),
+		count(*) FILTER (WHERE state='CANCELLED'),
+		count(*) FILTER (WHERE state='REJECTED'),
+		count(*) FILTER (WHERE state='DELIVERY_FAILED'),
+		coalesce(sum(total_amount_minor) FILTER (WHERE state IN ('DELIVERED','PICKED_UP')),0)::bigint,
+		statement_timestamp()
+	FROM dsh.commerce_orders
+	WHERE store_id=$1 AND ($2::timestamptz IS NULL OR created_at >= $2::timestamptz)`,
+		storeID, fromArg).Scan(
+		&result.TotalOrders, &result.DeliveredOrders, &result.PickedUpOrders,
+		&result.CancelledOrders, &result.RejectedOrders, &result.DeliveryFailedOrders,
+		&result.CompletedOrderValueMinor, &result.MeasuredAt)
+	if err != nil {
+		return PartnerStoreOrderSummary{}, fmt.Errorf("read partner Store order summary: %w", err)
+	}
+	return result, nil
+}
+
 func validOrderState(state string) bool {
 	switch state {
 	case "CREATED", "PARTNER_ACCEPTED", "PREPARING", "READY_FOR_DISPATCH", "READY_FOR_PICKUP", "PICKED_UP", "CAPTAIN_ASSIGNED", "IN_CUSTODY", "DELIVERED", "DELIVERY_FAILED", "REJECTED", "CANCELLED":

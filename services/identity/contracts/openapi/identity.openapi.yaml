@@ -65,6 +65,10 @@ paths:
     $ref: "./paths/operator-passkey-access.yaml#/paths/~1internal~1bootstrap~1operator"
   /auth/refresh:
     $ref: "./paths/session.yaml#/paths/~1auth~1refresh"
+  /auth/web/partner/session:
+    $ref: "./paths/session.yaml#/paths/~1auth~1web~1partner~1session"
+  /auth/web/partner/logout:
+    $ref: "./paths/session.yaml#/paths/~1auth~1web~1partner~1logout"
   /auth/logout:
     $ref: "./paths/session.yaml#/paths/~1auth~1logout"
   /auth/session:

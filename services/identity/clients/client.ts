@@ -65,6 +65,7 @@ export type IdentityClient = Readonly<{
   beginOperatorRecoveryPasskeyRegistration(request: OperatorPasskeyRecoveryRegistrationOptionsRequest): Promise<PasskeyOptions>;
   finishOperatorRecoveryPasskeyRegistration(request: OperatorPasskeyRecoveryFinishRequest): Promise<OperatorPasskeyRegistrationResponse>;
   refresh(request: RefreshRequest): Promise<TokenPair>;
+  restorePartnerBrowserSession(): Promise<TokenPair>;
   developmentSession(role: ActorType, clientInstanceId: string): Promise<TokenPair>;
   session(accessToken: string): Promise<ActorIdentity>;
   logout(accessToken: string): Promise<void>;
@@ -128,7 +129,7 @@ export function isIdentityClientError(value: unknown): value is IdentityClientEr
   return Boolean(value && typeof value === "object" && ((value as { kind?: unknown }).kind === "http" || (value as { kind?: unknown }).kind === "network"));
 }
 
-export function createIdentityClient(rawBaseUrl: string, timeoutMs = 8_000): IdentityClient {
+export function createIdentityClient(rawBaseUrl: string, timeoutMs = 8_000, partnerBrowserSession = false): IdentityClient {
   const baseUrl = normalizeBaseUrl(rawBaseUrl);
 
   async function request<T>(
@@ -149,7 +150,7 @@ export function createIdentityClient(rawBaseUrl: string, timeoutMs = 8_000): Ide
             ...(options.token === undefined ? {} : { Authorization: "Bearer " + options.token }),
           },
           ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
-          ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
+          ...(baseUrl.startsWith("/") || partnerBrowserSession ? { credentials: "include" as const } : {}),
           signal: controller.signal,
         });
       } catch (error) {
@@ -187,10 +188,15 @@ export function createIdentityClient(rawBaseUrl: string, timeoutMs = 8_000): Ide
     requestOperatorRecovery: (body) => request(identityOperationPaths.requestOperatorRecovery.path, { method: identityOperationPaths.requestOperatorRecovery.method, body }),
     beginOperatorRecoveryPasskeyRegistration: (body) => request(identityOperationPaths.beginOperatorRecoveryPasskeyRegistration.path, { method: identityOperationPaths.beginOperatorRecoveryPasskeyRegistration.method, body }),
     finishOperatorRecoveryPasskeyRegistration: (body) => request(identityOperationPaths.finishOperatorRecoveryPasskeyRegistration.path, { method: identityOperationPaths.finishOperatorRecoveryPasskeyRegistration.method, body }),
-    refresh: (body) => request(identityOperationPaths.refreshSession.path, { method: identityOperationPaths.refreshSession.method, body }),
+    refresh: (body) => partnerBrowserSession
+      ? request(identityOperationPaths.restorePartnerBrowserSession.path, { method: "POST" })
+      : request(identityOperationPaths.refreshSession.path, { method: identityOperationPaths.refreshSession.method, body }),
+    restorePartnerBrowserSession: () => request(identityOperationPaths.restorePartnerBrowserSession.path, { method: "POST" }),
     developmentSession: (role, clientInstanceId) => request(identityOperationPaths.createDevelopmentSession.path, { method: identityOperationPaths.createDevelopmentSession.method, body: { role, clientInstanceId } }),
     session: (accessToken) => request(identityOperationPaths.readCurrentSession.path, { method: identityOperationPaths.readCurrentSession.method, token: accessToken }),
-    logout: (accessToken) => request(identityOperationPaths.logoutSession.path, { method: identityOperationPaths.logoutSession.method, token: accessToken }),
+    logout: (accessToken) => partnerBrowserSession
+      ? request(identityOperationPaths.logoutPartnerBrowserSession.path, { method: "POST", token: accessToken })
+      : request(identityOperationPaths.logoutSession.path, { method: identityOperationPaths.logoutSession.method, token: accessToken }),
   };
 }
 
