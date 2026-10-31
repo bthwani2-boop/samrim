@@ -8,6 +8,7 @@ import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, AppState, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { isOwnCustomerWalletResponse } from "./customer-wallet-readback";
 
 type FundingAttempt = Readonly<{ version: 1; actorID: string; amountMinor: number; idempotencyKey: string; correlationID: string; fundingIntentID?: string; providerKey?: string }>;
 type PanelMode = "wallet" | "cash-in";
@@ -102,15 +103,11 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds, initialAmountMi
   useFocusEffect(useCallback(() => {
     void mode; // Requery providers when the cash-in mode changes.
     void loadProviders();
-    // Focused wallet: refresh the tiny public index, no restart required.
-    // Also refresh immediately when Android resumes from the background.
+    // Refresh on focus and foreground; provider configuration does not need a 5-second polling loop.
     const listener = AppState.addEventListener("change", (next) => {
       if (next === "active") void loadProviders();
     });
-    const refresh = setInterval(() => {
-      if (AppState.currentState === "active") void loadProviders();
-    }, 5000);
-    return () => { clearInterval(refresh); listener.remove(); };
+    return () => { listener.remove(); };
   }, [mode, loadProviders]));
 
   const load = useCallback(async () => {
@@ -129,6 +126,11 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds, initialAmountMi
       const restoredAttempt = parseFundingAttempt(await SecureStore.getItemAsync(storageKey), actorID);
       setPending(restoredAttempt);
       const walletResponse = await api().readOwnWallet(token);
+      const current = currentIdentityState();
+      if (current.kind !== "authenticated" || current.identity.subject.trim() !== actorID ||
+          !isOwnCustomerWalletResponse(walletResponse, actorID)) {
+        throw new Error("CUSTOMER_WALLET_SCOPE_MISMATCH");
+      }
       setWallet(walletResponse);
       if (!restoredAttempt?.fundingIntentID) return;
 
@@ -218,7 +220,9 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds, initialAmountMi
       if (isTerminalFundingIntent(intent)) {
         if (intent.state === "SETTLED") {
           const confirmedWallet = await client.readOwnWallet(token);
-          if (confirmedWallet.state.actorId !== actorID ||
+          const current = currentIdentityState();
+          if (current.kind !== "authenticated" || current.identity.subject.trim() !== actorID ||
+              !isOwnCustomerWalletResponse(confirmedWallet, actorID) ||
               !confirmedWallet.fundingIntents.some((entry) => entry.id === intent.id && entry.state === "SETTLED")) {
             throw new Error("CASH_IN_LEDGER_READBACK_MISMATCH");
           }
