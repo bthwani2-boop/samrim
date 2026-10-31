@@ -56,6 +56,8 @@ func (s *MarketingServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/public/banner-presentation", s.readPublicBannerPresentation)
 	mux.HandleFunc("GET /dsh/operator/marketing/banner-presentation", s.readOperatorBannerPresentation)
 	mux.HandleFunc("PUT /dsh/operator/marketing/banner-presentation", s.setOperatorBannerPresentation)
+	mux.HandleFunc("GET /dsh/operator/marketing/studio-draft", s.readOperatorStudioDraft)
+	mux.HandleFunc("PUT /dsh/operator/marketing/studio-draft", s.setOperatorStudioDraft)
 	mux.HandleFunc("POST /dsh/public/discovery-content/events", s.recordPublicDiscoveryContentEvent)
 	mux.HandleFunc("GET /dsh/public/discovery-content/{contentId}/target", s.resolvePublicDiscoveryContentTarget)
 	mux.HandleFunc("GET /dsh/operator/marketing/summary", s.readOperatorMarketingSummary)
@@ -939,6 +941,10 @@ func writeMarketingError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "marketing input is invalid")
 	case errors.Is(err, postgres.ErrMarketingCampaignNotFound), errors.Is(err, postgres.ErrPromotionNotFound), errors.Is(err, postgres.ErrDiscoveryContentNotFound), errors.Is(err, postgres.ErrDiscoveryContentEventNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "marketing record was not found")
+	case errors.Is(err, postgres.ErrStudioDraftInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid studio draft")
+	case errors.Is(err, postgres.ErrStudioDraftConflict):
+		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "studio draft was changed; reload before saving")
 	case errors.Is(err, postgres.ErrBannerPresentationInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid banner presentation")
 	case errors.Is(err, postgres.ErrBannerPresentationConflict):

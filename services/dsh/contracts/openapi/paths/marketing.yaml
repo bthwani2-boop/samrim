@@ -94,6 +94,45 @@ paths:
       responses:
         "200": { description: Updated or replayed presentation }
 
+  /dsh/operator/marketing/studio-draft:
+    get:
+      operationId: readOperatorStudioDraft
+      summary: Read the unpublished shared CLIENT_HOME studio draft
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+      responses:
+        "200":
+          description: Shared draft (null document before first save) and current version
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StudioDraft" } } }
+        "401": { description: Operator authentication is required }
+        "403": { description: Operator marketing permission is required }
+    put:
+      operationId: setOperatorStudioDraft
+      summary: Save unpublished version-checked shared CLIENT_HOME template draft
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [document]
+              properties:
+                document: { $ref: "../dsh.openapi.yaml#/components/schemas/StudioDraftDocument" }
+      responses:
+        "200": { description: Saved draft, version and idempotent replay flag }
+        "400": { description: Studio draft input is invalid }
+        "401": { description: Operator authentication is required }
+        "403": { description: Operator marketing permission is required }
+        "409": { description: Stale version or conflicting idempotency key }
+
   /dsh/public/promotions:
     get:
       operationId: listPublicPromotions

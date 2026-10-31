@@ -57,6 +57,8 @@ func TestMarketingContentOperatorRoutesRejectMissingMarketingPermission(t *testi
 	cases := []struct{ name, method, path, body string }{
 		{"list", "GET", "/dsh/operator/discovery-content", ""},
 		{"summary", "GET", "/dsh/operator/marketing/summary", ""},
+		{"studio draft read", "GET", "/dsh/operator/marketing/studio-draft", ""},
+		{"studio draft write", "PUT", "/dsh/operator/marketing/studio-draft", `{"document":{}}`},
 		{"analytics", "GET", "/dsh/operator/discovery-content/analytics?contentId=test", ""},
 		{"create", "POST", "/dsh/operator/discovery-content", ""},
 		{"publish", "POST", "/dsh/operator/discovery-content/test/publication", `{"state":"PUBLISHED"}`},
