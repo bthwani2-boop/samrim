@@ -10,7 +10,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
-import { isOfferStockout } from "../store-offer/inventory-stockout";
+import { catalogPublishedAvailability, isOfferStockout } from "../store-offer/inventory-stockout";
 import { agreementReadinessMessage, type StoreAgreementReadback } from "./store-agreement-readiness";
 
 type Data = Readonly<{
@@ -144,6 +144,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
   const stockout = data.offers?.filter(isOfferStockout) ?? [];
   const unavailable = data.offers?.filter(item => item.publicationState === "published" && !item.availability) ?? [];
   const available = data.offers?.filter(item => item.publicationState === "published" && item.availability).length;
+  const catalogReady = catalogPublishedAvailability(data.offers, data.offersPartial);
   const financialReady = Boolean(data.finance?.attributionComplete);
   const orders = data.recentOrders ?? [];
   const groups = groupOrders(orders);
@@ -151,7 +152,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
   const maxDay = Math.max(1, ...recentDays.map(item => item.count));
   const readySteps = [
     store.owned ? store.publicationState === "published" : null,
-    canCatalog && data.offers ? data.offers.some(item => item.publicationState === "published" && item.availability) : null,
+    canCatalog ? catalogReady : null,
     canOperate && operationalKnown ? operationalState === "مفتوح" : null,
     store.owned && commercialAgreement !== null && commercialAgreement !== "UNAVAILABLE" ? commercialAgreement === "ACTIVE" : null,
   ];
@@ -213,7 +214,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
           </View>
           <View style={styles.setupGrid}>
             {store.owned ? action("هوية المتجر", store.publicationState === "published" ? "المتجر منشور للعملاء" : "مراجعة بيانات المتجر والنشر", "/store?section=settings" as Href, "store", store.publicationState === "published") : null}
-            {canCatalog ? action("إعداد الكتالوج", data.offers === null ? "البيانات غير متاحة حاليًا" : available ? "يوجد منتجات متاحة للطلب" : "راجع المنتجات والأسعار", "/products" as Href, "cart", data.offers === null ? null : Boolean(available)) : null}
+            {canCatalog ? action("إعداد الكتالوج", data.offers === null ? "البيانات غير متاحة حاليًا" : catalogReady === null ? "لم تكتمل قراءة الكتالوج؛ راجع بقية المنتجات" : catalogReady ? "يوجد منتجات متاحة للطلب" : "راجع المنتجات والأسعار", "/products" as Href, "cart", catalogReady) : null}
             {canOperate ? action("إعدادات التشغيل", operationalKnown ? "استقبال الطلبات: " + operationalState : "تعذر قراءة حالة التشغيل", "/store?section=operations" as Href, "deliveries", operationalKnown ? operationalState === "مفتوح" : null) : null}
             {store.owned ? action("الاتفاقية التجارية", agreementReadinessMessage(commercialAgreement), "/store?section=settings" as Href, "wallet", commercialAgreement === null || commercialAgreement === "UNAVAILABLE" ? null : commercialAgreement === "ACTIVE") : null}
             {canPromotions ? action("العروض", "تحرير العروض المتاحة للمتجر", "/store?section=promotions" as Href, "offers") : null}
