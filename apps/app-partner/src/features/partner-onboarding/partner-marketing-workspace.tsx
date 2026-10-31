@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { PartnerStoreReels } from "../store-offer/partner-store-reels";
+import { PartnerStoreMarketingSummary } from "./partner-marketing-summary";
 import { StorePromotionsCard } from "../store-offer/store-promotions";
 
 export type PartnerMarketingView = "overview" | "offers" | "campaigns" | "content";
@@ -62,8 +63,9 @@ export function PartnerMarketingWorkspace({
         <Text style={styles.cardHint}>{item.hint}</Text>
       </Pressable>)}
     </View>
+    {view === "overview" ? <PartnerStoreMarketingSummary key={storeID} storeId={storeID}/> : null}
     {view === "content" ? <PartnerStoreReels key={storeID} storeId={storeID} storeName={storeName} /> :
       <StorePromotionsCard key={storeID} storeID={storeID} verticalID={verticalID} mode={view} />}
-    {view === "overview" ? <Text style={styles.note}>لا تتضمن هذه الشاشة إحصاءات تسويق تقديرية أو رسومًا مفروضة. أي خصم يُنشأ بتمويل الشريك يخضع لقواعد الأهلية والتسوية القائمة، والمقاطع تُنشر بعد موافقة العمليات.</Text> : null}
+    {view === "overview" ? <Text style={styles.note}>إحصاءات المقاطع أعلاه أحداث فعلية وليست تقديرًا للربح أو رسومًا مفروضة. أي خصم يُنشأ بتمويل الشريك يخضع لقواعد الأهلية والتسوية القائمة، والمقاطع تُنشر بعد موافقة العمليات.</Text> : null}
   </View>;
 }

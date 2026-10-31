@@ -257,3 +257,34 @@ func ListDiscoveryContentAnalytics(ctx context.Context, db *sql.DB, contentID st
 	}
 	return items, rows.Err()
 }
+
+// StoreContentPerformanceSummary is a Store-scoped projection of its own short-form
+// discovery media events. CONVERSION means an attributed created Order, not
+// a completed or paid Order and never a WLT settlement.
+type StoreContentPerformanceSummary struct {
+	StoreID                 string
+	ContentCount            int64
+	Impressions             int64
+	Clicks                  int64
+	AttributedOrdersCreated int64
+}
+
+func ReadStoreContentPerformanceSummary(ctx context.Context, db *sql.DB, storeID string) (StoreContentPerformanceSummary, error) {
+	storeID = strings.TrimSpace(storeID)
+	if db == nil || storeID == "" || len(storeID) > 150 {
+		return StoreContentPerformanceSummary{}, ErrDiscoveryContentInvalid
+	}
+	summary := StoreContentPerformanceSummary{StoreID: storeID}
+	err := db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT content.id)::bigint,
+		COUNT(events.id) FILTER (WHERE events.event_type='IMPRESSION'),
+		COUNT(events.id) FILTER (WHERE events.event_type='CLICK'),
+		COUNT(events.id) FILTER (WHERE events.event_type='CONVERSION')
+		FROM dsh.discovery_content content
+		LEFT JOIN dsh.discovery_content_events events ON events.content_id=content.id
+		WHERE content.source_store_id=$1 AND content.kind='SHORT_FORM'`, storeID).Scan(
+		&summary.ContentCount, &summary.Impressions, &summary.Clicks, &summary.AttributedOrdersCreated)
+	if err != nil {
+		return StoreContentPerformanceSummary{}, err
+	}
+	return summary, nil
+}

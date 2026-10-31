@@ -68,6 +68,16 @@ func TestPartnerStoreContentAnalyticsNeverLeaksAnotherStore(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
+		totals, err := postgres.ReadStoreContentPerformanceSummary(ctx, db, storeA)
+		if err != nil || totals.StoreID != storeA || totals.ContentCount != 1 || totals.Impressions != 1 ||
+			totals.Clicks != 1 || totals.AttributedOrdersCreated != 0 {
+			t.Fatalf("Store A content summary incorrect: %+v error=%v", totals, err)
+		}
+		otherTotals, err := postgres.ReadStoreContentPerformanceSummary(ctx, db, storeB)
+		if err != nil || otherTotals.StoreID != storeB || otherTotals.ContentCount != 0 ||
+			otherTotals.Impressions != 0 || otherTotals.Clicks != 0 || otherTotals.AttributedOrdersCreated != 0 {
+			t.Fatalf("Store B summary includes another Store: %+v error=%v", otherTotals, err)
+		}
 		items, belongs, err := postgres.ListPartnerStoreContentAnalytics(ctx, db, storeA, reel)
 		if err != nil || !belongs {
 			t.Fatalf("owner read: belongs=%t error=%v", belongs, err)

@@ -11,6 +11,7 @@ import { StoreProductsWorkspace } from "./store-products-workspace";
 import { StoreOffersPreview } from "./store-offers-preview";
 import { StoreOrderRatingsPreview } from "./store-order-ratings-preview";
 import { StoreCustomerActivitySummary } from "./store-customer-activity-summary";
+import { StoreMarketingPerformance } from "./store-marketing-performance";
 import { PartnerFinancialRegister } from "../finance/partner-financial-register";
 import { joiningCaseIsoWeekdayLabels as intakeWeekdays } from "../partner-onboarding/joining-case-weekdays";
 
@@ -100,6 +101,7 @@ export function StoreProfileDetailPanels({ activeTab, store, partner, partnerErr
     <Panel id="promotions" selected={activeTab === "catalog"}>
       <Card title="العروض والحملات">
         <StoreOffersPreview storeId={store.id}/>
+        <StoreMarketingPerformance key={store.id} storeId={store.id}/>
         <Link className="store-profile-action-link" href="/marketing">فتح مركز التسويق والحملات ←</Link>
       </Card>
     </Panel>

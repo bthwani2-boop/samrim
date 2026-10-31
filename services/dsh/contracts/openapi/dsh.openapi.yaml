@@ -537,6 +537,10 @@ paths:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1discovery-content"
   /dsh/partner/stores/{storeId}/discovery-content/{contentId}/analytics:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1discovery-content~1{contentId}~1analytics"
+  /dsh/partner/stores/{storeId}/discovery-content/summary:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1discovery-content~1summary"
+  /dsh/operator/stores/{storeId}/discovery-content/summary:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1discovery-content~1summary"
   /dsh/partner/stores/{storeId}/promotions:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1promotions"
   /dsh/partner/stores/{storeId}/promotions/{promotionId}/state:
@@ -10373,6 +10377,29 @@ components:
         count:
           type: integer
           minimum: 0
+
+    StoreContentPerformanceSummary:
+      type: object
+      additionalProperties: false
+      required: [storeId, contentCount, impressions, clicks, attributedOrdersCreated]
+      properties:
+        storeId:
+          type: string
+          minLength: 1
+          maxLength: 150
+        contentCount:
+          type: integer
+          minimum: 0
+        impressions:
+          type: integer
+          minimum: 0
+        clicks:
+          type: integer
+          minimum: 0
+        attributedOrdersCreated:
+          type: integer
+          minimum: 0
+          description: Created Orders canonically attributed by DSH; not completed sales, cash collected, or WLT settlement.
 
     DiscoveryContentAnalyticsListResponse:
       type: object

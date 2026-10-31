@@ -73,6 +73,8 @@ func (s *MarketingServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/operator/discovery-content", s.createOperatorDiscoveryContent)
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/discovery-content", s.listPartnerStoreDiscoveryContent)
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/discovery-content/{contentId}/analytics", s.listPartnerStoreContentAnalytics)
+	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/discovery-content/summary", s.readPartnerStoreContentSummary)
+	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/discovery-content/summary", s.readOperatorStoreContentSummary)
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/discovery-targets", s.listPartnerStoreDiscoveryTargets)
 	mux.HandleFunc("POST /dsh/partner/stores/{storeId}/discovery-content", s.createPartnerStoreDiscoveryContent)
 	mux.HandleFunc("POST /dsh/operator/discovery-content/{contentId}/publication", s.setOperatorDiscoveryContentPublication)
@@ -566,6 +568,54 @@ func (s *MarketingServer) listPartnerStoreDiscoveryContent(w http.ResponseWriter
 		values = append(values, toDiscoveryContentView(item))
 	}
 	writeJSON(w, http.StatusOK, contract.OperatorDiscoveryContentRegistryResponse{Items: values, Limit: len(values)})
+}
+
+func (s *MarketingServer) writeStoreContentSummary(w http.ResponseWriter, r *http.Request) {
+	storeID := strings.TrimSpace(r.PathValue("storeId"))
+	if storeID == "" || len(storeID) > 150 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "storeId is invalid")
+		return
+	}
+	summary, err := postgres.ReadStoreContentPerformanceSummary(r.Context(), s.db, storeID)
+	if err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	response := contract.StoreContentPerformanceSummary{}
+	response.StoreID = summary.StoreID
+	response.ContentCount = int(summary.ContentCount)
+	response.Impressions = int(summary.Impressions)
+	response.Clicks = int(summary.Clicks)
+	response.AttributedOrdersCreated = int(summary.AttributedOrdersCreated)
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *MarketingServer) readPartnerStoreContentSummary(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Partner session is required")
+		return
+	}
+	if r.Header.Get("X-Acting-Actor-ID") != "" || r.Header.Get("X-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Partner authority comes from session")
+		return
+	}
+	if _, err := s.requirePartnerStorePromotionAuthority(r.Context(), bearerToken(r), r.PathValue("storeId")); err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	s.writeStoreContentSummary(w, r)
+}
+
+func (s *MarketingServer) readOperatorStoreContentSummary(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "untrusted actor authority")
+		return
+	}
+	if !s.operatorAuthorized(w, r) {
+		return
+	}
+	s.writeStoreContentSummary(w, r)
 }
 
 func (s *MarketingServer) listPartnerStoreContentAnalytics(w http.ResponseWriter, r *http.Request) {

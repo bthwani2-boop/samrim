@@ -764,3 +764,37 @@ paths:
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/partner/stores/{storeId}/discovery-content/summary:
+    get:
+      operationId: readPartnerStoreContentPerformanceSummary
+      summary: All-time Store-owned short-form content and attributed created-Order event counts
+      description: Requires authenticated partner with Store-scoped promotions authority. Counts include retired/paused historical content, not general platform banners, and never imply settled revenue.
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+      responses:
+        "200":
+          description: Canonical Store-scoped short-form marketing totals.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreContentPerformanceSummary" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/stores/{storeId}/discovery-content/summary:
+    get:
+      operationId: readOperatorStoreContentPerformanceSummary
+      summary: Read short-form performance totals for one Store with operator marketing permission
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorId"
+      responses:
+        "200":
+          description: Store content totals from same DSH query as Partner, subject to operator Marketing authority.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreContentPerformanceSummary" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
