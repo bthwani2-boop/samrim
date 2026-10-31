@@ -11,16 +11,18 @@ function AwakeWhileBarcodeScanning() {
   useKeepAwake();
   return null;
 }
+import * as Clipboard from "expo-clipboard";
 import * as Crypto from "expo-crypto";
 import * as DocumentPicker from "expo-document-picker";
 import { Image as ExpoImage } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, Linking, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { onPartnerProductAction } from "../../shell/partner-product-actions";
 import { PartnerStorePromotionBanner } from "./partner-promotion-banner";
+import { buildPartnerOfferShareURL, buildPartnerStoreWhatsAppURL } from "../partner-onboarding/partner-storefront-url";
 import { StoreCatalogExportCard } from "./store-catalog-export";
 import { StoreProductTrash } from "./store-product-trash";
 import { isOfferStockout } from "./inventory-stockout";
@@ -143,7 +145,7 @@ function isResolvedProductMatch(match: CatalogIdentifierResolution): match is Re
   return match.outcome === "SHARED_PRODUCT_MATCH" || match.outcome === "STORE_LOCAL_PRODUCT_MATCH";
 }
 
-export function StoreOfferManagement({ storeId, verticalId, serviceCityId, canManagePromotions = false, toolsView = false }: { storeId: string; verticalId: string; serviceCityId: string; canManagePromotions?: boolean; toolsView?: boolean }) {
+export function StoreOfferManagement({ storeId, verticalId, serviceCityId, storePublicationState, canManagePromotions = false, toolsView = false }: { storeId: string; verticalId: string; serviceCityId: string; storePublicationState: string; canManagePromotions?: boolean; toolsView?: boolean }) {
 const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<OfferState>({ kind: "loading" });
@@ -223,6 +225,8 @@ const theme = useAppearanceTheme();
   const [busy, setBusy] = useState(false);
   const offerMutationLock = useRef(false);
   const [error, setError] = useState("");
+  const [shareNotice, setShareNotice] = useState("");
+  const [sharingOfferID, setSharingOfferID] = useState("");
   const [productSaveFeedback, setProductSaveFeedback] = useState("");
   const [storeProductName, setStoreProductName] = useState("");
   const [storeProductDescription, setStoreProductDescription] = useState("");
@@ -867,6 +871,41 @@ const theme = useAppearanceTheme();
   const parsedInventoryOnHand = Number(inventoryOnHandBaseUnits.trim());
   const expectedPricingBasis = expectedPricingBasisFor(selectedVariant?.measurementKind);
   const canAdd = selectedVariant !== null && selectedVariant.measurementKind !== "VARIABLE_MEASURE" && Boolean(quantityPolicy && pricingBasis) && pricingBasis === expectedPricingBasis && Number.isSafeInteger(parsedPrice) && parsedPrice > 0 && [parsedMin, parsedMax, parsedStep, parsedPricingUnit, parsedInventoryOnHand].every(Number.isSafeInteger) && parsedMin >= 1 && parsedMax >= parsedMin && parsedStep >= 1 && parsedPricingUnit >= 1 && parsedInventoryOnHand >= 0 && (inventoryPolicy === "QUANTITY_ON_HAND" || parsedInventoryOnHand === 0);
+  function publicOfferLink(offer: CatalogStoreOffer) {
+    return buildPartnerOfferShareURL(
+      { id: storeId, serviceCityId, publicationState: storePublicationState },
+      offer, process.env.EXPO_PUBLIC_CLIENT_WEB_ORIGIN, __DEV__,
+    );
+  }
+
+  async function copyOfferLink(offer: CatalogStoreOffer) {
+    const link = publicOfferLink(offer);
+    if (!link || sharingOfferID) return;
+    setShareNotice(""); setSharingOfferID(offer.offerId);
+    try {
+      await Clipboard.setStringAsync(link.url);
+      setShareNotice(link.previewOnly ? "تم نسخ معاينة المنتج المحلية؛ لا تُشاركها بوصفها رابطًا عامًا." : "تم نسخ رابط المنتج العام.");
+    } catch {
+      setShareNotice("تعذر نسخ رابط المنتج. تحقق من الصلاحيات ثم أعد المحاولة.");
+    } finally {
+      setSharingOfferID("");
+    }
+  }
+
+  async function shareOfferWhatsApp(offer: CatalogStoreOffer) {
+    const link = publicOfferLink(offer);
+    const whatsapp = buildPartnerStoreWhatsAppURL(link, offer.productName);
+    if (!whatsapp || sharingOfferID) return;
+    setShareNotice(""); setSharingOfferID(offer.offerId);
+    try {
+      await Linking.openURL(whatsapp);
+    } catch {
+      setShareNotice("تعذر فتح واتساب. يمكنك نسخ رابط المنتج ومشاركته يدويًا.");
+    } finally {
+      setSharingOfferID("");
+    }
+  }
+
   return (
     <View style={styles.container} accessibilityLabel="إدارة عروض المتجر">
       {!catalogReady ? <Text accessibilityRole="alert" style={styles.warning}>قائمة المتجر غير جاهزة للإدارة بعد. تعذرت إضافة المنتجات أو نشر العروض حاليًا؛ تواصل مع الدعم لاستكمال التجهيز.</Text> : null}
@@ -939,11 +978,14 @@ const theme = useAppearanceTheme();
         {!toolsView && panel === null && state.kind === "ready" && !serverOfferQuery && state.offers.length === 0 ? <Text style={styles.muted}>لا توجد عروض مرتبطة بهذا المتجر بعد.</Text> : null}
         {!toolsView && panel === null && state.kind === "ready" && serverOfferQuery && remoteOffers.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ البحث في كتالوج المتجر بالكامل…</Text></View> : null}
         {!toolsView && panel === null && state.kind === "ready" && serverOfferQuery && remoteOffers.kind === "error" ? <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>تعذر تحميل نتائج التصفية من المتجر.</Text><BthwaniButton label="إعادة البحث" onPress={() => setRemoteOfferRefresh((value) => value + 1)} variant="secondary" /></View> : null}
+        {shareNotice && !toolsView && panel === null ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{shareNotice}</Text> : null}
         {!toolsView && panel === null && state.kind === "ready" && listFilter !== "offers" ? <View style={styles.offerList}>
         {offersOnScreen.map((offer) => {
           const primaryMedia = getPrimaryMedia(offer.media);
           const inventoryDraft = inventoryDrafts[offer.offerId] ?? String(offer.inventoryOnHandBaseUnits);
           const stockExpanded = expandedInventoryId === offer.offerId;
+          const publicLink = publicOfferLink(offer);
+          const whatsappLink = buildPartnerStoreWhatsAppURL(publicLink, offer.productName);
           return <View key={offer.offerId} style={styles.item}>
             <View style={styles.offerIdentity}>
               {primaryMedia ? <ExpoImage cachePolicy="memory" accessibilityLabel={"صورة " + offer.productName} source={{ uri: primaryMedia.uri }} contentFit="cover" style={styles.offerImage} />
@@ -962,6 +1004,16 @@ const theme = useAppearanceTheme();
               <Pressable accessibilityRole="button" accessibilityLabel={"تعديل سعر " + offer.productName} onPress={() => setPanel("prices")} style={styles.compactAction}><BthwaniIcon name="edit" size={15} color={theme.color} /><Text style={styles.compactActionLabel}>تعديل</Text></Pressable>
               <Pressable accessibilityRole="button" accessibilityLabel={(offer.publicationState === "published" ? "إخفاء " : "نشر ") + offer.productName} disabled={busy} onPress={() => void updateOffer(offer, offer.publicationState === "published" ? "hidden" : "published", offer.availability)} style={styles.compactAction}><Text style={styles.compactActionLabel}>{offer.publicationState === "published" ? "إخفاء" : "نشر"}</Text></Pressable>
             </View>
+            {publicLink ? <View style={[styles.offerActionRow, { flexWrap: "wrap" }]}>
+              <Pressable accessibilityRole="button" accessibilityLabel={"نسخ رابط المنتج " + offer.productName}
+                disabled={Boolean(sharingOfferID)} onPress={() => void copyOfferLink(offer)} style={styles.compactAction}>
+                <Text style={styles.compactActionLabel}>{publicLink.previewOnly ? "نسخ رابط المعاينة" : "نسخ رابط المنتج"}</Text>
+              </Pressable>
+              {whatsappLink ? <Pressable accessibilityRole="button" accessibilityLabel={"مشاركة " + offer.productName + " عبر واتساب"}
+                disabled={Boolean(sharingOfferID)} onPress={() => void shareOfferWhatsApp(offer)} style={styles.compactAction}>
+                <Text style={styles.compactActionLabel}>مشاركة عبر واتساب</Text>
+              </Pressable> : null}
+            </View> : null}
             {stockExpanded ? <View style={styles.inventoryBlock}>
               <Text style={styles.muted}>المحجوز: {offer.inventoryReservedBaseUnits} · المتاح: {Math.max(0, offer.inventoryOnHandBaseUnits - offer.inventoryReservedBaseUnits)}</Text>
               <TextInput accessibilityLabel={"مخزون " + offer.productName} editable={!busy} keyboardType="number-pad" onChangeText={(value) => setInventoryDrafts((current) => ({ ...current, [offer.offerId]: toAsciiDigits(value) }))} value={inventoryDraft} style={[styles.input, styles.numericInput, busy && styles.disabledInput]} />

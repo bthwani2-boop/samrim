@@ -5,7 +5,7 @@ async function run() {
   const browser = await chromium.connectOverCDP("http://127.0.0.1:9223");
   let page;
   try {
-    const context = browser.contexts().find(c => c.pages().some(p => p.url().startsWith("http://localhost:18102")));
+    const context = browser.contexts().find(c => c.pages().some(p => p.url().startsWith("http://localhost:18102"))) ?? browser.contexts()[0];
     assert.ok(context, "EXISTING_PARTNER_WEB_SESSION_REQUIRED");
     page = await context.newPage();
     await page.goto("http://localhost:18102/more", { waitUntil: "domcontentloaded", timeout: 25000 });
