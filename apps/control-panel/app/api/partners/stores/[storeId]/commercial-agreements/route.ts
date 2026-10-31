@@ -49,7 +49,9 @@ export async function POST(request: Request, context: { params: Promise<{ storeI
     (body?.renewalPolicy === "MANUAL" || body?.renewalPolicy === "AUTOMATIC") &&
     typeof body?.terminationTerms === "string" && Array.from(body.terminationTerms.trim()).length >= 8 && Array.from(body.terminationTerms.trim()).length <= 500 &&
     typeof body?.adjustmentTerms === "string" && Array.from(body.adjustmentTerms.trim()).length >= 8 && Array.from(body.adjustmentTerms.trim()).length <= 500 &&
-    (model !== "SUBSCRIPTION" || (Array.isArray(rates) && rates.every(rate => rate?.commissionRateBps === 0)));
+    (model !== "SUBSCRIPTION" || (Array.isArray(rates) && rates.every(rate => rate?.commissionRateBps === 0))) &&
+    (model !== "HYBRID" || (Array.isArray(rates) && rates.some(rate =>
+      Number.isSafeInteger(rate?.commissionRateBps) && rate.commissionRateBps > 0)));
   if (!body || !recurringValid || Object.keys(body).some(key => !["rates", "reason", "expectedCurrentVersion", ...modelFields].includes(key)) || !Array.isArray(rates) || rates.length < 1 || rates.length > 3 || rates.some(rate => !rate || typeof rate !== "object" || Object.keys(rate).some(k => !["fulfillmentMode", "commissionRateBps"].includes(k)) || !["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"].includes(rate.fulfillmentMode) || !Number.isInteger(rate.commissionRateBps) || rate.commissionRateBps < 0 || rate.commissionRateBps > 10000) || !Number.isInteger(version) || Number(version) < 0 || typeof reason !== "string" || Array.from(reason.trim()).length < 8 || Array.from(reason.trim()).length > 500) return fail("INVALID_INPUT", "Agreement proposal is invalid", 400);
   try {
     const result = await proposePartnersStoreCommercialAgreement(storeId, rates as {fulfillmentMode: "BTHWANI_CAPTAIN" | "PARTNER_CAPTAIN" | "CUSTOMER_PICKUP";commissionRateBps:number}[], Number(version), reason, { operatorActorId: access.actorId, correlationId, idempotencyKey },

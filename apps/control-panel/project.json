@@ -38,7 +38,7 @@
     "contract": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "node --test apps/control-panel/tests/partner-financial-table.test.mjs"
+        "command": "node --test apps/control-panel/tests/partner-financial-table.test.mjs apps/control-panel/tests/initial-zero-commission-proposal.test.mjs apps/control-panel/tests/store-commercial-proposal-rates.test.mjs"
       }
     },
     "lint": {

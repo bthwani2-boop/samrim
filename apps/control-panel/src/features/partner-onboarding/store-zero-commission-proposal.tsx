@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { stablePartnerMutationHeaders } from "../partners/partner-request";
 import { initialZeroCommissionProposalVersion } from "./initial-zero-commission-proposal";
+import { sameStoreCommercialRates, storeCommercialRatesForProposal } from "./store-commercial-proposal-rates";
 
 type Agreement = Readonly<{
   agreementId: string;
@@ -30,7 +31,9 @@ export function StoreZeroCommissionProposal({ storeId, modes }: Readonly<{storeI
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [commercialModel, setCommercialModel] = useState<"COMMISSION" | "SUBSCRIPTION" | "HYBRID">("COMMISSION");
-  const [commissionPercent, setCommissionPercent] = useState("0");
+  const [commissionPercentByMode, setCommissionPercentByMode] = useState<Record<StoreFulfillmentMode, string>>({
+    BTHWANI_CAPTAIN: "0", PARTNER_CAPTAIN: "0", CUSTOMER_PICKUP: "0",
+  });
   const [recurringAmount, setRecurringAmount] = useState("");
   const [billingPeriod, setBillingPeriod] = useState<"MONTHLY" | "ANNUAL">("MONTHLY");
   const [invoiceDueDays, setInvoiceDueDays] = useState("7");
@@ -69,14 +72,12 @@ export function StoreZeroCommissionProposal({ storeId, modes }: Readonly<{storeI
     if (busy || !actorId || nextProposalVersion === null || modes.length === 0) return;
     const distinct = [...new Set(modes)];
     if (distinct.length !== modes.length || distinct.some(mode => !(mode in labels))) return;
-    const percent = Number(commissionPercent);
-    const bps = Math.round(percent * 100);
+    const rates = storeCommercialRatesForProposal(distinct, commissionPercentByMode, commercialModel);
     const recurring = commercialModel !== "COMMISSION";
     const amount = Number(recurringAmount);
     const due = Number(invoiceDueDays);
     const grace = Number(graceDays);
-    if (!Number.isFinite(percent) || bps < 0 || bps > 10000 || Math.abs(percent * 100 - bps) > 0.000001 ||
-      (commercialModel === "SUBSCRIPTION" && bps !== 0) || (commercialModel === "HYBRID" && bps === 0) ||
+    if (!rates ||
       (recurring && (!Number.isSafeInteger(amount) || amount < 1 || amount > 100000000 ||
         !Number.isSafeInteger(due) || due < 0 || due > 30 || !Number.isSafeInteger(grace) || grace < 0 || grace > 30 ||
         Array.from(terminationTerms.trim()).length < 8 || Array.from(terminationTerms.trim()).length > 500 ||
@@ -86,7 +87,7 @@ export function StoreZeroCommissionProposal({ storeId, modes }: Readonly<{storeI
     }
     const payload = {
       commercialModel,
-      rates: distinct.map(fulfillmentMode => ({ fulfillmentMode, commissionRateBps: bps })),
+      rates,
       expectedCurrentVersion: nextProposalVersion, reason: proposalReason.trim(),
       ...(recurring ? { recurringAmountMinor: amount, billingPeriod, billingTimeZone: "Asia/Aden", invoiceDueDays: due,
         graceDays: grace, renewalPolicy, terminationTerms: terminationTerms.trim(), adjustmentTerms: adjustmentTerms.trim() } : {}),
@@ -103,12 +104,15 @@ export function StoreZeroCommissionProposal({ storeId, modes }: Readonly<{storeI
       const body = await response.json() as { agreement?: Agreement };
       if (!body.agreement || body.agreement.status !== "PROPOSED" || body.agreement.commercialModel !== commercialModel ||
         body.agreement.rates.length !== distinct.length || body.agreement.recurringAmountMinor !== (recurring ? amount : 0) ||
-        body.agreement.rates.some(rate => rate.commissionRateBps !== bps || !distinct.includes(rate.fulfillmentMode as StoreFulfillmentMode))) {
+        !sameStoreCommercialRates(body.agreement.rates, rates)) {
         throw new Error("PROPOSAL_READBACK_MISMATCH");
       }
       const actual = await read();
       if (!actual.some(item => item.agreementId === body.agreement?.agreementId && item.status === "PROPOSED" &&
-        item.commercialModel === commercialModel && item.recurringAmountMinor === (recurring ? amount : 0))) throw new Error("PROPOSAL_CANONICAL_READBACK_MISMATCH");
+        item.commercialModel === commercialModel && item.recurringAmountMinor === (recurring ? amount : 0) &&
+        sameStoreCommercialRates(item.rates, rates))) {
+        throw new Error("PROPOSAL_CANONICAL_READBACK_MISMATCH");
+      }
       setNotice(recurring ? "حُفظ اقتراح الاشتراك أو الهجين بانتظار قبول صاحب المتجر. التحصيل والاعتماد المالي معطّلان حتى اكتمال الفوترة." :
         "حُفظ اقتراح العمولة بانتظار قبول صاحب المتجر واعتماد المالية.");
     } catch {
@@ -129,15 +133,21 @@ export function StoreZeroCommissionProposal({ storeId, modes }: Readonly<{storeI
       <p>أوضاع التنفيذ: {modes.map(mode => labels[mode] ?? mode).join("، ")}</p>
       <div className="form-grid">
         <label className="field-label" htmlFor="store-commercial-model">نموذج الاتفاق
-          <select id="store-commercial-model" value={commercialModel} onChange={event => { const value = event.target.value as "COMMISSION" | "SUBSCRIPTION" | "HYBRID"; setCommercialModel(value); if (value === "SUBSCRIPTION") setCommissionPercent("0"); }} disabled={busy}>
+          <select id="store-commercial-model" value={commercialModel} onChange={event => setCommercialModel(event.target.value as "COMMISSION" | "SUBSCRIPTION" | "HYBRID")} disabled={busy}>
             <option value="COMMISSION">عمولة فقط</option>
             <option value="SUBSCRIPTION">اشتراك فقط دون عمولة منتجات</option>
             <option value="HYBRID">اشتراك وعمولة</option>
           </select>
         </label>
-        {commercialModel !== "SUBSCRIPTION" ? <label className="field-label" htmlFor="store-commercial-rate">عمولة المنتجات (%) لكل أوضاع التنفيذ
-          <input id="store-commercial-rate" type="number" min={commercialModel === "HYBRID" ? "0.01" : "0"} max="100" step="0.01" value={commissionPercent} onChange={event => setCommissionPercent(event.target.value)} disabled={busy} />
-        </label> : <p>عمولة المنتجات صفر صراحةً في نموذج الاشتراك.</p>}
+        {commercialModel !== "SUBSCRIPTION" ? modes.map(mode =>
+          <label className="field-label" htmlFor={"store-commercial-rate-" + mode} key={mode}>
+            عمولة المنتجات (%) — {labels[mode]}
+            <input id={"store-commercial-rate-" + mode} type="number" min="0" max="100" step="0.01"
+              value={commissionPercentByMode[mode]}
+              onChange={event => setCommissionPercentByMode(current => ({ ...current, [mode]: event.target.value }))}
+              disabled={busy} />
+          </label>
+        ) : <p>عمولة المنتجات صفر صراحةً في نموذج الاشتراك لجميع طرق التنفيذ.</p>}
         {commercialModel !== "COMMISSION" ? <>
           <label className="field-label" htmlFor="store-commercial-amount">الاشتراك الدوري بالريال اليمني
             <input id="store-commercial-amount" type="number" min="1" max="100000000" step="1" value={recurringAmount} onChange={event => setRecurringAmount(event.target.value)} disabled={busy} />
