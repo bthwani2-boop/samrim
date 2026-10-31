@@ -25,25 +25,27 @@ These are visible labels, **not evidence** that all payment providers are live, 
 | E01 | لوحة التحكم | Screenshot + prior live DOM |
 | E02 | الطلبات | Main orders and refunds list DOM observed read-only; actions NOT_RUN |
 | E03 | الكتالوج | Products, stock and product-questions list DOM observed read-only; mutations NOT_RUN |
-| E04 | العملاء | Sidebar only; inner routes NOT_RUN |
+| E04 | العملاء | Customer wallet and notification list screens read-only; actions NOT_RUN |
 | E05 | التسويق (PRO) | Sidebar only; locked flow NOT_RUN |
-| E06 | التقارير | Sidebar only; inner routes NOT_RUN |
+| E06 | التقارير | Report overview and seven subpages read-only; data/exports NOT_RUN |
 | E07 | التحليلات الذكية (BI) (PRO) | Sidebar only; internal logic UNKNOWN |
-| E08 | الشحن | Sidebar only; inner routes NOT_RUN |
+| E08 | الشحن | Carriers, countries, rules and classes screens read-only; effects NOT_RUN |
 | E09 | الإعدادات | Payment settings OBSERVED; other subpages NOT_RUN |
-| E10 | تخصيص الثيم | Sidebar only; inner routes NOT_RUN |
+| E10 | تخصيص الثيم | Theme page read-only; publication NOT_RUN |
 | E11 | سوق الإضافات والتطبيقات (PRO) | Sidebar only; inner routes NOT_RUN |
 | E12 | متجر الخدمات (PRO) | Sidebar only; inner routes NOT_RUN |
 | E13 | حسابي | Sidebar only; inner routes NOT_RUN |
-| E14 | الإشعارات | Sidebar only; inner routes NOT_RUN |
+| E14 | الإشعارات | Notification list read-only; delivery NOT_RUN |
 | E15 | دعم المتجر / الدعم الفني (PRO) | Sidebar only; inner routes NOT_RUN |
-| E16 | واتساب (PRO) | Sidebar only; integration NOT_RUN |
+| E16 | واتساب (PRO) | Settings page read-only; provider integration NOT_RUN |
 | E17 | مساعد الذكاء الاصطناعي (قريبًا) | Teaser only; NOT an observed working capability |
-| E18 | الاستيراد والتصدير | Sidebar only; action NOT_RUN |
+| E18 | الاستيراد والتصدير | Experimental import/export page read-only; actions NOT_RUN |
 | E19 | الموظفون (PRO) | Sidebar only; role behavior NOT_RUN |
 | E20 | سجل النشاطات | Activity list and filter controls observed read-only; audit integrity NOT_RUN |
-| E21 | سلة المحذوفات | Sidebar only; inner routes NOT_RUN |
+| E21 | سلة المحذوفات | Recycle-bin page read-only; restore/delete NOT_RUN |
 | E22 | نسخ رابط المتجر | Sidebar action visible; action NOT_RUN |
+| E23 | مناديب التوصيل (PRO) | Menu observed; paid workflow unverified |
+| E24 | التسويات (PRO) | Menu observed; paid financial workflow unverified |
 
 Other visible dashboard controls: search, theme, language, user menu, store toggle, about-store link, on-boarding/checklist and stock/attention cards; these are not individually validated. A PRO badge or label is evidence of marketing/navigation, not proof of paid internal behavior.
 
@@ -66,6 +68,23 @@ These are pages of the user's current Elleen account and RRDA storefront, observ
 | RRDA catalog | https://rrda.elleen.ye/products | Category, brand, price and sort controls, quick view, favorites, product sharing, quick cart and back-in-stock notification buttons | Checkout, notifications delivery, account isolation, failed submissions |
 
 BThwani comparisons remain bounded: Store stock updates and stockout filtering already exist in Partner/DSH source; do not recreate those owners. Existing financial order adjustments and settlement code cannot be assumed to match Elleen's full refund workflow without a contract-and-ledger E2E inspection. Product questions are a visible competitor feature, not yet an independently approved BThwani capability. Activity-audit evidence is scoped to existing service/actor records, not proof of an Elleen-like global audit screen.
+
+## 2026-11-01 expanded navigation and 29-page read-only census
+
+Playwright opened 29 additional routes using the user's authorized Edge session. Each returned HTTP 200 with a visible heading; **route access does not prove a working feature or entitlement**. No payment, subscription upgrade, financial transaction, customer-record inspection, form submission or source-code copying was attempted.
+
+| Elleen group | Opened screen routes | Evidence limit |
+| --- | --- | --- |
+| Catalog | /admin/catalog/filters; /admin/catalog/brands; /admin/catalog/attributes; /admin/catalog/product-sections; /admin/catalog/product-reviews | Headings only; product mutations and moderation NOT_RUN |
+| Customers | /admin/customers/wallets; /admin/customers/notifications | No private customer balances or broadcast notification actions |
+| Reports | /admin/reports; /admin/reports/sales; /admin/reports/orders; /admin/reports/products; /admin/reports/customers; /admin/reports/inventory; /admin/reports/coupons; /admin/reports/traffic | Aggregates, filters, exports and monetary accuracy NOT_RUN |
+| Shipping | /admin/settings/shipping-carriers; /admin/settings/shipping-countries; /admin/settings/shipping-rules; /admin/settings/shipping-classes | Carrier integration and delivery tariff behavior NOT_RUN |
+| Brand and onboarding | /admin/verification; /admin/theme; /admin/onboarding | No proof submission or published theme change |
+| Operations | /admin/settings/whatsapp; /admin/helpdesk; /admin/notifications; /admin/recycle-bin; /admin/import-export | Message delivery, deletion/restoration and file actions NOT_RUN |
+| Commercial plans | /admin/plans | Plan presentation only; no upgrade or payment |
+| SEO | /admin/seo/dashboard | **Redirects to /admin/plans**: SEO is not verified as active for this Store |
+
+Menu expansion also revealed orders/refunds, catalog products/categories/stock, Store customer wallets/notifications, reporting, shipping and PRO-labelled marketing, BI, delivery representatives, settlements and staff. No paid feature internals were accessed or inferred as fact.
 
 ## BThwani impact routing — verified source existence only
 
