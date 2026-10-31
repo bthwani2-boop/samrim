@@ -46,3 +46,29 @@ func TestStoreContentSummaryRejectsUnauthorizedAndForgedHeadersBeforeDatabaseRea
 	check("operator forged client actor", "/dsh/operator/stores/store-A/discovery-content/summary", "Bearer test-marketing-summary-operator-token", "X-Actor-ID", http.StatusBadRequest)
 	check("operator missing acting actor", "/dsh/operator/stores/store-A/discovery-content/summary", "Bearer test-marketing-summary-operator-token", "", http.StatusBadRequest)
 }
+
+func TestStoreContentSummaryRejectsInvalidOrAmbiguousPeriodsBeforeDatabaseRead(t *testing.T) {
+	db, err := sql.Open("postgres", "host=127.0.0.1 port=1 user=unused sslmode=disable connect_timeout=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	server, err := NewMarketingWithDependencies(nil, "marketing-summary-period-check", db, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, period := range []string{"period=14d", "period=7d&period=all", "period=30d&period=30d"} {
+		t.Run(period, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/dsh/operator/stores/store-A/discovery-content/summary?"+period, nil)
+			req.SetPathValue("storeId", "store-A")
+			out := httptest.NewRecorder()
+			server.writeStoreContentSummary(out, req)
+			if out.Code != http.StatusBadRequest {
+				t.Fatalf("invalid period accepted or database accessed: status=%d body=%s", out.Code, out.Body.String())
+			}
+			if strings.Contains(out.Body.String(), "attributedOrdersCompleted") {
+				t.Fatal("invalid period revealed summary")
+			}
+		})
+	}
+}

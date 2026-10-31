@@ -381,11 +381,11 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
         .replace("{storeId}", encodeURIComponent(store)).replace("{contentId}", encodeURIComponent(content));
       return userRequest<DiscoveryContentAnalyticsListResponse>(accessToken, path, dshOperationPaths.listPartnerStoreContentAnalytics.method);
     },
-    async readPartnerStoreContentPerformanceSummary(accessToken: string, storeID: string): Promise<StoreContentPerformanceSummary> {
+    async readPartnerStoreContentPerformanceSummary(accessToken: string, storeID: string, period: "7d" | "30d" | "all" = "all"): Promise<StoreContentPerformanceSummary> {
       const store = storeID.trim();
-      if (!store || store.length > 150) throw new Error("DSH_PARTNER_CONTENT_SUMMARY_SCOPE_INVALID");
+      if (!store || store.length > 150 || !["7d", "30d", "all"].includes(period)) throw new Error("DSH_PARTNER_CONTENT_SUMMARY_SCOPE_INVALID");
       const path = dshOperationPaths.readPartnerStoreContentPerformanceSummary.path.replace("{storeId}", encodeURIComponent(store));
-      return userRequest<StoreContentPerformanceSummary>(accessToken, path, dshOperationPaths.readPartnerStoreContentPerformanceSummary.method);
+      return userRequest<StoreContentPerformanceSummary>(accessToken, path + "?period=" + period, dshOperationPaths.readPartnerStoreContentPerformanceSummary.method);
     },
     async listPartnerStorePromotions(accessToken: string, storeID: string): Promise<OperatorPromotionRegistryResponse> {
       const normalizedStore = storeID.trim();

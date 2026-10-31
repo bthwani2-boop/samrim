@@ -576,7 +576,28 @@ func (s *MarketingServer) writeStoreContentSummary(w http.ResponseWriter, r *htt
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "storeId is invalid")
 		return
 	}
-	summary, err := postgres.ReadStoreContentPerformanceSummary(r.Context(), s.db, storeID)
+	if len(r.URL.Query()["period"]) > 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "period must be supplied once")
+		return
+	}
+	period := strings.TrimSpace(r.URL.Query().Get("period"))
+	if period == "" {
+		period = "all"
+	}
+	if period != "7d" && period != "30d" && period != "all" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "period must be 7d, 30d or all")
+		return
+	}
+	var from *time.Time
+	if period != "all" {
+		days := -7
+		if period == "30d" {
+			days = -30
+		}
+		start := time.Now().UTC().AddDate(0, 0, days)
+		from = &start
+	}
+	summary, err := postgres.ReadStoreContentPerformanceSummary(r.Context(), s.db, storeID, period, from)
 	if err != nil {
 		writeMarketingError(w, err)
 		return
@@ -584,6 +605,8 @@ func (s *MarketingServer) writeStoreContentSummary(w http.ResponseWriter, r *htt
 	w.Header().Set("Cache-Control", "no-store")
 	response := contract.StoreContentPerformanceSummary{}
 	response.StoreID = summary.StoreID
+	response.Period = summary.Period
+	response.AttributedOrdersCompleted = int(summary.AttributedOrdersCompleted)
 	response.ContentCount = int(summary.ContentCount)
 	response.Impressions = int(summary.Impressions)
 	response.Clicks = int(summary.Clicks)

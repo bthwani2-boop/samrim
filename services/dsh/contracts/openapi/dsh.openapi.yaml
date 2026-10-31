@@ -10381,12 +10381,16 @@ components:
     StoreContentPerformanceSummary:
       type: object
       additionalProperties: false
-      required: [storeId, contentCount, impressions, clicks, attributedOrdersCreated]
+      required: [storeId, period, contentCount, impressions, clicks, attributedOrdersCreated, attributedOrdersCompleted]
       properties:
         storeId:
           type: string
           minLength: 1
           maxLength: 150
+        period:
+          type: string
+          enum: [7d, 30d, all]
+          description: For bounded windows, event counts are filtered by event occurrence time; contentCount counts media created within the same window. Completed Orders reflect their current state.
         contentCount:
           type: integer
           minimum: 0
@@ -10400,6 +10404,10 @@ components:
           type: integer
           minimum: 0
           description: Created Orders canonically attributed by DSH; not completed sales, cash collected, or WLT settlement.
+        attributedOrdersCompleted:
+          type: integer
+          minimum: 0
+          description: Attributed Orders currently in DELIVERED or PICKED_UP state for the same Store, filtered by attribution event time; not paid revenue or WLT settlement.
 
     DiscoveryContentAnalyticsListResponse:
       type: object

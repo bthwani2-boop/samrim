@@ -9,20 +9,23 @@ async function checkPartner(browser) {
   try {
     let calls = 0;
     let foreign = false;
-    await page.route("**/dsh/partner/stores/*/discovery-content/summary", async route => {
+    await page.route("**/dsh/partner/stores/*/discovery-content/summary*", async route => {
       const uri = new URL(route.request().url());
       const parts = uri.pathname.split("/");
       const scope = decodeURIComponent(parts[parts.indexOf("stores") + 1]);
       calls++;
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
-        storeId: foreign ? "foreign-store" : scope,
-        contentCount: 3, impressions: 250, clicks: 90, attributedOrdersCreated: 5,
+        storeId: foreign ? "foreign-store" : scope, period: uri.searchParams.get("period") ?? "all",
+        contentCount: 3, impressions: 250, clicks: 90, attributedOrdersCreated: 5, attributedOrdersCompleted: 3,
       }) });
     });
     await page.goto(origin + "/store?section=promotions&view=overview", {waitUntil:"domcontentloaded",timeout:28000});
     await page.getByText("أداء مقاطع المتجر", { exact:true }).waitFor({ state:"visible", timeout:18000 });
     await page.getByText("طلبات منشأة منسوبة", {exact:true}).waitFor({state:"visible",timeout:10000});
     await page.getByText("٥", {exact:true}).first().waitFor({state:"visible",timeout:10000});
+    await page.getByRole("button", {name:"7 أيام"}).click();
+    await page.getByText("طلبات مكتملة منسوبة", {exact:true}).waitFor({state:"visible",timeout:13000});
+    assert.ok(calls>=2,"switching period must re-read DSH");
     const before = calls;
     foreign = true;
     await page.goto(origin + "/store?section=promotions&view=content", {waitUntil:"domcontentloaded",timeout:28000});
@@ -47,12 +50,13 @@ async function checkOperator(browser) {
   const page = await context.newPage();
   try {
     let calls=0, foreign=false;
-    await page.route("**/api/stores/*/marketing/summary", async route => {
-      const parts=new URL(route.request().url()).pathname.split("/");
+    await page.route("**/api/stores/*/marketing/summary*", async route => {
+      const uri=new URL(route.request().url());
+      const parts=uri.pathname.split("/");
       const storeId=decodeURIComponent(parts[parts.indexOf("stores")+1]);
       calls++;
       await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({
-        storeId:foreign?"foreign-store":storeId,contentCount:3,impressions:250,clicks:90,attributedOrdersCreated:5,
+        storeId:foreign?"foreign-store":storeId,period:uri.searchParams.get("period") ?? "all",contentCount:3,impressions:250,clicks:90,attributedOrdersCreated:5,attributedOrdersCompleted:3,
       })});
     });
     await page.goto(origin + "/partners?tab=directory",{waitUntil:"domcontentloaded",timeout:28000});
@@ -64,6 +68,9 @@ async function checkOperator(browser) {
       await page.locator('section[aria-label="إحصاءات مقاطع هذا المتجر"]').waitFor({state:"visible",timeout:12000});
     });
     await page.getByText("طلبات منشأة منسوبة",{exact:true}).waitFor({state:"visible",timeout:12000});
+    await page.getByRole("button",{name:"30 يومًا"}).click();
+    await page.getByText("طلبات مكتملة منسوبة",{exact:true}).waitFor({state:"visible",timeout:12000});
+    assert.ok(calls>=2,"changing operator period must re-read DSH");
     const before=calls;
     foreign=true;
     await page.getByRole("tab",{name:"العملاء والجودة"}).click();

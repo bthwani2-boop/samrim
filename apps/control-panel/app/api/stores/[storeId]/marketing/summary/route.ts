@@ -15,10 +15,12 @@ export async function GET(request: Request, context: { params: Promise<{ storeId
   const denied = operatorWorkspacePermissionDenied(identity, "marketing");
   if (denied) return denied;
   const { storeId } = await context.params;
-  if (!storeId.trim() || storeId.length > 150) return fail("INVALID_INPUT", "Invalid Store identifier", 400);
+  const periods = new URL(request.url).searchParams.getAll("period");
+  const period = periods[0] ?? "all";
+  if (!storeId.trim() || storeId.length > 150 || periods.length > 1 || (period !== "7d" && period !== "30d" && period !== "all")) return fail("INVALID_INPUT", "Invalid Store summary input", 400);
   try {
     return NextResponse.json(
-      await readOperatorStoreContentPerformanceSummary(storeId, { operatorActorId: identity.subject }),
+      await readOperatorStoreContentPerformanceSummary(storeId, period, { operatorActorId: identity.subject }),
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (cause) {

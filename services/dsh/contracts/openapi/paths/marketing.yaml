@@ -768,11 +768,18 @@ paths:
   /dsh/partner/stores/{storeId}/discovery-content/summary:
     get:
       operationId: readPartnerStoreContentPerformanceSummary
-      summary: All-time Store-owned short-form content and attributed created-Order event counts
-      description: Requires authenticated partner with Store-scoped promotions authority. Counts include retired/paused historical content, not general platform banners, and never imply settled revenue.
+      summary: Period-scoped Store short-form content events and attributed created/completed Orders
+      description: Requires authenticated partner with Store-scoped promotions authority. Historical paused/retired content remains included when in period. Completed means currently delivered or picked up, not settled revenue.
       security: [{ userBearer: [] }]
       parameters:
         - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [7d, 30d, all]
+            default: all
+          description: All historical events (default), last seven days, or last thirty days.
       responses:
         "200":
           description: Canonical Store-scoped short-form marketing totals.
@@ -790,6 +797,13 @@ paths:
       parameters:
         - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
         - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorId"
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [7d, 30d, all]
+            default: all
+          description: All historical events (default), last seven days, or last thirty days.
       responses:
         "200":
           description: Store content totals from same DSH query as Partner, subject to operator Marketing authority.

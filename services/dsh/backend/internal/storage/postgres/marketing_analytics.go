@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"time"
 )
 
 var (
@@ -262,27 +263,40 @@ func ListDiscoveryContentAnalytics(ctx context.Context, db *sql.DB, contentID st
 // discovery media events. CONVERSION means an attributed created Order, not
 // a completed or paid Order and never a WLT settlement.
 type StoreContentPerformanceSummary struct {
-	StoreID                 string
-	ContentCount            int64
-	Impressions             int64
-	Clicks                  int64
-	AttributedOrdersCreated int64
+	StoreID                   string
+	Period                    string
+	ContentCount              int64
+	Impressions               int64
+	Clicks                    int64
+	AttributedOrdersCreated   int64
+	AttributedOrdersCompleted int64
 }
 
-func ReadStoreContentPerformanceSummary(ctx context.Context, db *sql.DB, storeID string) (StoreContentPerformanceSummary, error) {
+func ReadStoreContentPerformanceSummary(ctx context.Context, db *sql.DB, storeID, period string, from *time.Time) (StoreContentPerformanceSummary, error) {
 	storeID = strings.TrimSpace(storeID)
-	if db == nil || storeID == "" || len(storeID) > 150 {
+	if db == nil || storeID == "" || len(storeID) > 150 ||
+		(period != "7d" && period != "30d" && period != "all") ||
+		(period == "all" && from != nil) || (period != "all" && from == nil) {
 		return StoreContentPerformanceSummary{}, ErrDiscoveryContentInvalid
 	}
-	summary := StoreContentPerformanceSummary{StoreID: storeID}
-	err := db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT content.id)::bigint,
-		COUNT(events.id) FILTER (WHERE events.event_type='IMPRESSION'),
-		COUNT(events.id) FILTER (WHERE events.event_type='CLICK'),
-		COUNT(events.id) FILTER (WHERE events.event_type='CONVERSION')
+	var fromArg any
+	if from != nil {
+		fromArg = from.UTC()
+	}
+	summary := StoreContentPerformanceSummary{StoreID: storeID, Period: period}
+	err := db.QueryRowContext(ctx, `SELECT
+		COUNT(DISTINCT content.id) FILTER (WHERE $2::timestamptz IS NULL OR content.created_at >= $2::timestamptz),
+		COUNT(events.id) FILTER (WHERE events.event_type='IMPRESSION' AND ($2::timestamptz IS NULL OR events.occurred_at >= $2::timestamptz)),
+		COUNT(events.id) FILTER (WHERE events.event_type='CLICK' AND ($2::timestamptz IS NULL OR events.occurred_at >= $2::timestamptz)),
+		COUNT(events.id) FILTER (WHERE events.event_type='CONVERSION' AND ($2::timestamptz IS NULL OR events.occurred_at >= $2::timestamptz)),
+		COUNT(events.id) FILTER (WHERE events.event_type='CONVERSION' AND orders.state IN ('DELIVERED','PICKED_UP')
+			AND ($2::timestamptz IS NULL OR events.occurred_at >= $2::timestamptz))
 		FROM dsh.discovery_content content
 		LEFT JOIN dsh.discovery_content_events events ON events.content_id=content.id
-		WHERE content.source_store_id=$1 AND content.kind='SHORT_FORM'`, storeID).Scan(
-		&summary.ContentCount, &summary.Impressions, &summary.Clicks, &summary.AttributedOrdersCreated)
+		LEFT JOIN dsh.commerce_orders orders ON orders.id=events.order_id AND orders.store_id=content.source_store_id
+		WHERE content.source_store_id=$1 AND content.kind='SHORT_FORM'`, storeID, fromArg).Scan(
+		&summary.ContentCount, &summary.Impressions, &summary.Clicks,
+		&summary.AttributedOrdersCreated, &summary.AttributedOrdersCompleted)
 	if err != nil {
 		return StoreContentPerformanceSummary{}, err
 	}

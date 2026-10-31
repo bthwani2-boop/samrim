@@ -3,7 +3,9 @@ const {chromium}=require("@playwright/test");
 
 function verify(data,scope){
   assert.equal(data.storeId,scope,"Store scope mismatch");
-  for(const key of ["contentCount","impressions","clicks","attributedOrdersCreated"]){
+  assert.equal(data.period,"all");
+  assert.ok(data.attributedOrdersCompleted<=data.attributedOrdersCreated,"completed Orders exceed attributed created Orders");
+  for(const key of ["contentCount","impressions","clicks","attributedOrdersCreated","attributedOrdersCompleted"]){
     assert.ok(Number.isSafeInteger(data[key]) && data[key]>=0,"invalid "+key);
   }
   assert.equal(Object.hasOwn(data,"clientActorId"),false);
@@ -25,7 +27,7 @@ async function main(){
     await operator.waitForURL(url=>Boolean(url.searchParams.get("inspect")),{timeout:14000});
     const firstStore=new URL(operator.url()).searchParams.get("inspect");
     assert.ok(firstStore);
-    const readOperator=operator.waitForResponse(r=>r.url().includes("/api/stores/")&&r.url().endsWith("/marketing/summary"),{timeout:20000});
+    const readOperator=operator.waitForResponse(r=>r.url().includes("/api/stores/")&&r.url().includes("/marketing/summary?period="),{timeout:20000});
     await operator.getByRole("tab",{name:"المنتجات والعروض"}).click();
     const operatorResponse=await readOperator;
     assert.equal(operatorResponse.status(),200,"authorized operator Store marketing read");
@@ -41,7 +43,7 @@ async function main(){
 
     const partnerContext=browser.contexts().find(c=>c.pages().some(p=>p.url().startsWith("http://localhost:18102")))??browser.contexts()[0];
     partner=await partnerContext.newPage();
-    const readPartner=partner.waitForResponse(r=>r.url().includes("/dsh/partner/stores/")&&r.url().endsWith("/discovery-content/summary"),{timeout:23000});
+    const readPartner=partner.waitForResponse(r=>r.url().includes("/dsh/partner/stores/")&&r.url().includes("/discovery-content/summary?period="),{timeout:23000});
     await partner.goto("http://localhost:18102/store?section=promotions&view=overview",{waitUntil:"domcontentloaded",timeout:28000});
     const partnerResponse=await readPartner;
     assert.equal(partnerResponse.status(),200,"authorized partner content summary read");

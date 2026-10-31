@@ -54,11 +54,11 @@ export async function createMarketingContentWithMedia(formData: FormData, contex
   return requestDshMultipart<DiscoveryContentResponse>(dshOperationPaths.createOperatorDiscoveryContent.method, dshOperationPaths.createOperatorDiscoveryContent.path, formData, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
-export async function readOperatorStoreContentPerformanceSummary(storeId: string, context: DshOperatorReadContext): Promise<StoreContentPerformanceSummary> {
+export async function readOperatorStoreContentPerformanceSummary(storeId: string, period: "7d" | "30d" | "all", context: DshOperatorReadContext): Promise<StoreContentPerformanceSummary> {
   const scope = storeId.trim();
-  if (!context.operatorActorId.trim() || !scope || scope.length > 150) throw new Error("DSH_STORE_MARKETING_SUMMARY_SCOPE_INVALID");
+  if (!context.operatorActorId.trim() || !scope || scope.length > 150 || !["7d", "30d", "all"].includes(period)) throw new Error("DSH_STORE_MARKETING_SUMMARY_SCOPE_INVALID");
   const route = dshOperationPaths.readOperatorStoreContentPerformanceSummary;
-  const path = route.path.replace("{storeId}", encodeURIComponent(scope));
+  const path = route.path.replace("{storeId}", encodeURIComponent(scope)) + "?period=" + period;
   return (await requestDshJson<StoreContentPerformanceSummary>(route.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
