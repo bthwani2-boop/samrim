@@ -545,11 +545,11 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   }
 
   function shareStore() {
-    setShareTarget({ kind: "STORE", id: storeId, title: state.kind === "ready" ? state.store.name : "متجر", link: buildPublicStoreShareURL(storeId, selectedCityID ?? "", process.env.EXPO_PUBLIC_CLIENT_WEB_ORIGIN) ?? ExpoLinking.createURL(buildStoreSharePath(storeId, selectedCityID ?? "")) });
+    setShareTarget({ kind: "STORE", id: storeId, title: state.kind === "ready" ? state.store.name : "متجر", link: buildPublicStoreShareURL(storeId, selectedCityID ?? "", process.env.EXPO_PUBLIC_CLIENT_WEB_ORIGIN, "", __DEV__) ?? ExpoLinking.createURL(buildStoreSharePath(storeId, selectedCityID ?? "")) });
   }
   function shareOffer(offerID: string, productID: string, title: string) {
     setDetailOffer(null);
-    setShareTarget({ kind: "OFFER", id: offerID, title, link: buildPublicStoreShareURL(storeId, selectedCityID ?? "", process.env.EXPO_PUBLIC_CLIENT_WEB_ORIGIN, productID) ?? ExpoLinking.createURL(buildStoreSharePath(storeId, selectedCityID ?? "", productID)) });
+    setShareTarget({ kind: "OFFER", id: offerID, title, link: buildPublicStoreShareURL(storeId, selectedCityID ?? "", process.env.EXPO_PUBLIC_CLIENT_WEB_ORIGIN, productID, __DEV__) ?? ExpoLinking.createURL(buildStoreSharePath(storeId, selectedCityID ?? "", productID)) });
   }
 
   async function toggleOfferFavorite(offerID: string) {
@@ -836,7 +836,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing[3], gap: spacing[2] }}>
             {remainingPromotions.map((promotion) => <View key={promotion.id} style={{ width: Math.min(320, Math.max(245, windowWidth - spacing[3] * 3)) }}>
               <PromotionCard promotion={promotion} onUse={() => openStorePromotion(promotion.code)} />
-              <BthwaniButton label="مشاركة العرض" variant="secondary" onPress={() => setShareTarget({ kind: "PROMOTION", id: promotion.id, title: promotion.nameAr, link: buildPublicStoreShareURL(storeId, selectedCityID ?? "", process.env.EXPO_PUBLIC_CLIENT_WEB_ORIGIN) ?? ExpoLinking.createURL(buildStoreSharePath(storeId, selectedCityID ?? "")) })} />
+              <BthwaniButton label="مشاركة العرض" variant="secondary" onPress={() => setShareTarget({ kind: "PROMOTION", id: promotion.id, title: promotion.nameAr, link: buildPublicStoreShareURL(storeId, selectedCityID ?? "", process.env.EXPO_PUBLIC_CLIENT_WEB_ORIGIN, "", __DEV__) ?? ExpoLinking.createURL(buildStoreSharePath(storeId, selectedCityID ?? "")) })} />
             </View>)}
           </ScrollView>
           </> : null}

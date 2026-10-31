@@ -12,7 +12,7 @@ export function PartnerStorefrontLink({ store }: Readonly<{ store: PartnerAccess
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-  const link = buildPartnerStorefrontURL(store, process.env.EXPO_PUBLIC_CLIENT_WEB_ORIGIN, __DEV__ && Platform.OS === "web");
+  const link = buildPartnerStorefrontURL(store, process.env.EXPO_PUBLIC_CLIENT_WEB_ORIGIN, __DEV__);
 
   async function copy() {
     if (!link || busy) return;
@@ -40,7 +40,7 @@ export function PartnerStorefrontLink({ store }: Readonly<{ store: PartnerAccess
       ? <Text style={styles.muted}>سيصبح رابط المتجر متاحًا بعد اعتماد النشر.</Text>
       : link ? <>
         <Text selectable accessibilityLabel={link.previewOnly ? "رابط المعاينة المحلية" : "رابط المتجر العام"} style={styles.muted}>{link.url}</Text>
-        {link.previewOnly ? <Text style={styles.muted}>معاينة محلية على هذا الكمبيوتر فقط؛ ليست رابطًا عامًا للعملاء.</Text> : null}
+        {link.previewOnly ? <Text style={styles.muted}>معاينة محلية على جهاز التطوير أو هاتف موصول به؛ ليست رابطًا عامًا للعملاء.</Text> : null}
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
           <BthwaniButton label={link.previewOnly ? "فتح المعاينة" : "فتح المتجر"} variant="secondary" disabled={busy} onPress={() => void open()} />
           <BthwaniButton label={link.previewOnly ? "نسخ رابط المعاينة" : "نسخ الرابط"} disabled={busy} onPress={() => void copy()} />

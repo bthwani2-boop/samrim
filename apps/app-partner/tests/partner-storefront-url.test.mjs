@@ -25,9 +25,9 @@ test("missing, hostile, ambiguous or non-HTTPS public origins fail closed", () =
 });
 
 test("explicit loopback preview works only when enabled and is never public", () => {
-  const result = buildPartnerStorefrontURL(store, "http://127.0.0.1:18101", true);
+  const result = buildPartnerStorefrontURL(store, "http://localhost:18101", true);
   assert.equal(result?.previewOnly, true);
-  assert.equal(result?.url, "http://127.0.0.1:18101/" + buildStoreSharePath(store.id, store.serviceCityId));
+  assert.equal(result?.url, "http://localhost:18101/" + buildStoreSharePath(store.id, store.serviceCityId));
   assert.equal(buildPartnerStorefrontURL(store, "http://example.com", true), null);
 });
 
