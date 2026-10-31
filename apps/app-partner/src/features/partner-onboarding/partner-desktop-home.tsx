@@ -2,7 +2,7 @@ import { typography } from "@bthwani/design-system";
 import { BthwaniIcon, type MobileIconName, useAppearanceTheme } from "@bthwani/design-system/native";
 import {
   createDshMobileClient, formatMoney, type CatalogStoreOffer, type Order,
-  type PartnerAccessibleStore, type PartnerOrderAttentionCounts, type PartnerScopedFinanceStore,
+  type PartnerAccessibleStore, type PartnerOrderAttentionCounts, type PartnerScopedFinanceStore, type PartnerStoreOrderSummary,
 } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
@@ -16,13 +16,14 @@ type Data = Readonly<{
   attention: PartnerOrderAttentionCounts | null;
   recentOrders: ReadonlyArray<Order> | null;
   ordersPartial: boolean;
+  weeklyOrderSummary: PartnerStoreOrderSummary | null;
   offers: ReadonlyArray<CatalogStoreOffer> | null;
   offersPartial: boolean;
   finance: PartnerScopedFinanceStore | null;
 }>;
 
 const empty: Data = {
-  attention: null, recentOrders: null, ordersPartial: false,
+  attention: null, recentOrders: null, ordersPartial: false, weeklyOrderSummary: null,
   offers: null, offersPartial: false, finance: null,
 };
 
@@ -109,20 +110,26 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
     const client = createDshMobileClient(base, { cryptoRandomUUID: () => Crypto.randomUUID() });
     void (async () => {
       const token = await getUsableIdentityAccessToken();
-      const [orders, offers, financial] = await Promise.allSettled([
+      const [orders, offers, financial, weekly] = await Promise.allSettled([
         canOrders ? client.listPartnerOrders(token, { storeIds: [store.id], limit: 24 }) : Promise.resolve(null),
         canCatalog ? client.readOwnStoreOffers(token, store.id, 100) : Promise.resolve(null),
         store.owned ? client.readOwnPartnerFinancialSummary(token) : Promise.resolve(null),
+        canOrders ? client.readPartnerStoreOrderSummary(token, store.id, "7d") : Promise.resolve(null),
       ]);
       const current = currentIdentityState();
       if (!active || current.kind !== "authenticated" || current.identity.subject !== actor) return;
       const orderPage = orders.status === "fulfilled" ? orders.value : null;
       const offerPage = offers.status === "fulfilled" ? offers.value : null;
       const financePage = financial.status === "fulfilled" ? financial.value : null;
+      const weeklyPage = weekly.status === "fulfilled" ? weekly.value : null;
+      const weeklySummary = weeklyPage?.summary;
+      const verifiedWeekly = weeklySummary?.storeId === store.id && weeklySummary.period === "7d" &&
+        Number.isSafeInteger(weeklySummary.totalOrders) && weeklySummary.totalOrders >= 0 ? weeklySummary : null;
       setData({
         attention: orderPage?.attention ?? null,
         recentOrders: orderPage?.orders ?? null,
         ordersPartial: Boolean(orderPage?.nextCursor),
+        weeklyOrderSummary: verifiedWeekly,
         offers: offerPage?.offers ?? null,
         offersPartial: Boolean(offerPage?.nextCursor),
         finance: financePage?.summary.stores.find(item => item.storeId === store.id) ?? null,
@@ -185,6 +192,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
         <View style={styles.metrics}>
           {canOrders ? tile("الطلبات الجديدة", data.attention?.newOrders.toLocaleString("ar-YE") ?? "—", data.attention ? "تحتاج قبولًا أو مراجعة" : "تعذر قراءة العدد", "orders", "/orders" as Href) : null}
           {canOrders ? tile("بانتظار التسليم", data.attention?.awaitingDispatch.toLocaleString("ar-YE") ?? "—", "طابور المتجر الحالي", "deliveries", "/orders" as Href) : null}
+          {canOrders ? tile("طلبات ٧ أيام", data.weeklyOrderSummary?.totalOrders.toLocaleString("ar-YE") ?? "—", data.weeklyOrderSummary ? "جميع طلبات هذا المتجر المنشأة خلال الفترة، من DSH" : "تعذر قراءة ملخص المتجر الكامل", "orders", "/orders" as Href) : null}
           {canCatalog ? tile("المنتجات المتاحة", available?.toLocaleString("ar-YE") ?? "—", data.offersPartial ? "من أول 100 منتج" : "في كتالوج المتجر", "cart", "/products" as Href) : null}
           {store.owned ? tile("المستحقات المكتسبة", financialReady ? formatMoney(data.finance!.earnedMinor, "YER") : "—", financialReady ? "من ملخص التسوية الموثق" : "لم تكتمل قراءة المالية", "wallet", "/wallet" as Href) : null}
         </View>
