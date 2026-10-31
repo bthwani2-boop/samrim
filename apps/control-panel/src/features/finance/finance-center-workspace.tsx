@@ -20,7 +20,6 @@ const PartnerEarningsWorkspace = dynamic(() => import("./partner-earnings-worksp
 const CustomerWithdrawalQueue = dynamic(() => import("./customer-withdrawal-queue").then((module) => module.CustomerWithdrawalQueue));
 const BeneficiarySettlementWorkspace = dynamic(() => import("./beneficiary-settlement-workspace").then((module) => module.BeneficiarySettlementWorkspace));
 const StoreCommercialAgreementWorkspace = dynamic(() => import("./store-commercial-agreement-workspace").then((module) => module.StoreCommercialAgreementWorkspace));
-const StoreTypeCommissionDefaultWorkspace = dynamic(() => import("./store-type-commission-default-workspace").then((module) => module.StoreTypeCommissionDefaultWorkspace));
 
 type Source = "custody" | "commissions" | "batches" | "withdrawals";
 type Workflow = "custody" | "commissions" | "batches" | "withdrawals" | "settlement-partner" | "settlement-captain" | "agreements";
@@ -148,7 +147,7 @@ function FinanceTask({
     cursor, intakeId: queryValue(query, "intakeId") || (row?.source === "withdrawals" ? row.id : ""),
   }} />;
   if (workflow === "agreements") return <div className="finance-center-tools">
-    <StoreTypeCommissionDefaultWorkspace />
+    <p className="muted">النسب التفاوضية حسب نوع المتجر تُدار من <a href="/policies?group=commercial&policy=store-type-commission-defaults&action=manage">سياسات المتاجر</a>، وتبقى موافقة الاتفاقية وتفعيلها لدى المالية.</p>
     <StoreCommercialAgreementWorkspace />
   </div>;
   const actorType = workflow === "settlement-captain" ? "captain" : "partner";

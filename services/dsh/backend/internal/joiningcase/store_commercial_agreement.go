@@ -54,6 +54,9 @@ func (s *Service) UpdateStoreTypeCommissionDefaultForFinance(ctx context.Context
 	if err := s.requireFinance(ctx, actingActorID); err != nil {
 		return wltintegration.StoreTypeCommissionDefaultUpdateResponse{}, err
 	}
+	if err := s.identity.RequireOperatorPermission(ctx, strings.TrimSpace(actingActorID), "platform_policies"); err != nil {
+		return wltintegration.StoreTypeCommissionDefaultUpdateResponse{}, err
+	}
 	commercialStoreTypeID = strings.TrimSpace(commercialStoreTypeID)
 	if commercialStoreTypeID == "" || len(commercialStoreTypeID) > 128 {
 		return wltintegration.StoreTypeCommissionDefaultUpdateResponse{}, ErrStoreAgreementInvalidInput
