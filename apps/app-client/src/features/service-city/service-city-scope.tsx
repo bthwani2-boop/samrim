@@ -1,11 +1,12 @@
 import { borders, opacity, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
+import { useGlobalSearchParams, usePathname } from "expo-router";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { ServiceCity } from "@bthwani/dsh";
 import * as SecureStore from "../../bootstrap/compatible-storage";
 import { createContext, type PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Pressable, StyleSheet, Text, View } from "react-native";
 import { listActiveServiceCities } from "./service-city-client";
-import { persistCitySelection, readCitySelection } from "./service-city-preference";
+import { persistCitySelection, readCitySelection, resolveLinkedServiceCityID } from "./service-city-preference";
 
 const PREFERENCE_KEY = "samrim.app-client.service-city";
 
@@ -31,6 +32,9 @@ export function useServiceCityScope(): ScopeContextValue {
 }
 
 export default function ServiceCityScope({ children }: PropsWithChildren) {
+  const pathname = usePathname();
+  const { serviceCityId } = useGlobalSearchParams<{ serviceCityId?: string | string[] }>();
+  const linkedCityID = pathname.startsWith("/store/") && typeof serviceCityId === "string" ? serviceCityId.trim() : "";
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
@@ -47,7 +51,9 @@ export default function ServiceCityScope({ children }: PropsWithChildren) {
       if (generation !== refreshGenerationRef.current) return;
       const activeIDs = new Set(nextCities.map((city) => city.id));
       // A device preference is optional and cannot turn a valid DSH response into an outage.
-      const nextSelection = await readCitySelection(SecureStore, PREFERENCE_KEY, activeIDs, selectedCityRef.current);
+      const storedSelection = await readCitySelection(SecureStore, PREFERENCE_KEY, activeIDs, selectedCityRef.current);
+      const nextSelection = resolveLinkedServiceCityID(storedSelection, linkedCityID, activeIDs);
+      if (nextSelection && !storedSelection) await persistCitySelection(SecureStore, PREFERENCE_KEY, nextSelection);
       if (generation !== refreshGenerationRef.current) return;
       selectedCityRef.current = nextSelection;
       setCities(nextCities);
@@ -56,7 +62,7 @@ export default function ServiceCityScope({ children }: PropsWithChildren) {
     } catch {
       if (generation === refreshGenerationRef.current) setState("error");
     }
-  }, []);
+  }, [linkedCityID]);
 
   useEffect(() => { void refreshCities(); }, [refreshCities]);
   useEffect(() => {

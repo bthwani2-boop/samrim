@@ -25,6 +25,16 @@ export async function readCitySelection(
   return preferred && activeIDs.has(preferred) ? preferred : null;
 }
 
+// A Store link may suggest an active city for a fresh visitor, never override a saved choice.
+export function resolveLinkedServiceCityID(
+  selectedCityID: string | null,
+  linkedCityID: string,
+  activeIDs: ReadonlySet<string>,
+): string | null {
+  if (selectedCityID && activeIDs.has(selectedCityID)) return selectedCityID;
+  return linkedCityID && activeIDs.has(linkedCityID) ? linkedCityID : null;
+}
+
 export async function persistCitySelection(
   storage: CityPreferenceStorage,
   key: string,

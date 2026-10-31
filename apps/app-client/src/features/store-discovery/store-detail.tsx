@@ -23,6 +23,7 @@ import { summarizeStoreAvailability } from "./store-availability-summary";
 import { addCatalogOfferToCart, listFavoriteStoreIDs, listFavoriteStoreOfferIDs, listPublicDiscoveryContent, listPublicPromotions, readFavoriteStoreCatalog, readOwnStoreCart, readPublicStoreCatalog, readPublicStoreOrderability, readPublishedStore, setFavoriteStore, setFavoriteStoreOffer } from "./store-discovery-client";
 import type { GallerySourceRect } from "./store-product-gallery";
 import { StoreProductSheet } from "./store-product-sheet";
+import { buildStoreSharePath } from "./store-share-link";
 
 type DetailState =
   | { kind: "loading" }
@@ -544,11 +545,11 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   }
 
   function shareStore() {
-    setShareTarget({ kind: "STORE", id: storeId, title: state.kind === "ready" ? state.store.name : "متجر", link: ExpoLinking.createURL(`store/${encodeURIComponent(storeId)}`) });
+    setShareTarget({ kind: "STORE", id: storeId, title: state.kind === "ready" ? state.store.name : "متجر", link: ExpoLinking.createURL(buildStoreSharePath(storeId, selectedCityID ?? "")) });
   }
   function shareOffer(offerID: string, productID: string, title: string) {
     setDetailOffer(null);
-    setShareTarget({ kind: "OFFER", id: offerID, title, link: ExpoLinking.createURL(`store/${encodeURIComponent(storeId)}?productId=${encodeURIComponent(productID)}`) });
+    setShareTarget({ kind: "OFFER", id: offerID, title, link: ExpoLinking.createURL(buildStoreSharePath(storeId, selectedCityID ?? "", productID)) });
   }
 
   async function toggleOfferFavorite(offerID: string) {
@@ -835,7 +836,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing[3], gap: spacing[2] }}>
             {remainingPromotions.map((promotion) => <View key={promotion.id} style={{ width: Math.min(320, Math.max(245, windowWidth - spacing[3] * 3)) }}>
               <PromotionCard promotion={promotion} onUse={() => openStorePromotion(promotion.code)} />
-              <BthwaniButton label="مشاركة العرض" variant="secondary" onPress={() => setShareTarget({ kind: "PROMOTION", id: promotion.id, title: promotion.nameAr, link: ExpoLinking.createURL(`store/${encodeURIComponent(storeId)}`) })} />
+              <BthwaniButton label="مشاركة العرض" variant="secondary" onPress={() => setShareTarget({ kind: "PROMOTION", id: promotion.id, title: promotion.nameAr, link: ExpoLinking.createURL(buildStoreSharePath(storeId, selectedCityID ?? "")) })} />
             </View>)}
           </ScrollView>
           </> : null}
