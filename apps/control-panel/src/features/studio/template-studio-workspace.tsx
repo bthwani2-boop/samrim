@@ -5,6 +5,7 @@ import Link from "next/link";
 import { type CSSProperties, useEffect, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { PageHeader } from "../../shell/page-header";
+import { PublishedBannerSettings } from "./published-banner-settings";
 import {
   defaultStudioDraft,
   isStudioHex,
@@ -24,7 +25,7 @@ import {
 } from "./studio-draft";
 
 const storagePrefix = "bthwani-studio-private-draft-v1:";
-type EditorPanel = "sections" | "palette";
+type EditorPanel = "sections" | "palette" | "published";
 const viewports: ReadonlyArray<{ id: StudioViewport; label: string }> = [
   { id: "desktop", label: "الحاسوب" }, { id: "tablet", label: "اللوحي" }, { id: "phone", label: "الهاتف" },
 ];
@@ -38,34 +39,41 @@ function PreviewSection({ section, draft, currentSlide, onSlideSelect }: Readonl
   if (!section.visible) return null;
   if (section.id === "hero") {
     const slide = draft.slides[currentSlide % draft.slides.length]!;
-    return <section className="studio-mock-hero" aria-label="معاينة العرض الرئيسي">
+    return <section className={"studio-mock-hero studio-mock-hero-" + draft.heroOptions.height + " studio-mock-align-" + draft.heroOptions.align} aria-label="معاينة العرض الرئيسي">
       <div className="studio-mock-hero-content">
         <span className="studio-mock-eyebrow">بثواني · توصيل من متاجرك</span>
         <h2>{slide.title || section.title}</h2>
-        <p>{slide.description || section.description}</p>
-        <span className="studio-mock-button">{slide.buttonLabel || "استكشف"}</span>
+        {draft.heroOptions.showDescription ? <p>{slide.description || section.description}</p> : null}
+        {draft.heroOptions.showButton ? <span className="studio-mock-button">{slide.buttonLabel || "استكشف"}</span> : null}
       </div>
       <div className="studio-mock-hero-decoration" aria-hidden="true"><span>بـ</span></div>
-      {draft.slides.length > 1 ? <nav className="studio-mock-slide-controls" aria-label="شرائح العرض">
+      {draft.heroOptions.showDots && draft.slides.length > 1 ? <nav className="studio-mock-slide-controls" aria-label="شرائح العرض">
         {draft.slides.map((item, index) => <button type="button" key={item.id} aria-label={`عرض الشريحة ${index + 1}`} aria-pressed={index === currentSlide} onClick={() => onSlideSelect(index)} />)}
       </nav> : null}
     </section>;
   }
 
   const samples: Record<Exclude<StudioSectionId, "hero">, ReadonlyArray<string>> = {
+    benefits: ["اختيارات واضحة", "متابعة الطلب", "متاجر محلية", "دعم المستخدم"],
     services: ["المقاضي", "المطاعم", "الصيدليات", "الغاز", "اخدمني", "الهدايا", "الخضار", "المخابز"],
     stores: ["متجر قريب", "متجر المقاضي", "متجر محلي", "مشروع منزلي", "متجر مختار", "متجر متاح", "متجر حي", "متجر جديد"],
     products: ["منتج تجريبي", "اختيار يومي", "منتج مميز", "منتج محلي", "منتج جديد", "منتج متاح", "منتج مختار", "عرض منتج"],
+    curated: ["مجموعة منتجات", "مختارات الموسم", "قائمة منتجات", "توصيات", "مجموعة إضافية"],
+    banners: ["بنر توضيحي", "مساحة إعلانية", "رسالة ترويجية", "حملة موسمية"],
+    topSellers: ["منتج 1", "منتج 2", "منتج 3", "منتج 4", "منتج 5"],
     promotions: ["عرض توضيحي", "مساحة حملة", "عرض آخر", "بنر موسمي", "حملة محلية", "مساحة عرض", "حملة جديدة", "عرض قادم"],
+    testimonials: ["بطاقة رأي تجريبية", "رأي توضيحي", "انطباع افتراضي"],
+    brands: ["شريك محلي", "متجر 2", "متجر 3", "متجر 4", "متجر 5"],
     trust: ["اختر متجرك", "أكمل طلبك", "تابع التوصيل", "استلم طلبك", "اختر الخدمة", "تواصل بسهولة", "تابع الحالة", "اطلب مجددًا"],
   };
+  const sampleLabels = samples[section.id];
   return <section className="studio-mock-section" aria-label={section.title || studioSectionLabels[section.id]}>
     <div className="studio-mock-section-heading">
       <div><h3>{section.title || studioSectionLabels[section.id]}</h3><p>{section.description}</p></div>
       <span className="studio-mock-section-meta">{studioSectionLabels[section.id]}</span>
     </div>
     <div className={`studio-mock-grid studio-mock-grid-${section.id}`}>
-      {samples[section.id].slice(0, section.count).map((title) => <div className="studio-mock-tile" key={`${section.id}-${title}`}>
+      {Array.from({ length: section.count }, (_, index) => sampleLabels[index] ?? "عنصر توضيحي " + (index + 1)).map((title) => <div className="studio-mock-tile" key={`${section.id}-${title}`}>
         <div className="studio-mock-media" aria-hidden="true"><span>{section.id === "services" ? "◈" : section.id === "promotions" ? "✦" : "▧"}</span></div>
         <strong>{title}</strong>
         {section.id === "products" || section.id === "stores" ? <small>مثال للعرض فقط</small> : null}
@@ -86,6 +94,14 @@ function Editor({ actorId }: Readonly<{ actorId: string }>) {
   const [dirty, setDirty] = useState(false);
   const [notice, setNotice] = useState("");
   const [storageReady, setStorageReady] = useState(false);
+  useEffect(() => {
+    if (!draft.autoplay || draft.slides.length < 2 || !draft.sections.some((entry) => entry.id === "hero" && entry.visible)) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") setSlideIndex((previous) => (previous + 1) % draft.slides.length);
+    }, draft.intervalSeconds * 1000);
+    return () => window.clearInterval(timer);
+  }, [draft.autoplay, draft.slides.length, draft.intervalSeconds, draft.sections]);
   const [loadFailure, setLoadFailure] = useState(false);
 
   useEffect(() => {
@@ -246,8 +262,13 @@ function Editor({ actorId }: Readonly<{ actorId: string }>) {
         <div role="tablist" aria-label="أدوات الاستوديو" className="studio-inspector-tabs">
           <button type="button" role="tab" aria-selected={panel === "sections"} onClick={() => setPanel("sections")}>إعدادات القسم</button>
           <button type="button" role="tab" aria-selected={panel === "palette"} onClick={() => setPanel("palette")}>الألوان</button>
+          <button type="button" role="tab" aria-selected={panel === "published"} onClick={() => setPanel("published")}>البنرات المنشورة</button>
         </div>
-        {panel === "sections" ? <div role="tabpanel" className="studio-inspector-content">
+        {panel === "published" ? <div role="tabpanel" className="studio-inspector-content">
+          <p className="studio-guidance">إعدادات حركة البنرات الفعلية من DSH، مستقلة عن مسودة تصميم القالب. يتطلب حفظها صلاحية التسويق ويُتحقق من الإصدار على الخادم.</p>
+          <PublishedBannerSettings />
+          <Link className="button button-secondary" href="/marketing?section=content">إدارة صور البنرات ووجهاتها</Link>
+        </div> : panel === "sections" ? <div role="tabpanel" className="studio-inspector-content">
           <h2>{studioSectionLabels[section.id]}</h2>
           <label className="studio-check"><input type="checkbox" checked={section.visible} onChange={(event) => updateSection(section.id, { visible: event.target.checked })} />إظهار القسم</label>
           <label className="studio-field">عنوان القسم
@@ -262,6 +283,19 @@ function Editor({ actorId }: Readonly<{ actorId: string }>) {
             </select>
           </label> : <>
             <h3>إعدادات السلايدر</h3>
+            <label className="studio-field">ارتفاع العرض
+              <select value={draft.heroOptions.height} onChange={(event) => change((prev) => ({ ...prev, heroOptions: { ...prev.heroOptions, height: event.target.value as StudioDraft["heroOptions"]["height"] } }))}>
+                <option value="compact">صغير</option><option value="regular">متوسط</option><option value="tall">كبير</option>
+              </select>
+            </label>
+            <label className="studio-field">محاذاة النص
+              <select value={draft.heroOptions.align} onChange={(event) => change((prev) => ({ ...prev, heroOptions: { ...prev.heroOptions, align: event.target.value as StudioDraft["heroOptions"]["align"] } }))}>
+                <option value="start">بداية</option><option value="center">وسط</option><option value="end">نهاية</option>
+              </select>
+            </label>
+            <label className="studio-check"><input type="checkbox" checked={draft.heroOptions.showDescription} onChange={(event) => change((prev) => ({ ...prev, heroOptions: { ...prev.heroOptions, showDescription: event.target.checked } }))} />إظهار النص التفصيلي</label>
+            <label className="studio-check"><input type="checkbox" checked={draft.heroOptions.showButton} onChange={(event) => change((prev) => ({ ...prev, heroOptions: { ...prev.heroOptions, showButton: event.target.checked } }))} />إظهار زر العرض</label>
+            <label className="studio-check"><input type="checkbox" checked={draft.heroOptions.showDots} onChange={(event) => change((prev) => ({ ...prev, heroOptions: { ...prev.heroOptions, showDots: event.target.checked } }))} />إظهار مؤشرات الشرائح</label>
             <label className="studio-check"><input type="checkbox" checked={draft.autoplay} onChange={(event) => change((prev) => ({ ...prev, autoplay: event.target.checked }))} />تشغيل تلقائي عند ربط العرض الفعلي</label>
             <label className="studio-field">الفاصل الزمني (ثوانٍ)
               <select value={draft.intervalSeconds} disabled={!draft.autoplay} onChange={(event) => change((prev) => ({ ...prev, intervalSeconds: Number(event.target.value) }))}>

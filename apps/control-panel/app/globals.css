@@ -3716,3 +3716,19 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
   @media (max-width: 820px) { .studio-workbench { grid-template-columns: minmax(0,1fr); } .studio-pane { position: static; max-block-size: none; } .studio-section-pane { grid-row: 2; } .studio-center { grid-row: 1; } .studio-inspector { grid-row: 3; grid-column: 1; } .studio-preview-board { padding: 9px; } .studio-topbar { padding: 12px; } .studio-topbar-actions { inline-size: 100%; } }
   @media (prefers-reduced-motion: reduce) { .studio-preview-canvas { transition: none; } }
 }
+
+@layer composition {
+  .studio-mock-hero-compact { min-block-size: 150px; }
+  .studio-mock-hero-regular { min-block-size: 210px; }
+  .studio-mock-hero-tall { min-block-size: 310px; }
+  .studio-mock-align-center .studio-mock-hero-content { justify-items: center; text-align: center; }
+  .studio-mock-align-end .studio-mock-hero-content { justify-items: end; text-align: end; }
+  .studio-inspector-tabs button { font-size: 12px; }
+  .studio-inspector-content > .access-card { min-inline-size: 0; }
+  .studio-inspector-content > .access-card img { max-inline-size: 100%; }
+  @media (max-width: 820px) {
+    .studio-preview-canvas[data-viewport="phone"] .studio-mock-hero-compact { min-block-size: 140px; }
+    .studio-preview-canvas[data-viewport="phone"] .studio-mock-hero-regular { min-block-size: 175px; }
+    .studio-preview-canvas[data-viewport="phone"] .studio-mock-hero-tall { min-block-size: 240px; }
+  }
+}
