@@ -72,6 +72,7 @@ func (s *MarketingServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/operator/discovery-content/analytics", s.listOperatorDiscoveryContentAnalytics)
 	mux.HandleFunc("POST /dsh/operator/discovery-content", s.createOperatorDiscoveryContent)
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/discovery-content", s.listPartnerStoreDiscoveryContent)
+	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/discovery-content/{contentId}/analytics", s.listPartnerStoreContentAnalytics)
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/discovery-targets", s.listPartnerStoreDiscoveryTargets)
 	mux.HandleFunc("POST /dsh/partner/stores/{storeId}/discovery-content", s.createPartnerStoreDiscoveryContent)
 	mux.HandleFunc("POST /dsh/operator/discovery-content/{contentId}/publication", s.setOperatorDiscoveryContentPublication)
@@ -565,6 +566,38 @@ func (s *MarketingServer) listPartnerStoreDiscoveryContent(w http.ResponseWriter
 		values = append(values, toDiscoveryContentView(item))
 	}
 	writeJSON(w, http.StatusOK, contract.OperatorDiscoveryContentRegistryResponse{Items: values, Limit: len(values)})
+}
+
+func (s *MarketingServer) listPartnerStoreContentAnalytics(w http.ResponseWriter, r *http.Request) {
+	storeID := r.PathValue("storeId")
+	if _, err := s.requirePartnerStorePromotionAuthority(r.Context(), bearerToken(r), storeID); err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	contentID := strings.TrimSpace(r.PathValue("contentId"))
+	if contentID == "" || len(contentID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "contentId is required")
+		return
+	}
+	items, belongs, err := postgres.ListPartnerStoreContentAnalytics(r.Context(), s.db, storeID, contentID)
+	if err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	if !belongs {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "content not available to this Store")
+		return
+	}
+	values := make([]contract.DiscoveryContentAnalytics, 0, len(items))
+	for _, item := range items {
+		values = append(values, contract.DiscoveryContentAnalytics{
+			ContentID: item.ContentID,
+			EventType: contract.DiscoveryContentEventType(item.EventType),
+			Count:     int(item.Count),
+		})
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, contract.DiscoveryContentAnalyticsListResponse{Items: values})
 }
 
 func (s *MarketingServer) createDiscoveryContentWithMedia(w http.ResponseWriter, r *http.Request, acting, idempotency, partnerStoreID string) {

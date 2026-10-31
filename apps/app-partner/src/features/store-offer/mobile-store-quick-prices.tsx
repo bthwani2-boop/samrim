@@ -11,6 +11,7 @@ type QuickPriceChange = CatalogQuickPriceUpdate;
 type QuickPriceAttempt = Readonly<{ fingerprint: string; idempotencyKey: string; correlationID: string }>;
 type QuickPriceFilter = "all" | "available" | "unavailable";
 type QuickPricePublicationFilter = "all" | "draft" | "published" | "hidden";
+type QuickPriceInventoryFilter = "all" | "stockout";
 
 export type MobileStoreQuickPricesWorkspaceProps = Readonly<{
   client: ReturnType<typeof createDshMobileClient>;
@@ -32,6 +33,11 @@ const quickPricePublicationFilters: ReadonlyArray<{ value: QuickPricePublication
   { value: "draft", label: "مسودة" },
   { value: "published", label: "منشور" },
   { value: "hidden", label: "مخفي" },
+];
+
+const quickPriceInventoryFilters: ReadonlyArray<{ value: QuickPriceInventoryFilter; label: string }> = [
+  { value: "all", label: "كل حالات المخزون" },
+  { value: "stockout", label: "نفد المخزون المسجل" },
 ];
 
 function quickPricePublicationLabel(state: CatalogStoreOffer["publicationState"]): string {
@@ -86,7 +92,8 @@ export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, get
   const [categoryOptions, setCategoryOptions] = useState<ReadonlyArray<{ id: string; pathAr: string }>>([]);
   const [availabilityDraft, setAvailabilityDraft] = useState<QuickPriceFilter>("all");
   const [publicationDraft, setPublicationDraft] = useState<QuickPricePublicationFilter>("all");
-  const [filters, setFilters] = useState({ q: "", categoryId: "", availability: "all" as QuickPriceFilter, publicationState: "all" as QuickPricePublicationFilter });
+  const [inventoryDraft, setInventoryDraft] = useState<QuickPriceInventoryFilter>("all");
+  const [filters, setFilters] = useState({ q: "", categoryId: "", availability: "all" as QuickPriceFilter, publicationState: "all" as QuickPricePublicationFilter, inventoryStatus: "all" as QuickPriceInventoryFilter });
   const [nextCursor, setNextCursor] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -129,12 +136,17 @@ export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, get
     return () => { current = false; clearTimeout(timer); };
   }, [categoryQuery, client, verticalId]);
 
-  function applyFilters() {
-    setNotice("");
-    setFilters({ q: queryDraft.trim(), categoryId: categoryDraft.trim(), availability: availabilityDraft, publicationState: publicationDraft });
-  }
-
   const changes = useMemo(() => changedQuickPriceRows(offers, draftPrices), [draftPrices, offers]);
+
+  function applyFilters() {
+    if (changes.length > 0) {
+      setError("لديك أسعار معدّلة لم تُحفظ. احفظها أو ألغِ التعديلات قبل تغيير المرشحات.");
+      return;
+    }
+    setError("");
+    setNotice("");
+    setFilters({ q: queryDraft.trim(), categoryId: categoryDraft.trim(), availability: availabilityDraft, publicationState: publicationDraft, inventoryStatus: inventoryDraft });
+  }
 
   async function commit() {
     if (busy || changes.length === 0) return;
@@ -184,6 +196,9 @@ export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, get
     <View style={styles.filters}>
       {quickPricePublicationFilters.map((filter) => <BthwaniChip key={filter.value} disabled={busy} label={filter.label} onPress={() => setPublicationDraft(filter.value)} selected={publicationDraft === filter.value} />)}
     </View>
+    <View style={styles.filters}>
+      {quickPriceInventoryFilters.map((filter) => <BthwaniChip key={filter.value} disabled={busy} label={filter.label} onPress={() => setInventoryDraft(filter.value)} selected={inventoryDraft === filter.value} />)}
+    </View>
     <BthwaniButton busy={loading} disabled={busy || loading} label="تطبيق المرشحات" onPress={applyFilters} variant="secondary" />
     {loading ? <View style={{ alignItems: "center", gap: 6 }}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة النتائج…</Text></View> : null}
     {!loading && !offers.length ? <Text style={styles.muted}>لا توجد عروض مطابقة لهذه المرشحات.</Text> : null}
@@ -194,6 +209,7 @@ export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, get
     </View>)}
     {nextCursor ? <BthwaniButton busy={loading} disabled={loading || busy} label="تحميل المزيد" onPress={() => void read(nextCursor, true)} variant="secondary" /> : null}
     {offers.length ? <BthwaniButton busy={busy} disabled={busy || changes.length === 0} label={`حفظ الأسعار المتغيرة (${changes.length})`} onPress={() => void commit()} /> : null}
+    {changes.length > 0 ? <BthwaniButton disabled={busy} label="إلغاء تعديلات الأسعار غير المحفوظة" onPress={() => { setDraftPrices({}); setAttempt(null); setError(""); }} variant="secondary" /> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     {notice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}
   </View>;

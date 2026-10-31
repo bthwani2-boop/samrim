@@ -196,6 +196,29 @@ func RecordCheckoutDiscoveryConversionTx(ctx context.Context, tx *sql.Tx, orderI
 	return err
 }
 
+// ListPartnerStoreContentAnalytics never exposes the existence or results of content
+// that was not submitted by the authorized Store. The caller must first perform
+// Store-scoped session/permission authorization in the DSH HTTP owner.
+func ListPartnerStoreContentAnalytics(ctx context.Context, db *sql.DB, storeID, contentID string) ([]DiscoveryContentAnalyticsRecord, bool, error) {
+	storeID = strings.TrimSpace(storeID)
+	contentID = strings.TrimSpace(contentID)
+	if db == nil || storeID == "" || contentID == "" || len(storeID) > 150 || len(contentID) > 128 {
+		return nil, false, ErrDiscoveryContentInvalid
+	}
+	var belongs bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM dsh.discovery_content
+		WHERE id=$1 AND source_store_id=$2 AND kind='SHORT_FORM'
+	)`, contentID, storeID).Scan(&belongs); err != nil {
+		return nil, false, err
+	}
+	if !belongs {
+		return nil, false, nil
+	}
+	items, err := ListDiscoveryContentAnalytics(ctx, db, contentID)
+	return items, true, err
+}
+
 func ListDiscoveryContentAnalytics(ctx context.Context, db *sql.DB, contentID string) ([]DiscoveryContentAnalyticsRecord, error) {
 	contentID = strings.TrimSpace(contentID)
 	if db == nil || contentID == "" || len(contentID) > 128 {

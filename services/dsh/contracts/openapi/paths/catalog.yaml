@@ -1236,7 +1236,8 @@ paths:
         - { name: q, in: query, required: false, schema: { type: string, maxLength: 160 } }
         - { name: categoryId, in: query, required: false, schema: { type: string, maxLength: 128 } }
         - { name: availability, in: query, required: false, schema: { type: string, enum: [all, available, unavailable], default: all } }
-        - { name: publicationState, in: query, required: false, schema: { type: string, enum: [all, draft, published, hidden], default: all } }
+        - { name: publicationState, in: query, required: false, schema: { type: string, enum: [all, draft, published, hidden, not_published], default: all } }
+        - { name: inventoryStatus, in: query, required: false, schema: { type: string, enum: [all, stockout], default: all } }
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
         - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 2048 } }
       responses:

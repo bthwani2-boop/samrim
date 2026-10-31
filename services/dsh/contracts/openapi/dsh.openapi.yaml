@@ -535,6 +535,8 @@ paths:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1discovery-targets"
   /dsh/partner/stores/{storeId}/discovery-content:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1discovery-content"
+  /dsh/partner/stores/{storeId}/discovery-content/{contentId}/analytics:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1discovery-content~1{contentId}~1analytics"
   /dsh/partner/stores/{storeId}/promotions:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1promotions"
   /dsh/partner/stores/{storeId}/promotions/{promotionId}/state:

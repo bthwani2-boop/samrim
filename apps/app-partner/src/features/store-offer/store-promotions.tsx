@@ -81,7 +81,7 @@ function campaignDecisionLabel(campaign: PartnerCampaignView): string {
   return "بانتظار قرار المتجر";
 }
 
-export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID: string; verticalID: string }>) {
+export function StorePromotionsCard({ storeID, verticalID, mode = "all" }: Readonly<{ storeID: string; verticalID: string; mode?: "all" | "overview" | "offers" | "campaigns" }>) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const authenticated = currentIdentityState().kind === "authenticated";
@@ -109,21 +109,29 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
   const [endingPromotion, setEndingPromotion] = useState<PromotionView | null>(null);
   const [consentingCampaign, setConsentingCampaign] = useState<PartnerCampaignView | null>(null);
 
-  const load = useCallback(async (): Promise<Readonly<{ promotions: OperatorPromotionRegistryResponse; campaigns: PartnerCampaignListResponse }> | null> => {
+  const load = useCallback(async (): Promise<Readonly<{ promotions: OperatorPromotionRegistryResponse | null; campaigns: PartnerCampaignListResponse | null }> | null> => {
     if (!authenticated || !storeID) return null;
     try {
       const token = await getUsableIdentityAccessToken();
-      const [next, nextCampaigns] = await Promise.all([
+      const [promotionsResult, campaignsResult] = await Promise.allSettled([
         client().listPartnerStorePromotions(token, storeID),
         client().listPartnerStoreCampaigns(token, storeID),
       ]);
+      const next = promotionsResult.status === "fulfilled" ? promotionsResult.value : null;
+      const nextCampaigns = campaignsResult.status === "fulfilled" ? campaignsResult.value : null;
       setState(next);
       setCampaigns(nextCampaigns);
-      setError("");
+      if (!next || !nextCampaigns) {
+        setError(!next && !nextCampaigns ? "تعذر قراءة العروض والحملات. أعد المحاولة."
+          : !next ? "تعذر قراءة عروض المتجر. ما زالت الحملات المتاحة معروضة."
+            : "تعذر قراءة حملات المنصة. ما زالت عروض المتجر معروضة.");
+      } else setError("");
       return { promotions: next, campaigns: nextCampaigns };
     } catch (cause) {
       console.error("DSH store promotions readback failed", cause);
-      setError("تعذر قراءة عروض المتجر وحملات المنصة.");
+      setState(null);
+      setCampaigns(null);
+      setError("تعذر قراءة عروض المتجر وحملات المنصة. تحقق من الاتصال وأعد المحاولة.");
       return null;
     }
   }, [authenticated, storeID]);
@@ -180,7 +188,7 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
         ...(targets.length ? { targets } : {}),
       }, "promotion_create_" + Crypto.randomUUID(), "promotion_create_corr_" + Crypto.randomUUID());
       const readback = await load();
-      const canonical = readback?.promotions.promotions.find((promotion) => promotion.id === created.promotion.id);
+      const canonical = readback?.promotions?.promotions.find((promotion) => promotion.id === created.promotion.id);
       if (!canonical || canonical.state !== "DRAFT") {
         setError("تم إرسال إنشاء العرض لكن تعذّر إثبات المسودة من القراءة المعتمدة. أعد القراءة قبل أي إجراء آخر.");
         return;
@@ -199,7 +207,7 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
       const token = await getUsableIdentityAccessToken();
       await client().setPartnerStorePromotionState(token, storeID, promotion.id, { state: target }, promotion.version, "promotion_state_" + Crypto.randomUUID(), "promotion_state_corr_" + Crypto.randomUUID());
       const readback = await load();
-      const canonical = readback?.promotions.promotions.find((item) => item.id === promotion.id);
+      const canonical = readback?.promotions?.promotions.find((item) => item.id === promotion.id);
       if (!canonical || canonical.state !== target) {
         setError("تم إرسال تغيير الحالة لكن تعذّر إثبات النتيجة من القراءة المعتمدة. اعتمد الحالة المعروضة بعد إعادة القراءة.");
         return;
@@ -217,7 +225,7 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
       const token = await getUsableIdentityAccessToken();
       await client().optInPartnerStoreCampaign(token, storeID, campaign.promotion.id, { decision }, Math.max(1, campaign.storeOptInVersion ?? 0));
       const readback = await load();
-      const canonical = readback?.campaigns.campaigns.find((item) => item.promotion.id === campaign.promotion.id);
+      const canonical = readback?.campaigns?.campaigns.find((item) => item.promotion.id === campaign.promotion.id);
       if (!canonical || canonical.storeOptInState !== decision) {
         setError("تم إرسال قرار الحملة لكن تعذّر إثباته من القراءة المعتمدة. أعد القراءة قبل اتخاذ قرار آخر.");
         return;
@@ -231,17 +239,27 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
 
   if (!authenticated) return null;
   const now = Date.now();
+  const showOffers = mode !== "campaigns";
+  const showCampaigns = mode !== "offers";
   const buckets: Record<"active" | "scheduled" | "ended", PromotionView[]> = { active: [], scheduled: [], ended: [] };
   for (const promotion of state?.promotions ?? []) buckets[lifecycleBucket(promotion, now)].push(promotion);
 
   return <BthwaniSurface style={styles.card}>
-    <View style={styles.header}><Text style={styles.title}>العروض والحملات</Text><BthwaniButton label={formOpen ? "إغلاق" : "عرض جديد"} onPress={() => { setFormOpen((open) => !open); setError(""); }} variant="secondary" /></View>
+    <View style={styles.header}><Text style={styles.title}>{mode === "campaigns" ? "حملات المنصة" : mode === "offers" ? "العروض والقسائم" : "العروض والحملات"}</Text>{showOffers && mode !== "overview" ? <BthwaniButton label={formOpen ? "إغلاق" : "عرض جديد"} onPress={() => { setFormOpen((open) => !open); setError(""); }} variant="secondary" /> : null}</View>
     <Text style={styles.muted}>العروض المعتمدة والنشطة لهذا المتجر تظهر للعملاء في شريط عروض المتجر إلى جانب المنتجات والمحتوى المنشور من لوحة التحكم. يمول الشريك عروض متجره، وتحدد المنصة تمويل حملاتها وشروط المشاركة.</Text>
+    {mode === "overview" ? <View style={styles.summaryGrid} accessibilityLabel="مؤشرات التسويق المعتمدة">
+      {([
+        ["عروض نشطة", state ? buckets.active.length : null],
+        ["مجدولة أو موقوفة", state ? buckets.scheduled.length : null],
+        ["استخدامات مسجلة", state ? state.promotions.reduce((sum, item) => sum + item.redeemedCount, 0) : null],
+        ["حملات تتطلب قرارًا", campaigns ? campaigns.campaigns.filter(item => requiresPartnerOptIn(item.promotion) && !item.storeOptInState).length : null],
+      ] as const).map(([label, number]) => <View key={label} style={styles.summaryCard}><Text style={styles.summaryLabel}>{label}</Text><Text style={styles.summaryNumber}>{number === null ? "—" : number.toLocaleString("ar-YE")}</Text></View>)}
+    </View> : null}
     {notice ? <Text style={styles.notice}>{notice}</Text> : null}
-    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+    {error ? <View style={styles.section}><Text accessibilityRole="alert" style={styles.error}>{error}</Text><BthwaniButton label="إعادة تحميل العروض والحملات" disabled={busy} onPress={() => { void load(); }} variant="secondary" /></View> : null}
     {!state && !campaigns && !error ? <View style={styles.loading}><ActivityIndicator accessibilityLabel="جارٍ قراءة العروض والحملات" color={theme.interactiveText} /></View> : null}
 
-    {state && formOpen ? <View style={styles.form}>
+    {showOffers && mode !== "overview" && state && formOpen ? <View style={styles.form}>
       <Text style={styles.formTitle}>عرض متجر جديد</Text>
       <TextInput accessibilityLabel="رمز العرض" autoCapitalize="characters" placeholder="رمز قصير بالإنجليزية" placeholderTextColor={theme.colorMuted} style={styles.input} value={code} onChangeText={setCode} />
       <TextInput accessibilityLabel="اسم العرض" placeholder="اسم العرض" placeholderTextColor={theme.colorMuted} style={styles.input} value={nameAr} onChangeText={setNameAr} />
@@ -267,12 +285,12 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
       <BthwaniButton busy={busy} label="إنشاء مسودة العرض" onPress={() => void create()} />
     </View> : null}
 
-    <View style={styles.section}>
+    {showOffers ? <View style={styles.section}>
       <Text style={styles.sectionTitle}>عروض المتجر</Text>
       {state && state.promotions.length === 0 && !formOpen ? <Text style={styles.muted}>لا توجد عروض متجر بعد.</Text> : null}
       <ScrollView style={styles.list}>{(["active", "scheduled", "ended"] as const).map((bucket) => buckets[bucket].length === 0 ? null : <View key={bucket} style={styles.bucket}>
         <Text style={styles.bucketTitle}>{bucket === "active" ? "نشطة" : bucket === "scheduled" ? "مجدولة أو موقوفة" : "منتهية"}</Text>
-        {buckets[bucket].map((promotion) => { const threshold = minOrderSubtotalMinor(promotion); return <View key={promotion.id} style={styles.row}><View style={styles.rowCopy}>
+        {(mode === "overview" ? buckets[bucket].slice(0, 3) : buckets[bucket]).map((promotion) => { const threshold = minOrderSubtotalMinor(promotion); return <View key={promotion.id} style={styles.row}><View style={styles.rowCopy}>
           <Text style={styles.promoName}>{promotion.nameAr} · {promotion.code}</Text><Text style={styles.muted}>{benefitLabel(promotion)} · {fundingLabel(promotion)}</Text>
           <Text style={styles.muted}>{promotionScopeLabel(promotion)}</Text>
           {threshold ? <Text style={styles.muted}>حد الطلب: {formatMoney(threshold, "YER")}</Text> : null}
@@ -284,11 +302,11 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
           {promotion.state !== "ENDED" ? <BthwaniButton busy={busy} label="إنهاء" onPress={() => setEndingPromotion(promotion)} variant="secondary" /> : null}
         </View></View>; })}
       </View>)}</ScrollView>
-    </View>
+    </View> : null}
 
-    <View style={styles.section}><Text style={styles.sectionTitle}>حملات المنصة المؤهلة</Text>
+    {showCampaigns ? <View style={styles.section}><Text style={styles.sectionTitle}>حملات المنصة المؤهلة</Text>
       {campaigns && campaigns.campaigns.length === 0 ? <Text style={styles.muted}>لا توجد حملات منصة مؤهلة لهذا المتجر الآن.</Text> : null}
-      {(campaigns?.campaigns ?? []).map((campaign) => { const threshold = minOrderSubtotalMinor(campaign.promotion); return <View key={campaign.promotion.id} style={styles.row}><View style={styles.rowCopy}>
+      {(mode === "overview" ? (campaigns?.campaigns ?? []).slice(0, 3) : (campaigns?.campaigns ?? [])).map((campaign) => { const threshold = minOrderSubtotalMinor(campaign.promotion); return <View key={campaign.promotion.id} style={styles.row}><View style={styles.rowCopy}>
         <Text style={styles.promoName}>{campaign.promotion.nameAr}</Text><Text style={styles.muted}>{benefitLabel(campaign.promotion)} · {fundingLabel(campaign.promotion)}</Text>
         <Text style={styles.muted}>{promotionScopeLabel(campaign.promotion)}</Text>
         {threshold ? <Text style={styles.muted}>حد الطلب: {formatMoney(threshold, "YER")}</Text> : null}
@@ -298,7 +316,7 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
         <BthwaniButton busy={busy} disabled={campaign.storeOptInState === "OPTED_IN" || (campaign.promotion.fundingSource !== "BTHWANI" && !campaign.promotion.discountBudgetLimitMinor)} label="مشاركة" onPress={() => setConsentingCampaign(campaign)} variant="secondary" />
         <BthwaniButton busy={busy} disabled={campaign.storeOptInState === "DECLINED"} label="رفض" onPress={() => void decideCampaign(campaign, "DECLINED")} variant="secondary" />
       </View> : null}</View>; })}
-    </View>
+    </View> : null}
     <BthwaniConfirmDialog
       busy={busy}
       confirmLabel="أوافق على المشاركة"
@@ -341,7 +359,11 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
-    card: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[4], padding: spacing[4] },
+    card: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[4], padding: spacing[4], backgroundColor: theme.surface },
+    summaryGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
+    summaryCard: { backgroundColor: theme.surfaceInset, borderColor: theme.borderColor, borderWidth: 1, borderRadius: radius.md, minHeight: 92, padding: spacing[3], flexGrow: 1, flexBasis: 152, gap: spacing[2] },
+    summaryLabel: { ...typography.caption, color: theme.colorMuted },
+    summaryNumber: { ...typography.titleLg, color: theme.color, fontWeight: "800" },
     header: { alignItems: "center", flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
     title: { ...typography.titleSm, color: theme.color }, section: { gap: spacing[3] }, sectionTitle: { ...typography.titleSm, color: theme.color },
     formTitle: { ...typography.label, color: theme.color }, muted: { ...typography.bodySm, color: theme.colorMuted }, notice: { ...typography.bodySm, color: theme.interactiveText },

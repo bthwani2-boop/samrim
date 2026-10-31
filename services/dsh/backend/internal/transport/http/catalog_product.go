@@ -926,7 +926,7 @@ func (s *CatalogServer) listQuickPrices(w http.ResponseWriter, r *http.Request) 
 		}
 		limit = parsed
 	}
-	filters := postgres.CatalogQuickPriceFilters{Query: r.URL.Query().Get("q"), CategoryID: r.URL.Query().Get("categoryId"), Availability: r.URL.Query().Get("availability"), PublicationState: r.URL.Query().Get("publicationState")}
+	filters := postgres.CatalogQuickPriceFilters{Query: r.URL.Query().Get("q"), CategoryID: r.URL.Query().Get("categoryId"), Availability: r.URL.Query().Get("availability"), PublicationState: r.URL.Query().Get("publicationState"), InventoryStatus: r.URL.Query().Get("inventoryStatus")}
 	page, err := s.service.ListQuickPricesForPartner(r.Context(), bearerToken(r), r.PathValue("storeId"), filters, limit, r.URL.Query().Get("cursor"))
 	if err != nil {
 		writeCatalogError(w, err)

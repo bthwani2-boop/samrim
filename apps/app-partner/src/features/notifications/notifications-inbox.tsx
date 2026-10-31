@@ -6,6 +6,7 @@ import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
+import { usePartnerStoreScope } from "../partner-onboarding/partner-store-scope-context";
 
 const copy = {
   accessibilityLabel: "إشعارات الشريك",
@@ -26,6 +27,7 @@ function activeActorID(): string {
 
 export function NotificationsInbox() {
   const router = useRouter();
+  const { stores, selectStore, selectedStore } = usePartnerStoreScope();
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [actorID, setActorID] = useState(activeActorID);
@@ -77,11 +79,19 @@ export function NotificationsInbox() {
   }, [load]));
 
   function destination(item: Notification): Href | null {
+    // Notifications can outlive a staff grant. Never open a different selected Store.
+    const store = item.storeId ? stores.find((entry) => entry.id === item.storeId) : null;
+    if (item.storeId && !store) return null;
+    const has = (permission: "orders" | "store_operations") =>
+      Boolean(store && (store.owned || store.permissions.includes(permission)));
     if (item.orderId?.trim() && item.kind !== "STORE_AVAILABILITY_CHANGED" && item.kind !== "STORE_PUBLISHED") {
+      if (item.storeId ? !has("orders") : !stores.some((entry) => entry.owned || entry.permissions.includes("orders"))) return null;
       return { pathname: "/orders", params: { orderId: item.orderId, ...(item.storeId ? { storeId: item.storeId } : {}) } } as Href;
     }
-    if (item.storeId && item.kind === "STORE_AVAILABILITY_CHANGED") return { pathname: "/store", params: { section: "operations", returnTo: "orders" } } as Href;
-    if (item.storeId && item.kind === "STORE_PUBLISHED") return { pathname: "/store", params: { section: "settings", returnTo: "orders" } } as Href;
+    if (item.storeId && item.kind === "STORE_AVAILABILITY_CHANGED" && has("store_operations"))
+      return { pathname: "/store", params: { section: "operations", returnTo: "notifications" } } as Href;
+    if (item.storeId && item.kind === "STORE_PUBLISHED" && store?.owned)
+      return { pathname: "/store", params: { section: "settings", returnTo: "notifications" } } as Href;
     return null;
   }
 
@@ -98,7 +108,12 @@ export function NotificationsInbox() {
       }
       if (activeActorID() === actorID) {
         const target = destination(item);
-        if (target) router.push(target);
+        if (target) {
+          if (item.storeId && selectedStore?.id !== item.storeId) selectStore(item.storeId);
+          router.push(target);
+        } else if (item.orderId || item.storeId) {
+          setError("لا يمكنك فتح تفاصيل هذا الإشعار في نطاق المتاجر والصلاحيات الحالية.");
+        }
       }
     } catch (cause) {
       console.error("DSH partner notification read-state write failed", cause);

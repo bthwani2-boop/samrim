@@ -33,6 +33,7 @@ type CatalogQuickPriceFilters struct {
 	CategoryID       string
 	Availability     string
 	PublicationState string
+	InventoryStatus  string
 }
 
 type catalogQuickPriceCursor struct {
@@ -49,11 +50,15 @@ func ListCatalogQuickPriceOffers(ctx context.Context, db *sql.DB, storeID string
 	filters.CategoryID = strings.TrimSpace(filters.CategoryID)
 	filters.Availability = strings.TrimSpace(filters.Availability)
 	filters.PublicationState = strings.TrimSpace(filters.PublicationState)
+	filters.InventoryStatus = strings.TrimSpace(filters.InventoryStatus)
 	if filters.Availability == "" {
 		filters.Availability = "all"
 	}
 	if filters.PublicationState == "" {
 		filters.PublicationState = "all"
+	}
+	if filters.InventoryStatus == "" {
+		filters.InventoryStatus = "all"
 	}
 	if db == nil || storeID == "" || len(storeID) > 128 || len(filters.Query) > 160 || len(filters.CategoryID) > 128 || limit < 1 || limit > 100 || len(rawCursor) > 2048 {
 		return CatalogStoreOfferPage{}, ErrCatalogQuickPriceInvalidFilter
@@ -61,10 +66,13 @@ func ListCatalogQuickPriceOffers(ctx context.Context, db *sql.DB, storeID string
 	if filters.Availability != "all" && filters.Availability != "available" && filters.Availability != "unavailable" {
 		return CatalogStoreOfferPage{}, ErrCatalogQuickPriceInvalidFilter
 	}
-	if filters.PublicationState != "all" && filters.PublicationState != "draft" && filters.PublicationState != "published" && filters.PublicationState != "hidden" {
+	if filters.PublicationState != "all" && filters.PublicationState != "draft" && filters.PublicationState != "published" && filters.PublicationState != "hidden" && filters.PublicationState != "not_published" {
 		return CatalogStoreOfferPage{}, ErrCatalogQuickPriceInvalidFilter
 	}
-	filterHash := hashFacts("catalog-quick-price-filter", filters.Query, filters.CategoryID, filters.Availability, filters.PublicationState)
+	if filters.InventoryStatus != "all" && filters.InventoryStatus != "stockout" {
+		return CatalogStoreOfferPage{}, ErrCatalogQuickPriceInvalidFilter
+	}
+	filterHash := quickPriceFilterHash(filters)
 	cursor, err := decodeQuickPriceCursor(rawCursor, storeID, filterHash)
 	if err != nil {
 		return CatalogStoreOfferPage{}, err
@@ -75,11 +83,12 @@ func ListCatalogQuickPriceOffers(ctx context.Context, db *sql.DB, storeID string
 		))
 		AND ($3='' OR EXISTS (SELECT 1 FROM dsh.catalog_product_categories pc WHERE pc.product_id=p.id AND pc.category_id=$3))
 		AND ($4='all' OR ($4='available' AND o.availability=true) OR ($4='unavailable' AND o.availability=false))
-		AND ($5='all' OR o.publication_state=$5)`
-	args := []any{storeID, filters.Query, filters.CategoryID, filters.Availability, filters.PublicationState}
+		AND ($5='all' OR ($5='not_published' AND o.publication_state<>'published') OR o.publication_state=$5)
+		AND ($6='all' OR ($6='stockout' AND o.publication_state='published' AND o.inventory_policy='QUANTITY_ON_HAND' AND o.inventory_on_hand_base_units<=o.inventory_reserved_base_units))`
+	args := []any{storeID, filters.Query, filters.CategoryID, filters.Availability, filters.PublicationState, filters.InventoryStatus}
 	if cursor != nil {
 		args = append(args, cursor.CreatedAt, cursor.OfferID)
-		query += " AND (o.created_at,o.id)>($6,$7)"
+		query += " AND (o.created_at,o.id)>($7,$8)"
 	}
 	args = append(args, limit+1)
 	query += " ORDER BY o.created_at ASC,o.id ASC LIMIT $" + itoa(len(args))
@@ -116,6 +125,14 @@ func ListCatalogQuickPriceOffers(ctx context.Context, db *sql.DB, storeID string
 		return CatalogStoreOfferPage{}, err
 	}
 	return page, nil
+}
+
+func quickPriceFilterHash(filters CatalogQuickPriceFilters) string {
+	base := hashFacts("catalog-quick-price-filter", filters.Query, filters.CategoryID, filters.Availability, filters.PublicationState)
+	if filters.InventoryStatus == "" || filters.InventoryStatus == "all" {
+		return base
+	}
+	return hashFacts("catalog-inventory-filter", base, filters.InventoryStatus)
 }
 
 func encodeQuickPriceCursor(cursor catalogQuickPriceCursor) (string, error) {

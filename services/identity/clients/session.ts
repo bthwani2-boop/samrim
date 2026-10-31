@@ -165,6 +165,7 @@ export class IdentitySessionManager {
   private readonly key: string;
   private readonly createRefreshRequestId: () => string;
   private readonly developmentSession: (() => Promise<TokenPair>) | undefined;
+  private readonly restoreBrowserSession: (() => Promise<TokenPair>) | undefined;
   private stateValue: IdentitySessionState = { kind: "signed_out", reason: "no_local_session" };
   private tokens: StoredTokens | null = null;
   private refreshInFlight: Promise<IdentitySessionState> | null = null;
@@ -180,6 +181,7 @@ export class IdentitySessionManager {
     storageNamespace: string,
     createRefreshRequestId: () => string = defaultRefreshRequestId,
     developmentSession?: () => Promise<TokenPair>,
+    restoreBrowserSession?: () => Promise<TokenPair>,
   ) {
     this.client = client;
     this.storage = storage;
@@ -188,6 +190,7 @@ export class IdentitySessionManager {
     this.surface = surface;
     this.createRefreshRequestId = createRefreshRequestId;
     this.developmentSession = developmentSession;
+    this.restoreBrowserSession = restoreBrowserSession;
     if (identityRoleSurface(role) !== surface) throw new Error("IDENTITY_ROLE_SURFACE_MISMATCH");
     this.key = storageNamespace + ".identity.session.v1";
   }
@@ -266,6 +269,14 @@ export class IdentitySessionManager {
         }
       }
       this.tokens = null;
+      if (this.restoreBrowserSession) {
+        try {
+          return await this.adopt(await this.restoreBrowserSession());
+        } catch (error) {
+          if (isIdentityUnauthenticated(error)) return this.signOut("no_local_session");
+          return this.degraded(degradedReason(error));
+        }
+      }
       return this.restoreDevelopmentSession(raw === null ? "no_local_session" : "corrupt_local_session");
     }
 

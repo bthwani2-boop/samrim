@@ -1,7 +1,9 @@
-import type { DiscoveryContentView, OperatorDiscoveryContentRegistryResponse } from "@bthwani/dsh";
+import { createDshMobileClient, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentView, type OperatorDiscoveryContentRegistryResponse } from "@bthwani/dsh";
+import { typography } from "@bthwani/design-system";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 import * as Crypto from "expo-crypto";
 import * as DocumentPicker from "expo-document-picker";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
@@ -20,6 +22,8 @@ function statusLabel(value: Reel["state"]): string {
 }
 
 export function PartnerStoreReels({ storeId, storeName }: { storeId: string; storeName: string }) {
+  const theme = useAppearanceTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [items, setItems] = useState<ReadonlyArray<Reel>>([]);
   const [targets, setTargets] = useState<ReadonlyArray<ReelTarget>>([]);
   const [targetType, setTargetType] = useState<ReelTargetType>("STORE");
@@ -31,39 +35,77 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [listError, setListError] = useState("");
+  const [targetsError, setTargetsError] = useState("");
+  const [analyticsID, setAnalyticsID] = useState("");
+  const [analytics, setAnalytics] = useState<DiscoveryContentAnalyticsListResponse | null>(null);
+  const [analyticsError, setAnalyticsError] = useState("");
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const analyticsRequest = useRef(0);
   // Preserve one server idempotency key across retries of the same draft.
   const attempt = useRef<{ fingerprint: string; contentId: string; idempotencyKey: string; correlationId: string; startsAt: string } | null>(null);
 
   const read = useCallback(async () => {
+    setLoading(true);
     try {
       const token = await getUsableIdentityAccessToken();
       const prefix = `${baseUrl()}/dsh/partner/stores/${encodeURIComponent(storeId)}`;
       const headers = { Authorization: `Bearer ${token}`, Accept: "application/json" };
-      const [response, targetResponse] = await Promise.all([
-        fetch(`${prefix}/discovery-content`, { headers }),
-        fetch(`${prefix}/discovery-targets`, { headers }),
+      const [list, destinations] = await Promise.allSettled([
+        (async () => {
+          const response = await fetch(`${prefix}/discovery-content`, { headers });
+          if (!response.ok) throw new Error("REELS_LIST_READ_FAILED");
+          return response.json() as Promise<OperatorDiscoveryContentRegistryResponse>;
+        })(),
+        (async () => {
+          const response = await fetch(`${prefix}/discovery-targets`, { headers });
+          if (!response.ok) throw new Error("REELS_TARGETS_READ_FAILED");
+          return response.json() as Promise<{ targets: ReadonlyArray<ReelTarget> }>;
+        })(),
       ]);
-      if (!response.ok || !targetResponse.ok) throw new Error("REELS_READ_FAILED");
-      const [data, targetData] = await Promise.all([
-        response.json() as Promise<OperatorDiscoveryContentRegistryResponse>,
-        targetResponse.json() as Promise<{ targets: ReadonlyArray<ReelTarget> }>,
-      ]);
-      setItems(data.items);
-      setTargets(targetData.targets);
-      setMessage("");
+      if (list.status === "fulfilled") setItems(list.value.items);
+      setListError(list.status === "fulfilled" ? "" : "تعذر قراءة مقاطع المتجر. أعد المحاولة.");
+      if (destinations.status === "fulfilled") setTargets(destinations.value.targets);
+      setTargetsError(destinations.status === "fulfilled" ? "" : "تعذر قراءة وجهات المقاطع. يمكن متابعة المقاطع الحالية.");
     } catch {
-      setMessage("تعذر تحميل حالة الفيديوهات.");
+      setListError("تعذر قراءة مقاطع المتجر. تحقق من الاتصال.");
+      setTargetsError("تعذر قراءة وجهات المقاطع. تحقق من الاتصال.");
     } finally {
       setLoading(false);
     }
   }, [storeId]);
 
+  const loadAnalytics = async (contentID: string) => {
+    const request = analyticsRequest.current + 1;
+    analyticsRequest.current = request;
+    setAnalyticsID(contentID);
+    setAnalytics(null);
+    setAnalyticsError("");
+    setAnalyticsLoading(true);
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const result = await createDshMobileClient(baseUrl(), { cryptoRandomUUID: () => Crypto.randomUUID() })
+        .listPartnerStoreContentAnalytics(token, storeId, contentID);
+      if (analyticsRequest.current === request) setAnalytics(result);
+    } catch {
+      if (analyticsRequest.current === request) setAnalyticsError("تعذر قراءة نتائج هذا المقطع؛ أعد المحاولة.");
+    } finally {
+      if (analyticsRequest.current === request) setAnalyticsLoading(false);
+    }
+  };
+
   useEffect(() => {
     setTargetType("STORE");
     setTargetId(storeId);
     setTargetSearch("");
+    setItems([]);
+    setTargets([]);
+    setAnalyticsID("");
+    setAnalytics(null);
+    setListError("");
+    setTargetsError("");
+    analyticsRequest.current++;
     attempt.current = null;
-    setLoading(true);
     void read();
   }, [read, storeId]);
   const selectKind = (kind: ReelTargetType) => {
@@ -79,7 +121,7 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
     if (busy) return;
     try {
       const selected = await DocumentPicker.getDocumentAsync({
-        type: ["video/mp4", "image/jpeg", "image/png"], copyToCacheDirectory: true,
+        type: ["video/mp4"], copyToCacheDirectory: true,
       });
       if (selected.canceled || !selected.assets[0]) return;
       const value = selected.assets[0];
@@ -87,8 +129,8 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
         setMessage("الحد الأقصى 10 ميجابايت. اختر فيديو مضغوطًا.");
         return;
       }
-      if (!["video/mp4", "image/jpeg", "image/png"].includes(value.mimeType ?? "")) {
-        setMessage("صيغة الفيديو MP4، ويمكن أيضًا استخدام صورة.");
+      if (value.mimeType !== "video/mp4") {
+        setMessage("يدعم هذا القسم مقاطع MP4 فقط.");
         return;
       }
       setFile(value);
@@ -159,9 +201,9 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
 
   return <View style={styles.root} accessibilityLabel="فيديوهات المتجر">
     <Text style={styles.heading}>فيديوهات المتجر</Text>
-    <Text style={styles.note}>يُعرض المقطع بعد مراجعة بثواني، ويقود إلى متجرك مباشرة.</Text>
+    <Text style={styles.note}>مقطع MP4 حتى 30 ثانية و10 ميجابايت. يُنشر بعد موافقة بثواني، ويقود إلى المتجر أو منتج أو عرض مصرح به.</Text>
     <Pressable accessibilityRole="button" disabled={busy} style={styles.action} onPress={() => { void choose(); }}>
-      <Text style={styles.actionText}>{file ? file.name : "اختر فيديو أو صورة"}</Text>
+      <Text style={styles.actionText}>{file ? file.name : "اختر مقطع MP4"}</Text>
     </Pressable>
     {file ? <>
       <TextInput accessibilityLabel="وصف الفيديو" placeholder="عنوان قصير للمقطع" value={caption} onChangeText={setCaption} maxLength={160} style={styles.input} />
@@ -190,29 +232,55 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
       </Pressable>
     </> : null}
     {message ? <Text accessibilityRole="alert" style={styles.note}>{message}</Text> : null}
+    {listError || targetsError ? <View style={styles.item}>
+      {listError ? <Text accessibilityRole="alert" style={styles.note}>{listError}</Text> : null}
+      {targetsError ? <Text accessibilityRole="alert" style={styles.note}>{targetsError}</Text> : null}
+      <Pressable accessibilityRole="button" accessibilityLabel="إعادة تحميل المقاطع والوجهات"
+        style={styles.target} onPress={() => { void read(); }}><Text style={styles.kindText}>إعادة تحميل</Text></Pressable>
+    </View> : null}
     {loading ? <ActivityIndicator /> : items.map(item =>
       <View key={item.id} style={styles.item}>
         <Text style={styles.title}>{item.titleAr}</Text>
         <Text style={styles.note}>{statusLabel(item.state)}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel={"عرض أداء المقطع " + item.titleAr}
+          style={styles.target} onPress={() => { void loadAnalytics(item.id); }}>
+          <Text style={styles.kindText}>عرض النتائج</Text>
+        </Pressable>
+        {analyticsID === item.id ? <View style={styles.analyticsBox}>
+          {analyticsLoading ? <ActivityIndicator accessibilityLabel="جارٍ قراءة نتائج المقطع"/> : null}
+          {analyticsError ? <Text accessibilityRole="alert" style={styles.note}>{analyticsError}</Text> : null}
+          {analytics ? ([
+            ["أحداث الظهور", "IMPRESSION"], ["النقرات", "CLICK"], ["طلبات منشأة منسوبة", "CONVERSION"],
+          ] as const).map(([label, kind]) => <View key={kind} style={styles.metricRow}>
+            <Text style={styles.note}>{label}</Text>
+            <Text style={styles.title}>{(analytics.items.find(event => event.eventType === kind)?.count ?? 0).toLocaleString("ar-YE")}</Text>
+          </View>) : null}
+          {analytics ? <Text style={styles.note}>الطلبات المنسوبة تعني إنشاء الطلب بعد النقر، وليس إتمامه أو تحقيق أرباح.</Text> : null}
+        </View> : null}
       </View>
     )}
   </View>;
 }
 
-const styles = StyleSheet.create({
-  root: { gap: 12, paddingVertical: 16, paddingHorizontal: 12, borderRadius: 16 },
-  heading: { fontSize: 18, fontWeight: "700", textAlign: "right" },
-  note: { fontSize: 13, textAlign: "right" },
-  input: { minHeight: 48, borderWidth: 1, borderColor: "#999", paddingHorizontal: 12, borderRadius: 12, textAlign: "right" },
-  action: { minHeight: 46, backgroundColor: "#4f46e5", borderRadius: 12, padding: 12, justifyContent: "center", alignItems: "center" },
-  actionText: { color: "#fff", fontWeight: "700", textAlign: "center" },
-  disabled: { opacity: .45 },
-  rights: { minHeight: 44, justifyContent: "center" },
-  kindRow: { flexDirection: "row", gap: 8 },
-  kind: { flex: 1, padding: 10, minHeight: 44, backgroundColor: "#343b59", borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  kindSelected: { borderWidth: 2, borderColor: "#818cf8" },
-  kindText: { color: "#fff", fontSize: 14, fontWeight: "600" },
-  target: { minHeight: 44, padding: 10, borderWidth: 1, borderColor: "#777", borderRadius: 10, justifyContent: "center" },
-  item: { paddingVertical: 12, borderTopWidth: StyleSheet.hairlineWidth, borderColor: "#888" },
-  title: { fontSize: 15, fontWeight: "600", textAlign: "right" },
-});
+
+function createStyles(theme: ReturnType<typeof useAppearanceTheme>) {
+  return StyleSheet.create({
+    root: { gap: 13, padding: 18, borderRadius: 16, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.borderColor },
+    heading: { ...typography.titleMd, color: theme.color, fontWeight: "800", textAlign: "right" },
+    note: { ...typography.bodySm, color: theme.colorMuted, textAlign: "right" },
+    input: { ...typography.bodySm, minHeight: 48, color: theme.color, borderWidth: 1, borderColor: theme.borderColor, paddingHorizontal: 12, borderRadius: 10, textAlign: "right" },
+    action: { minHeight: 45, backgroundColor: theme.brandAction, borderRadius: 10, padding: 12, justifyContent: "center", alignItems: "center" },
+    actionText: { color: theme.onAction, fontWeight: "700", textAlign: "center" },
+    disabled: { opacity: .45 },
+    rights: { minHeight: 44, justifyContent: "center" },
+    kindRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    kind: { flex: 1, minWidth: 85, padding: 10, minHeight: 44, backgroundColor: theme.surfaceInset, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+    kindSelected: { borderWidth: 2, borderColor: theme.brandAction },
+    kindText: { ...typography.bodySm, color: theme.color, fontWeight: "700" },
+    target: { minHeight: 44, padding: 10, borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10, justifyContent: "center" },
+    item: { paddingVertical: 12, borderTopWidth: StyleSheet.hairlineWidth, borderColor: theme.borderColor, gap: 8 },
+    analyticsBox: { backgroundColor: theme.surfaceInset, borderRadius: 10, padding: 12, gap: 8 },
+    metricRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10 },
+    title: { ...typography.bodyStrong, color: theme.color, fontWeight: "700", textAlign: "right" },
+  });
+}

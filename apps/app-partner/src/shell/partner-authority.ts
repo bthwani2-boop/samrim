@@ -1,11 +1,11 @@
 import type { PartnerAccessibleStore, StoreAccessPermission } from "@bthwani/dsh";
 
-export type PartnerSurface = "orders" | "products" | "wallet" | "more" | "store" | "account";
-export type PartnerSurfacePath = "/orders" | "/products" | "/wallet" | "/more" | "/store" | "/account";
+export type PartnerSurface = "orders" | "products" | "wallet" | "more" | "store" | "employees" | "account";
+export type PartnerSurfacePath = "/orders" | "/products" | "/wallet" | "/more" | "/store" | "/employees" | "/account";
 
 const PARTNER_SURFACE_PATHS: Record<PartnerSurface, PartnerSurfacePath> = {
   orders: "/orders", products: "/products", wallet: "/wallet",
-  more: "/more", store: "/store", account: "/account",
+  more: "/more", store: "/store", employees: "/employees", account: "/account",
 };
 
 const STORE_SURFACE_PERMISSIONS: ReadonlyArray<StoreAccessPermission> = ["store_operations", "promotions"];
@@ -36,6 +36,7 @@ export function derivePartnerAuthority(stores: ReadonlyArray<PartnerAccessibleSt
     ...(canUseWallet ? ["wallet" as const] : []),
     "more" as const,
     ...(canUseStore ? ["store" as const] : []),
+    ...(owner ? ["employees" as const] : []),
     "account" as const,
   ];
   return { owner, surfaces, canUse: (surface) => surfaces.includes(surface) };
