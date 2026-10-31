@@ -105,7 +105,8 @@ Each ID has exactly one capability owner under `capabilities/**`.
 - system-owner boundaries follow `docs/governance/architecture.md`;
 - derived search/cache/analytics/notification/tracking state never becomes mutation authority;
 - successful user-facing mutation requires canonical committed readback;
-- admitted breadth and implementation completion are separate claims.
+- admitted breadth and implementation completion are separate claims;
+- admitted Partner workspace capabilities are available by Store scope and authorized permissions, never unlocked by paid subscription plans or feature tiers. Transaction charges, commercial agreements and third-party provider costs remain governed by their actual financial and integration owners.
 
 ## Explicit current non-goals
 
