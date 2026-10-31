@@ -11,6 +11,13 @@ import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 export type ClientShareTarget = Readonly<{ kind: ClientShareKind; id: string; title: string; link: string }>;
 
+function isLocalPreviewLink(link: string): boolean {
+  try {
+    const url = new URL(link);
+    return url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  } catch { return false; }
+}
+
 export function ClientShareSheet({ target, onClose }: { target: ClientShareTarget | null; onClose: () => void }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -21,6 +28,7 @@ export function ClientShareSheet({ target, onClose }: { target: ClientShareTarge
   const [success, setSuccess] = useState(false);
   const idempotencyKey = useRef("");
   const phoneValid = /^\+967[0-9]{9}$/.test(normalizeYemenPhoneE164(phone));
+  const localPreview = Boolean(target && isLocalPreviewLink(target.link));
 
   function resetAndClose() {
     if (busy) return;
@@ -91,8 +99,9 @@ export function ClientShareSheet({ target, onClose }: { target: ClientShareTarge
           </View>
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           <BthwaniButton label="إرسال المشاركة" busy={busy} disabled={!phoneValid || busy} onPress={()=>void send()} />
-          <Pressable accessibilityRole="button" onPress={() => void copyLink()} style={styles.outside}><Text style={styles.outsideText}>نسخ رابط المحتوى</Text></Pressable>
-          <Pressable accessibilityRole="button" onPress={()=>void shareOutside()} style={styles.outside}><Text style={styles.outsideText}>مشاركة عبر تطبيق آخر</Text></Pressable>
+          {localPreview ? <Text style={styles.notice}>رابط معاينة محلي يعمل على جهاز التطوير فقط، وليس رابطًا عامًا للمشاركة الخارجية.</Text> : null}
+          <Pressable accessibilityRole="button" onPress={() => void copyLink()} style={styles.outside}><Text style={styles.outsideText}>{localPreview ? "نسخ رابط المعاينة المحلية" : "نسخ رابط المحتوى"}</Text></Pressable>
+          {!localPreview ? <Pressable accessibilityRole="button" onPress={()=>void shareOutside()} style={styles.outside}><Text style={styles.outsideText}>مشاركة عبر تطبيق آخر</Text></Pressable> : null}
         </>}
       </View>
     </KeyboardAvoidingView>

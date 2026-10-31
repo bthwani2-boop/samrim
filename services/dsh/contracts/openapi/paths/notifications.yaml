@@ -84,3 +84,60 @@ paths:
           $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/notifications/devices:
+    post:
+      operationId: registerNotificationDevice
+      summary: Bind or update an Expo push installation to the current mobile actor-role session
+      security: [{ userBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [installationId, expoPushToken, tone]
+              properties:
+                installationId: { type: string, format: uuid }
+                expoPushToken: { type: string, minLength: 1 }
+                tone: { type: string, enum: [classic, soft, urgent] }
+      responses:
+        "200":
+          description: Push registration state and whether server push dispatch is enabled.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [registered, pushEnabled]
+                properties:
+                  registered: { type: boolean }
+                  pushEnabled: { type: boolean }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/notifications/devices/{installationId}:
+    delete:
+      operationId: unregisterNotificationDevice
+      summary: Unbind an Expo push installation from the current mobile actor-role session
+      security: [{ userBearer: [] }]
+      parameters:
+        - name: installationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Installation unregistered for the authorized actor.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [unregistered]
+                properties:
+                  unregistered: { type: boolean }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }

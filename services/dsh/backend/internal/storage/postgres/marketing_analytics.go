@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"time"
 )
 
 var (
@@ -196,6 +197,47 @@ func RecordCheckoutDiscoveryConversionTx(ctx context.Context, tx *sql.Tx, orderI
 	return err
 }
 
+// ListPartnerStoreContentAnalytics never exposes the existence or results of content
+// that was not submitted by the authorized Store. The caller must first perform
+// Store-scoped session/permission authorization in the DSH HTTP owner.
+func ListPartnerStoreContentAnalytics(ctx context.Context, db *sql.DB, storeID, contentID string) ([]DiscoveryContentAnalyticsRecord, bool, error) {
+	storeID = strings.TrimSpace(storeID)
+	contentID = strings.TrimSpace(contentID)
+	if db == nil || storeID == "" || contentID == "" || len(storeID) > 150 || len(contentID) > 128 {
+		return nil, false, ErrDiscoveryContentInvalid
+	}
+	// Bind ownership and aggregation in one PostgreSQL statement/snapshot.
+	// One LEFT JOIN row proves ownership even when the content has no events.
+	rows, err := db.QueryContext(ctx, `SELECT content.id, events.event_type, COUNT(events.id)
+		FROM dsh.discovery_content content
+		LEFT JOIN dsh.discovery_content_events events ON events.content_id=content.id
+		WHERE content.id=$1 AND content.source_store_id=$2 AND content.kind='SHORT_FORM'
+		GROUP BY content.id, events.event_type
+		ORDER BY events.event_type`, contentID, storeID)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	items := make([]DiscoveryContentAnalyticsRecord, 0)
+	belongs := false
+	for rows.Next() {
+		var id string
+		var eventType sql.NullString
+		var count int64
+		if err := rows.Scan(&id, &eventType, &count); err != nil {
+			return nil, false, err
+		}
+		belongs = true
+		if eventType.Valid {
+			items = append(items, DiscoveryContentAnalyticsRecord{ContentID: id, EventType: eventType.String, Count: count})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	return items, belongs, nil
+}
+
 func ListDiscoveryContentAnalytics(ctx context.Context, db *sql.DB, contentID string) ([]DiscoveryContentAnalyticsRecord, error) {
 	contentID = strings.TrimSpace(contentID)
 	if db == nil || contentID == "" || len(contentID) > 128 {
@@ -215,4 +257,48 @@ func ListDiscoveryContentAnalytics(ctx context.Context, db *sql.DB, contentID st
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+// StoreContentPerformanceSummary is a Store-scoped projection of its own short-form
+// discovery media events. CONVERSION means an attributed created Order, not
+// a completed or paid Order and never a WLT settlement.
+type StoreContentPerformanceSummary struct {
+	StoreID                   string
+	Period                    string
+	ContentCount              int64
+	Impressions               int64
+	Clicks                    int64
+	AttributedOrdersCreated   int64
+	AttributedOrdersCompleted int64
+}
+
+func ReadStoreContentPerformanceSummary(ctx context.Context, db *sql.DB, storeID, period string, from *time.Time) (StoreContentPerformanceSummary, error) {
+	storeID = strings.TrimSpace(storeID)
+	if db == nil || storeID == "" || len(storeID) > 150 ||
+		(period != "7d" && period != "30d" && period != "all") ||
+		(period == "all" && from != nil) || (period != "all" && from == nil) {
+		return StoreContentPerformanceSummary{}, ErrDiscoveryContentInvalid
+	}
+	var fromArg any
+	if from != nil {
+		fromArg = from.UTC()
+	}
+	summary := StoreContentPerformanceSummary{StoreID: storeID, Period: period}
+	err := db.QueryRowContext(ctx, `SELECT
+		COUNT(DISTINCT content.id) FILTER (WHERE $2::timestamptz IS NULL OR content.created_at >= $2::timestamptz),
+		COUNT(events.id) FILTER (WHERE events.event_type='IMPRESSION' AND ($2::timestamptz IS NULL OR events.occurred_at >= $2::timestamptz)),
+		COUNT(events.id) FILTER (WHERE events.event_type='CLICK' AND ($2::timestamptz IS NULL OR events.occurred_at >= $2::timestamptz)),
+		COUNT(events.id) FILTER (WHERE events.event_type='CONVERSION' AND ($2::timestamptz IS NULL OR events.occurred_at >= $2::timestamptz)),
+		COUNT(events.id) FILTER (WHERE events.event_type='CONVERSION' AND orders.state IN ('DELIVERED','PICKED_UP')
+			AND ($2::timestamptz IS NULL OR events.occurred_at >= $2::timestamptz))
+		FROM dsh.discovery_content content
+		LEFT JOIN dsh.discovery_content_events events ON events.content_id=content.id
+		LEFT JOIN dsh.commerce_orders orders ON orders.id=events.order_id AND orders.store_id=content.source_store_id
+		WHERE content.source_store_id=$1 AND content.kind='SHORT_FORM'`, storeID, fromArg).Scan(
+		&summary.ContentCount, &summary.Impressions, &summary.Clicks,
+		&summary.AttributedOrdersCreated, &summary.AttributedOrdersCompleted)
+	if err != nil {
+		return StoreContentPerformanceSummary{}, err
+	}
+	return summary, nil
 }

@@ -12,7 +12,7 @@ paths:
   /dsh/operator/distance-band-fee-policy:
     get:
       operationId: readOperatorDistanceBandFeePolicy
-      security: [{ serviceToken: [] }]
+      security: [{ serviceBearer: [] }]
       parameters:
         - { $ref: '#/components/parameters/ActingActorId' }
         - name: serviceCityId
@@ -23,11 +23,11 @@ paths:
         '404': { description: Policy has not been configured. }
     post:
       operationId: createOperatorDistanceBandFeePolicy
-      security: [{ serviceToken: [] }]
+      security: [{ serviceBearer: [] }]
       parameters:
         - { $ref: '#/components/parameters/ActingActorId' }
         - { $ref: '#/components/parameters/CorrelationId' }
-        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IdempotencyKeyRequired' }
       requestBody:
         required: true
         content:
@@ -55,7 +55,7 @@ paths:
   /dsh/operator/policy-history:
     get:
       operationId: readOperatorPolicyHistory
-      security: [{ serviceToken: [] }]
+      security: [{ serviceBearer: [] }]
       parameters:
         - { $ref: '#/components/parameters/ActingActorId' }
         - name: key
@@ -70,15 +70,15 @@ paths:
   /dsh/operator/policy-registry:
     get:
       operationId: readOperatorPolicyRegistry
-      security: [{ serviceToken: [] }]
+      security: [{ serviceBearer: [] }]
       parameters:
         - { $ref: '#/components/parameters/ActingActorId' }
       responses:
-        '200': { description: WLT policy values joined with DSH names, without duplicated storage. }
+        '200': { description: "WLT policy values joined with DSH names, without duplicated storage." }
   /dsh/operator/captain-minimum-balance-policy:
     get:
       operationId: readOperatorCaptainMinimumBalancePolicy
-      security: [{ serviceToken: [] }]
+      security: [{ serviceBearer: [] }]
       parameters:
         - { $ref: '#/components/parameters/ActingActorId' }
       responses:
@@ -86,10 +86,10 @@ paths:
         '404': { description: No active policy. }
     post:
       operationId: createOperatorCaptainMinimumBalancePolicy
-      security: [{ serviceToken: [] }]
+      security: [{ serviceBearer: [] }]
       parameters:
         - { $ref: '#/components/parameters/ActingActorId' }
-        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IdempotencyKeyRequired' }
         - { $ref: '#/components/parameters/CorrelationId' }
       requestBody:
         required: true
@@ -108,7 +108,7 @@ paths:
   /dsh/operator/captain-minimum-balance-policy/history:
     get:
       operationId: listOperatorCaptainMinimumBalanceHistory
-      security: [{ serviceToken: [] }]
+      security: [{ serviceBearer: [] }]
       parameters:
         - { $ref: '#/components/parameters/ActingActorId' }
       responses:
@@ -497,6 +497,18 @@ paths:
   /dsh/operator/marketing/banner-presentation:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1banner-presentation"
 
+  /dsh/operator/marketing/studio-draft:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1studio-draft"
+
+  /dsh/public/studio-theme:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1studio-theme"
+
+  /dsh/operator/marketing/studio-theme:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1studio-theme"
+
+  /dsh/operator/marketing/studio-theme/history:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1studio-theme~1history"
+
   /dsh/public/discovery-content:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1discovery-content"
 
@@ -535,6 +547,12 @@ paths:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1discovery-targets"
   /dsh/partner/stores/{storeId}/discovery-content:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1discovery-content"
+  /dsh/partner/stores/{storeId}/discovery-content/{contentId}/analytics:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1discovery-content~1{contentId}~1analytics"
+  /dsh/partner/stores/{storeId}/discovery-content/summary:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1discovery-content~1summary"
+  /dsh/operator/stores/{storeId}/discovery-content/summary:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1discovery-content~1summary"
   /dsh/partner/stores/{storeId}/promotions:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1promotions"
   /dsh/partner/stores/{storeId}/promotions/{promotionId}/state:
@@ -689,6 +707,12 @@ paths:
 
   /dsh/orders/{orderId}/rating:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1rating"
+
+  /dsh/partner/stores/{storeId}/ratings:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1ratings"
+
+  /dsh/operator/stores/{storeId}/ratings:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1ratings"
 
   /dsh/notifications:
     $ref: "./paths/notifications.yaml#/paths/~1dsh~1notifications"
@@ -912,6 +936,12 @@ paths:
   /dsh/stores/{storeId}/orders:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders"
 
+  /dsh/partner/stores/{storeId}/orders/summary:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1orders~1summary"
+
+  /dsh/operator/stores/{storeId}/orders/summary:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1orders~1summary"
+
   /dsh/partner/orders:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1partner~1orders"
 
@@ -1032,6 +1062,21 @@ paths:
 
   /dsh/captains/me/store-memberships/accept:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1store-memberships~1accept"
+
+  /dsh/captains/me/presence:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1presence"
+  /dsh/captains/me/assignments/{assignmentId}/arrive:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1arrive"
+  /dsh/captains/me/assignments/{assignmentId}/arrival:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1arrival"
+  /dsh/catalog/media/{key}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1media~1{key}"
+  /dsh/notifications/devices:
+    $ref: "./paths/notifications.yaml#/paths/~1dsh~1notifications~1devices"
+  /dsh/notifications/devices/{installationId}:
+    $ref: "./paths/notifications.yaml#/paths/~1dsh~1notifications~1devices~1{installationId}"
+  /dsh/operations/partners/{actorId}/team:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1operations~1partners~1{actorId}~1team"
 
 components:
   securitySchemes:
@@ -1429,6 +1474,214 @@ components:
         claimedByMe: { type: boolean }
         claimedByOther: { type: boolean }
         claimExpiresAt: { type: string, format: date-time }
+    StudioThemePalette:
+      type: object
+      additionalProperties: false
+      required: [navy, orange, white, turquoise, burgundy]
+      properties:
+        navy:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        orange:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        white:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        turquoise:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        burgundy:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+    StudioThemePublication:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, templateKey, version, palette]
+      properties:
+        schemaVersion:
+          type: integer
+          enum: [1]
+        templateKey:
+          type: string
+          enum: [CLIENT_HOME]
+        version:
+          type: integer
+          minimum: 1
+        palette:
+          anyOf:
+            - { $ref: "#/components/schemas/StudioThemePalette" }
+            - { type: "null" }
+        publishedByActorId:
+          type: string
+    StudioThemePublicationRequest:
+      type: object
+      additionalProperties: false
+      required: [action, expectedDraftVersion, targetPublicationVersion]
+      properties:
+        action:
+          type: string
+          enum: [ACTIVATE_DRAFT, RESTORE_DEFAULTS, ROLLBACK]
+        expectedDraftVersion:
+          type: integer
+          minimum: 0
+        targetPublicationVersion:
+          type: integer
+          minimum: 0
+    StudioThemePublicationMutation:
+      type: object
+      additionalProperties: false
+      required: [publication, idempotentReplay]
+      properties:
+        publication:
+          $ref: "#/components/schemas/StudioThemePublication"
+        idempotentReplay:
+          type: boolean
+    StudioThemeHistoryItem:
+      type: object
+      additionalProperties: false
+      required: [version, action, publishedByActorId, createdAt]
+      properties:
+        version:
+          type: integer
+          minimum: 2
+        action:
+          type: string
+          enum: [ACTIVATE_DRAFT, RESTORE_DEFAULTS, ROLLBACK]
+        publishedByActorId:
+          type: string
+        createdAt:
+          type: string
+    StudioThemeHistory:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/StudioThemeHistoryItem"
+    StudioDraft:
+      type: object
+      additionalProperties: false
+      required: [templateKey, document, version, updatedByActorId]
+      properties:
+        templateKey:
+          type: string
+          enum: [CLIENT_HOME]
+        document:
+          anyOf:
+            - { $ref: "#/components/schemas/StudioDraftDocument" }
+            - { type: "null" }
+        version:
+          type: integer
+          minimum: 1
+        updatedByActorId:
+          type: string
+    StudioDraftDocument:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, sections, heroOptions, palette, slides, autoplay, intervalSeconds]
+      properties:
+        schemaVersion:
+          type: integer
+          enum: [2]
+        sections:
+          type: array
+          minItems: 12
+          maxItems: 12
+          items:
+            $ref: "#/components/schemas/StudioDraftSection"
+        heroOptions:
+          $ref: "#/components/schemas/StudioDraftHeroOptions"
+        palette:
+          $ref: "#/components/schemas/StudioDraftPalette"
+        slides:
+          type: array
+          minItems: 1
+          maxItems: 4
+          items:
+            $ref: "#/components/schemas/StudioDraftSlide"
+        autoplay:
+          type: boolean
+        intervalSeconds:
+          type: integer
+          minimum: 3
+          maximum: 10
+    StudioDraftSection:
+      type: object
+      additionalProperties: false
+      required: [id, visible, title, description, count]
+      properties:
+        id:
+          type: string
+          enum: [hero, benefits, services, stores, products, curated, banners, topSellers, promotions, testimonials, brands, trust]
+        visible:
+          type: boolean
+        title:
+          type: string
+          maxLength: 80
+        description:
+          type: string
+          maxLength: 180
+        count:
+          type: integer
+          minimum: 1
+          maximum: 8
+    StudioDraftHeroOptions:
+      type: object
+      additionalProperties: false
+      required: [height, align, showDescription, showButton, showDots]
+      properties:
+        height:
+          type: string
+          enum: [compact, regular, tall]
+        align:
+          type: string
+          enum: [start, center, end]
+        showDescription:
+          type: boolean
+        showButton:
+          type: boolean
+        showDots:
+          type: boolean
+    StudioDraftPalette:
+      type: object
+      additionalProperties: false
+      required: [navy, orange, white, turquoise, burgundy]
+      properties:
+        navy:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        orange:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        white:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        turquoise:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        burgundy:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+    StudioDraftSlide:
+      type: object
+      additionalProperties: false
+      required: [id, title, description, buttonLabel]
+      properties:
+        id:
+          type: string
+          pattern: "^slide-[1-9][0-9]{0,4}$"
+        title:
+          type: string
+          maxLength: 80
+        description:
+          type: string
+          maxLength: 180
+        buttonLabel:
+          type: string
+          maxLength: 40
     BannerPresentation:
       type: object
       required: [placement, mode, intervalSeconds, version]
@@ -7336,6 +7589,56 @@ components:
         idempotentReplay:
           type: boolean
 
+    StoreOrderRatingSummary:
+      type: object
+      additionalProperties: false
+      required: [totalRatings, averageRating, oneStar, twoStars, threeStars, fourStars, fiveStars]
+      properties:
+        totalRatings:
+          type: integer
+          format: int64
+          minimum: 0
+        averageRating:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 5
+        oneStar:
+          type: integer
+          format: int64
+          minimum: 0
+        twoStars:
+          type: integer
+          format: int64
+          minimum: 0
+        threeStars:
+          type: integer
+          format: int64
+          minimum: 0
+        fourStars:
+          type: integer
+          format: int64
+          minimum: 0
+        fiveStars:
+          type: integer
+          format: int64
+          minimum: 0
+
+    StoreOrderRatingListResponse:
+      type: object
+      additionalProperties: false
+      required: [ratings, summary]
+      properties:
+        ratings:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderRating"
+        summary:
+          $ref: "#/components/schemas/StoreOrderRatingSummary"
+        nextCursor:
+          type: string
+          maxLength: 1024
+
     ManagedRoleMutationRequest:
       type: object
       required: [enabled]
@@ -9137,6 +9440,67 @@ components:
           format: int64
           minimum: 0
 
+    PartnerStoreOrderSummary:
+      type: object
+      additionalProperties: false
+      required: [storeId, period, measuredAt, totalOrders, deliveredOrders, pickedUpOrders, cancelledOrders, rejectedOrders, deliveryFailedOrders, completedOrderValueMinor, completedCustomers, returningCustomers]
+      properties:
+        storeId:
+          type: string
+        period:
+          type: string
+          enum: [7d, 30d, all]
+        measuredAt:
+          type: string
+          format: date-time
+        totalOrders:
+          type: integer
+          format: int64
+          minimum: 0
+        deliveredOrders:
+          type: integer
+          format: int64
+          minimum: 0
+        pickedUpOrders:
+          type: integer
+          format: int64
+          minimum: 0
+        cancelledOrders:
+          type: integer
+          format: int64
+          minimum: 0
+        rejectedOrders:
+          type: integer
+          format: int64
+          minimum: 0
+        deliveryFailedOrders:
+          type: integer
+          format: int64
+          minimum: 0
+        completedOrderValueMinor:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Recorded DSH Order value for delivered or picked-up Orders; not revenue, payable cash, or WLT settlement.
+        completedCustomers:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Distinct customers with a delivered or picked-up order created in the selected period; no customer identities are exposed.
+        returningCustomers:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Customers with at least two delivered or picked-up orders created in the selected period for the same Store.
+
+    PartnerStoreOrderSummaryResponse:
+      type: object
+      additionalProperties: false
+      required: [summary]
+      properties:
+        summary:
+          $ref: "#/components/schemas/PartnerStoreOrderSummary"
+
     PartnerOrdersResponse:
       type: object
       required: [orders, attention]
@@ -10234,6 +10598,37 @@ components:
           type: integer
           minimum: 0
 
+    StoreContentPerformanceSummary:
+      type: object
+      additionalProperties: false
+      required: [storeId, period, contentCount, impressions, clicks, attributedOrdersCreated, attributedOrdersCompleted]
+      properties:
+        storeId:
+          type: string
+          minLength: 1
+          maxLength: 150
+        period:
+          type: string
+          enum: [7d, 30d, all]
+          description: For bounded windows, event counts are filtered by event occurrence time; contentCount counts media created within the same window. Completed Orders reflect their current state.
+        contentCount:
+          type: integer
+          minimum: 0
+        impressions:
+          type: integer
+          minimum: 0
+        clicks:
+          type: integer
+          minimum: 0
+        attributedOrdersCreated:
+          type: integer
+          minimum: 0
+          description: Created Orders canonically attributed by DSH; not completed sales, cash collected, or WLT settlement.
+        attributedOrdersCompleted:
+          type: integer
+          minimum: 0
+          description: Attributed Orders currently in DELIVERED or PICKED_UP state for the same Store, filtered by attribution event time; not paid revenue or WLT settlement.
+
     DiscoveryContentAnalyticsListResponse:
       type: object
       required: [items]
@@ -10902,7 +11297,7 @@ components:
         permissions:
           type: array
           minItems: 1
-          maxItems: 3
+          maxItems: 7
           uniqueItems: true
           items:
             $ref: "#/components/schemas/StoreAccessPermission"

@@ -6,13 +6,13 @@ paths:
       description: Partner, captain, and field activation requires admitted role plus phone proof.
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/ManagedChallengeRequest" } } }
+        content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/ManagedChallengeRequest" } } }
       responses:
-        "201": { $ref: "#/components/responses/ChallengeIssued" }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "429": { $ref: "#/components/responses/RateLimited" }
-        "503": { $ref: "#/components/responses/Unavailable" }
+        "201": { $ref: "../identity.openapi.yaml#/components/responses/ChallengeIssued" }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "429": { $ref: "../identity.openapi.yaml#/components/responses/RateLimited" }
+        "503": { $ref: "../identity.openapi.yaml#/components/responses/Unavailable" }
 
   /auth/managed/activate:
     post:
@@ -20,11 +20,11 @@ paths:
       operationId: activateManagedRole
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/ManagedActivationRequest" } } }
+        content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/ManagedActivationRequest" } } }
       responses:
-        "200": { $ref: "#/components/responses/TokenPair" }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "200": { $ref: "../identity.openapi.yaml#/components/responses/TokenPair" }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
 
   /auth/managed/login:
     post:
@@ -32,12 +32,12 @@ paths:
       operationId: loginManagedRole
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/ManagedPasswordLoginRequest" } } }
+        content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/ManagedPasswordLoginRequest" } } }
       responses:
-        "200": { $ref: "#/components/responses/TokenPair" }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "429": { $ref: "#/components/responses/RateLimited" }
+        "200": { $ref: "../identity.openapi.yaml#/components/responses/TokenPair" }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "429": { $ref: "../identity.openapi.yaml#/components/responses/RateLimited" }
 
   /auth/managed/recovery/request:
     post:
@@ -46,13 +46,13 @@ paths:
       description: Issues a phone proof for password recovery without disclosing role admission. Never grants or activates a role.
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/ManagedChallengeRequest" } } }
+        content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/ManagedChallengeRequest" } } }
       responses:
-        "201": { $ref: "#/components/responses/ChallengeIssued" }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "429": { $ref: "#/components/responses/RateLimited" }
-        "503": { $ref: "#/components/responses/Unavailable" }
+        "201": { $ref: "../identity.openapi.yaml#/components/responses/ChallengeIssued" }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "429": { $ref: "../identity.openapi.yaml#/components/responses/RateLimited" }
+        "503": { $ref: "../identity.openapi.yaml#/components/responses/Unavailable" }
 
   /auth/managed/recover:
     post:
@@ -61,8 +61,8 @@ paths:
       description: Resets an admitted role's password after phone proof and revokes that role's sessions. Never creates a session, grants a role, or substitutes for first enrollment.
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/ManagedRecoveryProofRequest" } } }
+        content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/ManagedRecoveryProofRequest" } } }
       responses:
-        "200": { $ref: "#/components/responses/RecoveryComplete" }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "200": { $ref: "../identity.openapi.yaml#/components/responses/RecoveryComplete" }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }

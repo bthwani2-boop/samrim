@@ -13,7 +13,6 @@ export default function ClientAppLayout() {
     <Tabs screenOptions={tabOptions}>
       <Tabs.Screen name="home" options={{ title: "الرئيسية", tabBarAccessibilityLabel: "الرئيسية" }} />
       <Tabs.Screen name="orders" options={{ headerShown: false, tabBarStyle: { display: "none" }, title: "الطلبات", tabBarAccessibilityLabel: "الطلبات" }} />
-      <Tabs.Screen name="subscriptions" options={{ title: "الاشتراكات", tabBarAccessibilityLabel: "الاشتراكات" }} />
       <Tabs.Screen name="account" options={{ title: "الحساب", tabBarAccessibilityLabel: "الحساب" }} />
     </Tabs>
   );

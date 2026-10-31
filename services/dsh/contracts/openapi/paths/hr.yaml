@@ -123,7 +123,7 @@ paths:
         - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
         - { name: actorId, in: path, required: true, schema: { type: string } }
       responses:
-        "200": { description: Linked employee, if any., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/HREmployeeReadResponse" } } } }
+        "200": { description: "Linked employee, if any.", content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/HREmployeeReadResponse" } } } }
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }

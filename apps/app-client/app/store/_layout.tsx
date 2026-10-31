@@ -1,11 +1,6 @@
 import { Stack } from "expo-router";
 
-import ServiceCityScope from "../../src/features/service-city/service-city-scope";
-
+// The root layout already owns the one canonical Service City scope.
 export default function PublicStoreLayout() {
-  return (
-    <ServiceCityScope>
-      <Stack screenOptions={{ headerShown: false }} />
-    </ServiceCityScope>
-  );
+  return <Stack screenOptions={{ headerShown: false }} />;
 }

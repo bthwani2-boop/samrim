@@ -56,6 +56,12 @@ func (s *MarketingServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/public/banner-presentation", s.readPublicBannerPresentation)
 	mux.HandleFunc("GET /dsh/operator/marketing/banner-presentation", s.readOperatorBannerPresentation)
 	mux.HandleFunc("PUT /dsh/operator/marketing/banner-presentation", s.setOperatorBannerPresentation)
+	mux.HandleFunc("GET /dsh/operator/marketing/studio-draft", s.readOperatorStudioDraft)
+	mux.HandleFunc("PUT /dsh/operator/marketing/studio-draft", s.setOperatorStudioDraft)
+	mux.HandleFunc("GET /dsh/public/studio-theme", s.readPublicStudioPublication)
+	mux.HandleFunc("GET /dsh/operator/marketing/studio-theme", s.readOperatorStudioPublication)
+	mux.HandleFunc("GET /dsh/operator/marketing/studio-theme/history", s.readOperatorStudioPublicationHistory)
+	mux.HandleFunc("PUT /dsh/operator/marketing/studio-theme", s.setOperatorStudioPublication)
 	mux.HandleFunc("POST /dsh/public/discovery-content/events", s.recordPublicDiscoveryContentEvent)
 	mux.HandleFunc("GET /dsh/public/discovery-content/{contentId}/target", s.resolvePublicDiscoveryContentTarget)
 	mux.HandleFunc("GET /dsh/operator/marketing/summary", s.readOperatorMarketingSummary)
@@ -72,6 +78,9 @@ func (s *MarketingServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/operator/discovery-content/analytics", s.listOperatorDiscoveryContentAnalytics)
 	mux.HandleFunc("POST /dsh/operator/discovery-content", s.createOperatorDiscoveryContent)
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/discovery-content", s.listPartnerStoreDiscoveryContent)
+	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/discovery-content/{contentId}/analytics", s.listPartnerStoreContentAnalytics)
+	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/discovery-content/summary", s.readPartnerStoreContentSummary)
+	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/discovery-content/summary", s.readOperatorStoreContentSummary)
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/discovery-targets", s.listPartnerStoreDiscoveryTargets)
 	mux.HandleFunc("POST /dsh/partner/stores/{storeId}/discovery-content", s.createPartnerStoreDiscoveryContent)
 	mux.HandleFunc("POST /dsh/operator/discovery-content/{contentId}/publication", s.setOperatorDiscoveryContentPublication)
@@ -567,6 +576,109 @@ func (s *MarketingServer) listPartnerStoreDiscoveryContent(w http.ResponseWriter
 	writeJSON(w, http.StatusOK, contract.OperatorDiscoveryContentRegistryResponse{Items: values, Limit: len(values)})
 }
 
+func (s *MarketingServer) writeStoreContentSummary(w http.ResponseWriter, r *http.Request) {
+	storeID := strings.TrimSpace(r.PathValue("storeId"))
+	if storeID == "" || len(storeID) > 150 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "storeId is invalid")
+		return
+	}
+	if len(r.URL.Query()["period"]) > 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "period must be supplied once")
+		return
+	}
+	period := strings.TrimSpace(r.URL.Query().Get("period"))
+	if period == "" {
+		period = "all"
+	}
+	if period != "7d" && period != "30d" && period != "all" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "period must be 7d, 30d or all")
+		return
+	}
+	var from *time.Time
+	if period != "all" {
+		days := -7
+		if period == "30d" {
+			days = -30
+		}
+		start := time.Now().UTC().AddDate(0, 0, days)
+		from = &start
+	}
+	summary, err := postgres.ReadStoreContentPerformanceSummary(r.Context(), s.db, storeID, period, from)
+	if err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	response := contract.StoreContentPerformanceSummary{}
+	response.StoreID = summary.StoreID
+	response.Period = summary.Period
+	response.AttributedOrdersCompleted = int(summary.AttributedOrdersCompleted)
+	response.ContentCount = int(summary.ContentCount)
+	response.Impressions = int(summary.Impressions)
+	response.Clicks = int(summary.Clicks)
+	response.AttributedOrdersCreated = int(summary.AttributedOrdersCreated)
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *MarketingServer) readPartnerStoreContentSummary(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Partner session is required")
+		return
+	}
+	if r.Header.Get("X-Acting-Actor-ID") != "" || r.Header.Get("X-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Partner authority comes from session")
+		return
+	}
+	if _, err := s.requirePartnerStorePromotionAuthority(r.Context(), bearerToken(r), r.PathValue("storeId")); err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	s.writeStoreContentSummary(w, r)
+}
+
+func (s *MarketingServer) readOperatorStoreContentSummary(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "untrusted actor authority")
+		return
+	}
+	if !s.operatorAuthorized(w, r) {
+		return
+	}
+	s.writeStoreContentSummary(w, r)
+}
+
+func (s *MarketingServer) listPartnerStoreContentAnalytics(w http.ResponseWriter, r *http.Request) {
+	storeID := r.PathValue("storeId")
+	if _, err := s.requirePartnerStorePromotionAuthority(r.Context(), bearerToken(r), storeID); err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	contentID := strings.TrimSpace(r.PathValue("contentId"))
+	if contentID == "" || len(contentID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "contentId is required")
+		return
+	}
+	items, belongs, err := postgres.ListPartnerStoreContentAnalytics(r.Context(), s.db, storeID, contentID)
+	if err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	if !belongs {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "content not available to this Store")
+		return
+	}
+	values := make([]contract.DiscoveryContentAnalytics, 0, len(items))
+	for _, item := range items {
+		values = append(values, contract.DiscoveryContentAnalytics{
+			ContentID: item.ContentID,
+			EventType: contract.DiscoveryContentEventType(item.EventType),
+			Count:     int(item.Count),
+		})
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, contract.DiscoveryContentAnalyticsListResponse{Items: values})
+}
+
 func (s *MarketingServer) createDiscoveryContentWithMedia(w http.ResponseWriter, r *http.Request, acting, idempotency, partnerStoreID string) {
 	if !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "multipart/form-data") {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "discovery content requires a canonical media file upload")
@@ -906,6 +1018,14 @@ func writeMarketingError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "marketing input is invalid")
 	case errors.Is(err, postgres.ErrMarketingCampaignNotFound), errors.Is(err, postgres.ErrPromotionNotFound), errors.Is(err, postgres.ErrDiscoveryContentNotFound), errors.Is(err, postgres.ErrDiscoveryContentEventNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "marketing record was not found")
+	case errors.Is(err, postgres.ErrStudioPublicationInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid published studio palette")
+	case errors.Is(err, postgres.ErrStudioPublicationConflict):
+		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "published studio palette version changed")
+	case errors.Is(err, postgres.ErrStudioDraftInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid studio draft")
+	case errors.Is(err, postgres.ErrStudioDraftConflict):
+		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "studio draft was changed; reload before saving")
 	case errors.Is(err, postgres.ErrBannerPresentationInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid banner presentation")
 	case errors.Is(err, postgres.ErrBannerPresentationConflict):

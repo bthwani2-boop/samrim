@@ -117,7 +117,7 @@ paths:
               properties:
                 reason: { type: string, enum: [""] }
       responses:
-        "200": { description: Category restored as inactive, with explicit reactivation available through category editor. }
+        "200": { description: "Category restored as inactive, with explicit reactivation available through category editor." }
         "409": { description: Version conflict. }
   /dsh/stores/{storeId}/trash:
     get:
@@ -346,7 +346,7 @@ paths:
         content:
           multipart/form-data: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UploadCatalogCategoryMediaRequest" } }
       responses:
-        "200": { description: CommerceVertical image upload readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CommerceVerticalResponse" } } }
+        "200": { description: CommerceVertical image upload readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CommerceVerticalResponse" } } } }
 
   /dsh/catalog/commercial-store-types:
     get:
@@ -1070,7 +1070,7 @@ paths:
                 file: { type: string, format: binary, description: CSV or XLSX with barcode and positive whole YER price columns }
       responses:
         "201": { description: Store offer import preview., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportPreviewResponse" } } } }
-        "200": { description: Idempotent preview replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportPreviewResponse" } } }
+        "200": { description: Idempotent preview replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportPreviewResponse" } } } }
         "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
 
@@ -1138,7 +1138,7 @@ paths:
                 file: { type: string, format: binary, description: CSV or XLSX with barcode and positive whole YER price columns }
       responses:
         "201": { description: Store offer import preview., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportPreviewResponse" } } } }
-        "200": { description: Idempotent preview replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportPreviewResponse" } } }
+        "200": { description: Idempotent preview replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportPreviewResponse" } } } }
         "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
 
@@ -1236,7 +1236,8 @@ paths:
         - { name: q, in: query, required: false, schema: { type: string, maxLength: 160 } }
         - { name: categoryId, in: query, required: false, schema: { type: string, maxLength: 128 } }
         - { name: availability, in: query, required: false, schema: { type: string, enum: [all, available, unavailable], default: all } }
-        - { name: publicationState, in: query, required: false, schema: { type: string, enum: [all, draft, published, hidden], default: all } }
+        - { name: publicationState, in: query, required: false, schema: { type: string, enum: [all, draft, published, hidden, not_published], default: all } }
+        - { name: inventoryStatus, in: query, required: false, schema: { type: string, enum: [all, stockout], default: all } }
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
         - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 2048 } }
       responses:
@@ -1259,7 +1260,7 @@ paths:
         content:
           application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogQuickPriceCommitRequest" } }
       responses:
-        "200": { description: Each update reports applied, replayed, or stale-version conflict status., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogQuickPriceCommitResponse" } } } }
+        "200": { description: "Each update reports applied, replayed, or stale-version conflict status.", content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogQuickPriceCommitResponse" } } } }
         "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
 
@@ -1410,6 +1411,29 @@ paths:
       responses:
         "201": { description: Created Store-scoped product., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductResponse" } } } }
   /dsh/operator/stores/{storeId}/offers:
+    get:
+      operationId: listOperatorStoreOffers
+      summary: Read a server-paged StoreOffer list as an authorized operator
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 100 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 2048 }
+      responses:
+        "200":
+          description: Canonical StoreOffer page.
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogStoreOfferListResponse" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
     post:
       operationId: createOperatorStoreOffer
       summary: Create StoreOffer with operator attribution
@@ -1494,3 +1518,24 @@ paths:
               $ref: "../dsh.openapi.yaml#/components/schemas/UploadCatalogProductMediaRequest"
       responses:
         "201": { description: Uploaded image and canonical product readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductResponse" } } } }
+
+  /dsh/catalog/media/{key}:
+    get:
+      operationId: readCatalogMedia
+      summary: Read public immutable catalog-media bytes by the stored object key
+      description: The Go route captures the full remaining path as one key; the object must exist in managed media storage.
+      parameters:
+        - name: key
+          in: path
+          required: true
+          description: Media object key, which may contain path separators.
+          schema: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Media bytes with the stored Content-Type and immutable caching.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+        "503": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }

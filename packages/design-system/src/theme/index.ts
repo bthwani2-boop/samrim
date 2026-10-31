@@ -16,6 +16,8 @@ import {
   zIndex
 } from "../tokens/index";
 
+export { parseStudioPalette, parseStudioThemePublication, resolveStudioTheme, studioContrastRatio, type StudioPalette, type StudioThemePublication } from "./studio-palette";
+
 export const themes = {
   light: lightThemeColors,
   dark: darkThemeColors

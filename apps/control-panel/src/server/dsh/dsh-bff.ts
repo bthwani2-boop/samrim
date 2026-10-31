@@ -1,5 +1,25 @@
 import { appendMediaProvenance } from "./dsh-transport";
 
+import type { StoreOrderRatingListResponse, PartnerStoreOrderSummaryResponse } from "@bthwani/dsh";
+
+export async function readOperatorStoreOrderSummary(storeId: string, period: "7d" | "30d" | "all", context: DshOperatorReadContext): Promise<PartnerStoreOrderSummaryResponse> {
+  const scope = storeId.trim();
+  if (!scope || scope.length > 128 || !["7d", "30d", "all"].includes(period)) throw new Error("DSH_OPERATOR_STORE_SUMMARY_INPUT_INVALID");
+  const path = dshOperationPaths.readOperatorStoreOrderSummary.path.replace("{storeId}", encodeURIComponent(scope)) + "?period=" + encodeURIComponent(period);
+  return (await requestDshJson<PartnerStoreOrderSummaryResponse>(dshOperationPaths.readOperatorStoreOrderSummary.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function listOperatorStoreOrderRatings(storeId: string, cursor: string, context: DshOperatorReadContext, limit = 20): Promise<StoreOrderRatingListResponse> {
+  const scope = storeId.trim();
+  if (!scope || scope.length > 128 || cursor.length > 1024 || !Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error("DSH_OPERATOR_STORE_RATINGS_INPUT_INVALID");
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (cursor) params.set("cursor", cursor);
+  const path = dshOperationPaths.listOperatorStoreOrderRatings.path.replace("{storeId}", encodeURIComponent(scope)) + "?" + params;
+  return (await requestDshJson<StoreOrderRatingListResponse>(dshOperationPaths.listOperatorStoreOrderRatings.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+
+
 export function readOperatorStoreProduct(storeId: string, productId: string, context: DshOperatorReadContext): Promise<CatalogProduct> {
   const path=dshOperationPaths.readOperatorStoreProduct.path.replace("{storeId}",encodeURIComponent(storeId)).replace("{productId}",encodeURIComponent(productId));
   return requestDshJson<CatalogProduct>("GET",path,undefined,{"X-Acting-Actor-ID":context.operatorActorId}).then(r=>r.payload);

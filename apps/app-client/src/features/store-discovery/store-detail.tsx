@@ -23,6 +23,7 @@ import { summarizeStoreAvailability } from "./store-availability-summary";
 import { addCatalogOfferToCart, listFavoriteStoreIDs, listFavoriteStoreOfferIDs, listPublicDiscoveryContent, listPublicPromotions, readFavoriteStoreCatalog, readOwnStoreCart, readPublicStoreCatalog, readPublicStoreOrderability, readPublishedStore, setFavoriteStore, setFavoriteStoreOffer } from "./store-discovery-client";
 import type { GallerySourceRect } from "./store-product-gallery";
 import { StoreProductSheet } from "./store-product-sheet";
+import { buildPublicStoreShareURL, buildStoreSharePath } from "./store-share-link";
 
 type DetailState =
   | { kind: "loading" }
@@ -544,11 +545,11 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   }
 
   function shareStore() {
-    setShareTarget({ kind: "STORE", id: storeId, title: state.kind === "ready" ? state.store.name : "متجر", link: ExpoLinking.createURL(`store/${encodeURIComponent(storeId)}`) });
+    setShareTarget({ kind: "STORE", id: storeId, title: state.kind === "ready" ? state.store.name : "متجر", link: buildPublicStoreShareURL(storeId, selectedCityID ?? "", process.env.EXPO_PUBLIC_CLIENT_WEB_ORIGIN, "", __DEV__) ?? ExpoLinking.createURL(buildStoreSharePath(storeId, selectedCityID ?? "")) });
   }
   function shareOffer(offerID: string, productID: string, title: string) {
     setDetailOffer(null);
-    setShareTarget({ kind: "OFFER", id: offerID, title, link: ExpoLinking.createURL(`store/${encodeURIComponent(storeId)}?productId=${encodeURIComponent(productID)}`) });
+    setShareTarget({ kind: "OFFER", id: offerID, title, link: buildPublicStoreShareURL(storeId, selectedCityID ?? "", process.env.EXPO_PUBLIC_CLIENT_WEB_ORIGIN, productID, __DEV__) ?? ExpoLinking.createURL(buildStoreSharePath(storeId, selectedCityID ?? "", productID)) });
   }
 
   async function toggleOfferFavorite(offerID: string) {
@@ -789,7 +790,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           </View>
           <View style={styles.storeInfoStat}>
             <Text style={styles.storeInfoStatLabel}>تقييم المتجر</Text>
-            <Text accessibilityLabel={"تقييم المتجر " + (state.store.ratingCount ? state.store.ratingAverage.toFixed(1) : "0.0") + " من خمسة، عدد المقيّمين " + state.store.ratingCount} style={styles.storeInfoStatValue}>{"★ " + (state.store.ratingCount ? state.store.ratingAverage.toFixed(1) : "0.0") + " · " + state.store.ratingCount + " تقييم"}</Text>
+            <Text
+              accessibilityLabel={state.store.ratingCount > 0 ? "تقييم المتجر " + state.store.ratingAverage.toFixed(1) + " من خمسة، عدد المقيّمين " + state.store.ratingCount : "لا توجد تقييمات للمتجر بعد"}
+              style={styles.storeInfoStatValue}
+            >{state.store.ratingCount > 0 ? "★ " + state.store.ratingAverage.toFixed(1) + " · " + state.store.ratingCount + " تقييم" : "لا توجد تقييمات بعد"}</Text>
           </View>
         </View>
         {availabilitySummary.reason ? <Text accessibilityRole="alert" style={styles.muted}>{availabilitySummary.reason}</Text> : null}
@@ -835,7 +839,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing[3], gap: spacing[2] }}>
             {remainingPromotions.map((promotion) => <View key={promotion.id} style={{ width: Math.min(320, Math.max(245, windowWidth - spacing[3] * 3)) }}>
               <PromotionCard promotion={promotion} onUse={() => openStorePromotion(promotion.code)} />
-              <BthwaniButton label="مشاركة العرض" variant="secondary" onPress={() => setShareTarget({ kind: "PROMOTION", id: promotion.id, title: promotion.nameAr, link: ExpoLinking.createURL(`store/${encodeURIComponent(storeId)}`) })} />
+              <BthwaniButton label="مشاركة العرض" variant="secondary" onPress={() => setShareTarget({ kind: "PROMOTION", id: promotion.id, title: promotion.nameAr, link: buildPublicStoreShareURL(storeId, selectedCityID ?? "", process.env.EXPO_PUBLIC_CLIENT_WEB_ORIGIN, "", __DEV__) ?? ExpoLinking.createURL(buildStoreSharePath(storeId, selectedCityID ?? "")) })} />
             </View>)}
           </ScrollView>
           </> : null}

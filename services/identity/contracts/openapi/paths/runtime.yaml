@@ -5,7 +5,7 @@ paths:
       responses:
         "200":
           description: Process health.
-          content: { application/json: { schema: { $ref: "#/components/schemas/StatusResponse" } } }
+          content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/StatusResponse" } } }
 
   /identity/readiness:
     get:
@@ -13,7 +13,7 @@ paths:
       responses:
         "200":
           description: Canonical schema is ready.
-          content: { application/json: { schema: { $ref: "#/components/schemas/StatusResponse" } } }
+          content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/StatusResponse" } } }
         "503":
           description: Canonical schema is not ready.
-          content: { application/json: { schema: { $ref: "#/components/schemas/StatusResponse" } } }
+          content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/StatusResponse" } } }

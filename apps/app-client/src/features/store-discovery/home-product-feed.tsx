@@ -158,15 +158,6 @@ export function HomeProductFeed({
                   {media?.uri
                     ? <ExpoImage cachePolicy="disk" source={{ uri: media.uri }} contentFit="contain" transition={180} style={styles.photo} />
                     : <View style={styles.fallback}><BthwaniIcon name="store" color={theme.colorMuted} size={28} /></View>}
-                  <View style={styles.plusWrap}>
-                    <Pressable accessibilityRole="button" accessibilityLabel={`إضافة ${offer.productName} إلى السلة`} accessibilityState={{ disabled: Boolean(busyID) || !offer.availability }} disabled={Boolean(busyID) || !offer.availability} onPress={(event) => { event.stopPropagation(); void adjust(offer, 1); }} style={styles.plus}>
-                      {busyID === offer.offerId ? <ActivityIndicator color={theme.interactiveText} size="small" /> : <BthwaniIcon name="add" color={offer.availability ? theme.interactiveText : theme.colorMuted} size={24} />}
-                    </Pressable>
-                  </View>
-                  {(cartQuantities[offer.offerId] ?? 0) > 0 && offer.modifierGroups.length === 0 && offer.quantityPolicy === "DISCRETE" ? <View style={styles.cartBadge}>
-                    <Text accessibilityLabel={`الكمية ${cartQuantities[offer.offerId]}`} style={styles.cartBadgeCount}>{cartQuantities[offer.offerId]}</Text>
-                    <Pressable accessibilityRole="button" accessibilityLabel={`تقليل كمية ${offer.productName}`} disabled={Boolean(busyID)} onPress={(event) => { event.stopPropagation(); void adjust(offer, -1); }} style={styles.cartBadgeMinus}><Text style={styles.cartBadgeMinusText}>−</Text></Pressable>
-                  </View> : null}
                 </View>
                 <View style={styles.meta}>
                   {offer.storeName ? <Text numberOfLines={1} style={styles.store}>{offer.storeName}</Text> : null}
@@ -176,6 +167,17 @@ export function HomeProductFeed({
                   {!offer.availability ? <Text style={styles.unavailable}>غير متاح حاليًا</Text> : null}
                 </View>
               </Pressable>
+              <View pointerEvents="box-none" style={styles.photoActions}>
+                  <View style={styles.plusWrap}>
+                    <Pressable accessibilityRole="button" accessibilityLabel={`إضافة ${offer.productName} إلى السلة`} accessibilityState={{ disabled: Boolean(busyID) || !offer.availability }} disabled={Boolean(busyID) || !offer.availability} onPress={() => void adjust(offer, 1)} style={styles.plus}>
+                      {busyID === offer.offerId ? <ActivityIndicator color={theme.interactiveText} size="small" /> : <BthwaniIcon name="add" color={offer.availability ? theme.interactiveText : theme.colorMuted} size={24} />}
+                    </Pressable>
+                  </View>
+                  {(cartQuantities[offer.offerId] ?? 0) > 0 && offer.modifierGroups.length === 0 && offer.quantityPolicy === "DISCRETE" ? <View style={styles.cartBadge}>
+                    <Text accessibilityLabel={`الكمية ${cartQuantities[offer.offerId]}`} style={styles.cartBadgeCount}>{cartQuantities[offer.offerId]}</Text>
+                    <Pressable accessibilityRole="button" accessibilityLabel={`تقليل كمية ${offer.productName}`} disabled={Boolean(busyID)} onPress={() => void adjust(offer, -1)} style={styles.cartBadgeMinus}><Text style={styles.cartBadgeMinusText}>−</Text></Pressable>
+                  </View> : null}
+              </View>
             </Reanimated.View>
           );
         })}
@@ -194,6 +196,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     count: { ...typography.caption, color: theme.colorMuted },
     grid: { flexDirection: "row-reverse", flexWrap: "wrap", justifyContent: "space-between", rowGap: spacing[3] },
     item: { gap: spacing[1], minWidth: 0 },
+    photoActions: { position: "absolute", top: 0, left: 0, right: 0, aspectRatio: 1 },
     photoBox: { aspectRatio: 1, borderRadius: radius.lg, backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: borders.hairline, overflow: "hidden" },
     photo: { width: "100%", height: "100%" },
     fallback: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: theme.surfaceInset },

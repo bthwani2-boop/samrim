@@ -6,7 +6,7 @@
     "contract": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "node services/dsh/tools/generate-types.mjs --check"
+        "command": "node services/dsh/tools/generate-types.mjs --check && node tools/dev/check-openapi.mjs dsh"
       },
       "inputs": [
         "default",
@@ -18,7 +18,8 @@
         },
         {
           "runtime": "pnpm --version"
-        }
+        },
+        "{workspaceRoot}/tools/dev/check-openapi.mjs"
       ]
     },
     "lint": {

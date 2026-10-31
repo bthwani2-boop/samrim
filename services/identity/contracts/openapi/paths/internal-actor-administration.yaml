@@ -6,12 +6,12 @@ paths:
       security: [{ internalServiceToken: [] }]
       description: DSH-only read of the canonical Actor ID and security eligibility for Store-access invitation resolution. Returns no phone or credential data and does not mutate Identity state.
       parameters:
-        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ActorId" }
       responses:
-        "200": { description: Canonical Actor resolution used before a Store-access invitation is recorded., content: { application/json: { schema: { $ref: "#/components/schemas/CanonicalActorResolution" } } } }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
+        "200": { description: Canonical Actor resolution used before a Store-access invitation is recorded., content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/CanonicalActorResolution" } } } }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../identity.openapi.yaml#/components/responses/NotFound" }
 
   /internal/operator-profiles:
     get:
@@ -19,36 +19,36 @@ paths:
       operationId: listOperatorProfiles
       security: [{ internalServiceToken: [] }]
       parameters:
-        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ControlPanelActingActorId" }
         - { name: q, in: query, schema: { type: string, maxLength: 100 } }
         - { name: state, in: query, schema: { type: string, enum: [all, pending_review, approved, admitted], default: all } }
         - { name: sort, in: query, schema: { type: string, enum: [created_asc, created_desc], default: created_desc } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 25 } }
         - { name: cursor, in: query, schema: { type: string, maxLength: 1024 } }
       responses:
-        "200": { description: Server-paged Identity-owned operator profiles., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfilePage" } } } }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
+        "200": { description: Server-paged Identity-owned operator profiles., content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/OperatorProfilePage" } } } }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
     post:
       tags: [internal-actor-roles]
       operationId: createOperatorProfile
       security: [{ internalServiceToken: [] }]
       description: DSH-only HR-provenance operation. The DSH service authenticates the Root Owner and verifies a claimed HR employee request before creation. Control Panel internal service calls cannot create profiles directly.
       parameters:
-        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
-        - { $ref: "#/components/parameters/CorrelationId" }
-        - { $ref: "#/components/parameters/IdempotencyKey" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/CorrelationId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/IdempotencyKey" }
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileCreateRequest" } } }
+        content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/OperatorProfileCreateRequest" } } }
       responses:
-        "201": { description: Profile created without an actor role., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileResponse" } } } }
-        "200": { description: Exact idempotent replay., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileResponse" } } } }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "409": { $ref: "#/components/responses/Conflict" }
+        "201": { description: Profile created without an actor role., content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/OperatorProfileResponse" } } } }
+        "200": { description: Exact idempotent replay., content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/OperatorProfileResponse" } } } }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../identity.openapi.yaml#/components/responses/Conflict" }
 
   /internal/operator-profiles/{profileId}:
     get:
@@ -57,32 +57,32 @@ paths:
       security: [{ internalServiceToken: [] }]
       parameters:
         - { name: profileId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
-        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ControlPanelActingActorId" }
       responses:
-        "200": { description: Initial-Operator-authorized profile readback., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileResponse" } } } }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
+        "200": { description: Initial-Operator-authorized profile readback., content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/OperatorProfileResponse" } } } }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../identity.openapi.yaml#/components/responses/NotFound" }
     patch:
       tags: [internal-actor-roles]
       operationId: updateOperatorProfile
       security: [{ internalServiceToken: [] }]
       parameters:
         - { name: profileId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
-        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
-        - { $ref: "#/components/parameters/CorrelationId" }
-        - { $ref: "#/components/parameters/IdempotencyKey" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/CorrelationId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/IdempotencyKey" }
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileUpdateRequest" } } }
+        content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/OperatorProfileUpdateRequest" } } }
       responses:
-        "200": { description: Updated pre-review profile., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileResponse" } } } }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { $ref: "#/components/responses/Conflict" }
+        "200": { description: Updated pre-review profile., content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/OperatorProfileResponse" } } } }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../identity.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../identity.openapi.yaml#/components/responses/Conflict" }
 
   /internal/operators/{actorId}/details:
     patch:
@@ -91,19 +91,19 @@ paths:
       security: [{ internalServiceToken: [] }]
       description: Updates descriptive title and department for an admitted Operator. These fields never grant access or authority.
       parameters:
-        - { $ref: "#/components/parameters/ActorId" }
-        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
-        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/CorrelationId" }
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/OperatorRoleDetailsUpdateRequest" } } }
+        content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/OperatorRoleDetailsUpdateRequest" } } }
       responses:
-        "200": { description: Updated canonical Operator role details., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } } }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { $ref: "#/components/responses/Conflict" }
+        "200": { description: Updated canonical Operator role details., content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/ActorRoleView" } } } }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../identity.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../identity.openapi.yaml#/components/responses/Conflict" }
 
   /internal/operator-profiles/{profileId}/approve:
     post:
@@ -112,19 +112,19 @@ paths:
       security: [{ internalServiceToken: [] }]
       parameters:
         - { name: profileId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
-        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
-        - { $ref: "#/components/parameters/CorrelationId" }
-        - { $ref: "#/components/parameters/IdempotencyKey" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/CorrelationId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/IdempotencyKey" }
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileMutationRequest" } } }
+        content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/OperatorProfileMutationRequest" } } }
       responses:
-        "200": { description: Reviewed operator profile; role is still absent., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileResponse" } } } }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { $ref: "#/components/responses/Conflict" }
+        "200": { description: Reviewed operator profile; role is still absent., content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/OperatorProfileResponse" } } } }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../identity.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../identity.openapi.yaml#/components/responses/Conflict" }
 
   /internal/operator-profiles/{profileId}/grant:
     post:
@@ -134,20 +134,20 @@ paths:
       description: Creates or binds the Identity actor and grants the operator role only after approval. Profile binding and role admission commit atomically.
       parameters:
         - { name: profileId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
-        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
-        - { $ref: "#/components/parameters/CorrelationId" }
-        - { $ref: "#/components/parameters/IdempotencyKey" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/CorrelationId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/IdempotencyKey" }
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileMutationRequest" } } }
+        content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/OperatorProfileMutationRequest" } } }
       responses:
-        "200": { description: Existing approved Identity role readback., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileGrantResponse" } } } }
-        "201": { description: Identity actor and operator role granted after review., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileGrantResponse" } } } }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { $ref: "#/components/responses/Conflict" }
+        "200": { description: Existing approved Identity role readback., content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/OperatorProfileGrantResponse" } } } }
+        "201": { description: Identity actor and operator role granted after review., content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/OperatorProfileGrantResponse" } } } }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../identity.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../identity.openapi.yaml#/components/responses/Conflict" }
 
   /internal/operator-profiles/{profileId}/invitation:
     post:
@@ -157,15 +157,15 @@ paths:
       description: Issues enrollment only for an admitted, enabled, not-yet-activated operator profile. It cannot provision a role or reactivate an existing operator.
       parameters:
         - { name: profileId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
-        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
-        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/CorrelationId" }
       responses:
-        "201": { description: Single-use operator enrollment token returned once., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileInvitationResponse" } } } }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { $ref: "#/components/responses/Conflict" }
+        "201": { description: Single-use operator enrollment token returned once., content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/OperatorProfileInvitationResponse" } } } }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../identity.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../identity.openapi.yaml#/components/responses/Conflict" }
 
   /internal/actor-roles/provision:
     post:
@@ -174,18 +174,18 @@ paths:
       security: [{ internalServiceToken: [] }]
       description: Identity alone creates actor_id and persists role admission. DSH may request partner or captain only after the owning DSH eligibility transition; the retired Field role cannot be admitted or activated. Operator role admission uses the reviewed operator-profile path. First-operator bootstrap is a separate one-time lifecycle.
       parameters:
-        - { $ref: "#/components/parameters/CorrelationId" }
-        - { $ref: "#/components/parameters/ActingActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/CorrelationId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ActingActorId" }
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/ProvisionActorRoleRequest" } } }
+        content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/ProvisionActorRoleRequest" } } }
       responses:
-        "200": { description: Existing exact actor-role readback., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } } }
-        "201": { description: Canonical actor and/or role created., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } } }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "409": { $ref: "#/components/responses/Conflict" }
+        "200": { description: Existing exact actor-role readback., content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/ActorRoleView" } } } }
+        "201": { description: Canonical actor and/or role created., content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/ActorRoleView" } } } }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../identity.openapi.yaml#/components/responses/Conflict" }
 
   /internal/actors/{actorId}/roles/{role}/provision:
     post:
@@ -194,18 +194,18 @@ paths:
       security: [{ internalServiceToken: [] }]
       description: DSH may admit an already-resolved canonical Human Actor to the Partner role after its separately authorized Store-access eligibility transition. This operation never resolves phone or creates an Actor and does not admit other roles.
       parameters:
-        - { $ref: "#/components/parameters/ActorId" }
-        - { $ref: "#/components/parameters/Role" }
-        - { $ref: "#/components/parameters/CorrelationId" }
-        - { $ref: "#/components/parameters/ActingActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/Role" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/CorrelationId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ActingActorId" }
       responses:
-        "200": { description: Existing exact Partner role readback., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } } }
-        "201": { description: Partner role admitted for the existing canonical actor., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } } }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { $ref: "#/components/responses/Conflict" }
+        "200": { description: Existing exact Partner role readback., content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/ActorRoleView" } } } }
+        "201": { description: Partner role admitted for the existing canonical actor., content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/ActorRoleView" } } } }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../identity.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../identity.openapi.yaml#/components/responses/Conflict" }
 
   /internal/actor-roles/search:
     get:
@@ -213,7 +213,7 @@ paths:
       operationId: searchActorRoles
       security: [{ internalServiceToken: [] }]
       parameters:
-        - { name: role, in: query, required: true, schema: { $ref: "#/components/schemas/ActorType" } }
+        - { name: role, in: query, required: true, schema: { $ref: "../identity.openapi.yaml#/components/schemas/ActorType" } }
         - { name: q, in: query, schema: { type: string, maxLength: 100 } }
         - { name: enabled, in: query, schema: { type: boolean } }
         - { name: permissionCoverage, in: query, description: Enabled Operator permission coverage filter; valid only for role operator., schema: { type: string, enum: [none, some, complete] } }
@@ -221,10 +221,10 @@ paths:
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
         - { name: cursor, in: query, schema: { type: string } }
       responses:
-        "200": { description: Role-scoped actor readback., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleSearchPage" } } } }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
+        "200": { description: Role-scoped actor readback., content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/ActorRoleSearchPage" } } } }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
 
   /internal/actor-roles/read:
     post:
@@ -234,12 +234,12 @@ paths:
       description: Bounded role readback for a known set of actor identifiers. Identity remains the sole owner of role admission and current role eligibility.
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleReadBatchRequest" } } }
+        content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/ActorRoleReadBatchRequest" } } }
       responses:
-        "200": { description: Existing actor roles for the requested role and identifiers; unknown identifiers are omitted., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleReadBatchResponse" } } } }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
+        "200": { description: Existing actor roles for the requested role and identifiers; unknown identifiers are omitted., content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/ActorRoleReadBatchResponse" } } } }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
 
   /internal/operators/{actorId}/permissions/{permission}:
     get:
@@ -248,48 +248,48 @@ paths:
       security: [{ internalServiceToken: [] }]
       description: The Control Panel permission administrator may read another Operator's explicit permission state. DSH may read an Operator's permission for server-side authorization checks.
       parameters:
-        - { $ref: "#/components/parameters/ActorId" }
-        - { $ref: "#/components/parameters/OperatorPermission" }
-        - { $ref: "#/components/parameters/OptionalActingActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/OperatorPermission" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/OptionalActingActorId" }
       responses:
-        "200": { description: Current versioned Operator permission state., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorPermissionAccess" } } } }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
+        "200": { description: Current versioned Operator permission state., content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/OperatorPermissionAccess" } } } }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../identity.openapi.yaml#/components/responses/NotFound" }
     put:
       tags: [internal-actor-roles]
       operationId: setOperatorPermission
       security: [{ internalServiceToken: [] }]
       description: Changes only another enabled Operator's allowlisted explicit permission. The one-time bootstrapped first Operator is the sole permission administrator; each change requires a current version and reason and revokes affected sessions.
       parameters:
-        - { $ref: "#/components/parameters/ActorId" }
-        - { $ref: "#/components/parameters/OperatorPermission" }
-        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
-        - { $ref: "#/components/parameters/CorrelationId" }
-        - { $ref: "#/components/parameters/OperatorPermissionExpectedVersion" }
-        - { $ref: "#/components/parameters/OperatorPermissionReason" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/OperatorPermission" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/CorrelationId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/OperatorPermissionExpectedVersion" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/OperatorPermissionReason" }
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/SetOperatorPermissionRequest" } } }
+        content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/SetOperatorPermissionRequest" } } }
       responses:
-        "200": { description: Exact committed Operator permission state., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorPermissionAccess" } } } }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { $ref: "#/components/responses/Conflict" }
+        "200": { description: Exact committed Operator permission state., content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/OperatorPermissionAccess" } } } }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../identity.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../identity.openapi.yaml#/components/responses/Conflict" }
 
   /internal/actors/{actorId}/roles/{role}:
     get:
       tags: [internal-actor-roles]
       operationId: readActorRole
       security: [{ internalServiceToken: [] }]
-      parameters: [{ $ref: "#/components/parameters/ActorId" }, { $ref: "#/components/parameters/Role" }]
+      parameters: [{ $ref: "../identity.openapi.yaml#/components/parameters/ActorId" }, { $ref: "../identity.openapi.yaml#/components/parameters/Role" }]
       responses:
-        "200": { description: Exact actor-role readback., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } } }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
+        "200": { description: Exact actor-role readback., content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/ActorRoleView" } } } }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../identity.openapi.yaml#/components/responses/NotFound" }
 
   /internal/actors/{actorId}/roles/{role}/disable:
     post:
@@ -297,19 +297,19 @@ paths:
       operationId: disableActorRole
       security: [{ internalServiceToken: [] }]
       parameters:
-        - { $ref: "#/components/parameters/ActorId" }
-        - { $ref: "#/components/parameters/Role" }
-        - { $ref: "#/components/parameters/CorrelationId" }
-        - { $ref: "#/components/parameters/ActingActorId" }
-        - { $ref: "#/components/parameters/ExpectedVersion" }
-        - { $ref: "#/components/parameters/MutationReason" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/Role" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/CorrelationId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ActingActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ExpectedVersion" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/MutationReason" }
       responses:
         "204": { description: Exact role disabled and its sessions/challenges revoked. }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { $ref: "#/components/responses/Conflict" }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../identity.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../identity.openapi.yaml#/components/responses/Conflict" }
 
   /internal/actors/{actorId}/roles/{role}/enable:
     post:
@@ -317,19 +317,19 @@ paths:
       operationId: enableActorRole
       security: [{ internalServiceToken: [] }]
       parameters:
-        - { $ref: "#/components/parameters/ActorId" }
-        - { $ref: "#/components/parameters/Role" }
-        - { $ref: "#/components/parameters/CorrelationId" }
-        - { $ref: "#/components/parameters/ActingActorId" }
-        - { $ref: "#/components/parameters/ExpectedVersion" }
-        - { $ref: "#/components/parameters/MutationReason" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/Role" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/CorrelationId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ActingActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ExpectedVersion" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/MutationReason" }
       responses:
         "204": { description: Existing role enabled; no session or activation eligibility is silently recreated. }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { $ref: "#/components/responses/Conflict" }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../identity.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../identity.openapi.yaml#/components/responses/Conflict" }
 
   /internal/actors/{actorId}/roles/{role}/reenrollment:
     post:
@@ -337,20 +337,20 @@ paths:
       operationId: authorizeManagedRoleReenrollment
       security: [{ internalServiceToken: [] }]
       parameters:
-        - { $ref: "#/components/parameters/ActorId" }
-        - { $ref: "#/components/parameters/Role" }
-        - { $ref: "#/components/parameters/CorrelationId" }
-        - { $ref: "#/components/parameters/ActingActorId" }
-        - { $ref: "#/components/parameters/ReenrollmentExpectedVersion" }
-        - { $ref: "#/components/parameters/ExpectedActorVersion" }
-        - { $ref: "#/components/parameters/ReenrollmentReasonRequired" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/Role" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/CorrelationId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ActingActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ReenrollmentExpectedVersion" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ExpectedActorVersion" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ReenrollmentReasonRequired" }
       responses:
         "204": { description: An active domain-managed role is moved to fresh one-time activation only when current DSH eligibility and actor and role versions match; active sessions and challenges are revoked. The request is actor_id-addressed and operator-attributed. }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { $ref: "#/components/responses/Conflict" }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../identity.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../identity.openapi.yaml#/components/responses/Conflict" }
 
   /internal/actors/{actorId}/security/disable:
     post:
@@ -358,18 +358,18 @@ paths:
       operationId: disableActorSecurity
       security: [{ internalServiceToken: [] }]
       parameters:
-        - { $ref: "#/components/parameters/ActorId" }
-        - { $ref: "#/components/parameters/CorrelationId" }
-        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
-        - { $ref: "#/components/parameters/ControlPanelExpectedVersion" }
-        - { $ref: "#/components/parameters/MutationReason" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/CorrelationId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ControlPanelExpectedVersion" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/MutationReason" }
       responses:
         "204": { description: Identity-wide authentication disabled and active sessions/challenges revoked. }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { $ref: "#/components/responses/Conflict" }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../identity.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../identity.openapi.yaml#/components/responses/Conflict" }
 
   /internal/actors/{actorId}/security/enable:
     post:
@@ -377,47 +377,47 @@ paths:
       operationId: enableActorSecurity
       security: [{ internalServiceToken: [] }]
       parameters:
-        - { $ref: "#/components/parameters/ActorId" }
-        - { $ref: "#/components/parameters/CorrelationId" }
-        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
-        - { $ref: "#/components/parameters/ControlPanelExpectedVersion" }
-        - { $ref: "#/components/parameters/MutationReason" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/CorrelationId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ControlPanelExpectedVersion" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/MutationReason" }
       responses:
         "204": { description: Identity-wide authentication eligibility restored; no session is resurrected. }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { $ref: "#/components/responses/Conflict" }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../identity.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../identity.openapi.yaml#/components/responses/Conflict" }
 
   /internal/actors/{actorId}/roles/{role}/sessions:
     get:
       tags: [internal-sessions]
       operationId: listActorRoleSessions
       security: [{ internalServiceToken: [] }]
-      parameters: [{ $ref: "#/components/parameters/ActorId" }, { $ref: "#/components/parameters/Role" }]
+      parameters: [{ $ref: "../identity.openapi.yaml#/components/parameters/ActorId" }, { $ref: "../identity.openapi.yaml#/components/parameters/Role" }]
       responses:
         "200":
           description: Active sessions for the exact actor-role.
-          content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/SessionInfo" } } } }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
+          content: { application/json: { schema: { type: array, items: { $ref: "../identity.openapi.yaml#/components/schemas/SessionInfo" } } } }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../identity.openapi.yaml#/components/responses/NotFound" }
     delete:
       tags: [internal-sessions]
       operationId: revokeActorRoleSessions
       security: [{ internalServiceToken: [] }]
       parameters:
-        - { $ref: "#/components/parameters/ActorId" }
-        - { $ref: "#/components/parameters/Role" }
-        - { $ref: "#/components/parameters/CorrelationId" }
-        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/Role" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/CorrelationId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ControlPanelActingActorId" }
       responses:
         "204": { description: Active sessions for the exact actor-role revoked. }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../identity.openapi.yaml#/components/responses/NotFound" }
 
   /internal/actors/{actorId}/roles/{role}/sessions/{sessionId}:
     delete:
@@ -425,14 +425,39 @@ paths:
       operationId: revokeActorRoleSession
       security: [{ internalServiceToken: [] }]
       parameters:
-        - { $ref: "#/components/parameters/ActorId" }
-        - { $ref: "#/components/parameters/Role" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/Role" }
         - { name: sessionId, in: path, required: true, schema: { type: string } }
-        - { $ref: "#/components/parameters/CorrelationId" }
-        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/CorrelationId" }
+        - { $ref: "../identity.openapi.yaml#/components/parameters/ControlPanelActingActorId" }
       responses:
         "204": { description: Exact session revoked. }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../identity.openapi.yaml#/components/responses/NotFound" }
+
+  /internal/client-share-recipient/resolve:
+    get:
+      operationId: resolveClientShareRecipient
+      summary: Resolve a verified customer phone recipient for DSH's private share-delivery decision
+      description: DSH-only internal read. Never relay the resolution or absence of a recipient to an untrusted client.
+      security: [{ internalServiceToken: [] }]
+      parameters:
+        - name: phoneE164
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 32 }
+      responses:
+        "200":
+          description: Private canonical Actor ID resolution, or an empty actorId when no match is allowed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [actorId]
+                properties:
+                  actorId: { type: string }
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }

@@ -21,7 +21,7 @@ export async function GET(request: Request, context: { params: Promise<{ storeId
   const cursor = query.get("cursor") ?? "";
   const limitText = query.get("limit") ?? "8";
   const limit = Number(limitText);
-  if (!storeId || storeId.length > 128 || cursor.length > 2048 || !Number.isInteger(limit) || limit < 1 || limit > 30)
+  if (!storeId || storeId.length > 128 || cursor.length > 2048 || !Number.isInteger(limit) || limit < 1 || limit > 100)
     return fail("INVALID_INPUT", "Invalid store offer query.", 400);
   try {
     const data = await listOperatorStoreOffers(storeId, cursor, { operatorActorId: identity.subject }, limit);

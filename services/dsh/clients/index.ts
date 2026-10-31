@@ -3,6 +3,8 @@ export { dshOperationPaths } from "./generated/dsh-operations";
 export * from "./mobile";
 export * from "./notification-alert-policy";
 export * from "./client-share-types";
+export * from "./store-catalog-csv";
+export * from "./partner-order-csv";
 export * from "./joining-case-media";
 export * from "./order-conversation-attempt";
 export * from "./cash-in-simulator";

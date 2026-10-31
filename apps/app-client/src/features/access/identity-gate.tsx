@@ -1,6 +1,6 @@
 import { borders, elevation, radius, sizing, spacing, type ThemeColors, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type IdentitySessionState, identityErrorMessage, identitySessionSignOutMessage, isIdentityClientError, limitPasswordInput, validatePasswordInputShape } from "@bthwani/identity";
+import { type IdentitySessionState, identityErrorMessage, identitySessionSignOutMessage, limitPasswordInput, validatePasswordInputShape } from "@bthwani/identity";
 import { resolveInternalReturnPath } from "@bthwani/identity/presentation";
 import { type Href, Redirect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -39,10 +39,6 @@ const modeDetails = {
   recover: "recoverTitle",
 } as const satisfies Record<AuthMode, keyof IdentityCopy>;
 
-function isCredentialFailure(value: unknown): boolean {
-  return isIdentityClientError(value) && value.kind === "http" && value.status === 401;
-}
-
 function safeReturnTo(value: string | string[] | undefined): Href {
   return resolveInternalReturnPath(value, "/home", /^\/(?:home|notifications|account|wallet|addresses|multi-store-checkout|orders(?:\/[A-Za-z0-9._~%-]+)?|store\/[A-Za-z0-9._~%-]+(?:\?productId=[A-Za-z0-9._~%-]+)?|cart\/[A-Za-z0-9._~%-]+)$/u) as Href;
 }
@@ -66,7 +62,6 @@ export default function IdentityGate() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [focusedField, setFocusedField] = useState<FieldName | null>(null);
-  const [loginFailed, setLoginFailed] = useState(false);
   const [authPromptVisible, setAuthPromptVisible] = useState(false);
   const [discoverySearchOpen, setDiscoverySearchOpen] = useState(false);
   const [discoverySearchQuery, setDiscoverySearchQuery] = useState("");
@@ -106,7 +101,6 @@ export default function IdentityGate() {
     setError("");
     setNotice("");
     setFocusedField(null);
-    setLoginFailed(false);
   }, []);
 
   useEffect(() => {
@@ -136,13 +130,11 @@ export default function IdentityGate() {
     setError("");
     setNotice("");
     setFocusedField(null);
-    setLoginFailed(false);
   }
 
   function updatePhone(value: string) {
     setPhone(toAsciiDigits(value));
     if (mode === "login") {
-      setLoginFailed(false);
       setError("");
     }
   }
@@ -150,7 +142,6 @@ export default function IdentityGate() {
   function updatePassword(value: string) {
     setPassword(limitPasswordInput(value));
     if (mode === "login") {
-      setLoginFailed(false);
       setError("");
     }
   }
@@ -183,7 +174,6 @@ export default function IdentityGate() {
   async function submit() {
     setBusy(true);
     setError("");
-    setLoginFailed(false);
     try {
       if (mode === "login") {
         setState(await loginClient(phone, password));
@@ -200,7 +190,6 @@ export default function IdentityGate() {
       setProofRequested(false);
       setMode("login");
     } catch (cause) {
-      setLoginFailed(mode === "login" && isCredentialFailure(cause));
       setError(identityErrorMessage(cause, mode === "login" ? "login" : mode === "recover" ? "recovery" : "general", copy.errors));
     } finally {
       setBusy(false);
@@ -404,7 +393,7 @@ export default function IdentityGate() {
             {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
             {error ? <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
 
-            {mode === "login" && loginFailed ? (
+            {mode === "login" ? (
                 <BthwaniButton disabled={busy} label={copy.forgotPassword} onPress={() => selectMode("recover")} style={styles.recoveryAction} variant="secondary" />
             ) : null}
           </View>

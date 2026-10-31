@@ -18,6 +18,7 @@
     "./web.css": "./web.css",
     "./native/map": {
       "types": "./src/native/map.tsx",
+      "node": "./src/native/map.web.tsx",
       "react-native": "./src/native/map.tsx",
       "browser": "./src/native/map.web.tsx",
       "default": "./src/native/map.tsx"

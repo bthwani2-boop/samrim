@@ -94,6 +94,105 @@ paths:
       responses:
         "200": { description: Updated or replayed presentation }
 
+  /dsh/operator/marketing/studio-draft:
+    get:
+      operationId: readOperatorStudioDraft
+      summary: Read the unpublished shared CLIENT_HOME studio draft
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+      responses:
+        "200":
+          description: Shared draft (null document before first save) and current version
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StudioDraft" } } }
+        "401": { description: Operator authentication is required }
+        "403": { description: Operator marketing permission is required }
+    put:
+      operationId: setOperatorStudioDraft
+      summary: Save unpublished version-checked shared CLIENT_HOME template draft
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [document]
+              properties:
+                document: { $ref: "../dsh.openapi.yaml#/components/schemas/StudioDraftDocument" }
+      responses:
+        "200": { description: "Saved draft, version and idempotent replay flag" }
+        "400": { description: Studio draft input is invalid }
+        "401": { description: Operator authentication is required }
+        "403": { description: Operator marketing permission is required }
+        "409": { description: Stale version or conflicting idempotency key }
+
+  /dsh/public/studio-theme:
+    get:
+      operationId: readPublicStudioTheme
+      summary: Read only the published visual palette, never the unpublished operator draft
+      responses:
+        "200":
+          description: Versioned public palette, null when compiled defaults apply
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StudioThemePublication" } } }
+
+  /dsh/operator/marketing/studio-theme:
+    get:
+      operationId: readOperatorStudioTheme
+      summary: Read the current published palette version and operator attribution
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+      responses:
+        "200":
+          description: Versioned published palette
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StudioThemePublication" } } }
+        "401": { description: Authentication required }
+        "403": { description: Marketing permission required }
+    put:
+      operationId: setOperatorStudioTheme
+      summary: Activate a saved draft palette, restore compiled defaults, or rollback to an earlier publication
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/StudioThemePublicationRequest"
+      responses:
+        "200":
+          description: Published or idempotently replayed palette mutation
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StudioThemePublicationMutation" } } }
+        "400": { description: Invalid palette or request }
+        "401": { description: Authentication required }
+        "403": { description: Marketing permission required }
+        "409": { description: Stale version or conflicting idempotency key }
+
+  /dsh/operator/marketing/studio-theme/history:
+    get:
+      operationId: readOperatorStudioThemeHistory
+      summary: List the latest 20 published theme revisions for operator rollback
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+      responses:
+        "200":
+          description: Published version history
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StudioThemeHistory" } } }
+        "401": { description: Authentication required }
+        "403": { description: Marketing permission required }
+
   /dsh/public/promotions:
     get:
       operationId: listPublicPromotions
@@ -629,6 +728,25 @@ paths:
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
 
+  /dsh/partner/stores/{storeId}/discovery-content/{contentId}/analytics:
+    get:
+      operationId: listPartnerStoreContentAnalytics
+      summary: Read only own Store short-form media impression, click, and attributed created-order counts
+      description: Requires an authenticated Partner session with Store-scoped promotions authority. A media item must have source_store_id matching the requested Store; another Store's content is never exposed. CONVERSION counts created orders attributed by DSH and does not imply completed sales or earnings.
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ContentId"
+      responses:
+        "200":
+          description: Own Store content-scoped analytics.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/DiscoveryContentAnalyticsListResponse" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/partner/stores/{storeId}/promotions:
     get:
       operationId: listPartnerStorePromotions
@@ -744,4 +862,52 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/partner/stores/{storeId}/discovery-content/summary:
+    get:
+      operationId: readPartnerStoreContentPerformanceSummary
+      summary: Period-scoped Store short-form content events and attributed created/completed Orders
+      description: Requires authenticated partner with Store-scoped promotions authority. Historical paused/retired content remains included when in period. Completed means currently delivered or picked up, not settled revenue.
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [7d, 30d, all]
+            default: all
+          description: All historical events (default), last seven days, or last thirty days.
+      responses:
+        "200":
+          description: Canonical Store-scoped short-form marketing totals.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreContentPerformanceSummary" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/stores/{storeId}/discovery-content/summary:
+    get:
+      operationId: readOperatorStoreContentPerformanceSummary
+      summary: Read short-form performance totals for one Store with operator marketing permission
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorId"
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [7d, 30d, all]
+            default: all
+          description: All historical events (default), last seven days, or last thirty days.
+      responses:
+        "200":
+          description: Store content totals from same DSH query as Partner, subject to operator Marketing authority.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreContentPerformanceSummary" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }

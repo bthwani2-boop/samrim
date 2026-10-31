@@ -1,7 +1,7 @@
 "use client";
 
 import type { CatalogCategoryListResponse, CatalogProduct, CatalogProductListResponse, CatalogStoreOffer, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogProductResponse, CreateStoreOfferRequest, UpdateStoreOfferRequest, MediaProvenanceInput } from "@bthwani/dsh";
-import { isMediaProvenanceInputValid } from "@bthwani/dsh";
+import { collectStoreCatalogCsv, isMediaProvenanceInputValid, STORE_CATALOG_EXPORT_PAGE_SIZE } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { appendMediaProvenance, CatalogMediaProvenanceFields } from "../central-catalog/catalog-media-provenance-fields";
 import { StoreCatalogImportWorkspace } from "../central-catalog/store-catalog-import-workspace";
@@ -93,6 +93,10 @@ export function StoreProductsWorkspace({storeId, verticalId,storeName}:{storeId:
   const [attempt,setAttempt]=useState<Attempt|null>(null);
   const [editAttempt,setEditAttempt]=useState<{key:string;fingerprint:string}|null>(null);
   const [importOpen,setImportOpen]=useState(false);
+  const [exportBusy,setExportBusy]=useState(false);
+  const [exportProgress,setExportProgress]=useState(0);
+  const exportStore=useRef(storeId);
+  exportStore.current=storeId;
   // biome-ignore lint/correctness/useExhaustiveDependencies: refresh is the intentional retry and saved-product readback trigger.
   useEffect(()=>{const controller=new AbortController();const signal=controller.signal;const load=async()=>{
     setLoading(true);
@@ -252,10 +256,39 @@ export function StoreProductsWorkspace({storeId, verticalId,storeName}:{storeId:
     }catch(e){setError(e instanceof Error?e.message:"تعذر حفظ التعديل. حدّث القائمة عند تعارض النسخة.");}
     finally{setBusy(false)}
   }
+  async function exportStoreCatalog() {
+    if (exportBusy || busy || !storeId.trim()) return;
+    setExportBusy(true); setExportProgress(0); setError(""); setNotice("");
+    try {
+      const result = await collectStoreCatalogCsv(storeId, async cursorValue => {
+        if (exportStore.current !== storeId) throw new Error("STORE_EXPORT_SESSION_CHANGED");
+        const query = new URLSearchParams({ limit: String(STORE_CATALOG_EXPORT_PAGE_SIZE), ...(cursorValue ? {cursor:cursorValue} : {}) });
+        const page = await payload<CatalogStoreOfferListResponse>(await fetch("/api/stores/"+encodeURIComponent(storeId)+"/offers?"+query, {cache:"no-store"}));
+        if (exportStore.current !== storeId) throw new Error("STORE_EXPORT_SESSION_CHANGED");
+        return page;
+      }, count => { if (exportStore.current === storeId) setExportProgress(count); });
+      if (exportStore.current !== storeId) throw new Error("STORE_EXPORT_SESSION_CHANGED");
+      if (!result.count) { setNotice("لا توجد عروض للمتجر لتصديرها."); return; }
+      const url = URL.createObjectURL(new Blob([result.csv], {type:"text/csv;charset=utf-8"}));
+      try {
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = "bthwani-store-"+encodeURIComponent(storeId)+"-catalog.csv";
+        anchor.click();
+      } finally { URL.revokeObjectURL(url); }
+      setNotice("تم تجهيز ملف CSV من "+result.count+" عرضًا من كتالوج هذا المتجر.");
+    } catch (cause) {
+      if (exportStore.current === storeId) {
+        const code = cause instanceof Error ? cause.message : "";
+        setError(code==="STORE_EXPORT_TOO_LARGE_OR_INCONSISTENT" ? "الكتالوج أكبر من الحد الآمن أو تغيرت صفحاته. لم يُنتج ملف ناقص." : code==="STORE_EXPORT_SESSION_CHANGED" ? "تغير المتجر؛ أُلغي التصدير لحماية نطاق البيانات." : "تعذر تصدير كتالوج المتجر. راجع صلاحياتك وحالة الاتصال.");
+      }
+    } finally { setExportBusy(false); }
+  }
   return <section className="store-product-management" aria-label={"إدارة منتجات "+storeName}>
     <div className="store-product-toolbar">
       <div><h3>منتجات المتجر</h3><p className="store-profile-muted">أضف المنتجات وعدّل أسعارها وتوفرها دون مغادرة ملف المتجر.</p></div>
       <div className="store-product-actions">
+        <button type="button" className="button button-secondary" disabled={exportBusy||busy} onClick={()=>void exportStoreCatalog()}>{exportBusy?"جارٍ جمع "+exportProgress+" عرضًا…":"تصدير CSV كامل"}</button>
         <button type="button" className="button button-secondary" onClick={()=>{setImportOpen(!importOpen);setOpenAdd(false)}}>{importOpen?"إغلاق الاستيراد":"استيراد ملف"}</button>
         <button type="button" className="button button-primary" onClick={()=>{setOpenAdd(!openAdd);setImportOpen(false);setError("");setNotice("")}}>{openAdd?"إغلاق الإضافة":"إضافة منتج"}</button>
       </div>

@@ -15,6 +15,7 @@ const runtime = createManagedMobileIdentityBinding({
   surface,
   namespace,
   allowDevelopmentSessionFallback: Platform.OS !== "web" && process.env.EXPO_PUBLIC_BTHWANI_AUTH_JOURNEY_PROOF !== "1",
+  partnerBrowserSession: Platform.OS === "web",
   // Platform storage preserves native keychain and keeps browser tokens in memory.
   secureStorage: {
     getItem: (key) => SecureStore.getItemAsync(key),
