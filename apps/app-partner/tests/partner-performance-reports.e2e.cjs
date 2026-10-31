@@ -24,7 +24,7 @@ async function run() {
     if (await orders.count()) {
       await orders.click();
       await page.waitForURL(u => u.pathname === "/insights" && u.searchParams.get("view") === "orders", { timeout: 15000 });
-      await page.getByText("السجلات والتصدير تخص الصفحة المعروضة فقط", { exact: false }).waitFor({ timeout: 15000 });
+      await page.getByText("نسخ CSV يخص الصفحة المعروضة", { exact: false }).waitFor({ timeout: 15000 });
       await page.waitForTimeout(800);
       const text = await page.locator("body").innerText();
       assert.ok(/جارٍ قراءة التقرير|لا توجد سجلات|السجلات|تعذر قراءة التقرير/.test(text));
@@ -34,7 +34,7 @@ async function run() {
     if (await catalog.count()) {
       await catalog.click();
       await page.waitForURL(u => u.pathname === "/insights" && u.searchParams.get("view") === "catalog", { timeout: 15000 });
-      await page.getByText("السجلات والتصدير تخص الصفحة المعروضة فقط", { exact: false }).waitFor({ timeout: 15000 });
+      await page.getByText("نسخ CSV يخص الصفحة المعروضة", { exact: false }).waitFor({ timeout: 15000 });
       await page.waitForTimeout(800);
       const text = await page.locator("body").innerText();
       assert.ok(/جارٍ قراءة التقرير|لا توجد سجلات|السجلات|تعذر قراءة التقرير/.test(text));
@@ -69,7 +69,7 @@ async function run() {
     if (await mobileOrders.count()) {
       await mobileOrders.click();
       await page.waitForURL(u => u.pathname === "/insights" && u.searchParams.get("view") === "orders", { timeout: 15000 });
-      await page.getByText("السجلات والتصدير تخص الصفحة المعروضة فقط", { exact: false }).first().waitFor({ timeout: 15000 });
+      await page.getByText("نسخ CSV يخص الصفحة المعروضة", { exact: false }).first().waitFor({ timeout: 15000 });
       assert.ok((await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)) <= 2);
       console.log("MOBILE_ORDER_REPORT=PASS");
     }

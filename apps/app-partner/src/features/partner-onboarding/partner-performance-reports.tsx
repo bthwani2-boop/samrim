@@ -1,11 +1,13 @@
 import { typography } from "@bthwani/design-system";
 import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, orderStateLabel, type CatalogStoreOffer, type Order, type PartnerAccessibleStore, type PartnerStoreOrderSummary } from "@bthwani/dsh";
+import { collectPartnerOrderReportCsv, collectStoreCatalogCsv, createDshMobileClient, formatMoney, orderStateLabel, PARTNER_ORDER_REPORT_PAGE_SIZE, STORE_CATALOG_EXPORT_PAGE_SIZE, type CatalogStoreOffer, type Order, type PartnerAccessibleStore, type PartnerStoreOrderSummary } from "@bthwani/dsh";
 import * as Clipboard from "expo-clipboard";
 import * as Crypto from "expo-crypto";
+import { File, Paths } from "expo-file-system";
+import * as Sharing from "expo-sharing";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { isOfferStockout } from "../store-offer/inventory-stockout";
 
@@ -58,6 +60,12 @@ export function PartnerPerformanceReport({ store, view }: { store: PartnerAccess
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [copyStatus, setCopyStatus] = useState("");
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
+  const [exportStatus, setExportStatus] = useState("");
+  const [exportError, setExportError] = useState("");
+  const activeScope = useRef({ storeId: store.id, view });
+  activeScope.current = { storeId: store.id, view };
   const [retry, setRetry] = useState(0);
   const [summaryPeriod, setSummaryPeriod] = useState<"7d" | "30d" | "all">("30d");
   const [orderSummary, setOrderSummary] = useState<PartnerStoreOrderSummary | null>(null);
@@ -149,6 +157,77 @@ export function PartnerPerformanceReport({ store, view }: { store: PartnerAccess
     void Clipboard.setStringAsync(asCsv(exportRows)).then(() => setCopyStatus("تم نسخ بيانات الصفحة الحالية بصيغة CSV."))
       .catch(() => setCopyStatus("تعذر نسخ البيانات، حاول مجددًا."));
   };
+  async function downloadCompleteReport() {
+    if (exportBusy || !allowed) return;
+    const selected = currentIdentityState();
+    const actorId = selected.kind === "authenticated" ? selected.identity.subject : "";
+    const isCurrent = () => {
+      const latest = currentIdentityState();
+      return Boolean(actorId) && latest.kind === "authenticated" &&
+        latest.identity.subject === actorId &&
+        activeScope.current.storeId === store.id && activeScope.current.view === view;
+    };
+    setExportBusy(true);
+    setExportError("");
+    setExportStatus("");
+    setExportProgress(0);
+    try {
+      if (!isCurrent()) throw new Error("REPORT_EXPORT_SESSION_CHANGED");
+      const base = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
+      if (!base) throw new Error("REPORT_EXPORT_SERVICE_MISSING");
+      const token = await getUsableIdentityAccessToken();
+      if (!isCurrent()) throw new Error("REPORT_EXPORT_SESSION_CHANGED");
+      const api = createDshMobileClient(base, { cryptoRandomUUID: () => Crypto.randomUUID() });
+      const result = view === "orders"
+        ? await collectPartnerOrderReportCsv(store.id, async pageCursor => {
+          if (!isCurrent()) throw new Error("REPORT_EXPORT_SESSION_CHANGED");
+          const page = await api.listPartnerOrders(token, {
+            storeIds: [store.id], limit: PARTNER_ORDER_REPORT_PAGE_SIZE,
+            ...(pageCursor ? { cursor: pageCursor } : {}),
+          });
+          if (!isCurrent()) throw new Error("REPORT_EXPORT_SESSION_CHANGED");
+          return page;
+        }, count => { if (isCurrent()) setExportProgress(count); })
+        : await collectStoreCatalogCsv(store.id, async pageCursor => {
+          if (!isCurrent()) throw new Error("REPORT_EXPORT_SESSION_CHANGED");
+          const page = await api.readOwnStoreOffers(token, store.id, STORE_CATALOG_EXPORT_PAGE_SIZE, pageCursor);
+          if (!isCurrent()) throw new Error("REPORT_EXPORT_SESSION_CHANGED");
+          return page;
+        }, count => { if (isCurrent()) setExportProgress(count); });
+      if (!isCurrent()) throw new Error("REPORT_EXPORT_SESSION_CHANGED");
+      if (!result.count) {
+        setExportStatus("لا توجد سجلات في المتجر لتصديرها.");
+        return;
+      }
+      const filename = `bthwani-store-${encodeURIComponent(store.id)}-${view}-report.csv`;
+      if (Platform.OS === "web") {
+        const url = URL.createObjectURL(new Blob([result.csv], { type: "text/csv;charset=utf-8" }));
+        try {
+          const anchor = document.createElement("a");
+          anchor.href = url;
+          anchor.download = filename;
+          anchor.click();
+        } finally { URL.revokeObjectURL(url); }
+      } else {
+        if (!await Sharing.isAvailableAsync()) throw new Error("REPORT_EXPORT_SHARING_UNAVAILABLE");
+        if (!isCurrent()) throw new Error("REPORT_EXPORT_SESSION_CHANGED");
+        const file = new File(Paths.cache, `bthwani-report-${Crypto.randomUUID()}.csv`);
+        file.create();
+        file.write(result.csv);
+        await Sharing.shareAsync(file.uri, { mimeType: "text/csv", dialogTitle: "تصدير تقرير المتجر" });
+      }
+      if (isCurrent()) setExportStatus(`تم تجهيز ملف CSV يضم ${result.count} سجلًا من المتجر المصرح به.`);
+    } catch (cause) {
+      const code = cause instanceof Error ? cause.message : "";
+      if (isCurrent()) setExportError(code === "ORDER_REPORT_TOO_LARGE_OR_INCONSISTENT" || code === "STORE_EXPORT_TOO_LARGE_OR_INCONSISTENT"
+        ? "التقرير أكبر من الحد الآمن للجهاز أو تغيرت صفحاته؛ لم يُنشأ ملف ناقص."
+        : code === "REPORT_EXPORT_SESSION_CHANGED" ? "تغير الحساب أو المتجر أثناء القراءة؛ أُلغي التصدير لحماية البيانات."
+        : "تعذر تجهيز ملف CSV كامل. تحقق من الاتصال والصلاحيات ثم أعد المحاولة.");
+    } finally {
+      setExportBusy(false);
+    }
+  }
+
   return <View style={styles.screen}>
     <View style={styles.toolbar}>
       <View style={{ flex: 1, gap: 5, minWidth: 190 }}>
@@ -159,8 +238,15 @@ export function PartnerPerformanceReport({ store, view }: { store: PartnerAccess
         style={[styles.button, (loading || !!error || !allowed || visibleCount === 0) && styles.disabled]} onPress={copyReport}>
         <BthwaniIcon name="edit" size={17} color={theme.interactiveText}/><Text style={styles.buttonText}>نسخ CSV</Text>
       </Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="تنزيل CSV لجميع صفحات المتجر" disabled={exportBusy || !allowed}
+        style={[styles.button, (exportBusy || !allowed) && styles.disabled]} onPress={() => void downloadCompleteReport()}>
+        <BthwaniIcon name="edit" size={17} color={theme.interactiveText}/>
+        <Text style={styles.buttonText}>{exportBusy ? `جارٍ جمع ${exportProgress} سجلًا…` : "تنزيل CSV كامل"}</Text>
+      </Pressable>
     </View>
-    <Text style={styles.caption}>السجلات والتصدير تخص الصفحة المعروضة فقط. إجماليات الطلبات أدناه تُحسب من جميع سجلات المتجر في الفترة المختارة، وهي ليست إيرادًا ماليًا أو تسوية WLT.</Text>
+    <Text style={styles.caption}>نسخ CSV يخص الصفحة المعروضة، أما تنزيل CSV الكامل فيجمع جميع صفحات المتجر ضمن حد حماية الجهاز. فترة مؤشرات الإجماليات لا تُقيّد ملف التصدير. قيم الطلبات تشغيلية لدى DSH وليست إيرادات أو تسويات WLT.</Text>
+    {exportError ? <Text accessibilityRole="alert" style={styles.warning}>{exportError}</Text> : null}
+    {exportStatus ? <Text accessibilityLiveRegion="polite" style={styles.caption}>{exportStatus}</Text> : null}
     {view === "orders" && allowed ? <View style={styles.panel} accessibilityLabel="الإجماليات التشغيلية للمتجر">
       <Text accessibilityRole="header" style={styles.heading}>إجماليات الطلبات من الخادم</Text>
       <View style={styles.periodRow}>
