@@ -11,6 +11,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { isOfferStockout } from "../store-offer/inventory-stockout";
+import { agreementReadinessMessage, type StoreAgreementReadback } from "./store-agreement-readiness";
 
 type Data = Readonly<{
   attention: PartnerOrderAttentionCounts | null;
@@ -32,6 +33,7 @@ type Props = Readonly<{
   operationalState: string;
   operationalKnown: boolean;
   canOperate: boolean;
+  commercialAgreement: StoreAgreementReadback;
 }>;
 
 const statuses = [
@@ -85,7 +87,7 @@ function readableOrderState(state: Order["state"]) {
   }
 }
 
-export function PartnerDesktopHome({ store, operationalState, operationalKnown, canOperate }: Props) {
+export function PartnerDesktopHome({ store, operationalState, operationalKnown, canOperate, commercialAgreement }: Props) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const router = useRouter();
@@ -148,9 +150,10 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
   const recentDays = recentOrderDays(orders, new Date());
   const maxDay = Math.max(1, ...recentDays.map(item => item.count));
   const readySteps = [
-    store.publicationState === "published",
-    data.offers ? data.offers.some(item => item.publicationState === "published" && item.availability) : null,
+    store.owned ? store.publicationState === "published" : null,
+    canCatalog && data.offers ? data.offers.some(item => item.publicationState === "published" && item.availability) : null,
     canOperate && operationalKnown ? operationalState === "مفتوح" : null,
+    store.owned && commercialAgreement !== null && commercialAgreement !== "UNAVAILABLE" ? commercialAgreement === "ACTIVE" : null,
   ];
   const verifiedSteps = readySteps.filter(step => step !== null).length;
   const completedSteps = readySteps.filter(step => step === true).length;
@@ -212,6 +215,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
             {store.owned ? action("هوية المتجر", store.publicationState === "published" ? "المتجر منشور للعملاء" : "مراجعة بيانات المتجر والنشر", "/store?section=settings" as Href, "store", store.publicationState === "published") : null}
             {canCatalog ? action("إعداد الكتالوج", data.offers === null ? "البيانات غير متاحة حاليًا" : available ? "يوجد منتجات متاحة للطلب" : "راجع المنتجات والأسعار", "/products" as Href, "cart", data.offers === null ? null : Boolean(available)) : null}
             {canOperate ? action("إعدادات التشغيل", operationalKnown ? "استقبال الطلبات: " + operationalState : "تعذر قراءة حالة التشغيل", "/store?section=operations" as Href, "deliveries", operationalKnown ? operationalState === "مفتوح" : null) : null}
+            {store.owned ? action("الاتفاقية التجارية", agreementReadinessMessage(commercialAgreement), "/store?section=settings" as Href, "wallet", commercialAgreement === null || commercialAgreement === "UNAVAILABLE" ? null : commercialAgreement === "ACTIVE") : null}
             {canPromotions ? action("العروض", "تحرير العروض المتاحة للمتجر", "/store?section=promotions" as Href, "offers") : null}
             {store.owned ? action("الموظفين", "دعوة الموظفين وإدارة صلاحياتهم", "/employees" as Href, "account") : null}
             {store.owned ? action("كباتن المتجر", "إدارة عضويات كباتن المتجر", "/store?section=team" as Href, "deliveries") : null}
