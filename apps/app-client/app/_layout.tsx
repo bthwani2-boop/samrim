@@ -28,7 +28,7 @@ export default function RootLayout() {
     const api = createDshMobileClient(baseUrl);
     const refresh = () => {
       const requestId = ++latestRequest;
-      void api.readPublicStudioTheme().then((value) => {
+      void Promise.resolve().then(() => api.readPublicStudioTheme()).then((value) => {
         if (!mounted || requestId !== latestRequest) return;
         const published = parseStudioThemePublication(value);
         // Unknown schemas or invalid palettes never replace compiled defaults.
