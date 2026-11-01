@@ -10,12 +10,15 @@ export default function PartnerTabsLayout() {
   const theme = useAppearanceTheme();
   const { width } = useWindowDimensions();
   const desktopWeb = Platform.OS === "web" && width >= 1024;
-  const { authority } = usePartnerStoreScope();
+  const { authority, state } = usePartnerStoreScope();
+  // Keep routes addressable until Store authority resolves; PartnerSurfaceGate
+  // hides protected content while pending/error and redirects on confirmed denial.
+  // Setting href:null during loading would discard an authorized deep link.
   const tabOptions = useMemo(() => createPartnerTabOptions(theme, authority.canUse("orders"), desktopWeb), [theme, authority, desktopWeb]);
   return <Tabs screenOptions={tabOptions}>
-    <Tabs.Screen name="orders" options={authority.canUse("orders") ? { title: "الطلبات", tabBarAccessibilityLabel: "الطلبات" } : { href: null }} />
-    <Tabs.Screen name="products" listeners={{ tabPress: (event) => { event.preventDefault(); dispatchPartnerProductAction("list"); router.replace("/products" as Href); } }} options={authority.canUse("products") ? { title: "المنتجات", tabBarAccessibilityLabel: "المنتجات" } : { href: null }} />
-    <Tabs.Screen name="wallet" options={authority.canUse("wallet") ? { title: "المحفظة", tabBarAccessibilityLabel: "المحفظة" } : { href: null }} />
+    <Tabs.Screen name="orders" options={state.kind === "ready" && !authority.canUse("orders") ? { href: null } : { title: "الطلبات", tabBarAccessibilityLabel: "الطلبات" }} />
+    <Tabs.Screen name="products" listeners={{ tabPress: (event) => { event.preventDefault(); dispatchPartnerProductAction("list"); router.replace("/products" as Href); } }} options={state.kind === "ready" && !authority.canUse("products") ? { href: null } : { title: "المنتجات", tabBarAccessibilityLabel: "المنتجات" }} />
+    <Tabs.Screen name="wallet" options={state.kind === "ready" && !authority.canUse("wallet") ? { href: null } : { title: "المحفظة", tabBarAccessibilityLabel: "المحفظة" }} />
     <Tabs.Screen name="more" options={{ title: desktopWeb ? "لوحة المتجر" : "المزيد", tabBarAccessibilityLabel: desktopWeb ? "لوحة المتجر" : "الإدارة والإعدادات" }} />
   </Tabs>;
 }

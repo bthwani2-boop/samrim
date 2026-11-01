@@ -5,7 +5,7 @@ feature,area,priority,original,clone,notes
 "E02 orders list and state filters","orders","must","yes","partial","Elleen orders expose status search payment and date filters; DSH and Partner lists exist but transitions unverified"
 "E02 refunds list and status filtering","refunds","should","yes","partial","Elleen read-only headings; BThwani bounded adjustments not proven same refund flow"
 "E03 products and categories","catalog","must","yes","partial","Elleen quick-add is Store price/stock entry; BThwani Operator central product create uses category/name and separates Store offers; save and Client projection unverified"
-"E03 inventory stock management","inventory","must","yes","partial","Elleen stock management buttons observed; DSH stock and stockout APIs source-present"
+"E03 inventory stock management","inventory","must","yes","partial","Elleen stock list search and summary observed; BThwani Partner stockout/unavailable filters and native deep link PASS; stock mutation to Client projection not verified"
 "ES05 product questions","catalog","could","yes","no","Elleen question list exists; no independently admitted BThwani product question capability"
 "ES06 configurable product filters","catalog","should","yes","partial","Elleen filter builder list observed; BThwani discovery filters require scope verification"
 "ES07 brand records","catalog","should","yes","partial","Elleen brands list observed; BThwani catalog taxonomy source-present"
