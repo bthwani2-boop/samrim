@@ -12,6 +12,7 @@ import { StoreCaptainMembershipManagement } from "./store-captain-memberships";
 import { StoreCommercialAgreements } from "./store-commercial-agreements";
 import { StoreOperationalAvailabilityManagement } from "./store-operational-availability";
 import { StoreProfileImageEditor } from "./store-profile-image-editor";
+import { PartnerStoreSettingsOverview } from "./partner-store-settings-overview";
 
 type StoreSection = "operations" | "promotions" | "team" | "settings";
 function isStoreSection(value: string | undefined): value is StoreSection {
@@ -69,6 +70,7 @@ export function PartnerStore() {
       {section === "promotions" ? <PartnerMarketingWorkspace key={selectedStore.id} storeID={selectedStore.id} storeName={selectedStore.name} verticalID={selectedStore.primaryVerticalId} view={marketingView}/> : null}
       {section === "team" ? <TeamManagement key={selectedStore.id} storeID={selectedStore.id} /> : null}
       {section === "settings" ? <>
+        <PartnerStoreSettingsOverview key={selectedStore.id + ":settings"} storeID={selectedStore.id} />
         {selectedStore.owned && selectedStore.publicationState !== "published" ? <View style={styles.card}>
           <Text style={styles.value}>تجهيز المتجر للنشر</Text>
           <BthwaniButton label="الانتقال إلى المنتجات" onPress={() => router.push("/products" as Href)} variant="secondary" />

@@ -144,6 +144,7 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
     ...(canWallet?[{label:"المحفظة",description:"متابعة الرصيد والتسويات المصرّح بها",icon:"wallet" as const,href:"/wallet" as Href}]:[]),
   ];
   const actions:MenuItem[]=[
+    ...(selectedStore?.owned?[{label:"إعدادات المتجر",icon:"edit" as const,href:"/store?section=settings" as Href}]:[]),
     ...(can("catalog")?[{label:"أدوات الكتالوج",icon:"cart" as const,href:"/products?panel=tools" as Href}]:[]),
     ...(can("promotions")?[{label:"العروض",icon:"offers" as const,section:"promotions" as const}]:[]),
     ...(selectedStore?.owned?[{label:"الموظفين",icon:"account" as const,href:"/employees" as Href},{label:"كباتن المتجر",icon:"deliveries" as const,section:"team" as const}]:[]),

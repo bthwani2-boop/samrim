@@ -105,3 +105,30 @@ Partner is one actor-facing workspace on mobile and web. Operator Partner Manage
 ## Current working boundary
 
 This reference is evidence only; it cannot activate Product capabilities. No external billing change is authorized by merely observing payment labels. Any subscription implementation must define Store-specific accepted versioned terms, period, invoice/retry/reversal/renewal, payment/settlement accounting, service authorization and independent finance review before release. Current Partner changes show existing agreement readback, correct partial catalog readiness, and tolerate unavailable Studio theme reads; they do not create subscription charges or change a real ledger.
+
+## 2026-11-01 settings-only Playwright census (read-only)
+
+A new Playwright tab in the owner's already-authenticated Edge session opened the settings index and its 11 linked pages. All navigation was GET-only; no settings were saved, paid tiers accessed, form submissions sent, or backend/private APIs inspected. The observations below supersede the earlier NOT_RUN label for **settings subpage navigation only**, not for functional or financial workflows.
+
+| Elleen page (OBSERVED) | UI capabilities observed | BThwani current owner and bounded adoption decision |
+| --- | --- | --- |
+| `/admin/settings/brand` | Store identity, image, store type, timezone, address and custom domain | DSH store record and existing store media; Partner settings and Operator store file already show relevant parts. New editable business contacts/branding need an owner-backed versioned contract, not a page-only field. |
+| `/admin/settings/contact` | Phone, email, hours, location, map link and social accounts | DSH onboarding/store availability currently owns location/hours; contact/social links require separately approved DSH source, privacy rules, public projection and Partner/Operator editors. **Not implemented here**. |
+| `/admin/settings/payment` | COD, direct bank transfer and named Yemen wallet providers | WLT and existing Finance policy/providing readback own actual payment options, wallet and settlements. Partner agreement is read-only on financial approvals. No new payment rail enabled by observing a label. |
+| `/admin/settings/currency` | Base currency, display precision/separators, multi-currency upsell | Retain current canonical YER financial semantics. Locale/format may be reused in shared design-system; do not let UI redefine monetary units or create FX/accounting claims. |
+| `/admin/settings/whatsapp` | WhatsApp enable and contact field | Potential Partner contact link only after owner-authenticated, validated number and customer privacy/disclosure. **No WhatsApp order bypass or implicit integration**. |
+| `/admin/settings/in-app-notifications` | Nine editable templates for loyalty, orders, stock, refunds and welcome | Existing DSH/Identity notification owners and Partner inbox. Customization must not disable mandatory notices, reveal other tenants or let arbitrary copy impersonate platform. Not implemented. |
+| `/admin/settings/seasonal-decorations` | Occasion, motion, color, per-page visibility and scheduling | Optional future Store presentation configuration. Existing Studio/design tokens govern platform visual language; keep reduced-motion and accessible content. Not implemented. |
+| `/admin/settings/refund` | Refund enable and policy | Existing order/WLT financial ownership. Cannot promise refund behavior without an approved order reversal, settlement and ledger contract. Not implemented. |
+| `/admin/settings/stock` | Stock switches, threshold fields, alerts | DSH catalog offers and inventory APIs currently handle stock state. Partner stockout filters and Operator inventory already exist/in development; threshold policy requires canonical DSH validation/events, not client-only toggles. |
+| `/admin/settings/seo` | Metadata, search keywords, pixels and Google analytics | Applicable only to authorized public store surfaces and privacy-consented analytics; not Partner administration pages. Not implemented. |
+| `/admin/settings/print` | Invoice, packing, thermal and refund document template choices | Derived from immutable order/finance snapshots. Screen and generated document would need consistent canonical amounts and approved document policy. Not implemented. |
+| Settings landing | Verification switches, WhatsApp orders, app center and redirect links | Avoid competitor's optional mobile-code bypass. Identity verification must fail safely. Backend functionality of app center/redirects remains UNVERIFIED. |
+
+### Settings delivery slice on this branch
+
+- Shared Partner mobile/web `/store?section=settings`: a DSH-authenticated **read-only** operational status/working-hours/preparation overview with explicit loading/error/retry and navigation to the existing versioned operations editor. Store identity/account scope is taken from the existing Partner authorized selector, not a caller-provided account.
+- Mobile More and web desktop sidebar: a direct Settings destination for the owning Partner. Existing agreement, store profile images and availability editor remain canonical, with no duplicate writer.
+- Operator `/partners` Store profile already owns authorized Store operational controls, identities and Partner/Finance links; this slice does not create a competing operator settings writer or navigation panel.
+- Backend: **existing** DSH contract and authenticated partner availability endpoint reused; **no new backend migration or payment/notification/identity bypass**, no data mutations performed by settings readback.
+- Follow-on capabilities above are proposals only, subject to the actual governed Product owner; they are not claimed as implemented.
