@@ -31,13 +31,13 @@ test("dispatch location remains availability-gated while mission tracking is sep
 });
 
 test("mission location recovery is explicit and independent of dispatch availability", () => {
-  const start = readiness.indexOf("async function requestMissionLocation()");
+  const start = readiness.indexOf("async function recoverPhoneLocation()");
   const end = readiness.indexOf("async function toggleBackground(", start);
   assert.ok(start > 0 && end > start);
   const recovery = readiness.slice(start, end);
   assert.match(recovery, /Location\.requestForegroundPermissionsAsync\(\)/);
   assert.doesNotMatch(recovery, /setCaptainAvailability|publishCaptainPresence/);
-  assert.match(readiness, /missionActive && !gpsReady \? <BthwaniButton/);
+  assert.match(readiness, /!gpsReady && \(missionActive \|\| \(!storeOnly && available\)\)/);
   assert.match(readiness, /!permission\.canAskAgain/);
   assert.match(readiness, /Linking\.openSettings\(\)/);
 });
@@ -58,4 +58,19 @@ test("confirmed availability change re-triggers the canonical GPS map gate", () 
   assert.match(home, /availabilityRevision=\{availabilityRevision\}/);
   assert.match(home, /onAvailabilityConfirmed=\{onAvailabilityConfirmed\}/);
   assert.match(opportunities, /void availabilityRevision/);
+});
+
+test("available Captain recovers GPS without changing canonical availability", () => {
+  const start = readiness.indexOf("async function recoverPhoneLocation()");
+  const end = readiness.indexOf("async function toggleBackground(", start);
+  assert.ok(start > 0 && end > start);
+  const recovery = readiness.slice(start, end);
+  assert.match(recovery, /missionActive \? !missionAssignmentId : !available/);
+  assert.match(recovery, /Location\.requestForegroundPermissionsAsync\(\)/);
+  assert.match(recovery, /Location\.enableNetworkProviderAsync\(\)/);
+  assert.match(recovery, /Linking\.openSettings\(\)/);
+  assert.doesNotMatch(recovery, /setCaptainAvailability|publishCaptainPresence/);
+  assert.match(readiness, /available && !gpsReady \? <BthwaniButton/);
+  assert.match(readiness, /!gpsReady && \(missionActive \|\| \(!storeOnly && available\)\)/);
+  assert.match(readiness, /onPress=\{\(\) => void recoverPhoneLocation\(\)\}/);
 });

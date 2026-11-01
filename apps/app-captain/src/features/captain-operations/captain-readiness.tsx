@@ -48,7 +48,7 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
   const [assignmentsUnknown, setAssignmentsUnknown] = useState(false);
   const [gpsReady, setGpsReady] = useState(false);
   const [locationSettingsNeeded, setLocationSettingsNeeded] = useState(false);
-  const [missionLocationBusy, setMissionLocationBusy] = useState(false);
+  const [locationRecoveryBusy, setLocationRecoveryBusy] = useState(false);
   const [backgroundConsent, setBackgroundConsent] = useState(false);
   const [backgroundBusy, setBackgroundBusy] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -225,26 +225,33 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
     }
   }
 
-  async function requestMissionLocation() {
-    if (!missionActive || !missionAssignmentId || !actorID || missionLocationBusy) return;
+  async function recoverPhoneLocation() {
+    // Recovery never toggles DSH availability or grants access to the public pool.
+    if (!actorID || locationRecoveryBusy || (missionActive ? !missionAssignmentId : !available)) return;
+    const forMission = missionActive;
     const requestedActor = actorID;
     const stillCurrentActor = () => {
       const state = currentIdentityState();
       return state.kind === "authenticated" && isCurrentCaptainActor(requestedActor, state.identity.subject.trim());
     };
-    setMissionLocationBusy(true);
+    setLocationRecoveryBusy(true);
     setError("");
     try {
-      // Mission tracking is independent of public-pool availability.
+      // Recovery never changes the server-confirmed availability or mission state.
       const permission = await Location.requestForegroundPermissionsAsync();
       if (!stillCurrentActor()) return;
       if (!permission.granted) {
         setGpsReady(false);
         if (!permission.canAskAgain) {
           setLocationSettingsNeeded(true);
-          setError("إذن موقع المهمة مرفوض. افتح إعدادات التطبيق للسماح بالموقع.");
+          setError(forMission
+            ? "إذن موقع المهمة مرفوض. افتح إعدادات التطبيق للسماح بالموقع."
+            : "إذن موقع التوزيع مرفوض. افتح إعدادات التطبيق للسماح بالموقع.");
+          await Linking.openSettings().catch(() => {});
         } else {
-          setError("اسمح بموقع الهاتف لتتبع مهمة التوصيل الحالية.");
+          setError(forMission
+            ? "اسمح بموقع الهاتف لتتبع مهمة التوصيل الحالية."
+            : "اسمح بموقع الهاتف لمواصلة التوفر واستقبال العروض.");
         }
         return;
       }
@@ -259,12 +266,16 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
       }
       if (!stillCurrentActor()) return;
       if (!(await refreshGps())) {
-        setError("فعّل موقع الهاتف ثم اضغط تشغيل موقع المهمة مجددًا.");
+        setError(forMission
+          ? "فعّل موقع الهاتف ثم اضغط تشغيل موقع المهمة مجددًا."
+          : "فعّل خدمات الموقع ثم اضغط استعادة الموقع مجددًا.");
       }
     } catch {
-      if (stillCurrentActor()) setError("تعذر تفعيل موقع المهمة. تحقق من إعدادات الموقع وحاول مجددًا.");
+      if (stillCurrentActor()) setError(forMission
+        ? "تعذر تفعيل موقع المهمة. تحقق من إعدادات الموقع وحاول مجددًا."
+        : "تعذر استعادة موقع التوزيع. تحقق من إعدادات الموقع وحاول مجددًا.");
     } finally {
-      setMissionLocationBusy(false);
+      setLocationRecoveryBusy(false);
     }
   }
 
@@ -315,9 +326,9 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
         disabled={backgroundBusy || !gpsReady} onValueChange={(enabled) => void toggleBackground(enabled)}
         trackColor={{ false: "#76818A", true: "#78D8A7" }} thumbColor={backgroundConsent ? "#087F46" : "#F9FAFB"} />
     </View> : null}
-    {missionActive && !gpsReady ? <BthwaniButton
-      label={missionLocationBusy ? "جارٍ طلب إذن الموقع..." : "تشغيل موقع المهمة"}
-      variant="secondary" disabled={missionLocationBusy} onPress={() => void requestMissionLocation()} /> : null}
+    {!gpsReady && (missionActive || (!storeOnly && available)) ? <BthwaniButton
+      label={locationRecoveryBusy ? "جارٍ استعادة الموقع..." : missionActive ? "تشغيل موقع المهمة" : "استعادة موقع التوزيع"}
+      variant="secondary" disabled={locationRecoveryBusy} onPress={() => void recoverPhoneLocation()} /> : null}
     {locationSettingsNeeded ? <BthwaniButton label="فتح إعدادات إذن الموقع" variant="secondary"
       onPress={() => void Linking.openSettings().catch(() => setError("تعذر فتح إعدادات التطبيق."))} /> : null}
     {storeOnly && !missionActive ? <Text style={{ color: "#FFFFFF", fontSize: 12 }}>طلبات المتجر تصل من التوصيلات، دون تفعيل توزيع بثواني العام.</Text> : null}
@@ -356,6 +367,9 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
         {available ? (gpsReady ? "موقع التوزيع يعمل." : "موقع الهاتف غير متاح؛ شغّل GPS لاستمرار استقبال العروض.")
           : "موقع التوزيع متوقف. سيطلب التطبيق تشغيل الموقع عند تفعيل التوفر."}
       </Text>
+      {available && !gpsReady ? <BthwaniButton
+        label={locationRecoveryBusy ? "جارٍ استعادة الموقع..." : "استعادة موقع التوزيع"}
+        variant="secondary" disabled={locationRecoveryBusy} onPress={() => void recoverPhoneLocation()} /> : null}
       {newOffersBlockedByDelivery ? <Text style={styles.muted}>أكمل التوصيل الحالي أو عالج تعثره من التوصيلات قبل استقبال طلب جديد.</Text> : null}
       {newOffersBlockedByUnknownWork ? <Text style={styles.muted}>تعذرت قراءة التوصيلات؛ أعد فتح الرئيسية للتحقق.</Text> : null}
       {!eligible ? <Text style={styles.muted}>يُفعّل التوفر بعد اعتماد الكابتن.</Text> : null}
