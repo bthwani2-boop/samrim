@@ -76,10 +76,33 @@ async function main() {
       const guest = await guestContext.newPage();
       await guest.goto("http://localhost:18102/products?filter=stockout",{waitUntil:"domcontentloaded",timeout:20000});
       await guest.waitForURL(url=>url.pathname==="/"&&url.searchParams.has("returnTo"),{timeout:15000});
+      assert.equal(new URL(guest.url()).searchParams.get("returnTo"),"/products?filter=stockout","GUEST_CATALOG_FILTER_RETURN_LOST");
       assert.equal(await guest.getByLabel("إدارة عروض المتجر").count(),0,"GUEST_CATALOG_LEAKED");
       console.log("CATALOG_GUEST_DEEP_LINK=PASS_AUTH_REDIRECT");
     } finally {
       await guestContext.close();
+    }
+    // The existing authenticated context must also honor only admitted return
+    // destinations. These are navigation-only checks, not login attempts.
+    const resumed = await context.newPage();
+    try {
+      const returnViaLogin = async value => {
+        await resumed.goto("http://localhost:18102/?returnTo="+encodeURIComponent(value),{
+          waitUntil:"domcontentloaded",timeout:20000
+        });
+        await resumed.waitForURL(url => url.pathname !== "/",{timeout:14000});
+        return new URL(resumed.url());
+      };
+      const allowed = await returnViaLogin("/products?filter=stockout");
+      assert.equal(allowed.pathname,"/products","POST_LOGIN_CATALOG_RETURN_FAILED");
+      assert.equal(allowed.searchParams.get("filter"),"stockout","POST_LOGIN_CATALOG_FILTER_LOST");
+      const denied = await returnViaLogin("//example.com/unsafe");
+      assert.equal(denied.pathname,"/orders","EXTERNAL_LOGIN_RETURN_NOT_REJECTED");
+      const extra = await returnViaLogin("/products?filter=stockout&redirect=//example.com");
+      assert.equal(extra.pathname,"/orders","UNADMITTED_LOGIN_QUERY_NOT_REJECTED");
+      console.log("PARTNER_RETURN_TO=PASS_AUTHENTICATED_AND_NEGATIVE");
+    } finally {
+      await resumed.close();
     }
     console.log("CATALOG_NAV=PASS "+JSON.stringify(result));
   } finally {

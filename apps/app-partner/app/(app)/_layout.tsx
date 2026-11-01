@@ -1,10 +1,11 @@
 import { useAppearanceTheme } from "@bthwani/design-system/native";
 import { AuthenticatedMobileBoundary } from "@bthwani/identity/presentation";
-import { type Href, Stack, usePathname, useRouter } from "expo-router";
+import { type Href, Stack, useGlobalSearchParams, usePathname, useRouter } from "expo-router";
 import { useCallback } from "react";
 import { Platform, useWindowDimensions } from "react-native";
 
 import { currentIdentityState, restoreIdentitySession, subscribeIdentitySession } from "../../src/bootstrap/identity";
+import { partnerReturnPath } from "../../src/features/access/partner-return-path";
 import { PartnerStoreScopeProvider } from "../../src/features/partner-onboarding/partner-store-scope-context";
 import { PartnerDesktopWorkspace } from "../../src/shell/partner-desktop-workspace";
 
@@ -13,9 +14,10 @@ const identity = { restoreIdentitySession, currentIdentityState, subscribe: subs
 export default function PartnerAppLayout() {
   const router = useRouter();
   const pathname = usePathname();
+  const { filter } = useGlobalSearchParams<{ filter?: string | string[] }>();
   const onUnauthenticated = useCallback(
-    () => router.replace(`/?returnTo=${encodeURIComponent(pathname)}` as Href),
-    [pathname, router],
+    () => router.replace(`/?returnTo=${encodeURIComponent(partnerReturnPath(pathname, filter))}` as Href),
+    [filter, pathname, router],
   );
 
   return (

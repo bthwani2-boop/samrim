@@ -2,6 +2,7 @@ import { ManagedIdentityFlow, resolveInternalReturnPath } from "@bthwani/identit
 import { BthwaniButton } from "@bthwani/design-system/native";
 import { View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { partnerReturnPathPattern } from "./partner-return-path";
 import { type Href, Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   activateManagedIdentity,
@@ -21,7 +22,7 @@ const identity = { role, surface, restoreIdentitySession, currentIdentityState, 
 export default function IdentityGate() {
   const { returnTo } = useLocalSearchParams<{ returnTo?: string | string[] }>();
   const router = useRouter();
-  const safeReturnTo = resolveInternalReturnPath(returnTo, "/orders", /^(?:\/store|\/notifications|\/orders|\/products|\/wallet|\/more|\/account|\/onboarding)$/u) as Href;
+  const safeReturnTo = resolveInternalReturnPath(returnTo, "/orders", partnerReturnPathPattern) as Href;
 
   return (
     <View style={{ flex: 1 }}>
