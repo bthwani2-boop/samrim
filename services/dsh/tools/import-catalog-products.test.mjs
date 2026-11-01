@@ -78,3 +78,38 @@ test("CSV import rejects quotes embedded in unquoted fields", async () => {
   assert.match(result.stderr, /CSV.*quote/i);
   assert.equal(result.requests.length, 0);
 });
+
+test("CSV import rejects duplicate column names rather than overwriting data", async () => {
+  const csv = header + ",canonicalName\nTea,grocery,SHARED,DISCRETE,COUNT,category-1,Bread\n";
+  const result = await runCsvImport(csv);
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /CSV.*(duplicate|header)/i);
+  assert.equal(result.requests.length, 0);
+});
+
+test("CSV import rejects a blank column heading", async () => {
+  const csv = header + ",\nTea,grocery,SHARED,DISCRETE,COUNT,category-1,unexpected\n";
+  const result = await runCsvImport(csv);
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /CSV.*header/i);
+  assert.equal(result.requests.length, 0);
+});
+
+test("CSV import rejects extra and missing cells instead of silently truncating them", async () => {
+  const extra = await runCsvImport(header + "\nTea,grocery,SHARED,DISCRETE,COUNT,category-1,unmapped\n");
+  assert.notEqual(extra.code, 0);
+  assert.match(extra.stderr, /CSV.*(column|field)/i);
+  assert.equal(extra.requests.length, 0);
+
+  const missing = await runCsvImport(header + "\nTea,grocery,SHARED,DISCRETE,COUNT\n");
+  assert.notEqual(missing.code, 0);
+  assert.match(missing.stderr, /CSV.*(column|field)/i);
+  assert.equal(missing.requests.length, 0);
+});
+
+test("CSV import recognizes a UTF-8 BOM on the first header", async () => {
+  const result = await runCsvImport("\uFEFF" + header + "\nTea,grocery,SHARED,DISCRETE,COUNT,category-1\n");
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.requests.length, 1);
+  assert.equal(result.requests[0].body.rows[0].canonicalName, "Tea");
+});

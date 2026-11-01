@@ -101,7 +101,15 @@ function readRows(file) {
     const records = parseCsvRecords(text);
     if (!records.length) return [];
     const header = records[0].values.map((value) => value.trim());
-    return records.slice(1).map((entry) => ({ line: entry.line, row: Object.fromEntries(header.map((name, index) => [name, entry.values[index] || ""])) }));
+    if (header.some((name) => !name) || new Set(header).size !== header.length) {
+      throw new Error("CSV header contains a blank or duplicate column name");
+    }
+    return records.slice(1).map((entry) => {
+      if (entry.values.length !== header.length) {
+        throw new Error(`CSV field count mismatch at line ${entry.line}: expected ${header.length}, received ${entry.values.length}`);
+      }
+      return { line: entry.line, row: Object.fromEntries(header.map((name, index) => [name, entry.values[index]])) };
+    });
   }
   return text.split(/\r?\n/).map((line, index) => ({ line: index + 1, value: line })).filter((entry) => entry.value.trim() && !entry.value.trim().startsWith("#")).map((entry) => {
     try { return { line: entry.line, row: JSON.parse(entry.value) }; } catch { throw new Error(`line ${entry.line}: invalid JSON`); }
