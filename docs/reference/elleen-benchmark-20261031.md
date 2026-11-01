@@ -340,3 +340,21 @@ Direct Playwright navigation in the user's existing authorized Elleen Edge accou
 - Durable read-only Playwright regression `apps/control-panel/tests/catalog-create-readonly.e2e.cjs` visited the authenticated operator product tab, clicked New, verified URL `mode=create`, canonical form fields, RTL, no document overflow, closed details and verified exit from create mode. **PASS at 1366px and 390px**, with no observed page error or same-origin 5xx. This is a *navigation/form-presence test*, not the full create/save/readback journey.
 
 **Next gates:** preserve distinct master-catalog and store-offer owners; future P06 proof must exercise authorized actual Store offer edit → DSH persistence → Client readback, including missing/out-of-stock and wrong-Store refusal. **P00 OPEN. P01 financial-runtime upgrade REVIEW_BLOCKED** pending independently reviewed v58→v60 preservation/restore evidence. The prior historical-commission UI repair stays PASS for the specifically tested Partner account and its native device; no unrestricted release certification.
+
+### P00 — EC01/EC02 Client discovery + RRDA UI pairing, 2026-11-02
+
+**Reference observation (Elleen public RRDA):** Playwright opened `https://rrda.elleen.ye/` in the owner's already-connected Edge context and read only the visible control tree. Observed Arabic RTL, separate search and category controls, product category links, storefront banners/slider and shopping navigation. This confirms UI affordances, **not** its search result ranking, customer account or checkout semantics; no cart, login, paid feature or transaction was touched.
+
+**BThwani Client actual readback:** The existing `http://localhost:18101/home` Edge context loaded publicly visible Store offers. Search requires the proper sequence **focus search → choose المنتجات → enter term**; an earlier probe that entered the term *before the header switched* gave an empty-search UI and is **INVALIDATED AS A BUG REPRODUCTION**. Repeating the proper user path produced one concrete matching product from a local published Store, with an offer price and available state rendered; neither IDs nor amounts were retained in the durable artifact. Clicking a visible Store reached its `/store/{...}` route and displayed real catalogue offers; no cart/favorite/checkout mutation. This is DSH-backed frontend readback, not proof of an Order or stock reservation.
+
+**Existing scenario reused:** `node apps/app-client/tests/client-discovery-browser.manual.mjs` completed `outcome: PASS` in a **fresh guest context** with:
+- positive product search, product/store no-match cases;
+- offline product-search error and retry recovery;
+- zero document horizontal overflow at widths `320`, `390`, `768`, `1280`;
+- guest add-to-cart and favorite authorization redirects (no business mutation);
+- account view and six protected route redirects.
+Its `guestStoreDetail` flag is **false**, not a passed guest Store-detail proof; do not silently count it.
+
+**Additional distinct proof:** `apps/app-client/tests/client-store-search-readonly.e2e.cjs` uses the **authorized local Client Edge context**, selects an observed Home offer by its accessible label, searches that exact product, verifies visible results, then navigates to a Store's public detail and sees Store-offer projections. It also proves RTL and no document overflow at widths `390` and `1366` without modifying data. Output: `CLIENT_PRODUCT_SEARCH=PASS_CURRENT_STORE_OFFER` and `CLIENT_STORE_PROJECTION=PASS_READONLY_RESPONSIVE`. This proves a different runtime state than the existing isolated guest test and does not replace it.
+
+**Product distinction:** Elleen's e-commerce category/search presentation is a reference UX pattern; BThwani's city-scoped stores and DSH Store offers are a different contract. Do not infer approval for external payment providers, price copying, global inventory or cart mutations from screenshot parity. Replica Diff `EC01`/`EC02` rows remain `partial`: reference behavioral result parity, IDOR, offer mutation → Client projection, checkout and error recovery across actors are not all proven. P00 remains OPEN.
