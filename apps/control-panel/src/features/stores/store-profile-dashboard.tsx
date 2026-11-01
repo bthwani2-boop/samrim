@@ -9,6 +9,7 @@ import { createPortal } from "react-dom";
 import { useAdaptiveRecordView } from "../../shell/adaptive-record-workspace";
 import { OperationalIcon, type OperationalIconName } from "../../shell/workspace-icon";
 import { StoreImageEditor } from "./store-image-editor";
+import { StoreInventorySummary } from "./store-inventory-summary";
 import { PublicationIndicator } from "./store-indicators";
 import { StoreLogo } from "./store-logo";
 import { StoreModeControls } from "./store-mode-controls";
@@ -139,6 +140,7 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
       </details> : null}
     </section>
 
+    <StoreInventorySummary storeId={store.id} onOpenCatalog={() => selectTab("catalog")} />
     <div className="store-profile-content store-sheet-dashboard">
       <div className="store-profile-information"><ProfileCard title="بيانات المتجر" icon="⌂">
         <dl className="store-profile-facts">

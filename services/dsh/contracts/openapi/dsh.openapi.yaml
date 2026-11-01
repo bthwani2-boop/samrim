@@ -315,6 +315,9 @@ paths:
   /dsh/operator/stores/{storeId}/offers:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1offers"
 
+  /dsh/operator/stores/{storeId}/inventory-summary:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1inventory-summary"
+
   /dsh/operator/stores/{storeId}/offers/{offerId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1offers~1{offerId}"
 
@@ -357,6 +360,9 @@ paths:
 
   /dsh/stores/{storeId}/offers:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1offers"
+
+  /dsh/stores/{storeId}/inventory-summary:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1inventory-summary"
 
   /dsh/stores/{storeId}/catalog/imports/preview:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1catalog~1imports~1preview"
@@ -4671,6 +4677,43 @@ components:
             $ref: "#/components/schemas/CatalogStoreOffer"
         nextCursor:
           type: string
+
+    CatalogInventorySummary:
+      type: object
+      required: [storeId, totalOffers, publishedOffers, availableOffers, unavailableOffers, stockoutOffers]
+      additionalProperties: false
+      description: Canonical whole-Store offer counts; not Store operating availability or delivery serviceability.
+      properties:
+        storeId:
+          type: string
+        totalOffers:
+          type: integer
+          format: int64
+          minimum: 0
+        publishedOffers:
+          type: integer
+          format: int64
+          minimum: 0
+        availableOffers:
+          type: integer
+          format: int64
+          minimum: 0
+        unavailableOffers:
+          type: integer
+          format: int64
+          minimum: 0
+        stockoutOffers:
+          type: integer
+          format: int64
+          minimum: 0
+
+    CatalogInventorySummaryResponse:
+      type: object
+      required: [summary]
+      additionalProperties: false
+      properties:
+        summary:
+          $ref: "#/components/schemas/CatalogInventorySummary"
 
     CommerceVertical:
       type: object
