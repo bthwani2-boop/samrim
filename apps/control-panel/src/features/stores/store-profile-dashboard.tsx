@@ -111,7 +111,8 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
       basics: "identity", branches: "identity", coverage: "identity", customers: "quality",
       ratings: "quality", history: "documents" } as Record<string, string>)[tab] ?? tab;
     setActiveTab(group);
-    if (group !== "overview") recordView?.expandForEditing();
+    // Customer activity is read-only: expanding would remount the split record panel and reset this tab.
+    if (group !== "overview" && group !== "quality") recordView?.expandForEditing();
     document.querySelector(".adaptive-record-sheet .workspace-side-drawer-scroll")?.scrollTo({ top: 0, behavior: "smooth" });
   };
   const tabs: ReadonlyArray<readonly [string, string]> = [
