@@ -6,6 +6,7 @@ import { ActivityIndicator, AppState, StyleSheet, Text, View } from "react-nativ
 
 import { currentIdentityState } from "../../bootstrap/identity";
 import { hasReviewableStoreAgreementRates, isConfirmedOwnStoreAgreementAcceptance } from "./store-agreement-acceptance-readback";
+import { agreementReadbackErrorMessage, agreementStatusLabel } from "./store-agreement-readiness";
 import {
   acceptOwnStoreCommercialAgreement,
   newStoreAgreementMutationKeys,
@@ -39,18 +40,6 @@ function modeLabel(mode: string): string {
     case "PARTNER_CAPTAIN": return "توصيل المتجر";
     case "CUSTOMER_PICKUP": return "الاستلام من المتجر";
     default: return mode;
-  }
-}
-
-function statusLabel(status: string): string {
-  switch (status) {
-    case "PROPOSED": return "بانتظار قبول مالك المتجر";
-    case "PARTNER_ACCEPTED": return "قُبلت من المالك · بانتظار اعتماد المالية";
-    case "ACTIVE": return "سارية";
-    case "FINANCE_REJECTED":
-    case "REJECTED": return "مرفوضة";
-    case "SUPERSEDED": return "استُبدلت باتفاق أحدث";
-    default: return `الحالة: ${status}`;
   }
 }
 
@@ -154,9 +143,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
       return currentAgreements;
     } catch (cause) {
       if (isCurrent()) {
-        setError(cause instanceof Error && cause.message === "DSH_BASE_URL_REQUIRED"
-          ? "تعذر الاتصال بخدمة الاتفاقيات."
-          : "تعذر قراءة اتفاقيات المتجر أو التحقق من ملكيتها. أعد المحاولة.");
+        setError(agreementReadbackErrorMessage(cause));
       }
       return null;
     } finally {
@@ -272,9 +259,10 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
           <View key={agreement.agreementId} style={styles.agreement}>
             <View style={styles.agreementHeading}>
               <Text style={styles.agreementTitle}>الاتفاقية التجارية</Text>
-              <Text accessibilityRole="text" style={[styles.status, agreement.status === "ACTIVE" ? styles.active : agreement.status.includes("REJECT") ? styles.rejected : styles.pending]}>{statusLabel(agreement.status)}</Text>
+              <Text accessibilityRole="text" style={[styles.status, agreement.status === "ACTIVE" ? styles.active : agreement.status.includes("REJECT") ? styles.rejected : styles.pending]}>{agreementStatusLabel(agreement)}</Text>
             </View>
             <Text style={styles.muted}>النموذج التجاري: {agreement.commercialModel === "COMMISSION" ? "عمولة" : agreement.commercialModel === "SUBSCRIPTION" ? "اشتراك" : "اشتراك وعمولة"}</Text>
+            {agreement.historicalCommissionReadback ? <Text style={styles.muted}>هذه اتفاقية عمولة قديمة تُعرض للتوثيق والمتابعة فقط؛ لا تنشئ فوترة اشتراك أو تغييرًا في الشروط.</Text> : null}
             {agreement.commercialModel !== "COMMISSION" ? <>
               <Text selectable style={styles.rateValue}>الرسوم الدورية: {agreement.recurringAmountMinor.toLocaleString("ar-YE-u-nu-latn")} ريال يمني · {agreement.billingPeriod === "MONTHLY" ? "شهريًا" : "سنويًا"}</Text>
               <Text style={styles.muted}>استحقاق الفاتورة: {agreement.invoiceDueDays} يوم · السماح: {agreement.graceDays} يوم · التجديد: {agreement.renewalPolicy === "MANUAL" ? "يدوي" : "تلقائي"}</Text>

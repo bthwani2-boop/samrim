@@ -6,7 +6,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { currentIdentityState } from "../../bootstrap/identity";
-import { agreementReadinessMessage, ownStoreAgreementReadiness, type StoreAgreementReadback } from "../partner-onboarding/store-agreement-readiness";
+import { agreementReadbackErrorMessage, agreementReadinessMessage, ownStoreAgreementReadiness, type StoreAgreementReadback } from "../partner-onboarding/store-agreement-readiness";
 import { readOwnStoreCommercialAgreements } from "../partner-onboarding/store-commercial-agreement-client";
 import { usePartnerStoreScope } from "../partner-onboarding/partner-store-scope-context";
 import { PartnerStoreScopeSelector } from "../partner-onboarding/partner-store-scope-selector";
@@ -16,7 +16,9 @@ type AccountReadback = Readonly<{
   scope: string;
   joining: string;
   agreement: StoreAgreementReadback;
+  agreementFailure: string | null;
   joiningError: boolean;
+  joiningMatchesStore: boolean;
 }>;
 
 function AccountLink({ label, description, icon, href }: Readonly<{
@@ -72,8 +74,10 @@ export function PartnerAccountEssentials({ showStoreSelector = false }: Readonly
         joining: sameStore ? joiningCaseStateLabel(caseValue.state) :
           caseValue ? "حالة هذا المتجر غير متاحة من ملف الانضمام الأول" : "تعذر قراءة حالة ملف الانضمام",
         joiningError: joining.status === "rejected",
+        joiningMatchesStore: sameStore,
         agreement: agreement.status === "fulfilled" ?
           ownStoreAgreementReadiness(agreement.value, storeId, actor) : "UNAVAILABLE",
+        agreementFailure: agreement.status === "rejected" ? agreementReadbackErrorMessage(agreement.reason) : null,
       });
     });
     return () => { active = false; };
@@ -82,21 +86,23 @@ export function PartnerAccountEssentials({ showStoreSelector = false }: Readonly
   const current = readback?.scope === scope ? readback : null;
   const joiningDescription = !owner ? "هذه البيانات متاحة لمالك المتجر فقط" :
     current ? current.joining : "جارٍ التحقق من ملف الانضمام";
-  const agreementDescription = current ? agreementReadinessMessage(current.agreement) : "جارٍ التحقق من الاتفاقية";
+  const agreementDescription = current ? current.agreementFailure ?? agreementReadinessMessage(current.agreement) : "جارٍ التحقق من الاتفاقية";
 
   return <View style={styles.section} accessibilityLabel="خدمات حساب الشريك">
     <Text accessibilityRole="header" style={styles.title}>حسابي · خدمات المتجر</Text>
     <Text style={styles.helper}>البيانات من ملف الانضمام والاتفاقية والمحفظة المعتمدة، وتختلف حسب المتجر وصلاحيات الحساب.</Text>
     {showStoreSelector && stores.length > 1 ? <PartnerStoreScopeSelector /> : null}
+    {state.kind === "loading" ? <Text style={styles.helper}>جارٍ التحقق من المتاجر المتاحة...</Text> : null}
     {state.kind === "error" ? <Text accessibilityRole="alert" style={styles.notice}>تعذر تحميل المتاجر؛ أعد المحاولة من مساحة العمل.</Text> : null}
-    {!selectedStore ? <AccountLink label="طلب انضمام متجر" icon="store"
+    {!selectedStore && state.kind === "ready" ? <AccountLink label="طلب انضمام متجر" icon="store"
       description="متابعة الانضمام وبيانات النشاط" href={"/onboarding" as Href} /> : null}
     {selectedStore ? <>
       <Text style={styles.storeLabel}>{selectedStore.name}</Text>
       {owner ? <>
-        <AccountLink label="ملف الانضمام والمراجعة" icon="store" description={joiningDescription}
-          href={"/onboarding" as Href} />
-        <AccountLink label="الاتفاقية التجارية" icon="account" description={agreementDescription}
+        {current?.joiningMatchesStore ? <AccountLink label="ملف الانضمام للمتجر الأول" icon="store"
+          description={joiningDescription} href={"/onboarding" as Href} /> : null}
+        <AccountLink label="ملف المتجر والاتفاقية التجارية" icon="account"
+          description={agreementDescription}
           href={{ pathname: "/store", params: { section: "settings", returnTo: "account" } } as Href} />
         {current?.joiningError || current?.agreement === "UNAVAILABLE" ? <View style={styles.noticePanel}>
           <Text accessibilityRole="alert" style={styles.notice}>تعذر التحقق من بعض حالات الحساب؛ لم تُفترض الموافقة أو التفعيل.</Text>

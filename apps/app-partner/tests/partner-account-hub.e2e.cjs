@@ -6,7 +6,12 @@ async function inspect(page, width) {
   await page.goto("http://localhost:18102/account", { waitUntil: "domcontentloaded", timeout: 25000 });
   await page.waitForFunction(() => {
     const text = document.body.innerText || "";
-    return text.includes("حسابي · خدمات المتجر") || text.includes("تعذر التحقق") || location.pathname === "/";
+    const settled = text.includes("طلب انضمام متجر") ||
+      text.includes("ملف المتجر والاتفاقية التجارية") ||
+      text.includes("إدارة ملف الانضمام والاتفاقية التجارية محفوظة لمالك المتجر") ||
+      text.includes("تعذر تحميل المتاجر");
+    return (text.includes("حسابي · خدمات المتجر") && settled) ||
+      text.includes("تعذر التحقق") || location.pathname === "/";
   }, { timeout: 12000 }).catch(() => {});
   return page.evaluate(() => {
     const text = document.body.innerText || "";
@@ -16,9 +21,13 @@ async function inspect(page, width) {
       width: innerWidth,
       hasHub: text.includes("حسابي · خدمات المتجر"),
       hasAccountPreferences: text.includes("الحساب والتفضيلات"),
-      hasJoining: text.includes("ملف الانضمام والمراجعة") || text.includes("طلب انضمام متجر"),
-      hasAgreement: text.includes("الاتفاقية التجارية"),
+      hasJoining: text.includes("ملف الانضمام للمتجر الأول") || text.includes("طلب انضمام متجر"),
+      hasAgreement: text.includes("ملف المتجر والاتفاقية التجارية"),
+      agreementUnavailable: /بيانات الاتفاقية الواردة من الخدمة غير مكتملة|تعذر التحقق من الاتفاقية|خدمة الاتفاقيات غير متاحة/.test(text),
       hasWallet: text.includes("المحفظة والتسويات"),
+      delegate: text.includes("إدارة ملف الانضمام والاتفاقية التجارية محفوظة لمالك المتجر"),
+      scopeBlocked: text.includes("تعذر تحميل المتاجر"),
+      scopeLoading: text.includes("جارٍ التحقق من المتاجر المتاحة"),
       hasVisibleError: /TransformError|SyntaxError|Unable to resolve|Internal Server Error/.test(text),
       authBlocked: text.includes("تعذر التحقق") || location.pathname === "/",
       overflow: document.documentElement.scrollWidth > innerWidth + 2,
@@ -38,7 +47,10 @@ async function run() {
     for (const width of [1360, 390]) {
       const result = await inspect(page, width);
       console.log("ACCOUNT_VIEWPORT " + JSON.stringify(result));
-      if (result.authBlocked) { console.log("ACCOUNT_E2E=BLOCKED_AUTH"); process.exitCode=2; return; }
+      if (result.authBlocked || result.scopeBlocked || result.scopeLoading) {
+        console.log("ACCOUNT_E2E=BLOCKED_AUTH_OR_STORE_SCOPE"); process.exitCode=2; return;
+      }
+      assert.ok(result.hasJoining || result.hasAgreement || result.delegate, "STORE_SCOPE_HAS_NO_ACCESSIBLE_OUTCOME");
       assert.equal(result.pathname, "/account");
       assert.equal(result.rtl, "rtl");
       assert.ok(result.hasHub);
@@ -48,6 +60,9 @@ async function run() {
       if (result.hasAgreement) {
         const link = page.getByRole("button", { name: /الاتفاقية التجارية/ }).first();
         assert.ok(await link.count(), "AGREEMENT_LINK_NOT_ACCESSIBLE");
+        if (result.agreementUnavailable) {
+          console.log("ACCOUNT_AGREEMENT_READBACK=BLOCKED_CANONICAL_READ"); process.exitCode=2; return;
+        }
       }
       if (result.hasWallet) {
         const link = page.getByRole("button", { name: /المحفظة والتسويات/ }).first();

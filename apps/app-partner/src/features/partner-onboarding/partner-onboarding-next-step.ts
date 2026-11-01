@@ -38,7 +38,13 @@ export function nextStoreSetupFocus(facts: StoreSetupFacts): StoreSetupFocus | n
   }
   if (facts.ownsStore) {
     if (facts.agreement === "AWAITING_FINANCE") {
-      return { title: "بانتظار اعتماد المالية", detail: "تم قبول الاتفاقية. لا يلزم تقديم قبول جديد؛ أكمل بقية الإعدادات أثناء المراجعة.", href: null };
+      return { title: "بانتظار اعتماد المالية", detail: "تم قبول اتفاقية العمولة. لا يلزم تقديم قبول جديد؛ أكمل بقية الإعدادات أثناء المراجعة.", href: null };
+    }
+    if (facts.agreement === "SUBSCRIPTION_PENDING_BILLING") {
+      return { title: "الاشتراك غير قابل للتفعيل حاليًا", detail: "قُبلت الشروط، لكن لا تبدأ الفوترة أو التحصيل قبل اكتمال نظام الفوترة والتسويات والمراجعة المستقلة.", href: null };
+    }
+    if (facts.agreement === "RETIRED_MODEL") {
+      return { title: "الاتفاقية السابقة تتطلب معالجة", detail: "النموذج المختلط ملغى للمقترحات الجديدة؛ تواصل مع قسم الشركاء للمراجعة دون تغيير الاتفاق تلقائيًا.", href: null };
     }
     if (facts.agreement === "NOT_ACTIVE") {
       return { title: "بانتظار مقترح الاتفاقية", detail: "يتولى قسم الشركاء إعداد الشروط التجارية. لا تنشأ اتفاقية تلقائيًا.", href: null };
