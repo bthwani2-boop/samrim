@@ -193,11 +193,11 @@ export async function listOperatorStores(state: string, search: string, serviceC
 	return (await requestDshJson<OperatorStoreListResponse>(dshOperationPaths.listOperatorStores.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export async function readOperatorHomeAnalytics(context: DshOperatorReadContext): Promise<import("@bthwani/dsh").OperatorHomeAnalytics> {
+export async function readOperatorHomeAnalytics(context: DshOperatorReadContext, period: "7d" | "30d" = "7d"): Promise<import("@bthwani/dsh").OperatorHomeAnalytics> {
   if (!context.operatorActorId.trim()) throw new Error("DSH_OPERATOR_ANALYTICS_ACTOR_REQUIRED");
   return (await requestDshJson<import("@bthwani/dsh").OperatorHomeAnalytics>(
     dshOperationPaths.readOperatorHomeAnalytics.method,
-    dshOperationPaths.readOperatorHomeAnalytics.path,
+    `${dshOperationPaths.readOperatorHomeAnalytics.path}?period=${period}`,
     undefined,
     { "X-Acting-Actor-ID": context.operatorActorId.trim() },
   )).payload;

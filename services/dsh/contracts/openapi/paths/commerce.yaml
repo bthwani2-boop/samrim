@@ -1290,15 +1290,22 @@ paths:
   /dsh/operator/home-analytics:
     get:
       operationId: readOperatorHomeAnalytics
-      summary: Last seven Asia/Aden calendar days of orders created and their current statuses
+      summary: Last seven or thirty Asia/Aden calendar days of orders created and their current statuses
       description: Operator operations permission is required. Each count is across all orders created on that date, irrespective of pagination. Status is current at read time, not a historical daily snapshot.
       security:
         - serviceBearer: []
       parameters:
         - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [7d, 30d]
+            default: 7d
       responses:
         "200":
-          description: All seven dates including empty days from one PostgreSQL snapshot.
+          description: All seven or thirty dates including empty days from one PostgreSQL snapshot.
           content:
             application/json:
               schema:

@@ -9700,7 +9700,8 @@ components:
         days:
           type: array
           minItems: 7
-          maxItems: 7
+          maxItems: 30
+          description: Exactly 7 or 30 contiguous Asia/Aden dates depending on the period query.
           items:
             $ref: "#/components/schemas/OperatorHomeDailyOrders"
         measuredAt:
