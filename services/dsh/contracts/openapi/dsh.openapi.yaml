@@ -216,6 +216,12 @@ paths:
   /dsh/catalog/products:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products"
 
+  /dsh/operator/catalog-activity:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1operator~1catalog-activity"
+
+  /dsh/stores/{storeId}/catalog-activity:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1catalog-activity"
+
   /dsh/catalog/product-registry:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1product-registry"
 
@@ -3429,6 +3435,50 @@ components:
         nextCursor:
           type: string
           maxLength: 2048
+
+    CatalogActivityItem:
+      type: object
+      required: [id, kind, action, actorId, subject, entityId, storeId, at, version]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [product, offer]
+        action:
+          type: string
+          enum: [created, updated, migrated]
+        actorId:
+          type: string
+        subject:
+          type: string
+        entityId:
+          type: string
+        storeId:
+          type: string
+        at:
+          type: string
+          format: date-time
+        version:
+          type: integer
+        fromState:
+          type: string
+        toState:
+          type: string
+        priceMinor:
+          type: integer
+        previousPriceMinor:
+          type: integer
+    CatalogActivityPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogActivityItem"
+        nextCursor:
+          type: string
 
     CatalogProductRegistryItem:
       type: object
