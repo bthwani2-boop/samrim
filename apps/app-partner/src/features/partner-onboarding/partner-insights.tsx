@@ -5,7 +5,7 @@ import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
-import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { usePartnerStoreScope } from "./partner-store-scope-context";
 import { isOfferStockout } from "../store-offer/inventory-stockout";
 import { PartnerPerformanceReport } from "./partner-performance-reports";
@@ -72,15 +72,23 @@ export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: bool
     const base = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
     if (!base) { setLoading(false); return; }
     const api = createDshMobileClient(base, { cryptoRandomUUID: () => Crypto.randomUUID() });
+    const identity = currentIdentityState();
+    const actorID = identity.kind === "authenticated" ? identity.identity.subject.trim() : "";
+    const stillCurrent = () => {
+      const latest = currentIdentityState();
+      return active && Boolean(actorID) && latest.kind === "authenticated" && latest.identity.subject.trim() === actorID;
+    };
+    if (!actorID) { setLoading(false); return () => { active = false; }; }
     const read = async () => {
       const token = await getUsableIdentityAccessToken();
+      if (!stillCurrent()) return;
       const [orderResult, productResult, promotionResult, financeResult] = await Promise.allSettled([
         orders ? api.listPartnerOrders(token, { storeIds: [store.id], limit: 1 }) : Promise.resolve(null),
         catalog ? api.readOwnStoreOffers(token, store.id, 100) : Promise.resolve(null),
         api.listPublicPromotions(store.serviceCityId, store.id),
         store.owned ? api.readOwnPartnerFinancialSummary(token) : Promise.resolve(null),
       ]);
-      if (!active) return;
+      if (!stillCurrent()) return;
       const o = orderResult.status === "fulfilled" ? orderResult.value : null;
       const p = productResult.status === "fulfilled" ? productResult.value : null;
       const promo = promotionResult.status === "fulfilled" ? promotionResult.value : null;
@@ -96,7 +104,7 @@ export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: bool
       });
       setLoading(false);
     };
-    void read().catch(() => { if (active) setLoading(false); });
+    void read().catch(() => { if (stillCurrent()) setLoading(false); });
     return () => { active = false; };
   }, [selectedStore, embedded, reportView]));
   const metric = (label: string, value: string, icon: "orders" | "cart" | "wallet" | "store", href?: Href) =>
