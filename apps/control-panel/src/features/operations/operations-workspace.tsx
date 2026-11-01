@@ -446,7 +446,7 @@ export function OperationsWorkspace() {
           role="alert"
           type="warning"
           showIcon
-          message={errorStatus === 403 ? "لا تملك صلاحية قراءة الطلبات" : "تعذر قراءة الطلبات"}
+          title={errorStatus === 403 ? "لا تملك صلاحية قراءة الطلبات" : "تعذر قراءة الطلبات"}
           description={error}
           action={<Button disabled={loading} onClick={() => void load(true)}>إعادة المحاولة</Button>}
         />
@@ -457,7 +457,7 @@ export function OperationsWorkspace() {
           type="warning"
           showIcon
           role="status"
-          message={`${overdueOnPage.toLocaleString("ar-YE")} طلب متأخر أو متعثر في الصفحة الحالية.`}
+          title={`${overdueOnPage.toLocaleString("ar-YE")} طلب متأخر أو متعثر في الصفحة الحالية.`}
           action={<Button onClick={() => setPageReviewFilter("overdue")}>عرض المتأخرة في الصفحة</Button>}
         />
       ) : null}
