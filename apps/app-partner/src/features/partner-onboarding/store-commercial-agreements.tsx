@@ -226,7 +226,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
         reason: attempt.reason,
       }, attempt.idempotencyKey, attempt.correlationID);
       if (activeScope.current !== storageKey) return;
-      const expected = { storeID, actorID, agreementID: attempt.agreementId, expectedVersion: attempt.expectedAgreementVersion };
+      const expected = { storeID, actorID, agreementID: attempt.agreementId, expectedVersion: attempt.expectedAgreementVersion, reviewedAgreement: agreement };
       if (!isConfirmedOwnStoreAgreementAcceptance(accepted, expected)) {
         throw new Error("PARTNER_ACCEPTANCE_READBACK_MISMATCH");
       }
