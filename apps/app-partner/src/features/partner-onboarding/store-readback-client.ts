@@ -1,4 +1,5 @@
 import { type CommerceVertical, type CommercialStoreType, type CorrectJoiningCaseRequest, createDshMobileClient, type DshImageUploadInput, type JoiningCaseResponse, type MediaProvenanceInput, type PartnerAccessibleStorePage, type PartnerStoreOperationalAvailabilityMutationResponse, type PartnerStoreOperationalAvailabilityResponse, type ServiceCity, type StoreAccessGrantListResponse, type StoreAccessGrantMutationResponse, type StoreAccessGrantPermissionsRequest, type StoreAccessGrantTransitionRequest, type StoreAccessInvitationCreateRequest, type StoreAccessInvitationDecisionRequest, type StoreAccessPermission, type StoreCaptainInvitationResponse, type StoreCaptainMembershipListResponse, type StoreCaptainMembershipResponse, type StoreCaptainMembershipTransitionRequest, type StoreOperationalAvailabilityRequest } from "@bthwani/dsh";
+import type { CatalogActivityPage } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { partnerCorrectionIdentityPayload } from "./partner-correction-recovery";
@@ -28,6 +29,11 @@ export async function readOwnJoiningCase(): Promise<JoiningCaseResponse> {
 export async function listPartnerAccessibleStores(cursor = ""): Promise<PartnerAccessibleStorePage> {
   const token = await accessToken();
   return dshClient().listPartnerAccessibleStores(token, 50, cursor);
+}
+
+export async function listOwnStoreCatalogActivity(storeID: string, filters: Readonly<{ q?: string; action?: string; from?: string; to?: string; limit?: number; cursor?: string }> = {}): Promise<CatalogActivityPage> {
+  const token = await accessToken();
+  return dshClient().listPartnerStoreCatalogActivity(token, storeID, filters);
 }
 
 export async function listOwnStoreAccessGrants(storeID: string): Promise<StoreAccessGrantListResponse> {

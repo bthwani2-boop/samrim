@@ -145,7 +145,7 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
   ];
   const actions:MenuItem[]=[
     ...(selectedStore?.owned?[{label:"إعدادات المتجر",icon:"edit" as const,href:"/store?section=settings" as Href}]:[]),
-    ...(can("catalog")?[{label:"أدوات الكتالوج",icon:"cart" as const,href:"/products?panel=tools" as Href}]:[]),
+    ...(can("catalog")?[{label:"أدوات الكتالوج",icon:"cart" as const,href:"/products?panel=tools" as Href},{label:"سجل تغييرات العروض",icon:"cart" as const,href:"/activity" as Href}]:[]),
     ...(can("promotions")?[{label:"العروض",icon:"offers" as const,section:"promotions" as const}]:[]),
     ...(selectedStore?.owned?[{label:"الموظفين",icon:"account" as const,href:"/employees" as Href},{label:"كباتن المتجر",icon:"deliveries" as const,section:"team" as const}]:[]),
     {label:"الإشعارات",icon:"notifications" as const,href:"/notifications" as Href},

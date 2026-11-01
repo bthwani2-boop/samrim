@@ -23,6 +23,8 @@ export function PartnerStoreSettingsOverview({ storeID }: Readonly<{ storeID: st
   const [retry, setRetry] = useState(0);
 
   useFocusEffect(useCallback(() => {
+    // Retry explicitly re-reads DSH state for the same Store.
+    void retry;
     let active = true;
     setState({ kind: "loading" });
     void readOwnStoreOperationalAvailability(storeID)
