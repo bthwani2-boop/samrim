@@ -64,6 +64,10 @@ func NewStoreAccess(identity *identityintegration.Client, operatorServiceToken s
 
 func (s *StoreAccessServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/partner/stores", s.listAccessibleStores)
+	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/contact", s.readStorePublicContactForPartner)
+	mux.HandleFunc("PUT /dsh/partner/stores/{storeId}/contact", s.updateStorePublicContactForPartner)
+	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/contact", s.readStorePublicContactForOperator)
+	mux.HandleFunc("GET /dsh/public/stores/{storeId}/contact", s.readPublishedStorePublicContact)
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/access", s.listForOwner)
 	mux.HandleFunc("POST /dsh/partner/stores/{storeId}/access/invitations", s.createForOwner)
 	mux.HandleFunc("PATCH /dsh/partner/stores/{storeId}/access/{grantId}", s.transitionForOwner)

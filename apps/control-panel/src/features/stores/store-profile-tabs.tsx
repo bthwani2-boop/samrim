@@ -13,6 +13,7 @@ import { StoreModeControls } from "./store-mode-controls";
 import { StoreOperationsPreview } from "./store-operations-preview";
 import { joiningCaseIsoWeekdayLabels as intakeWeekdays } from "../partner-onboarding/joining-case-weekdays";
 import { StoreProfileDetailPanels } from "./store-profile-detail-panels";
+import { StorePublicContactSummary } from "./store-public-contact-summary";
 import { StoreCommercialAgreementProposal } from "../partner-onboarding/store-commercial-agreement-proposal";
 import { useSession } from "../../session/session-provider";
 import { PartnerTeamWorkspace } from "../partners/partner-team-workspace";
@@ -94,6 +95,7 @@ export function StoreProfileTabs({
           </dl>
           <button type="button" className="button button-secondary" onClick={openManagement}>تعديل بيانات المتجر</button>
         </Card>
+        <StorePublicContactSummary key={store.id + ":contact"} storeId={store.id} />
         <Card title="الشريك والاعتمادات">
           <dl className="store-profile-facts">
             <Fact title="مالك المتجر">
