@@ -36,6 +36,21 @@ func TestPartnerActivityRejectsMissingSessionAndForgedActor(t *testing.T) {
 	}
 }
 
+func TestPartnerActivityRejectsStoreAndKindScopeOverrides(t *testing.T) {
+	s := &CatalogServer{}
+	for _, raw := range []string{"?storeId=another-store", "?kind=product", "?storeId=another-store&kind=offer"} {
+		t.Run(raw, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/dsh/stores/store-one/catalog-activity"+raw, nil)
+			req.Header.Set("Authorization", "Bearer valid-shape-token")
+			rec := httptest.NewRecorder()
+			s.listPartnerCatalogActivity(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("scope override accepted (%s): status=%d body=%s", raw, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestCatalogActivityFilterBounds(t *testing.T) {
 	for _, raw := range []string{"?limit=0", "?limit=99", "?action=delete", "?kind=admin", "?cursor=" + strings.Repeat("a", 2049), "?q=" + strings.Repeat("x", 121)} {
 		rec := httptest.NewRecorder()
