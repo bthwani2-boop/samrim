@@ -62,11 +62,14 @@ export function PolicyQuickPeek({ policy, preview, position, containerRef, onClo
     if (typeof position.top === "number") element.style.top = `${position.top}px`;
     if (typeof position.width === "number") element.style.width = `${position.width}px`;
   }, [position, containerRef]);
-  const hasList = policy.list !== null || policy.owner === "WLT";
+  // Store Type commission suggestions have a scoped read, not an aggregate registry.
+  const hasList = policy.list !== null || (policy.owner === "WLT" && policy.key !== "store-type-commission-defaults");
+  const hasHistory = policy.key !== "store-type-commission-defaults";
   const [history,setHistory]=useState<readonly OperatorPolicyChange[]>([]);
   const [historyState,setHistoryState]=useState<"loading"|"ready"|"error"|"restricted">("loading");
   const [expanded,setExpanded]=useState(false);
   useEffect(()=>{
+    if (!hasHistory) return;
     if(preview?.kind==="restricted"){setHistoryState("restricted");return;}
     const controller=new AbortController();
     setHistoryState("loading");setExpanded(false);
@@ -77,7 +80,7 @@ export function PolicyQuickPeek({ policy, preview, position, containerRef, onClo
       if(!controller.signal.aborted){setHistory(body.items);setHistoryState("ready");}
     }).catch(()=>{if(!controller.signal.aborted)setHistoryState("error");});
     return ()=>controller.abort();
-  },[policy.key,preview?.kind]);
+  },[policy.key,preview?.kind,hasHistory]);
   return <div className="policy-quick-peek" role="dialog" aria-label={`معاينة ${policy.label}`}
     ref={containerRef} tabIndex={-1} data-testid="policy-quick-peek">
     <header className="policy-quick-peek-head">
@@ -112,9 +115,9 @@ export function PolicyQuickPeek({ policy, preview, position, containerRef, onClo
         : "جارٍ قراءة البيانات المعتمدة…"}
       </p>}
     </> : <p className="muted policy-quick-peek-hint">
-      لا تتوفر قراءة مجمعة موثوقة لهذا النوع حتى الآن.
+      لا تتوفر قراءة مجمعة موثوقة لهذا النوع. تُقرأ النسب المقترحة باختيار نوع متجر محدد، ولا تمثل عمولة عامة نافذة.
     </p>}
-    <details className="policy-quick-peek-history">
+    {hasHistory ? <details className="policy-quick-peek-history">
       <summary>آخر التغييرات الموثقة</summary>
       {historyState==="loading"?<p className="muted" role="status">جارٍ قراءة السجل…</p>
        :historyState==="restricted"?<p className="muted">سجل التغييرات يتطلب الصلاحية المناسبة.</p>
@@ -133,7 +136,7 @@ export function PolicyQuickPeek({ policy, preview, position, containerRef, onClo
           {expanded?"عرض الأحدث فقط":`عرض آخر ${history.length} تغييرًا`}
         </button>:null}
        </>}
-    </details>
+    </details> : null}
     <div className="policy-quick-peek-foot">
       <span>{policy.scope}</span>
 

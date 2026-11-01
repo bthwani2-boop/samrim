@@ -70,12 +70,12 @@ function DesktopWorkspace({ children }: PropsWithChildren) {
     ...(can("catalog") ? [{ label: "تقرير المنتجات والمخزون", href: "/insights?view=catalog" as Href, icon: "cart" as const, performanceView: "catalog" as const }] : []),
     ...(authority.canUse("wallet") ? [{ label: can("finance_read") ? "الكشف المالي والتسويات" : can("payout_request") ? "طلبات صرف المستحقات" : "المحفظة والتسويات", href: "/wallet" as Href, icon: "wallet" as const }] : []),
   ];
-  const utilityLinks: WorkspaceLink[] = [{ label: "الإشعارات", href: "/notifications" as Href, icon: "notifications" }];
+  const utilityLinks: WorkspaceLink[] = [...(can("catalog") ? [{ label: "سجل تغييرات العروض", href: "/activity" as Href, icon: "cart" as const }] : []), { label: "الإشعارات", href: "/notifications" as Href, icon: "notifications" }];
 
   const management: WorkspaceLink[] = [];
   if (authority.canUse("store")) {
     if (can("store_operations")) management.push({ label: "التشغيل", href: "/store?section=operations" as Href, icon: "store", section: "operations" });
-    if (isOwner) management.push({ label: "ملف المتجر والاتفاقيات", href: "/store?section=settings" as Href, icon: "edit", section: "settings" });
+    if (isOwner) management.push({ label: "إعدادات المتجر", href: "/store?section=settings" as Href, icon: "edit", section: "settings" });
     if (isOwner) management.push({ label: "كباتن المتجر", href: "/store?section=team" as Href, icon: "deliveries", section: "team" });
   }
   if (state.kind === "ready" && !selectedStore) management.push({ label: "تجهيز المتجر", href: "/onboarding" as Href, icon: "store" });
@@ -99,7 +99,7 @@ function DesktopWorkspace({ children }: PropsWithChildren) {
       onPress={() => {
         // Stack detail destinations must be pushed; tabs remain single-instance navigation.
         if (path === "/insights" && pathname === "/insights") router.setParams({ view: item.performanceView ?? "overview" });
-        else if (path === "/store" || path === "/account" || path === "/employees" || path === "/insights" || path === "/onboarding" || path === "/notifications") router.push(item.href);
+        else if (path === "/store" || path === "/account" || path === "/employees" || path === "/insights" || path === "/onboarding" || path === "/notifications" || path === "/activity") router.push(item.href);
         else router.navigate(item.href);
       }}
       style={({ pressed }) => [styles.navItem, nested && styles.navChild, selected && styles.navActive, pressed && styles.navPressed]}

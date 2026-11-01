@@ -1,8 +1,8 @@
 const assert = require("node:assert/strict");
-const { chromium } = require("@playwright/test");
+const { chromium, expect } = require("@playwright/test");
 
 async function main() {
-  const browser = await chromium.connectOverCDP("http://127.0.0.1:9223");
+  const browser = await chromium.connectOverCDP("http://127.0.0.1:9223", {timeout: 40000});
   let operator, partner;
   try {
     const origin = "http://localhost:13000";
@@ -16,8 +16,14 @@ async function main() {
     await operator.waitForURL(url=>Boolean(url.searchParams.get("inspect")), {timeout: 12000});
     const storeId = new URL(operator.url()).searchParams.get("inspect");
     assert.ok(storeId);
+    const customerTab = operator.getByRole("tab", {name: "العملاء والجودة"});
+    await customerTab.waitFor({state: "visible", timeout: 15000});
+    // The inspector mounts while it still reads its canonical store and owner data.
+    // A visible tab is not yet proof that the authenticated inspector is interactive.
+    await operator.waitForLoadState("networkidle", {timeout: 15000});
     const responsePromise = operator.waitForResponse(r => r.url().includes("/api/stores/") && r.url().includes("/orders/summary?"), {timeout: 18000});
-    await operator.getByRole("tab", {name: "العملاء والجودة"}).click();
+    await customerTab.click();
+    await expect(customerTab).toHaveAttribute("aria-selected", "true", {timeout: 5000});
     const response = await responsePromise;
     assert.equal(response.status(), 200);
     const data = await response.json();

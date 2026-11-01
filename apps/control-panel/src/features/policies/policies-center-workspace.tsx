@@ -11,20 +11,22 @@ import { readFinancialPolicyPreviews } from "./policy-financial-preview";
 import { type PolicyPreviewState, PolicyQuickPeek } from "./policy-quick-peek";
 
 type DrawerMode = "manage" | "add" | "choose";
-type PolicyGroup = "all" | "delivery" | "wallets" | "scope";
+type PolicyGroup = "all" | "delivery" | "wallets" | "commercial" | "scope";
 const policyGroups:ReadonlyArray<{id:PolicyGroup;label:string}> = [
   {id:"all",label:"السياسات العامة"},{id:"delivery",label:"التوصيل والرسوم"},
-  {id:"wallets",label:"المحافظ والمستحقات"},{id:"scope",label:"نطاق الخدمة"},
+  {id:"wallets",label:"المحافظ والمستحقات"},{id:"commercial",label:"سياسات المتاجر"},{id:"scope",label:"نطاق الخدمة"},
 ];
 function matchesPolicyGroup(key: PolicyResourceKey, group:PolicyGroup) {
   if(group==="all")return true;
   if(group==="delivery")return ["delivery-fees","store-type-cancellation"].includes(key);
   if(group==="wallets")return ["wallet-providers","captain-minimum-balance","partner-financial-terms"].includes(key);
+  if(group==="commercial")return ["store-type-commission-defaults","store-type-cancellation"].includes(key);
   return key==="service-cities";
 }
 
 function describePreview(preview: PolicyPreviewState | undefined): string {
-  if (!preview || preview.kind === "loading") return "جارٍ قراءة السجلات…";
+  if (!preview) return "اختر السياسة لقراءة سجلها";
+  if (preview.kind === "loading") return "جارٍ قراءة السجلات…";
   if (preview.kind === "error") return "تعذرت قراءة الملخص";
   if (preview.kind === "restricted") return "تتطلب صلاحية المالية";
   if (preview.kind === "missing") return "لم تُفعّل سياسة بعد";

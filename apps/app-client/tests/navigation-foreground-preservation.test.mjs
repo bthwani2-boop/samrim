@@ -23,3 +23,10 @@ test("app resume rechecks service cities without replacing navigation", () => {
   assert.match(scope, /next === "active" && wasBackgrounded/u);
   assert.match(scope, /void refreshCities\(\)/u);
 });
+
+const appRoot = readFileSync(new URL("../app/_layout.tsx", import.meta.url), "utf8");
+
+test("root network notice reports either confirmed offline signal while preserving unknown state", () => {
+  assert.match(appRoot, /offline=\{isConnected === false \|\| isInternetReachable === false\}/u);
+  assert.doesNotMatch(appRoot, /offline=\{isConnected === false && isInternetReachable === false\}/u);
+});

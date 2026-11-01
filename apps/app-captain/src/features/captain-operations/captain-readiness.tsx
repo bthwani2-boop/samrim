@@ -1,4 +1,4 @@
-import { BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import * as Location from "expo-location";
 import { useKeepAwake } from "expo-keep-awake";
 import { type CaptainAdmission, captainAdmissionStateLabel } from "@bthwani/dsh";
@@ -36,7 +36,7 @@ async function openPhoneLocationSettings() {
   await Linking.openSettings();
 }
 
-export function CaptainReadiness({ overlay = false, missionActive = false, missionAssignmentId = "" }: { overlay?: boolean; missionActive?: boolean; missionAssignmentId?: string } = {}) {
+export function CaptainReadiness({ overlay = false, missionActive = false, missionAssignmentId = "", onAvailabilityConfirmed }: { overlay?: boolean; missionActive?: boolean; missionAssignmentId?: string; onAvailabilityConfirmed?: () => void } = {}) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createCaptainOperationStyles(theme), [theme]);
   const [identityState, setIdentityState] = useState(currentIdentityState);
@@ -47,7 +47,8 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
   const [hasActiveDelivery, setHasActiveDelivery] = useState(false);
   const [assignmentsUnknown, setAssignmentsUnknown] = useState(false);
   const [gpsReady, setGpsReady] = useState(false);
-  const [gpsChecked, setGpsChecked] = useState(false);
+  const [locationSettingsNeeded, setLocationSettingsNeeded] = useState(false);
+  const [locationRecoveryBusy, setLocationRecoveryBusy] = useState(false);
   const [backgroundConsent, setBackgroundConsent] = useState(false);
   const [backgroundBusy, setBackgroundBusy] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -59,11 +60,10 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
     try {
       const ready = await isPhoneLocationReady();
       setGpsReady(ready);
-      setGpsChecked(true);
+      if (ready) setLocationSettingsNeeded(false);
       return ready;
     } catch {
       setGpsReady(false);
-      setGpsChecked(true);
       return false;
     }
   }, []);
@@ -174,14 +174,31 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
         const permission = await Location.requestForegroundPermissionsAsync();
         if (!permission.granted) {
           setGpsReady(false);
-          setError("اسمح بموقع الهاتف أولًا لبدء استقبال العروض.");
+          if (!permission.canAskAgain) {
+            setLocationSettingsNeeded(true);
+            setError("إذن الموقع مرفوض من إعدادات التطبيق. افتح إعدادات الإذن للسماح بالموقع.");
+          } else {
+            setError("اسمح بموقع الهاتف أولًا لبدء استقبال العروض.");
+          }
           return;
         }
+        const afterPermission = currentIdentityState();
+        if (afterPermission.kind !== "authenticated" || !isCurrentCaptainActor(target, afterPermission.identity.subject.trim())) return;
+        setLocationSettingsNeeded(false);
         if (!(await Location.hasServicesEnabledAsync())) {
-          setGpsReady(false);
-          setError("خدمات GPS مغلقة. افتح مفتاح GPS أولًا.");
-          return;
+          try {
+            if (Platform.OS === "android") await Location.enableNetworkProviderAsync();
+            else await openPhoneLocationSettings();
+          } catch {
+            await openPhoneLocationSettings().catch(() => {});
+          }
+          if (!(await Location.hasServicesEnabledAsync())) {
+            setGpsReady(false);
+            setError("فعّل موقع الهاتف ثم اضغط التوفر مجددًا لإكمال التشغيل.");
+            return;
+          }
         }
+        setGpsReady(true);
       }
       const token = await getUsableIdentityAccessToken();
       const before = currentIdentityState();
@@ -192,6 +209,7 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
         setError("لا يمكن تأكيد التوفر الآن؛ ستُقرأ الحالة من الخادم عند العودة.");
         return;
       }
+      onAvailabilityConfirmed?.();
       if (next) {
         try { await publishCaptainPresence(true); }
         catch { setError("التوفر مُفعّل لكن تعذر نشر موقعك. تحقق من GPS والاتصال."); }
@@ -207,46 +225,70 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
     }
   }
 
-  async function togglePhoneGps(next: boolean) {
-    if (busy) return;
-    setBusy(true);
+  async function recoverPhoneLocation() {
+    // Recovery never toggles DSH availability or grants access to the public pool.
+    if (!actorID || locationRecoveryBusy || (missionActive ? !missionAssignmentId : !available)) return;
+    const forMission = missionActive;
+    const requestedActor = actorID;
+    const stillCurrentActor = () => {
+      const state = currentIdentityState();
+      return state.kind === "authenticated" && isCurrentCaptainActor(requestedActor, state.identity.subject.trim());
+    };
+    setLocationRecoveryBusy(true);
     setError("");
     try {
-      if (!next) {
-        if (available) {
-          setError("أوقف التوفر أولًا قبل إيقاف GPS؛ حتى لا تُعرض عليك طلبات دون موقع.");
-          return;
-        }
-        // Android does not permit a third-party application to silently
-        // disable the device location provider. The Switch mirrors OS truth.
-        await openPhoneLocationSettings();
-        return;
-      }
+      // Recovery never changes the server-confirmed availability or mission state.
       const permission = await Location.requestForegroundPermissionsAsync();
+      if (!stillCurrentActor()) return;
       if (!permission.granted) {
-        setError("امنح التطبيق إذن الموقع من إعدادات الهاتف.");
-        await Linking.openSettings();
+        setGpsReady(false);
+        if (!permission.canAskAgain) {
+          setLocationSettingsNeeded(true);
+          setError(forMission
+            ? "إذن موقع المهمة مرفوض. افتح إعدادات التطبيق للسماح بالموقع."
+            : "إذن موقع التوزيع مرفوض. افتح إعدادات التطبيق للسماح بالموقع.");
+          await Linking.openSettings().catch(() => {});
+        } else {
+          setError(forMission
+            ? "اسمح بموقع الهاتف لتتبع مهمة التوصيل الحالية."
+            : "اسمح بموقع الهاتف لمواصلة التوفر واستقبال العروض.");
+        }
         return;
       }
+      setLocationSettingsNeeded(false);
       if (!(await Location.hasServicesEnabledAsync())) {
-        if (Platform.OS === "android") {
-          try { await Location.enableNetworkProviderAsync(); }
-          catch { await openPhoneLocationSettings(); }
-        } else {
-          await openPhoneLocationSettings();
+        try {
+          if (Platform.OS === "android") await Location.enableNetworkProviderAsync();
+          else await openPhoneLocationSettings();
+        } catch {
+          await openPhoneLocationSettings().catch(() => {});
         }
       }
+      if (!stillCurrentActor()) return;
       const ready = await refreshGps();
-      if (!ready) setError("فعّل خدمات الموقع في إعدادات الهاتف؛ سيظهر المفتاح مفعّلًا عند نجاح ذلك.");
-      else if (available) {
-        try { await publishCaptainPresence(true); }
-        catch { setError("GPS يعمل، لكن تعذر تحديث موقع التوزيع. تحقق من الاتصال."); }
+      if (!stillCurrentActor()) return;
+      if (!ready) {
+        setError(forMission
+          ? "فعّل موقع الهاتف ثم اضغط تشغيل موقع المهمة مجددًا."
+          : "فعّل خدمات الموقع ثم اضغط استعادة الموقع مجددًا.");
+        return;
+      }
+      if (!forMission) {
+        // A recovered public-pool Captain needs a fresh map gate and a new
+        // presence fix now. The publisher verifies current DSH availability.
+        onAvailabilityConfirmed?.();
+        try {
+          await publishCaptainPresence(true);
+        } catch {
+          if (stillCurrentActor()) setError("عاد موقع الهاتف، لكن تعذر نشر موقع التوزيع. تحقق من الاتصال وحاول مجددًا.");
+        }
       }
     } catch {
-      setError("تعذر فتح إعدادات الموقع. يمكنك تشغيل GPS يدويًا من إعدادات الهاتف.");
+      if (stillCurrentActor()) setError(forMission
+        ? "تعذر تفعيل موقع المهمة. تحقق من إعدادات الموقع وحاول مجددًا."
+        : "تعذر استعادة موقع التوزيع. تحقق من إعدادات الموقع وحاول مجددًا.");
     } finally {
-      await refreshGps();
-      setBusy(false);
+      setLocationRecoveryBusy(false);
     }
   }
 
@@ -275,15 +317,9 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
             onValueChange={(value) => void toggleAvailability(value)}
             trackColor={{ false: "#76818A", true: "#78D8A7" }}
             thumbColor={available ? "#087F46" : "#F9FAFB"} />}
-      </View>
-      <View style={{ width: 1, height: 35, backgroundColor: "rgba(255,255,255,0.25)" }} />
-      <View style={{ flex: 1, alignItems: "center", gap: 3 }}>
-        <Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "700" }}>GPS</Text>
-        <Switch accessibilityLabel="مفتاح GPS الهاتف" accessibilityRole="switch"
-          value={gpsReady} disabled={busy || !gpsChecked}
-          onValueChange={(value) => void togglePhoneGps(value)}
-          trackColor={{ false: "#76818A", true: "#78D8A7" }}
-          thumbColor={gpsReady ? "#087F46" : "#F9FAFB"} />
+        {!missionActive && !storeOnly ? <Text style={{ color: "#FFFFFF", fontSize: 11 }}>
+          {available ? (gpsReady ? "الموقع يعمل" : "شغّل GPS لمواصلة العمل") : "موقع التوزيع متوقف"}
+        </Text> : null}
       </View>
       <View style={{ width: 1, height: 35, backgroundColor: "rgba(255,255,255,0.25)" }} />
       <View style={{ flex: 1.2, gap: 5 }}>
@@ -303,6 +339,11 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
         disabled={backgroundBusy || !gpsReady} onValueChange={(enabled) => void toggleBackground(enabled)}
         trackColor={{ false: "#76818A", true: "#78D8A7" }} thumbColor={backgroundConsent ? "#087F46" : "#F9FAFB"} />
     </View> : null}
+    {!gpsReady && (missionActive || (!storeOnly && available)) ? <BthwaniButton
+      label={locationRecoveryBusy ? "جارٍ استعادة الموقع..." : missionActive ? "تشغيل موقع المهمة" : "استعادة موقع التوزيع"}
+      variant="secondary" disabled={locationRecoveryBusy} onPress={() => void recoverPhoneLocation()} /> : null}
+    {locationSettingsNeeded ? <BthwaniButton label="فتح إعدادات إذن الموقع" variant="secondary"
+      onPress={() => void Linking.openSettings().catch(() => setError("تعذر فتح إعدادات التطبيق."))} /> : null}
     {storeOnly && !missionActive ? <Text style={{ color: "#FFFFFF", fontSize: 12 }}>طلبات المتجر تصل من التوصيلات، دون تفعيل توزيع بثواني العام.</Text> : null}
     {error ? <Text accessibilityRole="alert" style={{ color: "#FFE4B3", fontSize: 12 }}>{error}</Text> : null}
     {newOffersBlockedByDelivery && !missionActive ? <Text accessibilityRole="alert" style={{ color: "#FFE4B3", fontSize: 12 }}>مشغول بتوصيل جارٍ · افتح إجراءات المهمة أسفل الخريطة</Text> : null}
@@ -335,23 +376,19 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
           thumbColor={available ? theme.success : theme.surface}
         />
       </View>
-      <View style={styles.readinessSwitchRow}>
-        <View style={styles.readinessHeroCopy}>
-          <Text style={styles.cardTitle}>GPS الهاتف</Text>
-          <Text style={styles.muted}>{gpsReady ? "الموقع يعمل" : gpsChecked ? "الموقع متوقف أو الإذن غير متاح" : "جارٍ التحقق من الموقع…"}</Text>
-        </View>
-        <Switch accessibilityLabel="مفتاح GPS الهاتف" accessibilityRole="switch"
-          value={gpsReady} disabled={busy || !gpsChecked}
-          onValueChange={(value) => void togglePhoneGps(value)}
-          trackColor={{ false: theme.borderColor, true: theme.successSoft }}
-          thumbColor={gpsReady ? theme.success : theme.surface}
-        />
-      </View>
-      <Text style={styles.muted}>مفتاح GPS يعكس حالة الهاتف، وقد يفتح إعدادات الموقع.</Text>
+      <Text style={styles.muted}>
+        {available ? (gpsReady ? "موقع التوزيع يعمل." : "موقع الهاتف غير متاح؛ شغّل GPS لاستمرار استقبال العروض.")
+          : "موقع التوزيع متوقف. سيطلب التطبيق تشغيل الموقع عند تفعيل التوفر."}
+      </Text>
+      {available && !gpsReady ? <BthwaniButton
+        label={locationRecoveryBusy ? "جارٍ استعادة الموقع..." : "استعادة موقع التوزيع"}
+        variant="secondary" disabled={locationRecoveryBusy} onPress={() => void recoverPhoneLocation()} /> : null}
       {newOffersBlockedByDelivery ? <Text style={styles.muted}>أكمل التوصيل الحالي أو عالج تعثره من التوصيلات قبل استقبال طلب جديد.</Text> : null}
       {newOffersBlockedByUnknownWork ? <Text style={styles.muted}>تعذرت قراءة التوصيلات؛ أعد فتح الرئيسية للتحقق.</Text> : null}
       {!eligible ? <Text style={styles.muted}>يُفعّل التوفر بعد اعتماد الكابتن.</Text> : null}
     </View> : null}
+    {locationSettingsNeeded ? <BthwaniButton label="فتح إعدادات إذن الموقع" variant="secondary"
+      onPress={() => void Linking.openSettings().catch(() => setError("تعذر فتح إعدادات التطبيق."))} /> : null}
     {error ? <View style={styles.readinessError}><Text accessibilityRole="alert" style={styles.error}>{error}</Text></View> : null}
   </View>;
 }

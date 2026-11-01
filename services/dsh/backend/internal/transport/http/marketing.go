@@ -58,6 +58,10 @@ func (s *MarketingServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /dsh/operator/marketing/banner-presentation", s.setOperatorBannerPresentation)
 	mux.HandleFunc("GET /dsh/operator/marketing/studio-draft", s.readOperatorStudioDraft)
 	mux.HandleFunc("PUT /dsh/operator/marketing/studio-draft", s.setOperatorStudioDraft)
+	mux.HandleFunc("GET /dsh/public/studio-layout", s.readPublicStudioLayout)
+	mux.HandleFunc("GET /dsh/operator/marketing/studio-layout", s.readOperatorStudioLayout)
+	mux.HandleFunc("PUT /dsh/operator/marketing/studio-layout", s.setOperatorStudioLayout)
+	mux.HandleFunc("GET /dsh/operator/marketing/studio-layout/history", s.readOperatorStudioLayoutHistory)
 	mux.HandleFunc("GET /dsh/public/studio-theme", s.readPublicStudioPublication)
 	mux.HandleFunc("GET /dsh/operator/marketing/studio-theme", s.readOperatorStudioPublication)
 	mux.HandleFunc("GET /dsh/operator/marketing/studio-theme/history", s.readOperatorStudioPublicationHistory)
@@ -1018,6 +1022,10 @@ func writeMarketingError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "marketing input is invalid")
 	case errors.Is(err, postgres.ErrMarketingCampaignNotFound), errors.Is(err, postgres.ErrPromotionNotFound), errors.Is(err, postgres.ErrDiscoveryContentNotFound), errors.Is(err, postgres.ErrDiscoveryContentEventNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "marketing record was not found")
+	case errors.Is(err, postgres.ErrStudioLayoutInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid studio page layout publication")
+	case errors.Is(err, postgres.ErrStudioLayoutConflict):
+		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "published studio layout version changed")
 	case errors.Is(err, postgres.ErrStudioPublicationInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid published studio palette")
 	case errors.Is(err, postgres.ErrStudioPublicationConflict):

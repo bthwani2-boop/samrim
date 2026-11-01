@@ -6,7 +6,7 @@ import { ActivityIndicator, Image, Text, View } from "react-native";
 
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
-import { claimCaptainOfferResponse } from "./captain-offer-response-guard";
+import { claimCaptainOfferResponse, isCaptainOfferActionable } from "./captain-offer-response-guard";
 import { createCaptainOperationStyles } from "./captain-operation-styles";
 import { isCurrentCaptainActor } from "./captain-session-scope";
 
@@ -107,11 +107,11 @@ export function CaptainOffers({ compact = false, popup = false, suppressed = fal
   const scopedOffers = isCurrentCaptainActor(loadedActorID, activeActorID) ? offers : [];
   const filteredOffers = useMemo(() => { const query = searchQuery.trim().toLocaleLowerCase(); if (!query) return scopedOffers; return scopedOffers.filter((offer) => [offer.id, offer.orderId, offer.storeName, offer.deliveryAreaText].join(" ").toLocaleLowerCase().includes(query)); }, [scopedOffers, searchQuery]);
 
-  const orderedOffers = [...filteredOffers].filter((offer) => !compact || (offer.state === "offered" && Date.parse(offer.expiresAt) > Date.now()))
+  const orderedOffers = [...filteredOffers].filter((offer) => !compact || isCaptainOfferActionable(offer))
     .sort((left, right) => Number(right.state === "offered") - Number(left.state === "offered"));
 
   async function respond(offer: CaptainOffer, decision: "accept" | "reject") {
-    if (busy || loading || !isCurrentCaptainActor(loadedActorID, activeActorID) || !offers.some((current) => current.id === offer.id && current.version === offer.version && current.state === "offered")) return;
+    if (busy || loading || !isCurrentCaptainActor(loadedActorID, activeActorID) || !isCaptainOfferActionable(offer) || !offers.some((current) => current.id === offer.id && current.version === offer.version && isCaptainOfferActionable(current))) return;
     if (!claimCaptainOfferResponse(responseInFlight.current, offer.id)) return;
     const actorID = loadedActorID;
     setBusy(offer.id);
@@ -146,8 +146,7 @@ export function CaptainOffers({ compact = false, popup = false, suppressed = fal
   if (popup) {
     // Non-modal: never cover the map or steal navigation. The Captain may
     // wait until safely stopped; unaccepted offers expire on the server.
-    const offer = orderedOffers.find((item) => item.state === "offered"
-      && Date.parse(item.expiresAt) > Date.now() && item.id !== dismissedOfferId);
+    const offer = orderedOffers.find((item) => isCaptainOfferActionable(item) && item.id !== dismissedOfferId);
     if (!isFocused || suppressed || (!offer && !error)) return null;
     return <View pointerEvents="box-none" style={{ position: "absolute", bottom: 12, left: 12, right: 12 }}
       accessibilityLabel="تنبيه عرض توصيل">
@@ -201,10 +200,10 @@ export function CaptainOffers({ compact = false, popup = false, suppressed = fal
           {offer.amountDueMinor === 0 ? <Text style={styles.muted}>لا يوجد نقد لتحصيله؛ الطلب مدفوع من رصيد العميل.</Text> : null}
         </View>
         {offer.state === "offered" ? <Text style={styles.muted}>آخر موعد للرد: {new Date(offer.expiresAt).toLocaleString("ar-YE")}</Text> : null}
-        {offer.state === "offered" ? <View style={styles.row}>
+        {isCaptainOfferActionable(offer) ? <View style={styles.row}>
           <BthwaniButton busy={busy === offer.id} disabled={Boolean(busy) || loading || !isCurrentCaptainActor(loadedActorID, activeActorID)} label="قبول" onPress={() => void respond(offer, "accept")} style={styles.actionButton} />
           <BthwaniButton disabled={Boolean(busy) || loading || !isCurrentCaptainActor(loadedActorID, activeActorID)} label="رفض" onPress={() => void respond(offer, "reject")} style={styles.actionButton} variant="secondary" />
-        </View> : null}
+        </View> : offer.state === "offered" ? <Text style={styles.muted}>انتهت مهلة الرد أو لم تعد صالحة. حدّث العروض للتحقق من حالتها.</Text> : null}
       </View>) : null}
       {error && !compact ? <BthwaniButton busy={loading} disabled={Boolean(busy) || loading} label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /> : null}
     </View>

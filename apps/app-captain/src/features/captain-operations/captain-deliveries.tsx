@@ -12,6 +12,7 @@ import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySe
 import { captainClient } from "./captain-client";
 import { createCaptainOperationStyles } from "./captain-operation-styles";
 import { canActOnCaptainTask } from "./captain-task-eligibility";
+import { isConfirmedCaptainCompletion } from "./captain-completion-readback";
 import { isCurrentCaptainActor } from "./captain-session-scope";
 import { OrderConversation } from "./order-conversation";
 
@@ -252,7 +253,9 @@ export function CaptainDeliveries() {
       if (!hasCurrentDeliveryActor(attempt.actorID)) return;
       setPendingCompletion(attempt);
       setCompletionRejected(false);
-      await captainClient().completeCaptainAssignment(token, attempt.assignmentID, attempt.request, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
+      const confirmation = await captainClient().completeCaptainAssignment(token, attempt.assignmentID, attempt.request, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
+      if (!hasCurrentDeliveryActor(attempt.actorID)) return;
+      if (!isConfirmedCaptainCompletion(confirmation, attempt)) throw new Error("CAPTAIN_COMPLETION_CANONICAL_READBACK_MISMATCH");
       await SecureStore.deleteItemAsync(pendingCaptainCompletionKey(attempt.actorID));
       if (!hasCurrentDeliveryActor(attempt.actorID)) return;
       setPendingCompletion(null);
@@ -278,7 +281,9 @@ export function CaptainDeliveries() {
       const token = await getUsableIdentityAccessToken();
       const identity = currentIdentityState();
       if (identity.kind !== "authenticated" || identity.identity.subject.trim() !== attempt.actorID) throw new Error("CAPTAIN_SESSION_CHANGED");
-      await captainClient().completeCaptainAssignment(token, attempt.assignmentID, attempt.request, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
+      const confirmation = await captainClient().completeCaptainAssignment(token, attempt.assignmentID, attempt.request, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
+      if (!hasCurrentDeliveryActor(attempt.actorID)) return;
+      if (!isConfirmedCaptainCompletion(confirmation, attempt)) throw new Error("CAPTAIN_COMPLETION_CANONICAL_READBACK_MISMATCH");
       await SecureStore.deleteItemAsync(pendingCaptainCompletionKey(attempt.actorID));
       if (!hasCurrentDeliveryActor(attempt.actorID)) return;
       setPendingCompletion(null);

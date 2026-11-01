@@ -23,6 +23,7 @@ function currentChild(pathname: string, destination: (typeof workspaceDestinatio
 }
 
 function canOpenWorkspaceDestination(identity: ActorIdentity, destination: (typeof workspaceDestinations)[number]) {
+  if (destination.href === "/catalog-activity" && !identity.permissions?.includes("partners")) return false;
   if (destination.initialOperatorAdminOnly && !identity.canManageOperatorPermissions) return false;
   return !destination.permission || identity.permissions?.includes(destination.permission) === true;
 }

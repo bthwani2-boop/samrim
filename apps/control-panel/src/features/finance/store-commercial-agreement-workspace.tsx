@@ -86,6 +86,18 @@ function modeLabel(mode: string) {
   return storeCommercialAgreementModes.find((item) => item.key === mode)?.label ?? mode;
 }
 
+// The mutation response alone is not proof that the finance decision was persisted.
+async function readCanonicalFinancialDecision(attempt: PendingDecisionAttempt): Promise<StoreCommercialAgreementRecord> {
+  const response = await fetch(`/api/finance/store-commercial-agreements/${encodeURIComponent(attempt.storeId)}`, { cache: "no-store" });
+  const body = await response.json() as { agreements?: readonly StoreCommercialAgreementRecord[]; error?: { message?: string } };
+  if (!response.ok || !Array.isArray(body.agreements)) throw new Error(errorMessage(body));
+  const matches = body.agreements.filter((agreement) => agreement.agreementId === attempt.agreementId);
+  if (matches.length !== 1) throw new Error("لم تُرجع قراءة النظام سجلًا وحيدًا مطابقًا للاتفاق؛ بقيت المحاولة محفوظة.");
+  const readback = matches[0];
+  if (!readback) throw new Error("تعذر تحديد سجل الاتفاق المطابق في قراءة النظام؛ بقيت المحاولة محفوظة.");
+  return readback;
+}
+
 export function StoreCommercialAgreementWorkspace() {
   const { state: sessionState } = useSession();
   const operatorActorId = sessionState.kind === "authenticated" && sessionState.identity.role === "operator" && sessionState.identity.permissions?.includes("finance") ? sessionState.identity.subject : "";
@@ -247,7 +259,8 @@ export function StoreCommercialAgreementWorkspace() {
       });
       const body = await response.json() as Partial<StoreCommercialAgreementDecisionResponse> & { error?: { message?: string } };
       if (!response.ok || !body.agreement) throw new Error(errorMessage(body));
-      if (!finishVerifiedAttempt(body.agreement, attempt)) setMessage("وصل رد القرار، لكن لم يطابق إثبات النظام المطلوب. بقيت المحاولة محفوظة للتحقق الصريح.");
+      const canonical = await readCanonicalFinancialDecision(attempt);
+      if (!finishVerifiedAttempt(canonical, attempt)) setMessage("وصل رد القرار، لكن لم يطابق إثبات النظام المطلوب. بقيت المحاولة محفوظة للتحقق الصريح.");
     } catch (cause) {
       setError(`${cause instanceof Error ? cause.message : "تعذر تأكيد نتيجة القرار"} بقيت المحاولة نفسها محفوظة؛ أعد إرسالها صراحةً أو أعد قراءة الاتفاقية.`);
     } finally {
@@ -264,13 +277,7 @@ export function StoreCommercialAgreementWorkspace() {
     setError("");
     setMessage("");
     try {
-      const response = await fetch(`/api/finance/store-commercial-agreements/${encodeURIComponent(attempt.storeId)}`, { cache: "no-store" });
-      const body = await response.json() as { agreements?: readonly StoreCommercialAgreementRecord[]; error?: { message?: string } };
-      if (!response.ok || !Array.isArray(body.agreements)) throw new Error(errorMessage(body));
-      const matches = body.agreements.filter((agreement) => agreement.agreementId === attempt.agreementId);
-      if (matches.length !== 1) throw new Error("لم تُرجع قراءة النظام سجلًا وحيدًا مطابقًا للاتفاق؛ بقيت المحاولة محفوظة.");
-      const readback = matches[0];
-      if (!readback) throw new Error("تعذر تحديد سجل الاتفاق المطابق في قراءة النظام؛ بقيت المحاولة محفوظة.");
+      const readback = await readCanonicalFinancialDecision(attempt);
       if (!finishVerifiedAttempt(readback, attempt)) setMessage("لم تثبت قراءة النظام النتيجة المطابقة؛ بقيت المحاولة محفوظة ويمكن إعادة المحاولة صراحةً.");
     } catch (cause) {
       setError(`${cause instanceof Error ? cause.message : "تعذرت قراءة الاتفاق "} لم يُرسل أي قرار جديد.`);
@@ -350,6 +357,15 @@ export function StoreCommercialAgreementWorkspace() {
       <p className="muted">قبول مالك المتجر: {formatTimestamp(selected.partnerAcceptedAt)}</p>
       <p className="muted">حالة الاتفاقية: {selected.effectiveAt ? `سارية منذ ${formatTimestamp(selected.effectiveAt)}` : "لم يبدأ سريانها بعد"}</p>
       <p className="muted">أنماط تنفيذ المتجر: {selected.fulfillmentModes.map(modeLabel).join("، ") || "غير محددة"}</p>
+      <h4>الشروط التجارية</h4>
+      <p className="muted">النموذج: {selected.commercialModel === "COMMISSION" ? "عمولة" : selected.commercialModel === "SUBSCRIPTION" ? "اشتراك" : "نموذج سابق ملغى"}</p>
+      {selected.commercialModel !== "COMMISSION" ? <>
+        <p className="muted">الاشتراك: {selected.recurringAmountMinor.toLocaleString("ar-YE-u-nu-latn")} ريال يمني · {selected.billingPeriod === "MONTHLY" ? "شهري" : "سنوي"} · {selected.billingTimeZone}</p>
+        <p className="muted">استحقاق الفاتورة {selected.invoiceDueDays} يوم · السماح {selected.graceDays} يوم · التجديد {selected.renewalPolicy === "MANUAL" ? "يدوي" : "تلقائي"}</p>
+        <p className="muted">الإلغاء: {selected.terminationTerms}</p>
+        <p className="muted">التعديل والاسترداد: {selected.adjustmentTerms}</p>
+        <p className="validation-error" role="alert">اعتماد الاشتراك معطّل، وأي اتفاق هجين سابق ملغى ولا يقبل التفعيل إلى حين اكتمال فوترة WLT والتسويات ومراجعتها المالية المستقلة.</p>
+      </> : null}
       <h4>النسب الدقيقة في الاتفاق</h4>
       <ul>{selected.fulfillmentModes.map((mode) => {
         const rate = selected.rates.find((item) => item.fulfillmentMode === mode);
@@ -373,7 +389,7 @@ export function StoreCommercialAgreementWorkspace() {
       {selected.status !== "PARTNER_ACCEPTED" || selected.partnerAcceptedByActorId !== selected.partnerActorId || selected.currentStoreOwnerActorId !== selected.partnerActorId || !selected.matchesCurrentFulfillmentModes ? <p className="validation-error" role="alert">لا يمكن اتخاذ القرار: يلزم اتفاق مقبول من المالك الحالي وبنسب مطابقة لأنماط المتجر الحالية.</p> : null}
       {pendingAttempt ? <p className="muted">توجد محاولة محفوظة؛ أكمل إعادة إرسالها أو تحقق من قراءتها قبل بدء قرار آخر.</p> : null}
       <div className="finance-toolbar">
-        <button className="button button-primary" type="button" onClick={() => beginDecision("APPROVE")} disabled={!pendingStorageReady || Boolean(pendingStorageError) || busy !== null || Boolean(pendingAttempt) || selected.status !== "PARTNER_ACCEPTED" || selected.partnerAcceptedByActorId !== selected.partnerActorId || selected.currentStoreOwnerActorId !== selected.partnerActorId || !selected.matchesCurrentFulfillmentModes || Array.from(reason.trim()).length < 8}>{busy === "APPROVE" ? "جارٍ الاعتماد…" : "اعتماد الاتفاق"}</button>
+        <button className="button button-primary" type="button" onClick={() => beginDecision("APPROVE")} disabled={selected.commercialModel !== "COMMISSION" || !pendingStorageReady || Boolean(pendingStorageError) || busy !== null || Boolean(pendingAttempt) || selected.status !== "PARTNER_ACCEPTED" || selected.partnerAcceptedByActorId !== selected.partnerActorId || selected.currentStoreOwnerActorId !== selected.partnerActorId || !selected.matchesCurrentFulfillmentModes || Array.from(reason.trim()).length < 8}>{busy === "APPROVE" ? "جارٍ الاعتماد…" : "اعتماد الاتفاق"}</button>
         <button className="button button-secondary" type="button" onClick={() => beginDecision("REJECT")} disabled={!pendingStorageReady || Boolean(pendingStorageError) || busy !== null || Boolean(pendingAttempt) || selected.status !== "PARTNER_ACCEPTED" || selected.partnerAcceptedByActorId !== selected.partnerActorId || selected.currentStoreOwnerActorId !== selected.partnerActorId || !selected.matchesCurrentFulfillmentModes || Array.from(reason.trim()).length < 8}>{busy === "REJECT" ? "جارٍ الرفض…" : "رفض الاتفاق"}</button>
       </div>
     </section> : null}

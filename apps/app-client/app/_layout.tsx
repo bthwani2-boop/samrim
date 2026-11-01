@@ -28,7 +28,7 @@ export default function RootLayout() {
     const api = createDshMobileClient(baseUrl);
     const refresh = () => {
       const requestId = ++latestRequest;
-      void api.readPublicStudioTheme().then((value) => {
+      void Promise.resolve().then(() => api.readPublicStudioTheme()).then((value) => {
         if (!mounted || requestId !== latestRequest) return;
         const published = parseStudioThemePublication(value);
         // Unknown schemas or invalid palettes never replace compiled defaults.
@@ -70,5 +70,5 @@ function RootNavigation() {
 function RootNetworkNotice() {
   const { top } = useSafeAreaInsets();
   const { isConnected, isInternetReachable } = useNetworkState();
-  return <BthwaniNetworkStatusNotice top={top} offline={isConnected === false && isInternetReachable === false} />;
+  return <BthwaniNetworkStatusNotice top={top} offline={isConnected === false || isInternetReachable === false} />;
 }

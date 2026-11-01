@@ -9,6 +9,13 @@ const unavailable: Metadata = {
   robots: { index: false, follow: false },
 };
 
+// Local previews must remain non-indexable without misleading users about live Store readiness.
+const localPreview: Metadata = {
+  title: "معاينة المتجر | بثواني",
+  description: "معاينة محلية لمتجر بثواني.",
+  robots: { index: false, follow: false },
+};
+
 function configuredPublicOrigin(value: string | undefined): string | undefined {
   if (!value?.trim()) return undefined;
   try {
@@ -43,7 +50,8 @@ export async function readPublicStoreMetadata(
   let cityId = "";
   try {
     const incoming = new URL(request.url);
-    if (incoming.protocol !== "https:" || ["localhost", "127.0.0.1", "[::1]"].includes(incoming.hostname)) return unavailable;
+    if (["localhost", "127.0.0.1", "[::1]"].includes(incoming.hostname)) return localPreview;
+    if (incoming.protocol !== "https:") return unavailable;
     cityId = incoming.searchParams.get("serviceCityId")?.trim() ?? "";
   } catch { return unavailable; }
   if (!/^[A-Za-z0-9._~-]{1,150}$/.test(cityId)) return unavailable;

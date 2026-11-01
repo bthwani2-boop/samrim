@@ -89,11 +89,15 @@ func TestStudioMigrationRegistered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != postgres.SchemaVersion || records[len(records)-1].Name != "167_marketing_studio_publication.sql" {
-		t.Fatalf("missing Studio publication migration v167; got %+v", records[len(records)-1])
+	if len(records) != postgres.SchemaVersion ||
+		records[165].Name != "166_marketing_studio_draft.sql" ||
+		records[166].Name != "167_marketing_studio_publication.sql" ||
+		records[167].Name != "168_store_public_contact.sql" ||
+		records[168].Name != "169_marketing_studio_layout.sql" {
+		t.Fatalf("unexpected Studio/Store contact migration history: loaded %d records", len(records))
 	}
-	if len(statements) != postgres.SchemaVersion || !strings.Contains(statements[165], "marketing_studio_draft_events") || !strings.Contains(statements[166], "marketing_studio_publication_events") {
-		t.Fatal("Studio migration SQL missing")
+	if len(statements) != postgres.SchemaVersion || !strings.Contains(statements[165], "marketing_studio_draft_events") || !strings.Contains(statements[166], "marketing_studio_publication_events") || !strings.Contains(statements[167], "store_public_contacts") || !strings.Contains(statements[168], "marketing_studio_layout_events") {
+		t.Fatal("Studio or Store contact migration SQL missing")
 	}
 }
 
@@ -260,11 +264,16 @@ func TestStudioDraftMigrationUpgradeFromV165(t *testing.T) {
 		}
 
 		if err := postgres.Migrate(ctx, db, records, migrations, testDeliveryProofKeyring(t)); err != nil {
-			t.Fatalf("upgrade from v165 to v167: %v", err)
+			t.Fatalf("upgrade from v165 to v169: %v", err)
 		}
 		var count, latest int
-		if err := db.QueryRowContext(ctx, "SELECT count(*), max(version) FROM dsh.schema_migrations").Scan(&count, &latest); err != nil || count != 167 || latest != 167 {
+		if err := db.QueryRowContext(ctx, "SELECT count(*), max(version) FROM dsh.schema_migrations").Scan(&count, &latest); err != nil || count != 169 || latest != 169 {
 			t.Fatalf("upgrade migration history: count=%d latest=%d err=%v", count, latest, err)
+		}
+		var contactTable, layoutEvents string
+		if err := db.QueryRowContext(ctx, "SELECT to_regclass('dsh.store_public_contacts')::text, to_regclass('dsh.marketing_studio_layout_events')::text").Scan(&contactTable, &layoutEvents); err != nil ||
+			contactTable != "dsh.store_public_contacts" || layoutEvents != "dsh.marketing_studio_layout_events" {
+			t.Fatalf("v168 contact or v169 Studio layout missing after upgrade: contact=%q layout=%q err=%v", contactTable, layoutEvents, err)
 		}
 		previous, err := postgres.ReadBannerPresentation(ctx, db)
 		if err != nil || previous.Mode != "CROSSFADE" || previous.IntervalSeconds != 7 || previous.Version != 9 {

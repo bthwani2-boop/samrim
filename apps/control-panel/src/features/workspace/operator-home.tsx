@@ -16,10 +16,11 @@ import { operationNotificationHref } from "../notifications/notification-operati
 import { notificationHref, notificationTitle } from "../notifications/notification-presentation";
 import { parseOperatorNotificationList } from "../notifications/notification-readback";
 import { isOperatorHomeAnalytics, OperatorHomeCharts } from "./operator-home-analytics";
+import { readFinanceAgreementPreview, type FinanceAgreementPreview } from "./operator-home-finance-queue";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 
 
-type QueueKey = "operations" | "operationsLive" | "joiningCases" | "joiningAdmissions" | "proposals" | "analytics" | "notifications";
+type QueueKey = "operations" | "operationsLive" | "joiningCases" | "joiningAdmissions" | "proposals" | "commercialAgreements" | "analytics" | "notifications";
 type QueueRequest = Readonly<{ key: QueueKey; url: string }>;
 
 function validSummary(value: unknown): value is OperatorOperationsSummary {
@@ -43,6 +44,7 @@ export function OperatorHome() {
   const canReadOperations = permissions.includes("operations");
   const canReadPartners = permissions.includes("partners");
   const canReadCatalog = permissions.includes("catalog");
+  const canReadFinance = permissions.includes("finance");
   const [operations, setOperations] = useState<ReadonlyArray<OperatorOperationListItem>>([]);
   const [summary, setSummary] = useState<OperatorOperationsSummary | null>(null);
   const [analytics, setAnalytics] = useState<OperatorHomeAnalytics | null>(null);
@@ -51,6 +53,7 @@ export function OperatorHome() {
   const [joiningCases, setJoiningCases] = useState<ReadonlyArray<JoiningCaseSummary>>([]);
   const [joiningAdmissions, setJoiningAdmissions] = useState<ReadonlyArray<JoiningCaseSummary>>([]);
   const [proposals, setProposals] = useState<ReadonlyArray<CatalogProductProposal>>([]);
+  const [commercialAgreements, setCommercialAgreements] = useState<readonly FinanceAgreementPreview[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingQueues, setLoadingQueues] = useState<ReadonlySet<QueueKey>>(() => new Set());
   const [refreshing, setRefreshing] = useState(false);
@@ -77,6 +80,7 @@ export function OperatorHome() {
       setJoiningCases([]);
       setJoiningAdmissions([]);
       setProposals([]);
+      setCommercialAgreements([]);
       setLastChecked(null);
       setErrors({});
     }
@@ -95,6 +99,7 @@ export function OperatorHome() {
         { key: "joiningCases" as const, url: "/api/partners/joining-cases?state=submitted&limit=4" },
       ] : []),
       ...(canReadCatalog ? [{ key: "proposals" as const, url: "/api/catalog/proposals?state=submitted&limit=8" }] : []),
+      ...(canReadFinance ? [{ key: "commercialAgreements" as const, url: "/api/finance/store-commercial-agreements?limit=3" }] : []),
     ];
     setLoadingQueues(new Set(requests.map(({ key }) => key)));
     setErrors({});
@@ -114,6 +119,10 @@ export function OperatorHome() {
         if (key === "analytics") {
           if (!isOperatorHomeAnalytics(body)) throw new Error("استجابة تحليل الطلبات غير صالحة.");
           setAnalytics(body);
+          return;
+        }
+        if (key === "commercialAgreements") {
+          setCommercialAgreements(readFinanceAgreementPreview(body));
           return;
         }
         const collectionKey = key === "operations" || key === "operationsLive" ? "operations"
@@ -136,6 +145,7 @@ export function OperatorHome() {
         if (sequence !== requestSequence.current) return;
         if (key === "operationsLive") setSummary(null);
         if (key === "analytics") setAnalytics(null);
+        if (key === "commercialAgreements") setCommercialAgreements([]);
         if (key === "notifications") { setRecentNotifications([]); setUnreadCount(null); }
         failure = queueFailureMessage(cause);
       } finally {
@@ -160,7 +170,7 @@ export function OperatorHome() {
     hasLoaded.current = true;
     setLoading(false);
     setRefreshing(false);
-  }, [actorKey, canReadCatalog, canReadOperations, canReadPartners, sessionReady]);
+  }, [actorKey, canReadCatalog, canReadFinance, canReadOperations, canReadPartners, sessionReady]);
 
   useReadOnReturn(loadQueues, sessionReady && !pageLoading && !refreshing);
   useEffect(() => {
@@ -175,16 +185,19 @@ export function OperatorHome() {
     return () => window.clearInterval(interval);
   }, [loadQueues, pageLoading, refreshing, sessionReady]);
 
-  const hasActionQueues = canReadOperations || canReadPartners || canReadCatalog;
+  const hasActionQueues = canReadOperations || canReadPartners || canReadCatalog || canReadFinance;
   const hasActionableItems = (canReadOperations && operations.length > 0)
     || (canReadPartners && (joiningAdmissions.length > 0 || joiningCases.length > 0))
-    || (canReadCatalog && proposals.length > 0);
+    || (canReadCatalog && proposals.length > 0)
+    || (canReadFinance && commercialAgreements.length > 0);
   const hasQueueError = (canReadOperations && Boolean(errors.operations))
     || (canReadPartners && (Boolean(errors.joiningAdmissions) || Boolean(errors.joiningCases)))
-    || (canReadCatalog && Boolean(errors.proposals));
+    || (canReadCatalog && Boolean(errors.proposals))
+    || (canReadFinance && Boolean(errors.commercialAgreements));
   const hasLoadingActionQueues = (canReadOperations && loadingQueues.has("operations"))
     || (canReadPartners && (loadingQueues.has("joiningAdmissions") || loadingQueues.has("joiningCases")))
-    || (canReadCatalog && loadingQueues.has("proposals"));
+    || (canReadCatalog && loadingQueues.has("proposals"))
+    || (canReadFinance && loadingQueues.has("commercialAgreements"));
 
   return (
     <section className="bt-home-page" aria-labelledby="workspace-title">
@@ -231,6 +244,9 @@ export function OperatorHome() {
               </> : null}
               {canReadCatalog ? <HomeQueue id="proposals" icon="catalog" title="مقترحات منتجات بانتظار المراجعة" href="/catalog/proposals" error={errors.proposals} loading={loadingQueues.has("proposals")} empty={proposals.length === 0} emptyMessage="لا مقترحات في هذه المعاينة.">
                 <ul className="home-list">{proposals.slice(0, 2).map((item) => <HomeRecord key={item.id} href={"/catalog/proposals?proposalId=" + encodeURIComponent(item.id)} title={item.proposedName} summary={item.proposedBrand ?? ""} state={catalogProductProposalStateLabel(item.state)} updatedAt={item.updatedAt} />)}</ul>
+              </HomeQueue> : null}
+              {canReadFinance ? <HomeQueue id="commercialAgreements" icon="review" title="اتفاقيات متاجر بانتظار قرار المالية" href="/finance/partner-store-commissions" error={errors.commercialAgreements} loading={loadingQueues.has("commercialAgreements")} empty={commercialAgreements.length === 0} emptyMessage="لا اتفاقيات معلقة في هذه المعاينة.">
+                <ul className="home-list">{commercialAgreements.slice(0, 2).map((item) => <HomeRecord key={item.agreementId} href="/finance/partner-store-commissions" title={item.storeName || "متجر بثواني"} state="قُبلت من الشريك · بانتظار المالية" updatedAt={item.partnerAcceptedAt} />)}</ul>
               </HomeQueue> : null}
             </div> : null}
           </section>

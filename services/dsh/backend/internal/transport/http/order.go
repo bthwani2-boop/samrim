@@ -124,7 +124,7 @@ func (s *OrderServer) listOperatorOperations(w http.ResponseWriter, r *http.Requ
 		actionableOnly = rawActionable == "true"
 	}
 	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
-	if len(cursor) > 512 {
+	if len(cursor) > 2048 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cursor is too long")
 		return
 	}
@@ -133,13 +133,15 @@ func (s *OrderServer) listOperatorOperations(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "storeId is invalid")
 		return
 	}
-	var operations postgres.OperatorOperationsResult
-	var err error
-	if storeID != "" {
-		operations, err = s.service.ListForOperatorStore(r.Context(), state, query, sort, actingActorID, actionableOnly, limit, cursor, storeID)
-	} else {
-		operations, err = s.service.ListForOperator(r.Context(), state, query, sort, actingActorID, actionableOnly, limit, cursor)
+	filters := postgres.OperatorOrderFilters{
+		StoreID:         storeID,
+		StoreName:       r.URL.Query().Get("storeName"),
+		FromDate:        r.URL.Query().Get("fromDate"),
+		ToDate:          r.URL.Query().Get("toDate"),
+		PaymentSource:   r.URL.Query().Get("paymentSource"),
+		FulfillmentMode: r.URL.Query().Get("fulfillmentMode"),
 	}
+	operations, err := s.service.ListForOperatorFiltered(r.Context(), state, query, sort, actingActorID, actionableOnly, limit, cursor, filters)
 	if err != nil {
 		writeOrderError(w, err)
 		return
@@ -150,6 +152,7 @@ func (s *OrderServer) listOperatorOperations(w http.ResponseWriter, r *http.Requ
 	}
 	summary := operations.Summary
 	writeJSON(w, http.StatusOK, contract.OperatorOperationsResponse{Operations: items, NextCursor: operations.NextCursor,
+		FilterEngineVersion: 1,
 		Summary: contract.OperatorOperationsSummary{TotalCount: summary.TotalCount, ActionableCount: summary.ActionableCount,
 			AwaitingDispatchCount: summary.AwaitingDispatchCount, ActiveCount: summary.ActiveCount, DeliveredCount: summary.DeliveredCount,
 			InCustodyOrderCount: summary.InCustodyOrderCount, InCustodyOrderValueMinor: int(summary.InCustodyOrderValueMinor), MeasuredAt: summary.MeasuredAt}})
@@ -310,7 +313,7 @@ func toOperatorOperationListItem(operation postgres.OperatorOperationListRecord)
 	if operation.Assignment != nil {
 		assignment = &contract.OperatorAssignmentSummary{ID: operation.Assignment.ID, OrderID: operation.Assignment.OrderID, CaptainActorID: operation.Assignment.CaptainActorID, State: operation.Assignment.State, Version: operation.Assignment.Version, HandoffState: operation.Assignment.HandoffState}
 	}
-	return contract.OperatorOperationListItem{OrderID: operation.OrderID, StoreName: operation.StoreName, State: contract.OrderState(operation.State), UpdatedAt: operation.UpdatedAt, StageStartedAt: operation.StageStartedAt, PreparationMinutes: optionalPreparationMinutes(operation.PreparationMinutes), SlaStatus: operation.StageSLA.Status, SlaReason: operation.StageSLA.Reason, SlaDeadlineAt: operation.StageSLA.DeadlineAt, SlaPolicyVersion: operation.StageSLA.PolicyVersion, SlaTargetMinutes: operation.StageSLA.TargetMinutes, Assignment: assignment}
+	return contract.OperatorOperationListItem{OrderID: operation.OrderID, StoreName: operation.StoreName, MultiStoreCheckoutID: operation.MultiStoreCheckoutID, State: contract.OrderState(operation.State), UpdatedAt: operation.UpdatedAt, StageStartedAt: operation.StageStartedAt, PreparationMinutes: optionalPreparationMinutes(operation.PreparationMinutes), SlaStatus: operation.StageSLA.Status, SlaReason: operation.StageSLA.Reason, SlaDeadlineAt: operation.StageSLA.DeadlineAt, SlaPolicyVersion: operation.StageSLA.PolicyVersion, SlaTargetMinutes: operation.StageSLA.TargetMinutes, Assignment: assignment}
 }
 
 func (s *OrderServer) listClient(w http.ResponseWriter, r *http.Request) {
@@ -1114,7 +1117,7 @@ func writeOrderError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partner orders Store scope is invalid")
 	case errors.Is(err, postgres.ErrClientOrdersInvalidCursor), errors.Is(err, postgres.ErrOperatorCustomerOrdersInvalidCursor):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "customer Order history cursor is invalid")
-	case errors.Is(err, postgres.ErrPartnerOrdersInvalidState), errors.Is(err, postgres.ErrPartnerOrdersInvalidQuery), errors.Is(err, postgres.ErrPartnerOrdersInvalidCursor), errors.Is(err, postgres.ErrOperatorOperationInvalidCursor), errors.Is(err, postgres.ErrOperatorOperationInvalidLimit):
+	case errors.Is(err, postgres.ErrPartnerOrdersInvalidState), errors.Is(err, postgres.ErrPartnerOrdersInvalidQuery), errors.Is(err, postgres.ErrPartnerOrdersInvalidCursor), errors.Is(err, postgres.ErrOperatorOperationInvalidCursor), errors.Is(err, postgres.ErrOperatorOperationInvalidLimit), errors.Is(err, postgres.ErrOperatorOperationInvalidQuery), errors.Is(err, postgres.ErrOperatorOperationInvalidSort):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partner or operator orders pagination, state, or search is invalid")
 	case errors.Is(err, orderdomain.ErrClientSessionForbidden), errors.Is(err, orderdomain.ErrPartnerSessionForbidden), errors.Is(err, orderdomain.ErrStoreOwnershipForbidden), errors.Is(err, orderdomain.ErrOperatorNotActive):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the authenticated session is not permitted for this Order")

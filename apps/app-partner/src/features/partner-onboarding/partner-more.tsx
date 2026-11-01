@@ -13,6 +13,8 @@ import { currentIdentityState, logoutIdentity, subscribeIdentitySession } from "
 import { PartnerPerformancePeek } from "./partner-performance-peek";
 import { PartnerInsights } from "./partner-insights";
 import { PartnerDesktopHome } from "./partner-desktop-home";
+import { readOwnStoreCommercialAgreements } from "./store-commercial-agreement-client";
+import { agreementReadinessMessage, ownStoreAgreementReadiness, type StoreAgreementReadback } from "./store-agreement-readiness";
 import { dispatchPartnerProductAction } from "../../shell/partner-product-actions";
 import { usePartnerStoreScope } from "./partner-store-scope-context";
 import { PartnerStoreScopeSelector } from "./partner-store-scope-selector";
@@ -49,6 +51,7 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
   const [needsJoiningCorrection,setNeedsJoiningCorrection]=useState(false);
   const [availability,setAvailability]=useState<PartnerStoreOperationalAvailabilityResponse|null>(null);
   const [availabilityError,setAvailabilityError]=useState(false);
+  const [agreementState,setAgreementState]=useState<Readonly<{ actor: string; storeId: string; status: Exclude<StoreAgreementReadback, null> }> | null>(null);
   const [storeImages,setStoreImages]=useState<StoreImagesResponse|null>(null);
   const [coverFailed,setCoverFailed]=useState(false);
   const [logoFailed,setLogoFailed]=useState(false);
@@ -118,13 +121,31 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
   const orderable=availability?.orderabilityByMode.some(mode=>mode.state==="OPEN_FOR_ORDERS")??false;
   const stopped=availability?.availability.paused??false;
   const operationalState=availabilityError?"تعذر قراءة حالة المتجر":!availability?"جارٍ التحقق":stopped?"متوقف مؤقتًا":orderable?"مفتوح":"مغلق";
+  useFocusEffect(useCallback(()=>{
+    let active=true;
+    setAgreementState(null);
+    if(accountOnly || !actor || !selectedStore?.owned) return ()=>{active=false;};
+    const scope=selectedStore.id;
+    const isCurrent=()=>{
+      const current=currentIdentityState();
+      return active && current.kind==="authenticated" && current.identity.subject===actor;
+    };
+    void readOwnStoreCommercialAgreements(scope).then(agreements=>{
+      if(!isCurrent())return;
+      setAgreementState({actor,storeId:scope,status:ownStoreAgreementReadiness(agreements,scope,actor)});
+    }).catch(()=>{if(isCurrent())setAgreementState({actor,storeId:scope,status:"UNAVAILABLE"});});
+    return ()=>{active=false;};
+  },[accountOnly,actor,selectedStore?.id,selectedStore?.owned]));
+  const commercialAgreement:StoreAgreementReadback=selectedStore?.owned && actor && agreementState?.actor===actor
+    && agreementState.storeId===selectedStore.id ? agreementState.status : null;
   const primaryActions:MenuItem[]=[
     ...(canOrders?[{label:"الطلبات",description:"قبول الطلبات وتجهيزها ومتابعة التسليم",icon:"orders" as const,href:"/orders" as Href}]:[]),
     ...(can("catalog")?[{label:"المنتجات",description:"إضافة المنتجات والأسعار وتحديث التوفر",icon:"cart" as const,href:"/products" as Href}]:[]),
     ...(canWallet?[{label:"المحفظة",description:"متابعة الرصيد والتسويات المصرّح بها",icon:"wallet" as const,href:"/wallet" as Href}]:[]),
   ];
   const actions:MenuItem[]=[
-    ...(can("catalog")?[{label:"أدوات الكتالوج",icon:"cart" as const,href:"/products?panel=tools" as Href}]:[]),
+    ...(selectedStore?.owned?[{label:"إعدادات المتجر",icon:"edit" as const,href:"/store?section=settings" as Href}]:[]),
+    ...(can("catalog")?[{label:"أدوات الكتالوج",icon:"cart" as const,href:"/products?panel=tools" as Href},{label:"سجل تغييرات العروض",icon:"cart" as const,href:"/activity" as Href}]:[]),
     ...(can("promotions")?[{label:"العروض",icon:"offers" as const,section:"promotions" as const}]:[]),
     ...(selectedStore?.owned?[{label:"الموظفين",icon:"account" as const,href:"/employees" as Href},{label:"كباتن المتجر",icon:"deliveries" as const,section:"team" as const}]:[]),
     {label:"الإشعارات",icon:"notifications" as const,href:"/notifications" as Href},
@@ -198,7 +219,7 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
         </Pressable>)}
       </View>
     </View>:null}
-    {selectedStore && desktopWeb ? <PartnerDesktopHome key={"home:"+selectedStore.id} store={selectedStore} operationalState={operationalState} operationalKnown={Boolean(availability&&!availabilityError)} canOperate={canOperate}/> : selectedStore ? <View style={styles.dashboardSection}>
+    {selectedStore && desktopWeb ? <PartnerDesktopHome key={"home:"+selectedStore.id} store={selectedStore} operationalState={operationalState} operationalKnown={Boolean(availability&&!availabilityError)} canOperate={canOperate} commercialAgreement={commercialAgreement}/> : selectedStore ? <View style={styles.dashboardSection}>
       <Text style={styles.sectionTitle}>نظرة على المتجر</Text>
       <PartnerInsights embedded/>
     </View> : null}
@@ -212,6 +233,16 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
     </View> : null}
     {!desktopWeb?<PartnerPerformancePeek store={selectedStore}/>:null}
     {!desktopWeb?<Text style={styles.sectionTitle}>ملف المتجر وإعداداته</Text>:null}
+    {selectedStore?.owned && !desktopWeb ? <Pressable accessibilityRole="button"
+      accessibilityLabel={"مراجعة الاتفاقية التجارية: "+agreementReadinessMessage(commercialAgreement)}
+      style={styles.quickCard} onPress={()=>router.push({pathname:"/store",params:{section:"settings",returnTo:"more"}} as Href)}>
+      <View style={styles.quickIcon}><BthwaniIcon name="wallet" color={commercialAgreement==="ACTIVE"?theme.success:theme.brandAction} size={22}/></View>
+      <View style={styles.quickText}>
+        <Text style={styles.quickTitle}>الاتفاقية التجارية</Text>
+        <Text style={styles.quickDescription}>{agreementReadinessMessage(commercialAgreement)}</Text>
+      </View>
+      <BthwaniIcon name="back" color={theme.colorMuted} size={16}/>
+    </Pressable> : null}
     {selectedStore&&!desktopWeb?<View style={styles.storeHero}>
       <Pressable disabled={!selectedStore.owned} accessibilityRole={selectedStore.owned?"button":undefined} accessibilityLabel={"ملف المتجر "+selectedStore.name+(selectedStore.owned?"، فتح إعدادات المتجر":"، للعرض فقط")}
         onPress={selectedStore.owned?()=>router.push({pathname:"/store",params:{section:"settings",returnTo:"more"}} as Href):undefined}>

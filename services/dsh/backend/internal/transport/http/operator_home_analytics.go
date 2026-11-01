@@ -15,10 +15,25 @@ func (s *OrderServer) readOperatorHomeAnalytics(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
 		return
 	}
-	report, err := s.service.ReadOperatorHomeAnalytics(r.Context(), actorID)
+	days, valid := operatorAnalyticsDays(r.URL.Query()["period"])
+	if !valid {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "period must be 7d or 30d")
+		return
+	}
+	report, err := s.service.ReadOperatorAnalyticsPeriod(r.Context(), actorID, days)
 	if err != nil {
 		writeOrderError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, report)
+}
+
+func operatorAnalyticsDays(values []string) (int, bool) {
+	if len(values) == 0 || (len(values) == 1 && values[0] == "7d") {
+		return 7, true
+	}
+	if len(values) == 1 && values[0] == "30d" {
+		return 30, true
+	}
+	return 0, false
 }

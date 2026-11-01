@@ -11,7 +11,7 @@ import { isCurrentCaptainActor } from "./captain-session-scope";
 
 type Mission = Readonly<{ assignment: CaptainAssignment; task: CaptainDeliveryTask }>;
 type MissionReadiness = "loading" | "ready" | "unavailable";
-type Props = { mission?: Mission | null; missionReadiness?: MissionReadiness };
+type Props = { mission?: Mission | null; missionReadiness?: MissionReadiness; availabilityRevision?: number };
 const circleStyles = {
   ORDERS: { fillColor: "rgba(234,111,36,0.30)", strokeColor: "#EA6F24" },
   CAPTAINS: { fillColor: "rgba(12,155,151,0.28)", strokeColor: "#0C9B97" },
@@ -31,7 +31,7 @@ function openNavigation(latitude: number, longitude: number) {
     .catch(() => Alert.alert("تعذر فتح الملاحة", "تحقق من توفر خرائط الهاتف."));
 }
 
-export function CaptainOpportunities({ mission = null, missionReadiness = "ready" }: Props) {
+export function CaptainOpportunities({ mission = null, missionReadiness = "ready", availabilityRevision = 0 }: Props) {
   const theme = useAppearanceTheme();
   const [height, setHeight] = useState(0);
   const [data, setData] = useState<CaptainOpportunityHeatmap | null>(null);
@@ -78,18 +78,32 @@ export function CaptainOpportunities({ mission = null, missionReadiness = "ready
   }, [mission, missionReadiness]);
 
   useFocusEffect(useCallback(() => {
+    // Re-run the location gate after server-confirmed availability changes.
+    void availabilityRevision;
     let cancelled = false;
     void refresh();
     void (async () => {
       try {
         const before = currentIdentityState();
-        if (before.kind !== "authenticated") return;
+        if (mission || missionReadiness !== "ready" || before.kind !== "authenticated") return;
+        // An idle Captain may center their map only while DSH confirms pool availability.
+        const token = await getUsableIdentityAccessToken();
+        const admission = await captainClient().readOwnCaptainAdmission(token);
+        const current = currentIdentityState();
+        if (cancelled || current.kind !== "authenticated"
+          || !isCurrentCaptainActor(before.identity.subject.trim(), current.identity.subject.trim())
+          || admission.admission.state !== "eligible" || admission.admission.availabilityState !== "available") return;
         const [permission, enabled] = await Promise.all([
           Location.getForegroundPermissionsAsync(), Location.hasServicesEnabledAsync(),
         ]);
-        if (!permission.granted || !enabled) return;
-        const fix = await Location.getLastKnownPositionAsync({ maxAge: 10 * 60_000, requiredAccuracy: 5000 })
-          ?? await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const afterPermission = currentIdentityState();
+        if (cancelled || !permission.granted || !enabled || afterPermission.kind !== "authenticated"
+          || !isCurrentCaptainActor(before.identity.subject.trim(), afterPermission.identity.subject.trim())) return;
+        const cached = await Location.getLastKnownPositionAsync({ maxAge: 10 * 60_000, requiredAccuracy: 5000 });
+        const afterCache = currentIdentityState();
+        if (cancelled || afterCache.kind !== "authenticated"
+          || !isCurrentCaptainActor(before.identity.subject.trim(), afterCache.identity.subject.trim())) return;
+        const fix = cached ?? await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         const after = currentIdentityState();
         if (!cancelled && after.kind === "authenticated"
           && isCurrentCaptainActor(before.identity.subject.trim(), after.identity.subject.trim())) {
@@ -99,7 +113,7 @@ export function CaptainOpportunities({ mission = null, missionReadiness = "ready
     })();
     const timer = setInterval(() => void refresh(true), 60_000);
     return () => { cancelled = true; clearInterval(timer); requestSequence.current++; setData(null); setOwnMapCenter(null); };
-  }, [refresh]));
+  }, [refresh, mission, missionReadiness, availabilityRevision]));
 
   // The single home map switches with the canonical assignment, never
   // based on an optimistic local offer decision.
