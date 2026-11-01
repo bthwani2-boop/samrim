@@ -10,7 +10,7 @@ import { usePartnerStoreScope } from "./partner-store-scope-context";
 import { isOfferStockout } from "../store-offer/inventory-stockout";
 import { PartnerPerformanceReport } from "./partner-performance-reports";
 import { PartnerStoreRatings } from "./partner-store-ratings";
-import { verifiedPartnerCustomerActivity } from "./partner-customer-activity";
+import { partnerRepeatBuyerPercentage, verifiedPartnerCustomerActivity } from "./partner-customer-activity";
 
 type Snapshot = Readonly<{
   orders: PartnerOrderAttentionCounts | null;
@@ -128,7 +128,8 @@ export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: bool
     ...(snapshot.stockout ? [{ label: snapshot.stockout + " منتجات نفد مخزونها", hint: "مخزون معروف من المنتجات المنشورة المحمّلة", href: "/products?filter=stockout" as Href }] : []),
     ...(snapshot.unavailable ? [{ label: snapshot.unavailable + " منتجات غير متاحة", hint: "ضمن المنتجات المنشورة المحمّلة", href: "/products?filter=unavailable" as Href }] : []),
   ];
-  const hasData = snapshot.orders !== null || snapshot.available !== null || snapshot.promotions !== null || snapshot.finance !== null;
+  const repeatBuyerPercentage = partnerRepeatBuyerPercentage(snapshot.customerActivity);
+  const hasData = snapshot.orders !== null || snapshot.available !== null || snapshot.promotions !== null || snapshot.finance !== null || snapshot.customerActivity !== null;
   const missingData = (canOrders && snapshot.orders === null) || (canCatalog && snapshot.available === null);
   const action = (label: string, hint: string, href: Href) =>
     <Pressable key={label} accessibilityRole="button" accessibilityLabel={label} style={styles.taskItem} onPress={() => String(href).startsWith("/store") ? router.push(href) : router.navigate(href)}>
@@ -157,6 +158,7 @@ export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: bool
       {canOrders ? metric("بانتظار التسليم", snapshot.orders?.awaitingDispatch.toLocaleString("ar-YE") ?? "—", "store", "/orders" as Href) : null}
       {canOrders ? metric("عملاء أكملوا طلبًا · 30 يومًا", snapshot.customerActivity?.completedCustomers.toLocaleString("ar-YE") ?? "—", "store", "/insights?view=orders" as Href) : null}
       {canOrders ? metric("عملاء كرروا الشراء · 30 يومًا", snapshot.customerActivity?.returningCustomers.toLocaleString("ar-YE") ?? "—", "store", "/insights?view=orders" as Href) : null}
+      {canOrders ? metric("نسبة تكرار الشراء داخل 30 يومًا", repeatBuyerPercentage === null ? "—" : repeatBuyerPercentage.toLocaleString("ar-YE", { maximumFractionDigits: 1 }) + "٪", "store", "/insights?view=orders" as Href) : null}
       {canCatalog ? metric("منتجات متاحة", snapshot.available?.toLocaleString("ar-YE") ?? "—", "cart", "/products" as Href) : null}
       {canCatalog && (snapshot.stockout ?? 0) > 0 ? metric("نفاد المخزون", snapshot.stockout?.toLocaleString("ar-YE") ?? "—", "cart", "/products?filter=stockout" as Href) : null}
       {snapshot.finance?.attributionComplete ? metric("مستحقات مكتسبة", formatMoney(snapshot.finance.earnedMinor, "YER"), "wallet", "/wallet" as Href) : null}
@@ -203,6 +205,6 @@ export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: bool
     {snapshot.truncated ? <Text style={styles.note}>مؤشرات المنتجات تخص أول 100 منتج فقط؛ توجد منتجات أخرى.</Text> : null}
     {snapshot.finance && !snapshot.finance.attributionComplete ? <Text style={styles.note}>البيانات المالية غير مكتملة، لذلك لم تُعرض مستحقات تقديرية.</Text> : null}
     {canOrders && !loading && snapshot.customerActivity === null ? <Text accessibilityRole="alert" style={styles.note}>تعذرت قراءة إحصاءات العملاء. أعد فتح الصفحة بعد التحقق من الاتصال والصلاحية.</Text> : null}
-    <Text style={styles.note}>إحصاءات العملاء تخص طلبات مكتملة لهذا المتجر فقط، ولا تكشف هويات العملاء. بقية المؤشرات من بيانات بثواني الفعلية وليست توقعات للمبيعات.</Text>
+    <Text style={styles.note}>إحصاءات العملاء تخص طلبات مكتملة لهذا المتجر فقط ولا تكشف هوياتهم. نسبة تكرار الشراء تعني نسبة العملاء الذين أكملوا طلبين أو أكثر في فترة الثلاثين يومًا نفسها، وليست نسبة الاحتفاظ بالعملاء بين فترتين. بقية المؤشرات ليست توقعات للمبيعات.</Text>
   </View>;
 }

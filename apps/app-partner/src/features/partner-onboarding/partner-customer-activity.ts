@@ -19,3 +19,11 @@ export function verifiedPartnerCustomerActivity(
     summary.deliveredOrders + summary.pickedUpOrders > summary.totalOrders) return null;
   return summary;
 }
+
+// Share of completed Store customers who completed at least two orders in
+// the *same selected period*. This is not cross-period retention.
+export function partnerRepeatBuyerPercentage(summary: PartnerStoreOrderSummary | null | undefined): number | null {
+  const verified = verifiedPartnerCustomerActivity(summary, summary?.storeId ?? "", summary?.period ?? "30d");
+  if (!verified || verified.completedCustomers === 0) return null;
+  return Math.round((1000 * verified.returningCustomers) / verified.completedCustomers) / 10;
+}
