@@ -106,3 +106,48 @@ publish; no preview draft leaks; light/dark Ant Design and CSS use identical
 validated publication; keyboard and RTL; offline errors preserve compiled
 defaults/last valid; explicit revision readback. Live publication to real devices
 requires separate safe fixtures and authorization; UI mock alone is not proof.
+
+## 6. Stable second-pass verification: all nine editor page surfaces
+
+A second isolated Playwright walkthrough selected **all nine exact option values**
+in Elleen's page `select` and waited for each page's own heading before recording
+its section list. This supersedes only the page-heading uncertainty in section 1.
+It does **not** establish backend persistence, entitlement bypass, preview fidelity,
+or complete configuration-field coverage. Section-setting buttons were sampled
+where accessible; intermittent panel-opening timeouts remain UNVERIFIED.
+
+| Elleen page (observed) | Actual visible section inventory | Independent BThwani placement and constraints |
+| --- | --- | --- |
+| Header (`header`) | Announcement bar, brand/logo, navigation, search, language switch, account, favorites, cart | Customer storefront **web header**, not operator/captain navigation. DSH owns route/commerce references; Identity owns account; valid supported locales only. P2 |
+| Home (`home`) | Main slider, benefits, categories, trending products, custom product sections, advertising banners, best sellers, offers, Instagram, testimonials, brands, newsletter | Client home only. DSH owns published product, catalog, offer and campaign truth. Avoid fake ratings/social/email features. P1 |
+| Product Detail (`product-detail`) | Product information, product tabs, related products, frequently bought together, image gallery | Client product view. DSH canonical product/variants/media; sales recommendations must use real evidence, not invented purchase relations. P2 |
+| About (`about`) | Hero, our story, mission/vision, values, stats, team, timeline, testimonials, call-to-action | Public website. Only verified stats/team and approved claims; editorial publication owner. P2 |
+| FAQ (`faq`) | Hero, search, FAQ categories, Q&A items, contact CTA | Public website and customer support. Backend search/content taxonomy only where needed; no independent support data cache. P2 |
+| Contact (`contact`) | Page banner, contact form, map settings | Public site support; protect personal messages, anti-abuse and verified support destinations. Map must use approved location. P2 |
+| Privacy Policy (`privacy-policy`) | Banner settings, content settings, contact CTA | Public **legal** route; review/approved version required. Marketing Studio must not publish legal copy directly. P2 |
+| Terms & Conditions (`terms-conditions`) | Banner settings, content settings | Public **legal** route; explicit approval, audit and versioned legal authority. P2 |
+| Footer (`footer`) | Footer identity, social links, quick links, customer service, contact information, payment methods | Public website + customer web. Payment icons must reflect actually enabled providers, not display-only fiction; link audit and accessibility. P2 |
+
+**Verified reference labels are presentation structure only.** Third-party
+section names, controls and hierarchy inform independently designed BThwani
+features; they are not authorizations to copy vendor source code, page content,
+brands, assets, or protected interactions. User-facing marketing, legal and
+operational surfaces retain their own canonical owners and permissions.
+
+### Resulting operator frontend/backend separation
+
+| Component | Frontend/control-plane responsibility | Owning backend / non-negotiable boundary |
+| --- | --- | --- |
+| Studio page selector | Show only real template families with published consumers; responsive previews, section visibility, ordering, and honest unpublished indicators | DSH controls versioned nonlegal storefront display publications; only operator marketing permission can mutate; separate draft vs published versions |
+| Client storefront publication | Preview published page as actual client consumes it; display source/version and deterministic fallback | DSH validates exact allowed sections, canonical media and content references, stable version and rollback; client consumes only published public projection |
+| Product / offer displays | Presentation variants responsive to layout settings | DSH owns product eligibility, stock, seller, price and offers; no template override of monetary/stock truth |
+| Operator corporate theme | Shared CSS/Ant tokens, personal day/night switch, safe recovery | Implemented in this slice through existing public DSH palette; status/finance token semantics remain canonical |
+| Support/FAQ/contact | Search and reading first, no forced sign-in; moderation and form abuse protection if forms admitted | Approved content/service owner, no leakage of customer or staff data |
+| Terms/privacy | Approved copy shown with effective date and accessible revision trail | Legal/governance owner approves each revision; no marketing-only write authority and no silent auto-publication |
+| Header/footer navigation | Link and localization selection, previews | Route owners, Identity roles, enabled payment methods; reject broken/unauthorized targets |
+
+**Implementation boundary:** The added operator publication reader and theme
+projection are implemented/tested. The multi-page storefront template publishing
+model, legal content workflow, and customer layout consumption are still
+**NOT_IMPLEMENTED** and require a separate coherent DSH/client/public-site
+vertical slice; do not mark these complete based on observed editor headings.
