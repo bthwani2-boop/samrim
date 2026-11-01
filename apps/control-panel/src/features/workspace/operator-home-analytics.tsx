@@ -14,11 +14,11 @@ const groups = [
 
 type GroupKey = (typeof groups)[number]["key"];
 
-export function isOperatorHomeAnalytics(value: unknown): value is OperatorHomeAnalytics {
+export function isOperatorHomeAnalytics(value: unknown, expectedDays: 7 | 30 = 7): value is OperatorHomeAnalytics {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const report = value as Record<string, unknown>;
   if (report.timeZone !== "Asia/Aden" || typeof report.measuredAt !== "string" || !Number.isFinite(Date.parse(report.measuredAt))
-    || !Array.isArray(report.days) || report.days.length !== 7) return false;
+    || !Array.isArray(report.days) || report.days.length !== expectedDays) return false;
   const keys = ["orders", "delivered", "inProgress", "awaitingDispatch", "failed", "cancelled"];
   let previous = "";
   return report.days.every((raw) => {
