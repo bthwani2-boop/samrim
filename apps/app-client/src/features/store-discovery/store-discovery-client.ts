@@ -29,6 +29,10 @@ export async function listPublishedStores(serviceCityID: string, options: Readon
   return client().listPublishedStores(serviceCityID, options);
 }
 
+export async function readPublicStudioLayout() {
+  return client().readPublicStudioLayout();
+}
+
 export async function listPublicPromotions(serviceCityID: string, storeID = ""): Promise<PromotionListResponse> {
   return client().listPublicPromotions(serviceCityID, storeID);
 }
