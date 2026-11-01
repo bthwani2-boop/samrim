@@ -38,7 +38,10 @@ func TestStudioLayoutPublicHTTPVersionRollbackAndOperatorPermission(t *testing.T
 		if _, err := db.ExecContext(ctx, "CREATE SCHEMA dsh"); err != nil {
 			t.Fatal(err)
 		}
-		for _, index := range []int{165, 166, 167} {
+		// This minimal Studio fixture starts from v166. Store-contact v168
+		// requires the full Store schema and has a separate migration owner;
+		// Studio's layout feature itself is introduced by v169.
+		for _, index := range []int{165, 166, 168} {
 			if _, err := db.ExecContext(ctx, migrations[index]); err != nil {
 				t.Fatalf("migration %d: %v", index+1, err)
 			}
