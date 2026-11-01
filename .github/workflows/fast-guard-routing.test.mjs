@@ -53,7 +53,11 @@ test("financial integration proof cannot silently skip selected tests", () => {
   assert.match(workflow, /TestNotificationsAreIsolatedByActorAndStore/);
   assert.match(workflow, /No financial integration test executed/);
   assert.match(workflow, /Financial integration test skipped/);
-  assert.equal((workflow.match(/financial_go_proof services\/(?:wlt|dsh)\/backend/g) ?? []).length, 4);
+  assert.match(workflow, /TestStudioDraftMigrationUpgradeFromV165/);
+  assert.match(workflow, /TestStudioLayoutPublicHTTPVersionRollbackAndOperatorPermission/);
+  assert.match(workflow, /TestCatalogActivityStoreScopedPaginationAndIsolation/);
+  assert.match(workflow, /TestCatalogInventorySummaryCountsEveryOfferAndIsolatesStores/);
+  assert.equal((workflow.match(/financial_go_proof services\/(?:wlt|dsh)\/backend/g) ?? []).length, 5);
 });
 
 test("unrelated docs are not misclassified as an executable service change", () => {

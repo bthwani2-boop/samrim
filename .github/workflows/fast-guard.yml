@@ -130,6 +130,9 @@ jobs:
           export BTHWANI_FINANCIAL_PROOF_ISOLATED=1
           export DSH_FINANCIAL_HANDOFF_TEST_DATABASE_URL="$DSH_DATABASE_URL"
           financial_go_proof services/dsh/backend ./internal/storage/postgres -run '^(TestPartnerFinanceAndPayoutStoreAuthorityBoundary|TestCaptainParallelDispatchThreeOnlyOneWins|TestStoreCaptainDispatchReadRespectsDelegation|TestOrderHTTPActorScopeAndPartnerTransitionRetry|TestLocationHTTPRejectsAuthenticatedCrossActorAddressAndStoreAccess|TestNotificationsAreIsolatedByActorAndStore|TestCaptainMissionLocationOwnerLatestAndTerminalPurge|TestPendingCancellationRequestsPaginationOverHundred|TestFinancialHandoffUnknownOutcomeAndConcurrentWorkers|TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay)$' -count=1 -timeout 9m
+          # The same disposable database also proves the pending Studio schema upgrade,
+          # publish/rollback authorization and catalog Store-isolation paths on this head.
+          financial_go_proof services/dsh/backend ./internal/storage/postgres -run '^(TestStudioDraftMigrationUpgradeFromV165|TestStudioLayoutPublicHTTPVersionRollbackAndOperatorPermission|TestCatalogActivityStoreScopedPaginationAndIsolation|TestCatalogInventorySummaryCountsEveryOfferAndIsolatesStores)$' -count=1 -timeout 7m
           unset DSH_FINANCIAL_HANDOFF_TEST_DATABASE_URL
           # Admission and prepublication visibility of both joining origins.
           # The disposable PostgreSQL container owns an isolated parent database.
