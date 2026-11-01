@@ -11,7 +11,7 @@ type Agreement = Readonly<{
   agreementId: string;
   status: string;
   agreementVersion: number;
-  commercialModel: "COMMISSION" | "SUBSCRIPTION" | "HYBRID";
+  commercialModel: "COMMISSION" | "SUBSCRIPTION" | "HYBRID"; // Historical read-only model; not offered for new proposals.
   recurringAmountMinor: number;
   billingPeriod: "NONE" | "MONTHLY" | "ANNUAL";
   rates: readonly { fulfillmentMode: string; commissionRateBps: number }[];
@@ -30,7 +30,7 @@ export function StoreCommercialAgreementProposal({ storeId, modes }: Readonly<{s
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [commercialModel, setCommercialModel] = useState<"COMMISSION" | "SUBSCRIPTION" | "HYBRID">("COMMISSION");
+  const [commercialModel, setCommercialModel] = useState<"COMMISSION" | "SUBSCRIPTION">("COMMISSION");
   const [commissionPercentByMode, setCommissionPercentByMode] = useState<Record<StoreFulfillmentMode, string>>({
     BTHWANI_CAPTAIN: "0", PARTNER_CAPTAIN: "0", CUSTOMER_PICKUP: "0",
   });
@@ -114,7 +114,7 @@ export function StoreCommercialAgreementProposal({ storeId, modes }: Readonly<{s
         sameStoreCommercialRates(item.rates, rates))) {
         throw new Error("PROPOSAL_CANONICAL_READBACK_MISMATCH");
       }
-      setNotice(recurring ? "حُفظ اقتراح الاشتراك أو الهجين بانتظار قبول صاحب المتجر. التحصيل والاعتماد المالي معطّلان حتى اكتمال الفوترة." :
+      setNotice(recurring ? "حُفظ اقتراح الاشتراك بانتظار قبول صاحب المتجر. التحصيل والاعتماد المالي معطّلان حتى اكتمال الفوترة." :
         "حُفظ اقتراح العمولة بانتظار قبول صاحب المتجر واعتماد المالية.");
     } catch {
       try { await read(); } catch { setAgreements(null); }
@@ -136,10 +136,9 @@ export function StoreCommercialAgreementProposal({ storeId, modes }: Readonly<{s
       <p>أوضاع التنفيذ: {modes.map(mode => labels[mode] ?? mode).join("، ")}</p>
       <div className="form-grid">
         <label className="field-label" htmlFor="store-commercial-model">نموذج الاتفاق
-          <select id="store-commercial-model" value={commercialModel} onChange={event => setCommercialModel(event.target.value as "COMMISSION" | "SUBSCRIPTION" | "HYBRID")} disabled={busy}>
+          <select id="store-commercial-model" value={commercialModel} onChange={event => setCommercialModel(event.target.value as "COMMISSION" | "SUBSCRIPTION")} disabled={busy}>
             <option value="COMMISSION">عمولة فقط</option>
             <option value="SUBSCRIPTION">اشتراك فقط دون عمولة منتجات</option>
-            <option value="HYBRID">اشتراك وعمولة</option>
           </select>
         </label>
         {commercialModel !== "SUBSCRIPTION" ? modes.map(mode =>
@@ -178,7 +177,7 @@ export function StoreCommercialAgreementProposal({ storeId, modes }: Readonly<{s
           <textarea id="store-commercial-proposal-reason" rows={2} minLength={8} maxLength={500} value={proposalReason} onChange={event => setProposalReason(event.target.value)} disabled={busy} />
         </label>
       </div>
-      {commercialModel !== "COMMISSION" ? <p className="muted">الاشتراك والهجين اقتراحان قابلان للقبول فقط حاليًا؛ يمنع WLT الاعتماد والتحصيل حتى تنفيذ الفوترة والقيود والتسويات والمراجعة المستقلة.</p> :
+      {commercialModel !== "COMMISSION" ? <p className="muted">الاشتراك اقتراح قابل للقبول فقط حاليًا؛ يمنع WLT الاعتماد والتحصيل حتى تنفيذ الفوترة والقيود والتسويات والمراجعة المستقلة.</p> :
         <p className="muted">عمولة 0% ليست اشتراكًا ولا تتحول تلقائيًا إلى اتفاق مدفوع.</p>}
       <button type="button" className="button button-secondary" disabled={busy || !actorId || modes.length === 0} onClick={() => void propose()}>
         {busy ? "جارٍ إرسال الاقتراح…" : hasActiveAgreement ? "اقتراح تعديل الاتفاق الساري" : nextProposalVersion > 0 ? "إعادة اقتراح الاتفاق بعد التصحيح" : "اقتراح الاتفاق التجاري"}

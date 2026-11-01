@@ -351,13 +351,13 @@ export function StoreCommercialAgreementWorkspace() {
       <p className="muted">حالة الاتفاقية: {selected.effectiveAt ? `سارية منذ ${formatTimestamp(selected.effectiveAt)}` : "لم يبدأ سريانها بعد"}</p>
       <p className="muted">أنماط تنفيذ المتجر: {selected.fulfillmentModes.map(modeLabel).join("، ") || "غير محددة"}</p>
       <h4>الشروط التجارية</h4>
-      <p className="muted">النموذج: {selected.commercialModel === "COMMISSION" ? "عمولة" : selected.commercialModel === "SUBSCRIPTION" ? "اشتراك" : "اشتراك وعمولة"}</p>
+      <p className="muted">النموذج: {selected.commercialModel === "COMMISSION" ? "عمولة" : selected.commercialModel === "SUBSCRIPTION" ? "اشتراك" : "نموذج سابق ملغى"}</p>
       {selected.commercialModel !== "COMMISSION" ? <>
         <p className="muted">الاشتراك: {selected.recurringAmountMinor.toLocaleString("ar-YE-u-nu-latn")} ريال يمني · {selected.billingPeriod === "MONTHLY" ? "شهري" : "سنوي"} · {selected.billingTimeZone}</p>
         <p className="muted">استحقاق الفاتورة {selected.invoiceDueDays} يوم · السماح {selected.graceDays} يوم · التجديد {selected.renewalPolicy === "MANUAL" ? "يدوي" : "تلقائي"}</p>
         <p className="muted">الإلغاء: {selected.terminationTerms}</p>
         <p className="muted">التعديل والاسترداد: {selected.adjustmentTerms}</p>
-        <p className="validation-error" role="alert">اعتماد الاشتراك والهجين معطّل إلى حين اكتمال فوترة WLT والتسويات ومراجعتها المالية المستقلة.</p>
+        <p className="validation-error" role="alert">اعتماد الاشتراك معطّل، وأي اتفاق هجين سابق ملغى ولا يقبل التفعيل إلى حين اكتمال فوترة WLT والتسويات ومراجعتها المالية المستقلة.</p>
       </> : null}
       <h4>النسب الدقيقة في الاتفاق</h4>
       <ul>{selected.fulfillmentModes.map((mode) => {

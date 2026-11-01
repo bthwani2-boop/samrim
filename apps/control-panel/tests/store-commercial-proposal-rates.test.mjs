@@ -19,16 +19,9 @@ test("subscription explicitly clears product commission without changing draft v
     modes.map(fulfillmentMode => ({ fulfillmentMode, commissionRateBps: 0 })));
   assert.equal(draft.BTHWANI_CAPTAIN, "12.5");
 });
-test("hybrid requires some positive commission but allows zero on another mode", () => {
-  assert.deepEqual(storeCommercialRatesForProposal(modes, {
-    BTHWANI_CAPTAIN: "0", PARTNER_CAPTAIN: "1", CUSTOMER_PICKUP: "0",
-  }, "HYBRID"), [
-    { fulfillmentMode: "BTHWANI_CAPTAIN", commissionRateBps: 0 },
-    { fulfillmentMode: "PARTNER_CAPTAIN", commissionRateBps: 100 },
-    { fulfillmentMode: "CUSTOMER_PICKUP", commissionRateBps: 0 },
-  ]);
+test("retired hybrid model is rejected even with positive commission", () => {
   assert.equal(storeCommercialRatesForProposal(modes, {
-    BTHWANI_CAPTAIN: "0", PARTNER_CAPTAIN: "0", CUSTOMER_PICKUP: "0",
+    BTHWANI_CAPTAIN: "0", PARTNER_CAPTAIN: "1", CUSTOMER_PICKUP: "0",
   }, "HYBRID"), null);
 });
 test("rejects duplicate, absent, unsupported, over-precision and invalid percentages", () => {

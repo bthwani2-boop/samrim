@@ -3925,7 +3925,7 @@ components:
       required: [rates, expectedCurrentVersion, reason]
       additionalProperties: false
       properties:
-        commercialModel: { type: string, enum: [COMMISSION, SUBSCRIPTION, HYBRID] }
+        commercialModel: { type: string, enum: [COMMISSION, SUBSCRIPTION] }
         recurringAmountMinor: { type: integer, minimum: 0, maximum: 100000000 }
         billingPeriod: { type: string, enum: [NONE, MONTHLY, ANNUAL] }
         billingTimeZone: { type: string, enum: [Asia/Aden] }

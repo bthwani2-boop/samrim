@@ -1,6 +1,6 @@
 // Client-side presentation validation only; WLT remains the financial authority.
 export type StoreCommercialFulfillmentMode = "BTHWANI_CAPTAIN" | "PARTNER_CAPTAIN" | "CUSTOMER_PICKUP";
-export type StoreCommercialModel = "COMMISSION" | "SUBSCRIPTION" | "HYBRID";
+export type StoreCommercialModel = "COMMISSION" | "SUBSCRIPTION";
 export type StoreCommissionRate = Readonly<{ fulfillmentMode: StoreCommercialFulfillmentMode; commissionRateBps: number }>;
 
 const supportedModes = new Set<StoreCommercialFulfillmentMode>(["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"]);
@@ -10,7 +10,7 @@ export function storeCommercialRatesForProposal(
   percentageByMode: Readonly<Partial<Record<StoreCommercialFulfillmentMode, string>>>,
   model: StoreCommercialModel,
 ): StoreCommissionRate[] | null {
-  if (!["COMMISSION", "SUBSCRIPTION", "HYBRID"].includes(model) ||
+  if (!["COMMISSION", "SUBSCRIPTION"].includes(model) ||
     modes.length < 1 || modes.length > 3 || new Set(modes).size !== modes.length ||
     modes.some(mode => !supportedModes.has(mode))) return null;
   const rates: StoreCommissionRate[] = [];
@@ -23,7 +23,6 @@ export function storeCommercialRatesForProposal(
       Math.abs(percent * 100 - bps) > 0.000001) return null;
     rates.push({ fulfillmentMode: mode, commissionRateBps: bps });
   }
-  if (model === "HYBRID" && !rates.some(rate => rate.commissionRateBps > 0)) return null;
   return rates;
 }
 

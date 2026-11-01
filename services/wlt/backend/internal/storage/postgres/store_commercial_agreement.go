@@ -294,7 +294,7 @@ func AcceptStoreCommercialAgreement(ctx context.Context, db *sql.DB, agreementID
 	if err != nil {
 		return StoreCommercialAgreementRecord{}, false, err
 	}
-	if item.Status != "PROPOSED" || item.AgreementVersion != expectedVersion || item.PartnerActorID != actorID {
+	if item.Status != "PROPOSED" || item.AgreementVersion != expectedVersion || item.PartnerActorID != actorID || item.CommercialModel == "HYBRID" {
 		if item.AgreementVersion != expectedVersion {
 			return StoreCommercialAgreementRecord{}, false, ErrStoreCommercialAgreementVersion
 		}
@@ -515,7 +515,7 @@ func normalizeStoreCommercialModel(input *ProposeStoreCommercialAgreementInput) 
 		input.BillingPeriod, input.BillingTimeZone, input.RenewalPolicy = "NONE", "Asia/Aden", "NONE"
 		return true
 	}
-	if input.CommercialModel != "SUBSCRIPTION" && input.CommercialModel != "HYBRID" {
+	if input.CommercialModel != "SUBSCRIPTION" {
 		return false
 	}
 	if input.RecurringAmountMinor < 1 || input.RecurringAmountMinor > 100000000 ||
@@ -532,15 +532,6 @@ func normalizeStoreCommercialModel(input *ProposeStoreCommercialAgreementInput) 
 			if rate.CommissionRateBps != 0 {
 				return false
 			}
-		}
-	}
-	if input.CommercialModel == "HYBRID" {
-		hasCommission := false
-		for _, rate := range input.Rates {
-			hasCommission = hasCommission || rate.CommissionRateBps > 0
-		}
-		if !hasCommission {
-			return false
 		}
 	}
 	return true

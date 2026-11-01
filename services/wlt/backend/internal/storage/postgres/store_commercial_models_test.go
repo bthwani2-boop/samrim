@@ -31,8 +31,8 @@ func TestNormalizeStoreCommercialModel(t *testing.T) {
 		{name: "subscription without terms denied", input: ProposeStoreCommercialAgreementInput{CommercialModel: "SUBSCRIPTION", RecurringAmountMinor: 1500}},
 		{name: "subscription cannot carry commission", input: recurringInput("SUBSCRIPTION", 250)},
 		{name: "subscription with zero commission", input: recurringInput("SUBSCRIPTION", 0), valid: true, model: "SUBSCRIPTION"},
-		{name: "hybrid with fee and commission", input: recurringInput("HYBRID", 250), valid: true, model: "HYBRID"},
-		{name: "hybrid must include commission", input: recurringInput("HYBRID", 0)},
+		{name: "retired hybrid with fee and commission is rejected", input: recurringInput("HYBRID", 250)},
+		{name: "retired hybrid with no commission is rejected", input: recurringInput("HYBRID", 0)},
 		{name: "unsupported time zone denied", input: func() ProposeStoreCommercialAgreementInput {
 			value := recurringInput("SUBSCRIPTION", 0)
 			value.BillingTimeZone = "UTC"

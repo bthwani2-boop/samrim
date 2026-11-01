@@ -175,7 +175,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
   function requestAcceptanceConfirmation(agreement: StoreCommercialAgreement) {
     if (activeScope.current !== storageKey || agreementsScope !== storageKey ||
       agreement.storeId !== storeID || agreement.partnerActorId !== actorID ||
-      !hasReviewableStoreAgreementRates(agreement)) return;
+      agreement.commercialModel === "HYBRID" || !hasReviewableStoreAgreementRates(agreement)) return;
     const savedAttempt = pendingAttempt?.agreementId === agreement.agreementId ? pendingAttempt : null;
     const reason = savedAttempt?.reason ?? DEFAULT_ACCEPTANCE_REASON;
     if (Array.from(reason.trim()).length < 8 || Array.from(reason.trim()).length > 500) {
@@ -190,7 +190,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
     if (acceptanceBusy.current || busyAgreementID || agreement.status !== "PROPOSED" || !storageKey ||
       !pendingStorageReady || agreementsScope !== storageKey || activeScope.current !== storageKey ||
       agreement.storeId !== storeID || agreement.partnerActorId !== actorID ||
-      !hasReviewableStoreAgreementRates(agreement)) return;
+      agreement.commercialModel === "HYBRID" || !hasReviewableStoreAgreementRates(agreement)) return;
     const savedAttempt = pendingAttempt?.agreementId === agreement.agreementId ? pendingAttempt : null;
     if (pendingAttempt && !savedAttempt) {
       setError("تحقق أولًا من محاولة القبول المحفوظة قبل قبول اتفاقية أخرى.");
@@ -267,7 +267,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
       {visibleAgreements?.length === 0 ? <Text style={styles.muted}>لا توجد اتفاقية بانتظارك الآن. يجهّز قسم الشركاء المقترح؛ ستظهر الشروط هنا لمراجعتها وقبولها قبل سريانها. يمكنك تجهيز المنتجات والصور بالتوازي.</Text> : null}
       {visibleAgreements?.map((agreement) => {
         const savedAttempt = scopedPendingAttempt?.agreementId === agreement.agreementId ? scopedPendingAttempt : null;
-        const canAccept = agreement.status === "PROPOSED" && hasReviewableStoreAgreementRates(agreement) && pendingStorageReady && !loading && (!scopedPendingAttempt || Boolean(savedAttempt));
+        const canAccept = agreement.commercialModel !== "HYBRID" && agreement.status === "PROPOSED" && hasReviewableStoreAgreementRates(agreement) && pendingStorageReady && !loading && (!scopedPendingAttempt || Boolean(savedAttempt));
         return (
           <View key={agreement.agreementId} style={styles.agreement}>
             <View style={styles.agreementHeading}>
@@ -288,7 +288,8 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
                 <Text selectable style={styles.rateValue}>{rateValue(rate.commissionRateBps)}{rate.fulfillmentMode === "PARTNER_CAPTAIN" ? ` · رسوم توصيل المتجر: ${rate.deliveryPricingMode === "FREE" ? "مجاني" : rate.deliveryPricingMode === "FIXED" ? `${rate.deliveryFixedFeeMinor ?? 0} ريال` : "حسب المسافة"}` : ""}{rate.deliveryMarkupMinor ? ` · زيادة توصيل ${rate.deliveryMarkupMinor} ريال لبثواني دون مساس بأجرة الكابتن` : ""}</Text>
               </View>
             )) : <Text style={styles.error}>لا تحتوي الاتفاقية على معدلات تشغيل صالحة.</Text>}
-            {agreement.status === "PROPOSED" ? <View style={styles.acceptance}>
+            {agreement.commercialModel === "HYBRID" ? <Text style={styles.error}>هذا النموذج التجاري ملغى. اطلب من قسم الشركاء إغلاق هذا المقترح وتقديم عقد بعمولة أو اشتراك فقط.</Text> : null}
+            {agreement.status === "PROPOSED" && agreement.commercialModel !== "HYBRID" ? <View style={styles.acceptance}>
               <Text style={styles.muted}>راجع النموذج والمبالغ والشروط أعلاه قبل قبول الاتفاق؛ قبولك لا يبدأ تحصيل اشتراك غير مفعّل.</Text>
               {savedAttempt ? <Text style={styles.muted}>محاولة قبول سابقة غير محسومة؛ تحقق من نتيجتها قبل إعادة المحاولة.</Text> : null}
               <BthwaniButton
