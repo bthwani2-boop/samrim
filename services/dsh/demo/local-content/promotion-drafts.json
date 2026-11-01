@@ -1,0 +1,33 @@
+[
+  {
+    "id": "demo-grocery-item-discount-v1",
+    "code": "DEMO-TOMATO-10",
+    "nameAr": "خصم تجريبي على الطماطم",
+    "descriptionAr": "مسودة محلية؛ يجب ربط المنتج بمعرّفه الرسمي في DSH بعد قراءته.",
+    "kind": "PERCENTAGE",
+    "valueMinor": 10,
+    "maxDiscountMinor": 300,
+    "fundingSource": "PARTNER",
+    "targets": [
+      {
+        "targetKind": "PRODUCT",
+        "targetRef": "MAP:tomato"
+      }
+    ],
+    "startsAt": "REPLACE_WITH_FUTURE_ISO8601_TIME",
+    "endsAt": "REPLACE_WITH_LATER_ISO8601_TIME"
+  },
+  {
+    "id": "demo-grocery-threshold-discount-v1",
+    "code": "DEMO-BASKET-100",
+    "nameAr": "خصم تجريبي لسلة مؤهلة",
+    "descriptionAr": "مسودة خصم ثابت مشروطة بحد أدنى للسلة؛ راجع التمويل والسياسة قبل الاستخدام.",
+    "kind": "FIXED",
+    "valueMinor": 100,
+    "fundingSource": "PARTNER",
+    "minOrderSubtotalMinor": 3000,
+    "targets": [],
+    "startsAt": "REPLACE_WITH_FUTURE_ISO8601_TIME",
+    "endsAt": "REPLACE_WITH_LATER_ISO8601_TIME"
+  }
+]

@@ -1,0 +1,114 @@
+{
+  "packId": "bthwani-local-demo-20261101",
+  "language": "ar-YE",
+  "stores": [
+    {
+      "storeKey": "sana-a-roda",
+      "nameAr": "سوق الروضة",
+      "cityAr": "صنعاء",
+      "neighborhoodAr": "الروضة",
+      "descriptionAr": "احتياجات يومية أساسية من متجر حيّ قريب.",
+      "catalogFile": "stores/sana-a-roda.csv",
+      "coverArtwork": "images/store-sana-a.svg"
+    },
+    {
+      "storeKey": "taiz-saha-bakery",
+      "nameAr": "مخبز الساحة",
+      "cityAr": "تعز",
+      "neighborhoodAr": "وسط المدينة",
+      "descriptionAr": "مخبوزات طازجة وخيارات إفطار بسيطة.",
+      "catalogFile": "stores/taiz-saha-bakery.csv",
+      "coverArtwork": "images/store-taiz-b.svg"
+    },
+    {
+      "storeKey": "aden-bayt-coffee",
+      "nameAr": "بيت البن العدني",
+      "cityAr": "عدن",
+      "neighborhoodAr": "كريتر",
+      "descriptionAr": "قهوة وبن ومستلزمات ضيافة بطابع محلي.",
+      "catalogFile": "stores/aden-bayt-coffee.csv",
+      "coverArtwork": "images/store-aden-c.svg"
+    }
+  ],
+  "categories": [
+    {
+      "categoryKey": "staples",
+      "nameAr": "أساسيات المطبخ",
+      "verticalHint": "grocery",
+      "artwork": "images/category-staples.svg"
+    },
+    {
+      "categoryKey": "dairy",
+      "nameAr": "الألبان والبيض",
+      "verticalHint": "grocery",
+      "artwork": "images/category-dairy.svg"
+    },
+    {
+      "categoryKey": "bakery",
+      "nameAr": "المخبوزات",
+      "verticalHint": "bakery",
+      "artwork": "images/category-bakery.svg"
+    },
+    {
+      "categoryKey": "coffee",
+      "nameAr": "القهوة والبن",
+      "verticalHint": "grocery",
+      "artwork": "images/category-coffee.svg"
+    },
+    {
+      "categoryKey": "household",
+      "nameAr": "العناية بالمنزل",
+      "verticalHint": "grocery",
+      "artwork": "images/category-home.svg"
+    }
+  ],
+  "productArtwork": [
+    {
+      "productKey": "rice",
+      "artwork": "images/product-rice.svg"
+    },
+    {
+      "productKey": "milk",
+      "artwork": "images/product-milk.svg"
+    },
+    {
+      "productKey": "soap",
+      "artwork": "images/product-soap.svg"
+    },
+    {
+      "productKey": "bread",
+      "artwork": "images/product-bread.svg"
+    },
+    {
+      "productKey": "bun",
+      "artwork": "images/product-bun.svg"
+    },
+    {
+      "productKey": "honey",
+      "artwork": "images/product-honey.svg"
+    },
+    {
+      "productKey": "coffee",
+      "artwork": "images/product-coffee.svg"
+    },
+    {
+      "productKey": "cardamom",
+      "artwork": "images/product-cardamom.svg"
+    },
+    {
+      "productKey": "dates",
+      "artwork": "images/product-dates.svg"
+    }
+  ],
+  "discovery": [
+    {
+      "contentKey": "sanaa-neighborhood-picks",
+      "kind": "BANNER",
+      "titleAr": "احتياجاتك اليومية من متاجر الحي",
+      "bodyAr": "اكتشف خيارات قريبة في صنعاء وتعز وعدن.",
+      "targetType": "INFO",
+      "artwork": "images/discovery-neighborhoods.svg",
+      "publication": "offline-proposal-only"
+    }
+  ]
+}

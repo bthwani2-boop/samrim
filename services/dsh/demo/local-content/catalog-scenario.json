@@ -1,0 +1,127 @@
+{
+  "scenarioId": "demo-sanaa-grocery-v1",
+  "locale": "ar-YE",
+  "currency": "YER",
+  "storeKey": "demo-grocery-store",
+  "storeNameAr": "مقاضي الحي",
+  "cityAr": "صنعاء",
+  "descriptionAr": "متجر تجريبي للمقاضي اليومية في صنعاء.",
+  "verticalKey": "resolve-from-dsh",
+  "categories": [
+    {
+      "key": "produce",
+      "nameAr": "خضروات وفواكه",
+      "nameEn": "Produce",
+      "parentKey": null,
+      "image": "images/category-produce.png"
+    },
+    {
+      "key": "dairy",
+      "nameAr": "ألبان ومشروبات",
+      "nameEn": "Dairy and drinks",
+      "parentKey": null,
+      "image": "images/category-dairy.png"
+    },
+    {
+      "key": "pantry",
+      "nameAr": "مواد غذائية",
+      "nameEn": "Pantry",
+      "parentKey": null,
+      "image": "images/category-pantry.png"
+    },
+    {
+      "key": "poultry",
+      "nameAr": "دواجن",
+      "nameEn": "Poultry",
+      "parentKey": null,
+      "image": "images/category-poultry.png"
+    }
+  ],
+  "sharedProducts": [
+    {
+      "key": "tomato",
+      "nameAr": "طماطم محلية",
+      "categoryKey": "produce",
+      "measurementKind": "MEASURED",
+      "baseUnit": "GRAM",
+      "variantTitle": "كيلوغرام",
+      "image": "images/product-tomato.png"
+    },
+    {
+      "key": "milk",
+      "nameAr": "حليب طازج",
+      "categoryKey": "dairy",
+      "measurementKind": "MEASURED",
+      "baseUnit": "MILLILITER",
+      "variantTitle": "عبوة لتر",
+      "image": "images/product-milk.png"
+    },
+    {
+      "key": "honey",
+      "nameAr": "عسل سدر جبلي",
+      "categoryKey": "pantry",
+      "measurementKind": "DISCRETE",
+      "baseUnit": "COUNT",
+      "variantTitle": "مرطبان 500 غرام",
+      "image": "images/product-honey.png"
+    },
+    {
+      "key": "rice",
+      "nameAr": "أرز بسمتي",
+      "categoryKey": "pantry",
+      "measurementKind": "DISCRETE",
+      "baseUnit": "COUNT",
+      "variantTitle": "كيس 5 كيلوغرام",
+      "image": "images/product-rice.png"
+    },
+    {
+      "key": "chicken",
+      "nameAr": "دجاج طازج",
+      "categoryKey": "poultry",
+      "measurementKind": "MEASURED",
+      "baseUnit": "GRAM",
+      "variantTitle": "كيلوغرام",
+      "image": "images/product-chicken.png"
+    }
+  ],
+  "storeAssortment": [
+    {
+      "productKey": "tomato",
+      "variantScenarios": [
+        "كيلوغرام",
+        "نصف كيلوغرام"
+      ]
+    },
+    {
+      "productKey": "milk",
+      "variantScenarios": [
+        "عبوة لتر",
+        "عبوة نصف لتر"
+      ]
+    },
+    {
+      "productKey": "honey",
+      "variantScenarios": [
+        "مرطبان 500 غرام",
+        "مرطبان 1 كيلوغرام"
+      ]
+    },
+    {
+      "productKey": "rice",
+      "variantScenarios": [
+        "كيس 5 كيلوغرام",
+        "كيس 10 كيلوغرام"
+      ]
+    },
+    {
+      "productKey": "chicken",
+      "variantScenarios": [
+        "كيلوغرام"
+      ]
+    }
+  ],
+  "promotionScenarios": [
+    "promotion-drafts.json"
+  ],
+  "storeCoverImage": "images/store-cover.png"
+}
