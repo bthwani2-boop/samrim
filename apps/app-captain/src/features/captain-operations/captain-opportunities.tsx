@@ -84,8 +84,7 @@ export function CaptainOpportunities({ mission = null, missionReadiness = "ready
       try {
         const before = currentIdentityState();
         if (mission || missionReadiness !== "ready" || before.kind !== "authenticated") return;
-        // Only the server-confirmed available Captain may acquire a new map fix.
-        // Offline mode must not activate phone GPS merely to center the map.
+        // An idle Captain may center their map only while DSH confirms pool availability.
         const token = await getUsableIdentityAccessToken();
         const admission = await captainClient().readOwnCaptainAdmission(token);
         const current = currentIdentityState();
