@@ -21,6 +21,8 @@ export type ActiveCaptainMission = Readonly<{
 export default function CaptainHomeRoute() {
   const [mission, setMission] = useState<ActiveCaptainMission | null>(null);
   const [missionReadiness, setMissionReadiness] = useState<"loading" | "ready" | "unavailable">("loading");
+  const [availabilityRevision, setAvailabilityRevision] = useState(0);
+  const onAvailabilityConfirmed = useCallback(() => setAvailabilityRevision((current) => current + 1), []);
 
   useFocusEffect(useCallback(() => {
     let disposed = false;
@@ -79,10 +81,12 @@ export default function CaptainHomeRoute() {
   }, []));
 
   return <View style={{ flex: 1 }}>
-    <CaptainOpportunities mission={missionReadiness === "ready" ? mission : null} missionReadiness={missionReadiness} />
+    <CaptainOpportunities mission={missionReadiness === "ready" ? mission : null}
+      missionReadiness={missionReadiness} availabilityRevision={availabilityRevision} />
     <View pointerEvents="box-none" style={{ position: "absolute", left: 0, right: 0, top: 8 }}>
       <CaptainReadiness overlay missionActive={missionReadiness === "ready" && Boolean(mission)}
-        missionAssignmentId={missionReadiness === "ready" ? (mission?.assignment.id ?? "") : ""} />
+        missionAssignmentId={missionReadiness === "ready" ? (mission?.assignment.id ?? "") : ""}
+        onAvailabilityConfirmed={onAvailabilityConfirmed} />
     </View>
     <CaptainOffers popup suppressed={Boolean(mission) || missionReadiness !== "ready"} />
   </View>;
