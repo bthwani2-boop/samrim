@@ -265,10 +265,23 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
         }
       }
       if (!stillCurrentActor()) return;
-      if (!(await refreshGps())) {
+      const ready = await refreshGps();
+      if (!stillCurrentActor()) return;
+      if (!ready) {
         setError(forMission
           ? "فعّل موقع الهاتف ثم اضغط تشغيل موقع المهمة مجددًا."
           : "فعّل خدمات الموقع ثم اضغط استعادة الموقع مجددًا.");
+        return;
+      }
+      if (!forMission) {
+        // A recovered public-pool Captain needs a fresh map gate and a new
+        // presence fix now. The publisher verifies current DSH availability.
+        onAvailabilityConfirmed?.();
+        try {
+          await publishCaptainPresence(true);
+        } catch {
+          if (stillCurrentActor()) setError("عاد موقع الهاتف، لكن تعذر نشر موقع التوزيع. تحقق من الاتصال وحاول مجددًا.");
+        }
       }
     } catch {
       if (stillCurrentActor()) setError(forMission

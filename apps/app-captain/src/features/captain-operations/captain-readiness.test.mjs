@@ -36,7 +36,8 @@ test("mission location recovery is explicit and independent of dispatch availabi
   assert.ok(start > 0 && end > start);
   const recovery = readiness.slice(start, end);
   assert.match(recovery, /Location\.requestForegroundPermissionsAsync\(\)/);
-  assert.doesNotMatch(recovery, /setCaptainAvailability|publishCaptainPresence/);
+  assert.doesNotMatch(recovery, /setCaptainAvailability\(/);
+  assert.match(recovery, /if \(!forMission\) \{/);
   assert.match(readiness, /!gpsReady && \(missionActive \|\| \(!storeOnly && available\)\)/);
   assert.match(readiness, /!permission\.canAskAgain/);
   assert.match(readiness, /Linking\.openSettings\(\)/);
@@ -69,7 +70,11 @@ test("available Captain recovers GPS without changing canonical availability", (
   assert.match(recovery, /Location\.requestForegroundPermissionsAsync\(\)/);
   assert.match(recovery, /Location\.enableNetworkProviderAsync\(\)/);
   assert.match(recovery, /Linking\.openSettings\(\)/);
-  assert.doesNotMatch(recovery, /setCaptainAvailability|publishCaptainPresence/);
+  assert.doesNotMatch(recovery, /setCaptainAvailability\(/);
+  assert.match(recovery, /onAvailabilityConfirmed\?\.\(\)/);
+  assert.match(recovery, /publishCaptainPresence\(true\)/);
+  assert.match(presence, /admission\.admission\.availabilityState === "available"/);
+  assert.match(presence, /current\.identity\.subject === before\.identity\.subject/);
   assert.match(readiness, /available && !gpsReady \? <BthwaniButton/);
   assert.match(readiness, /!gpsReady && \(missionActive \|\| \(!storeOnly && available\)\)/);
   assert.match(readiness, /onPress=\{\(\) => void recoverPhoneLocation\(\)\}/);
