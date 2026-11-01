@@ -22,8 +22,8 @@ const reviewedAgreement = {
   terminationTerms: "Cancel before renewal",
   adjustmentTerms: "Finance reviews refunds",
   rates: [
-    { fulfillmentMode: "BTHWANI_CAPTAIN", commissionRateBps: 0 },
-    { fulfillmentMode: "PARTNER_CAPTAIN", commissionRateBps: 0, deliveryMarkupMinor: 100, deliveryPricingMode: "FIXED", deliveryFixedFeeMinor: 600 },
+    { fulfillmentMode: "BTHWANI_CAPTAIN", commissionRateBps: 0, deliveryMarkupMinor: 100 },
+    { fulfillmentMode: "PARTNER_CAPTAIN", commissionRateBps: 0, deliveryPricingMode: "FIXED", deliveryFixedFeeMinor: 600 },
   ],
 };
 const expected = {
@@ -35,10 +35,32 @@ const expected = {
 };
 
 test("partner cannot review or accept an agreement with no commission rates", () => {
-  assert.equal(hasReviewableStoreAgreementRates({ rates: [] }), false);
+  assert.equal(hasReviewableStoreAgreementRates({ commercialModel: "COMMISSION", rates: [] }), false);
   assert.equal(hasReviewableStoreAgreementRates({
-    rates: [{ fulfillmentMode: "CUSTOMER_PICKUP", commissionRateBps: 0 }],
+    commercialModel: "COMMISSION", rates: [{ fulfillmentMode: "CUSTOMER_PICKUP", commissionRateBps: 0 }],
   }), true);
+});
+
+test("partner refuses duplicate, altered, or unapproved Store rate rules before accepting", () => {
+  assert.equal(hasReviewableStoreAgreementRates(reviewedAgreement), true);
+  const [captain, partner] = reviewedAgreement.rates;
+  const invalid = [
+    [captain, captain],
+    [{ ...captain, fulfillmentMode: "UNKNOWN" }],
+    [{ ...captain, commissionRateBps: 1 }],
+    [{ ...captain, deliveryMarkupMinor: -1 }],
+    [{ ...captain, deliveryMarkupMinor: 10001 }],
+    [{ ...captain, deliveryPricingMode: "FREE" }],
+    [{ ...captain, deliveryFixedFeeMinor: 1 }],
+    [{ ...partner, deliveryMarkupMinor: 100 }],
+    [{ ...partner, deliveryPricingMode: "FREE", deliveryFixedFeeMinor: 600 }],
+    [{ ...partner, deliveryFixedFeeMinor: 20001 }],
+    [{ ...partner, commissionRateBps: 10001 }],
+    [{ ...partner, commissionRateBps: "0" }],
+  ];
+  for (const rates of invalid) assert.equal(hasReviewableStoreAgreementRates({ ...reviewedAgreement, rates }), false, JSON.stringify(rates));
+  assert.equal(hasReviewableStoreAgreementRates({ ...reviewedAgreement, commercialModel: "COMMISSION" }), true);
+  assert.equal(hasReviewableStoreAgreementRates({ ...reviewedAgreement, commercialModel: "HYBRID" }), true);
 });
 
 test("partner acceptance readback must belong to the accepting owner and exact reviewed terms", () => {
@@ -71,8 +93,8 @@ test("partner acceptance readback must belong to the accepting owner and exact r
     terminationTerms: "Different cancellation",
     adjustmentTerms: "Different refunds",
     rates: [
-      accepted.rates[0],
-      { ...accepted.rates[1], deliveryMarkupMinor: 200 },
+      { ...accepted.rates[0], deliveryMarkupMinor: 200 },
+      accepted.rates[1],
     ],
   };
   for (const [field, replacement] of Object.entries(altered)) {

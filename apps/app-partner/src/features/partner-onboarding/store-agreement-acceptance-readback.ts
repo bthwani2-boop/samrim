@@ -6,9 +6,29 @@ type CommercialConsentTerms = Pick<
   "invoiceDueDays" | "graceDays" | "renewalPolicy" | "terminationTerms" | "adjustmentTerms" | "rates"
 >;
 
-// An agreement with no rates cannot be reviewed or knowingly accepted.
-export function hasReviewableStoreAgreementRates(agreement: Pick<StoreCommercialAgreement, "rates">): boolean {
-  return agreement.rates.length > 0;
+// WLT owns these contract rules. Reject malformed financial terms before
+// displaying an acceptance action; historical HYBRID stays readable only.
+export function hasReviewableStoreAgreementRates(agreement: Pick<StoreCommercialAgreement, "commercialModel" | "rates">): boolean {
+  const { rates } = agreement;
+  const modes = new Set(["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"]);
+  if (rates.length < 1 || rates.length > modes.size ||
+    new Set(rates.map(rate => rate.fulfillmentMode)).size !== rates.length) return false;
+  return rates.every(rate => {
+    const markup = rate.deliveryMarkupMinor ?? 0;
+    const pricing = rate.deliveryPricingMode ?? "DISTANCE";
+    const fixed = rate.deliveryFixedFeeMinor ?? 0;
+    if (!modes.has(rate.fulfillmentMode) ||
+      !Number.isSafeInteger(rate.commissionRateBps) || rate.commissionRateBps < 0 || rate.commissionRateBps > 10000 ||
+      !Number.isSafeInteger(markup) || markup < 0 || markup > 10000 ||
+      !Number.isSafeInteger(fixed) || fixed < 0 || fixed > 20000 ||
+      (agreement.commercialModel === "SUBSCRIPTION" && rate.commissionRateBps !== 0)) return false;
+    if (rate.fulfillmentMode === "PARTNER_CAPTAIN") {
+      if (!((pricing === "DISTANCE" && fixed === 0) ||
+        (pricing === "FREE" && fixed === 0) ||
+        (pricing === "FIXED" && fixed > 0))) return false;
+    } else if (pricing !== "DISTANCE" || fixed !== 0) return false;
+    return markup === 0 || (rate.fulfillmentMode === "BTHWANI_CAPTAIN" && rate.commissionRateBps === 0);
+  });
 }
 
 function matchesReviewedCommercialTerms(actual: CommercialConsentTerms, reviewed: CommercialConsentTerms): boolean {

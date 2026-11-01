@@ -1,6 +1,7 @@
 import * as Crypto from "expo-crypto";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { hasReviewableStoreAgreementRates } from "./store-agreement-acceptance-readback";
 
 type StoreCommercialAgreementRate = Readonly<{
   fulfillmentMode: string;
@@ -77,9 +78,14 @@ function isAgreement(value: unknown): value is StoreCommercialAgreement {
   if (value.commercialModel !== "COMMISSION" &&
     (Number(value.recurringAmountMinor) <= 0 || value.billingPeriod === "NONE" || value.renewalPolicy === "NONE" ||
     Array.from(value.terminationTerms.trim()).length < 8 || Array.from(value.adjustmentTerms.trim()).length < 8)) return false;
-  return value.rates.every((rate) => isRecord(rate) && typeof rate.fulfillmentMode === "string" &&
-    rate.fulfillmentMode.trim().length > 0 && Number.isSafeInteger(rate.commissionRateBps) &&
-    Number(rate.commissionRateBps) >= 0 && Number(rate.commissionRateBps) <= 10_000);
+  if (value.commercialModel === "HYBRID") {
+    // Retired agreements are auditable history, never new acceptance candidates.
+    return value.rates.every((rate) => isRecord(rate) && typeof rate.fulfillmentMode === "string" &&
+      rate.fulfillmentMode.trim().length > 0 && Number.isSafeInteger(rate.commissionRateBps) &&
+      Number(rate.commissionRateBps) >= 0 && Number(rate.commissionRateBps) <= 10000);
+  }
+  return value.rates.every((rate) => isRecord(rate)) &&
+    hasReviewableStoreAgreementRates(value as StoreCommercialAgreement);
 }
 
 async function request<T>(path: string, method: "GET" | "POST", body?: unknown, mutation?: Readonly<{ idempotencyKey: string; correlationID: string }>): Promise<T> {
