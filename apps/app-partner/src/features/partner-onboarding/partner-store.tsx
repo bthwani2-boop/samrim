@@ -13,6 +13,7 @@ import { StoreCommercialAgreements } from "./store-commercial-agreements";
 import { StoreOperationalAvailabilityManagement } from "./store-operational-availability";
 import { StoreProfileImageEditor } from "./store-profile-image-editor";
 import { PartnerStoreSettingsOverview } from "./partner-store-settings-overview";
+import { PartnerStorePublicContact } from "./partner-store-public-contact";
 
 type StoreSection = "operations" | "promotions" | "team" | "settings";
 function isStoreSection(value: string | undefined): value is StoreSection {
@@ -75,6 +76,7 @@ export function PartnerStore() {
           <Text style={styles.value}>تجهيز المتجر للنشر</Text>
           <BthwaniButton label="الانتقال إلى المنتجات" onPress={() => router.push("/products" as Href)} variant="secondary" />
         </View> : null}
+        <PartnerStorePublicContact key={selectedStore.id + ":contact"} storeID={selectedStore.id} />
         <StoreCommercialAgreements key={selectedStore.id + ":agreements"} storeID={selectedStore.id} />
         <StoreProfileImageEditor key={selectedStore.id + ":image"} storeID={selectedStore.id} storeName={selectedStore.name} />
         {firstStoreMatches && firstStore ? <FirstJoiningStoreFacts store={firstStore} /> : null}

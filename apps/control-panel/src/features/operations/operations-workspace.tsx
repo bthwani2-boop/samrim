@@ -3,7 +3,7 @@
 import { captainAssignmentStateLabel, formatOrderDate, type OperatorOperationListItem, type OperatorOperationsSummary, orderStateLabel } from "@bthwani/dsh";
 import { Alert, Button, Empty, Flex, Input, Select, Spin, Tag } from "antd";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
 import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
 import { RecordIndicator } from "../shared/record-indicator";
@@ -28,7 +28,21 @@ function operationNeedsReview(item: OperatorOperationListItem, now: number): boo
 }
 
 type View = "command" | "all" | "attention" | "dispatch" | "captains" | "coverage" | "reports";
-type Change = Readonly<{ view?: View; state?: string; q?: string; sort?: string }>;
+type OrderFilterKey = "storeName" | "fromDate" | "toDate" | "paymentSource" | "fulfillmentMode";
+type Change = Readonly<{ view?: View; state?: string; q?: string; sort?: string; filters?: Partial<Record<OrderFilterKey, string>>; grouped?: boolean }>;
+
+const paymentSourceOptions = [
+  { value: "", label: "جميع توزيعات الدفع" },
+  { value: "CASH", label: "نقد كامل" },
+  { value: "WALLET", label: "محفظة كاملة" },
+  { value: "MIXED", label: "نقد ومحفظة" },
+];
+const fulfillmentOptions = [
+  { value: "", label: "جميع طرق التنفيذ" },
+  { value: "BTHWANI_CAPTAIN", label: "كابتن بثواني" },
+  { value: "PARTNER_CAPTAIN", label: "كابتن المتجر" },
+  { value: "CUSTOMER_PICKUP", label: "استلام العميل" },
+];
 
 const views: ReadonlyArray<Readonly<{ id: View; label: string }>> = [
   { id: "command", label: "القيادة" },
@@ -109,13 +123,20 @@ export function OperationsWorkspace() {
   const actionableOnly = view === "attention" && !preciseState;
   const searchFromUrl = (params.get("q") ?? "").trim().slice(0, 128);
   const sort = params.get("sort") === "updated_asc" ? "updated_asc" : "updated_desc";
-  const cursorPage = useCursorPage("cursor", JSON.stringify([state, actionableOnly, searchFromUrl, sort]));
+  const storeName = (params.get("storeName") ?? "").trim().slice(0, 128);
+  const fromDate = params.get("fromDate") ?? "";
+  const toDate = params.get("toDate") ?? "";
+  const paymentSource = params.get("paymentSource") ?? "";
+  const fulfillmentMode = params.get("fulfillmentMode") ?? "";
+  const groupByCheckout = params.get("group") === "checkout";
+  const cursorPage = useCursorPage("cursor", JSON.stringify([state, actionableOnly, searchFromUrl, sort, storeName, fromDate, toDate, paymentSource, fulfillmentMode]));
   const cursor = cursorPage.cursor;
 
   const [operations, setOperations] = useState<ReadonlyArray<OperatorOperationListItem>>([]);
   const [summary, setSummary] = useState<OperatorOperationsSummary | null>(null);
   const [ageClock, setAgeClock] = useState(0);
   const [search, setSearch] = useState(searchFromUrl);
+  const [storeSearch, setStoreSearch] = useState(storeName);
   const pageCaptainFilter = ["assigned", "unassigned"].includes(params.get("captainFilter") ?? "")
     ? params.get("captainFilter") ?? "all" : "all";
   const pageReviewFilter = ["overdue", "action"].includes(params.get("reviewFilter") ?? "")
@@ -150,6 +171,7 @@ export function OperationsWorkspace() {
   const loadSequence = useRef(0);
 
   useEffect(() => setSearch(searchFromUrl), [searchFromUrl]);
+  useEffect(() => setStoreSearch(storeName), [storeName]);
   useEffect(() => setSelectedOrderId((new URLSearchParams(queryString).get("order") ?? "").slice(0,160)), [queryString]);
   useEffect(() => {
     setAgeClock(Date.now());
@@ -180,6 +202,16 @@ export function OperationsWorkspace() {
       if (changes.sort === "updated_desc") next.delete("sort");
       else next.set("sort", changes.sort);
     }
+    if (changes.filters) {
+      for (const [key, value] of Object.entries(changes.filters)) {
+        if (value) next.set(key, value);
+        else next.delete(key);
+      }
+    }
+    if (changes.grouped !== undefined) {
+      if (changes.grouped) next.set("group", "checkout");
+      else next.delete("group");
+    }
     next.delete("cursor");
     const serialized = next.toString();
     router.push(pathname + (serialized ? "?" + serialized : ""), { scroll: false });
@@ -196,6 +228,11 @@ export function OperationsWorkspace() {
       if (state) query.set("state", state);
       if (actionableOnly) query.set("actionableOnly", "true");
       if (searchFromUrl) query.set("q", searchFromUrl);
+       if (storeName) query.set("storeName", storeName);
+       if (fromDate) query.set("fromDate", fromDate);
+       if (toDate) query.set("toDate", toDate);
+       if (paymentSource) query.set("paymentSource", paymentSource);
+       if (fulfillmentMode) query.set("fulfillmentMode", fulfillmentMode);
       if (sort !== "updated_desc") query.set("sort", sort);
       if (cursor) query.set("cursor", cursor);
       const response = await fetch("/api/operations?" + query.toString(), {
@@ -225,7 +262,7 @@ export function OperationsWorkspace() {
     } finally {
       if (sequence === loadSequence.current) setLoading(false);
     }
-  }, [actionableOnly, cursor, searchFromUrl, sort, state]);
+  }, [actionableOnly, cursor, searchFromUrl, storeName, fromDate, toDate, paymentSource, fulfillmentMode, sort, state]);
 
   useEffect(() => {
     if (cursorPage.ready) void load();
@@ -242,6 +279,17 @@ export function OperationsWorkspace() {
 
   const overdueOnPage = operations.filter((item) => operationNeedsReview(item, ageClock || Date.now())).length;
   const hasSearch = Boolean(searchFromUrl);
+  const hasFilters = Boolean(hasSearch || preciseState || storeName || fromDate || toDate || paymentSource || fulfillmentMode || view === "attention" || view === "dispatch");
+  const resetFilters = () => {
+    setSearch("");
+    setStoreSearch("");
+    navigate({ view: "all", state: "", q: "", sort: "updated_desc", filters: { storeName: "", fromDate: "", toDate: "", paymentSource: "", fulfillmentMode: "" } });
+  };
+  const groupedOperations = groupByCheckout ? [...visibleOperations].sort((a, b) => {
+    if (Boolean(a.multiStoreCheckoutId) !== Boolean(b.multiStoreCheckoutId)) return a.multiStoreCheckoutId ? -1 : 1;
+    if (!a.multiStoreCheckoutId || !b.multiStoreCheckoutId) return 0;
+    return a.multiStoreCheckoutId.localeCompare(b.multiStoreCheckoutId);
+  }) : visibleOperations;
   const selectedFilter = preciseState || (view === "attention" ? "attention" : view === "dispatch" ? "READY_FOR_DISPATCH" : "");
   const selectedViewLabel = preciseState ? specificStates.find((item) => item.value === preciseState)?.label ?? preciseState
     : views.find((item) => item.id === view)?.label ?? "جميع الطلبات";
@@ -287,7 +335,24 @@ export function OperationsWorkspace() {
         : view === "reports" ? <OperationsPerformance summary={summary} operations={operations} loading={loading} />
         : view === "attention" ? <OperationsInterventionCenter onOpenOrder={openOrder} refreshVersion={cancellationInboxVersion} />
         : <>
-      {view === "dispatch" ? <OperationsDispatchOverview state={state} summary={summary}
+       <div className="ops-order-metrics" aria-label="ملخص نتائج الطلبات المطابقة للفلاتر">
+         {([
+           { key: "total", label: "الإجمالي", count: summary?.totalCount, action: () => navigate({ view: "all", state: "" }) },
+           { key: "attention", label: "تحتاج مراجعة", count: summary?.actionableCount, action: null },
+           { key: "dispatch", label: "بانتظار الإسناد", count: summary?.awaitingDispatchCount, action: () => navigate({ view: "dispatch", state: "" }) },
+           { key: "active", label: "نشطة", count: summary?.activeCount, action: null },
+           { key: "delivered", label: "تم التسليم", count: summary?.deliveredCount, action: () => navigate({ view: "all", state: "DELIVERED" }) },
+           { key: "custody", label: "في عهدة الكابتن", count: summary?.inCustodyOrderCount, action: null },
+         ] as const).map(metric => metric.action
+           ? <button key={metric.key} type="button" className="ops-order-metric" onClick={metric.action} disabled={loading || !summary}>
+               <strong>{metric.count == null ? "—" : metric.count.toLocaleString("ar-YE")}</strong><span>{metric.label}</span>
+             </button>
+           : <div key={metric.key} className="ops-order-metric">
+               <strong>{metric.count == null ? "—" : metric.count.toLocaleString("ar-YE")}</strong><span>{metric.label}</span>
+             </div>)}
+       </div>
+       <p className="muted ops-metric-note">المؤشرات محسوبة على جميع السجلات المطابقة في DSH قبل ترقيم الصفحات، وليست مجموع الصفحة المعروضة.</p>
+       {view === "dispatch" ? <OperationsDispatchOverview state={state} summary={summary}
         onState={next => navigate({view:"dispatch",state:next})}
         onView={next => navigate({view:next,state:""})} /> : null}
       <Flex className="ops-tools" gap="middle" wrap align="end">
@@ -298,7 +363,7 @@ export function OperationsWorkspace() {
             aria-label="رقم الطلب أو اسم المتجر"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            onSearch={() => navigate({ view, state: "", q: search.trim().slice(0, 128) })}
+             onSearch={() => navigate({ q: search.trim().slice(0, 128) })}
             placeholder="رقم الطلب أو اسم المتجر"
             maxLength={128}
             allowClear
@@ -332,17 +397,50 @@ export function OperationsWorkspace() {
             options={[{ value: "updated_desc", label: "الأحدث أولًا" }, { value: "updated_asc", label: "الأقدم أولًا" }]}
           />
         </Flex>
-      </Flex>
-
-      {hasSearch ? (
-        <Flex align="center" gap="small" wrap role="status">
-          <Tag closable onClose={(event) => {
-            event.preventDefault();
-            setSearch("");
-            navigate({ q: "" });
-          }}>البحث: {searchFromUrl}</Tag>
-        </Flex>
-      ) : null}
+       </Flex>
+       <Flex className="ops-tools ops-advanced-filters" gap="middle" wrap align="end" role="group" aria-label="فلاتر الطلبات الإضافية">
+         <Flex vertical gap="small" style={{ flex: "1 1 200px", minWidth: 170 }}>
+           <label htmlFor="ops-store-name">المتجر</label>
+           <Input.Search id="ops-store-name" aria-label="البحث باسم المتجر" value={storeSearch}
+             onChange={event => setStoreSearch(event.target.value)}
+             onSearch={() => navigate({ filters: { storeName: storeSearch.trim().slice(0, 128) } })}
+             placeholder="اسم المتجر" allowClear maxLength={128} enterButton="تصفية" />
+         </Flex>
+         <Flex vertical gap="small" style={{ flex: "1 1 145px", minWidth: 140 }}>
+           <label htmlFor="ops-from-date">من تاريخ الإنشاء</label>
+           <Input id="ops-from-date" type="date" aria-label="من تاريخ إنشاء الطلب" value={fromDate}
+             max={toDate || undefined}
+             onChange={event => navigate({ filters: { fromDate: event.target.value } })} />
+         </Flex>
+         <Flex vertical gap="small" style={{ flex: "1 1 145px", minWidth: 140 }}>
+           <label htmlFor="ops-to-date">إلى تاريخ الإنشاء</label>
+           <Input id="ops-to-date" type="date" aria-label="إلى تاريخ إنشاء الطلب" value={toDate}
+             min={fromDate || undefined}
+             onChange={event => navigate({ filters: { toDate: event.target.value } })} />
+         </Flex>
+         <Flex vertical gap="small" style={{ flex: "1 1 175px", minWidth: 155 }}>
+           <label htmlFor="ops-payment-source">توزيع الدفع المسجل</label>
+           <Select id="ops-payment-source" aria-label="تصفية حسب التوزيع المسجل للدفع"
+             value={paymentSource} options={paymentSourceOptions}
+             onChange={(chosen: string) => navigate({ filters: { paymentSource: chosen } })} />
+         </Flex>
+         <Flex vertical gap="small" style={{ flex: "1 1 175px", minWidth: 155 }}>
+           <label htmlFor="ops-fulfillment-mode">طريقة التنفيذ</label>
+           <Select id="ops-fulfillment-mode" aria-label="تصفية حسب طريقة التنفيذ"
+             value={fulfillmentMode} options={fulfillmentOptions}
+             onChange={(chosen: string) => navigate({ filters: { fulfillmentMode: chosen } })} />
+         </Flex>
+       </Flex>
+       <Flex align="center" gap="small" wrap className="ops-active-filters" role="group" aria-label="الفلاتر النشطة">
+         {hasSearch ? <Tag closable onClose={event => { event.preventDefault(); setSearch(""); navigate({ q: "" }); }}>البحث: {searchFromUrl}</Tag> : null}
+         {preciseState ? <Tag closable onClose={event => { event.preventDefault(); navigate({ state: "" }); }}>الحالة: {specificStates.find(item => item.value === preciseState)?.label ?? preciseState}</Tag> : null}
+         {storeName ? <Tag closable onClose={event => { event.preventDefault(); setStoreSearch(""); navigate({ filters: { storeName: "" } }); }}>المتجر: {storeName}</Tag> : null}
+         {fromDate ? <Tag closable onClose={event => { event.preventDefault(); navigate({ filters: { fromDate: "" } }); }}>من: {fromDate}</Tag> : null}
+         {toDate ? <Tag closable onClose={event => { event.preventDefault(); navigate({ filters: { toDate: "" } }); }}>إلى: {toDate}</Tag> : null}
+         {paymentSource ? <Tag closable onClose={event => { event.preventDefault(); navigate({ filters: { paymentSource: "" } }); }}>الدفع: {paymentSourceOptions.find(item => item.value === paymentSource)?.label ?? paymentSource}</Tag> : null}
+         {fulfillmentMode ? <Tag closable onClose={event => { event.preventDefault(); navigate({ filters: { fulfillmentMode: "" } }); }}>التنفيذ: {fulfillmentOptions.find(item => item.value === fulfillmentMode)?.label ?? fulfillmentMode}</Tag> : null}
+         {hasFilters ? <Button onClick={resetFilters}>مسح جميع الفلاتر</Button> : null}
+       </Flex>
       {error ? (
         <Alert
           role="alert"
@@ -363,30 +461,33 @@ export function OperationsWorkspace() {
           action={<Button onClick={() => setPageReviewFilter("overdue")}>عرض المتأخرة في الصفحة</Button>}
         />
       ) : null}
-      <div className="ops-list-heading">
-        <div className="ops-list-name"><h2 id="operations-list-title">{selectedViewLabel}</h2>
-          <span className="muted">{operations.length} طلب في هذه الصفحة{visibleOperations.length !== operations.length ? " · معروض من الصفحة " + visibleOperations.length : ""}{summary ? ` · ${summary.totalCount} إجمالي النتائج` : ""}{nextCursor ? " · المزيد في الصفحة التالية" : ""}</span>
-        </div>
+       <div className="ops-list-heading">
+         <div className="ops-list-name"><h2 id="operations-list-title">{selectedViewLabel}</h2>
+           <span className="muted">{operations.length} طلب في هذه الصفحة{visibleOperations.length !== operations.length ? " · معروض من الصفحة " + visibleOperations.length : ""}{summary ? ` · ${summary.totalCount} إجمالي النتائج` : ""}{nextCursor ? " · المزيد في الصفحة التالية" : ""}</span>
+         </div>
+         <Button type="default" aria-pressed={groupByCheckout} onClick={() => navigate({ grouped: !groupByCheckout })}>
+           {groupByCheckout ? "إلغاء تجميع الطلبات" : "تجميع الطلبات المرتبطة"}
+         </Button>
+       </div>
+       {groupByCheckout ? <p className="muted ops-metric-note" role="status">التجميع بصري لطلبات المتاجر المرتبطة داخل الصفحة الحالية فقط؛ الطلبات في صفحات أخرى تظل مستقلة ويمكن فتح كل منها على حدة.</p> : null}
 
-      </div>
-
-      {loading && operations.length === 0 ? (
+       {loading && operations.length === 0 ? (
         <Flex gap="small" align="center" role="status">
           <Spin size="small" /> جارٍ تحميل الطلبات...
         </Flex>
       ) : null}
-      {!loading && !error && operations.length === 0 ? (
-        <Empty description={hasSearch ? "لا توجد طلبات تطابق البحث" : "لا توجد طلبات في هذا العرض"}>
-          {hasSearch ? <Button onClick={() => { setSearch(""); navigate({ q: "" }); }}>عرض الطلبات</Button> : null}
-        </Empty>
-      ) : null}
+       {!loading && !error && operations.length === 0 ? (
+         <Empty description={hasFilters ? "لا توجد طلبات تطابق الفلاتر المحددة" : cursor ? "لا توجد طلبات إضافية في هذه الصفحة" : "لا توجد طلبات مسجلة في هذا العرض"}>
+           {hasFilters ? <Button onClick={resetFilters}>مسح الفلاتر وعرض الطلبات</Button> : cursor ? <Button onClick={() => navigate({})}>العودة إلى أول صفحة</Button> : null}
+         </Empty>
+       ) : null}
 
       <div className="ops-results">
         {operations.length > 0 ? (
           // biome-ignore lint/a11y/noNoninteractiveTabindex: This labeled, horizontally scrollable table region must be keyboard-focusable.
           <section className="operations-table-wrap" aria-label="قائمة الطلبات؛ تمرير أفقي عند الحاجة" tabIndex={0}>
             <table className="operations-table ops-list-table">
-              <caption className="visually-hidden">{selectedViewLabel}، خمسون طلبًا كحد أقصى في الصفحة</caption>
+               <caption className="visually-hidden">{selectedViewLabel}، خمسون طلبًا كحد أقصى في الصفحة، وتجميع اختياري للطلبات المرتبطة داخل الصفحة</caption>
               <thead><tr>
                 <th scope="col">المتجر</th>
                 <th scope="col">الحالة</th>
@@ -423,13 +524,16 @@ export function OperationsWorkspace() {
               </tr></thead>
               <tbody>
                 {visibleOperations.length === 0 ? <tr><td colSpan={6} className="catalog-table-state">لا توجد مطابقة في الصفحة الحالية. أزل مرشح الإسناد أو المتابعة.</td></tr> : null}
-                {visibleOperations.map((item) => {
-                  const age = operationalAge(item.state, item.updatedAt, ageClock || Date.now());
+                 {groupedOperations.map((item, index) => {
+                   const age = operationalAge(item.state, item.updatedAt, ageClock || Date.now());
                   const stageAttention = operationalSlaAttention(item, ageClock || Date.now()) ?? operationalStageAttention(item.state, item.stageStartedAt, ageClock || Date.now(), item.preparationMinutes);
                   const needsReview = stageAttention ? stageAttention.needsReview : age.needsReview;
                   const nextAction = resolveOperatorAction({ state: item.state, assignment: item.assignment });
-                  return <tr key={item.orderId} className={needsReview ? "ops-row-review" : undefined}>
-                    <th scope="row">{item.storeName}<small className="muted ops-order-short-id" dir="ltr" title={item.orderId}>#{item.orderId.slice(-8)}</small></th>
+                   const newCheckoutGroup = groupByCheckout && item.multiStoreCheckoutId && (index === 0 || groupedOperations[index - 1]?.multiStoreCheckoutId !== item.multiStoreCheckoutId);
+                   return <Fragment key={item.orderId}>
+                     {newCheckoutGroup ? <tr className="ops-checkout-group"><td colSpan={6}>طلب متعدد المتاجر <code dir="ltr" title={item.multiStoreCheckoutId}>#{item.multiStoreCheckoutId.slice(-8)}</code> · {groupedOperations.filter(candidate => candidate.multiStoreCheckoutId === item.multiStoreCheckoutId).length} طلب في هذه الصفحة</td></tr> : null}
+                     <tr className={needsReview ? "ops-row-review" : undefined}>
+                     <th scope="row">{item.storeName}<small className="muted ops-order-short-id" dir="ltr" title={item.orderId}>#{item.orderId.slice(-8)}</small>{!groupByCheckout && item.multiStoreCheckoutId ? <small className="muted ops-order-short-id">ضمن طلب متعدد المتاجر <code dir="ltr" title={item.multiStoreCheckoutId}>#{item.multiStoreCheckoutId.slice(-8)}</code></small> : null}</th>
                     <td><span className={"status-badge status-" + item.state.toLowerCase()}>{orderStateLabel(item.state)}</span></td>
                     <td>{item.assignment ? <span className="ops-captain-cell">
                       <span>{captainAssignmentStateLabel(item.assignment.state)}</span>
@@ -441,20 +545,22 @@ export function OperationsWorkspace() {
                       {nextAction ? <RecordIndicator legend icon="review" label={operationActionLabel(nextAction)} tone="warning" /> : null}
                     </div></td>
                     <td><Button aria-label={(nextAction || needsReview ? "مراجعة" : "تفاصيل") + " طلب " + item.orderId.slice(-8) + " من " + item.storeName} onClick={() => openOrder(item.orderId)}>{nextAction || needsReview ? "مراجعة" : "تفاصيل"}</Button></td>
-                  </tr>;
-                })}
-              </tbody>
+                   </tr>
+                   </Fragment>;
+                 })}
+               </tbody>
             </table>
             <ul className="ops-mobile-orders" aria-label="طلبات الصفحة">
-              {visibleOperations.map((item) => {
-                const age = operationalAge(item.state, item.updatedAt, ageClock || Date.now());
+               {groupedOperations.map((item) => {
+                 const age = operationalAge(item.state, item.updatedAt, ageClock || Date.now());
                 const stageAttention = operationalSlaAttention(item, ageClock || Date.now()) ?? operationalStageAttention(item.state, item.stageStartedAt, ageClock || Date.now(), item.preparationMinutes);
                 const needsReview = stageAttention ? stageAttention.needsReview : age.needsReview;
                 const nextAction = resolveOperatorAction({ state: item.state, assignment: item.assignment });
                 return <li key={item.orderId} className={"ops-mobile-order" + (needsReview ? " ops-mobile-order-review" : "")}>
-                  <div className="ops-mobile-order-heading">
-                    <strong>{item.storeName}</strong><small className="muted ops-order-short-id" dir="ltr" title={item.orderId}>#{item.orderId.slice(-8)}</small>
-                  </div>
+                   {item.multiStoreCheckoutId ? <small className="ops-order-group-label">طلب متعدد المتاجر <code dir="ltr" title={item.multiStoreCheckoutId}>#{item.multiStoreCheckoutId.slice(-8)}</code></small> : null}
+                   <div className="ops-mobile-order-heading">
+                     <strong>{item.storeName}</strong><small className="muted ops-order-short-id" dir="ltr" title={item.orderId}>#{item.orderId.slice(-8)}</small>
+                   </div>
                   <div className="ops-mobile-order-status">
                     <span className={"status-badge status-" + item.state.toLowerCase()}>{orderStateLabel(item.state)}</span>
                     <span className="ops-mobile-order-captain">{item.assignment ? captainAssignmentStateLabel(item.assignment.state) : "غير مسند"}</span>

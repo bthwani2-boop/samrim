@@ -1378,6 +1378,47 @@ paths:
       security:
         - serviceBearer: []
       parameters:
+        - name: storeId
+          in: query
+          required: false
+          description: Exact Store scope, operator permission enforced by DSH.
+          schema:
+            type: string
+            maxLength: 128
+        - name: storeName
+          in: query
+          required: false
+          description: Case-insensitive literal Store name filter.
+          schema:
+            type: string
+            maxLength: 128
+        - name: fromDate
+          in: query
+          required: false
+          description: Inclusive Order creation date in Asia/Aden.
+          schema:
+            type: string
+            format: date
+        - name: toDate
+          in: query
+          required: false
+          description: Inclusive Order creation date in Asia/Aden.
+          schema:
+            type: string
+            format: date
+        - name: paymentSource
+          in: query
+          required: false
+          description: Frozen Order cash/wallet allocation, not a WLT ledger settlement state.
+          schema:
+            type: string
+            enum: [CASH, WALLET, MIXED]
+        - name: fulfillmentMode
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP]
         - name: state
           in: query
           required: false
@@ -1417,7 +1458,7 @@ paths:
           required: false
           schema:
             type: string
-            maxLength: 512
+            maxLength: 2048
         - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
       responses:
         "200":

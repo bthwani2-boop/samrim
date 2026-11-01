@@ -89,8 +89,8 @@ func TestStudioMigrationRegistered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != postgres.SchemaVersion || records[len(records)-1].Name != "167_marketing_studio_publication.sql" {
-		t.Fatalf("missing Studio publication migration v167; got %+v", records[len(records)-1])
+	if len(records) != postgres.SchemaVersion || records[165].Name != "166_marketing_studio_draft.sql" || records[166].Name != "167_marketing_studio_publication.sql" {
+		t.Fatalf("missing Studio migrations v166-v167; loaded %d records", len(records))
 	}
 	if len(statements) != postgres.SchemaVersion || !strings.Contains(statements[165], "marketing_studio_draft_events") || !strings.Contains(statements[166], "marketing_studio_publication_events") {
 		t.Fatal("Studio migration SQL missing")

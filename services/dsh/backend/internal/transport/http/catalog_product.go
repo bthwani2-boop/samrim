@@ -115,6 +115,7 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/catalog/product-proposals/review-queue", s.listProductProposalReviewQueue)
 	mux.HandleFunc("POST /dsh/catalog/product-proposals/{proposalId}/review", s.reviewProductProposal)
 	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/offers", s.listOperatorStoreOffers)
+	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/inventory-summary", s.readOperatorStoreInventorySummary)
 	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/products", s.listOperatorStoreCatalogProducts)
 	mux.HandleFunc("POST /dsh/operator/stores/{storeId}/products", s.createOperatorStoreProduct)
 	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/products/{productId}", s.readOperatorStoreProduct)
@@ -123,6 +124,7 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/operator/stores/{storeId}/offers", s.createOperatorStoreOffer)
 	mux.HandleFunc("PATCH /dsh/operator/stores/{storeId}/offers/{offerId}", s.updateOperatorStoreOffer)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/offers", s.listOffers)
+	mux.HandleFunc("GET /dsh/stores/{storeId}/inventory-summary", s.readPartnerStoreInventorySummary)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/catalog/imports/preview", s.previewPartnerStoreCatalogImport)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/catalog/imports/{runId}", s.readPartnerStoreCatalogImport)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/catalog/imports/{runId}/commit", s.commitPartnerStoreCatalogImport)
@@ -1057,7 +1059,7 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "StoreOffer cursor or page size is invalid")
 	case errors.Is(err, postgres.ErrCatalogQuickPriceInvalidFilter):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Quick Prices filters or update facts are invalid")
-	case errors.Is(err, postgres.ErrCatalogProductNotFound), errors.Is(err, postgres.ErrCatalogVariantNotFound), errors.Is(err, postgres.ErrCatalogOfferNotFound), errors.Is(err, postgres.ErrCatalogCategoryNotFound), errors.Is(err, postgres.ErrCatalogVerticalNotFound), errors.Is(err, postgres.ErrCommercialStoreTypeNotFound), errors.Is(err, postgres.ErrCatalogProposalNotFound):
+	case errors.Is(err, postgres.ErrStoreNotFound), errors.Is(err, postgres.ErrCatalogProductNotFound), errors.Is(err, postgres.ErrCatalogVariantNotFound), errors.Is(err, postgres.ErrCatalogOfferNotFound), errors.Is(err, postgres.ErrCatalogCategoryNotFound), errors.Is(err, postgres.ErrCatalogVerticalNotFound), errors.Is(err, postgres.ErrCommercialStoreTypeNotFound), errors.Is(err, postgres.ErrCatalogProposalNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "catalog record was not found")
 	case errors.Is(err, postgres.ErrCatalogIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different catalog facts")

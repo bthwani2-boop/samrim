@@ -88,6 +88,10 @@ export async function readPublishedStore(storeID: string, serviceCityID: string)
   return client().readPublishedStore(storeID, serviceCityID);
 }
 
+export async function readStorePublicContact(storeID: string) {
+  return client().readPublishedStorePublicContact(storeID);
+}
+
 export async function readPublicStoreOrderability(storeID: string, serviceCityID: string): Promise<PublicStoreOrderabilityResponse> {
   return client().readPublicStoreOrderability(storeID, serviceCityID);
 }

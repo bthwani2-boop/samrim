@@ -203,8 +203,16 @@ export async function readOperatorHomeAnalytics(context: DshOperatorReadContext,
   )).payload;
 }
 
-export async function listOperatorOperations(state: string, search: string, sort: string, limit: number, cursor: string, actionableOnly: boolean, context: DshOperatorReadContext, storeId = ""): Promise<OperatorOperationsResponse> {
-	if (!context.operatorActorId.trim() || !Number.isInteger(limit) || limit < 1 || limit > 100 || cursor.trim().length > 512 || search.trim().length > 128 || (sort !== "updated_desc" && sort !== "updated_asc") || storeId.length > 128) {
+export type OperatorOperationsFilters = Readonly<{
+  storeName?: string;
+  fromDate?: string;
+  toDate?: string;
+  paymentSource?: string;
+  fulfillmentMode?: string;
+}>;
+
+export async function listOperatorOperations(state: string, search: string, sort: string, limit: number, cursor: string, actionableOnly: boolean, context: DshOperatorReadContext, storeId = "", filters: OperatorOperationsFilters = {}): Promise<OperatorOperationsResponse> {
+	if (!context.operatorActorId.trim() || !Number.isInteger(limit) || limit < 1 || limit > 100 || cursor.trim().length > 2048 || search.trim().length > 128 || (sort !== "updated_desc" && sort !== "updated_asc") || storeId.length > 128) {
 		throw new Error("DSH_OPERATOR_OPERATIONS_INPUT_INVALID");
 	}
 	const params = new URLSearchParams({ limit: String(limit) });
@@ -214,8 +222,16 @@ export async function listOperatorOperations(state: string, search: string, sort
 	if (cursor.trim()) params.set("cursor", cursor.trim());
 	if (actionableOnly) params.set("actionableOnly", "true");
 	if (storeId.trim()) params.set("storeId", storeId.trim());
+	for (const key of ["storeName", "fromDate", "toDate", "paymentSource", "fulfillmentMode"] as const) {
+		const value = filters[key]?.trim();
+		if (value) params.set(key, value);
+	}
 	const path = `${dshOperationPaths.listOperatorOperations.path}?${params.toString()}`;
-	return (await requestDshJson<OperatorOperationsResponse>(dshOperationPaths.listOperatorOperations.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+	const payload = (await requestDshJson<OperatorOperationsResponse>(dshOperationPaths.listOperatorOperations.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+	if (Object.values(filters).some(value => Boolean(value?.trim())) && payload.filterEngineVersion !== 1) {
+		throw new Error("DSH_OPERATOR_FILTER_ENGINE_UPGRADE_REQUIRED");
+	}
+	return payload;
 }
 
 export async function listOperatorNotifications(limit: number, context: DshOperatorReadContext, cursor = ""): Promise<NotificationListResponse> {

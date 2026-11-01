@@ -4,6 +4,7 @@ export * from "./mobile";
 export * from "./notification-alert-policy";
 export * from "./client-share-types";
 export * from "./store-catalog-csv";
+export * from "./store-inventory";
 export * from "./store-content-performance";
 export * from "./partner-order-csv";
 export * from "./joining-case-media";
