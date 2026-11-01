@@ -38,6 +38,7 @@
     "next": "16.4.3",
     "nx": "24.0.1",
     "typescript": "7.0.2",
-    "typescript-ast": "npm:typescript@6.0.2"
+    "typescript-ast": "npm:typescript@6.0.2",
+    "yaml": "2.9.0"
   }
 }

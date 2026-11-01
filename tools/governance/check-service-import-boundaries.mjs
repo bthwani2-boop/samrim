@@ -69,7 +69,15 @@ export function scanRepositoryServiceBoundaries(root) {
   let checked = 0;
   for (const file of trackedSources(root)) {
     const path = resolve(root, file);
-    const descriptor = openSync(path, "r");
+    let descriptor;
+    try {
+      descriptor = openSync(path, "r");
+    } catch (error) {
+      // Git still lists tracked files deleted or moved in the unstaged worktree.
+      // There is no source left to scan; preserve errors other than ENOENT.
+      if (error?.code === "ENOENT") continue;
+      throw error;
+    }
     try {
       if (!fstatSync(descriptor).isFile()) continue;
       checked++;

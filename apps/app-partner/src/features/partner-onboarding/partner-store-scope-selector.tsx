@@ -7,13 +7,13 @@ import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 import { usePartnerStoreScope } from "./partner-store-scope-context";
 
-export function PartnerStoreScopeSelector({ requiredPermissions }: Readonly<{ requiredPermissions?: ReadonlyArray<StoreAccessPermission> }>) {
+export function PartnerStoreScopeSelector({ requiredPermissions, ownedOnly = false }: Readonly<{ requiredPermissions?: ReadonlyArray<StoreAccessPermission>; ownedOnly?: boolean }>) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const { state, stores, selectedStore, selectStore, reload } = usePartnerStoreScope();
   const [expanded, setExpanded] = useState(false);
-  const visibleStores = requiredPermissions
-    ? stores.filter((store) => store.owned || requiredPermissions.some((permission) => store.permissions.includes(permission)))
+  const visibleStores = ownedOnly ? stores.filter((store) => store.owned)
+    : requiredPermissions ? stores.filter((store) => store.owned || requiredPermissions.some((permission) => store.permissions.includes(permission)))
     : stores;
   const visibleSelection = visibleStores.find((store) => store.id === selectedStore?.id);
 

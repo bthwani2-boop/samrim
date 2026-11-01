@@ -3,18 +3,8 @@
 import { useEffect, useState } from "react";
 import type { OperatorHomeAnalytics, OperatorOperationsSummary, OperatorOperationListItem } from "@bthwani/dsh";
 import { formatOrderDate } from "@bthwani/dsh";
-
-function validAnalytics(value: unknown): value is OperatorHomeAnalytics {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const data = value as Record<string, unknown>;
-  if (data.timeZone !== "Asia/Aden" || typeof data.measuredAt !== "string" || !Number.isFinite(Date.parse(data.measuredAt)) || !Array.isArray(data.days)) return false;
-  return data.days.every((row: unknown) => {
-    if (!row || typeof row !== "object" || Array.isArray(row)) return false;
-    const day = row as Record<string, unknown>;
-    return typeof day.day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(day.day) &&
-      ["orders", "delivered", "awaitingDispatch", "inProgress", "failed", "cancelled"].every(key => Number.isSafeInteger(day[key]) && Number(day[key]) >= 0);
-  });
-}
+import { isOperatorHomeAnalytics } from "../workspace/operator-home-analytics";
+import { calculateOperationsReportMetrics } from "./operations-report-metrics";
 
 const number = (n: number) => n.toLocaleString("ar-YE");
 const safeCsv = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`;
@@ -31,12 +21,14 @@ export function OperationsPerformance({ summary, loading }: Readonly<{
   useEffect(() => {
     let active = true;
     async function read() {
+      setReport(null);
+      setError("");
       setPending(true);
       try {
-        const res = await fetch("/api/operations/home-analytics", { cache: "no-store", signal: AbortSignal.timeout(12_000) });
+        const res = await fetch(`/api/operations/home-analytics?period=${range}d`, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
         if (!res.ok) throw new Error("تعذرت قراءة التقرير اليومي من المصدر.");
         const body: unknown = await res.json();
-        if (!validAnalytics(body)) throw new Error("بيانات التقرير اليومي غير صالحة.");
+        if (!isOperatorHomeAnalytics(body, range)) throw new Error("بيانات التقرير اليومي غير صالحة.");
         if (active) { setReport(body); setError(""); }
       } catch (cause) {
         if (active) { setReport(null); setError(cause instanceof Error ? cause.message : "تعذر عرض التقرير."); }
@@ -44,12 +36,10 @@ export function OperationsPerformance({ summary, loading }: Readonly<{
     }
     void read();
     return () => { active = false; };
-  }, []);
+  }, [range]);
   const allDays = report?.days ?? [];
   const days = allDays.slice(-range);
-  const totalOrders = days.reduce((n, d) => n + d.orders, 0);
-  const totalDelivered = days.reduce((n, d) => n + d.delivered, 0);
-  const totalFailed = days.reduce((n, d) => n + d.failed, 0);
+  const { totalOrders, delivered: totalDelivered, failed: totalFailed, cancelled: totalCancelled, averageOrdersPerDay, peakDay, peakOrders } = calculateOperationsReportMetrics(days);
   const maxValue = Math.max(1, ...days.map(item => item.orders));
   function exportReport() {
     if (!report || !allDays.length) return;
@@ -69,7 +59,7 @@ export function OperationsPerformance({ summary, loading }: Readonly<{
         <label>الفترة <select value={range} onChange={event => setRange(Number(event.target.value) === 30 ? 30 : 7)}>
           <option value={7}>آخر 7 أيام متاحة</option><option value={30}>آخر 30 يومًا متاحًا</option>
         </select></label>
-        <button type="button" onClick={exportReport} disabled={!report || days.length === 0}>تصدير البيانات الظاهرة</button>
+        <button type="button" onClick={exportReport} disabled={pending || !report || days.length !== range}>تصدير البيانات الظاهرة</button>
       </div>
     </header>
     {pending ? <p className="ops-dispatch-scope" role="status">جارٍ قراءة التقرير اليومي...</p> : null}
@@ -77,9 +67,12 @@ export function OperationsPerformance({ summary, loading }: Readonly<{
     {report ? <>
       <div className="ops-report-metrics">
         <div><span>طلبات الفترة</span><strong>{number(totalOrders)}</strong></div>
-        <div><span>حركات التسليم المسجلة</span><strong>{number(totalDelivered)}</strong></div>
-        <div><span>حالات فشل التسليم المسجلة</span><strong>{number(totalFailed)}</strong></div>
-        <div><span>عدد الأيام المتاحة</span><strong>{number(days.length)}</strong></div>
+        <div><span>طلبات الفترة بحالة تم التسليم</span><strong>{number(totalDelivered)}</strong></div>
+        <div><span>طلبات الفترة المتعثرة حاليًا</span><strong>{number(totalFailed)}</strong></div>
+        <div><span>عدد الأيام في الفترة</span><strong>{number(days.length)}</strong></div>
+        <div><span>طلبات الفترة الملغاة أو المرفوضة</span><strong>{number(totalCancelled)}</strong></div>
+        <div><span>متوسط الطلبات المنشأة يوميًا</span><strong>{averageOrdersPerDay === null ? "—" : averageOrdersPerDay.toLocaleString("ar-YE", { maximumFractionDigits: 1 })}</strong></div>
+        <div><span>أكثر يوم إنشاءً للطلبات</span><strong>{peakDay ? `${peakDay} · ${number(peakOrders)}` : "—"}</strong></div>
       </div>
       <section className="ops-report-chart" aria-labelledby="ops-daily-trends-title">
         <h3 id="ops-daily-trends-title">الحركة اليومية للطلبات</h3>

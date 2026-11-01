@@ -27,6 +27,14 @@ type OperatorHomeAnalytics struct {
 // created orders, including days without orders. Status is current, not an
 // inferred historical transition at the end of the respective day.
 func ReadOperatorHomeAnalytics(ctx context.Context, db *sql.DB) (OperatorHomeAnalytics, error) {
+	return ReadOperatorAnalyticsPeriod(ctx, db, 7)
+}
+
+// ReadOperatorAnalyticsPeriod returns a contiguous, locally dated period.
+func ReadOperatorAnalyticsPeriod(ctx context.Context, db *sql.DB, days int) (OperatorHomeAnalytics, error) {
+	if days != 7 && days != 30 {
+		return OperatorHomeAnalytics{}, errors.New("analytics period must be 7 or 30 days")
+	}
 	if db == nil {
 		return OperatorHomeAnalytics{}, errors.New("orders database unavailable")
 	}
@@ -35,7 +43,7 @@ WITH checkpoint AS (
  SELECT statement_timestamp() AS measured_at,
         (statement_timestamp() AT TIME ZONE 'Asia/Aden')::date AS today
 ), days AS (
- SELECT generate_series((today-6)::timestamp,today::timestamp,interval '1 day')::date AS day
+ SELECT generate_series((today-($1::integer-1))::timestamp,today::timestamp,interval '1 day')::date AS day
  FROM checkpoint
 ), grouped AS (
  SELECT (o.created_at AT TIME ZONE 'Asia/Aden')::date AS day,
@@ -46,7 +54,7 @@ WITH checkpoint AS (
         count(*) FILTER (WHERE o.state='DELIVERY_FAILED') AS failed,
         count(*) FILTER (WHERE o.state IN ('CANCELLED','REJECTED')) AS cancelled
  FROM dsh.commerce_orders o CROSS JOIN checkpoint
- WHERE o.created_at >= ((checkpoint.today-6)::timestamp AT TIME ZONE 'Asia/Aden')
+ WHERE o.created_at >= ((checkpoint.today-($1::integer-1))::timestamp AT TIME ZONE 'Asia/Aden')
    AND o.created_at <= checkpoint.measured_at
  GROUP BY 1
 )
@@ -55,12 +63,12 @@ SELECT to_char(days.day,'YYYY-MM-DD'),COALESCE(grouped.orders,0),
        COALESCE(grouped.in_progress,0),COALESCE(grouped.failed,0),
        COALESCE(grouped.cancelled,0),checkpoint.measured_at
 FROM days CROSS JOIN checkpoint LEFT JOIN grouped ON grouped.day=days.day
-ORDER BY days.day`)
+ORDER BY days.day`, days)
 	if err != nil {
 		return OperatorHomeAnalytics{}, err
 	}
 	defer rows.Close()
-	result := OperatorHomeAnalytics{Days: make([]OperatorHomeDailyOrders, 0, 7), TimeZone: "Asia/Aden"}
+	result := OperatorHomeAnalytics{Days: make([]OperatorHomeDailyOrders, 0, days), TimeZone: "Asia/Aden"}
 	for rows.Next() {
 		var day OperatorHomeDailyOrders
 		if err := rows.Scan(&day.Day, &day.Orders, &day.Delivered, &day.AwaitingDispatch,

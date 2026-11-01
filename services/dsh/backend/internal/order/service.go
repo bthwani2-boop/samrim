@@ -90,6 +90,26 @@ func (s *Service) CreateClientOrderRating(ctx context.Context, accessToken, orde
 	return postgres.CreateClientOrderRating(ctx, s.db, orderID, identity, rating, review, expectedVersion, idempotencyKey, requestHash, correlationID)
 }
 
+// ListRatingsForPartner exposes only bounded Order feedback for an authorized Store.
+// The Store scope comes from the canonical DSH access grant, never from the client alone.
+func (s *Service) ListRatingsForPartner(ctx context.Context, token, storeID string, limit int, cursor string) (postgres.StoreOrderRatingPage, error) {
+	actor, err := s.requireSession(ctx, token, "partner", "app-partner")
+	if err != nil {
+		return postgres.StoreOrderRatingPage{}, err
+	}
+	if err := s.requireOwnedStore(ctx, actor, storeID); err != nil {
+		return postgres.StoreOrderRatingPage{}, err
+	}
+	return postgres.ListStoreOrderRatings(ctx, s.db, storeID, limit, cursor)
+}
+
+func (s *Service) ListRatingsForOperator(ctx context.Context, operatorActorID, storeID string, limit int, cursor string) (postgres.StoreOrderRatingPage, error) {
+	if err := s.requireOperatorPermission(ctx, operatorActorID, "partners"); err != nil {
+		return postgres.StoreOrderRatingPage{}, err
+	}
+	return postgres.ListStoreOrderRatings(ctx, s.db, storeID, limit, cursor)
+}
+
 func (s *Service) ReadOrderConversation(ctx context.Context, accessToken, orderID string, limit int, before ...string) (postgres.OrderConversationRecord, error) {
 	actorID, role, err := s.requireConversationSession(ctx, accessToken)
 	if err != nil {
@@ -277,6 +297,61 @@ func (s *Service) ListForAuthorizedPartnerStores(ctx context.Context, accessToke
 	return page, counts, nil
 }
 
+func partnerOrderSummaryStart(period string, now time.Time) (*time.Time, error) {
+	switch period {
+	case "all":
+		return nil, nil
+	case "7d":
+		start := now.UTC().Add(-7 * 24 * time.Hour)
+		return &start, nil
+	case "30d":
+		start := now.UTC().Add(-30 * 24 * time.Hour)
+		return &start, nil
+	default:
+		return nil, postgres.ErrPartnerOrdersInvalidQuery
+	}
+}
+
+// ReadPartnerStoreOrderSummary authorizes every Store through the same DSH
+// owner/grant boundary as the Partner Order list, before touching its counts.
+func (s *Service) ReadPartnerStoreOrderSummary(ctx context.Context, accessToken, storeID, period string) (postgres.PartnerStoreOrderSummary, error) {
+	actorID, err := s.requireSession(ctx, accessToken, "partner", "app-partner")
+	if err != nil {
+		return postgres.PartnerStoreOrderSummary{}, err
+	}
+	storeID = strings.TrimSpace(storeID)
+	authorized, err := postgres.ListPartnerOrdersAuthorizedStoreIDs(ctx, s.db, actorID)
+	if err != nil {
+		return postgres.PartnerStoreOrderSummary{}, err
+	}
+	permitted := false
+	for _, id := range authorized {
+		if id == storeID {
+			permitted = true
+			break
+		}
+	}
+	if !permitted {
+		return postgres.PartnerStoreOrderSummary{}, ErrStoreOwnershipForbidden
+	}
+	from, err := partnerOrderSummaryStart(period, time.Now())
+	if err != nil {
+		return postgres.PartnerStoreOrderSummary{}, err
+	}
+	return postgres.ReadPartnerStoreOrderSummary(ctx, s.db, storeID, period, from)
+}
+
+func (s *Service) ReadOperatorStoreOrderSummary(ctx context.Context, operatorActorID, storeID, period string) (postgres.PartnerStoreOrderSummary, error) {
+	if err := s.requireOperatorPermission(ctx, operatorActorID, "partners"); err != nil {
+		return postgres.PartnerStoreOrderSummary{}, err
+	}
+	start, err := partnerOrderSummaryStart(period, time.Now())
+	if err != nil {
+		return postgres.PartnerStoreOrderSummary{}, err
+	}
+	return postgres.ReadPartnerStoreOrderSummary(ctx, s.db, storeID, period, start)
+}
+
 func (s *Service) ListOpenCasesForOperator(ctx context.Context, actorID, scope string, limit int, cursor string) (postgres.OpsCasePage, error) {
 	if err := s.requireOperatorPermission(ctx, actorID, "operations"); err != nil {
 		return postgres.OpsCasePage{}, err
@@ -351,17 +426,18 @@ func (s *Service) ListPendingCustomerContactsForOperator(ctx context.Context, ac
 }
 
 func (s *Service) ListForOperator(ctx context.Context, state, query, sort, actingActorID string, actionableOnly bool, limit int, cursor string) (postgres.OperatorOperationsResult, error) {
-	if err := s.requireOperatorPermission(ctx, actingActorID, "operations"); err != nil {
-		return postgres.OperatorOperationsResult{}, err
-	}
-	return postgres.ListOrdersForOperator(ctx, s.db, state, query, sort, actionableOnly, limit, cursor)
+	return s.ListForOperatorFiltered(ctx, state, query, sort, actingActorID, actionableOnly, limit, cursor, postgres.OperatorOrderFilters{})
 }
 
 func (s *Service) ListForOperatorStore(ctx context.Context, state, query, sort, actingActorID string, actionableOnly bool, limit int, cursor, storeID string) (postgres.OperatorOperationsResult, error) {
+	return s.ListForOperatorFiltered(ctx, state, query, sort, actingActorID, actionableOnly, limit, cursor, postgres.OperatorOrderFilters{StoreID: storeID})
+}
+
+func (s *Service) ListForOperatorFiltered(ctx context.Context, state, query, sort, actingActorID string, actionableOnly bool, limit int, cursor string, filters postgres.OperatorOrderFilters) (postgres.OperatorOperationsResult, error) {
 	if err := s.requireOperatorPermission(ctx, actingActorID, "operations"); err != nil {
 		return postgres.OperatorOperationsResult{}, err
 	}
-	return postgres.ListOrdersForOperatorStore(ctx, s.db, state, query, sort, actionableOnly, limit, cursor, storeID)
+	return postgres.ListOrdersForOperatorFiltered(ctx, s.db, state, query, sort, actionableOnly, limit, cursor, filters)
 }
 
 func (s *Service) ReadForOperator(ctx context.Context, orderID, actingActorID string) (postgres.OperatorOperationRecord, error) {

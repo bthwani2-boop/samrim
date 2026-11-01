@@ -1,5 +1,6 @@
 import { type OperatorMarketingSummary, type PromotionSettlementSummary, type CreatePromotionRequest, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentResponse, dshOperationPaths, type MarketingPublicationRequest, type OperatorDiscoveryContentRegistryResponse, type OperatorPromotionRegistryResponse, type PromotionResponse, type OperatorPartnerDecisionPage, type CreateMarketingCampaignRequest, type MarketingCampaignPage, type MarketingCampaignResponse } from "@bthwani/dsh";
 import { requestDshJson, requestDshMultipart, validateAttributedMutationContext, validateVersionedMutationContext, type DshOperatorReadContext, type JoiningCaseMutationContext, type StorePublicationMutationContext } from "./dsh-transport";
+import type { StoreContentPerformanceSummary } from "@bthwani/dsh";
 
 export type OperatorPromotionRegistryQuery = Readonly<{ search: string; state: string; discountKind?: string; fundingSource?: string; serviceCityId?: string; sort: "starts_desc" | "starts_asc"; cursor: string; limit: number }>;
 export type OperatorDiscoveryContentRegistryQuery = Readonly<{ search: string; state: string; kind: string; sort: "priority" | "created_desc"; cursor: string; limit: number }>;
@@ -51,6 +52,14 @@ export async function createMarketingContentWithMedia(formData: FormData, contex
   validateAttributedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_MARKETING_CONTENT_IDEMPOTENCY_INVALID");
   return requestDshMultipart<DiscoveryContentResponse>(dshOperationPaths.createOperatorDiscoveryContent.method, dshOperationPaths.createOperatorDiscoveryContent.path, formData, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function readOperatorStoreContentPerformanceSummary(storeId: string, period: "7d" | "30d" | "all", context: DshOperatorReadContext): Promise<StoreContentPerformanceSummary> {
+  const scope = storeId.trim();
+  if (!context.operatorActorId.trim() || !scope || scope.length > 150 || !["7d", "30d", "all"].includes(period)) throw new Error("DSH_STORE_MARKETING_SUMMARY_SCOPE_INVALID");
+  const route = dshOperationPaths.readOperatorStoreContentPerformanceSummary;
+  const path = route.path.replace("{storeId}", encodeURIComponent(scope)) + "?period=" + period;
+  return (await requestDshJson<StoreContentPerformanceSummary>(route.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
 export async function listMarketingAnalytics(contentId: string, context: DshOperatorReadContext): Promise<DiscoveryContentAnalyticsListResponse> {

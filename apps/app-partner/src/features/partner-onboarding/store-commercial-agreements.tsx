@@ -6,6 +6,7 @@ import { ActivityIndicator, AppState, StyleSheet, Text, View } from "react-nativ
 
 import { currentIdentityState } from "../../bootstrap/identity";
 import { hasReviewableStoreAgreementRates, isConfirmedOwnStoreAgreementAcceptance } from "./store-agreement-acceptance-readback";
+import { agreementReadbackErrorMessage, agreementStatusLabel } from "./store-agreement-readiness";
 import {
   acceptOwnStoreCommercialAgreement,
   newStoreAgreementMutationKeys,
@@ -13,7 +14,7 @@ import {
   type StoreCommercialAgreement,
 } from "./store-commercial-agreement-client";
 
-const DEFAULT_ACCEPTANCE_REASON = "أوافق على نسب العمولة وشروط الاتفاقية المعروضة";
+const DEFAULT_ACCEPTANCE_REASON = "أوافق على النموذج التجاري وجميع شروط الاتفاقية المعروضة";
 
 type AcceptanceAttempt = Readonly<{
   agreementId: string;
@@ -42,22 +43,21 @@ function modeLabel(mode: string): string {
   }
 }
 
-function statusLabel(status: string): string {
-  switch (status) {
-    case "PROPOSED": return "بانتظار قبول مالك المتجر";
-    case "PARTNER_ACCEPTED": return "قُبلت من المالك · بانتظار اعتماد المالية";
-    case "ACTIVE": return "سارية";
-    case "FINANCE_REJECTED":
-    case "REJECTED": return "مرفوضة";
-    case "SUPERSEDED": return "استُبدلت باتفاق أحدث";
-    default: return `الحالة: ${status}`;
-  }
-}
-
 function rateValue(commissionRateBps: number): string {
   return new Intl.NumberFormat("ar-YE-u-nu-latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(commissionRateBps / 100) + "%";
 }
 
+function commercialConsentSummary(agreement: StoreCommercialAgreement): string {
+  if (agreement.commercialModel === "COMMISSION") return "نموذج عمولة الطلبات. ";
+  const terms = agreement.commercialModel === "SUBSCRIPTION" ? "اشتراك دوري دون عمولة منتجات" : "اشتراك دوري مع عمولة منتجات";
+  return terms + ": " + agreement.recurringAmountMinor.toLocaleString("ar-YE-u-nu-latn") +
+    " ريال يمني، " + (agreement.billingPeriod === "MONTHLY" ? "شهريًا" : "سنويًا") +
+    " بتوقيت " + agreement.billingTimeZone + "، استحقاق " + agreement.invoiceDueDays +
+    " يوم، سماح " + agreement.graceDays + " يوم، تجديد " +
+    (agreement.renewalPolicy === "MANUAL" ? "يدوي" : "تلقائي") +
+    ". الإلغاء: " + agreement.terminationTerms + ". التعديل والاسترداد: " + agreement.adjustmentTerms +
+    ". لا يترتب تحصيل حتى تكتمل الفوترة والتسوية والمراجعة المستقلة. ";
+}
 function acceptanceErrorMessage(cause: unknown, hasSavedAttempt: boolean): string {
   if (cause && typeof cause === "object" && "status" in cause && (cause as { status?: unknown }).status === 409) {
     return "تغيرت بيانات الاتفاقية أو حالتها. أعد قراءتها قبل المتابعة.";
@@ -143,9 +143,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
       return currentAgreements;
     } catch (cause) {
       if (isCurrent()) {
-        setError(cause instanceof Error && cause.message === "DSH_BASE_URL_REQUIRED"
-          ? "تعذر الاتصال بخدمة الاتفاقيات."
-          : "تعذر قراءة اتفاقيات المتجر أو التحقق من ملكيتها. أعد المحاولة.");
+        setError(agreementReadbackErrorMessage(cause));
       }
       return null;
     } finally {
@@ -164,7 +162,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
   function requestAcceptanceConfirmation(agreement: StoreCommercialAgreement) {
     if (activeScope.current !== storageKey || agreementsScope !== storageKey ||
       agreement.storeId !== storeID || agreement.partnerActorId !== actorID ||
-      !hasReviewableStoreAgreementRates(agreement)) return;
+      agreement.commercialModel === "HYBRID" || !hasReviewableStoreAgreementRates(agreement)) return;
     const savedAttempt = pendingAttempt?.agreementId === agreement.agreementId ? pendingAttempt : null;
     const reason = savedAttempt?.reason ?? DEFAULT_ACCEPTANCE_REASON;
     if (Array.from(reason.trim()).length < 8 || Array.from(reason.trim()).length > 500) {
@@ -179,7 +177,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
     if (acceptanceBusy.current || busyAgreementID || agreement.status !== "PROPOSED" || !storageKey ||
       !pendingStorageReady || agreementsScope !== storageKey || activeScope.current !== storageKey ||
       agreement.storeId !== storeID || agreement.partnerActorId !== actorID ||
-      !hasReviewableStoreAgreementRates(agreement)) return;
+      agreement.commercialModel === "HYBRID" || !hasReviewableStoreAgreementRates(agreement)) return;
     const savedAttempt = pendingAttempt?.agreementId === agreement.agreementId ? pendingAttempt : null;
     if (pendingAttempt && !savedAttempt) {
       setError("تحقق أولًا من محاولة القبول المحفوظة قبل قبول اتفاقية أخرى.");
@@ -215,7 +213,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
         reason: attempt.reason,
       }, attempt.idempotencyKey, attempt.correlationID);
       if (activeScope.current !== storageKey) return;
-      const expected = { storeID, actorID, agreementID: attempt.agreementId, expectedVersion: attempt.expectedAgreementVersion };
+      const expected = { storeID, actorID, agreementID: attempt.agreementId, expectedVersion: attempt.expectedAgreementVersion, reviewedAgreement: agreement };
       if (!isConfirmedOwnStoreAgreementAcceptance(accepted, expected)) {
         throw new Error("PARTNER_ACCEPTANCE_READBACK_MISMATCH");
       }
@@ -248,7 +246,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
       <View style={styles.heading}>
         <Text style={styles.eyebrow}>الشروط التجارية</Text>
         <Text style={styles.title}>اتفاقية المتجر</Text>
-        <Text style={styles.muted}>راجع النسبة المحددة لكل طريقة تشغيل. لا يتم قبول الاتفاقية إلا بعد تأكيدك الصريح.</Text>
+        <Text style={styles.muted}>راجع النموذج التجاري ومبلغ الاشتراك إن وجد ونسب التنفيذ. لا يسري أي اتفاق دون قبولك وموافقة المالية.</Text>
       </View>
       {readingCurrentStore && visibleAgreements === null ? <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة اتفاقيات المتجر" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الاتفاقيات…</Text></View> : null}
       {visibleError ? <Text accessibilityRole="alert" style={styles.error}>{visibleError}</Text> : null}
@@ -256,21 +254,31 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
       {visibleAgreements?.length === 0 ? <Text style={styles.muted}>لا توجد اتفاقية بانتظارك الآن. يجهّز قسم الشركاء المقترح؛ ستظهر الشروط هنا لمراجعتها وقبولها قبل سريانها. يمكنك تجهيز المنتجات والصور بالتوازي.</Text> : null}
       {visibleAgreements?.map((agreement) => {
         const savedAttempt = scopedPendingAttempt?.agreementId === agreement.agreementId ? scopedPendingAttempt : null;
-        const canAccept = agreement.status === "PROPOSED" && hasReviewableStoreAgreementRates(agreement) && pendingStorageReady && !loading && (!scopedPendingAttempt || Boolean(savedAttempt));
+        const canAccept = agreement.commercialModel !== "HYBRID" && agreement.status === "PROPOSED" && hasReviewableStoreAgreementRates(agreement) && pendingStorageReady && !loading && (!scopedPendingAttempt || Boolean(savedAttempt));
         return (
           <View key={agreement.agreementId} style={styles.agreement}>
             <View style={styles.agreementHeading}>
               <Text style={styles.agreementTitle}>الاتفاقية التجارية</Text>
-              <Text accessibilityRole="text" style={[styles.status, agreement.status === "ACTIVE" ? styles.active : agreement.status.includes("REJECT") ? styles.rejected : styles.pending]}>{statusLabel(agreement.status)}</Text>
+              <Text accessibilityRole="text" style={[styles.status, agreement.status === "ACTIVE" ? styles.active : agreement.status.includes("REJECT") ? styles.rejected : styles.pending]}>{agreementStatusLabel(agreement)}</Text>
             </View>
+            <Text style={styles.muted}>النموذج التجاري: {agreement.commercialModel === "COMMISSION" ? "عمولة" : agreement.commercialModel === "SUBSCRIPTION" ? "اشتراك" : "اشتراك وعمولة"}</Text>
+            {agreement.historicalCommissionReadback ? <Text style={styles.muted}>هذه اتفاقية عمولة قديمة تُعرض للتوثيق والمتابعة فقط؛ لا تنشئ فوترة اشتراك أو تغييرًا في الشروط.</Text> : null}
+            {agreement.commercialModel !== "COMMISSION" ? <>
+              <Text selectable style={styles.rateValue}>الرسوم الدورية: {agreement.recurringAmountMinor.toLocaleString("ar-YE-u-nu-latn")} ريال يمني · {agreement.billingPeriod === "MONTHLY" ? "شهريًا" : "سنويًا"}</Text>
+              <Text style={styles.muted}>استحقاق الفاتورة: {agreement.invoiceDueDays} يوم · السماح: {agreement.graceDays} يوم · التجديد: {agreement.renewalPolicy === "MANUAL" ? "يدوي" : "تلقائي"}</Text>
+              <Text style={styles.muted}>الإلغاء: {agreement.terminationTerms}</Text>
+              <Text style={styles.muted}>التعديل أو الاسترداد: {agreement.adjustmentTerms}</Text>
+              <Text style={styles.muted}>التحصيل غير مفعل حتى اكتمال نظام الفوترة والمحاسبة والتحقق المستقل.</Text>
+            </> : null}
             {agreement.rates.length > 0 ? agreement.rates.map((rate) => (
               <View key={`${agreement.agreementId}:${rate.fulfillmentMode}`} style={styles.rateRow}>
                 <Text style={styles.rateLabel}>{modeLabel(rate.fulfillmentMode)}</Text>
                 <Text selectable style={styles.rateValue}>{rateValue(rate.commissionRateBps)}{rate.fulfillmentMode === "PARTNER_CAPTAIN" ? ` · رسوم توصيل المتجر: ${rate.deliveryPricingMode === "FREE" ? "مجاني" : rate.deliveryPricingMode === "FIXED" ? `${rate.deliveryFixedFeeMinor ?? 0} ريال` : "حسب المسافة"}` : ""}{rate.deliveryMarkupMinor ? ` · زيادة توصيل ${rate.deliveryMarkupMinor} ريال لبثواني دون مساس بأجرة الكابتن` : ""}</Text>
               </View>
             )) : <Text style={styles.error}>لا تحتوي الاتفاقية على معدلات تشغيل صالحة.</Text>}
-            {agreement.status === "PROPOSED" ? <View style={styles.acceptance}>
-              <Text style={styles.muted}>راجع النسب أعلاه ثم اضغط «مراجعة وتأكيد القبول». يُسجل إقرارك باسمك، وبعده تعتمد المالية الاتفاقية قبل نشر المتجر.</Text>
+            {agreement.commercialModel === "HYBRID" ? <Text style={styles.error}>هذا النموذج التجاري ملغى. اطلب من قسم الشركاء إغلاق هذا المقترح وتقديم عقد بعمولة أو اشتراك فقط.</Text> : null}
+            {agreement.status === "PROPOSED" && agreement.commercialModel !== "HYBRID" ? <View style={styles.acceptance}>
+              <Text style={styles.muted}>راجع النموذج والمبالغ والشروط أعلاه قبل قبول الاتفاق؛ قبولك لا يبدأ تحصيل اشتراك غير مفعّل.</Text>
               {savedAttempt ? <Text style={styles.muted}>محاولة قبول سابقة غير محسومة؛ تحقق من نتيجتها قبل إعادة المحاولة.</Text> : null}
               <BthwaniButton
                 busy={busyAgreementID === agreement.agreementId}
@@ -287,7 +295,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
         busy={Boolean(agreementToConfirm && busyAgreementID === agreementToConfirm.agreementId)}
         confirmLabel="تأكيد قبول الاتفاقية"
         description={agreementToConfirm
-          ? `ستوافق على الاتفاقية التجارية. النسب: ${agreementToConfirm.rates.map((rate) => `${modeLabel(rate.fulfillmentMode)}: ${rateValue(rate.commissionRateBps)}${rate.fulfillmentMode === "PARTNER_CAPTAIN" ? ` · رسوم توصيل المتجر: ${rate.deliveryPricingMode === "FREE" ? "مجاني" : rate.deliveryPricingMode === "FIXED" ? `${rate.deliveryFixedFeeMinor ?? 0} ريال` : "حسب المسافة"}` : ""}${rate.deliveryMarkupMinor ? ` + ${rate.deliveryMarkupMinor} ريال هامش توصيل لبثواني` : ""}`).join("، ")}. بعد قبولك تراجعها الإدارة المالية قبل أن تصبح سارية.`
+          ? commercialConsentSummary(agreementToConfirm) + `النسب: ${agreementToConfirm.rates.map((rate) => `${modeLabel(rate.fulfillmentMode)}: ${rateValue(rate.commissionRateBps)}${rate.fulfillmentMode === "PARTNER_CAPTAIN" ? ` · رسوم توصيل المتجر: ${rate.deliveryPricingMode === "FREE" ? "مجاني" : rate.deliveryPricingMode === "FIXED" ? `${rate.deliveryFixedFeeMinor ?? 0} ريال` : "حسب المسافة"}` : ""}${rate.deliveryMarkupMinor ? ` + ${rate.deliveryMarkupMinor} ريال هامش توصيل لبثواني` : ""}`).join("، ")}. بعد قبولك تراجعها الإدارة المالية قبل أن تصبح سارية.`
           : ""}
         onCancel={() => setAgreementToConfirm(null)}
         onConfirm={() => {

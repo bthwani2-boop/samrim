@@ -1,14 +1,13 @@
-import { borders, radius, sizing, type resolveTheme, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniConfirmDialog, BthwaniIcon, BthwaniConversationSheet, useConversationUnreadCounts, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
+import { borders, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { BthwaniButton, BthwaniConfirmDialog, BthwaniConversationSheet, BthwaniIcon, BthwaniStatusBadge, useAppearanceTheme, useConversationUnreadCounts } from "@bthwani/design-system/native";
 import { type CaptainAssignment, type CaptainOffer, captainHandoffStateLabel, createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderAdjustmentProposalRequest, type OrderTransitionRequest, orderStateLabel, paymentMethodLabel, paymentStateLabel, type StoreCaptainMembership } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useIsFocused, useLocalSearchParams } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-import { usePartnerStoreScope } from "../partner-onboarding/partner-store-scope-context";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { ActivityIndicator, AppState, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, AppState, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
+import { usePartnerStoreScope } from "../partner-onboarding/partner-store-scope-context";
 import { OrderConversation } from "./order-conversation";
 import { isCurrentOrderListRequest, mergeOrderPageRecords, tryAcquireOrderAction } from "./order-page-records";
 
@@ -56,7 +55,9 @@ function currentPartnerActor(): string {
 export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const theme = useAppearanceTheme();
   const insets=useSafeAreaInsets();
-  const styles = useMemo(() => createStyles(theme), [theme]);
+  const { width } = useWindowDimensions();
+  const desktopWeb = Platform.OS === "web" && width >= 1024;
+  const styles = useMemo(() => createStyles(theme, desktopWeb), [theme, desktopWeb]);
   const isFocused = useIsFocused();
   const { q: rawQuery, orderId: rawTargetOrder } = useLocalSearchParams<{q?: string | string[]; orderId?: string | string[]}>();
   const targetOrderId = (Array.isArray(rawTargetOrder) ? rawTargetOrder[0] : rawTargetOrder)?.trim() ?? "";
@@ -291,7 +292,23 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
 
   return (
     <View style={styles.container} accessibilityLabel="إدارة طلبات المتجر">
+      {desktopWeb ? <View style={styles.workspaceHeading}>
+        <View style={styles.workspaceHeadingCopy}>
+          <Text style={styles.workspaceEyebrow}>مساحة عمل الشريك</Text>
+          <Text style={styles.workspaceTitle}>إدارة الطلبات</Text>
+          <Text style={styles.workspaceSubtitle}>تابع الطلبات وجهّزها وأنهِ التسليم من مكان واحد.</Text>
+        </View>
+        <View style={styles.workspaceCount}>
+          <Text style={styles.workspaceCountValue}>{loading ? "…" : orders.length.toLocaleString("ar-YE")}</Text>
+          <Text style={styles.workspaceCountLabel}>طلبات معروضة</Text>
+        </View>
+      </View> : null}
       {!loading && attention ? <View style={styles.summaryRow} accessibilityLabel="ملخص طابور الطلبات">
+          {orders.some((order) => order.state === "READY_FOR_PICKUP") ? <View style={[styles.summaryCard, styles.pickupSummaryCard]}>
+            <BthwaniIcon name="success" size={21} color={theme.success} />
+            <Text style={styles.summaryValue}>{orders.filter((order) => order.state === "READY_FOR_PICKUP").length}</Text>
+            <Text style={styles.summaryLabel}>جاهز للاستلام في القائمة</Text>
+          </View> : null}
           <View style={styles.summaryCard}><BthwaniIcon name="orders" size={21} color={theme.brandAction} /><Text style={styles.summaryValue}>{attention.newOrders}</Text><Text style={styles.summaryLabel}>طلبات جديدة</Text></View>
           <View style={styles.summaryCard}><BthwaniIcon name="store" size={21} color={theme.info} /><Text style={styles.summaryValue}>{attention.awaitingDispatch}</Text><Text style={styles.summaryLabel}>بانتظار التسليم</Text></View>
           <View style={styles.summaryCard}><BthwaniIcon name="warning" size={21} color={theme.warning} /><Text style={styles.summaryValue}>{attention.deliveryRecovery}</Text><Text style={styles.summaryLabel}>تسليم متعثر</Text></View>
@@ -356,7 +373,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
 
         return (
 
-          <View key={order.id} style={styles.order}>
+          <View key={order.id} style={[styles.order, desktopWeb && styles.orderDesktop, order.state === "CREATED" && styles.orderNeedsAction]}>
             <View style={styles.compactHeader}>
               <View style={styles.compactHeaderText}>
                 <Text style={styles.orderTitle}>{"#" + order.id.slice(-8)}</Text>
@@ -373,6 +390,10 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
               <Text numberOfLines={1} style={styles.compactDim}>{order.fulfillmentMode === "CUSTOMER_PICKUP" ? "استلام من المتجر" : order.fulfillmentMode === "PARTNER_CAPTAIN" ? "توصيل المتجر" : "توصيل بثواني"} · {order.lines.length} {order.lines.length === 1 ? "صنف" : "أصناف"}</Text>
               {!storeId ? <Text numberOfLines={1} style={styles.compactDim}>{order.storeName}</Text> : null}
             </View>
+            {desktopWeb ? <View style={styles.desktopItemsPreview}>
+              <BthwaniIcon name="cart" size={17} color={theme.colorSecondary} />
+              <Text numberOfLines={1} style={styles.desktopItemsText}>{order.lines.slice(0, 3).map((line) => line.productName).join(" · ")}{order.lines.length > 3 ? ` · +${order.lines.length - 3} أصناف` : ""}</Text>
+            </View> : null}
             <View style={styles.compactMetaRow}>
               <Text numberOfLines={1} style={styles.compactPayment}>{paymentMethodLabel(order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)}</Text>
               <Text numberOfLines={1} style={styles.orderMoney}>{formatMoney(order.totalAmountMinor, order.currency)}</Text>
@@ -388,8 +409,8 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
                 <Text numberOfLines={1} style={styles.compactPrimaryLabel}>{nextActionLabel}</Text>
               </Pressable> : null}
               <Pressable accessibilityRole="button" accessibilityLabel={"عرض تفاصيل الطلب " + order.id.slice(-8)}
-                onPress={() => setExpandedOrderIds(() => new Set([order.id]))} style={styles.compactDetails}>
-                <Text style={styles.compactDetailsLabel}>التفاصيل</Text>
+                onPress={() => setExpandedOrderIds(() => new Set([order.id]))} style={[styles.compactDetails, desktopWeb && styles.desktopDetails, desktopWeb && order.state === "READY_FOR_PICKUP" && styles.desktopPickupDetails]}>
+                <Text style={[styles.compactDetailsLabel, desktopWeb && order.state === "READY_FOR_PICKUP" && styles.desktopPickupLabel]}>{desktopWeb && order.state === "READY_FOR_PICKUP" ? "تأكيد الاستلام" : desktopWeb && (order.state === "READY_FOR_DISPATCH" || order.state === "CAPTAIN_ASSIGNED") ? "متابعة التسليم" : "تفاصيل الطلب"}</Text>
               </Pressable>
             </View>
             <Modal transparent statusBarTranslucent animationType="slide" visible={expandedOrderIds.has(order.id)} onRequestClose={()=>closeDetails(order.id)}>
@@ -422,7 +443,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
             </View> : null}
             <Text style={styles.sheetHeading}>الأصناف والتجهيز</Text>
             <View style={styles.lines}>
-              {order.lines.map((line) => <View key={line.id} style={styles.line}><Text style={styles.lineTitle}>{line.productName} · {line.variantTitle}</Text><Text style={styles.muted}>المطلوب: {formatQuantity(line.baseUnit, line.requestedQuantityBaseUnits)} · النهائي: {formatQuantity(line.baseUnit, line.finalQuantityBaseUnits)}</Text><Text style={styles.muted}>{pricingBasisLabel(line.pricingBasis)} · {formatMoney(line.lineAmountMinor, line.currency)}{line.modifierAmountMinor > 0 ? ` · الإضافات: ${formatMoney(line.modifierAmountMinor, line.currency)}` : ""}</Text>{line.modifierSnapshots.length ? <Text style={styles.muted}>الإضافات المحددة: {line.modifierSnapshots.map((modifier) => modifier.optionNameAr).join("، ")}</Text> : null}{line.attributeSnapshots.length ? <Text style={styles.muted}>تفاصيل المنتج: {line.attributeSnapshots.map((attribute) => `${attribute.code}: ${attributeSnapshotValue(attribute)}`).join("، ")}</Text> : null}</View>)}
+              {order.lines.map((line) => <View key={line.id} style={styles.line}><Text style={styles.lineTitle}>{line.productName} · {line.variantTitle}</Text><Text style={styles.muted}>المطلوب: {formatQuantity(line.baseUnit, line.requestedQuantityBaseUnits)} · النهائي: {formatQuantity(line.baseUnit, line.finalQuantityBaseUnits)}</Text><Text style={styles.muted}>{pricingBasisLabel(line.pricingBasis)}: {formatMoney(line.unitPriceMinor, line.currency)} · إجمالي السطر: {formatMoney(line.lineAmountMinor, line.currency)}{line.modifierAmountMinor > 0 ? ` · الإضافات: ${formatMoney(line.modifierAmountMinor, line.currency)}` : ""}</Text>{line.modifierSnapshots.length ? <Text style={styles.muted}>الإضافات المحددة: {line.modifierSnapshots.map((modifier) => modifier.optionNameAr).join("، ")}</Text> : null}{line.attributeSnapshots.length ? <Text style={styles.muted}>تفاصيل المنتج: {line.attributeSnapshots.map((attribute) => `${attribute.code}: ${attributeSnapshotValue(attribute)}`).join("، ")}</Text> : null}</View>)}
             </View>
             {(order.state === "PARTNER_ACCEPTED" || order.state === "PREPARING") ? <View style={styles.adjustmentActions} accessibilityLabel="تعديلات أصناف الطلب">
               {order.lines.map((line) => {
@@ -533,9 +554,17 @@ function attributeSnapshotValue(attribute: Order["lines"][number]["attributeSnap
   return "—";
 }
 
-function createStyles(theme: ReturnType<typeof resolveTheme>) {
+function createStyles(theme: ReturnType<typeof resolveTheme>, desktopWeb: boolean) {
   return StyleSheet.create({
-    container: { gap: 9, paddingTop: 10, width: "100%" },
+    container: { gap: desktopWeb ? 14 : 9, paddingTop: desktopWeb ? 5 : 10, width: "100%" },
+    workspaceHeading: { backgroundColor: theme.surface, borderColor: theme.borderColorStrong, borderWidth: 1, borderRadius: 18, paddingHorizontal: 22, paddingVertical: 19, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 20 },
+    workspaceHeadingCopy: { flex: 1, gap: 5 },
+    workspaceEyebrow: { ...typography.caption, color: theme.brandAction, fontWeight: "800" },
+    workspaceTitle: { ...typography.titleLg, color: theme.color, fontWeight: "800" },
+    workspaceSubtitle: { ...typography.bodySm, color: theme.colorMuted },
+    workspaceCount: { backgroundColor: theme.actionSoft, borderRadius: 15, minWidth: 105, minHeight: 68, paddingHorizontal: 12, alignItems: "center", justifyContent: "center", gap: 3 },
+    workspaceCountValue: { ...typography.titleMd, fontWeight: "800", color: theme.interactiveText },
+    workspaceCountLabel: { ...typography.caption, color: theme.colorSecondary },
     toolbar: { alignItems: "center", flexDirection: "row", justifyContent: "flex-end", minHeight: 30 },
     archiveButton: { minHeight: 30, alignItems: "center", justifyContent: "center", paddingHorizontal: spacing[2] },
     archiveText: { ...typography.label, color: theme.brandAction },
@@ -545,22 +574,30 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     muted: { ...typography.bodySm, color: theme.colorMuted },
     state: { alignItems: "center", gap: spacing[2], paddingVertical: spacing[2] },
     summaryRow: { flexDirection: "row", gap: spacing[2] },
-    summaryCard: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, flex: 1, gap: 3, paddingVertical: 7, paddingHorizontal: 4 },
+    summaryCard: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: desktopWeb ? 14 : 12, borderWidth: 1, flex: 1, gap: desktopWeb ? 6 : 3, paddingVertical: desktopWeb ? 14 : 7, paddingHorizontal: desktopWeb ? 10 : 4 },
+    pickupSummaryCard: { borderColor: theme.success, borderWidth: 1 },
     summaryValue: { ...typography.titleSm, color: theme.color, fontWeight: "800" },
     summaryLabel: { ...typography.caption, color: theme.colorMuted, textAlign: "center" },
     filterRow: { flexDirection: "row", alignItems: "center", gap: spacing[2], paddingBottom: spacing[1] },
-    order: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 13, borderWidth: 1, gap: 6, padding: 10 },
+    order: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 13, borderWidth: 1, gap: desktopWeb ? 13 : 6, padding: desktopWeb ? 18 : 10 },
+    orderDesktop: { borderRadius: 16, borderRightWidth: 4, borderRightColor: theme.borderColorStrong, maxWidth: 920, width: "100%", alignSelf: "flex-end" },
+    orderNeedsAction: { borderRightColor: theme.brandAction },
+    desktopItemsPreview: { flexDirection: "row", alignItems: "center", gap: 9, backgroundColor: theme.surfaceInset, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
+    desktopItemsText: { ...typography.bodySm, color: theme.color, flex: 1 },
 
     compactHeader:{flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:8},
     compactHeaderText:{flex:1,minWidth:0,gap:2},
     compactDim:{...typography.caption,color:theme.colorMuted,fontSize:11,flexShrink:1},
     compactPayment:{...typography.caption,color:theme.interactiveText,flexShrink:1,fontSize:12},
     compactMetaRow:{flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:7},
-    compactButtons:{flexDirection:"row",alignItems:"center",gap:7},
+    compactButtons:{flexDirection:"row",alignItems:"center",gap:7,justifyContent:desktopWeb?"flex-start":undefined},
     compactPrimary:{flex:1.35,backgroundColor:theme.brandAction,borderRadius:9,minHeight:39,paddingHorizontal:6,flexDirection:"row",alignItems:"center",justifyContent:"center",gap:5},
     compactPrimaryLabel:{...typography.label,fontSize:12,color:theme.onAction,fontWeight:"800"},
     compactReject:{flex:0.7,minHeight:39,borderRadius:9,borderWidth:1,borderColor:theme.borderColor,alignItems:"center",justifyContent:"center"},
     compactDetails:{flex:0.75,minHeight:39,borderRadius:9,borderWidth:1,borderColor:theme.borderColor,backgroundColor:theme.surfaceRaised,alignItems:"center",justifyContent:"center"},
+    desktopDetails: { flex: 0, minWidth: 160, minHeight: 44, paddingHorizontal: 15 },
+    desktopPickupDetails: { backgroundColor: theme.brandAction, borderColor: theme.brandAction },
+    desktopPickupLabel: { color: theme.onAction },
     compactDetailsLabel:{...typography.label,fontSize:12,color:theme.interactiveText},
     sheetOverlay:{flex:1,justifyContent:"flex-end",backgroundColor:"#00000088"},
     sheetScrim:{...StyleSheet.absoluteFill},

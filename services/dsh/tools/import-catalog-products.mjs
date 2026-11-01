@@ -47,21 +47,41 @@ function parseCsvRecords(text) {
   let record = [];
   let value = "";
   let quoted = false;
+  let closedQuote = false;
+  let line = 1;
   let recordStart = 1;
   for (let index = 0; index < text.length; index += 1) {
     const character = text[index];
-    if (character === '"') {
-      if (quoted && text[index + 1] === '"') { value += '"'; index += 1; continue; }
-      quoted = !quoted;
+    if (character === '"' && quoted) {
+      if (text[index + 1] === '"') { value += '"'; index += 1; }
+      else { quoted = false; closedQuote = true; }
       continue;
     }
-    if (character === "," && !quoted) { record.push(value); value = ""; continue; }
-    if ((character === "\n" || character === "\r") && !quoted) {
-      if (character === "\r" && text[index + 1] === "\n") index += 1;
+    if (character === '"' && !quoted) {
+      if (value || closedQuote) throw new Error("CSV contains an invalid quote at line " + line);
+      quoted = true;
+      continue;
+    }
+    if (character === "\n" || character === "\r") {
+      const newline = character === "\r" && text[index + 1] === "\n" ? "\r\n" : character;
+      if (newline === "\r\n") index += 1;
+      line += 1;
+      if (quoted) { value += newline; continue; }
       record.push(value); value = "";
       if (record.some((item) => item.trim())) records.push({ line: recordStart, values: record });
       record = [];
-      recordStart = index + 2;
+      closedQuote = false;
+      recordStart = line;
+      continue;
+    }
+    if (closedQuote && character !== "," && character !== " " && character !== "\t") {
+      throw new Error("CSV contains content after a closing quote at line " + line);
+    }
+    if (closedQuote && (character === " " || character === "\t")) continue;
+    if (character === "," && !quoted) {
+      record.push(value);
+      value = "";
+      closedQuote = false;
       continue;
     }
     value += character;
@@ -81,7 +101,15 @@ function readRows(file) {
     const records = parseCsvRecords(text);
     if (!records.length) return [];
     const header = records[0].values.map((value) => value.trim());
-    return records.slice(1).map((entry) => ({ line: entry.line, row: Object.fromEntries(header.map((name, index) => [name, entry.values[index] || ""])) }));
+    if (header.some((name) => !name) || new Set(header).size !== header.length) {
+      throw new Error("CSV header contains a blank or duplicate column name");
+    }
+    return records.slice(1).map((entry) => {
+      if (entry.values.length !== header.length) {
+        throw new Error(`CSV field count mismatch at line ${entry.line}: expected ${header.length}, received ${entry.values.length}`);
+      }
+      return { line: entry.line, row: Object.fromEntries(header.map((name, index) => [name, entry.values[index]])) };
+    });
   }
   return text.split(/\r?\n/).map((line, index) => ({ line: index + 1, value: line })).filter((entry) => entry.value.trim() && !entry.value.trim().startsWith("#")).map((entry) => {
     try { return { line: entry.line, row: JSON.parse(entry.value) }; } catch { throw new Error(`line ${entry.line}: invalid JSON`); }

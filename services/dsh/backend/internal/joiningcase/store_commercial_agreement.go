@@ -18,6 +18,15 @@ var (
 )
 
 type StoreCommercialAgreementProposalInput struct {
+	CommercialModel        string
+	RecurringAmountMinor   int64
+	BillingPeriod          string
+	BillingTimeZone        string
+	InvoiceDueDays         int
+	GraceDays              int
+	RenewalPolicy          string
+	TerminationTerms       string
+	AdjustmentTerms        string
 	Rates                  []wltintegration.StoreCommercialAgreementRate
 	ExpectedCurrentVersion int
 	Reason                 string
@@ -52,6 +61,9 @@ func (s *Service) ReadStoreTypeCommissionDefaultsForFinance(ctx context.Context,
 
 func (s *Service) UpdateStoreTypeCommissionDefaultForFinance(ctx context.Context, commercialStoreTypeID, actingActorID, fulfillmentMode string, suggestedCommissionRateBps, expectedDefaultVersion int, reason, idempotencyKey, correlationID string) (wltintegration.StoreTypeCommissionDefaultUpdateResponse, error) {
 	if err := s.requireFinance(ctx, actingActorID); err != nil {
+		return wltintegration.StoreTypeCommissionDefaultUpdateResponse{}, err
+	}
+	if err := s.identity.RequireOperatorPermission(ctx, strings.TrimSpace(actingActorID), "platform_policies"); err != nil {
 		return wltintegration.StoreTypeCommissionDefaultUpdateResponse{}, err
 	}
 	commercialStoreTypeID = strings.TrimSpace(commercialStoreTypeID)
@@ -107,6 +119,10 @@ func (s *Service) ProposeStoreCommercialAgreementForOperatorPartners(ctx context
 	}
 	agreement, replayed, err := s.wlt.ProposeStoreCommercialAgreement(ctx, wltintegration.ProposeStoreCommercialAgreementInput{
 		StoreID: store.ID, PartnerActorID: store.PartnerActorID, Rates: rates,
+		CommercialModel: input.CommercialModel, RecurringAmountMinor: input.RecurringAmountMinor,
+		BillingPeriod: input.BillingPeriod, BillingTimeZone: input.BillingTimeZone,
+		InvoiceDueDays: input.InvoiceDueDays, GraceDays: input.GraceDays, RenewalPolicy: input.RenewalPolicy,
+		TerminationTerms: input.TerminationTerms, AdjustmentTerms: input.AdjustmentTerms,
 		ExpectedCurrentVersion: input.ExpectedCurrentVersion, Reason: input.Reason,
 	}, strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID), actingActorID)
 	if err != nil {

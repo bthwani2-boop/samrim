@@ -19,6 +19,15 @@ export type StoreCommercialAgreementRecord = Readonly<{
   storeId: string;
   partnerActorId: string;
   agreementVersion: number;
+  commercialModel: "COMMISSION" | "SUBSCRIPTION" | "HYBRID";
+  recurringAmountMinor: number;
+  billingPeriod: "NONE" | "MONTHLY" | "ANNUAL";
+  billingTimeZone: "Asia/Aden";
+  invoiceDueDays: number;
+  graceDays: number;
+  renewalPolicy: "NONE" | "MANUAL" | "AUTOMATIC";
+  terminationTerms: string;
+  adjustmentTerms: string;
   status: "PROPOSED" | "PARTNER_ACCEPTED" | "ACTIVE" | "FINANCE_REJECTED" | "SUPERSEDED";
   rates: readonly StoreCommercialAgreementRate[];
   proposedByActorId: string;

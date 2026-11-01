@@ -1,7 +1,7 @@
 import { Host, Picker } from "@expo/ui";
 import * as React from "react";
 import { Appearance, Text, View } from "react-native";
-import { isThemePreference, resolveTheme, resolveThemeName, type ThemeName, type ThemePreference } from "../theme/index";
+import { isThemePreference, parseStudioPalette, resolveStudioTheme, resolveThemeName, type StudioPalette, type ThemeName, type ThemePreference } from "../theme/index";
 import type { ThemeColors } from "../tokens/index";
 
 type AppearanceStorage = {
@@ -26,6 +26,7 @@ export function createMobileAppearanceController({
   key: string;
 }) {
   let systemColorScheme = Appearance.getColorScheme();
+  let publishedPalette: StudioPalette | null = null;
   let snapshot: MobileAppearanceSnapshot = createSnapshot("system", false);
   const listeners = new Set<() => void>();
 
@@ -74,6 +75,14 @@ export function createMobileAppearanceController({
 
   return {
     getSnapshot: () => snapshot,
+    setPublishedPalette(value: unknown): boolean {
+      const parsed = value === null ? null : parseStudioPalette(value);
+      if (value !== null && !parsed) return false;
+      if (JSON.stringify(parsed) === JSON.stringify(publishedPalette)) return true;
+      publishedPalette = parsed;
+      setSnapshot(snapshot.preference);
+      return true;
+    },
     restore,
     setPreference,
     subscribe(listener: () => void) {
@@ -90,7 +99,7 @@ export function createMobileAppearanceController({
 
   function createSnapshot(preference: ThemePreference, ready: boolean): MobileAppearanceSnapshot {
     const themeName = resolveThemeName(preference, systemColorScheme);
-    return { preference, themeName, theme: resolveTheme(themeName), ready };
+    return { preference, themeName, theme: resolveStudioTheme(themeName, publishedPalette), ready };
   }
 }
 

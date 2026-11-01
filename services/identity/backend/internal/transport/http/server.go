@@ -2,7 +2,9 @@ package identityhttp
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -25,6 +27,7 @@ import (
 type Config struct {
 	InternalServiceTokens map[string]string
 	AllowedOrigins        map[string]bool
+	PartnerWebOrigins     map[string]bool
 	AbuseIPSecret         []byte
 	TrustedProxies        []*net.IPNet
 	Readiness             func() error
@@ -74,6 +77,8 @@ func New(actors *actor.Service, authenticationService *authentication.Service, c
 	mux.HandleFunc("POST /auth/refresh", s.refresh)
 	mux.HandleFunc("POST /auth/logout", s.logout)
 	mux.HandleFunc("GET /auth/session", s.currentSession)
+	mux.HandleFunc("POST /auth/web/partner/session", s.webPartnerSession)
+	mux.HandleFunc("POST /auth/web/partner/logout", s.webPartnerLogout)
 	if config.Development {
 		mux.HandleFunc("POST /auth/development/session", s.developmentSession)
 	}
@@ -195,6 +200,7 @@ func (s *Server) activateManaged(w http.ResponseWriter, r *http.Request) {
 		writeDomainError(w, err)
 		return
 	}
+	s.setPartnerWebCookiesIfAuthorized(w, r, result, input.ClientInstanceId)
 	writeJSON(w, http.StatusOK, result)
 }
 func (s *Server) requestManagedRecovery(w http.ResponseWriter, r *http.Request) {
@@ -231,6 +237,7 @@ func (s *Server) loginManaged(w http.ResponseWriter, r *http.Request) {
 		writeDomainError(w, err)
 		return
 	}
+	s.setPartnerWebCookiesIfAuthorized(w, r, result, input.ClientInstanceId)
 	writeJSON(w, http.StatusOK, result)
 }
 func (s *Server) requestOperatorEnrollment(w http.ResponseWriter, r *http.Request) {
@@ -325,6 +332,125 @@ func (s *Server) finishOperatorPasskeyAuthentication(w http.ResponseWriter, r *h
 	}
 	writeJSON(w, http.StatusOK, result)
 }
+
+const partnerRefreshCookie = "bt_partner_web_refresh"
+const partnerDeviceCookie = "bt_partner_web_device"
+
+func (s *Server) partnerCookieName(base string) string {
+	if s.config.Development {
+		return base
+	}
+	return "__Host-" + base
+}
+
+func (s *Server) partnerWebOriginAllowed(r *http.Request) bool {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	return origin != "" && s.config.PartnerWebOrigins[origin]
+}
+
+func (s *Server) partnerWebCookies(w http.ResponseWriter, refreshToken, clientInstanceId string, maxAge int) {
+	for _, item := range []struct{ name, value string }{
+		{partnerRefreshCookie, refreshToken}, {partnerDeviceCookie, clientInstanceId},
+	} {
+		http.SetCookie(w, &http.Cookie{
+			Name: s.partnerCookieName(item.name), Value: item.value,
+			Path: "/", HttpOnly: true, Secure: true,
+			SameSite: http.SameSiteStrictMode, MaxAge: maxAge,
+		})
+	}
+}
+
+func (s *Server) setPartnerWebCookiesIfAuthorized(w http.ResponseWriter, r *http.Request, pair domain.TokenPair, clientInstanceId string) {
+	if !s.partnerWebOriginAllowed(r) || pair.Identity.Role != "partner" || pair.Identity.Surface != "app-partner" {
+		return
+	}
+	maxAge := 60 * 60
+	if s.config.Development {
+		maxAge = 30 * 24 * 60 * 60
+	}
+	s.partnerWebCookies(w, pair.RefreshToken, clientInstanceId, maxAge)
+}
+
+func (s *Server) readPartnerWebCookies(r *http.Request) (string, string, bool) {
+	refresh, errRefresh := r.Cookie(s.partnerCookieName(partnerRefreshCookie))
+	device, errDevice := r.Cookie(s.partnerCookieName(partnerDeviceCookie))
+	if errRefresh != nil || errDevice != nil || len(refresh.Value) < 20 || len(device.Value) < 8 {
+		return "", "", false
+	}
+	return refresh.Value, device.Value, true
+}
+
+func partnerWebRefreshRequest(refresh, device string) domain.RefreshRequest {
+	digest := sha256.Sum256([]byte("partner-web-refresh-v1\x00" + refresh + "\x00" + device))
+	return domain.RefreshRequest{RefreshToken: refresh, ClientInstanceId: device, RefreshRequestId: hex.EncodeToString(digest[:])}
+}
+
+func (s *Server) webPartnerSession(w http.ResponseWriter, r *http.Request) {
+	if !s.partnerWebOriginAllowed(r) {
+		writeDomainError(w, domain.ErrForbidden)
+		return
+	}
+	refresh, device, ok := s.readPartnerWebCookies(r)
+	if !ok {
+		writeDomainError(w, domain.ErrUnauthenticated)
+		return
+	}
+	// Deterministic per-token retry ID permits safe replay after a lost response.
+	pair, err := s.sessions.Refresh(r.Context(), partnerWebRefreshRequest(refresh, device))
+	if err != nil {
+		if errors.Is(err, domain.ErrInvalidRefresh) || errors.Is(err, domain.ErrUnauthenticated) {
+			s.partnerWebCookies(w, "", "", -1)
+		}
+		writeDomainError(w, err)
+		return
+	}
+	if pair.Identity.Role != "partner" || pair.Identity.Surface != "app-partner" {
+		s.partnerWebCookies(w, "", "", -1)
+		writeDomainError(w, domain.ErrForbidden)
+		return
+	}
+	s.setPartnerWebCookiesIfAuthorized(w, r, pair, device)
+	writeJSON(w, http.StatusOK, pair)
+}
+
+func (s *Server) webPartnerLogout(w http.ResponseWriter, r *http.Request) {
+	if !s.partnerWebOriginAllowed(r) {
+		writeDomainError(w, domain.ErrForbidden)
+		return
+	}
+	refresh, device, hasCookie := s.readPartnerWebCookies(r)
+	s.partnerWebCookies(w, "", "", -1)
+	if token, ok := bearerToken(r); ok {
+		err := s.sessions.Logout(r.Context(), token)
+		if err == nil {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if !errors.Is(err, domain.ErrUnauthenticated) {
+			writeDomainError(w, err)
+			return
+		}
+	}
+	// An expired access token must not leave a live refresh session behind.
+	if hasCookie {
+		pair, err := s.sessions.Refresh(r.Context(), partnerWebRefreshRequest(refresh, device))
+		if err == nil {
+			if pair.Identity.Role != "partner" || pair.Identity.Surface != "app-partner" {
+				writeDomainError(w, domain.ErrForbidden)
+				return
+			}
+			if err := s.sessions.Logout(r.Context(), pair.AccessToken); err != nil && !errors.Is(err, domain.ErrUnauthenticated) {
+				writeDomainError(w, err)
+				return
+			}
+		} else if !errors.Is(err, domain.ErrInvalidRefresh) && !errors.Is(err, domain.ErrUnauthenticated) && !errors.Is(err, domain.ErrRefreshStale) {
+			writeDomainError(w, err)
+			return
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 	var input domain.RefreshRequest
 	if !decodeJSON(w, r, &input) {
@@ -879,6 +1005,9 @@ func (s *Server) cors(next http.Handler) http.Handler {
 			}
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
+			if s.config.PartnerWebOrigins[origin] {
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+			}
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		}

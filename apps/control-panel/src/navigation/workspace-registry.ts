@@ -81,7 +81,7 @@ export const workspaceDestinations: readonly WorkspaceDestination[] = [
   },
   {
     href: "/partners",
-    label: "الشركاء",
+    label: "إدارة الشركاء",
     permission: "partners",
     children: [
       { href: "/partners", label: "الشركاء والمتاجر", searchAliases: "سجل الشركاء سجل المتاجر حسابات الشركاء", showInWorkspaceNavigation: false }
@@ -89,6 +89,7 @@ export const workspaceDestinations: readonly WorkspaceDestination[] = [
   },
   { href: "/catalog", label: "الكتالوج", children: catalogChildren, permission: "catalog" },
   { href: "/marketing", label: "التسويق والمحتوى", children: marketingChildren, permission: "marketing" },
+  { href: "/studio", label: "استوديو التصميم", children: [], permission: "marketing" },
   { href: "/finance", label: "المالية", children: financeChildren, permission: "finance" },
   { href: "/hr", label: "الموارد البشرية", children: [{ href: "/hr/employees", label: "الموظفون" }], permission: "hr" },
   { href: "/policies", label: "السياسات", children: policyChildren, permission: "platform_policies" },

@@ -49,6 +49,9 @@ func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/orders/{orderId}/delivery-proof", s.readDeliveryProof)
 	mux.HandleFunc("GET /dsh/orders/{orderId}/rating", s.readRating)
 	mux.HandleFunc("POST /dsh/orders/{orderId}/rating", s.createRating)
+	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/ratings", s.listPartnerStoreRatings)
+	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/ratings", s.listOperatorStoreRatings)
+	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/orders/summary", s.readOperatorStoreOrderSummary)
 	mux.HandleFunc("POST /dsh/orders/{orderId}/cancel", s.cancel)
 	mux.HandleFunc("POST /dsh/orders/{orderId}/cancellation-request", s.createClientCancellationRequest)
 	mux.HandleFunc("GET /dsh/orders/{orderId}/cancellation-request", s.readClientCancellationRequest)
@@ -76,6 +79,7 @@ func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/operator/cash-remittances/{remittanceId}/reconcile", s.reconcileOperatorCashRemittance)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders", s.listStore)
 	mux.HandleFunc("GET /dsh/partner/orders", s.listPartnerOrders)
+	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/orders/summary", s.readPartnerStoreOrderSummary)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders/{orderId}", s.readStore)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/orders/{orderId}/adjustments", s.proposePartnerOrderAdjustment)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/orders/{orderId}/transition", s.transition)
@@ -120,7 +124,7 @@ func (s *OrderServer) listOperatorOperations(w http.ResponseWriter, r *http.Requ
 		actionableOnly = rawActionable == "true"
 	}
 	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
-	if len(cursor) > 512 {
+	if len(cursor) > 2048 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cursor is too long")
 		return
 	}
@@ -129,13 +133,15 @@ func (s *OrderServer) listOperatorOperations(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "storeId is invalid")
 		return
 	}
-	var operations postgres.OperatorOperationsResult
-	var err error
-	if storeID != "" {
-		operations, err = s.service.ListForOperatorStore(r.Context(), state, query, sort, actingActorID, actionableOnly, limit, cursor, storeID)
-	} else {
-		operations, err = s.service.ListForOperator(r.Context(), state, query, sort, actingActorID, actionableOnly, limit, cursor)
+	filters := postgres.OperatorOrderFilters{
+		StoreID:         storeID,
+		StoreName:       r.URL.Query().Get("storeName"),
+		FromDate:        r.URL.Query().Get("fromDate"),
+		ToDate:          r.URL.Query().Get("toDate"),
+		PaymentSource:   r.URL.Query().Get("paymentSource"),
+		FulfillmentMode: r.URL.Query().Get("fulfillmentMode"),
 	}
+	operations, err := s.service.ListForOperatorFiltered(r.Context(), state, query, sort, actingActorID, actionableOnly, limit, cursor, filters)
 	if err != nil {
 		writeOrderError(w, err)
 		return
@@ -146,6 +152,7 @@ func (s *OrderServer) listOperatorOperations(w http.ResponseWriter, r *http.Requ
 	}
 	summary := operations.Summary
 	writeJSON(w, http.StatusOK, contract.OperatorOperationsResponse{Operations: items, NextCursor: operations.NextCursor,
+		FilterEngineVersion: 1,
 		Summary: contract.OperatorOperationsSummary{TotalCount: summary.TotalCount, ActionableCount: summary.ActionableCount,
 			AwaitingDispatchCount: summary.AwaitingDispatchCount, ActiveCount: summary.ActiveCount, DeliveredCount: summary.DeliveredCount,
 			InCustodyOrderCount: summary.InCustodyOrderCount, InCustodyOrderValueMinor: int(summary.InCustodyOrderValueMinor), MeasuredAt: summary.MeasuredAt}})
@@ -306,7 +313,7 @@ func toOperatorOperationListItem(operation postgres.OperatorOperationListRecord)
 	if operation.Assignment != nil {
 		assignment = &contract.OperatorAssignmentSummary{ID: operation.Assignment.ID, OrderID: operation.Assignment.OrderID, CaptainActorID: operation.Assignment.CaptainActorID, State: operation.Assignment.State, Version: operation.Assignment.Version, HandoffState: operation.Assignment.HandoffState}
 	}
-	return contract.OperatorOperationListItem{OrderID: operation.OrderID, StoreName: operation.StoreName, State: contract.OrderState(operation.State), UpdatedAt: operation.UpdatedAt, StageStartedAt: operation.StageStartedAt, PreparationMinutes: optionalPreparationMinutes(operation.PreparationMinutes), SlaStatus: operation.StageSLA.Status, SlaReason: operation.StageSLA.Reason, SlaDeadlineAt: operation.StageSLA.DeadlineAt, SlaPolicyVersion: operation.StageSLA.PolicyVersion, SlaTargetMinutes: operation.StageSLA.TargetMinutes, Assignment: assignment}
+	return contract.OperatorOperationListItem{OrderID: operation.OrderID, StoreName: operation.StoreName, MultiStoreCheckoutID: operation.MultiStoreCheckoutID, State: contract.OrderState(operation.State), UpdatedAt: operation.UpdatedAt, StageStartedAt: operation.StageStartedAt, PreparationMinutes: optionalPreparationMinutes(operation.PreparationMinutes), SlaStatus: operation.StageSLA.Status, SlaReason: operation.StageSLA.Reason, SlaDeadlineAt: operation.StageSLA.DeadlineAt, SlaPolicyVersion: operation.StageSLA.PolicyVersion, SlaTargetMinutes: operation.StageSLA.TargetMinutes, Assignment: assignment}
 }
 
 func (s *OrderServer) listClient(w http.ResponseWriter, r *http.Request) {
@@ -533,6 +540,92 @@ func (s *OrderServer) createRating(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, contract.OrderRatingResponse{Rating: toOrderRating(rating), IdempotentReplay: replayed})
 }
 
+// Basic completed-Order feedback, without customer identity or contact details.
+func storeOrderRatingQuery(w http.ResponseWriter, r *http.Request) (string, int, string, bool) {
+	storeID := strings.TrimSpace(r.PathValue("storeId"))
+	if storeID == "" || len(storeID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "storeId is invalid")
+		return "", 0, "", false
+	}
+	limit, ok := orderLimit(w, r)
+	if !ok {
+		return "", 0, "", false
+	}
+	if limit > 50 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "limit must not exceed 50 for ratings")
+		return "", 0, "", false
+	}
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	if len(cursor) > 1024 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "ratings cursor is invalid")
+		return "", 0, "", false
+	}
+	return storeID, limit, cursor, true
+}
+
+func toStoreOrderRatingList(page postgres.StoreOrderRatingPage) contract.StoreOrderRatingListResponse {
+	items := make([]contract.OrderRating, 0, len(page.Ratings))
+	for _, rating := range page.Ratings {
+		items = append(items, toOrderRating(rating))
+	}
+	summary := contract.StoreOrderRatingSummary{}
+	summary.TotalRatings = int(page.Summary.TotalRatings)
+	summary.AverageRating = page.Summary.AverageRating
+	summary.OneStar = int(page.Summary.OneStar)
+	summary.TwoStars = int(page.Summary.TwoStars)
+	summary.ThreeStars = int(page.Summary.ThreeStars)
+	summary.FourStars = int(page.Summary.FourStars)
+	summary.FiveStars = int(page.Summary.FiveStars)
+	return contract.StoreOrderRatingListResponse{Ratings: items, Summary: summary, NextCursor: page.NextCursor}
+}
+
+func (s *OrderServer) listPartnerStoreRatings(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "partner session is required")
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partner authority comes from the session")
+		return
+	}
+	storeID, limit, cursor, ok := storeOrderRatingQuery(w, r)
+	if !ok {
+		return
+	}
+	page, err := s.service.ListRatingsForPartner(r.Context(), bearerToken(r), storeID, limit, cursor)
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toStoreOrderRatingList(page))
+}
+
+func (s *OrderServer) listOperatorStoreRatings(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "untrusted actor authority header")
+		return
+	}
+	actor := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if actor == "" || len(actor) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "operator actor is required")
+		return
+	}
+	storeID, limit, cursor, ok := storeOrderRatingQuery(w, r)
+	if !ok {
+		return
+	}
+	page, err := s.service.ListRatingsForOperator(r.Context(), actor, storeID, limit, cursor)
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toStoreOrderRatingList(page))
+}
+
 // The server checks the immutable Order policy under the same lock as the state transition.
 func (s *OrderServer) cancel(w http.ResponseWriter, r *http.Request) {
 	if bearerToken(r) == "" {
@@ -686,6 +779,64 @@ func (s *OrderServer) listPartnerOrders(w http.ResponseWriter, r *http.Request) 
 			DeliveryRecovery: int(attention.DeliveryRecovery),
 		},
 	})
+}
+
+// This read is operational DSH Order state, not WLT financial settlement.
+func (s *OrderServer) readPartnerStoreOrderSummary(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "partner session is required")
+		return
+	}
+	storeID := strings.TrimSpace(r.PathValue("storeId"))
+	if storeID == "" || len(storeID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "storeId is invalid")
+		return
+	}
+	period := strings.TrimSpace(r.URL.Query().Get("period"))
+	if period == "" {
+		period = "30d"
+	}
+	if period != "7d" && period != "30d" && period != "all" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "period must be 7d, 30d or all")
+		return
+	}
+	summary, err := s.service.ReadPartnerStoreOrderSummary(r.Context(), bearerToken(r), storeID, period)
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"summary": summary})
+}
+
+func (s *OrderServer) readOperatorStoreOrderSummary(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "untrusted actor authority header")
+		return
+	}
+	actor := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	storeID := strings.TrimSpace(r.PathValue("storeId"))
+	if actor == "" || len(actor) > 128 || storeID == "" || len(storeID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "operator and store scope are required")
+		return
+	}
+	period := strings.TrimSpace(r.URL.Query().Get("period"))
+	if period == "" {
+		period = "30d"
+	}
+	if period != "7d" && period != "30d" && period != "all" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "period must be 7d, 30d or all")
+		return
+	}
+	summary, err := s.service.ReadOperatorStoreOrderSummary(r.Context(), actor, storeID, period)
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"summary": summary})
 }
 
 func orderStateFilter(w http.ResponseWriter, r *http.Request) (string, bool) {
@@ -966,7 +1117,7 @@ func writeOrderError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partner orders Store scope is invalid")
 	case errors.Is(err, postgres.ErrClientOrdersInvalidCursor), errors.Is(err, postgres.ErrOperatorCustomerOrdersInvalidCursor):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "customer Order history cursor is invalid")
-	case errors.Is(err, postgres.ErrPartnerOrdersInvalidState), errors.Is(err, postgres.ErrPartnerOrdersInvalidQuery), errors.Is(err, postgres.ErrPartnerOrdersInvalidCursor), errors.Is(err, postgres.ErrOperatorOperationInvalidCursor), errors.Is(err, postgres.ErrOperatorOperationInvalidLimit):
+	case errors.Is(err, postgres.ErrPartnerOrdersInvalidState), errors.Is(err, postgres.ErrPartnerOrdersInvalidQuery), errors.Is(err, postgres.ErrPartnerOrdersInvalidCursor), errors.Is(err, postgres.ErrOperatorOperationInvalidCursor), errors.Is(err, postgres.ErrOperatorOperationInvalidLimit), errors.Is(err, postgres.ErrOperatorOperationInvalidQuery), errors.Is(err, postgres.ErrOperatorOperationInvalidSort):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partner or operator orders pagination, state, or search is invalid")
 	case errors.Is(err, orderdomain.ErrClientSessionForbidden), errors.Is(err, orderdomain.ErrPartnerSessionForbidden), errors.Is(err, orderdomain.ErrStoreOwnershipForbidden), errors.Is(err, orderdomain.ErrOperatorNotActive):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the authenticated session is not permitted for this Order")

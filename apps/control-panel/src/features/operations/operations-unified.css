@@ -140,3 +140,25 @@
 
 /* Retain the selected queue's unsaved inputs while removing hidden panels from layout. */
 .ops-center .ops-decision-pane{min-width:0}
+
+/* Orders registry: server-filtered summaries and page-scoped multi-store grouping. */
+.ops-center .ops-order-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:9px;margin-top:14px;min-width:0}
+.ops-center .ops-order-metric{display:grid;align-content:center;justify-items:start;gap:5px;min-height:72px;min-width:0;padding:10px 13px;color:#eaf3ff;background:#10283e;border:1px solid #34506e;border-radius:10px;font:inherit;text-align:start}
+.ops-center button.ops-order-metric{cursor:pointer}
+.ops-center button.ops-order-metric:hover:not(:disabled){border-color:#ff915c;background:#1d3549}
+.ops-center button.ops-order-metric:focus-visible{outline:2px solid #ff965e;outline-offset:2px}
+.ops-center button.ops-order-metric:disabled{cursor:default}
+.ops-center .ops-order-metric strong{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}
+.ops-center .ops-order-metric span{font-size:12px;line-height:1.4}
+.ops-center .ops-metric-note{font-size:11px;line-height:1.7;margin:6px 1px 0}
+.ops-center .ops-advanced-filters{padding-block:10px;border-top:1px solid #31506e}
+.ops-center .ops-active-filters{min-height:32px}
+.ops-center .ops-checkout-group td{background:#20364f;color:#e8f2ff;font-weight:700;text-align:start;padding:10px 13px}
+.ops-center .ops-checkout-group code{direction:ltr;unicode-bidi:isolate}
+.ops-center .ops-order-group-label{display:block;color:#ffae82;font-size:11px;font-weight:700}
+[data-theme="light"] .ops-center .ops-order-metric{background:#fff;color:#1c3853;border-color:#c7d7e6}
+[data-theme="light"] .ops-center button.ops-order-metric:hover:not(:disabled){background:#f1f6fc;border-color:#ca672e}
+[data-theme="light"] .ops-center .ops-advanced-filters{border-color:#c9d8e6}
+[data-theme="light"] .ops-center .ops-checkout-group td{background:#ecf3fb;color:#233f5c}
+[data-theme="light"] .ops-center .ops-order-group-label{color:#8a3a12}
+@media(max-width:680px){.ops-center .ops-order-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}

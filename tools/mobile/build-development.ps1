@@ -6,6 +6,7 @@ param(
     [string] $App,
     [switch] $Submit,
     [switch] $Wait,
+    [switch] $AndroidOnly,
     [switch] $OfflinePlan
 )
 
@@ -86,7 +87,7 @@ if ($LASTEXITCODE -ne 0) { Fail "Dependency lock must match the committed manife
 if ($LASTEXITCODE -ne 0) { Fail "Mobile dependency/configuration preflight failed for $App." }
 
 $FirebaseEnabled = $App -in @("app-client", "app-partner", "app-captain")
-$IosEnabled = $App -in @("app-client", "app-partner", "app-captain")
+$IosEnabled = (-not $AndroidOnly) -and ($App -in @("app-client", "app-partner", "app-captain"))
 if ($IosEnabled) {
     $IosProfile = $EasConfig.build.'ios-simulator'
     if ($null -eq $IosProfile -or [string]$IosProfile.extends -ne "development" -or -not [bool]$IosProfile.ios.simulator) {

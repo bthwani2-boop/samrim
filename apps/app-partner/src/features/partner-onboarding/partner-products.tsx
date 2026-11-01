@@ -27,7 +27,7 @@ export function PartnerProducts() {
   return <View style={styles.container}>
     {toolsView ? <Host colorScheme={themeName} matchContents seedColor={theme.brandAction}><Button label="العودة إلى المنتجات" onPress={() => router.replace("/products" as Href)} testID="partner-products-back-to-list" variant="outlined" /></Host> : null}
     {switchingStore ? <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ فتح المتجر المصرح" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ فتح متجر مصرح لك بإدارة منتجاته…</Text></View> : null}
-    {catalogStore?.primaryVerticalId ? <StoreOfferManagement key={catalogStore.id} storeId={catalogStore.id} serviceCityId={catalogStore.serviceCityId} canManagePromotions={catalogStore.owned || catalogStore.permissions.includes("promotions")} verticalId={catalogStore.primaryVerticalId} toolsView={toolsView} /> : null}
+    {catalogStore?.primaryVerticalId ? <StoreOfferManagement key={catalogStore.id} storeId={catalogStore.id} serviceCityId={catalogStore.serviceCityId} storePublicationState={catalogStore.publicationState} canManagePromotions={catalogStore.owned || catalogStore.permissions.includes("promotions")} verticalId={catalogStore.primaryVerticalId} toolsView={toolsView} /> : null}
     {state.kind === "ready" && permittedStores.length === 0 ? <Text accessibilityRole="alert" style={styles.muted}>لا توجد متاجر تملك صلاحية إدارة منتجاتها.</Text> : null}
     {catalogStore && !catalogStore.primaryVerticalId ? <Text style={styles.muted}>تصنيف المتجر غير مكتمل.</Text> : null}
   </View>;

@@ -30,7 +30,7 @@ paths:
             schema:
               $ref: "../dsh.openapi.yaml#/components/schemas/StoreOperationalAvailabilityRequest"
       responses:
-        "200": { description: Canonical updated availability and mode orderability readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerStoreOperationalAvailabilityMutationResponse" } } }
+        "200": { description: Canonical updated availability and mode orderability readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerStoreOperationalAvailabilityMutationResponse" } } } }
         "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
@@ -70,7 +70,7 @@ paths:
             schema:
               $ref: "../dsh.openapi.yaml#/components/schemas/StoreOperationalAvailabilityRequest"
       responses:
-        "200": { description: Canonical updated availability and mode orderability readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerStoreOperationalAvailabilityMutationResponse" } } }
+        "200": { description: Canonical updated availability and mode orderability readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerStoreOperationalAvailabilityMutationResponse" } } } }
         "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
@@ -87,7 +87,7 @@ paths:
         - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
         - $ref: "../dsh.openapi.yaml#/components/parameters/ServiceCityIdRequired"
       responses:
-        "200": { description: Current canonical orderability by admitted fulfillment mode., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PublicStoreOrderabilityResponse" } } }
+        "200": { description: Current canonical orderability by admitted fulfillment mode., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PublicStoreOrderabilityResponse" } } } }
         "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }

@@ -150,6 +150,9 @@ const paths = git([
 	"--exclude-standard",
 	"-z",
 ]).split("\0").filter(Boolean);
+// An unstaged move leaves the removed tracked path in Git's index until staged.
+// Canonical governance owners are already checked above and must never be skipped.
+const pendingDeletions = new Set(git(["ls-files", "--deleted", "-z"]).split("\0").filter(Boolean));
 const oldRepo = ["bthwani2-boop/governance", "and-docs"].join("-"),
 	oldSha = ["GOVERNANCE", "CANONICAL", "SHA"].join("_");
 for (const p of paths) {
@@ -163,7 +166,8 @@ for (const p of paths) {
 	let stat;
 	try {
 		stat = fs.lstatSync(at(p));
-	} catch {
+	} catch (error) {
+		if (error?.code === "ENOENT" && pendingDeletions.has(p)) continue;
 		fail("repository file missing " + p);
 	}
 	if (stat.isSymbolicLink()) fail("repository symlink is not scanned " + p);

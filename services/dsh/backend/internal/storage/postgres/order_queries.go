@@ -237,6 +237,67 @@ func CountPartnerOrderAttention(ctx context.Context, db *sql.DB, storeIDs []stri
 	return counts, nil
 }
 
+// PartnerStoreOrderSummary is an operational, whole-Store aggregate over
+// canonical DSH Orders. The recorded Order value is not WLT settlement or revenue.
+type PartnerStoreOrderSummary struct {
+	StoreID                  string    `json:"storeId"`
+	Period                   string    `json:"period"`
+	MeasuredAt               time.Time `json:"measuredAt"`
+	TotalOrders              int64     `json:"totalOrders"`
+	DeliveredOrders          int64     `json:"deliveredOrders"`
+	PickedUpOrders           int64     `json:"pickedUpOrders"`
+	CancelledOrders          int64     `json:"cancelledOrders"`
+	RejectedOrders           int64     `json:"rejectedOrders"`
+	DeliveryFailedOrders     int64     `json:"deliveryFailedOrders"`
+	CompletedOrderValueMinor int64     `json:"completedOrderValueMinor"`
+	CompletedCustomers       int64     `json:"completedCustomers"`
+	ReturningCustomers       int64     `json:"returningCustomers"`
+}
+
+func ReadPartnerStoreOrderSummary(ctx context.Context, db *sql.DB, storeID, period string, from *time.Time) (PartnerStoreOrderSummary, error) {
+	storeID = strings.TrimSpace(storeID)
+	if db == nil || storeID == "" || len(storeID) > 128 {
+		return PartnerStoreOrderSummary{}, ErrPartnerOrdersScopeInvalid
+	}
+	if period != "7d" && period != "30d" && period != "all" {
+		return PartnerStoreOrderSummary{}, ErrPartnerOrdersInvalidQuery
+	}
+	var fromArg any
+	if from != nil {
+		fromArg = *from
+	}
+	result := PartnerStoreOrderSummary{StoreID: storeID, Period: period}
+	err := db.QueryRowContext(ctx, `WITH scoped AS (
+		SELECT client_actor_id,state,total_amount_minor
+		FROM dsh.commerce_orders
+		WHERE store_id=$1 AND ($2::timestamptz IS NULL OR created_at >= $2::timestamptz)
+	), customers AS (
+		SELECT client_actor_id,count(*) AS completed_orders FROM scoped
+		WHERE state IN ('DELIVERED','PICKED_UP')
+		GROUP BY client_actor_id
+	)
+	SELECT
+		(SELECT count(*) FROM scoped),
+		(SELECT count(*) FROM scoped WHERE state='DELIVERED'),
+		(SELECT count(*) FROM scoped WHERE state='PICKED_UP'),
+		(SELECT count(*) FROM scoped WHERE state='CANCELLED'),
+		(SELECT count(*) FROM scoped WHERE state='REJECTED'),
+		(SELECT count(*) FROM scoped WHERE state='DELIVERY_FAILED'),
+		(SELECT coalesce(sum(total_amount_minor),0)::bigint FROM scoped WHERE state IN ('DELIVERED','PICKED_UP')),
+		(SELECT count(*) FROM customers),
+		(SELECT count(*) FROM customers WHERE completed_orders>1),
+		statement_timestamp()`,
+		storeID, fromArg).Scan(
+		&result.TotalOrders, &result.DeliveredOrders, &result.PickedUpOrders,
+		&result.CancelledOrders, &result.RejectedOrders, &result.DeliveryFailedOrders,
+		&result.CompletedOrderValueMinor, &result.CompletedCustomers, &result.ReturningCustomers,
+		&result.MeasuredAt)
+	if err != nil {
+		return PartnerStoreOrderSummary{}, fmt.Errorf("read partner Store order summary: %w", err)
+	}
+	return result, nil
+}
+
 func validOrderState(state string) bool {
 	switch state {
 	case "CREATED", "PARTNER_ACCEPTED", "PREPARING", "READY_FOR_DISPATCH", "READY_FOR_PICKUP", "PICKED_UP", "CAPTAIN_ASSIGNED", "IN_CUSTODY", "DELIVERED", "DELIVERY_FAILED", "REJECTED", "CANCELLED":
@@ -253,17 +314,31 @@ var (
 )
 
 type operatorOperationsCursor struct {
-	UpdatedAt      time.Time `json:"updatedAt"`
-	ID             string    `json:"id"`
-	State          string    `json:"state"`
-	ActionableOnly bool      `json:"actionableOnly"`
-	Query          string    `json:"query"`
-	Sort           string    `json:"sort"`
-	StoreID        string    `json:"storeId,omitempty"`
+	UpdatedAt       time.Time `json:"updatedAt"`
+	ID              string    `json:"id"`
+	State           string    `json:"state"`
+	ActionableOnly  bool      `json:"actionableOnly"`
+	Query           string    `json:"query"`
+	Sort            string    `json:"sort"`
+	StoreID         string    `json:"storeId,omitempty"`
+	StoreName       string    `json:"storeName,omitempty"`
+	FromDate        string    `json:"fromDate,omitempty"`
+	ToDate          string    `json:"toDate,omitempty"`
+	PaymentSource   string    `json:"paymentSource,omitempty"`
+	FulfillmentMode string    `json:"fulfillmentMode,omitempty"`
+}
+
+type OperatorOrderFilters struct {
+	StoreID         string
+	StoreName       string
+	FromDate        string
+	ToDate          string
+	PaymentSource   string
+	FulfillmentMode string
 }
 
 func ListOrdersForOperator(ctx context.Context, db *sql.DB, state, query, sort string, actionableOnly bool, limit int, cursor string) (OperatorOperationsResult, error) {
-	return listOrdersForOperatorScope(ctx, db, state, query, sort, actionableOnly, limit, cursor, "")
+	return listOrdersForOperatorScope(ctx, db, state, query, sort, actionableOnly, limit, cursor, OperatorOrderFilters{})
 }
 
 func ListOrdersForOperatorStore(ctx context.Context, db *sql.DB, state, query, sort string, actionableOnly bool, limit int, cursor, storeID string) (OperatorOperationsResult, error) {
@@ -271,10 +346,14 @@ func ListOrdersForOperatorStore(ctx context.Context, db *sql.DB, state, query, s
 	if storeID == "" || len(storeID) > 128 {
 		return OperatorOperationsResult{}, ErrOperatorOperationInvalidQuery
 	}
-	return listOrdersForOperatorScope(ctx, db, state, query, sort, actionableOnly, limit, cursor, storeID)
+	return listOrdersForOperatorScope(ctx, db, state, query, sort, actionableOnly, limit, cursor, OperatorOrderFilters{StoreID: storeID})
 }
 
-func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, sort string, actionableOnly bool, limit int, cursor, storeID string) (OperatorOperationsResult, error) {
+func ListOrdersForOperatorFiltered(ctx context.Context, db *sql.DB, state, query, sort string, actionableOnly bool, limit int, cursor string, filters OperatorOrderFilters) (OperatorOperationsResult, error) {
+	return listOrdersForOperatorScope(ctx, db, state, query, sort, actionableOnly, limit, cursor, filters)
+}
+
+func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, sort string, actionableOnly bool, limit int, cursor string, filters OperatorOrderFilters) (OperatorOperationsResult, error) {
 	if db == nil || limit < 1 || limit > 100 {
 		return OperatorOperationsResult{}, ErrOperatorOperationInvalidLimit
 	}
@@ -291,6 +370,30 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 		return OperatorOperationsResult{}, ErrOperatorOperationInvalidSort
 	}
 	ascending := sort == "updated_asc"
+	filters.StoreID = strings.TrimSpace(filters.StoreID)
+	filters.StoreName = strings.TrimSpace(filters.StoreName)
+	filters.FromDate = strings.TrimSpace(filters.FromDate)
+	filters.ToDate = strings.TrimSpace(filters.ToDate)
+	filters.PaymentSource = strings.TrimSpace(filters.PaymentSource)
+	filters.FulfillmentMode = strings.TrimSpace(filters.FulfillmentMode)
+	if len(filters.StoreID) > 128 || utf8.RuneCountInString(filters.StoreName) > 128 ||
+		(filters.PaymentSource != "" && filters.PaymentSource != "CASH" && filters.PaymentSource != "WALLET" && filters.PaymentSource != "MIXED") ||
+		(filters.FulfillmentMode != "" && filters.FulfillmentMode != "BTHWANI_CAPTAIN" && filters.FulfillmentMode != "PARTNER_CAPTAIN" && filters.FulfillmentMode != "CUSTOMER_PICKUP") {
+		return OperatorOperationsResult{}, ErrOperatorOperationInvalidQuery
+	}
+	for _, dateValue := range []string{filters.FromDate, filters.ToDate} {
+		if dateValue == "" {
+			continue
+		}
+		parsed, err := time.Parse("2006-01-02", dateValue)
+		if err != nil || parsed.Format("2006-01-02") != dateValue {
+			return OperatorOperationsResult{}, ErrOperatorOperationInvalidQuery
+		}
+	}
+	if filters.FromDate != "" && filters.ToDate != "" && filters.FromDate > filters.ToDate {
+		return OperatorOperationsResult{}, ErrOperatorOperationInvalidQuery
+	}
+	storeID := filters.StoreID
 	args := []any{}
 	where := "TRUE"
 	if storeID != "" {
@@ -300,6 +403,37 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 	if state != "" {
 		args = append(args, state)
 		where += " AND o.state=$" + strconv.Itoa(len(args))
+	}
+	if filters.StoreName != "" {
+		args = append(args, "%"+escapeOperatorOperationSearch(filters.StoreName)+"%")
+		where += " AND s.name ILIKE $" + strconv.Itoa(len(args)) + " ESCAPE '!'"
+	}
+	if filters.FromDate != "" {
+		args = append(args, filters.FromDate)
+		// Cast date to timestamp before AT TIME ZONE. A bare date is otherwise
+		// converted via the database session zone and shifts Aden midnight by 3h.
+		where += " AND o.created_at >= (($" + strconv.Itoa(len(args)) + "::date)::timestamp AT TIME ZONE 'Asia/Aden')"
+	}
+	if filters.ToDate != "" {
+		args = append(args, filters.ToDate)
+		where += " AND o.created_at < (($" + strconv.Itoa(len(args)) + "::date + INTERVAL '1 day') AT TIME ZONE 'Asia/Aden')"
+	}
+	if filters.FulfillmentMode != "" {
+		args = append(args, filters.FulfillmentMode)
+		where += " AND o.fulfillment_mode=$" + strconv.Itoa(len(args))
+	}
+	// Only classify a recorded allocation after the Order is linked to its canonical payment intent.
+	// An unlinked zero-cash default must never appear as a wallet-funded Order.
+	if filters.PaymentSource != "" {
+		where += " AND o.payment_intent_id IS NOT NULL"
+	}
+	switch filters.PaymentSource {
+	case "CASH":
+		where += " AND o.payment_cash_amount_minor=o.total_amount_minor"
+	case "WALLET":
+		where += " AND o.payment_cash_amount_minor=0"
+	case "MIXED":
+		where += " AND o.payment_cash_amount_minor>0 AND o.payment_cash_amount_minor<o.total_amount_minor"
 	}
 	// The operations attention queue includes stalled early fulfillment states, even
 	// when no automatic state transition is safe. Read-only review must not depend
@@ -317,7 +451,7 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 	}
 	pageWhere := "TRUE"
 	if strings.TrimSpace(cursor) != "" {
-		decoded, err := decodeOperatorOperationsCursor(cursor, state, actionableOnly, query, sort, storeID)
+		decoded, err := decodeOperatorOperationsCursor(cursor, state, actionableOnly, query, sort, filters)
 		if err != nil {
 			return OperatorOperationsResult{}, err
 		}
@@ -336,13 +470,18 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 	// The filtered registry, totals and bounded page share a single statement snapshot.
 	// Cursor predicates apply only to the page, never to the result-set summary.
 	rows, err := db.QueryContext(ctx, `WITH filtered AS MATERIALIZED (
-		SELECT o.id,s.name,o.state,o.updated_at,o.total_amount_minor AS order_value_minor,
+		SELECT o.id,s.name,o.state,o.updated_at,m.checkout_id AS multi_store_checkout_id,o.total_amount_minor AS order_value_minor,
 		a.id AS assignment_id,a.order_id,a.captain_actor_id,a.state AS assignment_state,a.version,COALESCE(h.state,'') AS handoff_state,
         stage.stage_started_at, CASE WHEN o.state='PREPARING' THEN soa.preparation_minutes ELSE NULL END AS preparation_minutes,
         sla.target_minutes AS sla_target_minutes,sla.warning_minutes AS sla_warning_minutes,sla.policy_version AS sla_policy_version,
 		`+actionable+` AS actionable
 		FROM dsh.commerce_orders o
 		JOIN dsh.stores s ON s.id=o.store_id
+		LEFT JOIN LATERAL (
+			SELECT checkout_id FROM dsh.commerce_multi_store_checkout_children
+			WHERE order_id=o.id AND state='SUCCEEDED'
+			ORDER BY created_at DESC,checkout_id DESC LIMIT 1
+		) m ON TRUE
 		LEFT JOIN LATERAL (
 			SELECT id,order_id,captain_actor_id,state,version
 			FROM dsh.captain_assignments
@@ -392,7 +531,7 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 	), page AS (
         SELECT * FROM filtered WHERE `+pageWhere+" ORDER BY updated_at "+order+",id "+order+" LIMIT $"+strconv.Itoa(len(args))+`
 	)
-	SELECT summary.*,page.id,page.name,page.state,page.updated_at,page.assignment_id,page.order_id,page.captain_actor_id,page.assignment_state,page.version,page.handoff_state,page.stage_started_at,page.preparation_minutes,page.sla_target_minutes,page.sla_warning_minutes,page.sla_policy_version
+	SELECT summary.*,page.id,page.name,page.state,page.updated_at,page.multi_store_checkout_id,page.assignment_id,page.order_id,page.captain_actor_id,page.assignment_state,page.version,page.handoff_state,page.stage_started_at,page.preparation_minutes,page.sla_target_minutes,page.sla_warning_minutes,page.sla_policy_version
 	FROM summary LEFT JOIN page ON TRUE ORDER BY page.updated_at `+order+",page.id "+order, args...)
 	if err != nil {
 		return OperatorOperationsResult{}, err
@@ -402,7 +541,7 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 	var summary OperatorOperationsSummary
 	for rows.Next() {
 		var item OperatorOperationListRecord
-		var id, storeName, state sql.NullString
+		var id, storeName, state, multiStoreCheckoutID sql.NullString
 		var updatedAt sql.NullTime
 		var assignmentID, assignmentOrderID, captainActorID, assignmentState, handoffState sql.NullString
 		var assignmentVersion sql.NullInt64
@@ -410,7 +549,7 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 		var preparationMinutes sql.NullInt64
 		var slaTarget, slaWarning, slaVersion sql.NullInt64
 		if err := rows.Scan(&summary.TotalCount, &summary.ActionableCount, &summary.AwaitingDispatchCount, &summary.ActiveCount, &summary.DeliveredCount, &summary.InCustodyOrderCount, &summary.InCustodyOrderValueMinor, &summary.MeasuredAt,
-			&id, &storeName, &state, &updatedAt,
+			&id, &storeName, &state, &updatedAt, &multiStoreCheckoutID,
 			&assignmentID, &assignmentOrderID, &captainActorID, &assignmentState, &assignmentVersion, &handoffState, &stageStartedAt, &preparationMinutes, &slaTarget, &slaWarning, &slaVersion); err != nil {
 			return OperatorOperationsResult{}, err
 		}
@@ -418,6 +557,9 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 			continue // The summary still exists for empty results or an exhausted cursor.
 		}
 		item.OrderID, item.StoreName, item.State, item.UpdatedAt = id.String, storeName.String, state.String, updatedAt.Time
+		if multiStoreCheckoutID.Valid {
+			item.MultiStoreCheckoutID = multiStoreCheckoutID.String
+		}
 		if stageStartedAt.Valid {
 			timeValue := stageStartedAt.Time
 			item.StageStartedAt = &timeValue
@@ -443,7 +585,7 @@ func listOrdersForOperatorScope(ctx context.Context, db *sql.DB, state, query, s
 	if len(operations) > limit {
 		last := operations[limit-1]
 		result.Operations = operations[:limit]
-		result.NextCursor = encodeOperatorOperationsCursor(operatorOperationsCursor{UpdatedAt: last.UpdatedAt, ID: last.OrderID, State: state, ActionableOnly: actionableOnly, Query: query, Sort: sort, StoreID: storeID})
+		result.NextCursor = encodeOperatorOperationsCursor(operatorOperationsCursor{UpdatedAt: last.UpdatedAt, ID: last.OrderID, State: state, ActionableOnly: actionableOnly, Query: query, Sort: sort, StoreID: filters.StoreID, StoreName: filters.StoreName, FromDate: filters.FromDate, ToDate: filters.ToDate, PaymentSource: filters.PaymentSource, FulfillmentMode: filters.FulfillmentMode})
 	}
 	return result, nil
 }
@@ -519,13 +661,13 @@ func encodeOperatorOperationsCursor(cursor operatorOperationsCursor) string {
 	return base64.RawURLEncoding.EncodeToString(value)
 }
 
-func decodeOperatorOperationsCursor(raw, state string, actionableOnly bool, query, sort, storeID string) (operatorOperationsCursor, error) {
+func decodeOperatorOperationsCursor(raw, state string, actionableOnly bool, query, sort string, filters OperatorOrderFilters) (operatorOperationsCursor, error) {
 	value, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
 	if err != nil {
 		return operatorOperationsCursor{}, ErrOperatorOperationInvalidCursor
 	}
 	var cursor operatorOperationsCursor
-	if err := json.Unmarshal(value, &cursor); err != nil || cursor.ID == "" || cursor.UpdatedAt.IsZero() || cursor.State != strings.TrimSpace(state) || cursor.ActionableOnly != actionableOnly || cursor.Query != strings.TrimSpace(query) || cursor.Sort != strings.TrimSpace(sort) || cursor.StoreID != storeID {
+	if err := json.Unmarshal(value, &cursor); err != nil || cursor.ID == "" || cursor.UpdatedAt.IsZero() || cursor.State != strings.TrimSpace(state) || cursor.ActionableOnly != actionableOnly || cursor.Query != strings.TrimSpace(query) || cursor.Sort != strings.TrimSpace(sort) || cursor.StoreID != filters.StoreID || cursor.StoreName != filters.StoreName || cursor.FromDate != filters.FromDate || cursor.ToDate != filters.ToDate || cursor.PaymentSource != filters.PaymentSource || cursor.FulfillmentMode != filters.FulfillmentMode {
 		return operatorOperationsCursor{}, ErrOperatorOperationInvalidCursor
 	}
 	return cursor, nil

@@ -1290,15 +1290,22 @@ paths:
   /dsh/operator/home-analytics:
     get:
       operationId: readOperatorHomeAnalytics
-      summary: Last seven Asia/Aden calendar days of orders created and their current statuses
+      summary: Last seven or thirty Asia/Aden calendar days of orders created and their current statuses
       description: Operator operations permission is required. Each count is across all orders created on that date, irrespective of pagination. Status is current at read time, not a historical daily snapshot.
       security:
         - serviceBearer: []
       parameters:
         - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [7d, 30d]
+            default: 7d
       responses:
         "200":
-          description: All seven dates including empty days from one PostgreSQL snapshot.
+          description: All seven or thirty dates including empty days from one PostgreSQL snapshot.
           content:
             application/json:
               schema:
@@ -1371,6 +1378,47 @@ paths:
       security:
         - serviceBearer: []
       parameters:
+        - name: storeId
+          in: query
+          required: false
+          description: Exact Store scope, operator permission enforced by DSH.
+          schema:
+            type: string
+            maxLength: 128
+        - name: storeName
+          in: query
+          required: false
+          description: Case-insensitive literal Store name filter.
+          schema:
+            type: string
+            maxLength: 128
+        - name: fromDate
+          in: query
+          required: false
+          description: Inclusive Order creation date in Asia/Aden.
+          schema:
+            type: string
+            format: date
+        - name: toDate
+          in: query
+          required: false
+          description: Inclusive Order creation date in Asia/Aden.
+          schema:
+            type: string
+            format: date
+        - name: paymentSource
+          in: query
+          required: false
+          description: Frozen Order cash/wallet allocation, not a WLT ledger settlement state.
+          schema:
+            type: string
+            enum: [CASH, WALLET, MIXED]
+        - name: fulfillmentMode
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP]
         - name: state
           in: query
           required: false
@@ -1410,7 +1458,7 @@ paths:
           required: false
           schema:
             type: string
-            maxLength: 512
+            maxLength: 2048
         - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
       responses:
         "200":
@@ -1531,7 +1579,7 @@ paths:
             application/json:
               schema:
                 $ref: "../dsh.openapi.yaml#/components/schemas/OperatorOrderCasePage"
-        "400": { description: Invalid cursor, scope or limit. }
+        "400": { description: "Invalid cursor, scope or limit." }
         "401": { description: Authentication required. }
         "403": { description: Operations authorization required. }
 
@@ -1887,7 +1935,7 @@ paths:
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
-        "409": { description: Another operator owns the active claim, or stale/terminal order. }
+        "409": { description: "Another operator owns the active claim, or stale/terminal order." }
 
   /dsh/operator/cash-custody:
     get:
@@ -2013,6 +2061,37 @@ paths:
             application/json:
               schema:
                 $ref: "../dsh.openapi.yaml#/components/schemas/OrderListResponse"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/partner/stores/{storeId}/orders/summary:
+    get:
+      operationId: readPartnerStoreOrderSummary
+      summary: Read whole-Store operational Order totals; financial settlement remains WLT-owned
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [7d, 30d, all]
+            default: 30d
+      responses:
+        "200":
+          description: Server-aggregated operational Order totals for the authorized Store and period.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/PartnerStoreOrderSummaryResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
         "401":
           $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
         "403":
@@ -2477,3 +2556,89 @@ paths:
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/partner/stores/{storeId}/ratings:
+    get:
+      operationId: listPartnerStoreOrderRatings
+      summary: Read completed-Order feedback for an authorized Store without separate customer actor or contact fields
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 50 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 1024 }
+      responses:
+        "200":
+          description: Store-scoped Order ratings without separate customer actor or contact fields.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/StoreOrderRatingListResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+
+  /dsh/operator/stores/{storeId}/ratings:
+    get:
+      operationId: listOperatorStoreOrderRatings
+      summary: Read Store Order feedback without customer actor or contact fields for a permitted operator
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorId"
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 50 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 1024 }
+      responses:
+        "200":
+          description: Store-scoped Order ratings without separate customer actor or contact fields.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/StoreOrderRatingListResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+
+  /dsh/operator/stores/{storeId}/orders/summary:
+    get:
+      operationId: readOperatorStoreOrderSummary
+      summary: Read authorized Store-scoped operational Order and anonymous completed-customer totals
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorId"
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [7d, 30d, all]
+            default: 30d
+      responses:
+        "200":
+          description: Same canonical Store Order summary and completed-customer totals as Partner readback, subject to operator Partner permission.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/PartnerStoreOrderSummaryResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"

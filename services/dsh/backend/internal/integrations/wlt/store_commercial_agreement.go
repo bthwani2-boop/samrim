@@ -21,6 +21,15 @@ type StoreCommercialAgreement struct {
 	StoreID                  string                         `json:"storeId"`
 	PartnerActorID           string                         `json:"partnerActorId"`
 	AgreementVersion         int                            `json:"agreementVersion"`
+	CommercialModel          string                         `json:"commercialModel"`
+	RecurringAmountMinor     int64                          `json:"recurringAmountMinor"`
+	BillingPeriod            string                         `json:"billingPeriod"`
+	BillingTimeZone          string                         `json:"billingTimeZone"`
+	InvoiceDueDays           int                            `json:"invoiceDueDays"`
+	GraceDays                int                            `json:"graceDays"`
+	RenewalPolicy            string                         `json:"renewalPolicy"`
+	TerminationTerms         string                         `json:"terminationTerms"`
+	AdjustmentTerms          string                         `json:"adjustmentTerms"`
 	Status                   string                         `json:"status"`
 	Rates                    []StoreCommercialAgreementRate `json:"rates"`
 	ProposedByActorID        string                         `json:"proposedByActorId"`
@@ -43,6 +52,15 @@ type StoreCommercialAgreementPage struct {
 }
 
 type ProposeStoreCommercialAgreementInput struct {
+	CommercialModel        string
+	RecurringAmountMinor   int64
+	BillingPeriod          string
+	BillingTimeZone        string
+	InvoiceDueDays         int
+	GraceDays              int
+	RenewalPolicy          string
+	TerminationTerms       string
+	AdjustmentTerms        string
 	StoreID                string
 	PartnerActorID         string
 	Rates                  []StoreCommercialAgreementRate
@@ -78,6 +96,15 @@ func (c *Client) ProposeStoreCommercialAgreement(ctx context.Context, input Prop
 		"storeId":                strings.TrimSpace(input.StoreID),
 		"partnerActorId":         strings.TrimSpace(input.PartnerActorID),
 		"rates":                  input.Rates,
+		"commercialModel":        input.CommercialModel,
+		"recurringAmountMinor":   input.RecurringAmountMinor,
+		"billingPeriod":          input.BillingPeriod,
+		"billingTimeZone":        input.BillingTimeZone,
+		"invoiceDueDays":         input.InvoiceDueDays,
+		"graceDays":              input.GraceDays,
+		"renewalPolicy":          input.RenewalPolicy,
+		"terminationTerms":       input.TerminationTerms,
+		"adjustmentTerms":        input.AdjustmentTerms,
 		"expectedCurrentVersion": input.ExpectedCurrentVersion,
 		"reason":                 strings.TrimSpace(input.Reason),
 	}

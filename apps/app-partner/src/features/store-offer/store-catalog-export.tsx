@@ -1,54 +1,18 @@
-import { createDshMobileClient, type CatalogStoreOffer } from "@bthwani/dsh";
+import { collectStoreCatalogCsv, createDshMobileClient, STORE_CATALOG_EXPORT_PAGE_SIZE } from "@bthwani/dsh";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import * as Crypto from "expo-crypto";
-import { useMemo, useState } from "react";
-import { Share, StyleSheet, Text, View } from "react-native";
+import { File, Paths } from "expo-file-system";
+import * as Sharing from "expo-sharing";
+import { useMemo, useRef, useState } from "react";
+import { Platform, StyleSheet, Text, View } from "react-native";
 
-import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
-const EXPORT_ROW_LIMIT = 2000;
-const EXPORT_PAGE_SIZE = 50;
 
 function client() {
   const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
   if (!value) throw new Error("DSH_BASE_URL_REQUIRED");
   return createDshMobileClient(value, { cryptoRandomUUID: () => Crypto.randomUUID() });
-}
-
-function csvCell(value: string): string {
-  if (/[",\n\r]/.test(value)) return `"${value.replaceAll('"', '""')}"`;
-  return value;
-}
-
-function publicationCell(state: CatalogStoreOffer["publicationState"]): string {
-  switch (state) {
-    case "published": return "منشور";
-    case "hidden": return "مخفي";
-    default: return "مسودة";
-  }
-}
-
-function measurementCell(kind: CatalogStoreOffer["measurementKind"]): string {
-  switch (kind) {
-    case "DISCRETE": return "عدد";
-    case "MEASURED": return "قياس";
-    default: return "كمية متغيرة";
-  }
-}
-
-function composeOffersCsv(offers: ReadonlyArray<CatalogStoreOffer>): string {
-  const header = ["اسم المنتج", "النسخة", "العلامة التجارية", "السعر بالريال", "التوافر", "حالة النشر", "هوية القياس", "الوحدة الأساسية"].map(csvCell).join(",");
-  const rows = offers.map((offer) => [
-    offer.productName,
-    offer.variantTitle,
-    offer.brand ?? "",
-    String(offer.priceMinor),
-    offer.availability ? "متاح" : "غير متاح",
-    publicationCell(offer.publicationState),
-    measurementCell(offer.measurementKind),
-    offer.baseUnit,
-  ].map(csvCell).join(","));
-  return `\uFEFF${[header, ...rows].join("\r\n")}`;
 }
 
 export function StoreCatalogExportCard({ storeId, storeName }: Readonly<{ storeId: string; storeName?: string }>) {
@@ -62,32 +26,59 @@ export function StoreCatalogExportCard({ storeId, storeName }: Readonly<{ storeI
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [progress, setProgress] = useState(0);
+  const activeStoreId = useRef(storeId);
+  activeStoreId.current = storeId;
 
   async function exportCatalog() {
     if (busy || !storeId.trim()) return;
     setBusy(true);
     setError("");
     setNotice("");
+    setProgress(0);
+    const actor = currentIdentityState();
+    const actorId = actor.kind === "authenticated" ? actor.identity.subject.trim() : "";
+    const scopeCurrent = () => {
+      const active = currentIdentityState();
+      return Boolean(actorId) && active.kind === "authenticated" && active.identity.subject.trim() === actorId && activeStoreId.current === storeId;
+    };
     try {
+      if (!scopeCurrent()) throw new Error("STORE_EXPORT_SESSION_CHANGED");
       const token = await getUsableIdentityAccessToken();
-      const offers: CatalogStoreOffer[] = [];
-      let cursor = "";
-      for (let page = 0; page < EXPORT_ROW_LIMIT / EXPORT_PAGE_SIZE; page += 1) {
-        const result = await client().readOwnStoreOffers(token, storeId, EXPORT_PAGE_SIZE, cursor);
-        offers.push(...result.offers);
-        cursor = result.nextCursor ?? "";
-        if (!cursor) break;
-      }
-      if (!offers.length) {
+      const api = client();
+      const result = await collectStoreCatalogCsv(storeId, async cursor => {
+        if (!scopeCurrent()) throw new Error("STORE_EXPORT_SESSION_CHANGED");
+        const page = await api.readOwnStoreOffers(token, storeId, STORE_CATALOG_EXPORT_PAGE_SIZE, cursor);
+        if (!scopeCurrent()) throw new Error("STORE_EXPORT_SESSION_CHANGED");
+        return page;
+      }, count => { if (scopeCurrent()) setProgress(count); });
+      if (!scopeCurrent()) throw new Error("STORE_EXPORT_SESSION_CHANGED");
+      if (!result.count) {
         setNotice("لا توجد عروض لهذا المتجر بعد؛ لا شيء لتصديره.");
         return;
       }
-      const csv = composeOffersCsv(offers);
-      const shareResult = await Share.share({ message: csv, title: storeName ? `كتالوج ${storeName}` : "كتالوج المتجر" }, { dialogTitle: "تصدير كتالوج المتجر" });
-      if (shareResult.action === Share.sharedAction) setNotice(`تم تجهيز ${offers.length} عرضًا للتصدير مع بيانات الأسعار والتوافر والنشر.`);
+      const filename = `bthwani-store-${encodeURIComponent(storeId)}-catalog.csv`;
+      if (Platform.OS === "web") {
+        const url = URL.createObjectURL(new Blob([result.csv], { type: "text/csv;charset=utf-8" }));
+        try {
+          const anchor = document.createElement("a");
+          anchor.href = url;
+          anchor.download = filename;
+          anchor.click();
+        } finally { URL.revokeObjectURL(url); }
+      } else {
+        if (!await Sharing.isAvailableAsync()) throw new Error("STORE_EXPORT_SHARING_UNAVAILABLE");
+        if (!scopeCurrent()) throw new Error("STORE_EXPORT_SESSION_CHANGED");
+        const file = new File(Paths.cache, `bthwani-store-catalog-${Crypto.randomUUID()}.csv`);
+        file.create();
+        file.write(result.csv);
+        await Sharing.shareAsync(file.uri, { mimeType: "text/csv", dialogTitle: storeName ? `كتالوج ${storeName}` : "كتالوج المتجر" });
+      }
+      if (scopeCurrent()) setNotice(`تم تجهيز ملف CSV يضم ${result.count} عرضًا من بيانات المتجر المصرح بها.`);
     } catch (cause) {
       console.warn("DSH Store catalog export failed", cause);
-      setError("تعذر تصدير الكتالوج. أعد المحاولة بعد التحقق من الاتصال.");
+      const code = cause instanceof Error ? cause.message : "";
+      if (scopeCurrent()) setError(code === "STORE_EXPORT_TOO_LARGE_OR_INCONSISTENT" ? "الكتالوج أكبر من الحد الآمن للتصدير على الجهاز أو تغيرت صفحاته. لم يُصدر ملف ناقص؛ استخدم تصديرًا مجزأً." : code === "STORE_EXPORT_SESSION_CHANGED" ? "تغير الحساب أو المتجر. أُلغيت عملية التصدير لحماية البيانات." : "تعذر تجهيز ملف الكتالوج. تحقق من الاتصال والصلاحيات ثم أعد المحاولة.");
     } finally {
       setBusy(false);
     }
@@ -95,7 +86,8 @@ export function StoreCatalogExportCard({ storeId, storeName }: Readonly<{ storeI
 
   return <View accessibilityLabel="تصدير كتالوج المتجر" style={styles.block}>
     <Text style={styles.title}>تصدير الكتالوج</Text>
-    <Text style={styles.muted}>يجهّز النظام ملفًا نصيًا (CSV) من عروض متجرك الحالية بأسعارها وتوافرها وحالة نشرها، حتى {EXPORT_ROW_LIMIT} عرضًا، ويفتح قائمة المشاركة لحفظه أو إرساله.</Text>
+    <Text style={styles.muted}>تصدير ملف CSV فعلي من عروض المتجر الحالية، بما فيها الأسعار والتوافر وحالة النشر. يشمل كل الصفحات ضمن حد حماية أداء الجهاز، ولا ينتج ملفًا ناقصًا بصمت.</Text>
+    {busy ? <Text accessibilityLiveRegion="polite" style={styles.muted}>جارٍ قراءة عروض المتجر: {progress}</Text> : null}
     <BthwaniButton busy={busy} disabled={busy} label="تصدير عروض المتجر" onPress={() => void exportCatalog()} variant="secondary" />
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     {notice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}

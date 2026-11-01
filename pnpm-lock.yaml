@@ -232,6 +232,9 @@ importers:
       typescript-ast:
         specifier: npm:typescript@6.0.2
         version: typescript@6.0.2
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
 
   apps/app-captain:
     dependencies:

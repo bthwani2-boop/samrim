@@ -49,13 +49,19 @@ for (const app of sourceApps) {
 }
 
 test("every application is eligible for parallel Android and iOS submissions", () => {
-  assert.match(script, /\$IosEnabled = \$App -in @\("app-client", "app-partner", "app-captain"\)/);
+  assert.match(script, /\$IosEnabled = \(-not \$AndroidOnly\) -and \(\$App -in @\("app-client", "app-partner", "app-captain"\)\)/);
   for (const app of sourceApps) {
     const eas = JSON.parse(readFileSync(resolve(root, "apps", app, "eas.json"), "utf8"));
     assert.equal(eas.build["ios-simulator"].extends, "development", app);
     assert.equal(eas.build["ios-simulator"].ios.simulator, true, app);
     assert.equal(eas.build.development.developmentClient, true, app);
   }
+});
+
+test("AndroidOnly skips iOS discovery and submission without changing default behavior", () => {
+  assert.match(script, /\[switch\] \$AndroidOnly/);
+  assert.match(script, /\$IosEnabled = \(-not \$AndroidOnly\)/);
+  assert.match(script, /if \(\$IosEnabled\)/);
 });
 
 test("explicit Submit retains parallel Android and iOS submission logic", () => {

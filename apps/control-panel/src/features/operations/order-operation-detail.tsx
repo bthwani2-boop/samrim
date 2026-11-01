@@ -359,7 +359,7 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
             <h3>تعديلات عناصر الطلب</h3>
             <ul className="order-detail-list">{order.adjustments.map((adjustment) => {
               const line = order.lines.find((candidate) => candidate.id === adjustment.orderLineId);
-              const stateLabel = adjustment.state === "PROPOSED" ? "بانتظار موافقة العميل" : adjustment.state === "REJECTED" ? "رفض العميل التعديل" : adjustment.state === "APPLIED" ? "تم تعويض العميل في المحفظة" : "معلق للتسوية المالية";
+              const stateLabel = adjustment.state === "PROPOSED" ? "بانتظار موافقة العميل" : adjustment.state === "REJECTED" ? "رفض العميل التعديل" : adjustment.state === "APPLIED" ? "تم تطبيق التعديل؛ راجع القيد المالي لدى المالية" : "معلق للتسوية المالية";
               const compensated = walletCreditedAdjustments.has(adjustment.id);
               const financeAllowed = sessionState.kind === "authenticated" && sessionState.identity.role === "operator" && sessionState.identity.permissions?.includes("finance");
               const eligibleForWallet = financeAllowed && (order.state === "DELIVERED" || order.state === "PICKED_UP") && !order.discountMinor && !order.promotionId &&
@@ -416,6 +416,7 @@ export function OrderOperationDetail({ orderId, embedded = false, onClose, onUpd
             <div><dt>النقد المحدد عند إنشاء الطلب</dt><dd>{formatMoney(order.cashAmountMinor, order.currency)}</dd></div>
             {order.cashAmountMinor > 0 ? <div><dt>جهة التحصيل المتوقعة</dt><dd>{cashCollectionPartyLabel(order.fulfillmentMode)}</dd></div> : null}
           </dl>
+          <p className="muted">توزيع النقد والمحفظة هنا جزء من بيانات الطلب. حالة القيود والتعويضات المالية النهائية تُراجع من سجل WLT، ولا يُنشأ استرداد تلقائي لمجرد إلغاء الطلب أو تطبيق تعديل.</p>
         </section>
       )}
 

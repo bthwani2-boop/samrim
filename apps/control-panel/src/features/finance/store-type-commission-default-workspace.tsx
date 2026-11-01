@@ -2,7 +2,8 @@
 import { TextArea } from "@bthwani/design-system/web";
 
 import type { CommercialStoreType, CommercialStoreTypeListResponse, CommerceVertical, CommerceVerticalListResponse, StoreTypeCommissionDefault, StoreTypeCommissionDefaultsResponse } from "@bthwani/dsh";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { hasExactCommissionSuggestionReadback } from "./store-type-commission-default-readback";
 
 const modes = [
   { key: "BTHWANI_CAPTAIN", label: "توصيل بثواني" },
@@ -30,7 +31,7 @@ function apiMessage(value: unknown) {
   return "تعذر تحميل سجل أنواع المتاجر.";
 }
 
-export function StoreTypeCommissionDefaultWorkspace() {
+export function StoreTypeCommissionDefaultWorkspace({ readOnly = false }: Readonly<{ readOnly?: boolean }>) {
   const [options, setOptions] = useState<ReadonlyArray<StoreTypeOption>>([]);
   const [selectedTypeID, setSelectedTypeID] = useState("");
   const [loadedTypeID, setLoadedTypeID] = useState("");
@@ -40,6 +41,7 @@ export function StoreTypeCommissionDefaultWorkspace() {
   const [busyMode, setBusyMode] = useState<FulfillmentMode | "load" | "registry" | null>("registry");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const saving = useRef(false);
 
   useEffect(() => {
     let current = true;
@@ -66,8 +68,8 @@ export function StoreTypeCommissionDefaultWorkspace() {
     return () => { current = false; };
   }, []);
 
-  async function readDefaults(typeID = selectedTypeID.trim()): Promise<boolean> {
-    if (!typeID || typeID.length > 128) { setError("اختر نوع متجر أولًا."); return false; }
+  async function readDefaults(typeID = selectedTypeID.trim()): Promise<readonly StoreTypeCommissionDefault[] | null> {
+    if (!typeID || typeID.length > 128) { setError("اختر نوع متجر أولًا."); return null; }
     setBusyMode("load"); setError(""); setMessage("");
     try {
       const response = await fetch(`/api/finance/commercial-store-type-commission-defaults?commercialStoreTypeId=${encodeURIComponent(typeID)}`, { cache: "no-store" });
@@ -81,42 +83,84 @@ export function StoreTypeCommissionDefaultWorkspace() {
       })) as Record<FulfillmentMode, string>);
       setLoadedTypeID(typeID);
       setMessage("تمت قراءة النسب المقترحة من السجل المالي. تبقى شروط كل متجر في اتفاقيته الخاصة.");
-      return true;
+      return current;
     } catch (cause) {
       setDefaults([]); setLoadedTypeID("");
       setError(cause instanceof Error ? cause.message : "تعذر قراءة النسب المقترحة.");
-      return false;
+      return null;
     } finally { setBusyMode(null); }
   }
 
   async function save(mode: FulfillmentMode) {
+    if (readOnly) return;
+    if (saving.current) return;
     const selected = defaults.find((item) => item.fulfillmentMode === mode);
     const percent = Number(rates[mode]);
     const suggestedCommissionRateBps = Math.round(percent * 100);
-    if (!selectedTypeID || loadedTypeID !== selectedTypeID || !Number.isFinite(percent) || suggestedCommissionRateBps < 0 || suggestedCommissionRateBps > 10000 || Math.abs(percent * 100 - suggestedCommissionRateBps) > 0.000001 || Array.from(reason.trim()).length < 8) {
+    if (!selectedTypeID || loadedTypeID !== selectedTypeID || rates[mode] === "" ||
+      !Number.isFinite(percent) || suggestedCommissionRateBps < 0 || suggestedCommissionRateBps > 10000 ||
+      Math.abs(percent * 100 - suggestedCommissionRateBps) > 0.000001 ||
+      Array.from(reason.trim()).length < 8 || Array.from(reason.trim()).length > 500) {
       setError("أدخل نسبة صحيحة وسبب التغيير، ثم أعد قراءة النوع قبل الحفظ."); return;
     }
-    if (suggestedCommissionRateBps === selected?.suggestedCommissionRateBps) { setError("النسبة الجديدة مطابقة للاقتراح الحالي."); return; }
+    if (suggestedCommissionRateBps === selected?.suggestedCommissionRateBps) {
+      setError("النسبة الجديدة مطابقة للاقتراح الحالي."); return;
+    }
+    const typeID = loadedTypeID;
+    const expectedDefaultVersion = selected?.defaultVersion ?? 0;
+    const expected = {
+      commercialStoreTypeId: typeID,
+      fulfillmentMode: mode,
+      suggestedCommissionRateBps,
+      defaultVersion: expectedDefaultVersion + 1,
+    };
+    saving.current = true;
     setBusyMode(mode); setError(""); setMessage("");
     try {
       const response = await fetch("/api/finance/commercial-store-type-commission-defaults", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
-        body: JSON.stringify({ commercialStoreTypeId: loadedTypeID, fulfillmentMode: mode, suggestedCommissionRateBps, expectedDefaultVersion: selected?.defaultVersion ?? 0, reason: reason.trim() }),
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": crypto.randomUUID(),
+          "X-Correlation-ID": crypto.randomUUID(),
+        },
+        body: JSON.stringify({
+          commercialStoreTypeId: typeID, fulfillmentMode: mode, suggestedCommissionRateBps,
+          expectedDefaultVersion, reason: reason.trim(),
+        }),
       });
-      const body = await response.json() as { default?: StoreTypeCommissionDefault; error?: { message?: string } };
-      if (!response.ok || !body.default) throw new Error(body.error?.message || "تعذر حفظ النسبة المقترحة.");
+      const body = await response.json().catch(() => null) as
+        { default?: StoreTypeCommissionDefault; error?: { message?: string } } | null;
+      if (!response.ok) throw new Error(body?.error?.message || "تعذر إرسال تعديل النسبة.");
+      if (!body?.default || !hasExactCommissionSuggestionReadback([body.default], expected)) {
+        throw new Error("رد الحفظ لا يطابق الشروط المرسلة.");
+      }
+      const canonical = await readDefaults(typeID);
+      if (!canonical || !hasExactCommissionSuggestionReadback(canonical, expected)) {
+        throw new Error("تعذرت مطابقة رد الحفظ مع السجل المالي الدائم.");
+      }
       setReason("");
-      if (await readDefaults(loadedTypeID)) setMessage("تم حفظ النسبة المقترحة مع سجل التدقيق. لا تسري إلا ضمن اتفاقية المتجر المعتمدة.");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "تعذر حفظ النسبة المقترحة."); }
-    finally { setBusyMode(null); }
+      setMessage("تم التحقق من حفظ النسبة في السجل المالي. لا تسري إلا ضمن اتفاقية متجر معتمدة.");
+    } catch {
+      // A transport error does not prove the mutation failed. Read the financial owner
+      // before any new submission, and never report an ambiguous outcome as success.
+      const canonical = await readDefaults(typeID);
+      if (canonical && hasExactCommissionSuggestionReadback(canonical, expected)) {
+        setError("يعرض السجل المالي النسبة المطلوبة، لكن لم نتأكد من نتيجة محاولة الحفظ نفسها. راجع سجل التدقيق قبل أي تغيير جديد.");
+      } else {
+        setError("لم نتأكد من نتيجة الحفظ. راجع السجل المالي أولًا قبل إعادة الإرسال؛ لا تفترض فشل العملية أو نجاحها.");
+      }
+    } finally {
+      saving.current = false;
+      setBusyMode(null);
+    }
   }
 
   return <section className="form-section" aria-labelledby="store-type-commission-default-title">
     <div className="section-heading">
       <div><h2 id="store-type-commission-default-title">نسب مقترحة حسب نوع المتجر</h2></div>
     </div>
-    <p className="muted">نسب مقترحة للتفاوض؛ لا تغيّر الاتفاقيات النافذة أو الطلبات السابقة، ولا تُطبّق تلقائيًا.</p>
+    <p className="muted">نسب مقترحة للتفاوض؛ لا تغيّر الاتفاقيات النافذة أو الطلبات السابقة، ولا تُطبّق تلقائيًا.{readOnly ? " عرض للقراءة فقط؛ التعديل متاح من قسم السياسات وفق الصلاحيات." : ""}</p>
     <div className="form-grid">
       <label className="field-label" htmlFor="store-type-commission-default-type"><span>نوع المتجر التجاري</span>
         <select id="store-type-commission-default-type" value={selectedTypeID} onChange={(event) => { setSelectedTypeID(event.target.value); setLoadedTypeID(""); setDefaults([]); setError(""); setMessage(""); }} disabled={busyMode !== null || options.length === 0}>
@@ -135,14 +179,14 @@ export function StoreTypeCommissionDefaultWorkspace() {
           const value = defaults.find((item) => item.fulfillmentMode === key);
           return <div className="form-section" key={key}>
             <div className="section-heading"><h3>{label}</h3><span className="status-badge">{value ? formatPercent(value.suggestedCommissionRateBps) : "بلا اقتراح"}</span></div>
-            <label className="field-label" htmlFor={`commission-default-rate-${key}`}>النسبة المقترحة (%)<input id={`commission-default-rate-${key}`} type="number" min="0" max="100" step="0.01" value={rates[key]} onChange={(event) => setRates((current) => ({ ...current, [key]: event.target.value }))} disabled={busyMode !== null} /></label>
+            {!readOnly ? <label className="field-label" htmlFor={`commission-default-rate-${key}`}>النسبة المقترحة (%)<input id={`commission-default-rate-${key}`} type="number" min="0" max="100" step="0.01" value={rates[key]} onChange={(event) => setRates((current) => ({ ...current, [key]: event.target.value }))} disabled={busyMode !== null} /></label> : null}
             {value ? <p className="muted">آخر تحديث: {formatTimestamp(value.updatedAt)}</p> : <span className="muted">اختياري</span>}
             {value?.changeReason ? <p className="muted">سبب آخر تغيير: {value.changeReason}</p> : null}
-            <div className="action-row"><button className="button button-primary" type="button" onClick={() => void save(key)} disabled={busyMode !== null || Array.from(reason.trim()).length < 8 || loadedTypeID !== selectedTypeID || rates[key] === ""}>{saveLabel(busyMode === key, value, label)}</button></div>
+            {!readOnly ? <div className="action-row"><button className="button button-primary" type="button" onClick={() => void save(key)} disabled={busyMode !== null || Array.from(reason.trim()).length < 8 || loadedTypeID !== selectedTypeID || rates[key] === ""}>{saveLabel(busyMode === key, value, label)}</button></div> : null}
           </div>;
         })}
       </fieldset>
-      <label className="field-label" htmlFor="store-type-commission-default-reason">سبب التغيير<TextArea aria-describedby="store-type-commission-default-reason-hint" className="resize-none" id="store-type-commission-default-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={8} maxLength={500} rows={3} disabled={busyMode !== null} placeholder="سبب تعديل النسبة المقترحة" /><small id="store-type-commission-default-reason-hint">٨–٥٠٠ حرف.</small></label>
+      {!readOnly ? <label className="field-label" htmlFor="store-type-commission-default-reason">سبب التغيير<TextArea aria-describedby="store-type-commission-default-reason-hint" className="resize-none" id="store-type-commission-default-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={8} maxLength={500} rows={3} disabled={busyMode !== null} placeholder="سبب تعديل النسبة المقترحة" /><small id="store-type-commission-default-reason-hint">٨–٥٠٠ حرف.</small></label> : null}
     </> : null}
     {error ? <p className="validation-error" role="alert">{error}</p> : null}
     {message ? <output className="success">{message}</output> : null}

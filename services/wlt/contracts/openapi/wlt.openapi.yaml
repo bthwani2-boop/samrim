@@ -100,7 +100,7 @@ paths:
       operationId: readOperatorPolicyRegistry
       security: [{ serviceToken: [] }]
       responses:
-        '200': { description: Active WLT fee and Store Type reward policies, with total counts. }
+        '200': { description: "Active WLT fee and Store Type reward policies, with total counts." }
   /wlt/v1/operator/captain-minimum-balance-policy:
     get:
       operationId: readCaptainMinimumBalancePolicy
@@ -139,7 +139,7 @@ paths:
           in: query
           schema: { type: integer, minimum: 1, maximum: 100 }
       responses:
-        '200': { description: Most recent WLT-owned versions, including actor and change reason. }
+        '200': { description: "Most recent WLT-owned versions, including actor and change reason." }
   /wlt/v1/payment-intents:
     post:
       operationId: createPaymentIntent
@@ -241,7 +241,7 @@ paths:
         '400': { description: Invalid amount or attribution. }
         '401': { description: WLT service token is missing or invalid. }
         '404': { description: Canonical WLT adjustment case is not found. }
-        '409': { description: Payment not collected, amount exceeds original Order or prior decision conflicts. }
+        '409': { description: "Payment not collected, amount exceeds original Order or prior decision conflicts." }
         '502': { description: WLT persistence is unavailable. }
   /wlt/v1/payment-intents/by-external-reference:
     get:
@@ -480,23 +480,14 @@ paths:
               schema: { $ref: '#/components/schemas/DeliveryFeePolicyResponse' }
     post:
       operationId: createDeliveryFeePolicy
+      deprecated: true
+      description: Retired legacy delivery-fee policy mutation. Use distance-band fee policies.
       security: [{ serviceToken: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/CreateDeliveryFeePolicyRequest' }
       responses:
-        '201':
-          description: New immutable policy activated.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/DeliveryFeePolicyResponse' }
-        '200':
-          description: Idempotent replay.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/DeliveryFeePolicyResponse' }
+        '401':
+          description: Service authentication is required.
+        '410':
+          description: LEGACY_PRICING_DISABLED. No price policy is modified.
   /wlt/v1/operator/partner-financial-terms-policy:
     get:
       operationId: readPartnerFinancialTermsPolicy
@@ -796,7 +787,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PartnerCommissionReceivableRegistryResponse' }
-        '400': { description: Invalid search, sort, cursor, or limit. }
+        '400': { description: "Invalid search, sort, cursor, or limit." }
         '502': { description: WLT persistence is unavailable. }
   /wlt/v1/partners/{partnerActorId}/financial-activity:
     get:
@@ -1796,7 +1787,7 @@ paths:
       security: [{ serviceToken: [] }]
       parameters:
         - { name: status, in: query, required: false, schema: { type: string, enum: [REQUESTED, DESTINATION_PENDING, PAYOUT_HELD, REJECTED, COMPLETED] } }
-        - { name: search, in: query, required: false, description: Prefix match on intake ID, customer actor ID, beneficiary name, or provider; exactly four digits match the masked wallet suffix., schema: { type: string, maxLength: 128 } }
+        - { name: search, in: query, required: false, description: "Prefix match on intake ID, customer actor ID, beneficiary name, or provider; exactly four digits match the masked wallet suffix.", schema: { type: string, maxLength: 128 } }
         - { name: sort, in: query, required: false, schema: { type: string, enum: [requested_asc, requested_desc], default: requested_desc } }
         - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 1024 } }
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
@@ -3136,13 +3127,22 @@ components:
     StoreCommercialAgreement:
       type: object
       additionalProperties: false
-      required: [agreementId, storeId, partnerActorId, agreementVersion, status, createdAt, rates, proposedByActorId, proposedAt, partnerAcceptedByActorId, partnerAcceptedAt, financeApprovedByActorId, financeApprovedAt, financeDecisionByActorId, financeDecisionAt, effectiveAt, supersededAt, reason, financeDecisionReason]
+      required: [agreementId, storeId, partnerActorId, agreementVersion, status, createdAt, commercialModel, recurringAmountMinor, billingPeriod, billingTimeZone, invoiceDueDays, graceDays, renewalPolicy, terminationTerms, adjustmentTerms, rates, proposedByActorId, proposedAt, partnerAcceptedByActorId, partnerAcceptedAt, financeApprovedByActorId, financeApprovedAt, financeDecisionByActorId, financeDecisionAt, effectiveAt, supersededAt, reason, financeDecisionReason]
       properties:
         agreementId: { type: string }
         storeId: { type: string }
         partnerActorId: { type: string }
         agreementVersion: { type: integer, minimum: 1 }
         status: { type: string, enum: [PROPOSED, PARTNER_ACCEPTED, ACTIVE, FINANCE_REJECTED, SUPERSEDED] }
+        commercialModel: { type: string, enum: [COMMISSION, SUBSCRIPTION, HYBRID] }
+        recurringAmountMinor: { type: integer, minimum: 0, maximum: 100000000 }
+        billingPeriod: { type: string, enum: [NONE, MONTHLY, ANNUAL] }
+        billingTimeZone: { type: string, enum: [Asia/Aden] }
+        invoiceDueDays: { type: integer, minimum: 0, maximum: 30 }
+        graceDays: { type: integer, minimum: 0, maximum: 30 }
+        renewalPolicy: { type: string, enum: [NONE, MANUAL, AUTOMATIC] }
+        terminationTerms: { type: string }
+        adjustmentTerms: { type: string }
         createdAt: { type: string, format: date-time }
         rates:
           type: array
@@ -3182,6 +3182,15 @@ components:
       additionalProperties: false
       required: [storeId, partnerActorId, rates, expectedCurrentVersion, reason]
       properties:
+        commercialModel: { type: string, enum: [COMMISSION, SUBSCRIPTION] }
+        recurringAmountMinor: { type: integer, minimum: 0, maximum: 100000000 }
+        billingPeriod: { type: string, enum: [NONE, MONTHLY, ANNUAL] }
+        billingTimeZone: { type: string, enum: [Asia/Aden] }
+        invoiceDueDays: { type: integer, minimum: 0, maximum: 30 }
+        graceDays: { type: integer, minimum: 0, maximum: 30 }
+        renewalPolicy: { type: string, enum: [NONE, MANUAL, AUTOMATIC] }
+        terminationTerms: { type: string }
+        adjustmentTerms: { type: string }
         storeId: { type: string, minLength: 1, maxLength: 128 }
         partnerActorId: { type: string, minLength: 1, maxLength: 128 }
         rates:

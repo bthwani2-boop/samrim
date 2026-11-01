@@ -105,11 +105,12 @@ Each ID has exactly one capability owner under `capabilities/**`.
 - system-owner boundaries follow `docs/governance/architecture.md`;
 - derived search/cache/analytics/notification/tracking state never becomes mutation authority;
 - successful user-facing mutation requires canonical committed readback;
-- admitted breadth and implementation completion are separate claims.
+- admitted breadth and implementation completion are separate claims;
+- admitted Partner workspace capabilities are available by Store scope and authorized permissions, never unlocked by paid subscription plans or feature tiers. Transaction charges, commercial agreements and third-party provider costs remain governed by their actual financial and integration owners.
 
 ## Explicit current non-goals
 
-Not admitted now: loyalty as a standalone Product, a social review/community network, a generic support/ticketing platform, advanced route-optimization Product, generic analytics Product, a standalone notification Product, broad customer-profile/privacy orchestration, generic Partner organization/member/team abstractions beyond bounded Store-scoped access delegation, generic multi-tenant SaaS architecture, ERP/POS replacement, speculative multi-currency breadth, scheduled customer orders, generic point-to-point courier requests, generic returns/exchanges, electronics warranty-claim management, prescription-required/specially regulated pharmacy fulfillment, paid membership/subscription Product, mandatory Store daily check-in and a predictive/numeric Store-capacity engine.
+Not admitted now: loyalty as a standalone Product, a social review/community network, a generic support/ticketing platform, advanced route-optimization Product, generic analytics Product, a standalone notification Product, broad customer-profile/privacy orchestration, generic Partner organization/member/team abstractions beyond bounded Store-scoped access delegation, generic multi-tenant SaaS architecture, ERP/POS replacement, speculative multi-currency breadth, scheduled customer orders, generic point-to-point courier requests, generic returns/exchanges, electronics warranty-claim management, prescription-required/specially regulated pharmacy fulfillment, paid customer membership or Partner feature tiers gated by subscription, mandatory Store daily check-in and a predictive/numeric Store-capacity engine.
 
 Prescription-required or specially regulated pharmacy fulfillment remains outside the current target until explicitly admitted with the required legal/operational owner model. Standard pharmacy commerce must not silently claim that regulated workflow.
 

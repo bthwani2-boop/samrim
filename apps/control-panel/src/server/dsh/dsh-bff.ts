@@ -1,5 +1,25 @@
 import { appendMediaProvenance } from "./dsh-transport";
 
+import type { StoreOrderRatingListResponse, PartnerStoreOrderSummaryResponse } from "@bthwani/dsh";
+
+export async function readOperatorStoreOrderSummary(storeId: string, period: "7d" | "30d" | "all", context: DshOperatorReadContext): Promise<PartnerStoreOrderSummaryResponse> {
+  const scope = storeId.trim();
+  if (!scope || scope.length > 128 || !["7d", "30d", "all"].includes(period)) throw new Error("DSH_OPERATOR_STORE_SUMMARY_INPUT_INVALID");
+  const path = dshOperationPaths.readOperatorStoreOrderSummary.path.replace("{storeId}", encodeURIComponent(scope)) + "?period=" + encodeURIComponent(period);
+  return (await requestDshJson<PartnerStoreOrderSummaryResponse>(dshOperationPaths.readOperatorStoreOrderSummary.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function listOperatorStoreOrderRatings(storeId: string, cursor: string, context: DshOperatorReadContext, limit = 20): Promise<StoreOrderRatingListResponse> {
+  const scope = storeId.trim();
+  if (!scope || scope.length > 128 || cursor.length > 1024 || !Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error("DSH_OPERATOR_STORE_RATINGS_INPUT_INVALID");
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (cursor) params.set("cursor", cursor);
+  const path = dshOperationPaths.listOperatorStoreOrderRatings.path.replace("{storeId}", encodeURIComponent(scope)) + "?" + params;
+  return (await requestDshJson<StoreOrderRatingListResponse>(dshOperationPaths.listOperatorStoreOrderRatings.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+
+
 export function readOperatorStoreProduct(storeId: string, productId: string, context: DshOperatorReadContext): Promise<CatalogProduct> {
   const path=dshOperationPaths.readOperatorStoreProduct.path.replace("{storeId}",encodeURIComponent(storeId)).replace("{productId}",encodeURIComponent(productId));
   return requestDshJson<CatalogProduct>("GET",path,undefined,{"X-Acting-Actor-ID":context.operatorActorId}).then(r=>r.payload);
@@ -173,18 +193,26 @@ export async function listOperatorStores(state: string, search: string, serviceC
 	return (await requestDshJson<OperatorStoreListResponse>(dshOperationPaths.listOperatorStores.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export async function readOperatorHomeAnalytics(context: DshOperatorReadContext): Promise<import("@bthwani/dsh").OperatorHomeAnalytics> {
+export async function readOperatorHomeAnalytics(context: DshOperatorReadContext, period: "7d" | "30d" = "7d"): Promise<import("@bthwani/dsh").OperatorHomeAnalytics> {
   if (!context.operatorActorId.trim()) throw new Error("DSH_OPERATOR_ANALYTICS_ACTOR_REQUIRED");
   return (await requestDshJson<import("@bthwani/dsh").OperatorHomeAnalytics>(
     dshOperationPaths.readOperatorHomeAnalytics.method,
-    dshOperationPaths.readOperatorHomeAnalytics.path,
+    `${dshOperationPaths.readOperatorHomeAnalytics.path}?period=${period}`,
     undefined,
     { "X-Acting-Actor-ID": context.operatorActorId.trim() },
   )).payload;
 }
 
-export async function listOperatorOperations(state: string, search: string, sort: string, limit: number, cursor: string, actionableOnly: boolean, context: DshOperatorReadContext, storeId = ""): Promise<OperatorOperationsResponse> {
-	if (!context.operatorActorId.trim() || !Number.isInteger(limit) || limit < 1 || limit > 100 || cursor.trim().length > 512 || search.trim().length > 128 || (sort !== "updated_desc" && sort !== "updated_asc") || storeId.length > 128) {
+export type OperatorOperationsFilters = Readonly<{
+  storeName?: string;
+  fromDate?: string;
+  toDate?: string;
+  paymentSource?: string;
+  fulfillmentMode?: string;
+}>;
+
+export async function listOperatorOperations(state: string, search: string, sort: string, limit: number, cursor: string, actionableOnly: boolean, context: DshOperatorReadContext, storeId = "", filters: OperatorOperationsFilters = {}): Promise<OperatorOperationsResponse> {
+	if (!context.operatorActorId.trim() || !Number.isInteger(limit) || limit < 1 || limit > 100 || cursor.trim().length > 2048 || search.trim().length > 128 || (sort !== "updated_desc" && sort !== "updated_asc") || storeId.length > 128) {
 		throw new Error("DSH_OPERATOR_OPERATIONS_INPUT_INVALID");
 	}
 	const params = new URLSearchParams({ limit: String(limit) });
@@ -194,8 +222,16 @@ export async function listOperatorOperations(state: string, search: string, sort
 	if (cursor.trim()) params.set("cursor", cursor.trim());
 	if (actionableOnly) params.set("actionableOnly", "true");
 	if (storeId.trim()) params.set("storeId", storeId.trim());
+	for (const key of ["storeName", "fromDate", "toDate", "paymentSource", "fulfillmentMode"] as const) {
+		const value = filters[key]?.trim();
+		if (value) params.set(key, value);
+	}
 	const path = `${dshOperationPaths.listOperatorOperations.path}?${params.toString()}`;
-	return (await requestDshJson<OperatorOperationsResponse>(dshOperationPaths.listOperatorOperations.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+	const payload = (await requestDshJson<OperatorOperationsResponse>(dshOperationPaths.listOperatorOperations.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+	if (Object.values(filters).some(value => Boolean(value?.trim())) && payload.filterEngineVersion !== 1) {
+		throw new Error("DSH_OPERATOR_FILTER_ENGINE_UPGRADE_REQUIRED");
+	}
+	return payload;
 }
 
 export async function listOperatorNotifications(limit: number, context: DshOperatorReadContext, cursor = ""): Promise<NotificationListResponse> {
