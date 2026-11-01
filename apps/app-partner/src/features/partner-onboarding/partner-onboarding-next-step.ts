@@ -18,6 +18,15 @@ export type StoreSetupFocus = Readonly<{
   href: "/products" | "/store?section=settings" | "/store?section=operations" | null;
 }>;
 
+// Excluded steps are outside this actor's scope; unknown steps stay in the denominator.
+export function storeReadinessProgress(steps: readonly (boolean | null)[]) {
+  return {
+    total: steps.length,
+    completed: steps.filter(step => step === true).length,
+    unknown: steps.filter(step => step === null).length,
+  };
+}
+
 // This is guidance, never a substitute for DSH/WLT publication or orderability checks.
 // Unknown data does not count as completion, and a closed schedule is not a fault.
 export function nextStoreSetupFocus(facts: StoreSetupFacts): StoreSetupFocus | null {
