@@ -117,6 +117,12 @@ paths:
     $ref: "./paths/store-images.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1images"
   /dsh/operator/stores/{storeId}/images:
     $ref: "./paths/store-images.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1images"
+  /dsh/partner/stores/{storeId}/contact:
+    $ref: "./paths/store-contact.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1contact"
+  /dsh/operator/stores/{storeId}/contact:
+    $ref: "./paths/store-contact.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1contact"
+  /dsh/public/stores/{storeId}/contact:
+    $ref: "./paths/store-contact.yaml#/paths/~1dsh~1public~1stores~1{storeId}~1contact"
 
   /dsh/health:
     $ref: "./paths/runtime.yaml#/paths/~1dsh~1health"
@@ -321,6 +327,9 @@ paths:
   /dsh/operator/stores/{storeId}/offers:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1offers"
 
+  /dsh/operator/stores/{storeId}/inventory-summary:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1inventory-summary"
+
   /dsh/operator/stores/{storeId}/offers/{offerId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1offers~1{offerId}"
 
@@ -363,6 +372,9 @@ paths:
 
   /dsh/stores/{storeId}/offers:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1offers"
+
+  /dsh/stores/{storeId}/inventory-summary:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1inventory-summary"
 
   /dsh/stores/{storeId}/catalog/imports/preview:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1catalog~1imports~1preview"
@@ -4721,6 +4733,94 @@ components:
             $ref: "#/components/schemas/CatalogStoreOffer"
         nextCursor:
           type: string
+
+    StorePublicContact:
+      type: object
+      additionalProperties: false
+      required: [storeId, phoneE164, email, whatsappPhoneE164, whatsappEnabled, version]
+      properties:
+        storeId:
+          type: string
+        phoneE164:
+          type: string
+        email:
+          type: string
+        whatsappPhoneE164:
+          type: string
+        whatsappEnabled:
+          type: boolean
+        version:
+          type: integer
+        updatedAt:
+          type: string
+    StorePublicContactResponse:
+      type: object
+      additionalProperties: false
+      required: [contact]
+      properties:
+        contact:
+          $ref: "#/components/schemas/StorePublicContact"
+    StorePublicContactInput:
+      type: object
+      additionalProperties: false
+      required: [phoneE164, email, whatsappPhoneE164, whatsappEnabled, expectedVersion]
+      properties:
+        phoneE164:
+          type: string
+        email:
+          type: string
+        whatsappPhoneE164:
+          type: string
+        whatsappEnabled:
+          type: boolean
+        expectedVersion:
+          type: integer
+    StorePublicContactMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [contact, idempotentReplay]
+      properties:
+        contact:
+          $ref: "#/components/schemas/StorePublicContact"
+        idempotentReplay:
+          type: boolean
+
+    CatalogInventorySummary:
+      type: object
+      required: [storeId, totalOffers, publishedOffers, availableOffers, unavailableOffers, stockoutOffers]
+      additionalProperties: false
+      description: Canonical Store-offer inventory status across all pages; excludes Store orderability and delivery serviceability.
+      properties:
+        storeId:
+          type: string
+        totalOffers:
+          type: integer
+          format: int64
+          minimum: 0
+        publishedOffers:
+          type: integer
+          format: int64
+          minimum: 0
+        availableOffers:
+          type: integer
+          format: int64
+          minimum: 0
+        unavailableOffers:
+          type: integer
+          format: int64
+          minimum: 0
+        stockoutOffers:
+          type: integer
+          format: int64
+          minimum: 0
+
+    CatalogInventorySummaryResponse:
+      type: object
+      required: [summary]
+      additionalProperties: false
+      properties:
+        summary:
+          $ref: "#/components/schemas/CatalogInventorySummary"
 
     CommerceVertical:
       type: object
@@ -9670,6 +9770,9 @@ components:
           type: string
         storeName:
           type: string
+        multiStoreCheckoutId:
+          type: string
+          description: Parent checkout identifier, if this independent Store Order belongs to a multi-Store checkout. Does not merge order identities.
         state:
           $ref: "#/components/schemas/OrderState"
         updatedAt:
@@ -9929,7 +10032,11 @@ components:
           $ref: "#/components/schemas/OperatorOperationsSummary"
         nextCursor:
           type: string
-          maxLength: 512
+          maxLength: 2048
+        filterEngineVersion:
+          type: integer
+          minimum: 1
+          description: Server-side operator filter support; client must refuse filtered results from older servers without this capability marker.
 
     OperatorOperationResponse:
       type: object

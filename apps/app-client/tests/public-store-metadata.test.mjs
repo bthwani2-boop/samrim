@@ -89,6 +89,7 @@ test("a local Store preview is never indexable or published as a social preview"
   const local = new Request("http://localhost:18101/store/" + storeId + "?serviceCityId=" + cityId);
   const metadata = await metadataFor(local, "http://127.0.0.1:18080", async () => { throw new Error("unexpected fetch"); });
   assert.equal(metadata.robots.index, false);
+  assert.equal(metadata.title, "معاينة المتجر | بثواني");
   assert.equal(metadata.openGraph, undefined);
 });
 

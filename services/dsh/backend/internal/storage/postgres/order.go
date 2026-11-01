@@ -312,14 +312,15 @@ type OperatorOperationRecord struct {
 }
 
 type OperatorOperationListRecord struct {
-	StageSLA           OperatorStageSLA
-	StageStartedAt     *time.Time
-	PreparationMinutes *int
-	OrderID            string
-	StoreName          string
-	State              string
-	UpdatedAt          time.Time
-	Assignment         *OperatorAssignmentListRecord
+	StageSLA             OperatorStageSLA
+	StageStartedAt       *time.Time
+	PreparationMinutes   *int
+	OrderID              string
+	StoreName            string
+	MultiStoreCheckoutID string
+	State                string
+	UpdatedAt            time.Time
+	Assignment           *OperatorAssignmentListRecord
 }
 
 type OperatorAssignmentListRecord struct {

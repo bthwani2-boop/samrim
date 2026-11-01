@@ -1,0 +1,52 @@
+paths:
+  /dsh/partner/stores/{storeId}/contact:
+    get:
+      operationId: readPartnerStorePublicContact
+      summary: Read owned Store public business contact, never the owner's private joining phone
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+      responses:
+        "200": { description: Canonical Store public-contact settings., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StorePublicContactResponse" } } } }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+    put:
+      operationId: updatePartnerStorePublicContact
+      summary: Versioned, idempotent opt-in business-contact update by the Store owner
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StorePublicContactInput" }
+      responses:
+        "200": { description: Committed Store contact settings and idempotency replay status., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StorePublicContactMutationResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
+  /dsh/operator/stores/{storeId}/contact:
+    get:
+      operationId: readOperatorStorePublicContact
+      summary: Read Store contact settings for a Partners-authorized Operator
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorId"
+      responses:
+        "200": { description: Canonical Store business contact settings., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StorePublicContactResponse" } } } }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
+  /dsh/public/stores/{storeId}/contact:
+    get:
+      operationId: readPublishedStorePublicContact
+      summary: Read explicitly configured public business contact for a published Store
+      security: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+      responses:
+        "200": { description: Public business contact with disabled WhatsApp number withheld., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StorePublicContactResponse" } } } }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }

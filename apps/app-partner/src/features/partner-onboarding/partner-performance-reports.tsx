@@ -10,6 +10,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { isOfferStockout } from "../store-offer/inventory-stockout";
+import { PartnerInventorySummary } from "./partner-inventory-summary";
 
 export type PerformanceReportView = "orders" | "catalog";
 const PAGE_SIZE = 25;
@@ -245,6 +246,7 @@ export function PartnerPerformanceReport({ store, view }: { store: PartnerAccess
       </Pressable>
     </View>
     <Text style={styles.caption}>نسخ CSV يخص الصفحة المعروضة، أما تنزيل CSV الكامل فيجمع جميع صفحات المتجر ضمن حد حماية الجهاز. فترة مؤشرات الإجماليات لا تُقيّد ملف التصدير. قيم الطلبات تشغيلية لدى DSH وليست إيرادات أو تسويات WLT.</Text>
+    {view === "catalog" && allowed ? <PartnerInventorySummary store={store} /> : null}
     {exportError ? <Text accessibilityRole="alert" style={styles.warning}>{exportError}</Text> : null}
     {exportStatus ? <Text accessibilityLiveRegion="polite" style={styles.caption}>{exportStatus}</Text> : null}
     {view === "orders" && allowed ? <View style={styles.panel} accessibilityLabel="الإجماليات التشغيلية للمتجر">

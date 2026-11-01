@@ -1,7 +1,7 @@
 import * as Crypto from "expo-crypto";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
-import { hasReviewableStoreAgreementRates } from "./store-agreement-acceptance-readback";
+import { normalizeHistoricalCommissionReadback } from "./store-commercial-agreement-legacy";
 
 type StoreCommercialAgreementRate = Readonly<{
   fulfillmentMode: string;
@@ -25,6 +25,7 @@ export type StoreCommercialAgreement = Readonly<{
   renewalPolicy: "NONE" | "MANUAL" | "AUTOMATIC";
   terminationTerms: string;
   adjustmentTerms: string;
+  historicalCommissionReadback?: boolean;
   status: string;
   rates: ReadonlyArray<StoreCommercialAgreementRate>;
   partnerAcceptedByActorId?: string | null;
@@ -78,14 +79,12 @@ function isAgreement(value: unknown): value is StoreCommercialAgreement {
   if (value.commercialModel !== "COMMISSION" &&
     (Number(value.recurringAmountMinor) <= 0 || value.billingPeriod === "NONE" || value.renewalPolicy === "NONE" ||
     Array.from(value.terminationTerms.trim()).length < 8 || Array.from(value.adjustmentTerms.trim()).length < 8)) return false;
-  if (value.commercialModel === "HYBRID") {
-    // Retired agreements are auditable history, never new acceptance candidates.
-    return value.rates.every((rate) => isRecord(rate) && typeof rate.fulfillmentMode === "string" &&
-      rate.fulfillmentMode.trim().length > 0 && Number.isSafeInteger(rate.commissionRateBps) &&
-      Number(rate.commissionRateBps) >= 0 && Number(rate.commissionRateBps) <= 10000);
-  }
-  return value.rates.every((rate) => isRecord(rate)) &&
-    hasReviewableStoreAgreementRates(value as StoreCommercialAgreement);
+  // Historical agreements must remain readable even if older rate rows are
+  // incomplete. Consent is independently guarded by hasReviewableStoreAgreementRates,
+  // exact version/owner checks and WLT. Never use this readback validator to authorize a change.
+  return value.rates.every((rate) => isRecord(rate) && typeof rate.fulfillmentMode === "string" &&
+    rate.fulfillmentMode.trim().length > 0 && typeof rate.commissionRateBps === "number" &&
+    Number.isSafeInteger(rate.commissionRateBps) && rate.commissionRateBps >= 0 && rate.commissionRateBps <= 10000);
 }
 
 async function request<T>(path: string, method: "GET" | "POST", body?: unknown, mutation?: Readonly<{ idempotencyKey: string; correlationID: string }>): Promise<T> {
@@ -116,13 +115,15 @@ export async function readOwnStoreCommercialAgreements(storeID: string): Promise
   const normalizedStoreID = storeID.trim();
   if (!normalizedStoreID) throw new StoreCommercialAgreementRequestError(400, "INVALID_INPUT", "Store is required");
   const payload = await request<{ agreements?: unknown }>(`/dsh/partner/stores/${encodeURIComponent(normalizedStoreID)}/commercial-agreements`, "GET");
-  if (!Array.isArray(payload?.agreements) || !payload.agreements.every(isAgreement)) {
+  const agreements = Array.isArray(payload?.agreements)
+    ? payload.agreements.map(normalizeHistoricalCommissionReadback) : null;
+  if (!agreements || !agreements.every(isAgreement)) {
     throw new StoreCommercialAgreementRequestError(502, "INVALID_RESPONSE", "DSH returned an invalid Store commercial agreement list");
   }
-  if (payload.agreements.some((agreement) => agreement.storeId !== normalizedStoreID)) {
+  if (agreements.some((agreement) => agreement.storeId !== normalizedStoreID)) {
     throw new StoreCommercialAgreementRequestError(502, "STORE_SCOPE_MISMATCH", "DSH returned an agreement for another Store");
   }
-  return payload.agreements;
+  return agreements;
 }
 
 export async function acceptOwnStoreCommercialAgreement(

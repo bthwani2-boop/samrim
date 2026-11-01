@@ -35,6 +35,12 @@ test("store setup guidance prioritizes consent, catalog and publication without 
   assert.equal(nextStoreSetupFocus(base)?.href, "/store?section=settings");
   assert.equal(nextStoreSetupFocus({ ...base, agreement: "ACTIVE" })?.href, "/products");
   assert.equal(nextStoreSetupFocus({ ...base, catalogReady: true, agreement: "AWAITING_FINANCE" })?.href, null);
+  const subscription = nextStoreSetupFocus({ ...base, catalogReady: true, agreement: "SUBSCRIPTION_PENDING_BILLING" });
+  assert.equal(subscription?.href, null);
+  assert.match(subscription?.detail ?? "", /لا تبدأ الفوترة أو التحصيل/);
+  const retired = nextStoreSetupFocus({ ...base, catalogReady: true, agreement: "RETIRED_MODEL" });
+  assert.equal(retired?.href, null);
+  assert.match(retired?.detail ?? "", /النموذج المختلط ملغى/);
   assert.match(nextStoreSetupFocus({ ...base, catalogReady: true, agreement: "NOT_ACTIVE" })?.title ?? "", /بانتظار/);
   assert.equal(nextStoreSetupFocus({ ...base, catalogReady: true, agreement: "UNAVAILABLE" })?.href, "/store?section=settings");
   assert.equal(nextStoreSetupFocus({ ...base, catalogReady: true, agreement: "ACTIVE" })?.href, "/store?section=settings");

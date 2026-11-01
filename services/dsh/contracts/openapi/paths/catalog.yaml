@@ -1579,3 +1579,31 @@ paths:
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
         "503": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/stores/{storeId}/inventory-summary:
+    get:
+      operationId: readPartnerStoreInventorySummary
+      summary: Read whole-Store inventory counts via the canonical Partner Store catalog permission
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+      responses:
+        "200": { description: Complete Store inventory summary independent of page size., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogInventorySummaryResponse" } } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+
+  /dsh/operator/stores/{storeId}/inventory-summary:
+    get:
+      operationId: readOperatorStoreInventorySummary
+      summary: Read whole-Store inventory counts as an authorized Operator with partners permission
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+      responses:
+        "200": { description: Complete Store inventory summary independent of page size., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogInventorySummaryResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }

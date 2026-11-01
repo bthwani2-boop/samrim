@@ -23,6 +23,7 @@ import { summarizeStoreAvailability } from "./store-availability-summary";
 import { addCatalogOfferToCart, listFavoriteStoreIDs, listFavoriteStoreOfferIDs, listPublicDiscoveryContent, listPublicPromotions, readFavoriteStoreCatalog, readOwnStoreCart, readPublicStoreCatalog, readPublicStoreOrderability, readPublishedStore, setFavoriteStore, setFavoriteStoreOffer } from "./store-discovery-client";
 import type { GallerySourceRect } from "./store-product-gallery";
 import { StoreProductSheet } from "./store-product-sheet";
+import { StorePublicContactCard } from "./store-public-contact";
 import { buildPublicStoreShareURL, buildStoreSharePath } from "./store-share-link";
 
 type DetailState =
@@ -814,6 +815,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           })}
         </View> : null}
       </BthwaniSurface>
+      <StorePublicContactCard storeID={storeId} />
       {spotlightPromotion ? (
         <View accessibilityLabel="العرض المرتبط بالفيديو" style={styles.promotionNotice}>
           <PromotionCard promotion={spotlightPromotion} onUse={() => openStorePromotion(spotlightPromotion.code)} />
