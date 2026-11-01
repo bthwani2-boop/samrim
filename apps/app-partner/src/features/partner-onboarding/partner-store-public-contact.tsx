@@ -31,6 +31,8 @@ export function PartnerStorePublicContact({ storeID }: Readonly<{ storeID: strin
   const [reloadToken, setReloadToken] = useState(0);
 
   useFocusEffect(useCallback(() => {
+    // Re-run the canonical read when the user explicitly retries.
+    void reloadToken;
     let active = true;
     setState({ kind: "loading" });
     setMessage("");

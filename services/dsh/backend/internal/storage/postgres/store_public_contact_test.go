@@ -12,18 +12,20 @@ func TestValidateStorePublicContactInput(t *testing.T) {
 		ExpectedVersion: 0,
 	}
 	out, err := ValidateStorePublicContactInput(valid)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	if out.PhoneE164 != "+967712345678" || out.Email != "store@example.com" || out.WhatsAppPhoneE164 != "+967734567890" {
 		t.Fatalf("canonical contact values not trimmed: %+v", out)
 	}
 	tests := map[string]StorePublicContactInput{
-		"public owner phone must never be inferred": { WhatsAppEnabled: true, ExpectedVersion: 0 },
-		"malformed phone": { PhoneE164: "712345678" },
-		"ambiguous phone": { PhoneE164: "+00002345" },
-		"whatsapp without number": { WhatsAppEnabled: true },
-		"display name email": { Email: "Example <store@example.com>" },
-		"email with newline": { Email: "store@example.com\r\nBcc:x@example.com" },
-		"negative expected version": { ExpectedVersion: -1 },
+		"public owner phone must never be inferred": {WhatsAppEnabled: true, ExpectedVersion: 0},
+		"malformed phone":           {PhoneE164: "712345678"},
+		"ambiguous phone":           {PhoneE164: "+00002345"},
+		"whatsapp without number":   {WhatsAppEnabled: true},
+		"display name email":        {Email: "Example <store@example.com>"},
+		"email with newline":        {Email: "store@example.com\r\nBcc:x@example.com"},
+		"negative expected version": {ExpectedVersion: -1},
 	}
 	for name, input := range tests {
 		t.Run(name, func(t *testing.T) {

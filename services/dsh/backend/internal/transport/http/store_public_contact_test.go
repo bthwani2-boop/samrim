@@ -13,15 +13,17 @@ import (
 func TestStoreContactRoutesRejectUnauthenticatedAndLegacyActorHeaders(t *testing.T) {
 	serviceToken := "store-public-contact-test-service-authentication-key"
 	operatorAuth, err := auth.NewServiceToken(serviceToken)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	server := &StoreAccessServer{operatorAuth: operatorAuth, service: &storeaccess.Service{}}
 	mux := http.NewServeMux()
 	server.Register(mux)
 
 	cases := []struct {
 		name, method, path string
-		status int
-		auth, header string
+		status             int
+		auth, header       string
 	}{
 		{"partner without login", "GET", "/dsh/partner/stores/store-a/contact", http.StatusForbidden, "", ""},
 		{"write without mutation headers", "PUT", "/dsh/partner/stores/store-a/contact", http.StatusBadRequest, "", ""},
@@ -32,8 +34,12 @@ func TestStoreContactRoutesRejectUnauthenticatedAndLegacyActorHeaders(t *testing
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(tc.method, tc.path, nil)
-			if tc.auth != "" { req.Header.Set("Authorization", tc.auth) }
-			if tc.header != "" { req.Header.Set(tc.header, "forged") }
+			if tc.auth != "" {
+				req.Header.Set("Authorization", tc.auth)
+			}
+			if tc.header != "" {
+				req.Header.Set(tc.header, "forged")
+			}
 			rec := httptest.NewRecorder()
 			mux.ServeHTTP(rec, req)
 			if rec.Code != tc.status {

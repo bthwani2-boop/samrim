@@ -10,34 +10,52 @@ import (
 
 func (s *StoreAccessServer) readStorePublicContactForPartner(w http.ResponseWriter, r *http.Request) {
 	record, err := s.service.ReadPublicContactForOwner(r.Context(), bearerToken(r), r.PathValue("storeId"))
-	if err != nil { writeStorePublicContactError(w, err); return }
+	if err != nil {
+		writeStorePublicContactError(w, err)
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, map[string]any{"contact": record})
 }
 
 func (s *StoreAccessServer) updateStorePublicContactForPartner(w http.ResponseWriter, r *http.Request) {
 	correlationID, key, ok := storeAccessMutationHeaders(w, r)
-	if !ok { return }
+	if !ok {
+		return
+	}
 	var input postgres.StorePublicContactInput
-	if !decodeJSON(w, r, &input) { return }
+	if !decodeJSON(w, r, &input) {
+		return
+	}
 	record, replay, err := s.service.UpdatePublicContactForOwner(r.Context(), bearerToken(r), r.PathValue("storeId"), input, key, correlationID)
-	if err != nil { writeStorePublicContactError(w, err); return }
+	if err != nil {
+		writeStorePublicContactError(w, err)
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, map[string]any{"contact": record, "idempotentReplay": replay})
 }
 
 func (s *StoreAccessServer) readStorePublicContactForOperator(w http.ResponseWriter, r *http.Request) {
 	operatorID, ok := storeAccessOperatorActor(w, r, s.operatorAuth)
-	if !ok { return }
+	if !ok {
+		return
+	}
 	record, err := s.service.ReadPublicContactForOperator(r.Context(), operatorID, r.PathValue("storeId"))
-	if err != nil { writeStorePublicContactError(w, err); return }
+	if err != nil {
+		writeStorePublicContactError(w, err)
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, map[string]any{"contact": record})
 }
 
 func (s *StoreAccessServer) readPublishedStorePublicContact(w http.ResponseWriter, r *http.Request) {
 	record, err := s.service.ReadPublishedPublicContact(r.Context(), r.PathValue("storeId"))
-	if err != nil { writeStorePublicContactError(w, err); return }
+	if err != nil {
+		writeStorePublicContactError(w, err)
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, map[string]any{"contact": record})
 }
