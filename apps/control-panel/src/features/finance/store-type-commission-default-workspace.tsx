@@ -2,7 +2,8 @@
 import { TextArea } from "@bthwani/design-system/web";
 
 import type { CommercialStoreType, CommercialStoreTypeListResponse, CommerceVertical, CommerceVerticalListResponse, StoreTypeCommissionDefault, StoreTypeCommissionDefaultsResponse } from "@bthwani/dsh";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { hasExactCommissionSuggestionReadback } from "./store-type-commission-default-readback";
 
 const modes = [
   { key: "BTHWANI_CAPTAIN", label: "توصيل بثواني" },
@@ -40,6 +41,7 @@ export function StoreTypeCommissionDefaultWorkspace({ readOnly = false }: Readon
   const [busyMode, setBusyMode] = useState<FulfillmentMode | "load" | "registry" | null>("registry");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const saving = useRef(false);
 
   useEffect(() => {
     let current = true;
@@ -66,8 +68,8 @@ export function StoreTypeCommissionDefaultWorkspace({ readOnly = false }: Readon
     return () => { current = false; };
   }, []);
 
-  async function readDefaults(typeID = selectedTypeID.trim()): Promise<boolean> {
-    if (!typeID || typeID.length > 128) { setError("اختر نوع متجر أولًا."); return false; }
+  async function readDefaults(typeID = selectedTypeID.trim()): Promise<readonly StoreTypeCommissionDefault[] | null> {
+    if (!typeID || typeID.length > 128) { setError("اختر نوع متجر أولًا."); return null; }
     setBusyMode("load"); setError(""); setMessage("");
     try {
       const response = await fetch(`/api/finance/commercial-store-type-commission-defaults?commercialStoreTypeId=${encodeURIComponent(typeID)}`, { cache: "no-store" });
@@ -81,36 +83,77 @@ export function StoreTypeCommissionDefaultWorkspace({ readOnly = false }: Readon
       })) as Record<FulfillmentMode, string>);
       setLoadedTypeID(typeID);
       setMessage("تمت قراءة النسب المقترحة من السجل المالي. تبقى شروط كل متجر في اتفاقيته الخاصة.");
-      return true;
+      return current;
     } catch (cause) {
       setDefaults([]); setLoadedTypeID("");
       setError(cause instanceof Error ? cause.message : "تعذر قراءة النسب المقترحة.");
-      return false;
+      return null;
     } finally { setBusyMode(null); }
   }
 
   async function save(mode: FulfillmentMode) {
     if (readOnly) return;
+    if (saving.current) return;
     const selected = defaults.find((item) => item.fulfillmentMode === mode);
     const percent = Number(rates[mode]);
     const suggestedCommissionRateBps = Math.round(percent * 100);
-    if (!selectedTypeID || loadedTypeID !== selectedTypeID || !Number.isFinite(percent) || suggestedCommissionRateBps < 0 || suggestedCommissionRateBps > 10000 || Math.abs(percent * 100 - suggestedCommissionRateBps) > 0.000001 || Array.from(reason.trim()).length < 8) {
+    if (!selectedTypeID || loadedTypeID !== selectedTypeID || rates[mode] === "" ||
+      !Number.isFinite(percent) || suggestedCommissionRateBps < 0 || suggestedCommissionRateBps > 10000 ||
+      Math.abs(percent * 100 - suggestedCommissionRateBps) > 0.000001 ||
+      Array.from(reason.trim()).length < 8 || Array.from(reason.trim()).length > 500) {
       setError("أدخل نسبة صحيحة وسبب التغيير، ثم أعد قراءة النوع قبل الحفظ."); return;
     }
-    if (suggestedCommissionRateBps === selected?.suggestedCommissionRateBps) { setError("النسبة الجديدة مطابقة للاقتراح الحالي."); return; }
+    if (suggestedCommissionRateBps === selected?.suggestedCommissionRateBps) {
+      setError("النسبة الجديدة مطابقة للاقتراح الحالي."); return;
+    }
+    const typeID = loadedTypeID;
+    const expectedDefaultVersion = selected?.defaultVersion ?? 0;
+    const expected = {
+      commercialStoreTypeId: typeID,
+      fulfillmentMode: mode,
+      suggestedCommissionRateBps,
+      defaultVersion: expectedDefaultVersion + 1,
+    };
+    saving.current = true;
     setBusyMode(mode); setError(""); setMessage("");
     try {
       const response = await fetch("/api/finance/commercial-store-type-commission-defaults", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
-        body: JSON.stringify({ commercialStoreTypeId: loadedTypeID, fulfillmentMode: mode, suggestedCommissionRateBps, expectedDefaultVersion: selected?.defaultVersion ?? 0, reason: reason.trim() }),
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": crypto.randomUUID(),
+          "X-Correlation-ID": crypto.randomUUID(),
+        },
+        body: JSON.stringify({
+          commercialStoreTypeId: typeID, fulfillmentMode: mode, suggestedCommissionRateBps,
+          expectedDefaultVersion, reason: reason.trim(),
+        }),
       });
-      const body = await response.json() as { default?: StoreTypeCommissionDefault; error?: { message?: string } };
-      if (!response.ok || !body.default) throw new Error(body.error?.message || "تعذر حفظ النسبة المقترحة.");
+      const body = await response.json().catch(() => null) as
+        { default?: StoreTypeCommissionDefault; error?: { message?: string } } | null;
+      if (!response.ok) throw new Error(body?.error?.message || "تعذر إرسال تعديل النسبة.");
+      if (!body?.default || !hasExactCommissionSuggestionReadback([body.default], expected)) {
+        throw new Error("رد الحفظ لا يطابق الشروط المرسلة.");
+      }
+      const canonical = await readDefaults(typeID);
+      if (!canonical || !hasExactCommissionSuggestionReadback(canonical, expected)) {
+        throw new Error("تعذرت مطابقة رد الحفظ مع السجل المالي الدائم.");
+      }
       setReason("");
-      if (await readDefaults(loadedTypeID)) setMessage("تم حفظ النسبة المقترحة مع سجل التدقيق. لا تسري إلا ضمن اتفاقية المتجر المعتمدة.");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "تعذر حفظ النسبة المقترحة."); }
-    finally { setBusyMode(null); }
+      setMessage("تم التحقق من حفظ النسبة في السجل المالي. لا تسري إلا ضمن اتفاقية متجر معتمدة.");
+    } catch {
+      // A transport error does not prove the mutation failed. Read the financial owner
+      // before any new submission, and never report an ambiguous outcome as success.
+      const canonical = await readDefaults(typeID);
+      if (canonical && hasExactCommissionSuggestionReadback(canonical, expected)) {
+        setError("يعرض السجل المالي النسبة المطلوبة، لكن لم نتأكد من نتيجة محاولة الحفظ نفسها. راجع سجل التدقيق قبل أي تغيير جديد.");
+      } else {
+        setError("لم نتأكد من نتيجة الحفظ. راجع السجل المالي أولًا قبل إعادة الإرسال؛ لا تفترض فشل العملية أو نجاحها.");
+      }
+    } finally {
+      saving.current = false;
+      setBusyMode(null);
+    }
   }
 
   return <section className="form-section" aria-labelledby="store-type-commission-default-title">
