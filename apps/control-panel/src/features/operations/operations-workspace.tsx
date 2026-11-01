@@ -335,7 +335,7 @@ export function OperationsWorkspace() {
         : view === "reports" ? <OperationsPerformance summary={summary} operations={operations} loading={loading} />
         : view === "attention" ? <OperationsInterventionCenter onOpenOrder={openOrder} refreshVersion={cancellationInboxVersion} />
         : <>
-       <div className="ops-order-metrics" aria-label="ملخص نتائج الطلبات المطابقة للفلاتر">
+       <section className="ops-order-metrics" aria-label="ملخص نتائج الطلبات المطابقة للفلاتر">
          {([
            { key: "total", label: "الإجمالي", count: summary?.totalCount, action: () => navigate({ view: "all", state: "" }) },
            { key: "attention", label: "تحتاج مراجعة", count: summary?.actionableCount, action: null },
@@ -350,7 +350,7 @@ export function OperationsWorkspace() {
            : <div key={metric.key} className="ops-order-metric">
                <strong>{metric.count == null ? "—" : metric.count.toLocaleString("ar-YE")}</strong><span>{metric.label}</span>
              </div>)}
-       </div>
+       </section>
        <p className="muted ops-metric-note">المؤشرات محسوبة على جميع السجلات المطابقة في DSH قبل ترقيم الصفحات، وليست مجموع الصفحة المعروضة.</p>
        {view === "dispatch" ? <OperationsDispatchOverview state={state} summary={summary}
         onState={next => navigate({view:"dispatch",state:next})}

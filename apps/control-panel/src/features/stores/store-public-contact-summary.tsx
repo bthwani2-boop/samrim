@@ -10,6 +10,8 @@ export function StorePublicContactSummary({ storeId }: Readonly<{ storeId: strin
   const [retry, setRetry] = useState(0);
 
   useEffect(() => {
+    // A retry must trigger a new canonical read even when storeId is unchanged.
+    void retry;
     const controller = new AbortController();
     let active = true;
     setLoading(true);
