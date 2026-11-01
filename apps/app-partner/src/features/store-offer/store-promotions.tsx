@@ -286,6 +286,7 @@ export function StorePromotionsCard({ storeID, verticalID, mode = "all" }: Reado
         {(mode === "overview" ? buckets[bucket].slice(0, 3) : buckets[bucket]).map((promotion) => { const threshold = minOrderSubtotalMinor(promotion); return <View key={promotion.id} style={styles.row}><View style={styles.rowCopy}>
           <Text style={styles.promoName}>{promotion.nameAr} · {promotion.code}</Text><Text style={styles.muted}>{benefitLabel(promotion)} · {fundingLabel(promotion)}</Text>
           <Text style={styles.muted}>{promotionScopeLabel(promotion)}</Text>
+          <Text style={styles.muted}>مرات استخدام العرض المسجلة: {promotion.redeemedCount.toLocaleString("ar-YE")}</Text>
           {threshold ? <Text style={styles.muted}>حد الطلب: {formatMoney(threshold, "YER")}</Text> : null}
           <Text style={styles.muted}>من {new Date(promotion.startsAt).toLocaleString("ar-YE")}{promotion.endsAt ? " إلى " + new Date(promotion.endsAt).toLocaleString("ar-YE") : ""}</Text>
         </View><View style={styles.actions}>
