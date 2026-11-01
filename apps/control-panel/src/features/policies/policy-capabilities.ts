@@ -39,6 +39,12 @@ export const policyCapabilities = [
     scope: "كابتن بثواني", owner: "WLT", createLabel: null, additionalPermission: null, list: null,
   },
   {
+    key: "store-type-commission-defaults", href: "/policies?group=commercial&policy=store-type-commission-defaults&action=manage", label: "عمولات المتاجر المقترحة",
+    description: "اقتراح نسب تفاوضية حسب نوع المتجر وطريقة التنفيذ؛ لا تصبح نافذة إلا بموافقة الشريك والمالية على اتفاقيته الخاصة.",
+    icon: "finance", context: "الشروط التجارية", summary: "نسب مقترحة لا تُطبّق تلقائيًا",
+    scope: "نوع المتجر", owner: "WLT", createLabel: null, additionalPermission: "finance", list: null,
+  },
+  {
     key: "partner-financial-terms", href: "/policies?policy=partner-financial-terms&action=manage", label: "شروط الشريك المالية",
     description: "تحديد فترة التسوية المعتمدة لملفات الشركاء الجديدة والعالقة.",
     icon: "review", context: "مالية الشركاء", summary: "فترة تسوية الشريك المعتمدة",

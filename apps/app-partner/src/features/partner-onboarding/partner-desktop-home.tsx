@@ -10,7 +10,10 @@ import { useCallback, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
-import { isOfferStockout } from "../store-offer/inventory-stockout";
+import { catalogPublishedAvailability, isOfferStockout } from "../store-offer/inventory-stockout";
+import { agreementReadinessMessage, type StoreAgreementReadback } from "./store-agreement-readiness";
+import { nextStoreSetupFocus, storeReadinessProgress } from "./partner-onboarding-next-step";
+import { scopedPartnerPopularOffers } from "./partner-home-popularity";
 
 type Data = Readonly<{
   attention: PartnerOrderAttentionCounts | null;
@@ -18,13 +21,14 @@ type Data = Readonly<{
   ordersPartial: boolean;
   weeklyOrderSummary: PartnerStoreOrderSummary | null;
   offers: ReadonlyArray<CatalogStoreOffer> | null;
+  popularOffers: ReadonlyArray<CatalogStoreOffer> | null;
   offersPartial: boolean;
   finance: PartnerScopedFinanceStore | null;
 }>;
 
 const empty: Data = {
   attention: null, recentOrders: null, ordersPartial: false, weeklyOrderSummary: null,
-  offers: null, offersPartial: false, finance: null,
+  offers: null, popularOffers: null, offersPartial: false, finance: null,
 };
 
 type Props = Readonly<{
@@ -32,6 +36,7 @@ type Props = Readonly<{
   operationalState: string;
   operationalKnown: boolean;
   canOperate: boolean;
+  commercialAgreement: StoreAgreementReadback;
 }>;
 
 const statuses = [
@@ -85,7 +90,7 @@ function readableOrderState(state: Order["state"]) {
   }
 }
 
-export function PartnerDesktopHome({ store, operationalState, operationalKnown, canOperate }: Props) {
+export function PartnerDesktopHome({ store, operationalState, operationalKnown, canOperate, commercialAgreement }: Props) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const router = useRouter();
@@ -110,11 +115,14 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
     const client = createDshMobileClient(base, { cryptoRandomUUID: () => Crypto.randomUUID() });
     void (async () => {
       const token = await getUsableIdentityAccessToken();
-      const [orders, offers, financial, weekly] = await Promise.allSettled([
+      const [orders, offers, financial, weekly, popular] = await Promise.allSettled([
         canOrders ? client.listPartnerOrders(token, { storeIds: [store.id], limit: 24 }) : Promise.resolve(null),
         canCatalog ? client.readOwnStoreOffers(token, store.id, 100) : Promise.resolve(null),
         store.owned ? client.readOwnPartnerFinancialSummary(token) : Promise.resolve(null),
         canOrders ? client.readPartnerStoreOrderSummary(token, store.id, "7d") : Promise.resolve(null),
+        canCatalog && store.publicationState === "published"
+          ? client.readPublicStoreCatalog(store.id, store.serviceCityId, "", "", 4, "", "", "MOST_ORDERED_30_DAYS")
+          : Promise.resolve(null),
       ]);
       const current = currentIdentityState();
       if (!active || current.kind !== "authenticated" || current.identity.subject !== actor) return;
@@ -122,6 +130,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
       const offerPage = offers.status === "fulfilled" ? offers.value : null;
       const financePage = financial.status === "fulfilled" ? financial.value : null;
       const weeklyPage = weekly.status === "fulfilled" ? weekly.value : null;
+      const popularPage = popular.status === "fulfilled" ? popular.value : null;
       const weeklySummary = weeklyPage?.summary;
       const verifiedWeekly = weeklySummary?.storeId === store.id && weeklySummary.period === "7d" &&
         Number.isSafeInteger(weeklySummary.totalOrders) && weeklySummary.totalOrders >= 0 ? weeklySummary : null;
@@ -131,29 +140,36 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
         ordersPartial: Boolean(orderPage?.nextCursor),
         weeklyOrderSummary: verifiedWeekly,
         offers: offerPage?.offers ?? null,
+        popularOffers: scopedPartnerPopularOffers(store.id, popularPage),
         offersPartial: Boolean(offerPage?.nextCursor),
         finance: financePage?.summary.stores.find(item => item.storeId === store.id) ?? null,
       });
       setLoading(false);
     })().catch(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [store.id, store.owned, canCatalog, canOrders]));
+  }, [store.id, store.owned, store.serviceCityId, store.publicationState, canCatalog, canOrders]));
 
   const stockout = data.offers?.filter(isOfferStockout) ?? [];
   const unavailable = data.offers?.filter(item => item.publicationState === "published" && !item.availability) ?? [];
   const available = data.offers?.filter(item => item.publicationState === "published" && item.availability).length;
+  const catalogReady = catalogPublishedAvailability(data.offers, data.offersPartial);
   const financialReady = Boolean(data.finance?.attributionComplete);
   const orders = data.recentOrders ?? [];
   const groups = groupOrders(orders);
   const recentDays = recentOrderDays(orders, new Date());
   const maxDay = Math.max(1, ...recentDays.map(item => item.count));
   const readySteps = [
-    store.publicationState === "published",
-    data.offers ? data.offers.some(item => item.publicationState === "published" && item.availability) : null,
-    canOperate && operationalKnown ? operationalState === "مفتوح" : null,
+    ...(store.owned ? [store.publicationState === "published"] : []),
+    ...(canCatalog ? [catalogReady] : []),
+    ...(canOperate ? [operationalKnown ? operationalState === "مفتوح" : null] : []),
+    ...(store.owned ? [commercialAgreement === null || commercialAgreement === "UNAVAILABLE" ? null : commercialAgreement === "ACTIVE"] : []),
   ];
-  const verifiedSteps = readySteps.filter(step => step !== null).length;
-  const completedSteps = readySteps.filter(step => step === true).length;
+  const progress = storeReadinessProgress(readySteps);
+  const setupFocus = nextStoreSetupFocus({
+    ownsStore: store.owned, canEditCatalog: canCatalog, canManageAvailability: canOperate,
+    publicationState: store.publicationState, catalogReady, agreement: commercialAgreement,
+    operationalKnown, operationalState,
+  });
 
   const go = (href: Href) => {
     if (String(href).startsWith("/store")) router.push(href);
@@ -204,14 +220,27 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
               <Text style={styles.muted}>تابع إعدادات المتجر من نفس لوحة العمل.</Text>
             </View>
             <View style={styles.progressPill}>
-              <Text style={styles.progressNumber}>{verifiedSteps ? completedSteps + "/" + verifiedSteps : "—"}</Text>
-              <Text style={styles.muted}>خطوات متحققة</Text>
+              <Text style={styles.progressNumber}>{progress.total ? `${progress.completed}/${progress.total}` : "—"}</Text>
+              <Text style={styles.muted}>خطوات مكتملة</Text>
+              {progress.unknown > 0 ? <Text style={styles.muted}>{`غير متحقق منها: ${progress.unknown}`}</Text> : null}
             </View>
           </View>
+          {setupFocus ? <View style={styles.nextSetup} accessibilityLabel="توجيه إعداد المتجر">
+            <View style={styles.nextSetupCopy}>
+              <Text style={styles.nextSetupEyebrow}>المتابعة الآن</Text>
+              <Text style={styles.nextSetupTitle}>{setupFocus.title}</Text>
+              <Text style={styles.muted}>{setupFocus.detail}</Text>
+            </View>
+            {setupFocus.href ? <Pressable accessibilityRole="button" accessibilityLabel={"فتح: " + setupFocus.title}
+              style={styles.nextSetupButton} onPress={() => { if (setupFocus.href) go(setupFocus.href as Href); }}>
+              <Text style={styles.nextSetupButtonText}>متابعة</Text>
+            </Pressable> : null}
+          </View> : null}
           <View style={styles.setupGrid}>
             {store.owned ? action("هوية المتجر", store.publicationState === "published" ? "المتجر منشور للعملاء" : "مراجعة بيانات المتجر والنشر", "/store?section=settings" as Href, "store", store.publicationState === "published") : null}
-            {canCatalog ? action("إعداد الكتالوج", data.offers === null ? "البيانات غير متاحة حاليًا" : available ? "يوجد منتجات متاحة للطلب" : "راجع المنتجات والأسعار", "/products" as Href, "cart", data.offers === null ? null : Boolean(available)) : null}
+            {canCatalog ? action("إعداد الكتالوج", data.offers === null ? "البيانات غير متاحة حاليًا" : catalogReady === null ? "لم تكتمل قراءة الكتالوج؛ راجع بقية المنتجات" : catalogReady ? "يوجد منتجات متاحة للطلب" : "راجع المنتجات والأسعار", "/products" as Href, "cart", catalogReady) : null}
             {canOperate ? action("إعدادات التشغيل", operationalKnown ? "استقبال الطلبات: " + operationalState : "تعذر قراءة حالة التشغيل", "/store?section=operations" as Href, "deliveries", operationalKnown ? operationalState === "مفتوح" : null) : null}
+            {store.owned ? action("الاتفاقية التجارية", agreementReadinessMessage(commercialAgreement), "/store?section=settings" as Href, "wallet", commercialAgreement === null || commercialAgreement === "UNAVAILABLE" ? null : commercialAgreement === "ACTIVE") : null}
             {canPromotions ? action("العروض", "تحرير العروض المتاحة للمتجر", "/store?section=promotions" as Href, "offers") : null}
             {store.owned ? action("الموظفين", "دعوة الموظفين وإدارة صلاحياتهم", "/employees" as Href, "account") : null}
             {store.owned ? action("كباتن المتجر", "إدارة عضويات كباتن المتجر", "/store?section=team" as Href, "deliveries") : null}
@@ -311,6 +340,18 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
             </Pressable>)}
           {data.offersPartial ? <Text style={styles.muted}>أول 100 منتج فقط؛ قد توجد أصناف أخرى.</Text> : null}
         </View>
+        {canCatalog ? <View style={styles.panel}>
+          {panelTitle("الأكثر طلبًا خلال 30 يومًا", "/products" as Href)}
+          {store.publicationState !== "published" ? <Text style={styles.empty}>يظهر الترتيب بعد نشر المتجر.</Text> :
+            loading ? <Text style={styles.empty}>جارٍ قراءة ترتيب المنتجات…</Text> :
+            data.popularOffers === null ? <Text style={styles.empty}>تعذر قراءة الترتيب. أعد فتح الصفحة للمحاولة.</Text> :
+            data.popularOffers.length === 0 ? <Text style={styles.empty}>لم تُسجل طلبات مكتملة لمنتجات متاحة خلال آخر 30 يومًا.</Text> :
+            data.popularOffers.map((item, index) => <View key={item.offerId} style={styles.listItem}>
+              <Text style={styles.popularRank}>{index + 1}</Text>
+              <Text style={styles.listTitle} numberOfLines={2}>{item.productName}</Text>
+            </View>)}
+          <Text style={styles.muted}>ترتيب المنتجات المتاحة بحسب الطلبات المكتملة، وليس مبيعات مقدّرة.</Text>
+        </View> : null}
         <View style={styles.panel}>
           {panelTitle("الاختصارات")}
           {canOrders ? action("إدارة الطلبات", "عرض الطلبات الحالية", "/orders" as Href, "orders") : null}
@@ -349,6 +390,12 @@ function createStyles(theme: ReturnType<typeof useAppearanceTheme>) {
     setupText: { flex: 1, gap: 5 },
     progressPill: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 11, backgroundColor: theme.surfaceInset, alignItems: "center", gap: 3 },
     progressNumber: { ...typography.titleMd, color: theme.brandAction, fontWeight: "800" },
+    nextSetup: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 12, borderWidth: 1, borderColor: theme.borderColor, backgroundColor: theme.actionSoft, borderRadius: 11, padding: 13 },
+    nextSetupCopy: { flex: 1, minWidth: 210, gap: 4 },
+    nextSetupEyebrow: { ...typography.caption, color: theme.interactiveText, fontWeight: "800" },
+    nextSetupTitle: { ...typography.bodyStrong, color: theme.color, fontWeight: "800" },
+    nextSetupButton: { minHeight: 44, paddingHorizontal: 16, justifyContent: "center", alignItems: "center", borderRadius: 9, backgroundColor: theme.actionBackground },
+    nextSetupButtonText: { ...typography.bodySm, color: theme.onAction, fontWeight: "800" },
     setupGrid: { flexDirection: "row", flexWrap: "wrap", gap: 9 },
     setupAction: { flexGrow: 1, flexBasis: 178, minWidth: 160, minHeight: 66, paddingHorizontal: 10, paddingVertical: 9, borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10, backgroundColor: theme.surfaceInset, flexDirection: "row", alignItems: "center", gap: 8 },
     setupIcon: { width: 32, height: 32, borderRadius: 9, backgroundColor: theme.actionSoft, alignItems: "center", justifyContent: "center" },
@@ -361,6 +408,7 @@ function createStyles(theme: ReturnType<typeof useAppearanceTheme>) {
     tableKey: { ...typography.caption, color: theme.color, flex: 1.1, minWidth: 0, paddingHorizontal: 5, fontWeight: "700" },
     tableValue: { ...typography.caption, color: theme.colorMuted, flex: 1, minWidth: 0, paddingHorizontal: 4 },
     listItem: { flexDirection: "row", gap: 8, alignItems: "center", paddingVertical: 11, borderBottomWidth: 1, borderColor: theme.borderColor },
+    popularRank: { ...typography.bodySm, color: theme.interactiveText, minWidth: 22, fontWeight: "800", textAlign: "center" },
     productDot: { width: 32, height: 32, alignItems: "center", justifyContent: "center", borderRadius: 8, backgroundColor: theme.surfaceInset },
     listTitle: { ...typography.bodySm, color: theme.color, fontWeight: "700", flex: 1, minWidth: 0 },
     warningText: { ...typography.caption, color: theme.warning, fontWeight: "800" },

@@ -70,3 +70,12 @@ test("workspace browser tool file is valid TSX and requires review before any dr
   assert.ok(source.includes("onClick={approveDraft}"));
   assert.ok(!source.includes("fetch("), "navigation and drafts cannot issue generic API writes");
 });
+
+
+test("partner management navigation remains distinct from the Partner workspace", () => {
+  const entries = allowedWorkspaceEntries(operator(["partners"]));
+  const item = entries.find(entry => entry.href === "/partners");
+  assert.equal(item?.label, "الشركاء والمتاجر");
+  assert.equal(item?.context, "إدارة الشركاء");
+  assert.ok(entries.every(entry => !entry.href.startsWith("/store?")));
+});

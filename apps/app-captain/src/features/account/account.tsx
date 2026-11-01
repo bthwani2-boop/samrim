@@ -10,6 +10,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { getUsableIdentityAccessToken, logoutIdentity } from "../../bootstrap/identity";
 import { captainClient } from "../captain-operations/captain-client";
 import { StoreCaptainMemberships } from "../captain-operations/store-memberships";
+import { preferredCaptainProfileMembership } from "../captain-operations/captain-store-membership-policy";
 
 const actions: ReadonlyArray<Readonly<{
   description: string;
@@ -44,10 +45,10 @@ export default function CaptainAccount() {
         try {
           const token = await getUsableIdentityAccessToken();
           const memberships = await captainClient().listOwnStoreCaptainMemberships(token);
-          const directed = memberships.memberships.find((item) => item.displayNameAr && (item.state === "active" || item.state === "pending"));
+          const directed = preferredCaptainProfileMembership(memberships.memberships);
           if (directed) {
             if (current) {
-              setProfile({ fullNameAr: directed.displayNameAr ?? null, state: "store_only" });
+              setProfile({ fullNameAr: directed.displayNameAr ?? null, state: directed.state === "active" ? "store_only" : "store_pending" });
               setProfileState("ready");
             }
             return;
@@ -87,8 +88,8 @@ export default function CaptainAccount() {
         </View>
         <View style={styles.profileCopy}>
           <Text style={styles.profileTitle}>{profile?.fullNameAr || "ملف الكابتن"}</Text>
-          <Text style={styles.profileDescription}>{profileState === "loading" ? "جارٍ قراءة الملف…" : profileState === "error" ? "تعذر قراءة الملف الآن؛ أعد المحاولة لاحقًا." : profile?.state === "store_only" ? "حساب كابتن متجر" : profile?.contactPhoneE164 || "رقم الهاتف غير متاح"}</Text>
-          {profileState === "ready" && profile ? <Text style={styles.profileDescription}>حالة الأهلية: {profile.state === "store_only" ? "عضوية متجر — دون توزيع بثواني العام" : profile.state === "eligible" ? "مؤهل لاستقبال المهام" : "قيد المراجعة"}</Text> : null}
+          <Text style={styles.profileDescription}>{profileState === "loading" ? "جارٍ قراءة الملف…" : profileState === "error" ? "تعذر قراءة الملف الآن؛ أعد المحاولة لاحقًا." : profile?.state === "store_only" ? "حساب كابتن متجر نشط" : profile?.state === "store_pending" ? "بانتظار تفعيل عضوية المتجر" : profile?.contactPhoneE164 || "رقم الهاتف غير متاح"}</Text>
+          {profileState === "ready" && profile ? <Text style={styles.profileDescription}>حالة الأهلية: {profile.state === "store_only" ? "عضوية متجر نشطة — دون توزيع بثواني العام" : profile.state === "store_pending" ? "عضوية متجر قيد الاعتماد — لا تستقبل المهام بعد" : profile.state === "eligible" ? "مؤهل لاستقبال المهام" : "قيد المراجعة"}</Text> : null}
         </View>
       </BthwaniSurface>
 

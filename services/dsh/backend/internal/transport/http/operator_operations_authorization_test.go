@@ -27,7 +27,7 @@ func TestOperatorOperationsSummaryRejectsUnauthenticatedAndInvalidQueries(t *tes
 		{"unknown state", "?state=UNKNOWN", "operator", true, 400},
 		{"unknown sort", "?sort=UNKNOWN", "operator", true, 400},
 		{"invalid actionable", "?actionableOnly=1", "operator", true, 400},
-		{"overlong cursor", "?cursor=" + strings.Repeat("x", 513), "operator", true, 400},
+		{"overlong cursor", "?cursor=" + strings.Repeat("x", 2049), "operator", true, 400},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/dsh/operator/operations"+tc.query, nil)

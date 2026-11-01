@@ -1,6 +1,6 @@
 "use client";
 
-import type { StoreContentPerformanceSummary } from "@bthwani/dsh";
+import { storeContentEventRatios, verifiedStoreContentPerformance, type StoreContentPerformanceSummary } from "@bthwani/dsh";
 import { useEffect, useState } from "react";
 
 export function StoreMarketingPerformance({ storeId }: Readonly<{ storeId: string }>) {
@@ -22,10 +22,9 @@ export function StoreMarketingPerformance({ storeId }: Readonly<{ storeId: strin
       })
       .then(result => {
         if (controller.signal.aborted) return;
-        if (!result || result.storeId !== storeId || result.period !== period ||
-          [result.contentCount, result.impressions, result.clicks, result.attributedOrdersCreated, result.attributedOrdersCompleted]
-            .some(value => !Number.isSafeInteger(value) || value < 0)) throw new Error("STORE_MARKETING_SCOPE_MISMATCH");
-        setSummary(result);
+        const verified = verifiedStoreContentPerformance(result, storeId, period);
+        if (!verified) throw new Error("STORE_MARKETING_SCOPE_MISMATCH");
+        setSummary(verified);
       })
       .catch(cause => {
         if (!controller.signal.aborted) setError(cause instanceof Error && cause.message === "MARKETING_FORBIDDEN"
@@ -37,6 +36,7 @@ export function StoreMarketingPerformance({ storeId }: Readonly<{ storeId: strin
   }, [storeId, period, retry]);
 
   const visibleSummary = summary?.storeId === storeId && summary.period === period ? summary : null;
+  const ratios = storeContentEventRatios(visibleSummary);
   return <section aria-label="إحصاءات مقاطع هذا المتجر">
     <p className="store-profile-muted">أحداث DSH المسجلة لمقاطع المتجر في الفترة المختارة؛ «المقاطع» تعني المنشأة خلالها. النقر والظهور ليسا مستخدمين فريدين.</p>
     <div className="store-product-actions">
@@ -56,7 +56,9 @@ export function StoreMarketingPerformance({ storeId }: Readonly<{ storeId: strin
         { label: "طلبات مكتملة منسوبة", value: visibleSummary.attributedOrdersCompleted },
       ].map(item => <div key={item.label}><dt>{item.label}</dt>
         <dd>{item.value.toLocaleString("ar-YE")}</dd></div>)}
+      <div><dt>نقرات لكل 100 ظهور</dt><dd>{ratios.clicksPerHundredImpressions === null ? "—" : ratios.clicksPerHundredImpressions.toLocaleString("ar-YE")}</dd></div>
+      <div><dt>نسبة الطلبات المنسوبة المكتملة</dt><dd>{ratios.completedAttributedOrdersPercent === null ? "—" : ratios.completedAttributedOrdersPercent.toLocaleString("ar-YE") + "٪"}</dd></div>
     </dl> : null}
-    <p className="store-profile-muted">الطلب المكتمل المنسوب يعني حالة تسليم أو استلام حاليًا بعد نقرة مؤهلة؛ لا يثبت تحصيلًا أو تسوية WLT.</p>
+    <p className="store-profile-muted">نقرات كل 100 ظهور تقارن حدثين مستقلين وقد تتجاوز 100؛ ليست عدد زوار فريدين. نسبة اكتمال الطلبات المنسوبة تقارن الطلبات المكتملة بالمنشأة المنسوبة، ولا تمثل تحصيلًا أو تسوية WLT. عند غياب المقام تظهر —.</p>
   </section>;
 }

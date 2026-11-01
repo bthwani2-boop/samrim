@@ -9,6 +9,7 @@ import { createPortal } from "react-dom";
 import { useAdaptiveRecordView } from "../../shell/adaptive-record-workspace";
 import { OperationalIcon, type OperationalIconName } from "../../shell/workspace-icon";
 import { StoreImageEditor } from "./store-image-editor";
+import { StoreInventorySummary } from "./store-inventory-summary";
 import { PublicationIndicator } from "./store-indicators";
 import { StoreLogo } from "./store-logo";
 import { StoreModeControls } from "./store-mode-controls";
@@ -111,7 +112,8 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
       basics: "identity", branches: "identity", coverage: "identity", customers: "quality",
       ratings: "quality", history: "documents" } as Record<string, string>)[tab] ?? tab;
     setActiveTab(group);
-    if (group !== "overview") recordView?.expandForEditing();
+    // Customer activity is read-only: expanding would remount the split record panel and reset this tab.
+    if (group !== "overview" && group !== "quality") recordView?.expandForEditing();
     document.querySelector(".adaptive-record-sheet .workspace-side-drawer-scroll")?.scrollTo({ top: 0, behavior: "smooth" });
   };
   const tabs: ReadonlyArray<readonly [string, string]> = [
@@ -139,6 +141,7 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
       </details> : null}
     </section>
 
+    <StoreInventorySummary storeId={store.id} onOpenCatalog={() => selectTab("catalog")} />
     <div className="store-profile-content store-sheet-dashboard">
       <div className="store-profile-information"><ProfileCard title="بيانات المتجر" icon="⌂">
         <dl className="store-profile-facts">

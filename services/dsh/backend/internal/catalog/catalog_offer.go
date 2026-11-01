@@ -23,6 +23,22 @@ func (s *Service) ListOffersForOperator(ctx context.Context, actorID, storeID st
 	return postgres.ListCatalogOfferPage(ctx, s.db, strings.TrimSpace(storeID), limit, cursor)
 }
 
+// ReadInventorySummaryForPartner uses the same Store-level catalog permission as the paged offer list.
+func (s *Service) ReadInventorySummaryForPartner(ctx context.Context, accessToken, storeID string) (postgres.CatalogInventorySummary, error) {
+	if _, err := s.requireStoreOwner(ctx, accessToken, storeID); err != nil {
+		return postgres.CatalogInventorySummary{}, err
+	}
+	return postgres.ReadCatalogInventorySummary(ctx, s.db, strings.TrimSpace(storeID))
+}
+
+// ReadInventorySummaryForOperator requires the same partners permission as StoreOffer inspection.
+func (s *Service) ReadInventorySummaryForOperator(ctx context.Context, actorID, storeID string) (postgres.CatalogInventorySummary, error) {
+	if err := s.requireOperatorPermission(ctx, actorID, "partners"); err != nil {
+		return postgres.CatalogInventorySummary{}, err
+	}
+	return postgres.ReadCatalogInventorySummary(ctx, s.db, strings.TrimSpace(storeID))
+}
+
 func (s *Service) ListQuickPricesForPartner(ctx context.Context, accessToken, storeID string, filters postgres.CatalogQuickPriceFilters, limit int, cursor string) (postgres.CatalogStoreOfferPage, error) {
 	if _, err := s.requireStoreOwner(ctx, accessToken, storeID); err != nil {
 		return postgres.CatalogStoreOfferPage{}, err

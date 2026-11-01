@@ -6,7 +6,7 @@
     "contract": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "node services/dsh/tools/generate-types.mjs --check && node tools/dev/check-openapi.mjs dsh"
+        "command": "node services/dsh/tools/generate-types.mjs --check && node tools/dev/check-openapi.mjs dsh && node --test services/dsh/clients/store-inventory.test.mjs"
       },
       "inputs": [
         "default",

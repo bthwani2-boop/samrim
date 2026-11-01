@@ -25,14 +25,32 @@ export async function GET(request: Request) {
   const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) return errorResponse("INVALID_INPUT", "limit must be between 1 and 100", 400);
   if (rawActionableOnly !== "true" && rawActionableOnly !== "false") return errorResponse("INVALID_INPUT", "actionableOnly must be true or false", 400);
-  if (cursor.trim().length > 512) return errorResponse("INVALID_INPUT", "cursor is too long", 400);
+  if (cursor.trim().length > 2048) return errorResponse("INVALID_INPUT", "cursor is too long", 400);
   if (search.trim().length > 128) return errorResponse("INVALID_INPUT", "q is too long", 400);
   if (storeId.length > 128 || (params.has("storeId") && !storeId.trim())) return errorResponse("INVALID_INPUT", "storeId is invalid", 400);
   if (sort !== "updated_desc" && sort !== "updated_asc") return errorResponse("INVALID_INPUT", "sort is invalid", 400);
+  const filters = {
+    storeName: params.get("storeName") ?? "",
+    fromDate: params.get("fromDate") ?? "",
+    toDate: params.get("toDate") ?? "",
+    paymentSource: params.get("paymentSource") ?? "",
+    fulfillmentMode: params.get("fulfillmentMode") ?? "",
+  };
+  if ([...filters.storeName].length > 128 ||
+    (filters.fromDate && !/^\d{4}-\d{2}-\d{2}$/.test(filters.fromDate)) ||
+    (filters.toDate && !/^\d{4}-\d{2}-\d{2}$/.test(filters.toDate)) ||
+    (filters.fromDate && filters.toDate && filters.fromDate > filters.toDate) ||
+    !["", "CASH", "WALLET", "MIXED"].includes(filters.paymentSource) ||
+    !["", "BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"].includes(filters.fulfillmentMode)) {
+    return errorResponse("INVALID_INPUT", "invalid Order filter", 400);
+  }
   try {
-    const result = await listOperatorOperations(params.get("state") ?? "", search, sort, limit, cursor, rawActionableOnly === "true", { operatorActorId: identity.subject }, storeId);
+    const result = await listOperatorOperations(params.get("state") ?? "", search, sort, limit, cursor, rawActionableOnly === "true", { operatorActorId: identity.subject }, storeId, filters);
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    if (error instanceof Error && error.message === "DSH_OPERATOR_FILTER_ENGINE_UPGRADE_REQUIRED") {
+      return errorResponse("ORDER_FILTERS_UNAVAILABLE", "الفلاتر الإضافية متوقفة حتى تحديث خدمة الطلبات DSH. أزل الفلاتر الإضافية لمتابعة العمل.", 503);
+    }
     if (!isDshClientError(error)) return errorResponse("INTERNAL_ERROR", "operator operations read failed", 500);
     const payload = dshErrorPayload(error);
     return errorResponse(payload.code, payload.message, dshHttpStatus(error));

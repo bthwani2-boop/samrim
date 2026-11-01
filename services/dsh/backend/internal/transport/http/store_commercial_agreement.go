@@ -49,6 +49,15 @@ func (s *JoiningCaseServer) proposePartnersStoreCommercialAgreement(w http.Respo
 		return
 	}
 	var input struct {
+		CommercialModel        string                             `json:"commercialModel"`
+		RecurringAmountMinor   int64                              `json:"recurringAmountMinor"`
+		BillingPeriod          string                             `json:"billingPeriod"`
+		BillingTimeZone        string                             `json:"billingTimeZone"`
+		InvoiceDueDays         int                                `json:"invoiceDueDays"`
+		GraceDays              int                                `json:"graceDays"`
+		RenewalPolicy          string                             `json:"renewalPolicy"`
+		TerminationTerms       string                             `json:"terminationTerms"`
+		AdjustmentTerms        string                             `json:"adjustmentTerms"`
 		Rates                  []wlt.StoreCommercialAgreementRate `json:"rates"`
 		ExpectedCurrentVersion int                                `json:"expectedCurrentVersion"`
 		Reason                 string                             `json:"reason"`
@@ -58,6 +67,10 @@ func (s *JoiningCaseServer) proposePartnersStoreCommercialAgreement(w http.Respo
 	}
 	agreement, replayed, err := s.service.ProposeStoreCommercialAgreementForOperatorPartners(r.Context(), r.PathValue("storeId"), acting, joiningcase.StoreCommercialAgreementProposalInput{
 		Rates: input.Rates, ExpectedCurrentVersion: input.ExpectedCurrentVersion, Reason: input.Reason,
+		CommercialModel: input.CommercialModel, RecurringAmountMinor: input.RecurringAmountMinor,
+		BillingPeriod: input.BillingPeriod, BillingTimeZone: input.BillingTimeZone,
+		InvoiceDueDays: input.InvoiceDueDays, GraceDays: input.GraceDays, RenewalPolicy: input.RenewalPolicy,
+		TerminationTerms: input.TerminationTerms, AdjustmentTerms: input.AdjustmentTerms,
 	}, idempotency, correlation)
 	if err != nil {
 		writeStoreCommercialAgreementError(w, err)

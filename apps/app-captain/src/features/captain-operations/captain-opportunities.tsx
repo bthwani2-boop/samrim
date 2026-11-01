@@ -83,7 +83,14 @@ export function CaptainOpportunities({ mission = null, missionReadiness = "ready
     void (async () => {
       try {
         const before = currentIdentityState();
-        if (before.kind !== "authenticated") return;
+        if (mission || missionReadiness !== "ready" || before.kind !== "authenticated") return;
+        // An idle Captain may center their map only while DSH confirms pool availability.
+        const token = await getUsableIdentityAccessToken();
+        const admission = await captainClient().readOwnCaptainAdmission(token);
+        const current = currentIdentityState();
+        if (cancelled || current.kind !== "authenticated"
+          || !isCurrentCaptainActor(before.identity.subject.trim(), current.identity.subject.trim())
+          || admission.admission.state !== "eligible" || admission.admission.availabilityState !== "available") return;
         const [permission, enabled] = await Promise.all([
           Location.getForegroundPermissionsAsync(), Location.hasServicesEnabledAsync(),
         ]);
@@ -99,7 +106,7 @@ export function CaptainOpportunities({ mission = null, missionReadiness = "ready
     })();
     const timer = setInterval(() => void refresh(true), 60_000);
     return () => { cancelled = true; clearInterval(timer); requestSequence.current++; setData(null); setOwnMapCenter(null); };
-  }, [refresh]));
+  }, [refresh, mission, missionReadiness]));
 
   // The single home map switches with the canonical assignment, never
   // based on an optimistic local offer decision.

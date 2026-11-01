@@ -6,6 +6,7 @@ import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
+import { visibleCaptainStoreMemberships } from "./captain-store-membership-policy";
 
 type MembershipState =
   | { kind: "loading" }
@@ -29,8 +30,8 @@ export function StoreCaptainMemberships() {
 
   useFocusEffect(useCallback(() => { void reload(); }, [reload]));
 
-  const activeMemberships = state.kind === "ready"
-    ? state.memberships.filter((membership) => membership.state === "active")
+  const visibleMemberships = state.kind === "ready"
+    ? visibleCaptainStoreMemberships(state.memberships)
     : [];
 
   return (
@@ -48,13 +49,13 @@ export function StoreCaptainMemberships() {
           <BthwaniButton label="إعادة المحاولة" onPress={() => void reload()} variant="secondary" />
         </View>
       ) : null}
-      {state.kind === "ready" && activeMemberships.length === 0 ? (
-        <Text style={styles.description}>لا توجد متاجر توصيل نشطة مرتبطة بحسابك.</Text>
+      {state.kind === "ready" && visibleMemberships.length === 0 ? (
+        <Text style={styles.description}>لا توجد عضويات متاجر نشطة أو قيد التفعيل مرتبطة بحسابك.</Text>
       ) : null}
-      {activeMemberships.map((membership) => (
+      {visibleMemberships.map((membership) => (
         <View key={membership.id} style={styles.membership}>
           <Text style={styles.title}>{membership.storeName}</Text>
-          <Text style={styles.description}>نشط</Text>
+          <Text style={styles.description}>{membership.state === "active" ? "نشط" : "بانتظار التفعيل"}</Text>
         </View>
       ))}
     </BthwaniSurface>

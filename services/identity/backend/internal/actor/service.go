@@ -813,6 +813,19 @@ func (s *Service) ReadRoles(ctx context.Context, caller, role string, actorIDs [
 	return items, nil
 }
 
+// Search remains role-scoped at the SQL level: the actor ID lookup is only
+// available for Customer searches, not an unrestricted identity lookup.
+func actorRoleSearchPredicate(role string, param int) string {
+	switch role {
+	case "client":
+		return fmt.Sprintf("(position($%d in a.phone_e164)>0 OR position($%d in a.id)>0)", param, param)
+	case "operator":
+		return fmt.Sprintf("(position($%d in a.phone_e164)>0 OR position(lower($%d) in lower(r.job_title))>0 OR position(lower($%d) in lower(r.department))>0 OR EXISTS (SELECT 1 FROM identity_operator_profiles p WHERE p.actor_id=a.id AND position(lower($%d) in lower(p.full_name_ar))>0))", param, param, param, param)
+	default:
+		return fmt.Sprintf("position($%d in a.phone_e164)>0", param)
+	}
+}
+
 func (s *Service) Search(ctx context.Context, caller string, input domain.ActorSearchInput) (domain.ActorSearchPage, error) {
 	role := strings.ToLower(strings.TrimSpace(input.Role))
 	if !domain.CanReadRole(caller, role) {
@@ -855,7 +868,7 @@ func (s *Service) Search(ctx context.Context, caller string, input domain.ActorS
 		}
 		args = append(args, q)
 		queryArg = len(args)
-		clauses = append(clauses, fmt.Sprintf("position($%d in a.phone_e164)>0", queryArg))
+		clauses = append(clauses, actorRoleSearchPredicate(role, queryArg))
 	}
 	cursorClause := ""
 	if input.Cursor != "" {
@@ -886,9 +899,6 @@ func (s *Service) Search(ctx context.Context, caller string, input domain.ActorS
 	order := "ASC"
 	if sort == "phone_desc" {
 		order = "DESC"
-	}
-	if q != "" && role == "operator" {
-		clauses[len(clauses)-1] = fmt.Sprintf("(position($%d in a.phone_e164)>0 OR position(lower($%d) in lower(r.job_title))>0 OR position(lower($%d) in lower(r.department))>0 OR EXISTS (SELECT 1 FROM identity_operator_profiles p WHERE p.actor_id=a.id AND position(lower($%d) in lower(p.full_name_ar))>0))", queryArg, queryArg, queryArg, queryArg)
 	}
 	permissionSummaryJoin := ""
 	permissionSummaryColumn := ""

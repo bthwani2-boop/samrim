@@ -8,10 +8,9 @@ import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adapti
 import { CustomerProfile } from "./customer-profile";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { RegistryColumnHeader } from "../shared/registry-column-header";
+import { customerPageCounts, customerStateLabel as customerStatus } from "./customer-directory-page-counts";
 
 const pageSize = 20;
-const customerStatus = (customer: ActorRoleView) =>
-  !customer.securityEnabled ? "محظور أمنيًا" : !customer.enabled ? "موقوف" : "نشط";
 const dateText = (value?: string) => value ? new Intl.DateTimeFormat("ar-YE", { dateStyle: "medium" }).format(new Date(value)) : "لم يُسجّل";
 
 async function responseError(response: Response) {
@@ -45,6 +44,7 @@ export function CustomerDirectory() {
     return (pageSort === "oldest" ? 1 : -1) * (left - right);
   });
   const pageFiltersActive = securityFilter !== "all" || activityFilter !== "all" || pageSort !== "default";
+  const visibleCounts = customerPageCounts(visibleItems);
   const requestId = useRef(0);
 
   const navigate = useCallback((q: string, enabled: string, pageCursor = "", stack: string[] = []) => {
@@ -145,6 +145,15 @@ export function CustomerDirectory() {
     </div>
     <div className="customer-directory-heading"><div><h2>سجل العملاء</h2><p>البيانات المباشرة من نظام الهوية · الصفحة الحالية {items.length} عميلًا</p></div>
       <span className="customer-section-note">كل عميل له ملف موحد</span></div>
+    {!loading && !error && items.length > 0 ? <section aria-label="حالات العملاء المعروضين في الصفحة الحالية">
+      <p className="customer-section-note">هذه الأعداد تخص نتائج الصفحة الحالية بعد التصفية فقط، وليست إجمالي عملاء المنصة.</p>
+      <div className="customer-metric-grid">
+        <div className="customer-metric"><span>المعروضون</span><strong>{visibleCounts.total.toLocaleString("ar-YE")}</strong></div>
+        <div className="customer-metric"><span>نشط</span><strong>{visibleCounts.active.toLocaleString("ar-YE")}</strong></div>
+        <div className="customer-metric"><span>موقوف</span><strong>{visibleCounts.suspended.toLocaleString("ar-YE")}</strong></div>
+        <div className="customer-metric"><span>محظور أمنيًا</span><strong>{visibleCounts.blocked.toLocaleString("ar-YE")}</strong></div>
+      </div>
+    </section> : null}
     {error ? <div className="managed-status managed-status-warning" role="alert">{error}
       <button type="button" className="button button-secondary" onClick={() => setRevision((v) => v + 1)}>إعادة المحاولة</button></div> : null}
     {loading && !items.length ? <div role="status" className="collection-state">جارٍ تحميل العملاء…</div> : null}

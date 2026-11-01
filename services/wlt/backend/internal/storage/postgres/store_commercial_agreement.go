@@ -11,11 +11,12 @@ import (
 )
 
 var (
-	ErrStoreCommercialAgreementInvalidInput = errors.New("store commercial agreement input is invalid")
-	ErrStoreCommercialAgreementNotFound     = errors.New("store commercial agreement was not found")
-	ErrStoreCommercialAgreementState        = errors.New("store commercial agreement state does not allow this operation")
-	ErrStoreCommercialAgreementVersion      = errors.New("store commercial agreement version is stale")
-	ErrStoreCommercialAgreementUnavailable  = errors.New("active store commercial agreement is unavailable")
+	ErrStoreCommercialAgreementInvalidInput    = errors.New("store commercial agreement input is invalid")
+	ErrStoreCommercialAgreementNotFound        = errors.New("store commercial agreement was not found")
+	ErrStoreCommercialAgreementState           = errors.New("store commercial agreement state does not allow this operation")
+	ErrStoreCommercialAgreementVersion         = errors.New("store commercial agreement version is stale")
+	ErrStoreCommercialAgreementUnavailable     = errors.New("active store commercial agreement is unavailable")
+	ErrStoreCommercialAgreementBillingNotReady = errors.New("recurring billing must not activate before financial settlement is implemented")
 )
 
 type StoreCommercialAgreementPage struct {
@@ -36,6 +37,15 @@ type StoreCommercialAgreementRecord struct {
 	StoreID                  string                         `json:"storeId"`
 	PartnerActorID           string                         `json:"partnerActorId"`
 	AgreementVersion         int                            `json:"agreementVersion"`
+	CommercialModel          string                         `json:"commercialModel"`
+	RecurringAmountMinor     int64                          `json:"recurringAmountMinor"`
+	BillingPeriod            string                         `json:"billingPeriod"`
+	BillingTimeZone          string                         `json:"billingTimeZone"`
+	InvoiceDueDays           int                            `json:"invoiceDueDays"`
+	GraceDays                int                            `json:"graceDays"`
+	RenewalPolicy            string                         `json:"renewalPolicy"`
+	TerminationTerms         string                         `json:"terminationTerms"`
+	AdjustmentTerms          string                         `json:"adjustmentTerms"`
 	Status                   string                         `json:"status"`
 	CreatedAt                time.Time                      `json:"createdAt"`
 	Rates                    []StoreCommercialAgreementRate `json:"rates"`
@@ -54,6 +64,15 @@ type StoreCommercialAgreementRecord struct {
 }
 
 type ProposeStoreCommercialAgreementInput struct {
+	CommercialModel        string
+	RecurringAmountMinor   int64
+	BillingPeriod          string
+	BillingTimeZone        string
+	InvoiceDueDays         int
+	GraceDays              int
+	RenewalPolicy          string
+	TerminationTerms       string
+	AdjustmentTerms        string
 	StoreID                string
 	PartnerActorID         string
 	Rates                  []StoreCommercialAgreementRate
@@ -83,7 +102,7 @@ func ReadStoreCommercialAgreements(ctx context.Context, db *sql.DB, storeID stri
 		return nil, ErrStoreCommercialAgreementInvalidInput
 	}
 	rows, err := db.QueryContext(ctx, `SELECT agreement_id,store_id,partner_actor_id,agreement_version,status,created_at,proposed_by_actor_id,proposed_at,
-		partner_accepted_by_actor_id,partner_accepted_at,finance_approved_by_actor_id,finance_approved_at,finance_decision_by_actor_id,finance_decision_at,effective_at,superseded_at,reason,finance_decision_reason
+		partner_accepted_by_actor_id,partner_accepted_at,finance_approved_by_actor_id,finance_approved_at,finance_decision_by_actor_id,finance_decision_at,effective_at,superseded_at,reason,finance_decision_reason,commercial_model,recurring_amount_minor,billing_period,billing_timezone,invoice_due_days,grace_days,renewal_policy,termination_terms,adjustment_terms
 		FROM wlt.store_commercial_agreements WHERE store_id=$1 ORDER BY agreement_version`, storeID)
 	if err != nil {
 		return nil, err
@@ -120,7 +139,7 @@ func ListStoreCommercialAgreementsForFinance(ctx context.Context, db *sql.DB, st
 		return StoreCommercialAgreementPage{}, ErrStoreCommercialAgreementInvalidInput
 	}
 	rows, err := db.QueryContext(ctx, `SELECT agreement_id,store_id,partner_actor_id,agreement_version,status,created_at,proposed_by_actor_id,proposed_at,
-		partner_accepted_by_actor_id,partner_accepted_at,finance_approved_by_actor_id,finance_approved_at,finance_decision_by_actor_id,finance_decision_at,effective_at,superseded_at,reason,finance_decision_reason
+		partner_accepted_by_actor_id,partner_accepted_at,finance_approved_by_actor_id,finance_approved_at,finance_decision_by_actor_id,finance_decision_at,effective_at,superseded_at,reason,finance_decision_reason,commercial_model,recurring_amount_minor,billing_period,billing_timezone,invoice_due_days,grace_days,renewal_policy,termination_terms,adjustment_terms
 		FROM wlt.store_commercial_agreements WHERE status=$1 AND ($2::timestamptz IS NULL OR (created_at,agreement_id)<($2,$3))
 		ORDER BY created_at DESC,agreement_id DESC LIMIT $4`, status, before, beforeAgreementID, limit+1)
 	if err != nil {
@@ -160,6 +179,9 @@ func ProposeStoreCommercialAgreement(ctx context.Context, db *sql.DB, input Prop
 	input.ActorID, input.Reason = strings.TrimSpace(input.ActorID), strings.TrimSpace(input.Reason)
 	input.IdempotencyKey, input.CorrelationID = strings.TrimSpace(input.IdempotencyKey), strings.TrimSpace(input.CorrelationID)
 	input.Rates = normalizeAgreementRates(input.Rates)
+	if !normalizeStoreCommercialModel(&input) {
+		return StoreCommercialAgreementRecord{}, false, ErrStoreCommercialAgreementInvalidInput
+	}
 	if db == nil || boundedText(input.StoreID, 1, 128) == "" || boundedText(input.PartnerActorID, 1, 128) == "" ||
 		boundedText(input.ActorID, 1, 128) == "" || input.ExpectedCurrentVersion < 0 ||
 		!validStoreCommercialAgreementRates(input.Rates) || utf8.RuneCountInString(input.Reason) < 8 || utf8.RuneCountInString(input.Reason) > 500 ||
@@ -175,6 +197,11 @@ func ProposeStoreCommercialAgreement(ctx context.Context, db *sql.DB, input Prop
 		if rate.DeliveryPricingMode != "DISTANCE" {
 			parts = append(parts, "partner-delivery-pricing:v1", rate.DeliveryPricingMode, formatInt64(rate.DeliveryFixedFeeMinor))
 		}
+	}
+	if input.CommercialModel != "COMMISSION" {
+		parts = append(parts, "commercial-model:v1", input.CommercialModel, formatInt64(input.RecurringAmountMinor),
+			input.BillingPeriod, input.BillingTimeZone, formatInt(input.InvoiceDueDays), formatInt(input.GraceDays),
+			input.RenewalPolicy, input.TerminationTerms, input.AdjustmentTerms)
 	}
 	requestHash := hashFacts(parts...)
 	tx, err := db.BeginTx(ctx, nil)
@@ -215,8 +242,9 @@ func ProposeStoreCommercialAgreement(ctx context.Context, db *sql.DB, input Prop
 	if err != nil {
 		return StoreCommercialAgreementRecord{}, false, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.store_commercial_agreements(agreement_id,store_id,partner_actor_id,agreement_version,status,proposed_by_actor_id,reason,idempotency_key,request_hash,correlation_id)
-		VALUES($1,$2,$3,$4,'PROPOSED',$5,$6,$7,$8,$9)`, agreementID, input.StoreID, input.PartnerActorID, currentVersion+1, input.ActorID, input.Reason, input.IdempotencyKey, requestHash, input.CorrelationID); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.store_commercial_agreements(agreement_id,store_id,partner_actor_id,agreement_version,status,proposed_by_actor_id,reason,idempotency_key,request_hash,correlation_id,commercial_model,recurring_amount_minor,billing_period,billing_timezone,invoice_due_days,grace_days,renewal_policy,termination_terms,adjustment_terms)
+		VALUES($1,$2,$3,$4,'PROPOSED',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`, agreementID, input.StoreID, input.PartnerActorID, currentVersion+1, input.ActorID, input.Reason, input.IdempotencyKey, requestHash, input.CorrelationID,
+		input.CommercialModel, input.RecurringAmountMinor, input.BillingPeriod, input.BillingTimeZone, input.InvoiceDueDays, input.GraceDays, input.RenewalPolicy, input.TerminationTerms, input.AdjustmentTerms); err != nil {
 		return StoreCommercialAgreementRecord{}, false, err
 	}
 	for _, rate := range input.Rates {
@@ -266,7 +294,7 @@ func AcceptStoreCommercialAgreement(ctx context.Context, db *sql.DB, agreementID
 	if err != nil {
 		return StoreCommercialAgreementRecord{}, false, err
 	}
-	if item.Status != "PROPOSED" || item.AgreementVersion != expectedVersion || item.PartnerActorID != actorID {
+	if item.Status != "PROPOSED" || item.AgreementVersion != expectedVersion || item.PartnerActorID != actorID || item.CommercialModel == "HYBRID" {
 		if item.AgreementVersion != expectedVersion {
 			return StoreCommercialAgreementRecord{}, false, ErrStoreCommercialAgreementVersion
 		}
@@ -354,6 +382,9 @@ func DecideStoreCommercialAgreement(ctx context.Context, db *sql.DB, input Store
 	item, err := readStoreCommercialAgreement(ctx, tx, input.AgreementID, true)
 	if err != nil {
 		return StoreCommercialAgreementRecord{}, false, err
+	}
+	if input.Decision == "APPROVE" && item.CommercialModel != "COMMISSION" {
+		return StoreCommercialAgreementRecord{}, false, ErrStoreCommercialAgreementBillingNotReady
 	}
 	if input.Decision == "APPROVE" && !storeAgreementMatchesCurrentFulfillmentModes(item, input.CurrentStorePartnerActorID, input.CurrentFulfillmentModes) {
 		return StoreCommercialAgreementRecord{}, false, ErrStoreCommercialAgreementState
@@ -463,6 +494,49 @@ func normalizeAgreementRates(rates []StoreCommercialAgreementRate) []StoreCommer
 	return result
 }
 
+func normalizeStoreCommercialModel(input *ProposeStoreCommercialAgreementInput) bool {
+	input.CommercialModel = strings.ToUpper(strings.TrimSpace(input.CommercialModel))
+	input.BillingPeriod = strings.ToUpper(strings.TrimSpace(input.BillingPeriod))
+	input.BillingTimeZone = strings.TrimSpace(input.BillingTimeZone)
+	input.RenewalPolicy = strings.ToUpper(strings.TrimSpace(input.RenewalPolicy))
+	input.TerminationTerms = strings.TrimSpace(input.TerminationTerms)
+	input.AdjustmentTerms = strings.TrimSpace(input.AdjustmentTerms)
+	if input.CommercialModel == "" {
+		input.CommercialModel = "COMMISSION"
+	}
+	if input.CommercialModel == "COMMISSION" {
+		if input.RecurringAmountMinor != 0 || (input.BillingPeriod != "" && input.BillingPeriod != "NONE") ||
+			(input.BillingTimeZone != "" && input.BillingTimeZone != "Asia/Aden") ||
+			input.InvoiceDueDays != 0 || input.GraceDays != 0 ||
+			(input.RenewalPolicy != "" && input.RenewalPolicy != "NONE") ||
+			input.TerminationTerms != "" || input.AdjustmentTerms != "" {
+			return false
+		}
+		input.BillingPeriod, input.BillingTimeZone, input.RenewalPolicy = "NONE", "Asia/Aden", "NONE"
+		return true
+	}
+	if input.CommercialModel != "SUBSCRIPTION" {
+		return false
+	}
+	if input.RecurringAmountMinor < 1 || input.RecurringAmountMinor > 100000000 ||
+		(input.BillingPeriod != "MONTHLY" && input.BillingPeriod != "ANNUAL") ||
+		input.BillingTimeZone != "Asia/Aden" || input.InvoiceDueDays < 0 || input.InvoiceDueDays > 30 ||
+		input.GraceDays < 0 || input.GraceDays > 30 ||
+		(input.RenewalPolicy != "MANUAL" && input.RenewalPolicy != "AUTOMATIC") ||
+		utf8.RuneCountInString(input.TerminationTerms) < 8 || utf8.RuneCountInString(input.TerminationTerms) > 500 ||
+		utf8.RuneCountInString(input.AdjustmentTerms) < 8 || utf8.RuneCountInString(input.AdjustmentTerms) > 500 {
+		return false
+	}
+	if input.CommercialModel == "SUBSCRIPTION" {
+		for _, rate := range input.Rates {
+			if rate.CommissionRateBps != 0 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func validStoreCommercialAgreementRates(rates []StoreCommercialAgreementRate) bool {
 	if len(rates) == 0 || len(rates) > len(supportedStoreTypeCommissionModes) {
 		return false
@@ -513,7 +587,9 @@ func scanStoreCommercialAgreement(row agreementScanner) (StoreCommercialAgreemen
 	var acceptedBy, approvedBy, decisionBy, decisionReason sql.NullString
 	var acceptedAt, approvedAt, decisionAt, effectiveAt, supersededAt sql.NullTime
 	err := row.Scan(&item.AgreementID, &item.StoreID, &item.PartnerActorID, &item.AgreementVersion, &item.Status, &item.CreatedAt, &item.ProposedByActorID, &item.ProposedAt,
-		&acceptedBy, &acceptedAt, &approvedBy, &approvedAt, &decisionBy, &decisionAt, &effectiveAt, &supersededAt, &item.Reason, &decisionReason)
+		&acceptedBy, &acceptedAt, &approvedBy, &approvedAt, &decisionBy, &decisionAt, &effectiveAt, &supersededAt, &item.Reason, &decisionReason,
+		&item.CommercialModel, &item.RecurringAmountMinor, &item.BillingPeriod, &item.BillingTimeZone, &item.InvoiceDueDays, &item.GraceDays,
+		&item.RenewalPolicy, &item.TerminationTerms, &item.AdjustmentTerms)
 	if err != nil {
 		return StoreCommercialAgreementRecord{}, err
 	}
@@ -557,7 +633,7 @@ func readStoreCommercialAgreement(ctx context.Context, source interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }, agreementID string, forUpdate bool) (StoreCommercialAgreementRecord, error) {
 	query := `SELECT agreement_id,store_id,partner_actor_id,agreement_version,status,created_at,proposed_by_actor_id,proposed_at,
-		partner_accepted_by_actor_id,partner_accepted_at,finance_approved_by_actor_id,finance_approved_at,finance_decision_by_actor_id,finance_decision_at,effective_at,superseded_at,reason,finance_decision_reason
+		partner_accepted_by_actor_id,partner_accepted_at,finance_approved_by_actor_id,finance_approved_at,finance_decision_by_actor_id,finance_decision_at,effective_at,superseded_at,reason,finance_decision_reason,commercial_model,recurring_amount_minor,billing_period,billing_timezone,invoice_due_days,grace_days,renewal_policy,termination_terms,adjustment_terms
 		FROM wlt.store_commercial_agreements WHERE agreement_id=$1`
 	if forUpdate {
 		query += " FOR UPDATE"

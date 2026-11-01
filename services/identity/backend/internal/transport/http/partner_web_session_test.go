@@ -70,8 +70,8 @@ func TestPartnerBrowserCookiesStayHttpOnlyAndRoleScoped(t *testing.T) {
 			if !cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode || cookie.Path != "/" {
 				t.Fatalf("insecure cookie attributes: %#v", cookie)
 			}
-			if cookie.Secure == development {
-				t.Fatalf("development=%v: unexpected secure flag", development)
+			if !cookie.Secure {
+				t.Fatalf("development=%v: partner session cookie must always be Secure", development)
 			}
 			if !development && !strings.HasPrefix(cookie.Name, "__Host-") {
 				t.Fatalf("production cookie must be host-only: %s", cookie.Name)
@@ -115,7 +115,7 @@ func TestPartnerBrowserLogoutClearsCookiesWithoutBearer(t *testing.T) {
 		t.Fatalf("cleared cookies = %d", len(cookies))
 	}
 	for _, cookie := range cookies {
-		if cookie.MaxAge >= 0 || !cookie.HttpOnly {
+		if cookie.MaxAge >= 0 || !cookie.HttpOnly || !cookie.Secure {
 			t.Fatalf("cookie not safely cleared: %#v", cookie)
 		}
 	}

@@ -8,6 +8,13 @@ export async function operationResponseMessage(response: Response): Promise<stri
   if (response.status === 409) return "تغيرت حالة الطلب. أعد قراءتها قبل المحاولة مرة أخرى.";
   if (response.status === 400) return "بيانات طلب العملية غير صالحة. راجع عوامل البحث أو بيانات الإجراء.";
   if (response.status === 408 || response.status === 504) return "استغرقت العملية وقتًا طويلًا. أعد القراءة قبل المحاولة مرة أخرى.";
+  if (response.status === 503) {
+    const body: unknown = await response.clone().json().catch(() => null);
+    const error = body && typeof body === "object" && "error" in body ? (body as { error?: unknown }).error : null;
+    if (error && typeof error === "object" && "code" in error && error.code === "ORDER_FILTERS_UNAVAILABLE") {
+      return "الفلاتر الإضافية متوقفة حتى تحديث خدمة الطلبات DSH. أزل الفلاتر الإضافية لمتابعة العمل.";
+    }
+  }
   return "تعذر الاتصال بخدمة العمليات. أعد المحاولة.";
 }
 

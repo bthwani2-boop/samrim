@@ -81,7 +81,7 @@ export const workspaceDestinations: readonly WorkspaceDestination[] = [
   },
   {
     href: "/partners",
-    label: "الشركاء",
+    label: "إدارة الشركاء",
     permission: "partners",
     children: [
       { href: "/partners", label: "الشركاء والمتاجر", searchAliases: "سجل الشركاء سجل المتاجر حسابات الشركاء", showInWorkspaceNavigation: false }
