@@ -7531,7 +7531,7 @@ components:
         deliveryProofCode:
           type: string
           pattern: '^[0-9]{6}$'
-          description: Required when result is delivered; the customer reads this code from the client application.
+          description: Optional six-digit customer code for delivered. With a verified code DSH records VERIFIED; without a code it records CAPTAIN_CONFIRMED as the assigned Captain's attestation (not independent recipient proof). Not allowed for delivery_failed.
 
     DeliveryProofResponse:
       type: object
