@@ -28,6 +28,7 @@ import {
 import { ClientPublicHeader } from "../../shell/client-shell";
 import ServiceCityScope from "../service-city/service-city-scope";
 import StoreDiscovery from "../store-discovery/store-discovery";
+import { clientAuthReturnPathPattern } from "./client-auth-return-path";
 import { type IdentityCopy, identityPresentation } from "./identity-presentation";
 
 type AuthMode = "login" | "register" | "recover";
@@ -40,7 +41,7 @@ const modeDetails = {
 } as const satisfies Record<AuthMode, keyof IdentityCopy>;
 
 function safeReturnTo(value: string | string[] | undefined): Href {
-  return resolveInternalReturnPath(value, "/home", /^\/(?:home|notifications|account|wallet|addresses|multi-store-checkout|orders(?:\/[A-Za-z0-9._~%-]+)?|store\/[A-Za-z0-9._~%-]+(?:\?productId=[A-Za-z0-9._~%-]+)?|cart\/[A-Za-z0-9._~%-]+)$/u) as Href;
+  return resolveInternalReturnPath(value, "/home", clientAuthReturnPathPattern) as Href;
 }
 
 export default function IdentityGate() {

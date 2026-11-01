@@ -6,12 +6,13 @@ import { currentIdentityState, restoreIdentitySession, subscribeIdentitySession 
 
 const identity = { restoreIdentitySession, currentIdentityState, subscribe: subscribeIdentitySession };
 
-export function ClientProtectedScreen({ children }: Readonly<PropsWithChildren>) {
+export function ClientProtectedScreen({ children, authReturnPath }: Readonly<PropsWithChildren<{ authReturnPath?: string }>>) {
   const pathname = usePathname();
   const router = useRouter();
+  const destination = authReturnPath ?? pathname;
   const onUnauthenticated = useCallback(
-    () => router.replace(("/?returnTo=" + encodeURIComponent(pathname)) as Href),
-    [pathname, router],
+    () => router.replace(("/?returnTo=" + encodeURIComponent(destination)) as Href),
+    [destination, router],
   );
 
   return (
