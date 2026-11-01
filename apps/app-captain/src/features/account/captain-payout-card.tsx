@@ -13,6 +13,11 @@ import { claimCaptainPayoutSubmission } from "./captain-payout-submission-lock";
 
 type PayoutAttempt = Readonly<{ mode: "FULL_AVAILABLE" | "SPECIFIED"; amountMinor?: number; idempotencyKey: string; correlationID: string }>;
 
+function hasCurrentPayoutActor(actorID: string): boolean {
+  const identity = currentIdentityState();
+  return identity.kind === "authenticated" && isCurrentCaptainActor(actorID, identity.identity.subject.trim());
+}
+
 export function CaptainPayoutCard() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -25,30 +30,56 @@ export function CaptainPayoutCard() {
   const [notice, setNotice] = useState("");
   const [pendingAttempt, setPendingAttempt] = useState<PayoutAttempt | null>(null);
   const financialRequestInFlight = useRef(false);
+  const readSequence = useRef(0);
+  const [loadedActorID, setLoadedActorID] = useState("");
   const [intake, setIntake] = useState<SettlementIntake | null>(null);
   const [pendingIntakeAttempt, setPendingIntakeAttempt] = useState<PayoutAttempt | null>(null);
   const [confirmIntakeMode, setConfirmIntakeMode] = useState<"FULL_AVAILABLE" | "SPECIFIED" | null>(null);
   const load = useCallback(async () => {
-    if (!authenticated) return;
-    setBusy(true); setError("");
+    const sequence = ++readSequence.current;
+    const identity = currentIdentityState();
+    const actorID = identity.kind === "authenticated" ? identity.identity.subject.trim() : "";
+    const stillCurrent = () => sequence === readSequence.current && hasCurrentPayoutActor(actorID);
+    setBusy(true);
+    setError("");
+    setNotice("");
+    setState(null);
+    setIntake(null);
+    setPendingAttempt(null);
+    setPendingIntakeAttempt(null);
+    setLoadedActorID(actorID);
+    if (!actorID) { setBusy(false); return; }
     try {
       const token = await getUsableIdentityAccessToken();
-      const actor = currentIdentityState();
-      if (actor.kind === "authenticated") {
-        const raw = await SecureStore.getItemAsync(`bthwani.captain.payout.pending.v1.${encodeURIComponent(actor.identity.subject)}`);
-        if (raw) setPendingAttempt(JSON.parse(raw) as PayoutAttempt);
-        const savedIntake = await SecureStore.getItemAsync(`bthwani.captain.settlement-intake.pending.v1.${encodeURIComponent(actor.identity.subject)}`);
-        setPendingIntakeAttempt(savedIntake ? JSON.parse(savedIntake) as PayoutAttempt : null);
+      if (!stillCurrent()) return;
+      const raw = await SecureStore.getItemAsync(`bthwani.captain.payout.pending.v1.${encodeURIComponent(actorID)}`);
+      if (!stillCurrent()) return;
+      const savedIntake = await SecureStore.getItemAsync(`bthwani.captain.settlement-intake.pending.v1.${encodeURIComponent(actorID)}`);
+      if (!stillCurrent()) return;
+      const payoutState = (await captainClient().readOwnPayoutState(token)).state;
+      if (!stillCurrent()) return;
+      if (payoutState.actorType !== "captain" || payoutState.actorId !== actorID) {
+        throw new Error("CAPTAIN_PAYOUT_ACTOR_READBACK_MISMATCH");
       }
-      setState((await captainClient().readOwnPayoutState(token)).state);
-      setIntake((await captainClient().listOwnSettlementIntakes(token)).intakes[0] ?? null);
+      const intakes = (await captainClient().listOwnSettlementIntakes(token)).intakes;
+      if (!stillCurrent()) return;
+      setPendingAttempt(raw ? JSON.parse(raw) as PayoutAttempt : null);
+      setPendingIntakeAttempt(savedIntake ? JSON.parse(savedIntake) as PayoutAttempt : null);
+      setState(payoutState);
+      setIntake(intakes[0] ?? null);
     } catch (cause) {
       console.error("DSH captain payout state readback failed", cause);
-      setError("تعذر قراءة حالة سحب الأرباح.");
-    } finally { setBusy(false); }
-  }, [authenticated]);
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+      if (stillCurrent()) setError("تعذر قراءة حالة سحب الأرباح.");
+    } finally {
+      if (stillCurrent()) setBusy(false);
+    }
+  }, []);
+  useFocusEffect(useCallback(() => {
+    void load();
+    return () => { readSequence.current += 1; };
+  }, [load]));
   const request = async (mode: "FULL_AVAILABLE" | "SPECIFIED") => {
+    if (!hasCurrentPayoutActor(loadedActorID) || busy) return;
     if (pendingAttempt) mode = pendingAttempt.mode;
     const normalizedAmount = toAsciiDigits(amount.trim()).replace(/[^0-9]/g, "");
     const parsed = pendingAttempt?.amountMinor ?? (mode === "SPECIFIED" ? Number(normalizedAmount) : undefined);
@@ -65,7 +96,8 @@ export function CaptainPayoutCard() {
       const token = await getUsableIdentityAccessToken();
       const actor = currentIdentityState();
       if (actor.kind !== "authenticated" ||
-          !isCurrentCaptainActor(actorBeforeToken.identity.subject.trim(), actor.identity.subject.trim())) {
+          !isCurrentCaptainActor(actorBeforeToken.identity.subject.trim(), actor.identity.subject.trim()) ||
+          !isCurrentCaptainActor(loadedActorID, actor.identity.subject.trim())) {
         throw new Error("CAPTAIN_PAYOUT_SESSION_CHANGED");
       }
       const storageKey = `bthwani.captain.payout.pending.v1.${encodeURIComponent(actor.identity.subject)}`;
@@ -84,6 +116,7 @@ export function CaptainPayoutCard() {
       // An acknowledged mutation is not enough; verify the WLT read model and actor scope
       // before clearing the durable retry key or reporting financial success.
       const readback = (await captainClient().readOwnPayoutState(token)).state;
+      if (!hasCurrentPayoutActor(actor.identity.subject.trim())) throw new Error("CAPTAIN_PAYOUT_SESSION_CHANGED");
       if (result.payout.actorType !== "captain" ||
           result.payout.actorId !== actor.identity.subject ||
           result.payout.resolvedAmountMinor <= 0 ||
@@ -93,6 +126,7 @@ export function CaptainPayoutCard() {
         throw new Error("CAPTAIN_PAYOUT_READBACK_MISMATCH");
       }
       await SecureStore.deleteItemAsync(storageKey);
+      if (!hasCurrentPayoutActor(actor.identity.subject.trim())) throw new Error("CAPTAIN_PAYOUT_SESSION_CHANGED");
       setPendingAttempt(null);
       setNotice("تم تقديم طلب سحب الأرباح.");
       setAmount("");
@@ -108,7 +142,8 @@ export function CaptainPayoutCard() {
   };
   const requestIntake = async (mode: "FULL_AVAILABLE" | "SPECIFIED") => {
     const actor = currentIdentityState();
-    if (actor.kind !== "authenticated" || (!pendingIntakeAttempt && (!state || state.eligibleAvailableMinor <= 0))) return;
+    if (actor.kind !== "authenticated" || !isCurrentCaptainActor(loadedActorID, actor.identity.subject.trim()) || busy ||
+        (!pendingIntakeAttempt && (!state || state.eligibleAvailableMinor <= 0))) return;
     const effectiveMode = pendingIntakeAttempt?.mode ?? mode;
     const parsed = pendingIntakeAttempt?.amountMinor ?? (effectiveMode === "SPECIFIED" ? Number(toAsciiDigits(amount).replace(/[^0-9]/g, "")) : undefined);
     if (!pendingIntakeAttempt && effectiveMode === "SPECIFIED" && (!Number.isSafeInteger(parsed) || (parsed ?? 0) <= 0 || (parsed ?? 0) > (state?.eligibleAvailableMinor ?? 0))) {
