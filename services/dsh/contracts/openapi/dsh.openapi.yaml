@@ -500,6 +500,15 @@ paths:
   /dsh/operator/marketing/studio-draft:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1studio-draft"
 
+  /dsh/public/studio-layout:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1studio-layout"
+
+  /dsh/operator/marketing/studio-layout:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1studio-layout"
+
+  /dsh/operator/marketing/studio-layout/history:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1studio-layout~1history"
+
   /dsh/public/studio-theme:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1studio-theme"
 
@@ -1494,6 +1503,73 @@ components:
         burgundy:
           type: string
           pattern: "^#[0-9a-fA-F]{6}$"
+    StudioLayoutPublication:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, templateKey, version, document]
+      properties:
+        schemaVersion:
+          type: integer
+          enum: [1]
+        templateKey:
+          type: string
+          enum: [CLIENT_HOME]
+        version:
+          type: integer
+          minimum: 1
+        document:
+          anyOf:
+            - { $ref: "#/components/schemas/StudioDraftDocument" }
+            - { type: "null" }
+        publishedByActorId:
+          type: string
+    StudioLayoutPublicationRequest:
+      type: object
+      additionalProperties: false
+      required: [action, expectedDraftVersion, targetPublicationVersion]
+      properties:
+        action:
+          type: string
+          enum: [ACTIVATE_DRAFT, RESTORE_DEFAULTS, ROLLBACK]
+        expectedDraftVersion:
+          type: integer
+          minimum: 0
+        targetPublicationVersion:
+          type: integer
+          minimum: 0
+    StudioLayoutPublicationMutation:
+      type: object
+      additionalProperties: false
+      required: [publication, idempotentReplay]
+      properties:
+        publication:
+          $ref: "#/components/schemas/StudioLayoutPublication"
+        idempotentReplay:
+          type: boolean
+    StudioLayoutHistoryItem:
+      type: object
+      additionalProperties: false
+      required: [version, action, publishedByActorId, createdAt]
+      properties:
+        version:
+          type: integer
+          minimum: 2
+        action:
+          type: string
+          enum: [ACTIVATE_DRAFT, RESTORE_DEFAULTS, ROLLBACK]
+        publishedByActorId:
+          type: string
+        createdAt:
+          type: string
+    StudioLayoutHistory:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/StudioLayoutHistoryItem"
     StudioThemePublication:
       type: object
       additionalProperties: false

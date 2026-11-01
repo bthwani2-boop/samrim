@@ -17,7 +17,7 @@ type FeedState =
 const PAGE_SIZE = 18;
 
 export function HomeProductFeed({
-  cityID, verticalID, categoryID, shortcutID, isAuthenticated, onRequireAuthentication,
+  cityID, verticalID, categoryID, shortcutID, isAuthenticated, onRequireAuthentication, pageSize = PAGE_SIZE,
 }: {
   cityID: string | null;
   verticalID: string;
@@ -25,12 +25,14 @@ export function HomeProductFeed({
   shortcutID: string;
   isAuthenticated: boolean;
   onRequireAuthentication?: (() => void) | undefined;
+  pageSize?: number;
 }) {
   const router = useRouter();
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { width } = useWindowDimensions();
   const columns = width >= 1050 ? 5 : width >= 720 ? 4 : width >= 540 ? 3 : 2;
+  const effectivePageSize = Number.isInteger(pageSize) ? Math.max(1, Math.min(PAGE_SIZE, pageSize)) : PAGE_SIZE;
   const [state, setState] = useState<FeedState>({ kind: "loading" });
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState(false);
@@ -49,12 +51,12 @@ export function HomeProductFeed({
       return;
     }
     try {
-      const page = await searchPublicCatalog(cityID, "", categoryID, PAGE_SIZE, "", verticalID, shortcutID);
+      const page = await searchPublicCatalog(cityID, "", categoryID, effectivePageSize, "", verticalID, shortcutID);
       if (id === requestID.current) setState({ kind: "ready", offers: page.offers, nextCursor: page.nextCursor ?? "" });
     } catch {
       if (id === requestID.current) setState({ kind: "error" });
     }
-  }, [cityID, verticalID, categoryID, shortcutID]);
+  }, [cityID, verticalID, categoryID, shortcutID, effectivePageSize]);
 
   useEffect(() => {
     void load();

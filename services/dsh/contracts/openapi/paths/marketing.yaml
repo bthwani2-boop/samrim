@@ -133,6 +133,66 @@ paths:
         "403": { description: Operator marketing permission is required }
         "409": { description: Stale version or conflicting idempotency key }
 
+  /dsh/public/studio-layout:
+    get:
+      operationId: readPublicStudioLayout
+      summary: Read published CLIENT_HOME layout only, never an unpublished team draft
+      responses:
+        "200":
+          description: Published layout, null when the compiled client-home layout applies
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StudioLayoutPublication" } } }
+
+  /dsh/operator/marketing/studio-layout:
+    get:
+      operationId: readOperatorStudioLayout
+      summary: Read the published client-home layout version
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+      responses:
+        "200":
+          description: Versioned layout
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StudioLayoutPublication" } } }
+        "401": { description: Authentication required }
+        "403": { description: Marketing permission required }
+    put:
+      operationId: setOperatorStudioLayout
+      summary: Publish the saved CLIENT_HOME draft, restore compiled layout, or rollback
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/StudioLayoutPublicationRequest"
+      responses:
+        "200":
+          description: Versioned publication and replay status
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StudioLayoutPublicationMutation" } } }
+        "400": { description: Invalid layout or request }
+        "401": { description: Authentication required }
+        "403": { description: Marketing permission required }
+        "409": { description: Stale version or idempotency conflict }
+
+  /dsh/operator/marketing/studio-layout/history:
+    get:
+      operationId: readOperatorStudioLayoutHistory
+      summary: Read latest 20 published client-home layout versions
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+      responses:
+        "200":
+          description: Version history
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StudioLayoutHistory" } } }
+        "401": { description: Authentication required }
+        "403": { description: Marketing permission required }
+
   /dsh/public/studio-theme:
     get:
       operationId: readPublicStudioTheme

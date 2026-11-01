@@ -1,7 +1,7 @@
 import { createStyles } from "./store-discovery-styles";
 import { opacity, radius, type resolveTheme, sizing, spacing } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { availableCustomerFulfillmentModes, type CatalogCategory, type CatalogStoreOffer, type DeliveryAddress, formatMoney, fulfillmentModeLabel, type PublicCommerceVertical, type PublicDiscoveryContentView, type PublicPromotionView, type PublicShoppingShortcut, type PublicStoreView } from "@bthwani/dsh";
+import { availableCustomerFulfillmentModes, type CatalogCategory, type CatalogStoreOffer, type DeliveryAddress, formatMoney, fulfillmentModeLabel, type PublicCommerceVertical, type PublicDiscoveryContentView, type PublicPromotionView, type PublicShoppingShortcut, type PublicStoreView, type StudioDraftSection, type StudioLayoutPublication, parseStudioLayoutPublication } from "@bthwani/dsh";
 import { Image as ExpoImage } from "expo-image";
 import * as ExpoLinking from "expo-linking";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -17,7 +17,7 @@ import { LoopingHeroBanner } from "./looping-hero-banner";
 import { HomeProductFeed } from "./home-product-feed";
 import { PromotionCard } from "./promotion-card";
 import { StoreDirectoryCard } from "./store-directory-card";
-import { type BannerPresentation, listFavoriteStoreIDs, listOwnDeliveryAddresses, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, readPublicBannerPresentation, searchPublicCatalog, setFavoriteStore } from "./store-discovery-client";
+import { type BannerPresentation, listFavoriteStoreIDs, listOwnDeliveryAddresses, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, readPublicBannerPresentation, readPublicStudioLayout, searchPublicCatalog, setFavoriteStore } from "./store-discovery-client";
 
 function activityIcon(nameAr: string, nameEn: string): ComponentProps<typeof BthwaniIcon>["name"] {
   const label = (nameAr + " " + nameEn).toLowerCase();
@@ -100,6 +100,10 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const [loadMoreStoresError, setLoadMoreStoresError] = useState(false);
   const [marketing, setMarketing] = useState<{ content: ReadonlyArray<PublicDiscoveryContentView>; promotions: ReadonlyArray<PublicPromotionView>; error: boolean }>({ content: [], promotions: [], error: false });
   const [bannerPresentation, setBannerPresentation] = useState<BannerPresentation>({ placement: "HOME", mode: "CINEMATIC", intervalSeconds: 5, version: 1 });
+  const [publishedLayout, setPublishedLayout] = useState<StudioLayoutPublication | null>(null);
+  const [publishedSlideIndex, setPublishedSlideIndex] = useState(0);
+  const [publishedReduceMotion, setPublishedReduceMotion] = useState(false);
+  const [homeStoreLimit, setHomeStoreLimit] = useState(20);
   useEffect(() => {
     if (!isScreenActive || !selectedCityID) return;
     let mounted = true;
@@ -112,6 +116,47 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     const timer = setInterval(refresh, 60_000);
     return () => { mounted = false; clearInterval(timer); };
   }, [isScreenActive, selectedCityID]);
+  useEffect(() => {
+    if (!isScreenActive) return;
+    let mounted = true;
+    let latestRequest = 0;
+    const refresh = () => {
+      const id = ++latestRequest;
+      void readPublicStudioLayout().then((result) => {
+        if (!mounted || latestRequest !== id) return;
+        const publication = parseStudioLayoutPublication(result);
+        if (publication) setPublishedLayout(publication);
+      }).catch(() => { /* Offline or unsupported schema: retain last known safe layout. */ });
+    };
+    refresh();
+    const interval = setInterval(refresh, 60_000);
+    const app = AppState.addEventListener("change", (state) => {
+      if (state === "active") refresh();
+    });
+    return () => { mounted = false; latestRequest += 1; clearInterval(interval); app.remove(); };
+  }, [isScreenActive]);
+  useEffect(() => {
+    let mounted = true;
+    void AccessibilityInfo.isReduceMotionEnabled().then((reduced) => {
+      if (mounted) setPublishedReduceMotion(reduced);
+    }).catch(() => {});
+    const motion = AccessibilityInfo.addEventListener("reduceMotionChanged", setPublishedReduceMotion);
+    return () => { mounted = false; motion.remove(); };
+  }, []);
+  useEffect(() => {
+    const doc = publishedLayout?.document;
+    if (!isScreenActive || !doc?.autoplay || publishedReduceMotion || doc.slides.length < 2) return;
+    const timer = setInterval(() => setPublishedSlideIndex((index) => (index + 1) % doc.slides.length), doc.intervalSeconds * 1000);
+    return () => clearInterval(timer);
+  }, [isScreenActive, publishedLayout, publishedReduceMotion]);
+  const publishedStoreCount = publishedLayout?.document?.sections.find((section) => section.id === "stores")?.count ?? 20;
+  useEffect(() => {
+    // A new city or published layout resets the visible slideshow and store window.
+    void selectedCityID;
+    void publishedLayout?.version;
+    setHomeStoreLimit(publishedStoreCount);
+    setPublishedSlideIndex(0);
+  }, [publishedStoreCount, publishedLayout?.version, selectedCityID]);
   const discoveryLoadRequestID = useRef(0);
   const directoryRequestID = useRef(0);
   const directoryRequestKey = useRef("");
@@ -493,7 +538,134 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     return <View style={styles.state}><View style={styles.emptyIcon}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconXl} /></View><Text style={styles.title}>{selectedCityID ? "لا توجد متاجر متاحة بعد" : "اختر مدينة للبدء"}</Text><Text style={styles.muted}>{selectedCityID ? "لا توجد متاجر منشورة للطلب حاليًا." : "تظهر المتاجر بحسب مدينة الخدمة التي تختارها."}</Text>{!isAuthenticated && onRequireAuthentication ? <BthwaniButton label="تسجيل الدخول للطلب" onPress={onRequireAuthentication} /> : null}</View>;
   }
 
-  const storeRows = directoryMode && !directoryLoading ? filteredStores : [];
+  const layoutDoc = showHomeMarketing ? publishedLayout?.document : null;
+  const storeLayoutSection = layoutDoc?.sections.find((section) => section.id === "stores");
+  const showPublishedStores = !layoutDoc || storeLayoutSection?.visible === true;
+  const storePosition = layoutDoc?.sections.findIndex((section) => section.id === "stores") ?? -1;
+  const publishedBeforeStores = layoutDoc
+    ? layoutDoc.sections.filter((section, index) => section.visible && section.id !== "stores" &&
+        (!showPublishedStores || index < storePosition))
+    : [];
+  const publishedAfterStores = layoutDoc && showPublishedStores
+    ? layoutDoc.sections.filter((section, index) => section.visible && section.id !== "stores" && index > storePosition)
+    : [];
+  const storeRows = directoryMode && !directoryLoading && showPublishedStores
+    ? layoutDoc ? filteredStores.slice(0, homeStoreLimit) : filteredStores
+    : [];
+
+  function renderPublishedSection(section: StudioDraftSection): ReactNode {
+    if (!layoutDoc || !section.visible) return null;
+    const title = section.title.trim();
+    switch (section.id) {
+      case "hero": {
+        const slide = layoutDoc.slides[publishedSlideIndex % layoutDoc.slides.length];
+        return <View key={section.id} accessibilityLabel={title || "العرض الرئيسي"}>
+          {bannerContent.length ? <View style={{ width: Platform.OS === "web" ? carouselCardWidth : viewportWidth, alignSelf: "center" }}>
+            <LoopingHeroBanner screenActive={isScreenActive} presentation={bannerPresentation}
+              cardWidth={Platform.OS === "web" ? carouselCardWidth : viewportWidth}
+              items={bannerContent.slice(0, section.count)} onOpen={(item) => openDiscoveryContent(item.id)}
+              label="البنرات الرئيسية" />
+          </View> : null}
+          {slide ? <View style={{
+            backgroundColor: theme.surface, borderRadius: radius.lg, padding: spacing[4], gap: spacing[2],
+            minHeight: layoutDoc.heroOptions.height === "tall" ? 170 : layoutDoc.heroOptions.height === "regular" ? 120 : 80,
+            alignItems: layoutDoc.heroOptions.align === "center" ? "center" : layoutDoc.heroOptions.align === "end" ? "flex-end" : "flex-start",
+          }}>
+            <Text style={{ color: theme.color, fontSize: 21, fontWeight: "700", textAlign: "right" }}>{slide.title}</Text>
+            {layoutDoc.heroOptions.showDescription && slide.description ? <Text style={{ color: theme.colorMuted, textAlign: "right" }}>{slide.description}</Text> : null}
+            {layoutDoc.heroOptions.showButton && slide.buttonLabel ? <BthwaniButton label={slide.buttonLabel}
+              onPress={() => { if (onSearchOpenChange) onSearchOpenChange(true); else router.setParams({ focus: "search", scope: "stores" }); }} /> : null}
+            {layoutDoc.heroOptions.showDots && layoutDoc.slides.length > 1 ? <View style={{ flexDirection: "row", gap: spacing[2] }}>
+              {layoutDoc.slides.map((entry, index) => <Pressable key={entry.id}
+                accessibilityRole="button" accessibilityLabel={`عرض الشريحة ${index + 1}`}
+                accessibilityState={{ selected: index === publishedSlideIndex }}
+                onPress={() => setPublishedSlideIndex(index)}
+                style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}><View style={{ width: 22, height: 12, borderRadius: 8, backgroundColor: index === publishedSlideIndex ? theme.actionBackground : theme.borderColorStrong }} /></Pressable>)}
+            </View> : null}
+          </View> : null}
+        </View>;
+      }
+      case "benefits": {
+        const steps = ["اختر متجرك من المتاجر المتاحة", "أضف المنتجات إلى السلة", "تابع حالة طلبك حتى التسليم"];
+        return <View key={section.id} accessibilityLabel={title || "خطوات الطلب"} style={{ gap: spacing[2] }}>
+          <BthwaniSectionHeader title={title || "كيف تطلب؟"} subtitle={section.description} />
+          {steps.slice(0, section.count).map((step, index) => <Text key={step} style={{ textAlign: "right", color: theme.color }}>{index + 1}. {step}</Text>)}
+        </View>;
+      }
+      case "trust":
+        return <View key={section.id} style={styles.deliveryStrip} accessibilityLabel={title || "معلومات التوصيل"}>
+          <View style={styles.deliveryStripIcon}><BthwaniIcon name="cart" color="#FFFFFF" size={sizing.iconLg}/></View>
+          <View style={styles.deliveryStripCopy}>
+            <Text style={styles.deliveryStripTitle}>{title || "تفاصيل التوصيل"}</Text>
+            <Text style={styles.deliveryStripHint}>تظهر الرسوم والعروض المتاحة قبل تأكيد الطلب</Text>
+          </View>
+        </View>;
+      case "services":
+        return taxonomy.verticals.length ? <View key={section.id} style={styles.categoryShortcutBlock} accessibilityLabel={title || "مجالات التسوق"}>
+          <BthwaniSectionHeader title={title || "تصفح المجالات"} subtitle={section.description} />
+          <ScrollView contentContainerStyle={styles.activityTiles} horizontal showsHorizontalScrollIndicator={false}>
+            <Pressable accessibilityRole="button" accessibilityLabel="عرض جميع المجالات والمتاجر"
+              accessibilityState={{ selected: !selectedVerticalID }} onPress={() => selectVertical("")}
+              style={[styles.activityTile, !selectedVerticalID && styles.activityTileSelected]}>
+              <View style={[styles.activityMark, !selectedVerticalID && styles.activityMarkSelected]}>
+                <BthwaniIcon name="store" color={!selectedVerticalID ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /></View>
+              <Text style={[styles.activityTileName, !selectedVerticalID && styles.activityTileNameSelected]}>الكل</Text>
+            </Pressable>
+            {taxonomy.verticals.slice(0, section.count).map((vertical) => <Pressable key={vertical.id}
+              accessibilityRole="button" accessibilityLabel={`تصفح نشاط ${vertical.nameAr}`}
+              onPress={() => selectVertical(vertical.id)} style={styles.activityTile}>
+              <View style={styles.activityMark}><BthwaniIcon name={activityIcon(vertical.nameAr, vertical.nameEn)} color={theme.interactiveText} size={sizing.iconMd} /></View>
+              <Text numberOfLines={1} style={styles.activityTileName}>{vertical.nameAr}</Text>
+            </Pressable>)}
+          </ScrollView>
+        </View> : null;
+      case "products":
+        return <View key={section.id} accessibilityLabel={title || "المنتجات المتاحة"}>
+          <BthwaniSectionHeader title={title || "المنتجات المتاحة"} subtitle={section.description} />
+          <HomeProductFeed cityID={selectedCityID} verticalID={selectedVerticalID} categoryID={selectedCategoryID}
+            shortcutID={selectedShortcutID} isAuthenticated={isAuthenticated}
+            onRequireAuthentication={onRequireAuthentication} pageSize={section.count} />
+        </View>;
+      case "banners":
+        return carouselContent.length ? <View key={section.id} accessibilityLabel={title || "بنرات العروض"}>
+          <BthwaniSectionHeader title={title || "بنرات العروض"} subtitle={section.description} />
+          <DiscoveryMediaCarousel cardWidth={carouselCardWidth} items={carouselContent.slice(0, section.count)}
+            styles={styles} theme={theme} onOpen={(item) => openDiscoveryContent(item.id)} label="بنرات العروض" />
+        </View> : null;
+      case "promotions":
+        return marketing.promotions.length ? <View key={section.id} accessibilityLabel={title || "العروض المنشورة"} style={styles.marketingList}>
+          <BthwaniSectionHeader title={title || "العروض المنشورة"} subtitle={section.description} />
+          {marketing.promotions.slice(0, section.count).map((promotion) => <PromotionCard key={promotion.id} promotion={promotion} />)}
+        </View> : null;
+      case "curated":
+        return textContent.length ? <View key={section.id} accessibilityLabel={title || "المختارات"} style={styles.marketingList}>
+          <BthwaniSectionHeader title={title || "المختارات"} subtitle={section.description} />
+          {textContent.slice(0, section.count).map((item) => <Pressable key={item.id} accessibilityRole="button"
+            accessibilityLabel={`عرض ${item.titleAr}`} onPress={() => openDiscoveryContent(item.id)}>
+            <BthwaniSurface tone="inset" style={styles.marketingCard}>
+              <Text style={styles.cardTitle}>{item.titleAr}</Text>
+              {item.bodyAr ? <Text style={styles.muted}>{item.bodyAr}</Text> : null}
+            </BthwaniSurface>
+          </Pressable>)}
+        </View> : null;
+      case "brands":
+        return state.kind === "ready" && state.stores.length ? <View key={section.id} accessibilityLabel={title || "المتاجر المشاركة"} style={styles.marketingList}>
+          <BthwaniSectionHeader title={title || "المتاجر المشاركة"} subtitle={section.description} />
+          {state.stores.slice(0, section.count).map((store) => <Pressable key={store.id} accessibilityRole="button"
+            accessibilityLabel={`فتح متجر ${store.name}`}
+            onPress={() => router.push(("/store/" + encodeURIComponent(store.id)) as Href)}>
+            <BthwaniSurface tone="inset" style={styles.marketingCard}><Text style={styles.cardTitle}>{store.name}</Text></BthwaniSurface>
+          </Pressable>)}
+        </View> : null;
+      // Do not invent best-seller rankings or verified customer reviews.
+      case "topSellers":
+      case "testimonials":
+      case "stores":
+        return null;
+      default:
+        return null;
+    }
+  }
   // Do not leave empty grid tracks when fewer stores are published in a city.
   const gridColumns = directoryMode ? Math.min(webColumns, Math.max(1, filteredStores.length)) : webColumns;
 
@@ -523,6 +695,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         <BthwaniChip label="المنتجات" selected={searchScope === "products"} onPress={() => { if (onSearchScopeChange) onSearchScopeChange("products"); else router.setParams({ scope: "products" }); }} />
       </View> : null}
 
+      {layoutDoc ? <>{heroHeader ? <View style={{ backgroundColor: theme.brandStructure }}>{heroHeader}</View> : null}{publishedBeforeStores.map(renderPublishedSection)}</> : null}
+      {!layoutDoc ? <>
       {showHomeMarketing && bannerContent.length ? <View style={{ width: Platform.OS === "web" ? carouselCardWidth : viewportWidth, alignSelf: "center" }}><LoopingHeroBanner screenActive={isScreenActive} presentation={bannerPresentation} cardWidth={Platform.OS === "web" ? carouselCardWidth : viewportWidth} items={bannerContent} onOpen={(item) => openDiscoveryContent(item.id)} label="البنرات الرئيسية" immersiveHeader={heroHeader} /></View> : heroHeader ?? null}
       {showHomeMarketing ? <View style={styles.deliveryStrip} accessibilityLabel="معلومات التوصيل والعروض">
         <View style={styles.deliveryStripIcon}><BthwaniIcon name="cart" color="#FFFFFF" size={sizing.iconLg}/></View>
@@ -563,6 +737,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         onRequireAuthentication={onRequireAuthentication}
       /> : null}
 
+      </> : null}
+
       {!searchIsActive && marketing.error ? <Text accessibilityRole="alert" style={styles.error}>تعذر تحميل بعض العروض والمحتوى. يمكنك متابعة تصفح المتاجر.</Text> : null}
 
       {searchScope === "products" && searchIsActive && categoryTabs ? <>
@@ -583,7 +759,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         />
       ) : null}
 
-      {searchScope === "stores" || !searchIsActive ? <>
+      {(searchScope === "stores" || !searchIsActive) && (!layoutDoc || showPublishedStores) ? <>
       <View style={styles.storeFilterRow}>
         <Pressable
           accessibilityRole="button"
@@ -650,7 +826,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       </> : null}
 
 
-      {directoryMode && !searchIsActive ? <BthwaniSectionHeader title={selectedVertical ? `متاجر ${selectedVertical.nameAr}` : "اكتشف المتاجر"} subtitle="المتاجر المتاحة في مدينة الخدمة" /> : null}
+      {directoryMode && !searchIsActive && (!layoutDoc || showPublishedStores) ? <BthwaniSectionHeader title={selectedVertical ? `متاجر ${selectedVertical.nameAr}` : "اكتشف المتاجر"} subtitle="المتاجر المتاحة في مدينة الخدمة" /> : null}
       </View>}
       renderItem={({ item: store, index }) => <View style={[styles.storeGridCell, gridColumns === 2 && styles.storeGridCellHalf, gridColumns === 3 && styles.storeGridCellThird]}><StoreDirectoryCard
         store={store}
@@ -665,9 +841,10 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         index={index}
         compact={Platform.OS !== "web" && gridColumns === 3}
       /></View>}
-      ListEmptyComponent={directoryMode ? <StoreDirectoryStatus hasServiceCity={Boolean(selectedCityID)} kind={directoryStatusKind} query={query} selectedCategory={Boolean(selectedCategoryID)} onRetry={() => void load()} onClearSearch={() => { if (onSearchQueryChange) onSearchQueryChange(""); else router.setParams({ q: "" }); }} /> : undefined}
+      ListEmptyComponent={directoryMode && (!layoutDoc || showPublishedStores) ? <StoreDirectoryStatus hasServiceCity={Boolean(selectedCityID)} kind={directoryStatusKind} query={query} selectedCategory={Boolean(selectedCategoryID)} onRetry={() => void load()} onClearSearch={() => { if (onSearchQueryChange) onSearchQueryChange(""); else router.setParams({ q: "" }); }} /> : undefined}
       ListFooterComponent={<View style={styles.footer}>
-      {showHomeMarketing && hasMarketingItems ? <View accessibilityLabel="العروض ومحتوى الاكتشاف" style={styles.marketingBlock}>
+      {layoutDoc ? publishedAfterStores.map(renderPublishedSection) : null}
+      {!layoutDoc && showHomeMarketing && hasMarketingItems ? <View accessibilityLabel="العروض ومحتوى الاكتشاف" style={styles.marketingBlock}>
         {carouselContent.length ? <>
           <BthwaniSectionHeader title="مختارات وعروض" />
           <DiscoveryMediaCarousel cardWidth={carouselCardWidth} items={carouselContent} styles={styles} theme={theme} onOpen={(item) => openDiscoveryContent(item.id)} label="شرائح العروض" />
@@ -686,7 +863,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           <View style={styles.marketingList}>{marketing.promotions.slice(1).map((promotion) => <PromotionCard key={promotion.id} promotion={promotion} />)}</View>
         </> : null}
       </View> : null}
-        {directoryMode && state.kind === "ready" && state.nextCursor ? <>
+        {layoutDoc && showPublishedStores && directoryMode && state.kind === "ready" && filteredStores.length > homeStoreLimit ? <BthwaniButton label="عرض المزيد من المتاجر" onPress={() => setHomeStoreLimit((limit) => limit + 20)} variant="secondary" /> : null}
+        {(!layoutDoc || showPublishedStores) && directoryMode && state.kind === "ready" && state.nextCursor && (!layoutDoc || filteredStores.length <= homeStoreLimit) ? <>
           {loadMoreStoresError ? <Text accessibilityRole="alert" style={styles.error}>تعذر تحميل المزيد من المتاجر.</Text> : null}
           <BthwaniButton disabled={loadingMoreStores || directoryLoading} label={loadingMoreStores ? "جارٍ تحميل المزيد" : "تحميل المزيد من المتاجر"} onPress={() => void loadMoreStores()} variant="secondary" />
         </> : null}

@@ -1,4 +1,5 @@
 export * from "./generated/dsh-types";
+export * from "./studio-layout";
 export { dshOperationPaths } from "./generated/dsh-operations";
 export * from "./mobile";
 export * from "./notification-alert-policy";

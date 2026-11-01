@@ -7,6 +7,7 @@ import { useSession } from "../../session/session-provider";
 import { PageHeader } from "../../shell/page-header";
 import { PublishedBannerSettings } from "./published-banner-settings";
 import { PublishedThemeSettings } from "./published-theme-settings";
+import { PublishedLayoutSettings } from "./published-layout-settings";
 import {
   defaultStudioDraft,
   isStudioHex,
@@ -26,7 +27,7 @@ import {
 } from "./studio-draft";
 
 const storagePrefix = "bthwani-studio-private-draft-v1:";
-type EditorPanel = "sections" | "palette" | "published" | "theme-publishing";
+type EditorPanel = "sections" | "palette" | "published" | "theme-publishing" | "layout-publishing";
 const viewports: ReadonlyArray<{ id: StudioViewport; label: string }> = [
   { id: "desktop", label: "الحاسوب" }, { id: "tablet", label: "اللوحي" }, { id: "phone", label: "الهاتف" },
 ];
@@ -386,8 +387,9 @@ function Editor({ actorId }: Readonly<{ actorId: string }>) {
           <button type="button" role="tab" aria-selected={panel === "palette"} onClick={() => setPanel("palette")}>الألوان</button>
           <button type="button" role="tab" aria-selected={panel === "published"} onClick={() => setPanel("published")}>البنرات المنشورة</button>
           <button type="button" role="tab" aria-selected={panel === "theme-publishing"} onClick={() => setPanel("theme-publishing")}>نشر ألوان التطبيقات</button>
+          <button type="button" role="tab" aria-selected={panel === "layout-publishing"} onClick={() => setPanel("layout-publishing")}>نشر تخطيط الرئيسية</button>
         </div>
-        {panel === "theme-publishing" ? <div role="tabpanel" className="studio-inspector-content"><PublishedThemeSettings shared={shared} /></div> : panel === "published" ? <div role="tabpanel" className="studio-inspector-content">
+        {panel === "layout-publishing" ? <div role="tabpanel" className="studio-inspector-content"><PublishedLayoutSettings shared={shared} dirty={dirty} /></div> : panel === "theme-publishing" ? <div role="tabpanel" className="studio-inspector-content"><PublishedThemeSettings shared={shared} /></div> : panel === "published" ? <div role="tabpanel" className="studio-inspector-content">
           <p className="studio-guidance">إعدادات حركة البنرات الفعلية من DSH، مستقلة عن مسودة تصميم القالب. يتطلب حفظها صلاحية التسويق ويُتحقق من الإصدار على الخادم.</p>
           <PublishedBannerSettings />
           <Link className="button button-secondary" href="/marketing?section=content">إدارة صور البنرات ووجهاتها</Link>
@@ -458,7 +460,7 @@ function Editor({ actorId }: Readonly<{ actorId: string }>) {
           {warnings.length ? <div role="alert" className="studio-warning">{warnings.map((warning) => <p key={warning}>{warning}</p>)}</div> : <p className="studio-valid">التباين الأساسي للنصوص مناسب لمعيار AA.</p>}
           <p className="studio-guidance">لتفعيل هذه الألوان، احفظ مسودة الفريق ثم افتح تبويب «نشر ألوان التطبيقات». النشر لا ينقل أقسام الصفحة أو الشرائح.</p>
         </div>}
-        <div className="studio-inspector-footer"><span>النشر منفصل عن الحفظ المحلي ومسودة الفريق</span><button type="button" className="button button-secondary" onClick={() => setPanel("theme-publishing")}>إدارة نشر الألوان</button></div>
+        <div className="studio-inspector-footer"><span>احفظ مسودة الفريق قبل النشر. يمكن التراجع عن التخطيط والألوان كل على حدة.</span><button type="button" className="button button-secondary" onClick={() => setPanel("layout-publishing")}>نشر تخطيط الرئيسية</button><button type="button" className="button button-secondary" onClick={() => setPanel("theme-publishing")}>نشر الألوان</button></div>
       </aside>
     </div>
   </section>;
