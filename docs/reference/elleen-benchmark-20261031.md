@@ -238,3 +238,16 @@ This supplements the preceding dated record. It does **not** reclassify inaccess
 | Safety | No Store agreement change, no WLT ledger write, no operator permissions change, no hidden test fixture, no Elleen form submission or subscription action. | P01 runtime cause `UNVERIFIED`; WLT Finance activation gate unchanged |
 
 **Bounded finding:** rendered Partner dashboard and account navigation can be verified independently of an unrelated failure to confirm a Store agreement. The original test blocked this proof for the wrong reason. This correction changes only test classification; **the actual canonical agreement readback remains a separate unresolved P01 condition**. P00 overall `OPEN`, P01 `OPEN/REVIEW_BLOCKED` as applicable to Finance-sensitive activation.
+
+### 2026-11-02 — P00 additional direct Playwright Elleen navigation (read-only)
+
+A new bounded read-only Playwright examination used **the already-authorized Microsoft Edge CDP context**. No login, account export, network interception, local storage values, source files, payments, settings mutation, or form submission was performed.
+
+| ID | Page / scope | Direct result | Limit |
+| --- | --- | --- | --- |
+| S01 | `https://elleen.ye/admin`, existing authenticated tab | `PASS`: title `لوحة التحكم - إيلين`; visible dashboard sections for onboarding, latest customers and orders, sales trend, attention, stock and bestselling products; visible navigation for dashboard, settings, theme, notifications, support, import/export, activity log and recycle bin | DOM/visible-label read only, not every dropdown or workflow |
+| ET03 | `https://elleen.ye/admin/settings/payment`, new temporary tab sharing the authorized browser context and then closed | `PASS`: HTTP 200, exact title `إعدادات الدفع - إيلين`, headings `طرق الدفع`, `الدفع عند الاستلام (COD)`, bank transfer, Kuraimi, Jeeb, Mobile Money, Jawali, CashPay, Floosak, Easy Wallet, OneCash and `بوابات الدفع`; four visible `إعداد` buttons | No proof that a provider is connected, that any save succeeded, or that any billing rails are safe in BThwani |
+
+The temporary Playwright scripts were removed after successful execution. These observations strengthen the existing E01/ET03 catalogue, **not** subscription/commission logic or financial equivalence. The BThwani `COMMISSION`/`SUBSCRIPTION` commercial contract remains WLT-owned and is not inferred from Elleen's merchant-facing checkout payment options.
+
+**P00 remains OPEN:** a route/name census is not a per-control behavioral proof; paid PRO internals, mobile Android behavior, authenticated mutations and security/ledger handoffs remain UNVERIFIED or NOT_RUN. **P01 remains OPEN:** the observed Partner agreement warning has not been resolved by the Playwright test-oracle correction.
