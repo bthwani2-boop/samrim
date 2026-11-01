@@ -132,3 +132,57 @@ A new Playwright tab in the owner's already-authenticated Edge session opened th
 - Operator `/partners` Store profile already owns authorized Store operational controls, identities and Partner/Finance links; this slice does not create a competing operator settings writer or navigation panel.
 - Backend: **existing** DSH contract and authenticated partner availability endpoint reused; **no new backend migration or payment/notification/identity bypass**, no data mutations performed by settings readback.
 - Follow-on capabilities above are proposals only, subject to the actual governed Product owner; they are not claimed as implemented.
+
+## P00 — coverage register and sequential closure baseline (2026-11-01, branch `34`)
+
+**Nature:** non-authoritative evidence index and bounded work status. It does **not** amend Product Governance, assert production readiness, or replace the canonical implementation/tests. Repository baseline checked at `1c44d0eabf78c37552118a11c637a81be483023b`: local `34` clean; `origin/34` same SHA; one worktree at `D:/samrim`. `AGENTS.md`, `REPOSITORY-STRUCTURE.md` and `docs/governance/README.md` read before this record.
+
+**Freshness:** this record reindexes the dated read-only Elleen observations **already above**, not a new authenticated Elleen crawl. The currently connected browser-tab listing contained only BThwani/ChatGPT tabs, not an Elleen tab; therefore current-session re-observation of all Elleen details is `NOT_RUN`. Older route observations stay `OBSERVED (2026-11-01 prior session)`; unactioned controls stay `UNVERIFIED`. An HTTP 200 or a visible menu is not proof that any flow works.
+
+### Stable screen identifiers — extend existing E01–E24 navigation IDs
+
+| Screen IDs | Elleen paths already observed | Direct evidence class | Unproven activity |
+| --- | --- | --- | --- |
+| ES01–ES04 | `/admin/orders`, `/admin/orders/refunds/list`, `/admin/catalog/products`, `/admin/catalog/stock` | OBSERVED (dated read-only UI) | Submit order/refund; change price/stock; persistence; isolation |
+| ES05–ES10 | `/admin/catalog/product-questions`, `/admin/catalog/filters`, `/admin/catalog/brands`, `/admin/catalog/attributes`, `/admin/catalog/product-sections`, `/admin/catalog/product-reviews` | OBSERVED (screen or heading, dated) | Creation/moderation and authorization |
+| ES11–ES12 | `/admin/customers/wallets`, `/admin/customers/notifications` | OBSERVED (heading, dated) | Wallet integrity, broadcasts, recipient safety |
+| ER01–ER08 | `/admin/reports`, `/admin/reports/sales`, `/admin/reports/orders`, `/admin/reports/products`, `/admin/reports/customers`, `/admin/reports/inventory`, `/admin/reports/coupons`, `/admin/reports/traffic` | OBSERVED (read-only report UI; detail in `elleen-reports-observations-2026-11-01.md`) | Accuracy, exports, data completeness |
+| ES13–ES16 | `/admin/settings/shipping-carriers`, `/admin/settings/shipping-countries`, `/admin/settings/shipping-rules`, `/admin/settings/shipping-classes` | OBSERVED (heading, dated) | Carrier integrations, tariff application |
+| ET01–ET11 | `/admin/settings/brand`, `/admin/settings/contact`, `/admin/settings/payment`, `/admin/settings/currency`, `/admin/settings/whatsapp`, `/admin/settings/in-app-notifications`, `/admin/settings/seasonal-decorations`, `/admin/settings/refund`, `/admin/settings/stock`, `/admin/settings/seo`, `/admin/settings/print` | OBSERVED (settings fields/read-only UI, dated) | Save/publish/provider integration; authorization, financial effect |
+| ES17–ES22 | `/admin/verification`, `/admin/theme`, `/admin/onboarding`, `/admin/helpdesk`, `/admin/notifications`, `/admin/recycle-bin` | OBSERVED (heading/controls, dated) | Submission, paid features, mutations, recovery |
+| ES23–ES26 | `/admin/import-export`, `/admin/activity-logs`, `/admin/plans`, `/admin/seo/dashboard` | OBSERVED (navigation; SEO redirects to plans) | Import safety, immutable audit, subscription unlocks; SEO is **not** a verified feature |
+| EC01–EC02 | `https://rrda.elleen.ye/`, `/products` | OBSERVED (public storefront UI, dated) | Client checkout, product mutation reflection, auth, payment, performance |
+| EP01–EP07 | Marketing PRO, BI PRO, add-on/app market PRO, service market PRO, delivery-representatives PRO, settlements PRO, employees PRO (E05/E07/E11/E12/E23/E24/E19) | INFERRED **only** from labels; no verified functional flow | All paid internals and entitlements |
+| EP08 | AI assistant coming-soon (E17) | OBSERVED teaser, **not** an implemented feature | All behavior |
+
+No new Elleen screen is asserted here. Other icons, dialogues, validation, loading/error states, mobile animation, data changes and cross-screen handoffs not recorded above remain `UNVERIFIED` / `NOT_RUN`; do not silently mark the census exhaustive.
+
+### Cross-system gap/decision register (scope, dependencies and acceptance)
+
+`SOURCE_PRESENT` below means only that a named implementation/contract was found on branch `34`; it does **not** mean E2E PASS. Priorities follow governed dependency and safety rather than similarity to Elleen. Each row's final closure state remains `OPEN` unless explicitly proven.
+
+| Closure | Elleen reference and BThwani canonical owner | Current evidence / decision | Priority / next proof |
+| --- | --- | --- | --- |
+| P00 discovery | E01–E24, ES/ET/ER/EC, this evidence file, `docs/governance/product/{capabilities.md,journeys.md}` | PARTIAL. Retain dated observations, explicitly distinguish missing live navigation/flows. Do not create a second Product owner. | P0; revalidate reachable Elleen screens and any controls that could change P01 scope; matrix remains OPEN |
+| P01 Store Commercial Agreement | ET03 and E24; WLT agreement, DSH Store context, Partner mobile/web, Operator Finance | SOURCE_PRESENT: WLT migrations `059`/`060`, storage/HTTP, DSH bridge, Partner accept and Operator Finance decision. Both model values have tests; subscription activation is deliberately blocked. **Improve existing implementation only when a specific uncovered case is proven.** | P0; Store A vs B authorization, exact acceptance, approval/version/idempotency, durable WLT readback and finance/security review; OPEN |
+| P02 Store Type suggestion | E03/E09; DSH Store Type + WLT suggested commission policies | SOURCE_PRESENT: `commercial_store_type`, type-default UI/API. Verify **suggestion is not a binding agreement**; do not infer subscription default engine. | P1 after P01 boundary; owner/actor negotiation and non-activation proof; OPEN |
+| P03 Identity/recovery | E19/ES17; Identity and authenticated actor surfaces | Governed capability present; no verified recovery or negative authorization journey in this census. | P0 security; distinct account and session-readback proof; OPEN |
+| P04 Onboarding/publication | E01/ES19; DSH admissions, Operator and Partner | Governed Partner onboarding/publication owner exists; live role handoff not independently proven here. | P0; Partner consent → Finance → publication, failed cases; OPEN |
+| P05 Store availability | ET01/ET02/ET09; DSH operational availability, Partner and Client | SOURCE_PRESENT as described in this benchmark's settings slice; client-facing effect not independently tested here. | P0; mode/schedule readback and unavailable checkout denial; OPEN |
+| P06 Catalog/inventory | E03, ES03–ES10, ET09; DSH shared catalog and Store offers | SOURCE_PRESENT as described above; no claim of inventory reservation or product-question feature. | P0; mutation → persisted offer → Client, out-of-stock/concurrency; OPEN |
+| P07 Discovery | EC01/EC02; DSH catalog/discovery and Client | Client screens/source described above; customer-safe visibility/filters not live verified. | P1; search, filtering, isolation, empty/error cases; OPEN |
+| P08 Checkout/payment | EC01/EC02, ET03; DSH cart/order plus WLT collection | Existing admitted product scope; do not enable Elleen provider rails by label alone. | P0; COD/wallet/mixed, no duplicate payment/order, recovery; OPEN |
+| P09 Order lifecycle | ES01/ES02; DSH lifecycle, Partner, Client | Governed owner exists; Elleen refunds navigation is not equivalent to a BThwani refund contract. | P0; roles, order status/adjustments and canonical readback; OPEN |
+| P10 Captain dispatch | E23; DSH dispatch/handoff, Captain Android, WLT COD | Paid feature is INFERRED only; use BThwani authorized fulfillment contracts. | P0; offer race, proof, COD and retry; OPEN |
+| P11 Partner Captain/pickup | E23, ES01; DSH Store Captain / Customer Pickup | Store-affiliated Captain is not a new Identity role; separate fulfillment semantics. | P1; membership/store isolation and mode-specific handoff; OPEN |
+| P12 Subscription billing | E24 and ET03; WLT recurring invoice/ledger | **NOT IMPLEMENTED/NOT ACTIVATABLE as a financial agreement** by approved governance; no speculative billing or bypass. | P0 financial prerequisite; invoice-per-period uniqueness, retries, reconciliation, independent review; REVIEW_BLOCKED |
+| P13 Balances/settlements/refunds | E24, ES02, ES11; WLT and DSH bounded exceptions | Historical read-only coverage only; cannot infer ledger from reports screens. | P0 finance; conservation, double-post avoidance, refunds and authorized readback; OPEN |
+| P14 Exceptions/communications | ES02/ES20; DSH order exception and conversation | Existing governed bounded order conversation; no generic helpdesk implied by Elleen. | P1; participant ACL, retries, closure; OPEN |
+| P15 Promotions/content | E05, EC01, EP01; DSH discovery and funded promotion via WLT | PRO internals INFERRED; current Product excludes loyalty as standalone system. | P1; publication/eligibility/discount funding, no IDOR; OPEN |
+| P16 Reports/audit/export | E06/E20, ER01–ER08, ES24; DSH operational metrics and WLT monetary readback | See dated `elleen-reports-observations-2026-11-01.md`; do not mistake operational sales for settled net. | P1; server date window, store ACL, export/CSV formula safety; OPEN |
+| P17 Partner mobile/web UX | E10/ET01–ET11; `apps/app-partner` shared workspace and design system | Existing settings readback described above; full parity/RTL/empty and failure handling not proven here. | P1; Android+Web real task, authorization, accessible/reduced-motion states; OPEN |
+| P18 External integrations/backup | E08/E09/E16/ES13–ES16; existing integration owners | Provider labels do not constitute working integrations; no permission to deploy or modify external state. | P2 as admitted; owner-backed contract, safe restore and integration proof; OPEN |
+
+**P01 decision gate:** start from WLT's existing `STORE_COMMERCIAL_AGREEMENT` capability, not an alternative billing implementation. `COMMISSION` may be activated after approved terms; `SUBSCRIPTION` may be proposed and accepted but **not** Finance-activated or charged until governed recurring billing, anti-duplication, reconciliation, and independent review exist. Historical `HYBRID` remains readable and retired. Partner workspace access does not depend on a paid feature subscription.
+
+**P00 status: OPEN / partial evidence baseline committed when verified.** Current-session Elleen live reinspection and each working-control walkthrough are `NOT_RUN`; P01 cross-actor financial readback and independent finance/security review are `NOT_RUN`. The screen/flow ledger above is a bounded routing index for future section-level proof, not a claim that these sections are complete. Do not proceed to P02 as if P01 were closed.
