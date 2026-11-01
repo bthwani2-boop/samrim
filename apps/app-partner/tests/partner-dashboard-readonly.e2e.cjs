@@ -26,7 +26,8 @@ async function audit() {
           side:rect(side),sidebarColor:side?getComputedStyle(side).backgroundColor:null,
           labels:["مساحة الشريك","أحدث الطلبات","مساحة العمل اليومي","يحتاج انتباهك","تجهيز المتجر وتشغيله","الحساب والإعدادات"]
             .filter(label=>words.includes(label)),
-          textLength:words.length, authUnavailable:words.includes("تعذر التحقق"), loading:words.includes("جارٍ"),
+          textLength:words.length, authUnavailable:/(يلزم تسجيل الدخول|انتهت صلاحية جلسة|تعذر التحقق من جلسة)/.test(words),
+          agreementUnavailable:words.includes("تعذر التحقق من الاتفاقية"), loading:words.includes("جارٍ"),
           errors:/(SyntaxError|TransformError|Internal Server Error|Unable to resolve)/.test(words),
           overflow:document.documentElement.scrollWidth>innerWidth+1
         };

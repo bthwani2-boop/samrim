@@ -12,7 +12,7 @@ async function run() {
     await page.goto("http://localhost:18102/more",{waitUntil:"domcontentloaded",timeout:20000});
     await page.waitForFunction(()=>{
       const t=document.body.innerText||"";
-      return t.includes("تعذر التحقق")||t.includes("أحدث الطلبات")||t.includes("تعذر تحميل المتاجر")||location.pathname==="/";
+      return t.includes("أحدث الطلبات")||t.includes("تعذر تحميل المتاجر")||location.pathname==="/";
     },null,{timeout:15000}).catch(()=>{});
     const view=await page.evaluate(()=>{
       const body=document.body.innerText||"";
@@ -20,7 +20,8 @@ async function run() {
       const r=rail?.getBoundingClientRect();
       const labels=["أحدث الطلبات","مساحة العمل اليومي","يحتاج انتباهك","تجهيز المتجر وتشغيله","الإشعارات","الفريق وكباتن المتجر","ملف المتجر والاتفاقيات","إدارة التشغيل"];
       return {route:location.pathname,rtl:document.documentElement.dir,
-        blocked:body.includes("تعذر التحقق")||location.pathname==="/",
+        blocked:/(يلزم تسجيل الدخول|انتهت صلاحية جلسة|تعذر التحقق من جلسة)/.test(body)||location.pathname==="/",
+        agreementUnavailable:body.includes("تعذر التحقق من الاتفاقية"),
         sidebarAtRight:r?Math.abs(r.right-innerWidth)<=5:false,
         sidebarWidth:r?Math.round(r.width):null,
         labels:labels.filter(k=>body.includes(k)),

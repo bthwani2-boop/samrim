@@ -6,7 +6,7 @@ async function inspect(page, width) {
   await page.goto("http://localhost:18102/notifications", {waitUntil:"domcontentloaded",timeout:20000});
   await page.waitForFunction(() => {
     const t=document.body.innerText||"";
-    return t.includes("تعذر التحقق") || t.includes("الإشعارات") || location.pathname === "/";
+    return t.includes("الإشعارات") || location.pathname === "/";
   }, {timeout:11000}).catch(() => {});
   return page.evaluate(() => {
     const text=document.body.innerText || "";
@@ -14,7 +14,7 @@ async function inspect(page, width) {
     const r=sidebar?.getBoundingClientRect();
     return {
       path:location.pathname, direction:document.documentElement.dir,
-      width:innerWidth, blocked:text.includes("تعذر التحقق") || location.pathname === "/",
+      width:innerWidth, blocked:/(يلزم تسجيل الدخول|انتهت صلاحية جلسة|تعذر التحقق من جلسة)/.test(text) || location.pathname === "/",
       renderedInbox:text.includes("الإشعارات"),
       hasSidebar:!!sidebar, sidebarRight:r?Math.round(r.right):null,
       overflow:document.documentElement.scrollWidth>innerWidth+2,
