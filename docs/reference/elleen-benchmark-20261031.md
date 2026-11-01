@@ -295,3 +295,17 @@ This observation tightens `ET03` and `ES03` beyond headings/navigation without s
 These screenshots contain owner-account context; do **not** publish, package, copy to source assets or infer financial correctness from them. The `18.1/100` visual score is a **nonbinding layout diagnostic** with unlike datasets, not a functionality or design-quality verdict.
 
 The Replica CSV was updated with the newly observed COD/quick-add controls, but retains `partial` for both because save/readback was not exercised. `P00` remains **OPEN** for unverified controls and mobile/paid cases; `P01` remains **OPEN** for canonical agreement readback.
+
+### P00 — Orders, sales and delivery-rule controls (2026-11-02, read-only)
+
+Direct Playwright navigation in the user's existing authorized Elleen Edge account was bounded to three named routes and one deliberate non-submitting button action. No account/customer values, request bodies, downloadable exports or private provider code were captured:
+
+| Screen ID | Current visible controls, OBSERVED | Unverified actions |
+| --- | --- | --- |
+| `ES01` `/admin/orders` | Empty-state `لم يتم العثور على طلبات`; create-order link, clear filters, total/pending/confirmed/shipped/delivered/cancelled/returned counters; order text search, payment and method selectors, from/to date inputs | Order creation, transitions, non-empty pagination, payment status and refunds |
+| `ER02` `/admin/reports/sales` | Sales report; daily revenue, payment methods, revenue by category, peak times and daily breakdown headings; today/7/30/90-day/year/custom period controls, payment/category filters, **Excel export button** and date search | Calculations, financial reconciliation, correctness of Excel bytes, access boundaries |
+| `ES15` `/admin/settings/shipping-rules` | Empty rules state, two add-rule controls; clicking one opened a visible add-rule dialog after asynchronous loading. Observed required rule name, priority, action type, basket total, weight, item count, coupon, included product categories, shipping classes, customer country/governorate/city, days of week; action/condition/settings panels and cancel/create controls | Any create/save, eligibility evaluation, conflicts/order effects, seller authorization, customer shipping promise |
+
+**Product interpretation:** Elleen's conditional carrier/shipping rule builder is not a direct equivalent to BThwani's governed DSH distance/captain fulfillment and WLT settlement. Its appearance cannot authorize another generalized rule engine or bypass commercial pricing approval. The Replica feature matrix notes were updated with the observed fields; `partial` still represents unproven cross-product equivalence, not an adopted new requirement.
+
+**Local owners:** Read-only `curl` checks of `/dsh/readiness`, `/wlt/readiness`, and Identity's `/identity/readiness` on the configured local ports each returned `HTTP 200`. This proves basic service readiness at that instant only. It does **not** prove the Partner agreement GET, WLT ledger correctness, persisted Store authorization, or completion of P01. No local service restart or database writes were performed.
