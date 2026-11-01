@@ -12,6 +12,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { catalogPublishedAvailability, isOfferStockout } from "../store-offer/inventory-stockout";
 import { agreementReadinessMessage, type StoreAgreementReadback } from "./store-agreement-readiness";
+import { nextStoreSetupFocus } from "./partner-onboarding-next-step";
 
 type Data = Readonly<{
   attention: PartnerOrderAttentionCounts | null;
@@ -158,6 +159,11 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
   ];
   const verifiedSteps = readySteps.filter(step => step !== null).length;
   const completedSteps = readySteps.filter(step => step === true).length;
+  const setupFocus = nextStoreSetupFocus({
+    ownsStore: store.owned, canEditCatalog: canCatalog, canManageAvailability: canOperate,
+    publicationState: store.publicationState, catalogReady, agreement: commercialAgreement,
+    operationalKnown, operationalState,
+  });
 
   const go = (href: Href) => {
     if (String(href).startsWith("/store")) router.push(href);
@@ -212,6 +218,17 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
               <Text style={styles.muted}>خطوات متحققة</Text>
             </View>
           </View>
+          {setupFocus ? <View style={styles.nextSetup} accessibilityLabel="توجيه إعداد المتجر">
+            <View style={styles.nextSetupCopy}>
+              <Text style={styles.nextSetupEyebrow}>المتابعة الآن</Text>
+              <Text style={styles.nextSetupTitle}>{setupFocus.title}</Text>
+              <Text style={styles.muted}>{setupFocus.detail}</Text>
+            </View>
+            {setupFocus.href ? <Pressable accessibilityRole="button" accessibilityLabel={"فتح: " + setupFocus.title}
+              style={styles.nextSetupButton} onPress={() => { if (setupFocus.href) go(setupFocus.href as Href); }}>
+              <Text style={styles.nextSetupButtonText}>متابعة</Text>
+            </Pressable> : null}
+          </View> : null}
           <View style={styles.setupGrid}>
             {store.owned ? action("هوية المتجر", store.publicationState === "published" ? "المتجر منشور للعملاء" : "مراجعة بيانات المتجر والنشر", "/store?section=settings" as Href, "store", store.publicationState === "published") : null}
             {canCatalog ? action("إعداد الكتالوج", data.offers === null ? "البيانات غير متاحة حاليًا" : catalogReady === null ? "لم تكتمل قراءة الكتالوج؛ راجع بقية المنتجات" : catalogReady ? "يوجد منتجات متاحة للطلب" : "راجع المنتجات والأسعار", "/products" as Href, "cart", catalogReady) : null}
@@ -354,6 +371,12 @@ function createStyles(theme: ReturnType<typeof useAppearanceTheme>) {
     setupText: { flex: 1, gap: 5 },
     progressPill: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 11, backgroundColor: theme.surfaceInset, alignItems: "center", gap: 3 },
     progressNumber: { ...typography.titleMd, color: theme.brandAction, fontWeight: "800" },
+    nextSetup: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 12, borderWidth: 1, borderColor: theme.borderColor, backgroundColor: theme.actionSoft, borderRadius: 11, padding: 13 },
+    nextSetupCopy: { flex: 1, minWidth: 210, gap: 4 },
+    nextSetupEyebrow: { ...typography.caption, color: theme.interactiveText, fontWeight: "800" },
+    nextSetupTitle: { ...typography.bodyStrong, color: theme.color, fontWeight: "800" },
+    nextSetupButton: { minHeight: 44, paddingHorizontal: 16, justifyContent: "center", alignItems: "center", borderRadius: 9, backgroundColor: theme.actionBackground },
+    nextSetupButtonText: { ...typography.bodySm, color: theme.onAction, fontWeight: "800" },
     setupGrid: { flexDirection: "row", flexWrap: "wrap", gap: 9 },
     setupAction: { flexGrow: 1, flexBasis: 178, minWidth: 160, minHeight: 66, paddingHorizontal: 10, paddingVertical: 9, borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10, backgroundColor: theme.surfaceInset, flexDirection: "row", alignItems: "center", gap: 8 },
     setupIcon: { width: 32, height: 32, borderRadius: 9, backgroundColor: theme.actionSoft, alignItems: "center", justifyContent: "center" },

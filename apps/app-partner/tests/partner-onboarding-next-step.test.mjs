@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { partnerOnboardingNextStep } from "../src/features/partner-onboarding/partner-onboarding-next-step.ts";
+import { partnerOnboardingNextStep, nextStoreSetupFocus } from "../src/features/partner-onboarding/partner-onboarding-next-step.ts";
 
 test("all joining-case stages explain a safe actionable next step", () => {
   for (const state of ["draft", "admission_requested", "submitted", "needs_correction", "approved"]) {
@@ -17,4 +17,36 @@ test("correction and admission never claim success prematurely", () => {
   assert.match(partnerOnboardingNextStep("needs_correction", false), /استكمال البيانات/);
   assert.match(partnerOnboardingNextStep("submitted", false), /قيد مراجعة/);
   assert.match(partnerOnboardingNextStep("admission_requested", false), /بانتظار/);
+});
+
+test("store setup guidance prioritizes consent, catalog and publication without claiming activation", () => {
+  const base = {
+    ownsStore: true, canEditCatalog: true, canManageAvailability: true,
+    publicationState: "hidden", catalogReady: false, agreement: "AWAITING_PARTNER",
+    operationalKnown: true, operationalState: "مغلق",
+  };
+  assert.match(nextStoreSetupFocus(base)?.title ?? "", /الاتفاقية/);
+  assert.equal(nextStoreSetupFocus(base)?.href, "/store?section=settings");
+  assert.equal(nextStoreSetupFocus({ ...base, agreement: "ACTIVE" })?.href, "/products");
+  assert.equal(nextStoreSetupFocus({ ...base, catalogReady: true, agreement: "AWAITING_FINANCE" })?.href, null);
+  assert.match(nextStoreSetupFocus({ ...base, catalogReady: true, agreement: "NOT_ACTIVE" })?.title ?? "", /بانتظار/);
+  assert.equal(nextStoreSetupFocus({ ...base, catalogReady: true, agreement: "UNAVAILABLE" })?.href, "/store?section=settings");
+  assert.equal(nextStoreSetupFocus({ ...base, catalogReady: true, agreement: "ACTIVE" })?.href, "/store?section=settings");
+});
+test("store setup guidance respects delegated permissions and legitimate closed schedules", () => {
+  const base = {
+    ownsStore: false, canEditCatalog: true, canManageAvailability: false,
+    publicationState: "hidden", catalogReady: false, agreement: null,
+    operationalKnown: false, operationalState: "جارٍ التحقق",
+  };
+  assert.equal(nextStoreSetupFocus(base)?.href, "/products");
+  assert.equal(nextStoreSetupFocus({ ...base, catalogReady: true }), null);
+  assert.equal(nextStoreSetupFocus({ ...base, canEditCatalog: false }), null);
+  const ready = {
+    ...base, ownsStore: true, publicationState: "published", catalogReady: true,
+    agreement: "ACTIVE", canManageAvailability: true, operationalKnown: true, operationalState: "مغلق",
+  };
+  assert.equal(nextStoreSetupFocus(ready), null);
+  assert.equal(nextStoreSetupFocus({ ...ready, operationalState: "متوقف مؤقتًا" })?.href, "/store?section=operations");
+  assert.equal(nextStoreSetupFocus({ ...ready, operationalKnown: false, operationalState: "متوقف مؤقتًا" }), null);
 });
