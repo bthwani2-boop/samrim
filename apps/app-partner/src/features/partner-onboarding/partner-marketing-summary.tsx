@@ -1,6 +1,6 @@
 import { typography } from "@bthwani/design-system";
 import { useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, type StoreContentPerformanceSummary } from "@bthwani/dsh";
+import { createDshMobileClient, storeContentEventRatios, verifiedStoreContentPerformance, type StoreContentPerformanceSummary } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -46,16 +46,16 @@ export function PartnerStoreMarketingSummary({ storeId }: Readonly<{ storeId: st
       const api = createDshMobileClient(base, { cryptoRandomUUID: () => Crypto.randomUUID() });
       const result = await api.readPartnerStoreContentPerformanceSummary(token, storeId, period);
       if (!valid()) return;
-      if (!result || result.storeId !== storeId || result.period !== period ||
-        [result.contentCount, result.impressions, result.clicks, result.attributedOrdersCreated, result.attributedOrdersCompleted]
-          .some(value => !Number.isSafeInteger(value) || value < 0)) throw new Error("MARKETING_SUMMARY_SCOPE_MISMATCH");
-      setSummary(result);
+      const verified = verifiedStoreContentPerformance(result, storeId, period);
+      if (!verified) throw new Error("MARKETING_SUMMARY_SCOPE_MISMATCH");
+      setSummary(verified);
       setLoadedScope(actorId + "|" + storeId + "|" + period);
     })().catch(() => { if (valid()) setError("تعذرت قراءة تحليلات مقاطع هذا المتجر. تحقق من الصلاحية والاتصال ثم أعد المحاولة."); })
       .finally(() => { if (valid()) setLoading(false); });
     return () => { active = false; };
   }, [storeId, retry, activeActor, period]));
   const visibleSummary = activeActor && loadedScope === activeActor + "|" + storeId + "|" + period ? summary : null;
+  const ratios = storeContentEventRatios(visibleSummary);
 
   return <View style={styles.panel} accessibilityLabel="ملخص أداء مقاطع المتجر">
     <Text accessibilityRole="header" style={styles.heading}>أداء مقاطع المتجر</Text>
@@ -82,7 +82,9 @@ export function PartnerStoreMarketingSummary({ storeId }: Readonly<{ storeId: st
         { label: "طلبات مكتملة منسوبة", value: visibleSummary.attributedOrdersCompleted },
       ].map(item => <View key={item.label} style={styles.card}><Text style={styles.muted}>{item.label}</Text>
         <Text style={styles.value}>{item.value.toLocaleString("ar-YE")}</Text></View>)}
+      <View style={styles.card}><Text style={styles.muted}>نقرات لكل 100 ظهور</Text><Text style={styles.value}>{ratios.clicksPerHundredImpressions === null ? "—" : ratios.clicksPerHundredImpressions.toLocaleString("ar-YE")}</Text></View>
+      <View style={styles.card}><Text style={styles.muted}>نسبة الطلبات المنسوبة المكتملة</Text><Text style={styles.value}>{ratios.completedAttributedOrdersPercent === null ? "—" : ratios.completedAttributedOrdersPercent.toLocaleString("ar-YE") + "٪"}</Text></View>
     </View> : null}
-    <Text style={styles.muted}>الطلبات المكتملة منسوبة إلى نقرة مؤهلة وحالتها الحالية مُسلَّمة أو مستلمة من المتجر؛ لا تمثل تحصيلًا نقديًا أو تسوية WLT.</Text>
+    <Text style={styles.muted}>النقرات لكل 100 ظهور تقارن عدد حدثين مستقلين وقد تتجاوز 100، ولا تعني زوارًا فريدين. نسبة اكتمال الطلبات المنسوبة = الطلبات المكتملة المنسوبة ÷ المنشأة المنسوبة، وليست تحصيلًا نقديًا أو تسوية WLT. تظهر — عند غياب المقام.</Text>
   </View>;
 }
