@@ -53,6 +53,10 @@ export function PublishedLayoutSettings({ shared, dirty }: Readonly<{
           if (pending.current && publication.version !== pending.current.expectedVersion) {
             pending.current = null;
             setNotice("تغيّر إصدار التخطيط على DSH. راجع التخطيط المنشور وسجل التغييرات قبل إصدار أمر جديد.");
+          } else if (pending.current && revision > 0) {
+            // An explicit refresh found no new version. Any later write is still guarded by DSH compare-and-swap.
+            pending.current = null;
+            setNotice("لم يتغير الإصدار المنشور بعد التحديث. يمكنك تنفيذ أمر جديد، وستتحقق الخدمة من الإصدار قبل حفظه.");
           }
           setPublished(publication);
           setHistory(items);
