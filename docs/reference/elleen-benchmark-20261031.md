@@ -251,3 +251,47 @@ A new bounded read-only Playwright examination used **the already-authorized Mic
 The temporary Playwright scripts were removed after successful execution. These observations strengthen the existing E01/ET03 catalogue, **not** subscription/commission logic or financial equivalence. The BThwani `COMMISSION`/`SUBSCRIPTION` commercial contract remains WLT-owned and is not inferred from Elleen's merchant-facing checkout payment options.
 
 **P00 remains OPEN:** a route/name census is not a per-control behavioral proof; paid PRO internals, mobile Android behavior, authenticated mutations and security/ledger handoffs remain UNVERIFIED or NOT_RUN. **P01 remains OPEN:** the observed Partner agreement warning has not been resolved by the Playwright test-oracle correction.
+
+### P00 — deeper Replica Recon, REA-owned analysis and verified screen pairing (2026-11-02)
+
+**Provenance and scope:** branch `34` began at `7c44de5a4b5149f7cd9164c58e1c73fa88a948fa` with a clean worktree and matching `origin/34`. Source of truth remains `AGENTS.md`, `REPOSITORY-STRUCTURE.md`, current code and `docs/governance/README.md`; this reference is **not** a Product or billing authority. Earlier observations in this file are historical, not silently refreshed.
+
+**Replica Recon RPL-01, bounded map extension:**
+- `S01=E01` Elleen operator `/admin`: observed RTL main navigation, dashboard metrics, latest customers/orders, launch checklist, low-stock and best-selling widgets. Key UI components: sidebar grouped disclosure/menu, KPI cards, onboarding tiles, attention list, short tables, PRO/coming-soon labels. DOM route and screenshot observations only; button effects and entitlement internals remain `UNVERIFIED`.
+- `S02=ET03` Elleen `/admin/settings/payment`: read-only heading and provider list previously revalidated by Playwright. Components: provider cards and multiple `إعداد` controls; inputs/save/validation/permissions and actual payment processing `NOT_RUN`.
+- `S03=EC01` public RRDA `/`: authenticated-Edge-independent public-storefront presence via REA, with historic product/navigation observations. Checkout/cart mutation and cross-site reflection `NOT_RUN`.
+- `B01` BThwani operator `/workspace`: Browser/Playwright observed RTL task-first dashboard, priority counts, notifications and disclosures. `B02` finance `/finance`: BrowserAct navigated from workspace using one finance link click and opened `/finance?tab=pending` with another click. Observed seven Finance tabs, source-scoped metrics, pending decisions table, search, empty state and pagination; no transaction was submitted.
+- Flow `F01` Elleen dashboard → payment settings: **screen presence observed**, exact click path/count and save result `NOT_RUN`. `F02` Elleen catalog → stock → customer storefront: headings observed historically; mutation and readback `NOT_RUN`. `F03` BThwani operator dashboard → Finance → Pending: **2 navigation clicks PASS** in BrowserAct; a dedicated real-session Playwright regression separately proved Finance → Pending, RTL, visible queue/search, no horizontal overflow, no page errors or observed same-origin finance 5xx. This does not prove WLT balances or settlements.
+- Inferred *Elleen UI concepts*, **not database claims**: `Store` (store identity/launch UI), `CatalogItem` and `Stock` (catalog + low-stock headings), `Order` (order cards/statuses), `PaymentMethodConfiguration` (settings provider labels). Confidence `MEDIUM` for UI concepts, `UNKNOWN` for attributes, storage and relations. BThwani's actual Store, Order and WLT agreement ownership is established separately by its own code/contracts. No Elleen private implementation or artwork copied.
+
+**Replica Diff RPL-02 (reproducible bounded dataset):**
+- Authored the tool input `docs/reference/elleen-p00-replica-features.csv` in the prescribed `feature,area,priority,original,clone,notes` schema. It contains **45 evidence-cautious rows**: **38 counted**, 6 reference-only or not-admitted features skipped, plus one BThwani-specific agreement flow excluded from competitor parity. `partial` means source/screen presence without E2E equivalence; `yes` in `original` means only the *visible label or screen* was observed for its listed feature.
+- Ran the **unmodified upstream** `replica-diff/parity.py`: **48.7/100 heuristic feature parity**, **0/11 must-haves verified complete** in this matrix; NOT a platform completeness, security, product acceptance or release score. The previous **50/100 from 12 provisional rows is superseded** for scope and sampling purposes by this 45-row matrix.
+- Ran the **unmodified upstream** `replica-diff/imgdiff.py` in layout mode on direct Playwright dashboard screenshots. Elleen's browser zoom required physical viewport `911×600` to render CSS `1366×900`; BThwani used physical/CSS `1366×900`. Both independently confirmed CSS `1366×900`, RTL, HTTP 200 and no horizontal overflow. Raw layout similarity: **18.1/100**, `different`. **NOT admissible as an exact visual-parity gate**: sites intentionally use independent visual identities, datasets differ, and task-oriented BThwani dashboard is not a pixel clone. Raw screenshots/diff contain account-specific visuals, were kept only under a private local temporary folder, and must not be checked into this product repository.
+- **Design decision:** do not adopt Elleen trade dress, paid SaaS plan logic or payment integrations from these numbers. Prefer BThwani's reduced-click actor task flow and canonical DSH/WLT controls.
+
+**REA-02 owned technical analysis:** additionally ran `rea analyze-web-bundle` against the *BThwani-owned* Partner Web `http://localhost:18102/more` via origin-restricted Edge CDP. Evidence `ev_779965376f772ffdeb57b4fddb0566fd9ecd914c45a168985b63c440c852b8cc`: one development JS bundle analyzed (8,073,221 bytes), 420 `path`/`route`-like static values. These are **static candidate references**, **not** evidence that all routes are accessible, authorized, called or working. No source maps were fetched and **no competitor source bundles were analyzed**. Existing source/contract and runtime proof still outrank static route inventory. REA's broader audit-wide doctor remains nonhealthy for unrelated native decompilation engines; this targeted web analysis was successful.
+
+**Test artifact:** `apps/control-panel/tests/finance-pending-navigation.e2e.cjs` is a reusable read-only Playwright proof on the actual Operator Edge session, with no mocks or financial writes. It passed on the existing local services. Finance data accuracy, account isolation, immutable WLT ledger and P01 Store agreement approval remain **NOT_RUN** by this test.
+
+**Closure state:** `P00 = OPEN` (many per-icon dialogs, paid entitlements, mobile-device transitions and state-changing flows not observed); `P01 = OPEN/REVIEW_BLOCKED` for billing activation and the unresolved Store agreement warning. No accidental conclusion from the Replica score overrides those states.
+
+### P00 — Playwright per-control read-only verification (2026-11-02)
+
+This observation tightens `ET03` and `ES03` beyond headings/navigation without submitting a payment or catalog change:
+
+| Screen / action | Observed interactive state | Explicitly unverified |
+| --- | --- | --- |
+| `ET03` payment methods → first `إعداد` | Four visible `إعداد` entry controls; the first opened a visible **COD dialog** with `تفعيل طريقة الدفع` checkbox, customer instruction/note textarea and `إلغاء` / `حفظ التغييرات` actions. No path change. | Toggle effect, existing value, save permission/validation, persisted provider state, charge settlement |
+| `ES03` product list → `إضافة سريعة` | Six displayed products, status/count buttons, search, categories and brands controls. Quick-add revealed an **inline form** (not an ARIA dialog) with price, stock, `نشط` and `تتبع المخزون` fields/controls. | Field-level validation (absence of HTML `required` is not proof validation is missing), creation, stock mutation, image upload, Client projection |
+
+**Source:** authenticated user's Edge session, temporary Playwright pages closed after capture; observed DOM and click effects only. No form values, secrets, customer records, source bundles or private API payloads collected.
+
+**Private visual evidence digests:** matched CSS viewport `1366×900` (Elleen screenshot physically `911×600` because its existing browser zoom, normalized by Replica Diff; BThwani `1366×900`). Locally retained **outside Git** at `C:\Users\bassa\AppData\Local\Temp\bthwani-p00-20261102\`:
+- `elleen-operator-1366x900.png`: SHA-256 `16d7f83fd9c4d0da4b303dc6138eed86b7967a49ba1cb5fbebdd25e2c02a40fe`
+- `bthwani-operator-1366x900.png`: SHA-256 `0fdf5da99fb55787e3b837b4738208cdee57ae994fb41db33735e2f385fd1f7b`
+- `operator-layout-diff.png`: SHA-256 `f36e9ff9b395ed6ac5eb805fcda7cc528f0b9a4d2afd2d0dc7e522e92e398877`
+
+These screenshots contain owner-account context; do **not** publish, package, copy to source assets or infer financial correctness from them. The `18.1/100` visual score is a **nonbinding layout diagnostic** with unlike datasets, not a functionality or design-quality verdict.
+
+The Replica CSV was updated with the newly observed COD/quick-add controls, but retains `partial` for both because save/readback was not exercised. `P00` remains **OPEN** for unverified controls and mobile/paid cases; `P01` remains **OPEN** for canonical agreement readback.
