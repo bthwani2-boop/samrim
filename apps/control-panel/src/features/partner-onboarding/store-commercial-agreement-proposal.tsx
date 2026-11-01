@@ -5,17 +5,9 @@ import { useCallback, useEffect, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { stablePartnerMutationHeaders } from "../partners/partner-request";
 import { nextStoreCommercialAgreementVersion } from "./store-commercial-agreement-version";
-import { sameStoreCommercialRates, storeCommercialRatesForProposal } from "./store-commercial-proposal-rates";
+import { matchesProposedStoreAgreement, storeCommercialRatesForProposal, type ExpectedStoreCommercialProposal, type StoreCommercialProposalReadback } from "./store-commercial-proposal-rates";
 
-type Agreement = Readonly<{
-  agreementId: string;
-  status: string;
-  agreementVersion: number;
-  commercialModel: "COMMISSION" | "SUBSCRIPTION" | "HYBRID"; // Historical read-only model; not offered for new proposals.
-  recurringAmountMinor: number;
-  billingPeriod: "NONE" | "MONTHLY" | "ANNUAL";
-  rates: readonly { fulfillmentMode: string; commissionRateBps: number }[];
-}>;
+type Agreement = StoreCommercialProposalReadback & Readonly<{ partnerActorId: string }>;
 
 const labels: Record<string, string> = {
   BTHWANI_CAPTAIN: "توصيل بثواني",
@@ -53,10 +45,10 @@ export function StoreCommercialAgreementProposal({ storeId, modes }: Readonly<{s
       throw new Error("AGREEMENT_READ_UNAVAILABLE");
     }
     const items = body.agreements as Agreement[];
-    if (items.some(item => !item.agreementId || !Array.isArray(item.rates))) throw new Error("AGREEMENT_READ_INVALID");
+    if (items.some(item => !item.agreementId || item.storeId !== storeId || !Array.isArray(item.rates))) throw new Error("AGREEMENT_READ_INVALID");
     setAgreements(items);
     return items;
-  }, [url]);
+  }, [url, storeId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -93,6 +85,18 @@ export function StoreCommercialAgreementProposal({ storeId, modes }: Readonly<{s
       ...(recurring ? { recurringAmountMinor: amount, billingPeriod, billingTimeZone: "Asia/Aden", invoiceDueDays: due,
         graceDays: grace, renewalPolicy, terminationTerms: terminationTerms.trim(), adjustmentTerms: adjustmentTerms.trim() } : {}),
     };
+    const expected: ExpectedStoreCommercialProposal = {
+      storeId, proposedByActorId: actorId, agreementVersion: nextProposalVersion + 1,
+      reason: proposalReason.trim(), commercialModel, rates,
+      recurringAmountMinor: recurring ? amount : 0,
+      billingPeriod: recurring ? billingPeriod : "NONE",
+      billingTimeZone: "Asia/Aden",
+      invoiceDueDays: recurring ? due : 0,
+      graceDays: recurring ? grace : 0,
+      renewalPolicy: recurring ? renewalPolicy : "NONE",
+      terminationTerms: recurring ? terminationTerms.trim() : "",
+      adjustmentTerms: recurring ? adjustmentTerms.trim() : "",
+    };
     setBusy(true);
     setError("");
     setNotice("");
@@ -103,15 +107,16 @@ export function StoreCommercialAgreementProposal({ storeId, modes }: Readonly<{s
       });
       if (!response.ok) throw new Error("PROPOSAL_REJECTED");
       const body = await response.json() as { agreement?: Agreement };
-      if (!body.agreement || body.agreement.status !== "PROPOSED" || body.agreement.commercialModel !== commercialModel ||
-        body.agreement.rates.length !== distinct.length || body.agreement.recurringAmountMinor !== (recurring ? amount : 0) ||
-        !sameStoreCommercialRates(body.agreement.rates, rates)) {
+      const proposed = body.agreement;
+      if (!proposed || !matchesProposedStoreAgreement(proposed, expected)) {
         throw new Error("PROPOSAL_READBACK_MISMATCH");
       }
       const actual = await read();
-      if (!actual.some(item => item.agreementId === body.agreement?.agreementId && item.status === "PROPOSED" &&
-        item.commercialModel === commercialModel && item.recurringAmountMinor === (recurring ? amount : 0) &&
-        sameStoreCommercialRates(item.rates, rates))) {
+      const confirmed = actual.filter(item =>
+        item.agreementId === proposed.agreementId &&
+        item.partnerActorId === proposed.partnerActorId &&
+        matchesProposedStoreAgreement(item, expected));
+      if (confirmed.length !== 1) {
         throw new Error("PROPOSAL_CANONICAL_READBACK_MISMATCH");
       }
       setNotice(recurring ? "حُفظ اقتراح الاشتراك بانتظار قبول صاحب المتجر. التحصيل والاعتماد المالي معطّلان حتى اكتمال الفوترة." :

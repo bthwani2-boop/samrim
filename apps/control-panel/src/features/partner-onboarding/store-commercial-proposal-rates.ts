@@ -37,3 +37,52 @@ export function sameStoreCommercialRates(
   return expected.every(rate => actual.some(candidate =>
     candidate.fulfillmentMode === rate.fulfillmentMode && candidate.commissionRateBps === rate.commissionRateBps));
 }
+
+export type StoreCommercialProposalReadback = Readonly<{
+  agreementId: string;
+  storeId: string;
+  proposedByActorId: string;
+  agreementVersion: number;
+  status: string;
+  reason: string;
+  commercialModel: StoreCommercialModel | "HYBRID";
+  recurringAmountMinor: number;
+  billingPeriod: "NONE" | "MONTHLY" | "ANNUAL";
+  billingTimeZone: string;
+  invoiceDueDays: number;
+  graceDays: number;
+  renewalPolicy: "NONE" | "MANUAL" | "AUTOMATIC";
+  terminationTerms: string;
+  adjustmentTerms: string;
+  rates: readonly Readonly<{ fulfillmentMode: string; commissionRateBps: number }>[];
+}>;
+export type ExpectedStoreCommercialProposal = Readonly<
+  Omit<StoreCommercialProposalReadback, "agreementId" | "status" | "commercialModel" | "rates"> & {
+    commercialModel: StoreCommercialModel;
+    rates: readonly StoreCommissionRate[];
+  }
+>;
+
+// Verify every consent-bearing term, not just the amount or rates.
+// A successful POST or a same-ID GET cannot prove that altered terms were accepted.
+export function matchesProposedStoreAgreement(
+  actual: StoreCommercialProposalReadback,
+  expected: ExpectedStoreCommercialProposal,
+): boolean {
+  return typeof actual.agreementId === "string" && actual.agreementId.length > 0 &&
+    actual.status === "PROPOSED" &&
+    actual.storeId === expected.storeId &&
+    actual.proposedByActorId === expected.proposedByActorId &&
+    actual.agreementVersion === expected.agreementVersion &&
+    actual.reason === expected.reason &&
+    actual.commercialModel === expected.commercialModel &&
+    actual.recurringAmountMinor === expected.recurringAmountMinor &&
+    actual.billingPeriod === expected.billingPeriod &&
+    actual.billingTimeZone === expected.billingTimeZone &&
+    actual.invoiceDueDays === expected.invoiceDueDays &&
+    actual.graceDays === expected.graceDays &&
+    actual.renewalPolicy === expected.renewalPolicy &&
+    actual.terminationTerms === expected.terminationTerms &&
+    actual.adjustmentTerms === expected.adjustmentTerms &&
+    sameStoreCommercialRates(actual.rates, expected.rates);
+}

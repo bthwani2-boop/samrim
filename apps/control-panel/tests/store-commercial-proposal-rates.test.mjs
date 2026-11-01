@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { sameStoreCommercialRates, storeCommercialRatesForProposal } from "../src/features/partner-onboarding/store-commercial-proposal-rates.ts";
+import { matchesProposedStoreAgreement, sameStoreCommercialRates, storeCommercialRatesForProposal } from "../src/features/partner-onboarding/store-commercial-proposal-rates.ts";
 
 const modes = ["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"];
 test("commission proposals can negotiate different per-mode rates", () => {
@@ -46,4 +46,48 @@ test("canonical agreement readback requires all exact per-mode terms", () => {
   assert.equal(sameStoreCommercialRates([expected[0]], expected), false);
   assert.equal(sameStoreCommercialRates([expected[0], { fulfillmentMode: "PARTNER_CAPTAIN", commissionRateBps: 1 }], expected), false);
   assert.equal(sameStoreCommercialRates([expected[0], { fulfillmentMode: "CUSTOMER_PICKUP", commissionRateBps: 0 }], expected), false);
+});
+
+test("subscription proposal is confirmed only when every financial and consent term matches", () => {
+  const expected = {
+    storeId: "store-1", proposedByActorId: "operator-1", agreementVersion: 2,
+    reason: "New subscription negotiated with the store",
+    commercialModel: "SUBSCRIPTION", recurringAmountMinor: 1500,
+    billingPeriod: "MONTHLY", billingTimeZone: "Asia/Aden",
+    invoiceDueDays: 7, graceDays: 3, renewalPolicy: "MANUAL",
+    terminationTerms: "Cancel before the next renewal",
+    adjustmentTerms: "Finance reviews partial refunds",
+    rates: [{ fulfillmentMode: "CUSTOMER_PICKUP", commissionRateBps: 0 }],
+  };
+  const actual = { agreementId: "agreement-2", status: "PROPOSED", ...expected };
+  assert.equal(matchesProposedStoreAgreement(actual, expected), true);
+  const alterations = {
+    agreementId: "", status: "PARTNER_ACCEPTED", storeId: "another-store",
+    proposedByActorId: "another-operator", agreementVersion: 1,
+    reason: "Changed terms", commercialModel: "HYBRID",
+    recurringAmountMinor: 1600, billingPeriod: "ANNUAL", billingTimeZone: "UTC",
+    invoiceDueDays: 8, graceDays: 4, renewalPolicy: "AUTOMATIC",
+    terminationTerms: "Different cancellation policy", adjustmentTerms: "Different refund policy",
+    rates: [{ fulfillmentMode: "CUSTOMER_PICKUP", commissionRateBps: 100 }],
+  };
+  for (const [field, replacement] of Object.entries(alterations)) {
+    assert.equal(matchesProposedStoreAgreement({ ...actual, [field]: replacement }, expected), false, field);
+  }
+});
+
+test("commission proposal also verifies canonical zero recurring terms", () => {
+  const expected = {
+    storeId: "store-2", proposedByActorId: "operator-2", agreementVersion: 1,
+    reason: "Commission agreement for the new store",
+    commercialModel: "COMMISSION", recurringAmountMinor: 0,
+    billingPeriod: "NONE", billingTimeZone: "Asia/Aden",
+    invoiceDueDays: 0, graceDays: 0, renewalPolicy: "NONE",
+    terminationTerms: "", adjustmentTerms: "",
+    rates: [{ fulfillmentMode: "BTHWANI_CAPTAIN", commissionRateBps: 750 }],
+  };
+  const actual = { agreementId: "agreement-3", status: "PROPOSED", ...expected };
+  assert.equal(matchesProposedStoreAgreement(actual, expected), true);
+  assert.equal(matchesProposedStoreAgreement({ ...actual, recurringAmountMinor: 1 }, expected), false);
+  assert.equal(matchesProposedStoreAgreement({ ...actual, billingPeriod: "MONTHLY" }, expected), false);
+  assert.equal(matchesProposedStoreAgreement({ ...actual, rates: [{ ...expected.rates[0], commissionRateBps: 751 }] }, expected), false);
 });
