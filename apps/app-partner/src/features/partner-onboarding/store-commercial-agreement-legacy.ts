@@ -7,16 +7,22 @@
  * this projection never authorizes acceptance, invoices or settlement.
  */
 const legacyFinalStatuses = new Set(["ACTIVE", "SUPERSEDED", "FINANCE_REJECTED", "REJECTED"]);
-const commercialFields = [
-  "commercialModel", "recurringAmountMinor", "billingPeriod", "billingTimeZone",
-  "invoiceDueDays", "graceDays", "renewalPolicy", "terminationTerms", "adjustmentTerms",
-] as const;
+// Old WLT omits these fields. The newer DSH Go bridge can serialize the
+// missing values as empty strings and zeroes. Neither shape authorizes billing.
+const legacyBridgeEmptyFields = {
+  commercialModel: "", recurringAmountMinor: 0, billingPeriod: "",
+  billingTimeZone: "", invoiceDueDays: 0, graceDays: 0, renewalPolicy: "",
+  terminationTerms: "", adjustmentTerms: "",
+} as const;
 
 export function normalizeHistoricalCommissionReadback(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
   const record = value as Record<string, unknown>;
-  if (!legacyFinalStatuses.has(String(record.status)) ||
-    commercialFields.some((field) => Object.hasOwn(record, field)) ||
+  const fields = Object.entries(legacyBridgeEmptyFields);
+  const allMissing = fields.every(([field]) => !Object.hasOwn(record, field));
+  const allBridgeEmpty = fields.every(([field, empty]) =>
+    Object.hasOwn(record, field) && record[field] === empty);
+  if (!legacyFinalStatuses.has(String(record.status)) || (!allMissing && !allBridgeEmpty) ||
     !Array.isArray(record.rates) || record.rates.length === 0) return value;
   return {
     ...record,
