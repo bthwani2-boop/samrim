@@ -12,7 +12,6 @@ import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from
 import { currentIdentityState, logoutIdentity, subscribeIdentitySession } from "../../bootstrap/identity";
 import { PartnerPerformancePeek } from "./partner-performance-peek";
 import { PartnerInsights } from "./partner-insights";
-import { PartnerInventorySummary } from "./partner-inventory-summary";
 import { PartnerDesktopHome } from "./partner-desktop-home";
 import { readOwnStoreCommercialAgreements } from "./store-commercial-agreement-client";
 import { agreementReadinessMessage, ownStoreAgreementReadiness, type StoreAgreementReadback } from "./store-agreement-readiness";
@@ -224,7 +223,6 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
       <Text style={styles.sectionTitle}>نظرة على المتجر</Text>
       <PartnerInsights embedded/>
     </View> : null}
-    {!desktopWeb && selectedStore && can("catalog") ? <PartnerInventorySummary key={"home-inventory:"+selectedStore.id} store={selectedStore} compact /> : null}
     {!desktopWeb ? <View style={styles.dashboardSection}>
     <Text style={styles.sectionTitle}>إدارة المتجر</Text>
     <View style={styles.grid}>{actions.map((item,index)=><Pressable key={item.label} accessibilityRole="button" accessibilityLabel={item.label}

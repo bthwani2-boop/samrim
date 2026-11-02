@@ -2,14 +2,13 @@ import { typography } from "@bthwani/design-system";
 import { useAppearanceTheme } from "@bthwani/design-system/native";
 import { createDshMobileClient, scopedCatalogInventorySummary, type CatalogInventorySummary, type PartnerAccessibleStore } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { type Href, useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
-export function PartnerInventorySummary({ store, compact = false }: Readonly<{ store: PartnerAccessibleStore; compact?: boolean }>) {
+export function PartnerInventorySummary({ store }: Readonly<{ store: PartnerAccessibleStore }>) {
  const theme=useAppearanceTheme();
- const router=useRouter();
  const styles=useMemo(()=>StyleSheet.create({
   panel:{padding:14,borderRadius:13,borderWidth:1,borderColor:theme.borderColor,backgroundColor:theme.surface,gap:10},
   title:{...typography.bodyStrong,color:theme.color,fontWeight:"800"},
@@ -59,18 +58,12 @@ export function PartnerInventorySummary({ store, compact = false }: Readonly<{ s
   {label:"نافدة المخزون",value:summary.stockoutOffers},
  ]:[];
  return <View style={styles.panel} accessibilityLabel="ملخص مخزون المتجر الكامل">
-  <Text accessibilityRole="header" style={styles.title}>{compact ? "تنبيه مخزون المتجر" : "إجماليات المخزون من DSH"}</Text>
+  <Text accessibilityRole="header" style={styles.title}>إجماليات المخزون من DSH</Text>
   {!allowed?<Text style={styles.warning}>لا تملك صلاحية قراءة كتالوج هذا المتجر.</Text>:null}
   {loading?<ActivityIndicator accessibilityLabel="جارٍ قراءة ملخص المخزون" color={theme.brandAction}/>:null}
   {error?<Pressable accessibilityRole="button" accessibilityLabel="إعادة تحميل ملخص المخزون" onPress={()=>setRetry(n=>n+1)} style={styles.retry}><Text style={styles.warning}>{error} · إعادة المحاولة</Text></Pressable>:null}
-  {summary&&!loading&&!error?(compact ? <Pressable accessibilityRole={summary.stockoutOffers ? "button" : undefined}
-    accessibilityLabel={summary.stockoutOffers ? "عرض المنتجات نافدة المخزون" : "لا يوجد نفاد مخزون"}
-    disabled={summary.stockoutOffers===0} onPress={()=>router.navigate("/products?filter=stockout" as Href)} style={styles.retry}>
-    <Text style={summary.stockoutOffers ? styles.warning : styles.note}>{summary.stockoutOffers
-      ? summary.stockoutOffers.toLocaleString("ar-YE")+" منتج نافد من كامل مخزون المتجر · عرض المنتجات"
-      : "لا توجد منتجات نافدة في كامل كتالوج المتجر."}</Text>
-  </Pressable> : <><View style={styles.cards}>{items.map(item=><View key={item.label} style={styles.card}><Text style={styles.note}>{item.label}</Text><Text style={styles.value}>{item.value.toLocaleString("ar-YE")}</Text></View>)}</View>
+  {summary&&!loading&&!error?<><View style={styles.cards}>{items.map(item=><View key={item.label} style={styles.card}><Text style={styles.note}>{item.label}</Text><Text style={styles.value}>{item.value.toLocaleString("ar-YE")}</Text></View>)}</View>
    <Text style={styles.note}>الأرقام تشمل جميع عروض المتجر، لا الصفحة الحالية فقط. لا تعني إتاحة العرض أن المتجر مفتوح لاستقبال الطلبات.</Text>
-  </>):null}
+  </>:null}
  </View>;
 }
