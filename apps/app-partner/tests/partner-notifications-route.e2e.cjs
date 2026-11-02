@@ -24,11 +24,11 @@ async function inspect(page, width) {
 }
 
 async function run() {
-  const browser=await chromium.connectOverCDP("http://127.0.0.1:9223");
+  const browser=await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9223");
   let page;
   try {
     const context=browser.contexts().find(c=>c.pages().some(p=>p.url().startsWith("http://localhost:18102"))) ?? browser.contexts()[0];
-    assert.ok(context,"LOCAL_EDGE_CONTEXT_REQUIRED");
+    assert.ok(context,"LOCAL_CDP_CONTEXT_REQUIRED");
     page=await context.newPage();
     const desktop=await inspect(page,1360);
     console.log("NOTIFICATIONS_DESKTOP "+JSON.stringify(desktop));

@@ -4,13 +4,13 @@ const { chromium } = require("@playwright/test");
 // Read-only finance navigation proof. Never submits a financial action or
 // fabricates WLT responses; financial balances require separate owner readback.
 async function main() {
-  const browser = await chromium.connectOverCDP("http://127.0.0.1:9223");
+  const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9223");
   let page;
   try {
     const origin = "http://localhost:13000";
     const context = browser.contexts().find(item =>
       item.pages().some(tab => tab.url().startsWith(origin)));
-    assert.ok(context, "AUTHORIZED_OPERATOR_EDGE_CONTEXT_REQUIRED");
+    assert.ok(context, "AUTHORIZED_OPERATOR_CDP_CONTEXT_REQUIRED");
     page = await context.newPage();
     await page.setViewportSize({ width: 1366, height: 900 });
     const failures = [];

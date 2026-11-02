@@ -28,7 +28,7 @@ async function metric(page, label) {
 }
 
 async function main() {
-  const browser = await chromium.connectOverCDP("http://127.0.0.1:9223");
+  const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9223");
   let page;
   try {
     const origin = "http://localhost:13000";

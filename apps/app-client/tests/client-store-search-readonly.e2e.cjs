@@ -4,13 +4,13 @@ const { chromium } = require("@playwright/test");
 // Read-only authenticated Client discovery -> Store projection proof.
 // Never click cart, favorites, checkout or mutate an existing Store/offer.
 async function main() {
-  const browser = await chromium.connectOverCDP("http://127.0.0.1:9223");
+  const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9223");
   let page;
   try {
     const origin = "http://localhost:18101";
     const context = browser.contexts().find(item =>
       item.pages().some(tab => tab.url().startsWith(origin + "/")));
-    assert.ok(context, "AUTHORIZED_CLIENT_EDGE_CONTEXT_REQUIRED");
+    assert.ok(context, "AUTHORIZED_CLIENT_CDP_CONTEXT_REQUIRED");
     page = await context.newPage();
     await page.setViewportSize({ width: 390, height: 844 });
     const failures = [];

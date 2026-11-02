@@ -4,7 +4,7 @@ const { chromium } = require("@playwright/test");
 // Real, read-only Partner/DSH contract proof. Never log actor/store identifiers,
 // tokens, agreement amounts, or raw response bodies.
 async function main() {
-  const browser = await chromium.connectOverCDP("http://127.0.0.1:9223");
+  const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9223");
   let page;
   try {
     const context = browser.contexts().find(candidate =>

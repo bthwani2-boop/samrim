@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const { chromium, expect } = require("@playwright/test");
 
 async function main() {
-  const browser = await chromium.connectOverCDP("http://127.0.0.1:9223", {timeout: 40000});
+  const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9223", {timeout: 40000});
   let operator, partner;
   try {
     const origin = "http://localhost:13000";

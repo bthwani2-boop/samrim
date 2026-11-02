@@ -1,134 +1,143 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Edge', 'Chrome', 'Both')]
-    [string]$Browser = 'Both',
+    [ValidateSet('Chrome', 'Edge', 'Both')]
+    [string]$Browser = 'Chrome',
     [string]$Url = 'http://localhost:13000/',
     [string]$AccountEmail
 )
 
 $ErrorActionPreference = 'Stop'
-
-# User-specific account selection lives outside the repository and works in already-open shells.
-$accountFile = Join-Path $env:LOCALAPPDATA 'BThwani\BrowserAutomation\account.txt'
+$profilesRoot = Join-Path $env:LOCALAPPDATA 'BThwani\BrowserAutomation'
+$accountFile = Join-Path $profilesRoot 'account.txt'
 if (-not $AccountEmail -and (Test-Path -LiteralPath $accountFile)) {
     $AccountEmail = (Get-Content -LiteralPath $accountFile -Raw -Encoding UTF8).Trim()
 }
 
-function Start-BThwaniBrowser {
-    param(
-        [Parameter(Mandatory)] [string]$Name,
-        [Parameter(Mandatory)] [string]$Exe,
-        [Parameter(Mandatory)] [int]$Port,
-        [Parameter(Mandatory)] [string]$ProfileDir,
-        [Parameter(Mandatory)] [string]$TargetUrl,
-        [string]$AdditionalUrl
-    )
-
-    if (-not (Test-Path -LiteralPath $Exe)) {
-        throw "$Name executable not found: $Exe"
-    }
-    New-Item -ItemType Directory -Force -Path $ProfileDir | Out-Null
-    $arguments = @(
-        "--remote-debugging-address=127.0.0.1"
-        "--remote-debugging-port=$Port"
-        "--user-data-dir=`"$ProfileDir`""
-        "--no-first-run"
-        "--no-default-browser-check"
-        "`"$TargetUrl`""
-    )
-    if ($AdditionalUrl) {
-        $arguments += "`"$AdditionalUrl`""
-    }
-    Start-Process -FilePath $Exe -ArgumentList $arguments | Out-Null
-
-    $debugReady = $false
-    for ($i = 0; $i -lt 10; $i++) {
-        Start-Sleep -Milliseconds 350
-        if (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue) {
-            $debugReady = $true
-            break
-        }
-    }
-    $status = if ($debugReady) { 'READY' } else { 'STARTED_PORT_PENDING' }
-    Write-Host "$Name $status | URL=$TargetUrl | CDP=http://127.0.0.1:$Port"
-}
-
-# Read Chromium's own profile index; never copy cookies or credentials.
-function Get-AccountProfile {
-    param(
-        [Parameter(Mandatory)] [string]$UserDataDir,
-        [Parameter(Mandatory)] [string]$Email
-    )
-    $localState = Join-Path $UserDataDir 'Local State'
-    if (-not (Test-Path -LiteralPath $localState)) { return $null }
+function Test-AccountIndex {
+    param([string]$ProfileDir, [string]$Email)
+    if (-not $Email) { return 'NOT_REQUESTED' }
+    $localState = Join-Path $ProfileDir 'Local State'
+    if (-not (Test-Path -LiteralPath $localState)) { return 'NOT_VERIFIED' }
     try {
         $state = Get-Content -LiteralPath $localState -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
-        foreach ($profile in $state.profile.info_cache.GetEnumerator()) {
-            if ([string]$profile.Value.user_name -ieq $Email) {
-                return [string]$profile.Key
-            }
+        foreach ($entry in $state.profile.info_cache.GetEnumerator()) {
+            if ([string]$entry.Value.user_name -ieq $Email) { return 'PROFILE_EMAIL_MATCH' }
         }
     } catch {
-        Write-Warning "Could not read browser profile index: $UserDataDir"
+        return 'NOT_VERIFIED'
     }
-    return $null
+    return 'PROFILE_EMAIL_NOT_FOUND'
 }
 
-function Start-AccountProfile {
-    param(
-        [Parameter(Mandatory)] [string]$Name,
-        [Parameter(Mandatory)] [string]$Exe,
-        [Parameter(Mandatory)] [string]$Profile,
-        [Parameter(Mandatory)] [string]$TargetUrl
-    )
-    if (-not (Test-Path -LiteralPath $Exe)) { throw "$Name executable not found: $Exe" }
-    # Default browser profiles cannot reliably expose CDP; preserve their existing sign-in sessions.
-    Start-Process -FilePath $Exe -ArgumentList @(
-        "--profile-directory=`"$Profile`"",
-        '--new-window',
-        "`"$TargetUrl`""
-    ) | Out-Null
-    Write-Host "$Name PROFILE_OPENED | PROFILE=$Profile | URL=$TargetUrl | CDP=NOT_ENABLED_FOR_EXISTING_PROFILE"
+function Test-CdpEndpoint {
+    param([string]$Name, [string]$Executable, [string]$ProfileDir, [int]$Port)
+    $connections = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
+    if ($connections.Count -eq 0) { return $false }
+    foreach ($connection in $connections) {
+        if ($connection.LocalAddress -notin @('127.0.0.1', '::1')) {
+            throw "$Name CDP_UNSAFE_BIND: $Port is listening beyond loopback"
+        }
+        $owner = Get-CimInstance Win32_Process -Filter ("ProcessId=" + $connection.OwningProcess) -ErrorAction Stop
+        $expected = [System.IO.Path]::GetFileName($Executable)
+        if ($owner.Name -ine $expected -or
+            -not $owner.CommandLine -or
+            $owner.CommandLine.IndexOf($ProfileDir, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
+            throw "$Name CDP_PORT_CONFLICT: $Port is not owned by the expected profile"
+        }
+    }
+    try {
+        $version = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/json/version" -TimeoutSec 3
+        $expectedProduct = if ($Name -eq 'Chrome') { 'Chrome/' } else { 'Edg/' }
+        if (-not ([string]$version.Browser).StartsWith($expectedProduct, [StringComparison]::Ordinal)) {
+            throw 'Incorrect browser product'
+        }
+        $uri = [Uri]$version.webSocketDebuggerUrl
+        if ($uri.Scheme -ne 'ws' -or $uri.Host -notin @('127.0.0.1', '::1') -or $uri.Port -ne $Port) {
+            throw 'Unexpected WebSocket debugger address'
+        }
+        $socket = [System.Net.WebSockets.ClientWebSocket]::new()
+        $cancel = [System.Threading.CancellationTokenSource]::new([TimeSpan]::FromSeconds(3))
+        try {
+            $socket.ConnectAsync($uri, $cancel.Token).GetAwaiter().GetResult()
+            if ($socket.State -ne [System.Net.WebSockets.WebSocketState]::Open) {
+                throw 'WebSocket handshake incomplete'
+            }
+        } finally {
+            $socket.Dispose()
+            $cancel.Dispose()
+        }
+    } catch {
+        throw "$Name CDP_NOT_READY: $($_.Exception.Message)"
+    }
+    return $true
 }
 
+function Start-BThwaniBrowser {
+    param([string]$Name, [string]$Executable, [int]$Port, [string]$ProfileDir, [string]$TargetUrl)
+    if (-not (Test-Path -LiteralPath $Executable)) { throw "$Name BROWSER_MISSING" }
+    if (-not (Test-Path -LiteralPath $ProfileDir)) {
+        New-Item -ItemType Directory -Path $ProfileDir -Force | Out-Null
+    }
+    $ready = Test-CdpEndpoint -Name $Name -Executable $Executable -ProfileDir $ProfileDir -Port $Port
+    if (-not $ready) {
+        $existing = @(Get-CimInstance Win32_Process -Filter ("Name='" + [IO.Path]::GetFileName($Executable) + "'") |
+            Where-Object { $_.CommandLine -and $_.CommandLine.IndexOf($ProfileDir, [StringComparison]::OrdinalIgnoreCase) -ge 0 })
+        if ($existing.Count -gt 0) {
+            throw "$Name PROFILE_ALREADY_RUNNING_WITHOUT_CDP: preserve session; close it manually if necessary"
+        }
+        $arguments = @(
+            '--remote-debugging-address=127.0.0.1',
+            "--remote-debugging-port=$Port",
+            ('--user-data-dir="' + $ProfileDir + '"'),
+            '--no-first-run',
+            '--no-default-browser-check',
+            ('"' + $TargetUrl + '"')
+        )
+        Start-Process -FilePath $Executable -ArgumentList $arguments | Out-Null
+        for ($i = 0; $i -lt 20; $i++) {
+            Start-Sleep -Milliseconds 350
+            $ready = Test-CdpEndpoint -Name $Name -Executable $Executable -ProfileDir $ProfileDir -Port $Port
+            if ($ready) { break }
+        }
+        if (-not $ready) { throw "$Name CDP_START_TIMEOUT: browser launched; do not launch another copy" }
+    }
+    $targetUri = [Uri]$TargetUrl
+    $origin = $targetUri.GetLeftPart([UriPartial]::Authority)
+    $pages = @(Invoke-RestMethod -Uri "http://127.0.0.1:$Port/json/list" -TimeoutSec 3)
+    $present = @($pages | Where-Object {
+        $_.type -eq 'page' -and
+        ($_.url -eq $TargetUrl -or ($targetUri.AbsolutePath -eq '/' -and
+            ([string]$_.url).StartsWith($origin + '/', [StringComparison]::OrdinalIgnoreCase)))
+    })
+    if ($present.Count -eq 0) {
+        $encodedUrl = [Uri]::EscapeDataString($TargetUrl)
+        Invoke-RestMethod -Uri "http://127.0.0.1:$Port/json/new?$encodedUrl" -Method Put -TimeoutSec 5 | Out-Null
+    }
+    $account = Test-AccountIndex -ProfileDir $ProfileDir -Email $AccountEmail
+    Write-Host "$Name CDP_READY | URL=$TargetUrl | CDP=http://127.0.0.1:$Port | ACCOUNT=$account | SITE_AUTH=NOT_TESTED"
+}
+
+$chromeExe = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
 $edgeExe = 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
 if (-not (Test-Path -LiteralPath $edgeExe)) {
     $edgeExe = 'C:\Program Files\Microsoft\Edge\Application\msedge.exe'
 }
-$chromeExe = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
-$profilesRoot = Join-Path $env:LOCALAPPDATA 'BThwani\BrowserAutomation'
 
-if ($Browser -in @('Edge', 'Both')) {
-    $edgeProfile = if ($AccountEmail) {
-        Get-AccountProfile -UserDataDir (Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\User Data') -Email $AccountEmail
-    } else { $null }
-
-    if ($edgeProfile) {
-        Start-AccountProfile -Name 'Edge' -Exe $edgeExe -Profile $edgeProfile -TargetUrl $Url
-    } else {
-        $signInUrl = if ($AccountEmail) {
-            'https://accounts.google.com/AccountChooser?Email=' +
-                [Uri]::EscapeDataString($AccountEmail) +
-                '&continue=https%3A%2F%2Fmyaccount.google.com%2F'
-        } else { $null }
-        Start-BThwaniBrowser -Name 'Edge' -Exe $edgeExe -Port 9223 -ProfileDir (Join-Path $profilesRoot 'Edge') -TargetUrl $Url -AdditionalUrl $signInUrl
-        if ($AccountEmail) {
-            Write-Host "Edge ACCOUNT_NOT_VERIFIED | Sign in to Google with $AccountEmail in the opened tab if prompted"
-        }
-    }
-}
-
+$failures = @()
 if ($Browser -in @('Chrome', 'Both')) {
-    $chromeProfile = if ($AccountEmail) {
-        Get-AccountProfile -UserDataDir (Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data') -Email $AccountEmail
-    } else { $null }
-
-    if ($chromeProfile) {
-        Start-AccountProfile -Name 'Chrome' -Exe $chromeExe -Profile $chromeProfile -TargetUrl $Url
-    } else {
-        Start-BThwaniBrowser -Name 'Chrome' -Exe $chromeExe -Port 9222 -ProfileDir (Join-Path $profilesRoot 'Chrome') -TargetUrl $Url
-        if ($AccountEmail) {
-            Write-Host "Chrome ACCOUNT_NOT_VERIFIED | No matching signed-in Chrome profile found for $AccountEmail"
-        }
+    try {
+        Start-BThwaniBrowser -Name 'Chrome' -Executable $chromeExe -Port 9222 -ProfileDir (Join-Path $profilesRoot 'Chrome') -TargetUrl $Url
+    } catch {
+        Write-Error -Message $_.Exception.Message -ErrorAction Continue
+        $failures += 'Chrome'
     }
 }
+if ($Browser -in @('Edge', 'Both')) {
+    try {
+        Start-BThwaniBrowser -Name 'Edge' -Executable $edgeExe -Port 9223 -ProfileDir (Join-Path $profilesRoot 'Edge') -TargetUrl $Url
+    } catch {
+        Write-Error -Message $_.Exception.Message -ErrorAction Continue
+        $failures += 'Edge'
+    }
+}
+if ($failures.Count -gt 0) { exit 1 }

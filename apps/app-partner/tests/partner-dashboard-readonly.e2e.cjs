@@ -2,11 +2,11 @@ const assert = require("node:assert/strict");
 const { chromium } = require("@playwright/test");
 
 async function audit() {
-  const browser = await chromium.connectOverCDP("http://127.0.0.1:9223");
+  const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9223");
   try {
     const context = browser.contexts()[0];
     const page = context.pages().find(tab => tab.url().startsWith("http://localhost:18102/"));
-    assert.ok(page, "PARTNER_EDGE_TAB_REQUIRED");
+    assert.ok(page, "PARTNER_CDP_TAB_REQUIRED");
     const originalUrl = page.url();
     const errors = [];
     page.on("pageerror", error => errors.push(String(error?.message || error).slice(0, 120)));

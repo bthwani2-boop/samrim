@@ -2,10 +2,10 @@ const assert = require("node:assert/strict");
 const { chromium } = require("@playwright/test");
 
 async function run() {
-  const browser = await chromium.connectOverCDP("http://127.0.0.1:9223");
+  const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9223");
   try {
     const context = browser.contexts()[0];
-    assert.ok(context, "EDGE_CONTEXT_REQUIRED");
+    assert.ok(context, "CDP_CONTEXT_REQUIRED");
     const elleen = context.pages().find(page => page.url().startsWith("https://elleen.ye/admin"));
     if (elleen) {
       const reference = await elleen.evaluate(() => ({
