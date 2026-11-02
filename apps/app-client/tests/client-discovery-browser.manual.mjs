@@ -36,6 +36,12 @@ try {
   await expect(page.getByRole("button", { name: "المنتجات", exact: true })).toBeVisible({ timeout: 12000 });
   const activeSearch = page.getByPlaceholder("ابحث عن متجر أو منتج");
   if (homeOfferName) {
+    stage = "catalog-based search suggestions";
+    const suggestedTerm = page.getByRole("button", { name: /^اقتراح البحث عن / }).first();
+    await suggestedTerm.waitFor({ state: "visible", timeout: 16000 });
+    await suggestedTerm.click();
+    await expect(activeSearch).not.toHaveValue("");
+    summary.catalogSuggestions = "PASS";
     stage = "positive product search";
     await activeSearch.fill(homeOfferName);
     await expect(page.getByText(homeOfferName, { exact: true }).first()).toBeVisible({ timeout: 16000 });

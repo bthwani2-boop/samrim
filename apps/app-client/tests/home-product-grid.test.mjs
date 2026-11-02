@@ -39,3 +39,11 @@ test("typed product search reuses the DSH-backed grid, cart actions, and server 
   assert.match(feed, /searchPublicCatalog\(cityID, normalizedQuery, categoryID, PAGE_SIZE, state\.nextCursor/);
   assert.match(feed, /adjustSimpleOfferQuantity\(offer\.storeId, offer, direction\)/);
 });
+
+test("empty product search offers real catalog-based suggestions with an explicit retry", () => {
+  assert.match(discovery, /searchPublicCatalog\(selectedCityID, "", selectedCategoryID, 8/);
+  assert.match(discovery, /new Set\(page\.offers\.map\(\(offer\) => offer\.productName\.trim\(\)\)/);
+  assert.match(discovery, /اقتراح البحث عن/);
+  assert.match(discovery, /onSearchQueryChange\(name\)/);
+  assert.match(discovery, /إعادة تحميل الاقتراحات/);
+});

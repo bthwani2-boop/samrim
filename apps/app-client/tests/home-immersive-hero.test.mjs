@@ -54,7 +54,7 @@ test("hero movement uses published media and honors offscreen/foreground/motion 
 
 test("home search remains available in the immersive and compact headers without an obstructing floating control", () => {
   assert.match(home, /<ClientPublicHeader/);
-  assert.match(home, /homeCompact=\{compactHeader\}/);
+  assert.match(home, /homeCompact=\{searchOpen \|\| compactHeader\}/);
   assert.match(home, /onSearchOpenChange=\{setSearchVisibility\}/);
   assert.match(shell, /<BthwaniSearchField/);
   assert.doesNotMatch(home, /quickSearch|بحث سريع عن المنتجات|orbScale/);

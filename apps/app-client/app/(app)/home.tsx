@@ -53,7 +53,7 @@ export default function ClientHomeRoute() {
       <StatusBar style="dark" />
       {(searchOpen || compactHeader) ? <View style={!searchOpen && compactHeader ? styles.stickyHeaderOverlay : undefined}><ClientPublicHeader
         homeVariant
-        homeCompact={compactHeader}
+        homeCompact={searchOpen || compactHeader}
         hideAccountAction
         onSearchOpenChange={setSearchVisibility}
         onSearchQueryChange={setSearchQuery}

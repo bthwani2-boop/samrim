@@ -39,7 +39,7 @@ function ClientHeader({ searchOnCurrentRoute = false, hideSearchAction = false, 
   const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
   const isSearchOpen = focus === "search";
   const searchInputRef = useRef<TextInputInstance>(null);
-  const headerHeight = useSharedValue(148);
+  const headerHeight = useSharedValue(homeCompact ? 64 : 148);
   const animatedHeaderStyle = useAnimatedStyle(() => ({ height: headerHeight.value }));
   useEffect(() => {
     if (!homeVariant) return;
@@ -61,12 +61,14 @@ function ClientHeader({ searchOnCurrentRoute = false, hideSearchAction = false, 
         <View style={styles.homeCompactRow}>
           <BthwaniSearchField
             accessibilityLabel="ابحث عن متجر أو منتج"
+            autoCapitalize="none"
+            autoCorrect={false}
             containerStyle={styles.homeCompactSearch}
             inputRef={searchInputRef}
             onFocus={() => onSearchOpenChange?.(true)}
             onChangeText={(value) => { onSearchQueryChange?.(value); if (!onSearchQueryChange) router.setParams({ q: value }); }}
             onClear={() => { onSearchQueryChange?.(""); if (!onSearchQueryChange) router.setParams({ q: "" }); }}
-            placeholder="ابحث في بثواني"
+            placeholder="ابحث عن متجر أو منتج"
             returnKeyType="search"
             value={searchQuery}
           />

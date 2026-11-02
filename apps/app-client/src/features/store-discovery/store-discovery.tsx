@@ -17,7 +17,7 @@ import { LoopingHeroBanner } from "./looping-hero-banner";
 import { HomeProductFeed } from "./home-product-feed";
 import { PromotionCard } from "./promotion-card";
 import { StoreDirectoryCard } from "./store-directory-card";
-import { type BannerPresentation, listFavoriteStoreIDs, listOwnDeliveryAddresses, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, readPublicBannerPresentation, readPublicStudioLayout, setFavoriteStore } from "./store-discovery-client";
+import { type BannerPresentation, listFavoriteStoreIDs, listOwnDeliveryAddresses, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, readPublicBannerPresentation, readPublicStudioLayout, searchPublicCatalog, setFavoriteStore } from "./store-discovery-client";
 
 function activityIcon(nameAr: string, nameEn: string): ComponentProps<typeof BthwaniIcon>["name"] {
   const label = (nameAr + " " + nameEn).toLowerCase();
@@ -753,6 +753,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           selectedShortcutID={selectedShortcutID}
           isAuthenticated={isAuthenticated}
           onRequireAuthentication={onRequireAuthentication}
+          onSearchQueryChange={onSearchQueryChange}
         />
       ) : null}
 
@@ -894,7 +895,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   );
 }
 
-function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selectedVerticalID, selectedShortcutID, isAuthenticated, onRequireAuthentication, onClearCategory }: {
+function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selectedVerticalID, selectedShortcutID, isAuthenticated, onRequireAuthentication, onSearchQueryChange, onClearCategory }: {
   query: string;
   selectedCategoryID: string;
   selectedCityID: string | null;
@@ -902,17 +903,47 @@ function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selec
   selectedShortcutID: string;
   isAuthenticated: boolean;
   onRequireAuthentication?: (() => void) | undefined;
+  onSearchQueryChange?: ((value: string) => void) | undefined;
   onClearCategory: () => void;
 }) {
   const theme = useAppearanceTheme();
+  const router = useRouter();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  if (!query.trim()) {
+  const normalizedQuery = query.trim();
+  const [suggestionRetry, retrySuggestions] = useState(0);
+  const [suggestions, setSuggestions] = useState<{ kind: "loading" | "ready" | "error"; names: string[] }>({ kind: "loading", names: [] });
+  useEffect(() => {
+    if (normalizedQuery || !selectedCityID) return;
+    let active = true;
+    setSuggestions({ kind: "loading", names: [] });
+    void searchPublicCatalog(selectedCityID, "", selectedCategoryID, 8, "", selectedVerticalID, selectedShortcutID)
+      .then((page) => {
+        if (!active) return;
+        const names = [...new Set(page.offers.map((offer) => offer.productName.trim()).filter(Boolean))].slice(0, 6);
+        setSuggestions({ kind: "ready", names });
+      })
+      .catch(() => {
+        if (active) setSuggestions({ kind: "error", names: [] });
+      });
+    return () => { active = false; };
+  }, [normalizedQuery, selectedCityID, selectedCategoryID, selectedVerticalID, selectedShortcutID, suggestionRetry]);
+  if (!normalizedQuery) {
     return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}>
       <BthwaniSurface tone="inset" style={styles.noResults}>
         <BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} />
         <Text style={styles.cardTitle}>ابحث عن منتج في متاجر مدينتك</Text>
         <Text style={styles.muted}>اكتب الاسم أو جزءًا منه لتظهر المنتجات المنشورة.</Text>
       </BthwaniSurface>
+      {selectedCityID && suggestions.kind === "loading" ? <View accessibilityLabel="جارٍ تجهيز اقتراحات المنتجات"><BthwaniSkeleton height={42} /></View> : null}
+      {selectedCityID && suggestions.kind === "ready" && suggestions.names.length > 0 ? <View style={styles.categoryShortcutBlock} accessibilityLabel="اقتراحات من كتالوج المتاجر">
+        <BthwaniSectionHeader title="جرّب البحث عن" subtitle="أسماء منتجات منشورة في مدينتك" />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryShortcutContent}>
+          {suggestions.names.map((name) => <BthwaniChip key={name} icon="search" label={name}
+            accessibilityLabel={`اقتراح البحث عن ${name}`}
+            onPress={() => { if (onSearchQueryChange) onSearchQueryChange(name); else router.setParams({ q: name }); }} />)}
+        </ScrollView>
+      </View> : null}
+      {selectedCityID && suggestions.kind === "error" ? <BthwaniButton label="إعادة تحميل الاقتراحات" variant="secondary" onPress={() => retrySuggestions((value) => value + 1)} /> : null}
     </View>;
   }
   if (!selectedCityID) {
