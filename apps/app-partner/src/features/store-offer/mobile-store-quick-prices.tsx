@@ -19,6 +19,8 @@ export type MobileStoreQuickPricesWorkspaceProps = Readonly<{
   verticalId: string;
   getAccessToken: () => Promise<string>;
   createUUID: () => string;
+  initialSearch?: string;
+  selectedOfferId?: string;
   onPricesCommitted?: () => void | Promise<void>;
 }>;
 
@@ -72,7 +74,7 @@ function quickPriceCommitNotice(result: CatalogQuickPriceCommitResponse): string
   ].filter(Boolean).join(" ");
 }
 
-export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, getAccessToken, createUUID, onPricesCommitted }: MobileStoreQuickPricesWorkspaceProps) {
+export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, getAccessToken, createUUID, initialSearch = "", selectedOfferId, onPricesCommitted }: MobileStoreQuickPricesWorkspaceProps) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => StyleSheet.create({
     card: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 10, marginTop: 12, padding: 14 },
@@ -80,20 +82,21 @@ export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, get
     muted: { color: theme.colorMuted, fontSize: 14 },
     error: { color: theme.danger, fontSize: 14 },
     row: { borderColor: theme.borderColor, borderTopWidth: 1, gap: 8, paddingTop: 10 },
+    selectedRow: { backgroundColor: theme.actionSoft, borderRadius: 10, padding: 10 },
     product: { color: theme.color, fontSize: 15, fontWeight: "600" },
     input: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, color: theme.color, minHeight: 44, paddingHorizontal: 10, textAlign: "left", writingDirection: "ltr" },
     filters: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   }), [theme]);
   const [offers, setOffers] = useState<ReadonlyArray<CatalogStoreOffer>>([]);
   const [draftPrices, setDraftPrices] = useState<Readonly<Record<string, string>>>({});
-  const [queryDraft, setQueryDraft] = useState("");
+  const [queryDraft, setQueryDraft] = useState(initialSearch);
   const [categoryDraft, setCategoryDraft] = useState("");
   const [categoryQuery, setCategoryQuery] = useState("");
   const [categoryOptions, setCategoryOptions] = useState<ReadonlyArray<{ id: string; pathAr: string }>>([]);
   const [availabilityDraft, setAvailabilityDraft] = useState<QuickPriceFilter>("all");
   const [publicationDraft, setPublicationDraft] = useState<QuickPricePublicationFilter>("all");
   const [inventoryDraft, setInventoryDraft] = useState<QuickPriceInventoryFilter>("all");
-  const [filters, setFilters] = useState({ q: "", categoryId: "", availability: "all" as QuickPriceFilter, publicationState: "all" as QuickPricePublicationFilter, inventoryStatus: "all" as QuickPriceInventoryFilter });
+  const [filters, setFilters] = useState({ q: initialSearch, categoryId: "", availability: "all" as QuickPriceFilter, publicationState: "all" as QuickPricePublicationFilter, inventoryStatus: "all" as QuickPriceInventoryFilter });
   const [nextCursor, setNextCursor] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -184,6 +187,7 @@ export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, get
   return <View accessibilityLabel="الأسعار السريعة" style={styles.card}>
     <Text style={styles.title}>الأسعار السريعة</Text>
     <Text style={styles.muted}>{"عدّل أسعار منتجات المتجر واحفظ التغييرات دفعة واحدة."}</Text>
+    {initialSearch ? <Text style={styles.muted}>{"المنتج المحدد: " + initialSearch}</Text> : null}
     <TextInput accessibilityLabel="بحث الأسعار السريعة" editable={!busy} onChangeText={setQueryDraft} onSubmitEditing={applyFilters} placeholder="ابحث باسم المنتج أو خياره" returnKeyType="search" value={queryDraft} style={styles.input} />
     <TextInput accessibilityLabel="بحث فئات الأسعار السريعة" editable={!busy} onChangeText={setCategoryQuery} placeholder="ابحث عن فئة لتصفية النتائج" value={categoryQuery} style={styles.input} />
     <View style={styles.filters}>
@@ -202,7 +206,7 @@ export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, get
     <BthwaniButton busy={loading} disabled={busy || loading} label="تطبيق المرشحات" onPress={applyFilters} variant="secondary" />
     {loading ? <View style={{ alignItems: "center", gap: 6 }}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة النتائج…</Text></View> : null}
     {!loading && !offers.length ? <Text style={styles.muted}>لا توجد عروض مطابقة لهذه المرشحات.</Text> : null}
-    {offers.map((offer) => <View key={offer.offerId} style={styles.row}>
+    {offers.map((offer) => <View key={offer.offerId} style={[styles.row, offer.offerId === selectedOfferId && styles.selectedRow]}>
       <Text style={styles.product}>{offer.productName} · {offer.variantTitle}</Text>
       <Text style={styles.muted}>{formatMoney(offer.priceMinor, offer.currency)} · {offer.availability ? "متاح" : "غير متاح"} · {quickPricePublicationLabel(offer.publicationState)}</Text>
       <TextInput accessibilityLabel={`السعر الجديد لـ ${offer.productName}`} editable={!busy} keyboardType="number-pad" onChangeText={(value) => setDraftPrices((current) => ({ ...current, [offer.offerId]: value.replace(/\D/g, "") }))} placeholder="السعر بالريال اليمني" value={draftPrices[offer.offerId] ?? String(offer.priceMinor)} style={styles.input} />

@@ -150,7 +150,8 @@ const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<OfferState>({ kind: "loading" });
   const [panel, setPanel] = useState<"prices" | "create" | "tools" | null>(toolsView ? "tools" : null);
-  useEffect(() => { setPanel(toolsView ? "tools" : null); }, [toolsView]);
+  const [priceTarget, setPriceTarget] = useState<{ offerID: string; name: string } | null>(null);
+  useEffect(() => { setPanel(toolsView ? "tools" : null); setPriceTarget(null); }, [toolsView]);
   const [expandedInventoryId, setExpandedInventoryId] = useState<string | null>(null);
   const router = useRouter();
   const { q: rawListQuery } = useLocalSearchParams<{ q?: string | string[] }>();
@@ -164,7 +165,10 @@ const theme = useAppearanceTheme();
   const [filterModalOpen, setFilterModalOpen] = useState(false);
   const [popularIDs, setPopularIDs] = useState<ReadonlyArray<string> | null>(null);
   const [popularError, setPopularError] = useState(false);
-  useEffect(() => onPartnerProductAction((action) => setPanel((previous) => action === "list" || action === previous ? null : action)), []);
+  useEffect(() => onPartnerProductAction((action) => {
+    setPriceTarget(null);
+    setPanel((previous) => action === "list" || action === previous ? null : action);
+  }), []);
   useEffect(() => {
     if (listFilter !== "popular" || !storeId || !serviceCityId) return;
     let active = true;
@@ -968,6 +972,8 @@ const theme = useAppearanceTheme();
         {listFilter === "popular" && popularError ? <Text style={styles.muted}>تعذر قراءة ترتيب الطلبات لآخر 30 يومًا.</Text> : null}
       </> : null}
       {catalogReady && panel === "prices" ? <MobileStoreQuickPricesWorkspace
+        initialSearch={priceTarget?.name ?? ""}
+        selectedOfferId={priceTarget?.offerID ?? ""}
         client={dshClient()}
         scope={{ kind: "PARTNER", storeID: storeId }}
         verticalId={verticalId}
@@ -1041,7 +1047,7 @@ const theme = useAppearanceTheme();
               <Text style={styles.availabilityLabel}>{offer.availability ? "متاح" : "غير متاح"}</Text>
               {offer.inventoryPolicy === "QUANTITY_ON_HAND" ? <Pressable accessibilityRole="button" disabled={busy} onPress={() => setExpandedInventoryId(stockExpanded ? null : offer.offerId)} style={styles.compactAction}><Text style={styles.compactActionLabel}>المخزون</Text></Pressable> : null}
               <View style={{ flex: 1 }} />
-              <Pressable accessibilityRole="button" accessibilityLabel={"تعديل سعر " + offer.productName} onPress={() => setPanel("prices")} style={styles.compactAction}><BthwaniIcon name="edit" size={15} color={theme.color} /><Text style={styles.compactActionLabel}>تعديل</Text></Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel={"تعديل سعر " + offer.productName} onPress={() => { setPriceTarget({ offerID: offer.offerId, name: offer.productName }); setPanel("prices"); }} style={styles.compactAction}><BthwaniIcon name="edit" size={15} color={theme.color} /><Text style={styles.compactActionLabel}>تعديل</Text></Pressable>
               <Pressable accessibilityRole="button" accessibilityLabel={(offer.publicationState === "published" ? "إخفاء " : "نشر ") + offer.productName} disabled={busy} onPress={() => void updateOffer(offer, offer.publicationState === "published" ? "hidden" : "published", offer.availability)} style={styles.compactAction}><Text style={styles.compactActionLabel}>{offer.publicationState === "published" ? "إخفاء" : "نشر"}</Text></Pressable>
             </View>
             {publicLink ? <View style={[styles.offerActionRow, { flexWrap: "wrap" }]}>
