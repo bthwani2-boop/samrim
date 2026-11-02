@@ -11,16 +11,35 @@ $PSNativeCommandUseErrorActionPreference = $false
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $EnvPath = Join-Path $Root 'infra\local\.env'
 $ComposePath = Join-Path $Root 'infra\local\compose\compose.yaml'
+$RemoteComposePath = Join-Path $Root 'infra\local\compose\remote.override.yaml'
 Set-Location $Root
 
+# A selected Docker context is authoritative: remote Docker must never fall back to starting Desktop.
+$ActiveDockerContext = if ($env:DOCKER_CONTEXT) {
+    $env:DOCKER_CONTEXT.Trim()
+} else {
+    $context = & docker context show
+    if ($LASTEXITCODE -ne 0) { throw 'Unable to determine active Docker context' }
+    ([string]$context).Trim()
+}
+$UseRemoteDocker = $ActiveDockerContext -eq 'bthwani-docker'
+if ($UseRemoteDocker -and $env:DOCKER_HOST) {
+    throw 'DOCKER_HOST must be unset when using the bthwani-docker context'
+}
+
 function Compose([string[]]$Arguments) {
-    & docker compose --ansi never --project-name samrim-local --env-file $EnvPath -f $ComposePath @Arguments
+    $composeArgs = @('compose', '--ansi', 'never', '--project-name', 'samrim-local', '--env-file', $EnvPath, '-f', $ComposePath)
+    if ($UseRemoteDocker) {
+        $composeArgs += @('-f', $RemoteComposePath)
+    }
+    & docker @composeArgs @Arguments
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 function Ensure-DockerRunning {
     & docker info --format '{{.ServerVersion}}' *> $null
     if ($LASTEXITCODE -eq 0) { return }
+    if ($UseRemoteDocker) { throw 'Remote Docker on Lenovo is unavailable; check SSH and Docker Desktop on BTHWANI-DOCKER' }
     Write-Host 'DOCKER_DESKTOP_STARTING=on-demand'
     & docker desktop start --timeout 150
     if ($LASTEXITCODE -ne 0) { throw 'Could not start Docker Desktop' }
@@ -85,6 +104,10 @@ switch ($Target) {
         if ($LASTEXITCODE -ne 0) { Write-Host 'RUNTIME_LIGHT=PASS engine-already-stopped'; break }
         $outside = @(& docker ps --format '{{.Names}}' | Where-Object { $_ -notlike 'samrim-local-*' })
         Compose @('stop', '--timeout', '20')
+        if ($UseRemoteDocker) {
+            Write-Host 'RUNTIME_LIGHT=PASS remote-backend-stopped; Lenovo Docker engine preserved'
+            break
+        }
         if ($outside.Count -gt 0) {
             Write-Host "RUNTIME_LIGHT=PARTIAL other-containers-running=$($outside.Count); Docker Desktop left running"
         } else {
