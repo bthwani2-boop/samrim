@@ -39,7 +39,9 @@ try {
     stage = "positive product search";
     await activeSearch.fill(homeOfferName);
     await expect(page.getByText(homeOfferName, { exact: true }).first()).toBeVisible({ timeout: 16000 });
+    await expect(page.getByRole("button", { name: /^إضافة .* إلى السلة/ }).first()).toBeVisible({ timeout: 16000 });
     summary.positiveProductSearch = "PASS";
+    summary.searchResultsHaveAddActions = true;
   }
   stage = "product search no-results";
   await activeSearch.fill("__bthwani_nonexistent_store_20261101__");

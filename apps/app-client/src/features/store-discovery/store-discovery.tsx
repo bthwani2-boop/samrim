@@ -1,7 +1,7 @@
 import { createStyles } from "./store-discovery-styles";
 import { opacity, radius, type resolveTheme, sizing, spacing } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { availableCustomerFulfillmentModes, type CatalogCategory, type CatalogStoreOffer, type DeliveryAddress, formatMoney, fulfillmentModeLabel, type PublicCommerceVertical, type PublicDiscoveryContentView, type PublicPromotionView, type PublicShoppingShortcut, type PublicStoreView, type StudioDraftSection, type StudioLayoutPublication, parseStudioLayoutPublication } from "@bthwani/dsh";
+import { availableCustomerFulfillmentModes, type CatalogCategory, type DeliveryAddress, fulfillmentModeLabel, type PublicCommerceVertical, type PublicDiscoveryContentView, type PublicPromotionView, type PublicShoppingShortcut, type PublicStoreView, type StudioDraftSection, type StudioLayoutPublication, parseStudioLayoutPublication } from "@bthwani/dsh";
 import { Image as ExpoImage } from "expo-image";
 import * as ExpoLinking from "expo-linking";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -17,7 +17,7 @@ import { LoopingHeroBanner } from "./looping-hero-banner";
 import { HomeProductFeed } from "./home-product-feed";
 import { PromotionCard } from "./promotion-card";
 import { StoreDirectoryCard } from "./store-directory-card";
-import { type BannerPresentation, listFavoriteStoreIDs, listOwnDeliveryAddresses, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, readPublicBannerPresentation, readPublicStudioLayout, searchPublicCatalog, setFavoriteStore } from "./store-discovery-client";
+import { type BannerPresentation, listFavoriteStoreIDs, listOwnDeliveryAddresses, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, readPublicBannerPresentation, readPublicStudioLayout, setFavoriteStore } from "./store-discovery-client";
 
 function activityIcon(nameAr: string, nameEn: string): ComponentProps<typeof BthwaniIcon>["name"] {
   const label = (nameAr + " " + nameEn).toLowerCase();
@@ -38,12 +38,6 @@ type DiscoveryState =
   | { kind: "loading" }
   | { kind: "ready"; stores: ReadonlyArray<PublicStoreView>; verticals: ReadonlyArray<PublicCommerceVertical>; categories: ReadonlyArray<CatalogCategory>; shortcuts: ReadonlyArray<PublicShoppingShortcut>; favoriteStoreIDs: ReadonlyArray<string>; nextCursor: string }
   | { kind: "empty" }
-  | { kind: "error" };
-
-type ProductSearchState =
-  | { kind: "idle" }
-  | { kind: "loading" }
-  | { kind: "ready"; offers: ReadonlyArray<CatalogStoreOffer>; nextCursor: string | null }
   | { kind: "error" };
 
 type NearbyAddressState =
@@ -755,9 +749,10 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           query={query}
           selectedCategoryID={selectedCategoryID}
           selectedCityID={selectedCityID}
-          selectedCityName={selectedCityName}
           selectedVerticalID={selectedVerticalID}
           selectedShortcutID={selectedShortcutID}
+          isAuthenticated={isAuthenticated}
+          onRequireAuthentication={onRequireAuthentication}
         />
       ) : null}
 
@@ -899,118 +894,48 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   );
 }
 
-function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selectedCityName, selectedVerticalID, selectedShortcutID, onClearCategory }: {
+function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selectedVerticalID, selectedShortcutID, isAuthenticated, onRequireAuthentication, onClearCategory }: {
   query: string;
   selectedCategoryID: string;
   selectedCityID: string | null;
-  selectedCityName: string;
   selectedVerticalID: string;
   selectedShortcutID: string;
+  isAuthenticated: boolean;
+  onRequireAuthentication?: (() => void) | undefined;
   onClearCategory: () => void;
 }) {
-  const router = useRouter();
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [productSearch, setProductSearch] = useState<ProductSearchState>({ kind: "idle" });
-  const [loadingMoreProducts, setLoadingMoreProducts] = useState(false);
-  const [loadMoreProductsError, setLoadMoreProductsError] = useState(false);
-  const [failedProductImages, setFailedProductImages] = useState<ReadonlySet<string>>(() => new Set());
-  const productSearchRequestID = useRef(0);
-
-  const runProductSearch = useCallback(async () => {
-    const normalizedQuery = query.trim();
-    if (!selectedCityID || !normalizedQuery) {
-      setProductSearch({ kind: "idle" });
-      return;
-    }
-    const requestID = ++productSearchRequestID.current;
-    setProductSearch({ kind: "loading" });
-    setLoadingMoreProducts(false);
-    setLoadMoreProductsError(false);
-    try {
-      const result = await searchPublicCatalog(selectedCityID, normalizedQuery, selectedCategoryID, 20, "", selectedVerticalID,selectedShortcutID);
-      if (productSearchRequestID.current === requestID) setProductSearch({ kind: "ready", offers: result.offers, nextCursor: result.nextCursor });
-    } catch {
-      if (productSearchRequestID.current === requestID) setProductSearch({ kind: "error" });
-    }
-  }, [query, selectedCategoryID, selectedCityID, selectedVerticalID, selectedShortcutID]);
-
-  useEffect(() => {
-    if (!selectedCityID || !query.trim()) {
-      productSearchRequestID.current += 1;
-      setProductSearch({ kind: "idle" });
-      setLoadingMoreProducts(false);
-      setLoadMoreProductsError(false);
-      return;
-    }
-    setProductSearch({ kind: "loading" });
-    setLoadingMoreProducts(false);
-    setLoadMoreProductsError(false);
-    const timer = setTimeout(() => { void runProductSearch(); }, 300);
-    return () => {
-      clearTimeout(timer);
-      productSearchRequestID.current += 1;
-    };
-  }, [query, runProductSearch, selectedCityID]);
-
-  async function loadMoreProductOffers() {
-    if (productSearch.kind !== "ready" || !productSearch.nextCursor || loadingMoreProducts || !selectedCityID || !query.trim()) return;
-    const cursor = productSearch.nextCursor;
-    const requestID = ++productSearchRequestID.current;
-    setLoadingMoreProducts(true);
-    setLoadMoreProductsError(false);
-    try {
-      const result = await searchPublicCatalog(selectedCityID, query.trim(), selectedCategoryID, 20, cursor, selectedVerticalID,selectedShortcutID);
-      if (productSearchRequestID.current === requestID) {
-        setProductSearch((current) => current.kind === "ready" ? { kind: "ready", offers: [...current.offers, ...result.offers], nextCursor: result.nextCursor } : current);
-      }
-    } catch {
-      if (productSearchRequestID.current === requestID) setLoadMoreProductsError(true);
-    } finally {
-      if (productSearchRequestID.current === requestID) setLoadingMoreProducts(false);
-    }
-  }
-
   if (!query.trim()) {
-    return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}><BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>اكتب اسم المنتج للبحث</Text><Text style={styles.muted}>استخدم مربع البحث أعلى الصفحة، ويمكنك تضييق النتائج حسب الفئة.</Text></BthwaniSurface></View>;
+    return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}>
+      <BthwaniSurface tone="inset" style={styles.noResults}>
+        <BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} />
+        <Text style={styles.cardTitle}>ابحث عن منتج في متاجر مدينتك</Text>
+        <Text style={styles.muted}>اكتب الاسم أو جزءًا منه لتظهر المنتجات المنشورة.</Text>
+      </BthwaniSurface>
+    </View>;
   }
   if (!selectedCityID) {
-    return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}><BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="location" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>اختر مدينة الخدمة للبحث</Text><Text style={styles.muted}>أغلق البحث ثم اختر المدينة من أعلى الشاشة لتظهر المنتجات المتاحة فيها.</Text></BthwaniSurface></View>;
+    return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}>
+      <BthwaniSurface tone="inset" style={styles.noResults}>
+        <BthwaniIcon name="location" color={theme.colorMuted} size={sizing.iconXl} />
+        <Text style={styles.cardTitle}>اختر مدينة الخدمة للبحث</Text>
+        <Text style={styles.muted}>أغلق البحث واختر المدينة أولًا.</Text>
+      </BthwaniSurface>
+    </View>;
   }
-  if (productSearch.kind === "loading" || productSearch.kind === "idle") {
-    return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}><View style={styles.productSkeletons} accessibilityLabel="جارٍ البحث عن المنتجات"><BthwaniSkeleton height={104} /><BthwaniSkeleton height={104} /><BthwaniSkeleton height={104} /></View></View>;
-  }
-  if (productSearch.kind === "error") {
-    return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}><BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" style={styles.cardTitle}>تعذر البحث عن المنتجات</Text><Text style={styles.muted}>تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void runProductSearch()} /></BthwaniSurface></View>;
-  }
-  if (productSearch.offers.length === 0 && productSearch.nextCursor) {
-    return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}><BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>لا توجد نتائج مؤهلة في الجزء المفحوص</Text><Text style={styles.muted}>قد تظهر منتجات من متاجر أخرى عند متابعة البحث.</Text>{loadMoreProductsError ? <Text accessibilityRole="alert" style={styles.error}>تعذر متابعة البحث. أعد المحاولة.</Text> : null}<BthwaniButton disabled={loadingMoreProducts} label={loadingMoreProducts ? "جارٍ البحث" : "متابعة البحث"} onPress={() => void loadMoreProductOffers()} variant="secondary" /></BthwaniSurface></View>;
-  }
-  if (productSearch.offers.length === 0) {
-    return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}><BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>لا توجد منتجات مطابقة</Text><Text style={styles.muted}>جرّب كلمة أقصر أو اختر فئة أخرى.</Text><BthwaniButton label="مسح الفئة" onPress={onClearCategory} variant="quiet" /></BthwaniSurface></View>;
-  }
-
-  return (
-    <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}>
-      <BthwaniSectionHeader title="نتائج المنتجات" subtitle={`${productSearch.offers.length} منتج · ${selectedCityName || "مدينة الخدمة"}`} />
-        <View style={styles.list}>{productSearch.offers.map((offer) => {
-          const primaryMedia = offer.media.find((media) => media.role === "primary") ?? offer.media[0];
-          const imageFailed = failedProductImages.has(offer.offerId);
-          return <Pressable accessibilityRole="button" accessibilityLabel={`فتح ${offer.productName}${offer.storeName ? ` من متجر ${offer.storeName}` : ""}`} key={offer.offerId} onPress={() => router.push((`/store/${encodeURIComponent(offer.storeId)}?productId=${encodeURIComponent(offer.productId)}`) as Href)} style={({ pressed }) => [styles.productCard, pressed && styles.pressed]}>
-            {primaryMedia && !imageFailed ? <ExpoImage cachePolicy="disk" accessibilityLabel={`صورة ${offer.productName}`} onError={() => setFailedProductImages((current) => new Set(current).add(offer.offerId))} source={{ uri: primaryMedia.uri }} style={styles.productImage} contentFit="cover" /> : <View style={styles.productImageFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
-            <View style={styles.productCopy}>
-              <Text style={styles.productTitle} numberOfLines={2}>{offer.productName}</Text>
-              {offer.variantTitle.trim() ? <Text style={styles.storeMeta} numberOfLines={1}>{offer.variantTitle}</Text> : null}
-              <Text style={styles.storeMeta} numberOfLines={1}>{offer.storeName || "متجر مشارك"}</Text>
-              <Text style={offer.availability ? styles.productAvailability : styles.storeHint}>{offer.availability ? "متاح حسب آخر تحديث" : "تحقق من التوفر داخل المتجر"}</Text>
-            </View>
-            <View style={styles.productPriceBlock}><Text style={styles.productPrice}>{formatMoney(offer.priceMinor, offer.currency).replace(/ريال يمني/g, "ريال")}</Text><BthwaniIcon name="forward" color={theme.colorMuted} size={sizing.iconMd} /></View>
-          </Pressable>;
-        })}</View>
-        {loadMoreProductsError ? <Text accessibilityRole="alert" style={styles.error}>تعذر تحميل المزيد من المنتجات.</Text> : null}
-        {productSearch.nextCursor ? <BthwaniButton disabled={loadingMoreProducts} label={loadingMoreProducts ? "جارٍ تحميل المزيد" : "تحميل المزيد"} onPress={() => void loadMoreProductOffers()} variant="secondary" /> : null}
-    </View>
-  );
+  return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}>
+    <HomeProductFeed
+      cityID={selectedCityID}
+      verticalID={selectedVerticalID}
+      categoryID={selectedCategoryID}
+      shortcutID={selectedShortcutID}
+      query={query}
+      isAuthenticated={isAuthenticated}
+      onRequireAuthentication={onRequireAuthentication}
+      onClearCategory={onClearCategory}
+    />
+  </View>;
 }
 
 function StoreDirectoryStatus({ hasServiceCity, kind, query, selectedCategory, onRetry, onClearSearch }: { hasServiceCity: boolean; kind: "loading" | "error" | "empty"; query: string; selectedCategory: boolean; onRetry: () => void; onClearSearch: () => void }) {

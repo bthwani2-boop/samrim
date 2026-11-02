@@ -27,3 +27,15 @@ test("product actions are siblings of the product navigation button", () => {
   assert.ok(overlay > closeOffer && addToCart > overlay && reduceQuantity > overlay);
   assert.ok(feed.includes('photoActions: { position: "absolute", top: 0, left: 0, right: 0, aspectRatio: 1 }'));
 });
+
+const discovery = readFileSync(path.resolve(import.meta.dirname, "../src/features/store-discovery/store-discovery.tsx"), "utf8");
+
+test("typed product search reuses the DSH-backed grid, cart actions, and server cursor", () => {
+  assert.match(discovery, /function ProductSearchResults[\s\S]*?<HomeProductFeed/);
+  assert.match(discovery, /query=\{query\}/);
+  assert.doesNotMatch(discovery, /setProductSearch\(/);
+  assert.match(feed, /const normalizedQuery = query\.trim\(\)/);
+  assert.match(feed, /searchPublicCatalog\(cityID, normalizedQuery, categoryID, effectivePageSize/);
+  assert.match(feed, /searchPublicCatalog\(cityID, normalizedQuery, categoryID, PAGE_SIZE, state\.nextCursor/);
+  assert.match(feed, /adjustSimpleOfferQuantity\(offer\.storeId, offer, direction\)/);
+});

@@ -17,14 +17,16 @@ type FeedState =
 const PAGE_SIZE = 18;
 
 export function HomeProductFeed({
-  cityID, verticalID, categoryID, shortcutID, isAuthenticated, onRequireAuthentication, pageSize = PAGE_SIZE,
+  cityID, verticalID, categoryID, shortcutID, query = "", isAuthenticated, onRequireAuthentication, onClearCategory, pageSize = PAGE_SIZE,
 }: {
   cityID: string | null;
   verticalID: string;
   categoryID: string;
   shortcutID: string;
+  query?: string;
   isAuthenticated: boolean;
   onRequireAuthentication?: (() => void) | undefined;
+  onClearCategory?: (() => void) | undefined;
   pageSize?: number;
 }) {
   const router = useRouter();
@@ -33,6 +35,7 @@ export function HomeProductFeed({
   const { width } = useWindowDimensions();
   const columns = width >= 1050 ? 5 : width >= 720 ? 4 : width >= 540 || (Platform.OS !== "web" && width >= 360) ? 3 : 2;
   const effectivePageSize = Number.isInteger(pageSize) ? Math.max(1, Math.min(PAGE_SIZE, pageSize)) : PAGE_SIZE;
+  const normalizedQuery = query.trim();
   const [state, setState] = useState<FeedState>({ kind: "loading" });
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState(false);
@@ -45,23 +48,29 @@ export function HomeProductFeed({
   const load = useCallback(async () => {
     const id = ++requestID.current;
     setState({ kind: "loading" });
+    setLoadingMore(false);
     setMoreError(false);
     if (!cityID) {
       setState({ kind: "ready", offers: [], nextCursor: "" });
       return;
     }
     try {
-      const page = await searchPublicCatalog(cityID, "", categoryID, effectivePageSize, "", verticalID, shortcutID);
+      const page = await searchPublicCatalog(cityID, normalizedQuery, categoryID, effectivePageSize, "", verticalID, shortcutID);
       if (id === requestID.current) setState({ kind: "ready", offers: page.offers, nextCursor: page.nextCursor ?? "" });
     } catch {
       if (id === requestID.current) setState({ kind: "error" });
     }
-  }, [cityID, verticalID, categoryID, shortcutID, effectivePageSize]);
+  }, [cityID, verticalID, categoryID, shortcutID, effectivePageSize, normalizedQuery]);
 
   useEffect(() => {
+    if (normalizedQuery) {
+      setState({ kind: "loading" });
+      const timer = setTimeout(() => { void load(); }, 300);
+      return () => { clearTimeout(timer); requestID.current += 1; };
+    }
     void load();
     return () => { requestID.current += 1; };
-  }, [load]);
+  }, [load, normalizedQuery]);
 
   const loadMore = async () => {
     if (state.kind !== "ready" || !state.nextCursor || !cityID || loadingMore) return;
@@ -69,7 +78,7 @@ export function HomeProductFeed({
     setLoadingMore(true);
     setMoreError(false);
     try {
-      const page = await searchPublicCatalog(cityID, "", categoryID, PAGE_SIZE, state.nextCursor, verticalID, shortcutID);
+      const page = await searchPublicCatalog(cityID, normalizedQuery, categoryID, PAGE_SIZE, state.nextCursor, verticalID, shortcutID);
       if (id === requestID.current) {
         setState((current) => current.kind === "ready"
           ? { kind: "ready", offers: [...current.offers, ...page.offers], nextCursor: page.nextCursor ?? "" }
@@ -142,13 +151,20 @@ export function HomeProductFeed({
   };
 
   if (!cityID) return null;
-  if (state.kind === "loading") return <View style={styles.loading}><ActivityIndicator color={theme.brandAction} /><Text style={styles.muted}>جارٍ تحميل المنتجات المتاحة…</Text></View>;
-  if (state.kind === "error") return <View style={styles.status}><Text accessibilityRole="alert" style={styles.muted}>تعذر تحميل المنتجات. تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View>;
-  if (state.offers.length === 0) return <View style={styles.status}><Text style={styles.muted}>لا توجد منتجات منشورة ضمن هذا الاختيار. استكشف المتاجر أدناه.</Text></View>;
+  if (state.kind === "loading") return <View style={styles.loading} accessibilityLabel="جارٍ البحث"><ActivityIndicator color={theme.brandAction} /><Text style={styles.muted}>{normalizedQuery ? "جارٍ البحث عن المنتجات…" : "جارٍ تحميل المنتجات المتاحة…"}</Text></View>;
+  if (state.kind === "error") return <View style={styles.status}><Text accessibilityRole="alert" style={styles.muted}>{normalizedQuery ? "تعذر البحث عن المنتجات" : "تعذر تحميل المنتجات"}. تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View>;
+
+  if (state.offers.length === 0 && state.nextCursor) return <View style={styles.status} accessibilityLabel="لا توجد نتائج في الصفحة الحالية">
+    <Text style={styles.muted}>لم تظهر نتائج ضمن الجزء المحمّل، ويمكن متابعة البحث في بقية المتاجر.</Text>
+    {moreError ? <Text accessibilityRole="alert" style={styles.muted}>تعذر متابعة البحث. أعد المحاولة.</Text> : null}
+    <BthwaniButton busy={loadingMore} disabled={loadingMore} label={loadingMore ? "جارٍ البحث" : "متابعة البحث"} onPress={() => void loadMore()} variant="secondary" />
+  </View>;
+  if (state.offers.length === 0) return <View style={styles.status} accessibilityLabel="لا توجد نتائج بحث"><Text style={styles.muted}>{normalizedQuery ? "لا توجد منتجات مطابقة. جرّب اسمًا أقصر أو فئة أخرى." : "لا توجد منتجات منشورة ضمن هذا الاختيار. استكشف المتاجر أدناه."}</Text>{normalizedQuery && categoryID && onClearCategory ? <BthwaniButton label="مسح الفئة" onPress={onClearCategory} variant="secondary" /> : null}</View>;
   const cardWidth = columns === 5 ? "19%" : columns === 4 ? "24%" : columns === 3 ? "32%" : "49%";
 
   return (
-    <View style={styles.section} accessibilityLabel="المنتجات المتاحة">
+    <View style={styles.section} accessibilityLabel={normalizedQuery ? "نتائج البحث عن المنتجات" : "المنتجات المتاحة"}>
+      {normalizedQuery ? <View style={styles.headingRow}><Text style={styles.heading}>نتائج المنتجات</Text><Text style={styles.count}>{state.offers.length} منتج معروض{state.nextCursor ? " · المزيد متاح" : ""}</Text></View> : null}
       {cartMessage ? <Text accessibilityRole="alert" style={styles.cartMessage}>{cartMessage}</Text> : null}
       <View style={styles.grid}>
         {state.offers.map((offer, index) => {
