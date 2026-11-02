@@ -3,7 +3,9 @@ param(
     [ValidateSet('Chrome')]
     [string]$Browser = 'Chrome',
     [string]$Url = 'http://localhost:13000/',
-    [string]$AccountEmail
+    [string]$AccountEmail,
+    [switch]$VerifyAuthenticated,
+    [string]$RequireSelector
 )
 
 $ErrorActionPreference = 'Stop'
@@ -123,4 +125,14 @@ try {
 } catch {
     Write-Error -Message $_.Exception.Message -ErrorAction Continue
     exit 1
+}
+
+if ($VerifyAuthenticated) {
+    if (-not $RequireSelector) {
+        Write-Error -Message 'REQUIRE_SELECTOR_FOR_AUTHENTICATED_PAGE' -ErrorAction Continue
+        exit 1
+    }
+    $gate = Join-Path $PSScriptRoot 'verify-authenticated-browser.cjs'
+    & node $gate --url $Url --require-selector $RequireSelector
+    if ($LASTEXITCODE -ne 0) { exit 1 }
 }
