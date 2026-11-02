@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const { chromium } = require("@playwright/test");
 
 async function audit() {
-  const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9223");
+  const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9222");
   try {
     const context = browser.contexts()[0];
     const page = context.pages().find(tab => tab.url().startsWith("http://localhost:18102/"));

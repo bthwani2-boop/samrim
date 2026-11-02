@@ -4,7 +4,7 @@ const { chromium } = require("@playwright/test");
 // Browser-only contract check. Simulated DSH readbacks prove UI scoping;
 // they are not a substitute for the real DSH service tests.
 async function main() {
-  const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9223");
+  const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9222");
   let page;
   try {
     const context = browser.contexts().find(c => c.pages().some(tab => tab.url().startsWith("http://localhost:18102"))) ?? browser.contexts()[0];

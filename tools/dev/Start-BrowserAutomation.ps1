@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Chrome', 'Edge', 'Both')]
+    [ValidateSet('Chrome')]
     [string]$Browser = 'Chrome',
     [string]$Url = 'http://localhost:13000/',
     [string]$AccountEmail
@@ -47,7 +47,7 @@ function Test-CdpEndpoint {
     }
     try {
         $version = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/json/version" -TimeoutSec 3
-        $expectedProduct = if ($Name -eq 'Chrome') { 'Chrome/' } else { 'Edg/' }
+        $expectedProduct = 'Chrome/'
         if (-not ([string]$version.Browser).StartsWith($expectedProduct, [StringComparison]::Ordinal)) {
             throw 'Incorrect browser product'
         }
@@ -118,26 +118,9 @@ function Start-BThwaniBrowser {
 }
 
 $chromeExe = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
-$edgeExe = 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
-if (-not (Test-Path -LiteralPath $edgeExe)) {
-    $edgeExe = 'C:\Program Files\Microsoft\Edge\Application\msedge.exe'
+try {
+    Start-BThwaniBrowser -Name 'Chrome' -Executable $chromeExe -Port 9222 -ProfileDir (Join-Path $profilesRoot 'Chrome') -TargetUrl $Url
+} catch {
+    Write-Error -Message $_.Exception.Message -ErrorAction Continue
+    exit 1
 }
-
-$failures = @()
-if ($Browser -in @('Chrome', 'Both')) {
-    try {
-        Start-BThwaniBrowser -Name 'Chrome' -Executable $chromeExe -Port 9222 -ProfileDir (Join-Path $profilesRoot 'Chrome') -TargetUrl $Url
-    } catch {
-        Write-Error -Message $_.Exception.Message -ErrorAction Continue
-        $failures += 'Chrome'
-    }
-}
-if ($Browser -in @('Edge', 'Both')) {
-    try {
-        Start-BThwaniBrowser -Name 'Edge' -Executable $edgeExe -Port 9223 -ProfileDir (Join-Path $profilesRoot 'Edge') -TargetUrl $Url
-    } catch {
-        Write-Error -Message $_.Exception.Message -ErrorAction Continue
-        $failures += 'Edge'
-    }
-}
-if ($failures.Count -gt 0) { exit 1 }

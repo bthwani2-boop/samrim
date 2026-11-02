@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { chromium, expect } from "@playwright/test";
 
 const origin = process.env.BTHWANI_CLIENT_WEB_ORIGIN ?? "http://localhost:18101";
-const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9223");
+const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9222");
 const context = await browser.newContext({
   viewport: { width: 390, height: 844 }, locale: "ar-YE", reducedMotion: "reduce",
 });

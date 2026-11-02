@@ -3,7 +3,7 @@ const { chromium } = require("@playwright/test");
 
 // UI integration test with scoped DSH responses; live financial/data state is untouched.
 async function run() {
-  const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9223");
+  const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9222");
   let page;
   try {
     const context = browser.contexts().find(c => c.pages().some(p => p.url().startsWith("http://localhost:18102"))) ?? browser.contexts()[0];

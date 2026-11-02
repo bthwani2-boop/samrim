@@ -1,6 +1,6 @@
 const { chromium } = require("@playwright/test");
 (async () => {
-  const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9223");
+  const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9222");
   const context = browser.contexts()[0];
   const page = context?.pages().find(page => page.url().startsWith("http://localhost:18102/"));
   if (!page) { console.log("PARTNER_TAB=NOT_FOUND"); return; }

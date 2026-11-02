@@ -12,7 +12,7 @@ function validateRatingSummary(data) {
 }
 
 async function run() {
-  const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9223");
+  const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9222");
   let operatorPage, partnerPage;
   try {
     const origin = "http://localhost:13000";

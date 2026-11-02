@@ -4,7 +4,7 @@ const { chromium } = require("@playwright/test");
 // Actor-facing, read-only catalogue UX proof. Do not create or modify products,
 // upload images or write commercial prices/stock.
 async function main() {
-  const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9223");
+  const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9222");
   let page;
   try {
     const origin = "http://localhost:13000";
