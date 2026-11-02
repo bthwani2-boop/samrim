@@ -17,8 +17,8 @@ import * as DocumentPicker from "expo-document-picker";
 import { Image as ExpoImage } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Linking, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
+import { type ComponentProps, type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Image, Linking, Modal, Platform, Pressable, ScrollView, Switch, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { onPartnerProductAction } from "../../shell/partner-product-actions";
 import { PartnerStorePromotionBanner } from "./partner-promotion-banner";
@@ -145,8 +145,13 @@ function isResolvedProductMatch(match: CatalogIdentifierResolution): match is Re
   return match.outcome === "SHARED_PRODUCT_MATCH" || match.outcome === "STORE_LOCAL_PRODUCT_MATCH";
 }
 
+// React Native Web switches need a DOM direction override to keep the thumb inside
+// its track in RTL. The attribute is omitted on native platforms.
+const WebDirectionView = View as ComponentType<ComponentProps<typeof View> & { dir?: "ltr" | undefined }>;
+
 export function StoreOfferManagement({ storeId, verticalId, serviceCityId, storePublicationState, canManagePromotions = false, toolsView = false }: { storeId: string; verticalId: string; serviceCityId: string; storePublicationState: string; canManagePromotions?: boolean; toolsView?: boolean }) {
 const theme = useAppearanceTheme();
+  const wideOffers = useWindowDimensions().width >= 1180;
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<OfferState>({ kind: "loading" });
   const [panel, setPanel] = useState<"prices" | "create" | "tools" | null>(toolsView ? "tools" : null);
@@ -1025,14 +1030,14 @@ const theme = useAppearanceTheme();
         {!toolsView && panel === null && state.kind === "ready" && serverOfferQuery && remoteOffers.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ البحث في كتالوج المتجر بالكامل…</Text></View> : null}
         {!toolsView && panel === null && state.kind === "ready" && serverOfferQuery && remoteOffers.kind === "error" ? <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>تعذر تحميل نتائج التصفية من المتجر.</Text><BthwaniButton label="إعادة البحث" onPress={() => setRemoteOfferRefresh((value) => value + 1)} variant="secondary" /></View> : null}
         {shareNotice && !toolsView && panel === null ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{shareNotice}</Text> : null}
-        {!toolsView && panel === null && state.kind === "ready" && listFilter !== "offers" ? <View style={styles.offerList}>
+        {!toolsView && panel === null && state.kind === "ready" && listFilter !== "offers" ? <View style={[styles.offerList, wideOffers && styles.offerListWide]}>
         {offersOnScreen.map((offer) => {
           const primaryMedia = getPrimaryMedia(offer.media);
           const inventoryDraft = inventoryDrafts[offer.offerId] ?? String(offer.inventoryOnHandBaseUnits);
           const stockExpanded = expandedInventoryId === offer.offerId;
           const publicLink = publicOfferLink(offer);
           const whatsappLink = buildPartnerStoreWhatsAppURL(publicLink, offer.productName);
-          return <View key={offer.offerId} style={styles.item}>
+          return <View key={offer.offerId} style={[styles.item, wideOffers && styles.itemWide]}>
             <View style={styles.offerIdentity}>
               {primaryMedia ? <ExpoImage cachePolicy="memory" accessibilityLabel={"صورة " + offer.productName} source={{ uri: primaryMedia.uri }} contentFit="cover" style={styles.offerImage} />
                 : <View accessibilityLabel={"لا توجد صورة لـ " + offer.productName} style={styles.offerImagePlaceholder}><BthwaniIcon name="cart" color={theme.colorMuted} size={20} /></View>}
@@ -1043,7 +1048,7 @@ const theme = useAppearanceTheme();
               </View>
             </View>
             <View style={styles.offerActionRow}>
-              <Switch accessibilityLabel={"توافر " + offer.productName} trackColor={{ false: theme.borderColor, true: theme.actionSoft }} thumbColor={offer.availability ? theme.brandAction : theme.colorMuted} disabled={busy} onValueChange={(available) => void updateOffer(offer, offer.publicationState, available)} value={offer.availability} />
+              <WebDirectionView dir={Platform.OS === "web" ? "ltr" : undefined}><Switch accessibilityLabel={"توافر " + offer.productName} trackColor={{ false: theme.borderColor, true: theme.actionSoft }} thumbColor={offer.availability ? theme.brandAction : theme.colorMuted} disabled={busy} onValueChange={(available) => void updateOffer(offer, offer.publicationState, available)} value={offer.availability} /></WebDirectionView>
               <Text style={styles.availabilityLabel}>{offer.availability ? "متاح" : "غير متاح"}</Text>
               {offer.inventoryPolicy === "QUANTITY_ON_HAND" ? <Pressable accessibilityRole="button" disabled={busy} onPress={() => setExpandedInventoryId(stockExpanded ? null : offer.offerId)} style={styles.compactAction}><Text style={styles.compactActionLabel}>المخزون</Text></Pressable> : null}
               <View style={{ flex: 1 }} />
