@@ -50,7 +50,7 @@ export default function ClientHomeRoute() {
 
   return (
     <View style={styles.root}>
-      <StatusBar style={compactHeader ? "dark" : "light"} />
+      <StatusBar style="dark" />
       {(searchOpen || compactHeader) ? <View style={!searchOpen && compactHeader ? styles.stickyHeaderOverlay : undefined}><ClientPublicHeader
         homeVariant
         homeCompact={compactHeader}

@@ -702,9 +702,10 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       {showHomeMarketing ? <View style={styles.deliveryStrip} accessibilityLabel="معلومات التوصيل والعروض">
         <View style={styles.deliveryStripIcon}><BthwaniIcon name="cart" color="#FFFFFF" size={sizing.iconLg}/></View>
         <View style={styles.deliveryStripCopy}>
-          <Text style={styles.deliveryStripTitle}>تفاصيل التوصيل</Text>
-          <Text style={styles.deliveryStripHint}>تظهر الرسوم والعروض المتاحة قبل تأكيد الطلب</Text>
+          <Text style={styles.deliveryStripTitle}>التوصيل مع بثواني</Text>
+          <Text style={styles.deliveryStripHint}>تظهر رسوم التوصيل والعروض الفعلية قبل تأكيد الطلب</Text>
         </View>
+        {marketing.promotions.length ? <View style={styles.deliveryPromoCount} accessibilityLabel={`عدد العروض المنشورة ${marketing.promotions.length}`}><Text style={styles.deliveryPromoText}>{marketing.promotions.length} عروض</Text></View> : null}
       </View> : null}
       {showHomeMarketing && marketing.promotions.length > 0 ? <View accessibilityLabel="العرض المنشور" style={styles.featuredPromotion}><PromotionCard promotion={marketing.promotions[0]!} /></View> : null}
 

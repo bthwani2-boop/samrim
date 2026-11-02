@@ -5,9 +5,11 @@ import { test } from "node:test";
 
 const feed = readFileSync(path.resolve(import.meta.dirname, "../src/features/store-discovery/home-product-feed.tsx"), "utf8");
 
-test("mobile feed uses two legible columns; tablet and desktop scale without forcing three on phones", () => {
-  assert.match(feed, /width >= 1050 \? 5 : width >= 720 \? 4 : width >= 540 \? 3 : 2/);
-  assert.doesNotMatch(feed, /width >= 350 \? 3/);
+test("mobile feed uses three columns at 360dp, keeps two on narrower phones and scales on web", () => {
+  assert.match(feed, /width >= 1050 \? 5 : width >= 720 \? 4/);
+  assert.match(feed, /width >= 540 \|\| \(Platform\.OS !== "web" && width >= 360\)/);
+  assert.match(feed, /\? 3 : 2/);
+  assert.doesNotMatch(feed, /width >= 320 \? 3/);
   assert.match(feed, /photoBox: \{ aspectRatio: 1,/);
 });
 

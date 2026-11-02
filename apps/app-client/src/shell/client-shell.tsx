@@ -39,11 +39,11 @@ function ClientHeader({ searchOnCurrentRoute = false, hideSearchAction = false, 
   const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
   const isSearchOpen = focus === "search";
   const searchInputRef = useRef<TextInputInstance>(null);
-  const headerHeight = useSharedValue(166);
+  const headerHeight = useSharedValue(148);
   const animatedHeaderStyle = useAnimatedStyle(() => ({ height: headerHeight.value }));
   useEffect(() => {
     if (!homeVariant) return;
-    headerHeight.value = withTiming(homeCompact ? 64 : 166, { duration: 230, reduceMotion: ReduceMotion.System });
+    headerHeight.value = withTiming(homeCompact ? 64 : 148, { duration: 230, reduceMotion: ReduceMotion.System });
   }, [headerHeight, homeVariant, homeCompact]);
   const { cities, clearSelectedCity, selectedCityID } = useServiceCityScope();
   const cityName = serviceCityDisplayName(cities.find((city) => city.id === selectedCityID)?.displayNameAr);

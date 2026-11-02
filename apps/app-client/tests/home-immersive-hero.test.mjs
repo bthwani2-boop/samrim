@@ -22,7 +22,7 @@ test("delivery messaging is a fixed sibling below the animated banner, not a fab
   const stripAt = discovery.indexOf('accessibilityLabel="معلومات التوصيل والعروض"');
   assert.ok(bannerAt >= 0 && stripAt > bannerAt);
   const strip = discovery.slice(stripAt, stripAt + 500);
-  assert.match(strip, /الرسوم والعروض المتاحة قبل تأكيد الطلب/);
+  assert.match(strip, /تظهر رسوم التوصيل والعروض الفعلية قبل تأكيد الطلب/);
   assert.doesNotMatch(strip, /75 دقيقة|توصيل مجاني|countdown/i);
 });
 
@@ -30,7 +30,7 @@ test("one slide palette spans the full header and media stage without an indepen
   assert.match(banner, /function immersiveSlidePalette\(item: PublicDiscoveryContentView\)/);
   assert.match(banner, /const colors = immersiveSlidePalette\(item\)/);
   assert.match(banner, /Math\.min\(Math\.round\(cardWidth \/ 1\.75\), 384\)/);
-  assert.match(banner, /Platform\.OS === "web" \? Math\.min\(cardWidth, mediaHeight \+ 166\) : cardWidth/);
+  assert.match(banner, /Platform\.OS === "web" \? Math\.min\(cardWidth, mediaHeight \+ 166\) : mediaHeight \+ 148/);
   assert.match(banner, /locations=\{\[0, \(height - mediaHeight\) \/ height, 1\]\}/);
   assert.match(banner, /start=\{\{ x: 0\.5, y: 0 \}\} end=\{\{ x: 0\.5, y: 1 \}\}/);
   assert.match(banner, /colors=\{\[colors\[1\], colors\[1\] \+ "00"\]\}/);

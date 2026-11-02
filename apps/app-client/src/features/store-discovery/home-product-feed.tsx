@@ -5,7 +5,7 @@ import { Image as ExpoImage } from "expo-image";
 import * as Haptics from "expo-haptics";
 import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import Reanimated, { FadeInDown, ReduceMotion } from "react-native-reanimated";
 import { adjustSimpleOfferQuantity, listOwnOpenCarts, readOwnStoreCart, searchPublicCatalog } from "./store-discovery-client";
 
@@ -31,7 +31,7 @@ export function HomeProductFeed({
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { width } = useWindowDimensions();
-  const columns = width >= 1050 ? 5 : width >= 720 ? 4 : width >= 540 ? 3 : 2;
+  const columns = width >= 1050 ? 5 : width >= 720 ? 4 : width >= 540 || (Platform.OS !== "web" && width >= 360) ? 3 : 2;
   const effectivePageSize = Number.isInteger(pageSize) ? Math.max(1, Math.min(PAGE_SIZE, pageSize)) : PAGE_SIZE;
   const [state, setState] = useState<FeedState>({ kind: "loading" });
   const [loadingMore, setLoadingMore] = useState(false);
@@ -199,7 +199,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     grid: { flexDirection: "row-reverse", flexWrap: "wrap", justifyContent: "space-between", rowGap: spacing[3] },
     item: { gap: spacing[1], minWidth: 0 },
     photoActions: { position: "absolute", top: 0, left: 0, right: 0, aspectRatio: 1 },
-    photoBox: { aspectRatio: 1, borderRadius: radius.lg, backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: borders.hairline, overflow: "hidden" },
+    photoBox: { aspectRatio: 1, borderRadius: radius.xl, backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: borders.hairline, overflow: "hidden" },
     photo: { width: "100%", height: "100%" },
     fallback: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: theme.surfaceInset },
     plusWrap: { position: "absolute", bottom: spacing[1], left: spacing[1] },

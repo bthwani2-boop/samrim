@@ -53,8 +53,8 @@ export function LoopingHeroBanner({
   // scaling landscape promotional artwork into an oversized hero above the products.
   const mediaHeight = immersive && Platform.OS === "web"
     ? Math.min(Math.round(cardWidth / 1.75), 384)
-    : Math.round(cardWidth / 1.75);
-  const height = immersive ? (Platform.OS === "web" ? Math.min(cardWidth, mediaHeight + 166) : cardWidth) : mediaHeight;
+    : Math.round(cardWidth / (immersive ? 2.15 : 1.75));
+  const height = immersive ? (Platform.OS === "web" ? Math.min(cardWidth, mediaHeight + 166) : mediaHeight + 148) : mediaHeight;
 
   useEffect(() => {
     let mounted = true;
@@ -178,7 +178,7 @@ export function LoopingHeroBanner({
   return <GestureHandlerRootView style={{ marginHorizontal: immersive ? 0 : -spacing[1], width: cardWidth, height }}>
     <GestureDetector gesture={panGesture}><View
       accessibilityLabel={label + "، " + activeItem.titleAr + "، " + (index + 1) + " من " + items.length}
-      style={{ width: cardWidth, height, borderRadius: immersive ? 0 : radius.lg, overflow: "hidden", backgroundColor: "#101827" }}
+      style={{ width: cardWidth, height, borderTopLeftRadius: immersive ? 0 : radius.lg, borderTopRightRadius: immersive ? 0 : radius.lg, borderBottomLeftRadius: radius.xl, borderBottomRightRadius: radius.xl, overflow: "hidden", backgroundColor: "#101827" }}
     >
     {slide(activeItem, currentStyle, activeItem.id)}
     {incoming ? slide(incoming, nextStyle, "incoming-" + incoming.id) : null}
