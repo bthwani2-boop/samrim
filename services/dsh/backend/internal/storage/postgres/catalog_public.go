@@ -518,7 +518,13 @@ func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, service
 		conditions = append(conditions, fmt.Sprintf("dsh.shopping_shortcut_matches_product($%d,o.store_id,p.id)", len(args)))
 	}
 	if query != "" {
-		args = append(args, escapeCatalogSearchPrefix(query))
+		// Cross-Store discovery matches words inside product names. Keep short
+		// queries and Store-scoped catalog reads prefix-only to bound broad scans.
+		pattern := escapeCatalogSearchPrefix(query)
+		if storeID == "" && utf8.RuneCountInString(query) >= 3 {
+			pattern = escapeCatalogSearchContains(query)
+		}
+		args = append(args, pattern)
 		conditions = append(conditions, fmt.Sprintf("lower(p.canonical_name) LIKE lower($%d) ESCAPE '!'", len(args)))
 	}
 	if favoriteActorID != "" {
@@ -636,6 +642,12 @@ func catalogSearchCursorFingerprint(storeID, serviceCityID, verticalID, category
 
 func escapeCatalogSearchPrefix(query string) string {
 	return strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(strings.TrimSpace(query)) + "%"
+}
+
+// The leading wildcard is backed by the canonical-name trigram index.
+// Escape literal wildcard characters exactly as in prefix search.
+func escapeCatalogSearchContains(query string) string {
+	return "%" + escapeCatalogSearchPrefix(query)
 }
 
 func listStorefrontSections(ctx context.Context, db queryer, storeID string) ([]CatalogStorefrontSectionRecord, error) {
