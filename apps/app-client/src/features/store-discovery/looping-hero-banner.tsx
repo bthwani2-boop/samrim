@@ -3,7 +3,7 @@ import type { PublicDiscoveryContentView } from "@bthwani/dsh";
 import { Image as ExpoImage } from "expo-image";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LinearGradient } from "expo-linear-gradient";
-import { AccessibilityInfo, Animated, AppState, Easing, Pressable, Text, View } from "react-native";
+import { AccessibilityInfo, Animated, AppState, Easing, Platform, Pressable, Text, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
 import { wrapBannerIndex } from "./banner-loop";
@@ -49,11 +49,12 @@ export function LoopingHeroBanner({
   // Keep the complete top stage in the same animated slide, with interactive
   // controls over it; the delivery/campaign strip remains a separate sibling.
   const immersive = Boolean(immersiveHeader);
-  // A full-width home stage is square: branding, search, media and dots all fit inside 1:1.
-  const height = immersive ? cardWidth : Math.round(cardWidth / 1.75);
-  // The current published artwork is landscape. Preserve its aspect ratio in
-  // the lower part of the square instead of stretching or cropping its copy.
-  const mediaHeight = immersive ? Math.round(cardWidth / 1.75) : height;
+  // Preserve the square native stage. On web, use the available width without
+  // scaling landscape promotional artwork into an oversized hero above the products.
+  const mediaHeight = immersive && Platform.OS === "web"
+    ? Math.min(Math.round(cardWidth / 1.75), 384)
+    : Math.round(cardWidth / 1.75);
+  const height = immersive ? (Platform.OS === "web" ? Math.min(cardWidth, mediaHeight + 166) : cardWidth) : mediaHeight;
 
   useEffect(() => {
     let mounted = true;

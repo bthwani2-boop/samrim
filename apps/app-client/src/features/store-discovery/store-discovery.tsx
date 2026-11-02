@@ -75,6 +75,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const [discoveryContainerWidth, setDiscoveryContainerWidth] = useState(0);
   const webColumns = Platform.OS === "web" ? (viewportWidth >= 1140 ? 3 : viewportWidth >= 730 ? 2 : 1) : viewportWidth >= 360 ? 3 : viewportWidth >= 270 ? 2 : 1;
   const carouselCardWidth = Math.max(200, Math.min(((discoveryContainerWidth || viewportWidth) - spacing[4]) / (Platform.OS === "web" && webColumns >= 2 ? 2 : 1), 560));
+  const heroCardWidth = Platform.OS === "web" ? Math.max(200, Math.min((discoveryContainerWidth || viewportWidth) - spacing[4], 960)) : viewportWidth;
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<DiscoveryState>({ kind: "loading" });
   const [storeFilter, setStoreFilter] = useState<"all" | "newest" | "nearest" | "favorites">("all");
@@ -560,9 +561,9 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       case "hero": {
         const slide = layoutDoc.slides[publishedSlideIndex % layoutDoc.slides.length];
         return <View key={section.id} accessibilityLabel={title || "العرض الرئيسي"}>
-          {bannerContent.length ? <View style={{ width: Platform.OS === "web" ? carouselCardWidth : viewportWidth, alignSelf: "center" }}>
+          {bannerContent.length ? <View style={{ width: heroCardWidth, alignSelf: "center" }}>
             <LoopingHeroBanner screenActive={isScreenActive} presentation={bannerPresentation}
-              cardWidth={Platform.OS === "web" ? carouselCardWidth : viewportWidth}
+              cardWidth={heroCardWidth}
               items={bannerContent.slice(0, section.count)} onOpen={(item) => openDiscoveryContent(item.id)}
               label="البنرات الرئيسية" />
           </View> : null}
@@ -697,7 +698,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
 
       {layoutDoc ? <>{heroHeader ? <View style={{ backgroundColor: theme.brandStructure }}>{heroHeader}</View> : null}{publishedBeforeStores.map(renderPublishedSection)}</> : null}
       {!layoutDoc ? <>
-      {showHomeMarketing && bannerContent.length ? <View style={{ width: Platform.OS === "web" ? carouselCardWidth : viewportWidth, alignSelf: "center" }}><LoopingHeroBanner screenActive={isScreenActive} presentation={bannerPresentation} cardWidth={Platform.OS === "web" ? carouselCardWidth : viewportWidth} items={bannerContent} onOpen={(item) => openDiscoveryContent(item.id)} label="البنرات الرئيسية" immersiveHeader={heroHeader} /></View> : heroHeader ?? null}
+      {showHomeMarketing && bannerContent.length ? <View style={{ width: heroCardWidth, alignSelf: "center" }}><LoopingHeroBanner screenActive={isScreenActive} presentation={bannerPresentation} cardWidth={heroCardWidth} items={bannerContent} onOpen={(item) => openDiscoveryContent(item.id)} label="البنرات الرئيسية" immersiveHeader={heroHeader} /></View> : heroHeader ?? null}
       {showHomeMarketing ? <View style={styles.deliveryStrip} accessibilityLabel="معلومات التوصيل والعروض">
         <View style={styles.deliveryStripIcon}><BthwaniIcon name="cart" color="#FFFFFF" size={sizing.iconLg}/></View>
         <View style={styles.deliveryStripCopy}>

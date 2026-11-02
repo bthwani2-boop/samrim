@@ -29,13 +29,19 @@ test("delivery messaging is a fixed sibling below the animated banner, not a fab
 test("one slide palette spans the full header and media stage without an independently colored header", () => {
   assert.match(banner, /function immersiveSlidePalette\(item: PublicDiscoveryContentView\)/);
   assert.match(banner, /const colors = immersiveSlidePalette\(item\)/);
-  assert.match(banner, /const height = immersive \? cardWidth : Math\.round\(cardWidth \/ 1\.75\)/);
-  assert.match(banner, /const mediaHeight = immersive \? Math\.round\(cardWidth \/ 1\.75\) : height/);
+  assert.match(banner, /Math\.min\(Math\.round\(cardWidth \/ 1\.75\), 384\)/);
+  assert.match(banner, /Platform\.OS === "web" \? Math\.min\(cardWidth, mediaHeight \+ 166\) : cardWidth/);
   assert.match(banner, /locations=\{\[0, \(height - mediaHeight\) \/ height, 1\]\}/);
   assert.match(banner, /start=\{\{ x: 0\.5, y: 0 \}\} end=\{\{ x: 0\.5, y: 1 \}\}/);
   assert.match(banner, /colors=\{\[colors\[1\], colors\[1\] \+ "00"\]\}/);
   assert.doesNotMatch(banner, /items\.findIndex\(\(value\) => value\.id === item\.id\)/);
   assert.match(home, /homeTransparent/);
+});
+
+test("web hero scales with discovery content rather than the half-width marketing carousel", () => {
+  assert.match(discovery, /const heroCardWidth = Platform\.OS === "web" \?/);
+  assert.match(discovery, /Math\.min\(\(discoveryContainerWidth \|\| viewportWidth\) - spacing\[4\], 960\)/);
+  assert.match(discovery, /cardWidth=\{heroCardWidth\}/);
 });
 
 test("hero movement uses published media and honors offscreen/foreground/motion settings", () => {
