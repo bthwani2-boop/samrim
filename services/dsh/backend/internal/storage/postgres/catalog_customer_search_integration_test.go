@@ -57,7 +57,7 @@ func TestCustomerCatalogInfixSearchFreshDatabase(t *testing.T) {
 			}
 			offerInput := postgres.CatalogOfferInput{
 				StoreID: store, VariantID: product.Product.Variants[0].ID,
-				PriceMinor: 2000, QuantityPolicy: "DISCRETE", QuantityMinBaseUnits: 1,
+				PriceMinor: map[string]int64{"charger": 4200, "earbuds": 2100}[suffix], QuantityPolicy: "DISCRETE", QuantityMinBaseUnits: 1,
 				QuantityMaxBaseUnits: 5, QuantityStepBaseUnits: 1,
 				PricingBasis: "PER_UNIT", PricingUnitBaseUnits: 1, InventoryPolicy: "AVAILABILITY_ONLY",
 			}
@@ -83,6 +83,24 @@ func TestCustomerCatalogInfixSearchFreshDatabase(t *testing.T) {
 		ids := map[string]bool{page.Offers[0].ID: true, page2.Offers[0].ID: true}
 		if !ids[first] || !ids[second] {
 			t.Fatalf("the real in-name results are incomplete: %+v", ids)
+		}
+		for _, tc := range []struct {
+			sort, firstID, secondID string
+		}{
+			{"PRICE_ASC", second, first},
+			{"PRICE_DESC", first, second},
+		} {
+			sorted, err := postgres.SearchPublicCatalog(ctx, db, city, "", "", "USB", 1, "", "", tc.sort)
+			if err != nil || len(sorted.Offers) != 1 || sorted.Offers[0].ID != tc.firstID || sorted.NextCursor == nil {
+				t.Fatalf("sort=%s first page wrong: %+v %v", tc.sort, sorted, err)
+			}
+			next, err := postgres.SearchPublicCatalog(ctx, db, city, "", "", "USB", 1, *sorted.NextCursor, "", tc.sort)
+			if err != nil || len(next.Offers) != 1 || next.Offers[0].ID != tc.secondID {
+				t.Fatalf("sort=%s second page wrong: %+v %v", tc.sort, next, err)
+			}
+			if _, err := postgres.SearchPublicCatalog(ctx, db, city, "", "", "USB", 1, *sorted.NextCursor, "", ""); !errors.Is(err, postgres.ErrCatalogSearchInvalidCursor) {
+				t.Fatalf("sort %s cursor accepted original order: %v", tc.sort, err)
+			}
 		}
 		if _, err := postgres.SearchPublicCatalog(ctx, db, city, "", "", "HDMI", 1, *page.NextCursor); !errors.Is(err, postgres.ErrCatalogSearchInvalidCursor) {
 			t.Fatalf("cursor accepted a different query: %v", err)

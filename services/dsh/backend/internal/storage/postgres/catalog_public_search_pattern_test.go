@@ -66,3 +66,22 @@ func TestCustomerCatalogInfixSearchMigrationRegistered(t *testing.T) {
 		t.Fatal("migration must include the canonical-name trigram expression index")
 	}
 }
+
+func TestCustomerCatalogPriceCursorBindsSortCityAndQuery(t *testing.T) {
+	cursor := encodeCatalogSearchCursor("2100", "offer-b", "", "sanaa", "grocery", "", "USB", "", "", "shortcut", "PRICE_ASC")
+	position, err := decodeCatalogSearchCursor(cursor, "", "sanaa", "grocery", "", "USB", "", "", "shortcut", "PRICE_ASC")
+	if err != nil || position.canonicalName != "2100" || position.offerID != "offer-b" {
+		t.Fatalf("valid ascending price cursor failed: %+v %v", position, err)
+	}
+	for _, tc := range []struct{ city, query, shortcut, sort string }{
+		{"sanaa", "USB", "shortcut", "PRICE_DESC"},
+		{"sanaa", "USB", "shortcut", ""},
+		{"sanaa", "HDMI", "shortcut", "PRICE_ASC"},
+		{"aden", "USB", "shortcut", "PRICE_ASC"},
+		{"sanaa", "USB", "other-shortcut", "PRICE_ASC"},
+	} {
+		if _, err := decodeCatalogSearchCursor(cursor, "", tc.city, "grocery", "", tc.query, "", "", tc.shortcut, tc.sort); err == nil {
+			t.Fatalf("cursor must reject changed city/query/shortcut/sort: %+v", tc)
+		}
+	}
+}

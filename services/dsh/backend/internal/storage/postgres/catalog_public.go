@@ -452,17 +452,20 @@ func SearchPublicCatalog(ctx context.Context, db *sql.DB, serviceCityID, vertica
 	verticalID = strings.TrimSpace(verticalID)
 	categoryID = strings.TrimSpace(categoryID)
 	query = strings.TrimSpace(query)
-	shortcutID := ""
-	if len(shortcutScope) > 1 {
-		return PublicCatalogSearchRecord{}, errors.New("invalid shortcut scope")
+	shortcutID, sort := "", ""
+	if len(shortcutScope) > 2 {
+		return PublicCatalogSearchRecord{}, errors.New("invalid public catalog search options")
 	}
-	if len(shortcutScope) == 1 {
+	if len(shortcutScope) >= 1 {
 		shortcutID = strings.TrimSpace(shortcutScope[0])
 	}
-	if db == nil || serviceCityID == "" || utf8.RuneCountInString(query) > 160 || len(verticalID) > 128 || len(categoryID) > 128 || len(shortcutID) > 128 || len(cursor) > 1024 || limit < 1 || limit > 50 {
+	if len(shortcutScope) == 2 {
+		sort = strings.TrimSpace(shortcutScope[1])
+	}
+	if db == nil || serviceCityID == "" || utf8.RuneCountInString(query) > 160 || len(verticalID) > 128 || len(categoryID) > 128 || len(shortcutID) > 128 || len(cursor) > 1024 || limit < 1 || limit > 50 || (sort != "" && sort != "PRICE_ASC" && sort != "PRICE_DESC") {
 		return PublicCatalogSearchRecord{}, errors.New("public catalog search input is invalid")
 	}
-	offers, nextCursor, err := listCustomerVisibleOffers(ctx, db, "", serviceCityID, verticalID, categoryID, "", query, "", limit, cursor, shortcutID)
+	offers, nextCursor, err := listCustomerVisibleOffers(ctx, db, "", serviceCityID, verticalID, categoryID, "", query, "", limit, cursor, shortcutID, sort)
 	if err != nil {
 		return PublicCatalogSearchRecord{}, err
 	}
@@ -509,9 +512,12 @@ func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, service
 			SELECT child.id FROM dsh.catalog_categories child JOIN category_subtree parent ON child.parent_category_id=parent.id WHERE child.active=true AND child.vertical_id=s.primary_vertical_id
 		) SELECT 1 FROM dsh.catalog_product_categories pc JOIN category_subtree subtree ON subtree.id=pc.category_id WHERE pc.product_id=p.id)`, len(args)))
 	}
-	shortcutID := ""
+	shortcutID, sort := "", ""
 	if len(shortcutScope) > 0 {
 		shortcutID = strings.TrimSpace(shortcutScope[0])
+	}
+	if storeID == "" && len(shortcutScope) > 1 {
+		sort = strings.TrimSpace(shortcutScope[1])
 	}
 	if shortcutID != "" {
 		args = append(args, shortcutID)
@@ -532,15 +538,34 @@ func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, service
 		conditions = append(conditions, fmt.Sprintf("EXISTS (SELECT 1 FROM dsh.client_favorite_store_offers f WHERE f.client_actor_id=$%d AND f.store_offer_id=o.id)", len(args)))
 	}
 	if cursor != "" {
-		position, decodeErr := decodeCatalogSearchCursor(cursor, storeID, serviceCityID, verticalID, categoryID, query, productID, favoriteActorID, shortcutID)
+		position, decodeErr := decodeCatalogSearchCursor(cursor, storeID, serviceCityID, verticalID, categoryID, query, productID, favoriteActorID, shortcutID, sort)
 		if decodeErr != nil {
 			return nil, nil, decodeErr
 		}
-		args = append(args, position.canonicalName, position.offerID)
-		conditions = append(conditions, fmt.Sprintf("(lower(p.canonical_name),o.id) > (lower($%d),$%d)", len(args)-1, len(args)))
+		if sort == "" {
+			args = append(args, position.canonicalName, position.offerID)
+			conditions = append(conditions, fmt.Sprintf("(lower(p.canonical_name),o.id) > (lower($%d),$%d)", len(args)-1, len(args)))
+		} else {
+			price, parseErr := strconv.ParseInt(position.canonicalName, 10, 64)
+			if parseErr != nil || price <= 0 {
+				return nil, nil, ErrCatalogSearchInvalidCursor
+			}
+			args = append(args, price, position.offerID)
+			if sort == "PRICE_ASC" {
+				conditions = append(conditions, fmt.Sprintf("(o.price_minor,o.id) > ($%d,$%d)", len(args)-1, len(args)))
+			} else {
+				conditions = append(conditions, fmt.Sprintf("(o.price_minor < $%d OR (o.price_minor = $%d AND o.id > $%d))", len(args)-1, len(args)-1, len(args)))
+			}
+		}
 	}
 	args = append(args, limit+1)
-	rows, err := db.QueryContext(ctx, catalogOfferSelect+" WHERE "+strings.Join(conditions, " AND ")+fmt.Sprintf(" ORDER BY lower(p.canonical_name),o.id LIMIT $%d", len(args)), args...)
+	orderBy := " ORDER BY lower(p.canonical_name),o.id"
+	if sort == "PRICE_ASC" {
+		orderBy = " ORDER BY o.price_minor ASC,o.id ASC"
+	} else if sort == "PRICE_DESC" {
+		orderBy = " ORDER BY o.price_minor DESC,o.id ASC"
+	}
+	rows, err := db.QueryContext(ctx, catalogOfferSelect+" WHERE "+strings.Join(conditions, " AND ")+orderBy+fmt.Sprintf(" LIMIT $%d", len(args)), args...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list customer-visible offers: %w", err)
 	}
@@ -569,7 +594,11 @@ func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, service
 	if len(items) > limit {
 		items = items[:limit]
 		last := items[len(items)-1]
-		value := encodeCatalogSearchCursor(last.Product.CanonicalName, last.ID, storeID, serviceCityID, verticalID, categoryID, query, productID, favoriteActorID, shortcutID)
+		cursorKey := last.Product.CanonicalName
+		if sort != "" {
+			cursorKey = strconv.FormatInt(last.PriceMinor, 10)
+		}
+		value := encodeCatalogSearchCursor(cursorKey, last.ID, storeID, serviceCityID, verticalID, categoryID, query, productID, favoriteActorID, shortcutID, sort)
 		nextCursor = &value
 	}
 	return items, nextCursor, nil
@@ -633,6 +662,14 @@ func catalogSearchCursorFingerprint(storeID, serviceCityID, verticalID, category
 		binary.BigEndian.PutUint32(length[:], uint32(len(shortcutScope[0])))
 		input = append(input, length[:]...)
 		input = append(input, shortcutScope[0]...)
+	}
+	if len(shortcutScope) > 1 && shortcutScope[1] != "" {
+		// Sort is a distinct cursor dimension. Legacy name cursors keep their fingerprint.
+		input = append(input, 0xfe, 0x02)
+		var length [4]byte
+		binary.BigEndian.PutUint32(length[:], uint32(len(shortcutScope[1])))
+		input = append(input, length[:]...)
+		input = append(input, shortcutScope[1]...)
 	}
 	digest := sha256.Sum256(input)
 	var fingerprint [16]byte

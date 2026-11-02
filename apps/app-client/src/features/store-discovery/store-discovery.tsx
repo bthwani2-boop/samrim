@@ -912,6 +912,7 @@ function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selec
   const normalizedQuery = query.trim();
   const [suggestionRetry, retrySuggestions] = useState(0);
   const [suggestions, setSuggestions] = useState<{ kind: "loading" | "ready" | "error"; names: string[] }>({ kind: "loading", names: [] });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: suggestionRetry intentionally triggers a new request after a failed suggestion load.
   useEffect(() => {
     if (normalizedQuery || !selectedCityID) return;
     let active = true;

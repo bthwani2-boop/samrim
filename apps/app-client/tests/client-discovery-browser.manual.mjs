@@ -48,6 +48,27 @@ try {
     await expect(page.getByRole("button", { name: /^إضافة .* إلى السلة/ }).first()).toBeVisible({ timeout: 16000 });
     summary.positiveProductSearch = "PASS";
     summary.searchResultsHaveAddActions = true;
+
+    stage = "server-side product price sorting";
+    await page.getByRole("button", { name: "ترتيب المنتجات" }).click();
+    await expect(page.getByRole("radio", { name: "السعر: من الأقل للأعلى" })).toBeVisible();
+    await page.getByRole("radio", { name: "السعر: من الأقل للأعلى" }).click();
+    const priceAscRequest = page.waitForRequest(request =>
+      request.url().includes("/dsh/public/catalog/search") && new URL(request.url()).searchParams.get("sort") === "PRICE_ASC", { timeout: 16000 });
+    await page.getByRole("button", { name: "عرض النتائج" }).click();
+    await priceAscRequest;
+    await page.getByRole("button", { name: "ترتيب المنتجات" }).click();
+    await page.getByRole("radio", { name: "السعر: من الأعلى للأقل" }).click();
+    const priceDescRequest = page.waitForRequest(request =>
+      request.url().includes("/dsh/public/catalog/search") && new URL(request.url()).searchParams.get("sort") === "PRICE_DESC", { timeout: 16000 });
+    await page.getByRole("button", { name: "عرض النتائج" }).click();
+    await priceDescRequest;
+    await page.getByRole("button", { name: "ترتيب المنتجات" }).click();
+    const resetSortRequest = page.waitForRequest(request =>
+      request.url().includes("/dsh/public/catalog/search") && !new URL(request.url()).searchParams.has("sort"), { timeout: 16000 });
+    await page.getByRole("button", { name: "مسح الترتيب" }).click();
+    await resetSortRequest;
+    summary.priceSortRequest = "PASS";
   }
   stage = "product search no-results";
   await activeSearch.fill("__bthwani_nonexistent_store_20261101__");
