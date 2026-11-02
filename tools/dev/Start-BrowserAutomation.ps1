@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Edge', 'Chrome', 'Both')]
-    [string]$Browser = 'Edge',
+    [string]$Browser = 'Both',
     [string]$Url = 'http://localhost:13000/'
 )
 
