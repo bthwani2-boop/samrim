@@ -1,7 +1,7 @@
 import { typography } from "@bthwani/design-system";
 import { BthwaniIcon, type MobileIconName, useAppearanceTheme } from "@bthwani/design-system/native";
 import {
-  createDshMobileClient, formatMoney, type CatalogStoreOffer, type Order,
+  createDshMobileClient, formatMoney, scopedCatalogInventorySummary, type CatalogInventorySummary, type CatalogStoreOffer, type Order,
   type PartnerAccessibleStore, type PartnerOrderAttentionCounts, type PartnerScopedFinanceStore, type PartnerStoreOrderSummary,
 } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
@@ -21,6 +21,7 @@ type Data = Readonly<{
   ordersPartial: boolean;
   weeklyOrderSummary: PartnerStoreOrderSummary | null;
   offers: ReadonlyArray<CatalogStoreOffer> | null;
+  inventory: CatalogInventorySummary | null;
   popularOffers: ReadonlyArray<CatalogStoreOffer> | null;
   offersPartial: boolean;
   finance: PartnerScopedFinanceStore | null;
@@ -28,7 +29,7 @@ type Data = Readonly<{
 
 const empty: Data = {
   attention: null, recentOrders: null, ordersPartial: false, weeklyOrderSummary: null,
-  offers: null, popularOffers: null, offersPartial: false, finance: null,
+  offers: null, inventory: null, popularOffers: null, offersPartial: false, finance: null,
 };
 
 type Props = Readonly<{
@@ -115,7 +116,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
     const client = createDshMobileClient(base, { cryptoRandomUUID: () => Crypto.randomUUID() });
     void (async () => {
       const token = await getUsableIdentityAccessToken();
-      const [orders, offers, financial, weekly, popular] = await Promise.allSettled([
+      const [orders, offers, financial, weekly, popular, inventory] = await Promise.allSettled([
         canOrders ? client.listPartnerOrders(token, { storeIds: [store.id], limit: 24 }) : Promise.resolve(null),
         canCatalog ? client.readOwnStoreOffers(token, store.id, 100) : Promise.resolve(null),
         store.owned ? client.readOwnPartnerFinancialSummary(token) : Promise.resolve(null),
@@ -123,6 +124,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
         canCatalog && store.publicationState === "published"
           ? client.readPublicStoreCatalog(store.id, store.serviceCityId, "", "", 4, "", "", "MOST_ORDERED_30_DAYS")
           : Promise.resolve(null),
+        canCatalog ? client.readOwnStoreInventorySummary(token, store.id) : Promise.resolve(null),
       ]);
       const current = currentIdentityState();
       if (!active || current.kind !== "authenticated" || current.identity.subject !== actor) return;
@@ -131,6 +133,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
       const financePage = financial.status === "fulfilled" ? financial.value : null;
       const weeklyPage = weekly.status === "fulfilled" ? weekly.value : null;
       const popularPage = popular.status === "fulfilled" ? popular.value : null;
+      const inventoryPage = inventory.status === "fulfilled" ? inventory.value : null;
       const weeklySummary = weeklyPage?.summary;
       const verifiedWeekly = weeklySummary?.storeId === store.id && weeklySummary.period === "7d" &&
         Number.isSafeInteger(weeklySummary.totalOrders) && weeklySummary.totalOrders >= 0 ? weeklySummary : null;
@@ -140,6 +143,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
         ordersPartial: Boolean(orderPage?.nextCursor),
         weeklyOrderSummary: verifiedWeekly,
         offers: offerPage?.offers ?? null,
+        inventory: scopedCatalogInventorySummary(inventoryPage, store.id),
         popularOffers: scopedPartnerPopularOffers(store.id, popularPage),
         offersPartial: Boolean(offerPage?.nextCursor),
         finance: financePage?.summary.stores.find(item => item.storeId === store.id) ?? null,
@@ -151,7 +155,6 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
 
   const stockout = data.offers?.filter(isOfferStockout) ?? [];
   const unavailable = data.offers?.filter(item => item.publicationState === "published" && !item.availability) ?? [];
-  const available = data.offers?.filter(item => item.publicationState === "published" && item.availability).length;
   const catalogReady = catalogPublishedAvailability(data.offers, data.offersPartial);
   const financialReady = Boolean(data.finance?.attributionComplete);
   const orders = data.recentOrders ?? [];
@@ -209,7 +212,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
           {canOrders ? tile("الطلبات الجديدة", data.attention?.newOrders.toLocaleString("ar-YE") ?? "—", data.attention ? "تحتاج قبولًا أو مراجعة" : "تعذر قراءة العدد", "orders", "/orders" as Href) : null}
           {canOrders ? tile("بانتظار التسليم", data.attention?.awaitingDispatch.toLocaleString("ar-YE") ?? "—", "طابور المتجر الحالي", "deliveries", "/orders" as Href) : null}
           {canOrders ? tile("طلبات ٧ أيام", data.weeklyOrderSummary?.totalOrders.toLocaleString("ar-YE") ?? "—", data.weeklyOrderSummary ? "جميع طلبات هذا المتجر المنشأة خلال الفترة، من DSH" : "تعذر قراءة ملخص المتجر الكامل", "orders", "/orders" as Href) : null}
-          {canCatalog ? tile("المنتجات المتاحة", available?.toLocaleString("ar-YE") ?? "—", data.offersPartial ? "من أول 100 منتج" : "في كتالوج المتجر", "cart", "/products" as Href) : null}
+          {canCatalog ? tile("المنتجات المتاحة", data.inventory?.availableOffers.toLocaleString("ar-YE") ?? "—", data.inventory ? "من جميع عروض المتجر المنشورة، DSH" : "تعذر قراءة إجمالي المخزون", "cart", "/products" as Href) : null}
           {store.owned ? tile("المستحقات المكتسبة", financialReady ? formatMoney(data.finance!.earnedMinor, "YER") : "—", financialReady ? "من ملخص التسوية الموثق" : "لم تكتمل قراءة المالية", "wallet", "/wallet" as Href) : null}
         </View>
 
@@ -265,7 +268,8 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
           <View style={styles.panelHalf}>
             {panelTitle("المنتجات التي تحتاج متابعة", canCatalog ? "/products?filter=unavailable" as Href : undefined)}
             {data.offers === null ? <Text style={styles.empty}>{canCatalog ? "تعذر قراءة الكتالوج." : "لا تملك صلاحية قراءة الكتالوج."}</Text> : stockout.length === 0 && unavailable.length === 0 ?
-              <Text style={styles.empty}>لا توجد مشاكل توفر في المنتجات التي تمت قراءتها.</Text> :
+              data.inventory?.stockoutOffers ? <Pressable accessibilityRole="button" accessibilityLabel="عرض المنتجات نافدة المخزون" onPress={() => go("/products?filter=stockout" as Href)}><Text style={styles.warningText}>{data.inventory.stockoutOffers.toLocaleString("ar-YE")} منتجات نافدة خارج العينة الظاهرة؛ افتح الكتالوج للمتابعة.</Text></Pressable>
+                : <Text style={styles.empty}>لا توجد مشاكل توفر في المنتجات التي تمت قراءتها.</Text> :
               <View style={styles.table}>
                 {stockout.slice(0, 3).map(item => <Pressable key={item.offerId} accessibilityRole="button" style={styles.listItem}
                   onPress={() => go("/products?filter=stockout" as Href)}>
@@ -325,20 +329,28 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
           {canOrders && data.attention?.deliveryRecovery ? <Pressable style={styles.attentionItem} accessibilityRole="button" onPress={() => go("/orders" as Href)}>
             <BthwaniIcon name="warning" color={theme.warning} size={19}/><View style={styles.attentionCopy}><Text style={styles.listTitle}>تسليم متعثر</Text><Text style={styles.muted}>{data.attention.deliveryRecovery.toLocaleString("ar-YE") + " حالة تحتاج متابعة"}</Text></View>
           </Pressable> : null}
-          {!loading && ((canOrders && data.attention === null) || (canCatalog && data.offers === null)) ? <Text style={styles.muted}>لم تُقرأ بعض البيانات؛ تحقق من الاتصال ثم افتح الصفحة مجددًا.</Text> : null}
-          {!loading && data.attention && !data.attention.newOrders && !data.attention.deliveryRecovery && (!canCatalog || data.offers !== null) ? <Text style={styles.empty}>لا توجد تنبيهات طلبات عاجلة حاليًا.</Text> : null}
+          {canCatalog && data.inventory?.stockoutOffers ? <Pressable style={styles.attentionItem} accessibilityRole="button" accessibilityLabel="عرض المنتجات نافدة المخزون" onPress={() => go("/products?filter=stockout" as Href)}>
+            <BthwaniIcon name="warning" color={theme.warning} size={19}/><View style={styles.attentionCopy}><Text style={styles.listTitle}>نفاد المخزون</Text><Text style={styles.muted}>{data.inventory.stockoutOffers.toLocaleString("ar-YE") + " منتج من كامل كتالوج المتجر"}</Text></View>
+          </Pressable> : null}
+          {!loading && ((canOrders && data.attention === null) || (canCatalog && (data.offers === null || data.inventory === null))) ? <Text style={styles.muted}>لم تُقرأ بعض البيانات؛ تحقق من الاتصال ثم افتح الصفحة مجددًا.</Text> : null}
+          {!loading && data.attention && !data.attention.newOrders && !data.attention.deliveryRecovery && (!canCatalog || (data.offers !== null && data.inventory?.stockoutOffers === 0)) ? <Text style={styles.empty}>لا توجد تنبيهات طلبات عاجلة حاليًا.</Text> : null}
         </View>
         <View style={styles.panel}>
           {panelTitle("متابعة المخزون", canCatalog ? "/products?filter=stockout" as Href : undefined)}
-          {data.offers === null ? <Text style={styles.empty}>لم تُقرأ بيانات المخزون.</Text> : stockout.length === 0 ?
-            <Text style={styles.empty}>لا يوجد نفاد مؤكّد في المنتجات المحمّلة.</Text> :
+          {data.inventory === null ? <Text style={styles.empty}>تعذر قراءة إجمالي المخزون من DSH.</Text> : data.inventory.stockoutOffers === 0 ?
+            <Text style={styles.empty}>لا توجد منتجات نافدة في كامل كتالوج المتجر.</Text> :
+            <Pressable accessibilityRole="button" accessibilityLabel="عرض جميع المنتجات نافدة المخزون" onPress={() => go("/products?filter=stockout" as Href)}>
+              <Text style={styles.warningText}>{"يوجد " + data.inventory.stockoutOffers.toLocaleString("ar-YE") + " منتج نافد من كامل كتالوج المتجر. عرض التفاصيل"}</Text>
+            </Pressable>}
+          {data.offers === null ? <Text style={styles.muted}>تعذر قراءة أسماء المنتجات؛ افتح صفحة الكتالوج لإعادة المحاولة.</Text> : stockout.length === 0 ?
+            data.inventory?.stockoutOffers ? <Text style={styles.muted}>المنتجات النافدة لا تظهر في العينة الأولى المحمّلة؛ افتح الكتالوج لعرضها.</Text> : null :
             stockout.slice(0, 5).map(item => <Pressable key={item.offerId} accessibilityRole="button" style={styles.listItem}
               onPress={() => go("/products?filter=stockout" as Href)}>
               <View style={styles.productDot}><BthwaniIcon name="cart" color={theme.warning} size={18}/></View>
               <Text style={styles.listTitle} numberOfLines={2}>{item.productName}</Text>
               <Text style={styles.warningText}>نافد</Text>
             </Pressable>)}
-          {data.offersPartial ? <Text style={styles.muted}>أول 100 منتج فقط؛ قد توجد أصناف أخرى.</Text> : null}
+          {data.offersPartial ? <Text style={styles.muted}>قائمة أسماء المنتجات من أول 100 عرض فقط؛ العدد الإجمالي أعلاه يشمل كامل المتجر.</Text> : null}
         </View>
         {canCatalog ? <View style={styles.panel}>
           {panelTitle("الأكثر طلبًا خلال 30 يومًا", "/products" as Href)}
