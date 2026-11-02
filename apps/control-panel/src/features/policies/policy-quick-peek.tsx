@@ -63,8 +63,8 @@ export function PolicyQuickPeek({ policy, preview, position, containerRef, onClo
     if (typeof position.width === "number") element.style.width = `${position.width}px`;
   }, [position, containerRef]);
   // Store Type commission suggestions have a scoped read, not an aggregate registry.
-  const hasList = policy.list !== null || (policy.owner === "WLT" && policy.key !== "store-type-commission-defaults");
-  const hasHistory = policy.key !== "store-type-commission-defaults";
+  const hasList = policy.list !== null || (policy.owner === "WLT" && policy.key !== "store-type-commission-defaults" && policy.key !== "store-commercial-model");
+  const hasHistory = policy.key !== "store-type-commission-defaults" && policy.key !== "store-commercial-model";
   const [history,setHistory]=useState<readonly OperatorPolicyChange[]>([]);
   const [historyState,setHistoryState]=useState<"loading"|"ready"|"error"|"restricted">("loading");
   const [expanded,setExpanded]=useState(false);
@@ -115,7 +115,9 @@ export function PolicyQuickPeek({ policy, preview, position, containerRef, onClo
         : "جارٍ قراءة البيانات المعتمدة…"}
       </p>}
     </> : <p className="muted policy-quick-peek-hint">
-      لا تتوفر قراءة مجمعة موثوقة لهذا النوع. تُقرأ النسب المقترحة باختيار نوع متجر محدد، ولا تمثل عمولة عامة نافذة.
+      {policy.key === "store-commercial-model"
+        ? "يُختار نموذج العمولة أو الاشتراك لمتجر محدد من الاتفاقيات المرقّمة في WLT. لا توجد باقة عامة أو صلاحيات مدفوعة."
+        : "لا تتوفر قراءة مجمعة موثوقة لهذا النوع. تُقرأ النسب المقترحة باختيار نوع متجر محدد، ولا تمثل عمولة عامة نافذة."}
     </p>}
     {hasHistory ? <details className="policy-quick-peek-history">
       <summary>آخر التغييرات الموثقة</summary>

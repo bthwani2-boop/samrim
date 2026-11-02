@@ -15,7 +15,7 @@ const labels: Record<string, string> = {
   CUSTOMER_PICKUP: "استلام العميل",
 };
 
-export function StoreCommercialAgreementProposal({ storeId, modes }: Readonly<{storeId: string; modes: readonly StoreFulfillmentMode[]}>) {
+export function StoreCommercialAgreementProposal({ storeId, modes, readOnly = true }: Readonly<{storeId: string; modes: readonly StoreFulfillmentMode[]; readOnly?: boolean}>) {
   const { state: sessionState } = useSession();
   const actorId = sessionState.kind === "authenticated" ? sessionState.identity.subject : "";
   const [agreements, setAgreements] = useState<readonly Agreement[] | null>(null);
@@ -62,7 +62,7 @@ export function StoreCommercialAgreementProposal({ storeId, modes }: Readonly<{s
   }, [read]);
 
   async function propose() {
-    if (busy || !actorId || nextProposalVersion === null || modes.length === 0) return;
+    if (readOnly || busy || !actorId || nextProposalVersion === null || modes.length === 0) return;
     const distinct = [...new Set(modes)];
     if (distinct.length !== modes.length || distinct.some(mode => !(mode in labels))) return;
     const rates = storeCommercialRatesForProposal(distinct, commissionPercentByMode, commercialModel);
@@ -136,9 +136,18 @@ export function StoreCommercialAgreementProposal({ storeId, modes }: Readonly<{s
         : "لا تُستبدل أي اتفاقية معلقة قبل حسمها."}</p>
       {agreements.map(item => <p key={item.agreementId}>النسخة {item.agreementVersion} · {item.status} · {item.commercialModel} {item.commercialModel !== "COMMISSION" ? "· " + item.recurringAmountMinor + " ريال " + item.billingPeriod : ""} · {item.rates.map(rate => labels[rate.fulfillmentMode] + ": " + (rate.commissionRateBps / 100) + "%").join("، ")}</p>)}
       </> : null}
+      {!readOnly ? <>
       {nextProposalVersion === null ? <p>لا يمكن تقديم اقتراح أثناء وجود نسخة قيد القبول أو في حالة سجل غير متوقعة. راجع الاتفاقيات مع المالية وأعد القراءة.</p> : <>
       <p>{hasActiveAgreement ? "غيّر شروط المتجر باقتراح نسخة جديدة؛ الاتفاق الحالي يظل ساريًا حتى اعتماد البديل." : nextProposalVersion > 0 ? "راجع سبب رفض النسخة السابقة قبل إعادة الاقتراح." : "اختر النموذج التجاري؛ لا يسري قبل موافقة الشريك واعتماد المالية."}</p>
       <p>أوضاع التنفيذ: {modes.map(mode => labels[mode] ?? mode).join("، ")}</p>
+      <section className="access-card" aria-label="مقارنة نماذج التعاقد">
+        <h5>أي نموذج تجاري يناسب هذا المتجر؟</h5>
+        <div className="form-grid">
+          <p><strong>العمولة:</strong> نسبة تعاقدية على الطلبات المؤهلة لكل طريقة تنفيذ. لا تُستحق رسوم اشتراك دورية، ويسري الاتفاق بعد قبول مالك المتجر واعتماد المالية.</p>
+          <p><strong>الاشتراك:</strong> مبلغ دوري متفق عليه بالريال اليمني دون عمولة على منتجات الطلبات. يمكن عرض المقترح وقبوله، لكن الاشتراك غير قابل للتفعيل أو التحصيل حاليًا حتى اكتمال فوترة WLT ومراجعتها.</p>
+        </div>
+        <p className="muted">صلاحيات الشريك لا تتغير بحسب النموذج التجاري؛ هذا اتفاق رسوم خاص بالمتجر وليس باقة مدفوعة لفتح الميزات. لا يتحول معدل عمولة 0% إلى اشتراك تلقائيًا.</p>
+      </section>
       <div className="form-grid">
         <label className="field-label" htmlFor="store-commercial-model">نموذج الاتفاق
           <select id="store-commercial-model" value={commercialModel} onChange={event => setCommercialModel(event.target.value as "COMMISSION" | "SUBSCRIPTION")} disabled={busy}>
@@ -188,6 +197,7 @@ export function StoreCommercialAgreementProposal({ storeId, modes }: Readonly<{s
         {busy ? "جارٍ إرسال الاقتراح…" : hasActiveAgreement ? "اقتراح تعديل الاتفاق الساري" : nextProposalVersion > 0 ? "إعادة اقتراح الاتفاق بعد التصحيح" : "اقتراح الاتفاق التجاري"}
       </button>
       </>}
+      </> : <p className="muted">يُحدّد نموذج العمولة أو الاشتراك من قسم السياسات في لوحة التحكم بواسطة المشغّل المخوّل. هذه الصفحة تعرض سجل الاتفاقيات للمتابعة فقط؛ القبول والاعتماد يظلان مستقلين.</p>}
     </>}
     {error ? <p role="alert" className="identity-error">{error} <button className="button button-secondary" type="button" disabled={busy} onClick={() => {setError("");void read().catch(() => setError("تعذرت إعادة القراءة."));}}>إعادة القراءة</button></p> : null}
     {notice ? <output>{notice}</output> : null}

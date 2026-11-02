@@ -56,6 +56,9 @@ export function StoreProfileTabs({
   const account = partner?.partner;
   const { state: session } = useSession();
   const canManageStoreAgreement = session.kind === "authenticated" && session.identity.permissions?.includes("partners") === true;
+  const canSetCommercialModel = canManageStoreAgreement && session.kind === "authenticated"
+    && session.identity.permissions?.includes("platform_policies") === true
+    && session.identity.permissions?.includes("finance") === true;
   return <>
     <Panel id="operations" activeTab={activeTab}>
       {canViewOperations ? <div className="store-profile-tab-grid store-profile-focused-grid">
@@ -128,7 +131,13 @@ export function StoreProfileTabs({
         <Card title="المتاجر المرتبطة">
           <StoreBranchesPreview actorId={store.partnerActorId} currentStoreId={store.id} />
         </Card>
-        {canManageStoreAgreement ? <StoreCommercialAgreementProposal key={store.id} storeId={store.id} modes={store.fulfillmentModes} /> : null}
+        {canManageStoreAgreement ? <div>
+          <StoreCommercialAgreementProposal key={store.id} storeId={store.id} modes={store.fulfillmentModes} />
+          {canSetCommercialModel ? <Link className="store-profile-action-link"
+            href={`/policies?group=commercial&policy=store-commercial-model&action=manage&storeId=${encodeURIComponent(store.id)}`}>
+            تحديد نموذج العمولة أو الاشتراك من السياسات ←
+          </Link> : null}
+        </div> : null}
       </div>
       {manageOpen ? <section id="store-inline-management" className="store-profile-management" aria-label="تحرير بيانات المتجر">
         {management}

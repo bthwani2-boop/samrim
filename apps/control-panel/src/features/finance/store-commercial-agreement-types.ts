@@ -44,6 +44,21 @@ export type StoreCommercialAgreementRecord = Readonly<{
   reason: string;
 }>;
 
+export function storeCommercialStatusLabel(agreement: Pick<StoreCommercialAgreementRecord, "status" | "commercialModel">) {
+  if (agreement.status === "PARTNER_ACCEPTED") {
+    if (agreement.commercialModel === "SUBSCRIPTION") return "اشتراك مقبول من المالك · بانتظار اكتمال الفوترة في WLT، غير قابل للاعتماد حاليًا";
+    if (agreement.commercialModel === "HYBRID") return "النموذج الهجين ملغى · غير قابل للاعتماد";
+    return "بانتظار قرار المالية";
+  }
+  switch (agreement.status) {
+    case "PROPOSED": return "بانتظار قبول مالك المتجر";
+    case "ACTIVE": return "نشط";
+    case "FINANCE_REJECTED": return "مرفوض من المالية";
+    case "SUPERSEDED": return "استبدل باتفاق أحدث";
+  }
+}
+
+
 export type FinanceStoreCommercialAgreement = StoreCommercialAgreementRecord & Readonly<{
   storeName: string;
   currentStoreOwnerActorId: string;

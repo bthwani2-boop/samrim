@@ -39,6 +39,12 @@ export const policyCapabilities = [
     scope: "كابتن بثواني", owner: "WLT", createLabel: null, additionalPermission: null, list: null,
   },
   {
+    key: "store-commercial-model", href: "/policies?group=commercial&policy=store-commercial-model&action=manage", label: "نموذج الاتفاق التجاري للمتجر",
+    description: "اختيار عمولة أو اشتراك لكل متجر من مسار اتفاقيته القانونية. هذا اختيار مقترح لا يفعّل الرسوم، ولا يغيّر حقوق الشريك أو العقود القائمة.",
+    icon: "finance", context: "نموذج التعاقد", summary: "عمولة أم اشتراك · اتفاقية خاصة بكل متجر",
+    scope: "متجر محدد", owner: "WLT", createLabel: null, additionalPermission: "finance", list: null,
+  },
+  {
     key: "store-type-commission-defaults", href: "/policies?group=commercial&policy=store-type-commission-defaults&action=manage", label: "عمولات المتاجر المقترحة",
     description: "اقتراح نسب تفاوضية حسب نوع المتجر وطريقة التنفيذ؛ لا تصبح نافذة إلا بموافقة الشريك والمالية على اتفاقيته الخاصة.",
     icon: "finance", context: "الشروط التجارية", summary: "نسب مقترحة لا تُطبّق تلقائيًا",
@@ -74,5 +80,6 @@ export function isPolicyKey(value: string | null): value is PolicyResourceKey {
 export function canManagePolicy(key: PolicyResourceKey, permissions: readonly string[] | undefined): boolean {
   const additional = policyCapability(key).additionalPermission;
   return permissions?.includes("platform_policies") === true
-    && (additional === null || permissions?.includes(additional) === true);
+    && (additional === null || permissions?.includes(additional) === true)
+    && (key !== "store-commercial-model" || permissions.includes("partners"));
 }
