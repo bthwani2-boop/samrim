@@ -76,6 +76,7 @@ function DesktopWorkspace({ children }: PropsWithChildren) {
   if (authority.canUse("store")) {
     if (can("store_operations")) management.push({ label: "التشغيل", href: "/store?section=operations" as Href, icon: "store", section: "operations" });
     if (isOwner) management.push({ label: "إعدادات المتجر", href: "/store?section=settings" as Href, icon: "edit", section: "settings" });
+    if (isOwner) management.push({ label: "الاتفاقية التجارية", href: "/store?section=commercial" as Href, icon: "wallet", section: "commercial" });
     if (isOwner) management.push({ label: "كباتن المتجر", href: "/store?section=team" as Href, icon: "deliveries", section: "team" });
   }
   if (state.kind === "ready" && !selectedStore) management.push({ label: "تجهيز المتجر", href: "/onboarding" as Href, icon: "store" });

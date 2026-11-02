@@ -86,7 +86,7 @@ async function main() {
     }
     if (hasLegacyBridge) {
       await page.setViewportSize({ width: 1360, height: 900 });
-      await page.goto("http://localhost:18102/store?section=settings", {
+      await page.goto("http://localhost:18102/store?section=commercial", {
         waitUntil: "domcontentloaded", timeout: 20000,
       });
       await page.getByText("هذه اتفاقية عمولة قديمة", { exact: false })
@@ -106,6 +106,22 @@ async function main() {
       assert.equal(details.activeAcceptanceButtons, 0, "HISTORICAL_ACTIVE_AGREEMENT_MUST_NOT_BE_ACCEPTABLE_AGAIN");
       console.log("PARTNER_AGREEMENT_DETAILS=PASS_READONLY_HISTORICAL_NO_ACCEPTANCE");
     }
+    // Exercise the visible desktop and mobile entry points, not only direct URLs.
+    await page.setViewportSize({ width: 1360, height: 900 });
+    await page.goto("http://localhost:18102/more", { waitUntil: "domcontentloaded", timeout: 20000 });
+    await page.getByRole("link", { name: "الاتفاقية التجارية" }).click({ timeout: 12000 });
+    await page.waitForURL(url => new URL(url).searchParams.get("section") === "commercial", { timeout: 12000 });
+    await page.getByText("اتفاقية المتجر", { exact: true })
+      .waitFor({ state: "visible", timeout: 12000 });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("http://localhost:18102/more", { waitUntil: "domcontentloaded", timeout: 20000 });
+    await page.getByRole("button", { name: /مراجعة الاتفاقية التجارية:/ }).click({ timeout: 12000 });
+    await page.waitForURL(url => new URL(url).searchParams.get("section") === "commercial", { timeout: 12000 });
+    await page.getByText("اتفاقية المتجر", { exact: true })
+      .waitFor({ state: "visible", timeout: 12000 });
+    assert.equal(await page.evaluate(() => document.documentElement.dir === "rtl" &&
+      document.documentElement.scrollWidth <= innerWidth + 2), true, "COMMERCIAL_MOBILE_RTL_OVERFLOW");
+    console.log("PARTNER_AGREEMENT_NAV=PASS_DESKTOP_MOBILE_DIRECT_ACCESS");
     console.log(hasLegacyBridge
       ? "PARTNER_AGREEMENT=PASS_LEGACY_COMMISSION_DISPLAY_ONLY_WLT_UPGRADE_STILL_REQUIRED"
       : "PARTNER_AGREEMENT=PASS_COMPATIBLE_CONTRACT_READBACK");

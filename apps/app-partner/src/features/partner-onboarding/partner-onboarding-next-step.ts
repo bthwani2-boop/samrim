@@ -15,7 +15,7 @@ type StoreSetupFacts = Readonly<{
 export type StoreSetupFocus = Readonly<{
   title: string;
   detail: string;
-  href: "/products" | "/store?section=settings" | "/store?section=operations" | null;
+  href: "/products" | "/store?section=settings" | "/store?section=commercial" | "/store?section=operations" | null;
 }>;
 
 // Excluded steps are outside this actor's scope; unknown steps stay in the denominator.
@@ -31,7 +31,7 @@ export function storeReadinessProgress(steps: readonly (boolean | null)[]) {
 // Unknown data does not count as completion, and a closed schedule is not a fault.
 export function nextStoreSetupFocus(facts: StoreSetupFacts): StoreSetupFocus | null {
   if (facts.ownsStore && facts.agreement === "AWAITING_PARTNER") {
-    return { title: "راجع الاتفاقية التجارية", detail: "راجع الشروط المالية واقبلها إن وافقت عليها. الاعتماد النهائي للمالية.", href: "/store?section=settings" };
+    return { title: "راجع الاتفاقية التجارية", detail: "راجع الشروط المالية واقبلها إن وافقت عليها. الاعتماد النهائي للمالية.", href: "/store?section=commercial" };
   }
   if (facts.canEditCatalog && facts.catalogReady === false) {
     return { title: "جهّز منتجات المتجر", detail: "أضف منتجًا متاحًا بسعر صحيح ليتمكن العملاء من الطلب بعد النشر.", href: "/products" };
@@ -50,7 +50,7 @@ export function nextStoreSetupFocus(facts: StoreSetupFacts): StoreSetupFocus | n
       return { title: "بانتظار مقترح الاتفاقية", detail: "يتولى قسم الشركاء إعداد الشروط التجارية. لا تنشأ اتفاقية تلقائيًا.", href: null };
     }
     if (facts.agreement === null || facts.agreement === "UNAVAILABLE") {
-      return { title: "تعذر التحقق من الاتفاقية", detail: "راجع قسم الاتفاقية وأعد قراءة بياناتها قبل متابعة النشر.", href: "/store?section=settings" };
+      return { title: "تعذر التحقق من الاتفاقية", detail: "راجع قسم الاتفاقية وأعد قراءة بياناتها قبل متابعة النشر.", href: "/store?section=commercial" };
     }
     if (facts.publicationState !== "published") {
       return { title: "راجع متطلبات نشر المتجر", detail: "تحقق من الشعار والغلاف وساعات العمل وبيانات المتجر قبل طلب النشر.", href: "/store?section=settings" };

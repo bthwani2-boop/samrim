@@ -235,7 +235,7 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
     {!desktopWeb?<Text style={styles.sectionTitle}>ملف المتجر وإعداداته</Text>:null}
     {selectedStore?.owned && !desktopWeb ? <Pressable accessibilityRole="button"
       accessibilityLabel={"مراجعة الاتفاقية التجارية: "+agreementReadinessMessage(commercialAgreement)}
-      style={styles.quickCard} onPress={()=>router.push({pathname:"/store",params:{section:"settings",returnTo:"more"}} as Href)}>
+      style={styles.quickCard} onPress={()=>router.push({pathname:"/store",params:{section:"commercial",returnTo:"more"}} as Href)}>
       <View style={styles.quickIcon}><BthwaniIcon name="wallet" color={commercialAgreement==="ACTIVE"?theme.success:theme.brandAction} size={22}/></View>
       <View style={styles.quickText}>
         <Text style={styles.quickTitle}>الاتفاقية التجارية</Text>
