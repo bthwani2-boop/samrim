@@ -107,3 +107,10 @@ test("studio inspector tabs expose an RTL-aware keyboard and accessible selected
   }
   assert.equal((editor.match(/role="tabpanel" id="studio-inspector-panel" aria-labelledby=/g) ?? []).length, 5);
 });
+
+test("preview-only Studio sections warn operators before publication", () => {
+  assert.match(editor, /previewOnlySectionIds = new Set<StudioSectionId>\(\["topSellers", "testimonials"\]\)/);
+  assert.match(editor, /previewOnlySectionIds\.has\(entry\.id\)/);
+  assert.match(editor, /previewOnlySectionIds\.has\(section\.id\)/);
+  assert.match(editor, /لا يمكن نشر هذا القسم حاليًا/);
+});

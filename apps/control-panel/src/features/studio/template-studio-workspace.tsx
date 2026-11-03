@@ -27,6 +27,7 @@ import {
 } from "./studio-draft";
 
 const storagePrefix = "bthwani-studio-private-draft-v1:";
+const previewOnlySectionIds = new Set<StudioSectionId>(["topSellers", "testimonials"]);
 type EditorPanel = "sections" | "palette" | "published" | "theme-publishing" | "layout-publishing";
 const viewports: ReadonlyArray<{ id: StudioViewport; label: string }> = [
   { id: "desktop", label: "الحاسوب" }, { id: "tablet", label: "اللوحي" }, { id: "phone", label: "الهاتف" },
@@ -340,7 +341,7 @@ function Editor({ actorId }: Readonly<{ actorId: string }>) {
           >
             <button type="button" className="studio-section-select" aria-pressed={entry.id === selectedId} onClick={() => { setSelectedId(entry.id); setPanel("sections"); }}>
               <span aria-hidden="true" className="studio-grip">⠿</span>
-              <span><strong>{studioSectionLabels[entry.id]}</strong><small>{entry.visible ? "ظاهر" : "مخفي"} · {index + 1}</small></span>
+              <span><strong>{studioSectionLabels[entry.id]}</strong><small>{entry.visible ? "ظاهر" : "مخفي"} · {index + 1}{previewOnlySectionIds.has(entry.id) ? " · معاينة فقط" : ""}</small></span>
             </button>
             <div className="studio-section-actions">
               <button type="button" title="نقل لأعلى" aria-label={`نقل ${studioSectionLabels[entry.id]} لأعلى`} disabled={index === 0} onClick={() => move(entry.id, -1)}>↑</button>
@@ -406,6 +407,7 @@ function Editor({ actorId }: Readonly<{ actorId: string }>) {
           <Link className="button button-secondary" href="/marketing?section=content">إدارة صور البنرات ووجهاتها</Link>
         </div> : panel === "sections" ? <div role="tabpanel" id="studio-inspector-panel" aria-labelledby={"studio-tab-" + panel} className="studio-inspector-content">
           <h2>{studioSectionLabels[section.id]}</h2>
+          {previewOnlySectionIds.has(section.id) ? <p role="status" className="studio-warning">هذا القسم للمعاينة فقط؛ لا يمكن نشر هذا القسم حاليًا لعدم توفر بيانات حقيقية معتمدة. يمكنك إبقاؤه في المسودة أو إخفاؤه.</p> : null}
           <label className="studio-check"><input type="checkbox" checked={section.visible} onChange={(event) => updateSection(section.id, { visible: event.target.checked })} />إظهار القسم</label>
           <label className="studio-field">عنوان القسم
             <input value={section.title} maxLength={80} onChange={(event) => updateSection(section.id, { title: event.target.value })} />
