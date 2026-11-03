@@ -737,7 +737,16 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
             </View>
           </GestureDetector>;
           if (item.kind === "heading") return <BthwaniSectionHeader title={item.title} subtitle={item.subtitle} />;
-          return <GestureDetector gesture={tabSwipeGesture}><View><BthwaniSurface tone="inset" style={styles.emptySection}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /><Text style={styles.sectionTitle}>{item.title}</Text></BthwaniSurface></View></GestureDetector>;
+          return <GestureDetector gesture={tabSwipeGesture}><View><BthwaniSurface tone="inset" style={styles.emptySection}>
+            <BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} />
+            <Text style={styles.sectionTitle}>{item.title}</Text>
+            {(favoritesView || popularView || selectedCategoryID || selectedStoreSectionID || catalogQuery.trim()) ? <BthwaniButton
+              label="عرض جميع منتجات المتجر"
+              disabled={catalogRefreshing}
+              variant="quiet"
+              onPress={() => void reloadCatalog(null, "", false, false)}
+            /> : null}
+          </BthwaniSurface></View></GestureDetector>;
         }}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={<View style={styles.listHeader}>

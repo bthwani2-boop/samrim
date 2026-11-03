@@ -115,13 +115,15 @@ export function buildCatalogRows(catalog: PublicCatalogResponse, favoritesView: 
         : catalog.nextCursor
           ? `حمّل المزيد لعرض بقية منتجات ${selectedSection.nameAr}`
           : `لا توجد منتجات متاحة في ${selectedSection.nameAr} حاليًا`
-    : popularView
-      ? query.trim()
-        ? "لا توجد منتجات مطابقة"
-        : categoryID
+    : query.trim()
+      ? "لا توجد منتجات مطابقة للبحث"
+      : popularView
+        ? categoryID
           ? "لا توجد منتجات رائجة في هذا التصنيف خلال آخر 30 يومًا"
           : "لا توجد منتجات مطلوبة خلال آخر 30 يومًا"
-      : "لا توجد منتجات متاحة حاليًا";
+        : categoryID
+          ? "لا توجد منتجات ضمن هذه الفئة حاليًا"
+          : "لا توجد منتجات متاحة حاليًا";
   const catalogRows: StoreCatalogRow[] = [];
   const seenOfferIDs = new Set<string>();
 
