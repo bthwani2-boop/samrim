@@ -19,3 +19,8 @@ test("search recovery does not replace status filters or order authorization", (
   assert.match(source, /canFulfillOrder\(order\.storeId\)/);
   assert.match(source, /filter === "NEEDS_ACTION"/);
 });
+
+test("Partner order queue buttons expose their selected state to assistive technology", () => {
+  assert.match(source, /aria-pressed=\{filter === key\}/);
+  assert.match(source, /accessibilityLabel=\{label\}/);
+});
