@@ -19,3 +19,11 @@ test("the same Partner marketing surface exposes Store banners on mobile and web
  assert.match(workspace,/PartnerStoreBanners/);
  assert.match(desktop,/view=banners/);
 });
+
+test("Partner banner attempts survive failed owner readback and are cleared only after it succeeds", () => {
+ const ui = source();
+ assert.match(ui, /const refresh = useCallback\(async \(\): Promise<boolean> => \{/);
+ assert.match(ui, /if \(!await refresh\(\)\) throw new Error\("STORE_BANNER_READBACK_FAILED"\);\s*submitAttempt\.current=null/);
+ assert.match(ui, /if \(!await refresh\(\)\) throw new Error\("STORE_BANNER_VISIBILITY_READBACK_FAILED"\);\s*toggleAttempt\.current=null/);
+ assert.match(ui, /if \(request\.current !== current\) return false;/);
+});

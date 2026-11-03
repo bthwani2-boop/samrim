@@ -75,7 +75,7 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
   const toggleAttempt = useRef<{ id: string; enabled: boolean; version: number; idempotencyKey: string; correlationId: string } | null>(null);
   const request = useRef(0);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<boolean> => {
     const current = ++request.current;
     setLoading(true);
     setLoadingMore(false);
@@ -87,10 +87,10 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
         fetch(base + "/banners", { headers }),
         fetch(base + "/discovery-targets", { headers }),
       ]);
-      if (request.current !== current) return;
+      if (request.current !== current) return false;
       if (banners.status !== "fulfilled" || !banners.value.ok) throw new Error("STORE_BANNERS_READ_FAILED");
       const result = await banners.value.json() as OperatorDiscoveryContentRegistryResponse;
-      if (request.current !== current) return;
+      if (request.current !== current) return false;
       setItems(result.items);
       setNextCursor(result.nextCursor ?? "");
       if (destinations.status === "fulfilled" && destinations.value.ok) {
@@ -104,8 +104,10 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
         if (!targetSearchRef.current) { setTargets([]); setTargetLoadFailed(true); }
         setError("تم تحميل البنرات، لكن تعذرت قراءة وجهاتها. أعد المحاولة.");
       }
+      return true;
     } catch {
       if (request.current === current) setError("تعذر تحميل بنرات المتجر. تحقق من اتصالك وصلاحية التسويق ثم أعد المحاولة.");
+      return false;
     } finally {
       if (request.current === current) setLoading(false);
     }
@@ -203,8 +205,9 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
         method:"POST",headers:{Authorization:`Bearer ${token}`,"Idempotency-Key":attempt.idempotencyKey,"X-Correlation-ID":attempt.correlationId},body:form,
       });
       if (!response.ok) throw new Error("STORE_BANNER_CREATE_FAILED");
+      if (!await refresh()) throw new Error("STORE_BANNER_READBACK_FAILED");
       submitAttempt.current=null;setFile(null);setTitle("");setRights(false);setStartsAt("");setEndsAt("");setPriority("0");
-      await refresh();setNotice("تم استلام البنر للمراجعة. سيظهر بعد موافقة تسويق بثواني وخلال فترة عرضه.");
+      setNotice("تم استلام البنر للمراجعة. سيظهر بعد موافقة تسويق بثواني وخلال فترة عرضه.");
     } catch {setError("تعذر تأكيد رفع البنر. أعد المحاولة دون تغيير المدخلات للتحقق من نتيجة الطلب.");}
     finally {setBusy(false);}
   };
@@ -223,8 +226,9 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
         body:JSON.stringify({enabled,expectedVersion:attempt.version}),
       });
       if (!response.ok) throw new Error("STORE_BANNER_VISIBILITY_FAILED");
+      if (!await refresh()) throw new Error("STORE_BANNER_VISIBILITY_READBACK_FAILED");
       toggleAttempt.current=null;
-      await refresh();setNotice(enabled?"تم السماح بعرض البنر المعتمد.":"تم إخفاء البنر عن عملاء المتجر.");
+      setNotice(enabled?"تم السماح بعرض البنر المعتمد.":"تم إخفاء البنر عن عملاء المتجر.");
     } catch {setError("تعذر تأكيد تغيير عرض البنر. أعد المحاولة أو حدّث القائمة عند حدوث تعارض.");}
     finally {setPendingID("");}
   };

@@ -17,7 +17,7 @@ export function PartnerOrders() {
   const targetStoreId = Array.isArray(rawTargetStore) ? rawTargetStore[0] : rawTargetStore;
   const routeScope = Array.isArray(rawScope) ? rawScope[0] : rawScope;
   const [scope, setScope] = useState<OrdersScope>(routeScope === "all" ? "ALL_AUTHORIZED" : "SELECTED_STORE");
-  useEffect(() => { if (routeScope === "all") setScope("ALL_AUTHORIZED"); }, [routeScope]);
+  useEffect(() => { setScope(routeScope === "all" ? "ALL_AUTHORIZED" : "SELECTED_STORE"); }, [routeScope]);
   const permittedStores = stores.filter((store) => store.owned || store.permissions.includes("orders"));
   const canManageOrders = Boolean(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("orders")));
   const aggregateMode = scope === "ALL_AUTHORIZED" && permittedStores.length > 1;
