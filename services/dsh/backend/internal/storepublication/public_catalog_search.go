@@ -19,7 +19,7 @@ func (s *Service) SearchPublicCatalog(ctx context.Context, serviceCityID, vertic
 	const searchBudget = 8 * time.Second // cooperative cancellation; no strict wall-clock guarantee
 	boundedCtx, cancel := context.WithTimeout(ctx, searchBudget)
 	defer cancel()
-	return collectEligiblePublicCatalogOffers(boundedCtx, limit, cursor,
+	result, err := collectEligiblePublicCatalogOffers(boundedCtx, limit, cursor,
 		func(ctx context.Context, nextLimit int, nextCursor string) (postgres.PublicCatalogSearchRecord, error) {
 			return postgres.SearchPublicCatalog(ctx, s.db, serviceCityID, verticalID, categoryID, query, nextLimit, nextCursor, shortcutScope...)
 		},
@@ -34,6 +34,10 @@ func (s *Service) SearchPublicCatalog(ctx context.Context, serviceCityID, vertic
 			return true, nil
 		},
 	)
+	if ctxErr := boundedCtx.Err(); ctxErr != nil {
+		return postgres.PublicCatalogSearchRecord{}, ctxErr
+	}
+	return result, err
 }
 
 // Scan raw product cursor pages until enough *eligible* offers have been found.

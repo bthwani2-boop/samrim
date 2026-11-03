@@ -101,6 +101,7 @@ test("studio inspector tabs expose an RTL-aware keyboard and accessible selected
   assert.match(editor, /role="tablist" aria-label="أدوات الاستوديو"/);
   assert.match(editor, /"ArrowLeft", "ArrowRight", "Home", "End"/);
   assert.match(editor, /getComputedStyle\(event\.currentTarget\)\.direction === "rtl"/);
+  assert.match(editor, /event\.key === "ArrowLeft" \? -1 : 1\) \* \(rtl \? -1 : 1\)/, "ArrowLeft must move toward the right in RTL");
   for (const id of ["sections", "palette", "published", "theme-publishing", "layout-publishing"]) {
     assert.match(editor, new RegExp('id="studio-tab-' + id + '" aria-controls="studio-inspector-panel"'));
     assert.match(editor, new RegExp('tabIndex=\\{panel === "' + id + '" \\? 0 : -1\\}'));

@@ -13,6 +13,9 @@ func TestClientWebOriginMustBeApprovedAndHTTPSInProduction(t *testing.T) {
 		{"valid https client", "https://client.example.com", "https://client.example.com", false},
 		{"unapproved client origin", "https://client.example.com", "https://evil.example.com", true},
 		{"non-https client origin", "http://client.example.com", "http://client.example.com", true},
+		{"trailing slash is not a browser Origin", "https://client.example.com/", "https://client.example.com/", true},
+		{"path is not a browser Origin", "https://client.example.com/app", "https://client.example.com/app", true},
+		{"query is not a browser Origin", "https://client.example.com?foo=1", "https://client.example.com?foo=1", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			setRuntimeConfigBaseline(t)

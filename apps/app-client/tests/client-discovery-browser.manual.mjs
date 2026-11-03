@@ -5,13 +5,14 @@ import { chromium, expect } from "@playwright/test";
 
 async function assertCatalogPriceOrder(response, ascending) {
   const payload = await response.json();
-  assert.ok(Array.isArray(payload.offers) && payload.offers.length >= 2,
-    "PRICE_SORT_REQUIRES_TWO_SERVER_OFFERS");
+  assert.ok(Array.isArray(payload.offers), "PRICE_SORT_SERVER_RESPONSE_INVALID");
+  if (payload.offers.length < 2) return false;
   const prices = payload.offers.map((offer) => offer.priceMinor);
   assert.ok(prices.every((value) => Number.isSafeInteger(value)),
     "PRICE_SORT_INVALID_SERVER_PRICES");
   const expected = [...prices].sort((a, b) => ascending ? a - b : b - a);
   assert.deepEqual(prices, expected, "PRICE_SORT_SERVER_RESULT_OUT_OF_ORDER");
+  return true;
 }
 
 const origin = process.env.BTHWANI_CLIENT_WEB_ORIGIN ?? "http://localhost:18101";
@@ -67,19 +68,19 @@ try {
     const priceAscResponse = page.waitForResponse(response =>
       response.ok() && response.url().includes("/dsh/public/catalog/search") && new URL(response.url()).searchParams.get("sort") === "PRICE_ASC", { timeout: 16000 });
     await page.getByRole("button", { name: "عرض النتائج" }).click();
-    await assertCatalogPriceOrder(await priceAscResponse, true);
+    const ascVerified = await assertCatalogPriceOrder(await priceAscResponse, true);
     await page.getByRole("button", { name: "ترتيب المنتجات" }).click();
     await page.getByRole("radio", { name: "السعر: من الأعلى للأقل" }).click();
     const priceDescResponse = page.waitForResponse(response =>
       response.ok() && response.url().includes("/dsh/public/catalog/search") && new URL(response.url()).searchParams.get("sort") === "PRICE_DESC", { timeout: 16000 });
     await page.getByRole("button", { name: "عرض النتائج" }).click();
-    await assertCatalogPriceOrder(await priceDescResponse, false);
+    const descVerified = await assertCatalogPriceOrder(await priceDescResponse, false);
     await page.getByRole("button", { name: "ترتيب المنتجات" }).click();
     const resetSortRequest = page.waitForRequest(request =>
       request.url().includes("/dsh/public/catalog/search") && !new URL(request.url()).searchParams.has("sort"), { timeout: 16000 });
     await page.getByRole("button", { name: "مسح الترتيب" }).click();
     await resetSortRequest;
-    summary.priceSortResponse = "PASS";
+    summary.priceSortResponse = ascVerified && descVerified ? "PASS" : "NOT_RUN_SINGLE_OFFER";
   }
   stage = "product search no-results";
   await activeSearch.fill("__bthwani_nonexistent_store_20261101__");

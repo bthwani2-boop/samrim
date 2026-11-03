@@ -310,6 +310,45 @@ func TestPartnerStoreBannersFreshDatabaseScopePublicationAndReplay(t *testing.T)
 		} else {
 			assertPublic(storeA, city)
 		}
+		// Create 65 draft banners after the public visibility assertions so a
+		// Partner can page beyond the former 60-row ceiling without publishing
+		// any of the extra draft fixtures.
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.discovery_content(
+		    id,kind,title_ar,target_type,target_id,source_store_id,service_city_id,state,starts_at,created_by_actor_id)
+		    SELECT 'proof-page-' || lpad(n::text,3,'0'),'BANNER','بنر مسودة','STORE',$1,$1,$2,'DRAFT',
+		      clock_timestamp(),'fixture-actor' FROM generate_series(1,65) AS n`, storeA, city); err != nil {
+			t.Fatalf("create cursor pagination drafts: %v", err)
+		}
+		firstPage, cursor, err := postgres.PagePartnerStoreBanners(ctx, db, storeA, "", 60)
+		if err != nil || len(firstPage) != 60 || cursor == "" {
+			t.Fatalf("first Partner banner page wrong: count=%d cursor=%q err=%v", len(firstPage), cursor, err)
+		}
+		if _, _, err := postgres.PagePartnerStoreBanners(ctx, db, storeB, cursor, 60); !errors.Is(err, postgres.ErrDiscoveryContentInvalid) {
+			t.Fatalf("Partner Store B accepted Store A cursor: %v", err)
+		}
+		lastPage, lastCursor, err := postgres.PagePartnerStoreBanners(ctx, db, storeA, cursor, 60)
+		if err != nil || len(lastPage) != 12 || lastCursor != "" {
+			t.Fatalf("second Partner banner page wrong: count=%d cursor=%q err=%v", len(lastPage), lastCursor, err)
+		}
+		seen := make(map[string]bool)
+		for _, item := range append(firstPage, lastPage...) {
+			if seen[item.ID] || item.SourceStoreID != storeA {
+				t.Fatalf("duplicate or cross-Store banner in keyset pages: %+v", item)
+			}
+			seen[item.ID] = true
+		}
+		if len(seen) != 72 {
+			t.Fatalf("pages skipped own banner records: %d", len(seen))
+		}
+		for _, tc := range []struct{ query, kind, id string }{
+			{"منتج", "PRODUCT", storeA + "-product"},
+			{"عرض", "PROMOTION", storeA + "-promo"},
+		} {
+			targets, err := postgres.ListPartnerReelTargets(ctx, db, storeA, tc.query)
+			if err != nil || len(targets) != 1 || targets[0].TargetType != tc.kind || targets[0].TargetID != tc.id {
+				t.Fatalf("search cannot select the own Store's eligible destination: query=%q targets=%+v err=%v", tc.query, targets, err)
+			}
+		}
 	}, 4*time.Minute)
 }
 func parseBannerTimeOffset(t *testing.T, s string) time.Duration {

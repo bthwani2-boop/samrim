@@ -52,6 +52,7 @@ async function run() {
     const received = await foreignInventoryResponse;
     assert.equal((await received.json()).summary.storeId, "foreign-store", "expected a foreign Store readback before asserting isolation");
     await page.getByRole("button", { name: "منتجات متاحة، عرض التفاصيل" }).waitFor({ state: "visible", timeout: 15000 });
+    await page.getByText("جارٍ تحديث مؤشرات المتجر...").waitFor({ state: "hidden", timeout: 15000 });
     await page.getByText("—", { exact: true }).first().waitFor({ state: "visible", timeout: 15000 });
     assert.equal(await page.getByRole("button", { name: "نفاد المخزون، عرض التفاصيل" }).count(), 0);
     assert.equal(await page.getByText(new Intl.NumberFormat("ar-YE").format(637), { exact: true }).count(), 0);

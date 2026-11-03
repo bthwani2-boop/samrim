@@ -170,6 +170,7 @@ export class IdentitySessionManager {
   private tokens: StoredTokens | null = null;
   private refreshInFlight: Promise<IdentitySessionState> | null = null;
   private restoreInFlight: Promise<IdentitySessionState> | null = null;
+  private browserLogoutInFlight: Promise<void> | null = null;
   private readonly listeners = new Set<IdentitySessionListener>();
 
   constructor(
@@ -234,6 +235,7 @@ export class IdentitySessionManager {
   }
 
   async restore(): Promise<IdentitySessionState> {
+    if (this.browserLogoutInFlight) return this.stateValue;
     if (this.stateValue.kind === "signed_out" && (this.stateValue.reason === "explicit_logout" || this.stateValue.reason === "recovery")) {
       return this.stateValue;
     }
@@ -271,7 +273,9 @@ export class IdentitySessionManager {
       this.tokens = null;
       if (this.restoreBrowserSession) {
         try {
-          return await this.adopt(await this.restoreBrowserSession());
+          const pair = await this.restoreBrowserSession();
+          if (this.browserLogoutInFlight) return this.stateValue;
+          return await this.adopt(pair);
         } catch (error) {
           if (isIdentityUnauthenticated(error)) return this.signOut("no_local_session");
           return this.degraded(degradedReason(error));
@@ -329,12 +333,23 @@ export class IdentitySessionManager {
 
   async logout(): Promise<void> {
     if (this.restoreBrowserSession) {
+      if (this.browserLogoutInFlight) return this.browserLogoutInFlight;
       // A web refresh cookie cannot be removed by JavaScript. Never claim
-      // sign-out if the server could not revoke and expire that cookie.
-      await this.client.logout(this.tokens?.accessToken ?? "");
-      this.tokens = null;
-      await this.removeStorageBestEffort();
-      this.transition({ kind: "signed_out", reason: "explicit_logout" });
+      // sign-out if the server could not revoke and expire that cookie. Wait
+      // for a pending restore response: its Set-Cookie may rotate the token.
+      const operation = (async () => {
+        if (this.restoreInFlight) await this.restoreInFlight.catch(() => undefined);
+        await this.client.logout(this.tokens?.accessToken ?? "");
+        this.tokens = null;
+        await this.removeStorageBestEffort();
+        this.transition({ kind: "signed_out", reason: "explicit_logout" });
+      })();
+      this.browserLogoutInFlight = operation;
+      try {
+        await operation;
+      } finally {
+        if (this.browserLogoutInFlight === operation) this.browserLogoutInFlight = null;
+      }
       return;
     }
     let stored: StoredTokens | null = null;

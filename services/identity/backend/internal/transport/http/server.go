@@ -399,6 +399,10 @@ func (s *Server) webPartnerSession(w http.ResponseWriter, r *http.Request) {
 		writeDomainError(w, domain.ErrForbidden)
 		return
 	}
+	if r.ContentLength != 0 || len(r.TransferEncoding) > 0 {
+		writeDomainError(w, domain.ErrInvalidInput)
+		return
+	}
 	refresh, device, ok := s.readPartnerWebCookies(r)
 	if !ok {
 		writeDomainError(w, domain.ErrUnauthenticated)
@@ -427,15 +431,23 @@ func (s *Server) webPartnerLogout(w http.ResponseWriter, r *http.Request) {
 		writeDomainError(w, domain.ErrForbidden)
 		return
 	}
+	if r.ContentLength != 0 || len(r.TransferEncoding) > 0 {
+		writeDomainError(w, domain.ErrInvalidInput)
+		return
+	}
 	refresh, device, hasCookie := s.readPartnerWebCookies(r)
-	s.partnerWebCookies(w, "", "", -1)
 	if token, ok := bearerToken(r); ok {
-		err := s.sessions.Logout(r.Context(), token)
+		identity, err := s.sessions.ResolveAccessToken(r.Context(), token)
 		if err == nil {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if !errors.Is(err, domain.ErrUnauthenticated) {
+			if identity.Role != "partner" || identity.Surface != "app-partner" {
+				writeDomainError(w, domain.ErrForbidden)
+				return
+			}
+			if err := s.sessions.Logout(r.Context(), token); err != nil && !errors.Is(err, domain.ErrUnauthenticated) {
+				writeDomainError(w, err)
+				return
+			}
+		} else if !errors.Is(err, domain.ErrUnauthenticated) {
 			writeDomainError(w, err)
 			return
 		}
@@ -449,6 +461,7 @@ func (s *Server) webPartnerLogout(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if err := s.sessions.Logout(r.Context(), pair.AccessToken); err != nil && !errors.Is(err, domain.ErrUnauthenticated) {
+				s.setPartnerWebCookiesIfAuthorized(w, r, pair, device)
 				writeDomainError(w, err)
 				return
 			}
@@ -457,6 +470,7 @@ func (s *Server) webPartnerLogout(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	s.partnerWebCookies(w, "", "", -1)
 	w.WriteHeader(http.StatusNoContent)
 }
 

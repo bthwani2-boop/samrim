@@ -111,6 +111,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       void readPublicStoreOrderability(storeId, selectedCityID).then((response) => {
         if (active) setOrderabilityByMode(response.orderabilityByMode);
       }).catch(() => { /* Preserve the last confirmed state until DSH is reachable. */ });
+      // Revalidate Partner visibility and publication while the Store stays open.
+      void listPublicStoreBanners(storeId, selectedCityID).then((response) => {
+        if (active) setMarketingContents(response.items);
+      }).catch(() => { /* Keep the last confirmed page while DSH is unreachable. */ });
     };
     refresh();
     const interval = setInterval(refresh, 15000);

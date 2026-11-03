@@ -342,7 +342,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
             <Pressable accessibilityRole="button" accessibilityLabel="عرض جميع المنتجات نافدة المخزون" onPress={() => go("/products?filter=stockout" as Href)}>
               <Text style={styles.warningText}>{"يوجد " + data.inventory.stockoutOffers.toLocaleString("ar-YE") + " منتج نافد بين عروض المتجر المنشورة. عرض التفاصيل"}</Text>
             </Pressable>}
-          {data.offers === null ? <Text style={styles.muted}>تعذر قراءة أسماء المنتجات؛ افتح صفحة الكتالوج لإعادة المحاولة.</Text> : stockout.length === 0 ?
+          {!canCatalog ? null : data.offers === null ? <Text style={styles.muted}>تعذر قراءة أسماء المنتجات؛ افتح صفحة الكتالوج لإعادة المحاولة.</Text> : stockout.length === 0 ?
             data.inventory?.stockoutOffers ? <Text style={styles.muted}>المنتجات النافدة لا تظهر في العينة الأولى المحمّلة؛ افتح الكتالوج لعرضها.</Text> : null :
             stockout.slice(0, 5).map(item => <Pressable key={item.offerId} accessibilityRole="button" style={styles.listItem}
               onPress={() => go("/products?filter=stockout" as Href)}>
@@ -350,7 +350,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
               <Text style={styles.listTitle} numberOfLines={2}>{item.productName}</Text>
               <Text style={styles.warningText}>نافد</Text>
             </Pressable>)}
-          {data.offersPartial ? <Text style={styles.muted}>قائمة أسماء المنتجات من أول 100 عرض فقط؛ العدد الإجمالي أعلاه يشمل كامل المتجر.</Text> : null}
+          {canCatalog && data.offersPartial ? <Text style={styles.muted}>قائمة أسماء المنتجات من أول 100 عرض فقط؛ العدد الإجمالي أعلاه يشمل كامل المتجر.</Text> : null}
         </View>
         {canCatalog ? <View style={styles.panel}>
           {panelTitle("الأكثر طلبًا خلال 30 يومًا", "/products" as Href)}

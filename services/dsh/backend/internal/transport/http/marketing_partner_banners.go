@@ -2,6 +2,7 @@ package transporthttp
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
@@ -34,7 +35,20 @@ func (s *MarketingServer) listPartnerStoreBanners(w http.ResponseWriter, r *http
 		writeMarketingError(w, err)
 		return
 	}
-	items, err := postgres.ListPartnerStoreBanners(r.Context(), s.db, storeID)
+	if len(r.URL.Query()["cursor"]) > 1 || len(r.URL.Query()["limit"]) > 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cursor or limit provided more than once")
+		return
+	}
+	limit := 60
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		var parseErr error
+		limit, parseErr = strconv.Atoi(raw)
+		if parseErr != nil || limit < 1 || limit > 60 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "limit must be 1..60")
+			return
+		}
+	}
+	items, nextCursor, err := postgres.PagePartnerStoreBanners(r.Context(), s.db, storeID, r.URL.Query().Get("cursor"), limit)
 	if err != nil {
 		writeMarketingError(w, err)
 		return
@@ -44,7 +58,7 @@ func (s *MarketingServer) listPartnerStoreBanners(w http.ResponseWriter, r *http
 		values = append(values, toDiscoveryContentView(item))
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, contract.OperatorDiscoveryContentRegistryResponse{Items: values, Limit: len(values)})
+	writeJSON(w, http.StatusOK, contract.OperatorDiscoveryContentRegistryResponse{Items: values, Limit: limit, NextCursor: nextCursor})
 }
 
 func (s *MarketingServer) setPartnerStoreBannerVisibility(w http.ResponseWriter, r *http.Request) {

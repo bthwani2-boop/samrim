@@ -748,6 +748,9 @@ paths:
       security: [{ userBearer: [] }]
       parameters:
         - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - name: search
+          in: query
+          schema: { type: string, maxLength: 120, description: "Store-scoped product and promotion name substring, for searching beyond the initial 80 suggestions" }
       responses:
         "200":
           description: Product and offer references scoped to the authenticated Store
@@ -776,6 +779,12 @@ paths:
       security: [{ userBearer: [] }]
       parameters:
         - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 1024, description: "Opaque Store-bound keyset cursor from nextCursor" }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 60, default: 60 }
       responses:
         "200":
           description: Own Store banners only, including drafts pending Operator publication.

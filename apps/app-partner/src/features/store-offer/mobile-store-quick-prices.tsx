@@ -1,5 +1,5 @@
 import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
 
 import type { CatalogQuickPriceCommitRequest, CatalogQuickPriceCommitResponse, CatalogQuickPriceUpdate, CatalogStoreOffer } from "@bthwani/dsh";
@@ -103,8 +103,10 @@ export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, get
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [attempt, setAttempt] = useState<QuickPriceAttempt | null>(null);
+  const readSequence = useRef(0);
 
   const read = useCallback(async (cursor = "", append = false) => {
+    const currentRead = ++readSequence.current;
     const scopeKey = scope.storeID;
     if (!scopeKey.trim()) return;
     setLoading(!append);
@@ -124,17 +126,22 @@ export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, get
           selected = later.offers.find((offer) => offer.offerId === selectedOfferId);
           lookupCursor = later.nextCursor ?? "";
         }
+        if (currentRead !== readSequence.current) return;
         if (!selected) setNotice("لم يظهر المنتج المحدد ضمن النتائج المحمّلة. جرّب تضييق البحث باسمه أو فئته.");
+        else setNotice((current) => current === "لم يظهر المنتج المحدد ضمن النتائج المحمّلة. جرّب تضييق البحث باسمه أو فئته." ? "" : current);
       }
+      if (currentRead !== readSequence.current) return;
       const visible = selected && !append
         ? [selected, ...page.offers.filter((offer) => offer.offerId !== selected.offerId)] : page.offers;
       setOffers((current) => append ? [...current, ...visible.filter((offer) => !current.some((known) => known.offerId === offer.offerId))] : visible);
       setNextCursor(page.nextCursor ?? "");
     } catch (cause) {
-      console.warn("DSH Store quick prices readback failed", cause);
-      setError("تعذر قراءة الأسعار السريعة. حدّث القائمة وحاول مجددًا.");
+      if (currentRead === readSequence.current) {
+        console.warn("DSH Store quick prices readback failed", cause);
+        setError("تعذر قراءة الأسعار السريعة. حدّث القائمة وحاول مجددًا.");
+      }
     } finally {
-      setLoading(false);
+      if (currentRead === readSequence.current) setLoading(false);
     }
   }, [client, filters, getAccessToken, scope, selectedOfferId, initialSearch]);
 

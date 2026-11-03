@@ -54,6 +54,10 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
   const [items,setItems] = useState<ReadonlyArray<Banner>>([]);
   const [targets,setTargets] = useState<ReadonlyArray<Target>>([]);
   const [targetLoadFailed,setTargetLoadFailed] = useState(false);
+  const [targetSearch,setTargetSearch] = useState("");
+  const targetSearchRef = useRef("");
+  const [nextCursor,setNextCursor] = useState("");
+  const [loadingMore,setLoadingMore] = useState(false);
   const [file,setFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
   const [title,setTitle] = useState("");
   const [targetType,setTargetType] = useState<TargetType>("STORE");
@@ -74,6 +78,7 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
   const refresh = useCallback(async () => {
     const current = ++request.current;
     setLoading(true);
+    setLoadingMore(false);
     try {
       const token = await getUsableIdentityAccessToken();
       const headers = { Authorization: `Bearer ${token}`, Accept: "application/json" };
@@ -87,16 +92,16 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
       const result = await banners.value.json() as OperatorDiscoveryContentRegistryResponse;
       if (request.current !== current) return;
       setItems(result.items);
+      setNextCursor(result.nextCursor ?? "");
       if (destinations.status === "fulfilled" && destinations.value.ok) {
         try {
           const selection = await destinations.value.json() as { targets: ReadonlyArray<Target> };
-          if (request.current === current) { setTargets(selection.targets); setTargetLoadFailed(false); setError(""); }
+          if (request.current === current && !targetSearchRef.current) { setTargets(selection.targets); setTargetLoadFailed(false); setError(""); }
         } catch {
           if (request.current === current) { setTargets([]); setTargetLoadFailed(true); setError("تم تحميل البنرات، لكن تعذرت قراءة وجهاتها. أعد المحاولة."); }
         }
       } else {
-        setTargets([]);
-        setTargetLoadFailed(true);
+        if (!targetSearchRef.current) { setTargets([]); setTargetLoadFailed(true); }
         setError("تم تحميل البنرات، لكن تعذرت قراءة وجهاتها. أعد المحاولة.");
       }
     } catch {
@@ -106,12 +111,52 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
     }
   }, [storeId]);
   useEffect(() => {
-    setItems([]);setTargets([]);setTargetLoadFailed(false);setFile(null);setTitle("");setTargetType("STORE");setTargetId(storeId);
+    setItems([]);setTargets([]);setTargetLoadFailed(false);setNextCursor("");setTargetSearch("");targetSearchRef.current="";setFile(null);setTitle("");setTargetType("STORE");setTargetId(storeId);
     setPriority("0");setStartsAt("");setEndsAt("");setRights(false);setNotice("");setError("");
     submitAttempt.current = null;toggleAttempt.current = null;
     void refresh();
     return () => {request.current++};
   }, [refresh,storeId]);
+
+  useEffect(() => {
+    let active = true;
+    const timer = setTimeout(() => {
+      void (async () => {
+        const token = await getUsableIdentityAccessToken();
+        const response = await fetch(endpoint(storeId)+"/discovery-targets?search="+encodeURIComponent(targetSearch.trim()), {
+          headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+        });
+        if (!response.ok) throw new Error("STORE_BANNER_TARGET_SEARCH_FAILED");
+        const result = await response.json() as { targets: ReadonlyArray<Target> };
+        if (active) { setTargets(result.targets); setTargetLoadFailed(false); }
+      })().catch(() => {
+        if (active) { setTargets([]); setTargetLoadFailed(true); }
+      });
+    }, 300);
+    return () => { active=false; clearTimeout(timer); };
+  }, [storeId,targetSearch]);
+
+  const loadMore = async () => {
+    if (loading || loadingMore || !nextCursor) return;
+    const current = request.current;
+    const cursor = nextCursor;
+    setLoadingMore(true);
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const response = await fetch(endpoint(storeId)+"/banners?cursor="+encodeURIComponent(cursor),{
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      });
+      if (!response.ok) throw new Error("STORE_BANNERS_PAGE_FAILED");
+      const page = await response.json() as OperatorDiscoveryContentRegistryResponse;
+      if (request.current !== current) return;
+      setItems(old => [...old, ...page.items.filter(item => !old.some(existing => existing.id === item.id))]);
+      setNextCursor(page.nextCursor ?? "");
+    } catch {
+      if (request.current === current) setError("تعذر تحميل بقية البنرات. أعد المحاولة.");
+    } finally {
+      if (request.current === current) setLoadingMore(false);
+    }
+  };
 
   const choose = async () => {
     setError("");
@@ -183,7 +228,7 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
     } catch {setError("تعذر تأكيد تغيير عرض البنر. أعد المحاولة أو حدّث القائمة عند حدوث تعارض.");}
     finally {setPendingID("");}
   };
-  const available=targets.filter(x=>x.targetType===targetType).slice(0,30);
+  const available=targets.filter(x=>x.targetType===targetType);
   return <View style={styles.root} accessibilityLabel="إدارة بنرات المتجر">
     <View style={styles.panel}>
       <Text accessibilityRole="header" style={styles.title}>بنرات متجرك</Text>
@@ -193,6 +238,7 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
       <TextInput style={styles.input} accessibilityLabel="عنوان البنر" placeholder="عنوان البنر" value={title} onChangeText={value=>{setTitle(value);submitAttempt.current=null;}} maxLength={160} editable={!busy}/>
       <Text style={styles.label}>عند الضغط على البنر</Text>
       <View style={styles.buttons}>{(["STORE","PRODUCT","PROMOTION"] as const).map(kind=><Pressable key={kind} accessibilityRole="radio" accessibilityState={{checked:kind===targetType}} onPress={()=>{setTargetType(kind);setTargetId(kind==="STORE"?storeId:"");submitAttempt.current=null;}} style={[styles.chip,targetType===kind&&styles.selected]}><Text style={styles.chipText}>{labels[kind]}</Text></Pressable>)}</View>
+      {targetType!=="STORE"?<TextInput accessibilityLabel="بحث في وجهات البنر" style={styles.input} placeholder="ابحث باسم المنتج أو العرض" value={targetSearch} onChangeText={value=>{targetSearchRef.current=value.trim();setTargetSearch(value);}} maxLength={120}/>:null}
       {targetType!=="STORE"?<View style={styles.buttons}>{available.map(t=><Pressable key={t.targetType+t.targetId} accessibilityRole="radio" accessibilityLabel={t.label} accessibilityState={{checked:targetId===t.targetId}} onPress={()=>{setTargetId(t.targetId);submitAttempt.current=null;}} style={[styles.chip,targetId===t.targetId&&styles.selected]}><Text style={styles.chipText} numberOfLines={2}>{t.label}</Text></Pressable>)}{available.length===0?<Text style={styles.body}>{targetLoadFailed?"تعذر قراءة الوجهات. حدّث البنرات وحاول مجددًا.":"لا توجد وجهات مؤهلة في هذا المتجر."}</Text>:null}</View>:null}
       <Text style={styles.body}>أولوية الترتيب: الأصغر يظهر أولًا. المواعيد اختيارية بصيغة 2026-11-03T12:00.</Text>
       <TextInput style={styles.input} accessibilityLabel="ترتيب البنر" placeholder="ترتيب العرض (0 أولًا)" value={priority} onChangeText={value=>{setPriority(value);submitAttempt.current=null;}} keyboardType="numeric"/>
@@ -220,6 +266,7 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
         </View>
         <BthwaniButton label={item.partnerEnabled?"إخفاء البنر عن العملاء":"إظهار البنر بعد الاعتماد"} onPress={()=>void setVisibility(item,!item.partnerEnabled)} disabled={item.state!=="PUBLISHED"||Boolean(pendingID)||busy} variant="secondary"/>
       </View>)}
+      {nextCursor ? <BthwaniButton label={loadingMore?"جارٍ تحميل بقية البنرات...":"عرض المزيد من البنرات"} onPress={()=>void loadMore()} disabled={loading||loadingMore||busy||Boolean(pendingID)} variant="secondary"/> : null}
     </View>
   </View>;
 }

@@ -72,6 +72,10 @@ func (s *Server) webClientSession(w http.ResponseWriter, r *http.Request) {
 		writeDomainError(w, domain.ErrForbidden)
 		return
 	}
+	if r.ContentLength != 0 || len(r.TransferEncoding) > 0 {
+		writeDomainError(w, domain.ErrInvalidInput)
+		return
+	}
 	refresh, device, ok := s.readClientWebCookies(r)
 	if !ok {
 		writeDomainError(w, domain.ErrUnauthenticated)
@@ -99,8 +103,11 @@ func (s *Server) webClientLogout(w http.ResponseWriter, r *http.Request) {
 		writeDomainError(w, domain.ErrForbidden)
 		return
 	}
+	if r.ContentLength != 0 || len(r.TransferEncoding) > 0 {
+		writeDomainError(w, domain.ErrInvalidInput)
+		return
+	}
 	refresh, device, hasCookie := s.readClientWebCookies(r)
-	s.clientWebCookies(w, "", "", -1)
 	if token, ok := bearerToken(r); ok {
 		identity, err := s.sessions.ResolveAccessToken(r.Context(), token)
 		if err == nil {
@@ -108,10 +115,7 @@ func (s *Server) webClientLogout(w http.ResponseWriter, r *http.Request) {
 				writeDomainError(w, domain.ErrForbidden)
 				return
 			}
-			if err := s.sessions.Logout(r.Context(), token); err == nil {
-				w.WriteHeader(http.StatusNoContent)
-				return
-			} else if !errors.Is(err, domain.ErrUnauthenticated) {
+			if err := s.sessions.Logout(r.Context(), token); err != nil && !errors.Is(err, domain.ErrUnauthenticated) {
 				writeDomainError(w, err)
 				return
 			}
@@ -129,6 +133,9 @@ func (s *Server) webClientLogout(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if err := s.sessions.Logout(r.Context(), pair.AccessToken); err != nil && !errors.Is(err, domain.ErrUnauthenticated) {
+				// Refresh already rotated the credential. Keep the new cookie
+				// when logout fails so the browser can retry revocation.
+				s.clientWebCookies(w, pair.RefreshToken, device, 30*24*60*60)
 				writeDomainError(w, err)
 				return
 			}
@@ -137,6 +144,8 @@ func (s *Server) webClientLogout(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Expire cookies only after both bearer and cookie sessions are revoked.
+	s.clientWebCookies(w, "", "", -1)
 	w.WriteHeader(http.StatusNoContent)
 }
 

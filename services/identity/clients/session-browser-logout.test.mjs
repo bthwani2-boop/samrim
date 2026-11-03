@@ -11,7 +11,7 @@ registerHooks({
 });
 const { IdentitySessionManager } = await import("./session.ts");
 
-function testHarness(browser) {
+function testHarness(browser, restoreOverride) {
   const values = new Map();
   const storage = {
     getItem: async key => values.get(key) ?? null,
@@ -24,7 +24,7 @@ function testHarness(browser) {
   };
   const identity = { subject:"test-actor",role:"client",surface:"app-client",expiresAt:"2027-11-01T00:00:00Z",sessionId:"test-session" };
   const pair = { accessToken:"test-access-token-long-enough",refreshToken:"test-refresh-token-long-enough",accessExpiresAt:identity.expiresAt,identity };
-  const manager = new IdentitySessionManager(client,storage,async()=> "test-instance-id","client","app-client","bthwani.logout.test",()=> "stable-refresh-request-id-123456",undefined,browser ? async()=>pair : undefined);
+  const manager = new IdentitySessionManager(client,storage,async()=> "test-instance-id","client","app-client","bthwani.logout.test",()=> "stable-refresh-request-id-123456",undefined,browser ? (restoreOverride ?? (async()=>pair)) : undefined);
   return {manager,storage,values,pair,goOnline:()=>{online=true}};
 }
 
@@ -46,4 +46,27 @@ test("native logout retains existing fail-closed local deletion behavior",async(
   await assert.rejects(()=>h.manager.logout(),e=>e.kind==="network");
   assert.deepEqual(h.manager.state,{kind:"signed_out",reason:"explicit_logout"});
   assert.equal(h.values.size,0);
+});
+
+test("browser logout waits for a pending cookie restore, then remains signed out", async()=>{
+  let markStarted;
+  const started = new Promise(resolve=>{markStarted=resolve});
+  let finishRestore;
+  const pendingCookieResponse = new Promise(resolve=>{finishRestore=resolve});
+  const h = testHarness(true, async()=>{
+    markStarted();
+    return pendingCookieResponse;
+  });
+  h.goOnline();
+  const restoring = h.manager.restore();
+  await started;
+  const logout = h.manager.logout();
+  assert.notEqual(h.manager.state.kind,"authenticated","pending restore must not reauthenticate during logout");
+  finishRestore(h.pair);
+  await restoring;
+  await logout;
+  assert.deepEqual(h.manager.state,{kind:"signed_out",reason:"explicit_logout"});
+  assert.equal(h.values.size,0);
+  assert.deepEqual(await h.manager.restore(),{kind:"signed_out",reason:"explicit_logout"},
+    "late restore must not resuscitate the browser session");
 });

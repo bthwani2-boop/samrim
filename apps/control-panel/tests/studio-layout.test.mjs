@@ -48,7 +48,11 @@ test("published client home consumes only public layout; operator preview remain
 
 
 test("missing published layout service gives the operator a recovery action without altering the draft", () => {
-  assert.match(publisher, /live\.status === 404 \|\| past\.status === 404/);
+  assert.match(publisher, /payload\?\.error\?\.code !== "NOT_FOUND"/);
+  assert.match(publisher, /if \(await missingEndpoint\(live\) \|\| await missingEndpoint\(past\)\)/);
+  const codeGuard = publisher.indexOf('payload?.error?.code !== "NOT_FOUND"');
+  const outdated = publisher.indexOf('خدمة نشر تخطيط الرئيسية غير متاحة');
+  assert.ok(codeGuard > -1 && codeGuard < outdated, "404 error classification must precede outdated-DSH message");
   assert.match(publisher, /خدمة نشر تخطيط الرئيسية غير متاحة/);
   assert.match(publisher, /تحديث حالة النشر/);
   assert.match(publisher, /ستبقى مسودتك دون تغيير/);

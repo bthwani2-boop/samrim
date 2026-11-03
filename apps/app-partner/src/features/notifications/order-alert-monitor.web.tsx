@@ -49,7 +49,12 @@ export function OrderAlertMonitor() {
         for (let page = 1; page < 5 && nextCursor; page++) {
           const oldest = recent.at(-1);
           if (!oldest || Date.parse(oldest.createdAt) < Date.now() - 90_000) break;
-          const next = await api.listNotifications(token, 35, nextCursor);
+          let next: Awaited<ReturnType<typeof api.listNotifications>>;
+          try {
+            next = await api.listNotifications(token, 35, nextCursor);
+          } catch {
+            break; // A later page must not discard an unrung first-page alert.
+          }
           if (!active || currentActorID() !== actorId) return;
           recent.push(...next.notifications);
           if (!next.nextCursor || next.nextCursor === nextCursor) break;

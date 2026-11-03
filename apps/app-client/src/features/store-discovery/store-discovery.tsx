@@ -52,7 +52,7 @@ function uniqueNearbyAddress(addresses: ReadonlyArray<DeliveryAddress>, cityID: 
   return eligible.length === 1 ? eligible[0] ?? null : null;
 }
 
-export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthentication, searchOpen, searchQuery, searchScope: controlledSearchScope, isScreenActive = true, onSearchOpenChange, onSearchScopeChange, onSearchQueryChange, homeScrollOffset, heroHeader }: { isAuthenticated?: boolean; onRequireAuthentication?: (() => void) | undefined; searchOpen?: boolean; searchQuery?: string; searchScope?: "stores" | "products"; isScreenActive?: boolean; onSearchOpenChange?: (open: boolean) => void; onSearchScopeChange?: (scope: "stores" | "products") => void; onSearchQueryChange?: (query: string) => void; homeScrollOffset?: SharedValue<number>; heroHeader?: ReactNode }) {
+export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthentication, searchOpen, searchQuery, searchScope: controlledSearchScope, isScreenActive = true, onSearchOpenChange, onSearchScopeChange, onSearchQueryChange, homeScrollOffset, heroHeader, onHeroVisibilityChange }: { isAuthenticated?: boolean; onRequireAuthentication?: (() => void) | undefined; searchOpen?: boolean; searchQuery?: string; searchScope?: "stores" | "products"; isScreenActive?: boolean; onSearchOpenChange?: (open: boolean) => void; onSearchScopeChange?: (scope: "stores" | "products") => void; onSearchQueryChange?: (query: string) => void; homeScrollOffset?: SharedValue<number>; heroHeader?: ReactNode; onHeroVisibilityChange?: (visible: boolean) => void }) {
   const router = useRouter();
   const { q: rawQuery, focus: rawFocus, scope: rawScope } = useLocalSearchParams<{ q?: string | string[]; focus?: string | string[]; scope?: string | string[] }>();
   const routeQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
@@ -73,6 +73,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const heroCardWidth = Platform.OS === "web" ? Math.max(200, Math.min((discoveryContainerWidth || viewportWidth) - spacing[4], 960)) : viewportWidth;
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<DiscoveryState>({ kind: "loading" });
+  useEffect(() => { onHeroVisibilityChange?.(state.kind === "ready"); }, [onHeroVisibilityChange, state.kind]);
   const [storeFilter, setStoreFilter] = useState<"all" | "newest" | "nearest" | "favorites">("all");
   const [filtersPinned, setFiltersPinned] = useState(false);
   const localScrollOffset = useSharedValue(0);
@@ -578,8 +579,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
             minHeight: layoutDoc.heroOptions.height === "tall" ? 170 : layoutDoc.heroOptions.height === "regular" ? 120 : 80,
             alignItems: layoutDoc.heroOptions.align === "center" ? "center" : layoutDoc.heroOptions.align === "end" ? "flex-end" : "flex-start",
           }}>
-            <Text style={{ color: theme.color, fontSize: 21, fontWeight: "700", textAlign: "right" }}>{slide.title}</Text>
-            {layoutDoc.heroOptions.showDescription && slide.description ? <Text style={{ color: theme.colorMuted, textAlign: "right" }}>{slide.description}</Text> : null}
+            <Text style={{ color: theme.color, fontSize: 21, fontWeight: "700", textAlign: "right" }}>{slide.title || title}</Text>
+            {layoutDoc.heroOptions.showDescription && (slide.description || section.description) ? <Text style={{ color: theme.colorMuted, textAlign: "right" }}>{slide.description || section.description}</Text> : null}
             {layoutDoc.heroOptions.showButton && slide.buttonLabel ? <BthwaniButton label={slide.buttonLabel}
               onPress={() => { if (onSearchOpenChange) onSearchOpenChange(true); else router.setParams({ focus: "search", scope: "stores" }); }} /> : null}
             {layoutDoc.heroOptions.showDots && layoutDoc.slides.length > 1 ? <View style={{ flexDirection: "row", gap: spacing[2] }}>
@@ -930,7 +931,13 @@ function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selec
       // Each offer is Store-specific, so one page may repeat a single product.
       // Page within a bounded budget until six distinct names are found.
       for (let index = 0; index < 4 && names.length < 6; index++) {
-        const page = await searchPublicCatalog(selectedCityID, "", selectedCategoryID, 24, cursor, selectedVerticalID, selectedShortcutID);
+        let page: Awaited<ReturnType<typeof searchPublicCatalog>>;
+        try {
+          page = await searchPublicCatalog(selectedCityID, "", selectedCategoryID, 24, cursor, selectedVerticalID, selectedShortcutID);
+        } catch (error) {
+          if (names.length === 0) throw error;
+          break; // Keep valid suggestions from earlier pages after a later failure.
+        }
         if (!active) return;
         for (const offer of page.offers) {
           const name = offer.productName.trim();

@@ -47,10 +47,20 @@ func PartnerReelTargetBelongsToStore(ctx context.Context, src discoveryContentTa
 
 // ListPartnerReelTargets returns only linked products and Promotions of this
 // Store, never global catalog or platform-wide promotions.
-func ListPartnerReelTargets(ctx context.Context, db *sql.DB, storeID string) ([]PartnerReelTarget, error) {
+func ListPartnerReelTargets(ctx context.Context, db *sql.DB, storeID string, search ...string) ([]PartnerReelTarget, error) {
 	storeID = strings.TrimSpace(storeID)
 	if storeID == "" {
 		return nil, ErrDiscoveryContentInvalid
+	}
+	term := ""
+	if len(search) > 0 {
+		term = strings.TrimSpace(search[0])
+		if len(term) > 120 || len(search) > 1 {
+			return nil, ErrDiscoveryContentInvalid
+		}
+	}
+	if term != "" {
+		term = escapeCatalogSearchContains(term)
 	}
 	rows, err := db.QueryContext(ctx, `
    SELECT target_type,target_id,label FROM (
@@ -64,9 +74,10 @@ func ListPartnerReelTargets(ctx context.Context, db *sql.DB, storeID string) ([]
      FROM dsh.commerce_promotions promotion
      WHERE promotion.store_id=$1 AND promotion.state<>'ENDED'
    ) options
+   WHERE ($2::text = '' OR lower(label) LIKE lower($2) ESCAPE '!')
    GROUP BY target_type,target_id,label,priority
    ORDER BY priority,label,target_id LIMIT 80
- `, storeID)
+ `, storeID, term)
 	if err != nil {
 		return nil, err
 	}

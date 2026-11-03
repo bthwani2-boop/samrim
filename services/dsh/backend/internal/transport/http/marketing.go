@@ -555,7 +555,11 @@ func (s *MarketingServer) listPartnerStoreDiscoveryTargets(w http.ResponseWriter
 		writeMarketingError(w, err)
 		return
 	}
-	targets, err := postgres.ListPartnerReelTargets(r.Context(), s.db, r.PathValue("storeId"))
+	if len(r.URL.Query()["search"]) > 1 || len(r.URL.Query().Get("search")) > 120 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "search must be provided once and be at most 120 bytes")
+		return
+	}
+	targets, err := postgres.ListPartnerReelTargets(r.Context(), s.db, r.PathValue("storeId"), r.URL.Query().Get("search"))
 	if err != nil {
 		writeMarketingError(w, err)
 		return

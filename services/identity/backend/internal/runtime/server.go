@@ -268,7 +268,7 @@ func loadConfig(defaultPort string) (config, error) {
 			continue
 		}
 		parsed, err := url.Parse(origin)
-		if err != nil || parsed.Host == "" || parsed.String() != origin || !origins[origin] || (runtimeEnvironment == "production" && parsed.Scheme != "https") {
+		if err != nil || parsed.Host == "" || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.User != nil || parsed.String() != origin || !origins[origin] || (runtimeEnvironment == "production" && parsed.Scheme != "https") {
 			return config{}, errors.New("IDENTITY_PARTNER_WEB_ORIGINS must contain only trusted CORS origins and HTTPS in production")
 		}
 		partnerWebOrigins[origin] = true
@@ -280,7 +280,7 @@ func loadConfig(defaultPort string) (config, error) {
 			continue
 		}
 		parsed, err := url.Parse(origin)
-		if err != nil || parsed.Host == "" || parsed.String() != origin || !origins[origin] || (runtimeEnvironment == "production" && parsed.Scheme != "https") {
+		if err != nil || parsed.Host == "" || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.User != nil || parsed.String() != origin || !origins[origin] || (runtimeEnvironment == "production" && parsed.Scheme != "https") {
 			return config{}, errors.New("IDENTITY_CLIENT_WEB_ORIGINS must contain only trusted CORS origins and HTTPS in production")
 		}
 		clientWebOrigins[origin] = true

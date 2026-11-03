@@ -3,32 +3,90 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 )
 
-// ListPartnerStoreBanners returns only merchant-authored banners in the
-// already-authorized Store. Platform marketing and other Stores never appear.
+// ListPartnerStoreBanners returns the first merchant-authored banner page for
+// existing callers. API consumers should use the cursor-based page variant.
 func ListPartnerStoreBanners(ctx context.Context, db *sql.DB, storeID string) ([]DiscoveryContentRecord, error) {
-	storeID = strings.TrimSpace(storeID)
-	if storeID == "" {
-		return nil, ErrDiscoveryContentInvalid
+	items, _, err := PagePartnerStoreBanners(ctx, db, storeID, "", 60)
+	return items, err
+}
+
+type partnerBannerCursor struct {
+	StoreID   string    `json:"s"`
+	Ordinal   int       `json:"o"`
+	CreatedAt time.Time `json:"t"`
+	ID        string    `json:"i"`
+}
+
+func decodePartnerBannerCursor(storeID, cursor string) (partnerBannerCursor, error) {
+	var value partnerBannerCursor
+	if len(cursor) > 1024 {
+		return value, ErrDiscoveryContentInvalid
 	}
-	rows, err := db.QueryContext(ctx, "SELECT "+discoveryContentSelect+" FROM dsh.discovery_content content WHERE content.kind='BANNER' AND content.source_store_id=$1 ORDER BY content.ordinal ASC,content.created_at DESC LIMIT 60", storeID)
+	raw, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil || json.Unmarshal(raw, &value) != nil || value.StoreID != storeID ||
+		value.CreatedAt.IsZero() || value.ID == "" || len(value.ID) > 128 || value.Ordinal < 0 {
+		return partnerBannerCursor{}, ErrDiscoveryContentInvalid
+	}
+	return value, nil
+}
+
+func encodePartnerBannerCursor(storeID string, last DiscoveryContentRecord) string {
+	raw, _ := json.Marshal(partnerBannerCursor{StoreID: storeID, Ordinal: last.Ordinal, CreatedAt: last.CreatedAt.UTC(), ID: last.ID})
+	return base64.RawURLEncoding.EncodeToString(raw)
+}
+
+// PagePartnerStoreBanners only reads the authenticated Store's own banners.
+// The bound keyset tuple is stable across equally ranked banner timestamps.
+func PagePartnerStoreBanners(ctx context.Context, db *sql.DB, storeID, cursor string, limit int) ([]DiscoveryContentRecord, string, error) {
+	storeID = strings.TrimSpace(storeID)
+	if db == nil || storeID == "" || len(storeID) > 150 || limit < 1 || limit > 60 {
+		return nil, "", ErrDiscoveryContentInvalid
+	}
+	var after partnerBannerCursor
+	if cursor != "" {
+		var err error
+		after, err = decodePartnerBannerCursor(storeID, cursor)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+	rows, err := db.QueryContext(ctx,
+		"SELECT "+discoveryContentSelect+` FROM dsh.discovery_content content
+        WHERE content.kind='BANNER' AND content.source_store_id=$1
+          AND ($2::boolean=false OR
+            (content.ordinal > $3 OR
+              (content.ordinal=$3 AND content.created_at < $4) OR
+              (content.ordinal=$3 AND content.created_at=$4 AND content.id < $5)))
+        ORDER BY content.ordinal ASC,content.created_at DESC,content.id DESC LIMIT $6`,
+		storeID, cursor != "", after.Ordinal, after.CreatedAt, after.ID, limit+1)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer rows.Close()
-	result := make([]DiscoveryContentRecord, 0)
+	items := make([]DiscoveryContentRecord, 0, limit+1)
 	for rows.Next() {
 		item, scanErr := scanDiscoveryContent(rows)
 		if scanErr != nil {
-			return nil, scanErr
+			return nil, "", scanErr
 		}
-		result = append(result, item)
+		items = append(items, item)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	if len(items) > limit {
+		items = items[:limit]
+		return items, encodePartnerBannerCursor(storeID, items[len(items)-1]), nil
+	}
+	return items, "", nil
 }
 
 // ListPublishedStoreBanners is the Store-scoped customer readback. A banner
