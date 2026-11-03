@@ -935,7 +935,7 @@ function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selec
         try {
           page = await searchPublicCatalog(selectedCityID, "", selectedCategoryID, 24, cursor, selectedVerticalID, selectedShortcutID);
         } catch (error) {
-          if (names.length === 0) throw error;
+          if (index === 0) throw error;
           break; // Keep valid suggestions from earlier pages after a later failure.
         }
         if (!active) return;
