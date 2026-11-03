@@ -743,7 +743,7 @@ func (s *MarketingServer) createDiscoveryContentWithMedia(w http.ResponseWriter,
 		return
 	}
 	provenance := parsed.provenance.Normalized()
-	requestHash := postgres.HashMarketingFacts("discovery-content-create", input.ID, string(input.Kind), input.TitleAr, input.BodyAr, digest, parsed.contentType, string(input.TargetType), input.TargetID, input.ServiceCityID, input.StartsAt.UTC().Format(time.RFC3339Nano), optionalTimeString(input.EndsAt), fmt.Sprint(input.Ordinal), acting, provenance.Creator, provenance.SourceDescription, provenance.SourceURI, provenance.RightsStatement, provenance.RightsURI)
+	requestHash := hashDiscoveryContentUploadRequest(partnerStoreID, "discovery-content-create", input.ID, string(input.Kind), input.TitleAr, input.BodyAr, digest, parsed.contentType, string(input.TargetType), input.TargetID, input.ServiceCityID, input.StartsAt.UTC().Format(time.RFC3339Nano), optionalTimeString(input.EndsAt), fmt.Sprint(input.Ordinal), acting, provenance.Creator, provenance.SourceDescription, provenance.SourceURI, provenance.RightsStatement, provenance.RightsURI)
 	assetDigest := sha256Bytes([]byte(input.ID + "\x00" + idempotency))
 	asset := postgres.DiscoveryContentMediaAssetInput{ID: "discovery_content_media_" + assetDigest, IdempotencyKey: idempotency, RequestHash: requestHash, ObjectKey: objectKey, URI: uri, ContentSHA256: digest, ContentType: parsed.contentType, ByteSize: int64(len(parsed.bytes)), Creator: provenance.Creator, SourceDescription: provenance.SourceDescription, SourceURI: provenance.SourceURI, RightsStatement: provenance.RightsStatement, RightsURI: provenance.RightsURI, RightsAttestedBy: acting}
 	registered, replayed, err := postgres.RegisterDiscoveryContentMediaAssetPending(r.Context(), s.db, asset)
@@ -803,6 +803,15 @@ func (s *MarketingServer) createDiscoveryContentWithMedia(w http.ResponseWriter,
 	}
 	_ = s.ReconcileMediaStorage(r.Context())
 	writeJSON(w, responseStatus(replayed), contract.DiscoveryContentResponse{Content: toDiscoveryContentView(item), IdempotentReplay: replayed})
+}
+
+// A Partner may hold grants for multiple Stores; identical upload facts with
+// the same idempotency key must never replay across different Store owners.
+func hashDiscoveryContentUploadRequest(partnerStoreID string, facts ...string) string {
+	if partnerStoreID != "" {
+		facts = append(facts, "source-store", partnerStoreID)
+	}
+	return postgres.HashMarketingFacts(facts...)
 }
 
 type marketingContentUpload struct {

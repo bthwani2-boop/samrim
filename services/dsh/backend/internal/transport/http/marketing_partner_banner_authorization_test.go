@@ -66,3 +66,22 @@ func TestPartnerBannerListRejectsUnverifiedSession(t *testing.T) {
 		}
 	}
 }
+
+func TestDiscoveryContentUploadIdempotencyIsStoreScoped(t *testing.T) {
+	// Same content and actor, but a different authorized Store, is a
+	// conflicting replay rather than the original Store's media mutation.
+	facts := []string{"discovery-content-create", "content-1", "BANNER", "owned-image-digest", "actor-multiple-stores"}
+	storeA := hashDiscoveryContentUploadRequest("store-A", facts...)
+	if storeA != hashDiscoveryContentUploadRequest("store-A", facts...) {
+		t.Fatal("same Store and facts must preserve the retry hash")
+	}
+	if storeA == hashDiscoveryContentUploadRequest("store-B", facts...) {
+		t.Fatal("cross-Store replay reused an upload request hash")
+	}
+	if storeA == hashDiscoveryContentUploadRequest("", facts...) {
+		t.Fatal("Partner Store upload must not replay as operator content")
+	}
+	if len(facts) != 5 {
+		t.Fatal("hash helper unexpectedly mutated its source facts")
+	}
+}
