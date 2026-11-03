@@ -40,7 +40,12 @@ async function main() {
     const foreignResult = await foreignRead;
     assert.equal((await foreignResult.json()).summary.storeId, "another-store",
       "foreign Store readback must arrive before asserting the UI rejects it");
-    await page.getByText("تعذر قراءة إجمالي المخزون", { exact: true }).first().waitFor({ state: "visible", timeout: 17000 });
+    // The placeholder appears before Promise.allSettled returns; asserting
+    // absence at that point can pass before stale data is applied.
+    await page.getByText("جارٍ فحص الطلبات والمخزون…", { exact: true })
+      .waitFor({ state: "hidden", timeout: 20000 });
+    await page.getByText("تعذر قراءة إجمالي المخزون", { exact: true })
+      .first().waitFor({ state: "visible", timeout: 17000 });
     assert.equal(await page.getByText(new Intl.NumberFormat("ar-YE").format(637), { exact: true }).count(), 0);
     assert.ok(requests > 1, "expected a fresh DSH read after navigation");
     console.log("PARTNER_HOME_INVENTORY=PASS_FULL_DSH_TOTAL_AND_FOREIGN_STORE_REJECTED");
