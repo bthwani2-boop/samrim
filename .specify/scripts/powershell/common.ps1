@@ -157,19 +157,33 @@ function Save-FeatureJson {
     $json = @{ feature_directory = $FeatureDirectory } | ConvertTo-Json -Compress
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     $temporaryFile = Join-Path $specifyDir ("feature." + [guid]::NewGuid().ToString('N') + ".tmp")
+    # A second writer may create the destination between the existence
+    # check and File.Move. In that case retry with atomic File.Replace.
+    $backupFile = Join-Path $specifyDir ("feature." + [guid]::NewGuid().ToString('N') + ".bak")
     try {
         [System.IO.File]::WriteAllText($temporaryFile, $json, $utf8NoBom)
         if (Test-Path -LiteralPath $fjPath -PathType Leaf) {
-            # Windows PowerShell 5 / .NET Framework requires a real backup path.
-            $backupFile = Join-Path $specifyDir ("feature." + [guid]::NewGuid().ToString('N') + ".bak")
             [System.IO.File]::Replace($temporaryFile, $fjPath, $backupFile)
-            Remove-Item -LiteralPath $backupFile -Force
         } else {
-            [System.IO.File]::Move($temporaryFile, $fjPath)
+            try {
+                [System.IO.File]::Move($temporaryFile, $fjPath)
+            } catch [System.IO.IOException] {
+                if (-not (Test-Path -LiteralPath $fjPath -PathType Leaf)) { throw }
+                [System.IO.File]::Replace($temporaryFile, $fjPath, $backupFile)
+            }
         }
     } finally {
         if (Test-Path -LiteralPath $temporaryFile) {
             Remove-Item -LiteralPath $temporaryFile -Force
+        }
+        if (Test-Path -LiteralPath $backupFile) {
+            try {
+                Remove-Item -LiteralPath $backupFile -Force -ErrorAction Stop
+            } catch {
+                # The selection is already committed: cleanup failure is
+                # not a failed write, and the locked backup is left intact.
+                Write-Warning "feature.json was written; its temporary backup is locked."
+            }
         }
     }
 }
@@ -590,14 +604,14 @@ function Resolve-TemplateContent {
     # Priority 2: Installed presets (sorted by priority from .registry)
     $presetsDir = Join-Path $RepoRoot '.specify/presets'
     if (Test-Path $presetsDir) {
-        $registryFile = Join-Path $presetsDir '.registry'
-        $registryPresent = @(Get-ChildItem -LiteralPath $presetsDir -Force -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -ceq '.registry' }).Count -gt 0
+        $registryEntry = Get-ChildItem -LiteralPath $presetsDir -Force -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -ieq '.registry' } | Select-Object -First 1
+        $registryPresent = $null -ne $registryEntry
         $sortedPresets = @()
         $registryParsed = $false
         if ($registryPresent) {
             try {
-                $registryData = [System.IO.File]::ReadAllText($registryFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+                $registryData = [System.IO.File]::ReadAllText($registryEntry.FullName, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
                 if ($null -eq $registryData -or $registryData -isnot [PSCustomObject]) {
                     throw 'Registry root must be an object'
                 }
