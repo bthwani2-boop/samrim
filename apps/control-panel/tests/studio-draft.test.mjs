@@ -114,3 +114,9 @@ test("preview-only Studio sections warn operators before publication", () => {
   assert.match(editor, /previewOnlySectionIds\.has\(section\.id\)/);
   assert.match(editor, /لا يمكن نشر هذا القسم حاليًا/);
 });
+
+test("hero section headings are labeled as slide fallbacks, not primary slide content", () => {
+  assert.match(editor, /عنوان احتياطي عند فراغ عنوان الشريحة/);
+  assert.match(editor, /وصف احتياطي عند فراغ نص الشريحة/);
+  assert.match(editor, /عنوان ووصف الشريحة هما الظاهران عادة/);
+});

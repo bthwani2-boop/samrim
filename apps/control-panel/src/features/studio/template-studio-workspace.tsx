@@ -409,10 +409,11 @@ function Editor({ actorId }: Readonly<{ actorId: string }>) {
           <h2>{studioSectionLabels[section.id]}</h2>
           {previewOnlySectionIds.has(section.id) ? <p role="status" className="studio-warning">هذا القسم للمعاينة فقط؛ لا يمكن نشر هذا القسم حاليًا لعدم توفر بيانات حقيقية معتمدة. يمكنك إبقاؤه في المسودة أو إخفاؤه.</p> : null}
           <label className="studio-check"><input type="checkbox" checked={section.visible} onChange={(event) => updateSection(section.id, { visible: event.target.checked })} />إظهار القسم</label>
-          <label className="studio-field">عنوان القسم
+          {section.id === "hero" ? <p className="studio-guidance">عنوان ووصف الشريحة هما الظاهران عادة في العرض الرئيسي. حقول القسم احتياطية فقط عند ترك محتوى الشريحة فارغًا.</p> : null}
+          <label className="studio-field">{section.id === "hero" ? "عنوان احتياطي عند فراغ عنوان الشريحة" : "عنوان القسم"}
             <input value={section.title} maxLength={80} onChange={(event) => updateSection(section.id, { title: event.target.value })} />
           </label>
-          <label className="studio-field">وصف مختصر
+          <label className="studio-field">{section.id === "hero" ? "وصف احتياطي عند فراغ نص الشريحة" : "وصف مختصر"}
             <textarea rows={3} value={section.description} maxLength={180} onChange={(event) => updateSection(section.id, { description: event.target.value })} />
           </label>
           {section.id !== "hero" ? <label className="studio-field">عدد العناصر في المعاينة
