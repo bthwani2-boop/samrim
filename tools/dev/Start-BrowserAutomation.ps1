@@ -40,6 +40,9 @@ function Test-ExactBrowserProfile {
     if ($arguments.Count -ne 1) { return $false }
     $argument = $arguments[0]
     $value = if ($argument.Groups['quoted'].Success) { $argument.Groups['quoted'].Value } else { $argument.Groups['bare'].Value }
+    # A relative path depends on the other process's working directory,
+    # which is unknown to this verifier. Never adopt that browser profile.
+    if (-not [IO.Path]::IsPathRooted($value)) { return $false }
     try {
         $actual = [IO.Path]::GetFullPath($value).TrimEnd([char[]]@('\','/'))
         $expected = [IO.Path]::GetFullPath($ProfileDir).TrimEnd([char[]]@('\','/'))
