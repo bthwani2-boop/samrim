@@ -1,7 +1,6 @@
-import { createStyles } from "./store-discovery-styles";
 import { opacity, radius, type resolveTheme, sizing, spacing } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { availableCustomerFulfillmentModes, type CatalogCategory, type DeliveryAddress, fulfillmentModeLabel, type PublicCommerceVertical, type PublicDiscoveryContentView, type PublicPromotionView, type PublicShoppingShortcut, type PublicStoreView, type StudioDraftSection, type StudioLayoutPublication, parseStudioLayoutPublication } from "@bthwani/dsh";
+import { availableCustomerFulfillmentModes, type CatalogCategory, type DeliveryAddress, fulfillmentModeLabel, type PublicCommerceVertical, type PublicDiscoveryContentView, type PublicPromotionView, type PublicShoppingShortcut, type PublicStoreView, parseStudioLayoutPublication, type StudioDraftSection, type StudioLayoutPublication } from "@bthwani/dsh";
 import { Image as ExpoImage } from "expo-image";
 import * as ExpoLinking from "expo-linking";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -13,11 +12,12 @@ import { ClientShareSheet, type ClientShareTarget } from "../sharing/client-shar
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
 import { DiscoveryReelsViewer } from "./discovery-reels-viewer";
 import { normalizeDiscoveryTaxonomy } from "./discovery-taxonomy";
-import { LoopingHeroBanner } from "./looping-hero-banner";
 import { HomeProductFeed } from "./home-product-feed";
+import { LoopingHeroBanner } from "./looping-hero-banner";
 import { PromotionCard } from "./promotion-card";
 import { StoreDirectoryCard } from "./store-directory-card";
 import { type BannerPresentation, listFavoriteStoreIDs, listOwnDeliveryAddresses, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, readPublicBannerPresentation, readPublicStudioLayout, searchPublicCatalog, setFavoriteStore } from "./store-discovery-client";
+import { createStyles } from "./store-discovery-styles";
 
 function activityIcon(nameAr: string, nameEn: string): ComponentProps<typeof BthwaniIcon>["name"] {
   const label = (nameAr + " " + nameEn).toLowerCase();
@@ -839,7 +839,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         index={index}
         compact={Platform.OS !== "web" && gridColumns === 3}
       /></View>}
-      ListEmptyComponent={directoryMode && (!layoutDoc || showPublishedStores) ? <StoreDirectoryStatus hasServiceCity={Boolean(selectedCityID)} kind={directoryStatusKind} query={query} selectedCategory={Boolean(selectedCategoryID)} onRetry={() => void load()} onClearSearch={() => { if (onSearchQueryChange) onSearchQueryChange(""); else router.setParams({ q: "" }); }} /> : undefined}
+      ListEmptyComponent={directoryMode && (!layoutDoc || showPublishedStores) ? <StoreDirectoryStatus hasServiceCity={Boolean(selectedCityID)} kind={directoryStatusKind} query={query} selectedCategory={Boolean(selectedCategoryID)} onRetry={() => void load()} onClearSearch={() => { if (onSearchQueryChange) onSearchQueryChange(""); else router.setParams({ q: "" }); }} onClearCategory={() => selectCategory("")} /> : undefined}
       ListFooterComponent={<View style={styles.footer}>
       {layoutDoc ? publishedAfterStores.map(renderPublishedSection) : null}
       {!layoutDoc && showHomeMarketing && hasMarketingItems ? <View accessibilityLabel="العروض ومحتوى الاكتشاف" style={styles.marketingBlock}>
@@ -970,7 +970,7 @@ function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selec
   </View>;
 }
 
-function StoreDirectoryStatus({ hasServiceCity, kind, query, selectedCategory, onRetry, onClearSearch }: { hasServiceCity: boolean; kind: "loading" | "error" | "empty"; query: string; selectedCategory: boolean; onRetry: () => void; onClearSearch: () => void }) {
+function StoreDirectoryStatus({ hasServiceCity, kind, query, selectedCategory, onRetry, onClearSearch, onClearCategory }: { hasServiceCity: boolean; kind: "loading" | "error" | "empty"; query: string; selectedCategory: boolean; onRetry: () => void; onClearSearch: () => void; onClearCategory: () => void }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   if (!hasServiceCity) return <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="location" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>اختر مدينة الخدمة</Text><Text style={styles.muted}>أغلق البحث ثم اختر المدينة من أعلى الشاشة لعرض المتاجر المتاحة فيها.</Text></BthwaniSurface>;
@@ -978,16 +978,17 @@ function StoreDirectoryStatus({ hasServiceCity, kind, query, selectedCategory, o
   if (kind === "error") return <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" style={styles.cardTitle}>تعذر تحميل المتاجر</Text><Text style={styles.muted}>تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={onRetry} /></BthwaniSurface>;
   let emptyTitle = "لا توجد متاجر مطابقة";
   let emptyDescription = "غيّر الفئة أو أزل الفلاتر لعرض المتاجر المتاحة.";
-  if (kind === "empty" && !query.trim()) {
-    emptyTitle = "لا توجد متاجر منشورة للطلب حاليًا";
-    emptyDescription = "يمكنك البحث عن المنتجات المتاحة في مدينة الخدمة.";
-  } else if (query.trim()) {
+  if (query.trim()) {
     emptyTitle = "لا توجد نتائج بهذا الاسم";
     emptyDescription = "جرّب اسمًا أقصر أو امسح البحث لعرض كل المتاجر.";
   } else if (selectedCategory) {
     emptyTitle = "لا توجد متاجر ضمن هذه الفئة";
+    emptyDescription = "امسح الفئة لعرض المتاجر الأخرى المتاحة في مدينتك.";
+  } else if (kind === "empty") {
+    emptyTitle = "لا توجد متاجر منشورة للطلب حاليًا";
+    emptyDescription = "يمكنك البحث عن المنتجات المتاحة في مدينة الخدمة.";
   }
-  return <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>{emptyTitle}</Text><Text style={styles.muted}>{emptyDescription}</Text>{query.trim() ? <BthwaniButton label="مسح البحث" onPress={onClearSearch} variant="quiet" /> : null}</BthwaniSurface>;
+  return <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>{emptyTitle}</Text><Text style={styles.muted}>{emptyDescription}</Text>{query.trim() ? <BthwaniButton label="مسح البحث" onPress={onClearSearch} variant="quiet" /> : null}{selectedCategory ? <BthwaniButton label="مسح الفئة" onPress={onClearCategory} variant="quiet" /> : null}</BthwaniSurface>;
 }
 
 
