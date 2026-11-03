@@ -30,6 +30,14 @@ test("popularity, favorites, and curated section empty states preserve their sem
   assert.equal(buildCatalogRows({ ...emptyCatalog, sections: [section] }, false, false, null, section.id, "")[0]?.title, "لا توجد منتجات متاحة في مختارات حاليًا");
 });
 
+test("Store category chips expose selected state to web assistive technology", () => {
+  const source = readFileSync(new URL("./store-detail.tsx", import.meta.url), "utf8");
+  const category = source.split("const renderCategoryChip =")[1]?.split("async function loadMore()", 1)[0];
+  assert.ok(category, "Store category filter must exist");
+  assert.match(category, /aria-pressed=\{selected\}/);
+  assert.match(category, /accessibilityState=\{\{ selected \}\}/);
+});
+
 test("Store empty results have one accessible, scoped way back to the full catalog", () => {
   const source = readFileSync(new URL("./store-detail.tsx", import.meta.url), "utf8");
   assert.match(source, /label="عرض جميع منتجات المتجر"/);

@@ -445,6 +445,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       key={category.id}
       accessibilityRole="button"
       accessibilityLabel={`${isChild ? "تصنيف فرعي" : "تصنيف رئيسي"} ${category.nameAr}`}
+      aria-pressed={selected}
       accessibilityState={{ selected }}
       onPress={() => void reloadCatalog(category.id, catalogQuery, false, popularView)}
       style={[styles.categoryChip, isChild ? styles.subcategoryChip : styles.mainCategoryChip, isDeep && styles.deepCategoryChip, selected && styles.categoryChipSelected]}
