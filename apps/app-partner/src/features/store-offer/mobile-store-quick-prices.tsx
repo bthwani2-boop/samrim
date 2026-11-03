@@ -232,7 +232,7 @@ export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, get
     {offers.map((offer) => <View key={offer.offerId} style={[styles.row, offer.offerId === selectedOfferId && styles.selectedRow]}>
       <Text style={styles.product}>{offer.productName} · {offer.variantTitle}</Text>
       <Text style={styles.muted}>{formatMoney(offer.priceMinor, offer.currency)} · {offer.availability ? "متاح" : "غير متاح"} · {quickPricePublicationLabel(offer.publicationState)}</Text>
-      <TextInput accessibilityLabel={`السعر الجديد لـ ${offer.productName}`} editable={!busy} keyboardType="number-pad" onChangeText={(value) => setDraftPrices((current) => ({ ...current, [offer.offerId]: value.replace(/\D/g, "") }))} placeholder="السعر بالريال اليمني" value={draftPrices[offer.offerId] ?? String(offer.priceMinor)} style={styles.input} />
+      <TextInput accessibilityLabel={`السعر الجديد لـ ${offer.productName}، الخيار ${offer.variantTitle}`} editable={!busy} keyboardType="number-pad" onChangeText={(value) => setDraftPrices((current) => ({ ...current, [offer.offerId]: value.replace(/\D/g, "") }))} placeholder="السعر بالريال اليمني" value={draftPrices[offer.offerId] ?? String(offer.priceMinor)} style={styles.input} />
     </View>)}
     {nextCursor ? <BthwaniButton busy={loading} disabled={loading || busy} label="تحميل المزيد" onPress={() => void read(nextCursor, true)} variant="secondary" /> : null}
     {offers.length ? <BthwaniButton busy={busy} disabled={busy || changes.length === 0} label={`حفظ الأسعار المتغيرة (${changes.length})`} onPress={() => void commit()} /> : null}

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const source = readFileSync(new URL("./store-offer.tsx", import.meta.url), "utf8");
+const quickPricesSource = readFileSync(new URL("./mobile-store-quick-prices.tsx", import.meta.url), "utf8");
 
 test("product filter options expose the selected toggle state for accessible buttons", () => {
   const start = source.indexOf('([{ key: "all", label: "كل المنتجات" }');
@@ -14,4 +15,7 @@ test("product filter options expose the selected toggle state for accessible but
   assert.match(choice, /aria-pressed=\{listFilter === item\.key\}/);
   assert.doesNotMatch(choice, /aria-selected=/, "aria-selected is not valid on button roles");
   assert.match(choice, /accessibilityState=\{\{ selected: listFilter === item\.key \}\}/);
+});
+test("quick-price inputs distinguish same-name variants for assistive technology", () => {
+  assert.match(quickPricesSource, /accessibilityLabel=\{\`السعر الجديد لـ \$\{offer\.productName\}، الخيار \$\{offer\.variantTitle\}\`\}/);
 });
