@@ -328,9 +328,18 @@ export class IdentitySessionManager {
     try {
       storedSession = parseStoredSession(await this.readStorage());
     } catch (error) {
+      if (this.browserLogoutInFlight ||
+          (this.stateValue.kind === "signed_out" &&
+            (this.stateValue.reason === "explicit_logout" || this.stateValue.reason === "recovery"))) {
+        return this.stateValue;
+      }
       return this.degraded(degradedReason(error));
     }
-    if (this.browserLogoutInFlight) return this.stateValue;
+    if (this.browserLogoutInFlight ||
+        (this.stateValue.kind === "signed_out" &&
+          (this.stateValue.reason === "explicit_logout" || this.stateValue.reason === "recovery"))) {
+      return this.stateValue;
+    }
     if (this.restoreInFlight) return this.restoreInFlight;
     if (!storedSession) return this.restoreDevelopmentSession("no_local_session");
     this.tokens = storedSession;

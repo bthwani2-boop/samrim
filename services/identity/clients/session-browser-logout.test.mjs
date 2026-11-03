@@ -168,3 +168,43 @@ test("browser logout waits for pending-refresh session recovery before revoking 
   assert.deepEqual(h.manager.state, { kind: "signed_out", reason: "explicit_logout" });
   assert.equal(h.values.size, 0, "the late session recovery cannot restore tokens after logout");
 });
+
+for (const readFailure of [false, true]) {
+  test(`browser logout remains terminal when a pre-logout storage read settles afterward (${readFailure ? "error" : "stale data"})`, async () => {
+    const h = testHarness(true);
+    await h.manager.adopt(h.pair);
+    h.goOnline();
+    const key = "bthwani.logout.test.identity.session.v1";
+    const stale = h.values.get(key);
+    let readStarted;
+    const started = new Promise(resolve => { readStarted = resolve; });
+    let releaseRead;
+    const delayedRead = new Promise(resolve => { releaseRead = resolve; });
+    let tokenWrites = 0;
+    const write = h.storage.setItem;
+    h.storage.setItem = async (...args) => { tokenWrites++; return write(...args); };
+    let sessionCalls = 0;
+    let refreshCalls = 0;
+    h.client.session = async () => { sessionCalls++; return h.pair.identity; };
+    h.client.refresh = async () => { refreshCalls++; return h.pair; };
+    h.storage.getItem = async () => {
+      readStarted();
+      await delayedRead;
+      if (readFailure) throw new Error("delayed storage failure");
+      return stale;
+    };
+
+    const inFlight = h.manager.refresh();
+    await started;
+    await h.manager.logout();
+    assert.deepEqual(h.manager.state, { kind: "signed_out", reason: "explicit_logout" });
+    releaseRead();
+    await inFlight;
+    assert.deepEqual(h.manager.state, { kind: "signed_out", reason: "explicit_logout" },
+      "late read must not degrade or restore the completed logout");
+    assert.equal(sessionCalls, 0);
+    assert.equal(refreshCalls, 0);
+    assert.equal(tokenWrites, 0);
+    assert.equal(h.values.size, 0);
+  });
+}
