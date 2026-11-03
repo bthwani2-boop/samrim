@@ -119,7 +119,7 @@ func SetPartnerStoreBannerEnabled(ctx context.Context, db *sql.DB, storeID, cont
 		return DiscoveryContentRecord{}, false, err
 	}
 	var currentVersion int
-	if err = tx.QueryRowContext(ctx, "SELECT version FROM dsh.discovery_content WHERE id=$1 AND source_store_id=$2 AND kind='BANNER' FOR UPDATE", contentID, storeID).Scan(&currentVersion); errors.Is(err, sql.ErrNoRows) {
+	if err = tx.QueryRowContext(ctx, "SELECT version FROM dsh.discovery_content WHERE id=$1 AND source_store_id=$2 AND kind='BANNER' AND state='PUBLISHED' FOR UPDATE", contentID, storeID).Scan(&currentVersion); errors.Is(err, sql.ErrNoRows) {
 		return DiscoveryContentRecord{}, false, ErrDiscoveryContentNotFound
 	} else if err != nil {
 		return DiscoveryContentRecord{}, false, err
@@ -127,7 +127,7 @@ func SetPartnerStoreBannerEnabled(ctx context.Context, db *sql.DB, storeID, cont
 	if currentVersion != expectedVersion {
 		return DiscoveryContentRecord{}, false, ErrDiscoveryContentVersion
 	}
-	if _, err = tx.ExecContext(ctx, "UPDATE dsh.discovery_content SET partner_enabled=$3,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND source_store_id=$2 AND kind='BANNER'", contentID, storeID, enabled); err != nil {
+	if _, err = tx.ExecContext(ctx, "UPDATE dsh.discovery_content SET partner_enabled=$3,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND source_store_id=$2 AND kind='BANNER' AND state='PUBLISHED'", contentID, storeID, enabled); err != nil {
 		return DiscoveryContentRecord{}, false, err
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.commerce_marketing_mutation_idempotency(idempotency_key,request_hash,resource_type,resource_id,operation) VALUES($1,$2,'DISCOVERY_CONTENT',$3,'UPDATE')", idempotencyKey, hash, contentID); err != nil {

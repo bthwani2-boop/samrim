@@ -207,6 +207,28 @@ func TestPartnerStoreBannersFreshDatabaseScopePublicationAndReplay(t *testing.T)
 		}
 		key := "banner-proof-hide-key"
 		corr := "banner-proof-corr"
+		for _, id := range []string{"banner-draft-a", "banner-paused-a"} {
+			before, err := postgres.ReadDiscoveryContent(ctx, db, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _, err = postgres.SetPartnerStoreBannerEnabled(ctx, db, storeA, id, "actor-A", false,
+				before.Version, key+"-unapproved-"+id, corr)
+			if !errors.Is(err, postgres.ErrDiscoveryContentNotFound) {
+				t.Fatalf("Partner changed an unapproved banner %s: %v", id, err)
+			}
+			after, err := postgres.ReadDiscoveryContent(ctx, db, id)
+			if err != nil || after.Version != before.Version || after.PartnerEnabled != before.PartnerEnabled {
+				t.Fatalf("rejected banner mutation changed persistent state %s: before=%+v after=%+v err=%v", id, before, after, err)
+			}
+		}
+		click := postgres.DiscoveryContentEventInput{
+			ID: "banner-click-proof", ClientEventID: "banner-click-proof",
+			ContentID: "banner-visible-a", EventType: "CLICK", ClientSessionID: "banner-proof-session",
+		}
+		if err := postgres.RecordDiscoveryContentEvent(ctx, db, click); err != nil {
+			t.Fatalf("published Store banner must allow a click: %v", err)
+		}
 		if _, _, err = postgres.SetPartnerStoreBannerEnabled(ctx, db, storeB, "banner-visible-a", "actor-B", false, 1, key+"-foreign", corr); !errors.Is(err, postgres.ErrDiscoveryContentNotFound) {
 			t.Fatalf("foreign Store could hide Store A banner: %v", err)
 		}
@@ -215,6 +237,14 @@ func TestPartnerStoreBannersFreshDatabaseScopePublicationAndReplay(t *testing.T)
 			t.Fatalf("disable result=%+v replay=%v err=%v", changed, replay, err)
 		}
 		assertPublic(storeA, city)
+		if err := postgres.RecordDiscoveryContentEvent(ctx, db, click); err != nil {
+			t.Fatalf("exact click replay after hiding must remain idempotent: %v", err)
+		}
+		newClick := click
+		newClick.ID, newClick.ClientEventID = "banner-new-click-proof", "banner-new-click-proof"
+		if err := postgres.RecordDiscoveryContentEvent(ctx, db, newClick); !errors.Is(err, postgres.ErrDiscoveryContentEventNotFound) {
+			t.Fatalf("new click on Partner-disabled banner was accepted: %v", err)
+		}
 		if _, err := postgres.ResolveDiscoveryContentTarget(ctx, db, "banner-visible-a", city); !errors.Is(err, postgres.ErrDiscoveryContentNotFound) {
 			t.Fatalf("hidden Partner banner remained navigable: %v", err)
 		}
@@ -233,6 +263,9 @@ func TestPartnerStoreBannersFreshDatabaseScopePublicationAndReplay(t *testing.T)
 			t.Fatalf("restore result=%+v replay=%v err=%v", changed, replay, err)
 		}
 		assertPublic(storeA, city, "banner-visible-a")
+		if err := postgres.RecordDiscoveryContentEvent(ctx, db, newClick); err != nil {
+			t.Fatalf("restored Partner banner should accept new clicks again: %v", err)
+		}
 		// Independent keys racing the same expected version must yield exactly
 		// one committed update and one conflict; neither may overwrite the other.
 		type visibilityOutcome struct {

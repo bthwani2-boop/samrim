@@ -53,6 +53,7 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
   }), [theme]);
   const [items,setItems] = useState<ReadonlyArray<Banner>>([]);
   const [targets,setTargets] = useState<ReadonlyArray<Target>>([]);
+  const [targetLoadFailed,setTargetLoadFailed] = useState(false);
   const [file,setFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
   const [title,setTitle] = useState("");
   const [targetType,setTargetType] = useState<TargetType>("STORE");
@@ -77,14 +78,27 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
       const token = await getUsableIdentityAccessToken();
       const headers = { Authorization: `Bearer ${token}`, Accept: "application/json" };
       const base = endpoint(storeId);
-      const [banners, destinations] = await Promise.all([
+      const [banners, destinations] = await Promise.allSettled([
         fetch(base + "/banners", { headers }),
         fetch(base + "/discovery-targets", { headers }),
       ]);
-      if (!banners.ok || !destinations.ok) throw new Error("STORE_BANNERS_READ_FAILED");
-      const result = await banners.json() as OperatorDiscoveryContentRegistryResponse;
-      const selection = await destinations.json() as { targets: ReadonlyArray<Target> };
-      if (request.current === current) { setItems(result.items); setTargets(selection.targets); setError(""); }
+      if (request.current !== current) return;
+      if (banners.status !== "fulfilled" || !banners.value.ok) throw new Error("STORE_BANNERS_READ_FAILED");
+      const result = await banners.value.json() as OperatorDiscoveryContentRegistryResponse;
+      if (request.current !== current) return;
+      setItems(result.items);
+      if (destinations.status === "fulfilled" && destinations.value.ok) {
+        try {
+          const selection = await destinations.value.json() as { targets: ReadonlyArray<Target> };
+          if (request.current === current) { setTargets(selection.targets); setTargetLoadFailed(false); setError(""); }
+        } catch {
+          if (request.current === current) { setTargets([]); setTargetLoadFailed(true); setError("تم تحميل البنرات، لكن تعذرت قراءة وجهاتها. أعد المحاولة."); }
+        }
+      } else {
+        setTargets([]);
+        setTargetLoadFailed(true);
+        setError("تم تحميل البنرات، لكن تعذرت قراءة وجهاتها. أعد المحاولة.");
+      }
     } catch {
       if (request.current === current) setError("تعذر تحميل بنرات المتجر. تحقق من اتصالك وصلاحية التسويق ثم أعد المحاولة.");
     } finally {
@@ -92,7 +106,7 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
     }
   }, [storeId]);
   useEffect(() => {
-    setItems([]);setTargets([]);setFile(null);setTitle("");setTargetType("STORE");setTargetId(storeId);
+    setItems([]);setTargets([]);setTargetLoadFailed(false);setFile(null);setTitle("");setTargetType("STORE");setTargetId(storeId);
     setPriority("0");setStartsAt("");setEndsAt("");setRights(false);setNotice("");setError("");
     submitAttempt.current = null;toggleAttempt.current = null;
     void refresh();
@@ -179,7 +193,7 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
       <TextInput style={styles.input} accessibilityLabel="عنوان البنر" placeholder="عنوان البنر" value={title} onChangeText={value=>{setTitle(value);submitAttempt.current=null;}} maxLength={160} editable={!busy}/>
       <Text style={styles.label}>عند الضغط على البنر</Text>
       <View style={styles.buttons}>{(["STORE","PRODUCT","PROMOTION"] as const).map(kind=><Pressable key={kind} accessibilityRole="radio" accessibilityState={{checked:kind===targetType}} onPress={()=>{setTargetType(kind);setTargetId(kind==="STORE"?storeId:"");submitAttempt.current=null;}} style={[styles.chip,targetType===kind&&styles.selected]}><Text style={styles.chipText}>{labels[kind]}</Text></Pressable>)}</View>
-      {targetType!=="STORE"?<View style={styles.buttons}>{available.map(t=><Pressable key={t.targetType+t.targetId} accessibilityRole="radio" accessibilityLabel={t.label} accessibilityState={{checked:targetId===t.targetId}} onPress={()=>{setTargetId(t.targetId);submitAttempt.current=null;}} style={[styles.chip,targetId===t.targetId&&styles.selected]}><Text style={styles.chipText} numberOfLines={2}>{t.label}</Text></Pressable>)}{available.length===0?<Text style={styles.body}>لا توجد وجهات مؤهلة في هذا المتجر.</Text>:null}</View>:null}
+      {targetType!=="STORE"?<View style={styles.buttons}>{available.map(t=><Pressable key={t.targetType+t.targetId} accessibilityRole="radio" accessibilityLabel={t.label} accessibilityState={{checked:targetId===t.targetId}} onPress={()=>{setTargetId(t.targetId);submitAttempt.current=null;}} style={[styles.chip,targetId===t.targetId&&styles.selected]}><Text style={styles.chipText} numberOfLines={2}>{t.label}</Text></Pressable>)}{available.length===0?<Text style={styles.body}>{targetLoadFailed?"تعذر قراءة الوجهات. حدّث البنرات وحاول مجددًا.":"لا توجد وجهات مؤهلة في هذا المتجر."}</Text>:null}</View>:null}
       <Text style={styles.body}>أولوية الترتيب: الأصغر يظهر أولًا. المواعيد اختيارية بصيغة 2026-11-03T12:00.</Text>
       <TextInput style={styles.input} accessibilityLabel="ترتيب البنر" placeholder="ترتيب العرض (0 أولًا)" value={priority} onChangeText={value=>{setPriority(value);submitAttempt.current=null;}} keyboardType="numeric"/>
       <TextInput style={styles.input} accessibilityLabel="بداية عرض البنر" placeholder="بداية العرض (اختياري)" value={startsAt} onChangeText={value=>{setStartsAt(value);submitAttempt.current=null;}}/>
@@ -204,7 +218,7 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
             <Text style={styles.body} numberOfLines={2}>{item.startsAt.slice(0,16)}{item.endsAt?" — "+item.endsAt.slice(0,16):""}</Text>
           </View>
         </View>
-        <BthwaniButton label={item.partnerEnabled?"إخفاء البنر عن العملاء":"إظهار البنر بعد الاعتماد"} onPress={()=>void setVisibility(item,!item.partnerEnabled)} disabled={Boolean(pendingID)||busy} variant="secondary"/>
+        <BthwaniButton label={item.partnerEnabled?"إخفاء البنر عن العملاء":"إظهار البنر بعد الاعتماد"} onPress={()=>void setVisibility(item,!item.partnerEnabled)} disabled={item.state!=="PUBLISHED"||Boolean(pendingID)||busy} variant="secondary"/>
       </View>)}
     </View>
   </View>;
