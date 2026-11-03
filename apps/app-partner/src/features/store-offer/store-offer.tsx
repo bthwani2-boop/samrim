@@ -1077,7 +1077,13 @@ const theme = useAppearanceTheme();
           </View>;
         })}
       </View> : null}
-      {!toolsView && panel === null && state.kind === "ready" && listFilter !== "offers" && !popularError && (listFilter !== "popular" || popularIDs !== null) && (!serverOfferQuery || remoteOffers.kind === "ready") && (state.offers.length > 0 || Boolean(serverOfferQuery)) && offersOnScreen.length === 0 ? <Text style={styles.muted}>لا توجد منتجات تطابق البحث أو التصفية.</Text> : null}
+      {!toolsView && panel === null && state.kind === "ready" && listFilter !== "offers" && !popularError && (listFilter !== "popular" || popularIDs !== null) && (!serverOfferQuery || remoteOffers.kind === "ready") && (state.offers.length > 0 || Boolean(serverOfferQuery)) && offersOnScreen.length === 0 ? <View style={styles.state}>
+        <Text style={styles.muted}>لا توجد منتجات تطابق البحث أو التصفية.</Text>
+        <BthwaniButton label="مسح البحث والتصفية" disabled={busy} variant="quiet" onPress={() => {
+          setListFilter("all");
+          router.setParams({ q: "", filter: "all" });
+        }} />
+      </View> : null}
             {!toolsView && panel === null && listFilter !== "offers" && hasMoreOffers ? <BthwaniButton busy={loadingNextOffers} disabled={loadingNextOffers || busy} label={loadingNextOffers ? "جارٍ تحميل العروض…" : "تحميل المزيد من العروض"} onPress={() => void (serverOfferQuery ? loadMoreRemoteOffers() : loadMoreOffers())} variant="secondary" /> : null}
       <Modal visible={filterModalOpen} transparent animationType="slide" onRequestClose={() => setFilterModalOpen(false)}>
         <View style={styles.filterModalBackdrop}>
