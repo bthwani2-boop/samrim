@@ -44,7 +44,7 @@ test("empty product search offers real catalog-based suggestions with an explici
   assert.match(discovery, /searchPublicCatalog\(selectedCityID, "", selectedCategoryID, 24, cursor/);
   assert.match(discovery, /const seen = new Set<string>\(\)/);
   assert.match(discovery, /if \(name && !seen\.has\(name\)\)/);
-  assert.match(discovery, /if \(index === 0\) throw error/, "a failed later page must not discard successful earlier pages");
+  assert.match(discovery, /if \(index === 0 \|\| names\.length === 0\) throw error/, "failed pages without usable suggestions must expose retry while earlier valid names remain");
   assert.match(discovery, /اقتراح البحث عن/);
   assert.match(discovery, /onSearchQueryChange\(name\)/);
   assert.match(discovery, /إعادة تحميل الاقتراحات/);
