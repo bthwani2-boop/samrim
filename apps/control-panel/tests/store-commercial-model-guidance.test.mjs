@@ -21,3 +21,18 @@ test("finance status uses the commercial model and preserves the approval gate",
   assert.match(finance, /selected\.commercialModel !== "COMMISSION"/);
   assert.match(finance, /<button[^>]*onClick=\{\(\) => beginDecision\("APPROVE"\)\} disabled=\{selected\.commercialModel !== "COMMISSION" \|\|/);
 });
+
+test("commercial agreement rereads guard stale responses and preserve the latest Store projection", () => {
+  assert.match(proposal, /const readSequence = useRef\(0\)/);
+  const readStart = proposal.indexOf("const read = useCallback");
+  const readEnd = proposal.indexOf("}, [url, storeId])", readStart);
+  assert.ok(readStart >= 0 && readEnd > readStart);
+  const read = proposal.slice(readStart, readEnd);
+  assert.match(read, /const request = \+\+readSequence\.current/);
+  const guard = read.indexOf('if (request !== readSequence.current || signal?.aborted)');
+  const write = read.indexOf("setAgreements(items)");
+  assert.ok(guard >= 0 && guard < write, "superseded read must be rejected before UI state updates");
+  assert.match(read, /catch \(cause\) \{[\s\S]*?request !== readSequence.current/);
+  assert.match(proposal, /controller\.abort\(\); readSequence\.current\+\+/);
+  assert.match(proposal, /cause\.message === "AGREEMENT_READ_SUPERSEDED"/);
+});

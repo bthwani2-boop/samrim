@@ -1,7 +1,7 @@
 "use client";
 
 import { type StoreFulfillmentMode } from "@bthwani/dsh";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { stablePartnerMutationHeaders } from "../partners/partner-request";
 import { storeCommercialStatusLabel } from "../finance/store-commercial-agreement-types";
@@ -20,6 +20,7 @@ export function StoreCommercialAgreementProposal({ storeId, modes, readOnly = tr
   const { state: sessionState } = useSession();
   const actorId = sessionState.kind === "authenticated" ? sessionState.identity.subject : "";
   const [agreements, setAgreements] = useState<readonly Agreement[] | null>(null);
+  const readSequence = useRef(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -41,15 +42,22 @@ export function StoreCommercialAgreementProposal({ storeId, modes, readOnly = tr
   const hasUnknownAgreementStatus = agreements?.some(item => !["PROPOSED", "PARTNER_ACCEPTED", "ACTIVE", "SUPERSEDED", "FINANCE_REJECTED"].includes(item.status)) ?? false;
 
   const read = useCallback(async (signal?: AbortSignal) => {
-    const response = await fetch(url, { cache: "no-store", signal: signal ?? null });
-    const body: unknown = await response.json();
-    if (!response.ok || !body || typeof body !== "object" || !("agreements" in body) || !Array.isArray(body.agreements)) {
-      throw new Error("AGREEMENT_READ_UNAVAILABLE");
+    const request = ++readSequence.current;
+    try {
+      const response = await fetch(url, { cache: "no-store", signal: signal ?? null });
+      const body: unknown = await response.json();
+      if (!response.ok || !body || typeof body !== "object" || !("agreements" in body) || !Array.isArray(body.agreements)) {
+        throw new Error("AGREEMENT_READ_UNAVAILABLE");
+      }
+      const items = body.agreements as Agreement[];
+      if (items.some(item => !item.agreementId || item.storeId !== storeId || !Array.isArray(item.rates))) throw new Error("AGREEMENT_READ_INVALID");
+      if (request !== readSequence.current || signal?.aborted) throw new Error("AGREEMENT_READ_SUPERSEDED");
+      setAgreements(items);
+      return items;
+    } catch (cause) {
+      if (request !== readSequence.current || signal?.aborted) throw new Error("AGREEMENT_READ_SUPERSEDED");
+      throw cause;
     }
-    const items = body.agreements as Agreement[];
-    if (items.some(item => !item.agreementId || item.storeId !== storeId || !Array.isArray(item.rates))) throw new Error("AGREEMENT_READ_INVALID");
-    setAgreements(items);
-    return items;
   }, [url, storeId]);
 
   useEffect(() => {
@@ -58,9 +66,9 @@ export function StoreCommercialAgreementProposal({ storeId, modes, readOnly = tr
     setError("");
     setNotice("");
     void read(controller.signal).catch((cause: unknown) => {
-      if (!controller.signal.aborted) setError(cause instanceof Error ? "تعذرت قراءة الاتفاقات؛ أعد المحاولة قبل اقتراح أي شروط." : "تعذرت قراءة الاتفاقات.");
+      if (!controller.signal.aborted && !(cause instanceof Error && cause.message === "AGREEMENT_READ_SUPERSEDED")) setError(cause instanceof Error ? "تعذرت قراءة الاتفاقات؛ أعد المحاولة قبل اقتراح أي شروط." : "تعذرت قراءة الاتفاقات.");
     });
-    return () => controller.abort();
+    return () => { controller.abort(); readSequence.current++; };
   }, [read]);
 
   async function propose() {
@@ -137,7 +145,7 @@ export function StoreCommercialAgreementProposal({ storeId, modes, readOnly = tr
         ? "تظل الاتفاقية السارية نافذة حتى يقبل الشريك النسخة الجديدة وتعتمدها المالية، دون تعديل الطلبات السابقة."
         : "لا تُستبدل أي اتفاقية معلقة قبل حسمها."}</p>
       {agreements.map(item => <p key={item.agreementId}>النسخة {item.agreementVersion} · {storeCommercialStatusLabel(item)} · {item.commercialModel} {item.commercialModel !== "COMMISSION" ? "· " + item.recurringAmountMinor + " ريال " + item.billingPeriod : ""} · {item.rates.map(rate => labels[rate.fulfillmentMode] + ": " + (rate.commissionRateBps / 100) + "%").join("، ")}</p>)}
-      {hasUnknownAgreementStatus && !error ? <p role="alert" className="identity-error">توجد حالة اتفاق غير معروفة. لا يمكن اقتراح شروط قبل مراجعة السجل. <button className="button button-secondary" type="button" disabled={busy} onClick={() => void read().catch(() => setError("تعذرت إعادة قراءة الاتفاقات."))}>إعادة قراءة السجل</button></p> : null}
+      {hasUnknownAgreementStatus && !error ? <p role="alert" className="identity-error">توجد حالة اتفاق غير معروفة. لا يمكن اقتراح شروط قبل مراجعة السجل. <button className="button button-secondary" type="button" disabled={busy} onClick={() => void read().catch((cause: unknown) => { if (!(cause instanceof Error && cause.message === "AGREEMENT_READ_SUPERSEDED")) setError("تعذرت إعادة قراءة الاتفاقات."); })}>إعادة قراءة السجل</button></p> : null}
       </> : null}
       {!readOnly ? <>
       {nextProposalVersion === null ? <p>لا يمكن تقديم اقتراح أثناء وجود نسخة قيد القبول أو في حالة سجل غير متوقعة. راجع الاتفاقيات مع المالية وأعد القراءة.</p> : <>
