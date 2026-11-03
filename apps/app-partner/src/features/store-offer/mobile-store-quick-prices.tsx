@@ -112,7 +112,23 @@ export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, get
     try {
       const token = await getAccessToken();
       const page = await client.listOwnStoreQuickPrices(token, scope.storeID, { ...filters, limit: 50, cursor });
-      setOffers((current) => append ? [...current, ...page.offers.filter((offer) => !current.some((known) => known.offerId === offer.offerId))] : page.offers);
+      let selected = selectedOfferId ? page.offers.find((offer) => offer.offerId === selectedOfferId) : undefined;
+      if (!append && !cursor && selectedOfferId && !selected && filters.q === initialSearch) {
+        // Bring a selected same-name offer into view without expanding the
+        // entire list. Normal "load more" still starts at the first-page cursor.
+        let lookupCursor = page.nextCursor ?? "";
+        const visited = new Set<string>();
+        for (let index = 0; lookupCursor && index < 20 && !selected && !visited.has(lookupCursor); index++) {
+          visited.add(lookupCursor);
+          const later = await client.listOwnStoreQuickPrices(token, scope.storeID, { ...filters, limit: 50, cursor: lookupCursor });
+          selected = later.offers.find((offer) => offer.offerId === selectedOfferId);
+          lookupCursor = later.nextCursor ?? "";
+        }
+        if (!selected) setNotice("لم يظهر المنتج المحدد ضمن النتائج المحمّلة. جرّب تضييق البحث باسمه أو فئته.");
+      }
+      const visible = selected && !append
+        ? [selected, ...page.offers.filter((offer) => offer.offerId !== selected.offerId)] : page.offers;
+      setOffers((current) => append ? [...current, ...visible.filter((offer) => !current.some((known) => known.offerId === offer.offerId))] : visible);
       setNextCursor(page.nextCursor ?? "");
     } catch (cause) {
       console.warn("DSH Store quick prices readback failed", cause);
@@ -120,7 +136,7 @@ export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, get
     } finally {
       setLoading(false);
     }
-  }, [client, filters, getAccessToken, scope]);
+  }, [client, filters, getAccessToken, scope, selectedOfferId, initialSearch]);
 
   useEffect(() => { void read(); }, [read]);
 

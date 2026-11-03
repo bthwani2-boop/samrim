@@ -33,6 +33,7 @@ async function main() {
           distinctCols: rects.length === 2 && Math.abs(rects[0].left - rects[1].left) > 30,
           sequentialRows: rects.length === 2 && rects[1].top >= rects[0].bottom - 2,
           actionsWithinCards: within,
+          switchCount: document.querySelectorAll('[role="switch"]').length,
           switchesWithinTracks: [...document.querySelectorAll('[role="switch"]')].every(input => {
             const track = input.parentElement?.getBoundingClientRect();
             const thumb = input.parentElement?.children?.[1]?.getBoundingClientRect();
@@ -46,6 +47,7 @@ async function main() {
       assert.equal(shape.rtl, true, "CATALOG_MUST_BE_RTL");
       assert.equal(shape.overflow, false, "CATALOG_HORIZONTAL_OVERFLOW");
       assert.equal(shape.actionsWithinCards, true, "CATALOG_ITEM_ACTION_CLIPPED");
+      assert.ok(shape.switchCount > 0, "AVAILABILITY_SWITCHES_NOT_FOUND");
       assert.equal(shape.switchesWithinTracks, true, "RTL_AVAILABILITY_THUMB_OUTSIDE_TRACK");
       if (width === 1360) {
         assert.equal(shape.sameRow && shape.distinctCols, true,

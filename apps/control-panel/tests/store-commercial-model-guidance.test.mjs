@@ -19,4 +19,5 @@ test("finance status uses the commercial model and preserves the approval gate",
   assert.match(finance, /storeCommercialStatusLabel\(selected\)/);
   assert.match(finance, /storeCommercialStatusLabel\(verifiedDecision\.agreement\)/);
   assert.match(finance, /selected\.commercialModel !== "COMMISSION"/);
+  assert.match(finance, /<button[^>]*onClick=\{\(\) => beginDecision\("APPROVE"\)\} disabled=\{selected\.commercialModel !== "COMMISSION"/);
 });

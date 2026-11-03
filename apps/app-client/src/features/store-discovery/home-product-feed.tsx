@@ -12,6 +12,7 @@ import { adjustSimpleOfferQuantity, listOwnOpenCarts, readOwnStoreCart, searchPu
 type FeedState =
   | { kind: "loading" }
   | { kind: "error" }
+  | { kind: "invalid_query" }
   | { kind: "ready"; offers: ReadonlyArray<CatalogStoreOffer>; nextCursor: string };
 
 const PAGE_SIZE = 18;
@@ -59,6 +60,10 @@ export function HomeProductFeed({
     setMoreError(false);
     if (!cityID) {
       setState({ kind: "ready", offers: [], nextCursor: "" });
+      return;
+    }
+    if (Array.from(normalizedQuery).length > 160) {
+      if (id === requestID.current) setState({ kind: "invalid_query" });
       return;
     }
     try {
@@ -163,6 +168,7 @@ export function HomeProductFeed({
   </View>;
   if (!cityID) return null;
   if (state.kind === "loading") return withSort(<View style={styles.loading} accessibilityLabel="جارٍ البحث"><ActivityIndicator color={theme.brandAction} /><Text style={styles.muted}>{normalizedQuery ? "جارٍ البحث عن المنتجات…" : "جارٍ تحميل المنتجات المتاحة…"}</Text></View>);
+  if (state.kind === "invalid_query") return withSort(<View style={styles.status}><Text accessibilityRole="alert" style={styles.muted}>البحث طويل جدًا. أدخل 160 حرفًا أو أقل للبحث عن المنتجات.</Text></View>);
   if (state.kind === "error") return withSort(<View style={styles.status}><Text accessibilityRole="alert" style={styles.muted}>{normalizedQuery ? "تعذر البحث عن المنتجات" : "تعذر تحميل المنتجات"}. تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View>);
 
   if (state.offers.length === 0 && state.nextCursor) return withSort(<View style={styles.status} accessibilityLabel="لا توجد نتائج في الصفحة الحالية">

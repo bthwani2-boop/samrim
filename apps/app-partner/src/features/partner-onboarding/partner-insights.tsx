@@ -122,8 +122,8 @@ export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: bool
   const notices = [
     ...(snapshot.orders?.newOrders ? [{ label: snapshot.orders.newOrders + " طلبات جديدة", hint: "تحتاج مراجعة وقبولًا", href: "/orders" as Href }] : []),
     ...(snapshot.orders?.deliveryRecovery ? [{ label: snapshot.orders.deliveryRecovery + " حالات تسليم متعثرة", hint: "تحتاج متابعة", href: "/orders" as Href }] : []),
-    ...(snapshot.stockout ? [{ label: snapshot.stockout + " منتجات نفد مخزونها", hint: "من كامل كتالوج المتجر", href: "/products?filter=stockout" as Href }] : []),
-    ...(snapshot.unavailable ? [{ label: snapshot.unavailable + " منتجات غير متاحة", hint: "من كامل كتالوج المتجر", href: "/products?filter=unavailable" as Href }] : []),
+    ...(snapshot.stockout ? [{ label: snapshot.stockout + " منتجات نفد مخزونها", hint: "العدد للعروض المنشورة؛ التفاصيل قد تشمل غير المنشورة", href: "/products?filter=stockout" as Href }] : []),
+    ...(snapshot.unavailable ? [{ label: snapshot.unavailable + " منتجات غير متاحة", hint: "العدد للعروض المنشورة؛ التفاصيل قد تشمل غير المنشورة", href: "/products?filter=unavailable" as Href }] : []),
   ];
   const repeatBuyerPercentage = partnerRepeatBuyerPercentage(snapshot.customerActivity);
   const hasData = snapshot.orders !== null || snapshot.available !== null || snapshot.promotions !== null || snapshot.finance !== null || snapshot.customerActivity !== null;

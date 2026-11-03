@@ -14,6 +14,12 @@ async function main() {
     page = await context.newPage();
     await page.setViewportSize({ width: 390, height: 844 });
     const failures = [];
+    // Public catalog pages also work as a guest. Prove that this is the
+    // already-authorized Client session before calling it authenticated.
+    await page.goto(origin + "/orders", { waitUntil: "domcontentloaded", timeout: 25000 });
+    await page.getByLabel("طلباتي", { exact: true }).waitFor({ state: "visible", timeout: 12000 })
+      .catch(() => { throw new Error("AUTHORIZED_CLIENT_EDGE_CONTEXT_REQUIRED"); });
+    assert.equal(new URL(page.url()).pathname, "/orders", "AUTHORIZED_CLIENT_EDGE_CONTEXT_REQUIRED");
     page.on("pageerror", e => failures.push("script:" + String(e.message).slice(0, 120)));
     page.on("response", r => {
       if (r.status() >= 500 && r.url().startsWith(origin))

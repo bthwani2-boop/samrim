@@ -29,6 +29,7 @@ async function main() {
     await page.getByText("من جميع عروض المتجر المنشورة، DSH", { exact: true }).waitFor({ state: "visible", timeout: 18000 });
     await page.getByText(new Intl.NumberFormat("ar-YE").format(637), { exact: true }).waitFor({ state: "visible", timeout: 15000 });
     await page.getByText("نفاد المخزون", { exact: true }).first().waitFor({ state: "visible" });
+    await page.getByText(new Intl.NumberFormat("ar-YE").format(57) + " منتج من عروض المتجر المنشورة", { exact: true }).waitFor({ state: "visible" });
     assert.ok(requests > 0, "canonical full inventory summary not fetched");
     foreign = true;
     await page.reload({ waitUntil: "domcontentloaded", timeout: 25000 });

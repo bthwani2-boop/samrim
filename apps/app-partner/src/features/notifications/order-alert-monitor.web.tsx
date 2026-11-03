@@ -39,10 +39,23 @@ export function OrderAlertMonitor() {
       try {
         const token = await getUsableIdentityAccessToken();
         if (!active || currentActorID() !== actorId) return;
-        const response = await createDshMobileClient(apiUrl, { cryptoRandomUUID: () => Crypto.randomUUID() })
-          .listNotifications(token, 35);
+        const api = createDshMobileClient(apiUrl, { cryptoRandomUUID: () => Crypto.randomUUID() });
+        const response = await api.listNotifications(token, 35);
         if (!active || currentActorID() !== actorId) return;
-        const fresh = cursor.receive("partner", actorId, response.notifications);
+        const recent = [...response.notifications];
+        let nextCursor = response.nextCursor ?? "";
+        // Read beyond the first 35 only during bursts. Action alerts older
+        // than 90 seconds cannot ring, and at most five pages are considered.
+        for (let page = 1; page < 5 && nextCursor; page++) {
+          const oldest = recent.at(-1);
+          if (!oldest || Date.parse(oldest.createdAt) < Date.now() - 90_000) break;
+          const next = await api.listNotifications(token, 35, nextCursor);
+          if (!active || currentActorID() !== actorId) return;
+          recent.push(...next.notifications);
+          if (!next.nextCursor || next.nextCursor === nextCursor) break;
+          nextCursor = next.nextCursor;
+        }
+        const fresh = cursor.receive("partner", actorId, recent);
         const newest = fresh.at(-1);
         if (newest) setNotice({
           actorId,
@@ -74,7 +87,7 @@ export function OrderAlertMonitor() {
     const idValid = /^[A-Za-z0-9._~-]{1,160}$/.test(notice.orderId);
     const storeValid = /^[A-Za-z0-9._~-]{1,160}$/.test(notice.storeId);
     const destination: Href = idValid
-      ? { pathname: "/orders", params: { orderId: notice.orderId, ...(storeValid ? { storeId: notice.storeId } : {}) } }
+      ? { pathname: "/orders", params: { orderId: notice.orderId, ...(storeValid ? { storeId: notice.storeId } : { scope: "all" }) } }
       : "/orders";
     router.push(destination);
   };

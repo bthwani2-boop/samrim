@@ -330,17 +330,17 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
             <BthwaniIcon name="warning" color={theme.warning} size={19}/><View style={styles.attentionCopy}><Text style={styles.listTitle}>تسليم متعثر</Text><Text style={styles.muted}>{data.attention.deliveryRecovery.toLocaleString("ar-YE") + " حالة تحتاج متابعة"}</Text></View>
           </Pressable> : null}
           {canCatalog && data.inventory?.stockoutOffers ? <Pressable style={styles.attentionItem} accessibilityRole="button" accessibilityLabel="عرض المنتجات نافدة المخزون" onPress={() => go("/products?filter=stockout" as Href)}>
-            <BthwaniIcon name="warning" color={theme.warning} size={19}/><View style={styles.attentionCopy}><Text style={styles.listTitle}>نفاد المخزون</Text><Text style={styles.muted}>{data.inventory.stockoutOffers.toLocaleString("ar-YE") + " منتج من كامل كتالوج المتجر"}</Text></View>
+            <BthwaniIcon name="warning" color={theme.warning} size={19}/><View style={styles.attentionCopy}><Text style={styles.listTitle}>نفاد المخزون</Text><Text style={styles.muted}>{data.inventory.stockoutOffers.toLocaleString("ar-YE") + " منتج من عروض المتجر المنشورة"}</Text></View>
           </Pressable> : null}
           {!loading && ((canOrders && data.attention === null) || (canCatalog && (data.offers === null || data.inventory === null))) ? <Text style={styles.muted}>لم تُقرأ بعض البيانات؛ تحقق من الاتصال ثم افتح الصفحة مجددًا.</Text> : null}
           {!loading && data.attention && !data.attention.newOrders && !data.attention.deliveryRecovery && (!canCatalog || (data.offers !== null && data.inventory?.stockoutOffers === 0)) ? <Text style={styles.empty}>لا توجد تنبيهات طلبات عاجلة حاليًا.</Text> : null}
         </View>
         <View style={styles.panel}>
           {panelTitle("متابعة المخزون", canCatalog ? "/products?filter=stockout" as Href : undefined)}
-          {data.inventory === null ? <Text style={styles.empty}>تعذر قراءة إجمالي المخزون من DSH.</Text> : data.inventory.stockoutOffers === 0 ?
-            <Text style={styles.empty}>لا توجد منتجات نافدة في كامل كتالوج المتجر.</Text> :
+          {!canCatalog ? <Text style={styles.empty}>لا تملك صلاحية قراءة الكتالوج.</Text> : data.inventory === null ? <Text style={styles.empty}>تعذر قراءة إجمالي المخزون من DSH.</Text> : data.inventory.stockoutOffers === 0 ?
+            <Text style={styles.empty}>لا توجد منتجات نافدة بين عروض المتجر المنشورة.</Text> :
             <Pressable accessibilityRole="button" accessibilityLabel="عرض جميع المنتجات نافدة المخزون" onPress={() => go("/products?filter=stockout" as Href)}>
-              <Text style={styles.warningText}>{"يوجد " + data.inventory.stockoutOffers.toLocaleString("ar-YE") + " منتج نافد من كامل كتالوج المتجر. عرض التفاصيل"}</Text>
+              <Text style={styles.warningText}>{"يوجد " + data.inventory.stockoutOffers.toLocaleString("ar-YE") + " منتج نافد بين عروض المتجر المنشورة. عرض التفاصيل"}</Text>
             </Pressable>}
           {data.offers === null ? <Text style={styles.muted}>تعذر قراءة أسماء المنتجات؛ افتح صفحة الكتالوج لإعادة المحاولة.</Text> : stockout.length === 0 ?
             data.inventory?.stockoutOffers ? <Text style={styles.muted}>المنتجات النافدة لا تظهر في العينة الأولى المحمّلة؛ افتح الكتالوج لعرضها.</Text> : null :

@@ -922,12 +922,27 @@ function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selec
     if (normalizedQuery || !selectedCityID) return;
     let active = true;
     setSuggestions({ kind: "loading", names: [] });
-    void searchPublicCatalog(selectedCityID, "", selectedCategoryID, 8, "", selectedVerticalID, selectedShortcutID)
-      .then((page) => {
+    void (async () => {
+      const names: string[] = [];
+      const seen = new Set<string>();
+      const visitedCursors = new Set<string>();
+      let cursor = "";
+      // Each offer is Store-specific, so one page may repeat a single product.
+      // Page within a bounded budget until six distinct names are found.
+      for (let index = 0; index < 4 && names.length < 6; index++) {
+        const page = await searchPublicCatalog(selectedCityID, "", selectedCategoryID, 24, cursor, selectedVerticalID, selectedShortcutID);
         if (!active) return;
-        const names = [...new Set(page.offers.map((offer) => offer.productName.trim()).filter(Boolean))].slice(0, 6);
-        setSuggestions({ kind: "ready", names });
-      })
+        for (const offer of page.offers) {
+          const name = offer.productName.trim();
+          if (name && !seen.has(name)) { seen.add(name); names.push(name); }
+          if (names.length >= 6) break;
+        }
+        if (!page.nextCursor || visitedCursors.has(page.nextCursor)) break;
+        visitedCursors.add(page.nextCursor);
+        cursor = page.nextCursor;
+      }
+      if (active) setSuggestions({ kind: "ready", names });
+    })()
       .catch(() => {
         if (active) setSuggestions({ kind: "error", names: [] });
       });

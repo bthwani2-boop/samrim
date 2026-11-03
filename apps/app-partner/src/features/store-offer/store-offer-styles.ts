@@ -60,7 +60,7 @@ export function createStyles(theme: ReturnType<typeof resolveTheme>) {
     offerListWide: { flexDirection: "row", flexWrap: "wrap", alignItems: "flex-start" },
     inventoryBlock: { gap: spacing[1] },
     item: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: 1, borderRadius: 12, gap: 4, padding: 8 },
-    itemWide: { flexBasis: "48%", flexGrow: 1, minWidth: 0 },
+    itemWide: { flexBasis: "48%", flexGrow: 0, minWidth: 0 },
     offerIdentity: { alignItems: "center", flexDirection: "row", gap: 8 },
     offerActionRow: { alignItems: "center", flexDirection: "row", gap: 4, minHeight: 35 },
     compactAction: { minHeight: 32, paddingHorizontal: 8, borderRadius: 9, borderColor: theme.borderColor, borderWidth: 1, alignItems: "center", justifyContent: "center", gap: 4, flexDirection: "row" },
