@@ -94,6 +94,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [reduceMotion, setReduceMotion] = useState(false);
   const bannerRef = useRef<ScrollViewInstance | null>(null);
   const { width: windowWidth } = useWindowDimensions();
+  const desktopStorefront = Platform.OS === "web" && windowWidth >= 1024;
   const gridMode = userGridMode ?? (Platform.OS === "web" && windowWidth >= 1024);
   const gridColumns = Platform.OS === "web" && windowWidth >= 1200 ? 3 : 2;
   const [promotionLoading, setPromotionLoading] = useState(true);
@@ -132,7 +133,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   );
   const bannerItems: StoreBannerItem[] = [
     ...storeMarketingContents.map((content) => ({ kind: "content" as const, key: "content:" + content.id, content })),
-    ...bannerCatalogOffers.slice(0, 5).map((offer) => ({ kind: "offer" as const, key: `offer:${offer.offerId}`, offer })),
+    ...(!desktopStorefront ? bannerCatalogOffers.slice(0, 5).map((offer) => ({ kind: "offer" as const, key: `offer:${offer.offerId}`, offer })) : []),
   ].slice(0, 5);
   // Expose neighboring slides; centering padding is part of the scroll content, not each item.
   const bannerViewportWidth = Math.max(1, windowWidth - spacing[3] * 2);
@@ -724,7 +725,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       <View pointerEvents="none" style={[styles.statusBarScrim, { height: insets.top, backgroundColor: heroVisible ? "transparent" : theme.background }]} />
       <FlatList<StoreCatalogRow>
         stickyHeaderIndices={[1]}
-        onScroll={(event) => { const visible = event.nativeEvent.contentOffset.y < 244 + insets.top - 32; setHeroVisible((current) => current === visible ? current : visible); }}
+        onScroll={(event) => { const visible = event.nativeEvent.contentOffset.y < (desktopStorefront ? 144 : 244) + insets.top - 32; setHeroVisible((current) => current === visible ? current : visible); }}
         scrollEventThrottle={160}
         contentContainerStyle={styles.container}
         data={[{ kind: "filters", key: "catalog-filters" }, ...visibleCatalogRows]}
@@ -753,7 +754,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         }}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={<View style={styles.listHeader}>
-      <View style={[styles.storeHero, { height: 244 + insets.top }]}>
+      <View style={[styles.storeHero, { height: (desktopStorefront ? 144 : 244) + insets.top }]}>
           {heroImageURI
             ? <View pointerEvents="none" style={styles.storeHeroMedia}><ExpoImage cachePolicy="disk" accessibilityLabel={"غلاف متجر " + state.store.name} onError={() => setFailedStoreCover(true)} source={{ uri: heroImageURI }} contentFit="cover" style={styles.storeCover} /></View>
             : <View accessibilityLabel={"غلاف متجر " + state.store.name + " غير متوفر"} pointerEvents="none" style={styles.storeCoverFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
@@ -778,8 +779,9 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         </View>
         </View>
       </View>
-      <BthwaniSurface tone="raised" style={styles.storeInfoCard} accessibilityLabel={"معلومات متجر " + state.store.name}>
-        <View style={styles.storeInfoIdentityRow}>
+      <BthwaniSurface tone="raised" style={[styles.storeInfoCard, desktopStorefront && styles.storeInfoDesktop]} accessibilityLabel={"معلومات متجر " + state.store.name}>
+        <View style={desktopStorefront ? styles.storeInfoDesktopSummary : undefined}>
+        <View style={[styles.storeInfoIdentityRow, desktopStorefront && styles.storeInfoDesktopIdentity]}>
           {state.store.storeProfileImage?.uri && !failedStoreImage
             ? <ExpoImage cachePolicy="disk" accessibilityLabel={"شعار متجر " + state.store.name} onError={() => setFailedStoreImage(true)} source={{ uri: state.store.storeProfileImage.uri }} contentFit="contain" style={styles.storeInfoLogo} />
             : <View style={styles.storeInfoLogoFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
@@ -791,8 +793,8 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
             </View>
           </View>
         </View>
-        <View style={styles.storeInfoDivider} />
-        <View style={styles.storeInfoStatusRow}>
+        {!desktopStorefront ? <View style={styles.storeInfoDivider} /> : null}
+        <View style={[styles.storeInfoStatusRow, desktopStorefront && styles.storeInfoDesktopStatus]}>
           <View style={styles.storeInfoStat}>
             <Text style={styles.storeInfoStatLabel}>حالة المتجر</Text>
             <View style={styles.orderStatusBadge}><Text style={styles.orderStatusBadgeText}>{availabilitySummary.label}</Text></View>
@@ -808,6 +810,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
               style={styles.storeInfoStatValue}
             >{state.store.ratingCount > 0 ? "★ " + state.store.ratingAverage.toFixed(1) + " · " + state.store.ratingCount + " تقييم" : "لا توجد تقييمات بعد"}</Text>
           </View>
+        </View>
         </View>
         {availabilitySummary.reason ? <Text accessibilityRole="alert" style={styles.muted}>{availabilitySummary.reason}</Text> : null}
         {fulfillmentModes.length === 1 ? <View style={styles.storeInfoModes}>
@@ -845,7 +848,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
               </Pressable>)}
             </ScrollView>
           </View> : null}
-          {bannerError && bannerItems.length === 0 ? <Pressable accessibilityRole="button" accessibilityLabel="إعادة تحميل المنتجات الرائجة" onPress={() => void loadBanner()} style={styles.inlineRecovery}><Text style={styles.bannerPause}>تعذر تحميل المنتجات الرائجة · إعادة المحاولة</Text></Pressable> : null}
+          {!desktopStorefront && bannerError && bannerItems.length === 0 ? <Pressable accessibilityRole="button" accessibilityLabel="إعادة تحميل المنتجات الرائجة" onPress={() => void loadBanner()} style={styles.inlineRecovery}><Text style={styles.bannerPause}>تعذر تحميل المنتجات الرائجة · إعادة المحاولة</Text></Pressable> : null}
 
           {promotionError ? <View style={styles.promotionNotice}><Text accessibilityRole="alert" style={styles.validationError}>تعذر قراءة عروض هذا المتجر؛ يمكنك متابعة الطلب من دونها.</Text><BthwaniButton label="إعادة قراءة العروض" onPress={() => void retryPromotions()} variant="secondary" /></View> : null}
           {!promotionLoading && !promotionError && remainingPromotions.length > 0 ? <>
