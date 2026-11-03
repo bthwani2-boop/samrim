@@ -4,6 +4,7 @@ import { type StoreFulfillmentMode } from "@bthwani/dsh";
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { stablePartnerMutationHeaders } from "../partners/partner-request";
+import { storeCommercialStatusLabel } from "../finance/store-commercial-agreement-types";
 import { nextStoreCommercialAgreementVersion } from "./store-commercial-agreement-version";
 import { matchesProposedStoreAgreement, storeCommercialRatesForProposal, type ExpectedStoreCommercialProposal, type StoreCommercialProposalReadback } from "./store-commercial-proposal-rates";
 
@@ -134,7 +135,7 @@ export function StoreCommercialAgreementProposal({ storeId, modes, readOnly = tr
       <p>توجد {agreements.length} نسخة محفوظة. {hasActiveAgreement
         ? "تظل الاتفاقية السارية نافذة حتى يقبل الشريك النسخة الجديدة وتعتمدها المالية، دون تعديل الطلبات السابقة."
         : "لا تُستبدل أي اتفاقية معلقة قبل حسمها."}</p>
-      {agreements.map(item => <p key={item.agreementId}>النسخة {item.agreementVersion} · {item.status} · {item.commercialModel} {item.commercialModel !== "COMMISSION" ? "· " + item.recurringAmountMinor + " ريال " + item.billingPeriod : ""} · {item.rates.map(rate => labels[rate.fulfillmentMode] + ": " + (rate.commissionRateBps / 100) + "%").join("، ")}</p>)}
+      {agreements.map(item => <p key={item.agreementId}>النسخة {item.agreementVersion} · {storeCommercialStatusLabel(item)} · {item.commercialModel} {item.commercialModel !== "COMMISSION" ? "· " + item.recurringAmountMinor + " ريال " + item.billingPeriod : ""} · {item.rates.map(rate => labels[rate.fulfillmentMode] + ": " + (rate.commissionRateBps / 100) + "%").join("، ")}</p>)}
       </> : null}
       {!readOnly ? <>
       {nextProposalVersion === null ? <p>لا يمكن تقديم اقتراح أثناء وجود نسخة قيد القبول أو في حالة سجل غير متوقعة. راجع الاتفاقيات مع المالية وأعد القراءة.</p> : <>

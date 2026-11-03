@@ -44,7 +44,7 @@ export type StoreCommercialAgreementRecord = Readonly<{
   reason: string;
 }>;
 
-export function storeCommercialStatusLabel(agreement: Pick<StoreCommercialAgreementRecord, "status" | "commercialModel">) {
+export function storeCommercialStatusLabel(agreement: Readonly<{ status: string; commercialModel: StoreCommercialAgreementRecord["commercialModel"] }>) {
   if (agreement.status === "PARTNER_ACCEPTED") {
     if (agreement.commercialModel === "SUBSCRIPTION") return "اشتراك مقبول من المالك · بانتظار اكتمال الفوترة في WLT، غير قابل للاعتماد حاليًا";
     if (agreement.commercialModel === "HYBRID") return "النموذج الهجين ملغى · غير قابل للاعتماد";
@@ -55,6 +55,7 @@ export function storeCommercialStatusLabel(agreement: Pick<StoreCommercialAgreem
     case "ACTIVE": return "نشط";
     case "FINANCE_REJECTED": return "مرفوض من المالية";
     case "SUPERSEDED": return "استبدل باتفاق أحدث";
+    default: return "حالة الاتفاقية غير معروفة؛ أعد قراءة السجل";
   }
 }
 

@@ -9,6 +9,8 @@ test("operator sees both commercial models and the non-payment boundary before p
   assert.match(proposal, /aria-label="مقارنة نماذج التعاقد"/);
   assert.match(proposal, /صلاحيات الشريك لا تتغير بحسب النموذج/);
   assert.match(proposal, /الاشتراك غير قابل للتفعيل أو التحصيل حاليًا/);
+  assert.match(proposal, /storeCommercialStatusLabel\(item\)/);
+  assert.doesNotMatch(proposal, /\{item\.status\}[^\n]*\{item\.commercialModel\}/);
 });
 
 test("finance status uses the commercial model and preserves the approval gate", () => {

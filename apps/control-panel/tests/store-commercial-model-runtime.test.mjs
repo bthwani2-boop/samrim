@@ -21,4 +21,5 @@ test("finance labels are model-aware, without activating the subscription or ret
   assert.match(storeCommercialStatusLabel({ status: "PARTNER_ACCEPTED", commercialModel: "HYBRID" }), /ملغى/);
   assert.equal(storeCommercialStatusLabel({ status: "PROPOSED", commercialModel: "SUBSCRIPTION" }), "بانتظار قبول مالك المتجر");
   assert.equal(storeCommercialStatusLabel({ status: "ACTIVE", commercialModel: "COMMISSION" }), "نشط");
+  assert.equal(storeCommercialStatusLabel({ status: "UNKNOWN", commercialModel: "COMMISSION" }), "حالة الاتفاقية غير معروفة؛ أعد قراءة السجل");
 });
