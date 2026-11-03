@@ -289,6 +289,23 @@ paths:
         "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
+  /dsh/public/stores/{storeId}/banners:
+    get:
+      operationId: listPublicStoreBanners
+      summary: Published Partner-authored image banners in one eligible Store only
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - name: serviceCityId
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200":
+          description: Store-bound, approved, Partner-enabled, time-eligible banners in priority order.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/DiscoveryContentListResponse" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/public/discovery-content/events:
     post:
       operationId: recordPublicDiscoveryContentEvent
@@ -752,10 +769,47 @@ paths:
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
 
+  /dsh/partner/stores/{storeId}/banners:
+    get:
+      operationId: listPartnerStoreBanners
+      summary: Store-scoped Partner-authored image banners and current approval/visibility
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+      responses:
+        "200":
+          description: Own Store banners only, including drafts pending Operator publication.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/OperatorDiscoveryContentRegistryResponse" } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+  /dsh/partner/stores/{storeId}/banners/{contentId}/visibility:
+    post:
+      operationId: setPartnerStoreBannerVisibility
+      summary: Hide or restore an own Store banner independently of Operator publication
+      description: Requires Store-scoped promotions grant; visibility is not permission to publish an unapproved draft or Operator-paused banner.
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ContentId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerStoreBannerVisibilityRequest" } } }
+      responses:
+        "200":
+          description: Canonical Store-scoped banner visibility and version readback.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/DiscoveryContentResponse" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
   /dsh/partner/stores/{storeId}/discovery-content:
     get:
       operationId: listPartnerStoreReels
-      summary: List governed reel drafts for the authenticated Partner's Store
+      summary: List governed short-form drafts for the authenticated Partner's Store
       security: [{ userBearer: [] }]
       parameters:
         - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
@@ -767,8 +821,8 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
     post:
       operationId: createPartnerStoreReel
-      summary: Upload a Store-targeted SHORT_FORM draft for Operator review
-      description: Requires an authenticated app-partner session and the scoped promotions grant. The Store path and targetId must match; Partners cannot publish content or impersonate other Stores.
+      summary: Upload a Store-targeted SHORT_FORM video or BANNER image draft for Operator review
+      description: Requires an authenticated Partner session and the Store-scoped promotions grant. Image BANNER and MP4 SHORT_FORM drafts bind source_store_id and their destinations to that Store. The Operator alone publishes approved content; Partners cannot submit CAROUSEL platform content.
       security: [{ userBearer: [] }]
       parameters:
         - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"

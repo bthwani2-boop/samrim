@@ -42,8 +42,15 @@ func TestFreshReelsMediaMigration(t *testing.T) {
 		if err := db.QueryRowContext(ctx, "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid='dsh.discovery_content'::regclass AND conname='discovery_content_partner_source_chk'").Scan(&definition); err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(definition, "source_store_id") || !strings.Contains(definition, "SHORT_FORM") {
-			t.Fatalf("missing Store-scoped reel constraint: %s", definition)
+		if !strings.Contains(definition, "source_store_id") || !strings.Contains(definition, "SHORT_FORM") || !strings.Contains(definition, "BANNER") {
+			t.Fatalf("missing Store-scoped video/banner constraint: %s", definition)
+		}
+		var bannerEnabledDefault string
+		if err := db.QueryRowContext(ctx, `SELECT COALESCE(column_default,'') FROM information_schema.columns WHERE table_schema='dsh' AND table_name='discovery_content' AND column_name='partner_enabled'`).Scan(&bannerEnabledDefault); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(bannerEnabledDefault, "true") {
+			t.Fatalf("missing default Partner-owned banner visibility: %s", bannerEnabledDefault)
 		}
 
 		insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{ID: "reel-store-a", PartnerActorID: "reel-actor-a", Name: "Reel Store A"})

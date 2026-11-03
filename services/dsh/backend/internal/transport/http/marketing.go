@@ -53,6 +53,7 @@ func (s *MarketingServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/client/marketing-consent/{channel}", s.changeClientMarketingConsent)
 	mux.HandleFunc("GET /dsh/public/promotions", s.listPublicPromotions)
 	mux.HandleFunc("GET /dsh/public/discovery-content", s.listPublicDiscoveryContent)
+	mux.HandleFunc("GET /dsh/public/stores/{storeId}/banners", s.listPublicStoreBanners)
 	mux.HandleFunc("GET /dsh/public/banner-presentation", s.readPublicBannerPresentation)
 	mux.HandleFunc("GET /dsh/operator/marketing/banner-presentation", s.readOperatorBannerPresentation)
 	mux.HandleFunc("PUT /dsh/operator/marketing/banner-presentation", s.setOperatorBannerPresentation)
@@ -82,6 +83,8 @@ func (s *MarketingServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/operator/discovery-content/analytics", s.listOperatorDiscoveryContentAnalytics)
 	mux.HandleFunc("POST /dsh/operator/discovery-content", s.createOperatorDiscoveryContent)
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/discovery-content", s.listPartnerStoreDiscoveryContent)
+	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/banners", s.listPartnerStoreBanners)
+	mux.HandleFunc("POST /dsh/partner/stores/{storeId}/banners/{contentId}/visibility", s.setPartnerStoreBannerVisibility)
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/discovery-content/{contentId}/analytics", s.listPartnerStoreContentAnalytics)
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/discovery-content/summary", s.readPartnerStoreContentSummary)
 	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/discovery-content/summary", s.readOperatorStoreContentSummary)
@@ -700,8 +703,8 @@ func (s *MarketingServer) createDiscoveryContentWithMedia(w http.ResponseWriter,
 	// The session must authorize the Store, then the database verifies ownership
 	// of each destination before any video transcoding or media writes.
 	if partnerStoreID != "" {
-		if input.Kind != "SHORT_FORM" {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "partners may submit only short-form reels")
+		if input.Kind != "SHORT_FORM" && input.Kind != "BANNER" {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "partners may submit only Store banners or short-form reels")
 			return
 		}
 		owned, err := postgres.PartnerReelTargetBelongsToStore(r.Context(), s.db, partnerStoreID, string(input.TargetType), input.TargetID)
@@ -710,7 +713,7 @@ func (s *MarketingServer) createDiscoveryContentWithMedia(w http.ResponseWriter,
 			return
 		}
 		if !owned {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "reel target does not belong to the authorized Store")
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "content target does not belong to the authorized Store")
 			return
 		}
 	}
@@ -984,7 +987,7 @@ func toPublicPromotionView(item postgres.PromotionRecord) contract.PublicPromoti
 }
 
 func toDiscoveryContentView(item postgres.DiscoveryContentRecord) contract.DiscoveryContentView {
-	return contract.DiscoveryContentView{ID: item.ID, Kind: contract.DiscoveryContentKind(item.Kind), TitleAr: item.TitleAr, BodyAr: item.BodyAr, MediaUri: item.MediaURI, MediaKind: item.MediaKind, PosterUri: item.PosterURI, TargetType: contract.DiscoveryContentTargetType(item.TargetType), TargetID: item.TargetID, ServiceCityID: item.ServiceCityID, State: contract.PromotionState(item.State), StartsAt: item.StartsAt, EndsAt: item.EndsAt, Ordinal: item.Ordinal, Version: item.Version, CreatedByActorID: item.CreatedByActorID, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return contract.DiscoveryContentView{ID: item.ID, Kind: contract.DiscoveryContentKind(item.Kind), TitleAr: item.TitleAr, BodyAr: item.BodyAr, MediaUri: item.MediaURI, MediaKind: item.MediaKind, PosterUri: item.PosterURI, TargetType: contract.DiscoveryContentTargetType(item.TargetType), TargetID: item.TargetID, ServiceCityID: item.ServiceCityID, State: contract.PromotionState(item.State), StartsAt: item.StartsAt, EndsAt: item.EndsAt, Ordinal: item.Ordinal, Version: item.Version, PartnerEnabled: item.PartnerEnabled, CreatedByActorID: item.CreatedByActorID, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func toPublicDiscoveryContentView(item postgres.DiscoveryContentRecord) contract.PublicDiscoveryContentView {

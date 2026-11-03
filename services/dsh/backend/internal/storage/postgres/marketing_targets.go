@@ -40,7 +40,7 @@ func ResolveDiscoveryContentTarget(ctx context.Context, db *sql.DB, contentID, s
 	if held {
 		return DiscoveryContentTargetResolution{}, ErrDiscoveryContentNotFound
 	}
-	if content.State != "PUBLISHED" || content.MediaURI == "" || content.StartsAt.After(now) || (content.EndsAt != nil && !content.EndsAt.After(now)) || (content.ServiceCityID != "" && content.ServiceCityID != serviceCityID) {
+	if content.State != "PUBLISHED" || (content.Kind == "BANNER" && content.SourceStoreID != "" && !content.PartnerEnabled) || content.MediaURI == "" || content.StartsAt.After(now) || (content.EndsAt != nil && !content.EndsAt.After(now)) || (content.ServiceCityID != "" && content.ServiceCityID != serviceCityID) {
 		return DiscoveryContentTargetResolution{}, ErrDiscoveryContentNotFound
 	}
 	result, err := resolveDiscoveryContentTarget(ctx, db, content.TargetType, content.TargetID, serviceCityID, content.SourceStoreID, now)

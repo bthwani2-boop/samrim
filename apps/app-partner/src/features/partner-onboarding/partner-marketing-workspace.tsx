@@ -5,13 +5,14 @@ import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { PartnerStoreReels } from "../store-offer/partner-store-reels";
+import { PartnerStoreBanners } from "../store-offer/partner-store-banners";
 import { PartnerStoreMarketingSummary } from "./partner-marketing-summary";
 import { StorePromotionsCard } from "../store-offer/store-promotions";
 
-export type PartnerMarketingView = "overview" | "offers" | "campaigns" | "content";
+export type PartnerMarketingView = "overview" | "offers" | "campaigns" | "content" | "banners";
 
 export function parsePartnerMarketingView(value: string | undefined): PartnerMarketingView {
-  return value === "offers" || value === "campaigns" || value === "content" ? value : "overview";
+  return value === "offers" || value === "campaigns" || value === "content" || value === "banners" ? value : "overview";
 }
 
 const sections: ReadonlyArray<Readonly<{
@@ -21,6 +22,7 @@ const sections: ReadonlyArray<Readonly<{
   { id: "offers", label: "العروض والقسائم", hint: "خصم ونطاق وجدول وحد استخدام", icon: "offers" },
   { id: "campaigns", label: "حملات المنصة", hint: "مراجعة الأهلية وشروط المشاركة", icon: "success" },
   { id: "content", label: "مقاطع المتجر", hint: "محتوى أصلي يمر بمراجعة النشر", icon: "play" },
+  { id: "banners", label: "بنرات المتجر", hint: "صور متحركة بجدول ومراجعة ونطاق خاص بمتجرك", icon: "store" },
 ];
 
 export function PartnerMarketingWorkspace({
@@ -64,7 +66,8 @@ export function PartnerMarketingWorkspace({
       </Pressable>)}
     </View>
     {view === "overview" ? <PartnerStoreMarketingSummary key={storeID} storeId={storeID}/> : null}
-    {view === "content" ? <PartnerStoreReels key={storeID} storeId={storeID} storeName={storeName} /> :
+    {view === "banners" ? <PartnerStoreBanners key={storeID} storeId={storeID} storeName={storeName} /> :
+      view === "content" ? <PartnerStoreReels key={storeID} storeId={storeID} storeName={storeName} /> :
       <StorePromotionsCard key={storeID} storeID={storeID} verticalID={verticalID} mode={view} />}
     {view === "overview" ? <Text style={styles.note}>إحصاءات المقاطع أعلاه أحداث فعلية وليست تقديرًا للربح أو رسومًا مفروضة. أي خصم يُنشأ بتمويل الشريك يخضع لقواعد الأهلية والتسوية القائمة، والمقاطع تُنشر بعد موافقة العمليات.</Text> : null}
   </View>;

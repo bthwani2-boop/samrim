@@ -18,9 +18,11 @@ DSH owns content identity, placement/eligibility, target relation, publication l
 
 - content targets canonical Store/Catalog/promotion destinations or explicit bounded informational targets;
 - discovery content may target admitted canonical `STORE`, `PRODUCT`, `CATEGORY` or `PROMOTION` destinations as appropriate to its kind; DSH validates relation and scope;
-- Partner-sourced `SHORT_FORM` specifically targets a `STORE`, `PRODUCT` or `PROMOTION` belonging to the authorized source Store; `CATEGORY` is not an admitted Partner short-form destination;
+- Partner-sourced `SHORT_FORM` and in-Store image `BANNER` specifically target a `STORE`, `PRODUCT` or `PROMOTION` belonging to the authorized source Store; `CATEGORY` is not an admitted Partner-owned destination;
 - customer visibility requires the applicable review/approval and publication transition;
-- an authenticated Partner with the Store-scoped `promotions` grant may submit a `SHORT_FORM` draft only with `source_store_id` bound to the authorized Store and an eligible destination belonging to it; the Operator retains publication authority;
+- an authenticated Partner with the Store-scoped `promotions` grant may submit a `SHORT_FORM` or image `BANNER` draft only with `source_store_id` bound to the authorized Store and an eligible destination belonging to it; the Operator retains publication authority;
+- the platform-wide homepage banner is authored/published by Marketing Operators and excludes Partner-sourced Store media; the customer Store banner reads only the authorized Store’s published, approved, within-window images and never fills empty slots with ordinary products;
+- the Partner may hide or restore its own approved Store banner independently of Operator publication, but cannot publish an unapproved draft or override an Operator pause; independent Partner display state and version are owned by DSH;
 - SHORT_FORM MP4 media is bounded to 10 MiB input and 30 seconds, normalized to mobile-friendly H.264/AAC and accompanied by an immutable JPEG poster in the existing DSH media owner;
 - normalization failures block publication, and cleanup removes both the normalized video and derived poster;
 - app-local hard-coded content is not publication authority;

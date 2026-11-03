@@ -1283,6 +1283,13 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalizedCity) throw new Error("DSH_SERVICE_CITY_REQUIRED");
       return publicRequest<DiscoveryContentListResponse>(`${dshOperationPaths.listPublicDiscoveryContent.path}?${new URLSearchParams({ serviceCityId: normalizedCity }).toString()}`);
     },
+    async listPublicStoreBanners(storeID: string, serviceCityID: string): Promise<DiscoveryContentListResponse> {
+      const normalizedStore = storeID.trim();
+      const normalizedCity = serviceCityID.trim();
+      if (!normalizedStore || !normalizedCity) throw new Error("DSH_STORE_BANNER_SCOPE_REQUIRED");
+      const path = dshOperationPaths.listPublicStoreBanners.path.replace("{storeId}", encodeURIComponent(normalizedStore));
+      return publicRequest<DiscoveryContentListResponse>(`${path}?${new URLSearchParams({ serviceCityId: normalizedCity }).toString()}`);
+    },
     async resolvePublicDiscoveryContentTarget(contentID: string, serviceCityID: string): Promise<DiscoveryContentTargetResolution> {
       const normalizedContent = contentID.trim();
       const normalizedCity = serviceCityID.trim();

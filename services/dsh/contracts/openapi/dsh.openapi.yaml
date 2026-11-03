@@ -539,6 +539,9 @@ paths:
   /dsh/public/discovery-content:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1discovery-content"
 
+  /dsh/public/stores/{storeId}/banners:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1stores~1{storeId}~1banners"
+
   /dsh/public/discovery-content/events:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1discovery-content~1events"
 
@@ -572,6 +575,10 @@ paths:
 
   /dsh/partner/stores/{storeId}/discovery-targets:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1discovery-targets"
+  /dsh/partner/stores/{storeId}/banners:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1banners"
+  /dsh/partner/stores/{storeId}/banners/{contentId}/visibility:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1banners~1{contentId}~1visibility"
   /dsh/partner/stores/{storeId}/discovery-content:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1discovery-content"
   /dsh/partner/stores/{storeId}/discovery-content/{contentId}/analytics:
@@ -10658,6 +10665,17 @@ components:
           type: integer
           minimum: 1
 
+    PartnerStoreBannerVisibilityRequest:
+      type: object
+      additionalProperties: false
+      required: [enabled, expectedVersion]
+      properties:
+        enabled:
+          type: boolean
+        expectedVersion:
+          type: integer
+          minimum: 1
+
     MarketingPublicationRequest:
       type: object
       required: [state]
@@ -10677,7 +10695,7 @@ components:
 
     DiscoveryContentView:
       type: object
-      required: [id, kind, titleAr, bodyAr, mediaUri, mediaKind, targetType, state, startsAt, ordinal, version, createdByActorId, createdAt, updatedAt]
+      required: [id, kind, titleAr, bodyAr, mediaUri, mediaKind, targetType, state, startsAt, ordinal, version, partnerEnabled, createdByActorId, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -10719,6 +10737,9 @@ components:
         version:
           type: integer
           minimum: 1
+        partnerEnabled:
+          type: boolean
+          description: Own Partner Store banner display preference; never overrides Operator publication.
         createdByActorId:
           type: string
         createdAt:

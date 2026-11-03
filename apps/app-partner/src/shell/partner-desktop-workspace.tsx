@@ -14,7 +14,7 @@ type WorkspaceLink = Readonly<{
   href: Href;
   icon: MobileIconName;
   section?: string;
-  marketingView?: "overview" | "offers" | "campaigns" | "content";
+  marketingView?: "overview" | "offers" | "campaigns" | "content" | "banners";
   performanceView?: "overview" | "orders" | "catalog";
 }>;
 
@@ -63,6 +63,7 @@ function DesktopWorkspace({ children }: PropsWithChildren) {
     { label: "العروض والقسائم", href: "/store?section=promotions&view=offers" as Href, icon: "offers", section: "promotions", marketingView: "offers" },
     { label: "حملات المنصة", href: "/store?section=promotions&view=campaigns" as Href, icon: "success", section: "promotions", marketingView: "campaigns" },
     { label: "مقاطع المتجر", href: "/store?section=promotions&view=content" as Href, icon: "play", section: "promotions", marketingView: "content" },
+    { label: "بنرات المتجر", href: "/store?section=promotions&view=banners" as Href, icon: "store", section: "promotions", marketingView: "banners" },
   ] : [];
   const performanceLinks: WorkspaceLink[] = [
     { label: "نظرة عامة", href: "/insights?view=overview" as Href, icon: "trending", performanceView: "overview" },

@@ -17,10 +17,10 @@ test("desktop store exposes published products earlier via a compact hero and st
 });
 
 test("desktop storefront does not duplicate ordinary catalog offers as promotional banners", () => {
-  assert.match(detail, /\.\.\.\(!desktopStorefront \? bannerCatalogOffers\.slice\(0, 5\)\.map/);
-  assert.match(detail, /storeMarketingContents\.map/);
+  assert.match(detail, /listPublicStoreBanners\(storeId, selectedCityID\)/);
+  assert.doesNotMatch(detail, /bannerCatalogOffers/);
   assert.match(detail, /bannerItems\.map/);
-  assert.match(detail, /!desktopStorefront && bannerError && bannerItems\.length === 0/);
+  assert.match(detail, /accessibilityLabel="بنرات المتجر"/);
 });
 
 test("compact desktop retains store status, delivery mode selection and mobile presentation", () => {

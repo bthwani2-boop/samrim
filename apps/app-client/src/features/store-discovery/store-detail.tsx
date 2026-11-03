@@ -20,7 +20,7 @@ import { ClientShareSheet, type ClientShareTarget } from "../sharing/client-shar
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
 import { PromotionCard } from "./promotion-card";
 import { summarizeStoreAvailability } from "./store-availability-summary";
-import { addCatalogOfferToCart, listFavoriteStoreIDs, listFavoriteStoreOfferIDs, listPublicDiscoveryContent, listPublicPromotions, readFavoriteStoreCatalog, readOwnStoreCart, readPublicStoreCatalog, readPublicStoreOrderability, readPublishedStore, setFavoriteStore, setFavoriteStoreOffer } from "./store-discovery-client";
+import { addCatalogOfferToCart, listFavoriteStoreIDs, listFavoriteStoreOfferIDs, listPublicStoreBanners, listPublicPromotions, readFavoriteStoreCatalog, readOwnStoreCart, readPublicStoreCatalog, readPublicStoreOrderability, readPublishedStore, setFavoriteStore, setFavoriteStoreOffer } from "./store-discovery-client";
 import type { GallerySourceRect } from "./store-product-gallery";
 import { StoreProductSheet } from "./store-product-sheet";
 import { StorePublicContactCard } from "./store-public-contact";
@@ -31,9 +31,7 @@ type DetailState =
   | { kind: "ready"; store: PublicStoreView; catalog: PublicCatalogResponse }
   | { kind: "error" };
 
-type StoreBannerItem =
-  | { kind: "content"; key: string; content: PublicDiscoveryContentView }
-  | { kind: "offer"; key: string; offer: PublicCatalogResponse["offers"][number] };
+type StoreBannerItem = Readonly<{ key: string; content: PublicDiscoveryContentView }>;
 
 type CatalogSnapshot = { catalog: PublicCatalogResponse; categoryID: string | null; sectionID: string | null; query: string; productID: string };
 
@@ -69,8 +67,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [catalogTabs, setCatalogTabs] = useState<Partial<Record<number, CatalogSnapshot>>>({});
   const cartReadRequestID = useRef(0);
   const promotionRequestID = useRef(0);
-  const bannerRequestID = useRef(0);
-  const [bannerError, setBannerError] = useState(false);
+
   const [error, setError] = useState("");
   const [isFavorite, setIsFavorite] = useState(false);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
@@ -88,7 +85,6 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const spotlightPromotion = promotionId ? promotions.find(item => item.id === promotionId) : undefined;
   const remainingPromotions = spotlightPromotion ? promotions.filter(item => item.id !== spotlightPromotion.id) : promotions;
   const [marketingContents, setMarketingContents] = useState<ReadonlyArray<PublicDiscoveryContentView>>([]);
-  const [bannerOffers, setBannerOffers] = useState<PublicCatalogResponse["offers"]>([]);
   const [bannerIndex, setBannerIndex] = useState(0);
   const [bannerPaused, setBannerPaused] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -122,37 +118,11 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [cartReadError, setCartReadError] = useState(false);
   const fulfillmentModes = useMemo(() => state.kind === "ready" ? availableCustomerFulfillmentModes(state.store.fulfillmentModes) : [], [state]);
   const mutationBusy = Boolean(busyOfferId);
-  const bannerCatalogOffers = bannerOffers.length > 0 ? bannerOffers : (catalogTabs[0]?.catalog.offers ?? (state.kind === "ready" ? state.catalog.offers : []));
-  // Short-form clips belong in the dedicated Reels viewer, not Store image banners.
-  const storeMarketingContents = marketingContents.filter((item) =>
-    item.kind !== "SHORT_FORM" && (
-      (item.targetType === "STORE" && item.targetId === storeId) ||
-      (item.targetType === "PRODUCT" && [...bannerCatalogOffers, ...(state.kind === "ready" ? state.catalog.offers : [])].some((offer) => offer.productId === item.targetId)) ||
-      (item.targetType === "PROMOTION" && promotions.some((promotion) => promotion.id === item.targetId))
-    )
-  );
-  const bannerItems: StoreBannerItem[] = [
-    ...storeMarketingContents.map((content) => ({ kind: "content" as const, key: "content:" + content.id, content })),
-    ...(!desktopStorefront ? bannerCatalogOffers.slice(0, 5).map((offer) => ({ kind: "offer" as const, key: `offer:${offer.offerId}`, offer })) : []),
-  ].slice(0, 5);
-  // Expose neighboring slides; centering padding is part of the scroll content, not each item.
-  const bannerViewportWidth = Math.max(1, windowWidth - spacing[3] * 2);
-  const bannerWidth = Math.min(220, Math.max(174, Math.round(bannerViewportWidth * 0.60)));
-  const bannerStep = bannerWidth + spacing[1];
-  const bannerSidePadding = spacing[1];
+  // This surface displays only Partner-authored Store banners approved by DSH.
+  const bannerItems: StoreBannerItem[] = marketingContents.filter((content) => content.kind === "BANNER" && content.mediaKind === "image" && !!content.mediaUri).map((content) => ({ key: content.id, content }));
+  const bannerWidth = Math.max(1, windowWidth - spacing[3] * 2);
+  const bannerStep = bannerWidth;
 
-  const loadBanner = useCallback(async () => {
-    if (!selectedCityID) return;
-    const scope = storeRequestID.current;
-    const requestID = ++bannerRequestID.current;
-    setBannerError(false);
-    try {
-      const result = await readPublicStoreCatalog(storeId, selectedCityID, "", "", 5, "", "", "MOST_ORDERED_30_DAYS");
-      if (scope === storeRequestID.current && requestID === bannerRequestID.current) setBannerOffers(result.offers.slice(0, 5));
-    } catch {
-      if (scope === storeRequestID.current && requestID === bannerRequestID.current) setBannerError(true);
-    }
-  }, [selectedCityID, storeId]);
 
   const load = useCallback(async () => {
     const requestID = ++storeRequestID.current;
@@ -171,8 +141,6 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     setLoadingMore(false);
     setPromotions([]);
     setMarketingContents([]);
-    setBannerOffers([]);
-    setBannerError(false);
     setBannerIndex(0);
     setBannerPaused(false);
     bannerRef.current?.scrollTo({ x: 0, animated: false });
@@ -200,7 +168,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       const orderabilityRequest = readPublicStoreOrderability(storeId, selectedCityID)
         .then((result) => result.orderabilityByMode)
         .catch(() => null);
-      const contentRequest = listPublicDiscoveryContent(selectedCityID)
+      const contentRequest = listPublicStoreBanners(storeId, selectedCityID)
         .then((result) => { if (requestID === storeRequestID.current) setMarketingContents(result.items); })
         .catch(() => { if (requestID === storeRequestID.current) setMarketingContents([]); });
       const promotionRequest = listPublicPromotions(selectedCityID, storeId)
@@ -217,7 +185,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         .finally(() => {
           if (promotionID === promotionRequestID.current) setPromotionLoading(false);
         });
-      void loadBanner();
+
       const [store, rawCatalog] = await Promise.all([
         readPublishedStore(storeId, selectedCityID),
         readPublicStoreCatalog(storeId, selectedCityID, categoryId.trim(), "", 20, "", productId.trim()),
@@ -252,7 +220,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       setPromotionLoading(false);
       setState({ kind: "error" });
     }
-  }, [categoryId, loadBanner, productId, selectedCityID, storeId]);
+  }, [categoryId, productId, selectedCityID, storeId]);
 
   function openStorePromotion(code: string) {
     router.push(`/cart/${encodeURIComponent(storeId)}?fulfillmentMode=${encodeURIComponent(selectedFulfillmentMode ?? "")}&promotionCode=${encodeURIComponent(code)}` as Href);
@@ -351,7 +319,6 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       storeRequestID.current += 1;
       catalogRequestID.current += 1;
       promotionRequestID.current += 1;
-      bannerRequestID.current += 1;
       detailRequestID.current += 1;
     };
   }, [load]);
@@ -381,7 +348,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     return () => clearInterval(timer);
   }, [bannerItems.length, bannerPaused, reduceMotion, bannerStep]);
 
-  const visibleContentID = bannerItems[bannerIndex]?.kind === "content" ? bannerItems[bannerIndex].content.id : "";
+  const visibleContentID = bannerItems[bannerIndex]?.content.id ?? "";
   useEffect(() => {
     if (bannerIndex >= bannerItems.length) setBannerIndex(0);
     if (visibleContentID) void recordDiscoveryImpression(visibleContentID);
@@ -595,7 +562,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   }
 
   async function openOfferDetails(offerID: string, mode: "gallery" | "quick" = "gallery", anchorY?: number) {
-    const offer = state.kind === "ready" ? state.catalog.offers.find((item) => item.offerId === offerID) ?? bannerOffers.find((item) => item.offerId === offerID) : undefined;
+    const offer = state.kind === "ready" ? state.catalog.offers.find((item) => item.offerId === offerID) : undefined;
     if (!offer || !selectedCityID) return;
     const requestID = ++detailRequestID.current;
     setAddedOfferId("");
@@ -850,18 +817,35 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         </View>
       ) : null}
 
-          {bannerItems.length ? <View style={styles.bannerBlock}>
-            <ScrollView ref={bannerRef} horizontal snapToInterval={bannerStep} decelerationRate="fast" contentContainerStyle={{ paddingHorizontal: bannerSidePadding, gap: spacing[1] }} onTouchStart={() => setBannerPaused(true)} onTouchEnd={() => setBannerPaused(false)} onMomentumScrollEnd={(event) => { setBannerIndex(Math.max(0, Math.min(bannerItems.length - 1, Math.round(Math.abs(event.nativeEvent.contentOffset.x) / bannerStep)))); setBannerPaused(false); }} showsHorizontalScrollIndicator={false}>
-              {bannerItems.map((item) => item.kind === "content" ? <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={"تفاصيل " + item.content.titleAr} onPress={() => { void recordDiscoveryClick(item.content.id); router.push(("/discovery-content/" + encodeURIComponent(item.content.id)) as Href); }} style={[styles.bannerCard, { width: bannerWidth }]}>
-                {item.content.mediaUri ? <ExpoImage cachePolicy="disk" source={{ uri: item.content.mediaUri }} accessibilityLabel={"صورة " + item.content.titleAr} style={styles.bannerImage} contentFit="cover" /> : <View style={styles.bannerImageFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
-                <View style={styles.bannerCopy}><Text style={styles.bannerItemEyebrow}>جديد المتجر</Text><Text numberOfLines={2} style={styles.bannerProduct}>{item.content.titleAr}</Text><Text numberOfLines={2} style={styles.bannerPrice}>{item.content.bodyAr}</Text></View>
-              </Pressable> : <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={`${bannerOffers.length ? "عرض المنتج الرائج" : "عرض المنتج"} ${item.offer.productName}`} onPress={() => openOfferDetails(item.offer.offerId)} style={[styles.bannerCard, { width: bannerWidth }]}>
-                {item.offer.media[0]?.uri ? <ExpoImage cachePolicy="disk" source={{ uri: item.offer.media[0].uri }} accessibilityLabel={`صورة ${item.offer.productName}`} contentFit="cover" style={styles.bannerImage} /> : <View style={styles.bannerImageFallback}><BthwaniIcon name="trending" color={theme.interactiveText} size={sizing.iconMd} /></View>}
-                <View style={styles.bannerCopy}><Text style={styles.bannerItemEyebrow}>{bannerOffers.length ? "الأكثر طلبًا" : "من منتجات المتجر"}</Text><Text numberOfLines={1} style={styles.bannerProduct}>{item.offer.productName}</Text><Text style={styles.bannerPrice}>{storeMoney(item.offer.priceMinor, item.offer.currency)}</Text></View>
+          {bannerItems.length > 0 ? <View accessibilityLabel="بنرات المتجر" style={styles.bannerBlock}>
+            <ScrollView
+              ref={bannerRef}
+              horizontal
+              snapToInterval={bannerStep}
+              decelerationRate="fast"
+              onTouchStart={() => setBannerPaused(true)}
+              onTouchEnd={() => setBannerPaused(false)}
+              onMomentumScrollEnd={(event) => { setBannerIndex(Math.max(0, Math.min(bannerItems.length - 1, Math.round(Math.abs(event.nativeEvent.contentOffset.x) / bannerStep)))); setBannerPaused(false); }}
+              showsHorizontalScrollIndicator={false}
+            >
+              {bannerItems.map(({ content }) => <Pressable
+                key={content.id}
+                accessibilityRole="button"
+                accessibilityLabel={"عرض بنر المتجر: " + content.titleAr}
+                onPress={() => { void recordDiscoveryClick(content.id); router.push(("/discovery-content/" + encodeURIComponent(content.id)) as Href); }}
+                style={[styles.storeBannerSlide, { width: bannerWidth }]}
+              >
+                <ExpoImage cachePolicy="disk" accessibilityLabel={"صورة بنر " + content.titleAr} source={{ uri: content.mediaUri }} contentFit="cover" style={styles.storeBannerImage} />
+                <View style={styles.storeBannerCaption}>
+                  <Text style={styles.storeBannerTitle} numberOfLines={2}>{content.titleAr}</Text>
+                  {content.bodyAr ? <Text style={styles.storeBannerSubtitle} numberOfLines={1}>{content.bodyAr}</Text> : null}
+                </View>
               </Pressable>)}
             </ScrollView>
+            {bannerItems.length > 1 ? <View style={styles.storeBannerPagination} accessibilityLabel="مؤشر بنرات المتجر">
+              {bannerItems.map((item, index) => <View key={item.key} style={[styles.storeBannerDot, index === bannerIndex && styles.storeBannerDotActive]} />)}
+            </View> : null}
           </View> : null}
-          {!desktopStorefront && bannerError && bannerItems.length === 0 ? <Pressable accessibilityRole="button" accessibilityLabel="إعادة تحميل المنتجات الرائجة" onPress={() => void loadBanner()} style={styles.inlineRecovery}><Text style={styles.bannerPause}>تعذر تحميل المنتجات الرائجة · إعادة المحاولة</Text></Pressable> : null}
 
           {promotionError ? <View style={styles.promotionNotice}><Text accessibilityRole="alert" style={styles.validationError}>تعذر قراءة عروض هذا المتجر؛ يمكنك متابعة الطلب من دونها.</Text><BthwaniButton label="إعادة قراءة العروض" onPress={() => void retryPromotions()} variant="secondary" /></View> : null}
           {!promotionLoading && !promotionError && remainingPromotions.length > 0 ? <>
@@ -882,7 +866,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         ListEmptyComponent={catalogRefreshing ? <View style={styles.pageLoading} accessibilityLabel="جارٍ تحميل منتجات التبويب"><BthwaniSkeleton height={112} /><BthwaniSkeleton height={112} /></View> : undefined}
       />
       <StoreProductSheet
-        galleryOffers={[...state.catalog.offers, ...bannerOffers.filter((offer) => !state.catalog.offers.some((existing) => existing.offerId === offer.offerId))]}
+        galleryOffers={state.catalog.offers}
         onBrowseOffer={(offerID) => { void openOfferDetails(offerID, "gallery"); }}
         isFavorite={(offerID) => favoriteOfferIDs.has(offerID)}
         gallerySourceRect={gallerySourceRect}
