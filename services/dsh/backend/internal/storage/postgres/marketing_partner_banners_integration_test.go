@@ -349,6 +349,22 @@ func TestPartnerStoreBannersFreshDatabaseScopePublicationAndReplay(t *testing.T)
 				t.Fatalf("search cannot select the own Store's eligible destination: query=%q targets=%+v err=%v", tc.query, targets, err)
 			}
 		}
+		for _, tc := range []struct {
+			query string
+			valid bool
+		}{
+			{strings.Repeat("م", 120), true},
+			{strings.Repeat("م", 121), false},
+		} {
+			targets, err := postgres.ListPartnerReelTargets(ctx, db, storeA, tc.query)
+			if tc.valid {
+				if err != nil || len(targets) != 0 {
+					t.Fatalf("120-character Arabic search must be accepted: targets=%+v err=%v", targets, err)
+				}
+			} else if !errors.Is(err, postgres.ErrDiscoveryContentInvalid) {
+				t.Fatalf("121-character Arabic search must be rejected: %v", err)
+			}
+		}
 	}, 4*time.Minute)
 }
 func parseBannerTimeOffset(t *testing.T, s string) time.Duration {

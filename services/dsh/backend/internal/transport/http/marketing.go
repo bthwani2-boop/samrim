@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
@@ -555,8 +556,8 @@ func (s *MarketingServer) listPartnerStoreDiscoveryTargets(w http.ResponseWriter
 		writeMarketingError(w, err)
 		return
 	}
-	if len(r.URL.Query()["search"]) > 1 || len(r.URL.Query().Get("search")) > 120 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "search must be provided once and be at most 120 bytes")
+	if len(r.URL.Query()["search"]) > 1 || utf8.RuneCountInString(r.URL.Query().Get("search")) > 120 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "search must be provided once and be at most 120 characters")
 		return
 	}
 	targets, err := postgres.ListPartnerReelTargets(r.Context(), s.db, r.PathValue("storeId"), r.URL.Query().Get("search"))

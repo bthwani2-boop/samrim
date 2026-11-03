@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"strings"
+	"unicode/utf8"
 )
 
 type PartnerReelTarget struct {
@@ -55,7 +56,7 @@ func ListPartnerReelTargets(ctx context.Context, db *sql.DB, storeID string, sea
 	term := ""
 	if len(search) > 0 {
 		term = strings.TrimSpace(search[0])
-		if len(term) > 120 || len(search) > 1 {
+		if utf8.RuneCountInString(term) > 120 || len(search) > 1 {
 			return nil, ErrDiscoveryContentInvalid
 		}
 	}
