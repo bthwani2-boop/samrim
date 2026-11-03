@@ -75,13 +75,13 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
   const toggleAttempt = useRef<{ id: string; enabled: boolean; version: number; idempotencyKey: string; correlationId: string } | null>(null);
   const request = useRef(0);
 
-  const refresh = useCallback(async (): Promise<boolean> => {
+  const refresh = useCallback(async (expected?: Readonly<{ id: string; enabled?: boolean }>, minimumItems = 0): Promise<boolean> => {
     const current = ++request.current;
     setLoading(true);
     setLoadingMore(false);
     try {
       const token = await getUsableIdentityAccessToken();
-      const headers = { Authorization: `Bearer ${token}`, Accept: "application/json" };
+      const headers = { Authorization: "Bearer " + token, Accept: "application/json" };
       const base = endpoint(storeId);
       const [banners, destinations] = await Promise.allSettled([
         fetch(base + "/banners", { headers }),
@@ -91,8 +91,33 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
       if (banners.status !== "fulfilled" || !banners.value.ok) throw new Error("STORE_BANNERS_READ_FAILED");
       const result = await banners.value.json() as OperatorDiscoveryContentRegistryResponse;
       if (request.current !== current) return false;
-      setItems(result.items);
-      setNextCursor(result.nextCursor ?? "");
+      const visibleItems: Banner[] = [...result.items];
+      let cursor = result.nextCursor ?? "";
+      const visited = new Set<string>();
+      // Preserve loaded pages and confirm the exact created/changed banner,
+      // which may be on later keyset pages. Bound remote reads to 20 pages.
+      for (let page = 1; cursor && page < 20 &&
+        (visibleItems.length < minimumItems || (expected && !visibleItems.some(item => item.id === expected.id))); page++) {
+        if (visited.has(cursor)) throw new Error("STORE_BANNER_CURSOR_STALLED");
+        visited.add(cursor);
+        const next = await fetch(base + "/banners?cursor=" + encodeURIComponent(cursor), { headers });
+        if (!next.ok) throw new Error("STORE_BANNER_READBACK_PAGE_FAILED");
+        const data = await next.json() as OperatorDiscoveryContentRegistryResponse;
+        if (request.current !== current) return false;
+        for (const item of data.items) {
+          if (!visibleItems.some(existing => existing.id === item.id)) visibleItems.push(item);
+        }
+        cursor = data.nextCursor ?? "";
+      }
+      if (expected) {
+        const item = visibleItems.find(item => item.id === expected.id);
+        if (!item || (expected.enabled !== undefined && item.partnerEnabled !== expected.enabled)) {
+          throw new Error("STORE_BANNER_CANONICAL_READBACK_MISMATCH");
+        }
+      }
+      if (cursor && visibleItems.length < minimumItems) throw new Error("STORE_BANNER_LOADED_PAGES_INCOMPLETE");
+      setItems(visibleItems);
+      setNextCursor(cursor);
       if (destinations.status === "fulfilled" && destinations.value.ok) {
         try {
           const selection = await destinations.value.json() as { targets: ReadonlyArray<Target> };
@@ -106,7 +131,7 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
       }
       return true;
     } catch {
-      if (request.current === current) setError("تعذر تحميل بنرات المتجر. تحقق من اتصالك وصلاحية التسويق ثم أعد المحاولة.");
+      if (request.current === current) setError("تعذر تأكيد قراءة بنرات المتجر. لم تُفقد المحاولة؛ أعد القراءة أو تحقق من الاتصال.");
       return false;
     } finally {
       if (request.current === current) setLoading(false);
@@ -121,6 +146,9 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
   }, [refresh,storeId]);
 
   useEffect(() => {
+    // The initial unfiltered target read is owned by refresh(), not by
+    // another mount-time search that can erase its successful results.
+    if (targetType === "STORE") return;
     let active = true;
     const timer = setTimeout(() => {
       void (async () => {
@@ -132,11 +160,14 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
         const result = await response.json() as { targets: ReadonlyArray<Target> };
         if (active) { setTargets(result.targets); setTargetLoadFailed(false); }
       })().catch(() => {
-        if (active) { setTargets([]); setTargetLoadFailed(true); }
+        if (active) {
+          if (targetSearch.trim()) setTargets([]);
+          setTargetLoadFailed(true);
+        }
       });
     }, 300);
     return () => { active=false; clearTimeout(timer); };
-  }, [storeId,targetSearch]);
+  }, [storeId,targetSearch,targetType]);
 
   const loadMore = async () => {
     if (loading || loadingMore || !nextCursor) return;
@@ -205,7 +236,7 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
         method:"POST",headers:{Authorization:`Bearer ${token}`,"Idempotency-Key":attempt.idempotencyKey,"X-Correlation-ID":attempt.correlationId},body:form,
       });
       if (!response.ok) throw new Error("STORE_BANNER_CREATE_FAILED");
-      if (!await refresh()) throw new Error("STORE_BANNER_READBACK_FAILED");
+      if (!await refresh({ id: attempt.contentId }, items.length)) throw new Error("STORE_BANNER_READBACK_FAILED");
       submitAttempt.current=null;setFile(null);setTitle("");setRights(false);setStartsAt("");setEndsAt("");setPriority("0");
       setNotice("تم استلام البنر للمراجعة. سيظهر بعد موافقة تسويق بثواني وخلال فترة عرضه.");
     } catch {setError("تعذر تأكيد رفع البنر. أعد المحاولة دون تغيير المدخلات للتحقق من نتيجة الطلب.");}
@@ -226,7 +257,7 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
         body:JSON.stringify({enabled,expectedVersion:attempt.version}),
       });
       if (!response.ok) throw new Error("STORE_BANNER_VISIBILITY_FAILED");
-      if (!await refresh()) throw new Error("STORE_BANNER_VISIBILITY_READBACK_FAILED");
+      if (!await refresh({ id: item.id, enabled }, items.length)) throw new Error("STORE_BANNER_VISIBILITY_READBACK_FAILED");
       toggleAttempt.current=null;
       setNotice(enabled?"تم السماح بعرض البنر المعتمد.":"تم إخفاء البنر عن عملاء المتجر.");
     } catch {setError("تعذر تأكيد تغيير عرض البنر. أعد المحاولة أو حدّث القائمة عند حدوث تعارض.");}
@@ -242,7 +273,7 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
       <TextInput style={styles.input} accessibilityLabel="عنوان البنر" placeholder="عنوان البنر" value={title} onChangeText={value=>{setTitle(value);submitAttempt.current=null;}} maxLength={160} editable={!busy}/>
       <Text style={styles.label}>عند الضغط على البنر</Text>
       <View style={styles.buttons}>{(["STORE","PRODUCT","PROMOTION"] as const).map(kind=><Pressable key={kind} accessibilityRole="radio" accessibilityState={{checked:kind===targetType}} onPress={()=>{setTargetType(kind);setTargetId(kind==="STORE"?storeId:"");submitAttempt.current=null;}} style={[styles.chip,targetType===kind&&styles.selected]}><Text style={styles.chipText}>{labels[kind]}</Text></Pressable>)}</View>
-      {targetType!=="STORE"?<TextInput accessibilityLabel="بحث في وجهات البنر" style={styles.input} placeholder="ابحث باسم المنتج أو العرض" value={targetSearch} onChangeText={value=>{targetSearchRef.current=value.trim();setTargetSearch(value);}} maxLength={120}/>:null}
+      {targetType!=="STORE"?<TextInput accessibilityLabel="بحث في وجهات البنر" style={styles.input} placeholder="ابحث باسم المنتج أو العرض" value={targetSearch} onChangeText={value=>{targetSearchRef.current=value.trim();setTargetSearch(value);if (!value.trim()) setTargets([]);}} maxLength={120}/>:null}
       {targetType!=="STORE"?<View style={styles.buttons}>{available.map(t=><Pressable key={t.targetType+t.targetId} accessibilityRole="radio" accessibilityLabel={t.label} accessibilityState={{checked:targetId===t.targetId}} onPress={()=>{setTargetId(t.targetId);submitAttempt.current=null;}} style={[styles.chip,targetId===t.targetId&&styles.selected]}><Text style={styles.chipText} numberOfLines={2}>{t.label}</Text></Pressable>)}{available.length===0?<Text style={styles.body}>{targetLoadFailed?"تعذر قراءة الوجهات. حدّث البنرات وحاول مجددًا.":"لا توجد وجهات مؤهلة في هذا المتجر."}</Text>:null}</View>:null}
       <Text style={styles.body}>أولوية الترتيب: الأصغر يظهر أولًا. المواعيد اختيارية بصيغة 2026-11-03T12:00.</Text>
       <TextInput style={styles.input} accessibilityLabel="ترتيب البنر" placeholder="ترتيب العرض (0 أولًا)" value={priority} onChangeText={value=>{setPriority(value);submitAttempt.current=null;}} keyboardType="numeric"/>
@@ -257,7 +288,7 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
     </View>
     <View style={styles.panel}>
       <Text accessibilityRole="header" style={styles.title}>البنرات المسجلة</Text>
-      <BthwaniButton label="تحديث البنرات" onPress={()=>void refresh()} variant="secondary" disabled={loading||busy||Boolean(pendingID)}/>
+      <BthwaniButton label="تحديث البنرات" onPress={()=>void refresh(undefined, items.length)} variant="secondary" disabled={loading||busy||Boolean(pendingID)}/>
       {loading?<Text style={styles.body}>جارٍ قراءة حالة البنرات...</Text>:null}
       {!loading&&items.length===0?<Text style={styles.body}>لم يُرسل متجرك أي بنرات بعد.</Text>:null}
       {items.map(item=><View key={item.id} style={styles.panel}>

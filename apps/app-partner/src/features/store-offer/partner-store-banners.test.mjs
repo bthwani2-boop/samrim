@@ -22,8 +22,28 @@ test("the same Partner marketing surface exposes Store banners on mobile and web
 
 test("Partner banner attempts survive failed owner readback and are cleared only after it succeeds", () => {
  const ui = source();
- assert.match(ui, /const refresh = useCallback\(async \(\): Promise<boolean> => \{/);
- assert.match(ui, /if \(!await refresh\(\)\) throw new Error\("STORE_BANNER_READBACK_FAILED"\);\s*submitAttempt\.current=null/);
- assert.match(ui, /if \(!await refresh\(\)\) throw new Error\("STORE_BANNER_VISIBILITY_READBACK_FAILED"\);\s*toggleAttempt\.current=null/);
- assert.match(ui, /if \(request\.current !== current\) return false;/);
+ assert.ok(ui.includes('const refresh = useCallback(async (expected?: Readonly'));
+ assert.ok(ui.includes('if (!await refresh({ id: attempt.contentId }, items.length)) throw new Error("STORE_BANNER_READBACK_FAILED");'));
+ assert.ok(ui.includes('if (!await refresh({ id: item.id, enabled }, items.length)) throw new Error("STORE_BANNER_VISIBILITY_READBACK_FAILED");'));
+ assert.ok(ui.includes('if (request.current !== current) return false;'));
+ assert.match(ui, /submitAttempt\.current=null;setFile\(null\)/);
+ assert.match(ui, /toggleAttempt\.current=null;\s*setNotice/);
+});
+
+test("canonical banner readback checks exact changed records across bounded keyset pages", () => {
+ const ui = source();
+ assert.ok(ui.includes('for (let page = 1; cursor && page < 20 &&'));
+ assert.ok(ui.includes('visited.has(cursor)'));
+ assert.ok(ui.includes('"/banners?cursor=" + encodeURIComponent(cursor)'));
+ assert.ok(ui.includes('visibleItems.find(item => item.id === expected.id)'));
+ assert.ok(ui.includes('item.partnerEnabled !== expected.enabled'));
+ assert.ok(ui.includes('STORE_BANNER_CANONICAL_READBACK_MISMATCH'));
+ assert.ok(ui.includes('visibleItems.length < minimumItems'));
+});
+
+test("unfiltered mount does not issue a competing target search", () => {
+ const ui = source();
+ assert.ok(ui.includes('if (targetType === "STORE") return;'));
+ assert.ok(ui.includes('[storeId,targetSearch,targetType]'));
+ assert.ok(ui.includes('if (targetSearch.trim()) setTargets([])'));
 });
