@@ -73,7 +73,6 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const heroCardWidth = Platform.OS === "web" ? Math.max(200, Math.min((discoveryContainerWidth || viewportWidth) - spacing[4], 960)) : viewportWidth;
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<DiscoveryState>({ kind: "loading" });
-  useEffect(() => { onHeroVisibilityChange?.(state.kind === "ready"); }, [onHeroVisibilityChange, state.kind]);
   const [storeFilter, setStoreFilter] = useState<"all" | "newest" | "nearest" | "favorites">("all");
   const [filtersPinned, setFiltersPinned] = useState(false);
   const localScrollOffset = useSharedValue(0);
@@ -411,6 +410,11 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const [shareTarget, setShareTarget] = useState<ClientShareTarget | null>(null);
   const textContent = useMemo(() => marketing.content.filter((item) => !item.mediaUri), [marketing.content]);
   const showHomeMarketing = !searchIsActive && !selectedVerticalID && !selectedCategoryID && !selectedShortcutID;
+  // Only the published layout's colored header or an immersive banner places
+  // a dark surface beneath the mobile status bar.
+  const hasDarkHeroBehindStatusBar = state.kind === "ready" && showHomeMarketing && Boolean(heroHeader) &&
+    (Boolean(publishedLayout?.document) || bannerContent.length > 0);
+  useEffect(() => { onHeroVisibilityChange?.(hasDarkHeroBehindStatusBar); }, [onHeroVisibilityChange, hasDarkHeroBehindStatusBar]);
   const homeCampaignContent = <>
       {showHomeMarketing ? <View style={styles.deliveryStrip} accessibilityLabel="معلومات التوصيل والعروض">
         <View style={styles.deliveryStripIcon}><BthwaniIcon name="cart" color="#FFFFFF" size={sizing.iconLg}/></View>
@@ -567,6 +571,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     switch (section.id) {
       case "hero": {
         const slide = layoutDoc.slides[publishedSlideIndex % layoutDoc.slides.length];
+        const slideTitle = slide?.title.trim() || title;
+        const slideDescription = slide?.description.trim() || section.description.trim();
         return <View key={section.id} accessibilityLabel={title || "العرض الرئيسي"}>
           {bannerContent.length ? <View style={{ width: heroCardWidth, alignSelf: "center" }}>
             <LoopingHeroBanner screenActive={isScreenActive} presentation={bannerPresentation}
@@ -579,8 +585,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
             minHeight: layoutDoc.heroOptions.height === "tall" ? 170 : layoutDoc.heroOptions.height === "regular" ? 120 : 80,
             alignItems: layoutDoc.heroOptions.align === "center" ? "center" : layoutDoc.heroOptions.align === "end" ? "flex-end" : "flex-start",
           }}>
-            <Text style={{ color: theme.color, fontSize: 21, fontWeight: "700", textAlign: "right" }}>{slide.title || title}</Text>
-            {layoutDoc.heroOptions.showDescription && (slide.description || section.description) ? <Text style={{ color: theme.colorMuted, textAlign: "right" }}>{slide.description || section.description}</Text> : null}
+            <Text style={{ color: theme.color, fontSize: 21, fontWeight: "700", textAlign: "right" }}>{slideTitle}</Text>
+            {layoutDoc.heroOptions.showDescription && slideDescription ? <Text style={{ color: theme.colorMuted, textAlign: "right" }}>{slideDescription}</Text> : null}
             {layoutDoc.heroOptions.showButton && slide.buttonLabel ? <BthwaniButton label={slide.buttonLabel}
               onPress={() => { if (onSearchOpenChange) onSearchOpenChange(true); else router.setParams({ focus: "search", scope: "stores" }); }} /> : null}
             {layoutDoc.heroOptions.showDots && layoutDoc.slides.length > 1 ? <View style={{ flexDirection: "row", gap: spacing[2] }}>

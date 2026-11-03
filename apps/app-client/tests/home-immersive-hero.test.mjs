@@ -70,3 +70,17 @@ test("home search remains available in the immersive and compact headers without
 test("published banner artwork is fully contained in its stage instead of cropping promotional text", () => {
   assert.match(banner, /contentFit="contain"/);
 });
+
+test("status bar is light only while a dark hero surface is actually rendered", () => {
+  assert.match(discovery, /const hasDarkHeroBehindStatusBar = state\.kind === "ready" && showHomeMarketing && Boolean\(heroHeader\)/);
+  assert.match(discovery, /Boolean\(publishedLayout\?\.document\) \|\| bannerContent\.length > 0/);
+  assert.match(discovery, /onHeroVisibilityChange\?\.\(hasDarkHeroBehindStatusBar\)/);
+  assert.doesNotMatch(discovery, /onHeroVisibilityChange\?\.\(state\.kind === "ready"\)/);
+});
+
+test("published hero falls back for whitespace-only slide headings and descriptions", () => {
+  assert.match(discovery, /const slideTitle = slide\?\.title\.trim\(\) \|\| title/);
+  assert.match(discovery, /const slideDescription = slide\?\.description\.trim\(\) \|\| section\.description\.trim\(\)/);
+  assert.match(discovery, /\{slideTitle\}<\/Text>/);
+  assert.match(discovery, /\{slideDescription\}<\/Text>/);
+});
