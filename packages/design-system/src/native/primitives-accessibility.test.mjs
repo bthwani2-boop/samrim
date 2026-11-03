@@ -29,6 +29,13 @@ test("busy customer favorites use the shared disabled control", () => {
   assert.match(customer, /<BthwaniIconButton disabled=\{Boolean\(favoriteOfferBusyID\)\}/);
 });
 
+test("shared selectable chips expose web pressed semantics while leaving radio buttons to their checked state", () => {
+  const chip = source.split("export function BthwaniChip(")[1]?.split("export function BthwaniSearchField(")[0];
+  assert.ok(chip, "shared chip exists");
+  assert.match(chip, /aria-pressed=\{props\.accessibilityRole === "radio" \? undefined : selected\}/);
+  assert.match(chip, /props\.accessibilityRole === "radio" \? \{ checked: selected \} : \{ selected \}/);
+});
+
 test("radio choices announce checked state instead of generic selection across mobile actors", () => {
   assert.match(source, /props\.accessibilityRole === "radio" \? \{ checked: selected \} : \{ selected \}/);
   const radioSurfaces = [
