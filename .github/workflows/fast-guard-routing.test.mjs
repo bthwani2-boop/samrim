@@ -81,3 +81,17 @@ test("governance verification runs in CI even without a Node project change", ()
   const mutant = step.replace("node tools/governance/verify-governance.mjs", "node --version");
   assert.throws(() => assert.match(mutant, command), assert.AssertionError);
 });
+
+// The Sonar scan must reject a red server-side Quality Gate, not just upload analysis.
+test("SonarCloud Quality Gate failure is not silently reported as a successful scan", () => {
+  const sonar = readFileSync(new URL("./sonar-observe.yml", import.meta.url), "utf8");
+  const wait = /^\s+-Dsonar\.qualitygate\.wait=true$/m;
+  assert.match(sonar, /^name: Sonar Quality Gate$/m);
+  assert.match(sonar, /^\s+name: SonarQube Cloud Quality Gate$/m);
+  assert.match(sonar, /uses: SonarSource\/sonarqube-scan-action@[0-9a-f]{40}/);
+  assert.match(sonar, wait);
+  assert.match(sonar, /^\s+-Dsonar\.qualitygate\.timeout=300$/m);
+  assert.doesNotMatch(sonar, /continue-on-error:\s*true/);
+  const mutant = sonar.replace("-Dsonar.qualitygate.wait=true", "-Dsonar.qualitygate.wait=false");
+  assert.throws(() => assert.match(mutant, wait), assert.AssertionError);
+});
