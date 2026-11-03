@@ -35,6 +35,8 @@ type StoreBannerItem = Readonly<{ key: string; content: PublicDiscoveryContentVi
 
 type CatalogSnapshot = { catalog: PublicCatalogResponse; categoryID: string | null; sectionID: string | null; query: string; productID: string };
 
+const EMPTY_GRID_CELL_KEYS = ["empty-grid-cell:1", "empty-grid-cell:2", "empty-grid-cell:3"] as const;
+
 export default function ClientStoreDetail({ storeId, categoryId = "", productId = "", promotionId = "" }: { storeId: string; categoryId?: string; productId?: string; promotionId?: string }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -717,7 +719,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           if (item.kind === "grid") return <GestureDetector gesture={tabSwipeGesture}>
             <View style={styles.gridRow}>
               {item.offers.map((offer) => <View key={offer.offerId} style={styles.gridCell}>{renderOffer(offer, true)}</View>)}
-              {Array.from({ length: gridColumns - item.offers.length }, (_, index) => <View key={"empty-grid-cell:" + index} style={styles.gridCell} />)}
+              {EMPTY_GRID_CELL_KEYS.slice(item.offers.length, gridColumns).map((key) => <View key={key} style={styles.gridCell} />)}
             </View>
           </GestureDetector>;
           if (item.kind === "heading") return <BthwaniSectionHeader title={item.title} subtitle={item.subtitle} />;
