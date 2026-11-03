@@ -141,6 +141,48 @@ func TestPartnerStoreBannersFreshDatabaseScopePublicationAndReplay(t *testing.T)
 		assertPublic(storeA, city, "banner-visible-a")
 		assertPublic(storeB, city, "banner-visible-b")
 		assertPublic(storeA, otherCity)
+		// Real, eligible Store-owned targets prove that an otherwise valid
+		// foreign PRODUCT/PROMOTION can never be displayed in Store A's banner.
+		for index, store := range []string{storeA, storeB} {
+			code := []string{"BANPROOFA", "BANPROOFB"}[index]
+			if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_promotions
+			    (id,code,name_ar,kind,value_minor,starts_at,ends_at,created_by_actor_id,store_id,funding_source,state)
+			    VALUES($1,$2,'عرض بنر تجريبي','FIXED',50,now()-interval '1 hour',now()+interval '1 day','banner-proof-actor',$3,'PARTNER','PUBLISHED')`,
+				store+"-promo", code, store); err != nil {
+				t.Fatalf("create Store-scoped promotion %s: %v", store, err)
+			}
+		}
+		for _, target := range []struct{ kind, own, foreign string }{
+			{"PRODUCT", storeA + "-product", storeB + "-product"},
+			{"PROMOTION", storeA + "-promo", storeB + "-promo"},
+		} {
+			if _, err := db.ExecContext(ctx, "UPDATE dsh.discovery_content SET target_type=$1,target_id=$2 WHERE id='banner-cross-target-a'", target.kind, target.own); err != nil {
+				t.Fatal(err)
+			}
+			ownTargets, err := postgres.ListPublishedStoreBanners(ctx, db, storeA, city)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ownVisible := false
+			for _, item := range ownTargets {
+				ownVisible = ownVisible || item.ID == "banner-cross-target-a"
+			}
+			if !ownVisible {
+				t.Fatalf("valid own-Store %s banner missing", target.kind)
+			}
+			if _, err := db.ExecContext(ctx, "UPDATE dsh.discovery_content SET target_id=$1 WHERE id='banner-cross-target-a'", target.foreign); err != nil {
+				t.Fatal(err)
+			}
+			assertPublic(storeA, city, "banner-visible-a")
+			if _, err := postgres.ResolveDiscoveryContentTarget(ctx, db, "banner-cross-target-a", city); !errors.Is(err, postgres.ErrDiscoveryContentNotFound) {
+				t.Fatalf("foreign Store %s banner stayed navigable: %v", target.kind, err)
+			}
+		}
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.discovery_content SET target_type='STORE',target_id=$1 WHERE id='banner-cross-target-a'", storeB); err != nil {
+			t.Fatal(err)
+		}
+		assertPublic(storeA+"' OR true --", city)
+		assertPublic(storeA, city+"' OR true --")
 		own, err := postgres.ListPartnerStoreBanners(ctx, db, storeA)
 		if err != nil || len(own) != 7 {
 			t.Fatalf("partner Store A list must include only its 7 drafts/approved: count=%d err=%v", len(own), err)

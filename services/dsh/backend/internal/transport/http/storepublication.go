@@ -1,6 +1,7 @@
 package transporthttp
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -583,6 +584,10 @@ func (s *StorePublicationServer) searchPublicCatalog(w http.ResponseWriter, r *h
 	}
 	result, err := s.service.SearchPublicCatalog(r.Context(), serviceCityID, verticalID, categoryID, query, limit, cursor, shortcutID, sort)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			writeError(w, http.StatusGatewayTimeout, "CATALOG_SEARCH_TIMEOUT", "catalog search exceeded its execution budget")
+			return
+		}
 		writeStorePublicationError(w, err)
 		return
 	}

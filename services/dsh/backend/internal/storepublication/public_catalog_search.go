@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
@@ -12,8 +13,13 @@ import (
 // SearchPublicCatalog applies the same live Partner Identity and Store-specific
 // WLT agreement gates used by customer Store discovery. DSH's catalog SQL alone
 // cannot know when either external authority revokes eligibility.
+// The deadline also bounds PostgreSQL scan work for LIKE patterns without
+// extractable trigrams; raw-offer and batch caps cannot bound database work.
 func (s *Service) SearchPublicCatalog(ctx context.Context, serviceCityID, verticalID, categoryID, query string, limit int, cursor string, shortcutScope ...string) (postgres.PublicCatalogSearchRecord, error) {
-	return collectEligiblePublicCatalogOffers(ctx, limit, cursor,
+	const searchBudget = 8 * time.Second // below the API server's 15s response deadline
+	boundedCtx, cancel := context.WithTimeout(ctx, searchBudget)
+	defer cancel()
+	return collectEligiblePublicCatalogOffers(boundedCtx, limit, cursor,
 		func(ctx context.Context, nextLimit int, nextCursor string) (postgres.PublicCatalogSearchRecord, error) {
 			return postgres.SearchPublicCatalog(ctx, s.db, serviceCityID, verticalID, categoryID, query, nextLimit, nextCursor, shortcutScope...)
 		},
