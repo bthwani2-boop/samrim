@@ -50,8 +50,9 @@ export async function listPublicDiscoveryContent(serviceCityID: string): Promise
   return client().listPublicDiscoveryContent(serviceCityID);
 }
 
-export function listPublicStoreBanners(storeID: string, serviceCityID: string): Promise<DiscoveryContentListResponse> {
-  return client().listPublicStoreBanners(storeID, serviceCityID);
+export async function listPublicStoreBanners(storeID: string, serviceCityID: string): Promise<DiscoveryContentListResponse> {
+  // Keep synchronous DSH client setup errors catchable by the caller's Promise rejection handler.
+  return await client().listPublicStoreBanners(storeID, serviceCityID);
 }
 
 export async function resolvePublicDiscoveryContentTarget(contentID: string, serviceCityID: string): Promise<DiscoveryContentTargetResolution> {
