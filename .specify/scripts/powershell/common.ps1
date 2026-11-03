@@ -152,10 +152,26 @@ function Save-FeatureJson {
         New-Item -ItemType Directory -Path $specifyDir -Force | Out-Null
     }
 
-    # Write feature.json
+    # Write a complete file on the same volume and replace it atomically.
+    # Readers must never observe a partial feature selection.
     $json = @{ feature_directory = $FeatureDirectory } | ConvertTo-Json -Compress
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-    [System.IO.File]::WriteAllText($fjPath, $json, $utf8NoBom)
+    $temporaryFile = Join-Path $specifyDir ("feature." + [guid]::NewGuid().ToString('N') + ".tmp")
+    try {
+        [System.IO.File]::WriteAllText($temporaryFile, $json, $utf8NoBom)
+        if (Test-Path -LiteralPath $fjPath -PathType Leaf) {
+            # Windows PowerShell 5 / .NET Framework requires a real backup path.
+            $backupFile = Join-Path $specifyDir ("feature." + [guid]::NewGuid().ToString('N') + ".bak")
+            [System.IO.File]::Replace($temporaryFile, $fjPath, $backupFile)
+            Remove-Item -LiteralPath $backupFile -Force
+        } else {
+            [System.IO.File]::Move($temporaryFile, $fjPath)
+        }
+    } finally {
+        if (Test-Path -LiteralPath $temporaryFile) {
+            Remove-Item -LiteralPath $temporaryFile -Force
+        }
+    }
 }
 
 function Get-FeaturePathsEnv {
@@ -331,20 +347,35 @@ function Get-Python3Command {
     # kept as a deprecated fallback (still used by update-agent-context.sh).
     $override = if ($env:SPECKIT_PYTHON_EXECUTABLE) { $env:SPECKIT_PYTHON_EXECUTABLE } else { $env:SPECKIT_PYTHON }
     if ($override -and (Get-Command $override -ErrorAction SilentlyContinue)) {
-        $ver = & $override --version 2>&1
-        if ($ver -match 'Python 3') {
-            & $override -c 'import yaml' *> $null
-            if ($LASTEXITCODE -eq 0) { return @($override) }
+        try {
+            $ver = & $override --version 2>&1
+            if ($LASTEXITCODE -eq 0 -and $ver -match 'Python 3') {
+                & $override -c 'import yaml' *> $null
+                if ($LASTEXITCODE -eq 0) { return @($override) }
+            }
+        } catch { # Inoperable configured interpreter; try usable fallbacks.
         }
     }
-    if (Get-Command python3 -ErrorAction SilentlyContinue) { return @('python3') }
-    if (Get-Command python -ErrorAction SilentlyContinue) {
-        $ver = & python --version 2>&1
-        if ($ver -match 'Python 3') { return @('python') }
+    foreach ($candidate in @('python3', 'python')) {
+        if (-not (Get-Command $candidate -ErrorAction SilentlyContinue)) { continue }
+        try {
+            $ver = & $candidate --version 2>&1
+            if ($LASTEXITCODE -ne 0 -or $ver -notmatch 'Python 3') { continue }
+            & $candidate -c 'import yaml' *> $null
+            if ($LASTEXITCODE -eq 0) { return @($candidate) }
+        } catch { # Windows Store execution aliases can exist but not be usable.
+            continue
+        }
     }
     if (Get-Command py -ErrorAction SilentlyContinue) {
-        $ver = & py -3 --version 2>&1
-        if ($ver -match 'Python 3') { return @('py', '-3') }
+        try {
+            $ver = & py -3 --version 2>&1
+            if ($LASTEXITCODE -eq 0 -and $ver -match 'Python 3') {
+                & py -3 -c 'import yaml' *> $null
+                if ($LASTEXITCODE -eq 0) { return @('py', '-3') }
+            }
+        } catch { # Invalid launcher should not hide other resolved candidates.
+        }
     }
     return $null
 }
@@ -560,9 +591,11 @@ function Resolve-TemplateContent {
     $presetsDir = Join-Path $RepoRoot '.specify/presets'
     if (Test-Path $presetsDir) {
         $registryFile = Join-Path $presetsDir '.registry'
+        $registryPresent = @(Get-ChildItem -LiteralPath $presetsDir -Force -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -ceq '.registry' }).Count -gt 0
         $sortedPresets = @()
         $registryParsed = $false
-        if (Test-Path $registryFile) {
+        if ($registryPresent) {
             try {
                 $registryData = [System.IO.File]::ReadAllText($registryFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
                 if ($null -eq $registryData -or $registryData -isnot [PSCustomObject]) {
@@ -602,7 +635,10 @@ function Resolve-TemplateContent {
         }
 
         if (-not $registryParsed) {
-            $sortedPresets = Get-ChildItem -Path $presetsDir -Directory -ErrorAction SilentlyContinue |
+            if ($registryPresent) {
+                throw 'Installed preset registry is unreadable; disabled presets cannot become active'
+            }
+            $sortedPresets = Get-ChildItem -LiteralPath $presetsDir -Directory -ErrorAction SilentlyContinue |
                 Where-Object { $_.Name -cmatch '^[a-z0-9-]+$' } |
                 Sort-Object Name |
                 ForEach-Object { $_.Name }
