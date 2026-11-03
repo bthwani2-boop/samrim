@@ -47,9 +47,14 @@ async function verify({target, selector}) {
       });
       await page.waitForLoadState("networkidle", {timeout: 4500}).catch(() => {});
       await page.waitForTimeout(450); // allow client-side auth redirects to settle
+      // Expo and other client-rendered protected views can hydrate after the
+      // document loads; verify the signed-in selector after a bounded wait.
+      const hasSelector = selector
+        ? await page.locator(selector).first().waitFor({state: "visible", timeout: 10000}).then(() => true, () => false)
+        : true;
+      // Validate the destination and login form after client-side hydration.
       const finalUrl = new URL(page.url());
       const passwordForm = await page.locator('input[type="password"]').count();
-      const hasSelector = selector ? await page.locator(selector).first().isVisible() : true;
       if (
         finalUrl.origin !== target.origin ||
         finalUrl.pathname.replace(/\/+$/, "") !== target.pathname.replace(/\/+$/, "") ||
