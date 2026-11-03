@@ -347,7 +347,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     return state.stores;
   }, [state, storeFilter]);
 
-  let directoryStatusKind: "loading" | "error" | "empty" = "empty";
+  let directoryStatusKind: "loading" | "error" | "empty" | "filtered" = selectedVerticalID || selectedShortcutID || directoryFavoritesOnly ? "filtered" : "empty";
   if (directoryLoading || state.kind === "loading") directoryStatusKind = "loading";
   else if (directoryError || state.kind === "error") directoryStatusKind = "error";
 
@@ -845,7 +845,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         index={index}
         compact={Platform.OS !== "web" && gridColumns === 3}
       /></View>}
-      ListEmptyComponent={directoryMode && (!layoutDoc || showPublishedStores) ? <StoreDirectoryStatus hasServiceCity={Boolean(selectedCityID)} kind={directoryStatusKind} query={query} selectedCategory={Boolean(selectedCategoryID)} onRetry={() => void load()} onClearSearch={() => { if (onSearchQueryChange) onSearchQueryChange(""); else router.setParams({ q: "" }); }} onClearCategory={() => selectCategory("")} /> : undefined}
+      ListEmptyComponent={directoryMode && (!layoutDoc || showPublishedStores) ? <StoreDirectoryStatus hasServiceCity={Boolean(selectedCityID)} kind={directoryStatusKind} query={query} selectedCategory={Boolean(selectedCategoryID)} favoritesOnly={directoryFavoritesOnly} onClearFilters={() => { selectVertical(""); setStoreFilter("all"); }} onRetry={() => void load()} onClearSearch={() => { if (onSearchQueryChange) onSearchQueryChange(""); else router.setParams({ q: "" }); }} onClearCategory={() => selectCategory("")} /> : undefined}
       ListFooterComponent={<View style={styles.footer}>
       {layoutDoc ? publishedAfterStores.map(renderPublishedSection) : null}
       {!layoutDoc && showHomeMarketing && hasMarketingItems ? <View accessibilityLabel="العروض ومحتوى الاكتشاف" style={styles.marketingBlock}>
@@ -997,7 +997,7 @@ function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selec
   </View>;
 }
 
-function StoreDirectoryStatus({ hasServiceCity, kind, query, selectedCategory, onRetry, onClearSearch, onClearCategory }: { hasServiceCity: boolean; kind: "loading" | "error" | "empty"; query: string; selectedCategory: boolean; onRetry: () => void; onClearSearch: () => void; onClearCategory: () => void }) {
+function StoreDirectoryStatus({ hasServiceCity, kind, query, selectedCategory, favoritesOnly, onRetry, onClearSearch, onClearCategory, onClearFilters }: { hasServiceCity: boolean; kind: "loading" | "error" | "empty" | "filtered"; query: string; selectedCategory: boolean; favoritesOnly: boolean; onRetry: () => void; onClearSearch: () => void; onClearCategory: () => void; onClearFilters: () => void }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   if (!hasServiceCity) return <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="location" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>اختر مدينة الخدمة</Text><Text style={styles.muted}>أغلق البحث ثم اختر المدينة من أعلى الشاشة لعرض المتاجر المتاحة فيها.</Text></BthwaniSurface>;
@@ -1008,14 +1008,14 @@ function StoreDirectoryStatus({ hasServiceCity, kind, query, selectedCategory, o
   if (query.trim()) {
     emptyTitle = "لا توجد نتائج بهذا الاسم";
     emptyDescription = "جرّب اسمًا أقصر أو امسح البحث لعرض كل المتاجر.";
-  } else if (selectedCategory) {
+  } else if (selectedCategory && !favoritesOnly) {
     emptyTitle = "لا توجد متاجر ضمن هذه الفئة";
     emptyDescription = "امسح الفئة لعرض المتاجر الأخرى المتاحة في مدينتك.";
   } else if (kind === "empty") {
     emptyTitle = "لا توجد متاجر منشورة للطلب حاليًا";
     emptyDescription = "يمكنك البحث عن المنتجات المتاحة في مدينة الخدمة.";
   }
-  return <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>{emptyTitle}</Text><Text style={styles.muted}>{emptyDescription}</Text>{query.trim() ? <BthwaniButton label="مسح البحث" onPress={onClearSearch} variant="quiet" /> : null}{selectedCategory ? <BthwaniButton label="مسح الفئة" onPress={onClearCategory} variant="quiet" /> : null}</BthwaniSurface>;
+  return <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>{emptyTitle}</Text><Text style={styles.muted}>{emptyDescription}</Text>{query.trim() ? <BthwaniButton label="مسح البحث" onPress={onClearSearch} variant="quiet" /> : null}{selectedCategory ? <BthwaniButton label="مسح الفئة" onPress={onClearCategory} variant="quiet" /> : null}{kind === "filtered" ? <BthwaniButton label="إزالة الفلاتر" onPress={onClearFilters} variant="quiet" /> : null}</BthwaniSurface>;
 }
 
 

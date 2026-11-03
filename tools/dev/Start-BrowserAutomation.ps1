@@ -31,6 +31,24 @@ function Test-AccountIndex {
     return 'PROFILE_EMAIL_NOT_FOUND'
 }
 
+# Compare the literal Chrome --user-data-dir value, not a substring of a
+# command line (a suffixed profile could otherwise steal an authenticated CDP).
+function Test-ExactBrowserProfile {
+    param([string]$CommandLine, [string]$ProfileDir)
+    if (-not $CommandLine -or -not $ProfileDir) { return $false }
+    $arguments = [regex]::Matches($CommandLine, '(?i)(?:^|\s)--user-data-dir=(?:"(?<quoted>[^"]+)"|(?<bare>\S+))(?=\s|$)')
+    if ($arguments.Count -ne 1) { return $false }
+    $argument = $arguments[0]
+    $value = if ($argument.Groups['quoted'].Success) { $argument.Groups['quoted'].Value } else { $argument.Groups['bare'].Value }
+    try {
+        $actual = [IO.Path]::GetFullPath($value).TrimEnd([char[]]@('\','/'))
+        $expected = [IO.Path]::GetFullPath($ProfileDir).TrimEnd([char[]]@('\','/'))
+        return [string]::Equals($actual, $expected, [StringComparison]::OrdinalIgnoreCase)
+    } catch {
+        return $false
+    }
+}
+
 function Test-CdpEndpoint {
     param([string]$Name, [string]$Executable, [string]$ProfileDir, [int]$Port)
     $connections = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
@@ -43,7 +61,7 @@ function Test-CdpEndpoint {
         $expected = [System.IO.Path]::GetFileName($Executable)
         if ($owner.Name -ine $expected -or
             -not $owner.CommandLine -or
-            $owner.CommandLine.IndexOf($ProfileDir, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
+            -not (Test-ExactBrowserProfile -CommandLine $owner.CommandLine -ProfileDir $ProfileDir)) {
             throw "$Name CDP_PORT_CONFLICT: $Port is not owned by the expected profile"
         }
     }
@@ -83,7 +101,7 @@ function Start-BThwaniBrowser {
     $ready = Test-CdpEndpoint -Name $Name -Executable $Executable -ProfileDir $ProfileDir -Port $Port
     if (-not $ready) {
         $existing = @(Get-CimInstance Win32_Process -Filter ("Name='" + [IO.Path]::GetFileName($Executable) + "'") |
-            Where-Object { $_.CommandLine -and $_.CommandLine.IndexOf($ProfileDir, [StringComparison]::OrdinalIgnoreCase) -ge 0 })
+            Where-Object { Test-ExactBrowserProfile -CommandLine $_.CommandLine -ProfileDir $ProfileDir })
         if ($existing.Count -gt 0) {
             throw "$Name PROFILE_ALREADY_RUNNING_WITHOUT_CDP: preserve session; close it manually if necessary"
         }
@@ -96,10 +114,16 @@ function Start-BThwaniBrowser {
             ('"' + $TargetUrl + '"')
         )
         Start-Process -FilePath $Executable -ArgumentList $arguments | Out-Null
-        for ($i = 0; $i -lt 20; $i++) {
-            Start-Sleep -Milliseconds 350
-            $ready = Test-CdpEndpoint -Name $Name -Executable $Executable -ProfileDir $ProfileDir -Port $Port
-            if ($ready) { break }
+        # Startup can be slower on the secondary host. Wait for actual CDP
+        # WebSocket readiness, not a fixed number of short polls.
+        $deadline = [Diagnostics.Stopwatch]::StartNew()
+        while (-not $ready -and $deadline.Elapsed -lt [TimeSpan]::FromSeconds(25)) {
+            Start-Sleep -Milliseconds 400
+            try {
+                $ready = Test-CdpEndpoint -Name $Name -Executable $Executable -ProfileDir $ProfileDir -Port $Port
+            } catch {
+                if ($_.Exception.Message -notlike '*CDP_NOT_READY:*') { throw }
+            }
         }
         if (-not $ready) { throw "$Name CDP_START_TIMEOUT: browser launched; do not launch another copy" }
     }

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { nextStoreCommercialAgreementVersion } from "../src/features/partner-onboarding/store-commercial-agreement-version.ts";
 
@@ -39,3 +40,13 @@ test("unknown, missing or internally inconsistent agreement history fails closed
   ];
   for (const agreements of invalid) assert.equal(nextStoreCommercialAgreementVersion(agreements), null);
 });
+
+test("an unknown agreement status offers an explicit readback action even in a read-only view", () => {
+  const source = requireAgreementSource();
+  assert.match(source, /const hasUnknownAgreementStatus = agreements\?\.some/);
+  assert.match(source, /hasUnknownAgreementStatus && !error \? <p role="alert"/);
+  assert.match(source, /إعادة قراءة السجل<\/button>/);
+});
+function requireAgreementSource() {
+  return readFileSync(new URL("../src/features/partner-onboarding/store-commercial-agreement-proposal.tsx", import.meta.url), "utf8");
+}

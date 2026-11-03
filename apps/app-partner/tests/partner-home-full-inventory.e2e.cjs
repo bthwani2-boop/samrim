@@ -32,7 +32,14 @@ async function main() {
     await page.getByText(new Intl.NumberFormat("ar-YE").format(57) + " منتج من عروض المتجر المنشورة", { exact: true }).waitFor({ state: "visible" });
     assert.ok(requests > 0, "canonical full inventory summary not fetched");
     foreign = true;
+    const foreignRead = page.waitForResponse(
+      response => response.url().includes("/inventory-summary") && response.status() === 200,
+      { timeout: 20000 },
+    );
     await page.reload({ waitUntil: "domcontentloaded", timeout: 25000 });
+    const foreignResult = await foreignRead;
+    assert.equal((await foreignResult.json()).summary.storeId, "another-store",
+      "foreign Store readback must arrive before asserting the UI rejects it");
     await page.getByText("تعذر قراءة إجمالي المخزون", { exact: true }).first().waitFor({ state: "visible", timeout: 17000 });
     assert.equal(await page.getByText(new Intl.NumberFormat("ar-YE").format(637), { exact: true }).count(), 0);
     assert.ok(requests > 1, "expected a fresh DSH read after navigation");

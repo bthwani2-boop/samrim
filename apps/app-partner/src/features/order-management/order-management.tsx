@@ -335,6 +335,10 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
           onPress={() => router.setParams({ q: "", orderId: "" })} /> : null}
       </View> : null}
 
+      {!loading && error && normalizedSearch ? <View style={styles.state}>
+        <BthwaniButton label="مسح بحث الطلبات" disabled={Boolean(busy)} variant="quiet" onPress={() => router.setParams({ q: "", orderId: "" })} />
+      </View> : null}
+
       {orders.map((order) => {
         const next = nextState(order);
         const openAdjustments = order.adjustments.filter((adjustment) => adjustment.state === "PROPOSED" || adjustment.state === "FINANCIAL_RECONCILIATION_REQUIRED");

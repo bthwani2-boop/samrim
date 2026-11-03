@@ -38,6 +38,7 @@ export function StoreCommercialAgreementProposal({ storeId, modes, readOnly = tr
   const url = `/api/partners/stores/${encodeURIComponent(storeId)}/commercial-agreements`;
   const nextProposalVersion = agreements ? nextStoreCommercialAgreementVersion(agreements) : null;
   const hasActiveAgreement = agreements?.some(item => item.status === "ACTIVE") ?? false;
+  const hasUnknownAgreementStatus = agreements?.some(item => !["PROPOSED", "PARTNER_ACCEPTED", "ACTIVE", "SUPERSEDED", "FINANCE_REJECTED"].includes(item.status)) ?? false;
 
   const read = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch(url, { cache: "no-store", signal: signal ?? null });
@@ -136,6 +137,7 @@ export function StoreCommercialAgreementProposal({ storeId, modes, readOnly = tr
         ? "تظل الاتفاقية السارية نافذة حتى يقبل الشريك النسخة الجديدة وتعتمدها المالية، دون تعديل الطلبات السابقة."
         : "لا تُستبدل أي اتفاقية معلقة قبل حسمها."}</p>
       {agreements.map(item => <p key={item.agreementId}>النسخة {item.agreementVersion} · {storeCommercialStatusLabel(item)} · {item.commercialModel} {item.commercialModel !== "COMMISSION" ? "· " + item.recurringAmountMinor + " ريال " + item.billingPeriod : ""} · {item.rates.map(rate => labels[rate.fulfillmentMode] + ": " + (rate.commissionRateBps / 100) + "%").join("، ")}</p>)}
+      {hasUnknownAgreementStatus && !error ? <p role="alert" className="identity-error">توجد حالة اتفاق غير معروفة. لا يمكن اقتراح شروط قبل مراجعة السجل. <button className="button button-secondary" type="button" disabled={busy} onClick={() => void read().catch(() => setError("تعذرت إعادة قراءة الاتفاقات."))}>إعادة قراءة السجل</button></p> : null}
       </> : null}
       {!readOnly ? <>
       {nextProposalVersion === null ? <p>لا يمكن تقديم اقتراح أثناء وجود نسخة قيد القبول أو في حالة سجل غير متوقعة. راجع الاتفاقيات مع المالية وأعد القراءة.</p> : <>
