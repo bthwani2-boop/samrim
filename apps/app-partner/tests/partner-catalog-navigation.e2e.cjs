@@ -37,13 +37,13 @@ async function main() {
     await filter.waitFor({state:"visible",timeout:14000});
     await filter.click();
     const stockout=page.getByRole("button",{name:"نفاد المخزون"}).last();
-    assert.equal(await stockout.getAttribute("aria-selected"),"true");
+    assert.equal(await stockout.getAttribute("aria-pressed"),"true");
     await page.getByRole("button",{name:"إغلاق التصفية"}).click();
     await sidebar.getByRole("link",{name:"المنتجات غير المتاحة"}).click();
     await page.waitForURL(url=>url.pathname==="/products"&&url.searchParams.get("filter")==="unavailable",{timeout:12000});
     await filter.click();
     const unavailable=page.getByRole("button",{name:"غير المتاحة"}).last();
-    assert.equal(await unavailable.getAttribute("aria-selected"),"true");
+    assert.equal(await unavailable.getAttribute("aria-pressed"),"true");
     await page.getByRole("button",{name:"إغلاق التصفية"}).click();
     const result=await page.evaluate(()=>{
       const side=document.querySelector('[aria-label="التنقل الرئيسي للشريك"]')?.getBoundingClientRect();

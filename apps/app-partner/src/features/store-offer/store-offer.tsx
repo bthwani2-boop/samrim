@@ -1093,7 +1093,7 @@ const theme = useAppearanceTheme();
               <Pressable accessibilityRole="button" accessibilityLabel="إغلاق" onPress={() => setFilterModalOpen(false)}><BthwaniIcon name="close" size={21} color={theme.color} /></Pressable>
             </View>
             {([{ key: "all", label: "كل المنتجات" }, { key: "published", label: "المنشورة والمتاحة" }, { key: "unavailable", label: "غير المتاحة" }, { key: "stockout", label: "نفاد المخزون" }, { key: "hidden", label: "المخفية" }] as const).map((item) =>
-              <Pressable key={item.key} accessibilityRole="button" aria-selected={listFilter === item.key} accessibilityState={{ selected: listFilter === item.key }} onPress={() => { setListFilter(item.key); setFilterModalOpen(false); }} style={[styles.filterModalItem, listFilter === item.key && styles.filterChipActive]}>
+              <Pressable key={item.key} accessibilityRole="button" aria-pressed={listFilter === item.key} accessibilityState={{ selected: listFilter === item.key }} onPress={() => { setListFilter(item.key); setFilterModalOpen(false); }} style={[styles.filterModalItem, listFilter === item.key && styles.filterChipActive]}>
                 <Text style={styles.itemTitle}>{item.label}</Text>
                 {listFilter === item.key ? <BthwaniIcon name="success" color={theme.brandAction} size={18} /> : null}
               </Pressable>)}
