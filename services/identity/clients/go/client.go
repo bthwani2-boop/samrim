@@ -318,7 +318,15 @@ func (c *Client) doWithIdempotency(ctx context.Context, method, pathname, token,
 				Message string `json:"message"`
 			} `json:"error"`
 		}
-		_ = json.NewDecoder(io.LimitReader(response.Body, 64*1024)).Decode(&payload)
+		decodeErr := json.NewDecoder(io.LimitReader(response.Body, 64*1024)).Decode(&payload)
+		// A 404 with a stalled response body is not proof the actor is absent.
+		// Preserve the request deadline instead of converting it to ineligibility.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if errors.Is(decodeErr, context.DeadlineExceeded) || errors.Is(decodeErr, context.Canceled) {
+			return decodeErr
+		}
 		return &Error{Status: response.StatusCode, Code: strings.TrimSpace(payload.Error.Code), Message: strings.TrimSpace(payload.Error.Message)}
 	}
 	if target == nil || response.StatusCode == http.StatusNoContent {

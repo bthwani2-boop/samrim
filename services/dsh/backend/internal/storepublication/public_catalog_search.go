@@ -16,7 +16,7 @@ import (
 // The deadline also bounds PostgreSQL scan work for LIKE patterns without
 // extractable trigrams; raw-offer and batch caps cannot bound database work.
 func (s *Service) SearchPublicCatalog(ctx context.Context, serviceCityID, verticalID, categoryID, query string, limit int, cursor string, shortcutScope ...string) (postgres.PublicCatalogSearchRecord, error) {
-	const searchBudget = 8 * time.Second // below the API server's 15s response deadline
+	const searchBudget = 8 * time.Second // cooperative cancellation; no strict wall-clock guarantee
 	boundedCtx, cancel := context.WithTimeout(ctx, searchBudget)
 	defer cancel()
 	return collectEligiblePublicCatalogOffers(boundedCtx, limit, cursor,
@@ -53,13 +53,21 @@ func collectEligiblePublicCatalogOffers(
 	const maxRawOffers = 200
 	const maxBatches = 20
 	result := postgres.PublicCatalogSearchRecord{Offers: []postgres.CatalogStoreOfferRecord{}}
+	// An external authority can return 404 after context cancellation. Never
+	// treat a partial set of already-authorized offers as a successful page.
+	finish := func() (postgres.PublicCatalogSearchRecord, error) {
+		if err := ctx.Err(); err != nil {
+			return postgres.PublicCatalogSearchRecord{}, err
+		}
+		return result, nil
+	}
 	checked := make(map[string]bool)
 	cursor := initialCursor
 	scanned := 0
 	for batch := 0; batch < maxBatches; batch++ {
 		rawLimit := min(limit-len(result.Offers), maxRawOffers-scanned)
 		if rawLimit <= 0 {
-			return result, nil
+			return finish()
 		}
 		raw, err := fetch(ctx, rawLimit, cursor)
 		if err != nil {
@@ -88,9 +96,9 @@ func collectEligiblePublicCatalogOffers(
 			return postgres.PublicCatalogSearchRecord{}, fmt.Errorf("public catalog search cursor did not advance")
 		}
 		if len(result.Offers) >= limit || raw.NextCursor == nil || scanned >= maxRawOffers || batch+1 >= maxBatches {
-			return result, nil
+			return finish()
 		}
 		cursor = *raw.NextCursor
 	}
-	return result, nil
+	return finish()
 }
