@@ -206,12 +206,14 @@ export class IdentitySessionManager {
   }
 
   async getUsableAccessToken(): Promise<string> {
+    if (this.browserLogoutInFlight) throw new Error("IDENTITY_BROWSER_LOGOUT_IN_PROGRESS");
     let currentState = this.stateValue;
     let currentToken = this.tokens?.accessToken;
     if (currentState.kind === "restoring" || (currentState.kind === "authenticated" && !currentToken)) {
       currentState = this.restoreInFlight ? await this.restoreInFlight : await this.restore();
       currentToken = this.tokens?.accessToken;
     }
+    if (this.browserLogoutInFlight) throw new Error("IDENTITY_BROWSER_LOGOUT_IN_PROGRESS");
     if (currentState.kind !== "authenticated" || !currentToken) {
       throw new Error("IDENTITY_ACCESS_TOKEN_UNAVAILABLE");
     }
@@ -222,6 +224,7 @@ export class IdentitySessionManager {
     }
 
     const refreshed = await this.refresh();
+    if (this.browserLogoutInFlight) throw new Error("IDENTITY_BROWSER_LOGOUT_IN_PROGRESS");
     if (refreshed.kind !== "authenticated") {
       throw new Error(`IDENTITY_ACCESS_TOKEN_${refreshed.kind.toUpperCase()}`);
     }
@@ -316,6 +319,7 @@ export class IdentitySessionManager {
   }
 
   async refresh(): Promise<IdentitySessionState> {
+    if (this.browserLogoutInFlight) return this.stateValue;
     if (this.stateValue.kind === "signed_out" && (this.stateValue.reason === "explicit_logout" || this.stateValue.reason === "recovery")) {
       return this.stateValue;
     }
@@ -325,6 +329,7 @@ export class IdentitySessionManager {
     } catch (error) {
       return this.degraded(degradedReason(error));
     }
+    if (this.browserLogoutInFlight) return this.stateValue;
     if (!storedSession) return this.restoreDevelopmentSession("no_local_session");
     this.tokens = storedSession;
     if (storedSession.pendingRefresh) return this.restorePendingRefresh(storedSession);
@@ -339,6 +344,7 @@ export class IdentitySessionManager {
       // for a pending restore response: its Set-Cookie may rotate the token.
       const operation = (async () => {
         if (this.restoreInFlight) await this.restoreInFlight.catch(() => undefined);
+        if (this.refreshInFlight) await this.refreshInFlight.catch(() => undefined);
         await this.client.logout(this.tokens?.accessToken ?? "");
         this.tokens = null;
         await this.removeStorageBestEffort();

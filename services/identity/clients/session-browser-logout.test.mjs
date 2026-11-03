@@ -25,7 +25,7 @@ function testHarness(browser, restoreOverride) {
   const identity = { subject:"test-actor",role:"client",surface:"app-client",expiresAt:"2027-11-01T00:00:00Z",sessionId:"test-session" };
   const pair = { accessToken:"test-access-token-long-enough",refreshToken:"test-refresh-token-long-enough",accessExpiresAt:identity.expiresAt,identity };
   const manager = new IdentitySessionManager(client,storage,async()=> "test-instance-id","client","app-client","bthwani.logout.test",()=> "stable-refresh-request-id-123456",undefined,browser ? (restoreOverride ?? (async()=>pair)) : undefined);
-  return {manager,storage,values,pair,goOnline:()=>{online=true}};
+  return {manager,client,storage,values,pair,goOnline:()=>{online=true}};
 }
 
 test("browser logout while offline preserves live identity and cookie-backed recovery until server revocation",async()=>{
@@ -69,4 +69,67 @@ test("browser logout waits for a pending cookie restore, then remains signed out
   assert.equal(h.values.size,0);
   assert.deepEqual(await h.manager.restore(),{kind:"signed_out",reason:"explicit_logout"},
     "late restore must not resuscitate the browser session");
+});
+
+test("browser logout waits for in-flight refresh and revokes the rotated session", async () => {
+  const h = testHarness(true);
+  await h.manager.adopt(h.pair);
+  let signalStarted;
+  const started = new Promise(resolve => { signalStarted = resolve; });
+  let resolveRefresh;
+  const delayedRefresh = new Promise(resolve => { resolveRefresh = resolve; });
+  const revokedTokens = [];
+  h.client.refresh = async () => {
+    signalStarted();
+    return delayedRefresh;
+  };
+  h.client.logout = async token => { revokedTokens.push(token); };
+  const refreshing = h.manager.refresh();
+  await started;
+  const loggingOut = h.manager.logout();
+  assert.deepEqual(revokedTokens, [], "revocation must wait for the in-flight rotation");
+  const freshPair = {
+    ...h.pair,
+    accessToken: "rotated-access-token-long-enough",
+    refreshToken: "rotated-refresh-token-long-enough",
+  };
+  resolveRefresh(freshPair);
+  await refreshing;
+  await loggingOut;
+  assert.deepEqual(revokedTokens, [freshPair.accessToken], "revoke the latest rotated session");
+  assert.deepEqual(h.manager.state, {kind: "signed_out", reason: "explicit_logout"});
+  assert.equal(h.values.size, 0, "a completed refresh must not restore local credentials");
+});
+
+test("browser refresh and token reads cannot start while remote logout is pending", async () => {
+  const h = testHarness(true);
+  await h.manager.adopt(h.pair);
+  let completeLogout;
+  const remoteLogout = new Promise(resolve => { completeLogout = resolve; });
+  let refreshCalls = 0;
+  h.client.logout = async () => remoteLogout;
+  h.client.refresh = async () => { refreshCalls++; return h.pair; };
+  const loggingOut = h.manager.logout();
+  const duringLogout = await h.manager.refresh();
+  assert.equal(duringLogout.kind, "authenticated", "do not claim sign-out before cookie revocation");
+  await assert.rejects(() => h.manager.getUsableAccessToken(), /IDENTITY_BROWSER_LOGOUT_IN_PROGRESS/);
+  assert.equal(refreshCalls, 0, "a pending logout must not issue another refresh request");
+  completeLogout();
+  await loggingOut;
+  assert.deepEqual(h.manager.state, {kind: "signed_out", reason: "explicit_logout"});
+  assert.equal(h.values.size, 0);
+});
+
+test("failed browser logout releases its guard and permits an authenticated retry", async () => {
+  const h = testHarness(true);
+  await h.manager.adopt(h.pair);
+  await assert.rejects(() => h.manager.logout(), error => error.kind === "network");
+  assert.equal(h.manager.state.kind, "authenticated");
+  const refreshed = { ...h.pair, accessToken: "fresh-after-failed-logout-access" };
+  h.client.refresh = async () => refreshed;
+  assert.equal((await h.manager.refresh()).kind, "authenticated", "refresh is no longer blocked after failure");
+  assert.ok(h.values.size > 0);
+  h.goOnline();
+  await h.manager.logout();
+  assert.deepEqual(h.manager.state, {kind: "signed_out", reason: "explicit_logout"});
 });
