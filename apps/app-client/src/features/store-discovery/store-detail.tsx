@@ -341,7 +341,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     const timer = setInterval(() => {
       setBannerIndex((current) => {
         const next = (current + 1) % bannerItems.length;
-        bannerRef.current?.scrollTo({ x: next * bannerStep, animated: true });
+        bannerRef.current?.scrollTo({ x: (Platform.OS === "web" ? -1 : 1) * next * bannerStep, animated: true });
         return next;
       });
     }, 5000);

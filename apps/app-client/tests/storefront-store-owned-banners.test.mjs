@@ -15,5 +15,6 @@ test("client carousel uses one full-width merchant image and allows no-banner fa
  assert.match(client,/accessibilityLabel="بنرات المتجر"/);
  assert.match(client,/bannerItems\.map/);
  assert.match(client,/reduceMotion/);
+ assert.match(client,/Platform\.OS === "web" \? -1 : 1/);
  assert.doesNotMatch(client,/عرض المنتج الرائج/);
 });
