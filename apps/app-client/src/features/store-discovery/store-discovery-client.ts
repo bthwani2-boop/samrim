@@ -50,7 +50,7 @@ export async function listPublicDiscoveryContent(serviceCityID: string): Promise
   return client().listPublicDiscoveryContent(serviceCityID);
 }
 
-export async function listPublicStoreBanners(storeID: string, serviceCityID: string): Promise<DiscoveryContentListResponse> {
+export function listPublicStoreBanners(storeID: string, serviceCityID: string): Promise<DiscoveryContentListResponse> {
   return client().listPublicStoreBanners(storeID, serviceCityID);
 }
 

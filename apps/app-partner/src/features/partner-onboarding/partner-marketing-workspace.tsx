@@ -1,7 +1,7 @@
 import { typography } from "@bthwani/design-system";
 import { BthwaniIcon, type MobileIconName, useAppearanceTheme } from "@bthwani/design-system/native";
 import { useRouter } from "expo-router";
-import { useMemo } from "react";
+import { type ReactElement, useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { PartnerStoreReels } from "../store-offer/partner-store-reels";
@@ -48,6 +48,14 @@ export function PartnerMarketingWorkspace({
     // Reuse the admitted Store promotion route and preserve the selected Store scope.
     router.setParams({ view: next });
   };
+  let marketingContent: ReactElement;
+  if (view === "banners") {
+    marketingContent = <PartnerStoreBanners key={storeID} storeId={storeID} storeName={storeName} />;
+  } else if (view === "content") {
+    marketingContent = <PartnerStoreReels key={storeID} storeId={storeID} storeName={storeName} />;
+  } else {
+    marketingContent = <StorePromotionsCard key={storeID} storeID={storeID} verticalID={verticalID} mode={view} />;
+  }
   return <View style={styles.root} accessibilityLabel="مساحة تسويق المتجر">
     <View style={styles.banner}>
       <Text style={styles.eyebrow}>مساحة الشريك / التسويق</Text>
@@ -66,9 +74,7 @@ export function PartnerMarketingWorkspace({
       </Pressable>)}
     </View>
     {view === "overview" ? <PartnerStoreMarketingSummary key={storeID} storeId={storeID}/> : null}
-    {view === "banners" ? <PartnerStoreBanners key={storeID} storeId={storeID} storeName={storeName} /> :
-      view === "content" ? <PartnerStoreReels key={storeID} storeId={storeID} storeName={storeName} /> :
-      <StorePromotionsCard key={storeID} storeID={storeID} verticalID={verticalID} mode={view} />}
+    {marketingContent}
     {view === "overview" ? <Text style={styles.note}>إحصاءات المقاطع أعلاه أحداث فعلية وليست تقديرًا للربح أو رسومًا مفروضة. أي خصم يُنشأ بتمويل الشريك يخضع لقواعد الأهلية والتسوية القائمة، والمقاطع تُنشر بعد موافقة العمليات.</Text> : null}
   </View>;
 }
