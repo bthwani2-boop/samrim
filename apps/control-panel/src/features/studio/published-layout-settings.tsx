@@ -45,7 +45,12 @@ export function PublishedLayoutSettings({ shared, dirty }: Readonly<{
           fetch("/api/marketing/studio-layout", { cache: "no-store", signal: controller.signal }),
           fetch("/api/marketing/studio-layout?history=1", { cache: "no-store", signal: controller.signal }),
         ]);
-        if (!live.ok || !past.ok) throw new Error("تعذر قراءة التخطيط المنشور أو سجل الإصدارات.");
+        if (!live.ok || !past.ok) {
+          if (live.status === 404 || past.status === 404) {
+            throw new Error("خدمة نشر تخطيط الرئيسية غير متاحة على إصدار DSH الجاري (404). تحقّق من تحديث الخدمة ثم اضغط «تحديث حالة النشر». ستبقى مسودتك دون تغيير.");
+          }
+          throw new Error("تعذر قراءة التخطيط المنشور أو سجل الإصدارات.");
+        }
         const publication = parseStudioLayoutPublication(await live.json() as unknown);
         const items = parseHistory(await past.json() as unknown);
         if (!publication || !items) throw new Error("استجابة خدمة تخطيط الرئيسية غير صالحة.");

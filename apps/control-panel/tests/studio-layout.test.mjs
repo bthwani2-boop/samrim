@@ -45,3 +45,11 @@ test("published client home consumes only public layout; operator preview remain
   assert.match(publisher, /pending\.current/);
   assert.doesNotMatch(goPublic.slice(goPublic.indexOf("func (s *MarketingServer) readPublicStudioLayout"),goPublic.indexOf("func (s *MarketingServer) readOperatorStudioLayout")), /operatorAuthorized|ReadStudioDraft|PublishedByActorID/);
 });
+
+
+test("missing published layout service gives the operator a recovery action without altering the draft", () => {
+  assert.match(publisher, /live\.status === 404 \|\| past\.status === 404/);
+  assert.match(publisher, /خدمة نشر تخطيط الرئيسية غير متاحة/);
+  assert.match(publisher, /تحديث حالة النشر/);
+  assert.match(publisher, /ستبقى مسودتك دون تغيير/);
+});
