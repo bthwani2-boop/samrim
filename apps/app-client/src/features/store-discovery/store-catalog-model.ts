@@ -7,7 +7,7 @@ export type StoreCatalogRow =
   | { kind: "empty"; key: string; title: string }
   | { kind: "offer"; key: string; offer: PublicCatalogResponse["offers"][number] };
 
-export function buildDisplayCatalogRows(rows: StoreCatalogRow[], gridMode: boolean): StoreCatalogRow[] {
+export function buildDisplayCatalogRows(rows: StoreCatalogRow[], gridMode: boolean, gridColumns = 2): StoreCatalogRow[] {
   if (!gridMode) return rows.filter((row) => row.kind !== "filters");
   const result: StoreCatalogRow[] = [];
   let pending: PublicCatalogResponse["offers"][number][] = [];
@@ -20,7 +20,7 @@ export function buildDisplayCatalogRows(rows: StoreCatalogRow[], gridMode: boole
   for (const row of rows) {
     if (row.kind === "offer") {
       pending.push(row.offer);
-      if (pending.length === 2) flush();
+      if (pending.length === gridColumns) flush();
       continue;
     }
     flush();

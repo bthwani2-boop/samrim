@@ -9,7 +9,7 @@ import * as ExpoLinking from "expo-linking";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Alert, FlatList, Pressable, ScrollView, type ScrollViewInstance, Text, useWindowDimensions, View, type ViewInstance } from "react-native";
+import { AccessibilityInfo, Alert, FlatList, Platform, Pressable, ScrollView, type ScrollViewInstance, Text, useWindowDimensions, View, type ViewInstance } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -58,7 +58,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [quickAnchorY, setQuickAnchorY] = useState<number | undefined>(undefined);
   const [gallerySourceRect, setGallerySourceRect] = useState<GallerySourceRect | undefined>();
   const imageRefs = useRef<Map<string, ViewInstance>>(new Map());
-  const [gridMode, setGridMode] = useState(false);
+  const [userGridMode, setUserGridMode] = useState<boolean | null>(null);
   const detailRequestID = useRef(0);
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogSearchOpen, setCatalogSearchOpen] = useState(false);
@@ -94,6 +94,8 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [reduceMotion, setReduceMotion] = useState(false);
   const bannerRef = useRef<ScrollViewInstance | null>(null);
   const { width: windowWidth } = useWindowDimensions();
+  const gridMode = userGridMode ?? (Platform.OS === "web" && windowWidth >= 1024);
+  const gridColumns = Platform.OS === "web" && windowWidth >= 1200 ? 3 : 2;
   const [promotionLoading, setPromotionLoading] = useState(true);
   const [promotionError, setPromotionError] = useState(false);
   const [favoritesView, setFavoritesView] = useState(false);
@@ -423,7 +425,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   };
   appendCategoryLevel(null, 0);
   const catalogRows = buildCatalogRows(state.catalog, favoritesView, popularView, selectedCategoryID, selectedStoreSectionID, catalogQuery, catalogRefreshing);
-  const visibleCatalogRows = buildDisplayCatalogRows(catalogRows, gridMode);
+  const visibleCatalogRows = buildDisplayCatalogRows(catalogRows, gridMode, gridColumns);
   const switchCatalogTabOnSwipe = (translationX: number) => {
     if (catalogRefreshing || mutationBusy || detailOffer) return;
     const next = activeTab + (translationX < 0 ? 1 : -1);
@@ -639,7 +641,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     if (asGrid) return <BthwaniSurface key={offer.offerId} tone="base" style={[styles.item, styles.gridItem]}>
       <View style={styles.gridImageFrame}>
         <Pressable ref={(node) => { if (node) imageRefs.current.set(offer.offerId, node); else imageRefs.current.delete(offer.offerId); }} accessibilityRole="button" accessibilityLabel={"تكبير صورة " + offer.productName} onPress={() => openGalleryFromImage(offer.offerId)}>
-          {primaryMedia && !failedProductImageIDs.has(offer.offerId) ? <ExpoImage cachePolicy="disk" accessibilityLabel={"صورة " + offer.productName} source={{ uri: primaryMedia.uri }} onError={() => setFailedProductImageIDs((current) => new Set(current).add(offer.offerId))} contentFit="cover" style={styles.gridImage} /> : <View style={[styles.productImagePlaceholder, styles.gridImage]}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /></View>}
+          {primaryMedia && !failedProductImageIDs.has(offer.offerId) ? <ExpoImage cachePolicy="disk" accessibilityLabel={"صورة " + offer.productName} source={{ uri: primaryMedia.uri }} onError={() => setFailedProductImageIDs((current) => new Set(current).add(offer.offerId))} contentFit={Platform.OS === "web" && windowWidth >= 1024 ? "contain" : "cover"} style={styles.gridImage} /> : <View style={[styles.productImagePlaceholder, styles.gridImage]}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /></View>}
         </Pressable>
         <BthwaniIconButton disabled={Boolean(favoriteOfferBusyID)} icon="favorite" label={favoriteOfferIDs.has(offer.offerId) ? "إزالة المنتج من المفضلة" : "إضافة المنتج للمفضلة"} onPress={() => void toggleOfferFavorite(offer.offerId)} size={sizing.controlMd} style={styles.productFavorite} tone={favoriteOfferIDs.has(offer.offerId) ? "primary" : "soft"} />
       </View>
@@ -700,7 +702,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const detailQuantity = detailOffer ? Number(quantities[detailOffer.offerId] ?? detailOffer.quantityMinBaseUnits) : 0;
   const renderCategoryRail = () => (
     <View style={styles.catalogToolbar}>
-      <Pressable accessibilityRole="button" accessibilityLabel={gridMode ? "عرض المنتجات كقائمة" : "عرض المنتجات كمربعات"} accessibilityState={{ selected: gridMode }} onPress={() => setGridMode((current) => !current)} style={styles.layoutToggle}>
+      <Pressable accessibilityRole="button" accessibilityLabel={gridMode ? "عرض المنتجات كقائمة" : "عرض المنتجات كمربعات"} accessibilityState={{ selected: gridMode }} onPress={() => setUserGridMode(!gridMode)} style={styles.layoutToggle}>
         {gridMode ? <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.layoutListGlyph}>{[0, 1, 2].map((index) => <View key={index} style={styles.layoutListLine} />)}</View> : <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.layoutGridGlyph}>{[0, 1, 2, 3].map((index) => <View key={index} style={styles.layoutGridSquare} />)}</View>}
       </Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel="الكل" accessibilityState={{ selected: !favoritesView && !popularView && !selectedCategoryID && !selectedStoreSectionID, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(0)} style={[styles.catalogFilterChip, styles.pinnedAllChip, !favoritesView && !popularView && !selectedCategoryID && !selectedStoreSectionID && styles.catalogFilterChipSelected]}><Text numberOfLines={1} style={[styles.catalogFilterChipLabel, !favoritesView && !popularView && !selectedCategoryID && !selectedStoreSectionID && styles.catalogFilterChipLabelSelected]}>الكل</Text></Pressable>
@@ -734,7 +736,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           if (item.kind === "grid") return <GestureDetector gesture={tabSwipeGesture}>
             <View style={styles.gridRow}>
               {item.offers.map((offer) => <View key={offer.offerId} style={styles.gridCell}>{renderOffer(offer, true)}</View>)}
-              {item.offers.length === 1 ? <View style={styles.gridCell} /> : null}
+              {Array.from({ length: gridColumns - item.offers.length }, (_, index) => <View key={"empty-grid-cell:" + index} style={styles.gridCell} />)}
             </View>
           </GestureDetector>;
           if (item.kind === "heading") return <BthwaniSectionHeader title={item.title} subtitle={item.subtitle} />;
