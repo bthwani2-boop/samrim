@@ -13,7 +13,7 @@
     "contract": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "node --test apps/app-client/tests/home-product-grid.test.mjs"
+        "command": "node --test apps/app-client/tests/home-product-grid.test.mjs apps/app-client/tests/storefront-store-owned-banners.test.mjs"
       }
     },
     "export-smoke": {

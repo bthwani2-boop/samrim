@@ -88,6 +88,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const remainingPromotions = spotlightPromotion ? promotions.filter(item => item.id !== spotlightPromotion.id) : promotions;
   const [marketingContents, setMarketingContents] = useState<ReadonlyArray<PublicDiscoveryContentView>>([]);
   const [bannerError, setBannerError] = useState(false);
+  const bannerRequestID = useRef(0);
   const [bannerIndex, setBannerIndex] = useState(0);
   const [bannerPaused, setBannerPaused] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -109,13 +110,14 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     let active = true;
     if (!storeId || !selectedCityID) return () => { active = false; };
     const refresh = () => {
+      const bannerRequest = ++bannerRequestID.current;
       void readPublicStoreOrderability(storeId, selectedCityID).then((response) => {
         if (active) setOrderabilityByMode(response.orderabilityByMode);
       }).catch(() => { /* Preserve the last confirmed state until DSH is reachable. */ });
       // Revalidate Partner visibility and publication while the Store stays open.
       void listPublicStoreBanners(storeId, selectedCityID).then((response) => {
-        if (active) { setMarketingContents(response.items); setBannerError(false); }
-      }).catch(() => { if (active) setBannerError(true); /* Keep the last confirmed page while DSH is unreachable. */ });
+        if (active && bannerRequest === bannerRequestID.current) { setMarketingContents(response.items); setBannerError(false); }
+      }).catch(() => { if (active && bannerRequest === bannerRequestID.current) setBannerError(true); /* Keep the last confirmed page while DSH is unreachable. */ });
     };
     refresh();
     const interval = setInterval(refresh, 15000);
@@ -147,6 +149,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     setCatalogRefreshing(false);
     setLoadingMore(false);
     setPromotions([]);
+    ++bannerRequestID.current;
     setMarketingContents([]);
     setBannerError(false);
     setBannerIndex(0);
@@ -176,9 +179,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       const orderabilityRequest = readPublicStoreOrderability(storeId, selectedCityID)
         .then((result) => result.orderabilityByMode)
         .catch(() => null);
+      const contentID = ++bannerRequestID.current;
       const contentRequest = listPublicStoreBanners(storeId, selectedCityID)
-        .then((result) => { if (requestID === storeRequestID.current) { setMarketingContents(result.items); setBannerError(false); } })
-        .catch(() => { if (requestID === storeRequestID.current) setBannerError(true); });
+        .then((result) => { if (requestID === storeRequestID.current && contentID === bannerRequestID.current) { setMarketingContents(result.items); setBannerError(false); } })
+        .catch(() => { if (requestID === storeRequestID.current && contentID === bannerRequestID.current) setBannerError(true); });
       const promotionRequest = listPublicPromotions(selectedCityID, storeId)
         .then((result) => {
           if (promotionID !== promotionRequestID.current) return;
@@ -255,13 +259,14 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   async function retryBanners() {
     if (!storeId || !selectedCityID) return;
     const requestID = storeRequestID.current;
+    const bannerRequest = ++bannerRequestID.current;
     try {
       const result = await listPublicStoreBanners(storeId, selectedCityID);
-      if (requestID !== storeRequestID.current) return;
+      if (requestID !== storeRequestID.current || bannerRequest !== bannerRequestID.current) return;
       setMarketingContents(result.items);
       setBannerError(false);
     } catch {
-      if (requestID === storeRequestID.current) setBannerError(true);
+      if (requestID === storeRequestID.current && bannerRequest === bannerRequestID.current) setBannerError(true);
     }
   }
 

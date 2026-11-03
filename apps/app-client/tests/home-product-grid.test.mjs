@@ -49,3 +49,11 @@ test("empty product search offers real catalog-based suggestions with an explici
   assert.match(discovery, /onSearchQueryChange\(name\)/);
   assert.match(discovery, /إعادة تحميل الاقتراحات/);
 });
+
+test("read-only browser price-sort test validates empty and invalid prices before single-offer skip", () => {
+  const source = readFileSync(path.resolve(import.meta.dirname, "./client-discovery-browser.manual.mjs"), "utf8");
+  const empty = source.indexOf("PRICE_SORT_EMPTY_RESULT");
+  const invalid = source.indexOf("PRICE_SORT_INVALID_SERVER_PRICES");
+  const single = source.indexOf("if (payload.offers.length < 2) return false");
+  assert.ok(empty >= 0 && invalid > empty && single > invalid, "empty and malformed prices are failures even when fewer than two offers return");
+});

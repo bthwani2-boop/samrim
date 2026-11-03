@@ -6,10 +6,11 @@ import { chromium, expect } from "@playwright/test";
 async function assertCatalogPriceOrder(response, ascending) {
   const payload = await response.json();
   assert.ok(Array.isArray(payload.offers), "PRICE_SORT_SERVER_RESPONSE_INVALID");
-  if (payload.offers.length < 2) return false;
+  assert.ok(payload.offers.length > 0, "PRICE_SORT_EMPTY_RESULT");
   const prices = payload.offers.map((offer) => offer.priceMinor);
   assert.ok(prices.every((value) => Number.isSafeInteger(value)),
     "PRICE_SORT_INVALID_SERVER_PRICES");
+  if (payload.offers.length < 2) return false;
   const expected = [...prices].sort((a, b) => ascending ? a - b : b - a);
   assert.deepEqual(prices, expected, "PRICE_SORT_SERVER_RESULT_OUT_OF_ORDER");
   return true;

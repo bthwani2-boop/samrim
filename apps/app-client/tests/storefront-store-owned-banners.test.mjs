@@ -26,3 +26,11 @@ test("customer receives recoverable Store banner errors without losing confirmed
  assert.match(client,/async function retryBanners\(\)/);
  assert.doesNotMatch(client,/\.catch\(\(\) => \{ if \(requestID === storeRequestID\.current\) setMarketingContents\(\[\]\); \}\)/);
 });
+
+test("focused banner revalidation ignores older responses and retry supersedes focus refresh",()=>{
+ assert.match(client,/const bannerRequest = \+\+bannerRequestID\.current/);
+ assert.match(client,/active && bannerRequest === bannerRequestID\.current\) \{ setMarketingContents\(response\.items\)/);
+ assert.match(client,/const contentID = \+\+bannerRequestID\.current/);
+ assert.match(client,/contentID === bannerRequestID\.current\) \{ setMarketingContents\(result\.items\)/);
+ assert.match(client,/requestID !== storeRequestID\.current \|\| bannerRequest !== bannerRequestID\.current/);
+});
