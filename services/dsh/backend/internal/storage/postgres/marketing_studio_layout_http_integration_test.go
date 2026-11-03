@@ -157,6 +157,43 @@ func TestStudioLayoutPublicHTTPVersionRollbackAndOperatorPermission(t *testing.T
 			!strings.Contains(history.Body.String(), "RESTORE_DEFAULTS") {
 			t.Fatalf("missing audit history %d %s", history.Code, history.Body.String())
 		}
+		// A legacy publication can predate the current client-renderer allowlist.
+		// Rollback must not expose sections that the current client cannot render.
+		var legacy map[string]any
+		if err := json.Unmarshal(studioFixture(t), &legacy); err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range legacy["sections"].([]any) {
+			section := item.(map[string]any)
+			if section["id"] == "testimonials" {
+				section["visible"] = true
+			}
+		}
+		legacyJSON, err := json.Marshal(legacy)
+		if err != nil {
+			t.Fatal(err)
+		}
+		updated, err := db.ExecContext(ctx,
+			"UPDATE dsh.marketing_studio_layout_events SET result_document_json=$1::jsonb WHERE template_key=$2 AND result_version=$3",
+			string(legacyJSON), postgres.StudioTemplateKey, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rows, err := updated.RowsAffected(); err != nil || rows != 1 {
+			t.Fatalf("expected exactly one legacy fixture, rows=%d err=%v", rows, err)
+		}
+		rejectedRollback := request("PUT", operatorPath,
+			[]byte(`{"action":"ROLLBACK","expectedDraftVersion":0,"targetPublicationVersion":2}`),
+			true, 4, "layout-http-legacy-rollback")
+		if rejectedRollback.Code != http.StatusBadRequest {
+			t.Fatalf("unrenderable historical layout must not be republished: %d %s",
+				rejectedRollback.Code, rejectedRollback.Body.String())
+		}
+		stillPublished := request("GET", publicPath, nil, false, 4, "")
+		if stillPublished.Code != http.StatusOK || !strings.Contains(stillPublished.Body.String(), `"version":4`) {
+			t.Fatalf("rejected rollback changed current publication: %d %s",
+				stillPublished.Code, stillPublished.Body.String())
+		}
 		forbiddenRead := request("GET", operatorPath, nil, false, 4, "")
 		if forbiddenRead.Code != 401 {
 			t.Fatalf("operator read must be private: %d", forbiddenRead.Code)
