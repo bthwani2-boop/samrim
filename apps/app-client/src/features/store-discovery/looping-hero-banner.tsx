@@ -24,7 +24,7 @@ function immersiveSlidePalette(item: PublicDiscoveryContentView): readonly [stri
 
 /** Native-driver images, independent of Android RTL ScrollView offsets. */
 export function LoopingHeroBanner({
-  cardWidth, items, onOpen, label, screenActive, presentation, immersiveHeader,
+  cardWidth, items, onOpen, label, screenActive, presentation, immersiveHeader, compactDesktopHero = false,
 }: {
   cardWidth: number;
   items: ReadonlyArray<PublicDiscoveryContentView>;
@@ -33,6 +33,7 @@ export function LoopingHeroBanner({
   screenActive: boolean;
   presentation: BannerPresentation;
   immersiveHeader?: ReactNode;
+  compactDesktopHero?: boolean;
 }) {
   const [index, setIndex] = useState(0);
   const currentIndex = useRef(0);
@@ -52,9 +53,13 @@ export function LoopingHeroBanner({
   // Preserve the square native stage. On web, use the available width without
   // scaling landscape promotional artwork into an oversized hero above the products.
   const mediaHeight = immersive && Platform.OS === "web"
-    ? Math.min(Math.round(cardWidth / 1.75), 384)
+    ? compactDesktopHero
+      ? Math.min(Math.round(cardWidth / 2.8), 320)
+      : Math.min(Math.round(cardWidth / 1.75), 384)
     : Math.round(cardWidth / (immersive ? 2.15 : 1.75));
-  const height = immersive ? (Platform.OS === "web" ? Math.min(cardWidth, mediaHeight + 166) : mediaHeight + 148) : mediaHeight;
+  const height = immersive ? (Platform.OS === "web"
+    ? Math.min(cardWidth, mediaHeight + (compactDesktopHero ? 148 : 166))
+    : mediaHeight + 148) : mediaHeight;
 
   useEffect(() => {
     let mounted = true;

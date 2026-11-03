@@ -199,7 +199,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     navigation: { backgroundColor: theme.surfaceRaised, borderTopColor: theme.borderColorStrong, borderTopWidth: borders.hairline, elevation: 8, minHeight: 84, paddingHorizontal: spacing[3], paddingTop: spacing[2], zIndex: 8 },
     homeNavigation: { backgroundColor: theme.surfaceRaised, borderRadius: radius.round, borderColor: theme.borderColor, borderWidth: borders.hairline, position: "absolute", left: spacing[3], right: spacing[3], bottom: spacing[3], minHeight: 70, paddingTop: spacing[1], paddingHorizontal: spacing[2], elevation: 12 },
     homeNavigationItem: { borderRadius: radius.round, flex: 1, minHeight: sizing.controlLg, paddingHorizontal: spacing[1], paddingVertical: spacing[1] },
-    desktopNavigation: { backgroundColor: theme.surface, borderLeftColor: theme.borderColorStrong, borderLeftWidth: borders.hairline, width: 208, paddingHorizontal: spacing[2], paddingVertical: spacing[4] },
+    desktopNavigation: { backgroundColor: theme.surface, borderLeftColor: theme.borderColorStrong, borderLeftWidth: borders.hairline, width: 176, minWidth: 176, maxWidth: 176, paddingHorizontal: spacing[2], paddingVertical: spacing[4] },
     desktopNavigationItem: { borderRadius: radius.lg, marginVertical: spacing[1], minHeight: sizing.controlLg },
     navigationItem: { borderRadius: radius.lg, flex: 1, minHeight: sizing.controlLg, paddingHorizontal: spacing[2], paddingVertical: spacing[1], transform: [{ translateY: -spacing[4] }] },
     navigationLabel: { ...typography.label, marginTop: spacing[1] },

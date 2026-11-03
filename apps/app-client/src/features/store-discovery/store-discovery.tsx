@@ -66,6 +66,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const selectedCityName = serviceCityDisplayName(selectedCity?.displayNameAr);
   const theme = useAppearanceTheme();
   const { width: viewportWidth } = useWindowDimensions();
+  const desktopWebDiscovery = Platform.OS === "web" && viewportWidth >= 1024;
   const [discoveryContainerWidth, setDiscoveryContainerWidth] = useState(0);
   const webColumns = Platform.OS === "web" ? (viewportWidth >= 1140 ? 3 : viewportWidth >= 730 ? 2 : 1) : viewportWidth >= 360 ? 3 : viewportWidth >= 270 ? 2 : 1;
   const carouselCardWidth = Math.max(200, Math.min(((discoveryContainerWidth || viewportWidth) - spacing[4]) / (Platform.OS === "web" && webColumns >= 2 ? 2 : 1), 560));
@@ -409,6 +410,17 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const [shareTarget, setShareTarget] = useState<ClientShareTarget | null>(null);
   const textContent = useMemo(() => marketing.content.filter((item) => !item.mediaUri), [marketing.content]);
   const showHomeMarketing = !searchIsActive && !selectedVerticalID && !selectedCategoryID && !selectedShortcutID;
+  const homeCampaignContent = <>
+      {showHomeMarketing ? <View style={styles.deliveryStrip} accessibilityLabel="معلومات التوصيل والعروض">
+        <View style={styles.deliveryStripIcon}><BthwaniIcon name="cart" color="#FFFFFF" size={sizing.iconLg}/></View>
+        <View style={styles.deliveryStripCopy}>
+          <Text style={styles.deliveryStripTitle}>التوصيل مع بثواني</Text>
+          <Text style={styles.deliveryStripHint}>تظهر رسوم التوصيل والعروض الفعلية قبل تأكيد الطلب</Text>
+        </View>
+        {marketing.promotions.length ? <View style={styles.deliveryPromoCount} accessibilityLabel={`عدد العروض المنشورة ${marketing.promotions.length}`}><Text style={styles.deliveryPromoText}>{marketing.promotions.length} عروض</Text></View> : null}
+      </View> : null}
+      {showHomeMarketing && marketing.promotions.length > 0 ? <View accessibilityLabel="العرض المنشور" style={styles.featuredPromotion}><PromotionCard promotion={marketing.promotions[0]!} /></View> : null}
+  </>;
 
   async function openReels() {
     if (openingReels) return;
@@ -692,24 +704,16 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
 
       {layoutDoc ? <>{heroHeader ? <View style={{ backgroundColor: theme.brandStructure }}>{heroHeader}</View> : null}{publishedBeforeStores.map(renderPublishedSection)}</> : null}
       {!layoutDoc ? <>
-      {showHomeMarketing && bannerContent.length ? <View style={{ width: heroCardWidth, alignSelf: "center" }}><LoopingHeroBanner screenActive={isScreenActive} presentation={bannerPresentation} cardWidth={heroCardWidth} items={bannerContent} onOpen={(item) => openDiscoveryContent(item.id)} label="البنرات الرئيسية" immersiveHeader={heroHeader} /></View> : heroHeader ?? null}
-      {showHomeMarketing ? <View style={styles.deliveryStrip} accessibilityLabel="معلومات التوصيل والعروض">
-        <View style={styles.deliveryStripIcon}><BthwaniIcon name="cart" color="#FFFFFF" size={sizing.iconLg}/></View>
-        <View style={styles.deliveryStripCopy}>
-          <Text style={styles.deliveryStripTitle}>التوصيل مع بثواني</Text>
-          <Text style={styles.deliveryStripHint}>تظهر رسوم التوصيل والعروض الفعلية قبل تأكيد الطلب</Text>
-        </View>
-        {marketing.promotions.length ? <View style={styles.deliveryPromoCount} accessibilityLabel={`عدد العروض المنشورة ${marketing.promotions.length}`}><Text style={styles.deliveryPromoText}>{marketing.promotions.length} عروض</Text></View> : null}
-      </View> : null}
-      {showHomeMarketing && marketing.promotions.length > 0 ? <View accessibilityLabel="العرض المنشور" style={styles.featuredPromotion}><PromotionCard promotion={marketing.promotions[0]!} /></View> : null}
+      {showHomeMarketing && bannerContent.length ? <View style={{ width: heroCardWidth, alignSelf: "center" }}><LoopingHeroBanner screenActive={isScreenActive} presentation={bannerPresentation} cardWidth={heroCardWidth} items={bannerContent} onOpen={(item) => openDiscoveryContent(item.id)} label="البنرات الرئيسية" immersiveHeader={heroHeader} compactDesktopHero={desktopWebDiscovery} /></View> : heroHeader ?? null}
+      {!desktopWebDiscovery ? homeCampaignContent : null}
 
       {taxonomy.verticals.length ? <View style={styles.categoryShortcutBlock} accessibilityLabel="المجالات التجارية الرئيسية">
         <ScrollView accessibilityLabel="المجالات التجارية" contentContainerStyle={styles.activityTiles} horizontal showsHorizontalScrollIndicator={false}>
-          <Pressable accessibilityRole="button" accessibilityLabel="عرض جميع المجالات والمتاجر" accessibilityState={{ selected: !selectedVerticalID }} onPress={() => selectVertical("")} style={[styles.activityTile, !selectedVerticalID && styles.activityTileSelected]}>
+          <Pressable accessibilityRole="button" accessibilityLabel="عرض جميع المجالات والمتاجر" accessibilityState={{ selected: !selectedVerticalID }} onPress={() => selectVertical("")} style={[styles.activityTile, desktopWebDiscovery && styles.activityTileDesktop, !selectedVerticalID && styles.activityTileSelected]}>
             <View style={[styles.activityMark, !selectedVerticalID && styles.activityMarkSelected]}><BthwaniIcon name="store" color={!selectedVerticalID ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /></View>
             <Text numberOfLines={1} style={[styles.activityTileName, !selectedVerticalID && styles.activityTileNameSelected]}>الكل</Text>
           </Pressable>
-          {taxonomy.verticals.map((vertical) => <Pressable key={vertical.id} accessibilityRole="button" accessibilityLabel={`تصفح نشاط ${vertical.nameAr}`} accessibilityState={{ selected: selectedVerticalID === vertical.id }} onPress={() => selectVertical(vertical.id)} style={[styles.activityTile, selectedVerticalID === vertical.id && styles.activityTileSelected]}>
+          {taxonomy.verticals.map((vertical) => <Pressable key={vertical.id} accessibilityRole="button" accessibilityLabel={`تصفح نشاط ${vertical.nameAr}`} accessibilityState={{ selected: selectedVerticalID === vertical.id }} onPress={() => selectVertical(vertical.id)} style={[styles.activityTile, desktopWebDiscovery && styles.activityTileDesktop, selectedVerticalID === vertical.id && styles.activityTileSelected]}>
             <View style={[styles.activityMark, selectedVerticalID === vertical.id && styles.activityMarkSelected]}><BthwaniIcon name={activityIcon(vertical.nameAr, vertical.nameEn)} color={selectedVerticalID === vertical.id ? theme.onAction : theme.interactiveText} size={sizing.iconMd} /></View>
             <Text numberOfLines={1} style={[styles.activityTileName, selectedVerticalID === vertical.id && styles.activityTileNameSelected]}>{vertical.nameAr}</Text>
           </Pressable>)}
@@ -732,6 +736,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         isAuthenticated={isAuthenticated}
         onRequireAuthentication={onRequireAuthentication}
       /> : null}
+      {desktopWebDiscovery ? homeCampaignContent : null}
 
       </> : null}
 

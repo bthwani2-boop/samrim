@@ -66,6 +66,7 @@ export function createStyles(theme: ReturnType<typeof resolveTheme>) {
     activityTiles: { alignItems: "center", gap: spacing[2], paddingHorizontal: spacing[1], paddingVertical: 0 },
     activityTile: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.round, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[1], minHeight: 42, justifyContent: "center", paddingHorizontal: spacing[3], paddingVertical: spacing[1] },
     activityTileSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
+    activityTileDesktop: { minHeight: 38, paddingHorizontal: spacing[2] },
     activityMark: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.md, height: 24, justifyContent: "center", width: 24 },
     activityMarkWarm: { backgroundColor: theme.surfaceInset },
     activityMarkSelected: { backgroundColor: theme.interactiveText },

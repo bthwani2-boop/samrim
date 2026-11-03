@@ -17,20 +17,26 @@ test("home search and branding overlay the moving hero rather than a separate st
   assert.match(shell, /homeTransparent && \{ backgroundColor: "transparent" \}/);
 });
 
-test("delivery messaging is a fixed sibling below the animated banner, not a fabricated countdown", () => {
-  const bannerAt = discovery.indexOf("immersiveHeader={heroHeader}");
-  const stripAt = discovery.indexOf('accessibilityLabel="معلومات التوصيل والعروض"');
-  assert.ok(bannerAt >= 0 && stripAt > bannerAt);
-  const strip = discovery.slice(stripAt, stripAt + 500);
-  assert.match(strip, /تظهر رسوم التوصيل والعروض الفعلية قبل تأكيد الطلب/);
-  assert.doesNotMatch(strip, /75 دقيقة|توصيل مجاني|countdown/i);
+test("delivery messaging remains after the hero and follows core discovery on desktop", () => {
+  const campaignAt = discovery.indexOf("const homeCampaignContent = <>");
+  const stripAt = discovery.indexOf("styles.deliveryStrip", campaignAt);
+  const desktopPlacement = discovery.indexOf("{desktopWebDiscovery ? homeCampaignContent : null}", stripAt);
+  const mobilePlacement = discovery.indexOf("{!desktopWebDiscovery ? homeCampaignContent : null}", stripAt);
+  const bannerAt = discovery.lastIndexOf("immersiveHeader={heroHeader}");
+  const productAt = discovery.indexOf("<HomeProductFeed", discovery.indexOf("taxonomy.verticals.length ? <View"));
+  assert.ok(campaignAt >= 0 && stripAt > campaignAt && mobilePlacement > bannerAt);
+  assert.ok(desktopPlacement > productAt);
+  const campaign = discovery.slice(campaignAt, campaignAt + 1200);
+  assert.doesNotMatch(campaign, /75 minutes|free delivery countdown|countdown/i);
 });
 
 test("one slide palette spans the full header and media stage without an independently colored header", () => {
   assert.match(banner, /function immersiveSlidePalette\(item: PublicDiscoveryContentView\)/);
   assert.match(banner, /const colors = immersiveSlidePalette\(item\)/);
   assert.match(banner, /Math\.min\(Math\.round\(cardWidth \/ 1\.75\), 384\)/);
-  assert.match(banner, /Platform\.OS === "web" \? Math\.min\(cardWidth, mediaHeight \+ 166\) : mediaHeight \+ 148/);
+  assert.match(banner, /compactDesktopHero[\s\S]*?Math\.min\(Math\.round\(cardWidth \/ 2\.8\), 320\)/);
+  assert.match(banner, /mediaHeight \+ \(compactDesktopHero \? 148 : 166\)/);
+  assert.match(banner, /Math\.round\(cardWidth \/ \(immersive \? 2\.15 : 1\.75\)\)/);
   assert.match(banner, /locations=\{\[0, \(height - mediaHeight\) \/ height, 1\]\}/);
   assert.match(banner, /start=\{\{ x: 0\.5, y: 0 \}\} end=\{\{ x: 0\.5, y: 1 \}\}/);
   assert.match(banner, /colors=\{\[colors\[1\], colors\[1\] \+ "00"\]\}/);
