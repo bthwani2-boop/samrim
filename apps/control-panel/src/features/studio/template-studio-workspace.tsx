@@ -382,18 +382,29 @@ function Editor({ actorId }: Readonly<{ actorId: string }>) {
       </section>
 
       <aside className="studio-pane studio-inspector" aria-label="لوحة تحرير القالب">
-        <div role="tablist" aria-label="أدوات الاستوديو" className="studio-inspector-tabs">
-          <button type="button" role="tab" aria-selected={panel === "sections"} onClick={() => setPanel("sections")}>إعدادات القسم</button>
-          <button type="button" role="tab" aria-selected={panel === "palette"} onClick={() => setPanel("palette")}>الألوان</button>
-          <button type="button" role="tab" aria-selected={panel === "published"} onClick={() => setPanel("published")}>البنرات المنشورة</button>
-          <button type="button" role="tab" aria-selected={panel === "theme-publishing"} onClick={() => setPanel("theme-publishing")}>نشر ألوان التطبيقات</button>
-          <button type="button" role="tab" aria-selected={panel === "layout-publishing"} onClick={() => setPanel("layout-publishing")}>نشر تخطيط الرئيسية</button>
+        <div role="tablist" aria-label="أدوات الاستوديو" className="studio-inspector-tabs" onKeyDown={(event) => {
+          if (event.altKey || event.ctrlKey || event.metaKey || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+          const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+          const current = tabs.findIndex((tab) => tab === event.target);
+          if (current < 0) return;
+          const rtl = getComputedStyle(event.currentTarget).direction === "rtl";
+          const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1
+            : (current + (event.key === "ArrowLeft" ? -1 : 1) * (rtl ? -1 : 1) + tabs.length) % tabs.length;
+          event.preventDefault();
+          tabs[next]?.focus();
+          tabs[next]?.click();
+        }}>
+          <button type="button" id="studio-tab-sections" aria-controls="studio-inspector-panel" tabIndex={panel === "sections" ? 0 : -1} role="tab" aria-selected={panel === "sections"} onClick={() => setPanel("sections")}>إعدادات القسم</button>
+          <button type="button" id="studio-tab-palette" aria-controls="studio-inspector-panel" tabIndex={panel === "palette" ? 0 : -1} role="tab" aria-selected={panel === "palette"} onClick={() => setPanel("palette")}>الألوان</button>
+          <button type="button" id="studio-tab-published" aria-controls="studio-inspector-panel" tabIndex={panel === "published" ? 0 : -1} role="tab" aria-selected={panel === "published"} onClick={() => setPanel("published")}>البنرات المنشورة</button>
+          <button type="button" id="studio-tab-theme-publishing" aria-controls="studio-inspector-panel" tabIndex={panel === "theme-publishing" ? 0 : -1} role="tab" aria-selected={panel === "theme-publishing"} onClick={() => setPanel("theme-publishing")}>نشر ألوان التطبيقات</button>
+          <button type="button" id="studio-tab-layout-publishing" aria-controls="studio-inspector-panel" tabIndex={panel === "layout-publishing" ? 0 : -1} role="tab" aria-selected={panel === "layout-publishing"} onClick={() => setPanel("layout-publishing")}>نشر تخطيط الرئيسية</button>
         </div>
-        {panel === "layout-publishing" ? <div role="tabpanel" className="studio-inspector-content"><PublishedLayoutSettings shared={shared} dirty={dirty} /></div> : panel === "theme-publishing" ? <div role="tabpanel" className="studio-inspector-content"><PublishedThemeSettings shared={shared} /></div> : panel === "published" ? <div role="tabpanel" className="studio-inspector-content">
+        {panel === "layout-publishing" ? <div role="tabpanel" id="studio-inspector-panel" aria-labelledby={"studio-tab-" + panel} className="studio-inspector-content"><PublishedLayoutSettings shared={shared} dirty={dirty} /></div> : panel === "theme-publishing" ? <div role="tabpanel" id="studio-inspector-panel" aria-labelledby={"studio-tab-" + panel} className="studio-inspector-content"><PublishedThemeSettings shared={shared} /></div> : panel === "published" ? <div role="tabpanel" id="studio-inspector-panel" aria-labelledby={"studio-tab-" + panel} className="studio-inspector-content">
           <p className="studio-guidance">إعدادات حركة البنرات الفعلية من DSH، مستقلة عن مسودة تصميم القالب. يتطلب حفظها صلاحية التسويق ويُتحقق من الإصدار على الخادم.</p>
           <PublishedBannerSettings />
           <Link className="button button-secondary" href="/marketing?section=content">إدارة صور البنرات ووجهاتها</Link>
-        </div> : panel === "sections" ? <div role="tabpanel" className="studio-inspector-content">
+        </div> : panel === "sections" ? <div role="tabpanel" id="studio-inspector-panel" aria-labelledby={"studio-tab-" + panel} className="studio-inspector-content">
           <h2>{studioSectionLabels[section.id]}</h2>
           <label className="studio-check"><input type="checkbox" checked={section.visible} onChange={(event) => updateSection(section.id, { visible: event.target.checked })} />إظهار القسم</label>
           <label className="studio-field">عنوان القسم
@@ -441,7 +452,7 @@ function Editor({ actorId }: Readonly<{ actorId: string }>) {
             }))}>إضافة شريحة</button>
             <p className="studio-guidance">الصور والفيديو تُدار حاليًا من <Link href="/marketing?section=content">مركز المحتوى التسويقي</Link>. لا يرفع هذا المحرر وسائط إلى الخادم.</p>
           </>}
-        </div> : <div role="tabpanel" className="studio-inspector-content">
+        </div> : <div role="tabpanel" id="studio-inspector-panel" aria-labelledby={"studio-tab-" + panel} className="studio-inspector-content">
           <h2>الألوان الافتراضية</h2>
           <p className="studio-guidance">هذه الدرجات الخمس مضمّنة أصلًا في الكود. يمكنك تغييرها هنا للمعاينة والمسودة فقط.</p>
           {studioPaletteNames.map((entry) => <label className="studio-field studio-color-field" key={entry.key}>

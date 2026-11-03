@@ -96,3 +96,14 @@ test("studio is independently authorized and reuses the canonical DSH banner own
   assert.match(editor, /"--studio-on-hero": draft\.palette\.white/);
   assert.match(editor, /prefers-reduced-motion/);
 });
+
+test("studio inspector tabs expose an RTL-aware keyboard and accessible selected panel", () => {
+  assert.match(editor, /role="tablist" aria-label="أدوات الاستوديو"/);
+  assert.match(editor, /"ArrowLeft", "ArrowRight", "Home", "End"/);
+  assert.match(editor, /getComputedStyle\(event\.currentTarget\)\.direction === "rtl"/);
+  for (const id of ["sections", "palette", "published", "theme-publishing", "layout-publishing"]) {
+    assert.match(editor, new RegExp('id="studio-tab-' + id + '" aria-controls="studio-inspector-panel"'));
+    assert.match(editor, new RegExp('tabIndex=\\{panel === "' + id + '" \\? 0 : -1\\}'));
+  }
+  assert.equal((editor.match(/role="tabpanel" id="studio-inspector-panel" aria-labelledby=/g) ?? []).length, 5);
+});
