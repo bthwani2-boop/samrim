@@ -40,9 +40,11 @@ func TestCustomerCatalogInfixSearchFreshDatabase(t *testing.T) {
 		insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{ID: store, PartnerActorID: "search-test-owner", Name: "متجر البحث", ServiceCityID: city, PublicationState: "published"})
 		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.joining_cases (
 			id,contact_phone_e164,business_name,first_store_name,partner_actor_id,
+			first_store_vertical_id,first_store_commercial_type_id,
 			state,store_id,origin,financial_profile_state
-		) VALUES($1,$2,$3,$4,$5,'approved',$6,'control_panel','ACTIVE')`,
-			"search-test-case", "+967700000981", "متجر البحث", "متجر البحث", "search-test-owner", store); err != nil {
+		) VALUES($1,$2,$3,$4,$5,$6,$7,'approved',$8,'control_panel','ACTIVE')`,
+			"search-test-case", "+967700000981", "متجر البحث", "متجر البحث", "search-test-owner",
+			store+"-vertical", store+"-type", store); err != nil {
 			t.Fatalf("admit test Store: %v", err)
 		}
 		createOffer := func(name, suffix string) string {
