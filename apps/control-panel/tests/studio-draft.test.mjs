@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
 register(pathToFileURL(path.resolve(import.meta.dirname, "../../../packages/design-system/tools/ts-resolver.mjs")).href, import.meta.url);
 const {
   defaultStudioDraft, isStudioHex, moveStudioSection, parseStudioDraft,
-  studioContrastRatio, studioPaletteWarnings, studioSectionIds,
+  studioContrastRatio, studioPaletteWarnings, studioSectionIds, nextStudioInspectorTabIndex,
 } = await import("../src/features/studio/studio-draft.ts");
 const nav = readFileSync(path.resolve(import.meta.dirname, "../src/navigation/workspace-registry.ts"), "utf8");
 const route = readFileSync(path.resolve(import.meta.dirname, "../app/(workspace)/studio/page.tsx"), "utf8");
@@ -101,7 +101,7 @@ test("studio inspector tabs expose an RTL-aware keyboard and accessible selected
   assert.match(editor, /role="tablist" aria-label="أدوات الاستوديو"/);
   assert.match(editor, /"ArrowLeft", "ArrowRight", "Home", "End"/);
   assert.match(editor, /getComputedStyle\(event\.currentTarget\)\.direction === "rtl"/);
-  assert.match(editor, /event\.key === "ArrowLeft" \? -1 : 1\) \* \(rtl \? -1 : 1\)/, "ArrowLeft must move toward the right in RTL");
+  assert.match(editor, /nextStudioInspectorTabIndex\(event\.key, current, tabs\.length, rtl\)/);
   for (const id of ["sections", "palette", "published", "theme-publishing", "layout-publishing"]) {
     assert.match(editor, new RegExp('id="studio-tab-' + id + '" aria-controls="studio-inspector-panel"'));
     assert.match(editor, new RegExp('tabIndex=\\{panel === "' + id + '" \\? 0 : -1\\}'));
@@ -120,4 +120,22 @@ test("hero section headings are labeled as slide fallbacks, not primary slide co
   assert.match(editor, /عنوان احتياطي عند فراغ عنوان الشريحة/);
   assert.match(editor, /وصف احتياطي عند فراغ نص الشريحة/);
   assert.match(editor, /عنوان ووصف الشريحة هما الظاهران عادة/);
+});
+
+test("studio inspector keyboard navigation actually moves in RTL and LTR", () => {
+  // Five visible inspector tabs; mirror arrows, preserve Home/End, wrap at edges.
+  const n = nextStudioInspectorTabIndex;
+  assert.equal(n("ArrowLeft", 1, 5, false), 0);
+  assert.equal(n("ArrowRight", 1, 5, false), 2);
+  assert.equal(n("ArrowLeft", 1, 5, true), 2);
+  assert.equal(n("ArrowRight", 1, 5, true), 0);
+  assert.equal(n("ArrowLeft", 4, 5, true), 0);
+  assert.equal(n("ArrowRight", 0, 5, true), 4);
+  assert.equal(n("ArrowLeft", 0, 5, false), 4);
+  assert.equal(n("ArrowRight", 4, 5, false), 0);
+  assert.equal(n("Home", 3, 5, true), 0);
+  assert.equal(n("End", 1, 5, false), 4);
+  assert.equal(n("Escape", 1, 5, true), null);
+  assert.equal(n("ArrowLeft", -1, 5, true), null);
+  assert.equal(n("ArrowLeft", 0, 0, true), null);
 });

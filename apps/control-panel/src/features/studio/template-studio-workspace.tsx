@@ -12,6 +12,7 @@ import {
   defaultStudioDraft,
   isStudioHex,
   moveStudioSection,
+  nextStudioInspectorTabIndex,
   parseStudioDraft,
   studioContrastRatio,
   studioPaletteNames,
@@ -389,8 +390,8 @@ function Editor({ actorId }: Readonly<{ actorId: string }>) {
           const current = tabs.findIndex((tab) => tab === event.target);
           if (current < 0) return;
           const rtl = getComputedStyle(event.currentTarget).direction === "rtl";
-          const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1
-            : (current + (event.key === "ArrowLeft" ? -1 : 1) * (rtl ? -1 : 1) + tabs.length) % tabs.length;
+          const next = nextStudioInspectorTabIndex(event.key, current, tabs.length, rtl);
+          if (next === null) return;
           event.preventDefault();
           tabs[next]?.focus();
           tabs[next]?.click();
