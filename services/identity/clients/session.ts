@@ -323,6 +323,7 @@ export class IdentitySessionManager {
     if (this.stateValue.kind === "signed_out" && (this.stateValue.reason === "explicit_logout" || this.stateValue.reason === "recovery")) {
       return this.stateValue;
     }
+    if (this.restoreInFlight) return this.restoreInFlight;
     let storedSession: StoredSession | null;
     try {
       storedSession = parseStoredSession(await this.readStorage());
@@ -330,9 +331,20 @@ export class IdentitySessionManager {
       return this.degraded(degradedReason(error));
     }
     if (this.browserLogoutInFlight) return this.stateValue;
+    if (this.restoreInFlight) return this.restoreInFlight;
     if (!storedSession) return this.restoreDevelopmentSession("no_local_session");
     this.tokens = storedSession;
-    if (storedSession.pendingRefresh) return this.restorePendingRefresh(storedSession);
+    if (storedSession.pendingRefresh) {
+      // Browser logout must await recovery of a previously interrupted refresh,
+      // just as it awaits a normal restore or in-flight token rotation.
+      const operation = Promise.resolve().then(() => this.restorePendingRefresh(storedSession));
+      this.restoreInFlight = operation;
+      try {
+        return await operation;
+      } finally {
+        if (this.restoreInFlight === operation) this.restoreInFlight = null;
+      }
+    }
     return this.refreshStored(storedSession);
   }
 

@@ -133,3 +133,38 @@ test("failed browser logout releases its guard and permits an authenticated retr
   await h.manager.logout();
   assert.deepEqual(h.manager.state, {kind: "signed_out", reason: "explicit_logout"});
 });
+
+test("browser logout waits for pending-refresh session recovery before revoking credentials", async () => {
+  const h = testHarness(true);
+  await h.manager.adopt(h.pair);
+  h.values.set("bthwani.logout.test.identity.session.v1", JSON.stringify({
+    accessToken: h.pair.accessToken,
+    refreshToken: h.pair.refreshToken,
+    pendingRefresh: {
+      previous: { accessToken: h.pair.accessToken, refreshToken: h.pair.refreshToken },
+      requestId: "stable-refresh-request-id-123456",
+    },
+  }));
+  let signalSessionStarted;
+  const sessionStarted = new Promise(resolve => { signalSessionStarted = resolve; });
+  let completeSession;
+  const pendingSession = new Promise(resolve => { completeSession = resolve; });
+  let sessionChecks = 0;
+  h.client.session = async () => { sessionChecks++; signalSessionStarted(); return pendingSession; };
+  const revoked = [];
+  h.client.logout = async token => { revoked.push(token); };
+
+  const refreshing = h.manager.refresh();
+  const overlappingRefresh = h.manager.refresh();
+  await sessionStarted;
+  assert.equal(sessionChecks, 1, "pending session recovery must be shared across concurrent refresh callers");
+  const loggingOut = h.manager.logout();
+  assert.deepEqual(revoked, [], "logout must await the pending-refresh session check");
+
+  completeSession(h.pair.identity);
+  await Promise.all([refreshing, overlappingRefresh]);
+  await loggingOut;
+  assert.deepEqual(revoked, [h.pair.accessToken]);
+  assert.deepEqual(h.manager.state, { kind: "signed_out", reason: "explicit_logout" });
+  assert.equal(h.values.size, 0, "the late session recovery cannot restore tokens after logout");
+});
