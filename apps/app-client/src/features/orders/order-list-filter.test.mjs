@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { isPartialOrderListEmpty, matchesOrderFilters, matchesOrderStatus } from "./order-list-filter.ts";
 
@@ -71,4 +72,25 @@ test("an empty order history without a cursor is a true empty state", () => {
 
 test("visible loaded orders are not an empty state even when older pages remain", () => {
   assert.equal(isPartialOrderListEmpty(1, "older-orders-cursor"), false);
+});
+
+test("empty order views recover without navigating away from active filters", async () => {
+  const filters = await import("./order-list-filter.ts");
+  assert.equal(typeof filters.emptyOrdersNextAction, "function", "empty order recovery decision must be implemented");
+  const action = filters.emptyOrdersNextAction;
+  assert.equal(action("", "all", "all", ""), "browse", "real empty history can browse stores");
+  assert.equal(action("", "all", "all", "  unmatched  "), "reset", "empty search must clear, not navigate home");
+  assert.equal(action("", "cancelled", "all", ""), "reset", "status-filtered empty state must clear");
+  assert.equal(action("", "all", "pickup", ""), "reset", "fulfillment-filtered empty state must clear");
+  assert.equal(action("older-cursor", "all", "all", ""), "loadMore", "partial unfiltered page must load older orders");
+  assert.equal(action("older-cursor", "completed", "all", ""), "reset", "filtered empty older page can recover");
+});
+
+test("an older-page failure remains visible when the empty state owns the load-more action", () => {
+  const source = readFileSync(new URL("./orders.tsx", import.meta.url), "utf8");
+  const start = source.indexOf('label={emptyAction === "browse"');
+  const end = source.indexOf("</BthwaniSurface>", start);
+  assert.ok(start > 0 && end > start);
+  assert.match(source.slice(start, end), /loadMoreError/);
+  assert.match(source.slice(start, end), /accessibilityRole="alert"/);
 });

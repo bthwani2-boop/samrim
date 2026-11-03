@@ -7,6 +7,16 @@ export function isPartialOrderListEmpty(visibleOrderCount: number, nextCursor: s
   return visibleOrderCount === 0 && nextCursor.trim().length > 0;
 }
 
+export function emptyOrdersNextAction(
+  nextCursor: string,
+  status: OrderStatusFilter,
+  fulfillment: OrderFulfillmentFilter,
+  search: string,
+): "browse" | "reset" | "loadMore" {
+  if (search.trim() || status !== "all" || fulfillment !== "all") return "reset";
+  return nextCursor.trim() ? "loadMore" : "browse";
+}
+
 export function matchesOrderStatus(state: Order["state"], filter: OrderStatusFilter): boolean {
   if (filter === "all") return true;
   const cancelled = state === "CANCELLED" || state === "REJECTED" || state === "DELIVERY_FAILED";

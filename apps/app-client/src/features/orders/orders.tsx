@@ -8,7 +8,7 @@ import { Keyboard, Modal, Pressable, StyleSheet, Text, TextInput, View } from "r
 import { PremiumOrderProgress, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
 import { orderJourneyPresentation } from "./order-journey";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
-import { isPartialOrderListEmpty, matchesOrderFilters, matchesOrderStatus, type OrderFulfillmentFilter } from "./order-list-filter";
+import { emptyOrdersNextAction, isPartialOrderListEmpty, matchesOrderFilters, matchesOrderStatus, type OrderFulfillmentFilter } from "./order-list-filter";
 import { isClientActorScopeCurrent } from "./order-session-scope";
 import { acquireRepeatOrder, createRepeatOrderGate, invalidateRepeatOrderForActorChange, ownsRepeatOrder, releaseRepeatOrder } from "./repeat-order-gate";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -254,6 +254,8 @@ export default function ClientOrders() {
     return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر قراءة الطلبات</Text><Text style={styles.muted}>تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View>;
   }
 
+  const emptyAction = emptyOrdersNextAction(state.nextCursor, statusFilter, fulfillmentFilter, search);
+
   return <View style={styles.container} accessibilityLabel="طلباتي">
     <View style={styles.ordersHeader}><Text style={styles.screenTitle}>طلباتي</Text><Pressable accessibilityRole="button" accessibilityLabel="الرجوع" style={styles.backAction} onPress={() => router.back()}><BthwaniIcon name="back" color={premium.text} size={24} /></Pressable></View>
     <View style={styles.searchRow}>
@@ -272,7 +274,19 @@ export default function ClientOrders() {
       <BthwaniIcon name="orders" color={premium.orange} size={sizing.iconXl} />
       <Text style={styles.cardTitle}>{emptyStateTitle}</Text>
       <Text style={styles.muted}>{partialEmpty ? "\u0642\u062f \u062a\u062d\u062a\u0648\u064a \u0627\u0644\u0635\u0641\u062d\u0627\u062a \u0627\u0644\u0623\u0642\u062f\u0645 \u0639\u0644\u0649 \u0646\u062a\u0627\u0626\u062c. \u062d\u0645\u0651\u0644 \u0627\u0644\u0645\u0632\u064a\u062f \u0644\u0645\u062a\u0627\u0628\u0639\u0629 \u0627\u0644\u0628\u062d\u062b." : state.orders.length === 0 && statusFilter === "all" && fulfillmentFilter === "all" && !search.trim() ? "ستظهر طلباتك هنا بعد تأكيدها." : "جرّب تغيير البحث أو التصفية."}</Text>
-      <BthwaniButton label={state.orders.length === 0 && !state.nextCursor ? "استكشف المتاجر" : "عرض الكل"} onPress={() => state.orders.length === 0 && !state.nextCursor ? router.push("/home" as Href) : (setSearch(""), setStatusFilter("all"), setFulfillmentFilter("all"))} />
+      <BthwaniButton
+        label={emptyAction === "browse" ? "استكشف المتاجر" : emptyAction === "loadMore" ? "عرض طلبات أقدم" : "عرض الكل"}
+        busy={emptyAction === "loadMore" && loadingMore}
+        disabled={emptyAction === "loadMore" && loadingMore}
+        onPress={() => {
+          if (emptyAction === "browse") { router.push("/home" as Href); return; }
+          if (emptyAction === "loadMore") { void loadMore(); return; }
+          setSearch("");
+          setStatusFilter("all");
+          setFulfillmentFilter("all");
+        }}
+      />
+      {emptyAction === "loadMore" && loadMoreError ? <Text accessibilityRole="alert" style={styles.error}>{loadMoreError}</Text> : null}
     </BthwaniSurface> : <View style={styles.list}>
       {visibleOrders.map((order) => {
         const journey = orderJourneyPresentation(order);
@@ -311,7 +325,7 @@ export default function ClientOrders() {
         </BthwaniSurface>;
       })}
     </View>}
-    {state.nextCursor ? <View style={styles.list}>
+    {state.nextCursor && (visibleOrders.length > 0 || emptyAction !== "loadMore") ? <View style={styles.list}>
       {loadMoreError ? <Text accessibilityRole="alert" style={styles.error}>{loadMoreError}</Text> : null}
       <BthwaniButton label="عرض طلبات أقدم" busy={loadingMore} disabled={loadingMore || Boolean(repeatingOrderID)} onPress={() => void loadMore()} variant="secondary" />
     </View> : null}
