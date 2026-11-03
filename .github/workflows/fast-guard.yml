@@ -57,6 +57,11 @@ jobs:
       - name: Reject committed secrets
         run: node tools/security/verify-secrets.mjs
 
+      - name: Verify repository governance and CI routing
+        run: |
+          node tools/governance/verify-governance.mjs
+          node --test .github/workflows/fast-guard-routing.test.mjs
+
       - name: Set up Go only for affected services
         if: steps.changed.outputs.dsh == 'true' || steps.changed.outputs.wlt == 'true' || steps.changed.outputs.identity == 'true' || steps.changed.outputs.node == 'true' || steps.changed.outputs.finance == 'true'
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
@@ -196,7 +201,6 @@ jobs:
           apps/control-panel/tests/historical-field-finance-readonly.test.mjs
           apps/control-panel/tests/retired-field-wallet-destination-boundary.test.mjs
           apps/control-panel/tests/marketing-budget-route.test.mjs
-          .github/workflows/fast-guard-routing.test.mjs
 
       - name: Lint and typecheck affected projects
         if: steps.changed.outputs.node == 'true'

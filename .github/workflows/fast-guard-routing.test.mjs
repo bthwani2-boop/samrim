@@ -65,3 +65,19 @@ test("CI protection does not silently execute invalid retired script remnants", 
   assert.match(workflow, /apps\/control-panel\/tests\/retired-field-wallet-destination-boundary\.test\.mjs/);
   assert.match(workflow, /\.github\/workflows\/fast-guard-routing\.test\.mjs/);
 });
+
+test("governance verification runs in CI even without a Node project change", () => {
+  const stepName = "      - name: Verify repository governance and CI routing";
+  const start = workflow.indexOf(stepName);
+  assert.ok(start >= 0, "CI governance gate must exist");
+  const nextStep = workflow.indexOf("\n      - name:", start + stepName.length);
+  const step = workflow.slice(start, nextStep >= 0 ? nextStep : undefined);
+  const command = /^\s+node tools\/governance\/verify-governance\.mjs$/m;
+  assert.match(step, /^\s+run: \|$/m);
+  assert.match(step, command);
+  assert.match(step, /^\s+node --test \.github\/workflows\/fast-guard-routing\.test\.mjs$/m);
+  assert.doesNotMatch(step, /^\s+if:/m, "must not depend on changed-project classification");
+  // Negative control: removing the check must fail this exact assertion.
+  const mutant = step.replace("node tools/governance/verify-governance.mjs", "node --version");
+  assert.throws(() => assert.match(mutant, command), assert.AssertionError);
+});
