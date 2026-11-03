@@ -18,3 +18,11 @@ test("client carousel uses one full-width merchant image and allows no-banner fa
  assert.match(client,/Platform\.OS === "web" \? -1 : 1/);
  assert.doesNotMatch(client,/عرض المنتج الرائج/);
 });
+
+test("customer receives recoverable Store banner errors without losing confirmed content", () => {
+ assert.match(client,/setBannerError\(true\)/);
+ assert.match(client,/setBannerError\(false\)/);
+ assert.match(client,/label="إعادة قراءة البنرات"/);
+ assert.match(client,/async function retryBanners\(\)/);
+ assert.doesNotMatch(client,/\.catch\(\(\) => \{ if \(requestID === storeRequestID\.current\) setMarketingContents\(\[\]\); \}\)/);
+});

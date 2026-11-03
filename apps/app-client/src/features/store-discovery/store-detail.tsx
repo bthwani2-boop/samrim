@@ -87,6 +87,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const spotlightPromotion = promotionId ? promotions.find(item => item.id === promotionId) : undefined;
   const remainingPromotions = spotlightPromotion ? promotions.filter(item => item.id !== spotlightPromotion.id) : promotions;
   const [marketingContents, setMarketingContents] = useState<ReadonlyArray<PublicDiscoveryContentView>>([]);
+  const [bannerError, setBannerError] = useState(false);
   const [bannerIndex, setBannerIndex] = useState(0);
   const [bannerPaused, setBannerPaused] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -113,8 +114,8 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       }).catch(() => { /* Preserve the last confirmed state until DSH is reachable. */ });
       // Revalidate Partner visibility and publication while the Store stays open.
       void listPublicStoreBanners(storeId, selectedCityID).then((response) => {
-        if (active) setMarketingContents(response.items);
-      }).catch(() => { /* Keep the last confirmed page while DSH is unreachable. */ });
+        if (active) { setMarketingContents(response.items); setBannerError(false); }
+      }).catch(() => { if (active) setBannerError(true); /* Keep the last confirmed page while DSH is unreachable. */ });
     };
     refresh();
     const interval = setInterval(refresh, 15000);
@@ -147,6 +148,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     setLoadingMore(false);
     setPromotions([]);
     setMarketingContents([]);
+    setBannerError(false);
     setBannerIndex(0);
     setBannerPaused(false);
     bannerRef.current?.scrollTo({ x: 0, animated: false });
@@ -175,8 +177,8 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         .then((result) => result.orderabilityByMode)
         .catch(() => null);
       const contentRequest = listPublicStoreBanners(storeId, selectedCityID)
-        .then((result) => { if (requestID === storeRequestID.current) setMarketingContents(result.items); })
-        .catch(() => { if (requestID === storeRequestID.current) setMarketingContents([]); });
+        .then((result) => { if (requestID === storeRequestID.current) { setMarketingContents(result.items); setBannerError(false); } })
+        .catch(() => { if (requestID === storeRequestID.current) setBannerError(true); });
       const promotionRequest = listPublicPromotions(selectedCityID, storeId)
         .then((result) => {
           if (promotionID !== promotionRequestID.current) return;
@@ -250,6 +252,19 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     }
   }
 
+  async function retryBanners() {
+    if (!storeId || !selectedCityID) return;
+    const requestID = storeRequestID.current;
+    try {
+      const result = await listPublicStoreBanners(storeId, selectedCityID);
+      if (requestID !== storeRequestID.current) return;
+      setMarketingContents(result.items);
+      setBannerError(false);
+    } catch {
+      if (requestID === storeRequestID.current) setBannerError(true);
+    }
+  }
+
   const reloadCatalog = useCallback(async (categoryID: string | null, query: string, favoriteOnly = favoritesView, popularOnly = popularView) => {
     if (!storeId.trim() || !selectedCityID) return false;
     const requestID = catalogRequestID.current + 1;
@@ -298,7 +313,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       if (index === 0 && (selectedCategoryID || selectedStoreSectionID)) await reloadCatalog(null, "", false, false);
       return;
     }
-    setCatalogTabs((current) => ({ ...current, [activeTab]: { catalog: state.catalog, categoryID: selectedCategoryID, sectionID: selectedStoreSectionID, query: catalogQuery, productID: activeProductID } }));
+    setCatalogTabs((current) => ({ ...current, [activeTab]: { catalog: state.catalog, categoryID: selectedCategoryID, sectionID: selectedStoreSectionID, query: catalogTabs[activeTab]?.query ?? "", productID: activeProductID } }));
     catalogRequestID.current += 1;
     setLoadingMore(false);
     setCatalogSearchOpen(false);
@@ -434,7 +449,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   };
 
   async function loadMore() {
-    if (loadingMore || catalogRefreshing || state.kind !== "ready" || !selectedCityID || !state.catalog.nextCursor) return;
+    if (loadingMore || catalogRefreshing || state.kind !== "ready" || !selectedCityID || !state.catalog.nextCursor || catalogQuery.trim() !== (catalogTabs[activeTab]?.query ?? "").trim()) return;
     const requestID = catalogRequestID.current + 1;
     catalogRequestID.current = requestID;
     setLoadingMore(true);
@@ -442,7 +457,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     try {
       const catalog = favoritesView
         ? await readFavoriteStoreCatalog(storeId, selectedCityID, 20, state.catalog.nextCursor)
-        : await readPublicStoreCatalog(storeId, selectedCityID, selectedCategoryID ?? "", catalogQuery.trim(), 20, state.catalog.nextCursor, activeProductID, popularView ? "MOST_ORDERED_30_DAYS" : "");
+        : await readPublicStoreCatalog(storeId, selectedCityID, selectedCategoryID ?? "", (catalogTabs[activeTab]?.query ?? "").trim(), 20, state.catalog.nextCursor, activeProductID, popularView ? "MOST_ORDERED_30_DAYS" : "");
       if (requestID !== catalogRequestID.current) return;
       setState((current) => current.kind === "ready" ? { kind: "ready", store: current.store, catalog: mergeCatalog(current.catalog, catalog) } : current);
     } catch {
@@ -823,6 +838,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         </View>
       ) : null}
 
+          {bannerError ? <View style={styles.promotionNotice}><Text accessibilityRole="alert" style={styles.validationError}>تعذر تحديث بنرات هذا المتجر، ويمكنك متابعة التسوق.</Text><BthwaniButton label="إعادة قراءة البنرات" onPress={() => void retryBanners()} variant="secondary" /></View> : null}
           {bannerItems.length > 0 ? <View accessibilityLabel="بنرات المتجر" style={styles.bannerBlock}>
             <ScrollView
               ref={bannerRef}
@@ -865,7 +881,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           </> : null}
         </View>}
         ListFooterComponent={(state.catalog.nextCursor || error || favoriteLoadError) ? <View style={styles.listFooter}>
-          {state.catalog.nextCursor ? <BthwaniButton busy={loadingMore} disabled={catalogRefreshing} label="تحميل المزيد" onPress={() => void loadMore()} style={styles.loadMoreButton} variant="secondary" /> : null}
+          {state.catalog.nextCursor ? <BthwaniButton busy={loadingMore} disabled={catalogRefreshing || catalogQuery.trim() !== (catalogTabs[activeTab]?.query ?? "").trim()} label="تحميل المزيد" onPress={() => void loadMore()} style={styles.loadMoreButton} variant="secondary" /> : null}
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           {favoriteLoadError ? <BthwaniSurface tone="inset" style={styles.favoriteNotice}><Text style={styles.muted}>تعذر تحديث حالة المفضلة من الخادم.</Text><BthwaniButton busy={favoriteLoading} label="إعادة المحاولة" onPress={() => void reloadFavorites()} variant="secondary" /></BthwaniSurface> : null}
         </View> : undefined}

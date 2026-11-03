@@ -23,7 +23,8 @@ test("delivery messaging remains after the hero and follows core discovery on de
   const desktopPlacement = discovery.indexOf("{desktopWebDiscovery ? homeCampaignContent : null}", stripAt);
   const mobilePlacement = discovery.indexOf("{!desktopWebDiscovery ? homeCampaignContent : null}", stripAt);
   const bannerAt = discovery.lastIndexOf("immersiveHeader={heroHeader}");
-  const productAt = discovery.indexOf("<HomeProductFeed", discovery.indexOf("taxonomy.verticals.length ? <View"));
+  const fallback = discovery.indexOf("{!desktopWebDiscovery ? homeCampaignContent : null}");
+  const productAt = discovery.indexOf("<HomeProductFeed", discovery.indexOf("taxonomy.verticals.length ? <View", fallback));
   assert.ok(campaignAt >= 0 && stripAt > campaignAt && mobilePlacement > bannerAt);
   assert.ok(desktopPlacement > productAt);
   const campaign = discovery.slice(campaignAt, campaignAt + 1200);

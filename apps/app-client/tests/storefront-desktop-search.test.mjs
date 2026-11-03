@@ -20,3 +20,8 @@ test("search uses the store-scoped DSH catalog and retains failure recovery", ()
   assert.match(detail, /تعذر تحديث الكتالوج\. يمكنك متابعة العناصر الحالية أو إعادة المحاولة/);
   assert.match(detail, /onClear=\{\(\) => \{ setCatalogQuery\(""\); void reloadCatalog\(null, "", false, false\); \}\}/);
 });
+
+test("draft catalog search cannot reuse a cursor from a previously submitted query", () => {
+  assert.match(detail, /catalogQuery\.trim\(\) !== \(catalogTabs\[activeTab\]\?\.query \?\? ""\)\.trim\(\)/);
+  assert.match(detail, /readPublicStoreCatalog\(storeId, selectedCityID, selectedCategoryID \?\? "", \(catalogTabs\[activeTab\]\?\.query \?\? ""\)\.trim\(\), 20, state\.catalog\.nextCursor/);
+});

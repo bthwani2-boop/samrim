@@ -27,7 +27,8 @@ test("desktop navigation gives discovery more width without hiding or renaming d
 
 test("real categories and DSH-backed products precede secondary campaign content on desktop home", () => {
   assert.match(discovery, /const desktopWebDiscovery = Platform\.OS === "web" && viewportWidth >= 1024/);
-  const categories = discovery.indexOf("taxonomy.verticals.length ? <View");
+  const fallback = discovery.indexOf("{!desktopWebDiscovery ? homeCampaignContent : null}");
+  const categories = discovery.indexOf("taxonomy.verticals.length ? <View", fallback);
   const feed = discovery.indexOf("<HomeProductFeed", categories);
   const desktopCampaign = discovery.lastIndexOf("{desktopWebDiscovery ? homeCampaignContent : null}");
   assert.ok(categories >= 0 && feed > categories && desktopCampaign > feed);
