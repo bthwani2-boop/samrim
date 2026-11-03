@@ -28,6 +28,7 @@ type Config struct {
 	InternalServiceTokens map[string]string
 	AllowedOrigins        map[string]bool
 	PartnerWebOrigins     map[string]bool
+	ClientWebOrigins      map[string]bool
 	AbuseIPSecret         []byte
 	TrustedProxies        []*net.IPNet
 	Readiness             func() error
@@ -79,6 +80,8 @@ func New(actors *actor.Service, authenticationService *authentication.Service, c
 	mux.HandleFunc("GET /auth/session", s.currentSession)
 	mux.HandleFunc("POST /auth/web/partner/session", s.webPartnerSession)
 	mux.HandleFunc("POST /auth/web/partner/logout", s.webPartnerLogout)
+	mux.HandleFunc("POST /auth/web/client/session", s.webClientSession)
+	mux.HandleFunc("POST /auth/web/client/logout", s.webClientLogout)
 	if config.Development {
 		mux.HandleFunc("POST /auth/development/session", s.developmentSession)
 	}
@@ -131,6 +134,9 @@ func (s *Server) requestClientRegistration(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusCreated, result)
 }
 func (s *Server) registerClient(w http.ResponseWriter, r *http.Request) {
+	if s.rejectUnauthorizedClientBrowserOrigin(w, r) {
+		return
+	}
 	var input domain.ClientCredentialProofRequest
 	if !decodeJSON(w, r, &input) {
 		return
@@ -140,9 +146,12 @@ func (s *Server) registerClient(w http.ResponseWriter, r *http.Request) {
 		writeDomainError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, result)
+	s.writeClientAuthenticationResponse(w, r, result, input.ClientInstanceId, http.StatusCreated)
 }
 func (s *Server) loginClient(w http.ResponseWriter, r *http.Request) {
+	if s.rejectUnauthorizedClientBrowserOrigin(w, r) {
+		return
+	}
 	var input domain.PasswordLoginRequest
 	if !decodeJSON(w, r, &input) {
 		return
@@ -152,7 +161,7 @@ func (s *Server) loginClient(w http.ResponseWriter, r *http.Request) {
 		writeDomainError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, result)
+	s.writeClientAuthenticationResponse(w, r, result, input.ClientInstanceId, http.StatusOK)
 }
 func (s *Server) requestClientRecovery(w http.ResponseWriter, r *http.Request) {
 	var input domain.PhoneRequest
@@ -1005,7 +1014,7 @@ func (s *Server) cors(next http.Handler) http.Handler {
 			}
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
-			if s.config.PartnerWebOrigins[origin] {
+			if s.config.PartnerWebOrigins[origin] || s.config.ClientWebOrigins[origin] {
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
 			}
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")

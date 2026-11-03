@@ -7,6 +7,7 @@ import type {
   ActorType,
   Challenge,
   ClientCredentialProofRequest,
+  ClientBrowserAccessPair,
   ClientRecoveryProofRequest,
   ManagedActivationRequest,
   ManagedChallengeRequest,
@@ -66,6 +67,7 @@ export type IdentityClient = Readonly<{
   finishOperatorRecoveryPasskeyRegistration(request: OperatorPasskeyRecoveryFinishRequest): Promise<OperatorPasskeyRegistrationResponse>;
   refresh(request: RefreshRequest): Promise<TokenPair>;
   restorePartnerBrowserSession(): Promise<TokenPair>;
+  restoreClientBrowserSession(): Promise<TokenPair>;
   developmentSession(role: ActorType, clientInstanceId: string): Promise<TokenPair>;
   session(accessToken: string): Promise<ActorIdentity>;
   logout(accessToken: string): Promise<void>;
@@ -129,8 +131,13 @@ export function isIdentityClientError(value: unknown): value is IdentityClientEr
   return Boolean(value && typeof value === "object" && ((value as { kind?: unknown }).kind === "http" || (value as { kind?: unknown }).kind === "network"));
 }
 
-export function createIdentityClient(rawBaseUrl: string, timeoutMs = 8_000, partnerBrowserSession = false): IdentityClient {
+export function createIdentityClient(rawBaseUrl: string, timeoutMs = 8_000, browserSessionRole?: "client" | "partner"): IdentityClient {
   const baseUrl = normalizeBaseUrl(rawBaseUrl);
+  // Web refresh is authorized solely by a server-owned HttpOnly cookie.
+  // A non-secret marker preserves the shared in-memory session shape.
+  const browserPair = (pair: TokenPair | ClientBrowserAccessPair): TokenPair => browserSessionRole === "client"
+    ? { ...pair, refreshToken: "cookie-managed-client-web-refresh" }
+    : pair as TokenPair;
 
   async function request<T>(
     pathname: string,
@@ -150,7 +157,7 @@ export function createIdentityClient(rawBaseUrl: string, timeoutMs = 8_000, part
             ...(options.token === undefined ? {} : { Authorization: "Bearer " + options.token }),
           },
           ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
-          ...(baseUrl.startsWith("/") || partnerBrowserSession ? { credentials: "include" as const } : {}),
+          ...(baseUrl.startsWith("/") || browserSessionRole ? { credentials: "include" as const } : {}),
           signal: controller.signal,
         });
       } catch (error) {
@@ -171,8 +178,8 @@ export function createIdentityClient(rawBaseUrl: string, timeoutMs = 8_000, part
     health: () => request(identityOperationPaths.identityHealth.path, { method: identityOperationPaths.identityHealth.method }),
     readiness: () => request(identityOperationPaths.identityReadiness.path, { method: identityOperationPaths.identityReadiness.method, acceptStatuses: [503] }),
     requestClientRegistration: (body) => request(identityOperationPaths.requestClientRegistrationVerification.path, { method: identityOperationPaths.requestClientRegistrationVerification.method, body }),
-    registerClient: (body) => request(identityOperationPaths.registerClient.path, { method: identityOperationPaths.registerClient.method, body }),
-    loginClient: (body) => request(identityOperationPaths.loginClient.path, { method: identityOperationPaths.loginClient.method, body }),
+    registerClient: (body) => request<TokenPair | ClientBrowserAccessPair>(identityOperationPaths.registerClient.path, { method: identityOperationPaths.registerClient.method, body }).then(browserPair),
+    loginClient: (body) => request<TokenPair | ClientBrowserAccessPair>(identityOperationPaths.loginClient.path, { method: identityOperationPaths.loginClient.method, body }).then(browserPair),
     loginManaged: (body) => request(identityOperationPaths.loginManagedRole.path, { method: identityOperationPaths.loginManagedRole.method, body }),
     requestClientRecovery: (body) => request(identityOperationPaths.requestClientRecoveryVerification.path, { method: identityOperationPaths.requestClientRecoveryVerification.method, body }),
     recoverClient: (body) => request(identityOperationPaths.recoverClient.path, { method: identityOperationPaths.recoverClient.method, body }),
@@ -188,14 +195,15 @@ export function createIdentityClient(rawBaseUrl: string, timeoutMs = 8_000, part
     requestOperatorRecovery: (body) => request(identityOperationPaths.requestOperatorRecovery.path, { method: identityOperationPaths.requestOperatorRecovery.method, body }),
     beginOperatorRecoveryPasskeyRegistration: (body) => request(identityOperationPaths.beginOperatorRecoveryPasskeyRegistration.path, { method: identityOperationPaths.beginOperatorRecoveryPasskeyRegistration.method, body }),
     finishOperatorRecoveryPasskeyRegistration: (body) => request(identityOperationPaths.finishOperatorRecoveryPasskeyRegistration.path, { method: identityOperationPaths.finishOperatorRecoveryPasskeyRegistration.method, body }),
-    refresh: (body) => partnerBrowserSession
-      ? request(identityOperationPaths.restorePartnerBrowserSession.path, { method: "POST" })
+    refresh: (body) => browserSessionRole
+      ? request<TokenPair | ClientBrowserAccessPair>(browserSessionRole === "partner" ? identityOperationPaths.restorePartnerBrowserSession.path : identityOperationPaths.restoreClientBrowserSession.path, { method: "POST" }).then(browserPair)
       : request(identityOperationPaths.refreshSession.path, { method: identityOperationPaths.refreshSession.method, body }),
     restorePartnerBrowserSession: () => request(identityOperationPaths.restorePartnerBrowserSession.path, { method: "POST" }),
+    restoreClientBrowserSession: () => request<ClientBrowserAccessPair>(identityOperationPaths.restoreClientBrowserSession.path, { method: "POST" }).then(browserPair),
     developmentSession: (role, clientInstanceId) => request(identityOperationPaths.createDevelopmentSession.path, { method: identityOperationPaths.createDevelopmentSession.method, body: { role, clientInstanceId } }),
     session: (accessToken) => request(identityOperationPaths.readCurrentSession.path, { method: identityOperationPaths.readCurrentSession.method, token: accessToken }),
-    logout: (accessToken) => partnerBrowserSession
-      ? request(identityOperationPaths.logoutPartnerBrowserSession.path, { method: "POST", token: accessToken })
+    logout: (accessToken) => browserSessionRole
+      ? request(browserSessionRole === "partner" ? identityOperationPaths.logoutPartnerBrowserSession.path : identityOperationPaths.logoutClientBrowserSession.path, { method: "POST", token: accessToken })
       : request(identityOperationPaths.logoutSession.path, { method: identityOperationPaths.logoutSession.method, token: accessToken }),
   };
 }

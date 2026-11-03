@@ -64,6 +64,7 @@ const schemaNames = [
   "RefreshRequest",
   "ActorIdentity",
   "TokenPair",
+  "ClientBrowserAccessPair",
   "RecoveryResult",
   "ProvisionActorRoleRequest",
   "ActorRoleView",

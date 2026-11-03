@@ -328,6 +328,15 @@ export class IdentitySessionManager {
   }
 
   async logout(): Promise<void> {
+    if (this.restoreBrowserSession) {
+      // A web refresh cookie cannot be removed by JavaScript. Never claim
+      // sign-out if the server could not revoke and expire that cookie.
+      await this.client.logout(this.tokens?.accessToken ?? "");
+      this.tokens = null;
+      await this.removeStorageBestEffort();
+      this.transition({ kind: "signed_out", reason: "explicit_logout" });
+      return;
+    }
     let stored: StoredTokens | null = null;
     let storedSession: StoredSession | null = null;
     let localReadError: unknown = null;

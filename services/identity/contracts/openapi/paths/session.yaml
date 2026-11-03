@@ -11,6 +11,27 @@ paths:
         "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
         "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
 
+  /auth/web/client/session:
+    post:
+      tags: [session]
+      operationId: restoreClientBrowserSession
+      description: Refresh the Client browser session through a role-scoped HttpOnly Secure SameSite=Strict cookie from an approved Client web origin. No body is accepted; JSON contains a short-lived access token only, never the refresh token.
+      responses:
+        "200":
+          description: Short-lived Client web access session without refresh credentials.
+          content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/ClientBrowserAccessPair" } } }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+
+  /auth/web/client/logout:
+    post:
+      tags: [session]
+      operationId: logoutClientBrowserSession
+      description: Clear Client-only HttpOnly cookies and revoke the current Client session from an approved Client web origin. No body is accepted.
+      responses:
+        "204": { description: Client browser cookies cleared. }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+
   /auth/web/partner/session:
     post:
       tags: [session]
