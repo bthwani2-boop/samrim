@@ -27,10 +27,13 @@ test("customer receives recoverable Store banner errors without losing confirmed
  assert.doesNotMatch(client,/\.catch\(\(\) => \{ if \(requestID === storeRequestID\.current\) setMarketingContents\(\[\]\); \}\)/);
 });
 
-test("focused banner revalidation ignores older responses and retry supersedes focus refresh",()=>{
+test("newest successful banner read wins while failed later refreshes cannot discard retries",()=>{
  assert.match(client,/const bannerRequest = \+\+bannerRequestID\.current/);
- assert.match(client,/active && bannerRequest === bannerRequestID\.current\) \{ setMarketingContents\(response\.items\)/);
+ assert.match(client,/const bannerAppliedRequestID = useRef\(0\)/);
+ assert.match(client,/active && bannerRequest > bannerAppliedRequestID\.current/);
+ assert.match(client,/bannerAppliedRequestID\.current = bannerRequest/);
  assert.match(client,/const contentID = \+\+bannerRequestID\.current/);
- assert.match(client,/contentID === bannerRequestID\.current\) \{ setMarketingContents\(result\.items\)/);
- assert.match(client,/requestID !== storeRequestID\.current \|\| bannerRequest !== bannerRequestID\.current/);
+ assert.match(client,/contentID > bannerAppliedRequestID\.current/);
+ assert.match(client,/requestID !== storeRequestID\.current \|\| bannerRequest <= bannerAppliedRequestID\.current/);
+ assert.match(client,/bannerRequest === bannerRequestID\.current\) setBannerError\(true\)/);
 });

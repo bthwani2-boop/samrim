@@ -89,6 +89,9 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [marketingContents, setMarketingContents] = useState<ReadonlyArray<PublicDiscoveryContentView>>([]);
   const [bannerError, setBannerError] = useState(false);
   const bannerRequestID = useRef(0);
+  // A later failed revalidation must not suppress an older successful retry.
+  // Only an already-applied newer success may supersede an earlier response.
+  const bannerAppliedRequestID = useRef(0);
   const [bannerIndex, setBannerIndex] = useState(0);
   const [bannerPaused, setBannerPaused] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -116,7 +119,11 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       }).catch(() => { /* Preserve the last confirmed state until DSH is reachable. */ });
       // Revalidate Partner visibility and publication while the Store stays open.
       void listPublicStoreBanners(storeId, selectedCityID).then((response) => {
-        if (active && bannerRequest === bannerRequestID.current) { setMarketingContents(response.items); setBannerError(false); }
+        if (active && bannerRequest > bannerAppliedRequestID.current) {
+          bannerAppliedRequestID.current = bannerRequest;
+          setMarketingContents(response.items);
+          setBannerError(false);
+        }
       }).catch(() => { if (active && bannerRequest === bannerRequestID.current) setBannerError(true); /* Keep the last confirmed page while DSH is unreachable. */ });
     };
     refresh();
@@ -181,7 +188,11 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         .catch(() => null);
       const contentID = ++bannerRequestID.current;
       const contentRequest = listPublicStoreBanners(storeId, selectedCityID)
-        .then((result) => { if (requestID === storeRequestID.current && contentID === bannerRequestID.current) { setMarketingContents(result.items); setBannerError(false); } })
+        .then((result) => { if (requestID === storeRequestID.current && contentID > bannerAppliedRequestID.current) {
+            bannerAppliedRequestID.current = contentID;
+            setMarketingContents(result.items);
+            setBannerError(false);
+          } })
         .catch(() => { if (requestID === storeRequestID.current && contentID === bannerRequestID.current) setBannerError(true); });
       const promotionRequest = listPublicPromotions(selectedCityID, storeId)
         .then((result) => {
@@ -262,7 +273,8 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     const bannerRequest = ++bannerRequestID.current;
     try {
       const result = await listPublicStoreBanners(storeId, selectedCityID);
-      if (requestID !== storeRequestID.current || bannerRequest !== bannerRequestID.current) return;
+      if (requestID !== storeRequestID.current || bannerRequest <= bannerAppliedRequestID.current) return;
+      bannerAppliedRequestID.current = bannerRequest;
       setMarketingContents(result.items);
       setBannerError(false);
     } catch {
