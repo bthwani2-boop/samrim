@@ -744,11 +744,28 @@ func (s *MarketingServer) createDiscoveryContentWithMedia(w http.ResponseWriter,
 		return
 	}
 	provenance := parsed.provenance.Normalized()
-	requestHash := hashDiscoveryContentUploadRequest(partnerStoreID, "discovery-content-create", input.ID, string(input.Kind), input.TitleAr, input.BodyAr, digest, parsed.contentType, string(input.TargetType), input.TargetID, input.ServiceCityID, input.StartsAt.UTC().Format(time.RFC3339Nano), optionalTimeString(input.EndsAt), fmt.Sprint(input.Ordinal), acting, provenance.Creator, provenance.SourceDescription, provenance.SourceURI, provenance.RightsStatement, provenance.RightsURI)
+	requestFacts := []string{"discovery-content-create", input.ID, string(input.Kind), input.TitleAr, input.BodyAr, digest, parsed.contentType, string(input.TargetType), input.TargetID, input.ServiceCityID, input.StartsAt.UTC().Format(time.RFC3339Nano), optionalTimeString(input.EndsAt), fmt.Sprint(input.Ordinal), acting, provenance.Creator, provenance.SourceDescription, provenance.SourceURI, provenance.RightsStatement, provenance.RightsURI}
+	requestHash := hashDiscoveryContentUploadRequest(partnerStoreID, requestFacts...)
 	assetDigest := sha256Bytes([]byte(input.ID + "\x00" + idempotency))
 	asset := postgres.DiscoveryContentMediaAssetInput{ID: "discovery_content_media_" + assetDigest, IdempotencyKey: idempotency, RequestHash: requestHash, ObjectKey: objectKey, URI: uri, ContentSHA256: digest, ContentType: parsed.contentType, ByteSize: int64(len(parsed.bytes)), Creator: provenance.Creator, SourceDescription: provenance.SourceDescription, SourceURI: provenance.SourceURI, RightsStatement: provenance.RightsStatement, RightsURI: provenance.RightsURI, RightsAttestedBy: acting}
 	registered, replayed, err := postgres.RegisterDiscoveryContentMediaAssetPending(r.Context(), s.db, asset)
 	if err != nil {
+		// Legacy Partner uploads had no Store in their request hash. Permit
+		// replay only after confirming the old completed mutation still owns
+		// the same Store, actor and active media URI. Pending/foreign uploads
+		// cannot be safely attributed and remain conflicts, not retries.
+		if partnerStoreID != "" && errors.Is(err, postgres.ErrDiscoveryContentIdempotency) {
+			legacyHash := hashDiscoveryContentUploadRequest("", requestFacts...)
+			prior, found, readErr := postgres.ReadDiscoveryContentMutation(r.Context(), s.db, idempotency, input.ID, legacyHash)
+			if readErr == nil && found && eligibleLegacyPartnerUploadReplay(prior, partnerStoreID, acting, uri) {
+				writeJSON(w, http.StatusOK, contract.DiscoveryContentResponse{Content: toDiscoveryContentView(prior), IdempotentReplay: true})
+				return
+			}
+			if readErr != nil && !errors.Is(readErr, postgres.ErrDiscoveryContentIdempotency) {
+				writeMarketingError(w, readErr)
+				return
+			}
+		}
 		writeMarketingError(w, err)
 		return
 	}
@@ -804,6 +821,13 @@ func (s *MarketingServer) createDiscoveryContentWithMedia(w http.ResponseWriter,
 	}
 	_ = s.ReconcileMediaStorage(r.Context())
 	writeJSON(w, responseStatus(replayed), contract.DiscoveryContentResponse{Content: toDiscoveryContentView(item), IdempotentReplay: replayed})
+}
+
+// Historical retries are admitted only after the canonical mutation owner
+// confirms that the media belongs to this Store and the same Partner actor.
+func eligibleLegacyPartnerUploadReplay(item postgres.DiscoveryContentRecord, storeID, actorID, mediaURI string) bool {
+	return storeID != "" && actorID != "" && mediaURI != "" &&
+		item.SourceStoreID == storeID && item.CreatedByActorID == actorID && item.MediaURI == mediaURI
 }
 
 // A Partner may hold grants for multiple Stores; identical upload facts with

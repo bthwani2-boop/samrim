@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
 
 func TestPartnerBannerListRejectsUnverifiedSession(t *testing.T) {
@@ -83,5 +84,27 @@ func TestDiscoveryContentUploadIdempotencyIsStoreScoped(t *testing.T) {
 	}
 	if len(facts) != 5 {
 		t.Fatal("hash helper unexpectedly mutated its source facts")
+	}
+}
+
+func TestLegacyPartnerUploadReplayRequiresSameStoreActorAndActiveMedia(t *testing.T) {
+	legacy := postgres.DiscoveryContentRecord{SourceStoreID: "store-A", CreatedByActorID: "actor-A", MediaURI: "https://media.test/banner-A.png"}
+	if !eligibleLegacyPartnerUploadReplay(legacy, "store-A", "actor-A", legacy.MediaURI) {
+		t.Fatal("the same completed legacy mutation must be safely replayable")
+	}
+	for _, tc := range []struct {
+		name, store, actor, mediaURI string
+	}{
+		{"foreign Store", "store-B", "actor-A", legacy.MediaURI},
+		{"foreign actor", "store-A", "actor-B", legacy.MediaURI},
+		{"different media", "store-A", "actor-A", "https://media.test/banner-B.png"},
+		{"empty media", "store-A", "actor-A", ""},
+		{"empty Store", "", "actor-A", legacy.MediaURI},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if eligibleLegacyPartnerUploadReplay(legacy, tc.store, tc.actor, tc.mediaURI) {
+				t.Fatal("unauthorized legacy upload replay was accepted")
+			}
+		})
 	}
 }
