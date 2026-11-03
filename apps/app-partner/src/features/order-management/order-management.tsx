@@ -2,7 +2,7 @@ import { borders, radius, type resolveTheme, sizing, spacing, typography } from 
 import { BthwaniButton, BthwaniConfirmDialog, BthwaniConversationSheet, BthwaniIcon, BthwaniStatusBadge, useAppearanceTheme, useConversationUnreadCounts } from "@bthwani/design-system/native";
 import { type CaptainAssignment, type CaptainOffer, captainHandoffStateLabel, createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderAdjustmentProposalRequest, type OrderTransitionRequest, orderStateLabel, paymentMethodLabel, paymentStateLabel, type StoreCaptainMembership } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { useIsFocused, useLocalSearchParams } from "expo-router";
+import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, AppState, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -53,6 +53,7 @@ function currentPartnerActor(): string {
 }
 
 export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
+  const router = useRouter();
   const theme = useAppearanceTheme();
   const insets=useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -321,14 +322,18 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
 
       {loading ? <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة طلبات المتجر" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الطلبات…</Text></View> : null}
       {sidecarError ? <Text accessibilityRole="alert" style={styles.muted}>{sidecarError}</Text> : null}
-      {!loading && !orders.length && !error ? <Text style={styles.muted}>{
-        normalizedSearch ? "لا توجد طلبات تطابق البحث." :
-        filter === "ACTIVE" ? "لا توجد طلبات نشطة الآن. ستظهر الطلبات الجديدة تلقائيًا." :
-        filter === "NEEDS_ACTION" ? "لا توجد طلبات جديدة الآن." :
-        filter === "PREPARING" ? "لا توجد طلبات قيد التجهيز." :
-        filter === "HANDOFF" ? "لا توجد طلبات في مرحلة التسليم." :
-        "لا توجد طلبات في السجل حاليًا."
-      }</Text> : null}
+      {!loading && !orders.length && !error ? <View style={styles.state}>
+        <Text style={styles.muted}>{
+          normalizedSearch ? "لا توجد طلبات تطابق البحث." :
+          filter === "ACTIVE" ? "لا توجد طلبات نشطة الآن. ستظهر الطلبات الجديدة تلقائيًا." :
+          filter === "NEEDS_ACTION" ? "لا توجد طلبات جديدة الآن." :
+          filter === "PREPARING" ? "لا توجد طلبات قيد التجهيز." :
+          filter === "HANDOFF" ? "لا توجد طلبات في مرحلة التسليم." :
+          "لا توجد طلبات في السجل حاليًا."
+        }</Text>
+        {normalizedSearch ? <BthwaniButton label="مسح بحث الطلبات" disabled={Boolean(busy)} variant="quiet"
+          onPress={() => router.setParams({ q: "", orderId: "" })} /> : null}
+      </View> : null}
 
       {orders.map((order) => {
         const next = nextState(order);
