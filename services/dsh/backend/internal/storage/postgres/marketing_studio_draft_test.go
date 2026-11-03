@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -93,10 +95,12 @@ func TestStudioMigrationRegistered(t *testing.T) {
 		records[165].Name != "166_marketing_studio_draft.sql" ||
 		records[166].Name != "167_marketing_studio_publication.sql" ||
 		records[167].Name != "168_store_public_contact.sql" ||
-		records[168].Name != "169_marketing_studio_layout.sql" {
+		records[168].Name != "169_marketing_studio_layout.sql" ||
+		records[169].Name != "170_customer_catalog_name_infix_search.sql" {
 		t.Fatalf("unexpected Studio/Store contact migration history: loaded %d records", len(records))
 	}
-	if len(statements) != postgres.SchemaVersion || !strings.Contains(statements[165], "marketing_studio_draft_events") || !strings.Contains(statements[166], "marketing_studio_publication_events") || !strings.Contains(statements[167], "store_public_contacts") || !strings.Contains(statements[168], "marketing_studio_layout_events") {
+	if len(statements) != postgres.SchemaVersion || !strings.Contains(statements[165], "marketing_studio_draft_events") || !strings.Contains(statements[166], "marketing_studio_publication_events") || !strings.Contains(statements[167], "store_public_contacts") || !strings.Contains(statements[168], "marketing_studio_layout_events") ||
+		!strings.Contains(statements[169], "gin_trgm_ops") {
 		t.Fatal("Studio or Store contact migration SQL missing")
 	}
 }
@@ -220,7 +224,7 @@ func TestStudioDraftPersistenceVersionReplayAndIsolation(t *testing.T) {
 	})
 }
 
-func TestStudioDraftMigrationUpgradeFromV165(t *testing.T) {
+func TestStudioDraftMigrationUpgradeFromV165AndV168(t *testing.T) {
 	dsn := strings.TrimSpace(os.Getenv("DSH_DATABASE_URL"))
 	if dsn == "" {
 		t.Skip("isolated PostgreSQL connection is not configured")
@@ -235,53 +239,84 @@ func TestStudioDraftMigrationUpgradeFromV165(t *testing.T) {
 	if err := root.PingContext(check); err != nil {
 		t.Fatal(err)
 	}
-	withFreshDatabase(t, root, dsn, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrations []string) {
-		tx, err := db.BeginTx(ctx, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer func() { _ = tx.Rollback() }()
-		if _, err := tx.ExecContext(ctx, "CREATE SCHEMA dsh"); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := tx.ExecContext(ctx, "CREATE TABLE dsh.schema_migrations (version integer PRIMARY KEY, name text NOT NULL, sha256 text NOT NULL, applied_at timestamptz NOT NULL DEFAULT clock_timestamp())"); err != nil {
-			t.Fatal(err)
-		}
-		for index := 0; index < 165; index++ {
-			if _, err := tx.ExecContext(ctx, migrations[index]); err != nil {
-				t.Fatalf("bootstrap old schema v%d: %v", index+1, err)
-			}
-			row := records[index]
-			if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.schema_migrations(version,name,sha256) VALUES($1,$2,$3)", row.Version, row.Name, row.SHA256); err != nil {
-				t.Fatalf("record old schema v%d: %v", row.Version, err)
-			}
-		}
-		if _, err := tx.ExecContext(ctx, "UPDATE dsh.marketing_banner_presentation SET mode='CROSSFADE', interval_seconds=7, version=9 WHERE placement='HOME'"); err != nil {
-			t.Fatal(err)
-		}
-		if err := tx.Commit(); err != nil {
-			t.Fatal(err)
-		}
+	for _, baseline := range []int{165, 168} {
+		t.Run(fmt.Sprintf("from-v%d", baseline), func(t *testing.T) {
+			withFreshDatabase(t, root, dsn, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrations []string) {
+				tx, err := db.BeginTx(ctx, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer func() { _ = tx.Rollback() }()
+				if _, err := tx.ExecContext(ctx, "CREATE SCHEMA dsh"); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := tx.ExecContext(ctx, "CREATE TABLE dsh.schema_migrations (version integer PRIMARY KEY, name text NOT NULL, sha256 text NOT NULL, applied_at timestamptz NOT NULL DEFAULT clock_timestamp())"); err != nil {
+					t.Fatal(err)
+				}
+				for index := 0; index < baseline; index++ {
+					if _, err := tx.ExecContext(ctx, migrations[index]); err != nil {
+						t.Fatalf("bootstrap old schema v%d: %v", index+1, err)
+					}
+					row := records[index]
+					if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.schema_migrations(version,name,sha256) VALUES($1,$2,$3)", row.Version, row.Name, row.SHA256); err != nil {
+						t.Fatalf("record old schema v%d: %v", row.Version, err)
+					}
+				}
+				if _, err := tx.ExecContext(ctx, "UPDATE dsh.marketing_banner_presentation SET mode='CROSSFADE', interval_seconds=7, version=9 WHERE placement='HOME'"); err != nil {
+					t.Fatal(err)
+				}
+				if err := tx.Commit(); err != nil {
+					t.Fatal(err)
+				}
 
-		if err := postgres.Migrate(ctx, db, records, migrations, testDeliveryProofKeyring(t)); err != nil {
-			t.Fatalf("upgrade from v165 to v169: %v", err)
-		}
-		var count, latest int
-		if err := db.QueryRowContext(ctx, "SELECT count(*), max(version) FROM dsh.schema_migrations").Scan(&count, &latest); err != nil || count != 169 || latest != 169 {
-			t.Fatalf("upgrade migration history: count=%d latest=%d err=%v", count, latest, err)
-		}
-		var contactTable, layoutEvents string
-		if err := db.QueryRowContext(ctx, "SELECT to_regclass('dsh.store_public_contacts')::text, to_regclass('dsh.marketing_studio_layout_events')::text").Scan(&contactTable, &layoutEvents); err != nil ||
-			contactTable != "dsh.store_public_contacts" || layoutEvents != "dsh.marketing_studio_layout_events" {
-			t.Fatalf("v168 contact or v169 Studio layout missing after upgrade: contact=%q layout=%q err=%v", contactTable, layoutEvents, err)
-		}
-		previous, err := postgres.ReadBannerPresentation(ctx, db)
-		if err != nil || previous.Mode != "CROSSFADE" || previous.IntervalSeconds != 7 || previous.Version != 9 {
-			t.Fatalf("marketing banner state changed during Studio upgrade: %+v err=%v", previous, err)
-		}
-		studio, err := postgres.ReadStudioDraft(ctx, db)
-		if err != nil || studio.Version != 1 || len(studio.Document) != 0 {
-			t.Fatalf("Studio draft missing after upgrade: %+v err=%v", studio, err)
-		}
-	})
+				var originalStudioDocument json.RawMessage
+				expectedStudioVersion := 1
+				if baseline == 168 {
+					saved, replayed, err := postgres.SetStudioDraft(ctx, db, studioFixture(t), 1, "studio-upgrade-operator", "studio-upgrade-correlation", "studio-upgrade-idempotency")
+					if err != nil || replayed || saved.Version != 2 {
+						t.Fatalf("prepare existing v168 Studio draft: %+v replayed=%v err=%v", saved, replayed, err)
+					}
+					originalStudioDocument = append([]byte(nil), saved.Document...)
+					expectedStudioVersion = saved.Version
+				}
+
+				if err := postgres.Migrate(ctx, db, records, migrations, testDeliveryProofKeyring(t)); err != nil {
+					t.Fatalf("upgrade from v%d to v%d: %v", baseline, postgres.SchemaVersion, err)
+				}
+				var count, latest int
+				if err := db.QueryRowContext(ctx, "SELECT count(*), max(version) FROM dsh.schema_migrations").Scan(&count, &latest); err != nil || count != postgres.SchemaVersion || latest != postgres.SchemaVersion {
+					t.Fatalf("upgrade migration history: count=%d latest=%d err=%v", count, latest, err)
+				}
+				var contactTable, layoutEvents, catalogSearchIndex string
+				if err := db.QueryRowContext(ctx, "SELECT to_regclass('dsh.store_public_contacts')::text, to_regclass('dsh.marketing_studio_layout_events')::text, to_regclass('dsh.catalog_products_customer_name_trgm_idx')::text").Scan(&contactTable, &layoutEvents, &catalogSearchIndex); err != nil ||
+					contactTable != "dsh.store_public_contacts" || layoutEvents != "dsh.marketing_studio_layout_events" || catalogSearchIndex != "dsh.catalog_products_customer_name_trgm_idx" {
+					t.Fatalf("upgrade did not preserve required v168-v170 objects: contact=%q layout=%q search=%q err=%v", contactTable, layoutEvents, catalogSearchIndex, err)
+				}
+				if err := postgres.VerifySchema(ctx, db, records); err != nil {
+					t.Fatalf("upgraded schema validation: %v", err)
+				}
+				previous, err := postgres.ReadBannerPresentation(ctx, db)
+				if err != nil || previous.Mode != "CROSSFADE" || previous.IntervalSeconds != 7 || previous.Version != 9 {
+					t.Fatalf("marketing banner state changed during Studio upgrade: %+v err=%v", previous, err)
+				}
+				studio, err := postgres.ReadStudioDraft(ctx, db)
+				var beforeDraft, afterDraft any
+				if len(originalStudioDocument) > 0 {
+					if decodeErr := json.Unmarshal(originalStudioDocument, &beforeDraft); decodeErr != nil {
+						t.Fatal(decodeErr)
+					}
+					if decodeErr := json.Unmarshal(studio.Document, &afterDraft); decodeErr != nil {
+						t.Fatal(decodeErr)
+					}
+				}
+				if err != nil || studio.Version != expectedStudioVersion || (len(originalStudioDocument) == 0) != (len(studio.Document) == 0) || !reflect.DeepEqual(beforeDraft, afterDraft) {
+					t.Fatalf("Studio draft changed during upgrade: version=%d expected=%d contentPreserved=%v err=%v", studio.Version, expectedStudioVersion, reflect.DeepEqual(beforeDraft, afterDraft), err)
+				}
+				layout, err := postgres.ReadStudioLayoutPublication(ctx, db)
+				if err != nil || layout.Version != 1 || string(layout.Document) != "null" {
+					t.Fatalf("Studio layout defaults changed after upgrade: %+v err=%v", layout, err)
+				}
+			})
+		})
+	}
 }
