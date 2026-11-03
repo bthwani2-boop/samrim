@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/lib/pq"
@@ -525,11 +526,8 @@ func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, service
 	}
 	if query != "" {
 		// Cross-Store discovery matches words inside product names. Keep short
-		// queries and Store-scoped catalog reads prefix-only to bound broad scans.
-		pattern := escapeCatalogSearchPrefix(query)
-		if storeID == "" && utf8.RuneCountInString(query) >= 3 {
-			pattern = escapeCatalogSearchContains(query)
-		}
+		// or non-indexable queries and Store-scoped catalog reads prefix-only.
+		pattern := customerCatalogSearchPattern(storeID, query)
 		args = append(args, pattern)
 		conditions = append(conditions, fmt.Sprintf("lower(p.canonical_name) LIKE lower($%d) ESCAPE '!'", len(args)))
 	}
@@ -679,6 +677,31 @@ func catalogSearchCursorFingerprint(storeID, serviceCityID, verticalID, category
 
 func escapeCatalogSearchPrefix(query string) string {
 	return strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(strings.TrimSpace(query)) + "%"
+}
+
+// Leading-wildcard searches need an extractable word trigram. A string of
+// punctuation or isolated two-letter words forces an expensive full index
+// scan even when the canonical-name GIN trigram index exists.
+func hasExtractableCatalogTrigram(query string) bool {
+	consecutive := 0
+	for _, char := range query {
+		if unicode.IsLetter(char) || unicode.IsDigit(char) {
+			consecutive++
+			if consecutive >= 3 {
+				return true
+			}
+		} else {
+			consecutive = 0
+		}
+	}
+	return false
+}
+
+func customerCatalogSearchPattern(storeID, query string) string {
+	if storeID == "" && hasExtractableCatalogTrigram(query) {
+		return escapeCatalogSearchContains(query)
+	}
+	return escapeCatalogSearchPrefix(query)
 }
 
 // The leading wildcard is backed by the canonical-name trigram index.

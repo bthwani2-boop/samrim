@@ -27,6 +27,30 @@ func TestCustomerCatalogSearchEscapesSubstringTerms(t *testing.T) {
 	}
 }
 
+func TestCustomerCatalogOnlyUsesInfixSearchWithIndexableWordTrigram(t *testing.T) {
+	for _, tc := range []struct {
+		storeID, query, want string
+	}{
+		{"", "USB", "%USB%"},
+		{"", "باب", "%باب%"},
+		{"", "USB-C", "%USB-C%"},
+		{"", "2026", "%2026%"},
+		{"", "!!!", "!!!!!!%"},
+		{"", "a%b", "a!%b%"},
+		{"", "x_y", "x!_y%"},
+		{"", "ab cd", "ab cd%"},
+		{"store-a", "USB", "USB%"},
+		{"store-a", "باب", "باب%"},
+	} {
+		t.Run(tc.storeID+"/"+tc.query, func(t *testing.T) {
+			if got := customerCatalogSearchPattern(tc.storeID, tc.query); got != tc.want {
+				t.Fatalf("catalog pattern for %q in Store %q: got %q, want %q",
+					tc.query, tc.storeID, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestCustomerCatalogShortSearchRemainsPrefixOnly(t *testing.T) {
 	for _, term := range []string{"a", "ab", "ش", "شا"} {
 		if utf8.RuneCountInString(term) >= 3 {
