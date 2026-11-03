@@ -716,6 +716,19 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         }) : null}
         {!favoritesView ? visibleCategories.map(({ category, depth }) => renderCategoryChip(category, depth)) : null}
       </ScrollView>
+      {desktopStorefront ? <><BthwaniSearchField
+        accessibilityLabel="البحث في منتجات المتجر مباشرة"
+        containerStyle={styles.desktopCatalogSearch}
+        editable={!catalogRefreshing && !loadingMore}
+        onChangeText={setCatalogQuery}
+        onClear={() => { setCatalogQuery(""); void reloadCatalog(null, "", false, false); }}
+        onSubmitEditing={() => void reloadCatalog(null, catalogQuery, false, false)}
+        placeholder="ابحث داخل هذا المتجر"
+        returnKeyType="search"
+        value={catalogQuery}
+      />
+      <BthwaniIconButton icon="search" label="تنفيذ البحث داخل المتجر" disabled={catalogRefreshing || loadingMore} onPress={() => void reloadCatalog(null, catalogQuery, false, false)} size={sizing.controlMd} tone="primary" />
+      </> : null}
     </View>
   );
 
@@ -760,7 +773,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
             : <View accessibilityLabel={"غلاف متجر " + state.store.name + " غير متوفر"} pointerEvents="none" style={styles.storeCoverFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
         <View pointerEvents="none" style={styles.storeHeroShade} />
         <View style={[styles.storeHeroToolbar, { paddingTop: insets.top + spacing[2] }]}>
-          {catalogSearchOpen ? <BthwaniSearchField
+          {catalogSearchOpen && !desktopStorefront ? <BthwaniSearchField
           accessibilityLabel="البحث في جميع منتجات المتجر"
           containerStyle={styles.headerSearchField}
           editable={!catalogRefreshing && !loadingMore}
@@ -773,8 +786,8 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         /> : null}
         <BthwaniIconButton icon="share" label="مشاركة المتجر" onPress={() => void shareStore()} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" />
         <View style={styles.storeHeaderActions}>
-          <BthwaniIconButton icon={catalogSearchOpen ? "close" : "search"} label={catalogSearchOpen ? "إغلاق البحث داخل المتجر" : "البحث في منتجات المتجر"} onPress={() => { if (catalogSearchOpen) { setCatalogSearchOpen(false); setCatalogQuery(""); void reloadCatalog(null, "", false, false); } else if (activeTab !== 0) { void selectCatalogTab(0).then(() => setCatalogSearchOpen(true)); } else { setCatalogSearchOpen(true); } }} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" />
-          {!catalogSearchOpen ? <><BthwaniIconButton icon="cart" label="سلة التسوق" onPress={() => router.push(("/cart/" + encodeURIComponent(storeId) + "?fulfillmentMode=" + encodeURIComponent(selectedFulfillmentMode ?? "")) as Href)} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" />
+          {!desktopStorefront ? <BthwaniIconButton icon={catalogSearchOpen ? "close" : "search"} label={catalogSearchOpen ? "إغلاق البحث داخل المتجر" : "البحث في منتجات المتجر"} onPress={() => { if (catalogSearchOpen) { setCatalogSearchOpen(false); setCatalogQuery(""); void reloadCatalog(null, "", false, false); } else if (activeTab !== 0) { void selectCatalogTab(0).then(() => setCatalogSearchOpen(true)); } else { setCatalogSearchOpen(true); } }} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" /> : null}
+          {(!catalogSearchOpen || desktopStorefront) ? <><BthwaniIconButton icon="cart" label="سلة التسوق" onPress={() => router.push(("/cart/" + encodeURIComponent(storeId) + "?fulfillmentMode=" + encodeURIComponent(selectedFulfillmentMode ?? "")) as Href)} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" />
           <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" /></> : null}
         </View>
         </View>

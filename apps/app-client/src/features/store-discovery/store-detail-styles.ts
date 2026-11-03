@@ -65,6 +65,7 @@ export function createStyles(theme: ReturnType<typeof resolveTheme>) {
     promotionNotice: { alignItems: "flex-start", gap: spacing[2] },
     categoryRail: { alignItems: "center", flexDirection: "row", gap: spacing[1], paddingVertical: spacing[1], paddingHorizontal: spacing[1] },
     catalogToolbar: { alignItems: "center", flexDirection: "row", gap: spacing[1], minHeight: sizing.controlLg },
+    desktopCatalogSearch: { flexBasis: 300, flexGrow: 0, flexShrink: 1, maxWidth: 340, minWidth: 220 },
     categoryScroller: { flex: 1, minWidth: 0 },
     layoutToggle: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.md, justifyContent: "center", minHeight: sizing.controlMd, minWidth: sizing.controlMd, padding: spacing[2] },
     layoutListGlyph: { width: 20, gap: 3, alignItems: "stretch" },
