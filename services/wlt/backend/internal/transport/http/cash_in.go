@@ -276,7 +276,11 @@ func (s *Server) simulateCashInFundingIntent(w http.ResponseWriter, r *http.Requ
 		writeCashInError(w, err)
 		return
 	}
-	if current.ProviderKey != postgres.DevelopmentSimulatorProvider && !cashin.ValidMockProviderKey(current.ProviderKey) {
+	if current.ActorID != actingActorID {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "Funding intent was not found")
+		return
+	}
+	if current.ProviderKey != postgres.DevelopmentSimulatorProvider {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "only development-simulator funding intents can receive simulated outcomes")
 		return
 	}

@@ -1,6 +1,7 @@
 param(
   [string]$WltTestPattern = 'TestPartnerStoreFinanceAndRecipientSettlementLifecycle|TestCashIn|TestStoreCommercialAgreementLifecycleAndOrderSnapshots|TestPaymentRetryLostResponseAndParallelWorkers',
-  [string]$DshTestPattern = ''
+  [string]$DshTestPattern = '',
+  [string]$WltHttpTestPattern = ''
 )
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -92,9 +93,18 @@ try {
   $env:BTHWANI_EXPECTED_DATABASE_PORT = "$port"
   $env:BTHWANI_EXPECTED_DATABASE_NAME = $dbName
   $env:BTHWANI_EXPECTED_DATABASE_USER = $dbUser
-  & go test ./services/wlt/backend/internal/storage/postgres -run $WltTestPattern -v -count=1 -timeout 240s
-  if ($LASTEXITCODE -ne 0) {throw 'WLT finance integration tests failed'}
-  Write-Output 'WLT_FINANCE_ISOLATED_TESTS=PASS'
+  if ($WltTestPattern) {
+    & go test ./services/wlt/backend/internal/storage/postgres -run $WltTestPattern -v -count=1 -timeout 240s
+    if ($LASTEXITCODE -ne 0) {throw 'WLT finance integration tests failed'}
+    Write-Output 'WLT_FINANCE_ISOLATED_TESTS=PASS'
+  } else {
+    Write-Output 'WLT_FINANCE_ISOLATED_TESTS=NOT_RUN'
+  }
+  if ($WltHttpTestPattern) {
+    & go test ./services/wlt/backend/internal/transport/http -run $WltHttpTestPattern -v -count=1 -timeout 180s
+    if ($LASTEXITCODE -ne 0) {throw 'WLT isolated HTTP finance tests failed'}
+    Write-Output 'WLT_FINANCE_ISOLATED_HTTP_TESTS=PASS'
+  }
   if ($DshTestPattern) {
     $env:DSH_DATABASE_URL = $databaseUrl
     $env:BTHWANI_FINANCIAL_PROOF_ISOLATED = '1'
