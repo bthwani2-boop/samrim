@@ -271,7 +271,7 @@ func TestFundedCandidatePagesStopAfterRemainingQuota(t *testing.T) {
 	}
 }
 
-func TestFundedCandidatePageBudgetFailsClosedWithoutPartialOffers(t *testing.T) {
+func TestFundedCandidateStalledCursorFailsClosedWithoutPartialOffers(t *testing.T) {
 	pages := 0
 	candidates := make([]postgres.NearbyCaptainCandidate, postgres.NearbyCaptainCandidatePageSize)
 	for i := range candidates {
@@ -292,7 +292,52 @@ func TestFundedCandidatePageBudgetFailsClosedWithoutPartialOffers(t *testing.T) 
 			}
 			return wlt.CaptainWalletState{Currency: "YER", AvailableMinor: available}, nil
 		})
-	if !errors.Is(err, postgres.ErrCaptainNoAvailable) || selected != nil || pages != maxCaptainCandidatePages {
-		t.Fatalf("page budget must fail closed: selected=%v err=%v pages=%d", selected, err, pages)
+	if !errors.Is(err, ErrPaymentUnavailable) || selected != nil || pages != 2 {
+		t.Fatalf("stalled cursor must fail closed: selected=%v err=%v pages=%d", selected, err, pages)
+	}
+}
+
+// A funded Captain beyond the fourth page must not be lost merely because
+// previous nearby Captains have insufficient WLT cash coverage.
+func TestFundedCaptainPaginationBeyondOneHundredTwenty(t *testing.T) {
+	const unfundedCount = 120
+	candidates := make([]postgres.NearbyCaptainCandidate, 0, unfundedCount+3)
+	for i := 0; i < unfundedCount; i++ {
+		candidates = append(candidates, postgres.NearbyCaptainCandidate{
+			ActorID: fmt.Sprintf("unfunded-%03d", i), DistanceSquared: float64(i),
+		})
+	}
+	for i := 0; i < 3; i++ {
+		candidates = append(candidates, postgres.NearbyCaptainCandidate{
+			ActorID: fmt.Sprintf("funded-%d", i), DistanceSquared: float64(unfundedCount + i),
+		})
+	}
+	pages := 0
+	selected, err := selectFundedNearbyCaptainPages(context.Background(),
+		func(_ context.Context, after *postgres.NearbyCaptainCandidate) ([]postgres.NearbyCaptainCandidate, int64, error) {
+			start := pages * postgres.NearbyCaptainCandidatePageSize
+			if pages > 0 && (after == nil || after.ActorID != candidates[start-1].ActorID) {
+				t.Fatalf("wrong keyset cursor at page %d: %+v", pages+1, after)
+			}
+			pages++
+			if start >= len(candidates) {
+				return nil, 1200, nil
+			}
+			end := start + postgres.NearbyCaptainCandidatePageSize
+			if end > len(candidates) {
+				end = len(candidates)
+			}
+			return candidates[start:end], 1200, nil
+		},
+		func(_ context.Context, id string) (wlt.CaptainWalletState, error) {
+			available := int64(0)
+			if strings.HasPrefix(id, "funded-") {
+				available = 1200
+			}
+			return wlt.CaptainWalletState{Currency: "YER", AvailableMinor: available}, nil
+		},
+	)
+	if err != nil || !reflect.DeepEqual(selected, []string{"funded-0", "funded-1", "funded-2"}) || pages != 5 {
+		t.Fatalf("eligible captains beyond 120: selected=%v err=%v pages=%d", selected, err, pages)
 	}
 }
