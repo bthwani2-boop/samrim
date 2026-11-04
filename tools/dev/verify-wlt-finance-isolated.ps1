@@ -13,9 +13,18 @@ if (-not [string]::IsNullOrWhiteSpace($env:DOCKER_HOST)) {
 }
 function Assert-ProofRan([string]$label, [object[]]$lines) {
   $text = @($lines) -join "`n"
-  if ($text -match '\[no tests to run\]' -or $text -notmatch '(?m)^=== RUN\s+' -or
-      $text -notmatch '(?m)^--- PASS:' -or $text -match '(?m)^--- SKIP:') {
-    throw "$label did not execute and pass its selected tests"
+  $started = [regex]::Matches($text, '(?m)^=== RUN[ \t]+(\S+)')
+  $passed = [regex]::Matches($text, '(?m)^[ \t]*--- PASS:[ \t]+(\S+)')
+  if ($text -match '\[no tests to run\]' -or $text -match '(?m)^[ \t]*--- SKIP:' -or
+      $started.Count -eq 0 -or $started.Count -ne $passed.Count) {
+    throw "$label did not execute and pass all its selected tests"
+  }
+  $passedNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+  foreach ($match in $passed) { [void]$passedNames.Add($match.Groups[1].Value) }
+  foreach ($match in $started) {
+    if (-not $passedNames.Contains($match.Groups[1].Value)) {
+      throw "$label did not pass selected test $($match.Groups[1].Value)"
+    }
   }
 }
 $dockerOS = @(docker info --format '{{.OSType}}' 2>$null)
@@ -106,7 +115,9 @@ try {
   $env:BTHWANI_EXPECTED_DATABASE_NAME = $dbName
   $env:BTHWANI_EXPECTED_DATABASE_USER = $dbUser
   if ($WltTestPattern) {
-    & go test ./services/wlt/backend/internal/storage/postgres -run $WltTestPattern -v -count=1 -timeout 240s 2>&1 | Tee-Object -Variable wltProofOutput
+    # A -run expression can select multiple PostgreSQL migration-heavy tests. The timeout
+    # belongs to the entire Go process, not each selected test.
+    & go test ./services/wlt/backend/internal/storage/postgres -run $WltTestPattern -v -count=1 -timeout 12m 2>&1 | Tee-Object -Variable wltProofOutput
     if ($LASTEXITCODE -ne 0) {throw 'WLT finance integration tests failed'}
     Assert-ProofRan 'WLT finance' $wltProofOutput
     Write-Output 'WLT_FINANCE_ISOLATED_TESTS=PASS'
@@ -127,7 +138,9 @@ try {
     # disposable PostgreSQL root is safe when its exact identity is verified.
     $env:DSH_JOINING_QA_DATABASE_URL = $databaseUrl
     $env:BTHWANI_JOINING_QA_ISOLATED = '1'
-    & go test ./services/dsh/backend/internal/storage/postgres -run $DshTestPattern -v -count=1 -timeout 240s 2>&1 | Tee-Object -Variable dshProofOutput
+    # Joining, dispatch and checkout each migrate a fresh test schema: one
+    # 240s process-wide deadline wrongly aborted the third passing proof.
+    & go test ./services/dsh/backend/internal/storage/postgres -run $DshTestPattern -v -count=1 -timeout 12m 2>&1 | Tee-Object -Variable dshProofOutput
     if ($LASTEXITCODE -ne 0) {throw 'DSH isolated checkout integration tests failed'}
     Assert-ProofRan 'DSH integration' $dshProofOutput
     Write-Output 'DSH_CHECKOUT_ISOLATED_TESTS=PASS'
