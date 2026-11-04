@@ -6,6 +6,18 @@ param(
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Set-Location $repositoryRoot
+# A DOCKER_HOST override changes the effective daemon without changing context inspect.
+# Reject it before any docker invocation creates a disposable container.
+if (-not [string]::IsNullOrWhiteSpace($env:DOCKER_HOST)) {
+  throw 'WLT_FINANCE_PROOF=BLOCKED DOCKER_HOST overrides the inspected Docker context'
+}
+function Assert-ProofRan([string]$label, [object[]]$lines) {
+  $text = @($lines) -join "`n"
+  if ($text -match '\[no tests to run\]' -or $text -notmatch '(?m)^=== RUN\s+' -or
+      $text -notmatch '(?m)^--- PASS:' -or $text -match '(?m)^--- SKIP:') {
+    throw "$label did not execute and pass its selected tests"
+  }
+}
 $dockerOS = @(docker info --format '{{.OSType}}' 2>$null)
 if ($LASTEXITCODE -ne 0 -or $dockerOS -notcontains 'linux') {
   throw 'WLT_FINANCE_PROOF=BLOCKED Docker Linux Engine is unavailable; no test container or database was created.'
@@ -94,22 +106,30 @@ try {
   $env:BTHWANI_EXPECTED_DATABASE_NAME = $dbName
   $env:BTHWANI_EXPECTED_DATABASE_USER = $dbUser
   if ($WltTestPattern) {
-    & go test ./services/wlt/backend/internal/storage/postgres -run $WltTestPattern -v -count=1 -timeout 240s
+    & go test ./services/wlt/backend/internal/storage/postgres -run $WltTestPattern -v -count=1 -timeout 240s 2>&1 | Tee-Object -Variable wltProofOutput
     if ($LASTEXITCODE -ne 0) {throw 'WLT finance integration tests failed'}
+    Assert-ProofRan 'WLT finance' $wltProofOutput
     Write-Output 'WLT_FINANCE_ISOLATED_TESTS=PASS'
   } else {
     Write-Output 'WLT_FINANCE_ISOLATED_TESTS=NOT_RUN'
   }
   if ($WltHttpTestPattern) {
-    & go test ./services/wlt/backend/internal/transport/http -run $WltHttpTestPattern -v -count=1 -timeout 180s
+    & go test ./services/wlt/backend/internal/transport/http -run $WltHttpTestPattern -v -count=1 -timeout 180s 2>&1 | Tee-Object -Variable wltHttpProofOutput
     if ($LASTEXITCODE -ne 0) {throw 'WLT isolated HTTP finance tests failed'}
+    Assert-ProofRan 'WLT HTTP' $wltHttpProofOutput
     Write-Output 'WLT_FINANCE_ISOLATED_HTTP_TESTS=PASS'
   }
   if ($DshTestPattern) {
     $env:DSH_DATABASE_URL = $databaseUrl
     $env:BTHWANI_FINANCIAL_PROOF_ISOLATED = '1'
-    & go test ./services/dsh/backend/internal/storage/postgres -run $DshTestPattern -v -count=1 -timeout 240s
+    $env:BTHWANI_ENV = 'test'
+    # Joining proof uses an independent, strict isolation guard; the same
+    # disposable PostgreSQL root is safe when its exact identity is verified.
+    $env:DSH_JOINING_QA_DATABASE_URL = $databaseUrl
+    $env:BTHWANI_JOINING_QA_ISOLATED = '1'
+    & go test ./services/dsh/backend/internal/storage/postgres -run $DshTestPattern -v -count=1 -timeout 240s 2>&1 | Tee-Object -Variable dshProofOutput
     if ($LASTEXITCODE -ne 0) {throw 'DSH isolated checkout integration tests failed'}
+    Assert-ProofRan 'DSH integration' $dshProofOutput
     Write-Output 'DSH_CHECKOUT_ISOLATED_TESTS=PASS'
   }
 } catch {

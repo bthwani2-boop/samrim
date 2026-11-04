@@ -98,11 +98,11 @@ Use Git to identify changes and Nx to select affected project work when applicab
 
 **MANDATORY — ZERO MOJIBAKE:** All new/modified text MUST be valid UTF-8 without BOM or confirmed encoding corruption. Run `node tools/dev/check-encoding.mjs`; any confirmed violation BLOCKS closure until its root cause is fixed—never blindly replace characters. Details: `docs/governance/policies/quality.md`.
 
-Default integration flow:
+Default integration flow (external steps require their own authorization):
 
-`DISCOVER -> TASK BRANCH -> CHANGE -> AFFECTED PROOF -> LOCAL COMMIT -> SAFE PUSH -> DRAFT PR -> REVIEW / CI -> READY FOR REVIEW`
+`DISCOVER -> TASK BRANCH -> CHANGE -> AFFECTED PROOF -> LOCAL COMMIT -> [AUTHORIZED SAFE PUSH] -> [AUTHORIZED DRAFT PR] -> REVIEW / CI -> READY FOR REVIEW`
 
-For each authorized independent coding task, use a task branch, or the existing branch explicitly designated by the user. After the first coherent, affected-tested commit and successful safe push, open a Draft PR against the intended base. After each subsequent complete logical change, review its diff, rerun invalidated affected checks, commit locally, safely push, and verify the remote SHA matches. Track applicable CI, CodeRabbit and SonarQube findings without skipping mandatory review. Mark the PR Ready for Review only after applicable gates and required independent reviews pass; never merge or deploy without separate explicit authorization.
+For each authorized independent coding task, use a task branch, or the existing branch explicitly designated by the user. When push authority is explicit, safely push the first coherent, affected-tested commit. When Draft PR creation is explicitly authorized and a PR is the approved promotion mechanism, open a Draft PR against the intended base. After each subsequent complete logical change, review its diff, rerun invalidated affected checks, and commit locally; only when push authority is explicit, safely push and verify the remote SHA matches. Track applicable CI, CodeRabbit and SonarQube findings without skipping mandatory review. Mark the PR Ready for Review only after applicable gates and required independent reviews pass; never merge or deploy without separate explicit authorization.
 
 `pnpm safe:push` is a Git transport/safety interlock only. It must not duplicate candidate-wide proof already owned by explicit `pnpm verify` or final CI.
 
@@ -132,7 +132,7 @@ Model context is a scarce working set, not an archive. Reduce context without re
 - Do not carry raw logs, unchanged source, giant diffs or already-proven evidence across material closure cells. Retain only evidence that can still change the repair decision.
 - At a material cell boundary retain a compact checkpoint: exact HEAD, material decisions, affected owners/paths, still-valid proof, remaining dependencies and blockers. Discard superseded execution noise.
 - Keep the objective dependency map, but use a fresh bounded execution context for the next material cell instead of accumulating prior cell transcripts.
-- Each completed logical development batch is a reviewable checkpoint: inspect diff and affected proof, commit and safely push the authorized task branch, then check remote SHA. Open the Draft PR after the first valid push, keep its review/CI state visible, and avoid redundant full-suite runs. A failed or blocked gate leaves the PR in Draft; no premature Ready for Review.
+- Each completed logical development batch is a reviewable checkpoint: inspect diff and affected proof and commit locally. When push authority is explicit, safely push the authorized task branch and verify its remote SHA. When Draft PR creation is explicitly authorized and a PR is the approved promotion mechanism, open it after the first valid push and keep review/CI state visible. Without either authority, stop at the local checkpoint and report that step as blocked; avoid redundant full-suite runs. A failed or blocked gate leaves the PR in Draft; no premature Ready for Review.
 - Candidate-wide proof should normally run once after feature freeze. Rerun only proof invalidated by a later affected change.
 
 When asked to plan, emit one bounded objective command anchored to current HEAD, approved outcome, affected owners, necessary proof and safe stop point; do not add another permanent planning contract.
