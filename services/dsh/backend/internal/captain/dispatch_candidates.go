@@ -32,3 +32,45 @@ func selectFundedNearbyCaptains(ctx context.Context, candidates []postgres.Nearb
 	}
 	return approved, nil
 }
+
+// selectFundedNearbyCaptainPages keeps the candidate set bounded in memory
+// while scanning beyond any page whose Captains cannot cover COD. Once three
+// funded Captains are found no further database or WLT reads are performed.
+func selectFundedNearbyCaptainPages(
+	ctx context.Context,
+	readPage func(context.Context, *postgres.NearbyCaptainCandidate) ([]postgres.NearbyCaptainCandidate, int64, error),
+	readWallet func(context.Context, string) (wlt.CaptainWalletState, error),
+) ([]string, error) {
+	approved := make([]string, 0, 3)
+	var after *postgres.NearbyCaptainCandidate
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		candidates, cashMinor, err := readPage(ctx, after)
+		if err != nil {
+			return nil, err
+		}
+		if len(candidates) == 0 {
+			break
+		}
+		funded, err := selectFundedNearbyCaptains(ctx, candidates, cashMinor, readWallet)
+		if err != nil && err != postgres.ErrCaptainNoAvailable {
+			// Never publish partial offers after an unavailable WLT read.
+			return nil, err
+		}
+		approved = append(approved, funded...)
+		if len(approved) >= 3 {
+			return approved[:3], nil
+		}
+		if len(candidates) < postgres.NearbyCaptainCandidatePageSize {
+			break
+		}
+		last := candidates[len(candidates)-1]
+		after = &last
+	}
+	if len(approved) == 0 {
+		return nil, postgres.ErrCaptainNoAvailable
+	}
+	return approved, nil
+}
