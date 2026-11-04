@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -66,9 +67,55 @@ func TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay(t *testing.T) 
 			{CartID: secondCartID, StoreID: secondStoreID, AddressID: "address-two", CartVersion: 1, ExpectedTotalAmountMinor: 1800, FulfillmentMode: "BTHWANI_CAPTAIN"},
 		}}
 		requestHash := postgres.HashMultiStoreCheckoutRequest(input)
-		checkout, replayed, err := postgres.CreateMultiStoreCheckout(ctx, db, input, createKey, requestHash)
-		if err != nil || replayed || checkout.State != "PROCESSING" || len(checkout.Children) != 2 {
-			t.Fatalf("create parent/children = %+v replayed=%t err=%v", checkout, replayed, err)
+		// Simultaneous client submissions share one durable parent and two children.
+		type createResult struct {
+			checkout postgres.MultiStoreCheckoutRecord
+			replayed bool
+			err      error
+		}
+		const concurrentAttempts = 8
+		results := make(chan createResult, concurrentAttempts)
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for i := 0; i < concurrentAttempts; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				item, replay, e := postgres.CreateMultiStoreCheckout(ctx, db, input, createKey, requestHash)
+				results <- createResult{item, replay, e}
+			}()
+		}
+		close(start)
+		wg.Wait()
+		close(results)
+		var checkout postgres.MultiStoreCheckoutRecord
+		fresh, repeats := 0, 0
+		for result := range results {
+			if result.err != nil || result.checkout.State != "PROCESSING" || len(result.checkout.Children) != 2 || result.checkout.ID != checkoutID {
+				t.Fatalf("concurrent checkout = %+v replay=%t err=%v", result.checkout, result.replayed, result.err)
+			}
+			checkout = result.checkout
+			if result.replayed {
+				repeats++
+			} else {
+				fresh++
+			}
+		}
+		if fresh != 1 || repeats != concurrentAttempts-1 {
+			t.Fatalf("checkout fresh=%d repeated=%d", fresh, repeats)
+		}
+		for _, countQuery := range []struct {
+			query    string
+			expected int
+		}{
+			{"SELECT count(*) FROM dsh.commerce_multi_store_checkouts WHERE id=$1", 1},
+			{"SELECT count(*) FROM dsh.commerce_multi_store_checkout_children WHERE checkout_id=$1", 2},
+		} {
+			var count int
+			if err := db.QueryRowContext(ctx, countQuery.query, checkoutID).Scan(&count); err != nil || count != countQuery.expected {
+				t.Fatalf("duplicate checkout persisted count=%d want=%d err=%v", count, countQuery.expected, err)
+			}
 		}
 		replay, replayed, err := postgres.CreateMultiStoreCheckout(ctx, db, input, createKey, requestHash)
 		if err != nil || !replayed || replay.ID != checkoutID || len(replay.Children) != 2 {

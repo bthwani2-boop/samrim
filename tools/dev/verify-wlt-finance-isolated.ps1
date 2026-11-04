@@ -1,3 +1,7 @@
+param(
+  [string]$WltTestPattern = 'TestPartnerStoreFinanceAndRecipientSettlementLifecycle|TestCashIn|TestStoreCommercialAgreementLifecycleAndOrderSnapshots',
+  [string]$DshTestPattern = ''
+)
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Set-Location $repositoryRoot
@@ -88,9 +92,16 @@ try {
   $env:BTHWANI_EXPECTED_DATABASE_PORT = "$port"
   $env:BTHWANI_EXPECTED_DATABASE_NAME = $dbName
   $env:BTHWANI_EXPECTED_DATABASE_USER = $dbUser
-  & go test ./services/wlt/backend/internal/storage/postgres -run 'TestPartnerStoreFinanceAndRecipientSettlementLifecycle|TestCashIn|TestStoreCommercialAgreementLifecycleAndOrderSnapshots' -v -count=1 -timeout 240s
+  & go test ./services/wlt/backend/internal/storage/postgres -run $WltTestPattern -v -count=1 -timeout 240s
   if ($LASTEXITCODE -ne 0) {throw 'WLT finance integration tests failed'}
   Write-Output 'WLT_FINANCE_ISOLATED_TESTS=PASS'
+  if ($DshTestPattern) {
+    $env:DSH_DATABASE_URL = $databaseUrl
+    $env:BTHWANI_FINANCIAL_PROOF_ISOLATED = '1'
+    & go test ./services/dsh/backend/internal/storage/postgres -run $DshTestPattern -v -count=1 -timeout 240s
+    if ($LASTEXITCODE -ne 0) {throw 'DSH isolated checkout integration tests failed'}
+    Write-Output 'DSH_CHECKOUT_ISOLATED_TESTS=PASS'
+  }
 } catch {
   Write-Output "WLT_PROOF_ERROR=$($_.Exception.Message)"
   docker logs --tail 25 $name 2>$null
