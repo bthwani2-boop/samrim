@@ -3,6 +3,15 @@ export type TaxonomyKind = "all" | "vertical" | "type" | "category" | "shortcut"
 export type TaxonomyStatus = "all" | "active" | "inactive";
 // Registry views never silently restrict the list of commercial activities to
 // the last vertical selected while managing another kind of catalog item.
+export function taxonomyResourceForView(view: Exclude<TaxonomyKind, "all">): "categories" | "types" | "shortcuts" | "none" {
+  switch (view) {
+    case "category": return "categories";
+    case "type": return "types";
+    case "shortcut": return "shortcuts";
+    case "vertical": return "none";
+  }
+}
+
 export function visibleTaxonomyVertical(view: TaxonomyKind, selectedVerticalId: string, candidateId: string): boolean {
   return view === "vertical" || !selectedVerticalId || selectedVerticalId === candidateId;
 }

@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCategoryListParams, canLoadMoreCategories, isLoadedViewSort, matchesTaxonomyName, sortTaxonomyRows, taxonomyResultSummary, visibleTaxonomyVertical } from "../src/features/central-catalog/catalog-taxonomy-query.ts";
+import { buildCategoryListParams, canLoadMoreCategories, isLoadedViewSort, matchesTaxonomyName, sortTaxonomyRows, taxonomyResourceForView, taxonomyResultSummary, visibleTaxonomyVertical } from "../src/features/central-catalog/catalog-taxonomy-query.ts";
+
+test("each taxonomy view requests only its own resource and no secondary registry", () => {
+  assert.equal(taxonomyResourceForView("vertical"), "none");
+  assert.equal(taxonomyResourceForView("category"), "categories");
+  assert.equal(taxonomyResourceForView("type"), "types");
+  assert.equal(taxonomyResourceForView("shortcut"), "shortcuts");
+});
 
 test("commercial vertical view always lists all verticals, while other views keep selected scope", () => {
   assert.equal(visibleTaxonomyVertical("vertical", "grocery", "pharmacy"), true);

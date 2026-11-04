@@ -12,6 +12,7 @@ import {
   canLoadMoreCategories,
   matchesTaxonomyName,
   sortTaxonomyRows,
+  taxonomyResourceForView,
   taxonomyResultSummary,
   visibleTaxonomyVertical,
 } from "./catalog-taxonomy-query";
@@ -138,9 +139,12 @@ export function CatalogTaxonomyWorkspace() {
     scopeRequest.current += 1;
     setError("");
     setLoadingScope(true);
-    const reads = kind === "vertical" ? [] : kind === "category"
+    const resource = taxonomyResourceForView(kind);
+    const reads = resource === "categories"
       ? [loadCategories(verticalId, searchedQuery, status, pageSort)]
-      : [loadRelated(verticalId, kind)];
+      : resource === "types" || resource === "shortcuts"
+        ? [loadRelated(verticalId, kind === "type" ? "type" : "shortcut")]
+        : [];
     void Promise.all(reads).finally(() => {
       if (request === scopeLoadRequest.current) setLoadingScope(false);
     });
@@ -160,10 +164,11 @@ export function CatalogTaxonomyWorkspace() {
   const refresh = useCallback(async () => {
     setError("");
     try {
+      const resource = taxonomyResourceForView(kind);
       await Promise.all([
         loadVerticals(),
-        ...(kind === "category" ? [loadCategories(verticalId, searchedQuery, status, pageSort)] : []),
-        ...(kind === "type" || kind === "shortcut" ? [loadRelated(verticalId, kind)] : []),
+        ...(resource === "categories" ? [loadCategories(verticalId, searchedQuery, status, pageSort)] : []),
+        ...(resource === "types" || resource === "shortcuts" ? [loadRelated(verticalId, kind === "type" ? "type" : "shortcut")] : []),
       ]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "تعذّر تحديث القائمة.");
