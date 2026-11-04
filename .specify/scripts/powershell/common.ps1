@@ -861,3 +861,17 @@ except Exception as exc:
 
     return $content
 }
+
+# Produce portable ASCII-only JSON without requiring PowerShell 7's -EscapeHandling.
+# ConvertTo-Json escapes JSON syntax; encode remaining Unicode UTF-16 units as \uXXXX.
+function ConvertTo-SpecKitAsciiJson {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true, ValueFromPipeline = $true)]$InputObject)
+    process {
+        $json = ConvertTo-Json -InputObject $InputObject -Compress
+        [regex]::Replace($json, '[^\x00-\x7F]', {
+            param($match)
+            '\u{0:x4}' -f [int][char]$match.Value[0]
+        })
+    }
+}

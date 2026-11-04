@@ -345,7 +345,7 @@ if ($Json) {
     if ($DryRun) {
         $obj | Add-Member -NotePropertyName 'DRY_RUN' -NotePropertyValue $true
     }
-    $obj | ConvertTo-Json -EscapeHandling EscapeNonAscii -Compress
+    $obj | ConvertTo-SpecKitAsciiJson
 } else {
     Write-Output "BRANCH_NAME: $branchName"
     Write-Output "SPEC_FILE: $specFile"

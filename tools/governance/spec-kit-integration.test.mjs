@@ -79,6 +79,11 @@ test("Spec Kit is an integration-free adapter, not a second authority", () => {
   ]) {
     assert.ok(constitution.includes(marker), `missing authority boundary: ${marker}`);
   }
+  assert.deepEqual(constitution.match(/^[A-Z_]+_AUTHORITY:.*$/gm), [
+    "SEMANTIC_AUTHORITY: NONE",
+    "EXECUTION_AUTHORITY: NONE",
+    "IMPLEMENTATION_STATE_AUTHORITY: NONE",
+  ]);
 });
 
 test(
@@ -101,17 +106,17 @@ test(
         SPECIFY_FEATURE_DIRECTORY: path.join("specs", featureName),
       };
 
-      const unicodeDryRun = successfulJson(
-        invoke(sandbox, "create-new-feature.ps1", [
-          "-DryRun",
-          "-Json",
-          "-Number",
-          "1",
-          "-ShortName",
-          "واجهة-عربية",
-          "Check Unicode feature naming",
-        ]),
-      );
+      const unicodeResult = invoke(sandbox, "create-new-feature.ps1", [
+        "-DryRun",
+        "-Json",
+        "-Number",
+        "1",
+        "-ShortName",
+        "واجهة-عربية",
+        "Check Unicode feature naming",
+      ]);
+      assert.ok([...unicodeResult.stdout.trim()].every((character) => character.charCodeAt(0) <= 127), "JSON stdout must be ASCII-only");
+      const unicodeDryRun = successfulJson(unicodeResult);
       assert.equal(unicodeDryRun.BRANCH_NAME, "001-واجهة-عربية");
       assert.equal(fs.existsSync(specDir), false, "Unicode dry run must not write");
 
