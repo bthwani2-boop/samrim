@@ -1,6 +1,19 @@
 export type TaxonomySort = "default" | "name_asc" | "name_desc";
 export type TaxonomyKind = "all" | "vertical" | "type" | "category" | "shortcut";
 export type TaxonomyStatus = "all" | "active" | "inactive";
+// Registry views never silently restrict the list of commercial activities to
+// the last vertical selected while managing another kind of catalog item.
+export function visibleTaxonomyVertical(view: TaxonomyKind, selectedVerticalId: string, candidateId: string): boolean {
+  return view === "vertical" || !selectedVerticalId || selectedVerticalId === candidateId;
+}
+
+export function matchesTaxonomyName(
+  item: Readonly<{ nameAr: string; nameEn: string }>,
+  query: string,
+): boolean {
+  const normalized = query.trim().toLocaleLowerCase("ar");
+  return !normalized || [item.nameAr, item.nameEn].some((name) => name.toLocaleLowerCase("ar").includes(normalized));
+}
 
 export function buildCategoryListParams(input: Readonly<{
   verticalId: string;

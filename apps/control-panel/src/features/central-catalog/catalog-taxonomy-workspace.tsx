@@ -10,9 +10,10 @@ import { CatalogShoppingShortcutEditor } from "./catalog-shopping-shortcut-regis
 import {
   buildCategoryListParams,
   canLoadMoreCategories,
-  isLoadedViewSort,
+  matchesTaxonomyName,
   sortTaxonomyRows,
   taxonomyResultSummary,
+  visibleTaxonomyVertical,
 } from "./catalog-taxonomy-query";
 import { CatalogVerticalRegistry } from "./catalog-vertical-registry";
 
@@ -22,6 +23,12 @@ type CatalogRow = Readonly<{ id: string; kind: Kind; nameAr: string; nameEn: str
 type Editor = Readonly<{ kind: Kind; id?: string | undefined; sequence: number }>;
 const kindLabels: Record<Kind, string> = {
   vertical: "مجال", type: "نوع متجر", category: "فئة منتجات", shortcut: "اختصار تسوق",
+};
+const viewLabels: Record<Kind, string> = {
+  vertical: "المجالات التجارية", type: "أنواع المتاجر", category: "فئات المنتجات", shortcut: "اختصارات التسوق",
+};
+const searchLabels: Record<Kind, string> = {
+  vertical: "ابحث عن مجال", type: "ابحث عن نوع متجر", category: "ابحث عن فئة", shortcut: "ابحث عن اختصار تسوق",
 };
 
 async function readResponse<T>(response: Response): Promise<T> {
@@ -42,14 +49,13 @@ export function CatalogTaxonomyWorkspace() {
   const [categoryId, setCategoryId] = useState("");
   const [query, setQuery] = useState("");
   const [searchedQuery, setSearchedQuery] = useState("");
-  const [kind, setKind] = useState<Kind | "all">("all");
+  const [kind, setKind] = useState<Kind>("category");
   const [status, setStatus] = useState<Status>("all");
   const [pageSort, setPageSort] = useState<"default" | "name_asc" | "name_desc">("default");
   const [loading, setLoading] = useState(true);
   const [loadingScope, setLoadingScope] = useState(false);
   const [error, setError] = useState("");
   const [editor, setEditor] = useState<Editor | null>(null);
-  const [chooseKind, setChooseKind] = useState(false);
   const categoryRequest = useRef(0);
   const scopeRequest = useRef(0);
   const scopeLoadRequest = useRef(0);
@@ -123,11 +129,15 @@ export function CatalogTaxonomyWorkspace() {
     const request = ++scopeLoadRequest.current;
     setError("");
     setLoadingScope(true);
-    void Promise.all([loadCategories(verticalId, searchedQuery, status, pageSort), loadRelated(verticalId)])
-      .finally(() => {
-        if (request === scopeLoadRequest.current) setLoadingScope(false);
-      });
-  }, [verticalId, searchedQuery, status, pageSort, loadCategories, loadRelated]);
+    // Each view reads only its owner data. A failed category query cannot hide
+    // the independent commercial vertical or Store Type registries.
+    const reads = kind === "vertical" ? [] : kind === "category"
+      ? [loadCategories(verticalId, searchedQuery, status, pageSort)]
+      : [loadRelated(verticalId)];
+    void Promise.all(reads).finally(() => {
+      if (request === scopeLoadRequest.current) setLoadingScope(false);
+    });
+  }, [kind, verticalId, searchedQuery, status, pageSort, loadCategories, loadRelated]);
 
   const refreshShortcut = useCallback(async (saved: ShoppingShortcut) => {
     const request = scopeRequest.current;
@@ -152,20 +162,18 @@ export function CatalogTaxonomyWorkspace() {
   const selectedVertical = verticals.find((v) => v.id === verticalId);
   const rows = useMemo((): CatalogRow[] => {
     const result: CatalogRow[] = verticals
-      .filter((v) => !verticalId || v.id === verticalId)
-      .map((v) => ({ id: v.id, kind: "vertical", nameAr: v.nameAr, nameEn: v.nameEn, active: v.active, context: "مجال رئيسي", imageUri: v.imageUri }));
+      .filter((v) => visibleTaxonomyVertical(kind, verticalId, v.id))
+      .map((v) => ({ id: v.id, kind: "vertical", nameAr: v.nameAr, nameEn: v.nameEn, active: v.active, context: "نشاط تجاري رئيسي", imageUri: v.imageUri }));
     result.push(...types.map((t) => ({ id: t.id, kind: "type" as const, nameAr: t.nameAr, nameEn: t.nameEn, active: t.active, context: selectedVertical?.nameAr ?? "" })));
     result.push(...categories.map((c) => ({ id: c.id, kind: "category" as const, nameAr: c.nameAr, nameEn: c.nameEn, active: c.active, context: c.pathAr || selectedVertical?.nameAr || "", imageUri: c.imageUri })));
     result.push(...shortcuts.map((s) => ({ id: s.id, kind: "shortcut" as const, nameAr: s.titleAr, nameEn: "", active: s.active, context: `${s.storeTypeIds.length} نوع متجر · ${s.categoryIds.length} فئة` })));
-    const search = searchedQuery.toLocaleLowerCase();
-    return result.filter((item) => (kind === "all" || item.kind === kind) && (status === "all" || item.active === (status === "active"))
-      && (!search || [item.nameAr, item.nameEn, item.context, kindLabels[item.kind]].some((value) => value.toLocaleLowerCase().includes(search))));
+    return result.filter((item) => item.kind === kind && (status === "all" || item.active === (status === "active"))
+      && matchesTaxonomyName(item, searchedQuery));
   }, [verticals, verticalId, types, categories, shortcuts, kind, status, searchedQuery, selectedVertical?.nameAr]);
 
   const visibleRows = useMemo(() => loadingScope ? [] : sortTaxonomyRows(rows, pageSort, kind), [rows, pageSort, kind, loadingScope]);
   function openEditor(nextKind: Kind, id?: string) {
     setEditor({ kind: nextKind, id, sequence: ++serial.current });
-    setChooseKind(false);
     if (nextKind === "category" && id) setCategoryId(id);
   }
 
@@ -177,7 +185,7 @@ export function CatalogTaxonomyWorkspace() {
     triggerKey={editor ? editor.kind + ":" + (editor.id ?? "new") : ""}
     onClose={() => setEditor(null)}
     detail={editor ? <AdaptiveRecordPanel title={(editor.id ? "تعديل" : "إضافة") + " " + kindLabels[editor.kind]}
-      subtitle={editor.id ? rows.find((item) => item.kind === editor.kind && item.id === editor.id)?.nameAr ?? "" : selectedVertical?.nameAr ?? "سجل جديد"}
+      subtitle={editor.id ? rows.find((item) => item.kind === editor.kind && item.id === editor.id)?.nameAr ?? "" : editor.kind === "vertical" ? "جميع المجالات التجارية" : selectedVertical?.nameAr ?? "اختر المجال"}
       onClose={() => setEditor(null)}>
         <div className="unified-taxonomy-drawer-body" key={editor.sequence}>
           {editor.kind === "vertical" ? <CatalogVerticalRegistry verticals={verticals} selectedVerticalId={verticalId}
@@ -203,56 +211,59 @@ export function CatalogTaxonomyWorkspace() {
     </AdaptiveRecordPanel> : null}>
   <section className="unified-taxonomy" aria-label="التصنيفات الموحدة">
     <header className="unified-taxonomy-header">
-      <p className="unified-taxonomy-description">المجالات وأنواع المتاجر وفئات المنتجات واختصارات التسوق · إدارة واحدة</p>
+      <p className="unified-taxonomy-description">أدر النشاط التجاري للمتجر وأنواعه وفئات منتجاته واختصارات التسوق، دون خلط وظائفها.</p>
       <div className="unified-taxonomy-create">
-        <button type="button" className="button button-primary" disabled={!canEdit} aria-expanded={chooseKind}
-          onClick={() => setChooseKind((value) => !value)}>＋ إضافة عنصر</button>
-        {chooseKind ? <fieldset className="unified-taxonomy-create-menu" aria-label="نوع العنصر الجديد">
-          {(["vertical", "type", "category", "shortcut"] as const).map((value) =>
-            <button key={value} type="button" disabled={value !== "vertical" && !selectedVertical?.active}
-              onClick={() => openEditor(value)}>إضافة {kindLabels[value]}</button>)}
-        </fieldset> : null}
+        <button type="button" className="button button-primary"
+          disabled={!canEdit || (kind !== "vertical" && !selectedVertical?.active)}
+          onClick={() => openEditor(kind)}>＋ إضافة {kindLabels[kind]}</button>
       </div>
     </header>
+    <fieldset className="unified-taxonomy-views">
+      <legend className="sr-only">اختر ما تريد إدارته</legend>
+      {(["category", "type", "vertical", "shortcut"] as const).map((value) =>
+        <button key={value} type="button" aria-pressed={kind === value}
+          className={`unified-taxonomy-view${kind === value ? " is-active" : ""}`}
+          onClick={() => { setKind(value); setQuery(""); setSearchedQuery(""); setStatus("all"); setPageSort("default"); setEditor(null); }}>
+          {viewLabels[value]}
+        </button>)}
+    </fieldset>
     <div className="unified-taxonomy-controls">
-      <label className="unified-taxonomy-search">بحث شامل
-        <input type="search" maxLength={160} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="بحث بالاسم أو المسار…" />
+      <label className="unified-taxonomy-search">{searchLabels[kind]}
+        <input type="search" maxLength={160} value={query} onChange={(event) => setQuery(event.target.value)}
+          placeholder={kind === "category" ? "ابحث باسم الفئة ضمن المجال المختار…" : "ابحث بالاسم…"} />
       </label>
-      <label>المجال
-        <select value={verticalId} onChange={(e) => { setVerticalId(e.target.value); setCategoryId(""); setEditor(null); }}>
+      {kind !== "vertical" ? <label>المجال التجاري
+        <select value={verticalId} onChange={(event) => { setVerticalId(event.target.value); setQuery(""); setSearchedQuery(""); setCategoryId(""); setEditor(null); }}>
           {!verticalId ? <option value="">{verticals.length === 0 ? "لا توجد مجالات" : "اختر المجال"}</option> : null}
           {verticals.map((v) => <option key={v.id} value={v.id}>{v.nameAr}{v.active ? "" : " — معطّل"}</option>)}
         </select>
-      </label>
-      <label>نوع العنصر
-        <select value={kind} onChange={(e) => setKind(e.target.value as Kind | "all")}>
-          <option value="all">جميع الأنواع</option>
-          {(["vertical", "type", "category", "shortcut"] as const).map((item) => <option key={item} value={item}>{kindLabels[item]}</option>)}
-        </select>
-      </label>
-      <label>{kind === "category" ? "ترتيب الفئات" : kind === "all" ? "ترتيب العرض" : "ترتيب العناصر"}
+      </label> : <p className="unified-taxonomy-scope">جميع المجالات التجارية، دون تقييد بالمجال المختار سابقًا.</p>}
+      <label>{kind === "category" ? "ترتيب الفئات" : "ترتيب العناصر"}
         <select value={kind === "category" && pageSort === "default" ? "name_asc" : pageSort} onChange={(event) => setPageSort(event.target.value as typeof pageSort)}>
-          {kind !== "category" ? <option value="default">الترتيب الأصلي</option> : null}<option value="name_asc">الاسم أ–ي</option><option value="name_desc">الاسم ي–أ</option>
+          {kind !== "category" ? <option value="default">الترتيب الأصلي</option> : null}
+          <option value="name_asc">الاسم أ–ي</option>
+          <option value="name_desc">الاسم ي–أ</option>
         </select>
       </label>
       <details className="unified-taxonomy-advanced"><summary className="button button-secondary">تصفية إضافية{status !== "all" ? " · مفعّلة" : ""}</summary><div>
-        <label>الحالة<select value={status} onChange={(e) => setStatus(e.target.value as Status)}>
+        <label>الحالة<select value={status} onChange={(event) => setStatus(event.target.value as Status)}>
           <option value="all">جميع الحالات</option><option value="active">نشط</option><option value="inactive">متوقف</option>
         </select></label>
-        {(query || kind !== "all" || status !== "all") ? <button type="button" className="button button-secondary unified-taxonomy-reset" onClick={() => { setQuery(""); setStatus("all"); setKind("all"); }}>مسح الفلاتر</button> : null}
+        {(query || status !== "all") ? <button type="button" className="button button-secondary unified-taxonomy-reset"
+          onClick={() => { setQuery(""); setSearchedQuery(""); setStatus("all"); }}>مسح الفلاتر</button> : null}
       </div></details>
     </div>
     {error ? <div className="identity-error" role="alert">{error} <button type="button" className="button button-secondary" onClick={() => void refresh()}>إعادة المحاولة</button></div> : null}
     <div className="unified-taxonomy-count">
       <span>{loading || loadingScope ? "جارٍ تحميل التصنيفات…" : taxonomyResultSummary(rows.length, kind, Boolean(nextCursor))}</span>
-      {!verticalId ? <span>اختر مجالًا لعرض الأنواع والفئات والاختصارات التابعة له.</span> : null}
+      {kind === "vertical" ? <span>جميع المجالات المسجلة</span> : !verticalId ? <span>اختر مجالًا لعرض العناصر التابعة له.</span> : <span>المجال: {selectedVertical?.nameAr ?? "غير متاح"}</span>}
     </div>
     <div className="unified-taxonomy-table-wrap">
       <table className="unified-taxonomy-table">
         <thead><tr>
           <th scope="col">العنصر</th>
           <th scope="col">النوع</th>
-          <th scope="col">المجال / العلاقة</th>
+          <th scope="col">{kind === "category" ? "مسار الفئة" : kind === "vertical" ? "التصنيف" : kind === "type" ? "يتبع المجال" : "الارتباطات"}</th>
           <th scope="col">الحالة</th>
           <th scope="col">الإجراء</th>
         </tr></thead>
@@ -283,7 +294,6 @@ export function CatalogTaxonomyWorkspace() {
         {!loading && !loadingScope && rows.length === 0 ? <li className="collection-state">لا توجد نتائج مطابقة.</li> : null}
       </ul>
     </div>
-    {isLoadedViewSort(kind, Boolean(nextCursor)) && pageSort !== "default" ? <p className="muted" role="status">يطبق الترتيب على العناصر المحمّلة فقط؛ حمّل المزيد لضم بقية الفئات.</p> : null}
     {verticalId && canLoadMoreCategories(kind, Boolean(nextCursor)) ?
       <button type="button" className="button button-secondary unified-taxonomy-more" disabled={loadingScope}
         onClick={() => void loadCategories(verticalId, searchedQuery, status, pageSort, nextCursor, true)}>تحميل المزيد من الفئات</button> : null}

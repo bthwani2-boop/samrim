@@ -1,6 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCategoryListParams, canLoadMoreCategories, isLoadedViewSort, sortTaxonomyRows, taxonomyResultSummary } from "../src/features/central-catalog/catalog-taxonomy-query.ts";
+import { buildCategoryListParams, canLoadMoreCategories, isLoadedViewSort, matchesTaxonomyName, sortTaxonomyRows, taxonomyResultSummary, visibleTaxonomyVertical } from "../src/features/central-catalog/catalog-taxonomy-query.ts";
+
+test("commercial vertical view always lists all verticals, while other views keep selected scope", () => {
+  assert.equal(visibleTaxonomyVertical("vertical", "grocery", "pharmacy"), true);
+  assert.equal(visibleTaxonomyVertical("category", "grocery", "pharmacy"), false);
+  assert.equal(visibleTaxonomyVertical("category", "grocery", "grocery"), true);
+  assert.equal(visibleTaxonomyVertical("category", "", "pharmacy"), true);
+});
+
+test("scoped taxonomy search uses actual Arabic or English entity names, not invented context matches", () => {
+  const item = { nameAr: "أدوات منزلية", nameEn: "Home Essentials" };
+  assert.equal(matchesTaxonomyName(item, "  منزلية  "), true);
+  assert.equal(matchesTaxonomyName(item, "ESSENTIALS"), true);
+  assert.equal(matchesTaxonomyName(item, "نوع متجر"), false);
+  assert.equal(matchesTaxonomyName(item, ""), true);
+});
 
 test("category list queries carry the selected server sort on first and cursor pages", () => {
   const queryName = "\u0634\u0627\u064a";

@@ -2576,10 +2576,12 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
 .unified-taxonomy { direction:rtl; display:grid; gap:12px; min-inline-size:0; }
 .unified-taxonomy-header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
 .unified-taxonomy-description { color:var(--text-muted); font-size:13px; line-height:1.6; }
+.unified-taxonomy-views { display:flex; flex-wrap:wrap; gap:8px; min-inline-size:0; margin:0; padding:0; border:0; }
+.unified-taxonomy-view { min-block-size:40px; padding:8px 14px; border:1px solid var(--border-subtle); border-radius:8px; background:var(--surface-base); color:var(--color-primary); font-weight:650; }
+.unified-taxonomy-view:hover:not(.is-active) { background:var(--surface-muted); border-color:var(--border-strong); }
+.unified-taxonomy-view.is-active { border-color:var(--interactive-text); color:var(--interactive-text); background:var(--surface-muted); }
+.unified-taxonomy-scope { align-self:center; min-inline-size:0; margin:0; font-size:12px; color:var(--text-muted); }
 .unified-taxonomy-create { flex:none; position:relative; }
-.unified-taxonomy-create-menu { position:absolute; inset-block-start:calc(100% + 6px); inset-inline-end:0; z-index:25; display:grid; gap:2px; min-inline-size:200px; margin:0; padding:6px; border:1px solid var(--border-subtle); border-radius:10px; background:var(--surface-base); box-shadow:var(--shadow-card); }
-.unified-taxonomy-create-menu button { border:0; border-radius:6px; background:transparent; color:var(--color-primary); padding:10px 12px; text-align:start; }
-.unified-taxonomy-create-menu button:hover:not(:disabled) { background:var(--surface-muted); }
 .unified-taxonomy-controls { position:relative; display:grid; grid-template-columns:minmax(230px,2fr) minmax(140px,1fr) minmax(155px,1fr) auto; gap:12px; align-items:end; min-inline-size:0; padding:12px 14px; border:1px solid var(--border-subtle); border-radius:10px; background:var(--surface-base); }
 .unified-taxonomy-controls label { display:grid; min-inline-size:0; gap:5px; font-size:12px; font-weight:600; color:var(--text-muted); }
 .unified-taxonomy-controls :is(select,input) { min-inline-size:0; inline-size:100%; min-block-size:40px; padding:8px 11px; background:var(--surface-base); border:1px solid var(--border-strong); border-radius:8px; color:var(--color-primary); }
