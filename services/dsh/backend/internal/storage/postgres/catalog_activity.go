@@ -32,6 +32,7 @@ type CatalogActivityItem struct {
 	Subject            string    `json:"subject"`
 	EntityID           string    `json:"entityId"`
 	StoreID            string    `json:"storeId"`
+	StoreName          string    `json:"storeName,omitempty"`
 	At                 time.Time `json:"at"`
 	Version            int       `json:"version"`
 	FromState          string    `json:"fromState,omitempty"`
@@ -129,23 +130,24 @@ func ListCatalogActivity(ctx context.Context, db *sql.DB, f CatalogActivityFilte
 	}
 	const query = `WITH activity AS (
  SELECT 'product'::text AS kind, a.id, a.event_type, a.acting_actor_id,
-  a.canonical_name AS subject, a.product_id AS entity_id, ''::text AS store_id,
+  a.canonical_name AS subject, a.product_id AS entity_id, ''::text AS store_id, ''::text AS store_name,
   a.created_at AS at, a.result_version, ''::text AS from_state, ''::text AS to_state,
   NULL::bigint AS price_minor, NULL::bigint AS previous_price_minor
  FROM dsh.catalog_product_audit a
  UNION ALL
  SELECT 'offer'::text, a.id, a.event_type, a.acting_actor_id,
-  p.canonical_name, a.offer_id, a.store_id, a.created_at, a.result_version,
+  p.canonical_name, a.offer_id, a.store_id, COALESCE(s.name,''), a.created_at, a.result_version,
   COALESCE(a.from_state,''), a.to_state, a.price_minor, a.old_price_minor
  FROM dsh.catalog_store_offer_audit a
  JOIN dsh.catalog_product_variants v ON v.id=a.variant_id
  JOIN dsh.catalog_products p ON p.id=v.product_id
+ LEFT JOIN dsh.stores s ON s.id=a.store_id
  )
- SELECT kind,id,event_type,acting_actor_id,subject,entity_id,store_id,at,result_version,
+ SELECT kind,id,event_type,acting_actor_id,subject,entity_id,store_id,store_name,at,result_version,
  from_state,to_state,price_minor,previous_price_minor
  FROM activity
  WHERE ($1='' OR store_id=$1)
- AND ($2='' OR subject ILIKE '%'||$2||'%' OR acting_actor_id ILIKE '%'||$2||'%')
+ AND ($2='' OR subject ILIKE '%'||$2||'%' OR store_name ILIKE '%'||$2||'%' OR acting_actor_id ILIKE '%'||$2||'%')
  AND ($3='' OR kind=$3)
  AND ($4='' OR right(event_type,length($4))=$4)
  AND ($5::timestamptz IS NULL OR at >= $5::timestamptz)
@@ -164,7 +166,7 @@ func ListCatalogActivity(ctx context.Context, db *sql.DB, f CatalogActivityFilte
 		var id int64
 		var event string
 		var price, oldPrice sql.NullInt64
-		if err := rows.Scan(&item.Kind, &id, &event, &item.ActorID, &item.Subject, &item.EntityID, &item.StoreID, &item.At, &item.Version, &item.FromState, &item.ToState, &price, &oldPrice); err != nil {
+		if err := rows.Scan(&item.Kind, &id, &event, &item.ActorID, &item.Subject, &item.EntityID, &item.StoreID, &item.StoreName, &item.At, &item.Version, &item.FromState, &item.ToState, &price, &oldPrice); err != nil {
 			return CatalogActivityPage{}, err
 		}
 		item.At = item.At.UTC()

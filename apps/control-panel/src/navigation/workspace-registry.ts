@@ -28,7 +28,9 @@ export const workspaceCatalogResources = [
 export type CatalogResourceKey = (typeof workspaceCatalogResources)[number]["key"];
 
 // Product, category, and proposal registries share /catalog; retain separate import/recovery workflows.
-const catalogChildren: readonly WorkspaceChild[] = [];
+const catalogChildren: readonly WorkspaceChild[] = [
+  { href: "/catalog-activity", label: "سجل النشاط", searchAliases: "تاريخ تعديل المنتجات وعروض المتاجر", showInWorkspaceNavigation: false },
+];
 
 // The policies' names, scopes and supported capabilities have one discoverable owner.
 
@@ -88,7 +90,6 @@ export const workspaceDestinations: readonly WorkspaceDestination[] = [
     ]
   },
   { href: "/catalog", label: "الكتالوج", children: catalogChildren, permission: "catalog" },
-  { href: "/catalog-activity", label: "سجل نشاط الكتالوج", children: [], permission: "catalog" },
   { href: "/marketing", label: "التسويق والمحتوى", children: marketingChildren, permission: "marketing" },
   { href: "/studio", label: "استوديو التصميم", children: [], permission: "marketing" },
   { href: "/finance", label: "المالية", children: financeChildren, permission: "finance" },

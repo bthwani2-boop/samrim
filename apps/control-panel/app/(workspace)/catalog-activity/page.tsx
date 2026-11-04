@@ -1,7 +1,7 @@
-import { CatalogActivityWorkspace } from "../../../src/features/central-catalog/catalog-activity-workspace";
+import { redirect } from "next/navigation";
 
 export default function CatalogActivityPage() {
-  return <CatalogActivityWorkspace />;
+  redirect("/catalog?catalogView=activity");
 }
 
 export const metadata = { title: "سجل نشاط الكتالوج" };
