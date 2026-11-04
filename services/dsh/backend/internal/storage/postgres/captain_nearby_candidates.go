@@ -12,6 +12,8 @@ type NearbyCaptainCandidate struct {
 
 // ListNearbyCaptainCandidates uses the canonical latest presence only.
 // Captains without a fresh position are not eligible for distance-based dispatch.
+// Do not cap the ranked pool before DSH checks WLT coverage: the first 30
+// nearby Captains can all be unfunded while a later Captain is eligible.
 func ListNearbyCaptainCandidates(ctx context.Context, db *sql.DB, orderID, excludedActorID string) ([]NearbyCaptainCandidate, int64, error) {
 	var cashMinor int64
 	err := db.QueryRowContext(ctx, `SELECT payment_cash_amount_minor FROM dsh.commerce_orders WHERE id=$1`, orderID).Scan(&cashMinor)
@@ -37,8 +39,7 @@ func ListNearbyCaptainCandidates(ctx context.Context, db *sql.DB, orderID, exclu
 		ORDER BY
 			power((p.latitude-s.delivery_origin_latitude)*111195.0,2)
 			+power((p.longitude-s.delivery_origin_longitude)*111195.0*cos(radians(s.delivery_origin_latitude)),2),
-			a.actor_id
-		LIMIT 30`, orderID, strings.TrimSpace(excludedActorID))
+			a.actor_id`, orderID, strings.TrimSpace(excludedActorID))
 	if err != nil {
 		return nil, 0, err
 	}

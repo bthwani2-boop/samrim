@@ -67,6 +67,24 @@ func TestCaptainParallelDispatchThreeOnlyOneWins(t *testing.T) {
 				t.Fatalf("nearby ordering mismatch at %d: %+v", i, nearby)
 			}
 		}
+		// A wallet-funded Captain can be ranked beyond the first 30 nearby
+		// candidates. The canonical candidate query must not silently hide
+		// that Captain before DSH checks WLT coverage.
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_admissions
+			(id,actor_id,full_name_ar,state,availability_state,requires_profile_review,version)
+			SELECT 'dispatch-captain-'||n||'-admission','dispatch-captain-'||n,'كابتن اختبار','eligible','available',false,1
+			FROM generate_series(6,40) n`); err != nil {
+			t.Fatalf("insert additional Captain admissions: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_presence_latest(captain_actor_id,latitude,longitude,updated_at)
+			SELECT 'dispatch-captain-'||n,15.3694457+n*0.001,44.1910064,clock_timestamp()
+			FROM generate_series(6,40) n`); err != nil {
+			t.Fatalf("insert additional Captain presence: %v", err)
+		}
+		expanded, expandedCash, err := postgres.ListNearbyCaptainCandidates(ctx, db, orderID, "")
+		if err != nil || expandedCash != 1800 || len(expanded) != 39 || expanded[len(expanded)-1].ActorID != "dispatch-captain-40" {
+			t.Fatalf("search must reach qualified candidates beyond first 30: count=%d cash=%d err=%v", len(expanded), expandedCash, err)
+		}
 		pending, err := postgres.ListReadyCaptainDispatchOrders(ctx, db, 10, "")
 		if err != nil || len(pending) != 1 || pending[0] != orderID {
 			t.Fatalf("automatic dispatch recovery scan=%v err=%v", pending, err)

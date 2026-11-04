@@ -3,7 +3,9 @@ package captain
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
@@ -46,6 +48,32 @@ func TestFundedNearestCaptainsOnlyAndFailClosed(t *testing.T) {
 	})
 	if !errors.Is(err, ErrPaymentUnavailable) {
 		t.Fatalf("wallet outage must not become eligibility rejection: %v", err)
+	}
+}
+
+// A nearby Captain with adequate funds may be ranked after many Captains
+// without sufficient COD coverage; the dispatch search must still reach them.
+func TestFundedCandidatesAfterThirtyUnfundedNeighbors(t *testing.T) {
+	candidates := make([]postgres.NearbyCaptainCandidate, 0, 38)
+	for i := 0; i < 35; i++ {
+		candidates = append(candidates, postgres.NearbyCaptainCandidate{ActorID: fmt.Sprintf("unfunded-%d", i)})
+	}
+	for _, id := range []string{"funded-1", "funded-2", "funded-3"} {
+		candidates = append(candidates, postgres.NearbyCaptainCandidate{ActorID: id})
+	}
+	called := 0
+	selected, err := selectFundedNearbyCaptains(context.Background(), candidates, 1200, func(_ context.Context, actorID string) (wlt.CaptainWalletState, error) {
+		called++
+		if strings.HasPrefix(actorID, "unfunded-") {
+			return wlt.CaptainWalletState{Currency: "YER", LedgerBalanceMinor: 10000, HeldMinor: 9000, AvailableMinor: 1000}, nil
+		}
+		return wlt.CaptainWalletState{Currency: "YER", AvailableMinor: 1200}, nil
+	})
+	if err != nil || !reflect.DeepEqual(selected, []string{"funded-1", "funded-2", "funded-3"}) {
+		t.Fatalf("funded captains after unfunded candidates: selected=%v err=%v", selected, err)
+	}
+	if called != len(candidates) {
+		t.Fatalf("searched %d of %d candidates", called, len(candidates))
 	}
 }
 
