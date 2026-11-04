@@ -121,3 +121,13 @@ test("Fast Guard includes PRs targeting integration branches", () => {
   const broken = triggers.replace("  pull_request:\n  push:", "  pull_request:\n    branches: [main]\n  push:");
   assert.throws(() => assert.match(broken, /^  pull_request:\n  push:/m), assert.AssertionError);
 });
+
+test("Sonar review for PRs into branch 36 remains enabled", () => {
+  const sonar = readFileSync(new URL("./sonar-observe.yml", import.meta.url), "utf8");
+  assert.match(workflow, /^\s+branches: \[main\]$/m, "main push gate remains unchanged");
+  assert.match(sonar, /^\s+- '36'$/m);
+  assert.match(sonar, /github\.event\.pull_request\.base\.ref == '36' \|\|/);
+  assert.match(sonar, /github\.event\.pull_request\.base\.ref == 'main' && github\.event\.pull_request\.draft == false/);
+  assert.match(sonar, /github\.event\.pull_request\.draft == false/);
+  assert.match(sonar, /github\.ref == 'refs\/heads\/main'/);
+});
