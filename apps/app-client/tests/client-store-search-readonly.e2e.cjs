@@ -45,12 +45,15 @@ async function main() {
     assert.equal(await page.locator("html").getAttribute("dir"), "rtl");
     console.log("CLIENT_PRODUCT_SEARCH=PASS_CURRENT_STORE_OFFER");
 
-    await page.goto(origin + "/home", { waitUntil: "domcontentloaded", timeout: 25000 });
-    const store = page.getByRole("button", { name: /^فتح متجر/ }).first();
-    await store.waitFor({ state: "visible", timeout: 16000 });
-    await store.click();
-    await page.waitForURL(url => url.pathname.startsWith("/store/"), { timeout: 12000 });
-    await page.getByText("من منتجات المتجر").first()
+    // Verify the same offer's canonical Store projection, not an unrelated first Store.
+    const matchingOffer = page.getByRole("button", { name: /^عرض .* من / })
+      .filter({ hasText: productName }).first();
+    await matchingOffer.waitFor({ state: "visible", timeout: 16000 });
+    await matchingOffer.click();
+    await page.waitForURL(url => url.pathname.startsWith("/store/") && Boolean(url.searchParams.get("productId")), { timeout: 12000 });
+    await page.locator('[aria-label^="كتالوج "]').first()
+      .waitFor({ state: "visible", timeout: 16000 });
+    await page.getByRole("button", { name: "عرض تفاصيل " + productName, exact: true }).first()
       .waitFor({ state: "visible", timeout: 16000 });
     for (const width of [390, 1366]) {
       await page.setViewportSize({ width, height: 844 });
