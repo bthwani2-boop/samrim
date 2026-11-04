@@ -99,24 +99,30 @@ export function CatalogTaxonomyWorkspace() {
     }
   }, []);
 
-  const loadRelated = useCallback(async (id: string) => {
+  const loadRelated = useCallback(async (id: string, registryKind: "type" | "shortcut") => {
     const request = ++scopeRequest.current;
-    if (!id) { setTypes([]); setShortcuts([]); return; }
+    if (!id) {
+      if (registryKind === "type") setTypes([]);
+      else setShortcuts([]);
+      return;
+    }
     try {
-      const [typeBody, shortcutBody] = await Promise.all([
-        fetch(`/api/catalog/commercial-store-types?${new URLSearchParams({ verticalId: id, includeInactive: "true" })}`, { cache: "no-store" })
-          .then((res) => readResponse<{ storeTypes: ReadonlyArray<CommercialStoreType> }>(res)),
-        fetch(`/api/catalog/shopping-shortcuts?${new URLSearchParams({ verticalId: id })}`, { cache: "no-store" })
-          .then((res) => readResponse<ShoppingShortcutListResponse>(res)),
-      ]);
-      if (request !== scopeRequest.current) return;
-      setTypes(typeBody.storeTypes);
-      setShortcuts(shortcutBody.shortcuts);
+      if (registryKind === "type") {
+        const body = await readResponse<{ storeTypes: ReadonlyArray<CommercialStoreType> }>(
+          await fetch(`/api/catalog/commercial-store-types?${new URLSearchParams({ verticalId: id, includeInactive: "true" })}`, { cache: "no-store" }),
+        );
+        if (request === scopeRequest.current) setTypes(body.storeTypes);
+      } else {
+        const body = await readResponse<ShoppingShortcutListResponse>(
+          await fetch(`/api/catalog/shopping-shortcuts?${new URLSearchParams({ verticalId: id })}`, { cache: "no-store" }),
+        );
+        if (request === scopeRequest.current) setShortcuts(body.shortcuts);
+      }
     } catch (cause) {
       if (request !== scopeRequest.current) return;
-      setTypes([]);
-      setShortcuts([]);
-      setError(cause instanceof Error ? cause.message : "تعذّر تحميل الأنواع والاختصارات.");
+      if (registryKind === "type") setTypes([]);
+      else setShortcuts([]);
+      setError(cause instanceof Error ? cause.message : "تعذّر تحميل العناصر. أعد المحاولة.");
     }
   }, []);
 
@@ -127,13 +133,14 @@ export function CatalogTaxonomyWorkspace() {
 
   useEffect(() => {
     const request = ++scopeLoadRequest.current;
+    // Invalidate requests from the previous view before starting new reads.
+    categoryRequest.current += 1;
+    scopeRequest.current += 1;
     setError("");
     setLoadingScope(true);
-    // Each view reads only its owner data. A failed category query cannot hide
-    // the independent commercial vertical or Store Type registries.
     const reads = kind === "vertical" ? [] : kind === "category"
       ? [loadCategories(verticalId, searchedQuery, status, pageSort)]
-      : [loadRelated(verticalId)];
+      : [loadRelated(verticalId, kind)];
     void Promise.all(reads).finally(() => {
       if (request === scopeLoadRequest.current) setLoadingScope(false);
     });
@@ -153,11 +160,15 @@ export function CatalogTaxonomyWorkspace() {
   const refresh = useCallback(async () => {
     setError("");
     try {
-      await Promise.all([loadVerticals(), loadCategories(verticalId, searchedQuery, status, pageSort), loadRelated(verticalId)]);
+      await Promise.all([
+        loadVerticals(),
+        ...(kind === "category" ? [loadCategories(verticalId, searchedQuery, status, pageSort)] : []),
+        ...(kind === "type" || kind === "shortcut" ? [loadRelated(verticalId, kind)] : []),
+      ]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "تعذّر تحديث القائمة.");
     }
-  }, [loadVerticals, loadCategories, loadRelated, verticalId, searchedQuery, status, pageSort]);
+  }, [kind, loadVerticals, loadCategories, loadRelated, verticalId, searchedQuery, status, pageSort]);
 
   const selectedVertical = verticals.find((v) => v.id === verticalId);
   const rows = useMemo((): CatalogRow[] => {
@@ -223,7 +234,16 @@ export function CatalogTaxonomyWorkspace() {
       {(["category", "type", "vertical", "shortcut"] as const).map((value) =>
         <button key={value} type="button" aria-pressed={kind === value}
           className={`unified-taxonomy-view${kind === value ? " is-active" : ""}`}
-          onClick={() => { setKind(value); setQuery(""); setSearchedQuery(""); setStatus("all"); setPageSort("default"); setEditor(null); }}>
+          onClick={() => {
+            if (value === kind) return;
+            if (editor && !window.confirm("تغيير القسم سيغلق المحرر الحالي وقد يفقد التعديلات غير المحفوظة. هل تريد المتابعة؟")) return;
+            setKind(value);
+            setQuery("");
+            setSearchedQuery("");
+            setStatus("all");
+            setPageSort("default");
+            setEditor(null);
+          }}>
           {viewLabels[value]}
         </button>)}
     </fieldset>
