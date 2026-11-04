@@ -100,7 +100,8 @@ test(
       const featureDir = path.join(specDir, featureName);
       const selection = path.join(sandbox, ".specify", "feature.json");
       const original = '{"feature_directory":"original-feature"}';
-      fs.writeFileSync(selection, original, { encoding: "utf8", flag: "wx" });
+      fs.writeFileSync(selection, "stale sandbox selection", "utf8");
+      fs.writeFileSync(selection, original, "utf8");
       const featureEnv = {
         SPECIFY_FEATURE: featureName,
         SPECIFY_FEATURE_DIRECTORY: path.join("specs", featureName),

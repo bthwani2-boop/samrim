@@ -20,7 +20,7 @@ $sshTarget = $null
 $sshPort = $null
 switch ($dockerUri.Scheme) {
   'ssh' {
-    if (-not $dockerUri.Host -or $dockerUri.UserInfo.Contains(':') -or $dockerUri.AbsolutePath -ne '/') {
+    if (-not $dockerUri.Host -or $dockerUri.UserInfo.Contains(':')) {
       throw 'Unsupported SSH Docker endpoint'
     }
     $sshTarget = if ($dockerUri.UserInfo) { "$($dockerUri.UserInfo)@$($dockerUri.Host)" } else { $dockerUri.Host }

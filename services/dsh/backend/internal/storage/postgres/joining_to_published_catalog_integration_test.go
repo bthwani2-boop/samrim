@@ -137,9 +137,6 @@ func TestApprovedJoiningToCustomerVisibleCatalog(t *testing.T) {
 			t.Fatalf("approve Store: %+v %v", accepted, err)
 		}
 		storeID := accepted.Case.StoreID
-		if _, err = postgres.ReadPublishedStore(ctx, db, storeID, city); !errors.Is(err, postgres.ErrStoreNotFound) {
-			t.Fatalf("approved but unpublished Store leaked: %v", err)
-		}
 		productInput := postgres.CatalogProductInput{VerticalID: vertical, Scope: "STORE_SCOPED", StoreID: storeID,
 			CanonicalName: "شاحن رحلة اختبار", VariantTitle: "قطعة", MeasurementKind: "DISCRETE", BaseUnit: "COUNT"}
 		product, err := postgres.CreateCatalogProduct(ctx, db, productInput, "qa-journey-product",
@@ -163,10 +160,6 @@ func TestApprovedJoiningToCustomerVisibleCatalog(t *testing.T) {
 			owner, "qa-journey-publish-offer-correlation")
 		if err != nil || visibleOffer.Offer.PublicationState != "published" {
 			t.Fatalf("publish Offer: %+v %v", visibleOffer, err)
-		}
-		search, err := postgres.SearchPublicCatalog(ctx, db, city, "", "", "شاحن", 20, "")
-		if err != nil || len(search.Offers) != 0 {
-			t.Fatalf("prepublication offer leaked: %+v %v", search, err)
 		}
 
 		identityHTTP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -274,6 +267,13 @@ func TestApprovedJoiningToCustomerVisibleCatalog(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if _, err = postgres.ReadPublishedStore(ctx, db, storeID, city); !errors.Is(err, postgres.ErrStoreNotFound) {
+			t.Fatalf("active but unpublished Store leaked: %v", err)
+		}
+		search, err := postgres.SearchPublicCatalog(ctx, db, city, "", "", "شاحن", 20, "")
+		if err != nil || len(search.Offers) != 0 {
+			t.Fatalf("active but unpublished Store offer leaked: %+v %v", search, err)
+		}
 		_, missing, err = publication.Publish(ctx, storeID, "published", store.Version, "qa-agreement-blocked", operator, "qa-blocked-correlation")
 		if !errors.Is(err, storepublication.ErrPublicationReadinessBlocked) || missing.Ready {
 			t.Fatalf("unapproved agreement allowed: %+v err=%v", missing, err)
@@ -291,7 +291,7 @@ func TestApprovedJoiningToCustomerVisibleCatalog(t *testing.T) {
 		if err != nil || publicStore.ID != storeID || publicStore.StoreProfileImage == nil || publicStore.StoreCoverImage == nil {
 			t.Fatalf("owner-backed public Store/media unreadable: %+v %v", publicStore, err)
 		}
-		search, err = postgres.SearchPublicCatalog(ctx, db, city, "", "", "شاحن", 20, "")
+		search, err = publication.SearchPublicCatalog(ctx, city, "", "", "شاحن", 20, "")
 		if err != nil || len(search.Offers) != 1 || search.Offers[0].StoreID != storeID || search.Offers[0].Product.ID != product.Product.ID {
 			t.Fatalf("published Catalog / Store identity mismatch: %+v %v", search, err)
 		}
