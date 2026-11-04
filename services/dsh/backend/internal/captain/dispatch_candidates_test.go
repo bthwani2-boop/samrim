@@ -234,3 +234,65 @@ func TestFundedCandidatePaginationRejectsChangedCashExposure(t *testing.T) {
 		t.Fatalf("cash amount changed between pages: selected=%v err=%v pages=%d", selected, err, pages)
 	}
 }
+
+func TestFundedCandidatePagesStopAfterRemainingQuota(t *testing.T) {
+	first := make([]postgres.NearbyCaptainCandidate, postgres.NearbyCaptainCandidatePageSize)
+	first[0] = postgres.NearbyCaptainCandidate{ActorID: "funded-one"}
+	first[1] = postgres.NearbyCaptainCandidate{ActorID: "funded-two"}
+	for i := 2; i < len(first); i++ {
+		first[i] = postgres.NearbyCaptainCandidate{ActorID: fmt.Sprintf("unfunded-%d", i)}
+	}
+	pages, reads := 0, []string{}
+	selected, err := selectFundedNearbyCaptainPages(context.Background(),
+		func(_ context.Context, cursor *postgres.NearbyCaptainCandidate) ([]postgres.NearbyCaptainCandidate, int64, error) {
+			pages++
+			if pages == 1 {
+				return first, 1200, nil
+			}
+			if pages != 2 || cursor == nil || cursor.ActorID != first[len(first)-1].ActorID {
+				t.Fatalf("unexpected query after final captain or bad cursor: page=%d cursor=%+v", pages, cursor)
+			}
+			return []postgres.NearbyCaptainCandidate{
+				{ActorID: "funded-three"}, {ActorID: "wallet-lookup-must-not-run"},
+			}, 1200, nil
+		},
+		func(_ context.Context, id string) (wlt.CaptainWalletState, error) {
+			reads = append(reads, id)
+			if id == "wallet-lookup-must-not-run" {
+				return wlt.CaptainWalletState{}, errors.New("unneeded WLT failure")
+			}
+			if strings.HasPrefix(id, "unfunded-") {
+				return wlt.CaptainWalletState{Currency: "YER", AvailableMinor: 0}, nil
+			}
+			return wlt.CaptainWalletState{Currency: "YER", AvailableMinor: 1200}, nil
+		})
+	if err != nil || !reflect.DeepEqual(selected, []string{"funded-one", "funded-two", "funded-three"}) || pages != 2 || len(reads) != 31 {
+		t.Fatalf("remaining quota must stop WLT reads: selected=%v err=%v pages=%d reads=%v", selected, err, pages, reads)
+	}
+}
+
+func TestFundedCandidatePageBudgetFailsClosedWithoutPartialOffers(t *testing.T) {
+	pages := 0
+	candidates := make([]postgres.NearbyCaptainCandidate, postgres.NearbyCaptainCandidatePageSize)
+	for i := range candidates {
+		candidates[i] = postgres.NearbyCaptainCandidate{ActorID: fmt.Sprintf("unfunded-%d", i)}
+	}
+	candidates[0].ActorID = "one-funded"
+	selected, err := selectFundedNearbyCaptainPages(context.Background(),
+		func(_ context.Context, _ *postgres.NearbyCaptainCandidate) ([]postgres.NearbyCaptainCandidate, int64, error) {
+			pages++
+			if pages > 1 {
+				candidates[0].ActorID = "unfunded-0"
+			}
+			return candidates, 1200, nil
+		}, func(_ context.Context, id string) (wlt.CaptainWalletState, error) {
+			available := int64(0)
+			if id == "one-funded" {
+				available = 1200
+			}
+			return wlt.CaptainWalletState{Currency: "YER", AvailableMinor: available}, nil
+		})
+	if !errors.Is(err, postgres.ErrCaptainNoAvailable) || selected != nil || pages != maxCaptainCandidatePages {
+		t.Fatalf("page budget must fail closed: selected=%v err=%v pages=%d", selected, err, pages)
+	}
+}

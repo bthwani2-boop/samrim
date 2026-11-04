@@ -10,4 +10,6 @@ test("Store product saved feedback uses a supported native accessibility role an
   assert.match(feedback[1], /accessibilityRole="text"/);
   assert.match(feedback[1], /accessibilityLiveRegion="polite"/);
   assert.doesNotMatch(source, /accessibilityRole="status"/);
+  assert.match(source, /Platform\.OS === "ios" && panel === "create" && productSaveFeedback/);
+  assert.match(source, /AccessibilityInfo\.announceForAccessibility\(productSaveFeedback\)/);
 });

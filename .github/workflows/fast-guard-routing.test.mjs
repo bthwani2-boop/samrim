@@ -77,6 +77,7 @@ test("PowerShell is verified before the mandatory Spec Kit governance test", () 
   assert.match(step, /sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y powershell/);
   assert.match(step, /pwsh -NoProfile -NonInteractive -Command 'exit 0'/);
   assert.doesNotMatch(step, /^\s+continue-on-error: true$/m);
+  assert.doesNotMatch(step, /^\s+if:/m, "PowerShell setup must not be conditional");
   const mutant = workflow.replace(setup, "      - name: Removed mandatory PowerShell setup");
   assert.throws(() => assert.match(mutant, /      - name: Ensure PowerShell for mandatory Spec Kit proof/), assert.AssertionError);
 });

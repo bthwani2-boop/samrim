@@ -88,6 +88,6 @@ export function CatalogCenterWorkspace() {
     {visited.has("products") ? <section className="catalog-command-content" hidden={view!=="products"} aria-label="المنتجات"><CentralCatalog/></section>:null}
     {visited.has("categories") ? <section className="catalog-command-content" hidden={view!=="categories"} aria-label="المجالات والفئات"><CatalogTaxonomyWorkspace/></section>:null}
     {visited.has("proposals") ? <section className="catalog-command-content" hidden={view!=="proposals"} aria-label="المراجعة"><CatalogProposalReview/></section>:null}
-    {activityAllowed && visited.has("activity") ? <section className="catalog-command-content" hidden={view!=="activity"} aria-label="سجل النشاط"><CatalogActivityWorkspace/></section>:null}
+    {activityAllowed && visited.has("activity") ? <section className="catalog-command-content" hidden={view!=="activity"} aria-label="سجل النشاط"><CatalogActivityWorkspace active={view==="activity"}/></section>:null}
   </div>;
 }

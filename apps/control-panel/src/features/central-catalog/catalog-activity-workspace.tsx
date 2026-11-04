@@ -69,7 +69,7 @@ function eventDetails(item: CatalogActivityItem) {
   </div>;
 }
 
-export function CatalogActivityWorkspace() {
+export function CatalogActivityWorkspace({ active = true }: Readonly<{ active?: boolean }> = {}) {
   const [draft, setDraft] = useState<Filter>(emptyFilters);
   const [applied, setApplied] = useState<Filter>(emptyFilters);
   const [cursor, setCursor] = useState("");
@@ -80,6 +80,7 @@ export function CatalogActivityWorkspace() {
 
   useEffect(() => {
     void retry;
+    if (!active) return;
     const controller = new AbortController();
     const query = new URLSearchParams({ limit: "20" });
     for (const [key, value] of Object.entries(applied)) {
@@ -95,7 +96,7 @@ export function CatalogActivityWorkspace() {
       .then(page => { if (!controller.signal.aborted) setResult({ kind: "ready", page }); })
       .catch(() => { if (!controller.signal.aborted) setResult({ kind: "error" }); });
     return () => controller.abort();
-  }, [applied, cursor, retry]);
+  }, [active, applied, cursor, retry]);
 
   const update = (key: keyof Filter, value: string) => setDraft(current => ({ ...current, [key]: value }));
   const apply = () => {

@@ -18,7 +18,7 @@ import { Image as ExpoImage } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { type ComponentProps, type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Linking, Modal, Platform, Pressable, ScrollView, Switch, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { AccessibilityInfo, ActivityIndicator, Image, Linking, Modal, Platform, Pressable, ScrollView, Switch, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { onPartnerProductAction } from "../../shell/partner-product-actions";
 import { PartnerStorePromotionBanner } from "./partner-promotion-banner";
@@ -237,6 +237,12 @@ const theme = useAppearanceTheme();
   const [shareNotice, setShareNotice] = useState("");
   const [sharingOfferID, setSharingOfferID] = useState("");
   const [productSaveFeedback, setProductSaveFeedback] = useState("");
+  useEffect(() => {
+    // Android announces the polite live region; iOS needs an explicit VoiceOver announcement.
+    if (Platform.OS === "ios" && panel === "create" && productSaveFeedback) {
+      AccessibilityInfo.announceForAccessibility(productSaveFeedback);
+    }
+  }, [panel, productSaveFeedback]);
   const [storeProductName, setStoreProductName] = useState("");
   const [storeProductInitialPrice, setStoreProductInitialPrice] = useState("");
   const [storeProductDescription, setStoreProductDescription] = useState("");

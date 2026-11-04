@@ -16,7 +16,14 @@ type NearbyCaptainCandidate struct {
 // ListNearbyCaptainCandidates uses canonical fresh presence and a distance/ID
 // cursor. A page is bounded, but DSH can continue beyond the first 30 nearby
 // Captains until enough WLT-funded Captains have been found.
-func ListNearbyCaptainCandidates(ctx context.Context, db *sql.DB, orderID, excludedActorID string, after *NearbyCaptainCandidate) ([]NearbyCaptainCandidate, int64, error) {
+// NearbyCaptainCandidateReader allows all ranked pages to share one stable
+// read-only transaction snapshot while retaining the ordinary DB callers.
+type NearbyCaptainCandidateReader interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func ListNearbyCaptainCandidates(ctx context.Context, db NearbyCaptainCandidateReader, orderID, excludedActorID string, after *NearbyCaptainCandidate) ([]NearbyCaptainCandidate, int64, error) {
 	var cashMinor int64
 	err := db.QueryRowContext(ctx, `SELECT payment_cash_amount_minor FROM dsh.commerce_orders WHERE id=$1`, orderID).Scan(&cashMinor)
 	if err != nil {
