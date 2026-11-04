@@ -278,13 +278,31 @@ func Migrate(ctx context.Context, db *sql.DB, records []MigrationRecord, migrati
 		if record.Version != current+1 {
 			return fmt.Errorf("DSH migration v%d cannot follow schema v%d", record.Version, current)
 		}
-		if _, err := tx.ExecContext(ctx, migrationSQL[index]); err != nil {
-			return fmt.Errorf("apply DSH canonical migration v%d: %w", record.Version, err)
+		applySQL := true
+		if record.Version == 170 {
+			applySQL, err = prepareCustomerCatalogNameIndex(ctx, tx)
+			if err != nil {
+				return fmt.Errorf("prepare DSH canonical migration v170: %w", err)
+			}
+		}
+		if applySQL {
+			if _, err := tx.ExecContext(ctx, migrationSQL[index]); err != nil {
+				return fmt.Errorf("apply DSH canonical migration v%d: %w", record.Version, err)
+			}
 		}
 		if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.schema_migrations(version, name, sha256) VALUES($1,$2,$3)", record.Version, record.Name, record.SHA256); err != nil {
 			return fmt.Errorf("record DSH migration v%d: %w", record.Version, err)
 		}
 		current++
+		if record.Version == 170 && current < SchemaVersion {
+			// Release the catalog lock before v171 changes Studio tables.
+			// The next transaction re-acquires the migration advisory lock and
+			// validates the committed v170 checksum before proceeding.
+			if err := tx.Commit(); err != nil {
+				return fmt.Errorf("commit DSH migration v170: %w", err)
+			}
+			return Migrate(ctx, db, records, migrationSQL, proofKeys)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit DSH migrations through v%d: %w", SchemaVersion, err)
