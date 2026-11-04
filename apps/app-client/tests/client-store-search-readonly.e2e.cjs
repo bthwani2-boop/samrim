@@ -38,19 +38,37 @@ async function main() {
     await headerSearch.click();
     await page.getByRole("button", { name: "المنتجات", exact: true }).click();
     const search = page.getByPlaceholder("ابحث عن متجر أو منتج");
+    const serverSearch = page.waitForResponse(response => {
+      const url = new URL(response.url());
+      return response.ok() && response.request().method() === "GET" &&
+        url.pathname === "/dsh/public/catalog/search" && url.searchParams.get("q") === productName;
+    }, { timeout: 16000 });
     await search.fill(productName);
+    const searchPayload = await (await serverSearch).json();
+    assert.ok(Array.isArray(searchPayload?.offers), "CANONICAL_SEARCH_OFFERS_REQUIRED");
+    const namedOffers = searchPayload.offers.filter(offer =>
+      `عرض ${offer.productName} من ${offer.storeName || "المتجر"}` === label &&
+      typeof offer.storeId === "string" && offer.storeId &&
+      typeof offer.productId === "string" && offer.productId);
+    assert.ok(namedOffers.length > 0, "ORIGINAL_STORE_OFFER_NOT_IN_SEARCH_RESULTS");
+    const selectedOffer = namedOffers[0];
     await page.getByText(productName, { exact: true }).first()
       .waitFor({ state: "visible", timeout: 16000 });
     await page.getByText("نتائج المنتجات").waitFor({ state: "visible", timeout: 12000 });
     assert.equal(await page.locator("html").getAttribute("dir"), "rtl");
     console.log("CLIENT_PRODUCT_SEARCH=PASS_CURRENT_STORE_OFFER");
 
-    // Verify the same offer's canonical Store projection, not an unrelated first Store.
-    // Match both the originally observed product and its Store, not a similarly named offer.
-    const matchingOffer = page.getByRole("button", { name: label, exact: true }).first();
-    await matchingOffer.waitFor({ state: "visible", timeout: 16000 });
-    await matchingOffer.click();
+    // The search cards preserve DSH's offer order. Bind the first matching
+    // card to the first identical server identity, even with duplicate names.
+    const searchResults = page.locator('[aria-label="نتائج البحث عن المنتجات"]');
+    const matchingOffers = searchResults.getByRole("button", { name: label, exact: true });
+    await matchingOffers.first().waitFor({ state: "visible", timeout: 16000 });
+    assert.equal(await matchingOffers.count(), namedOffers.length, "SEARCH_OFFER_IDENTITY_COUNT_MISMATCH");
+    await matchingOffers.first().click();
     await page.waitForURL(url => url.pathname.startsWith("/store/") && Boolean(url.searchParams.get("productId")), { timeout: 12000 });
+    const destination = new URL(page.url());
+    assert.equal(decodeURIComponent(destination.pathname.slice("/store/".length)), selectedOffer.storeId, "OPENED_WRONG_STORE");
+    assert.equal(destination.searchParams.get("productId"), selectedOffer.productId, "OPENED_WRONG_PRODUCT");
     await page.locator('[aria-label^="كتالوج "]').first()
       .waitFor({ state: "visible", timeout: 16000 });
     await page.getByRole("button", { name: "عرض تفاصيل " + productName, exact: true }).first()
