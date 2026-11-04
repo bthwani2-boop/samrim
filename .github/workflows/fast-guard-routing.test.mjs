@@ -76,6 +76,7 @@ test("governance verification runs in CI even without a Node project change", ()
   assert.match(step, /^\s+run: \|$/m);
   assert.match(step, command);
   assert.match(step, /^\s+node --test \.github\/workflows\/fast-guard-routing\.test\.mjs$/m);
+  assert.match(step, /^\s+node --test tools\/governance\/spec-kit-integration\.test\.mjs$/m);
   assert.doesNotMatch(step, /^\s+if:/m, "must not depend on changed-project classification");
   // Negative control: removing the check must fail this exact assertion.
   const mutant = step.replace("node tools/governance/verify-governance.mjs", "node --version");

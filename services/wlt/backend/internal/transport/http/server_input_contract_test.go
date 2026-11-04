@@ -40,17 +40,24 @@ func TestCashInRailConfigurationGuard(t *testing.T) {
 	if rail, enabled, err := cashInRailForConfig(" disabled ", "development"); err != nil || rail != nil || enabled {
 		t.Fatalf("disabled Cash-In mode: rail=%T enabled=%v err=%v", rail, enabled, err)
 	}
+	for _, environment := range []string{"stage", "staging", "production"} {
+		t.Run("cash-in-disabled-"+environment, func(t *testing.T) {
+			if rail, enabled, err := cashInRailForConfig("disabled", environment); err != nil || rail != nil || enabled {
+				t.Fatalf("disabled Cash-In must remain valid without an external provider: rail=%T enabled=%v err=%v", rail, enabled, err)
+			}
+			if _, _, err := cashInRailForConfig("simulator", environment); err == nil {
+				t.Fatal("development simulator was accepted outside development")
+			}
+			if _, _, err := cashInRailForConfig("wiremock", environment, "http://payment-mock:8080"); err == nil {
+				t.Fatal("development HTTP mock was accepted outside development")
+			}
+		})
+	}
 	if rail, enabled, err := cashInRailForConfig(" SIMULATOR ", " DEVELOPMENT "); err != nil || rail == nil || !enabled {
 		t.Fatalf("development simulator: rail=%T enabled=%v err=%v", rail, enabled, err)
 	}
-	if _, _, err := cashInRailForConfig("simulator", "production"); err == nil {
-		t.Fatal("Cash-In simulator was accepted outside development")
-	}
 	if rail, enabled, err := cashInRailForConfig("wiremock", "development", "http://payment-mock:8080"); err != nil || rail == nil || !enabled {
 		t.Fatalf("development HTTP mock: rail=%T enabled=%v err=%v", rail, enabled, err)
-	}
-	if _, _, err := cashInRailForConfig("wiremock", "production", "http://payment-mock:8080"); err == nil {
-		t.Fatal("HTTP mock was accepted in production")
 	}
 	if _, _, err := cashInRailForConfig("wiremock", "development"); err == nil {
 		t.Fatal("HTTP mock without a verified endpoint was accepted")

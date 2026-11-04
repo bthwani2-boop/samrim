@@ -37,9 +37,11 @@ func joiningQADatabaseIsolated(raw string, env func(string) string) bool {
 		return false
 	}
 	local := u.Port() == "15440" && u.EscapedPath() == "/dsh_qa" && u.User.Username() == "qa_join"
+	finance := u.Port() == "15439" && u.EscapedPath() == "/bthwani_wlt_finance_proof" && u.User.Username() == "finance_proof" &&
+		env("BTHWANI_ENV") == "test" && env("BTHWANI_FINANCIAL_PROOF_ISOLATED") == "1"
 	ci := u.Port() == "19432" && u.EscapedPath() == "/dsh_join_qa" && u.User.Username() == "postgres" &&
 		env("BTHWANI_ENV") == "test" && env("BTHWANI_FINANCIAL_PROOF_ISOLATED") == "1"
-	return local || ci
+	return local || finance || ci
 }
 
 func TestJoiningQADatabaseIsolationGuard(t *testing.T) {
@@ -49,6 +51,9 @@ func TestJoiningQADatabaseIsolationGuard(t *testing.T) {
 	}{
 		{"CI exact", "postgres://postgres:secret@127.0.0.1:19432/dsh_join_qa?sslmode=disable", true},
 		{"local exact", "postgres://qa_join:secret@127.0.0.1:15440/dsh_qa?sslmode=disable", true},
+		{"isolated finance harness", "postgres://finance_proof:secret@127.0.0.1:15439/bthwani_wlt_finance_proof?sslmode=disable", true},
+		{"finance wrong database", "postgres://finance_proof:secret@127.0.0.1:15439/dsh_qa?sslmode=disable", false},
+		{"finance wrong port", "postgres://finance_proof:secret@127.0.0.1:15440/bthwani_wlt_finance_proof?sslmode=disable", false},
 		{"backup database", "postgres://postgres:secret@127.0.0.1:19432/dsh_join_qa_backup?sslmode=disable", false},
 		{"backup local", "postgres://qa_join:secret@127.0.0.1:15440/dsh_qa_backup", false},
 		{"wrong hostname", "postgres://postgres:secret@localhost:19432/dsh_join_qa", false},

@@ -48,6 +48,7 @@ type actorRequest struct {
 	correlationID   string
 	expectedVersion int
 	actingActorID   string
+	actingActorType string
 	target          any
 }
 
@@ -182,6 +183,9 @@ func (c *Client) requestWithActor(ctx context.Context, input actorRequest) error
 	}
 	if strings.TrimSpace(input.actingActorID) != "" {
 		request.Header.Set("X-Acting-Actor-ID", strings.TrimSpace(input.actingActorID))
+	}
+	if strings.TrimSpace(input.actingActorType) != "" {
+		request.Header.Set("X-Acting-Actor-Type", strings.ToLower(strings.TrimSpace(input.actingActorType)))
 	}
 	response, err := c.httpClient.Do(request)
 	if err != nil {

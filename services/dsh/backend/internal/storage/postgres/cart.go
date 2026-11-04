@@ -271,6 +271,10 @@ WHERE l.cart_id=$1 AND l.removed_at IS NULL ORDER BY l.created_at,l.id`, cartID)
 }
 
 func UpsertCartLine(ctx context.Context, db *sql.DB, clientActorID, storeID, offerID string, quantity int64, modifierIDs []string, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string) (CartRecord, bool, error) {
+	// An omitted optional modifier selection means an empty PostgreSQL array, never NULL.
+	if modifierIDs == nil {
+		modifierIDs = []string{}
+	}
 	if strings.TrimSpace(clientActorID) == "" || strings.TrimSpace(storeID) == "" || strings.TrimSpace(offerID) == "" || expectedVersion < 0 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(correlationID) == "" {
 		return CartRecord{}, false, errors.New("cart line mutation facts are invalid")
 	}
@@ -382,6 +386,9 @@ func UpsertCartLine(ctx context.Context, db *sql.DB, clientActorID, storeID, off
 }
 
 func UpdateCartLine(ctx context.Context, db *sql.DB, clientActorID, lineID string, quantity int64, modifierIDs []string, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string) (CartRecord, bool, error) {
+	if modifierIDs == nil {
+		modifierIDs = []string{}
+	}
 	if strings.TrimSpace(clientActorID) == "" || strings.TrimSpace(lineID) == "" || expectedVersion < 1 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(correlationID) == "" {
 		return CartRecord{}, false, errors.New("cart line update facts are invalid")
 	}

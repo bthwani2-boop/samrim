@@ -193,8 +193,9 @@ func (s *Server) reconcileDevelopmentFundingIntent(w http.ResponseWriter, r *htt
 		return
 	}
 	actorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if actorID == "" || len(actorID) > 128 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Acting actor is required")
+	actorType := strings.ToLower(strings.TrimSpace(r.Header.Get("X-Acting-Actor-Type")))
+	if actorID == "" || len(actorID) > 128 || (actorType != "customer" && actorType != "captain") {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "A valid acting actor and type are required")
 		return
 	}
 	correlation, _, ok := mutationHeaders(w, r)
@@ -206,7 +207,7 @@ func (s *Server) reconcileDevelopmentFundingIntent(w http.ResponseWriter, r *htt
 		writeCashInError(w, err)
 		return
 	}
-	if item.ActorID != actorID || !cashin.ValidMockProviderKey(item.ProviderKey) {
+	if item.ActorID != actorID || item.ActorType != actorType || !cashin.ValidMockProviderKey(item.ProviderKey) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "Funding intent was not found")
 		return
 	}
@@ -256,8 +257,9 @@ func (s *Server) simulateCashInFundingIntent(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	actingActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if actingActorID == "" || len(actingActorID) > 128 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+	actingActorType := strings.ToLower(strings.TrimSpace(r.Header.Get("X-Acting-Actor-Type")))
+	if actingActorID == "" || len(actingActorID) > 128 || (actingActorType != "customer" && actingActorType != "captain") {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "A valid acting actor and type are required")
 		return
 	}
 	correlation, idempotency, ok := mutationHeaders(w, r)
@@ -276,7 +278,11 @@ func (s *Server) simulateCashInFundingIntent(w http.ResponseWriter, r *http.Requ
 		writeCashInError(w, err)
 		return
 	}
-	if current.ProviderKey != postgres.DevelopmentSimulatorProvider && !cashin.ValidMockProviderKey(current.ProviderKey) {
+	if current.ActorID != actingActorID || current.ActorType != actingActorType {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "Funding intent was not found")
+		return
+	}
+	if current.ProviderKey != postgres.DevelopmentSimulatorProvider {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "only development-simulator funding intents can receive simulated outcomes")
 		return
 	}

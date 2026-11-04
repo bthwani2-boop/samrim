@@ -34,23 +34,54 @@ async function main() {
     assert.ok(label.startsWith("عرض ") && separator > 4, "HOME_PRODUCT_LABEL_MALFORMED");
     const productName = label.slice(4, separator).trim();
     assert.ok(productName.length >= 2, "HOME_PRODUCT_NAME_REQUIRED");
+    // Read the clicked home card's canonical identity rather than guessing
+    // from a matching display name (different products can share a name).
+    await product.click();
+    await page.waitForURL(url => url.pathname.startsWith("/store/") && Boolean(url.searchParams.get("productId")), { timeout: 12000 });
+    const homeDestination = new URL(page.url());
+    const homeStoreID = decodeURIComponent(homeDestination.pathname.slice("/store/".length));
+    const homeProductID = homeDestination.searchParams.get("productId");
+    assert.ok(homeStoreID && homeProductID, "HOME_OFFER_IDENTITY_REQUIRED");
+    await page.goto(origin + "/home", { waitUntil: "domcontentloaded", timeout: 25000 });
     const headerSearch = page.getByPlaceholder("ابحث عن متجر أو منتج");
     await headerSearch.click();
     await page.getByRole("button", { name: "المنتجات", exact: true }).click();
     const search = page.getByPlaceholder("ابحث عن متجر أو منتج");
+    const serverSearch = page.waitForResponse(response => {
+      const url = new URL(response.url());
+      return response.ok() && response.request().method() === "GET" &&
+        url.pathname === "/dsh/public/catalog/search" && url.searchParams.get("q") === productName;
+    }, { timeout: 16000 });
     await search.fill(productName);
+    const searchPayload = await (await serverSearch).json();
+    assert.ok(Array.isArray(searchPayload?.offers), "CANONICAL_SEARCH_OFFERS_REQUIRED");
+    const namedOffers = searchPayload.offers.filter(offer =>
+      `عرض ${offer.productName} من ${offer.storeName || "المتجر"}` === label &&
+      typeof offer.storeId === "string" && offer.storeId &&
+      typeof offer.productId === "string" && offer.productId);
+    const matchedIndex = namedOffers.findIndex(offer => offer.storeId === homeStoreID && offer.productId === homeProductID);
+    assert.notEqual(matchedIndex, -1, "ORIGINAL_STORE_OFFER_NOT_IN_SEARCH_RESULTS");
+    const selectedOffer = namedOffers[matchedIndex];
     await page.getByText(productName, { exact: true }).first()
       .waitFor({ state: "visible", timeout: 16000 });
     await page.getByText("نتائج المنتجات").waitFor({ state: "visible", timeout: 12000 });
     assert.equal(await page.locator("html").getAttribute("dir"), "rtl");
     console.log("CLIENT_PRODUCT_SEARCH=PASS_CURRENT_STORE_OFFER");
 
-    await page.goto(origin + "/home", { waitUntil: "domcontentloaded", timeout: 25000 });
-    const store = page.getByRole("button", { name: /^فتح متجر/ }).first();
-    await store.waitFor({ state: "visible", timeout: 16000 });
-    await store.click();
-    await page.waitForURL(url => url.pathname.startsWith("/store/"), { timeout: 12000 });
-    await page.getByText("من منتجات المتجر").first()
+    // The search cards preserve DSH's offer order. Select the original
+    // Store/Product identity among name-matched results, not the first name.
+    const searchResults = page.locator('[aria-label="نتائج البحث عن المنتجات"]');
+    const matchingOffers = searchResults.getByRole("button", { name: label, exact: true });
+    await matchingOffers.first().waitFor({ state: "visible", timeout: 16000 });
+    assert.equal(await matchingOffers.count(), namedOffers.length, "SEARCH_OFFER_IDENTITY_COUNT_MISMATCH");
+    await matchingOffers.nth(matchedIndex).click();
+    await page.waitForURL(url => url.pathname.startsWith("/store/") && Boolean(url.searchParams.get("productId")), { timeout: 12000 });
+    const destination = new URL(page.url());
+    assert.equal(decodeURIComponent(destination.pathname.slice("/store/".length)), selectedOffer.storeId, "OPENED_WRONG_STORE");
+    assert.equal(destination.searchParams.get("productId"), selectedOffer.productId, "OPENED_WRONG_PRODUCT");
+    await page.locator('[aria-label^="كتالوج "]').first()
+      .waitFor({ state: "visible", timeout: 16000 });
+    await page.getByRole("button", { name: "عرض تفاصيل " + productName, exact: true }).first()
       .waitFor({ state: "visible", timeout: 16000 });
     for (const width of [390, 1366]) {
       await page.setViewportSize({ width, height: 844 });

@@ -61,6 +61,7 @@ jobs:
         run: |
           node tools/governance/verify-governance.mjs
           node --test .github/workflows/fast-guard-routing.test.mjs
+          node --test tools/governance/spec-kit-integration.test.mjs
 
       - name: Set up Go only for affected services
         if: steps.changed.outputs.dsh == 'true' || steps.changed.outputs.wlt == 'true' || steps.changed.outputs.identity == 'true' || steps.changed.outputs.node == 'true' || steps.changed.outputs.finance == 'true'
@@ -125,7 +126,7 @@ jobs:
           export BTHWANI_EXPECTED_DATABASE_USER=postgres
           export BTHWANI_EXPECTED_DATABASE_NAME=wlt_proof
           export WLT_TEST_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/wlt_proof?sslmode=disable"
-          financial_go_proof services/wlt/backend ./internal/storage/postgres -run "^(TestFundedPromotionPaymentPersistedReplayHasOneFrozenSplit|TestFundedStoreCashCollectionPostsPlatformSubsidyExactlyOnce|TestFieldAcquisitionEntitlementPostgresLifecycle|TestConcurrentFieldAcquisitionReplayHasOneLedgerEffect|TestPartnerStoreFinanceAndRecipientSettlementLifecycle|TestCaptainWalletBalanceLockSerializesTransactions|TestSettlementIntakeWithoutDestinationPreservesFieldLedger|TestSettlementIntakePartnerStoreScopeWithoutHold|TestStoreCommercialAgreementLifecycleAndOrderSnapshots|TestSelfServiceZeroCommissionAgreementAllFulfillmentModes)$" -count=1 -timeout 7m
+          financial_go_proof services/wlt/backend ./internal/storage/postgres -run "^(TestFundedPromotionPaymentPersistedReplayHasOneFrozenSplit|TestFundedStoreCashCollectionPostsPlatformSubsidyExactlyOnce|TestFieldAcquisitionEntitlementPostgresLifecycle|TestConcurrentFieldAcquisitionReplayHasOneLedgerEffect|TestPartnerStoreFinanceAndRecipientSettlementLifecycle|TestCaptainWalletBalanceLockSerializesTransactions|TestSettlementIntakeWithoutDestinationPreservesFieldLedger|TestSettlementIntakePartnerStoreScopeWithoutHold|TestStoreCommercialAgreementLifecycleAndOrderSnapshots|TestSelfServiceZeroCommissionAgreementAllFulfillmentModes|TestPaymentRetryLostResponseAndParallelWorkers|TestConcurrentMixedPaymentCollectionAndCancellationHasSingleWinner)$" -count=1 -timeout 7m
           unset WLT_TEST_DATABASE_URL
           export BTHWANI_EXPECTED_DATABASE_NAME=dsh_proof
           export DSH_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/dsh_proof?sslmode=disable"
@@ -134,7 +135,7 @@ jobs:
           export BTHWANI_ENV=test
           export BTHWANI_FINANCIAL_PROOF_ISOLATED=1
           export DSH_FINANCIAL_HANDOFF_TEST_DATABASE_URL="$DSH_DATABASE_URL"
-          financial_go_proof services/dsh/backend ./internal/storage/postgres -run '^(TestPartnerFinanceAndPayoutStoreAuthorityBoundary|TestCaptainParallelDispatchThreeOnlyOneWins|TestStoreCaptainDispatchReadRespectsDelegation|TestOrderHTTPActorScopeAndPartnerTransitionRetry|TestLocationHTTPRejectsAuthenticatedCrossActorAddressAndStoreAccess|TestNotificationsAreIsolatedByActorAndStore|TestCaptainMissionLocationOwnerLatestAndTerminalPurge|TestPendingCancellationRequestsPaginationOverHundred|TestFinancialHandoffUnknownOutcomeAndConcurrentWorkers|TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay)$' -count=1 -timeout 9m
+          financial_go_proof services/dsh/backend ./internal/storage/postgres -run '^(TestPartnerFinanceAndPayoutStoreAuthorityBoundary|TestCaptainParallelDispatchThreeOnlyOneWins|TestStoreCaptainDispatchReadRespectsDelegation|TestOrderHTTPActorScopeAndPartnerTransitionRetry|TestLocationHTTPRejectsAuthenticatedCrossActorAddressAndStoreAccess|TestNotificationsAreIsolatedByActorAndStore|TestCaptainMissionLocationOwnerLatestAndTerminalPurge|TestPendingCancellationRequestsPaginationOverHundred|TestFinancialHandoffUnknownOutcomeAndConcurrentWorkers|TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay|TestConcurrentSingleStoreCheckoutPersistsExactlyOneOrder)$' -count=1 -timeout 9m
           unset DSH_FINANCIAL_HANDOFF_TEST_DATABASE_URL
           # Admission and prepublication visibility of both joining origins.
           # The disposable PostgreSQL container owns an isolated parent database.
@@ -142,7 +143,7 @@ jobs:
           export BTHWANI_JOINING_QA_ISOLATED=1
           export BTHWANI_EXPECTED_DATABASE_NAME=dsh_join_qa
           export DSH_JOINING_QA_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/dsh_join_qa?sslmode=disable"
-          financial_go_proof services/dsh/backend ./internal/storage/postgres -run TestSelfServiceCorrectionApprovalAndFinanceIsolationPostgres -count=1 -timeout 7m
+          financial_go_proof services/dsh/backend ./internal/storage/postgres -run '^(TestSelfServiceCorrectionApprovalAndFinanceIsolationPostgres|TestApprovedJoiningToCustomerVisibleCatalog)$' -count=1 -timeout 7m
           unset DSH_JOINING_QA_DATABASE_URL BTHWANI_JOINING_QA_ISOLATED
           # Existing end-to-end adapter proof needs two pristine databases and
           # the real WLT HTTP handler. Never point it at the durable local world.

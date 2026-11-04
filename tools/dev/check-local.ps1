@@ -56,6 +56,10 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Candidate service import boundary tests failed.' }
         node tools/governance/check-service-import-boundaries.mjs
         if ($LASTEXITCODE -ne 0) { throw 'Candidate service import boundaries failed.' }
+        if (@($candidateFiles | Where-Object { $_ -match '^(AGENTS\.md$|\.specify/|tools/governance/spec-kit-integration\.test\.mjs$)' }).Count -gt 0) {
+            node --test tools/governance/spec-kit-integration.test.mjs
+            if ($LASTEXITCODE -ne 0) { throw 'Candidate Spec Kit integration tests failed.' }
+        }
         node --test apps/control-panel/tests/finance-operator-recovery-scope.test.mjs
         if ($LASTEXITCODE -ne 0) { throw 'Candidate finance operator recovery isolation failed.' }
         node --test tools/mobile/check-actor-scoped-navigation.test.mjs
@@ -106,6 +110,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Local service import boundary tests failed.' }
     node tools/governance/check-service-import-boundaries.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Local service import boundaries failed.' }
+    if (@($files | Where-Object { $_ -match '^(AGENTS\.md$|\.specify/|tools/governance/spec-kit-integration\.test\.mjs$)' }).Count -gt 0) {
+        node --test tools/governance/spec-kit-integration.test.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'Local Spec Kit integration tests failed.' }
+    }
     node --test apps/control-panel/tests/finance-operator-recovery-scope.test.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Local finance operator recovery isolation failed.' }
     node --test tools/mobile/check-actor-scoped-navigation.test.mjs

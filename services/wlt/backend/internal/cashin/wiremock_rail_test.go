@@ -17,6 +17,8 @@ func TestWireMockRailContract(t *testing.T) {
 	var inquiryOutcome = "UNKNOWN"
 	var inquiryFee int64
 	var mismatch bool
+	var mismatchedCreateReference bool
+	var mismatchedInquiryTransaction bool
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -27,7 +29,11 @@ func TestWireMockRailContract(t *testing.T) {
 				return
 			}
 			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"providerKey":"wallet_provider_test_alpha","providerReference":"WM-wallet_provider_test_alpha-ext-123","state":"PENDING_PROVIDER"}`))
+			reference := "WM-" + providerKey + "-ext-123"
+			if mismatchedCreateReference {
+				reference = "WM-" + providerKey + "-other-payment"
+			}
+			_, _ = fmt.Fprintf(w, `{"providerKey":%q,"providerReference":%q,"state":"PENDING_PROVIDER"}`, providerKey, reference)
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/providers/"+providerKey+"/payments/WM-"+providerKey+"-ext-123":
 			if inquiryOutcome == "HTTP_500" {
 				http.Error(w, "provider error", http.StatusInternalServerError)
@@ -44,6 +50,9 @@ func TestWireMockRailContract(t *testing.T) {
 			transaction := ""
 			if inquiryOutcome == "SUCCESS" {
 				transaction = "WM-TXN-WM-" + providerKey + "-ext-123"
+				if mismatchedInquiryTransaction {
+					transaction = "WM-TXN-WM-" + providerKey + "-other-payment"
+				}
 			}
 			_, _ = fmt.Fprintf(w, `{"providerKey":%q,"providerReference":%q,"outcome":%q,"providerTransactionReference":%q,"providerFeeMinor":%d}`, providerKey, reference, inquiryOutcome, transaction, inquiryFee)
 		default:
@@ -65,6 +74,11 @@ func TestWireMockRailContract(t *testing.T) {
 	if createCount != 2 {
 		t.Fatalf("retry request count = %d", createCount)
 	}
+	mismatchedCreateReference = true
+	if _, err := rail.CreatePayment(context.Background(), input); !errors.Is(err, ErrProviderUnavailable) {
+		t.Fatalf("another payment's provider reference must not attach to this intent: %v", err)
+	}
+	mismatchedCreateReference = false
 	inquiry := PaymentInquiryRequest{ProviderKey: providerKey, IntentID: input.IntentID, ProviderReference: "WM-" + providerKey + "-ext-123"}
 	for _, test := range []struct {
 		outcome string
@@ -81,6 +95,12 @@ func TestWireMockRailContract(t *testing.T) {
 			t.Fatalf("settled provider transaction reference = %q", got.ProviderTransactionReference)
 		}
 	}
+	inquiryOutcome, inquiryFee = "SUCCESS", 37
+	mismatchedInquiryTransaction = true
+	if _, err := rail.InquirePayment(context.Background(), inquiry); !errors.Is(err, ErrProviderUnavailable) {
+		t.Fatalf("another payment's transaction reference must not settle this intent: %v", err)
+	}
+	mismatchedInquiryTransaction = false
 	inquiryOutcome, inquiryFee = "HTTP_500", 0
 	if _, err := rail.InquirePayment(context.Background(), inquiry); !errors.Is(err, ErrProviderUnavailable) {
 		t.Fatalf("HTTP 500 must leave payment unresolved: %v", err)
