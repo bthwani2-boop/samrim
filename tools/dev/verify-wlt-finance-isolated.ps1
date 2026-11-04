@@ -96,11 +96,19 @@ try {
   docker logs --tail 25 $name 2>$null
   throw
 } finally {
-  if ($null -ne $tunnel) {
-    if (-not $tunnel.HasExited) { Stop-Process -Id $tunnel.Id -Force }
-    $tunnel.Dispose()
-    Write-Output 'FINANCE_PROOF_TRANSPORT=STOPPED'
+  try {
+    # Release the disposable database even if stopping SSH fails.
+    docker rm -f $name 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Isolated finance database removal failed' }
+    Write-Output 'FINANCE_PROOF_DATABASE=STOPPED_REMOVED'
+  } finally {
+    if ($null -ne $tunnel) {
+      try {
+        if (-not $tunnel.HasExited) { Stop-Process -Id $tunnel.Id -Force -ErrorAction SilentlyContinue }
+      } finally {
+        $tunnel.Dispose()
+      }
+      Write-Output 'FINANCE_PROOF_TRANSPORT=STOPPED'
+    }
   }
-  docker rm -f $name 2>$null | Out-Null
-  Write-Output 'FINANCE_PROOF_DATABASE=STOPPED_REMOVED'
 }
