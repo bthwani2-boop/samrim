@@ -295,6 +295,118 @@ func TestApprovedJoiningToCustomerVisibleCatalog(t *testing.T) {
 		if err != nil || len(search.Offers) != 1 || search.Offers[0].StoreID != storeID || search.Offers[0].Product.ID != product.Product.ID {
 			t.Fatalf("published Catalog / Store identity mismatch: %+v %v", search, err)
 		}
-		t.Log("Store admission + product/offer + owned images + guarded publication + customer Store and Offer = PASS (isolated DSH; Identity/WLT test adapters)")
+		verifyPublishedJoiningCheckout(t, ctx, db, storeID, city, owner, visibleOffer.Offer.ID)
+		t.Log("Store admission + published Offer + same-Store customer checkout = PASS (isolated DSH; Identity/WLT test adapters)")
 	}, 5*time.Minute)
+}
+
+// One logical Store must survive joining, publication, customer cart and checkout.
+// Payment provisioning is a bounded test adapter here; real WLT ledger effects
+// are covered by the separate isolated DSH-to-WLT financial handoff proof.
+func verifyPublishedJoiningCheckout(t *testing.T, ctx context.Context, db *sql.DB, storeID, city, partner, offerID string) {
+	t.Helper()
+	const client = "qa-journey-customer"
+	availability, err := postgres.ReadStoreOperationalAvailability(ctx, db, storeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Replace the synthetic intake's Monday hours with an owner-approved
+	// always-open schedule so the test is independent of the wall-clock day.
+	open, replay, err := postgres.UpdateStoreOperationalAvailability(ctx, db, postgres.UpdateStoreOperationalAvailabilityInput{
+		StoreID: storeID, ScheduleMode: "ALWAYS_OPEN", ExpectedVersion: availability.Version,
+		ActingActorID: partner, AuthoritySource: "STORE_OWNER",
+		IdempotencyKey: "qa-journey-open-store", CorrelationID: "qa-journey-open-correlation",
+	})
+	if err != nil || replay || open.ScheduleMode != "ALWAYS_OPEN" {
+		t.Fatalf("owner-approved Store availability: %+v replay=%v err=%v", open, replay, err)
+	}
+
+	const addressText = "عنوان تجريبي في صنعاء"
+	address, err := postgres.CreateDeliveryAddress(ctx, db, client, addressText, 15.36, 44.20,
+		"qa-journey-address", postgres.HashDeliveryAddressCreateRequest(client, addressText, 15.36, 44.20, city),
+		"qa-journey-address-correlation", city)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cart, replay, err := postgres.UpsertCartLine(ctx, db, client, storeID, offerID, 1, nil, 0,
+		"qa-journey-cart", postgres.HashCartLineMutation("line_upsert", storeID, offerID, 1, nil, 0),
+		client, "qa-journey-cart-correlation")
+	if err != nil || replay || len(cart.Lines) != 1 {
+		t.Fatalf("joined Store customer cart: %+v replay=%v err=%v", cart, replay, err)
+	}
+	store, err := postgres.ReadStore(ctx, db, storeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var provisioned, cancelled int
+	confirmedTotal := int64(2000) // 1,450 StoreOffer + 550 test delivery quote
+	input := postgres.CheckoutInput{
+		ClientActorID: client, CartID: cart.ID, StoreID: storeID,
+		AddressID: address.Address.ID, FulfillmentMode: "BTHWANI_CAPTAIN", PaymentMethod: "CASH_ON_DELIVERY",
+		ExpectedTotalAmountMinor: &confirmedTotal, ExpectedCartVersion: cart.Version,
+		Evidence: postgres.CheckoutEvidence{
+			ServiceCityID: city, StoreVersion: store.Version, AddressVersion: address.Address.Version,
+			Status: "SERVICEABLE", PolicyVersion: "qa-journey-city-v1",
+			StoreOriginLatitude: 15.36, StoreOriginLongitude: 44.20,
+			AddressLatitude: 15.36, AddressLongitude: 44.20,
+		},
+		IdempotencyKey: "qa-journey-checkout", ActingActorID: client,
+		CorrelationID:            "qa-journey-checkout-correlation",
+		PaymentExternalReference: "qa-journey-payment-external",
+		PaymentIdempotencyKey:    "qa-journey-payment-key", PaymentCancellationKey: "qa-journey-cancel-key",
+		Recipient: postgres.DeliveryRecipientInput{Mode: "SELF"}, DeliveryProofKeyring: testDeliveryProofKeyring(t),
+		DeliveryFeeResolver: func(_ context.Context, quote postgres.DeliveryFeeQuoteInput) (postgres.DeliveryFeeQuote, error) {
+			if quote.StoreID != storeID || quote.FulfillmentMode != "BTHWANI_CAPTAIN" {
+				t.Fatal("delivery quote escaped the admitted Store/mode")
+			}
+			return postgres.DeliveryFeeQuote{FeeMinor: 550, PolicyVersion: "qa-journey-fee-v1"}, nil
+		},
+		PaymentProvisioner: func(_ context.Context, orderID, _, payer string, _, _, _, _ int64,
+			_ string, amount int64, _ postgres.PromotionFunding, _, _ string) (postgres.ProvisionedPayment, error) {
+			if orderID == "" || payer != client || amount != confirmedTotal {
+				t.Fatalf("wrong customer payment facts: order=%s payer=%s amount=%d", orderID, payer, amount)
+			}
+			provisioned++
+			return postgres.ProvisionedPayment{IntentID: "qa-journey-payment", State: "REQUIRES_COLLECTION", CashAmountMinor: amount}, nil
+		},
+		PaymentIntentRecoveryReader: func(context.Context, string) (postgres.PaymentIntentRecoveryRecord, bool, error) {
+			return postgres.PaymentIntentRecoveryRecord{}, false, nil
+		},
+		PaymentCanceller: func(context.Context, string, string, string, string) error {
+			cancelled++
+			return nil
+		},
+	}
+	input.RequestHash = postgres.HashCheckoutRequest(input)
+	bad := input
+	badTotal := confirmedTotal + 1
+	bad.ExpectedTotalAmountMinor = &badTotal
+	bad.IdempotencyKey = "qa-journey-bad-quote"
+	bad.RequestHash = postgres.HashCheckoutRequest(bad)
+	if _, _, err = postgres.CreateOrderFromCart(ctx, db, bad); !errors.Is(err, postgres.ErrCheckoutEvidenceStale) || provisioned != 0 {
+		t.Fatalf("unconfirmed price must fail before payment: %v provisioned=%d", err, provisioned)
+	}
+	order, replay, err := postgres.CreateOrderFromCart(ctx, db, input)
+	if err != nil || replay || order.State != "CREATED" || order.StoreID != storeID ||
+		order.ClientActorID != client || order.TotalAmountMinor != confirmedTotal ||
+		order.PaymentIntentID == nil || *order.PaymentIntentID != "qa-journey-payment" ||
+		len(order.Lines) != 1 || order.Lines[0].StoreOfferID != offerID {
+		t.Fatalf("joined Store did not reach one customer Order: %+v replay=%v err=%v", order, replay, err)
+	}
+	again, replay, err := postgres.CreateOrderFromCart(ctx, db, input)
+	if err != nil || !replay || again.ID != order.ID || provisioned != 1 || cancelled != 0 {
+		t.Fatalf("joined Store checkout replay duplicated payment: %+v replay=%v provisions=%d cancels=%d err=%v",
+			again, replay, provisioned, cancelled, err)
+	}
+	own, err := postgres.ReadOrderForClient(ctx, db, order.ID, client)
+	if err != nil || own.StoreID != storeID {
+		t.Fatalf("canonical customer order readback: %+v err=%v", own, err)
+	}
+	if _, err := postgres.ReadOrderForClient(ctx, db, order.ID, "qa-foreign-client"); !errors.Is(err, postgres.ErrOrderNotFound) {
+		t.Fatalf("foreign customer accessed the order: %v", err)
+	}
+	var count int
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.commerce_orders WHERE store_id=$1 AND client_actor_id=$2", storeID, client).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("joining-derived Store produced %d orders, err=%v", count, err)
+	}
 }
