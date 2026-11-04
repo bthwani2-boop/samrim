@@ -61,6 +61,7 @@ jobs:
         run: |
           node tools/governance/verify-governance.mjs
           node --test .github/workflows/fast-guard-routing.test.mjs
+          node --test tools/governance/spec-kit-integration.test.mjs
 
       - name: Set up Go only for affected services
         if: steps.changed.outputs.dsh == 'true' || steps.changed.outputs.wlt == 'true' || steps.changed.outputs.identity == 'true' || steps.changed.outputs.node == 'true' || steps.changed.outputs.finance == 'true'
