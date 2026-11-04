@@ -3539,6 +3539,9 @@ components:
           type: string
         storeId:
           type: string
+        storeName:
+          type: string
+          description: Current DSH Store display name when available; may differ from the historical name.
         at:
           type: string
           format: date-time

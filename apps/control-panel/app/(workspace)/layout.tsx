@@ -6,14 +6,14 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 import { IdentitySurface } from "../../src/features/access/identity-surface";
+import { StoreCatalogWebMCPTools } from "../../src/features/webmcp/store-catalog-webmcp-tools";
+import { WorkspaceEntryWebMCPTools } from "../../src/features/webmcp/workspace-entry-tools";
 import { currentWorkspaceChild, currentWorkspaceDestination, dynamicWorkspaceRouteLabel, isCurrentWorkspaceDestination, workspaceCatalogResources, workspaceDestinations, workspaceSearchEntries } from "../../src/navigation/workspace-registry";
 import { useSession } from "../../src/session/session-provider";
 import { OperatorAccountDrawer } from "../../src/shell/operator-account-drawer";
 import { ControlShell, LoadingState, UnavailableState } from "../../src/shell/public-shell";
-import { WorkspaceIcon } from "../../src/shell/workspace-icon";
 import { WorkspaceGlobalSearch } from "../../src/shell/workspace-global-search";
-import { StoreCatalogWebMCPTools } from "../../src/features/webmcp/store-catalog-webmcp-tools";
-import { WorkspaceEntryWebMCPTools } from "../../src/features/webmcp/workspace-entry-tools";
+import { WorkspaceIcon } from "../../src/shell/workspace-icon";
 
 function currentChild(pathname: string, destination: (typeof workspaceDestinations)[number]) {
   const child = currentWorkspaceChild(pathname, destination);
@@ -23,12 +23,13 @@ function currentChild(pathname: string, destination: (typeof workspaceDestinatio
 }
 
 function canOpenWorkspaceDestination(identity: ActorIdentity, destination: (typeof workspaceDestinations)[number]) {
-  if (destination.href === "/catalog-activity" && !identity.permissions?.includes("partners")) return false;
   if (destination.initialOperatorAdminOnly && !identity.canManageOperatorPermissions) return false;
   return !destination.permission || identity.permissions?.includes(destination.permission) === true;
 }
 
 function canOpenWorkspaceRoute(identity: ActorIdentity, href: string) {
+  // Cross-store catalog history retains both DSH operator grants, even when reached through Catalog.
+  if (href === "/catalog-activity" && !identity.permissions?.includes("partners")) return false;
   // The shared recovery page serves partners as well as catalog operators.
   if (href === "/catalog/trash" && identity.permissions?.includes("partners")) return true;
   const destination = workspaceDestinations.find((candidate) => isCurrentWorkspaceDestination(href, candidate));
@@ -89,7 +90,6 @@ function WorkspaceHeader({
   onOpenNavigation: () => void;
   pathname: string;
 }>) {
-  const router = useRouter();
   const { state } = useSession();
   const identity = state.kind === "authenticated" ? state.identity : null;
   const [accountOpen, setAccountOpen] = useState(false);
