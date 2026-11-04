@@ -10,6 +10,7 @@ on:
       - reopened
       - synchronize
       - ready_for_review
+      - converted_to_draft
       - edited
   push:
     branches:
@@ -29,14 +30,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
-    # Review integration candidates targeting main while still Draft; ordinary
-    # main-target drafts stay deferred until Ready, and 36 drafts remain scanned.
+    # Scan same-repository PRs from their first Draft, without relaxing the
+    # existing target-branch scope or exposing the token to forked PRs.
     if: >
       (github.event_name == 'pull_request' &&
       (github.event.pull_request.base.ref == '36' ||
-       (github.event.pull_request.base.ref == 'main' &&
-        (github.event.pull_request.draft == false ||
-         startsWith(github.event.pull_request.head.ref, 'integration/')))) &&
+       github.event.pull_request.base.ref == 'main') &&
       github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
 

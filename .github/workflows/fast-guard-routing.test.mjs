@@ -123,13 +123,15 @@ test("Fast Guard includes PRs targeting integration branches", () => {
   assert.throws(() => assert.match(broken, /^  pull_request:\n  push:/m), assert.AssertionError);
 });
 
-test("Sonar review for PRs into branch 36 remains enabled", () => {
+test("Sonar scans same-repository Draft PRs into main and 36", () => {
   const sonar = readFileSync(new URL("./sonar-observe.yml", import.meta.url), "utf8");
   assert.match(workflow, /^\s+branches: \[main\]$/m, "main push gate remains unchanged");
   assert.match(sonar, /^\s+- '36'$/m);
+  assert.match(sonar, /^\s+- converted_to_draft$/m);
   assert.match(sonar, /github\.event\.pull_request\.base\.ref == '36' \|\|/);
-  assert.match(sonar, /github\.event\.pull_request\.base\.ref == 'main' &&/);
-  assert.match(sonar, /github\.event\.pull_request\.draft == false \|\|/);
-  assert.match(sonar, /startsWith\(github\.event\.pull_request\.head\.ref, 'integration\/'\)/);
+  assert.match(sonar, /github\.event\.pull_request\.base\.ref == 'main'\)/);
+  assert.match(sonar, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
+  assert.doesNotMatch(sonar, /github\.event\.pull_request\.draft == false/);
+  assert.doesNotMatch(sonar, /pull_request_target:/);
   assert.match(sonar, /github\.ref == 'refs\/heads\/main'/);
 });
