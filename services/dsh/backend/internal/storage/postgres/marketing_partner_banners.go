@@ -58,14 +58,14 @@ func PagePartnerStoreBanners(ctx context.Context, db *sql.DB, storeID, cursor st
 			return nil, "", err
 		}
 	}
-	rows, err := db.QueryContext(ctx,
-		"SELECT "+discoveryContentSelect+` FROM dsh.discovery_content content
+	const pageQuery = "SELECT " + discoveryContentSelect + ` FROM dsh.discovery_content content
         WHERE content.kind='BANNER' AND content.source_store_id=$1
           AND ($2::boolean=false OR
             (content.ordinal > $3 OR
               (content.ordinal=$3 AND content.created_at < $4) OR
               (content.ordinal=$3 AND content.created_at=$4 AND content.id < $5)))
-        ORDER BY content.ordinal ASC,content.created_at DESC,content.id DESC LIMIT $6`,
+        ORDER BY content.ordinal ASC,content.created_at DESC,content.id DESC LIMIT $6`
+	rows, err := db.QueryContext(ctx, pageQuery,
 		storeID, cursor != "", after.Ordinal, after.CreatedAt, after.ID, limit+1)
 	if err != nil {
 		return nil, "", err

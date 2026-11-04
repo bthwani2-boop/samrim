@@ -115,6 +115,14 @@ func resolveDiscoveryContentTarget(ctx context.Context, source discoveryContentT
 }
 
 func discoveryContentTargetEligibilityPredicate(contentAlias, serviceCityPlaceholder, atExpression string) string {
+	// These fragments become SQL syntax, never parameter values. Only the
+	// three internally authored query contexts are allowed; fail closed if
+	// a future caller passes an unexpected identifier or expression.
+	validContent := contentAlias == "content" && (serviceCityPlaceholder == "$1" || serviceCityPlaceholder == "$2") && atExpression == "statement_timestamp()"
+	validTarget := contentAlias == "target" && serviceCityPlaceholder == "$3" && atExpression == "$4"
+	if !validContent && !validTarget {
+		return "FALSE"
+	}
 	return `(
 		(` + contentAlias + `.target_type='INFO' AND ` + contentAlias + `.target_id IS NULL)
 		OR (` + contentAlias + `.target_type='STORE' AND EXISTS (
