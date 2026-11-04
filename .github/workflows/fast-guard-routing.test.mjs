@@ -66,6 +66,22 @@ test("CI protection does not silently execute invalid retired script remnants", 
   assert.match(workflow, /\.github\/workflows\/fast-guard-routing\.test\.mjs/);
 });
 
+test("PowerShell is verified before the mandatory Spec Kit governance test", () => {
+  const setup = "      - name: Ensure PowerShell for mandatory Spec Kit proof";
+  const governance = "      - name: Verify repository governance and CI routing";
+  const start = workflow.indexOf(setup);
+  const end = workflow.indexOf(governance, start);
+  assert.ok(start >= 0 && end > start, "PowerShell setup must precede governance verification");
+  const step = workflow.slice(start, end);
+  assert.match(step, /command -v pwsh/);
+  assert.match(step, /sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y powershell/);
+  assert.match(step, /pwsh -NoProfile -NonInteractive -Command 'exit 0'/);
+  assert.doesNotMatch(step, /^\s+continue-on-error: true$/m);
+  assert.doesNotMatch(step, /^\s+if:/m, "PowerShell setup must not be conditional");
+  const mutant = workflow.replace(setup, "      - name: Removed mandatory PowerShell setup");
+  assert.throws(() => assert.match(mutant, /      - name: Ensure PowerShell for mandatory Spec Kit proof/), assert.AssertionError);
+});
+
 test("governance verification runs in CI even without a Node project change", () => {
   const stepName = "      - name: Verify repository governance and CI routing";
   const start = workflow.indexOf(stepName);
@@ -95,4 +111,25 @@ test("SonarCloud Quality Gate failure is not silently reported as a successful s
   assert.doesNotMatch(sonar, /continue-on-error:\s*true/);
   const mutant = sonar.replace("-Dsonar.qualitygate.wait=true", "-Dsonar.qualitygate.wait=false");
   assert.throws(() => assert.match(mutant, wait), assert.AssertionError);
+});
+
+// Guard against accidentally limiting PR checks to main and losing feedback on
+// short-lived integration bases such as 35 / integration/*.
+test("Fast Guard includes PRs targeting integration branches", () => {
+  const triggers = workflow.match(/^on:\n([\s\S]*?)\npermissions:/m)?.[1];
+  assert.ok(triggers, "workflow events must be declared");
+  assert.match(triggers, /^  pull_request:\n  push:/m);
+  const broken = triggers.replace("  pull_request:\n  push:", "  pull_request:\n    branches: [main]\n  push:");
+  assert.throws(() => assert.match(broken, /^  pull_request:\n  push:/m), assert.AssertionError);
+});
+
+test("Sonar review for PRs into branch 36 remains enabled", () => {
+  const sonar = readFileSync(new URL("./sonar-observe.yml", import.meta.url), "utf8");
+  assert.match(workflow, /^\s+branches: \[main\]$/m, "main push gate remains unchanged");
+  assert.match(sonar, /^\s+- '36'$/m);
+  assert.match(sonar, /github\.event\.pull_request\.base\.ref == '36' \|\|/);
+  assert.match(sonar, /github\.event\.pull_request\.base\.ref == 'main' &&/);
+  assert.match(sonar, /github\.event\.pull_request\.draft == false \|\|/);
+  assert.match(sonar, /startsWith\(github\.event\.pull_request\.head\.ref, 'integration\/'\)/);
+  assert.match(sonar, /github\.ref == 'refs\/heads\/main'/);
 });

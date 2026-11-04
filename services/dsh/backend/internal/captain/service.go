@@ -523,13 +523,26 @@ func (s *Service) ReconcileAutomaticDispatch(ctx context.Context, afterID string
 }
 
 // dispatchCandidates checks fresh nearby presence and the canonical WLT wallet
-// before any offer is issued. WLT reserves the actual COD exposure on acceptance.
+// before any offer is issued. It pages through nearby Captains until the nearest
+// three funded Captains are found. WLT reserves COD atomically on acceptance.
 func (s *Service) dispatchCandidates(ctx context.Context, orderID string) ([]string, error) {
-	candidates, cashMinor, err := postgres.ListNearbyCaptainCandidates(ctx, s.db, orderID, "")
+	// Keep all distance/cursor pages in one stable database snapshot. This
+	// read-only transaction never changes the canonical WLT reserve on accept.
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	if err != nil {
 		return nil, err
 	}
-	return selectFundedNearbyCaptains(ctx, candidates, cashMinor, s.payment.ReadCaptainWalletState)
+	defer func() { _ = tx.Rollback() }()
+	approved, err := selectFundedNearbyCaptainPages(ctx, func(ctx context.Context, after *postgres.NearbyCaptainCandidate) ([]postgres.NearbyCaptainCandidate, int64, error) {
+		return postgres.ListNearbyCaptainCandidates(ctx, tx, orderID, "", after)
+	}, s.payment.ReadCaptainWalletState)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return approved, nil
 }
 
 func (s *Service) Dispatch(ctx context.Context, orderID, actingActorID, idempotencyKey, correlationID string) (postgres.CaptainOffer, bool, error) {

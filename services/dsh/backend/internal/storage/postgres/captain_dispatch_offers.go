@@ -152,7 +152,8 @@ func dispatchCaptainCandidatesTx(ctx context.Context, tx *sql.Tx, orderID, exclu
 	query := `SELECT id,actor_id FROM dsh.captain_admissions WHERE state='eligible'
 		AND requires_profile_review=false AND availability_state='available'
 		AND NOT EXISTS (SELECT 1 FROM dsh.captain_dispatch_offers o WHERE o.captain_actor_id=dsh.captain_admissions.actor_id AND o.state='offered')
-		AND NOT EXISTS (SELECT 1 FROM dsh.captain_assignments a WHERE a.captain_actor_id=dsh.captain_admissions.actor_id AND a.state IN ('assigned','in_custody'))`
+		AND NOT EXISTS (SELECT 1 FROM dsh.captain_assignments a WHERE a.captain_actor_id=dsh.captain_admissions.actor_id AND a.state IN ('assigned','in_custody'))
+		AND EXISTS (SELECT 1 FROM dsh.captain_presence_latest p WHERE p.captain_actor_id=dsh.captain_admissions.actor_id AND p.updated_at>clock_timestamp()-interval '15 minutes')`
 	args := []any{}
 	if excludeCaptainID != "" {
 		query += " AND actor_id<>$1"

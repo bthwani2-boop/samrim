@@ -58,7 +58,7 @@ func TestCaptainParallelDispatchThreeOnlyOneWins(t *testing.T) {
 				t.Fatalf("captain %d location: %v", i, err)
 			}
 		}
-		nearby, cashDue, err := postgres.ListNearbyCaptainCandidates(ctx, db, orderID, "")
+		nearby, cashDue, err := postgres.ListNearbyCaptainCandidates(ctx, db, orderID, "", nil)
 		if err != nil || cashDue != 1800 || len(nearby) != 4 {
 			t.Fatalf("nearby candidates=%+v cash=%d err=%v", nearby, cashDue, err)
 		}
@@ -66,6 +66,40 @@ func TestCaptainParallelDispatchThreeOnlyOneWins(t *testing.T) {
 			if c.ActorID != fmt.Sprintf("dispatch-captain-%d", i+1) {
 				t.Fatalf("nearby ordering mismatch at %d: %+v", i, nearby)
 			}
+		}
+		// A wallet-funded Captain can be ranked beyond the first 30 nearby
+		// candidates. The canonical candidate query must not silently hide
+		// that Captain before DSH checks WLT coverage.
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_admissions
+			(id,actor_id,full_name_ar,state,availability_state,requires_profile_review,version)
+			SELECT 'dispatch-captain-'||n||'-admission','dispatch-captain-'||n,'كابتن اختبار','eligible','available',false,1
+			FROM generate_series(6,40) n`); err != nil {
+			t.Fatalf("insert additional Captain admissions: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_presence_latest(captain_actor_id,latitude,longitude,updated_at)
+			SELECT 'dispatch-captain-'||n,15.3694457+(CASE WHEN n=32 THEN 31 ELSE n END)*0.001,44.1910064,clock_timestamp()
+			FROM generate_series(6,40) n`); err != nil {
+			t.Fatalf("insert additional Captain presence: %v", err)
+		}
+		firstNearbyPage, expandedCash, err := postgres.ListNearbyCaptainCandidates(ctx, db, orderID, "", nil)
+		if err != nil || expandedCash != 1800 || len(firstNearbyPage) != postgres.NearbyCaptainCandidatePageSize {
+			t.Fatalf("first ranked candidate page: count=%d cash=%d err=%v", len(firstNearbyPage), expandedCash, err)
+		}
+		secondNearbyPage, nextCash, err := postgres.ListNearbyCaptainCandidates(ctx, db, orderID, "", &firstNearbyPage[len(firstNearbyPage)-1])
+		if err != nil || nextCash != 1800 || len(secondNearbyPage) != 9 ||
+			secondNearbyPage[0].ActorID != "dispatch-captain-32" ||
+			secondNearbyPage[len(secondNearbyPage)-1].ActorID != "dispatch-captain-40" {
+			t.Fatalf("next ranked page must reach beyond first 30: count=%d cash=%d err=%v", len(secondNearbyPage), nextCash, err)
+		}
+		boundary := firstNearbyPage[len(firstNearbyPage)-1]
+		next := secondNearbyPage[0]
+		if boundary.ActorID != "dispatch-captain-31" || next.ActorID != "dispatch-captain-32" ||
+			boundary.DistanceSquared != next.DistanceSquared {
+			t.Fatalf("expected tied distances across the page boundary: last=%+v next=%+v", boundary, next)
+		}
+		if boundary.DistanceSquared > next.DistanceSquared ||
+			(boundary.DistanceSquared == next.DistanceSquared && boundary.ActorID >= next.ActorID) {
+			t.Fatal("distance/actor cursor must advance strictly past the first page")
 		}
 		pending, err := postgres.ListReadyCaptainDispatchOrders(ctx, db, 10, "")
 		if err != nil || len(pending) != 1 || pending[0] != orderID {

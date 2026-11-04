@@ -18,7 +18,7 @@ import { Image as ExpoImage } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { type ComponentProps, type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Linking, Modal, Platform, Pressable, ScrollView, Switch, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { AccessibilityInfo, ActivityIndicator, Image, Linking, Modal, Platform, Pressable, ScrollView, Switch, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { onPartnerProductAction } from "../../shell/partner-product-actions";
 import { PartnerStorePromotionBanner } from "./partner-promotion-banner";
@@ -237,6 +237,12 @@ const theme = useAppearanceTheme();
   const [shareNotice, setShareNotice] = useState("");
   const [sharingOfferID, setSharingOfferID] = useState("");
   const [productSaveFeedback, setProductSaveFeedback] = useState("");
+  useEffect(() => {
+    // Android announces the polite live region; iOS needs an explicit VoiceOver announcement.
+    if (Platform.OS === "ios" && panel === "create" && productSaveFeedback) {
+      AccessibilityInfo.announceForAccessibility(productSaveFeedback);
+    }
+  }, [panel, productSaveFeedback]);
   const [storeProductName, setStoreProductName] = useState("");
   const [storeProductInitialPrice, setStoreProductInitialPrice] = useState("");
   const [storeProductDescription, setStoreProductDescription] = useState("");
@@ -1008,7 +1014,7 @@ const theme = useAppearanceTheme();
        {catalogReady && panel === "create" ? <View style={styles.searchRow}><TextInput accessibilityLabel="الباركود على العبوة أو رمز الصنف في هذا المتجر" autoCapitalize="characters" editable={!busy} onChangeText={(value) => { setIdentifier(value); setScanNotice(""); }} onSubmitEditing={() => void resolveIdentifier()} placeholder="امسح الباركود أو اكتب الرمز" returnKeyType="search" value={identifier} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={busy || !identifier.trim()} label="بحث عن المنتج" onPress={() => void resolveIdentifier()} variant="secondary" /><BthwaniButton disabled={busy} label={cameraOpen ? "إغلاق الكاميرا" : "مسح بالكاميرا"} onPress={async () => { if (cameraOpen) { setCameraOpen(false); return; } if (!cameraPermission?.granted) { const permission = await requestCameraPermission(); if (!permission.granted) { setError("يلزم السماح للكاميرا لمسح الباركود."); return; } } setCameraOpen(true); }} variant="secondary" /></View> : null}
       {cameraOpen && panel === "create" ? <><AwakeWhileBarcodeScanning /><CameraView style={styles.camera} facing="back" barcodeScannerSettings={{ barcodeTypes: ["ean13", "ean8", "upc_a", "upc_e", "code128"] }} onBarcodeScanned={({ data }) => { setCameraOpen(false); void onBarcode(data); }} /></> : null}
       {scanNotice && panel === "create" ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.muted}>{scanNotice}</Text> : null}
-      {productSaveFeedback && panel === "create" && !selectedProduct ? <Text accessibilityRole="status" style={[styles.muted, { color: theme.success }]}>{productSaveFeedback}</Text> : null}
+      {productSaveFeedback && panel === "create" && !selectedProduct ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={[styles.muted, { color: theme.success }]}>{productSaveFeedback}</Text> : null}
        {catalogReady && panel === "create" ? <View style={styles.searchRow}><TextInput accessibilityLabel="البحث في الكتالوج" editable={!busy} onChangeText={setQuery} onSubmitEditing={() => void searchProducts()} placeholder="ابحث باسم المنتج" returnKeyType="search" value={query} style={[styles.input, busy && styles.disabledInput]} />{query ? <BthwaniButton accessibilityLabel="مسح البحث" disabled={busy} label="مسح" onPress={() => { ++searchSequence.current; setQuery(""); setProducts([]); setProductNextCursor(""); setSearchSubmitted(false); setError(""); }} style={styles.clearSearch} variant="quiet" /> : null}<BthwaniButton busy={busy} disabled={busy} label="بحث" onPress={() => void searchProducts()} variant="secondary" /></View> : null}
       {panel === "create" && searchSubmitted && !products.length && !error ? <Text style={styles.muted}>لا توجد نتائج مطابقة. جرّب اسمًا آخر أو امسح البحث.</Text> : null}
        {catalogReady && panel === "create" && products.length ? <><View style={styles.productList}>{products.map((product) => { const primaryMedia = getPrimaryMedia(product.media); return <View key={product.id} style={styles.product}><View style={styles.productHeader}>{primaryMedia ? <ExpoImage cachePolicy="memory" accessibilityLabel={`صورة ${product.canonicalName}`} source={{ uri: primaryMedia.uri }} contentFit="cover" style={styles.productImage} /> : <View accessibilityLabel={`لا توجد صورة لـ ${product.canonicalName}`} style={styles.productImagePlaceholder}><Text style={styles.imagePlaceholderText}>لا توجد صورة</Text></View>}<View style={styles.productCopy}><Text style={styles.itemTitle}>{product.canonicalName}</Text><Text style={styles.muted}>{product.variants.length} نسخة متاحة للاختيار</Text></View></View>{product.variants.map((variant) => <BthwaniChip key={variant.id} label={`${variant.title} · ${measurementKindLabel(variant.measurementKind, variant.baseUnit)}`} disabled={busy} onPress={() => selectProduct(product, variant)} selected={selectedVariant?.id === variant.id} />)}</View>; })}</View>{productNextCursor ? <BthwaniButton busy={busy} disabled={busy} label="تحميل المزيد من المنتجات" onPress={() => void searchProducts(productNextCursor, true)} variant="secondary" /> : null}</> : null}

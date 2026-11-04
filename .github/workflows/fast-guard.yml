@@ -1,8 +1,8 @@
 name: Fast Guard
 
 on:
+  # Check feature PRs targeting main OR any short-lived integration base.
   pull_request:
-    branches: [main]
   push:
     branches: [main]
 
@@ -56,6 +56,26 @@ jobs:
 
       - name: Reject committed secrets
         run: node tools/security/verify-secrets.mjs
+
+      - name: Ensure PowerShell for mandatory Spec Kit proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Some ubuntu-24.04 runner image releases omit pwsh. Never skip the
+          # governance test when the tool is absent.
+          if ! command -v pwsh >/dev/null 2>&1; then
+            source /etc/os-release
+            test "$ID" = ubuntu
+            test "$VERSION_ID" = "24.04"
+            curl --fail --silent --show-error --location \
+              --output "$RUNNER_TEMP/packages-microsoft-prod.deb" \
+              "https://packages.microsoft.com/config/ubuntu/$VERSION_ID/packages-microsoft-prod.deb"
+            sudo dpkg -i "$RUNNER_TEMP/packages-microsoft-prod.deb"
+            sudo apt-get update -qq
+            sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y powershell
+          fi
+          command -v pwsh
+          pwsh -NoProfile -NonInteractive -Command 'exit 0'
 
       - name: Verify repository governance and CI routing
         run: |
