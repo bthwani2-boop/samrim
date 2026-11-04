@@ -85,16 +85,16 @@ func (c *Client) ReadCashInFundingIntent(ctx context.Context, fundingIntentID st
 	return response.Intent, err
 }
 
-func (c *Client) ReconcileMockCashInFundingIntent(ctx context.Context, fundingIntentID, actorID, idempotencyKey, correlationID string) (CashInFundingIntent, error) {
+func (c *Client) ReconcileMockCashInFundingIntent(ctx context.Context, fundingIntentID, actorType, actorID, idempotencyKey, correlationID string) (CashInFundingIntent, error) {
 	var response struct {
 		Intent CashInFundingIntent `json:"intent"`
 	}
 	path := "/wlt/v1/development/funding-intents/" + url.PathEscape(strings.TrimSpace(fundingIntentID)) + "/reconcile"
-	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: path, body: map[string]any{}, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actorID, target: &response})
+	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: path, body: map[string]any{}, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actorID, actingActorType: actorType, target: &response})
 	return response.Intent, err
 }
 
-func (c *Client) SimulateCashInFundingOutcome(ctx context.Context, fundingIntentID, outcome, actingActorID, idempotencyKey, correlationID string) (CashInFundingIntent, bool, error) {
+func (c *Client) SimulateCashInFundingOutcome(ctx context.Context, fundingIntentID, outcome, actingActorType, actingActorID, idempotencyKey, correlationID string) (CashInFundingIntent, bool, error) {
 	body := map[string]any{"outcome": strings.ToUpper(strings.TrimSpace(outcome))}
 	var response struct {
 		Intent           CashInFundingIntent `json:"intent"`
@@ -102,7 +102,7 @@ func (c *Client) SimulateCashInFundingOutcome(ctx context.Context, fundingIntent
 		IdempotentReplay bool                `json:"idempotentReplay"`
 	}
 	path := "/wlt/v1/development/funding-intents/" + url.PathEscape(strings.TrimSpace(fundingIntentID)) + "/simulate"
-	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: path, body: body, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actingActorID, target: &response})
+	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: path, body: body, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actingActorID, actingActorType: actingActorType, target: &response})
 	return response.Intent, response.IdempotentReplay, err
 }
 

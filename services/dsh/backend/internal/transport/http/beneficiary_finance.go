@@ -170,7 +170,7 @@ func (s *BeneficiaryFinanceServer) reconcileOwnFundingIntent(w http.ResponseWrit
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "Provider recovery unavailable")
 		return
 	}
-	updated, err := s.payment.ReconcileMockCashInFundingIntent(r.Context(), intentID, identity.Subject, idempotency, correlation)
+	updated, err := s.payment.ReconcileMockCashInFundingIntent(r.Context(), intentID, actorType, identity.Subject, idempotency, correlation)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return
@@ -212,7 +212,7 @@ func (s *BeneficiaryFinanceServer) simulateOwnFundingIntent(w http.ResponseWrite
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	updated, replayed, err := s.payment.SimulateCashInFundingOutcome(r.Context(), intentID, input.Outcome, identity.Subject, idempotency, correlation)
+	updated, replayed, err := s.payment.SimulateCashInFundingOutcome(r.Context(), intentID, input.Outcome, actorType, identity.Subject, idempotency, correlation)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return

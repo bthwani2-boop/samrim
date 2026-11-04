@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/cashin"
 	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/opsafety"
 	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/storage/postgres"
 )
@@ -67,20 +68,21 @@ func TestIsolatedManualSimulatorRejectsForeignActorBeforePostingLedger(t *testin
 			if err != nil || replay || intent.State != "PENDING_PROVIDER" {
 				t.Fatalf("create isolated funding intent: %+v replay=%t err=%v", intent, replay, err)
 			}
-			post := func(fundingID, actor, suffix string) *httptest.ResponseRecorder {
+			post := func(fundingID, actor, actorType, suffix string) *httptest.ResponseRecorder {
 				t.Helper()
 				path := fmt.Sprintf("/wlt/v1/development/funding-intents/%s/simulate", fundingID)
 				req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"outcome":"SUCCESS"}`))
 				req.Header.Set("Authorization", "Bearer "+token)
 				req.Header.Set("Content-Type", "application/json")
 				req.Header.Set("X-Acting-Actor-ID", actor)
+				req.Header.Set("X-Acting-Actor-Type", actorType)
 				req.Header.Set("X-Correlation-ID", role+"-cashin-"+suffix+"-correlation")
 				req.Header.Set("Idempotency-Key", role+"-cashin-"+suffix+"-idempotency")
 				res := httptest.NewRecorder()
 				mux.ServeHTTP(res, req)
 				return res
 			}
-			foreignAttempt := post(intent.ID, foreign, "foreign")
+			foreignAttempt := post(intent.ID, foreign, role, "foreign")
 			if foreignAttempt.Code != http.StatusNotFound {
 				t.Fatalf("foreign actor settled or disclosed funding: status=%d body=%s", foreignAttempt.Code, foreignAttempt.Body.String())
 			}
@@ -92,7 +94,19 @@ func TestIsolatedManualSimulatorRejectsForeignActorBeforePostingLedger(t *testin
 			if err != nil || balance != 0 {
 				t.Fatalf("foreign actor credited owner wallet: balance=%d err=%v", balance, err)
 			}
-			ownAttempt := post(intent.ID, owner, "owner")
+			otherRole := "captain"
+			if role == "captain" {
+				otherRole = "customer"
+			}
+			wrongRole := post(intent.ID, owner, otherRole, "wrong-role")
+			if wrongRole.Code != http.StatusNotFound {
+				t.Fatalf("other role with same actor ID settled funding: status=%d body=%s", wrongRole.Code, wrongRole.Body.String())
+			}
+			missingType := post(intent.ID, owner, "", "missing-type")
+			if missingType.Code != http.StatusBadRequest {
+				t.Fatalf("missing actor type bypassed the financial route: status=%d body=%s", missingType.Code, missingType.Body.String())
+			}
+			ownAttempt := post(intent.ID, owner, role, "owner")
 			if ownAttempt.Code != http.StatusOK {
 				t.Fatalf("legitimate owner cannot settle development intent: status=%d body=%s", ownAttempt.Code, ownAttempt.Body.String())
 			}
@@ -104,7 +118,7 @@ func TestIsolatedManualSimulatorRejectsForeignActorBeforePostingLedger(t *testin
 			if err != nil || balance != 1000 {
 				t.Fatalf("owner wallet amount not credited exactly once: balance=%d err=%v", balance, err)
 			}
-			if lateForeign := post(intent.ID, foreign, "after-settlement"); lateForeign.Code != http.StatusNotFound {
+			if lateForeign := post(intent.ID, foreign, role, "after-settlement"); lateForeign.Code != http.StatusNotFound {
 				t.Fatalf("foreign replay disclosed settled state: status=%d body=%s", lateForeign.Code, lateForeign.Body.String())
 			}
 			// Switching from the HTTP provider mock to the manual simulator must
@@ -117,13 +131,44 @@ func TestIsolatedManualSimulatorRejectsForeignActorBeforePostingLedger(t *testin
 			if err != nil || replay {
 				t.Fatalf("create pending mock-provider intent: replay=%t err=%v", replay, err)
 			}
-			mockAttempt := post(mockIntent.ID, owner, "cross-mode")
+			mockAttempt := post(mockIntent.ID, owner, role, "cross-mode")
 			if mockAttempt.Code != http.StatusForbidden {
 				t.Fatalf("manual simulator settled a provider-mock funding intent: status=%d body=%s", mockAttempt.Code, mockAttempt.Body.String())
 			}
 			mockStored, err := postgres.ReadCashInFundingIntent(ctx, db, mockIntent.ID)
 			if err != nil || mockStored.State != "PENDING_PROVIDER" || mockStored.LedgerTransactionID != nil {
 				t.Fatalf("cross-mode simulator wrote an unverified funding result: %+v err=%v", mockStored, err)
+			}
+			// Provider-backed reconciliation also requires role ownership, even
+			// if the same subject ID exists under another wallet role.
+			mockRail, err := cashin.NewWireMockRail("http://payment-mock:8080")
+			if err != nil {
+				t.Fatal(err)
+			}
+			mockServer := &Server{db: db, serviceToken: token, cashInRail: mockRail, cashInSimulatorEnabled: true}
+			mockMux := http.NewServeMux()
+			mockServer.Register(mockMux)
+			reconcile := func(actorType string) *httptest.ResponseRecorder {
+				t.Helper()
+				path := fmt.Sprintf("/wlt/v1/development/funding-intents/%s/reconcile", mockIntent.ID)
+				req := httptest.NewRequest(http.MethodPost, path, strings.NewReader("{}"))
+				req.Header.Set("Authorization", "Bearer "+token)
+				req.Header.Set("X-Acting-Actor-ID", owner)
+				req.Header.Set("X-Acting-Actor-Type", actorType)
+				req.Header.Set("Idempotency-Key", role+"-reconcile-type-check")
+				req.Header.Set("X-Correlation-ID", role+"-reconcile-type-correlation")
+				res := httptest.NewRecorder()
+				mockMux.ServeHTTP(res, req)
+				return res
+			}
+			if wrong := reconcile(otherRole); wrong.Code != http.StatusNotFound {
+				t.Fatalf("wrong-role reconciliation accessed mock provider intent: status=%d body=%s", wrong.Code, wrong.Body.String())
+			}
+			if missing := reconcile(""); missing.Code != http.StatusBadRequest {
+				t.Fatalf("reconciliation accepted missing actor type: status=%d body=%s", missing.Code, missing.Body.String())
+			}
+			if own := reconcile(role); own.Code != http.StatusOK {
+				t.Fatalf("owner cannot inspect pending mock provider intent: status=%d body=%s", own.Code, own.Body.String())
 			}
 			foreignBalance, err := postgres.ReadWalletBalance(ctx, db, role, foreign)
 			if err != nil || foreignBalance != 0 {
