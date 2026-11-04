@@ -318,7 +318,18 @@ func (c *Client) doWithIdempotency(ctx context.Context, method, pathname, token,
 				Message string `json:"message"`
 			} `json:"error"`
 		}
-		_ = json.NewDecoder(io.LimitReader(response.Body, 64*1024)).Decode(&payload)
+		decodeErr := json.NewDecoder(io.LimitReader(response.Body, 64*1024)).Decode(&payload)
+		if decodeErr != nil {
+			// Stalled bodies cannot turn cancellation into a terminal 404.
+			// A fully decoded 404 remains authoritative, even if cancellation
+			// happens after all response bytes were received.
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if errors.Is(decodeErr, context.DeadlineExceeded) || errors.Is(decodeErr, context.Canceled) {
+				return decodeErr
+			}
+		}
 		return &Error{Status: response.StatusCode, Code: strings.TrimSpace(payload.Error.Code), Message: strings.TrimSpace(payload.Error.Message)}
 	}
 	if target == nil || response.StatusCode == http.StatusNoContent {

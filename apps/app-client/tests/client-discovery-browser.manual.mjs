@@ -3,8 +3,21 @@
 import assert from "node:assert/strict";
 import { chromium, expect } from "@playwright/test";
 
+async function assertCatalogPriceOrder(response, ascending) {
+  const payload = await response.json();
+  assert.ok(Array.isArray(payload.offers), "PRICE_SORT_SERVER_RESPONSE_INVALID");
+  assert.ok(payload.offers.length > 0, "PRICE_SORT_EMPTY_RESULT");
+  const prices = payload.offers.map((offer) => offer.priceMinor);
+  assert.ok(prices.every((value) => Number.isSafeInteger(value)),
+    "PRICE_SORT_INVALID_SERVER_PRICES");
+  if (payload.offers.length < 2) return false;
+  const expected = [...prices].sort((a, b) => ascending ? a - b : b - a);
+  assert.deepEqual(prices, expected, "PRICE_SORT_SERVER_RESULT_OUT_OF_ORDER");
+  return true;
+}
+
 const origin = process.env.BTHWANI_CLIENT_WEB_ORIGIN ?? "http://localhost:18101";
-const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9223");
+const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9222");
 const context = await browser.newContext({
   viewport: { width: 390, height: 844 }, locale: "ar-YE", reducedMotion: "reduce",
 });
@@ -36,10 +49,39 @@ try {
   await expect(page.getByRole("button", { name: "المنتجات", exact: true })).toBeVisible({ timeout: 12000 });
   const activeSearch = page.getByPlaceholder("ابحث عن متجر أو منتج");
   if (homeOfferName) {
+    stage = "catalog-based search suggestions";
+    const suggestedTerm = page.getByRole("button", { name: /^اقتراح البحث عن / }).first();
+    await suggestedTerm.waitFor({ state: "visible", timeout: 16000 });
+    await suggestedTerm.click();
+    await expect(activeSearch).not.toHaveValue("");
+    summary.catalogSuggestions = "PASS";
     stage = "positive product search";
     await activeSearch.fill(homeOfferName);
     await expect(page.getByText(homeOfferName, { exact: true }).first()).toBeVisible({ timeout: 16000 });
+    await expect(page.getByRole("button", { name: /^إضافة .* إلى السلة/ }).first()).toBeVisible({ timeout: 16000 });
     summary.positiveProductSearch = "PASS";
+    summary.searchResultsHaveAddActions = true;
+
+    stage = "server-side product price sorting";
+    await page.getByRole("button", { name: "ترتيب المنتجات" }).click();
+    await expect(page.getByRole("radio", { name: "السعر: من الأقل للأعلى" })).toBeVisible();
+    await page.getByRole("radio", { name: "السعر: من الأقل للأعلى" }).click();
+    const priceAscResponse = page.waitForResponse(response =>
+      response.ok() && response.url().includes("/dsh/public/catalog/search") && new URL(response.url()).searchParams.get("sort") === "PRICE_ASC", { timeout: 16000 });
+    await page.getByRole("button", { name: "عرض النتائج" }).click();
+    const ascVerified = await assertCatalogPriceOrder(await priceAscResponse, true);
+    await page.getByRole("button", { name: "ترتيب المنتجات" }).click();
+    await page.getByRole("radio", { name: "السعر: من الأعلى للأقل" }).click();
+    const priceDescResponse = page.waitForResponse(response =>
+      response.ok() && response.url().includes("/dsh/public/catalog/search") && new URL(response.url()).searchParams.get("sort") === "PRICE_DESC", { timeout: 16000 });
+    await page.getByRole("button", { name: "عرض النتائج" }).click();
+    const descVerified = await assertCatalogPriceOrder(await priceDescResponse, false);
+    await page.getByRole("button", { name: "ترتيب المنتجات" }).click();
+    const resetSortRequest = page.waitForRequest(request =>
+      request.url().includes("/dsh/public/catalog/search") && !new URL(request.url()).searchParams.has("sort"), { timeout: 16000 });
+    await page.getByRole("button", { name: "مسح الترتيب" }).click();
+    await resetSortRequest;
+    summary.priceSortResponse = ascVerified && descVerified ? "PASS" : "NOT_RUN_SINGLE_OFFER";
   }
   stage = "product search no-results";
   await activeSearch.fill("__bthwani_nonexistent_store_20261101__");

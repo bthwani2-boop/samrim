@@ -1,0 +1,6 @@
+appId: com.bthwani.client
+---
+- launchApp:
+    clearState: false
+- assertVisible: "الرئيسية"
+- takeScreenshot: bthwani_client_home_smoke

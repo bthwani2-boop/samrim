@@ -11,7 +11,7 @@ async function authorize(storeId: string) {
   if (!identity) return { error: fail("UNAUTHENTICATED", "authentication is required", 401) } as const;
   if (identity.role !== "operator" || !identity.permissions?.includes("partners")) return { error: fail("FORBIDDEN", "Partners permission is required", 403) } as const;
   if (!storeId?.trim() || storeId.length > 128) return { error: fail("INVALID_INPUT", "storeId is invalid", 400) } as const;
-  return { actorId: identity.subject } as const;
+  return { actorId: identity.subject, permissions: identity.permissions } as const;
 }
 function handled(error: unknown) {
   if (!isDshClientError(error)) return fail("INTERNAL_ERROR", "Store agreement readback failed", 500);
@@ -31,6 +31,8 @@ export async function POST(request: Request, context: { params: Promise<{ storeI
   const { storeId } = await context.params;
   const access = await authorize(storeId);
   if ("error" in access) return access.error;
+  if (!access.permissions?.includes("platform_policies") || !access.permissions?.includes("finance"))
+    return fail("FORBIDDEN", "Commercial model proposals require platform policies and finance permissions", 403);
   const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() ?? "";
   const correlationId = request.headers.get("X-Correlation-ID")?.trim() ?? "";
   if (idempotencyKey.length < 8 || idempotencyKey.length > 128 || correlationId.length < 8 || correlationId.length > 128) return fail("INVALID_INPUT", "Mutation keys are required", 400);

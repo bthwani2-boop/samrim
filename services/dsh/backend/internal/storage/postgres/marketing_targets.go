@@ -40,7 +40,7 @@ func ResolveDiscoveryContentTarget(ctx context.Context, db *sql.DB, contentID, s
 	if held {
 		return DiscoveryContentTargetResolution{}, ErrDiscoveryContentNotFound
 	}
-	if content.State != "PUBLISHED" || content.MediaURI == "" || content.StartsAt.After(now) || (content.EndsAt != nil && !content.EndsAt.After(now)) || (content.ServiceCityID != "" && content.ServiceCityID != serviceCityID) {
+	if content.State != "PUBLISHED" || (content.Kind == "BANNER" && content.SourceStoreID != "" && !content.PartnerEnabled) || content.MediaURI == "" || content.StartsAt.After(now) || (content.EndsAt != nil && !content.EndsAt.After(now)) || (content.ServiceCityID != "" && content.ServiceCityID != serviceCityID) {
 		return DiscoveryContentTargetResolution{}, ErrDiscoveryContentNotFound
 	}
 	result, err := resolveDiscoveryContentTarget(ctx, db, content.TargetType, content.TargetID, serviceCityID, content.SourceStoreID, now)
@@ -115,6 +115,14 @@ func resolveDiscoveryContentTarget(ctx context.Context, source discoveryContentT
 }
 
 func discoveryContentTargetEligibilityPredicate(contentAlias, serviceCityPlaceholder, atExpression string) string {
+	// These fragments become SQL syntax, never parameter values. Only the
+	// three internally authored query contexts are allowed; fail closed if
+	// a future caller passes an unexpected identifier or expression.
+	validContent := contentAlias == "content" && (serviceCityPlaceholder == "$1" || serviceCityPlaceholder == "$2") && atExpression == "statement_timestamp()"
+	validTarget := contentAlias == "target" && serviceCityPlaceholder == "$3" && atExpression == "$4"
+	if !validContent && !validTarget {
+		return "FALSE"
+	}
 	return `(
 		(` + contentAlias + `.target_type='INFO' AND ` + contentAlias + `.target_id IS NULL)
 		OR (` + contentAlias + `.target_type='STORE' AND EXISTS (

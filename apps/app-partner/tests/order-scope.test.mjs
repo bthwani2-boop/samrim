@@ -49,3 +49,16 @@ test("real partner order list clears prior scope and prevents old mutations from
   assert.match(source, /if \(!isCurrentOrderListRequest\(generation, requestScopeKey, loadGeneration\.current, activeScopeKey\.current\)\) return;/u);
   assert.match(source, /finally \{ releaseAction\(\); if \(requestScopeKey === activeScopeKey\.current\) setBusy\(""\); \}/u);
 });
+
+test("failed Partner order search can clear both q and pinned orderId without hiding empty-result recovery", () => {
+  const source = readFileSync(new URL("../src/features/order-management/order-management.tsx", import.meta.url), "utf8");
+  assert.match(source, /!loading && !orders\.length && !error \? <View/);
+  assert.match(source, /!loading && error && normalizedSearch \? <View/);
+  const clearActions = source.match(/label="مسح بحث الطلبات"[^\n]*[\s\S]*?onPress=\{\(\) => router\.setParams\(\{ q: "", orderId: "" \}\)\}/g) ?? [];
+  assert.equal(clearActions.length, 2, "empty and failed searches must each have a scoped clear action");
+});
+
+test("Partner orders route scope resets to selected Store when the aggregate parameter disappears", () => {
+  const source = readFileSync(new URL("../src/features/partner-onboarding/partner-orders.tsx", import.meta.url), "utf8");
+  assert.match(source, /useEffect\(\(\) => \{ setScope\(routeScope === "all" \? "ALL_AUTHORIZED" : "SELECTED_STORE"\); \}, \[routeScope\]\)/);
+});

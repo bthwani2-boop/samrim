@@ -161,6 +161,17 @@ export function parseStudioDraft(input: unknown): StudioDraft | null {
     sections, slides, autoplay: input.autoplay, intervalSeconds: Number(input.intervalSeconds),
   };
 }
+// Keyboard tab order is mirrored in RTL. Keep the behavior testable apart
+// from React focus management, which owns only the event and DOM mutation.
+export function nextStudioInspectorTabIndex(key: string, current: number, count: number, rtl: boolean): number | null {
+  if (!Number.isInteger(current) || !Number.isInteger(count) || count < 1 || current < 0 || current >= count) return null;
+  if (key === "Home") return 0;
+  if (key === "End") return count - 1;
+  if (key !== "ArrowLeft" && key !== "ArrowRight") return null;
+  const step = (key === "ArrowLeft" ? -1 : 1) * (rtl ? -1 : 1);
+  return (current + step + count) % count;
+}
+
 export function moveStudioSection(sections: ReadonlyArray<StudioSection>, from: StudioSectionId, to: StudioSectionId): StudioSection[] {
   const source = sections.findIndex((value) => value.id === from);
   const target = sections.findIndex((value) => value.id === to);

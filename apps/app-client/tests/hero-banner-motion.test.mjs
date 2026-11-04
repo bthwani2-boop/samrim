@@ -13,7 +13,7 @@ for (const [name, source] of [["store-discovery.tsx", discovery], ["looping-hero
 }
 
 test("home uses the independent banner instead of the RTL ScrollView carousel", () => {
-  assert.match(discovery, /<LoopingHeroBanner screenActive=\{isScreenActive\} presentation=\{bannerPresentation\} cardWidth=\{Platform.OS === "web" \? carouselCardWidth : viewportWidth\} items=\{bannerContent\}/);
+  assert.match(discovery, /<LoopingHeroBanner screenActive=\{isScreenActive\} presentation=\{bannerPresentation\} cardWidth=\{heroCardWidth\} items=\{bannerContent\}/);
   assert.match(discovery, /<StoreDirectoryCard/);
   assert.doesNotMatch(hero, /<Animated\.ScrollView|onContentSizeChange|snapToInterval|physicalIndex/);
   assert.doesNotMatch(hero, /carouselDots|heroProgressTrack|heroPauseIcon/);

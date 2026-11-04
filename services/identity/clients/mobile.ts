@@ -21,6 +21,8 @@ export type MobileIdentityRuntimeConfig = {
   allowDevelopmentSessionFallback?: boolean;
   /** Partner Expo Web only: server-owned HttpOnly refresh cookie, never browser token storage. */
   partnerBrowserSession?: boolean;
+  /** Client Expo Web only: dedicated HttpOnly refresh-cookie session. */
+  clientBrowserSession?: boolean;
   secureStorage: {
     getItem(key: string): Promise<string | null>;
     setItem(key: string, value: string): Promise<void>;
@@ -46,7 +48,7 @@ export function createMobileIdentityRuntime(config: MobileIdentityRuntimeConfig)
     if (!explicit) throw new Error("IDENTITY_BASE_URL_REQUIRED");
     // Local UI and Identity may be configured with different loopback aliases.
     // SameSite=Strict cookies require the browser to use the same host label.
-    if (config.partnerBrowserSession && typeof window !== "undefined") {
+    if ((config.partnerBrowserSession || config.clientBrowserSession) && typeof window !== "undefined") {
       const api = new URL(explicit);
       const loopback = (host: string) => host === "localhost" || host === "127.0.0.1";
       if (loopback(api.hostname) && loopback(window.location.hostname) && api.protocol === window.location.protocol) {
@@ -76,7 +78,7 @@ export function createMobileIdentityRuntime(config: MobileIdentityRuntimeConfig)
   }
 
   function identityClient(): IdentityClient {
-    clientValue ??= createIdentityClient(identityBaseUrl(), 8_000, config.partnerBrowserSession === true);
+    clientValue ??= createIdentityClient(identityBaseUrl(), 8_000, config.partnerBrowserSession ? "partner" : config.clientBrowserSession ? "client" : undefined);
     return clientValue;
   }
 
@@ -92,7 +94,7 @@ export function createMobileIdentityRuntime(config: MobileIdentityRuntimeConfig)
       __DEV__ && config.allowDevelopmentSessionFallback !== false
         ? async () => identityClient().developmentSession(config.role, await clientInstanceId())
         : undefined,
-      config.partnerBrowserSession ? () => identityClient().restorePartnerBrowserSession() : undefined,
+      config.partnerBrowserSession ? () => identityClient().restorePartnerBrowserSession() : config.clientBrowserSession ? () => identityClient().restoreClientBrowserSession() : undefined,
     );
     return sessionValue;
   }

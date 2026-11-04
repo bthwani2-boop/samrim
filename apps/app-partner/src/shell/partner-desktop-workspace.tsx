@@ -14,7 +14,7 @@ type WorkspaceLink = Readonly<{
   href: Href;
   icon: MobileIconName;
   section?: string;
-  marketingView?: "overview" | "offers" | "campaigns" | "content";
+  marketingView?: "overview" | "offers" | "campaigns" | "content" | "banners";
   performanceView?: "overview" | "orders" | "catalog";
 }>;
 
@@ -63,6 +63,7 @@ function DesktopWorkspace({ children }: PropsWithChildren) {
     { label: "العروض والقسائم", href: "/store?section=promotions&view=offers" as Href, icon: "offers", section: "promotions", marketingView: "offers" },
     { label: "حملات المنصة", href: "/store?section=promotions&view=campaigns" as Href, icon: "success", section: "promotions", marketingView: "campaigns" },
     { label: "مقاطع المتجر", href: "/store?section=promotions&view=content" as Href, icon: "play", section: "promotions", marketingView: "content" },
+    { label: "بنرات المتجر", href: "/store?section=promotions&view=banners" as Href, icon: "store", section: "promotions", marketingView: "banners" },
   ] : [];
   const performanceLinks: WorkspaceLink[] = [
     { label: "نظرة عامة", href: "/insights?view=overview" as Href, icon: "trending", performanceView: "overview" },
@@ -76,6 +77,7 @@ function DesktopWorkspace({ children }: PropsWithChildren) {
   if (authority.canUse("store")) {
     if (can("store_operations")) management.push({ label: "التشغيل", href: "/store?section=operations" as Href, icon: "store", section: "operations" });
     if (isOwner) management.push({ label: "إعدادات المتجر", href: "/store?section=settings" as Href, icon: "edit", section: "settings" });
+    if (isOwner) management.push({ label: "الاتفاقية التجارية", href: "/store?section=commercial" as Href, icon: "wallet", section: "commercial" });
     if (isOwner) management.push({ label: "كباتن المتجر", href: "/store?section=team" as Href, icon: "deliveries", section: "team" });
   }
   if (state.kind === "ready" && !selectedStore) management.push({ label: "تجهيز المتجر", href: "/onboarding" as Href, icon: "store" });

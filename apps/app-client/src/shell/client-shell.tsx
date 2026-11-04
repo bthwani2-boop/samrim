@@ -39,11 +39,11 @@ function ClientHeader({ searchOnCurrentRoute = false, hideSearchAction = false, 
   const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
   const isSearchOpen = focus === "search";
   const searchInputRef = useRef<TextInputInstance>(null);
-  const headerHeight = useSharedValue(166);
+  const headerHeight = useSharedValue(homeCompact ? 64 : 148);
   const animatedHeaderStyle = useAnimatedStyle(() => ({ height: headerHeight.value }));
   useEffect(() => {
     if (!homeVariant) return;
-    headerHeight.value = withTiming(homeCompact ? 64 : 166, { duration: 230, reduceMotion: ReduceMotion.System });
+    headerHeight.value = withTiming(homeCompact ? 64 : 148, { duration: 230, reduceMotion: ReduceMotion.System });
   }, [headerHeight, homeVariant, homeCompact]);
   const { cities, clearSelectedCity, selectedCityID } = useServiceCityScope();
   const cityName = serviceCityDisplayName(cities.find((city) => city.id === selectedCityID)?.displayNameAr);
@@ -61,12 +61,14 @@ function ClientHeader({ searchOnCurrentRoute = false, hideSearchAction = false, 
         <View style={styles.homeCompactRow}>
           <BthwaniSearchField
             accessibilityLabel="ابحث عن متجر أو منتج"
+            autoCapitalize="none"
+            autoCorrect={false}
             containerStyle={styles.homeCompactSearch}
             inputRef={searchInputRef}
             onFocus={() => onSearchOpenChange?.(true)}
             onChangeText={(value) => { onSearchQueryChange?.(value); if (!onSearchQueryChange) router.setParams({ q: value }); }}
             onClear={() => { onSearchQueryChange?.(""); if (!onSearchQueryChange) router.setParams({ q: "" }); }}
-            placeholder="ابحث في بثواني"
+            placeholder="ابحث عن متجر أو منتج"
             returnKeyType="search"
             value={searchQuery}
           />
@@ -197,7 +199,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     navigation: { backgroundColor: theme.surfaceRaised, borderTopColor: theme.borderColorStrong, borderTopWidth: borders.hairline, elevation: 8, minHeight: 84, paddingHorizontal: spacing[3], paddingTop: spacing[2], zIndex: 8 },
     homeNavigation: { backgroundColor: theme.surfaceRaised, borderRadius: radius.round, borderColor: theme.borderColor, borderWidth: borders.hairline, position: "absolute", left: spacing[3], right: spacing[3], bottom: spacing[3], minHeight: 70, paddingTop: spacing[1], paddingHorizontal: spacing[2], elevation: 12 },
     homeNavigationItem: { borderRadius: radius.round, flex: 1, minHeight: sizing.controlLg, paddingHorizontal: spacing[1], paddingVertical: spacing[1] },
-    desktopNavigation: { backgroundColor: theme.surface, borderLeftColor: theme.borderColorStrong, borderLeftWidth: borders.hairline, width: 208, paddingHorizontal: spacing[2], paddingVertical: spacing[4] },
+    desktopNavigation: { backgroundColor: theme.surface, borderLeftColor: theme.borderColorStrong, borderLeftWidth: borders.hairline, width: 176, minWidth: 176, maxWidth: 176, paddingHorizontal: spacing[2], paddingVertical: spacing[4] },
     desktopNavigationItem: { borderRadius: radius.lg, marginVertical: spacing[1], minHeight: sizing.controlLg },
     navigationItem: { borderRadius: radius.lg, flex: 1, minHeight: sizing.controlLg, paddingHorizontal: spacing[2], paddingVertical: spacing[1], transform: [{ translateY: -spacing[4] }] },
     navigationLabel: { ...typography.label, marginTop: spacing[1] },

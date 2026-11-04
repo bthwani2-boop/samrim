@@ -20,7 +20,14 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/ClientCredentialProofRequest" } } }
       responses:
-        "201": { $ref: "../identity.openapi.yaml#/components/responses/TokenPair" }
+        "201":
+          description: Native clients receive a token pair; approved Client web origins receive an HttpOnly refresh cookie and a refresh-token-free JSON response.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "../identity.openapi.yaml#/components/schemas/TokenPair"
+                  - $ref: "../identity.openapi.yaml#/components/schemas/ClientBrowserAccessPair"
         "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
         "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
         "409": { $ref: "../identity.openapi.yaml#/components/responses/Conflict" }
@@ -33,7 +40,14 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/PasswordLoginRequest" } } }
       responses:
-        "200": { $ref: "../identity.openapi.yaml#/components/responses/TokenPair" }
+        "200":
+          description: Native clients receive a token pair; approved Client web origins receive an HttpOnly refresh cookie and a refresh-token-free JSON response.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "../identity.openapi.yaml#/components/schemas/TokenPair"
+                  - $ref: "../identity.openapi.yaml#/components/schemas/ClientBrowserAccessPair"
         "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
         "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
         "429": { $ref: "../identity.openapi.yaml#/components/responses/RateLimited" }

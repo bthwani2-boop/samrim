@@ -170,6 +170,7 @@ export class IdentitySessionManager {
   private tokens: StoredTokens | null = null;
   private refreshInFlight: Promise<IdentitySessionState> | null = null;
   private restoreInFlight: Promise<IdentitySessionState> | null = null;
+  private browserLogoutInFlight: Promise<void> | null = null;
   private readonly listeners = new Set<IdentitySessionListener>();
 
   constructor(
@@ -205,12 +206,14 @@ export class IdentitySessionManager {
   }
 
   async getUsableAccessToken(): Promise<string> {
+    if (this.browserLogoutInFlight) throw new Error("IDENTITY_BROWSER_LOGOUT_IN_PROGRESS");
     let currentState = this.stateValue;
     let currentToken = this.tokens?.accessToken;
     if (currentState.kind === "restoring" || (currentState.kind === "authenticated" && !currentToken)) {
       currentState = this.restoreInFlight ? await this.restoreInFlight : await this.restore();
       currentToken = this.tokens?.accessToken;
     }
+    if (this.browserLogoutInFlight) throw new Error("IDENTITY_BROWSER_LOGOUT_IN_PROGRESS");
     if (currentState.kind !== "authenticated" || !currentToken) {
       throw new Error("IDENTITY_ACCESS_TOKEN_UNAVAILABLE");
     }
@@ -221,6 +224,7 @@ export class IdentitySessionManager {
     }
 
     const refreshed = await this.refresh();
+    if (this.browserLogoutInFlight) throw new Error("IDENTITY_BROWSER_LOGOUT_IN_PROGRESS");
     if (refreshed.kind !== "authenticated") {
       throw new Error(`IDENTITY_ACCESS_TOKEN_${refreshed.kind.toUpperCase()}`);
     }
@@ -234,6 +238,7 @@ export class IdentitySessionManager {
   }
 
   async restore(): Promise<IdentitySessionState> {
+    if (this.browserLogoutInFlight) return this.stateValue;
     if (this.stateValue.kind === "signed_out" && (this.stateValue.reason === "explicit_logout" || this.stateValue.reason === "recovery")) {
       return this.stateValue;
     }
@@ -271,7 +276,9 @@ export class IdentitySessionManager {
       this.tokens = null;
       if (this.restoreBrowserSession) {
         try {
-          return await this.adopt(await this.restoreBrowserSession());
+          const pair = await this.restoreBrowserSession();
+          if (this.browserLogoutInFlight) return this.stateValue;
+          return await this.adopt(pair);
         } catch (error) {
           if (isIdentityUnauthenticated(error)) return this.signOut("no_local_session");
           return this.degraded(degradedReason(error));
@@ -312,22 +319,66 @@ export class IdentitySessionManager {
   }
 
   async refresh(): Promise<IdentitySessionState> {
+    if (this.browserLogoutInFlight) return this.stateValue;
     if (this.stateValue.kind === "signed_out" && (this.stateValue.reason === "explicit_logout" || this.stateValue.reason === "recovery")) {
       return this.stateValue;
     }
+    if (this.restoreInFlight) return this.restoreInFlight;
     let storedSession: StoredSession | null;
     try {
       storedSession = parseStoredSession(await this.readStorage());
     } catch (error) {
+      if (this.browserLogoutInFlight ||
+          (this.stateValue.kind === "signed_out" &&
+            (this.stateValue.reason === "explicit_logout" || this.stateValue.reason === "recovery"))) {
+        return this.stateValue;
+      }
       return this.degraded(degradedReason(error));
     }
+    if (this.browserLogoutInFlight ||
+        (this.stateValue.kind === "signed_out" &&
+          (this.stateValue.reason === "explicit_logout" || this.stateValue.reason === "recovery"))) {
+      return this.stateValue;
+    }
+    if (this.restoreInFlight) return this.restoreInFlight;
     if (!storedSession) return this.restoreDevelopmentSession("no_local_session");
     this.tokens = storedSession;
-    if (storedSession.pendingRefresh) return this.restorePendingRefresh(storedSession);
+    if (storedSession.pendingRefresh) {
+      // Browser logout must await recovery of a previously interrupted refresh,
+      // just as it awaits a normal restore or in-flight token rotation.
+      const operation = Promise.resolve().then(() => this.restorePendingRefresh(storedSession));
+      this.restoreInFlight = operation;
+      try {
+        return await operation;
+      } finally {
+        if (this.restoreInFlight === operation) this.restoreInFlight = null;
+      }
+    }
     return this.refreshStored(storedSession);
   }
 
   async logout(): Promise<void> {
+    if (this.restoreBrowserSession) {
+      if (this.browserLogoutInFlight) return this.browserLogoutInFlight;
+      // A web refresh cookie cannot be removed by JavaScript. Never claim
+      // sign-out if the server could not revoke and expire that cookie. Wait
+      // for a pending restore response: its Set-Cookie may rotate the token.
+      const operation = (async () => {
+        if (this.restoreInFlight) await this.restoreInFlight.catch(() => undefined);
+        if (this.refreshInFlight) await this.refreshInFlight.catch(() => undefined);
+        await this.client.logout(this.tokens?.accessToken ?? "");
+        this.tokens = null;
+        await this.removeStorageBestEffort();
+        this.transition({ kind: "signed_out", reason: "explicit_logout" });
+      })();
+      this.browserLogoutInFlight = operation;
+      try {
+        await operation;
+      } finally {
+        if (this.browserLogoutInFlight === operation) this.browserLogoutInFlight = null;
+      }
+      return;
+    }
     let stored: StoredTokens | null = null;
     let storedSession: StoredSession | null = null;
     let localReadError: unknown = null;

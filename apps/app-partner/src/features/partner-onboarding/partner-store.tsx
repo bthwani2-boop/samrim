@@ -15,9 +15,9 @@ import { StoreProfileImageEditor } from "./store-profile-image-editor";
 import { PartnerStoreSettingsOverview } from "./partner-store-settings-overview";
 import { PartnerStorePublicContact } from "./partner-store-public-contact";
 
-type StoreSection = "operations" | "promotions" | "team" | "settings";
+type StoreSection = "operations" | "promotions" | "team" | "settings" | "commercial";
 function isStoreSection(value: string | undefined): value is StoreSection {
-  return value === "operations" || value === "promotions" || value === "team" || value === "settings";
+  return value === "operations" || value === "promotions" || value === "team" || value === "settings" || value === "commercial";
 }
 function eligibleForSection(store: PartnerAccessibleStore, section: StoreSection): boolean {
   if (store.owned) return true;
@@ -70,6 +70,7 @@ export function PartnerStore() {
       {section === "operations" ? <StoreOperationalAvailabilityManagement key={selectedStore.id} storeID={selectedStore.id} fulfillmentModes={selectedStore.fulfillmentModes.filter(isStoreFulfillmentMode)} /> : null}
       {section === "promotions" ? <PartnerMarketingWorkspace key={selectedStore.id} storeID={selectedStore.id} storeName={selectedStore.name} verticalID={selectedStore.primaryVerticalId} view={marketingView}/> : null}
       {section === "team" ? <TeamManagement key={selectedStore.id} storeID={selectedStore.id} /> : null}
+      {section === "commercial" ? <StoreCommercialAgreements key={selectedStore.id + ":agreements"} storeID={selectedStore.id} /> : null}
       {section === "settings" ? <>
         <PartnerStoreSettingsOverview key={selectedStore.id + ":settings"} storeID={selectedStore.id} />
         {selectedStore.owned && selectedStore.publicationState !== "published" ? <View style={styles.card}>
@@ -77,7 +78,6 @@ export function PartnerStore() {
           <BthwaniButton label="الانتقال إلى المنتجات" onPress={() => router.push("/products" as Href)} variant="secondary" />
         </View> : null}
         <PartnerStorePublicContact key={selectedStore.id + ":contact"} storeID={selectedStore.id} />
-        <StoreCommercialAgreements key={selectedStore.id + ":agreements"} storeID={selectedStore.id} />
         <StoreProfileImageEditor key={selectedStore.id + ":image"} storeID={selectedStore.id} storeName={selectedStore.name} />
         {firstStoreMatches && firstStore ? <FirstJoiningStoreFacts store={firstStore} /> : null}
       </> : null}

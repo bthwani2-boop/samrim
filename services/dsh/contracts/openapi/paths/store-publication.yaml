@@ -335,7 +335,7 @@ paths:
         - name: q
           in: query
           required: false
-          description: Optional product-name prefix. When absent, returns a bounded, cursor-paginated public product feed.
+          description: Optional product-name search. Three or more Unicode characters match anywhere in the product name; one or two characters match its prefix. When absent, returns a bounded, cursor-paginated public product feed.
           schema: { type: string, maxLength: 160 }
         - name: categoryId
           in: query
@@ -351,6 +351,11 @@ paths:
           required: false
           description: Match eligible customer shopping shortcuts in product results and pagination.
           schema: { type: string, maxLength: 128 }
+        - name: sort
+          in: query
+          required: false
+          description: Optional server-side product offer price ordering. Cursors are bound to the selected sort; omit for the original name order.
+          schema: { type: string, enum: [PRICE_ASC, PRICE_DESC] }
         - name: limit
           in: query
           required: false

@@ -6,7 +6,7 @@ async function inspect(page, width) {
   await page.goto("http://localhost:18102/notifications", {waitUntil:"domcontentloaded",timeout:20000});
   await page.waitForFunction(() => {
     const t=document.body.innerText||"";
-    return t.includes("تعذر التحقق") || t.includes("الإشعارات") || location.pathname === "/";
+    return t.includes("الإشعارات") || location.pathname === "/";
   }, {timeout:11000}).catch(() => {});
   return page.evaluate(() => {
     const text=document.body.innerText || "";
@@ -14,7 +14,7 @@ async function inspect(page, width) {
     const r=sidebar?.getBoundingClientRect();
     return {
       path:location.pathname, direction:document.documentElement.dir,
-      width:innerWidth, blocked:text.includes("تعذر التحقق") || location.pathname === "/",
+      width:innerWidth, blocked:/(يلزم تسجيل الدخول|انتهت صلاحية جلسة|تعذر التحقق من جلسة)/.test(text) || location.pathname === "/",
       renderedInbox:text.includes("الإشعارات"),
       hasSidebar:!!sidebar, sidebarRight:r?Math.round(r.right):null,
       overflow:document.documentElement.scrollWidth>innerWidth+2,
@@ -24,11 +24,11 @@ async function inspect(page, width) {
 }
 
 async function run() {
-  const browser=await chromium.connectOverCDP("http://127.0.0.1:9223");
+  const browser=await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9222");
   let page;
   try {
     const context=browser.contexts().find(c=>c.pages().some(p=>p.url().startsWith("http://localhost:18102"))) ?? browser.contexts()[0];
-    assert.ok(context,"LOCAL_EDGE_CONTEXT_REQUIRED");
+    assert.ok(context,"LOCAL_CDP_CONTEXT_REQUIRED");
     page=await context.newPage();
     const desktop=await inspect(page,1360);
     console.log("NOTIFICATIONS_DESKTOP "+JSON.stringify(desktop));

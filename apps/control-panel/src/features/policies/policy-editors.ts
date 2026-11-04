@@ -3,6 +3,7 @@ import { ServiceCityPanel } from "../service-city/service-city-panel";
 import { WalletProviderPolicyPanel } from "../wallet-provider/wallet-provider-policy-panel";
 import { DeliveryFeePolicyWorkspace } from "../finance/delivery-fee-policy-workspace";
 import { StoreTypeCommissionDefaultWorkspace } from "../finance/store-type-commission-default-workspace";
+import { StoreCommercialModelPolicyWorkspace } from "./store-commercial-model-policy-workspace";
 import { PartnerFinancialTermsPolicyWorkspace } from "../finance/partner-financial-terms-policy-workspace";
 import type { PolicyResourceKey } from "./policy-capabilities";
 import { CaptainMinimumBalancePolicyWorkspace } from "./captain-minimum-balance-policy-workspace";
@@ -16,5 +17,6 @@ export const policyEditors: Record<PolicyResourceKey, ComponentType> = {
   "delivery-fees": DeliveryFeePolicyWorkspace,
   "partner-financial-terms": PartnerFinancialTermsPolicyWorkspace,
   "store-type-commission-defaults": StoreTypeCommissionDefaultWorkspace,
+  "store-commercial-model": StoreCommercialModelPolicyWorkspace,
   "captain-minimum-balance": CaptainMinimumBalancePolicyWorkspace,
 };

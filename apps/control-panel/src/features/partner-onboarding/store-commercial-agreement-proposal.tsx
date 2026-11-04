@@ -1,9 +1,10 @@
 "use client";
 
 import { type StoreFulfillmentMode } from "@bthwani/dsh";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { stablePartnerMutationHeaders } from "../partners/partner-request";
+import { storeCommercialStatusLabel } from "../finance/store-commercial-agreement-types";
 import { nextStoreCommercialAgreementVersion } from "./store-commercial-agreement-version";
 import { matchesProposedStoreAgreement, storeCommercialRatesForProposal, type ExpectedStoreCommercialProposal, type StoreCommercialProposalReadback } from "./store-commercial-proposal-rates";
 
@@ -15,10 +16,11 @@ const labels: Record<string, string> = {
   CUSTOMER_PICKUP: "استلام العميل",
 };
 
-export function StoreCommercialAgreementProposal({ storeId, modes }: Readonly<{storeId: string; modes: readonly StoreFulfillmentMode[]}>) {
+export function StoreCommercialAgreementProposal({ storeId, modes, readOnly = true }: Readonly<{storeId: string; modes: readonly StoreFulfillmentMode[]; readOnly?: boolean}>) {
   const { state: sessionState } = useSession();
   const actorId = sessionState.kind === "authenticated" ? sessionState.identity.subject : "";
   const [agreements, setAgreements] = useState<readonly Agreement[] | null>(null);
+  const readSequence = useRef(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -37,17 +39,25 @@ export function StoreCommercialAgreementProposal({ storeId, modes }: Readonly<{s
   const url = `/api/partners/stores/${encodeURIComponent(storeId)}/commercial-agreements`;
   const nextProposalVersion = agreements ? nextStoreCommercialAgreementVersion(agreements) : null;
   const hasActiveAgreement = agreements?.some(item => item.status === "ACTIVE") ?? false;
+  const hasUnknownAgreementStatus = agreements?.some(item => !["PROPOSED", "PARTNER_ACCEPTED", "ACTIVE", "SUPERSEDED", "FINANCE_REJECTED"].includes(item.status)) ?? false;
 
   const read = useCallback(async (signal?: AbortSignal) => {
-    const response = await fetch(url, { cache: "no-store", signal: signal ?? null });
-    const body: unknown = await response.json();
-    if (!response.ok || !body || typeof body !== "object" || !("agreements" in body) || !Array.isArray(body.agreements)) {
-      throw new Error("AGREEMENT_READ_UNAVAILABLE");
+    const request = ++readSequence.current;
+    try {
+      const response = await fetch(url, { cache: "no-store", signal: signal ?? null });
+      const body: unknown = await response.json();
+      if (!response.ok || !body || typeof body !== "object" || !("agreements" in body) || !Array.isArray(body.agreements)) {
+        throw new Error("AGREEMENT_READ_UNAVAILABLE");
+      }
+      const items = body.agreements as Agreement[];
+      if (items.some(item => !item.agreementId || item.storeId !== storeId || !Array.isArray(item.rates))) throw new Error("AGREEMENT_READ_INVALID");
+      if (request !== readSequence.current || signal?.aborted) throw new Error("AGREEMENT_READ_SUPERSEDED");
+      setAgreements(items);
+      return items;
+    } catch (cause) {
+      if (request !== readSequence.current || signal?.aborted) throw new Error("AGREEMENT_READ_SUPERSEDED");
+      throw cause;
     }
-    const items = body.agreements as Agreement[];
-    if (items.some(item => !item.agreementId || item.storeId !== storeId || !Array.isArray(item.rates))) throw new Error("AGREEMENT_READ_INVALID");
-    setAgreements(items);
-    return items;
   }, [url, storeId]);
 
   useEffect(() => {
@@ -56,13 +66,13 @@ export function StoreCommercialAgreementProposal({ storeId, modes }: Readonly<{s
     setError("");
     setNotice("");
     void read(controller.signal).catch((cause: unknown) => {
-      if (!controller.signal.aborted) setError(cause instanceof Error ? "تعذرت قراءة الاتفاقات؛ أعد المحاولة قبل اقتراح أي شروط." : "تعذرت قراءة الاتفاقات.");
+      if (!controller.signal.aborted && !(cause instanceof Error && cause.message === "AGREEMENT_READ_SUPERSEDED")) setError(cause instanceof Error ? "تعذرت قراءة الاتفاقات؛ أعد المحاولة قبل اقتراح أي شروط." : "تعذرت قراءة الاتفاقات.");
     });
-    return () => controller.abort();
+    return () => { controller.abort(); readSequence.current++; };
   }, [read]);
 
   async function propose() {
-    if (busy || !actorId || nextProposalVersion === null || modes.length === 0) return;
+    if (readOnly || busy || !actorId || nextProposalVersion === null || modes.length === 0) return;
     const distinct = [...new Set(modes)];
     if (distinct.length !== modes.length || distinct.some(mode => !(mode in labels))) return;
     const rates = storeCommercialRatesForProposal(distinct, commissionPercentByMode, commercialModel);
@@ -134,11 +144,21 @@ export function StoreCommercialAgreementProposal({ storeId, modes }: Readonly<{s
       <p>توجد {agreements.length} نسخة محفوظة. {hasActiveAgreement
         ? "تظل الاتفاقية السارية نافذة حتى يقبل الشريك النسخة الجديدة وتعتمدها المالية، دون تعديل الطلبات السابقة."
         : "لا تُستبدل أي اتفاقية معلقة قبل حسمها."}</p>
-      {agreements.map(item => <p key={item.agreementId}>النسخة {item.agreementVersion} · {item.status} · {item.commercialModel} {item.commercialModel !== "COMMISSION" ? "· " + item.recurringAmountMinor + " ريال " + item.billingPeriod : ""} · {item.rates.map(rate => labels[rate.fulfillmentMode] + ": " + (rate.commissionRateBps / 100) + "%").join("، ")}</p>)}
+      {agreements.map(item => <p key={item.agreementId}>النسخة {item.agreementVersion} · {storeCommercialStatusLabel(item)} · {item.commercialModel} {item.commercialModel !== "COMMISSION" ? "· " + item.recurringAmountMinor + " ريال " + item.billingPeriod : ""} · {item.rates.map(rate => labels[rate.fulfillmentMode] + ": " + (rate.commissionRateBps / 100) + "%").join("، ")}</p>)}
+      {hasUnknownAgreementStatus && !error ? <p role="alert" className="identity-error">توجد حالة اتفاق غير معروفة. لا يمكن اقتراح شروط قبل مراجعة السجل. <button className="button button-secondary" type="button" disabled={busy} onClick={() => void read().catch((cause: unknown) => { if (!(cause instanceof Error && cause.message === "AGREEMENT_READ_SUPERSEDED")) setError("تعذرت إعادة قراءة الاتفاقات."); })}>إعادة قراءة السجل</button></p> : null}
       </> : null}
+      {!readOnly ? <>
       {nextProposalVersion === null ? <p>لا يمكن تقديم اقتراح أثناء وجود نسخة قيد القبول أو في حالة سجل غير متوقعة. راجع الاتفاقيات مع المالية وأعد القراءة.</p> : <>
       <p>{hasActiveAgreement ? "غيّر شروط المتجر باقتراح نسخة جديدة؛ الاتفاق الحالي يظل ساريًا حتى اعتماد البديل." : nextProposalVersion > 0 ? "راجع سبب رفض النسخة السابقة قبل إعادة الاقتراح." : "اختر النموذج التجاري؛ لا يسري قبل موافقة الشريك واعتماد المالية."}</p>
       <p>أوضاع التنفيذ: {modes.map(mode => labels[mode] ?? mode).join("، ")}</p>
+      <section className="access-card" aria-label="مقارنة نماذج التعاقد">
+        <h5>أي نموذج تجاري يناسب هذا المتجر؟</h5>
+        <div className="form-grid">
+          <p><strong>العمولة:</strong> نسبة تعاقدية على الطلبات المؤهلة لكل طريقة تنفيذ. لا تُستحق رسوم اشتراك دورية، ويسري الاتفاق بعد قبول مالك المتجر واعتماد المالية.</p>
+          <p><strong>الاشتراك:</strong> مبلغ دوري متفق عليه بالريال اليمني دون عمولة على منتجات الطلبات. يمكن عرض المقترح وقبوله، لكن الاشتراك غير قابل للتفعيل أو التحصيل حاليًا حتى اكتمال فوترة WLT ومراجعتها.</p>
+        </div>
+        <p className="muted">صلاحيات الشريك لا تتغير بحسب النموذج التجاري؛ هذا اتفاق رسوم خاص بالمتجر وليس باقة مدفوعة لفتح الميزات. لا يتحول معدل عمولة 0% إلى اشتراك تلقائيًا.</p>
+      </section>
       <div className="form-grid">
         <label className="field-label" htmlFor="store-commercial-model">نموذج الاتفاق
           <select id="store-commercial-model" value={commercialModel} onChange={event => setCommercialModel(event.target.value as "COMMISSION" | "SUBSCRIPTION")} disabled={busy}>
@@ -188,6 +208,7 @@ export function StoreCommercialAgreementProposal({ storeId, modes }: Readonly<{s
         {busy ? "جارٍ إرسال الاقتراح…" : hasActiveAgreement ? "اقتراح تعديل الاتفاق الساري" : nextProposalVersion > 0 ? "إعادة اقتراح الاتفاق بعد التصحيح" : "اقتراح الاتفاق التجاري"}
       </button>
       </>}
+      </> : <p className="muted">يُحدّد نموذج العمولة أو الاشتراك من قسم السياسات في لوحة التحكم بواسطة المشغّل المخوّل. هذه الصفحة تعرض سجل الاتفاقيات للمتابعة فقط؛ القبول والاعتماد يظلان مستقلين.</p>}
     </>}
     {error ? <p role="alert" className="identity-error">{error} <button className="button button-secondary" type="button" disabled={busy} onClick={() => {setError("");void read().catch(() => setError("تعذرت إعادة القراءة."));}}>إعادة القراءة</button></p> : null}
     {notice ? <output>{notice}</output> : null}

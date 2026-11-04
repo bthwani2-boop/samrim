@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useSession } from "../../session/session-provider";
 import type { FinanceStoreCommercialAgreement, StoreCommercialAgreementDecision, StoreCommercialAgreementDecisionResponse, StoreCommercialAgreementQueueResponse, StoreCommercialAgreementRecord, StoreTypeCommissionDefaultsResponse } from "./store-commercial-agreement-types";
-import { storeCommercialAgreementModes } from "./store-commercial-agreement-types";
+import { storeCommercialAgreementModes, storeCommercialStatusLabel } from "./store-commercial-agreement-types";
 
 const queueLimit = 50;
 
@@ -62,16 +62,6 @@ function formatTimestamp(value: string | null | undefined) {
   if (!value) return "غير مسجل";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("ar-YE", { dateStyle: "medium", timeStyle: "short" }).format(date);
-}
-
-function statusLabel(status: FinanceStoreCommercialAgreement["status"]) {
-  switch (status) {
-    case "PROPOSED": return "بانتظار قبول مالك المتجر";
-    case "PARTNER_ACCEPTED": return "بانتظار قرار المالية";
-    case "ACTIVE": return "نشط";
-    case "FINANCE_REJECTED": return "مرفوض من المالية";
-    case "SUPERSEDED": return "استبدل باتفاق أحدث";
-  }
 }
 
 function errorMessage(value: unknown) {
@@ -335,7 +325,7 @@ export function StoreCommercialAgreementWorkspace() {
     {busy === "queue" && agreements.length === 0 ? <p role="status">جارٍ تحميل الاتفاقات…</p> : null}
     {agreements.length ? <section className="form-grid" aria-label="اتفاقات بانتظار المالية">
       {agreements.map((agreement) => <article className="access-card" key={agreement.agreementId}>
-        <div className="finance-toolbar"><div><h3>{agreement.storeName || "متجر بثواني"}</h3></div><strong>{statusLabel(agreement.status)}</strong></div>
+        <div className="finance-toolbar"><div><h3>{agreement.storeName || "متجر بثواني"}</h3></div><strong>{storeCommercialStatusLabel(agreement)}</strong></div>
         <p className="muted">نوع المتجر: {agreement.commercialStoreTypeNameAr} · الملكية: {agreement.currentStoreOwnerActorId === agreement.partnerActorId ? "مالك الاتفاق هو المالك الحالي" : "تغيّر مالك المتجر بعد الاتفاق"}</p>
         <p className="muted">الأنماط الحالية: {agreement.fulfillmentModes.map(modeLabel).join("، ") || "غير محددة"}</p>
         <p className="muted">أُرسل الاتفاق للمراجعة في {formatTimestamp(agreement.proposedAt)}</p>
@@ -351,7 +341,7 @@ export function StoreCommercialAgreementWorkspace() {
     {selected ? <section className="access-card" aria-labelledby="selected-store-commercial-agreement-title">
 
       <h3 id="selected-store-commercial-agreement-title">{selected.storeName || "متجر بثواني"}</h3>
-      <p className="muted">الحالة الحالية: {statusLabel(selected.status)}</p>
+      <p className="muted">الحالة الحالية: {storeCommercialStatusLabel(selected)}</p>
       <p className="muted">نوع المتجر: {selected.commercialStoreTypeNameAr} · الملكية: {selected.currentStoreOwnerActorId === selected.partnerActorId ? "مالك الاتفاق هو المالك الحالي" : "تغيّر مالك المتجر بعد الاتفاق"}</p>
       <p className="muted">أُرسل الاتفاق في {formatTimestamp(selected.proposedAt)}</p>
       <p className="muted">قبول مالك المتجر: {formatTimestamp(selected.partnerAcceptedAt)}</p>
@@ -397,7 +387,7 @@ export function StoreCommercialAgreementWorkspace() {
     {verifiedDecision ? <article className="access-card" aria-live="polite">
       <p className="eyebrow">تم التحقق من نتيجة القرار عبر قراءة النظام</p>
       <h3>{verifiedDecision.attempt.storeName || "متجر بثواني"}</h3>
-       <p className="muted">الحالة {statusLabel(verifiedDecision.agreement.status)}</p>
+       <p className="muted">الحالة {storeCommercialStatusLabel(verifiedDecision.agreement)}</p>
       <p className="muted">قرار المالية: {verifiedDecision.attempt.decision === "APPROVE" ? "اعتماد" : "رفض"} · {formatTimestamp(verifiedDecision.agreement.financeDecisionAt)}</p>
       <p className="muted">سبب القرار المسجل: {verifiedDecision.agreement.financeDecisionReason}</p>
       {verifiedDecision.agreement.effectiveAt ? <p className="muted">ساري منذ {formatTimestamp(verifiedDecision.agreement.effectiveAt)}</p> : null}

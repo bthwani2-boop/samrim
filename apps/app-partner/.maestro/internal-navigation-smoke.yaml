@@ -5,20 +5,23 @@ name: Partner internal stack navigation
 - launchApp:
     stopApp: false
     clearState: false
+- openLink: "partner://more"
 - extendedWaitUntil:
     visible: "المزيد"
     timeout: 15000
 - tapOn: "المزيد"
-- extendedWaitUntil:
-    visible: "الأداء"
-    timeout: 15000
+- scrollUntilVisible:
+    element:
+      text: "الأداء"
+    direction: DOWN
+    timeout: 20000
 - tapOn: "الأداء"
 - extendedWaitUntil:
-    visible: "فرص لتحسين المبيعات"
+    visible: "نظرة عامة"
     timeout: 15000
 - back
 - extendedWaitUntil:
-    visible: "ملف المتجر والصور"
+    visible: "حسابي وملف المتجر"
     timeout: 15000
 - tapOn: "الطلبات"
 - extendedWaitUntil:

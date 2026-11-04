@@ -13,9 +13,11 @@ export function PartnerOrders() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const { state, stores, selectedStore, selectStore } = usePartnerStoreScope();
-  const { storeId: rawTargetStore } = useLocalSearchParams<{storeId?: string | string[]}>();
+  const { storeId: rawTargetStore, scope: rawScope } = useLocalSearchParams<{storeId?: string | string[]; scope?: string | string[]}>();
   const targetStoreId = Array.isArray(rawTargetStore) ? rawTargetStore[0] : rawTargetStore;
-  const [scope, setScope] = useState<OrdersScope>("SELECTED_STORE");
+  const routeScope = Array.isArray(rawScope) ? rawScope[0] : rawScope;
+  const [scope, setScope] = useState<OrdersScope>(routeScope === "all" ? "ALL_AUTHORIZED" : "SELECTED_STORE");
+  useEffect(() => { setScope(routeScope === "all" ? "ALL_AUTHORIZED" : "SELECTED_STORE"); }, [routeScope]);
   const permittedStores = stores.filter((store) => store.owned || store.permissions.includes("orders"));
   const canManageOrders = Boolean(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("orders")));
   const aggregateMode = scope === "ALL_AUTHORIZED" && permittedStores.length > 1;

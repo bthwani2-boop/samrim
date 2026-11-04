@@ -1283,6 +1283,13 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalizedCity) throw new Error("DSH_SERVICE_CITY_REQUIRED");
       return publicRequest<DiscoveryContentListResponse>(`${dshOperationPaths.listPublicDiscoveryContent.path}?${new URLSearchParams({ serviceCityId: normalizedCity }).toString()}`);
     },
+    async listPublicStoreBanners(storeID: string, serviceCityID: string): Promise<DiscoveryContentListResponse> {
+      const normalizedStore = storeID.trim();
+      const normalizedCity = serviceCityID.trim();
+      if (!normalizedStore || !normalizedCity) throw new Error("DSH_STORE_BANNER_SCOPE_REQUIRED");
+      const path = dshOperationPaths.listPublicStoreBanners.path.replace("{storeId}", encodeURIComponent(normalizedStore));
+      return publicRequest<DiscoveryContentListResponse>(`${path}?${new URLSearchParams({ serviceCityId: normalizedCity }).toString()}`);
+    },
     async resolvePublicDiscoveryContentTarget(contentID: string, serviceCityID: string): Promise<DiscoveryContentTargetResolution> {
       const normalizedContent = contentID.trim();
       const normalizedCity = serviceCityID.trim();
@@ -1333,7 +1340,7 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = `${dshOperationPaths.readPublicStoreCatalog.path.replace("{storeId}", encodeURIComponent(normalizedStore))}?${params.toString()}`;
       return publicRequest<PublicCatalogResponse>(path);
     },
-    async searchPublicCatalog(serviceCityID: string, query: string, categoryID = "", limit = 20, cursor = "", verticalID = "", shortcutID = ""): Promise<PublicCatalogSearchResponse> {
+    async searchPublicCatalog(serviceCityID: string, query: string, categoryID = "", limit = 20, cursor = "", verticalID = "", shortcutID = "", sort: "" | "PRICE_ASC" | "PRICE_DESC" = ""): Promise<PublicCatalogSearchResponse> {
       const normalizedCity = serviceCityID.trim();
       const normalizedQuery = query.trim();
       if (!normalizedCity) throw new Error("DSH_CATALOG_SEARCH_SCOPE_REQUIRED");
@@ -1342,6 +1349,7 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (categoryID.trim()) params.set("categoryId", categoryID.trim());
       if (verticalID.trim()) params.set("verticalId", verticalID.trim());
       if (shortcutID.trim()) params.set("shortcutId", shortcutID.trim());
+      if (sort) params.set("sort", sort);
       params.set("limit", String(limit));
       if (cursor.trim()) params.set("cursor", cursor.trim());
       const path = `${dshOperationPaths.searchPublicCatalog.path}?${params.toString()}`;

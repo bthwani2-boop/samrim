@@ -17,8 +17,8 @@ import * as DocumentPicker from "expo-document-picker";
 import { Image as ExpoImage } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Linking, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
+import { type ComponentProps, type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Image, Linking, Modal, Platform, Pressable, ScrollView, Switch, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { onPartnerProductAction } from "../../shell/partner-product-actions";
 import { PartnerStorePromotionBanner } from "./partner-promotion-banner";
@@ -145,12 +145,18 @@ function isResolvedProductMatch(match: CatalogIdentifierResolution): match is Re
   return match.outcome === "SHARED_PRODUCT_MATCH" || match.outcome === "STORE_LOCAL_PRODUCT_MATCH";
 }
 
+// React Native Web switches need a DOM direction override to keep the thumb inside
+// its track in RTL. The attribute is omitted on native platforms.
+const WebDirectionView = View as ComponentType<ComponentProps<typeof View> & { dir?: "ltr" | undefined }>;
+
 export function StoreOfferManagement({ storeId, verticalId, serviceCityId, storePublicationState, canManagePromotions = false, toolsView = false }: { storeId: string; verticalId: string; serviceCityId: string; storePublicationState: string; canManagePromotions?: boolean; toolsView?: boolean }) {
 const theme = useAppearanceTheme();
+  const wideOffers = useWindowDimensions().width >= 1180;
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<OfferState>({ kind: "loading" });
   const [panel, setPanel] = useState<"prices" | "create" | "tools" | null>(toolsView ? "tools" : null);
-  useEffect(() => { setPanel(toolsView ? "tools" : null); }, [toolsView]);
+  const [priceTarget, setPriceTarget] = useState<{ offerID: string; name: string } | null>(null);
+  useEffect(() => { setPanel(toolsView ? "tools" : null); setPriceTarget(null); }, [toolsView]);
   const [expandedInventoryId, setExpandedInventoryId] = useState<string | null>(null);
   const router = useRouter();
   const { q: rawListQuery } = useLocalSearchParams<{ q?: string | string[] }>();
@@ -164,7 +170,10 @@ const theme = useAppearanceTheme();
   const [filterModalOpen, setFilterModalOpen] = useState(false);
   const [popularIDs, setPopularIDs] = useState<ReadonlyArray<string> | null>(null);
   const [popularError, setPopularError] = useState(false);
-  useEffect(() => onPartnerProductAction((action) => setPanel((previous) => action === "list" || action === previous ? null : action)), []);
+  useEffect(() => onPartnerProductAction((action) => {
+    setPriceTarget(null);
+    setPanel((previous) => action === "list" || action === previous ? null : action);
+  }), []);
   useEffect(() => {
     if (listFilter !== "popular" || !storeId || !serviceCityId) return;
     let active = true;
@@ -968,6 +977,8 @@ const theme = useAppearanceTheme();
         {listFilter === "popular" && popularError ? <Text style={styles.muted}>تعذر قراءة ترتيب الطلبات لآخر 30 يومًا.</Text> : null}
       </> : null}
       {catalogReady && panel === "prices" ? <MobileStoreQuickPricesWorkspace
+        initialSearch={priceTarget?.name ?? ""}
+        selectedOfferId={priceTarget?.offerID ?? ""}
         client={dshClient()}
         scope={{ kind: "PARTNER", storeID: storeId }}
         verticalId={verticalId}
@@ -1019,14 +1030,14 @@ const theme = useAppearanceTheme();
         {!toolsView && panel === null && state.kind === "ready" && serverOfferQuery && remoteOffers.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ البحث في كتالوج المتجر بالكامل…</Text></View> : null}
         {!toolsView && panel === null && state.kind === "ready" && serverOfferQuery && remoteOffers.kind === "error" ? <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>تعذر تحميل نتائج التصفية من المتجر.</Text><BthwaniButton label="إعادة البحث" onPress={() => setRemoteOfferRefresh((value) => value + 1)} variant="secondary" /></View> : null}
         {shareNotice && !toolsView && panel === null ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{shareNotice}</Text> : null}
-        {!toolsView && panel === null && state.kind === "ready" && listFilter !== "offers" ? <View style={styles.offerList}>
+        {!toolsView && panel === null && state.kind === "ready" && listFilter !== "offers" ? <View style={[styles.offerList, wideOffers && styles.offerListWide]}>
         {offersOnScreen.map((offer) => {
           const primaryMedia = getPrimaryMedia(offer.media);
           const inventoryDraft = inventoryDrafts[offer.offerId] ?? String(offer.inventoryOnHandBaseUnits);
           const stockExpanded = expandedInventoryId === offer.offerId;
           const publicLink = publicOfferLink(offer);
           const whatsappLink = buildPartnerStoreWhatsAppURL(publicLink, offer.productName);
-          return <View key={offer.offerId} style={styles.item}>
+          return <View key={offer.offerId} style={[styles.item, wideOffers && styles.itemWide]}>
             <View style={styles.offerIdentity}>
               {primaryMedia ? <ExpoImage cachePolicy="memory" accessibilityLabel={"صورة " + offer.productName} source={{ uri: primaryMedia.uri }} contentFit="cover" style={styles.offerImage} />
                 : <View accessibilityLabel={"لا توجد صورة لـ " + offer.productName} style={styles.offerImagePlaceholder}><BthwaniIcon name="cart" color={theme.colorMuted} size={20} /></View>}
@@ -1037,11 +1048,11 @@ const theme = useAppearanceTheme();
               </View>
             </View>
             <View style={styles.offerActionRow}>
-              <Switch accessibilityLabel={"توافر " + offer.productName} trackColor={{ false: theme.borderColor, true: theme.actionSoft }} thumbColor={offer.availability ? theme.brandAction : theme.colorMuted} disabled={busy} onValueChange={(available) => void updateOffer(offer, offer.publicationState, available)} value={offer.availability} />
+              <WebDirectionView dir={Platform.OS === "web" ? "ltr" : undefined}><Switch accessibilityLabel={"توافر " + offer.productName} trackColor={{ false: theme.borderColor, true: theme.actionSoft }} thumbColor={offer.availability ? theme.brandAction : theme.colorMuted} disabled={busy} onValueChange={(available) => void updateOffer(offer, offer.publicationState, available)} value={offer.availability} /></WebDirectionView>
               <Text style={styles.availabilityLabel}>{offer.availability ? "متاح" : "غير متاح"}</Text>
               {offer.inventoryPolicy === "QUANTITY_ON_HAND" ? <Pressable accessibilityRole="button" disabled={busy} onPress={() => setExpandedInventoryId(stockExpanded ? null : offer.offerId)} style={styles.compactAction}><Text style={styles.compactActionLabel}>المخزون</Text></Pressable> : null}
               <View style={{ flex: 1 }} />
-              <Pressable accessibilityRole="button" accessibilityLabel={"تعديل سعر " + offer.productName} onPress={() => setPanel("prices")} style={styles.compactAction}><BthwaniIcon name="edit" size={15} color={theme.color} /><Text style={styles.compactActionLabel}>تعديل</Text></Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel={"تعديل سعر " + offer.productName} onPress={() => { setPriceTarget({ offerID: offer.offerId, name: offer.productName }); setPanel("prices"); }} style={styles.compactAction}><BthwaniIcon name="edit" size={15} color={theme.color} /><Text style={styles.compactActionLabel}>تعديل</Text></Pressable>
               <Pressable accessibilityRole="button" accessibilityLabel={(offer.publicationState === "published" ? "إخفاء " : "نشر ") + offer.productName} disabled={busy} onPress={() => void updateOffer(offer, offer.publicationState === "published" ? "hidden" : "published", offer.availability)} style={styles.compactAction}><Text style={styles.compactActionLabel}>{offer.publicationState === "published" ? "إخفاء" : "نشر"}</Text></Pressable>
             </View>
             {publicLink ? <View style={[styles.offerActionRow, { flexWrap: "wrap" }]}>
@@ -1066,7 +1077,13 @@ const theme = useAppearanceTheme();
           </View>;
         })}
       </View> : null}
-      {!toolsView && panel === null && state.kind === "ready" && listFilter !== "offers" && !popularError && (listFilter !== "popular" || popularIDs !== null) && (!serverOfferQuery || remoteOffers.kind === "ready") && (state.offers.length > 0 || Boolean(serverOfferQuery)) && offersOnScreen.length === 0 ? <Text style={styles.muted}>لا توجد منتجات تطابق البحث أو التصفية.</Text> : null}
+      {!toolsView && panel === null && state.kind === "ready" && listFilter !== "offers" && !popularError && (listFilter !== "popular" || popularIDs !== null) && (!serverOfferQuery || remoteOffers.kind === "ready") && (state.offers.length > 0 || Boolean(serverOfferQuery)) && offersOnScreen.length === 0 ? <View style={styles.state}>
+        <Text style={styles.muted}>لا توجد منتجات تطابق البحث أو التصفية.</Text>
+        <BthwaniButton label="مسح البحث والتصفية" disabled={busy} variant="quiet" onPress={() => {
+          setListFilter("all");
+          router.setParams({ q: "", filter: "all" });
+        }} />
+      </View> : null}
             {!toolsView && panel === null && listFilter !== "offers" && hasMoreOffers ? <BthwaniButton busy={loadingNextOffers} disabled={loadingNextOffers || busy} label={loadingNextOffers ? "جارٍ تحميل العروض…" : "تحميل المزيد من العروض"} onPress={() => void (serverOfferQuery ? loadMoreRemoteOffers() : loadMoreOffers())} variant="secondary" /> : null}
       <Modal visible={filterModalOpen} transparent animationType="slide" onRequestClose={() => setFilterModalOpen(false)}>
         <View style={styles.filterModalBackdrop}>
@@ -1076,7 +1093,7 @@ const theme = useAppearanceTheme();
               <Pressable accessibilityRole="button" accessibilityLabel="إغلاق" onPress={() => setFilterModalOpen(false)}><BthwaniIcon name="close" size={21} color={theme.color} /></Pressable>
             </View>
             {([{ key: "all", label: "كل المنتجات" }, { key: "published", label: "المنشورة والمتاحة" }, { key: "unavailable", label: "غير المتاحة" }, { key: "stockout", label: "نفاد المخزون" }, { key: "hidden", label: "المخفية" }] as const).map((item) =>
-              <Pressable key={item.key} accessibilityRole="button" aria-selected={listFilter === item.key} accessibilityState={{ selected: listFilter === item.key }} onPress={() => { setListFilter(item.key); setFilterModalOpen(false); }} style={[styles.filterModalItem, listFilter === item.key && styles.filterChipActive]}>
+              <Pressable key={item.key} accessibilityRole="button" aria-pressed={listFilter === item.key} accessibilityState={{ selected: listFilter === item.key }} onPress={() => { setListFilter(item.key); setFilterModalOpen(false); }} style={[styles.filterModalItem, listFilter === item.key && styles.filterChipActive]}>
                 <Text style={styles.itemTitle}>{item.label}</Text>
                 {listFilter === item.key ? <BthwaniIcon name="success" color={theme.brandAction} size={18} /> : null}
               </Pressable>)}

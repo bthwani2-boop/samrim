@@ -1,6 +1,7 @@
 package transporthttp
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -561,6 +562,7 @@ func (s *StorePublicationServer) searchPublicCatalog(w http.ResponseWriter, r *h
 	categoryID := strings.TrimSpace(r.URL.Query().Get("categoryId"))
 	verticalID := strings.TrimSpace(r.URL.Query().Get("verticalId"))
 	shortcutID := strings.TrimSpace(r.URL.Query().Get("shortcutId"))
+	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
 	limit := 20
@@ -572,16 +574,20 @@ func (s *StorePublicationServer) searchPublicCatalog(w http.ResponseWriter, r *h
 		}
 		limit = parsed
 	}
-	if serviceCityID == "" || len(verticalID) > 128 || len(categoryID) > 128 || len(shortcutID) > 128 || utf8.RuneCountInString(query) > 160 || len(cursor) > 1024 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog search scope or query is invalid")
+	if serviceCityID == "" || len(verticalID) > 128 || len(categoryID) > 128 || len(shortcutID) > 128 || utf8.RuneCountInString(query) > 160 || len(cursor) > 1024 || (sort != "" && sort != "PRICE_ASC" && sort != "PRICE_DESC") {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog search scope, sort or query is invalid")
 		return
 	}
 	if s.service == nil {
 		writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "public catalog search is unavailable")
 		return
 	}
-	result, err := s.service.SearchPublicCatalog(r.Context(), serviceCityID, verticalID, categoryID, query, limit, cursor, shortcutID)
+	result, err := s.service.SearchPublicCatalog(r.Context(), serviceCityID, verticalID, categoryID, query, limit, cursor, shortcutID, sort)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			writeError(w, http.StatusGatewayTimeout, "CATALOG_SEARCH_TIMEOUT", "catalog search exceeded its execution budget")
+			return
+		}
 		writeStorePublicationError(w, err)
 		return
 	}

@@ -65,6 +65,10 @@ paths:
     $ref: "./paths/operator-passkey-access.yaml#/paths/~1internal~1bootstrap~1operator"
   /auth/refresh:
     $ref: "./paths/session.yaml#/paths/~1auth~1refresh"
+  /auth/web/client/session:
+    $ref: "./paths/session.yaml#/paths/~1auth~1web~1client~1session"
+  /auth/web/client/logout:
+    $ref: "./paths/session.yaml#/paths/~1auth~1web~1client~1logout"
   /auth/web/partner/session:
     $ref: "./paths/session.yaml#/paths/~1auth~1web~1partner~1session"
   /auth/web/partner/logout:
@@ -714,6 +718,20 @@ components:
       properties:
         enabled:
           type: boolean
+
+    ClientBrowserAccessPair:
+      description: Client web access response. The real refresh token is stored only in an HttpOnly Secure cookie and is never returned to browser JavaScript.
+      type: object
+      additionalProperties: false
+      required: [accessToken, accessExpiresAt, identity]
+      properties:
+        accessToken:
+          type: string
+        accessExpiresAt:
+          type: string
+          format: date-time
+        identity:
+          $ref: "#/components/schemas/ActorIdentity"
 
     TokenPair:
       type: object

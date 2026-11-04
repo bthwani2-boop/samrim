@@ -11,7 +11,7 @@ async function inspect(page, width) {
       text.includes("إدارة ملف الانضمام والاتفاقية التجارية محفوظة لمالك المتجر") ||
       text.includes("تعذر تحميل المتاجر");
     return (text.includes("حسابي · خدمات المتجر") && settled) ||
-      text.includes("تعذر التحقق") || location.pathname === "/";
+      /(يلزم تسجيل الدخول|انتهت صلاحية جلسة|تعذر التحقق من جلسة)/.test(text) || location.pathname === "/";
   }, { timeout: 12000 }).catch(() => {});
   return page.evaluate(() => {
     const text = document.body.innerText || "";
@@ -29,14 +29,14 @@ async function inspect(page, width) {
       scopeBlocked: text.includes("تعذر تحميل المتاجر"),
       scopeLoading: text.includes("جارٍ التحقق من المتاجر المتاحة"),
       hasVisibleError: /TransformError|SyntaxError|Unable to resolve|Internal Server Error/.test(text),
-      authBlocked: text.includes("تعذر التحقق") || location.pathname === "/",
+      authBlocked: /(يلزم تسجيل الدخول|انتهت صلاحية جلسة|تعذر التحقق من جلسة)/.test(text) || location.pathname === "/",
       overflow: document.documentElement.scrollWidth > innerWidth + 2,
     };
   });
 }
 
 async function run() {
-  const browser = await chromium.connectOverCDP("http://127.0.0.1:9223");
+  const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9222");
   let page;
   try {
     const context = browser.contexts().find(c => c.pages().some(p => p.url().startsWith("http://localhost:18102/")));

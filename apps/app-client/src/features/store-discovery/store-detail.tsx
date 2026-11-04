@@ -9,7 +9,7 @@ import * as ExpoLinking from "expo-linking";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Alert, FlatList, Pressable, ScrollView, type ScrollViewInstance, Text, useWindowDimensions, View, type ViewInstance } from "react-native";
+import { AccessibilityInfo, Alert, FlatList, Platform, Pressable, ScrollView, type ScrollViewInstance, Text, useWindowDimensions, View, type ViewInstance } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -20,7 +20,7 @@ import { ClientShareSheet, type ClientShareTarget } from "../sharing/client-shar
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
 import { PromotionCard } from "./promotion-card";
 import { summarizeStoreAvailability } from "./store-availability-summary";
-import { addCatalogOfferToCart, listFavoriteStoreIDs, listFavoriteStoreOfferIDs, listPublicDiscoveryContent, listPublicPromotions, readFavoriteStoreCatalog, readOwnStoreCart, readPublicStoreCatalog, readPublicStoreOrderability, readPublishedStore, setFavoriteStore, setFavoriteStoreOffer } from "./store-discovery-client";
+import { addCatalogOfferToCart, listFavoriteStoreIDs, listFavoriteStoreOfferIDs, listPublicStoreBanners, listPublicPromotions, readFavoriteStoreCatalog, readOwnStoreCart, readPublicStoreCatalog, readPublicStoreOrderability, readPublishedStore, setFavoriteStore, setFavoriteStoreOffer } from "./store-discovery-client";
 import type { GallerySourceRect } from "./store-product-gallery";
 import { StoreProductSheet } from "./store-product-sheet";
 import { StorePublicContactCard } from "./store-public-contact";
@@ -31,11 +31,11 @@ type DetailState =
   | { kind: "ready"; store: PublicStoreView; catalog: PublicCatalogResponse }
   | { kind: "error" };
 
-type StoreBannerItem =
-  | { kind: "content"; key: string; content: PublicDiscoveryContentView }
-  | { kind: "offer"; key: string; offer: PublicCatalogResponse["offers"][number] };
+type StoreBannerItem = Readonly<{ key: string; content: PublicDiscoveryContentView }>;
 
 type CatalogSnapshot = { catalog: PublicCatalogResponse; categoryID: string | null; sectionID: string | null; query: string; productID: string };
+
+const EMPTY_GRID_CELL_KEYS = ["empty-grid-cell:1", "empty-grid-cell:2", "empty-grid-cell:3"] as const;
 
 export default function ClientStoreDetail({ storeId, categoryId = "", productId = "", promotionId = "" }: { storeId: string; categoryId?: string; productId?: string; promotionId?: string }) {
   const router = useRouter();
@@ -58,7 +58,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [quickAnchorY, setQuickAnchorY] = useState<number | undefined>(undefined);
   const [gallerySourceRect, setGallerySourceRect] = useState<GallerySourceRect | undefined>();
   const imageRefs = useRef<Map<string, ViewInstance>>(new Map());
-  const [gridMode, setGridMode] = useState(false);
+  const [userGridMode, setUserGridMode] = useState<boolean | null>(null);
   const detailRequestID = useRef(0);
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogSearchOpen, setCatalogSearchOpen] = useState(false);
@@ -69,8 +69,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [catalogTabs, setCatalogTabs] = useState<Partial<Record<number, CatalogSnapshot>>>({});
   const cartReadRequestID = useRef(0);
   const promotionRequestID = useRef(0);
-  const bannerRequestID = useRef(0);
-  const [bannerError, setBannerError] = useState(false);
+
   const [error, setError] = useState("");
   const [isFavorite, setIsFavorite] = useState(false);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
@@ -88,12 +87,19 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const spotlightPromotion = promotionId ? promotions.find(item => item.id === promotionId) : undefined;
   const remainingPromotions = spotlightPromotion ? promotions.filter(item => item.id !== spotlightPromotion.id) : promotions;
   const [marketingContents, setMarketingContents] = useState<ReadonlyArray<PublicDiscoveryContentView>>([]);
-  const [bannerOffers, setBannerOffers] = useState<PublicCatalogResponse["offers"]>([]);
+  const [bannerError, setBannerError] = useState(false);
+  const bannerRequestID = useRef(0);
+  // A later failed revalidation must not suppress an older successful retry.
+  // Only an already-applied newer success may supersede an earlier response.
+  const bannerAppliedRequestID = useRef(0);
   const [bannerIndex, setBannerIndex] = useState(0);
   const [bannerPaused, setBannerPaused] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
   const bannerRef = useRef<ScrollViewInstance | null>(null);
   const { width: windowWidth } = useWindowDimensions();
+  const desktopStorefront = Platform.OS === "web" && windowWidth >= 1024;
+  const gridMode = userGridMode ?? (Platform.OS === "web" && windowWidth >= 1024);
+  const gridColumns = Platform.OS === "web" && windowWidth >= 1200 ? 3 : 2;
   const [promotionLoading, setPromotionLoading] = useState(true);
   const [promotionError, setPromotionError] = useState(false);
   const [favoritesView, setFavoritesView] = useState(false);
@@ -107,9 +113,18 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     let active = true;
     if (!storeId || !selectedCityID) return () => { active = false; };
     const refresh = () => {
+      const bannerRequest = ++bannerRequestID.current;
       void readPublicStoreOrderability(storeId, selectedCityID).then((response) => {
         if (active) setOrderabilityByMode(response.orderabilityByMode);
       }).catch(() => { /* Preserve the last confirmed state until DSH is reachable. */ });
+      // Revalidate Partner visibility and publication while the Store stays open.
+      void listPublicStoreBanners(storeId, selectedCityID).then((response) => {
+        if (active && bannerRequest > bannerAppliedRequestID.current) {
+          bannerAppliedRequestID.current = bannerRequest;
+          setMarketingContents(response.items);
+          setBannerError(false);
+        }
+      }).catch(() => { if (active && bannerRequest === bannerRequestID.current) setBannerError(true); /* Keep the last confirmed page while DSH is unreachable. */ });
     };
     refresh();
     const interval = setInterval(refresh, 15000);
@@ -119,37 +134,11 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [cartReadError, setCartReadError] = useState(false);
   const fulfillmentModes = useMemo(() => state.kind === "ready" ? availableCustomerFulfillmentModes(state.store.fulfillmentModes) : [], [state]);
   const mutationBusy = Boolean(busyOfferId);
-  const bannerCatalogOffers = bannerOffers.length > 0 ? bannerOffers : (catalogTabs[0]?.catalog.offers ?? (state.kind === "ready" ? state.catalog.offers : []));
-  // Short-form clips belong in the dedicated Reels viewer, not Store image banners.
-  const storeMarketingContents = marketingContents.filter((item) =>
-    item.kind !== "SHORT_FORM" && (
-      (item.targetType === "STORE" && item.targetId === storeId) ||
-      (item.targetType === "PRODUCT" && [...bannerCatalogOffers, ...(state.kind === "ready" ? state.catalog.offers : [])].some((offer) => offer.productId === item.targetId)) ||
-      (item.targetType === "PROMOTION" && promotions.some((promotion) => promotion.id === item.targetId))
-    )
-  );
-  const bannerItems: StoreBannerItem[] = [
-    ...storeMarketingContents.map((content) => ({ kind: "content" as const, key: "content:" + content.id, content })),
-    ...bannerCatalogOffers.slice(0, 5).map((offer) => ({ kind: "offer" as const, key: `offer:${offer.offerId}`, offer })),
-  ].slice(0, 5);
-  // Expose neighboring slides; centering padding is part of the scroll content, not each item.
-  const bannerViewportWidth = Math.max(1, windowWidth - spacing[3] * 2);
-  const bannerWidth = Math.min(220, Math.max(174, Math.round(bannerViewportWidth * 0.60)));
-  const bannerStep = bannerWidth + spacing[1];
-  const bannerSidePadding = spacing[1];
+  // This surface displays only Partner-authored Store banners approved by DSH.
+  const bannerItems: StoreBannerItem[] = marketingContents.filter((content) => content.kind === "BANNER" && content.mediaKind === "image" && !!content.mediaUri).map((content) => ({ key: content.id, content }));
+  const bannerWidth = Math.max(1, windowWidth - spacing[3] * 2);
+  const bannerStep = bannerWidth;
 
-  const loadBanner = useCallback(async () => {
-    if (!selectedCityID) return;
-    const scope = storeRequestID.current;
-    const requestID = ++bannerRequestID.current;
-    setBannerError(false);
-    try {
-      const result = await readPublicStoreCatalog(storeId, selectedCityID, "", "", 5, "", "", "MOST_ORDERED_30_DAYS");
-      if (scope === storeRequestID.current && requestID === bannerRequestID.current) setBannerOffers(result.offers.slice(0, 5));
-    } catch {
-      if (scope === storeRequestID.current && requestID === bannerRequestID.current) setBannerError(true);
-    }
-  }, [selectedCityID, storeId]);
 
   const load = useCallback(async () => {
     const requestID = ++storeRequestID.current;
@@ -167,8 +156,8 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     setCatalogRefreshing(false);
     setLoadingMore(false);
     setPromotions([]);
+    ++bannerRequestID.current;
     setMarketingContents([]);
-    setBannerOffers([]);
     setBannerError(false);
     setBannerIndex(0);
     setBannerPaused(false);
@@ -197,9 +186,14 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       const orderabilityRequest = readPublicStoreOrderability(storeId, selectedCityID)
         .then((result) => result.orderabilityByMode)
         .catch(() => null);
-      const contentRequest = listPublicDiscoveryContent(selectedCityID)
-        .then((result) => { if (requestID === storeRequestID.current) setMarketingContents(result.items); })
-        .catch(() => { if (requestID === storeRequestID.current) setMarketingContents([]); });
+      const contentID = ++bannerRequestID.current;
+      const contentRequest = listPublicStoreBanners(storeId, selectedCityID)
+        .then((result) => { if (requestID === storeRequestID.current && contentID > bannerAppliedRequestID.current) {
+            bannerAppliedRequestID.current = contentID;
+            setMarketingContents(result.items);
+            setBannerError(false);
+          } })
+        .catch(() => { if (requestID === storeRequestID.current && contentID === bannerRequestID.current) setBannerError(true); });
       const promotionRequest = listPublicPromotions(selectedCityID, storeId)
         .then((result) => {
           if (promotionID !== promotionRequestID.current) return;
@@ -214,7 +208,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         .finally(() => {
           if (promotionID === promotionRequestID.current) setPromotionLoading(false);
         });
-      void loadBanner();
+
       const [store, rawCatalog] = await Promise.all([
         readPublishedStore(storeId, selectedCityID),
         readPublicStoreCatalog(storeId, selectedCityID, categoryId.trim(), "", 20, "", productId.trim()),
@@ -249,7 +243,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       setPromotionLoading(false);
       setState({ kind: "error" });
     }
-  }, [categoryId, loadBanner, productId, selectedCityID, storeId]);
+  }, [categoryId, productId, selectedCityID, storeId]);
 
   function openStorePromotion(code: string) {
     router.push(`/cart/${encodeURIComponent(storeId)}?fulfillmentMode=${encodeURIComponent(selectedFulfillmentMode ?? "")}&promotionCode=${encodeURIComponent(code)}` as Href);
@@ -270,6 +264,21 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       setPromotionError(true);
     } finally {
       if (requestID === promotionRequestID.current) setPromotionLoading(false);
+    }
+  }
+
+  async function retryBanners() {
+    if (!storeId || !selectedCityID) return;
+    const requestID = storeRequestID.current;
+    const bannerRequest = ++bannerRequestID.current;
+    try {
+      const result = await listPublicStoreBanners(storeId, selectedCityID);
+      if (requestID !== storeRequestID.current || bannerRequest <= bannerAppliedRequestID.current) return;
+      bannerAppliedRequestID.current = bannerRequest;
+      setMarketingContents(result.items);
+      setBannerError(false);
+    } catch {
+      if (requestID === storeRequestID.current && bannerRequest === bannerRequestID.current) setBannerError(true);
     }
   }
 
@@ -321,7 +330,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       if (index === 0 && (selectedCategoryID || selectedStoreSectionID)) await reloadCatalog(null, "", false, false);
       return;
     }
-    setCatalogTabs((current) => ({ ...current, [activeTab]: { catalog: state.catalog, categoryID: selectedCategoryID, sectionID: selectedStoreSectionID, query: catalogQuery, productID: activeProductID } }));
+    setCatalogTabs((current) => ({ ...current, [activeTab]: { catalog: state.catalog, categoryID: selectedCategoryID, sectionID: selectedStoreSectionID, query: catalogTabs[activeTab]?.query ?? "", productID: activeProductID } }));
     catalogRequestID.current += 1;
     setLoadingMore(false);
     setCatalogSearchOpen(false);
@@ -340,7 +349,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     }
     setState({ kind: "ready", store: state.store, catalog: { ...state.catalog, offers: [], sections: [], nextCursor: null } });
     await reloadCatalog(null, "", index === 1, index === 2);
-  }, [activeTab, activeProductID, catalogQuery, catalogTabs, reloadCatalog, router, selectedCategoryID, selectedStoreSectionID, state, storeId]);
+  }, [activeTab, activeProductID, catalogTabs, reloadCatalog, router, selectedCategoryID, selectedStoreSectionID, state, storeId]);
 
   useEffect(() => {
     void load();
@@ -348,7 +357,6 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       storeRequestID.current += 1;
       catalogRequestID.current += 1;
       promotionRequestID.current += 1;
-      bannerRequestID.current += 1;
       detailRequestID.current += 1;
     };
   }, [load]);
@@ -371,14 +379,14 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     const timer = setInterval(() => {
       setBannerIndex((current) => {
         const next = (current + 1) % bannerItems.length;
-        bannerRef.current?.scrollTo({ x: next * bannerStep, animated: true });
+        bannerRef.current?.scrollTo({ x: (Platform.OS === "web" ? -1 : 1) * next * bannerStep, animated: true });
         return next;
       });
     }, 5000);
     return () => clearInterval(timer);
   }, [bannerItems.length, bannerPaused, reduceMotion, bannerStep]);
 
-  const visibleContentID = bannerItems[bannerIndex]?.kind === "content" ? bannerItems[bannerIndex].content.id : "";
+  const visibleContentID = bannerItems[bannerIndex]?.content.id ?? "";
   useEffect(() => {
     if (bannerIndex >= bannerItems.length) setBannerIndex(0);
     if (visibleContentID) void recordDiscoveryImpression(visibleContentID);
@@ -423,7 +431,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   };
   appendCategoryLevel(null, 0);
   const catalogRows = buildCatalogRows(state.catalog, favoritesView, popularView, selectedCategoryID, selectedStoreSectionID, catalogQuery, catalogRefreshing);
-  const visibleCatalogRows = buildDisplayCatalogRows(catalogRows, gridMode);
+  const visibleCatalogRows = buildDisplayCatalogRows(catalogRows, gridMode, gridColumns);
   const switchCatalogTabOnSwipe = (translationX: number) => {
     if (catalogRefreshing || mutationBusy || detailOffer) return;
     const next = activeTab + (translationX < 0 ? 1 : -1);
@@ -445,6 +453,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       key={category.id}
       accessibilityRole="button"
       accessibilityLabel={`${isChild ? "تصنيف فرعي" : "تصنيف رئيسي"} ${category.nameAr}`}
+      aria-pressed={selected}
       accessibilityState={{ selected }}
       onPress={() => void reloadCatalog(category.id, catalogQuery, false, popularView)}
       style={[styles.categoryChip, isChild ? styles.subcategoryChip : styles.mainCategoryChip, isDeep && styles.deepCategoryChip, selected && styles.categoryChipSelected]}
@@ -457,7 +466,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   };
 
   async function loadMore() {
-    if (loadingMore || catalogRefreshing || state.kind !== "ready" || !selectedCityID || !state.catalog.nextCursor) return;
+    if (loadingMore || catalogRefreshing || state.kind !== "ready" || !selectedCityID || !state.catalog.nextCursor || catalogQuery.trim() !== (catalogTabs[activeTab]?.query ?? "").trim()) return;
     const requestID = catalogRequestID.current + 1;
     catalogRequestID.current = requestID;
     setLoadingMore(true);
@@ -465,7 +474,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     try {
       const catalog = favoritesView
         ? await readFavoriteStoreCatalog(storeId, selectedCityID, 20, state.catalog.nextCursor)
-        : await readPublicStoreCatalog(storeId, selectedCityID, selectedCategoryID ?? "", catalogQuery.trim(), 20, state.catalog.nextCursor, activeProductID, popularView ? "MOST_ORDERED_30_DAYS" : "");
+        : await readPublicStoreCatalog(storeId, selectedCityID, selectedCategoryID ?? "", (catalogTabs[activeTab]?.query ?? "").trim(), 20, state.catalog.nextCursor, activeProductID, popularView ? "MOST_ORDERED_30_DAYS" : "");
       if (requestID !== catalogRequestID.current) return;
       setState((current) => current.kind === "ready" ? { kind: "ready", store: current.store, catalog: mergeCatalog(current.catalog, catalog) } : current);
     } catch {
@@ -591,7 +600,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   }
 
   async function openOfferDetails(offerID: string, mode: "gallery" | "quick" = "gallery", anchorY?: number) {
-    const offer = state.kind === "ready" ? state.catalog.offers.find((item) => item.offerId === offerID) ?? bannerOffers.find((item) => item.offerId === offerID) : undefined;
+    const offer = state.kind === "ready" ? state.catalog.offers.find((item) => item.offerId === offerID) : undefined;
     if (!offer || !selectedCityID) return;
     const requestID = ++detailRequestID.current;
     setAddedOfferId("");
@@ -638,7 +647,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     if (asGrid) return <BthwaniSurface key={offer.offerId} tone="base" style={[styles.item, styles.gridItem]}>
       <View style={styles.gridImageFrame}>
         <Pressable ref={(node) => { if (node) imageRefs.current.set(offer.offerId, node); else imageRefs.current.delete(offer.offerId); }} accessibilityRole="button" accessibilityLabel={"تكبير صورة " + offer.productName} onPress={() => openGalleryFromImage(offer.offerId)}>
-          {primaryMedia && !failedProductImageIDs.has(offer.offerId) ? <ExpoImage cachePolicy="disk" accessibilityLabel={"صورة " + offer.productName} source={{ uri: primaryMedia.uri }} onError={() => setFailedProductImageIDs((current) => new Set(current).add(offer.offerId))} contentFit="cover" style={styles.gridImage} /> : <View style={[styles.productImagePlaceholder, styles.gridImage]}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /></View>}
+          {primaryMedia && !failedProductImageIDs.has(offer.offerId) ? <ExpoImage cachePolicy="disk" accessibilityLabel={"صورة " + offer.productName} source={{ uri: primaryMedia.uri }} onError={() => setFailedProductImageIDs((current) => new Set(current).add(offer.offerId))} contentFit={Platform.OS === "web" && windowWidth >= 1024 ? "contain" : "cover"} style={styles.gridImage} /> : <View style={[styles.productImagePlaceholder, styles.gridImage]}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /></View>}
         </Pressable>
         <BthwaniIconButton disabled={Boolean(favoriteOfferBusyID)} icon="favorite" label={favoriteOfferIDs.has(offer.offerId) ? "إزالة المنتج من المفضلة" : "إضافة المنتج للمفضلة"} onPress={() => void toggleOfferFavorite(offer.offerId)} size={sizing.controlMd} style={styles.productFavorite} tone={favoriteOfferIDs.has(offer.offerId) ? "primary" : "soft"} />
       </View>
@@ -699,7 +708,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const detailQuantity = detailOffer ? Number(quantities[detailOffer.offerId] ?? detailOffer.quantityMinBaseUnits) : 0;
   const renderCategoryRail = () => (
     <View style={styles.catalogToolbar}>
-      <Pressable accessibilityRole="button" accessibilityLabel={gridMode ? "عرض المنتجات كقائمة" : "عرض المنتجات كمربعات"} accessibilityState={{ selected: gridMode }} onPress={() => setGridMode((current) => !current)} style={styles.layoutToggle}>
+      <Pressable accessibilityRole="button" accessibilityLabel={gridMode ? "عرض المنتجات كقائمة" : "عرض المنتجات كمربعات"} accessibilityState={{ selected: gridMode }} onPress={() => setUserGridMode(!gridMode)} style={styles.layoutToggle}>
         {gridMode ? <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.layoutListGlyph}>{[0, 1, 2].map((index) => <View key={index} style={styles.layoutListLine} />)}</View> : <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.layoutGridGlyph}>{[0, 1, 2, 3].map((index) => <View key={index} style={styles.layoutGridSquare} />)}</View>}
       </Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel="الكل" accessibilityState={{ selected: !favoritesView && !popularView && !selectedCategoryID && !selectedStoreSectionID, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(0)} style={[styles.catalogFilterChip, styles.pinnedAllChip, !favoritesView && !popularView && !selectedCategoryID && !selectedStoreSectionID && styles.catalogFilterChipSelected]}><Text numberOfLines={1} style={[styles.catalogFilterChipLabel, !favoritesView && !popularView && !selectedCategoryID && !selectedStoreSectionID && styles.catalogFilterChipLabelSelected]}>الكل</Text></Pressable>
@@ -712,6 +721,19 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         }) : null}
         {!favoritesView ? visibleCategories.map(({ category, depth }) => renderCategoryChip(category, depth)) : null}
       </ScrollView>
+      {desktopStorefront ? <><BthwaniSearchField
+        accessibilityLabel="البحث في منتجات المتجر مباشرة"
+        containerStyle={styles.desktopCatalogSearch}
+        editable={!catalogRefreshing && !loadingMore}
+        onChangeText={setCatalogQuery}
+        onClear={() => { setCatalogQuery(""); void reloadCatalog(null, "", false, false); }}
+        onSubmitEditing={() => void reloadCatalog(null, catalogQuery, false, false)}
+        placeholder="ابحث داخل هذا المتجر"
+        returnKeyType="search"
+        value={catalogQuery}
+      />
+      <BthwaniIconButton icon="search" label="تنفيذ البحث داخل المتجر" disabled={catalogRefreshing || loadingMore} onPress={() => void reloadCatalog(null, catalogQuery, false, false)} size={sizing.controlMd} tone="primary" />
+      </> : null}
     </View>
   );
 
@@ -721,7 +743,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       <View pointerEvents="none" style={[styles.statusBarScrim, { height: insets.top, backgroundColor: heroVisible ? "transparent" : theme.background }]} />
       <FlatList<StoreCatalogRow>
         stickyHeaderIndices={[1]}
-        onScroll={(event) => { const visible = event.nativeEvent.contentOffset.y < 244 + insets.top - 32; setHeroVisible((current) => current === visible ? current : visible); }}
+        onScroll={(event) => { const visible = event.nativeEvent.contentOffset.y < (desktopStorefront ? 144 : 244) + insets.top - 32; setHeroVisible((current) => current === visible ? current : visible); }}
         scrollEventThrottle={160}
         contentContainerStyle={styles.container}
         data={[{ kind: "filters", key: "catalog-filters" }, ...visibleCatalogRows]}
@@ -733,21 +755,30 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           if (item.kind === "grid") return <GestureDetector gesture={tabSwipeGesture}>
             <View style={styles.gridRow}>
               {item.offers.map((offer) => <View key={offer.offerId} style={styles.gridCell}>{renderOffer(offer, true)}</View>)}
-              {item.offers.length === 1 ? <View style={styles.gridCell} /> : null}
+              {EMPTY_GRID_CELL_KEYS.slice(item.offers.length, gridColumns).map((key) => <View key={key} style={styles.gridCell} />)}
             </View>
           </GestureDetector>;
           if (item.kind === "heading") return <BthwaniSectionHeader title={item.title} subtitle={item.subtitle} />;
-          return <GestureDetector gesture={tabSwipeGesture}><View><BthwaniSurface tone="inset" style={styles.emptySection}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /><Text style={styles.sectionTitle}>{item.title}</Text></BthwaniSurface></View></GestureDetector>;
+          return <GestureDetector gesture={tabSwipeGesture}><View><BthwaniSurface tone="inset" style={styles.emptySection}>
+            <BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} />
+            <Text style={styles.sectionTitle}>{item.title}</Text>
+            {(favoritesView || popularView || selectedCategoryID || selectedStoreSectionID || catalogQuery.trim()) ? <BthwaniButton
+              label="عرض جميع منتجات المتجر"
+              disabled={catalogRefreshing}
+              variant="quiet"
+              onPress={() => void reloadCatalog(null, "", false, false)}
+            /> : null}
+          </BthwaniSurface></View></GestureDetector>;
         }}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={<View style={styles.listHeader}>
-      <View style={[styles.storeHero, { height: 244 + insets.top }]}>
+      <View style={[styles.storeHero, { height: (desktopStorefront ? 144 : 244) + insets.top }]}>
           {heroImageURI
             ? <View pointerEvents="none" style={styles.storeHeroMedia}><ExpoImage cachePolicy="disk" accessibilityLabel={"غلاف متجر " + state.store.name} onError={() => setFailedStoreCover(true)} source={{ uri: heroImageURI }} contentFit="cover" style={styles.storeCover} /></View>
             : <View accessibilityLabel={"غلاف متجر " + state.store.name + " غير متوفر"} pointerEvents="none" style={styles.storeCoverFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
         <View pointerEvents="none" style={styles.storeHeroShade} />
         <View style={[styles.storeHeroToolbar, { paddingTop: insets.top + spacing[2] }]}>
-          {catalogSearchOpen ? <BthwaniSearchField
+          {catalogSearchOpen && !desktopStorefront ? <BthwaniSearchField
           accessibilityLabel="البحث في جميع منتجات المتجر"
           containerStyle={styles.headerSearchField}
           editable={!catalogRefreshing && !loadingMore}
@@ -760,14 +791,15 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         /> : null}
         <BthwaniIconButton icon="share" label="مشاركة المتجر" onPress={() => void shareStore()} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" />
         <View style={styles.storeHeaderActions}>
-          <BthwaniIconButton icon={catalogSearchOpen ? "close" : "search"} label={catalogSearchOpen ? "إغلاق البحث داخل المتجر" : "البحث في منتجات المتجر"} onPress={() => { if (catalogSearchOpen) { setCatalogSearchOpen(false); setCatalogQuery(""); void reloadCatalog(null, "", false, false); } else if (activeTab !== 0) { void selectCatalogTab(0).then(() => setCatalogSearchOpen(true)); } else { setCatalogSearchOpen(true); } }} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" />
-          {!catalogSearchOpen ? <><BthwaniIconButton icon="cart" label="سلة التسوق" onPress={() => router.push(("/cart/" + encodeURIComponent(storeId) + "?fulfillmentMode=" + encodeURIComponent(selectedFulfillmentMode ?? "")) as Href)} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" />
+          {!desktopStorefront ? <BthwaniIconButton icon={catalogSearchOpen ? "close" : "search"} label={catalogSearchOpen ? "إغلاق البحث داخل المتجر" : "البحث في منتجات المتجر"} onPress={() => { if (catalogSearchOpen) { setCatalogSearchOpen(false); setCatalogQuery(""); void reloadCatalog(null, "", false, false); } else if (activeTab !== 0) { void selectCatalogTab(0).then(() => setCatalogSearchOpen(true)); } else { setCatalogSearchOpen(true); } }} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" /> : null}
+          {(!catalogSearchOpen || desktopStorefront) ? <><BthwaniIconButton icon="cart" label="سلة التسوق" onPress={() => router.push(("/cart/" + encodeURIComponent(storeId) + "?fulfillmentMode=" + encodeURIComponent(selectedFulfillmentMode ?? "")) as Href)} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" />
           <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" /></> : null}
         </View>
         </View>
       </View>
-      <BthwaniSurface tone="raised" style={styles.storeInfoCard} accessibilityLabel={"معلومات متجر " + state.store.name}>
-        <View style={styles.storeInfoIdentityRow}>
+      <BthwaniSurface tone="raised" style={[styles.storeInfoCard, desktopStorefront && styles.storeInfoDesktop]} accessibilityLabel={"معلومات متجر " + state.store.name}>
+        <View style={desktopStorefront ? styles.storeInfoDesktopSummary : undefined}>
+        <View style={[styles.storeInfoIdentityRow, desktopStorefront && styles.storeInfoDesktopIdentity]}>
           {state.store.storeProfileImage?.uri && !failedStoreImage
             ? <ExpoImage cachePolicy="disk" accessibilityLabel={"شعار متجر " + state.store.name} onError={() => setFailedStoreImage(true)} source={{ uri: state.store.storeProfileImage.uri }} contentFit="contain" style={styles.storeInfoLogo} />
             : <View style={styles.storeInfoLogoFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
@@ -779,8 +811,8 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
             </View>
           </View>
         </View>
-        <View style={styles.storeInfoDivider} />
-        <View style={styles.storeInfoStatusRow}>
+        {!desktopStorefront ? <View style={styles.storeInfoDivider} /> : null}
+        <View style={[styles.storeInfoStatusRow, desktopStorefront && styles.storeInfoDesktopStatus]}>
           <View style={styles.storeInfoStat}>
             <Text style={styles.storeInfoStatLabel}>حالة المتجر</Text>
             <View style={styles.orderStatusBadge}><Text style={styles.orderStatusBadgeText}>{availabilitySummary.label}</Text></View>
@@ -796,6 +828,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
               style={styles.storeInfoStatValue}
             >{state.store.ratingCount > 0 ? "★ " + state.store.ratingAverage.toFixed(1) + " · " + state.store.ratingCount + " تقييم" : "لا توجد تقييمات بعد"}</Text>
           </View>
+        </View>
         </View>
         {availabilitySummary.reason ? <Text accessibilityRole="alert" style={styles.muted}>{availabilitySummary.reason}</Text> : null}
         {fulfillmentModes.length === 1 ? <View style={styles.storeInfoModes}>
@@ -822,18 +855,36 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         </View>
       ) : null}
 
-          {bannerItems.length ? <View style={styles.bannerBlock}>
-            <ScrollView ref={bannerRef} horizontal snapToInterval={bannerStep} decelerationRate="fast" contentContainerStyle={{ paddingHorizontal: bannerSidePadding, gap: spacing[1] }} onTouchStart={() => setBannerPaused(true)} onTouchEnd={() => setBannerPaused(false)} onMomentumScrollEnd={(event) => { setBannerIndex(Math.max(0, Math.min(bannerItems.length - 1, Math.round(Math.abs(event.nativeEvent.contentOffset.x) / bannerStep)))); setBannerPaused(false); }} showsHorizontalScrollIndicator={false}>
-              {bannerItems.map((item) => item.kind === "content" ? <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={"تفاصيل " + item.content.titleAr} onPress={() => { void recordDiscoveryClick(item.content.id); router.push(("/discovery-content/" + encodeURIComponent(item.content.id)) as Href); }} style={[styles.bannerCard, { width: bannerWidth }]}>
-                {item.content.mediaUri ? <ExpoImage cachePolicy="disk" source={{ uri: item.content.mediaUri }} accessibilityLabel={"صورة " + item.content.titleAr} style={styles.bannerImage} contentFit="cover" /> : <View style={styles.bannerImageFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
-                <View style={styles.bannerCopy}><Text style={styles.bannerItemEyebrow}>جديد المتجر</Text><Text numberOfLines={2} style={styles.bannerProduct}>{item.content.titleAr}</Text><Text numberOfLines={2} style={styles.bannerPrice}>{item.content.bodyAr}</Text></View>
-              </Pressable> : <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={`${bannerOffers.length ? "عرض المنتج الرائج" : "عرض المنتج"} ${item.offer.productName}`} onPress={() => openOfferDetails(item.offer.offerId)} style={[styles.bannerCard, { width: bannerWidth }]}>
-                {item.offer.media[0]?.uri ? <ExpoImage cachePolicy="disk" source={{ uri: item.offer.media[0].uri }} accessibilityLabel={`صورة ${item.offer.productName}`} contentFit="cover" style={styles.bannerImage} /> : <View style={styles.bannerImageFallback}><BthwaniIcon name="trending" color={theme.interactiveText} size={sizing.iconMd} /></View>}
-                <View style={styles.bannerCopy}><Text style={styles.bannerItemEyebrow}>{bannerOffers.length ? "الأكثر طلبًا" : "من منتجات المتجر"}</Text><Text numberOfLines={1} style={styles.bannerProduct}>{item.offer.productName}</Text><Text style={styles.bannerPrice}>{storeMoney(item.offer.priceMinor, item.offer.currency)}</Text></View>
+          {bannerError ? <View style={styles.promotionNotice}><Text accessibilityRole="alert" style={styles.validationError}>تعذر تحديث بنرات هذا المتجر، ويمكنك متابعة التسوق.</Text><BthwaniButton label="إعادة قراءة البنرات" onPress={() => void retryBanners()} variant="secondary" /></View> : null}
+          {bannerItems.length > 0 ? <View accessibilityLabel="بنرات المتجر" style={styles.bannerBlock}>
+            <ScrollView
+              ref={bannerRef}
+              horizontal
+              snapToInterval={bannerStep}
+              decelerationRate="fast"
+              onTouchStart={() => setBannerPaused(true)}
+              onTouchEnd={() => setBannerPaused(false)}
+              onMomentumScrollEnd={(event) => { setBannerIndex(Math.max(0, Math.min(bannerItems.length - 1, Math.round(Math.abs(event.nativeEvent.contentOffset.x) / bannerStep)))); setBannerPaused(false); }}
+              showsHorizontalScrollIndicator={false}
+            >
+              {bannerItems.map(({ content }) => <Pressable
+                key={content.id}
+                accessibilityRole="button"
+                accessibilityLabel={"عرض بنر المتجر: " + content.titleAr}
+                onPress={() => { void recordDiscoveryClick(content.id); router.push(("/discovery-content/" + encodeURIComponent(content.id)) as Href); }}
+                style={[styles.storeBannerSlide, { width: bannerWidth }]}
+              >
+                <ExpoImage cachePolicy="disk" accessibilityLabel={"صورة بنر " + content.titleAr} source={{ uri: content.mediaUri }} contentFit="cover" style={styles.storeBannerImage} />
+                <View style={styles.storeBannerCaption}>
+                  <Text style={styles.storeBannerTitle} numberOfLines={2}>{content.titleAr}</Text>
+                  {content.bodyAr ? <Text style={styles.storeBannerSubtitle} numberOfLines={1}>{content.bodyAr}</Text> : null}
+                </View>
               </Pressable>)}
             </ScrollView>
+            {bannerItems.length > 1 ? <View style={styles.storeBannerPagination} accessibilityLabel="مؤشر بنرات المتجر">
+              {bannerItems.map((item, index) => <View key={item.key} style={[styles.storeBannerDot, index === bannerIndex && styles.storeBannerDotActive]} />)}
+            </View> : null}
           </View> : null}
-          {bannerError && bannerItems.length === 0 ? <Pressable accessibilityRole="button" accessibilityLabel="إعادة تحميل المنتجات الرائجة" onPress={() => void loadBanner()} style={styles.inlineRecovery}><Text style={styles.bannerPause}>تعذر تحميل المنتجات الرائجة · إعادة المحاولة</Text></Pressable> : null}
 
           {promotionError ? <View style={styles.promotionNotice}><Text accessibilityRole="alert" style={styles.validationError}>تعذر قراءة عروض هذا المتجر؛ يمكنك متابعة الطلب من دونها.</Text><BthwaniButton label="إعادة قراءة العروض" onPress={() => void retryPromotions()} variant="secondary" /></View> : null}
           {!promotionLoading && !promotionError && remainingPromotions.length > 0 ? <>
@@ -847,14 +898,14 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           </> : null}
         </View>}
         ListFooterComponent={(state.catalog.nextCursor || error || favoriteLoadError) ? <View style={styles.listFooter}>
-          {state.catalog.nextCursor ? <BthwaniButton busy={loadingMore} disabled={catalogRefreshing} label="تحميل المزيد" onPress={() => void loadMore()} style={styles.loadMoreButton} variant="secondary" /> : null}
+          {state.catalog.nextCursor ? <BthwaniButton busy={loadingMore} disabled={catalogRefreshing || catalogQuery.trim() !== (catalogTabs[activeTab]?.query ?? "").trim()} label="تحميل المزيد" onPress={() => void loadMore()} style={styles.loadMoreButton} variant="secondary" /> : null}
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           {favoriteLoadError ? <BthwaniSurface tone="inset" style={styles.favoriteNotice}><Text style={styles.muted}>تعذر تحديث حالة المفضلة من الخادم.</Text><BthwaniButton busy={favoriteLoading} label="إعادة المحاولة" onPress={() => void reloadFavorites()} variant="secondary" /></BthwaniSurface> : null}
         </View> : undefined}
         ListEmptyComponent={catalogRefreshing ? <View style={styles.pageLoading} accessibilityLabel="جارٍ تحميل منتجات التبويب"><BthwaniSkeleton height={112} /><BthwaniSkeleton height={112} /></View> : undefined}
       />
       <StoreProductSheet
-        galleryOffers={[...state.catalog.offers, ...bannerOffers.filter((offer) => !state.catalog.offers.some((existing) => existing.offerId === offer.offerId))]}
+        galleryOffers={state.catalog.offers}
         onBrowseOffer={(offerID) => { void openOfferDetails(offerID, "gallery"); }}
         isFavorite={(offerID) => favoriteOfferIDs.has(offerID)}
         gallerySourceRect={gallerySourceRect}

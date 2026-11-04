@@ -50,6 +50,11 @@ export async function listPublicDiscoveryContent(serviceCityID: string): Promise
   return client().listPublicDiscoveryContent(serviceCityID);
 }
 
+export async function listPublicStoreBanners(storeID: string, serviceCityID: string): Promise<DiscoveryContentListResponse> {
+  // Keep synchronous DSH client setup errors catchable by the caller's Promise rejection handler.
+  return await client().listPublicStoreBanners(storeID, serviceCityID);
+}
+
 export async function resolvePublicDiscoveryContentTarget(contentID: string, serviceCityID: string): Promise<DiscoveryContentTargetResolution> {
   return client().resolvePublicDiscoveryContentTarget(contentID, serviceCityID);
 }
@@ -104,8 +109,8 @@ export async function readPublicStoreCatalog(storeID: string, serviceCityID: str
   return client().readPublicStoreCatalog(storeID, serviceCityID, categoryID, query, limit, cursor, productID, sort);
 }
 
-export async function searchPublicCatalog(serviceCityID: string, query: string, categoryID = "", limit = 20, cursor = "", verticalID = "", shortcutID = ""): Promise<PublicCatalogSearchResponse> {
-  return client().searchPublicCatalog(serviceCityID, query, categoryID, limit, cursor, verticalID,shortcutID);
+export async function searchPublicCatalog(serviceCityID: string, query: string, categoryID = "", limit = 20, cursor = "", verticalID = "", shortcutID = "", sort: "" | "PRICE_ASC" | "PRICE_DESC" = ""): Promise<PublicCatalogSearchResponse> {
+  return client().searchPublicCatalog(serviceCityID, query, categoryID, limit, cursor, verticalID, shortcutID, sort);
 }
 
 export async function evaluateStoreServiceability(storeID: string, addressID: string): Promise<ServiceabilityResponse> {

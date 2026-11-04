@@ -13,7 +13,7 @@
     "contract": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "node --test apps/app-partner/tests/actor-query-client.test.mjs apps/app-partner/tests/partner-store-invite-schema.test.mjs apps/app-partner/tests/partner-insights-actor-scope.test.mjs"
+        "command": "node --test apps/app-partner/tests/actor-query-client.test.mjs apps/app-partner/tests/partner-store-invite-schema.test.mjs apps/app-partner/tests/partner-insights-actor-scope.test.mjs apps/app-partner/src/features/access/partner-return-path.test.mjs apps/app-partner/src/features/store-offer/catalog-filter-accessibility.test.mjs apps/app-partner/src/features/store-offer/partner-store-banners.test.mjs"
       }
     },
     "export-smoke": {

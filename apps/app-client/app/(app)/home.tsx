@@ -14,6 +14,7 @@ const styles = StyleSheet.create({ root: { flex: 1 }, stickyHeaderOverlay: { pos
 export default function ClientHomeRoute() {
   const router = useRouter();
   const [compactHeader, setCompactHeader] = useState(false);
+  const [heroVisible, setHeroVisible] = useState(false);
   const homeScrollOffset = useSharedValue(0);
   useAnimatedReaction(() => homeScrollOffset.value > 410, (isCompact, previous) => {
     if (isCompact !== previous) runOnJS(setCompactHeader)(isCompact);
@@ -50,10 +51,10 @@ export default function ClientHomeRoute() {
 
   return (
     <View style={styles.root}>
-      <StatusBar style={compactHeader ? "dark" : "light"} />
+      <StatusBar style={searchOpen || compactHeader || !heroVisible ? "dark" : "light"} />
       {(searchOpen || compactHeader) ? <View style={!searchOpen && compactHeader ? styles.stickyHeaderOverlay : undefined}><ClientPublicHeader
         homeVariant
-        homeCompact={compactHeader}
+        homeCompact={searchOpen || compactHeader}
         hideAccountAction
         onSearchOpenChange={setSearchVisibility}
         onSearchQueryChange={setSearchQuery}
@@ -64,6 +65,7 @@ export default function ClientHomeRoute() {
         isScreenActive={screenActive}
         heroHeader={!searchOpen ? <ClientPublicHeader homeVariant homeTransparent hideAccountAction onSearchOpenChange={setSearchVisibility} onSearchQueryChange={setSearchQuery} searchOpen={searchOpen} searchQuery={searchQuery} /> : undefined}
         homeScrollOffset={homeScrollOffset}
+        onHeroVisibilityChange={setHeroVisible}
         isAuthenticated={isAuthenticated}
         onRequireAuthentication={!isAuthenticated ? () => router.replace("/?returnTo=/home" as Href) : undefined}
         onSearchOpenChange={setSearchVisibility}

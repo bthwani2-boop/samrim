@@ -3,7 +3,7 @@ import type { PublicDiscoveryContentView } from "@bthwani/dsh";
 import { Image as ExpoImage } from "expo-image";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LinearGradient } from "expo-linear-gradient";
-import { AccessibilityInfo, Animated, AppState, Easing, Pressable, Text, View } from "react-native";
+import { AccessibilityInfo, Animated, AppState, Easing, Platform, Pressable, Text, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
 import { wrapBannerIndex } from "./banner-loop";
@@ -24,7 +24,7 @@ function immersiveSlidePalette(item: PublicDiscoveryContentView): readonly [stri
 
 /** Native-driver images, independent of Android RTL ScrollView offsets. */
 export function LoopingHeroBanner({
-  cardWidth, items, onOpen, label, screenActive, presentation, immersiveHeader,
+  cardWidth, items, onOpen, label, screenActive, presentation, immersiveHeader, compactDesktopHero = false,
 }: {
   cardWidth: number;
   items: ReadonlyArray<PublicDiscoveryContentView>;
@@ -33,6 +33,7 @@ export function LoopingHeroBanner({
   screenActive: boolean;
   presentation: BannerPresentation;
   immersiveHeader?: ReactNode;
+  compactDesktopHero?: boolean;
 }) {
   const [index, setIndex] = useState(0);
   const currentIndex = useRef(0);
@@ -49,11 +50,16 @@ export function LoopingHeroBanner({
   // Keep the complete top stage in the same animated slide, with interactive
   // controls over it; the delivery/campaign strip remains a separate sibling.
   const immersive = Boolean(immersiveHeader);
-  // A full-width home stage is square: branding, search, media and dots all fit inside 1:1.
-  const height = immersive ? cardWidth : Math.round(cardWidth / 1.75);
-  // The current published artwork is landscape. Preserve its aspect ratio in
-  // the lower part of the square instead of stretching or cropping its copy.
-  const mediaHeight = immersive ? Math.round(cardWidth / 1.75) : height;
+  // Preserve the square native stage. On web, use the available width without
+  // scaling landscape promotional artwork into an oversized hero above the products.
+  const mediaHeight = immersive && Platform.OS === "web"
+    ? compactDesktopHero
+      ? Math.min(Math.round(cardWidth / 2.8), 320)
+      : Math.min(Math.round(cardWidth / 1.75), 384)
+    : Math.round(cardWidth / (immersive ? 2.15 : 1.75));
+  const height = immersive ? (Platform.OS === "web"
+    ? Math.min(cardWidth, mediaHeight + (compactDesktopHero ? 148 : 166))
+    : mediaHeight + 148) : mediaHeight;
 
   useEffect(() => {
     let mounted = true;
@@ -177,7 +183,7 @@ export function LoopingHeroBanner({
   return <GestureHandlerRootView style={{ marginHorizontal: immersive ? 0 : -spacing[1], width: cardWidth, height }}>
     <GestureDetector gesture={panGesture}><View
       accessibilityLabel={label + "، " + activeItem.titleAr + "، " + (index + 1) + " من " + items.length}
-      style={{ width: cardWidth, height, borderRadius: immersive ? 0 : radius.lg, overflow: "hidden", backgroundColor: "#101827" }}
+      style={{ width: cardWidth, height, borderTopLeftRadius: immersive ? 0 : radius.lg, borderTopRightRadius: immersive ? 0 : radius.lg, borderBottomLeftRadius: radius.xl, borderBottomRightRadius: radius.xl, overflow: "hidden", backgroundColor: "#101827" }}
     >
     {slide(activeItem, currentStyle, activeItem.id)}
     {incoming ? slide(incoming, nextStyle, "incoming-" + incoming.id) : null}

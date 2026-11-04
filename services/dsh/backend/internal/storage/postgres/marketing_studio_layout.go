@@ -168,7 +168,7 @@ func SetStudioLayoutPublication(ctx context.Context, db *sql.DB, action string,
 				return StudioLayoutPublicationRecord{}, false, err
 			}
 			if len(nextDocument) > 0 {
-				canonical, validateErr := ValidateStudioDocument(nextDocument)
+				canonical, validateErr := ValidateStudioPublishedLayout(nextDocument)
 				if validateErr != nil {
 					return StudioLayoutPublicationRecord{}, false, ErrStudioLayoutInvalid
 				}

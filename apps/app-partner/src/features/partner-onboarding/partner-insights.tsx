@@ -1,13 +1,12 @@
 import { typography } from "@bthwani/design-system";
 import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, type PartnerOrderAttentionCounts, type PartnerScopedFinanceStore, type PartnerStoreOrderSummary } from "@bthwani/dsh";
+import { createDshMobileClient, formatMoney, scopedCatalogInventorySummary, type PartnerOrderAttentionCounts, type PartnerScopedFinanceStore, type PartnerStoreOrderSummary } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { usePartnerStoreScope } from "./partner-store-scope-context";
-import { isOfferStockout } from "../store-offer/inventory-stockout";
 import { PartnerPerformanceReport } from "./partner-performance-reports";
 import { PartnerStoreRatings } from "./partner-store-ratings";
 import { partnerRepeatBuyerPercentage, verifiedPartnerCustomerActivity } from "./partner-customer-activity";
@@ -17,12 +16,11 @@ type Snapshot = Readonly<{
   available: number | null;
   unavailable: number | null;
   stockout: number | null;
-  truncated: boolean;
   promotions: number | null;
   finance: PartnerScopedFinanceStore | null;
   customerActivity: PartnerStoreOrderSummary | null;
 }>;
-const blank: Snapshot = { orders: null, available: null, unavailable: null, stockout: null, truncated: false, promotions: null, finance: null, customerActivity: null };
+const blank: Snapshot = { orders: null, available: null, unavailable: null, stockout: null, promotions: null, finance: null, customerActivity: null };
 
 export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: boolean }> = {}) {
   const theme = useAppearanceTheme();
@@ -84,25 +82,24 @@ export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: bool
     const read = async () => {
       const token = await getUsableIdentityAccessToken();
       if (!stillCurrent()) return;
-      const [orderResult, productResult, promotionResult, financeResult, customerResult] = await Promise.allSettled([
+      const [orderResult, inventoryResult, promotionResult, financeResult, customerResult] = await Promise.allSettled([
         orders ? api.listPartnerOrders(token, { storeIds: [store.id], limit: 1 }) : Promise.resolve(null),
-        catalog ? api.readOwnStoreOffers(token, store.id, 100) : Promise.resolve(null),
+        catalog ? api.readOwnStoreInventorySummary(token, store.id) : Promise.resolve(null),
         api.listPublicPromotions(store.serviceCityId, store.id),
         store.owned ? api.readOwnPartnerFinancialSummary(token) : Promise.resolve(null),
         orders ? api.readPartnerStoreOrderSummary(token, store.id, "30d") : Promise.resolve(null),
       ]);
       if (!stillCurrent()) return;
       const o = orderResult.status === "fulfilled" ? orderResult.value : null;
-      const p = productResult.status === "fulfilled" ? productResult.value : null;
+      const inventory = scopedCatalogInventorySummary(inventoryResult.status === "fulfilled" ? inventoryResult.value : null, store.id);
       const promo = promotionResult.status === "fulfilled" ? promotionResult.value : null;
       const financial = financeResult.status === "fulfilled" ? financeResult.value : null;
       const customerSummary = customerResult.status === "fulfilled" ? customerResult.value?.summary : null;
       setSnapshot({
         orders: o?.attention ?? null,
-        available: p ? p.offers.filter((offer) => offer.publicationState === "published" && offer.availability).length : null,
-        unavailable: p ? p.offers.filter((offer) => offer.publicationState === "published" && !offer.availability).length : null,
-        stockout: p ? p.offers.filter(isOfferStockout).length : null,
-        truncated: Boolean(p?.nextCursor),
+        available: inventory?.availableOffers ?? null,
+        unavailable: inventory?.unavailableOffers ?? null,
+        stockout: inventory?.stockoutOffers ?? null,
         promotions: promo?.promotions.length ?? null,
         finance: financial?.summary.stores.find((item) => item.storeId === store.id) ?? null,
         customerActivity: verifiedPartnerCustomerActivity(customerSummary, store.id, "30d"),
@@ -125,8 +122,8 @@ export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: bool
   const notices = [
     ...(snapshot.orders?.newOrders ? [{ label: snapshot.orders.newOrders + " طلبات جديدة", hint: "تحتاج مراجعة وقبولًا", href: "/orders" as Href }] : []),
     ...(snapshot.orders?.deliveryRecovery ? [{ label: snapshot.orders.deliveryRecovery + " حالات تسليم متعثرة", hint: "تحتاج متابعة", href: "/orders" as Href }] : []),
-    ...(snapshot.stockout ? [{ label: snapshot.stockout + " منتجات نفد مخزونها", hint: "مخزون معروف من المنتجات المنشورة المحمّلة", href: "/products?filter=stockout" as Href }] : []),
-    ...(snapshot.unavailable ? [{ label: snapshot.unavailable + " منتجات غير متاحة", hint: "ضمن المنتجات المنشورة المحمّلة", href: "/products?filter=unavailable" as Href }] : []),
+    ...(snapshot.stockout ? [{ label: snapshot.stockout + " منتجات نفد مخزونها", hint: "العدد للعروض المنشورة؛ التفاصيل قد تشمل غير المنشورة", href: "/products?filter=stockout" as Href }] : []),
+    ...(snapshot.unavailable ? [{ label: snapshot.unavailable + " منتجات غير متاحة", hint: "العدد للعروض المنشورة؛ التفاصيل قد تشمل غير المنشورة", href: "/products?filter=unavailable" as Href }] : []),
   ];
   const repeatBuyerPercentage = partnerRepeatBuyerPercentage(snapshot.customerActivity);
   const hasData = snapshot.orders !== null || snapshot.available !== null || snapshot.promotions !== null || snapshot.finance !== null || snapshot.customerActivity !== null;
@@ -202,7 +199,6 @@ export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: bool
         {canOrders ? <Pressable accessibilityRole="button" onPress={() => router.navigate("/orders" as Href)} style={styles.actionChip}><Text style={styles.actionLabel}>الطلبات</Text></Pressable> : null}
       </View> : null}
     </View>}
-    {snapshot.truncated ? <Text style={styles.note}>مؤشرات المنتجات تخص أول 100 منتج فقط؛ توجد منتجات أخرى.</Text> : null}
     {snapshot.finance && !snapshot.finance.attributionComplete ? <Text style={styles.note}>البيانات المالية غير مكتملة، لذلك لم تُعرض مستحقات تقديرية.</Text> : null}
     {canOrders && !loading && snapshot.customerActivity === null ? <Text accessibilityRole="alert" style={styles.note}>تعذرت قراءة إحصاءات العملاء. أعد فتح الصفحة بعد التحقق من الاتصال والصلاحية.</Text> : null}
     <Text style={styles.note}>إحصاءات العملاء تخص طلبات مكتملة لهذا المتجر فقط ولا تكشف هوياتهم. نسبة تكرار الشراء تعني نسبة العملاء الذين أكملوا طلبين أو أكثر في فترة الثلاثين يومًا نفسها، وليست نسبة الاحتفاظ بالعملاء بين فترتين. بقية المؤشرات ليست توقعات للمبيعات.</Text>

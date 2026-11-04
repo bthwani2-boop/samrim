@@ -4,36 +4,47 @@ import { type CatalogStoreOffer, formatMoney } from "@bthwani/dsh";
 import { Image as ExpoImage } from "expo-image";
 import * as Haptics from "expo-haptics";
 import { type Href, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import Reanimated, { FadeInDown, ReduceMotion } from "react-native-reanimated";
 import { adjustSimpleOfferQuantity, listOwnOpenCarts, readOwnStoreCart, searchPublicCatalog } from "./store-discovery-client";
 
 type FeedState =
   | { kind: "loading" }
   | { kind: "error" }
+  | { kind: "invalid_query" }
   | { kind: "ready"; offers: ReadonlyArray<CatalogStoreOffer>; nextCursor: string };
 
 const PAGE_SIZE = 18;
+type CatalogPriceSort = "" | "PRICE_ASC" | "PRICE_DESC";
+const SORT_OPTIONS: ReadonlyArray<{ value: CatalogPriceSort; label: string }> = [
+  { value: "", label: "الموصى به" },
+  { value: "PRICE_ASC", label: "السعر: من الأقل للأعلى" },
+  { value: "PRICE_DESC", label: "السعر: من الأعلى للأقل" },
+];
 
 export function HomeProductFeed({
-  cityID, verticalID, categoryID, shortcutID, isAuthenticated, onRequireAuthentication, pageSize = PAGE_SIZE,
+  cityID, verticalID, categoryID, shortcutID, query = "", isAuthenticated, onRequireAuthentication, onClearCategory, pageSize = PAGE_SIZE,
 }: {
   cityID: string | null;
   verticalID: string;
   categoryID: string;
   shortcutID: string;
+  query?: string;
   isAuthenticated: boolean;
   onRequireAuthentication?: (() => void) | undefined;
+  onClearCategory?: (() => void) | undefined;
   pageSize?: number;
 }) {
   const router = useRouter();
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { width } = useWindowDimensions();
-  const columns = width >= 1050 ? 5 : width >= 720 ? 4 : width >= 540 ? 3 : 2;
+  const columns = width >= 1050 ? 5 : width >= 720 ? 4 : width >= 540 || (Platform.OS !== "web" && width >= 360) ? 3 : 2;
   const effectivePageSize = Number.isInteger(pageSize) ? Math.max(1, Math.min(PAGE_SIZE, pageSize)) : PAGE_SIZE;
+  const normalizedQuery = query.trim();
   const [state, setState] = useState<FeedState>({ kind: "loading" });
+  const [sort, setSort] = useState<CatalogPriceSort>("");
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState(false);
   const [busyID, setBusyID] = useState("");
@@ -45,23 +56,33 @@ export function HomeProductFeed({
   const load = useCallback(async () => {
     const id = ++requestID.current;
     setState({ kind: "loading" });
+    setLoadingMore(false);
     setMoreError(false);
     if (!cityID) {
       setState({ kind: "ready", offers: [], nextCursor: "" });
       return;
     }
+    if (Array.from(normalizedQuery).length > 160) {
+      if (id === requestID.current) setState({ kind: "invalid_query" });
+      return;
+    }
     try {
-      const page = await searchPublicCatalog(cityID, "", categoryID, effectivePageSize, "", verticalID, shortcutID);
+      const page = await searchPublicCatalog(cityID, normalizedQuery, categoryID, effectivePageSize, "", verticalID, shortcutID, sort);
       if (id === requestID.current) setState({ kind: "ready", offers: page.offers, nextCursor: page.nextCursor ?? "" });
     } catch {
       if (id === requestID.current) setState({ kind: "error" });
     }
-  }, [cityID, verticalID, categoryID, shortcutID, effectivePageSize]);
+  }, [cityID, verticalID, categoryID, shortcutID, effectivePageSize, normalizedQuery, sort]);
 
   useEffect(() => {
+    if (normalizedQuery) {
+      setState({ kind: "loading" });
+      const timer = setTimeout(() => { void load(); }, 300);
+      return () => { clearTimeout(timer); requestID.current += 1; };
+    }
     void load();
     return () => { requestID.current += 1; };
-  }, [load]);
+  }, [load, normalizedQuery]);
 
   const loadMore = async () => {
     if (state.kind !== "ready" || !state.nextCursor || !cityID || loadingMore) return;
@@ -69,7 +90,7 @@ export function HomeProductFeed({
     setLoadingMore(true);
     setMoreError(false);
     try {
-      const page = await searchPublicCatalog(cityID, "", categoryID, PAGE_SIZE, state.nextCursor, verticalID, shortcutID);
+      const page = await searchPublicCatalog(cityID, normalizedQuery, categoryID, PAGE_SIZE, state.nextCursor, verticalID, shortcutID, sort);
       if (id === requestID.current) {
         setState((current) => current.kind === "ready"
           ? { kind: "ready", offers: [...current.offers, ...page.offers], nextCursor: page.nextCursor ?? "" }
@@ -141,14 +162,26 @@ export function HomeProductFeed({
     }
   };
 
+  const withSort = (content: ReactNode) => <View style={styles.sortedContainer}>
+    <CatalogPriceSortControl value={sort} onChange={setSort} />
+    {content}
+  </View>;
   if (!cityID) return null;
-  if (state.kind === "loading") return <View style={styles.loading}><ActivityIndicator color={theme.brandAction} /><Text style={styles.muted}>جارٍ تحميل المنتجات المتاحة…</Text></View>;
-  if (state.kind === "error") return <View style={styles.status}><Text accessibilityRole="alert" style={styles.muted}>تعذر تحميل المنتجات. تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View>;
-  if (state.offers.length === 0) return <View style={styles.status}><Text style={styles.muted}>لا توجد منتجات منشورة ضمن هذا الاختيار. استكشف المتاجر أدناه.</Text></View>;
+  if (state.kind === "loading") return withSort(<View style={styles.loading} accessibilityLabel="جارٍ البحث"><ActivityIndicator color={theme.brandAction} /><Text style={styles.muted}>{normalizedQuery ? "جارٍ البحث عن المنتجات…" : "جارٍ تحميل المنتجات المتاحة…"}</Text></View>);
+  if (state.kind === "invalid_query") return withSort(<View style={styles.status}><Text accessibilityRole="alert" style={styles.muted}>البحث طويل جدًا. أدخل 160 حرفًا أو أقل للبحث عن المنتجات.</Text></View>);
+  if (state.kind === "error") return withSort(<View style={styles.status}><Text accessibilityRole="alert" style={styles.muted}>{normalizedQuery ? "تعذر البحث عن المنتجات" : "تعذر تحميل المنتجات"}. تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View>);
+
+  if (state.offers.length === 0 && state.nextCursor) return withSort(<View style={styles.status} accessibilityLabel="لا توجد نتائج في الصفحة الحالية">
+    <Text style={styles.muted}>لم تظهر نتائج ضمن الجزء المحمّل، ويمكن متابعة البحث في بقية المتاجر.</Text>
+    {moreError ? <Text accessibilityRole="alert" style={styles.muted}>تعذر متابعة البحث. أعد المحاولة.</Text> : null}
+    <BthwaniButton busy={loadingMore} disabled={loadingMore} label={loadingMore ? "جارٍ البحث" : "متابعة البحث"} onPress={() => void loadMore()} variant="secondary" />
+  </View>);
+  if (state.offers.length === 0) return withSort(<View style={styles.status} accessibilityLabel="لا توجد نتائج بحث"><Text style={styles.muted}>{normalizedQuery ? "لا توجد منتجات مطابقة. جرّب اسمًا أقصر أو فئة أخرى." : "لا توجد منتجات منشورة ضمن هذا الاختيار. استكشف المتاجر أدناه."}</Text>{normalizedQuery && categoryID && onClearCategory ? <BthwaniButton label="مسح الفئة" onPress={onClearCategory} variant="secondary" /> : null}</View>);
   const cardWidth = columns === 5 ? "19%" : columns === 4 ? "24%" : columns === 3 ? "32%" : "49%";
 
-  return (
-    <View style={styles.section} accessibilityLabel="المنتجات المتاحة">
+  return withSort(
+    <View style={styles.section} accessibilityLabel={normalizedQuery ? "نتائج البحث عن المنتجات" : "المنتجات المتاحة"}>
+      {normalizedQuery ? <View style={styles.headingRow}><Text style={styles.heading}>نتائج المنتجات</Text><Text style={styles.count}>{state.offers.length} منتج معروض{state.nextCursor ? " · المزيد متاح" : ""}</Text></View> : null}
       {cartMessage ? <Text accessibilityRole="alert" style={styles.cartMessage}>{cartMessage}</Text> : null}
       <View style={styles.grid}>
         {state.offers.map((offer, index) => {
@@ -190,8 +223,73 @@ export function HomeProductFeed({
   );
 }
 
+function CatalogPriceSortControl({ value, onChange }: {
+  value: CatalogPriceSort;
+  onChange: (next: CatalogPriceSort) => void;
+}) {
+  const theme = useAppearanceTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<CatalogPriceSort>(value);
+  const activeLabel = SORT_OPTIONS.find((option) => option.value === value)?.label ?? "الموصى به";
+  const close = () => setOpen(false);
+  return <>
+    <View style={styles.sortToolbar}>
+      <Pressable accessibilityRole="button" accessibilityLabel="ترتيب المنتجات"
+        accessibilityState={{ selected: Boolean(value) }}
+        accessibilityHint="اختر الترتيب حسب السعر لجميع صفحات النتائج"
+        onPress={() => { setDraft(value); setOpen(true); }}
+        style={[styles.sortTrigger, Boolean(value) && styles.sortTriggerSelected]}>
+        <Text style={styles.sortTriggerText}>{value ? activeLabel : "الترتيب والتصفية"}</Text>
+      </Pressable>
+    </View>
+    <Modal visible={open} transparent statusBarTranslucent animationType="slide" onRequestClose={close}>
+      <View style={styles.sortOverlay}>
+        <Pressable accessibilityRole="button" accessibilityLabel="إغلاق ترتيب المنتجات" onPress={close}
+          style={StyleSheet.absoluteFill} />
+        <View accessibilityViewIsModal style={styles.sortSheet}>
+          <View style={styles.sortSheetTitleRow}>
+            <Text style={styles.sortTitle}>الترتيب والتصفية</Text>
+            <BthwaniButton label="إغلاق" variant="secondary" onPress={close} />
+          </View>
+          <Text style={styles.sortSubtitle}>الترتيب حسب</Text>
+          <View accessibilityRole="radiogroup" style={styles.sortOptions}>
+            {SORT_OPTIONS.map((option) => <Pressable key={option.value || "recommended"}
+              accessibilityRole="radio" accessibilityState={{ checked: draft === option.value }}
+              accessibilityLabel={option.label} onPress={() => setDraft(option.value)}
+              style={[styles.sortChoice, draft === option.value && styles.sortChoiceSelected]}>
+              <Text style={styles.sortChoiceLabel}>{option.label}</Text>
+              <Text style={styles.sortChoiceIndicator}>{draft === option.value ? "●" : "○"}</Text>
+            </Pressable>)}
+          </View>
+          <View style={styles.sortButtons}>
+            <BthwaniButton label="عرض النتائج" onPress={() => { onChange(draft); close(); }} />
+            <BthwaniButton label="مسح الترتيب" variant="secondary" onPress={() => { onChange(""); setDraft(""); close(); }} />
+          </View>
+        </View>
+      </View>
+    </Modal>
+  </>;
+}
+
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
+    sortedContainer: { gap: spacing[2] },
+    sortToolbar: { alignItems: "flex-start", paddingHorizontal: spacing[2] },
+    sortTrigger: { minHeight: 44, paddingHorizontal: spacing[3], borderRadius: radius.round, borderColor: theme.borderColorStrong, borderWidth: borders.hairline, backgroundColor: theme.surface, alignItems: "center", justifyContent: "center" },
+    sortTriggerSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
+    sortTriggerText: { ...typography.label, color: theme.interactiveText },
+    sortOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.44)" },
+    sortSheet: { backgroundColor: theme.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingTop: spacing[4], paddingBottom: spacing[6], paddingHorizontal: spacing[4], gap: spacing[3] },
+    sortSheetTitleRow: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between" },
+    sortTitle: { ...typography.titleMd, color: theme.color },
+    sortSubtitle: { ...typography.bodyStrong, color: theme.color },
+    sortOptions: { gap: spacing[2] },
+    sortChoice: { minHeight: 52, flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", borderRadius: radius.lg, borderWidth: borders.hairline, borderColor: theme.borderColor, paddingHorizontal: spacing[3], backgroundColor: theme.surface },
+    sortChoiceSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
+    sortChoiceLabel: { ...typography.bodySm, color: theme.color },
+    sortChoiceIndicator: { fontSize: 22, color: theme.interactiveText },
+    sortButtons: { flexDirection: "row-reverse", justifyContent: "space-between", gap: spacing[2] },
     section: { gap: spacing[1], paddingBottom: spacing[3] },
     headingRow: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", gap: spacing[2] },
     heading: { ...typography.titleSm, color: theme.color },
@@ -199,7 +297,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     grid: { flexDirection: "row-reverse", flexWrap: "wrap", justifyContent: "space-between", rowGap: spacing[3] },
     item: { gap: spacing[1], minWidth: 0 },
     photoActions: { position: "absolute", top: 0, left: 0, right: 0, aspectRatio: 1 },
-    photoBox: { aspectRatio: 1, borderRadius: radius.lg, backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: borders.hairline, overflow: "hidden" },
+    photoBox: { aspectRatio: 1, borderRadius: radius.xl, backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: borders.hairline, overflow: "hidden" },
     photo: { width: "100%", height: "100%" },
     fallback: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: theme.surfaceInset },
     plusWrap: { position: "absolute", bottom: spacing[1], left: spacing[1] },

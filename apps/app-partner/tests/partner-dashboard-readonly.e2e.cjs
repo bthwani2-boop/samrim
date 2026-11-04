@@ -2,11 +2,11 @@ const assert = require("node:assert/strict");
 const { chromium } = require("@playwright/test");
 
 async function audit() {
-  const browser = await chromium.connectOverCDP("http://127.0.0.1:9223");
+  const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9222");
   try {
     const context = browser.contexts()[0];
     const page = context.pages().find(tab => tab.url().startsWith("http://localhost:18102/"));
-    assert.ok(page, "PARTNER_EDGE_TAB_REQUIRED");
+    assert.ok(page, "PARTNER_CDP_TAB_REQUIRED");
     const originalUrl = page.url();
     const errors = [];
     page.on("pageerror", error => errors.push(String(error?.message || error).slice(0, 120)));
@@ -26,7 +26,8 @@ async function audit() {
           side:rect(side),sidebarColor:side?getComputedStyle(side).backgroundColor:null,
           labels:["مساحة الشريك","أحدث الطلبات","مساحة العمل اليومي","يحتاج انتباهك","تجهيز المتجر وتشغيله","الحساب والإعدادات"]
             .filter(label=>words.includes(label)),
-          textLength:words.length, authUnavailable:words.includes("تعذر التحقق"), loading:words.includes("جارٍ"),
+          textLength:words.length, authUnavailable:/(يلزم تسجيل الدخول|انتهت صلاحية جلسة|تعذر التحقق من جلسة)/.test(words),
+          agreementUnavailable:words.includes("تعذر التحقق من الاتفاقية"), loading:words.includes("جارٍ"),
           errors:/(SyntaxError|TransformError|Internal Server Error|Unable to resolve)/.test(words),
           overflow:document.documentElement.scrollWidth>innerWidth+1
         };

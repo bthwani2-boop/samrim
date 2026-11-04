@@ -7,7 +7,7 @@ export type StoreCatalogRow =
   | { kind: "empty"; key: string; title: string }
   | { kind: "offer"; key: string; offer: PublicCatalogResponse["offers"][number] };
 
-export function buildDisplayCatalogRows(rows: StoreCatalogRow[], gridMode: boolean): StoreCatalogRow[] {
+export function buildDisplayCatalogRows(rows: StoreCatalogRow[], gridMode: boolean, gridColumns = 2): StoreCatalogRow[] {
   if (!gridMode) return rows.filter((row) => row.kind !== "filters");
   const result: StoreCatalogRow[] = [];
   let pending: PublicCatalogResponse["offers"][number][] = [];
@@ -20,7 +20,7 @@ export function buildDisplayCatalogRows(rows: StoreCatalogRow[], gridMode: boole
   for (const row of rows) {
     if (row.kind === "offer") {
       pending.push(row.offer);
-      if (pending.length === 2) flush();
+      if (pending.length === gridColumns) flush();
       continue;
     }
     flush();
@@ -115,13 +115,15 @@ export function buildCatalogRows(catalog: PublicCatalogResponse, favoritesView: 
         : catalog.nextCursor
           ? `حمّل المزيد لعرض بقية منتجات ${selectedSection.nameAr}`
           : `لا توجد منتجات متاحة في ${selectedSection.nameAr} حاليًا`
-    : popularView
-      ? query.trim()
-        ? "لا توجد منتجات مطابقة"
-        : categoryID
+    : query.trim()
+      ? "لا توجد منتجات مطابقة للبحث"
+      : popularView
+        ? categoryID
           ? "لا توجد منتجات رائجة في هذا التصنيف خلال آخر 30 يومًا"
           : "لا توجد منتجات مطلوبة خلال آخر 30 يومًا"
-      : "لا توجد منتجات متاحة حاليًا";
+        : categoryID
+          ? "لا توجد منتجات ضمن هذه الفئة حاليًا"
+          : "لا توجد منتجات متاحة حاليًا";
   const catalogRows: StoreCatalogRow[] = [];
   const seenOfferIDs = new Set<string>();
 

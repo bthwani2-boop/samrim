@@ -29,6 +29,7 @@ const proofTypeLabels: Record<JoiningCaseProofType, string> = {
 export function JoiningCaseDetail({ caseId, embedded = false }: { caseId: string; embedded?: boolean }) {
   const { state: sessionState } = useSession();
   const canManageFinancialTerms = sessionState.kind === "authenticated" && sessionState.identity.permissions?.includes("finance") === true && sessionState.identity.permissions?.includes("platform_policies") === true;
+  const canSelectCommercialModel = canManageFinancialTerms && sessionState.kind === "authenticated" && sessionState.identity.permissions?.includes("partners") === true;
   const [result, setResult] = useState<JoiningCaseResponse | null>(null);
   const [proofDetails, setProofDetails] = useState<{ caseId: string; response: JoiningCaseProofDetailsResponse } | null>(null);
   const [proofDetailsError, setProofDetailsError] = useState<{ caseId: string; message: string } | null>(null);
@@ -351,7 +352,7 @@ export function JoiningCaseDetail({ caseId, embedded = false }: { caseId: string
             {current.state === "draft" && canOperatorAdmitJoiningCase(current.origin, current.state) ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>{current.origin === "self_service" ? "قبول طلب التسجيل الذاتي وإنشاء دور الشريك" : "إرسال الحالة للمراجعة وإنشاء دور الشريك"}</button> : null}
             {current.state === "admission_requested" && current.origin === "field" ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>قبول الإحالة وإنشاء دور الشريك</button> : null}
             {current.state === "submitted" ? <>
-               <p className="managed-status managed-status-info">يستطيع قسم الشركاء اعتماد الانضمام وإنشاء المتجر الآن. يبقى الملف المالي غير مفعل حتى تربط المالية سياسة التسوية، ثم يقبل الشريك اتفاق عمولة المتجر وتوافق المالية عليه قبل النشر.</p>
+               <p className="managed-status managed-status-info">يستطيع قسم الشركاء اعتماد الانضمام وإنشاء المتجر الآن. يبقى الملف المالي غير مفعل حتى تربط المالية سياسة التسوية، ثم يقبل الشريك الاتفاق التجاري المقترح من السياسات. لا يُفعّل نموذج الاشتراك حتى اكتمال نظام الفوترة والمراجعة المالية.</p>
               <label className="field-label" htmlFor="joining-correction">سبب التصحيح عند الحاجة<TextArea className="resize-none" id="joining-correction" disabled={busy} value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} /></label>
               <button type="button" className="button button-primary" disabled={busy} onClick={() => void reviewCase("approved")}>اعتماد الانضمام وإنشاء المتجر (دون تفعيل مالي)</button>
               <button type="button" className="button button-secondary" disabled={busy} onClick={() => void reviewCase("needs_correction")}>إعادة للتصحيح</button>
@@ -359,7 +360,11 @@ export function JoiningCaseDetail({ caseId, embedded = false }: { caseId: string
             {current.state === "needs_correction" ? <p>الحالة بانتظار تصحيح بيانات الشريك عبر المسار القانوني المتاح.</p> : null}
             {current.state === "approved" ? <>
               <p>تم اعتماد الانضمام. يُستكمل تفعيل الحساب من تطبيق الشريك، وتُدار جاهزية المتجر ونشره من ملف المتجر؛ الاعتماد لا يعني النشر للعملاء.</p>
-              {storeId ? <StoreCommercialAgreementProposal storeId={storeId} modes={current.store?.fulfillmentModes ?? current.firstStoreFulfillmentModes} /> : null}
+              {storeId ? <>
+                <StoreCommercialAgreementProposal storeId={storeId} modes={current.store?.fulfillmentModes ?? current.firstStoreFulfillmentModes} />
+                {canSelectCommercialModel ? <Link className="button button-secondary"
+                  href={`/policies?group=commercial&policy=store-commercial-model&action=manage&storeId=${encodeURIComponent(storeId)}`}>تحديد نموذج العمولة أو الاشتراك من السياسات</Link> : null}
+              </> : null}
               <details className="partner-case-attachments"><summary>إرشادات تفعيل حساب الشريك</summary><p>يفتح صاحب المتجر تطبيق الشريك برقم الجوال المسجّل. عند أول تفعيل يختار «أول دخول»؛ وإن سبق التفعيل يسجّل الدخول أو يستعيد كلمة المرور. لا يحتاج إلى تطبيق ميداني أو دعوة منه.</p></details>
               {current.financialProfileState === "REQUIRED" ? <>
                 <p className="managed-status managed-status-warning" role="status">{canManageFinancialTerms ? (activeTermsPolicy ? "اربط شروط التسوية المعتمدة لإكمال تفعيل الملف المالي." : policyReadMessage || "يلزم وجود سياسة مالية نشطة.") : "الملف بانتظار إجراء مستقل من مشغّل لديه صلاحية المالية وسياسات المنصة."}</p>

@@ -1,5 +1,5 @@
 import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
 
 import type { CatalogQuickPriceCommitRequest, CatalogQuickPriceCommitResponse, CatalogQuickPriceUpdate, CatalogStoreOffer } from "@bthwani/dsh";
@@ -19,6 +19,8 @@ export type MobileStoreQuickPricesWorkspaceProps = Readonly<{
   verticalId: string;
   getAccessToken: () => Promise<string>;
   createUUID: () => string;
+  initialSearch?: string;
+  selectedOfferId?: string;
   onPricesCommitted?: () => void | Promise<void>;
 }>;
 
@@ -72,7 +74,7 @@ function quickPriceCommitNotice(result: CatalogQuickPriceCommitResponse): string
   ].filter(Boolean).join(" ");
 }
 
-export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, getAccessToken, createUUID, onPricesCommitted }: MobileStoreQuickPricesWorkspaceProps) {
+export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, getAccessToken, createUUID, initialSearch = "", selectedOfferId, onPricesCommitted }: MobileStoreQuickPricesWorkspaceProps) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => StyleSheet.create({
     card: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 10, marginTop: 12, padding: 14 },
@@ -80,28 +82,31 @@ export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, get
     muted: { color: theme.colorMuted, fontSize: 14 },
     error: { color: theme.danger, fontSize: 14 },
     row: { borderColor: theme.borderColor, borderTopWidth: 1, gap: 8, paddingTop: 10 },
+    selectedRow: { backgroundColor: theme.actionSoft, borderRadius: 10, padding: 10 },
     product: { color: theme.color, fontSize: 15, fontWeight: "600" },
     input: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, color: theme.color, minHeight: 44, paddingHorizontal: 10, textAlign: "left", writingDirection: "ltr" },
     filters: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   }), [theme]);
   const [offers, setOffers] = useState<ReadonlyArray<CatalogStoreOffer>>([]);
   const [draftPrices, setDraftPrices] = useState<Readonly<Record<string, string>>>({});
-  const [queryDraft, setQueryDraft] = useState("");
+  const [queryDraft, setQueryDraft] = useState(initialSearch);
   const [categoryDraft, setCategoryDraft] = useState("");
   const [categoryQuery, setCategoryQuery] = useState("");
   const [categoryOptions, setCategoryOptions] = useState<ReadonlyArray<{ id: string; pathAr: string }>>([]);
   const [availabilityDraft, setAvailabilityDraft] = useState<QuickPriceFilter>("all");
   const [publicationDraft, setPublicationDraft] = useState<QuickPricePublicationFilter>("all");
   const [inventoryDraft, setInventoryDraft] = useState<QuickPriceInventoryFilter>("all");
-  const [filters, setFilters] = useState({ q: "", categoryId: "", availability: "all" as QuickPriceFilter, publicationState: "all" as QuickPricePublicationFilter, inventoryStatus: "all" as QuickPriceInventoryFilter });
+  const [filters, setFilters] = useState({ q: initialSearch, categoryId: "", availability: "all" as QuickPriceFilter, publicationState: "all" as QuickPricePublicationFilter, inventoryStatus: "all" as QuickPriceInventoryFilter });
   const [nextCursor, setNextCursor] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [attempt, setAttempt] = useState<QuickPriceAttempt | null>(null);
+  const readSequence = useRef(0);
 
   const read = useCallback(async (cursor = "", append = false) => {
+    const currentRead = ++readSequence.current;
     const scopeKey = scope.storeID;
     if (!scopeKey.trim()) return;
     setLoading(!append);
@@ -109,15 +114,36 @@ export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, get
     try {
       const token = await getAccessToken();
       const page = await client.listOwnStoreQuickPrices(token, scope.storeID, { ...filters, limit: 50, cursor });
-      setOffers((current) => append ? [...current, ...page.offers.filter((offer) => !current.some((known) => known.offerId === offer.offerId))] : page.offers);
+      let selected = selectedOfferId ? page.offers.find((offer) => offer.offerId === selectedOfferId) : undefined;
+      if (!append && !cursor && selectedOfferId && !selected && filters.q === initialSearch) {
+        // Bring a selected same-name offer into view without expanding the
+        // entire list. Normal "load more" still starts at the first-page cursor.
+        let lookupCursor = page.nextCursor ?? "";
+        const visited = new Set<string>();
+        for (let index = 0; lookupCursor && index < 20 && !selected && !visited.has(lookupCursor); index++) {
+          visited.add(lookupCursor);
+          const later = await client.listOwnStoreQuickPrices(token, scope.storeID, { ...filters, limit: 50, cursor: lookupCursor });
+          selected = later.offers.find((offer) => offer.offerId === selectedOfferId);
+          lookupCursor = later.nextCursor ?? "";
+        }
+        if (currentRead !== readSequence.current) return;
+        if (!selected) setNotice("لم يظهر المنتج المحدد ضمن النتائج المحمّلة. جرّب تضييق البحث باسمه أو فئته.");
+        else setNotice((current) => current === "لم يظهر المنتج المحدد ضمن النتائج المحمّلة. جرّب تضييق البحث باسمه أو فئته." ? "" : current);
+      }
+      if (currentRead !== readSequence.current) return;
+      const visible = selected && !append
+        ? [selected, ...page.offers.filter((offer) => offer.offerId !== selected.offerId)] : page.offers;
+      setOffers((current) => append ? [...current, ...visible.filter((offer) => !current.some((known) => known.offerId === offer.offerId))] : visible);
       setNextCursor(page.nextCursor ?? "");
     } catch (cause) {
-      console.warn("DSH Store quick prices readback failed", cause);
-      setError("تعذر قراءة الأسعار السريعة. حدّث القائمة وحاول مجددًا.");
+      if (currentRead === readSequence.current) {
+        console.warn("DSH Store quick prices readback failed", cause);
+        setError("تعذر قراءة الأسعار السريعة. حدّث القائمة وحاول مجددًا.");
+      }
     } finally {
-      setLoading(false);
+      if (currentRead === readSequence.current) setLoading(false);
     }
-  }, [client, filters, getAccessToken, scope]);
+  }, [client, filters, getAccessToken, scope, selectedOfferId, initialSearch]);
 
   useEffect(() => { void read(); }, [read]);
 
@@ -184,6 +210,7 @@ export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, get
   return <View accessibilityLabel="الأسعار السريعة" style={styles.card}>
     <Text style={styles.title}>الأسعار السريعة</Text>
     <Text style={styles.muted}>{"عدّل أسعار منتجات المتجر واحفظ التغييرات دفعة واحدة."}</Text>
+    {initialSearch ? <Text style={styles.muted}>{"المنتج المحدد: " + initialSearch}</Text> : null}
     <TextInput accessibilityLabel="بحث الأسعار السريعة" editable={!busy} onChangeText={setQueryDraft} onSubmitEditing={applyFilters} placeholder="ابحث باسم المنتج أو خياره" returnKeyType="search" value={queryDraft} style={styles.input} />
     <TextInput accessibilityLabel="بحث فئات الأسعار السريعة" editable={!busy} onChangeText={setCategoryQuery} placeholder="ابحث عن فئة لتصفية النتائج" value={categoryQuery} style={styles.input} />
     <View style={styles.filters}>
@@ -202,10 +229,10 @@ export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, get
     <BthwaniButton busy={loading} disabled={busy || loading} label="تطبيق المرشحات" onPress={applyFilters} variant="secondary" />
     {loading ? <View style={{ alignItems: "center", gap: 6 }}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة النتائج…</Text></View> : null}
     {!loading && !offers.length ? <Text style={styles.muted}>لا توجد عروض مطابقة لهذه المرشحات.</Text> : null}
-    {offers.map((offer) => <View key={offer.offerId} style={styles.row}>
+    {offers.map((offer) => <View key={offer.offerId} style={[styles.row, offer.offerId === selectedOfferId && styles.selectedRow]}>
       <Text style={styles.product}>{offer.productName} · {offer.variantTitle}</Text>
       <Text style={styles.muted}>{formatMoney(offer.priceMinor, offer.currency)} · {offer.availability ? "متاح" : "غير متاح"} · {quickPricePublicationLabel(offer.publicationState)}</Text>
-      <TextInput accessibilityLabel={`السعر الجديد لـ ${offer.productName}`} editable={!busy} keyboardType="number-pad" onChangeText={(value) => setDraftPrices((current) => ({ ...current, [offer.offerId]: value.replace(/\D/g, "") }))} placeholder="السعر بالريال اليمني" value={draftPrices[offer.offerId] ?? String(offer.priceMinor)} style={styles.input} />
+      <TextInput accessibilityLabel={`السعر الجديد لـ ${offer.productName}، الخيار ${offer.variantTitle}`} editable={!busy} keyboardType="number-pad" onChangeText={(value) => setDraftPrices((current) => ({ ...current, [offer.offerId]: value.replace(/\D/g, "") }))} placeholder="السعر بالريال اليمني" value={draftPrices[offer.offerId] ?? String(offer.priceMinor)} style={styles.input} />
     </View>)}
     {nextCursor ? <BthwaniButton busy={loading} disabled={loading || busy} label="تحميل المزيد" onPress={() => void read(nextCursor, true)} variant="secondary" /> : null}
     {offers.length ? <BthwaniButton busy={busy} disabled={busy || changes.length === 0} label={`حفظ الأسعار المتغيرة (${changes.length})`} onPress={() => void commit()} /> : null}

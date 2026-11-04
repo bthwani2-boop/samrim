@@ -2,17 +2,17 @@ const assert = require("node:assert/strict");
 const { chromium } = require("@playwright/test");
 
 async function run() {
-  const browser=await chromium.connectOverCDP("http://127.0.0.1:9223");
+  const browser=await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9222");
   let page;
   try {
     const context=browser.contexts().find(c=>c.pages().some(p=>p.url().startsWith("http://localhost:18102"))) ?? browser.contexts()[0];
-    assert.ok(context, "LOCAL_EDGE_CONTEXT_REQUIRED");
+    assert.ok(context, "LOCAL_CDP_CONTEXT_REQUIRED");
     page=await context.newPage();
     await page.setViewportSize({width:1360,height:900});
     await page.goto("http://localhost:18102/more",{waitUntil:"domcontentloaded",timeout:20000});
     await page.waitForFunction(()=>{
       const t=document.body.innerText||"";
-      return t.includes("تعذر التحقق")||t.includes("أحدث الطلبات")||t.includes("تعذر تحميل المتاجر")||location.pathname==="/";
+      return t.includes("أحدث الطلبات")||t.includes("تعذر تحميل المتاجر")||location.pathname==="/";
     },null,{timeout:15000}).catch(()=>{});
     const view=await page.evaluate(()=>{
       const body=document.body.innerText||"";
@@ -20,7 +20,8 @@ async function run() {
       const r=rail?.getBoundingClientRect();
       const labels=["أحدث الطلبات","مساحة العمل اليومي","يحتاج انتباهك","تجهيز المتجر وتشغيله","الإشعارات","الفريق وكباتن المتجر","ملف المتجر والاتفاقيات","إدارة التشغيل"];
       return {route:location.pathname,rtl:document.documentElement.dir,
-        blocked:body.includes("تعذر التحقق")||location.pathname==="/",
+        blocked:/(يلزم تسجيل الدخول|انتهت صلاحية جلسة|تعذر التحقق من جلسة)/.test(body)||location.pathname==="/",
+        agreementUnavailable:body.includes("تعذر التحقق من الاتفاقية"),
         sidebarAtRight:r?Math.abs(r.right-innerWidth)<=5:false,
         sidebarWidth:r?Math.round(r.width):null,
         labels:labels.filter(k=>body.includes(k)),

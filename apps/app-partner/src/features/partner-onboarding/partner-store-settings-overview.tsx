@@ -51,6 +51,8 @@ export function PartnerStoreSettingsOverview({ storeID }: Readonly<{ storeID: st
     <Text style={styles.metaLabel}>إعدادات مرتبطة</Text>
     <BthwaniButton label="إدارة المنتجات والمخزون" variant="secondary" onPress={() => navigate("/products?filter=stockout" as Href)} />
     <BthwaniButton label="إشعارات المتجر" variant="secondary" onPress={() => navigate("/notifications" as Href)} />
-    <Text style={styles.muted}>تُدار وسائل التحصيل والعمولات من الاتفاقية المعتمدة في الأسفل؛ لا تغيّر هذه الشاشة إعدادات الدفع لدى العملاء.</Text>
+    <BthwaniButton label="الاتفاقية التجارية" variant="secondary"
+      onPress={() => navigate({ pathname: "/store", params: { section: "commercial", returnTo: "more" } } as Href)} />
+    <Text style={styles.muted}>تُراجع العمولة أو رسوم الاشتراك في الاتفاقية التجارية المصرّح بها. لا تغيّر هذه الصفحة مدفوعات العملاء أو شروط المتجر.</Text>
   </View>;
 }

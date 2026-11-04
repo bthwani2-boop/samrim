@@ -9,7 +9,7 @@ import { AppState, Platform } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { appearance } from "../src/bootstrap/appearance";
-import { currentIdentityState, subscribeIdentitySession } from "../src/bootstrap/identity";
+import { currentIdentityState, restoreIdentitySession, subscribeIdentitySession } from "../src/bootstrap/identity";
 
 function currentMobileActorID(): string {
   const session = currentIdentityState();
@@ -20,6 +20,13 @@ import { OrderAlertMonitor } from "../src/features/notifications/order-alert-mon
 import ServiceCityScope from "../src/features/service-city/service-city-scope";
 
 export default function RootLayout() {
+  useEffect(() => {
+    if (Platform.OS === "web") {
+      // All deep links need cookie-session restoration, not only the login page.
+      // IdentitySessionManager deduplicates concurrent restoration requests.
+      void restoreIdentitySession().catch(() => { /* State owner exposes retry/error. */ });
+    }
+  }, []);
   useEffect(() => {
     const baseUrl = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
     if (!baseUrl) return;

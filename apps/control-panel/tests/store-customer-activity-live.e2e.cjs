@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const { chromium, expect } = require("@playwright/test");
 
 async function main() {
-  const browser = await chromium.connectOverCDP("http://127.0.0.1:9223", {timeout: 40000});
+  const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9222", {timeout: 40000});
   let operator, partner;
   try {
     const origin = "http://localhost:13000";
@@ -18,17 +18,23 @@ async function main() {
     assert.ok(storeId);
     const customerTab = operator.getByRole("tab", {name: "العملاء والجودة"});
     await customerTab.waitFor({state: "visible", timeout: 15000});
-    // The inspector mounts while it still reads its canonical store and owner data.
-    // A visible tab is not yet proof that the authenticated inspector is interactive.
-    await operator.waitForLoadState("networkidle", {timeout: 15000});
-    const responsePromise = operator.waitForResponse(r => r.url().includes("/api/stores/") && r.url().includes("/orders/summary?"), {timeout: 18000});
-    await customerTab.click();
+    // In the narrow inspector the Quality tab lives in Ant Tabs' More menu;
+    // clicking its hidden tab node does not select it.
+    await operator.locator("#store-profile-more").click();
+    await operator.getByRole("option", {name: "العملاء والجودة"}).click();
     await expect(customerTab).toHaveAttribute("aria-selected", "true", {timeout: 5000});
-    const response = await responsePromise;
+    // The inspector may have already loaded the default 30d summary before
+    // the tab is selected. Changing the period forces a fresh owner-backed read.
+    const [response] = await Promise.all([
+      operator.waitForResponse(r => r.url().includes("/api/stores/") &&
+        r.url().includes("/orders/summary?") &&
+        new URL(r.url()).searchParams.get("period") === "7d", {timeout: 18000}),
+      operator.getByRole("button", {name: "7 أيام"}).click(),
+    ]);
     assert.equal(response.status(), 200);
     const data = await response.json();
     assert.equal(data.summary.storeId, storeId);
-    assert.equal(data.summary.period, "30d");
+    assert.equal(data.summary.period, "7d");
     assert.ok(Number.isSafeInteger(data.summary.completedCustomers));
     assert.ok(Number.isSafeInteger(data.summary.returningCustomers));
     assert.ok(data.summary.returningCustomers <= data.summary.completedCustomers);

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
@@ -53,6 +54,7 @@ func (s *MarketingServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/client/marketing-consent/{channel}", s.changeClientMarketingConsent)
 	mux.HandleFunc("GET /dsh/public/promotions", s.listPublicPromotions)
 	mux.HandleFunc("GET /dsh/public/discovery-content", s.listPublicDiscoveryContent)
+	mux.HandleFunc("GET /dsh/public/stores/{storeId}/banners", s.listPublicStoreBanners)
 	mux.HandleFunc("GET /dsh/public/banner-presentation", s.readPublicBannerPresentation)
 	mux.HandleFunc("GET /dsh/operator/marketing/banner-presentation", s.readOperatorBannerPresentation)
 	mux.HandleFunc("PUT /dsh/operator/marketing/banner-presentation", s.setOperatorBannerPresentation)
@@ -82,6 +84,8 @@ func (s *MarketingServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/operator/discovery-content/analytics", s.listOperatorDiscoveryContentAnalytics)
 	mux.HandleFunc("POST /dsh/operator/discovery-content", s.createOperatorDiscoveryContent)
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/discovery-content", s.listPartnerStoreDiscoveryContent)
+	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/banners", s.listPartnerStoreBanners)
+	mux.HandleFunc("POST /dsh/partner/stores/{storeId}/banners/{contentId}/visibility", s.setPartnerStoreBannerVisibility)
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/discovery-content/{contentId}/analytics", s.listPartnerStoreContentAnalytics)
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/discovery-content/summary", s.readPartnerStoreContentSummary)
 	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/discovery-content/summary", s.readOperatorStoreContentSummary)
@@ -552,7 +556,11 @@ func (s *MarketingServer) listPartnerStoreDiscoveryTargets(w http.ResponseWriter
 		writeMarketingError(w, err)
 		return
 	}
-	targets, err := postgres.ListPartnerReelTargets(r.Context(), s.db, r.PathValue("storeId"))
+	if len(r.URL.Query()["search"]) > 1 || utf8.RuneCountInString(r.URL.Query().Get("search")) > 120 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "search must be provided once and be at most 120 characters")
+		return
+	}
+	targets, err := postgres.ListPartnerReelTargets(r.Context(), s.db, r.PathValue("storeId"), r.URL.Query().Get("search"))
 	if err != nil {
 		writeMarketingError(w, err)
 		return
@@ -700,8 +708,8 @@ func (s *MarketingServer) createDiscoveryContentWithMedia(w http.ResponseWriter,
 	// The session must authorize the Store, then the database verifies ownership
 	// of each destination before any video transcoding or media writes.
 	if partnerStoreID != "" {
-		if input.Kind != "SHORT_FORM" {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "partners may submit only short-form reels")
+		if input.Kind != "SHORT_FORM" && input.Kind != "BANNER" {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "partners may submit only Store banners or short-form reels")
 			return
 		}
 		owned, err := postgres.PartnerReelTargetBelongsToStore(r.Context(), s.db, partnerStoreID, string(input.TargetType), input.TargetID)
@@ -710,7 +718,7 @@ func (s *MarketingServer) createDiscoveryContentWithMedia(w http.ResponseWriter,
 			return
 		}
 		if !owned {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "reel target does not belong to the authorized Store")
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "content target does not belong to the authorized Store")
 			return
 		}
 	}
@@ -736,11 +744,28 @@ func (s *MarketingServer) createDiscoveryContentWithMedia(w http.ResponseWriter,
 		return
 	}
 	provenance := parsed.provenance.Normalized()
-	requestHash := postgres.HashMarketingFacts("discovery-content-create", input.ID, string(input.Kind), input.TitleAr, input.BodyAr, digest, parsed.contentType, string(input.TargetType), input.TargetID, input.ServiceCityID, input.StartsAt.UTC().Format(time.RFC3339Nano), optionalTimeString(input.EndsAt), fmt.Sprint(input.Ordinal), acting, provenance.Creator, provenance.SourceDescription, provenance.SourceURI, provenance.RightsStatement, provenance.RightsURI)
+	requestFacts := []string{"discovery-content-create", input.ID, string(input.Kind), input.TitleAr, input.BodyAr, digest, parsed.contentType, string(input.TargetType), input.TargetID, input.ServiceCityID, input.StartsAt.UTC().Format(time.RFC3339Nano), optionalTimeString(input.EndsAt), fmt.Sprint(input.Ordinal), acting, provenance.Creator, provenance.SourceDescription, provenance.SourceURI, provenance.RightsStatement, provenance.RightsURI}
+	requestHash := hashDiscoveryContentUploadRequest(partnerStoreID, requestFacts...)
 	assetDigest := sha256Bytes([]byte(input.ID + "\x00" + idempotency))
 	asset := postgres.DiscoveryContentMediaAssetInput{ID: "discovery_content_media_" + assetDigest, IdempotencyKey: idempotency, RequestHash: requestHash, ObjectKey: objectKey, URI: uri, ContentSHA256: digest, ContentType: parsed.contentType, ByteSize: int64(len(parsed.bytes)), Creator: provenance.Creator, SourceDescription: provenance.SourceDescription, SourceURI: provenance.SourceURI, RightsStatement: provenance.RightsStatement, RightsURI: provenance.RightsURI, RightsAttestedBy: acting}
 	registered, replayed, err := postgres.RegisterDiscoveryContentMediaAssetPending(r.Context(), s.db, asset)
 	if err != nil {
+		// Legacy Partner uploads had no Store in their request hash. Permit
+		// replay only after confirming the old completed mutation still owns
+		// the same Store, actor and active media URI. Pending/foreign uploads
+		// cannot be safely attributed and remain conflicts, not retries.
+		if partnerStoreID != "" && errors.Is(err, postgres.ErrDiscoveryContentIdempotency) {
+			legacyHash := hashDiscoveryContentUploadRequest("", requestFacts...)
+			prior, found, readErr := postgres.ReadDiscoveryContentMutation(r.Context(), s.db, idempotency, input.ID, legacyHash)
+			if readErr == nil && found && eligibleLegacyPartnerUploadReplay(prior, partnerStoreID, acting, uri) {
+				writeJSON(w, http.StatusOK, contract.DiscoveryContentResponse{Content: toDiscoveryContentView(prior), IdempotentReplay: true})
+				return
+			}
+			if readErr != nil && !errors.Is(readErr, postgres.ErrDiscoveryContentIdempotency) {
+				writeMarketingError(w, readErr)
+				return
+			}
+		}
 		writeMarketingError(w, err)
 		return
 	}
@@ -796,6 +821,22 @@ func (s *MarketingServer) createDiscoveryContentWithMedia(w http.ResponseWriter,
 	}
 	_ = s.ReconcileMediaStorage(r.Context())
 	writeJSON(w, responseStatus(replayed), contract.DiscoveryContentResponse{Content: toDiscoveryContentView(item), IdempotentReplay: replayed})
+}
+
+// Historical retries are admitted only after the canonical mutation owner
+// confirms that the media belongs to this Store and the same Partner actor.
+func eligibleLegacyPartnerUploadReplay(item postgres.DiscoveryContentRecord, storeID, actorID, mediaURI string) bool {
+	return storeID != "" && actorID != "" && mediaURI != "" &&
+		item.SourceStoreID == storeID && item.CreatedByActorID == actorID && item.MediaURI == mediaURI
+}
+
+// A Partner may hold grants for multiple Stores; identical upload facts with
+// the same idempotency key must never replay across different Store owners.
+func hashDiscoveryContentUploadRequest(partnerStoreID string, facts ...string) string {
+	if partnerStoreID != "" {
+		facts = append(facts, "source-store", partnerStoreID)
+	}
+	return postgres.HashMarketingFacts(facts...)
 }
 
 type marketingContentUpload struct {
@@ -984,7 +1025,7 @@ func toPublicPromotionView(item postgres.PromotionRecord) contract.PublicPromoti
 }
 
 func toDiscoveryContentView(item postgres.DiscoveryContentRecord) contract.DiscoveryContentView {
-	return contract.DiscoveryContentView{ID: item.ID, Kind: contract.DiscoveryContentKind(item.Kind), TitleAr: item.TitleAr, BodyAr: item.BodyAr, MediaUri: item.MediaURI, MediaKind: item.MediaKind, PosterUri: item.PosterURI, TargetType: contract.DiscoveryContentTargetType(item.TargetType), TargetID: item.TargetID, ServiceCityID: item.ServiceCityID, State: contract.PromotionState(item.State), StartsAt: item.StartsAt, EndsAt: item.EndsAt, Ordinal: item.Ordinal, Version: item.Version, CreatedByActorID: item.CreatedByActorID, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return contract.DiscoveryContentView{ID: item.ID, Kind: contract.DiscoveryContentKind(item.Kind), TitleAr: item.TitleAr, BodyAr: item.BodyAr, MediaUri: item.MediaURI, MediaKind: item.MediaKind, PosterUri: item.PosterURI, TargetType: contract.DiscoveryContentTargetType(item.TargetType), TargetID: item.TargetID, ServiceCityID: item.ServiceCityID, State: contract.PromotionState(item.State), StartsAt: item.StartsAt, EndsAt: item.EndsAt, Ordinal: item.Ordinal, Version: item.Version, PartnerEnabled: item.PartnerEnabled, CreatedByActorID: item.CreatedByActorID, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func toPublicDiscoveryContentView(item postgres.DiscoveryContentRecord) contract.PublicDiscoveryContentView {

@@ -35,14 +35,21 @@ export default function ClientAccount() {
     if (busy) return;
     setBusy(true);
     setNotice("");
+    let shouldNavigate = false;
     try {
       await logoutIdentity();
+      shouldNavigate = true;
     } catch {
-      setNotice("تم تسجيل الخروج من هذا الجهاز، لكن تعذر تأكيد إبطال الجلسة على الخادم.");
+      if (currentIdentityState().kind === "authenticated") {
+        setNotice("تعذر تسجيل الخروج. تحقق من الاتصال ثم حاول مجددًا.");
+      } else {
+        setNotice("تم تسجيل الخروج من هذا الجهاز، لكن تعذر تأكيد إبطال الجلسة على الخادم.");
+        shouldNavigate = true;
+      }
     } finally {
       setBusy(false);
-      router.replace("/?returnTo=/account" as Href);
     }
+    if (shouldNavigate) router.replace("/?returnTo=/account" as Href);
   }
 
   async function changeCity() {

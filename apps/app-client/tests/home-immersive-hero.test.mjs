@@ -17,25 +17,38 @@ test("home search and branding overlay the moving hero rather than a separate st
   assert.match(shell, /homeTransparent && \{ backgroundColor: "transparent" \}/);
 });
 
-test("delivery messaging is a fixed sibling below the animated banner, not a fabricated countdown", () => {
-  const bannerAt = discovery.indexOf("immersiveHeader={heroHeader}");
-  const stripAt = discovery.indexOf('accessibilityLabel="معلومات التوصيل والعروض"');
-  assert.ok(bannerAt >= 0 && stripAt > bannerAt);
-  const strip = discovery.slice(stripAt, stripAt + 500);
-  assert.match(strip, /الرسوم والعروض المتاحة قبل تأكيد الطلب/);
-  assert.doesNotMatch(strip, /75 دقيقة|توصيل مجاني|countdown/i);
+test("delivery messaging remains after the hero and follows core discovery on desktop", () => {
+  const campaignAt = discovery.indexOf("const homeCampaignContent = <>");
+  const stripAt = discovery.indexOf("styles.deliveryStrip", campaignAt);
+  const desktopPlacement = discovery.indexOf("{desktopWebDiscovery ? homeCampaignContent : null}", stripAt);
+  const mobilePlacement = discovery.indexOf("{!desktopWebDiscovery ? homeCampaignContent : null}", stripAt);
+  const bannerAt = discovery.lastIndexOf("immersiveHeader={heroHeader}");
+  const fallback = discovery.indexOf("{!desktopWebDiscovery ? homeCampaignContent : null}");
+  const productAt = discovery.indexOf("<HomeProductFeed", discovery.indexOf("taxonomy.verticals.length ? <View", fallback));
+  assert.ok(campaignAt >= 0 && stripAt > campaignAt && mobilePlacement > bannerAt);
+  assert.ok(desktopPlacement > productAt);
+  const campaign = discovery.slice(campaignAt, campaignAt + 1200);
+  assert.doesNotMatch(campaign, /75 minutes|free delivery countdown|countdown/i);
 });
 
 test("one slide palette spans the full header and media stage without an independently colored header", () => {
   assert.match(banner, /function immersiveSlidePalette\(item: PublicDiscoveryContentView\)/);
   assert.match(banner, /const colors = immersiveSlidePalette\(item\)/);
-  assert.match(banner, /const height = immersive \? cardWidth : Math\.round\(cardWidth \/ 1\.75\)/);
-  assert.match(banner, /const mediaHeight = immersive \? Math\.round\(cardWidth \/ 1\.75\) : height/);
+  assert.match(banner, /Math\.min\(Math\.round\(cardWidth \/ 1\.75\), 384\)/);
+  assert.match(banner, /compactDesktopHero[\s\S]*?Math\.min\(Math\.round\(cardWidth \/ 2\.8\), 320\)/);
+  assert.match(banner, /mediaHeight \+ \(compactDesktopHero \? 148 : 166\)/);
+  assert.match(banner, /Math\.round\(cardWidth \/ \(immersive \? 2\.15 : 1\.75\)\)/);
   assert.match(banner, /locations=\{\[0, \(height - mediaHeight\) \/ height, 1\]\}/);
   assert.match(banner, /start=\{\{ x: 0\.5, y: 0 \}\} end=\{\{ x: 0\.5, y: 1 \}\}/);
   assert.match(banner, /colors=\{\[colors\[1\], colors\[1\] \+ "00"\]\}/);
   assert.doesNotMatch(banner, /items\.findIndex\(\(value\) => value\.id === item\.id\)/);
   assert.match(home, /homeTransparent/);
+});
+
+test("web hero scales with discovery content rather than the half-width marketing carousel", () => {
+  assert.match(discovery, /const heroCardWidth = Platform\.OS === "web" \?/);
+  assert.match(discovery, /Math\.min\(\(discoveryContainerWidth \|\| viewportWidth\) - spacing\[4\], 960\)/);
+  assert.match(discovery, /cardWidth=\{heroCardWidth\}/);
 });
 
 test("hero movement uses published media and honors offscreen/foreground/motion settings", () => {
@@ -48,7 +61,7 @@ test("hero movement uses published media and honors offscreen/foreground/motion 
 
 test("home search remains available in the immersive and compact headers without an obstructing floating control", () => {
   assert.match(home, /<ClientPublicHeader/);
-  assert.match(home, /homeCompact=\{compactHeader\}/);
+  assert.match(home, /homeCompact=\{searchOpen \|\| compactHeader\}/);
   assert.match(home, /onSearchOpenChange=\{setSearchVisibility\}/);
   assert.match(shell, /<BthwaniSearchField/);
   assert.doesNotMatch(home, /quickSearch|بحث سريع عن المنتجات|orbScale/);
@@ -56,4 +69,18 @@ test("home search remains available in the immersive and compact headers without
 
 test("published banner artwork is fully contained in its stage instead of cropping promotional text", () => {
   assert.match(banner, /contentFit="contain"/);
+});
+
+test("status bar is light only while a dark hero surface is actually rendered", () => {
+  assert.match(discovery, /const hasDarkHeroBehindStatusBar = state\.kind === "ready" && showHomeMarketing && Boolean\(heroHeader\)/);
+  assert.match(discovery, /Boolean\(publishedLayout\?\.document\) \|\| bannerContent\.length > 0/);
+  assert.match(discovery, /onHeroVisibilityChange\?\.\(hasDarkHeroBehindStatusBar\)/);
+  assert.doesNotMatch(discovery, /onHeroVisibilityChange\?\.\(state\.kind === "ready"\)/);
+});
+
+test("published hero falls back for whitespace-only slide headings and descriptions", () => {
+  assert.match(discovery, /const slideTitle = slide\?\.title\.trim\(\) \|\| title/);
+  assert.match(discovery, /const slideDescription = slide\?\.description\.trim\(\) \|\| section\.description\.trim\(\)/);
+  assert.match(discovery, /\{slideTitle\}<\/Text>/);
+  assert.match(discovery, /\{slideDescription\}<\/Text>/);
 });
