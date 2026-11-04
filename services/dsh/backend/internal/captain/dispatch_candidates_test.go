@@ -190,3 +190,47 @@ func TestFundedCaptainPaginationFailsClosedAfterPartialSelection(t *testing.T) {
 		t.Fatalf("failed second page must not publish partial offers: %v err=%v pages=%d", selected, err, pages)
 	}
 }
+
+func TestFundedCandidatesRejectNegativeCashExposure(t *testing.T) {
+	candidates := []postgres.NearbyCaptainCandidate{{ActorID: "captain-1"}}
+	selected, err := selectFundedNearbyCaptains(context.Background(), candidates, -1, func(context.Context, string) (wlt.CaptainWalletState, error) {
+		t.Fatal("invalid COD amount must fail before wallet read")
+		return wlt.CaptainWalletState{}, nil
+	})
+	if selected != nil || !errors.Is(err, ErrPaymentUnavailable) {
+		t.Fatalf("invalid negative cash exposure must fail closed: selected=%v err=%v", selected, err)
+	}
+}
+
+func TestFundedCandidatePaginationRejectsChangedCashExposure(t *testing.T) {
+	first := make([]postgres.NearbyCaptainCandidate, postgres.NearbyCaptainCandidatePageSize)
+	first[0] = postgres.NearbyCaptainCandidate{ActorID: "funded-first"}
+	for i := 1; i < len(first); i++ {
+		first[i] = postgres.NearbyCaptainCandidate{ActorID: fmt.Sprintf("unfunded-%d", i)}
+	}
+	pages := 0
+	selected, err := selectFundedNearbyCaptainPages(context.Background(),
+		func(_ context.Context, cursor *postgres.NearbyCaptainCandidate) ([]postgres.NearbyCaptainCandidate, int64, error) {
+			pages++
+			if pages == 1 {
+				if cursor != nil {
+					t.Fatal("first page cannot have a cursor")
+				}
+				return first, 1200, nil
+			}
+			if cursor == nil || cursor.ActorID != first[len(first)-1].ActorID {
+				t.Fatalf("incorrect page cursor: %+v", cursor)
+			}
+			return []postgres.NearbyCaptainCandidate{{ActorID: "funded-later"}}, 0, nil
+		},
+		func(_ context.Context, id string) (wlt.CaptainWalletState, error) {
+			if strings.HasPrefix(id, "unfunded-") {
+				return wlt.CaptainWalletState{Currency: "YER", AvailableMinor: 0}, nil
+			}
+			return wlt.CaptainWalletState{Currency: "YER", AvailableMinor: 1200}, nil
+		},
+	)
+	if selected != nil || !errors.Is(err, ErrPaymentUnavailable) || pages != 2 {
+		t.Fatalf("cash amount changed between pages: selected=%v err=%v pages=%d", selected, err, pages)
+	}
+}

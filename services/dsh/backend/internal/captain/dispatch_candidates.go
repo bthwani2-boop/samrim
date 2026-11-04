@@ -11,6 +11,9 @@ import (
 // Preserve source-ranked nearest order while rejecting financially ineligible
 // captains before inserting offers. A missing wallet read fails closed.
 func selectFundedNearbyCaptains(ctx context.Context, candidates []postgres.NearbyCaptainCandidate, cashMinor int64, readWallet func(context.Context, string) (wlt.CaptainWalletState, error)) ([]string, error) {
+	if cashMinor < 0 {
+		return nil, fmt.Errorf("%w: negative COD exposure", ErrPaymentUnavailable)
+	}
 	approved := make([]string, 0, 3)
 	for _, candidate := range candidates {
 		if cashMinor > 0 {
@@ -43,6 +46,8 @@ func selectFundedNearbyCaptainPages(
 ) ([]string, error) {
 	approved := make([]string, 0, 3)
 	var after *postgres.NearbyCaptainCandidate
+	var initialCashMinor int64
+	cashRead := false
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -51,6 +56,10 @@ func selectFundedNearbyCaptainPages(
 		if err != nil {
 			return nil, err
 		}
+		if cashMinor < 0 || (cashRead && cashMinor != initialCashMinor) {
+			return nil, fmt.Errorf("%w: inconsistent COD exposure between captain pages", ErrPaymentUnavailable)
+		}
+		initialCashMinor, cashRead = cashMinor, true
 		if len(candidates) == 0 {
 			break
 		}
