@@ -1,11 +1,24 @@
 "use strict";
 const assert = require("node:assert/strict");
-const { chromium } = require("@playwright/test");
+const { spawnSync } = require("node:child_process");
+const path = require("node:path");
 const origin = "http://localhost:18102";
 const item = "حامل هاتف للسيارة - تجريبي 20261104";
 const action = process.env.BTHWANI_LOCAL_DEMO_ACTION || "inspect";
 if (!["inspect","create-publish"].includes(action)) throw Error("INVALID_DEMO_ACTION");
 async function main(){
+ // Enforce the repository's authorized Chrome-profile and signed-in page gate
+ // before attaching Playwright or allowing any Partner mutation.
+ const repo = path.resolve(__dirname, "../../..");
+ const gate = spawnSync("pwsh", [
+  "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+  path.join(repo, "tools", "dev", "Start-BrowserAutomation.ps1"),
+  "-Url", origin + "/products",
+  "-VerifyAuthenticated", "-RequireSelector",
+  'button:has-text("إضافة منتج")',
+ ], { cwd: repo, encoding: "utf8", timeout: 60000, windowsHide: true });
+ if (gate.error || gate.status !== 0) throw new Error("PARTNER_SITE_AUTHENTICATION_REQUIRED");
+ const { chromium } = require("@playwright/test");
  const browser=await chromium.connectOverCDP("http://127.0.0.1:9222");
  const context=browser.contexts()[0];assert.ok(context,"AUTHENTICATED_CHROME_CONTEXT_REQUIRED");
  const page=await context.newPage();
