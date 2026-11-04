@@ -96,3 +96,13 @@ test("SonarCloud Quality Gate failure is not silently reported as a successful s
   const mutant = sonar.replace("-Dsonar.qualitygate.wait=true", "-Dsonar.qualitygate.wait=false");
   assert.throws(() => assert.match(mutant, wait), assert.AssertionError);
 });
+
+// Guard against accidentally limiting PR checks to main and losing feedback on
+// short-lived integration bases such as 35 / integration/*.
+test("Fast Guard includes PRs targeting integration branches", () => {
+  const triggers = workflow.match(/^on:\n([\s\S]*?)\npermissions:/m)?.[1];
+  assert.ok(triggers, "workflow events must be declared");
+  assert.match(triggers, /^  pull_request:\n  push:/m);
+  const broken = triggers.replace("  pull_request:\n  push:", "  pull_request:\n    branches: [main]\n  push:");
+  assert.throws(() => assert.match(broken, /^  pull_request:\n  push:/m), assert.AssertionError);
+});
