@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 )
 
 // prepareCustomerCatalogNameIndex keeps the canonical v170 checksum unchanged.
@@ -14,17 +13,34 @@ import (
 // This function never runs a blocking full index build on a populated table.
 func prepareCustomerCatalogNameIndex(ctx context.Context, tx *sql.Tx) (bool, error) {
 	const indexName = "dsh.catalog_products_customer_name_trgm_idx"
-	var valid, ready bool
-	var definition string
+	// Keep the index definition stable until this migration commits.
+	// SHARE UPDATE EXCLUSIVE allows product writes but excludes concurrent index DDL.
+	if _, err := tx.ExecContext(ctx, "LOCK TABLE dsh.catalog_products IN SHARE UPDATE EXCLUSIVE MODE NOWAIT"); err != nil {
+		return false, fmt.Errorf("catalog is busy; refusing to inspect the catalog index: %w", err)
+	}
+	var valid, ready, matchesDefinition bool
 	err := tx.QueryRowContext(ctx, `
-SELECT i.indisvalid, i.indisready, pg_get_indexdef(i.indexrelid)
+SELECT i.indisvalid, i.indisready,
+       am.amname = 'gin'
+       AND i.indnkeyatts = 1
+       AND i.indnatts = 1
+       AND NOT i.indisunique
+       AND NOT i.indisexclusion
+       AND i.indpred IS NULL
+       AND i.indkey[0] = 0
+       AND opc.opcname = 'gin_trgm_ops'
+       AND opc.opcnamespace = (SELECT extnamespace FROM pg_catalog.pg_extension WHERE extname = 'pg_trgm')
+       AND pg_catalog.pg_get_expr(i.indexprs, i.indrelid, true) = 'lower(canonical_name)'
 FROM pg_catalog.pg_index i
-WHERE i.indexrelid=to_regclass('dsh.catalog_products_customer_name_trgm_idx')
-  AND i.indrelid='dsh.catalog_products'::regclass
-`).Scan(&valid, &ready, &definition)
+JOIN pg_catalog.pg_class idx ON idx.oid = i.indexrelid
+JOIN pg_catalog.pg_am am ON am.oid = idx.relam
+JOIN pg_catalog.pg_opclass opc ON opc.oid = i.indclass[0]
+WHERE i.indexrelid = to_regclass('dsh.catalog_products_customer_name_trgm_idx')
+  AND i.indrelid = 'dsh.catalog_products'::regclass
+`).Scan(&valid, &ready, &matchesDefinition)
 	switch {
 	case err == nil:
-		if !valid || !ready || !strings.HasSuffix(strings.TrimSpace(definition), "ON dsh.catalog_products USING gin (lower(canonical_name) gin_trgm_ops)") {
+		if !valid || !ready || !matchesDefinition {
 			return false, fmt.Errorf("%s exists but is invalid or has a different definition; review and repair it independently", indexName)
 		}
 		// The index is correct already. Record v170 with its original checksum.

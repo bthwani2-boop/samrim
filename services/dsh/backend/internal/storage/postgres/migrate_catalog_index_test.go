@@ -84,6 +84,22 @@ CREATE TABLE dsh.catalog_products (id integer PRIMARY KEY, canonical_name text N
 	}
 	// An exactly matching and valid pre-existing index must be reused.
 	testPreflight(false, "")
+	// Index identity must not depend on search_path / operator-class rendering.
+	qualifiedTx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := qualifiedTx.ExecContext(ctx, "SET LOCAL search_path = pg_catalog"); err != nil {
+		_ = qualifiedTx.Rollback()
+		t.Fatal(err)
+	}
+	if build, err := prepareCustomerCatalogNameIndex(ctx, qualifiedTx); err != nil || build {
+		_ = qualifiedTx.Rollback()
+		t.Fatalf("schema-independent index reuse got build=%v err=%v", build, err)
+	}
+	if err := qualifiedTx.Commit(); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err := db.ExecContext(ctx, "DROP INDEX dsh.catalog_products_customer_name_trgm_idx"); err != nil {
 		t.Fatal(err)

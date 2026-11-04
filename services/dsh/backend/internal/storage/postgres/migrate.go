@@ -294,6 +294,15 @@ func Migrate(ctx context.Context, db *sql.DB, records []MigrationRecord, migrati
 			return fmt.Errorf("record DSH migration v%d: %w", record.Version, err)
 		}
 		current++
+		if record.Version == 170 && current < SchemaVersion {
+			// Release the catalog lock before v171 changes Studio tables.
+			// The next transaction re-acquires the migration advisory lock and
+			// validates the committed v170 checksum before proceeding.
+			if err := tx.Commit(); err != nil {
+				return fmt.Errorf("commit DSH migration v170: %w", err)
+			}
+			return Migrate(ctx, db, records, migrationSQL, proofKeys)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit DSH migrations through v%d: %w", SchemaVersion, err)
