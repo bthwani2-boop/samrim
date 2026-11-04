@@ -1,8 +1,8 @@
 name: Fast Guard
 
 on:
+  # Check feature PRs targeting main OR any short-lived integration base.
   pull_request:
-    branches: [main]
   push:
     branches: [main]
 
