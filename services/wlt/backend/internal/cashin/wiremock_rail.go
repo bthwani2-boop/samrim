@@ -71,9 +71,9 @@ func (r *WireMockRail) CreatePayment(ctx context.Context, input CreatePaymentReq
 		ProviderReference string `json:"providerReference"`
 		State             string `json:"state"`
 	}
-	expectedPrefix := "WM-" + provider + "-"
+	expectedReference := "WM-" + provider + "-" + input.ExternalReference
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&body); err != nil ||
-		body.ProviderKey != provider || !strings.HasPrefix(body.ProviderReference, expectedPrefix) || len(body.ProviderReference) > 160 || body.State != "PENDING_PROVIDER" {
+		body.ProviderKey != provider || body.ProviderReference != expectedReference || len(body.ProviderReference) > 160 || body.State != "PENDING_PROVIDER" {
 		return CreatePaymentResult{}, ErrProviderUnavailable
 	}
 	return CreatePaymentResult{ProviderReference: body.ProviderReference, State: body.State, Simulator: true}, nil
@@ -114,7 +114,7 @@ func (r *WireMockRail) InquirePayment(ctx context.Context, input PaymentInquiryR
 	switch body.Outcome {
 	case "SUCCESS":
 		if strings.TrimSpace(body.ProviderTransactionReference) == "" || len(body.ProviderTransactionReference) > 160 ||
-			!strings.HasPrefix(body.ProviderTransactionReference, "WM-TXN-WM-"+provider+"-") || body.ProviderFeeMinor < 0 {
+			body.ProviderTransactionReference != "WM-TXN-"+input.ProviderReference || body.ProviderFeeMinor < 0 {
 			return PaymentInquiryResult{}, ErrProviderUnavailable
 		}
 	case "FAILURE", "UNKNOWN", "DELAYED":
