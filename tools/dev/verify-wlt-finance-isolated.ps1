@@ -1,5 +1,5 @@
 param(
-  [string]$WltTestPattern = 'TestPartnerStoreFinanceAndRecipientSettlementLifecycle|TestCashIn|TestStoreCommercialAgreementLifecycleAndOrderSnapshots',
+  [string]$WltTestPattern = 'TestPartnerStoreFinanceAndRecipientSettlementLifecycle|TestCashIn|TestStoreCommercialAgreementLifecycleAndOrderSnapshots|TestPaymentRetryLostResponseAndParallelWorkers',
   [string]$DshTestPattern = ''
 )
 $ErrorActionPreference = 'Stop'

@@ -34,6 +34,15 @@ async function main() {
     assert.ok(label.startsWith("عرض ") && separator > 4, "HOME_PRODUCT_LABEL_MALFORMED");
     const productName = label.slice(4, separator).trim();
     assert.ok(productName.length >= 2, "HOME_PRODUCT_NAME_REQUIRED");
+    // Read the clicked home card's canonical identity rather than guessing
+    // from a matching display name (different products can share a name).
+    await product.click();
+    await page.waitForURL(url => url.pathname.startsWith("/store/") && Boolean(url.searchParams.get("productId")), { timeout: 12000 });
+    const homeDestination = new URL(page.url());
+    const homeStoreID = decodeURIComponent(homeDestination.pathname.slice("/store/".length));
+    const homeProductID = homeDestination.searchParams.get("productId");
+    assert.ok(homeStoreID && homeProductID, "HOME_OFFER_IDENTITY_REQUIRED");
+    await page.goto(origin + "/home", { waitUntil: "domcontentloaded", timeout: 25000 });
     const headerSearch = page.getByPlaceholder("ابحث عن متجر أو منتج");
     await headerSearch.click();
     await page.getByRole("button", { name: "المنتجات", exact: true }).click();
@@ -50,21 +59,22 @@ async function main() {
       `عرض ${offer.productName} من ${offer.storeName || "المتجر"}` === label &&
       typeof offer.storeId === "string" && offer.storeId &&
       typeof offer.productId === "string" && offer.productId);
-    assert.ok(namedOffers.length > 0, "ORIGINAL_STORE_OFFER_NOT_IN_SEARCH_RESULTS");
-    const selectedOffer = namedOffers[0];
+    const matchedIndex = namedOffers.findIndex(offer => offer.storeId === homeStoreID && offer.productId === homeProductID);
+    assert.notEqual(matchedIndex, -1, "ORIGINAL_STORE_OFFER_NOT_IN_SEARCH_RESULTS");
+    const selectedOffer = namedOffers[matchedIndex];
     await page.getByText(productName, { exact: true }).first()
       .waitFor({ state: "visible", timeout: 16000 });
     await page.getByText("نتائج المنتجات").waitFor({ state: "visible", timeout: 12000 });
     assert.equal(await page.locator("html").getAttribute("dir"), "rtl");
     console.log("CLIENT_PRODUCT_SEARCH=PASS_CURRENT_STORE_OFFER");
 
-    // The search cards preserve DSH's offer order. Bind the first matching
-    // card to the first identical server identity, even with duplicate names.
+    // The search cards preserve DSH's offer order. Select the original
+    // Store/Product identity among name-matched results, not the first name.
     const searchResults = page.locator('[aria-label="نتائج البحث عن المنتجات"]');
     const matchingOffers = searchResults.getByRole("button", { name: label, exact: true });
     await matchingOffers.first().waitFor({ state: "visible", timeout: 16000 });
     assert.equal(await matchingOffers.count(), namedOffers.length, "SEARCH_OFFER_IDENTITY_COUNT_MISMATCH");
-    await matchingOffers.first().click();
+    await matchingOffers.nth(matchedIndex).click();
     await page.waitForURL(url => url.pathname.startsWith("/store/") && Boolean(url.searchParams.get("productId")), { timeout: 12000 });
     const destination = new URL(page.url());
     assert.equal(decodeURIComponent(destination.pathname.slice("/store/".length)), selectedOffer.storeId, "OPENED_WRONG_STORE");

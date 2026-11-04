@@ -64,7 +64,10 @@ func TestPaymentRetryLostResponseAndParallelWorkers(t *testing.T) {
 		go func() {
 			defer group.Done()
 			<-start
-			record, repeated, e := CreatePaymentIntent(s.ctx, s.db, create)
+			attempt := create
+			allocation := *create.CustomerPaymentAllocation
+			attempt.CustomerPaymentAllocation = &allocation
+			record, repeated, e := CreatePaymentIntent(s.ctx, s.db, attempt)
 			results <- result{record, repeated, e}
 		}()
 	}
