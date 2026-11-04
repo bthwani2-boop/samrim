@@ -28,11 +28,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
+    # Scan integration-branch drafts before Ready; main keeps its existing non-draft gate.
     if: >
       (github.event_name == 'pull_request' &&
-      (github.event.pull_request.base.ref == 'main' || github.event.pull_request.base.ref == '36') &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.draft == false) ||
+      (github.event.pull_request.base.ref == '36' ||
+       (github.event.pull_request.base.ref == 'main' && github.event.pull_request.draft == false)) &&
+      github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
 
     steps:
