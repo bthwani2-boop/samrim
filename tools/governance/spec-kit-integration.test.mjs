@@ -192,7 +192,7 @@ test(
       assert.ok(ready.TEMPLATE_CONTENT.includes("#"), "template output must remain valid JSON");
 
       const original = '{"feature_directory":"original-feature"}';
-      fs.writeFileSync(selection, original, "utf8");
+      fs.writeFileSync(selection, original, { encoding: "utf8", flag: "wx" });
       const paths = successfulJson(
         invoke(
           sandbox,
