@@ -96,3 +96,13 @@ test("SonarCloud Quality Gate failure is not silently reported as a successful s
   const mutant = sonar.replace("-Dsonar.qualitygate.wait=true", "-Dsonar.qualitygate.wait=false");
   assert.throws(() => assert.match(mutant, wait), assert.AssertionError);
 });
+
+test("integration PRs to branch 36 receive Fast Guard and Sonar review gates", () => {
+  const sonar = readFileSync(new URL("./sonar-observe.yml", import.meta.url), "utf8");
+  assert.match(workflow, /^\s+branches: \[main, '36'\]$/m);
+  assert.match(workflow, /^\s+branches: \[main\]$/m, "main push gate remains unchanged");
+  assert.match(sonar, /^\s+- '36'$/m);
+  assert.match(sonar, /github\.event\.pull_request\.base\.ref == 'main' \|\| github\.event\.pull_request\.base\.ref == '36'/);
+  assert.match(sonar, /github\.event\.pull_request\.draft == false/);
+  assert.match(sonar, /github\.ref == 'refs\/heads\/main'/);
+});

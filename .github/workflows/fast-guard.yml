@@ -2,7 +2,8 @@ name: Fast Guard
 
 on:
   pull_request:
-    branches: [main]
+    # Integration PRs into 36 need the same code and financial checks as main.
+    branches: [main, '36']
   push:
     branches: [main]
 
