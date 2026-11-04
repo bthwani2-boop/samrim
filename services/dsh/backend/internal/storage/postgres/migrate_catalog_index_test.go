@@ -78,6 +78,32 @@ CREATE TABLE dsh.catalog_products (id integer PRIMARY KEY, canonical_name text N
 
 	// Fresh empty schema may build the canonical index transactionally.
 	testPreflight(true, "")
+	// An unrelated index-DDL lock must be rejected immediately. ROW EXCLUSIVE
+	// product writers remain compatible with SHARE UPDATE EXCLUSIVE.
+	locker, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := locker.ExecContext(ctx, "LOCK TABLE dsh.catalog_products IN SHARE UPDATE EXCLUSIVE MODE"); err != nil {
+		_ = locker.Rollback()
+		t.Fatal(err)
+	}
+	busyCtx, cancelBusy := context.WithTimeout(ctx, 3*time.Second)
+	lockedTx, err := db.BeginTx(busyCtx, nil)
+	if err != nil {
+		_ = locker.Rollback()
+		cancelBusy()
+		t.Fatal(err)
+	}
+	_, busyErr := prepareCustomerCatalogNameIndex(busyCtx, lockedTx)
+	if busyErr == nil || !strings.Contains(busyErr.Error(), "catalog is busy") || busyCtx.Err() != nil {
+		t.Errorf("NOWAIT catalog lock returned err=%v ctx=%v", busyErr, busyCtx.Err())
+	}
+	_ = lockedTx.Rollback()
+	cancelBusy()
+	if err := locker.Rollback(); err != nil {
+		t.Fatal(err)
+	}
 	const statement = "CREATE INDEX catalog_products_customer_name_trgm_idx ON dsh.catalog_products USING gin (lower(canonical_name) gin_trgm_ops)"
 	if _, err := db.ExecContext(ctx, statement); err != nil {
 		t.Fatal(err)
