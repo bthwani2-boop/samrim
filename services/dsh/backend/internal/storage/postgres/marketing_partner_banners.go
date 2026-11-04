@@ -43,6 +43,120 @@ func encodePartnerBannerCursor(storeID string, last DiscoveryContentRecord) stri
 	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
+const partnerBannerPageSQL = `SELECT content.id,content.kind,content.title_ar,content.body_ar,COALESCE((SELECT asset.uri FROM dsh.discovery_content_media_assets asset WHERE asset.id=content.media_asset_id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),COALESCE((SELECT CASE WHEN asset.content_type='video/mp4' THEN 'video' ELSE 'image' END FROM dsh.discovery_content_media_assets asset WHERE asset.id=content.media_asset_id),'image'),COALESCE((SELECT CASE WHEN asset.content_type='video/mp4' AND right(asset.uri,4)='.mp4' THEN left(asset.uri,length(asset.uri)-4)||'.poster.jpg' ELSE '' END FROM dsh.discovery_content_media_assets asset WHERE asset.id=content.media_asset_id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),content.source_store_id,content.target_type,content.target_id,content.service_city_id,content.state,content.starts_at,content.ends_at,content.ordinal,content.version,content.created_by_actor_id,content.created_at,content.updated_at,content.partner_enabled FROM dsh.discovery_content content
+        WHERE content.kind='BANNER' AND content.source_store_id=$1
+          AND ($2::boolean=false OR
+            (content.ordinal > $3 OR
+              (content.ordinal=$3 AND content.created_at < $4) OR
+              (content.ordinal=$3 AND content.created_at=$4 AND content.id < $5)))
+        ORDER BY content.ordinal ASC,content.created_at DESC,content.id DESC LIMIT $6`
+
+const publishedStoreBannerSQL = `SELECT content.id,content.kind,content.title_ar,content.body_ar,COALESCE((SELECT asset.uri FROM dsh.discovery_content_media_assets asset WHERE asset.id=content.media_asset_id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),COALESCE((SELECT CASE WHEN asset.content_type='video/mp4' THEN 'video' ELSE 'image' END FROM dsh.discovery_content_media_assets asset WHERE asset.id=content.media_asset_id),'image'),COALESCE((SELECT CASE WHEN asset.content_type='video/mp4' AND right(asset.uri,4)='.mp4' THEN left(asset.uri,length(asset.uri)-4)||'.poster.jpg' ELSE '' END FROM dsh.discovery_content_media_assets asset WHERE asset.id=content.media_asset_id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),content.source_store_id,content.target_type,content.target_id,content.service_city_id,content.state,content.starts_at,content.ends_at,content.ordinal,content.version,content.created_by_actor_id,content.created_at,content.updated_at,content.partner_enabled
+ FROM dsh.discovery_content content
+ JOIN dsh.stores store ON store.id=content.source_store_id
+ JOIN dsh.service_cities city ON city.id=store.service_city_id AND city.active=true
+ WHERE content.kind='BANNER'
+   AND content.source_store_id=$1
+   AND content.partner_enabled=true
+   AND content.state='PUBLISHED'
+   AND NOT EXISTS (SELECT 1 FROM dsh.marketing_campaign_content_links link
+      JOIN dsh.marketing_campaigns campaign ON campaign.id=link.campaign_id
+      WHERE link.content_id=content.id AND campaign.state<>'PUBLISHED')
+   AND content.starts_at<=statement_timestamp()
+   AND (content.ends_at IS NULL OR content.ends_at>statement_timestamp())
+   AND (content.service_city_id IS NULL OR content.service_city_id=$2)
+   AND store.service_city_id=$2
+   AND store.publication_state='published'
+   AND store.publication_changed_at IS NOT NULL
+   AND EXISTS (
+      SELECT 1 FROM dsh.discovery_content_media_assets asset
+      WHERE asset.id=content.media_asset_id AND asset.state='active'
+        AND asset.rights_attested_at IS NOT NULL AND asset.uri<>''
+        AND asset.content_type IN ('image/jpeg','image/png')
+   )
+   AND (
+		(content.target_type='INFO' AND content.target_id IS NULL)
+		OR (content.target_type='STORE' AND EXISTS (
+			SELECT 1
+			FROM dsh.stores store
+			JOIN dsh.service_cities city ON city.id=store.service_city_id AND city.active=true
+			WHERE store.id=content.target_id
+			  AND (content.source_store_id IS NULL OR store.id=content.source_store_id)
+			  AND ($2='' OR store.service_city_id=$2)
+			  AND store.publication_state='published'
+			  AND store.publication_changed_at IS NOT NULL
+			  AND EXISTS (
+				  SELECT 1 FROM dsh.catalog_store_offers offer
+				  WHERE offer.store_id=store.id
+				    AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=offer.id)
+			  )
+		))
+		OR (content.target_type='PROMOTION' AND EXISTS (
+			SELECT 1
+			FROM dsh.commerce_promotions promotion
+			WHERE promotion.id=content.target_id
+			  AND (content.source_store_id IS NULL OR promotion.store_id=content.source_store_id)
+			  AND promotion.state='PUBLISHED'
+			  AND NOT EXISTS (SELECT 1 FROM dsh.marketing_campaign_promotion_links link
+			    JOIN dsh.marketing_campaigns campaign ON campaign.id=link.campaign_id
+			    WHERE link.promotion_id=promotion.id AND campaign.state<>'PUBLISHED')
+			  AND promotion.starts_at<=statement_timestamp()
+			  AND (promotion.ends_at IS NULL OR promotion.ends_at>statement_timestamp())
+			  AND (promotion.redemption_limit IS NULL OR promotion.redeemed_count < promotion.redemption_limit)
+			  AND (promotion.discount_budget_limit_minor IS NULL OR promotion.discount_spent_minor < promotion.discount_budget_limit_minor)
+			  AND ($2='' OR promotion.service_city_id IS NULL OR promotion.service_city_id='' OR promotion.service_city_id=$2)
+			  AND (promotion.service_city_id IS NULL OR promotion.service_city_id='' OR EXISTS (
+				  SELECT 1 FROM dsh.service_cities promotion_city
+				  WHERE promotion_city.id=promotion.service_city_id AND promotion_city.active=true
+			  ))
+			  AND (
+				  ((promotion.store_id IS NULL OR promotion.store_id='')
+				    AND promotion.funding_source='BTHWANI' AND promotion.requires_partner_opt_in=false)
+				  OR (promotion.store_id IS NOT NULL AND promotion.store_id<>'' AND EXISTS (
+				    SELECT 1
+				    FROM dsh.stores store
+				    JOIN dsh.service_cities city ON city.id=store.service_city_id AND city.active=true
+				    WHERE store.id=promotion.store_id
+				      AND ($2='' OR store.service_city_id=$2)
+				      AND store.publication_state='published'
+				      AND store.publication_changed_at IS NOT NULL
+				      AND (promotion.service_city_id IS NULL OR promotion.service_city_id='' OR promotion.service_city_id=store.service_city_id)
+				      AND EXISTS (
+				        SELECT 1 FROM dsh.catalog_store_offers offer
+				        WHERE offer.store_id=store.id
+				          AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=offer.id)
+				      )
+				  ))
+			  )
+		))
+		OR (content.target_type='PRODUCT' AND EXISTS (
+			SELECT 1
+			FROM dsh.stores store
+			JOIN dsh.service_cities city ON city.id=store.service_city_id AND city.active=true
+			JOIN dsh.catalog_store_offers offer ON offer.store_id=store.id
+			JOIN dsh.catalog_product_variants variant ON variant.id=offer.variant_id
+			JOIN dsh.catalog_products product ON product.id=variant.product_id
+			WHERE ($2='' OR store.service_city_id=$2)
+			  AND product.id=content.target_id
+			  AND (content.source_store_id IS NULL OR store.id=content.source_store_id)
+			  AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=offer.id)
+		))
+		OR (content.target_type='CATEGORY' AND EXISTS (
+			SELECT 1
+			FROM dsh.stores store
+			JOIN dsh.service_cities city ON city.id=store.service_city_id AND city.active=true
+			JOIN dsh.catalog_store_offers offer ON offer.store_id=store.id
+			JOIN dsh.catalog_product_variants variant ON variant.id=offer.variant_id
+			JOIN dsh.catalog_products product ON product.id=variant.product_id
+			JOIN dsh.catalog_product_categories product_category ON product_category.product_id=product.id
+			WHERE ($2='' OR store.service_city_id=$2)
+			  AND product_category.category_id=content.target_id
+			  AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=offer.id)
+		))
+	) ORDER BY content.ordinal ASC,content.starts_at DESC,content.id DESC LIMIT 8`
+
+const partnerBannerOwnedReadSQL = `SELECT content.id,content.kind,content.title_ar,content.body_ar,COALESCE((SELECT asset.uri FROM dsh.discovery_content_media_assets asset WHERE asset.id=content.media_asset_id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),COALESCE((SELECT CASE WHEN asset.content_type='video/mp4' THEN 'video' ELSE 'image' END FROM dsh.discovery_content_media_assets asset WHERE asset.id=content.media_asset_id),'image'),COALESCE((SELECT CASE WHEN asset.content_type='video/mp4' AND right(asset.uri,4)='.mp4' THEN left(asset.uri,length(asset.uri)-4)||'.poster.jpg' ELSE '' END FROM dsh.discovery_content_media_assets asset WHERE asset.id=content.media_asset_id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),content.source_store_id,content.target_type,content.target_id,content.service_city_id,content.state,content.starts_at,content.ends_at,content.ordinal,content.version,content.created_by_actor_id,content.created_at,content.updated_at,content.partner_enabled FROM dsh.discovery_content content WHERE content.id=$1 AND content.source_store_id=$2 AND content.kind='BANNER'`
+
 // PagePartnerStoreBanners only reads the authenticated Store's own banners.
 // The bound keyset tuple is stable across equally ranked banner timestamps.
 func PagePartnerStoreBanners(ctx context.Context, db *sql.DB, storeID, cursor string, limit int) ([]DiscoveryContentRecord, string, error) {
@@ -58,14 +172,7 @@ func PagePartnerStoreBanners(ctx context.Context, db *sql.DB, storeID, cursor st
 			return nil, "", err
 		}
 	}
-	const pageQuery = "SELECT " + discoveryContentSelect + ` FROM dsh.discovery_content content
-        WHERE content.kind='BANNER' AND content.source_store_id=$1
-          AND ($2::boolean=false OR
-            (content.ordinal > $3 OR
-              (content.ordinal=$3 AND content.created_at < $4) OR
-              (content.ordinal=$3 AND content.created_at=$4 AND content.id < $5)))
-        ORDER BY content.ordinal ASC,content.created_at DESC,content.id DESC LIMIT $6`
-	rows, err := db.QueryContext(ctx, pageQuery,
+	rows, err := db.QueryContext(ctx, partnerBannerPageSQL,
 		storeID, cursor != "", after.Ordinal, after.CreatedAt, after.ID, limit+1)
 	if err != nil {
 		return nil, "", err
@@ -97,32 +204,7 @@ func ListPublishedStoreBanners(ctx context.Context, db *sql.DB, storeID, service
 	if storeID == "" || serviceCityID == "" || len(storeID) > 128 || len(serviceCityID) > 128 {
 		return nil, ErrDiscoveryContentInvalid
 	}
-	query := "SELECT " + discoveryContentSelect + `
- FROM dsh.discovery_content content
- JOIN dsh.stores store ON store.id=content.source_store_id
- JOIN dsh.service_cities city ON city.id=store.service_city_id AND city.active=true
- WHERE content.kind='BANNER'
-   AND content.source_store_id=$1
-   AND content.partner_enabled=true
-   AND content.state='PUBLISHED'
-   AND NOT EXISTS (SELECT 1 FROM dsh.marketing_campaign_content_links link
-      JOIN dsh.marketing_campaigns campaign ON campaign.id=link.campaign_id
-      WHERE link.content_id=content.id AND campaign.state<>'PUBLISHED')
-   AND content.starts_at<=statement_timestamp()
-   AND (content.ends_at IS NULL OR content.ends_at>statement_timestamp())
-   AND (content.service_city_id IS NULL OR content.service_city_id=$2)
-   AND store.service_city_id=$2
-   AND store.publication_state='published'
-   AND store.publication_changed_at IS NOT NULL
-   AND EXISTS (
-      SELECT 1 FROM dsh.discovery_content_media_assets asset
-      WHERE asset.id=content.media_asset_id AND asset.state='active'
-        AND asset.rights_attested_at IS NOT NULL AND asset.uri<>''
-        AND asset.content_type IN ('image/jpeg','image/png')
-   )
-   AND ` + discoveryContentTargetEligibilityPredicate("content", "$2", "statement_timestamp()") +
-		" ORDER BY content.ordinal ASC,content.starts_at DESC,content.id DESC LIMIT 8"
-	rows, err := db.QueryContext(ctx, query, storeID, serviceCityID)
+	rows, err := db.QueryContext(ctx, publishedStoreBannerSQL, storeID, serviceCityID)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +243,7 @@ func SetPartnerStoreBannerEnabled(ctx context.Context, db *sql.DB, storeID, cont
 		if priorID != contentID || priorHash != hash || priorType != "DISCOVERY_CONTENT" || priorOperation != "UPDATE" {
 			return DiscoveryContentRecord{}, false, ErrDiscoveryContentIdempotency
 		}
-		item, readErr := scanDiscoveryContent(tx.QueryRowContext(ctx, "SELECT "+discoveryContentSelect+" FROM dsh.discovery_content content WHERE content.id=$1 AND content.source_store_id=$2 AND content.kind='BANNER'", contentID, storeID))
+		item, readErr := scanDiscoveryContent(tx.QueryRowContext(ctx, partnerBannerOwnedReadSQL, contentID, storeID))
 		if errors.Is(readErr, sql.ErrNoRows) {
 			return DiscoveryContentRecord{}, false, ErrDiscoveryContentNotFound
 		}
@@ -191,7 +273,7 @@ func SetPartnerStoreBannerEnabled(ctx context.Context, db *sql.DB, storeID, cont
 	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.commerce_marketing_mutation_idempotency(idempotency_key,request_hash,resource_type,resource_id,operation) VALUES($1,$2,'DISCOVERY_CONTENT',$3,'UPDATE')", idempotencyKey, hash, contentID); err != nil {
 		return DiscoveryContentRecord{}, false, err
 	}
-	item, err := scanDiscoveryContent(tx.QueryRowContext(ctx, "SELECT "+discoveryContentSelect+" FROM dsh.discovery_content content WHERE id=$1 AND source_store_id=$2 AND content.kind='BANNER'", contentID, storeID))
+	item, err := scanDiscoveryContent(tx.QueryRowContext(ctx, partnerBannerOwnedReadSQL, contentID, storeID))
 	if err != nil {
 		return DiscoveryContentRecord{}, false, err
 	}
