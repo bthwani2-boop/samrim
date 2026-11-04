@@ -94,6 +94,8 @@ test(
       const featureName = "001-readiness-proof";
       const featureDir = path.join(specDir, featureName);
       const selection = path.join(sandbox, ".specify", "feature.json");
+      const original = '{"feature_directory":"original-feature"}';
+      fs.writeFileSync(selection, original, { encoding: "utf8", flag: "wx" });
       const featureEnv = {
         SPECIFY_FEATURE: featureName,
         SPECIFY_FEATURE_DIRECTORY: path.join("specs", featureName),
@@ -140,7 +142,7 @@ test(
       );
       assert.equal(created.BRANCH_NAME, featureName);
       assert.ok(fs.statSync(path.join(featureDir, "spec.md")).size > 0);
-      assert.equal(fs.existsSync(selection), false, "NO_PERSIST must be respected");
+      assert.equal(fs.readFileSync(selection, "utf8"), original, "NO_PERSIST must retain the existing selection");
 
       const invalid = invoke(sandbox, "create-new-feature.ps1", [
         "-Json",
@@ -191,8 +193,6 @@ test(
       );
       assert.ok(ready.TEMPLATE_CONTENT.includes("#"), "template output must remain valid JSON");
 
-      const original = '{"feature_directory":"original-feature"}';
-      fs.writeFileSync(selection, original, { encoding: "utf8", flag: "wx" });
       const paths = successfulJson(
         invoke(
           sandbox,
