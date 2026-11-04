@@ -46,8 +46,8 @@ async function main() {
     console.log("CLIENT_PRODUCT_SEARCH=PASS_CURRENT_STORE_OFFER");
 
     // Verify the same offer's canonical Store projection, not an unrelated first Store.
-    const matchingOffer = page.getByRole("button", { name: /^عرض .* من / })
-      .filter({ hasText: productName }).first();
+    // Match both the originally observed product and its Store, not a similarly named offer.
+    const matchingOffer = page.getByRole("button", { name: label, exact: true }).first();
     await matchingOffer.waitFor({ state: "visible", timeout: 16000 });
     await matchingOffer.click();
     await page.waitForURL(url => url.pathname.startsWith("/store/") && Boolean(url.searchParams.get("productId")), { timeout: 12000 });
