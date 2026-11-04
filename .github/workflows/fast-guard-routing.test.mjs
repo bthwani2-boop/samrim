@@ -66,6 +66,21 @@ test("CI protection does not silently execute invalid retired script remnants", 
   assert.match(workflow, /\.github\/workflows\/fast-guard-routing\.test\.mjs/);
 });
 
+test("PowerShell is verified before the mandatory Spec Kit governance test", () => {
+  const setup = "      - name: Ensure PowerShell for mandatory Spec Kit proof";
+  const governance = "      - name: Verify repository governance and CI routing";
+  const start = workflow.indexOf(setup);
+  const end = workflow.indexOf(governance, start);
+  assert.ok(start >= 0 && end > start, "PowerShell setup must precede governance verification");
+  const step = workflow.slice(start, end);
+  assert.match(step, /command -v pwsh/);
+  assert.match(step, /sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y powershell/);
+  assert.match(step, /pwsh -NoProfile -NonInteractive -Command 'exit 0'/);
+  assert.doesNotMatch(step, /^\s+continue-on-error: true$/m);
+  const mutant = workflow.replace(setup, "      - name: Removed mandatory PowerShell setup");
+  assert.throws(() => assert.match(mutant, /      - name: Ensure PowerShell for mandatory Spec Kit proof/), assert.AssertionError);
+});
+
 test("governance verification runs in CI even without a Node project change", () => {
   const stepName = "      - name: Verify repository governance and CI routing";
   const start = workflow.indexOf(stepName);
