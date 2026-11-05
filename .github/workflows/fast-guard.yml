@@ -176,6 +176,35 @@ jobs:
           export DSH_FINANCIAL_HANDOFF_TEST_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/dsh_a04_realfunding?sslmode=disable"
           financial_go_proof services/wlt/backend ./cmd/api -run '^TestIsolatedDSHToRealWLTStorePickupMixedPayment$' -count=1 -timeout 7m
 
+      - name: Verify Identity refresh and actor isolation against disposable PostgreSQL
+        if: steps.changed.outputs.identity == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          container="bthwani-fast-guard-identity"
+          cleanup() { docker rm -f "$container" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          password="$(openssl rand -hex 16)"
+          docker run -d --rm --name "$container" --tmpfs /var/lib/postgresql:rw,size=512m -p 127.0.0.1:19433:5432 -e "POSTGRES_PASSWORD=$password" -e POSTGRES_DB=identity_proof postgis/postgis:18-3.6@sha256:e84455a058f60f06dd8c40e66a2c628b8fc113d9fca0896e1f308b25b897207f
+          ready=false
+          for i in $(seq 1 50); do
+            if docker exec "$container" pg_isready -q -h 127.0.0.1 -U postgres -d identity_proof >/dev/null 2>&1; then ready=true; break; fi
+            sleep 1
+          done
+          test "$ready" = true
+          export IDENTITY_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19433/identity_proof?sslmode=disable"
+          (cd services/identity/backend && go test ./internal/session -run '^(TestHistoricalRefreshReconciliationUsesDatabaseTime|TestDevelopmentOperatorSessionUsesCanonicalInitialOperator|TestRevokeRoleSessionIsScopedToTargetActor)$' -v -count=1 -timeout 6m) | tee "$RUNNER_TEMP/identity-postgres.log"
+          if grep -q -- '--- SKIP:' "$RUNNER_TEMP/identity-postgres.log"; then
+            echo "::error::Identity PostgreSQL proof was skipped"
+            exit 1
+          fi
+          for name in TestHistoricalRefreshReconciliationUsesDatabaseTime TestDevelopmentOperatorSessionUsesCanonicalInitialOperator TestRevokeRoleSessionIsScopedToTargetActor; do
+            if ! grep -q -- "--- PASS: $name " "$RUNNER_TEMP/identity-postgres.log"; then
+              echo "::error::Required Identity integration test did not pass: $name"
+              exit 1
+            fi
+          done
+
       - name: Set up pnpm
         if: steps.changed.outputs.node == 'true'
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413

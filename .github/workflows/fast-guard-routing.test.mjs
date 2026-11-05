@@ -116,11 +116,11 @@ test("SonarCloud Quality Gate failure is not silently reported as a successful s
 // Guard against accidentally limiting PR checks to main and losing feedback on
 // short-lived integration bases such as 35 / integration/*.
 test("Fast Guard includes PRs targeting integration branches", () => {
-  const triggers = workflow.match(/^on:\n([\s\S]*?)\npermissions:/m)?.[1];
+  const triggers = workflow.match(/^on:\r?\n([\s\S]*?)\r?\npermissions:/m)?.[1];
   assert.ok(triggers, "workflow events must be declared");
-  assert.match(triggers, /^  pull_request:\n  push:/m);
-  const broken = triggers.replace("  pull_request:\n  push:", "  pull_request:\n    branches: [main]\n  push:");
-  assert.throws(() => assert.match(broken, /^  pull_request:\n  push:/m), assert.AssertionError);
+  assert.match(triggers, /^  pull_request:\r?\n  push:/m);
+  const broken = triggers.replace(/  pull_request:\r?\n  push:/, "  pull_request:\n    branches: [main]\n  push:");
+  assert.throws(() => assert.match(broken, /^  pull_request:\r?\n  push:/m), assert.AssertionError);
 });
 
 test("Sonar scans same-repository Draft PRs into main, 36 and 37", () => {
