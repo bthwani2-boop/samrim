@@ -75,6 +75,10 @@ func selectFundedNearbyCaptainPages(
 		if err != nil {
 			return nil, err
 		}
+		// The reader may return a stale success after the caller cancelled.
+		if err := scanCtx.Err(); err != nil {
+			return nil, err
+		}
 		if cashMinor < 0 || (cashRead && cashMinor != initialCashMinor) {
 			return nil, fmt.Errorf("%w: inconsistent COD exposure between captain pages", ErrPaymentUnavailable)
 		}
@@ -82,9 +86,20 @@ func selectFundedNearbyCaptainPages(
 		if len(candidates) == 0 {
 			break
 		}
+		// Validate before reading WLT or satisfying the final quota: a stale
+		// page must never reissue an offer to an already selected Captain.
+		last := candidates[len(candidates)-1]
+		if after != nil && (last.DistanceSquared < after.DistanceSquared ||
+			(last.DistanceSquared == after.DistanceSquared && last.ActorID <= after.ActorID)) {
+			return nil, fmt.Errorf("%w: captain candidate cursor did not advance", ErrPaymentUnavailable)
+		}
 		funded, err := selectFundedNearbyCaptainsUpTo(scanCtx, candidates, cashMinor, 3-len(approved), readWallet)
 		if err != nil && err != postgres.ErrCaptainNoAvailable {
 			// Never publish partial offers after an unavailable WLT read.
+			return nil, err
+		}
+		// A late successful wallet response does not override cancellation.
+		if err := scanCtx.Err(); err != nil {
 			return nil, err
 		}
 		approved = append(approved, funded...)
@@ -93,11 +108,6 @@ func selectFundedNearbyCaptainPages(
 		}
 		if len(candidates) < postgres.NearbyCaptainCandidatePageSize {
 			break
-		}
-		last := candidates[len(candidates)-1]
-		if after != nil && (last.DistanceSquared < after.DistanceSquared ||
-			(last.DistanceSquared == after.DistanceSquared && last.ActorID <= after.ActorID)) {
-			return nil, fmt.Errorf("%w: captain candidate cursor did not advance", ErrPaymentUnavailable)
 		}
 		after = &last
 	}
