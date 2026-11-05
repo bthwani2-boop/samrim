@@ -2920,7 +2920,7 @@ components:
       required: [id, purpose, filename, contentType, sha256, sizeBytes, uploadedBy, createdAt]
       properties:
         id: { type: string }
-        purpose: { type: string, enum: [TRANSFER_RECEIPT, SETTLEMENT_STATEMENT, SETTLEMENT_BATCH_EXPORT, CUSTOMER_WITHDRAWAL_REQUEST] }
+        purpose: { type: string, enum: [TRANSFER_RECEIPT, SETTLEMENT_STATEMENT, CUSTOMER_WITHDRAWAL_REQUEST] }
         filename: { type: string }
         contentType: { type: string, enum: [application/pdf, image/jpeg, image/png, text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet] }
         sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
