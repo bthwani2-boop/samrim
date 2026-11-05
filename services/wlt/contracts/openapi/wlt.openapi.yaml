@@ -1753,7 +1753,7 @@ paths:
               type: object
               required: [purpose, file]
               properties:
-                purpose: { type: string, enum: [TRANSFER_RECEIPT, SETTLEMENT_STATEMENT, SETTLEMENT_BATCH_EXPORT, CUSTOMER_WITHDRAWAL_REQUEST] }
+                purpose: { type: string, enum: [TRANSFER_RECEIPT, SETTLEMENT_STATEMENT, CUSTOMER_WITHDRAWAL_REQUEST] }
                 file: { type: string, format: binary }
       responses:
         '201':
