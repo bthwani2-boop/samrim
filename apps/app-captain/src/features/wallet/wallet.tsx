@@ -33,8 +33,8 @@ export default function CaptainWallet() {
     >
       <Text accessibilityRole="header" style={styles.title}>محفظة الكابتن</Text>
       <Text style={{ ...typography.caption, color: theme.colorMuted }}>الرصيد التشغيلي مستقل عن الأرباح المؤهلة للسحب.</Text>
-      <CaptainCashInPanel key={activeActorID} />
-      <CaptainPayoutCard key={activeActorID} />
+      <CaptainCashInPanel key={`cash-in:${activeActorID}`} />
+      <CaptainPayoutCard key={`payout:${activeActorID}`} />
     </ScrollView>
   </View>;
 }

@@ -8,11 +8,12 @@ const payout = readFileSync(new URL("../account/captain-payout-card.tsx", import
 const cashLoad = cash.slice(cash.indexOf("  const load = useCallback(async () => {"), cash.indexOf("  const createIntent = async () => {"));
 const payoutLoad = payout.slice(payout.indexOf("  const load = useCallback(async () => {"), payout.indexOf("  const request = async ("));
 
-test("wallet remounts both financial surfaces when the authenticated actor changes", () => {
+test("wallet remounts independently keyed financial surfaces when the authenticated actor changes", () => {
   assert.match(wallet, /subscribeIdentitySession\(setIdentityState\)/);
   assert.match(wallet, /const activeActorID = identityState\.kind === "authenticated"/);
-  assert.match(wallet, /<CaptainCashInPanel key=\{activeActorID\} \/>/);
-  assert.match(wallet, /<CaptainPayoutCard key=\{activeActorID\} \/>/);
+  assert.match(wallet, /<CaptainCashInPanel key=\{`cash-in:\$\{activeActorID\}`\} \/>/);
+  assert.match(wallet, /<CaptainPayoutCard key=\{`payout:\$\{activeActorID\}`\} \/>/);
+  assert.notEqual(`cash-in:synthetic-captain`, `payout:synthetic-captain`);
 });
 
 test("cash-in readback invalidates delayed results on actor switch, blur, and newer reads", () => {
