@@ -132,3 +132,27 @@ func TestDevelopmentActorPinsAreDevelopmentOnly(t *testing.T) {
 		t.Fatalf("staging accepted development actor pin: %v", err)
 	}
 }
+
+// TestProductionRejectsSharedServiceBearer ensures that a single credential
+// cannot acquire an arbitrary principal through internal token iteration.
+func TestProductionRejectsSharedServiceBearer(t *testing.T) {
+	setRuntimeConfigBaseline(t)
+	t.Setenv("CONTROL_PANEL_SERVICE_TOKEN", "dsh-service-token-01234567890123456789")
+	if _, err := loadConfig("8082"); err == nil || !strings.Contains(err.Error(), "shared by") {
+		t.Fatalf("production accepted service principals with a shared bearer: %v", err)
+	}
+}
+
+// TestProductionRejectsWeakServiceBearer refuses short or missing internal
+// credentials before any service can start and accept protected requests.
+func TestProductionRejectsWeakServiceBearer(t *testing.T) {
+	for _, secret := range []string{"", "short-service-token"} {
+		t.Run(secret, func(t *testing.T) {
+			setRuntimeConfigBaseline(t)
+			t.Setenv("IDENTITY_DSH_SERVICE_TOKEN", secret)
+			if _, err := loadConfig("8082"); err == nil || !strings.Contains(err.Error(), "not configured strongly enough") {
+				t.Fatalf("production accepted absent/weak service bearer: %v", err)
+			}
+		})
+	}
+}

@@ -263,16 +263,17 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
 	var currentAccessHash, currentHash, deviceHash string
-	var createdAt, accessExpiry, refreshExpiry, absoluteExpiry time.Time
+	var createdAt, accessExpiry, refreshExpiry, absoluteExpiry, databaseNow time.Time
 	var version int
-	err = tx.QueryRowContext(ctx, "SELECT access_token_hash,refresh_token_hash,client_instance_id_hash,created_at,access_expires_at,refresh_expires_at,absolute_expires_at,version FROM identity_sessions WHERE id=$1 AND actor_id=$2 AND role=$3 AND revoked_at IS NULL FOR UPDATE", sessionID, actorID, role).Scan(&currentAccessHash, &currentHash, &deviceHash, &createdAt, &accessExpiry, &refreshExpiry, &absoluteExpiry, &version)
+	err = tx.QueryRowContext(ctx, "SELECT access_token_hash,refresh_token_hash,client_instance_id_hash,created_at,access_expires_at,refresh_expires_at,absolute_expires_at,version,clock_timestamp() FROM identity_sessions WHERE id=$1 AND actor_id=$2 AND role=$3 AND revoked_at IS NULL FOR UPDATE", sessionID, actorID, role).Scan(&currentAccessHash, &currentHash, &deviceHash, &createdAt, &accessExpiry, &refreshExpiry, &absoluteExpiry, &version, &databaseNow)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
 	if err != nil {
 		return domain.TokenPair{}, err
 	}
-	now := s.now().UTC()
+	// Session expiry is persisted by PostgreSQL; host clock skew cannot extend it.
+	now := databaseNow.UTC()
 	if !identitysecurity.ConstantTimeHexEqual(deviceHash, identitysecurity.SHA256Hex(device)) {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
@@ -351,7 +352,6 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 		}
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
-	now = s.now().UTC()
 	nextAccessExpiry, nextRefreshExpiry, ok := calculateSessionExpiries(role, now, absoluteExpiry, s.development)
 	if !ok {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
