@@ -912,7 +912,35 @@ func (s *Server) readFinanceEvidenceDocument(w http.ResponseWriter, r *http.Requ
 	if !s.authorize(w, r) || !s.requireActingOperator(w, r) {
 		return
 	}
-	item, err := postgres.ReadFinanceEvidenceDocumentForOperator(r.Context(), s.db, s.financeEvidenceCipher, r.PathValue("documentId"), strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")), strings.TrimSpace(r.Header.Get("X-Correlation-ID")))
+	s.serveFinanceEvidenceDocument(w, r, nil)
+}
+
+func (s *Server) readFinanceEvidenceAccessContext(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) || !s.requireActingOperator(w, r) {
+		return
+	}
+	item, err := postgres.ReadFinanceEvidenceDocumentAccessContext(r.Context(), s.db, r.PathValue("documentId"))
+	if err != nil {
+		writeSettlementError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"purpose": item.Purpose, "batchId": item.BatchID, "requiresCurrentIdentityFacts": item.RequiresCurrentIdentityFacts})
+}
+
+func (s *Server) readVerifiedFinanceEvidenceDocument(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) || !s.requireActingOperator(w, r) {
+		return
+	}
+	var input settlementBatchIdentityFactsRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	s.serveFinanceEvidenceDocument(w, r, input.IdentityFactsByBeneficiary)
+}
+
+func (s *Server) serveFinanceEvidenceDocument(w http.ResponseWriter, r *http.Request, facts []postgres.IdentityFacts) {
+	item, err := postgres.ReadFinanceEvidenceDocumentForOperator(r.Context(), s.db, s.financeEvidenceCipher, s.destinationEncryptionKey, r.PathValue("documentId"), strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")), strings.TrimSpace(r.Header.Get("X-Correlation-ID")), facts)
 	if err != nil {
 		writeSettlementError(w, err)
 		return

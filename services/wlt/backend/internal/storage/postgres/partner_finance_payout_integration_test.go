@@ -493,19 +493,31 @@ func TestSettlementExportDownloadBlocksRevokedRecipient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("valid current staff export denied: %v", err)
 	}
-	if original, err := ReadFinanceEvidenceDocumentForOperator(s.ctx, s.db, cipher, exported.EvidenceDocumentID, "finance-reader", "export-read-valid-"+s.suffix); err != nil || len(original.Content) == 0 {
+	access, err := ReadFinanceEvidenceDocumentAccessContext(s.ctx, s.db, exported.EvidenceDocumentID)
+	if err != nil || access.Purpose != "SETTLEMENT_BATCH_EXPORT" || access.BatchID != batch.ID || !access.RequiresCurrentIdentityFacts {
+		t.Fatalf("open settlement export must require current beneficiary facts: %+v %v", access, err)
+	}
+	if _, err := ReadFinanceEvidenceDocumentForOperator(s.ctx, s.db, cipher, cipher, exported.EvidenceDocumentID, "finance-reader", "export-read-missing-facts-"+s.suffix, nil); !errors.Is(err, ErrReverificationRequired) {
+		t.Fatalf("saved instructions without fresh beneficiary facts must be rejected: %v", err)
+	}
+	if original, err := ReadFinanceEvidenceDocumentForOperator(s.ctx, s.db, cipher, cipher, exported.EvidenceDocumentID, "finance-reader", "export-read-valid-"+s.suffix, []IdentityFacts{staffFacts}); err != nil || len(original.Content) == 0 {
 		t.Fatalf("valid current export download: %+v %v", original, err)
+	}
+	changedFacts := staffFacts
+	changedFacts.RoleVersion++
+	if _, err := ReadFinanceEvidenceDocumentForOperator(s.ctx, s.db, cipher, cipher, exported.EvidenceDocumentID, "finance-reader", "export-read-identity-changed-"+s.suffix, []IdentityFacts{changedFacts}); !errors.Is(err, ErrReverificationRequired) {
+		t.Fatalf("identity-only change with unchanged Store routing must block old instructions: %v", err)
 	}
 	if applied, err := MarkStorePayoutRecipientReviewRequired(s.ctx, s.db, storeB, owner, "staff access revoked", "export-read-review-"+s.suffix); err != nil || !applied {
 		t.Fatalf("recipient review transition: applied=%v err=%v", applied, err)
 	}
-	if _, err := ReadFinanceEvidenceDocumentForOperator(s.ctx, s.db, cipher, exported.EvidenceDocumentID, "finance-reader", "export-read-revoked-"+s.suffix); !errors.Is(err, ErrPayoutRecipientReviewRequired) {
+	if _, err := ReadFinanceEvidenceDocumentForOperator(s.ctx, s.db, cipher, cipher, exported.EvidenceDocumentID, "finance-reader", "export-read-revoked-"+s.suffix, []IdentityFacts{staffFacts}); !errors.Is(err, ErrPayoutRecipientReviewRequired) {
 		t.Fatalf("revoked recipient accessed stored transfer workbook: %v", err)
 	}
 	if _, err := RevertStorePayoutRecipientToOwner(s.ctx, s.db, RevertStorePayoutRecipientInput{StoreID: storeB, PartnerActorID: owner, Reason: "restore future routing", IdempotencyKey: "export-read-revert-" + s.suffix, CorrelationID: "export-read-revert-correlation-" + s.suffix}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ReadFinanceEvidenceDocumentForOperator(s.ctx, s.db, cipher, exported.EvidenceDocumentID, "finance-reader", "export-read-reverted-"+s.suffix); !errors.Is(err, ErrPayoutRecipientReviewRequired) {
+	if _, err := ReadFinanceEvidenceDocumentForOperator(s.ctx, s.db, cipher, cipher, exported.EvidenceDocumentID, "finance-reader", "export-read-reverted-"+s.suffix, []IdentityFacts{staffFacts}); !errors.Is(err, ErrPayoutRecipientReviewRequired) {
 		t.Fatalf("reverting routing silently reauthorized historical staff XLSX: %v", err)
 	}
 	historical, err := ReadFinanceEvidenceDocument(s.ctx, s.db, cipher, exported.EvidenceDocumentID)

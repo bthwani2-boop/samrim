@@ -173,6 +173,8 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/operator/settlement-statements/{statementId}/rows", s.recordSettlementStatementRow)
 	mux.HandleFunc("POST /wlt/v1/operator/finance-evidence-documents", s.uploadFinanceEvidenceDocument)
 	mux.HandleFunc("GET /wlt/v1/operator/finance-evidence-documents/{documentId}", s.readFinanceEvidenceDocument)
+	mux.HandleFunc("GET /wlt/v1/operator/finance-evidence-documents/{documentId}/access-context", s.readFinanceEvidenceAccessContext)
+	mux.HandleFunc("POST /wlt/v1/operator/finance-evidence-documents/{documentId}/verified-download", s.readVerifiedFinanceEvidenceDocument)
 	mux.HandleFunc("POST /wlt/v1/operator/customer-withdrawal-intakes", s.createCustomerWithdrawalIntake)
 	mux.HandleFunc("GET /wlt/v1/operator/customer-withdrawal-intakes", s.listCustomerWithdrawalIntakes)
 	mux.HandleFunc("GET /wlt/v1/operator/customer-withdrawal-intakes/{intakeId}", s.readCustomerWithdrawalIntake)
