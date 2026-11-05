@@ -7,6 +7,7 @@ const toolDir=path.dirname(fileURLToPath(import.meta.url));
 const repoRoot=path.resolve(toolDir,"../..");
 const appsRoot=path.join(repoRoot,"apps");
 const envPath=path.join(repoRoot,"infra/local/.env");
+const runtimeOwnersPath=path.join(repoRoot,"infra/local/runtime-owners.json");
 
 function fail(message){
   console.error(message);
@@ -27,6 +28,17 @@ const surfaceRoot=requestedSurface?surfaceRoots.get(requestedSurface):process.cw
 const surface=path.basename(surfaceRoot);
 if(path.dirname(surfaceRoot)!==appsRoot||!surfaceRoots.has(surface)){
   fail(`LOCAL_SURFACE_ROOT_REQUIRED cwd=${surfaceRoot} expected_parent=${appsRoot}`);
+}
+if(fs.existsSync(runtimeOwnersPath)){
+  const config=JSON.parse(fs.readFileSync(runtimeOwnersPath,"utf8"));
+  const owner=config.surfaces?.[surface]?.owner;
+  const machine=process.env.COMPUTERNAME?.toUpperCase();
+  if(machine===config.sourceHost && owner==="lenovo-native"){
+    fail(`RUNTIME_OWNER_IS_LENOVO surface=${surface} target=${config.sshTarget}; do not launch a competing local process`);
+  }
+  if(machine===config.remoteHost && owner==="surface" && process.env.SAMRIM_REMOTE_TRIAL!=="1"){
+    fail(`RUNTIME_OWNER_IS_SURFACE surface=${surface}; remote use requires an explicit trial`);
+  }
 }
 if(!fs.existsSync(envPath)){
   fail("LOCAL_ENV_MISSING copy=infra/local/.env.example->infra/local/.env");
