@@ -83,6 +83,23 @@ func TestFailedCustodyCaptainCannotReceiveAnotherDispatch(t *testing.T) {
 		if !errors.Is(err, postgres.ErrCaptainNoAvailable) {
 			t.Fatalf("direct dispatch must reject failed custody: %v", err)
 		}
+		// A stale historical offer can still be rejected after another delivery
+		// enters failed custody. Rejection must not restore availability.
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.captain_admissions SET availability_state='unavailable' WHERE actor_id=$1", failedCaptain); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.captain_dispatch_offers(id,order_id,captain_actor_id,state,expires_at,version,idempotency_key,request_hash) VALUES('custody-stale-offer',$1,$2,'offered',clock_timestamp()+interval '1 hour',1,'custody-stale-key','stale-hash')", readyOrder, failedCaptain); err != nil {
+			t.Fatal(err)
+		}
+		response, err := postgres.RespondToCaptainOffer(ctx, db, "custody-stale-offer", failedCaptain, "reject", 1, "custody-stale-reject-key", postgres.HashCaptainOfferResponse("custody-stale-offer", "reject", 1), "custody-stale-reject-correlation")
+		if err != nil || response.Offer.State != "rejected" {
+			t.Fatalf("stale offer rejection: result=%+v err=%v", response, err)
+		}
+		var availability string
+		if err := db.QueryRowContext(ctx, "SELECT availability_state FROM dsh.captain_admissions WHERE actor_id=$1", failedCaptain).Scan(&availability); err != nil || availability != "unavailable" {
+			t.Fatalf("failed custody was incorrectly restored after rejecting stale offer: state=%s err=%v", availability, err)
+		}
+
 		offer, replayed, err := postgres.CreateCaptainDispatchOffer(ctx, db, readyOrder, "custody-healthy-key", postgres.HashCaptainDispatchRequest(readyOrder), "operator-test", "custody-healthy-correlation", healthyCaptain)
 		if err != nil || replayed || offer.State != "offered" {
 			t.Fatalf("healthy captain must still receive offer: offer=%+v replayed=%v err=%v", offer, replayed, err)

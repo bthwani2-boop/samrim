@@ -723,7 +723,7 @@ func RestoreCaptainAdmission(ctx context.Context, db *sql.DB, actorID, idempoten
 		return admission, nil
 	}
 	var hasActiveWork bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM dsh.captain_dispatch_offers WHERE captain_actor_id=$1 AND state='offered') OR EXISTS (SELECT 1 FROM dsh.captain_assignments WHERE captain_actor_id=$1 AND state IN ('assigned','in_custody'))`, actorID).Scan(&hasActiveWork); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM dsh.captain_dispatch_offers WHERE captain_actor_id=$1 AND state='offered') OR EXISTS (SELECT 1 FROM dsh.captain_assignments WHERE captain_actor_id=$1 AND state IN ('assigned','in_custody','delivery_failed'))`, actorID).Scan(&hasActiveWork); err != nil {
 		return CaptainAdmission{}, err
 	}
 	if hasActiveWork {
