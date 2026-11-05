@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"github.com/lib/pq"
 	"strconv"
 	"strings"
@@ -192,15 +191,15 @@ func dispatchCaptainCandidatesTx(ctx context.Context, tx *sql.Tx, orderID, exclu
 	}
 	var firstID string
 	expiresAt := time.Now().UTC().Add(captainOfferTimeout)
+	// The SQL query limits the candidate batch to three; preserve each offer's
+	// original idempotency key without a branch per candidate.
+	offerKeys := [3]string{idempotencyKey, idempotencyKey + ":offer-2", idempotencyKey + ":offer-3"}
 	for i, c := range candidates {
 		id, err := newID("captain-offer")
 		if err != nil {
 			return "", err
 		}
-		key := idempotencyKey
-		if i > 0 {
-			key = fmt.Sprintf("%s:offer-%d", idempotencyKey, i+1)
-		}
+		key := offerKeys[i]
 		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_dispatch_offers(id,order_id,captain_actor_id,state,expires_at,version,idempotency_key,request_hash) VALUES($1,$2,$3,'offered',$4,1,$5,$6)`, id, orderID, c.actorID, expiresAt, key, requestHash); err != nil {
 			if isUniqueViolation(err) {
 				return "", ErrCaptainDispatchConflict

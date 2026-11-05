@@ -446,6 +446,24 @@ func BindCaptainAdmission(ctx context.Context, db *sql.DB, admissionID, actorID,
 	return updated, nil
 }
 
+// requireNoActiveCaptainWorkForAvailability keeps a Captain with unresolved
+// custody from re-entering dispatch, including after a failed delivery.
+func requireNoActiveCaptainWorkForAvailability(ctx context.Context, tx *sql.Tx, actorID string, available bool) error {
+	if !available {
+		return nil
+	}
+	var hasActiveWork bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM dsh.captain_dispatch_offers WHERE captain_actor_id=$1 AND state='offered') OR EXISTS (SELECT 1 FROM dsh.captain_assignments WHERE captain_actor_id=$1 AND state IN ('assigned','in_custody','delivery_failed'))`, actorID).Scan(&hasActiveWork); err != nil {
+		return err
+	}
+	if hasActiveWork {
+		return ErrCaptainOperationConflict
+	}
+	return nil
+}
+
+// SetCaptainAvailability updates a Captain's operational availability while
+// retaining assignment and custody exclusions inside the owning transaction.
 func SetCaptainAvailability(ctx context.Context, db *sql.DB, actorID string, available bool, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID, reason string) (CaptainAdmission, bool, error) {
 	if db == nil || strings.TrimSpace(actorID) == "" || expectedVersion < 1 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
 		return CaptainAdmission{}, false, ErrCaptainOperationConflict
@@ -489,14 +507,8 @@ func SetCaptainAvailability(ctx context.Context, db *sql.DB, actorID string, ava
 	if admission.Version != expectedVersion {
 		return CaptainAdmission{}, false, ErrCaptainVersionConflict
 	}
-	if available {
-		var hasActiveWork bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM dsh.captain_dispatch_offers WHERE captain_actor_id=$1 AND state='offered') OR EXISTS (SELECT 1 FROM dsh.captain_assignments WHERE captain_actor_id=$1 AND state IN ('assigned','in_custody','delivery_failed'))`, actorID).Scan(&hasActiveWork); err != nil {
-			return CaptainAdmission{}, false, err
-		}
-		if hasActiveWork {
-			return CaptainAdmission{}, false, ErrCaptainOperationConflict
-		}
+	if err := requireNoActiveCaptainWorkForAvailability(ctx, tx, actorID, available); err != nil {
+		return CaptainAdmission{}, false, err
 	}
 	wanted := "unavailable"
 	if available {

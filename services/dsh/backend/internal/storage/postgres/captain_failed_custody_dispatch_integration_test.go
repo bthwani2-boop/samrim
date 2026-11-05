@@ -12,8 +12,9 @@ import (
 	_ "github.com/lib/pq"
 )
 
-// A failed delivery retains physical custody. A stale "available" flag must
-// never permit another platform mission until explicit recovery.
+// TestFailedCustodyCaptainCannotReceiveAnotherDispatch ensures an unresolved
+// failed delivery retains custody and blocks a new dispatch even if a stale
+// "available" flag and fresh GPS fix remain.
 func TestFailedCustodyCaptainCannotReceiveAnotherDispatch(t *testing.T) {
 	rootURL := strings.TrimSpace(os.Getenv("DSH_DATABASE_URL"))
 	if rootURL == "" {
