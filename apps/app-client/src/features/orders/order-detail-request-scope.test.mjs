@@ -40,7 +40,7 @@ test("delayed reads from order A cannot populate order B when a route reuses one
     return { pending, operation };
   });
   route.orderID = "order-b";
-  a.forEach(({ pending }, index) => pending.resolve(`order-a-result-${index}`));
+  a.forEach(({ pending }, index) => { pending.resolve(`order-a-result-${index}`); });
   await Promise.all(a.map(({ operation }) => operation));
   assert.deepEqual(applied, [], "old order reads must be ignored even when actor is unchanged");
   assert.equal(isClientOrderScopeCurrent("client-a", "order-b", route.actorID, route.orderID), true);
