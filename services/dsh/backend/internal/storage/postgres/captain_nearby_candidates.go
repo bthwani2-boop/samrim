@@ -56,8 +56,8 @@ func ListNearbyCaptainCandidates(ctx context.Context, db NearbyCaptainCandidateR
 					WHERE ca.captain_actor_id=a.actor_id AND ca.state IN ('assigned','in_custody'))
 		)
 		SELECT actor_id,distance_squared FROM ranked
-		WHERE ($3::double precision IS NULL OR (distance_squared,actor_id) > ($3::double precision,$4))
-		ORDER BY distance_squared,actor_id
+		WHERE ($3::double precision IS NULL OR (distance_squared,actor_id COLLATE "C") > ($3::double precision,$4::text COLLATE "C"))
+		ORDER BY distance_squared,actor_id COLLATE "C"
 		LIMIT $5`, orderID, strings.TrimSpace(excludedActorID), afterDistance, afterActorID, NearbyCaptainCandidatePageSize)
 	if err != nil {
 		return nil, 0, err

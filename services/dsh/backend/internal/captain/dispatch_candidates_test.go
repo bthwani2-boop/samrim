@@ -271,7 +271,7 @@ func TestFundedCandidatePagesStopAfterRemainingQuota(t *testing.T) {
 	}
 }
 
-func TestFundedCandidatePageBudgetFailsClosedWithoutPartialOffers(t *testing.T) {
+func TestFundedCandidateStalledCursorFailsClosedWithoutPartialOffers(t *testing.T) {
 	pages := 0
 	candidates := make([]postgres.NearbyCaptainCandidate, postgres.NearbyCaptainCandidatePageSize)
 	for i := range candidates {
@@ -292,7 +292,150 @@ func TestFundedCandidatePageBudgetFailsClosedWithoutPartialOffers(t *testing.T) 
 			}
 			return wlt.CaptainWalletState{Currency: "YER", AvailableMinor: available}, nil
 		})
-	if !errors.Is(err, postgres.ErrCaptainNoAvailable) || selected != nil || pages != maxCaptainCandidatePages {
-		t.Fatalf("page budget must fail closed: selected=%v err=%v pages=%d", selected, err, pages)
+	if !errors.Is(err, ErrPaymentUnavailable) || selected != nil || pages != 2 {
+		t.Fatalf("stalled cursor must fail closed: selected=%v err=%v pages=%d", selected, err, pages)
+	}
+}
+
+// A funded Captain beyond the fourth page must not be lost merely because
+// previous nearby Captains have insufficient WLT cash coverage.
+func TestFundedCaptainPaginationBeyondOneHundredTwenty(t *testing.T) {
+	const unfundedCount = 120
+	candidates := make([]postgres.NearbyCaptainCandidate, 0, unfundedCount+3)
+	for i := 0; i < unfundedCount; i++ {
+		candidates = append(candidates, postgres.NearbyCaptainCandidate{
+			ActorID: fmt.Sprintf("unfunded-%03d", i), DistanceSquared: float64(i),
+		})
+	}
+	for i := 0; i < 3; i++ {
+		candidates = append(candidates, postgres.NearbyCaptainCandidate{
+			ActorID: fmt.Sprintf("funded-%d", i), DistanceSquared: float64(unfundedCount + i),
+		})
+	}
+	pages := 0
+	selected, err := selectFundedNearbyCaptainPages(context.Background(),
+		func(_ context.Context, after *postgres.NearbyCaptainCandidate) ([]postgres.NearbyCaptainCandidate, int64, error) {
+			start := pages * postgres.NearbyCaptainCandidatePageSize
+			if pages > 0 && (after == nil || after.ActorID != candidates[start-1].ActorID) {
+				t.Fatalf("wrong keyset cursor at page %d: %+v", pages+1, after)
+			}
+			pages++
+			if start >= len(candidates) {
+				return nil, 1200, nil
+			}
+			end := start + postgres.NearbyCaptainCandidatePageSize
+			if end > len(candidates) {
+				end = len(candidates)
+			}
+			return candidates[start:end], 1200, nil
+		},
+		func(_ context.Context, id string) (wlt.CaptainWalletState, error) {
+			available := int64(0)
+			if strings.HasPrefix(id, "funded-") {
+				available = 1200
+			}
+			return wlt.CaptainWalletState{Currency: "YER", AvailableMinor: available}, nil
+		},
+	)
+	if err != nil || !reflect.DeepEqual(selected, []string{"funded-0", "funded-1", "funded-2"}) || pages != 5 {
+		t.Fatalf("eligible captains beyond 120: selected=%v err=%v pages=%d", selected, err, pages)
+	}
+}
+
+func TestFundedCandidateRepeatedPageCannotFillQuota(t *testing.T) {
+	first := make([]postgres.NearbyCaptainCandidate, postgres.NearbyCaptainCandidatePageSize)
+	for i := range first {
+		first[i] = postgres.NearbyCaptainCandidate{ActorID: fmt.Sprintf("unfunded-%02d", i), DistanceSquared: float64(i)}
+	}
+	first[0].ActorID = "funded-one"
+	first[1].ActorID = "funded-two"
+	pages := 0
+	walletReads := 0
+	selected, err := selectFundedNearbyCaptainPages(context.Background(),
+		func(_ context.Context, after *postgres.NearbyCaptainCandidate) ([]postgres.NearbyCaptainCandidate, int64, error) {
+			pages++
+			if pages == 2 && (after == nil || *after != first[len(first)-1]) {
+				t.Fatalf("unexpected page cursor: %+v", after)
+			}
+			if pages > 2 {
+				t.Fatal("a repeated cursor must stop scanning")
+			}
+			return first, 1200, nil
+		},
+		func(_ context.Context, actorID string) (wlt.CaptainWalletState, error) {
+			walletReads++
+			available := int64(0)
+			if strings.HasPrefix(actorID, "funded-") {
+				available = 1200
+			}
+			return wlt.CaptainWalletState{Currency: "YER", AvailableMinor: available}, nil
+		},
+	)
+	if selected != nil || !errors.Is(err, ErrPaymentUnavailable) || pages != 2 || walletReads != len(first) {
+		t.Fatalf("repeated page must not duplicate funded captains: selected=%v err=%v pages=%d walletReads=%d", selected, err, pages, walletReads)
+	}
+}
+
+func TestFundedCandidateCancelledDuringLastWalletReadFailsClosed(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	selected, err := selectFundedNearbyCaptainPages(ctx,
+		func(pageCtx context.Context, after *postgres.NearbyCaptainCandidate) ([]postgres.NearbyCaptainCandidate, int64, error) {
+			if after != nil {
+				t.Fatalf("unexpected cursor: %+v", after)
+			}
+			if _, ok := pageCtx.Deadline(); !ok {
+				t.Fatal("page reader must receive a bounded context")
+			}
+			return []postgres.NearbyCaptainCandidate{{ActorID: "funded-last", DistanceSquared: 1}}, 1200, nil
+		},
+		func(walletCtx context.Context, actorID string) (wlt.CaptainWalletState, error) {
+			if _, ok := walletCtx.Deadline(); !ok {
+				t.Fatal("wallet reader must receive a bounded context")
+			}
+			cancel()
+			return wlt.CaptainWalletState{Currency: "YER", AvailableMinor: 1200}, nil
+		},
+	)
+	if selected != nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled scan must never publish partial offers: selected=%v err=%v", selected, err)
+	}
+}
+
+func TestFundedCandidateCancelAfterPartialPageRejectsOffers(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	page := make([]postgres.NearbyCaptainCandidate, postgres.NearbyCaptainCandidatePageSize)
+	for i := range page {
+		page[i] = postgres.NearbyCaptainCandidate{ActorID: fmt.Sprintf("unfunded-%02d", i), DistanceSquared: float64(i)}
+	}
+	page[0].ActorID = "funded-first"
+	pages, walletReads := 0, 0
+	selected, err := selectFundedNearbyCaptainPages(ctx,
+		func(readCtx context.Context, _ *postgres.NearbyCaptainCandidate) ([]postgres.NearbyCaptainCandidate, int64, error) {
+			if _, ok := readCtx.Deadline(); !ok {
+				t.Fatal("readPage must receive scan deadline")
+			}
+			pages++
+			if pages == 1 {
+				return page, 1200, nil
+			}
+			cancel() // Simulate cancellation after a prior funded Captain was selected.
+			return nil, 1200, nil
+		},
+		func(walletCtx context.Context, id string) (wlt.CaptainWalletState, error) {
+			if _, ok := walletCtx.Deadline(); !ok {
+				t.Fatal("WLT preflight must receive scan deadline")
+			}
+			walletReads++
+			available := int64(0)
+			if id == "funded-first" {
+				available = 1200
+			}
+			return wlt.CaptainWalletState{Currency: "YER", AvailableMinor: available}, nil
+		},
+	)
+	if selected != nil || !errors.Is(err, context.Canceled) || pages != 2 || walletReads != len(page) {
+		t.Fatalf("cancellation must discard prior partial selection: selected=%v err=%v pages=%d reads=%d", selected, err, pages, walletReads)
 	}
 }
