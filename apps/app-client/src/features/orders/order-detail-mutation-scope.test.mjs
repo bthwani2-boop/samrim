@@ -20,10 +20,20 @@ test("late writes for rating, cancellation, and adjustment cannot overwrite a di
   }
 });
 
-test("navigating to a different order clears prior cancellation review state", () => {
-  const start = source.indexOf("if (!preserveCurrent) {\n      setDeliveryProof");
-  assert.notEqual(start, -1);
-  assert.match(source.slice(start, start + 320), /setCancellationReview\(null\)/);
+test("same-actor same-order refocus preserves cancellation draft; changed scope clears it", () => {
+  assert.match(source, /const cancellationDraftScope = useRef/);
+  const start = source.indexOf("const priorDraftScope = cancellationDraftScope.current;");
+  const end = source.indexOf("if (!preserveCurrent) {", start);
+  assert.ok(start >= 0 && end > start, "scope change must be decided separately from general focus refresh");
+  const reset = source.slice(start, end);
+  assert.match(reset, /!isClientOrderScopeCurrent\(priorDraftScope.actorID, priorDraftScope.orderID, actorID, orderId\)/);
+  for (const stateReset of ["setCancellationReview(null)", "setShowCancellationForm(false)", 'setCancellationReason("")']) {
+    assert.ok(reset.includes(stateReset), `changed order/actor must reset ${stateReset}`);
+  }
+  assert.equal(isClientOrderScopeCurrent("actor-A", "order-A", "actor-A", "order-A"), true);
+  assert.equal(isClientOrderScopeCurrent("actor-A", "order-A", "actor-A", "order-B"), false);
+  assert.equal(isClientOrderScopeCurrent("actor-A", "order-A", "actor-B", "order-A"), false);
+  assert.match(source, /cancellationDraftScope.current = null; setState\(\{ kind: "auth_required" \}\)/);
 });
 
 test("a late response for order A is discarded when order B is selected by the same actor", async () => {

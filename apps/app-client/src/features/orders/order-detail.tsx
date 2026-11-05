@@ -38,6 +38,7 @@ export default function ClientOrderDetail() {
   const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
   const loadSequence = useRef(0);
   const requestedOrderIDRef = useRef(orderId);
+  const cancellationDraftScope = useRef<{ actorID: string; orderID: string } | null>(null);
   requestedOrderIDRef.current = orderId;
   const hasCurrentOrderScope = useCallback((actorID: string, requestedOrderID: string): boolean => {
     const current = currentIdentityState();
@@ -123,19 +124,25 @@ export default function ClientOrderDetail() {
   const load = useCallback(async (preserveCurrent = false) => {
     const sequence = ++loadSequence.current;
     const session = currentIdentityState();
-    if (session.kind !== "authenticated" || !session.identity.subject.trim()) { setState({ kind: "auth_required" }); return; }
+    if (session.kind !== "authenticated" || !session.identity.subject.trim()) { cancellationDraftScope.current = null; setState({ kind: "auth_required" }); return; }
     const actorID = session.identity.subject.trim();
-    if (!orderId.trim()) { setState({ kind: "error" }); return; }
+    if (!orderId.trim()) { cancellationDraftScope.current = null; setState({ kind: "error" }); return; }
     if (preserveCurrent) setRefreshing(true);
     else setState({ kind: "loading" });
     setRefreshError("");
     setCancelError("");
-    if (!preserveCurrent) {
-      setDeliveryProof({ kind: "loading" });
-      setOrderRating({ kind: "loading" });
+    // Refocusing the same order must not discard a partially written cancellation.
+    // A different actor/order must never inherit that draft or its review state.
+    const priorDraftScope = cancellationDraftScope.current;
+    if (!priorDraftScope || !isClientOrderScopeCurrent(priorDraftScope.actorID, priorDraftScope.orderID, actorID, orderId)) {
+      cancellationDraftScope.current = { actorID, orderID: orderId };
       setCancellationReview(null);
       setShowCancellationForm(false);
       setCancellationReason("");
+    }
+    if (!preserveCurrent) {
+      setDeliveryProof({ kind: "loading" });
+      setOrderRating({ kind: "loading" });
     }
     try {
       const token = await getUsableIdentityAccessToken();

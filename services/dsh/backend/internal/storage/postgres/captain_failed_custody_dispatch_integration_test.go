@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	_ "github.com/lib/pq"
@@ -20,12 +22,25 @@ func TestFailedCustodyCaptainCannotReceiveAnotherDispatch(t *testing.T) {
 	if rootURL == "" {
 		t.Skip("requires disposable DSH_DATABASE_URL")
 	}
+	// Bound the lib/pq startup handshake as well as the overall ping context.
+	parsed, err := url.Parse(rootURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	params := parsed.Query()
+	if !params.Has("connect_timeout") {
+		params.Set("connect_timeout", "5")
+		parsed.RawQuery = params.Encode()
+	}
+	rootURL = parsed.String()
 	rootDB, err := sql.Open("postgres", rootURL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = rootDB.Close() })
-	if err := rootDB.Ping(); err != nil {
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer pingCancel()
+	if err := rootDB.PingContext(pingCtx); err != nil {
 		t.Fatal(err)
 	}
 	withFreshDatabase(t, rootDB, rootURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrations []string) {
