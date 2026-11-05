@@ -35,7 +35,7 @@ export function PartnerScrollScreen({ children }: PropsWithChildren) {
   }, [origin, router]));
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  return <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{children}</ScrollView>;
+  return <ScrollView role={Platform.OS === "web" ? "main" : undefined} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{children}</ScrollView>;
 }
 
 export function createPartnerTabOptions(theme: ReturnType<typeof resolveTheme>, canSearchOrders: boolean, desktopWeb = false) {
