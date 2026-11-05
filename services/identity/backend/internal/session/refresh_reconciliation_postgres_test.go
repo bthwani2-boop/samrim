@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/actor"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/domain"
@@ -60,15 +61,41 @@ func TestHistoricalRefreshReconciliationUsesDatabaseTime(t *testing.T) {
 		t.Fatalf("latest-generation recovery should be stable: %v", err)
 	}
 
-	// Isolated time-travel fixture: age only this synthetic historical row.
-	// No shared session, wallet, Root Owner or production data is modified.
+	// Age both synthetic history rows with the second rotation still latest.
+	// This ensures the five-minute limit, not the latest-generation guard,
+	// rejects the second request. No shared session or user data is changed.
 	if _, err := db.ExecContext(ctx, `UPDATE identity_refresh_token_history
-        SET rotated_at=clock_timestamp()-interval '6 minutes'
-        WHERE session_id=$1 AND refresh_request_id=$2`, original.Identity.SessionID, firstRequest.RefreshRequestId); err != nil {
-		t.Fatalf("age isolated historical token: %v", err)
+        SET rotated_at=CASE
+            WHEN refresh_request_id=$2 THEN clock_timestamp()-interval '7 minutes'
+            WHEN refresh_request_id=$3 THEN clock_timestamp()-interval '6 minutes'
+        END
+        WHERE session_id=$1 AND refresh_request_id IN ($2,$3)`,
+		original.Identity.SessionID, firstRequest.RefreshRequestId, secondRequest.RefreshRequestId); err != nil {
+		t.Fatalf("age isolated historical tokens: %v", err)
 	}
-	if _, err := svc.Refresh(ctx, firstRequest); !errors.Is(err, domain.ErrInvalidRefresh) {
-		t.Fatalf("aged replay must be rejected as compromised: %v", err)
+	var latestRequestID string
+	var latestRotation time.Time
+	var pastDatabaseGrace bool
+	if err := db.QueryRowContext(ctx, `SELECT refresh_request_id,rotated_at,
+        clock_timestamp() > rotated_at + interval '5 minutes'
+        FROM identity_refresh_token_history
+        WHERE session_id=$1 ORDER BY rotated_at DESC LIMIT 1`,
+		original.Identity.SessionID).Scan(&latestRequestID, &latestRotation, &pastDatabaseGrace); err != nil {
+		t.Fatalf("read isolated rotation ordering and database age: %v", err)
+	}
+	if latestRequestID != secondRequest.RefreshRequestId || !pastDatabaseGrace {
+		t.Fatalf("test must replay latest row past database grace: latest=%q dbExpired=%t", latestRequestID, pastDatabaseGrace)
+	}
+	// The server's deliberately skewed clock sees an age within five minutes,
+	// while PostgreSQL sees an age beyond five minutes. The implementation must
+	// use the database's clock when deciding whether to recover credentials.
+	svc.now = func() time.Time { return time.Now().Add(-2 * time.Minute) }
+	hostAge := svc.now().Sub(latestRotation)
+	if hostAge < 0 || hostAge >= 5*time.Minute {
+		t.Fatalf("test requires host-clock age inside grace; got %v", hostAge)
+	}
+	if _, err := svc.Refresh(ctx, secondRequest); !errors.Is(err, domain.ErrInvalidRefresh) {
+		t.Fatalf("aged latest retry must be rejected as compromised: %v", err)
 	}
 	var revoked, compromised sql.NullTime
 	if err := db.QueryRowContext(ctx, "SELECT revoked_at,compromised_at FROM identity_sessions WHERE id=$1 AND actor_id=$2", original.Identity.SessionID, operator.ActorID).Scan(&revoked, &compromised); err != nil {
