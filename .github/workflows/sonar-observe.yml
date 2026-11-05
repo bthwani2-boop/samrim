@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - '36'
+      - '37'
     types:
       - opened
       - reopened
@@ -31,10 +32,11 @@ jobs:
     timeout-minutes: 15
 
     # Scan same-repository PRs from their first Draft, without relaxing the
-    # existing target-branch scope or exposing the token to forked PRs.
+    # declared target-branch scope or exposing the token to forked PRs.
     if: >
       (github.event_name == 'pull_request' &&
-      (github.event.pull_request.base.ref == '36' ||
+      (github.event.pull_request.base.ref == '37' ||
+       github.event.pull_request.base.ref == '36' ||
        github.event.pull_request.base.ref == 'main') &&
       github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')

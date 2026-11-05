@@ -7,6 +7,7 @@ const toolDir=path.dirname(fileURLToPath(import.meta.url));
 const repoRoot=path.resolve(toolDir,"../..");
 const appsRoot=path.join(repoRoot,"apps");
 const envPath=path.join(repoRoot,"infra/local/.env");
+const runtimeOwnersPath=path.join(repoRoot,"infra/local/runtime-owners.json");
 
 function fail(message){
   console.error(message);
@@ -27,6 +28,24 @@ const surfaceRoot=requestedSurface?surfaceRoots.get(requestedSurface):process.cw
 const surface=path.basename(surfaceRoot);
 if(path.dirname(surfaceRoot)!==appsRoot||!surfaceRoots.has(surface)){
   fail(`LOCAL_SURFACE_ROOT_REQUIRED cwd=${surfaceRoot} expected_parent=${appsRoot}`);
+}
+if(!fs.existsSync(runtimeOwnersPath)){
+  fail("RUNTIME_OWNER_CONFIG_REQUIRED path=infra/local/runtime-owners.json");
+}
+{
+  const config=JSON.parse(fs.readFileSync(runtimeOwnersPath,"utf8"));
+  const owner=config.surfaces?.[surface]?.owner;
+  const machine=process.env.COMPUTERNAME?.toUpperCase();
+  if(!machine || !["surface","lenovo-native"].includes(owner)){
+    fail(`RUNTIME_OWNER_UNKNOWN surface=${surface} machine=${machine??"unset"}`);
+  }
+  if(owner==="lenovo-native" && machine!==config.remoteHost){
+    fail(`RUNTIME_OWNER_IS_LENOVO surface=${surface} target=${config.sshTarget}; do not launch a competing local process`);
+  }
+  if(owner==="surface" && machine!==config.sourceHost &&
+     !(machine===config.remoteHost && process.env.SAMRIM_REMOTE_TRIAL==="1")){
+    fail(`RUNTIME_OWNER_IS_SURFACE surface=${surface}; remote use requires an explicit trial on the declared remote host`);
+  }
 }
 if(!fs.existsSync(envPath)){
   fail("LOCAL_ENV_MISSING copy=infra/local/.env.example->infra/local/.env");
@@ -58,6 +77,16 @@ for(const name of [
     url.username||url.password||url.search||url.hash||
     (name==="CONTROL_PANEL_PUBLIC_ORIGIN"&&url.pathname!=="/")){
     fail(`LOCAL_RUNTIME_ORIGIN_MUST_BE_LOOPBACK name=${name}`);
+  }
+}
+// A Lenovo native server must listen on the exact port forwarded by the Surface SSH tunnel.
+if(process.env.COMPUTERNAME?.toUpperCase()===JSON.parse(fs.readFileSync(runtimeOwnersPath,"utf8")).remoteHost){
+  const owners=JSON.parse(fs.readFileSync(runtimeOwnersPath,"utf8"));
+  const portName=surface==="control-panel"?"SAMRIM_CONTROL_PORT":
+    `SAMRIM_${surface.replace(/[^A-Za-z0-9]/g,"_").toUpperCase()}_METRO_PORT`;
+  const expected=owners.surfaces[surface]?.remotePort;
+  if(!Number.isInteger(expected)||Number(process.env[portName])!==expected){
+    fail(`LENOVO_REMOTE_PORT_MISMATCH surface=${surface} env=${portName} expected=${expected}`);
   }
 }
 if(process.argv.includes("--check-local-config")){
