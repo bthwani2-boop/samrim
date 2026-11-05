@@ -78,3 +78,28 @@ test("no unrecognized host can start a Lenovo-owned app", () => {
     assert.match(r.stderr, /RUNTIME_OWNER_IS_LENOVO|RUNTIME_OWNER_UNKNOWN/, host);
   }
 });
+
+test("Lenovo runtime launchers do not open extra Windows console windows", () => {
+  const source = fs.readFileSync(launcher, "utf8");
+  const invoke = fs.readFileSync(path.join(root, "tools/dev/Invoke-LenovoApp.ps1"), "utf8");
+  const register = fs.readFileSync(path.join(root, "tools/dev/Register-LenovoAppTasks.ps1"), "utf8");
+  assert.match(source, /stdio:"inherit",\s*windowsHide:true/);
+  assert.doesNotMatch(source, /windowsHide:false/);
+  assert.match(invoke, /'-WindowStyle','Hidden'/);
+  assert.match(register, /-WindowStyle Hidden/);
+  assert.match(register, /-RestartCount 3 -RestartInterval/);
+  for (const name of ["app-client", "app-partner", "app-captain", "control-panel"]) {
+    assert.ok(register.includes("'" + name + "'="), name);
+  }
+});
+
+test("Lenovo scoped stop requires live task, owner, launcher and listener provenance", () => {
+  const stop = fs.readFileSync(path.join(root, "tools/dev/Stop-LenovoSurface.ps1"), "utf8");
+  for (const check of [
+    "LENOVO_ONLY", "LENOVO_RUNTIME_NOT_OWNER", "LENOVO_APP_TASK_OWNER_MISMATCH",
+    "LENOVO_APP_NON_LOOPBACK_LISTENER_BLOCKED", "LENOVO_APP_LAUNCHER_PROVENANCE_BLOCKED",
+    "LENOVO_APP_ORPHAN_PROVENANCE_BLOCKED", "LENOVO_APP_PROCESS_RACE_BLOCKED",
+    "LENOVO_APP_LISTENER_REMAINS", "LENOVO_APP_STOP=PASS",
+  ]) assert.ok(stop.includes(check), check);
+  assert.match(stop, /taskkill\.exe \/PID \$launcher\.ProcessId \/T \/F/);
+});

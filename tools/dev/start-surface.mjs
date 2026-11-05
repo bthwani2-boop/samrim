@@ -162,7 +162,7 @@ const result=spawnSync(process.execPath,args,{
   cwd:surfaceRoot,
   env:process.env,
   stdio:"inherit",
-  windowsHide:false,
+  windowsHide:true,
 });
 
 if(result.error) throw result.error;

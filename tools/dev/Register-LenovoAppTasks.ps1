@@ -11,17 +11,18 @@ if(!(Test-Path -LiteralPath $entry)) { throw 'NATIVE_APP_RUNNER_MISSING' }
 $mapping=[ordered]@{
   'app-client'='BThwani Client Metro Native'
   'app-partner'='BThwani Partner Metro Native'
+  'app-captain'='BThwani Captain Metro Trial'
   'control-panel'='BThwani Control Next Native'
 }
 $principal=New-ScheduledTaskPrincipal -UserId ($env:USERDOMAIN+'\'+$env:USERNAME) -LogonType Interactive -RunLevel Limited
-$settings=New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+$settings=New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
 foreach($app in $mapping.Keys) {
   $name=$mapping[$app]
   if(Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue) {
     Write-Output ('APP_TASK_ALREADY_EXISTS='+$name)
     continue
   }
-  $argsList='-NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File "'+$entry+'" -App '+$app+' -Trial'
+  $argsList='-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy RemoteSigned -File "'+$entry+'" -App '+$app+' -Trial'
   $action=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $argsList -WorkingDirectory (Join-Path $root 'source\apps')
   Register-ScheduledTask -TaskName $name -Action $action -Principal $principal -Settings $settings -Description ('On-demand Windows Native trial for '+$app+'; promote to login trigger only after verified cutover') | Out-Null
   Write-Output ('APP_TRIAL_TASK_REGISTERED='+$app)
