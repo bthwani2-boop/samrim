@@ -27,13 +27,15 @@ const archiveInputs = [
   "tsconfig.base.json", "nx.json", "patches"
 ];
 const mirroredPrefixes = archiveInputs.filter(p => !path.posix.extname(p)).map(p => p + "/");
-const ignoredNames = new Set([".git", "node_modules", ".expo", ".next", ".next-dev", "dist", "build", "coverage", "test-results", ".cache", ".turbo", ".agent-device", ".maestro", ".mimosa"]);
-const forbiddenBasename = /^(?:\.env(?:\..*)?|google-services\.json|GoogleService-Info\.plist|credentials(?:\..*)?|id_rsa|id_ed25519|.*\.(?:pem|key|p12|pfx|jks|keystore))$/i;
+const ignoredNames = new Set([".git", ".ssh", ".secrets", "private", "node_modules", ".expo", ".next", ".next-dev", "dist", "build", "coverage", "test-results", ".cache", ".turbo", ".agent-device", ".maestro", ".mimosa"]);
+const forbiddenBasename = /^(?:\.env(?:\..*)?|\.npmrc|\.git-credentials|google-services\.json|GoogleService-Info\.plist|credentials(?:\..*)?|id_rsa|id_ed25519|.*\.(?:pem|key|p12|pfx|jks|keystore))$/i;
 const normalize = p => p.replaceAll("\\", "/");
 function approved(relative) {
   const p = normalize(relative);
-  if (!p || p.startsWith("/") || p.includes("..") || !/^[A-Za-z0-9_. \/-]+$/.test(p)) return false;
-  if (p.split("/").some(s => ignoredNames.has(s) || forbiddenBasename.test(s) || s === "private")) return false;
+  if (!p || p.startsWith("/") || p.includes("//")) return false;
+  const segments = p.split("/");
+  if (segments.some(s => !s || s==="." || s===".." || /[<>:"|?*]/.test(s) || [...s].some(c => c.charCodeAt(0) < 32))) return false;
+  if (segments.some(s => ignoredNames.has(s) || forbiddenBasename.test(s))) return false;
   return archiveInputs.includes(p) || mirroredPrefixes.some(prefix => p.startsWith(prefix));
 }
 function call(exe, args, timeout=45000) {
@@ -88,7 +90,25 @@ function syncFile(rel, deleted=false) {
   const actual=remoteScript("(Get-FileHash -Algorithm SHA256 -LiteralPath "+quote(dest)+").Hash");
   if(actual.trim().toUpperCase()!==sha(full)) throw new Error("MIRROR_HASH_MISMATCH: "+rel);
 }
+function assertArchiveInputsSafe() {
+  // Archive reads from Git HEAD (not only changed files); reject any future accidentally tracked secret
+  // before transferring the zip. An example template intentionally has no production values.
+  const result=spawnSync("git.exe",["ls-files","--cached","-z","--",...archiveInputs],{
+    cwd:root,encoding:"buffer",timeout:25000,windowsHide:true
+  });
+  if(result.status!==0 || result.error) throw new Error("MIRROR_GIT_ARCHIVE_INVENTORY_UNAVAILABLE");
+  for(const raw of result.stdout.toString("utf8").split("\0")){
+    if(!raw) continue;
+    const rel=normalize(raw);
+    const leaf=rel.split("/").at(-1);
+    if(rel.includes("..") || rel.split("/").includes(".git") ||
+       (forbiddenBasename.test(leaf) && leaf!==".env.example")){
+      throw new Error("MIRROR_SENSITIVE_TRACKED_FILE_REJECTED: "+rel);
+    }
+  }
+}
 function fullBaseline() {
+  assertArchiveInputsSafe();
   const temp=path.join(os.tmpdir(),"bthwani-lenovo-source-"+process.pid+".zip");
   const remoteZip=remoteRoot+"/source-baseline.zip";
   try {
@@ -120,6 +140,13 @@ function poll() {
   for(const rel of last.keys()) if(!now.has(rel)) {syncFile(rel,true);updates++;}
   last=now;
   if(updates) console.log("LENOVO_SOURCE_CHANGED=PASS count="+updates);
+}
+const checkAt=process.argv.indexOf("--check-path");
+if(checkAt!==-1){
+  const relative=normalize(process.argv[checkAt+1]||"");
+  if(!approved(relative)) throw new Error("MIRROR_PATH_REJECTED");
+  console.log("MIRROR_PATH_ACCEPTED="+relative);
+  process.exit(0);
 }
 const verifyAt=process.argv.indexOf("--verify");
 if(verifyAt!==-1){

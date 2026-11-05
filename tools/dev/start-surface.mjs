@@ -29,7 +29,10 @@ const surface=path.basename(surfaceRoot);
 if(path.dirname(surfaceRoot)!==appsRoot||!surfaceRoots.has(surface)){
   fail(`LOCAL_SURFACE_ROOT_REQUIRED cwd=${surfaceRoot} expected_parent=${appsRoot}`);
 }
-if(fs.existsSync(runtimeOwnersPath)){
+if(!fs.existsSync(runtimeOwnersPath)){
+  fail("RUNTIME_OWNER_CONFIG_REQUIRED path=infra/local/runtime-owners.json");
+}
+{
   const config=JSON.parse(fs.readFileSync(runtimeOwnersPath,"utf8"));
   const owner=config.surfaces?.[surface]?.owner;
   const machine=process.env.COMPUTERNAME?.toUpperCase();

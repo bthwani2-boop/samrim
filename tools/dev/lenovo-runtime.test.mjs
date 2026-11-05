@@ -23,12 +23,15 @@ test("one canonical source host and bounded native Windows runtime ownership", (
   }
 });
 
-test("captain launcher refuses a competing local Surface Metro", () => {
-  const r = spawnSync(process.execPath, [launcher, "app-captain", "--check-local-config"], {
-    cwd: root, env: {...process.env, COMPUTERNAME: owners.sourceHost}, encoding: "utf8", timeout: 12000
-  });
-  assert.equal(r.status, 1);
-  assert.match(r.stderr, /RUNTIME_OWNER_IS_LENOVO/);
+test("all four remote-owned apps refuse competing local Surface development servers", () => {
+  for (const app of ["app-captain", "app-client", "app-partner", "control-panel"]) {
+    assert.equal(owners.surfaces[app].owner, "lenovo-native");
+    const r = spawnSync(process.execPath, [launcher, app, "--check-local-config"], {
+      cwd: root, env: {...process.env, COMPUTERNAME: owners.sourceHost}, encoding: "utf8", timeout: 12000
+    });
+    assert.equal(r.status, 1, app);
+    assert.match(r.stderr, /RUNTIME_OWNER_IS_LENOVO/, app);
+  }
 });
 
 test("source mirroring rejects forbidden sensitive paths before SSH", () => {
@@ -38,5 +41,30 @@ test("source mirroring rejects forbidden sensitive paths before SSH", () => {
     });
     assert.equal(r.status, 1, forbidden);
     assert.match(r.stderr, /MIRROR_VERIFY_PATH_REJECTED/, forbidden);
+  }
+});
+
+test("source mirror permits Expo route conventions but rejects secret and traversal paths", () => {
+  const accepted = [
+    "apps/app-client/app/(app)/_layout.tsx",
+    "apps/app-client/app/store/[storeId].tsx",
+    "apps/app-partner/app/+html.tsx",
+    "apps/app-captain/app/(app)/home.tsx",
+  ];
+  for (const route of accepted) {
+    const r = spawnSync(process.execPath, [sync, "--check-path", route], {
+      cwd: root, env: {...process.env, COMPUTERNAME: owners.sourceHost}, encoding: "utf8", timeout: 12000
+    });
+    assert.equal(r.status, 0, route + ": " + r.stderr);
+    assert.match(r.stdout, /MIRROR_PATH_ACCEPTED/, route);
+  }
+  const forbidden = ["infra/local/.env", "apps/app-client/google-services.json", "apps/app-client/key.jks",
+    "apps/app-client/../../private.env", "tools/dev/.npmrc", "tools/dev/.ssh/id_rsa"];
+  for (const route of forbidden) {
+    const r = spawnSync(process.execPath, [sync, "--check-path", route], {
+      cwd: root, env: {...process.env, COMPUTERNAME: owners.sourceHost}, encoding: "utf8", timeout: 12000
+    });
+    assert.equal(r.status, 1, route);
+    assert.match(r.stderr, /MIRROR_PATH_REJECTED/, route);
   }
 });

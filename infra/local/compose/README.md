@@ -10,13 +10,9 @@ Daily backend lifecycle:
 - `pnpm dev status` — display backend/state.
 - `pnpm dev down` — stop repository host development processes and backend/state.
 
-Interactive surfaces are package-owned foreground processes:
+Interactive surfaces are **outside Docker**, and their present runtime owner is defined in [the current local runtime map](../runtime-owners.json). See [the two-machine development runbook](../README.md) for the native Windows task owners, source sync, localhost app tunnels, scoped stop/recovery and device transport. `pnpm client|partner|captain` and `pnpm control` are local entrypoints and fail closed on Surface when Lenovo owns the application. There is no active independent Field application; the historical `field` role is retired.
 
-- `pnpm client|partner|captain|field` — run that app's Expo development server.
-- `pnpm control` — run Control Panel Next development.
-- `pnpm scr` — own ADB transport/reverse mappings and scrcpy.
-
-Mobile apps are opened manually. Application-source edits reuse the running Metro process and Fast Refresh; Control uses Next HMR. Native rebuilds are not part of the source-edit loop.
+`pnpm scr` owns ADB reverse/scrcpy on Surface. Mobile apps are opened manually. JS source edits should reuse Metro/Fast Refresh, Control uses Next HMR, and normal JS changes do not require native EAS rebuilds. Verify mirrored source freshness before claiming the remote app reflects a change.
 
 `infra/local/.env.example` is the tracked local configuration template. The ignored local runtime projection is created beside it and preserved after creation.
 
@@ -26,16 +22,16 @@ An explicitly authorized local correction to the existing initial operator phone
 
 There is no Docker JavaScript runtime, persistent synthetic world, global fixture registry, parallel surface runtime owner or automatic mobile-app opener.
 
-## Docker Desktop engine and restore evidence (local observation, 2026-10-28)
+## Docker Desktop engine and restore safety (current local development)
 
-The local Windows host currently selects **Docker VMM (Beta)** in Docker Desktop 4.97.0. The active Docker CLI context is `desktop-linux`; the PostgreSQL and SeaweedFS containers use named Docker volumes (`samrim-local_samrim-postgres18-data` and `samrim-local_samrim-media-data`), not bind mounts into the repository. The observed Docker Desktop virtual disk is `C:\Users\bassa\AppData\Local\Docker\vm-data\DockerDesktop.vhdx` (~6.32 GiB at this observation); the project and external backups remain on `D:`. These host-specific details are observations, **not** a required path, a permanent configuration contract or evidence of the Docker backend from `docker context` alone. Recheck current backend, disk location, context, container mounts, and backups before a recovery or migration.
+Surface's selected Docker context is `bthwani-docker` over SSH to Windows Lenovo, where Docker Desktop owns backend containers and named PostgreSQL/SeaweedFS volumes. Historical observations of a Surface `desktop-linux` engine, Surface VHDX disk or local Docker VMM do **not** describe the current active service writer. Before any recovery or migration, recheck the live context, engine, container mounts, isolated database/media backups and verified restore; do not infer them from a previously observed file path.
 
 For G01, use a separate Docker network, disposable PostgreSQL/SeaweedFS volumes and actual service-owner readback. Restoring the database or copying media alone does not prove combined Identity/DSH/WLT recovery. Never reset Docker Desktop, prune project volumes, swap active VHDX storage, or restore over existing data to make a test pass. A virtual disk file is not itself a verified, off-engine recoverable backup; verify external database and media backups plus their restore and ACL behavior independently.
 
 ## Remote Docker on Lenovo (local development)
 
-The Windows Surface keeps the source tree, applications, Docker CLI and Compose plugin; a dedicated
-Windows Lenovo host runs Docker Desktop and all containers. The SSH Docker context is
+The Windows Surface keeps canonical source/Git, Docker CLI and Compose plugin; a dedicated
+Windows Lenovo host runs Docker Desktop and all backend containers. The applications are separate native Windows processes on Lenovo, **not** Docker containers; their runtime owners, source mirrors and SSH app ports are documented in [the current local runbook](../README.md). The SSH Docker context is
 `bthwani-docker`. Local development never requires making Docker Engine or PostgreSQL
 available on a LAN-facing address.
 

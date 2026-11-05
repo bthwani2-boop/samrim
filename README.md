@@ -25,14 +25,9 @@ pnpm dev status
 pnpm dev down
 ```
 
-Start only the surface being developed:
+Application dev servers may run **natively on Lenovo Windows**, not on this source machine. Read [the current local runtime map and operational runbook](infra/local/README.md) before starting, stopping or testing any app. Surface keeps canonical source/Git, browser and ADB; Docker services stay on Lenovo through the SSH Docker context.
 
-```text
-pnpm client
-pnpm partner
-pnpm captain
-pnpm control
-```
+`pnpm client`, `pnpm partner`, `pnpm captain`, and `pnpm control` invoke local package launchers. They **fail closed** if another host is the declared runtime owner; they are not remote start commands. Use the documented Windows Scheduled Tasks and SSH loopback tunnels, then verify the running host and mirrored file SHA before claiming Fast Refresh/HMR or test success. Never start a competing local server to bypass an unreachable Lenovo.
 
 Device transport/scrcpy when needed:
 
