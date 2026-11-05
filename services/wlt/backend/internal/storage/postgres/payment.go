@@ -366,6 +366,21 @@ func CollectPaymentIntent(ctx context.Context, db *sql.DB, input CollectPaymentI
 	if err := domain.ValidateCollect(input.CollectedByActorID, input.CollectionReference, input.CollectedAmountMinor, current.AmountMinor); err != nil {
 		return PaymentIntentRecord{}, false, err
 	}
+	// A new BThwani Captain cash collection must still have the full active
+	// cover held for the collecting Captain. Lock the reservation through
+	// collection commit so a concurrent cancellation cannot release it.
+	if current.AmountMinor > 0 && allocationErr == nil && allocation.FulfillmentMode == "BTHWANI_CAPTAIN" {
+		var coveredMinor int64
+		err := tx.QueryRowContext(ctx, `SELECT amount_minor FROM wlt.captain_cod_reservations
+			WHERE payment_intent_id=$1 AND order_id=$2 AND captain_actor_id=$3 AND state='ACTIVE' FOR SHARE`,
+			input.IntentID, allocation.OrderID, input.CollectedByActorID).Scan(&coveredMinor)
+		if errors.Is(err, sql.ErrNoRows) || (err == nil && coveredMinor != current.AmountMinor) {
+			return PaymentIntentRecord{}, false, ErrStateConflict
+		}
+		if err != nil {
+			return PaymentIntentRecord{}, false, err
+		}
+	}
 	var collector *string
 	if input.CollectedByActorID != "" {
 		collector = &input.CollectedByActorID

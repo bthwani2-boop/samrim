@@ -166,4 +166,59 @@ func TestConcurrentCaptainOffersYieldOneCODHoldAndReleasableWinner(t *testing.T)
 	if activeHolds != 1 || reserveEvents != 2 {
 		t.Fatalf("expected one ACTIVE and one RELEASED reservation, got active=%d total=%d", activeHolds, reserveEvents)
 	}
+	// Collection and release must serialize against the same payment row.
+	// Exactly one wins: collected cash stays covered, or uncollected cash
+	// remains uncollectible after the release.
+	raceStart := make(chan struct{})
+	var raceWG sync.WaitGroup
+	var collected PaymentIntentRecord
+	var raceReleased CaptainCODReservationRecord
+	var collectErr, releaseErr error
+	raceWG.Add(2)
+	go func() {
+		defer raceWG.Done()
+		<-raceStart
+		collected, _, collectErr = CollectPaymentIntent(s.ctx, s.db, CollectPaymentIntentInput{
+			IntentID: payment.ID, CollectedAmountMinor: 1000,
+			CollectedByActorID: losing, CollectionReference: losing + "-cash-collected",
+			ExpectedVersion: payment.Version, IdempotencyKey: losing + "-collect-race",
+			CorrelationID: losing + "-collect-race-correlation",
+		})
+	}()
+	go func() {
+		defer raceWG.Done()
+		<-raceStart
+		raceReleased, _, releaseErr = ReleaseCaptainCOD(s.ctx, s.db, CaptainCODReservationInput{
+			OrderID: orderID, PaymentIntentID: payment.ID, CaptainActorID: losing,
+			IdempotencyKey: losing + "-release-race", CorrelationID: losing + "-release-race-correlation",
+		})
+	}()
+	close(raceStart)
+	raceWG.Wait()
+	persistedPayment, err := ReadPaymentIntent(s.ctx, s.db, payment.ID)
+	if err != nil {
+		t.Fatalf("payment readback after collection/release race: %v", err)
+	}
+	persistedHold, err := readCaptainCODReservation(s.ctx, s.db, second.ID)
+	if err != nil {
+		t.Fatalf("hold readback after collection/release race: %v", err)
+	}
+	wallet, err := ReadCaptainWalletState(s.ctx, s.db, losing)
+	if err != nil {
+		t.Fatalf("Captain wallet readback after race: %v", err)
+	}
+	switch persistedPayment.State {
+	case domain.StateCollected:
+		if collectErr != nil || !errors.Is(releaseErr, ErrCaptainCODReservationState) ||
+			collected.State != domain.StateCollected || persistedHold.State != "ACTIVE" || wallet.HeldMinor != 1000 {
+			t.Fatalf("collected cash not covered after race: collect=%v release=%v payment=%+v hold=%+v wallet=%+v", collectErr, releaseErr, persistedPayment, persistedHold, wallet)
+		}
+	case domain.StateRequiresCollect:
+		if releaseErr != nil || !errors.Is(collectErr, ErrStateConflict) ||
+			raceReleased.State != "RELEASED" || persistedHold.State != "RELEASED" || wallet.HeldMinor != 0 {
+			t.Fatalf("released cash remained collectable after race: collect=%v release=%v payment=%+v hold=%+v wallet=%+v", collectErr, releaseErr, persistedPayment, persistedHold, wallet)
+		}
+	default:
+		t.Fatalf("unexpected payment state after race: %s", persistedPayment.State)
+	}
 }

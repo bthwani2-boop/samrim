@@ -117,8 +117,10 @@ func ReserveCaptainCOD(ctx context.Context, db *sql.DB, input CaptainCODReservat
 	if !errors.Is(err, sql.ErrNoRows) {
 		return CaptainCODReservationRecord{}, false, err
 	}
+	// A new hold after collection can no longer be released and would trap
+	// Captain funds; exact idempotent retries already returned above.
 	var amountMinor int64
-	err = tx.QueryRowContext(ctx, `SELECT a.cash_amount_minor FROM wlt.payment_intents p JOIN wlt.customer_payment_allocations a ON a.payment_intent_id=p.id WHERE p.id=$1 AND a.order_id=$2 AND p.method=$3 AND p.state IN ('REQUIRES_COLLECTION','COLLECTED') FOR UPDATE`, input.PaymentIntentID, input.OrderID, domain.MethodCashOnDelivery).Scan(&amountMinor)
+	err = tx.QueryRowContext(ctx, `SELECT a.cash_amount_minor FROM wlt.payment_intents p JOIN wlt.customer_payment_allocations a ON a.payment_intent_id=p.id WHERE p.id=$1 AND a.order_id=$2 AND p.method=$3 AND p.state='REQUIRES_COLLECTION' FOR UPDATE`, input.PaymentIntentID, input.OrderID, domain.MethodCashOnDelivery).Scan(&amountMinor)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CaptainCODReservationRecord{}, false, ErrCaptainCODAllocationNotFound
 	}
@@ -201,6 +203,17 @@ func transitionCaptainCOD(ctx context.Context, db *sql.DB, input CaptainCODReser
 	if !errors.Is(err, sql.ErrNoRows) {
 		return CaptainCODReservationRecord{}, false, err
 	}
+	// Match collection's lock order (payment before Captain wallet and hold).
+	// This prevents release/collection races from leaving collected cash
+	// without active cover, without deadlocking the two transactions.
+	var paymentState string
+	err = tx.QueryRowContext(ctx, `SELECT state FROM wlt.payment_intents WHERE id=$1 FOR SHARE`, input.PaymentIntentID).Scan(&paymentState)
+	if errors.Is(err, sql.ErrNoRows) {
+		return CaptainCODReservationRecord{}, false, ErrCaptainCODReservationState
+	}
+	if err != nil {
+		return CaptainCODReservationRecord{}, false, err
+	}
 	if err := lockCaptainWalletBalance(ctx, tx, input.CaptainActorID); err != nil {
 		return CaptainCODReservationRecord{}, false, err
 	}
@@ -225,6 +238,11 @@ func transitionCaptainCOD(ctx context.Context, db *sql.DB, input CaptainCODReser
 			}
 			return reservation, true, nil
 		}
+		return CaptainCODReservationRecord{}, false, ErrCaptainCODReservationState
+	}
+	// Once customer cash is recorded as collected, the hold is debt cover:
+	// only the balanced wallet debit may terminate it, never cancellation.
+	if operation == "release" && paymentState == domain.StateCollected {
 		return CaptainCODReservationRecord{}, false, ErrCaptainCODReservationState
 	}
 	if operation == "finalize" {
