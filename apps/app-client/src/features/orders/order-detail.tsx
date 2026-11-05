@@ -37,6 +37,14 @@ export default function ClientOrderDetail() {
   const [identityState, setIdentityState] = useState(currentIdentityState);
   const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
   const loadSequence = useRef(0);
+  const requestedOrderIDRef = useRef(orderId);
+  requestedOrderIDRef.current = orderId;
+  const hasCurrentOrderScope = useCallback((actorID: string, requestedOrderID: string): boolean => {
+    const current = currentIdentityState();
+    return current.kind === "authenticated" && isClientOrderScopeCurrent(
+      actorID, requestedOrderID, current.identity.subject.trim(), requestedOrderIDRef.current,
+    );
+  }, []);
   const latestOrderState = useRef<Order["state"] | null>(null);
   const [showCancellationForm, setShowCancellationForm] = useState(false);
   const [showConversation, setShowConversation] = useState(false);
@@ -66,12 +74,12 @@ export default function ClientOrderDetail() {
     try {
       const token = await getUsableIdentityAccessToken();
       const value = await client().readClientDeliveryProof(token, orderId);
-      if (hasCurrentClientActor(actorID)) setDeliveryProof({ kind: "ready", value });
+      if (hasCurrentOrderScope(actorID, orderId)) setDeliveryProof({ kind: "ready", value });
     } catch (error) {
       console.error("DSH client delivery proof read failed", error);
-      if (hasCurrentClientActor(actorID)) setDeliveryProof({ kind: "error" });
+      if (hasCurrentOrderScope(actorID, orderId)) setDeliveryProof({ kind: "error" });
     }
-  }, [orderId]);
+  }, [hasCurrentOrderScope, orderId]);
 
   const refreshRating = useCallback(async (orderState: Order["state"]) => {
     const session = currentIdentityState();
@@ -86,12 +94,12 @@ export default function ClientOrderDetail() {
     try {
       const token = await getUsableIdentityAccessToken();
       const value = await client().readClientOrderRating(token, orderId);
-      if (!hasCurrentClientActor(actorID)) return;
+      if (!hasCurrentOrderScope(actorID, orderId)) return;
       setSelectedRating(value.rating.rating);
       setReview(value.rating.review);
       setOrderRating({ kind: "ready", value });
     } catch (error) {
-      if (!hasCurrentClientActor(actorID)) return;
+      if (!hasCurrentOrderScope(actorID, orderId)) return;
       if (typeof error === "object" && error !== null && "status" in error && (error as { status?: unknown }).status === 404) {
         setSelectedRating(0);
         setReview("");
@@ -101,16 +109,16 @@ export default function ClientOrderDetail() {
       console.error("DSH client order rating read failed", error);
       setOrderRating({ kind: "error" });
     }
-  }, [orderId]);
+  }, [hasCurrentOrderScope, orderId]);
 
   const readCancellationReview = useCallback(async (token: string, requestedOrderID: string, actorID: string) => {
     try {
       const result = await client().readOrderCancellationReview(token, requestedOrderID);
-      if (hasCurrentClientActor(actorID)) setCancellationReview(result.request);
+      if (hasCurrentOrderScope(actorID, requestedOrderID)) setCancellationReview(result.request);
     } catch (error) {
-      if (hasCurrentClientActor(actorID) && typeof error === "object" && error !== null && "status" in error && (error as {status?:unknown}).status === 404) setCancellationReview(null);
+      if (hasCurrentOrderScope(actorID, requestedOrderID) && typeof error === "object" && error !== null && "status" in error && (error as {status?:unknown}).status === 404) setCancellationReview(null);
     }
-  }, []);
+  }, [hasCurrentOrderScope]);
 
   const load = useCallback(async (preserveCurrent = false) => {
     const sequence = ++loadSequence.current;
