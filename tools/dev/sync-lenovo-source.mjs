@@ -9,6 +9,14 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+// Use fixed, ACL-protected Windows executables; never resolve SSH/Git through a writable PATH.
+const executablePaths=Object.freeze({
+  "git.exe":"C:\\Program Files\\Git\\cmd\\git.exe",
+  "ssh.exe":"C:\\Windows\\System32\\OpenSSH\\ssh.exe",
+  "scp.exe":"C:\\Windows\\System32\\OpenSSH\\scp.exe",
+  "tar.exe":"C:\\Windows\\System32\\tar.exe",
+});
+
 const ownerConfig = JSON.parse(fs.readFileSync(path.join(root, "infra/local/runtime-owners.json"), "utf8"));
 if (process.env.COMPUTERNAME?.toUpperCase() !== ownerConfig.sourceHost) {
   throw new Error("SYNC_SOURCE_HOST_REQUIRED: source changes must originate on the declared primary machine");
@@ -44,7 +52,9 @@ function approved(relative) {
   return archiveInputs.includes(p) || mirroredPrefixes.some(prefix => p.startsWith(prefix));
 }
 function call(exe, args, timeout=45000) {
-  const r = spawnSync(exe,args,{cwd:root,encoding:"utf8",timeout,windowsHide:true,maxBuffer:1024*1024});
+  const fixedPath=executablePaths[exe];
+  if(!fixedPath) throw new Error("EXECUTABLE_NOT_ALLOWLISTED");
+  const r = spawnSync(fixedPath,args,{cwd:root,encoding:"utf8",timeout,windowsHide:true,maxBuffer:1024*1024});
   if(r.error || r.status!==0) throw new Error(exe+" failed: "+(r.error?.message||r.stderr||"exit "+r.status).slice(0,900));
   return (r.stdout||"").trim();
 }
@@ -61,14 +71,14 @@ function sourcePaths() {
     ["ls-files","--cached","-z","--",...archiveInputs],
     ["ls-files","--others","--exclude-standard","-z","--",...archiveInputs]
   ]) {
-    const buf = spawnSync("git.exe",args,{cwd:root,encoding:"buffer",timeout:25000,windowsHide:true});
+    const buf = spawnSync(executablePaths["git.exe"],args,{cwd:root,encoding:"buffer",timeout:25000,windowsHide:true});
     if(buf.status!==0 || buf.error) throw new Error("GIT_FILE_INVENTORY_UNAVAILABLE");
     for(const name of buf.stdout.toString("utf8").split("\0")) if(approved(name)) included.add(normalize(name));
   }
-  return [...included].sort();
+  return [...included].sort((a,b)=>a.localeCompare(b,"en"));
 }
 function gitChangedPaths(args){
-  const result=spawnSync("git.exe",args,{cwd:root,encoding:"buffer",timeout:25000,windowsHide:true});
+  const result=spawnSync(executablePaths["git.exe"],args,{cwd:root,encoding:"buffer",timeout:25000,windowsHide:true});
   if(result.error||result.status!==0) throw new Error("MIRROR_GIT_DELTA_UNAVAILABLE");
   return result.stdout.toString("utf8").split("\0").filter(Boolean).map(normalize);
 }
@@ -89,7 +99,7 @@ function resumeExisting(dryRun=false){
     ...gitChangedPaths(["diff","--name-only","-z","HEAD","--",...archiveInputs]),
     ...gitChangedPaths(["ls-files","--others","--exclude-standard","-z","--",...archiveInputs])
   ]);
-  const selected=[...changes].filter(approved).sort();
+  const selected=[...changes].filter(approved).sort((a,b)=>a.localeCompare(b,"en"));
   const current=call("git.exe",["rev-parse","HEAD"]);
   const managed=currentManaged();
   const previous=readManaged();
@@ -225,7 +235,26 @@ function fullBaseline() {
     call("scp.exe",["-q","-o","BatchMode=yes",temp,target+":"+remoteZip],45000);
     const got=remoteScript("(Get-FileHash -LiteralPath "+quote(win(remoteZip))+" -Algorithm SHA256).Hash");
     if(got.trim().toUpperCase()!==digest) throw new Error("BASELINE_ZIP_HASH_MISMATCH");
-    remoteScript("New-Item -ItemType Directory -Force -Path "+quote(win(remoteSource))+" | Out-Null; tar.exe -xf "+quote(win(remoteZip))+" -C "+quote(win(remoteSource))+"; if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}",45000);
+    // Fresh bootstrap only: extract off-path, then publish a complete tree in one same-volume directory move.
+    // Never expand an archive over an existing tree that a running Expo/Next process may be reading.
+    const stage=win(remoteRoot+"/source-bootstrap-stage");
+    const dest=win(remoteSource);
+    const bootstrap=[
+      "$ErrorActionPreference='Stop'",
+      "$source="+quote(dest),
+      "$stage="+quote(stage),
+      "$zip="+quote(win(remoteZip)),
+      "if(Test-Path -LiteralPath $source){throw 'MIRROR_SOURCE_ALREADY_EXISTS'}",
+      "if(Test-Path -LiteralPath $stage){throw 'MIRROR_BOOTSTRAP_STAGE_ALREADY_EXISTS'}",
+      "$active=@(Get-NetTCPConnection -State Listen -LocalPort 18111,18112,18113,13010 -ErrorAction SilentlyContinue)",
+      "if($active.Count -gt 0){throw 'MIRROR_BOOTSTRAP_LIVE_RUNTIME_BLOCKED'}",
+      "New-Item -ItemType Directory -Path $stage -ErrorAction Stop | Out-Null",
+      "tar.exe -xf $zip -C $stage",
+      "if($LASTEXITCODE -ne 0){throw 'MIRROR_BOOTSTRAP_ARCHIVE_FAILED'}",
+      "if(!(Test-Path -LiteralPath (Join-Path $stage 'pnpm-workspace.yaml') -PathType Leaf)){throw 'MIRROR_BOOTSTRAP_MANIFEST_MISSING'}",
+      "[IO.Directory]::Move($stage,$source)"
+    ].join("; ");
+    remoteScript(bootstrap,60000);
   } finally {
     try{fs.unlinkSync(temp);}catch{}
   }

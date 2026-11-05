@@ -21,9 +21,9 @@ $add=[System.Collections.Generic.List[string]]::new()
 $updated=$original
 foreach($name in $required){
   $expr='(?m)^'+[Regex]::Escape($name)+'=([^\r\n]*)$'
-  $matches=[Regex]::Matches($updated,$expr)
+  $foundMatches=[Regex]::Matches($updated,$expr)
   $hasValue=$false
-  foreach($match in $matches){ if(![string]::IsNullOrWhiteSpace($match.Groups[1].Value)){$hasValue=$true} }
+  foreach($match in $foundMatches){ if(![string]::IsNullOrWhiteSpace($match.Groups[1].Value)){$hasValue=$true} }
   if($hasValue){continue}
   $secret=Read-MaskedSecret $name
   if([string]::IsNullOrWhiteSpace($secret) -or $secret.Contains([char]10) -or $secret.Contains([char]13)){
