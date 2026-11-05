@@ -4,6 +4,8 @@ $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 if($env:COMPUTERNAME -ne 'BTHWANI-DOCKER') { throw 'LENOVO_ONLY' }
 $root='C:\Users\bthwa\BThwaniAppRunner'
+$owners=Get-Content -Raw -LiteralPath (Join-Path $root 'source\infra\local\runtime-owners.json') | ConvertFrom-Json
+if(([string]$owners.remoteRuntimeRoot).Replace('/',[char]92).TrimEnd([char]92) -ine $root.TrimEnd([char]92)) { throw 'LENOVO_RUNTIME_ROOT_MISMATCH' }
 $entry=Join-Path $root 'source\tools\dev\Invoke-LenovoApp.ps1'
 if(!(Test-Path -LiteralPath $entry)) { throw 'NATIVE_APP_RUNNER_MISSING' }
 $mapping=[ordered]@{

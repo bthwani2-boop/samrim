@@ -10,6 +10,8 @@ Set-StrictMode -Version Latest
 $runtimeRoot = 'C:\Users\bthwa\BThwaniAppRunner'
 $source = Join-Path $runtimeRoot 'source'
 $owners = Get-Content -Raw -LiteralPath (Join-Path $source 'infra\local\runtime-owners.json') | ConvertFrom-Json
+$declaredRoot = ([string]$owners.remoteRuntimeRoot).Replace('/',[char]92).TrimEnd([char]92)
+if($runtimeRoot.TrimEnd([char]92) -ine $declaredRoot) { throw 'LENOVO_RUNTIME_ROOT_MISMATCH' }
 if($env:COMPUTERNAME -ne $owners.remoteHost) { throw 'LENOVO_RUNTIME_WRONG_HOST' }
 $owner = $owners.surfaces.$App.owner
 if($owner -ne 'lenovo-native' -and -not $Trial) { throw "LENOVO_RUNTIME_NOT_OWNER app=$App owner=$owner" }

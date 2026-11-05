@@ -14,7 +14,7 @@ Do not infer machine ownership from a path called `Surface`, the `pnpm client|pa
 
 The actual owner and **Lenovo** application port for each surface are in `runtime-owners.json`. The stable **Surface localhost** ports are in the ignored `infra/local/.env` (template: `.env.example`). A Surface SSH loopback tunnel forwards each stable port to its runtime-owner port on Lenovo. No application or database port needs to listen on Wi-Fi/LAN.
 
-Windows Scheduled Tasks on **Lenovo**, currently configured to start at user logon:
+Windows Scheduled Tasks on **Lenovo** (the current live tasks were promoted to user-logon startup after cutover; `tools/dev/Register-LenovoAppTasks.ps1` creates the Client/Partner/Control tasks **without** logon triggers for initial on-demand trials). Always inspect each live trigger instead of assuming a freshly registered task starts automatically:
 
 | Task | Native process |
 | --- | --- |
@@ -34,6 +34,8 @@ Windows Scheduled Tasks on **Surface**, also using user-logon triggers:
 | `BThwani Partner Lenovo SSH Tunnel` | Partner app loopback tunnel |
 | `BThwani Control Lenovo SSH Tunnel` | Control Panel loopback tunnel |
 | `BThwani Lenovo Source Sync` | One-way source mirror from Surface |
+
+The six Surface background jobs (four app tunnels, backend tunnel, and source synchronizer) now use **`-WindowStyle Hidden`** in their Windows Scheduled Task actions, while remaining discoverable in Task Scheduler (`Settings.Hidden` is not required). The synchronizer launches its one Node watcher under a hidden PowerShell parent. Check task state, the owning process, and SSH/HTTP readback before restarting anything. Terminal windows created by an operator or other remote-control apps are not these job owners and must not be closed indiscriminately.
 
 The single per-app SSH tunnel owner is `tools/dev/Start-AppTunnel.ps1`; all four Surface app-tunnel Scheduled Tasks, including `BThwani Captain Lenovo SSH Tunnel` with `-App app-captain`, now invoke it. The native Windows app launcher is `tools/dev/Start-LenovoSurface.ps1` through `tools/dev/Invoke-LenovoApp.ps1`. The previous Captain script at `%LOCALAPPDATA%\BThwani\captain-metro-tunnel.ps1` is **inactive** (verified no running process or scheduled task references it on 2026-11-05). Keep that historical file as a recovery artifact unless its removal is separately authorized; never reactivate it or create a competing tunnel. Validate the live Scheduled Task action, owning process and localhost listener instead of assuming this documentation proves future state.
 
@@ -64,6 +66,8 @@ Use `Start-ScheduledTask -TaskName '<exact owner task>'` on the proper machine o
 
 `pnpm client`, `pnpm partner`, `pnpm captain` and `pnpm control` are **local package entrypoints**, not remote launch commands. `start-surface.mjs` rejects competing local launches when `runtime-owners.json` assigns Lenovo. To start/restart a remote app, use its **remote Task Scheduler owner**, then verify the Surface localhost listener routes through SSH. Do not edit the map or silently run a Surface fallback simply to make a broken remote runtime appear green. Any rollback to Surface requires a scoped authorized cutover and a verified owner/port transition.
 
+When reverting an app from Lenovo to Surface, first inspect and stop the **exact corresponding Surface SSH tunnel Scheduled Task** (not the backend SSH tunnel or other app tasks). Check that its child SSH process actually ended and released the app's local loopback port; if an orphan remains, inspect and terminate **only** the matching PID and forwarding command before starting the replacement. Then change the runtime-owner map and perform a verified, scoped cutover. Updating the map alone does not interrupt a blocking live SSH tunnel, so do not assume it releases the port. No fallback is automatic.
+
 `pnpm dev down` may stop **all backend services** and local repository app processes. Never use it to stop only one app. Docker belongs to Lenovo through the `bthwani-docker` context; `pnpm dev status` is safe for backend health observation. Never switch to `desktop-linux`, start a second engine, prune volumes, reset databases, expose Postgres on a LAN, or restore a VHDX to work around a connectivity failure. Refer to [Compose runtime and recovery](compose/README.md) for backend-specific details.
 
 ADB remains on Surface. After ADB daemon/device reconnect, inspect `adb reverse --list` and restore only the required API and app loopback mappings (`pnpm scr` owns the established mappings). Physical phones access the mapped Surface localhost ports, not the private Lenovo loopback ports.
@@ -71,5 +75,7 @@ ADB remains on Surface. After ADB daemon/device reconnect, inspect `adb reverse 
 ## Secrets, data and recovery
 
 Mobile Google Maps keys and Control Panel development credentials are stored separately under `C:\Users\bthwa\BThwaniAppRunner\private\env` on Lenovo, **outside Git and the mirrored source**. Use the interactive `tools/dev/Set-LenovoRuntimeSecrets.ps1` on Lenovo to enter missing values securely; never print their contents, copy Surface's full secret set, or send keys in chat. Review the local ACLs and provider restrictions before claiming complete secret-hardening.
+
+SSH currently uses the existing Windows OpenSSH server. Test public-key access and inspect effective Windows Firewall source-address filters before restricting TCP 22; an observed Wi-Fi IP is not proof of a DHCP reservation. Do not disable a working allow rule or password authentication until a validated independent recovery path exists. Prefer scoped changes to the existing rules rather than parallel rules or a second SSH daemon. Measure actual Wi-Fi throughput before tuning channel, router, network adapters or connection software.
 
 If Lenovo/SSH is unavailable: report `BLOCKED` or `DEGRADED`; investigate existing tasks/network and known-good backups, restore the same owner, and verify canonical readback. **Never silently start a second Docker engine or Metro/Next server on Surface.** If an app cutover itself fails, preserve and restore the known-good service only with a scoped, inspected reversal; do not touch persistent Postgres/media volumes or unrelated user sessions. No scripts in this document imply authorization to merge, deploy or make destructive changes.

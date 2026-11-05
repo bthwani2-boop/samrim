@@ -59,12 +59,22 @@ test("source mirror permits Expo route conventions but rejects secret and traver
     assert.match(r.stdout, /MIRROR_PATH_ACCEPTED/, route);
   }
   const forbidden = ["infra/local/.env", "apps/app-client/google-services.json", "apps/app-client/key.jks",
-    "apps/app-client/../../private.env", "tools/dev/.npmrc", "tools/dev/.ssh/id_rsa"];
+    "apps/app-client/../../private.env", "tools/dev/.npmrc", "tools/dev/.ssh/id_rsa", "apps/app-client/Private/access.ts", "apps/app-client/.Secrets/config.ts", "apps/app-partner/Node_Modules/evil.js"];
   for (const route of forbidden) {
     const r = spawnSync(process.execPath, [sync, "--check-path", route], {
       cwd: root, env: {...process.env, COMPUTERNAME: owners.sourceHost}, encoding: "utf8", timeout: 12000
     });
     assert.equal(r.status, 1, route);
     assert.match(r.stderr, /MIRROR_PATH_REJECTED/, route);
+  }
+});
+
+test("no unrecognized host can start a Lenovo-owned app", () => {
+  for (const host of ["OTHER-HOST", ""]) {
+    const r = spawnSync(process.execPath, [launcher, "app-captain", "--check-local-config"], {
+      cwd: root, env: {...process.env, COMPUTERNAME: host}, encoding: "utf8", timeout: 12000
+    });
+    assert.equal(r.status, 1, host);
+    assert.match(r.stderr, /RUNTIME_OWNER_IS_LENOVO|RUNTIME_OWNER_UNKNOWN/, host);
   }
 });

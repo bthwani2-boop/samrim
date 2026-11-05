@@ -15,6 +15,11 @@ if (process.env.COMPUTERNAME?.toUpperCase() !== ownerConfig.sourceHost) {
 }
 const target = ownerConfig.sshTarget;
 const remoteRoot = ownerConfig.remoteRuntimeRoot.replace(/\\/g, "/");
+const registeredRuntimeRoot="C:/Users/bthwa/BThwaniAppRunner";
+if(remoteRoot.replace(/\/$/,"").toLowerCase()!==registeredRuntimeRoot.toLowerCase()){
+  throw new Error("LENOVO_RUNTIME_ROOT_MISMATCH: update the launcher and scheduled tasks before changing the mirror root");
+}
+
 const remoteSource = remoteRoot + "/source";
 const mode = process.argv.includes("--watch") ? "watch" : "once";
 const archiveInputs = [
@@ -35,7 +40,7 @@ function approved(relative) {
   if (!p || p.startsWith("/") || p.includes("//")) return false;
   const segments = p.split("/");
   if (segments.some(s => !s || s==="." || s===".." || /[<>:"|?*]/.test(s) || [...s].some(c => c.charCodeAt(0) < 32))) return false;
-  if (segments.some(s => ignoredNames.has(s) || forbiddenBasename.test(s))) return false;
+  if (segments.some(s => ignoredNames.has(s.toLowerCase()) || forbiddenBasename.test(s))) return false;
   return archiveInputs.includes(p) || mirroredPrefixes.some(prefix => p.startsWith(prefix));
 }
 function call(exe, args, timeout=45000) {
@@ -62,6 +67,87 @@ function sourcePaths() {
   }
   return [...included].sort();
 }
+function gitChangedPaths(args){
+  const result=spawnSync("git.exe",args,{cwd:root,encoding:"buffer",timeout:25000,windowsHide:true});
+  if(result.error||result.status!==0) throw new Error("MIRROR_GIT_DELTA_UNAVAILABLE");
+  return result.stdout.toString("utf8").split("\0").filter(Boolean).map(normalize);
+}
+function existingMirror(){
+  const remoteProbe="$p="+quote(win(remoteSource+"/pnpm-workspace.yaml"))+
+    ";if(Test-Path -LiteralPath $p -PathType Leaf){Write-Output 'PRESENT'}"+
+    "else{$active=@(Get-NetTCPConnection -State Listen -LocalPort 18111,18112,18113,13010 -ErrorAction SilentlyContinue);"+
+    "if($active.Count -gt 0){throw 'MIRROR_BOOTSTRAP_LIVE_RUNTIME_BLOCKED'};Write-Output 'MISSING'}";
+  return remoteScript(remoteProbe).trim()==="PRESENT";
+}
+function resumeExisting(dryRun=false){
+  const baseFile=win(remoteRoot+"/source-baseline-head.txt");
+  const base=remoteScript("$f="+quote(baseFile)+";if(Test-Path $f){Get-Content -Raw -LiteralPath $f}else{Write-Output 'NONE'}").trim();
+  if(!/^[0-9a-f]{40}$/i.test(base)) throw new Error("MIRROR_BASELINE_UNKNOWN: refusing to overwrite a running source tree");
+  if(call("git.exe",["cat-file","-t",base])!=="commit") throw new Error("MIRROR_BASELINE_COMMIT_MISSING");
+  const changes=new Set([
+    ...gitChangedPaths(["diff","--name-only","-z",base,"HEAD","--",...archiveInputs]),
+    ...gitChangedPaths(["diff","--name-only","-z","HEAD","--",...archiveInputs]),
+    ...gitChangedPaths(["ls-files","--others","--exclude-standard","-z","--",...archiveInputs])
+  ]);
+  const selected=[...changes].filter(approved).sort();
+  const current=call("git.exe",["rev-parse","HEAD"]);
+  const managed=currentManaged();
+  const previous=readManaged();
+  console.log("LENOVO_RESUME_SOURCE base="+base+" head="+current+" delta="+selected.length);
+  pruneFormerlyManaged(previous,managed,dryRun);
+  if(dryRun) return;
+  for(const rel of selected) syncFile(rel);
+  remoteScript("Set-Content -NoNewline -LiteralPath "+quote(baseFile)+" -Value "+quote(current));
+  writeManaged(managed);
+  console.log("LENOVO_SOURCE_RECONCILE=PASS delta="+selected.length);
+}
+const stateFile=path.join(process.env.LOCALAPPDATA || path.join(os.homedir(),"AppData","Local"),
+  "BThwani","lenovo-source-manifest.json");
+function currentManaged(){
+  const entries=new Map();
+  for(const rel of sourcePaths()){
+    const file=path.join(root,rel);
+    try{
+      const st=fs.lstatSync(file);
+      if(st.isSymbolicLink()) throw new Error("MIRROR_MANAGED_SYMLINK_REJECTED: "+rel);
+      if(st.isFile()) entries.set(rel,sha(file));
+    }catch(e){if(e?.code!=="ENOENT") throw e;}
+  }
+  return entries;
+}
+function readManaged(){
+  if(!fs.existsSync(stateFile)) return new Map();
+  const data=JSON.parse(fs.readFileSync(stateFile,"utf8"));
+  if(data.version!==1 || data.host!==ownerConfig.remoteHost || typeof data.files!=="object")
+    throw new Error("MIRROR_MANIFEST_INVALID");
+  const managed=new Map();
+  for(const [rel,digest] of Object.entries(data.files)){
+    if(!approved(rel) || !/^[0-9A-F]{64}$/.test(digest)) throw new Error("MIRROR_MANIFEST_ENTRY_INVALID");
+    managed.set(rel,digest);
+  }
+  return managed;
+}
+function writeManaged(current){
+  fs.mkdirSync(path.dirname(stateFile),{recursive:true});
+  const tmp=stateFile+".pending-"+process.pid;
+  try{
+    fs.writeFileSync(tmp,JSON.stringify({version:1,host:ownerConfig.remoteHost,
+      files:Object.fromEntries(current)}),"utf8");
+    fs.renameSync(tmp,stateFile);
+  }finally{if(fs.existsSync(tmp))fs.unlinkSync(tmp);}
+}
+function pruneFormerlyManaged(previous,current,dryRun=false){
+  const stale=[...previous].filter(([rel])=>!current.has(rel));
+  if(stale.length) console.log("LENOVO_MANAGED_STALE="+stale.length);
+  if(dryRun) return;
+  for(const [rel,digest] of stale){
+    const dest=remoteFile(rel);
+    const actual=remoteScript("$p="+quote(dest)+";if(Test-Path -LiteralPath $p -PathType Leaf){(Get-FileHash -Algorithm SHA256 -LiteralPath $p).Hash}else{Write-Output 'MISSING'}").trim().toUpperCase();
+    if(actual==="MISSING") continue;
+    if(actual!==digest) throw new Error("MIRROR_STALE_FILE_CONFLICT: "+rel);
+    syncFile(rel,true);
+  }
+}
 let last = new Map();
 function filesWithStats() {
   const result = new Map();
@@ -76,7 +162,7 @@ function filesWithStats() {
 }
 function syncFile(rel, deleted=false) {
   if(!approved(rel)) throw new Error("MIRROR_PATH_REJECTED");
-  const full=path.join(root, rel);
+  const full=path.join(root,rel);
   const dest=remoteFile(rel);
   if(deleted || !fs.existsSync(full)) {
     remoteScript("$p="+quote(dest)+"; if(Test-Path -LiteralPath $p -PathType Leaf){Remove-Item -LiteralPath $p -Force; Write-Output 'MIRROR_DELETED'}");
@@ -84,11 +170,20 @@ function syncFile(rel, deleted=false) {
   }
   const stat=fs.lstatSync(full);
   if(!stat.isFile() || stat.isSymbolicLink()) throw new Error("MIRROR_NONREGULAR_FILE_REJECTED: "+rel);
+  const digest=sha(full);
+  const remoteHash=remoteScript("$p="+quote(dest)+";if(Test-Path -LiteralPath $p -PathType Leaf){(Get-FileHash -Algorithm SHA256 -LiteralPath $p).Hash}else{Write-Output 'MISSING'}");
+  if(remoteHash.trim().toUpperCase()===digest) return;
+  const staging=win(remoteRoot+"/sync-stage-"+crypto.createHash("sha256").update(rel).digest("hex").slice(0,20)+".tmp");
+  const backup=win(remoteRoot+"/sync-backup-"+crypto.createHash("sha256").update(rel).digest("hex").slice(0,20)+".bak");
   const dir=path.dirname(dest);
   remoteScript("New-Item -ItemType Directory -Force -Path "+quote(dir)+" | Out-Null");
-  call("scp.exe",["-q","-o","BatchMode=yes","-o","StrictHostKeyChecking=yes","-o","ConnectTimeout=8",full,target+":"+remoteSource+"/"+rel],40000);
-  const actual=remoteScript("(Get-FileHash -Algorithm SHA256 -LiteralPath "+quote(dest)+").Hash");
-  if(actual.trim().toUpperCase()!==sha(full)) throw new Error("MIRROR_HASH_MISMATCH: "+rel);
+  call("scp.exe",["-q","-o","BatchMode=yes","-o","StrictHostKeyChecking=yes","-o","ConnectTimeout=8",full,target+":"+staging.replaceAll("\\","/")],40000);
+  const actual=remoteScript("(Get-FileHash -Algorithm SHA256 -LiteralPath "+quote(staging)+").Hash");
+  if(actual.trim().toUpperCase()!==digest) throw new Error("MIRROR_STAGE_HASH_MISMATCH: "+rel);
+  remoteScript("$stage="+quote(staging)+"; $dest="+quote(dest)+"; $backup="+quote(backup)+"; if(Test-Path -LiteralPath $dest -PathType Leaf){[IO.File]::Replace($stage,$dest,$backup)}else{[IO.File]::Move($stage,$dest)}");
+  const published=remoteScript("(Get-FileHash -Algorithm SHA256 -LiteralPath "+quote(dest)+").Hash");
+  if(published.trim().toUpperCase()!==digest) throw new Error("MIRROR_PUBLISHED_HASH_MISMATCH: "+rel);
+  remoteScript("$backup="+quote(backup)+";if(Test-Path -LiteralPath $backup -PathType Leaf){Remove-Item -LiteralPath $backup -Force}");
 }
 function assertArchiveInputsSafe() {
   // Archive reads from Git HEAD (not only changed files); reject any future accidentally tracked secret
@@ -113,7 +208,19 @@ function fullBaseline() {
   const remoteZip=remoteRoot+"/source-baseline.zip";
   try {
     // HEAD is the baseline; uncommitted tracked and new source files are sent separately.
-    call("git.exe",["archive","--format=zip","--output="+temp,"HEAD","--",...archiveInputs],45000);
+    const excludedDirs=[...ignoredNames].map(dir=>":(exclude,glob)**/"+dir+"/**");
+    const excludedSensitive=[":(exclude,glob)**/.env*",":(exclude,glob)**/*.jks",
+      ":(exclude,glob)**/*.pem",":(exclude,glob)**/*.key",":(exclude,glob)**/*.p12",
+      ":(exclude,glob)**/*.pfx",":(exclude,glob)**/*.keystore",
+      ":(exclude,glob)**/google-services.json",":(exclude,glob)**/GoogleService-Info.plist",
+      ":(exclude,glob)**/.npmrc",":(exclude,glob)**/.git-credentials"];
+    call("git.exe",["archive","--format=zip","--output="+temp,"HEAD","--",...archiveInputs,...excludedDirs,...excludedSensitive],45000);
+    const listed=call("tar.exe",["-tf",temp],45000);
+    for(const entry of listed.split(/\r?\n/)){
+      if(entry && !entry.endsWith("/") && !approved(entry)){
+        throw new Error("MIRROR_UNSAFE_ARCHIVE_ENTRY: "+entry);
+      }
+    }
     const digest=sha(temp);
     call("scp.exe",["-q","-o","BatchMode=yes",temp,target+":"+remoteZip],45000);
     const got=remoteScript("(Get-FileHash -LiteralPath "+quote(win(remoteZip))+" -Algorithm SHA256).Hash");
@@ -129,6 +236,7 @@ function fullBaseline() {
   for(const rel of changes) if(approved(rel)) syncFile(rel);
   const head=call("git.exe",["rev-parse","HEAD"]);
   remoteScript("Set-Content -NoNewline -LiteralPath "+quote(win(remoteRoot+"/source-baseline-head.txt"))+" -Value "+quote(head));
+  writeManaged(currentManaged());
   console.log("LENOVO_SOURCE_BASELINE=PASS sha="+head+" copied_dirty="+[...changes].filter(approved).length);
 }
 function poll() {
@@ -138,6 +246,7 @@ function poll() {
     if(last.get(rel)!==st) {syncFile(rel);updates++;}
   }
   for(const rel of last.keys()) if(!now.has(rel)) {syncFile(rel,true);updates++;}
+  if(updates) writeManaged(currentManaged());
   last=now;
   if(updates) console.log("LENOVO_SOURCE_CHANGED=PASS count="+updates);
 }
@@ -162,7 +271,15 @@ if(verifyAt!==-1){
   console.log("LENOVO_SOURCE_VERIFY=PASS file="+relative);
   process.exit(0);
 }
-fullBaseline();
+if(existingMirror()){
+  // Reconcile Git changes in place with individually staged, hash-verified file publication.
+  // Never extract a full archive over live Metro/Next source or remove node_modules.
+  resumeExisting(process.argv.includes("--dry-run"));
+}else if(process.argv.includes("--dry-run")){
+  console.log("LENOVO_SOURCE_FRESH_BOOTSTRAP_REQUIRED");
+}else{
+  fullBaseline(); // Empty derived workspace only.
+}
 last=filesWithStats();
 if(mode==="watch"){
   console.log("LENOVO_SOURCE_WATCH=ACTIVE interval=1500ms source=Surface target=Lenovo");

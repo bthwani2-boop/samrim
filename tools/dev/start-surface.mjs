@@ -36,11 +36,15 @@ if(!fs.existsSync(runtimeOwnersPath)){
   const config=JSON.parse(fs.readFileSync(runtimeOwnersPath,"utf8"));
   const owner=config.surfaces?.[surface]?.owner;
   const machine=process.env.COMPUTERNAME?.toUpperCase();
-  if(machine===config.sourceHost && owner==="lenovo-native"){
+  if(!machine || !["surface","lenovo-native"].includes(owner)){
+    fail(`RUNTIME_OWNER_UNKNOWN surface=${surface} machine=${machine??"unset"}`);
+  }
+  if(owner==="lenovo-native" && machine!==config.remoteHost){
     fail(`RUNTIME_OWNER_IS_LENOVO surface=${surface} target=${config.sshTarget}; do not launch a competing local process`);
   }
-  if(machine===config.remoteHost && owner==="surface" && process.env.SAMRIM_REMOTE_TRIAL!=="1"){
-    fail(`RUNTIME_OWNER_IS_SURFACE surface=${surface}; remote use requires an explicit trial`);
+  if(owner==="surface" && machine!==config.sourceHost &&
+     !(machine===config.remoteHost && process.env.SAMRIM_REMOTE_TRIAL==="1")){
+    fail(`RUNTIME_OWNER_IS_SURFACE surface=${surface}; remote use requires an explicit trial on the declared remote host`);
   }
 }
 if(!fs.existsSync(envPath)){
@@ -73,6 +77,16 @@ for(const name of [
     url.username||url.password||url.search||url.hash||
     (name==="CONTROL_PANEL_PUBLIC_ORIGIN"&&url.pathname!=="/")){
     fail(`LOCAL_RUNTIME_ORIGIN_MUST_BE_LOOPBACK name=${name}`);
+  }
+}
+// A Lenovo native server must listen on the exact port forwarded by the Surface SSH tunnel.
+if(process.env.COMPUTERNAME?.toUpperCase()===JSON.parse(fs.readFileSync(runtimeOwnersPath,"utf8")).remoteHost){
+  const owners=JSON.parse(fs.readFileSync(runtimeOwnersPath,"utf8"));
+  const portName=surface==="control-panel"?"SAMRIM_CONTROL_PORT":
+    `SAMRIM_${surface.replace(/[^A-Za-z0-9]/g,"_").toUpperCase()}_METRO_PORT`;
+  const expected=owners.surfaces[surface]?.remotePort;
+  if(!Number.isInteger(expected)||Number(process.env[portName])!==expected){
+    fail(`LENOVO_REMOTE_PORT_MISMATCH surface=${surface} env=${portName} expected=${expected}`);
   }
 }
 if(process.argv.includes("--check-local-config")){
