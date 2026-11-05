@@ -53,7 +53,7 @@ func ListNearbyCaptainCandidates(ctx context.Context, db NearbyCaptainCandidateR
 				AND NOT EXISTS(SELECT 1 FROM dsh.captain_dispatch_offers off
 					WHERE off.captain_actor_id=a.actor_id AND off.state='offered')
 				AND NOT EXISTS(SELECT 1 FROM dsh.captain_assignments ca
-					WHERE ca.captain_actor_id=a.actor_id AND ca.state IN ('assigned','in_custody'))
+					WHERE ca.captain_actor_id=a.actor_id AND ca.state IN ('assigned','in_custody','delivery_failed'))
 		)
 		SELECT actor_id,distance_squared FROM ranked
 		WHERE ($3::double precision IS NULL OR (distance_squared,actor_id COLLATE "C") > ($3::double precision,$4::text COLLATE "C"))
