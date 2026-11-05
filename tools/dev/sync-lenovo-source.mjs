@@ -22,7 +22,7 @@ if (process.env.COMPUTERNAME?.toUpperCase() !== ownerConfig.sourceHost) {
   throw new Error("SYNC_SOURCE_HOST_REQUIRED: source changes must originate on the declared primary machine");
 }
 const target = ownerConfig.sshTarget;
-const remoteRoot = ownerConfig.remoteRuntimeRoot.replace(/\\/g, "/");
+const remoteRoot = ownerConfig.remoteRuntimeRoot.replaceAll("\\", "/");
 const registeredRuntimeRoot="C:/Users/bthwa/BThwaniAppRunner";
 if(remoteRoot.replace(/\/$/,"").toLowerCase()!==registeredRuntimeRoot.toLowerCase()){
   throw new Error("LENOVO_RUNTIME_ROOT_MISMATCH: update the launcher and scheduled tasks before changing the mirror root");
@@ -47,7 +47,7 @@ function approved(relative) {
   const p = normalize(relative);
   if (!p || p.startsWith("/") || p.includes("//")) return false;
   const segments = p.split("/");
-  if (segments.some(s => !s || s==="." || s===".." || /[<>:"|?*]/.test(s) || [...s].some(c => c.charCodeAt(0) < 32))) return false;
+  if (segments.some(s => !s || s==="." || s===".." || /[<>:"|?*]/.test(s) || [...s].some(c => c.codePointAt(0) < 32))) return false;
   if (segments.some(s => ignoredNames.has(s.toLowerCase()) || forbiddenBasename.test(s))) return false;
   return archiveInputs.includes(p) || mirroredPrefixes.some(prefix => p.startsWith(prefix));
 }
@@ -198,7 +198,7 @@ function syncFile(rel, deleted=false) {
 function assertArchiveInputsSafe() {
   // Archive reads from Git HEAD (not only changed files); reject any future accidentally tracked secret
   // before transferring the zip. An example template intentionally has no production values.
-  const result=spawnSync("git.exe",["ls-files","--cached","-z","--",...archiveInputs],{
+  const result=spawnSync(executablePaths["git.exe"],["ls-files","--cached","-z","--",...archiveInputs],{
     cwd:root,encoding:"buffer",timeout:25000,windowsHide:true
   });
   if(result.status!==0 || result.error) throw new Error("MIRROR_GIT_ARCHIVE_INVENTORY_UNAVAILABLE");
