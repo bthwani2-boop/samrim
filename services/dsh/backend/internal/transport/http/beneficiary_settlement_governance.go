@@ -723,7 +723,7 @@ func (s *BeneficiaryFinanceServer) uploadOperatorFinanceEvidence(w http.Response
 		return
 	}
 	purpose := strings.ToUpper(strings.TrimSpace(r.FormValue("purpose")))
-	if purpose != "TRANSFER_RECEIPT" && purpose != "SETTLEMENT_STATEMENT" {
+	if purpose != "TRANSFER_RECEIPT" && purpose != "SETTLEMENT_STATEMENT" && purpose != "CAPTAIN_COD_LEGACY_RECOVERY" {
 		writeError(w, http.StatusBadRequest, "INVALID_UPLOAD", "finance evidence purpose is invalid")
 		return
 	}

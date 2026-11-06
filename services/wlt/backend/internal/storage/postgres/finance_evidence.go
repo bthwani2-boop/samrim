@@ -260,7 +260,7 @@ func readFinanceEvidenceDocument(ctx context.Context, source interface {
 }
 
 func validEvidencePurpose(value string) bool {
-	return value == "TRANSFER_RECEIPT" || value == "SETTLEMENT_STATEMENT" || value == "SETTLEMENT_BATCH_EXPORT" || value == "CUSTOMER_WITHDRAWAL_REQUEST"
+	return value == "TRANSFER_RECEIPT" || value == "SETTLEMENT_STATEMENT" || value == "SETTLEMENT_BATCH_EXPORT" || value == "CUSTOMER_WITHDRAWAL_REQUEST" || value == "CAPTAIN_COD_LEGACY_RECOVERY"
 }
 
 func validEvidenceContentType(value string) bool {
@@ -311,7 +311,7 @@ func validEvidenceContent(contentType string, content []byte) bool {
 
 func validEvidencePurposeMedia(purpose, contentType string) bool {
 	switch purpose {
-	case "TRANSFER_RECEIPT", "CUSTOMER_WITHDRAWAL_REQUEST":
+	case "TRANSFER_RECEIPT", "CUSTOMER_WITHDRAWAL_REQUEST", "CAPTAIN_COD_LEGACY_RECOVERY":
 		return contentType == "application/pdf" || contentType == "image/jpeg" || contentType == "image/png"
 	case "SETTLEMENT_STATEMENT":
 		return contentType == "application/pdf" || contentType == "text/csv" ||

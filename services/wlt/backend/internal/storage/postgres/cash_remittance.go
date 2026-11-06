@@ -256,13 +256,13 @@ func RemitCash(ctx context.Context, db *sql.DB, input RemitCashInput) (CashRemit
 	if !matchesCaptainCashRemittance(payment, input) {
 		return CashRemittanceRecord{}, false, ErrRemittanceInvalidInput
 	}
-	// The new COD lifecycle settles in-wallet. No new cash remittance may
-	// be created for a payment whose collateral has already been debited.
-	var debited bool
-	if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM wlt.captain_cod_reservations WHERE payment_intent_id=$1 AND state='DEBITED')", input.PaymentIntentID).Scan(&debited); err != nil {
+	// An ACTIVE COD hold or completed wallet debit forbids new cash remittance,
+	// including remittance after a reviewed historical COD recovery.
+	var covered bool
+	if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM wlt.captain_cod_reservations WHERE payment_intent_id=$1 AND state IN ('ACTIVE','DEBITED'))", input.PaymentIntentID).Scan(&covered); err != nil {
 		return CashRemittanceRecord{}, false, err
 	}
-	if debited {
+	if covered {
 		return CashRemittanceRecord{}, false, ErrRemittanceState
 	}
 	var remittanceID, existingCaptainID, existingState string

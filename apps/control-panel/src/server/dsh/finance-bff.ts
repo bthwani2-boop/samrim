@@ -1,6 +1,33 @@
 import { type StoreTypeCommissionDefaultsResponse as DshStoreTypeCommissionDefaultsResponse, type FinanceStoreCommercialAgreementQueueResponse, type StoreCommercialAgreementListResponse, type StoreCommercialAgreementMutationResponse, type StorePayoutRecipientListResponse, type ActorLegalName, type BeneficiaryPayoutState, type BeneficiaryPayoutStateResponse, type CashCustodyRegistryResponse, type CreateCustomerWithdrawalIntakeRequest, type CreateDeliveryFeePolicyRequest, type CreatePartnerFinancialTermsPolicyRequest, type CustomerWithdrawalDecisionRequest, type CustomerWithdrawalIntakeListResponse, type CustomerWithdrawalIntakeResponse, type DeliveryFeePolicyResponse, dshOperationPaths, type FinanceEvidenceDocument, type OfficialWalletDestination, type PartnerCommissionReceivableRegistryResponse, type PartnerCommissionRemittanceRequest, type PartnerCommissionRemittanceResponse, type PartnerFinancialSummaryResponse, type PartnerFinancialTermsPolicyResponse, type PayoutRequest, type SettlementBatch, type SettlementBatchExport, type StoreTypeCommissionDefaultUpdateResponse, type SubmitActorLegalNameRequest, type UpdateStoreTypeCommissionDefaultRequest, type VerifyActorLegalNameRequest } from "@bthwani/dsh";
 import { requestDshJson, requestDshMultipart, requestDshFile, validateAttributedMutationContext, type DshOperatorReadContext, type JoiningCaseMutationContext } from "./dsh-transport";
 
+type LegacyCODRecoveryResponse = import("@bthwani/dsh").LegacyCODRecoveryResponse;
+
+export async function readOperatorLegacyCODRecoveryByPayment(paymentIntentId: string, context: DshOperatorReadContext): Promise<LegacyCODRecoveryResponse> {
+  if (!paymentIntentId.trim() || paymentIntentId.length > 128 || !context.operatorActorId.trim()) throw new Error("DSH_LEGACY_COD_RECOVERY_READ_INVALID");
+  const path = dshOperationPaths.readOperatorLegacyCODRecoveryByPayment.path.replace("{paymentIntentId}", encodeURIComponent(paymentIntentId.trim()));
+  return (await requestDshJson<LegacyCODRecoveryResponse>(dshOperationPaths.readOperatorLegacyCODRecoveryByPayment.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function submitOperatorLegacyCODRecovery(paymentIntentId: string, evidenceDocumentId: string, context: JoiningCaseMutationContext): Promise<LegacyCODRecoveryResponse> {
+  if (!paymentIntentId.trim() || paymentIntentId.length > 128 || !evidenceDocumentId.trim() || evidenceDocumentId.length > 128) throw new Error("DSH_LEGACY_COD_RECOVERY_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  return (await requestDshJson<LegacyCODRecoveryResponse>(
+    dshOperationPaths.submitOperatorLegacyCODRecovery.method, dshOperationPaths.submitOperatorLegacyCODRecovery.path,
+    { paymentIntentId: paymentIntentId.trim(), evidenceDocumentId: evidenceDocumentId.trim() },
+    { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() }
+  )).payload;
+}
+
+export async function approveOperatorLegacyCODRecovery(reviewId: string, context: JoiningCaseMutationContext): Promise<LegacyCODRecoveryResponse> {
+  if (!reviewId.trim() || reviewId.length > 128) throw new Error("DSH_LEGACY_COD_APPROVAL_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  const path = dshOperationPaths.approveOperatorLegacyCODRecovery.path.replace("{reviewId}", encodeURIComponent(reviewId.trim()));
+  return (await requestDshJson<LegacyCODRecoveryResponse>(
+    dshOperationPaths.approveOperatorLegacyCODRecovery.method, path, {},
+    { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() }
+  )).payload;
+}
 export async function listOperatorCashCustody(search: string, sort: "collected_asc" | "collected_desc", cursor: string, limit: number, context: DshOperatorReadContext): Promise<CashCustodyRegistryResponse> {
   if (!context.operatorActorId.trim()) throw new Error("DSH_OPERATOR_CASH_CUSTODY_INPUT_INVALID");
   if (search.trim().length > 128 || cursor.length > 1024 || !["collected_asc", "collected_desc"].includes(sort) || !Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("DSH_CASH_CUSTODY_REGISTRY_INPUT_INVALID");
@@ -174,7 +201,7 @@ export async function cancelOperatorSettlementIntake(intakeId: string, reason: s
   })).payload;
 }
 
-export type FinanceEvidencePurpose = "TRANSFER_RECEIPT" | "SETTLEMENT_STATEMENT" | "CUSTOMER_WITHDRAWAL_REQUEST";
+export type FinanceEvidencePurpose = "TRANSFER_RECEIPT" | "SETTLEMENT_STATEMENT" | "CUSTOMER_WITHDRAWAL_REQUEST" | "CAPTAIN_COD_LEGACY_RECOVERY";
 export type OperatorFinanceEvidenceResponse = Readonly<{ document: FinanceEvidenceDocument }>;
 export type OperatorSettlementStatement = Readonly<{ id: string; batchId?: string | null; providerKey: string; currency: "YER"; periodStart: string; periodEnd: string; evidenceDocumentId: string; filename: string; artifactSHA256: string; uploadedBy: string; createdAt: string }>;
 export type OperatorSettlementStatementRow = Readonly<{ id: string; statementId: string; rowSequence: number; externalTransferReference: string; amountMinor: number; currency: "YER"; transactionAt: string; recordedBy: string; matchedTransferId?: string | null }>;

@@ -344,6 +344,74 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CashLiabilityRegistryResponse' }
+  /wlt/v1/operator/captain-cod-legacy-reviews:
+    post:
+      operationId: submitLegacyCODRecovery
+      summary: Record historical COD collection evidence without creating a debit or a hold
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ActingActorId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LegacyCODRecoverySubmitRequest' }
+      responses:
+        '201': { description: Finance review is pending independent approval. }
+        '200': { description: Identical review replay. }
+        '400': { description: Invalid payment or evidence facts. }
+        '409': { description: Existing COD cover, transfer or review prevents a new recovery. }
+  /wlt/v1/operator/captain-cod-legacy-reviews/by-payment/{paymentIntentId}:
+    get:
+      operationId: readLegacyCODRecoveryByPayment
+      summary: Read canonical historical COD review by payment
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: paymentIntentId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { $ref: '#/components/parameters/ActingActorId' }
+      responses:
+        '200':
+          description: Historical COD review and its approved hold if any
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LegacyCODRecoveryResponse' }
+        '404': { description: No historical COD recovery review for payment. }
+  /wlt/v1/operator/captain-cod-legacy-reviews/{reviewId}:
+    get:
+      operationId: readLegacyCODRecovery
+      summary: Read one canonical historical COD review
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: reviewId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { $ref: '#/components/parameters/ActingActorId' }
+      responses:
+        '200':
+          description: Historical COD review
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LegacyCODRecoveryResponse' }
+        '404': { description: Finance review not found. }
+  /wlt/v1/operator/captain-cod-legacy-reviews/{reviewId}/approve:
+    post:
+      operationId: approveLegacyCODRecovery
+      summary: Independent Finance operator approves a covered, previously unremitted COD amount
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: reviewId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { $ref: '#/components/parameters/ActingActorId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+      responses:
+        '200':
+          description: Actual WLT Captain available balance reserved under two-person review, or an exact replay
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LegacyCODRecoveryResponse' }
+        '403': { description: Approver is the submitter or the Captain. }
+        '404': { description: Review not found. }
+        '409': { description: Already settled or insufficient Captain wallet cover. }
   /wlt/v1/operator/cash-remittances/{remittanceId}/reconcile:
     post:
       operationId: reconcileCaptainCashRemittance
@@ -1753,7 +1821,7 @@ paths:
               type: object
               required: [purpose, file]
               properties:
-                purpose: { type: string, enum: [TRANSFER_RECEIPT, SETTLEMENT_STATEMENT, CUSTOMER_WITHDRAWAL_REQUEST] }
+                purpose: { type: string, enum: [TRANSFER_RECEIPT, SETTLEMENT_STATEMENT, CUSTOMER_WITHDRAWAL_REQUEST, CAPTAIN_COD_LEGACY_RECOVERY] }
                 file: { type: string, format: binary }
       responses:
         '201':
@@ -2920,7 +2988,7 @@ components:
       required: [id, purpose, filename, contentType, sha256, sizeBytes, uploadedBy, createdAt]
       properties:
         id: { type: string }
-        purpose: { type: string, enum: [TRANSFER_RECEIPT, SETTLEMENT_STATEMENT, CUSTOMER_WITHDRAWAL_REQUEST] }
+        purpose: { type: string, enum: [TRANSFER_RECEIPT, SETTLEMENT_STATEMENT, CUSTOMER_WITHDRAWAL_REQUEST, CAPTAIN_COD_LEGACY_RECOVERY] }
         filename: { type: string }
         contentType: { type: string, enum: [application/pdf, image/jpeg, image/png, text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet] }
         sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
@@ -2938,7 +3006,7 @@ components:
       additionalProperties: false
       required: [purpose, batchId, requiresCurrentIdentityFacts]
       properties:
-        purpose: { type: string, enum: [TRANSFER_RECEIPT, SETTLEMENT_STATEMENT, SETTLEMENT_BATCH_EXPORT, CUSTOMER_WITHDRAWAL_REQUEST] }
+        purpose: { type: string, enum: [TRANSFER_RECEIPT, SETTLEMENT_STATEMENT, SETTLEMENT_BATCH_EXPORT, CUSTOMER_WITHDRAWAL_REQUEST, CAPTAIN_COD_LEGACY_RECOVERY] }
         batchId: { type: string, maxLength: 128 }
         requiresCurrentIdentityFacts: { type: boolean }
     CustomerWithdrawalIntakeRequest:
@@ -3346,6 +3414,37 @@ components:
         captainActorId: { type: string, minLength: 1, maxLength: 128 }
         amountMinor: { type: integer, minimum: 1 }
         remittanceReference: { type: string, minLength: 1, maxLength: 128 }
+    LegacyCODRecoverySubmitRequest:
+      type: object
+      additionalProperties: false
+      required: [paymentIntentId, evidenceDocumentId]
+      properties:
+        paymentIntentId: { type: string, minLength: 1, maxLength: 128 }
+        evidenceDocumentId: { type: string, minLength: 1, maxLength: 128 }
+    LegacyCODRecoveryRecord:
+      type: object
+      additionalProperties: false
+      required: [id, orderId, paymentIntentId, captainActorId, amountMinor, evidenceDocumentId, submittedBy, status, createdAt]
+      properties:
+        id: { type: string }
+        orderId: { type: string }
+        paymentIntentId: { type: string }
+        captainActorId: { type: string }
+        amountMinor: { type: integer, minimum: 1 }
+        evidenceDocumentId: { type: string }
+        submittedBy: { type: string }
+        status: { type: string, enum: [PENDING, APPROVED] }
+        approvedBy: { type: string }
+        approvedAt: { type: string, format: date-time }
+        reservationId: { type: string }
+        createdAt: { type: string, format: date-time }
+    LegacyCODRecoveryResponse:
+      type: object
+      additionalProperties: false
+      required: [review]
+      properties:
+        review: { $ref: '#/components/schemas/LegacyCODRecoveryRecord' }
+        idempotentReplay: { type: boolean }
     CashLiabilityItem:
       type: object
       additionalProperties: false
