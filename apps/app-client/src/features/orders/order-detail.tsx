@@ -74,6 +74,7 @@ export default function ClientOrderDetail() {
     const actorID = session.identity.subject.trim();
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!hasCurrentOrderScope(actorID, orderId)) return;
       const value = await client().readClientDeliveryProof(token, orderId);
       if (hasCurrentOrderScope(actorID, orderId)) setDeliveryProof({ kind: "ready", value });
     } catch (error) {
@@ -94,6 +95,7 @@ export default function ClientOrderDetail() {
     setRatingError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!hasCurrentOrderScope(actorID, orderId)) return;
       const value = await client().readClientOrderRating(token, orderId);
       if (!hasCurrentOrderScope(actorID, orderId)) return;
       setSelectedRating(value.rating.rating);
@@ -146,6 +148,7 @@ export default function ClientOrderDetail() {
     }
     try {
       const token = await getUsableIdentityAccessToken();
+      if (sequence !== loadSequence.current || !hasCurrentOrderScope(actorID, orderId)) return;
       const order = (await client().readOrder(token, orderId)).order;
       const current = currentIdentityState();
       if (sequence !== loadSequence.current || current.kind !== "authenticated" || !isClientOrderScopeCurrent(actorID, order.id, current.identity.subject.trim(), orderId)) return;
@@ -184,6 +187,7 @@ export default function ClientOrderDetail() {
     setRatingError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!hasCurrentOrderScope(state.actorID, state.order.id)) return;
       const value = await client().createClientOrderRating(token, state.order.id, { rating: selectedRating, review }, state.order.version);
       if (!hasCurrentOrderScope(state.actorID, state.order.id)) return;
       setOrderRating({ kind: "ready", value });
@@ -203,12 +207,13 @@ export default function ClientOrderDetail() {
     setCancelError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!hasCurrentOrderScope(state.actorID, state.order.id)) return;
       const result = await client().requestOrderCancellationReview(token, state.order.id, cancellationReason.trim(), Crypto.randomUUID());
       if (hasCurrentOrderScope(state.actorID, state.order.id)) setCancellationReview(result.request);
     } catch {
       if (hasCurrentOrderScope(state.actorID, state.order.id)) {
         const token = await getUsableIdentityAccessToken().catch(() => "");
-        if (token) await readCancellationReview(token, state.order.id, state.actorID);
+        if (token && hasCurrentOrderScope(state.actorID, state.order.id)) await readCancellationReview(token, state.order.id, state.actorID);
         if (hasCurrentOrderScope(state.actorID, state.order.id)) setCancelError("لم تتأكد نتيجة طلب المراجعة. تحقق من الحالة قبل إعادة الإرسال.");
       }
     } finally { setCancellationReviewBusy(false); }
@@ -221,6 +226,7 @@ export default function ClientOrderDetail() {
     setCancelError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!hasCurrentOrderScope(state.actorID, state.order.id)) return;
       const outcome = await client().cancelClientOrder(token, state.order.id, state.order.version);
       if (hasCurrentOrderScope(state.actorID, state.order.id) && outcome.order.id === orderId) {
         setState({ kind: "ready", actorID: state.actorID, order: outcome.order });
@@ -239,6 +245,7 @@ export default function ClientOrderDetail() {
     setAdjustmentError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!hasCurrentOrderScope(state.actorID, state.order.id)) return;
       const result = await client().decideClientOrderAdjustment(token, state.order.id, adjustmentId, { decision, expectedAdjustmentVersion: state.order.adjustments.find((item) => item.id === adjustmentId)?.version ?? 0 }, state.order.version);
       if (!hasCurrentOrderScope(state.actorID, state.order.id) || result.order.id !== orderId) return;
       setState({ kind: "ready", order: result.order, actorID: state.actorID });

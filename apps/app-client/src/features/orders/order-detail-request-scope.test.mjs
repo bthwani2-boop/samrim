@@ -47,3 +47,25 @@ test("delayed reads from order A cannot populate order B when a route reuses one
   route.actorID = "client-b";
   assert.equal(isClientOrderScopeCurrent("client-a", "order-b", route.actorID, route.orderID), false);
 });
+
+test("token-backed order reads check the current scope before dispatch", () => {
+  for (const [name, operation] of [
+    ["refreshDeliveryProof", "readClientDeliveryProof"],
+    ["refreshRating", "readClientOrderRating"],
+    ["load", "readOrder"],
+  ]) {
+    const body = callbackSource(name);
+    const tokenIndex = body.indexOf("const token = await getUsableIdentityAccessToken();");
+    const readIndex = body.indexOf(`client().${operation}(`, tokenIndex);
+    assert.ok(tokenIndex >= 0 && readIndex > tokenIndex, `${name} must acquire a token for ${operation}`);
+    const beforeRead = body.slice(tokenIndex, readIndex);
+    if (name === "load") {
+      assert.match(beforeRead,
+        /if \(sequence !== loadSequence\.current \|\| !hasCurrentOrderScope\(actorID, orderId\)\) return;/,
+        "order loading must reject an outdated sequence or route before requesting data");
+    } else {
+      assert.match(beforeRead, /if \(!hasCurrentOrderScope\(actorID, orderId\)\) return;/,
+        `${name} must reject an outdated actor/order before requesting data`);
+    }
+  }
+});

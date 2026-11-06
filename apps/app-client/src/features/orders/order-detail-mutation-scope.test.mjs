@@ -50,3 +50,26 @@ test("a late response for order A is discarded when order B is selected by the s
   await request;
   assert.equal(screen.result, null);
 });
+
+test("token acquisition must revalidate actor and order before each outbound mutation", () => {
+  const operations = [
+    ["submitRating", "createClientOrderRating"],
+    ["requestOperationsCancellation", "requestOrderCancellationReview"],
+    ["cancelOrder", "cancelClientOrder"],
+    ["decideAdjustment", "decideClientOrderAdjustment"],
+  ];
+  for (const [name, operation] of operations) {
+    const body = callback(name);
+    const tokenIndex = body.indexOf("const token = await getUsableIdentityAccessToken();");
+    const mutationIndex = body.indexOf(`await client().${operation}(`, tokenIndex);
+    assert.ok(tokenIndex >= 0 && mutationIndex > tokenIndex, `${name} must acquire a token before ${operation}`);
+    const beforeMutation = body.slice(tokenIndex, mutationIndex);
+    assert.match(beforeMutation, /if \(!hasCurrentOrderScope\(state\.actorID, state\.order\.id\)\) return;/,
+      `${name} must recheck live actor/order after token acquisition and before sending ${operation}`);
+  }
+
+  const cancellation = callback("requestOperationsCancellation");
+  assert.match(cancellation,
+    /const token = await getUsableIdentityAccessToken\(\)\.catch\(\(\) => ""\);\s*if \(token && hasCurrentOrderScope\(state\.actorID, state\.order\.id\)\) await readCancellationReview\(/,
+    "cancellation recovery must not query an old order under a new session");
+});
