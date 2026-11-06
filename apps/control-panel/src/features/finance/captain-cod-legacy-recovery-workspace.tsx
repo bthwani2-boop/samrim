@@ -4,7 +4,7 @@ import { formatMoney, type LegacyCODRecoveryResponse } from "@bthwani/dsh";
 import { type FormEvent, useRef, useState } from "react";
 import { responseMessage } from "../access/identity-error-message";
 import { useSession } from "../../session/session-provider";
-import { operatorRecoveryStorageKey } from "./operator-recovery-key";
+import { operatorPaymentRecoveryStorageKey, operatorRecoveryStorageKey } from "./operator-recovery-key";
 
 type Review = LegacyCODRecoveryResponse["review"];
 type Props = Readonly<{ initialPaymentId?: string }>;
@@ -24,9 +24,12 @@ const recoveryBaseKey = "bthwani.finance.legacy-cod-review.v1";
 
 function readPending(actorId: string, paymentIntentId: string): Pending | null {
   try {
-    const key = operatorRecoveryStorageKey(recoveryBaseKey, actorId);
+    const key = operatorPaymentRecoveryStorageKey(recoveryBaseKey, actorId, paymentIntentId);
     if (!key) return null;
-    const value: unknown = JSON.parse(window.sessionStorage.getItem(key) ?? "null");
+    const legacyKey = operatorRecoveryStorageKey(recoveryBaseKey, actorId);
+    // Preserve an in-flight pre-fix attempt until it is next saved or closed.
+    const raw = window.sessionStorage.getItem(key) ?? (legacyKey ? window.sessionStorage.getItem(legacyKey) : null);
+    const value: unknown = JSON.parse(raw ?? "null");
     if (!value || typeof value !== "object") return null;
     const item = value as Record<string, unknown>;
     if (item.paymentIntentId !== paymentIntentId || !paymentIntentId) return null;
@@ -40,12 +43,17 @@ function readPending(actorId: string, paymentIntentId: string): Pending | null {
   }
 }
 
-function savePending(actorId: string, pending: Pending | null) {
+function savePending(actorId: string, paymentIntentId: string, pending: Pending | null) {
   try {
-    const key = operatorRecoveryStorageKey(recoveryBaseKey, actorId);
+    const key = operatorPaymentRecoveryStorageKey(recoveryBaseKey, actorId, paymentIntentId);
     if (!key) return;
     if (pending) window.sessionStorage.setItem(key, JSON.stringify(pending));
     else window.sessionStorage.removeItem(key);
+    const legacyKey = operatorRecoveryStorageKey(recoveryBaseKey, actorId);
+    const legacyRaw = legacyKey ? window.sessionStorage.getItem(legacyKey) : null;
+    if (legacyKey && legacyRaw && (JSON.parse(legacyRaw) as Pending).paymentIntentId === paymentIntentId) {
+      window.sessionStorage.removeItem(legacyKey);
+    }
   } catch {
     // A storage failure must not be treated as evidence of a completed operation.
   }
@@ -100,7 +108,7 @@ export function CaptainCODLegacyRecoveryWorkspace({ initialPaymentId = "" }: Pro
       if (result.review?.paymentIntentId !== paymentId) throw new Error("هوية مراجعة التحصيل لا تطابق الطلب.");
       setReview(result.review);
       setDocumentId("");
-      savePending(actorId, null);
+      savePending(actorId, paymentId, null);
     } catch (cause) {
       if (requestId === serial.current) setError(cause instanceof Error ? cause.message : "تعذر قراءة مراجعة التحصيل.");
     } finally {
@@ -123,7 +131,7 @@ export function CaptainCODLegacyRecoveryWorkspace({ initialPaymentId = "" }: Pro
     setError("");
     setNotice("");
     const requestId = ++serial.current;
-    savePending(actorId, pending);
+    savePending(actorId, paymentId, pending);
     try {
       if (!pending.documentId) {
         const form = new FormData();
@@ -138,8 +146,9 @@ export function CaptainCODLegacyRecoveryWorkspace({ initialPaymentId = "" }: Pro
         const body = await uploaded.json() as { document?: { id?: string } };
         if (!body.document?.id) throw new Error("تعذر تأكيد حفظ المستند. لا تُنشئ محاولة جديدة قبل مراجعة الطلب.");
         pending = { ...pending, documentId: body.document.id };
-        savePending(actorId, pending);
-        setDocumentId(pending.documentId);
+        savePending(actorId, paymentId, pending);
+        // Another payment may have been selected while the upload was in flight.
+        if (requestId === serial.current) setDocumentId(pending.documentId);
       }
       const response = await fetch("/api/finance/captain-cod-legacy-reviews", {
         method: "POST",
@@ -157,7 +166,7 @@ export function CaptainCODLegacyRecoveryWorkspace({ initialPaymentId = "" }: Pro
       setReview(result.review);
       setProof(null);
       setDocumentId("");
-      savePending(actorId, null);
+      savePending(actorId, paymentId, null);
       setNotice("حُفظ طلب المراجعة المالية. يلزم اعتماده من مشغّل مالية مختلف لديه الصلاحية.");
     } catch (cause) {
       if (requestId === serial.current) setError(cause instanceof Error ? cause.message : "تعذر حفظ المراجعة. اقرأ الحالة قبل إعادة المحاولة.");
@@ -170,7 +179,7 @@ export function CaptainCODLegacyRecoveryWorkspace({ initialPaymentId = "" }: Pro
     if (!actorId || busy || !approvedConfirmed || !reviewed || reviewed.status !== "PENDING" || reviewed.submittedBy === actorId) return;
     const paymentId = reviewed.paymentIntentId;
     const pending = readPending(actorId, paymentId) ?? newPending(paymentId, "");
-    savePending(actorId, pending);
+    savePending(actorId, paymentId, pending);
     const requestId = ++serial.current;
     setBusy(true);
     setError("");
@@ -191,7 +200,7 @@ export function CaptainCODLegacyRecoveryWorkspace({ initialPaymentId = "" }: Pro
       if (requestId !== serial.current) return;
       setReview(result.review);
       setApprovedConfirmed(false);
-      savePending(actorId, null);
+      savePending(actorId, paymentId, null);
       setNotice("اعتمد WLT المراجعة وأنشأ الحجز الممول للكابتن الأصلي. لم يتم تنفيذ خصم أو تسوية من هذه الشاشة.");
     } catch (cause) {
       if (requestId === serial.current) setError(cause instanceof Error ? cause.message : "الاعتماد غير مؤكد؛ اقرأ الحالة قبل إعادة المحاولة.");
