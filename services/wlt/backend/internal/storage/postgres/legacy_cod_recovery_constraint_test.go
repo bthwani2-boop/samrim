@@ -23,6 +23,7 @@ func TestLegacyCODRecoveryUniquenessConflictsAreDomainErrors(t *testing.T) {
 		{"duplicate reservation", "captain_cod_legacy_recovery_reviews_reservation_id_key", ErrLegacyCODRecoveryState},
 		{"active order hold", "captain_cod_reservations_active_order_uq", ErrLegacyCODRecoveryState},
 		{"active payment hold", "captain_cod_reservations_active_payment_intent_uq", ErrLegacyCODRecoveryState},
+		{"reservation event reused approval key", "captain_cod_reservation_events_idempotency_key_key", ErrIdempotencyConflict},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

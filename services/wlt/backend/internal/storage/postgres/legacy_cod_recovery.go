@@ -246,7 +246,7 @@ func ApproveLegacyCODRecovery(ctx context.Context, db *sql.DB, input LegacyCODRe
 		return LegacyCODRecoveryRecord{}, false, mapLegacyCODRecoveryConstraintError(err)
 	}
 	if err := insertCaptainCODReservationEvent(ctx, tx, reservationID, "CAPTAIN_COD_LEGACY_RECOVERED", input.IdempotencyKey, requestHash, input.CorrelationID); err != nil {
-		return LegacyCODRecoveryRecord{}, false, err
+		return LegacyCODRecoveryRecord{}, false, mapLegacyCODRecoveryConstraintError(err)
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE wlt.captain_cod_legacy_recovery_reviews
 		SET status='APPROVED',approved_by=$2,approved_at=clock_timestamp(),
@@ -279,6 +279,8 @@ func mapLegacyCODRecoveryConstraintError(err error) error {
 		return ErrIdempotencyConflict
 	}
 	switch conflict.Constraint {
+	case "captain_cod_reservation_events_idempotency_key_key":
+		return ErrIdempotencyConflict
 	case "captain_cod_legacy_recovery_reviews_evidence_document_id_key":
 		return ErrLegacyCODRecoveryEvidence
 	case "captain_cod_legacy_recovery_reviews_payment_intent_id_key",

@@ -194,4 +194,71 @@ func TestLegacyCODReviewRequiresIndependentFundedEvidenceAndSettlesExactlyOnce(t
 	if err != nil || wallet.HeldMinor != 0 || wallet.AvailableMinor != 20000+500-cash {
 		t.Fatalf("settled wallet: %+v err=%v", wallet, err)
 	}
+
+	// Two distinct Finance reviews must not share one approval idempotency key.
+	// The first review has already committed its event; this second request
+	// exercises the event-table UNIQUE violation, not merely a preflight check.
+	secondOrder := order + "-second-review"
+	secondPayment, replay, err := CreatePaymentIntent(s.ctx, s.db, CreatePaymentIntentInput{
+		ExternalReference: secondOrder + "-reference", PayerActorID: customer,
+		OrderID: secondOrder, AmountMinor: cash, Currency: "YER", Method: domain.MethodCashOnDelivery,
+		CustomerPaymentAllocation: &CustomerPaymentAllocationInput{
+			OrderID: secondOrder, StoreID: store, PartnerActorID: owner,
+			CommercialStoreTypeID: "finance-type", FulfillmentMode: "BTHWANI_CAPTAIN",
+			Currency: "YER", SubtotalMinor: 5000, DeliveryFeeMinor: 500,
+			CashAmountMinor: cash, CustomerPayableMinor: cash,
+			PolicyVersion: "legacy-second-review-proof",
+		},
+		IdempotencyKey: secondOrder + "-create", CorrelationID: secondOrder + "-create-correlation",
+	})
+	if err != nil || replay {
+		t.Fatalf("create second isolated payment: replay=%v err=%v", replay, err)
+	}
+	if _, err := s.db.ExecContext(s.ctx, `UPDATE wlt.payment_intents SET state='COLLECTED',
+		version=version+1,collected_amount_minor=$2,collected_by_actor_id=$3,
+		collection_reference=$4,collected_at=clock_timestamp(),updated_at=clock_timestamp()
+		WHERE id=$1 AND state='REQUIRES_COLLECTION'`, secondPayment.ID, cash, captain, secondOrder+"-historical-receipt"); err != nil {
+		t.Fatalf("historical second collection in isolated DB: %v", err)
+	}
+	secondEvidence, err := SaveFinanceEvidenceDocument(s.ctx, s.db, cipher, FinanceEvidenceDocumentInput{
+		Purpose: "CAPTAIN_COD_LEGACY_RECOVERY", Filename: "second-historical-collection.pdf",
+		ContentType: "application/pdf", Content: []byte("%PDF-1.4\n1 0 obj\nsecond recovery evidence\n%%EOF"),
+		ActorID: submitter, IdempotencyKey: secondOrder + "-evidence",
+		CorrelationID: secondOrder + "-evidence-correlation",
+	})
+	if err != nil {
+		t.Fatalf("save second original evidence: %v", err)
+	}
+	secondReview, replay, err := SubmitLegacyCODRecovery(s.ctx, s.db, LegacyCODRecoveryInput{
+		PaymentIntentID: secondPayment.ID, EvidenceDocumentID: secondEvidence.ID, ActorID: submitter,
+		IdempotencyKey: secondOrder + "-submit", CorrelationID: secondOrder + "-submit-correlation",
+	})
+	if err != nil || replay || secondReview.Status != "PENDING" {
+		t.Fatalf("submit second independent review: %+v replay=%v err=%v", secondReview, replay, err)
+	}
+	if accepted.approvalKey == "" {
+		t.Fatal("first approval lacks a persisted idempotency key")
+	}
+	_, _, err = ApproveLegacyCODRecovery(s.ctx, s.db, LegacyCODRecoveryApprovalInput{
+		ReviewID: secondReview.ID, ActorID: approver, IdempotencyKey: accepted.approvalKey,
+		CorrelationID: secondOrder + "-key-reuse-correlation",
+	})
+	if !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("second review reused an approval key without a domain conflict: %v", err)
+	}
+	persistedSecond, err := ReadLegacyCODRecovery(s.ctx, s.db, secondReview.ID)
+	if err != nil || persistedSecond.Status != "PENDING" || persistedSecond.ReservationID != "" {
+		t.Fatalf("duplicate-key approval mutated second review: %+v err=%v", persistedSecond, err)
+	}
+	var secondHolds, firstKeyEvents int
+	if err := s.db.QueryRowContext(s.ctx, `SELECT
+		(SELECT count(*) FROM wlt.captain_cod_reservations WHERE payment_intent_id=$1),
+		(SELECT count(*) FROM wlt.captain_cod_reservation_events WHERE idempotency_key=$2)`,
+		secondPayment.ID, accepted.approvalKey).Scan(&secondHolds, &firstKeyEvents); err != nil || secondHolds != 0 || firstKeyEvents != 1 {
+		t.Fatalf("duplicate key produced a new reservation or event: holds=%d events=%d err=%v", secondHolds, firstKeyEvents, err)
+	}
+	walletAfterConflict, err := ReadCaptainWalletState(s.ctx, s.db, captain)
+	if err != nil || walletAfterConflict.HeldMinor != wallet.HeldMinor || walletAfterConflict.AvailableMinor != wallet.AvailableMinor {
+		t.Fatalf("duplicate-key approval changed wallet: before=%+v after=%+v err=%v", wallet, walletAfterConflict, err)
+	}
 }
