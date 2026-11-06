@@ -15,7 +15,14 @@ import (
 // This runs inside the existing isolated cross-service test, reusing its
 // disposable database, approved Store and real WLT HTTP handler. No live
 // Identity, production funds or durable local data participate.
-func verifyLegacyCODRecoveryThroughDSH(t *testing.T, ctx context.Context, db *sql.DB, wltURL, serviceToken, partnerID, storeID, dshDir string) {
+type historicalCODReviewProof struct {
+	orderID   string
+	paymentID string
+	captainID string
+	cashMinor int64
+}
+
+func verifyLegacyCODRecoveryThroughDSH(t *testing.T, ctx context.Context, db *sql.DB, wltURL, serviceToken, partnerID, storeID, dshDir string) historicalCODReviewProof {
 	t.Helper()
 	const orderID = "proof-legacy-cod-order"
 	const captainID = "proof-legacy-cod-captain"
@@ -109,33 +116,6 @@ func verifyLegacyCODRecoveryThroughDSH(t *testing.T, ctx context.Context, db *sq
 	if err != nil || wallet.HeldMinor != cash || wallet.AvailableMinor != 20000-cash {
 		t.Fatalf("real WLT review created no exact held cover: %+v err=%v", wallet, err)
 	}
-	earning, replay, err := postgres.FinalizePartnerOrderEarning(ctx, db, postgres.FinalizePartnerOrderEarningInput{
-		OrderID: orderID, PaymentIntentID: payment.ID, PartnerActorID: partnerID,
-		CaptainActorID: captainID, IdempotencyKey: "proof-legacy-partner-earning",
-		CorrelationID: "proof-legacy-partner-earning-correlation",
-	})
-	if err != nil || replay || earning.LedgerTransactionID == "" {
-		t.Fatalf("post original recovered earning: %+v replay=%v err=%v", earning, replay, err)
-	}
-	codInput := postgres.CaptainCODReservationInput{
-		OrderID: orderID, PaymentIntentID: payment.ID, CaptainActorID: captainID,
-		IdempotencyKey: "proof-legacy-cod-debit", CorrelationID: "proof-legacy-cod-debit-correlation",
-	}
-	debit, replay, err := postgres.FinalizeCaptainCOD(ctx, db, codInput)
-	if err != nil || replay || debit.ID != review.ReservationID || debit.State != "DEBITED" {
-		t.Fatalf("recovered original Captain debit: %+v replay=%v err=%v", debit, replay, err)
-	}
-	second, replay, err := postgres.FinalizeCaptainCOD(ctx, db, codInput)
-	if err != nil || !replay || second.ID != debit.ID {
-		t.Fatalf("original Captain debit replay: %+v replay=%v err=%v", second, replay, err)
-	}
-	var reservations, debits int
-	err = db.QueryRowContext(ctx,
-		"SELECT (SELECT COUNT(*) FROM wlt.captain_cod_reservations WHERE payment_intent_id=$1),"+
-			"(SELECT COUNT(*) FROM wlt.ledger_transactions WHERE transaction_type='CAPTAIN_COD_WALLET_DEBITED' AND source_id=$2)",
-		payment.ID, debit.ID).Scan(&reservations, &debits)
-	if err != nil || reservations != 1 || debits != 1 {
-		t.Fatalf("duplicate historical WLT posting: reservations=%d debits=%d err=%v", reservations, debits, err)
-	}
-	t.Log("DSH Finance operators -> WLT reviewed legacy COD -> held reserve -> partner earning -> exactly-once Captain debit PASS")
+	t.Log("DSH Finance operators approved the original historical COD and created exact held cover; handoff settlement remains pending")
+	return historicalCODReviewProof{orderID: orderID, paymentID: payment.ID, captainID: captainID, cashMinor: cash}
 }

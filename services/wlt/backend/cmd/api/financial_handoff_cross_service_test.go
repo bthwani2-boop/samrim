@@ -298,7 +298,7 @@ func TestIsolatedDSHToRealWLTStorePickupMixedPayment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	verifyLegacyCODRecoveryThroughDSH(t, ctx, db, liveWLT.URL, token, owner, store, dshDir)
+	legacy := verifyLegacyCODRecoveryThroughDSH(t, ctx, db, liveWLT.URL, token, owner, store, dshDir)
 	cmd := exec.CommandContext(ctx, "go", "test", "-C", dshDir, "./internal/financialhandoff",
 		"-run", "^TestRealWLTStorePickupMixedFundingReconcilesAcrossDatabases$", "-count=1", "-v")
 	// The child has a different explicit expected database name; never hand it
@@ -327,11 +327,35 @@ func TestIsolatedDSHToRealWLTStorePickupMixedPayment(t *testing.T) {
 		"WLT_FINANCIAL_PROOF_CANCEL_ORDER_ID="+cancelledOrder,
 		"WLT_FINANCIAL_PROOF_CANCEL_PAYMENT_ID="+cancelPayment.ID,
 		"WLT_FINANCIAL_PROOF_CANCEL_CLIENT_ID="+cancelledCustomer,
+		"WLT_FINANCIAL_PROOF_LEGACY_ORDER_ID="+legacy.orderID,
+		"WLT_FINANCIAL_PROOF_LEGACY_PAYMENT_ID="+legacy.paymentID,
+		"WLT_FINANCIAL_PROOF_LEGACY_CAPTAIN_ID="+legacy.captainID,
 	)
 	output, err := cmd.CombinedOutput()
 	t.Log(string(output))
 	if err != nil {
 		t.Fatalf("real DSH financialhandoff -> real WLT server failed: %v", err)
+	}
+	// The historical review only supplied funded cover. DSH must perform the
+	// earning and debit through its durable outbox, with no duplicate postings.
+	legacyReview, err := postgres.ReadLegacyCODRecoveryByPayment(ctx, db, legacy.paymentID)
+	if err != nil || legacyReview.Status != "APPROVED" || legacyReview.ReservationID == "" {
+		t.Fatalf("historical WLT review lost after DSH settlement: %+v err=%v", legacyReview, err)
+	}
+	var legacyReservations, legacyDebits, legacyEarnings int
+	err = db.QueryRowContext(ctx, `SELECT
+		(SELECT COUNT(*) FROM wlt.captain_cod_reservations WHERE id=$1 AND payment_intent_id=$2 AND state='DEBITED'),
+		(SELECT COUNT(*) FROM wlt.ledger_transactions WHERE transaction_type='CAPTAIN_COD_WALLET_DEBITED' AND source_id=$1),
+		(SELECT COUNT(*) FROM wlt.partner_order_earnings WHERE order_id=$3)`,
+		legacyReview.ReservationID, legacy.paymentID, legacy.orderID).
+		Scan(&legacyReservations, &legacyDebits, &legacyEarnings)
+	if err != nil || legacyReservations != 1 || legacyDebits != 1 || legacyEarnings != 1 {
+		t.Fatalf("historical DSH outbox created duplicate/missing finance: reservations=%d debits=%d earnings=%d err=%v",
+			legacyReservations, legacyDebits, legacyEarnings, err)
+	}
+	legacyWallet, err := postgres.ReadCaptainWalletState(ctx, db, legacy.captainID)
+	if err != nil || legacyWallet.HeldMinor != 0 || legacyWallet.AvailableMinor != 20000+500-legacy.cashMinor {
+		t.Fatalf("historical Captain wallet after recovered settlement: %+v err=%v", legacyWallet, err)
 	}
 	finalPayment, err := postgres.ReadPaymentIntent(ctx, db, payment.ID)
 	if err != nil || finalPayment.State != "COLLECTED" {
