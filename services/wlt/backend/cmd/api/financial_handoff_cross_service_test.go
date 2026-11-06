@@ -298,6 +298,7 @@ func TestIsolatedDSHToRealWLTStorePickupMixedPayment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	verifyLegacyCODRecoveryThroughDSH(t, ctx, db, liveWLT.URL, token, owner, store, dshDir)
 	cmd := exec.CommandContext(ctx, "go", "test", "-C", dshDir, "./internal/financialhandoff",
 		"-run", "^TestRealWLTStorePickupMixedFundingReconcilesAcrossDatabases$", "-count=1", "-v")
 	// The child has a different explicit expected database name; never hand it
