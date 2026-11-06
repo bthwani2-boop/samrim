@@ -362,7 +362,7 @@ paths:
         '201': { description: Finance review is pending independent approval. }
         '200': { description: Identical review replay. }
         '400': { description: Invalid payment or evidence facts. }
-        '409': { description: Existing COD cover, transfer or review prevents a new recovery. }
+        '409': { description: 'Existing COD cover, transfer or review prevents a new recovery.' }
   /wlt/v1/operator/captain-cod-legacy-reviews/by-payment/{paymentIntentId}:
     get:
       operationId: readLegacyCODRecoveryByPayment
