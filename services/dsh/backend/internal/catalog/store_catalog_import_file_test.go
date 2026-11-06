@@ -127,3 +127,45 @@ func TestParseStoreCatalogImportFileCSVAccepts5000RowsRejects5001(t *testing.T) 
 		t.Fatalf("CSV exceeding %d rows must be rejected: %v", MaxStoreCatalogImportRows, err)
 	}
 }
+
+func TestParseStoreCatalogImportFileCSVPriceGrouping(t *testing.T) {
+	cases := []struct {
+		name      string
+		price     string
+		wantPrice int64
+		invalid   bool
+	}{
+		{name: "plain whole YER", price: "1000", wantPrice: 1000},
+		{name: "comma grouping", price: "1,000", wantPrice: 1000},
+		{name: "Arabic thousands separator", price: "١٬٠٠٠", wantPrice: 1000},
+		{name: "space grouping", price: "1 000", wantPrice: 1000},
+		{name: "multiple valid groups", price: "1,000,000", wantPrice: 1000000},
+		{name: "ambiguous decimal comma", price: "1,5", invalid: true},
+		{name: "malformed groups", price: "12,34", invalid: true},
+		{name: "empty group", price: "1,,000", invalid: true},
+		{name: "mixed separators", price: "1, 000", invalid: true},
+		{name: "Arabic digits malformed comma", price: "١,٥", invalid: true},
+		{name: "interspersed spaces", price: "1 00 0", invalid: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var input strings.Builder
+			input.WriteString("name,price\nSugar,")
+			input.WriteString(fmt.Sprintf("%q", tc.price))
+			input.WriteByte('\n')
+			rows, err := ParseStoreCatalogImportFile("catalog.csv", []byte(input.String()))
+			if err != nil || len(rows) != 1 {
+				t.Fatalf("price row must remain previewable: %+v %v", rows, err)
+			}
+			if tc.invalid {
+				if rows[0].ErrorCode != "INVALID_INPUT" {
+					t.Fatalf("malformed grouping must not silently change the price: %+v", rows[0])
+				}
+				return
+			}
+			if rows[0].ErrorCode != "" || rows[0].PriceMinor != tc.wantPrice {
+				t.Fatalf("valid grouped price changed: %+v; want %d", rows[0], tc.wantPrice)
+			}
+		})
+	}
+}
