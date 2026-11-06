@@ -27,6 +27,18 @@ export function storeReadinessProgress(steps: readonly (boolean | null)[]) {
   };
 }
 
+// Setup progress describes durable onboarding facts, not momentary orderability.
+// A legitimate schedule closure must not make an already configured Store look incomplete.
+export function storeSetupProgress(
+  facts: Pick<StoreSetupFacts, "ownsStore" | "canEditCatalog" | "publicationState" | "catalogReady" | "agreement">,
+) {
+  return storeReadinessProgress([
+    ...(facts.ownsStore ? [facts.publicationState === "published"] : []),
+    ...(facts.canEditCatalog ? [facts.catalogReady] : []),
+    ...(facts.ownsStore ? [facts.agreement === null || facts.agreement === "UNAVAILABLE" ? null : facts.agreement === "ACTIVE"] : []),
+  ]);
+}
+
 // This is guidance, never a substitute for DSH/WLT publication or orderability checks.
 // Unknown data does not count as completion, and a closed schedule is not a fault.
 export function nextStoreSetupFocus(facts: StoreSetupFacts): StoreSetupFocus | null {
