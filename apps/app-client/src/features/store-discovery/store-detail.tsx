@@ -35,7 +35,7 @@ type StoreBannerItem = Readonly<{ key: string; content: PublicDiscoveryContentVi
 
 type CatalogSnapshot = { catalog: PublicCatalogResponse; categoryID: string | null; sectionID: string | null; query: string; productID: string };
 
-const EMPTY_GRID_CELL_KEYS = ["empty-grid-cell:1", "empty-grid-cell:2", "empty-grid-cell:3"] as const;
+const EMPTY_GRID_CELL_KEYS = ["empty-grid-cell:1", "empty-grid-cell:2", "empty-grid-cell:3", "empty-grid-cell:4", "empty-grid-cell:5"] as const;
 
 export default function ClientStoreDetail({ storeId, categoryId = "", productId = "", promotionId = "" }: { storeId: string; categoryId?: string; productId?: string; promotionId?: string }) {
   const router = useRouter();
@@ -74,7 +74,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [isFavorite, setIsFavorite] = useState(false);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
   const [favoriteOfferIDs, setFavoriteOfferIDs] = useState<ReadonlySet<string>>(new Set());
-  const [failedProductImageIDs, setFailedProductImageIDs] = useState<ReadonlySet<string>>(new Set());
+  const [failedProductImageURIs, setFailedProductImageURIs] = useState<ReadonlySet<string>>(new Set());
   const [failedCategoryImageIDs, setFailedCategoryImageIDs] = useState<ReadonlySet<string>>(new Set());
   const [failedStoreImage, setFailedStoreImage] = useState(false);
   const [failedStoreCover, setFailedStoreCover] = useState(false);
@@ -99,7 +99,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const { width: windowWidth } = useWindowDimensions();
   const desktopStorefront = Platform.OS === "web" && windowWidth >= 1024;
   const gridMode = userGridMode ?? (Platform.OS === "web" && windowWidth >= 1024);
-  const gridColumns = Platform.OS === "web" && windowWidth >= 1200 ? 3 : 2;
+  const gridColumns = Platform.OS !== "web" ? 2 : windowWidth >= 1700 ? 5 : windowWidth >= 1200 ? 4 : windowWidth >= 1024 ? 3 : 2;
   const [promotionLoading, setPromotionLoading] = useState(true);
   const [promotionError, setPromotionError] = useState(false);
   const [favoritesView, setFavoritesView] = useState(false);
@@ -647,7 +647,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     if (asGrid) return <BthwaniSurface key={offer.offerId} tone="base" style={[styles.item, styles.gridItem]}>
       <View style={styles.gridImageFrame}>
         <Pressable ref={(node) => { if (node) imageRefs.current.set(offer.offerId, node); else imageRefs.current.delete(offer.offerId); }} accessibilityRole="button" accessibilityLabel={"تكبير صورة " + offer.productName} onPress={() => openGalleryFromImage(offer.offerId)}>
-          {primaryMedia && !failedProductImageIDs.has(offer.offerId) ? <ExpoImage cachePolicy="disk" accessibilityLabel={"صورة " + offer.productName} source={{ uri: primaryMedia.uri }} onError={() => setFailedProductImageIDs((current) => new Set(current).add(offer.offerId))} contentFit={Platform.OS === "web" && windowWidth >= 1024 ? "contain" : "cover"} style={styles.gridImage} /> : <View style={[styles.productImagePlaceholder, styles.gridImage]}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /></View>}
+          {primaryMedia?.uri && !failedProductImageURIs.has(primaryMedia.uri) ? <ExpoImage cachePolicy="disk" accessibilityLabel={"صورة " + offer.productName} source={{ uri: primaryMedia.uri }} onError={() => setFailedProductImageURIs((current) => new Set(current).add(primaryMedia.uri))} contentFit={Platform.OS === "web" && windowWidth >= 1024 ? "contain" : "cover"} style={[styles.gridImage, desktopStorefront && styles.gridImageDesktop]} /> : <View accessibilityLabel={"صورة المنتج غير متوفرة: " + offer.productName} style={[styles.productImagePlaceholder, styles.gridImage, desktopStorefront && styles.gridImageDesktop, styles.gridImageFallback]}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /><Text style={styles.gridImageFallbackText}>صورة غير متوفرة</Text></View>}
         </Pressable>
         <BthwaniIconButton disabled={Boolean(favoriteOfferBusyID)} icon="favorite" label={favoriteOfferIDs.has(offer.offerId) ? "إزالة المنتج من المفضلة" : "إضافة المنتج للمفضلة"} onPress={() => void toggleOfferFavorite(offer.offerId)} size={sizing.controlMd} style={styles.productFavorite} tone={favoriteOfferIDs.has(offer.offerId) ? "primary" : "soft"} />
       </View>
@@ -666,8 +666,8 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
               onPress={() => openGalleryFromImage(offer.offerId)}
               style={styles.productImagePressable}
             >
-              {primaryMedia && !failedProductImageIDs.has(offer.offerId)
-                ? <ExpoImage cachePolicy="disk" accessibilityLabel={`صورة ${offer.productName}`} onError={() => setFailedProductImageIDs((current) => new Set(current).add(offer.offerId))} source={{ uri: primaryMedia.uri }} contentFit="cover" style={styles.productImage} />
+              {primaryMedia?.uri && !failedProductImageURIs.has(primaryMedia.uri)
+                ? <ExpoImage cachePolicy="disk" accessibilityLabel={`صورة ${offer.productName}`} onError={() => setFailedProductImageURIs((current) => new Set(current).add(primaryMedia.uri))} source={{ uri: primaryMedia.uri }} contentFit="cover" style={styles.productImage} />
                 : <View accessibilityLabel={`لا توجد صورة متاحة لـ ${offer.productName}`} style={styles.productImagePlaceholder}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /></View>}
             </Pressable>
           </View>
