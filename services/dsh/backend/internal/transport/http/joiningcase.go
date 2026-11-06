@@ -59,6 +59,7 @@ func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/joining-cases", s.create)
 	mux.HandleFunc("GET /dsh/partner-applications/self", s.selfServiceApplication)
 	mux.HandleFunc("POST /dsh/partner-applications/self", s.selfServiceApplication)
+	mux.HandleFunc("GET /dsh/partner-applications/self/contact", s.selfServiceApplicantContact)
 	mux.HandleFunc("POST /dsh/partner-applications/self/correct-and-resubmit", s.selfServiceCorrection)
 	mux.HandleFunc("GET /dsh/joining-cases", s.listForOperator)
 	mux.HandleFunc("GET /dsh/joining-cases/self", s.readForPartner)

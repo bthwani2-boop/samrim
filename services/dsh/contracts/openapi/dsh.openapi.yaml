@@ -136,6 +136,8 @@ paths:
   /dsh/partner-applications/self:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1partner-applications~1self"
 
+  /dsh/partner-applications/self/contact:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1partner-applications~1self~1contact"
   /dsh/partner-applications/self/correct-and-resubmit:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1partner-applications~1self~1correct-and-resubmit"
 
@@ -1819,6 +1821,16 @@ components:
           type: string
         status:
           type: string
+
+    SelfServiceApplicantContactResponse:
+      type: object
+      description: Verified contact from the authenticated Identity client, not an editable field.
+      required: [contactPhoneE164]
+      additionalProperties: false
+      properties:
+        contactPhoneE164:
+          type: string
+          pattern: '^[+][1-9][0-9]{7,14}$'
 
     CreateJoiningCaseRequest:
       type: object

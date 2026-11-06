@@ -45,6 +45,26 @@ func (s *JoiningCaseServer) selfServiceApplication(w http.ResponseWriter, r *htt
 	}
 }
 
+// Only the verified applicant can read the phone already bound in Identity.
+// This avoids entering the same phone twice and never trusts a form field.
+func (s *JoiningCaseServer) selfServiceApplicantContact(w http.ResponseWriter, r *http.Request) {
+	token := bearerToken(r)
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "an authenticated customer identity is required")
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "caller-authored identity is forbidden")
+		return
+	}
+	phone, err := s.service.ReadSelfServiceApplicantContact(r.Context(), token)
+	if err != nil {
+		writeJoiningCaseError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.SelfServiceApplicantContactResponse{ContactPhoneE164: phone})
+}
+
 // A pre-admission applicant corrects the same verified first-Store application.
 // No caller-provided case or actor ID is accepted; DSH resolves both canonically.
 func (s *JoiningCaseServer) selfServiceCorrection(w http.ResponseWriter, r *http.Request) {

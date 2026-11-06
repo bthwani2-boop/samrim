@@ -33,6 +33,29 @@ func TestSelfServiceApplicationRejectsUnauthenticatedAndSpoofedActor(t *testing.
 	}
 }
 
+func TestSelfServiceApplicantContactRequiresVerifiedBearerAndRejectsActorSpoofing(t *testing.T) {
+	server := &JoiningCaseServer{}
+	router := http.NewServeMux()
+	server.Register(router)
+	const path = "/dsh/partner-applications/self/contact"
+	withoutBearer := httptest.NewRequest(http.MethodGet, path, nil)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, withoutBearer)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without verified token, got %d", response.Code)
+	}
+	for _, name := range []string{"X-Actor-ID", "X-Acting-Actor-ID"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request.Header.Set("Authorization", "Bearer unverified")
+		request.Header.Set(name, "another-actor")
+		result := httptest.NewRecorder()
+		router.ServeHTTP(result, request)
+		if result.Code != http.StatusBadRequest || !strings.Contains(result.Body.String(), "INVALID_INPUT") {
+			t.Fatalf("spoof header %s was not rejected: %d %s", name, result.Code, result.Body.String())
+		}
+	}
+}
+
 func TestSelfServiceCorrectionRequiresVerifiedBearerAndRejectsActorSpoofing(t *testing.T) {
 	server := &JoiningCaseServer{}
 	router := http.NewServeMux()
