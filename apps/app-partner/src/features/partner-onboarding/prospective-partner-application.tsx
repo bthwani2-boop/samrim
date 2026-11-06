@@ -5,11 +5,12 @@ import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native
 import type { BthwaniMapCoordinate, BthwaniMapProps } from "@bthwani/design-system/native/map";
 import { toAsciiDigits } from "@bthwani/design-system";
 import { normalizeYemenPhoneE164 } from "@bthwani/identity/phone";
+import { identityErrorMessage, limitPasswordInput, validatePasswordInputShape } from "@bthwani/identity";
 import * as Crypto from "expo-crypto";
 import { useRouter } from "expo-router";
 import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { currentProspectSession, loginProspect, logoutProspect, prospectAccessToken, registerProspect, requestProspectRegistration, restoreProspectSession, subscribeProspectSession } from "../../bootstrap/applicant-identity";
+import { currentProspectSession, loginProspect, logoutProspect, prospectAccessToken, recoverProspect, registerProspect, requestProspectRecovery, requestProspectRegistration, restoreProspectSession, subscribeProspectSession } from "../../bootstrap/applicant-identity";
 import { listActiveServiceCities, listCatalogVerticals, listCommercialStoreTypes } from "./store-readback-client";
 import { JoiningCaseCorrection } from "./joining-case-correction";
 
@@ -81,7 +82,7 @@ export function ProspectivePartnerApplication(){
  }),[theme]);
  const [session,setSession]=useState(currentProspectSession());
  const [restoring,setRestoring]=useState(true);
- const [mode,setMode]=useState<"login"|"register">("register");
+ const [mode,setMode]=useState<"login"|"register"|"recover">("register");
  const [phone,setPhone]=useState("");
  const [verifiedContactPhone,setVerifiedContactPhone]=useState("");
  const [manualContactFallback,setManualContactFallback]=useState(false);
@@ -119,6 +120,9 @@ export function ProspectivePartnerApplication(){
  const [proofNumber,setProofNumber]=useState("");
  const [modes,setModes]=useState<StoreFulfillmentMode[]>(["BTHWANI_CAPTAIN"]);
  const phoneReady=/^\+[1-9]\d{7,14}$/.test(normalizeYemenPhoneE164(phone));
+ const needsProof=mode!=="login";
+ const passwordShape=validatePasswordInputShape(password,needsProof?passwordConfirmation:undefined);
+ const canAuthenticate=phoneReady&&passwordShape.valid&&(!needsProof||(proofRequested&&/^\d{6}$/.test(toAsciiDigits(code).trim())));
  const selectedOrigin=useMemo<BthwaniMapCoordinate|null>(()=>{
   if(!lat.trim()||!lng.trim())return null;
   const latitude=Number(toAsciiDigits(lat));const longitude=Number(toAsciiDigits(lng));
@@ -218,20 +222,32 @@ export function ProspectivePartnerApplication(){
  }
 
  async function authenticate(){
-  if(busy||!phoneReady||!password||(mode==="register"&&(!proofRequested||toAsciiDigits(code).trim().length!==6||!passwordConfirmation)))return;
+  if(busy||!canAuthenticate)return;
   setBusy(true);setError("");setNotice("");
   try{
+   const normalized=normalizeYemenPhoneE164(phone);
    if(mode==="register"){
-    if(!proofRequested){throw new Error("يجب طلب رمز التحقق أولاً")}
-    if(password!==passwordConfirmation)throw new Error("تأكيد كلمة المرور لا يطابق كلمة المرور.");
-    await registerProspect(phone.trim(),toAsciiDigits(code.trim()),password);
-   }else{await loginProspect(phone.trim(),password)}
-  }catch(cause){setError(cause instanceof Error?cause.message:"تعذر تسجيل الدخول")}finally{setBusy(false)}
+    await registerProspect(normalized,toAsciiDigits(code.trim()),password);
+   }else if(mode==="recover"){
+    await recoverProspect(normalized,toAsciiDigits(code.trim()),password);
+    setMode("login");setProofRequested(false);setCode("");setPassword("");setPasswordConfirmation("");
+    setNotice("تم تغيير كلمة المرور. سجّل دخولك بكلمة المرور الجديدة.");
+   }else{
+    await loginProspect(normalized,password);
+   }
+  }catch(cause){setError(identityErrorMessage(cause,mode==="login"?"login":mode==="recover"?"recovery":"general"))}
+  finally{setBusy(false)}
  }
  async function requestProof(){
-  if(busy || !phoneReady)return;
-  setBusy(true);setError("");
-  try{await requestProspectRegistration(phone.trim());setProofRequested(true);setNotice("أدخل رمز التحقق المرسل إلى رقمك.")}catch(cause){setError(cause instanceof Error?cause.message:"تعذر طلب الرمز")}finally{setBusy(false)}
+  if(busy||!phoneReady||mode==="login")return;
+  setBusy(true);setError("");setNotice("");
+  try{
+   const normalized=normalizeYemenPhoneE164(phone);
+   if(mode==="recover")await requestProspectRecovery(normalized);
+   else await requestProspectRegistration(normalized);
+   setCode("");setProofRequested(true);setNotice("أدخل رمز التحقق المرسل إلى رقمك.");
+  }catch(cause){setError(identityErrorMessage(cause,mode==="recover"?"recovery":"general"))}
+  finally{setBusy(false)}
  }
  async function submit(){
   const initiating=currentProspectSession();
@@ -296,21 +312,25 @@ export function ProspectivePartnerApplication(){
   <View style={styles.formCard}>
   {restoring||loading?<ActivityIndicator accessibilityLabel="جارٍ التحقق من بيانات الطلب"/>:null}
   {!authenticated&&!restoring?<View style={styles.content}>
-   <Text style={styles.cardTitle}>ابدأ الآن</Text>
-   <Text style={styles.muted}>لديك حساب عميل بثواني؟ استخدم الرقم نفسه، لا تحتاج حسابًا جديدًا.</Text>
+   <Text style={styles.cardTitle}>{mode==="recover"?"استعادة كلمة المرور":"ابدأ الآن"}</Text>
+   <Text style={styles.muted}>{mode==="recover"?"سنرسل رمز تحقق إلى رقم جوالك لاستعادة الوصول إلى طلبك.":"لديك حساب عميل بثواني؟ استخدم الرقم نفسه، لا تحتاج حسابًا جديدًا."}</Text>
    <View style={styles.segment} accessibilityRole="radiogroup">
     {([{id:"register",label:"حساب جديد"},{id:"login",label:"لدي حساب"}] as const).map(item=>
-     <Pressable key={item.id} disabled={busy} accessibilityRole="radio" accessibilityState={{checked:mode===item.id,disabled:busy}} onPress={()=>{setMode(item.id);setProofRequested(false);setCode("");setPassword("");setPasswordConfirmation("");setError("")}} style={[styles.segmentButton,mode===item.id&&styles.segmentSelected]}>
-      <Text style={[styles.segmentLabel,mode===item.id&&styles.segmentLabelSelected]}>{item.label}</Text>
+     <Pressable key={item.id} disabled={busy} accessibilityRole="radio" accessibilityState={{checked:mode===item.id||(mode==="recover"&&item.id==="login"),disabled:busy}} onPress={()=>{setMode(item.id);setProofRequested(false);setCode("");setPassword("");setPasswordConfirmation("");setError("");setNotice("")}} style={[styles.segmentButton,(mode===item.id||(mode==="recover"&&item.id==="login"))&&styles.segmentSelected]}>
+      <Text style={[styles.segmentLabel,(mode===item.id||(mode==="recover"&&item.id==="login"))&&styles.segmentLabelSelected]}>{item.label}</Text>
      </Pressable>)}
    </View>
    {field("رقم الجوال",phone,(next)=>{setPhone(next);setProofRequested(false);setCode("")},false,"phone-pad")}
    <Text style={styles.muted}>مثال: 777123456 · استخدم رقم جوالك الذي تستطيع استلام رمز التحقق عليه.</Text>
-   {mode==="register"?<BthwaniButton label={proofRequested?"إعادة إرسال رمز التحقق":"إرسال رمز التحقق"} onPress={()=>void requestProof()} disabled={busy||!phoneReady}/>:null}
-   {mode==="register"&&proofRequested?field("رمز التحقق",code,setCode,false,"numeric"):null}
-   {mode==="login"||proofRequested?field("كلمة المرور",password,setPassword,true):null}
-   {mode==="register"&&proofRequested?field("تأكيد كلمة المرور",passwordConfirmation,setPasswordConfirmation,true):null}
-   <BthwaniButton label={busy?"جارٍ التحقق…":mode==="register"?"تأكيد الرقم والمتابعة":"الدخول إلى طلبي"} onPress={()=>void authenticate()} disabled={busy||!phoneReady||!password||(mode==="register"&&(!proofRequested||toAsciiDigits(code).trim().length!==6||!passwordConfirmation))}/>
+   {needsProof?<BthwaniButton label={proofRequested?"إعادة إرسال رمز التحقق":"إرسال رمز التحقق"} onPress={()=>void requestProof()} disabled={busy||!phoneReady}/>:null}
+   {needsProof&&proofRequested?field("رمز التحقق",code,value=>setCode(toAsciiDigits(value).replace(/\D/g,"").slice(0,6)),false,"numeric"):null}
+   {mode==="login"||proofRequested?field(mode==="recover"?"كلمة المرور الجديدة":"كلمة المرور",password,value=>setPassword(limitPasswordInput(value)),true):null}
+   {needsProof&&proofRequested?field("تأكيد كلمة المرور",passwordConfirmation,value=>setPasswordConfirmation(limitPasswordInput(value)),true):null}
+   {needsProof&&proofRequested?<Text style={styles.muted}>كلمة المرور 8 أحرف بالضبط، ويجب أن تتطابق مع التأكيد.</Text>:null}
+   {!passwordShape.valid&&(mode==="login"?password.length>0:passwordConfirmation.length>0)?<Text style={styles.muted}>{passwordShape.message}</Text>:null}
+   {(mode==="login"||proofRequested)?<BthwaniButton label={busy?"جارٍ التحقق…":mode==="register"?"تأكيد الرقم والمتابعة":mode==="recover"?"تغيير كلمة المرور":"الدخول إلى طلبي"} onPress={()=>void authenticate()} disabled={busy||!canAuthenticate}/>:null}
+   {mode==="login"?<Pressable accessibilityRole="button" disabled={busy} onPress={()=>{setMode("recover");setProofRequested(false);setCode("");setPassword("");setPasswordConfirmation("");setError("");setNotice("")}}><Text style={[styles.text,{color:theme.actionBackground,textAlign:"center"}]}>نسيت كلمة المرور؟</Text></Pressable>:null}
+   {mode==="recover"?<Pressable accessibilityRole="button" disabled={busy} onPress={()=>{setMode("login");setProofRequested(false);setCode("");setPassword("");setPasswordConfirmation("");setError("");setNotice("")}}><Text style={[styles.text,{color:theme.actionBackground,textAlign:"center"}]}>العودة لتسجيل الدخول</Text></Pressable>:null}
   </View>:null}
   {authenticated&&!caseValue&&!hasRead&&!loading?<View style={{gap:8}}><Text accessibilityRole="alert" style={styles.muted}>تعذر التحقق من وجود طلب سابق. لن يتاح إنشاء طلب آخر قبل قراءة حالتك من المنصة.</Text><BthwaniButton label="إعادة التحقق من طلب الانضمام" variant="secondary" onPress={()=>void load()} disabled={busy}/></View>:null}
   {authenticated&&caseValue?<View style={styles.content}>

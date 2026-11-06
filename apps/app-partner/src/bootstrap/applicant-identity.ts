@@ -28,4 +28,9 @@ export async function loginProspect(phone:string,password:string):Promise<Identi
  const pair=await runtime.identityClient().loginClient({phone,password,clientInstanceId:await runtime.clientInstanceId()});
  return runtime.identitySession().adopt(pair);
 }
+export function requestProspectRecovery(phone:string){return runtime.identityClient().requestClientRecovery({phone})}
+export async function recoverProspect(phone:string,code:string,password:string):Promise<IdentitySessionState>{
+ await runtime.identityClient().recoverClient({phone,code,password});
+ return runtime.identitySession().clearLocalSession();
+}
 export const logoutProspect=runtime.logoutIdentity;
