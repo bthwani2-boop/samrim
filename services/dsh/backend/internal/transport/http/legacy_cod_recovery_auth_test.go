@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 )
 
 func TestOperatorLegacyCODRecoveryRejectsUnauthenticatedOrForgedActors(t *testing.T) {
@@ -39,6 +40,28 @@ func TestOperatorLegacyCODRecoveryRejectsUnauthenticatedOrForgedActors(t *testin
 			tc.handler(recorder, request)
 			if recorder.Code != http.StatusBadRequest {
 				t.Fatalf("expected 400 got %d body=%s", recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestWLTFinanceDependencyErrorsDoNotInvalidateOperatorAuthentication(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		want   int
+	}{
+		{http.StatusUnauthorized, http.StatusBadGateway},
+		{http.StatusBadGateway, http.StatusBadGateway},
+		{http.StatusServiceUnavailable, http.StatusBadGateway},
+		{http.StatusForbidden, http.StatusForbidden},
+		{http.StatusConflict, http.StatusConflict},
+		{http.StatusBadRequest, http.StatusBadRequest},
+	} {
+		t.Run(http.StatusText(tc.status), func(t *testing.T) {
+			response := httptest.NewRecorder()
+			writeWLTFinanceDependencyError(response, &wlt.Error{Status: tc.status, Code: "UPSTREAM_TEST", Message: "test"})
+			if response.Code != tc.want {
+				t.Fatalf("upstream status %d yielded %d, want %d: %s", tc.status, response.Code, tc.want, response.Body.String())
 			}
 		})
 	}

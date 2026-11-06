@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/domain"
+	"github.com/lib/pq"
 )
 
 var (
@@ -149,7 +150,7 @@ func SubmitLegacyCODRecovery(ctx context.Context, db *sql.DB, input LegacyCODRec
 		id, input.PaymentIntentID, input.OrderID, input.CaptainActorID, amount, input.EvidenceDocumentID,
 		input.ActorID, input.IdempotencyKey, requestHash, input.CorrelationID)
 	if err != nil {
-		return LegacyCODRecoveryRecord{}, false, err
+		return LegacyCODRecoveryRecord{}, false, mapLegacyCODRecoveryConstraintError(err)
 	}
 	if err := tx.Commit(); err != nil {
 		return LegacyCODRecoveryRecord{}, false, err
@@ -242,7 +243,7 @@ func ApproveLegacyCODRecovery(ctx context.Context, db *sql.DB, input LegacyCODRe
 		reservationID, item.OrderID, item.PaymentIntentID, item.CaptainActorID, item.AmountMinor,
 		reserveKey, requestHash, input.CorrelationID)
 	if err != nil {
-		return LegacyCODRecoveryRecord{}, false, err
+		return LegacyCODRecoveryRecord{}, false, mapLegacyCODRecoveryConstraintError(err)
 	}
 	if err := insertCaptainCODReservationEvent(ctx, tx, reservationID, "CAPTAIN_COD_LEGACY_RECOVERED", input.IdempotencyKey, requestHash, input.CorrelationID); err != nil {
 		return LegacyCODRecoveryRecord{}, false, err
@@ -253,13 +254,42 @@ func ApproveLegacyCODRecovery(ctx context.Context, db *sql.DB, input LegacyCODRe
 		WHERE id=$1 AND status='PENDING'`,
 		item.ID, input.ActorID, input.IdempotencyKey, input.CorrelationID, reservationID)
 	if err != nil {
-		return LegacyCODRecoveryRecord{}, false, err
+		return LegacyCODRecoveryRecord{}, false, mapLegacyCODRecoveryConstraintError(err)
 	}
 	if err := tx.Commit(); err != nil {
 		return LegacyCODRecoveryRecord{}, false, err
 	}
 	result, err := ReadLegacyCODRecovery(ctx, db, input.ReviewID)
 	return result, false, err
+}
+
+// Translate only known uniqueness races into domain outcomes. All other SQL
+// failures remain storage errors; a concurrent Finance action must not become
+// a misleading 502 merely because its pre-check won a stale snapshot.
+func mapLegacyCODRecoveryConstraintError(err error) error {
+	var conflict *pq.Error
+	if !errors.As(err, &conflict) || conflict.Code != "23505" {
+		return err
+	}
+	// PostgreSQL truncates generated constraint names at 63 bytes, so the
+	// two long idempotency constraints may have shortened table prefixes.
+	if strings.HasPrefix(conflict.Constraint, "captain_cod_legacy_recovery_rev") &&
+		(strings.Contains(conflict.Constraint, "submitted_idempotency") ||
+			strings.Contains(conflict.Constraint, "approval_idempotency")) {
+		return ErrIdempotencyConflict
+	}
+	switch conflict.Constraint {
+	case "captain_cod_legacy_recovery_reviews_evidence_document_id_key":
+		return ErrLegacyCODRecoveryEvidence
+	case "captain_cod_legacy_recovery_reviews_payment_intent_id_key",
+		"captain_cod_legacy_recovery_reviews_order_id_key",
+		"captain_cod_legacy_recovery_reviews_reservation_id_key",
+		"captain_cod_reservations_active_order_uq",
+		"captain_cod_reservations_active_payment_intent_uq":
+		return ErrLegacyCODRecoveryState
+	default:
+		return err
+	}
 }
 
 func requireUnsettledLegacyCOD(ctx context.Context, tx *sql.Tx, orderID, paymentIntentID, captainID string) (int64, error) {
@@ -286,7 +316,7 @@ func requireUnsettledLegacyCOD(ctx context.Context, tx *sql.Tx, orderID, payment
 	var hasSettlement bool
 	err = tx.QueryRowContext(ctx, `SELECT
 		EXISTS(SELECT 1 FROM wlt.cash_remittances WHERE payment_intent_id=$1)
-		OR EXISTS(SELECT 1 FROM wlt.captain_cod_reservations WHERE payment_intent_id=$1 OR order_id=$2)
+		OR EXISTS(SELECT 1 FROM wlt.captain_cod_reservations WHERE (payment_intent_id=$1 OR order_id=$2) AND state <> 'RELEASED')
 		OR EXISTS(SELECT 1 FROM wlt.partner_order_earnings WHERE payment_intent_id=$1 OR order_id=$2)`,
 		paymentIntentID, orderID).Scan(&hasSettlement)
 	if err != nil {

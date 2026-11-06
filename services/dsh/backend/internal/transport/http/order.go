@@ -255,7 +255,7 @@ func (s *OrderServer) reconcileOperatorCashRemittance(w http.ResponseWriter, r *
 	if err != nil {
 		var wltErr *wlt.Error
 		if errors.As(err, &wltErr) {
-			writeError(w, wltErr.Status, wltErr.Code, wltErr.Message)
+			writeWLTFinanceDependencyError(w, wltErr)
 			return
 		}
 		writeOrderError(w, err)

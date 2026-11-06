@@ -218,7 +218,9 @@ func transitionCaptainCOD(ctx context.Context, db *sql.DB, input CaptainCODReser
 		return CaptainCODReservationRecord{}, false, err
 	}
 	var reservation CaptainCODReservationRecord
-	err = scanCaptainCODReservation(tx.QueryRowContext(ctx, `SELECT id,order_id,payment_intent_id,captain_actor_id,amount_minor,currency,state,created_at,updated_at,released_at,finalized_at,remitted_at FROM wlt.captain_cod_reservations WHERE order_id=$1 AND payment_intent_id=$2 AND captain_actor_id=$3 FOR UPDATE`, input.OrderID, input.PaymentIntentID, input.CaptainActorID), &reservation)
+	err = scanCaptainCODReservation(tx.QueryRowContext(ctx, `SELECT id,order_id,payment_intent_id,captain_actor_id,amount_minor,currency,state,created_at,updated_at,released_at,finalized_at,remitted_at FROM wlt.captain_cod_reservations WHERE order_id=$1 AND payment_intent_id=$2 AND captain_actor_id=$3
+		ORDER BY CASE state WHEN 'ACTIVE' THEN 0 WHEN 'DEBITED' THEN 1 ELSE 2 END,
+		created_at DESC,id DESC LIMIT 1 FOR UPDATE`, input.OrderID, input.PaymentIntentID, input.CaptainActorID), &reservation)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CaptainCODReservationRecord{}, false, ErrCaptainCODReservationNotFound
 	}

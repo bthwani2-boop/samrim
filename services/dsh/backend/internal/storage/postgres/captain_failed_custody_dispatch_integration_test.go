@@ -115,6 +115,29 @@ func TestFailedCustodyCaptainCannotReceiveAnotherDispatch(t *testing.T) {
 			t.Fatalf("failed custody was incorrectly restored after rejecting stale offer: state=%s err=%v", availability, err)
 		}
 
+		// An already-issued unexpired offer cannot be accepted once another
+		// delivery has entered failed custody. Rejection must remain available.
+		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.captain_dispatch_offers(id,order_id,captain_actor_id,state,expires_at,version,idempotency_key,request_hash) VALUES('custody-preexisting-offer',$1,$2,'offered',clock_timestamp()+interval '1 hour',1,'custody-preexisting-key','preexisting-hash')", readyOrder, failedCaptain); err != nil {
+			t.Fatal(err)
+		}
+		_, err = postgres.RespondToCaptainOffer(ctx, db, "custody-preexisting-offer", failedCaptain, "accept", 1,
+			"custody-old-accept-key", postgres.HashCaptainOfferResponse("custody-preexisting-offer", "accept", 1), "custody-old-accept-correlation")
+		if !errors.Is(err, postgres.ErrCaptainNoAvailable) {
+			t.Fatalf("pre-existing offer bypassed failed custody: %v", err)
+		}
+		var preexistingOfferState, readyOrderState string
+		if err := db.QueryRowContext(ctx, "SELECT state FROM dsh.captain_dispatch_offers WHERE id='custody-preexisting-offer'").Scan(&preexistingOfferState); err != nil || preexistingOfferState != "offered" {
+			t.Fatalf("failed custody acceptance altered pre-existing offer: state=%s err=%v", preexistingOfferState, err)
+		}
+		if err := db.QueryRowContext(ctx, "SELECT state FROM dsh.commerce_orders WHERE id=$1", readyOrder).Scan(&readyOrderState); err != nil || readyOrderState != "READY_FOR_DISPATCH" {
+			t.Fatalf("failed custody acceptance assigned ready order: state=%s err=%v", readyOrderState, err)
+		}
+		response, err = postgres.RespondToCaptainOffer(ctx, db, "custody-preexisting-offer", failedCaptain, "reject", 1,
+			"custody-preexisting-reject-key", postgres.HashCaptainOfferResponse("custody-preexisting-offer", "reject", 1), "custody-preexisting-reject-correlation")
+		if err != nil || response.Offer.State != "rejected" {
+			t.Fatalf("rejection blocked for pre-existing offer: %+v err=%v", response, err)
+		}
+
 		offer, replayed, err := postgres.CreateCaptainDispatchOffer(ctx, db, readyOrder, "custody-healthy-key", postgres.HashCaptainDispatchRequest(readyOrder), "operator-test", "custody-healthy-correlation", healthyCaptain)
 		if err != nil || replayed || offer.State != "offered" {
 			t.Fatalf("healthy captain must still receive offer: offer=%+v replayed=%v err=%v", offer, replayed, err)

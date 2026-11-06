@@ -1,13 +1,13 @@
 "use client";
 
 import { formatMoney, type LegacyCODRecoveryResponse } from "@bthwani/dsh";
-import { type FormEvent, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { responseMessage } from "../access/identity-error-message";
 import { useSession } from "../../session/session-provider";
 import { operatorPaymentRecoveryStorageKey, operatorRecoveryStorageKey } from "./operator-recovery-key";
 
 type Review = LegacyCODRecoveryResponse["review"];
-type Props = Readonly<{ initialPaymentId?: string }>;
+type Props = Readonly<{ initialPaymentId?: string; onBusyChange?: (busy: boolean) => void; onDraftChange?: (hasDraft: boolean) => void }>;
 type Pending = Readonly<{
   paymentIntentId: string;
   fingerprint: string;
@@ -68,7 +68,7 @@ function newPending(paymentIntentId: string, fingerprint: string): Pending {
   };
 }
 
-export function CaptainCODLegacyRecoveryWorkspace({ initialPaymentId = "" }: Props) {
+export function CaptainCODLegacyRecoveryWorkspace({ initialPaymentId = "", onBusyChange, onDraftChange }: Props) {
   const { state: session } = useSession();
   const actorId = session.kind === "authenticated" ? session.identity.subject.trim() : "";
   const [paymentIntentId, setPaymentIntentId] = useState(initialPaymentId);
@@ -76,8 +76,16 @@ export function CaptainCODLegacyRecoveryWorkspace({ initialPaymentId = "" }: Pro
   const [review, setReview] = useState<Review | null>(null);
   const [proof, setProof] = useState<File | null>(null);
   const [documentId, setDocumentId] = useState("");
+  useEffect(() => {
+    onDraftChange?.(Boolean(proof || documentId));
+    return () => onDraftChange?.(false);
+  }, [proof, documentId, onDraftChange]);
   const [approvedConfirmed, setApprovedConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    onBusyChange?.(busy);
+    return () => onBusyChange?.(false);
+  }, [busy, onBusyChange]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const serial = useRef(0);
@@ -210,12 +218,13 @@ export function CaptainCODLegacyRecoveryWorkspace({ initialPaymentId = "" }: Pro
   }
 
   return (
-    <details id="legacy-cod-review" className="access-card" open={Boolean(initialPaymentId)}>
+    <details id="legacy-cod-review" className="access-card" open={Boolean(initialPaymentId)} aria-busy={busy}>
       <summary>مراجعة تحصيل COD التاريخي بدون حجز مالي</summary>
       <p className="muted">هذا استثناء مالي لتحصيل سابق فقط، لا يُنشئ حجزًا إلا بعد التحقق من الإثبات والرصيد واعتماد مشغّل مالية ثانٍ. لا تُستخدم هذه الآلية للطلبات الجديدة.</p>
       <form className="form-section" onSubmit={(event) => void lookup(event)}>
         <label className="field-label" htmlFor="legacy-cod-payment">معرّف عملية الدفع
-          <input id="legacy-cod-payment" value={paymentIntentId} maxLength={128} autoComplete="off" onChange={(event) => {
+          <input id="legacy-cod-payment" value={paymentIntentId} maxLength={128} autoComplete="off" disabled={busy} onChange={(event) => {
+            if (event.target.value.trim() !== paymentIntentId.trim() && (proof || documentId) && !window.confirm("يوجد إثبات مرتبط بهذا التحصيل. هل تريد مسح الاختيار والانتقال إلى معرّف آخر؟")) return;
             ++serial.current;
             setBusy(false);
             setPaymentIntentId(event.target.value);
@@ -245,7 +254,7 @@ export function CaptainCODLegacyRecoveryWorkspace({ initialPaymentId = "" }: Pro
         {reviewed.status === "APPROVED" ? <p className="managed-status managed-status-success">الحجز المالي المعتمد: <bdi dir="ltr">{reviewed.reservationId}</bdi> · تم الاعتماد بواسطة <bdi dir="ltr">{reviewed.approvedBy}</bdi></p> : null}
       </section> : searchedPaymentId && !review && !busy && !error ? <div className="form-section">
         <label className="field-label" htmlFor="legacy-cod-proof">إثبات التحصيل التاريخي (PDF أو صورة)
-          <input id="legacy-cod-proof" type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => {
+          <input id="legacy-cod-proof" type="file" accept="application/pdf,image/jpeg,image/png" disabled={busy} onChange={(event) => {
             setProof(event.target.files?.[0] ?? null);
             setDocumentId("");
           }} />

@@ -559,6 +559,18 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 	} else if admissionState != "eligible" || requiresProfileReview {
 		return CaptainOfferResult{}, ErrCaptainNotEligible
 	}
+	// A pre-existing unexpired offer must not bypass the same failed-custody
+	// exclusion enforced while searching and creating new dispatch offers.
+	// Rejection above remains allowed so the Captain can decline stale work.
+	var failedCustody bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(
+		SELECT 1 FROM dsh.captain_assignments
+		WHERE captain_actor_id=$1 AND state='delivery_failed')`, captainActorID).Scan(&failedCustody); err != nil {
+		return CaptainOfferResult{}, err
+	}
+	if failedCustody {
+		return CaptainOfferResult{}, ErrCaptainNoAvailable
+	}
 	var orderState, orderMode, orderStoreID string
 	if err := tx.QueryRowContext(ctx, "SELECT state,fulfillment_mode,store_id FROM dsh.commerce_orders WHERE id=$1 FOR UPDATE", offer.OrderID).Scan(&orderState, &orderMode, &orderStoreID); errors.Is(err, sql.ErrNoRows) {
 		return CaptainOfferResult{}, ErrOrderNotFound

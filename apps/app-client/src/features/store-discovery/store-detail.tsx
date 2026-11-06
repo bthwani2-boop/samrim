@@ -170,6 +170,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     setCartReadError(false);
     setFailedStoreImage(false);
     setFailedStoreCover(false);
+    setFailedProductImageURIs(new Set());
     setHeroVisible(true);
     setIsFavorite(false);
     setFavoriteOfferIDs(new Set());

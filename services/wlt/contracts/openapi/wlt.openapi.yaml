@@ -1855,6 +1855,7 @@ paths:
       operationId: readFinanceEvidenceDocumentAccessContext
       security: [{ serviceToken: [] }]
       parameters:
+        - { $ref: '#/components/parameters/ActingActorId' }
         - name: documentId
           in: path
           required: true
@@ -1868,12 +1869,14 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/FinanceEvidenceDocumentAccessContextResponse' }
         '400': { $ref: '#/components/responses/InvalidInput' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
   /wlt/v1/operator/finance-evidence-documents/{documentId}/verified-download:
     post:
       operationId: readVerifiedFinanceEvidenceDocument
       security: [{ serviceToken: [] }]
       parameters:
+        - { $ref: '#/components/parameters/ActingActorId' }
         - name: documentId
           in: path
           required: true
@@ -1895,6 +1898,7 @@ paths:
             text/csv: { schema: { type: string, format: binary } }
             application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: { schema: { type: string, format: binary } }
         '400': { $ref: '#/components/responses/InvalidInput' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
   /wlt/v1/operator/customer-withdrawal-intakes:

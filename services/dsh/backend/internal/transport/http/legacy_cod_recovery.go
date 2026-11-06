@@ -103,8 +103,19 @@ func writeLegacyCODOperatorError(w http.ResponseWriter, err error) {
 	case errors.Is(err, orderdomain.ErrLegacyCODRecoveryInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "legacy COD review facts are invalid")
 	case errors.As(err, &remote):
-		writeError(w, remote.Status, remote.Code, remote.Message)
+		writeWLTFinanceDependencyError(w, remote)
 	default:
 		writeOrderError(w, err)
 	}
+}
+
+// WLT is a trusted downstream service, not the operator's authentication boundary.
+// Its own rejected service token or outage must never be presented as an
+// unauthenticated Control Panel operator.
+func writeWLTFinanceDependencyError(w http.ResponseWriter, remote *wlt.Error) {
+	if remote.Status == http.StatusUnauthorized || remote.Status >= http.StatusInternalServerError {
+		writeError(w, http.StatusBadGateway, "WLT_DEPENDENCY_UNAVAILABLE", "finance service is unavailable")
+		return
+	}
+	writeError(w, remote.Status, remote.Code, remote.Message)
 }

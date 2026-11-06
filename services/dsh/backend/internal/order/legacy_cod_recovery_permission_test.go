@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
@@ -26,9 +27,9 @@ func TestLegacyCODFinanceRoutesRejectMissingOrUnverifiableFinancePermissionBefor
 		{name: "inactive operator", wantCalls: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			calls := 0
+			var calls atomic.Int64
 			identity := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				calls++
+				calls.Add(1)
 				w.Header().Set("Content-Type", "application/json")
 				switch r.URL.Path {
 				case "/internal/actors/actor_finance_denied/roles/operator":
@@ -80,10 +81,11 @@ func TestLegacyCODFinanceRoutesRejectMissingOrUnverifiableFinancePermissionBefor
 			}
 			for _, operation := range operations {
 				t.Run(operation.name, func(t *testing.T) {
-					before := calls
+					before := calls.Load()
 					err := operation.invoke()
-					if err == nil || calls-before != tc.wantCalls {
-						t.Fatalf("operation passed Finance boundary: err=%v Identity calls=%d, want=%d", err, calls-before, tc.wantCalls)
+					gotCalls := calls.Load() - before
+					if err == nil || gotCalls != int64(tc.wantCalls) {
+						t.Fatalf("operation passed Finance boundary: err=%v Identity calls=%d, want=%d", err, gotCalls, tc.wantCalls)
 					}
 					if !tc.roleActive {
 						if !errors.Is(err, ErrOperatorNotActive) {
