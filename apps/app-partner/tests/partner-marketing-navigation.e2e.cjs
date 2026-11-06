@@ -18,7 +18,7 @@ async function run() {
     await page.goto("http://localhost:18102/store?section=promotions&view=overview",
       { waitUntil: "domcontentloaded", timeout: 22000 });
     await page.getByText("مساحة الشريك / التسويق", { exact: true }).waitFor({ state: "visible", timeout: 18000 });
-    for (const label of ["نظرة تسويقية", "العروض والقسائم", "حملات المنصة", "مقاطع المتجر"]) {
+    for (const label of ["نظرة تسويقية", "العروض والقسائم", "حملات المنصة", "مقاطع المتجر", "بنرات المتجر"]) {
       assert.equal(await page.getByRole("button", { name: label, exact: true }).count(), 1, label);
     }
     for (const label of ["عروض نشطة", "مجدولة", "مسودات", "موقوفة", "استخدامات مسجلة", "حملات تتطلب قرارًا"]) {
@@ -57,6 +57,13 @@ async function run() {
     await page.getByText("مقاطع المتجر", { exact:true }).first().waitFor({ state:"visible" });
     await page.getByRole("button",{ name:"اختر مقطع MP4" }).waitFor({ state:"visible", timeout:12000 });
     console.log("CONTENT_READ_ONLY=PASS");
+    await page.getByRole("button",{ name:"بنرات المتجر", exact:true }).click();
+    await page.waitForURL(/view=banners/, { timeout:10000 });
+    await page.getByRole("heading",{ name:"بنرات متجرك" }).waitFor({ state:"visible", timeout:12000 });
+    await page.getByRole("button",{ name:"اختيار صورة بنر JPEG أو PNG" }).waitFor({ state:"visible", timeout:12000 });
+    await page.getByLabel("عنوان البنر").waitFor({ state:"visible", timeout:12000 });
+    // Viewing the Store banner controls must not create or publish content.
+    console.log("BANNERS_READ_ONLY=PASS");
     await page.getByRole("button",{ name:"نظرة تسويقية", exact:true }).click();
     await page.waitForURL(/view=overview/, { timeout:10000 });
     await page.screenshot({path:"D:\\samrim-FILING\\BTHWANI-PARTNER-MARKETING-OVERVIEW-VIEW.png",fullPage:false});
@@ -72,7 +79,7 @@ async function run() {
       }));
       assert.equal(layout.rtl,"rtl");
       assert.equal(layout.overflow,false, "horizontal overflow "+width);
-      assert.equal(layout.links,4);
+      assert.equal(layout.links,5);
       assert.equal(layout.sidebar,width>=1024);
       console.log("VIEWPORT "+JSON.stringify(layout));
     }

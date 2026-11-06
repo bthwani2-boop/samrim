@@ -24,6 +24,9 @@ type Service struct {
 
 const refreshRaceGrace = 5 * time.Second
 
+// Reconciliation must recover a lost response, not revive arbitrary historical tokens.
+const refreshReconciliationGrace = 5 * time.Minute
+
 const minimumAccessLifetime = time.Second
 
 func New(db *sql.DB, refreshSecret []byte, development bool, developmentActorIDs map[string]string) *Service {
@@ -182,7 +185,13 @@ func (s *Service) createTx(ctx context.Context, tx *sql.Tx, actorID, role, devic
 	if err != nil {
 		return domain.TokenPair{}, err
 	}
-	now := s.now().UTC()
+	// PostgreSQL is authoritative for session creation and refresh expiry.
+	// An application host clock skew must not shorten or extend a new session.
+	var now time.Time
+	if err := tx.QueryRowContext(ctx, "SELECT clock_timestamp()").Scan(&now); err != nil {
+		return domain.TokenPair{}, err
+	}
+	now = now.UTC()
 	absoluteExpiry := now.Add(sessionAbsoluteLifetime(role, s.development))
 	accessExpiry, refreshExpiry, ok := calculateSessionExpiries(role, now, absoluteExpiry, s.development)
 	if !ok {
@@ -260,16 +269,17 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
 	var currentAccessHash, currentHash, deviceHash string
-	var createdAt, accessExpiry, refreshExpiry, absoluteExpiry time.Time
+	var createdAt, accessExpiry, refreshExpiry, absoluteExpiry, databaseNow time.Time
 	var version int
-	err = tx.QueryRowContext(ctx, "SELECT access_token_hash,refresh_token_hash,client_instance_id_hash,created_at,access_expires_at,refresh_expires_at,absolute_expires_at,version FROM identity_sessions WHERE id=$1 AND actor_id=$2 AND role=$3 AND revoked_at IS NULL FOR UPDATE", sessionID, actorID, role).Scan(&currentAccessHash, &currentHash, &deviceHash, &createdAt, &accessExpiry, &refreshExpiry, &absoluteExpiry, &version)
+	err = tx.QueryRowContext(ctx, "SELECT access_token_hash,refresh_token_hash,client_instance_id_hash,created_at,access_expires_at,refresh_expires_at,absolute_expires_at,version,clock_timestamp() FROM identity_sessions WHERE id=$1 AND actor_id=$2 AND role=$3 AND revoked_at IS NULL FOR UPDATE", sessionID, actorID, role).Scan(&currentAccessHash, &currentHash, &deviceHash, &createdAt, &accessExpiry, &refreshExpiry, &absoluteExpiry, &version, &databaseNow)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
 	if err != nil {
 		return domain.TokenPair{}, err
 	}
-	now := s.now().UTC()
+	// Session expiry is persisted by PostgreSQL; host clock skew cannot extend it.
+	now := databaseNow.UTC()
 	if !identitysecurity.ConstantTimeHexEqual(deviceHash, identitysecurity.SHA256Hex(device)) {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
@@ -291,9 +301,12 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
 	if !currentTokenMatches {
-		var rotatedAt time.Time
+		// Both rotation timestamp and reconciliation clock must originate in
+		// PostgreSQL: a different host clock can otherwise turn a legitimate
+		// lost-response retry into session compromise and revocation.
+		var rotatedAt, reconciliationNow time.Time
 		var historicalRequestID sql.NullString
-		err := tx.QueryRowContext(ctx, "SELECT rotated_at,refresh_request_id FROM identity_refresh_token_history WHERE session_id=$1 AND token_hash=$2", sessionID, presentedHash).Scan(&rotatedAt, &historicalRequestID)
+		err := tx.QueryRowContext(ctx, "SELECT rotated_at,refresh_request_id,clock_timestamp() FROM identity_refresh_token_history WHERE session_id=$1 AND token_hash=$2", sessionID, presentedHash).Scan(&rotatedAt, &historicalRequestID, &reconciliationNow)
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.TokenPair{}, domain.ErrInvalidRefresh
 		}
@@ -301,22 +314,31 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 			return domain.TokenPair{}, err
 		}
 		if historicalRequestID.Valid && historicalRequestID.String == requestID {
-			pair, err := s.derivedRefreshPair(ctx, tx, sessionID, actorID, role, deviceHash, version, accessExpiry)
-			if err != nil {
+			// A request ID may be retained with any historical rotation. Only the
+			// immediately preceding rotation within a bounded retry window may
+			// reconstruct the current credential after a missing response.
+			var latestTokenHash string
+			if err := tx.QueryRowContext(ctx, "SELECT token_hash FROM identity_refresh_token_history WHERE session_id=$1 ORDER BY rotated_at DESC,token_hash DESC LIMIT 1", sessionID).Scan(&latestTokenHash); err != nil {
 				return domain.TokenPair{}, err
 			}
-			if !identitysecurity.ConstantTimeHexEqual(currentAccessHash, identitysecurity.SHA256Hex(pair.AccessToken)) {
-				return domain.TokenPair{}, domain.ErrInvalidRefresh
+			if canReconcileRefresh(reconciliationNow, rotatedAt, identitysecurity.ConstantTimeHexEqual(latestTokenHash, presentedHash), historicalRequestID.String, requestID) {
+				pair, err := s.derivedRefreshPair(ctx, tx, sessionID, actorID, role, deviceHash, version, accessExpiry)
+				if err != nil {
+					return domain.TokenPair{}, err
+				}
+				if !identitysecurity.ConstantTimeHexEqual(currentAccessHash, identitysecurity.SHA256Hex(pair.AccessToken)) {
+					return domain.TokenPair{}, domain.ErrInvalidRefresh
+				}
+				if err := auditTx(ctx, tx, "session.refresh_reconciled", actorID, actorID, "success", "", map[string]any{"sessionId": sessionID, "role": role, "version": version}); err != nil {
+					return domain.TokenPair{}, err
+				}
+				if err := tx.Commit(); err != nil {
+					return domain.TokenPair{}, err
+				}
+				return pair, nil
 			}
-			if err := auditTx(ctx, tx, "session.refresh_reconciled", actorID, actorID, "success", "", map[string]any{"sessionId": sessionID, "role": role, "version": version}); err != nil {
-				return domain.TokenPair{}, err
-			}
-			if err := tx.Commit(); err != nil {
-				return domain.TokenPair{}, err
-			}
-			return pair, nil
 		}
-		if withinRefreshRaceGrace(now, rotatedAt) {
+		if withinRefreshRaceGrace(reconciliationNow, rotatedAt) {
 			if err := auditTx(ctx, tx, "session.refresh_stale", actorID, actorID, "stale", "", map[string]any{"sessionId": sessionID, "role": role}); err != nil {
 				return domain.TokenPair{}, err
 			}
@@ -336,7 +358,6 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 		}
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
-	now = s.now().UTC()
 	nextAccessExpiry, nextRefreshExpiry, ok := calculateSessionExpiries(role, now, absoluteExpiry, s.development)
 	if !ok {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
@@ -551,6 +572,14 @@ func calculateSessionExpiries(role string, now, absolute time.Time, development 
 func withinRefreshRaceGrace(now, rotatedAt time.Time) bool {
 	age := now.Sub(rotatedAt)
 	return age >= 0 && age <= refreshRaceGrace
+}
+
+func canReconcileRefresh(now, rotatedAt time.Time, latest bool, storedRequestID, requestID string) bool {
+	if !latest || storedRequestID == "" || storedRequestID != requestID {
+		return false
+	}
+	age := now.Sub(rotatedAt)
+	return age >= 0 && age <= refreshReconciliationGrace
 }
 
 func auditTx(ctx context.Context, tx *sql.Tx, eventType, actorID, principal, outcome, correlationID string, metadata map[string]any) error {

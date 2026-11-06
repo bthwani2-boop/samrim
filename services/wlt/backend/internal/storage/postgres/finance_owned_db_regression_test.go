@@ -178,6 +178,13 @@ func TestFundedPromotionSettlesIntoConservedPartnerEarnings(t *testing.T) {
 			if err != nil || replay {
 				t.Fatalf("create canonical funded payment: replay=%t err=%v", replay, err)
 			}
+			hold, holdReplay, err := ReserveCaptainCOD(s.ctx, s.db, CaptainCODReservationInput{
+				OrderID: orderID, PaymentIntentID: intent.ID, CaptainActorID: captain,
+				IdempotencyKey: orderID + "-reserve", CorrelationID: orderID + "-reserve-correlation",
+			})
+			if err != nil || holdReplay || hold.State != "ACTIVE" || hold.AmountMinor != 4000 {
+				t.Fatalf("funded COD reserve: %+v replay=%t err=%v", hold, holdReplay, err)
+			}
 			unsettled, summaryErr := ReadPromotionSettlementSummary(s.ctx, s.db, promotionID)
 			if summaryErr != nil || unsettled != before {
 				t.Fatalf("unsettled order counted as expense: before=%+v after=%+v err=%v", before, unsettled, summaryErr)

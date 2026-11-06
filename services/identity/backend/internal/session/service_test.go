@@ -191,3 +191,30 @@ func TestCreateDevelopmentSessionRequiresConfiguredActorBeforeDatabaseAccess(t *
 		t.Fatalf("CreateDevelopment() error = %v, want not found when no development actor is configured", err)
 	}
 }
+
+func TestRefreshReconciliationRequiresLatestRotationAndBoundedRetry(t *testing.T) {
+	now := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name          string
+		rotatedAt     time.Time
+		latest        bool
+		storedRequest string
+		request       string
+		want          bool
+	}{
+		{name: "immediate lost response retry", rotatedAt: now, latest: true, storedRequest: "original-request", request: "original-request", want: true},
+		{name: "retry at grace boundary", rotatedAt: now.Add(-refreshReconciliationGrace), latest: true, storedRequest: "original-request", request: "original-request", want: true},
+		{name: "older generation cannot recover current token", rotatedAt: now, latest: false, storedRequest: "original-request", request: "original-request"},
+		{name: "old request cannot recover current token indefinitely", rotatedAt: now.Add(-refreshReconciliationGrace - time.Nanosecond), latest: true, storedRequest: "original-request", request: "original-request"},
+		{name: "different request cannot reconcile", rotatedAt: now, latest: true, storedRequest: "original-request", request: "new-request"},
+		{name: "missing stored request cannot reconcile", rotatedAt: now, latest: true, request: "original-request"},
+		{name: "future rotation rejected", rotatedAt: now.Add(time.Nanosecond), latest: true, storedRequest: "original-request", request: "original-request"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := canReconcileRefresh(now, tc.rotatedAt, tc.latest, tc.storedRequest, tc.request); got != tc.want {
+				t.Fatalf("canReconcileRefresh() = %t, want %t", got, tc.want)
+			}
+		})
+	}
+}

@@ -3,7 +3,7 @@ import { BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSearchField, useApp
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { type PropsWithChildren, useEffect, useMemo, useRef } from "react";
-import { type ColorValue, ScrollView, StyleSheet, Text, type TextInputInstance, View } from "react-native";
+import { type ColorValue, Platform, ScrollView, StyleSheet, Text, type TextInputInstance, View } from "react-native";
 import Animated, { ReduceMotion, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ClientNotificationAction } from "../features/notifications/client-notification-action";
@@ -140,7 +140,7 @@ export function ClientScrollScreen({ children }: PropsWithChildren) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+    <ScrollView role={Platform.OS === "web" ? "main" : undefined} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
       {children}
     </ScrollView>
   );

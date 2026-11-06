@@ -1118,7 +1118,7 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 	case errors.Is(err, postgres.ErrCatalogImportInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog import facts are invalid")
 	case errors.Is(err, catalog.ErrStoreCatalogImportFile):
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog import file must be a valid CSV or XLSX with barcode and positive whole YER price columns, with no more than 5000 data rows")
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog import file must be a valid CSV or XLSX with a positive whole YER price column and either a barcode or product name column, with no more than 5000 data rows")
 	case errors.Is(err, postgres.ErrCatalogOfferInvalidState):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "StoreOffer publication state is invalid")
 	case errors.Is(err, catalog.ErrCatalogVerticalInvalid):

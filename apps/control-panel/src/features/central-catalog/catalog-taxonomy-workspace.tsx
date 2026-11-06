@@ -34,7 +34,7 @@ const searchLabels: Record<Kind, string> = {
 
 async function readResponse<T>(response: Response): Promise<T> {
   const body = await response.json().catch(() => null) as { error?: { message?: string } } | null;
-  if (!response.ok) throw new Error(body?.error?.message || "تعذّر قراءة التصنيفات.");
+  if (!response.ok) throw new Error(body?.error?.message || "تعذّر قراءة القائمة.");
   return body as T;
 }
 
@@ -225,7 +225,7 @@ export function CatalogTaxonomyWorkspace() {
           ) : null}
         </div>
     </AdaptiveRecordPanel> : null}>
-  <section className="unified-taxonomy" aria-label="التصنيفات الموحدة">
+  <section className="unified-taxonomy" aria-label="التصنيفات التجارية الموحدة">
     <header className="unified-taxonomy-header">
       <p className="unified-taxonomy-description">أدر النشاط التجاري للمتجر وأنواعه وفئات منتجاته واختصارات التسوق، دون خلط وظائفها.</p>
       <div className="unified-taxonomy-create">
@@ -280,7 +280,7 @@ export function CatalogTaxonomyWorkspace() {
     </div>
     {error ? <div className="identity-error" role="alert">{error} <button type="button" className="button button-secondary" onClick={() => void refresh()}>إعادة المحاولة</button></div> : null}
     <div className="unified-taxonomy-count">
-      <span>{loading || loadingScope ? "جارٍ تحميل التصنيفات…" : taxonomyResultSummary(rows.length, kind, Boolean(nextCursor))}</span>
+      <span>{loading || loadingScope ? "جارٍ تحميل العناصر…" : taxonomyResultSummary(rows.length, kind, Boolean(nextCursor))}</span>
       {kind === "vertical" ? <span>جميع المجالات المسجلة</span> : !verticalId ? <span>اختر مجالًا لعرض العناصر التابعة له.</span> : <span>المجال: {selectedVertical?.nameAr ?? "غير متاح"}</span>}
     </div>
     <div className="unified-taxonomy-table-wrap">
@@ -307,7 +307,7 @@ export function CatalogTaxonomyWorkspace() {
           {!loading && !loadingScope && rows.length === 0 ? <tr><td colSpan={5} className="unified-taxonomy-empty">لا توجد نتائج مطابقة. غيّر المجال أو المرشحات.</td></tr> : null}
         </tbody>
       </table>
-      <ul className="unified-taxonomy-mobile" aria-label="التصنيفات المعروضة">
+      <ul className="unified-taxonomy-mobile" aria-label={viewLabels[kind]}>
         {visibleRows.map((item) => <li key={`${item.kind}:${item.id}`} className="unified-taxonomy-mobile-card">
           <div className="unified-taxonomy-mobile-heading">
             <strong>{item.nameAr}</strong>

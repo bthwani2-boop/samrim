@@ -289,6 +289,7 @@ func setupPartnerFinanceProof(t *testing.T, s *fieldAcquisitionScenario, multiSt
 	}
 	// Fixture setup follows canonical agreement, payment collection and earnings
 	// commands. No balance or payout state is fabricated directly in storage.
+	captainFunded := false
 	earn = func(store, mode string, subtotal int64) {
 		t.Helper()
 		agreement, _, err := ProposeStoreCommercialAgreement(s.ctx, s.db, ProposeStoreCommercialAgreementInput{StoreID: store, PartnerActorID: owner, Rates: []StoreCommercialAgreementRate{{FulfillmentMode: mode, CommissionRateBps: 1000}}, ActorID: "finance-proposer", Reason: "isolated finance proof", IdempotencyKey: store + "-propose", CorrelationID: store + "-propose-correlation"})
@@ -313,6 +314,32 @@ func setupPartnerFinanceProof(t *testing.T, s *fieldAcquisitionScenario, multiSt
 			t.Fatal(err)
 		}
 		collector := "finance-captain-" + s.suffix
+		if mode == "BTHWANI_CAPTAIN" {
+			if !captainFunded {
+				funding, _, err := CreateCashInFundingIntent(s.ctx, s.db, CreateCashInFundingIntentInput{
+					ActorType: "captain", ActorID: collector, AmountMinor: 40000, Currency: "YER",
+					ProviderKey: DevelopmentSimulatorProvider, IdempotencyKey: collector + "-fund",
+					CorrelationID: collector + "-fund-correlation",
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, _, err := ApplyCashInFundingResult(s.ctx, s.db, ApplyCashInFundingResultInput{
+					FundingIntentID: funding.ID, Outcome: "SUCCESS", ActorID: "finance-proof-provider",
+					ProviderTransactionReference: collector + "-provider-confirmed",
+					IdempotencyKey:               collector + "-credit", CorrelationID: collector + "-credit-correlation",
+				}); err != nil {
+					t.Fatal(err)
+				}
+				captainFunded = true
+			}
+			if _, _, err := ReserveCaptainCOD(s.ctx, s.db, CaptainCODReservationInput{
+				OrderID: order, PaymentIntentID: payment.ID, CaptainActorID: collector,
+				IdempotencyKey: store + "-reserve", CorrelationID: store + "-reserve-correlation",
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
 		if mode == "CUSTOMER_PICKUP" {
 			collector = owner
 		}
@@ -367,13 +394,34 @@ func setupPartnerFinanceProof(t *testing.T, s *fieldAcquisitionScenario, multiSt
 func TestPartnerFullAvailableIncludesEveryAuthorizedStoreBeyondLegacyLimit(t *testing.T) {
 	started := time.Now()
 	// This stress test must execute 201 full canonical Store earning journeys.
-	// The ordinary 45s fixture context expires during setup (at ~125 Stores
-	// on the isolated 1.5-CPU DB), before the actual payout request is called.
-	// Keep setup separate from the explicitly bounded finance operation.
-	s := newFieldAcquisitionScenarioWithTimeout(t, 100*time.Second)
+	// The 201 canonical Store earning journeys perform over 1,200 database
+	// operations before payout. A 100-second setup deadline expired after only
+	// 25 additional Stores on the isolated 1.5-CPU test runner. Bound this slow
+	// synthetic setup separately; the payout itself still has a 10s deadline.
+	s := newFieldAcquisitionScenarioWithTimeout(t, 14*time.Minute)
 	t.Logf("scale phase=migrated duration=%v", time.Since(started))
 	owner, _, a, _, _, facts, _, cipher, earn := setupPartnerFinanceProof(t, s, false)
 	t.Logf("scale phase=base-setup duration=%v", time.Since(started))
+	// The 200 further COD orders require real wallet cover in this isolated
+	// fixture. Fund the same Captain through the canonical simulator once;
+	// do not bypass ReserveCaptainCOD or fabricate wallet ledger entries.
+	captain := "finance-captain-" + s.suffix
+	scaleFunding, fundingReplay, err := CreateCashInFundingIntent(s.ctx, s.db, CreateCashInFundingIntentInput{
+		ActorType: "captain", ActorID: captain, AmountMinor: 200 * 1000,
+		Currency: "YER", ProviderKey: DevelopmentSimulatorProvider,
+		IdempotencyKey: captain + "-scale-funding", CorrelationID: captain + "-scale-funding-correlation",
+	})
+	if err != nil || fundingReplay {
+		t.Fatalf("scale Captain funding intent: replay=%t err=%v", fundingReplay, err)
+	}
+	settled, fundingReplay, err := ApplyCashInFundingResult(s.ctx, s.db, ApplyCashInFundingResultInput{
+		FundingIntentID: scaleFunding.ID, Outcome: "SUCCESS", ActorID: "finance-scale-provider",
+		ProviderTransactionReference: captain + "-scale-provider-confirmed",
+		IdempotencyKey:               captain + "-scale-funding-settle", CorrelationID: captain + "-scale-funding-settle-correlation",
+	})
+	if err != nil || fundingReplay || settled.State != "SETTLED" {
+		t.Fatalf("scale Captain funding settlement: %+v replay=%t err=%v", settled, fundingReplay, err)
+	}
 	ids := []string{a}
 	for index := range 200 {
 		id := fmt.Sprintf("finance-scale-%d-%s", index, s.suffix)
@@ -445,19 +493,31 @@ func TestSettlementExportDownloadBlocksRevokedRecipient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("valid current staff export denied: %v", err)
 	}
-	if original, err := ReadFinanceEvidenceDocumentForOperator(s.ctx, s.db, cipher, exported.EvidenceDocumentID, "finance-reader", "export-read-valid-"+s.suffix); err != nil || len(original.Content) == 0 {
+	access, err := ReadFinanceEvidenceDocumentAccessContext(s.ctx, s.db, exported.EvidenceDocumentID)
+	if err != nil || access.Purpose != "SETTLEMENT_BATCH_EXPORT" || access.BatchID != batch.ID || !access.RequiresCurrentIdentityFacts {
+		t.Fatalf("open settlement export must require current beneficiary facts: %+v %v", access, err)
+	}
+	if _, err := ReadFinanceEvidenceDocumentForOperator(s.ctx, s.db, cipher, cipher, exported.EvidenceDocumentID, "finance-reader", "export-read-missing-facts-"+s.suffix, nil); !errors.Is(err, ErrReverificationRequired) {
+		t.Fatalf("saved instructions without fresh beneficiary facts must be rejected: %v", err)
+	}
+	if original, err := ReadFinanceEvidenceDocumentForOperator(s.ctx, s.db, cipher, cipher, exported.EvidenceDocumentID, "finance-reader", "export-read-valid-"+s.suffix, []IdentityFacts{staffFacts}); err != nil || len(original.Content) == 0 {
 		t.Fatalf("valid current export download: %+v %v", original, err)
+	}
+	changedFacts := staffFacts
+	changedFacts.RoleVersion++
+	if _, err := ReadFinanceEvidenceDocumentForOperator(s.ctx, s.db, cipher, cipher, exported.EvidenceDocumentID, "finance-reader", "export-read-identity-changed-"+s.suffix, []IdentityFacts{changedFacts}); !errors.Is(err, ErrReverificationRequired) {
+		t.Fatalf("identity-only change with unchanged Store routing must block old instructions: %v", err)
 	}
 	if applied, err := MarkStorePayoutRecipientReviewRequired(s.ctx, s.db, storeB, owner, "staff access revoked", "export-read-review-"+s.suffix); err != nil || !applied {
 		t.Fatalf("recipient review transition: applied=%v err=%v", applied, err)
 	}
-	if _, err := ReadFinanceEvidenceDocumentForOperator(s.ctx, s.db, cipher, exported.EvidenceDocumentID, "finance-reader", "export-read-revoked-"+s.suffix); !errors.Is(err, ErrPayoutRecipientReviewRequired) {
+	if _, err := ReadFinanceEvidenceDocumentForOperator(s.ctx, s.db, cipher, cipher, exported.EvidenceDocumentID, "finance-reader", "export-read-revoked-"+s.suffix, []IdentityFacts{staffFacts}); !errors.Is(err, ErrPayoutRecipientReviewRequired) {
 		t.Fatalf("revoked recipient accessed stored transfer workbook: %v", err)
 	}
 	if _, err := RevertStorePayoutRecipientToOwner(s.ctx, s.db, RevertStorePayoutRecipientInput{StoreID: storeB, PartnerActorID: owner, Reason: "restore future routing", IdempotencyKey: "export-read-revert-" + s.suffix, CorrelationID: "export-read-revert-correlation-" + s.suffix}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ReadFinanceEvidenceDocumentForOperator(s.ctx, s.db, cipher, exported.EvidenceDocumentID, "finance-reader", "export-read-reverted-"+s.suffix); !errors.Is(err, ErrPayoutRecipientReviewRequired) {
+	if _, err := ReadFinanceEvidenceDocumentForOperator(s.ctx, s.db, cipher, cipher, exported.EvidenceDocumentID, "finance-reader", "export-read-reverted-"+s.suffix, []IdentityFacts{staffFacts}); !errors.Is(err, ErrPayoutRecipientReviewRequired) {
 		t.Fatalf("reverting routing silently reauthorized historical staff XLSX: %v", err)
 	}
 	historical, err := ReadFinanceEvidenceDocument(s.ctx, s.db, cipher, exported.EvidenceDocumentID)

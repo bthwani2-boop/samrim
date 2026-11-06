@@ -115,7 +115,7 @@ WHERE a.state='eligible' AND a.availability_state='available'
   )
   AND NOT EXISTS (
       SELECT 1 FROM dsh.captain_assignments ca
-      WHERE ca.captain_actor_id=a.actor_id AND ca.state IN ('assigned','in_custody')
+      WHERE ca.captain_actor_id=a.actor_id AND ca.state IN ('assigned','in_custody','delivery_failed')
   )
 GROUP BY 1,2
 HAVING count(*)>=4

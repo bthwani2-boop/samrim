@@ -251,7 +251,30 @@ func isPriceImportHeader(value string) bool {
 
 func parseStoreImportPrice(value string) (int64, string, string) {
 	value = normalizeImportDigits(strings.TrimSpace(value))
-	value = strings.NewReplacer(",", "", "٬", "", " ", "").Replace(value)
+	if strings.ContainsAny(value, ",٬ ") {
+		// A grouping separator is valid only between exact three-digit groups.
+		// Removing arbitrary commas/spaces would silently turn "1,5" into 15 YER.
+		var separator rune
+		for _, ch := range value {
+			if ch != ',' && ch != '٬' && ch != ' ' {
+				continue
+			}
+			if separator != 0 && separator != ch {
+				return 0, "INVALID_INPUT", "price must be a positive whole amount in YER"
+			}
+			separator = ch
+		}
+		groups := strings.Split(value, string(separator))
+		if len(groups[0]) == 0 || len(groups[0]) > 3 {
+			return 0, "INVALID_INPUT", "price must be a positive whole amount in YER"
+		}
+		for _, group := range groups[1:] {
+			if len(group) != 3 {
+				return 0, "INVALID_INPUT", "price must be a positive whole amount in YER"
+			}
+		}
+		value = strings.Join(groups, "")
+	}
 	price, err := strconv.ParseInt(value, 10, 64)
 	if err != nil || price <= 0 {
 		return 0, "INVALID_INPUT", "price must be a positive whole amount in YER"

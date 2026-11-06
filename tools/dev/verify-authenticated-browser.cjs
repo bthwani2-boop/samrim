@@ -27,6 +27,11 @@ function parseArgs(argv) {
   return result;
 }
 
+// A hidden responsive-navigation link must not mask visible signed-in links.
+function visibleSignedInLocator(page, selector) {
+  return page.locator(selector).filter({ visible: true }).first();
+}
+
 async function verify({target, selector}) {
   const endpoint = "http://127.0.0.1:9222";
   let browser;
@@ -50,7 +55,7 @@ async function verify({target, selector}) {
       // Expo and other client-rendered protected views can hydrate after the
       // document loads; verify the signed-in selector after a bounded wait.
       const hasSelector = selector
-        ? await page.locator(selector).first().waitFor({state: "visible", timeout: 10000}).then(() => true, () => false)
+        ? await visibleSignedInLocator(page, selector).waitFor({state: "visible", timeout: 10000}).then(() => true, () => false)
         : true;
       // Validate the destination and login form after client-side hydration.
       const finalUrl = new URL(page.url());
@@ -94,4 +99,4 @@ async function main() {
 }
 
 if (require.main === module) main();
-module.exports = {authPath, parseArgs, verify};
+module.exports = {authPath, parseArgs, verify, visibleSignedInLocator};

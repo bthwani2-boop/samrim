@@ -204,5 +204,126 @@ func TestStoreTypeCancellationPolicyAndLockedOrderTransition(t *testing.T) {
 		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.commerce_order_audit WHERE order_id=$1 AND acting_actor_id='cancel-proof-operator' AND decision_reason LIKE 'Partner confirmed%'", restricted).Scan(&audit); err != nil || audit != 1 {
 			t.Fatalf("reason missing=%d err=%v", audit, err)
 		}
+		raceOrder := saveOrder("race", "CLIENT_BEFORE_ACCEPTANCE", "REQUIRES_COLLECTION", 2)
+		assertClientCancellationRacesPartnerAcceptance(t, ctx, db, raceOrder)
 	})
+}
+
+// assertClientCancellationRacesPartnerAcceptance proves the two distinct
+// Order writers cannot both commit when the same version races at the row lock.
+func assertClientCancellationRacesPartnerAcceptance(t *testing.T, ctx context.Context, db *sql.DB, orderID string) {
+	t.Helper()
+	blocker, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = blocker.Rollback() }()
+	var lockedID string
+	if err := blocker.QueryRowContext(ctx, "SELECT id FROM dsh.commerce_orders WHERE id=$1 FOR UPDATE", orderID).Scan(&lockedID); err != nil {
+		t.Fatal(err)
+	}
+	if lockedID != orderID {
+		t.Fatalf("held wrong Order: got %s want %s", lockedID, orderID)
+	}
+
+	type outcome struct {
+		state    string
+		order    postgres.OrderRecord
+		replayed bool
+		err      error
+	}
+	results := make(chan outcome, 2)
+	start := make(chan struct{})
+	raceCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	go func() {
+		<-start
+		item, replayed, err := postgres.TransitionOrderWithPaymentCancellation(
+			raceCtx, db, orderID, "CANCELLED", 1, "cancel-proof-race-client",
+			postgres.HashOrderTransition(orderID, "CANCELLED", 1),
+			"cancel-proof-client", "cancel-proof-race-client", "client_cancelled",
+		)
+		results <- outcome{state: "CANCELLED", order: item, replayed: replayed, err: err}
+	}()
+	go func() {
+		<-start
+		item, replayed, err := postgres.TransitionOrder(
+			raceCtx, db, orderID, "PARTNER_ACCEPTED", "", 1,
+			"cancel-proof-race-partner",
+			postgres.HashOrderTransition(orderID, "PARTNER_ACCEPTED", 1),
+			"cancel-proof-partner", "cancel-proof-race-partner",
+		)
+		results <- outcome{state: "PARTNER_ACCEPTED", order: item, replayed: replayed, err: err}
+	}()
+	close(start)
+
+	// Observe both requests waiting on the held row. Without this barrier
+	// a sequential success/conflict would not demonstrate real contention.
+	deadline := time.Now().Add(12 * time.Second)
+	for {
+		var waiting int
+		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT %'").Scan(&waiting); err != nil {
+			t.Fatalf("inspect disposable DB row-lock waiters: %v", err)
+		}
+		if waiting >= 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("cancellation and acceptance failed to overlap on the Order lock: waiting=%d", waiting)
+		}
+		time.Sleep(40 * time.Millisecond)
+	}
+	if err := blocker.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	successes := 0
+	conflicts := 0
+	winnerState := ""
+	for i := 0; i < 2; i++ {
+		select {
+		case result := <-results:
+			if result.err == nil {
+				successes++
+				if result.replayed || result.order.State != result.state || result.order.Version != 2 {
+					t.Fatalf("winner returned noncanonical state: %+v", result)
+				}
+				winnerState = result.state
+			} else if errors.Is(result.err, postgres.ErrOrderVersionConflict) {
+				conflicts++
+			} else {
+				t.Fatalf("unexpected concurrent Order transition: %+v", result)
+			}
+		case <-raceCtx.Done():
+			t.Fatalf("concurrent Order transitions timed out: %v", raceCtx.Err())
+		}
+	}
+	if successes != 1 || conflicts != 1 {
+		t.Fatalf("race must have one legal winner: success=%d conflict=%d", successes, conflicts)
+	}
+	var state string
+	var version int
+	if err := db.QueryRowContext(ctx, "SELECT state,version FROM dsh.commerce_orders WHERE id=$1", orderID).Scan(&state, &version); err != nil {
+		t.Fatal(err)
+	}
+	if state != winnerState || version != 2 {
+		t.Fatalf("persisted Order differs from winner: state=%s version=%d winner=%s", state, version, winnerState)
+	}
+	var audits, transitions, cancellationOutbox int
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.commerce_order_audit WHERE order_id=$1", orderID).Scan(&audits); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.commerce_order_transition_idempotency WHERE order_id=$1", orderID).Scan(&transitions); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.commerce_financial_handoff_outbox WHERE order_id=$1 AND effect_type='PAYMENT_CANCEL'", orderID).Scan(&cancellationOutbox); err != nil {
+		t.Fatal(err)
+	}
+	wantOutbox := 0
+	if state == "CANCELLED" {
+		wantOutbox = 1
+	}
+	if audits != 1 || transitions != 1 || cancellationOutbox != wantOutbox {
+		t.Fatalf("race forked persisted effects: audits=%d transitions=%d cancelOutbox=%d expected=%d", audits, transitions, cancellationOutbox, wantOutbox)
+	}
 }

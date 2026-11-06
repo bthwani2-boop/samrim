@@ -73,6 +73,16 @@ func TestCaptainCODCashDebitIsExactlyOnce(t *testing.T) {
 			if err != nil || replay {
 				t.Fatalf("create payment: replay=%t err=%v", replay, err)
 			}
+			// Collection cannot create an uncovered Captain cash obligation.
+			_, _, err = CollectPaymentIntent(s.ctx, s.db, CollectPaymentIntentInput{
+				IntentID: payment.ID, CollectedAmountMinor: tc.cash,
+				CollectedByActorID: captain, CollectionReference: order + "-uncovered",
+				ExpectedVersion: payment.Version, IdempotencyKey: order + "-uncovered-collect",
+				CorrelationID: order + "-uncovered-collect-correlation",
+			})
+			if !errors.Is(err, ErrStateConflict) {
+				t.Fatalf("cash collection without active Captain cover must fail, got %v", err)
+			}
 			reservationInput := CaptainCODReservationInput{
 				OrderID: order, PaymentIntentID: payment.ID, CaptainActorID: captain,
 				IdempotencyKey: order + "-reserve", CorrelationID: order + "-reserve-correlation",
@@ -84,6 +94,15 @@ func TestCaptainCODCashDebitIsExactlyOnce(t *testing.T) {
 			before, err := ReadCaptainWalletState(s.ctx, s.db, captain)
 			if err != nil || before.HeldMinor != tc.cash || before.AvailableMinor != tc.captainFund-tc.cash {
 				t.Fatalf("before delivery: %+v err=%v", before, err)
+			}
+			_, _, err = CollectPaymentIntent(s.ctx, s.db, CollectPaymentIntentInput{
+				IntentID: payment.ID, CollectedAmountMinor: tc.cash,
+				CollectedByActorID: captain + "-other", CollectionReference: order + "-wrong-captain",
+				ExpectedVersion: payment.Version, IdempotencyKey: order + "-wrong-captain-collect",
+				CorrelationID: order + "-wrong-captain-collect-correlation",
+			})
+			if !errors.Is(err, ErrStateConflict) {
+				t.Fatalf("cash collection by a Captain without the hold must fail, got %v", err)
 			}
 			final := reservationInput
 			final.IdempotencyKey = order + "-finalize"
@@ -99,6 +118,25 @@ func TestCaptainCODCashDebitIsExactlyOnce(t *testing.T) {
 			})
 			if err != nil || replay {
 				t.Fatalf("collect: replay=%t err=%v", replay, err)
+			}
+			// Cash is now collected: release must not remove its cover.
+			release := reservationInput
+			release.IdempotencyKey = order + "-release-after-collection"
+			release.CorrelationID = order + "-release-after-collection-correlation"
+			if _, _, err = ReleaseCaptainCOD(s.ctx, s.db, release); !errors.Is(err, ErrCaptainCODReservationState) {
+				t.Fatalf("release after cash collection must fail, got %v", err)
+			}
+			stillHeld, err := ReadCaptainWalletState(s.ctx, s.db, captain)
+			if err != nil || stillHeld.HeldMinor != tc.cash || stillHeld.AvailableMinor != before.AvailableMinor {
+				t.Fatalf("collected COD lost its hold: before=%+v after=%+v err=%v", before, stillHeld, err)
+			}
+			_, _, err = FinalizePartnerOrderEarning(s.ctx, s.db, FinalizePartnerOrderEarningInput{
+				OrderID: order, PaymentIntentID: payment.ID, PartnerActorID: owner,
+				CaptainActorID: captain + "-other", IdempotencyKey: order + "-wrong-earning",
+				CorrelationID: order + "-wrong-earning-correlation",
+			})
+			if !errors.Is(err, ErrPartnerEarningPaymentState) {
+				t.Fatalf("COD earning credited to a different Captain must fail, got %v", err)
 			}
 			earningInput := FinalizePartnerOrderEarningInput{
 				OrderID: order, PaymentIntentID: payment.ID, PartnerActorID: owner,
@@ -164,6 +202,26 @@ func TestCaptainCODCashDebitIsExactlyOnce(t *testing.T) {
 			wallet, err := ReadCaptainWalletState(s.ctx, s.db, captain)
 			if err != nil || wallet.HeldMinor != 0 || wallet.AvailableMinor != tc.captainFund+500-tc.cash {
 				t.Fatalf("post delivery wallet: %+v err=%v", wallet, err)
+			}
+			// Retrying the original reservation returns its terminal record.
+			// A fresh reserve after collection must not freeze wallet funds again.
+			replayedHold, holdReplay, err := ReserveCaptainCOD(s.ctx, s.db, reservationInput)
+			if err != nil || !holdReplay || replayedHold.ID != hold.ID || replayedHold.State != "DEBITED" {
+				t.Fatalf("original reserve replay after debit: %+v replay=%t err=%v", replayedHold, holdReplay, err)
+			}
+			late := reservationInput
+			late.IdempotencyKey = order + "-late-reserve"
+			late.CorrelationID = order + "-late-reserve-correlation"
+			if _, _, err := ReserveCaptainCOD(s.ctx, s.db, late); !errors.Is(err, ErrCaptainCODAllocationNotFound) {
+				t.Fatalf("fresh reservation after collected debit must fail, got %v", err)
+			}
+			afterLate, err := ReadCaptainWalletState(s.ctx, s.db, captain)
+			if err != nil || afterLate.HeldMinor != 0 || afterLate.AvailableMinor != wallet.AvailableMinor {
+				t.Fatalf("late reserve changed settled Captain wallet: before=%+v after=%+v err=%v", wallet, afterLate, err)
+			}
+			var reservationCount int
+			if err := s.db.QueryRowContext(s.ctx, "SELECT COUNT(*) FROM wlt.captain_cod_reservations WHERE payment_intent_id=$1", payment.ID).Scan(&reservationCount); err != nil || reservationCount != 1 {
+				t.Fatalf("late reserve created another reservation: count=%d err=%v", reservationCount, err)
 			}
 			var debitCount int
 			var debitTotal, creditTotal int64

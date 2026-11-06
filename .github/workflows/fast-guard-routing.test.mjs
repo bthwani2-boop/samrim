@@ -53,7 +53,10 @@ test("financial integration proof cannot silently skip selected tests", () => {
   assert.match(workflow, /TestNotificationsAreIsolatedByActorAndStore/);
   assert.match(workflow, /No financial integration test executed/);
   assert.match(workflow, /Financial integration test skipped/);
-  assert.equal((workflow.match(/financial_go_proof services\/(?:wlt|dsh)\/backend/g) ?? []).length, 4);
+  assert.match(workflow, /TestLegacyCODV61UpgradePreservesHistoricalCollectedPayment/);
+  assert.match(workflow, /BTHWANI_IMPORT_SCALE_PROOF_ISOLATED=1/);
+  assert.match(workflow, /TestStoreCatalogImport5000RowsPartialCommitReadback/);
+  assert.equal((workflow.match(/financial_go_proof services\/(?:wlt|dsh)\/backend/g) ?? []).length, 6);
 });
 
 test("unrelated docs are not misclassified as an executable service change", () => {
@@ -116,21 +119,23 @@ test("SonarCloud Quality Gate failure is not silently reported as a successful s
 // Guard against accidentally limiting PR checks to main and losing feedback on
 // short-lived integration bases such as 35 / integration/*.
 test("Fast Guard includes PRs targeting integration branches", () => {
-  const triggers = workflow.match(/^on:\n([\s\S]*?)\npermissions:/m)?.[1];
+  const triggers = workflow.match(/^on:\r?\n([\s\S]*?)\r?\npermissions:/m)?.[1];
   assert.ok(triggers, "workflow events must be declared");
-  assert.match(triggers, /^  pull_request:\n  push:/m);
-  const broken = triggers.replace("  pull_request:\n  push:", "  pull_request:\n    branches: [main]\n  push:");
-  assert.throws(() => assert.match(broken, /^  pull_request:\n  push:/m), assert.AssertionError);
+  assert.match(triggers, /^  pull_request:\r?\n  push:/m);
+  const broken = triggers.replace(/  pull_request:\r?\n  push:/, "  pull_request:\n    branches: [main]\n  push:");
+  assert.throws(() => assert.match(broken, /^  pull_request:\r?\n  push:/m), assert.AssertionError);
 });
 
-test("Sonar scans same-repository Draft PRs into main, 36 and 37", () => {
+test("Sonar scans same-repository Draft PRs into main, 36, 37 and 38", () => {
   const sonar = readFileSync(new URL("./sonar-observe.yml", import.meta.url), "utf8");
   assert.match(workflow, /^\s+branches: \[main\]$/m, "main push gate remains unchanged");
   assert.match(sonar, /^\s+- '36'$/m);
   assert.match(sonar, /^\s+- '37'$/m);
+  assert.match(sonar, /^\s+- '38'$/m);
   assert.match(sonar, /^\s+- converted_to_draft$/m);
   assert.match(sonar, /github\.event\.pull_request\.base\.ref == '36' \|\|/);
   assert.match(sonar, /github\.event\.pull_request\.base\.ref == '37' \|\|/);
+  assert.match(sonar, /github\.event\.pull_request\.base\.ref == '38' \|\|/);
   assert.match(sonar, /github\.event\.pull_request\.base\.ref == 'main'\)/);
   assert.match(sonar, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
   assert.doesNotMatch(sonar, /github\.event\.pull_request\.draft == false/);

@@ -6,6 +6,7 @@ on:
       - main
       - '36'
       - '37'
+      - '38'
     types:
       - opened
       - reopened
@@ -35,7 +36,8 @@ jobs:
     # declared target-branch scope or exposing the token to forked PRs.
     if: >
       (github.event_name == 'pull_request' &&
-      (github.event.pull_request.base.ref == '37' ||
+      (github.event.pull_request.base.ref == '38' ||
+       github.event.pull_request.base.ref == '37' ||
        github.event.pull_request.base.ref == '36' ||
        github.event.pull_request.base.ref == 'main') &&
       github.event.pull_request.head.repo.full_name == github.repository) ||

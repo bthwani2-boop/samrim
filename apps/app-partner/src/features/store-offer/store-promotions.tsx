@@ -2,13 +2,19 @@ import { borders, radius, resolveTheme, spacing, typography } from "@bthwani/des
 import { BthwaniButton, BthwaniChip, BthwaniConfirmDialog, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { createDshMobileClient, formatMoney, type CatalogCategoryListItem, type CatalogProduct, type OperatorPromotionRegistryResponse, type PartnerCampaignListResponse, type PartnerCampaignView, type PromotionTarget, type PromotionView } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { promotionBucket, type PromotionBucket } from "./promotion-lifecycle";
 
 type TargetKind = "NONE" | PromotionTarget["targetKind"];
 type TargetOption = Readonly<{ id: string; label: string }>;
+type ScopedPromotions = Readonly<{
+  actorID: string;
+  storeID: string;
+  promotions: OperatorPromotionRegistryResponse | null;
+  campaigns: PartnerCampaignListResponse | null;
+}>;
 
 function client() {
   const baseUrl = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -75,9 +81,14 @@ function campaignDecisionLabel(campaign: PartnerCampaignView): string {
 export function StorePromotionsCard({ storeID, verticalID, mode = "all" }: Readonly<{ storeID: string; verticalID: string; mode?: "all" | "overview" | "offers" | "campaigns" }>) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const authenticated = currentIdentityState().kind === "authenticated";
-  const [state, setState] = useState<OperatorPromotionRegistryResponse | null>(null);
-  const [campaigns, setCampaigns] = useState<PartnerCampaignListResponse | null>(null);
+  const identity = currentIdentityState();
+  const actorID = identity.kind === "authenticated" ? identity.identity.subject.trim() : "";
+  const authenticated = Boolean(actorID);
+  const [readback, setReadback] = useState<ScopedPromotions | null>(null);
+  const scopeMatches = readback?.actorID === actorID && readback.storeID === storeID;
+  const state = scopeMatches ? readback.promotions : null;
+  const campaigns = scopeMatches ? readback.campaigns : null;
+  const latestRead = useRef(0);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -101,17 +112,23 @@ export function StorePromotionsCard({ storeID, verticalID, mode = "all" }: Reado
   const [consentingCampaign, setConsentingCampaign] = useState<PartnerCampaignView | null>(null);
 
   const load = useCallback(async (): Promise<Readonly<{ promotions: OperatorPromotionRegistryResponse | null; campaigns: PartnerCampaignListResponse | null }> | null> => {
-    if (!authenticated || !storeID) return null;
+    if (!actorID || !storeID) return null;
+    const readID = ++latestRead.current;
+    const stillCurrent = () => {
+      const latest = currentIdentityState();
+      return latestRead.current === readID && latest.kind === "authenticated" && latest.identity.subject.trim() === actorID;
+    };
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!stillCurrent()) return null;
       const [promotionsResult, campaignsResult] = await Promise.allSettled([
         client().listPartnerStorePromotions(token, storeID),
         client().listPartnerStoreCampaigns(token, storeID),
       ]);
+      if (!stillCurrent()) return null;
       const next = promotionsResult.status === "fulfilled" ? promotionsResult.value : null;
       const nextCampaigns = campaignsResult.status === "fulfilled" ? campaignsResult.value : null;
-      setState(next);
-      setCampaigns(nextCampaigns);
+      setReadback({ actorID, storeID, promotions: next, campaigns: nextCampaigns });
       if (!next || !nextCampaigns) {
         setError(!next && !nextCampaigns ? "تعذر قراءة العروض والحملات. أعد المحاولة."
           : !next ? "تعذر قراءة عروض المتجر. ما زالت الحملات المتاحة معروضة."
@@ -119,14 +136,19 @@ export function StorePromotionsCard({ storeID, verticalID, mode = "all" }: Reado
       } else setError("");
       return { promotions: next, campaigns: nextCampaigns };
     } catch (cause) {
+      if (!stillCurrent()) return null;
       console.error("DSH store promotions readback failed", cause);
-      setState(null);
-      setCampaigns(null);
+      setReadback(null);
       setError("تعذر قراءة عروض المتجر وحملات المنصة. تحقق من الاتصال وأعد المحاولة.");
       return null;
     }
-  }, [authenticated, storeID]);
-  useEffect(() => { void load(); }, [load]);
+  }, [actorID, storeID]);
+  useEffect(() => {
+    setReadback(null);
+    setError("");
+    void load();
+    return () => { latestRead.current++; };
+  }, [load]);
 
   function resetForm() {
     setCode(""); setNameAr(""); setDescriptionAr(""); setKind("PERCENTAGE"); setValue(""); setMaxDiscount("");

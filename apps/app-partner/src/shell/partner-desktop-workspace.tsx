@@ -150,7 +150,7 @@ function DesktopWorkspace({ children }: PropsWithChildren) {
       </View>
       {children}
     </View>
-    <View style={styles.sidebar} accessibilityLabel="التنقل الرئيسي للشريك">
+    <View role="navigation" style={styles.sidebar} accessibilityLabel="التنقل الرئيسي للشريك">
       <View style={styles.brand}>
         <View style={styles.brandIcon}><BthwaniIcon name="store" size={24} color={brandRoots.surfaceBase} /></View>
         <View style={styles.brandText}>

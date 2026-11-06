@@ -200,13 +200,44 @@ func (c *Client) UploadFinanceEvidenceDocument(ctx context.Context, purpose, fil
 	return result.Document, err
 }
 
-func (c *Client) ReadFinanceEvidenceDocument(ctx context.Context, documentID, actingActorID string) (FinanceEvidenceFile, error) {
+// FinanceEvidenceAccessContext carries WLT's current release requirements for one stored finance evidence document.
+type FinanceEvidenceAccessContext struct {
+	Purpose                      string `json:"purpose"`
+	BatchID                      string `json:"batchId"`
+	RequiresCurrentIdentityFacts bool   `json:"requiresCurrentIdentityFacts"`
+}
+
+// ReadFinanceEvidenceAccessContext reads WLT's access requirements without downloading the evidence bytes.
+func (c *Client) ReadFinanceEvidenceAccessContext(ctx context.Context, documentID, actingActorID string) (FinanceEvidenceAccessContext, error) {
+	var result FinanceEvidenceAccessContext
+	path := "/wlt/v1/operator/finance-evidence-documents/" + url.PathEscape(strings.TrimSpace(documentID)) + "/access-context"
+	err := c.requestWithActor(ctx, actorRequest{method: http.MethodGet, path: path, actingActorID: actingActorID, target: &result})
+	return result, err
+}
+
+// ReadFinanceEvidenceDocument downloads finance evidence, submitting fresh beneficiary facts when the WLT access context requires them.
+func (c *Client) ReadFinanceEvidenceDocument(ctx context.Context, documentID, actingActorID string, facts []IdentityFacts) (FinanceEvidenceFile, error) {
 	if c == nil || c.httpClient == nil || strings.TrimSpace(c.baseURL) == "" || strings.TrimSpace(c.serviceToken) == "" {
 		return FinanceEvidenceFile{}, errors.New("WLT client is not configured")
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/wlt/v1/operator/finance-evidence-documents/"+url.PathEscape(strings.TrimSpace(documentID)), nil)
+	method := http.MethodGet
+	path := "/wlt/v1/operator/finance-evidence-documents/" + url.PathEscape(strings.TrimSpace(documentID))
+	var body io.Reader
+	if len(facts) > 0 {
+		method = http.MethodPost
+		path += "/verified-download"
+		encoded, err := json.Marshal(map[string]any{"identityFactsByBeneficiary": facts})
+		if err != nil {
+			return FinanceEvidenceFile{}, err
+		}
+		body = bytes.NewReader(encoded)
+	}
+	request, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
 	if err != nil {
 		return FinanceEvidenceFile{}, err
+	}
+	if len(facts) > 0 {
+		request.Header.Set("Content-Type", "application/json")
 	}
 	request.Header.Set("Accept", "application/octet-stream")
 	request.Header.Set("Authorization", "Bearer "+c.serviceToken)

@@ -28,5 +28,5 @@ test("compact desktop retains store status, delivery mode selection and mobile p
   assert.match(detail, /accessibilityRole="radio"/);
   assert.match(detail, /selectedFulfillmentMode === mode/);
   assert.match(detail, /desktopStorefront \? 144 : 244/);
-  assert.match(detail, /gridColumns = Platform\.OS === "web"/);
+  assert.match(detail, /gridColumns = Platform\.OS !== "web" \? 2 : windowWidth >= 1700 \? 5/);
 });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { partnerOnboardingNextStep, nextStoreSetupFocus, storeReadinessProgress } from "../src/features/partner-onboarding/partner-onboarding-next-step.ts";
+import { partnerOnboardingNextStep, nextStoreSetupFocus, storeReadinessProgress, storeSetupProgress } from "../src/features/partner-onboarding/partner-onboarding-next-step.ts";
 
 test("all joining-case stages explain a safe actionable next step", () => {
   for (const state of ["draft", "admission_requested", "submitted", "needs_correction", "approved"]) {
@@ -61,4 +61,14 @@ test("store setup guidance respects delegated permissions and legitimate closed 
   assert.equal(nextStoreSetupFocus(ready), null);
   assert.equal(nextStoreSetupFocus({ ...ready, operationalState: "متوقف مؤقتًا" })?.href, "/store?section=operations");
   assert.equal(nextStoreSetupFocus({ ...ready, operationalKnown: false, operationalState: "متوقف مؤقتًا" }), null);
+});
+
+test("store setup stays complete during normal closed hours and tracks unknown agreement", () => {
+  const ready = { ownsStore: true, canEditCatalog: true, publicationState: "published", catalogReady: true, agreement: "ACTIVE" };
+  assert.deepEqual(storeSetupProgress(ready), { total: 3, completed: 3, unknown: 0 });
+  assert.deepEqual(storeSetupProgress({ ...ready, agreement: null }), { total: 3, completed: 2, unknown: 1 });
+  assert.deepEqual(storeSetupProgress({ ...ready, ownsStore: false }), { total: 1, completed: 1, unknown: 0 });
+  const operational = { ...ready, canManageAvailability: true, operationalKnown: true, operationalState: "مغلق" };
+  assert.equal(nextStoreSetupFocus(operational), null);
+  assert.equal(nextStoreSetupFocus({ ...operational, operationalState: "متوقف مؤقتًا" })?.href, "/store?section=operations");
 });

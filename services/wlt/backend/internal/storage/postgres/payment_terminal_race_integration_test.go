@@ -72,6 +72,29 @@ func TestConcurrentMixedPaymentCollectionAndCancellationHasSingleWinner(t *testi
 				ExpectedVersion: payment.Version, IdempotencyKey: orderID + "-collect",
 				CorrelationID: orderID + "-collect-correlation",
 			}
+			if tc.mode == "BTHWANI_CAPTAIN" {
+				funding, _, err := CreateCashInFundingIntent(s.ctx, s.db, CreateCashInFundingIntentInput{
+					ActorType: "captain", ActorID: collection.CollectedByActorID, AmountMinor: 2000,
+					Currency: "YER", ProviderKey: DevelopmentSimulatorProvider,
+					IdempotencyKey: orderID + "-captain-fund", CorrelationID: orderID + "-captain-fund-correlation",
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, _, err := ApplyCashInFundingResult(s.ctx, s.db, ApplyCashInFundingResultInput{
+					FundingIntentID: funding.ID, Outcome: "SUCCESS", ActorID: "terminal-race-provider",
+					ProviderTransactionReference: orderID + "-captain-provider",
+					IdempotencyKey:               orderID + "-captain-credit", CorrelationID: orderID + "-captain-credit-correlation",
+				}); err != nil {
+					t.Fatal(err)
+				}
+				if _, _, err := ReserveCaptainCOD(s.ctx, s.db, CaptainCODReservationInput{
+					OrderID: orderID, PaymentIntentID: payment.ID, CaptainActorID: collection.CollectedByActorID,
+					IdempotencyKey: orderID + "-captain-reserve", CorrelationID: orderID + "-captain-reserve-correlation",
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
 			cancellation := CancelPaymentIntentInput{
 				IntentID: payment.ID, Reason: "customer cancelled before collection",
 				ExpectedVersion: payment.Version, IdempotencyKey: orderID + "-cancel",

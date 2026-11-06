@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 var (
@@ -304,29 +306,40 @@ func CreatePartitionedPartnerPayoutRequest(ctx context.Context, db *sql.DB, ciph
 		amount             int64
 		allocations        []storeAllocation
 	}
+	// Check and lock a beneficiary's destination once per transaction, not
+	// once for every Store. All Stores for that beneficiary share the same
+	// immutable identity facts and destination snapshot in this request.
+	type verifiedDestination struct {
+		id      string
+		version int
+	}
+	destinationByBeneficiary := map[string]verifiedDestination{}
 	groups := map[string]*payoutGroup{}
 	for _, allocation := range allocations {
-		facts, provided := input.BeneficiaryFacts[allocation.routing.beneficiaryActorID]
+		beneficiaryID := allocation.routing.beneficiaryActorID
+		facts, provided := input.BeneficiaryFacts[beneficiaryID]
 		if !provided {
-			return PartnerPayoutRequestRecord{}, false, fmt.Errorf("%w: %s", ErrReverificationRequired, allocation.routing.beneficiaryActorID)
+			return PartnerPayoutRequestRecord{}, false, fmt.Errorf("%w: %s", ErrReverificationRequired, beneficiaryID)
 		}
-		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:payout:partner:"+allocation.routing.beneficiaryActorID); err != nil {
-			return PartnerPayoutRequestRecord{}, false, err
+		destination, verified := destinationByBeneficiary[beneficiaryID]
+		if !verified {
+			if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:payout:partner:"+beneficiaryID); err != nil {
+				return PartnerPayoutRequestRecord{}, false, err
+			}
+			if err := tx.QueryRowContext(ctx, "SELECT id,version FROM wlt.official_wallet_destinations WHERE actor_type='partner' AND actor_id=$1 AND verification_status='VERIFIED' AND status='ACTIVE_FOR_PAYOUT' FOR UPDATE", beneficiaryID).Scan(&destination.id, &destination.version); errors.Is(err, sql.ErrNoRows) {
+				return PartnerPayoutRequestRecord{}, false, fmt.Errorf("%w: %s", ErrRecipientDestinationNotReady, beneficiaryID)
+			} else if err != nil {
+				return PartnerPayoutRequestRecord{}, false, err
+			}
+			if err := facts.matchesStoredDestination(ctx, tx, cipher, destination.id, "partner", beneficiaryID, true); err != nil {
+				return PartnerPayoutRequestRecord{}, false, commitIdentityStaleness(tx, err)
+			}
+			destinationByBeneficiary[beneficiaryID] = destination
 		}
-		var destinationID string
-		var destinationVersion int
-		if err := tx.QueryRowContext(ctx, "SELECT id,version FROM wlt.official_wallet_destinations WHERE actor_type='partner' AND actor_id=$1 AND verification_status='VERIFIED' AND status='ACTIVE_FOR_PAYOUT' FOR UPDATE", allocation.routing.beneficiaryActorID).Scan(&destinationID, &destinationVersion); errors.Is(err, sql.ErrNoRows) {
-			return PartnerPayoutRequestRecord{}, false, fmt.Errorf("%w: %s", ErrRecipientDestinationNotReady, allocation.routing.beneficiaryActorID)
-		} else if err != nil {
-			return PartnerPayoutRequestRecord{}, false, err
-		}
-		if err := facts.matchesStoredDestination(ctx, tx, cipher, destinationID, "partner", allocation.routing.beneficiaryActorID, true); err != nil {
-			return PartnerPayoutRequestRecord{}, false, commitIdentityStaleness(tx, err)
-		}
-		groupKey := allocation.routing.beneficiaryActorID + "|" + destinationID + "|" + formatInt(destinationVersion)
+		groupKey := beneficiaryID + "|" + destination.id + "|" + formatInt(destination.version)
 		group := groups[groupKey]
 		if group == nil {
-			group = &payoutGroup{beneficiaryActorID: allocation.routing.beneficiaryActorID, destinationID: destinationID, destinationVersion: destinationVersion}
+			group = &payoutGroup{beneficiaryActorID: beneficiaryID, destinationID: destination.id, destinationVersion: destination.version}
 			groups[groupKey] = group
 		}
 		group.amount += allocation.amount
@@ -370,11 +383,23 @@ func CreatePartitionedPartnerPayoutRequest(ctx context.Context, db *sql.DB, ciph
 		if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.partner_payout_request_payouts(request_id,payout_id,group_index) VALUES($1,$2,$3)`, requestID, childID, groupIndex+1); err != nil {
 			return PartnerPayoutRequestRecord{}, false, err
 		}
+		// Freeze the Store allocation lines in one insert rather than one
+		// database round-trip per Store; all input values remain parameters.
+		storeIDs := make([]string, 0, len(group.allocations))
+		beneficiaryIDs := make([]string, 0, len(group.allocations))
+		versions := make([]int64, 0, len(group.allocations))
+		amounts := make([]int64, 0, len(group.allocations))
 		for _, allocation := range group.allocations {
-			if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.payout_store_allocations(payout_id,store_id,beneficiary_actor_id,recipient_assignment_version,amount_minor,currency)
-				VALUES($1,$2,$3,$4,$5,'YER')`, childID, allocation.routing.storeID, allocation.routing.beneficiaryActorID, allocation.routing.assignmentVersion, allocation.amount); err != nil {
-				return PartnerPayoutRequestRecord{}, false, err
-			}
+			storeIDs = append(storeIDs, allocation.routing.storeID)
+			beneficiaryIDs = append(beneficiaryIDs, allocation.routing.beneficiaryActorID)
+			versions = append(versions, allocation.routing.assignmentVersion)
+			amounts = append(amounts, allocation.amount)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.payout_store_allocations(payout_id,store_id,beneficiary_actor_id,recipient_assignment_version,amount_minor,currency)
+			SELECT $1,batch.store_id,batch.beneficiary_actor_id,batch.recipient_assignment_version,batch.amount_minor,'YER'
+			FROM unnest($2::text[],$3::text[],$4::bigint[],$5::bigint[]) AS batch(store_id,beneficiary_actor_id,recipient_assignment_version,amount_minor)`,
+			childID, pq.Array(storeIDs), pq.Array(beneficiaryIDs), pq.Array(versions), pq.Array(amounts)); err != nil {
+			return PartnerPayoutRequestRecord{}, false, err
 		}
 	}
 

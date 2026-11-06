@@ -430,6 +430,7 @@ func TestCaptainParallelDispatchThreeOnlyOneWins(t *testing.T) {
 		if pickupReplayErr != nil || !replayedByOwner || pickupReplay.ID != pickedUp.ID {
 			t.Fatalf("own pickup replay must retain the same assignment: %+v replay=%t err=%v", pickupReplay, replayedByOwner, pickupReplayErr)
 		}
+		assertConcurrentSameKeyAcceptanceReplay(t, ctx, db, storeID, cityID)
 	})
 }
 func readParallelOfferIDs(t *testing.T, ctx context.Context, db *sql.DB, orderID string) []string {
@@ -451,4 +452,118 @@ func readParallelOfferIDs(t *testing.T, ctx context.Context, db *sql.DB, orderID
 		t.Fatal(err)
 	}
 	return ids
+}
+
+// assertConcurrentSameKeyAcceptanceReplay holds the Order row until both
+// identical acceptances have reached its lock; a sequential replay cannot
+// expose the first-read-before-lock race.
+func assertConcurrentSameKeyAcceptanceReplay(t *testing.T, ctx context.Context, db *sql.DB, storeID, cityID string) {
+	t.Helper()
+	const orderID = "same-key-acceptance-order"
+	const actorID = "same-key-acceptance-captain"
+	_, err := db.ExecContext(ctx, "INSERT INTO dsh.commerce_carts(id,client_actor_id,store_id,state,version) VALUES('same-key-acceptance-cart','dispatch-three-client',$1,'checked_out',1)", storeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.ExecContext(ctx, "INSERT INTO dsh.commerce_orders (id,client_actor_id,store_id,cart_id,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,total_amount_minor,currency,version,payment_intent_id,payment_method,payment_state,fulfillment_mode,payment_cash_amount_minor) VALUES ($1,'dispatch-three-client',$2,'same-key-acceptance-cart','dispatch-three-address',1,'صنعاء',15.3694457,44.1910064,$3,'CITY_SCOPE_V1','SERVICEABLE',1,1,'READY_FOR_DISPATCH',1800,'YER',1,'same-key-acceptance-payment','CASH_ON_DELIVERY','REQUIRES_COLLECTION','BTHWANI_CAPTAIN',1800)", orderID, storeID, cityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.ExecContext(ctx, "INSERT INTO dsh.captain_admissions(id,actor_id,full_name_ar,state,availability_state,requires_profile_review,version) VALUES('same-key-acceptance-admission',$1,'كابتن اختبار','eligible','available',false,1)", actorID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.ExecContext(ctx, "INSERT INTO dsh.captain_presence_latest(captain_actor_id,latitude,longitude,updated_at) VALUES($1,15.3694457,44.1910064,clock_timestamp())", actorID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	offer, replayed, err := postgres.CreateCaptainDispatchOffer(ctx, db, orderID,
+		"same-key-dispatch", postgres.HashCaptainDispatchRequest(orderID),
+		"test-operator", "same-key-dispatch", actorID)
+	if err != nil || replayed || offer.ID == "" {
+		t.Fatalf("create isolated offer: %+v replay=%t err=%v", offer, replayed, err)
+	}
+
+	blocker, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = blocker.Rollback() }()
+	var lockedOrder string
+	if err := blocker.QueryRowContext(ctx, "SELECT id FROM dsh.commerce_orders WHERE id=$1 FOR UPDATE", orderID).Scan(&lockedOrder); err != nil {
+		t.Fatal(err)
+	}
+
+	const key = "same-key-offer-accept"
+	hash := postgres.HashCaptainOfferResponse(offer.ID, "accept", 1)
+	type outcome struct {
+		value postgres.CaptainOfferResult
+		err   error
+	}
+	results := make(chan outcome, 2)
+	start := make(chan struct{})
+	raceCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	for i := 0; i < 2; i++ {
+		go func() {
+			<-start
+			value, err := postgres.RespondToCaptainOffer(raceCtx, db, offer.ID, actorID, "accept", 1, key, hash, key)
+			results <- outcome{value: value, err: err}
+		}()
+	}
+	close(start)
+	// Both requests must queue on the held Order row before the blocker commits.
+	// Otherwise one may start only after the other finishes and mask the race.
+	deadline := time.Now().Add(12 * time.Second)
+	for {
+		var waiting int
+		err := db.QueryRowContext(ctx, "SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT o.id FROM dsh.commerce_orders o%' AND query LIKE '%FOR UPDATE OF o%'").Scan(&waiting)
+		if err != nil {
+			t.Fatalf("query isolated PostgreSQL waiters: %v", err)
+		}
+		if waiting >= 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("same-key requests did not both reach Order lock; waiting=%d", waiting)
+		}
+		time.Sleep(40 * time.Millisecond)
+	}
+	if err := blocker.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	first, replays := 0, 0
+	assignmentID := ""
+	for i := 0; i < 2; i++ {
+		select {
+		case got := <-results:
+			if got.err != nil || got.value.Assignment == nil {
+				t.Fatalf("same-key concurrent acceptance failed: %+v err=%v", got.value, got.err)
+			}
+			if assignmentID != "" && got.value.Assignment.ID != assignmentID {
+				t.Fatalf("duplicate assignment IDs: %s vs %s", assignmentID, got.value.Assignment.ID)
+			}
+			assignmentID = got.value.Assignment.ID
+			if got.value.Replayed {
+				replays++
+			} else {
+				first++
+			}
+		case <-raceCtx.Done():
+			t.Fatalf("same-key acceptance timed out: %v", raceCtx.Err())
+		}
+	}
+	if first != 1 || replays != 1 {
+		t.Fatalf("first=%d replay=%d; want 1 each", first, replays)
+	}
+	var assignments, audits int
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.captain_assignments WHERE order_id=$1 AND state='assigned'", orderID).Scan(&assignments); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.captain_audit WHERE order_id=$1 AND event_type='dispatch_offer_accepted'", orderID).Scan(&audits); err != nil {
+		t.Fatal(err)
+	}
+	if assignments != 1 || audits != 1 {
+		t.Fatalf("same-key replay duplicated results: assignments=%d audits=%d", assignments, audits)
+	}
 }

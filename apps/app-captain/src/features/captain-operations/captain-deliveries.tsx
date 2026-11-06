@@ -202,6 +202,7 @@ export function CaptainDeliveries() {
       if (!response.arrivedAt) throw new Error("ARRIVAL_CONFIRMATION_MISSING");
       setArrivalStatus(previous => ({ ...previous, [assignment.id]: true }));
     } catch (cause) {
+      if (!hasCurrentDeliveryActor(loadedActorID)) return;
       console.error("DSH captain arrival failed", cause);
       setError("تعذر تأكيد الوصول؛ تحقّق من الاتصال وحالة المهمة ثم أعد المحاولة.");
     } finally {
@@ -221,6 +222,7 @@ export function CaptainDeliveries() {
       await captainClient().completeCaptainPickup(token, assignment.id, assignment.handoff.version);
       if (hasCurrentDeliveryActor(loadedActorID)) await load();
     } catch (cause) {
+      if (!hasCurrentDeliveryActor(loadedActorID)) return;
       console.error("DSH Captain pickup failed", cause);
       setError("لا يمكن تأكيد الاستلام قبل تأكيد المتجر أو عند تعارض النسخة.");
     } finally {
@@ -261,6 +263,7 @@ export function CaptainDeliveries() {
       setPendingCompletion(null);
       await load();
     } catch (cause) {
+      if (!hasCurrentDeliveryActor(loadedActorID)) return;
       console.error("DSH Captain completion failed", cause);
       setCompletionRejected(captainCompletionHttpRejected(cause));
       setError(captainCompletionHttpRejected(cause) ? "لم تُحدّث المهمة. تحقق منها قبل إعادة المحاولة." : "تعذر تأكيد النتيجة. بقيت المحاولة محفوظة؛ أعد المحاولة من الزر نفسه.");
@@ -289,6 +292,7 @@ export function CaptainDeliveries() {
       setPendingCompletion(null);
       await load();
     } catch (cause) {
+      if (!hasCurrentDeliveryActor(attempt.actorID)) return;
       console.error("DSH Captain completion recovery failed", cause);
       setCompletionRejected(captainCompletionHttpRejected(cause));
       setError(captainCompletionHttpRejected(cause) ? "لم تُحدّث المهمة. تحقق منها قبل إعادة المحاولة." : "لم نتأكد من النتيجة. بقيت المحاولة محفوظة؛ أعد المحاولة من الزر نفسه.");
@@ -321,8 +325,10 @@ export function CaptainDeliveries() {
       setPendingCompletion(null);
       setCompletionRejected(false);
       await load();
+      if (!hasCurrentDeliveryActor(attempt.actorID)) return;
       setError("ثبت أن المحاولة لم تُنفذ وأن المهمة ما زالت في عهدتك؛ يمكنك إعادة تأكيد النتيجة.");
     } catch (cause) {
+      if (!hasCurrentDeliveryActor(attempt.actorID)) return;
       console.error("DSH Captain completion rejection reconciliation failed", cause);
       setError("تعذر تأكيد حالة المهمة. بقيت المحاولة الأصلية محفوظة كما هي.");
     } finally {

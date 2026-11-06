@@ -56,6 +56,42 @@ type FinanceEvidenceDocumentRecord struct {
 	Content     []byte
 }
 
+// FinanceEvidenceDocumentAccessContext is the minimal WLT-owned context DSH needs before releasing stored finance evidence.
+type FinanceEvidenceDocumentAccessContext struct {
+	Purpose                      string
+	BatchID                      string
+	RequiresCurrentIdentityFacts bool
+}
+
+// ReadFinanceEvidenceDocumentAccessContext supplies DSH with just enough
+// metadata to fetch fresh Identity facts before executable XLSX release.
+func ReadFinanceEvidenceDocumentAccessContext(ctx context.Context, db *sql.DB, id string) (FinanceEvidenceDocumentAccessContext, error) {
+	id = strings.TrimSpace(id)
+	if db == nil || boundedText(id, 1, 128) == "" {
+		return FinanceEvidenceDocumentAccessContext{}, ErrSettlementBatchInput
+	}
+	var item FinanceEvidenceDocumentAccessContext
+	var status string
+	err := db.QueryRowContext(ctx, `SELECT d.purpose,COALESCE(e.batch_id,''),COALESCE(b.status,'')
+FROM wlt.finance_evidence_documents d
+LEFT JOIN wlt.settlement_batch_exports e ON e.evidence_document_id=d.id
+LEFT JOIN wlt.settlement_batches b ON b.id=e.batch_id
+WHERE d.id=$1`, id).Scan(&item.Purpose, &item.BatchID, &status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return FinanceEvidenceDocumentAccessContext{}, ErrFinanceEvidenceNotFound
+	}
+	if err != nil {
+		return FinanceEvidenceDocumentAccessContext{}, err
+	}
+	if item.Purpose == "SETTLEMENT_BATCH_EXPORT" {
+		if item.BatchID == "" || status == "" {
+			return FinanceEvidenceDocumentAccessContext{}, ErrFinanceEvidenceNotFound
+		}
+		item.RequiresCurrentIdentityFacts = status != "COMPLETED"
+	}
+	return item, nil
+}
+
 func SaveFinanceEvidenceDocument(ctx context.Context, db *sql.DB, cipher *DestinationCipher, input FinanceEvidenceDocumentInput) (FinanceEvidenceDocumentRecord, error) {
 	input.Purpose = strings.ToUpper(strings.TrimSpace(input.Purpose))
 	input.Filename = strings.TrimSpace(input.Filename)
@@ -124,7 +160,8 @@ func ReadFinanceEvidenceDocument(ctx context.Context, db *sql.DB, cipher *Destin
 	return readFinanceEvidenceDocument(ctx, db, cipher, strings.TrimSpace(id), true)
 }
 
-func ReadFinanceEvidenceDocumentForOperator(ctx context.Context, db *sql.DB, cipher *DestinationCipher, id, actorID, correlationID string) (FinanceEvidenceDocumentRecord, error) {
+// ReadFinanceEvidenceDocumentForOperator audits an operator download and revalidates active settlement instructions against current routing and Identity facts.
+func ReadFinanceEvidenceDocumentForOperator(ctx context.Context, db *sql.DB, cipher, destinationCipher *DestinationCipher, id, actorID, correlationID string, identityFacts []IdentityFacts) (FinanceEvidenceDocumentRecord, error) {
 	id, actorID, correlationID = strings.TrimSpace(id), strings.TrimSpace(actorID), strings.TrimSpace(correlationID)
 	if db == nil || cipher == nil || boundedText(id, 1, 128) == "" || boundedText(actorID, 1, 128) == "" {
 		return FinanceEvidenceDocumentRecord{}, ErrSettlementBatchInput
@@ -169,6 +206,13 @@ FOR UPDATE OF b`, id).Scan(&exportBatchID, &batchStatus)
 			}
 			if readErr = requireCurrentSettlementExportRouting(ctx, tx, batch); readErr != nil {
 				return FinanceEvidenceDocumentRecord{}, readErr
+			}
+			snapshots, readErr := readSettlementBatchSnapshots(ctx, tx, exportBatchID)
+			if readErr != nil {
+				return FinanceEvidenceDocumentRecord{}, readErr
+			}
+			if _, readErr = requireIdentityFactsForSnapshots(ctx, tx, destinationCipher, identityFacts, snapshots); readErr != nil {
+				return FinanceEvidenceDocumentRecord{}, commitIdentityStaleness(tx, readErr)
 			}
 		}
 	}
@@ -216,7 +260,7 @@ func readFinanceEvidenceDocument(ctx context.Context, source interface {
 }
 
 func validEvidencePurpose(value string) bool {
-	return value == "TRANSFER_RECEIPT" || value == "SETTLEMENT_STATEMENT" || value == "SETTLEMENT_BATCH_EXPORT" || value == "CUSTOMER_WITHDRAWAL_REQUEST"
+	return value == "TRANSFER_RECEIPT" || value == "SETTLEMENT_STATEMENT" || value == "SETTLEMENT_BATCH_EXPORT" || value == "CUSTOMER_WITHDRAWAL_REQUEST" || value == "CAPTAIN_COD_LEGACY_RECOVERY"
 }
 
 func validEvidenceContentType(value string) bool {
@@ -267,7 +311,7 @@ func validEvidenceContent(contentType string, content []byte) bool {
 
 func validEvidencePurposeMedia(purpose, contentType string) bool {
 	switch purpose {
-	case "TRANSFER_RECEIPT", "CUSTOMER_WITHDRAWAL_REQUEST":
+	case "TRANSFER_RECEIPT", "CUSTOMER_WITHDRAWAL_REQUEST", "CAPTAIN_COD_LEGACY_RECOVERY":
 		return contentType == "application/pdf" || contentType == "image/jpeg" || contentType == "image/png"
 	case "SETTLEMENT_STATEMENT":
 		return contentType == "application/pdf" || contentType == "text/csv" ||

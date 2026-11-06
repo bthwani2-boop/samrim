@@ -1,7 +1,7 @@
 "use strict";
 const {test} = require("node:test");
 const assert = require("node:assert/strict");
-const {authPath,parseArgs} = require("./verify-authenticated-browser.cjs");
+const {authPath,parseArgs,visibleSignedInLocator} = require("./verify-authenticated-browser.cjs");
 
 test("Login endpoints are not accepted as protected-page proof", () => {
   for (const path of ["/admin/login","/sign-in","/en/authentication","/signin"]) {
@@ -27,4 +27,21 @@ test("Valid inspection uses only the provided target and selector", () => {
   assert.equal(target.origin,"https://elleen.ye");
   assert.equal(target.pathname,"/admin/dashboard");
   assert.equal(selector,"main");
+});
+
+test("Signed-in selector considers visible links, not a hidden first responsive match", () => {
+  const expectedLocator = {waitFor() {}};
+  const page = {
+    locator(selector) {
+      assert.equal(selector, 'a[href*="/admin/"]');
+      return {
+        first() { throw new Error("Hidden first match must not be selected"); },
+        filter(options) {
+          assert.deepEqual(options, {visible: true});
+          return {first: () => expectedLocator};
+        }
+      };
+    }
+  };
+  assert.equal(visibleSignedInLocator(page, 'a[href*="/admin/"]'), expectedLocator);
 });

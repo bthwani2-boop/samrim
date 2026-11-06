@@ -146,8 +146,16 @@ jobs:
           export BTHWANI_EXPECTED_DATABASE_USER=postgres
           export BTHWANI_EXPECTED_DATABASE_NAME=wlt_proof
           export WLT_TEST_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/wlt_proof?sslmode=disable"
-          financial_go_proof services/wlt/backend ./internal/storage/postgres -run "^(TestFundedPromotionPaymentPersistedReplayHasOneFrozenSplit|TestFundedStoreCashCollectionPostsPlatformSubsidyExactlyOnce|TestFieldAcquisitionEntitlementPostgresLifecycle|TestConcurrentFieldAcquisitionReplayHasOneLedgerEffect|TestPartnerStoreFinanceAndRecipientSettlementLifecycle|TestCaptainWalletBalanceLockSerializesTransactions|TestSettlementIntakeWithoutDestinationPreservesFieldLedger|TestSettlementIntakePartnerStoreScopeWithoutHold|TestStoreCommercialAgreementLifecycleAndOrderSnapshots|TestSelfServiceZeroCommissionAgreementAllFulfillmentModes|TestPaymentRetryLostResponseAndParallelWorkers|TestConcurrentMixedPaymentCollectionAndCancellationHasSingleWinner)$" -count=1 -timeout 7m
+          financial_go_proof services/wlt/backend ./internal/storage/postgres -run "^(TestFundedPromotionPaymentPersistedReplayHasOneFrozenSplit|TestFundedStoreCashCollectionPostsPlatformSubsidyExactlyOnce|TestFieldAcquisitionEntitlementPostgresLifecycle|TestConcurrentFieldAcquisitionReplayHasOneLedgerEffect|TestPartnerStoreFinanceAndRecipientSettlementLifecycle|TestSettlementExportDownloadBlocksRevokedRecipient|TestCaptainWalletBalanceLockSerializesTransactions|TestCaptainCODCashDebitIsExactlyOnce|TestConcurrentCaptainOffersYieldOneCODHoldAndReleasableWinner|TestSettlementIntakeWithoutDestinationPreservesFieldLedger|TestSettlementIntakePartnerStoreScopeWithoutHold|TestStoreCommercialAgreementLifecycleAndOrderSnapshots|TestSelfServiceZeroCommissionAgreementAllFulfillmentModes|TestPaymentRetryLostResponseAndParallelWorkers|TestConcurrentMixedPaymentCollectionAndCancellationHasSingleWinner|TestLegacyCODReviewRequiresIndependentFundedEvidenceAndSettlesExactlyOnce|TestLegacyCODReleasedOnlyReservationAllowsEvidenceBoundSubmission)$" -count=1 -timeout 7m
           unset WLT_TEST_DATABASE_URL
+          # Preserve historical COD, allocation, evidence and wallet postings
+          # across the v60 -> v61 upgrade in a separate pristine CI database.
+          docker exec "$container" psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c "CREATE DATABASE wlt_v61_upgrade_proof;"
+          export BTHWANI_ENV=test
+          export BTHWANI_EXPECTED_DATABASE_NAME=wlt_v61_upgrade_proof
+          export WLT_MIGRATION_TEST_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/wlt_v61_upgrade_proof?sslmode=disable"
+          financial_go_proof services/wlt/backend ./internal/storage/postgres -run "^TestLegacyCODV61UpgradePreservesHistoricalCollectedPayment$" -count=1 -timeout 4m
+          unset WLT_MIGRATION_TEST_DATABASE_URL
           export BTHWANI_EXPECTED_DATABASE_NAME=dsh_proof
           export DSH_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/dsh_proof?sslmode=disable"
           # DSH migrations are applied only inside child databases created by
@@ -155,8 +163,14 @@ jobs:
           export BTHWANI_ENV=test
           export BTHWANI_FINANCIAL_PROOF_ISOLATED=1
           export DSH_FINANCIAL_HANDOFF_TEST_DATABASE_URL="$DSH_DATABASE_URL"
-          financial_go_proof services/dsh/backend ./internal/storage/postgres -run '^(TestPartnerFinanceAndPayoutStoreAuthorityBoundary|TestCaptainParallelDispatchThreeOnlyOneWins|TestStoreCaptainDispatchReadRespectsDelegation|TestOrderHTTPActorScopeAndPartnerTransitionRetry|TestLocationHTTPRejectsAuthenticatedCrossActorAddressAndStoreAccess|TestNotificationsAreIsolatedByActorAndStore|TestCaptainMissionLocationOwnerLatestAndTerminalPurge|TestPendingCancellationRequestsPaginationOverHundred|TestFinancialHandoffUnknownOutcomeAndConcurrentWorkers|TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay|TestConcurrentSingleStoreCheckoutPersistsExactlyOneOrder)$' -count=1 -timeout 9m
+          financial_go_proof services/dsh/backend ./internal/storage/postgres -run '^(TestPartnerFinanceAndPayoutStoreAuthorityBoundary|TestCaptainParallelDispatchThreeOnlyOneWins|TestFailedCustodyCaptainCannotReceiveAnotherDispatch|TestStoreCaptainDispatchReadRespectsDelegation|TestOrderHTTPActorScopeAndPartnerTransitionRetry|TestLocationHTTPRejectsAuthenticatedCrossActorAddressAndStoreAccess|TestNotificationsAreIsolatedByActorAndStore|TestCaptainMissionLocationOwnerLatestAndTerminalPurge|TestPendingCancellationRequestsPaginationOverHundred|TestStoreTypeCancellationPolicyAndLockedOrderTransition|TestFinancialHandoffUnknownOutcomeAndConcurrentWorkers|TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay|TestConcurrentSingleStoreCheckoutPersistsExactlyOneOrder)$' -count=1 -timeout 9m
           unset DSH_FINANCIAL_HANDOFF_TEST_DATABASE_URL
+          # Prove one 5,000-row Store Catalog run reaches persisted preview,
+          # partial canonical Product/StoreOffer commit, isolated readback,
+          # actor denial and replay in the disposable DSH child database.
+          export BTHWANI_IMPORT_SCALE_PROOF_ISOLATED=1
+          financial_go_proof services/dsh/backend ./internal/catalog -run '^TestStoreCatalogImport5000RowsPartialCommitReadback$' -count=1 -timeout 7m
+          unset BTHWANI_IMPORT_SCALE_PROOF_ISOLATED
           # Admission and prepublication visibility of both joining origins.
           # The disposable PostgreSQL container owns an isolated parent database.
           docker exec "$container" psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c "CREATE DATABASE dsh_join_qa;"
@@ -175,6 +189,35 @@ jobs:
           export WLT_TEST_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/wlt_a04_realfunding?sslmode=disable"
           export DSH_FINANCIAL_HANDOFF_TEST_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/dsh_a04_realfunding?sslmode=disable"
           financial_go_proof services/wlt/backend ./cmd/api -run '^TestIsolatedDSHToRealWLTStorePickupMixedPayment$' -count=1 -timeout 7m
+
+      - name: Verify Identity refresh and actor isolation against disposable PostgreSQL
+        if: steps.changed.outputs.identity == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          container="bthwani-fast-guard-identity"
+          cleanup() { docker rm -f "$container" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          password="$(openssl rand -hex 16)"
+          docker run -d --rm --name "$container" --tmpfs /var/lib/postgresql:rw,size=512m -p 127.0.0.1:19433:5432 -e "POSTGRES_PASSWORD=$password" -e POSTGRES_DB=identity_proof postgis/postgis:18-3.6@sha256:e84455a058f60f06dd8c40e66a2c628b8fc113d9fca0896e1f308b25b897207f
+          ready=false
+          for i in $(seq 1 50); do
+            if docker exec "$container" pg_isready -q -h 127.0.0.1 -U postgres -d identity_proof >/dev/null 2>&1; then ready=true; break; fi
+            sleep 1
+          done
+          test "$ready" = true
+          export IDENTITY_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19433/identity_proof?sslmode=disable"
+          (cd services/identity/backend && go test ./internal/session -run '^(TestHistoricalRefreshReconciliationUsesDatabaseTime|TestDevelopmentOperatorSessionUsesCanonicalInitialOperator|TestRevokeRoleSessionIsScopedToTargetActor|TestRefreshRejectsExpiredDatabaseLifetimeDespiteHostClockSkew|TestSessionCreationUsesDatabaseClockDespiteHostSkew|TestConcurrentRefreshUsesOnePersistedGeneration|TestSessionActorDeviceAndExpiryIsolation|TestOneActorDifferentSurfaceRolesRemainSeparated)$' -v -count=1 -timeout 6m) | tee "$RUNNER_TEMP/identity-postgres.log"
+          if grep -q -- '--- SKIP:' "$RUNNER_TEMP/identity-postgres.log"; then
+            echo "::error::Identity PostgreSQL proof was skipped"
+            exit 1
+          fi
+          for name in TestHistoricalRefreshReconciliationUsesDatabaseTime TestDevelopmentOperatorSessionUsesCanonicalInitialOperator TestRevokeRoleSessionIsScopedToTargetActor TestRefreshRejectsExpiredDatabaseLifetimeDespiteHostClockSkew TestSessionCreationUsesDatabaseClockDespiteHostSkew TestConcurrentRefreshUsesOnePersistedGeneration TestSessionActorDeviceAndExpiryIsolation TestOneActorDifferentSurfaceRolesRemainSeparated; do
+            if ! grep -q -- "--- PASS: $name " "$RUNNER_TEMP/identity-postgres.log"; then
+              echo "::error::Required Identity integration test did not pass: $name"
+              exit 1
+            fi
+          done
 
       - name: Set up pnpm
         if: steps.changed.outputs.node == 'true'
@@ -202,6 +245,8 @@ jobs:
           apps/app-captain/src/features/captain-operations/captain-no-live-tracking.test.mjs
           apps/app-captain/src/features/captain-operations/captain-presence-policy.test.mjs
           apps/app-captain/src/features/captain-operations/captain-session-scope.test.mjs
+          apps/app-captain/src/features/captain-operations/captain-deliveries-session-scope.test.mjs
+          apps/app-captain/src/features/wallet/wallet-actor-isolation.test.mjs
           apps/app-captain/src/features/captain-operations/captain-task-eligibility.test.mjs
           apps/app-client/src/features/location-core/address-pagination.test.mjs
           apps/app-client/src/features/orders/order-session-scope.test.mjs
@@ -211,6 +256,7 @@ jobs:
           apps/app-client/tests/multi-store-quote-consent.test.mjs
           apps/app-client/tests/store-discovery-marketing-slots.test.mjs
           apps/app-client/tests/store-promotion-handoff.test.mjs
+          services/identity/clients/degraded-session-alert.test.mjs
           services/dsh/clients/presentation/order-payment-disclosure.test.mjs
           services/dsh/clients/cash-in-simulator.test.mjs
           apps/app-partner/src/features/order-management/order-page-records.test.mjs

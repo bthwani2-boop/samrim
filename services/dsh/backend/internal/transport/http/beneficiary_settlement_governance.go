@@ -723,7 +723,7 @@ func (s *BeneficiaryFinanceServer) uploadOperatorFinanceEvidence(w http.Response
 		return
 	}
 	purpose := strings.ToUpper(strings.TrimSpace(r.FormValue("purpose")))
-	if purpose != "TRANSFER_RECEIPT" && purpose != "SETTLEMENT_STATEMENT" {
+	if purpose != "TRANSFER_RECEIPT" && purpose != "SETTLEMENT_STATEMENT" && purpose != "CAPTAIN_COD_LEGACY_RECOVERY" {
 		writeError(w, http.StatusBadRequest, "INVALID_UPLOAD", "finance evidence purpose is invalid")
 		return
 	}
@@ -750,7 +750,31 @@ func (s *BeneficiaryFinanceServer) readOperatorFinanceEvidence(w http.ResponseWr
 	if !s.authorizeAndRequireOperator(w, r) {
 		return
 	}
-	file, err := s.payment.ReadFinanceEvidenceDocument(r.Context(), r.PathValue("documentId"), strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")))
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	documentID := r.PathValue("documentId")
+	access, err := s.payment.ReadFinanceEvidenceAccessContext(r.Context(), documentID, acting)
+	if err != nil {
+		writeWLTFinanceError(w, err)
+		return
+	}
+	var facts []wlt.IdentityFacts
+	if access.RequiresCurrentIdentityFacts {
+		if access.BatchID == "" {
+			writeError(w, http.StatusBadGateway, "FINANCE_EVIDENCE_CONTEXT_INVALID", "settlement export context is invalid")
+			return
+		}
+		batch, readErr := s.payment.ReadSettlementBatch(r.Context(), access.BatchID, acting)
+		if readErr != nil {
+			writeWLTFinanceError(w, readErr)
+			return
+		}
+		facts, readErr = s.currentFactsForBatch(r.Context(), batch.Items, acting)
+		if readErr != nil {
+			writeOfficialWalletIdentityReadError(w, readErr)
+			return
+		}
+	}
+	file, err := s.payment.ReadFinanceEvidenceDocument(r.Context(), documentID, acting, facts)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return

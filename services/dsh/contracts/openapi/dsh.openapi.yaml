@@ -816,6 +816,12 @@ paths:
   /dsh/operator/cash-custody:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1cash-custody"
 
+  /dsh/operator/captain-cod-legacy-reviews:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1captain-cod-legacy-reviews"
+  /dsh/operator/captain-cod-legacy-reviews/by-payment/{paymentIntentId}:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1captain-cod-legacy-reviews~1by-payment~1{paymentIntentId}"
+  /dsh/operator/captain-cod-legacy-reviews/{reviewId}/approve:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1captain-cod-legacy-reviews~1{reviewId}~1approve"
   /dsh/operator/cash-remittances/{remittanceId}/reconcile:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1cash-remittances~1{remittanceId}~1reconcile"
 
@@ -7256,6 +7262,65 @@ components:
           items:
             $ref: "#/components/schemas/CaptainAssignment"
 
+    LegacyCODRecoveryReview:
+      type: object
+      additionalProperties: false
+      required: [id, orderId, paymentIntentId, captainActorId, amountMinor, evidenceDocumentId, submittedBy, status, createdAt]
+      properties:
+        id:
+          type: string
+        orderId:
+          type: string
+        paymentIntentId:
+          type: string
+        captainActorId:
+          type: string
+        amountMinor:
+          type: integer
+          format: int64
+          minimum: 1
+        evidenceDocumentId:
+          type: string
+        submittedBy:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, APPROVED]
+        approvedBy:
+          type: string
+        reservationId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        approvedAt:
+          type: string
+          format: date-time
+
+    LegacyCODRecoveryResponse:
+      type: object
+      additionalProperties: false
+      required: [review]
+      properties:
+        review:
+          $ref: "#/components/schemas/LegacyCODRecoveryReview"
+        idempotentReplay:
+          type: boolean
+
+    SubmitLegacyCODRecoveryRequest:
+      type: object
+      additionalProperties: false
+      required: [paymentIntentId, evidenceDocumentId]
+      properties:
+        paymentIntentId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        evidenceDocumentId:
+          type: string
+          minLength: 1
+          maxLength: 128
+
     CashLiabilityItem:
       type: object
       required: [paymentIntentId, externalReference, captainActorId, amountMinor, currency, paymentVersion, collectedAt, remittanceState]
@@ -8972,7 +9037,7 @@ components:
           type: string
         purpose:
           type: string
-          enum: [TRANSFER_RECEIPT, SETTLEMENT_STATEMENT, CUSTOMER_WITHDRAWAL_REQUEST]
+          enum: [TRANSFER_RECEIPT, SETTLEMENT_STATEMENT, CUSTOMER_WITHDRAWAL_REQUEST, CAPTAIN_COD_LEGACY_RECOVERY]
         filename:
           type: string
         contentType:

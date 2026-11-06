@@ -73,7 +73,7 @@ export function PartnerMarketingWorkspace({
         <Text style={styles.cardHint}>{item.hint}</Text>
       </Pressable>)}
     </View>
-    {view === "overview" ? <PartnerStoreMarketingSummary key={storeID} storeId={storeID}/> : null}
+    {view === "overview" ? <PartnerStoreMarketingSummary key={"marketing-summary:" + storeID} storeId={storeID}/> : null}
     {marketingContent}
     {view === "overview" ? <Text style={styles.note}>إحصاءات المقاطع أعلاه أحداث فعلية وليست تقديرًا للربح أو رسومًا مفروضة. أي خصم يُنشأ بتمويل الشريك يخضع لقواعد الأهلية والتسوية القائمة، والمقاطع تُنشر بعد موافقة العمليات.</Text> : null}
   </View>;

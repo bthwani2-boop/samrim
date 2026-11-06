@@ -1977,6 +1977,94 @@ paths:
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 
+  /dsh/operator/captain-cod-legacy-reviews:
+    post:
+      operationId: submitOperatorLegacyCODRecovery
+      summary: Submit documentary review for a legacy collected COD payment without an active hold
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/SubmitLegacyCODRecoveryRequest"
+      responses:
+        "201":
+          description: Finance evidence recorded without a cash debit or hold.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/LegacyCODRecoveryResponse"
+        "200":
+          description: Identical submitted review replay.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/LegacyCODRecoveryResponse"
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { description: "Existing financial cover, remittance or review conflicts with submitted facts." }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/captain-cod-legacy-reviews/by-payment/{paymentIntentId}:
+    get:
+      operationId: readOperatorLegacyCODRecoveryByPayment
+      summary: Read WLT-owned Finance review by original payment intent
+      security:
+        - serviceBearer: []
+      parameters:
+        - name: paymentIntentId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+      responses:
+        "200":
+          description: Canonical Finance review, including the original evidence document.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/LegacyCODRecoveryResponse"
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/captain-cod-legacy-reviews/{reviewId}/approve:
+    post:
+      operationId: approveOperatorLegacyCODRecovery
+      summary: Independently review and reserve actual available original Captain COD cover
+      security:
+        - serviceBearer: []
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      responses:
+        "200":
+          description: Second Finance operator approved a real funded hold, or replayed the same approval.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/LegacyCODRecoveryResponse"
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { description: "Insufficient wallet cover, prior settlement, or review conflict." }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/operator/cash-remittances/{remittanceId}/reconcile:
     post:
       operationId: reconcileOperatorCashRemittance

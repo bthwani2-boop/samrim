@@ -124,10 +124,11 @@ func FinalizePartnerOrderEarning(ctx context.Context, db *sql.DB, input Finalize
 
 	var paymentState, currency, method, payerActorID string
 	var paymentAmount int64
+	var collectedBy sql.NullString
 	err = tx.QueryRowContext(ctx, `SELECT p.state,p.amount_minor,p.currency,p.method
-		,p.payer_actor_id
+		,p.payer_actor_id,p.collected_by_actor_id
 		FROM wlt.payment_intents p JOIN wlt.customer_payment_allocations a ON a.payment_intent_id=p.id
-		WHERE p.id=$1 FOR UPDATE OF p,a`, input.PaymentIntentID).Scan(&paymentState, &paymentAmount, &currency, &method, &payerActorID)
+		WHERE p.id=$1 FOR UPDATE OF p,a`, input.PaymentIntentID).Scan(&paymentState, &paymentAmount, &currency, &method, &payerActorID, &collectedBy)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PartnerOrderEarningRecord{}, false, ErrCustomerPaymentAllocationNotFound
 	}
@@ -143,6 +144,23 @@ func FinalizePartnerOrderEarning(ctx context.Context, db *sql.DB, input Finalize
 	}
 	if paymentState != domain.StateCollected || method != domain.MethodCashOnDelivery || allocation.OrderID != input.OrderID || currency != allocation.Currency || paymentAmount != allocation.CashAmountMinor || allocation.PartnerActorID != input.PartnerActorID || allocation.FulfillmentMode != "BTHWANI_CAPTAIN" {
 		return PartnerOrderEarningRecord{}, false, ErrPartnerEarningPaymentState
+	}
+	// The collected COD receivable and Captain earning must belong to the
+	// same Captain with full active cover, never a second credited actor.
+	if allocation.CashAmountMinor > 0 {
+		if !collectedBy.Valid || collectedBy.String != input.CaptainActorID {
+			return PartnerOrderEarningRecord{}, false, ErrPartnerEarningPaymentState
+		}
+		var heldMinor int64
+		err := tx.QueryRowContext(ctx, `SELECT amount_minor FROM wlt.captain_cod_reservations
+			WHERE payment_intent_id=$1 AND order_id=$2 AND captain_actor_id=$3 AND state='ACTIVE' FOR SHARE`,
+			input.PaymentIntentID, input.OrderID, input.CaptainActorID).Scan(&heldMinor)
+		if errors.Is(err, sql.ErrNoRows) || (err == nil && heldMinor != allocation.CashAmountMinor) {
+			return PartnerOrderEarningRecord{}, false, ErrPartnerEarningPaymentState
+		}
+		if err != nil {
+			return PartnerOrderEarningRecord{}, false, err
+		}
 	}
 	captainDeliveryFee := allocation.DeliveryFeeMinor - allocation.DeliveryMarginMinor
 	if captainDeliveryFee < 0 || (allocation.CommissionSnapshot != nil && allocation.DeliveryMarginMinor != allocation.CommissionSnapshot.DeliveryMarkupMinor) {

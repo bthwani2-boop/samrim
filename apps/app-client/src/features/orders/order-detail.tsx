@@ -37,6 +37,15 @@ export default function ClientOrderDetail() {
   const [identityState, setIdentityState] = useState(currentIdentityState);
   const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
   const loadSequence = useRef(0);
+  const requestedOrderIDRef = useRef(orderId);
+  const cancellationDraftScope = useRef<{ actorID: string; orderID: string } | null>(null);
+  requestedOrderIDRef.current = orderId;
+  const hasCurrentOrderScope = useCallback((actorID: string, requestedOrderID: string): boolean => {
+    const current = currentIdentityState();
+    return current.kind === "authenticated" && isClientOrderScopeCurrent(
+      actorID, requestedOrderID, current.identity.subject.trim(), requestedOrderIDRef.current,
+    );
+  }, []);
   const latestOrderState = useRef<Order["state"] | null>(null);
   const [showCancellationForm, setShowCancellationForm] = useState(false);
   const [showConversation, setShowConversation] = useState(false);
@@ -65,13 +74,14 @@ export default function ClientOrderDetail() {
     const actorID = session.identity.subject.trim();
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!hasCurrentOrderScope(actorID, orderId)) return;
       const value = await client().readClientDeliveryProof(token, orderId);
-      if (hasCurrentClientActor(actorID)) setDeliveryProof({ kind: "ready", value });
+      if (hasCurrentOrderScope(actorID, orderId)) setDeliveryProof({ kind: "ready", value });
     } catch (error) {
       console.error("DSH client delivery proof read failed", error);
-      if (hasCurrentClientActor(actorID)) setDeliveryProof({ kind: "error" });
+      if (hasCurrentOrderScope(actorID, orderId)) setDeliveryProof({ kind: "error" });
     }
-  }, [orderId]);
+  }, [hasCurrentOrderScope, orderId]);
 
   const refreshRating = useCallback(async (orderState: Order["state"]) => {
     const session = currentIdentityState();
@@ -85,13 +95,14 @@ export default function ClientOrderDetail() {
     setRatingError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!hasCurrentOrderScope(actorID, orderId)) return;
       const value = await client().readClientOrderRating(token, orderId);
-      if (!hasCurrentClientActor(actorID)) return;
+      if (!hasCurrentOrderScope(actorID, orderId)) return;
       setSelectedRating(value.rating.rating);
       setReview(value.rating.review);
       setOrderRating({ kind: "ready", value });
     } catch (error) {
-      if (!hasCurrentClientActor(actorID)) return;
+      if (!hasCurrentOrderScope(actorID, orderId)) return;
       if (typeof error === "object" && error !== null && "status" in error && (error as { status?: unknown }).status === 404) {
         setSelectedRating(0);
         setReview("");
@@ -101,33 +112,43 @@ export default function ClientOrderDetail() {
       console.error("DSH client order rating read failed", error);
       setOrderRating({ kind: "error" });
     }
-  }, [orderId]);
+  }, [hasCurrentOrderScope, orderId]);
 
   const readCancellationReview = useCallback(async (token: string, requestedOrderID: string, actorID: string) => {
     try {
       const result = await client().readOrderCancellationReview(token, requestedOrderID);
-      if (hasCurrentClientActor(actorID)) setCancellationReview(result.request);
+      if (hasCurrentOrderScope(actorID, requestedOrderID)) setCancellationReview(result.request);
     } catch (error) {
-      if (hasCurrentClientActor(actorID) && typeof error === "object" && error !== null && "status" in error && (error as {status?:unknown}).status === 404) setCancellationReview(null);
+      if (hasCurrentOrderScope(actorID, requestedOrderID) && typeof error === "object" && error !== null && "status" in error && (error as {status?:unknown}).status === 404) setCancellationReview(null);
     }
-  }, []);
+  }, [hasCurrentOrderScope]);
 
   const load = useCallback(async (preserveCurrent = false) => {
     const sequence = ++loadSequence.current;
     const session = currentIdentityState();
-    if (session.kind !== "authenticated" || !session.identity.subject.trim()) { setState({ kind: "auth_required" }); return; }
+    if (session.kind !== "authenticated" || !session.identity.subject.trim()) { cancellationDraftScope.current = null; setState({ kind: "auth_required" }); return; }
     const actorID = session.identity.subject.trim();
-    if (!orderId.trim()) { setState({ kind: "error" }); return; }
+    if (!orderId.trim()) { cancellationDraftScope.current = null; setState({ kind: "error" }); return; }
     if (preserveCurrent) setRefreshing(true);
     else setState({ kind: "loading" });
     setRefreshError("");
     setCancelError("");
+    // Refocusing the same order must not discard a partially written cancellation.
+    // A different actor/order must never inherit that draft or its review state.
+    const priorDraftScope = cancellationDraftScope.current;
+    if (!priorDraftScope || !isClientOrderScopeCurrent(priorDraftScope.actorID, priorDraftScope.orderID, actorID, orderId)) {
+      cancellationDraftScope.current = { actorID, orderID: orderId };
+      setCancellationReview(null);
+      setShowCancellationForm(false);
+      setCancellationReason("");
+    }
     if (!preserveCurrent) {
       setDeliveryProof({ kind: "loading" });
       setOrderRating({ kind: "loading" });
     }
     try {
       const token = await getUsableIdentityAccessToken();
+      if (sequence !== loadSequence.current || !hasCurrentOrderScope(actorID, orderId)) return;
       const order = (await client().readOrder(token, orderId)).order;
       const current = currentIdentityState();
       if (sequence !== loadSequence.current || current.kind !== "authenticated" || !isClientOrderScopeCurrent(actorID, order.id, current.identity.subject.trim(), orderId)) return;
@@ -139,14 +160,13 @@ export default function ClientOrderDetail() {
       await refreshRating(order.state);
     } catch (error) {
       console.error("DSH client order detail read failed", error);
-      const current = currentIdentityState();
-      if (sequence !== loadSequence.current || current.kind !== "authenticated" || current.identity.subject.trim() !== actorID) return;
+      if (sequence !== loadSequence.current || !hasCurrentOrderScope(actorID, orderId)) return;
       if (preserveCurrent) console.warn("DSH order automatic refresh deferred", error);
       else setState({ kind: "error" });
     } finally {
       if (sequence === loadSequence.current) setRefreshing(false);
     }
-  }, [orderId, readCancellationReview, refreshDeliveryProof, refreshRating]);
+  }, [hasCurrentOrderScope, orderId, readCancellationReview, refreshDeliveryProof, refreshRating]);
 
   const storeIdForMedia = state.kind === "ready" ? state.order.storeId : "";
   const cityIdForMedia = state.kind === "ready" ? state.order.serviceCityId : "";
@@ -167,35 +187,37 @@ export default function ClientOrderDetail() {
     setRatingError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!hasCurrentOrderScope(state.actorID, state.order.id)) return;
       const value = await client().createClientOrderRating(token, state.order.id, { rating: selectedRating, review }, state.order.version);
-      if (!hasCurrentClientActor(state.actorID)) return;
+      if (!hasCurrentOrderScope(state.actorID, state.order.id)) return;
       setOrderRating({ kind: "ready", value });
       setReview(value.rating.review);
     } catch (error) {
       console.error("DSH client order rating create failed", error);
-      if (hasCurrentClientActor(state.actorID)) setRatingError("تعذر حفظ التقييم. قد تكون العملية سُجلت بالفعل؛ حدّث الحالة للتحقق.");
+      if (hasCurrentOrderScope(state.actorID, state.order.id)) setRatingError("تعذر حفظ التقييم. قد تكون العملية سُجلت بالفعل؛ حدّث الحالة للتحقق.");
     } finally {
       setRatingSubmitting(false);
     }
-  }, [activeActorID, orderId, ratingSubmitting, review, selectedRating, state]);
+  }, [activeActorID, hasCurrentOrderScope, orderId, ratingSubmitting, review, selectedRating, state]);
 
   const requestOperationsCancellation = useCallback(async () => {
     if (state.kind !== "ready" || cancellationReviewBusy || cancellationReview?.state === "PENDING" ||
-        !hasCurrentClientActor(state.actorID) || ["CANCELLED","REJECTED","DELIVERED","PICKED_UP"].includes(state.order.state)) return;
+        !hasCurrentOrderScope(state.actorID, state.order.id) || ["CANCELLED","REJECTED","DELIVERED","PICKED_UP"].includes(state.order.state)) return;
     setCancellationReviewBusy(true);
     setCancelError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!hasCurrentOrderScope(state.actorID, state.order.id)) return;
       const result = await client().requestOrderCancellationReview(token, state.order.id, cancellationReason.trim(), Crypto.randomUUID());
-      if (hasCurrentClientActor(state.actorID)) setCancellationReview(result.request);
+      if (hasCurrentOrderScope(state.actorID, state.order.id)) setCancellationReview(result.request);
     } catch {
-      if (hasCurrentClientActor(state.actorID)) {
+      if (hasCurrentOrderScope(state.actorID, state.order.id)) {
         const token = await getUsableIdentityAccessToken().catch(() => "");
-        if (token) await readCancellationReview(token, state.order.id, state.actorID);
-        setCancelError("لم تتأكد نتيجة طلب المراجعة. تحقق من الحالة قبل إعادة الإرسال.");
+        if (token && hasCurrentOrderScope(state.actorID, state.order.id)) await readCancellationReview(token, state.order.id, state.actorID);
+        if (hasCurrentOrderScope(state.actorID, state.order.id)) setCancelError("لم تتأكد نتيجة طلب المراجعة. تحقق من الحالة قبل إعادة الإرسال.");
       }
     } finally { setCancellationReviewBusy(false); }
-  }, [state, cancellationReviewBusy, cancellationReview?.state, cancellationReason, readCancellationReview]);
+  }, [state, cancellationReviewBusy, cancellationReview?.state, cancellationReason, hasCurrentOrderScope, readCancellationReview]);
 
   const cancelOrder = useCallback(async () => {
     if (state.kind !== "ready" || !hasCurrentClientActor(state.actorID) || !isClientOrderScopeCurrent(state.actorID, state.order.id, activeActorID, orderId) || cancelling ||
@@ -204,17 +226,18 @@ export default function ClientOrderDetail() {
     setCancelError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!hasCurrentOrderScope(state.actorID, state.order.id)) return;
       const outcome = await client().cancelClientOrder(token, state.order.id, state.order.version);
-      if (hasCurrentClientActor(state.actorID) && outcome.order.id === orderId) {
+      if (hasCurrentOrderScope(state.actorID, state.order.id) && outcome.order.id === orderId) {
         setState({ kind: "ready", actorID: state.actorID, order: outcome.order });
       }
     } catch {
-      if (hasCurrentClientActor(state.actorID)) {
+      if (hasCurrentOrderScope(state.actorID, state.order.id)) {
         await load(true);
-        setCancelError("تحقق من الحالة الحالية قبل أي محاولة إلغاء أخرى؛ قد تكون العملية سُجلت.");
+        if (hasCurrentOrderScope(state.actorID, state.order.id)) setCancelError("تحقق من الحالة الحالية قبل أي محاولة إلغاء أخرى؛ قد تكون العملية سُجلت.");
       }
     } finally { setCancelling(false); }
-  }, [activeActorID, cancelling, load, orderId, state]);
+  }, [activeActorID, cancelling, hasCurrentOrderScope, load, orderId, state]);
 
   const decideAdjustment = useCallback(async (adjustmentId: string, decision: "ACCEPT" | "REJECT") => {
     if (state.kind !== "ready" || !isClientOrderScopeCurrent(state.actorID, state.order.id, activeActorID, orderId) || !hasCurrentClientActor(state.actorID) || adjustmentBusy) return;
@@ -222,16 +245,17 @@ export default function ClientOrderDetail() {
     setAdjustmentError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!hasCurrentOrderScope(state.actorID, state.order.id)) return;
       const result = await client().decideClientOrderAdjustment(token, state.order.id, adjustmentId, { decision, expectedAdjustmentVersion: state.order.adjustments.find((item) => item.id === adjustmentId)?.version ?? 0 }, state.order.version);
-      if (!hasCurrentClientActor(state.actorID) || result.order.id !== orderId) return;
+      if (!hasCurrentOrderScope(state.actorID, state.order.id) || result.order.id !== orderId) return;
       setState({ kind: "ready", order: result.order, actorID: state.actorID });
     } catch (error) {
       console.error("DSH client order adjustment decision failed", error);
-      if (hasCurrentClientActor(state.actorID)) setAdjustmentError("تعذر حفظ قرارك. حدّث الطلب للتحقق من الحالة قبل إعادة المحاولة.");
+      if (hasCurrentOrderScope(state.actorID, state.order.id)) setAdjustmentError("تعذر حفظ قرارك. حدّث الطلب للتحقق من الحالة قبل إعادة المحاولة.");
     } finally {
       setAdjustmentBusy("");
     }
-  }, [activeActorID, adjustmentBusy, orderId, state]);
+  }, [activeActorID, adjustmentBusy, hasCurrentOrderScope, orderId, state]);
 
   function confirmAdjustmentDecision(adjustmentId: string, decision: "ACCEPT" | "REJECT") {
     if (decision === "REJECT") {

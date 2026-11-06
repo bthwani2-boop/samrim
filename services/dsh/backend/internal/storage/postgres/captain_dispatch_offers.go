@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"github.com/lib/pq"
 	"strconv"
 	"strings"
@@ -152,7 +151,7 @@ func dispatchCaptainCandidatesTx(ctx context.Context, tx *sql.Tx, orderID, exclu
 	query := `SELECT id,actor_id FROM dsh.captain_admissions WHERE state='eligible'
 		AND requires_profile_review=false AND availability_state='available'
 		AND NOT EXISTS (SELECT 1 FROM dsh.captain_dispatch_offers o WHERE o.captain_actor_id=dsh.captain_admissions.actor_id AND o.state='offered')
-		AND NOT EXISTS (SELECT 1 FROM dsh.captain_assignments a WHERE a.captain_actor_id=dsh.captain_admissions.actor_id AND a.state IN ('assigned','in_custody'))
+		AND NOT EXISTS (SELECT 1 FROM dsh.captain_assignments a WHERE a.captain_actor_id=dsh.captain_admissions.actor_id AND a.state IN ('assigned','in_custody','delivery_failed'))
 		AND EXISTS (SELECT 1 FROM dsh.captain_presence_latest p WHERE p.captain_actor_id=dsh.captain_admissions.actor_id AND p.updated_at>clock_timestamp()-interval '15 minutes')`
 	args := []any{}
 	if excludeCaptainID != "" {
@@ -192,15 +191,15 @@ func dispatchCaptainCandidatesTx(ctx context.Context, tx *sql.Tx, orderID, exclu
 	}
 	var firstID string
 	expiresAt := time.Now().UTC().Add(captainOfferTimeout)
+	// The SQL query limits the candidate batch to three; preserve each offer's
+	// original idempotency key without a branch per candidate.
+	offerKeys := [3]string{idempotencyKey, idempotencyKey + ":offer-2", idempotencyKey + ":offer-3"}
 	for i, c := range candidates {
 		id, err := newID("captain-offer")
 		if err != nil {
 			return "", err
 		}
-		key := idempotencyKey
-		if i > 0 {
-			key = fmt.Sprintf("%s:offer-%d", idempotencyKey, i+1)
-		}
+		key := offerKeys[i]
 		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_dispatch_offers(id,order_id,captain_actor_id,state,expires_at,version,idempotency_key,request_hash) VALUES($1,$2,$3,'offered',$4,1,$5,$6)`, id, orderID, c.actorID, expiresAt, key, requestHash); err != nil {
 			if isUniqueViolation(err) {
 				return "", ErrCaptainDispatchConflict
@@ -409,6 +408,16 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 	if err := canonicalizeCaptainOffersTx(ctx, tx, ""); err != nil {
 		return CaptainOfferResult{}, err
 	}
+	// Every captain acceptance must lock the order before its offer. Otherwise
+	// simultaneous acceptances could deadlock while superseding other offers.
+	var lockedOrderID string
+	if err := tx.QueryRowContext(ctx, `SELECT o.id FROM dsh.commerce_orders o
+		JOIN dsh.captain_dispatch_offers offer ON offer.order_id=o.id
+		WHERE offer.id=$1 FOR UPDATE OF o`, offerID).Scan(&lockedOrderID); errors.Is(err, sql.ErrNoRows) {
+		return CaptainOfferResult{}, ErrCaptainOfferNotFound
+	} else if err != nil {
+		return CaptainOfferResult{}, err
+	}
 	replay, err := captainOperationReplayTx(ctx, tx, idempotencyKey, requestHash, "respond_offer")
 	if err != nil {
 		return CaptainOfferResult{}, err
@@ -439,16 +448,6 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 			return CaptainOfferResult{}, err
 		}
 		return CaptainOfferResult{Offer: offer, Assignment: assignment, Replayed: true}, nil
-	}
-	// Every captain acceptance must lock the order before its offer. Otherwise
-	// simultaneous acceptances could deadlock while superseding other offers.
-	var lockedOrderID string
-	if err := tx.QueryRowContext(ctx, `SELECT o.id FROM dsh.commerce_orders o
-		JOIN dsh.captain_dispatch_offers offer ON offer.order_id=o.id
-		WHERE offer.id=$1 FOR UPDATE OF o`, offerID).Scan(&lockedOrderID); errors.Is(err, sql.ErrNoRows) {
-		return CaptainOfferResult{}, ErrCaptainOfferNotFound
-	} else if err != nil {
-		return CaptainOfferResult{}, err
 	}
 	var offer CaptainOffer
 	err = tx.QueryRowContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,COALESCE(offer.source_store_id,''),offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' AND m.rights_attested_at IS NOT NULL LIMIT 1),''),COALESCE((SELECT NULLIF(city.display_name_ar,'') FROM dsh.service_cities city WHERE city.id=o.service_city_id),'منطقة الخدمة'),o.payment_cash_amount_minor,o.currency,o.payment_method,o.payment_state
@@ -559,6 +558,18 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 		return CaptainOfferResult{}, err
 	} else if admissionState != "eligible" || requiresProfileReview {
 		return CaptainOfferResult{}, ErrCaptainNotEligible
+	}
+	// A pre-existing unexpired offer must not bypass the same failed-custody
+	// exclusion enforced while searching and creating new dispatch offers.
+	// Rejection above remains allowed so the Captain can decline stale work.
+	var failedCustody bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(
+		SELECT 1 FROM dsh.captain_assignments
+		WHERE captain_actor_id=$1 AND state='delivery_failed')`, captainActorID).Scan(&failedCustody); err != nil {
+		return CaptainOfferResult{}, err
+	}
+	if failedCustody {
+		return CaptainOfferResult{}, ErrCaptainNoAvailable
 	}
 	var orderState, orderMode, orderStoreID string
 	if err := tx.QueryRowContext(ctx, "SELECT state,fulfillment_mode,store_id FROM dsh.commerce_orders WHERE id=$1 FOR UPDATE", offer.OrderID).Scan(&orderState, &orderMode, &orderStoreID); errors.Is(err, sql.ErrNoRows) {

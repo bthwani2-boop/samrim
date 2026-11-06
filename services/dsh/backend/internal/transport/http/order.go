@@ -76,6 +76,9 @@ func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/operator/operations/{orderId}/contact-review", s.recordOperatorContactReview)
 	mux.HandleFunc("POST /dsh/operator/operations/{orderId}/contact-review/claim", s.updateOperatorContactClaim)
 	mux.HandleFunc("GET /dsh/operator/cash-custody", s.listOperatorCashCustody)
+	mux.HandleFunc("POST /dsh/operator/captain-cod-legacy-reviews", s.submitOperatorLegacyCODRecovery)
+	mux.HandleFunc("GET /dsh/operator/captain-cod-legacy-reviews/by-payment/{paymentIntentId}", s.readOperatorLegacyCODRecoveryByPayment)
+	mux.HandleFunc("POST /dsh/operator/captain-cod-legacy-reviews/{reviewId}/approve", s.approveOperatorLegacyCODRecovery)
 	mux.HandleFunc("POST /dsh/operator/cash-remittances/{remittanceId}/reconcile", s.reconcileOperatorCashRemittance)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders", s.listStore)
 	mux.HandleFunc("GET /dsh/partner/orders", s.listPartnerOrders)
@@ -252,7 +255,7 @@ func (s *OrderServer) reconcileOperatorCashRemittance(w http.ResponseWriter, r *
 	if err != nil {
 		var wltErr *wlt.Error
 		if errors.As(err, &wltErr) {
-			writeError(w, wltErr.Status, wltErr.Code, wltErr.Message)
+			writeWLTFinanceDependencyError(w, wltErr)
 			return
 		}
 		writeOrderError(w, err)

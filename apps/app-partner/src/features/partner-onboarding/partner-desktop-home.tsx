@@ -12,7 +12,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { catalogPublishedAvailability, isOfferStockout } from "../store-offer/inventory-stockout";
 import { agreementReadinessMessage, type StoreAgreementReadback } from "./store-agreement-readiness";
-import { nextStoreSetupFocus, storeReadinessProgress } from "./partner-onboarding-next-step";
+import { nextStoreSetupFocus, storeSetupProgress } from "./partner-onboarding-next-step";
 import { scopedPartnerPopularOffers } from "./partner-home-popularity";
 
 type Data = Readonly<{
@@ -161,13 +161,13 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
   const groups = groupOrders(orders);
   const recentDays = recentOrderDays(orders, new Date());
   const maxDay = Math.max(1, ...recentDays.map(item => item.count));
-  const readySteps = [
-    ...(store.owned ? [store.publicationState === "published"] : []),
-    ...(canCatalog ? [catalogReady] : []),
-    ...(canOperate ? [operationalKnown ? operationalState === "مفتوح" : null] : []),
-    ...(store.owned ? [commercialAgreement === null || commercialAgreement === "UNAVAILABLE" ? null : commercialAgreement === "ACTIVE"] : []),
-  ];
-  const progress = storeReadinessProgress(readySteps);
+  const progress = storeSetupProgress({
+    ownsStore: store.owned,
+    canEditCatalog: canCatalog,
+    publicationState: store.publicationState,
+    catalogReady,
+    agreement: commercialAgreement,
+  });
   const setupFocus = nextStoreSetupFocus({
     ownsStore: store.owned, canEditCatalog: canCatalog, canManageAvailability: canOperate,
     publicationState: store.publicationState, catalogReady, agreement: commercialAgreement,
@@ -242,7 +242,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
           <View style={styles.setupGrid}>
             {store.owned ? action("هوية المتجر", store.publicationState === "published" ? "المتجر منشور للعملاء" : "مراجعة بيانات المتجر والنشر", "/store?section=settings" as Href, "store", store.publicationState === "published") : null}
             {canCatalog ? action("إعداد الكتالوج", data.offers === null ? "البيانات غير متاحة حاليًا" : catalogReady === null ? "لم تكتمل قراءة الكتالوج؛ راجع بقية المنتجات" : catalogReady ? "يوجد منتجات متاحة للطلب" : "راجع المنتجات والأسعار", "/products" as Href, "cart", catalogReady) : null}
-            {canOperate ? action("إعدادات التشغيل", operationalKnown ? "استقبال الطلبات: " + operationalState : "تعذر قراءة حالة التشغيل", "/store?section=operations" as Href, "deliveries", operationalKnown ? operationalState === "مفتوح" : null) : null}
+            {canOperate ? action("إعدادات التشغيل", operationalKnown ? "استقبال الطلبات: " + operationalState : "تعذر قراءة حالة التشغيل", "/store?section=operations" as Href, "deliveries") : null}
             {store.owned ? action("الاتفاقية التجارية", agreementReadinessMessage(commercialAgreement), "/store?section=commercial" as Href, "wallet", commercialAgreement === null || commercialAgreement === "UNAVAILABLE" ? null : commercialAgreement === "ACTIVE") : null}
             {canPromotions ? action("العروض", "تحرير العروض المتاحة للمتجر", "/store?section=promotions" as Href, "offers") : null}
             {store.owned ? action("الموظفين", "دعوة الموظفين وإدارة صلاحياتهم", "/employees" as Href, "account") : null}

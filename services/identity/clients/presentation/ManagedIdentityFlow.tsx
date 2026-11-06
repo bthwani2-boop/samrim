@@ -113,7 +113,7 @@ export function AuthenticatedMobileBoundary({ binding, onUnauthenticated, childr
       <View style={styles.stateCard}>
         {state.kind === "degraded" ? (
           <>
-            <Text style={styles.stateTitle}>تعذر التحقق</Text>
+            <Text accessibilityRole="alert" style={styles.stateTitle}>تعذر التحقق</Text>
             <Pressable accessibilityRole="button" accessibilityState={{ busy, disabled: busy }} disabled={busy} onPress={() => void restoreSession()} style={styles.primaryButton}>
               {busy ? <ActivityIndicator accessibilityLabel="جارٍ التحقق" color={theme.onAction} /> : <Text style={styles.primaryButtonText}>إعادة المحاولة</Text>}
             </Pressable>
@@ -234,7 +234,7 @@ export function ManagedIdentityFlow({ managedRole, surface, binding, authenticat
   if (state.kind === "authenticated") return authenticatedContent ?? null;
   if (state.kind === "degraded") return shell(
     <View style={styles.card}>
-      <Text style={styles.title}>تعذر التحقق</Text>
+      <Text accessibilityRole="alert" style={styles.title}>تعذر التحقق</Text>
       <Pressable accessibilityRole="button" accessibilityState={{ busy, disabled: busy }} disabled={busy} onPress={() => void restoreSession()} style={styles.primaryButton}>
         {busy ? <ActivityIndicator accessibilityLabel="جارٍ التحقق" color={theme.onAction} /> : <Text style={styles.primaryButtonText}>إعادة المحاولة</Text>}
       </Pressable>

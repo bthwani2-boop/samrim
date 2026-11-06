@@ -50,15 +50,25 @@ func TestOrderRegisteredRoutesRejectUnauthenticatedRequests(t *testing.T) {
 	server.Register(mux)
 
 	routes := orderRegisteredRoutes(t)
-	// The Partner Store summary must remain inside the authenticated Order route census.
-	if len(routes) != 45 {
-		t.Fatalf("Order route census changed: got %d, want 45; review authentication for every new or removed route", len(routes))
+	// The Partner Store summary and all three historical COD Finance routes
+	// must remain inside the authenticated Order route census.
+	if len(routes) != 48 {
+		t.Fatalf("Order route census changed: got %d, want 48; review authentication for every new or removed route", len(routes))
 	}
 	foundPartnerSummary := false
 	foundPartnerRatings := false
 	foundOperatorRatings := false
 	foundOperatorSummary := false
+	legacyCODRoutes := map[string]bool{
+		"POST /dsh/operator/captain-cod-legacy-reviews":                             false,
+		"GET /dsh/operator/captain-cod-legacy-reviews/by-payment/{paymentIntentId}": false,
+		"POST /dsh/operator/captain-cod-legacy-reviews/{reviewId}/approve":          false,
+	}
 	for _, route := range routes {
+		key := route.method + " " + route.path
+		if _, expected := legacyCODRoutes[key]; expected {
+			legacyCODRoutes[key] = true
+		}
 		if route.method == nethttp.MethodGet && route.path == "/dsh/partner/stores/{storeId}/orders/summary" {
 			foundPartnerSummary = true
 		}
@@ -74,6 +84,11 @@ func TestOrderRegisteredRoutesRejectUnauthenticatedRequests(t *testing.T) {
 	}
 	if !foundPartnerSummary || !foundPartnerRatings || !foundOperatorRatings || !foundOperatorSummary {
 		t.Fatal("Partner summary or Store ratings read routes are missing from authenticated Order route census")
+	}
+	for path, found := range legacyCODRoutes {
+		if !found {
+			t.Fatalf("historical COD Finance route missing from authenticated Order census: %s", path)
+		}
 	}
 	for _, route := range routes {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {

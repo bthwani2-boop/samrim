@@ -52,12 +52,8 @@ func VerifyRuntimePrivileges(ctx context.Context, db *sql.DB) error {
 	if err := verifyNonOwnerNoDDL(ctx, db, "runtime"); err != nil {
 		return err
 	}
-	for _, requirement := range identityRuntimePrivileges {
-		for _, privilege := range requirement.privileges {
-			if err := requireTablePrivilege(ctx, db, requirement.table, privilege, true); err != nil {
-				return fmt.Errorf("identity runtime role: %w", err)
-			}
-		}
+	if err := verifyRequiredIdentityTablePrivileges(ctx, db, "runtime", identityRuntimePrivileges); err != nil {
+		return err
 	}
 	for _, privilege := range []string{"UPDATE", "DELETE", "TRUNCATE"} {
 		if err := requireTablePrivilege(ctx, db, "identity_security_audit", privilege, false); err != nil {
@@ -76,12 +72,8 @@ func VerifyMaintenancePrivileges(ctx context.Context, db *sql.DB) error {
 	if err := verifyNonOwnerNoDDL(ctx, db, "maintenance"); err != nil {
 		return err
 	}
-	for _, requirement := range identityMaintenancePrivileges {
-		for _, privilege := range requirement.privileges {
-			if err := requireTablePrivilege(ctx, db, requirement.table, privilege, true); err != nil {
-				return fmt.Errorf("identity maintenance role: %w", err)
-			}
-		}
+	if err := verifyRequiredIdentityTablePrivileges(ctx, db, "maintenance", identityMaintenancePrivileges); err != nil {
+		return err
 	}
 	for _, privilege := range []string{"INSERT", "UPDATE", "TRUNCATE"} {
 		if err := requireTablePrivilege(ctx, db, "identity_security_audit", privilege, false); err != nil {
@@ -123,6 +115,17 @@ func requireTablePrivilege(ctx context.Context, db *sql.DB, table, privilege str
 			return fmt.Errorf("missing table privilege %s.%s", table, privilege)
 		}
 		return fmt.Errorf("forbidden table privilege %s.%s", table, privilege)
+	}
+	return nil
+}
+
+func verifyRequiredIdentityTablePrivileges(ctx context.Context, db *sql.DB, label string, permissions []tablePrivilegeRequirement) error {
+	for _, entry := range permissions {
+		for _, privilege := range entry.privileges {
+			if err := requireTablePrivilege(ctx, db, entry.table, privilege, true); err != nil {
+				return fmt.Errorf("identity %s: %w", label, err)
+			}
+		}
 	}
 	return nil
 }

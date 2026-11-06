@@ -1093,7 +1093,7 @@ paths:
   /dsh/catalog/store-imports/preview:
     post:
       operationId: previewOperatorStoreCatalogImport
-      summary: Preview barcode and price rows for one Operator-authorized Store
+      summary: Preview barcode or Store-local name and price rows for one Operator-authorized Store
       security:
         - serviceBearer: []
       parameters:
@@ -1109,7 +1109,7 @@ paths:
               required: [storeId, file]
               properties:
                 storeId: { type: string, minLength: 1, maxLength: 128 }
-                file: { type: string, format: binary, description: CSV or XLSX with barcode and positive whole YER price columns }
+                file: { type: string, format: binary, description: CSV or XLSX with a positive whole YER price column and either a barcode or Store-local product name column; optional unit and variant columns are supported for name-based rows }
       responses:
         "201": { description: Store offer import preview., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportPreviewResponse" } } } }
         "200": { description: Idempotent preview replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportPreviewResponse" } } } }
@@ -1162,7 +1162,7 @@ paths:
   /dsh/stores/{storeId}/catalog/imports/preview:
     post:
       operationId: previewPartnerStoreCatalogImport
-      summary: Preview barcode and price rows for the Partner-owned Store
+      summary: Preview barcode or Store-local name and price rows for the Partner-owned Store
       security:
         - userBearer: []
       parameters:
@@ -1177,7 +1177,7 @@ paths:
               type: object
               required: [file]
               properties:
-                file: { type: string, format: binary, description: CSV or XLSX with barcode and positive whole YER price columns }
+                file: { type: string, format: binary, description: CSV or XLSX with a positive whole YER price column and either a barcode or Store-local product name column; optional unit and variant columns are supported for name-based rows }
       responses:
         "201": { description: Store offer import preview., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportPreviewResponse" } } } }
         "200": { description: Idempotent preview replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportPreviewResponse" } } } }
