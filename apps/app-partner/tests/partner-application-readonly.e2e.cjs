@@ -69,7 +69,24 @@ async function audit() {
       console.log("PARTNER_SIGNUP_FLOW_LAYOUT=PASS");
       await page.getByRole("button", { name: "العودة لتسجيل دخول الشريك" }).click();
       await page.waitForURL(url => new URL(url).pathname === "/", { timeout: 15000 });
-      console.log("PARTNER_APPLY_RETURN_LOGIN=PASS");
+      await page.waitForTimeout(900); // allow an existing role-scoped session to redirect
+      const returnState = await page.evaluate(() => ({
+        path: location.pathname,
+        signedOutLogin: (document.body.innerText || "").includes("تسجيل الدخول"),
+        passwordField: Boolean(document.querySelector('input[type="password"]')),
+        workspace: (document.body.innerText || "").includes("الطلبات") || (document.body.innerText || "").includes("متجري"),
+      }));
+      console.log("PARTNER_RETURN_STATE=" + JSON.stringify(returnState));
+      if (returnState.path === "/") {
+        await page.getByText("تسجيل الدخول", { exact: true }).first().waitFor({ state: "visible", timeout: 8000 });
+        await page.getByLabel("رقم الجوال").waitFor({ state: "visible", timeout: 8000 });
+        await page.getByLabel("كلمة المرور").waitFor({ state: "visible", timeout: 8000 });
+        console.log("PARTNER_APPLY_RETURN_LOGIN=PASS");
+      } else if (returnState.path.startsWith("/orders") && returnState.workspace) {
+        console.log("PARTNER_APPLY_RETURN_LOGIN=NOT_RUN_SIGNED_IN_SESSION");
+      } else {
+        throw new Error("RETURN_DESTINATION_NOT_VERIFIED");
+      }
       if (pageErrors.length) throw new Error("EXPO_RENDER_ERRORS " + JSON.stringify(pageErrors));
       console.log("PARTNER_APPLY_READONLY=PASS");
     } finally {

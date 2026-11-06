@@ -75,7 +75,11 @@ func TestSelfServiceCorrectionRequiresVerifiedBearerAndRejectsActorSpoofing(t *t
 		{name: "malformed JSON rejected before identity", token: "unverified", version: "1", wantStatus: http.StatusBadRequest},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			request := httptest.NewRequest(http.MethodPost, path, strings.NewReader("{"))
+			body := "{}"
+			if tc.name == "malformed JSON rejected before identity" {
+				body = "{"
+			}
+			request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
 			if tc.token != "" {
 				request.Header.Set("Authorization", "Bearer "+tc.token)
 			}
@@ -91,6 +95,12 @@ func TestSelfServiceCorrectionRequiresVerifiedBearerAndRejectsActorSpoofing(t *t
 			router.ServeHTTP(response, request)
 			if response.Code != tc.wantStatus {
 				t.Fatalf("status = %d, want %d: %s", response.Code, tc.wantStatus, response.Body.String())
+			}
+			if tc.name == "actor override" && !strings.Contains(response.Body.String(), "client actor authority headers are forbidden") {
+				t.Fatalf("actor spoofing was not rejected at the header gate: %s", response.Body.String())
+			}
+			if tc.name == "missing version" && !strings.Contains(response.Body.String(), "X-Expected-Version are required") {
+				t.Fatalf("missing required version was not rejected at the header gate: %s", response.Body.String())
 			}
 		})
 	}

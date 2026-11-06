@@ -126,6 +126,7 @@ export function ProspectivePartnerApplication(){
 
  const sessionScope=session.kind==="authenticated"?`${session.identity.subject}:${session.identity.sessionId}`:"";
  const scopeRef=useRef(sessionScope);
+ const submissionEpochRef=useRef(0);
  const sameSession=useCallback(()=>{
   const current=currentProspectSession();
   return current.kind==="authenticated"&&`${current.identity.subject}:${current.identity.sessionId}`===sessionScope;
@@ -136,6 +137,7 @@ export function ProspectivePartnerApplication(){
    if(!active)return;
    const nextScope=value.kind==="authenticated"?`${value.identity.subject}:${value.identity.sessionId}`:"";
    if(scopeRef.current&&scopeRef.current!==nextScope){
+    submissionEpochRef.current+=1;setBusy(false);
     setCaseValue(null);setHasRead(false);setIntakeStep("basics");setLoading(false);
     setVerifiedContactPhone("");setManualContactFallback(false);setPhone("");
     setOwnerName("");setStoreName("");setAddress("");setProofNumber("");setLat("");setLng("");
@@ -194,7 +196,7 @@ export function ProspectivePartnerApplication(){
  // require the applicant's explicit choice. The backend revalidates all IDs.
  useEffect(()=>{if(cities.length===1&&!city)setCity(cities[0]!.id)},[cities,city]);
  useEffect(()=>{if(verticals.length===1&&!vertical)setVertical(verticals[0]!.id)},[verticals,vertical]);
- useEffect(()=>{if(types.length===1&&!storeType)setStoreType(types[0]!.id)},[types,storeType]);
+ useEffect(()=>{if(types.length===1&&types[0]!.verticalId===vertical&&!storeType)setStoreType(types[0]!.id)},[types,storeType,vertical]);
 
  async function toggleLocationMap(){
   if(showLocationMap){setShowLocationMap(false);return;}
@@ -232,10 +234,11 @@ export function ProspectivePartnerApplication(){
  }
  async function submit(){
   if(busy||!sameSession())return;
+  const submissionEpoch=++submissionEpochRef.current;
   const canonicalContact=manualContactFallback?normalizeYemenPhoneE164(phone):verifiedContactPhone;
   setError("");setNotice("");
   const latitude=Number(toAsciiDigits(lat));const longitude=Number(toAsciiDigits(lng));
-  if(!/^\+[1-9]\d{7,14}$/.test(canonicalContact)||!ownerName.trim()||!storeName.trim()||!address.trim()||!city||!vertical||!storeType||!proofNumber.trim()||modes.length===0||
+  if(!/^\+[1-9]\d{7,14}$/.test(canonicalContact)||!ownerName.trim()||!storeName.trim()||!address.trim()||!city||!vertical||!storeType||!types.some(t=>t.id===storeType&&t.verticalId===vertical)||!proofNumber.trim()||modes.length===0||
      !lat.trim()||!lng.trim()||!Number.isFinite(latitude)||!Number.isFinite(longitude)){
    setError("أكمل البيانات الأساسية واختر المدينة والمجال ونوع المتجر وطريقة التوصيل وحدد موقعه.");return;
   }
@@ -260,7 +263,7 @@ export function ProspectivePartnerApplication(){
    if(read.case.id!==result.case.id)throw new Error("CASE_READBACK_MISMATCH");
    setCaseValue(read);setNotice("سُجل طلب الانضمام؛ سيُراجع قسم الشركاء بياناتك قبل منح صلاحيات المتجر.");
   }catch(cause){if(sameSession()){await load();if(sameSession())setError(details(cause))}}
-  finally{if(sameSession())setBusy(false)}
+  finally{if(submissionEpochRef.current===submissionEpoch)setBusy(false)}
  }
  const field=(label:string,value:string,set:(value:string)=>void,secure=false,keyboard:"default"|"phone-pad"|"numeric"|"numbers-and-punctuation"="default")=>
   <View style={{gap:6}}><Text style={styles.label}>{label}</Text><TextInput accessibilityLabel={label} style={styles.input} value={value} onChangeText={set} editable={!busy} keyboardType={keyboard} secureTextEntry={secure} autoCapitalize={secure||keyboard==="phone-pad"?"none":"sentences"}/></View>;
@@ -314,10 +317,19 @@ export function ProspectivePartnerApplication(){
      applicant
      readCorrection={async()=>api().readSelfServiceJoiningApplication(await prospectAccessToken())}
      submitCorrection={async(caseID,input,expectedVersion)=>{
+      // Capture the initiating session before awaiting a token or digest.
+      // A replacement account must never submit the previous account's form.
+      const initial=currentProspectSession();
+      if(initial.kind!=="authenticated"||!sameSession()||caseID!==caseValue.case.id)throw new Error("APPLICANT_IDENTITY_MISMATCH");
+      const initialScope=`${initial.identity.subject}:${initial.identity.sessionId}`;
+      const stillOriginal=()=>{
+       const now=currentProspectSession();
+       return sameSession()&&now.kind==="authenticated"&&`${now.identity.subject}:${now.identity.sessionId}`===initialScope;
+      };
       const token=await prospectAccessToken();
-      const identity=currentProspectSession();
-      if(identity.kind!=="authenticated"||caseID!==caseValue.case.id)throw new Error("APPLICANT_IDENTITY_MISMATCH");
-      const digest=await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256,JSON.stringify([identity.identity.subject,caseID,expectedVersion,input]));
+      if(!stillOriginal())throw new Error("APPLICANT_SESSION_CHANGED");
+      const digest=await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256,JSON.stringify([initial.identity.subject,caseID,expectedVersion,input]));
+      if(!stillOriginal())throw new Error("APPLICANT_SESSION_CHANGED");
       return api().correctSelfServiceJoiningApplication(token,input,expectedVersion,`applicant_correction_${digest.slice(0,40)}`,`applicant_corr_${digest.slice(0,40)}`);
      }}
     />
@@ -340,9 +352,9 @@ export function ProspectivePartnerApplication(){
    {field("عنوان المتجر",address,setAddress)}
    {registrySelect("city","مدينة الخدمة",cities.map(c=>({id:c.id,label:c.displayNameAr})),city,setCity)}
    {registrySelect("vertical","المجال التجاري",verticals.map(v=>({id:v.id,label:v.nameAr})),vertical,setVertical)}
-   {registrySelect("storeType","نوع المتجر",types.map(t=>({id:t.id,label:t.nameAr})),storeType,setStoreType)}
+   {registrySelect("storeType","نوع المتجر",types.filter(t=>t.verticalId===vertical).map(t=>({id:t.id,label:t.nameAr})),storeType,setStoreType)}
    <BthwaniButton label="متابعة إلى الموقع والإثبات" disabled={busy||loading} onPress={()=>{
-    if(!/^\+[1-9]\d{7,14}$/.test(manualContactFallback?normalizeYemenPhoneE164(phone):verifiedContactPhone)||ownerName.trim().length<2||storeName.trim().length<2||address.trim().length<4||!city||!vertical||!storeType){
+    if(!/^\+[1-9]\d{7,14}$/.test(manualContactFallback?normalizeYemenPhoneE164(phone):verifiedContactPhone)||ownerName.trim().length<2||storeName.trim().length<2||address.trim().length<4||!city||!vertical||!storeType||!types.some(t=>t.id===storeType&&t.verticalId===vertical)){
      setError("أدخل رقم هاتف حسابك واسم المالك والنشاط والعنوان، وحدد مدينة الخدمة والمجال ونوع المتجر.");return;
     }
     setError("");setIntakeStep("details");
