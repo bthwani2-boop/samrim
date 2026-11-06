@@ -9,7 +9,7 @@ import { identityErrorMessage, limitPasswordInput, validatePasswordInputShape } 
 import * as Crypto from "expo-crypto";
 import { useRouter } from "expo-router";
 import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { currentProspectSession, loginProspect, logoutProspect, prospectAccessToken, recoverProspect, registerProspect, requestProspectRecovery, requestProspectRegistration, restoreProspectSession, subscribeProspectSession } from "../../bootstrap/applicant-identity";
 import { listActiveServiceCities, listCatalogVerticals, listCommercialStoreTypes } from "./store-readback-client";
 import { JoiningCaseCorrection } from "./joining-case-correction";
@@ -41,19 +41,24 @@ function api(){
 export function ProspectivePartnerApplication(){
  const theme=useAppearanceTheme();
  const router=useRouter();
+ const {width:viewportWidth}=useWindowDimensions();
+ const showColumns=viewportWidth>=720;
  const styles=useMemo(()=>StyleSheet.create({
   root:{flex:1,backgroundColor:theme.background},
   inner:{flexGrow:1,paddingHorizontal:16,paddingVertical:24,alignItems:"center",gap:16},
-  hero:{width:"100%",maxWidth:600,alignItems:"center",paddingTop:10,gap:8,marginBottom:3},
+  hero:{width:"100%",maxWidth:680,alignItems:"center",paddingTop:10,gap:8,marginBottom:3},
   brand:{flexDirection:"row-reverse",alignItems:"center",gap:9,marginBottom:5},
   brandMark:{width:36,height:36,borderRadius:12,backgroundColor:theme.actionBackground,alignItems:"center",justifyContent:"center"},
   brandMarkText:{fontSize:21,fontWeight:"800" as const,color:theme.onAction},
   brandName:{fontSize:16,fontWeight:"700" as const,color:theme.color},
   heading:{fontSize:25,fontWeight:"800" as const,color:theme.color,textAlign:"center" as const,writingDirection:"rtl" as const},
   intro:{fontSize:14,color:theme.colorMuted,textAlign:"center" as const,lineHeight:23,maxWidth:510,writingDirection:"rtl" as const},
-  formCard:{width:"100%",maxWidth:600,backgroundColor:theme.surface,borderWidth:1,borderColor:theme.borderColor,borderRadius:22,padding:20,gap:16,
+  formCard:{width:"100%",maxWidth:680,backgroundColor:theme.surface,borderWidth:1,borderColor:theme.borderColor,borderRadius:22,padding:20,gap:16,
    shadowColor:theme.shadowColor,shadowOffset:{width:0,height:8},shadowOpacity:0.08,shadowRadius:20,elevation:3},
   content:{gap:14},
+  fieldRow:{flexDirection:"row" as const,alignItems:"flex-start" as const,gap:14},
+  fieldColumn:{flexDirection:"column" as const},
+  fieldCell:{flex:1,minWidth:0,width:"100%" as const},
   cardTitle:{fontSize:19,fontWeight:"700" as const,color:theme.color,textAlign:"right" as const,writingDirection:"rtl" as const},
   text:{fontSize:14,color:theme.color,textAlign:"right" as const,writingDirection:"rtl" as const},
   muted:{fontSize:13,color:theme.colorMuted,textAlign:"right" as const,lineHeight:21,writingDirection:"rtl" as const},
@@ -77,7 +82,7 @@ export function ProspectivePartnerApplication(){
   statusTitle:{fontSize:16,fontWeight:"700" as const,color:theme.color,textAlign:"right" as const},
   notice:{color:theme.color,textAlign:"right" as const,backgroundColor:theme.surfaceRaised,borderRadius:12,padding:12,fontSize:13},
   error:{color:theme.dangerText,backgroundColor:theme.dangerSoft,borderRadius:12,padding:12,fontSize:13,textAlign:"right" as const,writingDirection:"rtl" as const},
-  footer:{width:"100%",maxWidth:600,gap:8,alignItems:"center" as const,paddingBottom:8},
+  footer:{width:"100%",maxWidth:680,gap:8,alignItems:"center" as const,paddingBottom:8},
   footerText:{fontSize:12,color:theme.colorMuted,textAlign:"center" as const,lineHeight:20},
  }),[theme]);
  const [session,setSession]=useState(currentProspectSession());
@@ -239,7 +244,7 @@ export function ProspectivePartnerApplication(){
   finally{setBusy(false)}
  }
  async function requestProof(){
-  if(busy||!phoneReady||mode==="login")return;
+  if(busy||!phoneReady||mode==="login"||(mode==="register"&&!passwordShape.valid))return;
   setBusy(true);setError("");setNotice("");
   try{
    const normalized=normalizeYemenPhoneE164(phone);
@@ -312,23 +317,42 @@ export function ProspectivePartnerApplication(){
   <View style={styles.formCard}>
   {restoring||loading?<ActivityIndicator accessibilityLabel="جارٍ التحقق من بيانات الطلب"/>:null}
   {!authenticated&&!restoring?<View style={styles.content}>
-   <Text style={styles.cardTitle}>{mode==="recover"?"استعادة كلمة المرور":"ابدأ الآن"}</Text>
-   <Text style={styles.muted}>{mode==="recover"?"سنرسل رمز تحقق إلى رقم جوالك لاستعادة الوصول إلى طلبك.":"لديك حساب عميل بثواني؟ استخدم الرقم نفسه، لا تحتاج حسابًا جديدًا."}</Text>
+   <Text style={styles.cardTitle}>{mode==="register"?"إنشاء حساب":mode==="recover"?"استعادة كلمة المرور":"مرحبًا بعودتك"}</Text>
+   <Text style={styles.muted}>{mode==="register"?"أنشئ حسابك الآن. اسم صاحب النشاط يُستكمل بعد الدخول، ويمكن إضافة بريد المتجر لاحقًا (اختياري).":mode==="recover"?"استعد حسابك باستخدام رقم جوالك الموثق.":"استخدم حساب بثواني الحالي لمتابعة طلب متجرك."}</Text>
    <View style={styles.segment} accessibilityRole="radiogroup">
-    {([{id:"register",label:"حساب جديد"},{id:"login",label:"لدي حساب"}] as const).map(item=>
+    {([{id:"register",label:"إنشاء حساب"},{id:"login",label:"تسجيل الدخول"}] as const).map(item=>
      <Pressable key={item.id} disabled={busy} accessibilityRole="radio" accessibilityState={{checked:mode===item.id||(mode==="recover"&&item.id==="login"),disabled:busy}} onPress={()=>{setMode(item.id);setProofRequested(false);setCode("");setPassword("");setPasswordConfirmation("");setError("");setNotice("")}} style={[styles.segmentButton,(mode===item.id||(mode==="recover"&&item.id==="login"))&&styles.segmentSelected]}>
       <Text style={[styles.segmentLabel,(mode===item.id||(mode==="recover"&&item.id==="login"))&&styles.segmentLabelSelected]}>{item.label}</Text>
      </Pressable>)}
    </View>
-   {field("رقم الجوال",phone,(next)=>{setPhone(next);setProofRequested(false);setCode("")},false,"phone-pad")}
-   <Text style={styles.muted}>مثال: 777123456 · استخدم رقم جوالك الذي تستطيع استلام رمز التحقق عليه.</Text>
-   {needsProof?<BthwaniButton label={proofRequested?"إعادة إرسال رمز التحقق":"إرسال رمز التحقق"} onPress={()=>void requestProof()} disabled={busy||!phoneReady}/>:null}
-   {needsProof&&proofRequested?field("رمز التحقق",code,value=>setCode(toAsciiDigits(value).replace(/\D/g,"").slice(0,6)),false,"numeric"):null}
-   {mode==="login"||proofRequested?field(mode==="recover"?"كلمة المرور الجديدة":"كلمة المرور",password,value=>setPassword(limitPasswordInput(value)),true):null}
-   {needsProof&&proofRequested?field("تأكيد كلمة المرور",passwordConfirmation,value=>setPasswordConfirmation(limitPasswordInput(value)),true):null}
-   {needsProof&&proofRequested?<Text style={styles.muted}>كلمة المرور 8 أحرف بالضبط، ويجب أن تتطابق مع التأكيد.</Text>:null}
+   <View style={[styles.fieldRow,!showColumns&&styles.fieldColumn]}>
+    <View style={styles.fieldCell}>
+     {field("رقم الجوال",phone,(next)=>{setPhone(next);setProofRequested(false);setCode("")},false,"phone-pad")}
+    </View>
+    {mode!=="recover"?<View style={styles.fieldCell}>
+     {field("كلمة المرور",password,value=>setPassword(limitPasswordInput(value)),true)}
+    </View>:null}
+   </View>
+   <Text style={styles.muted}>مثال: 777123456 · سيُستخدم الرقم للتحقق من الحساب.</Text>
+   {mode==="register"?<>
+    {field("تأكيد كلمة المرور",passwordConfirmation,value=>setPasswordConfirmation(limitPasswordInput(value)),true)}
+    <Text style={styles.muted}>كلمة المرور 8 أحرف بالضبط، وتأكيدها مطابق.</Text>
+   </>:null}
+   {mode==="recover"&&proofRequested?<>
+    {field("كلمة المرور الجديدة",password,value=>setPassword(limitPasswordInput(value)),true)}
+    {field("تأكيد كلمة المرور",passwordConfirmation,value=>setPasswordConfirmation(limitPasswordInput(value)),true)}
+   </>:null}
    {!passwordShape.valid&&(mode==="login"?password.length>0:passwordConfirmation.length>0)?<Text style={styles.muted}>{passwordShape.message}</Text>:null}
-   {(mode==="login"||proofRequested)?<BthwaniButton label={busy?"جارٍ التحقق…":mode==="register"?"تأكيد الرقم والمتابعة":mode==="recover"?"تغيير كلمة المرور":"الدخول إلى طلبي"} onPress={()=>void authenticate()} disabled={busy||!canAuthenticate}/>:null}
+   {needsProof&&proofRequested?<View style={{gap:8}}>
+    <Text style={styles.muted}>أدخل رمز التحقق المرسل إلى جوالك لإكمال {mode==="register"?"إنشاء الحساب":"استعادة الحساب"}.</Text>
+    {field("رمز التحقق",code,value=>setCode(toAsciiDigits(value).replace(/\D/g,"").slice(0,6)),false,"numeric")}
+   </View>:null}
+   {mode==="register"&&!proofRequested?<BthwaniButton label="إنشاء حساب" onPress={()=>void requestProof()} disabled={busy||!phoneReady||!passwordShape.valid}/>:null}
+   {mode==="recover"&&!proofRequested?<BthwaniButton label="إرسال رمز الاستعادة" onPress={()=>void requestProof()} disabled={busy||!phoneReady}/>:null}
+   {(mode==="login"||proofRequested)?<BthwaniButton label={busy?"جارٍ التحقق…":mode==="register"?"تأكيد الرقم وإنشاء الحساب":mode==="recover"?"تغيير كلمة المرور":"تسجيل الدخول"} onPress={()=>void authenticate()} disabled={busy||!canAuthenticate}/>:null}
+   {needsProof&&proofRequested?<Pressable accessibilityRole="button" disabled={busy||!phoneReady||(mode==="register"&&!passwordShape.valid)} onPress={()=>void requestProof()}>
+    <Text style={[styles.text,{color:theme.actionBackground,textAlign:"center"}]}>إعادة إرسال رمز التحقق</Text>
+   </Pressable>:null}
    {mode==="login"?<Pressable accessibilityRole="button" disabled={busy} onPress={()=>{setMode("recover");setProofRequested(false);setCode("");setPassword("");setPasswordConfirmation("");setError("");setNotice("")}}><Text style={[styles.text,{color:theme.actionBackground,textAlign:"center"}]}>نسيت كلمة المرور؟</Text></Pressable>:null}
    {mode==="recover"?<Pressable accessibilityRole="button" disabled={busy} onPress={()=>{setMode("login");setProofRequested(false);setCode("");setPassword("");setPasswordConfirmation("");setError("");setNotice("")}}><Text style={[styles.text,{color:theme.actionBackground,textAlign:"center"}]}>العودة لتسجيل الدخول</Text></Pressable>:null}
   </View>:null}
