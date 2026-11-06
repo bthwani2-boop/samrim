@@ -408,6 +408,16 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 	if err := canonicalizeCaptainOffersTx(ctx, tx, ""); err != nil {
 		return CaptainOfferResult{}, err
 	}
+	// Every captain acceptance must lock the order before its offer. Otherwise
+	// simultaneous acceptances could deadlock while superseding other offers.
+	var lockedOrderID string
+	if err := tx.QueryRowContext(ctx, `SELECT o.id FROM dsh.commerce_orders o
+		JOIN dsh.captain_dispatch_offers offer ON offer.order_id=o.id
+		WHERE offer.id=$1 FOR UPDATE OF o`, offerID).Scan(&lockedOrderID); errors.Is(err, sql.ErrNoRows) {
+		return CaptainOfferResult{}, ErrCaptainOfferNotFound
+	} else if err != nil {
+		return CaptainOfferResult{}, err
+	}
 	replay, err := captainOperationReplayTx(ctx, tx, idempotencyKey, requestHash, "respond_offer")
 	if err != nil {
 		return CaptainOfferResult{}, err
@@ -438,16 +448,6 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 			return CaptainOfferResult{}, err
 		}
 		return CaptainOfferResult{Offer: offer, Assignment: assignment, Replayed: true}, nil
-	}
-	// Every captain acceptance must lock the order before its offer. Otherwise
-	// simultaneous acceptances could deadlock while superseding other offers.
-	var lockedOrderID string
-	if err := tx.QueryRowContext(ctx, `SELECT o.id FROM dsh.commerce_orders o
-		JOIN dsh.captain_dispatch_offers offer ON offer.order_id=o.id
-		WHERE offer.id=$1 FOR UPDATE OF o`, offerID).Scan(&lockedOrderID); errors.Is(err, sql.ErrNoRows) {
-		return CaptainOfferResult{}, ErrCaptainOfferNotFound
-	} else if err != nil {
-		return CaptainOfferResult{}, err
 	}
 	var offer CaptainOffer
 	err = tx.QueryRowContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,COALESCE(offer.source_store_id,''),offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' AND m.rights_attested_at IS NOT NULL LIMIT 1),''),COALESCE((SELECT NULLIF(city.display_name_ar,'') FROM dsh.service_cities city WHERE city.id=o.service_city_id),'منطقة الخدمة'),o.payment_cash_amount_minor,o.currency,o.payment_method,o.payment_state
