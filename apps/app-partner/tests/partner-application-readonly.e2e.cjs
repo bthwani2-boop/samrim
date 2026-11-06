@@ -39,6 +39,9 @@ async function audit() {
         assert.equal(report.requiresDocumentPhoto, false);
         assert.equal(report.runtimeError, false);
       }
+      await page.getByRole("button", { name: "العودة لتسجيل دخول الشريك" }).click();
+      await page.waitForURL(url => new URL(url).pathname === "/", { timeout: 15000 });
+      console.log("PARTNER_APPLY_RETURN_LOGIN=PASS");
       if (pageErrors.length) throw new Error("EXPO_RENDER_ERRORS " + JSON.stringify(pageErrors));
       console.log("PARTNER_APPLY_READONLY=PASS");
     } finally {

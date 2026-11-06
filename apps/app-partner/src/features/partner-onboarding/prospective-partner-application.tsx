@@ -221,7 +221,7 @@ export function ProspectivePartnerApplication(){
  return <ScrollView style={styles.root} contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled">
   <Text style={styles.heading}>طلب الانضمام إلى بثواني</Text>
   <Text style={styles.muted}>يمكن التقديم دون ميداني. يُتحقق من هاتفك أولاً؛ ولا يمنح الطلب صلاحية إدارة متجر حتى موافقة قسم الشركاء.</Text>
-  <BthwaniButton label="العودة لتسجيل دخول الشريك" onPress={()=>router.back()} variant="secondary"/>
+  <BthwaniButton label="العودة لتسجيل دخول الشريك" onPress={()=>router.replace("/")} variant="secondary"/>
   {restoring||loading?<ActivityIndicator accessibilityLabel="جارٍ التحقق من بيانات الطلب"/>:null}
   {!authenticated&&!restoring?<View style={{gap:10}}>
    {select("لدي حساب موثق أم أريد التسجيل؟",[{id:"register" as const,label:"تسجيل رقم جديد"},{id:"login" as const,label:"الدخول بحساب موجود"}],mode,(next)=>{setMode(next);setProofRequested(false);setCode("");setError("");})}
@@ -255,7 +255,7 @@ export function ProspectivePartnerApplication(){
     />
    </>:caseValue.case.state==="approved"?<>
     <Text style={styles.muted}>اعتمد قسم الشركاء طلبك. ادخل إلى حساب الشريك بنفس رقم الهاتف، ثم أكمل بيانات المتجر والكتالوج والاتفاق التجاري قبل طلب النشر.</Text>
-    <BthwaniButton label="الانتقال إلى حساب الشريك لإكمال المتجر" onPress={()=>router.back()} />
+    <BthwaniButton label="الانتقال إلى حساب الشريك لإكمال المتجر" onPress={()=>router.replace("/")} />
    </>:caseValue.case.state==="submitted"?<Text style={styles.muted}>طلبك قيد مراجعة قسم الشركاء. لا ترسل طلبًا ثانيًا؛ ستظهر هنا حالة المراجعة والتصحيح عند تحديثها.</Text>
    :<Text style={styles.muted}>طلبك محفوظ كمسودة وينتظر خطوة قبول أولية من قسم الشركاء. لا يلزم تسجيل طلب جديد.</Text>}
    <BthwaniButton label="تحديث حالة الطلب" variant="secondary" onPress={()=>void load()} disabled={loading}/>
