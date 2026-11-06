@@ -207,12 +207,12 @@ jobs:
           done
           test "$ready" = true
           export IDENTITY_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19433/identity_proof?sslmode=disable"
-          (cd services/identity/backend && go test ./internal/session -run '^(TestHistoricalRefreshReconciliationUsesDatabaseTime|TestDevelopmentOperatorSessionUsesCanonicalInitialOperator|TestRevokeRoleSessionIsScopedToTargetActor|TestRefreshRejectsExpiredDatabaseLifetimeDespiteHostClockSkew|TestConcurrentRefreshUsesOnePersistedGeneration|TestSessionActorDeviceAndExpiryIsolation|TestOneActorDifferentSurfaceRolesRemainSeparated)$' -v -count=1 -timeout 6m) | tee "$RUNNER_TEMP/identity-postgres.log"
+          (cd services/identity/backend && go test ./internal/session -run '^(TestHistoricalRefreshReconciliationUsesDatabaseTime|TestDevelopmentOperatorSessionUsesCanonicalInitialOperator|TestRevokeRoleSessionIsScopedToTargetActor|TestRefreshRejectsExpiredDatabaseLifetimeDespiteHostClockSkew|TestSessionCreationUsesDatabaseClockDespiteHostSkew|TestConcurrentRefreshUsesOnePersistedGeneration|TestSessionActorDeviceAndExpiryIsolation|TestOneActorDifferentSurfaceRolesRemainSeparated)$' -v -count=1 -timeout 6m) | tee "$RUNNER_TEMP/identity-postgres.log"
           if grep -q -- '--- SKIP:' "$RUNNER_TEMP/identity-postgres.log"; then
             echo "::error::Identity PostgreSQL proof was skipped"
             exit 1
           fi
-          for name in TestHistoricalRefreshReconciliationUsesDatabaseTime TestDevelopmentOperatorSessionUsesCanonicalInitialOperator TestRevokeRoleSessionIsScopedToTargetActor TestRefreshRejectsExpiredDatabaseLifetimeDespiteHostClockSkew TestConcurrentRefreshUsesOnePersistedGeneration TestSessionActorDeviceAndExpiryIsolation TestOneActorDifferentSurfaceRolesRemainSeparated; do
+          for name in TestHistoricalRefreshReconciliationUsesDatabaseTime TestDevelopmentOperatorSessionUsesCanonicalInitialOperator TestRevokeRoleSessionIsScopedToTargetActor TestRefreshRejectsExpiredDatabaseLifetimeDespiteHostClockSkew TestSessionCreationUsesDatabaseClockDespiteHostSkew TestConcurrentRefreshUsesOnePersistedGeneration TestSessionActorDeviceAndExpiryIsolation TestOneActorDifferentSurfaceRolesRemainSeparated; do
             if ! grep -q -- "--- PASS: $name " "$RUNNER_TEMP/identity-postgres.log"; then
               echo "::error::Required Identity integration test did not pass: $name"
               exit 1

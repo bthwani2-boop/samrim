@@ -99,3 +99,61 @@ func TestRefreshRejectsExpiredDatabaseLifetimeDespiteHostClockSkew(t *testing.T)
 		t.Fatalf("fresh service could not resolve rotated access: resolved=%+v err=%v", resolved, err)
 	}
 }
+
+// TestSessionCreationUsesDatabaseClockDespiteHostSkew protects the session
+// creation boundary, where the expiry origin must match PostgreSQL checks.
+func TestSessionCreationUsesDatabaseClockDespiteHostSkew(t *testing.T) {
+	ctx, db := newIsolatedIdentityDatabase(t)
+	synthetic, err := actor.New(db, "").ProvisionFirstOperatorBootstrap(ctx,
+		"operator-bootstrap", domain.ProvisionActorRoleInput{PhoneE164: "+15555550592"})
+	if err != nil {
+		t.Fatalf("bootstrap disposable operator: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name     string
+		skew     time.Duration
+		instance string
+	}{
+		{name: "app host one year slow", skew: -365 * 24 * time.Hour, instance: "isolated-creation-slow-host"},
+		{name: "app host one year fast", skew: 365 * 24 * time.Hour, instance: "isolated-creation-fast-host"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := New(db, []byte("01234567890123456789012345678901"), true, nil)
+			svc.now = func() time.Time { return time.Now().Add(tc.skew) }
+			pair, err := svc.CreateDevelopment(ctx, "operator", tc.instance)
+			if err != nil || pair.Identity.Subject != synthetic.ActorID {
+				t.Fatalf("create operator session with skewed app host: pair=%+v err=%v", pair.Identity, err)
+			}
+
+			var databaseNow, lastUsedAt, accessExpiry, refreshExpiry, absoluteExpiry time.Time
+			err = db.QueryRowContext(ctx, `SELECT clock_timestamp(),last_used_at,access_expires_at,
+				refresh_expires_at,absolute_expires_at FROM identity_sessions
+				WHERE id=$1 AND actor_id=$2`, pair.Identity.SessionID, synthetic.ActorID).
+				Scan(&databaseNow, &lastUsedAt, &accessExpiry, &refreshExpiry, &absoluteExpiry)
+			if err != nil {
+				t.Fatalf("read canonical session from disposable PostgreSQL: %v", err)
+			}
+			if elapsed := databaseNow.Sub(lastUsedAt); elapsed < 0 || elapsed > 5*time.Second {
+				t.Fatalf("persisted session creation used host rather than PostgreSQL time: delta=%s", elapsed)
+			}
+			expectedAccess, expectedRefresh, valid := calculateSessionExpiries(
+				"operator", lastUsedAt, lastUsedAt.Add(sessionAbsoluteLifetime("operator", true)), true)
+			if !valid || !accessExpiry.Equal(expectedAccess) || !refreshExpiry.Equal(expectedRefresh) ||
+				!absoluteExpiry.Equal(lastUsedAt.Add(sessionAbsoluteLifetime("operator", true))) {
+				t.Fatalf("creation expiries do not match DB-origin lifetimes: valid=%t access=%s refresh=%s absolute=%s",
+					valid, accessExpiry, refreshExpiry, absoluteExpiry)
+			}
+			if !pair.AccessExpiry.Equal(accessExpiry) {
+				t.Fatalf("returned and persisted access expiries disagree: returned=%s DB=%s", pair.AccessExpiry, accessExpiry)
+			}
+			rotated, err := svc.Refresh(ctx, domain.RefreshRequest{
+				RefreshToken: pair.RefreshToken, ClientInstanceId: tc.instance,
+				RefreshRequestId: "creation-skew-" + tc.instance,
+			})
+			if err != nil || rotated.RefreshToken == pair.RefreshToken {
+				t.Fatalf("newly created DB-valid session is not refreshable: %v", err)
+			}
+		})
+	}
+}

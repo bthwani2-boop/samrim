@@ -185,7 +185,13 @@ func (s *Service) createTx(ctx context.Context, tx *sql.Tx, actorID, role, devic
 	if err != nil {
 		return domain.TokenPair{}, err
 	}
-	now := s.now().UTC()
+	// PostgreSQL is authoritative for session creation and refresh expiry.
+	// An application host clock skew must not shorten or extend a new session.
+	var now time.Time
+	if err := tx.QueryRowContext(ctx, "SELECT clock_timestamp()").Scan(&now); err != nil {
+		return domain.TokenPair{}, err
+	}
+	now = now.UTC()
 	absoluteExpiry := now.Add(sessionAbsoluteLifetime(role, s.development))
 	accessExpiry, refreshExpiry, ok := calculateSessionExpiries(role, now, absoluteExpiry, s.development)
 	if !ok {
