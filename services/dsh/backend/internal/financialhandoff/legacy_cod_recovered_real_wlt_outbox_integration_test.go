@@ -42,10 +42,14 @@ func verifyRealLegacyCODOutboxSettlement(t *testing.T, ctx context.Context, db *
 	// This disposable fixture represents an already delivered historical Order
 	// whose original financial handoff was interrupted before WLT settlement.
 	if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_orders
-		(id,client_actor_id,store_id,cart_id,service_city_id,serviceability_store_version,
+		(id,client_actor_id,store_id,cart_id,address_id,address_version,address_text,
+		address_latitude,address_longitude,service_city_id,serviceability_policy_version,
+		serviceability_status,serviceability_store_version,serviceability_address_version,
 		state,total_amount_minor,currency,version,payment_intent_id,payment_method,
 		payment_state,fulfillment_mode,payment_cash_amount_minor)
-		VALUES($1,$2,$3,'proof-legacy-cod-cart',$4,1,'DELIVERED',$5,'YER',2,$6,
+		VALUES($1,$2,$3,'proof-legacy-cod-cart','proof-legacy-cod-address',1,
+		'Isolated historical delivery address',15.3694457,44.1910064,$4,
+		'CITY_SCOPE_V1','SERVICEABLE',1,1,'DELIVERED',$5,'YER',2,$6,
 		'CASH_ON_DELIVERY','REQUIRES_COLLECTION','BTHWANI_CAPTAIN',$5)`,
 		orderID, customer, store, city, cash, paymentID); err != nil {
 		t.Fatal(err)
