@@ -42,18 +42,49 @@ export function ProspectivePartnerApplication(){
  const router=useRouter();
  const styles=useMemo(()=>StyleSheet.create({
   root:{flex:1,backgroundColor:theme.background},
-  inner:{padding:20,gap:12},
-  heading:{fontSize:23,fontWeight:"700" as const,color:theme.color,textAlign:"right" as const},
-  text:{fontSize:15,color:theme.color,textAlign:"right" as const,writingDirection:"rtl" as const},
-  muted:{fontSize:13,color:theme.colorMuted,textAlign:"right" as const},
-  input:{borderWidth:1,borderColor:theme.borderColor,borderRadius:10,padding:12,color:theme.color,textAlign:"right" as const,writingDirection:"rtl" as const,minHeight:48},
-  choice:{borderWidth:1,borderColor:theme.borderColor,borderRadius:10,padding:10},
-  selected:{borderColor:theme.actionBackground,borderWidth:2},
+  inner:{flexGrow:1,paddingHorizontal:16,paddingVertical:24,alignItems:"center",gap:16},
+  hero:{width:"100%",maxWidth:600,alignItems:"center",paddingTop:10,gap:8,marginBottom:3},
+  brand:{flexDirection:"row-reverse",alignItems:"center",gap:9,marginBottom:5},
+  brandMark:{width:36,height:36,borderRadius:12,backgroundColor:theme.actionBackground,alignItems:"center",justifyContent:"center"},
+  brandMarkText:{fontSize:21,fontWeight:"800" as const,color:theme.onAction},
+  brandName:{fontSize:16,fontWeight:"700" as const,color:theme.color},
+  heading:{fontSize:25,fontWeight:"800" as const,color:theme.color,textAlign:"center" as const,writingDirection:"rtl" as const},
+  intro:{fontSize:14,color:theme.colorMuted,textAlign:"center" as const,lineHeight:23,maxWidth:510,writingDirection:"rtl" as const},
+  formCard:{width:"100%",maxWidth:600,backgroundColor:theme.surface,borderWidth:1,borderColor:theme.borderColor,borderRadius:22,padding:20,gap:16,
+   shadowColor:theme.shadowColor,shadowOffset:{width:0,height:8},shadowOpacity:0.08,shadowRadius:20,elevation:3},
+  content:{gap:14},
+  cardTitle:{fontSize:19,fontWeight:"700" as const,color:theme.color,textAlign:"right" as const,writingDirection:"rtl" as const},
+  text:{fontSize:14,color:theme.color,textAlign:"right" as const,writingDirection:"rtl" as const},
+  muted:{fontSize:13,color:theme.colorMuted,textAlign:"right" as const,lineHeight:21,writingDirection:"rtl" as const},
+  label:{fontSize:13,fontWeight:"600" as const,color:theme.color,textAlign:"right" as const,writingDirection:"rtl" as const},
+  input:{backgroundColor:theme.surfaceInset,borderWidth:1,borderColor:theme.borderColor,borderRadius:12,paddingHorizontal:13,paddingVertical:11,
+   color:theme.color,textAlign:"right" as const,writingDirection:"rtl" as const,minHeight:48,fontSize:15},
+  choiceRow:{flexDirection:"row-reverse",flexWrap:"wrap" as const,justifyContent:"flex-start" as const,gap:8},
+  choice:{borderWidth:1,borderColor:theme.borderColor,borderRadius:12,paddingHorizontal:14,paddingVertical:11,backgroundColor:theme.surfaceInset,minHeight:43,minWidth:90,justifyContent:"center" as const},
+  selected:{borderColor:theme.actionBackground,backgroundColor:theme.surfaceRaised,borderWidth:2},
+  choiceText:{fontSize:13,color:theme.color,textAlign:"center" as const,writingDirection:"rtl" as const},
+  selectedText:{fontWeight:"700" as const,color:theme.color},
+  segment:{flexDirection:"row-reverse",borderRadius:14,padding:4,backgroundColor:theme.surfaceInset,gap:6},
+  segmentButton:{flex:1,alignItems:"center" as const,justifyContent:"center" as const,paddingVertical:12,borderRadius:11},
+  segmentSelected:{backgroundColor:theme.surface,borderColor:theme.actionBackground,borderWidth:1},
+  segmentLabel:{fontSize:13,color:theme.colorMuted,textAlign:"center" as const},
+  segmentLabelSelected:{color:theme.color,fontWeight:"700" as const},
+  stepPill:{alignSelf:"flex-end" as const,borderRadius:20,backgroundColor:theme.surfaceInset,paddingHorizontal:12,paddingVertical:6},
+  stepLabel:{fontSize:12,color:theme.color,fontWeight:"600" as const},
+  section:{gap:10,paddingVertical:8},
+  statusPanel:{backgroundColor:theme.surfaceInset,borderRadius:14,padding:14,gap:7},
+  statusTitle:{fontSize:16,fontWeight:"700" as const,color:theme.color,textAlign:"right" as const},
+  notice:{color:theme.color,textAlign:"right" as const,backgroundColor:theme.surfaceRaised,borderRadius:12,padding:12,fontSize:13},
+  error:{color:theme.dangerText,backgroundColor:theme.dangerSoft,borderRadius:12,padding:12,fontSize:13,textAlign:"right" as const,writingDirection:"rtl" as const},
+  footer:{width:"100%",maxWidth:600,gap:8,alignItems:"center" as const,paddingBottom:8},
+  footerText:{fontSize:12,color:theme.colorMuted,textAlign:"center" as const,lineHeight:20},
  }),[theme]);
  const [session,setSession]=useState(currentProspectSession());
  const [restoring,setRestoring]=useState(true);
  const [mode,setMode]=useState<"login"|"register">("register");
  const [phone,setPhone]=useState("");
+ const [verifiedContactPhone,setVerifiedContactPhone]=useState("");
+ const [manualContactFallback,setManualContactFallback]=useState(false);
  const [password,setPassword]=useState("");
  const [passwordConfirmation,setPasswordConfirmation]=useState("");
  const [code,setCode]=useState("");
@@ -65,6 +96,7 @@ export function ProspectivePartnerApplication(){
  const [caseValue,setCaseValue]=useState<JoiningCaseResponse|null>(null);
  const [hasRead,setHasRead]=useState(false);
  const [intakeStep,setIntakeStep]=useState<"basics"|"details">("basics");
+ const [expandedRegistry,setExpandedRegistry]=useState<"city"|"vertical"|"storeType"|null>(null);
  const [cities,setCities]=useState<readonly ServiceCity[]>([]);
  const [verticals,setVerticals]=useState<readonly CommerceVertical[]>([]);
  const [types,setTypes]=useState<readonly CommercialStoreType[]>([]);
@@ -105,7 +137,9 @@ export function ProspectivePartnerApplication(){
    const nextScope=value.kind==="authenticated"?`${value.identity.subject}:${value.identity.sessionId}`:"";
    if(scopeRef.current&&scopeRef.current!==nextScope){
     setCaseValue(null);setHasRead(false);setIntakeStep("basics");setLoading(false);
-    if(!nextScope)setPhone("");
+    setVerifiedContactPhone("");setManualContactFallback(false);setPhone("");
+    setOwnerName("");setStoreName("");setAddress("");setProofNumber("");setLat("");setLng("");
+    setError("");setNotice("");setPassword("");setPasswordConfirmation("");setCode("");setProofRequested(false);
    }
    scopeRef.current=nextScope;
    setSession(value);
@@ -119,6 +153,19 @@ export function ProspectivePartnerApplication(){
   setLoading(true);setError("");
   try{
    const token=await prospectAccessToken();
+   // During a rolling local upgrade the older DSH may not yet serve this
+   // read-only contact endpoint. Preserve the existing verified-phone input
+   // only for that exact 404; do not bypass actual identity errors.
+   let contactPhone="";
+   try{
+    const contact=await api().readSelfServiceApplicantContact(token);
+    contactPhone=contact.contactPhoneE164;
+   }catch(cause){
+    if(!(cause && typeof cause==="object" && (cause as {status?:number}).status===404))throw cause;
+   }
+   if(!sameSession())return;
+   setVerifiedContactPhone(contactPhone);setManualContactFallback(!contactPhone);
+   if(contactPhone)setPhone(contactPhone);
    const result=await api().readSelfServiceJoiningApplication(token);
    if(!sameSession())return;
    if(result.case.origin!=="self_service")throw new Error("CASE_ORIGIN_MISMATCH");
@@ -185,14 +232,15 @@ export function ProspectivePartnerApplication(){
  }
  async function submit(){
   if(busy||!sameSession())return;
+  const canonicalContact=manualContactFallback?normalizeYemenPhoneE164(phone):verifiedContactPhone;
   setError("");setNotice("");
   const latitude=Number(toAsciiDigits(lat));const longitude=Number(toAsciiDigits(lng));
-  if(!/^\+[1-9]\d{7,14}$/.test(normalizeYemenPhoneE164(phone))||!ownerName.trim()||!storeName.trim()||!address.trim()||!city||!vertical||!storeType||!proofNumber.trim()||modes.length===0||
+  if(!/^\+[1-9]\d{7,14}$/.test(canonicalContact)||!ownerName.trim()||!storeName.trim()||!address.trim()||!city||!vertical||!storeType||!proofNumber.trim()||modes.length===0||
      !lat.trim()||!lng.trim()||!Number.isFinite(latitude)||!Number.isFinite(longitude)){
    setError("أكمل البيانات الأساسية واختر المدينة والمجال ونوع المتجر وطريقة التوصيل وحدد موقعه.");return;
   }
   const input:CreateJoiningCaseRequest={
-   contactPhoneE164:normalizeYemenPhoneE164(phone),ownerFullName:ownerName.trim(),businessName:storeName.trim(),firstStoreName:storeName.trim(),
+   contactPhoneE164:canonicalContact,ownerFullName:ownerName.trim(),businessName:storeName.trim(),firstStoreName:storeName.trim(),
    walletProviderKey:"",firstStoreAddress:address.trim(),serviceCityId:city,firstStoreVerticalId:vertical,firstStoreCommercialTypeId:storeType,
    firstStoreLatitude:latitude,firstStoreLongitude:longitude,firstStoreWorkingHours:{intervals:[]},
    firstStoreProofType:proofType,firstStoreProofNumber:proofNumber.trim(),firstStoreFulfillmentModes:modes,
@@ -215,27 +263,47 @@ export function ProspectivePartnerApplication(){
   finally{if(sameSession())setBusy(false)}
  }
  const field=(label:string,value:string,set:(value:string)=>void,secure=false,keyboard:"default"|"phone-pad"|"numeric"|"numbers-and-punctuation"="default")=>
-  <View style={{gap:4}}><Text style={styles.text}>{label}</Text><TextInput accessibilityLabel={label} style={styles.input} value={value} onChangeText={set} editable={!busy} keyboardType={keyboard} secureTextEntry={secure} autoCapitalize="none"/></View>;
+  <View style={{gap:6}}><Text style={styles.label}>{label}</Text><TextInput accessibilityLabel={label} style={styles.input} value={value} onChangeText={set} editable={!busy} keyboardType={keyboard} secureTextEntry={secure} autoCapitalize={secure||keyboard==="phone-pad"?"none":"sentences"}/></View>;
  const select=<T extends string>(label:string,items:readonly {id:T;label:string}[],value:T,set:(id:T)=>void)=>
-  <View style={{gap:5}}><Text style={styles.text}>{label}</Text><View style={{gap:5}}>{items.map(item=><Pressable accessibilityRole="radio" accessibilityState={{checked:value===item.id,disabled:busy}} key={item.id} onPress={()=>set(item.id)} disabled={busy} style={[styles.choice,value===item.id&&styles.selected]}><Text style={styles.text}>{item.label}</Text></Pressable>)}</View></View>;
+  <View style={{gap:8}}><Text style={styles.label}>{label}</Text><View style={styles.choiceRow}>{items.map(item=><Pressable accessibilityRole="radio" accessibilityState={{checked:value===item.id,disabled:busy}} key={item.id} onPress={()=>set(item.id)} disabled={busy} style={[styles.choice,value===item.id&&styles.selected]}><Text style={[styles.choiceText,value===item.id&&styles.selectedText]}>{item.label}</Text></Pressable>)}</View></View>;
+ const registrySelect=<T extends string>(key:"city"|"vertical"|"storeType",label:string,items:readonly {id:T;label:string}[],value:T,set:(id:T)=>void)=>{
+  const selected=items.find(item=>item.id===value);
+  const expandable=items.length>1;
+  return <View style={{gap:5}}>
+   {expandable?<Pressable accessibilityRole="button" accessibilityState={{expanded:expandedRegistry===key,disabled:busy}} disabled={busy} onPress={()=>setExpandedRegistry(current=>current===key?null:key)} style={styles.choice}>
+    <Text style={styles.text}>{label}: {selected?.label||"اضغط للاختيار"} {expandedRegistry===key?"▴":"▾"}</Text>
+   </Pressable>:<Text style={styles.text}>{label}: {selected?.label||"لا توجد خيارات متاحة"}</Text>}
+   {expandable&&expandedRegistry===key?<ScrollView style={{maxHeight:230}} nestedScrollEnabled keyboardShouldPersistTaps="handled">{select(label,items,value,next=>{set(next);setExpandedRegistry(null)})}</ScrollView>:null}
+  </View>;
+ };
  return <ScrollView style={styles.root} contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled">
-  <Text style={styles.heading}>طلب الانضمام إلى بثواني</Text>
-  <Text style={styles.muted}>يمكن التقديم دون ميداني. يُتحقق من هاتفك أولاً؛ ولا يمنح الطلب صلاحية إدارة متجر حتى موافقة قسم الشركاء.</Text>
-  <BthwaniButton label="العودة لتسجيل دخول الشريك" onPress={()=>router.replace("/")} variant="secondary"/>
+  <View style={styles.hero}>
+   <View style={styles.brand}><View style={styles.brandMark}><Text style={styles.brandMarkText}>ب</Text></View><Text style={styles.brandName}>بثواني للشركاء</Text></View>
+   <Text style={styles.heading}>طلب الانضمام إلى بثواني</Text>
+   <Text style={styles.intro}>سجّل برقم جوالك، وأضف بيانات متجرك بخطوات بسيطة. نراجع الطلب قبل تفعيل إدارة المتجر.</Text>
+  </View>
+  <View style={styles.formCard}>
   {restoring||loading?<ActivityIndicator accessibilityLabel="جارٍ التحقق من بيانات الطلب"/>:null}
-  {!authenticated&&!restoring?<View style={{gap:10}}>
-   {select("لدي حساب موثق أم أريد التسجيل؟",[{id:"register" as const,label:"تسجيل رقم جديد"},{id:"login" as const,label:"الدخول بحساب موجود"}],mode,(next)=>{setMode(next);setProofRequested(false);setCode("");setError("");})}
-   {field("رقم الهاتف",phone,(next)=>{setPhone(next);setProofRequested(false);setCode("");},false,"phone-pad")}
-   {mode==="register"?<><BthwaniButton label="إرسال رمز التحقق" onPress={()=>void requestProof()} disabled={busy}/>{proofRequested?field("رمز التحقق",code,setCode,false,"numeric"):null}</>:null}
-   {field("كلمة المرور",password,setPassword,true)}
-   {mode==="register"?field("تأكيد كلمة المرور",passwordConfirmation,setPasswordConfirmation,true):null}
-   <BthwaniButton label={busy?"جارٍ التحقق…":mode==="register"?"إثبات رقم الهاتف والمتابعة":"دخول المتقدم"} onPress={()=>void authenticate()} disabled={busy|| (mode==="register"&&!proofRequested)}/>
+  {!authenticated&&!restoring?<View style={styles.content}>
+   <Text style={styles.cardTitle}>ابدأ الآن</Text>
+   <Text style={styles.muted}>لديك حساب عميل بثواني؟ استخدم الرقم نفسه، لا تحتاج حسابًا جديدًا.</Text>
+   <View style={styles.segment} accessibilityRole="radiogroup">
+    {([{id:"register",label:"حساب جديد"},{id:"login",label:"لدي حساب"}] as const).map(item=>
+     <Pressable key={item.id} disabled={busy} accessibilityRole="radio" accessibilityState={{checked:mode===item.id,disabled:busy}} onPress={()=>{setMode(item.id);setProofRequested(false);setCode("");setPassword("");setPasswordConfirmation("");setError("")}} style={[styles.segmentButton,mode===item.id&&styles.segmentSelected]}>
+      <Text style={[styles.segmentLabel,mode===item.id&&styles.segmentLabelSelected]}>{item.label}</Text>
+     </Pressable>)}
+   </View>
+   {field("رقم الجوال",phone,(next)=>{setPhone(next);setProofRequested(false);setCode("")},false,"phone-pad")}
+   {mode==="register"?<BthwaniButton label={proofRequested?"إعادة إرسال رمز التحقق":"إرسال رمز التحقق"} onPress={()=>void requestProof()} disabled={busy}/>:null}
+   {mode==="register"&&proofRequested?field("رمز التحقق",code,setCode,false,"numeric"):null}
+   {mode==="login"||proofRequested?field("كلمة المرور",password,setPassword,true):null}
+   {mode==="register"&&proofRequested?field("تأكيد كلمة المرور",passwordConfirmation,setPasswordConfirmation,true):null}
+   <BthwaniButton label={busy?"جارٍ التحقق…":mode==="register"?"تأكيد الرقم والمتابعة":"الدخول إلى طلبي"} onPress={()=>void authenticate()} disabled={busy||(mode==="register"&&!proofRequested)}/>
   </View>:null}
   {authenticated&&!caseValue&&!hasRead&&!loading?<View style={{gap:8}}><Text accessibilityRole="alert" style={styles.muted}>تعذر التحقق من وجود طلب سابق. لن يتاح إنشاء طلب آخر قبل قراءة حالتك من المنصة.</Text><BthwaniButton label="إعادة التحقق من طلب الانضمام" variant="secondary" onPress={()=>void load()} disabled={busy}/></View>:null}
-  {authenticated&&caseValue?<View style={{gap:9}}>
-   <Text style={styles.heading}>طلبك الحالي</Text>
-   <Text style={styles.text}>المتجر: {caseValue.case.firstStoreName}</Text>
-   <Text style={styles.text}>الحالة: {joiningCaseStateLabel(caseValue.case.state)}</Text>
+  {authenticated&&caseValue?<View style={styles.content}>
+   <Text style={styles.cardTitle}>متابعة طلبك</Text>
+   <View style={styles.statusPanel}><Text style={styles.statusTitle}>{caseValue.case.firstStoreName}</Text><Text style={styles.muted}>حالة الطلب: {joiningCaseStateLabel(caseValue.case.state)}</Text></View>
    {caseValue.case.state==="needs_correction"?<>
     <Text accessibilityRole="alert" style={styles.muted}>أُعيد طلبك للتصحيح. عدّل بيانات طلبك هنا باستخدام حسابك الموثق نفسه؛ لا تحتاج إلى دور الشريك قبل اعتماد الطلب.</Text>
     {caseValue.case.correctionReason?<Text style={styles.text}>سبب التصحيح: {caseValue.case.correctionReason}</Text>:null}
@@ -260,26 +328,27 @@ export function ProspectivePartnerApplication(){
    :<Text style={styles.muted}>طلبك محفوظ كمسودة وينتظر خطوة قبول أولية من قسم الشركاء. لا يلزم تسجيل طلب جديد.</Text>}
    <BthwaniButton label="تحديث حالة الطلب" variant="secondary" onPress={()=>void load()} disabled={loading}/>
   </View>:null}
-  {authenticated&&!caseValue&&hasRead&&!loading?<View style={{gap:11}}>
+  {authenticated&&!caseValue&&hasRead&&!loading?<View style={styles.content}>
+   <View style={styles.stepPill}><Text style={styles.stepLabel}>{intakeStep==="basics"?"الخطوة ١ من ٢":"الخطوة ٢ من ٢"}</Text></View>
    {intakeStep==="basics"?<>
-   <Text style={styles.heading}>الخطوة ١ من ٢ · معلومات النشاط</Text>
-   <Text style={styles.muted}>أدخل بيانات صاحب النشاط والمتجر؛ يمكنك مراجعتها قبل الإرسال.</Text>
-   {field("رقم الهاتف المرتبط بحسابك",phone,setPhone,false,"phone-pad")}
-   <Text style={styles.muted}>اكتب نفس الرقم الذي سجلت به الدخول؛ ستتحقق Identity من تطابقه قبل إنشاء الطلب.</Text>
+   <Text style={styles.cardTitle}>عرّفنا بمتجرك</Text>
+   <Text style={styles.muted}>بيانات أساسية لإرسال طلبك إلى قسم الشراكات.</Text>
+   {manualContactFallback?field("رقم الهاتف المرتبط بحسابك",phone,setPhone,false,"phone-pad"):<View style={{gap:4}}><Text style={styles.text}>رقم جوالك الموثق</Text><Text selectable style={styles.text}>{verifiedContactPhone||"جارٍ التحقق من رقم الحساب"}</Text></View>}
+   <Text style={styles.muted}>{manualContactFallback?"أدخل الرقم الذي سجلت به الدخول؛ سيطابقه النظام مع هويتك.":"يُستخدم رقم حسابك الموثق تلقائيًا، دون إدخاله مرة ثانية."}</Text>
    {field("الاسم الكامل لصاحب النشاط",ownerName,setOwnerName)}
    {field("اسم النشاط والمتجر",storeName,setStoreName)}
    {field("عنوان المتجر",address,setAddress)}
-   {select("مدينة الخدمة",cities.map(c=>({id:c.id,label:c.displayNameAr})),city,setCity)}
-   {select("المجال التجاري",verticals.map(v=>({id:v.id,label:v.nameAr})),vertical,setVertical)}
-   {select("نوع المتجر",types.map(t=>({id:t.id,label:t.nameAr})),storeType,setStoreType)}
+   {registrySelect("city","مدينة الخدمة",cities.map(c=>({id:c.id,label:c.displayNameAr})),city,setCity)}
+   {registrySelect("vertical","المجال التجاري",verticals.map(v=>({id:v.id,label:v.nameAr})),vertical,setVertical)}
+   {registrySelect("storeType","نوع المتجر",types.map(t=>({id:t.id,label:t.nameAr})),storeType,setStoreType)}
    <BthwaniButton label="متابعة إلى الموقع والإثبات" disabled={busy||loading} onPress={()=>{
-    if(!/^\+[1-9]\d{7,14}$/.test(normalizeYemenPhoneE164(phone))||ownerName.trim().length<2||storeName.trim().length<2||address.trim().length<4||!city||!vertical||!storeType){
+    if(!/^\+[1-9]\d{7,14}$/.test(manualContactFallback?normalizeYemenPhoneE164(phone):verifiedContactPhone)||ownerName.trim().length<2||storeName.trim().length<2||address.trim().length<4||!city||!vertical||!storeType){
      setError("أدخل رقم هاتف حسابك واسم المالك والنشاط والعنوان، وحدد مدينة الخدمة والمجال ونوع المتجر.");return;
     }
     setError("");setIntakeStep("details");
    }}/>
    </>:<>
-   <Text style={styles.heading}>الخطوة ٢ من ٢ · الموقع والإثبات</Text>
+   <Text style={styles.cardTitle}>أكمل الموقع والإثبات</Text>
    <BthwaniButton label="العودة إلى معلومات النشاط" variant="secondary" onPress={()=>{setError("");setIntakeStep("basics")}} disabled={busy}/>
    <View style={{gap:8}}>
     <Text style={styles.text}>موقع المتجر</Text>
@@ -302,8 +371,13 @@ export function ProspectivePartnerApplication(){
    <BthwaniButton label="إرسال طلب انضمام الشريك" disabled={busy} onPress={()=>void submit()}/>
    </>}
   </View>:null}
-  {authenticated?<BthwaniButton label="الخروج من حساب المتقدم" variant="secondary" onPress={()=>void logoutProspect()} disabled={busy}/>:null}
-  {notice?<Text accessibilityRole="text" style={styles.muted}>{notice}</Text>:null}
-  {error?<Text accessibilityRole="alert" style={styles.text}>{error}</Text>:null}
+  {notice?<Text accessibilityRole="text" style={styles.notice}>{notice}</Text>:null}
+  {error?<Text accessibilityRole="alert" style={styles.error}>{error}</Text>:null}
+  </View>
+  <View style={styles.footer}>
+   {authenticated?<BthwaniButton label="تسجيل الخروج من حساب المتقدم" variant="secondary" onPress={()=>void logoutProspect()} disabled={busy}/>:null}
+   <BthwaniButton label="العودة لتسجيل دخول الشريك" onPress={()=>router.replace("/")} variant="secondary"/>
+   <Text style={styles.footerText}>بياناتك محفوظة ضمن طلب الانضمام، ولا يُنشر المتجر قبل استكمال الاعتماد والجاهزية.</Text>
+  </View>
  </ScrollView>;
 }

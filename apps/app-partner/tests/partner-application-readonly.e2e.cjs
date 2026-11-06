@@ -25,8 +25,9 @@ async function audit() {
             width: innerWidth,
             overflow: document.documentElement.scrollWidth > innerWidth + 1,
             title: words.includes("طلب الانضمام إلى بثواني"),
-            registerMode: words.includes("تسجيل رقم جديد"),
-            loginMode: words.includes("الدخول بحساب موجود"),
+            registerMode: words.includes("حساب جديد"),
+            loginMode: words.includes("لدي حساب"),
+            cardTitle: words.includes("ابدأ الآن"),
             requiresDocumentPhoto: words.includes("أرفق صورة الوثيقة"),
             runtimeError: /(TransformError|Internal Server Error|Unable to resolve)/.test(words)
           };
@@ -35,10 +36,37 @@ async function audit() {
         assert.equal(report.pathname, "/apply");
         assert.equal(report.rtl, "rtl");
         assert.equal(report.title, true);
+        assert.equal(report.cardTitle, true);
+        assert.equal(report.registerMode, true);
+        assert.equal(report.loginMode, true);
         assert.equal(report.overflow, false);
         assert.equal(report.requiresDocumentPhoto, false);
         assert.equal(report.runtimeError, false);
       }
+      if (process.env.BTHWANI_CAPTURE_SIGNUP_QA === "1") {
+        const dir = require("node:os").tmpdir();
+        const join = require("node:path").join;
+        const mobileScreenshot = join(dir, "BTHWANI_SIGNUP_QA_39_MOBILE.png");
+        await page.screenshot({ path: mobileScreenshot, fullPage: true });
+        await page.setViewportSize({width:1280,height:840});
+        const desktopScreenshot = join(dir, "BTHWANI_SIGNUP_QA_39_DESKTOP.png");
+        await page.screenshot({ path: desktopScreenshot, fullPage: true });
+        await page.setViewportSize({width:390,height:844});
+        await page.emulateMedia({colorScheme:"dark"});
+        await page.waitForTimeout(350);
+        const darkScreenshot = join(dir, "BTHWANI_SIGNUP_QA_39_DARK.png");
+        await page.screenshot({path:darkScreenshot,fullPage:true});
+        await page.emulateMedia({colorScheme:"light"});
+        console.log("PARTNER_SIGNUP_SCREENSHOTS=" + mobileScreenshot + ";" + desktopScreenshot + ";" + darkScreenshot);
+      }
+      const cardBox = await page.getByText("ابدأ الآن", { exact: true }).locator("..").boundingBox();
+      assert.ok(cardBox && cardBox.width < 600 && cardBox.width > 250, "SIGNUP_CARD_NOT_CONSTRAINED");
+      assert.equal(await page.locator('input[type="password"]').count(), 0, "PREMATURE_PASSWORD_FIELDS");
+      await page.getByRole("radio", { name: "لدي حساب" }).click();
+      assert.equal(await page.locator('input[type="password"]').count(), 1, "LOGIN_PASSWORD_FIELD_MISSING");
+      await page.getByRole("radio", { name: "حساب جديد" }).click();
+      assert.equal(await page.locator('input[type="password"]').count(), 0, "REGISTER_PASSWORD_PREMATURE");
+      console.log("PARTNER_SIGNUP_FLOW_LAYOUT=PASS");
       await page.getByRole("button", { name: "العودة لتسجيل دخول الشريك" }).click();
       await page.waitForURL(url => new URL(url).pathname === "/", { timeout: 15000 });
       console.log("PARTNER_APPLY_RETURN_LOGIN=PASS");
