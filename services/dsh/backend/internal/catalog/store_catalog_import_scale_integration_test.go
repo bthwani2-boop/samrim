@@ -188,4 +188,75 @@ func TestStoreCatalogImport5000RowsPartialCommitReadback(t *testing.T) {
 		t.Fatalf("duplicate writer effect after commit replay: offers=%d products=%d audit=%d", offers, products, audits)
 	}
 	t.Log("5,000-row preview, two real StoreOffer commits, 4,998 rejected rows, actor rejection and replay-safe persistent readback PASS")
+
+	// The mixed-validity workload does not prove that 5,000 valid products
+	// can actually be created. Exercise the full accepted-row boundary too.
+	var validData bytes.Buffer
+	validData.WriteString("name,price\n")
+	for n := 1; n <= MaxStoreCatalogImportRows; n++ {
+		fmt.Fprintf(&validData, "Full Scale Product %d,%d\n", n, n+100)
+	}
+	fullStart := time.Now()
+	fullPreview, err := service.previewStoreCatalogImport(ctx, actorID, "PARTNER", storeID, "", "full-scale.csv",
+		validData.Bytes(), "full-scale-preview", "full-scale-correlation")
+	if err != nil {
+		t.Fatalf("preview 5,000 valid product rows: %v", err)
+	}
+	if len(fullPreview.Items) != MaxStoreCatalogImportRows ||
+		fullPreview.Run.AcceptedCount != MaxStoreCatalogImportRows || fullPreview.Run.ConflictCount != 0 {
+		t.Fatalf("valid full-scale preview count=%d accepted=%d conflicts=%d",
+			len(fullPreview.Items), fullPreview.Run.AcceptedCount, fullPreview.Run.ConflictCount)
+	}
+	previewDuration := time.Since(fullStart)
+	fullCommit, err := service.commitStoreCatalogImport(ctx, actorID, "PARTNER", storeID,
+		fullPreview.Run.ID, "full-scale-commit", "full-scale-correlation")
+	if err != nil {
+		t.Fatalf("commit 5,000 valid product rows: %v", err)
+	}
+	if fullCommit.Run.State != "committed" || len(fullCommit.Items) != MaxStoreCatalogImportRows {
+		t.Fatalf("valid full-scale commit state=%s count=%d", fullCommit.Run.State, len(fullCommit.Items))
+	}
+	for _, item := range fullCommit.Items {
+		if item.Classification != "IMPORTED" || !item.Committed || item.ProductID == nil || item.VariantID == nil {
+			t.Fatalf("valid product row %d was not committed: classification=%s error=%v", item.RowNumber, item.Classification, item.ErrorCode)
+		}
+	}
+	persistedFull, err := postgres.ReadCatalogImportRun(ctx, db, fullPreview.Run.ID)
+	if err != nil || persistedFull.Run.State != "committed" || len(persistedFull.Items) != MaxStoreCatalogImportRows {
+		t.Fatalf("canonical 5,000-valid-row readback state=%s count=%d err=%v",
+			persistedFull.Run.State, len(persistedFull.Items), err)
+	}
+	for _, index := range []int{0, MaxStoreCatalogImportRows / 2, MaxStoreCatalogImportRows - 1} {
+		item := persistedFull.Items[index]
+		product, readErr := postgres.ReadCatalogProduct(ctx, db, *item.ProductID)
+		if readErr != nil || product.StoreID != storeID || product.CanonicalName != fmt.Sprintf("Full Scale Product %d", index+1) {
+			t.Fatalf("canonical full-scale Product %d mismatch: %v", index, readErr)
+		}
+		var offerID string
+		if err := db.QueryRowContext(ctx, "SELECT id FROM dsh.catalog_store_offers WHERE store_id=$1 AND variant_id=$2", storeID, *item.VariantID).Scan(&offerID); err != nil {
+			t.Fatalf("canonical full-scale StoreOffer %d missing: %v", index, err)
+		}
+		offer, readErr := postgres.ReadCatalogOffer(ctx, db, offerID)
+		if readErr != nil || offer.StoreID != storeID || offer.PriceMinor != int64(index+101) {
+			t.Fatalf("canonical full-scale StoreOffer %d price/scope mismatch: %v", index, readErr)
+		}
+	}
+	replayedFull, err := service.commitStoreCatalogImport(ctx, actorID, "PARTNER", storeID,
+		fullPreview.Run.ID, "full-scale-commit", "full-scale-replay-correlation")
+	if err != nil || !replayedFull.Replayed {
+		t.Fatalf("full-scale retry must replay without creating new offers: replay=%v err=%v", replayedFull.Replayed, err)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM dsh.catalog_store_offers WHERE store_id=$1", storeID).Scan(&offers); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM dsh.catalog_products WHERE store_id=$1", storeID).Scan(&products); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM dsh.catalog_import_audit WHERE run_id=$1", fullPreview.Run.ID).Scan(&audits); err != nil {
+		t.Fatal(err)
+	}
+	if offers != MaxStoreCatalogImportRows+2 || products != MaxStoreCatalogImportRows+2 || audits != 2 {
+		t.Fatalf("full-scale replay mutated data: offers=%d products=%d runAudit=%d", offers, products, audits)
+	}
+	t.Logf("FULL_VALID_IMPORT_5000=PASS preview=%s commit_and_readback=%s offers=%d", previewDuration, time.Since(fullStart)-previewDuration, offers)
 }
