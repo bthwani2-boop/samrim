@@ -234,8 +234,15 @@ export function ProspectivePartnerApplication(){
   try{await requestProspectRegistration(phone.trim());setProofRequested(true);setNotice("أدخل رمز التحقق المرسل إلى رقمك.")}catch(cause){setError(cause instanceof Error?cause.message:"تعذر طلب الرمز")}finally{setBusy(false)}
  }
  async function submit(){
-  if(busy||!sameSession())return;
+  const initiating=currentProspectSession();
+  if(busy||initiating.kind!=="authenticated"||!sameSession())return;
+  const initiatingScope=`${initiating.identity.subject}:${initiating.identity.sessionId}`;
   const submissionEpoch=++submissionEpochRef.current;
+  const stillInitiating=()=>{
+   const current=currentProspectSession();
+   return submissionEpochRef.current===submissionEpoch&&sameSession()&&current.kind==="authenticated"&&
+    `${current.identity.subject}:${current.identity.sessionId}`===initiatingScope;
+  };
   const canonicalContact=manualContactFallback?normalizeYemenPhoneE164(phone):verifiedContactPhone;
   setError("");setNotice("");
   const latitude=Number(toAsciiDigits(lat));const longitude=Number(toAsciiDigits(lng));
@@ -252,9 +259,9 @@ export function ProspectivePartnerApplication(){
   setBusy(true);
   try{
    const token=await prospectAccessToken();
-   const id=currentProspectSession();
-   if(id.kind!=="authenticated")throw new Error("IDENTITY_REQUIRED");
-   const digest=await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256,JSON.stringify([id.identity.subject,input]));
+   if(!stillInitiating())throw new Error("APPLICANT_SESSION_CHANGED");
+   const digest=await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256,JSON.stringify([initiating.identity.subject,input]));
+   if(!stillInitiating())throw new Error("APPLICANT_SESSION_CHANGED");
    const key=`self_join_${digest}`;
    const result=await api().createSelfServiceJoiningApplication(token,input,key,`self_corr_${digest}`);
    if(!sameSession())return;
