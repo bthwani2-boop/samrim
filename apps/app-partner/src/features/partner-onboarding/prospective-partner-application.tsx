@@ -254,8 +254,8 @@ export function ProspectivePartnerApplication(){
      }}
     />
    </>:caseValue.case.state==="approved"?<>
-    <Text style={styles.muted}>اعتمد قسم الشركاء طلبك. ادخل إلى حساب الشريك بنفس رقم الهاتف، ثم أكمل بيانات المتجر والكتالوج والاتفاق التجاري قبل طلب النشر.</Text>
-    <BthwaniButton label="الانتقال إلى حساب الشريك لإكمال المتجر" onPress={()=>router.replace("/")} />
+    <Text style={styles.muted}>اعتمد قسم الشركاء طلبك. استخدم رقمك نفسه في دخول الشريك؛ إن كانت هذه أول مرة فاختر تفعيل الحساب برمز التحقق وتعيين كلمة مرور الشريك. بعدها أكمل تجهيز المتجر قبل طلب النشر.</Text>
+    <BthwaniButton label="تفعيل حساب الشريك أو تسجيل الدخول" onPress={()=>router.replace("/")} />
    </>:caseValue.case.state==="submitted"?<Text style={styles.muted}>طلبك قيد مراجعة قسم الشركاء. لا ترسل طلبًا ثانيًا؛ ستظهر هنا حالة المراجعة والتصحيح عند تحديثها.</Text>
    :<Text style={styles.muted}>طلبك محفوظ كمسودة وينتظر خطوة قبول أولية من قسم الشركاء. لا يلزم تسجيل طلب جديد.</Text>}
    <BthwaniButton label="تحديث حالة الطلب" variant="secondary" onPress={()=>void load()} disabled={loading}/>
