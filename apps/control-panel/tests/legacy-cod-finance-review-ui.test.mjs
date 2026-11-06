@@ -8,6 +8,8 @@ const ui = readFileSync(new URL("src/features/finance/captain-cod-legacy-recover
 const custody = readFileSync(new URL("src/features/finance/cash-custody-workspace.tsx", root), "utf8");
 const submit = readFileSync(new URL("app/api/finance/captain-cod-legacy-reviews/route.ts", root), "utf8");
 const approve = readFileSync(new URL("app/api/finance/captain-cod-legacy-reviews/[reviewId]/approve/route.ts", root), "utf8");
+const evidenceRoute = readFileSync(new URL("app/api/finance/evidence/route.ts", root), "utf8");
+const financeClient = readFileSync(new URL("src/server/dsh/finance-bff.ts", root), "utf8");
 
 test("historical COD review is reachable from the existing Finance cash custody screen", () => {
   assert.match(custody, /<CaptainCODLegacyRecoveryWorkspace key=\{operatorActorId \+ ":" \+ legacyPaymentId\}/);
@@ -16,6 +18,17 @@ test("historical COD review is reachable from the existing Finance cash custody 
   assert.match(ui, /\/api\/finance\/captain-cod-legacy-reviews\/by-payment\//);
   assert.match(ui, /\/api\/finance\/captain-cod-legacy-reviews"/);
   assert.match(ui, /CAPTAIN_COD_LEGACY_RECOVERY/);
+});
+
+test("historical COD evidence is admitted at both the operator API and DSH BFF boundaries", () => {
+  const uploadGuard = financeClient.split("export async function uploadOperatorFinanceEvidence(")[1]
+    ?.split("validateAttributedMutationContext(context)")[0];
+  assert.ok(uploadGuard, "the financial evidence upload validator must exist");
+  assert.match(evidenceRoute, /purpose !== "CAPTAIN_COD_LEGACY_RECOVERY"/);
+  assert.match(uploadGuard, /purpose === "CAPTAIN_COD_LEGACY_RECOVERY"/,
+    "the DSH BFF must not reject a purpose already admitted by the operator evidence API");
+  assert.match(evidenceRoute, /identity\.permissions\?\.includes\("finance"\)/);
+  assert.match(evidenceRoute, /verifySameOrigin\(request\)/);
 });
 
 test("a separate Finance actor must explicitly approve the existing review", () => {
