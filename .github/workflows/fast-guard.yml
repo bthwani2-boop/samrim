@@ -148,6 +148,14 @@ jobs:
           export WLT_TEST_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/wlt_proof?sslmode=disable"
           financial_go_proof services/wlt/backend ./internal/storage/postgres -run "^(TestFundedPromotionPaymentPersistedReplayHasOneFrozenSplit|TestFundedStoreCashCollectionPostsPlatformSubsidyExactlyOnce|TestFieldAcquisitionEntitlementPostgresLifecycle|TestConcurrentFieldAcquisitionReplayHasOneLedgerEffect|TestPartnerStoreFinanceAndRecipientSettlementLifecycle|TestSettlementExportDownloadBlocksRevokedRecipient|TestCaptainWalletBalanceLockSerializesTransactions|TestCaptainCODCashDebitIsExactlyOnce|TestConcurrentCaptainOffersYieldOneCODHoldAndReleasableWinner|TestSettlementIntakeWithoutDestinationPreservesFieldLedger|TestSettlementIntakePartnerStoreScopeWithoutHold|TestStoreCommercialAgreementLifecycleAndOrderSnapshots|TestSelfServiceZeroCommissionAgreementAllFulfillmentModes|TestPaymentRetryLostResponseAndParallelWorkers|TestConcurrentMixedPaymentCollectionAndCancellationHasSingleWinner|TestLegacyCODReviewRequiresIndependentFundedEvidenceAndSettlesExactlyOnce)$" -count=1 -timeout 7m
           unset WLT_TEST_DATABASE_URL
+          # Preserve historical COD, allocation, evidence and wallet postings
+          # across the v60 -> v61 upgrade in a separate pristine CI database.
+          docker exec "$container" psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c "CREATE DATABASE wlt_v61_upgrade_proof;"
+          export BTHWANI_ENV=test
+          export BTHWANI_EXPECTED_DATABASE_NAME=wlt_v61_upgrade_proof
+          export WLT_MIGRATION_TEST_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/wlt_v61_upgrade_proof?sslmode=disable"
+          financial_go_proof services/wlt/backend ./internal/storage/postgres -run "^TestLegacyCODV61UpgradePreservesHistoricalCollectedPayment$" -count=1 -timeout 4m
+          unset WLT_MIGRATION_TEST_DATABASE_URL
           export BTHWANI_EXPECTED_DATABASE_NAME=dsh_proof
           export DSH_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/dsh_proof?sslmode=disable"
           # DSH migrations are applied only inside child databases created by
