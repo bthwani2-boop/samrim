@@ -53,6 +53,45 @@ func TestLegacyCODV61UpgradePreservesHistoricalCollectedPayment(t *testing.T) {
 	const orderID = "v61-historical-order"
 	const captainID = "v61-original-collector"
 	const amount = int64(5500)
+	// V60 already requires an active, consented Store commercial agreement.
+	// Establish it through WLT's real owner commands, not an SQL shortcut.
+	profile, _, err := PreparePartnerFinancialProfile(ctx, db, PreparePartnerFinancialProfileInput{
+		JoiningCaseID: "v61-partner-case", PartnerActorID: "v61-partner",
+		Origin: domain.OriginControlPanel, SettlementPeriod: domain.SettlementWeekly,
+		IdempotencyKey: "v61-profile-prepare", CorrelationID: "v61-profile-prepare-correlation",
+	})
+	if err != nil {
+		t.Fatalf("prepare v60 partner: %v", err)
+	}
+	if _, _, err := ActivatePartnerFinancialProfile(ctx, db, ActivatePartnerFinancialProfileInput{
+		ProfileID: profile.ID, ExpectedVersion: profile.Version, ActorID: "v61-finance-profile-approver",
+		IdempotencyKey: "v61-profile-activate", CorrelationID: "v61-profile-activate-correlation",
+	}); err != nil {
+		t.Fatalf("activate v60 partner: %v", err)
+	}
+	agreement, _, err := ProposeStoreCommercialAgreement(ctx, db, ProposeStoreCommercialAgreementInput{
+		StoreID: "v61-store", PartnerActorID: "v61-partner",
+		Rates:   []StoreCommercialAgreementRate{{FulfillmentMode: "BTHWANI_CAPTAIN", CommissionRateBps: 1000}},
+		ActorID: "v61-agreement-proposer", Reason: "isolated historical v60 upgrade fixture",
+		IdempotencyKey: "v61-agreement-propose", CorrelationID: "v61-agreement-propose-correlation",
+	})
+	if err != nil {
+		t.Fatalf("propose v60 Store agreement: %v", err)
+	}
+	agreement, _, err = AcceptStoreCommercialAgreement(ctx, db, agreement.AgreementID, agreement.AgreementVersion,
+		"v61-partner", "partner accepted terms", "v61-agreement-accept", "v61-agreement-accept-correlation")
+	if err != nil {
+		t.Fatalf("accept v60 Store agreement: %v", err)
+	}
+	if _, _, err := DecideStoreCommercialAgreement(ctx, db, StoreCommercialAgreementDecisionInput{
+		AgreementID: agreement.AgreementID, ExpectedVersion: agreement.AgreementVersion,
+		Decision: "APPROVE", ActorID: "v61-agreement-finance-approver",
+		CurrentStorePartnerActorID: "v61-partner", CurrentFulfillmentModes: []string{"BTHWANI_CAPTAIN"},
+		Reason: "approved historical Store", IdempotencyKey: "v61-agreement-approve",
+		CorrelationID: "v61-agreement-approve-correlation",
+	}); err != nil {
+		t.Fatalf("approve v60 Store agreement: %v", err)
+	}
 	payment, replay, err := CreatePaymentIntent(ctx, db, CreatePaymentIntentInput{
 		ExternalReference: "v61-historical-payment", PayerActorID: "v61-customer",
 		OrderID: orderID, AmountMinor: amount, Currency: "YER", Method: domain.MethodCashOnDelivery,
