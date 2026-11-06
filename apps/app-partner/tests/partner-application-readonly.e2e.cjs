@@ -62,6 +62,14 @@ async function audit() {
       const cardBox = await page.getByText("ابدأ الآن", { exact: true }).locator("..").boundingBox();
       assert.ok(cardBox && cardBox.width < 600 && cardBox.width > 250, "SIGNUP_CARD_NOT_CONSTRAINED");
       assert.equal(await page.locator('input[type="password"]').count(), 0, "PREMATURE_PASSWORD_FIELDS");
+      const phoneInput = page.getByLabel("رقم الجوال");
+      const sendCode = page.getByRole("button", { name: "إرسال رمز التحقق" });
+      assert.equal(await sendCode.isDisabled(), true, "SEND_CODE_WITHOUT_PHONE_SHOULD_BE_DISABLED");
+      await phoneInput.fill("777123456");
+      assert.equal(await sendCode.isEnabled(), true, "VALID_YEMEN_PHONE_SHOULD_ENABLE_CODE");
+      await phoneInput.fill("77");
+      assert.equal(await sendCode.isDisabled(), true, "INVALID_PHONE_SHOULD_DISABLE_CODE");
+      await phoneInput.fill("");
       await page.getByRole("radio", { name: "لدي حساب" }).click();
       assert.equal(await page.locator('input[type="password"]').count(), 1, "LOGIN_PASSWORD_FIELD_MISSING");
       await page.getByRole("radio", { name: "حساب جديد" }).click();

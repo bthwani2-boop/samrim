@@ -118,6 +118,7 @@ export function ProspectivePartnerApplication(){
  const [showFulfillmentChoices,setShowFulfillmentChoices]=useState(false);
  const [proofNumber,setProofNumber]=useState("");
  const [modes,setModes]=useState<StoreFulfillmentMode[]>(["BTHWANI_CAPTAIN"]);
+ const phoneReady=/^\+[1-9]\d{7,14}$/.test(normalizeYemenPhoneE164(phone));
  const selectedOrigin=useMemo<BthwaniMapCoordinate|null>(()=>{
   if(!lat.trim()||!lng.trim())return null;
   const latitude=Number(toAsciiDigits(lat));const longitude=Number(toAsciiDigits(lng));
@@ -217,7 +218,7 @@ export function ProspectivePartnerApplication(){
  }
 
  async function authenticate(){
-  if(busy||!phone.trim()||!password)return;
+  if(busy||!phoneReady||!password||(mode==="register"&&(!proofRequested||toAsciiDigits(code).trim().length!==6||!passwordConfirmation)))return;
   setBusy(true);setError("");setNotice("");
   try{
    if(mode==="register"){
@@ -228,7 +229,7 @@ export function ProspectivePartnerApplication(){
   }catch(cause){setError(cause instanceof Error?cause.message:"تعذر تسجيل الدخول")}finally{setBusy(false)}
  }
  async function requestProof(){
-  if(busy || !phone.trim())return;
+  if(busy || !phoneReady)return;
   setBusy(true);setError("");
   try{await requestProspectRegistration(phone.trim());setProofRequested(true);setNotice("أدخل رمز التحقق المرسل إلى رقمك.")}catch(cause){setError(cause instanceof Error?cause.message:"تعذر طلب الرمز")}finally{setBusy(false)}
  }
@@ -297,11 +298,12 @@ export function ProspectivePartnerApplication(){
      </Pressable>)}
    </View>
    {field("رقم الجوال",phone,(next)=>{setPhone(next);setProofRequested(false);setCode("")},false,"phone-pad")}
-   {mode==="register"?<BthwaniButton label={proofRequested?"إعادة إرسال رمز التحقق":"إرسال رمز التحقق"} onPress={()=>void requestProof()} disabled={busy}/>:null}
+   <Text style={styles.muted}>مثال: 777123456 · استخدم رقم جوالك الذي تستطيع استلام رمز التحقق عليه.</Text>
+   {mode==="register"?<BthwaniButton label={proofRequested?"إعادة إرسال رمز التحقق":"إرسال رمز التحقق"} onPress={()=>void requestProof()} disabled={busy||!phoneReady}/>:null}
    {mode==="register"&&proofRequested?field("رمز التحقق",code,setCode,false,"numeric"):null}
    {mode==="login"||proofRequested?field("كلمة المرور",password,setPassword,true):null}
    {mode==="register"&&proofRequested?field("تأكيد كلمة المرور",passwordConfirmation,setPasswordConfirmation,true):null}
-   <BthwaniButton label={busy?"جارٍ التحقق…":mode==="register"?"تأكيد الرقم والمتابعة":"الدخول إلى طلبي"} onPress={()=>void authenticate()} disabled={busy||(mode==="register"&&!proofRequested)}/>
+   <BthwaniButton label={busy?"جارٍ التحقق…":mode==="register"?"تأكيد الرقم والمتابعة":"الدخول إلى طلبي"} onPress={()=>void authenticate()} disabled={busy||!phoneReady||!password||(mode==="register"&&(!proofRequested||toAsciiDigits(code).trim().length!==6||!passwordConfirmation))}/>
   </View>:null}
   {authenticated&&!caseValue&&!hasRead&&!loading?<View style={{gap:8}}><Text accessibilityRole="alert" style={styles.muted}>تعذر التحقق من وجود طلب سابق. لن يتاح إنشاء طلب آخر قبل قراءة حالتك من المنصة.</Text><BthwaniButton label="إعادة التحقق من طلب الانضمام" variant="secondary" onPress={()=>void load()} disabled={busy}/></View>:null}
   {authenticated&&caseValue?<View style={styles.content}>
