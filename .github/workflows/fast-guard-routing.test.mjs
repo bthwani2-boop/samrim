@@ -54,7 +54,9 @@ test("financial integration proof cannot silently skip selected tests", () => {
   assert.match(workflow, /No financial integration test executed/);
   assert.match(workflow, /Financial integration test skipped/);
   assert.match(workflow, /TestLegacyCODV61UpgradePreservesHistoricalCollectedPayment/);
-  assert.equal((workflow.match(/financial_go_proof services\/(?:wlt|dsh)\/backend/g) ?? []).length, 5);
+  assert.match(workflow, /BTHWANI_IMPORT_SCALE_PROOF_ISOLATED=1/);
+  assert.match(workflow, /TestStoreCatalogImport5000RowsPartialCommitReadback/);
+  assert.equal((workflow.match(/financial_go_proof services\/(?:wlt|dsh)\/backend/g) ?? []).length, 6);
 });
 
 test("unrelated docs are not misclassified as an executable service change", () => {
