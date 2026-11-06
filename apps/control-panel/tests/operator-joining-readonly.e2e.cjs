@@ -19,7 +19,22 @@ async function main() {
         blockedWrites.push("unexpected mutation");
       }
     });
+    const queueRead = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === "/api/partners/workbench" &&
+        url.searchParams.get("kind") === "joining" &&
+        response.request().method() === "GET";
+    }, { timeout: 25000 });
     await page.goto("http://localhost:13000/partners?view=joining", { waitUntil: "domcontentloaded", timeout: 25000 });
+    const queueResponse = await queueRead;
+    assert.equal(queueResponse.status(), 200, "JOINING_QUEUE_CANONICAL_READ_FAILED");
+    const payload = await queueResponse.json();
+    assert.ok(Array.isArray(payload?.rows), "JOINING_ROWS_MISSING");
+    assert.ok(payload.rows.length <= 50, "JOINING_ROWS_UNBOUNDED");
+    assert.ok(payload.rows.every((row) => row?.kind === "joining"), "JOINING_QUEUE_WRONG_KIND");
+    assert.equal(typeof payload.nextCursor, "string", "JOINING_QUEUE_CURSOR_MISSING");
+    console.log("OPERATOR_JOINING_API_READBACK=PASS rows=" + payload.rows.length +
+      " more=" + Boolean(payload.nextCursor));
     await page.getByText("طلبات الانضمام", { exact: true }).first().waitFor({ state: "visible", timeout: 20000 });
     await page.locator("#partner-unified-search").waitFor({ state: "visible", timeout: 18000 });
     for (const width of [1280, 390]) {
