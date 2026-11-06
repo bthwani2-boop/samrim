@@ -20,7 +20,7 @@ import { readFinanceAgreementPreview, type FinanceAgreementPreview } from "./ope
 import { useReadOnReturn } from "../shared/use-read-on-return";
 
 
-type QueueKey = "operations" | "operationsLive" | "joiningCases" | "joiningAdmissions" | "proposals" | "commercialAgreements" | "analytics" | "notifications";
+type QueueKey = "operations" | "operationsLive" | "joiningCases" | "joiningDrafts" | "proposals" | "commercialAgreements" | "analytics" | "notifications";
 type QueueRequest = Readonly<{ key: QueueKey; url: string }>;
 
 function validSummary(value: unknown): value is OperatorOperationsSummary {
@@ -51,7 +51,7 @@ export function OperatorHome() {
   const [recentNotifications, setRecentNotifications] = useState<ReadonlyArray<Notification>>([]);
   const [unreadCount, setUnreadCount] = useState<number | null>(null);
   const [joiningCases, setJoiningCases] = useState<ReadonlyArray<JoiningCaseSummary>>([]);
-  const [joiningAdmissions, setJoiningAdmissions] = useState<ReadonlyArray<JoiningCaseSummary>>([]);
+  const [joiningDrafts, setJoiningDrafts] = useState<ReadonlyArray<JoiningCaseSummary>>([]);
   const [proposals, setProposals] = useState<ReadonlyArray<CatalogProductProposal>>([]);
   const [commercialAgreements, setCommercialAgreements] = useState<readonly FinanceAgreementPreview[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,7 +78,7 @@ export function OperatorHome() {
       setRecentNotifications([]);
       setUnreadCount(null);
       setJoiningCases([]);
-      setJoiningAdmissions([]);
+      setJoiningDrafts([]);
       setProposals([]);
       setCommercialAgreements([]);
       setLastChecked(null);
@@ -95,7 +95,7 @@ export function OperatorHome() {
       ] : []),
       { key: "notifications" as const, url: "/api/notifications?limit=25" },
       ...(canReadPartners ? [
-        { key: "joiningAdmissions" as const, url: "/api/partners/joining-cases?state=admission_requested&limit=4" },
+        { key: "joiningDrafts" as const, url: "/api/partners/joining-cases?state=draft&limit=4" },
         { key: "joiningCases" as const, url: "/api/partners/joining-cases?state=submitted&limit=4" },
       ] : []),
       ...(canReadCatalog ? [{ key: "proposals" as const, url: "/api/catalog/proposals?state=submitted&limit=8" }] : []),
@@ -138,7 +138,7 @@ export function OperatorHome() {
         else if (key === "operationsLive") {
           setSummary(validSummary(data.summary) ? data.summary : null);
         } else if (key === "joiningCases") setJoiningCases(data.cases as ReadonlyArray<JoiningCaseSummary>);
-        else if (key === "joiningAdmissions") setJoiningAdmissions(data.cases as ReadonlyArray<JoiningCaseSummary>);
+        else if (key === "joiningDrafts") setJoiningDrafts(data.cases as ReadonlyArray<JoiningCaseSummary>);
         else if (key === "proposals") setProposals(data.proposals as ReadonlyArray<CatalogProductProposal>);
 
       } catch (cause) {
@@ -187,15 +187,15 @@ export function OperatorHome() {
 
   const hasActionQueues = canReadOperations || canReadPartners || canReadCatalog || canReadFinance;
   const hasActionableItems = (canReadOperations && operations.length > 0)
-    || (canReadPartners && (joiningAdmissions.length > 0 || joiningCases.length > 0))
+    || (canReadPartners && (joiningDrafts.length > 0 || joiningCases.length > 0))
     || (canReadCatalog && proposals.length > 0)
     || (canReadFinance && commercialAgreements.length > 0);
   const hasQueueError = (canReadOperations && Boolean(errors.operations))
-    || (canReadPartners && (Boolean(errors.joiningAdmissions) || Boolean(errors.joiningCases)))
+    || (canReadPartners && (Boolean(errors.joiningDrafts) || Boolean(errors.joiningCases)))
     || (canReadCatalog && Boolean(errors.proposals))
     || (canReadFinance && Boolean(errors.commercialAgreements));
   const hasLoadingActionQueues = (canReadOperations && loadingQueues.has("operations"))
-    || (canReadPartners && (loadingQueues.has("joiningAdmissions") || loadingQueues.has("joiningCases")))
+    || (canReadPartners && (loadingQueues.has("joiningDrafts") || loadingQueues.has("joiningCases")))
     || (canReadCatalog && loadingQueues.has("proposals"))
     || (canReadFinance && loadingQueues.has("commercialAgreements"));
 
@@ -235,8 +235,8 @@ export function OperatorHome() {
                 <ul className="home-list">{operations.slice(0, 2).map((item) => <HomeRecord key={item.orderId} href={"/operations/" + encodeURIComponent(item.orderId)} title={item.storeName} state={orderStateLabel(item.state)} updatedAt={item.updatedAt} />)}</ul>
               </HomeQueue> : null}
               {canReadPartners ? <>
-                <HomeQueue id="admissions" icon="review" title="إحالات تنتظر القبول" href="/partners/joining?state=admission_requested" error={errors.joiningAdmissions} loading={loadingQueues.has("joiningAdmissions")} empty={joiningAdmissions.length === 0} emptyMessage="لا إحالات في هذه المعاينة.">
-                  <ul className="home-list">{joiningAdmissions.slice(0, 2).map((item) => <HomeRecord key={item.id} href={"/partners/" + encodeURIComponent(item.id)} title={item.businessName} summary={item.firstStoreName} state={joiningCaseStateLabel(item.state)} updatedAt={item.updatedAt} />)}</ul>
+                <HomeQueue id="drafts" icon="review" title="طلبات متاجر جديدة بانتظار الإدخال" href="/partners/joining?state=draft" error={errors.joiningDrafts} loading={loadingQueues.has("joiningDrafts")} empty={joiningDrafts.length === 0} emptyMessage="لا طلبات جديدة في هذه المعاينة.">
+                  <ul className="home-list">{joiningDrafts.slice(0, 2).map((item) => <HomeRecord key={item.id} href={"/partners/" + encodeURIComponent(item.id)} title={item.businessName} summary={item.firstStoreName} state={joiningCaseStateLabel(item.state)} updatedAt={item.updatedAt} />)}</ul>
                 </HomeQueue>
                 <HomeQueue id="joining" icon="partners" title="طلبات انضمام قيد المراجعة" href="/partners/joining?state=submitted" error={errors.joiningCases} loading={loadingQueues.has("joiningCases")} empty={joiningCases.length === 0} emptyMessage="لا طلبات في هذه المعاينة.">
                   <ul className="home-list">{joiningCases.slice(0, 2).map((item) => <HomeRecord key={item.id} href={"/partners/" + encodeURIComponent(item.id)} title={item.businessName} summary={item.firstStoreName} state={joiningCaseStateLabel(item.state)} updatedAt={item.updatedAt} />)}</ul>
