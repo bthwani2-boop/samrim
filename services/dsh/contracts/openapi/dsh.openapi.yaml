@@ -136,6 +136,9 @@ paths:
   /dsh/partner-applications/self:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1partner-applications~1self"
 
+  /dsh/partner-applications/self/correct-and-resubmit:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1partner-applications~1self~1correct-and-resubmit"
+
   /dsh/joining-cases/self:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1self"
 

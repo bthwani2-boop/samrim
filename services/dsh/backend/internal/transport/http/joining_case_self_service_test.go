@@ -32,3 +32,43 @@ func TestSelfServiceApplicationRejectsUnauthenticatedAndSpoofedActor(t *testing.
 		t.Fatalf("spoofed actor was not rejected: %d %s", response.Code, response.Body.String())
 	}
 }
+
+func TestSelfServiceCorrectionRequiresVerifiedBearerAndRejectsActorSpoofing(t *testing.T) {
+	server := &JoiningCaseServer{}
+	router := http.NewServeMux()
+	server.Register(router)
+	const path = "/dsh/partner-applications/self/correct-and-resubmit"
+
+	for _, tc := range []struct {
+		name       string
+		token      string
+		actor      string
+		version    string
+		wantStatus int
+	}{
+		{name: "missing bearer", wantStatus: http.StatusUnauthorized},
+		{name: "actor override", token: "unverified", actor: "another-actor", version: "1", wantStatus: http.StatusBadRequest},
+		{name: "missing version", token: "unverified", wantStatus: http.StatusBadRequest},
+		{name: "malformed JSON rejected before identity", token: "unverified", version: "1", wantStatus: http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, path, strings.NewReader("{"))
+			if tc.token != "" {
+				request.Header.Set("Authorization", "Bearer "+tc.token)
+			}
+			if tc.actor != "" {
+				request.Header.Set("X-Actor-ID", tc.actor)
+			}
+			request.Header.Set("Idempotency-Key", "self-correction-test-123")
+			request.Header.Set("X-Correlation-ID", "self-correction-correlation-123")
+			if tc.version != "" {
+				request.Header.Set("X-Expected-Version", tc.version)
+			}
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d: %s", response.Code, tc.wantStatus, response.Body.String())
+			}
+		})
+	}
+}

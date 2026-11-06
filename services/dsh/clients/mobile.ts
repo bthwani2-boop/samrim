@@ -304,6 +304,11 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const op=dshOperationPaths.createSelfServiceJoiningApplication;
       return userRequest<JoiningCaseResponse>(accessToken,op.path,op.method,input,{"Idempotency-Key":idempotencyKey.trim(),"X-Correlation-ID":correlationID.trim()});
     },
+    async correctSelfServiceJoiningApplication(accessToken: string, input: CorrectJoiningCaseRequest, expectedVersion: number, idempotencyKey: string, correlationID: string): Promise<JoiningCaseResponse> {
+      if (!Number.isInteger(expectedVersion) || expectedVersion < 1 || !idempotencyKey.trim() || !correlationID.trim()) throw new Error("DSH_JOINING_MUTATION_HEADERS_REQUIRED");
+      const op = dshOperationPaths.correctSelfServiceJoiningApplication;
+      return userRequest<JoiningCaseResponse>(accessToken, op.path, op.method, input, { "X-Expected-Version": String(expectedVersion), "Idempotency-Key": idempotencyKey.trim(), "X-Correlation-ID": correlationID.trim() });
+    },
     async readOwnJoiningCase(accessToken: string): Promise<JoiningCaseResponse> {
       return userRequest<JoiningCaseResponse>(accessToken, dshOperationPaths.readOwnJoiningCase.path, dshOperationPaths.readOwnJoiningCase.method);
     },
@@ -502,7 +507,7 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const firstStoreCommercialTypeId = input.firstStoreCommercialTypeId.trim();
       if (!normalized || businessName.length < 2 || businessName.length > 160 || firstStoreName.length < 2 || firstStoreName.length > 160 || !serviceCityId || !firstStoreVerticalId || !firstStoreCommercialTypeId || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180 || expectedVersion < 1) throw new Error("DSH_JOINING_CASE_INPUT_INVALID");
       const path = dshOperationPaths.correctAndResubmitJoiningCase.path.replace("{caseId}", encodeURIComponent(normalized));
-      return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.correctAndResubmitJoiningCase.method, { businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreCommercialTypeId, firstStoreLatitude: input.firstStoreLatitude, firstStoreLongitude: input.firstStoreLongitude }, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) });
+      return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.correctAndResubmitJoiningCase.method, input, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) });
     },
     async listCatalogProducts(accessToken: string, query = "", verticalID = "", limit = 100, cursor = ""): Promise<CatalogProductListResponse> {
       if (limit < 1 || limit > 100) throw new Error("DSH_PRODUCT_LIMIT_INVALID");

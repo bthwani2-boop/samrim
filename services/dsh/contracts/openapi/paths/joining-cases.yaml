@@ -69,6 +69,30 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
 
+  /dsh/partner-applications/self/correct-and-resubmit:
+    post:
+      operationId: correctSelfServiceJoiningApplication
+      summary: Correct and resubmit the verified applicant's own pre-admission case
+      description: Requires a currently verified Identity client role and matching canonical applicant actor and phone. The case is selected by DSH, never by a client-provided ID. Does not grant Partner access.
+      security: [{ userBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CorrectJoiningCaseRequest" }
+      responses:
+        "200": { description: Canonically resubmitted own case., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/joining-cases/self:
     get:
       operationId: readOwnJoiningCase

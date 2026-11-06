@@ -299,6 +299,24 @@ func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken,
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
+	return s.correctAndResubmitForActor(ctx, caseID, identity.Subject, "", input, expectedVersion, idempotencyKey, correlationID)
+}
+
+// The prospective applicant can correct only the case read through their own
+// currently verified client actor and canonical phone, before Partner admission.
+func (s *Service) CorrectAndResubmitForApplicant(ctx context.Context, accessToken string, input contract.CorrectJoiningCaseRequest, expectedVersion int, idempotencyKey, correlationID string) (postgres.JoiningCaseResult, error) {
+	actorID, phone, err := s.selfServiceApplicant(ctx, accessToken)
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	current, err := postgres.ReadSelfServiceJoiningCase(ctx, s.db, actorID, phone)
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	return s.correctAndResubmitForActor(ctx, current.Case.ID, actorID, phone, input, expectedVersion, idempotencyKey, correlationID)
+}
+
+func (s *Service) correctAndResubmitForActor(ctx context.Context, caseID, actorID, applicantPhone string, input contract.CorrectJoiningCaseRequest, expectedVersion int, idempotencyKey, correlationID string) (postgres.JoiningCaseResult, error) {
 	caseID = strings.TrimSpace(caseID)
 	ownerFullName := strings.TrimSpace(input.OwnerFullName)
 	businessName := strings.TrimSpace(input.BusinessName)
@@ -331,8 +349,12 @@ func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken,
 	if modesErr != nil {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
-	mutation := postgres.CorrectJoiningCaseInput{CaseID: caseID, ActorID: identity.Subject, OwnerFullName: ownerFullName, BusinessName: businessName, FirstStoreName: firstStoreName, FirstStoreAddress: firstStoreAddress, FirstStoreWorkingHours: workingHours, FirstStoreProofType: proofType, FirstStoreProofNumber: proofNumber, FirstStoreNotes: notes, EvidenceKeyring: s.evidenceKeys, ExpectedVersion: expectedVersion, IdempotencyKey: strings.TrimSpace(idempotencyKey), CorrelationID: strings.TrimSpace(correlationID), ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: commercialTypeID, Latitude: latitude, Longitude: longitude, FulfillmentModes: fulfillmentModes}
-	requestHash, err := s.evidenceKeys.RequestHash("partner-correct-and-resubmit", caseID, identity.Subject, ownerFullName, businessName, firstStoreName, firstStoreAddress, string(workingHours), proofType, proofNumber, notes, serviceCityID, verticalID, commercialTypeID, strconv.FormatFloat(latitude, 'f', 6, 64), strconv.FormatFloat(longitude, 'f', 6, 64), strings.Join(fulfillmentModes, ","), strconv.Itoa(expectedVersion))
+	mutation := postgres.CorrectJoiningCaseInput{CaseID: caseID, ActorID: actorID, ApplicantActorID: actorID, ApplicantPhone: applicantPhone, OwnerFullName: ownerFullName, BusinessName: businessName, FirstStoreName: firstStoreName, FirstStoreAddress: firstStoreAddress, FirstStoreWorkingHours: workingHours, FirstStoreProofType: proofType, FirstStoreProofNumber: proofNumber, FirstStoreNotes: notes, EvidenceKeyring: s.evidenceKeys, ExpectedVersion: expectedVersion, IdempotencyKey: strings.TrimSpace(idempotencyKey), CorrelationID: strings.TrimSpace(correlationID), ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: commercialTypeID, Latitude: latitude, Longitude: longitude, FulfillmentModes: fulfillmentModes}
+	scope := "partner-correct-and-resubmit"
+	if applicantPhone != "" {
+		scope = "self-service-correct-and-resubmit"
+	}
+	requestHash, err := s.evidenceKeys.RequestHash(scope, caseID, actorID, ownerFullName, businessName, firstStoreName, firstStoreAddress, string(workingHours), proofType, proofNumber, notes, serviceCityID, verticalID, commercialTypeID, strconv.FormatFloat(latitude, 'f', 6, 64), strconv.FormatFloat(longitude, 'f', 6, 64), strings.Join(fulfillmentModes, ","), strconv.Itoa(expectedVersion))
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}

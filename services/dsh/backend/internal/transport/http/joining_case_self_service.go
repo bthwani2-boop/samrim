@@ -44,3 +44,27 @@ func (s *JoiningCaseServer) selfServiceApplication(w http.ResponseWriter, r *htt
 		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "unsupported method")
 	}
 }
+
+// A pre-admission applicant corrects the same verified first-Store application.
+// No caller-provided case or actor ID is accepted; DSH resolves both canonically.
+func (s *JoiningCaseServer) selfServiceCorrection(w http.ResponseWriter, r *http.Request) {
+	token := bearerToken(r)
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "an authenticated customer identity is required")
+		return
+	}
+	correlation, idempotency, expected, ok := requiredPartnerCaseHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input contract.CorrectJoiningCaseRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.service.CorrectAndResubmitForApplicant(r.Context(), token, input, expected, idempotency, correlation)
+	if err != nil {
+		writeJoiningCaseError(w, err)
+		return
+	}
+	s.writeResult(w, r, http.StatusOK, result)
+}

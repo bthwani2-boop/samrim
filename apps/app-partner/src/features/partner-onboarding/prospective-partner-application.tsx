@@ -7,10 +7,11 @@ import { toAsciiDigits } from "@bthwani/design-system";
 import { normalizeYemenPhoneE164 } from "@bthwani/identity/phone";
 import * as Crypto from "expo-crypto";
 import { useRouter } from "expo-router";
-import { type ComponentType, useCallback, useEffect, useMemo, useState } from "react";
+import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentProspectSession, loginProspect, logoutProspect, prospectAccessToken, registerProspect, requestProspectRegistration, restoreProspectSession, subscribeProspectSession } from "../../bootstrap/applicant-identity";
 import { listActiveServiceCities, listCatalogVerticals, listCommercialStoreTypes } from "./store-readback-client";
+import { JoiningCaseCorrection } from "./joining-case-correction";
 
 const MODES:readonly {id:StoreFulfillmentMode;label:string}[]=[
  {id:"BTHWANI_CAPTAIN",label:"توصيل بثواني"},
@@ -81,6 +82,8 @@ export function ProspectivePartnerApplication(){
  const [mapError,setMapError]=useState("");
  const [manualCoordinateEntry,setManualCoordinateEntry]=useState(false);
  const [proofType,setProofType]=useState<CreateJoiningCaseRequest["firstStoreProofType"]>("IDENTITY_DOCUMENT");
+ const [showProofChoices,setShowProofChoices]=useState(false);
+ const [showFulfillmentChoices,setShowFulfillmentChoices]=useState(false);
  const [proofNumber,setProofNumber]=useState("");
  const [modes,setModes]=useState<StoreFulfillmentMode[]>(["BTHWANI_CAPTAIN"]);
  const selectedOrigin=useMemo<BthwaniMapCoordinate|null>(()=>{
@@ -89,33 +92,50 @@ export function ProspectivePartnerApplication(){
   return Number.isFinite(latitude)&&Number.isFinite(longitude)&&latitude>=-90&&latitude<=90&&longitude>=-180&&longitude<=180?{latitude,longitude}:null;
  },[lat,lng]);
 
+ const sessionScope=session.kind==="authenticated"?`${session.identity.subject}:${session.identity.sessionId}`:"";
+ const scopeRef=useRef(sessionScope);
+ const sameSession=useCallback(()=>{
+  const current=currentProspectSession();
+  return current.kind==="authenticated"&&`${current.identity.subject}:${current.identity.sessionId}`===sessionScope;
+ },[sessionScope]);
  useEffect(()=>{
   let active=true;
-  const un=subscribeProspectSession(value=>{if(active)setSession(value)});
+  const un=subscribeProspectSession(value=>{
+   if(!active)return;
+   const nextScope=value.kind==="authenticated"?`${value.identity.subject}:${value.identity.sessionId}`:"";
+   if(scopeRef.current&&scopeRef.current!==nextScope){
+    setCaseValue(null);setHasRead(false);setIntakeStep("basics");setLoading(false);
+    if(!nextScope)setPhone("");
+   }
+   scopeRef.current=nextScope;
+   setSession(value);
+  });
   void restoreProspectSession().catch(()=>{if(active)setError("تعذر استعادة جلسة المتقدم، أعد المحاولة.")}).finally(()=>{if(active)setRestoring(false)});
   return()=>{active=false;un()};
  },[]);
  const authenticated=session.kind==="authenticated";
  const load=useCallback(async()=>{
-  if(!authenticated)return;
+  if(!sessionScope||!sameSession())return;
   setLoading(true);setError("");
   try{
    const token=await prospectAccessToken();
    const result=await api().readSelfServiceJoiningApplication(token);
+   if(!sameSession())return;
    if(result.case.origin!=="self_service")throw new Error("CASE_ORIGIN_MISMATCH");
-   setCaseValue(result);
+   setCaseValue(result);setHasRead(true);
   }catch(cause){
+   if(!sameSession())return;
    if(cause && typeof cause==="object" && (cause as {status?:number}).status===404){setCaseValue(null);setHasRead(true);}
    else {setHasRead(false);setError(details(cause));}
-  }finally{setLoading(false)}
- },[authenticated]);
+  }finally{if(sameSession())setLoading(false)}
+ },[sessionScope,sameSession]);
  useEffect(()=>{if(authenticated){void load()}else{setCaseValue(null);setHasRead(false);setIntakeStep("basics")}},[authenticated,load]);
  useEffect(()=>{
-  if(!authenticated || caseValue)return;
+  if(!authenticated)return;
   let active=true;
   void Promise.all([listActiveServiceCities(),listCatalogVerticals()]).then(([a,b])=>{if(active){setCities(a);setVerticals(b)}}).catch(()=>{if(active)setError("تعذر قراءة المدن والمجالات. تحقق من الاتصال.")});
   return()=>{active=false};
- },[authenticated,caseValue]);
+ },[authenticated]);
  useEffect(()=>{
   if(!vertical){setTypes([]);setStoreType("");return}
   let active=true;
@@ -123,6 +143,11 @@ export function ProspectivePartnerApplication(){
   void listCommercialStoreTypes(vertical).then(result=>{if(active)setTypes(result)}).catch(()=>{if(active)setError("تعذر تحميل أنواع المتاجر")});
   return()=>{active=false};
  },[vertical]);
+ // A sole active server option is unambiguous; multi-option registries always
+ // require the applicant's explicit choice. The backend revalidates all IDs.
+ useEffect(()=>{if(cities.length===1&&!city)setCity(cities[0]!.id)},[cities,city]);
+ useEffect(()=>{if(verticals.length===1&&!vertical)setVertical(verticals[0]!.id)},[verticals,vertical]);
+ useEffect(()=>{if(types.length===1&&!storeType)setStoreType(types[0]!.id)},[types,storeType]);
 
  async function toggleLocationMap(){
   if(showLocationMap){setShowLocationMap(false);return;}
@@ -159,7 +184,7 @@ export function ProspectivePartnerApplication(){
   try{await requestProspectRegistration(phone.trim());setProofRequested(true);setNotice("أدخل رمز التحقق المرسل إلى رقمك.")}catch(cause){setError(cause instanceof Error?cause.message:"تعذر طلب الرمز")}finally{setBusy(false)}
  }
  async function submit(){
-  if(busy)return;
+  if(busy||!sameSession())return;
   setError("");setNotice("");
   const latitude=Number(toAsciiDigits(lat));const longitude=Number(toAsciiDigits(lng));
   if(!/^\+[1-9]\d{7,14}$/.test(normalizeYemenPhoneE164(phone))||!ownerName.trim()||!storeName.trim()||!address.trim()||!city||!vertical||!storeType||!proofNumber.trim()||modes.length===0||
@@ -180,12 +205,14 @@ export function ProspectivePartnerApplication(){
    const digest=await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256,JSON.stringify([id.identity.subject,input]));
    const key=`self_join_${digest}`;
    const result=await api().createSelfServiceJoiningApplication(token,input,key,`self_corr_${digest}`);
+   if(!sameSession())return;
    if(result.case.origin!=="self_service")throw new Error("CASE_ORIGIN_MISMATCH");
    const read=await api().readSelfServiceJoiningApplication(token);
+   if(!sameSession())return;
    if(read.case.id!==result.case.id)throw new Error("CASE_READBACK_MISMATCH");
    setCaseValue(read);setNotice("سُجل طلب الانضمام؛ سيُراجع قسم الشركاء بياناتك قبل منح صلاحيات المتجر.");
-  }catch(cause){await load();setError(details(cause))}
-  finally{setBusy(false)}
+  }catch(cause){if(sameSession()){await load();if(sameSession())setError(details(cause))}}
+  finally{if(sameSession())setBusy(false)}
  }
  const field=(label:string,value:string,set:(value:string)=>void,secure=false,keyboard:"default"|"phone-pad"|"numeric"|"numbers-and-punctuation"="default")=>
   <View style={{gap:4}}><Text style={styles.text}>{label}</Text><TextInput accessibilityLabel={label} style={styles.input} value={value} onChangeText={set} editable={!busy} keyboardType={keyboard} secureTextEntry={secure} autoCapitalize="none"/></View>;
@@ -210,9 +237,22 @@ export function ProspectivePartnerApplication(){
    <Text style={styles.text}>المتجر: {caseValue.case.firstStoreName}</Text>
    <Text style={styles.text}>الحالة: {joiningCaseStateLabel(caseValue.case.state)}</Text>
    {caseValue.case.state==="needs_correction"?<>
-    <Text accessibilityRole="alert" style={styles.muted}>أُعيد طلبك للتصحيح. سجّل الدخول إلى حساب الشريك المرتبط برقمك، وراجع الملاحظات وأعد تقديم البيانات من شاشة الانضمام.</Text>
+    <Text accessibilityRole="alert" style={styles.muted}>أُعيد طلبك للتصحيح. عدّل بيانات طلبك هنا باستخدام حسابك الموثق نفسه؛ لا تحتاج إلى دور الشريك قبل اعتماد الطلب.</Text>
     {caseValue.case.correctionReason?<Text style={styles.text}>سبب التصحيح: {caseValue.case.correctionReason}</Text>:null}
-    <BthwaniButton label="الانتقال إلى حساب الشريك لتصحيح الطلب" onPress={()=>router.back()} />
+    <JoiningCaseCorrection
+     value={caseValue}
+     cities={cities}
+     onUpdated={next=>{if(!sameSession())return;setCaseValue(next);if(next.case.state==="submitted")setNotice("أُعيد إرسال بيانات المتجر إلى قسم الشركاء للمراجعة.")}}
+     applicant
+     readCorrection={async()=>api().readSelfServiceJoiningApplication(await prospectAccessToken())}
+     submitCorrection={async(caseID,input,expectedVersion)=>{
+      const token=await prospectAccessToken();
+      const identity=currentProspectSession();
+      if(identity.kind!=="authenticated"||caseID!==caseValue.case.id)throw new Error("APPLICANT_IDENTITY_MISMATCH");
+      const digest=await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256,JSON.stringify([identity.identity.subject,caseID,expectedVersion,input]));
+      return api().correctSelfServiceJoiningApplication(token,input,expectedVersion,`applicant_correction_${digest.slice(0,40)}`,`applicant_corr_${digest.slice(0,40)}`);
+     }}
+    />
    </>:caseValue.case.state==="approved"?<>
     <Text style={styles.muted}>اعتمد قسم الشركاء طلبك. ادخل إلى حساب الشريك بنفس رقم الهاتف، ثم أكمل بيانات المتجر والكتالوج والاتفاق التجاري قبل طلب النشر.</Text>
     <BthwaniButton label="الانتقال إلى حساب الشريك لإكمال المتجر" onPress={()=>router.back()} />
@@ -252,9 +292,13 @@ export function ProspectivePartnerApplication(){
     {selectedOrigin?<Text accessibilityLiveRegion="polite" style={styles.muted}>تم تحديد موقع المتجر. يمكنك تعديل النقطة قبل إرسال الطلب.</Text>:<Text style={styles.muted}>لم تحدد موقع المتجر بعد. اختر النقطة على الخريطة أو أدخل الإحداثيات عند تعذرها.</Text>}
     <Text style={styles.muted}>الموقع الدقيق مطلوب لمراجعة المتجر؛ أما الصور والكتالوج والاتفاق المالي فتُستكمل قبل النشر.</Text>
    </View>
-   {select("نوع إثبات النشاط",PROOFS,proofType,setProofType)}
+   <Text style={styles.text}>نوع الإثبات: {PROOFS.find(item=>item.id===proofType)?.label}</Text>
+   <BthwaniButton label={showProofChoices?"إخفاء الأنواع":"تغيير نوع الإثبات"} variant="secondary" onPress={()=>setShowProofChoices(value=>!value)} disabled={busy}/>
+   {showProofChoices?select("نوع إثبات النشاط",PROOFS,proofType,setProofType):null}
    {field("رقم وثيقة الإثبات",proofNumber,setProofNumber)}
-   <View style={{gap:6}}><Text style={styles.text}>أوضاع التوصيل</Text>{MODES.map(m=><Pressable key={m.id} disabled={busy} accessibilityRole="checkbox" accessibilityState={{checked:modes.includes(m.id),disabled:busy}} style={[styles.choice,modes.includes(m.id)&&styles.selected]} onPress={()=>setModes(old=>old.includes(m.id)?old.filter(x=>x!==m.id):[...old,m.id])}><Text style={styles.text}>{modes.includes(m.id)?"✓ ":""}{m.label}</Text></Pressable>)}</View>
+   <Text style={styles.text}>طريقة التوصيل: {modes.map(mode=>MODES.find(item=>item.id===mode)?.label||mode).join("، ")||"غير محددة"}</Text>
+   <BthwaniButton label={showFulfillmentChoices?"إخفاء الخيارات":"تغيير طرق التوصيل والاستلام"} variant="secondary" onPress={()=>setShowFulfillmentChoices(value=>!value)} disabled={busy}/>
+   {showFulfillmentChoices?<View style={{gap:6}}><Text style={styles.text}>اختر طريقة واحدة على الأقل</Text>{MODES.map(m=><Pressable key={m.id} disabled={busy} accessibilityRole="checkbox" accessibilityState={{checked:modes.includes(m.id),disabled:busy}} style={[styles.choice,modes.includes(m.id)&&styles.selected]} onPress={()=>setModes(old=>old.includes(m.id)?old.filter(x=>x!==m.id):[...old,m.id])}><Text style={styles.text}>{modes.includes(m.id)?"✓ ":""}{m.label}</Text></Pressable>)}</View>:null}
    <BthwaniButton label="إرسال طلب انضمام الشريك" disabled={busy} onPress={()=>void submit()}/>
    </>}
   </View>:null}
