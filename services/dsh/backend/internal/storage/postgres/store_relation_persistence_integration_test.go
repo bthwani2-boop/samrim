@@ -55,13 +55,12 @@ func TestStoreRelationFreshBootstrapAndV171Upgrade(t *testing.T) {
 							t.Fatal(err)
 						}
 					}
-					if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.stores (id,partner_actor_id,name) VALUES ('existing-v171','partner-v171','Existing store')"); err != nil {
-						_ = tx.Rollback()
-						t.Fatal(err)
-					}
 					if err := tx.Commit(); err != nil {
 						t.Fatal(err)
 					}
+					insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{
+						ID: "existing-v171", PartnerActorID: "partner-v171", Name: "Existing store",
+					})
 				}
 				if err := postgres.Migrate(ctx, db, records, migrations, testDeliveryProofKeyring(t)); err != nil {
 					t.Fatal(err)
@@ -75,9 +74,9 @@ func TestStoreRelationFreshBootstrapAndV171Upgrade(t *testing.T) {
 						t.Fatalf("existing Store relation was not preserved: %s %v", relation, err)
 					}
 				}
-				if _, err := db.ExecContext(ctx, "INSERT INTO dsh.stores (id,partner_actor_id,name) VALUES ('new-v172','partner-v172','New Store')"); err != nil {
-					t.Fatal(err)
-				}
+				insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{
+					ID: "new-v172", PartnerActorID: "partner-v172", Name: "New Store",
+				})
 				store, err := postgres.ReadStore(ctx, db, "new-v172")
 				if err != nil || store.RelationModel != postgres.StoreRelationBThwaniPartner {
 					t.Fatalf("new Store must default to marketplace relation: %+v %v", store, err)
