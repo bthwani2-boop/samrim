@@ -18,7 +18,7 @@ Preserve unrelated changes, secrets, durable data and active user state.
 
 Local docs/governance/README.md routes challengeable approved Product/platform/architecture/policy decisions. Actual source, schemas, API contracts, tests, configuration and runtime readback own current implementation truth. Historical external governance and competitor research are read-only evidence, not operational dependencies.
 
-Classify each material durable impact as NONE, REVALIDATE_ONLY, UPDATE_REQUIRED or DEFECT_FOUND. Correct the one applicable local durable owner for approved changed meaning in the same coherent samrim PR as materially affected implementation/tests. Never invent commercial features, promote speculative instructions, duplicate executable facts or require routine donor reads. AGENTS.md alone owns agent execution law; REPOSITORY-STRUCTURE.md owns placement.
+Classify each material durable impact as NONE, REVALIDATE_ONLY, UPDATE_REQUIRED or DEFECT_FOUND. Correct the one applicable local durable owner for approved changed meaning in the same coherent change batch as materially affected implementation/tests; if a PR is separately human-authorized, keep them together in that PR. Never invent commercial features, promote speculative instructions, duplicate executable facts or require routine donor reads. AGENTS.md alone owns agent execution law; REPOSITORY-STRUCTURE.md owns placement.
 
 ## 3. Discovery, ownership and simplification
 
@@ -108,11 +108,17 @@ Use Git to identify changes and Nx to select affected project work when applicab
 
 **MANDATORY — ZERO MOJIBAKE:** All new/modified text MUST be valid UTF-8 without BOM or confirmed encoding corruption. Run `node tools/dev/check-encoding.mjs`; any confirmed violation BLOCKS closure until its root cause is fixed—never blindly replace characters. Details: `docs/governance/policies/quality.md`.
 
-Default integration flow (external steps require their own authorization):
+Execution routing: MA Commander, SentinelX, Remote Desktop Commander, RelayDesk, Cmdexa, Remote Arc and MCPENROUZ are equal-status authorized device-control candidates, with no fixed priority. GitHub is the specialized eighth channel for repository/PR/CI state; Light Remote, Shellway and other connected tools are optional. Select by real capability, permission, efficiency, reliability and recovery. Do not use a different channel to bypass DENIED; do not run Codex CLI without a task-specific human instruction and proven direct-tool insufficiency.
 
-`DISCOVER -> TASK BRANCH -> CHANGE -> AFFECTED PROOF -> LOCAL COMMIT -> [AUTHORIZED SAFE PUSH] -> [AUTHORIZED DRAFT PR] -> REVIEW / CI -> READY FOR REVIEW`
+Default local-first development flow (each external Git action requires its own human authorization):
 
-For each authorized independent coding task, use a task branch, or the existing branch explicitly designated by the user. When push authority is explicit, safely push the first coherent, affected-tested commit. When Draft PR creation is explicitly authorized and a PR is the approved promotion mechanism, open a Draft PR against the intended base. After each subsequent complete logical change, review its diff, rerun invalidated affected checks, and commit locally; only when push authority is explicit, safely push and verify the remote SHA matches. Track applicable CI, CodeRabbit and SonarQube findings without skipping mandatory review. Mark the PR Ready for Review only after applicable gates and required independent reviews pass; never merge or deploy without separate explicit authorization.
+`DISCOVER -> REUSE EXISTING AUTHORIZED BRANCH/WORKTREE -> COHERENT CHANGE -> AFFECTED PROOF -> LOCAL COMMIT -> [HUMAN-AUTHORIZED PUSH] -> [HUMAN-AUTHORIZED PR] -> EXACT-CANDIDATE CI / REVIEW -> [HUMAN-AUTHORIZED MERGE]`
+
+Reuse the existing, explicitly authorized branch and checkout for related changes. **Never create a branch, create a worktree, or open a new Pull Request without an explicit human command for that action.** Do not silently switch to another branch or add unrelated work to an occupied branch. If no suitable authorized branch is available, preserve the state and request the necessary branch authorization rather than contaminating another task. A worktree is optional even for concurrent sessions and requires separate human authorization; serialize shared writes when isolation is unavailable.
+
+Complete related changes as coherent batches; review their diff and run the smallest sufficient affected checks, then create authorized local commits at meaningful checkpoints, not per file or keystroke. Push only under an explicit human authorization with its agreed scope/cadence, and verify remote SHA. A Push does not authorize a PR; a PR does not authorize Ready, merge, or deployment. When a PR already exists, reuse it for the same bounded deliverable; never manufacture a PR cascade for incidental fixes.
+
+CI, CodeRabbit and SonarQube are feedback, **not a per-edit blocking loop**. Do not repeatedly poll them or run candidate-wide suites after minor edits. Continue independently safe development while checks run; address confirmed critical findings at their causal owner. At human-authorized delivery and before declaring a PR ready, verify applicable required checks, reviewer findings, and independent high-risk proofs on the exact candidate SHA and applicable target base. Missing or failed required gates are BLOCKED/REVIEW_BLOCKED, never PASS. Local task completion is distinct from remote delivery/merge completion.
 
 `pnpm safe:push` is a Git transport/safety interlock only. It must not duplicate candidate-wide proof already owned by explicit `pnpm verify` or final CI.
 
@@ -142,7 +148,7 @@ Model context is a scarce working set, not an archive. Reduce context without re
 - Do not carry raw logs, unchanged source, giant diffs or already-proven evidence across material closure cells. Retain only evidence that can still change the repair decision.
 - At a material cell boundary retain a compact checkpoint: exact HEAD, material decisions, affected owners/paths, still-valid proof, remaining dependencies and blockers. Discard superseded execution noise.
 - Keep the objective dependency map, but use a fresh bounded execution context for the next material cell instead of accumulating prior cell transcripts.
-- Each completed logical development batch is a reviewable checkpoint: inspect diff and affected proof and commit locally. When push authority is explicit, safely push the authorized task branch and verify its remote SHA. When Draft PR creation is explicitly authorized and a PR is the approved promotion mechanism, open it after the first valid push and keep review/CI state visible. Without either authority, stop at the local checkpoint and report that step as blocked; avoid redundant full-suite runs. A failed or blocked gate leaves the PR in Draft; no premature Ready for Review.
+- Each coherent development batch is a local checkpoint: inspect the diff and affected proof, then commit locally when authorized. Neither a Push nor a PR is needed to continue or finish an authorized local development task. Only on a separate human delivery command, safely push within the approved scope and verify remote SHA; create or update a PR only when that operation is explicitly authorized. A failed required gate leaves the candidate unready; do not perform repetitive full-suite reviews while development continues.
 - Candidate-wide proof should normally run once after feature freeze. Rerun only proof invalidated by a later affected change.
 
 When asked to plan, emit one bounded objective command anchored to current HEAD, approved outcome, affected owners, necessary proof and safe stop point; do not add another permanent planning contract.
