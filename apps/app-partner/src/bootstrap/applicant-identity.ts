@@ -40,4 +40,8 @@ export async function recoverProspect(phone:string,code:string,password:string):
  await runtime.identityClient().recoverClient({phone,code,password});
  return runtime.identitySession().clearLocalSession();
 }
+export async function registerDirectPartnerFromVerifiedAccount(){
+ const token=await runtime.getUsableAccessToken();
+ return runtime.identityClient().registerVerifiedSelfPartner(token,{clientInstanceId:await runtime.clientInstanceId()});
+}
 export const logoutProspect=runtime.logoutIdentity;

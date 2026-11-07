@@ -26,6 +26,7 @@ const runtime = createManagedMobileIdentityBinding({
   explicitApiUrl: process.env.EXPO_PUBLIC_IDENTITY_API_URL,
 });
 
+export const adoptDirectPartnerIdentity = (pair: import("@bthwani/identity").TokenPair) => runtime.identitySession().adopt(pair);
 export const restoreIdentitySession = runtime.restoreIdentitySession;
 export const currentIdentityState = runtime.currentIdentityState;
 export const getUsableIdentityAccessToken = runtime.getUsableAccessToken;
