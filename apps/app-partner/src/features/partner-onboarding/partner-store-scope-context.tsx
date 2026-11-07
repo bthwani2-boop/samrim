@@ -41,7 +41,10 @@ export function PartnerStoreScopeProvider({ children }: Readonly<{ children: Rea
   }, [scopes.reload]);
   const [selectedStoreID, setSelectedStoreID] = useState("");
   const stores = scopes.state.kind === "ready" ? scopes.state.stores : [];
-  const authority = useMemo(() => (scopes.state.kind === "ready" ? derivePartnerAuthority(scopes.state.stores) : RESOLVING_PARTNER_AUTHORITY), [scopes.state]);
+  const selectedStore = stores.find((store) => store.id === selectedStoreID) ?? stores.find((store) => store.owned) ?? stores[0];
+  // Navigation authority follows the selected Store, not unrelated Stores owned
+  // by the same actor. Marketplace capabilities remain unavailable on an independent Store.
+  const authority = useMemo(() => (scopes.state.kind === "ready" ? derivePartnerAuthority(selectedStore ? [selectedStore] : []) : RESOLVING_PARTNER_AUTHORITY), [scopes.state.kind, selectedStore]);
 
   useEffect(() => {
     if (stores.length === 0) {
@@ -58,11 +61,12 @@ export function PartnerStoreScopeProvider({ children }: Readonly<{ children: Rea
     authority,
     stores,
     selectedStoreID,
-    selectedStore: stores.find((store) => store.id === selectedStoreID) ?? stores.find((store) => store.owned) ?? stores[0],
+    selectedStore,
     selectStore: setSelectedStoreID,
     reload: scopes.reload,
-    storesWithPermission: (permission) => stores.filter((store) => store.owned || store.permissions.includes(permission)),
-  }), [scopes.state, authority, scopes.reload, selectedStoreID, stores]);
+    storesWithPermission: (permission) => stores.filter((store) => (store.owned || store.permissions.includes(permission)) &&
+      (!["finance_read", "payout_request", "orders", "fulfillment"].includes(permission) || store.relationModel === "BTHWANI_PARTNER")),
+  }), [scopes.state, authority, scopes.reload, selectedStoreID, selectedStore, stores]);
 
   return <PartnerStoreScopeContext.Provider value={value}>{children}</PartnerStoreScopeContext.Provider>;
 }

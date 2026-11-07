@@ -23,7 +23,10 @@ function isoInput(value: string): string | null {
   const date = new Date(value);
   return value.trim() && Number.isFinite(date.getTime()) ? date.toISOString() : null;
 }
-function status(value: Banner): string {
+function status(value: Banner, independent = false): string {
+  if (independent) return value.state === "DRAFT" ? "مسودة محفوظة؛ النشر المستقل غير مفعّل"
+    : value.state === "PAUSED" ? "موقوف؛ النشر المستقل غير مفعّل"
+    : "اعتماد سابق؛ النشر المستقل غير مفعّل";
   if (value.state === "DRAFT") return "بانتظار اعتماد التسويق";
   if (value.state === "PAUSED") return "أوقفته إدارة بثواني";
   if (!value.partnerEnabled) return "أوقفته أنت";
@@ -32,7 +35,7 @@ function status(value: Banner): string {
   return "منشور";
 }
 
-export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: string; storeName: string }>) {
+export function PartnerStoreBanners({ storeId, storeName, independent = false }: Readonly<{ storeId: string; storeName: string; independent?: boolean }>) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => StyleSheet.create({
     root: { gap: spacing[3] },
@@ -204,6 +207,7 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
     } catch {setError("تعذر اختيار الصورة. أعد المحاولة.");}
   };
   const create = async () => {
+    if (independent && targetType === "PROMOTION") { setError("عروض سوق بثواني ليست وجهة لبنرات المتجر المستقل."); return; }
     if (busy || !file || !rights || title.trim().length < 2 || !targetId) return;
     const ordinal = Number(priority.trim());
     if (!Number.isSafeInteger(ordinal) || ordinal < 0 || ordinal > 1000) {setError("ترتيب العرض يجب أن يكون عددًا بين 0 و1000.");return;}
@@ -223,8 +227,8 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
       const form = new FormData();
       for (const [key,value] of Object.entries({
         id:attempt.contentId,kind:"BANNER",titleAr:title.trim(),targetType,targetId,startsAt:attempt.startsAt,
-        endsAt:last??"",ordinal:String(ordinal),creator:storeName,sourceDescription:"صورة بنر رفعها الشريك من متجره في بثواني",
-        rightsStatement:"أقر بامتلاكي حقوق الصورة وبسماح استخدامها للإعلان داخل متجري في بثواني.",rightsAttested:"true",
+        endsAt:last??"",ordinal:String(ordinal),creator:storeName,sourceDescription:independent?"صورة بنر لمتجر ويب مستقل، مسودة خاصة بالمتجر":"صورة بنر رفعها الشريك من متجره في بثواني",
+        rightsStatement:independent?"أقر بامتلاكي حقوق الصورة لاستخدامها داخل متجري المستقل، دون نشرها حاليًا.":"أقر بامتلاكي حقوق الصورة وبسماح استخدامها للإعلان داخل متجري في بثواني.",rightsAttested:"true",
       })) form.append(key,value);
       if (Platform.OS === "web") {
         const blob=await fetch(file.uri).then(r=>r.blob());
@@ -238,13 +242,15 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
       if (!response.ok) throw new Error("STORE_BANNER_CREATE_FAILED");
       if (!await refresh({ id: attempt.contentId }, items.length)) throw new Error("STORE_BANNER_READBACK_FAILED");
       submitAttempt.current=null;setFile(null);setTitle("");setRights(false);setStartsAt("");setEndsAt("");setPriority("0");
-      setNotice("تم استلام البنر للمراجعة. سيظهر بعد موافقة تسويق بثواني وخلال فترة عرضه.");
+      setNotice(independent
+        ? "حُفظ بنر المتجر المستقل كمسودة. لن يظهر للزبائن حتى تفعيل قناة النشر المستقلة والتحقق من ضوابطها."
+        : "تم استلام البنر للمراجعة. سيظهر بعد موافقة تسويق بثواني وخلال فترة عرضه.");
     } catch {setError("تعذر تأكيد رفع البنر. أعد المحاولة دون تغيير المدخلات للتحقق من نتيجة الطلب.");}
     finally {setBusy(false);}
   };
 
   const setVisibility = async (item: Banner, enabled: boolean) => {
-    if (pendingID || busy) return;
+    if (independent || pendingID || busy) return;
     setPendingID(item.id);setError("");setNotice("");
     try {
       const token=await getUsableIdentityAccessToken();
@@ -267,12 +273,14 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
   return <View style={styles.root} accessibilityLabel="إدارة بنرات المتجر">
     <View style={styles.panel}>
       <Text accessibilityRole="header" style={styles.title}>بنرات متجرك</Text>
-      <Text style={styles.body}>اختر صورة لعرض متحرك داخل صفحة متجرك فقط. البنر الرئيسي لتطبيق بثواني تتحكم به إدارة التسويق. مراجعة النشر مطلوبة قبل العرض.</Text>
+      <Text style={styles.body}>{independent
+        ? "أضف بنرات متجرك الخاص كمسودات محفوظة في DSH. لن تظهر في سوق بثواني أو لعملاء رابط المتجر قبل اعتماد قناة النشر المستقلة؛ ولا يمكن ربطها بعروض أو حملات السوق."
+        : "اختر صورة لعرض متحرك داخل صفحة متجرك فقط. البنر الرئيسي لتطبيق بثواني تتحكم به إدارة التسويق. مراجعة النشر مطلوبة قبل العرض."}</Text>
       <BthwaniButton label={file ? "تغيير الصورة: "+file.name : "اختيار صورة بنر JPEG أو PNG"} onPress={() => void choose()} disabled={busy} variant="secondary"/>
       {file ? <ExpoImage source={{uri:file.uri}} style={{width:"100%",height:150,borderRadius:radius.md}} contentFit="contain" accessibilityLabel="معاينة صورة البنر المحددة"/>:null}
       <TextInput style={styles.input} accessibilityLabel="عنوان البنر" placeholder="عنوان البنر" value={title} onChangeText={value=>{setTitle(value);submitAttempt.current=null;}} maxLength={160} editable={!busy}/>
       <Text style={styles.label}>عند الضغط على البنر</Text>
-      <View style={styles.buttons}>{(["STORE","PRODUCT","PROMOTION"] as const).map(kind=><Pressable key={kind} accessibilityRole="radio" accessibilityState={{checked:kind===targetType}} onPress={()=>{setTargetType(kind);setTargetId(kind==="STORE"?storeId:"");submitAttempt.current=null;}} style={[styles.chip,targetType===kind&&styles.selected]}><Text style={styles.chipText}>{labels[kind]}</Text></Pressable>)}</View>
+      <View style={styles.buttons}>{(independent ? ["STORE","PRODUCT"] as const : ["STORE","PRODUCT","PROMOTION"] as const).map(kind=><Pressable key={kind} accessibilityRole="radio" accessibilityState={{checked:kind===targetType}} onPress={()=>{setTargetType(kind);setTargetId(kind==="STORE"?storeId:"");submitAttempt.current=null;}} style={[styles.chip,targetType===kind&&styles.selected]}><Text style={styles.chipText}>{labels[kind]}</Text></Pressable>)}</View>
       {targetType!=="STORE"?<TextInput accessibilityLabel="بحث في وجهات البنر" style={styles.input} placeholder="ابحث باسم المنتج أو العرض" value={targetSearch} onChangeText={value=>{targetSearchRef.current=value.trim();setTargetSearch(value);if (!value.trim()) setTargets([]);}} maxLength={120}/>:null}
       {targetType!=="STORE"?<View style={styles.buttons}>{available.map(t=><Pressable key={t.targetType+t.targetId} accessibilityRole="radio" accessibilityLabel={t.label} accessibilityState={{checked:targetId===t.targetId}} onPress={()=>{setTargetId(t.targetId);submitAttempt.current=null;}} style={[styles.chip,targetId===t.targetId&&styles.selected]}><Text style={styles.chipText} numberOfLines={2}>{t.label}</Text></Pressable>)}{available.length===0?<Text style={styles.body}>{targetLoadFailed?"تعذر قراءة الوجهات. حدّث البنرات وحاول مجددًا.":"لا توجد وجهات مؤهلة في هذا المتجر."}</Text>:null}</View>:null}
       <Text style={styles.body}>أولوية الترتيب: الأصغر يظهر أولًا. المواعيد اختيارية بصيغة 2026-11-03T12:00.</Text>
@@ -282,7 +290,7 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
       <Pressable style={styles.checkbox} accessibilityRole="checkbox" accessibilityState={{checked:rights}} onPress={()=>setRights(value=>!value)}>
         <Text style={styles.label}>{rights?"☑":"☐"} أملك حقوق استخدام هذه الصورة في متجري</Text>
       </Pressable>
-      <BthwaniButton label={busy?"جارٍ إرسال البنر...":"إرسال البنر للمراجعة"} onPress={()=>void create()} disabled={busy||!file||!rights||!targetId||title.trim().length<2}/>
+      <BthwaniButton label={busy?"جارٍ إرسال البنر...":independent?"حفظ البنر كمسودة":"إرسال البنر للمراجعة"} onPress={()=>void create()} disabled={busy||!file||!rights||!targetId||title.trim().length<2}/>
       {error?<Text accessibilityRole="alert" style={styles.error}>{error}</Text>:null}
       {notice?<Text accessibilityLiveRegion="polite" style={styles.label}>{notice}</Text>:null}
     </View>
@@ -295,11 +303,11 @@ export function PartnerStoreBanners({ storeId, storeName }: Readonly<{ storeId: 
         <View style={styles.tile}>
           {item.mediaUri?<ExpoImage source={{uri:item.mediaUri}} style={styles.image} contentFit="cover" accessibilityLabel={"بنر "+item.titleAr}/>:null}
           <View style={styles.column}><Text style={styles.label} numberOfLines={2}>{item.titleAr}</Text>
-            <Text style={styles.body}>{status(item)} · ترتيب {item.ordinal}</Text>
+            <Text style={styles.body}>{status(item, independent)} · ترتيب {item.ordinal}</Text>
             <Text style={styles.body} numberOfLines={2}>{item.startsAt.slice(0,16)}{item.endsAt?" — "+item.endsAt.slice(0,16):""}</Text>
           </View>
         </View>
-        <BthwaniButton label={item.partnerEnabled?"إخفاء البنر عن العملاء":"إظهار البنر بعد الاعتماد"} onPress={()=>void setVisibility(item,!item.partnerEnabled)} disabled={item.state!=="PUBLISHED"||Boolean(pendingID)||busy} variant="secondary"/>
+        <BthwaniButton label={item.partnerEnabled?"إخفاء البنر عن العملاء":"إظهار البنر بعد الاعتماد"} onPress={()=>void setVisibility(item,!item.partnerEnabled)} disabled={independent||item.state!=="PUBLISHED"||Boolean(pendingID)||busy} variant="secondary"/>
       </View>)}
       {nextCursor ? <BthwaniButton label={loadingMore?"جارٍ تحميل بقية البنرات...":"عرض المزيد من البنرات"} onPress={()=>void loadMore()} disabled={loading||loadingMore||busy||Boolean(pendingID)} variant="secondary"/> : null}
     </View>

@@ -6,6 +6,7 @@ import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo
 import { useCallback, useMemo, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { isMarketplaceStore } from "../../shell/partner-authority";
 import { usePartnerStoreScope } from "./partner-store-scope-context";
 import { PartnerPerformanceReport } from "./partner-performance-reports";
 import { PartnerStoreRatings } from "./partner-store-ratings";
@@ -26,12 +27,12 @@ export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: bool
   const theme = useAppearanceTheme();
   const router = useRouter();
   const { view } = useLocalSearchParams<{ view?: string }>();
-  const reportView = !embedded && (view === "orders" || view === "catalog" || view === "ratings") ? view : "overview";
   const { width } = useWindowDimensions();
   const desktopWeb = Platform.OS === "web" && width >= 1024;
   const { selectedStore } = usePartnerStoreScope();
-  const canOrders = Boolean(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("orders")));
+  const canOrders = Boolean(selectedStore && isMarketplaceStore(selectedStore) && (selectedStore.owned || selectedStore.permissions.includes("orders")));
   const canCatalog = Boolean(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("catalog")));
+  const reportView = !embedded && ((canOrders && (view === "orders" || view === "ratings")) || (canCatalog && view === "catalog")) ? view : "overview";
   const styles = useMemo(() => StyleSheet.create({
     screen: { gap: desktopWeb ? 16 : 10, paddingTop: embedded ? 0 : 9 },
     metrics: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
@@ -68,7 +69,8 @@ export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: bool
     const store = selectedStore;
     if (!store) { setLoading(false); return; }
     const catalog = store.owned || store.permissions.includes("catalog");
-    const orders = store.owned || store.permissions.includes("orders");
+    const marketplace = isMarketplaceStore(store);
+    const orders = marketplace && (store.owned || store.permissions.includes("orders"));
     const base = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
     if (!base) { setLoading(false); return; }
     const api = createDshMobileClient(base, { cryptoRandomUUID: () => Crypto.randomUUID() });
@@ -85,8 +87,8 @@ export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: bool
       const [orderResult, inventoryResult, promotionResult, financeResult, customerResult] = await Promise.allSettled([
         orders ? api.listPartnerOrders(token, { storeIds: [store.id], limit: 1 }) : Promise.resolve(null),
         catalog ? api.readOwnStoreInventorySummary(token, store.id) : Promise.resolve(null),
-        api.listPublicPromotions(store.serviceCityId, store.id),
-        store.owned ? api.readOwnPartnerFinancialSummary(token) : Promise.resolve(null),
+        marketplace ? api.listPublicPromotions(store.serviceCityId, store.id) : Promise.resolve(null),
+        marketplace && store.owned ? api.readOwnPartnerFinancialSummary(token) : Promise.resolve(null),
         orders ? api.readPartnerStoreOrderSummary(token, store.id, "30d") : Promise.resolve(null),
       ]);
       if (!stillCurrent()) return;
@@ -139,7 +141,7 @@ export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: bool
       style={[styles.actionChip, reportView === item.id && { backgroundColor: theme.actionSoft, borderColor: theme.actionBackground }]}>
       <Text style={styles.actionLabel}>{item.label}</Text>
     </Pressable>)}
-    {selectedStore && (selectedStore.owned || selectedStore.permissions.includes("finance_read")) ? <Pressable accessibilityRole="button" accessibilityLabel="فتح التقرير المالي" onPress={() => router.navigate("/wallet" as Href)} style={styles.actionChip}><Text style={styles.actionLabel}>التقرير المالي</Text></Pressable> : null}
+    {selectedStore && isMarketplaceStore(selectedStore) && (selectedStore.owned || selectedStore.permissions.includes("finance_read")) ? <Pressable accessibilityRole="button" accessibilityLabel="فتح التقرير المالي" onPress={() => router.navigate("/wallet" as Href)} style={styles.actionChip}><Text style={styles.actionLabel}>التقرير المالي</Text></Pressable> : null}
   </View>;
 
   if (!embedded && reportView !== "overview" && selectedStore) return <View style={styles.screen}>
@@ -171,7 +173,7 @@ export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: bool
           <Text style={styles.body}>الإجراءات الأساسية متاحة مباشرة وفق صلاحيتك في المتجر.</Text>
           {canOrders ? action("إدارة الطلبات", "فتح الطابور", "/orders" as Href) : null}
           {canCatalog ? action("تحديث المنتجات والأسعار", "فتح الكتالوج", "/products" as Href) : null}
-          {selectedStore && (selectedStore.owned || selectedStore.permissions.includes("promotions")) ? action("مراجعة العروض", "إدارة العروض", "/store?section=promotions" as Href) : null}
+          {selectedStore && isMarketplaceStore(selectedStore) && (selectedStore.owned || selectedStore.permissions.includes("promotions")) ? action("مراجعة العروض", "إدارة العروض", "/store?section=promotions" as Href) : null}
           {!canOrders && !canCatalog ? <Text style={styles.body}>لا توجد مهام تشغيلية مسندة إلى هذا الحساب حاليًا.</Text> : null}
         </View>
       </View>

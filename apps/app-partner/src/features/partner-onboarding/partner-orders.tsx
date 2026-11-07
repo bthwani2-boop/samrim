@@ -6,6 +6,7 @@ import { OrderManagement } from "../order-management/order-management";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 import { usePartnerStoreScope } from "./partner-store-scope-context";
 import { PartnerStoreScopeSelector } from "./partner-store-scope-selector";
+import { isMarketplaceStore } from "../../shell/partner-authority";
 
 type OrdersScope = "SELECTED_STORE" | "ALL_AUTHORIZED";
 
@@ -18,8 +19,8 @@ export function PartnerOrders() {
   const routeScope = Array.isArray(rawScope) ? rawScope[0] : rawScope;
   const [scope, setScope] = useState<OrdersScope>(routeScope === "all" ? "ALL_AUTHORIZED" : "SELECTED_STORE");
   useEffect(() => { setScope(routeScope === "all" ? "ALL_AUTHORIZED" : "SELECTED_STORE"); }, [routeScope]);
-  const permittedStores = stores.filter((store) => store.owned || store.permissions.includes("orders"));
-  const canManageOrders = Boolean(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("orders")));
+  const permittedStores = stores.filter((store) => isMarketplaceStore(store) && (store.owned || store.permissions.includes("orders")));
+  const canManageOrders = Boolean(selectedStore && isMarketplaceStore(selectedStore) && (selectedStore.owned || selectedStore.permissions.includes("orders")));
   const aggregateMode = scope === "ALL_AUTHORIZED" && permittedStores.length > 1;
   const targetStorePermitted = permittedStores.some(store => store.id === targetStoreId);
 
@@ -35,7 +36,7 @@ export function PartnerOrders() {
       <BthwaniChip label="المتجر المختار" onPress={() => setScope("SELECTED_STORE")} selected={!aggregateMode} />
       <BthwaniChip label="جميع المتاجر" onPress={() => setScope("ALL_AUTHORIZED")} selected={aggregateMode} />
     </View> : null}
-    {!aggregateMode && (permittedStores.length > 1 || !canManageOrders) ? <PartnerStoreScopeSelector requiredPermissions={["orders"]} /> : null}
+    {!aggregateMode && (permittedStores.length > 1 || !canManageOrders) ? <PartnerStoreScopeSelector requiredPermissions={["orders"]} marketplaceOnly /> : null}
     {!aggregateMode && selectedStore && canManageOrders ? <>
       <OrderManagement key={"orders:" + selectedStore.id} storeId={selectedStore.id} />
     </> : null}
