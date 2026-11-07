@@ -344,8 +344,13 @@ func validateStoreRelationConstraints(ctx context.Context, db *sql.DB) error {
 			_, err = tx.ExecContext(validationCtx, "SET LOCAL statement_timeout = '45s'")
 		}
 		if err == nil {
-			// name is a fixed local constant, not an identifier supplied by a caller.
-			_, err = tx.ExecContext(validationCtx, "ALTER TABLE dsh.stores VALIDATE CONSTRAINT "+name)
+			// PostgreSQL identifiers cannot be query parameters: use exact SQL
+			// literals for the two known constraints, never interpolated SQL.
+			if name == "stores_relation_model_chk" {
+				_, err = tx.ExecContext(validationCtx, "ALTER TABLE dsh.stores VALIDATE CONSTRAINT stores_relation_model_chk")
+			} else {
+				_, err = tx.ExecContext(validationCtx, "ALTER TABLE dsh.stores VALIDATE CONSTRAINT stores_independent_market_publication_chk")
+			}
 		}
 		if err == nil {
 			err = tx.Commit()

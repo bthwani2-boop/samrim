@@ -37,7 +37,7 @@ paths:
       tags: [client-auth]
       operationId: registerVerifiedSelfPartner
       description: A verified client session may create its own first Partner role without a staff joining request. Existing or disabled Partner roles are never overwritten. No Store is published.
-      security: [{ bearerAuth: [] }]
+      security: [{ accessToken: [] }]
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/PartnerSelfRegistrationRequest" } } }
