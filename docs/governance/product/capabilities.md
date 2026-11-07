@@ -10,6 +10,7 @@ Routing only; behavior remains in each capability owner. Journey participation i
 `IDENTITY_ACTIVATION_SESSIONS` → `capabilities/access/identity-activation-sessions.md`
 `EMPLOYEE_HR` → `capabilities/access/employee-hr.md`
 `PARTNER_ONBOARDING_STORE_PUBLICATION` → `capabilities/partner/partner-onboarding-store-publication.md`
+`STORE_RELATION_MODEL` → `capabilities/partner/store-relation-model.md`
 `STORE_OPERATIONAL_AVAILABILITY` → `capabilities/partner/store-operational-availability.md`
 `CENTRAL_CATALOG` → `capabilities/partner/central-catalog.md`
 `STORE_CAPTAIN_MEMBERSHIP` → `capabilities/partner/store-captain-membership.md`
