@@ -63,8 +63,8 @@ func TestIndependentStoreBannerDraftRejectsMarketplacePublication(t *testing.T) 
 			}
 			if _, err := db.ExecContext(ctx, `INSERT INTO dsh.discovery_content
 				(id,kind,title_ar,media_asset_id,target_type,target_id,source_store_id,service_city_id,state,starts_at,ends_at,created_by_actor_id,partner_enabled)
-				VALUES($1,'BANNER','بنر خاص',$2,'STORE',$3,$4,'DRAFT',now()-interval '1 hour',now()+interval '1 day',$5,true)`,
-				store+"-content", asset, store, city, store+"-owner"); err != nil {
+				VALUES($1,'BANNER','بنر خاص',$2,'STORE',$3,$4,$5,'DRAFT',now()-interval '1 hour',now()+interval '1 day',$6,true)`,
+				store+"-content", asset, store, store, city, store+"-owner"); err != nil {
 				t.Fatal(err)
 			}
 		}
