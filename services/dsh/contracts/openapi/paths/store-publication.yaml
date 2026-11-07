@@ -3,7 +3,7 @@ paths:
     post:
       operationId: createPartnerFirstStore
       summary: Create an unpublished first Store for the authenticated Partner without a joining request
-      security: [{ partnerBearer: [] }]
+      security: [{ userBearer: [] }]
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerFirstStoreCreateRequest" } } }
