@@ -66,7 +66,7 @@ const publishedStoreBannerSQL = `SELECT content.id,content.kind,content.title_ar
    AND (content.ends_at IS NULL OR content.ends_at>statement_timestamp())
    AND (content.service_city_id IS NULL OR content.service_city_id=$2)
    AND store.service_city_id=$2
-   AND store.publication_state='published'
+   AND store.publication_state='published' AND store.relation_model='BTHWANI_PARTNER'
    AND store.publication_changed_at IS NOT NULL
    AND EXISTS (
       SELECT 1 FROM dsh.discovery_content_media_assets asset
@@ -83,7 +83,7 @@ const publishedStoreBannerSQL = `SELECT content.id,content.kind,content.title_ar
 			WHERE store.id=content.target_id
 			  AND (content.source_store_id IS NULL OR store.id=content.source_store_id)
 			  AND ($2='' OR store.service_city_id=$2)
-			  AND store.publication_state='published'
+			  AND store.publication_state='published' AND store.relation_model='BTHWANI_PARTNER'
 			  AND store.publication_changed_at IS NOT NULL
 			  AND EXISTS (
 				  SELECT 1 FROM dsh.catalog_store_offers offer
@@ -118,7 +118,7 @@ const publishedStoreBannerSQL = `SELECT content.id,content.kind,content.title_ar
 				    JOIN dsh.service_cities city ON city.id=store.service_city_id AND city.active=true
 				    WHERE store.id=promotion.store_id
 				      AND ($2='' OR store.service_city_id=$2)
-				      AND store.publication_state='published'
+				      AND store.publication_state='published' AND store.relation_model='BTHWANI_PARTNER'
 				      AND store.publication_changed_at IS NOT NULL
 				      AND (promotion.service_city_id IS NULL OR promotion.service_city_id='' OR promotion.service_city_id=store.service_city_id)
 				      AND EXISTS (

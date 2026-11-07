@@ -132,7 +132,7 @@ func discoveryContentTargetEligibilityPredicate(contentAlias, serviceCityPlaceho
 			WHERE store.id=` + contentAlias + `.target_id
 			  AND (` + contentAlias + `.source_store_id IS NULL OR store.id=` + contentAlias + `.source_store_id)
 			  AND (` + serviceCityPlaceholder + `='' OR store.service_city_id=` + serviceCityPlaceholder + `)
-			  AND store.publication_state='published'
+			  AND store.publication_state='published' AND store.relation_model='BTHWANI_PARTNER'
 			  AND store.publication_changed_at IS NOT NULL
 			  AND EXISTS (
 				  SELECT 1 FROM dsh.catalog_store_offers offer
@@ -167,7 +167,7 @@ func discoveryContentTargetEligibilityPredicate(contentAlias, serviceCityPlaceho
 				    JOIN dsh.service_cities city ON city.id=store.service_city_id AND city.active=true
 				    WHERE store.id=promotion.store_id
 				      AND (` + serviceCityPlaceholder + `='' OR store.service_city_id=` + serviceCityPlaceholder + `)
-				      AND store.publication_state='published'
+				      AND store.publication_state='published' AND store.relation_model='BTHWANI_PARTNER'
 				      AND store.publication_changed_at IS NOT NULL
 				      AND (promotion.service_city_id IS NULL OR promotion.service_city_id='' OR promotion.service_city_id=store.service_city_id)
 				      AND EXISTS (

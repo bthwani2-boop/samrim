@@ -44,9 +44,9 @@ func ClientShareExists(ctx context.Context, db *sql.DB, kind, resourceID string)
 	var q string
 	switch kind {
 	case "STORE":
-		q = `SELECT EXISTS(SELECT 1 FROM dsh.stores WHERE id=$1 AND publication_state='published' AND deleted_at IS NULL)`
+		q = `SELECT EXISTS(SELECT 1 FROM dsh.stores WHERE id=$1 AND relation_model='BTHWANI_PARTNER' AND publication_state='published' AND deleted_at IS NULL)`
 	case "OFFER":
-		q = `SELECT EXISTS(SELECT 1 FROM dsh.catalog_store_offers o JOIN dsh.stores s ON s.id=o.store_id WHERE o.id=$1 AND o.publication_state='published' AND o.availability=true AND s.publication_state='published' AND s.deleted_at IS NULL)`
+		q = `SELECT EXISTS(SELECT 1 FROM dsh.catalog_store_offers o JOIN dsh.stores s ON s.id=o.store_id WHERE o.id=$1 AND o.publication_state='published' AND o.availability=true AND s.publication_state='published' AND s.relation_model='BTHWANI_PARTNER' AND s.deleted_at IS NULL)`
 	case "PROMOTION":
 		q = `SELECT EXISTS(SELECT 1 FROM dsh.commerce_promotions p WHERE p.id=$1 AND p.state='PUBLISHED' AND p.starts_at<=clock_timestamp() AND (p.ends_at IS NULL OR p.ends_at>clock_timestamp()) AND NOT EXISTS (SELECT 1 FROM dsh.marketing_campaign_promotion_links l JOIN dsh.marketing_campaigns c ON c.id=l.campaign_id WHERE l.promotion_id=p.id AND c.state<>'PUBLISHED'))`
 	case "CONTENT":

@@ -121,7 +121,7 @@ func ListPublishedStorePage(ctx context.Context, db *sql.DB, input PublicStoreLi
 		sc.id AS service_city_id,sc.display_name_ar,sc.active AS service_city_active,sc.version AS service_city_version,sc.created_at AS service_city_created_at,sc.updated_at AS service_city_updated_at
 		FROM dsh.stores s JOIN dsh.service_cities sc ON sc.id=s.service_city_id
 		CROSS JOIN LATERAL (SELECT CASE WHEN $4::double precision IS NULL OR $5::double precision IS NULL OR s.delivery_origin_latitude IS NULL OR s.delivery_origin_longitude IS NULL THEN NULL ELSE (6371000.0 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians($4)) * cos(radians(s.delivery_origin_latitude)) * cos(radians(s.delivery_origin_longitude) - radians($5)) + sin(radians($4)) * sin(radians(s.delivery_origin_latitude))))))::double precision END AS distance_meters) location
-		WHERE s.service_city_id=$1 AND sc.active=true AND s.publication_state='published' AND s.publication_changed_at IS NOT NULL
+		WHERE s.service_city_id=$1 AND sc.active=true AND s.publication_state='published' AND s.relation_model='BTHWANI_PARTNER' AND s.publication_changed_at IS NOT NULL
 		AND ($2='' OR lower(s.name) LIKE $2 ESCAPE '!')
 		AND ($3='' OR EXISTS (WITH RECURSIVE store_categories(id,parent_category_id,vertical_id) AS (
 			SELECT c.id,c.parent_category_id,c.vertical_id FROM dsh.catalog_store_offers o

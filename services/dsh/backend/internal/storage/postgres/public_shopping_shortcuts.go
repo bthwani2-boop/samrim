@@ -36,7 +36,7 @@ AND EXISTS (
     JOIN dsh.catalog_product_variants variant ON variant.id=offer.variant_id
     JOIN dsh.catalog_products product ON product.id=variant.product_id
     WHERE store.primary_vertical_id=shortcut.vertical_id AND store.service_city_id=city.id
-      AND store.publication_state='published' AND store.publication_changed_at IS NOT NULL
+      AND store.publication_state='published' AND store.relation_model='BTHWANI_PARTNER' AND store.publication_changed_at IS NOT NULL
       AND EXISTS (SELECT 1 FROM dsh.joining_cases joined WHERE joined.partner_actor_id=store.partner_actor_id
                   AND joined.financial_profile_state='ACTIVE')
       AND dsh.shopping_shortcut_matches_product(shortcut.id,store.id,product.id)

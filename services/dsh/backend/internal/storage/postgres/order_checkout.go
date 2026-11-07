@@ -246,7 +246,7 @@ func CreateOrderFromCart(ctx context.Context, db *sql.DB, input CheckoutInput) (
 	err = tx.QueryRowContext(ctx, `SELECT s.service_city_id,s.version,s.fulfillment_modes,a.service_city_id,a.version,a.address_text,a.latitude,a.longitude
 FROM dsh.stores s JOIN dsh.service_cities c ON c.id=s.service_city_id AND c.active=true
 LEFT JOIN dsh.delivery_addresses a ON a.id=NULLIF($2,'') AND a.client_actor_id=$3
-WHERE s.id=$1 AND s.publication_state='published' AND ($4='CUSTOMER_PICKUP' OR a.id IS NOT NULL)`, input.StoreID, input.AddressID, input.ClientActorID, input.FulfillmentMode).Scan(&storeCityID, &storeVersion, pq.Array(&storeFulfillmentModes), &addressCityID, &addressVersion, &addressText, &latitude, &longitude)
+WHERE s.id=$1 AND s.publication_state='published' AND s.relation_model='BTHWANI_PARTNER' AND ($4='CUSTOMER_PICKUP' OR a.id IS NOT NULL)`, input.StoreID, input.AddressID, input.ClientActorID, input.FulfillmentMode).Scan(&storeCityID, &storeVersion, pq.Array(&storeFulfillmentModes), &addressCityID, &addressVersion, &addressText, &latitude, &longitude)
 	modeSupported := false
 	for _, mode := range storeFulfillmentModes {
 		if mode == input.FulfillmentMode {
