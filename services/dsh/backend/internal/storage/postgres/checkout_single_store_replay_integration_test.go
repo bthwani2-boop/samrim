@@ -147,6 +147,37 @@ func TestConcurrentSingleStoreCheckoutPersistsExactlyOneOrder(t *testing.T) {
 			},
 		}
 		input.RequestHash = postgres.HashCheckoutRequest(input)
+		// Defense-in-depth: this disposable database deliberately simulates a
+		// legacy/inconsistent published Store relation that the live DB CHECK
+		// prohibits. Public marketplace reads and checkout must still reject it.
+		if _, err := db.ExecContext(ctx, "ALTER TABLE dsh.stores DROP CONSTRAINT stores_independent_market_publication_chk"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.stores SET relation_model=$1 WHERE id=$2", postgres.StoreRelationIndependent, store); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := postgres.ReadPublishedStore(ctx, db, store, city); !errors.Is(err, postgres.ErrStoreNotFound) {
+			t.Fatalf("independent Store must not be readable as a published marketplace Store: %v", err)
+		}
+		page, err := postgres.ListPublishedStorePage(ctx, db, postgres.PublicStoreListQuery{ServiceCityID: city})
+		if err != nil || len(page.Stores) != 0 {
+			t.Fatalf("independent Store must not appear in marketplace discovery: %+v %v", page, err)
+		}
+		if _, err := postgres.ReadPublicCatalog(ctx, db, store, city, "", "", "", 10, ""); !errors.Is(err, postgres.ErrStoreNotFound) {
+			t.Fatalf("independent Store must not expose the marketplace catalog: %v", err)
+		}
+		if _, _, err := postgres.CreateOrderFromCart(ctx, db, input); !errors.Is(err, postgres.ErrCheckoutEvidenceStale) {
+			t.Fatalf("independent Store must not create a marketplace Order: %v", err)
+		}
+		if got := provisions.Load(); got != 0 {
+			t.Fatalf("independent checkout must not provision a marketplace payment: %d", got)
+		}
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.stores SET relation_model=$1 WHERE id=$2", postgres.StoreRelationBThwaniPartner, store); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, "ALTER TABLE dsh.stores ADD CONSTRAINT stores_independent_market_publication_chk CHECK (relation_model='BTHWANI_PARTNER' OR publication_state <> 'published')"); err != nil {
+			t.Fatal(err)
+		}
 		const workers = 8
 		type outcome struct {
 			order    postgres.OrderRecord

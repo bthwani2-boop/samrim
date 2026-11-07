@@ -95,7 +95,7 @@ func ListPublicDiscoveryCategories(ctx context.Context, db *sql.DB, serviceCityI
 		JOIN dsh.catalog_products p ON p.id=v.product_id
 		JOIN dsh.catalog_product_categories pc ON pc.product_id=p.id
 		JOIN dsh.catalog_categories c ON c.id=pc.category_id AND c.active=true AND c.vertical_id=p.vertical_id
-		WHERE sc.id=$1 AND s.publication_state='published' AND s.publication_changed_at IS NOT NULL
+		WHERE sc.id=$1 AND s.publication_state='published' AND s.relation_model='BTHWANI_PARTNER' AND s.publication_changed_at IS NOT NULL
 		AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id)
 		ORDER BY pc.category_id`
 	rows, err := db.QueryContext(ctx, query, strings.TrimSpace(serviceCityID))
@@ -132,7 +132,7 @@ func ListPublicDiscoveryVerticals(ctx context.Context, db *sql.DB, serviceCityID
 			SELECT 1 FROM dsh.stores store
 			JOIN dsh.service_cities city ON city.id=store.service_city_id AND city.active=true
 			JOIN dsh.joining_cases joining ON joining.partner_actor_id=store.partner_actor_id AND joining.financial_profile_state='ACTIVE'
-			WHERE city.id=$1 AND store.primary_vertical_id=vertical.id AND store.publication_state='published' AND store.publication_changed_at IS NOT NULL
+			WHERE city.id=$1 AND store.primary_vertical_id=vertical.id AND store.publication_state='published' AND store.relation_model='BTHWANI_PARTNER' AND store.publication_changed_at IS NOT NULL
 			AND EXISTS (SELECT 1 FROM dsh.catalog_store_offers offer WHERE offer.store_id=store.id
 				AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=offer.id)))
 		ORDER BY lower(vertical.name_ar),vertical.id`, serviceCityID)
@@ -257,7 +257,7 @@ func ReadPublicPopularCatalog(ctx context.Context, db *sql.DB, storeID, serviceC
 		return PublicCatalogRecord{}, ErrStoreNotFound
 	}
 	var verticalID string
-	if err := db.QueryRowContext(ctx, `SELECT s.primary_vertical_id FROM dsh.stores s JOIN dsh.service_cities c ON c.id=s.service_city_id AND c.active=true JOIN dsh.commerce_verticals v ON v.id=s.primary_vertical_id AND v.active=true WHERE s.id=$1 AND s.service_city_id=$2 AND s.publication_state='published'`, storeID, serviceCityID).Scan(&verticalID); errors.Is(err, sql.ErrNoRows) {
+	if err := db.QueryRowContext(ctx, `SELECT s.primary_vertical_id FROM dsh.stores s JOIN dsh.service_cities c ON c.id=s.service_city_id AND c.active=true JOIN dsh.commerce_verticals v ON v.id=s.primary_vertical_id AND v.active=true WHERE s.id=$1 AND s.service_city_id=$2 AND s.publication_state='published' AND s.relation_model='BTHWANI_PARTNER'`, storeID, serviceCityID).Scan(&verticalID); errors.Is(err, sql.ErrNoRows) {
 		return PublicCatalogRecord{}, ErrStoreNotFound
 	} else if err != nil {
 		return PublicCatalogRecord{}, fmt.Errorf("read popular public catalog scope: %w", err)
@@ -278,7 +278,7 @@ func ReadPublicPopularCatalog(ctx context.Context, db *sql.DB, storeID, serviceC
 }
 
 func listPopularStoreOffers(ctx context.Context, db *sql.DB, storeID, serviceCityID, verticalID, categoryID, query string, limit int, cursor string) ([]CatalogStoreOfferRecord, *string, error) {
-	conditions := []string{"o.store_id=$1", "s.service_city_id=$2", "s.primary_vertical_id=$3", "s.publication_state='published'", "EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id)", "popularity.order_count>0"}
+	conditions := []string{"o.store_id=$1", "s.service_city_id=$2", "s.primary_vertical_id=$3", "s.publication_state='published' AND s.relation_model='BTHWANI_PARTNER'", "EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id)", "popularity.order_count>0"}
 	args := []any{storeID, serviceCityID, verticalID}
 	if categoryID != "" {
 		args = append(args, categoryID)
@@ -421,7 +421,7 @@ func readPublicCatalog(ctx context.Context, db *sql.DB, storeID, serviceCityID, 
 		FROM dsh.stores s
 		JOIN dsh.service_cities c ON c.id=s.service_city_id AND c.active=true
 		JOIN dsh.commerce_verticals v ON v.id=s.primary_vertical_id AND v.active=true
-		WHERE s.id=$1 AND s.service_city_id=$2 AND s.publication_state='published'`, storeID, serviceCityID).Scan(&verticalID)
+		WHERE s.id=$1 AND s.service_city_id=$2 AND s.publication_state='published' AND s.relation_model='BTHWANI_PARTNER'`, storeID, serviceCityID).Scan(&verticalID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PublicCatalogRecord{}, ErrStoreNotFound
 	}
