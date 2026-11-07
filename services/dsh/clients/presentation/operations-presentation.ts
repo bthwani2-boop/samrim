@@ -40,6 +40,7 @@ const publicationReadinessBlockedReasonLabels: Record<StorePublicationBlockedRea
   STORE_COVER_NOT_READY: "صورة غلاف المتجر غير جاهزة للنشر",
   STORE_SCHEDULE_NOT_READY: "ساعات عمل المتجر لم تُحدد بعد؛ أكملها من ملف المتجر قبل النشر",
   COMMERCIAL_AGREEMENT_NOT_READY: "اتفاقية المتجر لم تُقبل وتُعتمد ماليًا بعد",
+  STORE_NOT_MARKETPLACE: "هذا متجر مستقل ولا يُنشر في سوق بثواني؛ نشره يكون عبر رابط متجره الخاص بعد استيفاء شروط الاستضافة",
   READINESS_UNAVAILABLE: "تعذر التحقق من جاهزية المتجر حاليًا؛ أعد المحاولة",
 };
 

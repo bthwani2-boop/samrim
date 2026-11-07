@@ -89,7 +89,14 @@ function sortedIntervals(intervals: ReadonlyArray<StoreWorkingHoursInterval>): S
   return [...intervals].sort((left, right) => left.dayOfWeek - right.dayOfWeek || left.opensAt.localeCompare(right.opensAt) || left.closesAt.localeCompare(right.closesAt));
 }
 
-export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: JoiningCaseResponse; cities: ReadonlyArray<ServiceCity>; onUpdated: (next: JoiningCaseResponse) => void }) {
+export function JoiningCaseCorrection({ value, cities, onUpdated, submitCorrection, readCorrection, applicant = false }: {
+  value: JoiningCaseResponse;
+  cities: ReadonlyArray<ServiceCity>;
+  onUpdated: (next: JoiningCaseResponse) => void;
+  submitCorrection?: (caseID: string, input: CorrectJoiningCaseRequest, expectedVersion: number) => Promise<JoiningCaseResponse>;
+  readCorrection?: () => Promise<JoiningCaseResponse>;
+  applicant?: boolean;
+}) {
   const current = value.case;
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -249,15 +256,17 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
     setBusy(true);
     setError("");
     try {
-      const resubmitted = await correctAndResubmitOwnJoiningCase({
-        caseID: current.id,
-        input: correctionInput,
-        expectedVersion: current.version,
-      });
+      const resubmitted = submitCorrection
+        ? await submitCorrection(current.id, correctionInput, current.version)
+        : await correctAndResubmitOwnJoiningCase({
+          caseID: current.id,
+          input: correctionInput,
+          expectedVersion: current.version,
+        });
       onUpdated(resubmitted);
     } catch (nextError) {
       try {
-        const latest = await readOwnJoiningCase();
+        const latest = readCorrection ? await readCorrection() : await readOwnJoiningCase();
         const latestCase = latest.case;
         if (latestCase.id !== current.id) throw new Error("PARTNER_CORRECTION_WRONG_CASE_READBACK");
         // A failed write cannot discard the partner's edited form. In particular,
@@ -301,7 +310,7 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
       <Text style={styles.title}>التصحيح مطلوب قبل إعادة الإرسال</Text>
       <Text style={styles.reason}>{current.correctionReason || "طلب المشغّل تصحيح البيانات."}</Text>
       <Text style={styles.phone}>رقم الهاتف المعتمد: <Text style={styles.phoneValue}>{current.contactPhoneE164}</Text></Text>
-      <StoreProfileImageEditor value={value} onUpdated={onUpdated} />
+      {applicant ? null : <StoreProfileImageEditor value={value} onUpdated={onUpdated} />}
       <View style={styles.locationBox}>
         <Text style={styles.label}>موقع المتجر الثابت</Text>
         <Text style={styles.muted}>صحّح إحداثيات المتجر إذا طلب فريق التشغيل ذلك. احفظ نقطة المتجر نفسها، لا موقع الهاتف.</Text>

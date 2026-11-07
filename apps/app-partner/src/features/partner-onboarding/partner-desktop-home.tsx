@@ -10,6 +10,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { isMarketplaceStore } from "../../shell/partner-authority";
 import { catalogPublishedAvailability, isOfferStockout } from "../store-offer/inventory-stockout";
 import { agreementReadinessMessage, type StoreAgreementReadback } from "./store-agreement-readiness";
 import { nextStoreSetupFocus, storeSetupProgress } from "./partner-onboarding-next-step";
@@ -97,10 +98,11 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
   const router = useRouter();
   const [data, setData] = useState<Data>(empty);
   const [loading, setLoading] = useState(true);
-  const canOrders = store.owned || store.permissions.includes("orders");
+  const marketplace = isMarketplaceStore(store);
+  const canOrders = marketplace && (store.owned || store.permissions.includes("orders"));
   const canCatalog = store.owned || store.permissions.includes("catalog");
-  const canPromotions = store.owned || store.permissions.includes("promotions");
-  const canFinance = store.owned || store.permissions.includes("finance_read");
+  const canPromotions = marketplace && (store.owned || store.permissions.includes("promotions"));
+  const canFinance = marketplace && (store.owned || store.permissions.includes("finance_read"));
 
   useFocusEffect(useCallback(() => {
     let active = true;
@@ -119,9 +121,9 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
       const [orders, offers, financial, weekly, popular, inventory] = await Promise.allSettled([
         canOrders ? client.listPartnerOrders(token, { storeIds: [store.id], limit: 24 }) : Promise.resolve(null),
         canCatalog ? client.readOwnStoreOffers(token, store.id, 100) : Promise.resolve(null),
-        store.owned ? client.readOwnPartnerFinancialSummary(token) : Promise.resolve(null),
+        canFinance && store.owned ? client.readOwnPartnerFinancialSummary(token) : Promise.resolve(null),
         canOrders ? client.readPartnerStoreOrderSummary(token, store.id, "7d") : Promise.resolve(null),
-        canCatalog && store.publicationState === "published"
+        marketplace && canCatalog && store.publicationState === "published"
           ? client.readPublicStoreCatalog(store.id, store.serviceCityId, "", "", 4, "", "", "MOST_ORDERED_30_DAYS")
           : Promise.resolve(null),
         canCatalog ? client.readOwnStoreInventorySummary(token, store.id) : Promise.resolve(null),
@@ -151,7 +153,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
       setLoading(false);
     })().catch(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [store.id, store.owned, store.serviceCityId, store.publicationState, canCatalog, canOrders]));
+  }, [store.id, store.owned, store.serviceCityId, store.publicationState, canCatalog, canOrders, canFinance, marketplace]));
 
   const stockout = data.offers?.filter(isOfferStockout) ?? [];
   const unavailable = data.offers?.filter(item => item.publicationState === "published" && !item.availability) ?? [];
@@ -212,8 +214,8 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
           {canOrders ? tile("الطلبات الجديدة", data.attention?.newOrders.toLocaleString("ar-YE") ?? "—", data.attention ? "تحتاج قبولًا أو مراجعة" : "تعذر قراءة العدد", "orders", "/orders" as Href) : null}
           {canOrders ? tile("بانتظار التسليم", data.attention?.awaitingDispatch.toLocaleString("ar-YE") ?? "—", "طابور المتجر الحالي", "deliveries", "/orders" as Href) : null}
           {canOrders ? tile("طلبات ٧ أيام", data.weeklyOrderSummary?.totalOrders.toLocaleString("ar-YE") ?? "—", data.weeklyOrderSummary ? "جميع طلبات هذا المتجر المنشأة خلال الفترة، من DSH" : "تعذر قراءة ملخص المتجر الكامل", "orders", "/orders" as Href) : null}
-          {canCatalog ? tile("المنتجات المتاحة", data.inventory?.availableOffers.toLocaleString("ar-YE") ?? "—", data.inventory ? "من جميع عروض المتجر المنشورة، DSH" : "تعذر قراءة إجمالي المخزون", "cart", "/products" as Href) : null}
-          {store.owned ? tile("المستحقات المكتسبة", financialReady ? formatMoney(data.finance!.earnedMinor, "YER") : "—", financialReady ? "من ملخص التسوية الموثق" : "لم تكتمل قراءة المالية", "wallet", "/wallet" as Href) : null}
+          {canCatalog ? tile("المنتجات المتاحة", data.inventory?.availableOffers.toLocaleString("ar-YE") ?? "—", data.inventory ? (marketplace ? "من جميع عروض المتجر المنشورة، DSH" : "من الكتالوج الخاص؛ ليس نشرًا للعملاء") : "تعذر قراءة إجمالي المخزون", "cart", "/products" as Href) : null}
+          {canFinance && store.owned ? tile("المستحقات المكتسبة", financialReady ? formatMoney(data.finance!.earnedMinor, "YER") : "—", financialReady ? "من ملخص التسوية الموثق" : "لم تكتمل قراءة المالية", "wallet", "/wallet" as Href) : null}
         </View>
 
         <View style={styles.panel}>
@@ -222,13 +224,13 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
               <Text style={styles.panelTitle}>تجهيز المتجر وتشغيله</Text>
               <Text style={styles.muted}>تابع إعدادات المتجر من نفس لوحة العمل.</Text>
             </View>
-            <View style={styles.progressPill}>
+            {marketplace ? <View style={styles.progressPill}>
               <Text style={styles.progressNumber}>{progress.total ? `${progress.completed}/${progress.total}` : "—"}</Text>
               <Text style={styles.muted}>خطوات مكتملة</Text>
               {progress.unknown > 0 ? <Text style={styles.muted}>{`غير متحقق منها: ${progress.unknown}`}</Text> : null}
-            </View>
+            </View> : null}
           </View>
-          {setupFocus ? <View style={styles.nextSetup} accessibilityLabel="توجيه إعداد المتجر">
+          {marketplace && setupFocus ? <View style={styles.nextSetup} accessibilityLabel="توجيه إعداد المتجر">
             <View style={styles.nextSetupCopy}>
               <Text style={styles.nextSetupEyebrow}>المتابعة الآن</Text>
               <Text style={styles.nextSetupTitle}>{setupFocus.title}</Text>
@@ -240,19 +242,19 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
             </Pressable> : null}
           </View> : null}
           <View style={styles.setupGrid}>
-            {store.owned ? action("هوية المتجر", store.publicationState === "published" ? "المتجر منشور للعملاء" : "مراجعة بيانات المتجر والنشر", "/store?section=settings" as Href, "store", store.publicationState === "published") : null}
-            {canCatalog ? action("إعداد الكتالوج", data.offers === null ? "البيانات غير متاحة حاليًا" : catalogReady === null ? "لم تكتمل قراءة الكتالوج؛ راجع بقية المنتجات" : catalogReady ? "يوجد منتجات متاحة للطلب" : "راجع المنتجات والأسعار", "/products" as Href, "cart", catalogReady) : null}
+            {store.owned ? action("هوية المتجر", !marketplace ? "معاينة خاصة؛ النشر العام غير مفعل" : store.publicationState === "published" ? "المتجر منشور للعملاء" : "مراجعة بيانات المتجر والنشر", "/store?section=settings" as Href, "store", marketplace && store.publicationState === "published") : null}
+            {canCatalog ? action("إعداد الكتالوج", data.offers === null ? "البيانات غير متاحة حاليًا" : catalogReady === null ? "لم تكتمل قراءة الكتالوج؛ راجع بقية المنتجات" : catalogReady ? (marketplace ? "يوجد منتجات متاحة للطلب" : "المنتجات جاهزة للمعاينة الخاصة؛ الطلب المباشر غير مفعل") : "راجع المنتجات والأسعار", "/products" as Href, "cart", catalogReady) : null}
             {canOperate ? action("إعدادات التشغيل", operationalKnown ? "استقبال الطلبات: " + operationalState : "تعذر قراءة حالة التشغيل", "/store?section=operations" as Href, "deliveries") : null}
-            {store.owned ? action("الاتفاقية التجارية", agreementReadinessMessage(commercialAgreement), "/store?section=commercial" as Href, "wallet", commercialAgreement === null || commercialAgreement === "UNAVAILABLE" ? null : commercialAgreement === "ACTIVE") : null}
+            {marketplace && store.owned ? action("الاتفاقية التجارية", agreementReadinessMessage(commercialAgreement), "/store?section=commercial" as Href, "wallet", commercialAgreement === null || commercialAgreement === "UNAVAILABLE" ? null : commercialAgreement === "ACTIVE") : null}
             {canPromotions ? action("العروض", "تحرير العروض المتاحة للمتجر", "/store?section=promotions" as Href, "offers") : null}
             {store.owned ? action("الموظفين", "دعوة الموظفين وإدارة صلاحياتهم", "/employees" as Href, "account") : null}
-            {store.owned ? action("كباتن المتجر", "إدارة عضويات كباتن المتجر", "/store?section=team" as Href, "deliveries") : null}
+            {marketplace && store.owned ? action("كباتن المتجر", "إدارة عضويات كباتن المتجر", "/store?section=team" as Href, "deliveries") : null}
             {canFinance ? action("المحفظة والتسويات", "ملخص وحركات الحساب المصرّح بها", "/wallet" as Href, "wallet") : null}
           </View>
         </View>
 
         <View style={styles.cardsRow}>
-          <View style={styles.panelHalf}>
+          {canOrders ? <View style={styles.panelHalf}>
             {panelTitle("أحدث الطلبات", canOrders ? "/orders" as Href : undefined)}
             {data.recentOrders === null ? <Text style={styles.empty}>{canOrders ? "تعذر قراءة أحدث الطلبات." : "لا تملك صلاحية قراءة الطلبات."}</Text> : orders.length === 0 ? <Text style={styles.empty}>لا توجد طلبات حديثة لهذا المتجر.</Text> :
               <View style={styles.table}>
@@ -264,7 +266,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
                   <Text numberOfLines={1} style={styles.tableValue}>{formatMoney(order.totalAmountMinor, "YER")}</Text>
                 </Pressable>)}
               </View>}
-          </View>
+          </View> : null}
           <View style={styles.panelHalf}>
             {panelTitle("المنتجات التي تحتاج متابعة", canCatalog ? "/products?filter=unavailable" as Href : undefined)}
             {data.offers === null ? <Text style={styles.empty}>{canCatalog ? "تعذر قراءة الكتالوج." : "لا تملك صلاحية قراءة الكتالوج."}</Text> : stockout.length === 0 && unavailable.length === 0 ?
@@ -285,7 +287,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
           </View>
         </View>
 
-        <View style={styles.cardsRow}>
+        {canOrders ? <View style={styles.cardsRow}>
           <View style={styles.panelHalf}>
             {panelTitle("الطلبات حسب الحالة", canOrders ? "/orders" as Href : undefined)}
             {data.recentOrders === null ? <Text style={styles.empty}>تعذر قراءة حالة الطلبات.</Text> :
@@ -316,7 +318,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
               <Text style={styles.muted}>آخر 7 أيام من الطلبات المحمّلة فقط؛ ليست إحصاءات المبيعات الشاملة.</Text>
             </View>}
           </View>
-        </View>
+        </View> : null}
       </View>
 
       <View style={styles.sideColumn}>
@@ -352,7 +354,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
             </Pressable>)}
           {canCatalog && data.offersPartial ? <Text style={styles.muted}>قائمة أسماء المنتجات من أول 100 عرض فقط؛ العدد الإجمالي أعلاه يشمل كامل المتجر.</Text> : null}
         </View>
-        {canCatalog ? <View style={styles.panel}>
+        {marketplace && canCatalog ? <View style={styles.panel}>
           {panelTitle("الأكثر طلبًا خلال 30 يومًا", "/products" as Href)}
           {store.publicationState !== "published" ? <Text style={styles.empty}>يظهر الترتيب بعد نشر المتجر.</Text> :
             loading ? <Text style={styles.empty}>جارٍ قراءة ترتيب المنتجات…</Text> :

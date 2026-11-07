@@ -252,6 +252,7 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
                   reason === "CATALOG_NOT_READY" ? <span>جهّز المنتجات من قسم الكتالوج الخاص بالمتجر.</span> :
                   reason === "STORE_SCHEDULE_NOT_READY" ? <span>حدّد أوقات العمل من إعدادات تشغيل المتجر.</span> :
                   reason === "FINANCIAL_PROFILE_NOT_READY" ? <span>يُراجع المشغّل الربط المالي بعد اعتماد الانضمام.</span> :
+                   reason === "STORE_NOT_MARKETPLACE" ? <span>هذا متجر مستقل ولا يُنشر داخل سوق بثواني. اعتمد مسار نشر موقع المتجر المستقل عند توافره.</span> :
                     <span>راجع بيانات المتجر وصلاحية مدينة الخدمة.</span>}
                 </li>)}
               </ul>

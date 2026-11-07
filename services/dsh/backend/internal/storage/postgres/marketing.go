@@ -1084,6 +1084,20 @@ func validateDiscoveryContentPublication(ctx context.Context, tx *sql.Tx, id str
 	} else if err != nil {
 		return err
 	}
+	// Content authored for a merchant-direct Store stays a DRAFT in the
+	// marketplace channel. Even a corrupted published Store row cannot
+	// grant marketplace distribution or a new publication state.
+	if sourceStoreID != "" {
+		var relation string
+		if err := tx.QueryRowContext(ctx, "SELECT relation_model FROM dsh.stores WHERE id=$1 AND deleted_at IS NULL FOR SHARE", sourceStoreID).Scan(&relation); errors.Is(err, sql.ErrNoRows) {
+			return ErrDiscoveryContentTargetInvalid
+		} else if err != nil {
+			return err
+		}
+		if relation != StoreRelationBThwaniPartner {
+			return ErrDiscoveryContentTargetInvalid
+		}
+	}
 	eligibleAt := time.Now().UTC()
 	if startsAt.After(eligibleAt) {
 		eligibleAt = startsAt

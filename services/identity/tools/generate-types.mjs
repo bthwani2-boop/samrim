@@ -46,6 +46,7 @@ const schemaNames = [
   "OperatorEnrollmentRequest",
   "OperatorEnrollmentToken",
   "ClientCredentialProofRequest",
+  "PartnerSelfRegistrationRequest",
   "ClientRecoveryProofRequest",
   "PasswordLoginRequest",
   "ManagedPasswordLoginRequest",

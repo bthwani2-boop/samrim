@@ -104,6 +104,46 @@ func (s *Service) RegisterClient(ctx context.Context, input domain.ClientCredent
 	})
 }
 
+// RegisterVerifiedPartner converts only an existing, live, password-backed
+// Client identity into a first-time Partner account. It uses the same actor,
+// never grants Operator permissions, and does not publish any Store.
+func (s *Service) RegisterVerifiedPartner(ctx context.Context, clientAccessToken, clientInstanceID string) (domain.TokenPair, error) {
+	identity, err := s.sessions.ResolveAccessToken(ctx, clientAccessToken)
+	if err != nil {
+		return domain.TokenPair{}, err
+	}
+	if identity.Role != "client" || identity.Surface != "app-client" || identity.Subject == "" || identity.SessionID == "" {
+		return domain.TokenPair{}, domain.ErrForbidden
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.TokenPair{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var active bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(
+		SELECT 1 FROM identity_sessions WHERE id=$1 AND actor_id=$2 AND role='client'
+		  AND revoked_at IS NULL AND access_expires_at>clock_timestamp()
+		  AND absolute_expires_at>clock_timestamp())`,
+		identity.SessionID, identity.Subject).Scan(&active); err != nil {
+		return domain.TokenPair{}, err
+	}
+	if !active {
+		return domain.TokenPair{}, domain.ErrUnauthenticated
+	}
+	if err := s.actors.AdmitSelfRegisteredPartnerTx(ctx, tx, identity.Subject); err != nil {
+		return domain.TokenPair{}, err
+	}
+	pair, err := s.sessions.CreateTx(ctx, tx, identity.Subject, "partner", clientInstanceID)
+	if err != nil {
+		return domain.TokenPair{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.TokenPair{}, err
+	}
+	return pair, nil
+}
+
 func (s *Service) RequestClientRecovery(ctx context.Context, input domain.PhoneRequest, ipHash string) (domain.Challenge, error) {
 	phone, err := identitysecurity.NormalizePhoneE164(input.Phone)
 	if err != nil {

@@ -32,7 +32,7 @@ OUTCOME: An eligible managed participant becomes a canonically resolved actor wi
 SURFACES: OPERATOR, PARTNER, CAPTAIN
 OWNERS: IDENTITY, DSH
 CAPABILITIES: IDENTITY_ACTIVATION_SESSIONS
-ENTRY: Authorized DSH domain admission or eligibility exists for a Partner or Captain. Historical Field identity/standing remains separately governed for attribution and rights.
+ENTRY: A verified Partner self-registers directly through Identity; Captain roles and historical managed/invited participants retain their explicit governed eligibility requirements. Historical Field standing remains separately governed.
 EXIT: The target role is admitted and its target surface can authenticate and read owner-backed standing state.
 READBACK: Identity role/session readback plus DSH domain-standing readback.
 
@@ -47,7 +47,7 @@ OPERATOR
 → DSH standing readback
 ```
 
-Partner and Captain each use a role-scoped app session. Retired Field sessions are not accepted; archived ledger data is read through authorized Finance records only. Eligibility, role admission, activation, authentication and resource authorization remain distinct. Client self-registration and Operator bootstrap/recovery remain access subflows.
+Partner and Captain each use a role-scoped app session. Partner self-registration after canonical phone verification no longer depends on Operator admission or a JoiningCase. Captain enrollment and historical managed invitations retain their explicit gates. Retired Field sessions are not accepted; archived ledger data is read through authorized Finance records only. Resource authorization and Store publication remain distinct.
 
 ### Failure / recovery
 
@@ -57,45 +57,41 @@ Duplicate actor risk, ineligible candidate, stale admission, replay, cross-role 
 
 No surface grants its own role. Current task assignment never substitutes for standing role admission. No sixth Store-staff role is created.
 
-## PARTNER_TO_VISIBLE_STORE — acquisition to customer-visible Store
+## PARTNER_TO_VISIBLE_STORE — direct registration to customer-visible Store
 
 JOURNEY_ID: PARTNER_TO_VISIBLE_STORE
-OUTCOME: A legitimate prospect progresses through Partner self-service or Operator-assisted intake to one published Store only after its bound Partner owner accepts the exact Store Commercial Agreement and Finance approves it; the Client then receives the separate customer-safe visibility readback. New Field referral attribution is prohibited; prior attribution is audit history only.
-SURFACES: OPERATOR, PARTNER, CLIENT
+OUTCOME: A person verifies their phone, registers or signs into the Partner role without a joining application or Operator admission, creates an unpublished first Store in DSH immediately, and prepares its catalog, media and financial agreement. Customer visibility is a **later, independent Store-specific readiness decision**, never an automatic registration side effect.
+SURFACES: PARTNER, OPERATOR, CLIENT
 OWNERS: IDENTITY, DSH, WLT
 CAPABILITIES: PARTNER_ONBOARDING_STORE_PUBLICATION, IDENTITY_ACTIVATION_SESSIONS, CENTRAL_CATALOG, STORE_COMMERCIAL_AGREEMENT
-ENTRY: An authorized Operator-originated joining case or an Identity-verified Partner self-service first-Store application starts the prospective case; no new Field attribution can be attached.
-EXIT: The exact Store agreement is Partner-accepted and Finance-approved, initial catalog and final Operator readiness pass, and Store publication plus customer-safe readback are available.
-READBACK: Operator and Partner read joining/publication state; Finance and Partner read the canonical agreement state; Client receives the Store projection when visibility gates pass. Operator Finance retains historical Field-attribution and ledger readback, not reward issuance.
+ENTRY: Identity-verified Partner registration/login, without any JoiningCase or Field referral.
+EXIT: Exact agreement accepted by Partner and approved by Finance, initial catalog/media and required publication readiness satisfied, followed by DSH public Store readback.
+READBACK: Identity returns the Partner role/session; DSH returns the canonical Store owned by the same actor and initially unpublished; WLT confirms agreement state; Client sees the public projection only after publication.
 
 ### Frontstage and handoffs
 
 ```text
-PROSPECT → verified self-service first-Store application from Partner entrance; DSH binds the canonical applicant actor and phone
-OPERATOR → alternatively create a Partner joining case without any Field attribution
-OPERATOR → review / correction / rejection / admission
-DSH → Identity partner-role request
-PARTNER → confirm/correct canonical onboarding data
-DSH → Store ownership + Service City + Commerce Vertical + Store Type + durable fulfillment-mode policy
-WLT → Store-specific agreement proposal
-PARTNER → accept exact agreement version and rates
-FINANCE → approve; WLT activates only after both gates
-PARTNER / OPERATOR → authorized initial Store catalog and media readiness
-OPERATOR → final readiness and publication approval
-DSH → Store publication
-DSH → idempotent Partner Go-Live/catalog handoff without Field reward issuance
-CLIENT → customer-safe Store projection
+PARTNER → phone, password and OTP (new account) or existing Partner login
+IDENTITY → verify canonical actor; first-time Partner role/session, no Operator approval
+PARTNER → Store identity, active Service City, Vertical and Store Type, address and map location
+DSH → one owned first Store, unpublished + paused, replay-safe (no JoiningCase)
+PARTNER → manage the Store, logo/cover, catalog and business hours
+WLT → Store-specific commercial agreement proposal
+PARTNER → accept exact agreement
+FINANCE → approve; WLT activates the applicable financial profile
+DSH → separate Store publication readiness and authorized publication
+CLIENT → customer-safe published Store projection and independent orderability state
 ```
 
-Store publication is not current orderability. Durable enabled fulfillment modes are not temporary mode availability. The JoiningCase remains onboarding history; ongoing Partner Store scope after admission comes from DSH Store ownership and accepted Store-scoped delegation.
+Historical Field-origin and previous self-service JoiningCases remain readable to authorized users, but **no new Partner registration or Store setup** produces a JoiningCase. Those legacy cases do not become a second Store/identity owner.
 
 ### Failure / recovery
 
-Missing/incompatible first-Store facts, correction loops, duplicate logical case, stale version, a historical Field-originated case requiring authorized correction without new attribution, self-service Identity phone/actor mismatch, duplicate-actor risk, missing Partner acceptance, missing Finance approval and interrupted Identity/WLT handoff recover through canonical readback without rebinding the case, actor or agreement version. Missing or inactive agreement blocks publication.
+Invalid OTP, unauthorized role, wrong Actor or Store owner, duplicate/racing first-Store writes, inconsistent city/type, abandoned setup, network retries, absent image/catalog/operating hours, inactive agreement or missing Finance approval fail closed through the canonical owner. Exact retries re-read the original Store; they never create another Store or publish it prematurely.
 
 ### Negative space
 
-Field does not approve its own case, accept for the Partner or approve financial terms. Operator does not become Partner/Store owner. Store is not a tenant. The first JoiningCase is not a permanent one-Store workspace root.
+A person cannot self-reactivate a disabled Partner role or impersonate another actor. Identity admission is not Store ownership or publication; creating a Store is not Finance approval or customer orderability. Operator and Field do not own the Partner's Store.
 
 ## STORE_ORDERABILITY — published Store to current ability to accept orders
 

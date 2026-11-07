@@ -11,12 +11,12 @@ function safeShareProductId(value: string): boolean {
 
 /** A Store URL is public only after DSH publication and an explicit public web origin. */
 export function buildPartnerStorefrontURL(
-  store: Pick<PartnerAccessibleStore, "id" | "serviceCityId" | "publicationState">,
+  store: Pick<PartnerAccessibleStore, "id" | "serviceCityId" | "publicationState" | "relationModel">,
   configuredOrigin: string | undefined,
   allowLocalPreview = false,
   productId = "",
 ): PartnerStorefrontURL | null {
-  if (store.publicationState !== "published") return null;
+  if (store.publicationState !== "published" || store.relationModel !== "BTHWANI_PARTNER") return null;
   if (!/^[A-Za-z0-9_-]{1,150}$/.test(store.id) || !/^[A-Za-z0-9_-]{1,150}$/.test(store.serviceCityId)) return null;
   if (productId && !safeShareProductId(productId)) return null;
   if (!configuredOrigin?.trim()) return null;
@@ -38,7 +38,7 @@ export function buildPartnerStorefrontURL(
 
 /** Share only a published, orderable Offer that belongs to the current authorized Store. */
 export function buildPartnerOfferShareURL(
-  store: Pick<PartnerAccessibleStore, "id" | "serviceCityId" | "publicationState">,
+  store: Pick<PartnerAccessibleStore, "id" | "serviceCityId" | "publicationState" | "relationModel">,
   offer: Pick<CatalogStoreOffer, "storeId" | "productId" | "publicationState" | "availability" | "productActive" | "variantActive">,
   configuredOrigin: string | undefined,
   allowLocalPreview = false,

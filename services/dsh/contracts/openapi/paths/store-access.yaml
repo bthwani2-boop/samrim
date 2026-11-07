@@ -17,6 +17,24 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
+  /dsh/partner/stores/{storeId}/independent-preview:
+    get:
+      operationId: readPartnerIndependentStorePreview
+      summary: Private read-only preview of the canonical independent Store and its Catalog for its authenticated owner
+      description: Does not publish a Store, allow customer access, create orders, or activate financial capabilities. Unpublished catalog entries may be returned to the owner for preparation.
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+        - { name: cursor, in: query, schema: { type: string, maxLength: 2048 } }
+      responses:
+        "200": { description: Private owner-only read-only Store and bounded Catalog preview., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/IndependentStorePreview" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/partner/stores/{storeId}/access:
     get:
       operationId: listPartnerStoreAccessGrants

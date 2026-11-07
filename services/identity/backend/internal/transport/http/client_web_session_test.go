@@ -21,7 +21,7 @@ func TestClientBrowserSessionOriginAndCookieAdmission(t *testing.T) {
 		want         int
 	}{
 		{"missing origin", "", http.StatusForbidden},
-		{"partner origin", "http://localhost:18102", http.StatusForbidden},
+		{"partner applicant origin without cookie", "http://localhost:18102", http.StatusUnauthorized},
 		{"untrusted origin", "http://localhost:9999", http.StatusForbidden},
 		{"client missing cookie", "http://localhost:18101", http.StatusUnauthorized},
 	} {
@@ -158,7 +158,63 @@ func TestClientBrowserAuthResponseFailClosedForWrongRoleOrOrigin(t *testing.T) {
 	}
 }
 
-func TestClientBrowserLoginAndRegistrationRejectOtherTrustedOriginBeforeCreatingSession(t *testing.T) {
+func TestApplicantBrowserRefreshCookiesAreSeparateFromClient(t *testing.T) {
+	server := &Server{config: Config{
+		ClientWebOrigins:  map[string]bool{"http://localhost:18101": true},
+		PartnerWebOrigins: map[string]bool{"http://localhost:18102": true},
+		Development:       true,
+	}}
+	pair := domain.TokenPair{
+		AccessToken:  "test.access.token",
+		RefreshToken: "test.refresh.secret.never.expose",
+		Identity:     domain.ActorIdentity{Role: "client", Surface: "app-client"},
+	}
+	for _, tc := range []struct{ origin, cookieName, otherOrigin string }{
+		{"http://localhost:18101", clientRefreshCookie, "http://localhost:18102"},
+		{"http://localhost:18102", applicantRefreshCookie, "http://localhost:18101"},
+	} {
+		t.Run(tc.cookieName, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/auth/client/register", nil)
+			req.Header.Set("Origin", tc.origin)
+			rec := httptest.NewRecorder()
+			server.writeClientAuthenticationResponse(rec, req, pair, "test-instance-1234", http.StatusCreated)
+			if rec.Code != http.StatusCreated || strings.Contains(rec.Body.String(), pair.RefreshToken) || strings.Contains(rec.Body.String(), "refreshToken") {
+				t.Fatalf("unacceptable client browser response: %d", rec.Code)
+			}
+			cookies := rec.Result().Cookies()
+			if len(cookies) != 2 {
+				t.Fatalf("got %d cookies, want 2", len(cookies))
+			}
+			found := false
+			for _, cookie := range cookies {
+				if cookie.Name == tc.cookieName {
+					found = true
+				}
+				if !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteStrictMode || cookie.Name == partnerRefreshCookie || cookie.Name == partnerDeviceCookie {
+					t.Fatal("client browser session cookie lacks security attributes")
+				}
+			}
+			if !found {
+				t.Fatalf("missing refresh cookie %q", tc.cookieName)
+			}
+			own := httptest.NewRequest(http.MethodPost, "/auth/web/client/session", nil)
+			own.Header.Set("Origin", tc.origin)
+			for _, cookie := range cookies {
+				own.AddCookie(cookie)
+			}
+			refresh, device, ok := server.readClientWebCookies(own)
+			if !ok || refresh != pair.RefreshToken || device != "test-instance-1234" {
+				t.Fatal("own-origin session cookie cannot be read back")
+			}
+			own.Header.Set("Origin", tc.otherOrigin)
+			if _, _, ok := server.readClientWebCookies(own); ok {
+				t.Fatal("applicant web cookie leaked into ordinary client web session")
+			}
+		})
+	}
+}
+
+func TestProspectivePartnerClientEntryRequiresExplicitTrustedPartnerOrigin(t *testing.T) {
 	handler := New(nil, nil, nil, nil, nil, Config{
 		AllowedOrigins:    map[string]bool{"http://localhost:18101": true, "http://localhost:18102": true},
 		ClientWebOrigins:  map[string]bool{"http://localhost:18101": true},
@@ -166,12 +222,23 @@ func TestClientBrowserLoginAndRegistrationRejectOtherTrustedOriginBeforeCreating
 		Development:       true,
 	})
 	for _, path := range []string{"/auth/client/login", "/auth/client/register"} {
-		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader("{}"))
-		req.Header.Set("Origin", "http://localhost:18102")
-		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, req)
-		if rec.Code != http.StatusForbidden {
-			t.Fatalf("%s wrong origin status=%d; must reject before credential handling", path, rec.Code)
+		for _, tc := range []struct {
+			name, origin string
+			want         int
+		}{
+			{"prospective partner", "http://localhost:18102", http.StatusBadRequest},
+			{"untrusted", "http://localhost:9999", http.StatusForbidden},
+			{"native without origin", "", http.StatusBadRequest},
+		} {
+			t.Run(path+"/"+tc.name, func(t *testing.T) {
+				req := httptest.NewRequest(http.MethodPost, path, strings.NewReader("{invalid"))
+				req.Header.Set("Origin", tc.origin)
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				if rec.Code != tc.want {
+					t.Fatalf("%s origin=%s status=%d want=%d", path, tc.origin, rec.Code, tc.want)
+				}
+			})
 		}
 	}
 }

@@ -721,6 +721,17 @@ func (s *MarketingServer) createDiscoveryContentWithMedia(w http.ResponseWriter,
 			writeError(w, http.StatusForbidden, "FORBIDDEN", "content target does not belong to the authorized Store")
 			return
 		}
+		// This endpoint may stage Store-owned drafts, but independent Stores
+		// cannot bind content to BThwani marketplace promotions.
+		store, readErr := postgres.ReadStore(r.Context(), s.db, partnerStoreID)
+		if readErr != nil {
+			writeMarketingError(w, readErr)
+			return
+		}
+		if store.RelationModel == postgres.StoreRelationIndependent && input.TargetType == "PROMOTION" {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "independent Store banners cannot target marketplace promotions")
+			return
+		}
 	}
 	var posterBytes []byte
 	if parsed.contentType == "video/mp4" {
