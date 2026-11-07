@@ -5,7 +5,7 @@ import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState, type ComponentType } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, restoreIdentitySession, subscribeIdentitySession } from "../src/bootstrap/identity";
-import { firstStoreFulfillmentLabel, firstStoreModesForRelation, type FirstStoreRelation } from "../src/features/partner-onboarding/first-store-relation-choice";
+import { firstStoreFulfillmentLabel, firstStoreModesForRelation, firstStoreRelationCanEnroll, type FirstStoreRelation } from "../src/features/partner-onboarding/first-store-relation-choice";
 import { partnerSetupSessionKey } from "../src/features/partner-onboarding/partner-setup-session-scope";
 
 type Step = 0|1|2|3;
@@ -16,7 +16,7 @@ const service=()=>createDshMobileClient(process.env.EXPO_PUBLIC_DSH_API_URL||"")
 function ascii(v:string){
  return v.replace(/[٠-٩۰-۹]/g,c=>String("٠١٢٣٤٥٦٧٨٩".indexOf(c)>=0?"٠١٢٣٤٥٦٧٨٩".indexOf(c):"۰۱۲۳۴۵۶۷۸۹".indexOf(c)));
 }
-function errorText(e:unknown){
+function errorText(e:unknown,action:"read"|"save"="save"){
  if(e&&typeof e==="object"&&"status" in e){
   const status=(e as {status?:number}).status;
   if(status===409){
@@ -25,7 +25,7 @@ function errorText(e:unknown){
   }
   if(status===401||status===403)return "انتهت صلاحية الدخول أو الحساب غير مخوّل. سجّل الدخول مجددًا.";
  }
- return "تعذر حفظ المتجر الآن. تحقق من اتصال الخدمة وحاول مجددًا دون إدخال متجر جديد.";
+ return action==="read"?"تعذر تحميل بيانات إعداد المتجر. تحقق من اتصال الخدمة ثم أعد المحاولة.":"تعذر حفظ المتجر الآن. تحقق من اتصال الخدمة وحاول مجددًا دون إدخال متجر جديد.";
 }
 export default function PartnerStoreSetup(){
  const router=useRouter();
@@ -52,6 +52,7 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
  const theme=useAppearanceTheme();
  const {width}=useWindowDimensions();
  const [checking,setChecking]=useState(true);
+ const [registryReady,setRegistryReady]=useState(false);
  const [busy,setBusy]=useState(false);
  const [saved,setSaved]=useState("");
  const [error,setError]=useState("");
@@ -65,6 +66,9 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
  const [cities,setCities]=useState<readonly ServiceCity[]>([]);
  const [verticals,setVerticals]=useState<readonly CommerceVertical[]>([]);
  const [types,setTypes]=useState<readonly CommercialStoreType[]>([]);
+ const [typesLoading,setTypesLoading]=useState(false);
+ const [typesError,setTypesError]=useState(false);
+ const [typesRetry,setTypesRetry]=useState(0);
  const [joiningPolicies,setJoiningPolicies]=useState<readonly StoreJoiningOption[]>([]);
  const [modes,setModes]=useState<StoreFulfillmentMode[]>(["BTHWANI_CAPTAIN"]);
  const [lat,setLat]=useState("");
@@ -80,7 +84,7 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
  },[lat,lng]);
 
  const load=useCallback(async()=>{
-  setChecking(true);setError("");
+  setChecking(true);setRegistryReady(false);setError("");
   try{
    if(partnerSetupSessionKey(currentIdentityState())!==scope)return;
    const token=await getUsableIdentityAccessToken();
@@ -97,24 +101,27 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
    setCities(availableCities);setVerticals(availableVerticals);
    if(availableCities.length===1)setCity(availableCities[0]!.id);
    if(availableVerticals.length===1)setVertical(availableVerticals[0]!.id);
+   setRegistryReady(true);
   }catch(e){
-   if(partnerSetupSessionKey(currentIdentityState())===scope)setError(errorText(e));
+   if(partnerSetupSessionKey(currentIdentityState())===scope)setError(errorText(e,"read"));
   }finally{
    if(partnerSetupSessionKey(currentIdentityState())===scope)setChecking(false);
   }
  },[router,scope]);
  useEffect(()=>{void load();},[load]);
  useEffect(()=>{
-  if(!vertical){setTypes([]);setStoreType("");return;}
+  if(!vertical){setTypes([]);setStoreType("");setTypesError(false);setTypesLoading(false);return;}
   let active=true;
+  setTypes([]);
   setStoreType("");
+  setTypesLoading(true);setTypesError(false);
   void service().listCommercialStoreTypes(vertical).then(values=>{
    if(!active)return;
    setTypes(values.filter(x=>x.active&&x.verticalId===vertical));
    if(values.filter(x=>x.active&&x.verticalId===vertical).length===1)setStoreType(values.find(x=>x.active&&x.verticalId===vertical)!.id);
-  }).catch(()=>{if(active)setError("تعذر تحميل أنواع المتاجر. أعد المحاولة.")});
+  }).catch(()=>{if(active)setTypesError(true)}).finally(()=>{if(active)setTypesLoading(false)});
   return ()=>{active=false};
- },[vertical]);
+ },[vertical,typesRetry]);
 
  async function showMap(){
   if(mapShown){setMapShown(false);return;}
@@ -128,13 +135,16 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
  }
  function advance(){
   setError("");
-  if(step===0&&(!relation||name.trim().length<2)){setError("اختر طريقة تشغيل المتجر وأدخل اسمه.");return;}
+  if(step===0&&(!firstStoreRelationCanEnroll(joiningPolicies,relation)||name.trim().length<2)){setError("اختر طريقة تشغيل متاحة حاليًا وأدخل اسم المتجر.");return;}
   if(step===1&&(!city||!vertical||!storeType||!types.some(t=>t.id===storeType&&t.verticalId===vertical))){setError("اختر مدينة الخدمة والمجال ونوع المتجر.");return;}
   if(step===2&&(!selected||address.trim().length<4||modes.length===0)){setError("حدد العنوان والموقع وطريقة التوصيل.");return;}
   setStep(Math.min(step+1,3) as Step);
  }
  async function save(){
   if(busy||!scope||!selected||!name.trim()||!relation||!city||!vertical||!storeType||address.trim().length<4||modes.length===0)return;
+  if(!registryReady||!firstStoreRelationCanEnroll(joiningPolicies,relation)){
+   setStep(0);setError("تعذر تأكيد إتاحة نموذج المتجر. حدّث الخيارات قبل الإنشاء.");return;
+  }
   setBusy(true);setError("");
   const starting=scope;
   try{
@@ -185,7 +195,7 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
    <Text style={s.heading}>إعداد متجرك في بثواني</Text>
    <Text style={s.small}>يمكنك إنشاء المتجر بنفسك دون طلب انضمام أو انتظار موافقة لإنشاء الحساب.</Text>
    {checking?<ActivityIndicator accessibilityLabel="التحقق من المتجر"/>:null}
-   {!checking&&!saved?<View style={{gap:15}}>
+   {!checking&&registryReady&&!saved?<View style={{gap:15}}>
     <View style={s.steps}>
      {labels.map((label,index)=><View key={label} style={[s.step,index===step&&s.active]}><Text style={s.small}>{index<step?"✓ ":""}{label}</Text></View>)}
     </View>
@@ -193,7 +203,7 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
      <Text style={s.title}>طريقة تشغيل المتجر</Text>
      {!joiningPolicies.some(policy=>policy.enrollmentEnabled)?<Text style={s.error}>إنشاء متاجر جديدة متوقف حاليًا. إذا كان لديك متجر قائم فادخل من لوحة متاجرك.</Text>:null}
      <Text style={s.small}>المتجر نفسه وصفحاته ومنتجاته. يمكنك اختيار شراكة بثواني أو متجر ويب خاص، دون إنشاء حساب آخر.</Text>
-     {([["BTHWANI_PARTNER","انضم إلى بثواني","اعرض متجرك لعملاء بثواني بعد مراجعة الاتفاق والتفعيل."],["INDEPENDENT_STORE","أنشئ متجرك الخاص","متجر ويب مستقل؛ تتولى البيع والتوصيل والدفع بنفسك. نشر الرابط المباشر لا يزال قيد التجهيز."]] as const).filter(([id])=>joiningPolicies.some(policy=>policy.relationModel===id&&policy.enrollmentEnabled)).map(([id,title,description])=><Pressable
+     {([["BTHWANI_PARTNER","انضم إلى بثواني","اعرض متجرك لعملاء بثواني بعد مراجعة الاتفاق والتفعيل."],["INDEPENDENT_STORE","أنشئ متجرك الخاص","متجر ويب مستقل؛ تتولى البيع والتوصيل والدفع بنفسك. نشر الرابط المباشر لا يزال قيد التجهيز."]] as const).filter(([id])=>firstStoreRelationCanEnroll(joiningPolicies,id)).map(([id,title,description])=><Pressable
        key={id} accessibilityRole="radio" accessibilityState={{checked:relation===id}} disabled={busy}
        style={[s.option,relation===id&&s.chosen]}
        onPress={()=>{setModes(current=>firstStoreModesForRelation(relation,id,current));setRelation(id);}}>
@@ -208,6 +218,8 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
      {choose("مدينة الخدمة",cities.map(x=>({id:x.id,label:x.displayNameAr})),city,setCity)}
      {choose("المجال التجاري",verticals.filter(x=>x.active).map(x=>({id:x.id,label:x.nameAr})),vertical,setVertical)}
      {choose("نوع المتجر",types.map(x=>({id:x.id,label:x.nameAr})),storeType,setStoreType)}
+     {typesLoading?<ActivityIndicator accessibilityLabel="تحميل أنواع المتاجر"/>:null}
+     {typesError?<View style={{gap:8}}><Text accessibilityRole="alert" style={s.error}>تعذر تحميل أنواع المتاجر لهذا المجال. لم يتم حفظ اختيار غير مؤكد.</Text><BthwaniButton label="إعادة تحميل الأنواع" variant="secondary" disabled={busy} onPress={()=>setTypesRetry(n=>n+1)}/></View>:null}
     </View>:null}
     {step===2?<View style={{gap:12}}>
      <TextInput accessibilityLabel="عنوان المتجر" value={address} onChangeText={setAddress} editable={!busy} placeholder="الشارع، الحي، أقرب معلم" placeholderTextColor={theme.colorMuted} style={s.field}/>
@@ -241,7 +253,7 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
     <Text style={s.small}>{relation==="INDEPENDENT_STORE"?"تم حفظ متجرك المستقل وغير المنشور. يمكنك إعداد المنتجات؛ لن يُفتح رابط الشراء المباشر قبل اعتماد ونشر خدمة المتاجر المستقلة.":"المتجر محفوظ وغير منشور حاليًا. يمكنك الدخول إلى لوحة الإدارة وإكمال جاهزية نشره في بثواني."}</Text>
     <BthwaniButton label="فتح لوحة إدارة المتجر" onPress={()=>router.replace("/more" as Href)}/>
    </View>:null}
-   {error?<View style={{gap:8}}><Text accessibilityRole="alert" style={s.error}>{error}</Text><BthwaniButton label="إعادة المحاولة" variant="secondary" onPress={()=>void load()}/></View>:null}
+   {error?<View style={{gap:8}}><Text accessibilityRole="alert" style={s.error}>{error}</Text><BthwaniButton label="تحديث بيانات الانضمام" variant="secondary" disabled={checking||busy} onPress={()=>void load()}/></View>:null}
   </View>
  </ScrollView>;
 }

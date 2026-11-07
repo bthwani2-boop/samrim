@@ -36,14 +36,20 @@ export function IndependentStoresWorkspace() {
         if (state) params.set("state", state);
         if (cursor) params.set("cursor", cursor);
         const response = await fetch(`/api/independent-stores?${params}`, { cache: "no-store", signal: controller.signal });
-        if (!response.ok) throw new Error("READ_FAILED");
+        if (response.status === 401) throw new Error("انتهت جلسة المشغّل. سجّل الدخول مجددًا ثم أعد المحاولة.");
+        if (response.status === 403) throw new Error("لا تملك صلاحية عرض المتاجر المستقلة. اطلب صلاحية الشركاء من مسؤول الوصول.");
+        if (!response.ok) throw new Error("تعذر الاتصال بسجل المتاجر المستقلة في DSH. تحقق من الخدمة وأعد المحاولة.");
         const next = await response.json() as OperatorStoreListResponse;
         if (!Array.isArray(next.stores) || next.stores.some((store) => store.relationModel !== "INDEPENDENT_STORE")) {
           throw new Error("STORE_RELATION_MISMATCH");
         }
         if (!controller.signal.aborted) setPage(next);
-      } catch {
-        if (!controller.signal.aborted) setError("تعذر تحميل سجل المتاجر المستقلة. تحقق من اتصال DSH وأعد المحاولة.");
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : "";
+        if (!controller.signal.aborted) setError(message.startsWith("انتهت جلسة") || message.startsWith("لا تملك صلاحية") || message.startsWith("تعذر الاتصال")
+          ? message : message === "STORE_RELATION_MISMATCH"
+            ? "قراءة سجل المتاجر المستقلة غير متطابقة مع DSH؛ لا يمكن عرض نتائج غير موثوقة."
+            : "تعذر تحميل سجل المتاجر المستقلة. تحقق من اتصال DSH وأعد المحاولة.");
       } finally {
         if (!controller.signal.aborted) setLoading(false);
       }

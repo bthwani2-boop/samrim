@@ -1,4 +1,12 @@
-import type { StoreFulfillmentMode } from "@bthwani/dsh";
+import type { StoreFulfillmentMode, StoreJoiningOption } from "@bthwani/dsh";
+
+/** Enrollment visibility is a DSH readback; this check never grants Store publication. */
+export function firstStoreRelationCanEnroll(
+  policies: ReadonlyArray<StoreJoiningOption>,
+  relation: FirstStoreRelation | "",
+): boolean {
+  return relation !== "" && policies.some((policy) => policy.relationModel === relation && policy.enrollmentEnabled);
+}
 
 export type FirstStoreRelation = "BTHWANI_PARTNER" | "INDEPENDENT_STORE";
 

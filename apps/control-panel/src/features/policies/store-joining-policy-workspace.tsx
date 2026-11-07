@@ -2,16 +2,18 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "../../session/session-provider";
+import { validStoreJoiningPolicyReadback, type StoreJoiningModel as Model, type StoreJoiningPolicy as Policy } from "./store-joining-policy-readback";
 
-type Model="BTHWANI_PARTNER"|"INDEPENDENT_STORE";
-type Policy={relationModel:Model;enrollmentEnabled:boolean;version:number;updatedBy:string;updatedAt:string;reason:string};
 const path="/api/policies/store-joining";
 const labels:Record<Model,string>={BTHWANI_PARTNER:"شريك بثواني",INDEPENDENT_STORE:"متجر مستقل"};
 
 export function StoreJoiningPolicyWorkspace(){
  const {state}=useSession();
  const authorized=state.kind==="authenticated"&&state.identity.role==="operator"&&state.identity.permissions?.includes("platform_policies")===true;
+ const actorSession=state.kind==="authenticated"?JSON.stringify([state.identity.subject,state.identity.sessionId]):"";
  const [policies,setPolicies]=useState<Policy[]>([]);
+ const [loadedSession,setLoadedSession]=useState("");
+ const [refresh,setRefresh]=useState(0);
  const [loading,setLoading]=useState(true);
  const [saving,setSaving]=useState(false);
  const [selected,setSelected]=useState<Model>("BTHWANI_PARTNER");
@@ -19,29 +21,33 @@ export function StoreJoiningPolicyWorkspace(){
  const [reason,setReason]=useState("");
  const [error,setError]=useState("");
  const [notice,setNotice]=useState("");
- const current=policies.find(p=>p.relationModel===selected);
+ const readbackReady=authorized&&loadedSession===actorSession&&policies.length===2;
+ const current=readbackReady?policies.find(p=>p.relationModel===selected):undefined;
 
  useEffect(()=>{
+  setPolicies([]);setLoadedSession("");setLoading(true);setError("");setNotice("");
   if(!authorized){setLoading(false);return;}
   const controller=new AbortController();
   void (async()=>{
    try{
     const response=await fetch(path,{cache:"no-store",signal:controller.signal});
     const body=await response.json() as {items?:Policy[]};
-    if(!response.ok||!Array.isArray(body.items)||body.items.length!==2)throw Error("تعذرت قراءة سياسة الانضمام.");
+    if(!response.ok||!validStoreJoiningPolicyReadback(body.items))
+      throw Error("تعذرت قراءة سياسة الانضمام.");
     if(!controller.signal.aborted){
       setPolicies(body.items);
-      setEnabled(body.items.find(item=>item.relationModel==="BTHWANI_PARTNER")?.enrollmentEnabled??false);
+      setLoadedSession(actorSession);
+      setEnabled(body.items.find(item=>item.relationModel===selected)?.enrollmentEnabled??false);
     }
    }catch{
     if(!controller.signal.aborted)setError("تعذرت قراءة السياسات من الخدمة. لا يمكن تعديلها الآن.");
    }finally{if(!controller.signal.aborted)setLoading(false)}
   })();
   return ()=>controller.abort();
- },[authorized]);
+ },[authorized,actorSession,refresh]);
 
  async function save(){
-  if(!authorized||!current||saving||enabled===current.enrollmentEnabled||reason.trim().length<5)return;
+  if(!readbackReady||!current||saving||enabled===current.enrollmentEnabled||reason.trim().length<5)return;
   if(!window.confirm(enabled?"فتح إنشاء متاجر جديدة لهذا النموذج؟":"إيقاف إنشاء متاجر جديدة بهذا النموذج؟ المتاجر القائمة لن تتوقف."))return;
   setSaving(true);setError("");setNotice("");
   try{
@@ -54,18 +60,25 @@ export function StoreJoiningPolicyWorkspace(){
    const confirmedResponse=await fetch(path,{cache:"no-store"});
    const confirmedBody=await confirmedResponse.json() as {items?:Policy[]};
    const confirmed=confirmedBody.items?.find(item=>item.relationModel===selected);
-   if(!confirmedResponse.ok||!confirmed||confirmed.version!==body.policy.version||confirmed.enrollmentEnabled!==enabled)
+   if(!confirmedResponse.ok||!validStoreJoiningPolicyReadback(confirmedBody.items)||!confirmed||confirmed.version!==body.policy.version||confirmed.enrollmentEnabled!==enabled)
     throw Error("النتيجة غير مؤكدة. أعد قراءة السياسة قبل محاولة التغيير مجددًا.");
    setPolicies(confirmedBody.items!);
+   setLoadedSession(actorSession);
+   setEnabled(confirmed.enrollmentEnabled);
    setReason("");
    setNotice("تم اعتماد سياسة الانضمام بالإصدار "+confirmed.version+" بعد القراءة من DSH.");
-  }catch(e){setError(e instanceof Error?e.message:"تعذّر التأكد من الحفظ.");}
+  }catch{
+   // The PUT might have committed even if its response or readback was lost.
+   // Block a second write until a fresh DSH read establishes the latest version.
+   setPolicies([]);setLoadedSession("");
+   setError("تعذر تأكيد نتيجة تغيير السياسة. أعد قراءة الحالة من DSH قبل أي محاولة جديدة.");
+  }
   finally{setSaving(false)}
  }
  return <section className="workspace-page policy-studio" aria-label="انضمام المتاجر">
   <h2>سياسات انضمام المتاجر</h2>
   <p className="muted">تحدد هذه السياسة إتاحة إنشاء متاجر جديدة فقط. لا توقف المتاجر القائمة ولا تغير نشرها أو اتفاقاتها.</p>
-  {!authorized?<p role="alert">يتطلب التعديل صلاحية سياسات المنصة.</p>:loading?<p role="status">جارٍ قراءة السياسات…</p>:policies.length!==2?<p role="alert">{error||"السياسات غير متاحة."}</p>:<>
+  {!authorized?<p role="alert">يتطلب التعديل صلاحية سياسات المنصة.</p>:loading?<p role="status">جارٍ قراءة السياسات…</p>:!readbackReady?<div className="state-card" role="alert"><p>{error||"السياسات غير متاحة أو تحتاج إعادة قراءة."}</p><button type="button" onClick={()=>setRefresh(value=>value+1)}>إعادة قراءة السياسات</button></div>:<>
    <div className="policy-rich-toolbar">
     <label>نموذج المتجر
      <select value={selected} onChange={e=>{
