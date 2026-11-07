@@ -13,7 +13,7 @@ The Human Actor/role model is owned by `docs/governance/platform.md`. Bounded sy
 
 ## Current approved Product target
 
-BThwani is one multi-role delivery-commerce network. It is a directed graph of participant, Store, commerce, fulfillment, financial and bounded collaboration outcomes rather than one global linear lifecycle.
+BThwani is one multi-role delivery-commerce network with an admitted merchant-direct web storefront relation on the same canonical Store. It is a directed graph of participant, Store, commerce, fulfillment, financial and bounded collaboration outcomes rather than one global linear lifecycle. The independent Store relation does not grant marketplace discovery, wallet payment, BThwani Captain delivery or a second Store/tenant.
 
 ```text
 PARTICIPANT ADMISSION ─────────────┐
@@ -59,6 +59,7 @@ For materially costly-to-reverse identity, relation, state, ownership or public-
 - `IDENTITY_ACTIVATION_SESSIONS`
 - `EMPLOYEE_HR`
 - `PARTNER_ONBOARDING_STORE_PUBLICATION`
+- `STORE_RELATION_MODEL`
 - `STORE_OPERATIONAL_AVAILABILITY`
 - `CENTRAL_CATALOG`
 - `SERVICEABILITY_ADDRESSES`
@@ -87,6 +88,8 @@ Each ID has exactly one capability owner under `capabilities/**`.
 ## Product-wide invariants
 
 - the Platform Human Actor/role model is authoritative for participant identity semantics;
+- each canonical Store has one effective Store relationship (BTHWANI_PARTNER or INDEPENDENT_STORE) and retains the same Store identity, merchant catalog, published public link and content when its approved relationship changes;
+- marketplace discovery and checkout remain exclusive to eligible BTHWANI_PARTNER Stores; an independent Store has only a separately admitted direct web publication and direct merchant-controlled checkout after their independent safety gates pass;
 - one canonical Store Order belongs to exactly one Store, even when created under a parent multi-Store checkout;
 - fulfillment mode is operational truth and remains distinct from payment method;
 - the admitted fulfillment modes are BThwani Captain delivery, Store-affiliated Partner Captain delivery and Customer Pickup;
@@ -106,11 +109,11 @@ Each ID has exactly one capability owner under `capabilities/**`.
 - derived search/cache/analytics/notification/tracking state never becomes mutation authority;
 - successful user-facing mutation requires canonical committed readback;
 - admitted breadth and implementation completion are separate claims;
-- admitted Partner workspace capabilities are available by Store scope and authorized permissions, never unlocked by paid subscription plans or feature tiers. Transaction charges, commercial agreements and third-party provider costs remain governed by their actual financial and integration owners.
+- admitted marketplace Partner workspace capabilities remain available by Store scope and authorized permissions, never unlocked by a paid subscription plan or feature tier. A separately admitted independent storefront hosting plan may control hosting limits only, not Identity roles, Store ownership or marketplace agreement rights. Transaction charges, commercial agreements and third-party provider costs remain governed by their actual financial and integration owners.
 
 ## Explicit current non-goals
 
-Not admitted now: loyalty as a standalone Product, a social review/community network, a generic support/ticketing platform, advanced route-optimization Product, generic analytics Product, a standalone notification Product, broad customer-profile/privacy orchestration, generic Partner organization/member/team abstractions beyond bounded Store-scoped access delegation, generic multi-tenant SaaS architecture, ERP/POS replacement, speculative multi-currency breadth, scheduled customer orders, generic point-to-point courier requests, generic returns/exchanges, electronics warranty-claim management, prescription-required/specially regulated pharmacy fulfillment, paid customer membership or Partner feature tiers gated by subscription, mandatory Store daily check-in and a predictive/numeric Store-capacity engine.
+Not admitted now: loyalty as a standalone Product, a social review/community network, a generic support/ticketing platform, advanced route-optimization Product, generic analytics Product, a standalone notification Product, broad customer-profile/privacy orchestration, generic Partner organization/member/team abstractions beyond bounded Store-scoped access delegation, generic multi-tenant SaaS architecture beyond the admitted bounded independent Store web hosting relation, ERP/POS replacement, speculative multi-currency breadth, scheduled customer orders, generic point-to-point courier requests, generic returns/exchanges, electronics warranty-claim management, prescription-required/specially regulated pharmacy fulfillment, paid customer membership or Partner feature tiers gated by subscription, mandatory Store daily check-in and a predictive/numeric Store-capacity engine.
 
 Prescription-required or specially regulated pharmacy fulfillment remains outside the current target until explicitly admitted with the required legal/operational owner model. Standard pharmacy commerce must not silently claim that regulated workflow.
 

@@ -27,6 +27,7 @@ var (
 	StoreLogoNotReadyReason              = "STORE_LOGO_NOT_READY"
 	StoreCoverNotReadyReason             = "STORE_COVER_NOT_READY"
 	StoreScheduleNotReadyReason          = "STORE_SCHEDULE_NOT_READY"
+	StoreNotMarketplaceReason            = "STORE_NOT_MARKETPLACE"
 )
 
 type PublicationReadiness struct {
@@ -93,6 +94,10 @@ func evaluatePublicationGuard(ctx context.Context, requestedState string, store 
 	if requestedState != "published" {
 		// Hiding must remain possible when Partner Identity, WLT, or catalog readiness is unavailable.
 		return PublicationReadiness{}, nil
+	}
+	if store.RelationModel != postgres.StoreRelationBThwaniPartner {
+		blocked := PublicationReadiness{BlockedReason: StoreNotMarketplaceReason, BlockedReasons: []string{StoreNotMarketplaceReason}}
+		return blocked, ErrPublicationReadinessBlocked
 	}
 	readiness, err := readReadiness(ctx, store)
 	if err != nil {
@@ -369,6 +374,10 @@ func (s *Service) ReadPublished(ctx context.Context, storeID, serviceCityID stri
 }
 
 func (s *Service) ReadinessForStore(ctx context.Context, store postgres.StoreRecord) (PublicationReadiness, error) {
+	// Independent Stores cannot satisfy the marketplace publication gate.
+	if store.RelationModel != postgres.StoreRelationBThwaniPartner {
+		return PublicationReadiness{BlockedReason: StoreNotMarketplaceReason, BlockedReasons: []string{StoreNotMarketplaceReason}}, nil
+	}
 	// One canonical list for Store file, publication guard, and operator actionability.
 	// Each independent requirement is read from its existing owning service.
 	var missing []string

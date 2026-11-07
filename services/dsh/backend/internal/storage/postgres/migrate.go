@@ -17,7 +17,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 171
+const SchemaVersion = 172
 
 type MigrationRecord struct {
 	Version int
@@ -51,7 +51,7 @@ var requiredTables = []schemaRelationExpectation{
 	{name: "dsh.hr_operator_access_events", columns: []string{"idempotency_key", "request_id", "event_type", "request_hash", "acting_actor_id", "correlation_id", "created_at"}, constraints: []string{"hr_operator_access_events_pkey", "hr_access_event_hash_chk"}},
 	{name: "dsh.hr_employee_events", columns: []string{"idempotency_key", "employee_id", "event_type", "request_hash", "acting_actor_id", "correlation_id", "created_at", "before_snapshot", "after_snapshot", "reason"}, constraints: []string{"hr_employee_events_pkey", "hr_employee_event_type_chk", "hr_employee_event_hash_chk", "hr_employee_update_snapshots_chk", "hr_employee_status_reason_chk"}, indexes: []string{"hr_employee_events_employee_idx", "hr_employee_events_recent_idx"}},
 	{name: "dsh.schema_migrations", columns: []string{"version", "name", "sha256", "applied_at"}, constraints: []string{"schema_migrations_pkey"}},
-	{name: "dsh.stores", columns: []string{"id", "partner_actor_id", "name", "version", "created_at", "updated_at", "publication_state", "publication_changed_at", "delivery_origin_latitude", "delivery_origin_longitude", "delivery_origin_version", "delivery_origin_updated_at", "service_city_id", "primary_vertical_id", "fulfillment_modes", "commercial_store_type_id", "deleted_at", "deleted_by", "deletion_reason"}, constraints: []string{"stores_pkey", "stores_id_partner_actor_uq", "stores_name_length_chk", "stores_version_positive_chk", "stores_publication_state_chk", "stores_delivery_origin_pair_chk", "stores_delivery_origin_latitude_chk", "stores_delivery_origin_longitude_chk", "stores_delivery_origin_version_chk", "stores_delivery_origin_updated_at_chk", "stores_service_city_fk", "stores_primary_vertical_fk", "stores_fulfillment_modes_chk", "stores_commercial_type_vertical_fk", "store_deletion_facts_chk"}, indexes: []string{"stores_partner_actor_idx", "stores_publication_state_idx", "stores_service_city_idx", "stores_primary_vertical_idx", "stores_commercial_type_idx", "stores_operator_updated_idx", "stores_published_city_name_registry_idx", "stores_published_city_name_prefix_registry_idx", "stores_published_city_created_registry_idx", "stores_published_city_name_search_idx", "stores_trash_idx"}},
+	{name: "dsh.stores", columns: []string{"id", "partner_actor_id", "name", "version", "created_at", "updated_at", "publication_state", "publication_changed_at", "delivery_origin_latitude", "delivery_origin_longitude", "delivery_origin_version", "delivery_origin_updated_at", "service_city_id", "primary_vertical_id", "fulfillment_modes", "commercial_store_type_id", "deleted_at", "deleted_by", "deletion_reason", "relation_model"}, constraints: []string{"stores_pkey", "stores_id_partner_actor_uq", "stores_name_length_chk", "stores_version_positive_chk", "stores_publication_state_chk", "stores_delivery_origin_pair_chk", "stores_delivery_origin_latitude_chk", "stores_delivery_origin_longitude_chk", "stores_delivery_origin_version_chk", "stores_delivery_origin_updated_at_chk", "stores_service_city_fk", "stores_primary_vertical_fk", "stores_fulfillment_modes_chk", "stores_commercial_type_vertical_fk", "store_deletion_facts_chk", "stores_relation_model_chk", "stores_independent_market_publication_chk"}, indexes: []string{"stores_partner_actor_idx", "stores_publication_state_idx", "stores_service_city_idx", "stores_primary_vertical_idx", "stores_commercial_type_idx", "stores_operator_updated_idx", "stores_published_city_name_registry_idx", "stores_published_city_name_prefix_registry_idx", "stores_published_city_created_registry_idx", "stores_published_city_name_search_idx", "stores_trash_idx"}},
 	{name: "dsh.joining_cases", columns: []string{"id", "contact_phone_e164", "business_name", "first_store_name", "partner_actor_id", "originating_field_actor_id", "origin", "state", "correction_reason", "reviewed_by", "store_id", "version", "created_at", "updated_at", "first_store_service_city_id", "first_store_vertical_id", "first_store_fulfillment_modes", "first_store_latitude", "first_store_longitude", "settlement_period", "financial_profile_id", "financial_profile_state", "terms_policy_version", "first_store_commercial_type_id", "wallet_provider_key"}, constraints: []string{"joining_cases_pkey", "joining_cases_phone_length_chk", "joining_cases_business_name_chk", "joining_cases_store_name_chk", "joining_cases_state_chk", "joining_cases_version_positive_chk", "joining_cases_store_fk", "joining_cases_service_city_fk", "joining_cases_first_store_vertical_fk", "joining_cases_first_store_commercial_type_fk", "joining_cases_origin_chk", "joining_cases_field_actor_chk", "joining_cases_store_origin_pair_chk", "joining_cases_store_origin_latitude_chk", "joining_cases_store_origin_longitude_chk", "joining_cases_settlement_period_chk", "joining_cases_financial_profile_state_chk", "joining_cases_first_store_fulfillment_modes_chk", "joining_cases_terms_policy_version_chk", "joining_cases_wallet_provider_key_chk"}, indexes: []string{"joining_cases_active_phone_uq", "joining_cases_partner_actor_uq", "joining_cases_state_idx", "joining_cases_service_city_idx", "joining_cases_first_store_vertical_idx", "joining_cases_field_actor_idx", "joining_cases_financial_profile_id_uq", "joining_cases_financial_profile_state_idx"}},
 	{name: "dsh.joining_case_financial_profile_outbox", columns: []string{"id", "case_id", "idempotency_key", "request_hash", "correlation_id", "acting_actor_id", "partner_actor_id", "origin", "settlement_period", "financial_profile_id", "state", "attempts", "last_error", "next_attempt_at", "created_at", "updated_at", "terms_policy_version"}, constraints: []string{"joining_case_financial_profile_outbox_pkey", "joining_case_financial_outbox_case_uq", "joining_case_financial_outbox_idempotency_uq", "joining_case_financial_outbox_case_fk", "joining_case_financial_outbox_origin_chk", "joining_case_financial_outbox_settlement_chk", "joining_case_financial_outbox_state_chk", "joining_case_financial_outbox_attempts_chk", "joining_case_financial_outbox_policy_version_chk"}, indexes: []string{"joining_case_financial_outbox_pending_idx"}},
 	{name: "dsh.joining_case_mutation_idempotency", columns: []string{"idempotency_key", "request_hash", "case_id", "operation", "result_version", "result_state", "result_partner_actor_id", "result_store_id", "result_correction_reason", "created_at"}, constraints: []string{"joining_case_mutation_idempotency_pkey", "joining_case_idempotency_facts_uq", "joining_case_idempotency_operation_chk", "joining_case_idempotency_state_chk", "joining_case_idempotency_version_chk", "joining_case_idempotency_case_fk"}, indexes: []string{"joining_case_idempotency_case_idx"}},
@@ -307,8 +307,93 @@ func Migrate(ctx context.Context, db *sql.DB, records []MigrationRecord, migrati
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit DSH migrations through v%d: %w", SchemaVersion, err)
 	}
+	// v172 creates checks without scanning existing Stores while holding the
+	// migration transaction's stronger DDL lock. Validate after it commits,
+	// with a bounded lock wait; a failed validation remains retryable.
+	if err := validateStoreRelationConstraints(ctx, db); err != nil {
+		return fmt.Errorf("validate Store relation constraints: %w", err)
+	}
 	if err := MigrateDeliveryProofCryptography(ctx, db, proofKeys); err != nil {
 		return fmt.Errorf("migrate DSH delivery proof material: %w", err)
+	}
+	return nil
+}
+
+// Store relation CHECKs are added as NOT VALID so the DDL transaction avoids
+// scanning every existing Store under its stronger lock. Validation happens in
+// a separate, bounded transaction after that migration commits. If interrupted,
+// the recorded migration can be retried without rewriting schema history.
+func validateStoreRelationConstraints(ctx context.Context, db *sql.DB) error {
+	for _, name := range []string{"stores_relation_model_chk", "stores_independent_market_publication_chk"} {
+		var validated bool
+		if err := db.QueryRowContext(ctx, `SELECT convalidated FROM pg_constraint
+			WHERE conrelid='dsh.stores'::regclass AND conname=$1 AND contype='c'`, name).Scan(&validated); err != nil {
+			return fmt.Errorf("read Store constraint %s validation state: %w", name, err)
+		}
+		if validated {
+			continue
+		}
+		validationCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+		tx, err := db.BeginTx(validationCtx, nil)
+		if err != nil {
+			cancel()
+			return fmt.Errorf("start Store constraint validation for %s: %w", name, err)
+		}
+		_, err = tx.ExecContext(validationCtx, "SET LOCAL lock_timeout = '5s'")
+		if err == nil {
+			_, err = tx.ExecContext(validationCtx, "SET LOCAL statement_timeout = '45s'")
+		}
+		if err == nil {
+			// name is a fixed local constant, not an identifier supplied by a caller.
+			_, err = tx.ExecContext(validationCtx, "ALTER TABLE dsh.stores VALIDATE CONSTRAINT "+name)
+		}
+		if err == nil {
+			err = tx.Commit()
+		} else {
+			_ = tx.Rollback()
+		}
+		cancel()
+		if err != nil {
+			return fmt.Errorf("validate Store constraint %s after migration commit: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// Database startup must fail if someone weakens or removes the canonical Store
+// relationship checks; checking constraint names alone is insufficient.
+func verifyStoreRelationConstraints(ctx context.Context, db *sql.DB) error {
+	var nullable, defaultValue string
+	if err := db.QueryRowContext(ctx, `SELECT is_nullable, column_default
+		FROM information_schema.columns
+		WHERE table_schema='dsh' AND table_name='stores' AND column_name='relation_model'`).Scan(&nullable, &defaultValue); err != nil {
+		return fmt.Errorf("read Store relation column: %w", err)
+	}
+	if nullable != "NO" || !strings.Contains(defaultValue, "BTHWANI_PARTNER") {
+		return errors.New("DSH Store relation column default/nullability is invalid")
+	}
+	for _, requirement := range []struct {
+		name   string
+		tokens []string
+	}{
+		{"stores_relation_model_chk", []string{"CHECK", "relation_model", "BTHWANI_PARTNER", "INDEPENDENT_STORE"}},
+		{"stores_independent_market_publication_chk", []string{"CHECK", "relation_model", "BTHWANI_PARTNER", "publication_state", "published", " OR ", "<>"}},
+	} {
+		var definition string
+		var validated bool
+		if err := db.QueryRowContext(ctx, `SELECT pg_get_constraintdef(oid), convalidated
+			FROM pg_constraint
+			WHERE conrelid='dsh.stores'::regclass AND conname=$1 AND contype='c'`, requirement.name).Scan(&definition, &validated); err != nil {
+			return fmt.Errorf("read DSH Store constraint %s: %w", requirement.name, err)
+		}
+		if !validated {
+			return fmt.Errorf("DSH Store constraint %s has not been validated", requirement.name)
+		}
+		for _, token := range requirement.tokens {
+			if !strings.Contains(definition, token) {
+				return fmt.Errorf("DSH Store constraint %s has an unexpected definition", requirement.name)
+			}
+		}
 	}
 	return nil
 }
@@ -378,6 +463,9 @@ func VerifySchema(ctx context.Context, db *sql.DB, records []MigrationRecord) er
 		if err := verifySchemaRelation(ctx, db, relation.name, relation.columns, relation.forbiddenColumns, relation.constraints, relation.indexes); err != nil {
 			return err
 		}
+	}
+	if err := verifyStoreRelationConstraints(ctx, db); err != nil {
+		return err
 	}
 	var databaseNow time.Time
 	if err := db.QueryRowContext(ctx, "SELECT clock_timestamp()").Scan(&databaseNow); err != nil {
