@@ -15,7 +15,17 @@ func ReadIndependentStoreOwnedByPartner(ctx context.Context, db *sql.DB, storeID
 	if db == nil || storeID == "" || partnerActorID == "" || len(storeID) > 128 || len(partnerActorID) > 128 {
 		return StoreRecord{}, ErrStoreNotFound
 	}
-	store, err := scanStore(db.QueryRowContext(ctx, storeSelect+` WHERE id=$1 AND partner_actor_id=$2 AND relation_model='INDEPENDENT_STORE' AND deleted_at IS NULL`, storeID, partnerActorID))
+	// The owner and relation checks are part of one fixed, parameterized SQL
+	// statement. Never build a preview scope dynamically from request data.
+	store, err := scanStore(db.QueryRowContext(ctx, `
+		SELECT id, partner_actor_id, name, service_city_id, primary_vertical_id,
+			commercial_store_type_id, version, publication_state, publication_changed_at,
+			created_at, updated_at, delivery_origin_latitude, delivery_origin_longitude,
+			delivery_origin_version, delivery_origin_updated_at, fulfillment_modes, relation_model
+		FROM dsh.stores
+		WHERE id=$1 AND partner_actor_id=$2 AND relation_model='INDEPENDENT_STORE'
+			AND deleted_at IS NULL
+	`, storeID, partnerActorID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return StoreRecord{}, ErrStoreNotFound
 	}
