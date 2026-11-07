@@ -9,7 +9,8 @@ const styles = readFileSync(path.join(feature, "store-detail-styles.ts"), "utf8"
 
 test("desktop store exposes published products earlier via a compact hero and store summary", () => {
   assert.match(detail, /const desktopStorefront = Platform\.OS === "web" && windowWidth >= 1024/);
-  assert.match(detail, /height: \(desktopStorefront \? 144 : 244\) \+ insets\.top/);
+  assert.match(detail, /const storeHeroHeight = desktopStorefront \? 196 : Platform\.OS === "web" \? 214 : 244/);
+  assert.match(detail, /height: storeHeroHeight \+ insets\.top/);
   assert.match(detail, /desktopStorefront && styles\.storeInfoDesktop/);
   assert.match(detail, /desktopStorefront \? styles\.storeInfoDesktopSummary/);
   assert.match(styles, /storeInfoDesktop: \{[^}]*marginTop: -24/);
@@ -27,6 +28,6 @@ test("compact desktop retains store status, delivery mode selection and mobile p
   assert.match(detail, /availabilitySummary\.label/);
   assert.match(detail, /accessibilityRole="radio"/);
   assert.match(detail, /selectedFulfillmentMode === mode/);
-  assert.match(detail, /desktopStorefront \? 144 : 244/);
+  assert.match(detail, /storeHeroHeight \+ insets\.top - 32/);
   assert.match(detail, /gridColumns = Platform\.OS !== "web" \? 2 : windowWidth >= 1700 \? 5/);
 });
