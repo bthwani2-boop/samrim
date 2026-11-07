@@ -715,13 +715,13 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       </Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel="الكل" accessibilityState={{ selected: !favoritesView && !popularView && !selectedCategoryID && !selectedStoreSectionID, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(0)} style={[styles.catalogFilterChip, styles.pinnedAllChip, !favoritesView && !popularView && !selectedCategoryID && !selectedStoreSectionID && styles.catalogFilterChipSelected]}><Text numberOfLines={1} style={[styles.catalogFilterChipLabel, !favoritesView && !popularView && !selectedCategoryID && !selectedStoreSectionID && styles.catalogFilterChipLabelSelected]}>الكل</Text></Pressable>
       <ScrollView horizontal style={styles.categoryScroller} contentContainerStyle={styles.categoryRail} showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        {!favoritesView ? visibleCategories.map(({ category, depth }) => renderCategoryChip(category, depth)) : null}
         <Pressable accessibilityRole="button" accessibilityLabel="المفضلة" accessibilityState={{ selected: favoritesView, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(1)} style={[styles.catalogFilterChip, favoritesView && styles.catalogFilterChipSelected]}><BthwaniIcon name="favorite" color={favoritesView ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /><Text numberOfLines={1} style={[styles.catalogFilterChipLabel, favoritesView && styles.catalogFilterChipLabelSelected]}>المفضلة</Text></Pressable>
         <Pressable accessibilityRole="button" accessibilityLabel="الأكثر طلبًا خلال آخر 30 يومًا" accessibilityState={{ selected: popularView, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(2)} style={[styles.catalogFilterChip, popularView && styles.catalogFilterChipSelected]}><BthwaniIcon name="trending" color={popularView ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /><Text numberOfLines={1} style={[styles.catalogFilterChipLabel, popularView && styles.catalogFilterChipLabelSelected]}>الأكثر طلبًا</Text></Pressable>
         {!favoritesView ? state.catalog.sections.filter((section) => section.active).map((section) => {
           const selected = selectedStoreSectionID === section.id;
           return <Pressable key={section.id} accessibilityRole="button" accessibilityLabel={`قسم ${section.nameAr}`} accessibilityState={{ selected }} onPress={() => void selectStoreSection(section.id)} style={[styles.catalogFilterChip, selected && styles.catalogFilterChipSelected]}><Text numberOfLines={1} style={[styles.catalogFilterChipLabel, selected && styles.catalogFilterChipLabelSelected]}>{section.nameAr}</Text></Pressable>;
         }) : null}
-        {!favoritesView ? visibleCategories.map(({ category, depth }) => renderCategoryChip(category, depth)) : null}
       </ScrollView>
       {desktopStorefront ? <><BthwaniSearchField
         accessibilityLabel="البحث في منتجات المتجر مباشرة"
@@ -840,6 +840,9 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
             <Text style={styles.muted}>الطريقة التي يدعمها المتجر · {orderabilityEta(effectiveOrderability.find((item) => item.fulfillmentMode === fulfillmentModes[0]))}</Text>
           </View>
         </View> : null}
+        {Platform.OS === "web" && fulfillmentModes.length > 1 && !selectedFulfillmentMode && fulfillmentModes.some((mode) => effectiveOrderability.some((item) => item.fulfillmentMode === mode && item.state === "OPEN_FOR_ORDERS"))
+          ? <Text accessibilityLiveRegion="polite" style={styles.storeInfoChoicePrompt}>حدد طريقة الطلب أولًا لتتمكن من إضافة المنتجات إلى السلة.</Text>
+          : null}
         {fulfillmentModes.length > 1 ? <View style={styles.storeInfoModes} accessibilityLabel="طرق الطلب المتاحة">
           {fulfillmentModes.map((mode) => {
             const orderability = effectiveOrderability.find((item) => item.fulfillmentMode === mode);

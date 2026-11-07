@@ -60,6 +60,7 @@ export function createStyles(theme: ReturnType<typeof resolveTheme>) {
     storeInfoStat: { alignItems: "flex-start", flex: 1, gap: spacing[1], minWidth: 0 },
     storeInfoStatLabel: { ...typography.caption, color: theme.colorMuted, textAlign: "right" },
     storeInfoStatValue: { ...typography.bodySm, color: theme.color, textAlign: "right", fontWeight: "600" },
+    storeInfoChoicePrompt: { ...typography.bodySm, color: theme.interactiveText, fontWeight: "600", textAlign: "right" },
     storeInfoModes: { flexDirection: "row", gap: spacing[2], flexWrap: "wrap" },
     storeInfoMode: { alignItems: "center", backgroundColor: theme.surfaceInset, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, flexGrow: 1, justifyContent: "center", minHeight: sizing.controlMd, minWidth: 92, paddingHorizontal: spacing[2] },
     storeInfoModeSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
