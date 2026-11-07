@@ -5,9 +5,9 @@ ALTER TABLE dsh.stores
 
 ALTER TABLE dsh.stores
     ADD CONSTRAINT stores_relation_model_chk
-        CHECK (relation_model IN ('BTHWANI_PARTNER', 'INDEPENDENT_STORE')),
+        CHECK (relation_model IN ('BTHWANI_PARTNER', 'INDEPENDENT_STORE')) NOT VALID,
     ADD CONSTRAINT stores_independent_market_publication_chk
-        CHECK (relation_model = 'BTHWANI_PARTNER' OR publication_state <> 'published');
+        CHECK (relation_model = 'BTHWANI_PARTNER' OR publication_state <> 'published') NOT VALID;
 
 -- Independent Stores remain ineligible for the existing marketplace publication
 -- flow until a separately admitted, owner-backed web-only publication path exists.

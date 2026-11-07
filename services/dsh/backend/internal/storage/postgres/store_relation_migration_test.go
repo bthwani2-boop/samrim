@@ -22,8 +22,8 @@ func TestStoreRelationMigrationRegisteredAndFailClosed(t *testing.T) {
 	statement := sqls[SchemaVersion-1]
 	for _, required := range []string{
 		"ADD COLUMN relation_model text NOT NULL DEFAULT 'BTHWANI_PARTNER'",
-		"CHECK (relation_model IN ('BTHWANI_PARTNER', 'INDEPENDENT_STORE'))",
-		"CHECK (relation_model = 'BTHWANI_PARTNER' OR publication_state <> 'published')",
+		"CHECK (relation_model IN ('BTHWANI_PARTNER', 'INDEPENDENT_STORE')) NOT VALID",
+		"CHECK (relation_model = 'BTHWANI_PARTNER' OR publication_state <> 'published') NOT VALID",
 	} {
 		if !strings.Contains(statement, required) {
 			t.Errorf("missing Store relation invariant %q", required)
