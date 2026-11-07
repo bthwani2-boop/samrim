@@ -29,3 +29,26 @@ test("marketplace Store page renders unavailable without checkout or discovery l
   const retry = source.split('if (state.kind === "error") {')[1]?.split('const heroImageURI')[0];
   assert.match(retry ?? "", /label="إعادة المحاولة"/);
 });
+
+test("Store revalidation withdraws stale public detail and cart on DSH 404 without leaking it", () => {
+  const source = readFileSync(new URL("./store-detail.tsx", import.meta.url), "utf8");
+  const pollFailure = source.split("}).catch((cause) => {")[1]?.split("// Revalidate Partner visibility", 1)[0];
+  assert.ok(pollFailure, "live public orderability errors must be handled");
+  assert.match(pollFailure, /storeReadFailureKind\(cause\) === "unavailable"/);
+  assert.match(pollFailure, /setState\(\{ kind: "unavailable" \}\)/);
+  assert.match(pollFailure, /setOpenCart\(null\)/);
+  assert.match(pollFailure, /setDetailOffer\(null\)/);
+  assert.match(pollFailure, /\+\+storeRequestID\.current/);
+  assert.match(pollFailure, /\+\+catalogRequestID\.current/);
+});
+
+test("orderability revalidation fails closed and rejects older or mis-scoped success", () => {
+  const source = readFileSync(new URL("./store-detail.tsx", import.meta.url), "utf8");
+  assert.match(source, /const orderabilityRequest = \+\+orderabilityRequestID\.current/g);
+  assert.match(source, /orderabilityRequest !== orderabilityRequestID\.current/);
+  assert.match(source, /orderabilityRequest === orderabilityRequestID\.current/);
+  assert.match(source, /response\.storeId === storeId && response\.serviceCityId === selectedCityID \? response\.orderabilityByMode : \[\]/);
+  assert.match(source, /setOrderabilityByMode\(\[\]\);/);
+  assert.match(source, /\.catch\(\(\) => \[\]\)/);
+  assert.doesNotMatch(source, /Preserve the last confirmed state until DSH is reachable/);
+});

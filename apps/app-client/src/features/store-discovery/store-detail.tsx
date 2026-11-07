@@ -68,6 +68,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [loadingMore, setLoadingMore] = useState(false);
   const catalogRequestID = useRef(0);
   const storeRequestID = useRef(0);
+  const orderabilityRequestID = useRef(0);
   const [catalogTabs, setCatalogTabs] = useState<Partial<Record<number, CatalogSnapshot>>>({});
   const cartReadRequestID = useRef(0);
   const promotionRequestID = useRef(0);
@@ -117,9 +118,30 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     if (!storeId || !selectedCityID) return () => { active = false; };
     const refresh = () => {
       const bannerRequest = ++bannerRequestID.current;
+      const orderabilityRequest = ++orderabilityRequestID.current;
       void readPublicStoreOrderability(storeId, selectedCityID).then((response) => {
-        if (active) setOrderabilityByMode(response.orderabilityByMode);
-      }).catch(() => { /* Preserve the last confirmed state until DSH is reachable. */ });
+        if (!active || orderabilityRequest !== orderabilityRequestID.current) return;
+        // A mis-scoped response must never reopen Store actions.
+        setOrderabilityByMode(response.storeId === storeId && response.serviceCityId === selectedCityID ? response.orderabilityByMode : []);
+      }).catch((cause) => {
+        if (!active || orderabilityRequest !== orderabilityRequestID.current) return;
+        if (storeReadFailureKind(cause) === "unavailable") {
+          // DSH no longer publishes this marketplace Store (including relation cutover).
+          // Discard any in-flight view, catalog, cart or promotional readbacks.
+          ++storeRequestID.current;
+          ++catalogRequestID.current;
+          ++detailRequestID.current;
+          ++cartReadRequestID.current;
+          ++promotionRequestID.current;
+          ++bannerRequestID.current;
+          setState({ kind: "unavailable" });
+          setDetailOffer(null);
+          setOpenCart(null);
+          setMarketingContents([]);
+        }
+        // Network errors cannot keep an old OPEN_FOR_ORDERS badge actionable.
+        setOrderabilityByMode([]);
+      });
       // Revalidate Partner visibility and publication while the Store stays open.
       void listPublicStoreBanners(storeId, selectedCityID).then((response) => {
         if (active && bannerRequest > bannerAppliedRequestID.current) {
@@ -131,7 +153,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     };
     refresh();
     const interval = setInterval(refresh, 15000);
-    return () => { active = false; clearInterval(interval); };
+    return () => { active = false; ++orderabilityRequestID.current; clearInterval(interval); };
   }, [storeId, selectedCityID]));
   const [openCart, setOpenCart] = useState<CartResponse["cart"] | null>(null);
   const [cartReadError, setCartReadError] = useState(false);
@@ -187,9 +209,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     }
     setState({ kind: "loading" });
     try {
-      const orderabilityRequest = readPublicStoreOrderability(storeId, selectedCityID)
-        .then((result) => result.orderabilityByMode)
-        .catch(() => null);
+      const orderabilityRequest = ++orderabilityRequestID.current;
+      const orderabilityRead = readPublicStoreOrderability(storeId, selectedCityID)
+        .then((result) => result.storeId === storeId && result.serviceCityId === selectedCityID ? result.orderabilityByMode : [])
+        .catch(() => []);
       const contentID = ++bannerRequestID.current;
       const contentRequest = listPublicStoreBanners(storeId, selectedCityID)
         .then((result) => { if (requestID === storeRequestID.current && contentID > bannerAppliedRequestID.current) {
@@ -237,8 +260,8 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           if (requestID === storeRequestID.current && cartRequestID === cartReadRequestID.current) setCartReadError(true);
         });
       }
-      void orderabilityRequest.then((orderability) => {
-        if (requestID === storeRequestID.current) setOrderabilityByMode(orderability);
+      void orderabilityRead.then((orderability) => {
+        if (requestID === storeRequestID.current && orderabilityRequest === orderabilityRequestID.current) setOrderabilityByMode(orderability);
       });
       void promotionRequest;
       void contentRequest;
