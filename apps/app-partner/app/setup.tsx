@@ -5,9 +5,10 @@ import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState, type ComponentType } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, restoreIdentitySession, subscribeIdentitySession } from "../src/bootstrap/identity";
+import { firstStoreFulfillmentLabel, firstStoreModesForRelation, type FirstStoreRelation } from "../src/features/partner-onboarding/first-store-relation-choice";
 
 type Step = 0|1|2|3;
-type StoreRelationModel = "BTHWANI_PARTNER" | "INDEPENDENT_STORE";
+type StoreRelationModel = FirstStoreRelation;
 const labels=["هوية المتجر","نوع النشاط","الموقع والتواصل","المراجعة"] as const;
 const service=()=>createDshMobileClient(process.env.EXPO_PUBLIC_DSH_API_URL||"");
 
@@ -65,7 +66,7 @@ export default function PartnerStoreSetup(){
    }
    const token=await getUsableIdentityAccessToken();
    const page=await service().listPartnerAccessibleStores(token,1);
-   if(page.stores.length>0){router.replace("/orders" as Href);return;}
+   if(page.stores.length>0){router.replace("/more" as Href);return;}
    const [availableCities,availableVerticals]=await Promise.all([service().listActiveServiceCities(),service().listCatalogVerticals()]);
    setCities(availableCities);setVerticals(availableVerticals);
    if(availableCities.length===1)setCity(availableCities[0]!.id);
@@ -168,7 +169,7 @@ export default function PartnerStoreSetup(){
      {([["BTHWANI_PARTNER","انضم إلى بثواني","اعرض متجرك لعملاء بثواني بعد مراجعة الاتفاق والتفعيل."],["INDEPENDENT_STORE","أنشئ متجرك الخاص","متجر ويب مستقل؛ تتولى البيع والتوصيل والدفع بنفسك. نشر الرابط المباشر لا يزال قيد التجهيز."]] as const).map(([id,title,description])=><Pressable
        key={id} accessibilityRole="radio" accessibilityState={{checked:relation===id}} disabled={busy}
        style={[s.option,relation===id&&s.chosen]}
-       onPress={()=>{setRelation(id);setModes(id==="INDEPENDENT_STORE"?["CUSTOMER_PICKUP"]:["BTHWANI_CAPTAIN"]);}}>
+       onPress={()=>{setModes(current=>firstStoreModesForRelation(relation,id,current));setRelation(id);}}>
         <Text style={s.title}>{relation===id?"✓  ":""}{title}</Text>
         <Text style={s.small}>{description}</Text>
        </Pressable>)}
@@ -202,6 +203,7 @@ export default function PartnerStoreSetup(){
      <Text style={s.text}>المجال: {verticals.find(v=>v.id===vertical)?.nameAr}</Text>
      <Text style={s.text}>النوع: {types.find(t=>t.id===storeType)?.nameAr}</Text>
      <Text style={s.text}>العنوان: {address}</Text>
+     <Text style={s.text}>طرق تقديم الطلبات المختارة: {modes.map(firstStoreFulfillmentLabel).join("، ") || "لم تُحدّد"}</Text>
      <Text style={s.small}>{relation==="INDEPENDENT_STORE"?"سينشأ المتجر مستقلًا وغير منشور. ستتمكن من تجهيز المنتجات الآن، ونشر رابطه بعد اكتمال خدمة الاستضافة المباشرة وضوابطها؛ لا يوجد دفع أو توصيل بثواني.":"سينشأ المتجر غير منشور. بعد ذلك يمكنك تجهيز الصور والكتالوج والاتفاق التجاري قبل ظهوره في تطبيق العميل."}</Text>
     </View>:null}
     {step<3?<BthwaniButton label="التالي" onPress={advance} disabled={busy}/>:<BthwaniButton label="إنشاء المتجر" onPress={()=>void save()} disabled={busy}/>}
@@ -210,7 +212,7 @@ export default function PartnerStoreSetup(){
    {saved?<View style={{gap:14}}>
     <Text style={s.title}>تم إنشاء متجرك</Text>
     <Text style={s.small}>{relation==="INDEPENDENT_STORE"?"تم حفظ متجرك المستقل وغير المنشور. يمكنك إعداد المنتجات؛ لن يُفتح رابط الشراء المباشر قبل اعتماد ونشر خدمة المتاجر المستقلة.":"المتجر محفوظ وغير منشور حاليًا. يمكنك الدخول إلى لوحة الإدارة وإكمال جاهزية نشره في بثواني."}</Text>
-    <BthwaniButton label="فتح لوحة إدارة المتجر" onPress={()=>router.replace("/orders" as Href)}/>
+    <BthwaniButton label="فتح لوحة إدارة المتجر" onPress={()=>router.replace("/more" as Href)}/>
    </View>:null}
    {error?<View style={{gap:8}}><Text accessibilityRole="alert" style={s.error}>{error}</Text><BthwaniButton label="إعادة المحاولة" variant="secondary" onPress={()=>void load()}/></View>:null}
   </View>
