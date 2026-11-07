@@ -89,6 +89,7 @@ export const workspaceDestinations: readonly WorkspaceDestination[] = [
       { href: "/partners", label: "الشركاء والمتاجر", searchAliases: "سجل الشركاء سجل المتاجر حسابات الشركاء", showInWorkspaceNavigation: false }
     ]
   },
+  { href: "/independent-stores", label: "المتاجر المستقلة", children: [], permission: "partners" },
   { href: "/catalog", label: "الكتالوج", children: catalogChildren, permission: "catalog" },
   { href: "/marketing", label: "التسويق والمحتوى", children: marketingChildren, permission: "marketing" },
   { href: "/studio", label: "استوديو التصميم", children: [], permission: "marketing" },

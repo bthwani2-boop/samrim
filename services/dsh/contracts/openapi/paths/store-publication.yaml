@@ -1,4 +1,20 @@
 paths:
+  /dsh/partner/stores/first:
+    post:
+      operationId: createPartnerFirstStore
+      summary: Create an unpublished first Store for the authenticated Partner without a joining request
+      security: [{ userBearer: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerFirstStoreCreateRequest" } } }
+      responses:
+        "201": { description: First Store created; not publicly visible, content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerFirstStoreCreateResponse" } } } }
+        "200": { description: Exact replay of the same first Store creation, content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerFirstStoreCreateResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
   /dsh/operator/stores/trash:
     get:
       operationId: listDeletedStores
@@ -87,6 +103,7 @@ paths:
         - { name: serviceCityId, in: query, required: false, schema: { type: string, maxLength: 128 } }
         - { name: searchMode, in: query, required: false, description: "name_prefix requires state=published, a serviceCityId, at least two query characters, and sort=name_asc", schema: { type: string, enum: [contains, name_prefix], default: contains } }
         - { name: state, in: query, required: false, schema: { type: string, enum: [unpublished, published, hidden] } }
+        - { name: relationModel, in: query, required: false, description: "Canonical DSH Store relation; an empty value lists both models and the cursor is relation-scoped.", schema: { type: string, enum: [BTHWANI_PARTNER, INDEPENDENT_STORE] } }
         - { name: sort, in: query, required: false, schema: { type: string, enum: [updated_desc, updated_asc, name_asc] } }
       responses:
         "200": { description: Bounded canonical store summaries for operator registry use., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/OperatorStoreListResponse" } } } }

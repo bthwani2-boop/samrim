@@ -64,6 +64,31 @@ func (s *Service) Create(ctx context.Context, input contract.CreateJoiningCaseRe
 	return postgres.CreateJoiningCase(ctx, s.db, postgres.CreateJoiningCaseInput{IdempotencyKey: strings.TrimSpace(idempotencyKey), RequestHash: requestHash, ActingActorID: strings.TrimSpace(actingActorID), CorrelationID: strings.TrimSpace(correlationID), EvidenceKeyring: s.evidenceKeys, Request: request})
 }
 
+// CreateFirstStore lets an already verified Partner set up their first Store
+// immediately. No joining case is created and no Operator admission is needed.
+// Publication and financial permissions remain independent.
+func (s *Service) CreateFirstStore(ctx context.Context, accessToken string, input contract.PartnerFirstStoreCreateRequest) (postgres.StoreRecord, bool, error) {
+	identity, err := s.requirePartner(ctx, accessToken)
+	if err != nil {
+		return postgres.StoreRecord{}, false, err
+	}
+	modes := make([]string, len(input.FulfillmentModes))
+	for i, mode := range input.FulfillmentModes {
+		modes[i] = string(mode)
+	}
+	return postgres.CreateFirstStoreForPartner(ctx, s.db, identity.Subject, postgres.SelfStoreInput{
+		RelationModel:    input.RelationModel,
+		Name:             input.Name,
+		ServiceCityID:    input.ServiceCityID,
+		VerticalID:       input.PrimaryVerticalID,
+		CommercialTypeID: input.CommercialStoreTypeID,
+		Address:          input.AddressText,
+		Latitude:         input.Latitude,
+		Longitude:        input.Longitude,
+		FulfillmentModes: modes,
+	})
+}
+
 func validJoiningCaseProofType(value string) bool {
 	switch value {
 	case "COMMERCIAL_REGISTRATION", "IDENTITY_DOCUMENT", "FREELANCE_WORK_DOCUMENT", "PASSPORT":
@@ -299,6 +324,24 @@ func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken,
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
+	return s.correctAndResubmitForActor(ctx, caseID, identity.Subject, "", input, expectedVersion, idempotencyKey, correlationID)
+}
+
+// The prospective applicant can correct only the case read through their own
+// currently verified client actor and canonical phone, before Partner admission.
+func (s *Service) CorrectAndResubmitForApplicant(ctx context.Context, accessToken string, input contract.CorrectJoiningCaseRequest, expectedVersion int, idempotencyKey, correlationID string) (postgres.JoiningCaseResult, error) {
+	actorID, phone, err := s.selfServiceApplicant(ctx, accessToken)
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	current, err := postgres.ReadSelfServiceJoiningCase(ctx, s.db, actorID, phone)
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	return s.correctAndResubmitForActor(ctx, current.Case.ID, actorID, phone, input, expectedVersion, idempotencyKey, correlationID)
+}
+
+func (s *Service) correctAndResubmitForActor(ctx context.Context, caseID, actorID, applicantPhone string, input contract.CorrectJoiningCaseRequest, expectedVersion int, idempotencyKey, correlationID string) (postgres.JoiningCaseResult, error) {
 	caseID = strings.TrimSpace(caseID)
 	ownerFullName := strings.TrimSpace(input.OwnerFullName)
 	businessName := strings.TrimSpace(input.BusinessName)
@@ -331,8 +374,12 @@ func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken,
 	if modesErr != nil {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
-	mutation := postgres.CorrectJoiningCaseInput{CaseID: caseID, ActorID: identity.Subject, OwnerFullName: ownerFullName, BusinessName: businessName, FirstStoreName: firstStoreName, FirstStoreAddress: firstStoreAddress, FirstStoreWorkingHours: workingHours, FirstStoreProofType: proofType, FirstStoreProofNumber: proofNumber, FirstStoreNotes: notes, EvidenceKeyring: s.evidenceKeys, ExpectedVersion: expectedVersion, IdempotencyKey: strings.TrimSpace(idempotencyKey), CorrelationID: strings.TrimSpace(correlationID), ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: commercialTypeID, Latitude: latitude, Longitude: longitude, FulfillmentModes: fulfillmentModes}
-	requestHash, err := s.evidenceKeys.RequestHash("partner-correct-and-resubmit", caseID, identity.Subject, ownerFullName, businessName, firstStoreName, firstStoreAddress, string(workingHours), proofType, proofNumber, notes, serviceCityID, verticalID, commercialTypeID, strconv.FormatFloat(latitude, 'f', 6, 64), strconv.FormatFloat(longitude, 'f', 6, 64), strings.Join(fulfillmentModes, ","), strconv.Itoa(expectedVersion))
+	mutation := postgres.CorrectJoiningCaseInput{CaseID: caseID, ActorID: actorID, ApplicantActorID: actorID, ApplicantPhone: applicantPhone, OwnerFullName: ownerFullName, BusinessName: businessName, FirstStoreName: firstStoreName, FirstStoreAddress: firstStoreAddress, FirstStoreWorkingHours: workingHours, FirstStoreProofType: proofType, FirstStoreProofNumber: proofNumber, FirstStoreNotes: notes, EvidenceKeyring: s.evidenceKeys, ExpectedVersion: expectedVersion, IdempotencyKey: strings.TrimSpace(idempotencyKey), CorrelationID: strings.TrimSpace(correlationID), ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: commercialTypeID, Latitude: latitude, Longitude: longitude, FulfillmentModes: fulfillmentModes}
+	scope := "partner-correct-and-resubmit"
+	if applicantPhone != "" {
+		scope = "self-service-correct-and-resubmit"
+	}
+	requestHash, err := s.evidenceKeys.RequestHash(scope, caseID, actorID, ownerFullName, businessName, firstStoreName, firstStoreAddress, string(workingHours), proofType, proofNumber, notes, serviceCityID, verticalID, commercialTypeID, strconv.FormatFloat(latitude, 'f', 6, 64), strconv.FormatFloat(longitude, 'f', 6, 64), strings.Join(fulfillmentModes, ","), strconv.Itoa(expectedVersion))
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}

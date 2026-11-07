@@ -49,7 +49,7 @@ partner_participation AS (
         COUNT(*) FILTER (WHERE opt.state='DECLINED') AS declined,
         COUNT(*) FILTER (WHERE opt.state IS NULL) AS pending
  FROM dsh.commerce_promotions p CROSS JOIN at_time
- JOIN dsh.stores s ON s.publication_state='published'
+ JOIN dsh.stores s ON s.publication_state='published' AND s.relation_model='BTHWANI_PARTNER'
      AND (p.service_city_id IS NULL OR p.service_city_id=s.service_city_id)
  LEFT JOIN dsh.commerce_promotion_store_opt_ins opt
      ON opt.promotion_id=p.id AND opt.store_id=s.id

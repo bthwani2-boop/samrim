@@ -11,6 +11,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { currentIdentityState, logoutIdentity, subscribeIdentitySession } from "../../bootstrap/identity";
 import { PartnerPerformancePeek } from "./partner-performance-peek";
+import { mayPrepareIndependentStoreBanners } from "./independent-store-banner-access";
 import { PartnerInsights } from "./partner-insights";
 import { PartnerDesktopHome } from "./partner-desktop-home";
 import { readOwnStoreCommercialAgreements } from "./store-commercial-agreement-client";
@@ -22,7 +23,7 @@ import { PartnerStorefrontLink } from "./partner-storefront-link";
 import { onStoreAvailabilityChanged } from "./store-availability-events";
 import { listOwnStoreAccessInvitations, readOwnJoiningCase, readOwnStoreImages, readOwnStoreOperationalAvailability } from "./store-readback-client";
 
-type MenuItem = Readonly<{label:string;icon:MobileIconName;href?:Href;section?:"promotions"|"team";description?:string}>;
+type MenuItem = Readonly<{label:string;icon:MobileIconName;href?:Href;section?:"promotions"|"team"|"banners";description?:string}>;
 type IdentityDisplay = Readonly<{name:string;role:string;phone?:string}>;
 function roleForPermissions(values:ReadonlyArray<string>) {
   const unique=new Set(values);
@@ -58,10 +59,11 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
   const [logoutBusy,setLogoutBusy]=useState(false);
   const [logoutError,setLogoutError]=useState("");
   const selectedID=selectedStore?.id;
-  const canOperate=Boolean(selectedStore && (selectedStore.owned||selectedStore.permissions.includes("store_operations")));
+  const marketplace=selectedStore?.relationModel==="BTHWANI_PARTNER";
+  const canOperate=Boolean(marketplace && selectedStore && (selectedStore.owned||selectedStore.permissions.includes("store_operations")));
   const can=(permission:"promotions"|"catalog")=>Boolean(selectedStore&&(selectedStore.owned||selectedStore.permissions.includes(permission)));
-  const canOrders=Boolean(selectedStore&&(selectedStore.owned||selectedStore.permissions.includes("orders")));
-  const canWallet=Boolean(selectedStore&&(selectedStore.owned||selectedStore.permissions.includes("finance_read")||selectedStore.permissions.includes("payout_request")));
+  const canOrders=Boolean(marketplace && selectedStore&&(selectedStore.owned||selectedStore.permissions.includes("orders")));
+  const canWallet=Boolean(marketplace && selectedStore&&(selectedStore.owned||selectedStore.permissions.includes("finance_read")||selectedStore.permissions.includes("payout_request")));
   const storeID=canOperate?selectedID:undefined;
 
   useFocusEffect(useCallback(()=>{
@@ -124,7 +126,7 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
   useFocusEffect(useCallback(()=>{
     let active=true;
     setAgreementState(null);
-    if(accountOnly || !actor || !selectedStore?.owned) return ()=>{active=false;};
+    if(accountOnly || !marketplace || !actor || !selectedStore?.owned) return ()=>{active=false;};
     const scope=selectedStore.id;
     const isCurrent=()=>{
       const current=currentIdentityState();
@@ -135,7 +137,7 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
       setAgreementState({actor,storeId:scope,status:ownStoreAgreementReadiness(agreements,scope,actor)});
     }).catch(()=>{if(isCurrent())setAgreementState({actor,storeId:scope,status:"UNAVAILABLE"});});
     return ()=>{active=false;};
-  },[accountOnly,actor,selectedStore?.id,selectedStore?.owned]));
+  },[accountOnly,actor,marketplace,selectedStore?.id,selectedStore?.owned]));
   const commercialAgreement:StoreAgreementReadback=selectedStore?.owned && actor && agreementState?.actor===actor
     && agreementState.storeId===selectedStore.id ? agreementState.status : null;
   const primaryActions:MenuItem[]=[
@@ -146,8 +148,9 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
   const actions:MenuItem[]=[
     ...(selectedStore?.owned?[{label:"إعدادات المتجر",icon:"edit" as const,href:"/store?section=settings" as Href}]:[]),
     ...(can("catalog")?[{label:"أدوات الكتالوج",icon:"cart" as const,href:"/products?panel=tools" as Href},{label:"سجل تغييرات العروض",icon:"cart" as const,href:"/activity" as Href}]:[]),
-    ...(can("promotions")?[{label:"العروض",icon:"offers" as const,section:"promotions" as const}]:[]),
-    ...(selectedStore?.owned?[{label:"الموظفين",icon:"account" as const,href:"/employees" as Href},{label:"كباتن المتجر",icon:"deliveries" as const,section:"team" as const}]:[]),
+    ...(marketplace&&can("promotions")?[{label:"العروض",icon:"offers" as const,section:"promotions" as const}]:[]),
+    ...(mayPrepareIndependentStoreBanners(selectedStore)?[{label:"بنرات المتجر المستقل",icon:"store" as const,section:"banners" as const}]:[]),
+    ...(selectedStore?.owned?[{label:"الموظفين",icon:"account" as const,href:"/employees" as Href},...(marketplace?[{label:"كباتن المتجر",icon:"deliveries" as const,section:"team" as const}]:[])]:[]),
     {label:"الإشعارات",icon:"notifications" as const,href:"/notifications" as Href},
     {label:"الأداء",icon:"orders",href:"/insights" as Href},
     ...(state.kind==="ready"&&!stores.length?[{label:"إعداد المتجر",icon:"store" as const,href:"/onboarding" as Href}]:[]),
@@ -170,8 +173,8 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
     {!accountOnly ? <>
     {desktopWeb && selectedStore ? <View style={styles.topAlert} accessibilityLabel="حالة المتجر الحالية">
       <View style={[styles.dot,{backgroundColor:selectedStore.publicationState==="published"?theme.success:theme.warning}]}/>
-      <Text style={styles.topAlertText}>{selectedStore.publicationState==="published" ? "المتجر منشور للعملاء" : "المتجر لم يُنشر للعملاء بعد"}</Text>
-      <Text style={styles.topAlertHint}>{canOperate ? "استقبال الطلبات: "+operationalState : "الحالة تعتمد على نشر المتجر والصلاحيات"}</Text>
+      <Text style={styles.topAlertText}>{marketplace ? (selectedStore.publicationState==="published" ? "المتجر منشور للعملاء" : "المتجر لم يُنشر للعملاء بعد") : "المتجر مستقل · المعاينة خاصة بالمالك"}</Text>
+      <Text style={styles.topAlertHint}>{canOperate ? "استقبال الطلبات: "+operationalState : marketplace ? "الحالة تعتمد على نشر المتجر والصلاحيات" : "لم يُفعّل النشر أو استقبال الطلب المباشر"}</Text>
     </View> : null}
     <View style={styles.dashboardHeader}>
       <View style={styles.dashboardCopy}>
@@ -181,7 +184,7 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
       </View>
       {desktopWeb?<View style={styles.dateColumn}>
         <Text style={styles.dateLabel}>اليوم: {displayDate}</Text>
-        <Text style={styles.statusText}>{selectedStore?(canOperate?"التشغيل: "+operationalState:selectedStore.publicationState==="published"?"متجر منشور":"متجر قيد الإعداد"):"لوحة الشريك"}</Text>
+        <Text style={styles.statusText}>{selectedStore?(marketplace?(canOperate?"التشغيل: "+operationalState:selectedStore.publicationState==="published"?"متجر منشور":"متجر قيد الإعداد"):"المتجر المستقل قيد الإعداد"):"لوحة الشريك"}</Text>
       </View>:selectedStore?<View style={styles.statusPanel}>
         <View style={styles.statusLine}>
           <View style={[styles.dot,{backgroundColor:availabilityError?theme.warning:orderable&&!stopped?theme.success:theme.warning}]}/>

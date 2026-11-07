@@ -1,265 +1,173 @@
-"use client";
-
-import { type CommerceVertical, type CommercialStoreType, createDshMobileClient, type CreateJoiningCaseRequest, type JoiningCaseResponse, joiningCaseStateLabel, type ServiceCity, type StoreFulfillmentMode } from "@bthwani/dsh";
-import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
-import type { BthwaniMapCoordinate, BthwaniMapProps } from "@bthwani/design-system/native/map";
-import { toAsciiDigits } from "@bthwani/design-system";
 import { normalizeYemenPhoneE164 } from "@bthwani/identity/phone";
-import * as Crypto from "expo-crypto";
-import { useRouter } from "expo-router";
-import { type ComponentType, useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { currentProspectSession, loginProspect, logoutProspect, prospectAccessToken, registerProspect, requestProspectRegistration, restoreProspectSession, subscribeProspectSession } from "../../bootstrap/applicant-identity";
-import { listActiveServiceCities, listCatalogVerticals, listCommercialStoreTypes } from "./store-readback-client";
+import { identityErrorMessage, limitPasswordInput, validatePasswordInputShape, type TokenPair } from "@bthwani/identity";
+import { BthwaniButton, BthwaniIconButton, useAppearanceTheme } from "@bthwani/design-system/native";
+import { type Href, useRouter } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
+import {
+  currentProspectSession, loginProspect, registerDirectPartnerFromVerifiedAccount,
+  registerProspect, requestProspectRegistration, restoreProspectSession, subscribeProspectSession,
+} from "../../bootstrap/applicant-identity";
+import {
+  adoptDirectPartnerIdentity, currentIdentityState, loginManagedIdentity,
+  recoverManagedIdentity, requestManagedRecovery, restoreIdentitySession,
+  subscribeIdentitySession,
+} from "../../bootstrap/identity";
 
-const MODES:readonly {id:StoreFulfillmentMode;label:string}[]=[
- {id:"BTHWANI_CAPTAIN",label:"توصيل بثواني"},
- {id:"PARTNER_CAPTAIN",label:"توصيل المتجر"},
- {id:"CUSTOMER_PICKUP",label:"استلام العميل من المتجر"},
-];
-const PROOFS:readonly {id:CreateJoiningCaseRequest["firstStoreProofType"];label:string}[]=[
- {id:"COMMERCIAL_REGISTRATION",label:"سجل تجاري"},
- {id:"IDENTITY_DOCUMENT",label:"بطاقة هوية"},
- {id:"PASSPORT",label:"جواز سفر"},
-];
-function details(error:unknown):string{
- const data=error && typeof error==="object"?error as {code?:string;status?:number}:null;
- if(data?.status===400)return "البيانات غير مكتملة أو لا تطابق متطلبات الخدمة؛ راجع العنوان والموقع والوثيقة والمدينة ونوع المتجر.";
- if(data?.status===401)return "انتهت صلاحية جلسة المتقدم؛ سجل الدخول مجددًا ثم اقرأ طلبك.";
- if(data?.status===409)return "يوجد طلب انضمام أو بيانات سابقة لهذا الرقم، اقرأ طلبك أولاً أو تواصل مع قسم الشركاء.";
- if(data?.status===403)return "هوية المتقدم أو رقم الهاتف لا يطابق الحساب الموثق.";
- if(data?.status===404)return "لم يعثر النظام على الطلب. تحقق من الاتصال ثم أعد المحاولة.";
- return "تعذر تأكيد العملية. اقرأ الحالة من الخدمة قبل تكرار الإرسال.";
-}
-function api(){
- const url=process.env.EXPO_PUBLIC_DSH_API_URL;
- if(!url)throw new Error("DSH_BASE_URL_REQUIRED");
- return createDshMobileClient(url,{cryptoRandomUUID:()=>Crypto.randomUUID()});
-}
-export function ProspectivePartnerApplication(){
- const theme=useAppearanceTheme();
+function ascii(input:string){return input.replace(/[٠-٩۰-۹]/g,c=>String("٠١٢٣٤٥٦٧٨٩".indexOf(c)>=0?"٠١٢٣٤٥٦٧٨٩".indexOf(c):"۰۱۲۳۴۵۶۷۸۹".indexOf(c)))}
+
+export function ProspectivePartnerApplication() {
  const router=useRouter();
- const styles=useMemo(()=>StyleSheet.create({
-  root:{flex:1,backgroundColor:theme.background},
-  inner:{padding:20,gap:12},
-  heading:{fontSize:23,fontWeight:"700" as const,color:theme.color,textAlign:"right" as const},
-  text:{fontSize:15,color:theme.color,textAlign:"right" as const,writingDirection:"rtl" as const},
-  muted:{fontSize:13,color:theme.colorMuted,textAlign:"right" as const},
-  input:{borderWidth:1,borderColor:theme.borderColor,borderRadius:10,padding:12,color:theme.color,textAlign:"right" as const,writingDirection:"rtl" as const,minHeight:48},
-  choice:{borderWidth:1,borderColor:theme.borderColor,borderRadius:10,padding:10},
-  selected:{borderColor:theme.actionBackground,borderWidth:2},
- }),[theme]);
- const [session,setSession]=useState(currentProspectSession());
+ const theme=useAppearanceTheme();
+ const {width}=useWindowDimensions();
+ const [partner,setPartner]=useState(currentIdentityState());
+ const [prospect,setProspect]=useState(currentProspectSession());
  const [restoring,setRestoring]=useState(true);
- const [mode,setMode]=useState<"login"|"register">("register");
+ const [mode,setMode]=useState<"register"|"login"|"recover">("register");
  const [phone,setPhone]=useState("");
  const [password,setPassword]=useState("");
- const [passwordConfirmation,setPasswordConfirmation]=useState("");
+ const [confirm,setConfirm]=useState("");
  const [code,setCode]=useState("");
- const [proofRequested,setProofRequested]=useState(false);
+ const [codeSent,setCodeSent]=useState(false);
+ const [visible,setVisible]=useState(false);
+ const [confirmVisible,setConfirmVisible]=useState(false);
  const [busy,setBusy]=useState(false);
- const [loading,setLoading]=useState(false);
  const [error,setError]=useState("");
  const [notice,setNotice]=useState("");
- const [caseValue,setCaseValue]=useState<JoiningCaseResponse|null>(null);
- const [hasRead,setHasRead]=useState(false);
- const [intakeStep,setIntakeStep]=useState<"basics"|"details">("basics");
- const [cities,setCities]=useState<readonly ServiceCity[]>([]);
- const [verticals,setVerticals]=useState<readonly CommerceVertical[]>([]);
- const [types,setTypes]=useState<readonly CommercialStoreType[]>([]);
- const [city,setCity]=useState("");
- const [vertical,setVertical]=useState("");
- const [storeType,setStoreType]=useState("");
- const [ownerName,setOwnerName]=useState("");
- const [storeName,setStoreName]=useState("");
- const [address,setAddress]=useState("");
- const [lat,setLat]=useState("");
- const [lng,setLng]=useState("");
- const [showLocationMap,setShowLocationMap]=useState(false);
- const [MapComponent,setMapComponent]=useState<ComponentType<BthwaniMapProps>|null>(null);
- const [mapLoading,setMapLoading]=useState(false);
- const [mapError,setMapError]=useState("");
- const [manualCoordinateEntry,setManualCoordinateEntry]=useState(false);
- const [proofType,setProofType]=useState<CreateJoiningCaseRequest["firstStoreProofType"]>("IDENTITY_DOCUMENT");
- const [proofNumber,setProofNumber]=useState("");
- const [modes,setModes]=useState<StoreFulfillmentMode[]>(["BTHWANI_CAPTAIN"]);
- const selectedOrigin=useMemo<BthwaniMapCoordinate|null>(()=>{
-  if(!lat.trim()||!lng.trim())return null;
-  const latitude=Number(toAsciiDigits(lat));const longitude=Number(toAsciiDigits(lng));
-  return Number.isFinite(latitude)&&Number.isFinite(longitude)&&latitude>=-90&&latitude<=90&&longitude>=-180&&longitude<=180?{latitude,longitude}:null;
- },[lat,lng]);
+ const mobile=width<720;
+ const normalized=normalizeYemenPhoneE164(phone);
+ const validPhone=/^\+[1-9]\d{7,14}$/.test(normalized);
+ const passwordValid=mode==="login"?password.length>0:validatePasswordInputShape(password,confirm).valid;
+ const canSubmit=validPhone&&(mode==="recover"&&!codeSent||passwordValid);
+ const isPartner=partner.kind==="authenticated";
+ const isVerifiedClient=prospect.kind==="authenticated";
+ const styles=useMemo(()=>({
+  root:{flex:1,backgroundColor:theme.background},
+  content:{flexGrow:1,alignItems:"center" as const,paddingHorizontal:16,paddingTop:46,paddingBottom:30,gap:17},
+  header:{width:"100%" as const,maxWidth:630,alignItems:"center" as const,gap:7},
+  title:{color:theme.color,fontSize:23,fontWeight:"700" as const,textAlign:"center" as const},
+  subtitle:{color:theme.colorMuted,fontSize:14,textAlign:"center" as const,lineHeight:23},
+  card:{width:"100%" as const,maxWidth:630,backgroundColor:theme.surface,borderWidth:1,borderColor:theme.borderColor,borderRadius:22,padding:mobile?18:25,gap:15},
+  heading:{color:theme.color,fontSize:19,fontWeight:"700" as const,textAlign:"right" as const},
+  label:{color:theme.color,fontSize:13,fontWeight:"600" as const,textAlign:"right" as const},
+  fields:{flexDirection:mobile?"column" as const:"row" as const,gap:13},
+  field:{flex:mobile?undefined:1,flexDirection:"column" as const,gap:6,minWidth:0},
+  input:{backgroundColor:theme.surfaceInset,color:theme.color,borderWidth:1,borderColor:theme.borderColor,borderRadius:11,paddingHorizontal:12,paddingVertical:12,textAlign:"right" as const,writingDirection:"rtl" as const,fontSize:15},
+  password:{backgroundColor:theme.surfaceInset,borderWidth:1,borderColor:theme.borderColor,borderRadius:11,flexDirection:"row" as const,alignItems:"center" as const,paddingLeft:5},
+  passwordInput:{flex:1,minWidth:0,color:theme.color,paddingHorizontal:12,paddingVertical:12,textAlign:"right" as const,fontSize:15},
+  small:{color:theme.colorMuted,fontSize:12,textAlign:"right" as const,lineHeight:20},
+  error:{color:theme.dangerText,backgroundColor:theme.dangerSoft,padding:12,borderRadius:10,textAlign:"right" as const},
+  link:{color:theme.actionBackground,fontSize:14,fontWeight:"600" as const,textAlign:"center" as const},
+ }),[theme,mobile]);
 
  useEffect(()=>{
   let active=true;
-  const un=subscribeProspectSession(value=>{if(active)setSession(value)});
-  void restoreProspectSession().catch(()=>{if(active)setError("تعذر استعادة جلسة المتقدم، أعد المحاولة.")}).finally(()=>{if(active)setRestoring(false)});
-  return()=>{active=false;un()};
+  const offPartner=subscribeIdentitySession(next=>{if(active)setPartner(next)});
+  const offClient=subscribeProspectSession(next=>{if(active)setProspect(next)});
+  void Promise.allSettled([restoreIdentitySession(),restoreProspectSession()]).finally(()=>{if(active)setRestoring(false)});
+  return()=>{active=false;offPartner();offClient()};
  },[]);
- const authenticated=session.kind==="authenticated";
- const load=useCallback(async()=>{
-  if(!authenticated)return;
-  setLoading(true);setError("");
-  try{
-   const token=await prospectAccessToken();
-   const result=await api().readSelfServiceJoiningApplication(token);
-   if(result.case.origin!=="self_service")throw new Error("CASE_ORIGIN_MISMATCH");
-   setCaseValue(result);
-  }catch(cause){
-   if(cause && typeof cause==="object" && (cause as {status?:number}).status===404){setCaseValue(null);setHasRead(true);}
-   else {setHasRead(false);setError(details(cause));}
-  }finally{setLoading(false)}
- },[authenticated]);
- useEffect(()=>{if(authenticated){void load()}else{setCaseValue(null);setHasRead(false);setIntakeStep("basics")}},[authenticated,load]);
- useEffect(()=>{
-  if(!authenticated || caseValue)return;
-  let active=true;
-  void Promise.all([listActiveServiceCities(),listCatalogVerticals()]).then(([a,b])=>{if(active){setCities(a);setVerticals(b)}}).catch(()=>{if(active)setError("تعذر قراءة المدن والمجالات. تحقق من الاتصال.")});
-  return()=>{active=false};
- },[authenticated,caseValue]);
- useEffect(()=>{
-  if(!vertical){setTypes([]);setStoreType("");return}
-  let active=true;
-  setStoreType("");
-  void listCommercialStoreTypes(vertical).then(result=>{if(active)setTypes(result)}).catch(()=>{if(active)setError("تعذر تحميل أنواع المتاجر")});
-  return()=>{active=false};
- },[vertical]);
+ useEffect(()=>{if(isPartner)router.replace("/setup" as Href)},[isPartner,router]);
 
- async function toggleLocationMap(){
-  if(showLocationMap){setShowLocationMap(false);return;}
-  if(mapLoading)return;
-  if(MapComponent){setShowLocationMap(true);return;}
-  setMapLoading(true);setMapError("");
-  try{
-   // Native map availability depends on the installed Android binary.
-   // Loading it only on demand keeps registration usable in older builds.
-   const module=await import("@bthwani/design-system/native/map");
-   setMapComponent(()=>module.BthwaniMap);
-   setShowLocationMap(true);
-  }catch{
-   setShowLocationMap(false);
-   setManualCoordinateEntry(true);
-   setMapError("الخريطة غير متاحة في النسخة المثبتة. أدخل الإحداثيات يدويًا أو استخدم نسخة تدعم الخرائط.");
-  }finally{setMapLoading(false)}
+ function switchMode(next:"register"|"login"|"recover"){
+  setMode(next);setError("");setNotice("");setCode("");setCodeSent(false);
+  setPassword("");setConfirm("");setVisible(false);setConfirmVisible(false);
  }
-
- async function authenticate(){
-  if(busy||!phone.trim()||!password)return;
+ async function enterPartner(pair:TokenPair){
+  await adoptDirectPartnerIdentity(pair);
+  router.replace("/setup" as Href);
+ }
+ async function activateVerifiedAccount(){
+  try {
+   const pair=await registerDirectPartnerFromVerifiedAccount();
+   await enterPartner(pair);
+  }catch(cause){
+   if(cause && typeof cause==="object" && "status" in cause && (cause as {status?:number}).status===409 && password){
+    // A previous successful role admission can outlive an interrupted response.
+    await loginManagedIdentity(normalized,password);router.replace("/setup" as Href);
+    return;
+   }
+   throw cause;
+  }
+ }
+ async function submit(){
+  if(busy||!canSubmit||isPartner)return;
   setBusy(true);setError("");setNotice("");
   try{
    if(mode==="register"){
-    if(!proofRequested){throw new Error("يجب طلب رمز التحقق أولاً")}
-    if(password!==passwordConfirmation)throw new Error("تأكيد كلمة المرور لا يطابق كلمة المرور.");
-    await registerProspect(phone.trim(),toAsciiDigits(code.trim()),password);
-   }else{await loginProspect(phone.trim(),password)}
-  }catch(cause){setError(cause instanceof Error?cause.message:"تعذر تسجيل الدخول")}finally{setBusy(false)}
- }
- async function requestProof(){
-  if(busy || !phone.trim())return;
-  setBusy(true);setError("");
-  try{await requestProspectRegistration(phone.trim());setProofRequested(true);setNotice("أدخل رمز التحقق المرسل إلى رقمك.")}catch(cause){setError(cause instanceof Error?cause.message:"تعذر طلب الرمز")}finally{setBusy(false)}
- }
- async function submit(){
-  if(busy)return;
-  setError("");setNotice("");
-  const latitude=Number(toAsciiDigits(lat));const longitude=Number(toAsciiDigits(lng));
-  if(!/^\+[1-9]\d{7,14}$/.test(normalizeYemenPhoneE164(phone))||!ownerName.trim()||!storeName.trim()||!address.trim()||!city||!vertical||!storeType||!proofNumber.trim()||modes.length===0||
-     !lat.trim()||!lng.trim()||!Number.isFinite(latitude)||!Number.isFinite(longitude)){
-   setError("أكمل البيانات الأساسية واختر المدينة والمجال ونوع المتجر وطريقة التوصيل وحدد موقعه.");return;
-  }
-  const input:CreateJoiningCaseRequest={
-   contactPhoneE164:normalizeYemenPhoneE164(phone),ownerFullName:ownerName.trim(),businessName:storeName.trim(),firstStoreName:storeName.trim(),
-   walletProviderKey:"",firstStoreAddress:address.trim(),serviceCityId:city,firstStoreVerticalId:vertical,firstStoreCommercialTypeId:storeType,
-   firstStoreLatitude:latitude,firstStoreLongitude:longitude,firstStoreWorkingHours:{intervals:[]},
-   firstStoreProofType:proofType,firstStoreProofNumber:proofNumber.trim(),firstStoreFulfillmentModes:modes,
-  };
-  setBusy(true);
-  try{
-   const token=await prospectAccessToken();
-   const id=currentProspectSession();
-   if(id.kind!=="authenticated")throw new Error("IDENTITY_REQUIRED");
-   const digest=await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256,JSON.stringify([id.identity.subject,input]));
-   const key=`self_join_${digest}`;
-   const result=await api().createSelfServiceJoiningApplication(token,input,key,`self_corr_${digest}`);
-   if(result.case.origin!=="self_service")throw new Error("CASE_ORIGIN_MISMATCH");
-   const read=await api().readSelfServiceJoiningApplication(token);
-   if(read.case.id!==result.case.id)throw new Error("CASE_READBACK_MISMATCH");
-   setCaseValue(read);setNotice("سُجل طلب الانضمام؛ سيُراجع قسم الشركاء بياناتك قبل منح صلاحيات المتجر.");
-  }catch(cause){await load();setError(details(cause))}
+    if(!codeSent){
+     await requestProspectRegistration(normalized);
+     setCode("");setCodeSent(true);setNotice("أدخل رمز التحقق لإكمال إنشاء حساب الشريك.");
+    }else{
+     if(!/^\d{6}$/.test(ascii(code))) {setError("أدخل رمز التحقق المكوّن من 6 أرقام.");return;}
+     await registerProspect(normalized,ascii(code),password);
+     await activateVerifiedAccount();
+    }
+   }else if(mode==="login"){
+    try { await loginManagedIdentity(normalized,password);router.replace("/setup" as Href); }
+    catch(cause){
+     // A customer identity can become a Partner with the same verified phone.
+     if(!cause||typeof cause!=="object"||!("status" in cause)||![401,404].includes((cause as {status:number}).status))throw cause;
+     await loginProspect(normalized,password);
+     await activateVerifiedAccount();
+    }
+   }else{
+    if(!codeSent){await requestManagedRecovery(normalized);setCode("");setCodeSent(true);setNotice("أدخل رمز الاستعادة المرسل إلى جوالك.");}
+    else{
+     if(!/^\d{6}$/.test(ascii(code))){setError("أدخل رمز الاستعادة المكوّن من 6 أرقام.");return;}
+     await recoverManagedIdentity(normalized,ascii(code),password);
+     switchMode("login");setNotice("تم تحديث كلمة المرور. سجّل الدخول بكلمتك الجديدة.");
+    }
+   }
+  }catch(cause){setError(identityErrorMessage(cause,mode==="login"?"login":mode==="recover"?"recovery":"general"))}
   finally{setBusy(false)}
  }
- const field=(label:string,value:string,set:(value:string)=>void,secure=false,keyboard:"default"|"phone-pad"|"numeric"|"numbers-and-punctuation"="default")=>
-  <View style={{gap:4}}><Text style={styles.text}>{label}</Text><TextInput accessibilityLabel={label} style={styles.input} value={value} onChangeText={set} editable={!busy} keyboardType={keyboard} secureTextEntry={secure} autoCapitalize="none"/></View>;
- const select=<T extends string>(label:string,items:readonly {id:T;label:string}[],value:T,set:(id:T)=>void)=>
-  <View style={{gap:5}}><Text style={styles.text}>{label}</Text><View style={{gap:5}}>{items.map(item=><Pressable accessibilityRole="radio" accessibilityState={{checked:value===item.id,disabled:busy}} key={item.id} onPress={()=>set(item.id)} disabled={busy} style={[styles.choice,value===item.id&&styles.selected]}><Text style={styles.text}>{item.label}</Text></Pressable>)}</View></View>;
- return <ScrollView style={styles.root} contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled">
-  <Text style={styles.heading}>طلب الانضمام إلى بثواني</Text>
-  <Text style={styles.muted}>يمكن التقديم دون ميداني. يُتحقق من هاتفك أولاً؛ ولا يمنح الطلب صلاحية إدارة متجر حتى موافقة قسم الشركاء.</Text>
-  <BthwaniButton label="العودة لتسجيل دخول الشريك" onPress={()=>router.back()} variant="secondary"/>
-  {restoring||loading?<ActivityIndicator accessibilityLabel="جارٍ التحقق من بيانات الطلب"/>:null}
-  {!authenticated&&!restoring?<View style={{gap:10}}>
-   {select("لدي حساب موثق أم أريد التسجيل؟",[{id:"register" as const,label:"تسجيل رقم جديد"},{id:"login" as const,label:"الدخول بحساب موجود"}],mode,(next)=>{setMode(next);setProofRequested(false);setCode("");setError("");})}
-   {field("رقم الهاتف",phone,(next)=>{setPhone(next);setProofRequested(false);setCode("");},false,"phone-pad")}
-   {mode==="register"?<><BthwaniButton label="إرسال رمز التحقق" onPress={()=>void requestProof()} disabled={busy}/>{proofRequested?field("رمز التحقق",code,setCode,false,"numeric"):null}</>:null}
-   {field("كلمة المرور",password,setPassword,true)}
-   {mode==="register"?field("تأكيد كلمة المرور",passwordConfirmation,setPasswordConfirmation,true):null}
-   <BthwaniButton label={busy?"جارٍ التحقق…":mode==="register"?"إثبات رقم الهاتف والمتابعة":"دخول المتقدم"} onPress={()=>void authenticate()} disabled={busy|| (mode==="register"&&!proofRequested)}/>
-  </View>:null}
-  {authenticated&&!caseValue&&!hasRead&&!loading?<View style={{gap:8}}><Text accessibilityRole="alert" style={styles.muted}>تعذر التحقق من وجود طلب سابق. لن يتاح إنشاء طلب آخر قبل قراءة حالتك من المنصة.</Text><BthwaniButton label="إعادة التحقق من طلب الانضمام" variant="secondary" onPress={()=>void load()} disabled={busy}/></View>:null}
-  {authenticated&&caseValue?<View style={{gap:9}}>
-   <Text style={styles.heading}>طلبك الحالي</Text>
-   <Text style={styles.text}>المتجر: {caseValue.case.firstStoreName}</Text>
-   <Text style={styles.text}>الحالة: {joiningCaseStateLabel(caseValue.case.state)}</Text>
-   {caseValue.case.state==="needs_correction"?<>
-    <Text accessibilityRole="alert" style={styles.muted}>أُعيد طلبك للتصحيح. سجّل الدخول إلى حساب الشريك المرتبط برقمك، وراجع الملاحظات وأعد تقديم البيانات من شاشة الانضمام.</Text>
-    {caseValue.case.correctionReason?<Text style={styles.text}>سبب التصحيح: {caseValue.case.correctionReason}</Text>:null}
-    <BthwaniButton label="الانتقال إلى حساب الشريك لتصحيح الطلب" onPress={()=>router.back()} />
-   </>:caseValue.case.state==="approved"?<>
-    <Text style={styles.muted}>اعتمد قسم الشركاء طلبك. ادخل إلى حساب الشريك بنفس رقم الهاتف، ثم أكمل بيانات المتجر والكتالوج والاتفاق التجاري قبل طلب النشر.</Text>
-    <BthwaniButton label="الانتقال إلى حساب الشريك لإكمال المتجر" onPress={()=>router.back()} />
-   </>:caseValue.case.state==="submitted"?<Text style={styles.muted}>طلبك قيد مراجعة قسم الشركاء. لا ترسل طلبًا ثانيًا؛ ستظهر هنا حالة المراجعة والتصحيح عند تحديثها.</Text>
-   :<Text style={styles.muted}>طلبك محفوظ كمسودة وينتظر خطوة قبول أولية من قسم الشركاء. لا يلزم تسجيل طلب جديد.</Text>}
-   <BthwaniButton label="تحديث حالة الطلب" variant="secondary" onPress={()=>void load()} disabled={loading}/>
-  </View>:null}
-  {authenticated&&!caseValue&&hasRead&&!loading?<View style={{gap:11}}>
-   {intakeStep==="basics"?<>
-   <Text style={styles.heading}>الخطوة ١ من ٢ · معلومات النشاط</Text>
-   <Text style={styles.muted}>أدخل بيانات صاحب النشاط والمتجر؛ يمكنك مراجعتها قبل الإرسال.</Text>
-   {field("رقم الهاتف المرتبط بحسابك",phone,setPhone,false,"phone-pad")}
-   <Text style={styles.muted}>اكتب نفس الرقم الذي سجلت به الدخول؛ ستتحقق Identity من تطابقه قبل إنشاء الطلب.</Text>
-   {field("الاسم الكامل لصاحب النشاط",ownerName,setOwnerName)}
-   {field("اسم النشاط والمتجر",storeName,setStoreName)}
-   {field("عنوان المتجر",address,setAddress)}
-   {select("مدينة الخدمة",cities.map(c=>({id:c.id,label:c.displayNameAr})),city,setCity)}
-   {select("المجال التجاري",verticals.map(v=>({id:v.id,label:v.nameAr})),vertical,setVertical)}
-   {select("نوع المتجر",types.map(t=>({id:t.id,label:t.nameAr})),storeType,setStoreType)}
-   <BthwaniButton label="متابعة إلى الموقع والإثبات" disabled={busy||loading} onPress={()=>{
-    if(!/^\+[1-9]\d{7,14}$/.test(normalizeYemenPhoneE164(phone))||ownerName.trim().length<2||storeName.trim().length<2||address.trim().length<4||!city||!vertical||!storeType){
-     setError("أدخل رقم هاتف حسابك واسم المالك والنشاط والعنوان، وحدد مدينة الخدمة والمجال ونوع المتجر.");return;
-    }
-    setError("");setIntakeStep("details");
-   }}/>
-   </>:<>
-   <Text style={styles.heading}>الخطوة ٢ من ٢ · الموقع والإثبات</Text>
-   <BthwaniButton label="العودة إلى معلومات النشاط" variant="secondary" onPress={()=>{setError("");setIntakeStep("basics")}} disabled={busy}/>
-   <View style={{gap:8}}>
-    <Text style={styles.text}>موقع المتجر</Text>
-    <Text style={styles.muted}>حدد موقع متجرك على الخريطة؛ لا حاجة لإدخال إحداثيات يدويًا. موقع المتجر ليس موقع هاتفك بالضرورة.</Text>
-    <BthwaniButton label={mapLoading?"جارٍ تجهيز الخريطة":showLocationMap?"إخفاء الخريطة":"تحديد موقع المتجر على الخريطة"} variant="secondary" onPress={()=>void toggleLocationMap()} disabled={busy||mapLoading}/>
-    {mapError?<Text accessibilityRole="alert" style={styles.muted}>{mapError}</Text>:null}
-    {showLocationMap&&MapComponent?<MapComponent accessibilityLabel="خريطة تحديد موقع المتجر" selection={selectedOrigin} selectionTitle="موقع متجري" onSelectCoordinate={(point)=>{if(busy)return;setLat(String(point.latitude));setLng(String(point.longitude));setError("");}} height={280}/>:null}
-    <BthwaniButton label={manualCoordinateEntry?"إخفاء إدخال الإحداثيات":"إدخال الإحداثيات يدويًا عند تعذر الخريطة"} variant="secondary" onPress={()=>setManualCoordinateEntry(value=>!value)} disabled={busy}/>
-    {manualCoordinateEntry?<View style={{gap:8}}>{field("خط عرض المتجر",lat,setLat,false,"numbers-and-punctuation")}{field("خط طول المتجر",lng,setLng,false,"numbers-and-punctuation")}</View>:null}
-    {selectedOrigin?<Text accessibilityLiveRegion="polite" style={styles.muted}>تم تحديد موقع المتجر. يمكنك تعديل النقطة قبل إرسال الطلب.</Text>:<Text style={styles.muted}>لم تحدد موقع المتجر بعد. اختر النقطة على الخريطة أو أدخل الإحداثيات عند تعذرها.</Text>}
-    <Text style={styles.muted}>الموقع الدقيق مطلوب لمراجعة المتجر؛ أما الصور والكتالوج والاتفاق المالي فتُستكمل قبل النشر.</Text>
-   </View>
-   {select("نوع إثبات النشاط",PROOFS,proofType,setProofType)}
-   {field("رقم وثيقة الإثبات",proofNumber,setProofNumber)}
-   <View style={{gap:6}}><Text style={styles.text}>أوضاع التوصيل</Text>{MODES.map(m=><Pressable key={m.id} disabled={busy} accessibilityRole="checkbox" accessibilityState={{checked:modes.includes(m.id),disabled:busy}} style={[styles.choice,modes.includes(m.id)&&styles.selected]} onPress={()=>setModes(old=>old.includes(m.id)?old.filter(x=>x!==m.id):[...old,m.id])}><Text style={styles.text}>{modes.includes(m.id)?"✓ ":""}{m.label}</Text></Pressable>)}</View>
-   <BthwaniButton label="إرسال طلب انضمام الشريك" disabled={busy} onPress={()=>void submit()}/>
-   </>}
-  </View>:null}
-  {authenticated?<BthwaniButton label="الخروج من حساب المتقدم" variant="secondary" onPress={()=>void logoutProspect()} disabled={busy}/>:null}
-  {notice?<Text accessibilityRole="text" style={styles.muted}>{notice}</Text>:null}
-  {error?<Text accessibilityRole="alert" style={styles.text}>{error}</Text>:null}
+ const textField=(label:string,value:string,change:(value:string)=>void,keyboard:"default"|"phone-pad"|"numeric"="default")=><View style={styles.field}>
+  <Text style={styles.label}>{label}</Text>
+  <TextInput accessibilityLabel={label} value={value} onChangeText={change} editable={!busy}
+   keyboardType={keyboard} autoCapitalize="none" style={styles.input}/>
+ </View>;
+ const passwordField=(label:string,value:string,change:(value:string)=>void,shown:boolean,toggle:()=>void)=><View style={styles.field}>
+  <Text style={styles.label}>{label}</Text>
+  <View style={styles.password}>
+   <BthwaniIconButton icon={shown?"eye-off":"eye"} label={(shown?"إخفاء ":"إظهار ")+label} onPress={toggle} disabled={busy} size={40} tone="soft"/>
+   <TextInput accessibilityLabel={label} value={value} onChangeText={change} editable={!busy}
+    autoCapitalize="none" autoCorrect={false} spellCheck={false}
+    autoComplete={mode==="login"?"current-password":"new-password"} secureTextEntry={!shown} style={styles.passwordInput}/>
+  </View>
+ </View>;
+ const buttonLabel=mode==="recover"?(codeSent?"تغيير كلمة المرور":"إرسال رمز الاستعادة")
+  :mode==="login"?"تسجيل الدخول":codeSent?"تأكيد الجوال والدخول":"إنشاء حساب";
+ return <ScrollView style={styles.root} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+  <View style={styles.header}>
+   <Text style={styles.title}>بثواني للشركاء</Text>
+   <Text style={styles.subtitle}>أنشئ حسابك وابدأ إعداد متجرك مباشرة.</Text>
+  </View>
+  <View style={styles.card}>
+   {restoring?<ActivityIndicator accessibilityLabel="استعادة الجلسة"/>:null}
+   <Text style={styles.heading}>{mode==="register"?"إنشاء حساب شريك":mode==="login"?"تسجيل الدخول":"استعادة كلمة المرور"}</Text>
+   {isVerifiedClient&&!isPartner&&!restoring?<View style={{gap:10}}>
+    <Text style={styles.small}>حسابك موثّق. يمكنك الدخول إلى حساب الشريك دون إعادة التحقق من الجوال.</Text>
+    <BthwaniButton label="متابعة إلى إعداد متجري" onPress={()=>{if(busy)return;setBusy(true);setError("");void activateVerifiedAccount().catch(cause=>setError(identityErrorMessage(cause))).finally(()=>setBusy(false))}} disabled={busy}/>
+   </View>:null}
+   {!isPartner&&!restoring&&!isVerifiedClient?<View style={{gap:15}}>
+    <View style={styles.fields}>
+     {textField("رقم الجوال",phone,v=>{setPhone(v);setCodeSent(false);setCode("")},"phone-pad")}
+     {mode!=="recover"||codeSent?passwordField(mode==="recover"?"كلمة المرور الجديدة":"كلمة المرور",password,mode==="login"?setPassword:v=>setPassword(limitPasswordInput(v)),visible,()=>setVisible(v=>!v)):null}
+    </View>
+    {mode==="register"||mode==="recover"&&codeSent?passwordField("تأكيد كلمة المرور",confirm,v=>setConfirm(limitPasswordInput(v)),confirmVisible,()=>setConfirmVisible(v=>!v)):null}
+    {mode==="register"?<Text style={styles.small}>كلمة المرور 8 أحرف بالضبط. الاسم وبيانات المتجر تُستكمل بعد الدخول.</Text>:null}
+    {codeSent?textField("رمز التحقق",code,v=>setCode(ascii(v).replace(/\D/g,"").slice(0,6)),"numeric"):null}
+    {mode!=="login"&&confirm.length>0&&!validatePasswordInputShape(password,confirm).valid?<Text accessibilityRole="alert" style={styles.error}>تحقق من كلمة المرور وتأكيدها؛ يجب أن تتطابقا وتكونا 8 أحرف.</Text>:null}
+    <BthwaniButton label={buttonLabel} onPress={()=>void submit()} disabled={busy||!canSubmit||Boolean(codeSent&&!/^\d{6}$/.test(ascii(code)))}/>
+    {mode==="register"&&codeSent?<Pressable accessibilityRole="button" disabled={busy} onPress={()=>{setCodeSent(false);setCode("")}}><Text style={styles.link}>إعادة طلب رمز التحقق</Text></Pressable>:null}
+    {mode==="register"?<Pressable accessibilityRole="button" disabled={busy} onPress={()=>switchMode("login")}><Text style={styles.link}>لديك حساب؟ تسجيل الدخول</Text></Pressable>:null}
+    {mode==="login"?<Pressable accessibilityRole="button" disabled={busy} onPress={()=>switchMode("register")}><Text style={styles.link}>ليس لديك حساب؟ إنشاء حساب</Text></Pressable>:null}
+    {mode==="login"?<Pressable accessibilityRole="button" disabled={busy} onPress={()=>switchMode("recover")}><Text style={styles.link}>نسيت كلمة المرور؟</Text></Pressable>:null}
+    {mode==="recover"?<Pressable accessibilityRole="button" disabled={busy} onPress={()=>switchMode("login")}><Text style={styles.link}>العودة لتسجيل الدخول</Text></Pressable>:null}
+   </View>:null}
+   {notice?<Text accessibilityLiveRegion="polite" style={styles.small}>{notice}</Text>:null}
+   {error?<Text accessibilityRole="alert" style={styles.error}>{error}</Text>:null}
+  </View>
  </ScrollView>;
 }

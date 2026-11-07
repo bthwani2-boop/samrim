@@ -4,6 +4,8 @@ import { type Href, Link, Redirect, useLocalSearchParams, useRouter } from "expo
 import { useMemo } from "react";
 import { Text, View } from "react-native";
 import { PartnerMarketingWorkspace, parsePartnerMarketingView } from "./partner-marketing-workspace";
+import { mayPrepareIndependentStoreBanners } from "./independent-store-banner-access";
+import { PartnerStoreBanners } from "../store-offer/partner-store-banners";
 import { usePartnerStoreContext } from "./partner-store-context";
 import { type PartnerAccessibleStore, usePartnerStoreScope } from "./partner-store-scope-context";
 import { PartnerStoreScopeSelector } from "./partner-store-scope-selector";
@@ -15,11 +17,13 @@ import { StoreProfileImageEditor } from "./store-profile-image-editor";
 import { PartnerStoreSettingsOverview } from "./partner-store-settings-overview";
 import { PartnerStorePublicContact } from "./partner-store-public-contact";
 
-type StoreSection = "operations" | "promotions" | "team" | "settings" | "commercial";
+type StoreSection = "operations" | "promotions" | "team" | "settings" | "commercial" | "banners";
 function isStoreSection(value: string | undefined): value is StoreSection {
-  return value === "operations" || value === "promotions" || value === "team" || value === "settings" || value === "commercial";
+  return value === "operations" || value === "promotions" || value === "team" || value === "settings" || value === "commercial" || value === "banners";
 }
 function eligibleForSection(store: PartnerAccessibleStore, section: StoreSection): boolean {
+  if (section === "banners") return mayPrepareIndependentStoreBanners(store);
+  if (["promotions", "team", "commercial"].includes(section) && store.relationModel !== "BTHWANI_PARTNER") return false;
   if (store.owned) return true;
   return section === "operations" ? store.permissions.includes("store_operations")
     : section === "promotions" ? store.permissions.includes("promotions") : false;
@@ -65,10 +69,11 @@ export function PartnerStore() {
   const firstStoreMatches = Boolean(selectedStore?.owned && firstStore && firstStore.id === selectedStore.id);
 
   return <View style={styles.container}>
-    {stores.length > 1 ? <PartnerStoreScopeSelector requiredPermissions={requiredPermissions(section)} /> : null}
+    {stores.length > 1 ? <PartnerStoreScopeSelector requiredPermissions={requiredPermissions(section)} ownedOnly={section === "banners"} independentOnly={section === "banners"} marketplaceOnly={section === "promotions" || section === "team" || section === "commercial"} /> : null}
     {selectedStore && permitted ? <>
       {section === "operations" ? <StoreOperationalAvailabilityManagement key={selectedStore.id} storeID={selectedStore.id} fulfillmentModes={selectedStore.fulfillmentModes.filter(isStoreFulfillmentMode)} /> : null}
       {section === "promotions" ? <PartnerMarketingWorkspace key={selectedStore.id} storeID={selectedStore.id} storeName={selectedStore.name} verticalID={selectedStore.primaryVerticalId} view={marketingView}/> : null}
+      {section === "banners" ? <PartnerStoreBanners key={selectedStore.id} storeId={selectedStore.id} storeName={selectedStore.name} independent /> : null}
       {section === "team" ? <TeamManagement key={selectedStore.id} storeID={selectedStore.id} /> : null}
       {section === "commercial" ? <StoreCommercialAgreements key={selectedStore.id + ":agreements"} storeID={selectedStore.id} /> : null}
       {section === "settings" ? <>

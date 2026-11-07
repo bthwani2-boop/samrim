@@ -28,7 +28,7 @@ export async function GET(request: Request) {
   }
 
   try {
-		const page = await listOperatorStores(state, search, serviceCityId, "contains", sort, limit, cursor, { operatorActorId: identity.subject });
+		const page = await listOperatorStores(state, search, serviceCityId, "contains", sort, limit, cursor, { operatorActorId: identity.subject }, "BTHWANI_PARTNER");
     return NextResponse.json(page, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (isDshClientError(error)) {

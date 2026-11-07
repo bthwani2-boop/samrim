@@ -26,7 +26,7 @@ export async function POST(request: Request) {
   if (permissions.includes("partners")) {
     sources.push({ key: "stores", label: "المتاجر", read: async () => {
       const page = await listOperatorStores("", query, "", "contains", "updated_desc", 5, "", context);
-      return page.stores.map((item) => ({ label: item.name, href: `/partners/stores/${encodeURIComponent(item.id)}` }));
+      return page.stores.map((item) => ({ label: item.name, href: item.relationModel === "INDEPENDENT_STORE" ? "/independent-stores" : `/partners/stores/${encodeURIComponent(item.id)}` }));
     } });
     sources.push({ key: "partners", label: "حسابات الشركاء", read: async () => {
       const page = await searchIdentityRoles("partner", query, 5);

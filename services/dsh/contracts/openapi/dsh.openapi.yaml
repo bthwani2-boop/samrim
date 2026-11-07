@@ -136,6 +136,11 @@ paths:
   /dsh/partner-applications/self:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1partner-applications~1self"
 
+  /dsh/partner-applications/self/contact:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1partner-applications~1self~1contact"
+  /dsh/partner-applications/self/correct-and-resubmit:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1partner-applications~1self~1correct-and-resubmit"
+
   /dsh/joining-cases/self:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1self"
 
@@ -443,6 +448,8 @@ paths:
   /dsh/stores:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores"
 
+  /dsh/partner/stores/first:
+    $ref: "./paths/store-publication.yaml#/paths/~1dsh~1partner~1stores~1first"
   /dsh/operator/stores/trash:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1operator~1stores~1trash"
 
@@ -463,6 +470,9 @@ paths:
 
   /dsh/operations/stores/{storeId}/operational-availability:
     $ref: "./paths/store-availability.yaml#/paths/~1dsh~1operations~1stores~1{storeId}~1operational-availability"
+
+  /dsh/partner/stores/{storeId}/independent-preview:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1independent-preview"
 
   /dsh/partner/stores/{storeId}/access:
     $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1access"
@@ -1817,6 +1827,78 @@ components:
         status:
           type: string
 
+    SelfServiceApplicantContactResponse:
+      type: object
+      description: Verified contact from the authenticated Identity client, not an editable field.
+      required: [contactPhoneE164]
+      additionalProperties: false
+      properties:
+        contactPhoneE164:
+          type: string
+          pattern: '^[+][1-9][0-9]{7,14}$'
+
+    PartnerFirstStoreCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name, serviceCityId, primaryVerticalId, commercialStoreTypeId, addressText, latitude, longitude, fulfillmentModes]
+      properties:
+        relationModel:
+          type: string
+          enum: [BTHWANI_PARTNER, INDEPENDENT_STORE]
+          description: Canonical Store relationship selected for this first unpublished Store. Defaults to BTHWANI_PARTNER for existing clients; never grants publication or financial privileges.
+        name:
+          type: string
+          minLength: 2
+          maxLength: 160
+        serviceCityId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        primaryVerticalId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        commercialStoreTypeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        addressText:
+          type: string
+          minLength: 4
+          maxLength: 500
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        fulfillmentModes:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/StoreFulfillmentMode"
+
+    PartnerFirstStoreCreateResponse:
+      type: object
+      additionalProperties: false
+      required: [storeId, publicationState, relationModel, replayed]
+      properties:
+        relationModel:
+          type: string
+          enum: [BTHWANI_PARTNER, INDEPENDENT_STORE]
+          description: Store relation read back from DSH after the successful creation or exact replay.
+        storeId:
+          type: string
+        publicationState:
+          type: string
+          enum: [unpublished]
+        replayed:
+          type: boolean
+
     CreateJoiningCaseRequest:
       type: object
       required: [contactPhoneE164, ownerFullName, businessName, firstStoreName, walletProviderKey, firstStoreAddress, serviceCityId, firstStoreVerticalId, firstStoreCommercialTypeId, firstStoreLatitude, firstStoreLongitude, firstStoreWorkingHours, firstStoreProofType, firstStoreProofNumber, firstStoreFulfillmentModes]
@@ -1893,9 +1975,9 @@ components:
       properties:
         intervals:
           type: array
-          minItems: 1
+          minItems: 0
           maxItems: 28
-          description: Local Service City weekly schedule. Days without intervals are closed; supports split and overnight periods.
+          description: Local Service City weekly schedule. Empty intervals represent a closed schedule during joining; publication requires an explicitly configured operational schedule. Supports split and overnight periods.
           items:
             $ref: "#/components/schemas/StoreWorkingHoursInterval"
 
@@ -2277,7 +2359,7 @@ components:
 
     OperatorStoreSummary:
       type: object
-      required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, commercialStoreTypeId, version, publicationState, fulfillmentModes, createdAt, updatedAt]
+      required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, commercialStoreTypeId, version, publicationState, relationModel, fulfillmentModes, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -2317,6 +2399,9 @@ components:
           minimum: 1
         publicationState:
           $ref: "#/components/schemas/PublicationState"
+        relationModel:
+          type: string
+          enum: [BTHWANI_PARTNER, INDEPENDENT_STORE]
         fulfillmentModes:
           type: array
           items:
@@ -2454,7 +2539,7 @@ components:
           $ref: "#/components/schemas/JoiningCaseProofType"
         firstStoreProofNumber:
           type: string
-          minLength: 1
+          minLength: 0
           maxLength: 128
         firstStoreNotes:
           type: string
@@ -2541,7 +2626,7 @@ components:
 
     StorePublicationBlockedReason:
       type: string
-      enum: [PARTNER_IDENTITY_NOT_ELIGIBLE, FINANCIAL_PROFILE_NOT_READY, SERVICE_CITY_NOT_ELIGIBLE, STORE_LOGO_NOT_READY, STORE_COVER_NOT_READY, STORE_SCHEDULE_NOT_READY, CATALOG_NOT_READY, COMMERCIAL_AGREEMENT_NOT_READY, READINESS_UNAVAILABLE]
+      enum: [PARTNER_IDENTITY_NOT_ELIGIBLE, FINANCIAL_PROFILE_NOT_READY, SERVICE_CITY_NOT_ELIGIBLE, STORE_LOGO_NOT_READY, STORE_COVER_NOT_READY, STORE_SCHEDULE_NOT_READY, CATALOG_NOT_READY, COMMERCIAL_AGREEMENT_NOT_READY, STORE_NOT_MARKETPLACE, READINESS_UNAVAILABLE]
     StorePublicationReadiness:
       type: object
       required: [ready]
@@ -11573,6 +11658,9 @@ components:
           maxLength: 128
         publicationState:
           type: string
+        relationModel:
+          type: string
+          enum: [BTHWANI_PARTNER, INDEPENDENT_STORE]
         fulfillmentModes:
           type: array
           items:
@@ -11584,6 +11672,59 @@ components:
           uniqueItems: true
           items:
             $ref: "#/components/schemas/StoreAccessPermission"
+
+    IndependentPreviewOffer:
+      type: object
+      additionalProperties: false
+      required: [id, productId, title, priceMinor, currency, imageUri, availability, publicationState]
+      properties:
+        id:
+          type: string
+        productId:
+          type: string
+        title:
+          type: string
+        priceMinor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        imageUri:
+          type: string
+        availability:
+          type: boolean
+        publicationState:
+          type: string
+
+    IndependentStorePreview:
+      type: object
+      additionalProperties: false
+      description: Private Partner-owned Store and Catalog preparation; never a public storefront or an order endpoint.
+      required: [storeId, name, relationModel, publicationState, profileImageUri, coverImageUri, previewOnly, checkoutEnabled, offers, nextCursor]
+      properties:
+        storeId:
+          type: string
+        name:
+          type: string
+        relationModel:
+          type: string
+          enum: [INDEPENDENT_STORE]
+        publicationState:
+          type: string
+        profileImageUri:
+          type: string
+        coverImageUri:
+          type: string
+        previewOnly:
+          type: boolean
+        checkoutEnabled:
+          type: boolean
+        offers:
+          type: array
+          items:
+            $ref: "#/components/schemas/IndependentPreviewOffer"
+        nextCursor:
+          type: string
 
     PartnerAccessibleStorePage:
       type: object

@@ -98,7 +98,8 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const bannerRef = useRef<ScrollViewInstance | null>(null);
   const { width: windowWidth } = useWindowDimensions();
   const desktopStorefront = Platform.OS === "web" && windowWidth >= 1024;
-  const gridMode = userGridMode ?? (Platform.OS === "web" && windowWidth >= 1024);
+  const storeHeroHeight = desktopStorefront ? 196 : Platform.OS === "web" ? 214 : 244;
+  const gridMode = userGridMode ?? (Platform.OS === "web");
   const gridColumns = Platform.OS !== "web" ? 2 : windowWidth >= 1700 ? 5 : windowWidth >= 1200 ? 4 : windowWidth >= 1024 ? 3 : 2;
   const [promotionLoading, setPromotionLoading] = useState(true);
   const [promotionError, setPromotionError] = useState(false);
@@ -413,6 +414,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const currentOrderability = effectiveOrderability.find((item) => item.fulfillmentMode === selectedFulfillmentMode);
   const availabilitySummary = summarizeStoreAvailability(effectiveOrderability, selectedFulfillmentMode);
   const canOrderSelected = Boolean(selectedFulfillmentMode && currentOrderability?.state === "OPEN_FOR_ORDERS");
+  const suggestedOrderMode = fulfillmentModes.find((mode) => effectiveOrderability.some((item) => item.fulfillmentMode === mode && item.state === "OPEN_FOR_ORDERS"));
   const activeCatalogCategories = state.catalog.categories.filter((category) => category.active);
   const selectedCategory = activeCatalogCategories.find((category) => category.id === selectedCategoryID);
   const selectedCategoryTrail = selectedCategory ? categoryTrail(selectedCategory.id, activeCatalogCategories) : [];
@@ -650,10 +652,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         <Pressable ref={(node) => { if (node) imageRefs.current.set(offer.offerId, node); else imageRefs.current.delete(offer.offerId); }} accessibilityRole="button" accessibilityLabel={"تكبير صورة " + offer.productName} onPress={() => openGalleryFromImage(offer.offerId)}>
           {primaryMedia?.uri && !failedProductImageURIs.has(primaryMedia.uri) ? <ExpoImage cachePolicy="disk" accessibilityLabel={"صورة " + offer.productName} source={{ uri: primaryMedia.uri }} onError={() => setFailedProductImageURIs((current) => new Set(current).add(primaryMedia.uri))} contentFit={Platform.OS === "web" && windowWidth >= 1024 ? "contain" : "cover"} style={[styles.gridImage, desktopStorefront && styles.gridImageDesktop]} /> : <View accessibilityLabel={"صورة المنتج غير متوفرة: " + offer.productName} style={[styles.productImagePlaceholder, styles.gridImage, desktopStorefront && styles.gridImageDesktop, styles.gridImageFallback]}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /><Text style={styles.gridImageFallbackText}>صورة غير متوفرة</Text></View>}
         </Pressable>
-        <BthwaniIconButton disabled={Boolean(favoriteOfferBusyID)} icon="favorite" label={favoriteOfferIDs.has(offer.offerId) ? "إزالة المنتج من المفضلة" : "إضافة المنتج للمفضلة"} onPress={() => void toggleOfferFavorite(offer.offerId)} size={sizing.controlMd} style={styles.productFavorite} tone={favoriteOfferIDs.has(offer.offerId) ? "primary" : "soft"} />
+        <BthwaniIconButton disabled={Boolean(favoriteOfferBusyID)} icon="favorite" label={favoriteOfferIDs.has(offer.offerId) ? `إزالة ${offer.productName} من المفضلة` : `إضافة ${offer.productName} إلى المفضلة`} onPress={() => void toggleOfferFavorite(offer.offerId)} size={sizing.controlMd} style={styles.productFavorite} tone={favoriteOfferIDs.has(offer.offerId) ? "primary" : "soft"} />
       </View>
-      <Pressable accessibilityRole="button" onPress={() => openGalleryFromImage(offer.offerId)} style={styles.gridCopy}><Text numberOfLines={2} style={[styles.itemTitle, styles.gridCopyText]}>{offer.productName}</Text><Text numberOfLines={1} style={[styles.productUnit, styles.gridCopyText]}>{offer.variantTitle || (offer.pricingBasis === "PER_MEASURE" ? formatQuantity(offer.baseUnit, offer.pricingUnitBaseUnits) : "عبوة")}</Text></Pressable>
-      <View style={styles.gridBottom}><Text numberOfLines={1} style={styles.productActionPrice}>{storeMoney(offer.priceMinor, offer.currency)}</Text><Pressable accessibilityRole="button" accessibilityLabel={"اختيار كمية " + offer.productName + " وإضافتها للسلة"} disabled={mutationBusy || !canOrderSelected} accessibilityState={{ disabled: mutationBusy || !canOrderSelected }} onPress={(event) => void openOfferDetails(offer.offerId, "quick", event.nativeEvent.pageY)} style={[styles.addOfferButton, !canOrderSelected && { opacity: 0.4 }]}><BthwaniIcon name="cart" color={theme.onAction} size={sizing.iconSm} /><Text style={styles.addOfferPlus}>+</Text></Pressable></View>
+      <Pressable accessibilityRole="button" onPress={() => openGalleryFromImage(offer.offerId)} style={styles.gridCopy}><Text numberOfLines={2} style={[styles.itemTitle, styles.gridCopyText]}>{offer.productName}</Text><Text numberOfLines={Platform.OS === "web" ? 2 : 1} style={[styles.productUnit, styles.gridCopyText]}>{offer.pricingBasis === "PER_MEASURE" ? `${offer.variantTitle ? offer.variantTitle + " · " : ""}السعر لكل ${formatQuantity(offer.baseUnit, offer.pricingUnitBaseUnits)}` : offer.variantTitle || "عبوة"}</Text></Pressable>
+      <View style={styles.gridBottom}><Text numberOfLines={Platform.OS === "web" ? undefined : 1} style={[styles.productActionPrice, Platform.OS === "web" && styles.gridActionPrice]}>{storeMoney(offer.priceMinor, offer.currency)}</Text><Pressable accessibilityRole="button" accessibilityLabel={"اختيار كمية " + offer.productName + " وإضافتها للسلة"} disabled={mutationBusy || !canOrderSelected} accessibilityState={{ disabled: mutationBusy || !canOrderSelected }} onPress={(event) => void openOfferDetails(offer.offerId, "quick", event.nativeEvent.pageY)} style={[styles.addOfferButton, !canOrderSelected && { opacity: 0.4 }]}><BthwaniIcon name="cart" color={theme.onAction} size={sizing.iconSm} /><Text style={styles.addOfferPlus}>+</Text></Pressable></View>
     </BthwaniSurface>;
     return (
       <View key={offer.offerId}>
@@ -707,20 +709,25 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   };
 
   const detailQuantity = detailOffer ? Number(quantities[detailOffer.offerId] ?? detailOffer.quantityMinBaseUnits) : 0;
+  const favoriteFilterChip = <Pressable accessibilityRole="button" accessibilityLabel="المفضلة" accessibilityState={{ selected: favoritesView, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(1)} style={[styles.catalogFilterChip, favoritesView && styles.catalogFilterChipSelected]}><BthwaniIcon name="favorite" color={favoritesView ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /><Text numberOfLines={1} style={[styles.catalogFilterChipLabel, favoritesView && styles.catalogFilterChipLabelSelected]}>المفضلة</Text></Pressable>;
+  const popularFilterChip = <Pressable accessibilityRole="button" accessibilityLabel="الأكثر طلبًا خلال آخر 30 يومًا" accessibilityState={{ selected: popularView, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(2)} style={[styles.catalogFilterChip, popularView && styles.catalogFilterChipSelected]}><BthwaniIcon name="trending" color={popularView ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /><Text numberOfLines={1} style={[styles.catalogFilterChipLabel, popularView && styles.catalogFilterChipLabelSelected]}>الأكثر طلبًا</Text></Pressable>;
   const renderCategoryRail = () => (
     <View style={styles.catalogToolbar}>
       <Pressable accessibilityRole="button" accessibilityLabel={gridMode ? "عرض المنتجات كقائمة" : "عرض المنتجات كمربعات"} accessibilityState={{ selected: gridMode }} onPress={() => setUserGridMode(!gridMode)} style={styles.layoutToggle}>
         {gridMode ? <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.layoutListGlyph}>{[0, 1, 2].map((index) => <View key={index} style={styles.layoutListLine} />)}</View> : <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.layoutGridGlyph}>{[0, 1, 2, 3].map((index) => <View key={index} style={styles.layoutGridSquare} />)}</View>}
       </Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel="الكل" accessibilityState={{ selected: !favoritesView && !popularView && !selectedCategoryID && !selectedStoreSectionID, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(0)} style={[styles.catalogFilterChip, styles.pinnedAllChip, !favoritesView && !popularView && !selectedCategoryID && !selectedStoreSectionID && styles.catalogFilterChipSelected]}><Text numberOfLines={1} style={[styles.catalogFilterChipLabel, !favoritesView && !popularView && !selectedCategoryID && !selectedStoreSectionID && styles.catalogFilterChipLabelSelected]}>الكل</Text></Pressable>
+      {desktopStorefront ? favoriteFilterChip : null}
+      {desktopStorefront ? popularFilterChip : null}
       <ScrollView horizontal style={styles.categoryScroller} contentContainerStyle={styles.categoryRail} showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        <Pressable accessibilityRole="button" accessibilityLabel="المفضلة" accessibilityState={{ selected: favoritesView, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(1)} style={[styles.catalogFilterChip, favoritesView && styles.catalogFilterChipSelected]}><BthwaniIcon name="favorite" color={favoritesView ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /><Text numberOfLines={1} style={[styles.catalogFilterChipLabel, favoritesView && styles.catalogFilterChipLabelSelected]}>المفضلة</Text></Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="الأكثر طلبًا خلال آخر 30 يومًا" accessibilityState={{ selected: popularView, busy: catalogRefreshing }} onPress={() => void selectCatalogTab(2)} style={[styles.catalogFilterChip, popularView && styles.catalogFilterChipSelected]}><BthwaniIcon name="trending" color={popularView ? theme.onAction : theme.interactiveText} size={sizing.iconSm} /><Text numberOfLines={1} style={[styles.catalogFilterChipLabel, popularView && styles.catalogFilterChipLabelSelected]}>الأكثر طلبًا</Text></Pressable>
+        {Platform.OS === "web" && !favoritesView ? visibleCategories.map(({ category, depth }) => renderCategoryChip(category, depth)) : null}
+        {!desktopStorefront ? favoriteFilterChip : null}
+        {!desktopStorefront ? popularFilterChip : null}
         {!favoritesView ? state.catalog.sections.filter((section) => section.active).map((section) => {
           const selected = selectedStoreSectionID === section.id;
           return <Pressable key={section.id} accessibilityRole="button" accessibilityLabel={`قسم ${section.nameAr}`} accessibilityState={{ selected }} onPress={() => void selectStoreSection(section.id)} style={[styles.catalogFilterChip, selected && styles.catalogFilterChipSelected]}><Text numberOfLines={1} style={[styles.catalogFilterChipLabel, selected && styles.catalogFilterChipLabelSelected]}>{section.nameAr}</Text></Pressable>;
         }) : null}
-        {!favoritesView ? visibleCategories.map(({ category, depth }) => renderCategoryChip(category, depth)) : null}
+        {Platform.OS !== "web" && !favoritesView ? visibleCategories.map(({ category, depth }) => renderCategoryChip(category, depth)) : null}
       </ScrollView>
       {desktopStorefront ? <><BthwaniSearchField
         accessibilityLabel="البحث في منتجات المتجر مباشرة"
@@ -744,7 +751,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       <View pointerEvents="none" style={[styles.statusBarScrim, { height: insets.top, backgroundColor: heroVisible ? "transparent" : theme.background }]} />
       <FlatList<StoreCatalogRow>
         stickyHeaderIndices={[1]}
-        onScroll={(event) => { const visible = event.nativeEvent.contentOffset.y < (desktopStorefront ? 144 : 244) + insets.top - 32; setHeroVisible((current) => current === visible ? current : visible); }}
+        onScroll={(event) => { const visible = event.nativeEvent.contentOffset.y < storeHeroHeight + insets.top - 32; setHeroVisible((current) => current === visible ? current : visible); }}
         scrollEventThrottle={160}
         contentContainerStyle={styles.container}
         data={[{ kind: "filters", key: "catalog-filters" }, ...visibleCatalogRows]}
@@ -773,7 +780,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         }}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={<View style={styles.listHeader}>
-      <View style={[styles.storeHero, { height: (desktopStorefront ? 144 : 244) + insets.top }]}>
+      <View style={[styles.storeHero, { height: storeHeroHeight + insets.top }]}>
           {heroImageURI
             ? <View pointerEvents="none" style={styles.storeHeroMedia}><ExpoImage cachePolicy="disk" accessibilityLabel={"غلاف متجر " + state.store.name} onError={() => setFailedStoreCover(true)} source={{ uri: heroImageURI }} contentFit="cover" style={styles.storeCover} /></View>
             : <View accessibilityLabel={"غلاف متجر " + state.store.name + " غير متوفر"} pointerEvents="none" style={styles.storeCoverFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
@@ -798,7 +805,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         </View>
         </View>
       </View>
-      <BthwaniSurface tone="raised" style={[styles.storeInfoCard, desktopStorefront && styles.storeInfoDesktop]} accessibilityLabel={"معلومات متجر " + state.store.name}>
+      <BthwaniSurface tone="raised" style={[styles.storeInfoCard, desktopStorefront && styles.storeInfoDesktop, Platform.OS === "web" && !desktopStorefront && styles.storeInfoWebMobile]} accessibilityLabel={"معلومات متجر " + state.store.name}>
         <View style={desktopStorefront ? styles.storeInfoDesktopSummary : undefined}>
         <View style={[styles.storeInfoIdentityRow, desktopStorefront && styles.storeInfoDesktopIdentity]}>
           {state.store.storeProfileImage?.uri && !failedStoreImage
@@ -839,12 +846,17 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
             <Text style={styles.muted}>الطريقة التي يدعمها المتجر · {orderabilityEta(effectiveOrderability.find((item) => item.fulfillmentMode === fulfillmentModes[0]))}</Text>
           </View>
         </View> : null}
+        {Platform.OS === "web" && fulfillmentModes.length > 1 && suggestedOrderMode && !canOrderSelected
+          ? <Text accessibilityLiveRegion="polite" style={styles.storeInfoChoicePrompt}>{selectedFulfillmentMode ? "طريقة الطلب المحددة غير مفتوحة الآن. " : "اختر طريقة الطلب لإضافة المنتجات إلى السلة. "}يمكنك اختيار {fulfillmentModeLabel(suggestedOrderMode)} المفتوحة حاليًا.</Text>
+          : null}
         {fulfillmentModes.length > 1 ? <View style={styles.storeInfoModes} accessibilityLabel="طرق الطلب المتاحة">
           {fulfillmentModes.map((mode) => {
             const orderability = effectiveOrderability.find((item) => item.fulfillmentMode === mode);
+            const modeStatus = summarizeStoreAvailability(effectiveOrderability, mode);
             return <Pressable key={mode} accessibilityRole="radio" accessibilityLabel={fulfillmentModeLabel(mode)} accessibilityHint={fulfillmentModeDescription(mode) + " " + orderabilityEta(orderability)} accessibilityState={{ checked: selectedFulfillmentMode === mode }} onPress={() => { setSelectedFulfillmentMode(mode); if (selectedCityID) void saveFulfillmentMode(storeId, selectedCityID, mode); setError(""); }} style={[styles.storeInfoMode, selectedFulfillmentMode === mode && styles.storeInfoModeSelected]}>
               <BthwaniIcon name={mode === "CUSTOMER_PICKUP" ? "account" : mode === "PARTNER_CAPTAIN" ? "store" : "location"} color={theme.interactiveText} size={sizing.iconSm} />
               <Text numberOfLines={2} style={[styles.storeInfoModeText, selectedFulfillmentMode === mode && styles.storeInfoModeTextSelected]}>{fulfillmentModeLabel(mode)}</Text>
+              {Platform.OS === "web" ? <Text style={[styles.storeInfoModeStatus, modeStatus.label === "مفتوح" && styles.storeInfoModeStatusOpen]}>{modeStatus.label}</Text> : null}
             </Pressable>;
           })}
         </View> : null}

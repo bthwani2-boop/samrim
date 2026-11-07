@@ -11,6 +11,11 @@ const PARTNER_SURFACE_PATHS: Record<PartnerSurface, PartnerSurfacePath> = {
 const STORE_SURFACE_PERMISSIONS: ReadonlyArray<StoreAccessPermission> = ["store_operations", "promotions"];
 const WALLET_SURFACE_PERMISSIONS: ReadonlyArray<StoreAccessPermission> = ["finance_read", "payout_request"];
 
+/** Independent Store catalog rights never grant marketplace order or money surfaces. */
+export function isMarketplaceStore(store: Pick<PartnerAccessibleStore, "relationModel">): boolean {
+  return store.relationModel === "BTHWANI_PARTNER";
+}
+
 export type PartnerAuthority = Readonly<{
   owner: boolean;
   surfaces: ReadonlyArray<PartnerSurface>;
@@ -26,10 +31,12 @@ export const RESOLVING_PARTNER_AUTHORITY: PartnerAuthority = {
 export function derivePartnerAuthority(stores: ReadonlyArray<PartnerAccessibleStore>): PartnerAuthority {
   const owner = stores.some((store) => store.owned);
   const grants = (permission: StoreAccessPermission) => stores.some((store) => store.permissions.includes(permission));
+  const marketplaceGrants = (permission: StoreAccessPermission) => stores.some((store) => isMarketplaceStore(store) && store.permissions.includes(permission));
+  const marketplaceOwner = stores.some((store) => isMarketplaceStore(store) && store.owned);
   const canUseStore = owner || stores.length === 0 || STORE_SURFACE_PERMISSIONS.some(grants);
-  const canUseOrders = owner || grants("orders");
+  const canUseOrders = marketplaceOwner || marketplaceGrants("orders");
   const canUseProducts = owner || grants("catalog");
-  const canUseWallet = owner || WALLET_SURFACE_PERMISSIONS.some(grants);
+  const canUseWallet = marketplaceOwner || WALLET_SURFACE_PERMISSIONS.some(marketplaceGrants);
   const surfaces = [
     ...(canUseOrders ? ["orders" as const] : []),
     ...(canUseProducts ? ["products" as const] : []),

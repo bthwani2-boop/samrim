@@ -44,13 +44,81 @@ func ClientShareExists(ctx context.Context, db *sql.DB, kind, resourceID string)
 	var q string
 	switch kind {
 	case "STORE":
-		q = `SELECT EXISTS(SELECT 1 FROM dsh.stores WHERE id=$1 AND publication_state='published' AND deleted_at IS NULL)`
+		q = `SELECT EXISTS(SELECT 1 FROM dsh.stores WHERE id=$1 AND relation_model='BTHWANI_PARTNER' AND publication_state='published' AND deleted_at IS NULL)`
 	case "OFFER":
-		q = `SELECT EXISTS(SELECT 1 FROM dsh.catalog_store_offers o JOIN dsh.stores s ON s.id=o.store_id WHERE o.id=$1 AND o.publication_state='published' AND o.availability=true AND s.publication_state='published' AND s.deleted_at IS NULL)`
+		q = `SELECT EXISTS(SELECT 1 FROM dsh.catalog_store_offers o JOIN dsh.stores s ON s.id=o.store_id WHERE o.id=$1 AND o.publication_state='published' AND o.availability=true AND s.publication_state='published' AND s.relation_model='BTHWANI_PARTNER' AND s.deleted_at IS NULL)`
 	case "PROMOTION":
-		q = `SELECT EXISTS(SELECT 1 FROM dsh.commerce_promotions p WHERE p.id=$1 AND p.state='PUBLISHED' AND p.starts_at<=clock_timestamp() AND (p.ends_at IS NULL OR p.ends_at>clock_timestamp()) AND NOT EXISTS (SELECT 1 FROM dsh.marketing_campaign_promotion_links l JOIN dsh.marketing_campaigns c ON c.id=l.campaign_id WHERE l.promotion_id=p.id AND c.state<>'PUBLISHED'))`
+		q = `SELECT EXISTS(
+			SELECT 1 FROM dsh.commerce_promotions p
+			WHERE p.id=$1 AND p.state='PUBLISHED'
+			  AND p.starts_at<=clock_timestamp()
+			  AND (p.ends_at IS NULL OR p.ends_at>clock_timestamp())
+			  AND NOT EXISTS (
+			    SELECT 1 FROM dsh.marketing_campaign_promotion_links link
+			    JOIN dsh.marketing_campaigns campaign ON campaign.id=link.campaign_id
+			    WHERE link.promotion_id=p.id AND campaign.state<>'PUBLISHED'
+			  )
+			  AND (NULLIF(p.store_id,'') IS NULL OR EXISTS (
+			    SELECT 1 FROM dsh.stores store WHERE store.id=p.store_id
+			      AND store.relation_model='BTHWANI_PARTNER'
+			      AND store.publication_state='published' AND store.deleted_at IS NULL
+			  ))
+		)`
 	case "CONTENT":
-		q = `SELECT EXISTS(SELECT 1 FROM dsh.discovery_content c WHERE c.id=$1 AND c.state='PUBLISHED' AND c.starts_at<=clock_timestamp() AND (c.ends_at IS NULL OR c.ends_at>clock_timestamp()) AND NOT EXISTS (SELECT 1 FROM dsh.marketing_campaign_content_links l JOIN dsh.marketing_campaigns campaign ON campaign.id=l.campaign_id WHERE l.content_id=c.id AND campaign.state<>'PUBLISHED'))`
+		q = `SELECT EXISTS(
+			SELECT 1 FROM dsh.discovery_content c
+			WHERE c.id=$1 AND c.state='PUBLISHED'
+			  AND c.starts_at<=clock_timestamp()
+			  AND (c.ends_at IS NULL OR c.ends_at>clock_timestamp())
+			  AND NOT EXISTS (
+			    SELECT 1 FROM dsh.marketing_campaign_content_links link
+			    JOIN dsh.marketing_campaigns campaign ON campaign.id=link.campaign_id
+			    WHERE link.content_id=c.id AND campaign.state<>'PUBLISHED'
+			  )
+			  AND (NULLIF(c.source_store_id,'') IS NULL OR EXISTS (
+			    SELECT 1 FROM dsh.stores source_store
+			    WHERE source_store.id=c.source_store_id
+			      AND source_store.relation_model='BTHWANI_PARTNER'
+			      AND source_store.publication_state='published' AND source_store.deleted_at IS NULL
+			  ))
+			  AND (c.target_type<>'STORE' OR EXISTS (
+			    SELECT 1 FROM dsh.stores target_store WHERE target_store.id=c.target_id
+			      AND target_store.relation_model='BTHWANI_PARTNER'
+			      AND target_store.publication_state='published' AND target_store.deleted_at IS NULL
+			      AND (c.source_store_id IS NULL OR target_store.id=c.source_store_id)
+			  ))
+			  AND (c.target_type<>'PROMOTION' OR EXISTS (
+			    SELECT 1 FROM dsh.commerce_promotions promotion
+			    WHERE promotion.id=c.target_id AND promotion.state='PUBLISHED'
+			      AND (c.source_store_id IS NULL OR promotion.store_id=c.source_store_id)
+			      AND (NULLIF(promotion.store_id,'') IS NULL OR EXISTS (
+			        SELECT 1 FROM dsh.stores target_store WHERE target_store.id=promotion.store_id
+			          AND target_store.relation_model='BTHWANI_PARTNER'
+			          AND target_store.publication_state='published' AND target_store.deleted_at IS NULL
+			      ))
+			  ))
+			  AND (c.target_type<>'PRODUCT' OR EXISTS (
+			    SELECT 1 FROM dsh.catalog_product_variants variant
+			    JOIN dsh.catalog_store_offers offer ON offer.variant_id=variant.id
+			    JOIN dsh.stores store ON store.id=offer.store_id
+			    JOIN dsh.catalog_customer_visible_offers visible ON visible.offer_id=offer.id
+			    WHERE variant.product_id=c.target_id
+			      AND store.relation_model='BTHWANI_PARTNER'
+			      AND store.publication_state='published' AND store.deleted_at IS NULL
+			      AND (c.source_store_id IS NULL OR store.id=c.source_store_id)
+			  ))
+			  AND (c.target_type<>'CATEGORY' OR EXISTS (
+			    SELECT 1 FROM dsh.catalog_product_categories category
+			    JOIN dsh.catalog_product_variants variant ON variant.product_id=category.product_id
+			    JOIN dsh.catalog_store_offers offer ON offer.variant_id=variant.id
+			    JOIN dsh.stores store ON store.id=offer.store_id
+			    JOIN dsh.catalog_customer_visible_offers visible ON visible.offer_id=offer.id
+			    WHERE category.category_id=c.target_id
+			      AND store.relation_model='BTHWANI_PARTNER'
+			      AND store.publication_state='published' AND store.deleted_at IS NULL
+			      AND (c.source_store_id IS NULL OR store.id=c.source_store_id)
+			  ))
+		)`
 	default:
 		return false, ErrClientShareInvalid
 	}
