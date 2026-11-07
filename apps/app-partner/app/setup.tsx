@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState, type ComponentType } from "r
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, restoreIdentitySession, subscribeIdentitySession } from "../src/bootstrap/identity";
 import { firstStoreFulfillmentLabel, firstStoreModesForRelation, type FirstStoreRelation } from "../src/features/partner-onboarding/first-store-relation-choice";
+import { partnerSetupSessionKey } from "../src/features/partner-onboarding/partner-setup-session-scope";
 
 type Step = 0|1|2|3;
 type StoreRelationModel = FirstStoreRelation;
@@ -28,9 +29,28 @@ function errorText(e:unknown){
 }
 export default function PartnerStoreSetup(){
  const router=useRouter();
+ const [actor,setActor]=useState(currentIdentityState);
+ const scope=partnerSetupSessionKey(actor);
+ useEffect(()=>subscribeIdentitySession(setActor),[]);
+ useEffect(()=>{
+  if(scope)return;
+  let active=true;
+  void restoreIdentitySession().then(next=>{
+   if(!active)return;
+   setActor(next);
+   if(!partnerSetupSessionKey(next))router.replace("/" as Href);
+  }).catch(()=>{if(active)router.replace("/" as Href);});
+  return ()=>{active=false;};
+ },[router,scope]);
+ if(!scope)return <ActivityIndicator accessibilityLabel="التحقق من حساب الشريك"/>;
+ // Remount the entire wizard on actor/session changes; no previous owner's form survives.
+ return <PartnerStoreSetupForm key={scope} scope={scope}/>;
+}
+
+function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
+ const router=useRouter();
  const theme=useAppearanceTheme();
  const {width}=useWindowDimensions();
- const [actor,setActor]=useState(currentIdentityState());
  const [checking,setChecking]=useState(true);
  const [busy,setBusy]=useState(false);
  const [saved,setSaved]=useState("");
@@ -58,36 +78,32 @@ export default function PartnerStoreSetup(){
   if(!lat.trim()||!lng.trim()||!Number.isFinite(a)||!Number.isFinite(b)||a < -90||a >90||b < -180||b >180)return null;
   return {latitude:a,longitude:b};
  },[lat,lng]);
- const scope=actor.kind==="authenticated"&&actor.identity.role==="partner"?actor.identity.subject+":"+actor.identity.sessionId:"";
 
  const load=useCallback(async()=>{
   setChecking(true);setError("");
   try{
-   const session=currentIdentityState();
-   if(session.kind!=="authenticated"){
-    const restored=await restoreIdentitySession();
-    if(restored.kind!=="authenticated"){router.replace("/" as Href);return;}
-   }
+   if(partnerSetupSessionKey(currentIdentityState())!==scope)return;
    const token=await getUsableIdentityAccessToken();
    const page=await service().listPartnerAccessibleStores(token,1);
+   if(partnerSetupSessionKey(currentIdentityState())!==scope)return;
    if(page.stores.length>0){router.replace("/more" as Href);return;}
    const [availableCities,availableVerticals,policyReadback]=await Promise.all([
     service().listActiveServiceCities(),
     service().listCatalogVerticals(),
     service().listStoreJoiningPolicies(),
    ]);
+   if(partnerSetupSessionKey(currentIdentityState())!==scope)return;
    setJoiningPolicies(policyReadback.items);
    setCities(availableCities);setVerticals(availableVerticals);
    if(availableCities.length===1)setCity(availableCities[0]!.id);
    if(availableVerticals.length===1)setVertical(availableVerticals[0]!.id);
-  }catch(e){setError(errorText(e))}
-  finally{setChecking(false)}
- },[router]);
- useEffect(()=>{
-  const unsubscribe=subscribeIdentitySession(setActor);
-  void load();
-  return unsubscribe;
- },[load]);
+  }catch(e){
+   if(partnerSetupSessionKey(currentIdentityState())===scope)setError(errorText(e));
+  }finally{
+   if(partnerSetupSessionKey(currentIdentityState())===scope)setChecking(false);
+  }
+ },[router,scope]);
+ useEffect(()=>{void load();},[load]);
  useEffect(()=>{
   if(!vertical){setTypes([]);setStoreType("");return;}
   let active=true;
@@ -99,7 +115,6 @@ export default function PartnerStoreSetup(){
   }).catch(()=>{if(active)setError("تعذر تحميل أنواع المتاجر. أعد المحاولة.")});
   return ()=>{active=false};
  },[vertical]);
- useEffect(()=>{if(actor.kind==="signed_out"&&scope==="")return;},[actor,scope]);
 
  async function showMap(){
   if(mapShown){setMapShown(false);return;}
@@ -124,20 +139,22 @@ export default function PartnerStoreSetup(){
   const starting=scope;
   try{
    const token=await getUsableIdentityAccessToken();
-   const current=currentIdentityState();
-   if(current.kind!=="authenticated"||current.identity.subject+":"+current.identity.sessionId!==starting)throw Error("SESSION_CHANGED");
+   if(partnerSetupSessionKey(currentIdentityState())!==starting)throw Error("SESSION_CHANGED");
    const result=await service().createPartnerFirstStore(token,{
     name:name.trim(),relationModel:relation,serviceCityId:city,primaryVerticalId:vertical,commercialStoreTypeId:storeType,
     addressText:address.trim(),latitude:selected.latitude,longitude:selected.longitude,fulfillmentModes:modes,
    });
    if(result.relationModel!==relation)throw Error("STORE_RELATION_READBACK_MISMATCH");
-   const after=currentIdentityState();
-   if(after.kind!=="authenticated"||after.identity.subject+":"+after.identity.sessionId!==starting)return;
+   if(partnerSetupSessionKey(currentIdentityState())!==starting)return;
    const confirmed=await service().listPartnerAccessibleStores(token,25);
+   if(partnerSetupSessionKey(currentIdentityState())!==starting)return;
    if(!confirmed.stores.some(store=>store.id===result.storeId&&store.owned))throw Error("STORE_READBACK_MISMATCH");
    setSaved(result.storeId);
-  }catch(e){setError(errorText(e))}
-  finally{setBusy(false)}
+  }catch(e){
+   if(partnerSetupSessionKey(currentIdentityState())===starting)setError(errorText(e));
+  }finally{
+   if(partnerSetupSessionKey(currentIdentityState())===starting)setBusy(false);
+  }
  }
  const s=useMemo(()=>({
   root:{flex:1,backgroundColor:theme.background},
