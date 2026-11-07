@@ -13,6 +13,8 @@ import (
 
 const clientRefreshCookie = "bt_client_web_refresh"
 const clientDeviceCookie = "bt_client_web_device"
+const applicantRefreshCookie = "bt_applicant_web_refresh"
+const applicantDeviceCookie = "bt_applicant_web_device"
 
 func (s *Server) clientCookieName(base string) string {
 	if s.config.Development {
@@ -23,7 +25,19 @@ func (s *Server) clientCookieName(base string) string {
 
 func (s *Server) clientWebOriginAllowed(r *http.Request) bool {
 	origin := strings.TrimSpace(r.Header.Get("Origin"))
-	return origin != "" && s.config.ClientWebOrigins[origin]
+	// A prospective Partner proves an ordinary client identity before admission.
+	// Both origins must be explicitly trusted; neither grants Partner authority.
+	return origin != "" && (s.config.ClientWebOrigins[origin] || s.config.PartnerWebOrigins[origin])
+}
+
+func (s *Server) clientWebCookieBases(r *http.Request) (string, string) {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	// Cookies are host-scoped, not port-scoped. Keep the pre-role Partner
+	// applicant session independent from the ordinary Client web session.
+	if s.config.PartnerWebOrigins[origin] {
+		return applicantRefreshCookie, applicantDeviceCookie
+	}
+	return clientRefreshCookie, clientDeviceCookie
 }
 
 func (s *Server) rejectUnauthorizedClientBrowserOrigin(w http.ResponseWriter, r *http.Request) bool {
@@ -34,9 +48,10 @@ func (s *Server) rejectUnauthorizedClientBrowserOrigin(w http.ResponseWriter, r 
 	return false
 }
 
-func (s *Server) clientWebCookies(w http.ResponseWriter, refreshToken, device string, maxAge int) {
+func (s *Server) clientWebCookies(w http.ResponseWriter, r *http.Request, refreshToken, device string, maxAge int) {
+	refreshName, deviceName := s.clientWebCookieBases(r)
 	for _, item := range []struct{ name, value string }{
-		{clientRefreshCookie, refreshToken}, {clientDeviceCookie, device},
+		{refreshName, refreshToken}, {deviceName, device},
 	} {
 		http.SetCookie(w, &http.Cookie{
 			Name: s.clientCookieName(item.name), Value: item.value, Path: "/",
@@ -50,12 +65,13 @@ func (s *Server) setClientWebCookiesIfAuthorized(w http.ResponseWriter, r *http.
 		return
 	}
 	// The cookie expires no later than the canonical 30-day refresh window.
-	s.clientWebCookies(w, pair.RefreshToken, device, 30*24*60*60)
+	s.clientWebCookies(w, r, pair.RefreshToken, device, 30*24*60*60)
 }
 
 func (s *Server) readClientWebCookies(r *http.Request) (string, string, bool) {
-	refresh, errRefresh := r.Cookie(s.clientCookieName(clientRefreshCookie))
-	device, errDevice := r.Cookie(s.clientCookieName(clientDeviceCookie))
+	refreshName, deviceName := s.clientWebCookieBases(r)
+	refresh, errRefresh := r.Cookie(s.clientCookieName(refreshName))
+	device, errDevice := r.Cookie(s.clientCookieName(deviceName))
 	if errRefresh != nil || errDevice != nil || len(refresh.Value) < 20 || len(device.Value) < 8 {
 		return "", "", false
 	}
@@ -85,13 +101,13 @@ func (s *Server) webClientSession(w http.ResponseWriter, r *http.Request) {
 	pair, err := s.sessions.Refresh(r.Context(), clientWebRefreshRequest(refresh, device))
 	if err != nil {
 		if errors.Is(err, domain.ErrInvalidRefresh) || errors.Is(err, domain.ErrUnauthenticated) {
-			s.clientWebCookies(w, "", "", -1)
+			s.clientWebCookies(w, r, "", "", -1)
 		}
 		writeDomainError(w, err)
 		return
 	}
 	if pair.Identity.Role != "client" || pair.Identity.Surface != "app-client" {
-		s.clientWebCookies(w, "", "", -1)
+		s.clientWebCookies(w, r, "", "", -1)
 		writeDomainError(w, domain.ErrForbidden)
 		return
 	}
@@ -135,7 +151,7 @@ func (s *Server) webClientLogout(w http.ResponseWriter, r *http.Request) {
 			if err := s.sessions.Logout(r.Context(), pair.AccessToken); err != nil && !errors.Is(err, domain.ErrUnauthenticated) {
 				// Refresh already rotated the credential. Keep the new cookie
 				// when logout fails so the browser can retry revocation.
-				s.clientWebCookies(w, pair.RefreshToken, device, 30*24*60*60)
+				s.clientWebCookies(w, r, pair.RefreshToken, device, 30*24*60*60)
 				writeDomainError(w, err)
 				return
 			}
@@ -145,7 +161,7 @@ func (s *Server) webClientLogout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// Expire cookies only after both bearer and cookie sessions are revoked.
-	s.clientWebCookies(w, "", "", -1)
+	s.clientWebCookies(w, r, "", "", -1)
 	w.WriteHeader(http.StatusNoContent)
 }
 

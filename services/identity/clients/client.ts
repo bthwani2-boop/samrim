@@ -7,6 +7,7 @@ import type {
   ActorType,
   Challenge,
   ClientCredentialProofRequest,
+  PartnerSelfRegistrationRequest,
   ClientBrowserAccessPair,
   ClientRecoveryProofRequest,
   ManagedActivationRequest,
@@ -49,6 +50,7 @@ export type IdentityClient = Readonly<{
   readiness(): Promise<Readonly<{ service: "identity"; status: "ok" | "not_ready" }>>;
   requestClientRegistration(request: PhoneRequest): Promise<Challenge>;
   registerClient(request: ClientCredentialProofRequest): Promise<TokenPair>;
+  registerVerifiedSelfPartner(clientAccessToken: string, request: PartnerSelfRegistrationRequest): Promise<TokenPair>;
   loginClient(request: PasswordLoginRequest): Promise<TokenPair>;
   loginManaged(request: ManagedPasswordLoginRequest): Promise<TokenPair>;
   requestClientRecovery(request: PhoneRequest): Promise<Challenge>;
@@ -179,6 +181,12 @@ export function createIdentityClient(rawBaseUrl: string, timeoutMs = 8_000, brow
     readiness: () => request(identityOperationPaths.identityReadiness.path, { method: identityOperationPaths.identityReadiness.method, acceptStatuses: [503] }),
     requestClientRegistration: (body) => request(identityOperationPaths.requestClientRegistrationVerification.path, { method: identityOperationPaths.requestClientRegistrationVerification.method, body }),
     registerClient: (body) => request<TokenPair | ClientBrowserAccessPair>(identityOperationPaths.registerClient.path, { method: identityOperationPaths.registerClient.method, body }).then(browserPair),
+    registerVerifiedSelfPartner: (token, body) => request<TokenPair | ClientBrowserAccessPair>(
+      identityOperationPaths.registerVerifiedSelfPartner.path,
+      { method: identityOperationPaths.registerVerifiedSelfPartner.method, token, body },
+    ).then(pair => "refreshToken" in pair ? pair as TokenPair : {
+      ...pair, refreshToken: "cookie-managed-partner-web-refresh",
+    }),
     loginClient: (body) => request<TokenPair | ClientBrowserAccessPair>(identityOperationPaths.loginClient.path, { method: identityOperationPaths.loginClient.method, body }).then(browserPair),
     loginManaged: (body) => request(identityOperationPaths.loginManagedRole.path, { method: identityOperationPaths.loginManagedRole.method, body }),
     requestClientRecovery: (body) => request(identityOperationPaths.requestClientRecoveryVerification.path, { method: identityOperationPaths.requestClientRecoveryVerification.method, body }),

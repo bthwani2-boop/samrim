@@ -66,6 +66,16 @@ func (s *Service) CreateSelfService(ctx context.Context, input contract.CreateJo
 	})
 }
 
+// ReadSelfServiceApplicantContact exposes the live, verified phone that DSH
+// already uses to bind self-service cases. It does not admit a Partner role.
+func (s *Service) ReadSelfServiceApplicantContact(ctx context.Context, accessToken string) (string, error) {
+	_, phone, err := s.selfServiceApplicant(ctx, accessToken)
+	if err != nil {
+		return "", err
+	}
+	return phone, nil
+}
+
 func (s *Service) ReadSelfService(ctx context.Context, accessToken string) (postgres.JoiningCaseResult, error) {
 	actorID, phone, err := s.selfServiceApplicant(ctx, accessToken)
 	if err != nil {

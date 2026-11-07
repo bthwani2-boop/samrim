@@ -1,4 +1,20 @@
 paths:
+  /dsh/partner/stores/first:
+    post:
+      operationId: createPartnerFirstStore
+      summary: Create an unpublished first Store for the authenticated Partner without a joining request
+      security: [{ userBearer: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerFirstStoreCreateRequest" } } }
+      responses:
+        "201": { description: First Store created; not publicly visible, content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerFirstStoreCreateResponse" } } } }
+        "200": { description: Exact replay of the same first Store creation, content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerFirstStoreCreateResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
   /dsh/operator/stores/trash:
     get:
       operationId: listDeletedStores

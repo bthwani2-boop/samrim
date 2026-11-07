@@ -22,7 +22,7 @@ const identity = { role, surface, restoreIdentitySession, currentIdentityState, 
 export default function IdentityGate() {
   const { returnTo } = useLocalSearchParams<{ returnTo?: string | string[] }>();
   const router = useRouter();
-  const safeReturnTo = resolveInternalReturnPath(returnTo, "/orders", partnerReturnPathPattern) as Href;
+  const safeReturnTo = resolveInternalReturnPath(returnTo, "/setup", partnerReturnPathPattern) as Href;
 
   return (
     <View style={{ flex: 1 }}>
@@ -35,7 +35,7 @@ export default function IdentityGate() {
         />
       </View>
       <SafeAreaView edges={["bottom"]} style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
-        <BthwaniButton label="انضم كمتجر جديد دون ميداني" variant="secondary" onPress={() => router.push("/apply" as Href)} />
+        <BthwaniButton label="إنشاء حساب شريك" variant="secondary" onPress={() => router.push("/apply" as Href)} />
       </SafeAreaView>
     </View>
   );

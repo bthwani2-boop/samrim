@@ -1,5 +1,6 @@
 import { type PartnerAccessibleStore, type StoreAccessPermission } from "@bthwani/dsh";
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
+import { type Href, useRouter } from "expo-router";
 
 import { usePartnerAccessibleStoreScopes } from "./partner-accessible-store-scopes";
 import { type PartnerAuthority, derivePartnerAuthority, RESOLVING_PARTNER_AUTHORITY } from "../../shell/partner-authority";
@@ -27,7 +28,13 @@ export async function notifyPartnerStoreAccessChanged(): Promise<void> {
 }
 
 export function PartnerStoreScopeProvider({ children }: Readonly<{ children: ReactNode }>) {
+  const router=useRouter();
   const scopes = usePartnerAccessibleStoreScopes();
+  useEffect(()=>{
+    if(scopes.state.kind==="ready"&&scopes.state.stores.length===0){
+      router.replace("/setup" as Href);
+    }
+  },[router,scopes.state]);
   useEffect(() => {
     accessChangeListeners.add(scopes.reload);
     return () => { accessChangeListeners.delete(scopes.reload); };
