@@ -171,7 +171,7 @@ export async function readOperatorPartnerStorePresence(actorIds: ReadonlyArray<s
   return response.payload.actorIds;
 }
 
-export async function listOperatorStores(state: string, search: string, serviceCityId: string, searchMode: string, sort: string, limit: number, cursor: string, context: DshOperatorReadContext): Promise<OperatorStoreListResponse> {
+export async function listOperatorStores(state: string, search: string, serviceCityId: string, searchMode: string, sort: string, limit: number, cursor: string, context: DshOperatorReadContext, relationModel: "" | "BTHWANI_PARTNER" | "INDEPENDENT_STORE" = ""): Promise<OperatorStoreListResponse> {
 	const normalizedState = state.trim();
 	const normalizedSearch = search.trim();
 	const normalizedCityId = serviceCityId.trim();
@@ -179,11 +179,12 @@ export async function listOperatorStores(state: string, search: string, serviceC
 	const normalizedSort = sort.trim() || "updated_desc";
 	const normalizedCursor = cursor.trim();
 	const namePrefixSearch = normalizedSearchMode === "name_prefix";
-	if (!context.operatorActorId.trim() || !Number.isSafeInteger(limit) || limit < 1 || limit > 50 || normalizedCursor.length > 1024 || Array.from(normalizedSearch).length > 128 || normalizedCityId.length > 128 || (normalizedState !== "" && normalizedState !== "unpublished" && normalizedState !== "published" && normalizedState !== "hidden") || (normalizedSearchMode !== "contains" && !namePrefixSearch) || (normalizedSort !== "updated_desc" && normalizedSort !== "updated_asc" && normalizedSort !== "name_asc") || (namePrefixSearch && (normalizedState !== "published" || Array.from(normalizedSearch).length < 2 || !normalizedCityId || normalizedSort !== "name_asc")) || (!namePrefixSearch && normalizedSort === "name_asc")) {
+	if ((relationModel !== "" && relationModel !== "BTHWANI_PARTNER" && relationModel !== "INDEPENDENT_STORE") || !context.operatorActorId.trim() || !Number.isSafeInteger(limit) || limit < 1 || limit > 50 || normalizedCursor.length > 1024 || Array.from(normalizedSearch).length > 128 || normalizedCityId.length > 128 || (normalizedState !== "" && normalizedState !== "unpublished" && normalizedState !== "published" && normalizedState !== "hidden") || (normalizedSearchMode !== "contains" && !namePrefixSearch) || (normalizedSort !== "updated_desc" && normalizedSort !== "updated_asc" && normalizedSort !== "name_asc") || (namePrefixSearch && (normalizedState !== "published" || Array.from(normalizedSearch).length < 2 || !normalizedCityId || normalizedSort !== "name_asc")) || (!namePrefixSearch && normalizedSort === "name_asc")) {
 		throw new Error("DSH_OPERATOR_STORES_INPUT_INVALID");
 	}
 	const query = new URLSearchParams({ limit: String(limit) });
 	if (normalizedState) query.set("state", normalizedState);
+	if (relationModel) query.set("relationModel", relationModel);
 	if (normalizedSearch) query.set("q", normalizedSearch);
 	if (normalizedCityId) query.set("serviceCityId", normalizedCityId);
 	if (namePrefixSearch) query.set("searchMode", normalizedSearchMode);

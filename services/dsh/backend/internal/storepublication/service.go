@@ -201,7 +201,7 @@ func (s *Service) ReadPartnerStorePresence(ctx context.Context, actingActorID st
 	return postgres.ReadPartnerStorePresence(ctx, s.db, actorIDs)
 }
 
-func (s *Service) ListForOperator(ctx context.Context, state, query, serviceCityID, searchMode, sort, actingActorID string, limit int, cursor string) (postgres.OperatorStorePage, error) {
+func (s *Service) ListForOperator(ctx context.Context, state, query, serviceCityID, searchMode, sort, actingActorID string, limit int, cursor, relationModel string) (postgres.OperatorStorePage, error) {
 	actingActorID = strings.TrimSpace(actingActorID)
 	state = strings.TrimSpace(state)
 	if actingActorID == "" || len(actingActorID) > 128 {
@@ -217,7 +217,7 @@ func (s *Service) ListForOperator(ctx context.Context, state, query, serviceCity
 	if err := s.requireStoreRegistryPermission(ctx, actingActorID, state); err != nil {
 		return postgres.OperatorStorePage{}, err
 	}
-	return postgres.ListStoresForOperator(ctx, s.db, state, query, serviceCityID, searchMode, sort, limit, cursor)
+	return postgres.ListStoresForOperator(ctx, s.db, state, query, serviceCityID, searchMode, sort, limit, cursor, relationModel)
 }
 
 func (s *Service) requireStoreRegistryPermission(ctx context.Context, actingActorID, state string) error {

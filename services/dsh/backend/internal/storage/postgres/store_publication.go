@@ -93,6 +93,7 @@ type OperatorStoreSummary struct {
 	CommercialStoreTypeID     string
 	Version                   int
 	PublicationState          string
+	RelationModel             string
 	FulfillmentModes          []string
 	CreatedAt                 time.Time
 	UpdatedAt                 time.Time
@@ -272,11 +273,15 @@ func ReadPartnerStorePresence(ctx context.Context, db *sql.DB, actorIDs []string
 	return found, rows.Err()
 }
 
-func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, serviceCityID, searchMode, sort string, limit int, cursor string) (OperatorStorePage, error) {
+func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, serviceCityID, searchMode, sort string, limit int, cursor, relationModel string) (OperatorStorePage, error) {
 	if db == nil || limit < 1 || limit > 50 {
 		return OperatorStorePage{}, ErrOperatorStoreInvalidLimit
 	}
 	state = strings.TrimSpace(state)
+	relationModel = strings.TrimSpace(relationModel)
+	if relationModel != "" && relationModel != StoreRelationBThwaniPartner && relationModel != StoreRelationIndependent {
+		return OperatorStorePage{}, ErrOperatorStoreInvalidQuery
+	}
 	if state != "" && state != "unpublished" && state != "published" && state != "hidden" {
 		return OperatorStorePage{}, ErrOperatorStoreInvalidState
 	}
@@ -316,7 +321,7 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, servic
 	var cursorName, cursorID string
 	var cursorUpdatedAt time.Time
 	if hasCursor {
-		decoded, err := decodeOperatorStoreCursor(cursor, state, query, serviceCityID, searchMode, sort)
+		decoded, err := decodeOperatorStoreCursor(cursor, state, query, serviceCityID, searchMode, sort, relationModel)
 		if err != nil {
 			return OperatorStorePage{}, err
 		}
@@ -325,7 +330,7 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, servic
 			cursorName = decoded.Name
 			if decoded.Scope != "" {
 				prefix := strings.ToLower(escapeOperatorStoreSearch(query)) + "%"
-				err := db.QueryRowContext(ctx, "SELECT name FROM dsh.stores WHERE id=$1 AND publication_state='published' AND service_city_id=$2 AND lower(name) LIKE $3 ESCAPE '!'", decoded.ID, serviceCityID, prefix).Scan(&cursorName)
+				err := db.QueryRowContext(ctx, "SELECT name FROM dsh.stores WHERE id=$1 AND publication_state='published' AND service_city_id=$2 AND lower(name) LIKE $3 ESCAPE '!' AND ($4::text='' OR relation_model=$4)", decoded.ID, serviceCityID, prefix, relationModel).Scan(&cursorName)
 				if errors.Is(err, sql.ErrNoRows) {
 					return OperatorStorePage{}, ErrOperatorStoreInvalidCursor
 				}
@@ -344,7 +349,7 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, servic
 		prefixPattern = strings.ToLower(escapedQuery) + "%"
 		containsPattern = "%" + escapedQuery + "%"
 	}
-	rows, err := db.QueryContext(ctx, `SELECT s.id,s.partner_actor_id,s.name,s.service_city_id,s.primary_vertical_id,s.commercial_store_type_id,s.version,s.publication_state,s.fulfillment_modes,s.created_at,s.updated_at,
+	rows, err := db.QueryContext(ctx, `SELECT s.id,s.partner_actor_id,s.name,s.service_city_id,s.primary_vertical_id,s.commercial_store_type_id,s.version,s.publication_state,s.relation_model,s.fulfillment_modes,s.created_at,s.updated_at,
 		COALESCE(NULLIF(btrim(j.owner_full_name),''),NULLIF(btrim(j.business_name),''),''),COALESCE(c.display_name_ar,''),COALESCE(v.name_ar,''),
 		COALESCE((SELECT m.uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' AND m.media_role='primary' AND m.rights_attested_at IS NOT NULL ORDER BY m.created_at DESC LIMIT 1),''), COALESCE(t.name_ar,''), s.delivery_origin_latitude, s.delivery_origin_longitude
 		FROM dsh.stores s
@@ -353,6 +358,7 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, servic
 		LEFT JOIN dsh.commerce_verticals v ON v.id=s.primary_vertical_id
 		LEFT JOIN dsh.commercial_store_types t ON t.id=s.commercial_store_type_id
 		WHERE s.deleted_at IS NULL AND ($1::text='' OR s.publication_state=$1)
+		  AND ($13::text='' OR s.relation_model=$13)
 		  AND ($2::text='' OR (($4::text='name_prefix' AND lower(s.name) LIKE $5::text ESCAPE '!') OR ($4::text='contains' AND (s.id ILIKE $6::text ESCAPE '!' OR s.name ILIKE $6::text ESCAPE '!' OR s.partner_actor_id ILIKE $6::text ESCAPE '!' OR j.owner_full_name ILIKE $6::text ESCAPE '!' OR j.contact_phone_e164 ILIKE $6::text ESCAPE '!'))))
 		  AND ($3::text='' OR s.service_city_id=$3)
 		  AND (NOT $7::boolean OR ($8::text='name_asc' AND (lower(s.name),s.id)>(lower($9::text),$10::text)) OR ($8::text='updated_asc' AND (s.updated_at,s.id)>($11::timestamptz,$10::text)) OR ($8::text='updated_desc' AND (s.updated_at,s.id)<($11::timestamptz,$10::text)))
@@ -363,7 +369,7 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, servic
 		  CASE WHEN $8::text='updated_asc' THEN s.id END ASC,
 		  CASE WHEN $8::text='updated_desc' THEN s.updated_at END DESC,
 		  CASE WHEN $8::text='updated_desc' THEN s.id END DESC
-		LIMIT $12`, state, query, serviceCityID, searchMode, prefixPattern, containsPattern, hasCursor, sort, cursorName, cursorID, cursorUpdatedAt, limit+1)
+		LIMIT $12`, state, query, serviceCityID, searchMode, prefixPattern, containsPattern, hasCursor, sort, cursorName, cursorID, cursorUpdatedAt, limit+1, relationModel)
 	if err != nil {
 		return OperatorStorePage{}, fmt.Errorf("list canonical operator stores: %w", err)
 	}
@@ -372,12 +378,12 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, servic
 	for rows.Next() {
 		var store OperatorStoreSummary
 		var cityID, verticalID, commercialTypeID sql.NullString
-		if err := rows.Scan(&store.ID, &store.PartnerActorID, &store.Name, &cityID, &verticalID, &commercialTypeID, &store.Version, &store.PublicationState, pq.Array(&store.FulfillmentModes), &store.CreatedAt, &store.UpdatedAt, &store.PartnerName, &store.ServiceCityName, &store.PrimaryVerticalName, &store.StoreProfileImageURI, &store.CommercialStoreTypeNameAr, &store.DeliveryOriginLatitude, &store.DeliveryOriginLongitude); err != nil {
+		if err := rows.Scan(&store.ID, &store.PartnerActorID, &store.Name, &cityID, &verticalID, &commercialTypeID, &store.Version, &store.PublicationState, &store.RelationModel, pq.Array(&store.FulfillmentModes), &store.CreatedAt, &store.UpdatedAt, &store.PartnerName, &store.ServiceCityName, &store.PrimaryVerticalName, &store.StoreProfileImageURI, &store.CommercialStoreTypeNameAr, &store.DeliveryOriginLatitude, &store.DeliveryOriginLongitude); err != nil {
 			return OperatorStorePage{}, err
 		}
 		if len(page.Stores) == limit {
 			last := page.Stores[len(page.Stores)-1]
-			page.NextCursor = encodeOperatorStoreCursor(operatorStoreCursor{UpdatedAt: last.UpdatedAt, ID: last.ID}, state, query, serviceCityID, searchMode, sort)
+			page.NextCursor = encodeOperatorStoreCursor(operatorStoreCursor{UpdatedAt: last.UpdatedAt, ID: last.ID}, state, query, serviceCityID, searchMode, sort, relationModel)
 			break
 		}
 		if cityID.Valid {
@@ -404,19 +410,26 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, servic
 	return page, nil
 }
 
-func encodeOperatorStoreCursor(cursor operatorStoreCursor, state, query, serviceCityID, searchMode, sort string) string {
-	cursor.Scope = operatorStoreCursorScope(state, query, serviceCityID, searchMode, sort)
+func encodeOperatorStoreCursor(cursor operatorStoreCursor, state, query, serviceCityID, searchMode, sort, relationModel string) string {
+	cursor.Scope = operatorStoreCursorScope(state, query, serviceCityID, searchMode, sort, relationModel)
 	value, _ := json.Marshal(cursor)
 	return base64.RawURLEncoding.EncodeToString(value)
 }
 
-func operatorStoreCursorScope(state, query, serviceCityID, searchMode, sort string) string {
-	value, _ := json.Marshal([5]string{state, query, serviceCityID, searchMode, sort})
+func operatorStoreCursorScope(state, query, serviceCityID, searchMode, sort, relationModel string) string {
+	// Preserve existing unfiltered cursors; bind filtered cursors to the
+	// exact canonical Store relationship so pages cannot cross channels.
+	var value []byte
+	if relationModel == "" {
+		value, _ = json.Marshal([5]string{state, query, serviceCityID, searchMode, sort})
+	} else {
+		value, _ = json.Marshal([6]string{state, query, serviceCityID, searchMode, sort, relationModel})
+	}
 	digest := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(digest[:])
 }
 
-func decodeOperatorStoreCursor(raw, state, query, serviceCityID, searchMode, sort string) (operatorStoreCursor, error) {
+func decodeOperatorStoreCursor(raw, state, query, serviceCityID, searchMode, sort, relationModel string) (operatorStoreCursor, error) {
 	value, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
 	if err != nil {
 		return operatorStoreCursor{}, ErrOperatorStoreInvalidCursor
@@ -429,7 +442,7 @@ func decodeOperatorStoreCursor(raw, state, query, serviceCityID, searchMode, sor
 		return operatorStoreCursor{}, ErrOperatorStoreInvalidCursor
 	}
 	if cursor.Scope != "" {
-		if cursor.Scope != operatorStoreCursorScope(state, query, serviceCityID, searchMode, sort) {
+		if cursor.Scope != operatorStoreCursorScope(state, query, serviceCityID, searchMode, sort, relationModel) {
 			return operatorStoreCursor{}, ErrOperatorStoreInvalidCursor
 		}
 		return cursor, nil
@@ -437,7 +450,7 @@ func decodeOperatorStoreCursor(raw, state, query, serviceCityID, searchMode, sor
 	if cursor.SearchMode == "" {
 		cursor.SearchMode = "contains"
 	}
-	if sort == "name_asc" || cursor.State != state || cursor.Query != query || cursor.ServiceCityID != serviceCityID || cursor.SearchMode != searchMode || cursor.Sort != sort {
+	if relationModel != "" || sort == "name_asc" || cursor.State != state || cursor.Query != query || cursor.ServiceCityID != serviceCityID || cursor.SearchMode != searchMode || cursor.Sort != sort {
 		return operatorStoreCursor{}, ErrOperatorStoreInvalidCursor
 	}
 	return cursor, nil

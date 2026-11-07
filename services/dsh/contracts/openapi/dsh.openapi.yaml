@@ -2348,7 +2348,7 @@ components:
 
     OperatorStoreSummary:
       type: object
-      required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, commercialStoreTypeId, version, publicationState, fulfillmentModes, createdAt, updatedAt]
+      required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, commercialStoreTypeId, version, publicationState, relationModel, fulfillmentModes, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -2388,6 +2388,9 @@ components:
           minimum: 1
         publicationState:
           $ref: "#/components/schemas/PublicationState"
+        relationModel:
+          type: string
+          enum: [BTHWANI_PARTNER, INDEPENDENT_STORE]
         fulfillmentModes:
           type: array
           items:

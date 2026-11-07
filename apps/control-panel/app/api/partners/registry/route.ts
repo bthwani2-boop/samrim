@@ -54,7 +54,7 @@ async function registry(request: Request, privateQuery?: string) {
   const context = { operatorActorId: identity.subject };
   try {
     if (cursor.phase === "stores" && mode !== "without_store") {
-      const page = await listOperatorStores(state, q, serviceCityId, "contains", sort, PAGE_SIZE, cursor.from, context);
+      const page = await listOperatorStores(state, q, serviceCityId, "contains", sort, PAGE_SIZE, cursor.from, context, "BTHWANI_PARTNER");
       const ids = [...new Set(page.stores.map((store) => store.partnerActorId))];
       const roles = await readManagedIdentityRolesBatch(ids);
       const byActor = new Map(roles.map((role) => [role.actorId, role]));
