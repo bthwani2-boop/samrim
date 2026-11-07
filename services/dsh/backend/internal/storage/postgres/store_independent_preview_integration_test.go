@@ -21,7 +21,7 @@ func TestIndependentStorePreviewOwnershipAndChannelIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer root.Close()
+	t.Cleanup(func() { _ = root.Close() })
 
 	withFreshDatabase(t, root, dsn, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrations []string) {
 		if err := postgres.Migrate(ctx, db, records, migrations, testDeliveryProofKeyring(t)); err != nil {
@@ -89,7 +89,7 @@ func TestIndependentStorePreviewOwnershipAndChannelIsolation(t *testing.T) {
 				t.Fatalf("foreign or marketplace Store leaked through independent preview: %+v err=%v", input, err)
 			}
 		}
-		if _, err := db.ExecContext(ctx, `UPDATE dsh.stores SET deleted_at=clock_timestamp() WHERE id='independent-preview-store'`); err != nil {
+		if _, _, err := postgres.SetStoreTrashed(ctx, db, store.ID, "preview-operator", "archived fixture store", "trash", "preview-archive-key", store.Version); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := postgres.ReadIndependentStoreOwnedByPartner(ctx, db, "independent-preview-store", "independent-owner"); !errors.Is(err, postgres.ErrStoreNotFound) {
