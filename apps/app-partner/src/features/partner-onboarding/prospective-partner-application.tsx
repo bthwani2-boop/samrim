@@ -1,7 +1,7 @@
 "use client";
 
 import { type CommerceVertical, type CommercialStoreType, createDshMobileClient, type CreateJoiningCaseRequest, type JoiningCaseResponse, joiningCaseStateLabel, type ServiceCity, type StoreFulfillmentMode } from "@bthwani/dsh";
-import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniIconButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { BthwaniMapCoordinate, BthwaniMapProps } from "@bthwani/design-system/native/map";
 import { toAsciiDigits } from "@bthwani/design-system";
 import { normalizeYemenPhoneE164 } from "@bthwani/identity/phone";
@@ -19,6 +19,9 @@ const MODES:readonly {id:StoreFulfillmentMode;label:string}[]=[
  {id:"PARTNER_CAPTAIN",label:"توصيل المتجر"},
  {id:"CUSTOMER_PICKUP",label:"استلام العميل من المتجر"},
 ];
+const JOINING_STEPS=[{id:"identity",label:"هوية المتجر"},{id:"category",label:"نوع النشاط"},{id:"contact",label:"معلومات التواصل"},{id:"review",label:"مراجعة الطلب"}] as const;
+type JoiningStep=(typeof JOINING_STEPS)[number]["id"];
+
 const PROOFS:readonly {id:CreateJoiningCaseRequest["firstStoreProofType"];label:string}[]=[
  {id:"COMMERCIAL_REGISTRATION",label:"سجل تجاري"},
  {id:"IDENTITY_DOCUMENT",label:"بطاقة هوية"},
@@ -63,6 +66,8 @@ export function ProspectivePartnerApplication(){
   text:{fontSize:14,color:theme.color,textAlign:"right" as const,writingDirection:"rtl" as const},
   muted:{fontSize:13,color:theme.colorMuted,textAlign:"right" as const,lineHeight:21,writingDirection:"rtl" as const},
   label:{fontSize:13,fontWeight:"600" as const,color:theme.color,textAlign:"right" as const,writingDirection:"rtl" as const},
+  passwordRow:{backgroundColor:theme.surfaceInset,borderWidth:1,borderColor:theme.borderColor,borderRadius:12,flexDirection:"row",alignItems:"center",paddingRight:6},
+  passwordInput:{flex:1,minWidth:0,borderWidth:0,backgroundColor:"transparent" as const},
   input:{backgroundColor:theme.surfaceInset,borderWidth:1,borderColor:theme.borderColor,borderRadius:12,paddingHorizontal:13,paddingVertical:11,
    color:theme.color,textAlign:"right" as const,writingDirection:"rtl" as const,minHeight:48,fontSize:15},
   choiceRow:{flexDirection:"row-reverse",flexWrap:"wrap" as const,justifyContent:"flex-start" as const,gap:8},
@@ -70,20 +75,24 @@ export function ProspectivePartnerApplication(){
   selected:{borderColor:theme.actionBackground,backgroundColor:theme.surfaceRaised,borderWidth:2},
   choiceText:{fontSize:13,color:theme.color,textAlign:"center" as const,writingDirection:"rtl" as const},
   selectedText:{fontWeight:"700" as const,color:theme.color},
-  segment:{flexDirection:"row-reverse",borderRadius:14,padding:4,backgroundColor:theme.surfaceInset,gap:6},
-  segmentButton:{flex:1,alignItems:"center" as const,justifyContent:"center" as const,paddingVertical:12,borderRadius:11},
-  segmentSelected:{backgroundColor:theme.surface,borderColor:theme.actionBackground,borderWidth:1},
-  segmentLabel:{fontSize:13,color:theme.colorMuted,textAlign:"center" as const},
-  segmentLabelSelected:{color:theme.color,fontWeight:"700" as const},
-  stepPill:{alignSelf:"flex-end" as const,borderRadius:20,backgroundColor:theme.surfaceInset,paddingHorizontal:12,paddingVertical:6},
-  stepLabel:{fontSize:12,color:theme.color,fontWeight:"600" as const},
+  stepRow:{flexDirection:"row-reverse" as const,gap:5,marginBottom:4},
+  stepItem:{flex:1,minWidth:0,alignItems:"center" as const,gap:5,paddingVertical:10,borderBottomWidth:3,borderBottomColor:theme.borderColor},
+  stepCurrent:{borderBottomColor:theme.actionBackground},
+  stepDone:{borderBottomColor:theme.colorMuted},
+  stepCircle:{height:29,width:29,borderRadius:15,alignItems:"center" as const,justifyContent:"center" as const,backgroundColor:theme.surfaceInset},
+  stepCircleCurrent:{backgroundColor:theme.actionBackground},
+  stepCircleDone:{backgroundColor:theme.surfaceRaised},
+  stepNumber:{fontSize:13,fontWeight:"700" as const,color:theme.colorMuted},
+  stepNumberCurrent:{color:theme.onAction},
+  stepNumberDone:{color:theme.color},
+  stepName:{fontSize:11,fontWeight:"600" as const,color:theme.colorMuted,textAlign:"center" as const,writingDirection:"rtl" as const},
+  stepNameCurrent:{color:theme.color},
   section:{gap:10,paddingVertical:8},
   statusPanel:{backgroundColor:theme.surfaceInset,borderRadius:14,padding:14,gap:7},
   statusTitle:{fontSize:16,fontWeight:"700" as const,color:theme.color,textAlign:"right" as const},
   notice:{color:theme.color,textAlign:"right" as const,backgroundColor:theme.surfaceRaised,borderRadius:12,padding:12,fontSize:13},
   error:{color:theme.dangerText,backgroundColor:theme.dangerSoft,borderRadius:12,padding:12,fontSize:13,textAlign:"right" as const,writingDirection:"rtl" as const},
   footer:{width:"100%",maxWidth:680,gap:8,alignItems:"center" as const,paddingBottom:8},
-  footerText:{fontSize:12,color:theme.colorMuted,textAlign:"center" as const,lineHeight:20},
  }),[theme]);
  const [session,setSession]=useState(currentProspectSession());
  const [restoring,setRestoring]=useState(true);
@@ -93,6 +102,8 @@ export function ProspectivePartnerApplication(){
  const [manualContactFallback,setManualContactFallback]=useState(false);
  const [password,setPassword]=useState("");
  const [passwordConfirmation,setPasswordConfirmation]=useState("");
+ const [showPassword,setShowPassword]=useState(false);
+ const [showPasswordConfirmation,setShowPasswordConfirmation]=useState(false);
  const [code,setCode]=useState("");
  const [proofRequested,setProofRequested]=useState(false);
  const [busy,setBusy]=useState(false);
@@ -101,7 +112,7 @@ export function ProspectivePartnerApplication(){
  const [notice,setNotice]=useState("");
  const [caseValue,setCaseValue]=useState<JoiningCaseResponse|null>(null);
  const [hasRead,setHasRead]=useState(false);
- const [intakeStep,setIntakeStep]=useState<"basics"|"details">("basics");
+ const [intakeStep,setIntakeStep]=useState<JoiningStep>("identity");
  const [expandedRegistry,setExpandedRegistry]=useState<"city"|"vertical"|"storeType"|null>(null);
  const [cities,setCities]=useState<readonly ServiceCity[]>([]);
  const [verticals,setVerticals]=useState<readonly CommerceVertical[]>([]);
@@ -126,7 +137,7 @@ export function ProspectivePartnerApplication(){
  const [modes,setModes]=useState<StoreFulfillmentMode[]>(["BTHWANI_CAPTAIN"]);
  const phoneReady=/^\+[1-9]\d{7,14}$/.test(normalizeYemenPhoneE164(phone));
  const needsProof=mode!=="login";
- const passwordShape=validatePasswordInputShape(password,needsProof?passwordConfirmation:undefined);
+ const passwordShape=mode==="login"?{valid:password.trim().length>0,code:undefined,message:undefined}:validatePasswordInputShape(password,passwordConfirmation);
  const canAuthenticate=phoneReady&&passwordShape.valid&&(!needsProof||(proofRequested&&/^\d{6}$/.test(toAsciiDigits(code).trim())));
  const selectedOrigin=useMemo<BthwaniMapCoordinate|null>(()=>{
   if(!lat.trim()||!lng.trim())return null;
@@ -146,12 +157,15 @@ export function ProspectivePartnerApplication(){
   const un=subscribeProspectSession(value=>{
    if(!active)return;
    const nextScope=value.kind==="authenticated"?`${value.identity.subject}:${value.identity.sessionId}`:"";
-   if(scopeRef.current&&scopeRef.current!==nextScope){
+   if(scopeRef.current!==nextScope){
     submissionEpochRef.current+=1;setBusy(false);
-    setCaseValue(null);setHasRead(false);setIntakeStep("basics");setLoading(false);
-    setVerifiedContactPhone("");setManualContactFallback(false);setPhone("");
+    setCaseValue(null);setHasRead(false);setIntakeStep("identity");setLoading(false);
+    setVerifiedContactPhone("");setManualContactFallback(false);
+    // Retain a freshly entered login phone only for the legacy DSH contact fallback.
+    // Never retain it when logging out or switching between authenticated actors.
+    if(scopeRef.current)setPhone("");
     setOwnerName("");setStoreName("");setAddress("");setProofNumber("");setLat("");setLng("");
-    setError("");setNotice("");setPassword("");setPasswordConfirmation("");setCode("");setProofRequested(false);
+    setError("");setNotice("");setPassword("");setPasswordConfirmation("");setShowPassword(false);setShowPasswordConfirmation(false);setCode("");setProofRequested(false);
    }
    scopeRef.current=nextScope;
    setSession(value);
@@ -188,7 +202,7 @@ export function ProspectivePartnerApplication(){
    else {setHasRead(false);setError(details(cause));}
   }finally{if(sameSession())setLoading(false)}
  },[sessionScope,sameSession]);
- useEffect(()=>{if(authenticated){void load()}else{setCaseValue(null);setHasRead(false);setIntakeStep("basics")}},[authenticated,load]);
+ useEffect(()=>{if(authenticated){void load()}else{setCaseValue(null);setHasRead(false);setIntakeStep("identity")}},[authenticated,load]);
  useEffect(()=>{
   if(!authenticated)return;
   let active=true;
@@ -296,6 +310,16 @@ export function ProspectivePartnerApplication(){
  }
  const field=(label:string,value:string,set:(value:string)=>void,secure=false,keyboard:"default"|"phone-pad"|"numeric"|"numbers-and-punctuation"="default")=>
   <View style={{gap:6}}><Text style={styles.label}>{label}</Text><TextInput accessibilityLabel={label} style={styles.input} value={value} onChangeText={set} editable={!busy} keyboardType={keyboard} secureTextEntry={secure} autoCapitalize={secure||keyboard==="phone-pad"?"none":"sentences"}/></View>;
+ const passwordField=(label:string,value:string,set:(value:string)=>void,visible:boolean,toggle:()=>void,loginPassword=false)=>
+  <View style={{gap:6}}>
+   <Text style={styles.label}>{label}</Text>
+   <View style={styles.passwordRow}>
+    <TextInput accessibilityLabel={label} autoComplete={loginPassword?"current-password":"new-password"} autoCapitalize="none" autoCorrect={false} spellCheck={false}
+     style={[styles.input,styles.passwordInput]} value={value} onChangeText={next=>set(loginPassword?next:limitPasswordInput(next))}
+     editable={!busy} secureTextEntry={!visible}/>
+    <BthwaniIconButton icon={visible?"eye-off":"eye"} label={visible?"إخفاء "+label:"إظهار "+label} disabled={busy} onPress={toggle} size={40} tone="soft"/>
+   </View>
+  </View>;
  const select=<T extends string>(label:string,items:readonly {id:T;label:string}[],value:T,set:(id:T)=>void)=>
   <View style={{gap:8}}><Text style={styles.label}>{label}</Text><View style={styles.choiceRow}>{items.map(item=><Pressable accessibilityRole="radio" accessibilityState={{checked:value===item.id,disabled:busy}} key={item.id} onPress={()=>set(item.id)} disabled={busy} style={[styles.choice,value===item.id&&styles.selected]}><Text style={[styles.choiceText,value===item.id&&styles.selectedText]}>{item.label}</Text></Pressable>)}</View></View>;
  const registrySelect=<T extends string>(key:"city"|"vertical"|"storeType",label:string,items:readonly {id:T;label:string}[],value:T,set:(id:T)=>void)=>{
@@ -311,38 +335,34 @@ export function ProspectivePartnerApplication(){
  return <ScrollView style={styles.root} contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled">
   <View style={styles.hero}>
    <View style={styles.brand}><View style={styles.brandMark}><Text style={styles.brandMarkText}>ب</Text></View><Text style={styles.brandName}>بثواني للشركاء</Text></View>
-   <Text style={styles.heading}>طلب الانضمام إلى بثواني</Text>
-   <Text style={styles.intro}>سجّل برقم جوالك، وأضف بيانات متجرك بخطوات بسيطة. نراجع الطلب قبل تفعيل إدارة المتجر.</Text>
+   <Text style={styles.heading}>{authenticated?"إعداد متجرك":"انضم إلى شركاء بثواني"}</Text>
+   <Text style={styles.intro}>{authenticated?"أكمل بيانات متجرك، ثم أرسل طلب الانضمام للمراجعة.":"أنشئ حسابك أو ادخل بحسابك الحالي ثم أعدّ متجرك مباشرة."}</Text>
   </View>
   <View style={styles.formCard}>
   {restoring||loading?<ActivityIndicator accessibilityLabel="جارٍ التحقق من بيانات الطلب"/>:null}
   {!authenticated&&!restoring?<View style={styles.content}>
-   <Text style={styles.cardTitle}>{mode==="register"?"إنشاء حساب":mode==="recover"?"استعادة كلمة المرور":"مرحبًا بعودتك"}</Text>
-   <Text style={styles.muted}>{mode==="register"?"أنشئ حسابك الآن. اسم صاحب النشاط يُستكمل بعد الدخول، ويمكن إضافة بريد المتجر لاحقًا (اختياري).":mode==="recover"?"استعد حسابك باستخدام رقم جوالك الموثق.":"استخدم حساب بثواني الحالي لمتابعة طلب متجرك."}</Text>
-   <View style={styles.segment} accessibilityRole="radiogroup">
-    {([{id:"register",label:"إنشاء حساب"},{id:"login",label:"تسجيل الدخول"}] as const).map(item=>
-     <Pressable key={item.id} disabled={busy} accessibilityRole="radio" accessibilityState={{checked:mode===item.id||(mode==="recover"&&item.id==="login"),disabled:busy}} onPress={()=>{setMode(item.id);setProofRequested(false);setCode("");setPassword("");setPasswordConfirmation("");setError("");setNotice("")}} style={[styles.segmentButton,(mode===item.id||(mode==="recover"&&item.id==="login"))&&styles.segmentSelected]}>
-      <Text style={[styles.segmentLabel,(mode===item.id||(mode==="recover"&&item.id==="login"))&&styles.segmentLabelSelected]}>{item.label}</Text>
-     </Pressable>)}
-   </View>
+   <Text style={styles.cardTitle}>{mode==="register"?"بيانات الحساب":mode==="recover"?"استعادة كلمة المرور":"تسجيل الدخول"}</Text>
+   <Text style={styles.muted}>{mode==="register"?"رقم الجوال وكلمة المرور فقط. أكمل اسمك وبيانات متجرك بعد الدخول.":mode==="recover"?"سنرسل رمزًا إلى جوالك الموثق.":"استخدم حساب بثواني الموجود لمتابعة طلب متجرك."}</Text>
    <View style={[styles.fieldRow,!showColumns&&styles.fieldColumn]}>
     <View style={styles.fieldCell}>
      {field("رقم الجوال",phone,(next)=>{setPhone(next);setProofRequested(false);setCode("")},false,"phone-pad")}
     </View>
     {mode!=="recover"?<View style={styles.fieldCell}>
-     {field("كلمة المرور",password,value=>setPassword(limitPasswordInput(value)),true)}
+     {passwordField("كلمة المرور",password,setPassword,showPassword,()=>setShowPassword(current=>!current),mode==="login")}
     </View>:null}
    </View>
    <Text style={styles.muted}>مثال: 777123456 · سيُستخدم الرقم للتحقق من الحساب.</Text>
    {mode==="register"?<>
-    {field("تأكيد كلمة المرور",passwordConfirmation,value=>setPasswordConfirmation(limitPasswordInput(value)),true)}
+    {passwordField("تأكيد كلمة المرور",passwordConfirmation,setPasswordConfirmation,showPasswordConfirmation,()=>setShowPasswordConfirmation(current=>!current))}
     <Text style={styles.muted}>كلمة المرور 8 أحرف بالضبط، وتأكيدها مطابق.</Text>
    </>:null}
    {mode==="recover"&&proofRequested?<>
-    {field("كلمة المرور الجديدة",password,value=>setPassword(limitPasswordInput(value)),true)}
-    {field("تأكيد كلمة المرور",passwordConfirmation,value=>setPasswordConfirmation(limitPasswordInput(value)),true)}
+    {passwordField("كلمة المرور الجديدة",password,setPassword,showPassword,()=>setShowPassword(current=>!current))}
+    {passwordField("تأكيد كلمة المرور",passwordConfirmation,setPasswordConfirmation,showPasswordConfirmation,()=>setShowPasswordConfirmation(current=>!current))}
    </>:null}
-   {!passwordShape.valid&&(mode==="login"?password.length>0:passwordConfirmation.length>0)?<Text style={styles.muted}>{passwordShape.message}</Text>:null}
+   {passwordShape.code==="MISMATCH"&&Array.from(passwordConfirmation).length===8?<Text accessibilityRole="alert" style={styles.error}>كلمتا المرور غير متطابقتين. اضغط على رمز العين لمراجعة القيمتين.</Text>:null}
+   {!passwordShape.valid&&(mode==="login"?password.length>0:passwordConfirmation.length>0)&&passwordShape.code!=="MISMATCH"?<Text style={styles.muted}>{passwordShape.message}</Text>:null}
+   {needsProof&&passwordShape.valid&&passwordConfirmation.length>0?<Text style={styles.muted}>كلمتا المرور متطابقتان.</Text>:null}
    {needsProof&&proofRequested?<View style={{gap:8}}>
     <Text style={styles.muted}>أدخل رمز التحقق المرسل إلى جوالك لإكمال {mode==="register"?"إنشاء الحساب":"استعادة الحساب"}.</Text>
     {field("رمز التحقق",code,value=>setCode(toAsciiDigits(value).replace(/\D/g,"").slice(0,6)),false,"numeric")}
@@ -353,8 +373,10 @@ export function ProspectivePartnerApplication(){
    {needsProof&&proofRequested?<Pressable accessibilityRole="button" disabled={busy||!phoneReady||(mode==="register"&&!passwordShape.valid)} onPress={()=>void requestProof()}>
     <Text style={[styles.text,{color:theme.actionBackground,textAlign:"center"}]}>إعادة إرسال رمز التحقق</Text>
    </Pressable>:null}
-   {mode==="login"?<Pressable accessibilityRole="button" disabled={busy} onPress={()=>{setMode("recover");setProofRequested(false);setCode("");setPassword("");setPasswordConfirmation("");setError("");setNotice("")}}><Text style={[styles.text,{color:theme.actionBackground,textAlign:"center"}]}>نسيت كلمة المرور؟</Text></Pressable>:null}
-   {mode==="recover"?<Pressable accessibilityRole="button" disabled={busy} onPress={()=>{setMode("login");setProofRequested(false);setCode("");setPassword("");setPasswordConfirmation("");setError("");setNotice("")}}><Text style={[styles.text,{color:theme.actionBackground,textAlign:"center"}]}>العودة لتسجيل الدخول</Text></Pressable>:null}
+   {mode==="register"?<Pressable accessibilityRole="button" disabled={busy} onPress={()=>{setMode("login");setProofRequested(false);setCode("");setPassword("");setPasswordConfirmation("");setShowPassword(false);setShowPasswordConfirmation(false);setError("");setNotice("")}}><Text style={[styles.text,{color:theme.actionBackground,textAlign:"center"}]}>لديك حساب؟ تسجيل الدخول</Text></Pressable>:null}
+   {mode==="login"?<Pressable accessibilityRole="button" disabled={busy} onPress={()=>{setMode("recover");setProofRequested(false);setCode("");setPassword("");setPasswordConfirmation("");setShowPassword(false);setShowPasswordConfirmation(false);setError("");setNotice("")}}><Text style={[styles.text,{color:theme.actionBackground,textAlign:"center"}]}>نسيت كلمة المرور؟</Text></Pressable>:null}
+   {mode==="login"?<Pressable accessibilityRole="button" disabled={busy} onPress={()=>{setMode("register");setProofRequested(false);setCode("");setPassword("");setPasswordConfirmation("");setShowPassword(false);setShowPasswordConfirmation(false);setError("");setNotice("")}}><Text style={[styles.text,{color:theme.actionBackground,textAlign:"center"}]}>ليس لديك حساب؟ إنشاء حساب</Text></Pressable>:null}
+   {mode==="recover"?<Pressable accessibilityRole="button" disabled={busy} onPress={()=>{setMode("login");setProofRequested(false);setCode("");setPassword("");setPasswordConfirmation("");setShowPassword(false);setShowPasswordConfirmation(false);setError("");setNotice("")}}><Text style={[styles.text,{color:theme.actionBackground,textAlign:"center"}]}>العودة لتسجيل الدخول</Text></Pressable>:null}
   </View>:null}
   {authenticated&&!caseValue&&!hasRead&&!loading?<View style={{gap:8}}><Text accessibilityRole="alert" style={styles.muted}>تعذر التحقق من وجود طلب سابق. لن يتاح إنشاء طلب آخر قبل قراءة حالتك من المنصة.</Text><BthwaniButton label="إعادة التحقق من طلب الانضمام" variant="secondary" onPress={()=>void load()} disabled={busy}/></View>:null}
   {authenticated&&caseValue?<View style={styles.content}>
@@ -394,27 +416,53 @@ export function ProspectivePartnerApplication(){
    <BthwaniButton label="تحديث حالة الطلب" variant="secondary" onPress={()=>void load()} disabled={loading}/>
   </View>:null}
   {authenticated&&!caseValue&&hasRead&&!loading?<View style={styles.content}>
-   <View style={styles.stepPill}><Text style={styles.stepLabel}>{intakeStep==="basics"?"الخطوة ١ من ٢":"الخطوة ٢ من ٢"}</Text></View>
-   {intakeStep==="basics"?<>
-   <Text style={styles.cardTitle}>عرّفنا بمتجرك</Text>
-   <Text style={styles.muted}>بيانات أساسية لإرسال طلبك إلى قسم الشراكات.</Text>
-   {manualContactFallback?field("رقم الهاتف المرتبط بحسابك",phone,setPhone,false,"phone-pad"):<View style={{gap:4}}><Text style={styles.text}>رقم جوالك الموثق</Text><Text selectable style={styles.text}>{verifiedContactPhone||"جارٍ التحقق من رقم الحساب"}</Text></View>}
-   <Text style={styles.muted}>{manualContactFallback?"أدخل الرقم الذي سجلت به الدخول؛ سيطابقه النظام مع هويتك.":"يُستخدم رقم حسابك الموثق تلقائيًا، دون إدخاله مرة ثانية."}</Text>
-   {field("الاسم الكامل لصاحب النشاط",ownerName,setOwnerName)}
-   {field("اسم النشاط والمتجر",storeName,setStoreName)}
-   {field("عنوان المتجر",address,setAddress)}
-   {registrySelect("city","مدينة الخدمة",cities.map(c=>({id:c.id,label:c.displayNameAr})),city,setCity)}
-   {registrySelect("vertical","المجال التجاري",verticals.map(v=>({id:v.id,label:v.nameAr})),vertical,setVertical)}
-   {registrySelect("storeType","نوع المتجر",types.filter(t=>t.verticalId===vertical).map(t=>({id:t.id,label:t.nameAr})),storeType,setStoreType)}
-   <BthwaniButton label="متابعة إلى الموقع والإثبات" disabled={busy||loading} onPress={()=>{
-    if(!/^\+[1-9]\d{7,14}$/.test(manualContactFallback?normalizeYemenPhoneE164(phone):verifiedContactPhone)||ownerName.trim().length<2||storeName.trim().length<2||address.trim().length<4||!city||!vertical||!storeType||!types.some(t=>t.id===storeType&&t.verticalId===vertical)){
-     setError("أدخل رقم هاتف حسابك واسم المالك والنشاط والعنوان، وحدد مدينة الخدمة والمجال ونوع المتجر.");return;
-    }
-    setError("");setIntakeStep("details");
-   }}/>
-   </>:<>
-   <Text style={styles.cardTitle}>أكمل الموقع والإثبات</Text>
-   <BthwaniButton label="العودة إلى معلومات النشاط" variant="secondary" onPress={()=>{setError("");setIntakeStep("basics")}} disabled={busy}/>
+   <Text style={styles.cardTitle}>إعداد متجرك</Text>
+   <Text style={styles.muted}>أكمل الخطوات بالترتيب. يمكن الرجوع لتعديل البيانات قبل إرسال طلب الانضمام.</Text>
+   <View style={styles.stepRow} accessibilityLabel="خطوات إعداد المتجر">
+    {JOINING_STEPS.map((step,index)=>{
+     const current=JOINING_STEPS.findIndex(item=>item.id===intakeStep);
+     const isActive=index===current;
+     const isDone=index<current;
+     return <View key={step.id} style={[styles.stepItem,isActive&&styles.stepCurrent,isDone&&styles.stepDone]}>
+      <View style={[styles.stepCircle,isActive&&styles.stepCircleCurrent,isDone&&styles.stepCircleDone]}>
+       <Text style={[styles.stepNumber,isActive&&styles.stepNumberCurrent,isDone&&styles.stepNumberDone]}>{isDone?"✓":index+1}</Text>
+      </View>
+      <Text style={[styles.stepName,isActive&&styles.stepNameCurrent]}>{step.label}</Text>
+     </View>;
+    })}
+   </View>
+   {intakeStep==="identity"?<>
+    <Text style={styles.cardTitle}>هوية المتجر</Text>
+    <Text style={styles.muted}>بيانات المتجر وصاحب النشاط، ولا تحتاج إلى إنشاء حساب آخر.</Text>
+    {manualContactFallback?field("رقم الجوال المرتبط بحسابك",phone,setPhone,false,"phone-pad"):<View style={styles.statusPanel}><Text style={styles.label}>رقم الجوال الموثق</Text><Text selectable style={styles.text}>{verifiedContactPhone||"جارٍ التحقق من الحساب"}</Text></View>}
+    {field("اسم المتجر",storeName,setStoreName)}
+    {field("اسم صاحب النشاط",ownerName,setOwnerName)}
+    <BthwaniButton label="التالي: نوع النشاط" disabled={busy||loading} onPress={()=>{
+     const contact=manualContactFallback?normalizeYemenPhoneE164(phone):verifiedContactPhone;
+     if(!/^\+[1-9]\d{7,14}$/.test(contact)||ownerName.trim().length<2||storeName.trim().length<2){
+      setError("أدخل اسم المتجر واسم صاحبه، وتأكد من رقم الجوال المرتبط بحسابك.");return;
+     }
+     setError("");setIntakeStep("category");
+    }}/>
+   </>:null}
+   {intakeStep==="category"?<>
+    <Text style={styles.cardTitle}>نوع النشاط</Text>
+    <Text style={styles.muted}>اختر المدينة والمجال التجاري المناسبين لمتجرك.</Text>
+    {registrySelect("city","مدينة الخدمة",cities.map(c=>({id:c.id,label:c.displayNameAr})),city,setCity)}
+    {registrySelect("vertical","المجال التجاري",verticals.map(v=>({id:v.id,label:v.nameAr})),vertical,setVertical)}
+    {registrySelect("storeType","نوع المتجر",types.filter(t=>t.verticalId===vertical).map(t=>({id:t.id,label:t.nameAr})),storeType,setStoreType)}
+    <BthwaniButton label="التالي: معلومات التواصل" disabled={busy||loading} onPress={()=>{
+     if(!city||!vertical||!storeType||!types.some(t=>t.id===storeType&&t.verticalId===vertical)){
+      setError("اختر مدينة الخدمة والمجال التجاري ونوع المتجر المناسب.");return;
+     }
+     setError("");setIntakeStep("contact");
+    }}/>
+    <BthwaniButton label="السابق" variant="secondary" onPress={()=>{setError("");setIntakeStep("identity")}} disabled={busy}/>
+   </>:null}
+   {intakeStep==="contact"?<>
+    <Text style={styles.cardTitle}>معلومات التواصل والموقع</Text>
+    <Text style={styles.muted}>العنوان وموقع المتجر مطلوبان لمراجعة طلبك؛ صور المتجر والكتالوج تُستكمل بعد الاعتماد.</Text>
+    {field("عنوان المتجر",address,setAddress)}
    <View style={{gap:8}}>
     <Text style={styles.text}>موقع المتجر</Text>
     <Text style={styles.muted}>حدد موقع متجرك على الخريطة؛ لا حاجة لإدخال إحداثيات يدويًا. موقع المتجر ليس موقع هاتفك بالضرورة.</Text>
@@ -433,16 +481,47 @@ export function ProspectivePartnerApplication(){
    <Text style={styles.text}>طريقة التوصيل: {modes.map(mode=>MODES.find(item=>item.id===mode)?.label||mode).join("، ")||"غير محددة"}</Text>
    <BthwaniButton label={showFulfillmentChoices?"إخفاء الخيارات":"تغيير طرق التوصيل والاستلام"} variant="secondary" onPress={()=>setShowFulfillmentChoices(value=>!value)} disabled={busy}/>
    {showFulfillmentChoices?<View style={{gap:6}}><Text style={styles.text}>اختر طريقة واحدة على الأقل</Text>{MODES.map(m=><Pressable key={m.id} disabled={busy} accessibilityRole="checkbox" accessibilityState={{checked:modes.includes(m.id),disabled:busy}} style={[styles.choice,modes.includes(m.id)&&styles.selected]} onPress={()=>setModes(old=>old.includes(m.id)?old.filter(x=>x!==m.id):[...old,m.id])}><Text style={styles.text}>{modes.includes(m.id)?"✓ ":""}{m.label}</Text></Pressable>)}</View>:null}
-   <BthwaniButton label="إرسال طلب انضمام الشريك" disabled={busy} onPress={()=>void submit()}/>
-   </>}
+
+    <BthwaniButton label="مراجعة بيانات الطلب" disabled={busy||loading} onPress={()=>{
+     if(address.trim().length<4||!selectedOrigin||!proofNumber.trim()||modes.length===0){
+      setError("أدخل عنوان المتجر وحدد موقعه ورقم الوثيقة وطريقة التوصيل.");return;
+     }
+     setError("");setIntakeStep("review");
+    }}/>
+    <BthwaniButton label="السابق" variant="secondary" onPress={()=>{setError("");setIntakeStep("category")}} disabled={busy}/>
+   </>:null}
+   {intakeStep==="review"?<>
+    <Text style={styles.cardTitle}>راجع طلب متجرك</Text>
+    <Text style={styles.muted}>ستُرسل البيانات إلى قسم الشراكات للمراجعة، ولن يُنشر المتجر أو تُفعّل صلاحيات الشريك قبل الاعتماد.</Text>
+    <View style={styles.statusPanel}>
+     <Text style={styles.statusTitle}>هوية المتجر</Text>
+     <Text style={styles.text}>اسم المتجر: {storeName.trim()}</Text>
+     <Text style={styles.text}>صاحب النشاط: {ownerName.trim()}</Text>
+     <BthwaniButton label="تعديل هوية المتجر" variant="secondary" onPress={()=>setIntakeStep("identity")} disabled={busy}/>
+    </View>
+    <View style={styles.statusPanel}>
+     <Text style={styles.statusTitle}>نوع النشاط</Text>
+     <Text style={styles.text}>{cities.find(x=>x.id===city)?.displayNameAr||city} · {verticals.find(x=>x.id===vertical)?.nameAr||vertical}</Text>
+     <Text style={styles.text}>{types.find(x=>x.id===storeType)?.nameAr||storeType}</Text>
+     <BthwaniButton label="تعديل نوع النشاط" variant="secondary" onPress={()=>setIntakeStep("category")} disabled={busy}/>
+    </View>
+    <View style={styles.statusPanel}>
+     <Text style={styles.statusTitle}>معلومات التواصل والموقع</Text>
+     <Text style={styles.text}>{address.trim()}</Text>
+     <Text style={styles.text}>الموقع: {selectedOrigin?"محدد":"غير محدد"} · الإثبات: {PROOFS.find(x=>x.id===proofType)?.label}</Text>
+     <Text style={styles.text}>التوصيل: {modes.map(x=>MODES.find(m=>m.id===x)?.label||x).join("، ")}</Text>
+     <BthwaniButton label="تعديل معلومات التواصل" variant="secondary" onPress={()=>setIntakeStep("contact")} disabled={busy}/>
+    </View>
+    <BthwaniButton label="إرسال طلب الانضمام" disabled={busy||loading} onPress={()=>void submit()}/>
+    <BthwaniButton label="السابق" variant="secondary" onPress={()=>setIntakeStep("contact")} disabled={busy}/>
+   </>:null}
   </View>:null}
   {notice?<Text accessibilityRole="text" style={styles.notice}>{notice}</Text>:null}
   {error?<Text accessibilityRole="alert" style={styles.error}>{error}</Text>:null}
   </View>
-  <View style={styles.footer}>
+  {authenticated?<View style={styles.footer}>
    {authenticated?<BthwaniButton label="تسجيل الخروج من حساب المتقدم" variant="secondary" onPress={()=>void logoutProspect()} disabled={busy}/>:null}
-   <BthwaniButton label="العودة لتسجيل دخول الشريك" onPress={()=>router.replace("/")} variant="secondary"/>
-   <Text style={styles.footerText}>بياناتك محفوظة ضمن طلب الانضمام، ولا يُنشر المتجر قبل استكمال الاعتماد والجاهزية.</Text>
-  </View>
+   <Text style={styles.muted}>إعداد المتجر لا يمنح صلاحيات الشريك قبل الاعتماد، ولا ينشر المتجر تلقائيًا.</Text>
+  </View>:null}
  </ScrollView>;
 }
