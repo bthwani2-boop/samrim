@@ -128,14 +128,14 @@ func (s *StorePublicationServer) listForOperator(w http.ResponseWriter, r *http.
 		}
 		limit = parsed
 	}
-	page, err := s.service.ListForOperator(r.Context(), r.URL.Query().Get("state"), r.URL.Query().Get("q"), r.URL.Query().Get("serviceCityId"), r.URL.Query().Get("searchMode"), r.URL.Query().Get("sort"), actingActorID, limit, r.URL.Query().Get("cursor"))
+	page, err := s.service.ListForOperator(r.Context(), r.URL.Query().Get("state"), r.URL.Query().Get("q"), r.URL.Query().Get("serviceCityId"), r.URL.Query().Get("searchMode"), r.URL.Query().Get("sort"), actingActorID, limit, r.URL.Query().Get("cursor"), r.URL.Query().Get("relationModel"))
 	if err != nil {
 		writeStorePublicationError(w, err)
 		return
 	}
 	stores := make([]contract.OperatorStoreSummary, 0, len(page.Stores))
 	for _, store := range page.Stores {
-		stores = append(stores, contract.OperatorStoreSummary{ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, PartnerName: store.PartnerName, ServiceCityName: store.ServiceCityName, PrimaryVerticalName: store.PrimaryVerticalName, StoreProfileImage: toStoreProfileImageURI(store.StoreProfileImageURI), StoreCoverImage: toStoreCoverImageURI(store.StoreCoverImageURI), CommercialStoreTypeNameAr: store.CommercialStoreTypeNameAr, DeliveryOrigin: operatorStoreDeliveryOrigin(store), ServiceCityID: store.ServiceCityID, PrimaryVerticalID: store.PrimaryVerticalID, CommercialStoreTypeID: nullableString(store.CommercialStoreTypeID), Version: store.Version, PublicationState: contract.PublicationState(store.PublicationState), FulfillmentModes: toStoreFulfillmentModes(store.FulfillmentModes), CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt})
+		stores = append(stores, contract.OperatorStoreSummary{ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, PartnerName: store.PartnerName, ServiceCityName: store.ServiceCityName, PrimaryVerticalName: store.PrimaryVerticalName, StoreProfileImage: toStoreProfileImageURI(store.StoreProfileImageURI), StoreCoverImage: toStoreCoverImageURI(store.StoreCoverImageURI), CommercialStoreTypeNameAr: store.CommercialStoreTypeNameAr, DeliveryOrigin: operatorStoreDeliveryOrigin(store), ServiceCityID: store.ServiceCityID, PrimaryVerticalID: store.PrimaryVerticalID, CommercialStoreTypeID: nullableString(store.CommercialStoreTypeID), Version: store.Version, PublicationState: contract.PublicationState(store.PublicationState), RelationModel: store.RelationModel, FulfillmentModes: toStoreFulfillmentModes(store.FulfillmentModes), CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt})
 	}
 	writeJSON(w, http.StatusOK, contract.OperatorStoreListResponse{Stores: stores, NextCursor: page.NextCursor})
 }
