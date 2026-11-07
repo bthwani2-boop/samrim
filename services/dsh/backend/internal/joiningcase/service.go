@@ -77,6 +77,7 @@ func (s *Service) CreateFirstStore(ctx context.Context, accessToken string, inpu
 		modes[i] = string(mode)
 	}
 	return postgres.CreateFirstStoreForPartner(ctx, s.db, identity.Subject, postgres.SelfStoreInput{
+		RelationModel:    input.RelationModel,
 		Name:             input.Name,
 		ServiceCityID:    input.ServiceCityID,
 		VerticalID:       input.PrimaryVerticalID,

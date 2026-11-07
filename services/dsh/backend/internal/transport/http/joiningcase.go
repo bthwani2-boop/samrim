@@ -112,7 +112,7 @@ func (s *JoiningCaseServer) createPartnerFirstStore(w http.ResponseWriter, r *ht
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, status, contract.PartnerFirstStoreCreateResponse{
-		StoreID: store.ID, PublicationState: store.PublicationState, Replayed: replayed,
+		StoreID: store.ID, PublicationState: store.PublicationState, RelationModel: store.RelationModel, Replayed: replayed,
 	})
 }
 

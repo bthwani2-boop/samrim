@@ -20,6 +20,7 @@ var (
 )
 
 type SelfStoreInput struct {
+	RelationModel    string
 	Name             string
 	ServiceCityID    string
 	VerticalID       string
@@ -42,6 +43,14 @@ func CreateFirstStoreForPartner(ctx context.Context, db *sql.DB, actorID string,
 	input.VerticalID = strings.TrimSpace(input.VerticalID)
 	input.CommercialTypeID = strings.TrimSpace(input.CommercialTypeID)
 	input.Address = strings.TrimSpace(input.Address)
+	input.RelationModel = strings.TrimSpace(input.RelationModel)
+	if input.RelationModel == "" {
+		// Older Partner clients are the admitted marketplace path.
+		input.RelationModel = StoreRelationBThwaniPartner
+	}
+	if input.RelationModel != StoreRelationBThwaniPartner && input.RelationModel != StoreRelationIndependent {
+		return StoreRecord{}, false, ErrSelfStoreInput
+	}
 	if db == nil || actorID == "" || len(actorID) > 128 ||
 		utf8.RuneCountInString(input.Name) < 2 || utf8.RuneCountInString(input.Name) > 160 ||
 		utf8.RuneCountInString(input.Address) < 4 || utf8.RuneCountInString(input.Address) > 500 ||
@@ -53,20 +62,23 @@ func CreateFirstStoreForPartner(ctx context.Context, db *sql.DB, actorID string,
 		return StoreRecord{}, false, ErrSelfStoreInput
 	}
 	input.FulfillmentModes = modes
+	if input.RelationModel == StoreRelationIndependent {
+		for _, mode := range modes {
+			if mode == "BTHWANI_CAPTAIN" {
+				// A merchant-direct Store cannot request BThwani dispatch.
+				return StoreRecord{}, false, ErrSelfStoreInput
+			}
+		}
+	}
 	lat, lon, err := normalizeLocation(input.Latitude, input.Longitude)
 	if err != nil {
 		return StoreRecord{}, false, ErrSelfStoreInput
 	}
 	input.Latitude, input.Longitude = lat, lon
-	canonical, err := json.Marshal(struct {
-		Owner string
-		Input SelfStoreInput
-	}{actorID, input})
+	storeID, err := firstStoreDeterministicID(actorID, input)
 	if err != nil {
 		return StoreRecord{}, false, err
 	}
-	sum := sha256.Sum256(canonical)
-	storeID := "store_" + hex.EncodeToString(sum[:16])
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return StoreRecord{}, false, err
@@ -95,10 +107,10 @@ func CreateFirstStoreForPartner(ctx context.Context, db *sql.DB, actorID string,
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.stores
 	(id,partner_actor_id,name,service_city_id,primary_vertical_id,commercial_store_type_id,address_text,
-	delivery_origin_latitude,delivery_origin_longitude,delivery_origin_version,delivery_origin_updated_at,fulfillment_modes)
-	VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,1,clock_timestamp(),$10)`,
+	delivery_origin_latitude,delivery_origin_longitude,delivery_origin_version,delivery_origin_updated_at,fulfillment_modes,relation_model)
+	VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,1,clock_timestamp(),$10,$11)`,
 		storeID, actorID, input.Name, input.ServiceCityID, input.VerticalID, input.CommercialTypeID,
-		input.Address, lat, lon, pq.Array(input.FulfillmentModes)); err != nil {
+		input.Address, lat, lon, pq.Array(input.FulfillmentModes), input.RelationModel); err != nil {
 		return StoreRecord{}, false, fmt.Errorf("create self-service Store: %w", err)
 	}
 	// No invented opening hours. Store readiness and orderability remain false
@@ -114,4 +126,37 @@ func CreateFirstStoreForPartner(ctx context.Context, db *sql.DB, actorID string,
 	}
 	record, err := ReadStoreOwnedByPartner(ctx, db, storeID, actorID)
 	return record, false, err
+}
+
+// firstStoreDeterministicID preserves the byte-for-byte legacy marketplace
+// Store IDs for callers created before relation_model existed. A newly chosen
+// independent Store includes its relationship in the hash, never aliasing a
+// marketplace Store with the same owner and facts.
+func firstStoreDeterministicID(actorID string, input SelfStoreInput) (string, error) {
+	legacy := struct {
+		Name             string
+		ServiceCityID    string
+		VerticalID       string
+		CommercialTypeID string
+		Address          string
+		Latitude         float64
+		Longitude        float64
+		FulfillmentModes []string
+	}{
+		input.Name, input.ServiceCityID, input.VerticalID, input.CommercialTypeID,
+		input.Address, input.Latitude, input.Longitude, input.FulfillmentModes,
+	}
+	var hashFacts any = legacy
+	if input.RelationModel == StoreRelationIndependent {
+		hashFacts = input
+	}
+	canonical, err := json.Marshal(struct {
+		Owner string
+		Input any
+	}{actorID, hashFacts})
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(canonical)
+	return "store_" + hex.EncodeToString(sum[:16]), nil
 }
