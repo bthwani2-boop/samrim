@@ -20,6 +20,7 @@ import { ClientShareSheet, type ClientShareTarget } from "../sharing/client-shar
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
 import { PromotionCard } from "./promotion-card";
 import { summarizeStoreAvailability } from "./store-availability-summary";
+import { storeReadFailureKind } from "./store-read-state";
 import { addCatalogOfferToCart, listFavoriteStoreIDs, listFavoriteStoreOfferIDs, listPublicStoreBanners, listPublicPromotions, readFavoriteStoreCatalog, readOwnStoreCart, readPublicStoreCatalog, readPublicStoreOrderability, readPublishedStore, setFavoriteStore, setFavoriteStoreOffer } from "./store-discovery-client";
 import type { GallerySourceRect } from "./store-product-gallery";
 import { StoreProductSheet } from "./store-product-sheet";
@@ -29,7 +30,8 @@ import { buildPublicStoreShareURL, buildStoreSharePath } from "./store-share-lin
 type DetailState =
   | { kind: "loading" }
   | { kind: "ready"; store: PublicStoreView; catalog: PublicCatalogResponse }
-  | { kind: "error" };
+  | { kind: "error" }
+  | { kind: "unavailable" };
 
 type StoreBannerItem = Readonly<{ key: string; content: PublicDiscoveryContentView }>;
 
@@ -240,10 +242,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       });
       void promotionRequest;
       void contentRequest;
-    } catch {
+    } catch (error) {
       if (requestID !== storeRequestID.current) return;
       setPromotionLoading(false);
-      setState({ kind: "error" });
+      setState({ kind: storeReadFailureKind(error) });
     }
   }, [categoryId, productId, selectedCityID, storeId]);
 
@@ -404,8 +406,11 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   if (state.kind === "loading") {
     return <View style={styles.state} accessibilityLabel="جارٍ تجهيز المتجر"><BthwaniSkeleton width="30%" height={28} /><BthwaniSkeleton height={92} /><BthwaniSkeleton height={160} /><BthwaniSkeleton height={160} /></View>;
   }
+  if (state.kind === "unavailable") {
+    return <View style={styles.state} accessibilityLabel="المتجر غير متاح"><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>هذا المتجر غير متاح</Text><Text style={styles.muted}>لا يمكن عرض المتجر حاليًا. قد يكون غير منشور أو خارج نطاق مدينة الخدمة.</Text><BthwaniButton label="العودة إلى المتاجر" onPress={() => router.replace("/home" as Href)} variant="secondary" /></View>;
+  }
   if (state.kind === "error") {
-    return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر قراءة المتجر</Text><Text style={styles.muted}>قد لا يكون المتجر متاحًا في مدينة الخدمة الحالية.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /><BthwaniButton label="العودة" onPress={() => router.back()} variant="secondary" /></View>;
+    return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر قراءة المتجر</Text><Text style={styles.muted}>تعذر الاتصال ببيانات المتجر. تحقق من اتصالك وأعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /><BthwaniButton label="العودة إلى المتاجر" onPress={() => router.replace("/home" as Href)} variant="secondary" /></View>;
   }
 
   const heroImageURI = !failedStoreCover ? state.store.storeCoverImage?.uri : undefined;
