@@ -1,4 +1,4 @@
-import { createDshMobileClient, type CommerceVertical, type CommercialStoreType, type ServiceCity, type StoreFulfillmentMode } from "@bthwani/dsh";
+import { createDshMobileClient, type CommerceVertical, type CommercialStoreType, type ServiceCity, type StoreFulfillmentMode, type StoreJoiningOption } from "@bthwani/dsh";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { BthwaniMapCoordinate, BthwaniMapProps } from "@bthwani/design-system/native/map";
 import { type Href, useRouter } from "expo-router";
@@ -18,7 +18,10 @@ function ascii(v:string){
 function errorText(e:unknown){
  if(e&&typeof e==="object"&&"status" in e){
   const status=(e as {status?:number}).status;
-  if(status===409)return "متجرك موجود بالفعل. افتح لوحة التحكم أو أعد قراءة المتاجر.";
+  if(status===409){
+   const code="code" in e?(e as {code?:unknown}).code:undefined;
+   return code==="STORE_JOINING_CLOSED"?"هذا النوع من المتاجر غير متاح للانضمام حاليًا. حدّث الخيارات وحاول مجددًا.":"متجرك موجود بالفعل أو تغيرت سياسة الانضمام. حدّث الصفحة واقرأ المتاجر.";
+  }
   if(status===401||status===403)return "انتهت صلاحية الدخول أو الحساب غير مخوّل. سجّل الدخول مجددًا.";
  }
  return "تعذر حفظ المتجر الآن. تحقق من اتصال الخدمة وحاول مجددًا دون إدخال متجر جديد.";
@@ -42,6 +45,7 @@ export default function PartnerStoreSetup(){
  const [cities,setCities]=useState<readonly ServiceCity[]>([]);
  const [verticals,setVerticals]=useState<readonly CommerceVertical[]>([]);
  const [types,setTypes]=useState<readonly CommercialStoreType[]>([]);
+ const [joiningPolicies,setJoiningPolicies]=useState<readonly StoreJoiningOption[]>([]);
  const [modes,setModes]=useState<StoreFulfillmentMode[]>(["BTHWANI_CAPTAIN"]);
  const [lat,setLat]=useState("");
  const [lng,setLng]=useState("");
@@ -67,7 +71,12 @@ export default function PartnerStoreSetup(){
    const token=await getUsableIdentityAccessToken();
    const page=await service().listPartnerAccessibleStores(token,1);
    if(page.stores.length>0){router.replace("/more" as Href);return;}
-   const [availableCities,availableVerticals]=await Promise.all([service().listActiveServiceCities(),service().listCatalogVerticals()]);
+   const [availableCities,availableVerticals,policyReadback]=await Promise.all([
+    service().listActiveServiceCities(),
+    service().listCatalogVerticals(),
+    service().listStoreJoiningPolicies(),
+   ]);
+   setJoiningPolicies(policyReadback.items);
    setCities(availableCities);setVerticals(availableVerticals);
    if(availableCities.length===1)setCity(availableCities[0]!.id);
    if(availableVerticals.length===1)setVertical(availableVerticals[0]!.id);
@@ -165,8 +174,9 @@ export default function PartnerStoreSetup(){
     </View>
     {step===0?<View style={{gap:10}}>
      <Text style={s.title}>طريقة تشغيل المتجر</Text>
+     {!joiningPolicies.some(policy=>policy.enrollmentEnabled)?<Text style={s.error}>إنشاء متاجر جديدة متوقف حاليًا. إذا كان لديك متجر قائم فادخل من لوحة متاجرك.</Text>:null}
      <Text style={s.small}>المتجر نفسه وصفحاته ومنتجاته. يمكنك اختيار شراكة بثواني أو متجر ويب خاص، دون إنشاء حساب آخر.</Text>
-     {([["BTHWANI_PARTNER","انضم إلى بثواني","اعرض متجرك لعملاء بثواني بعد مراجعة الاتفاق والتفعيل."],["INDEPENDENT_STORE","أنشئ متجرك الخاص","متجر ويب مستقل؛ تتولى البيع والتوصيل والدفع بنفسك. نشر الرابط المباشر لا يزال قيد التجهيز."]] as const).map(([id,title,description])=><Pressable
+     {([["BTHWANI_PARTNER","انضم إلى بثواني","اعرض متجرك لعملاء بثواني بعد مراجعة الاتفاق والتفعيل."],["INDEPENDENT_STORE","أنشئ متجرك الخاص","متجر ويب مستقل؛ تتولى البيع والتوصيل والدفع بنفسك. نشر الرابط المباشر لا يزال قيد التجهيز."]] as const).filter(([id])=>joiningPolicies.some(policy=>policy.relationModel===id&&policy.enrollmentEnabled)).map(([id,title,description])=><Pressable
        key={id} accessibilityRole="radio" accessibilityState={{checked:relation===id}} disabled={busy}
        style={[s.option,relation===id&&s.chosen]}
        onPress={()=>{setModes(current=>firstStoreModesForRelation(relation,id,current));setRelation(id);}}>

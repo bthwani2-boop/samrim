@@ -102,6 +102,16 @@ func CreateFirstStoreForPartner(ctx context.Context, db *sql.DB, actorID string,
 	if !errors.Is(err, sql.ErrNoRows) {
 		return StoreRecord{}, false, err
 	}
+	// Check admission only for new Stores, after exact-replay readback. Share-lock
+	// serializes policy closure with Store creation and prevents TOCTOU races.
+	var enrollmentEnabled bool
+	if err := tx.QueryRowContext(ctx, `SELECT enrollment_enabled FROM dsh.store_joining_policies
+		WHERE relation_model=$1 FOR SHARE`, input.RelationModel).Scan(&enrollmentEnabled); err != nil {
+		return StoreRecord{}, false, fmt.Errorf("read Store joining policy: %w", err)
+	}
+	if !enrollmentEnabled {
+		return StoreRecord{}, false, ErrStoreJoiningClosed
+	}
 	if err := requireActiveJoiningCaseOptionsTx(ctx, tx, input.ServiceCityID, input.VerticalID, input.CommercialTypeID); err != nil {
 		return StoreRecord{}, false, err
 	}

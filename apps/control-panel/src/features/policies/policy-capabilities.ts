@@ -7,6 +7,12 @@ import type { OperationalIconName } from "../../shell/workspace-icon";
  */
 export const policyCapabilities = [
   {
+    key: "store-joining", href: "/policies?group=commercial&policy=store-joining&action=manage", label: "انضمام المتاجر",
+    description: "فتح أو إيقاف إنشاء متاجر جديدة لكل نموذج، دون تعطيل المتاجر القائمة أو تجاوز اعتماد النشر.",
+    icon: "pickup", context: "المتاجر والانضمام", summary: "إتاحة الانضمام إلى سوق بثواني أو إنشاء متجر مستقل",
+    scope: "نموذج المتجر", owner: "DSH", createLabel: null, additionalPermission: null, list: null,
+  },
+  {
     key: "store-type-cancellation", href: "/policies?policy=store-type-cancellation&action=manage", label: "إلغاء الطلبات",
     description: "تحديد إمكانية إلغاء العميل قبل قبول المتجر، أو مراجعة العمليات فقط حسب نوع المتجر.",
     icon: "review", context: "أنواع المتاجر", summary: "سياسة الإلغاء حسب نوع المتجر",

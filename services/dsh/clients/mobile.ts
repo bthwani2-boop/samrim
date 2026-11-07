@@ -150,6 +150,12 @@ async function requestWithTimeout<T>(request: (signal: AbortSignal) => Promise<T
   }
 }
 
+export type StoreJoiningOption = Readonly<{
+  relationModel: "BTHWANI_PARTNER" | "INDEPENDENT_STORE";
+  enrollmentEnabled: boolean;
+}>;
+export type PublicStoreJoiningOptions = Readonly<{items:ReadonlyArray<StoreJoiningOption>}>;
+
 export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClientOptions = {}) {
   const timeoutMs = options.timeoutMs ?? 8_000;
   let baseUrl = rawBaseUrl.trim();
@@ -1198,6 +1204,16 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalizedStore || expectedVersion < 1 || fulfillmentModes.length < 1 || fulfillmentModes.length > 2 || new Set(fulfillmentModes).size !== fulfillmentModes.length || fulfillmentModes.some((mode) => mode !== "BTHWANI_CAPTAIN" && mode !== "CUSTOMER_PICKUP")) throw new Error("DSH_STORE_FULFILLMENT_MODES_INVALID");
       const path = dshOperationPaths.setStoreFulfillmentModes.path.replace("{storeId}", encodeURIComponent(normalizedStore));
       return userRequest<StoreFulfillmentModesResponse>(accessToken, path, dshOperationPaths.setStoreFulfillmentModes.method, { fulfillmentModes }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+    },
+    async listStoreJoiningPolicies(): Promise<PublicStoreJoiningOptions> {
+      const result = await publicRequest<PublicStoreJoiningOptions>(dshOperationPaths.listPublicStoreJoiningOptions.path);
+      if (!Array.isArray(result.items) || result.items.length !== 2 ||
+          !result.items.some(item=>item.relationModel==="BTHWANI_PARTNER") ||
+          !result.items.some(item=>item.relationModel==="INDEPENDENT_STORE") ||
+          !result.items.every(item=>typeof item.enrollmentEnabled==="boolean")) {
+        throw new Error("DSH_STORE_JOINING_POLICY_INVALID");
+      }
+      return result;
     },
     async listActiveServiceCities(): Promise<ReadonlyArray<ServiceCity>> {
       return (await publicRequest<ServiceCityListResponse>(dshOperationPaths.listActiveServiceCities.path)).cities;

@@ -52,6 +52,86 @@ paths:
       responses:
         '201': { description: Activated WLT policy and canonical readback. }
         '409': { description: Stale version or idempotency conflict. }
+  /dsh/public/store-joining-policies:
+    get:
+      operationId: listPublicStoreJoiningOptions
+      summary: Public Store enrollment options without operator identities or audit reasons
+      security: []
+      responses:
+        '200':
+          description: Canonical DSH admission availability for each relation
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [relationModel, enrollmentEnabled]
+                      properties:
+                        relationModel: { type: string, enum: [BTHWANI_PARTNER, INDEPENDENT_STORE] }
+                        enrollmentEnabled: { type: boolean }
+        '503': { description: Admission policy unavailable; enrollment fails closed }
+  /dsh/operator/store-joining-policies:
+    get:
+      operationId: listOperatorStoreJoiningPolicies
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ActingActorId' }
+      responses:
+        '200':
+          description: Operator policy and canonical versions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/StoreJoiningPolicy' }
+  /dsh/operator/store-joining-policies/{model}:
+    put:
+      operationId: updateOperatorStoreJoiningPolicy
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ActingActorId' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+        - { $ref: '#/components/parameters/IdempotencyKeyRequired' }
+        - name: model
+          in: path
+          required: true
+          schema: { type: string, enum: [BTHWANI_PARTNER, INDEPENDENT_STORE] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [enrollmentEnabled, expectedVersion, reason]
+              properties:
+                enrollmentEnabled: { type: boolean }
+                expectedVersion: { type: integer, minimum: 1 }
+                reason: { type: string, minLength: 5, maxLength: 500 }
+      responses:
+        '200':
+          description: Authorized mutation and canonical DSH result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [policy]
+                properties:
+                  policy: { $ref: '#/components/schemas/StoreJoiningPolicy' }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
   /dsh/operator/policy-history:
     get:
       operationId: readOperatorPolicyHistory
@@ -1836,6 +1916,27 @@ components:
         contactPhoneE164:
           type: string
           pattern: '^[+][1-9][0-9]{7,14}$'
+
+    StoreJoiningPolicy:
+      type: object
+      additionalProperties: false
+      required: [relationModel, enrollmentEnabled, version, updatedBy, updatedAt, reason]
+      properties:
+        relationModel:
+          type: string
+          enum: [BTHWANI_PARTNER, INDEPENDENT_STORE]
+        enrollmentEnabled:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+        updatedBy:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+        reason:
+          type: string
 
     PartnerFirstStoreCreateRequest:
       type: object

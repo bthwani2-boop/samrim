@@ -15,11 +15,11 @@ func TestStoreRelationMigrationRegisteredAndFailClosed(t *testing.T) {
 	if len(records) != SchemaVersion || len(sqls) != SchemaVersion {
 		t.Fatalf("unexpected migration count: %d / %d", len(records), len(sqls))
 	}
-	last := records[SchemaVersion-1]
+	last := records[171]
 	if last.Version != 172 || last.Name != "172_store_relation_foundation.sql" {
 		t.Fatalf("unexpected store relation migration: %+v", last)
 	}
-	statement := sqls[SchemaVersion-1]
+	statement := sqls[171]
 	for _, required := range []string{
 		"ADD COLUMN relation_model text NOT NULL DEFAULT 'BTHWANI_PARTNER'",
 		"CHECK (relation_model IN ('BTHWANI_PARTNER', 'INDEPENDENT_STORE')) NOT VALID",

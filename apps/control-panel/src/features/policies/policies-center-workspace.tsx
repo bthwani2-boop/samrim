@@ -20,7 +20,7 @@ function matchesPolicyGroup(key: PolicyResourceKey, group:PolicyGroup) {
   if(group==="all")return true;
   if(group==="delivery")return ["delivery-fees","store-type-cancellation"].includes(key);
   if(group==="wallets")return ["wallet-providers","captain-minimum-balance","partner-financial-terms"].includes(key);
-  if(group==="commercial")return ["store-commercial-model","store-type-commission-defaults","store-type-cancellation"].includes(key);
+  if(group==="commercial")return ["store-joining","store-commercial-model","store-type-commission-defaults","store-type-cancellation"].includes(key);
   return key==="service-cities";
 }
 

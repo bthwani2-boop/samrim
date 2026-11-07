@@ -17,7 +17,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 172
+const SchemaVersion = 173
 
 type MigrationRecord struct {
 	Version int
@@ -26,6 +26,8 @@ type MigrationRecord struct {
 }
 
 var requiredTables = []schemaRelationExpectation{
+	{name: "dsh.store_joining_policies", columns: []string{"relation_model", "enrollment_enabled", "version", "updated_by_actor_id", "updated_at", "reason"}, constraints: []string{"store_joining_policies_pkey", "store_joining_policies_relation_model_check", "store_joining_policies_version_check", "store_joining_policies_reason_check"}},
+	{name: "dsh.store_joining_policy_events", columns: []string{"idempotency_key", "relation_model", "request_hash", "expected_version", "result_version", "enrollment_enabled", "actor_id", "reason", "created_at"}, constraints: []string{"store_joining_policy_events_pkey", "store_joining_policy_events_relation_model_fkey", "store_joining_policy_events_expected_version_check", "store_joining_policy_events_result_version_check"}, indexes: []string{"store_joining_policy_events_model_idx"}},
 	{name: "dsh.marketing_studio_layout_events", columns: []string{"idempotency_key", "request_hash", "template_key", "action", "expected_version", "result_version", "source_draft_version", "target_publication_version", "previous_document_json", "result_document_json", "acting_actor_id", "correlation_id", "created_at"}, constraints: []string{"marketing_studio_layout_events_pkey", "marketing_studio_layout_hash_chk", "marketing_studio_layout_action_chk", "marketing_studio_layout_expected_chk", "marketing_studio_layout_result_chk", "marketing_studio_layout_unique_version", "marketing_studio_layout_document_chk"}, indexes: []string{"marketing_studio_layout_recent_idx"}},
 	{name: "dsh.marketing_studio_publication_events", columns: []string{"idempotency_key", "request_hash", "template_key", "action", "expected_version", "result_version", "source_draft_version", "target_publication_version", "previous_palette_json", "result_palette_json", "acting_actor_id", "correlation_id", "created_at"}, constraints: []string{"marketing_studio_publication_events_pkey", "marketing_studio_pub_hash_chk", "marketing_studio_pub_action_chk", "marketing_studio_pub_expected_chk", "marketing_studio_pub_result_chk", "marketing_studio_pub_unique_version", "marketing_studio_pub_palette_chk"}, indexes: []string{"marketing_studio_pub_recent_idx"}},
 	{name: "dsh.marketing_studio_drafts", columns: []string{"template_key", "document_json", "version", "updated_by_actor_id", "updated_at", "published_palette_json", "publication_version", "published_at", "published_by_actor_id", "published_layout_json", "layout_publication_version", "layout_published_at", "layout_published_by_actor_id"}, constraints: []string{"marketing_studio_drafts_pkey", "marketing_studio_draft_key_chk", "marketing_studio_draft_version_chk", "marketing_studio_draft_json_chk", "marketing_studio_publication_version_chk", "marketing_studio_published_palette_chk", "marketing_studio_layout_version_chk", "marketing_studio_layout_json_chk"}},

@@ -33,6 +33,8 @@ func NewOperatorPolicy(identity *identityintegration.Client, accessToken string,
 func (s *OperatorPolicyServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/operator/policy-history", s.readPolicyHistory)
 	mux.HandleFunc("GET /dsh/operator/policy-registry", s.readOperatorPolicyRegistry)
+	mux.HandleFunc("GET /dsh/operator/store-joining-policies", s.readOperatorStoreJoiningPolicies)
+	mux.HandleFunc("PUT /dsh/operator/store-joining-policies/{model}", s.updateOperatorStoreJoiningPolicy)
 }
 
 func (s *OperatorPolicyServer) authorizeOperator(w http.ResponseWriter, r *http.Request) bool {

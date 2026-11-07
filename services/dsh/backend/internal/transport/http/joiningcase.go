@@ -58,6 +58,7 @@ func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/operator/stores/{storeId}/images", s.operatorStoreImages)
 	mux.HandleFunc("POST /dsh/joining-cases", s.create)
 	mux.HandleFunc("POST /dsh/partner/stores/first", s.createPartnerFirstStore)
+	mux.HandleFunc("GET /dsh/public/store-joining-policies", s.readPublicStoreJoiningPolicies)
 	mux.HandleFunc("GET /dsh/partner-applications/self", s.selfServiceApplication)
 	mux.HandleFunc("POST /dsh/partner-applications/self", s.selfServiceApplication)
 	mux.HandleFunc("GET /dsh/partner-applications/self/contact", s.selfServiceApplicantContact)
@@ -79,6 +80,21 @@ func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
 	s.RegisterStoreCommercialAgreementRoutes(mux)
 }
 
+func (s *JoiningCaseServer) readPublicStoreJoiningPolicies(w http.ResponseWriter, r *http.Request) {
+	policies, err := postgres.ReadStoreJoiningPolicies(r.Context(), s.db)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "POLICY_UNAVAILABLE", "Store joining policies are unavailable")
+		return
+	}
+	// Public registration choices must not expose operator actor IDs or policy reasons.
+	options := make([]map[string]any, 0, len(policies))
+	for _, policy := range policies {
+		options = append(options, map[string]any{"relationModel": policy.RelationModel, "enrollmentEnabled": policy.EnrollmentEnabled})
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"items": options})
+}
+
 func (s *JoiningCaseServer) createPartnerFirstStore(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "actor override is forbidden")
@@ -95,6 +111,10 @@ func (s *JoiningCaseServer) createPartnerFirstStore(w http.ResponseWriter, r *ht
 	}
 	store, replayed, err := s.service.CreateFirstStore(r.Context(), token, input)
 	if err != nil {
+		if errors.Is(err, postgres.ErrStoreJoiningClosed) {
+			writeError(w, http.StatusConflict, "STORE_JOINING_CLOSED", "new Stores in the chosen relation are currently unavailable")
+			return
+		}
 		if errors.Is(err, postgres.ErrSelfStoreExists) {
 			writeError(w, http.StatusConflict, "STORE_ALREADY_EXISTS", "use the existing Store")
 			return
