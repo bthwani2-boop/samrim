@@ -151,6 +151,37 @@ func TestMarketingPartnerParticipationSummaryDoesNotTruncateAfter100Campaigns(t 
 		if err != nil || len(currentPending.Items) != 100 {
 			t.Fatalf("pending must exclude ineligible/history-only Stores: count=%d err=%v", len(currentPending.Items), err)
 		}
+		// Only marketplace Stores may receive new invitations. Use a
+		// disposable database to simulate legacy/inconsistent published
+		// independent rows without weakening the persistent schema.
+		beforeRelationChange, err := postgres.ReadOperatorMarketingSummary(ctx, db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, "ALTER TABLE dsh.stores DROP CONSTRAINT stores_independent_market_publication_chk"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.stores SET relation_model=$1 WHERE id IN ('summary-store-extra-000','summary-store-b')", postgres.StoreRelationIndependent); err != nil {
+			t.Fatal(err)
+		}
+		afterRelationChange, err := postgres.ReadOperatorMarketingSummary(ctx, db)
+		if err != nil || beforeRelationChange.PartnerInvitations-afterRelationChange.PartnerInvitations != 105 {
+			t.Fatalf("independent Store must leave active campaign invitations: before=%+v after=%+v err=%v", beforeRelationChange, afterRelationChange, err)
+		}
+		remaining, err := postgres.ListOperatorPartnerDecisions(ctx, db, "summary-promo-000", "", "PENDING", 100)
+		if err != nil || len(remaining.Items) != 100 || remaining.NextCursor != "" {
+			t.Fatalf("independent Store must not enter new invitation pages: %+v err=%v", remaining, err)
+		}
+		for _, item := range remaining.Items {
+			if item.StoreID == "summary-store-extra-000" {
+				t.Fatal("independent Store appeared in marketplace invitation list")
+			}
+		}
+		declinedAfterConversion, err := postgres.ListOperatorPartnerDecisions(ctx, db, "summary-promo-001", "", "DECLINED", 25)
+		if err != nil || len(declinedAfterConversion.Items) != 1 ||
+			declinedAfterConversion.Items[0].StoreID != "summary-store-b" || declinedAfterConversion.Items[0].StorePublished {
+			t.Fatalf("historical decision must survive conversion without marketplace eligibility: %+v err=%v", declinedAfterConversion, err)
+		}
 		if _, err := postgres.ListOperatorPartnerDecisions(ctx, db, "unknown-campaign", "", "", 25); err == nil {
 			t.Fatal("unknown campaign should be rejected")
 		}
