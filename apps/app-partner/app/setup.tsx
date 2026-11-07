@@ -2,11 +2,12 @@ import { createDshMobileClient, type CommerceVertical, type CommercialStoreType,
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { BthwaniMapCoordinate, BthwaniMapProps } from "@bthwani/design-system/native/map";
 import { type Href, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState, type ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, restoreIdentitySession, subscribeIdentitySession } from "../src/bootstrap/identity";
 import { firstStoreFulfillmentLabel, firstStoreModesForRelation, firstStoreRelationCanEnroll, type FirstStoreRelation } from "../src/features/partner-onboarding/first-store-relation-choice";
 import { partnerSetupSessionKey } from "../src/features/partner-onboarding/partner-setup-session-scope";
+import { readPartnerSetupDraft, rememberPartnerSetupDraft, clearPartnerSetupDraft } from "../src/features/partner-onboarding/partner-setup-draft";
 
 type Step = 0|1|2|3;
 type StoreRelationModel = FirstStoreRelation;
@@ -31,7 +32,13 @@ export default function PartnerStoreSetup(){
  const router=useRouter();
  const [actor,setActor]=useState(currentIdentityState);
  const scope=partnerSetupSessionKey(actor);
- useEffect(()=>subscribeIdentitySession(setActor),[]);
+ const lastScope=useRef(scope);
+ useEffect(()=>subscribeIdentitySession(next=>{
+  const nextScope=partnerSetupSessionKey(next);
+  if(nextScope!==lastScope.current)clearPartnerSetupDraft(lastScope.current);
+  lastScope.current=nextScope;
+  setActor(next);
+ }),[]);
  useEffect(()=>{
   if(scope)return;
   let active=true;
@@ -51,32 +58,48 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
  const router=useRouter();
  const theme=useAppearanceTheme();
  const {width}=useWindowDimensions();
+ const restored=useMemo(()=>readPartnerSetupDraft(scope),[scope]);
  const [checking,setChecking]=useState(true);
  const [registryReady,setRegistryReady]=useState(false);
  const [busy,setBusy]=useState(false);
  const [saved,setSaved]=useState("");
  const [error,setError]=useState("");
- const [step,setStep]=useState<Step>(0);
- const [name,setName]=useState("");
- const [relation,setRelation]=useState<StoreRelationModel|"">("");
- const [address,setAddress]=useState("");
- const [city,setCity]=useState("");
- const [vertical,setVertical]=useState("");
- const [storeType,setStoreType]=useState("");
+ const [step,setStep]=useState<Step>(restored?.step??0);
+ const [name,setName]=useState(restored?.name??"");
+ const [relation,setRelation]=useState<StoreRelationModel|"">(restored?.relation??"");
+ const [address,setAddress]=useState(restored?.address??"");
+ const [city,setCity]=useState(restored?.city??"");
+ const [vertical,setVertical]=useState(restored?.vertical??"");
+ const [storeType,setStoreType]=useState(restored?.storeType??"");
  const [cities,setCities]=useState<readonly ServiceCity[]>([]);
  const [verticals,setVerticals]=useState<readonly CommerceVertical[]>([]);
  const [types,setTypes]=useState<readonly CommercialStoreType[]>([]);
- const [typesLoading,setTypesLoading]=useState(false);
+ const [typesLoading,setTypesLoading]=useState(Boolean(restored?.vertical));
  const [typesError,setTypesError]=useState(false);
  const [typesRetry,setTypesRetry]=useState(0);
  const [joiningPolicies,setJoiningPolicies]=useState<readonly StoreJoiningOption[]>([]);
- const [modes,setModes]=useState<StoreFulfillmentMode[]>(["BTHWANI_CAPTAIN"]);
- const [lat,setLat]=useState("");
- const [lng,setLng]=useState("");
+ const [modes,setModes]=useState<StoreFulfillmentMode[]>([...(restored?.modes??["BTHWANI_CAPTAIN"])]);
+ const [lat,setLat]=useState(restored?.lat??"");
+ const [lng,setLng]=useState(restored?.lng??"");
  const [MapComponent,setMapComponent]=useState<ComponentType<BthwaniMapProps>|null>(null);
  const [mapShown,setMapShown]=useState(false);
  const [manualLocation,setManualLocation]=useState(false);
  const mobile=width<720;
+ useEffect(()=>{
+  if(checking||!registryReady||saved||step===0)return;
+  if(!firstStoreRelationCanEnroll(joiningPolicies,relation)){
+   setStep(0);setError("نموذج المتجر لم يعد متاحًا؛ اختر نموذجًا متاحًا بعد تحديث السياسة.");return;
+  }
+  if(step>1&&(!cities.some(item=>item.id===city)||!verticals.some(item=>item.active&&item.id===vertical)
+    ||(!typesLoading&&(typesError||!types.some(type=>type.id===storeType&&type.verticalId===vertical))))){
+   setStep(1);setError("تغيرت خيارات نشاط متجرك. راجع المدينة والنشاط والنوع المتاحين ثم تابع.");
+  }
+ },[checking,registryReady,saved,step,joiningPolicies,relation,cities,city,verticals,vertical,typesLoading,typesError,types,storeType]);
+ useEffect(()=>{
+  // A temporary same-session form draft, never a DSH Store or publication record.
+  if(checking||!registryReady||busy||saved)return;
+  rememberPartnerSetupDraft(scope,{step,name,relation,address,city,vertical,storeType,modes,lat,lng});
+ },[checking,registryReady,busy,saved,scope,step,name,relation,address,city,vertical,storeType,modes,lat,lng]);
  const selected=useMemo<BthwaniMapCoordinate|null>(()=>{
   const a=Number(ascii(lat)),b=Number(ascii(lng));
   if(!lat.trim()||!lng.trim()||!Number.isFinite(a)||!Number.isFinite(b)||a < -90||a >90||b < -180||b >180)return null;
@@ -90,7 +113,7 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
    const token=await getUsableIdentityAccessToken();
    const page=await service().listPartnerAccessibleStores(token,1);
    if(partnerSetupSessionKey(currentIdentityState())!==scope)return;
-   if(page.stores.length>0){router.replace("/more" as Href);return;}
+   if(page.stores.length>0){clearPartnerSetupDraft(scope);router.replace("/more" as Href);return;}
    const [availableCities,availableVerticals,policyReadback]=await Promise.all([
     service().listActiveServiceCities(),
     service().listCatalogVerticals(),
@@ -98,9 +121,11 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
    ]);
    if(partnerSetupSessionKey(currentIdentityState())!==scope)return;
    setJoiningPolicies(policyReadback.items);
+   setRelation(current=>firstStoreRelationCanEnroll(policyReadback.items,current)?current:"");
    setCities(availableCities);setVerticals(availableVerticals);
-   if(availableCities.length===1)setCity(availableCities[0]!.id);
-   if(availableVerticals.length===1)setVertical(availableVerticals[0]!.id);
+   setCity(current=>availableCities.some(item=>item.id===current)?current:availableCities.length===1?availableCities[0]!.id:"");
+   const activeVerticals=availableVerticals.filter(item=>item.active);
+   setVertical(current=>activeVerticals.some(item=>item.id===current)?current:activeVerticals.length===1?activeVerticals[0]!.id:"");
    setRegistryReady(true);
   }catch(e){
    if(partnerSetupSessionKey(currentIdentityState())===scope)setError(errorText(e,"read"));
@@ -113,12 +138,12 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
   if(!vertical){setTypes([]);setStoreType("");setTypesError(false);setTypesLoading(false);return;}
   let active=true;
   setTypes([]);
-  setStoreType("");
   setTypesLoading(true);setTypesError(false);
   void service().listCommercialStoreTypes(vertical).then(values=>{
    if(!active)return;
-   setTypes(values.filter(x=>x.active&&x.verticalId===vertical));
-   if(values.filter(x=>x.active&&x.verticalId===vertical).length===1)setStoreType(values.find(x=>x.active&&x.verticalId===vertical)!.id);
+   const available=values.filter(x=>x.active&&x.verticalId===vertical);
+   setTypes(available);
+   setStoreType(current=>available.some(type=>type.id===current)?current:available.length===1?available[0]!.id:"");
   }).catch(()=>{if(active)setTypesError(true)}).finally(()=>{if(active)setTypesLoading(false)});
   return ()=>{active=false};
  },[vertical,typesRetry]);
@@ -145,6 +170,10 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
   if(!registryReady||!firstStoreRelationCanEnroll(joiningPolicies,relation)){
    setStep(0);setError("تعذر تأكيد إتاحة نموذج المتجر. حدّث الخيارات قبل الإنشاء.");return;
   }
+  if(typesLoading||typesError||!types.some(type=>type.id===storeType&&type.verticalId===vertical)
+   ||!cities.some(item=>item.id===city)||!verticals.some(item=>item.id===vertical&&item.active)){
+   setStep(1);setError("تحقق من المدينة ونوع النشاط وأعد قراءة الخيارات قبل إنشاء المتجر.");return;
+  }
   setBusy(true);setError("");
   const starting=scope;
   try{
@@ -159,6 +188,7 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
    const confirmed=await service().listPartnerAccessibleStores(token,25);
    if(partnerSetupSessionKey(currentIdentityState())!==starting)return;
    if(!confirmed.stores.some(store=>store.id===result.storeId&&store.owned))throw Error("STORE_READBACK_MISMATCH");
+   clearPartnerSetupDraft(scope);
    setSaved(result.storeId);
   }catch(e){
    if(partnerSetupSessionKey(currentIdentityState())===starting)setError(errorText(e));
@@ -194,6 +224,7 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
   <View style={s.card}>
    <Text style={s.heading}>إعداد متجرك في بثواني</Text>
    <Text style={s.small}>يمكنك إنشاء المتجر بنفسك دون طلب انضمام أو انتظار موافقة لإنشاء الحساب.</Text>
+   {restored&&!saved?<Text style={s.small} accessibilityRole="summary">استعدنا بيانات إعدادك غير المحفوظة في جلسة الدخول الحالية. نتحقق من إتاحة الخيارات مجددًا قبل الإنشاء.</Text>:null}
    {checking?<ActivityIndicator accessibilityLabel="التحقق من المتجر"/>:null}
    {!checking&&registryReady&&!saved?<View style={{gap:15}}>
     <View style={s.steps}>
