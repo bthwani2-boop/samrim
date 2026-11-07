@@ -448,6 +448,8 @@ paths:
   /dsh/stores:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores"
 
+  /dsh/partner/stores/first:
+    $ref: "./paths/store-publication.yaml#/paths/~1dsh~1partner~1stores~1first"
   /dsh/operator/stores/trash:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1operator~1stores~1trash"
 
@@ -1831,6 +1833,60 @@ components:
         contactPhoneE164:
           type: string
           pattern: '^[+][1-9][0-9]{7,14}$'
+
+    PartnerFirstStoreCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name, serviceCityId, primaryVerticalId, commercialStoreTypeId, addressText, latitude, longitude, fulfillmentModes]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 160
+        serviceCityId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        primaryVerticalId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        commercialStoreTypeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        addressText:
+          type: string
+          minLength: 4
+          maxLength: 500
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        fulfillmentModes:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/StoreFulfillmentMode"
+
+    PartnerFirstStoreCreateResponse:
+      type: object
+      additionalProperties: false
+      required: [storeId, publicationState, replayed]
+      properties:
+        storeId:
+          type: string
+        publicationState:
+          type: string
+          enum: [unpublished]
+        replayed:
+          type: boolean
 
     CreateJoiningCaseRequest:
       type: object

@@ -17,6 +17,8 @@ paths:
     $ref: "./paths/client-auth.yaml#/paths/~1auth~1client~1registration~1request"
   /auth/client/register:
     $ref: "./paths/client-auth.yaml#/paths/~1auth~1client~1register"
+  /auth/partner/self/register:
+    $ref: "./paths/client-auth.yaml#/paths/~1auth~1partner~1self~1register"
   /auth/client/login:
     $ref: "./paths/client-auth.yaml#/paths/~1auth~1client~1login"
   /auth/client/recovery/request:
@@ -417,6 +419,16 @@ components:
           type: string
           minLength: 8
           maxLength: 8
+        clientInstanceId:
+          type: string
+          minLength: 8
+          maxLength: 256
+
+    PartnerSelfRegistrationRequest:
+      type: object
+      additionalProperties: false
+      required: [clientInstanceId]
+      properties:
         clientInstanceId:
           type: string
           minLength: 8

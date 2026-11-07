@@ -64,6 +64,30 @@ func (s *Service) Create(ctx context.Context, input contract.CreateJoiningCaseRe
 	return postgres.CreateJoiningCase(ctx, s.db, postgres.CreateJoiningCaseInput{IdempotencyKey: strings.TrimSpace(idempotencyKey), RequestHash: requestHash, ActingActorID: strings.TrimSpace(actingActorID), CorrelationID: strings.TrimSpace(correlationID), EvidenceKeyring: s.evidenceKeys, Request: request})
 }
 
+// CreateFirstStore lets an already verified Partner set up their first Store
+// immediately. No joining case is created and no Operator admission is needed.
+// Publication and financial permissions remain independent.
+func (s *Service) CreateFirstStore(ctx context.Context, accessToken string, input contract.PartnerFirstStoreCreateRequest) (postgres.StoreRecord, bool, error) {
+	identity, err := s.requirePartner(ctx, accessToken)
+	if err != nil {
+		return postgres.StoreRecord{}, false, err
+	}
+	modes := make([]string, len(input.FulfillmentModes))
+	for i, mode := range input.FulfillmentModes {
+		modes[i] = string(mode)
+	}
+	return postgres.CreateFirstStoreForPartner(ctx, s.db, identity.Subject, postgres.SelfStoreInput{
+		Name:             input.Name,
+		ServiceCityID:    input.ServiceCityID,
+		VerticalID:       input.PrimaryVerticalID,
+		CommercialTypeID: input.CommercialStoreTypeID,
+		Address:          input.AddressText,
+		Latitude:         input.Latitude,
+		Longitude:        input.Longitude,
+		FulfillmentModes: modes,
+	})
+}
+
 func validJoiningCaseProofType(value string) bool {
 	switch value {
 	case "COMMERCIAL_REGISTRATION", "IDENTITY_DOCUMENT", "FREELANCE_WORK_DOCUMENT", "PASSPORT":

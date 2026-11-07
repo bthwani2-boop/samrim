@@ -57,6 +57,7 @@ func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/images", s.operatorStoreImages)
 	mux.HandleFunc("POST /dsh/operator/stores/{storeId}/images", s.operatorStoreImages)
 	mux.HandleFunc("POST /dsh/joining-cases", s.create)
+	mux.HandleFunc("POST /dsh/partner/stores/first", s.createPartnerFirstStore)
 	mux.HandleFunc("GET /dsh/partner-applications/self", s.selfServiceApplication)
 	mux.HandleFunc("POST /dsh/partner-applications/self", s.selfServiceApplication)
 	mux.HandleFunc("GET /dsh/partner-applications/self/contact", s.selfServiceApplicantContact)
@@ -76,6 +77,43 @@ func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/review", s.review)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/financial-terms", s.bindFinancialTerms)
 	s.RegisterStoreCommercialAgreementRoutes(mux)
+}
+
+func (s *JoiningCaseServer) createPartnerFirstStore(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "actor override is forbidden")
+		return
+	}
+	token := bearerToken(r)
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Partner identity is required")
+		return
+	}
+	var input contract.PartnerFirstStoreCreateRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	store, replayed, err := s.service.CreateFirstStore(r.Context(), token, input)
+	if err != nil {
+		if errors.Is(err, postgres.ErrSelfStoreExists) {
+			writeError(w, http.StatusConflict, "STORE_ALREADY_EXISTS", "use the existing Store")
+			return
+		}
+		if errors.Is(err, postgres.ErrSelfStoreInput) {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Store setup fields are invalid")
+			return
+		}
+		writeJoiningCaseError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if replayed {
+		status = http.StatusOK
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, status, contract.PartnerFirstStoreCreateResponse{
+		StoreID: store.ID, PublicationState: store.PublicationState, Replayed: replayed,
+	})
 }
 
 func (s *JoiningCaseServer) listForOperator(w http.ResponseWriter, r *http.Request) {

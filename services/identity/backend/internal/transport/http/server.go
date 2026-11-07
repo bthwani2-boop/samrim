@@ -51,6 +51,7 @@ func New(actors *actor.Service, authenticationService *authentication.Service, c
 	mux.HandleFunc("GET /identity/readiness", s.readiness)
 	mux.HandleFunc("POST /auth/client/registration/request", s.requestClientRegistration)
 	mux.HandleFunc("POST /auth/client/register", s.registerClient)
+	mux.HandleFunc("POST /auth/partner/self/register", s.registerVerifiedPartner)
 	mux.HandleFunc("POST /auth/client/login", s.loginClient)
 	mux.HandleFunc("POST /auth/client/recovery/request", s.requestClientRecovery)
 	mux.HandleFunc("POST /auth/client/recover", s.recoverClient)
@@ -148,6 +149,42 @@ func (s *Server) registerClient(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeClientAuthenticationResponse(w, r, result, input.ClientInstanceId, http.StatusCreated)
 }
+
+// A verified Client can become a Partner without a staff joining request.
+// The response is scoped to the Partner surface. No Store is published here.
+func (s *Server) registerVerifiedPartner(w http.ResponseWriter, r *http.Request) {
+	if origin := strings.TrimSpace(r.Header.Get("Origin")); origin != "" && !s.partnerWebOriginAllowed(r) {
+		writeDomainError(w, domain.ErrForbidden)
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" {
+		writeDomainError(w, domain.ErrForbidden)
+		return
+	}
+	token, ok := bearerToken(r)
+	if !ok {
+		writeDomainError(w, domain.ErrUnauthenticated)
+		return
+	}
+	var input struct {
+		ClientInstanceId string `json:"clientInstanceId"`
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	pair, err := s.challenges.RegisterVerifiedPartner(r.Context(), token, input.ClientInstanceId)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	if strings.TrimSpace(r.Header.Get("Origin")) != "" {
+		s.setPartnerWebCookiesIfAuthorized(w, r, pair, input.ClientInstanceId)
+		writeJSON(w, http.StatusCreated, clientBrowserAccessPair{AccessToken: pair.AccessToken, AccessExpiry: pair.AccessExpiry, Identity: pair.Identity})
+		return
+	}
+	writeJSON(w, http.StatusCreated, pair)
+}
+
 func (s *Server) loginClient(w http.ResponseWriter, r *http.Request) {
 	if s.rejectUnauthorizedClientBrowserOrigin(w, r) {
 		return

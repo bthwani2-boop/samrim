@@ -32,6 +32,29 @@ paths:
         "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
         "409": { $ref: "../identity.openapi.yaml#/components/responses/Conflict" }
 
+  /auth/partner/self/register:
+    post:
+      tags: [client-auth]
+      operationId: registerVerifiedSelfPartner
+      description: A verified client session may create its own first Partner role without a staff joining request. Existing or disabled Partner roles are never overwritten. No Store is published.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "../identity.openapi.yaml#/components/schemas/PartnerSelfRegistrationRequest" } } }
+      responses:
+        "201":
+          description: Native app receives a Partner token pair; trusted Partner web origin receives a Partner HttpOnly refresh cookie and a refresh-token-free access response.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "../identity.openapi.yaml#/components/schemas/TokenPair"
+                  - $ref: "../identity.openapi.yaml#/components/schemas/ClientBrowserAccessPair"
+        "400": { $ref: "../identity.openapi.yaml#/components/responses/Invalid" }
+        "401": { $ref: "../identity.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../identity.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../identity.openapi.yaml#/components/responses/Conflict" }
+
   /auth/client/login:
     post:
       tags: [client-auth]
