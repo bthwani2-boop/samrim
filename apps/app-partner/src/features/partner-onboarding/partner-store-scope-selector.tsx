@@ -7,7 +7,7 @@ import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 import { usePartnerStoreScope } from "./partner-store-scope-context";
 
-export function PartnerStoreScopeSelector({ requiredPermissions, ownedOnly = false, marketplaceOnly = false }: Readonly<{ requiredPermissions?: ReadonlyArray<StoreAccessPermission>; ownedOnly?: boolean; marketplaceOnly?: boolean }>) {
+export function PartnerStoreScopeSelector({ requiredPermissions, ownedOnly = false, marketplaceOnly = false, independentOnly = false }: Readonly<{ requiredPermissions?: ReadonlyArray<StoreAccessPermission>; ownedOnly?: boolean; marketplaceOnly?: boolean; independentOnly?: boolean }>) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const { state, stores, selectedStore, selectStore, reload } = usePartnerStoreScope();
@@ -15,7 +15,8 @@ export function PartnerStoreScopeSelector({ requiredPermissions, ownedOnly = fal
   const visibleStores = ownedOnly ? stores.filter((store) => store.owned)
     : requiredPermissions ? stores.filter((store) => store.owned || requiredPermissions.some((permission) => store.permissions.includes(permission)))
     : stores;
-  const eligibleStores = marketplaceOnly ? visibleStores.filter((store) => store.relationModel === "BTHWANI_PARTNER") : visibleStores;
+  const eligibleStores = marketplaceOnly ? visibleStores.filter((store) => store.relationModel === "BTHWANI_PARTNER")
+    : independentOnly ? visibleStores.filter((store) => store.relationModel === "INDEPENDENT_STORE" && store.owned) : visibleStores;
   const visibleSelection = eligibleStores.find((store) => store.id === selectedStore?.id);
 
   if (state.kind === "loading") return <View style={styles.card}><ActivityIndicator accessibilityLabel="جارٍ قراءة المتاجر المتاحة" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة المتاجر المتاحة لحسابك…</Text></View>;

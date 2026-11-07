@@ -11,6 +11,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { currentIdentityState, logoutIdentity, subscribeIdentitySession } from "../../bootstrap/identity";
 import { PartnerPerformancePeek } from "./partner-performance-peek";
+import { mayPrepareIndependentStoreBanners } from "./independent-store-banner-access";
 import { PartnerInsights } from "./partner-insights";
 import { PartnerDesktopHome } from "./partner-desktop-home";
 import { readOwnStoreCommercialAgreements } from "./store-commercial-agreement-client";
@@ -22,7 +23,7 @@ import { PartnerStorefrontLink } from "./partner-storefront-link";
 import { onStoreAvailabilityChanged } from "./store-availability-events";
 import { listOwnStoreAccessInvitations, readOwnJoiningCase, readOwnStoreImages, readOwnStoreOperationalAvailability } from "./store-readback-client";
 
-type MenuItem = Readonly<{label:string;icon:MobileIconName;href?:Href;section?:"promotions"|"team";description?:string}>;
+type MenuItem = Readonly<{label:string;icon:MobileIconName;href?:Href;section?:"promotions"|"team"|"banners";description?:string}>;
 type IdentityDisplay = Readonly<{name:string;role:string;phone?:string}>;
 function roleForPermissions(values:ReadonlyArray<string>) {
   const unique=new Set(values);
@@ -148,6 +149,7 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
     ...(selectedStore?.owned?[{label:"إعدادات المتجر",icon:"edit" as const,href:"/store?section=settings" as Href}]:[]),
     ...(can("catalog")?[{label:"أدوات الكتالوج",icon:"cart" as const,href:"/products?panel=tools" as Href},{label:"سجل تغييرات العروض",icon:"cart" as const,href:"/activity" as Href}]:[]),
     ...(marketplace&&can("promotions")?[{label:"العروض",icon:"offers" as const,section:"promotions" as const}]:[]),
+    ...(mayPrepareIndependentStoreBanners(selectedStore)?[{label:"بنرات المتجر المستقل",icon:"store" as const,section:"banners" as const}]:[]),
     ...(selectedStore?.owned?[{label:"الموظفين",icon:"account" as const,href:"/employees" as Href},...(marketplace?[{label:"كباتن المتجر",icon:"deliveries" as const,section:"team" as const}]:[])]:[]),
     {label:"الإشعارات",icon:"notifications" as const,href:"/notifications" as Href},
     {label:"الأداء",icon:"orders",href:"/insights" as Href},

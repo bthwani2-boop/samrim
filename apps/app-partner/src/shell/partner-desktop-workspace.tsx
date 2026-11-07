@@ -6,6 +6,7 @@ import * as Clipboard from "expo-clipboard";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 
 import { usePartnerStoreScope } from "../features/partner-onboarding/partner-store-scope-context";
+import { mayPrepareIndependentStoreBanners } from "../features/partner-onboarding/independent-store-banner-access";
 import { buildPartnerStorefrontURL } from "../features/partner-onboarding/partner-storefront-url";
 import { PartnerNotificationsHeaderAction } from "../features/notifications/partner-notifications-header-action";
 
@@ -65,7 +66,9 @@ function DesktopWorkspace({ children }: PropsWithChildren) {
     { label: "حملات المنصة", href: "/store?section=promotions&view=campaigns" as Href, icon: "success", section: "promotions", marketingView: "campaigns" },
     { label: "مقاطع المتجر", href: "/store?section=promotions&view=content" as Href, icon: "play", section: "promotions", marketingView: "content" },
     { label: "بنرات المتجر", href: "/store?section=promotions&view=banners" as Href, icon: "store", section: "promotions", marketingView: "banners" },
-  ] : [];
+  ] : mayPrepareIndependentStoreBanners(selectedStore)
+    ? [{ label: "بنرات المتجر المستقل", href: "/store?section=banners" as Href, icon: "store", section: "banners" }]
+    : [];
   const performanceLinks: WorkspaceLink[] = [
     { label: "نظرة عامة", href: "/insights?view=overview" as Href, icon: "trending", performanceView: "overview" },
     ...(isMarketplace && can("orders") ? [{ label: "تقرير الطلبات", href: "/insights?view=orders" as Href, icon: "orders" as const, performanceView: "orders" as const }] : []),
