@@ -3,7 +3,9 @@ import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Text, View } from "react-native";
 
+import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
+import { partnerSetupSessionKey } from "./partner-setup-session-scope";
 import { readOwnIndependentStorePreview } from "./store-readback-client";
 
 /** Owner-only preparation preview; not a published link or an ordering surface. */
@@ -14,31 +16,46 @@ export function PartnerIndependentStorePreview({ store }: Readonly<{ store: Part
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const generation = useRef(0);
+  const currentScope = useRef(partnerSetupSessionKey(currentIdentityState()));
 
-  // The caller keys this component by Store ID, so unmount invalidates
-  // in-flight reads before a different owner's Store can be displayed.
-  useEffect(() => () => { generation.current += 1; }, []);
+  // Same Store ID may be visited in a different Identity session. Discard all
+  // private preview data and in-flight reads at that boundary, not just on unmount.
+  useEffect(() => {
+    const unsubscribe = subscribeIdentitySession(next => {
+      const scope = partnerSetupSessionKey(next);
+      if (scope === currentScope.current) return;
+      currentScope.current = scope;
+      generation.current += 1;
+      setPreview(null);
+      setError("");
+      setBusy(false);
+    });
+    return () => { unsubscribe(); generation.current += 1; };
+  }, []);
 
   async function readPage(cursor = "") {
-    if (busy || !store.owned || store.relationModel !== "INDEPENDENT_STORE") return;
+    const startingScope = partnerSetupSessionKey(currentIdentityState());
+    if (busy || !startingScope || !store.owned || store.relationModel !== "INDEPENDENT_STORE") return;
     const requestGeneration = ++generation.current;
+    const stillCurrent = () => requestGeneration === generation.current &&
+      partnerSetupSessionKey(currentIdentityState()) === startingScope;
     setBusy(true);
     setError("");
     try {
       const next = await readOwnIndependentStorePreview(store.id, cursor);
-      if (requestGeneration !== generation.current) return;
+      if (!stillCurrent()) return;
       if (next.storeId !== store.id || next.relationModel !== "INDEPENDENT_STORE" ||
           next.previewOnly !== true || next.checkoutEnabled !== false ||
           (cursor && (cursor === next.nextCursor || !preview))) {
         throw new Error("INDEPENDENT_PREVIEW_SCOPE_INVALID");
       }
-      setPreview(previous => cursor && previous
+      setPreview(previous => !stillCurrent() ? previous : cursor && previous
         ? { ...next, offers: [...previous.offers, ...next.offers] }
         : next);
     } catch {
-      if (requestGeneration === generation.current) setError("تعذرت قراءة معاينة المتجر. تحقق من الاتصال ثم أعد المحاولة.");
+      if (stillCurrent()) setError("تعذرت قراءة معاينة المتجر. تحقق من الاتصال ثم أعد المحاولة.");
     } finally {
-      if (requestGeneration === generation.current) setBusy(false);
+      if (stillCurrent()) setBusy(false);
     }
   }
 

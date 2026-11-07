@@ -79,7 +79,8 @@ export function PartnerStore() {
       {section === "settings" ? <>
         <PartnerStoreSettingsOverview key={selectedStore.id + ":settings"} storeID={selectedStore.id} />
         {selectedStore.owned && selectedStore.publicationState !== "published" ? <View style={styles.card}>
-          <Text style={styles.value}>تجهيز المتجر للنشر</Text>
+          <Text style={styles.value}>{selectedStore.relationModel === "INDEPENDENT_STORE" ? "تجهيز محتوى المتجر المستقل" : "تجهيز المتجر للنشر"}</Text>
+          {selectedStore.relationModel === "INDEPENDENT_STORE" ? <Text style={styles.muted}>يمكنك تجهيز المنتجات والصور. النشر العام والطلب المباشر غير مفعّلين حاليًا، ولا تمنح هذه الخطوة صلاحية النشر.</Text> : null}
           <BthwaniButton label="الانتقال إلى المنتجات" onPress={() => router.push("/products" as Href)} variant="secondary" />
         </View> : null}
         <PartnerStorePublicContact key={selectedStore.id + ":contact"} storeID={selectedStore.id} />
