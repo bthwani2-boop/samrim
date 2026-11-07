@@ -9,6 +9,7 @@ import { dispatchPartnerProductAction } from "./partner-product-actions";
 import { type PropsWithChildren, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BackHandler, type ColorValue, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, type TextInputInstance, View } from "react-native";
 import { usePartnerStoreScope } from "../features/partner-onboarding/partner-store-scope-context";
+import { isMarketplaceStore } from "./partner-authority";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 type PartnerSearchNavigation = {
@@ -67,7 +68,8 @@ function PartnerHeader({ title, isOrders, isProducts, isCatalogSurface, isSubpag
   const theme = useAppearanceTheme();
   const router = useRouter();
   const { stores, selectedStore, selectStore } = usePartnerStoreScope();
-  const scopedStores = isCatalogSurface ? stores.filter((store) => store.owned || store.permissions.includes("catalog")) : stores;
+  const scopedStores = isCatalogSurface ? stores.filter((store) => store.owned || store.permissions.includes("catalog"))
+    : isOrders ? stores.filter((store) => isMarketplaceStore(store) && (store.owned || store.permissions.includes("orders"))) : stores;
   const selectedScopedStore = scopedStores.find((store) => store.id === selectedStore?.id);
   const [pickerOpen, setPickerOpen] = useState(false);
   const focus = Array.isArray(rawFocus) ? rawFocus[0] : rawFocus;
@@ -90,7 +92,7 @@ function PartnerHeader({ title, isOrders, isProducts, isCatalogSurface, isSubpag
       </View> : <>
         <View style={styles.headerMain}>
           <Text accessibilityRole="header" numberOfLines={1} style={styles.headerTitle}>{title}</Text>
-          {isOrders && selectedStore && (selectedStore.owned || selectedStore.permissions.includes("store_operations")) ? <PartnerOrderAvailability key={selectedStore.id} storeID={selectedStore.id} published={selectedStore.publicationState === "published"} /> : null}
+          {isOrders && selectedStore && isMarketplaceStore(selectedStore) && (selectedStore.owned || selectedStore.permissions.includes("store_operations")) ? <PartnerOrderAvailability key={selectedStore.id} storeID={selectedStore.id} published={selectedStore.publicationState === "published"} /> : null}
         </View>
         <View style={styles.headerActions}>
           {isOrders ? <PartnerNotificationsHeaderAction /> : null}

@@ -25,10 +25,11 @@ export default function PartnerWallet() {
   const storeScope = usePartnerStoreScope();
   const financeScopeKey = storeScope.storesWithPermission("finance_read").map((store) => `${store.id}:${store.owned}`).join(",");
   const payoutScopeKey = storeScope.storesWithPermission("payout_request").map((store) => `${store.id}:${store.owned}`).join(",");
-  const ownerScopeKey = storeScope.stores.filter((store) => store.owned).map((store) => store.id).join(",");
-  const canReadFinance = storeScope.stores.some((store) => store.owned || store.permissions.includes("finance_read"));
-  const canRequestPayout = storeScope.stores.some((store) => store.owned || store.permissions.includes("payout_request"));
-  const ownsAnyStore = storeScope.stores.some((store) => store.owned);
+  const marketStores = storeScope.stores.filter((store) => store.relationModel === "BTHWANI_PARTNER");
+  const ownerScopeKey = marketStores.filter((store) => store.owned).map((store) => store.id).join(",");
+  const canReadFinance = marketStores.some((store) => store.owned || store.permissions.includes("finance_read"));
+  const canRequestPayout = marketStores.some((store) => store.owned || store.permissions.includes("payout_request"));
+  const ownsAnyStore = marketStores.some((store) => store.owned);
   const actionButton = (action: WalletAction, label: string) => {
     const expanded = openAction === action;
     const primary = action === "payout";

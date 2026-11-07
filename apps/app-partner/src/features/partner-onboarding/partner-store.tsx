@@ -20,6 +20,7 @@ function isStoreSection(value: string | undefined): value is StoreSection {
   return value === "operations" || value === "promotions" || value === "team" || value === "settings" || value === "commercial";
 }
 function eligibleForSection(store: PartnerAccessibleStore, section: StoreSection): boolean {
+  if (["promotions", "team", "commercial"].includes(section) && store.relationModel !== "BTHWANI_PARTNER") return false;
   if (store.owned) return true;
   return section === "operations" ? store.permissions.includes("store_operations")
     : section === "promotions" ? store.permissions.includes("promotions") : false;
@@ -65,7 +66,7 @@ export function PartnerStore() {
   const firstStoreMatches = Boolean(selectedStore?.owned && firstStore && firstStore.id === selectedStore.id);
 
   return <View style={styles.container}>
-    {stores.length > 1 ? <PartnerStoreScopeSelector requiredPermissions={requiredPermissions(section)} /> : null}
+    {stores.length > 1 ? <PartnerStoreScopeSelector requiredPermissions={requiredPermissions(section)} marketplaceOnly={section === "promotions" || section === "team" || section === "commercial"} /> : null}
     {selectedStore && permitted ? <>
       {section === "operations" ? <StoreOperationalAvailabilityManagement key={selectedStore.id} storeID={selectedStore.id} fulfillmentModes={selectedStore.fulfillmentModes.filter(isStoreFulfillmentMode)} /> : null}
       {section === "promotions" ? <PartnerMarketingWorkspace key={selectedStore.id} storeID={selectedStore.id} storeName={selectedStore.name} verticalID={selectedStore.primaryVerticalId} view={marketingView}/> : null}

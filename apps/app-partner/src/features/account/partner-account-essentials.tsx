@@ -50,7 +50,8 @@ export function PartnerAccountEssentials({ showStoreSelector = false }: Readonly
   const actor = identity.kind === "authenticated" ? identity.identity.subject : "";
   const storeId = selectedStore?.id ?? "";
   const owner = Boolean(actor && selectedStore?.owned);
-  const canFinance = Boolean(selectedStore && (selectedStore.owned ||
+  const marketplace = selectedStore?.relationModel === "BTHWANI_PARTNER";
+  const canFinance = Boolean(selectedStore?.relationModel === "BTHWANI_PARTNER" && (selectedStore.owned ||
     selectedStore.permissions.includes("finance_read") || selectedStore.permissions.includes("payout_request")));
   const [readback, setReadback] = useState<AccountReadback | null>(null);
   const [retry, setRetry] = useState(0);
@@ -64,7 +65,7 @@ export function PartnerAccountEssentials({ showStoreSelector = false }: Readonly
       const next = currentIdentityState();
       return active && next.kind === "authenticated" && next.identity.subject === actor;
     };
-    void Promise.allSettled([readOwnJoiningCase(), readOwnStoreCommercialAgreements(storeId)]).then(([joining, agreement]) => {
+    void Promise.allSettled([readOwnJoiningCase(), marketplace ? readOwnStoreCommercialAgreements(storeId) : Promise.resolve(null)]).then(([joining, agreement]) => {
       if (!isCurrent()) return;
       const caseValue = joining.status === "fulfilled" ? joining.value.case : null;
       // The first-store joining case does not certify another Store owned by the same actor.
@@ -75,13 +76,13 @@ export function PartnerAccountEssentials({ showStoreSelector = false }: Readonly
           caseValue ? "حالة هذا المتجر غير متاحة من ملف الانضمام الأول" : "تعذر قراءة حالة ملف الانضمام",
         joiningError: joining.status === "rejected",
         joiningMatchesStore: sameStore,
-        agreement: agreement.status === "fulfilled" ?
+        agreement: marketplace && agreement.status === "fulfilled" && agreement.value ?
           ownStoreAgreementReadiness(agreement.value, storeId, actor) : "UNAVAILABLE",
         agreementFailure: agreement.status === "rejected" ? agreementReadbackErrorMessage(agreement.reason) : null,
       });
     });
     return () => { active = false; };
-  }, [actor, owner, scope, storeId]));
+  }, [actor, marketplace, owner, scope, storeId]));
 
   const current = readback?.scope === scope ? readback : null;
   const joiningDescription = !owner ? "هذه البيانات متاحة لمالك المتجر فقط" :
@@ -101,10 +102,10 @@ export function PartnerAccountEssentials({ showStoreSelector = false }: Readonly
       {owner ? <>
         {current?.joiningMatchesStore ? <AccountLink label="ملف الانضمام للمتجر الأول" icon="store"
           description={joiningDescription} href={"/onboarding" as Href} /> : null}
-        <AccountLink label="ملف المتجر والاتفاقية التجارية" icon="account"
-          description={agreementDescription}
+        <AccountLink label={marketplace ? "ملف المتجر والاتفاقية التجارية" : "ملف المتجر المستقل"} icon="account"
+          description={marketplace ? agreementDescription : "إدارة المتجر والكتالوج والمعاينة الخاصة"}
           href={{ pathname: "/store", params: { section: "settings", returnTo: "account" } } as Href} />
-        {current?.joiningError || current?.agreement === "UNAVAILABLE" ? <View style={styles.noticePanel}>
+        {current?.joiningError || (marketplace && current?.agreement === "UNAVAILABLE") ? <View style={styles.noticePanel}>
           <Text accessibilityRole="alert" style={styles.notice}>تعذر التحقق من بعض حالات الحساب؛ لم تُفترض الموافقة أو التفعيل.</Text>
           <BthwaniButton label="إعادة قراءة الحالة" variant="secondary" onPress={() => setRetry(value => value + 1)} />
         </View> : null}

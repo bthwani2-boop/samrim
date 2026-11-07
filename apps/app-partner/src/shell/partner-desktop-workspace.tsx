@@ -44,6 +44,7 @@ function DesktopWorkspace({ children }: PropsWithChildren) {
   useEffect(() => { if (selectedStore?.id) setCopyMessage(""); }, [selectedStore?.id]);
   const permissions = selectedStore?.permissions ?? [];
   const isOwner = Boolean(selectedStore?.owned);
+  const isMarketplace = selectedStore?.relationModel === "BTHWANI_PARTNER";
   const can = (permission: string) => isOwner || permissions.includes(permission as typeof permissions[number]);
 
   const mainLinks: WorkspaceLink[] = [{ label: "الرئيسية", href: "/more" as Href, icon: "home" }];
@@ -58,7 +59,7 @@ function DesktopWorkspace({ children }: PropsWithChildren) {
     catalogLinks.push({ label: "الاستيراد والتصدير والأسعار", href: "/products?panel=tools" as Href, icon: "categories", section: "tools" });
   }
 
-  const marketingLinks: WorkspaceLink[] = can("promotions") ? [
+  const marketingLinks: WorkspaceLink[] = isMarketplace && can("promotions") ? [
     { label: "نظرة تسويقية", href: "/store?section=promotions&view=overview" as Href, icon: "trending", section: "promotions", marketingView: "overview" },
     { label: "العروض والقسائم", href: "/store?section=promotions&view=offers" as Href, icon: "offers", section: "promotions", marketingView: "offers" },
     { label: "حملات المنصة", href: "/store?section=promotions&view=campaigns" as Href, icon: "success", section: "promotions", marketingView: "campaigns" },
@@ -67,7 +68,7 @@ function DesktopWorkspace({ children }: PropsWithChildren) {
   ] : [];
   const performanceLinks: WorkspaceLink[] = [
     { label: "نظرة عامة", href: "/insights?view=overview" as Href, icon: "trending", performanceView: "overview" },
-    ...(can("orders") ? [{ label: "تقرير الطلبات", href: "/insights?view=orders" as Href, icon: "orders" as const, performanceView: "orders" as const }] : []),
+    ...(isMarketplace && can("orders") ? [{ label: "تقرير الطلبات", href: "/insights?view=orders" as Href, icon: "orders" as const, performanceView: "orders" as const }] : []),
     ...(can("catalog") ? [{ label: "تقرير المنتجات والمخزون", href: "/insights?view=catalog" as Href, icon: "cart" as const, performanceView: "catalog" as const }] : []),
     ...(authority.canUse("wallet") ? [{ label: can("finance_read") ? "الكشف المالي والتسويات" : can("payout_request") ? "طلبات صرف المستحقات" : "المحفظة والتسويات", href: "/wallet" as Href, icon: "wallet" as const }] : []),
   ];
@@ -77,8 +78,8 @@ function DesktopWorkspace({ children }: PropsWithChildren) {
   if (authority.canUse("store")) {
     if (can("store_operations")) management.push({ label: "التشغيل", href: "/store?section=operations" as Href, icon: "store", section: "operations" });
     if (isOwner) management.push({ label: "إعدادات المتجر", href: "/store?section=settings" as Href, icon: "edit", section: "settings" });
-    if (isOwner) management.push({ label: "الاتفاقية التجارية", href: "/store?section=commercial" as Href, icon: "wallet", section: "commercial" });
-    if (isOwner) management.push({ label: "كباتن المتجر", href: "/store?section=team" as Href, icon: "deliveries", section: "team" });
+    if (isMarketplace && isOwner) management.push({ label: "الاتفاقية التجارية", href: "/store?section=commercial" as Href, icon: "wallet", section: "commercial" });
+    if (isMarketplace && isOwner) management.push({ label: "كباتن المتجر", href: "/store?section=team" as Href, icon: "deliveries", section: "team" });
   }
   if (state.kind === "ready" && !selectedStore) management.push({ label: "تجهيز المتجر", href: "/onboarding" as Href, icon: "store" });
 
