@@ -13,7 +13,8 @@ import { AccessibilityInfo, Alert, FlatList, Platform, Pressable, ScrollView, ty
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { currentIdentityState } from "../../bootstrap/identity";
+import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
+import { subscribeClientCartActorChanges } from "../cart-checkout/cart-session-scope";
 import { readSavedFulfillmentMode, saveFulfillmentMode } from "../cart-checkout/fulfillment-choice";
 import { useServiceCityScope } from "../service-city/service-city-scope";
 import { ClientShareSheet, type ClientShareTarget } from "../sharing/client-share-sheet";
@@ -38,6 +39,11 @@ type StoreBannerItem = Readonly<{ key: string; content: PublicDiscoveryContentVi
 type CatalogSnapshot = { catalog: PublicCatalogResponse; categoryID: string | null; sectionID: string | null; query: string; productID: string };
 
 const EMPTY_GRID_CELL_KEYS = ["empty-grid-cell:1", "empty-grid-cell:2", "empty-grid-cell:3", "empty-grid-cell:4", "empty-grid-cell:5"] as const;
+
+function currentStoreActorID(): string {
+  const session = currentIdentityState();
+  return session.kind === "authenticated" ? session.identity.subject.trim() : "";
+}
 
 export default function ClientStoreDetail({ storeId, categoryId = "", productId = "", promotionId = "" }: { storeId: string; categoryId?: string; productId?: string; promotionId?: string }) {
   const router = useRouter();
@@ -71,6 +77,8 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const orderabilityRequestID = useRef(0);
   const [catalogTabs, setCatalogTabs] = useState<Partial<Record<number, CatalogSnapshot>>>({});
   const cartReadRequestID = useRef(0);
+  const activeActorIDRef = useRef(currentStoreActorID());
+  const actorRevisionRef = useRef(0);
   const promotionRequestID = useRef(0);
 
   const [error, setError] = useState("");
@@ -379,12 +387,48 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   }, [activeTab, activeProductID, catalogTabs, reloadCatalog, router, selectedCategoryID, selectedStoreSectionID, state, storeId]);
 
   useEffect(() => {
-    void load();
+    // The public Store is unchanged by login, but cart and favorites are actor-private.
+    // Subscribe before reading the current actor to close the account-switch race.
+    const subscription = subscribeClientCartActorChanges(
+      activeActorIDRef.current,
+      currentStoreActorID,
+      (listener) => subscribeIdentitySession((session) => {
+        listener(session.kind === "authenticated" ? session.identity.subject.trim() : "");
+      }),
+      (nextActorID) => {
+        activeActorIDRef.current = nextActorID;
+        actorRevisionRef.current += 1;
+        setOpenCart(null);
+        setCartReadError(false);
+        setIsFavorite(false);
+        setFavoriteOfferIDs(new Set());
+        // Favorite catalog tab 1 is actor-private. Never reuse its cached offers
+        // while the next actor's public Store read is pending or unavailable.
+        setCatalogTabs({});
+        setFavoritesView(false);
+        setPopularView(false);
+        setFavoriteLoadError(false);
+        setCatalogRefreshing(false);
+        setError("");
+        setFavoriteBusy(false);
+        setFavoriteOfferBusyID("");
+        setFavoriteLoading(false);
+        setBusyOfferId("");
+        setAddedOfferId("");
+        setQuantities({});
+        setSelectedModifierOptionIds({});
+        setDetailOffer(null);
+        void load();
+      },
+    );
+    if (!subscription.changedDuringSync) void load();
     return () => {
       storeRequestID.current += 1;
       catalogRequestID.current += 1;
       promotionRequestID.current += 1;
       detailRequestID.current += 1;
+      cartReadRequestID.current += 1;
+      subscription.unsubscribe();
     };
   }, [load]);
 
@@ -551,20 +595,23 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       setError(modifierError);
       return;
     }
+    const actorRevision = actorRevisionRef.current;
     setBusyOfferId(offer.offerId);
     cartReadRequestID.current += 1;
     setAddedOfferId("");
     setError("");
     try {
       const result = await addCatalogOfferToCart(storeId, offer, quantity, selectedModifierOptionIds[offer.offerId] ?? []);
+      if (actorRevision !== actorRevisionRef.current) return;
       setOpenCart(result.cart);
       setCartReadError(false);
       setAddedOfferId(offer.offerId);
     } catch (cause) {
+      if (actorRevision !== actorRevisionRef.current) return;
       console.error("DSH catalog offer add failed", cause);
       setError(dshMutationErrorMessage(cause, "تعذر إضافة المنتج. أعد المحاولة أو افتح السلة لقراءة حالتها."));
     } finally {
-      setBusyOfferId("");
+      if (actorRevision === actorRevisionRef.current) setBusyOfferId("");
     }
   }
 
@@ -574,14 +621,16 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       router.replace(`/?returnTo=/store/${encodeURIComponent(storeId)}` as Href);
       return;
     }
+    const actorRevision = actorRevisionRef.current;
     setFavoriteBusy(true);
     setError("");
     try {
-      setIsFavorite(await setFavoriteStore(storeId, !isFavorite));
+      const favorite = await setFavoriteStore(storeId, !isFavorite);
+      if (actorRevision === actorRevisionRef.current) setIsFavorite(favorite);
     } catch {
-      setError("تعذر تحديث المفضلة. أعد المحاولة.");
+      if (actorRevision === actorRevisionRef.current) setError("تعذر تحديث المفضلة. أعد المحاولة.");
     } finally {
-      setFavoriteBusy(false);
+      if (actorRevision === actorRevisionRef.current) setFavoriteBusy(false);
     }
   }
 
@@ -599,10 +648,12 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       router.replace(`/?returnTo=/store/${encodeURIComponent(storeId)}` as Href);
       return;
     }
+    const actorRevision = actorRevisionRef.current;
     setFavoriteOfferBusyID(offerID);
     setError("");
     try {
       const isFavoriteNow = await setFavoriteStoreOffer(offerID, !favoriteOfferIDs.has(offerID));
+      if (actorRevision !== actorRevisionRef.current) return;
       setCatalogTabs((current) => { const next = { ...current }; delete next[1]; return next; });
       setFavoriteOfferIDs((current) => {
         const next = new Set(current);
@@ -615,9 +666,9 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       }
       setFavoriteLoadError(false);
     } catch {
-      setError("تعذر تحديث مفضلة المنتجات. أعد المحاولة.");
+      if (actorRevision === actorRevisionRef.current) setError("تعذر تحديث مفضلة المنتجات. أعد المحاولة.");
     } finally {
-      setFavoriteOfferBusyID("");
+      if (actorRevision === actorRevisionRef.current) setFavoriteOfferBusyID("");
     }
   }
 
@@ -662,14 +713,16 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       router.replace(`/?returnTo=/store/${encodeURIComponent(storeId)}` as Href);
       return;
     }
+    const actorRevision = actorRevisionRef.current;
     setFavoriteLoading(true);
     try {
       const [storesResult, offersResult] = await Promise.allSettled([listFavoriteStoreIDs(), listFavoriteStoreOfferIDs(storeId)]);
+      if (actorRevision !== actorRevisionRef.current) return;
       if (storesResult.status === "fulfilled") setIsFavorite(storesResult.value.includes(storeId));
       if (offersResult.status === "fulfilled") setFavoriteOfferIDs(new Set(offersResult.value));
       setFavoriteLoadError(storesResult.status === "rejected" || offersResult.status === "rejected");
     } finally {
-      setFavoriteLoading(false);
+      if (actorRevision === actorRevisionRef.current) setFavoriteLoading(false);
     }
   }
 
