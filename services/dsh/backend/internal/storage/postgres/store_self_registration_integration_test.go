@@ -127,6 +127,43 @@ func TestDirectPartnerFirstStoreUnpublishedAndIdempotentPostgres(t *testing.T) {
 		if _, _, err := postgres.CreateFirstStoreForPartner(ctx, db, "new-owner", malformed); !errors.Is(err, postgres.ErrSelfStoreInput) {
 			t.Fatalf("invalid payload was accepted: %v", err)
 		}
-		t.Log("direct Partner Store: single writer, 7 replays, owner isolation, no joining case, unpublished and paused")
+		// The independent merchant is the same canonical Store writer, but may
+		// only use merchant fulfillment and stays invisible to the marketplace.
+		independentInput := input
+		independentInput.RelationModel = postgres.StoreRelationIndependent
+		independentInput.FulfillmentModes = []string{"PARTNER_CAPTAIN", "CUSTOMER_PICKUP"}
+		independentOwner := "qa-independent-partner"
+		independentStore, independentReplay, err := postgres.CreateFirstStoreForPartner(ctx, db, independentOwner, independentInput)
+		if err != nil || independentReplay || independentStore.RelationModel != postgres.StoreRelationIndependent || independentStore.PublicationState != "unpublished" {
+			t.Fatalf("independent first Store invalid: %+v replay=%v err=%v", independentStore, independentReplay, err)
+		}
+		independentAgain, independentReplayed, err := postgres.CreateFirstStoreForPartner(ctx, db, independentOwner, independentInput)
+		if err != nil || !independentReplayed || independentAgain.ID != independentStore.ID {
+			t.Fatalf("independent exact retry changed Store: %+v replay=%v err=%v", independentAgain, independentReplayed, err)
+		}
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.stores SET publication_state='published' WHERE id=$1", independentStore.ID); err == nil {
+			t.Fatal("independent Store must not publish through marketplace field")
+		}
+		// Even an authorized operator cannot grant BThwani dispatch to an independent Store.
+		if _, err := postgres.SetStoreFulfillmentModes(ctx, db, independentStore.ID, "qa-authorized-operator", []string{"BTHWANI_CAPTAIN"}, independentStore.Version, "idem-independent-gate-123", "corr-independent-gate-123"); !errors.Is(err, postgres.ErrFulfillmentModesInvalid) {
+			t.Fatalf("operator could enable platform Captain for independent Store: %v", err)
+		}
+		invalidRelation := independentInput
+		invalidRelation.RelationModel = "NOT_A_STORE_RELATION"
+		if _, _, err := postgres.CreateFirstStoreForPartner(ctx, db, "qa-invalid-relation", invalidRelation); !errors.Is(err, postgres.ErrSelfStoreInput) {
+			t.Fatalf("unsupported relation must fail closed: %v", err)
+		}
+		invalidIndependent := independentInput
+		invalidIndependent.FulfillmentModes = []string{"BTHWANI_CAPTAIN"}
+		if _, _, err := postgres.CreateFirstStoreForPartner(ctx, db, "qa-invalid-independent", invalidIndependent); !errors.Is(err, postgres.ErrSelfStoreInput) {
+			t.Fatalf("independent must reject BThwani Captain: %v", err)
+		}
+		if _, _, err := postgres.CreateFirstStoreForPartner(ctx, db, independentOwner, input); !errors.Is(err, postgres.ErrSelfStoreExists) {
+			t.Fatalf("independent Store may not be recreated as marketplace: %v", err)
+		}
+		if _, err := postgres.ReadStoreOwnedByPartner(ctx, db, independentStore.ID, owner); !errors.Is(err, postgres.ErrStoreNotFound) {
+			t.Fatalf("cross-owner independent Store was readable: %v", err)
+		}
+		t.Log("direct Partner Stores: single writer, exact replays, relationship isolation, no joining case, unpublished")
 	}, 5*time.Minute)
 }

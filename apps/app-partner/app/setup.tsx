@@ -5,8 +5,10 @@ import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState, type ComponentType } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, restoreIdentitySession, subscribeIdentitySession } from "../src/bootstrap/identity";
+import { firstStoreFulfillmentLabel, firstStoreModesForRelation, type FirstStoreRelation } from "../src/features/partner-onboarding/first-store-relation-choice";
 
 type Step = 0|1|2|3;
+type StoreRelationModel = FirstStoreRelation;
 const labels=["هوية المتجر","نوع النشاط","الموقع والتواصل","المراجعة"] as const;
 const service=()=>createDshMobileClient(process.env.EXPO_PUBLIC_DSH_API_URL||"");
 
@@ -32,6 +34,7 @@ export default function PartnerStoreSetup(){
  const [error,setError]=useState("");
  const [step,setStep]=useState<Step>(0);
  const [name,setName]=useState("");
+ const [relation,setRelation]=useState<StoreRelationModel|"">("");
  const [address,setAddress]=useState("");
  const [city,setCity]=useState("");
  const [vertical,setVertical]=useState("");
@@ -63,7 +66,7 @@ export default function PartnerStoreSetup(){
    }
    const token=await getUsableIdentityAccessToken();
    const page=await service().listPartnerAccessibleStores(token,1);
-   if(page.stores.length>0){router.replace("/orders" as Href);return;}
+   if(page.stores.length>0){router.replace("/more" as Href);return;}
    const [availableCities,availableVerticals]=await Promise.all([service().listActiveServiceCities(),service().listCatalogVerticals()]);
    setCities(availableCities);setVerticals(availableVerticals);
    if(availableCities.length===1)setCity(availableCities[0]!.id);
@@ -101,13 +104,13 @@ export default function PartnerStoreSetup(){
  }
  function advance(){
   setError("");
-  if(step===0&&name.trim().length<2){setError("أدخل اسم متجرك.");return;}
+  if(step===0&&(!relation||name.trim().length<2)){setError("اختر طريقة تشغيل المتجر وأدخل اسمه.");return;}
   if(step===1&&(!city||!vertical||!storeType||!types.some(t=>t.id===storeType&&t.verticalId===vertical))){setError("اختر مدينة الخدمة والمجال ونوع المتجر.");return;}
   if(step===2&&(!selected||address.trim().length<4||modes.length===0)){setError("حدد العنوان والموقع وطريقة التوصيل.");return;}
   setStep(Math.min(step+1,3) as Step);
  }
  async function save(){
-  if(busy||!scope||!selected||!name.trim()||!city||!vertical||!storeType||address.trim().length<4||modes.length===0)return;
+  if(busy||!scope||!selected||!name.trim()||!relation||!city||!vertical||!storeType||address.trim().length<4||modes.length===0)return;
   setBusy(true);setError("");
   const starting=scope;
   try{
@@ -115,9 +118,10 @@ export default function PartnerStoreSetup(){
    const current=currentIdentityState();
    if(current.kind!=="authenticated"||current.identity.subject+":"+current.identity.sessionId!==starting)throw Error("SESSION_CHANGED");
    const result=await service().createPartnerFirstStore(token,{
-    name:name.trim(),serviceCityId:city,primaryVerticalId:vertical,commercialStoreTypeId:storeType,
+    name:name.trim(),relationModel:relation,serviceCityId:city,primaryVerticalId:vertical,commercialStoreTypeId:storeType,
     addressText:address.trim(),latitude:selected.latitude,longitude:selected.longitude,fulfillmentModes:modes,
    });
+   if(result.relationModel!==relation)throw Error("STORE_RELATION_READBACK_MISMATCH");
    const after=currentIdentityState();
    if(after.kind!=="authenticated"||after.identity.subject+":"+after.identity.sessionId!==starting)return;
    const confirmed=await service().listPartnerAccessibleStores(token,25);
@@ -160,6 +164,15 @@ export default function PartnerStoreSetup(){
      {labels.map((label,index)=><View key={label} style={[s.step,index===step&&s.active]}><Text style={s.small}>{index<step?"✓ ":""}{label}</Text></View>)}
     </View>
     {step===0?<View style={{gap:10}}>
+     <Text style={s.title}>طريقة تشغيل المتجر</Text>
+     <Text style={s.small}>المتجر نفسه وصفحاته ومنتجاته. يمكنك اختيار شراكة بثواني أو متجر ويب خاص، دون إنشاء حساب آخر.</Text>
+     {([["BTHWANI_PARTNER","انضم إلى بثواني","اعرض متجرك لعملاء بثواني بعد مراجعة الاتفاق والتفعيل."],["INDEPENDENT_STORE","أنشئ متجرك الخاص","متجر ويب مستقل؛ تتولى البيع والتوصيل والدفع بنفسك. نشر الرابط المباشر لا يزال قيد التجهيز."]] as const).map(([id,title,description])=><Pressable
+       key={id} accessibilityRole="radio" accessibilityState={{checked:relation===id}} disabled={busy}
+       style={[s.option,relation===id&&s.chosen]}
+       onPress={()=>{setModes(current=>firstStoreModesForRelation(relation,id,current));setRelation(id);}}>
+        <Text style={s.title}>{relation===id?"✓  ":""}{title}</Text>
+        <Text style={s.small}>{description}</Text>
+       </Pressable>)}
      <Text style={s.title}>هوية المتجر</Text>
      <Text style={s.small}>الاسم والبريد الشخصي ليسا شرطًا لإنشاء الحساب. ابدأ باسم متجرك فقط.</Text>
      <TextInput accessibilityLabel="اسم المتجر" value={name} onChangeText={setName} editable={!busy} placeholder="اكتب اسم المتجر" placeholderTextColor={theme.colorMuted} style={s.field}/>
@@ -180,24 +193,26 @@ export default function PartnerStoreSetup(){
      </View>:null}
      <Text style={s.small}>{selected?"تم تحديد موقع المتجر.":"حدد الموقع على الخريطة أو أدخل الإحداثيات."}</Text>
      <Text style={s.title}>طريقة تقديم الطلبات</Text>
-     {([["BTHWANI_CAPTAIN","توصيل بثواني"],["PARTNER_CAPTAIN","مندوب المتجر"],["CUSTOMER_PICKUP","استلام من المتجر"]] as const).map(([id,label])=><Pressable key={id} accessibilityRole="checkbox" accessibilityState={{checked:modes.includes(id)}} disabled={busy} style={[s.option,modes.includes(id)&&s.chosen]} onPress={()=>setModes(old=>old.includes(id)?old.filter(x=>x!==id):[...old,id])}><Text style={s.text}>{modes.includes(id)?"✓  ":""}{label}</Text></Pressable>)}
+     {([["BTHWANI_CAPTAIN","توصيل بثواني"],["PARTNER_CAPTAIN","مندوب المتجر"],["CUSTOMER_PICKUP","استلام من المتجر"]] as const).filter(([id])=>relation!=="INDEPENDENT_STORE"||id!=="BTHWANI_CAPTAIN").map(([id,label])=><Pressable key={id} accessibilityRole="checkbox" accessibilityState={{checked:modes.includes(id)}} disabled={busy} style={[s.option,modes.includes(id)&&s.chosen]} onPress={()=>setModes(old=>old.includes(id)?old.filter(x=>x!==id):[...old,id])}><Text style={s.text}>{modes.includes(id)?"✓  ":""}{label}</Text></Pressable>)}
     </View>:null}
     {step===3?<View style={{gap:10}}>
      <Text style={s.title}>مراجعة المتجر</Text>
      <Text style={s.text}>المتجر: {name}</Text>
+     <Text style={s.text}>النموذج: {relation==="INDEPENDENT_STORE"?"متجر ويب مستقل":"شريك بثواني"}</Text>
      <Text style={s.text}>المدينة: {cities.find(c=>c.id===city)?.displayNameAr}</Text>
      <Text style={s.text}>المجال: {verticals.find(v=>v.id===vertical)?.nameAr}</Text>
      <Text style={s.text}>النوع: {types.find(t=>t.id===storeType)?.nameAr}</Text>
      <Text style={s.text}>العنوان: {address}</Text>
-     <Text style={s.small}>سينشأ المتجر غير منشور. بعد ذلك يمكنك تجهيز الصور والكتالوج والاتفاق التجاري قبل ظهوره للعملاء.</Text>
+     <Text style={s.text}>طرق تقديم الطلبات المختارة: {modes.map(firstStoreFulfillmentLabel).join("، ") || "لم تُحدّد"}</Text>
+     <Text style={s.small}>{relation==="INDEPENDENT_STORE"?"سينشأ المتجر مستقلًا وغير منشور. ستتمكن من تجهيز المنتجات الآن، ونشر رابطه بعد اكتمال خدمة الاستضافة المباشرة وضوابطها؛ لا يوجد دفع أو توصيل بثواني.":"سينشأ المتجر غير منشور. بعد ذلك يمكنك تجهيز الصور والكتالوج والاتفاق التجاري قبل ظهوره في تطبيق العميل."}</Text>
     </View>:null}
     {step<3?<BthwaniButton label="التالي" onPress={advance} disabled={busy}/>:<BthwaniButton label="إنشاء المتجر" onPress={()=>void save()} disabled={busy}/>}
     {step>0?<BthwaniButton label="السابق" variant="secondary" disabled={busy} onPress={()=>{setError("");setStep((step-1) as Step)}}/>:null}
    </View>:null}
    {saved?<View style={{gap:14}}>
     <Text style={s.title}>تم إنشاء متجرك</Text>
-    <Text style={s.small}>المتجر محفوظ وغير منشور حاليًا. يمكنك الدخول إلى لوحة الإدارة وإكمال جاهزية النشر.</Text>
-    <BthwaniButton label="فتح لوحة إدارة المتجر" onPress={()=>router.replace("/orders" as Href)}/>
+    <Text style={s.small}>{relation==="INDEPENDENT_STORE"?"تم حفظ متجرك المستقل وغير المنشور. يمكنك إعداد المنتجات؛ لن يُفتح رابط الشراء المباشر قبل اعتماد ونشر خدمة المتاجر المستقلة.":"المتجر محفوظ وغير منشور حاليًا. يمكنك الدخول إلى لوحة الإدارة وإكمال جاهزية نشره في بثواني."}</Text>
+    <BthwaniButton label="فتح لوحة إدارة المتجر" onPress={()=>router.replace("/more" as Href)}/>
    </View>:null}
    {error?<View style={{gap:8}}><Text accessibilityRole="alert" style={s.error}>{error}</Text><BthwaniButton label="إعادة المحاولة" variant="secondary" onPress={()=>void load()}/></View>:null}
   </View>

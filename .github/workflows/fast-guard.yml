@@ -177,7 +177,7 @@ jobs:
           export BTHWANI_JOINING_QA_ISOLATED=1
           export BTHWANI_EXPECTED_DATABASE_NAME=dsh_join_qa
           export DSH_JOINING_QA_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/dsh_join_qa?sslmode=disable"
-          financial_go_proof services/dsh/backend ./internal/storage/postgres -run '^(TestSelfServiceCorrectionApprovalAndFinanceIsolationPostgres|TestApprovedJoiningToCustomerVisibleCatalog)$' -count=1 -timeout 7m
+          financial_go_proof services/dsh/backend ./internal/storage/postgres -run '^(TestSelfServiceCorrectionApprovalAndFinanceIsolationPostgres|TestApprovedJoiningToCustomerVisibleCatalog|TestDirectPartnerFirstStoreUnpublishedAndIdempotentPostgres)$' -count=1 -timeout 7m
           unset DSH_JOINING_QA_DATABASE_URL BTHWANI_JOINING_QA_ISOLATED
           # Existing end-to-end adapter proof needs two pristine databases and
           # the real WLT HTTP handler. Never point it at the durable local world.

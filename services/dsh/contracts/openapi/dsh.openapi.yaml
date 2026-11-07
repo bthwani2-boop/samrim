@@ -1839,6 +1839,10 @@ components:
       additionalProperties: false
       required: [name, serviceCityId, primaryVerticalId, commercialStoreTypeId, addressText, latitude, longitude, fulfillmentModes]
       properties:
+        relationModel:
+          type: string
+          enum: [BTHWANI_PARTNER, INDEPENDENT_STORE]
+          description: Canonical Store relationship selected for this first unpublished Store. Defaults to BTHWANI_PARTNER for existing clients; never grants publication or financial privileges.
         name:
           type: string
           minLength: 2
@@ -1878,8 +1882,12 @@ components:
     PartnerFirstStoreCreateResponse:
       type: object
       additionalProperties: false
-      required: [storeId, publicationState, replayed]
+      required: [storeId, publicationState, relationModel, replayed]
       properties:
+        relationModel:
+          type: string
+          enum: [BTHWANI_PARTNER, INDEPENDENT_STORE]
+          description: Store relation read back from DSH after the successful creation or exact replay.
         storeId:
           type: string
         publicationState:
