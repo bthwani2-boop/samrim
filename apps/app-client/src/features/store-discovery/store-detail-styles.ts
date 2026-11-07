@@ -42,6 +42,7 @@ export function createStyles(theme: ReturnType<typeof resolveTheme>) {
     storeHeroToolbar: { position: "absolute", top: 0, left: 0, right: 0, alignItems: "center", flexDirection: "row", gap: spacing[2], justifyContent: "space-between", paddingHorizontal: spacing[3], zIndex: 2 },
     storeInfoCard: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, gap: spacing[2], marginTop: -68, padding: spacing[3], zIndex: 2, ...elevation.raised },
     storeInfoDesktop: { marginTop: -24, padding: spacing[3], gap: spacing[2] },
+    storeInfoWebMobile: { marginTop: -20 },
     storeInfoDesktopSummary: { alignItems: "center", flexDirection: "row", gap: spacing[4] },
     storeInfoDesktopIdentity: { flex: 1, minWidth: 0 },
     storeInfoDesktopStatus: { flex: 1.4, minWidth: 0 },

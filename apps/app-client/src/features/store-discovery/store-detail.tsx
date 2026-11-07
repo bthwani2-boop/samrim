@@ -98,7 +98,8 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const bannerRef = useRef<ScrollViewInstance | null>(null);
   const { width: windowWidth } = useWindowDimensions();
   const desktopStorefront = Platform.OS === "web" && windowWidth >= 1024;
-  const gridMode = userGridMode ?? (Platform.OS === "web" && windowWidth >= 1024);
+  const storeHeroHeight = desktopStorefront ? 196 : Platform.OS === "web" ? 214 : 244;
+  const gridMode = userGridMode ?? (Platform.OS === "web");
   const gridColumns = Platform.OS !== "web" ? 2 : windowWidth >= 1700 ? 5 : windowWidth >= 1200 ? 4 : windowWidth >= 1024 ? 3 : 2;
   const [promotionLoading, setPromotionLoading] = useState(true);
   const [promotionError, setPromotionError] = useState(false);
@@ -744,7 +745,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       <View pointerEvents="none" style={[styles.statusBarScrim, { height: insets.top, backgroundColor: heroVisible ? "transparent" : theme.background }]} />
       <FlatList<StoreCatalogRow>
         stickyHeaderIndices={[1]}
-        onScroll={(event) => { const visible = event.nativeEvent.contentOffset.y < (desktopStorefront ? 144 : 244) + insets.top - 32; setHeroVisible((current) => current === visible ? current : visible); }}
+        onScroll={(event) => { const visible = event.nativeEvent.contentOffset.y < storeHeroHeight + insets.top - 32; setHeroVisible((current) => current === visible ? current : visible); }}
         scrollEventThrottle={160}
         contentContainerStyle={styles.container}
         data={[{ kind: "filters", key: "catalog-filters" }, ...visibleCatalogRows]}
@@ -773,7 +774,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         }}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={<View style={styles.listHeader}>
-      <View style={[styles.storeHero, { height: (desktopStorefront ? 144 : 244) + insets.top }]}>
+      <View style={[styles.storeHero, { height: storeHeroHeight + insets.top }]}>
           {heroImageURI
             ? <View pointerEvents="none" style={styles.storeHeroMedia}><ExpoImage cachePolicy="disk" accessibilityLabel={"غلاف متجر " + state.store.name} onError={() => setFailedStoreCover(true)} source={{ uri: heroImageURI }} contentFit="cover" style={styles.storeCover} /></View>
             : <View accessibilityLabel={"غلاف متجر " + state.store.name + " غير متوفر"} pointerEvents="none" style={styles.storeCoverFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
@@ -798,7 +799,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         </View>
         </View>
       </View>
-      <BthwaniSurface tone="raised" style={[styles.storeInfoCard, desktopStorefront && styles.storeInfoDesktop]} accessibilityLabel={"معلومات متجر " + state.store.name}>
+      <BthwaniSurface tone="raised" style={[styles.storeInfoCard, desktopStorefront && styles.storeInfoDesktop, Platform.OS === "web" && !desktopStorefront && styles.storeInfoWebMobile]} accessibilityLabel={"معلومات متجر " + state.store.name}>
         <View style={desktopStorefront ? styles.storeInfoDesktopSummary : undefined}>
         <View style={[styles.storeInfoIdentityRow, desktopStorefront && styles.storeInfoDesktopIdentity]}>
           {state.store.storeProfileImage?.uri && !failedStoreImage
