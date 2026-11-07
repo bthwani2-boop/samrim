@@ -42,6 +42,7 @@ type PartnerAccessibleStore struct {
 	ServiceCityID     string   `json:"serviceCityId"`
 	PrimaryVerticalID string   `json:"primaryVerticalId"`
 	PublicationState  string   `json:"publicationState"`
+	RelationModel     string   `json:"relationModel"`
 	FulfillmentModes  []string `json:"fulfillmentModes"`
 	Owned             bool     `json:"owned"`
 	Permissions       []string `json:"permissions"`
@@ -297,7 +298,7 @@ func ListPartnerAccessibleStores(ctx context.Context, db *sql.DB, actorID string
 	if db == nil || actorID == "" || len(actorID) > 128 || limit < 1 || limit > 50 || len(cursor) > 128 {
 		return PartnerAccessibleStorePage{}, ErrStoreAccessConflict
 	}
-	rows, err := db.QueryContext(ctx, `SELECT s.id,s.name,COALESCE(s.service_city_id,''),s.primary_vertical_id,s.publication_state,s.fulfillment_modes,
+	rows, err := db.QueryContext(ctx, `SELECT s.id,s.name,COALESCE(s.service_city_id,''),s.primary_vertical_id,s.publication_state,s.relation_model,s.fulfillment_modes,
 		s.partner_actor_id=$1,
 		CASE WHEN s.partner_actor_id=$1 THEN ARRAY['orders','catalog','store_operations','promotions','finance_read','payout_request','fulfillment']::text[] ELSE g.permissions END
 		FROM dsh.stores s
@@ -315,7 +316,7 @@ func ListPartnerAccessibleStores(ctx context.Context, db *sql.DB, actorID string
 	page := PartnerAccessibleStorePage{Stores: make([]PartnerAccessibleStore, 0, limit)}
 	for rows.Next() {
 		var item PartnerAccessibleStore
-		if err := rows.Scan(&item.ID, &item.Name, &item.ServiceCityID, &item.PrimaryVerticalID, &item.PublicationState, pq.Array(&item.FulfillmentModes), &item.Owned, pq.Array(&item.Permissions)); err != nil {
+		if err := rows.Scan(&item.ID, &item.Name, &item.ServiceCityID, &item.PrimaryVerticalID, &item.PublicationState, &item.RelationModel, pq.Array(&item.FulfillmentModes), &item.Owned, pq.Array(&item.Permissions)); err != nil {
 			return PartnerAccessibleStorePage{}, err
 		}
 		item.Permissions = canonicalStorePermissions(item.Permissions)

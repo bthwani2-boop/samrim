@@ -471,6 +471,9 @@ paths:
   /dsh/operations/stores/{storeId}/operational-availability:
     $ref: "./paths/store-availability.yaml#/paths/~1dsh~1operations~1stores~1{storeId}~1operational-availability"
 
+  /dsh/partner/stores/{storeId}/independent-preview:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1independent-preview"
+
   /dsh/partner/stores/{storeId}/access:
     $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1access"
   /dsh/partner/stores:
@@ -11644,6 +11647,9 @@ components:
           maxLength: 128
         publicationState:
           type: string
+        relationModel:
+          type: string
+          enum: [BTHWANI_PARTNER, INDEPENDENT_STORE]
         fulfillmentModes:
           type: array
           items:
@@ -11655,6 +11661,59 @@ components:
           uniqueItems: true
           items:
             $ref: "#/components/schemas/StoreAccessPermission"
+
+    IndependentPreviewOffer:
+      type: object
+      additionalProperties: false
+      required: [id, productId, title, priceMinor, currency, imageUri, availability, publicationState]
+      properties:
+        id:
+          type: string
+        productId:
+          type: string
+        title:
+          type: string
+        priceMinor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        imageUri:
+          type: string
+        availability:
+          type: boolean
+        publicationState:
+          type: string
+
+    IndependentStorePreview:
+      type: object
+      additionalProperties: false
+      description: Private Partner-owned Store and Catalog preparation; never a public storefront or an order endpoint.
+      required: [storeId, name, relationModel, publicationState, profileImageUri, coverImageUri, previewOnly, checkoutEnabled, offers, nextCursor]
+      properties:
+        storeId:
+          type: string
+        name:
+          type: string
+        relationModel:
+          type: string
+          enum: [INDEPENDENT_STORE]
+        publicationState:
+          type: string
+        profileImageUri:
+          type: string
+        coverImageUri:
+          type: string
+        previewOnly:
+          type: boolean
+        checkoutEnabled:
+          type: boolean
+        offers:
+          type: array
+          items:
+            $ref: "#/components/schemas/IndependentPreviewOffer"
+        nextCursor:
+          type: string
 
     PartnerAccessibleStorePage:
       type: object
