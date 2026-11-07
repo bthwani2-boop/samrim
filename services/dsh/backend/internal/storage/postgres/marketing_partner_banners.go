@@ -138,6 +138,8 @@ const publishedStoreBannerSQL = `SELECT content.id,content.kind,content.title_ar
 			JOIN dsh.catalog_products product ON product.id=variant.product_id
 			WHERE ($2='' OR store.service_city_id=$2)
 			  AND product.id=content.target_id
+			  AND store.publication_state='published' AND store.relation_model='BTHWANI_PARTNER'
+			  AND store.publication_changed_at IS NOT NULL AND store.deleted_at IS NULL
 			  AND (content.source_store_id IS NULL OR store.id=content.source_store_id)
 			  AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=offer.id)
 		))
@@ -151,6 +153,9 @@ const publishedStoreBannerSQL = `SELECT content.id,content.kind,content.title_ar
 			JOIN dsh.catalog_product_categories product_category ON product_category.product_id=product.id
 			WHERE ($2='' OR store.service_city_id=$2)
 			  AND product_category.category_id=content.target_id
+			  AND store.publication_state='published' AND store.relation_model='BTHWANI_PARTNER'
+			  AND store.publication_changed_at IS NOT NULL AND store.deleted_at IS NULL
+			  AND (content.source_store_id IS NULL OR store.id=content.source_store_id)
 			  AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=offer.id)
 		))
 	) ORDER BY content.ordinal ASC,content.starts_at DESC,content.id DESC LIMIT 8`
