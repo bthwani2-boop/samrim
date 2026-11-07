@@ -44,7 +44,21 @@ test("existing mobile two-column grid remains the default when explicitly select
 });
 
 test("responsive desktop store defaults to existing grid without overriding the user's toggle", () => {
-  assert.match(detail, /const gridMode = userGridMode \?\? \(Platform\.OS === "web" && windowWidth >= 1024\)/);
+  assert.match(detail, /const gridMode = userGridMode \?\? \(Platform\.OS === "web"\)/);
   assert.match(detail, /const gridColumns = Platform\.OS !== "web" \? 2 : windowWidth >= 1700 \? 5 : windowWidth >= 1200 \? 4 : windowWidth >= 1024 \? 3 : 2/);
   assert.match(detail, /setUserGridMode\(!gridMode\)/);
+});
+
+test("desktop keeps favorites and popular accessible outside the scrolling categories", () => {
+  assert.match(detail, /desktopStorefront \? favoriteFilterChip : null/);
+  assert.match(detail, /desktopStorefront \? popularFilterChip : null/);
+  assert.match(detail, /suggestedOrderMode && !canOrderSelected/);
+  assert.match(detail, /modeStatus\.label/);
+});
+
+test("web grid presents measured prices and product-specific favorite actions", () => {
+  assert.match(detail, /السعر لكل \$\{formatQuantity\(offer\.baseUnit, offer\.pricingUnitBaseUnits\)\}/);
+  assert.match(detail, /numberOfLines=\{Platform\.OS === "web" \? undefined : 1\}/);
+  assert.match(detail, /styles\.gridActionPrice/);
+  assert.match(detail, /إضافة \$\{offer\.productName\} إلى المفضلة/);
 });
