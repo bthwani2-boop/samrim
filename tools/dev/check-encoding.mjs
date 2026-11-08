@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveTrustedExecutable } from "./trusted-executables.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -28,7 +29,7 @@ const mojibake = new RegExp(
 );
 
 function git(args) {
-  const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  const result = spawnSync(resolveTrustedExecutable("git"), args, { cwd: root, encoding: "utf8" });
   if (result.status !== 0) {
     throw new Error(`git ${args.join(" ")} failed: ${result.stderr.trim()}`);
   }
