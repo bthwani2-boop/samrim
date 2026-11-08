@@ -10,6 +10,7 @@ import (
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
+	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
 // Exercise the canonical Identity client against a disposable in-memory HTTP
@@ -33,6 +34,8 @@ func TestIndependentCustomerPolicyRequiresCurrentPartnerSurface(t *testing.T) {
 			_, _ = w.Write([]byte(`{"subject":"","role":"partner","surface":"app-partner"}`))
 		case "test-partner-session":
 			_, _ = w.Write([]byte(`{"subject":"actor-a","role":"partner","surface":"app-partner"}`))
+		case "test-partner-session-b":
+			_, _ = w.Write([]byte(`{"subject":"actor-b","role":"partner","surface":"app-partner"}`))
 		default:
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(`{"error":{"code":"UNAUTHENTICATED"}}`))
@@ -57,19 +60,42 @@ func TestIndependentCustomerPolicyRequiresCurrentPartnerSurface(t *testing.T) {
 		{"test-mismatched-surface", false},
 		{"test-empty-actor", false},
 		{"test-partner-session", true},
+		{"test-partner-session-b", true},
+		{"test-revoked-session", false},
 	} {
 		t.Run(tc.token, func(t *testing.T) {
-			_, err := service.ReadIndependentCustomerPolicyForOwner(context.Background(), tc.token, "store-a")
+			// Exercise each private entry point through the real Identity client.
+			// The deliberately absent database proves only that non-Partner
+			// sessions are denied BEFORE persistence is touched.
+			_, policyErr := service.ReadIndependentCustomerPolicyForOwner(context.Background(), tc.token, "store-a")
+			_, previewErr := service.ReadIndependentPreview(context.Background(), tc.token, "store-a", 20, "")
+			_, _, saveErr := service.SaveIndependentCustomerPolicyDraftForOwner(context.Background(), tc.token, "store-a",
+				postgres.IndependentCustomerPolicyDraftInput{ExpectedVersion: 0,
+					CancellationTerms: "Cancel with merchant", ReturnsTerms: "Return to merchant",
+					FulfillmentTerms: "Collect at store", CollectionTerms: "Pay merchant"},
+				"test-private-policy-idempotency-key", "test-private-policy-correlation")
 			if !tc.allowed {
-				if !errors.Is(err, ErrPartnerSession) {
-					t.Fatalf("non-Partner session reached Store storage: %v", err)
+				for label, got := range map[string]error{"policy": policyErr, "preview": previewErr, "save": saveErr} {
+					if tc.token == "test-revoked-session" {
+						var identityErr *identityclient.Error
+						if !errors.As(got, &identityErr) || identityErr.Status != http.StatusUnauthorized {
+							t.Fatalf("%s revoked session did not fail at Identity boundary: %v", label, got)
+						}
+						continue
+					}
+					if !errors.Is(got, ErrPartnerSession) {
+						t.Fatalf("%s non-Partner session reached Store storage: %v", label, got)
+					}
 				}
 				return
 			}
-			// With a verified Partner actor the intentionally absent DB
-			// must fail closed at the existing owned-Store SQL boundary.
-			if !errors.Is(err, postgres.ErrStoreNotFound) {
-				t.Fatalf("verified Partner did not reach canonical owner guard: %v", err)
+			// Both valid synthetic actors reach the owner-scoped SQL boundary;
+			// no real A/B identity or persistent Store authorization is proven.
+			if !errors.Is(policyErr, postgres.ErrStoreNotFound) ||
+				!errors.Is(previewErr, postgres.ErrStoreNotFound) ||
+				!errors.Is(saveErr, postgres.ErrIndependentCustomerPolicyInvalid) {
+				t.Fatalf("Partner private Store boundary failed closed: policy=%v preview=%v save=%v",
+					policyErr, previewErr, saveErr)
 			}
 		})
 	}
