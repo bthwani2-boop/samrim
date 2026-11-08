@@ -6,6 +6,7 @@ import { Link, type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View, type ScrollViewInstance } from "react-native";
 
+import { clientStorefrontCartPath } from "../access/client-auth-return-path";
 import { useServiceCityScope } from "../service-city/service-city-scope";
 import { mergeCatalog } from "./store-catalog-model";
 import { listPublicStoreBanners, readPublicStoreCatalog, readPublishedStore } from "./store-discovery-client";
@@ -230,7 +231,7 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
           <Pressable accessibilityRole="button" onPress={() => jumpTo(productsOffset.current)} style={styles.navItem}><Text style={styles.navText}>المنتجات</Text></Pressable>
           <Pressable accessibilityRole="button" onPress={() => jumpTo(contactOffset.current)} style={styles.navItem}><Text style={styles.navText}>التواصل</Text></Pressable>
         </View>
-        <BthwaniButton label={"سلة المتجر" + marketCitySuffix} busy={openingMarket} onPress={() => void openMarketRoute(("/cart/" + encodeURIComponent(storeId)) as Href)} />
+        <BthwaniButton label={"سلة المتجر" + marketCitySuffix} busy={openingMarket} onPress={() => void openMarketRoute(clientStorefrontCartPath(storeId, selectedCityID ?? "", productID) as Href)} />
       </View>
       {marketCityError ? <Text accessibilityRole="alert" style={styles.secondary}>تعذر اختيار مدينة المتجر. أعد المحاولة.</Text> : null}
 

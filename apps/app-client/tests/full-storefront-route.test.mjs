@@ -9,6 +9,8 @@ const route = readFileSync(path.join(app, "app/storefront/[storeId].tsx"), "utf8
 const market = readFileSync(path.join(app, "app/store/[storeId].tsx"), "utf8");
 const marketDetail = readFileSync(path.join(app, "src/features/store-discovery/store-detail.tsx"), "utf8");
 const cityScope = readFileSync(path.join(app, "src/features/service-city/service-city-scope.tsx"), "utf8");
+const cartRoute = readFileSync(path.join(app, "app/cart/[storeId].tsx"), "utf8");
+const cart = readFileSync(path.join(app, "src/features/cart-checkout/client-cart-screen.tsx"), "utf8");
 
 test("web route is a separate composition, never the existing marketplace or independent owner preview", () => {
   assert.match(route, /Platform\.OS !== "web"/);
@@ -63,5 +65,13 @@ test("web product and category links stay in the Full Storefront and purchasing 
   assert.match(site, /readPublicStoreCatalog\(storeId, selectedCityID, categoryID, initialQuery, 24, "", productID\)/);
   assert.match(site, /readPublicStoreCatalog\(storeId, selectedCityID, categoryID, appliedQuery, 24, cursor, productID\)/);
   assert.match(site, /openMarketRoute\(marketplacePath\(productID\)\)/);
-  assert.match(site, /openMarketRoute\(\("\/cart\/" \+ encodeURIComponent\(storeId\)\) as Href\)/);
+  assert.match(site, /openMarketRoute\(clientStorefrontCartPath\(storeId, selectedCityID \?\? "", productID\) as Href\)/);
+});
+
+test("a signed-out marketplace shopper keeps the exact product and the storefront cart keeps its return scope", () => {
+  assert.match(marketDetail, /requireAuthentication\(offer\.productId\)/);
+  assert.match(marketDetail, /encodeURIComponent\(returnTo\)/);
+  assert.match(cartRoute, /authReturnPath: storefront\.returnPath/);
+  assert.match(cart, /buildFullStorefrontPath\(storeId, storefront\.cityID, \{ productID: storefront\.productID \}\)/);
+  assert.match(cart, /<CartCheckout key=/);
 });

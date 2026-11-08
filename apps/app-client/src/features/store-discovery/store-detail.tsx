@@ -60,6 +60,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [selectedCategoryID, setSelectedCategoryID] = useState<string | null>(null);
   const [selectedStoreSectionID, setSelectedStoreSectionID] = useState<string | null>(null);
   const [activeProductID, setActiveProductID] = useState("");
+  const requireAuthentication = useCallback((requestedProductID = activeProductID) => {
+    const returnTo = "/" + buildStoreSharePath(storeId, selectedCityID ?? "", requestedProductID);
+    router.replace(("/?returnTo=" + encodeURIComponent(returnTo)) as Href);
+  }, [activeProductID, router, selectedCityID, storeId]);
   const [detailOffer, setDetailOffer] = useState<PublicCatalogResponse["offers"][number] | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [sheetMode, setSheetMode] = useState<"gallery" | "quick">("gallery");
@@ -382,7 +386,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const selectCatalogTab = useCallback(async (index: number) => {
     if (index < 0 || index > 2 || state.kind !== "ready") return;
     if (index === 1 && currentIdentityState().kind !== "authenticated") {
-      router.replace(`/?returnTo=/store/${encodeURIComponent(storeId)}` as Href);
+      requireAuthentication();
       return;
     }
     if (index === activeTab) {
@@ -408,7 +412,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     }
     setState({ kind: "ready", store: state.store, catalog: { ...state.catalog, offers: [], sections: [], nextCursor: null } });
     await reloadCatalog(null, "", index === 1, index === 2);
-  }, [activeTab, activeProductID, catalogTabs, reloadCatalog, router, selectedCategoryID, selectedStoreSectionID, state, storeId]);
+  }, [activeTab, activeProductID, catalogTabs, reloadCatalog, requireAuthentication, selectedCategoryID, selectedStoreSectionID, state]);
 
   useEffect(() => {
     // The public Store is unchanged by login, but cart and favorites are actor-private.
@@ -605,7 +609,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       return;
     }
     if (currentIdentityState().kind !== "authenticated") {
-      router.replace(`/?returnTo=/store/${encodeURIComponent(storeId)}` as Href);
+      requireAuthentication(offer.productId);
       return;
     }
     const quantity = Number(quantities[offer.offerId] ?? String(offer.quantityMinBaseUnits));
@@ -642,7 +646,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   async function toggleFavorite() {
     if (favoriteBusy) return;
     if (currentIdentityState().kind !== "authenticated") {
-      router.replace(`/?returnTo=/store/${encodeURIComponent(storeId)}` as Href);
+      requireAuthentication();
       return;
     }
     const actorRevision = actorRevisionRef.current;
@@ -670,7 +674,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   async function toggleOfferFavorite(offerID: string) {
     if (favoriteOfferBusyID) return;
     if (currentIdentityState().kind !== "authenticated") {
-      router.replace(`/?returnTo=/store/${encodeURIComponent(storeId)}` as Href);
+      requireAuthentication(detailOffer?.productId ?? activeProductID);
       return;
     }
     const actorRevision = actorRevisionRef.current;
@@ -746,7 +750,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
 
   async function reloadFavorites() {
     if (currentIdentityState().kind !== "authenticated") {
-      router.replace(`/?returnTo=/store/${encodeURIComponent(storeId)}` as Href);
+      requireAuthentication();
       return;
     }
     const actorRevision = actorRevisionRef.current;
