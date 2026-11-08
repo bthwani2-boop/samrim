@@ -18,7 +18,7 @@ function executableFunction(name, environment) {
   const js = ts.transpileModule(`${declaration.getText(ast)}; ${name};`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
   }).outputText;
-  return vm.runInNewContext(js, environment);
+  return vm.runInNewContext(js, { currentStoreActorID: () => "actor-A", ...environment });
 }
 
 function deferred() {

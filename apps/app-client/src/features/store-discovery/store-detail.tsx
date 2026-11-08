@@ -125,6 +125,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     let active = true;
     if (!storeId || !selectedCityID) return () => { active = false; };
     const refresh = () => {
+      const storeGeneration = storeRequestID.current;
       const bannerRequest = ++bannerRequestID.current;
       const orderabilityRequest = ++orderabilityRequestID.current;
       void readPublicStoreOrderability(storeId, selectedCityID).then((response) => {
@@ -135,7 +136,13 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         if (!active || orderabilityRequest !== orderabilityRequestID.current) return;
         if (storeReadFailureKind(cause) === "unavailable") {
           // DSH no longer publishes this marketplace Store (including relation cutover).
-          // Discard any in-flight view, catalog, cart or promotional readbacks.
+          // Invalidate pending mutations as well as public/private reads.
+          actorRevisionRef.current += 1;
+          setBusyOfferId("");
+          setAddedOfferId("");
+          setFavoriteBusy(false);
+          setFavoriteOfferBusyID("");
+          setFavoriteLoading(false);
           ++storeRequestID.current;
           ++catalogRequestID.current;
           ++detailRequestID.current;
@@ -152,12 +159,12 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       });
       // Revalidate Partner visibility and publication while the Store stays open.
       void listPublicStoreBanners(storeId, selectedCityID).then((response) => {
-        if (active && bannerRequest > bannerAppliedRequestID.current) {
+        if (active && storeGeneration === storeRequestID.current && bannerRequest > bannerAppliedRequestID.current) {
           bannerAppliedRequestID.current = bannerRequest;
           setMarketingContents(response.items);
           setBannerError(false);
         }
-      }).catch(() => { if (active && bannerRequest === bannerRequestID.current) setBannerError(true); /* Keep the last confirmed page while DSH is unreachable. */ });
+      }).catch(() => { if (active && storeGeneration === storeRequestID.current && bannerRequest === bannerRequestID.current) setBannerError(true); /* Keep the last confirmed page while DSH is unreachable. */ });
     };
     refresh();
     const interval = setInterval(refresh, 15000);
@@ -174,6 +181,18 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
 
 
   const load = useCallback(async () => {
+    // Invalidate A's outstanding mutations even when the actor stays the same
+    // and only the Store/city or deep-link context changes.
+    actorRevisionRef.current += 1;
+    setBusyOfferId("");
+    setAddedOfferId("");
+    setFavoriteBusy(false);
+    setFavoriteOfferBusyID("");
+    setFavoriteLoading(false);
+    setQuantities({});
+    setSelectedModifierOptionIds({});
+    setShareTarget(null);
+    setError("");
     const requestID = ++storeRequestID.current;
     catalogRequestID.current += 1;
     detailRequestID.current += 1;
@@ -418,6 +437,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     );
     if (!subscription.changedDuringSync) void load();
     return () => {
+      actorRevisionRef.current += 1;
       storeRequestID.current += 1;
       catalogRequestID.current += 1;
       promotionRequestID.current += 1;
@@ -591,12 +611,13 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       return;
     }
     const actorRevision = actorRevisionRef.current;
+    const actorID = currentStoreActorID();
     setBusyOfferId(offer.offerId);
     cartReadRequestID.current += 1;
     setAddedOfferId("");
     setError("");
     try {
-      const result = await addCatalogOfferToCart(storeId, offer, quantity, selectedModifierOptionIds[offer.offerId] ?? []);
+      const result = await addCatalogOfferToCart(storeId, offer, quantity, selectedModifierOptionIds[offer.offerId] ?? [], actorID);
       if (actorRevision !== actorRevisionRef.current) return;
       setOpenCart(result.cart);
       setCartReadError(false);
@@ -617,10 +638,11 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       return;
     }
     const actorRevision = actorRevisionRef.current;
+    const actorID = currentStoreActorID();
     setFavoriteBusy(true);
     setError("");
     try {
-      const favorite = await setFavoriteStore(storeId, !isFavorite);
+      const favorite = await setFavoriteStore(storeId, !isFavorite, actorID);
       if (actorRevision === actorRevisionRef.current) setIsFavorite(favorite);
     } catch {
       if (actorRevision === actorRevisionRef.current) setError("تعذر تحديث المفضلة. أعد المحاولة.");
@@ -644,10 +666,11 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       return;
     }
     const actorRevision = actorRevisionRef.current;
+    const actorID = currentStoreActorID();
     setFavoriteOfferBusyID(offerID);
     setError("");
     try {
-      const isFavoriteNow = await setFavoriteStoreOffer(offerID, !favoriteOfferIDs.has(offerID));
+      const isFavoriteNow = await setFavoriteStoreOffer(offerID, !favoriteOfferIDs.has(offerID), actorID);
       if (actorRevision !== actorRevisionRef.current) return;
       setCatalogTabs((current) => { const next = { ...current }; delete next[1]; return next; });
       setFavoriteOfferIDs((current) => {

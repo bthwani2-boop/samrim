@@ -1,6 +1,6 @@
 import { type CartResponse, type CatalogStoreOffer, type CheckoutQuoteResponse, type CheckoutRequest, type ClientOpenCartListResponse, createDshMobileClient, type DiscoveryContentEventRequest, type DiscoveryContentListResponse, type DiscoveryContentTargetResolution, type MultiStoreCheckoutRequest, type MultiStoreCheckoutResponse, type PromotionListResponse, type PublicCatalogResponse, type PublicCatalogSearchResponse, type PublicStoreOrderabilityResponse, type PublicStoreView, type PublishedStoreListResponse, type ServiceabilityResponse } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { listOwnDeliveryAddresses } from "../location-core/delivery-address-client";
 
 function dshBaseUrl(): string {
@@ -10,6 +10,19 @@ function dshBaseUrl(): string {
 }
 
 const client = () => createDshMobileClient(dshBaseUrl(), { cryptoRandomUUID: () => Crypto.randomUUID() });
+
+function assertStoreActor(expectedActorID: string): void {
+  const session = currentIdentityState();
+  if (!expectedActorID || session.kind !== "authenticated" || session.identity.subject.trim() !== expectedActorID) {
+    throw new Error("CLIENT_STORE_SESSION_CHANGED");
+  }
+}
+
+async function tokenForStoreActor(expectedActorID: string): Promise<string> {
+  const accessToken = await getUsableIdentityAccessToken();
+  assertStoreActor(expectedActorID);
+  return accessToken;
+}
 
 export async function listPublishedStores(serviceCityID: string, options: Readonly<{
   q?: string;
@@ -69,8 +82,8 @@ export async function listFavoriteStoreIDs(): Promise<ReadonlyArray<string>> {
   return (await client().listClientFavoriteStores(accessToken)).storeIds;
 }
 
-export async function setFavoriteStore(storeID: string, isFavorite: boolean): Promise<boolean> {
-  const accessToken = await getUsableIdentityAccessToken();
+export async function setFavoriteStore(storeID: string, isFavorite: boolean, actorID: string): Promise<boolean> {
+  const accessToken = await tokenForStoreActor(actorID);
   const result = isFavorite ? await client().addClientFavoriteStore(accessToken, storeID) : await client().removeClientFavoriteStore(accessToken, storeID);
   return result.isFavorite;
 }
@@ -80,8 +93,8 @@ export async function listFavoriteStoreOfferIDs(storeID: string): Promise<Readon
   return (await client().listClientFavoriteStoreOffers(accessToken, storeID)).offerIds;
 }
 
-export async function setFavoriteStoreOffer(storeOfferID: string, isFavorite: boolean): Promise<boolean> {
-  const accessToken = await getUsableIdentityAccessToken();
+export async function setFavoriteStoreOffer(storeOfferID: string, isFavorite: boolean, actorID: string): Promise<boolean> {
+  const accessToken = await tokenForStoreActor(actorID);
   const result = isFavorite
     ? await client().addClientFavoriteStoreOffer(accessToken, storeOfferID)
     : await client().removeClientFavoriteStoreOffer(accessToken, storeOfferID);
@@ -159,8 +172,9 @@ export async function addCatalogOfferToCart(
   offer: CatalogStoreOffer,
   quantityBaseUnits: number,
   selectedModifierOptionIds: ReadonlyArray<string>,
+  actorID: string,
 ): Promise<CartResponse> {
-  const accessToken = await getUsableIdentityAccessToken();
+  const accessToken = await tokenForStoreActor(actorID);
   let expectedVersion = 0;
   try {
     expectedVersion = (await client().readOpenCart(accessToken, storeID)).cart.version;
@@ -168,15 +182,16 @@ export async function addCatalogOfferToCart(
     const notFound = error && typeof error === "object" && (error as { kind?: unknown; status?: unknown }).kind === "http" && (error as { status?: unknown }).status === 404;
     if (!notFound) throw error;
   }
+  assertStoreActor(actorID);
   return client().upsertCartLine(accessToken, { storeId: storeID, storeOfferId: offer.offerId, quantityBaseUnits, selectedModifierOptionIds }, expectedVersion);
 }
 
 /** Update one simple, discrete home offer using DSH's authoritative cart version. */
-export async function adjustSimpleOfferQuantity(storeID: string, offer: CatalogStoreOffer, direction: 1 | -1): Promise<CartResponse> {
+export async function adjustSimpleOfferQuantity(storeID: string, offer: CatalogStoreOffer, direction: 1 | -1, actorID: string): Promise<CartResponse> {
   if (offer.quantityPolicy !== "DISCRETE" || offer.modifierGroups.length > 0 || !offer.availability) {
     throw new Error("HOME_OFFER_REQUIRES_DETAIL");
   }
-  const accessToken = await getUsableIdentityAccessToken();
+  const accessToken = await tokenForStoreActor(actorID);
   let current: CartResponse | null = null;
   try {
     current = await client().readOpenCart(accessToken, storeID);
@@ -184,6 +199,7 @@ export async function adjustSimpleOfferQuantity(storeID: string, offer: CatalogS
     const missing = error && typeof error === "object" && (error as { status?: unknown }).status === 404;
     if (!missing) throw error;
   }
+  assertStoreActor(actorID);
   const line = current?.cart.lines.find((item) => item.storeOfferId === offer.offerId);
   if (direction === -1 && !line) throw new Error("HOME_OFFER_NOT_IN_CART");
   if (direction === -1 && line && line.quantityBaseUnits <= offer.quantityMinBaseUnits) {

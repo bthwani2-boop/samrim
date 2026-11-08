@@ -536,7 +536,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   }
 
   async function toggleFavorite(storeID: string) {
-    if (!isAuthenticated || !currentDiscoveryActorID()) {
+    const actorID = currentDiscoveryActorID();
+    if (!isAuthenticated || !actorID) {
       onRequireAuthentication?.();
       return;
     }
@@ -546,7 +547,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     setFavoriteBusyStoreID(storeID);
     setFavoriteError("");
     try {
-      const nextValue = await setFavoriteStore(storeID, !isFavorite);
+      const nextValue = await setFavoriteStore(storeID, !isFavorite, actorID);
       if (requestID !== discoveryLoadRequestID.current) return;
       setState((current) => {
         if (current.kind !== "ready") return current;

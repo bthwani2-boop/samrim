@@ -166,7 +166,8 @@ export function HomeProductFeed({
 
   const adjust = async (offer: CatalogStoreOffer, direction: 1 | -1) => {
     if (busyOfferRef.current) return;
-    if (!isAuthenticated || !currentHomeActorID()) {
+    const actorID = currentHomeActorID();
+    if (!isAuthenticated || !actorID) {
       onRequireAuthentication?.();
       return;
     }
@@ -180,7 +181,7 @@ export function HomeProductFeed({
     setBusyID(offer.offerId);
     setCartMessage("");
     try {
-      const result = await adjustSimpleOfferQuantity(offer.storeId, offer, direction);
+      const result = await adjustSimpleOfferQuantity(offer.storeId, offer, direction, actorID);
       if (revision !== cartReadRevisionRef.current) return;
       void Haptics.selectionAsync().catch(() => { /* Feedback is optional; the committed cart is authoritative. */ });
       setCartQuantities((current) => {
