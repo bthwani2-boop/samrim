@@ -69,7 +69,7 @@ export function PartnerStore() {
   const firstStoreMatches = Boolean(selectedStore?.owned && firstStore && firstStore.id === selectedStore.id);
 
   return <View style={styles.container}>
-    {stores.length > 1 ? <PartnerStoreScopeSelector requiredPermissions={requiredPermissions(section)} ownedOnly={section === "banners"} independentOnly={section === "banners"} marketplaceOnly={section === "promotions" || section === "team" || section === "commercial"} /> : null}
+    {stores.length > 1 ? <PartnerStoreScopeSelector requiredPermissions={requiredPermissions(section)} ownedOnly={section === "banners"} independentOnly={section === "banners"} marketplaceOnly={section === "operations" || section === "promotions" || section === "team" || section === "commercial"} /> : null}
     {selectedStore && permitted ? <>
       {section === "operations" ? <StoreOperationalAvailabilityManagement key={selectedStore.id} storeID={selectedStore.id} fulfillmentModes={selectedStore.fulfillmentModes.filter(isStoreFulfillmentMode)} /> : null}
       {section === "promotions" ? <PartnerMarketingWorkspace key={selectedStore.id} storeID={selectedStore.id} storeName={selectedStore.name} verticalID={selectedStore.primaryVerticalId} view={marketingView}/> : null}

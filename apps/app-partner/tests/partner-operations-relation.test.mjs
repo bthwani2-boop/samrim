@@ -47,6 +47,8 @@ test("desktop navigation refuses marketplace operations without exact relation",
   assert.match(shellSource, /const isMarketplace = selectedStore\?\.relationModel === "BTHWANI_PARTNER";/);
   assert.match(shellSource, /if \(isMarketplace && can\("store_operations"\)\) management\.push/);
   assert.doesNotMatch(shellSource, /if \(can\("store_operations"\)\) management\.push/);
+  assert.match(storeSource, /marketplaceOnly=\{section === "operations" \|\| section === "promotions"/,
+    "operation Store selector must not offer unknown/independent Stores");
 });
 
 test("Store settings guidance never advertises publication for an unknown relation", () => {
