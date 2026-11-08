@@ -43,3 +43,11 @@ test("store site offers explicit retry, no-results and themed responsive layout"
   assert.match(site, /useAppearanceTheme\(\)/);
   assert.match(site, /role="main"/);
 });
+
+test("web product cards expose a real browser anchor to the existing Marketplace route", () => {
+  // A role=link Pressable without href is JS-only: no copy/open-in-new-tab.
+  assert.match(site, /import \{[^}]*\bLink\b[^}]*\} from "expo-router"/);
+  assert.match(site, /<Link key=\{offer\.offerId\} href=\{marketplacePath\(offer\.productId\)\} asChild>/);
+  assert.match(site, /<Pressable accessibilityRole="link" accessibilityLabel=\{"عرض "/);
+  assert.doesNotMatch(site, /onPress=\{\(\) => router\.push\(marketplacePath\(offer\.productId\)\)\}/);
+});

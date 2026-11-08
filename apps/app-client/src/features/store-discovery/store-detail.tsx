@@ -527,17 +527,21 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     const next = activeTab + (translationX < 0 ? 1 : -1);
     if (next >= 0 && next <= 2) void selectCatalogTab(next);
   };
-  const tabSwipeGesture = Gesture.Pan()
-    .enabled(!catalogRefreshing && !mutationBusy && !detailOffer)
-    .activeOffsetX([-42, 42])
-    .failOffsetY([-18, 18])
-    .onEnd((event) => {
-      if (Math.abs(event.translationX) >= 65) runOnJS(switchCatalogTabOnSwipe)(event.translationX);
-    });
-
   // Pan-to-switch tabs is a native touch affordance. Web already has explicit
   // category tabs and must not leave web gesture handlers alive on route exit.
-  const withNativeTabSwipe = (content: ReactNode) => Platform.OS === "web" ? content : <GestureDetector gesture={tabSwipeGesture}>{content}</GestureDetector>;
+  // Each rendered FlatList row needs its OWN Gesture instance; sharing one Pan
+  // among multiple GestureDetectors makes earlier rows lose their native handler.
+  const withNativeTabSwipe = (content: ReactNode) => {
+    if (Platform.OS === "web") return content;
+    const rowSwipeGesture = Gesture.Pan()
+      .enabled(!catalogRefreshing && !mutationBusy && !detailOffer)
+      .activeOffsetX([-42, 42])
+      .failOffsetY([-18, 18])
+      .onEnd((event) => {
+        if (Math.abs(event.translationX) >= 65) runOnJS(switchCatalogTabOnSwipe)(event.translationX);
+      });
+    return <GestureDetector gesture={rowSwipeGesture}>{content}</GestureDetector>;
+  };
 
   const renderCategoryChip = (category: PublicCatalogResponse["categories"][number], depth: number) => {
     const selected = selectedCategoryID === category.id;

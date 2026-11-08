@@ -2,7 +2,7 @@ import { borders, radius, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { formatMoney, type PublicCatalogResponse, type PublicDiscoveryContentView, type PublicStoreView } from "@bthwani/dsh";
 import { Image as ExpoImage } from "expo-image";
-import { type Href, useRouter } from "expo-router";
+import { Link, type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View, type ScrollViewInstance } from "react-native";
 
@@ -275,7 +275,8 @@ export default function ClientFullStorefront({ storeId }: Readonly<{ storeId: st
         {catalogBusy ? <View style={styles.grid} accessibilityLabel="جارٍ تحميل المنتجات"><BthwaniSkeleton height={220} width={Math.max(100, cardWidth)} /><BthwaniSkeleton height={220} width={Math.max(100, cardWidth)} /></View> : offers.length > 0 ? <View style={styles.grid}>
           {offers.map((offer) => {
             const image = offer.media.find((media) => media.role === "primary") ?? offer.media[0];
-            return <Pressable key={offer.offerId} accessibilityRole="link" accessibilityLabel={"عرض " + offer.productName + " داخل سوق بثواني"} onPress={() => router.push(marketplacePath(offer.productId))} style={{ width: cardWidth }}>
+            return <Link key={offer.offerId} href={marketplacePath(offer.productId)} asChild>
+              <Pressable accessibilityRole="link" accessibilityLabel={"عرض " + offer.productName + " داخل سوق بثواني"} style={{ width: cardWidth }}>
               <BthwaniSurface tone="base" style={styles.productCard}>
                 {image?.uri && !brokenImages.has(image.uri)
                   ? <ExpoImage cachePolicy="disk" accessibilityLabel={"صورة " + offer.productName} source={{ uri: image.uri }} contentFit="contain" style={styles.productImage} onError={() => setBrokenImages((prev) => new Set(prev).add(image.uri))} />
@@ -285,7 +286,8 @@ export default function ClientFullStorefront({ storeId }: Readonly<{ storeId: st
                 <Text style={styles.price}>{formatMoney(offer.priceMinor, offer.currency)}</Text>
                 {!offer.availability ? <Text style={styles.unavailableLabel}>غير متوفر حاليًا</Text> : null}
               </BthwaniSurface>
-            </Pressable>;
+              </Pressable>
+            </Link>;
           })}
         </View> : <View style={styles.empty}>
           <BthwaniIcon name="store" color={theme.colorMuted} size={32} />
