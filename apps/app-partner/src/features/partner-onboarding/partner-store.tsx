@@ -23,7 +23,7 @@ function isStoreSection(value: string | undefined): value is StoreSection {
 }
 function eligibleForSection(store: PartnerAccessibleStore, section: StoreSection): boolean {
   if (section === "banners") return mayPrepareIndependentStoreBanners(store);
-  if (["promotions", "team", "commercial"].includes(section) && store.relationModel !== "BTHWANI_PARTNER") return false;
+  if (["operations", "promotions", "team", "commercial"].includes(section) && store.relationModel !== "BTHWANI_PARTNER") return false;
   if (store.owned) return true;
   return section === "operations" ? store.permissions.includes("store_operations")
     : section === "promotions" ? store.permissions.includes("promotions") : false;

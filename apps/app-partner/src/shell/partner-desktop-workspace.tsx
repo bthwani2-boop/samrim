@@ -79,7 +79,7 @@ function DesktopWorkspace({ children }: PropsWithChildren) {
 
   const management: WorkspaceLink[] = [];
   if (authority.canUse("store")) {
-    if (can("store_operations")) management.push({ label: "التشغيل", href: "/store?section=operations" as Href, icon: "store", section: "operations" });
+    if (isMarketplace && can("store_operations")) management.push({ label: "التشغيل", href: "/store?section=operations" as Href, icon: "store", section: "operations" });
     if (isOwner) management.push({ label: "إعدادات المتجر", href: "/store?section=settings" as Href, icon: "edit", section: "settings" });
     if (isMarketplace && isOwner) management.push({ label: "الاتفاقية التجارية", href: "/store?section=commercial" as Href, icon: "wallet", section: "commercial" });
     if (isMarketplace && isOwner) management.push({ label: "كباتن المتجر", href: "/store?section=team" as Href, icon: "deliveries", section: "team" });
