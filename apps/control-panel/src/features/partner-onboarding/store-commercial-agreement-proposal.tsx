@@ -8,13 +8,41 @@ import { storeCommercialStatusLabel } from "../finance/store-commercial-agreemen
 import { nextStoreCommercialAgreementVersion } from "./store-commercial-agreement-version";
 import { matchesProposedStoreAgreement, storeCommercialRatesForProposal, type ExpectedStoreCommercialProposal, type StoreCommercialProposalReadback } from "./store-commercial-proposal-rates";
 
-type Agreement = StoreCommercialProposalReadback & Readonly<{ partnerActorId: string }>;
+type AgreementRate = StoreCommercialProposalReadback["rates"][number] & Readonly<{
+  deliveryMarkupMinor?: number;
+  deliveryPricingMode?: "DISTANCE" | "FIXED" | "FREE";
+  deliveryFixedFeeMinor?: number;
+}>;
+type Agreement = Omit<StoreCommercialProposalReadback, "rates"> & Readonly<{
+  partnerActorId: string;
+  rates: readonly AgreementRate[];
+}>;
 
 const labels: Record<string, string> = {
   BTHWANI_CAPTAIN: "توصيل بثواني",
   PARTNER_CAPTAIN: "توصيل المتجر",
   CUSTOMER_PICKUP: "استلام العميل",
 };
+
+function commercialRateDescription(rate: AgreementRate): string {
+  const parts = [`${labels[rate.fulfillmentMode]}: ${rate.commissionRateBps / 100}%`];
+  if ((rate.deliveryMarkupMinor ?? 0) > 0) parts.push(`إضافة على رسوم توصيل العميل: ${rate.deliveryMarkupMinor} ريال`);
+  if (rate.fulfillmentMode === "PARTNER_CAPTAIN") {
+    const mode = rate.deliveryPricingMode ?? "DISTANCE";
+    parts.push(mode === "FREE" ? "توصيل المتجر: مجاني" :
+      mode === "FIXED" ? `توصيل المتجر: ثابت ${rate.deliveryFixedFeeMinor} ريال` :
+      "توصيل المتجر: حسب المسافة");
+  }
+  return parts.join(" · ");
+}
+
+// The proposal UI submits commission rates only. Additional WLT delivery fees
+// are valid for older contracts, but cannot be silently added to this proposal.
+function hasOnlyDefaultDeliveryFeeTerms(item: Agreement): boolean {
+  return item.rates.every(rate => (rate.deliveryMarkupMinor ?? 0) === 0 &&
+    (rate.deliveryPricingMode ?? "DISTANCE") === "DISTANCE" &&
+    (rate.deliveryFixedFeeMinor ?? 0) === 0);
+}
 
 export function StoreCommercialAgreementProposal(props: Readonly<{storeId: string; modes: readonly StoreFulfillmentMode[]; readOnly?: boolean}>) {
   const { state } = useSession();
@@ -63,7 +91,8 @@ function StoreCommercialAgreementEditor({ storeId, modes, readOnly = true }: Rea
     setAgreements(null);
     setNotice("");
     try {
-      const response = await fetch(url, { cache: "no-store", signal: signal ?? null });
+      const readSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(12_000)]) : AbortSignal.timeout(12_000);
+      const response = await fetch(url, { cache: "no-store", signal: readSignal });
       const body: unknown = await response.json();
       if (!response.ok || !body || typeof body !== "object" || !("agreements" in body) || !Array.isArray(body.agreements)) {
         throw new Error("AGREEMENT_READ_UNAVAILABLE");
@@ -71,12 +100,43 @@ function StoreCommercialAgreementEditor({ storeId, modes, readOnly = true }: Rea
       const items = body.agreements as Agreement[];
       if (items.some(item => !item || typeof item.agreementId !== "string" || !item.agreementId.trim() ||
         item.storeId !== storeId || typeof item.partnerActorId !== "string" || !item.partnerActorId.trim() ||
+        typeof item.proposedByActorId !== "string" || !item.proposedByActorId.trim() ||
+        typeof item.status !== "string" || typeof item.reason !== "string" ||
+        !["COMMISSION", "SUBSCRIPTION", "HYBRID"].includes(item.commercialModel) ||
+        !Number.isSafeInteger(item.recurringAmountMinor) || item.recurringAmountMinor < 0 ||
+        item.recurringAmountMinor > 100000000 ||
+        !["NONE", "MONTHLY", "ANNUAL"].includes(item.billingPeriod) ||
+        item.billingTimeZone !== "Asia/Aden" ||
+        !Number.isSafeInteger(item.invoiceDueDays) || item.invoiceDueDays < 0 || item.invoiceDueDays > 30 ||
+        !Number.isSafeInteger(item.graceDays) || item.graceDays < 0 || item.graceDays > 30 ||
+        !["NONE", "MANUAL", "AUTOMATIC"].includes(item.renewalPolicy) ||
+        typeof item.terminationTerms !== "string" || typeof item.adjustmentTerms !== "string" ||
         !Number.isSafeInteger(item.agreementVersion) || item.agreementVersion < 1 ||
         !Array.isArray(item.rates) || item.rates.length < 1 || item.rates.length > 3 ||
         item.rates.some(rate => !rate || !Object.hasOwn(labels, rate.fulfillmentMode) ||
           !Number.isSafeInteger(rate.commissionRateBps) || rate.commissionRateBps < 0 ||
-          rate.commissionRateBps > 10000) ||
-        new Set(item.rates.map(rate => rate.fulfillmentMode)).size !== item.rates.length) ||
+          rate.commissionRateBps > 10000 ||
+          (rate.deliveryMarkupMinor !== undefined && (!Number.isSafeInteger(rate.deliveryMarkupMinor) ||
+            rate.deliveryMarkupMinor < 0 || rate.deliveryMarkupMinor > 10000)) ||
+          (rate.deliveryFixedFeeMinor !== undefined && (!Number.isSafeInteger(rate.deliveryFixedFeeMinor) ||
+            rate.deliveryFixedFeeMinor < 0 || rate.deliveryFixedFeeMinor > 20000)) ||
+          (rate.deliveryPricingMode !== undefined && !["DISTANCE", "FIXED", "FREE"].includes(rate.deliveryPricingMode)) ||
+          ((rate.deliveryMarkupMinor ?? 0) > 0 && (rate.fulfillmentMode !== "BTHWANI_CAPTAIN" || rate.commissionRateBps !== 0)) ||
+          (rate.fulfillmentMode !== "PARTNER_CAPTAIN" &&
+            ((rate.deliveryPricingMode ?? "DISTANCE") !== "DISTANCE" || (rate.deliveryFixedFeeMinor ?? 0) !== 0)) ||
+          (rate.fulfillmentMode === "PARTNER_CAPTAIN" && (
+            ((rate.deliveryPricingMode ?? "DISTANCE") === "FIXED" && (rate.deliveryFixedFeeMinor ?? 0) <= 0) ||
+            ((rate.deliveryPricingMode ?? "DISTANCE") !== "FIXED" && (rate.deliveryFixedFeeMinor ?? 0) !== 0)))) ||
+        new Set(item.rates.map(rate => rate.fulfillmentMode)).size !== item.rates.length ||
+        (item.commercialModel === "COMMISSION" && (item.recurringAmountMinor !== 0 ||
+          item.billingPeriod !== "NONE" || item.invoiceDueDays !== 0 || item.graceDays !== 0 ||
+          item.renewalPolicy !== "NONE" || item.terminationTerms !== "" || item.adjustmentTerms !== "")) ||
+        (item.commercialModel === "SUBSCRIPTION" && (item.recurringAmountMinor < 1 ||
+          !["MONTHLY", "ANNUAL"].includes(item.billingPeriod) ||
+          !["MANUAL", "AUTOMATIC"].includes(item.renewalPolicy) ||
+          item.rates.some(rate => rate.commissionRateBps !== 0) ||
+          Array.from(item.terminationTerms).length < 8 || Array.from(item.terminationTerms).length > 500 ||
+          Array.from(item.adjustmentTerms).length < 8 || Array.from(item.adjustmentTerms).length > 500))) ||
         new Set(items.map(item => item.agreementId)).size !== items.length) {
         throw new Error("AGREEMENT_READ_INVALID");
       }
@@ -153,14 +213,16 @@ function StoreCommercialAgreementEditor({ storeId, modes, readOnly = true }: Rea
       if (controller.signal.aborted) return;
       postAttempted = true;
       const response = await fetch(url, {
-        method: "POST", headers, body: JSON.stringify(payload), signal: controller.signal,
+        method: "POST", headers, body: JSON.stringify(payload),
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]),
       });
       if (controller.signal.aborted) return;
       if (!response.ok) throw new Error("PROPOSAL_REJECTED");
       const body = await response.json() as { agreement?: Agreement };
       if (controller.signal.aborted) return;
       const proposed = body.agreement;
-      if (!proposed || !matchesProposedStoreAgreement(proposed, expected)) {
+      if (!proposed || !matchesProposedStoreAgreement(proposed, expected) ||
+        !hasOnlyDefaultDeliveryFeeTerms(proposed)) {
         throw new Error("PROPOSAL_READBACK_MISMATCH");
       }
       const actual = await read(controller.signal);
@@ -168,7 +230,8 @@ function StoreCommercialAgreementEditor({ storeId, modes, readOnly = true }: Rea
       const confirmed = actual.filter(item =>
         item.agreementId === proposed.agreementId &&
         item.partnerActorId === proposed.partnerActorId &&
-        matchesProposedStoreAgreement(item, expected));
+        matchesProposedStoreAgreement(item, expected) &&
+        hasOnlyDefaultDeliveryFeeTerms(item));
       if (confirmed.length !== 1) {
         throw new Error("PROPOSAL_CANONICAL_READBACK_MISMATCH");
       }
@@ -199,7 +262,7 @@ function StoreCommercialAgreementEditor({ storeId, modes, readOnly = true }: Rea
       <p>توجد {agreements.length} نسخة محفوظة. {hasActiveAgreement
         ? "تظل الاتفاقية السارية نافذة حتى يقبل الشريك النسخة الجديدة وتعتمدها المالية، دون تعديل الطلبات السابقة."
         : "لا تُستبدل أي اتفاقية معلقة قبل حسمها."}</p>
-      {agreements.map(item => <p key={item.agreementId}>النسخة {item.agreementVersion} · {storeCommercialStatusLabel(item)} · {item.commercialModel} {item.commercialModel !== "COMMISSION" ? "· " + item.recurringAmountMinor + " ريال " + item.billingPeriod : ""} · {item.rates.map(rate => labels[rate.fulfillmentMode] + ": " + (rate.commissionRateBps / 100) + "%").join("، ")}</p>)}
+      {agreements.map(item => <p key={item.agreementId}>النسخة {item.agreementVersion} · {storeCommercialStatusLabel(item)} · {item.commercialModel} {item.commercialModel !== "COMMISSION" ? "· " + item.recurringAmountMinor + " ريال " + item.billingPeriod : ""} · {item.rates.map(commercialRateDescription).join("، ")}</p>)}
       {hasUnknownAgreementStatus && !error ? <p role="alert" className="identity-error">توجد حالة اتفاق غير معروفة. لا يمكن اقتراح شروط قبل مراجعة السجل. <button className="button button-secondary" type="button" disabled={busy} onClick={() => void read().catch((cause: unknown) => { if (!(cause instanceof Error && cause.message === "AGREEMENT_READ_SUPERSEDED")) setError("تعذرت إعادة قراءة الاتفاقات."); })}>إعادة قراءة السجل</button></p> : null}
       </> : null}
       {!readOnly ? <>

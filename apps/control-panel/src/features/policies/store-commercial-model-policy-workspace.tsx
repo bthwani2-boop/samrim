@@ -49,7 +49,7 @@ function StoreCommercialModelPolicyEditor() {
     setLoading(true);
     try {
       const response = await fetch(`/api/stores/${encodeURIComponent(storeId)}/publication`, {
-        cache: "no-store", signal: controller.signal,
+        cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(12_000)]),
       });
       if (!response.ok) throw new Error(response.status === 403 ? "لا تملك صلاحية قراءة هذا المتجر." : "تعذرت قراءة المتجر من DSH.");
       const result = await response.json() as StorePublicationResponse;
@@ -62,7 +62,9 @@ function StoreCommercialModelPolicyEditor() {
       if (sequence.current === requestID && !controller.signal.aborted) setSelected(result.store);
     } catch (cause) {
       if (sequence.current === requestID && !controller.signal.aborted) {
-        setError(cause instanceof Error ? cause.message : "تعذرت قراءة المتجر.");
+        setError(cause instanceof Error && cause.name === "TimeoutError"
+          ? "انتهت مهلة التحقق من المتجر. أعد المحاولة."
+          : cause instanceof Error ? cause.message : "تعذرت قراءة المتجر.");
       }
     } finally {
       if (sequence.current === requestID && !controller.signal.aborted) setLoading(false);

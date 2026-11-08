@@ -23,13 +23,13 @@ const proposeCode = proposal.slice(proposeStart, proposeEnd)
   .replace("const expected: ExpectedStoreCommercialProposal", "const expected")
   .replace(" as { agreement?: Agreement }", "");
 
-function runStoreLookup(fetch) {
+function runStoreLookup(fetch, signalAPI = AbortSignal) {
   const sequence = { current: 0 };
   const activeRead = { current: null };
   const state = { selected: [], errors: [], loading: [] };
   const readStore = runInNewContext(lookupCode + "\nreadStore", {
     useCallback: callback => callback,
-    sequence, activeRead, AbortController, encodeURIComponent,
+    sequence, activeRead, AbortController, AbortSignal: signalAPI, Error, encodeURIComponent,
     fetch, validModes: new Set(["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"]),
     setSelected: value => state.selected.push(value),
     setLoading: value => state.loading.push(value),
@@ -51,21 +51,31 @@ const agreement = {
   terminationTerms: "", adjustmentTerms: "",
 };
 const response = () => ({ ok: true, json: async () => ({ agreement }) });
+const defaultFeeStart = proposal.indexOf("function hasOnlyDefaultDeliveryFeeTerms(item: Agreement): boolean {");
+const defaultFeeEnd = proposal.indexOf("\n}", defaultFeeStart);
+assert.ok(defaultFeeStart >= 0 && defaultFeeEnd > defaultFeeStart);
+const hasOnlyDefaultDeliveryFeeTerms = runInNewContext(
+  proposal.slice(defaultFeeStart, defaultFeeEnd + 2)
+    .replace("item: Agreement", "item")
+    .replace("): boolean", ")") +
+  "\nhasOnlyDefaultDeliveryFeeTerms",
+);
 
-function runProposal({ fetch, headers, read, existingError = "", requiringConfirmation = false } = {}) {
+function runProposal({ fetch, headers, read, existingError = "", requiringConfirmation = false,
+  signalAPI = AbortSignal, modes = ["CUSTOMER_PICKUP"] } = {}) {
   const proposalController = { current: null };
   const state = { busy: [], errors: [], notices: [], agreements: [], confirmation: [] };
   const requests = [];
   const reads = [];
   const trigger = runInNewContext(proposeCode + "\n({ operation: propose(), repeat: propose })", {
     readOnly: false, busy: false, error: existingError, requiresConfirmation: requiringConfirmation, actorId: "operator-a", nextProposalVersion: 0,
-    modes: ["CUSTOMER_PICKUP"], labels: { CUSTOMER_PICKUP: "استلام العميل" },
-    commercialModel: "COMMISSION", commissionPercentByMode: { CUSTOMER_PICKUP: "0" },
+    modes, labels: { CUSTOMER_PICKUP: "استلام العميل", BTHWANI_CAPTAIN: "توصيل بثواني" },
+    commercialModel: "COMMISSION", commissionPercentByMode: { CUSTOMER_PICKUP: "0", BTHWANI_CAPTAIN: "0" },
     recurringAmount: "", billingPeriod: "MONTHLY", invoiceDueDays: "7",
     graceDays: "3", renewalPolicy: "MANUAL", terminationTerms: "", adjustmentTerms: "",
     proposalReason: agreement.reason,
     storeId: "store-a", url: "/api/partners/stores/store-a/commercial-agreements",
-    proposalController, AbortController,
+    proposalController, AbortController, AbortSignal: signalAPI,
     storeCommercialRatesForProposal,
     stablePartnerMutationHeaders: (...args) => (headers ? headers(...args) : Promise.resolve({ "Idempotency-Key": "same-key" })),
     fetch: (...args) => {
@@ -76,7 +86,7 @@ function runProposal({ fetch, headers, read, existingError = "", requiringConfir
       reads.push(args);
       return read ? read(...args) : Promise.resolve([agreement]);
     },
-    matchesProposedStoreAgreement,
+    matchesProposedStoreAgreement, hasOnlyDefaultDeliveryFeeTerms,
     setBusy: value => state.busy.push(value),
     setError: value => state.errors.push(value),
     setNotice: value => state.notices.push(value),
@@ -172,7 +182,10 @@ test("confirmed same-session proposal uses one POST and owner readback before su
   assert.equal(run.requests[0][1].method, "POST");
   assert.ok(run.requests[0][1].signal);
   assert.equal(run.reads.length, 1);
-  assert.strictEqual(run.reads[0][0], run.requests[0][1].signal);
+  assert.notStrictEqual(run.reads[0][0], run.requests[0][1].signal,
+    "POST has its own timeout but canonical GET remains tied to the active session controller");
+  assert.equal(run.reads[0][0].aborted, false);
+  assert.equal(run.requests[0][1].signal.aborted, false);
   assert.match(run.state.notices.at(-1), /حُفظ اقتراح العمولة/);
   assert.equal(run.state.busy.at(-1), false);
   assert.equal(run.proposalController.current, null);
@@ -199,7 +212,7 @@ test("rapid commercial proposal double-submit dispatches only one POST", async (
   assert.equal(run.requests.length, 0);
 });
 
-function runAgreementRead(fetch) {
+function runAgreementRead(fetch, signalAPI = AbortSignal) {
   const begin = proposal.indexOf("  const read = useCallback(async (signal?: AbortSignal) => {");
   const end = proposal.indexOf("\n  }, [url, storeId]);", begin);
   assert.ok(begin >= 0 && end > begin);
@@ -211,7 +224,7 @@ function runAgreementRead(fetch) {
   const agreements = [];
   const notices = [];
   const read = runInNewContext(code + "\nread", {
-    useCallback: callback => callback, readSequence,
+    useCallback: callback => callback, readSequence, AbortSignal: signalAPI,
     url: "/api/partners/stores/store-a/commercial-agreements", storeId: "store-a",
     labels: { BTHWANI_CAPTAIN: "توصيل بثواني", PARTNER_CAPTAIN: "توصيل المتجر", CUSTOMER_PICKUP: "استلام العميل" },
     fetch, setAgreements: value => agreements.push(value),
@@ -517,4 +530,280 @@ test("successful POST but different canonical WLT GET terms never confirms the p
   assert.equal(run.reads.length, 2, "canonical mismatch invokes one GET-only reconciliation");
   assert.deepEqual(run.state.notices, [""]);
   assert.equal(run.state.confirmation.at(-1), true);
+});
+
+function boundedSignalAPI(expectedDuration) {
+  return {
+    any: signals => AbortSignal.any(signals),
+    timeout: milliseconds => {
+      assert.equal(milliseconds, expectedDuration, "financial request deadline must not change");
+      return AbortSignal.timeout(8);
+    },
+  };
+}
+
+test("stalled canonical WLT GET reaches a deadline and never leaves old agreements visible", async () => {
+  for (const controller of [null, new AbortController()]) {
+    let requestedSignal;
+    const run = runAgreementRead((_url, { signal }) => {
+      requestedSignal = signal;
+      return new Promise((_resolve, reject) => {
+        if (signal.aborted) reject(signal.reason);
+        else signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    }, boundedSignalAPI(12_000));
+    await assert.rejects(run.read(controller?.signal), error => error?.name === "TimeoutError");
+    assert.equal(requestedSignal.aborted, true);
+    assert.equal(controller?.signal.aborted ?? false, false,
+      "a GET timeout must not revoke the operator session");
+    assert.deepEqual(run.agreements, [null],
+      "a timed out canonical read never restores an old agreement version");
+    assert.deepEqual(run.notices, [""]);
+  }
+});
+
+test("stalled financial POST becomes uncertain and requires explicit WLT readback, never a second POST", async () => {
+  let timedOut = false;
+  const run = runProposal({
+    signalAPI: boundedSignalAPI(20_000),
+    fetch: (_url, { signal }) => new Promise((_resolve, reject) => {
+      const fail = () => {
+        timedOut = signal.reason?.name === "TimeoutError";
+        reject(signal.reason);
+      };
+      if (signal.aborted) fail();
+      else signal.addEventListener("abort", fail, { once: true });
+    }),
+    read: async () => [agreement],
+  });
+  await run.operation;
+  assert.equal(timedOut, true);
+  assert.equal(run.requests.length, 1, "POST is attempted at most once");
+  assert.equal(run.reads.length, 1, "only a canonical read follows the uncertain POST");
+  assert.equal(run.requests[0][1].signal.aborted, true);
+  assert.equal(run.state.confirmation.at(-1), true);
+  assert.match(run.state.errors.at(-1), /لم نؤكد نتيجة الاقتراح/);
+  assert.deepEqual(run.state.notices, [""], "never report a successful financial mutation on timeout");
+  assert.equal(run.state.busy.at(-1), false);
+  assert.equal(run.proposalController.current, null);
+});
+
+test("stalled commercial Store lookup times out, releases the form and allows safe GET-only retry", async () => {
+  let calls = 0;
+  const run = runStoreLookup((_url, { signal }) => {
+    calls += 1;
+    if (calls > 1) return Promise.resolve(storeReply("store-a"));
+    return new Promise((_resolve, reject) => {
+      if (signal.aborted) reject(signal.reason);
+      else signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
+  }, boundedSignalAPI(12_000));
+  await run.readStore("store-a");
+  assert.equal(calls, 1);
+  assert.deepEqual(run.state.selected, [null]);
+  assert.match(run.state.errors.at(-1), /انتهت مهلة التحقق من المتجر/);
+  assert.equal(run.state.loading.at(-1), false, "timed-out GET must release the disabled form");
+  assert.equal(run.activeRead.current, null);
+  await run.readStore("store-a");
+  assert.equal(calls, 2, "recovery is an operator-initiated read, never an automatic financial POST");
+  assert.equal(run.state.selected.at(-1)?.id, "store-a");
+  assert.equal(run.state.loading.at(-1), false);
+});
+
+test("WLT agreement history rejects malformed consent actors and financial terms before display or new proposal", async () => {
+  const invalid = [
+    { proposedByActorId: "" },
+    { proposedByActorId: null },
+    { status: null },
+    { reason: null },
+    { commercialModel: "UNKNOWN" },
+    { commercialModel: null },
+    { recurringAmountMinor: "15000" },
+    { recurringAmountMinor: 1.5 },
+    { recurringAmountMinor: -1 },
+    { recurringAmountMinor: 100000001 },
+    { billingPeriod: "WEEKLY" },
+    { billingTimeZone: "UTC" },
+    { invoiceDueDays: "7" },
+    { invoiceDueDays: 31 },
+    { graceDays: -1 },
+    { graceDays: 3.5 },
+    { renewalPolicy: "UNKNOWN" },
+    { terminationTerms: null },
+    { adjustmentTerms: 100 },
+  ];
+  for (const changed of invalid) {
+    const run = runAgreementRead(async () => ({
+      ok: true, json: async () => ({ agreements: [{ ...agreement, ...changed }] }),
+    }));
+    await assert.rejects(run.read(new AbortController().signal), /AGREEMENT_READ_INVALID/,
+      "invalid owner ledger field: " + JSON.stringify(changed));
+    assert.deepEqual(run.agreements, [null],
+      "invalid financial values must not enter actionable UI state");
+    assert.deepEqual(run.notices, [""], "no finance confirmation on invalid GET");
+  }
+});
+
+test("WLT canonical commission, subscription and legacy hybrid agreement fields remain readable", async () => {
+  const subscription = {
+    ...agreement, commercialModel: "SUBSCRIPTION", recurringAmountMinor: 15000,
+    billingPeriod: "MONTHLY", invoiceDueDays: 7, graceDays: 3,
+    renewalPolicy: "MANUAL",
+    terminationTerms: "Termination terms of store agreement",
+    adjustmentTerms: "Adjustment and refund terms of store agreement",
+  };
+  for (const item of [agreement, subscription, { ...subscription, commercialModel: "HYBRID" }]) {
+    const run = runAgreementRead(async () => ({
+      ok: true, json: async () => ({ agreements: [item] }),
+    }));
+    const returned = await run.read(new AbortController().signal);
+    assert.equal(returned[0].commercialModel, item.commercialModel);
+    assert.equal(returned[0].recurringAmountMinor, item.recurringAmountMinor);
+    assert.equal(run.agreements.at(-1)[0].storeId, "store-a");
+  }
+});
+
+test("WLT history never presents contradictory commission fees or subscription terms as an accepted agreement", async () => {
+  const subscription = {
+    ...agreement, commercialModel: "SUBSCRIPTION", recurringAmountMinor: 15000,
+    billingPeriod: "MONTHLY", invoiceDueDays: 7, graceDays: 3,
+    renewalPolicy: "MANUAL",
+    terminationTerms: "Commercial termination rules",
+    adjustmentTerms: "Commercial adjustment rules",
+  };
+  const inconsistent = [
+    { ...agreement, recurringAmountMinor: 1 },
+    { ...agreement, billingPeriod: "MONTHLY" },
+    { ...agreement, invoiceDueDays: 1 },
+    { ...agreement, graceDays: 1 },
+    { ...agreement, renewalPolicy: "AUTOMATIC" },
+    { ...agreement, terminationTerms: "unwanted renewal terms" },
+    { ...agreement, adjustmentTerms: "unwanted adjustment terms" },
+    { ...subscription, recurringAmountMinor: 0 },
+    { ...subscription, billingPeriod: "NONE" },
+    { ...subscription, renewalPolicy: "NONE" },
+    { ...subscription, terminationTerms: "short" },
+    { ...subscription, adjustmentTerms: "short" },
+    { ...subscription, rates: [{ fulfillmentMode: "CUSTOMER_PICKUP", commissionRateBps: 100 }] },
+  ];
+  for (const invalid of inconsistent) {
+    const run = runAgreementRead(async () => ({
+      ok: true, json: async () => ({ agreements: [invalid] }),
+    }));
+    await assert.rejects(run.read(new AbortController().signal), /AGREEMENT_READ_INVALID/,
+      "contractually inconsistent WLT financial row must fail closed");
+    assert.deepEqual(run.agreements, [null]);
+    assert.deepEqual(run.notices, [""]);
+  }
+});
+
+test("WLT rate history discloses customer surcharges and store-captain fixed/free/distance delivery terms", async () => {
+  const start = proposal.indexOf("function commercialRateDescription(rate: AgreementRate): string {");
+  const end = proposal.indexOf("\n}", start);
+  assert.ok(start >= 0 && end > start);
+  assert.match(proposal, /item\.rates\.map\(commercialRateDescription\)\.join\("، "\)/);
+  const formatted = runInNewContext(
+    proposal.slice(start, end + 2)
+      .replace("rate: AgreementRate", "rate")
+      .replace("): string", ")")
+      + "\ncommercialRateDescription",
+    { labels: {
+      BTHWANI_CAPTAIN: "توصيل بثواني",
+      PARTNER_CAPTAIN: "توصيل المتجر",
+      CUSTOMER_PICKUP: "استلام العميل",
+    } },
+  );
+  const cases = [
+    [{ fulfillmentMode: "BTHWANI_CAPTAIN", commissionRateBps: 0, deliveryMarkupMinor: 350 },
+      /إضافة على رسوم توصيل العميل: 350 ريال/],
+    [{ fulfillmentMode: "PARTNER_CAPTAIN", commissionRateBps: 250,
+      deliveryPricingMode: "FIXED", deliveryFixedFeeMinor: 900 },
+      /توصيل المتجر: ثابت 900 ريال/],
+    [{ fulfillmentMode: "PARTNER_CAPTAIN", commissionRateBps: 0, deliveryPricingMode: "FREE" },
+      /توصيل المتجر: مجاني/],
+    [{ fulfillmentMode: "PARTNER_CAPTAIN", commissionRateBps: 100 },
+      /توصيل المتجر: حسب المسافة/],
+    [{ fulfillmentMode: "CUSTOMER_PICKUP", commissionRateBps: 400 },
+      /استلام العميل: 4%/],
+  ];
+  for (const [rate, message] of cases) {
+    const run = runAgreementRead(async () => ({
+      ok: true, json: async () => ({ agreements: [{ ...agreement, rates: [rate] }] }),
+    }));
+    const rows = await run.read(new AbortController().signal);
+    assert.equal(rows[0].rates.length, 1);
+    assert.match(formatted(rows[0].rates[0]), message);
+  }
+});
+
+test("malformed WLT delivery markups and captain pricing are never displayed as confirmed agreement terms", async () => {
+  const invalid = [
+    { fulfillmentMode: "BTHWANI_CAPTAIN", commissionRateBps: 100, deliveryMarkupMinor: 10 },
+    { fulfillmentMode: "PARTNER_CAPTAIN", commissionRateBps: 0, deliveryMarkupMinor: 10 },
+    { fulfillmentMode: "CUSTOMER_PICKUP", commissionRateBps: 0, deliveryMarkupMinor: 10 },
+    { fulfillmentMode: "BTHWANI_CAPTAIN", commissionRateBps: 0, deliveryMarkupMinor: -1 },
+    { fulfillmentMode: "BTHWANI_CAPTAIN", commissionRateBps: 0, deliveryMarkupMinor: 10001 },
+    { fulfillmentMode: "BTHWANI_CAPTAIN", commissionRateBps: 0, deliveryMarkupMinor: "200" },
+    { fulfillmentMode: "BTHWANI_CAPTAIN", commissionRateBps: 0, deliveryPricingMode: "FREE" },
+    { fulfillmentMode: "CUSTOMER_PICKUP", commissionRateBps: 0, deliveryFixedFeeMinor: 100 },
+    { fulfillmentMode: "PARTNER_CAPTAIN", commissionRateBps: 0, deliveryPricingMode: "BROKEN" },
+    { fulfillmentMode: "PARTNER_CAPTAIN", commissionRateBps: 0, deliveryPricingMode: "FIXED" },
+    { fulfillmentMode: "PARTNER_CAPTAIN", commissionRateBps: 0, deliveryPricingMode: "FIXED", deliveryFixedFeeMinor: -1 },
+    { fulfillmentMode: "PARTNER_CAPTAIN", commissionRateBps: 0, deliveryPricingMode: "FIXED", deliveryFixedFeeMinor: 20001 },
+    { fulfillmentMode: "PARTNER_CAPTAIN", commissionRateBps: 0, deliveryPricingMode: "FREE", deliveryFixedFeeMinor: 1 },
+    { fulfillmentMode: "PARTNER_CAPTAIN", commissionRateBps: 0, deliveryPricingMode: "DISTANCE", deliveryFixedFeeMinor: 1 },
+  ];
+  for (const rate of invalid) {
+    const run = runAgreementRead(async () => ({
+      ok: true, json: async () => ({ agreements: [{ ...agreement, rates: [rate] }] }),
+    }));
+    await assert.rejects(run.read(new AbortController().signal), /AGREEMENT_READ_INVALID/, JSON.stringify(rate));
+    assert.deepEqual(run.agreements, [null]);
+    assert.deepEqual(run.notices, [""]);
+  }
+});
+
+test("proposal verifies consented default delivery fees, never confirming unrequested WLT surcharge", async () => {
+  const canonicalFree = { ...agreement, rates: [{
+    fulfillmentMode: "BTHWANI_CAPTAIN", commissionRateBps: 0,
+    deliveryMarkupMinor: 0, deliveryPricingMode: "DISTANCE", deliveryFixedFeeMinor: 0,
+  }] };
+  const canonicalSurcharge = { ...canonicalFree, rates: [{
+    ...canonicalFree.rates[0], deliveryMarkupMinor: 350,
+  }] };
+  const defaultTerms = runProposal({
+    modes: ["BTHWANI_CAPTAIN"],
+    fetch: async () => ({ ok: true, json: async () => ({ agreement: canonicalFree }) }),
+    read: async () => [canonicalFree],
+  });
+  await defaultTerms.operation;
+  assert.equal(defaultTerms.requests.length, 1);
+  assert.equal(defaultTerms.reads.length, 1);
+  assert.deepEqual(defaultTerms.state.confirmation, []);
+  assert.match(defaultTerms.state.notices.at(-1), /حُفظ اقتراح العمولة/);
+  assert.equal(hasOnlyDefaultDeliveryFeeTerms(canonicalFree), true);
+  assert.equal(hasOnlyDefaultDeliveryFeeTerms(canonicalSurcharge), false);
+
+  const extraInPost = runProposal({
+    modes: ["BTHWANI_CAPTAIN"],
+    fetch: async () => ({ ok: true, json: async () => ({ agreement: canonicalSurcharge }) }),
+    read: async () => [canonicalSurcharge],
+  });
+  await extraInPost.operation;
+  assert.equal(extraInPost.requests.length, 1);
+  assert.equal(extraInPost.reads.length, 1, "after suspicious POST, GET-only recovery");
+  assert.equal(extraInPost.state.confirmation.at(-1), true);
+  assert.match(extraInPost.state.errors.at(-1), /لم نؤكد نتيجة الاقتراح/);
+  assert.equal(extraInPost.state.notices.at(-1), "");
+
+  const extraOnlyInCanonicalGet = runProposal({
+    modes: ["BTHWANI_CAPTAIN"],
+    fetch: async () => ({ ok: true, json: async () => ({ agreement: canonicalFree }) }),
+    read: async () => [canonicalSurcharge],
+  });
+  await extraOnlyInCanonicalGet.operation;
+  assert.equal(extraOnlyInCanonicalGet.requests.length, 1, "never retry POST on canonical mismatch");
+  assert.equal(extraOnlyInCanonicalGet.reads.length, 2, "verification and GET-only reconciliation");
+  assert.equal(extraOnlyInCanonicalGet.state.confirmation.at(-1), true);
+  assert.equal(extraOnlyInCanonicalGet.state.notices.at(-1), "");
 });
