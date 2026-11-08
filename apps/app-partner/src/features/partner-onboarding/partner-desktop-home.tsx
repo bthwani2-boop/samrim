@@ -99,6 +99,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
   const [data, setData] = useState<Data>(empty);
   const [loading, setLoading] = useState(true);
   const marketplace = isMarketplaceStore(store);
+  const independent = store.relationModel === "INDEPENDENT_STORE";
   const canOrders = marketplace && (store.owned || store.permissions.includes("orders"));
   const canCatalog = store.owned || store.permissions.includes("catalog");
   const canPromotions = marketplace && (store.owned || store.permissions.includes("promotions"));
@@ -214,7 +215,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
           {canOrders ? tile("الطلبات الجديدة", data.attention?.newOrders.toLocaleString("ar-YE") ?? "—", data.attention ? "تحتاج قبولًا أو مراجعة" : "تعذر قراءة العدد", "orders", "/orders" as Href) : null}
           {canOrders ? tile("بانتظار التسليم", data.attention?.awaitingDispatch.toLocaleString("ar-YE") ?? "—", "طابور المتجر الحالي", "deliveries", "/orders" as Href) : null}
           {canOrders ? tile("طلبات ٧ أيام", data.weeklyOrderSummary?.totalOrders.toLocaleString("ar-YE") ?? "—", data.weeklyOrderSummary ? "جميع طلبات هذا المتجر المنشأة خلال الفترة، من DSH" : "تعذر قراءة ملخص المتجر الكامل", "orders", "/orders" as Href) : null}
-          {canCatalog ? tile("المنتجات المتاحة", data.inventory?.availableOffers.toLocaleString("ar-YE") ?? "—", data.inventory ? (marketplace ? "من جميع عروض المتجر المنشورة، DSH" : "من الكتالوج الخاص؛ ليس نشرًا للعملاء") : "تعذر قراءة إجمالي المخزون", "cart", "/products" as Href) : null}
+          {canCatalog ? tile("المنتجات المتاحة", data.inventory?.availableOffers.toLocaleString("ar-YE") ?? "—", data.inventory ? (marketplace ? "من جميع عروض المتجر المنشورة، DSH" : independent ? "من الكتالوج الخاص؛ ليس نشرًا للعملاء" : "نموذج المتجر غير متحقق؛ لا تعتمد نشر الكتالوج") : "تعذر قراءة إجمالي المخزون", "cart", "/products" as Href) : null}
           {canFinance && store.owned ? tile("المستحقات المكتسبة", financialReady ? formatMoney(data.finance!.earnedMinor, "YER") : "—", financialReady ? "من ملخص التسوية الموثق" : "لم تكتمل قراءة المالية", "wallet", "/wallet" as Href) : null}
         </View>
 
@@ -242,8 +243,8 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
             </Pressable> : null}
           </View> : null}
           <View style={styles.setupGrid}>
-            {store.owned ? action("هوية المتجر", !marketplace ? "معاينة خاصة؛ النشر العام غير مفعل" : store.publicationState === "published" ? "المتجر منشور للعملاء" : "مراجعة بيانات المتجر والنشر", "/store?section=settings" as Href, "store", marketplace && store.publicationState === "published") : null}
-            {canCatalog ? action("إعداد الكتالوج", data.offers === null ? "البيانات غير متاحة حاليًا" : catalogReady === null ? "لم تكتمل قراءة الكتالوج؛ راجع بقية المنتجات" : catalogReady ? (marketplace ? "يوجد منتجات متاحة للطلب" : "المنتجات جاهزة للمعاينة الخاصة؛ الطلب المباشر غير مفعل") : "راجع المنتجات والأسعار", "/products" as Href, "cart", catalogReady) : null}
+            {store.owned ? action("هوية المتجر", marketplace ? (store.publicationState === "published" ? "المتجر منشور للعملاء" : "مراجعة بيانات المتجر والنشر") : independent ? "معاينة خاصة؛ النشر العام غير مفعل" : "تعذر التحقق من نموذج المتجر", "/store?section=settings" as Href, "store", marketplace && store.publicationState === "published") : null}
+            {canCatalog ? action("إعداد الكتالوج", data.offers === null ? "البيانات غير متاحة حاليًا" : catalogReady === null ? "لم تكتمل قراءة الكتالوج؛ راجع بقية المنتجات" : catalogReady ? (marketplace ? "يوجد منتجات متاحة للطلب" : independent ? "المنتجات جاهزة للمعاينة الخاصة؛ الطلب المباشر غير مفعل" : "نموذج المتجر غير متحقق؛ الطلب غير متاح") : "راجع المنتجات والأسعار", "/products" as Href, "cart", catalogReady) : null}
             {canOperate ? action("إعدادات التشغيل", operationalKnown ? "استقبال الطلبات: " + operationalState : "تعذر قراءة حالة التشغيل", "/store?section=operations" as Href, "deliveries") : null}
             {marketplace && store.owned ? action("الاتفاقية التجارية", agreementReadinessMessage(commercialAgreement), "/store?section=commercial" as Href, "wallet", commercialAgreement === null || commercialAgreement === "UNAVAILABLE" ? null : commercialAgreement === "ACTIVE") : null}
             {canPromotions ? action("العروض", "تحرير العروض المتاحة للمتجر", "/store?section=promotions" as Href, "offers") : null}

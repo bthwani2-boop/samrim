@@ -5,6 +5,9 @@ import { test } from "node:test";
 
 const file = path.resolve(import.meta.dirname, "../src/features/partner-onboarding/partner-more.tsx");
 const source = readFileSync(file, "utf8");
+const desktopSource = readFileSync(
+  path.resolve(import.meta.dirname, "../src/features/partner-onboarding/partner-desktop-home.tsx"), "utf8",
+);
 
 function liveRelationFlags(relationModel) {
   const market = source.match(/const marketplace=([^;]+);/);
@@ -38,4 +41,15 @@ test("desktop and mobile status fail closed rather than interpreting not-marketp
     "desktop banner must not claim independent preview for unsupported relation");
   assert.ok(source.includes('backgroundColor:marketplace&&selectedStore.publicationState==="published"?theme.success:theme.warning'),
     "unknown relation must not receive marketplace-published success color");
+});
+
+test("desktop Store setup shows private preview only for a confirmed independent relation", () => {
+  assert.match(desktopSource, /const marketplace = isMarketplaceStore\(store\);/);
+  assert.match(desktopSource, /const independent = store\.relationModel === "INDEPENDENT_STORE";/);
+  assert.doesNotMatch(desktopSource, /!marketplace \? "معاينة خاصة؛ النشر العام غير مفعل"/);
+  assert.match(desktopSource, /independent \? "معاينة خاصة؛ النشر العام غير مفعل" : "تعذر التحقق من نموذج المتجر"/);
+  assert.match(desktopSource, /independent \? "المنتجات جاهزة للمعاينة الخاصة؛ الطلب المباشر غير مفعل" : "نموذج المتجر غير متحقق؛ الطلب غير متاح"/);
+  assert.match(desktopSource, /independent \? "من الكتالوج الخاص؛ ليس نشرًا للعملاء" : "نموذج المتجر غير متحقق؛ لا تعتمد نشر الكتالوج"/);
+  assert.match(desktopSource, /const canOrders = marketplace &&/);
+  assert.match(desktopSource, /const canFinance = marketplace &&/);
 });
