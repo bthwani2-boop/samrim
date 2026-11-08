@@ -64,6 +64,8 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
  const [registryReady,setRegistryReady]=useState(false);
  const [busy,setBusy]=useState(false);
  const [saved,setSaved]=useState("");
+ const [recovered,setRecovered]=useState(false);
+ const saveInFlight=useRef(false);
  const [error,setError]=useState("");
  const [step,setStep]=useState<Step>(restored?.step??0);
  const [name,setName]=useState(restored?.name??"");
@@ -167,7 +169,7 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
   setStep(Math.min(step+1,3) as Step);
  }
  async function save(){
-  if(busy||!scope||!selected||!name.trim()||!relation||!city||!vertical||!storeType||address.trim().length<4||modes.length===0)return;
+  if(busy||saveInFlight.current||!scope||!selected||!name.trim()||!relation||!city||!vertical||!storeType||address.trim().length<4||modes.length===0)return;
   if(!registryReady||!firstStoreRelationCanEnroll(joiningPolicies,relation)){
    setStep(0);setError("تعذر تأكيد إتاحة نموذج المتجر. حدّث الخيارات قبل الإنشاء.");return;
   }
@@ -175,25 +177,58 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
    ||!cities.some(item=>item.id===city)||!verticals.some(item=>item.id===vertical&&item.active)){
    setStep(1);setError("تحقق من المدينة ونوع النشاط وأعد قراءة الخيارات قبل إنشاء المتجر.");return;
   }
+  saveInFlight.current=true;
   setBusy(true);setError("");
   const starting=scope;
+  let token:string|null=null;
+  let createResponseReceived=false;
   try{
-   const token=await getUsableIdentityAccessToken();
+   token=await getUsableIdentityAccessToken();
    if(partnerSetupSessionKey(currentIdentityState())!==starting)throw Error("SESSION_CHANGED");
    const result=await service().createPartnerFirstStore(token,{
     name:name.trim(),relationModel:relation,serviceCityId:city,primaryVerticalId:vertical,commercialStoreTypeId:storeType,
     addressText:address.trim(),latitude:selected.latitude,longitude:selected.longitude,fulfillmentModes:modes,
    });
+   createResponseReceived=true;
    if(result.relationModel!==relation)throw Error("STORE_RELATION_READBACK_MISMATCH");
    if(partnerSetupSessionKey(currentIdentityState())!==starting)return;
    const confirmed=await service().listPartnerAccessibleStores(token,25);
    if(partnerSetupSessionKey(currentIdentityState())!==starting)return;
    if(!confirmed.stores.some(store=>store.id===result.storeId&&store.owned))throw Error("STORE_READBACK_MISMATCH");
    clearPartnerSetupDraft(scope);
+   setRecovered(false);
    setSaved(result.storeId);
   }catch(e){
+   if(partnerSetupSessionKey(currentIdentityState())!==starting)return;
+   const cause=e&&typeof e==="object"?e as {kind?:unknown;status?:unknown}:null;
+   // Only an uncertain POST result may lead to a candidate readback. A
+   // definitive HTTP 4xx, failed local validation or later GET is NOT an
+   // ambiguous creation. Never issue a second POST automatically.
+   const ambiguousCreate=!createResponseReceived&&(cause?.kind==="network"||
+    (cause?.kind==="http"&&typeof cause.status==="number"&&cause.status>=500));
+   if(token&&ambiguousCreate){
+    try{
+     const existing=await service().listPartnerAccessibleStores(token,25);
+     if(partnerSetupSessionKey(currentIdentityState())!==starting)return;
+     // An owned Store alone is not evidence that THIS request committed.
+     // The listing does not expose Store Type, address or coordinates, so a
+     // matching entry is a candidate for manual verification, not proof.
+     const matching=existing.stores.filter(store=>store.owned&&
+      store.name.trim()===name.trim()&&store.relationModel===relation&&
+      store.serviceCityId===city&&store.primaryVerticalId===vertical&&
+      store.fulfillmentModes.length===modes.length&&
+      modes.every(mode=>store.fulfillmentModes.includes(mode)));
+     if(matching.length===1){
+      // Preserve the draft: a matching Store is not a confirmed new creation.
+      setRecovered(true);
+      setSaved(matching[0]!.id);
+      return;
+     }
+    }catch{ /* Canonical owner read unavailable: preserve original failure. */ }
+   }
    if(partnerSetupSessionKey(currentIdentityState())===starting)setError(errorText(e));
   }finally{
+   saveInFlight.current=false;
    if(partnerSetupSessionKey(currentIdentityState())===starting)setBusy(false);
   }
  }
@@ -281,9 +316,9 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
     {step>0?<BthwaniButton label="السابق" variant="secondary" disabled={busy} onPress={()=>{setError("");setStep((step-1) as Step)}}/>:null}
    </View>:null}
    {saved?<View style={{gap:14}}>
-    <Text style={s.title}>تم إنشاء متجرك</Text>
-    <Text style={s.small}>{relation==="INDEPENDENT_STORE"?"تم حفظ متجرك المستقل وغير المنشور. يمكنك إعداد المنتجات؛ لن يُفتح رابط الشراء المباشر قبل اعتماد ونشر خدمة المتاجر المستقلة.":"المتجر محفوظ وغير منشور حاليًا. يمكنك الدخول إلى لوحة الإدارة وإكمال جاهزية نشره في بثواني."}</Text>
-    <BthwaniButton label="فتح لوحة إدارة المتجر" onPress={()=>router.replace("/more" as Href)}/>
+    <Text style={s.title}>{recovered?"عُثر على متجر قد يطابق البيانات":"تم إنشاء متجرك"}</Text>
+    <Text style={s.small}>{recovered?"استجابة الإنشاء غير مؤكدة. ظهر متجر مملوك لك يطابق المعلومات الأساسية، لكن يلزم مراجعة نوعه وعنوانه في لوحة الإدارة قبل اعتبار الإنشاء ناجحًا. احتفظنا بمسودتك ولا تُعد الإرسال قبل التحقق.":relation==="INDEPENDENT_STORE"?"تم حفظ متجرك المستقل وغير المنشور. يمكنك إعداد المنتجات؛ لن يُفتح رابط الشراء المباشر قبل اعتماد ونشر خدمة المتاجر المستقلة.":"المتجر محفوظ وغير منشور حاليًا. يمكنك الدخول إلى لوحة الإدارة وإكمال جاهزية نشره في بثواني."}</Text>
+    <BthwaniButton label={recovered?"فتح الإدارة والتحقق من المتجر":"فتح لوحة إدارة المتجر"} onPress={()=>router.replace("/more" as Href)}/>
    </View>:null}
    {error?<View style={{gap:8}}><Text accessibilityRole="alert" style={s.error}>{error}</Text><BthwaniButton label="تحديث بيانات الانضمام" variant="secondary" disabled={checking||busy} onPress={()=>void load()}/></View>:null}
   </View>
