@@ -27,7 +27,7 @@ test("store profile navigation and panels are owned by one direct Ant Design Tab
 test("tab changes preserve profile routing, permissions, and readback behavior", () => {
   assert.match(dashboard, /const \[activeTab, setActiveTab\] = useState\("overview"\)/);
   assert.match(dashboard, /const openEditor = \(\) => \{ setActiveTab\("identity"\); openManagement\(\); \}/);
-  assert.match(dashboard, /setActiveTab\(group\);\s*if \(group !== "overview"\) recordView\?\.expandForEditing\(\)/);
+  assert.match(dashboard, /setActiveTab\(group\);[\s\S]*?if \(group !== "overview" && group !== "quality"\) recordView\?\.expandForEditing\(\)/);
   assert.match(dashboard, /scrollTo\(\{ top: 0, behavior: "smooth" \}\)/);
   assert.match(dashboard, /if \(!canViewOperations\) return;/);
   assert.match(dashboard, /value\.availability\?\.storeId !== store\.id \|\| !Array\.isArray\(value\.orderabilityByMode\)/);

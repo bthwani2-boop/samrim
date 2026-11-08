@@ -1,8 +1,11 @@
 "use client";
 
 import type { OperatorStoreListResponse } from "@bthwani/dsh";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useSession } from "../../session/session-provider";
+import { AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
+import { StoreInspector } from "./store-inspector";
 
 type PublicationFilter = "" | "unpublished" | "hidden";
 
@@ -32,6 +35,7 @@ function IndependentStoresRegistry() {
   const [history, setHistory] = useState<string[]>([]);
   const [refresh, setRefresh] = useState(0);
   const [page, setPage] = useState<OperatorStoreListResponse | null>(null);
+  const [selectedStoreId, setSelectedStoreId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -69,7 +73,15 @@ function IndependentStoresRegistry() {
     return () => controller.abort();
   }, [query, state, cursor, refresh]);
 
-  return <section className="workspace-page" aria-labelledby="independent-stores-title" data-testid="independent-stores-workspace">
+  // The identical Store inspector/management surface used by Partners.
+  // The only selectable IDs originate in the validated independent DSH page.
+  const detail = selectedStoreId ? <StoreInspector key={selectedStoreId} storeId={selectedStoreId}
+    onClose={() => setSelectedStoreId("")} onUpdated={() => setRefresh((value) => value + 1)} /> : null;
+
+  return <AdaptiveRecordWorkspace open={Boolean(selectedStoreId)} detail={detail}
+    preferenceKey="partners-unified" {...(selectedStoreId ? { triggerKey: `independent-store-${selectedStoreId}` } : {})}
+    onClose={() => setSelectedStoreId("")}>
+  <section className="workspace-page" aria-labelledby="independent-stores-title" data-testid="independent-stores-workspace">
     <header className="workspace-page-heading">
       <div>
         <h1 id="independent-stores-title">المتاجر المستقلة</h1>
@@ -118,14 +130,15 @@ function IndependentStoresRegistry() {
           <td>{store.partnerName || "مالك مسجل"} <small><bdi dir="ltr">{store.partnerActorId}</bdi></small></td>
           <td>{store.serviceCityName || "غير محددة"} — {store.primaryVerticalName || "نشاط غير محدد"}</td>
           <td>{publicationLabel(store.publicationState)}</td>
-          <td><details><summary>بيانات المتجر</summary>
-            <dl>
-              <dt>معرّف Store</dt><dd><bdi dir="ltr">{store.id}</bdi></dd>
-              <dt>نوع النشاط</dt><dd>{store.commercialStoreTypeNameAr || "غير محدد"}</dd>
-              <dt>آخر تحديث</dt><dd>{new Date(store.updatedAt).toLocaleDateString("ar-YE")}</dd>
-              <dt>العلاقة التجارية</dt><dd>متجر مستقل، بلا عمولة أو طلبات سوق مفعّلة</dd>
-            </dl>
-          </details></td>
+          <td><div className="partner-unified-card-actions">
+            <button type="button" className="partner-row-action"
+              data-adaptive-record-trigger={`independent-store-${store.id}`}
+              aria-label={`إدارة ملف متجر ${store.name}`}
+              onClick={() => setSelectedStoreId(store.id)}>إدارة المتجر</button>
+            <Link className="button button-secondary" href={`/partners/stores/${encodeURIComponent(store.id)}`}>
+              فتح الملف الكامل
+            </Link>
+          </div></td>
         </tr>)}</tbody>
       </table>
     </div> : null}
@@ -140,5 +153,6 @@ function IndependentStoresRegistry() {
         setCursor(page.nextCursor ?? "");
       }}>التالي</button>
     </nav> : null}
-  </section>;
+  </section>
+  </AdaptiveRecordWorkspace>;
 }
