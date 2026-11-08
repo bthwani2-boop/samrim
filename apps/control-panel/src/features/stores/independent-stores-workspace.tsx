@@ -2,6 +2,7 @@
 
 import type { OperatorStoreListResponse } from "@bthwani/dsh";
 import { useEffect, useState } from "react";
+import { useSession } from "../../session/session-provider";
 
 type PublicationFilter = "" | "unpublished" | "hidden";
 
@@ -14,6 +15,16 @@ function publicationLabel(state: string) {
 }
 
 export function IndependentStoresWorkspace() {
+  const { state } = useSession();
+  // DSH authorizes each request, but the operator's private registry UI must
+  // also leave memory when the Identity actor or session changes.
+  if (state.kind !== "authenticated" || state.identity.role !== "operator" || !state.identity.subject || !state.identity.sessionId) return null;
+  if (!state.identity.permissions?.includes("partners")) return <section className="workspace-page" role="alert">يتطلب سجل المتاجر المستقلة صلاحية إدارة الشركاء.</section>;
+  const sessionKey = JSON.stringify([state.identity.subject, state.identity.sessionId]);
+  return <IndependentStoresRegistry key={sessionKey} />;
+}
+
+function IndependentStoresRegistry() {
   const [draftQuery, setDraftQuery] = useState("");
   const [query, setQuery] = useState("");
   const [state, setState] = useState<PublicationFilter>("");
