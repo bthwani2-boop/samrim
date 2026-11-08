@@ -57,8 +57,9 @@ function MarketplaceCustomerActivitySummary({ storeId }: Readonly<{ storeId: str
 }
 
 export function StoreCustomerActivitySummary({ storeId, relationModel }: Readonly<{ storeId: string; relationModel: "BTHWANI_PARTNER" | "INDEPENDENT_STORE" }>) {
+  if (relationModel === "BTHWANI_PARTNER") return <MarketplaceCustomerActivitySummary storeId={storeId}/>;
   if (relationModel === "INDEPENDENT_STORE") {
     return <section aria-label="نشاط عملاء المتجر المستقل"><p role="status" className="store-profile-muted">هذا المتجر مستقل. إحصاءات عملاء طلبات سوق بثواني لا تمثل عملاء الطلبات المباشرة لهذا المتجر. ستتاح إحصاءات الطلبات المباشرة بعد اعتماد مسارها في DSH.</p></section>;
   }
-  return <MarketplaceCustomerActivitySummary storeId={storeId}/>;
+  return <section aria-label="نوع علاقة المتجر غير معروف"><p role="alert" className="store-profile-muted">تعذر تحديد علاقة المتجر؛ لم تُعرض إحصاءات السوق. أعد قراءة بيانات المتجر من DSH.</p></section>;
 }

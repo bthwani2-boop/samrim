@@ -50,3 +50,12 @@ test("independent operator tabs never mount marketplace Orders, ratings, or WLT 
   assert.match(parent, /const publicationLabel = isMarketplaceStore \? publicationStateLabel/);
   assert.match(parent, /جاهزية الموقع المستقل غير معتمدة/);
 });
+
+test("unknown DSH relation fails closed without mounting marketplace summary", () => {
+  const element = render({ storeId: "store-a", relationModel: "UNEXPECTED_RELATION" });
+  assert.equal(element.type, "section");
+  assert.equal(element.props.children[0].type, "p");
+  assert.equal(element.props.children[0].props.role, "alert");
+  assert.match(element.props.children[0].props.children[0], /تعذر تحديد علاقة المتجر/);
+  assert.notEqual(element.type, marketplace);
+});

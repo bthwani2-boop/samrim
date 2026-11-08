@@ -14,6 +14,10 @@ const StoreManagement = lazy(async () => ({ default: (await import("./store-work
 
 type PartnerContext = Readonly<{ partner: ActorRoleView; joiningCase: JoiningCaseView | null }>;
 
+function supportedStoreRelation(value: unknown): value is StorePublicationResponse["store"]["relationModel"] {
+  return value === "BTHWANI_PARTNER" || value === "INDEPENDENT_STORE";
+}
+
 export function StoreInspector({ storeId, onClose, onPrevious, onNext, onUpdated }: Readonly<{
   storeId: string; onClose: () => void;
   onPrevious?: (() => void) | undefined; onNext?: (() => void) | undefined; onUpdated?: (() => void) | undefined;
@@ -43,7 +47,7 @@ export function StoreInspector({ storeId, onClose, onPrevious, onNext, onUpdated
       if (!response.ok) throw new Error(response.status === 403 ? "لا تملك صلاحية قراءة جاهزية المتجر." : await partnerErrorMessage(response));
       const result = await response.json() as StorePublicationResponse;
       if (request !== sequence.current) return;
-      if (result.store?.id !== storeId || !Array.isArray(result.store.fulfillmentModes) || typeof result.store.publicationReadiness?.ready !== "boolean") {
+      if (result.store?.id !== storeId || !supportedStoreRelation(result.store.relationModel) || !Array.isArray(result.store.fulfillmentModes) || typeof result.store.publicationReadiness?.ready !== "boolean") {
         throw new Error("استجابة ملف المتجر غير صالحة.");
       }
       setStore(result.store);
@@ -99,7 +103,7 @@ export function StoreInspector({ storeId, onClose, onPrevious, onNext, onUpdated
         return;
       }
       const result = await response.json() as StorePublicationResponse;
-      if (result.store?.id !== store.id) throw new Error("تعذرت مطابقة نتيجة العملية.");
+      if (result.store?.id !== store.id || !supportedStoreRelation(result.store.relationModel) || (nextState === "published" && result.store.relationModel !== "BTHWANI_PARTNER")) throw new Error("تعذرت مطابقة نتيجة العملية.");
       setStore(result.store);
       setConfirmHide(false);
       setNotice("تم تنفيذ العملية، وتحديث حالة المتجر من الخدمة المالكة.");
