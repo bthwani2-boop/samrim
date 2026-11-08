@@ -15,10 +15,23 @@ export function StoreModeControls({ store, onUpdated }: Readonly<{ store: Store;
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
+  const visibleChoices = store.relationModel === "INDEPENDENT_STORE"
+    ? modeChoices.filter(mode => mode !== "BTHWANI_CAPTAIN")
+    : store.relationModel === "BTHWANI_PARTNER" ? modeChoices : [];
   useEffect(() => { if (!editing) setSelected(store.fulfillmentModes); }, [editing, store.fulfillmentModes]);
+  useEffect(() => { setEditing(false); setSelected(store.fulfillmentModes); setError(""); setNotice(""); },
+    [store.id, store.relationModel, store.version]);
   const changed = selected.length !== store.fulfillmentModes.length || selected.some((value) => !store.fulfillmentModes.includes(value));
+  const illegalSelection = selected.some(mode => !visibleChoices.includes(mode));
   async function save() {
     if (busy || !changed || selected.length === 0) return;
+    if ((store.relationModel !== "BTHWANI_PARTNER" && store.relationModel !== "INDEPENDENT_STORE") ||
+        selected.some(mode => !modeChoices.includes(mode)) ||
+        (store.relationModel === "INDEPENDENT_STORE" && selected.includes("BTHWANI_CAPTAIN"))) {
+      setNotice("");
+      setError("أوضاع التنفيذ لا تناسب نموذج المتجر الحالي. حدّث الملف وأعد الاختيار قبل الحفظ.");
+      return;
+    }
     setBusy(true); setError(""); setNotice("");
     try {
       const response = await fetch(`/api/stores/${encodeURIComponent(store.id)}/fulfillment-modes`, {
@@ -29,8 +42,9 @@ export function StoreModeControls({ store, onUpdated }: Readonly<{ store: Store;
       const readback = await fetch(`/api/stores/${encodeURIComponent(store.id)}/publication`, { cache: "no-store" });
       if (!readback.ok) throw new Error("تعذر تأكيد حالة التوصيل بعد الحفظ.");
       const latest = await readback.json() as StorePublicationResponse;
-      if (!response.ok || latest.store.id !== store.id || selected.length !== latest.store.fulfillmentModes.length
-        || selected.some((item) => !latest.store.fulfillmentModes.includes(item))) {
+      if (!response.ok || latest.store?.id !== store.id || latest.store.relationModel !== store.relationModel ||
+        selected.length !== latest.store.fulfillmentModes.length ||
+        selected.some((item) => !latest.store.fulfillmentModes.includes(item))) {
         onUpdated();
         throw new Error(failure || "لم تتطابق أوضاع التنفيذ مع قراءة النظام؛ أعد المحاولة بعد التحديث.");
       }
@@ -45,18 +59,19 @@ export function StoreModeControls({ store, onUpdated }: Readonly<{ store: Store;
     <div className="store-mode-heading"><strong>طرق تنفيذ الطلب</strong>
       {!editing ? <button type="button" className="store-control-link" onClick={() => { setEditing(true); setError(""); setNotice(""); }}>تعديل</button> : null}
     </div>
-    {!editing ? <div className="store-mode-chips">{modeChoices.map((choice) =>
+    {!editing ? <div className="store-mode-chips">{visibleChoices.map((choice) =>
       <span key={choice} data-enabled={store.fulfillmentModes.includes(choice)}>{fulfillmentModeLabel(choice)}</span>)}</div> :
     <fieldset className="store-mode-edit" disabled={busy}>
       <legend>تفعيل أو تعطيل طرق التنفيذ</legend>
-      {modeChoices.map((choice) => <label key={choice} className="store-mode-option">
+      {visibleChoices.map((choice) => <label key={choice} className="store-mode-option">
         <input type="checkbox" checked={selected.includes(choice)} onChange={() => {
           setSelected((old) => old.includes(choice) ? old.filter((value) => value !== choice) : [...old, choice]);
           setError(""); setNotice("");
         }} /><span>{fulfillmentModeLabel(choice)}</span>
       </label>)}
       {selected.length === 0 ? <p role="alert">يجب إبقاء طريقة تنفيذ واحدة على الأقل.</p> : null}
-      <div className="store-control-actions"><button className="button button-primary" type="button" disabled={!changed || !selected.length || busy} onClick={() => void save()}>{busy ? "جارٍ الحفظ…" : "حفظ"}</button>
+      {illegalSelection ? <p role="alert">توجد طريقة تنفيذ غير مسموحة لهذا النموذج. أعد قراءة ملف المتجر قبل حفظ أي تغيير.</p> : null}
+      <div className="store-control-actions"><button className="button button-primary" type="button" disabled={!changed || !selected.length || illegalSelection || busy} onClick={() => void save()}>{busy ? "جارٍ الحفظ…" : "حفظ"}</button>
         <button className="button button-secondary" type="button" disabled={busy} onClick={() => { setSelected(store.fulfillmentModes); setEditing(false); setError(""); }}>إلغاء</button></div>
     </fieldset>}
     {error ? <p className="store-control-error" role="alert">{error}</p> : null}

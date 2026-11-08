@@ -1,7 +1,7 @@
 "use client";
 
 import { TextArea } from "@bthwani/design-system/web";
-import { type CommercialStoreType, type CommercialStoreTypeListResponse, publicationReadinessBlockedReasonLabel, publicationStateLabel, type SetStoreCommercialTypeResponse, type StoreFulfillmentMode, type StoreFulfillmentModesResponse, type StoreInternalPhotoSummary, type StorePublicationResponse } from "@bthwani/dsh";
+import { type CommercialStoreType, type CommercialStoreTypeListResponse, publicationReadinessBlockedReasonLabel, publicationStateLabel, type SetStoreCommercialTypeResponse, type StoreFulfillmentMode, type StoreInternalPhotoSummary, type StorePublicationResponse } from "@bthwani/dsh";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -55,6 +55,11 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
       if (!response.ok) throw new Error(await partnerErrorMessage(response));
       const next = await response.json() as StorePublicationResponse;
       if (sequence !== requestSequence.current) return null;
+      if (next.store?.id !== storeId ||
+          (next.store.relationModel !== "BTHWANI_PARTNER" && next.store.relationModel !== "INDEPENDENT_STORE") ||
+          !Array.isArray(next.store.fulfillmentModes) || typeof next.store.publicationReadiness?.ready !== "boolean") {
+        throw new Error("قراءة المتجر غير مطابقة للمتجر المطلوب؛ لم تُعتمد بياناتها.");
+      }
       setPublication(next);
       setSelectedModes(next.store.fulfillmentModes);
       setSelectedCommercialTypeID(next.store.commercialStoreTypeId ?? "");
@@ -64,7 +69,10 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
       return next;
     } catch (cause) {
       if (sequence !== requestSequence.current) return null;
-      setError(cause instanceof Error ? cause.message : "تعذرت قراءة سجل المتجر .");
+      setPublication(null);
+      setSelectedModes([]);
+      setCommercialTypes([]);
+      setError(cause instanceof Error ? cause.message : "تعذرت قراءة سجل المتجر.");
       return null;
     } finally {
       if (sequence === requestSequence.current && showLoading) setLoading(false);
@@ -120,9 +128,16 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
 
   async function changePublication() {
     const current = publication?.store;
-    if (!current) return;
+    if (!current || busy || current.id !== storeId) return;
     const nextState = current.publicationState === "published" ? "hidden" : "published";
+    if (nextState === "published" && current.relationModel !== "BTHWANI_PARTNER") {
+      setNotice("");
+      await readStore(false);
+      setError("نشر المتجر المستقل للعامة غير مفعّل. هذه الجاهزية تخص سوق بثواني فقط.");
+      return;
+    }
     if (nextState === "published" && !current.publicationReadiness.ready) {
+      setNotice("");
       setError(`لا يمكن نشر المتجر: ${publicationReadinessBlockedReasonLabel(current.publicationReadiness.blockedReason)}`);
       return;
     }
@@ -140,9 +155,15 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
         return;
       }
       const result = await response.json() as StorePublicationResponse;
-      setPublication(result);
-      setSelectedModes(result.store.fulfillmentModes);
-      setNotice("سُجل تغيير النشر وعادت الحالة المعتمدة الجديدة.");
+      if (result.store?.id !== current.id || result.store.relationModel !== current.relationModel ||
+          result.store.publicationState !== nextState) throw new Error("STORE_PUBLICATION_RESPONSE_MISMATCH");
+      const verified = await readStore(false);
+      if (verified?.store.id !== current.id || verified.store.relationModel !== current.relationModel ||
+          verified.store.publicationState !== nextState) {
+        setError("لم تتطابق نتيجة النشر مع الحالة المعتمدة للمتجر. راجع آخر حالة قبل إعادة المحاولة.");
+        return;
+      }
+      setNotice("سُجل تغيير النشر وأكدت قراءة المتجر حالته الجديدة.");
       onUpdated?.();
     } catch {
       await readStore(false);
@@ -154,8 +175,15 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
 
   async function saveFulfillmentModes() {
     const current = publication?.store;
-    if (!current || selectedModes.length === 0) {
+    if (!current || busy || selectedModes.length === 0) {
       setError("اختر وضع طلب واحدًا على الأقل للمتجر.");
+      return;
+    }
+    if (current.id !== storeId || (current.relationModel !== "INDEPENDENT_STORE" && current.relationModel !== "BTHWANI_PARTNER") ||
+        selectedModes.some(mode => !fulfillmentModeOptions.some(option => option.value === mode)) ||
+        (current.relationModel === "INDEPENDENT_STORE" && selectedModes.includes("BTHWANI_CAPTAIN"))) {
+      setNotice("");
+      setError("أوضاع التنفيذ المحددة لا تتوافق مع نموذج المتجر الحالي. راجع بيانات المتجر قبل الحفظ.");
       return;
     }
     setBusy(true);
@@ -171,10 +199,15 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
         await reconcileFailure(response, "تعذر حفظ أوضاع الطلب.");
         return;
       }
-      const result = await response.json() as StoreFulfillmentModesResponse;
-      await readStore(false);
-      setSelectedModes(result.fulfillmentModes);
-      setNotice("حُفظت أوضاع الطلب ثم أُعيدت قراءة سجل المتجر .");
+      const readback = await readStore(false);
+      if (readback?.store.id !== current.id || readback.store.relationModel !== current.relationModel ||
+          readback.store.fulfillmentModes.length !== selectedModes.length ||
+          selectedModes.some(mode => !readback.store.fulfillmentModes.includes(mode))) {
+        setError("لم تثبت مطابقة أوضاع التنفيذ بعد الحفظ مع بيانات المتجر. أعد قراءة المتجر قبل المحاولة مجددًا.");
+        return;
+      }
+      setSelectedModes(readback.store.fulfillmentModes);
+      setNotice("حُفظت أوضاع التنفيذ وتأكدت مطابقتها في سجل المتجر.");
       onUpdated?.();
     } catch {
       await readStore(false);
@@ -221,6 +254,13 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
   }
 
   const store = publication?.store;
+  const canChangePublication = Boolean(store && (
+    (store.relationModel === "BTHWANI_PARTNER" && (store.publicationState === "published" || store.publicationReadiness.ready)) ||
+    (store.relationModel === "INDEPENDENT_STORE" && store.publicationState === "published")
+  ));
+  const visibleFulfillmentModeOptions = store?.relationModel === "INDEPENDENT_STORE"
+    ? fulfillmentModeOptions.filter(option => option.value !== "BTHWANI_CAPTAIN")
+    : store?.relationModel === "BTHWANI_PARTNER" ? fulfillmentModeOptions : [];
   const blockers = store?.publicationReadiness.ready ? [] : store?.publicationReadiness.blockedReasons?.length ? store.publicationReadiness.blockedReasons : store?.publicationReadiness.blockedReason ? [store.publicationReadiness.blockedReason] : [];
   return (
     <section className={`workspace-page store-workspace ${embedded ? "store-workspace-embedded" : ""}`} aria-label={embedded ? "إدارة بيانات المتجر وتوصيله وصوره" : undefined} aria-labelledby={embedded ? undefined : "store-workspace-title"}>
@@ -232,7 +272,8 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
 
       {store ? <>
         {embedded ? null : <section id="store-onboarding-readiness" className="store-detail-section" aria-label="رحلة انضمام ونشر المتجر">
-          <div className="store-detail-heading"><h2>رحلة المتجر من التسجيل إلى النشر</h2><span className="status-badge">{store.publicationState === "published" ? "منشور" : store.publicationReadiness.ready ? "جاهز للنشر" : "قيد التجهيز"}</span></div>
+          <div className="store-detail-heading"><h2>رحلة المتجر من التسجيل إلى النشر</h2><span className="status-badge">{store.relationModel === "INDEPENDENT_STORE" ? "تجهيز متجر مستقل" : store.publicationState === "published" ? "منشور" : store.publicationReadiness.ready ? "جاهز للنشر" : "قيد التجهيز"}</span></div>
+          {store.relationModel === "INDEPENDENT_STORE" ? <p role="status" className="muted">يمكن تجهيز المتجر المستقل وكتالوجه هنا، لكن نشر موقعه العام والطلبات المباشرة غير مفعّلين بعد. لا تعني جاهزية سوق بثواني الموافقة على النشر المستقل.</p> : <>
           <ol>
             <li>تسجيل واعتماد المتجر — مكتمل.</li>
             <li>تجهيز الهوية والاتفاقية والكتالوج — {store.publicationReadiness.ready ? "مكتمل." : "قيد الاستكمال."}</li>
@@ -257,12 +298,13 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
                 </li>)}
               </ul>
             </>}
+          </>}
         </section>}
         {embedded ? null : <section className="partner-case-summary" aria-label="ملخص حالة المتجر">
           <div className="partner-case-summary-main">
-            <div><h2>{store.name}</h2><p>الشريك: {store.partnerName || "حساب مرتبط"}</p><p>{publicationStateLabel(store.publicationState)} · {store.publicationReadiness.ready ? "جاهز للنشر" : publicationReadinessBlockedReasonLabel(store.publicationReadiness.blockedReason)}</p></div>
+            <div><h2>{store.name}</h2><p>الشريك: {store.partnerName || "حساب مرتبط"}</p><p>{publicationStateLabel(store.publicationState)} · {store.relationModel === "INDEPENDENT_STORE" ? "مسار النشر المستقل غير مفعّل" : store.publicationReadiness.ready ? "جاهز للنشر" : publicationReadinessBlockedReasonLabel(store.publicationReadiness.blockedReason)}</p></div>
           </div>
-          <div className="partner-case-summary-actions"><Link className="button button-secondary" href={`/partners/actors/${encodeURIComponent(store.partnerActorId)}`}>ملف الشريك</Link><a className="button button-primary" href="#store-publication-title">إدارة النشر</a></div>
+          <div className="partner-case-summary-actions"><Link className="button button-secondary" href={`/partners/actors/${encodeURIComponent(store.partnerActorId)}`}>ملف الشريك</Link>{store.relationModel === "BTHWANI_PARTNER" ? <a className="button button-primary" href="#store-publication-title">إدارة النشر</a> : null}</div>
         </section>}
         {embedded ? null : <section className="store-detail-section" aria-labelledby="store-detail-context-title">
           <div className="store-detail-heading"><div><h2 id="store-detail-context-title">معلومات المتجر والعلاقات</h2></div><button type="button" className="button button-secondary" disabled={loading || busy} onClick={() => void readStore()}>{loading ? "جارٍ القراءة…" : "إعادة القراءة"}</button></div>
@@ -293,17 +335,18 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
 
         {embedded ? null : <section className="store-detail-section" aria-labelledby="store-publication-title">
           <div className="store-detail-heading"><div><h2 id="store-publication-title">النشر والجاهزية</h2></div><span className={`status-badge status-${store.publicationState}`}>{publicationStateLabel(store.publicationState)}</span></div>
-          <p>{store.publicationReadiness.ready ? "المتجر مستوفٍ لشروط النشر الحالية." : `الجاهزية: ${publicationReadinessBlockedReasonLabel(store.publicationReadiness.blockedReason)}`}</p>
-          <div className="button-row"><button type="button" className="button button-primary" disabled={busy || loading || (!store.publicationReadiness.ready && store.publicationState !== "published")} onClick={() => void changePublication()}>{busy ? "جارٍ الحفظ…" : store.publicationState === "published" ? "إخفاء المتجر" : "نشر المتجر"}</button></div>
+          <p>{store.relationModel === "INDEPENDENT_STORE" ? "هذا المتجر مستقل، ولا تُجيز جاهزية السوق نشر موقعه العام أو تفعيل الطلبات المباشرة." : store.publicationReadiness.ready ? "المتجر مستوفٍ لشروط النشر الحالية." : `الجاهزية: ${publicationReadinessBlockedReasonLabel(store.publicationReadiness.blockedReason)}`}</p>
+          <div className="button-row">{canChangePublication ? <button type="button" className="button button-primary" disabled={busy || loading} onClick={() => void changePublication()}>{busy ? "جارٍ الحفظ…" : store.publicationState === "published" ? "إخفاء المتجر" : "نشر المتجر"}</button> : null}</div>
         </section>}
 
         {!embedded ? <section className="store-detail-section" aria-labelledby="store-fulfillment-title">
           <div className="store-detail-heading"><div><h2 id="store-fulfillment-title">أوضاع التنفيذ</h2></div></div>
           <fieldset className="store-fulfillment-options" disabled={busy || loading}>
             <legend>الأوضاع التي يتيحها المتجر</legend>
-            {fulfillmentModeOptions.map((option) => <label key={option.value} className="store-fulfillment-option"><input type="checkbox" checked={selectedModes.includes(option.value)} onChange={() => setSelectedModes((current) => current.includes(option.value) ? current.filter((mode) => mode !== option.value) : [...current, option.value])} /><span><strong>{option.label}</strong><small>{option.description}</small></span></label>)}
+            {visibleFulfillmentModeOptions.map((option) => <label key={option.value} className="store-fulfillment-option"><input type="checkbox" checked={selectedModes.includes(option.value)} onChange={() => setSelectedModes((current) => current.includes(option.value) ? current.filter((mode) => mode !== option.value) : [...current, option.value])} /><span><strong>{option.label}</strong><small>{option.description}</small></span></label>)}
           </fieldset>
-          <div className="button-row"><button type="button" className="button button-primary" disabled={busy || loading || selectedModes.length === 0 || selectedModes.length === store.fulfillmentModes.length && selectedModes.every((mode) => store.fulfillmentModes.includes(mode))} onClick={() => void saveFulfillmentModes()}>{busy ? "جارٍ الحفظ…" : "حفظ أوضاع التنفيذ"}</button><button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => { setSelectedModes(store.fulfillmentModes); setError(""); }}>إلغاء التغييرات</button></div>
+          {store.relationModel === "INDEPENDENT_STORE" ? <p className="muted">توصيل بثواني غير متاح للمتجر المستقل؛ يمكنه استخدام توصيل المتجر أو استلام العميل فقط.</p> : null}
+          <div className="button-row"><button type="button" className="button button-primary" disabled={busy || loading || selectedModes.length === 0 || selectedModes.some(mode => !visibleFulfillmentModeOptions.some(option => option.value === mode)) || selectedModes.length === store.fulfillmentModes.length && selectedModes.every((mode) => store.fulfillmentModes.includes(mode))} onClick={() => void saveFulfillmentModes()}>{busy ? "جارٍ الحفظ…" : "حفظ أوضاع التنفيذ"}</button><button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => { setSelectedModes(store.fulfillmentModes); setError(""); }}>إلغاء التغييرات</button></div>
         </section> : null}
 
         <details className="store-advanced-settings" open={embedded || !store.commercialStoreTypeId}>
