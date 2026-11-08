@@ -119,8 +119,14 @@ func TestIndependentCatalogAndCheckoutNeverReferenceNonexistentOfferDeletedAt(t 
 		if strings.Contains(string(source), "o.deleted_at") {
 			t.Errorf("%s refers to nonexistent catalog_store_offers.deleted_at", file)
 		}
-		if !strings.Contains(string(source), "p.deleted_at IS NULL") {
-			t.Errorf("%s must retain canonical deleted Product suppression", file)
+		// The Direct writer now composes the public Catalog's canonical
+		// predicate rather than duplicating its SQL in this source file.
+		effectiveSQL := string(source)
+		if file == "independent_direct_order.go" {
+			effectiveSQL = independentDirectOrderOfferQuery
+		}
+		if !strings.Contains(effectiveSQL, "p.deleted_at IS NULL") {
+			t.Errorf("%s must retain canonical deleted Product suppression in its effective SQL", file)
 		}
 	}
 	catalogSchema, err := os.ReadFile("migrations/010_central_catalog_refoundation.sql")

@@ -513,3 +513,24 @@ func TestIndependentOrderReplayDoesNotReissueRotatedOrExpiredBearer(t *testing.T
 		})
 	}
 }
+
+// Direct checkout must never accept a known Offer ID that its own published
+// Store Catalog would hide. The maximum permitted catalog quantity may
+// overflow int64 even when a smaller requested quantity looks affordable.
+func TestIndependentCheckoutUsesPublishedOfferEligibility(t *testing.T) {
+	for _, gate := range []string{
+		"JOIN dsh.stores s ON s.id=o.store_id",
+		"o.id=$1 AND o.store_id=$2",
+		"o.price_minor::numeric * o.quantity_max_base_units::numeric <= 9223372036854775807",
+		"o.inventory_policy='AVAILABILITY_ONLY'",
+		"p.store_id=s.id",
+		"FOR SHARE OF o,v,p",
+	} {
+		if !strings.Contains(independentDirectOrderOfferQuery, gate) {
+			t.Errorf("direct checkout accepted an Offer outside the public buyable subset: missing %q", gate)
+		}
+	}
+	if !strings.Contains(independentDirectOrderOfferQuery, strings.TrimSpace(independentDirectBuyableOfferSQL)) {
+		t.Fatal("direct checkout must consume the exact public independent Offer eligibility predicate")
+	}
+}

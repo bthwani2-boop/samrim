@@ -180,6 +180,19 @@ type independentOrderLine struct {
 	quantity, pricingUnit, unitPrice, lineTotal              int64
 }
 
+// The public independent Catalog and the Direct Order writer must enforce the
+// same buyable subset. A known but unlisted Offer ID must not bypass Catalog
+// pricing/quantity/rights guards through this internal writer.
+const independentDirectOrderOfferQuery = `SELECT o.id,v.id,p.id,p.canonical_name,v.title,o.price_minor,
+	o.quantity_min_base_units,o.quantity_max_base_units,o.quantity_step_base_units,
+	o.pricing_unit_base_units,o.pricing_basis,o.inventory_policy
+	FROM dsh.catalog_store_offers o
+	JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
+	JOIN dsh.catalog_products p ON p.id=v.product_id
+	JOIN dsh.stores s ON s.id=o.store_id
+	WHERE o.id=$1 AND o.store_id=$2` + independentDirectBuyableOfferSQL + `
+	FOR SHARE OF o,v,p`
+
 // CreateIndependentPickupOrder is a transactionally idempotent, server-priced,
 // pickup-only DSH owner primitive. Merchant delivery stays disabled until DSH
 // owns a verified address/serviceability/fee policy. This method must NOT be
@@ -314,19 +327,7 @@ func CreateIndependentPickupOrder(ctx context.Context, db *sql.DB, secret []byte
 		var item independentOrderLine
 		var minQty, maxQty, stepQty, priceUnit sql.NullInt64
 		var pricingBasis, inventoryPolicy string
-		err := tx.QueryRowContext(ctx, `SELECT o.id,v.id,p.id,p.canonical_name,v.title,o.price_minor,
-			o.quantity_min_base_units,o.quantity_max_base_units,o.quantity_step_base_units,
-			o.pricing_unit_base_units,o.pricing_basis,o.inventory_policy
-			FROM dsh.catalog_store_offers o
-			JOIN dsh.catalog_product_variants v ON v.id=o.variant_id AND v.active=true
-			JOIN dsh.catalog_products p ON p.id=v.product_id AND p.active=true
-			WHERE o.id=$1 AND o.store_id=$2 AND o.publication_state='published'
-			  AND o.availability=true AND p.deleted_at IS NULL
-			  AND (p.scope='SHARED' OR (p.scope='STORE_SCOPED' AND p.store_id=$2))
-			  AND NOT EXISTS (SELECT 1 FROM dsh.catalog_store_offer_modifier_groups og WHERE og.offer_id=o.id)
-			  AND o.currency='YER'
-			  AND EXISTS (SELECT 1 FROM dsh.catalog_publishable_offers publishable WHERE publishable.offer_id=o.id)
-			FOR SHARE OF o,v,p`, line.OfferID, input.StoreID).
+		err := tx.QueryRowContext(ctx, independentDirectOrderOfferQuery, line.OfferID, input.StoreID).
 			Scan(&item.offerID, &item.variantID, &item.productID, &item.productName, &item.variantTitle,
 				&item.unitPrice, &minQty, &maxQty, &stepQty, &priceUnit, &pricingBasis, &inventoryPolicy)
 		if errors.Is(err, sql.ErrNoRows) {
