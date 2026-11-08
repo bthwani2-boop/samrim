@@ -21,7 +21,7 @@ const confirmedItems = [
   policy("INDEPENDENT_STORE", true, 1),
 ];
 
-function executeSave(fetch) {
+function executeSave(fetch, signalAPI = AbortSignal) {
   const changes = [];
   const inFlightSave = { current: null };
   const state = {
@@ -35,7 +35,7 @@ function executeSave(fetch) {
     actorSession: '["operator-a","session-1"]',
     window: { confirm: () => true },
     crypto: { randomUUID: () => "single-idempotency-key" },
-    AbortController,
+    AbortController, AbortSignal: signalAPI,
     inFlightSave,
     fetch: async (...args) => { changes.push({ path: args[0], options: args[1] }); return fetch(...args); },
     validStoreJoiningPolicyReadback: items =>
@@ -165,4 +165,98 @@ test("double submit during in-flight operator policy save only dispatches one PU
   deliver({ ok: true, json: async () => ({ policy: policy("BTHWANI_PARTNER", false, 2) }) });
   await run.operation;
   assert.equal(run.changes.length, 1);
+});
+
+function boundedJoiningSignal(expectedMilliseconds) {
+  return {
+    any: signals => AbortSignal.any(signals),
+    timeout: milliseconds => {
+      assert.equal(milliseconds, expectedMilliseconds, "production policy deadline must remain unchanged");
+      return AbortSignal.timeout(8);
+    },
+  };
+}
+
+function executePolicyRead(fetch, signalAPI = AbortSignal) {
+  const iifeStart = source.indexOf("  void (async()=>{");
+  const iifeEnd = source.indexOf("  })();", iifeStart);
+  assert.ok(iifeStart >= 0 && iifeEnd > iifeStart, "extract actual production policy GET");
+  const code = source.slice(iifeStart, iifeEnd + "  })();".length)
+    .replace("void (async()=>{", "(async()=>{")
+    .replaceAll(" as {items?:Policy[]}", "");
+  const controller = new AbortController();
+  const calls = [];
+  const state = { policies: [], loadedSession: [], enabled: [], error: [], loading: [] };
+  const operation = runInNewContext(code, {
+    controller, path: "/api/policies/store-joining",
+    actorSession: '["operator-a","session-1"]', selected: "BTHWANI_PARTNER",
+    fetch: (...args) => { calls.push(args); return fetch(...args); },
+    AbortSignal: signalAPI,
+    validStoreJoiningPolicyReadback: items =>
+      Array.isArray(items) && items.length === 2 && items.every(item => Number.isSafeInteger(item.version)),
+    setPolicies: value => state.policies.push(value),
+    setLoadedSession: value => state.loadedSession.push(value),
+    setEnabled: value => state.enabled.push(value),
+    setError: value => state.error.push(value),
+    setLoading: value => state.loading.push(value),
+  });
+  return { controller, calls, state, operation };
+}
+
+test("stalled canonical joining-policy GET times out and releases the loading view without a write", async () => {
+  const run = executePolicyRead((_path, { signal }) =>
+    new Promise((_resolve, reject) => {
+      if (signal.aborted) reject(signal.reason);
+      else signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    }), boundedJoiningSignal(12_000));
+  await run.operation;
+  assert.equal(run.calls.length, 1);
+  assert.equal(run.calls[0][1].cache, "no-store");
+  assert.equal(run.calls[0][1].signal.aborted, true);
+  assert.equal(run.controller.signal.aborted, false, "timeout must not revoke the operator session");
+  assert.equal(run.state.loading.at(-1), false);
+  assert.match(run.state.error.at(-1), /لا يمكن تعديلها الآن/);
+  assert.deepEqual(run.state.policies, [], "no stale policy data is installed");
+  assert.deepEqual(run.state.loadedSession, [], "unconfirmed GET does not authorize policy saves");
+});
+
+test("stalled joining-policy PUT times out, blocks a second mutation until canonical reread", async () => {
+  const run = executeSave((_path, { signal }) =>
+    new Promise((_resolve, reject) => {
+      if (signal.aborted) reject(signal.reason);
+      else signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    }), boundedJoiningSignal(20_000));
+  await run.operation;
+  assert.equal(run.changes.length, 1);
+  assert.equal(run.changes[0].options.method, "PUT");
+  assert.equal(run.changes[0].options.signal.aborted, true);
+  assert.equal(run.inFlightSave.current, null);
+  assert.equal(run.state.loadedSession, "");
+  assert.deepEqual(Array.from(run.state.policies), []);
+  assert.equal(run.state.notice, "");
+  assert.equal(run.state.saving.at(-1), false);
+  assert.match(run.state.error, /أعد قراءة الحالة من DSH/);
+});
+
+test("stalled confirmation GET after a successful PUT fails closed with no duplicate PUT or success notice", async () => {
+  const run = executeSave((_path, { method, signal }) => {
+    if (method === "PUT") return {
+      ok: true,
+      json: async () => ({ policy: policy("BTHWANI_PARTNER", false, 2) }),
+    };
+    return new Promise((_resolve, reject) => {
+      if (signal.aborted) reject(signal.reason);
+      else signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
+  }, boundedJoiningSignal(20_000));
+  await run.operation;
+  assert.equal(run.changes.length, 2);
+  assert.equal(run.changes.filter(call => call.options.method === "PUT").length, 1);
+  assert.strictEqual(run.changes[0].options.signal, run.changes[1].options.signal,
+    "one timeout covers PUT and its confirmation GET");
+  assert.equal(run.state.loadedSession, "");
+  assert.deepEqual(Array.from(run.state.policies), []);
+  assert.equal(run.state.notice, "");
+  assert.equal(run.state.saving.at(-1), false);
+  assert.match(run.state.error, /أعد قراءة الحالة من DSH/);
 });

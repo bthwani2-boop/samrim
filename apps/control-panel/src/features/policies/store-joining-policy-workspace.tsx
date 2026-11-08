@@ -31,7 +31,7 @@ export function StoreJoiningPolicyWorkspace(){
   const controller=new AbortController();
   void (async()=>{
    try{
-    const response=await fetch(path,{cache:"no-store",signal:controller.signal});
+    const response=await fetch(path,{cache:"no-store",signal:AbortSignal.any([controller.signal,AbortSignal.timeout(12_000)])});
     const body=await response.json() as {items?:Policy[]};
     if(!response.ok||!validStoreJoiningPolicyReadback(body.items))
       throw Error("تعذرت قراءة سياسة الانضمام.");
@@ -56,17 +56,18 @@ export function StoreJoiningPolicyWorkspace(){
   if(!readbackReady||!current||saving||inFlightSave.current||enabled===current.enrollmentEnabled||reason.trim().length<5)return;
   if(!window.confirm(enabled?"فتح إنشاء متاجر جديدة لهذا النموذج؟":"إيقاف إنشاء متاجر جديدة بهذا النموذج؟ المتاجر القائمة لن تتوقف."))return;
   const controller=new AbortController();
+  const requestSignal=AbortSignal.any([controller.signal,AbortSignal.timeout(20_000)]);
   inFlightSave.current=controller;
   setSaving(true);setError("");setNotice("");
   try{
-   const response=await fetch(path,{method:"PUT",signal:controller.signal,
+   const response=await fetch(path,{method:"PUT",signal:requestSignal,
     headers:{"Content-Type":"application/json","Idempotency-Key":crypto.randomUUID()},
     body:JSON.stringify({relationModel:selected,enrollmentEnabled:enabled,expectedVersion:current.version,reason:reason.trim()})
    });
    const body=await response.json() as {policy?:Policy;error?:{message?:string}};
    if(controller.signal.aborted)return;
    if(!response.ok||!body.policy)throw Error(body.error?.message||"تعذر اعتماد السياسة.");
-   const confirmedResponse=await fetch(path,{cache:"no-store",signal:controller.signal});
+   const confirmedResponse=await fetch(path,{cache:"no-store",signal:requestSignal});
    const confirmedBody=await confirmedResponse.json() as {items?:Policy[]};
    if(controller.signal.aborted)return;
    const confirmed=confirmedBody.items?.find(item=>item.relationModel===selected);
