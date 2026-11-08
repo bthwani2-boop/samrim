@@ -1,4 +1,4 @@
-import type { IndependentCustomerPolicyDraft, IndependentCustomerPolicyDraftInput } from "@bthwani/dsh";
+import { isDefinitiveDshMobileClientRejection, type IndependentCustomerPolicyDraft, type IndependentCustomerPolicyDraftInput } from "@bthwani/dsh";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import * as Crypto from "expo-crypto";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -99,10 +99,21 @@ export function PartnerIndependentCustomerPolicyDraftEditor({ storeID }: Readonl
     setBusy(true);
     setPending(attempt);
     setNotice("");
+    let definitivelyRejected = false;
     try {
       await saveOwnIndependentCustomerPolicyDraft(storeID, attempt.input, attempt.key, attempt.correlation);
-    } catch {
-      // A timeout may follow a committed write; canonical DSH readback decides.
+    } catch (cause) {
+      // Network loss or a 5xx may follow a committed write; a definitive 4xx cannot be treated as saved.
+      definitivelyRejected = isDefinitiveDshMobileClientRejection(cause);
+    }
+    if (definitivelyRejected) {
+      if (stillCurrent()) {
+        setPending(null);
+        setNotice("رفض DSH حفظ مسودة السياسات. حدّث بيانات المتجر وراجع الصلاحية أو أي تعديل متزامن قبل المحاولة مجددًا.");
+      }
+      if (savingGeneration.current === generation) savingGeneration.current = null;
+      if (stillCurrent()) setBusy(false);
+      return;
     }
     // An Identity switch may happen while the PUT is in flight. Never read the
     // old Store using the newly authenticated Partner's bearer.

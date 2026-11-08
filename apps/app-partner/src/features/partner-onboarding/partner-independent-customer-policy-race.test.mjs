@@ -61,11 +61,42 @@ function harness() {
     }),
     sameTerms: (policy, expected) => ["cancellationTerms", "returnsTerms", "fulfillmentTerms", "collectionTerms"]
       .every(key => policy[key] === expected[key]),
+    isDefinitiveDshMobileClientRejection: cause => cause?.kind === "http" && cause.status >= 400 && cause.status < 500,
   };
   const save = vm.runInNewContext(compiledSave, context);
   return { save, write, calls, current, context };
 }
 
+for (const status of [403, 409, 422]) {
+  test(`definitive HTTP ${status} cannot be recovered as success from a concurrent matching owner write`, async () => {
+    const h = harness();
+    h.context.saveOwnIndependentCustomerPolicyDraft = async (store, body, key, correlation) => {
+      h.calls.writes.push({ store, body, key, correlation });
+      throw { kind: "http", status, code: "REJECTED" };
+    };
+    await h.save();
+    assert.equal(h.calls.reads, 0, "a definitive rejection must not infer success from a later owner read");
+    assert.equal(h.calls.states.length, 0, "leave the last confirmed policy state unchanged");
+    assert.equal(h.calls.pending.at(-1), null, "a rejected idempotency attempt is not replayed");
+    assert.ok(!h.calls.notices.some(value => /تم حفظ/.test(value)), "must not claim the concurrent write as this save");
+    assert.ok(h.calls.notices.at(-1), "show an actionable rejection notice");
+    assert.equal(h.calls.busy.at(-1), false);
+  });
+}
+
+test("ambiguous network or server failure still verifies the canonical owner with the same retry key", async () => {
+  for (const failure of [new Error("offline"), { kind: "http", status: 503 }]) {
+    const h = harness();
+    h.context.saveOwnIndependentCustomerPolicyDraft = async (store, body, key, correlation) => {
+      h.calls.writes.push({ store, body, key, correlation });
+      throw failure;
+    };
+    await h.save();
+    assert.equal(h.calls.reads, 1);
+    assert.match(h.calls.notices.at(-1), /تم حفظ/);
+    assert.equal(h.calls.pending.at(-1), null);
+  }
+});
 test("two rapid save taps dispatch one canonical write and one readback", async () => {
   const h = harness();
   const first = h.save();

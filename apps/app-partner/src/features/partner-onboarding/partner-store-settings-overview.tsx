@@ -1,10 +1,12 @@
 import type { PartnerStoreOperationalAvailabilityResponse } from "@bthwani/dsh";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Text, View } from "react-native";
 
+import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
+import { partnerSetupSessionKey } from "./partner-setup-session-scope";
 import { readOwnStoreOperationalAvailability } from "./store-readback-client";
 import { storeSettingsStatus } from "./partner-store-settings-status";
 
@@ -21,17 +23,50 @@ export function PartnerStoreSettingsOverview({ storeID }: Readonly<{ storeID: st
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const [state, setState] = useState<ReadState>({ kind: "loading" });
   const [retry, setRetry] = useState(0);
+  const [identityState, setIdentityState] = useState(currentIdentityState);
+  const sessionKey = partnerSetupSessionKey(identityState);
+  const sessionScope = useRef(sessionKey);
+  const requestGeneration = useRef(0);
+
+  useEffect(() => subscribeIdentitySession(next => {
+    const nextScope = partnerSetupSessionKey(next);
+    if (nextScope === sessionScope.current) return;
+    sessionScope.current = nextScope;
+    requestGeneration.current += 1;
+    setIdentityState(next);
+    setState({ kind: "loading" });
+    setRetry(value => value + 1);
+  }), []);
 
   useFocusEffect(useCallback(() => {
-    // Retry explicitly re-reads DSH state for the same Store.
+    // Retry explicitly re-reads DSH state for the same Store and Identity session.
     void retry;
+    void sessionKey;
     let active = true;
+    const generation = ++requestGeneration.current;
+    const scope = partnerSetupSessionKey(currentIdentityState());
+    const stillCurrent = () => active && generation === requestGeneration.current &&
+      scope !== "" && scope === partnerSetupSessionKey(currentIdentityState());
     setState({ kind: "loading" });
-    void readOwnStoreOperationalAvailability(storeID)
-      .then(value => { if (active) setState({ kind: "ready", value }); })
-      .catch(() => { if (active) setState({ kind: "error" }); });
-    return () => { active = false; };
-  }, [storeID, retry]));
+    if (!scope) {
+      setState({ kind: "error" });
+    } else {
+      void readOwnStoreOperationalAvailability(storeID)
+        .then(value => {
+          if (!stillCurrent()) return;
+          const validStoreScope = value?.availability?.storeId === storeID &&
+            Array.isArray(value.orderabilityByMode) &&
+            value.orderabilityByMode.every(mode => mode?.storeId === storeID);
+          if (!validStoreScope) { setState({ kind: "error" }); return; }
+          setState({ kind: "ready", value });
+        })
+        .catch(() => { if (stillCurrent()) setState({ kind: "error" }); });
+    }
+    return () => {
+      active = false;
+      if (requestGeneration.current === generation) requestGeneration.current += 1;
+    };
+  }, [storeID, retry, sessionKey]));
 
   const navigate = (href: Href) => router.push(href);
   return <View style={styles.card}>
