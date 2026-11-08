@@ -20,6 +20,10 @@ var ErrIndependentStorefrontNotPublished = errors.New("independent storefront wa
 const independentDirectBuyableOfferSQL = `
     AND o.publication_state='published' AND o.availability=true
     AND o.currency='YER' AND o.pricing_basis='PER_UNIT'
+    -- Direct Order rejects free/negative prices and checked-int64 overflow.
+    -- Only advertise Offers whose entire declared quantity range is quoteable.
+    AND o.price_minor > 0
+    AND o.price_minor::numeric * o.quantity_max_base_units::numeric <= 9223372036854775807
     AND o.pricing_unit_base_units=1
     AND o.inventory_policy='AVAILABILITY_ONLY'
     AND EXISTS (SELECT 1 FROM dsh.catalog_publishable_offers publishable WHERE publishable.offer_id=o.id)

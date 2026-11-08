@@ -207,6 +207,16 @@ func TestIndependentDirectOrderIsolatedPersistenceGuards(t *testing.T) {
 		if _, err := db.ExecContext(ctx, insert, "invalid-pickup-fee", storeA, 50, 650, strings.Repeat("a", 64)); err == nil {
 			t.Fatal("pickup with merchant delivery fee must fail DB CHECK")
 		}
+		// A marketplace Store must never create a direct Order, even when the
+		// caller bypasses the Go Store-model check and uses valid Order facts.
+		if _, err := db.ExecContext(ctx, insert, "market-model-forbidden", storeB, 0, 600, strings.Repeat("c", 64)); err == nil {
+			t.Fatal("marketplace Store bypassed the direct Order insertion guard")
+		}
+		var marketDirectCount int
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM dsh.independent_direct_orders WHERE id='market-model-forbidden'`).
+			Scan(&marketDirectCount); err != nil || marketDirectCount != 0 {
+			t.Fatalf("marketplace Order denial was not durable: count=%d err=%v", marketDirectCount, err)
+		}
 		if _, err := db.ExecContext(ctx, insert, "valid-test-order", storeA, 0, 600, strings.Repeat("b", 64)); err != nil {
 			t.Fatalf("insert synthetic QA-only order: %v", err)
 		}
@@ -378,5 +388,21 @@ func TestIndependentDirectOrderIsolatedPersistenceGuards(t *testing.T) {
 		// PostgreSQL positive owner draft write/replay and negative IDOR.
 		// No public publication, service cutover or financial side effect.
 		exerciseIndependentPolicyHTTPOnIsolatedDB(t, ctx, db, storeA, storeB, ownerA)
+
+		// Only the *new* direct Order is gated by the current relationship.
+		// A QA-only relation flip must not delete or rewrite an older Order;
+		// this is a persistence invariant, not a released conversion workflow.
+		if _, err := db.ExecContext(ctx, `UPDATE dsh.stores SET relation_model='BTHWANI_PARTNER' WHERE id=$1`, storeA); err != nil {
+			t.Fatal(err)
+		}
+		var historicState string
+		if err := db.QueryRowContext(ctx, `SELECT state FROM dsh.independent_direct_orders WHERE id=$1 AND store_id=$2`,
+			"valid-test-order", storeA).Scan(&historicState); err != nil || historicState != "SUBMITTED" {
+			t.Fatalf("relation change must preserve historic merchant-direct Order: state=%q err=%v", historicState, err)
+		}
+		if _, err := db.ExecContext(ctx, insert, "after-relation-change-forbidden", storeA, 0, 600,
+			strings.Repeat("d", 64)); err == nil {
+			t.Fatal("a newly marketplace Store must no longer create direct Orders")
+		}
 	}, 5*time.Minute)
 }

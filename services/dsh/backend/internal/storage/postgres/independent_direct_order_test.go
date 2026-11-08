@@ -300,6 +300,22 @@ func TestIndependentSchemaVerifierIncludesAllNewTables(t *testing.T) {
 			t.Errorf("VerifySchema does not check migration 174 table %s", table)
 		}
 	}
+	// Prevent a forged direct Order for a marketplace Store even if the
+	// writer is bypassed. The gate is INSERT-only so historical Orders remain
+	// intact if the commercial Store model is later changed.
+	for _, gate := range []string{
+		"CREATE FUNCTION dsh.require_independent_direct_order_store()",
+		"RETURNS trigger LANGUAGE plpgsql AS $independent_store_guard$",
+		"$independent_store_guard$;",
+		"WHERE id=NEW.store_id AND deleted_at IS NULL",
+		"FOR SHARE;",
+		"CREATE TRIGGER independent_direct_order_store_insert_guard",
+		"BEFORE INSERT ON dsh.independent_direct_orders",
+	} {
+		if !strings.Contains(migration, gate) {
+			t.Errorf("direct Order Store-model insertion gate missing %q", gate)
+		}
+	}
 	// The database, not only the Go writer, must reject forged line prices.
 	// A disposable PostgreSQL integration test exercises the actual CHECK.
 	for _, arithmeticConstraint := range []string{

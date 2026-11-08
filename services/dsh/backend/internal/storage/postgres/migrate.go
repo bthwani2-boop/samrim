@@ -484,6 +484,22 @@ func VerifySchema(ctx context.Context, db *sql.DB, records []MigrationRecord) er
 	if err := verifyStoreRelationConstraints(ctx, db); err != nil {
 		return err
 	}
+	// The direct Order writer must not rely solely on application-side checks:
+	// marketplace and archived Stores cannot insert independent Orders at SQL.
+	var independentInsertGuardEnabled bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS(
+		SELECT 1 FROM pg_trigger t
+		JOIN pg_class c ON c.oid=t.tgrelid
+		JOIN pg_namespace n ON n.oid=c.relnamespace
+		WHERE n.nspname='dsh' AND c.relname='independent_direct_orders'
+		  AND t.tgname='independent_direct_order_store_insert_guard'
+		  AND NOT t.tgisinternal AND t.tgenabled IN ('O','A')
+	)`).Scan(&independentInsertGuardEnabled); err != nil {
+		return fmt.Errorf("DSH independent direct Order insertion guard readback: %w", err)
+	}
+	if !independentInsertGuardEnabled {
+		return errors.New("DSH independent direct Order insertion guard missing or disabled")
+	}
 	var databaseNow time.Time
 	if err := db.QueryRowContext(ctx, "SELECT clock_timestamp()").Scan(&databaseNow); err != nil {
 		return fmt.Errorf("DSH database clock: %w", err)

@@ -183,6 +183,30 @@ CREATE TABLE dsh.independent_direct_orders (
     CONSTRAINT independent_direct_order_capability_chk CHECK
         (guest_capability_hash ~ '^[0-9a-f]{64}$')
 );
+-- Enforce the current commercial relation at the actual DSH write boundary.
+-- FOR SHARE serializes an Order insert with a concurrent Store-model change;
+-- an INSERT-only trigger deliberately leaves historical direct Orders intact
+-- when an authorized future conversion changes the canonical Store relation.
+CREATE FUNCTION dsh.require_independent_direct_order_store()
+RETURNS trigger LANGUAGE plpgsql AS $independent_store_guard$
+DECLARE current_relation text;
+BEGIN
+    SELECT relation_model INTO current_relation
+      FROM dsh.stores
+     WHERE id=NEW.store_id AND deleted_at IS NULL
+     FOR SHARE;
+    IF current_relation IS DISTINCT FROM 'INDEPENDENT_STORE' THEN
+        RAISE EXCEPTION 'direct Orders require a current independent Store'
+            USING ERRCODE='23514',
+                  CONSTRAINT='independent_direct_order_store_relation_chk';
+    END IF;
+    RETURN NEW;
+END;
+$independent_store_guard$;
+CREATE TRIGGER independent_direct_order_store_insert_guard
+    BEFORE INSERT ON dsh.independent_direct_orders
+    FOR EACH ROW EXECUTE FUNCTION dsh.require_independent_direct_order_store();
+
 CREATE INDEX independent_direct_orders_store_idx
     ON dsh.independent_direct_orders(store_id,created_at DESC,id DESC);
 

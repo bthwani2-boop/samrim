@@ -144,3 +144,39 @@ func TestIndependentCatalogAndCheckoutNeverReferenceNonexistentOfferDeletedAt(t 
 		t.Fatal("canonical Catalog Product soft-deletion authority moved")
 	}
 }
+
+func TestIndependentPublicCatalogNeverAdvertisesUnquoteableAmountRange(t *testing.T) {
+	// Independent public Store eligibility and the paginated Catalog share
+	// this SQL filter. Direct Order checks prices using int64 arithmetic.
+	// A listing must not promise quantities that its server writer rejects.
+	for _, predicate := range []string{
+		"o.price_minor > 0",
+		"o.pricing_unit_base_units=1",
+		"o.quantity_min_base_units > 0",
+		"o.quantity_max_base_units >= o.quantity_min_base_units",
+		"o.price_minor::numeric * o.quantity_max_base_units::numeric <= 9223372036854775807",
+	} {
+		if !strings.Contains(independentDirectBuyableOfferSQL, predicate) {
+			t.Errorf("independent public listing would advertise unquoteable price/quantity without %q", predicate)
+		}
+	}
+	// These are independent checks at the canonical server-quote owner,
+	// not assertions about the literal SQL formatting.
+	for _, tc := range []struct {
+		name     string
+		price    int64
+		quantity int64
+		ok       bool
+	}{
+		{name: "small payable range", price: 600, quantity: 5, ok: true},
+		{name: "zero price unavailable for direct order", price: 0, quantity: 1},
+		{name: "max quantity overflows int64 subtotal", price: 9223372036854775807, quantity: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := independentLineAmount(tc.price, tc.quantity, 1)
+			if (err == nil) != tc.ok {
+				t.Fatalf("server quote price=%d quantity=%d err=%v, want valid=%v", tc.price, tc.quantity, err, tc.ok)
+			}
+		})
+	}
+}
