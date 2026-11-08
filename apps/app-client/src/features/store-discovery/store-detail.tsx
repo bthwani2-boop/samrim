@@ -398,17 +398,8 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       (nextActorID) => {
         activeActorIDRef.current = nextActorID;
         actorRevisionRef.current += 1;
-        setOpenCart(null);
-        setCartReadError(false);
-        setIsFavorite(false);
-        setFavoriteOfferIDs(new Set());
-        // Favorite catalog tab 1 is actor-private. Never reuse its cached offers
-        // while the next actor's public Store read is pending or unavailable.
-        setCatalogTabs({});
-        setFavoritesView(false);
-        setPopularView(false);
-        setFavoriteLoadError(false);
-        setCatalogRefreshing(false);
+        // load() synchronously clears private Store/cart/favorite snapshots
+        // before its first network await; reset only mutation-local state here.
         setError("");
         setFavoriteBusy(false);
         setFavoriteOfferBusyID("");
@@ -417,7 +408,6 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         setAddedOfferId("");
         setQuantities({});
         setSelectedModifierOptionIds({});
-        setDetailOffer(null);
         void load();
       },
     );
@@ -691,10 +681,20 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     setQuickAnchorY(anchorY);
     setDetailOffer(offer);
     setDetailLoading(true);
-    // Operating hours may have changed since the store page loaded.
-    if (mode === "quick") void readPublicStoreOrderability(storeId, selectedCityID)
-      .then((result) => { if (requestID === detailRequestID.current) setOrderabilityByMode(result.orderabilityByMode); })
-      .catch(() => {});
+    // Opening quick-add requires a fresh, Store-scoped DSH orderability read.
+    // Share the polling request generation so a late response cannot reopen checkout.
+    if (mode === "quick") {
+      const orderabilityRequest = ++orderabilityRequestID.current;
+      setOrderabilityByMode([]);
+      void readPublicStoreOrderability(storeId, selectedCityID)
+        .then((result) => {
+          if (requestID !== detailRequestID.current || orderabilityRequest !== orderabilityRequestID.current) return;
+          setOrderabilityByMode(result.storeId === storeId && result.serviceCityId === selectedCityID ? result.orderabilityByMode : []);
+        })
+        .catch(() => {
+          if (requestID === detailRequestID.current && orderabilityRequest === orderabilityRequestID.current) setOrderabilityByMode([]);
+        });
+    }
     try {
       const catalog = await readPublicStoreCatalog(storeId, selectedCityID, "", "", 20, "", offer.productId);
       if (requestID !== detailRequestID.current) return;

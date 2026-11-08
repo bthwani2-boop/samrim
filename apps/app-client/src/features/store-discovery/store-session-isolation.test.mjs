@@ -34,13 +34,20 @@ test("Store detail subscribes to account changes and clears private state before
   assert.match(subscription, /subscribeIdentitySession/);
   assert.match(subscription, /actorRevisionRef.current \+= 1/);
   for (const reset of [
-    "setOpenCart(null)", "setCartReadError(false)", "setIsFavorite(false)",
-    "setFavoriteOfferIDs(new Set())", "setFavoriteBusy(false)",
-    'setFavoriteOfferBusyID("")', "setFavoriteLoading(false)",
-    'setBusyOfferId("")', 'setAddedOfferId("")',
+    "setFavoriteBusy(false)", 'setFavoriteOfferBusyID("")',
+    "setFavoriteLoading(false)", 'setBusyOfferId("")', 'setAddedOfferId("")',
     "setQuantities({})", "setSelectedModifierOptionIds({})",
-    "setDetailOffer(null)", "void load()",
-  ]) assert.ok(subscription.includes(reset), `missing private-state cleanup: ${reset}`);
+    'setError("")', "void load()",
+  ]) assert.ok(subscription.includes(reset), `missing mutation-state cleanup: ${reset}`);
+  assert.doesNotMatch(subscription, /setCatalogTabs\(/, "the actor callback must not duplicate the load owner's catalog reset");
+  const beforeNetwork = source.split("const load = useCallback(async () => {")[1]?.split("    try {", 1)[0];
+  assert.ok(beforeNetwork, "the production Store loader must have synchronous initialization");
+  for (const reset of [
+    "setCatalogTabs({})", "setFavoritesView(false)", "setPopularView(false)",
+    "setFavoriteLoadError(false)", "setCatalogRefreshing(false)", "setOpenCart(null)",
+    "setCartReadError(false)", "setIsFavorite(false)", "setFavoriteOfferIDs(new Set())",
+    "setDetailOffer(null)", 'setState({ kind: "loading" })',
+  ]) assert.ok(beforeNetwork.includes(reset), `load must synchronously clear actor-private state: ${reset}`);
   assert.match(source, /subscription\.unsubscribe\(\)/);
   assert.match(source, /if \(!subscription\.changedDuringSync\) void load\(\)/);
 });
@@ -168,7 +175,7 @@ test("same-actor add-to-cart still displays the new authoritative cart", async (
   assert.ok(updates.some(([kind, value]) => kind === "busy" && value === ""));
 });
 
-test("switching from actor A to B clears cached private favorites before a slow or failed Store refresh", async () => {
+test("actor switch invokes the Store loader's synchronous private-cache reset before a failed refresh", async () => {
   let handler;
   function findActorHandler(node) {
     if (ts.isCallExpression(node) &&
@@ -214,6 +221,12 @@ test("switching from actor A to B clears cached private favorites before a slow 
     setSelectedModifierOptionIds: record("modifiers"),
     setDetailOffer: record("detail"),
     load: () => {
+      // The source assertion above checks these calls are in the production
+      // load() before network I/O; execute the same callback contract here.
+      context.setCatalogTabs({});
+      context.setFavoritesView(false);
+      context.setFavoriteLoadError(false);
+      context.setCatalogRefreshing(false);
       refresh = slowRead.catch(() => { changes.push(["refresh", "failed"]); });
     },
   };
@@ -231,7 +244,7 @@ test("switching from actor A to B clears cached private favorites before a slow 
   assert.equal(favoriteError, false);
   assert.equal(catalogRefreshing, false);
   assert.equal(error, "");
-  assert.ok(changes.findIndex(([name]) => name === "tabs") < changes.findIndex(([name]) => name === "favoriteBusy"), "private tab is cleared with the initial session reset");
+  assert.equal(changes.filter(([name]) => name === "tabs").length, 1, "the loader is the sole owner of cached catalog clearing");
 
   failRead(new Error("DSH unavailable"));
   await refresh;
