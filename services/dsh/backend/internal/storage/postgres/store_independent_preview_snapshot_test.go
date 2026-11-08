@@ -54,3 +54,30 @@ func TestIndependentOwnerPreviewNeverReadsCatalogOutsideAuthorizedSnapshot(t *te
 		t.Fatal("Store publication and Catalog/Offer media must use the caller's same transaction")
 	}
 }
+
+func TestIndependentOwnerPreviewCursorCannotCrossStores(t *testing.T) {
+	// The private owner preview reuses canonical Store-bound Catalog paging.
+	// A cursor from Store B must never be accepted while inspecting Store A.
+	foreignCursor, err := encodeCatalogStoreOfferCursor(catalogStoreOfferCursor{
+		Version: 1, StoreID: "independent-store-b",
+		CreatedAt: time.Date(2026, time.November, 8, 12, 0, 0, 0, time.UTC),
+		OfferID:   "offer-b",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := decodeCatalogStoreOfferCursor(foreignCursor, "independent-store-a"); !errors.Is(err, ErrCatalogOfferInvalidCursor) {
+		t.Fatalf("cross-Store private Preview cursor must be rejected, got %v", err)
+	}
+	validCursor, err := encodeCatalogStoreOfferCursor(catalogStoreOfferCursor{
+		Version: 1, StoreID: "independent-store-a",
+		CreatedAt: time.Date(2026, time.November, 8, 12, 0, 0, 0, time.UTC),
+		OfferID:   "offer-a",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := decodeCatalogStoreOfferCursor(validCursor, "independent-store-a"); err != nil {
+		t.Fatalf("same-Store owner Preview cursor should be accepted, got %v", err)
+	}
+}
