@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
@@ -133,6 +134,16 @@ func independentGuestCapability(secret []byte, keyHash string) (string, string, 
 	return token, hex.EncodeToString(digest[:]), nil
 }
 
+// replayableIndependentGuestStatusToken preserves the original bearer only
+// while it remains the stored, unexpired capability. Rotating a secret may
+// preserve the immutable order receipt but must never mint a new bearer.
+func replayableIndependentGuestStatusToken(token, currentHash, persistedHash string, expires, now time.Time) string {
+	if !expires.After(now) || subtle.ConstantTimeCompare([]byte(persistedHash), []byte(currentHash)) != 1 {
+		return ""
+	}
+	return token
+}
+
 // independentDirectUnitOfferSupported matches the published independent
 // Catalog's intentionally narrow direct-order subset. A different pricing
 // unit must never become orderable merely by bypassing the public listing.
@@ -205,21 +216,26 @@ func CreateIndependentPickupOrder(ctx context.Context, db *sql.DB, secret []byte
 		if existingStore != input.StoreID || existingHash != requestHash {
 			return IndependentDirectOrderReceipt{}, ErrIndependentOrderConflict
 		}
-		receipt := IndependentDirectOrderReceipt{OrderID: existingOrder, StoreID: input.StoreID, Currency: "YER", StatusToken: statusToken, Replayed: true}
+		receipt := IndependentDirectOrderReceipt{OrderID: existingOrder, StoreID: input.StoreID, Currency: "YER", Replayed: true}
 		var expires time.Time
-		err = tx.QueryRowContext(ctx, `SELECT state,total_amount_minor,guest_capability_expires_at FROM dsh.independent_direct_orders
-			WHERE id=$1 AND store_id=$2 AND guest_capability_hash=$3`, existingOrder, input.StoreID, statusHash).
-			Scan(&receipt.State, &receipt.TotalMinor, &expires)
+		var persistedCapabilityHash string
+		// The idempotency record and request hash, not the current HMAC key,
+		// identify the historical Order. A rotated secret must not make a
+		// committed Order appear missing or change its original receipt.
+		err = tx.QueryRowContext(ctx, `SELECT state,total_amount_minor,guest_capability_expires_at,guest_capability_hash
+			FROM dsh.independent_direct_orders WHERE id=$1 AND store_id=$2`, existingOrder, input.StoreID).
+			Scan(&receipt.State, &receipt.TotalMinor, &expires, &persistedCapabilityHash)
 		if err != nil {
 			return IndependentDirectOrderReceipt{}, fmt.Errorf("read independent order replay: %w", err)
 		}
 		receipt.StatusExpiresAt = expires
-		if !expires.After(time.Now().UTC()) {
-			// An idempotent retry returns the same historical order but does
-			// not reissue an expired bearer. Verified-phone recovery is not
-			// implemented and must be admitted separately before an HTTP route.
-			receipt.StatusToken = ""
-		}
+		// Reissue the original status bearer only if the existing hash still
+		// matches the server's current signing secret and has not expired.
+		// Never replace the stored hash or extend the original expiry on
+		// replay. Rotated/expired credentials need separately admitted
+		// verified-phone recovery before a public endpoint can be enabled.
+		receipt.StatusToken = replayableIndependentGuestStatusToken(
+			statusToken, statusHash, persistedCapabilityHash, expires, time.Now().UTC())
 		if err := tx.Commit(); err != nil {
 			return IndependentDirectOrderReceipt{}, err
 		}
@@ -305,7 +321,7 @@ func CreateIndependentPickupOrder(ctx context.Context, db *sql.DB, secret []byte
 			JOIN dsh.catalog_product_variants v ON v.id=o.variant_id AND v.active=true
 			JOIN dsh.catalog_products p ON p.id=v.product_id AND p.active=true
 			WHERE o.id=$1 AND o.store_id=$2 AND o.publication_state='published'
-			  AND o.availability=true AND o.deleted_at IS NULL AND p.deleted_at IS NULL
+			  AND o.availability=true AND p.deleted_at IS NULL
 			  AND (p.scope='SHARED' OR (p.scope='STORE_SCOPED' AND p.store_id=$2))
 			  AND NOT EXISTS (SELECT 1 FROM dsh.catalog_store_offer_modifier_groups og WHERE og.offer_id=o.id)
 			  AND o.currency='YER'

@@ -11,6 +11,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"time"
 )
 
 func validDirectPickup() IndependentDirectOrderRequest {
@@ -443,6 +444,43 @@ func TestIndependentGuestStatusCapabilityRejectsMalformedBeforeSQL(t *testing.T)
 			}
 			if _, err := ReadIndependentDirectOrderStatus(context.Background(), nil, test.storeID, test.orderID, test.token); !errors.Is(err, ErrIndependentOrderUnavailable) {
 				t.Fatalf("public status must fail closed without database: %v", err)
+			}
+		})
+	}
+}
+
+func TestIndependentOrderReplayDoesNotReissueRotatedOrExpiredBearer(t *testing.T) {
+	originalSecret := []byte(strings.Repeat("A", 32))
+	rotatedSecret := []byte(strings.Repeat("B", 32))
+	key := strings.Repeat("d", 64)
+	originalToken, storedHash, err := independentGuestCapability(originalSecret, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotatedToken, rotatedHash, err := independentGuestCapability(rotatedSecret, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if originalToken == rotatedToken || storedHash == rotatedHash {
+		t.Fatal("secret rotation must change the derived bearer")
+	}
+	now := time.Date(2026, 11, 8, 0, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name                       string
+		token, hash, persistedHash string
+		expires                    time.Time
+		want                       string
+	}{
+		{"unchanged original secret", originalToken, storedHash, storedHash, now.Add(15 * time.Minute), originalToken},
+		{"rotated server secret", rotatedToken, rotatedHash, storedHash, now.Add(15 * time.Minute), ""},
+		{"expired original secret", originalToken, storedHash, storedHash, now.Add(-time.Second), ""},
+		{"exact expiry", originalToken, storedHash, storedHash, now, ""},
+		{"unmatched persisted hash", originalToken, storedHash, strings.Repeat("0", 64), now.Add(15 * time.Minute), ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := replayableIndependentGuestStatusToken(tc.token, tc.hash, tc.persistedHash, tc.expires, now)
+			if got != tc.want {
+				t.Fatalf("incorrect replay status bearer: got length=%d want length=%d", len(got), len(tc.want))
 			}
 		})
 	}

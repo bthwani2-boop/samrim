@@ -82,7 +82,13 @@ func ListCatalogOfferPage(ctx context.Context, db *sql.DB, storeID string, limit
 	return page, nil
 }
 
-func hydrateCatalogOfferPage(ctx context.Context, db *sql.DB, offers []CatalogStoreOfferRecord) error {
+// Accept a DB connection or an existing read-only transaction so consumer
+// projections can hydrate media and modifier details from one MVCC snapshot.
+type catalogOfferReadQueryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func hydrateCatalogOfferPage(ctx context.Context, db catalogOfferReadQueryer, offers []CatalogStoreOfferRecord) error {
 	if len(offers) == 0 {
 		return nil
 	}

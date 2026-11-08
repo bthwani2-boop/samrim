@@ -18,7 +18,7 @@ var ErrIndependentStorefrontNotPublished = errors.New("independent storefront wa
 // reservations and measured prices must not appear purchasable until DSH
 // owns their server quote and lifecycle.
 const independentDirectBuyableOfferSQL = `
-    AND o.publication_state='published' AND o.availability=true AND o.deleted_at IS NULL
+    AND o.publication_state='published' AND o.availability=true
     AND o.currency='YER' AND o.pricing_basis='PER_UNIT'
     AND o.pricing_unit_base_units=1
     AND o.inventory_policy='AVAILABILITY_ONLY'
@@ -79,6 +79,20 @@ func IndependentStorePublicationForOwner(ctx context.Context, db *sql.DB, storeI
 // Public contact is explicitly opt-in business data; private Identity contact
 // and JoiningCase documents are never projected.
 func ReadPublishedIndependentStore(ctx context.Context, db *sql.DB, storeID, approvedLegalTermsVersion string) (IndependentPublishedStore, error) {
+	if db == nil {
+		return IndependentPublishedStore{}, ErrIndependentStorefrontNotPublished
+	}
+	return readPublishedIndependentStoreWithQueryer(ctx, db, storeID, approvedLegalTermsVersion)
+}
+
+// QueryRowContext exists on both *sql.DB and *sql.Tx. Public Catalog pages
+// read Store publication under the very same read-only MVCC snapshot as Offers
+// and media instead of re-authorizing against a different database version.
+type independentStorefrontRowQueryer interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func readPublishedIndependentStoreWithQueryer(ctx context.Context, db independentStorefrontRowQueryer, storeID, approvedLegalTermsVersion string) (IndependentPublishedStore, error) {
 	storeID = strings.TrimSpace(storeID)
 	approvedLegalTermsVersion = strings.TrimSpace(approvedLegalTermsVersion)
 	// The legal owner has not yet admitted any release version. Without one,
@@ -159,11 +173,19 @@ func listPublishedIndependentOffersInternal(ctx context.Context, db *sql.DB, sto
 	if db == nil || storeID == "" || len(storeID) > 128 || limit < 1 || limit > 100 || len(rawCursor) > 2048 {
 		return CatalogStoreOfferPage{}, ErrCatalogOfferInvalidCursor
 	}
-	if _, err := ReadPublishedIndependentStore(ctx, db, storeID, approvedLegalTermsVersion); err != nil {
-		return CatalogStoreOfferPage{}, err
-	}
 	cursor, err := decodeCatalogStoreOfferCursor(rawCursor, storeID)
 	if err != nil {
+		return CatalogStoreOfferPage{}, err
+	}
+	// One read-only, repeatable-read transaction binds the publication,
+	// price/offer pagination and rights-attested media to one MVCC snapshot.
+	// This is not a Store checkout or a writer transaction.
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return CatalogStoreOfferPage{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := readPublishedIndependentStoreWithQueryer(ctx, tx, storeID, approvedLegalTermsVersion); err != nil {
 		return CatalogStoreOfferPage{}, err
 	}
 	query := catalogOfferSelect + ` JOIN dsh.independent_store_publications publication ON publication.store_id=s.id
@@ -192,7 +214,7 @@ func listPublishedIndependentOffersInternal(ctx context.Context, db *sql.DB, sto
 	}
 	args = append(args, limit+1)
 	query += " ORDER BY o.created_at ASC,o.id ASC LIMIT $" + itoa(len(args))
-	rows, err := db.QueryContext(ctx, query, args...)
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return CatalogStoreOfferPage{}, err
 	}
@@ -221,7 +243,10 @@ func listPublishedIndependentOffersInternal(ctx context.Context, db *sql.DB, sto
 			return CatalogStoreOfferPage{}, err
 		}
 	}
-	if err := hydrateCatalogOfferPage(ctx, db, page.Offers); err != nil {
+	if err := hydrateCatalogOfferPage(ctx, tx, page.Offers); err != nil {
+		return CatalogStoreOfferPage{}, err
+	}
+	if err := tx.Commit(); err != nil {
 		return CatalogStoreOfferPage{}, err
 	}
 	return page, nil

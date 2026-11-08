@@ -2,6 +2,7 @@ package postgres_test
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
@@ -77,6 +78,12 @@ func TestIndependentDirectOrderIsolatedPersistenceGuards(t *testing.T) {
 		// A draft Store without a reviewed publication must fail closed.
 		if _, err := postgres.ReadPublishedIndependentStore(ctx, db, storeA, "unreleased-qa-only"); !errors.Is(err, postgres.ErrIndependentStorefrontNotPublished) {
 			t.Fatalf("independent public Store must remain unpublished in isolated QA: %v", err)
+		}
+		// Public Catalog also uses a read-only REPEATABLE READ transaction to
+		// evaluate authorization, paginate Offers, and hydrate media. A draft
+		// must fail closed even if its internal Catalog already has products.
+		if _, err := postgres.ListPublishedIndependentOffers(ctx, db, storeA, "unreleased-qa-only", 20, ""); !errors.Is(err, postgres.ErrIndependentStorefrontNotPublished) {
+			t.Fatalf("independent public Catalog must not expose draft Store offers: %v", err)
 		}
 
 		// Owner-only draft policy writer is a separate, non-publication flow.
@@ -202,6 +209,60 @@ func TestIndependentDirectOrderIsolatedPersistenceGuards(t *testing.T) {
 		}
 		if _, err := db.ExecContext(ctx, insert, "valid-test-order", storeA, 0, 600, strings.Repeat("b", 64)); err != nil {
 			t.Fatalf("insert synthetic QA-only order: %v", err)
+		}
+
+		// A durable idempotency record belongs to the historical request,
+		// not to the current server HMAC secret. Simulate the original
+		// committed receipt inside this disposable database, then verify
+		// that rotating the signing secret does not create an Order or
+		// reissue a bearer not matching the persisted capability hash.
+		// This is a replay-only fixture, NOT proof of public checkout.
+		replayAttempt := base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("K", 32)))
+		replayRequest := postgres.IndependentDirectOrderRequest{
+			StoreID: storeA, IdempotencyKey: replayAttempt,
+			GuestName: "Guest Buyer", GuestPhoneE164: "+967700001122",
+			ExpectedMerchantPolicyVersion: "v3", ExpectedSubtotalMinor: 600,
+			FulfillmentMode: "CUSTOMER_PICKUP",
+			Lines:           []postgres.IndependentDirectOrderLineRequest{{OfferID: "synthetic-qa-only-offer", QuantityBaseUnits: 1}},
+		}
+		replayFacts, err := json.Marshal(replayRequest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		idempotencyDigest := sha256.Sum256([]byte("dsh:independent-direct-order:v1:" + replayAttempt))
+		idempotencyHash := hex.EncodeToString(idempotencyDigest[:])
+		replayRequestDigest := sha256.Sum256(replayFacts)
+		oldSecret := []byte(strings.Repeat("M", 32))
+		rotatedSecret := []byte(strings.Repeat("N", 32))
+		mac := hmac.New(sha256.New, oldSecret)
+		_, _ = mac.Write([]byte("dsh:independent-direct-order:status:v1:" + idempotencyHash))
+		oldBearer := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+		oldBearerDigest := sha256.Sum256([]byte(oldBearer))
+		if _, err := db.ExecContext(ctx, `UPDATE dsh.independent_direct_orders SET guest_capability_hash=$2 WHERE id=$1`,
+			"valid-test-order", hex.EncodeToString(oldBearerDigest[:])); err != nil {
+			t.Fatalf("attach replay-only synthetic capability: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.independent_direct_order_idempotency
+			(key_hash,request_hash,store_id,order_id) VALUES($1,$2,$3,$4)`,
+			idempotencyHash, hex.EncodeToString(replayRequestDigest[:]), storeA, "valid-test-order"); err != nil {
+			t.Fatalf("attach replay-only synthetic attempt: %v", err)
+		}
+		originalReplay, err := postgres.CreateIndependentPickupOrder(ctx, db, oldSecret,
+			"qa-server-terms-version", replayRequest)
+		if err != nil || !originalReplay.Replayed || originalReplay.OrderID != "valid-test-order" ||
+			originalReplay.StatusToken != oldBearer || originalReplay.TotalMinor != 600 {
+			t.Fatalf("unchanged secret must return the original durable receipt and bearer: %+v err=%v", originalReplay, err)
+		}
+		rotatedReplay, err := postgres.CreateIndependentPickupOrder(ctx, db, rotatedSecret,
+			"qa-server-terms-version", replayRequest)
+		if err != nil || !rotatedReplay.Replayed || rotatedReplay.OrderID != originalReplay.OrderID ||
+			rotatedReplay.StatusToken != "" || rotatedReplay.TotalMinor != originalReplay.TotalMinor {
+			t.Fatalf("rotated secret must return the same receipt without minting a bearer: %+v err=%v", rotatedReplay, err)
+		}
+		var replayAuditCount int
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM dsh.independent_direct_order_audit
+			WHERE order_id='valid-test-order'`).Scan(&replayAuditCount); err != nil || replayAuditCount != 0 {
+			t.Fatalf("idempotent retries must not create Order audit events: count=%d err=%v", replayAuditCount, err)
 		}
 
 		// This is a synthetic disposable-DB guest capability fixture, not an

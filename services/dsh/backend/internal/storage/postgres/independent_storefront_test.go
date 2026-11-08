@@ -77,3 +77,70 @@ func TestIndependentStoreMediaURIEligibilityMatchesStoreCatalogAndCheckout(t *te
 		t.Errorf("locked Direct Order must independently recheck both Store media URIs: %d guards", got)
 	}
 }
+
+func TestIndependentPublicCatalogUsesOneReadOnlyRepeatableSnapshot(t *testing.T) {
+	b, err := os.ReadFile("independent_storefront.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(b)
+	start := strings.Index(source, "func listPublishedIndependentOffersInternal(")
+	end := strings.Index(source, "// IndependentPublicOffer")
+	if start < 0 || end <= start {
+		t.Fatal("cannot locate independent public Catalog reader")
+	}
+	reader := source[start:end]
+	for _, required := range []string{
+		"db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})",
+		"readPublishedIndependentStoreWithQueryer(ctx, tx, storeID, approvedLegalTermsVersion)",
+		"tx.QueryContext(ctx, query, args...)",
+		"hydrateCatalogOfferPage(ctx, tx, page.Offers)",
+		"tx.Commit()",
+	} {
+		if !strings.Contains(reader, required) {
+			t.Errorf("public Catalog no longer reads one consistent read-only snapshot: missing %q", required)
+		}
+	}
+	if strings.Contains(reader, "ReadPublishedIndependentStore(ctx, db") ||
+		strings.Contains(reader, "hydrateCatalogOfferPage(ctx, db") {
+		t.Fatal("public Catalog must not bypass its read-only snapshot for authorization or media")
+	}
+}
+
+func TestIndependentCatalogAndCheckoutNeverReferenceNonexistentOfferDeletedAt(t *testing.T) {
+	// A real isolated PostgreSQL execution caught this historical alias error:
+	// dsh.catalog_store_offers has no deleted_at; dsh.catalog_products does.
+	// Keep both query builders aligned to the canonical Catalog schema.
+	for _, file := range []string{"independent_storefront.go", "independent_direct_order.go"} {
+		source, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(source), "o.deleted_at") {
+			t.Errorf("%s refers to nonexistent catalog_store_offers.deleted_at", file)
+		}
+		if !strings.Contains(string(source), "p.deleted_at IS NULL") {
+			t.Errorf("%s must retain canonical deleted Product suppression", file)
+		}
+	}
+	catalogSchema, err := os.ReadFile("migrations/010_central_catalog_refoundation.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	begin := strings.Index(string(catalogSchema), "CREATE TABLE dsh.catalog_store_offers (")
+	end := strings.Index(string(catalogSchema), "CREATE INDEX catalog_store_offers_store_idx")
+	if begin < 0 || end <= begin {
+		t.Fatal("canonical Store Offer table schema cannot be located")
+	}
+	if strings.Contains(string(catalogSchema)[begin:end], "deleted_at") {
+		t.Fatal("canonical Store Offer schema changed: review eligibility SQL against migrations")
+	}
+	trashMigration, err := os.ReadFile("migrations/111_catalog_product_recycle_bin.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(trashMigration), "ALTER TABLE dsh.catalog_products") ||
+		!strings.Contains(string(trashMigration), "ADD COLUMN deleted_at") {
+		t.Fatal("canonical Catalog Product soft-deletion authority moved")
+	}
+}
