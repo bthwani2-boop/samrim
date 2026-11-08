@@ -280,6 +280,11 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     }
   }, [categoryId, productId, selectedCityID, storeId]);
 
+  function returnToStores() {
+    // A direct Store link has no in-app history to pop; take both entry paths to discovery.
+    router.replace("/home" as Href);
+  }
+
   function openStorePromotion(code: string) {
     router.push(`/cart/${encodeURIComponent(storeId)}?fulfillmentMode=${encodeURIComponent(selectedFulfillmentMode ?? "")}&promotionCode=${encodeURIComponent(code)}` as Href);
   }
@@ -464,10 +469,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     return <View style={styles.state} accessibilityLabel="جارٍ تجهيز المتجر"><BthwaniSkeleton width="30%" height={28} /><BthwaniSkeleton height={92} /><BthwaniSkeleton height={160} /><BthwaniSkeleton height={160} /></View>;
   }
   if (state.kind === "unavailable") {
-    return <View style={styles.state} accessibilityLabel="المتجر غير متاح"><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>هذا المتجر غير متاح</Text><Text style={styles.muted}>لا يمكن عرض المتجر حاليًا. قد يكون غير منشور أو خارج نطاق مدينة الخدمة.</Text><BthwaniButton label="العودة إلى المتاجر" onPress={() => router.replace("/home" as Href)} variant="secondary" /></View>;
+    return <View style={styles.state} accessibilityLabel="المتجر غير متاح"><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>هذا المتجر غير متاح</Text><Text style={styles.muted}>لا يمكن عرض المتجر حاليًا. قد يكون غير منشور أو خارج نطاق مدينة الخدمة.</Text><BthwaniButton label="العودة إلى المتاجر" onPress={returnToStores} variant="secondary" /></View>;
   }
   if (state.kind === "error") {
-    return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر قراءة المتجر</Text><Text style={styles.muted}>تعذر الاتصال ببيانات المتجر. تحقق من اتصالك وأعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /><BthwaniButton label="العودة إلى المتاجر" onPress={() => router.replace("/home" as Href)} variant="secondary" /></View>;
+    return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر قراءة المتجر</Text><Text style={styles.muted}>تعذر الاتصال ببيانات المتجر. تحقق من اتصالك وأعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /><BthwaniButton label="العودة إلى المتاجر" onPress={returnToStores} variant="secondary" /></View>;
   }
 
   const heroImageURI = !failedStoreCover ? state.store.storeCoverImage?.uri : undefined;
@@ -880,6 +885,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         /> : null}
         <BthwaniIconButton icon="share" label="مشاركة المتجر" onPress={() => void shareStore()} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" />
         <View style={styles.storeHeaderActions}>
+          <BthwaniIconButton icon="home" label="العودة إلى المتاجر" onPress={returnToStores} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" />
           {!desktopStorefront ? <BthwaniIconButton icon={catalogSearchOpen ? "close" : "search"} label={catalogSearchOpen ? "إغلاق البحث داخل المتجر" : "البحث في منتجات المتجر"} onPress={() => { if (catalogSearchOpen) { setCatalogSearchOpen(false); setCatalogQuery(""); void reloadCatalog(null, "", false, false); } else if (activeTab !== 0) { void selectCatalogTab(0).then(() => setCatalogSearchOpen(true)); } else { setCatalogSearchOpen(true); } }} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" /> : null}
           {(!catalogSearchOpen || desktopStorefront) ? <><BthwaniIconButton icon="cart" label="سلة التسوق" onPress={() => router.push(("/cart/" + encodeURIComponent(storeId) + "?fulfillmentMode=" + encodeURIComponent(selectedFulfillmentMode ?? "")) as Href)} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" />
           <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlMd} style={styles.storeHeaderAction} tone="soft" /></> : null}
