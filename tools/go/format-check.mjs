@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { resolveTrustedExecutable } from "../dev/trusted-executables.mjs";
 
 const root = path.resolve(process.argv[2] || "");
 if (!process.argv[2] || !fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
@@ -22,7 +23,7 @@ walk(root);
 
 const unformatted = [];
 for (let i = 0; i < files.length; i += 100) {
-  const output = execFileSync("gofmt", ["-l", ...files.slice(i, i + 100)], { encoding: "utf8" });
+  const output = execFileSync(resolveTrustedExecutable("gofmt"), ["-l", ...files.slice(i, i + 100)], { encoding: "utf8" });
   unformatted.push(...output.split(/\r?\n/).filter(Boolean));
 }
 if (unformatted.length) {

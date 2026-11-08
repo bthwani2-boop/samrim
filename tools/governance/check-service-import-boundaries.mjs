@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { closeSync, fstatSync, openSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { resolveTrustedExecutable } from "../dev/trusted-executables.mjs";
 import ts from "typescript-ast";
 
 const internalPath = /(?:^|\/)services\/(dsh|identity|wlt)\/backend\/internal(?:\/|$)/;
@@ -56,7 +57,7 @@ export function scanServiceBoundaryFile(file, content) {
 function trackedSources(root) {
   const collected = new Set();
   for (const args of [["ls-files", "-z"], ["ls-files", "--others", "--exclude-standard", "-z"]]) {
-    const raw = execFileSync("git", args, { cwd: root, encoding: "utf8" });
+    const raw = execFileSync(resolveTrustedExecutable("git"), args, { cwd: root, encoding: "utf8" });
     for (const file of raw.split("\0")) {
       if (file && (/\.go$/.test(file) || /\.(?:c?js|mjs|mts|cts|tsx?|jsx?)$/.test(file))) collected.add(file);
     }
