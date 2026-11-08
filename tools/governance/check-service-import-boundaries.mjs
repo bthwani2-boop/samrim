@@ -61,7 +61,7 @@ function trackedSources(root) {
       if (file && (/\.go$/.test(file) || /\.(?:c?js|mjs|mts|cts|tsx?|jsx?)$/.test(file))) collected.add(file);
     }
   }
-  return [...collected].sort();
+  return [...collected].sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
 }
 
 export function scanRepositoryServiceBoundaries(root) {
