@@ -469,7 +469,9 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const store = storeID.trim();
       if (!store || store.length > 128) throw new Error("DSH_STORE_CONTACT_SCOPE_INVALID");
       const path = dshOperationPaths.readPublishedStorePublicContact.path.replace("{storeId}", encodeURIComponent(store));
-      return publicRequest<StorePublicContactResponse>(path);
+      const response = await publicRequest<StorePublicContactResponse>(path);
+      if (response.contact?.storeId !== store) throw new Error("DSH_PUBLIC_CONTACT_SCOPE_MISMATCH");
+      return response;
     },
     async readPartnerStoreOperationalAvailability(accessToken: string, storeID: string): Promise<PartnerStoreOperationalAvailabilityResponse> {
       const normalizedStore = storeID.trim();
@@ -1366,7 +1368,13 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const normalizedCity = serviceCityID.trim();
       if (!normalized || !normalizedCity) throw new Error("DSH_STORE_SCOPE_REQUIRED");
       const path = `${dshOperationPaths.readPublishedStore.path.replace("{storeId}", encodeURIComponent(normalized))}?${new URLSearchParams({ serviceCityId: normalizedCity }).toString()}`;
-      return publicRequest<PublicStoreView>(path);
+      const result = await publicRequest<PublicStoreView>(path);
+      if (result.id !== normalized || result.serviceCity?.id !== normalizedCity ||
+          !Array.isArray(result.orderabilityByMode) ||
+          result.orderabilityByMode.some(item => item.storeId !== normalized)) {
+        throw new Error("DSH_PUBLIC_STORE_SCOPE_MISMATCH");
+      }
+      return result;
     },
     async readPublicStoreOrderability(storeID: string, serviceCityID: string): Promise<PublicStoreOrderabilityResponse> {
       const normalizedStore = storeID.trim();
@@ -1374,7 +1382,13 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalizedStore || !normalizedCity) throw new Error("DSH_STORE_ORDERABILITY_SCOPE_REQUIRED");
       const query = new URLSearchParams({ serviceCityId: normalizedCity });
       const path = `${dshOperationPaths.readPublicStoreOrderability.path.replace("{storeId}", encodeURIComponent(normalizedStore))}?${query.toString()}`;
-      return publicRequest<PublicStoreOrderabilityResponse>(path);
+      const result = await publicRequest<PublicStoreOrderabilityResponse>(path);
+      if (result.storeId !== normalizedStore || result.serviceCityId !== normalizedCity ||
+          !Array.isArray(result.orderabilityByMode) ||
+          result.orderabilityByMode.some(item => item.storeId !== normalizedStore)) {
+        throw new Error("DSH_PUBLIC_ORDERABILITY_SCOPE_MISMATCH");
+      }
+      return result;
     },
     async readPublicStoreCatalog(storeID: string, serviceCityID: string, categoryID = "", query = "", limit = 100, cursor = "", productID = "", sort: "" | "MOST_ORDERED_30_DAYS" = ""): Promise<PublicCatalogResponse> {
       const normalizedStore = storeID.trim();
@@ -1393,7 +1407,14 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       params.set("limit", String(limit));
       if (cursor.trim()) params.set("cursor", cursor.trim());
       const path = `${dshOperationPaths.readPublicStoreCatalog.path.replace("{storeId}", encodeURIComponent(normalizedStore))}?${params.toString()}`;
-      return publicRequest<PublicCatalogResponse>(path);
+      const result = await publicRequest<PublicCatalogResponse>(path);
+      if (result.storeId !== normalizedStore || !Array.isArray(result.offers) ||
+          !Array.isArray(result.sections) ||
+          result.offers.some(offer => offer.storeId !== normalizedStore) ||
+          result.sections.some(section => section.storeId !== normalizedStore)) {
+        throw new Error("DSH_PUBLIC_CATALOG_SCOPE_MISMATCH");
+      }
+      return result;
     },
     async searchPublicCatalog(serviceCityID: string, query: string, categoryID = "", limit = 20, cursor = "", verticalID = "", shortcutID = "", sort: "" | "PRICE_ASC" | "PRICE_DESC" = ""): Promise<PublicCatalogSearchResponse> {
       const normalizedCity = serviceCityID.trim();
