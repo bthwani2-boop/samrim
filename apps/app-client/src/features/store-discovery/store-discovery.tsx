@@ -7,6 +7,8 @@ import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo
 import { type ComponentProps, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, AppState, I18nManager, Platform, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import Reanimated, { runOnJS, type SharedValue, useAnimatedReaction, useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated";
+import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
+import { subscribeClientCartActorChanges } from "../cart-checkout/cart-session-scope";
 import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
 import { ClientShareSheet, type ClientShareTarget } from "../sharing/client-share-sheet";
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
@@ -50,6 +52,11 @@ function uniqueNearbyAddress(addresses: ReadonlyArray<DeliveryAddress>, cityID: 
   if (nextCursor) return null;
   const eligible = addresses.filter((address) => address.serviceCityId === cityID && Number.isFinite(address.latitude) && Number.isFinite(address.longitude));
   return eligible.length === 1 ? eligible[0] ?? null : null;
+}
+
+function currentDiscoveryActorID(): string {
+  const session = currentIdentityState();
+  return session.kind === "authenticated" ? session.identity.subject.trim() : "";
 }
 
 export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthentication, searchOpen, searchQuery, searchScope: controlledSearchScope, isScreenActive = true, onSearchOpenChange, onSearchScopeChange, onSearchQueryChange, homeScrollOffset, heroHeader, onHeroVisibilityChange }: { isAuthenticated?: boolean; onRequireAuthentication?: (() => void) | undefined; searchOpen?: boolean; searchQuery?: string; searchScope?: "stores" | "products"; isScreenActive?: boolean; onSearchOpenChange?: (open: boolean) => void; onSearchScopeChange?: (scope: "stores" | "products") => void; onSearchQueryChange?: (query: string) => void; homeScrollOffset?: SharedValue<number>; heroHeader?: ReactNode; onHeroVisibilityChange?: (visible: boolean) => void }) {
@@ -154,6 +161,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     setPublishedSlideIndex(0);
   }, [publishedStoreCount, publishedLayout?.version, selectedCityID]);
   const discoveryLoadRequestID = useRef(0);
+  const activeActorIDRef = useRef(currentDiscoveryActorID());
   const directoryRequestID = useRef(0);
   const directoryRequestKey = useRef("");
   const nearbyAddressRequestID = useRef(0);
@@ -170,6 +178,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     directoryRequestID.current += 1;
     setState({ kind: "loading" });
     setFavoriteError("");
+    setFavoriteBusyStoreID("");
     setMarketing({ content: [], promotions: [], error: false });
     setDirectoryLoading(false);
     setDirectoryError(false);
@@ -199,7 +208,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           error: results.some((result) => result.status === "rejected"),
         });
       });
-      if (isAuthenticated) {
+      if (isAuthenticated && currentDiscoveryActorID()) {
         void listFavoriteStoreIDs().then((favoriteStoreIDs) => {
           if (requestID === discoveryLoadRequestID.current) setState((current) => current.kind === "ready" ? { ...current, favoriteStoreIDs } : current);
         }).catch(() => {
@@ -212,8 +221,26 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   }, [isAuthenticated, selectedCityID]);
 
   useEffect(() => {
-    void load();
-    return () => { discoveryLoadRequestID.current += 1; };
+    const subscription = subscribeClientCartActorChanges(
+      activeActorIDRef.current,
+      currentDiscoveryActorID,
+      (listener) => subscribeIdentitySession((session) => {
+        listener(session.kind === "authenticated" ? session.identity.subject.trim() : "");
+      }),
+      (actorID) => {
+        activeActorIDRef.current = actorID;
+        // load() resets the directory, private favorites and nearby address
+        // before its first network await, regardless of auth boolean changes.
+        void load();
+      },
+    );
+    if (!subscription.changedDuringSync) void load();
+    return () => {
+      discoveryLoadRequestID.current += 1;
+      nearbyAddressRequestID.current += 1;
+      directoryRequestID.current += 1;
+      subscription.unsubscribe();
+    };
   }, [load]);
 
   useEffect(() => {
@@ -509,25 +536,27 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   }
 
   async function toggleFavorite(storeID: string) {
-    if (!isAuthenticated) {
+    if (!isAuthenticated || !currentDiscoveryActorID()) {
       onRequireAuthentication?.();
       return;
     }
     if (favoriteBusyStoreID || state.kind !== "ready") return;
+    const requestID = discoveryLoadRequestID.current;
     const isFavorite = state.favoriteStoreIDs.includes(storeID);
     setFavoriteBusyStoreID(storeID);
     setFavoriteError("");
     try {
       const nextValue = await setFavoriteStore(storeID, !isFavorite);
+      if (requestID !== discoveryLoadRequestID.current) return;
       setState((current) => {
         if (current.kind !== "ready") return current;
         const nextIDs = current.favoriteStoreIDs.filter((id) => id !== storeID);
         return { ...current, favoriteStoreIDs: nextValue ? [...nextIDs, storeID] : nextIDs };
       });
     } catch {
-      setFavoriteError("تعذر تحديث المفضلة. أعد المحاولة.");
+      if (requestID === discoveryLoadRequestID.current) setFavoriteError("تعذر تحديث المفضلة. أعد المحاولة.");
     } finally {
-      setFavoriteBusyStoreID("");
+      if (requestID === discoveryLoadRequestID.current) setFavoriteBusyStoreID("");
     }
   }
 

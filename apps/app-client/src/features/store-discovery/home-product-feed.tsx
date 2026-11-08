@@ -6,6 +6,8 @@ import * as Haptics from "expo-haptics";
 import { type Href, useRouter } from "expo-router";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
+import { subscribeClientCartActorChanges } from "../cart-checkout/cart-session-scope";
 import Reanimated, { FadeInDown, ReduceMotion } from "react-native-reanimated";
 import { adjustSimpleOfferQuantity, listOwnOpenCarts, readOwnStoreCart, searchPublicCatalog } from "./store-discovery-client";
 
@@ -16,6 +18,12 @@ type FeedState =
   | { kind: "ready"; offers: ReadonlyArray<CatalogStoreOffer>; nextCursor: string };
 
 const PAGE_SIZE = 18;
+
+function currentHomeActorID(): string {
+  const session = currentIdentityState();
+  return session.kind === "authenticated" ? session.identity.subject.trim() : "";
+}
+
 type CatalogPriceSort = "" | "PRICE_ASC" | "PRICE_DESC";
 const SORT_OPTIONS: ReadonlyArray<{ value: CatalogPriceSort; label: string }> = [
   { value: "", label: "الموصى به" },
@@ -52,6 +60,9 @@ export function HomeProductFeed({
   const [cartQuantities, setCartQuantities] = useState<Readonly<Record<string, number>>>({});
   const busyOfferRef = useRef("");
   const requestID = useRef(0);
+  const activeActorIDRef = useRef(currentHomeActorID());
+  const cartReadRevisionRef = useRef(0);
+  const [actorRevision, setActorRevision] = useState(0);
 
   const load = useCallback(async () => {
     const id = ++requestID.current;
@@ -104,16 +115,41 @@ export function HomeProductFeed({
   };
 
   useEffect(() => {
-    if (!isAuthenticated || state.kind !== "ready") {
+    const subscription = subscribeClientCartActorChanges(
+      activeActorIDRef.current,
+      currentHomeActorID,
+      (listener) => subscribeIdentitySession((session) => {
+        listener(session.kind === "authenticated" ? session.identity.subject.trim() : "");
+      }),
+      (actorID) => {
+        activeActorIDRef.current = actorID;
+        cartReadRevisionRef.current += 1;
+        // Product catalog is public; cart quantities and pending mutations are not.
+        setCartQuantities({});
+        setCartMessage("");
+        busyOfferRef.current = "";
+        setBusyID("");
+        setActorRevision((current) => current + 1);
+      },
+    );
+    return () => {
+      cartReadRevisionRef.current += 1;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated || !currentHomeActorID() || state.kind !== "ready") {
       setCartQuantities({});
       return;
     }
     let cancelled = false;
+    const revision = cartReadRevisionRef.current;
     const eligibleStores = new Set(state.offers.map((offer) => offer.storeId));
     void listOwnOpenCarts().then(async ({ carts }) => {
       const relevant = carts.filter((cart) => eligibleStores.has(cart.storeId));
       const results = await Promise.allSettled(relevant.map((cart) => readOwnStoreCart(cart.storeId)));
-      if (cancelled) return;
+      if (cancelled || revision !== cartReadRevisionRef.current) return;
       const next: Record<string, number> = {};
       for (const result of results) {
         if (result.status !== "fulfilled" || !result.value) continue;
@@ -122,7 +158,7 @@ export function HomeProductFeed({
       setCartQuantities(next);
     }).catch(() => { /* The cart stays read-only until a successful DSH mutation. */ });
     return () => { cancelled = true; };
-  }, [isAuthenticated, state]);
+  }, [isAuthenticated, state, actorRevision]);
 
   const openOffer = (offer: CatalogStoreOffer) => {
     router.push((`/store/${encodeURIComponent(offer.storeId)}?productId=${encodeURIComponent(offer.productId)}`) as Href);
@@ -130,7 +166,7 @@ export function HomeProductFeed({
 
   const adjust = async (offer: CatalogStoreOffer, direction: 1 | -1) => {
     if (busyOfferRef.current) return;
-    if (!isAuthenticated) {
+    if (!isAuthenticated || !currentHomeActorID()) {
       onRequireAuthentication?.();
       return;
     }
@@ -139,11 +175,13 @@ export function HomeProductFeed({
       return;
     }
     if (!offer.availability) return;
+    const revision = cartReadRevisionRef.current;
     busyOfferRef.current = offer.offerId;
     setBusyID(offer.offerId);
     setCartMessage("");
     try {
       const result = await adjustSimpleOfferQuantity(offer.storeId, offer, direction);
+      if (revision !== cartReadRevisionRef.current) return;
       void Haptics.selectionAsync().catch(() => { /* Feedback is optional; the committed cart is authoritative. */ });
       setCartQuantities((current) => {
         const next = { ...current };
@@ -155,10 +193,12 @@ export function HomeProductFeed({
         return next;
       });
     } catch {
-      setCartMessage("تعذر تحديث كمية المنتج. تحقق من اتصالك ثم أعد المحاولة.");
+      if (revision === cartReadRevisionRef.current) setCartMessage("تعذر تحديث كمية المنتج. تحقق من اتصالك ثم أعد المحاولة.");
     } finally {
-      busyOfferRef.current = "";
-      setBusyID("");
+      if (revision === cartReadRevisionRef.current) {
+        busyOfferRef.current = "";
+        setBusyID("");
+      }
     }
   };
 
