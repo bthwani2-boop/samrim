@@ -44,6 +44,16 @@ test("store site offers explicit retry, no-results and themed responsive layout"
   assert.match(site, /role="main"/);
 });
 
+test("a newer category filter must clear pending pagination before the stale page resolves", () => {
+  // Pagination and filters share catalogID. A category tab remains clickable
+  // while a page is loading. Once it supersedes the page, the old page's
+  // generation-gated finally cannot clear loadingMore, so the filter must.
+  const filter = site.split("const applyFilter = useCallback")[1]?.split("const loadMore = useCallback")[0] ?? "";
+  assert.match(filter, /const generation = \+\+catalogID\.current;\s*setLoadingMore\(false\);\s*setCatalogBusy\(true\);/);
+  const loadMore = site.split("const loadMore = useCallback")[1] ?? "";
+  assert.match(loadMore, /if \(generation !== catalogID\.current\) return;/);
+});
+
 test("web product cards expose a real browser anchor to the existing Marketplace route", () => {
   // A role=link Pressable without href is JS-only: no copy/open-in-new-tab.
   assert.match(site, /import \{[^}]*\bLink\b[^}]*\} from "expo-router"/);

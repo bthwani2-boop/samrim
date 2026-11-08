@@ -122,7 +122,10 @@ export default function ClientFullStorefront({ storeId }: Readonly<{ storeId: st
 
   const applyFilter = useCallback(async (categoryID: string, search: string) => {
     if (!storeId || !selectedCityID) return;
+    // A filter supersedes an in-flight page. Its stale finally cannot clear
+    // loadingMore once the shared catalog generation has advanced.
     const generation = ++catalogID.current;
+    setLoadingMore(false);
     setCatalogBusy(true);
     setCatalogError(false);
     try {
