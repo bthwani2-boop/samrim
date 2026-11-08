@@ -307,11 +307,15 @@ func CreateIndependentPickupOrder(ctx context.Context, db *sql.DB, secret []byte
 	if err != nil {
 		return IndependentDirectOrderReceipt{}, err
 	}
-	var availabilityExists bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM dsh.store_operational_availability WHERE store_id=$1)`, input.StoreID).Scan(&availabilityExists); err != nil {
+	// A row lazily initialized before independent scheduling was closed by
+	// default is not evidence of the merchant's chosen pickup hours.
+	var availabilityConfigured bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM dsh.store_operational_availability
+		WHERE store_id=$1 AND NOT (schedule_mode='ALWAYS_OPEN' AND version=1
+			AND updated_by_actor_id IN ('system:lazy-initialize','system:checkout-initialize')))`, input.StoreID).Scan(&availabilityConfigured); err != nil {
 		return IndependentDirectOrderReceipt{}, err
 	}
-	if !availabilityExists {
+	if !availabilityConfigured {
 		return IndependentDirectOrderReceipt{}, ErrIndependentOrderUnavailable
 	}
 	orderability, err := lockAndEvaluateStoreOrderability(ctx, tx, input.StoreID, "CUSTOMER_PICKUP")

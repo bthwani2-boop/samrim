@@ -433,6 +433,10 @@ func TestIndependentDirectOrderIsolatedPersistenceGuards(t *testing.T) {
 			t, ctx, db, storeA, storeB, offerA.Offer.ID,
 			productA.Product.ID, productA.Product.Variants[0].ID)
 
+		t.Run("reviewed pickup persists one order and rejects stale confirmation", func(t *testing.T) {
+			exerciseIndependentPickupWriter(t, ctx, db, storeA, ownerA, offerA.Offer.ID, offerA.Offer.Version)
+		})
+
 		// Only the *new* direct Order is gated by the current relationship.
 		// A QA-only relation flip must not delete or rewrite an older Order;
 		// this is a persistence invariant, not a released conversion workflow.
@@ -449,6 +453,108 @@ func TestIndependentDirectOrderIsolatedPersistenceGuards(t *testing.T) {
 			t.Fatal("a newly marketplace Store must no longer create direct Orders")
 		}
 	}, 5*time.Minute)
+}
+
+func exerciseIndependentPickupWriter(t *testing.T, ctx context.Context, db *sql.DB, storeID, ownerID, offerID string, offerVersion int) {
+	t.Helper()
+	const termsVersion, policyVersion = "qa-hosting-v1", "qa-merchant-v1"
+	// Only this disposable database has synthetic reviewed publication and media.
+	// The Order, lines, idempotency key and audit must all come from the DSH writer.
+	for _, fixture := range []struct {
+		query string
+		args  []any
+	}{
+		{`INSERT INTO dsh.service_cities(id,display_name_ar,active) VALUES('direct-qa-city','QA City',true)`, nil},
+		{`UPDATE dsh.stores SET service_city_id='direct-qa-city',fulfillment_modes=ARRAY['CUSTOMER_PICKUP'] WHERE id=$1`, []any{storeID}},
+		{`INSERT INTO dsh.independent_store_publications(
+			store_id,state,review_state,terms_version,terms_accepted_by_actor_id,terms_accepted_at,published_at)
+			VALUES($1,'PUBLISHED_INDEPENDENT','PASSED',$2,$3,clock_timestamp(),clock_timestamp())`, []any{storeID, termsVersion, ownerID}},
+		{`UPDATE dsh.independent_store_customer_policies SET policy_version=$2, review_state='PASSED',
+			reviewed_by_actor_id='qa-reviewer',published_at=clock_timestamp() WHERE store_id=$1`, []any{storeID, policyVersion}},
+		{`INSERT INTO dsh.store_profile_media_assets(
+			id,store_id,idempotency_key,request_hash,expected_case_version,object_key,uri,content_sha256,content_type,
+			byte_size,media_role,state,attached_at,creator,source_description,rights_statement,rights_attested_by_actor_id,rights_attested_at)
+			SELECT 'direct-qa-' || role,$1,'direct-qa-' || role,repeat('a',64),1,'direct-qa-' || role,
+			       'https://fixture.invalid/' || role,repeat('a',64),'image/png',1,role,'active',clock_timestamp(),
+			       'QA fixture','QA fixture','QA test rights',$2,clock_timestamp()
+			FROM (VALUES ('primary'),('cover')) AS media(role)`, []any{storeID, ownerID}},
+		{`INSERT INTO dsh.store_operational_availability(store_id,schedule_mode,schedule_timezone,weekly_schedule,paused,
+			unavailable_fulfillment_modes,version,updated_by_actor_id)
+			VALUES($1,'ALWAYS_OPEN','Asia/Aden','[]'::jsonb,false,ARRAY[]::text[],1,'system:lazy-initialize')
+			ON CONFLICT(store_id) DO UPDATE SET schedule_mode=EXCLUDED.schedule_mode,
+				version=EXCLUDED.version,updated_by_actor_id=EXCLUDED.updated_by_actor_id`, []any{storeID}},
+	} {
+		result, err := db.ExecContext(ctx, fixture.query, fixture.args...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rows, err := result.RowsAffected(); err != nil || rows == 0 {
+			t.Fatalf("reviewed pickup fixture did not write its expected rows: %d %v", rows, err)
+		}
+	}
+	if _, _, err := postgres.UpdateStorePublicContactForOwner(ctx, db, storeID, ownerID,
+		postgres.StorePublicContactInput{PhoneE164: "+967700001234"}, "direct-qa-contact", "direct-qa-contact-corr"); err != nil {
+		t.Fatal(err)
+	}
+	offer := postgres.CatalogOfferUpdateInput{
+		PriceMinor: 600, Availability: true, PublicationState: "published",
+		QuantityPolicy: "DISCRETE", QuantityMinBaseUnits: 1, QuantityMaxBaseUnits: 5, QuantityStepBaseUnits: 1,
+		PricingBasis: "PER_UNIT", PricingUnitBaseUnits: 1, InventoryPolicy: "AVAILABILITY_ONLY",
+	}
+	if _, err := postgres.UpdateCatalogOffer(ctx, db, offerID, offer, offerVersion, "direct-qa-offer",
+		postgres.HashCatalogOfferUpdateRequest(offerID, offer, offerVersion), ownerID, "direct-qa-offer-corr"); err != nil {
+		t.Fatal(err)
+	}
+	storefront, err := postgres.ReadPublishedIndependentStore(ctx, db, storeID, termsVersion)
+	if err != nil || storefront.StoreID != storeID || storefront.MerchantPolicyVersion != policyVersion {
+		t.Fatalf("synthetic reviewed storefront must expose the correct Store and policy: %+v %v", storefront, err)
+	}
+	catalog, err := postgres.ListPublishedIndependentOffers(ctx, db, storeID, termsVersion, 20, "")
+	if err != nil || len(catalog.Offers) != 1 || catalog.Offers[0].OfferID != offerID {
+		t.Fatalf("direct catalog must expose the exact buyable offer: %+v %v", catalog, err)
+	}
+	request := postgres.IndependentDirectOrderRequest{
+		StoreID: storeID, IdempotencyKey: base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("Q", 32))),
+		GuestName: "QA Pickup Buyer", GuestPhoneE164: "+967700001235",
+		ExpectedMerchantPolicyVersion: policyVersion, ExpectedSubtotalMinor: 1200, FulfillmentMode: "CUSTOMER_PICKUP",
+		Lines: []postgres.IndependentDirectOrderLineRequest{{OfferID: offerID, QuantityBaseUnits: 2}},
+	}
+	secret := []byte(strings.Repeat("Y", 32))
+	if _, err := postgres.CreateIndependentPickupOrder(ctx, db, secret, termsVersion, request); !errors.Is(err, postgres.ErrIndependentOrderUnavailable) {
+		t.Fatalf("legacy system-initialized opening must not admit pickup: %v", err)
+	}
+	availability, _, err := postgres.UpdateStoreOperationalAvailability(ctx, db, postgres.UpdateStoreOperationalAvailabilityInput{
+		StoreID: storeID, ScheduleMode: "ALWAYS_OPEN", ExpectedVersion: 1, ActingActorID: ownerID,
+		AuthoritySource: "STORE_OWNER", IdempotencyKey: "direct-qa-hours", CorrelationID: "direct-qa-hours-corr",
+	})
+	if err != nil || availability.Version != 2 || availability.UpdatedByActorID != ownerID {
+		t.Fatalf("explicit pickup hours must persist under the Store owner: %+v %v", availability, err)
+	}
+	stale := request
+	stale.ExpectedSubtotalMinor++
+	if _, err := postgres.CreateIndependentPickupOrder(ctx, db, secret, termsVersion, stale); !errors.Is(err, postgres.ErrIndependentOrderQuote) {
+		t.Fatalf("stale quote must not spend the key or create an Order: %v", err)
+	}
+	first, err := postgres.CreateIndependentPickupOrder(ctx, db, secret, termsVersion, request)
+	if err != nil || first.Replayed || first.OrderID == "" || first.State != "SUBMITTED" || first.TotalMinor != 1200 {
+		t.Fatalf("internal pickup confirmation must persist exactly the quoted Order: %+v %v", first, err)
+	}
+	replay, err := postgres.CreateIndependentPickupOrder(ctx, db, secret, termsVersion, request)
+	if err != nil || !replay.Replayed || replay.OrderID != first.OrderID || replay.StatusToken != first.StatusToken {
+		t.Fatalf("retry must recover the committed Order and original status capability: %+v %v", replay, err)
+	}
+	status, err := postgres.ReadIndependentDirectOrderStatus(ctx, db, storeID, first.OrderID, first.StatusToken)
+	if err != nil || status.OrderID != first.OrderID || status.Version != 1 {
+		t.Fatalf("guest capability did not read committed canonical state: %+v %v", status, err)
+	}
+	var orders, lines, audit int
+	if err := db.QueryRowContext(ctx, `SELECT
+		(SELECT count(*) FROM dsh.independent_direct_orders WHERE guest_name=$1),
+		(SELECT count(*) FROM dsh.independent_direct_order_lines WHERE order_id=$2 AND quantity_base_units=2 AND line_amount_minor=1200),
+		(SELECT count(*) FROM dsh.independent_direct_order_audit WHERE order_id=$2 AND to_state='SUBMITTED')`,
+		request.GuestName, first.OrderID).Scan(&orders, &lines, &audit); err != nil || orders != 1 || lines != 1 || audit != 1 {
+		t.Fatalf("unexpected persisted order effects: orders=%d lines=%d audit=%d err=%v", orders, lines, audit, err)
+	}
 }
 
 // exerciseIndependentDirectOrderConcurrentDraftAndIdempotencySQL verifies the

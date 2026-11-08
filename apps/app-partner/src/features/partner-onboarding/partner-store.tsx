@@ -1,5 +1,5 @@
 import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type JoiningCaseResponse, type PublicationState, publicationStateLabel, type StoreAccessPermission, type StoreFulfillmentMode } from "@bthwani/dsh";
+import { type JoiningCaseResponse, type PublicationState, publicationStateLabel, type StoreFulfillmentMode } from "@bthwani/dsh";
 import { type Href, Link, Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo } from "react";
 import { Text, View } from "react-native";
@@ -23,14 +23,11 @@ function isStoreSection(value: string | undefined): value is StoreSection {
 }
 function eligibleForSection(store: PartnerAccessibleStore, section: StoreSection): boolean {
   if (section === "banners") return mayPrepareIndependentStoreBanners(store);
+  if (section === "operations" && store.relationModel === "INDEPENDENT_STORE") return store.owned;
   if (["operations", "promotions", "team", "commercial"].includes(section) && store.relationModel !== "BTHWANI_PARTNER") return false;
   if (store.owned) return true;
   return section === "operations" ? store.permissions.includes("store_operations")
     : section === "promotions" ? store.permissions.includes("promotions") : false;
-}
-function requiredPermissions(section: StoreSection): ReadonlyArray<StoreAccessPermission> {
-  return section === "operations" ? ["store_operations"]
-    : section === "promotions" ? ["promotions"] : [];
 }
 function isStoreFulfillmentMode(value: string): value is StoreFulfillmentMode {
   return value === "BTHWANI_CAPTAIN" || value === "PARTNER_CAPTAIN" || value === "CUSTOMER_PICKUP";
@@ -67,17 +64,20 @@ export function PartnerStore() {
   const permitted = Boolean(selectedStore && eligibleForSection(selectedStore, section));
   const firstStore = firstStoreCase?.case.store;
   const firstStoreMatches = Boolean(selectedStore?.owned && firstStore && firstStore.id === selectedStore.id);
+  const independent = selectedStore?.relationModel === "INDEPENDENT_STORE";
 
   return <View style={styles.container}>
-    {stores.length > 1 ? <PartnerStoreScopeSelector requiredPermissions={requiredPermissions(section)} ownedOnly={section === "banners"} independentOnly={section === "banners"} marketplaceOnly={section === "operations" || section === "promotions" || section === "team" || section === "commercial"} /> : null}
+    {stores.length > 1 ? <PartnerStoreScopeSelector eligible={(store) => eligibleForSection(store, section)} /> : null}
     {selectedStore && permitted ? <>
-      {section === "operations" ? <StoreOperationalAvailabilityManagement key={selectedStore.id} storeID={selectedStore.id} fulfillmentModes={selectedStore.fulfillmentModes.filter(isStoreFulfillmentMode)} /> : null}
+      {section === "operations" ? <StoreOperationalAvailabilityManagement key={selectedStore.id} storeID={selectedStore.id} preparingIndependent={independent} fulfillmentModes={selectedStore.fulfillmentModes.filter(isStoreFulfillmentMode)} /> : null}
       {section === "promotions" ? <PartnerMarketingWorkspace key={selectedStore.id} storeID={selectedStore.id} storeName={selectedStore.name} verticalID={selectedStore.primaryVerticalId} view={marketingView}/> : null}
       {section === "banners" ? <PartnerStoreBanners key={selectedStore.id} storeId={selectedStore.id} storeName={selectedStore.name} independent /> : null}
       {section === "team" ? <TeamManagement key={selectedStore.id} storeID={selectedStore.id} /> : null}
       {section === "commercial" ? <StoreCommercialAgreements key={selectedStore.id + ":agreements"} storeID={selectedStore.id} /> : null}
       {section === "settings" ? <>
-        <PartnerStoreSettingsOverview key={selectedStore.id + ":settings"} storeID={selectedStore.id} />
+        <PartnerStoreSettingsOverview key={selectedStore.id + ":settings"} storeID={selectedStore.id}
+          canManageHours={eligibleForSection(selectedStore, "operations")} canReviewAgreement={eligibleForSection(selectedStore, "commercial")}
+          preparingIndependent={independent} />
         {selectedStore.owned && selectedStore.publicationState !== "published" ? <View style={styles.card}>
           <Text style={styles.value}>{selectedStore.relationModel === "INDEPENDENT_STORE" ? "تجهيز محتوى المتجر المستقل" : selectedStore.relationModel === "BTHWANI_PARTNER" ? "تجهيز المتجر للنشر" : "تعذر التحقق من نموذج المتجر"}</Text>
           {selectedStore.relationModel === "INDEPENDENT_STORE" ? <Text style={styles.muted}>يمكنك تجهيز المنتجات والصور. النشر العام والطلب المباشر غير مفعّلين حاليًا، ولا تمنح هذه الخطوة صلاحية النشر.</Text> : null}

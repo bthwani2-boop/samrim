@@ -17,7 +17,9 @@ type ReadState =
 
 
 /** Store settings surface reads DSH truth; writes remain in the canonical operational editor. */
-export function PartnerStoreSettingsOverview({ storeID }: Readonly<{ storeID: string }>) {
+export function PartnerStoreSettingsOverview({ storeID, canManageHours, canReviewAgreement, preparingIndependent }: Readonly<{
+  storeID: string; canManageHours: boolean; canReviewAgreement: boolean; preparingIndependent: boolean;
+}>) {
   const router = useRouter();
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
@@ -77,17 +79,17 @@ export function PartnerStoreSettingsOverview({ storeID }: Readonly<{ storeID: st
       <BthwaniButton label="إعادة المحاولة" variant="secondary" onPress={() => setRetry(value => value + 1)} />
     </> : null}
     {state.kind === "ready" ? <>
-      <Text style={styles.value}>{storeSettingsStatus(state.value)}</Text>
+      <Text style={styles.value}>{preparingIndependent ? "إعدادات الاستلام الخاصة بالمتجر" : storeSettingsStatus(state.value)}</Text>
       <Text style={styles.muted}>ساعات العمل: {state.value.availability.scheduleMode === "ALWAYS_OPEN" ? "على مدار الساعة" : "جدول أسبوعي"}</Text>
       <Text style={styles.muted}>وقت التجهيز: {state.value.availability.preparationMinutes == null ? "غير محدد" : state.value.availability.preparationMinutes.toLocaleString("ar-YE") + " دقيقة"}</Text>
     </> : null}
-    <BthwaniButton label="تعديل ساعات العمل واستقبال الطلبات" variant="secondary"
-      onPress={() => navigate({ pathname: "/store", params: { section: "operations", returnTo: "more" } } as Href)} />
+    {canManageHours ? <BthwaniButton label={preparingIndependent ? "تجهيز ساعات الاستلام" : "تعديل ساعات العمل واستقبال الطلبات"} variant="secondary"
+      onPress={() => navigate({ pathname: "/store", params: { section: "operations", returnTo: "more" } } as Href)} /> : null}
     <Text style={styles.metaLabel}>إعدادات مرتبطة</Text>
     <BthwaniButton label="إدارة المنتجات والمخزون" variant="secondary" onPress={() => navigate("/products?filter=stockout" as Href)} />
     <BthwaniButton label="إشعارات المتجر" variant="secondary" onPress={() => navigate("/notifications" as Href)} />
-    <BthwaniButton label="الاتفاقية التجارية" variant="secondary"
+    {canReviewAgreement ? <><BthwaniButton label="الاتفاقية التجارية" variant="secondary"
       onPress={() => navigate({ pathname: "/store", params: { section: "commercial", returnTo: "more" } } as Href)} />
-    <Text style={styles.muted}>تُراجع العمولة أو رسوم الاشتراك في الاتفاقية التجارية المصرّح بها. لا تغيّر هذه الصفحة مدفوعات العملاء أو شروط المتجر.</Text>
+    <Text style={styles.muted}>تُراجع العمولة أو رسوم الاشتراك في الاتفاقية التجارية المصرّح بها. لا تغيّر هذه الصفحة مدفوعات العملاء أو شروط المتجر.</Text></> : null}
   </View>;
 }

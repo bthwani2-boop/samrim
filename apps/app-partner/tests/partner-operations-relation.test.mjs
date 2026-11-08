@@ -10,7 +10,7 @@ const storeSource = readFileSync(storePath, "utf8");
 const shellSource = readFileSync(shellPath, "utf8");
 
 const begin = storeSource.indexOf("function eligibleForSection(");
-const end = storeSource.indexOf("\nfunction requiredPermissions(", begin);
+const end = storeSource.indexOf("\nfunction isStoreFulfillmentMode(", begin);
 assert.ok(begin >= 0 && end > begin, "extract the production section authority rule");
 const declaration = storeSource.slice(begin, end);
 const js = declaration.replace(
@@ -22,11 +22,15 @@ const eligibleForSection = runInNewContext(js + "\neligibleForSection", {
 });
 const store = (relationModel, owned, permissions = []) => ({ relationModel, owned, permissions });
 
-test("actual Store operations gate requires an explicit marketplace relation", () => {
+test("the existing hours editor admits the independent owner without admitting other market tools", () => {
   assert.equal(eligibleForSection(store("BTHWANI_PARTNER", true), "operations"), true);
   assert.equal(eligibleForSection(store("BTHWANI_PARTNER", false, ["store_operations"]), "operations"), true);
   assert.equal(eligibleForSection(store("BTHWANI_PARTNER", false), "operations"), false);
-  for (const relation of ["INDEPENDENT_STORE", undefined, null, "", "UNKNOWN"]) {
+  assert.equal(eligibleForSection(store("INDEPENDENT_STORE", true), "operations"), true);
+  assert.equal(eligibleForSection(store("INDEPENDENT_STORE", false, ["store_operations"]), "operations"), false);
+  for (const section of ["promotions", "commercial", "team"])
+    assert.equal(eligibleForSection(store("INDEPENDENT_STORE", true), section), false);
+  for (const relation of [undefined, null, "", "UNKNOWN"]) {
     assert.equal(eligibleForSection(store(relation, true), "operations"), false, "owner cannot bypass unknown relation");
     assert.equal(eligibleForSection(store(relation, false, ["store_operations"]), "operations"), false,
       "a stale permission must not grant marketplace operations");
@@ -47,8 +51,8 @@ test("desktop navigation refuses marketplace operations without exact relation",
   assert.match(shellSource, /const isMarketplace = selectedStore\?\.relationModel === "BTHWANI_PARTNER";/);
   assert.match(shellSource, /if \(isMarketplace && can\("store_operations"\)\) management\.push/);
   assert.doesNotMatch(shellSource, /if \(can\("store_operations"\)\) management\.push/);
-  assert.match(storeSource, /marketplaceOnly=\{section === "operations" \|\| section === "promotions"/,
-    "operation Store selector must not offer unknown/independent Stores");
+  assert.match(storeSource, /eligible=\{\(store\) => eligibleForSection\(store, section\)\}/,
+    "the selector and screen must use the same section authority");
 });
 
 test("Store settings guidance never advertises publication for an unknown relation", () => {

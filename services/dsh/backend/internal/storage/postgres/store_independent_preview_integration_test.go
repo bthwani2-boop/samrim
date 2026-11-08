@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	_ "github.com/lib/pq"
@@ -35,6 +36,19 @@ func TestIndependentStorePreviewOwnershipAndChannelIsolation(t *testing.T) {
 		})
 		if _, err := db.ExecContext(ctx, `UPDATE dsh.stores SET relation_model='INDEPENDENT_STORE' WHERE id='independent-preview-store'`); err != nil {
 			t.Fatal(err)
+		}
+
+		availability, err := postgres.ReadStoreOperationalAvailability(ctx, db, "independent-preview-store")
+		if err != nil || availability.ScheduleMode != "WEEKLY" || len(availability.WeeklySchedule) != 0 {
+			t.Fatalf("lazy initialization must keep independent Store closed: %+v err=%v", availability, err)
+		}
+		orderability, err := postgres.EvaluateStoreOrderability(ctx, db, "independent-preview-store", "CUSTOMER_PICKUP", time.Time{})
+		if err != nil || orderability.State != postgres.StoreOrderabilityClosedBySchedule {
+			t.Fatalf("an independent Store must choose opening hours before pickup: %+v err=%v", orderability, err)
+		}
+		marketAvailability, err := postgres.ReadStoreOperationalAvailability(ctx, db, "market-preview-store")
+		if err != nil || marketAvailability.ScheduleMode != "ALWAYS_OPEN" {
+			t.Fatalf("legacy marketplace availability default changed: %+v err=%v", marketAvailability, err)
 		}
 
 		store, err := postgres.ReadIndependentStoreOwnedByPartner(ctx, db, "independent-preview-store", "independent-owner")
