@@ -11895,6 +11895,7 @@ components:
           enum: [INDEPENDENT_STORE]
         publicationState:
           type: string
+          description: Independent web-publication lifecycle from DSH, not marketplace publication_state. Owner preview remains private even when this state is published.
         profileImageUri:
           type: string
         coverImageUri:

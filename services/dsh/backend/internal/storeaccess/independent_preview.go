@@ -45,13 +45,20 @@ func (s *Service) ReadIndependentPreview(ctx context.Context, token, storeID str
 	if err != nil {
 		return IndependentStorePreview{}, err
 	}
+	// The canonical Store publication_state is marketplace-only. An independent
+	// owner preview must report the separate DSH independent-publication state;
+	// otherwise an independently published Store continues to appear as draft.
+	independentPublicationState, _, err := postgres.IndependentStorePublicationForOwner(ctx, s.db, store.ID, actorID)
+	if err != nil {
+		return IndependentStorePreview{}, err
+	}
 	page, err := postgres.ListCatalogOfferPage(ctx, s.db, store.ID, limit, cursor)
 	if err != nil {
 		return IndependentStorePreview{}, err
 	}
 	preview := IndependentStorePreview{
 		StoreID: store.ID, Name: store.Name, RelationModel: store.RelationModel,
-		PublicationState: store.PublicationState, PreviewOnly: true,
+		PublicationState: independentPublicationState, PreviewOnly: true,
 		CheckoutEnabled: false, Offers: make([]IndependentPreviewOffer, 0, len(page.Offers)),
 		NextCursor: page.NextCursor,
 	}
