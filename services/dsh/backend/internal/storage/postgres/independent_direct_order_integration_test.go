@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 )
 
 // This test is NOT allowed to use the ordinary DSH application database.
@@ -323,6 +323,26 @@ func TestIndependentDirectOrderIsolatedPersistenceGuards(t *testing.T) {
 			rotatedReplay.StatusToken != "" || rotatedReplay.TotalMinor != originalReplay.TotalMinor {
 			t.Fatalf("rotated secret must return the same receipt without minting a bearer: %+v err=%v", rotatedReplay, err)
 		}
+		// A previously accepted attempt key never becomes reusable by a
+		// different Store, even when both Stores are currently unlisted.
+		crossStoreReplay := replayRequest
+		crossStoreReplay.StoreID = storeB
+		if _, err := postgres.CreateIndependentPickupOrder(ctx, db, oldSecret,
+			"qa-server-terms-version", crossStoreReplay); !errors.Is(err, postgres.ErrIndependentOrderConflict) {
+			t.Fatalf("historical idempotency key must reject another Store without a new Order: %v", err)
+		}
+		changedReplay := replayRequest
+		changedReplay.ExpectedSubtotalMinor = 700
+		if _, err := postgres.CreateIndependentPickupOrder(ctx, db, oldSecret,
+			"qa-server-terms-version", changedReplay); !errors.Is(err, postgres.ErrIndependentOrderConflict) {
+			t.Fatalf("same historical key with different checkout amount must conflict: %v", err)
+		}
+		var historicalKeyCount int
+		if err := db.QueryRowContext(ctx,
+			`SELECT count(*) FROM dsh.independent_direct_order_idempotency WHERE key_hash=$1 AND store_id=$2 AND order_id=$3`,
+			idempotencyHash, storeA, "valid-test-order").Scan(&historicalKeyCount); err != nil || historicalKeyCount != 1 {
+			t.Fatalf("cross-Store/changed-payload retries must preserve original idempotency mapping: count=%d err=%v", historicalKeyCount, err)
+		}
 		var replayAuditCount int
 		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM dsh.independent_direct_order_audit
 			WHERE order_id='valid-test-order'`).Scan(&replayAuditCount); err != nil || replayAuditCount != 0 {
@@ -406,6 +426,13 @@ func TestIndependentDirectOrderIsolatedPersistenceGuards(t *testing.T) {
 		// No public publication, service cutover or financial side effect.
 		exerciseIndependentPolicyHTTPOnIsolatedDB(t, ctx, db, storeA, storeB, ownerA)
 
+		// A1-P1: current draft must reject competing attempts; the durable
+		// idempotency key remains unique across synthetic concurrent SQL
+		// transactions. This is NOT an approved customer checkout test.
+		exerciseIndependentDirectOrderConcurrentDraftAndIdempotencySQL(
+			t, ctx, db, storeA, storeB, offerA.Offer.ID,
+			productA.Product.ID, productA.Product.Variants[0].ID)
+
 		// Only the *new* direct Order is gated by the current relationship.
 		// A QA-only relation flip must not delete or rewrite an older Order;
 		// this is a persistence invariant, not a released conversion workflow.
@@ -422,4 +449,182 @@ func TestIndependentDirectOrderIsolatedPersistenceGuards(t *testing.T) {
 			t.Fatal("a newly marketplace Store must no longer create direct Orders")
 		}
 	}, 5*time.Minute)
+}
+
+// exerciseIndependentDirectOrderConcurrentDraftAndIdempotencySQL verifies the
+// only lawful claim possible before operator-reviewed publication is admitted:
+// concurrent guests cannot write to a draft, and a disposable SQL transaction
+// cannot persist duplicate idempotency keys or an orphaned losing Order.
+// Synthetic SQL rows are NOT a substitute for CreateIndependentPickupOrder's
+// approved-publication, phone-proof, full order/quote or HTTP flow.
+func exerciseIndependentDirectOrderConcurrentDraftAndIdempotencySQL(
+	t *testing.T, ctx context.Context, db *sql.DB,
+	independentStoreID, marketplaceStoreID, offerID, productID, variantID string,
+) {
+	t.Helper()
+	t.Run("concurrent unreviewed checkout rejects both attempts without persistence", func(t *testing.T) {
+		attempt := base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("R", 32)))
+		req := postgres.IndependentDirectOrderRequest{
+			StoreID: independentStoreID, IdempotencyKey: attempt,
+			GuestName: "Concurrent Draft Buyer", GuestPhoneE164: "+967700001123",
+			ExpectedMerchantPolicyVersion: "v3", ExpectedSubtotalMinor: 600,
+			FulfillmentMode: "CUSTOMER_PICKUP",
+			Lines: []postgres.IndependentDirectOrderLineRequest{{
+				OfferID: offerID, QuantityBaseUnits: 1,
+			}},
+		}
+		secret := []byte(strings.Repeat("D", 32))
+		results := make([]error, 2)
+		start := make(chan struct{})
+		var both sync.WaitGroup
+		for i := range results {
+			both.Add(1)
+			go func(i int) {
+				defer both.Done()
+				<-start
+				_, results[i] = postgres.CreateIndependentPickupOrder(
+					ctx, db, secret, "qa-not-legally-approved", req)
+			}(i)
+		}
+		close(start)
+		both.Wait()
+		for i, err := range results {
+			if !errors.Is(err, postgres.ErrIndependentOrderUnavailable) {
+				t.Fatalf("draft concurrent checkout %d must fail closed, got %v", i, err)
+			}
+		}
+		wrongStore := req
+		wrongStore.StoreID = marketplaceStoreID
+		if _, err := postgres.CreateIndependentPickupOrder(
+			ctx, db, secret, "qa-not-legally-approved", wrongStore); !errors.Is(err, postgres.ErrIndependentOrderUnavailable) {
+			t.Fatalf("marketplace Store checkout with same key must fail closed: %v", err)
+		}
+		attemptDigest := sha256.Sum256([]byte("dsh:independent-direct-order:v1:" + attempt))
+		keyHash := hex.EncodeToString(attemptDigest[:])
+		var keyCount, orderCount int
+		if err := db.QueryRowContext(ctx,
+			`SELECT count(*) FROM dsh.independent_direct_order_idempotency WHERE key_hash=$1`, keyHash).
+			Scan(&keyCount); err != nil || keyCount != 0 {
+			t.Fatalf("failed draft attempts must not persist an idempotency key: count=%d err=%v", keyCount, err)
+		}
+		if err := db.QueryRowContext(ctx,
+			`SELECT count(*) FROM dsh.independent_direct_orders WHERE guest_name=$1`, req.GuestName).
+			Scan(&orderCount); err != nil || orderCount != 0 {
+			t.Fatalf("failed draft attempts must not persist an Order: count=%d err=%v", orderCount, err)
+		}
+	})
+
+	t.Run("concurrent synthetic SQL transactions preserve one global key and atomic order lines", func(t *testing.T) {
+		// A draft is deliberately NOT promoted to PASSED/PUBLISHED here.
+		// This exercises unique-key, FK and rollback mechanics only, not
+		// a lawful application-level checkout.
+		raceCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		idemDigest := sha256.Sum256([]byte("qa:independent:direct:sql-key-race"))
+		requestDigest := sha256.Sum256([]byte("qa:independent:direct:identical-synthetic-request"))
+		keyHash := hex.EncodeToString(idemDigest[:])
+		requestHash := hex.EncodeToString(requestDigest[:])
+		const insertOrder = `INSERT INTO dsh.independent_direct_orders
+			(id,store_id,publication_version,store_version,fulfillment_mode,
+			 guest_name,guest_phone_e164,hosting_terms_version,merchant_policy_version,
+			 merchant_policy_snapshot,subtotal_amount_minor,merchant_delivery_fee_minor,
+			 total_amount_minor,guest_capability_hash,guest_capability_expires_at)
+			VALUES($1,$2,1,1,'CUSTOMER_PICKUP','Synthetic Race Buyer','+967700001124',
+			       'qa-unreleased-terms','qa-unreviewed-policy',
+			       '{"cancellationTerms":"qa only","returnsTerms":"qa only","fulfillmentTerms":"qa only","collectionTerms":"qa only"}'::jsonb,
+			       600,0,600,$3,clock_timestamp()+interval '10 minutes')`
+		const insertLine = `INSERT INTO dsh.independent_direct_order_lines
+			(order_id,store_id,offer_id,product_id,variant_id,product_name,variant_title,
+			 quantity_base_units,pricing_unit_base_units,unit_price_minor,line_amount_minor)
+			VALUES($1,$2,$3,$4,$5,'Synthetic Offer','Unit',1,1,600,600)`
+		const insertAttempt = `INSERT INTO dsh.independent_direct_order_idempotency
+			(key_hash,request_hash,store_id,order_id) VALUES($1,$2,$3,$4)`
+		type raceResult struct {
+			id        string
+			committed bool
+			err       error
+		}
+		results := []raceResult{
+			{id: "qa-direct-race-candidate-1"},
+			{id: "qa-direct-race-candidate-2"},
+		}
+		start := make(chan struct{})
+		var both sync.WaitGroup
+		for i := range results {
+			both.Add(1)
+			go func(i int) {
+				defer both.Done()
+				<-start
+				tx, err := db.BeginTx(raceCtx, nil)
+				if err != nil {
+					results[i].err = err
+					return
+				}
+				defer func() { _ = tx.Rollback() }()
+				capability := strings.Repeat(string(rune('1'+i)), 64)
+				if _, err = tx.ExecContext(raceCtx, insertOrder,
+					results[i].id, independentStoreID, capability); err != nil {
+					results[i].err = err
+					return
+				}
+				if _, err = tx.ExecContext(raceCtx, insertLine,
+					results[i].id, independentStoreID, offerID, productID, variantID); err != nil {
+					results[i].err = err
+					return
+				}
+				if _, err = tx.ExecContext(raceCtx, insertAttempt,
+					keyHash, requestHash, independentStoreID, results[i].id); err != nil {
+					results[i].err = err
+					return
+				}
+				results[i].err = tx.Commit()
+				results[i].committed = results[i].err == nil
+			}(i)
+		}
+		close(start)
+		both.Wait()
+		var winner string
+		successes, conflicts := 0, 0
+		for i, result := range results {
+			if result.committed {
+				successes++
+				winner = result.id
+				continue
+			}
+			var pqErr *pq.Error
+			if !errors.As(result.err, &pqErr) || string(pqErr.Code) != "23505" ||
+				pqErr.Constraint != "independent_direct_order_idempotency_pkey" {
+				t.Fatalf("race lane %d failed for a reason other than global attempt-key uniqueness: %v", i, result.err)
+			}
+			conflicts++
+		}
+		if successes != 1 || conflicts != 1 {
+			t.Fatalf("SQL idempotency race must commit one atomic transaction and reject one: %+v", results)
+		}
+		var winnerOrder, winnerStore, winnerHash string
+		if err := db.QueryRowContext(ctx, `SELECT order_id,store_id,request_hash
+			FROM dsh.independent_direct_order_idempotency WHERE key_hash=$1`, keyHash).
+			Scan(&winnerOrder, &winnerStore, &winnerHash); err != nil ||
+			winnerOrder != winner || winnerStore != independentStoreID || winnerHash != requestHash {
+			t.Fatalf("global attempt readback must identify exactly the winner: order=%s store=%s hash=%s err=%v",
+				winnerOrder, winnerStore, winnerHash, err)
+		}
+		var orders, lines int
+		var amount int64
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM dsh.independent_direct_orders
+			WHERE id IN ($1,$2)`, results[0].id, results[1].id).Scan(&orders); err != nil || orders != 1 {
+			t.Fatalf("losing race must roll back its Order: count=%d err=%v", orders, err)
+		}
+		if err := db.QueryRowContext(ctx, `SELECT count(*),COALESCE(sum(line_amount_minor),0)
+			FROM dsh.independent_direct_order_lines WHERE order_id IN ($1,$2)`,
+			results[0].id, results[1].id).Scan(&lines, &amount); err != nil || lines != 1 || amount != 600 {
+			t.Fatalf("losing race must roll back its line with the Order: count=%d amount=%d err=%v", lines, amount, err)
+		}
+		var keys int
+		if err := db.QueryRowContext(ctx,
+			`SELECT count(*) FROM dsh.independent_direct_order_idempotency WHERE key_hash=$1`,
+			keyHash).Scan(&keys); err != nil || keys != 1 {
+			t.Fatalf("two concurrent SQL transactions cannot duplicate the attempt key: count=%d err=%v", keys, err)
+		}
+	})
 }
