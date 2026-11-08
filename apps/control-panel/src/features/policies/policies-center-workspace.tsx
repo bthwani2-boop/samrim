@@ -38,6 +38,17 @@ function describePreview(preview: PolicyPreviewState | undefined): string {
 
 export function PoliciesCenterWorkspace() {
   const { state } = useSession();
+  if (state.kind !== "authenticated" || !state.identity.subject || !state.identity.sessionId) return null;
+  // Keep previews, dialogs and mounted editors inside the active Identity scope.
+  const sessionScope = JSON.stringify([
+    state.identity.subject, state.identity.sessionId, state.identity.role,
+    [...(state.identity.permissions ?? [])].sort(),
+  ]);
+  return <ScopedPoliciesCenterWorkspace key={sessionScope} />;
+}
+
+function ScopedPoliciesCenterWorkspace() {
+  const { state } = useSession();
   const [query, setQuery] = useState("");
   const [group, setGroup] = useState<PolicyGroup>("all");
   const [selected, setSelected] = useState<PolicyResourceKey | null>(null);

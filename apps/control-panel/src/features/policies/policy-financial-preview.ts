@@ -17,8 +17,13 @@ export async function readFinancialPolicyPreviews(signal:AbortSignal,canReadTerm
  ]);
  const result:Results={};
  if(registry.status==="fulfilled"&&registry.value.status===200){
-  const data=registry.value.body as OperatorFinancialPolicyRegistry;
-  if(Array.isArray(data.deliveryFees)&&Number.isSafeInteger(data.deliveryTotal)){
+  const data=registry.value.body as OperatorFinancialPolicyRegistry | null;
+  if(data && Array.isArray(data.deliveryFees) && Number.isSafeInteger(data.deliveryTotal) && data.deliveryTotal >= 0 &&
+    data.deliveryFees.every(fee => fee && typeof fee.id === "string" && typeof fee.name === "string" &&
+      Array.isArray(fee.distanceBands) && fee.distanceBands.every((band: unknown) => band !== null &&
+        typeof band === "object" && "upToMeters" in band && "ratePerKmMinor" in band &&
+        (band.upToMeters === null || Number.isSafeInteger(band.upToMeters)) &&
+        Number.isSafeInteger(band.ratePerKmMinor)))){
    const global=data.deliveryFees.find(p=>p.id==="");
    const bandsSummary=(items:readonly {upToMeters:number|null;ratePerKmMinor:number}[])=>items.map((b,i)=>`${b.upToMeters===null?"∞":`${b.upToMeters/1000} كم`}: ${money(b.ratePerKmMinor)}/كم`).join(" · ");
    const visibleFees=data.deliveryFees.slice(0,5);
@@ -37,7 +42,7 @@ export async function readFinancialPolicyPreviews(signal:AbortSignal,canReadTerm
  else if(terms.status==="fulfilled"&&terms.value!==null){
   if(terms.value.status===404){result["partner-financial-terms"]={kind:"missing"}}
   else if(terms.value.status===200){
-   const p=(terms.value.body as {policy?:{id:string;settlementPeriod:string;version:number;createdBy:string;createdAt:string}}).policy;
+   const p=(terms.value.body as {policy?:{id:string;settlementPeriod:string;version:number;createdBy:string;createdAt:string}} | null)?.policy;
    const label=p?.settlementPeriod==="DAILY"?"يومية":p?.settlementPeriod==="WEEKLY"?"أسبوعية":p?.settlementPeriod==="MONTHLY"?"شهرية":null;
    result["partner-financial-terms"]=p&&label?{kind:"ready",value:{active:1,inactive:null,headline:`التسوية ${label} · v${p.version}`,records:[
     {id:p.id,name:"فترة التسوية",active:true,detail:label,version:p.version,createdAt:p.createdAt,createdBy:p.createdBy}
@@ -45,10 +50,10 @@ export async function readFinancialPolicyPreviews(signal:AbortSignal,canReadTerm
   }else result["partner-financial-terms"]=failure;
  }else result["partner-financial-terms"]=failure;
  if(captain.status==="fulfilled"){
-  if(captain.value.status===404&&(captain.value.body as {error?:{code?:string}}).error?.code==="CAPTAIN_MINIMUM_BALANCE_NOT_CONFIGURED"){
+  if(captain.value.status===404&&(captain.value.body as {error?:{code?:string}} | null)?.error?.code==="CAPTAIN_MINIMUM_BALANCE_NOT_CONFIGURED"){
    result["captain-minimum-balance"]={kind:"missing"};
   }else if(captain.value.status===200){
-   const p=(captain.value.body as CaptainMinimumBalanceResponse).policy;
+   const p=(captain.value.body as CaptainMinimumBalanceResponse | null)?.policy;
    result["captain-minimum-balance"]=p&&p.state==="ACTIVE"&&p.currency==="YER"&&p.minimumAvailableMinor>0?
     {kind:"ready",value:{active:1,inactive:null,headline:`شحن التفعيل الأول ${money(p.minimumAvailableMinor)} · v${p.version}`,
      records:[{id:p.id,name:"كابتن بثواني · شحن التفعيل الأول",active:true,detail:money(p.minimumAvailableMinor),version:p.version,createdAt:p.createdAt,createdBy:p.createdBy}],
