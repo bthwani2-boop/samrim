@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { validStoreJoiningPolicyReadback, type StoreJoiningModel as Model, type StoreJoiningPolicy as Policy } from "./store-joining-policy-readback";
 
@@ -21,11 +21,12 @@ export function StoreJoiningPolicyWorkspace(){
  const [reason,setReason]=useState("");
  const [error,setError]=useState("");
  const [notice,setNotice]=useState("");
+ const inFlightSave=useRef<AbortController|null>(null);
  const readbackReady=authorized&&loadedSession===actorSession&&policies.length===2;
  const current=readbackReady?policies.find(p=>p.relationModel===selected):undefined;
 
  useEffect(()=>{
-  setPolicies([]);setLoadedSession("");setLoading(true);setError("");setNotice("");
+  setPolicies([]);setLoadedSession("");setLoading(true);setError("");setNotice("");setSaving(false);
   if(!authorized){setLoading(false);return;}
   const controller=new AbortController();
   void (async()=>{
@@ -43,22 +44,31 @@ export function StoreJoiningPolicyWorkspace(){
     if(!controller.signal.aborted)setError("تعذرت قراءة السياسات من الخدمة. لا يمكن تعديلها الآن.");
    }finally{if(!controller.signal.aborted)setLoading(false)}
   })();
-  return ()=>controller.abort();
+  return ()=>{
+   controller.abort();
+   // A PUT may have committed before cancellation; never replay it implicitly.
+   inFlightSave.current?.abort();
+   inFlightSave.current=null;
+  };
  },[authorized,actorSession,refresh]);
 
  async function save(){
-  if(!readbackReady||!current||saving||enabled===current.enrollmentEnabled||reason.trim().length<5)return;
+  if(!readbackReady||!current||saving||inFlightSave.current||enabled===current.enrollmentEnabled||reason.trim().length<5)return;
   if(!window.confirm(enabled?"فتح إنشاء متاجر جديدة لهذا النموذج؟":"إيقاف إنشاء متاجر جديدة بهذا النموذج؟ المتاجر القائمة لن تتوقف."))return;
+  const controller=new AbortController();
+  inFlightSave.current=controller;
   setSaving(true);setError("");setNotice("");
   try{
-   const response=await fetch(path,{method:"PUT",
+   const response=await fetch(path,{method:"PUT",signal:controller.signal,
     headers:{"Content-Type":"application/json","Idempotency-Key":crypto.randomUUID()},
     body:JSON.stringify({relationModel:selected,enrollmentEnabled:enabled,expectedVersion:current.version,reason:reason.trim()})
    });
    const body=await response.json() as {policy?:Policy;error?:{message?:string}};
+   if(controller.signal.aborted)return;
    if(!response.ok||!body.policy)throw Error(body.error?.message||"تعذر اعتماد السياسة.");
-   const confirmedResponse=await fetch(path,{cache:"no-store"});
+   const confirmedResponse=await fetch(path,{cache:"no-store",signal:controller.signal});
    const confirmedBody=await confirmedResponse.json() as {items?:Policy[]};
+   if(controller.signal.aborted)return;
    const confirmed=confirmedBody.items?.find(item=>item.relationModel===selected);
    if(!confirmedResponse.ok||!validStoreJoiningPolicyReadback(confirmedBody.items)||!confirmed||confirmed.version!==body.policy.version||confirmed.enrollmentEnabled!==enabled)
     throw Error("النتيجة غير مؤكدة. أعد قراءة السياسة قبل محاولة التغيير مجددًا.");
@@ -68,12 +78,16 @@ export function StoreJoiningPolicyWorkspace(){
    setReason("");
    setNotice("تم اعتماد سياسة الانضمام بالإصدار "+confirmed.version+" بعد القراءة من DSH.");
   }catch{
+   if(controller.signal.aborted)return;
    // The PUT might have committed even if its response or readback was lost.
    // Block a second write until a fresh DSH read establishes the latest version.
    setPolicies([]);setLoadedSession("");
    setError("تعذر تأكيد نتيجة تغيير السياسة. أعد قراءة الحالة من DSH قبل أي محاولة جديدة.");
   }
-  finally{setSaving(false)}
+  finally{
+   if(inFlightSave.current===controller)inFlightSave.current=null;
+   if(!controller.signal.aborted)setSaving(false);
+  }
  }
  return <section className="workspace-page policy-studio" aria-label="انضمام المتاجر">
   <h2>سياسات انضمام المتاجر</h2>
