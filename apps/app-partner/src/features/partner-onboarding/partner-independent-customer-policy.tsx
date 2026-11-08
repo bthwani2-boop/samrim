@@ -32,6 +32,8 @@ export function PartnerIndependentCustomerPolicyDraftEditor({ storeID }: Readonl
   const [pending, setPending] = useState<Pending | null>(null);
   const [reload, setReload] = useState(0);
   const requestGeneration = useRef(0);
+  // A synchronous guard is required: React busy state does not block two taps in one render.
+  const savingGeneration = useRef<number | null>(null);
   const sessionScope = useRef(partnerSetupSessionKey(currentIdentityState()));
 
   useEffect(() => subscribeIdentitySession(next => {
@@ -39,6 +41,7 @@ export function PartnerIndependentCustomerPolicyDraftEditor({ storeID }: Readonl
     if (scope === sessionScope.current) return;
     sessionScope.current = scope;
     requestGeneration.current += 1;
+    savingGeneration.current = null;
     setState({ kind: "loading" });
     setDraft(blank);
     setPending(null);
@@ -49,6 +52,8 @@ export function PartnerIndependentCustomerPolicyDraftEditor({ storeID }: Readonl
 
   useEffect(() => {
     const generation = ++requestGeneration.current;
+    savingGeneration.current = null;
+    setBusy(false);
     const scope = partnerSetupSessionKey(currentIdentityState());
     const stillCurrent = () => generation === requestGeneration.current &&
       scope !== "" && scope === partnerSetupSessionKey(currentIdentityState());
@@ -74,7 +79,7 @@ export function PartnerIndependentCustomerPolicyDraftEditor({ storeID }: Readonl
   }
 
   async function save() {
-    if (busy || state.kind !== "ready") return;
+    if (busy || savingGeneration.current !== null || state.kind !== "ready") return;
     const scope = partnerSetupSessionKey(currentIdentityState());
     if (!scope) return;
     const input: IndependentCustomerPolicyDraftInput = {
@@ -88,6 +93,7 @@ export function PartnerIndependentCustomerPolicyDraftEditor({ storeID }: Readonl
     }
     const attempt: Pending = pending ?? { input, key: Crypto.randomUUID(), correlation: Crypto.randomUUID() };
     const generation = ++requestGeneration.current;
+    savingGeneration.current = generation;
     const stillCurrent = () => generation === requestGeneration.current &&
       scope === partnerSetupSessionKey(currentIdentityState());
     setBusy(true);
@@ -97,6 +103,12 @@ export function PartnerIndependentCustomerPolicyDraftEditor({ storeID }: Readonl
       await saveOwnIndependentCustomerPolicyDraft(storeID, attempt.input, attempt.key, attempt.correlation);
     } catch {
       // A timeout may follow a committed write; canonical DSH readback decides.
+    }
+    // An Identity switch may happen while the PUT is in flight. Never read the
+    // old Store using the newly authenticated Partner's bearer.
+    if (!stillCurrent()) {
+      if (savingGeneration.current === generation) savingGeneration.current = null;
+      return;
     }
     try {
       const result = await readOwnIndependentCustomerPolicyDraft(storeID);
@@ -117,6 +129,7 @@ export function PartnerIndependentCustomerPolicyDraftEditor({ storeID }: Readonl
     } catch {
       if (stillCurrent()) setNotice("تعذّر تأكيد الحفظ. أعد المحاولة دون تغيير الحقول لاستخدام المفتاح نفسه.");
     } finally {
+      if (savingGeneration.current === generation) savingGeneration.current = null;
       if (stillCurrent()) setBusy(false);
     }
   }
