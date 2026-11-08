@@ -10,6 +10,12 @@ CAPABILITY_ID: STORE_RELATION_MODEL
 
 A Partner may own multiple Stores. Each Store retains one canonical identity, catalog, public link, and storefront across relationship changes and has exactly one effective commercial relationship: BTHWANI_PARTNER (BThwani marketplace) or INDEPENDENT_STORE (merchant-direct web storefront). Transitioning preserves Store and catalog identifiers, merchant content, existing public links and historical Orders. The Store relationship never derives from its vertical, Store Type, category, client navigation, or query string.
 
+## Shared Store presentation contract
+
+A published Store has one canonical identity, catalog, media and permanent public storefront across both relationships. The full responsive web storefront is the Store's merchant-facing public presentation for both BTHWANI_PARTNER and INDEPENDENT_STORE, once the respective web publication and legal gates are met. A marketplace-eligible Partner Store additionally has a compact Store view inside the BThwani Client app; the independent Store never gains marketplace discovery or ordering through that view. The two compositions may differ in navigation and content but never create parallel Store writers, prices, inventory or permissions.
+
+For any public Store checkout, DSH derives the effective commercial relationship and the eligible Order route from current owner-backed Store and publication facts at server confirmation. A website path, query parameter, client theme or entry channel cannot choose Direct versus Marketplace settlement. Public site address/DNS, hosting terms and payment enablement remain separately gated decisions, not effects of this presentation contract.
+
 ## Ownership and relation semantics
 
 DSH owns the Store relationship, ownership, effective history, channel publication, and Order routing. Identity owns the Partner actor/session; a new Store relationship never creates a new Identity role. WLT owns marketplace agreements, commissions, and any later admitted paid hosting invoice; Store-independent hosting plans never redefine the historical WLT Store COMMISSION/SUBSCRIPTION agreement. Applications present derived capabilities but never select financial terms or grant rights.
