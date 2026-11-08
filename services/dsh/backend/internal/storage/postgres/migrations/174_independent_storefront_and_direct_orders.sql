@@ -217,8 +217,15 @@ CREATE TABLE dsh.independent_direct_order_lines (
         REFERENCES dsh.catalog_product_variants(id,product_id) ON DELETE RESTRICT,
     CONSTRAINT independent_direct_order_lines_quantity_chk CHECK
         (quantity_base_units > 0 AND pricing_unit_base_units > 0),
+    -- Server-priced line snapshots must also be arithmetically consistent
+    -- if data is written outside the approved DSH transaction. NUMERIC
+    -- avoids BIGINT overflow while checking the persisted equality.
     CONSTRAINT independent_direct_order_lines_price_chk CHECK
-        (unit_price_minor > 0 AND line_amount_minor > 0)
+        (unit_price_minor > 0 AND line_amount_minor > 0
+         AND MOD(quantity_base_units,NULLIF(pricing_unit_base_units,0))=0
+         AND line_amount_minor::numeric =
+             unit_price_minor::numeric * quantity_base_units::numeric /
+             NULLIF(pricing_unit_base_units,0)::numeric)
 );
 
 -- Globally unique key hashes prevent the same guest attempt from being replayed

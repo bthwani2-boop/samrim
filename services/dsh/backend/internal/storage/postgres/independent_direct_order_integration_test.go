@@ -210,6 +210,43 @@ func TestIndependentDirectOrderIsolatedPersistenceGuards(t *testing.T) {
 		if _, err := db.ExecContext(ctx, insert, "valid-test-order", storeA, 0, 600, strings.Repeat("b", 64)); err != nil {
 			t.Fatalf("insert synthetic QA-only order: %v", err)
 		}
+		// Prove the schema rejects a forged line price even when all Store,
+		// Offer, Variant and Product foreign keys are valid. These are
+		// disposable QA-only fixtures, not a bypass of the DSH order writer.
+		productAInput := postgres.CatalogProductInput{VerticalID: storeA + "-vertical",
+			Scope: "STORE_SCOPED", StoreID: storeA, CanonicalName: "Test Offer A",
+			VariantTitle: "Unit", MeasurementKind: "DISCRETE", BaseUnit: "COUNT"}
+		productA, err := postgres.CreateCatalogProduct(ctx, db, productAInput,
+			"direct-a-product-create", postgres.HashCatalogProductCreateRequest(productAInput),
+			ownerA, "direct-a-product-correlation")
+		if err != nil {
+			t.Fatal(err)
+		}
+		offerAInput := postgres.CatalogOfferInput{StoreID: storeA,
+			VariantID: productA.Product.Variants[0].ID, PriceMinor: 600,
+			QuantityPolicy: "DISCRETE", QuantityMinBaseUnits: 1, QuantityMaxBaseUnits: 5,
+			QuantityStepBaseUnits: 1, PricingBasis: "PER_UNIT", PricingUnitBaseUnits: 1,
+			InventoryPolicy: "AVAILABILITY_ONLY"}
+		offerA, err := postgres.CreateCatalogOffer(ctx, db, offerAInput,
+			"direct-a-offer-create", postgres.HashCatalogOfferCreateRequest(offerAInput),
+			ownerA, "direct-a-offer-correlation")
+		if err != nil {
+			t.Fatal(err)
+		}
+		lineInsert := `INSERT INTO dsh.independent_direct_order_lines
+			(order_id,store_id,offer_id,product_id,variant_id,product_name,variant_title,
+			 quantity_base_units,pricing_unit_base_units,unit_price_minor,line_amount_minor)
+			VALUES($1,$2,$3,$4,$5,'Test Offer A','Unit',1,1,600,$6)`
+		lineArgs := []any{"valid-test-order", storeA, offerA.Offer.ID,
+			productA.Product.ID, productA.Product.Variants[0].ID}
+		if _, err := db.ExecContext(ctx, lineInsert,
+			append(append([]any{}, lineArgs...), 500)...); err == nil {
+			t.Fatal("database accepted mathematically false independent order line charge")
+		}
+		if _, err := db.ExecContext(ctx, lineInsert,
+			append(append([]any{}, lineArgs...), 600)...); err != nil {
+			t.Fatalf("database rejected exact independently priced line: %v", err)
+		}
 
 		// A durable idempotency record belongs to the historical request,
 		// not to the current server HMAC secret. Simulate the original
@@ -324,11 +361,14 @@ func TestIndependentDirectOrderIsolatedPersistenceGuards(t *testing.T) {
 		if err == nil {
 			t.Fatal("a line from Store B must never be attached to a Direct Order owned by Store A")
 		}
-		// Persistence witness: failed insert did not bypass the unique Store
-		// foreign keys or contaminate an accepted order.
+		// Persistence witness: failed cross-Store insert did not contaminate
+		// the one legitimate line or the order's immutable subtotal.
 		var count int
-		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM dsh.independent_direct_order_lines WHERE order_id=$1`, "valid-test-order").Scan(&count); err != nil || count != 0 {
-			t.Fatalf("cross-Store injection changed persistent lines: count=%d err=%v", count, err)
+		var lineSum int64
+		if err := db.QueryRowContext(ctx, `SELECT count(*),COALESCE(sum(line_amount_minor),0)
+			FROM dsh.independent_direct_order_lines WHERE order_id=$1`, "valid-test-order").
+			Scan(&count, &lineSum); err != nil || count != 1 || lineSum != 600 {
+			t.Fatalf("cross-Store or forged-line injection changed persisted items: count=%d sum=%d err=%v", count, lineSum, err)
 		}
 		// The original marketplace publication law must remain unchanged.
 		if _, err := db.ExecContext(ctx, `UPDATE dsh.stores SET publication_state='published' WHERE id=$1`, storeA); err == nil {

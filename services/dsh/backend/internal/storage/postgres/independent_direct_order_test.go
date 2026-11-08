@@ -300,6 +300,18 @@ func TestIndependentSchemaVerifierIncludesAllNewTables(t *testing.T) {
 			t.Errorf("VerifySchema does not check migration 174 table %s", table)
 		}
 	}
+	// The database, not only the Go writer, must reject forged line prices.
+	// A disposable PostgreSQL integration test exercises the actual CHECK.
+	for _, arithmeticConstraint := range []string{
+		"CONSTRAINT independent_direct_order_lines_price_chk CHECK",
+		"MOD(quantity_base_units,NULLIF(pricing_unit_base_units,0))=0",
+		"line_amount_minor::numeric =",
+		"unit_price_minor::numeric * quantity_base_units::numeric /",
+	} {
+		if !strings.Contains(migration, arithmeticConstraint) {
+			t.Errorf("independent order line arithmetic constraint missing %s", arithmeticConstraint)
+		}
+	}
 	for _, requiredSnapshotField := range []string{
 		"merchant_policy_snapshot->'cancellationTerms'",
 		"merchant_policy_snapshot->'returnsTerms'",
