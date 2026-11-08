@@ -81,7 +81,8 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
  const [typesError,setTypesError]=useState(false);
  const [typesRetry,setTypesRetry]=useState(0);
  const [joiningPolicies,setJoiningPolicies]=useState<readonly StoreJoiningOption[]>([]);
- const [modes,setModes]=useState<StoreFulfillmentMode[]>([...(restored?.modes??["BTHWANI_CAPTAIN"])]);
+ const [modes,setModes]=useState<StoreFulfillmentMode[]>(() => firstStoreModesForRelation(
+  restored?.relation??"",restored?.relation==="INDEPENDENT_STORE"?"INDEPENDENT_STORE":"BTHWANI_PARTNER",restored?.modes??(restored?.relation==="INDEPENDENT_STORE"?["CUSTOMER_PICKUP"]:["BTHWANI_CAPTAIN"])));
  const [lat,setLat]=useState(restored?.lat??"");
  const [lng,setLng]=useState(restored?.lng??"");
  const [MapComponent,setMapComponent]=useState<ComponentType<BthwaniMapProps>|null>(null);
@@ -165,7 +166,8 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
   setError("");
   if(step===0&&(!firstStoreRelationCanEnroll(joiningPolicies,relation)||name.trim().length<2)){setError("اختر طريقة تشغيل متاحة حاليًا وأدخل اسم المتجر.");return;}
   if(step===1&&(!city||!vertical||!storeType||!types.some(t=>t.id===storeType&&t.verticalId===vertical))){setError("اختر مدينة الخدمة والمجال ونوع المتجر.");return;}
-  if(step===2&&(!selected||address.trim().length<4||modes.length===0)){setError("حدد العنوان والموقع وطريقة التوصيل.");return;}
+  const allowedModes=relation?firstStoreModesForRelation(relation,relation,modes):[];
+  if(step===2&&(!selected||address.trim().length<4||allowedModes.length===0||allowedModes.length!==modes.length)){setError("حدد العنوان والموقع وراجع طرق التوصيل المسموحة لهذا المتجر.");return;}
   setStep(Math.min(step+1,3) as Step);
  }
  async function save(){
@@ -176,6 +178,10 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
   if(typesLoading||typesError||!types.some(type=>type.id===storeType&&type.verticalId===vertical)
    ||!cities.some(item=>item.id===city)||!verticals.some(item=>item.id===vertical&&item.active)){
    setStep(1);setError("تحقق من المدينة ونوع النشاط وأعد قراءة الخيارات قبل إنشاء المتجر.");return;
+  }
+  const allowedModes=firstStoreModesForRelation(relation,relation,modes);
+  if(allowedModes.length===0||allowedModes.length!==modes.length){
+   setStep(2);setError("راجع طرق التوصيل: لا يجوز للمتجر المستقل اختيار كابتن بثواني.");return;
   }
   saveInFlight.current=true;
   setBusy(true);setError("");

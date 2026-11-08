@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript-ast";
+import { firstStoreModesForRelation } from "../src/features/partner-onboarding/first-store-relation-choice.ts";
 
 const source = readFileSync(new URL("../app/setup.tsx", import.meta.url), "utf8");
 const ast = ts.createSourceFile("setup.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -23,7 +24,7 @@ const matchingStore = (id = "store-1") => ({
   fulfillmentModes: ["CUSTOMER_PICKUP"],
 });
 
-function harness({ create, read } = {}) {
+function harness({ create, read, modes = ["CUSTOMER_PICKUP"] } = {}) {
   const events = { created: 0, read: 0, saved: [], recovered: [], errors: [], busy: [], cleared: 0 };
   let activeSession = "partner-a:session-1";
   const setSession = value => { activeSession = value; };
@@ -43,10 +44,11 @@ function harness({ create, read } = {}) {
     selected: { latitude: 15.3, longitude: 44.2 },
     name: "محل تجريبي", relation: "INDEPENDENT_STORE", city: "city-1",
     vertical: "vertical-1", storeType: "type-1", address: "عنوان تجريبي",
-    modes: ["CUSTOMER_PICKUP"], registryReady: true, joiningPolicies: [],
+    modes, registryReady: true, joiningPolicies: [],
     typesLoading: false, typesError: false, types: [{ id: "type-1", verticalId: "vertical-1" }],
     cities: [{ id: "city-1" }], verticals: [{ id: "vertical-1", active: true }],
     firstStoreRelationCanEnroll: () => true,
+    firstStoreModesForRelation,
     getUsableIdentityAccessToken: async () => "valid-token",
     currentIdentityState: () => activeSession,
     partnerSetupSessionKey: identity => identity,
@@ -159,4 +161,17 @@ test("a confirmed POST whose owner readback fails is not a second ambiguous crea
   assert.equal(h.events.read, 1, "a failed follow-on read must not trigger speculative replay lookup");
   assert.deepEqual(h.events.saved, []);
   assert.equal(h.events.cleared, 0);
+});
+
+
+test("restored independent draft cannot submit stale marketplace Captain to DSH", async () => {
+  const h = harness({ modes: ["CUSTOMER_PICKUP", "BTHWANI_CAPTAIN"] });
+  await h.save();
+  assert.equal(h.events.created, 0, "invalid independent fulfillment must stop before the POST");
+  assert.equal(h.events.read, 0);
+  assert.match(h.events.errors.at(-1), /طريقة التوصيل|طرق التوصيل/);
+});
+
+test("the wizard sanitizes persisted Store modes using its canonical relation helper", () => {
+  assert.match(source, /useState<StoreFulfillmentMode\[\]>\(\(\) => firstStoreModesForRelation\(/);
 });
