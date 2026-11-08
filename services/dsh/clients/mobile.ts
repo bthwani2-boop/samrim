@@ -340,13 +340,23 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const query = new URLSearchParams({ limit: String(limit) });
       if (cursor) query.set("cursor", cursor);
       const path = dshOperationPaths.readPartnerIndependentStorePreview.path.replace("{storeId}", encodeURIComponent(normalizedStore));
-      return userRequest<IndependentStorePreview>(accessToken, `${path}?${query.toString()}`, dshOperationPaths.readPartnerIndependentStorePreview.method);
+      const response = await userRequest<IndependentStorePreview>(accessToken, `${path}?${query.toString()}`, dshOperationPaths.readPartnerIndependentStorePreview.method);
+      if (response.storeId !== normalizedStore || response.relationModel !== "INDEPENDENT_STORE" ||
+          response.previewOnly !== true || response.checkoutEnabled !== false ||
+          !Array.isArray(response.offers) || typeof response.nextCursor !== "string") {
+        throw new Error("DSH_INDEPENDENT_PREVIEW_SCOPE_MISMATCH");
+      }
+      return response;
     },
     async readPartnerIndependentCustomerPolicyDraft(accessToken: string, storeID: string): Promise<IndependentCustomerPolicyDraftResponse> {
       const store = storeID.trim();
       if (!store || store.length > 128) throw new Error("DSH_INDEPENDENT_POLICY_STORE_INVALID");
       const op = dshOperationPaths.readPartnerIndependentCustomerPolicyDraft;
-      return userRequest<IndependentCustomerPolicyDraftResponse>(accessToken, op.path.replace("{storeId}", encodeURIComponent(store)), op.method);
+      const response = await userRequest<IndependentCustomerPolicyDraftResponse>(accessToken, op.path.replace("{storeId}", encodeURIComponent(store)), op.method);
+      if (response.draftOnly !== true || response.policy?.storeId !== store) {
+        throw new Error("DSH_INDEPENDENT_POLICY_SCOPE_MISMATCH");
+      }
+      return response;
     },
     async savePartnerIndependentCustomerPolicyDraft(accessToken: string, storeID: string, input: IndependentCustomerPolicyDraftInput, idempotencyKey: string, correlationID: string): Promise<IndependentCustomerPolicyDraftMutationResponse> {
       const store = storeID.trim();
@@ -356,7 +366,11 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
         throw new Error("DSH_INDEPENDENT_POLICY_DRAFT_INPUT_INVALID");
       }
       const op = dshOperationPaths.savePartnerIndependentCustomerPolicyDraft;
-      return userRequest<IndependentCustomerPolicyDraftMutationResponse>(accessToken, op.path.replace("{storeId}", encodeURIComponent(store)), op.method, input, mutationHeaders(idempotencyKey, correlationID));
+      const response = await userRequest<IndependentCustomerPolicyDraftMutationResponse>(accessToken, op.path.replace("{storeId}", encodeURIComponent(store)), op.method, input, mutationHeaders(idempotencyKey, correlationID));
+      if (response.draftOnly !== true || response.policy?.storeId !== store) {
+        throw new Error("DSH_INDEPENDENT_POLICY_SCOPE_MISMATCH");
+      }
+      return response;
     },
     async listPartnerStoreAccessGrants(accessToken: string, storeID: string): Promise<StoreAccessGrantListResponse> {
       const normalizedStore = storeID.trim();
