@@ -92,7 +92,7 @@ test("operational and commercial snapshots are session guarded, independent Stor
   assert.match(source, /const visibleIdentity:IdentityDisplay=stillCurrentSession\(\)\?identity:/);
   assert.match(source, /const visibleStoreImages=stillCurrentSession\(\)\?storeImages:null/);
   assert.match(source, /selectedStore\?\.owned && marketplace && !desktopWeb \? <Pressable/);
-  assert.match(source, /!marketplace \? "المتجر المستقل قيد الإعداد"/);
+  assert.match(source, /independent \? "المتجر المستقل قيد الإعداد" : "تعذر التحقق من نموذج المتجر"/);
 });
 
 test("dashboard data widgets are hidden until a live session and remounted on session change", () => {

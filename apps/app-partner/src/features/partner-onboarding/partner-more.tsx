@@ -63,6 +63,7 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
   const [logoutError,setLogoutError]=useState("");
   const selectedID=selectedStore?.id;
   const marketplace=selectedStore?.relationModel==="BTHWANI_PARTNER";
+  const independent=selectedStore?.relationModel==="INDEPENDENT_STORE";
   const canOperate=Boolean(marketplace && selectedStore && (selectedStore.owned||selectedStore.permissions.includes("store_operations")));
   const can=(permission:"promotions"|"catalog")=>Boolean(selectedStore&&(selectedStore.owned||selectedStore.permissions.includes(permission)));
   const canOrders=Boolean(marketplace && selectedStore&&(selectedStore.owned||selectedStore.permissions.includes("orders")));
@@ -188,9 +189,9 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
   return <View style={styles.screen}>
     {!accountOnly ? <>
     {desktopWeb && selectedStore ? <View style={styles.topAlert} accessibilityLabel="حالة المتجر الحالية">
-      <View style={[styles.dot,{backgroundColor:selectedStore.publicationState==="published"?theme.success:theme.warning}]}/>
-      <Text style={styles.topAlertText}>{marketplace ? (selectedStore.publicationState==="published" ? "المتجر منشور للعملاء" : "المتجر لم يُنشر للعملاء بعد") : "المتجر مستقل · المعاينة خاصة بالمالك"}</Text>
-      <Text style={styles.topAlertHint}>{canOperate ? "استقبال الطلبات: "+operationalState : marketplace ? "الحالة تعتمد على نشر المتجر والصلاحيات" : "لم يُفعّل النشر أو استقبال الطلب المباشر"}</Text>
+      <View style={[styles.dot,{backgroundColor:marketplace&&selectedStore.publicationState==="published"?theme.success:theme.warning}]}/>
+      <Text style={styles.topAlertText}>{marketplace ? (selectedStore.publicationState==="published" ? "المتجر منشور للعملاء" : "المتجر لم يُنشر للعملاء بعد") : independent ? "المتجر مستقل · المعاينة خاصة بالمالك" : "تعذر التحقق من نموذج المتجر"}</Text>
+      <Text style={styles.topAlertHint}>{canOperate ? "استقبال الطلبات: "+operationalState : marketplace ? "الحالة تعتمد على نشر المتجر والصلاحيات" : independent ? "لم يُفعّل النشر أو استقبال الطلب المباشر" : "أعد قراءة بيانات المتجر من DSH قبل التشغيل"}</Text>
     </View> : null}
     <View style={styles.dashboardHeader}>
       <View style={styles.dashboardCopy}>
@@ -200,11 +201,11 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
       </View>
       {desktopWeb?<View style={styles.dateColumn}>
         <Text style={styles.dateLabel}>اليوم: {displayDate}</Text>
-        <Text style={styles.statusText}>{selectedStore?(marketplace?(canOperate?"التشغيل: "+operationalState:selectedStore.publicationState==="published"?"متجر منشور":"متجر قيد الإعداد"):"المتجر المستقل قيد الإعداد"):"لوحة الشريك"}</Text>
+        <Text style={styles.statusText}>{selectedStore?(marketplace?(canOperate?"التشغيل: "+operationalState:selectedStore.publicationState==="published"?"متجر منشور":"متجر قيد الإعداد"):independent?"المتجر المستقل قيد الإعداد":"تعذر التحقق من نموذج المتجر"):"لوحة الشريك"}</Text>
       </View>:selectedStore?<View style={styles.statusPanel}>
         <View style={styles.statusLine}>
           <View style={[styles.dot,{backgroundColor:visibleAvailabilityError?theme.warning:orderable&&!stopped?theme.success:theme.warning}]}/>
-          <Text style={styles.statusText}>{canOperate ? "استقبال الطلبات: "+operationalState : !marketplace ? "المتجر المستقل قيد الإعداد" : "المتجر: "+(selectedStore.publicationState==="published"?"منشور":"قيد الإعداد")}</Text>
+          <Text style={styles.statusText}>{canOperate ? "استقبال الطلبات: "+operationalState : marketplace ? "المتجر: "+(selectedStore.publicationState==="published"?"منشور":"قيد الإعداد") : independent ? "المتجر المستقل قيد الإعداد" : "تعذر التحقق من نموذج المتجر"}</Text>
         </View>
         {canOperate?<Pressable accessibilityRole="button" accessibilityLabel="فتح إدارة تشغيل المتجر" style={styles.statusButton}
           onPress={()=>router.push({pathname:"/store",params:{section:"operations",returnTo:"more"}} as Href)}>
