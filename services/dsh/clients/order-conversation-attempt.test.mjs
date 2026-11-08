@@ -36,3 +36,16 @@ test("private media retry keeps the same file and audience without persisting me
   assert.throws(()=>createOrderConversationMessageAttempt("client-1","order-1","صورة","conversation-media-123","correlation-media-123",["operator"],
     {kind:"image",contentType:"text/html",fileUri:"file:///sandbox/photo"}),/MEDIA_INVALID/);
 });
+
+test("recipient-role ordering remains lexical and stable across retry recovery", () => {
+  const input = ["partner", "client", "operator", "captain"];
+  const attempt = createOrderConversationMessageAttempt(
+    "client-1", "order-1", "مرحبا", "conversation-key-lexical", "conversation-correlation-lexical", input,
+  );
+  assert.deepEqual(attempt.recipientRoles, ["captain", "client", "operator", "partner"]);
+  assert.deepEqual(input, ["partner", "client", "operator", "captain"], "caller input must remain unchanged");
+  assert.deepEqual(
+    parseOrderConversationMessageAttempt(JSON.stringify(attempt), "client-1", "order-1")?.recipientRoles,
+    attempt.recipientRoles,
+  );
+});
