@@ -45,6 +45,10 @@ function Panel({ id, selected, children }: Readonly<{ id: string; selected: bool
 }
 
 export function StoreProfileDetailPanels({ activeTab, store, partner, partnerError, canViewFinance, canViewOperations, manageOpen, openManagement, management }: StoreProfileTabsProps) {
+  const isMarketplaceStore = store.relationModel === "BTHWANI_PARTNER";
+  // The existing DSH publication/readiness fields only govern marketplace visibility.
+  const publicationLabel = isMarketplaceStore ? publicationStateLabel(store.publicationState) : "نشر الموقع المستقل غير مفعّل";
+  const independentReadiness = "جاهزية الموقع المستقل غير معتمدة";
   const joining = partner?.joiningCase;
   const account = partner?.partner;
   const hasOrigin = Boolean(store.deliveryOrigin);
@@ -63,8 +67,8 @@ export function StoreProfileDetailPanels({ activeTab, store, partner, partnerErr
     </Card>
     <Card title="حالة النشر وإمكانية تنفيذ الطلب">
       <dl className="store-profile-facts">
-        <Fact title="حالة النشر">{publicationStateLabel(store.publicationState)}</Fact>
-        <Fact title="جاهزية النشر">{store.publicationReadiness.ready ? "جاهز" : "غير جاهز"}</Fact>
+        <Fact title="حالة النشر">{publicationLabel}</Fact>
+        <Fact title="جاهزية النشر">{isMarketplaceStore ? (store.publicationReadiness.ready ? "جاهز" : "غير جاهز") : independentReadiness}</Fact>
         <Fact title="أوضاع التنفيذ">{store.fulfillmentModes.map(fulfillmentModeLabel).join(" · ") || "غير محددة"}</Fact>
       </dl>
       <button type="button" className="button button-primary" onClick={openManagement}>تحرير إعدادات المتجر والصور</button>
@@ -83,12 +87,12 @@ export function StoreProfileDetailPanels({ activeTab, store, partner, partnerErr
       <div className="store-profile-tab-grid">
         <Card title="حالة استقبال الطلبات">
           <dl className="store-profile-facts">
-            <Fact title="حالة نشر المتجر">{publicationStateLabel(store.publicationState)}</Fact>
+            <Fact title="حالة نشر المتجر">{publicationLabel}</Fact>
             <Fact title="تنفيذ الطلبات">{store.fulfillmentModes.map(fulfillmentModeLabel).join(" · ") || "لم تُحدد طرق التنفيذ"}</Fact>
-            <Fact title="جاهزية المتجر">{store.publicationReadiness.ready ? "جاهز" : "توجد متطلبات غير مكتملة"}</Fact>
+            <Fact title="جاهزية المتجر">{isMarketplaceStore ? (store.publicationReadiness.ready ? "جاهز" : "توجد متطلبات غير مكتملة") : independentReadiness}</Fact>
           </dl>
         </Card>
-        {canViewOperations ? <Card title="طلبات هذا المتجر"><StoreOperationsPreview storeId={store.id}/></Card> : <Unavailable title="طلبات المتجر" reason="قراءة الطلبات تتطلب صلاحية العمليات لدى المشغّل."/>}
+        {!isMarketplaceStore ? <Unavailable title="طلبات المتجر المستقل" reason="الطلبات المباشرة لا تُدار عبر سجل عمليات سوق بثواني. لم تُفعّل قراءة طلبات المتجر المستقل بعد."/> : canViewOperations ? <Card title="طلبات هذا المتجر"><StoreOperationsPreview storeId={store.id}/></Card> : <Unavailable title="طلبات المتجر" reason="قراءة الطلبات تتطلب صلاحية العمليات لدى المشغّل."/>}
       </div>
     </Panel>
 
@@ -145,7 +149,7 @@ export function StoreProfileDetailPanels({ activeTab, store, partner, partnerErr
 
     <Panel id="customers" selected={activeTab === "quality"}>
       <div className="store-profile-tab-grid">
-        <Card title="نشاط عملاء هذا المتجر"><StoreCustomerActivitySummary key={store.id} storeId={store.id}/></Card>
+        <Card title="نشاط عملاء هذا المتجر"><StoreCustomerActivitySummary key={store.id} storeId={store.id} relationModel={store.relationModel}/></Card>
         <Card title="خصوصية العملاء"><p className="store-profile-muted">تعرض المؤشرات نشاط الطلبات المكتملة فقط، ولا تكشف قائمة أسماء العملاء أو أرقامهم أو بيانات التواصل. إدارة الهوية تبقى لدى Identity.</p></Card>
       </div>
     </Panel>
@@ -162,8 +166,8 @@ export function StoreProfileDetailPanels({ activeTab, store, partner, partnerErr
           {joining ? <Link className="button button-secondary" href={`/partners/${encodeURIComponent(joining.id)}`}>فتح ملف الانضمام والوثائق</Link> : null}
           <p className="store-profile-muted">تظل صور الإثبات محمية؛ لا تعرض بدون قراءة وثيقة مخولة.</p>
         </Card>
-        <Card title="أهلية النشر"><dl className="store-profile-facts"><Fact title="الجاهزية">{store.publicationReadiness.ready ? "مستوفٍ للشروط" : "غير مستوفٍ بعد"}</Fact>
-          <Fact title="الحالة">{publicationStateLabel(store.publicationState)}</Fact></dl></Card>
+        <Card title="أهلية النشر"><dl className="store-profile-facts"><Fact title="الجاهزية">{isMarketplaceStore ? (store.publicationReadiness.ready ? "مستوفٍ للشروط" : "غير مستوفٍ بعد") : independentReadiness}</Fact>
+          <Fact title="الحالة">{publicationLabel}</Fact></dl></Card>
       </div>
     </Panel>
 
@@ -171,8 +175,8 @@ export function StoreProfileDetailPanels({ activeTab, store, partner, partnerErr
       <div className="store-profile-tab-grid">
         <Card title="مراجعة الجاهزية">
           <dl className="store-profile-facts">
-            <Fact title="جاهزية النشر">{store.publicationReadiness.ready ? "جاهز للنشر" : "لم تكتمل الشروط"}</Fact>
-            <Fact title="حالة النشر">{publicationStateLabel(store.publicationState)}</Fact>
+            <Fact title="جاهزية النشر">{isMarketplaceStore ? (store.publicationReadiness.ready ? "جاهز للنشر" : "لم تكتمل الشروط") : independentReadiness}</Fact>
+            <Fact title="حالة النشر">{publicationLabel}</Fact>
             <Fact title="المستندات الأولية">{joining ? joining.firstStoreProofImageUploaded ? "تم رفع مستند إثبات" : "لم يُرفع إثبات" : "لا يوجد طلب انضمام في القراءة"}</Fact>
             <Fact title="صورة المراجعة">{joining?.reviewPhotoUploaded ? "مرفقة" : "غير مرفقة"}</Fact>
           </dl>
@@ -184,7 +188,7 @@ export function StoreProfileDetailPanels({ activeTab, store, partner, partnerErr
 
     <Panel id="ratings" selected={activeTab === "quality"}>
       <div className="store-profile-tab-grid">
-        <Card title="تقييمات الطلبات المكتملة"><StoreOrderRatingsPreview key={store.id} storeId={store.id}/></Card>
+        {isMarketplaceStore ? <Card title="تقييمات الطلبات المكتملة"><StoreOrderRatingsPreview key={store.id} storeId={store.id}/></Card> : <Unavailable title="تقييمات الطلبات المباشرة" reason="تقييمات طلبات سوق بثواني لا تمثل تقييمات الطلبات المستقلة؛ لا توجد قراءة مباشرة معتمدة بعد."/>}
         <Card title="حماية الخصوصية"><p className="store-profile-muted">تُعرض تقييمات الطلبات المصرح بها دون معرّف العميل أو هاتفه المحفوظين لدى المنصة؛ وقد يتضمن التعليق نصًا أدخله العميل بنفسه. تقييم المنتجات والكباتن والردود ليست جزءًا من هذه القراءة.</p></Card>
       </div>
     </Panel>
@@ -203,12 +207,14 @@ export function StoreProfileDetailPanels({ activeTab, store, partner, partnerErr
     </Panel>
 
     {canViewFinance ? <Panel id="finance" selected={activeTab === "finance"}>
-      {store.partnerActorId ? <PartnerFinancialRegister partnerActorId={store.partnerActorId} storeId={store.id} /> :
-        <p className="store-profile-muted">لا يمكن قراءة الكشف المالي قبل ربط المتجر بحساب الشريك.</p>}
-      <div className="store-profile-finance-actions">
-        <Link className="button button-secondary" href={"/finance/partner-earnings?partnerActorId=" + encodeURIComponent(store.partnerActorId)}>مركز مالية الشريك</Link>
-        <Link className="button button-quiet" href="/finance/partner-store-commissions">اتفاقيات عمولة المتاجر</Link>
-      </div>
+      {isMarketplaceStore ? <>
+        {store.partnerActorId ? <PartnerFinancialRegister partnerActorId={store.partnerActorId} storeId={store.id} /> :
+          <p className="store-profile-muted">لا يمكن قراءة الكشف المالي قبل ربط المتجر بحساب الشريك.</p>}
+        <div className="store-profile-finance-actions">
+          <Link className="button button-secondary" href={"/finance/partner-earnings?partnerActorId=" + encodeURIComponent(store.partnerActorId)}>مركز مالية الشريك</Link>
+          <Link className="button button-quiet" href="/finance/partner-store-commissions">اتفاقيات عمولة المتاجر</Link>
+        </div>
+      </> : <p className="store-profile-muted" role="status">هذه البيانات المالية تخص سوق بثواني فقط؛ لا يوجد سجل مالي لطلبات المتجر المستقل في WLT ضمن المسار الحالي.</p>}
     </Panel> : null}
   </>;
 }
