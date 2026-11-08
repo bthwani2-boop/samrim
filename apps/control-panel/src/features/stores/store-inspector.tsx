@@ -76,6 +76,10 @@ export function StoreInspector({ storeId, onClose, onPrevious, onNext, onUpdated
   async function changePublication() {
     if (!store || busy) return;
     const nextState = store.publicationState === "published" ? "hidden" : "published";
+    if (nextState === "published" && store.relationModel !== "BTHWANI_PARTNER") {
+      setError("النشر العام للمتاجر المستقلة غير مفعّل. يمكن تجهيز الملف والسياسات فقط حتى اعتماد النشر.");
+      return;
+    }
     if (nextState === "published" && !store.publicationReadiness.ready) {
       setError("النشر غير مسموح: " + publicationReadinessBlockedReasonLabel(store.publicationReadiness.blockedReason));
       return;
@@ -107,7 +111,7 @@ export function StoreInspector({ storeId, onClose, onPrevious, onNext, onUpdated
   }
 
   const publicationAction = store?.publicationState === "published" ? "إخفاء المتجر" : "نشر المتجر";
-  const canPublish = Boolean(store && (store.publicationState === "published" || store.publicationReadiness.ready));
+  const canPublish = Boolean(store && (store.publicationState === "published" || (store.relationModel === "BTHWANI_PARTNER" && store.publicationReadiness.ready)));
 
   return <AdaptiveRecordPanel title="تفاصيل المتجر" subtitle="الهوية والجاهزية والإجراءات المعتمدة" onClose={onClose} onPrevious={onPrevious} onNext={onNext}
     actions={canPublish || confirmHide ? <>
@@ -120,6 +124,7 @@ export function StoreInspector({ storeId, onClose, onPrevious, onNext, onUpdated
     {loading && !store ? <p role="status" className="workspace-side-state">جارٍ قراءة بيانات المتجر…</p> : null}
     {error ? <div role="alert" className="managed-status managed-status-warning"><p>{error}</p><button type="button" className="button button-secondary" disabled={busy} onClick={() => void load()}>إعادة قراءة المعاينة</button></div> : null}
     {notice ? <p role="status" className="success-inline">{notice}</p> : null}
+    {store?.relationModel === "INDEPENDENT_STORE" ? <p role="status" className="muted">النشر العام للمتاجر المستقلة غير مفعّل. يمكن مراجعة ملف المتجر وتجهيز محتواه؛ لا تتيح هذه الشاشة موقع شراء مباشرًا.</p> : null}
     {store ? <StoreProfileDashboard store={store} partner={partner} partnerError={partnerError} canViewFinance={canViewFinance && store.relationModel === "BTHWANI_PARTNER"} canViewOperations={canViewOperations} manageOpen={manageOpen} openManagement={openManagement} onUpdated={() => { void load(); onUpdated?.(); }} management={<Suspense fallback={<p role="status">جارٍ تحميل أدوات إدارة المتجر…</p>}><StoreManagement storeId={store.id} embedded onUpdated={() => { void load(); onUpdated?.(); }} /></Suspense>} /> : null}
   </AdaptiveRecordPanel>;
 }

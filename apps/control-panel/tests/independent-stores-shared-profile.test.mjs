@@ -34,3 +34,21 @@ test("canonical editor is shared, but marketplace WLT finance remains partner-on
   assert.ok(inspector.includes('canViewFinance={canViewFinance && store.relationModel === "BTHWANI_PARTNER"}'));
   assert.ok(inspector.includes("/api/stores/${encodeURIComponent(storeId)}/publication"));
 });
+
+// Evaluate the inspector's production action guard against both Store relations.
+test("independent Store is never offered public publish while Marketplace readiness is retained", () => {
+  const declaration = inspector.match(/const canPublish = Boolean\([^\n]+\);/)?.[0];
+  assert.ok(declaration, "the shared Store inspector must guard its publication action");
+  const evaluate = (relationModel, publicationState, ready) => {
+    const store = { relationModel, publicationState, publicationReadiness: { ready } };
+    return Function("store", `${declaration}; return canPublish;`)(store);
+  };
+  assert.equal(evaluate("INDEPENDENT_STORE", "unpublished", true), false, "readiness alone cannot open independent publication");
+  assert.equal(evaluate("INDEPENDENT_STORE", "hidden", true), false);
+  assert.equal(evaluate("INDEPENDENT_STORE", "published", false), true, "an existing publication must remain hideable");
+  assert.equal(evaluate("BTHWANI_PARTNER", "unpublished", true), true);
+  assert.equal(evaluate("BTHWANI_PARTNER", "unpublished", false), false);
+  assert.equal(evaluate("UNKNOWN", "unpublished", true), false);
+  assert.match(inspector, /nextState === "published" && store\.relationModel !== "BTHWANI_PARTNER"/, "mutation must independently fail closed");
+  assert.match(inspector, /النشر العام للمتاجر المستقلة غير مفعّل/, "operator must see the unavailable rollout gate");
+});
