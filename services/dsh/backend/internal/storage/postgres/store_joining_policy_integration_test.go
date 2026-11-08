@@ -26,7 +26,9 @@ func TestStoreJoiningAdmissionPolicyControlsCreationPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer root.Close()
+	// withFreshDatabase registers cleanup of its child database; close the
+	// administrator connection only after that cleanup has completed.
+	t.Cleanup(func() { _ = root.Close() })
 	withFreshDatabase(t, root, raw, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, sqls []string) {
 		if err := postgres.Migrate(ctx, db, records, sqls, testDeliveryProofKeyring(t)); err != nil {
 			t.Fatal(err)
