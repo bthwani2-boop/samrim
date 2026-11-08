@@ -108,7 +108,7 @@ Use Git to identify changes and Nx to select affected project work when applicab
 
 **MANDATORY — ZERO MOJIBAKE:** All new/modified text MUST be valid UTF-8 without BOM or confirmed encoding corruption. Run `node tools/dev/check-encoding.mjs`; any confirmed violation BLOCKS closure until its root cause is fixed—never blindly replace characters. Details: `docs/governance/policies/quality.md`.
 
-Execution routing: MA Commander, SentinelX, Remote Desktop Commander, RelayDesk, Cmdexa, Remote Arc and MCPENROUZ are equal-status authorized device-control candidates, with no fixed priority. GitHub is the specialized eighth channel for repository/PR/CI state; Light Remote, Shellway and other connected tools are optional. Select by real capability, permission, efficiency, reliability and recovery. Do not use a different channel to bypass DENIED; do not run Codex CLI without a task-specific human instruction and proven direct-tool insufficiency.
+Execution routing: MA Commander, SentinelX, Remote Desktop Commander, Cmdexa, Remote Arc, MCPENROUZ and Local Commander are equal-status authorized device-control candidates, with no fixed priority. GitHub is the specialized eighth channel for repository/PR/CI state; Light Remote, Shellway and other connected tools are optional. Select by real capability, permission, efficiency, reliability and recovery. Do not use a different channel to bypass DENIED; do not run Codex CLI without a task-specific human instruction and proven direct-tool insufficiency.
 
 Default local-first development flow (each external Git action requires its own human authorization):
 
