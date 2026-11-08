@@ -8,7 +8,7 @@ import { Image as ExpoImage } from "expo-image";
 import * as ExpoLinking from "expo-linking";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, Alert, FlatList, Platform, Pressable, ScrollView, type ScrollViewInstance, Text, useWindowDimensions, View, type ViewInstance } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
@@ -535,6 +535,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       if (Math.abs(event.translationX) >= 65) runOnJS(switchCatalogTabOnSwipe)(event.translationX);
     });
 
+  // Pan-to-switch tabs is a native touch affordance. Web already has explicit
+  // category tabs and must not leave web gesture handlers alive on route exit.
+  const withNativeTabSwipe = (content: ReactNode) => Platform.OS === "web" ? content : <GestureDetector gesture={tabSwipeGesture}>{content}</GestureDetector>;
+
   const renderCategoryChip = (category: PublicCatalogResponse["categories"][number], depth: number) => {
     const selected = selectedCategoryID === category.id;
     const isChild = depth > 0;
@@ -868,15 +872,13 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => {
           if (item.kind === "filters") return <View style={[styles.stickyCategories, { paddingTop: heroVisible ? 0 : insets.top }]}>{renderCategoryRail()}</View>;
-          if (item.kind === "offer") return <GestureDetector gesture={tabSwipeGesture}><View>{renderOffer(item.offer)}</View></GestureDetector>;
-          if (item.kind === "grid") return <GestureDetector gesture={tabSwipeGesture}>
-            <View style={styles.gridRow}>
+          if (item.kind === "offer") return withNativeTabSwipe(<View>{renderOffer(item.offer)}</View>);
+          if (item.kind === "grid") return withNativeTabSwipe(<View style={styles.gridRow}>
               {item.offers.map((offer) => <View key={offer.offerId} style={styles.gridCell}>{renderOffer(offer, true)}</View>)}
               {EMPTY_GRID_CELL_KEYS.slice(item.offers.length, gridColumns).map((key) => <View key={key} style={styles.gridCell} />)}
-            </View>
-          </GestureDetector>;
+            </View>);
           if (item.kind === "heading") return <BthwaniSectionHeader title={item.title} subtitle={item.subtitle} />;
-          return <GestureDetector gesture={tabSwipeGesture}><View><BthwaniSurface tone="inset" style={styles.emptySection}>
+          return withNativeTabSwipe(<View><BthwaniSurface tone="inset" style={styles.emptySection}>
             <BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} />
             <Text style={styles.sectionTitle}>{item.title}</Text>
             {(favoritesView || popularView || selectedCategoryID || selectedStoreSectionID || catalogQuery.trim()) ? <BthwaniButton
@@ -885,7 +887,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
               variant="quiet"
               onPress={() => void reloadCatalog(null, "", false, false)}
             /> : null}
-          </BthwaniSurface></View></GestureDetector>;
+          </BthwaniSurface></View>);
         }}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={<View style={styles.listHeader}>
@@ -972,6 +974,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         </View> : null}
       </BthwaniSurface>
       <StorePublicContactCard storeID={storeId} />
+      {Platform.OS === "web" ? <View style={styles.promotionNotice}><BthwaniButton label="زيارة موقع المتجر الكامل" variant="secondary" onPress={() => router.push(("/storefront/" + encodeURIComponent(storeId) + "?serviceCityId=" + encodeURIComponent(selectedCityID ?? "")) as Href)} /></View> : null}
       {spotlightPromotion ? (
         <View accessibilityLabel="العرض المرتبط بالفيديو" style={styles.promotionNotice}>
           <PromotionCard promotion={spotlightPromotion} onUse={() => openStorePromotion(spotlightPromotion.code)} />

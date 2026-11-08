@@ -30,7 +30,7 @@ test("customer receives recoverable Store banner errors without losing confirmed
 test("newest successful banner read wins while failed later refreshes cannot discard retries",()=>{
  assert.match(client,/const bannerRequest = \+\+bannerRequestID\.current/);
  assert.match(client,/const bannerAppliedRequestID = useRef\(0\)/);
- assert.match(client,/active && bannerRequest > bannerAppliedRequestID\.current/);
+ assert.match(client,/active && storeGeneration === storeRequestID\.current && bannerRequest > bannerAppliedRequestID\.current/);
  assert.match(client,/bannerAppliedRequestID\.current = bannerRequest/);
  assert.match(client,/const contentID = \+\+bannerRequestID\.current/);
  assert.match(client,/contentID > bannerAppliedRequestID\.current/);
