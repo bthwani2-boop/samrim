@@ -356,13 +356,17 @@ function goPropertyType(lines, optional, context) {
   const ref = valueAfter(lines, "$ref:", 10);
   if (ref) return nullable || pointerType ? "*" + refType(ref) : refType(ref);
 
-  const constant = valueAfter(lines, "const:", 10);
-  if (constant !== null) return pointerType ? "*string" : "string";
-
-  const enumValue = valueAfter(lines, "enum:", 10);
-  if (enumValue) return pointerType ? "*string" : "string";
-
   const type = valueAfter(lines, "type:", 10);
+  const constant = valueAfter(lines, "const:", 10);
+  const enumValue = valueAfter(lines, "enum:", 10);
+  if (constant !== null || enumValue) {
+    // The JSON scalar kind remains authoritative even when restricted by
+    // const/enum. A boolean-only rights attestation cannot decode as string.
+    const scalarType = type === "boolean" ? "bool"
+      : type === "integer" ? "int"
+      : type === "number" ? "float64" : "string";
+    return pointerType ? "*" + scalarType : scalarType;
+  }
   if (type === "string") {
     const format = valueAfter(lines, "format:", 10);
     if (format === "date-time") return pointer || optional ? "*time.Time" : "time.Time";

@@ -87,7 +87,7 @@ type StudioThemePalette struct {
 }
 
 type StudioLayoutPublication struct {
-	SchemaVersion      string               `json:"schemaVersion"`
+	SchemaVersion      int                  `json:"schemaVersion"`
 	TemplateKey        string               `json:"templateKey"`
 	Version            int                  `json:"version"`
 	Document           *StudioDraftDocument `json:"document"`
@@ -117,7 +117,7 @@ type StudioLayoutHistory struct {
 }
 
 type StudioThemePublication struct {
-	SchemaVersion      string              `json:"schemaVersion"`
+	SchemaVersion      int                 `json:"schemaVersion"`
 	TemplateKey        string              `json:"templateKey"`
 	Version            int                 `json:"version"`
 	Palette            *StudioThemePalette `json:"palette"`
@@ -154,7 +154,7 @@ type StudioDraft struct {
 }
 
 type StudioDraftDocument struct {
-	SchemaVersion   string                 `json:"schemaVersion"`
+	SchemaVersion   int                    `json:"schemaVersion"`
 	Sections        []StudioDraftSection   `json:"sections"`
 	HeroOptions     StudioDraftHeroOptions `json:"heroOptions"`
 	Palette         StudioDraftPalette     `json:"palette"`
@@ -849,7 +849,7 @@ type UploadCatalogProductMediaRequest struct {
 	SourceUri         string `json:"sourceUri,omitempty"`
 	RightsStatement   string `json:"rightsStatement"`
 	RightsUri         string `json:"rightsUri,omitempty"`
-	RightsAttested    string `json:"rightsAttested"`
+	RightsAttested    bool   `json:"rightsAttested"`
 }
 
 type UploadCatalogCategoryMediaRequest struct {
@@ -860,7 +860,7 @@ type UploadCatalogCategoryMediaRequest struct {
 	SourceUri         string `json:"sourceUri,omitempty"`
 	RightsStatement   string `json:"rightsStatement"`
 	RightsUri         string `json:"rightsUri,omitempty"`
-	RightsAttested    string `json:"rightsAttested"`
+	RightsAttested    bool   `json:"rightsAttested"`
 }
 
 type CatalogProductResponse struct {
@@ -2641,7 +2641,7 @@ type CreateDeliveryFeePolicyRequest struct {
 	OrderSizeUnitBaseUnits int    `json:"orderSizeUnitBaseUnits"`
 	OrderSizeRateMinor     int    `json:"orderSizeRateMinor"`
 	ZoneSurchargeMinor     int    `json:"zoneSurchargeMinor"`
-	RoundingUnitMinor      string `json:"roundingUnitMinor"`
+	RoundingUnitMinor      int    `json:"roundingUnitMinor"`
 	ExpectedVersion        int    `json:"expectedVersion"`
 	Reason                 string `json:"reason"`
 }
@@ -2657,7 +2657,7 @@ type DeliveryFeePolicy struct {
 	OrderSizeUnitBaseUnits int               `json:"orderSizeUnitBaseUnits"`
 	OrderSizeRateMinor     int               `json:"orderSizeRateMinor"`
 	ZoneSurchargeMinor     int               `json:"zoneSurchargeMinor"`
-	RoundingUnitMinor      string            `json:"roundingUnitMinor"`
+	RoundingUnitMinor      int               `json:"roundingUnitMinor"`
 	DistanceBands          []DistanceFeeBand `json:"distanceBands,omitempty"`
 	Version                int               `json:"version"`
 	CreatedBy              string            `json:"createdBy"`
@@ -2738,7 +2738,7 @@ type FieldAcquisitionRewardPolicy struct {
 	ScopeType         string    `json:"scopeType"`
 	ScopeID           string    `json:"scopeId"`
 	RewardMinor       int       `json:"rewardMinor"`
-	RoundingUnitMinor string    `json:"roundingUnitMinor"`
+	RoundingUnitMinor int       `json:"roundingUnitMinor"`
 	State             string    `json:"state"`
 	Version           int       `json:"version"`
 	CreatedBy         string    `json:"createdBy"`
