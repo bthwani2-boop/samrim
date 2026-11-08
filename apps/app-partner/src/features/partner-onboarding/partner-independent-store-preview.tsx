@@ -7,6 +7,7 @@ import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 import { partnerSetupSessionKey } from "./partner-setup-session-scope";
 import { readOwnIndependentStorePreview } from "./store-readback-client";
+import { PartnerIndependentCustomerPolicyDraftEditor } from "./partner-independent-customer-policy";
 
 /** Owner-only preparation preview; not a published link or an ordering surface. */
 export function PartnerIndependentStorePreview({ store }: Readonly<{ store: PartnerAccessibleStore }>) {
@@ -81,5 +82,6 @@ export function PartnerIndependentStorePreview({ store }: Readonly<{ store: Part
         <BthwaniButton label="تحديث المعاينة" disabled={busy} variant="secondary" onPress={() => void readPage()} />
       </>}
     {error ? <Text accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
+    <PartnerIndependentCustomerPolicyDraftEditor key={store.id} storeID={store.id} />
   </View>;
 }

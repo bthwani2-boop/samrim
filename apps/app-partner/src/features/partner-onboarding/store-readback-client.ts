@@ -1,5 +1,5 @@
 import { type CommerceVertical, type CommercialStoreType, type CorrectJoiningCaseRequest, createDshMobileClient, type DshImageUploadInput, type JoiningCaseResponse, type MediaProvenanceInput, type PartnerAccessibleStorePage, type PartnerStoreOperationalAvailabilityMutationResponse, type PartnerStoreOperationalAvailabilityResponse, type ServiceCity, type StoreAccessGrantListResponse, type StoreAccessGrantMutationResponse, type StoreAccessGrantPermissionsRequest, type StoreAccessGrantTransitionRequest, type StoreAccessInvitationCreateRequest, type StoreAccessInvitationDecisionRequest, type StoreAccessPermission, type StoreCaptainInvitationResponse, type StoreCaptainMembershipListResponse, type StoreCaptainMembershipResponse, type StoreCaptainMembershipTransitionRequest, type StoreOperationalAvailabilityRequest } from "@bthwani/dsh";
-import type { CatalogActivityPage, IndependentStorePreview } from "@bthwani/dsh";
+import type { CatalogActivityPage, IndependentStorePreview, IndependentCustomerPolicyDraftInput, IndependentCustomerPolicyDraftResponse, IndependentCustomerPolicyDraftMutationResponse } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { partnerCorrectionIdentityPayload } from "./partner-correction-recovery";
@@ -34,6 +34,18 @@ export async function listPartnerAccessibleStores(cursor = ""): Promise<PartnerA
 export async function readOwnIndependentStorePreview(storeID: string, cursor = ""): Promise<IndependentStorePreview> {
   const token = await accessToken();
   return dshClient().readPartnerIndependentStorePreview(token, storeID, 20, cursor);
+}
+
+export async function readOwnIndependentCustomerPolicyDraft(storeID: string): Promise<IndependentCustomerPolicyDraftResponse> {
+  const token = await accessToken();
+  return dshClient().readPartnerIndependentCustomerPolicyDraft(token, storeID);
+}
+
+export async function saveOwnIndependentCustomerPolicyDraft(
+  storeID: string, input: IndependentCustomerPolicyDraftInput, idempotencyKey: string, correlationID: string,
+): Promise<IndependentCustomerPolicyDraftMutationResponse> {
+  const token = await accessToken();
+  return dshClient().savePartnerIndependentCustomerPolicyDraft(token, storeID, input, idempotencyKey, correlationID);
 }
 
 export async function listOwnStoreCatalogActivity(storeID: string, filters: Readonly<{ q?: string; action?: string; from?: string; to?: string; limit?: number; cursor?: string }> = {}): Promise<CatalogActivityPage> {

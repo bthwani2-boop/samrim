@@ -334,5 +334,9 @@ func TestIndependentDirectOrderIsolatedPersistenceGuards(t *testing.T) {
 		if _, err := db.ExecContext(ctx, `UPDATE dsh.stores SET publication_state='published' WHERE id=$1`, storeA); err == nil {
 			t.Fatal("independent Store must not be admitted to legacy marketplace publication")
 		}
+		// End-to-end DSH HTTP -> synthetic Identity session -> real isolated
+		// PostgreSQL positive owner draft write/replay and negative IDOR.
+		// No public publication, service cutover or financial side effect.
+		exerciseIndependentPolicyHTTPOnIsolatedDB(t, ctx, db, storeA, storeB, ownerA)
 	}, 5*time.Minute)
 }

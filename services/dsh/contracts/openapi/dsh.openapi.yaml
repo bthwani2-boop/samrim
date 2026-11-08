@@ -551,6 +551,9 @@ paths:
   /dsh/operations/stores/{storeId}/operational-availability:
     $ref: "./paths/store-availability.yaml#/paths/~1dsh~1operations~1stores~1{storeId}~1operational-availability"
 
+  /dsh/partner/stores/{storeId}/independent-customer-policy/draft:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1independent-customer-policy~1draft"
+
   /dsh/partner/stores/{storeId}/independent-preview:
     $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1independent-preview"
 
@@ -11796,6 +11799,86 @@ components:
           type: boolean
         publicationState:
           type: string
+
+    IndependentCustomerPolicyDraft:
+      type: object
+      additionalProperties: false
+      description: Canonical owner-private merchant policy. Review state is informational and never a Partner-controlled publication authorization.
+      required: [storeId, version, policyVersion, reviewState, cancellationTerms, returnsTerms, fulfillmentTerms, collectionTerms]
+      properties:
+        storeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        version:
+          type: integer
+          minimum: 0
+        policyVersion:
+          type: string
+        reviewState:
+          type: string
+          enum: [NOT_CHECKED, PASSED, REJECTED]
+        cancellationTerms:
+          type: string
+        returnsTerms:
+          type: string
+        fulfillmentTerms:
+          type: string
+        collectionTerms:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+
+    IndependentCustomerPolicyDraftInput:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, cancellationTerms, returnsTerms, fulfillmentTerms, collectionTerms]
+      description: Only the merchant's own terms and optimistic version. Reviewer, publishedAt and hosting consent are forbidden.
+      properties:
+        expectedVersion:
+          type: integer
+          minimum: 0
+        cancellationTerms:
+          type: string
+          minLength: 2
+          maxLength: 4000
+        returnsTerms:
+          type: string
+          minLength: 2
+          maxLength: 4000
+        fulfillmentTerms:
+          type: string
+          minLength: 2
+          maxLength: 4000
+        collectionTerms:
+          type: string
+          minLength: 2
+          maxLength: 4000
+
+    IndependentCustomerPolicyDraftResponse:
+      type: object
+      additionalProperties: false
+      required: [policy, draftOnly]
+      properties:
+        policy:
+          $ref: "#/components/schemas/IndependentCustomerPolicyDraft"
+        draftOnly:
+          type: boolean
+          description: Always true; this private resource cannot publish a Store.
+
+    IndependentCustomerPolicyDraftMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [policy, draftOnly, idempotentReplay]
+      properties:
+        policy:
+          $ref: "#/components/schemas/IndependentCustomerPolicyDraft"
+        draftOnly:
+          type: boolean
+          description: Always true; this private resource cannot publish a Store.
+        idempotentReplay:
+          type: boolean
 
     IndependentStorePreview:
       type: object
