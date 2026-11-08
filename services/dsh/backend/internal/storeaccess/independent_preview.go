@@ -41,18 +41,11 @@ func (s *Service) ReadIndependentPreview(ctx context.Context, token, storeID str
 	if err != nil {
 		return IndependentStorePreview{}, err
 	}
-	store, err := postgres.ReadIndependentStoreOwnedByPartner(ctx, s.db, storeID, actorID)
-	if err != nil {
-		return IndependentStorePreview{}, err
-	}
-	// The canonical Store publication_state is marketplace-only. An independent
-	// owner preview must report the separate DSH independent-publication state;
-	// otherwise an independently published Store continues to appear as draft.
-	independentPublicationState, _, err := postgres.IndependentStorePublicationForOwner(ctx, s.db, store.ID, actorID)
-	if err != nil {
-		return IndependentStorePreview{}, err
-	}
-	page, err := postgres.ListCatalogOfferPage(ctx, s.db, store.ID, limit, cursor)
+	// Keep the owner/relation check, independent publication, media and
+	// Catalog on one transaction snapshot. A Store transfer must never pair
+	// authorization from the former owner with a newer Catalog read.
+	store, independentPublicationState, page, err := postgres.ReadIndependentPreviewSnapshotForOwner(
+		ctx, s.db, storeID, actorID, limit, cursor)
 	if err != nil {
 		return IndependentStorePreview{}, err
 	}

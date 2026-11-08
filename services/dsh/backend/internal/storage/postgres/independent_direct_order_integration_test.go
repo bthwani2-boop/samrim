@@ -73,6 +73,23 @@ func TestIndependentDirectOrderIsolatedPersistenceGuards(t *testing.T) {
 		if _, _, err := postgres.IndependentStorePublicationForOwner(ctx, db, storeB, "direct-owner-b"); !errors.Is(err, postgres.ErrStoreNotFound) {
 			t.Fatalf("market Store must not obtain independent publication readback: %v", err)
 		}
+		// A private Preview must bind owner, separate publication, Store media
+		// and Catalog to one repeatable-read transaction on actual PostGIS.
+		previewStore, previewState, previewPage, err := postgres.ReadIndependentPreviewSnapshotForOwner(
+			ctx, db, storeA, ownerA, 20, "")
+		if err != nil || previewStore.ID != storeA || previewStore.RelationModel != "INDEPENDENT_STORE" ||
+			previewState != "DRAFT" || len(previewPage.Offers) != 0 {
+			t.Fatalf("independent owner preview snapshot must remain an owned draft: store=%+v publication=%q page=%+v err=%v",
+				previewStore, previewState, previewPage, err)
+		}
+		if _, _, _, err := postgres.ReadIndependentPreviewSnapshotForOwner(
+			ctx, db, storeA, "other-owner", 20, ""); !errors.Is(err, postgres.ErrStoreNotFound) {
+			t.Fatalf("foreign owner must not access independent Catalog snapshot: %v", err)
+		}
+		if _, _, _, err := postgres.ReadIndependentPreviewSnapshotForOwner(
+			ctx, db, storeB, "direct-owner-b", 20, ""); !errors.Is(err, postgres.ErrStoreNotFound) {
+			t.Fatalf("marketplace Store must not access independent owner preview snapshot: %v", err)
+		}
 		// Parse and execute the independent public Store's full SQL, including
 		// the same-statement rights-attested media joins, against PostgreSQL.
 		// A draft Store without a reviewed publication must fail closed.

@@ -27,11 +27,15 @@ type catalogStoreOfferCursor struct {
 }
 
 func ListCatalogOfferPage(ctx context.Context, db *sql.DB, storeID string, limit int, rawCursor string) (CatalogStoreOfferPage, error) {
-	storeID = strings.TrimSpace(storeID)
-	rawCursor = strings.TrimSpace(rawCursor)
 	if db == nil {
 		return CatalogStoreOfferPage{}, errors.New("DSH database is nil")
 	}
+	return listCatalogOfferPageWithQueryer(ctx, db, storeID, limit, rawCursor)
+}
+
+func listCatalogOfferPageWithQueryer(ctx context.Context, queryer catalogOfferReadQueryer, storeID string, limit int, rawCursor string) (CatalogStoreOfferPage, error) {
+	storeID = strings.TrimSpace(storeID)
+	rawCursor = strings.TrimSpace(rawCursor)
 	if storeID == "" || len(storeID) > 128 || limit < 1 || limit > 100 || len(rawCursor) > 2048 {
 		return CatalogStoreOfferPage{}, ErrCatalogOfferInvalidCursor
 	}
@@ -47,7 +51,7 @@ func ListCatalogOfferPage(ctx context.Context, db *sql.DB, storeID string, limit
 	}
 	args = append(args, limit+1)
 	query += " ORDER BY o.created_at ASC,o.id ASC LIMIT $" + itoa(len(args))
-	rows, err := db.QueryContext(ctx, query, args...)
+	rows, err := queryer.QueryContext(ctx, query, args...)
 	if err != nil {
 		return CatalogStoreOfferPage{}, err
 	}
@@ -76,7 +80,7 @@ func ListCatalogOfferPage(ctx context.Context, db *sql.DB, storeID string, limit
 			return CatalogStoreOfferPage{}, err
 		}
 	}
-	if err := hydrateCatalogOfferPage(ctx, db, page.Offers); err != nil {
+	if err := hydrateCatalogOfferPage(ctx, queryer, page.Offers); err != nil {
 		return CatalogStoreOfferPage{}, err
 	}
 	return page, nil

@@ -59,12 +59,19 @@ type IndependentPublishedStore struct {
 // relation before returning even a draft publication state. Authentication of
 // ownerActorID is required at the calling transport/service boundary.
 func IndependentStorePublicationForOwner(ctx context.Context, db *sql.DB, storeID, ownerActorID string) (string, int, error) {
-	if db == nil || strings.TrimSpace(storeID) == "" || strings.TrimSpace(ownerActorID) == "" {
+	if db == nil {
+		return "", 0, ErrStoreNotFound
+	}
+	return independentStorePublicationForOwnerWithQueryer(ctx, db, storeID, ownerActorID)
+}
+
+func independentStorePublicationForOwnerWithQueryer(ctx context.Context, queryer independentStorefrontRowQueryer, storeID, ownerActorID string) (string, int, error) {
+	if strings.TrimSpace(storeID) == "" || strings.TrimSpace(ownerActorID) == "" {
 		return "", 0, ErrStoreNotFound
 	}
 	var state string
 	var version int
-	err := db.QueryRowContext(ctx, `SELECT COALESCE(publication.state,'DRAFT'),COALESCE(publication.version,1)
+	err := queryer.QueryRowContext(ctx, `SELECT COALESCE(publication.state,'DRAFT'),COALESCE(publication.version,1)
 		FROM dsh.stores store
 		LEFT JOIN dsh.independent_store_publications publication ON publication.store_id=store.id
 		WHERE store.id=$1 AND store.partner_actor_id=$2 AND store.relation_model='INDEPENDENT_STORE'
