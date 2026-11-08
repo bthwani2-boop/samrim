@@ -48,3 +48,14 @@ test("desktop navigation refuses marketplace operations without exact relation",
   assert.match(shellSource, /if \(isMarketplace && can\("store_operations"\)\) management\.push/);
   assert.doesNotMatch(shellSource, /if \(can\("store_operations"\)\) management\.push/);
 });
+
+test("Store settings guidance never advertises publication for an unknown relation", () => {
+  const match = storeSource.match(/<Text style=\{styles\.value\}>\{(selectedStore\.relationModel[^}]+)\}<\/Text>/);
+  assert.ok(match, "read the real Store-settings heading expression");
+  const label = relationModel => runInNewContext(match[1], {selectedStore: {relationModel}});
+  assert.equal(label("BTHWANI_PARTNER"), "تجهيز المتجر للنشر");
+  assert.equal(label("INDEPENDENT_STORE"), "تجهيز محتوى المتجر المستقل");
+  for (const relation of [undefined, null, "", "UNKNOWN"]) {
+    assert.equal(label(relation), "تعذر التحقق من نموذج المتجر");
+  }
+});
