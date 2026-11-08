@@ -5,8 +5,27 @@ import type { PolicyPreviewState } from "./policy-quick-peek";
 type Results=Partial<Record<PolicyResourceKey,PolicyPreviewState>>;
 const money=(amount:number)=>new Intl.NumberFormat("ar-YE").format(amount)+" ريال";
 const failure:PolicyPreviewState={kind:"error"};
+// Match WLT's validDeliveryDistanceBands before displaying an effective fee policy.
+function validDistanceBands(value:unknown):value is ReadonlyArray<{upToMeters:number|null;ratePerKmMinor:number}> {
+ if(!Array.isArray(value)||value.length<1||value.length>30)return false;
+ let previous=0;
+ for(let i=0;i<value.length;i++){
+  const band:unknown=value[i];
+  if(!band||typeof band!=="object"||!("upToMeters" in band)||!("ratePerKmMinor" in band)||
+    typeof band.ratePerKmMinor!=="number"||!Number.isSafeInteger(band.ratePerKmMinor)||
+    band.ratePerKmMinor<1||band.ratePerKmMinor>100000000)return false;
+  if(i===value.length-1){
+   if(band.upToMeters!==null)return false;
+  }else{
+   if(typeof band.upToMeters!=="number"||!Number.isSafeInteger(band.upToMeters)||
+     band.upToMeters<=previous||band.upToMeters>500000)return false;
+   previous=band.upToMeters;
+  }
+ }
+ return true;
+}
 async function get(url:string,signal:AbortSignal):Promise<{status:number;body:unknown}>{
- const response=await fetch(url,{cache:"no-store",signal});
+ const response=await fetch(url,{cache:"no-store",signal:AbortSignal.any([signal,AbortSignal.timeout(12_000)])});
  return {status:response.status,body:await response.json()};
 }
 export async function readFinancialPolicyPreviews(signal:AbortSignal,canReadTerms:boolean):Promise<Results>{
@@ -20,10 +39,7 @@ export async function readFinancialPolicyPreviews(signal:AbortSignal,canReadTerm
   const data=registry.value.body as OperatorFinancialPolicyRegistry | null;
   if(data && Array.isArray(data.deliveryFees) && Number.isSafeInteger(data.deliveryTotal) && data.deliveryTotal >= 0 &&
     data.deliveryFees.every(fee => fee && typeof fee.id === "string" && typeof fee.name === "string" &&
-      Array.isArray(fee.distanceBands) && fee.distanceBands.every((band: unknown) => band !== null &&
-        typeof band === "object" && "upToMeters" in band && "ratePerKmMinor" in band &&
-        (band.upToMeters === null || Number.isSafeInteger(band.upToMeters)) &&
-        Number.isSafeInteger(band.ratePerKmMinor)))){
+      validDistanceBands(fee.distanceBands))){
    const global=data.deliveryFees.find(p=>p.id==="");
    const bandsSummary=(items:readonly {upToMeters:number|null;ratePerKmMinor:number}[])=>items.map((b,i)=>`${b.upToMeters===null?"∞":`${b.upToMeters/1000} كم`}: ${money(b.ratePerKmMinor)}/كم`).join(" · ");
    const visibleFees=data.deliveryFees.slice(0,5);
@@ -44,7 +60,8 @@ export async function readFinancialPolicyPreviews(signal:AbortSignal,canReadTerm
   else if(terms.value.status===200){
    const p=(terms.value.body as {policy?:{id:string;settlementPeriod:string;version:number;createdBy:string;createdAt:string}} | null)?.policy;
    const label=p?.settlementPeriod==="DAILY"?"يومية":p?.settlementPeriod==="WEEKLY"?"أسبوعية":p?.settlementPeriod==="MONTHLY"?"شهرية":null;
-   result["partner-financial-terms"]=p&&label?{kind:"ready",value:{active:1,inactive:null,headline:`التسوية ${label} · v${p.version}`,records:[
+   result["partner-financial-terms"]=p && label && typeof p.id === "string" && p.id.trim() &&
+    Number.isSafeInteger(p.version) && p.version > 0 ? {kind:"ready",value:{active:1,inactive:null,headline:`التسوية ${label} · v${p.version}`,records:[
     {id:p.id,name:"فترة التسوية",active:true,detail:label,version:p.version,createdAt:p.createdAt,createdBy:p.createdBy}
    ],note:"شروط التسوية لا تمثل عمولة عامة على المتاجر."}}:failure;
   }else result["partner-financial-terms"]=failure;
@@ -54,7 +71,9 @@ export async function readFinancialPolicyPreviews(signal:AbortSignal,canReadTerm
    result["captain-minimum-balance"]={kind:"missing"};
   }else if(captain.value.status===200){
    const p=(captain.value.body as CaptainMinimumBalanceResponse | null)?.policy;
-   result["captain-minimum-balance"]=p&&p.state==="ACTIVE"&&p.currency==="YER"&&p.minimumAvailableMinor>0?
+   result["captain-minimum-balance"]=p && p.state==="ACTIVE" && p.currency==="YER" &&
+    typeof p.id === "string" && p.id.trim() && Number.isSafeInteger(p.version) && p.version > 0 &&
+    Number.isSafeInteger(p.minimumAvailableMinor) && p.minimumAvailableMinor > 0 ?
     {kind:"ready",value:{active:1,inactive:null,headline:`شحن التفعيل الأول ${money(p.minimumAvailableMinor)} · v${p.version}`,
      records:[{id:p.id,name:"كابتن بثواني · شحن التفعيل الأول",active:true,detail:money(p.minimumAvailableMinor),version:p.version,createdAt:p.createdAt,createdBy:p.createdBy}],
      note:"يُفحص مرة واحدة عند أول إتاحة للعمل، ثم تحمي WLT كل طلب نقدي بحجز قيمته كاملة، دون حد يومي."}}:failure;
