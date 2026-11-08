@@ -4,7 +4,7 @@ import test from "node:test";
 import { buildPartnerOfferShareURL, buildPartnerStorefrontURL, buildPartnerStoreWhatsAppURL } from "../src/features/partner-onboarding/partner-storefront-url.ts";
 import { buildStoreSharePath } from "../../app-client/src/features/store-discovery/store-share-link.ts";
 
-const store = { id: "store_123", serviceCityId: "city_sanaa", publicationState: "published" };
+const store = { id: "store_123", serviceCityId: "city_sanaa", publicationState: "published", relationModel: "BTHWANI_PARTNER" };
 
 test("published Store uses the same path as the customer Web App", () => {
   const actual = buildPartnerStorefrontURL(store, "https://bthwani.example");
@@ -15,6 +15,17 @@ test("published Store uses the same path as the customer Web App", () => {
 test("no link before publication even with a configured public origin", () => {
   for (const state of ["draft", "unpublished", "hidden", ""]) {
     assert.equal(buildPartnerStorefrontURL({ ...store, publicationState: state }, "https://bthwani.example"), null);
+  }
+});
+
+test("independent and unknown Store relations can never share a marketplace Store or product URL", () => {
+  for (const relationModel of ["INDEPENDENT_STORE", "", undefined]) {
+    const nonMarket = { ...store, relationModel };
+    assert.equal(buildPartnerStorefrontURL(nonMarket, "https://bthwani.example"), null);
+    assert.equal(buildPartnerOfferShareURL(nonMarket, {
+      storeId: store.id, productId: "product-1", publicationState: "published",
+      availability: true, productActive: true, variantActive: true,
+    }, "https://bthwani.example"), null);
   }
 });
 
