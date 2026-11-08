@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { visiblePublishedOffers, verifiedMarketplaceStoreRead, storefrontColumns } from "../src/features/store-discovery/full-storefront-model.ts";
+import * as storefront from "../src/features/store-discovery/full-storefront-model.ts";
+const { visiblePublishedOffers, verifiedMarketplaceStoreRead, storefrontColumns } = storefront;
 
 const store = {
   id: "partner-a",
@@ -39,4 +40,31 @@ test("web layout keeps responsive card counts at approved viewport widths", () =
   assert.equal(storefrontColumns(768), 3);
   assert.equal(storefrontColumns(1360), 4);
   assert.equal(storefrontColumns(320), 1);
+});
+
+test("Full Storefront links stay in the site and encode product and category scope", () => {
+  assert.equal(storefront.buildFullStorefrontPath("partner-a", "sanaa", { productID: "product&1" }),
+    "/storefront/partner-a?serviceCityId=sanaa&productId=product%261");
+  assert.equal(storefront.buildFullStorefrontPath("partner-a", "sanaa", { categoryID: "cat/1" }),
+    "/storefront/partner-a?serviceCityId=sanaa&categoryId=cat%2F1");
+});
+
+test("a shared site uses its active linked city without changing the saved marketplace city", () => {
+  const cities = [{ id: "sanaa", active: true }, { id: "aden", active: true }, { id: "inactive", active: false }];
+  assert.equal(storefront.resolveFullStorefrontCityID("sanaa", "aden", cities), "sanaa");
+  assert.equal(storefront.resolveFullStorefrontCityID("", "aden", cities), "aden");
+  assert.equal(storefront.resolveFullStorefrontCityID("inactive", "aden", cities), null);
+  assert.equal(storefront.resolveFullStorefrontCityID("foreign", "aden", cities), null);
+});
+
+test("a product page never substitutes another product or a withdrawn variant", () => {
+  const offer = { offerId: "one", storeId: "partner-a", productId: "product-1", productActive: true, variantActive: true, publicationState: "published" };
+  const alternatives = [
+    offer,
+    { ...offer, offerId: "two", productId: "product-2" },
+    { ...offer, offerId: "draft", publicationState: "draft" },
+    { ...offer, offerId: "foreign", storeId: "partner-b" },
+  ];
+  assert.deepEqual(visiblePublishedOffers(alternatives, "partner-a", "product-1").map(item => item.offerId), ["one"]);
+  assert.deepEqual(visiblePublishedOffers(alternatives, "partner-a", "missing"), []);
 });

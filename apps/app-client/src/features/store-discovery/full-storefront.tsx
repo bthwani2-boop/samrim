@@ -1,6 +1,6 @@
 import { borders, radius, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { formatMoney, type PublicCatalogResponse, type PublicDiscoveryContentView, type PublicStoreView } from "@bthwani/dsh";
+import { formatMoney, formatQuantity, type PublicCatalogResponse, type PublicDiscoveryContentView, type PublicStoreView } from "@bthwani/dsh";
 import { Image as ExpoImage } from "expo-image";
 import { Link, type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -9,9 +9,10 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions
 import { useServiceCityScope } from "../service-city/service-city-scope";
 import { mergeCatalog } from "./store-catalog-model";
 import { listPublicStoreBanners, readPublicStoreCatalog, readPublishedStore } from "./store-discovery-client";
-import { storefrontColumns, verifiedMarketplaceStoreRead, visiblePublishedOffers } from "./full-storefront-model";
+import { buildFullStorefrontPath, resolveFullStorefrontCityID, storefrontColumns, verifiedMarketplaceStoreRead, visiblePublishedOffers } from "./full-storefront-model";
 import { StorePublicContactCard } from "./store-public-contact";
 import { storeReadFailureKind } from "./store-read-state";
+import { buildStoreSharePath } from "./store-share-link";
 
 type SiteState =
   | { kind: "loading" }
@@ -21,10 +22,11 @@ type SiteState =
 
 type SiteBanner = PublicDiscoveryContentView;
 
-// This is a read-only Web composition over the SAME DSH Marketplace Store,
-// catalog and media as ClientStoreDetail. Marketplace checkout remains there.
-export default function ClientFullStorefront({ storeId }: Readonly<{ storeId: string }>) {
-  const { selectedCityID } = useServiceCityScope();
+export default function ClientFullStorefront({ storeId, linkedCityID, categoryID, productID, initialQuery }: Readonly<{
+  storeId: string; linkedCityID: string; categoryID: string; productID: string; initialQuery: string;
+}>) {
+  const { cities, selectedCityID: savedCityID, selectCity } = useServiceCityScope();
+  const selectedCityID = resolveFullStorefrontCityID(linkedCityID, savedCityID, cities);
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const router = useRouter();
@@ -38,12 +40,13 @@ export default function ClientFullStorefront({ storeId }: Readonly<{ storeId: st
   const [state, setState] = useState<SiteState>({ kind: "loading" });
   const [banners, setBanners] = useState<ReadonlyArray<SiteBanner>>([]);
   const [bannerError, setBannerError] = useState(false);
-  const [query, setQuery] = useState("");
-  const [activeCategoryID, setActiveCategoryID] = useState("");
-  const [appliedQuery, setAppliedQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
+  const [appliedQuery, setAppliedQuery] = useState(initialQuery);
   const [catalogBusy, setCatalogBusy] = useState(false);
   const [catalogError, setCatalogError] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [marketCityError, setMarketCityError] = useState(false);
+  const [openingMarket, setOpeningMarket] = useState(false);
   const [brokenImages, setBrokenImages] = useState<ReadonlySet<string>>(new Set());
 
   const hideWithdrawnStore = useCallback(() => {
@@ -57,11 +60,8 @@ export default function ClientFullStorefront({ storeId }: Readonly<{ storeId: st
     setBannerError(false);
   }, []);
 
-  const marketplacePath = (productID = ""): Href => (
-    "/store/" + encodeURIComponent(storeId) +
-    "?serviceCityId=" + encodeURIComponent(selectedCityID ?? "") +
-    (productID ? "&productId=" + encodeURIComponent(productID) : "")
-  ) as Href;
+  const storefrontPath = (scope?: Parameters<typeof buildFullStorefrontPath>[2]) =>
+    buildFullStorefrontPath(storeId, selectedCityID ?? "", scope) as Href;
 
   const refreshBanners = useCallback(async (storeGeneration: number) => {
     if (!storeId || !selectedCityID) return;
@@ -85,9 +85,8 @@ export default function ClientFullStorefront({ storeId }: Readonly<{ storeId: st
     setState({ kind: "loading" });
     setBanners([]);
     setBannerError(false);
-    setQuery("");
-    setAppliedQuery("");
-    setActiveCategoryID("");
+    setQuery(initialQuery);
+    setAppliedQuery(initialQuery);
     setCatalogBusy(false);
     setCatalogError(false);
     setLoadingMore(false);
@@ -99,7 +98,7 @@ export default function ClientFullStorefront({ storeId }: Readonly<{ storeId: st
     try {
       const [store, catalog] = await Promise.all([
         readPublishedStore(storeId, selectedCityID),
-        readPublicStoreCatalog(storeId, selectedCityID, "", "", 24),
+        readPublicStoreCatalog(storeId, selectedCityID, categoryID, initialQuery, 24, "", productID),
       ]);
       if (generation !== readID.current) return;
       // DSH independently enforces published BTHWANI_PARTNER eligibility for
@@ -109,18 +108,18 @@ export default function ClientFullStorefront({ storeId }: Readonly<{ storeId: st
         return;
       }
       setState({ kind: "ready", store, catalog });
-      void refreshBanners(generation);
+      if (!productID) void refreshBanners(generation);
     } catch (cause) {
       if (generation === readID.current) setState({ kind: storeReadFailureKind(cause) });
     }
-  }, [refreshBanners, selectedCityID, storeId]);
+  }, [categoryID, initialQuery, productID, refreshBanners, selectedCityID, storeId]);
 
   useEffect(() => {
     void load();
     return () => { ++readID.current; ++catalogID.current; ++bannerID.current; };
   }, [load]);
 
-  const applyFilter = useCallback(async (categoryID: string, search: string) => {
+  const applyFilter = useCallback(async (search: string) => {
     if (!storeId || !selectedCityID) return;
     // A filter supersedes an in-flight page. Its stale finally cannot clear
     // loadingMore once the shared catalog generation has advanced.
@@ -134,7 +133,6 @@ export default function ClientFullStorefront({ storeId }: Readonly<{ storeId: st
       if (catalog.storeId !== storeId) throw new Error("PUBLIC_CATALOG_STORE_MISMATCH");
       setState((previous) => previous.kind === "ready" && previous.store.id === storeId &&
         previous.store.serviceCity.id === selectedCityID ? { ...previous, catalog } : previous);
-      setActiveCategoryID(categoryID);
       setAppliedQuery(search.trim());
     } catch (cause) {
       if (generation !== catalogID.current) return;
@@ -143,7 +141,7 @@ export default function ClientFullStorefront({ storeId }: Readonly<{ storeId: st
     } finally {
       if (generation === catalogID.current) setCatalogBusy(false);
     }
-  }, [hideWithdrawnStore, selectedCityID, storeId]);
+  }, [categoryID, hideWithdrawnStore, selectedCityID, storeId]);
 
   const loadMore = useCallback(async () => {
     if (state.kind !== "ready" || !selectedCityID || !state.catalog.nextCursor || catalogBusy || loadingMore) return;
@@ -152,7 +150,7 @@ export default function ClientFullStorefront({ storeId }: Readonly<{ storeId: st
     setLoadingMore(true);
     setCatalogError(false);
     try {
-      const next = await readPublicStoreCatalog(storeId, selectedCityID, activeCategoryID, appliedQuery, 24, cursor);
+      const next = await readPublicStoreCatalog(storeId, selectedCityID, categoryID, appliedQuery, 24, cursor, productID);
       if (generation !== catalogID.current) return;
       if (next.storeId !== storeId || next.nextCursor === cursor) throw new Error("PUBLIC_CATALOG_PAGE_MISMATCH");
       setState((previous) => previous.kind === "ready" && previous.store.id === storeId &&
@@ -164,17 +162,36 @@ export default function ClientFullStorefront({ storeId }: Readonly<{ storeId: st
     } finally {
       if (generation === catalogID.current) setLoadingMore(false);
     }
-  }, [activeCategoryID, appliedQuery, catalogBusy, hideWithdrawnStore, loadingMore, selectedCityID, state, storeId]);
+  }, [appliedQuery, catalogBusy, categoryID, hideWithdrawnStore, loadingMore, productID, selectedCityID, state, storeId]);
 
   const ready = state.kind === "ready" && state.store.id === storeId &&
     state.store.serviceCity.id === selectedCityID ? state : null;
-  const columns = storefrontColumns(width);
+  const columns = productID ? (width < 720 ? 1 : 2) : storefrontColumns(width);
   const siteWidth = Math.min(width, 1240);
   const innerWidth = Math.max(0, siteWidth - spacing[4] * 2);
   const cardWidth = Math.max(0, Math.floor((innerWidth - (columns - 1) * spacing[3]) / columns));
-  const offers = ready ? visiblePublishedOffers(ready.catalog.offers, storeId) : [];
+  const offers = ready ? visiblePublishedOffers(ready.catalog.offers, storeId, productID) : [];
   const categories = ready ? ready.catalog.categories.filter((category) => category.active) : [];
-  const goToMarket = () => router.push(marketplacePath());
+  const openMarketRoute = async (path: Href) => {
+    if (!selectedCityID || openingMarket) return;
+    setMarketCityError(false);
+    if (selectedCityID !== savedCityID) {
+      const generation = readID.current;
+      setOpeningMarket(true);
+      try {
+        await selectCity(selectedCityID);
+        if (generation !== readID.current) return;
+      } catch {
+        setMarketCityError(true);
+        return;
+      } finally {
+        setOpeningMarket(false);
+      }
+    }
+    router.push(path);
+  };
+  const marketplacePath = (requestedProductID = "") =>
+    ("/" + buildStoreSharePath(storeId, selectedCityID ?? "", requestedProductID)) as Href;
   const jumpTo = (offset: number) => scrollRef.current?.scrollTo({ y: Math.max(0, offset - spacing[3]), animated: true });
 
   if (!ready) {
@@ -193,6 +210,8 @@ export default function ClientFullStorefront({ storeId }: Readonly<{ storeId: st
   const store = ready.store;
   const cover = store.storeCoverImage?.uri;
   const profile = store.storeProfileImage?.uri;
+  const product = productID ? offers[0] : undefined;
+  const marketCitySuffix = selectedCityID !== savedCityID ? " في " + store.serviceCity.displayNameAr : "";
 
   return <ScrollView
     ref={scrollRef}
@@ -211,14 +230,15 @@ export default function ClientFullStorefront({ storeId }: Readonly<{ storeId: st
           <Pressable accessibilityRole="button" onPress={() => jumpTo(productsOffset.current)} style={styles.navItem}><Text style={styles.navText}>المنتجات</Text></Pressable>
           <Pressable accessibilityRole="button" onPress={() => jumpTo(contactOffset.current)} style={styles.navItem}><Text style={styles.navText}>التواصل</Text></Pressable>
         </View>
-        <BthwaniButton label="التسوق عبر بثواني" onPress={goToMarket} />
+        <BthwaniButton label={"سلة المتجر" + marketCitySuffix} busy={openingMarket} onPress={() => void openMarketRoute(("/cart/" + encodeURIComponent(storeId)) as Href)} />
       </View>
+      {marketCityError ? <Text accessibilityRole="alert" style={styles.secondary}>تعذر اختيار مدينة المتجر. أعد المحاولة.</Text> : null}
 
-      <View accessibilityLabel={"واجهة متجر " + store.name} style={styles.hero}>
+      {!productID ? <View accessibilityLabel={"واجهة متجر " + store.name} style={styles.hero}>
         {cover && !brokenImages.has(cover)
           ? <ExpoImage cachePolicy="disk" accessibilityLabel={"غلاف متجر " + store.name} source={{ uri: cover }} contentFit="cover" style={styles.cover} onError={() => setBrokenImages((prev) => new Set(prev).add(cover))} />
           : <View style={styles.coverFallback}><BthwaniIcon name="store" color={theme.colorMuted} size={48} /></View>}
-      </View>
+      </View> : null}
       <BthwaniSurface tone="raised" style={styles.identityCard}>
         <View style={styles.identityRow}>
           {profile && !brokenImages.has(profile)
@@ -248,54 +268,63 @@ export default function ClientFullStorefront({ storeId }: Readonly<{ storeId: st
 
       <View style={styles.section} onLayout={(event) => { productsOffset.current = event.nativeEvent.layout.y; }}>
         <View style={styles.sectionHeading}>
-          <Text accessibilityRole="header" style={styles.title}>منتجات المتجر</Text>
-          <Text style={styles.secondary}>المنتجات المنشورة لدى {store.name}</Text>
+          <Text accessibilityRole="header" style={styles.title}>{productID ? product?.productName ?? "المنتج غير متاح" : "منتجات المتجر"}</Text>
+          {product?.productDescription?.trim() ? <Text style={styles.secondary}>{product.productDescription}</Text> : null}
+          {!productID ? <Text style={styles.secondary}>المنتجات المنشورة لدى {store.name}</Text> : null}
         </View>
-        <View style={styles.searchRow}>
+        {productID ? <View style={styles.navigation}>
+          <Link href={storefrontPath()} style={styles.navItem}><Text style={styles.navText}>عرض جميع منتجات المتجر</Text></Link>
+          {offers.some((offer) => offer.availability) ? <BthwaniButton label={"اختيار المنتج عبر بثواني" + marketCitySuffix} busy={openingMarket} onPress={() => void openMarketRoute(marketplacePath(productID))} /> : null}
+        </View> : <View style={styles.searchRow}>
           <TextInput
             accessibilityLabel="البحث في منتجات المتجر"
             autoCapitalize="none"
             autoCorrect={false}
             returnKeyType="search"
-            onSubmitEditing={() => void applyFilter(activeCategoryID, query)}
+            onSubmitEditing={() => void applyFilter(query)}
             onChangeText={setQuery}
             placeholder="ابحث عن منتج"
             placeholderTextColor={theme.colorMuted}
             style={styles.searchInput}
             value={query}
           />
-          <BthwaniButton label="بحث" disabled={catalogBusy || loadingMore} onPress={() => void applyFilter(activeCategoryID, query)} />
-        </View>
-        {categories.length > 0 ? <View style={styles.categories} accessibilityLabel="فئات المتجر المنشورة">
-          <Pressable accessibilityRole="button" accessibilityState={{ selected: !activeCategoryID, disabled: catalogBusy }} disabled={catalogBusy} onPress={() => void applyFilter("", query)} style={[styles.category, !activeCategoryID && styles.categorySelected]}>
-            <Text style={[styles.categoryText, !activeCategoryID && styles.categoryTextSelected]}>الكل</Text>
-          </Pressable>
-          {categories.map((category) => <Pressable key={category.id} accessibilityRole="button" accessibilityLabel={"فئة " + category.nameAr} accessibilityState={{ selected: activeCategoryID === category.id, disabled: catalogBusy }} disabled={catalogBusy} onPress={() => void applyFilter(category.id, query)} style={[styles.category, activeCategoryID === category.id && styles.categorySelected]}>
-            <Text style={[styles.categoryText, activeCategoryID === category.id && styles.categoryTextSelected]}>{category.nameAr}</Text>
-          </Pressable>)}
+          <BthwaniButton label="بحث" disabled={catalogBusy || loadingMore} onPress={() => void applyFilter(query)} />
+        </View>}
+        {!productID && categories.length > 0 ? <View style={styles.categories} accessibilityLabel="فئات المتجر المنشورة">
+          {[{ id: "", nameAr: "الكل" }, ...categories].map((category) => {
+            const selected = categoryID === category.id;
+            return <Link key={category.id} href={storefrontPath({ categoryID: category.id, query })} asChild>
+              <Pressable accessibilityRole="link" accessibilityLabel={category.id ? "فئة " + category.nameAr : "كل فئات المتجر"} accessibilityState={{ selected }} style={StyleSheet.flatten([styles.category, selected && styles.categorySelected])}>
+                <Text style={[styles.categoryText, selected && styles.categoryTextSelected]}>{category.nameAr}</Text>
+              </Pressable>
+            </Link>;
+          })}
         </View> : null}
-        {catalogError ? <View style={styles.notice}><Text accessibilityRole="alert" style={styles.secondary}>تعذر تحديث المنتجات. النتائج السابقة محفوظة.</Text><BthwaniButton label="إعادة قراءة المنتجات" onPress={() => void applyFilter(activeCategoryID, query)} variant="secondary" /></View> : null}
+        {catalogError ? <View style={styles.notice}><Text accessibilityRole="alert" style={styles.secondary}>تعذر تحديث المنتجات. النتائج السابقة محفوظة.</Text><BthwaniButton label="إعادة قراءة المنتجات" onPress={() => productID ? void loadMore() : void applyFilter(query)} variant="secondary" /></View> : null}
         {catalogBusy ? <View style={styles.grid} accessibilityLabel="جارٍ تحميل المنتجات"><BthwaniSkeleton height={220} width={Math.max(100, cardWidth)} /><BthwaniSkeleton height={220} width={Math.max(100, cardWidth)} /></View> : offers.length > 0 ? <View style={styles.grid}>
           {offers.map((offer) => {
             const image = offer.media.find((media) => media.role === "primary") ?? offer.media[0];
-            return <Link key={offer.offerId} href={marketplacePath(offer.productId)} asChild>
-              <Pressable accessibilityRole="link" accessibilityLabel={"عرض " + offer.productName + " داخل سوق بثواني"} style={{ width: cardWidth }}>
-              <BthwaniSurface tone="base" style={styles.productCard}>
+            const card = <BthwaniSurface tone="base" style={styles.productCard}>
                 {image?.uri && !brokenImages.has(image.uri)
                   ? <ExpoImage cachePolicy="disk" accessibilityLabel={"صورة " + offer.productName} source={{ uri: image.uri }} contentFit="contain" style={styles.productImage} onError={() => setBrokenImages((prev) => new Set(prev).add(image.uri))} />
                   : <View style={[styles.productImage, styles.productPlaceholder]}><BthwaniIcon name="store" color={theme.colorMuted} size={26} /><Text style={styles.secondary}>صورة غير متوفرة</Text></View>}
                 <Text style={styles.productName} numberOfLines={2}>{offer.productName}</Text>
                 {offer.variantTitle?.trim() ? <Text style={styles.secondary} numberOfLines={1}>{offer.variantTitle}</Text> : null}
-                <Text style={styles.price}>{formatMoney(offer.priceMinor, offer.currency)}</Text>
+                <Text style={styles.price}>{formatMoney(offer.priceMinor, offer.currency)} / {formatQuantity(offer.baseUnit, offer.pricingUnitBaseUnits)}</Text>
                 {!offer.availability ? <Text style={styles.unavailableLabel}>غير متوفر حاليًا</Text> : null}
               </BthwaniSurface>
-              </Pressable>
+            if (productID) return <View key={offer.offerId} style={{ width: Math.min(450, cardWidth) }}>{card}</View>;
+            return <Link key={offer.offerId} href={storefrontPath({ productID: offer.productId })} asChild>
+              <Pressable accessibilityRole="link" accessibilityLabel={"عرض " + offer.productName} style={{ width: cardWidth }}>{card}</Pressable>
             </Link>;
           })}
         </View> : <View style={styles.empty}>
           <BthwaniIcon name="store" color={theme.colorMuted} size={32} />
-          <Text style={styles.secondary}>{activeCategoryID || appliedQuery ? "لا توجد نتائج مطابقة لهذا البحث أو التصنيف." : "لا توجد منتجات منشورة للعرض حاليًا."}</Text>
-          {activeCategoryID || appliedQuery ? <BthwaniButton label="عرض جميع المنتجات" onPress={() => { setQuery(""); void applyFilter("", ""); }} variant="secondary" /> : null}
+          <Text style={styles.secondary}>{productID ? "المنتج غير متاح في هذا المتجر." : categoryID || appliedQuery ? "لا توجد نتائج مطابقة لهذا البحث أو التصنيف." : "لا توجد منتجات منشورة للعرض حاليًا."}</Text>
+          {!productID && (categoryID || appliedQuery) ? <BthwaniButton label="عرض جميع المنتجات" onPress={() => {
+            if (categoryID) router.push(storefrontPath());
+            else { setQuery(""); void applyFilter(""); }
+          }} variant="secondary" /> : null}
         </View>}
         {ready.catalog.nextCursor && !catalogBusy ? <View style={styles.more}><BthwaniButton label="عرض المزيد من المنتجات" busy={loadingMore} onPress={() => void loadMore()} variant="secondary" /></View> : null}
       </View>
@@ -307,7 +336,7 @@ export default function ClientFullStorefront({ storeId }: Readonly<{ storeId: st
       <View style={styles.footer}>
         <Text style={styles.footerTitle}>{store.name} · بثواني</Text>
         <Text style={styles.secondary}>يُعرض هذا الموقع من بيانات المتجر المنشورة في سوق بثواني.</Text>
-        <BthwaniButton label="العودة إلى المتجر داخل سوق بثواني" onPress={goToMarket} variant="secondary" />
+        <BthwaniButton label={"العودة إلى المتجر داخل سوق بثواني" + marketCitySuffix} busy={openingMarket} onPress={() => void openMarketRoute(marketplacePath())} variant="secondary" />
       </View>
     </View>
   </ScrollView>;

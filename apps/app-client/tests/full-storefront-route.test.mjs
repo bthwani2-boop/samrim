@@ -12,7 +12,7 @@ const cityScope = readFileSync(path.join(app, "src/features/service-city/service
 
 test("web route is a separate composition, never the existing marketplace or independent owner preview", () => {
   assert.match(route, /Platform\.OS !== "web"/);
-  assert.match(route, /ClientFullStorefront storeId=\{storeId\}/);
+  assert.match(route, /ClientFullStorefront\s+storeId=\{storeId\}/);
   assert.match(route, /index: false/);
   assert.match(route, /Redirect href=\{path as Href\}/);
   assert.match(market, /ClientStoreDetail/);
@@ -25,7 +25,7 @@ test("web site reads the canonical public Store, scoped catalog and Store-owned 
   assert.match(site, /readPublishedStore\(storeId, selectedCityID\)/);
   assert.match(site, /readPublicStoreCatalog\(storeId, selectedCityID/);
   assert.match(site, /verifiedMarketplaceStoreRead\(store, catalog, storeId, selectedCityID\)/);
-  assert.match(site, /visiblePublishedOffers\(ready\.catalog\.offers, storeId\)/);
+  assert.match(site, /visiblePublishedOffers\(ready\.catalog\.offers, storeId, productID\)/);
   assert.match(site, /listPublicStoreBanners\(storeId, selectedCityID\)/);
   assert.match(site, /StorePublicContactCard storeID=\{storeId\}/);
   assert.doesNotMatch(site, /createDshMobileClient|fetch\(|checkout\(|addCatalogOfferToCart|calculatePrice/);
@@ -44,20 +44,24 @@ test("store site offers explicit retry, no-results and themed responsive layout"
   assert.match(site, /role="main"/);
 });
 
-test("a newer category filter must clear pending pagination before the stale page resolves", () => {
-  // Pagination and filters share catalogID. A category tab remains clickable
-  // while a page is loading. Once it supersedes the page, the old page's
-  // generation-gated finally cannot clear loadingMore, so the filter must.
+test("a newer search clears pagination and route scope changes discard pending reads", () => {
+  // The search field can submit while a page is loading. The superseded
+  // request's generation-gated finally cannot clear loadingMore.
   const filter = site.split("const applyFilter = useCallback")[1]?.split("const loadMore = useCallback")[0] ?? "";
   assert.match(filter, /const generation = \+\+catalogID\.current;\s*setLoadingMore\(false\);\s*setCatalogBusy\(true\);/);
   const loadMore = site.split("const loadMore = useCallback")[1] ?? "";
   assert.match(loadMore, /if \(generation !== catalogID\.current\) return;/);
+  assert.match(route, /key=\{JSON\.stringify\(\[storeId, cityID, categoryID, productID, query\]\)\}/);
 });
 
-test("web product cards expose a real browser anchor to the existing Marketplace route", () => {
+test("web product and category links stay in the Full Storefront and purchasing hands off to Marketplace", () => {
   // A role=link Pressable without href is JS-only: no copy/open-in-new-tab.
   assert.match(site, /import \{[^}]*\bLink\b[^}]*\} from "expo-router"/);
-  assert.match(site, /<Link key=\{offer\.offerId\} href=\{marketplacePath\(offer\.productId\)\} asChild>/);
+  assert.match(site, /<Link key=\{offer\.offerId\} href=\{storefrontPath\(\{ productID: offer\.productId \}\)\} asChild>/);
+  assert.match(site, /href=\{storefrontPath\(\{ categoryID: category\.id, query \}\)\}/);
   assert.match(site, /<Pressable accessibilityRole="link" accessibilityLabel=\{"عرض "/);
-  assert.doesNotMatch(site, /onPress=\{\(\) => router\.push\(marketplacePath\(offer\.productId\)\)\}/);
+  assert.match(site, /readPublicStoreCatalog\(storeId, selectedCityID, categoryID, initialQuery, 24, "", productID\)/);
+  assert.match(site, /readPublicStoreCatalog\(storeId, selectedCityID, categoryID, appliedQuery, 24, cursor, productID\)/);
+  assert.match(site, /openMarketRoute\(marketplacePath\(productID\)\)/);
+  assert.match(site, /openMarketRoute\(\("\/cart\/" \+ encodeURIComponent\(storeId\)\) as Href\)/);
 });
