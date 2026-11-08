@@ -22,13 +22,13 @@ const confirmed = type("type-a", "CLIENT_BEFORE_ACCEPTANCE", 2);
 const expected = "CLIENT_BEFORE_ACCEPTANCE";
 const nextTick = () => new Promise(resolve => setImmediate(resolve));
 
-function executeSave(fetchImpl, readImpl, { existingError = "" } = {}) {
+function executeSave(fetchImpl, readImpl, { existingError = "", signalAPI = AbortSignal } = {}) {
   const changes = { requests: [], reads: [], types: [], ids: [], notices: [], errors: [], reasons: [], busy: [] };
   const inFlightSave = { current: null };
   const context = {
     current: type(), busy: false, loading: false, error: existingError, mode: expected,
     reason: "Approved test-only change", verticalId: "vertical-a", inFlightSave,
-    AbortController, encodeURIComponent,
+    AbortController, AbortSignal: signalAPI, encodeURIComponent,
     crypto: { randomUUID: () => "request-key-once" },
     fetch: (...args) => {
       changes.requests.push(args);
@@ -314,4 +314,77 @@ test("DSH Store-Type PATCH with unchanged version must not confirm success or tr
 test("DSH cancellation policy only confirms exactly expectedVersion plus one", () => {
   assert.match(source, /payload\.storeType\.version !== expectedVersion \+ 1/);
   assert.match(source, /confirmed\.version !== payload\.storeType\.version/);
+});
+
+function boundedCancellationSignal(expectedMilliseconds) {
+  return {
+    any: signals => AbortSignal.any(signals),
+    timeout: milliseconds => {
+      assert.equal(milliseconds, expectedMilliseconds, "production request deadline stays fixed");
+      return AbortSignal.timeout(8);
+    },
+  };
+}
+
+test("canonical cancellation-policy catalog GET times out instead of loading indefinitely", async () => {
+  const start = source.indexOf("async function readJson<T>(url: string, signal: AbortSignal): Promise<T> {");
+  const end = source.indexOf("\n}\n\nexport function", start);
+  assert.ok(start >= 0 && end > start);
+  const code = source.slice(start, end + 2)
+    .replace("async function readJson<T>(url: string, signal: AbortSignal): Promise<T>",
+      "async function readJson(url, signal)")
+    .replace("await response.json() as T & { error?: { message?: string } }", "await response.json()");
+  const requests = [];
+  const readJson = runInNewContext(code + "\nreadJson", {
+    AbortSignal: boundedCancellationSignal(12_000),
+    fetch: (_url, { signal }) => {
+      requests.push(signal);
+      return new Promise((_resolve, reject) => {
+        if (signal.aborted) reject(signal.reason);
+        else signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    },
+  });
+  const controller = new AbortController();
+  await assert.rejects(readJson("/api/catalog/verticals", controller.signal),
+    error => error?.name === "TimeoutError");
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].aborted, true);
+  assert.equal(controller.signal.aborted, false, "GET deadline must not terminate the operator session");
+});
+
+test("stalled cancellation PATCH times out with one write and requires read-only recovery", async () => {
+  const run = executeSave((_url, { signal }) => new Promise((_resolve, reject) => {
+    if (signal.aborted) reject(signal.reason);
+    else signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+  }), async () => { throw new Error("must not read until PATCH replies"); },
+  { signalAPI: boundedCancellationSignal(20_000) });
+  await run.operation;
+  assert.equal(run.changes.requests.length, 1);
+  assert.equal(run.changes.requests[0][1].method, "PATCH");
+  assert.equal(run.changes.requests[0][1].signal.aborted, true);
+  assert.equal(run.changes.reads.length, 0);
+  assert.equal(run.changes.notices.at(-1), "");
+  assert.deepEqual(Array.from(run.changes.types.at(-1)), []);
+  assert.match(run.changes.errors.at(-1), /أعد قراءة أنواع المتاجر من DSH/);
+  assert.equal(run.changes.busy.at(-1), false);
+  assert.equal(run.inFlightSave.current, null);
+});
+
+test("stalled cancellation confirmation read after PATCH is bounded and never confirms stale policy", async () => {
+  const run = executeSave(async () => patchResponse(confirmed), (_url, signal) =>
+    new Promise((_resolve, reject) => {
+      if (signal.aborted) reject(signal.reason);
+      else signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    }), { signalAPI: boundedCancellationSignal(20_000) });
+  await run.operation;
+  assert.equal(run.changes.requests.length, 1, "no automatic PATCH retry");
+  assert.equal(run.changes.reads.length, 1);
+  assert.strictEqual(run.changes.requests[0][1].signal, run.changes.reads[0][1],
+    "same bounded mutation scope covers the canonical DSH readback");
+  assert.equal(run.changes.reads[0][1].aborted, true);
+  assert.deepEqual(Array.from(run.changes.types.at(-1)), []);
+  assert.equal(run.changes.notices.at(-1), "");
+  assert.match(run.changes.errors.at(-1), /تعذر تأكيد نتيجة الحفظ/);
+  assert.equal(run.changes.busy.at(-1), false);
 });

@@ -11,7 +11,7 @@ const labels: Record<CancellationMode, string> = {
 };
 
 async function readJson<T>(url: string, signal: AbortSignal): Promise<T> {
-  const response = await fetch(url, { cache: "no-store", signal });
+  const response = await fetch(url, { cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(12_000)]) });
   const value = await response.json() as T & { error?: { message?: string } };
   if (!response.ok) throw new Error(value.error?.message || "تعذرت قراءة سياسة الإلغاء");
   return value;
@@ -100,6 +100,7 @@ function StoreTypeCancellationEditor() {
     if (!current || busy || inFlightSave.current || loading || error ||
       mode === current.cancellationMode || reason.trim().length < 5) return;
     const controller = new AbortController();
+    const requestSignal = AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]);
     inFlightSave.current = controller;
     const storeTypeId = current.id;
     const expectedVersion = current.version;
@@ -108,7 +109,7 @@ function StoreTypeCancellationEditor() {
     setBusy(true); setError(""); setNotice("");
     try {
       const response = await fetch(`/api/policies/store-type-cancellations/${encodeURIComponent(storeTypeId)}`, {
-        method: "PATCH", signal: controller.signal,
+        method: "PATCH", signal: requestSignal,
         headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify({ mode: requestedMode, expectedVersion, reason: reason.trim() }),
       });
@@ -122,7 +123,7 @@ function StoreTypeCancellationEditor() {
       // A PATCH response alone is not durable proof. Re-read the DSH-owned Store Type.
       const readback = await readJson<{ storeTypes: CommercialStoreType[] }>(
         `/api/catalog/commercial-store-types?verticalId=${encodeURIComponent(selectedVertical)}`,
-        controller.signal,
+        requestSignal,
       );
       if (controller.signal.aborted) return;
       const confirmed = Array.isArray(readback.storeTypes)
