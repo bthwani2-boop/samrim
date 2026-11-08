@@ -31,6 +31,6 @@ test("independent registry validates DSH relation and remounts on Identity sessi
 test("canonical editor is shared, but marketplace WLT finance remains partner-only", () => {
   assert.ok(inspector.includes('import("./store-workspace")'));
   assert.ok(inspector.includes("<StoreManagement storeId={store.id} embedded"));
-  assert.ok(inspector.includes('canViewFinance={canViewFinance && store.publicationReadiness.blockedReason !== "STORE_NOT_MARKETPLACE"}'));
+  assert.ok(inspector.includes('canViewFinance={canViewFinance && store.relationModel === "BTHWANI_PARTNER"}'));
   assert.ok(inspector.includes("/api/stores/${encodeURIComponent(storeId)}/publication"));
 });

@@ -2747,7 +2747,7 @@ components:
 
     StoreView:
       type: object
-      required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, commercialStoreTypeId, deliveryOrigin, fulfillmentModes, version, publicationState, publicationReadiness, createdAt, updatedAt]
+      required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, commercialStoreTypeId, deliveryOrigin, fulfillmentModes, version, publicationState, relationModel, publicationReadiness, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -2788,6 +2788,9 @@ components:
           minimum: 1
         publicationState:
           $ref: "#/components/schemas/PublicationState"
+        relationModel:
+          type: string
+          enum: [BTHWANI_PARTNER, INDEPENDENT_STORE]
         publicationReadiness:
           $ref: "#/components/schemas/StorePublicationReadiness"
         publicationChangedAt:
