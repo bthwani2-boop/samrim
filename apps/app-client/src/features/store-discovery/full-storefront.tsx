@@ -3,7 +3,7 @@ import { BthwaniButton, BthwaniIcon, BthwaniSkeleton, BthwaniSurface, useAppeara
 import { formatMoney, formatQuantity, IndependentStoreUnavailable, listPublishedIndependentWebCatalog, readPublishedIndependentWebStore, type IndependentPublicStore, type IndependentPublicCatalog, type PublicCatalogResponse, type PublicDiscoveryContentView, type PublicStoreView } from "@bthwani/dsh";
 import { Image as ExpoImage } from "expo-image";
 import { Link, type Href, useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View, type ScrollViewInstance } from "react-native";
 
 import { clientStorefrontCartPath } from "../access/client-auth-return-path";
@@ -55,12 +55,6 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
   const [marketCityError, setMarketCityError] = useState(false);
   const [openingMarket, setOpeningMarket] = useState(false);
   const [brokenImages, setBrokenImages] = useState<ReadonlySet<string>>(new Set());
-
-  useFocusEffect(useCallback(() => {
-    openingMarketRef.current = false;
-    setOpeningMarket(false);
-    return () => { openingMarketRef.current = false; };
-  }, []));
 
   const hideWithdrawnStore = useCallback(() => {
     // A definitive DSH publication denial invalidates every in-flight public read.
@@ -143,10 +137,20 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
     }
   }, [categoryID, initialQuery, productID, refreshBanners, selectedCityID, storeId]);
 
-  useEffect(() => {
+  // A public website is not a snapshot of the first visit. Recheck DSH
+  // publication and Catalog whenever the Store route regains focus. A former
+  // owner's or withdrawn Store's data must not remain visible on return.
+  useFocusEffect(useCallback(() => {
+    openingMarketRef.current = false;
+    setOpeningMarket(false);
     void load();
-    return () => { ++readID.current; ++catalogID.current; ++bannerID.current; };
-  }, [load]);
+    return () => {
+      openingMarketRef.current = false;
+      ++readID.current;
+      ++catalogID.current;
+      ++bannerID.current;
+    };
+  }, [load]));
 
   const applyFilter = useCallback(async (search: string) => {
     if (!storeId || !selectedCityID) return;

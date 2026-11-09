@@ -36,6 +36,27 @@ test("one Client Web site reads the separately approved independent publication 
   assert.doesNotMatch(site, /PartnerIndependentStorePreview|independent-preview/);
 });
 
+test("returning to the Store site rechecks DSH and cancels stale reads", () => {
+  const callbackSource = site.match(/useFocusEffect\(useCallback\((\(\) => \{[\s\S]*?\}), \[load\]\)\);/)?.[1];
+  assert.ok(callbackSource, "Store route focus must revalidate publication and catalog");
+  assert.doesNotMatch(site, /useEffect\(\(\) => \{\s+void load\(\)/, "avoid duplicate initial GETs");
+  const events = [];
+  const readID = { current: 1 };
+  const catalogID = { current: 2 };
+  const bannerID = { current: 3 };
+  const openingMarketRef = { current: true };
+  const focus = runInNewContext("(" + callbackSource + ")", {
+    openingMarketRef, setOpeningMarket: value => events.push(["opening", value]),
+    load: () => { events.push(["reload"]); },
+    readID, catalogID, bannerID,
+  });
+  const cleanup = focus();
+  assert.deepEqual(events, [["opening", false], ["reload"]]);
+  assert.equal(openingMarketRef.current, false);
+  cleanup();
+  assert.deepEqual([readID.current, catalogID.current, bannerID.current], [2, 3, 4]);
+});
+
 test("web site reads the canonical public Store, scoped catalog and Store-owned banners", () => {
   assert.match(site, /readPublishedStore\(storeId, selectedCityID\)/);
   assert.match(site, /readPublicStoreCatalog\(storeId, selectedCityID/);
