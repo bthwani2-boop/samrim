@@ -19,6 +19,7 @@ export function PartnerIndependentStorePreview({ store }: Readonly<{ store: Part
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const generation = useRef(0);
+  const readInFlight = useRef(false);
   const currentScope = useRef(partnerSetupSessionKey(currentIdentityState()));
 
   // The same Store ID may be visited under a different Identity session.
@@ -29,18 +30,20 @@ export function PartnerIndependentStorePreview({ store }: Readonly<{ store: Part
       if (scope === currentScope.current) return;
       currentScope.current = scope;
       generation.current += 1;
+      readInFlight.current = false;
       setPreview(null);
       setFailedMedia(new Set());
       setError("");
       setBusy(false);
     });
-    return () => { unsubscribe(); generation.current += 1; };
+    return () => { unsubscribe(); generation.current += 1; readInFlight.current = false; };
   }, []);
 
   // Losing Store ownership or changing its relation must also clear private preview data.
   useEffect(() => {
     if (store.owned && store.relationModel === "INDEPENDENT_STORE") return;
     generation.current += 1;
+    readInFlight.current = false;
     setPreview(null);
     setFailedMedia(new Set());
     setError("");
@@ -49,7 +52,8 @@ export function PartnerIndependentStorePreview({ store }: Readonly<{ store: Part
 
   async function readPage(cursor = "") {
     const startingScope = partnerSetupSessionKey(currentIdentityState());
-    if (busy || !startingScope || !store.owned || store.relationModel !== "INDEPENDENT_STORE") return;
+    if (busy || readInFlight.current || !startingScope || !store.owned || store.relationModel !== "INDEPENDENT_STORE") return;
+    readInFlight.current = true;
     const requestGeneration = ++generation.current;
     const stillCurrent = () => requestGeneration === generation.current &&
       partnerSetupSessionKey(currentIdentityState()) === startingScope;
@@ -70,7 +74,10 @@ export function PartnerIndependentStorePreview({ store }: Readonly<{ store: Part
     } catch {
       if (stillCurrent()) setError("تعذرت قراءة معاينة المتجر. تحقق من الاتصال ثم أعد المحاولة.");
     } finally {
-      if (stillCurrent()) setBusy(false);
+      if (stillCurrent()) {
+        readInFlight.current = false;
+        setBusy(false);
+      }
     }
   }
 
