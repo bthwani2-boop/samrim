@@ -60,6 +60,17 @@ func TestIndependentStoreCanonicalCatalogAndOwnerScope(t *testing.T) {
 			accessible.Stores[0].RelationModel != postgres.StoreRelationIndependent {
 			t.Fatalf("Partner Store scope must report the canonical independent relationship: %+v err=%v", accessible, err)
 		}
+		grant, replayed, err := postgres.CreateStoreAccessInvitation(ctx, db, store.ID,
+			"independent-owner", "independent-staff", []string{"catalog", "orders"},
+			"independent-catalog-staff-invite-v1", "independent-catalog-staff-correlation-v1")
+		if err != nil || replayed {
+			t.Fatalf("cannot create isolated Store-scoped staff invitation: grant=%+v replayed=%v err=%v", grant, replayed, err)
+		}
+		activateGrantDirectly(t, ctx, db, grant, "independent-owner")
+		staffPage, err := postgres.ListPartnerAccessibleStores(ctx, db, "independent-staff", 10, "")
+		if err != nil || len(staffPage.Stores) != 1 || staffPage.Stores[0].ID != store.ID || staffPage.Stores[0].Owned {
+			t.Fatalf("active staff grant cannot read its canonical Store: %+v err=%v", staffPage, err)
+		}
 		// A direct Store keeps its existing DSH Catalog ownership. Use the
 		// canonical product and offer writers, not a second storefront table.
 		verticalID := "independent-catalog-store-vertical"
@@ -105,9 +116,12 @@ func TestIndependentStoreCanonicalCatalogAndOwnerScope(t *testing.T) {
 		if _, _, err := postgres.SetStoreTrashed(ctx, db, store.ID, "catalog-operator", "archived fixture store", "trash", "catalog-archive-key", store.Version); err != nil {
 			t.Fatal(err)
 		}
-		archived, err := postgres.ListPartnerAccessibleStores(ctx, db, "independent-owner", 10, "")
-		if err != nil || len(archived.Stores) != 0 {
-			t.Fatalf("archived Store must not be accessible to the Partner: %+v err=%v", archived, err)
+		for _, actorID := range []string{"independent-owner", "independent-staff"} {
+			archived, archivedErr := postgres.ListPartnerAccessibleStores(ctx, db, actorID, 10, "")
+			if archivedErr != nil || len(archived.Stores) != 0 {
+				t.Fatalf("archived Store must disappear from owner and staff navigation, actor=%s page=%+v err=%v",
+					actorID, archived, archivedErr)
+			}
 		}
 	})
 }
