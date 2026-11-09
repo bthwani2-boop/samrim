@@ -13,10 +13,10 @@ import (
 	_ "github.com/lib/pq"
 )
 
-func TestIndependentStorePreviewOwnershipAndChannelIsolation(t *testing.T) {
+func TestIndependentStoreCanonicalCatalogAndOwnerScope(t *testing.T) {
 	dsn := strings.TrimSpace(os.Getenv("DSH_DATABASE_URL"))
 	if dsn == "" {
-		t.Skip("isolated DSH_DATABASE_URL required for independent preview proof")
+		t.Skip("isolated DSH_DATABASE_URL required for independent Catalog proof")
 	}
 	root, err := sql.Open("postgres", dsn)
 	if err != nil {
@@ -29,31 +29,31 @@ func TestIndependentStorePreviewOwnershipAndChannelIsolation(t *testing.T) {
 			t.Fatal(err)
 		}
 		insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{
-			ID: "independent-preview-store", PartnerActorID: "independent-owner", Name: "Independent preview",
+			ID: "independent-catalog-store", PartnerActorID: "independent-owner", Name: "Independent catalog",
 		})
 		insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{
-			ID: "market-preview-store", PartnerActorID: "market-owner", Name: "Marketplace store",
+			ID: "market-catalog-store", PartnerActorID: "market-owner", Name: "Marketplace store",
 		})
-		if _, err := db.ExecContext(ctx, `UPDATE dsh.stores SET relation_model='INDEPENDENT_STORE' WHERE id='independent-preview-store'`); err != nil {
+		if _, err := db.ExecContext(ctx, `UPDATE dsh.stores SET relation_model='INDEPENDENT_STORE' WHERE id='independent-catalog-store'`); err != nil {
 			t.Fatal(err)
 		}
 
-		availability, err := postgres.ReadStoreOperationalAvailability(ctx, db, "independent-preview-store")
+		availability, err := postgres.ReadStoreOperationalAvailability(ctx, db, "independent-catalog-store")
 		if err != nil || availability.ScheduleMode != "WEEKLY" || len(availability.WeeklySchedule) != 0 {
 			t.Fatalf("lazy initialization must keep independent Store closed: %+v err=%v", availability, err)
 		}
-		orderability, err := postgres.EvaluateStoreOrderability(ctx, db, "independent-preview-store", "CUSTOMER_PICKUP", time.Time{})
+		orderability, err := postgres.EvaluateStoreOrderability(ctx, db, "independent-catalog-store", "CUSTOMER_PICKUP", time.Time{})
 		if err != nil || orderability.State != postgres.StoreOrderabilityClosedBySchedule {
 			t.Fatalf("an independent Store must choose opening hours before pickup: %+v err=%v", orderability, err)
 		}
-		marketAvailability, err := postgres.ReadStoreOperationalAvailability(ctx, db, "market-preview-store")
+		marketAvailability, err := postgres.ReadStoreOperationalAvailability(ctx, db, "market-catalog-store")
 		if err != nil || marketAvailability.ScheduleMode != "ALWAYS_OPEN" {
 			t.Fatalf("legacy marketplace availability default changed: %+v err=%v", marketAvailability, err)
 		}
 
-		store, err := postgres.ReadIndependentStoreOwnedByPartner(ctx, db, "independent-preview-store", "independent-owner")
-		if err != nil || store.ID != "independent-preview-store" || store.RelationModel != postgres.StoreRelationIndependent || store.PublicationState == "published" {
-			t.Fatalf("owned unpublished independent Store must be previewable: %+v err=%v", store, err)
+		store, err := postgres.ReadStoreOwnedByPartner(ctx, db, "independent-catalog-store", "independent-owner")
+		if err != nil || store.ID != "independent-catalog-store" || store.RelationModel != postgres.StoreRelationIndependent || store.PublicationState == "published" {
+			t.Fatalf("owned unpublished independent Store must keep canonical Store facts: %+v err=%v", store, err)
 		}
 		accessible, err := postgres.ListPartnerAccessibleStores(ctx, db, "independent-owner", 10, "")
 		if err != nil || len(accessible.Stores) != 1 || accessible.Stores[0].ID != store.ID ||
@@ -62,18 +62,18 @@ func TestIndependentStorePreviewOwnershipAndChannelIsolation(t *testing.T) {
 		}
 		// A direct Store keeps its existing DSH Catalog ownership. Use the
 		// canonical product and offer writers, not a second storefront table.
-		verticalID := "independent-preview-store-vertical"
+		verticalID := "independent-catalog-store-vertical"
 		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.catalog_categories
 			(id,vertical_id,name_ar,name_en,active)
-			VALUES('independent-preview-category',$1,'فئة للمعاينة','Preview category',true)`, verticalID); err != nil {
+			VALUES('independent-catalog-category',$1,'فئة للمعاينة','Catalog category',true)`, verticalID); err != nil {
 			t.Fatal(err)
 		}
 		productInput := postgres.CatalogProductInput{
 			VerticalID: verticalID, Scope: "SHARED", CanonicalName: "منتج المعاينة",
 			VariantTitle: "Default", MeasurementKind: "DISCRETE", BaseUnit: "COUNT",
-			CategoryIDs: []string{"independent-preview-category"},
+			CategoryIDs: []string{"independent-catalog-category"},
 		}
-		product, err := postgres.CreateCatalogProduct(ctx, db, productInput, "preview-product-create", postgres.HashCatalogProductCreateRequest(productInput), "preview-operator", "preview-product-correlation")
+		product, err := postgres.CreateCatalogProduct(ctx, db, productInput, "catalog-product-create", postgres.HashCatalogProductCreateRequest(productInput), "catalog-operator", "catalog-product-correlation")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -84,7 +84,7 @@ func TestIndependentStorePreviewOwnershipAndChannelIsolation(t *testing.T) {
 			PricingBasis: "PER_UNIT", PricingUnitBaseUnits: 1,
 			InventoryPolicy: "AVAILABILITY_ONLY",
 		}
-		offer, err := postgres.CreateCatalogOffer(ctx, db, offerInput, "preview-offer-create", postgres.HashCatalogOfferCreateRequest(offerInput), "preview-operator", "preview-offer-correlation")
+		offer, err := postgres.CreateCatalogOffer(ctx, db, offerInput, "catalog-offer-create", postgres.HashCatalogOfferCreateRequest(offerInput), "catalog-operator", "catalog-offer-correlation")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -94,20 +94,20 @@ func TestIndependentStorePreviewOwnershipAndChannelIsolation(t *testing.T) {
 			t.Fatalf("independent Store must reuse the exact canonical Product and Offer: %+v err=%v", page, err)
 		}
 		for _, input := range []struct{ storeID, actorID string }{
-			{"independent-preview-store", "other-partner"},
-			{"market-preview-store", "market-owner"},
-			{"market-preview-store", "independent-owner"},
+			{"independent-catalog-store", "other-partner"},
+			{"market-catalog-store", "independent-owner"},
 			{"missing-store", "independent-owner"},
 		} {
-			if _, err := postgres.ReadIndependentStoreOwnedByPartner(ctx, db, input.storeID, input.actorID); !errors.Is(err, postgres.ErrStoreNotFound) {
-				t.Fatalf("foreign or marketplace Store leaked through independent preview: %+v err=%v", input, err)
+			if _, err := postgres.ReadStoreOwnedByPartner(ctx, db, input.storeID, input.actorID); !errors.Is(err, postgres.ErrStoreNotFound) {
+				t.Fatalf("foreign Store leaked through canonical owned Store read: %+v err=%v", input, err)
 			}
 		}
-		if _, _, err := postgres.SetStoreTrashed(ctx, db, store.ID, "preview-operator", "archived fixture store", "trash", "preview-archive-key", store.Version); err != nil {
+		if _, _, err := postgres.SetStoreTrashed(ctx, db, store.ID, "catalog-operator", "archived fixture store", "trash", "catalog-archive-key", store.Version); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := postgres.ReadIndependentStoreOwnedByPartner(ctx, db, "independent-preview-store", "independent-owner"); !errors.Is(err, postgres.ErrStoreNotFound) {
-			t.Fatalf("archived Store must not have a partner preview: %v", err)
+		archived, err := postgres.ListPartnerAccessibleStores(ctx, db, "independent-owner", 10, "")
+		if err != nil || len(archived.Stores) != 0 {
+			t.Fatalf("archived Store must not be accessible to the Partner: %+v err=%v", archived, err)
 		}
 	})
 }

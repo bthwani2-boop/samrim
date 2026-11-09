@@ -387,7 +387,7 @@ func (s *Service) paymentIntentCanceller() postgres.PaymentIntentCanceller {
 }
 
 func storeAllowsCheckout(store postgres.StoreRecord, fulfillmentMode string) bool {
-	return store.PublicationState == "published" && strings.TrimSpace(store.PartnerActorID) != "" && supportsFulfillmentMode(store.FulfillmentModes, fulfillmentMode)
+	return store.RelationModel == postgres.StoreRelationBThwaniPartner && store.PublicationState == "published" && strings.TrimSpace(store.PartnerActorID) != "" && supportsFulfillmentMode(store.FulfillmentModes, fulfillmentMode)
 }
 
 func supportsFulfillmentMode(modes []string, requested string) bool {

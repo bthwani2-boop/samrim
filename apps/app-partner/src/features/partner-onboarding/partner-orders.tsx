@@ -3,7 +3,6 @@ import { useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { OrderManagement } from "../order-management/order-management";
-import { IndependentPickupOrders } from "../order-management/independent-pickup-orders";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 import { usePartnerStoreScope } from "./partner-store-scope-context";
 import { PartnerStoreScopeSelector } from "./partner-store-scope-selector";
@@ -40,10 +39,7 @@ export function PartnerOrders() {
       <BthwaniChip label="جميع متاجر السوق" onPress={() => setScope("ALL_AUTHORIZED")} selected={aggregateMode} />
     </View> : null}
     {!aggregateMode && (permittedStores.length > 1 || !canManageOrders) ? <PartnerStoreScopeSelector eligible={canUseStoreOrders} /> : null}
-    {!aggregateMode && selectedStore && canManageOrders ? selectedStore.relationModel === "INDEPENDENT_STORE"
-      ? <IndependentPickupOrders key={selectedStore.id} storeID={selectedStore.id} canAdvance={selectedStore.owned || selectedStore.permissions.includes("fulfillment")} />
-      : <OrderManagement key={"orders:" + selectedStore.id} storeId={selectedStore.id} />
-      : null}
+    {!aggregateMode && selectedStore && canManageOrders ? <OrderManagement key={"orders:" + selectedStore.id} storeId={selectedStore.id} /> : null}
     {aggregateMode ? <OrderManagement key="all-authorized" /> : null}
     {state.kind === "ready" && targetStoreId && !permittedStores.some(store => store.id === targetStoreId) ? <View style={styles.card}><Text style={styles.muted}>لا توجد صلاحية لطلبات هذا المتجر.</Text></View> : null}
     {state.kind === "ready" && !permittedStores.length ? <View style={styles.card}><Text style={styles.muted}>لا توجد متاجر مخوّل لك استقبال طلباتها.</Text></View> : null}

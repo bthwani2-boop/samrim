@@ -1,7 +1,6 @@
 import { normalizeYemenPhoneE164 } from "@bthwani/identity/phone";
 import { dshOperationPaths } from "./generated/dsh-operations";
-import type { IndependentPartnerPickupOrdersResponse, IndependentPickupOrderStatus, IndependentPickupOrderTransitionRequest } from "./generated/dsh-types";
-import type { IndependentStorePreview, IndependentCustomerPolicyDraftInput, IndependentCustomerPolicyDraftResponse, IndependentCustomerPolicyDraftMutationResponse } from "./generated/dsh-types";
+import type { IndependentCustomerPolicyDraftInput, IndependentCustomerPolicyDraftResponse, IndependentCustomerPolicyDraftMutationResponse } from "./generated/dsh-types";
 import type { CatalogActivityPage, StoreOrderRatingListResponse, StoreContentPerformanceSummary, StudioLayoutPublication, StorePublicContactInput, StorePublicContactResponse, StorePublicContactMutationResponse } from "./generated/dsh-types";
 import type { ClientSharePage, ClientShareSendRequest, ClientShareSendResponse } from "./client-share-types";
 import type { AcceptStoreCaptainInvitationRequest, BeneficiaryFundingIntentResponse, BeneficiaryPayoutStateResponse, BeneficiaryWalletResponse, CampaignOptInRequest, CaptainAdmissionResponse, CaptainAssignmentListResponse, CaptainAssignmentResponse, CaptainAvailabilityRequest, CaptainCompletionRequest, CaptainDeliveryTaskResponse, CaptainOfferDecisionRequest, CaptainOfferListResponse, CaptainOpportunityHeatmap, CaptainOfferResponse, CartResponse, CashInFundingIntent, CashLiabilityResponse, CatalogAttributeEnumOptionListResponse, CatalogAttributeRuleListResponse, CatalogCategoryListResponse, CatalogIdentifierResolveResponse, CatalogImportCommitResponse, CatalogImportPreviewResponse, CatalogImportRunResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposal, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogProductResponse, CatalogQuickPriceCommitRequest, CatalogQuickPriceCommitResponse, CatalogStorefrontSectionListResponse, CatalogStorefrontSectionResponse, CatalogInventorySummaryResponse, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogVariantResponse, CheckoutQuoteResponse, CheckoutRequest, ClientOpenCartListResponse, CommerceVerticalListResponse, CommercialStoreTypeListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, CreateJoiningCaseRequest, CreateOrderConversationMessageRequest, CreateOrderRatingRequest, CreatePromotionRequest, CreateStoreOfferRequest, DeliveryAddressListResponse, DeliveryAddressResponse, DeliveryProofResponse, DiscoveryContentAnalyticsListResponse, DiscoveryContentEventRequest, DiscoveryContentListResponse, DiscoveryContentTargetResolution, FavoriteStoreListResponse, StudioThemePublication, FavoriteStoreOfferListResponse, FavoriteStoreOfferResponse, FavoriteStoreResponse, JoiningCaseListResponse, JoiningCaseResponse, MarketingPublicationRequest, MarkOrderConversationReadRequest, MediaProvenanceInput, MultiStoreCheckoutRequest, MultiStoreCheckoutResponse, NotificationListResponse, NotificationReadResponse, OperatorPromotionRegistryResponse, OrderAdjustmentDecisionRequest, OrderAdjustmentProposalRequest, OrderConversationMessageResponse, OrderConversationPrivateMediaResponse, OrderConversationReadResponse, OrderConversationResponse, OrderListResponse, OrderRatingResponse, OrderResponse, OrderTransitionRequest, PartnerAccessibleStorePage, PartnerCampaignListResponse, PartnerCampaignOptInResponse, PartnerOrdersResponse, PartnerStoreOrderSummaryResponse, PartnerPayoutRequestCreateRequest, PartnerPayoutRequestResponse, PartnerPayoutSummaryResponse, PartnerScopedFinancialSummaryResponse, PartnerStoreOperationalAvailabilityMutationResponse, PartnerStoreOperationalAvailabilityResponse, PayoutRequest, PromotionListResponse, PromotionResponse, PublicCatalogResponse, PublicCatalogSearchResponse, PublicStoreOrderabilityResponse, PublicStoreView, PublishedStoreListResponse, ReplaceCatalogProductMediaRequest, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, SetStoreFulfillmentModesRequest, StoreAccessGrantActivationRequest, StoreAccessGrantListResponse, StoreAccessGrantMutationResponse, StoreAccessGrantPermissionsRequest, StoreAccessGrantTransitionRequest, StoreAccessInvitationCreateRequest, StoreAccessInvitationDecisionRequest, StoreAccessPermission, StoreCaptainDispatchRequest, StoreCaptainInvitationResponse, StoreCaptainMembershipListResponse, StoreCaptainMembershipResponse, StoreCaptainMembershipTransitionRequest, StoreCommercialAgreementMutationResponse, StoreCommercialAgreementProposalRequest, StoreDeliveryOriginResponse, StoreFulfillmentModesResponse, StoreImagesResponse, StoreOperationalAvailabilityRequest, PartnerFirstStoreCreateRequest, PartnerFirstStoreCreateResponse, StorePayoutRecipientListResponse, StorePayoutRecipientMutationResponse, StorePayoutRecipientRevertRequest, StorePayoutRecipientRevertResponse, StorePayoutRecipientSelectRequest, UpdateCartLineRequest, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateDeliveryAddressRequest, UpdateStoreOfferRequest, UpsertCartLineRequest, WalletProviderListResponse } from "./generated/dsh-types";
@@ -335,20 +334,6 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const query = new URLSearchParams({ limit: String(limit) });
       if (cursor.trim()) query.set("cursor", cursor.trim());
       return userRequest<PartnerAccessibleStorePage>(accessToken, `${dshOperationPaths.listPartnerAccessibleStores.path}?${query.toString()}`, dshOperationPaths.listPartnerAccessibleStores.method);
-    },
-    async readPartnerIndependentStorePreview(accessToken: string, storeID: string, limit = 20, cursor = ""): Promise<IndependentStorePreview> {
-      const normalizedStore = storeID.trim();
-      if (!normalizedStore || normalizedStore.length > 128 || !Number.isInteger(limit) || limit < 1 || limit > 50 || cursor.length > 2048) throw new Error("DSH_INDEPENDENT_PREVIEW_INPUT_INVALID");
-      const query = new URLSearchParams({ limit: String(limit) });
-      if (cursor) query.set("cursor", cursor);
-      const path = dshOperationPaths.readPartnerIndependentStorePreview.path.replace("{storeId}", encodeURIComponent(normalizedStore));
-      const response = await userRequest<IndependentStorePreview>(accessToken, `${path}?${query.toString()}`, dshOperationPaths.readPartnerIndependentStorePreview.method);
-      if (response.storeId !== normalizedStore || response.relationModel !== "INDEPENDENT_STORE" ||
-          response.previewOnly !== true || response.checkoutEnabled !== false ||
-          !Array.isArray(response.offers) || typeof response.nextCursor !== "string") {
-        throw new Error("DSH_INDEPENDENT_PREVIEW_SCOPE_MISMATCH");
-      }
-      return response;
     },
     async readPartnerIndependentCustomerPolicyDraft(accessToken: string, storeID: string): Promise<IndependentCustomerPolicyDraftResponse> {
       const store = storeID.trim();
@@ -976,18 +961,6 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (options.q) query.set("q", options.q);
       if (options.cursor) query.set("cursor", options.cursor);
       return userRequest<PartnerOrdersResponse>(accessToken, `${dshOperationPaths.listPartnerOrders.path}?${query.toString()}`, dshOperationPaths.listPartnerOrders.method);
-    },
-    async listIndependentPartnerPickupOrders(accessToken: string, storeID: string, cursor = ""): Promise<IndependentPartnerPickupOrdersResponse> {
-      const operation = dshOperationPaths.listIndependentPartnerPickupOrders;
-      const path = operation.path.replace("{storeId}", encodeURIComponent(storeID));
-      const query = new URLSearchParams({ limit: "25" });
-      if (cursor) query.set("cursor", cursor);
-      return userRequest(accessToken, `${path}?${query}`, operation.method);
-    },
-    async transitionIndependentPartnerPickupOrder(accessToken: string, storeID: string, orderID: string, input: IndependentPickupOrderTransitionRequest): Promise<IndependentPickupOrderStatus> {
-      const operation = dshOperationPaths.transitionIndependentPartnerPickupOrder;
-      const path = operation.path.replace("{storeId}", encodeURIComponent(storeID)).replace("{orderId}", encodeURIComponent(orderID));
-      return userRequest(accessToken, path, operation.method, input);
     },
     async readPartnerStoreOrderSummary(accessToken: string, storeID: string, period: "7d" | "30d" | "all" = "30d"): Promise<PartnerStoreOrderSummaryResponse> {
       const normalized = storeID.trim();

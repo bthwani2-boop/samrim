@@ -54,6 +54,18 @@ A service existing in source does not automatically admit Product breadth; Produ
 
 DDD, rich domain models, Clean/Hexagonal Architecture, ports/adapters and SOLID are design techniques, not mandatory layers, directory layouts or compliance targets. Choose the smallest implementation that preserves domain ownership, business invariants, transaction/concurrency correctness, authorization and contract evolution. Add an abstraction only for a proven current need whose benefit exceeds its complexity; never refactor correct code solely to match a named pattern.
 
+## Mandatory single-owner and single-engine law
+
+Every mutable commercial fact has **exactly one canonical semantic owner, governed writer and authoritative readback**. Every essential operation has **one existing canonical engine** within its bounded owner: Identity owns identity/access; DSH owns Store, catalog/offer, price and availability evaluation, publication, checkout/Order and fulfillment; WLT owns agreements, payment and financial ledger/settlement. Different public routes, actors, clients and commercial relationships must compose these engines, not instantiate competing ones.
+
+**Prohibited by default:** a second engine, service, table/schema, state machine, catalog, pricing/inventory calculator, checkout/order writer, financial ledger, data writer or synchronization path that independently implements or owns the **same** responsibility or mutable truth. Renaming it per Store model, channel, team or deployment does not make it a distinct responsibility. A shadow writer, dual-source-of-truth or permanent parallel legacy implementation is not an approved shortcut.
+
+BTHWANI_PARTNER and INDEPENDENT_STORE are Store **policy, eligibility, publication, fulfillment, contractual and financial-term variants**, not grounds for parallel commerce infrastructure. Distinct lawful Order routes or presentations are implemented through the **same canonical DSH/WLT/Identity owners** with explicit guarded policies and contracts; no client flag or second database may decide ownership, price, authorization or money.
+
+Before proposing any *new distinct* persistence structure, service or execution mechanism, the proponent must demonstrate a current responsibility **not correctly expressible inside its existing owner**, show why direct reuse/extension is insufficient, identify its unique fact/contract/writer and obtain explicit approval in the canonical governance owner. **Duplicating an existing canonical engine or writer for the same responsibility is forbidden even under this exception.** Bounded derived projections, indexes and technical provider adapters are permitted only as non-authoritative, rebuildable consumers of canonical truth, never as substitute writers. A temporary migration coexistence requires a controlled, evidenced cutover, preserved readback and removal of the losing path; it is not permission to operate two permanent engines.
+
+Architecture and code reviews **must reject** an unproven parallel owner/engine/table/service, and require correction at the current owner rather than approval by convenience, speed or mere presence of legacy code. This rule governs new work and remediation; removal of existing violations requires safe consumer/data migration and verification, not destructive deletion on discovery.
+
 ## Adapter boundary
 
 Media storage/delivery and notification delivery may use bounded technical adapters. An adapter owns transport/provider mechanics only.

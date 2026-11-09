@@ -38,6 +38,8 @@ For any public Store checkout, DSH derives the effective commercial relationship
 
 DSH owns the Store relationship, ownership, effective history, channel publication, and Order routing. Identity owns the Partner actor/session; a new Store relationship never creates a new Identity role. WLT owns marketplace agreements, commissions, and any later admitted paid hosting invoice; Store-independent hosting plans never redefine the historical WLT Store COMMISSION/SUBSCRIPTION agreement. Applications present derived capabilities but never select financial terms or grant rights.
 
+The differences between BTHWANI_PARTNER and INDEPENDENT_STORE must be expressed by Store-scoped policies, eligibility, publication gates, fulfillment rules and versioned contracts **within the existing canonical engines**. Both relationships use the same DSH Store identity, catalog, Offer/price/availability ownership and Order engine, the same Identity actor authority, and WLT as the sole financial owner for any applicable financial effects. Separate web composition or a lawful direct-Order route may differ in user experience and guarded transaction rules; neither authorizes a second Store table, duplicated catalog or pricing source, parallel checkout engine, independent finance ledger, or shadow synchronization. The mandatory ban and narrowly evidenced distinct-responsibility exception are owned by `docs/governance/architecture.md`.
+
 The currently admitted marketplace model continues to own all existing Stores. Existing Store rows remain BTHWANI_PARTNER after schema adoption; a database default is not an active agreement, a new Partner approval, or publication permission.
 
 ## Publication and rollout boundary

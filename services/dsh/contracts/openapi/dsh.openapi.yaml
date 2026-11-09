@@ -675,8 +675,6 @@ paths:
   /dsh/partner/stores/{storeId}/independent-customer-policy/draft:
     $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1independent-customer-policy~1draft"
 
-  /dsh/partner/stores/{storeId}/independent-preview:
-    $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1independent-preview"
 
   /dsh/partner/stores/{storeId}/access:
     $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1access"
@@ -1198,10 +1196,6 @@ paths:
 
   /dsh/partner/orders:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1partner~1orders"
-  /dsh/partner/stores/{storeId}/direct-orders:
-    $ref: "./paths/commerce.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1direct-orders"
-  /dsh/partner/stores/{storeId}/direct-orders/{orderId}:
-    $ref: "./paths/commerce.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1direct-orders~1{orderId}"
 
   /dsh/stores/{storeId}/orders/{orderId}:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders~1{orderId}"
@@ -10137,93 +10131,6 @@ components:
         summary:
           $ref: "#/components/schemas/PartnerStoreOrderSummary"
 
-    IndependentPickupOrderState:
-      type: string
-      enum: [SUBMITTED, ACCEPTED, PREPARING, READY, COMPLETED, REJECTED, CANCELLED]
-    IndependentPickupOrderStatus:
-      type: object
-      additionalProperties: false
-      required: [orderId, storeId, state, version]
-      properties:
-        orderId:
-          type: string
-        storeId:
-          type: string
-        state:
-          $ref: "#/components/schemas/IndependentPickupOrderState"
-        version:
-          type: integer
-          minimum: 1
-    IndependentPickupOrderLine:
-      type: object
-      additionalProperties: false
-      required: [offerId, productName, variantTitle, quantityBaseUnits, lineAmountMinor]
-      properties:
-        offerId:
-          type: string
-        productName:
-          type: string
-        variantTitle:
-          type: string
-        quantityBaseUnits:
-          type: integer
-          format: int64
-          minimum: 1
-        lineAmountMinor:
-          type: integer
-          format: int64
-          minimum: 1
-    IndependentPartnerPickupOrder:
-      type: object
-      additionalProperties: false
-      required: [orderId, storeId, state, version, totalMinor, createdAt, lines]
-      properties:
-        orderId:
-          type: string
-        storeId:
-          type: string
-        state:
-          $ref: "#/components/schemas/IndependentPickupOrderState"
-        version:
-          type: integer
-          minimum: 1
-        totalMinor:
-          type: integer
-          format: int64
-          minimum: 1
-        createdAt:
-          type: string
-          format: date-time
-        lines:
-          type: array
-          items:
-            $ref: "#/components/schemas/IndependentPickupOrderLine"
-    IndependentPartnerPickupOrdersResponse:
-      type: object
-      additionalProperties: false
-      required: [orders, nextCursor]
-      properties:
-        orders:
-          type: array
-          items:
-            $ref: "#/components/schemas/IndependentPartnerPickupOrder"
-        nextCursor:
-          type: string
-    IndependentPickupOrderTransitionRequest:
-      type: object
-      additionalProperties: false
-      required: [state, expectedVersion]
-      properties:
-        state:
-          type: string
-          enum: [ACCEPTED, PREPARING, READY, COMPLETED, REJECTED]
-        expectedVersion:
-          type: integer
-          minimum: 1
-        reason:
-          type: string
-          maxLength: 300
-          description: Required for rejection.
     PartnerOrdersResponse:
       type: object
       required: [orders, attention]
@@ -11992,29 +11899,6 @@ components:
           items:
             $ref: "#/components/schemas/StoreAccessPermission"
 
-    IndependentPreviewOffer:
-      type: object
-      additionalProperties: false
-      required: [id, productId, title, priceMinor, currency, imageUri, availability, publicationState]
-      properties:
-        id:
-          type: string
-        productId:
-          type: string
-        title:
-          type: string
-        priceMinor:
-          type: integer
-          format: int64
-        currency:
-          type: string
-        imageUri:
-          type: string
-        availability:
-          type: boolean
-        publicationState:
-          type: string
-
     IndependentCustomerPolicyDraft:
       type: object
       additionalProperties: false
@@ -12094,37 +11978,6 @@ components:
           description: Always true; this private resource cannot publish a Store.
         idempotentReplay:
           type: boolean
-
-    IndependentStorePreview:
-      type: object
-      additionalProperties: false
-      description: Private Partner-owned Store and Catalog preparation; never a public storefront or an order endpoint.
-      required: [storeId, name, relationModel, publicationState, profileImageUri, coverImageUri, previewOnly, checkoutEnabled, offers, nextCursor]
-      properties:
-        storeId:
-          type: string
-        name:
-          type: string
-        relationModel:
-          type: string
-          enum: [INDEPENDENT_STORE]
-        publicationState:
-          type: string
-          description: Independent web-publication lifecycle from DSH, not marketplace publication_state. Owner preview remains private even when this state is published.
-        profileImageUri:
-          type: string
-        coverImageUri:
-          type: string
-        previewOnly:
-          type: boolean
-        checkoutEnabled:
-          type: boolean
-        offers:
-          type: array
-          items:
-            $ref: "#/components/schemas/IndependentPreviewOffer"
-        nextCursor:
-          type: string
 
     PartnerAccessibleStorePage:
       type: object

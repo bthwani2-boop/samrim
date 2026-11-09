@@ -68,14 +68,13 @@ func TestIndependentCustomerPolicyRequiresCurrentPartnerSurface(t *testing.T) {
 			// The deliberately absent database proves only that non-Partner
 			// sessions are denied BEFORE persistence is touched.
 			_, policyErr := service.ReadIndependentCustomerPolicyForOwner(context.Background(), tc.token, "store-a")
-			_, previewErr := service.ReadIndependentPreview(context.Background(), tc.token, "store-a", 20, "")
 			_, _, saveErr := service.SaveIndependentCustomerPolicyDraftForOwner(context.Background(), tc.token, "store-a",
 				postgres.IndependentCustomerPolicyDraftInput{ExpectedVersion: 0,
 					CancellationTerms: "Cancel with merchant", ReturnsTerms: "Return to merchant",
 					FulfillmentTerms: "Collect at store", CollectionTerms: "Pay merchant"},
 				"test-private-policy-idempotency-key", "test-private-policy-correlation")
 			if !tc.allowed {
-				for label, got := range map[string]error{"policy": policyErr, "preview": previewErr, "save": saveErr} {
+				for label, got := range map[string]error{"policy": policyErr, "save": saveErr} {
 					if tc.token == "test-revoked-session" {
 						var identityErr *identityclient.Error
 						if !errors.As(got, &identityErr) || identityErr.Status != http.StatusUnauthorized {
@@ -92,10 +91,9 @@ func TestIndependentCustomerPolicyRequiresCurrentPartnerSurface(t *testing.T) {
 			// Both valid synthetic actors reach the owner-scoped SQL boundary;
 			// no real A/B identity or persistent Store authorization is proven.
 			if !errors.Is(policyErr, postgres.ErrStoreNotFound) ||
-				!errors.Is(previewErr, postgres.ErrStoreNotFound) ||
 				!errors.Is(saveErr, postgres.ErrIndependentCustomerPolicyInvalid) {
-				t.Fatalf("Partner private Store boundary failed closed: policy=%v preview=%v save=%v",
-					policyErr, previewErr, saveErr)
+				t.Fatalf("Partner private Store boundary failed closed: policy=%v save=%v",
+					policyErr, saveErr)
 			}
 		})
 	}

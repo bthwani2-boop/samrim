@@ -7,8 +7,12 @@ import ts from "typescript-ast";
 const source = readFileSync(new URL("./mobile.ts", import.meta.url), "utf8");
 const generated = readFileSync(new URL("./generated/dsh-operations.ts", import.meta.url), "utf8");
 const ast = ts.createSourceFile("mobile.ts", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+test("private Store preview is retired rather than maintained as a second website", () => {
+  assert.doesNotMatch(source, /readPartnerIndependentStorePreview/);
+  assert.doesNotMatch(generated, /independent-preview/);
+});
+
 const methodsToTest = [
-  "readPartnerIndependentStorePreview",
   "readPartnerIndependentCustomerPolicyDraft",
   "savePartnerIndependentCustomerPolicyDraft",
 ];
@@ -46,36 +50,11 @@ function harness(response) {
   });
   return { calls, client };
 }
-const preview = () => ({
-  storeId: "store-a", relationModel: "INDEPENDENT_STORE", previewOnly: true,
-  checkoutEnabled: false, offers: [], nextCursor: "", name: "اختبار خاص",
-});
 const policy = () => ({
   policy: { storeId: "store-a", version: 2, cancellationTerms: "clear" },
   draftOnly: true,
 });
 
-test("owner preview keeps exact authenticated endpoint and private-only flags", async () => {
-  const { client, calls } = harness(preview());
-  const response = await client.readPartnerIndependentStorePreview("partner-token", " store-a ", 15);
-  assert.equal(response.previewOnly, true);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0][0], "partner-token");
-  assert.match(calls[0][1], /\/dsh\/partner\/stores\/store-a\/independent-preview\?limit=15/);
-  assert.equal(calls[0][2], "GET");
-});
-for (const [reason, altered] of [
-  ["other Store", { storeId: "store-b" }],
-  ["other relation", { relationModel: "BTHWANI_PARTNER" }],
-  ["public visibility flag", { previewOnly: false }],
-  ["checkout enabled", { checkoutEnabled: true }],
-  ["malformed list", { offers: null }],
-]) {
-  test("owner preview fails closed for " + reason, async () => {
-    const { client } = harness({ ...preview(), ...altered });
-    await assert.rejects(client.readPartnerIndependentStorePreview("partner-token", "store-a"), /DSH_INDEPENDENT_PREVIEW_SCOPE_MISMATCH/);
-  });
-}
 test("owner policy draft accepts exact private Store response", async () => {
   const { client, calls } = harness(policy());
   const result = await client.readPartnerIndependentCustomerPolicyDraft("partner-token", "store-a");

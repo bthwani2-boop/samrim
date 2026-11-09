@@ -56,35 +56,6 @@ func exerciseIndependentPolicyHTTPOnIsolatedDB(t *testing.T, ctx context.Context
 	mux := http.NewServeMux()
 	server.Register(mux)
 
-	// The independent owner preview must use its own DSH publication state,
-	// not the canonical Store's marketplace-only publication_state.
-	previewRequest := func(token, storeID string) *httptest.ResponseRecorder {
-		req := httptest.NewRequestWithContext(ctx, http.MethodGet,
-			"/dsh/partner/stores/"+storeID+"/independent-preview", nil)
-		req.Header.Set("Authorization", "Bearer "+token)
-		rec := httptest.NewRecorder()
-		mux.ServeHTTP(rec, req)
-		return rec
-	}
-	ownerPreview := previewRequest("qa-owner-a-session", storeA)
-	if ownerPreview.Code != http.StatusOK {
-		t.Fatalf("owner independent preview status=%d body=%s", ownerPreview.Code, ownerPreview.Body.String())
-	}
-	var preview struct {
-		PublicationState string `json:"publicationState"`
-		PreviewOnly      bool   `json:"previewOnly"`
-		CheckoutEnabled  bool   `json:"checkoutEnabled"`
-	}
-	if err := json.Unmarshal(ownerPreview.Body.Bytes(), &preview); err != nil {
-		t.Fatal(err)
-	}
-	if preview.PublicationState != "DRAFT" || !preview.PreviewOnly || preview.CheckoutEnabled {
-		t.Fatalf("owner preview must disclose independent DRAFT only, not marketplace state: %+v", preview)
-	}
-	if forbidden := previewRequest("qa-owner-b-session", storeA); forbidden.Code != http.StatusNotFound {
-		t.Fatalf("foreign owner must not read independent preview: %d", forbidden.Code)
-	}
-
 	request := func(method, token, storeID, body, key string) *httptest.ResponseRecorder {
 		t.Helper()
 		req := httptest.NewRequestWithContext(ctx, method,

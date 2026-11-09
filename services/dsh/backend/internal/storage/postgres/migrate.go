@@ -17,7 +17,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 175
+const SchemaVersion = 176
 
 type MigrationRecord struct {
 	Version int
@@ -33,10 +33,6 @@ var requiredTables = []schemaRelationExpectation{
 	{name: "dsh.independent_store_customer_policy_audit", columns: []string{"id", "store_id", "actor_id", "key_hash", "correlation_id", "expected_version", "result_version", "policy_version", "event_type", "created_at"}, constraints: []string{"independent_store_customer_policy_audit_pkey", "independent_store_customer_policy_audit_key_hash_key", "independent_customer_policy_audit_version_chk", "independent_customer_policy_audit_event_chk"}, indexes: []string{"independent_store_customer_policy_audit_store_idx"}},
 	{name: "dsh.independent_store_publication_idempotency", columns: []string{"key_hash", "request_hash", "store_id", "requested_state", "expected_version", "result_version"}, constraints: []string{"independent_store_publication_idempotency_pkey", "independent_store_pub_idem_hash_chk", "independent_store_pub_idem_version_chk"}},
 	{name: "dsh.independent_store_publication_audit", columns: []string{"id", "store_id", "from_state", "to_state", "expected_version", "result_version", "actor_id", "key_hash"}, constraints: []string{"independent_store_publication_audit_pkey", "independent_store_pub_audit_version_chk"}, indexes: []string{"independent_store_publication_audit_store_idx"}},
-	{name: "dsh.independent_direct_orders", columns: []string{"id", "store_id", "publication_version", "store_version", "state", "version", "fulfillment_mode", "payment_method", "guest_name", "guest_phone_e164", "hosting_terms_version", "merchant_policy_version", "merchant_policy_snapshot", "subtotal_amount_minor", "merchant_delivery_fee_minor", "total_amount_minor", "currency", "guest_capability_hash", "guest_capability_expires_at"}, constraints: []string{"independent_direct_orders_pkey", "independent_direct_order_version_chk", "independent_direct_order_payment_chk", "independent_direct_order_policy_snapshot_chk", "independent_direct_order_address_chk", "independent_direct_order_amount_chk", "independent_direct_order_capability_chk"}, indexes: []string{"independent_direct_orders_store_idx", "independent_direct_order_order_store_uq"}},
-	{name: "dsh.independent_direct_order_lines", columns: []string{"order_id", "store_id", "offer_id", "product_id", "variant_id", "quantity_base_units", "pricing_unit_base_units", "unit_price_minor", "line_amount_minor"}, constraints: []string{"independent_direct_order_lines_pkey", "independent_direct_line_order_scope_fk", "independent_direct_line_offer_scope_fk", "independent_direct_line_variant_product_fk", "independent_direct_order_lines_price_chk"}},
-	{name: "dsh.independent_direct_order_idempotency", columns: []string{"key_hash", "request_hash", "store_id", "order_id", "created_at"}, constraints: []string{"independent_direct_order_idempotency_pkey", "independent_direct_order_idem_hash_chk"}, indexes: []string{"independent_direct_order_idempotency_store_idx"}},
-	{name: "dsh.independent_direct_order_audit", columns: []string{"id", "order_id", "actor_id", "event_type", "to_state", "result_version", "created_at"}, constraints: []string{"independent_direct_order_audit_pkey", "independent_direct_order_audit_state_chk", "independent_direct_order_audit_version_chk"}, indexes: []string{"independent_direct_order_audit_order_idx"}},
 	{name: "dsh.store_joining_policies", columns: []string{"relation_model", "enrollment_enabled", "version", "updated_by_actor_id", "updated_at", "reason"}, constraints: []string{"store_joining_policies_pkey", "store_joining_policies_relation_model_check", "store_joining_policies_version_check", "store_joining_policies_reason_check"}},
 	{name: "dsh.store_joining_policy_events", columns: []string{"idempotency_key", "relation_model", "request_hash", "expected_version", "result_version", "enrollment_enabled", "actor_id", "reason", "created_at"}, constraints: []string{"store_joining_policy_events_pkey", "store_joining_policy_events_relation_model_fkey", "store_joining_policy_events_expected_version_check", "store_joining_policy_events_check"}, indexes: []string{"store_joining_policy_events_model_idx"}},
 	{name: "dsh.marketing_studio_layout_events", columns: []string{"idempotency_key", "request_hash", "template_key", "action", "expected_version", "result_version", "source_draft_version", "target_publication_version", "previous_document_json", "result_document_json", "acting_actor_id", "correlation_id", "created_at"}, constraints: []string{"marketing_studio_layout_events_pkey", "marketing_studio_layout_hash_chk", "marketing_studio_layout_action_chk", "marketing_studio_layout_expected_chk", "marketing_studio_layout_result_chk", "marketing_studio_layout_unique_version", "marketing_studio_layout_document_chk"}, indexes: []string{"marketing_studio_layout_recent_idx"}},
@@ -485,21 +481,21 @@ func VerifySchema(ctx context.Context, db *sql.DB, records []MigrationRecord) er
 	if err := verifyStoreRelationConstraints(ctx, db); err != nil {
 		return err
 	}
-	// The direct Order writer must not rely solely on application-side checks:
-	// marketplace and archived Stores cannot insert independent Orders at SQL.
-	var independentInsertGuardEnabled bool
-	if err := db.QueryRowContext(ctx, `SELECT EXISTS(
-		SELECT 1 FROM pg_trigger t
-		JOIN pg_class c ON c.oid=t.tgrelid
-		JOIN pg_namespace n ON n.oid=c.relnamespace
-		WHERE n.nspname='dsh' AND c.relname='independent_direct_orders'
-		  AND t.tgname='independent_direct_order_store_insert_guard'
-		  AND NOT t.tgisinternal AND t.tgenabled IN ('O','A')
-	)`).Scan(&independentInsertGuardEnabled); err != nil {
-		return fmt.Errorf("DSH independent direct Order insertion guard readback: %w", err)
-	}
-	if !independentInsertGuardEnabled {
-		return errors.New("DSH independent direct Order insertion guard missing or disabled")
+	// Merchant-direct orders have one canonical DSH Order owner. The
+	// unadmitted parallel storage retired in migration 176 must not return.
+	for _, retired := range []string{
+		"dsh.independent_direct_orders",
+		"dsh.independent_direct_order_lines",
+		"dsh.independent_direct_order_idempotency",
+		"dsh.independent_direct_order_audit",
+	} {
+		var stillPresent bool
+		if err := db.QueryRowContext(ctx, "SELECT to_regclass($1) IS NOT NULL", retired).Scan(&stillPresent); err != nil {
+			return fmt.Errorf("verify retired direct Order storage %s: %w", retired, err)
+		}
+		if stillPresent {
+			return fmt.Errorf("retired parallel direct Order storage still exists: %s", retired)
+		}
 	}
 	var databaseNow time.Time
 	if err := db.QueryRowContext(ctx, "SELECT clock_timestamp()").Scan(&databaseNow); err != nil {

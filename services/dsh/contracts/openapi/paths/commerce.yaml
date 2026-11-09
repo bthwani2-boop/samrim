@@ -2187,49 +2187,6 @@ paths:
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 
-  /dsh/partner/stores/{storeId}/direct-orders:
-    get:
-      operationId: listIndependentPartnerPickupOrders
-      summary: List merchant-direct pickup Orders for an authorized Store
-      security: [{ userBearer: [] }]
-      parameters:
-        - { name: storeId, in: path, required: true, schema: { type: string } }
-        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
-        - { name: cursor, in: query, schema: { type: string, maxLength: 1024 } }
-      responses:
-        "200":
-          description: Store-scoped pickup Orders and immutable line snapshots without guest credentials or contact data.
-          content:
-            application/json:
-              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/IndependentPartnerPickupOrdersResponse" }
-        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
-        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
-        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
-        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
-  /dsh/partner/stores/{storeId}/direct-orders/{orderId}:
-    patch:
-      operationId: transitionIndependentPartnerPickupOrder
-      summary: Advance an authorized merchant-direct pickup Order
-      security: [{ userBearer: [] }]
-      parameters:
-        - { name: storeId, in: path, required: true, schema: { type: string } }
-        - { name: orderId, in: path, required: true, schema: { type: string } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/IndependentPickupOrderTransitionRequest" }
-      responses:
-        "200":
-          description: Current Order state after applying or replaying the versioned transition.
-          content:
-            application/json:
-              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/IndependentPickupOrderStatus" }
-        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
-        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
-        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
-        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
-        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
   /dsh/partner/orders:
     get:
       operationId: listPartnerOrders

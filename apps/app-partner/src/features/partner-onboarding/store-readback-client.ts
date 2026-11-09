@@ -1,6 +1,5 @@
 import { type CommerceVertical, type CommercialStoreType, type CorrectJoiningCaseRequest, createDshMobileClient, type DshImageUploadInput, type JoiningCaseResponse, type MediaProvenanceInput, type PartnerAccessibleStorePage, type PartnerStoreOperationalAvailabilityMutationResponse, type PartnerStoreOperationalAvailabilityResponse, type ServiceCity, type StoreAccessGrantListResponse, type StoreAccessGrantMutationResponse, type StoreAccessGrantPermissionsRequest, type StoreAccessGrantTransitionRequest, type StoreAccessInvitationCreateRequest, type StoreAccessInvitationDecisionRequest, type StoreAccessPermission, type StoreCaptainInvitationResponse, type StoreCaptainMembershipListResponse, type StoreCaptainMembershipResponse, type StoreCaptainMembershipTransitionRequest, type StoreOperationalAvailabilityRequest } from "@bthwani/dsh";
 import type { CatalogActivityPage, IndependentCustomerPolicyDraftInput, IndependentCustomerPolicyDraftResponse, IndependentCustomerPolicyDraftMutationResponse } from "@bthwani/dsh";
-import type { IndependentPickupOrderTransitionRequest } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { partnerCorrectionIdentityPayload } from "./partner-correction-recovery";
@@ -16,14 +15,6 @@ function dshClient() {
 }
 
 const accessToken = getUsableIdentityAccessToken;
-
-export function listIndependentPickupOrders(token: string, storeID: string, cursor: string) {
-  return dshClient().listIndependentPartnerPickupOrders(token, storeID, cursor);
-}
-
-export function transitionIndependentPickupOrder(token: string, storeID: string, orderID: string, input: IndependentPickupOrderTransitionRequest) {
-  return dshClient().transitionIndependentPartnerPickupOrder(token, storeID, orderID, input);
-}
 
 type OwnJoiningCaseCorrection = Readonly<{
   caseID: string;

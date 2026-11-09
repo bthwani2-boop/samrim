@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -13,10 +15,31 @@ import (
 	"github.com/lib/pq"
 )
 
+// A disposable DSH proof database is required for schema/fulfillment tests.
+// Never auto-create or mutate the shared local development database.
+func isolatedStoreFulfillmentQA(t *testing.T) string {
+	t.Helper()
+	raw := strings.TrimSpace(os.Getenv("DSH_DATABASE_URL"))
+	if os.Getenv("BTHWANI_DSH_QA_ISOLATED") != "1" || raw == "" {
+		t.Skip("NOT_RUN: isolated DSH QA database is not authorized/available")
+	}
+	target, err := url.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target.Scheme != "postgres" || target.Hostname() != "127.0.0.1" ||
+		target.Port() != "19432" || strings.TrimPrefix(target.Path, "/") != "dsh_proof" ||
+		target.User == nil || target.User.Username() != "postgres" ||
+		target.RawQuery != "sslmode=disable" || target.Fragment != "" {
+		t.Fatal("refuse QA against an unrecognized PostgreSQL target")
+	}
+	return raw
+}
+
 // Only the exact isolated QA endpoint may run this test. It uses the canonical
 // disposable migrated database and never touches a shared DSH database.
 func TestStoreFulfillmentModesIndependentScopeIsolatedPostgres(t *testing.T) {
-	raw := isolatedIndependentOrderQA(t)
+	raw := isolatedStoreFulfillmentQA(t)
 	root, err := sql.Open("postgres", raw)
 	if err != nil {
 		t.Fatal(err)

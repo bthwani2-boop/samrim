@@ -51,12 +51,7 @@ func TestIndependentStoreMediaURIEligibilityMatchesStoreCatalogAndCheckout(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	orderBytes, err := os.ReadFile("independent_direct_order.go")
-	if err != nil {
-		t.Fatal(err)
-	}
 	storeSource := string(storeBytes)
-	orderSource := string(orderBytes)
 	storeReaderStart := strings.Index(storeSource, "func ReadPublishedIndependentStore(")
 	catalogStart := strings.Index(storeSource, "func listPublishedIndependentOffersInternal(")
 	catalogEnd := strings.Index(storeSource, "// IndependentPublicOffer")
@@ -72,9 +67,6 @@ func TestIndependentStoreMediaURIEligibilityMatchesStoreCatalogAndCheckout(t *te
 	}
 	if got := strings.Count(publicCatalogSQL, eligibleMediaNotBlank); got != 2 {
 		t.Errorf("public Catalog must recheck both Store media URIs: %d guards", got)
-	}
-	if got := strings.Count(orderSource, eligibleMediaNotBlank); got != 2 {
-		t.Errorf("locked Direct Order must independently recheck both Store media URIs: %d guards", got)
 	}
 }
 
@@ -108,27 +100,18 @@ func TestIndependentPublicCatalogUsesOneReadOnlyRepeatableSnapshot(t *testing.T)
 	}
 }
 
-func TestIndependentCatalogAndCheckoutNeverReferenceNonexistentOfferDeletedAt(t *testing.T) {
+func TestIndependentCatalogNeverReferencesNonexistentOfferDeletedAt(t *testing.T) {
+	storeBytes, err := os.ReadFile("independent_storefront.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	storeSource := string(storeBytes)
 	// A real isolated PostgreSQL execution caught this historical alias error:
 	// dsh.catalog_store_offers has no deleted_at; dsh.catalog_products does.
 	// Keep both query builders aligned to the canonical Catalog schema.
-	for _, file := range []string{"independent_storefront.go", "independent_direct_order.go"} {
-		source, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(string(source), "o.deleted_at") {
-			t.Errorf("%s refers to nonexistent catalog_store_offers.deleted_at", file)
-		}
-		// The Direct writer now composes the public Catalog's canonical
-		// predicate rather than duplicating its SQL in this source file.
-		effectiveSQL := string(source)
-		if file == "independent_direct_order.go" {
-			effectiveSQL = independentDirectOrderOfferQuery
-		}
-		if !strings.Contains(effectiveSQL, "p.deleted_at IS NULL") {
-			t.Errorf("%s must retain canonical deleted Product suppression in its effective SQL", file)
-		}
+	if strings.Contains(storeSource, "o.deleted_at") ||
+		!strings.Contains(storeSource, "p.deleted_at IS NULL") {
+		t.Fatal("independent public Catalog must use canonical Product soft-delete and never an Offer deleted_at")
 	}
 	catalogSchema, err := os.ReadFile("migrations/010_central_catalog_refoundation.sql")
 	if err != nil {
@@ -152,10 +135,7 @@ func TestIndependentCatalogAndCheckoutNeverReferenceNonexistentOfferDeletedAt(t 
 	}
 }
 
-func TestIndependentPublicCatalogNeverAdvertisesUnquoteableAmountRange(t *testing.T) {
-	// Independent public Store eligibility and the paginated Catalog share
-	// this SQL filter. Direct Order checks prices using int64 arithmetic.
-	// A listing must not promise quantities that its server writer rejects.
+func TestIndependentPublicCatalogNeverAdvertisesOverflowingPrices(t *testing.T) {
 	for _, predicate := range []string{
 		"o.price_minor > 0",
 		"o.pricing_unit_base_units=1",
@@ -164,26 +144,20 @@ func TestIndependentPublicCatalogNeverAdvertisesUnquoteableAmountRange(t *testin
 		"o.price_minor::numeric * o.quantity_max_base_units::numeric <= 9223372036854775807",
 	} {
 		if !strings.Contains(independentDirectBuyableOfferSQL, predicate) {
-			t.Errorf("independent public listing would advertise unquoteable price/quantity without %q", predicate)
+			t.Errorf("independent Catalog is missing overflow-safe Offer predicate %s", predicate)
 		}
 	}
-	// These are independent checks at the canonical server-quote owner,
-	// not assertions about the literal SQL formatting.
 	for _, tc := range []struct {
-		name     string
-		price    int64
-		quantity int64
-		ok       bool
+		price, quantity int64
+		allowed         bool
 	}{
-		{name: "small payable range", price: 600, quantity: 5, ok: true},
-		{name: "zero price unavailable for direct order", price: 0, quantity: 1},
-		{name: "max quantity overflows int64 subtotal", price: 9223372036854775807, quantity: 2},
+		{600, 5, true},
+		{0, 1, false},
+		{9223372036854775807, 2, false},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := independentLineAmount(tc.price, tc.quantity, 1)
-			if (err == nil) != tc.ok {
-				t.Fatalf("server quote price=%d quantity=%d err=%v, want valid=%v", tc.price, tc.quantity, err, tc.ok)
-			}
-		})
+		_, err := CalculateCatalogLineAmount(tc.price, tc.quantity, "PER_UNIT", 1)
+		if (err == nil) != tc.allowed {
+			t.Errorf("canonical pricing mismatch: price=%d quantity=%d err=%v", tc.price, tc.quantity, err)
+		}
 	}
 }
