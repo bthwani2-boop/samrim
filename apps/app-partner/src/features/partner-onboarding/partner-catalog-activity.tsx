@@ -1,12 +1,14 @@
 import type { CatalogActivityItem, CatalogActivityPage } from "@bthwani/dsh";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
+import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
 
 import { catalogActivityDateBound, validCatalogActivityDay } from "./partner-catalog-activity-date";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 import { usePartnerStoreScope } from "./partner-store-scope-context";
+import { partnerSetupSessionKey } from "./partner-setup-session-scope";
 import { listOwnStoreCatalogActivity } from "./store-readback-client";
 
 type ReadState =
@@ -15,6 +17,7 @@ type ReadState =
 type Filters = Readonly<{ q: string; action: string; from: string; to: string }>;
 const empty: Filters = { q: "", action: "", from: "", to: "" };
 const labels: Record<string, string> = { created: "إنشاء", updated: "تعديل", migrated: "نقل بيانات" };
+const currentPartnerSessionKey = () => partnerSetupSessionKey(currentIdentityState());
 
 function localDate(raw: string) {
   return new Intl.DateTimeFormat("ar-YE", { timeZone: "Asia/Aden", dateStyle: "medium", timeStyle: "short" }).format(new Date(raw));
@@ -22,15 +25,19 @@ function localDate(raw: string) {
 
 export function PartnerCatalogActivity() {
   const scope = usePartnerStoreScope();
-  // Remount query, cursor and visible results whenever the selected Store changes.
-  return <PartnerCatalogActivityForStore key={scope.selectedStore?.id ?? ""} scope={scope} />;
+  const sessionKey = useSyncExternalStore(subscribeIdentitySession, currentPartnerSessionKey, () => "");
+  // Remount filters, pagination and audit details for each Store AND authenticated session.
+  return <PartnerCatalogActivityForStore key={JSON.stringify([sessionKey, scope.selectedStore?.id ?? ""])} scope={scope} sessionKey={sessionKey} />;
 }
 
-function PartnerCatalogActivityForStore({ scope }: Readonly<{ scope: ReturnType<typeof usePartnerStoreScope> }>) {
+function PartnerCatalogActivityForStore({ scope, sessionKey }: Readonly<{ scope: ReturnType<typeof usePartnerStoreScope>; sessionKey: string }>) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const { selectedStore, state: scopeState } = scope;
   const storeID = selectedStore?.id ?? "";
+  const scopeKey = JSON.stringify([sessionKey, storeID]);
+  const activeScopeKey = useRef(scopeKey);
+  activeScopeKey.current = scopeKey;
   const allowed = Boolean(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("catalog")));
   const [draft, setDraft] = useState<Filters>(empty);
   const [filters, setFilters] = useState<Filters>(empty);
@@ -38,25 +45,31 @@ function PartnerCatalogActivityForStore({ scope }: Readonly<{ scope: ReturnType<
   const [previous, setPrevious] = useState<readonly string[]>([]);
   const [retry, setRetry] = useState(0);
   const [read, setRead] = useState<ReadState>({ kind: "loading" });
+  const [visibleScopeKey, setVisibleScopeKey] = useState("");
   const [expanded, setExpanded] = useState("");
   const [inputError, setInputError] = useState("");
 
   useFocusEffect(useCallback(() => {
     // Retain the explicit retry generation so the active screen re-reads DSH on demand.
     void retry;
-    if (!allowed || !storeID) return;
+    if (!allowed || !storeID || !sessionKey || currentPartnerSessionKey() !== sessionKey) return;
     let active = true;
     setRead({ kind: "loading" });
+    setVisibleScopeKey("");
+    const current = () => {
+      return active && Boolean(sessionKey) && currentPartnerSessionKey() === sessionKey &&
+        activeScopeKey.current === scopeKey;
+    };
     void listOwnStoreCatalogActivity(storeID, {
       q: filters.q, action: filters.action, cursor, limit: 20,
       from: catalogActivityDateBound(filters.from, false), to: catalogActivityDateBound(filters.to, true),
     }).then(page => {
-      if (active) setRead({ kind: "ready", page });
+      if (current()) { setRead({ kind: "ready", page }); setVisibleScopeKey(scopeKey); }
     }).catch(() => {
-      if (active) setRead({ kind: "error" });
+      if (current()) setRead({ kind: "error" });
     });
     return () => { active = false; };
-  }, [allowed, storeID, filters, cursor, retry]));
+  }, [allowed, storeID, filters, cursor, retry, sessionKey, scopeKey]));
 
   const apply = () => {
     if (!validCatalogActivityDay(draft.from) || !validCatalogActivityDay(draft.to) || (draft.from && draft.to && draft.from > draft.to)) {
@@ -70,7 +83,8 @@ function PartnerCatalogActivityForStore({ scope }: Readonly<{ scope: ReturnType<
     setFilters(draft);
     setRetry(value => value + 1);
   };
-  const page = read.kind === "ready" ? read.page : null;
+  const visible = allowed && Boolean(sessionKey) && currentPartnerSessionKey() === sessionKey && visibleScopeKey === scopeKey;
+  const page = visible && read.kind === "ready" ? read.page : null;
   return <View style={styles.container} accessibilityLabel="سجل تغييرات عروض المتجر">
     <Text accessibilityRole="header" style={styles.sectionTitle}>سجل تغييرات عروض المتجر</Text>
     <Text style={styles.muted}>يعرض العمليات المسجلة على أسعار وعروض المتجر المحدد، وليس جميع أنشطة الحساب.</Text>
@@ -78,7 +92,7 @@ function PartnerCatalogActivityForStore({ scope }: Readonly<{ scope: ReturnType<
     {scopeState.kind === "error" ? <Text style={styles.error}>تعذر تحديد المتجر الحالي. أعد فتح الصفحة بعد استعادة الاتصال.</Text> : null}
     {scopeState.kind === "ready" && !selectedStore ? <Text style={styles.muted}>لا توجد متاجر مرتبطة بحسابك.</Text> : null}
     {selectedStore && !allowed ? <Text style={styles.error}>ليس لديك إذن عرض تغييرات الكتالوج في هذا المتجر.</Text> : null}
-    {selectedStore && allowed ? <>
+    {selectedStore && allowed && Boolean(sessionKey) && currentPartnerSessionKey() === sessionKey ? <>
       <View style={styles.card}>
         <Text style={styles.value}>المتجر: {selectedStore.name}</Text>
         <Text style={styles.metaLabel}>بحث باسم المنتج أو معرف المنفذ</Text>

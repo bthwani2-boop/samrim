@@ -6,14 +6,16 @@ import * as Crypto from "expo-crypto";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from "react-native";
-import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { isOfferStockout } from "../store-offer/inventory-stockout";
 import { PartnerInventorySummary } from "./partner-inventory-summary";
+import { partnerSetupSessionKey } from "./partner-setup-session-scope";
 
 export type PerformanceReportView = "orders" | "catalog";
 const PAGE_SIZE = 25;
+const currentPartnerSessionKey = () => partnerSetupSessionKey(currentIdentityState());
 
 function dateLabel(iso: string): string {
   const timestamp = Date.parse(iso);
@@ -30,6 +32,8 @@ function asCsv(rows: readonly (readonly string[])[]): string {
 export function PartnerPerformanceReport({ store, view }: { store: PartnerAccessibleStore; view: PerformanceReportView }) {
   const theme = useAppearanceTheme();
   const router = useRouter();
+  const sessionKey = useSyncExternalStore(subscribeIdentitySession, currentPartnerSessionKey, () => "");
+  const scopeKey = JSON.stringify([sessionKey, store.id, view]);
   const styles = useMemo(() => StyleSheet.create({
     screen: { gap: 14 },
     heading: { ...typography.titleMd, color: theme.color, fontWeight: "800" },
@@ -56,8 +60,10 @@ export function PartnerPerformanceReport({ store, view }: { store: PartnerAccess
   const [cursor, setCursor] = useState("");
   const [history, setHistory] = useState<string[]>([]);
   const [nextCursor, setNextCursor] = useState("");
-  const [orders, setOrders] = useState<ReadonlyArray<Order>>([]);
-  const [offers, setOffers] = useState<ReadonlyArray<CatalogStoreOffer>>([]);
+  const [storedOrders, setOrders] = useState<ReadonlyArray<Order>>([]);
+  const [storedOffers, setOffers] = useState<ReadonlyArray<CatalogStoreOffer>>([]);
+  const [visibleScopeKey, setVisibleScopeKey] = useState("");
+  const [visibleSummaryScopeKey, setVisibleSummaryScopeKey] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [copyStatus, setCopyStatus] = useState("");
@@ -65,81 +71,87 @@ export function PartnerPerformanceReport({ store, view }: { store: PartnerAccess
   const [exportProgress, setExportProgress] = useState(0);
   const [exportStatus, setExportStatus] = useState("");
   const [exportError, setExportError] = useState("");
-  const activeScope = useRef({ storeId: store.id, view });
-  activeScope.current = { storeId: store.id, view };
+  const activeScopeKey = useRef(scopeKey);
+  activeScopeKey.current = scopeKey;
+  const exportEpoch = useRef(0);
   const [retry, setRetry] = useState(0);
   const [summaryPeriod, setSummaryPeriod] = useState<"7d" | "30d" | "all">("30d");
-  const [orderSummary, setOrderSummary] = useState<PartnerStoreOrderSummary | null>(null);
+  const [storedOrderSummary, setOrderSummary] = useState<PartnerStoreOrderSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState("");
   const allowed = store.owned || store.permissions.includes(view === "orders" ? "orders" : "catalog");
+
+  // A-B-A Store/view changes or leaving the screen must cancel an in-flight CSV export.
+  useFocusEffect(useCallback(() => {
+    // Capture this focused Store/view/session to invalidate older exports.
+    activeScopeKey.current = scopeKey;
+    exportEpoch.current += 1;
+    return () => { exportEpoch.current += 1; };
+  }, [scopeKey]));
 
   useFocusEffect(useCallback(() => {
     // An explicit retry re-fetches the same Store and page after a failed request.
     void retry;
     let active = true;
-    setOrders([]); setOffers([]); setNextCursor(""); setError(""); setCopyStatus("");
-    if (!allowed) { setLoading(false); return () => { active = false; }; }
+    setOrders([]); setOffers([]); setVisibleScopeKey(""); setNextCursor(""); setError(""); setCopyStatus("");
+    if (!allowed || !sessionKey) { setLoading(false); return () => { active = false; }; }
     setLoading(true);
     const base = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
     if (!base) { setLoading(false); setError("عنوان خدمة البيانات غير متاح."); return () => { active = false; }; }
     const api = createDshMobileClient(base, { cryptoRandomUUID: () => Crypto.randomUUID() });
-    const identity = currentIdentityState();
-    const actorID = identity.kind === "authenticated" ? identity.identity.subject : "";
     const stillCurrent = () => {
-      const latest = currentIdentityState();
-      return active && !!actorID && latest.kind === "authenticated" && latest.identity.subject === actorID;
+      return active && Boolean(sessionKey) && currentPartnerSessionKey() === sessionKey &&
+        activeScopeKey.current === scopeKey;
     };
     void (async () => {
-      if (!actorID) throw new Error("PARTNER_SESSION_REQUIRED");
       const token = await getUsableIdentityAccessToken();
+      if (!stillCurrent()) return;
       if (view === "orders") {
         const response = await api.listPartnerOrders(token, { storeIds: [store.id], limit: PAGE_SIZE, ...(cursor ? { cursor } : {}) });
-        if (stillCurrent()) { setOrders(response.orders.filter(order => order.storeId === store.id)); setNextCursor(response.nextCursor ?? ""); }
+        if (stillCurrent()) { setOrders(response.orders.filter(order => order.storeId === store.id)); setNextCursor(response.nextCursor ?? ""); setVisibleScopeKey(scopeKey); }
       } else {
         const response = await api.readOwnStoreOffers(token, store.id, PAGE_SIZE, cursor);
-        if (stillCurrent()) { setOffers(response.offers.filter(offer => offer.storeId === store.id)); setNextCursor(response.nextCursor ?? ""); }
+        if (stillCurrent()) { setOffers(response.offers.filter(offer => offer.storeId === store.id)); setNextCursor(response.nextCursor ?? ""); setVisibleScopeKey(scopeKey); }
       }
       if (stillCurrent()) setLoading(false);
     })().catch(() => { if (stillCurrent()) { setError("تعذر قراءة التقرير. تحقق من الاتصال والصلاحيات ثم أعد المحاولة."); setLoading(false); } });
     return () => { active = false; };
-  }, [store.id, view, cursor, allowed, retry]));
+  }, [store.id, view, cursor, allowed, retry, sessionKey, scopeKey]));
 
   useFocusEffect(useCallback(() => {
     // Retry deliberately re-reads the same Store and selected period.
     void retry;
     let active = true;
-    setOrderSummary(null); setSummaryError("");
-    if (view !== "orders" || !allowed) { setSummaryLoading(false); return () => { active = false; }; }
+    setOrderSummary(null); setVisibleSummaryScopeKey(""); setSummaryError("");
+    if (view !== "orders" || !allowed || !sessionKey) { setSummaryLoading(false); return () => { active = false; }; }
     setSummaryLoading(true);
     const base = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
     if (!base) { setSummaryLoading(false); setSummaryError("تعذر الوصول إلى خدمة مؤشرات الطلبات."); return () => { active = false; }; }
     const api = createDshMobileClient(base, { cryptoRandomUUID: () => Crypto.randomUUID() });
-    const identity = currentIdentityState();
-    const actorID = identity.kind === "authenticated" ? identity.identity.subject : "";
     const stillCurrent = () => {
-      const latest = currentIdentityState();
-      return active && !!actorID && latest.kind === "authenticated" && latest.identity.subject === actorID;
+      return active && Boolean(sessionKey) && currentPartnerSessionKey() === sessionKey &&
+        activeScopeKey.current === scopeKey;
     };
-    if (!actorID) {
-      setSummaryError("يلزم تسجيل الدخول لقراءة إجماليات المتجر.");
-      setSummaryLoading(false);
-      return () => { active = false; };
-    }
     void (async () => {
       const token = await getUsableIdentityAccessToken();
+      if (!stillCurrent()) return;
       const response = await api.readPartnerStoreOrderSummary(token, store.id, summaryPeriod);
       if (!response.summary || response.summary.storeId !== store.id || response.summary.period !== summaryPeriod) {
         throw new Error("DSH_PARTNER_ORDER_SUMMARY_SCOPE_MISMATCH");
       }
       if (stillCurrent()) {
         setOrderSummary(response.summary);
+        setVisibleSummaryScopeKey(scopeKey);
         setSummaryLoading(false);
       }
     })().catch(() => { if (stillCurrent()) { setSummaryError("تعذر قراءة إجماليات المتجر؛ أعد المحاولة."); setSummaryLoading(false); } });
     return () => { active = false; };
-  }, [store.id, view, allowed, summaryPeriod, retry]));
+  }, [store.id, view, allowed, summaryPeriod, retry, sessionKey, scopeKey]));
 
+  const visible = allowed && Boolean(sessionKey) && currentPartnerSessionKey() === sessionKey && visibleScopeKey === scopeKey;
+  const orders = visible ? storedOrders : [];
+  const offers = visible ? storedOffers : [];
+  const orderSummary = visible && visibleSummaryScopeKey === scopeKey ? storedOrderSummary : null;
   const visibleCount = view === "orders" ? orders.length : offers.length;
   const summary = view === "orders" ? [
     { label: "طلبات الصفحة الحالية", value: String(orders.length) },
@@ -155,18 +167,16 @@ export function PartnerPerformanceReport({ store, view }: { store: PartnerAccess
     : [["المنتج", "النوع", "حالة النشر", "التوفر", "السعر"], ...offers.map(item => [item.productName, item.variantTitle, item.publicationState === "published" ? "منشور" : item.publicationState === "draft" ? "مسودة" : "مخفي", item.availability ? "متاح" : "غير متاح", formatMoney(item.priceMinor, "YER")])];
 
   const copyReport = () => {
+    if (!visible || loading || error) return;
     void Clipboard.setStringAsync(asCsv(exportRows)).then(() => setCopyStatus("تم نسخ بيانات الصفحة الحالية بصيغة CSV."))
       .catch(() => setCopyStatus("تعذر نسخ البيانات، حاول مجددًا."));
   };
   async function downloadCompleteReport() {
-    if (exportBusy || !allowed) return;
-    const selected = currentIdentityState();
-    const actorId = selected.kind === "authenticated" ? selected.identity.subject : "";
+    if (exportBusy || !allowed || !sessionKey) return;
+    const startedExportEpoch = exportEpoch.current;
     const isCurrent = () => {
-      const latest = currentIdentityState();
-      return Boolean(actorId) && latest.kind === "authenticated" &&
-        latest.identity.subject === actorId &&
-        activeScope.current.storeId === store.id && activeScope.current.view === view;
+      return Boolean(sessionKey) && currentPartnerSessionKey() === sessionKey &&
+        activeScopeKey.current === scopeKey && exportEpoch.current === startedExportEpoch;
     };
     setExportBusy(true);
     setExportError("");
@@ -246,9 +256,9 @@ export function PartnerPerformanceReport({ store, view }: { store: PartnerAccess
       </Pressable>
     </View>
     <Text style={styles.caption}>نسخ CSV يخص الصفحة المعروضة، أما تنزيل CSV الكامل فيجمع جميع صفحات المتجر ضمن حد حماية الجهاز. فترة مؤشرات الإجماليات لا تُقيّد ملف التصدير. قيم الطلبات تشغيلية لدى DSH وليست إيرادات أو تسويات WLT.</Text>
-    {view === "catalog" && allowed ? <PartnerInventorySummary store={store} /> : null}
-    {exportError ? <Text accessibilityRole="alert" style={styles.warning}>{exportError}</Text> : null}
-    {exportStatus ? <Text accessibilityLiveRegion="polite" style={styles.caption}>{exportStatus}</Text> : null}
+    {view === "catalog" && allowed ? <PartnerInventorySummary key={store.id} store={store} /> : null}
+    {visible && exportError ? <Text accessibilityRole="alert" style={styles.warning}>{exportError}</Text> : null}
+    {visible && exportStatus ? <Text accessibilityLiveRegion="polite" style={styles.caption}>{exportStatus}</Text> : null}
     {view === "orders" && allowed ? <View style={styles.panel} accessibilityLabel="الإجماليات التشغيلية للمتجر">
       <Text accessibilityRole="header" style={styles.heading}>إجماليات الطلبات من الخادم</Text>
       <View style={styles.periodRow}>
@@ -279,7 +289,7 @@ export function PartnerPerformanceReport({ store, view }: { store: PartnerAccess
     {!allowed ? <Text style={styles.warning}>لا تملك صلاحية قراءة هذا التقرير للمتجر المحدد.</Text> : null}
     {loading ? <View style={styles.panel}><ActivityIndicator color={theme.brandAction}/><Text style={styles.muted}>جارٍ قراءة التقرير...</Text></View> : null}
     {error ? <Pressable accessibilityRole="button" onPress={() => setRetry(value => value + 1)} style={styles.panel}><Text style={styles.warning}>{error} · إعادة المحاولة</Text></Pressable> : null}
-    {!loading && !error && allowed ? <>
+    {!loading && !error && allowed && visible ? <>
       <View style={styles.cards}>{summary.map(item => <View key={item.label} style={styles.card}><Text style={styles.caption}>{item.label}</Text><Text style={styles.value}>{item.value}</Text></View>)}</View>
       <View style={styles.panel}>
         <Text style={styles.heading}>السجلات ({visibleCount.toLocaleString("ar-YE")})</Text>
@@ -307,7 +317,7 @@ export function PartnerPerformanceReport({ store, view }: { store: PartnerAccess
           <Text style={styles.buttonText}>التالي</Text>
         </Pressable>
       </View>
-      {copyStatus ? <Text accessibilityLiveRegion="polite" style={styles.caption}>{copyStatus}</Text> : null}
+      {visible && copyStatus ? <Text accessibilityLiveRegion="polite" style={styles.caption}>{copyStatus}</Text> : null}
     </> : null}
   </View>;
 }
