@@ -666,6 +666,9 @@ paths:
   /dsh/operations/stores/{storeId}/operational-availability:
     $ref: "./paths/store-availability.yaml#/paths/~1dsh~1operations~1stores~1{storeId}~1operational-availability"
 
+  /dsh/partner/stores/{storeId}/independent-publication/submit:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1independent-publication~1submit"
+
   /dsh/partner/stores/{storeId}/independent-customer-policy/draft:
     $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1independent-customer-policy~1draft"
 

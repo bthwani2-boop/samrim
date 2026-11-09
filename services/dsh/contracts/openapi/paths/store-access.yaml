@@ -1,4 +1,46 @@
 paths:
+  /dsh/partner/stores/{storeId}/independent-publication/submit:
+    post:
+      operationId: submitPartnerIndependentPublicationReview
+      summary: Authenticated independent Store owner submits for an Operator review, never publishes
+      description: Requires the exact currently approved Hosting Terms version and explicit owner acceptance. DSH atomically enforces Store ownership, review state, policy draft, expected publication version, idempotency and audit. SUSPENDED Stores cannot self-resubmit.
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 16, maxLength: 128 } }
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedVersion, hostingTermsVersion, termsAccepted]
+              properties:
+                expectedVersion: { type: integer, minimum: 1 }
+                hostingTermsVersion: { type: string, minLength: 1, maxLength: 128 }
+                termsAccepted: { type: boolean, const: true }
+      responses:
+        "200":
+          description: Private review-only publication state with idempotent replay receipt
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [storeId, state, version, idempotentReplay]
+                properties:
+                  storeId: { type: string }
+                  state: { type: string, const: NEEDS_REVIEW }
+                  version: { type: integer, minimum: 2 }
+                  idempotentReplay: { type: boolean }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
   /dsh/partner/stores:
     get:
       operationId: listPartnerAccessibleStores
