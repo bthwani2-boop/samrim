@@ -22,7 +22,9 @@ export function buildPublicStoreShareURL(
   try {
     const origin = new URL(publicOrigin.trim());
     const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(origin.hostname);
-    const publicHTTPS = origin.protocol === "https:" && !loopback;
+    // Public shared links require a DNS host; URL normalizes alternate IP encodings.
+    const literalIP = /^\d+(?:\.\d+){3}$/.test(origin.hostname) || origin.hostname.startsWith("[");
+    const publicHTTPS = origin.protocol === "https:" && !loopback && !literalIP;
     const localPreview = allowLocalPreview && origin.protocol === "http:" && loopback;
     if (!publicHTTPS && !localPreview) return null;
     if (origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) return null;

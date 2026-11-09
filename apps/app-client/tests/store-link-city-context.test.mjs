@@ -47,6 +47,17 @@ test("public product links reject oversized IDs and control characters before sh
     "https://bthwani.example/store/store_1?serviceCityId=city_sanaa&productId=product_1");
 });
 
+test("public Store shares reject IP-literal origins instead of advertising internal network URLs", () => {
+  for (const origin of [
+    "https://127.0.0.2", "https://10.0.0.1", "https://169.254.169.254",
+    "https://[fd00::1]", "https://[::ffff:127.0.0.2]", "https://8.8.8.8",
+  ]) {
+    assert.equal(buildPublicStoreShareURL("store_1", "city_sanaa", origin), null, origin);
+  }
+  assert.equal(buildPublicStoreShareURL("store_1", "city_sanaa", "https://bthwani.example"),
+    "https://bthwani.example/store/store_1?serviceCityId=city_sanaa");
+});
+
 test("Missing or insecure origin without development authorization preserves the native deep-link fallback", () => {
   for (const origin of [undefined, "", "http://127.0.0.1:18101", "http://outside.example", "https://localhost:18101", "https://user:pass@example.com", "https://example.com/path", "https://example.com?x=1"]) {
     assert.equal(buildPublicStoreShareURL("store_1", "city_sanaa", origin), null, String(origin));
