@@ -320,19 +320,19 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
   >
     <View style={styles.content}>
       <View style={styles.masthead}>
-        <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى سوق بثواني" onPress={() => router.push("/home" as Href)} style={styles.brandButton}>
+        {isMarketplace ? <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى سوق بثواني" onPress={() => router.push("/home" as Href)} style={styles.brandButton}>
           <Text style={styles.brand}>بثواني</Text>
-        </Pressable>
+        </Pressable> : <Text style={styles.brand}>بثواني</Text>}
         <View style={styles.navigation} accessibilityLabel="أقسام موقع المتجر">
           <Pressable accessibilityRole="button" onPress={() => jumpTo(0)} style={styles.navItem}><Text style={styles.navText}>الرئيسية</Text></Pressable>
           <Pressable accessibilityRole="button" onPress={() => jumpTo(productsOffset.current)} style={styles.navItem}><Text style={styles.navText}>المنتجات</Text></Pressable>
           <Pressable accessibilityRole="button" onPress={() => jumpTo(contactOffset.current)} style={styles.navItem}><Text style={styles.navText}>التواصل</Text></Pressable>
         </View>
         {isMarketplace ? <BthwaniButton label={"سلة المتجر" + marketCitySuffix} busy={openingMarket} onPress={() => void openMarketRoute(clientStorefrontCartPath(storeId, selectedCityID ?? "", productID) as Href)} /> : <Text style={styles.secondary}>الطلب المباشر غير متاح حتى اعتماد خدمة المتجر.</Text>}
-        <BthwaniButton label={signedIn ? "حسابي" : "تسجيل الدخول"} variant="secondary"
-          onPress={() => router.push((signedIn ? "/account" : siteLoginPath) as Href)} />
+        {isMarketplace ? <BthwaniButton label={signedIn ? "حسابي" : "تسجيل الدخول"} variant="secondary"
+          onPress={() => router.push((signedIn ? "/account" : siteLoginPath) as Href)} /> : null}
       </View>
-      {marketCityError ? <Text accessibilityRole="alert" style={styles.secondary}>تعذر اختيار مدينة المتجر. أعد المحاولة.</Text> : null}
+      {isMarketplace && marketCityError ? <Text accessibilityRole="alert" style={styles.secondary}>تعذر اختيار مدينة المتجر. أعد المحاولة.</Text> : null}
 
       {!productID ? <View accessibilityLabel={"واجهة متجر " + store.name} style={styles.hero}>
         {cover && !brokenImages.has(cover)

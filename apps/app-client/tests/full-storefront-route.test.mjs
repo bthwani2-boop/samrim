@@ -36,6 +36,13 @@ test("one Client Web site reads the separately approved independent publication 
   assert.doesNotMatch(site, /PartnerIndependentStorePreview|independent-preview/);
 });
 
+test("an independent public website has no marketplace home or account navigation", () => {
+  assert.match(site, /\{isMarketplace \? <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى سوق بثواني"/);
+  assert.match(site, /: <Text style=\{styles\.brand\}>بثواني<\/Text>\}/);
+  assert.match(site, /\{isMarketplace \? <BthwaniButton label=\{signedIn \? "حسابي" : "تسجيل الدخول"\}/);
+  assert.match(site, /\{isMarketplace && marketCityError \?/);
+});
+
 test("returning to the Store site rechecks DSH and cancels stale reads", () => {
   const callbackSource = site.match(/useFocusEffect\(useCallback\((\(\) => \{[\s\S]*?\}), \[load\]\)\);/)?.[1];
   assert.ok(callbackSource, "Store route focus must revalidate publication and catalog");
