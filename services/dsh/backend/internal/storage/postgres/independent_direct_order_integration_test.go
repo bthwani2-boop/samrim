@@ -434,7 +434,7 @@ func TestIndependentDirectOrderIsolatedPersistenceGuards(t *testing.T) {
 			productA.Product.ID, productA.Product.Variants[0].ID)
 
 		t.Run("reviewed pickup persists one order and rejects stale confirmation", func(t *testing.T) {
-			exerciseIndependentPickupWriter(t, ctx, db, storeA, ownerA, offerA.Offer.ID, offerA.Offer.Version)
+			exerciseIndependentPickupWriter(t, ctx, db, storeA, storeB, ownerA, offerA.Offer.ID, offerA.Offer.Version)
 		})
 
 		// Only the *new* direct Order is gated by the current relationship.
@@ -455,7 +455,7 @@ func TestIndependentDirectOrderIsolatedPersistenceGuards(t *testing.T) {
 	}, 5*time.Minute)
 }
 
-func exerciseIndependentPickupWriter(t *testing.T, ctx context.Context, db *sql.DB, storeID, ownerID, offerID string, offerVersion int) {
+func exerciseIndependentPickupWriter(t *testing.T, ctx context.Context, db *sql.DB, storeID, marketplaceStoreID, ownerID, offerID string, offerVersion int) {
 	t.Helper()
 	const termsVersion, policyVersion = "qa-hosting-v1", "qa-merchant-v1"
 	// Only this disposable database has synthetic reviewed publication and media.
@@ -555,6 +555,89 @@ func exerciseIndependentPickupWriter(t *testing.T, ctx context.Context, db *sql.
 		request.GuestName, first.OrderID).Scan(&orders, &lines, &audit); err != nil || orders != 1 || lines != 1 || audit != 1 {
 		t.Fatalf("unexpected persisted order effects: orders=%d lines=%d audit=%d err=%v", orders, lines, audit, err)
 	}
+
+	t.Run("private partner orders: one Store, one CAS and one audit on concurrent retry", func(t *testing.T) {
+		page, err := postgres.ListIndependentOrdersForPartner(ctx, db, storeID, ownerID, 1, "")
+		if err != nil || len(page.Orders) != 1 || page.Orders[0].OrderID != first.OrderID ||
+			page.Orders[0].StoreID != storeID || len(page.Orders[0].Lines) != 1 || page.NextCursor == "" {
+			t.Fatalf("owned newest order page invalid: %+v err=%v", page, err)
+		}
+		// Other isolated QA fixtures may create additional earlier orders.
+		// Walk every page instead of assuming the next page is the oldest.
+		var expectedCount int
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM dsh.independent_direct_orders
+			WHERE store_id=$1 AND fulfillment_mode='CUSTOMER_PICKUP'`, storeID).Scan(&expectedCount); err != nil || expectedCount < 2 {
+			t.Fatalf("invalid isolated Store order count: %d err=%v", expectedCount, err)
+		}
+		seen := map[string]bool{first.OrderID: true}
+		for cursor := page.NextCursor; cursor != ""; {
+			if len(seen) >= expectedCount {
+				t.Fatalf("Store cursor did not terminate after %d orders", len(seen))
+			}
+			older, err := postgres.ListIndependentOrdersForPartner(ctx, db, storeID, ownerID, 1, cursor)
+			if err != nil || len(older.Orders) != 1 || older.Orders[0].StoreID != storeID {
+				t.Fatalf("Store-scoped cursor leaked or missed older order: %+v err=%v", older, err)
+			}
+			if seen[older.Orders[0].OrderID] {
+				t.Fatalf("Store-scoped cursor returned duplicate order %q", older.Orders[0].OrderID)
+			}
+			seen[older.Orders[0].OrderID] = true
+			cursor = older.NextCursor
+		}
+		if len(seen) != expectedCount || !seen["valid-test-order"] {
+			t.Fatalf("Store cursor skipped orders: got %d/%d, historic order present=%v",
+				len(seen), expectedCount, seen["valid-test-order"])
+		}
+		if _, err := postgres.ListIndependentOrdersForPartner(ctx, db, storeID, "foreign-owner", 10, ""); !errors.Is(err, postgres.ErrOrderNotFound) {
+			t.Fatalf("foreign actor must not list owner Store: %v", err)
+		}
+		if _, err := postgres.ListIndependentOrdersForPartner(ctx, db, "direct-integration-b", "direct-owner-b", 10, ""); !errors.Is(err, postgres.ErrOrderNotFound) {
+			t.Fatalf("marketplace Store must not have independent order access: %v", err)
+		}
+		if _, err := postgres.ListIndependentOrdersForPartner(ctx, db, storeID, ownerID, 10, page.NextCursor+"!"); !errors.Is(err, postgres.ErrIndependentPartnerOrderInvalid) {
+			t.Fatalf("corrupted cursor must reject: %v", err)
+		}
+		change := postgres.IndependentPartnerOrderTransition{State: "ACCEPTED", ExpectedVersion: 1}
+		if _, err := postgres.TransitionIndependentOrderForPartner(ctx, db, storeID, first.OrderID, "foreign-owner", change); !errors.Is(err, postgres.ErrOrderNotFound) {
+			t.Fatalf("foreign actor must not mutate owner Order: %v", err)
+		}
+		type outcome struct {
+			status postgres.IndependentDirectOrderStatus
+			err    error
+		}
+		results := make([]outcome, 2)
+		var both sync.WaitGroup
+		for i := range results {
+			both.Add(1)
+			go func(i int) {
+				defer both.Done()
+				results[i].status, results[i].err = postgres.TransitionIndependentOrderForPartner(ctx, db, storeID, first.OrderID, ownerID, change)
+			}(i)
+		}
+		both.Wait()
+		for i, result := range results {
+			if result.err != nil || result.status.StoreID != storeID || result.status.OrderID != first.OrderID ||
+				result.status.State != "ACCEPTED" || result.status.Version != 2 {
+				t.Fatalf("concurrent same-actor retry %d failed: %+v", i, result)
+			}
+		}
+		var auditCount, version int
+		var state string
+		if err := db.QueryRowContext(ctx, `SELECT
+			(SELECT count(*) FROM dsh.independent_direct_order_audit WHERE order_id=$1 AND event_type='partner_transition'),
+			(SELECT version FROM dsh.independent_direct_orders WHERE id=$1),
+			(SELECT state FROM dsh.independent_direct_orders WHERE id=$1)`, first.OrderID).
+			Scan(&auditCount, &version, &state); err != nil || auditCount != 1 || version != 2 || state != "ACCEPTED" {
+			t.Fatalf("CAS/audit not atomic: audit=%d version=%d state=%s err=%v", auditCount, version, state, err)
+		}
+		if _, err := postgres.TransitionIndependentOrderForPartner(ctx, db, storeID, first.OrderID, ownerID,
+			postgres.IndependentPartnerOrderTransition{State: "REJECTED", ExpectedVersion: 1, Reason: "competing decision"}); !errors.Is(err, postgres.ErrIndependentPartnerOrderConflict) {
+			t.Fatalf("conflicting stale transition must reject: %v", err)
+		}
+	})
+	t.Run("private partner HTTP and revocable staff grants", func(t *testing.T) {
+		exerciseIndependentPartnerOrderHTTPOnIsolatedDB(t, ctx, db, storeID, marketplaceStoreID, ownerID, first.OrderID)
+	})
 }
 
 // exerciseIndependentDirectOrderConcurrentDraftAndIdempotencySQL verifies the

@@ -3,10 +3,11 @@ import { useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { OrderManagement } from "../order-management/order-management";
+import { IndependentPickupOrders } from "../order-management/independent-pickup-orders";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 import { usePartnerStoreScope } from "./partner-store-scope-context";
 import { PartnerStoreScopeSelector } from "./partner-store-scope-selector";
-import { isMarketplaceStore } from "../../shell/partner-authority";
+import { canUseStoreOrders, isMarketplaceStore } from "../../shell/partner-authority";
 
 type OrdersScope = "SELECTED_STORE" | "ALL_AUTHORIZED";
 
@@ -19,9 +20,11 @@ export function PartnerOrders() {
   const routeScope = Array.isArray(rawScope) ? rawScope[0] : rawScope;
   const [scope, setScope] = useState<OrdersScope>(routeScope === "all" ? "ALL_AUTHORIZED" : "SELECTED_STORE");
   useEffect(() => { setScope(routeScope === "all" ? "ALL_AUTHORIZED" : "SELECTED_STORE"); }, [routeScope]);
-  const permittedStores = stores.filter((store) => isMarketplaceStore(store) && (store.owned || store.permissions.includes("orders")));
-  const canManageOrders = Boolean(selectedStore && isMarketplaceStore(selectedStore) && (selectedStore.owned || selectedStore.permissions.includes("orders")));
-  const aggregateMode = scope === "ALL_AUTHORIZED" && permittedStores.length > 1;
+  const permittedStores = stores.filter(canUseStoreOrders);
+  const canManageOrders = Boolean(selectedStore && canUseStoreOrders(selectedStore));
+  const showMarketAggregate = Boolean(selectedStore && isMarketplaceStore(selectedStore)) &&
+    permittedStores.filter(isMarketplaceStore).length > 1;
+  const aggregateMode = scope === "ALL_AUTHORIZED" && showMarketAggregate;
   const targetStorePermitted = permittedStores.some(store => store.id === targetStoreId);
 
   // Never change the store implicitly. Only a contextual order deep link can
@@ -32,14 +35,15 @@ export function PartnerOrders() {
   }, [state.kind, targetStoreId, selectedStore?.id, targetStorePermitted, selectStore]);
 
   return <View style={styles.container}>
-    {permittedStores.length > 1 ? <View style={styles.choiceRow} accessibilityLabel="نطاق الطلبات">
+    {showMarketAggregate ? <View style={styles.choiceRow} accessibilityLabel="نطاق الطلبات">
       <BthwaniChip label="المتجر المختار" onPress={() => setScope("SELECTED_STORE")} selected={!aggregateMode} />
-      <BthwaniChip label="جميع المتاجر" onPress={() => setScope("ALL_AUTHORIZED")} selected={aggregateMode} />
+      <BthwaniChip label="جميع متاجر السوق" onPress={() => setScope("ALL_AUTHORIZED")} selected={aggregateMode} />
     </View> : null}
-    {!aggregateMode && (permittedStores.length > 1 || !canManageOrders) ? <PartnerStoreScopeSelector requiredPermissions={["orders"]} marketplaceOnly /> : null}
-    {!aggregateMode && selectedStore && canManageOrders ? <>
-      <OrderManagement key={"orders:" + selectedStore.id} storeId={selectedStore.id} />
-    </> : null}
+    {!aggregateMode && (permittedStores.length > 1 || !canManageOrders) ? <PartnerStoreScopeSelector eligible={canUseStoreOrders} /> : null}
+    {!aggregateMode && selectedStore && canManageOrders ? selectedStore.relationModel === "INDEPENDENT_STORE"
+      ? <IndependentPickupOrders key={selectedStore.id} storeID={selectedStore.id} canAdvance={selectedStore.owned || selectedStore.permissions.includes("fulfillment")} />
+      : <OrderManagement key={"orders:" + selectedStore.id} storeId={selectedStore.id} />
+      : null}
     {aggregateMode ? <OrderManagement key="all-authorized" /> : null}
     {state.kind === "ready" && targetStoreId && !permittedStores.some(store => store.id === targetStoreId) ? <View style={styles.card}><Text style={styles.muted}>لا توجد صلاحية لطلبات هذا المتجر.</Text></View> : null}
     {state.kind === "ready" && !permittedStores.length ? <View style={styles.card}><Text style={styles.muted}>لا توجد متاجر مخوّل لك استقبال طلباتها.</Text></View> : null}

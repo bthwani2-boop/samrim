@@ -6,7 +6,6 @@ import { Linking, Platform, Share, Text, View } from "react-native";
 
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 import { buildPartnerStorefrontURL, buildPartnerStoreWhatsAppURL } from "./partner-storefront-url";
-import { PartnerIndependentStorePreview } from "./partner-independent-store-preview";
 
 export function PartnerStorefrontLink({ store }: Readonly<{ store: PartnerAccessibleStore }>) {
   const theme = useAppearanceTheme();
@@ -45,9 +44,7 @@ export function PartnerStorefrontLink({ store }: Readonly<{ store: PartnerAccess
 
   return <View style={styles.card}>
     <Text style={styles.value}>رابط متجر {store.name}</Text>
-    {store.relationModel === "INDEPENDENT_STORE"
-      ? <PartnerIndependentStorePreview key={store.id} store={store} />
-      : store.publicationState !== "published"
+    {store.publicationState !== "published"
       ? <Text style={styles.muted}>سيصبح رابط المتجر متاحًا بعد اعتماد النشر.</Text>
       : link ? <>
         <Text selectable accessibilityLabel={link.previewOnly ? "رابط المعاينة المحلية" : "رابط المتجر العام"} style={styles.muted}>{link.url}</Text>

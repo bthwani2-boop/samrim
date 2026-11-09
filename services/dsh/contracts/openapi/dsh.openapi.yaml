@@ -1077,6 +1077,10 @@ paths:
 
   /dsh/partner/orders:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1partner~1orders"
+  /dsh/partner/stores/{storeId}/direct-orders:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1direct-orders"
+  /dsh/partner/stores/{storeId}/direct-orders/{orderId}:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1direct-orders~1{orderId}"
 
   /dsh/stores/{storeId}/orders/{orderId}:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders~1{orderId}"
@@ -10012,6 +10016,93 @@ components:
         summary:
           $ref: "#/components/schemas/PartnerStoreOrderSummary"
 
+    IndependentPickupOrderState:
+      type: string
+      enum: [SUBMITTED, ACCEPTED, PREPARING, READY, COMPLETED, REJECTED, CANCELLED]
+    IndependentPickupOrderStatus:
+      type: object
+      additionalProperties: false
+      required: [orderId, storeId, state, version]
+      properties:
+        orderId:
+          type: string
+        storeId:
+          type: string
+        state:
+          $ref: "#/components/schemas/IndependentPickupOrderState"
+        version:
+          type: integer
+          minimum: 1
+    IndependentPickupOrderLine:
+      type: object
+      additionalProperties: false
+      required: [offerId, productName, variantTitle, quantityBaseUnits, lineAmountMinor]
+      properties:
+        offerId:
+          type: string
+        productName:
+          type: string
+        variantTitle:
+          type: string
+        quantityBaseUnits:
+          type: integer
+          format: int64
+          minimum: 1
+        lineAmountMinor:
+          type: integer
+          format: int64
+          minimum: 1
+    IndependentPartnerPickupOrder:
+      type: object
+      additionalProperties: false
+      required: [orderId, storeId, state, version, totalMinor, createdAt, lines]
+      properties:
+        orderId:
+          type: string
+        storeId:
+          type: string
+        state:
+          $ref: "#/components/schemas/IndependentPickupOrderState"
+        version:
+          type: integer
+          minimum: 1
+        totalMinor:
+          type: integer
+          format: int64
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/IndependentPickupOrderLine"
+    IndependentPartnerPickupOrdersResponse:
+      type: object
+      additionalProperties: false
+      required: [orders, nextCursor]
+      properties:
+        orders:
+          type: array
+          items:
+            $ref: "#/components/schemas/IndependentPartnerPickupOrder"
+        nextCursor:
+          type: string
+    IndependentPickupOrderTransitionRequest:
+      type: object
+      additionalProperties: false
+      required: [state, expectedVersion]
+      properties:
+        state:
+          type: string
+          enum: [ACCEPTED, PREPARING, READY, COMPLETED, REJECTED]
+        expectedVersion:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+          maxLength: 300
+          description: Required for rejection.
     PartnerOrdersResponse:
       type: object
       required: [orders, attention]

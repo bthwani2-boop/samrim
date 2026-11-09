@@ -100,8 +100,8 @@ export function PartnerIndependentStorePreview({ store }: Readonly<{ store: Part
   }
 
   return <View style={{ gap: 10 }}>
-    <Text style={styles.value}>معاينة موقع المتجر</Text>
-    <Text style={styles.muted}>عرض خاص بالمالك للمراجعة قبل النشر. لا يوجد رابط بيع عام أو سلة أو إتمام طلب من هذه المعاينة.</Text>
+    <Text accessibilityRole="header" style={styles.value}>معاينة موقع المتجر</Text>
+    <Text style={styles.muted}>النشر العام للمتاجر المستقلة غير مفعّل حاليًا. هذه المعاينة خاصة بمالك المتجر.</Text>
     {!preview
       ? <BthwaniButton label={busy ? "جارٍ تحميل المعاينة" : "عرض معاينة المتجر"} disabled={busy} onPress={() => void readPage()} />
       : <>

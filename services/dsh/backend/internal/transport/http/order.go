@@ -82,6 +82,8 @@ func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/operator/cash-remittances/{remittanceId}/reconcile", s.reconcileOperatorCashRemittance)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders", s.listStore)
 	mux.HandleFunc("GET /dsh/partner/orders", s.listPartnerOrders)
+	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/direct-orders", s.listIndependentPartnerOrders)
+	mux.HandleFunc("PATCH /dsh/partner/stores/{storeId}/direct-orders/{orderId}", s.transitionIndependentPartnerOrder)
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/orders/summary", s.readPartnerStoreOrderSummary)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders/{orderId}", s.readStore)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/orders/{orderId}/adjustments", s.proposePartnerOrderAdjustment)

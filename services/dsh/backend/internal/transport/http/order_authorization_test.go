@@ -52,8 +52,8 @@ func TestOrderRegisteredRoutesRejectUnauthenticatedRequests(t *testing.T) {
 	routes := orderRegisteredRoutes(t)
 	// The Partner Store summary and all three historical COD Finance routes
 	// must remain inside the authenticated Order route census.
-	if len(routes) != 48 {
-		t.Fatalf("Order route census changed: got %d, want 48; review authentication for every new or removed route", len(routes))
+	if len(routes) != 50 {
+		t.Fatalf("Order route census changed: got %d, want 50; review authentication for every new or removed route", len(routes))
 	}
 	foundPartnerSummary := false
 	foundPartnerRatings := false
@@ -64,10 +64,17 @@ func TestOrderRegisteredRoutesRejectUnauthenticatedRequests(t *testing.T) {
 		"GET /dsh/operator/captain-cod-legacy-reviews/by-payment/{paymentIntentId}": false,
 		"POST /dsh/operator/captain-cod-legacy-reviews/{reviewId}/approve":          false,
 	}
+	directPickupRoutes := map[string]bool{
+		"GET /dsh/partner/stores/{storeId}/direct-orders":             false,
+		"PATCH /dsh/partner/stores/{storeId}/direct-orders/{orderId}": false,
+	}
 	for _, route := range routes {
 		key := route.method + " " + route.path
 		if _, expected := legacyCODRoutes[key]; expected {
 			legacyCODRoutes[key] = true
+		}
+		if _, expected := directPickupRoutes[key]; expected {
+			directPickupRoutes[key] = true
 		}
 		if route.method == nethttp.MethodGet && route.path == "/dsh/partner/stores/{storeId}/orders/summary" {
 			foundPartnerSummary = true
@@ -88,6 +95,11 @@ func TestOrderRegisteredRoutesRejectUnauthenticatedRequests(t *testing.T) {
 	for path, found := range legacyCODRoutes {
 		if !found {
 			t.Fatalf("historical COD Finance route missing from authenticated Order census: %s", path)
+		}
+	}
+	for path, found := range directPickupRoutes {
+		if !found {
+			t.Fatalf("independent pickup route missing from authenticated Order census: %s", path)
 		}
 	}
 	for _, route := range routes {

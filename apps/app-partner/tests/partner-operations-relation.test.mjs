@@ -47,6 +47,18 @@ test("non-marketplace owner retains safe Store settings and independent banners"
   assert.equal(eligibleForSection(store(undefined, true), "settings"), true);
 });
 
+test("private storefront preview admits only the owner of an independent Store", () => {
+  assert.equal(eligibleForSection(store("INDEPENDENT_STORE", true), "preview"), true);
+  assert.equal(eligibleForSection(store("INDEPENDENT_STORE", false, ["store_operations"]), "preview"), false);
+  assert.equal(eligibleForSection(store("BTHWANI_PARTNER", true), "preview"), false);
+  assert.equal(eligibleForSection(store("UNKNOWN", true), "preview"), false);
+});
+
+test("desktop workspace opens the authorized private preview through the Store route", () => {
+  assert.match(shellSource, /<Link href="\/store\?section=preview" asChild>/);
+  assert.match(storeSource, /section === "preview" \? <View[\s\S]*?<PartnerIndependentStorePreview/);
+});
+
 test("desktop navigation refuses marketplace operations without exact relation", () => {
   assert.match(shellSource, /const isMarketplace = selectedStore\?\.relationModel === "BTHWANI_PARTNER";/);
   assert.match(shellSource, /if \(isMarketplace && can\("store_operations"\)\) management\.push/);

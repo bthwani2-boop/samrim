@@ -1,6 +1,6 @@
 import { brandRoots, brandScale, spacing, typography } from "@bthwani/design-system";
 import { BthwaniIcon, type MobileIconName, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type Href, useGlobalSearchParams, usePathname, useRouter } from "expo-router";
+import { type Href, Link, useGlobalSearchParams, usePathname, useRouter } from "expo-router";
 import { type PropsWithChildren, useEffect, useMemo, useState } from "react";
 import * as Clipboard from "expo-clipboard";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
@@ -36,6 +36,7 @@ function DesktopWorkspace({ children }: PropsWithChildren) {
   const { authority, selectedStore, state } = usePartnerStoreScope();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const activeSection = Array.isArray(query.section) ? query.section[0] : query.section;
+  const previewSelected = pathname === "/store" && activeSection === "preview";
   const activePanel = Array.isArray(query.panel) ? query.panel[0] : query.panel;
   const activeFilter = Array.isArray(query.filter) ? query.filter[0] : query.filter;
   const activeMarketingView = Array.isArray(query.view) ? query.view[0] : query.view;
@@ -176,7 +177,14 @@ function DesktopWorkspace({ children }: PropsWithChildren) {
       </ScrollView>
       <View style={styles.footer}>
         <View style={styles.divider} />
-        {selectedStore ? <Pressable accessibilityRole="button"
+        {isOwner && selectedStore?.relationModel === "INDEPENDENT_STORE" ? <Link href="/store?section=preview" asChild>
+          <Pressable accessibilityRole="link" accessibilityState={{ selected: previewSelected }}
+            style={({pressed}) => [styles.navItem, previewSelected && styles.navActive, pressed && styles.navPressed]}>
+            <BthwaniIcon name="store" size={20} color={previewSelected ? brandRoots.brandTurquoise : brandScale.structure[200]} />
+            <Text style={[styles.navText, previewSelected && styles.navTextActive]}>معاينة المتجر الخاصة</Text>
+          </Pressable>
+        </Link> : null}
+        {isMarketplace ? <Pressable accessibilityRole="button"
           accessibilityLabel={storefrontLink ? (storefrontLink.previewOnly ? "نسخ رابط معاينة المتجر" : "نسخ رابط المتجر") : "رابط المتجر غير متاح"}
           accessibilityState={{ disabled: !storefrontLink }}
           disabled={!storefrontLink}
@@ -187,7 +195,7 @@ function DesktopWorkspace({ children }: PropsWithChildren) {
               .catch(() => setCopyMessage("تعذر نسخ الرابط؛ حاول مجددًا."));
           }}
           style={({pressed}) => [styles.storefrontCopy, !storefrontLink && styles.storefrontUnavailable, pressed && styles.navPressed]}>
-          <BthwaniIcon name="store" size={18} color={brandRoots.brandStructure} />
+          <BthwaniIcon name="store" size={18} color={theme.color} />
           <Text style={styles.storefrontCopyText}>{storefrontLink ? (storefrontLink.previewOnly ? "نسخ رابط المعاينة" : "نسخ رابط المتجر") : "رابط المتجر غير متاح"}</Text>
         </Pressable> : null}
         {copyMessage ? <Text accessibilityLiveRegion="polite" style={styles.storefrontFeedback}>{copyMessage}</Text> : null}
@@ -231,7 +239,7 @@ function createStyles(theme: ReturnType<typeof useAppearanceTheme>) {
     footer: { paddingHorizontal: spacing[3], paddingBottom: spacing[4], gap: spacing[2] },
     storefrontCopy: { minHeight: 44, backgroundColor: theme.surface, borderRadius: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing[2], paddingHorizontal: 9 },
     storefrontUnavailable: { opacity: 0.65 },
-    storefrontCopyText: { ...typography.bodySm, color: brandRoots.brandStructure, fontWeight: "800" },
+    storefrontCopyText: { ...typography.bodySm, color: theme.color, fontWeight: "800" },
     storefrontFeedback: { ...typography.caption, color: brandRoots.surfaceBase, textAlign: "center" },
   });
 }

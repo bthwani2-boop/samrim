@@ -1,5 +1,6 @@
 import { normalizeYemenPhoneE164 } from "@bthwani/identity/phone";
 import { dshOperationPaths } from "./generated/dsh-operations";
+import type { IndependentPartnerPickupOrdersResponse, IndependentPickupOrderStatus, IndependentPickupOrderTransitionRequest } from "./generated/dsh-types";
 import type { IndependentStorePreview, IndependentCustomerPolicyDraftInput, IndependentCustomerPolicyDraftResponse, IndependentCustomerPolicyDraftMutationResponse } from "./generated/dsh-types";
 import type { CatalogActivityPage, StoreOrderRatingListResponse, StoreContentPerformanceSummary, StudioLayoutPublication, StorePublicContactInput, StorePublicContactResponse, StorePublicContactMutationResponse } from "./generated/dsh-types";
 import type { ClientSharePage, ClientShareSendRequest, ClientShareSendResponse } from "./client-share-types";
@@ -974,6 +975,18 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (options.q) query.set("q", options.q);
       if (options.cursor) query.set("cursor", options.cursor);
       return userRequest<PartnerOrdersResponse>(accessToken, `${dshOperationPaths.listPartnerOrders.path}?${query.toString()}`, dshOperationPaths.listPartnerOrders.method);
+    },
+    async listIndependentPartnerPickupOrders(accessToken: string, storeID: string, cursor = ""): Promise<IndependentPartnerPickupOrdersResponse> {
+      const operation = dshOperationPaths.listIndependentPartnerPickupOrders;
+      const path = operation.path.replace("{storeId}", encodeURIComponent(storeID));
+      const query = new URLSearchParams({ limit: "25" });
+      if (cursor) query.set("cursor", cursor);
+      return userRequest(accessToken, `${path}?${query}`, operation.method);
+    },
+    async transitionIndependentPartnerPickupOrder(accessToken: string, storeID: string, orderID: string, input: IndependentPickupOrderTransitionRequest): Promise<IndependentPickupOrderStatus> {
+      const operation = dshOperationPaths.transitionIndependentPartnerPickupOrder;
+      const path = operation.path.replace("{storeId}", encodeURIComponent(storeID)).replace("{orderId}", encodeURIComponent(orderID));
+      return userRequest(accessToken, path, operation.method, input);
     },
     async readPartnerStoreOrderSummary(accessToken: string, storeID: string, period: "7d" | "30d" | "all" = "30d"): Promise<PartnerStoreOrderSummaryResponse> {
       const normalized = storeID.trim();
