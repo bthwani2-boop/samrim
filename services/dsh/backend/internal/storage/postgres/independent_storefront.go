@@ -12,19 +12,19 @@ import (
 	"unicode/utf8"
 )
 
-// These independent Store reads are intentionally not wired to public HTTP
-// routes. Publication is subject to separate legal, security and Product gates.
+// Independent Store public readers are served only after DSH publication,
+// legal, contact and media eligibility gates; direct checkout remains disabled.
 var ErrIndependentStorefrontNotPublished = errors.New("independent storefront was not published")
 
-// Both public Store eligibility and the public Catalog use one exact
-// orderable Direct-MVP Offer rule. More complex modifiers, quantity-stock
-// reservations and measured prices must not appear purchasable until DSH
-// owns their server quote and lifecycle.
-const independentDirectBuyableOfferSQL = `
+// Both public Store admission and its public Catalog use the same conservative
+// published-Offer visibility rule. This is a display projection, never a Direct
+// Order permission: independent checkout remains separately gated in DSH.
+// Widen supported offer kinds only with the canonical Catalog publication policy.
+const independentPublishedOfferEligibilitySQL = `
     AND o.publication_state='published' AND o.availability=true
     AND o.currency='YER' AND o.pricing_basis='PER_UNIT'
-    -- Direct Order rejects free/negative prices and checked-int64 overflow.
-    -- Only advertise Offers whose entire declared quantity range is quoteable.
+    -- Do not expose invalid or overflow-prone price/quantity combinations.
+    -- Even though checkout is disabled, visible totals must remain representable.
     AND o.price_minor > 0
     AND o.price_minor::numeric * o.quantity_max_base_units::numeric <= 9223372036854775807
     AND o.pricing_unit_base_units=1
@@ -156,7 +156,7 @@ func readPublishedIndependentStoreWithQueryer(ctx context.Context, db independen
 			JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
 			JOIN dsh.catalog_products p ON p.id=v.product_id
 			WHERE o.store_id=s.id
-		`+independentDirectBuyableOfferSQL+`
+		`+independentPublishedOfferEligibilitySQL+`
 		  )`, storeID, approvedLegalTermsVersion).Scan(
 		&result.StoreID, &result.ServiceCityID, &result.Name, &result.StoreVersion,
 		&result.PublicationVersion, &result.PublishedAt,
@@ -240,7 +240,7 @@ func listPublishedIndependentOffersInternal(ctx context.Context, db *sql.DB, sto
 		  AND EXISTS (SELECT 1 FROM dsh.store_profile_media_assets a
 		      WHERE a.store_id=s.id AND a.media_role='primary' AND a.state='active' AND a.rights_attested_at IS NOT NULL AND NULLIF(btrim(a.uri),'') IS NOT NULL)
 		  AND EXISTS (SELECT 1 FROM dsh.store_profile_media_assets a
-		      WHERE a.store_id=s.id AND a.media_role='cover' AND a.state='active' AND a.rights_attested_at IS NOT NULL AND NULLIF(btrim(a.uri),'') IS NOT NULL)` + independentDirectBuyableOfferSQL
+		      WHERE a.store_id=s.id AND a.media_role='cover' AND a.state='active' AND a.rights_attested_at IS NOT NULL AND NULLIF(btrim(a.uri),'') IS NOT NULL)` + independentPublishedOfferEligibilitySQL
 	args := []any{storeID, approvedLegalTermsVersion}
 	if categoryID != "" {
 		args = append(args, categoryID)

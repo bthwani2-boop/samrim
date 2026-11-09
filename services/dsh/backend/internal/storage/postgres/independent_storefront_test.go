@@ -143,7 +143,7 @@ func TestIndependentPublicCatalogNeverAdvertisesOverflowingPrices(t *testing.T) 
 		"o.quantity_max_base_units >= o.quantity_min_base_units",
 		"o.price_minor::numeric * o.quantity_max_base_units::numeric <= 9223372036854775807",
 	} {
-		if !strings.Contains(independentDirectBuyableOfferSQL, predicate) {
+		if !strings.Contains(independentPublishedOfferEligibilitySQL, predicate) {
 			t.Errorf("independent Catalog is missing overflow-safe Offer predicate %s", predicate)
 		}
 	}
