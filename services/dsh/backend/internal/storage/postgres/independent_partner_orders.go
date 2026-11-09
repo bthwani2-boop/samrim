@@ -170,6 +170,8 @@ func TransitionIndependentOrderForPartner(ctx context.Context, db *sql.DB, store
 	if !validIndependentPartnerOrderID(storeID) || !validIndependentPartnerOrderID(orderID) ||
 		actorID == "" || input.ExpectedVersion < 1 || !utf8.ValidString(input.Reason) ||
 		strings.ContainsAny(input.Reason, "\x00\r\n") || utf8.RuneCountInString(input.Reason) > 300 ||
+		(input.State != "ACCEPTED" && input.State != "PREPARING" && input.State != "READY" &&
+			input.State != "COMPLETED" && input.State != "REJECTED") ||
 		(input.State == "REJECTED" && input.Reason == "") || (input.State != "REJECTED" && input.Reason != "") {
 		return IndependentDirectOrderStatus{}, ErrIndependentPartnerOrderInvalid
 	}

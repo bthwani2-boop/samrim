@@ -54,6 +54,9 @@ func TestIndependentPartnerOrderBadInputsRejectWithoutDB(t *testing.T) {
 	}{
 
 		{"zero version", IndependentPartnerOrderTransition{State: "ACCEPTED", ExpectedVersion: 0}},
+		{"unknown state", IndependentPartnerOrderTransition{State: "UNKNOWN", ExpectedVersion: 1}},
+		{"cancel by merchant", IndependentPartnerOrderTransition{State: "CANCELLED", ExpectedVersion: 1}},
+		{"submitted is not a transition target", IndependentPartnerOrderTransition{State: "SUBMITTED", ExpectedVersion: 1}},
 		{"empty reject reason", IndependentPartnerOrderTransition{State: "REJECTED", ExpectedVersion: 1}},
 		{"reason on accepted", IndependentPartnerOrderTransition{State: "ACCEPTED", ExpectedVersion: 1, Reason: "not allowed"}},
 		{"multiline reason", IndependentPartnerOrderTransition{State: "REJECTED", ExpectedVersion: 1, Reason: "x\ny"}},
