@@ -59,6 +59,8 @@ test("manual browser proof stays inside the authorized Chrome CDP context", () =
   assert.doesNotMatch(browserProof, /browser\.newContext\(/);
   assert.match(browserProof, /await page\.close\(\)/);
   assert.doesNotMatch(browserProof, /await context\.close\(\)/);
+  assert.match(browserProof, /process\.exitCode = 2/, "missing approved Store must block positive E2E proof");
+  assert.match(browserProof, /assert\.deepEqual\(errors, \[\]/, "browser errors must fail the journey");
 });
 
 test("a newer search clears pagination and route scope changes discard pending reads", () => {

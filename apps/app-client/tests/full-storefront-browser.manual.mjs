@@ -34,6 +34,8 @@ try {
   if (!await storeButton.isVisible().catch(() => false)) {
     const route = await page.goto(origin + "/storefront/invalid-unpublished-store?serviceCityId=invalid-city", { waitUntil: "domcontentloaded", timeout: 40000 });
     console.log(JSON.stringify({ outcome: "BLOCKED_NO_PUBLISHED_MARKETPLACE_STORE", homeHTTP: homeResponse.status(), routeHTTP: route?.status(), htmlDirection: await page.locator("html").getAttribute("dir"), reason: "No authorized public Partner Store found in the current guest directory" }));
+    // An absent approved Store is a blocked positive journey, not a green E2E run.
+    process.exitCode = 2;
   } else {
     await storeButton.click();
     await expect(page).toHaveURL(/\/store\//, { timeout: 12000 });
@@ -114,7 +116,7 @@ try {
     await expect(page.getByText("منتجات المتجر", { exact: true })).toHaveCount(0);
 
     console.log(JSON.stringify({ outcome: errors.length ? "BROWSER_WARN_JS_ERRORS" : "PASS_BROWSER", rtl: true, layouts, lightThemeTextColor, darkThemeTextColor, searchNoResultsRecovered: true, catalogFailureRetryRecovered: true, withdrawnStoreGuard: true, ssrNoindex: true, keyboardFocus: true, negativeStoreBlocked: true, errors, websiteUrl: site.origin + "/storefront/<store-id>" }));
-    assert.deepEqual(errors.filter(item => item.route.startsWith("/storefront/")), [], "Storefront JavaScript errors");
+    assert.deepEqual(errors, [], "Browser JavaScript errors during the public Storefront journey");
   }
 } finally {
   // Only close the tab created by this proof, never the shared Chrome context.
