@@ -42,9 +42,11 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
   const [notice, setNotice] = useState("");
   const [internalPhotos, setInternalPhotos] = useState<ReadonlyArray<StoreInternalPhotoSummary>>([]);
   const [internalPhotosError, setInternalPhotosError] = useState("");
+  const [internalPhotosLoading, setInternalPhotosLoading] = useState(true);
   const [confirmTrash, setConfirmTrash] = useState(false);
   const [trashReason, setTrashReason] = useState("");
   const requestSequence = useRef(0);
+  const photoRequestSequence = useRef(0);
 
   const readStore = useCallback(async (showLoading = true): Promise<StorePublicationResponse | null> => {
     const sequence = ++requestSequence.current;
@@ -86,16 +88,36 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
     return () => { document.removeEventListener("visibilitychange", rereadOnReturn); requestSequence.current += 1; };
   }, [readStore]);
 
-  useEffect(() => {
-    let active = true;
-    void fetch(`/api/stores/${encodeURIComponent(storeId)}/internal-photos`, { cache: "no-store" }).then(async (response) => {
+  const readInternalPhotos = useCallback(async (signal?: AbortSignal) => {
+    const sequence = ++photoRequestSequence.current;
+    setInternalPhotosLoading(true);
+    setInternalPhotosError("");
+    try {
+      const response = await fetch(`/api/stores/${encodeURIComponent(storeId)}/internal-photos`, { cache: "no-store", signal: signal ?? null });
       if (!response.ok) throw new Error(await partnerErrorMessage(response));
-      return response.json() as Promise<{ photos: ReadonlyArray<StoreInternalPhotoSummary> }>;
-    }).then((result) => { if (active) { setInternalPhotos(result.photos); setInternalPhotosError(""); } }).catch((cause: unknown) => {
-      if (active) setInternalPhotosError(cause instanceof Error ? cause.message : "تعذر قراءة الصور الداخلية.");
-    });
-    return () => { active = false; };
+      const payload: unknown = await response.json();
+      if (typeof payload !== "object" || payload === null || !("photos" in payload) || !Array.isArray(payload.photos) ||
+          payload.photos.some((photo) => !photo || typeof photo.id !== "string" || photo.id.length === 0 ||
+            typeof photo.createdAt !== "string" || !Number.isFinite(Date.parse(photo.createdAt)) ||
+            (photo.contentType !== "image/jpeg" && photo.contentType !== "image/png"))) {
+        throw new Error("استجابة صور المتجر غير صالحة.");
+      }
+      if (sequence !== photoRequestSequence.current || signal?.aborted) return;
+      setInternalPhotos(payload.photos as ReadonlyArray<StoreInternalPhotoSummary>);
+    } catch (cause) {
+      if (sequence !== photoRequestSequence.current || signal?.aborted) return;
+      setInternalPhotos([]);
+      setInternalPhotosError(cause instanceof Error ? cause.message : "تعذر قراءة الصور الداخلية.");
+    } finally {
+      if (sequence === photoRequestSequence.current && !signal?.aborted) setInternalPhotosLoading(false);
+    }
   }, [storeId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void readInternalPhotos(controller.signal);
+    return () => { photoRequestSequence.current += 1; controller.abort(); };
+  }, [readInternalPhotos]);
 
   async function reconcileFailure(response: Response, fallback: string) {
     const message = await partnerErrorMessage(response);
@@ -326,9 +348,9 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
         </section>}
 
         <section className="store-detail-section" aria-labelledby="store-internal-photos-title">
-          <div className="store-detail-heading"><div><h2 id="store-internal-photos-title">الصور الميدانية الداخلية</h2><p className="muted">لا تظهر هذه الصور للعملاء ولا تُستخدم في واجهة المتجر.</p></div><span className="status-badge">{internalPhotos.length} صور</span></div>
-          {internalPhotosError ? <div className="managed-status managed-status-warning" role="alert">{internalPhotosError}<button type="button" className="button button-secondary" onClick={() => { setInternalPhotosError(""); void fetch(`/api/stores/${encodeURIComponent(storeId)}/internal-photos`, { cache: "no-store" }).then((response) => response.json() as Promise<{ photos: ReadonlyArray<StoreInternalPhotoSummary> }>).then((result) => setInternalPhotos(result.photos)).catch(() => setInternalPhotosError("تعذر قراءة الصور الداخلية.")); }}>إعادة المحاولة</button></div> : null}
-          {internalPhotos.length ? <div className="store-internal-photo-grid">{internalPhotos.map((photo) => <figure key={photo.id}><img src={`/api/stores/${encodeURIComponent(storeId)}/internal-photos/${encodeURIComponent(photo.id)}`} alt="صورة ميدانية داخلية للمتجر" loading="lazy" /><figcaption><time dateTime={photo.createdAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium" }).format(new Date(photo.createdAt))}</time></figcaption></figure>)}</div> : !internalPhotosError ? <p className="muted">لا توجد صور ميدانية داخلية لهذا المتجر.</p> : null}
+          <div className="store-detail-heading"><div><h2 id="store-internal-photos-title">الصور الميدانية الداخلية</h2><p className="muted">لا تظهر هذه الصور للعملاء ولا تُستخدم في واجهة المتجر.</p></div><span className="status-badge">{internalPhotosLoading ? "جارٍ التحميل" : `${internalPhotos.length} صور`}</span></div>
+          {internalPhotosError ? <div className="managed-status managed-status-warning" role="alert">{internalPhotosError}<button type="button" className="button button-secondary" disabled={internalPhotosLoading} onClick={() => void readInternalPhotos()}>إعادة المحاولة</button></div> : null}
+          {internalPhotosLoading ? <p role="status" className="muted">جارٍ قراءة الصور الداخلية للمتجر…</p> : internalPhotos.length ? <div className="store-internal-photo-grid">{internalPhotos.map((photo) => <figure key={photo.id}><img src={`/api/stores/${encodeURIComponent(storeId)}/internal-photos/${encodeURIComponent(photo.id)}`} alt="صورة ميدانية داخلية للمتجر" loading="lazy" /><figcaption><time dateTime={photo.createdAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium" }).format(new Date(photo.createdAt))}</time></figcaption></figure>)}</div> : !internalPhotosError ? <p className="muted">لا توجد صور ميدانية داخلية لهذا المتجر.</p> : null}
         </section>
 
         {embedded ? null : <div id="store-images"><StoreImageEditor key={storeId} storeId={storeId} name={store.name} onSaved={() => { void readStore(false); onUpdated?.(); }} /></div>}
