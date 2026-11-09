@@ -72,7 +72,7 @@ func TestStoreJoiningAdmissionPolicyControlsCreationPostgres(t *testing.T) {
 			"qa-operator", "Different payload on reused key", "qa-policy-disable-0001"); !errors.Is(err, postgres.ErrStoreJoiningPolicyIdempotency) {
 			t.Fatalf("idempotency reuse permitted: %v", err)
 		}
-		if _, _, err = postgres.CreateFirstStoreForPartner(ctx, db, "qa-closed-independent", independent); !errors.Is(err, postgres.ErrStoreJoiningClosed) {
+		if _, _, err = postgres.CreateFirstStoreForPartner(ctx, db, "qa-closed-independent", independent, "idem-qa-closed-ind-0001"); !errors.Is(err, postgres.ErrStoreJoiningClosed) {
 			t.Fatalf("closed enrollment allowed Store creation: %v", err)
 		}
 		var count int
@@ -82,7 +82,7 @@ func TestStoreJoiningAdmissionPolicyControlsCreationPostgres(t *testing.T) {
 		marketplace := independent
 		marketplace.RelationModel = "" // Legacy callers cannot bypass the marketplace admission policy.
 		marketplace.FulfillmentModes = []string{"BTHWANI_CAPTAIN"}
-		if _, _, err = postgres.CreateFirstStoreForPartner(ctx, db, "qa-open-market", marketplace); err != nil {
+		if _, _, err = postgres.CreateFirstStoreForPartner(ctx, db, "qa-open-market", marketplace, "idem-qa-open-market-0001"); err != nil {
 			t.Fatalf("other model should remain available: %v", err)
 		}
 		reopened, err := postgres.SetStoreJoiningPolicy(ctx, db, postgres.StoreRelationIndependent, true, 2,
@@ -90,7 +90,7 @@ func TestStoreJoiningAdmissionPolicyControlsCreationPostgres(t *testing.T) {
 		if err != nil || !reopened.EnrollmentEnabled || reopened.Version != 3 {
 			t.Fatalf("reopen failed: %+v %v", reopened, err)
 		}
-		created, replayFlag, err := postgres.CreateFirstStoreForPartner(ctx, db, "qa-independent-owner", independent)
+		created, replayFlag, err := postgres.CreateFirstStoreForPartner(ctx, db, "qa-independent-owner", independent, "idem-qa-independent-policy-0001")
 		if err != nil || replayFlag || created.PublicationState != "unpublished" {
 			t.Fatalf("new Store invalid: %+v %v", created, err)
 		}
@@ -98,11 +98,11 @@ func TestStoreJoiningAdmissionPolicyControlsCreationPostgres(t *testing.T) {
 			"qa-operator", "Close after independent first Store", "qa-policy-disable-0002"); err != nil {
 			t.Fatal(err)
 		}
-		again, replayed, err := postgres.CreateFirstStoreForPartner(ctx, db, "qa-independent-owner", independent)
+		again, replayed, err := postgres.CreateFirstStoreForPartner(ctx, db, "qa-independent-owner", independent, "idem-qa-independent-policy-0001")
 		if err != nil || !replayed || again.ID != created.ID {
 			t.Fatalf("exact replay must work after closure: %+v %t %v", again, replayed, err)
 		}
-		if _, _, err = postgres.CreateFirstStoreForPartner(ctx, db, "qa-second-independent", independent); !errors.Is(err, postgres.ErrStoreJoiningClosed) {
+		if _, _, err = postgres.CreateFirstStoreForPartner(ctx, db, "qa-second-independent", independent, "idem-qa-closed-ind-0002"); !errors.Is(err, postgres.ErrStoreJoiningClosed) {
 			t.Fatalf("new applicant bypassed closure: %v", err)
 		}
 		// Disable market and confirm omitted relationModel cannot bypass closure.
@@ -110,7 +110,7 @@ func TestStoreJoiningAdmissionPolicyControlsCreationPostgres(t *testing.T) {
 			"qa-operator", "Pause new marketplace enrollment", "qa-policy-market-off-0001"); err != nil {
 			t.Fatal(err)
 		}
-		if _, _, err = postgres.CreateFirstStoreForPartner(ctx, db, "qa-legacy-market", marketplace); !errors.Is(err, postgres.ErrStoreJoiningClosed) {
+		if _, _, err = postgres.CreateFirstStoreForPartner(ctx, db, "qa-legacy-market", marketplace, "idem-qa-closed-market-0001"); !errors.Is(err, postgres.ErrStoreJoiningClosed) {
 			t.Fatalf("legacy caller bypassed marketplace policy: %v", err)
 		}
 		if _, err = db.QueryContext(ctx, "SELECT * FROM dsh.store_joining_policy_events"); err != nil {

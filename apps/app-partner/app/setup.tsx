@@ -2,6 +2,7 @@ import { createDshMobileClient, type CommerceVertical, type CommercialStoreType,
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { BthwaniMapCoordinate, BthwaniMapProps } from "@bthwani/design-system/native/map";
 import { type Href, useRouter } from "expo-router";
+import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, restoreIdentitySession, subscribeIdentitySession } from "../src/bootstrap/identity";
@@ -191,10 +192,14 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
   try{
    token=await getUsableIdentityAccessToken();
    if(partnerSetupSessionKey(currentIdentityState())!==starting)throw Error("SESSION_CHANGED");
-   const result=await service().createPartnerFirstStore(token,{
+   const input={
     name:name.trim(),relationModel:relation,serviceCityId:city,primaryVerticalId:vertical,commercialStoreTypeId:storeType,
     addressText:address.trim(),latitude:selected.latitude,longitude:selected.longitude,fulfillmentModes:modes,
-   });
+   };
+   // Stable within this authenticated session and exact submission, including manual retry.
+   const digest=await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256,JSON.stringify([scope,input]));
+   if(partnerSetupSessionKey(currentIdentityState())!==starting)return;
+   const result=await service().createPartnerFirstStore(token,input,"first_store_"+digest);
    createResponseReceived=true;
    if(result.relationModel!==relation)throw Error("STORE_RELATION_READBACK_MISMATCH");
    if(partnerSetupSessionKey(currentIdentityState())!==starting)return;

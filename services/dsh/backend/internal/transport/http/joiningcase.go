@@ -105,14 +105,23 @@ func (s *JoiningCaseServer) createPartnerFirstStore(w http.ResponseWriter, r *ht
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Partner identity is required")
 		return
 	}
+	idempotencyKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if len(idempotencyKey) < 8 || len(idempotencyKey) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "bounded Idempotency-Key is required")
+		return
+	}
 	var input contract.PartnerFirstStoreCreateRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	store, replayed, err := s.service.CreateFirstStore(r.Context(), token, input)
+	store, replayed, err := s.service.CreateFirstStore(r.Context(), token, input, idempotencyKey)
 	if err != nil {
 		if errors.Is(err, postgres.ErrStoreJoiningClosed) {
 			writeError(w, http.StatusConflict, "STORE_JOINING_CLOSED", "new Stores in the chosen relation are currently unavailable")
+			return
+		}
+		if errors.Is(err, postgres.ErrSelfStoreIdempotency) {
+			writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key belongs to another first Store request or actor")
 			return
 		}
 		if errors.Is(err, postgres.ErrSelfStoreExists) {

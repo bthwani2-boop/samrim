@@ -208,10 +208,10 @@ func TestIndependentDirectOrderSchemaEnforcesPickupAndCrossStoreLineScope(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != SchemaVersion || records[len(records)-1].Name != "174_independent_storefront_and_direct_orders.sql" {
-		t.Fatalf("direct order migration is not the registered canonical last version: %+v", records[len(records)-1])
+	if len(records) != SchemaVersion || len(records) < 174 || records[173].Name != "174_independent_storefront_and_direct_orders.sql" {
+		t.Fatal("independent direct order migration 174 is missing from canonical migration history")
 	}
-	sql := statements[len(statements)-1]
+	sql := statements[173]
 	for _, invariant := range []string{
 		"independent_direct_order_amount_chk",
 		"fulfillment_mode <> 'CUSTOMER_PICKUP' OR merchant_delivery_fee_minor = 0",
@@ -270,7 +270,10 @@ func TestIndependentSchemaVerifierIncludesAllNewTables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	migration := migrations[len(migrations)-1]
+	if len(migrations) < 174 {
+		t.Fatal("independent Store migration 174 is missing")
+	}
+	migration := migrations[173]
 	required := []string{
 		"dsh.independent_store_publications",
 		"dsh.independent_store_customer_policies",

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
@@ -25,12 +26,13 @@ const matchingStore = (id = "store-1") => ({
 });
 
 function harness({ create, read, modes = ["CUSTOMER_PICKUP"] } = {}) {
-  const events = { created: 0, read: 0, saved: [], recovered: [], errors: [], busy: [], cleared: 0 };
+  const events = { created: 0, read: 0, keys: [], saved: [], recovered: [], errors: [], busy: [], cleared: 0 };
   let activeSession = "partner-a:session-1";
   const setSession = value => { activeSession = value; };
   const client = {
-    async createPartnerFirstStore() {
+    async createPartnerFirstStore(_token, _input, key) {
       events.created++;
+      events.keys.push(key);
       return create ? create() : { storeId: "store-1", relationModel: "INDEPENDENT_STORE" };
     },
     async listPartnerAccessibleStores() {
@@ -61,6 +63,7 @@ function harness({ create, read, modes = ["CUSTOMER_PICKUP"] } = {}) {
     setStep: () => {},
     errorText: cause => cause?.message || "تعذّر الإنشاء",
     Error,
+    Crypto: { CryptoDigestAlgorithm: { SHA256: "SHA-256" }, digestStringAsync: async (_algorithm, value) => createHash("sha256").update(value).digest("hex") },
   };
   return { save: runInNewContext(code, environment), events, setSession };
 }
@@ -80,6 +83,19 @@ test("lost create response recovers existing owned DSH Store, with no second POS
   assert.equal(h.events.cleared, 0, "an ambiguous response cannot erase the form draft");
   assert.equal(h.events.errors.filter(Boolean).length, 0);
   assert.equal(h.events.busy.at(-1), false);
+});
+
+test("same-session manual retry reuses the exact first Store idempotency key", async () => {
+  const h = harness({
+    create: async () => { throw { kind: "network", message: "lost response" }; },
+    read: async () => ({ stores: [] }),
+  });
+  await h.save();
+  await h.save();
+  assert.equal(h.events.created, 2);
+  assert.equal(h.events.keys[0], h.events.keys[1], "exact submission has a stable key");
+  assert.match(h.events.keys[0], /^first_store_[0-9a-f]{64}$/);
+  assert.equal(h.events.cleared, 0);
 });
 
 test("failed create never trusts another actor's inaccessible Store or fabricates success", async () => {

@@ -4,6 +4,8 @@ paths:
       operationId: createPartnerFirstStore
       summary: Create an unpublished first Store for the authenticated Partner without a joining request
       security: [{ userBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerFirstStoreCreateRequest" } } }

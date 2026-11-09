@@ -308,9 +308,10 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const op = dshOperationPaths.readSelfServiceApplicantContact;
       return userRequest<SelfServiceApplicantContactResponse>(accessToken, op.path, op.method);
     },
-    async createPartnerFirstStore(accessToken: string, input: PartnerFirstStoreCreateRequest): Promise<PartnerFirstStoreCreateResponse> {
+    async createPartnerFirstStore(accessToken: string, input: PartnerFirstStoreCreateRequest, idempotencyKey: string): Promise<PartnerFirstStoreCreateResponse> {
+      if (idempotencyKey.trim().length < 8 || idempotencyKey.trim().length > 128) throw new Error("DSH_FIRST_STORE_IDEMPOTENCY_REQUIRED");
       const op = dshOperationPaths.createPartnerFirstStore;
-      return userRequest<PartnerFirstStoreCreateResponse>(accessToken, op.path, op.method, input);
+      return userRequest<PartnerFirstStoreCreateResponse>(accessToken, op.path, op.method, input, { "Idempotency-Key": idempotencyKey.trim() });
     },
     async readSelfServiceJoiningApplication(accessToken: string): Promise<JoiningCaseResponse> {
       const op=dshOperationPaths.readSelfServiceJoiningApplication;

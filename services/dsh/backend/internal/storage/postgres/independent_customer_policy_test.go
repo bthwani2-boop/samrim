@@ -69,7 +69,10 @@ func TestIndependentCustomerPolicyDraftSchemaDoesNotGrantPublishing(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	schema := statements[len(statements)-1]
+	if len(statements) < 174 {
+		t.Fatal("independent Store migration 174 is missing")
+	}
+	schema := statements[173]
 	for _, required := range []string{
 		"independent_store_customer_policy_idempotency",
 		"independent_store_customer_policy_audit",

@@ -15,8 +15,9 @@ import (
 )
 
 var (
-	ErrSelfStoreExists = errors.New("partner already has a first Store")
-	ErrSelfStoreInput  = errors.New("first Store setup is invalid")
+	ErrSelfStoreExists      = errors.New("partner already has a first Store")
+	ErrSelfStoreInput       = errors.New("first Store setup is invalid")
+	ErrSelfStoreIdempotency = errors.New("first Store idempotency key belongs to different request or actor")
 )
 
 type SelfStoreInput struct {
@@ -36,8 +37,9 @@ type SelfStoreInput struct {
 // logo/cover, catalog, and WLT readiness remain with their existing owners.
 // A deterministic fact-derived ID makes identical retries safe and prevents
 // different facts from silently modifying an existing Store.
-func CreateFirstStoreForPartner(ctx context.Context, db *sql.DB, actorID string, input SelfStoreInput) (StoreRecord, bool, error) {
+func CreateFirstStoreForPartner(ctx context.Context, db *sql.DB, actorID string, input SelfStoreInput, idempotencyKey string) (StoreRecord, bool, error) {
 	actorID = strings.TrimSpace(actorID)
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	input.Name = strings.TrimSpace(input.Name)
 	input.ServiceCityID = strings.TrimSpace(input.ServiceCityID)
 	input.VerticalID = strings.TrimSpace(input.VerticalID)
@@ -51,7 +53,7 @@ func CreateFirstStoreForPartner(ctx context.Context, db *sql.DB, actorID string,
 	if input.RelationModel != StoreRelationBThwaniPartner && input.RelationModel != StoreRelationIndependent {
 		return StoreRecord{}, false, ErrSelfStoreInput
 	}
-	if db == nil || actorID == "" || len(actorID) > 128 ||
+	if db == nil || actorID == "" || len(actorID) > 128 || len(idempotencyKey) < 8 || len(idempotencyKey) > 128 ||
 		utf8.RuneCountInString(input.Name) < 2 || utf8.RuneCountInString(input.Name) > 160 ||
 		utf8.RuneCountInString(input.Address) < 4 || utf8.RuneCountInString(input.Address) > 500 ||
 		input.ServiceCityID == "" || input.VerticalID == "" || input.CommercialTypeID == "" {
@@ -79,12 +81,35 @@ func CreateFirstStoreForPartner(ctx context.Context, db *sql.DB, actorID string,
 	if err != nil {
 		return StoreRecord{}, false, err
 	}
+	keySum := sha256.Sum256([]byte(idempotencyKey))
+	keyHash := hex.EncodeToString(keySum[:])
+	requestSum := sha256.Sum256([]byte(storeID))
+	requestHash := hex.EncodeToString(requestSum[:])
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return StoreRecord{}, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	// Serialize globally by key before the actor lock to prevent cross-actor replays.
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:first-store-key:"+keyHash); err != nil {
+		return StoreRecord{}, false, err
+	}
 	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:first-store:"+actorID); err != nil {
+		return StoreRecord{}, false, err
+	}
+	var usedActor, usedRequest, usedStore string
+	err = tx.QueryRowContext(ctx, `SELECT partner_actor_id,request_hash,store_id FROM dsh.first_store_create_idempotency WHERE key_hash=$1`, keyHash).Scan(&usedActor, &usedRequest, &usedStore)
+	if err == nil {
+		if usedActor != actorID || usedRequest != requestHash || usedStore != storeID {
+			return StoreRecord{}, false, ErrSelfStoreIdempotency
+		}
+		if err := tx.Commit(); err != nil {
+			return StoreRecord{}, false, err
+		}
+		record, err := ReadStoreOwnedByPartner(ctx, db, storeID, actorID)
+		return record, true, err
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
 		return StoreRecord{}, false, err
 	}
 	var existing string
@@ -92,6 +117,9 @@ func CreateFirstStoreForPartner(ctx context.Context, db *sql.DB, actorID string,
 	if err == nil {
 		if existing != storeID {
 			return StoreRecord{}, false, ErrSelfStoreExists
+		}
+		if err := recordFirstStoreAttemptTx(ctx, tx, keyHash, requestHash, actorID, storeID); err != nil {
+			return StoreRecord{}, false, err
 		}
 		if err := tx.Commit(); err != nil {
 			return StoreRecord{}, false, err
@@ -131,11 +159,20 @@ func CreateFirstStoreForPartner(ctx context.Context, db *sql.DB, actorID string,
 		storeID, StoreScheduleTimezone, actorID); err != nil {
 		return StoreRecord{}, false, fmt.Errorf("initialize unpublished Store availability: %w", err)
 	}
+	if err := recordFirstStoreAttemptTx(ctx, tx, keyHash, requestHash, actorID, storeID); err != nil {
+		return StoreRecord{}, false, err
+	}
 	if err := tx.Commit(); err != nil {
 		return StoreRecord{}, false, err
 	}
 	record, err := ReadStoreOwnedByPartner(ctx, db, storeID, actorID)
 	return record, false, err
+}
+
+func recordFirstStoreAttemptTx(ctx context.Context, tx *sql.Tx, keyHash, requestHash, actorID, storeID string) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO dsh.first_store_create_idempotency
+		(key_hash,request_hash,partner_actor_id,store_id) VALUES($1,$2,$3,$4)`, keyHash, requestHash, actorID, storeID)
+	return err
 }
 
 // firstStoreDeterministicID preserves the byte-for-byte legacy marketplace
