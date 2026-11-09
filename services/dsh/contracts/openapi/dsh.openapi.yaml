@@ -72,9 +72,19 @@ paths:
         - name: cursor
           in: query
           schema: { type: string, maxLength: 2048 }
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 160 }
+          description: Optional literal substring search on public product and variant names.
+        - name: categoryId
+          in: query
+          schema: { type: string, maxLength: 128 }
+        - name: productId
+          in: query
+          schema: { type: string, maxLength: 128 }
       responses:
         '200':
-          description: Canonical Store-scoped buyable offers only, with rights-attested public HTTPS media and opaque scoped cursor.
+          description: Canonical Store-scoped buyable offers only, filtered before pagination, with rights-attested public HTTPS media and an opaque Store/City/legal/filter-scoped cursor.
           content:
             application/json:
               schema:

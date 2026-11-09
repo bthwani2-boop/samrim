@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
@@ -68,6 +69,7 @@ func (s *IndependentPublicStorefrontServer) publicScope(w http.ResponseWriter, r
 	allowed := map[string]bool{"serviceCityId": true}
 	if strings.HasSuffix(r.URL.Path, "/catalog") {
 		allowed["limit"], allowed["cursor"] = true, true
+		allowed["q"], allowed["categoryId"], allowed["productId"] = true, true, true
 	}
 	for key, values := range query {
 		if !allowed[key] || len(values) != 1 {
@@ -91,15 +93,22 @@ func safeIndependentPublicMediaURI(raw string) bool {
 	}
 	host := strings.ToLower(parsed.Hostname())
 	if host == "localhost" || strings.HasSuffix(host, ".local") ||
-		strings.HasSuffix(host, ".internal") {
+		strings.HasSuffix(host, ".internal") || strings.HasSuffix(host, ".") ||
+		strings.Contains(host, "..") {
 		return false
+	}
+	// URL hostnames such as 127.1, 2130706433 or printer may be resolved
+	// by browsers as local addresses even though net.ParseIP rejects them.
+	ip := net.ParseIP(host)
+	if ip == nil {
+		lastLabel := host[strings.LastIndexByte(host, '.')+1:]
+		if !strings.Contains(host, ".") || strings.Trim(lastLabel, "0123456789") == "" {
+			return false
+		}
 	}
 	// A public image must not induce a browser to fetch a private-network
 	// address, even if its URI uses an HTTPS scheme.
-	if ip := net.ParseIP(host); ip != nil && !ip.IsGlobalUnicast() {
-		return false
-	}
-	if ip := net.ParseIP(host); ip != nil && (ip.IsPrivate() || ip.IsLoopback()) {
+	if ip != nil && (!ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback()) {
 		return false
 	}
 	return true
@@ -154,14 +163,16 @@ func (s *IndependentPublicStorefrontServer) readCatalog(w http.ResponseWriter, r
 		limit, _ = strconv.Atoi(raw)
 	}
 	cursor := r.URL.Query().Get("cursor")
-	if limit < 1 || limit > 50 || len(cursor) > 2048 {
+	categoryID, productID, search := strings.TrimSpace(r.URL.Query().Get("categoryId")), strings.TrimSpace(r.URL.Query().Get("productId")), strings.TrimSpace(r.URL.Query().Get("q"))
+	if len(categoryID) > 128 || len(productID) > 128 || !utf8.ValidString(search) || utf8.RuneCountInString(search) > 160 ||
+		limit < 1 || limit > 50 || len(cursor) > 2048 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog pagination is invalid")
 		return
 	}
 	if _, ok := s.publishedStore(w, r, storeID, cityID); !ok {
 		return
 	}
-	page, err := postgres.ListPublishedIndependentOffersForCity(r.Context(), s.db, storeID, s.approvedTermsVersion, cityID, limit, cursor)
+	page, err := postgres.ListPublishedIndependentOffersForCityFiltered(r.Context(), s.db, storeID, s.approvedTermsVersion, cityID, categoryID, productID, search, limit, cursor)
 	switch {
 	case errors.Is(err, postgres.ErrIndependentStorefrontNotPublished):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "storefront was not found")

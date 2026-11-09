@@ -2,11 +2,14 @@ package postgres
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // These independent Store reads are intentionally not wired to public HTTP
@@ -177,15 +180,30 @@ func readPublishedIndependentStoreWithQueryer(ctx context.Context, db independen
 	return result, nil
 }
 
+// A public cursor is scoped to the original Store, City, legal publication
+// version, search and filters. Moving it between two views is rejected before
+// opening a database transaction; legacy unfiltered internal reads retain
+// their canonical Store-only cursor.
+func independentCatalogCursorScope(storeID, termsVersion, cityID, categoryID, productID, search string) string {
+	if cityID == "" && categoryID == "" && productID == "" && search == "" {
+		return storeID
+	}
+	sum := sha256.Sum256([]byte(strings.Join([]string{storeID, termsVersion, cityID, categoryID, productID, search}, "\x00")))
+	return storeID + ":" + hex.EncodeToString(sum[:])
+}
+
 // ListPublishedIndependentOffers queries the canonical Catalog, never a
 // shadow independent catalog. A Store-specific cursor cannot be replayed to
 // enumerate a different Store. Private draft/hidden offers never leave DSH.
-func listPublishedIndependentOffersInternal(ctx context.Context, db *sql.DB, storeID, approvedLegalTermsVersion, expectedCityID string, limit int, rawCursor string) (CatalogStoreOfferPage, error) {
+func listPublishedIndependentOffersInternal(ctx context.Context, db *sql.DB, storeID, approvedLegalTermsVersion, expectedCityID, categoryID, productID, search string, limit int, rawCursor string) (CatalogStoreOfferPage, error) {
 	storeID = strings.TrimSpace(storeID)
-	if db == nil || storeID == "" || len(storeID) > 128 || limit < 1 || limit > 100 || len(rawCursor) > 2048 {
+	categoryID, productID, search = strings.TrimSpace(categoryID), strings.TrimSpace(productID), strings.TrimSpace(search)
+	if db == nil || storeID == "" || len(storeID) > 128 || len(categoryID) > 128 || len(productID) > 128 ||
+		!utf8.ValidString(search) || utf8.RuneCountInString(search) > 160 || limit < 1 || limit > 100 || len(rawCursor) > 2048 {
 		return CatalogStoreOfferPage{}, ErrCatalogOfferInvalidCursor
 	}
-	cursor, err := decodeCatalogStoreOfferCursor(rawCursor, storeID)
+	cursorScope := independentCatalogCursorScope(storeID, approvedLegalTermsVersion, expectedCityID, categoryID, productID, search)
+	cursor, err := decodeCatalogStoreOfferCursor(rawCursor, cursorScope)
 	if err != nil {
 		return CatalogStoreOfferPage{}, err
 	}
@@ -224,9 +242,22 @@ func listPublishedIndependentOffersInternal(ctx context.Context, db *sql.DB, sto
 		  AND EXISTS (SELECT 1 FROM dsh.store_profile_media_assets a
 		      WHERE a.store_id=s.id AND a.media_role='cover' AND a.state='active' AND a.rights_attested_at IS NOT NULL AND NULLIF(btrim(a.uri),'') IS NOT NULL)` + independentDirectBuyableOfferSQL
 	args := []any{storeID, approvedLegalTermsVersion}
+	if categoryID != "" {
+		args = append(args, categoryID)
+		query += " AND EXISTS (SELECT 1 FROM dsh.catalog_product_categories pc JOIN dsh.catalog_categories category ON category.id=pc.category_id AND category.active=true AND category.vertical_id=p.vertical_id WHERE pc.product_id=p.id AND pc.category_id=$" + itoa(len(args)) + ")"
+	}
+	if productID != "" {
+		args = append(args, productID)
+		query += " AND p.id=$" + itoa(len(args))
+	}
+	if search != "" {
+		args = append(args, search)
+		parameter := "$" + itoa(len(args))
+		query += " AND (strpos(lower(p.canonical_name),lower(" + parameter + "))>0 OR strpos(lower(v.title),lower(" + parameter + "))>0)"
+	}
 	if cursor != nil {
 		args = append(args, cursor.CreatedAt, cursor.OfferID)
-		query += " AND (o.created_at,o.id)>($3,$4)"
+		query += " AND (o.created_at,o.id)>($" + itoa(len(args)-1) + ",$" + itoa(len(args)) + ")"
 	}
 	args = append(args, limit+1)
 	query += " ORDER BY o.created_at ASC,o.id ASC LIMIT $" + itoa(len(args))
@@ -254,7 +285,7 @@ func listPublishedIndependentOffersInternal(ctx context.Context, db *sql.DB, sto
 	if len(items) > limit {
 		page.Offers = items[:limit]
 		last := page.Offers[len(page.Offers)-1]
-		page.NextCursor, err = encodeCatalogStoreOfferCursor(catalogStoreOfferCursor{Version: 1, StoreID: storeID, CreatedAt: last.CreatedAt.UTC(), OfferID: last.ID})
+		page.NextCursor, err = encodeCatalogStoreOfferCursor(catalogStoreOfferCursor{Version: 1, StoreID: cursorScope, CreatedAt: last.CreatedAt.UTC(), OfferID: last.ID})
 		if err != nil {
 			return CatalogStoreOfferPage{}, err
 		}
@@ -298,7 +329,7 @@ type IndependentPublicOfferPage struct {
 // authorized HTTP mapping. This method still requires a reviewed public route,
 // verified policy state, customer privacy and abuse controls before activation.
 func ListPublishedIndependentOffers(ctx context.Context, db *sql.DB, storeID, approvedLegalTermsVersion string, limit int, rawCursor string) (IndependentPublicOfferPage, error) {
-	internal, err := listPublishedIndependentOffersInternal(ctx, db, storeID, approvedLegalTermsVersion, "", limit, rawCursor)
+	internal, err := listPublishedIndependentOffersInternal(ctx, db, storeID, approvedLegalTermsVersion, "", "", "", "", limit, rawCursor)
 	if err != nil {
 		return IndependentPublicOfferPage{}, err
 	}
@@ -308,10 +339,16 @@ func ListPublishedIndependentOffers(ctx context.Context, db *sql.DB, storeID, ap
 // ListPublishedIndependentOffersForCity binds an unauthenticated website read
 // to the same active City as the Store publication and its Catalog snapshot.
 func ListPublishedIndependentOffersForCity(ctx context.Context, db *sql.DB, storeID, approvedLegalTermsVersion, cityID string, limit int, rawCursor string) (IndependentPublicOfferPage, error) {
+	return ListPublishedIndependentOffersForCityFiltered(ctx, db, storeID, approvedLegalTermsVersion, cityID, "", "", "", limit, rawCursor)
+}
+
+// ListPublishedIndependentOffersForCityFiltered reuses the canonical Catalog
+// and applies all public filters before pagination under one publication snapshot.
+func ListPublishedIndependentOffersForCityFiltered(ctx context.Context, db *sql.DB, storeID, approvedLegalTermsVersion, cityID, categoryID, productID, search string, limit int, rawCursor string) (IndependentPublicOfferPage, error) {
 	if strings.TrimSpace(cityID) == "" || len(cityID) > 128 {
 		return IndependentPublicOfferPage{}, ErrIndependentStorefrontNotPublished
 	}
-	internal, err := listPublishedIndependentOffersInternal(ctx, db, storeID, approvedLegalTermsVersion, cityID, limit, rawCursor)
+	internal, err := listPublishedIndependentOffersInternal(ctx, db, storeID, approvedLegalTermsVersion, cityID, categoryID, productID, search, limit, rawCursor)
 	if err != nil {
 		return IndependentPublicOfferPage{}, err
 	}
