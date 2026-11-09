@@ -138,6 +138,7 @@ export function HomeProductFeed({
     };
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Actor revision must trigger a fresh private cart read when the signed-in account changes without changing public catalog state.
   useEffect(() => {
     if (!isAuthenticated || !currentHomeActorID() || state.kind !== "ready") {
       setCartQuantities({});
