@@ -66,7 +66,7 @@ const owners = [
   "SECURITY.md",
   ".github/pull_request_template.md",
   "docs/governance/README.md",
-  "docs/governance/policies/security.md",
+  "docs/governance/safety.md",
   "apps/control-panel/DESIGN.md",
   "apps/control-panel/UX-CONTRACT.md",
   "packages/design-system/README.md"
@@ -98,27 +98,57 @@ for (const source of governed) {
 }
 // Validate the capability router against the admitted Product IDs and declared owners.
 // This follows the live owner map instead of freezing a donor-era filename list.
-const overview = get("docs/governance/product/overview.md");
+const overview = get("docs/governance/product.md");
 const admittedSection = overview.split("## Admitted capabilities\n")[1]?.split("\n## ")[0];
 if (!admittedSection) fail("admitted capabilities section missing");
 const admitted = [...admittedSection.matchAll(/^- `([A-Z][A-Z0-9_]*)`$/gm)].map((m) => m[1]);
 if (!admitted.length || new Set(admitted).size !== admitted.length)
   fail("missing or duplicated admitted capability ID");
-const capabilityRouter = get("docs/governance/product/capabilities.md");
-const capabilityRoutes = [...capabilityRouter.matchAll(/^`([A-Z][A-Z0-9_]*)`[ \t]*→[ \t]*`(capabilities\/[\w/-]+\.md)`[ \t]*$/gm)];
-const routedIds = new Set(), routedPaths = new Set();
-for (const [, id, relative] of capabilityRoutes) {
-  const owner = "docs/governance/product/" + relative;
-  if (routedIds.has(id) || routedPaths.has(owner)) fail("duplicate capability routing " + id);
-  if (!seenOwners.has(owner)) fail("capability target missing " + id + " -> " + owner);
-  const declaration = /^CAPABILITY_ID:\s*(\S+)\s*$/m.exec(get(owner));
-  if (!declaration || declaration[1] !== id) fail("capability owner mismatch " + id + " -> " + owner);
-  routedIds.add(id); routedPaths.add(owner);
+// A capability remains a unique durable decision even when several capabilities
+// are consolidated in one semantic-owner document. The Product list is the census;
+// each owner declares its individual sections, never a second routing document.
+const actualCapabilities = new Map();
+for (const owner of governed) {
+  const body = get(owner);
+  for (const match of body.matchAll(/^CAPABILITY_ID:\s*([A-Z][A-Z0-9_]*)\s*$/gm)) {
+    const id = match[1];
+    if (actualCapabilities.has(id)) fail("duplicate capability ID " + id);
+    if (!new RegExp("^## " + id + " \\u2014 ", "m").test(body))
+      fail("capability section heading missing " + id + " at " + owner);
+    actualCapabilities.set(id, owner);
+  }
 }
-if (capabilityRoutes.length !== admitted.length || admitted.some((id) => !routedIds.has(id)))
-  fail("admitted capability has no unique routed owner");
-for (const owner of governed.filter((p) => p.startsWith("docs/governance/product/capabilities/")))
-  if (!routedPaths.has(owner)) fail("orphaned capability owner " + owner);
+if (actualCapabilities.size !== admitted.length ||
+    admitted.some(id => !actualCapabilities.has(id)) ||
+    [...actualCapabilities.keys()].some(id => !admitted.includes(id)))
+  fail("admitted capability missing, extra, or orphaned in consolidated owners");
+for (const [id, owner] of actualCapabilities) {
+  if (!seenOwners.has(owner) || !get("docs/governance/README.md").includes(owner.slice("docs/governance/".length)))
+    fail("capability lacks a routed semantic owner " + id + " -> " + owner);
+}
+// Current product decision boundaries; this is a static regression sentinel,
+// not evidence that the app, finance and direct checkout flows are deployed.
+const storeGovernance = get("docs/governance/stores.md");
+const financeGovernance = get("docs/governance/finance.md");
+const identityGovernance = get("docs/governance/identity.md");
+const experienceGovernance = get("docs/governance/experience.md");
+if (storeGovernance.includes("Current JoiningCase intake/submission") ||
+    storeGovernance.includes("Operator initial admission of the submitted case"))
+  fail("obsolete joining-case flow reintroduced as current");
+if (!storeGovernance.includes("BTHWANI_PARTNER") ||
+    !storeGovernance.includes("INDEPENDENT_STORE") ||
+    !storeGovernance.includes("Client Expo Web app"))
+  fail("Store relation or shared Client Web presentation decision missing");
+if (!financeGovernance.includes("COMMISSION") ||
+    !financeGovernance.includes("SUBSCRIPTION") ||
+    !financeGovernance.includes("Only relation-eligible COMMISSION may currently be Finance-activated"))
+  fail("relation-based commercial model or subscription activation guard missing");
+if (!identityGovernance.includes("finance\x60, \x60hr\x60") ||
+    identityGovernance.includes("Partner/Captain/Field require"))
+  fail("Operator HR permission or current-role correction missing");
+if (!experienceGovernance.includes("full Store view opened via the Store's direct URL"))
+  fail("unified Store presentation contract missing");
+
 if (fs.existsSync(at("knowledge.sources.json")))
 	fail("external donor pin resurrected");
 const law = get("AGENTS.md");
@@ -133,12 +163,12 @@ for (const x of [
 	if (!law.includes(x)) fail("agent rule lost " + x);
 if (
 	!get("README.md").includes("docs/governance/README.md") ||
-	!get("SECURITY.md").includes("docs/governance/policies/security.md")
+	!get("SECURITY.md").includes("docs/governance/safety.md")
 )
 	fail("local ownership routing broken");
 if (
 	!get("docs/governance/README.md").includes(
-		"docs/governance/product/overview.md",
+		"docs/governance/product.md",
 	) ||
 	!get("docs/governance/README.md").includes("docs/governance/architecture.md")
 )

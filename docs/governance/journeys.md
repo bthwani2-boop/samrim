@@ -1,7 +1,7 @@
-# BThwani Current Journeys
+# BThwani Cross-Owner Journeys
 
 ARTIFACT_CLASS: DURABLE_PRODUCT_GOVERNANCE
-SEMANTIC_OWNER: docs/governance/product/journeys.md
+SEMANTIC_OWNER: docs/governance/journeys.md
 EXECUTION_AUTHORITY: NONE
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 
@@ -532,7 +532,7 @@ Notification projections are bounded, idempotent derivations of committed canoni
 
 ## Scenario routing without duplicate census
 
-The `JOURNEY_ID`, `SURFACES`, `OWNERS`, `CAPABILITIES`, `ENTRY`, `EXIT` and `READBACK` fields in the actual scenarios above are the canonical mappings. The supporting-subflow table identifies separate prerequisite and projection lanes. Do not maintain parallel actor, capability, owner or status matrices: they repeat those fields and can drift. Approved current Product scope and excluded capabilities belong to `docs/governance/product/overview.md`; the individual capability documents own their specific invariants. These scenarios are proof lenses, not assertions that the functionality is implemented.
+The `JOURNEY_ID`, `SURFACES`, `OWNERS`, `CAPABILITIES`, `ENTRY`, `EXIT` and `READBACK` fields in the actual scenarios above are the canonical mappings. The supporting-subflow table identifies separate prerequisite and projection lanes. Do not maintain parallel actor, capability, owner or status matrices: they repeat those fields and can drift. Approved current Product scope and excluded capabilities belong to `docs/governance/product.md`; the individual capability documents own their specific invariants. These scenarios are proof lenses, not assertions that the functionality is implemented.
 
 ## End-to-end integration proof boundary
 

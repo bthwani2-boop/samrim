@@ -48,7 +48,7 @@ When replacing or refounding a canonical path, migrate every materially affected
 
 Preserve required Product behavior, security, authorization, privacy, data integrity, contract integrity and operational safety throughout simplification.
 
-For every materially affected workflow, enforce the effort-minimal, high-volume actor experience in `docs/governance/policies/experience.md`: require only necessary facts at the current stage, reuse canonical data, make optional inputs non-blocking, minimize repeated user actions and expose clear completion/recovery. Reject unjustified UX or technical machinery; retain essential safety in its existing owner and prove the simpler real task, not just fewer screens.
+For every materially affected workflow, enforce the effort-minimal, high-volume actor experience in `docs/governance/experience.md`: require only necessary facts at the current stage, reuse canonical data, make optional inputs non-blocking, minimize repeated user actions and expose clear completion/recovery. Reject unjustified UX or technical machinery; retain essential safety in its existing owner and prove the simpler real task, not just fewer screens.
 
 ## 4. Local development state
 
@@ -108,7 +108,7 @@ Complete related edits before running TypeScript, tests, device checks or other 
 
 Use Git to identify changes and Nx to select affected project work when applicable. `pnpm check` is the normal local feedback command for uncommitted work; use narrower direct commands when they are sufficient. `pnpm verify` is explicit candidate-wide local proof, not a default step and not an implicit prerequisite to push.
 
-**MANDATORY — ZERO MOJIBAKE:** All new/modified text MUST be valid UTF-8 without BOM or confirmed encoding corruption. Run `node tools/dev/check-encoding.mjs`; any confirmed violation BLOCKS closure until its root cause is fixed—never blindly replace characters. Details: `docs/governance/policies/quality.md`.
+**MANDATORY — ZERO MOJIBAKE:** All new/modified text MUST be valid UTF-8 without BOM or confirmed encoding corruption. Run `node tools/dev/check-encoding.mjs`; any confirmed violation BLOCKS closure until its root cause is fixed—never blindly replace characters. Details: `docs/governance/engineering.md`.
 
 Execution routing: MA Commander, SentinelX, Remote Desktop Commander, Cmdexa, Remote Arc, MCPENROUZ and Local Commander are equal-status authorized device-control candidates, with no fixed priority. GitHub is the specialized eighth channel for repository/PR/CI state; Light Remote, Shellway and other connected tools are optional. Select by real capability, permission, efficiency, reliability and recovery. Do not use a different channel to bypass DENIED; do not run Codex CLI without a task-specific human instruction and proven direct-tool insufficiency.
 
@@ -161,7 +161,7 @@ Before implementation, verify the approved outcome, what already works, acceptan
 
 For materially affected UI, deliver real professional fit-and-finish using the Design System: useful hierarchy/navigation, coherent layout, complete forms, validation, messages and recovery; correct Arabic/RTL where required; responsive layouts, touch/keyboard/focus/screen-reader support, WCAG 2.2 AA where applicable, and supported themes/reduced motion. Render representative browser/device states and verify materially relevant loading, populated, empty, no-results, forbidden, invalid, network error/retry, busy/success/failure, concurrency and destructive confirmation/undo behavior. State applicability is justified, not a ceremonial full matrix. Backend-only or trivial text work has no fictitious visual gate.
 
-Before extending an app UI, read its maintained design/UX contract and reuse or extend the canonical tokens, controls and composition owners; reject a competing page-local foundation. Follow `docs/governance/policies/quality.md` for structural and visual regression proof. Review intentional visual baseline changes on the exact candidate; never auto-accept a changed image merely to pass CI.
+Before extending an app UI, read its maintained design/UX contract and reuse or extend the canonical tokens, controls and composition owners; reject a competing page-local foundation. Follow `docs/governance/engineering.md` for structural and visual regression proof. Review intentional visual baseline changes on the exact candidate; never auto-accept a changed image merely to pass CI.
 
 For affected functionality, verify the authorized actor finishes the task and the next authorized actor reads canonical persistent state. Include real negative/security/tenant/role boundaries, retry/idempotency, concurrency, settlement/financial conservation and failure recovery where materially applicable. No mocked screen, isolated HTTP 200 or green CI alone proves full journey closure. Use bounded disposable owned fixtures and actual state owners; do not change user data, invent features or rebuild healthy code.
 

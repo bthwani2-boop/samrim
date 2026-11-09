@@ -1,12 +1,15 @@
-# Central Catalog
+# Catalog and Store Assortment
 
-ARTIFACT_CLASS: DURABLE_PRODUCT_CAPABILITY_GOVERNANCE
-SEMANTIC_OWNER: docs/governance/product/capabilities/partner/central-catalog.md
+ARTIFACT_CLASS: DURABLE_GOVERNANCE
+SEMANTIC_OWNER: docs/governance/catalog.md
 EXECUTION_AUTHORITY: NONE
 IMPLEMENTATION_STATE_AUTHORITY: NONE
+
+## CENTRAL_CATALOG — Central Catalog
+
 CAPABILITY_ID: CENTRAL_CATALOG
 
-## Outcome
+### Outcome
 
 DSH owns central shared commerce identities, Store-local catalog content and
 one canonical Store offer truth. The capability serves restaurants, groceries,
@@ -19,7 +22,7 @@ assortment; the Client surface reads a DSH-composed customer-safe storefront.
 This Central Catalog capability does not admit a full PIM, ERP, POS or marketing
 system.
 
-## Ownership and verticals
+### Ownership and verticals
 
 `CommerceVertical` is the canonical classification of the commercial activity
 of a Store. A Store has exactly one `primary_vertical_id` in the admitted Product model. A
@@ -30,16 +33,14 @@ catalog media storage, provenance and rights attestation. The image helps people
 recognize a vertical; it does not change its classification or eligibility rules,
 and it remains separate from Category and Product media.
 
-The joining case requires the first-Store vertical before admission. The value
-is preserved through review, correction and resubmission and is transferred to
-the Store atomically with Store creation. An existing Store with no vertical
+First-Store setup requires an active Commerce Vertical and compatible Store Type within the canonical DSH Store creation transaction. The new Partner role itself does not depend on a joining case, vertical selection or Operator Store approval. An existing Store with no vertical
 is retained for history but is not vertical-discoverable or customer-visible
 until an authorized Operator assigns one through the DSH owner path. No legacy
 Store receives a guessed vertical.
 
 The Commerce Vertical registry is canonical DSH data, not a hard-coded Governance inventory. Registry members change only through authorized DSH mutation and canonical readback; this capability owns the classification semantics, not the current registry contents. A vertical may carry a non-authoritative workflow preference that helps route initial product entry. That preference cannot require a Store or vertical to use only shared or only Store-scoped identities and cannot block a mixed assortment.
 
-## Reference classification and sequencing boundaries
+### Reference classification and sequencing boundaries
 
 Keep four independent DSH-owned concepts distinct: `ServiceCity` is geographic operating scope; `CommerceVertical` classifies the Store's commercial activity; `CommercialStoreType` is a compatible business-model type within one vertical; and `CatalogCategory` is the shared Product taxonomy within a vertical. A Store-local `StorefrontSection` is a fifth, separate merchandising/grouping meaning. None is a synonym, a surrogate foreign key or an authority inferred from another label.
 
@@ -59,11 +60,11 @@ with real eligible results appear, and common customer paths should reach
 sellable results without forcing traversal of every data hierarchy level.
 Neither `SHARED` nor `STORE_SCOPED` ownership is a customer-visible filter.
 
-A submitted first-Store joining case requires an active Service City, Commerce Vertical and compatible CommercialStoreType, but it does **not** require a pre-existing exhaustive shared Product library or every category of that vertical. An authorized Operator may establish the needed registry/taxonomy/Shared Product core ahead of onboarding as a current-program preparation choice; such preparation does not alter the Field role-admission prerequisites. The activated Partner may use Shared Products, create permitted Store-scoped items and submit missing Shared Product proposals before Go-Live. Publication and customer-visible offer eligibility still enforce their separate catalog rules.
+Direct DSH first-Store creation requires an active Service City, Commerce Vertical and compatible CommercialStoreType. It does **not** require an exhaustive shared Product library or every category in advance. Authorized Operators may prepare registry/taxonomy/Shared Product facts beforehand as an operational convenience, never as an Identity Partner admission condition. Partners may create Store-scoped Products and offers through the shared canonical catalog writer. Publication and customer-visible offer eligibility keep separate, server-checked gates.
 
 Reference readiness means proven values and owner API readback for the particular admitted scenario, including active status and vertical/type/category compatibility where that relationship applies. Database schema existence, menu navigation or a test/demo record name alone is not proof of readiness. Do not automatically seed new actor/store/offer authority when initializing a catalog.
 
-## Shared catalog taxonomy and data definitions
+### Shared catalog taxonomy and data definitions
 
 `CatalogCategory` is the shared catalog taxonomy: a flexible tree with
 `parent_category_id`. It is not a fixed L1/L2/L3/L4 model, a
@@ -86,7 +87,7 @@ catalog use cases: text, number, boolean, enum, measurement and date. Values
 are typed records, never an opaque options JSON blob, encoded names or a
 vertical-specific column explosion.
 
-## Product and ProductVariant
+### Product and ProductVariant
 
 `Product` is the common commercial identity. `ProductVariant` is the concrete
 sellable/package identity. Every Product has at least one Variant; a simple
@@ -119,14 +120,14 @@ actions, but vertical preferences cannot restrict Store assortment ownership.
 The Client does not present shared/local ownership as separate customer
 categories.
 
-## Identifiers and media
+### Identifiers and media
 
 Identifiers belong to Variants, not Products. DSH supports global `GTIN`, `EAN` and `UPC` sellable identifiers and Store-scoped `SKU`, with exact uniqueness rules. An identifier whose external type is not verified must remain explicitly represented without inventing a more specific external type; no barcode or provider identifier becomes the sole Product identity.
 
 Media is a bounded catalog-owned relation. Product media identity, role, ordering and authorization remain DSH catalog truth. Storage/provider/transport choice is an integration concern and does not become Product authority. External media references are validated, contain no credentials and are replaceable without redefining catalog identity.
 
 
-## StoreOffer and StorefrontSection
+### StoreOffer and StorefrontSection
 
 `StoreOffer` is the Store-scoped commercial relation:
 
@@ -166,7 +167,7 @@ section placement may reference only an eligible Store item or offer. The
 customer sees one coherent Store catalog organized for that Store, without
 separate headings that expose internal central/local ownership.
 
-## Restaurant modifiers
+### Restaurant modifiers
 
 Where the current Store vertical requires customization, DSH owns bounded
 `ModifierGroup` and `ModifierOption` records with required/optional selection
@@ -176,7 +177,7 @@ Cart and Order store canonical option IDs plus the frozen snapshot required for
 the transaction. Free-text line notes, if admitted, are separate bounded
 fields. Customization is never an opaque `cart.options` JSON authority.
 
-## Customer visibility and read model
+### Customer visibility and read model
 
 DSH owns one `CUSTOMER_VISIBLE_OFFER` evaluator. It is the only eligibility
 rule used by storefront catalog, cart and checkout. At minimum it requires:
@@ -199,7 +200,7 @@ read model, with bounded pagination/search and category/section filters when
 material. Direct IDs cannot bypass the evaluator and a Store detail response
 does not inline an unbounded catalog.
 
-## Operator and Partner operations
+### Operator and Partner operations
 
 The Operator Catalog workspace may manage verticals, shared taxonomy, typed
 attribute rules, Shared Products, Variants, identifiers, bounded media,
@@ -223,11 +224,11 @@ creation are denied.
 
 Store product and offer preparation before and after Go-Live uses one canonical DSH Store Catalog writer. The Partner app and authorized Operator Store record can create and update Store-scoped products and offers through distinct attributed identities; Operator management stays inside the Store record, not the Shared Catalog registry. Store publication remains gated by publishable offers and the independent Partner, commercial-agreement, profile-media and Operator readiness rules. Operator Store-file management may select multiple compatible Shared variants, set Store-specific prices and create their StoreOffers with bounded concurrent calls through the existing Store owner API, preserving per-item idempotency and actionable failures. This is not a second importer or Product registry. Field joining-case admission does not grant catalog-writing authority. A Store-specific Operator import accepts either the existing Store management permission (`partners`) or the existing shared-catalog permission (`catalog`), but neither permission alone grants the other domain's mutations; each import is bound to its specified Store and Operator.
 
-## Evolution and migration invariants
+### Evolution and migration invariants
 
-Catalog representation may evolve only through the DSH-owned migration history under `docs/governance/policies/data.md`.
+Catalog representation may evolve only through the DSH-owned migration history under `docs/governance/safety.md`.
 
-- migration mutability and protection follow the consuming repository's exact-state execution rules and `docs/governance/policies/data.md`; never rewrite merged or preservation-required migration history, and never copy a live migration ordinal/range into Governance;
+- migration mutability and protection follow the consuming repository's exact-state execution rules and `docs/governance/safety.md`; never rewrite merged or preservation-required migration history, and never copy a live migration ordinal/range into Governance;
 - representation changes preserve current canonical Product, Variant, StoreOffer, identifier, media, category and audit meaning unless an explicitly authorized Product decision changes that meaning;
 - local-to-Shared promotion selects or creates an approved Shared identity, repoints the Store's offers while preserving price, availability and history, then removes the losing local identity responsibility;
 - legacy/historical records are never guessed into a current classification merely to satisfy a newer model;
@@ -235,7 +236,7 @@ Catalog representation may evolve only through the DSH-owned migration history u
 - historical cutover details belong to Git and executable migrations, not live capability truth.
 
 
-## Failure, security and proof invariants
+### Failure, security and proof invariants
 
 - Operator-only Shared Catalog mutations and Partner-own-Store authorization
   are enforced at DSH using trusted actor/session context.
@@ -255,3 +256,30 @@ Catalog representation may evolve only through the DSH-owned migration history u
   flow and real-device Partner flow.
 
 Campaign/promotion eligibility and discovery-content publication are separately governed by `COMMERCE_PROMOTIONS` and `DISCOVERY_CONTENT`; they do not become Catalog mutation authority. The capability does not admit loyalty, advanced search infrastructure, POS/ERP/SFTP integration, multi-warehouse, multi-currency or placeholder catalog capabilities.
+
+## CUSTOMER_STORE_CATALOG — Customer Store Catalog
+
+CAPABILITY_ID: CUSTOMER_STORE_CATALOG
+
+### Outcome
+
+A Client can find and compare customer-visible offers inside a published Store catalog using Store-owned categories, favorites and an honest recent-order ranking.
+
+### Ownership
+
+DSH owns the Store, category, offer, completed Order evidence **and the actor-scoped customer favorite records and their mutations**. The Client interface presents the authenticated customer's DSH-backed favorites but is never a separate durable writer.
+
+### Invariants
+
+- default catalog order and Store-curated sections remain unchanged;
+- “الأكثر رواجًا” ranks only currently customer-visible Store offers by the count of distinct completed Store Orders containing each offer during the trailing 30 days;
+- completed delivery and completed customer pickup count; failed, rejected and cancelled Orders do not;
+- offers with no completed Order in the window are omitted from this ranking;
+- equal counts use product name and offer ID as deterministic tie-breakers;
+- category and text filters remain bounded and compatible with the popularity ranking;
+- favorites remain actor-scoped and separate from popularity;
+- product quantity and modifier details remain available through the product interaction, not duplicated as nonessential metadata in the compact catalog card.
+
+### Failure and recovery
+
+An empty 30-day ranking is shown as an explicit empty state. Catalog read failures preserve the prior results and expose the existing retry path.

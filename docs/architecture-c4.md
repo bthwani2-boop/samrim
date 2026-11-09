@@ -18,10 +18,10 @@ When this map and its sources disagree, use the following owners:
 | Governance routing | [Governance index](governance/README.md) |
 | Human actors and surfaces | [Platform model](governance/platform.md) |
 | Durable service/data boundaries | [Architecture governance](governance/architecture.md) |
-| Current admitted scope/non-goals | [Current Product](governance/product/overview.md) |
-| Capability-specific meaning | [Capabilities index](governance/product/capabilities.md) |
-| Cross-surface business scenarios | [Journeys](governance/product/journeys.md) |
-| Experience and access constraints | [Experience](../docs/governance/policies/experience.md), [Security](../docs/governance/policies/security.md) |
+| Current admitted scope/non-goals | [Current Product](governance/product.md) |
+| Capability-specific meaning | [Capabilities index](governance/product.md) |
+| Cross-surface business scenarios | [Journeys](governance/journeys.md) |
+| Experience and access constraints | [Experience](../docs/governance/experience.md), [Security](../docs/governance/safety.md) |
 | Current API behavior | [Identity OpenAPI](../services/identity/contracts/openapi/identity.openapi.yaml), [DSH OpenAPI](../services/dsh/contracts/openapi/dsh.openapi.yaml), [WLT OpenAPI](../services/wlt/contracts/openapi/wlt.openapi.yaml) |
 | Actual modules and runtime configuration | [Apps](../apps/), [Services](../services/), [Local Compose](../infra/local/compose/compose.yaml) |
 
@@ -115,10 +115,10 @@ These entries point to *existing code directories*, not to a mandate to extract 
 ### Domain distinctions easy to lose in a diagram
 
 - Human Actor/role is an **Identity** fact; Store ownership and Store-scoped grants are **DSH** facts. HR employment is a logical HR fact, not an Identity role.
-- **ServiceCity**, **CommerceVertical**, **CommercialStoreType**, **CatalogCategory**, and **StorefrontSection** are distinct concepts. Store Type does not equal product category. See [Central Catalog](governance/product/capabilities/partner/central-catalog.md).
-- Store publication, current orderability, Offer availability, serviceability and fulfillment-mode availability are distinct DSH results. See [Store onboarding](governance/product/capabilities/partner/partner-onboarding-store-publication.md).
-- WLT owns payment, balances, commission, earnings, cash custody, reconciliation and Store Commercial Agreement state; a Store-facing screen does not gain financial write authority. See [Agreement](governance/product/capabilities/finance/store-commercial-agreement.md) and [Finance policy](../docs/governance/policies/finance.md).
-- One Store Order belongs to one Store. Parent multi-Store checkout is orchestration above independent Store Orders; its admission does **not** prove implementation completeness. See [Current Product](governance/product/overview.md).
+- **ServiceCity**, **CommerceVertical**, **CommercialStoreType**, **CatalogCategory**, and **StorefrontSection** are distinct concepts. Store Type does not equal product category. See [Central Catalog](governance/catalog.md).
+- Store publication, current orderability, Offer availability, serviceability and fulfillment-mode availability are distinct DSH results. See [Store onboarding](governance/stores.md).
+- WLT owns payment, balances, commission, earnings, cash custody, reconciliation and Store Commercial Agreement state; a Store-facing screen does not gain financial write authority. See [Agreement](governance/finance.md) and [Finance policy](../docs/governance/finance.md).
+- One Store Order belongs to one Store. Parent multi-Store checkout is orchestration above independent Store Orders; its admission does **not** prove implementation completeness. See [Current Product](governance/product.md).
 
 ## 5. Dynamic example — Partner admission to customer-visible Store
 
@@ -150,7 +150,7 @@ sequenceDiagram
     D-->>C: Customer-safe published Store projection, if gates pass
 ~~~
 
-Final publication additionally depends on admitted catalog, Service City and other readiness conditions. Publication does **not** promise the Store can accept an Order now. Recovery, unknown outcomes, identity rebinding protection and idempotency are governed by the linked [Partner-to-visible-Store journey](governance/product/journeys.md), not by this abbreviated diagram.
+Final publication additionally depends on admitted catalog, Service City and other readiness conditions. Publication does **not** promise the Store can accept an Order now. Recovery, unknown outcomes, identity rebinding protection and idempotency are governed by the linked [Partner-to-visible-Store journey](governance/journeys.md), not by this abbreviated diagram.
 
 ## 6. Deployment view — current local Compose only
 

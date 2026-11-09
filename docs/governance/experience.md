@@ -1,15 +1,17 @@
-# Experience and Interaction Policy
+# Experience and Design
 
-ARTIFACT_CLASS: DURABLE_CROSS_CUTTING_POLICY
-SEMANTIC_OWNER: docs/governance/policies/experience.md
+ARTIFACT_CLASS: DURABLE_GOVERNANCE
+SEMANTIC_OWNER: docs/governance/experience.md
 EXECUTION_AUTHORITY: NONE
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 
+## Experience and Interaction Policy
+
 UX communicates canonical Product state, authority, available actions, feedback and recovery. User-facing experience is part of functional correctness, not end-stage polish.
 
-This policy owns durable information-architecture, navigation, interaction, RTL/localization, accessibility, state/recovery and platform-adaptation invariants. Durable visual identity and design language are owned by `docs/governance/policies/design.md`.
+This policy owns durable information-architecture, navigation, interaction, RTL/localization, accessibility, state/recovery and platform-adaptation invariants. Durable visual identity and design language are owned by `docs/governance/experience.md`.
 
-## BThwani experience contract
+### BThwani experience contract
 
 BThwani maintains one recognizable cross-surface experience system with platform-native behavior. Unified identity does not mean identical information architecture, identical shells or pixel-identical UI across the four deployable surfaces: Client, Partner, Captain and Control Panel. The standalone Field app, new acquisition attribution and reward workflows are retired.
 
@@ -21,9 +23,15 @@ The durable BThwani experience must remain:
 - adapted to the actor's real job rather than forcing every app into one navigation model;
 - adaptive to platform/device/window/input conventions rather than forcing one layout model everywhere.
 
-Visual identity, color, typography, shape, iconography, imagery, elevation and motion language are governed by `docs/governance/policies/design.md` and implemented through the canonical reusable Design System where reuse is proven.
+Visual identity, color, typography, shape, iconography, imagery, elevation and motion language are governed by `docs/governance/experience.md` and implemented through the canonical reusable Design System where reuse is proven.
 
-## Effort-minimal experience at operational scale
+### Store interface presentation — one Client application
+
+There is one customer-facing Client Expo application, with native mobile marketplace and Expo Web marketplace. The **same Store presentation components** support a compact Store view for eligible BTHWANI_PARTNER marketplace discovery on Android/iOS and Client Web, and a **full Store view opened via the Store's direct URL within the same Client Expo Web application** for either eligible published relation. This full view is not a new website product, Expo application, Store instance, database, checkout engine or Partner administration shell. The independent Store is not listed in the marketplace. Both views derive published Store content, offers, price and stock from canonical DSH; DSH/WLT/Identity enforce relation, publication, checkout eligibility and financing server-side independently of appearance or route.
+
+Arabic Store forms call `relationModel` «طريقة عمل المتجر» (شريك بثواني / متجر مستقل), `commercialStoreTypeId` «نوع المتجر» (such as بقالة / صيدلية) and `primaryVerticalId` «المجال التجاري». UI labels do not create extra models or alter canonical IDs. Presentation differences use a bounded mode, not a separately managed application or unlimited design-policy switches.
+
+### Effort-minimal experience at operational scale
 
 **No avoidable technical or user-experience complexity.** Across Customer, Partner, Captain and Operator work, the default is the shortest clear, safe, recoverable path to the actor's real outcome. Thousands of Stores, products, records or daily actions must not turn routine work into repeated forms, navigation or technical troubleshooting. Simplicity means removing unnecessary work, not concealing missing functionality or weakening canonical controls.
 
@@ -35,7 +43,7 @@ Visual identity, color, typography, shape, iconography, imagery, elevation and m
 - **Make complexity earn its place.** An added screen, approval, mandatory field, confirmation, service, state or abstraction requires a present, provable user, business, legal or safety need that a simpler existing path cannot satisfy. Remove obsolete paths after safe cutover; keep essential authorization, privacy, integrity, audit, financial and recovery guarantees enforced behind the experience.
 - **Prove simplicity with real actors.** Verify the repeated end-to-end job (entry, save, submit, review, correction and next-owner readback as applicable) on representative data and actual interaction. When claiming a workflow is faster or simpler, compare meaningful steps, re-entry, failure/retry burden or task time against its previous behavior rather than relying only on screen count or appearance.
 
-## Information architecture and application shell
+### Information architecture and application shell
 
 A materially developed surface requires a coherent information architecture before isolated page styling or feature depth.
 
@@ -60,7 +68,7 @@ ACTOR / USER OUTCOME
 
 For the Operator workspace, the durable top-level information architecture is organized around eleven work centers: Home (Leadership); Operations; Partners; Independent Stores; Catalog; Marketing and Content; Design Studio; Finance; Human Resources; Policies; Access and Permissions. Design Studio is a distinct operator composition workspace for visual section editing, private drafts and preview; it does not own DSH marketing content, published config or a parallel Design System. Its local-only drafts do not publish, and live publication must pass the canonical server owner and Identity permissions. Notifications, personal profile, appearance, session and security utilities belong to the shell instead of creating parallel work centers. Each center has one canonical primary work surface; only a materially distinct entity lifecycle, separate authorization or substantial batch workflow justifies a secondary destination. A state filter or routine action alone does not justify a new page or navigation tab. Partners and Catalog are separate centers because partner lifecycle, serviceability and store readiness are distinct from central product identities, their categories, proposals and imports. Independent Stores is a separate top-level Operator center for the merchant-direct Store relationship, filtered by DSH's canonical Store relation with server-side paging, without turning independent merchants into marketplace Partners or adding another Identity role. The merchant controls its own Store identity, catalog, and eligible merchant-authored content within Store-scoped authorization; private direct-order Customers will only be available through a separately admitted owner-scoped Direct Order path, never by reusing marketplace Customer lists or revealing PII from the Operator registry. The Catalog center owns operator-facing management of the shared catalog, including its categories, structured data definitions and import/review workflows. Quick Prices uses a fast operational grid on desktop and compact sequential price entry on mobile. In Arabic operator-facing central catalog experiences, use the term “الفئات” for this taxonomy, including its top-level and nested levels. Policies is the operator-facing home for cross-capability shared platform rules, including service geography and delivery fees; it does not own catalog taxonomy or product data definitions. Before and after Go-Live, the Partner workspace owns Store-local catalog preparation, product content, pricing and menu organization. Historical Field attribution grants no Store catalog write authority; current intake comes from Partner self-service or the Operator workspace. Finance provides operational Partner and Captain settlements. Archived Field financial obligations remain available to authorized Finance for readback and reconciliation only, not new acquisitions or rewards. For each Store, Finance sees the proposed agreement, Partner acceptance, Finance approval and active version as explicit states; if a Store Type rate is shown, it is visibly a suggestion and cannot appear as active terms. Partner and Captain official-wallet intake may select a provider preference only; where available, the Identity-derived phone and official name are read-only, and stale Identity facts require reverification. Its growing payout and evidence resources use server-driven registries with server-owned search, filters, sorting, bounded paging, selection/actions where justified, and on-demand relationship details. Customer balance withdrawals remain a separately authorized exception queue: Operations records the request, Finance approves and executes it, and an independent operator reconciles it. Funding, COD remittance, beneficiary payouts and customer withdrawal exceptions remain distinct work queues because they have different sources, authority and state transitions. These centers organize administration and do not reassign canonical capability meaning, data or write ownership. A center is an information-architecture responsibility, not a new service or semantic owner.
 
-### Operator operations-at-scale contract
+#### Operator operations-at-scale contract
 
 The Control Panel is an operations console for sustained work at scale, not a decorative dashboard. Operator presentation starts from the job, resource semantics and expected scale rather than a preferred component.
 
@@ -85,7 +93,7 @@ For repeated operator decisions, a row or equivalent record summary makes its au
 
 Collection state that materially affects repeated work must survive the interaction path by an appropriate mechanism. Filters, sort, page/position, visible columns, density or another relevant view preference may be persisted or made shareable when doing so materially reduces repeated setup. URL persistence is appropriate only for nonsensitive state with an unambiguous owning collection; sensitive values do not enter URLs merely for convenience. Repeated operational query configurations may become saved views when their recurrence and value are proven rather than speculatively prebuilt.
 
-Selection scope is explicit. Page-local selection, loaded-result selection and an action over all canonical records matching a query are materially different states and must never be represented as interchangeable. A bulk action states the affected scope and consequence before execution and exposes busy/progress, partial failure or recovery, and final canonical outcome when those states are materially possible. Large or long-running multi-record execution semantics are owned by `docs/governance/policies/reliability.md`; presentation must not simulate a client-side loop as atomic platform success.
+Selection scope is explicit. Page-local selection, loaded-result selection and an action over all canonical records matching a query are materially different states and must never be represented as interchangeable. A bulk action states the affected scope and consequence before execution and exposes busy/progress, partial failure or recovery, and final canonical outcome when those states are materially possible. Large or long-running multi-record execution semantics are owned by `docs/governance/safety.md`; presentation must not simulate a client-side loop as atomic platform success.
 
 Detail presentation preserves collection context when operators repeatedly inspect or compare multiple records. A split panel, drawer, expandable detail or equivalent in-context presentation is appropriate only when that workflow is materially faster and clearer than repeated route changes. Complex editing, investigation or multi-step work uses a focused detail/workflow surface when a persistent side panel would constrain the task or duplicate the canonical object workspace.
 
@@ -101,7 +109,7 @@ RTL remains correct under operational density and horizontal overflow. Logical s
 
 Presentation patterns never reassign the underlying capability owner, writer, authorization boundary or canonical readback. Do not create duplicate list/detail routes, permanent side-by-side edit forms, client-filtered server-paginated truth or parallel presentation models that become shadow operational truth.
 
-## Interaction and platform adaptation
+### Interaction and platform adaptation
 
 The same BThwani semantic outcome may use platform-appropriate navigation, system controls, safe areas, gestures, keyboard/pointer behavior, dialogs/sheets, window sizes and platform chrome.
 
@@ -113,7 +121,7 @@ Touch targets, focus order, keyboard reachability, gesture behavior and safe-are
 
 When image inspection is part of an authorized task, a small thumbnail or logo provides a usable full-image review on demand. Equivalent image-review needs reuse a coherent, keyboard-accessible treatment with contain-fit, dismiss/return focus, load-error recovery and correct privacy/permission boundaries. Case-only evidence or restricted media never becomes publicly available merely because the UI reuses a viewer.
 
-## State, feedback, recovery and truth
+### State, feedback, recovery and truth
 
 Loading, empty, no-results, forbidden, conflict, offline, error, unknown, busy, disabled, selected, validation and recovery states are materially distinct when the capability exposes them.
 
@@ -123,7 +131,7 @@ UI never claims success, eligibility, health, money or completion before canonic
 
 Feedback must make consequence and next action clear without leaking raw internal identifiers, concurrency versions, backend enum vocabulary or transport representations into normal user-facing content.
 
-## Arabic, RTL and localization
+### Arabic, RTL and localization
 
 Arabic/RTL is an end-to-end interaction invariant, not a `textAlign: right` treatment.
 
@@ -142,7 +150,7 @@ Partner and Captain mobile surfaces use the current Arabic-only RTL baseline unl
 
 Directionality is a shared semantic foundation; apps do not invent competing RTL/LTR systems.
 
-## Accessibility
+### Accessibility
 
 - Web accessibility targets WCAG 2.2 AA where applicable; web interaction semantics use current WAI/ARIA guidance when relevant.
 - Mobile uses equivalent platform semantics, scalable text, accessible names, focus/reading order, contrast and touch-target behavior.
@@ -151,7 +159,7 @@ Directionality is a shared semantic foundation; apps do not invent competing RTL
 - Reduced-motion behavior is respected when motion is material to the affected surface.
 - Accessibility is designed and tested with the interaction, not added after visual completion.
 
-## Evidence
+### Evidence
 
 A material user-facing change proves, as applicable:
 
@@ -176,3 +184,141 @@ Rendered claims require interaction/accessibility/device/runtime evidence approp
 Visual regression can prove stability of a rendered contract when that contract is mature and materially valuable, but it does not replace behavioral, accessibility, RTL or canonical-readback proof.
 
 Use `docs/reference/experience.md` for current external Experience/Design evidence. External references may challenge and improve BThwani interaction and platform fit; they never become BThwani Product, information-architecture or design authority by existence.
+
+## Design and Visual Identity Policy
+
+This policy owns BThwani's durable cross-surface visual identity and design-language invariants. It does not own Product capabilities, information architecture, navigation, interaction/recovery behavior, accessibility policy, implementation topology, or current rendered state.
+
+```text
+docs/governance/experience.md
+→ durable visual identity / design language
+
+docs/governance/experience.md
+→ information architecture / shell / navigation / interaction / RTL / accessibility / recovery
+
+docs/governance/engineering.md
+→ material review and proof obligations
+
+EXECUTABLE DESIGN SYSTEM
+→ reusable implementation of admitted visual semantics
+
+APP SURFACES
+→ app-specific composition and rendering
+```
+
+No Markdown file in an implementation repository, app-local visual foundation, donor implementation, external Design System, or rendered screenshot becomes a parallel BThwani design authority.
+
+### Visual character
+
+BThwani is operational, familiar, trustworthy, warm, modern and uncluttered. Visual design makes the current context, primary action, state and recovery legible before decoration.
+
+The recognizable signature is restrained deep-navy structure with controlled orange emphasis over quiet surfaces. Brand identity must remain distinctive without overwhelming content, status meaning or platform familiarity.
+
+### Brand anchors and color semantics
+
+The five approved compiled-default brand anchors are:
+
+- structural royal navy `#102B4E`;
+- vivid brand orange `#F36B21`;
+- pure white `#FFFFFF`;
+- light turquoise blue `#83DDF3`;
+- burgundy / deer-blood accent `#7B1E3A`.
+
+The light/dark semantic palettes, warm surfaces, accessible dark-orange actions, interaction feedback and gradients are derived from these defaults by the executable Design System. White text on vivid orange `#F36B21` is not WCAG AA for normal-sized text; use a validated contrast role such as `#C2410C` for white-text primary buttons.
+
+These anchors are durable brand decisions until an explicit brand decision changes them. Derived ramps, interaction shades, contrast adaptations, opacity, component-level colors and theme-specific values belong to the executable Design System rather than being mirrored here as a second token registry.
+
+Orange is intentional emphasis for brand and high-priority interaction, not decorative saturation across cards or chrome. Navy provides structure and identity, not a requirement to make every surface dark. Success, warning, danger and informational states use semantic state meaning and must not be overloaded with brand meaning.
+
+Color alone never carries material state or action meaning.
+
+#### Compiled defaults and governed Studio overrides
+
+All four deployable surfaces retain these five compiled defaults, so their design does not depend on an API response, a persisted marketing configuration or connectivity. A later authorized Studio publication may replace **editable semantic presentation roles** with any validated color choices for light/dark and supported individual surfaces. Marketing and Content owns the editing entry point; its published theme state must have one lawful server owner, explicit Identity authorization, schema/version compatibility, preview separate from publication, audit, rollback, and safe restoration to compiled defaults. Per-operator appearance preference remains distinct from organization-wide published colors.
+
+Studio publication changes presentation, not permanent code defaults or mutable Identity, commerce, dispatch or WLT financial state. New roles/colors are not published if they obscure safety or financial meaning, fail applicable WCAG 2.2 AA contrast, break a consumer, or expose arbitrary CSS/JS. A client with no valid or compatible publication must render its compiled defaults without a crash; existing installed applications only accept the supported schema. This policy approves the brand direction and safe override boundary, not evidence that runtime Studio publication is implemented.
+
+### Typography and numeric expression
+
+Typography prioritizes Arabic readability, clear hierarchy, stable shaping, legible numerals and platform-quality rendering. Screen titles identify the current job or context; supporting text clarifies state, consequence and recovery without backend vocabulary.
+
+No custom brand typeface is currently admitted as a durable visual-identity decision. If a custom typeface is proposed, admission requires proven Arabic shaping/RTL, weights, numerals, small-size legibility, Android/iOS/web rendering, text scaling, performance and licensing. The font mechanism currently used by any surface is implementation truth.
+
+Exact font sizes, line heights, weights and platform mappings are executable Design System concerns unless a value itself becomes a durable brand decision.
+
+### Spacing, density and hierarchy
+
+Spacing establishes information groups and action priority rather than filling empty space mechanically. Density may differ by surface and input model while preserving the same hierarchy and state meaning.
+
+Operational density means information efficiency, not visual crowding. Repeated comparison and high-volume work should expose enough identity, state and decisive comparable information to scan and act without unnecessary route changes or oversized containers. Secondary metadata and secondary actions remain visually quieter than the primary job.
+
+Narrative, form and focused-detail content may use constrained readable widths. Operational registries, comparison surfaces and other wide data workspaces may consume materially more of the available viewport when an arbitrary global maximum width would reduce scanning, comparison or action efficiency. Exact breakpoints, dimensions and layout values remain executable Design System or app concerns rather than durable constants here.
+
+Where multiple density modes materially improve sustained operator work, compact and comfortable treatments preserve the same semantics, reachability and accessibility rather than becoming different products. Density choice is not introduced without a real user or workflow need, and exact density tokens remain executable Design System concerns.
+
+Important values, actions and statuses must remain readable under realistic Arabic copy, large text and constrained widths. Truncation must not hide materially required meaning.
+
+### Shape, surfaces, elevation and depth
+
+Shape language is cohesive and restrained. Controls, fields, cards, sheets and other surfaces use a consistent radius family through semantic Design System roles rather than local per-screen invention.
+
+Cards contain one coherent responsibility; they are not giant click targets containing unrelated actions and are not the default layout primitive for large comparable record collections. Data-dense workspaces prefer clear alignment, spacing, borders or restrained tonal separation before decorative elevation. Borders and restrained elevation may separate work areas, but shadows do not substitute for hierarchy. Decorative gradients, excessive layering or visual effects that obscure state or delay an operational action are noncanonical.
+
+Focus, busy, disabled, selected and error treatments should preserve understandable geometry while changing semantic treatment as appropriate.
+
+### Iconography, imagery and media
+
+Iconography uses a coherent family, consistent stroke/fill language and semantic meaning. Direction-sensitive symbols must remain compatible with the Arabic/RTL interaction contract owned by `docs/governance/experience.md`.
+
+Images, illustrations and media support Product understanding or brand character; they do not fabricate Product truth or crowd out primary actions. Material visual assets require known provenance and compatible licensing. Donor or third-party assets are evidence/candidates only and are not adopted by existence.
+
+### Motion
+
+Motion communicates hierarchy, continuity, feedback or state change. Decorative motion that slows task completion, masks latency or competes with operational actions is noncanonical.
+
+Exact durations, easing curves and platform implementations belong to the executable Design System. Accessibility and reduced-motion interaction behavior remain governed by `docs/governance/experience.md`.
+
+### Light and dark appearance
+
+Light and dark appearance preserve semantic hierarchy, action priority, state meaning and BThwani identity rather than becoming independent visual products. Theme adaptation uses semantic roles; screens do not fork business meaning or invent local theme systems.
+
+The dark surface model may adapt navy/orange expression for contrast and legibility while preserving their brand relationship. Exact theme values remain executable Design System implementation.
+
+### Cross-platform expression
+
+BThwani has one recognizable visual identity, not one pixel-identical layout. Android, iOS and web may render components, chrome, density and interaction affordances differently when platform fit requires it. Platform conventions challenge implementation choices without becoming BThwani brand authority.
+
+### Design-system boundary
+
+The reusable Design System implements domain-neutral visual semantics through the progression:
+
+```text
+BRAND / VISUAL INVARIANT
+→ PRIMITIVE TOKEN
+→ SEMANTIC TOKEN
+→ REUSABLE PRIMITIVE / PATTERN WHEN PROVEN
+→ PLATFORM-SPECIFIC RENDERING
+```
+
+A reusable token, primitive or pattern exists only when it has real current consumers and reduces whole-system inconsistency or complexity. Product/domain components begin with the consuming feature and move into the Design System only after domain-neutral multi-consumer need is proven.
+
+No surface creates a competing foundation for color, typography, spacing, radius, elevation, iconography, motion, directionality or theme when the canonical Design System can own the same reusable meaning.
+
+### Evidence and change control
+
+A material visual change must distinguish:
+
+```text
+DURABLE BRAND / DESIGN DECISION
+→ update this semantic owner when the durable meaning changes
+
+EXECUTABLE TOKEN / COMPONENT TREATMENT
+→ change the Design System and prove affected consumers
+
+APP-SPECIFIC COMPOSITION
+→ change the owning surface without promoting local composition into global design law
+```
+
+Rendered evidence is required for claims about actual appearance; source declarations alone do not prove visual quality. Interaction, accessibility, RTL, responsive/adaptive and state-transition proof remain governed by `docs/governance/experience.md` and `docs/governance/engineering.md`.
+
+Donor implementations, OSS, Material, Apple guidance and other external design systems are challenge/evidence sources only. Preserve useful BThwani meaning, reject defects and obsolete architecture, and never copy external visual identity as authority.

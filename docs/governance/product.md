@@ -1,7 +1,7 @@
-# BThwani Current Product
+# BThwani Product Scope
 
 ARTIFACT_CLASS: DURABLE_PRODUCT_GOVERNANCE
-SEMANTIC_OWNER: docs/governance/product/overview.md
+SEMANTIC_OWNER: docs/governance/product.md
 EXECUTION_AUTHORITY: NONE
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 
@@ -9,7 +9,7 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 This file owns current Product breadth, non-goals and capability admission law.
 
-The Human Actor/role model is owned by `docs/governance/platform.md`. Bounded system ownership is owned by `docs/governance/architecture.md`. Detailed capability truth lives only in `capabilities/**`; cross-capability, cross-surface orchestration lives only in `docs/governance/product/journeys.md`.
+The Human Actor/role model is owned by `docs/governance/platform.md`. Bounded system ownership is owned by `docs/governance/architecture.md`. Detailed capability truth lives only in `capabilities/**`; cross-capability, cross-surface orchestration lives only in `docs/governance/journeys.md`.
 
 ## Current approved Product target
 
@@ -38,7 +38,7 @@ OPERATOR ───────────────────────�
 MULTI-STORE ────────────────────────── orchestration above independent Store Orders
 ```
 
-Detailed cross-capability surfaces, handoffs, branches and readbacks are owned by `docs/governance/product/journeys.md` as durable E2E scenario meaning; its contents do not prescribe implementation slices or assert their completion.
+Detailed cross-capability surfaces, handoffs, branches and readbacks are owned by `docs/governance/journeys.md` as durable E2E scenario meaning; its contents do not prescribe implementation slices or assert their completion.
 
 The active implementation slice may be narrower. Current approved Governance may intentionally lead implementation progress. Missing admitted breadth is not by itself a defect unless the authorized objective or current delivery gate requires that breadth to be complete.
 
@@ -87,6 +87,10 @@ Each ID has exactly one capability owner under `capabilities/**`.
 
 ## Product-wide invariants
 
+BThwani has one canonical Store and commerce engine. The `relationModel` values `BTHWANI_PARTNER` and `INDEPENDENT_STORE` express governed relation variants, not new products or engines. The approved target commercial terms are commission for eligible marketplace Partners and subscription for independent Stores. WLT alone owns exact rates, accepted agreements, billing, conservation and settlements. These decisions do **not** assert that recurring subscription billing, independent direct checkout or relation conversion are ready to activate.
+
+Client uses a compact Partner Store view inside the marketplace on Android, iOS and Expo Web; an eligible published Store of either relation can be viewed in a full Store presentation via a direct link within the **same existing Client Expo Web application**. No additional Expo app, domain owner, Store writer or checkout engine exists for the full view.
+
 - the Platform Human Actor/role model is authoritative for participant identity semantics;
 - each canonical Store has one effective Store relationship (BTHWANI_PARTNER or INDEPENDENT_STORE) and retains the same Store identity, merchant catalog, published public link and content when its approved relationship changes;
 - marketplace discovery and checkout remain exclusive to eligible BTHWANI_PARTNER Stores; an independent Store has only a separately admitted direct web publication and direct merchant-controlled checkout after their independent safety gates pass;
@@ -109,7 +113,7 @@ Each ID has exactly one capability owner under `capabilities/**`.
 - derived search/cache/analytics/notification/tracking state never becomes mutation authority;
 - successful user-facing mutation requires canonical committed readback;
 - admitted breadth and implementation completion are separate claims;
-- admitted marketplace Partner workspace capabilities remain available by Store scope and authorized permissions, never unlocked by a paid subscription plan or feature tier. A separately admitted independent storefront hosting plan may control hosting limits only, not Identity roles, Store ownership or marketplace agreement rights. Transaction charges, commercial agreements and third-party provider costs remain governed by their actual financial and integration owners.
+- admitted marketplace Partner workspace capabilities remain available by Store scope and authorized permissions, never unlocked by a paid subscription plan or feature tier. A relation-eligible independent Store subscription may control expressly agreed hosting/service limits only, never Identity roles, Store ownership or Partner marketplace rights. Transaction charges, commercial agreements and third-party provider costs remain governed by their actual financial and integration owners.
 
 ## Explicit current non-goals
 

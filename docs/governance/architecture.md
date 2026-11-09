@@ -48,7 +48,7 @@ WLT
 → payout / settlement / reconciliation
 ```
 
-A service existing in source does not automatically admit Product breadth; Product admission is owned by `docs/governance/product/overview.md`.
+A service existing in source does not automatically admit Product breadth; Product admission is owned by `docs/governance/product.md`.
 
 ## Architecture selection
 
