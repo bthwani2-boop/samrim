@@ -45,11 +45,33 @@ func TestIndependentPartnerOrdersRejectUntrustedRequestsBeforeDataAccess(t *test
 func TestIndependentPartnerOrderInvalidTransitionBodyFailsBeforeService(t *testing.T) {
 	mux := http.NewServeMux()
 	(&OrderServer{}).Register(mux)
-	req := httptest.NewRequest("PATCH", "/dsh/partner/stores/store-a/direct-orders/order-a", strings.NewReader("{invalid json"))
-	req.Header.Set("Authorization", "Bearer test-token")
-	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("invalid json status=%d body=%s", w.Code, w.Body.String())
+	for _, tc := range []struct {
+		name, body string
+	}{
+		{"malformed JSON", "{invalid json"},
+		{"actor spoof in body", `{"state":"ACCEPTED","expectedVersion":1,"actorId":"foreign-actor"}`},
+		{"Store spoof in body", `{"state":"ACCEPTED","expectedVersion":1,"storeId":"foreign-store"}`},
+		{"second JSON value", `{"state":"ACCEPTED","expectedVersion":1}{"state":"REJECTED","expectedVersion":1}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPatch,
+				"/dsh/partner/stores/store-a/direct-orders/order-a", strings.NewReader(tc.body))
+			req.Header.Set("Authorization", "Bearer test-token")
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("invalid transition body status=%d body=%s", w.Code, w.Body.String())
+			}
+			if got := w.Header().Get("Cache-Control"); !strings.Contains(got, "no-store") {
+				t.Errorf("private error response must disable caching: Cache-Control=%q", got)
+			}
+			if got := w.Header().Get("X-Robots-Tag"); got != "noindex, nofollow" {
+				t.Errorf("private error response crawler hint=%q", got)
+			}
+			if strings.Contains(w.Body.String(), "foreign-actor") || strings.Contains(w.Body.String(), "foreign-store") {
+				t.Fatalf("invalid input response echoed untrusted actor or Store: %s", w.Body.String())
+			}
+		})
 	}
 }
