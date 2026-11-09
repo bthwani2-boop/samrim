@@ -62,3 +62,16 @@ test("Partner orders route scope resets to selected Store when the aggregate par
   const source = readFileSync(new URL("../src/features/partner-onboarding/partner-orders.tsx", import.meta.url), "utf8");
   assert.match(source, /useEffect\(\(\) => \{ setScope\(routeScope === "all" \? "ALL_AUTHORIZED" : "SELECTED_STORE"\); \}, \[routeScope\]\)/);
 });
+
+test("independent pickup order UI includes Store-scoped render and pre-dispatch guards", () => {
+  const source = readFileSync(new URL("../src/features/order-management/independent-pickup-orders.tsx", import.meta.url), "utf8");
+  const storeA = JSON.stringify(["actor-a", "store-a"]);
+  const storeB = JSON.stringify(["actor-a", "store-b"]);
+  assert.equal(isCurrentOrderListRequest(2, storeA, 2, storeB), false);
+  assert.match(source, /const scopeKey = JSON\.stringify\(\[scope, storeID\]\)/u);
+  assert.match(source, /isCurrentOrderListRequest\(request, scopeKey, generation\.current, activeScopeKey\.current\)/u);
+  assert.match(source, /const visible = visibleScopeKey === scopeKey/u);
+  assert.match(source, /!loading && visible && !error && orders\.map\(order =>/u);
+  assert.match(source, /confirm && visible && confirm\.order\.storeId === storeID/u);
+  assert.match(source, /const token = await scopedToken\(scope\);[\s\S]*?if \(!isCurrentAction\(\)\) return;[\s\S]*?transitionIndependentPickupOrder\(token, storeID/u);
+});
