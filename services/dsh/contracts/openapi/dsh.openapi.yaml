@@ -84,7 +84,7 @@ paths:
           schema: { type: string, maxLength: 128 }
       responses:
         '200':
-          description: Canonical Store-scoped buyable offers only, filtered before pagination, with rights-attested public HTTPS media and an opaque Store/City/legal/filter-scoped cursor.
+          description: Canonical Store-scoped published offers for read-only display, filtered before pagination, with rights-attested HTTPS media and an opaque Store/City/legal/filter-scoped cursor.
           content:
             application/json:
               schema:
@@ -96,7 +96,7 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: [offerId, productId, productName, variantId, variantTitle, priceMinor, currency, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, media]
+                      required: [offerId, productId, productName, variantId, variantTitle, baseUnit, pricingBasis, pricingUnitBaseUnits, priceMinor, currency, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, media]
                       properties:
                         offerId: { type: string }
                         productId: { type: string }
@@ -104,6 +104,9 @@ paths:
                         productDescription: { type: string }
                         variantId: { type: string }
                         variantTitle: { type: string }
+                        baseUnit: { type: string, enum: [COUNT, GRAM, MILLILITER] }
+                        pricingBasis: { type: string, enum: [PER_UNIT, PER_MEASURE] }
+                        pricingUnitBaseUnits: { type: integer, format: int64, minimum: 1 }
                         priceMinor: { type: integer, format: int64 }
                         currency: { type: string }
                         quantityMinBaseUnits: { type: integer, format: int64 }

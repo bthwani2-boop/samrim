@@ -29,6 +29,9 @@ export type IndependentPublicOffer = Readonly<{
   variantTitle: string;
   priceMinor: number;
   currency: "YER";
+  baseUnit: "COUNT" | "GRAM" | "MILLILITER";
+  pricingBasis: "PER_UNIT" | "PER_MEASURE";
+  pricingUnitBaseUnits: number;
   media: ReadonlyArray<Readonly<{ uri: string; role: string }>>;
 }>;
 
@@ -107,8 +110,14 @@ export async function listPublishedIndependentWebCatalog(
       (cursor && value.nextCursor === cursor) ||
       !value.offers.every(item => object(item) && text(item.offerId) && text(item.productId) &&
         text(item.productName) && text(item.variantId) && text(item.variantTitle) &&
-        Number.isSafeInteger(item.priceMinor) && (item.priceMinor as number) >= 0 &&
-        item.currency === "YER" && Array.isArray(item.media) &&
+        Number.isSafeInteger(item.priceMinor) && (item.priceMinor as number) > 0 &&
+        item.currency === "YER" &&
+        (item.baseUnit === "COUNT" || item.baseUnit === "GRAM" || item.baseUnit === "MILLILITER") &&
+        (item.pricingBasis === "PER_UNIT" || item.pricingBasis === "PER_MEASURE") &&
+        Number.isSafeInteger(item.pricingUnitBaseUnits) && (item.pricingUnitBaseUnits as number) > 0 &&
+        ((item.pricingBasis === "PER_UNIT" && item.baseUnit === "COUNT" && item.pricingUnitBaseUnits === 1) ||
+          (item.pricingBasis === "PER_MEASURE" && (item.baseUnit === "GRAM" || item.baseUnit === "MILLILITER"))) &&
+        Array.isArray(item.media) &&
         item.media.every((media: unknown) => object(media) && publicMedia(media.uri) && text(media.role)) &&
         (!options.productID || item.productId === options.productID)))
     throw new IndependentStoreUnavailable("INVALID_PUBLIC_CATALOG");

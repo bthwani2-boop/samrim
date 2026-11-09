@@ -110,8 +110,8 @@ func TestIndependentCatalogNeverReferencesNonexistentOfferDeletedAt(t *testing.T
 	// dsh.catalog_store_offers has no deleted_at; dsh.catalog_products does.
 	// Keep both query builders aligned to the canonical Catalog schema.
 	if strings.Contains(storeSource, "o.deleted_at") ||
-		!strings.Contains(storeSource, "p.deleted_at IS NULL") {
-		t.Fatal("independent public Catalog must use canonical Product soft-delete and never an Offer deleted_at")
+		!strings.Contains(storeSource, "dsh.catalog_publishable_offers") {
+		t.Fatal("independent public Catalog must reuse the canonical publishable-offer view for product soft-deletion and never refer to an Offer deleted_at")
 	}
 	catalogSchema, err := os.ReadFile("migrations/010_central_catalog_refoundation.sql")
 	if err != nil {
@@ -135,17 +135,39 @@ func TestIndependentCatalogNeverReferencesNonexistentOfferDeletedAt(t *testing.T
 	}
 }
 
-func TestIndependentPublicCatalogNeverAdvertisesOverflowingPrices(t *testing.T) {
-	for _, predicate := range []string{
-		"o.price_minor > 0",
-		"o.pricing_unit_base_units=1",
-		"o.quantity_min_base_units > 0",
-		"o.quantity_max_base_units >= o.quantity_min_base_units",
-		"o.price_minor::numeric * o.quantity_max_base_units::numeric <= 9223372036854775807",
+func TestIndependentPublicCatalogReusesCanonicalPublishableOfferVisibility(t *testing.T) {
+	// The catalog/view owner controls activity, quantity, price and inventory
+	// admission. Website presentation adds only unsupported visual constraints.
+	for _, required := range []string{
+		"dsh.catalog_publishable_offers",
+		"o.currency='YER'",
+		"NOT EXISTS (SELECT 1 FROM dsh.catalog_store_offer_modifier_groups",
 	} {
-		if !strings.Contains(independentPublishedOfferEligibilitySQL, predicate) {
-			t.Errorf("independent Catalog is missing overflow-safe Offer predicate %s", predicate)
+		if !strings.Contains(independentWebOfferPresentationSQL, required) {
+			t.Errorf("independent public reader must reuse the canonical Catalog and its narrow presentation rules: %q", required)
 		}
+	}
+	for _, duplicate := range []string{
+		"o.publication_state='published'",
+		"o.availability=true",
+		"o.price_minor > 0",
+		"o.inventory_policy='AVAILABILITY_ONLY'",
+		"o.quantity_min_base_units > 0",
+		"o.pricing_basis='PER_UNIT'",
+		"o.quantity_max_base_units >= o.quantity_min_base_units",
+		"p.deleted_at IS NULL",
+	} {
+		if strings.Contains(independentWebOfferPresentationSQL, duplicate) {
+			t.Errorf("duplicate Catalog ownership in independent website SQL: %q", duplicate)
+		}
+	}
+	source, err := os.ReadFile("independent_storefront.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(source), "BaseUnit: offer.Variant.BaseUnit") ||
+		!strings.Contains(string(source), "PricingUnitBaseUnits: offer.PricingUnitBaseUnits") {
+		t.Fatal("independent public offers must expose canonical price units, not invent their own")
 	}
 	for _, tc := range []struct {
 		price, quantity int64
@@ -157,7 +179,7 @@ func TestIndependentPublicCatalogNeverAdvertisesOverflowingPrices(t *testing.T) 
 	} {
 		_, err := CalculateCatalogLineAmount(tc.price, tc.quantity, "PER_UNIT", 1)
 		if (err == nil) != tc.allowed {
-			t.Errorf("canonical pricing mismatch: price=%d quantity=%d err=%v", tc.price, tc.quantity, err)
+			t.Errorf("canonical price calculation changed: price=%d quantity=%d err=%v", tc.price, tc.quantity, err)
 		}
 	}
 }

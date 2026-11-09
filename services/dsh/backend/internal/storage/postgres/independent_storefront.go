@@ -16,27 +16,14 @@ import (
 // legal, contact and media eligibility gates; direct checkout remains disabled.
 var ErrIndependentStorefrontNotPublished = errors.New("independent storefront was not published")
 
-// Both public Store admission and its public Catalog use the same conservative
-// published-Offer visibility rule. This is a display projection, never a Direct
-// Order permission: independent checkout remains separately gated in DSH.
-// Widen supported offer kinds only with the canonical Catalog publication policy.
-const independentPublishedOfferEligibilitySQL = `
-    AND o.publication_state='published' AND o.availability=true
-    AND o.currency='YER' AND o.pricing_basis='PER_UNIT'
-    -- Do not expose invalid or overflow-prone price/quantity combinations.
-    -- Even though checkout is disabled, visible totals must remain representable.
-    AND o.price_minor > 0
-    AND o.price_minor::numeric * o.quantity_max_base_units::numeric <= 9223372036854775807
-    AND o.pricing_unit_base_units=1
-    AND o.inventory_policy='AVAILABILITY_ONLY'
-    AND EXISTS (SELECT 1 FROM dsh.catalog_publishable_offers publishable WHERE publishable.offer_id=o.id)
-    AND o.quantity_min_base_units > 0
-    AND o.quantity_max_base_units >= o.quantity_min_base_units
-    AND o.quantity_step_base_units > 0 AND o.pricing_unit_base_units > 0
-    AND MOD(o.quantity_min_base_units,o.pricing_unit_base_units)=0
-    AND v.active=true AND p.active=true AND p.deleted_at IS NULL
-    AND (p.scope='SHARED' OR (p.scope='STORE_SCOPED' AND p.store_id=s.id))
-    AND NOT EXISTS(SELECT 1 FROM dsh.catalog_store_offer_modifier_groups og WHERE og.offer_id=o.id)
+// Public read-only websites consume the canonical Catalog eligibility view.
+// The extra constraints below are presentation-only: the current Store website
+// does not render modifier-selection price breakdowns.
+// Stock, publication and quantity eligibility are evaluated by the Catalog owner.
+const independentWebOfferPresentationSQL = `
+    AND EXISTS (SELECT 1 FROM dsh.catalog_publishable_offers published WHERE published.offer_id=o.id)
+    AND o.currency='YER'
+    AND NOT EXISTS (SELECT 1 FROM dsh.catalog_store_offer_modifier_groups og WHERE og.offer_id=o.id)
 `
 
 type IndependentPublishedStore struct {
@@ -156,7 +143,7 @@ func readPublishedIndependentStoreWithQueryer(ctx context.Context, db independen
 			JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
 			JOIN dsh.catalog_products p ON p.id=v.product_id
 			WHERE o.store_id=s.id
-		`+independentPublishedOfferEligibilitySQL+`
+		`+independentWebOfferPresentationSQL+`
 		  )`, storeID, approvedLegalTermsVersion).Scan(
 		&result.StoreID, &result.ServiceCityID, &result.Name, &result.StoreVersion,
 		&result.PublicationVersion, &result.PublishedAt,
@@ -240,7 +227,7 @@ func listPublishedIndependentOffersInternal(ctx context.Context, db *sql.DB, sto
 		  AND EXISTS (SELECT 1 FROM dsh.store_profile_media_assets a
 		      WHERE a.store_id=s.id AND a.media_role='primary' AND a.state='active' AND a.rights_attested_at IS NOT NULL AND NULLIF(btrim(a.uri),'') IS NOT NULL)
 		  AND EXISTS (SELECT 1 FROM dsh.store_profile_media_assets a
-		      WHERE a.store_id=s.id AND a.media_role='cover' AND a.state='active' AND a.rights_attested_at IS NOT NULL AND NULLIF(btrim(a.uri),'') IS NOT NULL)` + independentPublishedOfferEligibilitySQL
+		      WHERE a.store_id=s.id AND a.media_role='cover' AND a.state='active' AND a.rights_attested_at IS NOT NULL AND NULLIF(btrim(a.uri),'') IS NOT NULL)` + independentWebOfferPresentationSQL
 	args := []any{storeID, approvedLegalTermsVersion}
 	if categoryID != "" {
 		args = append(args, categoryID)
@@ -314,6 +301,9 @@ type IndependentPublicOffer struct {
 	VariantID             string                        `json:"variantId"`
 	VariantTitle          string                        `json:"variantTitle"`
 	PriceMinor            int64                         `json:"priceMinor"`
+	BaseUnit              string                        `json:"baseUnit"`
+	PricingBasis          string                        `json:"pricingBasis"`
+	PricingUnitBaseUnits  int64                         `json:"pricingUnitBaseUnits"`
 	Currency              string                        `json:"currency"`
 	QuantityMinBaseUnits  int64                         `json:"quantityMinBaseUnits"`
 	QuantityMaxBaseUnits  int64                         `json:"quantityMaxBaseUnits"`
@@ -365,7 +355,9 @@ func projectIndependentPublicOffers(internal CatalogStoreOfferPage) (Independent
 			OfferID: offer.ID, ProductID: offer.Product.ID,
 			ProductName: offer.Product.CanonicalName, ProductDescription: offer.Product.Description,
 			VariantID: offer.VariantID, VariantTitle: offer.Variant.Title,
-			PriceMinor: offer.PriceMinor, Currency: offer.Currency,
+			BaseUnit: offer.Variant.BaseUnit, PricingBasis: offer.PricingBasis,
+			PricingUnitBaseUnits: offer.PricingUnitBaseUnits,
+			PriceMinor:           offer.PriceMinor, Currency: offer.Currency,
 			QuantityMinBaseUnits:  *offer.QuantityMinBaseUnits,
 			QuantityMaxBaseUnits:  *offer.QuantityMaxBaseUnits,
 			QuantityStepBaseUnits: *offer.QuantityStepBaseUnits,

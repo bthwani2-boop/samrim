@@ -30,7 +30,7 @@ const catalog = {
   storeId: "store_1",
   offers: [{ offerId: "offer_1", productId: "product_1", productName: "منتج",
     variantId: "variant_1", variantTitle: "واحد", priceMinor: 1500,
-    currency: "YER", media: [{ uri: "https://images.example.com/offer.png", role: "primary" }] }],
+    currency: "YER", baseUnit: "COUNT", pricingBasis: "PER_UNIT", pricingUnitBaseUnits: 1, media: [{ uri: "https://images.example.com/offer.png", role: "primary" }] }],
   nextCursor: "",
 };
 
@@ -73,6 +73,15 @@ test("independent public catalog scope, filtering and media stay in the same Sto
   assert.equal(new URL(url).pathname, "/dsh/public/independent-stores/store_1/catalog");
 });
 
+test("public independent catalog reuses the same measured price units as marketplace", async () => {
+  const measured = { ...catalog.offers[0], baseUnit: "GRAM", pricingBasis: "PER_MEASURE", pricingUnitBaseUnits: 1000 };
+  await withFetch(async () => new Response(JSON.stringify({ ...catalog, offers: [measured] }), { status: 200 }), async () => {
+    const result = await listPublishedIndependentWebCatalog("https://api.example.com", "store_1", "sanaa");
+    assert.equal(result.offers[0].baseUnit, "GRAM");
+    assert.equal(result.offers[0].pricingUnitBaseUnits, 1000);
+  });
+});
+
 test("unpublished and cross-Store public facts fail closed", async () => {
   await withFetch(async () => new Response("{}", { status: 404 }), async () => {
     await assert.rejects(readPublishedIndependentWebStore("https://api.example.com", "store_1", "sanaa"), IndependentStoreUnavailable);
@@ -87,6 +96,12 @@ test("unpublished and cross-Store public facts fail closed", async () => {
   }
   for (const override of [
     { storeId: "other_store" },
+    { offers: [{ ...catalog.offers[0], baseUnit: "INVALID" }] },
+    { offers: [{ ...catalog.offers[0], priceMinor: 0 }] },
+    { offers: [{ ...catalog.offers[0], pricingBasis: "PER_MEASURE", baseUnit: "COUNT" }] },
+    { offers: [{ ...catalog.offers[0], pricingBasis: "PER_UNIT", baseUnit: "GRAM" }] },
+    { offers: [{ ...catalog.offers[0], pricingUnitBaseUnits: 0 }] },
+    { offers: [{ ...catalog.offers[0], pricingBasis: "PER_UNIT", pricingUnitBaseUnits: 1000 }] },
     { offers: [{ ...catalog.offers[0], media: [{ uri: "file:///secret", role: "primary" }] }] },
   ]) {
     await withFetch(async () => new Response(JSON.stringify({ ...catalog, ...override }), { status: 200 }), async () => {
