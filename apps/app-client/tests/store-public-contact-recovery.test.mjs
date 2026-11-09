@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { buildPublicContactActions } from "../src/features/store-discovery/store-public-contact-actions.ts";
+import { storeReadFailureKind } from "../src/features/store-discovery/store-read-state.ts";
 
 const source = readFileSync(new URL("../src/features/store-discovery/store-public-contact.tsx", import.meta.url), "utf8");
 
@@ -44,4 +45,13 @@ test("external-link failure is visible without showing a previous Store's error"
   assert.match(source, /activeScope\.current === scopeKey/u);
   assert.match(source, /تعذر فتح وسيلة التواصل/u);
   assert.match(source, /accessibilityRole="alert"/u);
+});
+
+test("a withdrawn or denied public Store contact fails closed instead of offering endless retry", () => {
+  for (const status of [401, 403, 404, 410]) {
+    assert.equal(storeReadFailureKind({ status }), "unavailable");
+  }
+  assert.equal(storeReadFailureKind({ status: 503 }), "error");
+  assert.match(source, /storeReadFailureKind\(cause\) === "unavailable" \? "unavailable" : "error"/u);
+  assert.match(source, /current\.kind === "unavailable"/u);
 });

@@ -5,10 +5,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { buildPublicContactActions } from "./store-public-contact-actions";
 import { readStorePublicContact } from "./store-discovery-client";
+import { storeReadFailureKind } from "./store-read-state";
 
 type ContactRead =
   | { scopeKey: string; kind: "ready"; contact: StorePublicContact }
-  | { scopeKey: string; kind: "error" };
+  | { scopeKey: string; kind: "error" | "unavailable" };
 
 export function StorePublicContactCard({ storeID }: Readonly<{ storeID: string }>) {
   const theme = useAppearanceTheme();
@@ -37,15 +38,15 @@ export function StorePublicContactCard({ storeID }: Readonly<{ storeID: string }
       if (!active || activeScope.current !== scopeKey) return;
       if (result.contact.storeId === storeID) setRead({ scopeKey, kind: "ready", contact: result.contact });
       else setRead({ scopeKey, kind: "error" });
-    }).catch(() => {
-      if (active && activeScope.current === scopeKey) setRead({ scopeKey, kind: "error" });
+    }).catch((cause) => {
+      if (active && activeScope.current === scopeKey) setRead({ scopeKey, kind: storeReadFailureKind(cause) === "unavailable" ? "unavailable" : "error" });
     });
     return () => { active = false; };
   }, [scopeKey, storeID]);
 
   // Never render another Store's contact during a route or retry transition.
   const current = read?.scopeKey === scopeKey ? read : null;
-  if (!current) return null;
+  if (!current || current.kind === "unavailable") return null;
   const actions = current.kind === "ready" ? buildPublicContactActions(current.contact) : [];
   if (current.kind === "ready" && !actions.length) return null;
 
