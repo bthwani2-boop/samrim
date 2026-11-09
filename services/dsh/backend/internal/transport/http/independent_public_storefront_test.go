@@ -57,6 +57,8 @@ func TestIndependentPublicStorefrontValidatesScopeAndPaginationBeforeReadingDB(t
 		{"/dsh/public/independent-stores/store-1/catalog?serviceCityId=sanaa&limit=abc", http.StatusBadRequest},
 		{"/dsh/public/independent-stores/store-1/catalog?serviceCityId=sanaa&serviceCityId=aden", http.StatusBadRequest},
 		{"/dsh/public/independent-stores/store-1/catalog?serviceCityId=sanaa&categoryId=foreign", http.StatusBadRequest},
+		{"/dsh/public/independent-stores/store-1/catalog?serviceCityId=sanaa&%ZZ=ignored", http.StatusBadRequest},
+		{"/dsh/public/independent-stores/store-1?serviceCityId=sanaa&%ZZ=ignored", http.StatusBadRequest},
 		{"/dsh/public/independent-stores/store-1/catalog?serviceCityId=sanaa&q=private", http.StatusBadRequest},
 		{"/dsh/public/independent-stores/store-1?serviceCityId=sanaa&relationModel=BTHWANI_PARTNER", http.StatusBadRequest},
 		{"/dsh/public/independent-stores/store-1?serviceCityId=sanaa", http.StatusNotFound},

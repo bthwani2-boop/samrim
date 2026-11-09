@@ -53,7 +53,12 @@ func (s *IndependentPublicStorefrontServer) publicScope(w http.ResponseWriter, r
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "storefront was not found")
 		return "", "", false
 	}
-	storeID, cityID := strings.TrimSpace(r.PathValue("storeId")), strings.TrimSpace(r.URL.Query().Get("serviceCityId"))
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "malformed independent Store query")
+		return "", "", false
+	}
+	storeID, cityID := strings.TrimSpace(r.PathValue("storeId")), strings.TrimSpace(query.Get("serviceCityId"))
 	if storeID == "" || len(storeID) > 128 || cityID == "" || len(cityID) > 128 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "valid Store and Service City are required")
 		return "", "", false
@@ -64,7 +69,7 @@ func (s *IndependentPublicStorefrontServer) publicScope(w http.ResponseWriter, r
 	if strings.HasSuffix(r.URL.Path, "/catalog") {
 		allowed["limit"], allowed["cursor"] = true, true
 	}
-	for key, values := range r.URL.Query() {
+	for key, values := range query {
 		if !allowed[key] || len(values) != 1 {
 			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "unsupported or duplicated independent Store scope")
 			return "", "", false
