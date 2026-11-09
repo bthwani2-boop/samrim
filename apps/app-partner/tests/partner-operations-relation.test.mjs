@@ -62,6 +62,23 @@ test("desktop workspace offers the verified public link, not a private preview s
   assert.doesNotMatch(storeSource, /PartnerIndependentStorePreview/);
 });
 
+test("desktop Store actions open and copy the same approved Client Web site for both relations", () => {
+  const start = shellSource.indexOf('{(isMarketplace || (isOwner && selectedStore?.relationModel === "INDEPENDENT_STORE")) ? <>');
+  const end = shellSource.indexOf('{copyMessage ? <Text', start);
+  assert.ok(start >= 0 && end > start, "one footer action group must serve both Store models");
+  const footer = shellSource.slice(start, end);
+  assert.match(footer, /accessibilityLabel="فتح موقع المتجر"/);
+  assert.match(footer, /accessibilityLabel="نسخ رابط المتجر"/);
+  assert.equal((footer.match(/disabled=\{!storefrontLink\}/g) ?? []).length, 2);
+  assert.match(footer, /Linking\.openURL\(storefrontLink\.url\)/);
+  assert.match(footer, /Clipboard\.setStringAsync\(storefrontLink\.url\)/);
+  assert.match(footer, /independentPublic\.checking/);
+  assert.match(footer, /اعتماد نشره في DSH/);
+  assert.doesNotMatch(footer, /independent-preview|storefront-preview|readOwnIndependentStorePreview/);
+  assert.match(shellSource, /selectedStore\?\.relationModel === "INDEPENDENT_STORE"\s*\? independentPublic\.link/);
+  assert.match(shellSource, /buildPartnerStorefrontURL\(selectedStore, process\.env\.EXPO_PUBLIC_CLIENT_WEB_ORIGIN, __DEV__\)/);
+});
+
 test("desktop navigation refuses marketplace operations without exact relation", () => {
   assert.match(shellSource, /const isMarketplace = selectedStore\?\.relationModel === "BTHWANI_PARTNER";/);
   assert.match(shellSource, /if \(isMarketplace && can\("store_operations"\)\) management\.push/);

@@ -181,30 +181,44 @@ function DesktopWorkspace({ children }: PropsWithChildren) {
       </ScrollView>
       <View style={styles.footer}>
         <View style={styles.divider} />
-        {(isMarketplace || (isOwner && selectedStore?.relationModel === "INDEPENDENT_STORE")) ? <Pressable accessibilityRole="button"
-          accessibilityLabel={selectedStore?.relationModel === "INDEPENDENT_STORE" ? "نسخ رابط المتجر" : (storefrontLink ? (storefrontLink.previewOnly ? "نسخ رابط التطوير المحلي" : "نسخ رابط المتجر") : "رابط المتجر غير متاح")}
-          accessibilityState={{ disabled: !storefrontLink }}
-          disabled={!storefrontLink}
-          onPress={() => {
-            if (!storefrontLink) return;
-            void Clipboard.setStringAsync(storefrontLink.url)
-              .then(() => setCopyMessage(storefrontLink.previewOnly ? "تم نسخ رابط التطوير المحلية." : "تم نسخ رابط المتجر."))
-              .catch(() => setCopyMessage("تعذر نسخ الرابط؛ حاول مجددًا."));
-          }}
-          style={({pressed}) => [styles.storefrontCopy, !storefrontLink && styles.storefrontUnavailable, pressed && styles.navPressed]}>
-          <BthwaniIcon name="store" size={18} color={theme.color} />
-          <Text style={styles.storefrontCopyText}>{selectedStore?.relationModel === "INDEPENDENT_STORE" ? "نسخ رابط المتجر" : (storefrontLink ? (storefrontLink.previewOnly ? "نسخ رابط التطوير" : "نسخ رابط المتجر") : "رابط المتجر غير متاح")}</Text>
-        </Pressable> : null}
-        {isOwner && selectedStore?.relationModel === "INDEPENDENT_STORE" && storefrontLink ? <Pressable accessibilityRole="button"
-          accessibilityLabel="فتح المتجر المستقل المنشور"
-          onPress={() => { void Linking.openURL(storefrontLink.url).catch(() => setCopyMessage("تعذر فتح المتجر. تحقق من الاتصال.")); }}
-          style={({pressed}) => [styles.storefrontCopy, pressed && styles.navPressed]}>
-          <BthwaniIcon name="store" size={18} color={theme.color} />
-          <Text style={styles.storefrontCopyText}>فتح المتجر</Text>
-        </Pressable> : null}
-        {isOwner && selectedStore?.relationModel === "INDEPENDENT_STORE" && !storefrontLink ? <Text style={styles.storefrontFeedback}>
-          {independentPublic.checking ? "جارٍ فحص رابط المتجر..." : (__DEV__ && Platform.OS === "web" ? "رابط المتجر المحلي ينتظر جاهزية قراءة DSH؛ لن ننسخ رابطًا لا يفتح." : "رابط المتجر العام ينتظر اعتماد نشره في DSH.")}
-        </Text> : null}
+        {(isMarketplace || (isOwner && selectedStore?.relationModel === "INDEPENDENT_STORE")) ? <>
+          <Pressable accessibilityRole="button"
+            accessibilityLabel="فتح موقع المتجر"
+            accessibilityState={{ disabled: !storefrontLink }}
+            disabled={!storefrontLink}
+            onPress={() => {
+              if (!storefrontLink) return;
+              void Linking.openURL(storefrontLink.url)
+                .catch(() => setCopyMessage("تعذر فتح موقع المتجر. تحقق من الاتصال ثم أعد المحاولة."));
+            }}
+            style={({ pressed }) => [styles.storefrontCopy, !storefrontLink && styles.storefrontUnavailable, pressed && styles.navPressed]}>
+            <BthwaniIcon name="store" size={18} color={theme.color} />
+            <Text style={styles.storefrontCopyText}>فتح موقع المتجر</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button"
+            accessibilityLabel="نسخ رابط المتجر"
+            accessibilityState={{ disabled: !storefrontLink }}
+            disabled={!storefrontLink}
+            onPress={() => {
+              if (!storefrontLink) return;
+              void Clipboard.setStringAsync(storefrontLink.url)
+                .then(() => setCopyMessage(storefrontLink.previewOnly ? "تم نسخ رابط التطوير المحلي." : "تم نسخ رابط المتجر."))
+                .catch(() => setCopyMessage("تعذر نسخ الرابط؛ حاول مجددًا."));
+            }}
+            style={({ pressed }) => [styles.storefrontCopy, !storefrontLink && styles.storefrontUnavailable, pressed && styles.navPressed]}>
+            <BthwaniIcon name="store" size={18} color={theme.color} />
+            <Text style={styles.storefrontCopyText}>نسخ رابط المتجر</Text>
+          </Pressable>
+          {!storefrontLink ? <Text style={styles.storefrontFeedback}>
+            {isMarketplace
+              ? "موقع المتجر غير متاح بعد. تحقق من نشره وضبط عنوان ويب العميل."
+              : independentPublic.checking
+                ? "جارٍ التحقق من نشر موقع المتجر..."
+                : independentPublic.status === "error"
+                  ? "تعذرت قراءة حالة النشر من DSH. أعد المحاولة بعد استعادة الاتصال."
+                  : "موقع المتجر المستقل غير جاهز بعد. يلزم اعتماد نشره في DSH وإعداد عنوان ويب العميل."}
+          </Text> : null}
+        </> : null}
         {copyMessage ? <Text accessibilityLiveRegion="polite" style={styles.storefrontFeedback}>{copyMessage}</Text> : null}
         {renderLink({ label: "الحساب والإعدادات", href: "/account", icon: "account" })}
       </View>
