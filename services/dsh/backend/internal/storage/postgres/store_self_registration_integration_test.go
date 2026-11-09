@@ -207,6 +207,48 @@ func TestDirectPartnerFirstStoreUnpublishedAndIdempotentPostgres(t *testing.T) {
 		if _, err := postgres.ReadStoreOwnedByPartner(ctx, db, independentStore.ID, owner); !errors.Is(err, postgres.ErrStoreNotFound) {
 			t.Fatalf("cross-owner independent Store was readable: %v", err)
 		}
-		t.Log("direct Partner Stores: single writer, exact replays, relationship isolation, no joining case, unpublished")
+		// A timed-out create blocked on the actor's advisory lock must leave
+		// no half-created Store or consumed key. Retrying the same attempt
+		// after the lock is released must create exactly one canonical Store.
+		const timeoutOwner = "qa-first-store-timeout-owner"
+		const timeoutKey = "idem-qa-first-store-timeout-0001"
+		lockTx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = lockTx.Rollback() }()
+		if _, err := lockTx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:first-store:"+timeoutOwner); err != nil {
+			t.Fatal(err)
+		}
+		timeoutCtx, timeoutCancel := context.WithTimeout(ctx, 250*time.Millisecond)
+		_, _, timeoutErr := postgres.CreateFirstStoreForPartner(timeoutCtx, db, timeoutOwner, independentInput, timeoutKey)
+		timeoutCancel()
+		if timeoutErr == nil {
+			t.Fatal("a timed-out first Store attempt succeeded while its owner lock was held")
+		}
+		if err := lockTx.Rollback(); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.stores WHERE partner_actor_id=$1", timeoutOwner).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("timed-out create persisted Store count=%d err=%v", count, err)
+		}
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.first_store_create_idempotency WHERE partner_actor_id=$1", timeoutOwner).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("timed-out create consumed idempotency count=%d err=%v", count, err)
+		}
+		rescued, alreadyCreated, err := postgres.CreateFirstStoreForPartner(ctx, db, timeoutOwner, independentInput, timeoutKey)
+		if err != nil || alreadyCreated || rescued.ID == "" || rescued.PublicationState != "unpublished" {
+			t.Fatalf("same-key recovery after timeout failed: id=%s replay=%t state=%s err=%v", rescued.ID, alreadyCreated, rescued.PublicationState, err)
+		}
+		recovered, replayedAfterTimeout, err := postgres.CreateFirstStoreForPartner(ctx, db, timeoutOwner, independentInput, timeoutKey)
+		if err != nil || !replayedAfterTimeout || recovered.ID != rescued.ID {
+			t.Fatalf("post-timeout exact retry changed Store: id=%s replay=%t err=%v", recovered.ID, replayedAfterTimeout, err)
+		}
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.stores WHERE partner_actor_id=$1", timeoutOwner).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("recovered create persisted wrong Store count=%d err=%v", count, err)
+		}
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.first_store_create_idempotency WHERE partner_actor_id=$1", timeoutOwner).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("recovered create persisted wrong idempotency count=%d err=%v", count, err)
+		}
+		t.Log("direct Partner Stores: single writer, concurrent replay and timeout recovery, relationship isolation, unpublished")
 	}, 5*time.Minute)
 }
