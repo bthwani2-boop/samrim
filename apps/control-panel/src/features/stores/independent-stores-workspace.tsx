@@ -55,16 +55,32 @@ function IndependentStoresRegistry() {
         if (response.status === 403) throw new Error("لا تملك صلاحية عرض المتاجر المستقلة. اطلب صلاحية الشركاء من مسؤول الوصول.");
         if (!response.ok) throw new Error("تعذر الاتصال بسجل المتاجر المستقلة في DSH. تحقق من الخدمة وأعد المحاولة.");
         const next = await response.json() as OperatorStoreListResponse;
-        if (!Array.isArray(next.stores) || next.stores.some((store) => store.relationModel !== "INDEPENDENT_STORE")) {
+        const seen = new Set<string>();
+        if (!next || !Array.isArray(next.stores) || next.stores.length > 25 ||
+          (next.nextCursor !== undefined && (typeof next.nextCursor !== "string" || next.nextCursor.length > 1024)) ||
+          next.stores.some((store) => {
+            if (!store || store.relationModel !== "INDEPENDENT_STORE" ||
+              typeof store.id !== "string" || !store.id.trim() || store.id.length > 128 ||
+              typeof store.partnerActorId !== "string" || !store.partnerActorId.trim() ||
+              typeof store.name !== "string" || !store.name.trim() ||
+              !Number.isSafeInteger(store.version) || store.version < 1 ||
+              (store.publicationState !== "unpublished" && store.publicationState !== "hidden") ||
+              seen.has(store.id)) return true;
+            seen.add(store.id);
+            return false;
+          })) {
           throw new Error("STORE_RELATION_MISMATCH");
         }
         if (!controller.signal.aborted) setPage(next);
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : "";
-        if (!controller.signal.aborted) setError(message.startsWith("انتهت جلسة") || message.startsWith("لا تملك صلاحية") || message.startsWith("تعذر الاتصال")
-          ? message : message === "STORE_RELATION_MISMATCH"
-            ? "قراءة سجل المتاجر المستقلة غير متطابقة مع DSH؛ لا يمكن عرض نتائج غير موثوقة."
-            : "تعذر تحميل سجل المتاجر المستقلة. تحقق من اتصال DSH وأعد المحاولة.");
+        if (!controller.signal.aborted) {
+          setSelectedStoreId("");
+          setError(message.startsWith("انتهت جلسة") || message.startsWith("لا تملك صلاحية") || message.startsWith("تعذر الاتصال")
+            ? message : message === "STORE_RELATION_MISMATCH"
+              ? "قراءة سجل المتاجر المستقلة غير متطابقة مع DSH؛ لا يمكن عرض نتائج غير موثوقة."
+              : "تعذر تحميل سجل المتاجر المستقلة. تحقق من اتصال DSH وأعد المحاولة.");
+        }
       } finally {
         if (!controller.signal.aborted) setLoading(false);
       }
@@ -95,6 +111,7 @@ function IndependentStoresRegistry() {
     </p>
     <search><form className="registry-toolbar" onSubmit={(event) => {
       event.preventDefault();
+      setSelectedStoreId("");
       setHistory([]);
       setCursor("");
       setQuery(draftQuery.trim());
@@ -107,6 +124,7 @@ function IndependentStoresRegistry() {
       <label>
         <span>حالة سجل المتجر</span>
         <select aria-label="تصفية المتاجر المستقلة" value={state} onChange={(event) => {
+          setSelectedStoreId("");
           setState(event.target.value as PublicationFilter);
           setHistory([]);
           setCursor("");
@@ -144,11 +162,13 @@ function IndependentStoresRegistry() {
     </div> : null}
     {!loading && page ? <nav aria-label="صفحات المتاجر المستقلة" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
       <button type="button" disabled={history.length === 0} onClick={() => {
+        setSelectedStoreId("");
         setCursor(history[history.length - 1] ?? "");
         setHistory((old) => old.slice(0, -1));
       }}>السابق</button>
       <span className="muted">صفحة {history.length + 1}</span>
       <button type="button" disabled={!page.nextCursor} onClick={() => {
+        setSelectedStoreId("");
         setHistory((old) => [...old, cursor]);
         setCursor(page.nextCursor ?? "");
       }}>التالي</button>
