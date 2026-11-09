@@ -14,9 +14,9 @@ export const policyCapabilities = [
   },
   {
     key: "store-type-cancellation", href: "/policies?policy=store-type-cancellation&action=manage", label: "إلغاء الطلبات",
-    description: "تحديد إمكانية إلغاء العميل قبل قبول المتجر، أو مراجعة العمليات فقط حسب نوع المتجر.",
-    icon: "review", context: "أنواع المتاجر", summary: "سياسة الإلغاء حسب نوع المتجر",
-    scope: "نوع المتجر", owner: "DSH", createLabel: null, additionalPermission: null, list: null,
+    description: "تحديد إمكانية إلغاء العميل قبل قبول المتجر، أو مراجعة العمليات فقط حسب نوع المتجر التجاري.",
+    icon: "review", context: "أنواع المتاجر", summary: "سياسة الإلغاء حسب نوع المتجر التجاري",
+    scope: "نوع المتجر التجاري", owner: "DSH", createLabel: null, additionalPermission: null, list: null,
   },
   {
     key: "service-cities", href: "/policies?policy=service-cities&action=manage", label: "مدن الخدمة",
@@ -52,9 +52,9 @@ export const policyCapabilities = [
   },
   {
     key: "store-type-commission-defaults", href: "/policies?group=commercial&policy=store-type-commission-defaults&action=manage", label: "عمولات المتاجر المقترحة",
-    description: "اقتراح نسب تفاوضية حسب نوع المتجر وطريقة التنفيذ؛ لا تصبح نافذة إلا بموافقة الشريك والمالية على اتفاقيته الخاصة.",
+    description: "اقتراح نسب تفاوضية حسب نوع المتجر التجاري وطريقة التنفيذ؛ لا تصبح نافذة إلا بموافقة الشريك والمالية على اتفاقيته الخاصة.",
     icon: "finance", context: "الشروط التجارية", summary: "نسب مقترحة لا تُطبّق تلقائيًا",
-    scope: "نوع المتجر", owner: "WLT", createLabel: null, additionalPermission: "finance", list: null,
+    scope: "نوع المتجر التجاري", owner: "WLT", createLabel: null, additionalPermission: "finance", list: null,
   },
   {
     key: "partner-financial-terms", href: "/policies?policy=partner-financial-terms&action=manage", label: "شروط الشريك المالية",

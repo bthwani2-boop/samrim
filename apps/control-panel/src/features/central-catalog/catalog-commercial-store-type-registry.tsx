@@ -24,7 +24,7 @@ async function readType(verticalId: string, typeId: string): Promise<CommercialS
     throw new Error(message(body));
   }
   const item = body.storeTypes.find((entry) => entry.id === typeId);
-  if (!item) throw new Error("تعذر العثور على نوع المتجر ضمن المجال المحدد.");
+  if (!item) throw new Error("تعذر العثور على نوع المتجر التجاري ضمن المجال المحدد.");
   return item;
 }
 
@@ -65,7 +65,7 @@ export function CatalogCommercialStoreTypeRegistry({ verticals, verticalId, init
       form.setFieldsValue({ nameAr: item.nameAr, nameEn: item.nameEn, active: item.active, reason: "" });
       setReady(true);
     }).catch((cause: unknown) => {
-      if (current) setError(cause instanceof Error ? cause.message : "تعذرت قراءة نوع المتجر.");
+      if (current) setError(cause instanceof Error ? cause.message : "تعذرت قراءة نوع المتجر التجاري.");
     }).finally(() => {
       if (current) setLoading(false);
     });
@@ -96,16 +96,16 @@ export function CatalogCommercialStoreTypeRegistry({ verticals, verticalId, init
       await onSaved?.();
       onClose?.();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "تعذر حفظ نوع المتجر.");
+      setError(cause instanceof Error ? cause.message : "تعذر حفظ نوع المتجر التجاري.");
     } finally {
       setBusy(false);
     }
   }
 
   return <section className="catalog-taxonomy-section" aria-labelledby="commercial-store-type-title">
-    <h3 id="commercial-store-type-title">{selected ? "تعديل نوع المتجر" : "إنشاء نوع متجر"}</h3>
+    <h3 id="commercial-store-type-title">{selected ? "تعديل نوع المتجر التجاري" : "إنشاء نوع متجر تجاري"}</h3>
     {verticalId && !vertical?.active ? <p className="managed-status managed-status-warning" role="status">المجال متوقف؛ لا يمكن إنشاء نوع متجر أو تعديله فيه.</p> : null}
-    {loading ? <div><p role="status">جارٍ قراءة نوع المتجر…</p><Button disabled={busy} onClick={() => onClose?.()}>إلغاء</Button></div> : null}
+    {loading ? <div><p role="status">جارٍ قراءة نوع المتجر التجاري…</p><Button disabled={busy} onClick={() => onClose?.()}>إلغاء</Button></div> : null}
     {error ? <div>
       <p className="identity-error" role="alert">{error}</p>
       {initialId ? <><Button type="link" disabled={loading} onClick={() => setReadAttempt((attempt) => attempt + 1)}>إعادة المحاولة</Button><Button disabled={busy} onClick={() => onClose?.()}>إلغاء</Button></> : null}
@@ -125,7 +125,7 @@ export function CatalogCommercialStoreTypeRegistry({ verticals, verticalId, init
       </Form.Item>
       <div className="catalog-registry-actions unified-taxonomy-save-actions">
         <Button type="primary" htmlType="submit" loading={busy} disabled={!canEdit || !vertical?.active}>
-          {selected ? "حفظ نوع المتجر" : "إنشاء نوع المتجر"}
+          {selected ? "حفظ نوع المتجر التجاري" : "إنشاء نوع المتجر التجاري"}
         </Button>
         <Button disabled={busy} onClick={() => onClose?.()}>إلغاء</Button>
       </div>

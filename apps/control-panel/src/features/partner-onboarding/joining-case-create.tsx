@@ -41,7 +41,7 @@ function clearPendingJoiningCaseMetadata(storageKey: string): void {
 function commercialTypePrompt(verticalId: string, loading: boolean): string {
   if (!verticalId) return "اختر المجال التجاري أولاً";
   if (loading) return "جارٍ تحميل الأنواع…";
-  return "اختر نوع المتجر";
+  return "اختر نوع المتجر التجاري";
 }
 
 function toggleFulfillmentMode(current: JoiningCaseCreateInput["firstStoreFulfillmentModes"], mode: JoiningCaseCreateInput["firstStoreFulfillmentModes"][number], checked: boolean) {

@@ -153,7 +153,7 @@ function StoreTypeCancellationEditor() {
   }
 
   return <section className="access-form" aria-labelledby="cancellation-policy-heading">
-    <h3 id="cancellation-policy-heading">سياسة إلغاء الطلبات حسب نوع المتجر</h3>
+    <h3 id="cancellation-policy-heading">سياسة إلغاء الطلبات حسب نوع المتجر التجاري</h3>
     <p className="muted">خياران فقط لكل نوع متجر. يُحسم تنفيذ الإلغاء من الخادم وفق حالة الطلب، وتحتفظ الطلبات القديمة بسياستها.</p>
     <label className="field-label" htmlFor="cancellation-vertical">المجال
       <select id="cancellation-vertical" value={verticalId}
@@ -162,7 +162,7 @@ function StoreTypeCancellationEditor() {
         {verticals.map(item => <option key={item.id} value={item.id}>{item.nameAr}</option>)}
       </select>
     </label>
-    <label className="field-label" htmlFor="cancellation-store-type">نوع المتجر
+    <label className="field-label" htmlFor="cancellation-store-type">نوع المتجر التجاري
       <select id="cancellation-store-type" value={typeId}
         onChange={event => { setTypeId(event.target.value); setNotice(""); setError(""); }}
         disabled={busy || loading}>

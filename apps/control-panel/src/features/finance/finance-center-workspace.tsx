@@ -148,7 +148,7 @@ function FinanceTask({
     cursor, intakeId: queryValue(query, "intakeId") || (row?.source === "withdrawals" ? row.id : ""),
   }} />;
   if (workflow === "agreements") return <div className="finance-center-tools">
-    <p className="muted">النسب التفاوضية حسب نوع المتجر لا تُطبّق تلقائيًا. {canEditStoreTypePolicies ? <>لتعديلها، افتح <a href="/policies?group=commercial&policy=store-type-commission-defaults&action=manage">سياسات المتاجر</a>.</> : "يمكنك الاطلاع عليها هنا دون تعديلها."} وتبقى موافقة الاتفاقية وتفعيلها لدى المالية.</p>
+    <p className="muted">النسب التفاوضية حسب نوع المتجر التجاري لا تُطبّق تلقائيًا. {canEditStoreTypePolicies ? <>لتعديلها، افتح <a href="/policies?group=commercial&policy=store-type-commission-defaults&action=manage">سياسات المتاجر</a>.</> : "يمكنك الاطلاع عليها هنا دون تعديلها."} وتبقى موافقة الاتفاقية وتفعيلها لدى المالية.</p>
     <details className="access-card">
       <summary>استعراض نسب المتاجر المقترحة (قراءة فقط)</summary>
       <StoreTypeCommissionDefaultWorkspace readOnly />

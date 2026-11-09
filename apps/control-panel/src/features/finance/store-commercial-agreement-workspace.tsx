@@ -326,7 +326,7 @@ export function StoreCommercialAgreementWorkspace() {
     {agreements.length ? <section className="form-grid" aria-label="اتفاقات بانتظار المالية">
       {agreements.map((agreement) => <article className="access-card" key={agreement.agreementId}>
         <div className="finance-toolbar"><div><h3>{agreement.storeName || "متجر بثواني"}</h3></div><strong>{storeCommercialStatusLabel(agreement)}</strong></div>
-        <p className="muted">نوع المتجر: {agreement.commercialStoreTypeNameAr} · الملكية: {agreement.currentStoreOwnerActorId === agreement.partnerActorId ? "مالك الاتفاق هو المالك الحالي" : "تغيّر مالك المتجر بعد الاتفاق"}</p>
+        <p className="muted">نوع المتجر التجاري: {agreement.commercialStoreTypeNameAr} · الملكية: {agreement.currentStoreOwnerActorId === agreement.partnerActorId ? "مالك الاتفاق هو المالك الحالي" : "تغيّر مالك المتجر بعد الاتفاق"}</p>
         <p className="muted">الأنماط الحالية: {agreement.fulfillmentModes.map(modeLabel).join("، ") || "غير محددة"}</p>
         <p className="muted">أُرسل الاتفاق للمراجعة في {formatTimestamp(agreement.proposedAt)}</p>
         <p className="muted">قبله مالك المتجر في {formatTimestamp(agreement.partnerAcceptedAt)}</p>
@@ -342,7 +342,7 @@ export function StoreCommercialAgreementWorkspace() {
 
       <h3 id="selected-store-commercial-agreement-title">{selected.storeName || "متجر بثواني"}</h3>
       <p className="muted">الحالة الحالية: {storeCommercialStatusLabel(selected)}</p>
-      <p className="muted">نوع المتجر: {selected.commercialStoreTypeNameAr} · الملكية: {selected.currentStoreOwnerActorId === selected.partnerActorId ? "مالك الاتفاق هو المالك الحالي" : "تغيّر مالك المتجر بعد الاتفاق"}</p>
+      <p className="muted">نوع المتجر التجاري: {selected.commercialStoreTypeNameAr} · الملكية: {selected.currentStoreOwnerActorId === selected.partnerActorId ? "مالك الاتفاق هو المالك الحالي" : "تغيّر مالك المتجر بعد الاتفاق"}</p>
       <p className="muted">أُرسل الاتفاق في {formatTimestamp(selected.proposedAt)}</p>
       <p className="muted">قبول مالك المتجر: {formatTimestamp(selected.partnerAcceptedAt)}</p>
       <p className="muted">حالة الاتفاقية: {selected.effectiveAt ? `سارية منذ ${formatTimestamp(selected.effectiveAt)}` : "لم يبدأ سريانها بعد"}</p>
