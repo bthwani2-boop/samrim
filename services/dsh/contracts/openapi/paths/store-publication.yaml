@@ -1,4 +1,46 @@
 paths:
+  /dsh/operator/independent-stores/{storeId}/suspend:
+    post:
+      operationId: suspendIndependentStorePublication
+      summary: Immediately suspend an independent web publication without changing marketplace publication
+      description: An active Partners-authorized Operator makes a CAS decision with durable idempotency and one audit event. Existing orders remain available to their authorized actors. This action never approves or releases a Store.
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/StoreId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedVersion, reason]
+              properties:
+                expectedVersion: { type: integer, minimum: 1 }
+                reason: { type: string, minLength: 8, maxLength: 1000 }
+      responses:
+        "200":
+          description: Suspension committed or exact idempotent replay
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [storeId, state, version, idempotentReplay]
+                properties:
+                  storeId: { type: string }
+                  state: { type: string, const: SUSPENDED }
+                  version: { type: integer, minimum: 1 }
+                  idempotentReplay: { type: boolean }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { description: Independent Store or publication not found }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
   /dsh/partner/stores/first:
     post:
       operationId: createPartnerFirstStore
