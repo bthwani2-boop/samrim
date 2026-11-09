@@ -658,6 +658,9 @@ paths:
   /dsh/public/catalog/search:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1public~1catalog~1search"
 
+  /dsh/operator/independent-stores/{storeId}/publication:
+    $ref: "./paths/store-publication.yaml#/paths/~1dsh~1operator~1independent-stores~1{storeId}~1publication"
+
   /dsh/operator/independent-stores/{storeId}/review-decision:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1operator~1independent-stores~1{storeId}~1review-decision"
 
@@ -2980,6 +2983,27 @@ components:
       properties:
         state:
           $ref: "#/components/schemas/PublicationAction"
+
+    IndependentPublicationOperatorStatus:
+      type: object
+      additionalProperties: false
+      required: [storeId, state, reviewState, version]
+      properties:
+        storeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        state:
+          type: string
+          enum: [DRAFT, NEEDS_REVIEW, NEEDS_CORRECTION, UNPUBLISHED, SUSPENDED, PUBLISHED_INDEPENDENT]
+        reviewState:
+          type: string
+          enum: [NOT_CHECKED, NEEDS_REVIEW, REJECTED, PASSED]
+        version:
+          type: integer
+          minimum: 1
+        reviewReason:
+          type: string
 
     StorePublicationResponse:
       type: object

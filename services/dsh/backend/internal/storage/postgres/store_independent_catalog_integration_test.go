@@ -37,6 +37,14 @@ func TestIndependentStoreCanonicalCatalogAndOwnerScope(t *testing.T) {
 		if _, err := db.ExecContext(ctx, `UPDATE dsh.stores SET relation_model='INDEPENDENT_STORE' WHERE id='independent-catalog-store'`); err != nil {
 			t.Fatal(err)
 		}
+		status, err := postgres.ReadIndependentPublicationForOperator(ctx, db, "independent-catalog-store")
+		if err != nil || status.StoreID != "independent-catalog-store" || status.State != "DRAFT" ||
+			status.ReviewState != "NOT_CHECKED" || status.Version != 1 || status.ReviewReason != "" {
+			t.Fatalf("private operator must read DSH's canonical independent draft version: %+v err=%v", status, err)
+		}
+		if _, err := postgres.ReadIndependentPublicationForOperator(ctx, db, "market-catalog-store"); !errors.Is(err, postgres.ErrStoreNotFound) {
+			t.Fatalf("marketplace Store must never be represented as an independent publication: %v", err)
+		}
 
 		availability, err := postgres.ReadStoreOperationalAvailability(ctx, db, "independent-catalog-store")
 		if err != nil || availability.ScheduleMode != "WEEKLY" || len(availability.WeeklySchedule) != 0 {
@@ -122,6 +130,9 @@ func TestIndependentStoreCanonicalCatalogAndOwnerScope(t *testing.T) {
 				t.Fatalf("archived Store must disappear from owner and staff navigation, actor=%s page=%+v err=%v",
 					actorID, archived, archivedErr)
 			}
+		}
+		if _, err := postgres.ReadIndependentPublicationForOperator(ctx, db, store.ID); !errors.Is(err, postgres.ErrStoreNotFound) {
+			t.Fatalf("archived Store must not return independent publication facts to operator: %v", err)
 		}
 	})
 }

@@ -14,6 +14,30 @@ type independentReviewRequest struct {
 	Reason          string `json:"reason"`
 }
 
+// The private review readback is scoped to an active Partners operator.
+// It never exposes publication or legal facts on an unauthenticated route.
+func (s *StorePublicationServer) readIndependentPublicationForOperator(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("X-Robots-Tag", "noindex, nofollow")
+	actor, ok := storeAccessOperatorActor(w, r, s.auth)
+	if !ok {
+		return
+	}
+	result, err := s.service.ReadIndependentPublicationForOperator(r.Context(), r.PathValue("storeId"), actor)
+	if err != nil {
+		switch {
+		case errors.Is(err, postgres.ErrStoreNotFound):
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "independent Store publication was not found")
+		case errors.Is(err, storepublication.ErrOperatorNotActive):
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "active Operator permission is required")
+		default:
+			writeStorePublicationError(w, err)
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 // The Operator cannot select PUBLISHED_INDEPENDENT or a review PASSED state
 // through this endpoint. These are rejection/correction transitions only.
 func (s *StorePublicationServer) decideIndependentReview(w http.ResponseWriter, r *http.Request) {

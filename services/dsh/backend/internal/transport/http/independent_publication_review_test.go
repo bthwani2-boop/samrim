@@ -41,3 +41,30 @@ func TestIndependentReviewRejectsUnauthenticatedOperatorWithoutDatabase(t *testi
 		}
 	}
 }
+
+func TestIndependentPublicationOperatorReadRejectsUntrustedService(t *testing.T) {
+	token, err := auth.NewServiceToken("valid-isolated-control-service-token-for-independent-review")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &StorePublicationServer{auth: token}
+	mux := http.NewServeMux()
+	server.Register(mux)
+	for _, authorization := range []string{"", "Bearer forged-service"} {
+		req := httptest.NewRequest(http.MethodGet,
+			"/dsh/operator/independent-stores/private-store/publication", nil)
+		req.Header.Set("X-Acting-Actor-ID", "spoofed-operator")
+		if authorization != "" {
+			req.Header.Set("Authorization", authorization)
+		}
+		res := httptest.NewRecorder()
+		mux.ServeHTTP(res, req)
+		if res.Code != http.StatusUnauthorized {
+			t.Fatalf("private independent publication read allowed untrusted service: status=%d body=%s", res.Code, res.Body.String())
+		}
+		if !strings.Contains(res.Header().Get("Cache-Control"), "no-store") ||
+			res.Header().Get("X-Robots-Tag") != "noindex, nofollow" {
+			t.Fatalf("private publication must be uncacheable and unindexable: %+v", res.Header())
+		}
+	}
+}

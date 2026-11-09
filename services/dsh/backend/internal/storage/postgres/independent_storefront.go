@@ -99,6 +99,39 @@ func independentStorePublicationForOwnerWithQueryer(ctx context.Context, queryer
 	return state, version, nil
 }
 
+// IndependentPublicationOperatorStatus is a private projection of the
+// canonical DSH publication, not a second Store publication state. Operators
+// need its own version for review CAS; the Store's version is unrelated.
+type IndependentPublicationOperatorStatus struct {
+	StoreID      string `json:"storeId"`
+	State        string `json:"state"`
+	ReviewState  string `json:"reviewState"`
+	Version      int    `json:"version"`
+	ReviewReason string `json:"reviewReason,omitempty"`
+}
+
+func ReadIndependentPublicationForOperator(ctx context.Context, db *sql.DB, storeID string) (IndependentPublicationOperatorStatus, error) {
+	storeID = strings.TrimSpace(storeID)
+	if db == nil || storeID == "" || len(storeID) > 128 {
+		return IndependentPublicationOperatorStatus{}, ErrStoreNotFound
+	}
+	var result IndependentPublicationOperatorStatus
+	err := db.QueryRowContext(ctx, `SELECT s.id,COALESCE(p.state,'DRAFT'),COALESCE(p.review_state,'NOT_CHECKED'),
+		COALESCE(p.version,1),COALESCE(p.review_reason,'')
+		FROM dsh.stores s
+		LEFT JOIN dsh.independent_store_publications p ON p.store_id=s.id
+		WHERE s.id=$1 AND s.relation_model='INDEPENDENT_STORE'
+		  AND s.publication_state<>'published' AND s.deleted_at IS NULL`, storeID).
+		Scan(&result.StoreID, &result.State, &result.ReviewState, &result.Version, &result.ReviewReason)
+	if errors.Is(err, sql.ErrNoRows) {
+		return IndependentPublicationOperatorStatus{}, ErrStoreNotFound
+	}
+	if err != nil {
+		return IndependentPublicationOperatorStatus{}, fmt.Errorf("read independent publication for operator: %w", err)
+	}
+	return result, nil
+}
+
 // ReadPublishedIndependentStore never reuses marketplace publication or a
 // client-side model flag. The URL's Store ID is a locator, not authorization.
 // Public contact is explicitly opt-in business data; private Identity contact
