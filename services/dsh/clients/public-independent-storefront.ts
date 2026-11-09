@@ -33,10 +33,15 @@ export type IndependentPublicOffer = Readonly<{
   pricingBasis: "PER_UNIT" | "PER_MEASURE";
   pricingUnitBaseUnits: number;
   media: ReadonlyArray<Readonly<{ uri: string; role: string }>>;
+  modifierGroups: ReadonlyArray<Readonly<{
+    id: string; nameAr: string; required: boolean; minSelections: number; maxSelections: number;
+    options: ReadonlyArray<Readonly<{ id: string; nameAr: string; priceDeltaMinor: number }>>;
+  }>>;
 }>;
 
 export type IndependentPublicCatalog = Readonly<{
   storeId: string;
+  categories: ReadonlyArray<Readonly<{ id: string; nameAr: string; active: true }>>;
   offers: ReadonlyArray<IndependentPublicOffer>;
   nextCursor: string;
 }>;
@@ -105,7 +110,10 @@ export async function listPublishedIndependentWebCatalog(
   if (options.productID) params.set("productId", options.productID);
   if (cursor) params.set("cursor", cursor);
   const value = await readJSON(baseURL, path + "?" + params, options.signal);
-  if (!object(value) || value.storeId !== storeID || !Array.isArray(value.offers) ||
+  if (!object(value) || value.storeId !== storeID || !Array.isArray(value.categories) ||
+       !value.categories.every(category => object(category) && text(category.id) && validID(category.id) &&
+         text(category.nameAr) && Boolean(category.nameAr.trim()) && category.active === true) ||
+       !Array.isArray(value.offers) ||
       !text(value.nextCursor) || value.nextCursor.length > 2048 ||
       (cursor && value.nextCursor === cursor) ||
       !value.offers.every(item => object(item) && text(item.offerId) && text(item.productId) &&
@@ -117,6 +125,14 @@ export async function listPublishedIndependentWebCatalog(
         Number.isSafeInteger(item.pricingUnitBaseUnits) && (item.pricingUnitBaseUnits as number) > 0 &&
         ((item.pricingBasis === "PER_UNIT" && item.baseUnit === "COUNT" && item.pricingUnitBaseUnits === 1) ||
           (item.pricingBasis === "PER_MEASURE" && (item.baseUnit === "GRAM" || item.baseUnit === "MILLILITER"))) &&
+        Array.isArray(item.modifierGroups) &&
+        item.modifierGroups.every((group: unknown) => object(group) && text(group.id) && validID(group.id) &&
+          text(group.nameAr) && typeof group.required === "boolean" &&
+          Number.isSafeInteger(group.minSelections) && (group.minSelections as number) >= 0 &&
+          Number.isSafeInteger(group.maxSelections) && (group.maxSelections as number) >= (group.minSelections as number) &&
+          Array.isArray(group.options) && group.options.every((option: unknown) => object(option) &&
+            text(option.id) && validID(option.id) && text(option.nameAr) &&
+            Number.isSafeInteger(option.priceDeltaMinor) && (option.priceDeltaMinor as number) >= 0)) &&
         Array.isArray(item.media) &&
         item.media.every((media: unknown) => object(media) && publicMedia(media.uri) && text(media.role)) &&
         (!options.productID || item.productId === options.productID)))

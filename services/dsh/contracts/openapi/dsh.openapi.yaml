@@ -89,14 +89,23 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [storeId, offers, nextCursor]
+                required: [storeId, categories, offers, nextCursor]
                 properties:
                   storeId: { type: string }
+                  categories:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, nameAr, active]
+                      properties:
+                        id: { type: string }
+                        nameAr: { type: string }
+                        active: { type: boolean, const: true }
                   offers:
                     type: array
                     items:
                       type: object
-                      required: [offerId, productId, productName, variantId, variantTitle, baseUnit, pricingBasis, pricingUnitBaseUnits, priceMinor, currency, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, media]
+                      required: [offerId, productId, productName, variantId, variantTitle, baseUnit, pricingBasis, pricingUnitBaseUnits, priceMinor, currency, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, media, modifierGroups]
                       properties:
                         offerId: { type: string }
                         productId: { type: string }
@@ -112,6 +121,26 @@ paths:
                         quantityMinBaseUnits: { type: integer, format: int64 }
                         quantityMaxBaseUnits: { type: integer, format: int64 }
                         quantityStepBaseUnits: { type: integer, format: int64 }
+                        modifierGroups:
+                          type: array
+                          items:
+                            type: object
+                            required: [id, nameAr, required, minSelections, maxSelections, options]
+                            properties:
+                              id: { type: string }
+                              nameAr: { type: string }
+                              required: { type: boolean }
+                              minSelections: { type: integer, minimum: 0 }
+                              maxSelections: { type: integer, minimum: 0 }
+                              options:
+                                type: array
+                                items:
+                                  type: object
+                                  required: [id, nameAr, priceDeltaMinor]
+                                  properties:
+                                    id: { type: string }
+                                    nameAr: { type: string }
+                                    priceDeltaMinor: { type: integer, format: int64, minimum: 0 }
                         media:
                           type: array
                           items:

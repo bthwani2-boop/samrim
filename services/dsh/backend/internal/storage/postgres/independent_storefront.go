@@ -20,12 +20,11 @@ var ErrIndependentStorefrontNotPublished = errors.New("independent storefront wa
 
 // Public read-only websites consume the canonical Catalog eligibility view.
 // The extra constraints below are presentation-only: the current Store website
-// does not render modifier-selection price breakdowns.
+// uses the same canonical modifier details for read-only display.
 // Stock, publication and quantity eligibility are evaluated by the Catalog owner.
 const independentWebOfferPresentationSQL = `
     AND EXISTS (SELECT 1 FROM dsh.catalog_publishable_offers published WHERE published.offer_id=o.id)
     AND o.currency='YER'
-    AND NOT EXISTS (SELECT 1 FROM dsh.catalog_store_offer_modifier_groups og WHERE og.offer_id=o.id)
 `
 
 type IndependentPublishedStore struct {
@@ -259,6 +258,39 @@ func listPublishedIndependentOffersInternal(ctx context.Context, db *sql.DB, sto
 	if err := hydrateCatalogOfferPage(ctx, tx, page.Offers); err != nil {
 		return CatalogStoreOfferPage{}, err
 	}
+	// Reuse the canonical Catalog's category labels/ancestry from this same
+	// read-only Store publication snapshot. The category list covers all
+	// publishable Offers, not just the current product page or filter.
+	categorySQL := `SELECT DISTINCT c.id FROM dsh.catalog_store_offers o
+		JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
+		JOIN dsh.catalog_products p ON p.id=v.product_id
+		JOIN dsh.catalog_product_categories pc ON pc.product_id=p.id
+		JOIN dsh.catalog_categories c ON c.id=pc.category_id AND c.active=true AND c.vertical_id=p.vertical_id
+		WHERE o.store_id=$1` + independentWebOfferPresentationSQL + ` ORDER BY c.id`
+	categoryRows, err := tx.QueryContext(ctx, categorySQL, storeID)
+	if err != nil {
+		return CatalogStoreOfferPage{}, err
+	}
+	categoryIDs := make([]string, 0)
+	for categoryRows.Next() {
+		var categoryID string
+		if err := categoryRows.Scan(&categoryID); err != nil {
+			_ = categoryRows.Close()
+			return CatalogStoreOfferPage{}, err
+		}
+		categoryIDs = append(categoryIDs, categoryID)
+	}
+	if err := categoryRows.Err(); err != nil {
+		_ = categoryRows.Close()
+		return CatalogStoreOfferPage{}, err
+	}
+	if err := categoryRows.Close(); err != nil {
+		return CatalogStoreOfferPage{}, err
+	}
+	page.Categories, err = ListPublicCatalogCategories(ctx, tx, categoryIDs)
+	if err != nil {
+		return CatalogStoreOfferPage{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return CatalogStoreOfferPage{}, err
 	}
@@ -272,26 +304,46 @@ type IndependentPublicOfferMedia struct {
 	URI  string `json:"uri"`
 	Role string `json:"role"`
 }
+type IndependentPublicModifierOption struct {
+	ID              string `json:"id"`
+	NameAr          string `json:"nameAr"`
+	PriceDeltaMinor int64  `json:"priceDeltaMinor"`
+}
+type IndependentPublicModifierGroup struct {
+	ID            string                            `json:"id"`
+	NameAr        string                            `json:"nameAr"`
+	Required      bool                              `json:"required"`
+	MinSelections int                               `json:"minSelections"`
+	MaxSelections int                               `json:"maxSelections"`
+	Options       []IndependentPublicModifierOption `json:"options"`
+}
 type IndependentPublicOffer struct {
-	OfferID               string                        `json:"offerId"`
-	ProductID             string                        `json:"productId"`
-	ProductName           string                        `json:"productName"`
-	ProductDescription    string                        `json:"productDescription,omitempty"`
-	VariantID             string                        `json:"variantId"`
-	VariantTitle          string                        `json:"variantTitle"`
-	PriceMinor            int64                         `json:"priceMinor"`
-	BaseUnit              string                        `json:"baseUnit"`
-	PricingBasis          string                        `json:"pricingBasis"`
-	PricingUnitBaseUnits  int64                         `json:"pricingUnitBaseUnits"`
-	Currency              string                        `json:"currency"`
-	QuantityMinBaseUnits  int64                         `json:"quantityMinBaseUnits"`
-	QuantityMaxBaseUnits  int64                         `json:"quantityMaxBaseUnits"`
-	QuantityStepBaseUnits int64                         `json:"quantityStepBaseUnits"`
-	Media                 []IndependentPublicOfferMedia `json:"media"`
+	OfferID               string                           `json:"offerId"`
+	ProductID             string                           `json:"productId"`
+	ProductName           string                           `json:"productName"`
+	ProductDescription    string                           `json:"productDescription,omitempty"`
+	VariantID             string                           `json:"variantId"`
+	VariantTitle          string                           `json:"variantTitle"`
+	PriceMinor            int64                            `json:"priceMinor"`
+	BaseUnit              string                           `json:"baseUnit"`
+	PricingBasis          string                           `json:"pricingBasis"`
+	PricingUnitBaseUnits  int64                            `json:"pricingUnitBaseUnits"`
+	Currency              string                           `json:"currency"`
+	QuantityMinBaseUnits  int64                            `json:"quantityMinBaseUnits"`
+	QuantityMaxBaseUnits  int64                            `json:"quantityMaxBaseUnits"`
+	QuantityStepBaseUnits int64                            `json:"quantityStepBaseUnits"`
+	Media                 []IndependentPublicOfferMedia    `json:"media"`
+	ModifierGroups        []IndependentPublicModifierGroup `json:"modifierGroups"`
+}
+type IndependentPublicCategory struct {
+	ID     string `json:"id"`
+	NameAr string `json:"nameAr"`
+	Active bool   `json:"active"`
 }
 type IndependentPublicOfferPage struct {
-	Offers     []IndependentPublicOffer `json:"offers"`
-	NextCursor string                   `json:"nextCursor,omitempty"`
+	Categories []IndependentPublicCategory `json:"categories"`
+	Offers     []IndependentPublicOffer    `json:"offers"`
+	NextCursor string                      `json:"nextCursor,omitempty"`
 }
 
 // ListPublishedIndependentOffers strips storage/admin fields before any future
@@ -325,7 +377,18 @@ func ListPublishedIndependentOffersForCityFiltered(ctx context.Context, db *sql.
 }
 
 func projectIndependentPublicOffers(internal CatalogStoreOfferPage) (IndependentPublicOfferPage, error) {
-	public := IndependentPublicOfferPage{Offers: make([]IndependentPublicOffer, 0, len(internal.Offers)), NextCursor: internal.NextCursor}
+	public := IndependentPublicOfferPage{
+		Categories: make([]IndependentPublicCategory, 0, len(internal.Categories)),
+		Offers:     make([]IndependentPublicOffer, 0, len(internal.Offers)),
+		NextCursor: internal.NextCursor,
+	}
+	for _, category := range internal.Categories {
+		if category.Active {
+			public.Categories = append(public.Categories, IndependentPublicCategory{
+				ID: category.ID, NameAr: category.NameAr, Active: true,
+			})
+		}
+	}
 	for _, offer := range internal.Offers {
 		if offer.QuantityMinBaseUnits == nil || offer.QuantityMaxBaseUnits == nil || offer.QuantityStepBaseUnits == nil {
 			return IndependentPublicOfferPage{}, ErrIndependentStorefrontNotPublished
@@ -341,6 +404,25 @@ func projectIndependentPublicOffers(internal CatalogStoreOfferPage) (Independent
 			QuantityMaxBaseUnits:  *offer.QuantityMaxBaseUnits,
 			QuantityStepBaseUnits: *offer.QuantityStepBaseUnits,
 			Media:                 make([]IndependentPublicOfferMedia, 0, len(offer.Product.Media)),
+		}
+		item.ModifierGroups = make([]IndependentPublicModifierGroup, 0, len(offer.ModifierGroups))
+		for _, group := range offer.ModifierGroups {
+			if !group.Active {
+				continue
+			}
+			publicGroup := IndependentPublicModifierGroup{
+				ID: group.ID, NameAr: group.NameAr, Required: group.Required,
+				MinSelections: group.MinSelections, MaxSelections: group.MaxSelections,
+				Options: make([]IndependentPublicModifierOption, 0, len(group.Options)),
+			}
+			for _, option := range group.Options {
+				if option.Availability && option.PriceDeltaMinor >= 0 {
+					publicGroup.Options = append(publicGroup.Options, IndependentPublicModifierOption{
+						ID: option.ID, NameAr: option.NameAr, PriceDeltaMinor: option.PriceDeltaMinor,
+					})
+				}
+			}
+			item.ModifierGroups = append(item.ModifierGroups, publicGroup)
 		}
 		for _, media := range offer.Product.Media {
 			if strings.TrimSpace(media.URI) != "" {

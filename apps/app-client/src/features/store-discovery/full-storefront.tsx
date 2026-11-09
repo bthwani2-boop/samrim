@@ -257,7 +257,7 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
       ? ready.catalog.offers.filter(offer => !productID || offer.productId === productID).map(offer => ({
           ...offer, availability: true, priceUnitLabel: formatQuantity(offer.baseUnit, offer.pricingUnitBaseUnits),
         })) : [];
-  const categories = ready?.relation === "marketplace" ? ready.catalog.categories.filter((category) => category.active) : [];
+  const categories = ready ? ready.catalog.categories.filter((category) => category.active) : [];
   const openMarketRoute = async (path: Href) => {
     // React state is not a synchronous lock: two taps can arrive before render.
     if (!selectedCityID || openingMarketRef.current) return;
@@ -433,6 +433,18 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
             else { setQuery(""); void applyFilter(""); }
           }} variant="secondary" /> : null}
         </View>}
+        {productID && ready.relation === "independent" && product && product.modifierGroups.length > 0
+          ? <View style={styles.notice} accessibilityLabel="إضافات وخيارات المنتج">
+              <Text style={styles.secondary}>السعر المعروض أساسي، والإضافات التالية للعرض فقط. الطلب المباشر غير متاح حاليًا.</Text>
+              {product.modifierGroups.map(group => <View key={group.id} style={styles.section}>
+                <Text style={styles.productName}>{group.nameAr}</Text>
+                <Text style={styles.secondary}>{group.required ? "اختيار مطلوب عند تفعيل الشراء" : "اختيار إضافي"}</Text>
+                {group.options.map(option => <Text key={option.id} style={styles.secondary}>
+                  {option.nameAr}{option.priceDeltaMinor > 0 ? " · +" + formatMoney(option.priceDeltaMinor, product.currency) : ""}
+                </Text>)}
+                {group.options.length === 0 ? <Text style={styles.secondary}>لا تتوفر خيارات منشورة حاليًا.</Text> : null}
+              </View>)}
+            </View> : null}
         {ready.catalog.nextCursor && !catalogBusy ? <View style={styles.more}><BthwaniButton label="عرض المزيد من المنتجات" busy={loadingMore} onPress={() => void loadMore()} variant="secondary" /></View> : null}
       </View>
 

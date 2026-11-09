@@ -192,5 +192,5 @@ func (s *IndependentPublicStorefrontServer) readCatalog(w http.ResponseWriter, r
 			}
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"storeId": storeID, "offers": page.Offers, "nextCursor": page.NextCursor})
+	writeJSON(w, http.StatusOK, map[string]any{"storeId": storeID, "categories": page.Categories, "offers": page.Offers, "nextCursor": page.NextCursor})
 }

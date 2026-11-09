@@ -28,9 +28,10 @@ const store = {
 };
 const catalog = {
   storeId: "store_1",
+  categories: [{ id: "category_1", nameAr: "المنتجات", active: true }],
   offers: [{ offerId: "offer_1", productId: "product_1", productName: "منتج",
     variantId: "variant_1", variantTitle: "واحد", priceMinor: 1500,
-    currency: "YER", baseUnit: "COUNT", pricingBasis: "PER_UNIT", pricingUnitBaseUnits: 1, media: [{ uri: "https://images.example.com/offer.png", role: "primary" }] }],
+    currency: "YER", baseUnit: "COUNT", pricingBasis: "PER_UNIT", pricingUnitBaseUnits: 1, modifierGroups: [], media: [{ uri: "https://images.example.com/offer.png", role: "primary" }] }],
   nextCursor: "",
 };
 
@@ -66,6 +67,7 @@ test("independent public catalog scope, filtering and media stay in the same Sto
       productID: "product_1", query: "منتج",
     });
     assert.equal(page.offers[0].priceMinor, 1500);
+    assert.equal(page.categories[0].id, "category_1");
   });
   assert.equal(new URL(url).searchParams.get("productId"), "product_1");
   assert.equal(new URL(url).searchParams.get("serviceCityId"), "sanaa");
@@ -79,6 +81,15 @@ test("public independent catalog reuses the same measured price units as marketp
     const result = await listPublishedIndependentWebCatalog("https://api.example.com", "store_1", "sanaa");
     assert.equal(result.offers[0].baseUnit, "GRAM");
     assert.equal(result.offers[0].pricingUnitBaseUnits, 1000);
+  });
+});
+
+test("independent public extra options stay a read-only view of canonical modifier data", async () => {
+  const options = [{ id: "option_1", nameAr: "إضافة", priceDeltaMinor: 200 }];
+  const offer = { ...catalog.offers[0], modifierGroups: [{ id: "group_1", nameAr: "خيارات", required: false, minSelections: 0, maxSelections: 1, options }] };
+  await withFetch(async () => new Response(JSON.stringify({ ...catalog, offers: [offer] }), { status: 200 }), async () => {
+    const result = await listPublishedIndependentWebCatalog("https://api.example.com", "store_1", "sanaa");
+    assert.equal(result.offers[0].modifierGroups[0].options[0].priceDeltaMinor, 200);
   });
 });
 
@@ -96,8 +107,12 @@ test("unpublished and cross-Store public facts fail closed", async () => {
   }
   for (const override of [
     { storeId: "other_store" },
+    { categories: [{ id: "bad id", nameAr: "غير صالح", active: true }] },
+    { categories: [{ id: "category_1", nameAr: "مخفية", active: false }] },
     { offers: [{ ...catalog.offers[0], baseUnit: "INVALID" }] },
     { offers: [{ ...catalog.offers[0], priceMinor: 0 }] },
+    { offers: [{ ...catalog.offers[0], modifierGroups: [{ id: "group_1", nameAr: "غير متاح", required: true, minSelections: 2, maxSelections: 1, options: [] }] }] },
+    { offers: [{ ...catalog.offers[0], modifierGroups: [{ id: "group_1", nameAr: "خيارات", required: false, minSelections: 0, maxSelections: 1, options: [{ id: "option_1", nameAr: "غير صالح", priceDeltaMinor: -1 }] }] }] },
     { offers: [{ ...catalog.offers[0], pricingBasis: "PER_MEASURE", baseUnit: "COUNT" }] },
     { offers: [{ ...catalog.offers[0], pricingBasis: "PER_UNIT", baseUnit: "GRAM" }] },
     { offers: [{ ...catalog.offers[0], pricingUnitBaseUnits: 0 }] },

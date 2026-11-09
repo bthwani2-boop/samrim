@@ -15,6 +15,7 @@ import (
 var ErrCatalogOfferInvalidCursor = errors.New("catalog StoreOffer cursor is invalid")
 
 type CatalogStoreOfferPage struct {
+	Categories []CatalogCategoryRecord
 	Offers     []CatalogStoreOfferRecord
 	NextCursor string
 }

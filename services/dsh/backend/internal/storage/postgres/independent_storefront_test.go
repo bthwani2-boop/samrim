@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -187,7 +188,6 @@ func TestIndependentPublicCatalogReusesCanonicalPublishableOfferVisibility(t *te
 	for _, required := range []string{
 		"dsh.catalog_publishable_offers",
 		"o.currency='YER'",
-		"NOT EXISTS (SELECT 1 FROM dsh.catalog_store_offer_modifier_groups",
 	} {
 		if !strings.Contains(independentWebOfferPresentationSQL, required) {
 			t.Errorf("independent public reader must reuse the canonical Catalog and its narrow presentation rules: %q", required)
@@ -215,6 +215,9 @@ func TestIndependentPublicCatalogReusesCanonicalPublishableOfferVisibility(t *te
 		!strings.Contains(string(source), "PricingUnitBaseUnits: offer.PricingUnitBaseUnits") {
 		t.Fatal("independent public offers must expose canonical price units, not invent their own")
 	}
+	if strings.Contains(independentWebOfferPresentationSQL, "catalog_store_offer_modifier_groups") {
+		t.Fatal("published Store must not suppress offers merely for having modifiers")
+	}
 	for _, tc := range []struct {
 		price, quantity int64
 		allowed         bool
@@ -226,6 +229,48 @@ func TestIndependentPublicCatalogReusesCanonicalPublishableOfferVisibility(t *te
 		_, err := CalculateCatalogLineAmount(tc.price, tc.quantity, "PER_UNIT", 1)
 		if (err == nil) != tc.allowed {
 			t.Errorf("canonical price calculation changed: price=%d quantity=%d err=%v", tc.price, tc.quantity, err)
+		}
+	}
+}
+
+func TestIndependentPublishedProjectionStripsPrivateCategoryAndUnavailableOptions(t *testing.T) {
+	minimum, maximum, step := int64(1), int64(5), int64(1)
+	page := CatalogStoreOfferPage{
+		Categories: []CatalogCategoryRecord{
+			{ID: "category-1", NameAr: "Public", Active: true, Version: 91, ImageURI: "private-object-key"},
+			{ID: "category-2", NameAr: "Draft", Active: false},
+		},
+		Offers: []CatalogStoreOfferRecord{{
+			ID: "offer-1", Product: CatalogProductRecord{ID: "product-1", CanonicalName: "Product"},
+			VariantID: "variant-1", Variant: CatalogVariantRecord{Title: "Unit", BaseUnit: "COUNT"},
+			PriceMinor: 1500, Currency: "YER", PricingBasis: "PER_UNIT", PricingUnitBaseUnits: 1,
+			QuantityMinBaseUnits: &minimum, QuantityMaxBaseUnits: &maximum, QuantityStepBaseUnits: &step,
+			ModifierGroups: []CatalogModifierGroupRecord{{
+				ID: "group-1", NameAr: "Options", Active: true, MaxSelections: 1,
+				Options: []CatalogModifierOptionRecord{
+					{ID: "option-1", NameAr: "Visible", PriceDeltaMinor: 100, Availability: true},
+					{ID: "option-2", NameAr: "Hidden", PriceDeltaMinor: 500, Availability: false},
+				},
+			}, {ID: "group-draft", NameAr: "Internal", Active: false}},
+		}},
+	}
+	result, err := projectIndependentPublicOffers(page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Categories) != 1 || result.Categories[0].ID != "category-1" ||
+		len(result.Offers) != 1 || len(result.Offers[0].ModifierGroups) != 1 ||
+		len(result.Offers[0].ModifierGroups[0].Options) != 1 ||
+		result.Offers[0].ModifierGroups[0].Options[0].ID != "option-1" {
+		t.Fatalf("public-only category/modifier projection failed: %+v", result)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, private := range []string{"private-object-key", "Hidden", "Internal", "Draft", "inventoryOnHand", "version", "partnerActorId"} {
+		if strings.Contains(string(encoded), private) {
+			t.Fatalf("public projection leaked private fact %q", private)
 		}
 	}
 }
