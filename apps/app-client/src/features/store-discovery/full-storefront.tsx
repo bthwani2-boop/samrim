@@ -2,7 +2,7 @@ import { borders, radius, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { formatMoney, formatQuantity, type PublicCatalogResponse, type PublicDiscoveryContentView, type PublicStoreView } from "@bthwani/dsh";
 import { Image as ExpoImage } from "expo-image";
-import { Link, type Href, useRouter } from "expo-router";
+import { Link, type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View, type ScrollViewInstance } from "react-native";
 
@@ -35,6 +35,7 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
   const readID = useRef(0);
   const catalogID = useRef(0);
   const bannerID = useRef(0);
+  const openingMarketRef = useRef(false);
   const scrollRef = useRef<ScrollViewInstance | null>(null);
   const productsOffset = useRef(0);
   const contactOffset = useRef(0);
@@ -49,6 +50,12 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
   const [marketCityError, setMarketCityError] = useState(false);
   const [openingMarket, setOpeningMarket] = useState(false);
   const [brokenImages, setBrokenImages] = useState<ReadonlySet<string>>(new Set());
+
+  useFocusEffect(useCallback(() => {
+    openingMarketRef.current = false;
+    setOpeningMarket(false);
+    return () => { openingMarketRef.current = false; };
+  }, []));
 
   const hideWithdrawnStore = useCallback(() => {
     // A definitive DSH publication denial invalidates every in-flight public read.
@@ -174,22 +181,29 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
   const offers = ready ? visiblePublishedOffers(ready.catalog.offers, storeId, productID) : [];
   const categories = ready ? ready.catalog.categories.filter((category) => category.active) : [];
   const openMarketRoute = async (path: Href) => {
-    if (!selectedCityID || openingMarket) return;
+    // React state is not a synchronous lock: two taps can arrive before render.
+    if (!selectedCityID || openingMarketRef.current) return;
+    openingMarketRef.current = true;
+    setOpeningMarket(true);
     setMarketCityError(false);
-    if (selectedCityID !== savedCityID) {
-      const generation = readID.current;
-      setOpeningMarket(true);
-      try {
+    let navigated = false;
+    try {
+      if (selectedCityID !== savedCityID) {
+        const generation = readID.current;
         await selectCity(selectedCityID);
         if (generation !== readID.current) return;
-      } catch {
-        setMarketCityError(true);
-        return;
-      } finally {
+      }
+      router.push(path);
+      navigated = true;
+    } catch {
+      setMarketCityError(true);
+    } finally {
+      // Keep the lock until the route loses focus; release on failed handoff.
+      if (!navigated) {
+        openingMarketRef.current = false;
         setOpeningMarket(false);
       }
     }
-    router.push(path);
   };
   const marketplacePath = (requestedProductID = "") =>
     ("/" + buildStoreSharePath(storeId, selectedCityID ?? "", requestedProductID)) as Href;
