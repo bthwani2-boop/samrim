@@ -57,7 +57,7 @@ export function createOrderConversationMessageAttempt(
     actorID: normalizedActor,
     orderID: normalizedOrder,
     body: normalizedBody,
-    ...(recipientRoles ? { recipientRoles: [...recipientRoles].sort() } : {}),
+    ...(recipientRoles ? { recipientRoles: [...recipientRoles].sort((a, b) => a < b ? -1 : a > b ? 1 : 0) } : {}),
     ...(media ? { mediaKind: media.kind, mediaContentType: media.contentType, mediaFileUri: media.fileUri } : {}),
     idempotencyKey: normalizedKey,
     correlationID: normalizedCorrelation,

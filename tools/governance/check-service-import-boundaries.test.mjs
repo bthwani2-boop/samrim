@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
-import { resolve } from "node:path";
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, join, resolve } from "node:path";
 import { test } from "node:test";
 import { scanRepositoryServiceBoundaries, scanServiceBoundaryFile } from "./check-service-import-boundaries.mjs";
+import { resolveTrustedExecutable } from "../dev/trusted-executables.mjs";
 
 const dshInternal = "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres";
 
@@ -52,4 +55,26 @@ test("actual tracked repository honors runtime owner boundaries", () => {
   const result = scanRepositoryServiceBoundaries(root);
   assert.ok(result.checked > 900, "scan must cover a realistic repository, not only fixtures");
   assert.deepEqual(result.violations, []);
+});
+
+test("repository boundary scan rejects PATH-shadowed Git executables", () => {
+  const shadowDir = mkdtempSync(join(tmpdir(), "bthwani-git-shadow-"));
+  const fakeGit = join(shadowDir, process.platform === "win32" ? "git.cmd" : "git");
+  const oldPath = process.env.PATH;
+  try {
+    writeFileSync(fakeGit, process.platform === "win32" ? "@echo off\r\nexit /b 71\r\n" : "#!/bin/sh\nexit 71\n");
+    if (process.platform !== "win32") chmodSync(fakeGit, 0o700);
+    assert.ok(existsSync(fakeGit));
+    process.env.PATH = shadowDir + delimiter + (oldPath ?? "");
+    const trusted = resolveTrustedExecutable("git");
+    assert.notEqual(resolve(trusted).toLowerCase(), resolve(fakeGit).toLowerCase());
+    const root = resolve(import.meta.dirname, "../..");
+    const result = scanRepositoryServiceBoundaries(root);
+    assert.ok(result.checked > 900);
+    assert.deepEqual(result.violations, []);
+  } finally {
+    if (oldPath === undefined) delete process.env.PATH;
+    else process.env.PATH = oldPath;
+    rmSync(shadowDir, { recursive: true, force: true });
+  }
 });

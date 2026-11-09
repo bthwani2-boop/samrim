@@ -146,7 +146,7 @@ func toStoreView(store postgres.StoreRecord, readiness storepublication.Publicat
 		ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, ServiceCityID: nullableString(store.ServiceCityID), PrimaryVerticalID: nullableString(store.PrimaryVerticalID), CommercialStoreTypeID: nullableString(store.CommercialStoreTypeID), Version: store.Version,
 		PartnerName: store.PartnerName, ServiceCityName: store.ServiceCityName, PrimaryVerticalName: store.PrimaryVerticalName,
 		FulfillmentModes: toFulfillmentModes(store.FulfillmentModes),
-		PublicationState: contract.PublicationState(store.PublicationState), PublicationChangedAt: store.PublicationChangedAt,
+		PublicationState: contract.PublicationState(store.PublicationState), RelationModel: store.RelationModel, PublicationChangedAt: store.PublicationChangedAt,
 		DeliveryOrigin: deliveryOrigin,
 		CreatedAt:      store.CreatedAt, UpdatedAt: store.UpdatedAt,
 		StoreProfileImage:    toStoreProfileImage(store.StoreProfileImage),

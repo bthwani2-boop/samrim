@@ -307,7 +307,7 @@ func ListPartnerAccessibleStores(ctx context.Context, db *sql.DB, actorID string
 			WHERE store_id=s.id AND delegate_actor_id=$1 AND state='active'
 			ORDER BY updated_at DESC,id DESC LIMIT 1
 		) g ON true
-		WHERE (s.partner_actor_id=$1 OR g.permissions IS NOT NULL) AND s.id>$2
+		WHERE s.deleted_at IS NULL AND (s.partner_actor_id=$1 OR g.permissions IS NOT NULL) AND s.id>$2
 		ORDER BY s.id LIMIT $3`, actorID, cursor, limit+1)
 	if err != nil {
 		return PartnerAccessibleStorePage{}, fmt.Errorf("list Partner-accessible Stores: %w", err)

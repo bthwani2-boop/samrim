@@ -37,7 +37,8 @@ test("typed product search reuses the DSH-backed grid, cart actions, and server 
   assert.match(feed, /const normalizedQuery = query\.trim\(\)/);
   assert.match(feed, /searchPublicCatalog\(cityID, normalizedQuery, categoryID, effectivePageSize/);
   assert.match(feed, /searchPublicCatalog\(cityID, normalizedQuery, categoryID, PAGE_SIZE, state\.nextCursor/);
-  assert.match(feed, /adjustSimpleOfferQuantity\(offer\.storeId, offer, direction\)/);
+  assert.match(feed, /adjustSimpleOfferQuantity\(offer\.storeId, offer, direction, actorID\)/);
+  assert.match(feed, /const actorID = currentHomeActorID\(\)/);
 });
 
 test("empty product search offers real catalog-based suggestions with an explicit retry", () => {

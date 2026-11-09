@@ -9,6 +9,151 @@ servers:
   - url: http://127.0.0.1:18080
 
 paths:
+  /dsh/public/independent-stores/{storeId}:
+    get:
+      operationId: readPublishedIndependentWebStore
+      summary: Read a separately approved independent web publication, never marketplace discovery
+      security: []
+      parameters:
+        - name: storeId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: serviceCityId
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: DSH-approved independent Store, public business contact, published merchant policy and rights-attested media. Direct checkout remains unavailable.
+          headers:
+            Cache-Control: { schema: { type: string, enum: [no-store] } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [storeId, name, serviceCityId, profileImageUri, coverImageUri, checkoutEnabled]
+                properties:
+                  storeId: { type: string }
+                  name: { type: string }
+                  serviceCityId: { type: string }
+                  profileImageUri: { type: string, format: uri }
+                  coverImageUri: { type: string, format: uri }
+                  businessPhoneE164: { type: string }
+                  businessEmail: { type: string }
+                  businessWhatsAppE164: { type: string }
+                  hostingTermsVersion: { type: string }
+                  merchantPolicyVersion: { type: string }
+                  cancellationTerms: { type: string }
+                  returnsTerms: { type: string }
+                  fulfillmentTerms: { type: string }
+                  collectionTerms: { type: string }
+                  checkoutEnabled: { type: boolean, const: false }
+        '400': { description: Invalid Store or City scope }
+        '404': { description: 'Not released, unpublished, suspended, wrong City or missing approvals; no private data' }
+        '503': { description: DSH publication unavailable; fail closed }
+  /dsh/public/independent-stores/{storeId}/catalog:
+    get:
+      operationId: listPublishedIndependentWebCatalog
+      summary: Read approved independent Store offers from canonical DSH Catalog
+      security: []
+      parameters:
+        - name: storeId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: serviceCityId
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 24 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 2048 }
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 160 }
+          description: Optional literal substring search on public product and variant names.
+        - name: categoryId
+          in: query
+          schema: { type: string, maxLength: 128 }
+        - name: productId
+          in: query
+          schema: { type: string, maxLength: 128 }
+      responses:
+        '200':
+          description: Canonical Store-scoped published offers for read-only display, filtered before pagination, with rights-attested HTTPS media and an opaque Store/City/legal/filter-scoped cursor.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [storeId, categories, offers, nextCursor]
+                properties:
+                  storeId: { type: string }
+                  categories:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, nameAr, active]
+                      properties:
+                        id: { type: string }
+                        nameAr: { type: string }
+                        active: { type: boolean, const: true }
+                  offers:
+                    type: array
+                    items:
+                      type: object
+                      required: [offerId, productId, productName, variantId, variantTitle, baseUnit, pricingBasis, pricingUnitBaseUnits, priceMinor, availability, currency, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, media, modifierGroups]
+                      properties:
+                        offerId: { type: string }
+                        productId: { type: string }
+                        productName: { type: string }
+                        productDescription: { type: string }
+                        variantId: { type: string }
+                        variantTitle: { type: string }
+                        baseUnit: { type: string, enum: [COUNT, GRAM, MILLILITER] }
+                        pricingBasis: { type: string, enum: [PER_UNIT, PER_MEASURE] }
+                        pricingUnitBaseUnits: { type: integer, format: int64, minimum: 1 }
+                        priceMinor: { type: integer, format: int64 }
+                        availability: { type: boolean, const: true }
+                        currency: { type: string }
+                        quantityMinBaseUnits: { type: integer, format: int64 }
+                        quantityMaxBaseUnits: { type: integer, format: int64 }
+                        quantityStepBaseUnits: { type: integer, format: int64 }
+                        modifierGroups:
+                          type: array
+                          items:
+                            type: object
+                            required: [id, nameAr, required, minSelections, maxSelections, options]
+                            properties:
+                              id: { type: string }
+                              nameAr: { type: string }
+                              required: { type: boolean }
+                              minSelections: { type: integer, minimum: 0 }
+                              maxSelections: { type: integer, minimum: 0 }
+                              options:
+                                type: array
+                                items:
+                                  type: object
+                                  required: [id, nameAr, priceDeltaMinor]
+                                  properties:
+                                    id: { type: string }
+                                    nameAr: { type: string }
+                                    priceDeltaMinor: { type: integer, format: int64, minimum: 0 }
+                        media:
+                          type: array
+                          items:
+                            type: object
+                            required: [uri, role]
+                            properties:
+                              uri: { type: string, format: uri }
+                              role: { type: string }
+                  nextCursor: { type: string }
+        '400': { description: 'Invalid scope, limit or cursor' }
+        '404': { description: 'Not released, unpublished, suspended, wrong City or missing approvals' }
+        '503': { description: DSH Catalog unavailable; fail closed }
   /dsh/operator/distance-band-fee-policy:
     get:
       operationId: readOperatorDistanceBandFeePolicy
@@ -52,6 +197,86 @@ paths:
       responses:
         '201': { description: Activated WLT policy and canonical readback. }
         '409': { description: Stale version or idempotency conflict. }
+  /dsh/public/store-joining-policies:
+    get:
+      operationId: listPublicStoreJoiningOptions
+      summary: Public Store enrollment options without operator identities or audit reasons
+      security: []
+      responses:
+        '200':
+          description: Canonical DSH admission availability for each relation
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [relationModel, enrollmentEnabled]
+                      properties:
+                        relationModel: { type: string, enum: [BTHWANI_PARTNER, INDEPENDENT_STORE] }
+                        enrollmentEnabled: { type: boolean }
+        '503': { description: Admission policy unavailable; enrollment fails closed }
+  /dsh/operator/store-joining-policies:
+    get:
+      operationId: listOperatorStoreJoiningPolicies
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ActingActorId' }
+      responses:
+        '200':
+          description: Operator policy and canonical versions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/StoreJoiningPolicy' }
+  /dsh/operator/store-joining-policies/{model}:
+    put:
+      operationId: updateOperatorStoreJoiningPolicy
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ActingActorId' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+        - { $ref: '#/components/parameters/IdempotencyKeyRequired' }
+        - name: model
+          in: path
+          required: true
+          schema: { type: string, enum: [BTHWANI_PARTNER, INDEPENDENT_STORE] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [enrollmentEnabled, expectedVersion, reason]
+              properties:
+                enrollmentEnabled: { type: boolean }
+                expectedVersion: { type: integer, minimum: 1 }
+                reason: { type: string, minLength: 5, maxLength: 500 }
+      responses:
+        '200':
+          description: Authorized mutation and canonical DSH result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [policy]
+                properties:
+                  policy: { $ref: '#/components/schemas/StoreJoiningPolicy' }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
   /dsh/operator/policy-history:
     get:
       operationId: readOperatorPolicyHistory
@@ -433,6 +658,15 @@ paths:
   /dsh/public/catalog/search:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1public~1catalog~1search"
 
+  /dsh/operator/independent-stores/{storeId}/publication:
+    $ref: "./paths/store-publication.yaml#/paths/~1dsh~1operator~1independent-stores~1{storeId}~1publication"
+
+  /dsh/operator/independent-stores/{storeId}/review-decision:
+    $ref: "./paths/store-publication.yaml#/paths/~1dsh~1operator~1independent-stores~1{storeId}~1review-decision"
+
+  /dsh/operator/independent-stores/{storeId}/suspend:
+    $ref: "./paths/store-publication.yaml#/paths/~1dsh~1operator~1independent-stores~1{storeId}~1suspend"
+
   /dsh/stores/{storeId}/publication:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores~1{storeId}~1publication"
 
@@ -471,8 +705,12 @@ paths:
   /dsh/operations/stores/{storeId}/operational-availability:
     $ref: "./paths/store-availability.yaml#/paths/~1dsh~1operations~1stores~1{storeId}~1operational-availability"
 
-  /dsh/partner/stores/{storeId}/independent-preview:
-    $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1independent-preview"
+  /dsh/partner/stores/{storeId}/independent-publication/submit:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1independent-publication~1submit"
+
+  /dsh/partner/stores/{storeId}/independent-customer-policy/draft:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1independent-customer-policy~1draft"
+
 
   /dsh/partner/stores/{storeId}/access:
     $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1access"
@@ -551,6 +789,9 @@ paths:
 
   /dsh/public/stores/{storeId}/banners:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1stores~1{storeId}~1banners"
+
+  /dsh/public/independent-stores/{storeId}/banners:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1independent-stores~1{storeId}~1banners"
 
   /dsh/public/discovery-content/events:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1discovery-content~1events"
@@ -1837,6 +2078,27 @@ components:
           type: string
           pattern: '^[+][1-9][0-9]{7,14}$'
 
+    StoreJoiningPolicy:
+      type: object
+      additionalProperties: false
+      required: [relationModel, enrollmentEnabled, version, updatedBy, updatedAt, reason]
+      properties:
+        relationModel:
+          type: string
+          enum: [BTHWANI_PARTNER, INDEPENDENT_STORE]
+        enrollmentEnabled:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+        updatedBy:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+        reason:
+          type: string
+
     PartnerFirstStoreCreateRequest:
       type: object
       additionalProperties: false
@@ -2643,7 +2905,7 @@ components:
 
     StoreView:
       type: object
-      required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, commercialStoreTypeId, deliveryOrigin, fulfillmentModes, version, publicationState, publicationReadiness, createdAt, updatedAt]
+      required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, commercialStoreTypeId, deliveryOrigin, fulfillmentModes, version, publicationState, relationModel, publicationReadiness, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -2684,6 +2946,9 @@ components:
           minimum: 1
         publicationState:
           $ref: "#/components/schemas/PublicationState"
+        relationModel:
+          type: string
+          enum: [BTHWANI_PARTNER, INDEPENDENT_STORE]
         publicationReadiness:
           $ref: "#/components/schemas/StorePublicationReadiness"
         publicationChangedAt:
@@ -2718,6 +2983,27 @@ components:
       properties:
         state:
           $ref: "#/components/schemas/PublicationAction"
+
+    IndependentPublicationOperatorStatus:
+      type: object
+      additionalProperties: false
+      required: [storeId, state, reviewState, version]
+      properties:
+        storeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        state:
+          type: string
+          enum: [DRAFT, NEEDS_REVIEW, NEEDS_CORRECTION, UNPUBLISHED, SUSPENDED, PUBLISHED_INDEPENDENT]
+        reviewState:
+          type: string
+          enum: [NOT_CHECKED, NEEDS_REVIEW, REJECTED, PASSED]
+        version:
+          type: integer
+          minimum: 1
+        reviewReason:
+          type: string
 
     StorePublicationResponse:
       type: object
@@ -11673,58 +11959,85 @@ components:
           items:
             $ref: "#/components/schemas/StoreAccessPermission"
 
-    IndependentPreviewOffer:
+    IndependentCustomerPolicyDraft:
       type: object
       additionalProperties: false
-      required: [id, productId, title, priceMinor, currency, imageUri, availability, publicationState]
-      properties:
-        id:
-          type: string
-        productId:
-          type: string
-        title:
-          type: string
-        priceMinor:
-          type: integer
-          format: int64
-        currency:
-          type: string
-        imageUri:
-          type: string
-        availability:
-          type: boolean
-        publicationState:
-          type: string
-
-    IndependentStorePreview:
-      type: object
-      additionalProperties: false
-      description: Private Partner-owned Store and Catalog preparation; never a public storefront or an order endpoint.
-      required: [storeId, name, relationModel, publicationState, profileImageUri, coverImageUri, previewOnly, checkoutEnabled, offers, nextCursor]
+      description: Canonical owner-private merchant policy. Review state is informational and never a Partner-controlled publication authorization.
+      required: [storeId, version, policyVersion, reviewState, cancellationTerms, returnsTerms, fulfillmentTerms, collectionTerms]
       properties:
         storeId:
           type: string
-        name:
+          minLength: 1
+          maxLength: 128
+        version:
+          type: integer
+          minimum: 0
+        policyVersion:
           type: string
-        relationModel:
+        reviewState:
           type: string
-          enum: [INDEPENDENT_STORE]
-        publicationState:
+          enum: [NOT_CHECKED, PASSED, REJECTED]
+        cancellationTerms:
           type: string
-        profileImageUri:
+        returnsTerms:
           type: string
-        coverImageUri:
+        fulfillmentTerms:
           type: string
-        previewOnly:
+        collectionTerms:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+
+    IndependentCustomerPolicyDraftInput:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, cancellationTerms, returnsTerms, fulfillmentTerms, collectionTerms]
+      description: Only the merchant's own terms and optimistic version. Reviewer, publishedAt and hosting consent are forbidden.
+      properties:
+        expectedVersion:
+          type: integer
+          minimum: 0
+        cancellationTerms:
+          type: string
+          minLength: 2
+          maxLength: 4000
+        returnsTerms:
+          type: string
+          minLength: 2
+          maxLength: 4000
+        fulfillmentTerms:
+          type: string
+          minLength: 2
+          maxLength: 4000
+        collectionTerms:
+          type: string
+          minLength: 2
+          maxLength: 4000
+
+    IndependentCustomerPolicyDraftResponse:
+      type: object
+      additionalProperties: false
+      required: [policy, draftOnly]
+      properties:
+        policy:
+          $ref: "#/components/schemas/IndependentCustomerPolicyDraft"
+        draftOnly:
           type: boolean
-        checkoutEnabled:
+          description: Always true; this private resource cannot publish a Store.
+
+    IndependentCustomerPolicyDraftMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [policy, draftOnly, idempotentReplay]
+      properties:
+        policy:
+          $ref: "#/components/schemas/IndependentCustomerPolicyDraft"
+        draftOnly:
           type: boolean
-        offers:
-          type: array
-          items:
-            $ref: "#/components/schemas/IndependentPreviewOffer"
-        nextCursor:
-          type: string
+          description: Always true; this private resource cannot publish a Store.
+        idempotentReplay:
+          type: boolean
 
     PartnerAccessibleStorePage:
       type: object

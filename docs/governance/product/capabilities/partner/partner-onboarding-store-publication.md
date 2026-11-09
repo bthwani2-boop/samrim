@@ -14,6 +14,12 @@ Historical `joining_case` records and their evidence remain available for author
 ## Ownership
 Identity owns the phone challenge, canonical actor, Partner role admission, credentials and role-specific sessions. DSH owns Store identity, first-Store setup, durable ownership, Service City, commerce vertical and Store Type, fulfillment policy, operator-ready publication gates, public Store media, and canonical Store records. WLT owns Store-specific financial agreement proposal, acceptance, Finance approval and ledger-linked readiness. Partner self-registration never delegates these writers to the UI. Existing joining-case data are preserved under DSH as **legacy historical records only**.
 
+## Current Store enrollment availability policy
+
+DSH owns the two explicit model-specific admission toggles BTHWANI_PARTNER and INDEPENDENT_STORE. An authorized Operator with platform_policies may enable or pause **new first-Store creation** through the canonical DSH policy record and optimistic versioned, idempotent mutation; one initial record exists per relation model. Both start enabled for creation of unpublished drafts. Partner setup presents only enabled options read from DSH. The DSH first-Store transaction rechecks policy under a row lock after checking for an exact existing Store, so closing enrollment refuses fresh creation including legacy requests that omit relationModel, while preserving idempotent readback of an already created Store and all existing Store/Order rights.
+
+This toggle never admits identity roles, commercial terms, marketplace publication, independent web publication or Order checkout. Marketplace still requires Partner acceptance, Finance approval and DSH publication readiness. Independent automatic low-risk publication is a future separately gated workflow and cannot be activated through this enrollment toggle. A policy-read/storage failure blocks new Store creation rather than trusting UI defaults. No generalized rule engine or parallel frontend policy authority is created.
+
 ## Current direct-registration and Store invariants
 
 - Partner self-registration requires a valid verified Identity Client session on the same canonical actor; it creates the Partner role and a scoped Partner session atomically. An arbitrary phone number, spoofed Actor header or unsigned browser request never admits a Partner. Disabled or previously provisioned Partner roles must not be reactivated through self-registration.

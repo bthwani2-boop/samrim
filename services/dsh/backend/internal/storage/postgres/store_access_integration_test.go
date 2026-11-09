@@ -100,6 +100,36 @@ func TestFreshStoreAccessDelegationJourney(t *testing.T) {
 			t.Fatalf("active delegated Store is absent or incorrectly scoped in Partner readback: page=%+v err=%v", accessible, err)
 		}
 
+		// Archiving a Store must remove it from both its owner's and active
+		// delegates' current Store navigation; recovering it remains private
+		// and does not restore marketplace publication.
+		beforeArchive, err := postgres.ReadStore(ctx, db, storeID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		archived, replayed, err := postgres.SetStoreTrashed(ctx, db, storeID, ownerActorID,
+			"Archived after delegated access QA", "trash", "idem-access-store-archive-v1", beforeArchive.Version)
+		if err != nil || replayed || archived.DeletedAt == nil {
+			t.Fatalf("Store archive did not persist a deletion marker: record=%+v replay=%v err=%v", archived, replayed, err)
+		}
+		for _, actorID := range []string{ownerActorID, delegateActorID} {
+			page, pageErr := postgres.ListPartnerAccessibleStores(ctx, db, actorID, 25, "")
+			if pageErr != nil || len(page.Stores) != 0 {
+				t.Fatalf("archived Store remained in Partner scope for actor=%s: %+v err=%v", actorID, page, pageErr)
+			}
+		}
+		restored, replayed, err := postgres.SetStoreTrashed(ctx, db, storeID, ownerActorID,
+			"", "restore", "idem-access-store-restore-v1", archived.Version)
+		if err != nil || replayed || restored.DeletedAt != nil {
+			t.Fatalf("Store restore did not clear its archive marker: record=%+v replay=%v err=%v", restored, replayed, err)
+		}
+		for _, actorID := range []string{ownerActorID, delegateActorID} {
+			page, pageErr := postgres.ListPartnerAccessibleStores(ctx, db, actorID, 25, "")
+			if pageErr != nil || len(page.Stores) != 1 || page.Stores[0].ID != storeID || page.Stores[0].PublicationState != "hidden" {
+				t.Fatalf("restored private Store has incorrect Partner scope for actor=%s: %+v err=%v", actorID, page, pageErr)
+			}
+		}
+
 		grant, replayed, err = postgres.TransitionStoreAccessGrant(ctx, db, storeID, ownerActorID, grant.ID, "revoked", grant.Version, "idem-access-revoke-v1", "corr-access-revoke-v1")
 		if err != nil || replayed || grant.State != "revoked" || grant.Version != 5 {
 			t.Fatalf("owner revocation failed: grant=%+v replayed=%t err=%v", grant, replayed, err)

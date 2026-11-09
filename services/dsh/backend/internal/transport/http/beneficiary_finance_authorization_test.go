@@ -33,6 +33,16 @@ func beneficiaryFinanceRegisteredRoutes(t *testing.T) []beneficiaryFinanceRegist
 			t.Fatalf("read %s: %v", file, err)
 		}
 		for _, match := range pattern.FindAllStringSubmatch(string(source), -1) {
+			// One ServeMux registration dispatches three canonical finance URLs.
+			// Count and check every real URL, not only the broad registration.
+			if strings.Contains(match[2], "{financeAction...}") {
+				for _, action := range []string{"payout-state", "official-wallet-destination", "wallet-provider-intent"} {
+					routes = append(routes, beneficiaryFinanceRegisteredRoute{
+						method: match[1], path: strings.Replace(match[2], "{financeAction...}", action, 1),
+					})
+				}
+				continue
+			}
 			routes = append(routes, beneficiaryFinanceRegisteredRoute{method: match[1], path: match[2]})
 		}
 	}

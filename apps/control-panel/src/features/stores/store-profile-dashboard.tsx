@@ -3,7 +3,7 @@
 import { type JoiningCaseView, joiningCaseStateLabel, type OperatorOperationsSummary, publicationReadinessBlockedReasonLabel, publicationStateLabel, type StorePublicationResponse } from "@bthwani/dsh";
 import type { ActorRoleView } from "@bthwani/identity";
 import Link from "next/link";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Tabs } from "antd";
 import { createPortal } from "react-dom";
 import { useAdaptiveRecordView } from "../../shell/adaptive-record-workspace";
@@ -57,15 +57,24 @@ function MissingData({ message }: Readonly<{ message: string }>) {
 export function StoreProfileDashboard({ store, partner, partnerError, canViewFinance, canViewOperations, manageOpen, openManagement, management, onUpdated }: ProfileProps) {
   const account = partner?.partner;
   const accountState = partnerError ? "تعذرت القراءة" : !account ? "غير متاحة" : !account.enabled || !account.securityEnabled ? "موقوف" : account.activatedAt ? "نشط" : "بانتظار التفعيل";
-  const ready = store.publicationReadiness.ready;
-  const publication = publicationStateLabel(store.publicationState);
-  const blockers = !ready ? (store.publicationReadiness.blockedReasons?.length ? store.publicationReadiness.blockedReasons : store.publicationReadiness.blockedReason ? [store.publicationReadiness.blockedReason] : []) : [];
+  const isMarketplaceStore = store.relationModel === "BTHWANI_PARTNER";
+  const canViewMarketplaceOperations = isMarketplaceStore && canViewOperations;
+  const canViewMarketplaceFinance = isMarketplaceStore && canViewFinance;
+  const ready = isMarketplaceStore && store.publicationReadiness.ready;
+  const publication = isMarketplaceStore ? publicationStateLabel(store.publicationState) : "نشر الموقع المستقل غير مفعّل";
+  const blockers = isMarketplaceStore && !ready ? (store.publicationReadiness.blockedReasons?.length ? store.publicationReadiness.blockedReasons : store.publicationReadiness.blockedReason ? [store.publicationReadiness.blockedReason] : []) : [];
   const caseView = partner?.joiningCase;
   const cover = store.storeCoverImage?.uri;
 
   const [activeTab, setActiveTab] = useState("overview");
-  const [orderSummary, setOrderSummary] = useState<OperatorOperationsSummary | null>(null);
-  const [operationalReadback, setOperationalReadback] = useState<OperationalReadback | "unavailable" | null>(null);
+  const orderSummaryScope = JSON.stringify([store.id, store.relationModel, store.version]);
+  const [orderSummary, setOrderSummary] = useState<{ scope: string; summary: OperatorOperationsSummary | null } | null>(null);
+  const currentOrderSummary = orderSummary?.scope === orderSummaryScope ? orderSummary.summary : null;
+  const recordOrderSummary = useCallback((summary: OperatorOperationsSummary | null) => {
+    setOrderSummary({ scope: orderSummaryScope, summary });
+  }, [orderSummaryScope]);
+  const [operationalReadback, setOperationalReadback] = useState<{ scope: string; value: OperationalReadback | "unavailable" } | null>(null);
+  const currentOperationalReadback = operationalReadback?.scope === orderSummaryScope ? operationalReadback.value : null;
   const [imageRole, setImageRole] = useState<"primary" | "cover" | null>(null);
   const [imageNotice, setImageNotice] = useState("");
   const imageDialog = useRef<HTMLDialogElement>(null);
@@ -81,7 +90,7 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
     }
   }, [imageRole]);
   useEffect(() => {
-    if (!canViewOperations) return;
+    if (!canViewMarketplaceOperations) return;
     let active = true;
     setOperationalReadback(null);
     const check = () => {
@@ -90,19 +99,19 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
           if (!response.ok) throw new Error("Operational availability unavailable");
           const value = await response.json() as OperationalReadback;
           if (value.availability?.storeId !== store.id || !Array.isArray(value.orderabilityByMode)) throw new Error("Invalid store readback");
-          if (active) setOperationalReadback(value);
+          if (active) setOperationalReadback({ scope: orderSummaryScope, value });
         })
-        .catch(() => { if (active) setOperationalReadback("unavailable"); });
+        .catch(() => { if (active) setOperationalReadback({ scope: orderSummaryScope, value: "unavailable" }); });
     };
     check();
     const timer = window.setInterval(check, 15000);
     return () => { active = false; window.clearInterval(timer); };
-  }, [canViewOperations, store.id]);
-  const visibleModes = operationalReadback && operationalReadback !== "unavailable" ? operationalReadback.orderabilityByMode : [];
+  }, [canViewMarketplaceOperations, store.id, orderSummaryScope]);
+  const visibleModes = currentOperationalReadback && currentOperationalReadback !== "unavailable" ? currentOperationalReadback.orderabilityByMode : [];
   const openModeCount = visibleModes.filter((mode) => mode.state === "OPEN_FOR_ORDERS").length;
   const operationalLabel = store.publicationState !== "published" ? "غير منشور"
-    : operationalReadback === "unavailable" ? "حالة التشغيل غير متاحة"
-    : !operationalReadback ? "التحقق من التشغيل…"
+    : currentOperationalReadback === "unavailable" ? "حالة التشغيل غير متاحة"
+    : !currentOperationalReadback ? "التحقق من التشغيل…"
     : openModeCount === 0 ? "مغلق"
     : openModeCount < visibleModes.length ? "مفتوح جزئيًا" : "مفتوح";
   const recordView = useAdaptiveRecordView();
@@ -120,20 +129,20 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
     ["overview", "نظرة عامة"], ["operations", "التشغيل والطلبات"],
     ["catalog", "المنتجات والعروض"], ["identity", "بيانات المتجر"],
     ["quality", "العملاء والجودة"], ["documents", "الوثائق والسجل"],
-    ...(canViewFinance ? [["finance", "المالية"] as const] : []),
+    ...(canViewMarketplaceFinance ? [["finance", "المالية"] as const] : []),
   ];
   const overview = (
     <section className="store-profile-overview">
-    {canViewOperations ? <section id="store-profile-overview" className="store-profile-kpis" aria-label="مؤشرات طلبات المتجر">
-      <div className="store-profile-kpi"><div><span>طلبات تحتاج متابعة</span><strong>{orderSummary?.actionableCount ?? "—"}</strong></div></div>
-      <div className="store-profile-kpi"><div><span>بانتظار الإسناد</span><strong>{orderSummary?.awaitingDispatchCount ?? "—"}</strong></div></div>
-      <div className="store-profile-kpi"><div><span>الطلبات النشطة</span><strong>{orderSummary?.activeCount ?? "—"}</strong></div></div>
-    </section> : null}
+    {canViewMarketplaceOperations ? <section id="store-profile-overview" className="store-profile-kpis" aria-label="مؤشرات طلبات المتجر">
+      <div className="store-profile-kpi"><div><span>طلبات تحتاج متابعة</span><strong>{currentOrderSummary?.actionableCount ?? "—"}</strong></div></div>
+      <div className="store-profile-kpi"><div><span>بانتظار الإسناد</span><strong>{currentOrderSummary?.awaitingDispatchCount ?? "—"}</strong></div></div>
+      <div className="store-profile-kpi"><div><span>الطلبات النشطة</span><strong>{currentOrderSummary?.activeCount ?? "—"}</strong></div></div>
+    </section> : store.relationModel === "INDEPENDENT_STORE" ? <p role="status" className="store-profile-muted">هذا متجر مستقل؛ لا تُعرض له مؤشرات طلبات سوق بثواني أو إسناد الكباتن.</p> : null}
 
     <section className="store-profile-alert" data-ready={ready} aria-label="جاهزية نشر المتجر" id="store-onboarding-readiness">
       <div>
-        <strong>{ready ? "متطلبات النشر مكتملة" : "متطلبات نشر تحتاج متابعة"}</strong>
-        <p>حالة النشر: {publication}. {ready ? "تُحدد إمكانية استقبال الطلبات بصورة مستقلة وفق حالة التشغيل." : "العوائق: " + (blockers.length || 1)}</p>
+        <strong>{isMarketplaceStore ? ready ? "متطلبات النشر مكتملة" : "متطلبات نشر تحتاج متابعة" : "الموقع المستقل غير منشور للعامة"}</strong>
+        <p>حالة النشر: {publication}. {isMarketplaceStore ? ready ? "تُحدد إمكانية استقبال الطلبات بصورة مستقلة وفق حالة التشغيل." : "العوائق: " + (blockers.length || 1) : "جاهزية سوق بثواني لا تمنح إذن نشر موقع مستقل أو استقبال طلبات مباشرة."}</p>
       </div>
       {!ready && blockers.length ? <details className="store-profile-readiness-detail">
         <summary>عرض أسباب عدم الجاهزية</summary>
@@ -151,8 +160,8 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
         </dl>
         {partnerError ? <p className="store-profile-minor-error">{partnerError}</p> : null}
       </ProfileCard></div>
-      {canViewOperations ? <div className="store-profile-readiness"><ProfileCard title="طلبات المتجر" icon="▤">
-        <StoreOperationsPreview storeId={store.id} compact onSummary={setOrderSummary} />
+      {canViewMarketplaceOperations ? <div className="store-profile-readiness"><ProfileCard title="طلبات المتجر" icon="▤">
+        <StoreOperationsPreview storeId={store.id} compact onSummary={recordOrderSummary} />
       </ProfileCard></div> : null}
       <div className="store-profile-access"><ProfileCard title="حالة حساب الشريك" icon="○">
         <div className="store-profile-state-row"><span>حساب المالك</span><strong>{accountState}</strong></div>
@@ -173,7 +182,7 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
             <span className="store-profile-eyebrow">ملف المتجر · الشركاء والمتاجر</span>
             <h2>{store.name}</h2>
             <p>{[store.primaryVerticalName, store.serviceCityName].filter(Boolean).join(" · ") || "سجل متجر"}</p>
-            <div className="store-profile-identity-meta"><span className="store-sheet-state" data-status={store.publicationState}>{publication} <PublicationIndicator state={store.publicationState} /></span>{canViewOperations ? <button type="button" className="store-profile-operating-state" data-state={openModeCount > 0 && store.publicationState === "published" ? "open" : "closed"} onClick={() => selectTab("operations")} aria-label={"حالة استقبال الطلبات: " + operationalLabel + "، فتح التشغيل"}>{operationalLabel}</button> : null}</div>
+            <div className="store-profile-identity-meta"><span className="store-sheet-state" data-status={isMarketplaceStore ? store.publicationState : "unpublished"}>{publication} {isMarketplaceStore ? <PublicationIndicator state={store.publicationState} /> : null}</span>{canViewMarketplaceOperations ? <button type="button" className="store-profile-operating-state" data-state={openModeCount > 0 && store.publicationState === "published" ? "open" : "closed"} onClick={() => selectTab("operations")} aria-label={"حالة استقبال الطلبات: " + operationalLabel + "، فتح التشغيل"}>{operationalLabel}</button> : null}</div>
           </div>
         </div>
         <div className="store-profile-hero-info">
@@ -196,16 +205,16 @@ export function StoreProfileDashboard({ store, partner, partnerError, canViewFin
     </dialog>, document.body) : null}
 
     {imageNotice ? <output className="store-profile-image-notice">{imageNotice}</output> : null}
-    <div className="store-profile-navigation" data-has-finance={canViewFinance}>
+    <div className="store-profile-navigation" data-has-finance={canViewMarketplaceFinance}>
       <Tabs id="store-profile" aria-label={"\u0623\u0642\u0633\u0627\u0645 \u0645\u0644\u0641 \u0627\u0644\u0645\u062a\u062c\u0631"} className="store-profile-sections" activeKey={activeTab} onChange={selectTab} size="small" tabBarGutter={8}
         items={tabs.map(([key, label]) => ({
           key,
           label: <><OperationalIcon name={profileTabIcons[key] ?? "review"}/>{label}</>,
           forceRender: key === "overview",
           children: key === "overview" ? <>{overview}<StoreProfileTabs activeTab="overview" store={store} partner={partner} partnerError={partnerError}
-            canViewFinance={canViewFinance} canViewOperations={canViewOperations} manageOpen={manageOpen} openManagement={openEditor} management={management} onUpdated={onUpdated} onSelectTab={selectTab}/></> :
+            canViewFinance={canViewMarketplaceFinance} canViewOperations={canViewOperations} manageOpen={manageOpen} openManagement={openEditor} management={management} onUpdated={onUpdated} onSelectTab={selectTab}/></> :
             activeTab === key ? <StoreProfileTabs activeTab={key} store={store} partner={partner} partnerError={partnerError}
-              canViewFinance={canViewFinance} canViewOperations={canViewOperations} manageOpen={manageOpen} openManagement={openEditor} management={management} onUpdated={onUpdated} onSelectTab={selectTab}/> : null,
+              canViewFinance={canViewMarketplaceFinance} canViewOperations={canViewOperations} manageOpen={manageOpen} openManagement={openEditor} management={management} onUpdated={onUpdated} onSelectTab={selectTab}/> : null,
         }))}/>
     </div>
   </div>;

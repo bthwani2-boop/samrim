@@ -10,7 +10,7 @@ import { agreementReadbackErrorMessage, agreementReadinessMessage, ownStoreAgree
 import { readOwnStoreCommercialAgreements } from "../partner-onboarding/store-commercial-agreement-client";
 import { usePartnerStoreScope } from "../partner-onboarding/partner-store-scope-context";
 import { PartnerStoreScopeSelector } from "../partner-onboarding/partner-store-scope-selector";
-import { readOwnJoiningCase } from "../partner-onboarding/store-readback-client";
+import { isJoiningCaseNotFound, readOwnJoiningCase } from "../partner-onboarding/store-readback-client";
 
 type AccountReadback = Readonly<{
   scope: string;
@@ -74,7 +74,7 @@ export function PartnerAccountEssentials({ showStoreSelector = false }: Readonly
         scope,
         joining: sameStore ? joiningCaseStateLabel(caseValue.state) :
           caseValue ? "حالة هذا المتجر غير متاحة من ملف الانضمام الأول" : "تعذر قراءة حالة ملف الانضمام",
-        joiningError: joining.status === "rejected",
+        joiningError: joining.status === "rejected" && !isJoiningCaseNotFound(joining.reason),
         joiningMatchesStore: sameStore,
         agreement: marketplace && agreement.status === "fulfilled" && agreement.value ?
           ownStoreAgreementReadiness(agreement.value, storeId, actor) : "UNAVAILABLE",

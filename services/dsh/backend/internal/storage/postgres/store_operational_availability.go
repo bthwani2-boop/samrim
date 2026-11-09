@@ -98,6 +98,12 @@ func HashStoreOperationalAvailabilityMutation(input UpdateStoreOperationalAvaila
 	)
 }
 
+const initializeStoreOperationalAvailability = `INSERT INTO dsh.store_operational_availability(
+	store_id,schedule_mode,schedule_timezone,weekly_schedule,paused,unavailable_fulfillment_modes,version,updated_by_actor_id)
+	SELECT id,CASE WHEN relation_model='INDEPENDENT_STORE' THEN 'WEEKLY' ELSE 'ALWAYS_OPEN' END,
+	       $2,'[]'::jsonb,false,ARRAY[]::text[],1,$3 FROM dsh.stores WHERE id=$1
+	ON CONFLICT(store_id) DO NOTHING`
+
 func ReadStoreOperationalAvailability(ctx context.Context, db *sql.DB, storeID string) (StoreOperationalAvailability, error) {
 	storeID = strings.TrimSpace(storeID)
 	if db == nil || storeID == "" {
@@ -199,8 +205,7 @@ func UpdateStoreOperationalAvailability(ctx context.Context, db *sql.DB, input U
 	if !errors.Is(err, sql.ErrNoRows) {
 		return StoreOperationalAvailability{}, false, fmt.Errorf("read Store availability idempotency: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.store_operational_availability(store_id,schedule_mode,schedule_timezone,weekly_schedule,paused,unavailable_fulfillment_modes,version,updated_by_actor_id)
-		VALUES($1,'ALWAYS_OPEN',$2,'[]'::jsonb,false,ARRAY[]::text[],1,'system:lazy-initialize') ON CONFLICT(store_id) DO NOTHING`, input.StoreID, StoreScheduleTimezone); err != nil {
+	if _, err := tx.ExecContext(ctx, initializeStoreOperationalAvailability, input.StoreID, StoreScheduleTimezone, "system:lazy-initialize"); err != nil {
 		return StoreOperationalAvailability{}, false, fmt.Errorf("ensure Store operational availability: %w", err)
 	}
 	current, err := readStoreOperationalAvailabilityRow(ctx, tx.QueryRowContext(ctx, `SELECT store_id,schedule_mode,schedule_timezone,weekly_schedule,
@@ -302,9 +307,7 @@ func authorizeStoreAvailabilityMutationTx(ctx context.Context, tx *sql.Tx, input
 
 func lockAndEvaluateStoreOrderability(ctx context.Context, tx *sql.Tx, storeID, fulfillmentMode string) (StoreOrderability, error) {
 	storeID = strings.TrimSpace(storeID)
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.store_operational_availability(store_id,schedule_mode,schedule_timezone,weekly_schedule,paused,unavailable_fulfillment_modes,version,updated_by_actor_id)
-		SELECT id,'ALWAYS_OPEN',$2,'[]'::jsonb,false,ARRAY[]::text[],1,'system:checkout-initialize' FROM dsh.stores WHERE id=$1
-		ON CONFLICT(store_id) DO NOTHING`, storeID, StoreScheduleTimezone); err != nil {
+	if _, err := tx.ExecContext(ctx, initializeStoreOperationalAvailability, storeID, StoreScheduleTimezone, "system:checkout-initialize"); err != nil {
 		return StoreOrderability{}, fmt.Errorf("ensure Store orderability for checkout: %w", err)
 	}
 	availability, err := readStoreOperationalAvailabilityRow(ctx, tx.QueryRowContext(ctx, `SELECT store_id,schedule_mode,schedule_timezone,weekly_schedule,
@@ -324,9 +327,7 @@ func lockAndEvaluateStoreOrderability(ctx context.Context, tx *sql.Tx, storeID, 
 }
 
 func ensureStoreOperationalAvailability(ctx context.Context, db *sql.DB, storeID string) error {
-	result, err := db.ExecContext(ctx, `INSERT INTO dsh.store_operational_availability(store_id,schedule_mode,schedule_timezone,weekly_schedule,paused,unavailable_fulfillment_modes,version,updated_by_actor_id)
-		SELECT id,'ALWAYS_OPEN',$2,'[]'::jsonb,false,ARRAY[]::text[],1,'system:lazy-initialize' FROM dsh.stores WHERE id=$1
-		ON CONFLICT(store_id) DO NOTHING`, storeID, StoreScheduleTimezone)
+	result, err := db.ExecContext(ctx, initializeStoreOperationalAvailability, storeID, StoreScheduleTimezone, "system:lazy-initialize")
 	if err != nil {
 		return fmt.Errorf("ensure Store operational availability: %w", err)
 	}

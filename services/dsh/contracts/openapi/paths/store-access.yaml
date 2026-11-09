@@ -1,4 +1,46 @@
 paths:
+  /dsh/partner/stores/{storeId}/independent-publication/submit:
+    post:
+      operationId: submitPartnerIndependentPublicationReview
+      summary: Authenticated independent Store owner submits for an Operator review, never publishes
+      description: Requires the exact currently approved Hosting Terms version and explicit owner acceptance. DSH atomically enforces Store ownership, review state, policy draft, expected publication version, idempotency and audit. SUSPENDED Stores cannot self-resubmit.
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 16, maxLength: 128 } }
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedVersion, hostingTermsVersion, termsAccepted]
+              properties:
+                expectedVersion: { type: integer, minimum: 1 }
+                hostingTermsVersion: { type: string, minLength: 1, maxLength: 128 }
+                termsAccepted: { type: boolean, const: true }
+      responses:
+        "200":
+          description: Private review-only publication state with idempotent replay receipt
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [storeId, state, version, idempotentReplay]
+                properties:
+                  storeId: { type: string }
+                  state: { type: string, const: NEEDS_REVIEW }
+                  version: { type: integer, minimum: 2 }
+                  idempotentReplay: { type: boolean }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
   /dsh/partner/stores:
     get:
       operationId: listPartnerAccessibleStores
@@ -17,22 +59,42 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
-  /dsh/partner/stores/{storeId}/independent-preview:
+  /dsh/partner/stores/{storeId}/independent-customer-policy/draft:
     get:
-      operationId: readPartnerIndependentStorePreview
-      summary: Private read-only preview of the canonical independent Store and its Catalog for its authenticated owner
-      description: Does not publish a Store, allow customer access, create orders, or activate financial capabilities. Unpublished catalog entries may be returned to the owner for preparation.
+      operationId: readPartnerIndependentCustomerPolicyDraft
+      summary: Read the independent Store owner's private customer-policy draft
+      description: Requires a verified app-partner session of the canonical Store owner. A saved or previously reviewed merchant policy is never a public publication decision. Private merchant policy text is not indexed or cached.
       security: [{ userBearer: [] }]
       parameters:
         - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
-        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
-        - { name: cursor, in: query, schema: { type: string, maxLength: 2048 } }
       responses:
-        "200": { description: Private owner-only read-only Store and bounded Catalog preview., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/IndependentStorePreview" } } } }
+        "200": { description: Current owner-authored customer policy or an empty version-zero draft; never a publication grant., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/IndependentCustomerPolicyDraftResponse" } } } }
         "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+    put:
+      operationId: savePartnerIndependentCustomerPolicyDraft
+      summary: Save merchant-authored customer policy terms as an unapproved Store draft
+      description: Only the authenticated canonical Store owner can edit the four customer-facing terms. DSH enforces exact Store ownership, version, idempotency and durable audit. This never approves, publishes or activates customer checkout or WLT settlement.
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 16, maxLength: 128 } }
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/IndependentCustomerPolicyDraftInput" }
+      responses:
+        "200": { description: Canonical private draft receipt and exact replay status; never a published policy., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/IndependentCustomerPolicyDraftMutationResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
   /dsh/partner/stores/{storeId}/access:

@@ -64,7 +64,9 @@ func NewStoreAccess(identity *identityintegration.Client, operatorServiceToken s
 
 func (s *StoreAccessServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/partner/stores", s.listAccessibleStores)
-	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/independent-preview", s.readIndependentPreview)
+	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/independent-customer-policy/draft", s.readIndependentCustomerPolicyForPartner)
+	mux.HandleFunc("PUT /dsh/partner/stores/{storeId}/independent-customer-policy/draft", s.saveIndependentCustomerPolicyDraftForPartner)
+	mux.HandleFunc("POST /dsh/partner/stores/{storeId}/independent-publication/submit", s.submitIndependentPublication)
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/contact", s.readStorePublicContactForPartner)
 	mux.HandleFunc("PUT /dsh/partner/stores/{storeId}/contact", s.updateStorePublicContactForPartner)
 	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/contact", s.readStorePublicContactForOperator)
@@ -100,42 +102,6 @@ func (s *StoreAccessServer) listAccessibleStores(w http.ResponseWriter, r *http.
 		return
 	}
 	writeJSON(w, http.StatusOK, page)
-}
-
-// readIndependentPreview is a private Partner-only preparation view, never a
-// published direct site or an alternative marketplace Catalog endpoint.
-func (s *StoreAccessServer) readIndependentPreview(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "actor identity must come from the Partner session")
-		return
-	}
-	limit := 20
-	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
-		parsed, err := strconv.Atoi(raw)
-		if err != nil || parsed < 1 || parsed > 50 {
-			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "limit must be between 1 and 50")
-			return
-		}
-		limit = parsed
-	}
-	if len(r.URL.Query().Get("cursor")) > 2048 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid preview cursor")
-		return
-	}
-	preview, err := s.service.ReadIndependentPreview(r.Context(), bearerToken(r), r.PathValue("storeId"), limit, r.URL.Query().Get("cursor"))
-	if err != nil {
-		if errors.Is(err, postgres.ErrStoreNotFound) {
-			writeError(w, http.StatusNotFound, "NOT_FOUND", "independent Store preview was not found")
-		} else if errors.Is(err, postgres.ErrCatalogOfferInvalidCursor) {
-			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid preview cursor")
-		} else {
-			writeStoreAccessError(w, err)
-		}
-		return
-	}
-	w.Header().Set("Cache-Control", "private, no-store")
-	w.Header().Set("X-Robots-Tag", "noindex, nofollow")
-	writeJSON(w, http.StatusOK, preview)
 }
 
 func (s *StoreAccessServer) listForOwner(w http.ResponseWriter, r *http.Request) {

@@ -34,7 +34,7 @@ export function useServiceCityScope(): ScopeContextValue {
 export default function ServiceCityScope({ children }: PropsWithChildren) {
   const pathname = usePathname();
   const { serviceCityId } = useGlobalSearchParams<{ serviceCityId?: string | string[] }>();
-  const linkedCityID = pathname.startsWith("/store/") && typeof serviceCityId === "string" ? serviceCityId.trim() : "";
+  const linkedCityID = (pathname.startsWith("/store/") || pathname.startsWith("/storefront/")) && typeof serviceCityId === "string" ? serviceCityId.trim() : "";
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);

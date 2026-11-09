@@ -17,8 +17,23 @@ func TestPartnerStoreBannerStaticQueriesMatchCanonicalReadbacks(t *testing.T) {
 			t.Errorf("%s query projection drifted from scanDiscoveryContent", name)
 		}
 	}
-	predicate := discoveryContentTargetEligibilityPredicate("content", "$2", "statement_timestamp()")
-	if predicate == "FALSE" || !strings.Contains(publishedStoreBannerSQL, "AND "+predicate+" ORDER BY") {
-		t.Fatal("published Store banner target eligibility drifted from canonical policy")
+	// This is still the one canonical Discovery Content banner reader, not
+	// a parallel banner registry. Marketplace and independent website channels
+	// must remain disjoint, and independent banners may link only to that Store.
+	for _, required := range []string{
+		"$3='' AND store.publication_state='published'",
+		"store.relation_model='BTHWANI_PARTNER'",
+		"$3<>'' AND store.relation_model='INDEPENDENT_STORE'",
+		"content.target_type='STORE' AND content.target_id=content.source_store_id",
+		"content.partner_enabled=true",
+		"content.state='PUBLISHED'",
+		"asset.rights_attested_at IS NOT NULL",
+	} {
+		if !strings.Contains(publishedStoreBannerSQL, required) {
+			t.Errorf("missing Store banner channel/publication gate: %s", required)
+		}
+	}
+	if !strings.Contains(publishedStoreBannerSQL, "ORDER BY content.ordinal") {
+		t.Fatal("Store banner ordering changed")
 	}
 }

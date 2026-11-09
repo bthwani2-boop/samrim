@@ -93,12 +93,20 @@ test("a local Store preview is never indexable or published as a social preview"
   assert.equal(metadata.openGraph, undefined);
 });
 
-test("canonical metadata ignores an untrusted request Host", async () => {
-  const hostileRequest = new Request("https://attacker.example/store/" + storeId + "?serviceCityId=" + cityId);
-  const metadata = await metadataFor(hostileRequest, "http://127.0.0.1:18080", async () => response(published));
-  const expected = "https://bthwani.test/store/store_example?serviceCityId=city_sanaa";
-  assert.equal(metadata.alternates.canonical, expected);
-  assert.equal(metadata.openGraph.url, expected);
+test("untrusted request Hosts cannot trigger public Store metadata or a DSH fetch", async () => {
+  let fetchCalls = 0;
+  const noFetch = async () => { fetchCalls++; throw new Error("unexpected DSH fetch from untrusted Host"); };
+  for (const url of [
+    "https://attacker.example/store/" + storeId + "?serviceCityId=" + cityId,
+    "https://bthwani.test:8443/store/" + storeId + "?serviceCityId=" + cityId,
+    "https://www.bthwani.test/store/" + storeId + "?serviceCityId=" + cityId,
+  ]) {
+    const metadata = await metadataFor(new Request(url), "http://127.0.0.1:18080", noFetch);
+    assert.equal(metadata.robots.index, false, url);
+    assert.equal(metadata.alternates, undefined, url);
+    assert.equal(metadata.openGraph, undefined, url);
+  }
+  assert.equal(fetchCalls, 0, "untrusted Host must never be forwarded to DSH");
 });
 
 test("missing or unsafe configured public origins never fetch or become indexable", async () => {

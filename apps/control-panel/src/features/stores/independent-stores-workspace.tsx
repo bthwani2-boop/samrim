@@ -1,7 +1,11 @@
 "use client";
 
 import type { OperatorStoreListResponse } from "@bthwani/dsh";
+import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useSession } from "../../session/session-provider";
+import { AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
+import { StoreInspector } from "./store-inspector";
 
 type PublicationFilter = "" | "unpublished" | "hidden";
 
@@ -14,6 +18,16 @@ function publicationLabel(state: string) {
 }
 
 export function IndependentStoresWorkspace() {
+  const { state } = useSession();
+  // DSH authorizes each request, but the operator's private registry UI must
+  // also leave memory when the Identity actor or session changes.
+  if (state.kind !== "authenticated" || state.identity.role !== "operator" || !state.identity.subject || !state.identity.sessionId) return null;
+  if (!state.identity.permissions?.includes("partners")) return <section className="workspace-page" role="alert">يتطلب سجل المتاجر المستقلة صلاحية إدارة الشركاء.</section>;
+  const sessionKey = JSON.stringify([state.identity.subject, state.identity.sessionId]);
+  return <IndependentStoresRegistry key={sessionKey} />;
+}
+
+function IndependentStoresRegistry() {
   const [draftQuery, setDraftQuery] = useState("");
   const [query, setQuery] = useState("");
   const [state, setState] = useState<PublicationFilter>("");
@@ -21,6 +35,7 @@ export function IndependentStoresWorkspace() {
   const [history, setHistory] = useState<string[]>([]);
   const [refresh, setRefresh] = useState(0);
   const [page, setPage] = useState<OperatorStoreListResponse | null>(null);
+  const [selectedStoreId, setSelectedStoreId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -36,14 +51,36 @@ export function IndependentStoresWorkspace() {
         if (state) params.set("state", state);
         if (cursor) params.set("cursor", cursor);
         const response = await fetch(`/api/independent-stores?${params}`, { cache: "no-store", signal: controller.signal });
-        if (!response.ok) throw new Error("READ_FAILED");
+        if (response.status === 401) throw new Error("انتهت جلسة المشغّل. سجّل الدخول مجددًا ثم أعد المحاولة.");
+        if (response.status === 403) throw new Error("لا تملك صلاحية عرض المتاجر المستقلة. اطلب صلاحية الشركاء من مسؤول الوصول.");
+        if (!response.ok) throw new Error("تعذر الاتصال بسجل المتاجر المستقلة في DSH. تحقق من الخدمة وأعد المحاولة.");
         const next = await response.json() as OperatorStoreListResponse;
-        if (!Array.isArray(next.stores) || next.stores.some((store) => store.relationModel !== "INDEPENDENT_STORE")) {
+        const seen = new Set<string>();
+        if (!next || !Array.isArray(next.stores) || next.stores.length > 25 ||
+          (next.nextCursor !== undefined && (typeof next.nextCursor !== "string" || next.nextCursor.length > 1024)) ||
+          next.stores.some((store) => {
+            if (!store || store.relationModel !== "INDEPENDENT_STORE" ||
+              typeof store.id !== "string" || !store.id.trim() || store.id.length > 128 ||
+              typeof store.partnerActorId !== "string" || !store.partnerActorId.trim() ||
+              typeof store.name !== "string" || !store.name.trim() ||
+              !Number.isSafeInteger(store.version) || store.version < 1 ||
+              (store.publicationState !== "unpublished" && store.publicationState !== "hidden") ||
+              seen.has(store.id)) return true;
+            seen.add(store.id);
+            return false;
+          })) {
           throw new Error("STORE_RELATION_MISMATCH");
         }
         if (!controller.signal.aborted) setPage(next);
-      } catch {
-        if (!controller.signal.aborted) setError("تعذر تحميل سجل المتاجر المستقلة. تحقق من اتصال DSH وأعد المحاولة.");
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : "";
+        if (!controller.signal.aborted) {
+          setSelectedStoreId("");
+          setError(message.startsWith("انتهت جلسة") || message.startsWith("لا تملك صلاحية") || message.startsWith("تعذر الاتصال")
+            ? message : message === "STORE_RELATION_MISMATCH"
+              ? "قراءة سجل المتاجر المستقلة غير متطابقة مع DSH؛ لا يمكن عرض نتائج غير موثوقة."
+              : "تعذر تحميل سجل المتاجر المستقلة. تحقق من اتصال DSH وأعد المحاولة.");
+        }
       } finally {
         if (!controller.signal.aborted) setLoading(false);
       }
@@ -52,7 +89,15 @@ export function IndependentStoresWorkspace() {
     return () => controller.abort();
   }, [query, state, cursor, refresh]);
 
-  return <section className="workspace-page" aria-labelledby="independent-stores-title" data-testid="independent-stores-workspace">
+  // The identical Store inspector/management surface used by Partners.
+  // The only selectable IDs originate in the validated independent DSH page.
+  const detail = selectedStoreId ? <StoreInspector key={selectedStoreId} storeId={selectedStoreId}
+    onClose={() => setSelectedStoreId("")} onUpdated={() => setRefresh((value) => value + 1)} /> : null;
+
+  return <AdaptiveRecordWorkspace open={Boolean(selectedStoreId)} detail={detail}
+    preferenceKey="partners-unified" {...(selectedStoreId ? { triggerKey: `independent-store-${selectedStoreId}` } : {})}
+    onClose={() => setSelectedStoreId("")}>
+  <section className="workspace-page" aria-labelledby="independent-stores-title" data-testid="independent-stores-workspace">
     <header className="workspace-page-heading">
       <div>
         <h1 id="independent-stores-title">المتاجر المستقلة</h1>
@@ -66,6 +111,7 @@ export function IndependentStoresWorkspace() {
     </p>
     <search><form className="registry-toolbar" onSubmit={(event) => {
       event.preventDefault();
+      setSelectedStoreId("");
       setHistory([]);
       setCursor("");
       setQuery(draftQuery.trim());
@@ -78,6 +124,7 @@ export function IndependentStoresWorkspace() {
       <label>
         <span>حالة سجل المتجر</span>
         <select aria-label="تصفية المتاجر المستقلة" value={state} onChange={(event) => {
+          setSelectedStoreId("");
           setState(event.target.value as PublicationFilter);
           setHistory([]);
           setCursor("");
@@ -101,27 +148,31 @@ export function IndependentStoresWorkspace() {
           <td>{store.partnerName || "مالك مسجل"} <small><bdi dir="ltr">{store.partnerActorId}</bdi></small></td>
           <td>{store.serviceCityName || "غير محددة"} — {store.primaryVerticalName || "نشاط غير محدد"}</td>
           <td>{publicationLabel(store.publicationState)}</td>
-          <td><details><summary>بيانات المتجر</summary>
-            <dl>
-              <dt>معرّف Store</dt><dd><bdi dir="ltr">{store.id}</bdi></dd>
-              <dt>نوع النشاط</dt><dd>{store.commercialStoreTypeNameAr || "غير محدد"}</dd>
-              <dt>آخر تحديث</dt><dd>{new Date(store.updatedAt).toLocaleDateString("ar-YE")}</dd>
-              <dt>العلاقة التجارية</dt><dd>متجر مستقل، بلا عمولة أو طلبات سوق مفعّلة</dd>
-            </dl>
-          </details></td>
+          <td><div className="partner-unified-card-actions">
+            <button type="button" className="partner-row-action"
+              data-adaptive-record-trigger={`independent-store-${store.id}`}
+              aria-label={`إدارة ملف متجر ${store.name}`}
+              onClick={() => setSelectedStoreId(store.id)}>إدارة المتجر</button>
+            <Link className="button button-secondary" href={`/partners/stores/${encodeURIComponent(store.id)}`}>
+              فتح الملف الكامل
+            </Link>
+          </div></td>
         </tr>)}</tbody>
       </table>
     </div> : null}
     {!loading && page ? <nav aria-label="صفحات المتاجر المستقلة" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
       <button type="button" disabled={history.length === 0} onClick={() => {
+        setSelectedStoreId("");
         setCursor(history[history.length - 1] ?? "");
         setHistory((old) => old.slice(0, -1));
       }}>السابق</button>
       <span className="muted">صفحة {history.length + 1}</span>
       <button type="button" disabled={!page.nextCursor} onClick={() => {
+        setSelectedStoreId("");
         setHistory((old) => [...old, cursor]);
         setCursor(page.nextCursor ?? "");
       }}>التالي</button>
     </nav> : null}
-  </section>;
+  </section>
+  </AdaptiveRecordWorkspace>;
 }

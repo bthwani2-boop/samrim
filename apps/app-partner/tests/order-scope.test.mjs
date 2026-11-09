@@ -62,3 +62,11 @@ test("Partner orders route scope resets to selected Store when the aggregate par
   const source = readFileSync(new URL("../src/features/partner-onboarding/partner-orders.tsx", import.meta.url), "utf8");
   assert.match(source, /useEffect\(\(\) => \{ setScope\(routeScope === "all" \? "ALL_AUTHORIZED" : "SELECTED_STORE"\); \}, \[routeScope\]\)/);
 });
+
+test("Partner Orders uses the canonical OrderManagement for both relations", () => {
+  const parent = readFileSync(new URL("../src/features/partner-onboarding/partner-orders.tsx", import.meta.url), "utf8");
+  const management = readFileSync(new URL("../src/features/order-management/order-management.tsx", import.meta.url), "utf8");
+  assert.match(parent, /<OrderManagement key=\{"orders:" \+ selectedStore\.id\} storeId=\{selectedStore\.id\}/);
+  assert.doesNotMatch(parent, /IndependentPickupOrders|independent-pickup-orders|relationModel === "INDEPENDENT_STORE"/);
+  assert.match(management, /client\(\)\.listPartnerOrders\(token,/);
+});

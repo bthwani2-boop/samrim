@@ -31,7 +31,7 @@ type PublicCatalogSearchRecord struct {
 	NextCursor *string
 }
 
-func ListPublicCatalogCategories(ctx context.Context, db *sql.DB, categoryIDs []string) ([]CatalogCategoryRecord, error) {
+func ListPublicCatalogCategories(ctx context.Context, db catalogOfferReadQueryer, categoryIDs []string) ([]CatalogCategoryRecord, error) {
 	if db == nil {
 		return nil, errors.New("DSH database is nil")
 	}

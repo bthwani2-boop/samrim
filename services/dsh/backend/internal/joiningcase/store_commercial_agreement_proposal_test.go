@@ -3,8 +3,29 @@ package joiningcase
 import (
 	"errors"
 	wlt "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	"testing"
 )
+
+func TestMarketplaceCommercialProposalRejectsIndependentAndUnknownRelation(t *testing.T) {
+	for _, state := range []string{"unpublished", "hidden", "published"} {
+		if !storeAllowsCommercialAgreementProposal(postgres.StoreRelationBThwaniPartner, state) {
+			t.Fatalf("marketplace Store in state %q should retain its agreement proposal route", state)
+		}
+	}
+	for _, relation := range []string{"", postgres.StoreRelationIndependent, "UNKNOWN"} {
+		for _, state := range []string{"unpublished", "hidden", "published"} {
+			if storeAllowsCommercialAgreementProposal(relation, state) {
+				t.Fatalf("relation %q must never propose a WLT marketplace agreement in state %q", relation, state)
+			}
+		}
+	}
+	for _, state := range []string{"", "INVALID"} {
+		if storeAllowsCommercialAgreementProposal(postgres.StoreRelationBThwaniPartner, state) {
+			t.Fatalf("marketplace Store in invalid publication state %q must not propose", state)
+		}
+	}
+}
 
 func TestInitialZeroCommissionRatesCoverOnlyAdmittedModes(t *testing.T) {
 	modes := []string{"CUSTOMER_PICKUP", "BTHWANI_CAPTAIN", "PARTNER_CAPTAIN"}

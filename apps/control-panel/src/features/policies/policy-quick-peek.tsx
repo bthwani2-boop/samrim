@@ -117,7 +117,7 @@ export function PolicyQuickPeek({ policy, preview, position, containerRef, onClo
     </> : <p className="muted policy-quick-peek-hint">
       {policy.key === "store-commercial-model"
         ? "يُختار نموذج العمولة أو الاشتراك لمتجر محدد من الاتفاقيات المرقّمة في WLT. لا توجد باقة عامة أو صلاحيات مدفوعة."
-        : "لا تتوفر قراءة مجمعة موثوقة لهذا النوع. تُقرأ النسب المقترحة باختيار نوع متجر محدد، ولا تمثل عمولة عامة نافذة."}
+        : "لا تتوفر قراءة مجمعة موثوقة لهذا النوع. تُقرأ النسب المقترحة باختيار نوع نشاط محدد، ولا تمثل عمولة عامة نافذة."}
     </p>}
     {hasHistory ? <details className="policy-quick-peek-history">
       <summary>آخر التغييرات الموثقة</summary>

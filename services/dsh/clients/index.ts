@@ -2,6 +2,7 @@ export * from "./generated/dsh-types";
 export * from "./studio-layout";
 export { dshOperationPaths } from "./generated/dsh-operations";
 export * from "./mobile";
+export * from "./public-independent-storefront";
 export * from "./notification-alert-policy";
 export * from "./client-share-types";
 export * from "./store-catalog-csv";

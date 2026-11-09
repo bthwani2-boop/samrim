@@ -9,7 +9,7 @@ test("customer store banners use only Store-scoped DSH publication, never the ma
  assert.match(client,/listPublicStoreBanners\(storeId, selectedCityID\)/);
  assert.doesNotMatch(client,/listPublicDiscoveryContent\(selectedCityID\)/);
  assert.doesNotMatch(client,/bannerCatalogOffers\.slice\(0, 5\)/);
- assert.match(api,/listPublicStoreBanners\(storeID, serviceCityID\)/);
+ assert.match(api,/listPublicStoreBanners\(storeID, serviceCityID, relation\)/);
 });
 test("client carousel uses one full-width merchant image and allows no-banner fallback",()=>{
  assert.match(client,/accessibilityLabel="بنرات المتجر"/);
@@ -30,7 +30,7 @@ test("customer receives recoverable Store banner errors without losing confirmed
 test("newest successful banner read wins while failed later refreshes cannot discard retries",()=>{
  assert.match(client,/const bannerRequest = \+\+bannerRequestID\.current/);
  assert.match(client,/const bannerAppliedRequestID = useRef\(0\)/);
- assert.match(client,/active && bannerRequest > bannerAppliedRequestID\.current/);
+ assert.match(client,/active && storeGeneration === storeRequestID\.current && bannerRequest > bannerAppliedRequestID\.current/);
  assert.match(client,/bannerAppliedRequestID\.current = bannerRequest/);
  assert.match(client,/const contentID = \+\+bannerRequestID\.current/);
  assert.match(client,/contentID > bannerAppliedRequestID\.current/);

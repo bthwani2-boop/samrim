@@ -17,7 +17,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 172
+const SchemaVersion = 176
 
 type MigrationRecord struct {
 	Version int
@@ -26,6 +26,15 @@ type MigrationRecord struct {
 }
 
 var requiredTables = []schemaRelationExpectation{
+	{name: "dsh.first_store_create_idempotency", columns: []string{"key_hash", "request_hash", "partner_actor_id", "store_id", "created_at"}, constraints: []string{"first_store_create_idempotency_pkey", "first_store_create_idem_hash_chk", "first_store_create_idempotency_store_id_fkey"}, indexes: []string{"first_store_create_idempotency_partner_idx"}},
+	{name: "dsh.independent_store_publications", columns: []string{"store_id", "state", "version", "terms_version", "terms_accepted_by_actor_id", "terms_accepted_at", "review_state", "published_at"}, constraints: []string{"independent_store_publications_pkey", "independent_store_publication_state_chk", "independent_store_publication_review_chk", "independent_store_publication_terms_chk", "independent_store_publication_published_chk"}, indexes: []string{"independent_store_publications_state_idx"}},
+	{name: "dsh.independent_store_customer_policies", columns: []string{"store_id", "version", "policy_version", "cancellation_terms", "returns_terms", "fulfillment_terms", "collection_terms", "authored_by_actor_id", "review_state", "reviewed_by_actor_id", "published_at"}, constraints: []string{"independent_store_customer_policies_pkey", "independent_store_customer_policy_terms_chk", "independent_store_customer_policy_review_chk"}},
+	{name: "dsh.independent_store_customer_policy_idempotency", columns: []string{"key_hash", "request_hash", "store_id", "owner_actor_id", "result", "created_at"}, constraints: []string{"independent_store_customer_policy_idempotency_pkey", "independent_customer_policy_idem_hash_chk", "independent_customer_policy_idem_result_chk"}, indexes: []string{"independent_store_customer_policy_idem_store_idx"}},
+	{name: "dsh.independent_store_customer_policy_audit", columns: []string{"id", "store_id", "actor_id", "key_hash", "correlation_id", "expected_version", "result_version", "policy_version", "event_type", "created_at"}, constraints: []string{"independent_store_customer_policy_audit_pkey", "independent_store_customer_policy_audit_key_hash_key", "independent_customer_policy_audit_version_chk", "independent_customer_policy_audit_event_chk"}, indexes: []string{"independent_store_customer_policy_audit_store_idx"}},
+	{name: "dsh.independent_store_publication_idempotency", columns: []string{"key_hash", "request_hash", "store_id", "requested_state", "expected_version", "result_version"}, constraints: []string{"independent_store_publication_idempotency_pkey", "independent_store_pub_idem_hash_chk", "independent_store_pub_idem_version_chk"}},
+	{name: "dsh.independent_store_publication_audit", columns: []string{"id", "store_id", "from_state", "to_state", "expected_version", "result_version", "actor_id", "key_hash"}, constraints: []string{"independent_store_publication_audit_pkey", "independent_store_pub_audit_version_chk"}, indexes: []string{"independent_store_publication_audit_store_idx"}},
+	{name: "dsh.store_joining_policies", columns: []string{"relation_model", "enrollment_enabled", "version", "updated_by_actor_id", "updated_at", "reason"}, constraints: []string{"store_joining_policies_pkey", "store_joining_policies_relation_model_check", "store_joining_policies_version_check", "store_joining_policies_reason_check"}},
+	{name: "dsh.store_joining_policy_events", columns: []string{"idempotency_key", "relation_model", "request_hash", "expected_version", "result_version", "enrollment_enabled", "actor_id", "reason", "created_at"}, constraints: []string{"store_joining_policy_events_pkey", "store_joining_policy_events_relation_model_fkey", "store_joining_policy_events_expected_version_check", "store_joining_policy_events_check"}, indexes: []string{"store_joining_policy_events_model_idx"}},
 	{name: "dsh.marketing_studio_layout_events", columns: []string{"idempotency_key", "request_hash", "template_key", "action", "expected_version", "result_version", "source_draft_version", "target_publication_version", "previous_document_json", "result_document_json", "acting_actor_id", "correlation_id", "created_at"}, constraints: []string{"marketing_studio_layout_events_pkey", "marketing_studio_layout_hash_chk", "marketing_studio_layout_action_chk", "marketing_studio_layout_expected_chk", "marketing_studio_layout_result_chk", "marketing_studio_layout_unique_version", "marketing_studio_layout_document_chk"}, indexes: []string{"marketing_studio_layout_recent_idx"}},
 	{name: "dsh.marketing_studio_publication_events", columns: []string{"idempotency_key", "request_hash", "template_key", "action", "expected_version", "result_version", "source_draft_version", "target_publication_version", "previous_palette_json", "result_palette_json", "acting_actor_id", "correlation_id", "created_at"}, constraints: []string{"marketing_studio_publication_events_pkey", "marketing_studio_pub_hash_chk", "marketing_studio_pub_action_chk", "marketing_studio_pub_expected_chk", "marketing_studio_pub_result_chk", "marketing_studio_pub_unique_version", "marketing_studio_pub_palette_chk"}, indexes: []string{"marketing_studio_pub_recent_idx"}},
 	{name: "dsh.marketing_studio_drafts", columns: []string{"template_key", "document_json", "version", "updated_by_actor_id", "updated_at", "published_palette_json", "publication_version", "published_at", "published_by_actor_id", "published_layout_json", "layout_publication_version", "layout_published_at", "layout_published_by_actor_id"}, constraints: []string{"marketing_studio_drafts_pkey", "marketing_studio_draft_key_chk", "marketing_studio_draft_version_chk", "marketing_studio_draft_json_chk", "marketing_studio_publication_version_chk", "marketing_studio_published_palette_chk", "marketing_studio_layout_version_chk", "marketing_studio_layout_json_chk"}},
@@ -471,6 +480,22 @@ func VerifySchema(ctx context.Context, db *sql.DB, records []MigrationRecord) er
 	}
 	if err := verifyStoreRelationConstraints(ctx, db); err != nil {
 		return err
+	}
+	// Merchant-direct orders have one canonical DSH Order owner. The
+	// unadmitted parallel storage retired in migration 176 must not return.
+	for _, retired := range []string{
+		"dsh.independent_direct_orders",
+		"dsh.independent_direct_order_lines",
+		"dsh.independent_direct_order_idempotency",
+		"dsh.independent_direct_order_audit",
+	} {
+		var stillPresent bool
+		if err := db.QueryRowContext(ctx, "SELECT to_regclass($1) IS NOT NULL", retired).Scan(&stillPresent); err != nil {
+			return fmt.Errorf("verify retired direct Order storage %s: %w", retired, err)
+		}
+		if stillPresent {
+			return fmt.Errorf("retired parallel direct Order storage still exists: %s", retired)
+		}
 	}
 	var databaseNow time.Time
 	if err := db.QueryRowContext(ctx, "SELECT clock_timestamp()").Scan(&databaseNow); err != nil {

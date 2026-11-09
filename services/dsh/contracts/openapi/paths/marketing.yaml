@@ -306,6 +306,24 @@ paths:
         "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
+  /dsh/public/independent-stores/{storeId}/banners:
+    get:
+      operationId: listPublicIndependentStoreBanners
+      summary: Approved image banners from the canonical Discovery Content owner for one legally published independent Store
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - name: serviceCityId
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200":
+          description: Store-scoped Operator-approved, Partner-enabled, legally published image banners.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/DiscoveryContentListResponse" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/public/discovery-content/events:
     post:
       operationId: recordPublicDiscoveryContentEvent

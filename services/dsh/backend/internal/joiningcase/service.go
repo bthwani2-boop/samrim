@@ -67,7 +67,7 @@ func (s *Service) Create(ctx context.Context, input contract.CreateJoiningCaseRe
 // CreateFirstStore lets an already verified Partner set up their first Store
 // immediately. No joining case is created and no Operator admission is needed.
 // Publication and financial permissions remain independent.
-func (s *Service) CreateFirstStore(ctx context.Context, accessToken string, input contract.PartnerFirstStoreCreateRequest) (postgres.StoreRecord, bool, error) {
+func (s *Service) CreateFirstStore(ctx context.Context, accessToken string, input contract.PartnerFirstStoreCreateRequest, idempotencyKey string) (postgres.StoreRecord, bool, error) {
 	identity, err := s.requirePartner(ctx, accessToken)
 	if err != nil {
 		return postgres.StoreRecord{}, false, err
@@ -86,7 +86,7 @@ func (s *Service) CreateFirstStore(ctx context.Context, accessToken string, inpu
 		Latitude:         input.Latitude,
 		Longitude:        input.Longitude,
 		FulfillmentModes: modes,
-	})
+	}, idempotencyKey)
 }
 
 func validJoiningCaseProofType(value string) bool {

@@ -60,7 +60,7 @@ export function OperatorOrderChatAttachments({orderId,recipients,onSent,disabled
       const attempt:Attempt={
         body:kind==="image"?"صورة من العمليات":kind==="video"?"فيديو من العمليات":"رسالة صوتية من العمليات",
         mediaKind:kind,mediaContentType:file.type,mediaBase64:await toBase64(file),
-        recipients:[...recipients].sort(),key:crypto.randomUUID(),
+        recipients:[...recipients].sort((a, b) => a < b ? -1 : a > b ? 1 : 0),key:crypto.randomUUID(),
       };
       pending.current=attempt;
       await submit(attempt);

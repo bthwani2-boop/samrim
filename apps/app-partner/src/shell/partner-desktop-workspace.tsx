@@ -3,11 +3,12 @@ import { BthwaniIcon, type MobileIconName, useAppearanceTheme } from "@bthwani/d
 import { type Href, useGlobalSearchParams, usePathname, useRouter } from "expo-router";
 import { type PropsWithChildren, useEffect, useMemo, useState } from "react";
 import * as Clipboard from "expo-clipboard";
-import { Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 
 import { usePartnerStoreScope } from "../features/partner-onboarding/partner-store-scope-context";
 import { mayPrepareIndependentStoreBanners } from "../features/partner-onboarding/independent-store-banner-access";
 import { buildPartnerStorefrontURL } from "../features/partner-onboarding/partner-storefront-url";
+import { usePartnerIndependentPublicLink } from "../features/partner-onboarding/use-partner-independent-public-link";
 import { PartnerNotificationsHeaderAction } from "../features/notifications/partner-notifications-header-action";
 
 type WorkspaceLink = Readonly<{
@@ -41,7 +42,10 @@ function DesktopWorkspace({ children }: PropsWithChildren) {
   const activeMarketingView = Array.isArray(query.view) ? query.view[0] : query.view;
   const [expandedGroups, setExpandedGroups] = useState({ catalog: true, marketing: true, performance: true, management: true });
   const [copyMessage, setCopyMessage] = useState("");
-  const storefrontLink = selectedStore ? buildPartnerStorefrontURL(selectedStore, process.env.EXPO_PUBLIC_CLIENT_WEB_ORIGIN, __DEV__) : null;
+  const independentPublic = usePartnerIndependentPublicLink(selectedStore?.relationModel === "INDEPENDENT_STORE" ? selectedStore : null);
+  const storefrontLink = selectedStore?.relationModel === "INDEPENDENT_STORE"
+    ? independentPublic.link
+    : selectedStore ? buildPartnerStorefrontURL(selectedStore, process.env.EXPO_PUBLIC_CLIENT_WEB_ORIGIN, __DEV__) : null;
   useEffect(() => { if (selectedStore?.id) setCopyMessage(""); }, [selectedStore?.id]);
   const permissions = selectedStore?.permissions ?? [];
   const isOwner = Boolean(selectedStore?.owned);
@@ -79,8 +83,9 @@ function DesktopWorkspace({ children }: PropsWithChildren) {
 
   const management: WorkspaceLink[] = [];
   if (authority.canUse("store")) {
-    if (can("store_operations")) management.push({ label: "التشغيل", href: "/store?section=operations" as Href, icon: "store", section: "operations" });
+    if (isMarketplace && can("store_operations")) management.push({ label: "التشغيل", href: "/store?section=operations" as Href, icon: "store", section: "operations" });
     if (isOwner) management.push({ label: "إعدادات المتجر", href: "/store?section=settings" as Href, icon: "edit", section: "settings" });
+    if (isOwner && selectedStore?.relationModel === "INDEPENDENT_STORE") management.push({ label: "موقع المتجر وسياساته", href: "/store?section=website" as Href, icon: "store", section: "website" });
     if (isMarketplace && isOwner) management.push({ label: "الاتفاقية التجارية", href: "/store?section=commercial" as Href, icon: "wallet", section: "commercial" });
     if (isMarketplace && isOwner) management.push({ label: "كباتن المتجر", href: "/store?section=team" as Href, icon: "deliveries", section: "team" });
   }
@@ -176,20 +181,44 @@ function DesktopWorkspace({ children }: PropsWithChildren) {
       </ScrollView>
       <View style={styles.footer}>
         <View style={styles.divider} />
-        {selectedStore ? <Pressable accessibilityRole="button"
-          accessibilityLabel={storefrontLink ? (storefrontLink.previewOnly ? "نسخ رابط معاينة المتجر" : "نسخ رابط المتجر") : "رابط المتجر غير متاح"}
-          accessibilityState={{ disabled: !storefrontLink }}
-          disabled={!storefrontLink}
-          onPress={() => {
-            if (!storefrontLink) return;
-            void Clipboard.setStringAsync(storefrontLink.url)
-              .then(() => setCopyMessage(storefrontLink.previewOnly ? "تم نسخ رابط المعاينة المحلية." : "تم نسخ رابط المتجر."))
-              .catch(() => setCopyMessage("تعذر نسخ الرابط؛ حاول مجددًا."));
-          }}
-          style={({pressed}) => [styles.storefrontCopy, !storefrontLink && styles.storefrontUnavailable, pressed && styles.navPressed]}>
-          <BthwaniIcon name="store" size={18} color={brandRoots.brandStructure} />
-          <Text style={styles.storefrontCopyText}>{storefrontLink ? (storefrontLink.previewOnly ? "نسخ رابط المعاينة" : "نسخ رابط المتجر") : "رابط المتجر غير متاح"}</Text>
-        </Pressable> : null}
+        {(isMarketplace || (isOwner && selectedStore?.relationModel === "INDEPENDENT_STORE")) ? <>
+          <Pressable accessibilityRole="button"
+            accessibilityLabel="فتح موقع المتجر"
+            accessibilityState={{ disabled: !storefrontLink }}
+            disabled={!storefrontLink}
+            onPress={() => {
+              if (!storefrontLink) return;
+              void Linking.openURL(storefrontLink.url)
+                .catch(() => setCopyMessage("تعذر فتح موقع المتجر. تحقق من الاتصال ثم أعد المحاولة."));
+            }}
+            style={({ pressed }) => [styles.storefrontCopy, !storefrontLink && styles.storefrontUnavailable, pressed && styles.navPressed]}>
+            <BthwaniIcon name="store" size={18} color={theme.color} />
+            <Text style={styles.storefrontCopyText}>فتح موقع المتجر</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button"
+            accessibilityLabel="نسخ رابط المتجر"
+            accessibilityState={{ disabled: !storefrontLink }}
+            disabled={!storefrontLink}
+            onPress={() => {
+              if (!storefrontLink) return;
+              void Clipboard.setStringAsync(storefrontLink.url)
+                .then(() => setCopyMessage(storefrontLink.previewOnly ? "تم نسخ رابط التطوير المحلي." : "تم نسخ رابط المتجر."))
+                .catch(() => setCopyMessage("تعذر نسخ الرابط؛ حاول مجددًا."));
+            }}
+            style={({ pressed }) => [styles.storefrontCopy, !storefrontLink && styles.storefrontUnavailable, pressed && styles.navPressed]}>
+            <BthwaniIcon name="store" size={18} color={theme.color} />
+            <Text style={styles.storefrontCopyText}>نسخ رابط المتجر</Text>
+          </Pressable>
+          {!storefrontLink ? <Text style={styles.storefrontFeedback}>
+            {isMarketplace
+              ? "موقع المتجر غير متاح بعد. تحقق من نشره وضبط عنوان ويب العميل."
+              : independentPublic.checking
+                ? "جارٍ التحقق من نشر موقع المتجر..."
+                : independentPublic.status === "error"
+                  ? "تعذرت قراءة حالة النشر من DSH. أعد المحاولة بعد استعادة الاتصال."
+                  : "موقع المتجر المستقل غير جاهز بعد. يلزم اعتماد نشره في DSH وإعداد عنوان ويب العميل."}
+          </Text> : null}
+        </> : null}
         {copyMessage ? <Text accessibilityLiveRegion="polite" style={styles.storefrontFeedback}>{copyMessage}</Text> : null}
         {renderLink({ label: "الحساب والإعدادات", href: "/account", icon: "account" })}
       </View>
@@ -231,7 +260,7 @@ function createStyles(theme: ReturnType<typeof useAppearanceTheme>) {
     footer: { paddingHorizontal: spacing[3], paddingBottom: spacing[4], gap: spacing[2] },
     storefrontCopy: { minHeight: 44, backgroundColor: theme.surface, borderRadius: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing[2], paddingHorizontal: 9 },
     storefrontUnavailable: { opacity: 0.65 },
-    storefrontCopyText: { ...typography.bodySm, color: brandRoots.brandStructure, fontWeight: "800" },
+    storefrontCopyText: { ...typography.bodySm, color: theme.color, fontWeight: "800" },
     storefrontFeedback: { ...typography.caption, color: brandRoots.surfaceBase, textAlign: "center" },
   });
 }

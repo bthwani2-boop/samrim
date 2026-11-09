@@ -141,7 +141,9 @@ function httpStatus(error: unknown): number | null {
   return value.kind === "http" && typeof value.status === "number" ? value.status : null;
 }
 
-export function StoreOperationalAvailabilityManagement({ storeID, fulfillmentModes }: { storeID: string; fulfillmentModes: ReadonlyArray<StoreFulfillmentMode> }) {
+export function StoreOperationalAvailabilityManagement({ storeID, fulfillmentModes, preparingIndependent = false }: {
+  storeID: string; fulfillmentModes: ReadonlyArray<StoreFulfillmentMode>; preparingIndependent?: boolean;
+}) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<AvailabilityState>({ kind: "loading" });
@@ -200,7 +202,7 @@ export function StoreOperationalAvailabilityManagement({ storeID, fulfillmentMod
       setPendingAttempt(null);
       setState({ kind: "ready", value: updated });
       setDraft(availabilityDraft(updated.availability));
-      setNotice("تم تحديث استقبال الطلبات.");
+      setNotice(preparingIndependent ? "تم حفظ ساعات وإعدادات الاستلام." : "تم تحديث استقبال الطلبات.");
       signalStoreAvailabilityChanged(storeID);
     } catch (cause) {
       const status = httpStatus(cause);
@@ -227,12 +229,13 @@ export function StoreOperationalAvailabilityManagement({ storeID, fulfillmentMod
   const commit = (next: AvailabilityDraft) => { if (!disabled) void save(next); };
   return <View style={styles.card}>
     <View style={styles.headerLine}>
-      <Text style={styles.title}>استقبال الطلبات</Text>
+      <Text style={styles.title}>{preparingIndependent ? "تجهيز ساعات الاستلام" : "استقبال الطلبات"}</Text>
       <View style={[styles.stateTag, { backgroundColor: confirmedOpen ? theme.successSoft : theme.warningSoft }]}>
         <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: confirmedOpen ? theme.success : theme.warning }} />
-        <Text style={[styles.stateLabel, { color: confirmedOpen ? theme.success : theme.warning }]}>{confirmedOpen ? "مفتوح" : "مغلق"}</Text>
+        <Text style={[styles.stateLabel, { color: confirmedOpen ? theme.success : theme.warning }]}>{preparingIndependent ? (confirmedOpen ? "متاح وفق الجدول" : "مغلق وفق الإعدادات") : (confirmedOpen ? "مفتوح" : "مغلق")}</Text>
       </View>
     </View>
+    {preparingIndependent ? <Text style={styles.muted}>هذه الإعدادات تجهّز الاستلام. استقبال العملاء يبدأ بعد اعتماد النشر والشراء المباشر.</Text> : null}
     <View style={styles.chips}>
       <BthwaniChip disabled={disabled} label="مفتوح دائمًا" selected={draft.scheduleMode === "ALWAYS_OPEN" && !draft.paused && draft.unavailableFulfillmentModes.length === 0}
         onPress={() => commit({ ...draft, scheduleMode: "ALWAYS_OPEN", weeklySchedule: [], paused: false, pauseReason: "", pauseUntil: null, unavailableFulfillmentModes: [] })} />
