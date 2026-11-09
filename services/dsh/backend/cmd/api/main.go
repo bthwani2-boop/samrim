@@ -101,6 +101,7 @@ func main() {
 		database,
 		strings.EqualFold(strings.TrimSpace(os.Getenv("DSH_INDEPENDENT_WEB_PUBLIC_RELEASED")), "true"),
 		os.Getenv("DSH_APPROVED_INDEPENDENT_HOSTING_TERMS_VERSION"),
+		os.Getenv("DSH_INDEPENDENT_WEB_PUBLIC_HOSTS"),
 	)
 	locationCoreServer, err := transporthttp.NewLocationCore(identityClient, database)
 	if err != nil {

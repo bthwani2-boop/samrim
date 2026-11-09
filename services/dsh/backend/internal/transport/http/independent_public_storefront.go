@@ -19,14 +19,22 @@ import (
 type IndependentPublicStorefrontServer struct {
 	db                   *sql.DB
 	approvedTermsVersion string
+	approvedHosts        map[string]bool
 }
 
-func NewIndependentPublicStorefront(db *sql.DB, releaseEnabled bool, approvedTermsVersion string) *IndependentPublicStorefrontServer {
+func NewIndependentPublicStorefront(db *sql.DB, releaseEnabled bool, approvedTermsVersion, approvedHostsCSV string) *IndependentPublicStorefrontServer {
+	hosts := make(map[string]bool)
+	for _, raw := range strings.Split(approvedHostsCSV, ",") {
+		host := strings.ToLower(strings.TrimSpace(raw))
+		if host != "" && !strings.ContainsAny(host, "/\\@*?# ") {
+			hosts[host] = true
+		}
+	}
 	if !releaseEnabled {
 		approvedTermsVersion = ""
 	}
 	return &IndependentPublicStorefrontServer{
-		db: db, approvedTermsVersion: strings.TrimSpace(approvedTermsVersion),
+		db: db, approvedTermsVersion: strings.TrimSpace(approvedTermsVersion), approvedHosts: hosts,
 	}
 }
 
@@ -41,7 +49,7 @@ func (s *IndependentPublicStorefrontServer) publicScope(w http.ResponseWriter, r
 	w.Header().Set("Vary", "Host")
 	// Absent explicit legal approval, even forged published DB records stay
 	// unavailable and cannot be distinguished from an unknown Store.
-	if s == nil || s.approvedTermsVersion == "" {
+	if s == nil || s.approvedTermsVersion == "" || !s.approvedHosts[strings.ToLower(r.Host)] {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "storefront was not found")
 		return "", "", false
 	}

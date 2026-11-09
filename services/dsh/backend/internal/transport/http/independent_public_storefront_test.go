@@ -19,7 +19,7 @@ func TestIndependentPublicStorefrontRequiresReleaseAndLegalApproval(t *testing.T
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mux := http.NewServeMux()
-			NewIndependentPublicStorefront(nil, tc.release, tc.terms).Register(mux)
+			NewIndependentPublicStorefront(nil, tc.release, tc.terms, "example.test").Register(mux)
 			for _, path := range []string{
 				"/dsh/public/independent-stores/private-store?serviceCityId=sanaa",
 				"/dsh/public/independent-stores/private-store/catalog?serviceCityId=sanaa",
@@ -46,7 +46,7 @@ func TestIndependentPublicStorefrontRequiresReleaseAndLegalApproval(t *testing.T
 
 func TestIndependentPublicStorefrontValidatesScopeAndPaginationBeforeReadingDB(t *testing.T) {
 	mux := http.NewServeMux()
-	NewIndependentPublicStorefront(nil, true, "approved-v1").Register(mux)
+	NewIndependentPublicStorefront(nil, true, "approved-v1", "example.com").Register(mux)
 	for _, tc := range []struct {
 		path string
 		want int
@@ -88,5 +88,44 @@ func TestIndependentPublicMediaMustUsePublicHTTPS(t *testing.T) {
 		if got := safeIndependentPublicMediaURI(tc.uri); got != tc.safe {
 			t.Errorf("safeIndependentPublicMediaURI(%q)=%v, want %v", tc.uri, got, tc.safe)
 		}
+	}
+}
+
+func TestIndependentPublicStorefrontRejectsUntrustedHostBeforeDatabaseRead(t *testing.T) {
+	server := NewIndependentPublicStorefront(nil, true, "approved-v1", "shop.example, www.shop.example")
+	for _, tc := range []struct {
+		host    string
+		allowed bool
+	}{
+		{"shop.example", true},
+		{"WWW.SHOP.EXAMPLE", true},
+		{"shop.example.attacker.test", false},
+		{"attacker.test", false},
+		{"shop.example:443", false},
+		{"localhost", false},
+	} {
+		request := httptest.NewRequest(http.MethodGet, "/dsh/public/independent-stores/store-a?serviceCityId=sanaa", nil)
+		request.Host = tc.host
+		request.SetPathValue("storeId", "store-a")
+		request.Header.Set("X-Forwarded-Host", "shop.example")
+		recorder := httptest.NewRecorder()
+		storeID, cityID, permitted := server.publicScope(recorder, request)
+		if permitted != tc.allowed {
+			t.Errorf("host=%q permitted=%v, want=%v", tc.host, permitted, tc.allowed)
+		}
+		if tc.allowed && (storeID != "store-a" || cityID != "sanaa") {
+			t.Errorf("allowed host=%q lost canonical Store/City scope", tc.host)
+		}
+		if !tc.allowed && recorder.Code != http.StatusNotFound {
+			t.Errorf("untrusted host=%q returned %d instead of 404", tc.host, recorder.Code)
+		}
+	}
+	// Explicit release with no legal host is still a private endpoint.
+	request := httptest.NewRequest(http.MethodGet, "/dsh/public/independent-stores/store-a?serviceCityId=sanaa", nil)
+	request.SetPathValue("storeId", "store-a")
+	response := httptest.NewRecorder()
+	_, _, permitted := NewIndependentPublicStorefront(nil, true, "approved-v1", "").publicScope(response, request)
+	if permitted || response.Code != http.StatusNotFound {
+		t.Fatalf("an unconfigured public host must fail closed, code=%d", response.Code)
 	}
 }
