@@ -31,6 +31,7 @@ test("one Client Web site reads the separately approved independent publication 
   assert.match(site, /relation: "independent"/);
   assert.match(site, /relation: "marketplace"/);
   assert.match(site, /ready\??\.relation === "independent"/);
+  assert.doesNotMatch(site, /availability:\s*true/, "independent offer availability must come from DSH");
   assert.match(site, /isMarketplace \? <BthwaniButton label=\{"سلة المتجر"/);
   assert.match(site, /isMarketplace && offers\.some/);
   assert.doesNotMatch(site, /PartnerIndependentStorePreview|independent-preview/);

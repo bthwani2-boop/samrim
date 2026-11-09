@@ -243,7 +243,7 @@ func TestIndependentPublishedProjectionStripsPrivateCategoryAndUnavailableOption
 		Offers: []CatalogStoreOfferRecord{{
 			ID: "offer-1", Product: CatalogProductRecord{ID: "product-1", CanonicalName: "Product"},
 			VariantID: "variant-1", Variant: CatalogVariantRecord{Title: "Unit", BaseUnit: "COUNT"},
-			PriceMinor: 1500, Currency: "YER", PricingBasis: "PER_UNIT", PricingUnitBaseUnits: 1,
+			PriceMinor: 1500, Currency: "YER", Availability: true, PricingBasis: "PER_UNIT", PricingUnitBaseUnits: 1,
 			QuantityMinBaseUnits: &minimum, QuantityMaxBaseUnits: &maximum, QuantityStepBaseUnits: &step,
 			ModifierGroups: []CatalogModifierGroupRecord{{
 				ID: "group-1", NameAr: "Options", Active: true, MaxSelections: 1,
@@ -259,7 +259,7 @@ func TestIndependentPublishedProjectionStripsPrivateCategoryAndUnavailableOption
 		t.Fatal(err)
 	}
 	if len(result.Categories) != 1 || result.Categories[0].ID != "category-1" ||
-		len(result.Offers) != 1 || len(result.Offers[0].ModifierGroups) != 1 ||
+		len(result.Offers) != 1 || !result.Offers[0].Availability || len(result.Offers[0].ModifierGroups) != 1 ||
 		len(result.Offers[0].ModifierGroups[0].Options) != 1 ||
 		result.Offers[0].ModifierGroups[0].Options[0].ID != "option-1" {
 		t.Fatalf("public-only category/modifier projection failed: %+v", result)

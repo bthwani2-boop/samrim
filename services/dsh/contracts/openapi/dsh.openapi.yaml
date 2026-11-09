@@ -105,7 +105,7 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: [offerId, productId, productName, variantId, variantTitle, baseUnit, pricingBasis, pricingUnitBaseUnits, priceMinor, currency, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, media, modifierGroups]
+                      required: [offerId, productId, productName, variantId, variantTitle, baseUnit, pricingBasis, pricingUnitBaseUnits, priceMinor, availability, currency, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, media, modifierGroups]
                       properties:
                         offerId: { type: string }
                         productId: { type: string }
@@ -117,6 +117,7 @@ paths:
                         pricingBasis: { type: string, enum: [PER_UNIT, PER_MEASURE] }
                         pricingUnitBaseUnits: { type: integer, format: int64, minimum: 1 }
                         priceMinor: { type: integer, format: int64 }
+                        availability: { type: boolean, const: true }
                         currency: { type: string }
                         quantityMinBaseUnits: { type: integer, format: int64 }
                         quantityMaxBaseUnits: { type: integer, format: int64 }

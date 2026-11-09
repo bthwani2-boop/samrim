@@ -30,7 +30,7 @@ const catalog = {
   storeId: "store_1",
   categories: [{ id: "category_1", nameAr: "المنتجات", active: true }],
   offers: [{ offerId: "offer_1", productId: "product_1", productName: "منتج",
-    variantId: "variant_1", variantTitle: "واحد", priceMinor: 1500,
+    variantId: "variant_1", variantTitle: "واحد", priceMinor: 1500, availability: true,
     currency: "YER", baseUnit: "COUNT", pricingBasis: "PER_UNIT", pricingUnitBaseUnits: 1, modifierGroups: [], media: [{ uri: "https://images.example.com/offer.png", role: "primary" }] }],
   nextCursor: "",
 };
@@ -111,6 +111,8 @@ test("unpublished and cross-Store public facts fail closed", async () => {
     { categories: [{ id: "category_1", nameAr: "مخفية", active: false }] },
     { offers: [{ ...catalog.offers[0], baseUnit: "INVALID" }] },
     { offers: [{ ...catalog.offers[0], priceMinor: 0 }] },
+    { offers: [{ ...catalog.offers[0], availability: false }] },
+    { offers: [{ ...catalog.offers[0], availability: undefined }] },
     { offers: [{ ...catalog.offers[0], modifierGroups: [{ id: "group_1", nameAr: "غير متاح", required: true, minSelections: 2, maxSelections: 1, options: [] }] }] },
     { offers: [{ ...catalog.offers[0], modifierGroups: [{ id: "group_1", nameAr: "خيارات", required: false, minSelections: 0, maxSelections: 1, options: [{ id: "option_1", nameAr: "غير صالح", priceDeltaMinor: -1 }] }] }] },
     { offers: [{ ...catalog.offers[0], pricingBasis: "PER_MEASURE", baseUnit: "COUNT" }] },

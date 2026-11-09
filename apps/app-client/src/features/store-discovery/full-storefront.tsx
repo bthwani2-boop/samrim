@@ -256,7 +256,7 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
       }))
     : ready?.relation === "independent"
       ? ready.catalog.offers.filter(offer => !productID || offer.productId === productID).map(offer => ({
-          ...offer, availability: true, priceUnitLabel: formatQuantity(offer.baseUnit, offer.pricingUnitBaseUnits),
+          ...offer, priceUnitLabel: formatQuantity(offer.baseUnit, offer.pricingUnitBaseUnits),
         })) : [];
   const categories = ready ? ready.catalog.categories.filter((category) => category.active) : [];
   const openMarketRoute = async (path: Href) => {

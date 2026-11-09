@@ -325,6 +325,7 @@ type IndependentPublicOffer struct {
 	VariantID             string                           `json:"variantId"`
 	VariantTitle          string                           `json:"variantTitle"`
 	PriceMinor            int64                            `json:"priceMinor"`
+	Availability          bool                             `json:"availability"`
 	BaseUnit              string                           `json:"baseUnit"`
 	PricingBasis          string                           `json:"pricingBasis"`
 	PricingUnitBaseUnits  int64                            `json:"pricingUnitBaseUnits"`
@@ -399,7 +400,7 @@ func projectIndependentPublicOffers(internal CatalogStoreOfferPage) (Independent
 			VariantID: offer.VariantID, VariantTitle: offer.Variant.Title,
 			BaseUnit: offer.Variant.BaseUnit, PricingBasis: offer.PricingBasis,
 			PricingUnitBaseUnits: offer.PricingUnitBaseUnits,
-			PriceMinor:           offer.PriceMinor, Currency: offer.Currency,
+			PriceMinor:           offer.PriceMinor, Currency: offer.Currency, Availability: offer.Availability,
 			QuantityMinBaseUnits:  *offer.QuantityMinBaseUnits,
 			QuantityMaxBaseUnits:  *offer.QuantityMaxBaseUnits,
 			QuantityStepBaseUnits: *offer.QuantityStepBaseUnits,

@@ -28,6 +28,7 @@ export type IndependentPublicOffer = Readonly<{
   variantId: string;
   variantTitle: string;
   priceMinor: number;
+  availability: true;
   currency: "YER";
   baseUnit: "COUNT" | "GRAM" | "MILLILITER";
   pricingBasis: "PER_UNIT" | "PER_MEASURE";
@@ -119,7 +120,7 @@ export async function listPublishedIndependentWebCatalog(
       !value.offers.every(item => object(item) && text(item.offerId) && text(item.productId) &&
         text(item.productName) && text(item.variantId) && text(item.variantTitle) &&
         Number.isSafeInteger(item.priceMinor) && (item.priceMinor as number) > 0 &&
-        item.currency === "YER" &&
+        item.availability === true && item.currency === "YER" &&
         (item.baseUnit === "COUNT" || item.baseUnit === "GRAM" || item.baseUnit === "MILLILITER") &&
         (item.pricingBasis === "PER_UNIT" || item.pricingBasis === "PER_MEASURE") &&
         Number.isSafeInteger(item.pricingUnitBaseUnits) && (item.pricingUnitBaseUnits as number) > 0 &&
