@@ -27,13 +27,15 @@ export function StoreInspector({ storeId, onClose, onPrevious, onNext, onUpdated
   const canViewFinance = session.kind === "authenticated" && session.identity.permissions?.includes("finance") === true;
   const canViewOperations = session.kind === "authenticated" && session.identity.permissions?.includes("operations") === true;
   const [store, setStore] = useState<StorePublicationResponse["store"] | null>(null);
+  const currentStore = store?.id === storeId ? store : null;
   const [partner, setPartner] = useState<PartnerContext | null>(null);
   const [partnerError, setPartnerError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-  const [confirmHide, setConfirmHide] = useState(false);
+  const [confirmHideFor, setConfirmHideFor] = useState<string | null>(null);
+  const confirmHide = Boolean(currentStore && confirmHideFor === currentStore.id);
   const [manageOpen, setManageOpen] = useState(false);
   const openManagement = () => { setManageOpen(true); recordView?.expandForEditing(); };
   const sequence = useRef(0);
@@ -42,6 +44,8 @@ export function StoreInspector({ storeId, onClose, onPrevious, onNext, onUpdated
     const request = ++sequence.current;
     setLoading(true);
     setError("");
+    setNotice("");
+    setConfirmHideFor(null);
     try {
       const response = await fetch(`/api/stores/${encodeURIComponent(storeId)}/publication`, { cache: "no-store", signal });
       if (!response.ok) throw new Error(response.status === 403 ? "لا تملك صلاحية قراءة جاهزية المتجر." : await partnerErrorMessage(response));
@@ -78,7 +82,8 @@ export function StoreInspector({ storeId, onClose, onPrevious, onNext, onUpdated
   }, [load]);
 
   async function changePublication() {
-    if (!store || busy) return;
+    if (!store || store.id !== storeId || busy) return;
+    const request = sequence.current;
     const nextState = store.publicationState === "published" ? "hidden" : "published";
     if (nextState === "published" && store.relationModel !== "BTHWANI_PARTNER") {
       setError("النشر العام للمتاجر المستقلة غير مفعّل. يمكن تجهيز الملف والسياسات فقط حتى اعتماد النشر.");
@@ -96,39 +101,45 @@ export function StoreInspector({ storeId, onClose, onPrevious, onNext, onUpdated
         method: "POST", headers: partnerMutationHeaders(),
         body: JSON.stringify({ state: nextState, expectedVersion: store.version }),
       });
+      if (request !== sequence.current) return;
       if (!response.ok) {
         const failure = await partnerErrorMessage(response);
+        if (request !== sequence.current) return;
+        const refreshRequest = sequence.current + 1;
         await load();
-        setError(failure);
+        if (refreshRequest === sequence.current) setError(failure);
         return;
       }
       const result = await response.json() as StorePublicationResponse;
+      if (request !== sequence.current) return;
       if (result.store?.id !== store.id || !supportedStoreRelation(result.store.relationModel) || (nextState === "published" && result.store.relationModel !== "BTHWANI_PARTNER")) throw new Error("تعذرت مطابقة نتيجة العملية.");
       setStore(result.store);
-      setConfirmHide(false);
+      setConfirmHideFor(null);
       setNotice("تم تنفيذ العملية، وتحديث حالة المتجر من الخدمة المالكة.");
       onUpdated?.();
     } catch {
+      if (request !== sequence.current) return;
+      const refreshRequest = sequence.current + 1;
       await load();
-      setError("لا يمكن تأكيد نتيجة العملية. تحقق من الحالة المقروءة قبل إعادة المحاولة.");
+      if (refreshRequest === sequence.current) setError("لا يمكن تأكيد نتيجة العملية. تحقق من الحالة المقروءة قبل إعادة المحاولة.");
     } finally { setBusy(false); }
   }
 
-  const publicationAction = store?.publicationState === "published" ? "إخفاء المتجر" : "نشر المتجر";
-  const canPublish = Boolean(store && (store.publicationState === "published" || (store.relationModel === "BTHWANI_PARTNER" && store.publicationReadiness.ready)));
+  const publicationAction = currentStore?.publicationState === "published" ? "إخفاء المتجر" : "نشر المتجر";
+  const canPublish = Boolean(currentStore && (currentStore.publicationState === "published" || (currentStore.relationModel === "BTHWANI_PARTNER" && currentStore.publicationReadiness.ready)));
 
   return <AdaptiveRecordPanel title="تفاصيل المتجر" subtitle="الهوية والجاهزية والإجراءات المعتمدة" onClose={onClose} onPrevious={onPrevious} onNext={onNext}
     actions={canPublish || confirmHide ? <>
-      {canPublish ? <button className={store?.publicationState === "published" ? "button button-secondary" : "button button-primary"} type="button"
-        disabled={busy || loading} onClick={() => store?.publicationState === "published" && !confirmHide ? setConfirmHide(true) : void changePublication()}>
+      {canPublish ? <button className={currentStore?.publicationState === "published" ? "button button-secondary" : "button button-primary"} type="button"
+        disabled={busy || loading} onClick={() => currentStore?.publicationState === "published" && !confirmHide ? setConfirmHideFor(currentStore.id) : void changePublication()}>
         {busy ? "جارٍ التنفيذ…" : confirmHide ? "تأكيد إخفاء المتجر" : publicationAction}
       </button> : null}
-      {confirmHide ? <button type="button" className="button button-secondary" onClick={() => setConfirmHide(false)} disabled={busy}>إلغاء</button> : null}
+      {confirmHide ? <button type="button" className="button button-secondary" onClick={() => setConfirmHideFor(null)} disabled={busy}>إلغاء</button> : null}
     </> : null}>
-    {loading && !store ? <p role="status" className="workspace-side-state">جارٍ قراءة بيانات المتجر…</p> : null}
+    {loading && !currentStore ? <p role="status" className="workspace-side-state">جارٍ قراءة بيانات المتجر…</p> : null}
     {error ? <div role="alert" className="managed-status managed-status-warning"><p>{error}</p><button type="button" className="button button-secondary" disabled={busy} onClick={() => void load()}>إعادة قراءة المعاينة</button></div> : null}
-    {notice ? <p role="status" className="success-inline">{notice}</p> : null}
-    {store?.relationModel === "INDEPENDENT_STORE" ? <p role="status" className="muted">النشر العام للمتاجر المستقلة غير مفعّل. يمكن مراجعة ملف المتجر وتجهيز محتواه؛ لا تتيح هذه الشاشة موقع شراء مباشرًا.</p> : null}
-    {store ? <StoreProfileDashboard store={store} partner={partner} partnerError={partnerError} canViewFinance={canViewFinance && store.relationModel === "BTHWANI_PARTNER"} canViewOperations={canViewOperations} manageOpen={manageOpen} openManagement={openManagement} onUpdated={() => { void load(); onUpdated?.(); }} management={<Suspense fallback={<p role="status">جارٍ تحميل أدوات إدارة المتجر…</p>}><StoreManagement storeId={store.id} embedded onUpdated={() => { void load(); onUpdated?.(); }} /></Suspense>} /> : null}
+    {notice && currentStore ? <p role="status" className="success-inline">{notice}</p> : null}
+    {currentStore?.relationModel === "INDEPENDENT_STORE" ? <p role="status" className="muted">النشر العام للمتاجر المستقلة غير مفعّل. يمكن مراجعة ملف المتجر وتجهيز محتواه؛ لا تتيح هذه الشاشة موقع شراء مباشرًا.</p> : null}
+    {currentStore ? <StoreProfileDashboard store={currentStore} partner={partner} partnerError={partnerError} canViewFinance={canViewFinance && currentStore.relationModel === "BTHWANI_PARTNER"} canViewOperations={canViewOperations} manageOpen={manageOpen} openManagement={openManagement} onUpdated={() => { void load(); onUpdated?.(); }} management={<Suspense fallback={<p role="status">جارٍ تحميل أدوات إدارة المتجر…</p>}><StoreManagement storeId={currentStore.id} embedded onUpdated={() => { void load(); onUpdated?.(); }} /></Suspense>} /> : null}
   </AdaptiveRecordPanel>;
 }
