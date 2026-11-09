@@ -75,3 +75,15 @@ test("independent pickup order UI includes Store-scoped render and pre-dispatch 
   assert.match(source, /confirm && visible && confirm\.order\.storeId === storeID/u);
   assert.match(source, /const token = await scopedToken\(scope\);[\s\S]*?if \(!isCurrentAction\(\)\) return;[\s\S]*?transitionIndependentPickupOrder\(token, storeID/u);
 });
+
+test("A-B-A Store switching invalidates an earlier direct-order mutation", () => {
+  const source = readFileSync(new URL("../src/features/order-management/independent-pickup-orders.tsx", import.meta.url), "utf8");
+  const scopeA = JSON.stringify(["actor-a", "store-a"]);
+  const scopeB = JSON.stringify(["actor-a", "store-b"]);
+  const requestEpoch = 3;
+  assert.equal(isCurrentOrderListRequest(requestEpoch, scopeA, requestEpoch + 1, scopeB), false);
+  assert.equal(isCurrentOrderListRequest(requestEpoch, scopeA, requestEpoch + 2, scopeA), false);
+  assert.equal(isCurrentOrderListRequest(requestEpoch + 2, scopeA, requestEpoch + 2, scopeA), true);
+  assert.equal((source.match(/scopeEpoch\.current \+= 1/g) ?? []).length, 2);
+  assert.match(source, /isCurrentOrderListRequest\(requestedEpoch, requestedScopeKey, scopeEpoch\.current, activeScopeKey\.current\)/u);
+});

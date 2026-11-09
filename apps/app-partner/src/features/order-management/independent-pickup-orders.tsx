@@ -42,6 +42,7 @@ export function IndependentPickupOrders({ storeID, canAdvance }: Readonly<{ stor
   const [confirm, setConfirm] = useState<{ order: IndependentPartnerPickupOrder; state: "COMPLETED" | "REJECTED" } | null>(null);
   const [reason, setReason] = useState("");
   const generation = useRef(0);
+  const scopeEpoch = useRef(0);
   const activeScopeKey = useRef(scopeKey);
   activeScopeKey.current = scopeKey;
   const locks = useRef(new Set<string>());
@@ -53,6 +54,7 @@ export function IndependentPickupOrders({ storeID, canAdvance }: Readonly<{ stor
       const changed = partnerSetupSessionKey(identity);
       if (changed === scope) return;
       generation.current += 1;
+      scopeEpoch.current += 1;
       setOrders([]);
       setCursor("");
       setVisibleScopeKey("");
@@ -67,6 +69,7 @@ export function IndependentPickupOrders({ storeID, canAdvance }: Readonly<{ stor
   useEffect(() => {
     // Remove Store A's data and pending dialogs when Store B is selected.
     generation.current += 1;
+    scopeEpoch.current += 1;
     setOrders([]);
     setCursor("");
     setLoading(true);
@@ -113,7 +116,9 @@ export function IndependentPickupOrders({ storeID, canAdvance }: Readonly<{ stor
   const transition = async (order: IndependentPartnerPickupOrder, state: Transition) => {
     if (!canAdvance || busyOrder || order.storeId !== storeID || visibleScopeKey !== scopeKey) return;
     const requestedScopeKey = scopeKey;
-    const isCurrentAction = () => mounted.current && currentScope() === scope && activeScopeKey.current === requestedScopeKey;
+    const requestedEpoch = scopeEpoch.current;
+    const isCurrentAction = () => mounted.current && currentScope() === scope &&
+      isCurrentOrderListRequest(requestedEpoch, requestedScopeKey, scopeEpoch.current, activeScopeKey.current);
     const release = tryAcquireOrderAction(locks.current, requestedScopeKey + ":" + order.orderId);
     if (!release) return;
     setBusyOrder(order.orderId);
