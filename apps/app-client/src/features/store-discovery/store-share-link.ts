@@ -17,6 +17,7 @@ export function buildPublicStoreShareURL(
   allowLocalPreview = false,
 ): string | null {
   if (!/^[A-Za-z0-9_-]{1,150}$/.test(storeId) || !/^[A-Za-z0-9_-]{1,150}$/.test(serviceCityId)) return null;
+  if (productId.length > 150 || /[\u0000-\u001f\u007f]/.test(productId)) return null;
   if (!publicOrigin?.trim()) return null;
   try {
     const origin = new URL(publicOrigin.trim());
