@@ -45,16 +45,21 @@ test("returning to the Store site rechecks DSH and cancels stale reads", () => {
   const catalogID = { current: 2 };
   const bannerID = { current: 3 };
   const openingMarketRef = { current: true };
+  const routeFocusedRef = { current: false };
   const focus = runInNewContext("(" + callbackSource + ")", {
-    openingMarketRef, setOpeningMarket: value => events.push(["opening", value]),
+    openingMarketRef, routeFocusedRef, setOpeningMarket: value => events.push(["opening", value]),
     load: () => { events.push(["reload"]); },
     readID, catalogID, bannerID,
   });
   const cleanup = focus();
   assert.deepEqual(events, [["opening", false], ["reload"]]);
   assert.equal(openingMarketRef.current, false);
+  assert.equal(routeFocusedRef.current, true);
   cleanup();
+  assert.equal(routeFocusedRef.current, false);
   assert.deepEqual([readID.current, catalogID.current, bannerID.current], [2, 3, 4]);
+  assert.match(site, /window\.addEventListener\("focus", refreshOnBrowserFocus\)/);
+  assert.match(site, /routeFocusedRef\.current && document\.visibilityState === "visible"/);
 });
 
 test("web site reads the canonical public Store, scoped catalog and Store-owned banners", () => {

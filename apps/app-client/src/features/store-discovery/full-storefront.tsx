@@ -3,8 +3,8 @@ import { BthwaniButton, BthwaniIcon, BthwaniSkeleton, BthwaniSurface, useAppeara
 import { formatMoney, formatQuantity, IndependentStoreUnavailable, listPublishedIndependentWebCatalog, readPublishedIndependentWebStore, type IndependentPublicStore, type IndependentPublicCatalog, type PublicCatalogResponse, type PublicDiscoveryContentView, type PublicStoreView } from "@bthwani/dsh";
 import { Image as ExpoImage } from "expo-image";
 import { Link, type Href, useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View, type ScrollViewInstance } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View, type ScrollViewInstance } from "react-native";
 
 import { clientStorefrontCartPath } from "../access/client-auth-return-path";
 import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
@@ -36,6 +36,7 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
   const signedIn = useSyncExternalStore(subscribeIdentitySession, () => currentIdentityState().kind === "authenticated", () => false);
   const { width } = useWindowDimensions();
   const readID = useRef(0);
+  const routeFocusedRef = useRef(false);
   const catalogID = useRef(0);
   const catalogRetryOrigin = useRef<"filter" | "page">("filter");
   const catalogRetrySearch = useRef(initialQuery);
@@ -141,16 +142,29 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
   // publication and Catalog whenever the Store route regains focus. A former
   // owner's or withdrawn Store's data must not remain visible on return.
   useFocusEffect(useCallback(() => {
+    routeFocusedRef.current = true;
     openingMarketRef.current = false;
     setOpeningMarket(false);
     void load();
     return () => {
+      routeFocusedRef.current = false;
       openingMarketRef.current = false;
       ++readID.current;
       ++catalogID.current;
       ++bannerID.current;
     };
   }, [load]));
+
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    // Route focus does not fire when a customer returns to the same browser
+    // tab after the merchant publishes a change in another tab/window.
+    const refreshOnBrowserFocus = () => {
+      if (routeFocusedRef.current && document.visibilityState === "visible") void load();
+    };
+    window.addEventListener("focus", refreshOnBrowserFocus);
+    return () => window.removeEventListener("focus", refreshOnBrowserFocus);
+  }, [load]);
 
   const applyFilter = useCallback(async (search: string) => {
     if (!storeId || !selectedCityID) return;

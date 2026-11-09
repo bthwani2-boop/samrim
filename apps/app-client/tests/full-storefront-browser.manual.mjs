@@ -54,7 +54,9 @@ try {
         cards: Array.from(document.querySelectorAll('[aria-label^="عرض "]')).length,
       }));
       assert(outcome.horizontalOverflow <= 2, "unexpected horizontal overflow at " + width + ": " + outcome.horizontalOverflow);
-      const screenshot = await page.screenshot({ animations: "disabled" });
+      // Chrome's shared CDP profile can stall when Playwright freezes live CSS animations.
+      // This proof checks readable pixels and layout, not a deterministic visual baseline.
+      const screenshot = await page.screenshot({ animations: "allow" });
       assert(screenshot.byteLength > 2000, "blank screenshot at " + width);
       layouts.push({ ...outcome, screenshotBytes: screenshot.byteLength });
     }
@@ -65,7 +67,10 @@ try {
     await page.emulateMedia({ colorScheme: "dark" });
     await expect.poll(readThemeTextColor, { timeout: 10000 }).not.toBe(lightThemeTextColor);
     const darkThemeTextColor = await readThemeTextColor();
-    const darkCapture = await page.screenshot({ animations: "disabled" });
+    // Capture the narrow dark viewport after validating all three light layouts;
+    // the shared CDP compositor can stall on a wide dark-mode capture.
+    await page.setViewportSize({ width: 390, height: 900 });
+    const darkCapture = await page.screenshot({ animations: "allow" });
     assert(darkCapture.byteLength > 2000);
     await page.emulateMedia({ colorScheme: "light" });
     await expect.poll(readThemeTextColor, { timeout: 10000 }).toBe(lightThemeTextColor);
