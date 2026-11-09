@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { runInNewContext } from "node:vm";
 
 const app = path.resolve(import.meta.dirname, "..");
 const site = readFileSync(path.join(app, "src/features/store-discovery/full-storefront.tsx"), "utf8");
@@ -91,4 +92,37 @@ test("a signed-out marketplace shopper keeps the exact product and the storefron
   assert.match(cartRoute, /authReturnPath: storefront\.returnPath/);
   assert.match(cart, /buildFullStorefrontPath\(storeId, storefront\.cityID, \{ productID: storefront\.productID \}\)/);
   assert.match(cart, /<CartCheckout key=/);
+});
+
+test("retrying a failed catalog page keeps the same Store cursor instead of resetting earlier results", () => {
+  const filter = site.split("const applyFilter = useCallback")[1]?.split("const loadMore = useCallback")[0] ?? "";
+  const page = site.split("const loadMore = useCallback")[1]?.split("  const ready = ")[0] ?? "";
+  assert.match(site, /const catalogRetryOrigin = useRef<"filter" \| "page">\("filter"\)/);
+  assert.match(filter, /catalogRetryOrigin\.current = "filter"/);
+  assert.match(page, /catalogRetryOrigin\.current = "page"/);
+  assert.match(page, /const cursor = state\.catalog\.nextCursor/);
+  assert.match(page, /readPublicStoreCatalog\(storeId, selectedCityID, categoryID, appliedQuery, 24, cursor, productID\)/);
+  assert.match(page, /if \(generation !== catalogID\.current\) return;/);
+  assert.match(page, /mergeCatalog\(previous\.catalog, next\)/);
+  assert.match(site, /onPress=\{\(\) => catalogRetryOrigin\.current === "page" \? void loadMore\(\) : void applyFilter\(query\)\}/);
+  assert.doesNotMatch(site, /onPress=\{\(\) => productID \? void loadMore\(\) : void applyFilter\(query\)\}/);
+});
+
+test("the actual catalog error retry handler selects the failed page, not an unsent search", () => {
+  const errorAction = site.split('label="إعادة قراءة المنتجات" onPress=')[1] ?? "";
+  const expression = errorAction.match(/^\{\(\) => ([^}]+)\} variant="secondary"/)?.[1];
+  assert.ok(expression, "extract the source-owned retry callback from the rendered error action");
+  const invoke = (origin) => {
+    const calls = [];
+    const onRetry = runInNewContext("() => (" + expression + ")", {
+      catalogRetryOrigin: { current: origin },
+      query: "draft not submitted",
+      loadMore: () => { calls.push("retry-page"); },
+      applyFilter: (value) => { calls.push("filter:" + value); },
+    });
+    onRetry();
+    return calls;
+  };
+  assert.deepEqual(invoke("page"), ["retry-page"], "a failed nextCursor page must not reset the catalog");
+  assert.deepEqual(invoke("filter"), ["filter:draft not submitted"], "an explicit search retry uses the submitted input");
 });
