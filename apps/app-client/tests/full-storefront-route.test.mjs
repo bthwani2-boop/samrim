@@ -98,13 +98,16 @@ test("retrying a failed catalog page keeps the same Store cursor instead of rese
   const filter = site.split("const applyFilter = useCallback")[1]?.split("const loadMore = useCallback")[0] ?? "";
   const page = site.split("const loadMore = useCallback")[1]?.split("  const ready = ")[0] ?? "";
   assert.match(site, /const catalogRetryOrigin = useRef<"filter" \| "page">\("filter"\)/);
+  assert.match(site, /const catalogRetrySearch = useRef\(initialQuery\)/);
+  assert.match(filter, /catalogRetrySearch\.current = search\.trim\(\)/);
+  assert.match(site, /catalogRetrySearch\.current = initialQuery/);
   assert.match(filter, /catalogRetryOrigin\.current = "filter"/);
   assert.match(page, /catalogRetryOrigin\.current = "page"/);
   assert.match(page, /const cursor = state\.catalog\.nextCursor/);
   assert.match(page, /readPublicStoreCatalog\(storeId, selectedCityID, categoryID, appliedQuery, 24, cursor, productID\)/);
   assert.match(page, /if \(generation !== catalogID\.current\) return;/);
   assert.match(page, /mergeCatalog\(previous\.catalog, next\)/);
-  assert.match(site, /onPress=\{\(\) => catalogRetryOrigin\.current === "page" \? void loadMore\(\) : void applyFilter\(query\)\}/);
+  assert.match(site, /onPress=\{\(\) => catalogRetryOrigin\.current === "page" \? void loadMore\(\) : void applyFilter\(catalogRetrySearch\.current\)\}/);
   assert.doesNotMatch(site, /onPress=\{\(\) => productID \? void loadMore\(\) : void applyFilter\(query\)\}/);
 });
 
@@ -117,6 +120,7 @@ test("the actual catalog error retry handler selects the failed page, not an uns
     const onRetry = runInNewContext("() => (" + expression + ")", {
       catalogRetryOrigin: { current: origin },
       query: "draft not submitted",
+      catalogRetrySearch: { current: "actually submitted query" },
       loadMore: () => { calls.push("retry-page"); },
       applyFilter: (value) => { calls.push("filter:" + value); },
     });
@@ -124,5 +128,5 @@ test("the actual catalog error retry handler selects the failed page, not an uns
     return calls;
   };
   assert.deepEqual(invoke("page"), ["retry-page"], "a failed nextCursor page must not reset the catalog");
-  assert.deepEqual(invoke("filter"), ["filter:draft not submitted"], "an explicit search retry uses the submitted input");
+  assert.deepEqual(invoke("filter"), ["filter:actually submitted query"], "retry repeats the failed submitted request, never an unsent draft");
 });

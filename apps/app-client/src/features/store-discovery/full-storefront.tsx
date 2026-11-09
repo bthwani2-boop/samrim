@@ -35,6 +35,7 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
   const readID = useRef(0);
   const catalogID = useRef(0);
   const catalogRetryOrigin = useRef<"filter" | "page">("filter");
+  const catalogRetrySearch = useRef(initialQuery);
   const bannerID = useRef(0);
   const openingMarketRef = useRef(false);
   const scrollRef = useRef<ScrollViewInstance | null>(null);
@@ -99,6 +100,7 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
     setCatalogBusy(false);
     setCatalogError(false);
     catalogRetryOrigin.current = "filter";
+    catalogRetrySearch.current = initialQuery;
     setLoadingMore(false);
     setBrokenImages(new Set());
     if (!storeId.trim() || !selectedCityID) {
@@ -132,6 +134,7 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
   const applyFilter = useCallback(async (search: string) => {
     if (!storeId || !selectedCityID) return;
     catalogRetryOrigin.current = "filter";
+    catalogRetrySearch.current = search.trim();
     // A filter supersedes an in-flight page. Its stale finally cannot clear
     // loadingMore once the shared catalog generation has advanced.
     const generation = ++catalogID.current;
@@ -327,7 +330,7 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
             </Link>;
           })}
         </View> : null}
-        {catalogError ? <View style={styles.notice}><Text accessibilityRole="alert" style={styles.secondary}>تعذر تحديث المنتجات. النتائج السابقة محفوظة.</Text><BthwaniButton label="إعادة قراءة المنتجات" onPress={() => catalogRetryOrigin.current === "page" ? void loadMore() : void applyFilter(query)} variant="secondary" /></View> : null}
+        {catalogError ? <View style={styles.notice}><Text accessibilityRole="alert" style={styles.secondary}>تعذر تحديث المنتجات. النتائج السابقة محفوظة.</Text><BthwaniButton label="إعادة قراءة المنتجات" onPress={() => catalogRetryOrigin.current === "page" ? void loadMore() : void applyFilter(catalogRetrySearch.current)} variant="secondary" /></View> : null}
         {catalogBusy ? <View style={styles.grid} accessibilityLabel="جارٍ تحميل المنتجات"><BthwaniSkeleton height={220} width={Math.max(100, cardWidth)} /><BthwaniSkeleton height={220} width={Math.max(100, cardWidth)} /></View> : offers.length > 0 ? <View style={styles.grid}>
           {offers.map((offer) => {
             const image = offer.media.find((media) => media.role === "primary") ?? offer.media[0];
