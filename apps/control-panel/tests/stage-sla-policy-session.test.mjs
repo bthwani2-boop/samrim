@@ -39,7 +39,7 @@ function runApproval(fetchImpl,{ready=true,signalAPI=shortSignal(20_000)}={}){
 test("Stage SLA policy is remounted with role, permissions and complete session",()=>{
  assert.match(source,/state\.identity\.role!=="operator"/);
  assert.match(source,/!state\.identity\.subject\|\|!state\.identity\.sessionId/);
- assert.match(source,/\.\.\.\(state\.identity\.permissions\?\?\[\]\)\]\.sort\(\)/);
+ assert.match(source,/\.\.\.\(state\.identity\.permissions\?\?\[\]\)\]\.sort\(\(a,b\)=>a\.localeCompare\(b\)\)/);
  assert.match(source,/<StageSLAPolicyEditor key=\{key\}/);
  assert.match(source,/inFlightSave\.current\?\.abort\(\)/);
  assert.match(source,/disabled=\{!readReady\|\|!valid\|\|saving\}/);

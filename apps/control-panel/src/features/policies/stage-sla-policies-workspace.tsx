@@ -33,7 +33,7 @@ export function StageSLAPoliciesWorkspace(){
    !state.identity.subject||!state.identity.sessionId)
    return <p role="alert">تتطلب الإدارة جلسة مشغّل فعّالة وصلاحية سياسات المنصة.</p>;
  const key=JSON.stringify([state.identity.subject,state.identity.sessionId,state.identity.role,
-  [...(state.identity.permissions??[])].sort()]);
+  [...(state.identity.permissions??[])].sort((a,b)=>a.localeCompare(b))]);
  return <StageSLAPolicyEditor key={key}/>;
 }
 function StageSLAPolicyEditor(){

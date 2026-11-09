@@ -42,7 +42,7 @@ export function PoliciesCenterWorkspace() {
   // Keep previews, dialogs and mounted editors inside the active Identity scope.
   const sessionScope = JSON.stringify([
     state.identity.subject, state.identity.sessionId, state.identity.role,
-    [...(state.identity.permissions ?? [])].sort(),
+    [...(state.identity.permissions ?? [])].sort((a,b)=>a.localeCompare(b)),
   ]);
   return <ScopedPoliciesCenterWorkspace key={sessionScope} />;
 }
