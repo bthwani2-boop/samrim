@@ -83,7 +83,8 @@ export function PartnerIndependentStorePreview({ store }: Readonly<{ store: Part
 
   function media(uri: string, key: string, label: string, height: number) {
     const imageScope = partnerSetupSessionKey(currentIdentityState());
-    if (!uri || failedMedia.has(key)) {
+    const failedImageKey = JSON.stringify([key, uri]);
+    if (!uri || failedMedia.has(failedImageKey)) {
       return <View style={{ alignItems: "center", justifyContent: "center", minHeight: height, backgroundColor: theme.surfaceInset }}>
         <Text style={styles.muted}>{label} غير متاحة</Text>
       </View>;
@@ -94,7 +95,7 @@ export function PartnerIndependentStorePreview({ store }: Readonly<{ store: Part
       contentFit="cover"
       onError={() => {
         if (imageScope && imageScope === currentScope.current && imageScope === partnerSetupSessionKey(currentIdentityState())) {
-          setFailedMedia(previous => new Set([...previous, key]));
+          setFailedMedia(previous => new Set([...previous, failedImageKey]));
         }
       }}
       source={{ uri }}

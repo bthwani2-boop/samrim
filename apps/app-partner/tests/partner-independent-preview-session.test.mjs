@@ -225,3 +225,49 @@ test("a denied or failed preview GET releases the lock for an explicit retry", a
   await retry;
   assert.equal(h.context.preview?.storeId, "store-a");
 });
+
+
+test("an obsolete image failure cannot hide a newer image for the same private Store", () => {
+  const ast = ts.createSourceFile("partner-independent-store-preview.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let declaration;
+  function visit(node) {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === "media") declaration = node;
+    ts.forEachChild(node, visit);
+  }
+  visit(ast);
+  assert.ok(declaration, "the private preview's real media error callback must be exercised");
+  const code = ts.transpileModule(declaration.getText(ast) + "; media;", {
+    compilerOptions: {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.None,
+      jsx: ts.JsxEmit.React,
+    },
+  }).outputText;
+  const currentActor = identity("partner-a", "session-1");
+  const ctx = {
+    React: { createElement: (tag, props, ...children) => ({ tag, props, children }) },
+    View: "View", Text: "Text", ExpoImage: "ExpoImage",
+    styles: { muted: {} },
+    theme: { surfaceInset: "none" },
+    failedMedia: new Set(),
+    partnerSetupSessionKey: scope,
+    currentIdentityState: () => currentActor,
+    currentScope: { current: scope(currentActor) },
+    setFailedMedia: update => {
+      ctx.failedMedia = typeof update === "function" ? update(ctx.failedMedia) : update;
+    },
+  };
+  const media = runInNewContext(code, ctx);
+  const oldImage = media("https://cdn.example.test/store/old-cover.jpg", "store-cover", "cover", 155);
+  assert.equal(oldImage.tag, "ExpoImage");
+  // The owner refreshed the canonical Store preview, which now uses a distinct image URI.
+  const newUri = "https://cdn.example.test/store/new-cover.jpg";
+  const newImage = media(newUri, "store-cover", "cover", 155);
+  assert.equal(newImage.tag, "ExpoImage");
+  oldImage.props.onError(); // late callback from the image removed by the refresh
+  assert.equal(media(newUri, "store-cover", "cover", 155).tag, "ExpoImage",
+    "failed old URI must not hide the current Store cover");
+  newImage.props.onError();
+  assert.equal(media(newUri, "store-cover", "cover", 155).tag, "View",
+    "a failure of the current URI must still show the image fallback");
+});
