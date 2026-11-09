@@ -34,10 +34,27 @@ test("all finance recovery reads and writes require the authenticated operator",
 });
 
 test("workspace actor switches discard React subtree state without clearing durable idempotency records", () => {
-  assert.match(layout, /<main key=\{state\.identity\.subject\}/);
+  assert.match(layout, /<main key=\{workspaceScope\}/);
   assert.match(cash, /idempotencyKey|evidenceKey/);
   assert.match(earnings, /idempotencyKey/);
   assert.doesNotMatch(cash + earnings, /sessionStorage\.clear\(\)/);
+});
+
+test("workspace protected subtree remounts on session and permission changes before any old response can paint", () => {
+  const expression = layout.match(/const workspaceScope = ([^\n]+);/)?.[1];
+  assert.ok(expression, "workspace must derive its identity from trusted authenticated session and permission facts");
+  const scope = (identity) => Function("state", `return ${expression};`)({ identity });
+  const base = {
+    subject: "operator-a", sessionId: "session-a", role: "operator",
+    permissions: ["partners", "finance"], canManageOperatorPermissions: false,
+  };
+  const key = scope(base);
+  assert.equal(scope({ ...base, permissions: ["finance", "partners"] }), key, "permission ordering alone cannot remount the subtree");
+  assert.notEqual(scope({ ...base, subject: "operator-b" }), key, "different actor needs a fresh subtree");
+  assert.notEqual(scope({ ...base, sessionId: "session-b" }), key, "new session for the same actor needs a fresh subtree");
+  assert.notEqual(scope({ ...base, permissions: ["partners"] }), key, "revoked finance permission must discard old Store and finance content");
+  assert.notEqual(scope({ ...base, role: "partner" }), key, "role change must discard previous operator content");
+  assert.notEqual(scope({ ...base, canManageOperatorPermissions: true }), key, "operator administration rights must invalidate old view");
 });
 
 test("an old unscoped financial attempt is never adopted as a new operator's record", () => {

@@ -336,6 +336,7 @@ export default function WorkspaceLayout({ children }: Readonly<{ children: React
   if (state.kind === "signed_out") return <LoadingState title="جارٍ الرجوع إلى بوابة الهوية" message="انتهت الجلسة المحلية أو لم تعد متاحة." />;
 
   const destinationAccessGranted = canOpenWorkspaceRoute(state.identity, pathname);
+  const workspaceScope = JSON.stringify([state.identity.subject, state.identity.sessionId, state.identity.role, [...(state.identity.permissions ?? [])].sort(), state.identity.canManageOperatorPermissions === true]);
 
   return (
     <ControlShell className="workspace-app-shell" surface="workspace" footer={null} header={<WorkspaceHeader busy={busy} navOpen={navigationOpen} navTriggerRef={navTriggerRef} onLogout={() => { setLocalSignOut(true); void logout(); }} onOpenNavigation={() => setNavigationOpen(true)} pathname={pathname} />}>
@@ -345,7 +346,7 @@ export default function WorkspaceLayout({ children }: Readonly<{ children: React
       <div className="workspace-layout" data-nav-compact={navigationCompact ? "true" : "false"} data-table-density={tableDense ? "compact" : "comfortable"}>
         {navigationOpen ? <button type="button" className="workspace-nav-backdrop" aria-label="إغلاق مسارات العمل" onClick={closeNavigation} /> : null}
         <WorkspaceNavigation firstLinkRef={navFirstLinkRef} navRef={navRef} onClose={closeNavigation} open={navigationOpen} pathname={pathname} compact={navigationCompact} onToggleCompact={toggleNavigationCompact} dense={tableDense} onToggleDensity={toggleTableDensity} />
-        <main key={state.identity.subject} ref={mainRef} id="workspace-main" className="workspace-main" data-workspace-section={pathname?.split("/")[1] || "workspace"} tabIndex={-1}>
+        <main key={workspaceScope} ref={mainRef} id="workspace-main" className="workspace-main" data-workspace-section={pathname?.split("/")[1] || "workspace"} tabIndex={-1}>
           {destinationAccessGranted ? children : <section className="collection-state" role="status"><strong>الوصول إلى هذه المساحة غير مفعّل</strong><p>تحتاج إلى صلاحية النطاق المناسبة من إدارة صلاحيات المشغّلين.</p><Link className="button button-secondary" href="/workspace">العودة إلى الرئيسية</Link></section>}
         </main>
       </div>
