@@ -48,16 +48,18 @@ export async function readPublicStoreMetadata(
 ): Promise<Metadata> {
   if (!request || !apiURL || !/^[A-Za-z0-9._~-]{1,150}$/.test(storeId)) return unavailable;
   let cityId = "";
+  let requestOrigin = "";
   try {
     const incoming = new URL(request.url);
     if (["localhost", "127.0.0.1", "[::1]"].includes(incoming.hostname)) return localPreview;
     if (incoming.protocol !== "https:") return unavailable;
+    requestOrigin = incoming.origin;
     cityId = incoming.searchParams.get("serviceCityId")?.trim() ?? "";
   } catch { return unavailable; }
   if (!/^[A-Za-z0-9._~-]{1,150}$/.test(cityId)) return unavailable;
-  // Never derive canonical metadata from the request Host, which may be an untrusted alias.
+  // Canonical metadata must not be published for an untrusted Host or alias.
   const publicOrigin = configuredPublicOrigin(process.env.EXPO_PUBLIC_CLIENT_WEB_ORIGIN);
-  if (!publicOrigin) return unavailable;
+  if (!publicOrigin || requestOrigin !== publicOrigin) return unavailable;
   try {
     const base = new URL(apiURL);
     if (!["http:", "https:"].includes(base.protocol)) return unavailable;
