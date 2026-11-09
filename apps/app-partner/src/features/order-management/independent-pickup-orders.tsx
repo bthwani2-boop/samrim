@@ -7,7 +7,7 @@ import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySe
 import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";
 import { createPartnerSurfaceStyles } from "../partner-onboarding/partner-surface-styles";
 import { listIndependentPickupOrders, transitionIndependentPickupOrder } from "../partner-onboarding/store-readback-client";
-import { isCurrentOrderListRequest, tryAcquireOrderAction } from "./order-page-records";
+import { isCurrentOrderListRequest, reconcileVersionedOrderPage, tryAcquireOrderAction } from "./order-page-records";
 
 type Transition = IndependentPickupOrderTransitionRequest["state"];
 const states: Record<IndependentPickupOrderState, string> = {
@@ -89,9 +89,7 @@ export function IndependentPickupOrders({ storeID, canAdvance }: Readonly<{ stor
       const result = await listIndependentPickupOrders(await scopedToken(scope), storeID, after);
       if (!isCurrent()) return;
       if (result.orders.some(order => order.storeId !== storeID) || (after && result.nextCursor === after)) throw new Error("DIRECT_ORDER_SCOPE_MISMATCH");
-      setOrders(previous => after
-        ? [...previous, ...result.orders.filter(order => !previous.some(item => item.orderId === order.orderId))]
-        : result.orders);
+      setOrders(previous => reconcileVersionedOrderPage(previous, result.orders, Boolean(after)));
       setCursor(result.nextCursor);
       setVisibleScopeKey(scopeKey);
     } catch {

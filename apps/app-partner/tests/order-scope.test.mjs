@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { isCurrentOrderListRequest } from "../src/features/order-management/order-page-records.ts";
+import { isCurrentOrderListRequest, reconcileVersionedOrderPage } from "../src/features/order-management/order-page-records.ts";
 
 function deferred() {
   let resolve;
@@ -86,4 +86,28 @@ test("A-B-A Store switching invalidates an earlier direct-order mutation", () =>
   assert.equal(isCurrentOrderListRequest(requestEpoch + 2, scopeA, requestEpoch + 2, scopeA), true);
   assert.equal((source.match(/scopeEpoch\.current \+= 1/g) ?? []).length, 2);
   assert.match(source, /isCurrentOrderListRequest\(requestedEpoch, requestedScopeKey, scopeEpoch\.current, activeScopeKey\.current\)/u);
+});
+
+test("fresh direct-order readback never rolls back a confirmed higher-version transition", () => {
+  const accepted = { orderId: "order-a", storeId: "store-a", version: 2, state: "ACCEPTED" };
+  const preparing = { ...accepted, version: 3, state: "PREPARING" };
+  const second = { orderId: "order-b", storeId: "store-a", version: 1, state: "SUBMITTED" };
+  assert.deepEqual(reconcileVersionedOrderPage([preparing], [accepted, second], false), [preparing, second]);
+  assert.deepEqual(reconcileVersionedOrderPage([preparing, second], [second], false), [second],
+    "a fresh authorized read must remove orders absent from the owner response");
+});
+
+test("older paginated direct-order pages cannot duplicate or downgrade a changed order", () => {
+  const first = { orderId: "order-a", version: 3, state: "PREPARING" };
+  const second = { orderId: "order-b", version: 1, state: "SUBMITTED" };
+  const updatedSecond = { ...second, version: 2, state: "ACCEPTED" };
+  const olderFirst = { ...first, version: 2, state: "ACCEPTED" };
+  const third = { orderId: "order-c", version: 1, state: "SUBMITTED" };
+  assert.deepEqual(reconcileVersionedOrderPage([first, second], [olderFirst, updatedSecond, third], true),
+    [first, updatedSecond, third]);
+});
+
+test("the real direct-order list uses version-aware owner readback", () => {
+  const source = readFileSync(new URL("../src/features/order-management/independent-pickup-orders.tsx", import.meta.url), "utf8");
+  assert.match(source, /setOrders\(previous => reconcileVersionedOrderPage\(previous, result\.orders, Boolean\(after\)\)\)/);
 });
