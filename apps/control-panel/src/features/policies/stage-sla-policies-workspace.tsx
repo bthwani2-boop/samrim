@@ -53,6 +53,7 @@ function StageSLAPolicyEditor(){
  const [notice,setNotice]=useState("");
  const selected=policies.find(p=>p.fulfillmentMode===mode&&p.stage===stage);
  useEffect(()=>()=>{inFlightSave.current?.abort();inFlightSave.current=null;},[]);
+ // biome-ignore lint/correctness/useExhaustiveDependencies: refresh explicitly requests a fresh DSH read after retry or uncertain POST.
  useEffect(()=>{
   const controller=new AbortController();
   setLoading(true);setReadReady(false);setPolicies([]);setError("");setNotice("");
@@ -70,11 +71,13 @@ function StageSLAPolicyEditor(){
   })();
   return ()=>controller.abort();
  },[authorized,refresh]);
+ // biome-ignore lint/correctness/useExhaustiveDependencies: different Mode/Stage pairs may both lack a policy, but must still reset the numeric draft.
  useEffect(()=>{
   // Refresh numeric fields from the canonical policy without erasing a save notice.
   setTarget(selected?String(selected.targetMinutes):"");
   setWarning(selected?String(selected.warningMinutes):"");
  },[selected,mode,stage]);
+ // biome-ignore lint/correctness/useExhaustiveDependencies: changing Mode/Stage must clear the prior policy notice even if there is no matching row.
  useEffect(()=>{
   setError("");setNotice("");
  },[mode,stage]);

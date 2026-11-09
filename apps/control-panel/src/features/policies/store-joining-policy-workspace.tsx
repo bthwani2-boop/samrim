@@ -25,6 +25,13 @@ export function StoreJoiningPolicyWorkspace(){
  const readbackReady=authorized&&loadedSession===actorSession&&policies.length===2;
  const current=readbackReady?policies.find(p=>p.relationModel===selected):undefined;
 
+ // Selection is a client-side view of one canonical DSH response. Changing
+ // models must not issue a competing GET, and new readback resets the draft.
+ useEffect(()=>{
+  if(readbackReady)setEnabled(current?.enrollmentEnabled??false);
+ },[readbackReady,current]);
+
+ // biome-ignore lint/correctness/useExhaustiveDependencies: refresh is the explicit operator retry after a failed or ambiguous canonical read.
  useEffect(()=>{
   setPolicies([]);setLoadedSession("");setLoading(true);setError("");setNotice("");setSaving(false);
   if(!authorized){setLoading(false);return;}
@@ -38,7 +45,6 @@ export function StoreJoiningPolicyWorkspace(){
     if(!controller.signal.aborted){
       setPolicies(body.items);
       setLoadedSession(actorSession);
-      setEnabled(body.items.find(item=>item.relationModel===selected)?.enrollmentEnabled??false);
     }
    }catch{
     if(!controller.signal.aborted)setError("تعذرت قراءة السياسات من الخدمة. لا يمكن تعديلها الآن.");

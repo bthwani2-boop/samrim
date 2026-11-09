@@ -53,6 +53,7 @@ function StoreTypeCancellationEditor() {
     inFlightSave.current = null;
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reload is the explicit GET-only retry after an uncertain Store Type mutation.
   useEffect(() => {
     const controller = new AbortController();
     setVerticalsLoading(true);
@@ -70,6 +71,7 @@ function StoreTypeCancellationEditor() {
     return () => controller.abort();
   }, [reload]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reload must re-read the selected vertical even when its ID has not changed.
   useEffect(() => {
     const controller = new AbortController();
     setTypes([]);

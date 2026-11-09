@@ -19,6 +19,7 @@ export function StoreModeControls({ store, onUpdated }: Readonly<{ store: Store;
     ? modeChoices.filter(mode => mode !== "BTHWANI_CAPTAIN")
     : store.relationModel === "BTHWANI_PARTNER" ? modeChoices : [];
   useEffect(() => { if (!editing) setSelected(store.fulfillmentModes); }, [editing, store.fulfillmentModes]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Store identity/relation/version resets editing; array identity alone must not discard an in-progress draft.
   useEffect(() => { setEditing(false); setSelected(store.fulfillmentModes); setError(""); setNotice(""); },
     [store.id, store.relationModel, store.version]);
   const changed = selected.length !== store.fulfillmentModes.length || selected.some((value) => !store.fulfillmentModes.includes(value));
