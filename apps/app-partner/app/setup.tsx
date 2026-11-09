@@ -23,7 +23,7 @@ function errorText(e:unknown,action:"read"|"save"="save"){
   const status=(e as {status?:number}).status;
   if(status===409){
    const code="code" in e?(e as {code?:unknown}).code:undefined;
-   return code==="STORE_JOINING_CLOSED"?"هذا النوع من المتاجر غير متاح للانضمام حاليًا. حدّث الخيارات وحاول مجددًا.":"متجرك موجود بالفعل أو تغيرت سياسة الانضمام. حدّث الصفحة واقرأ المتاجر.";
+   return code==="STORE_JOINING_CLOSED"?"نموذج المتجر المختار غير متاح للانضمام حاليًا. حدّث الخيارات وحاول مجددًا.":"متجرك موجود بالفعل أو تغيرت سياسة الانضمام. حدّث الصفحة واقرأ المتاجر.";
   }
   if(status===401||status===403)return "انتهت صلاحية الدخول أو الحساب غير مخوّل. سجّل الدخول مجددًا.";
   if(status===404&&action==="read")return "خدمة إعداد المتاجر غير مفعّلة على الخادم الحالي. لا يمكن إنشاء متجر حتى تحديث الخدمة؛ إعادة المحاولة وحدها لن تحل المشكلة.";
@@ -167,7 +167,7 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
  function advance(){
   setError("");
   if(step===0&&(!firstStoreRelationCanEnroll(joiningPolicies,relation)||name.trim().length<2)){setError("اختر طريقة تشغيل متاحة حاليًا وأدخل اسم المتجر.");return;}
-  if(step===1&&(!city||!vertical||!storeType||!types.some(t=>t.id===storeType&&t.verticalId===vertical))){setError("اختر مدينة الخدمة والمجال ونوع المتجر.");return;}
+  if(step===1&&(!city||!vertical||!storeType||!types.some(t=>t.id===storeType&&t.verticalId===vertical))){setError("اختر مدينة الخدمة والمجال ونوع المتجر التجاري.");return;}
   const allowedModes=relation?firstStoreModesForRelation(relation,relation,modes):[];
   if(step===2&&(!selected||address.trim().length<4||allowedModes.length===0||allowedModes.length!==modes.length)){setError("حدد العنوان والموقع وراجع طرق التوصيل المسموحة لهذا المتجر.");return;}
   setStep(Math.min(step+1,3) as Step);
@@ -296,7 +296,7 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
     {step===1?<View style={{gap:8}}>
      {choose("مدينة الخدمة",cities.map(x=>({id:x.id,label:x.displayNameAr})),city,setCity)}
      {choose("المجال التجاري",verticals.filter(x=>x.active).map(x=>({id:x.id,label:x.nameAr})),vertical,setVertical)}
-     {choose("نوع المتجر",types.map(x=>({id:x.id,label:x.nameAr})),storeType,setStoreType)}
+     {choose("نوع المتجر التجاري",types.map(x=>({id:x.id,label:x.nameAr})),storeType,setStoreType)}
      {typesLoading?<ActivityIndicator accessibilityLabel="تحميل أنواع المتاجر"/>:null}
      {typesError?<View style={{gap:8}}><Text accessibilityRole="alert" style={s.error}>تعذر تحميل أنواع المتاجر لهذا المجال. لم يتم حفظ اختيار غير مؤكد.</Text><BthwaniButton label="إعادة تحميل الأنواع" variant="secondary" disabled={busy} onPress={()=>setTypesRetry(n=>n+1)}/></View>:null}
     </View>:null}
@@ -319,7 +319,7 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
      <Text style={s.text}>النموذج: {relation==="INDEPENDENT_STORE"?"متجر ويب مستقل":"شريك بثواني"}</Text>
      <Text style={s.text}>المدينة: {cities.find(c=>c.id===city)?.displayNameAr}</Text>
      <Text style={s.text}>المجال: {verticals.find(v=>v.id===vertical)?.nameAr}</Text>
-     <Text style={s.text}>النوع: {types.find(t=>t.id===storeType)?.nameAr}</Text>
+     <Text style={s.text}>نوع المتجر التجاري: {types.find(t=>t.id===storeType)?.nameAr}</Text>
      <Text style={s.text}>العنوان: {address}</Text>
      <Text style={s.text}>طرق تقديم الطلبات المختارة: {modes.map(firstStoreFulfillmentLabel).join("، ") || "لم تُحدّد"}</Text>
      <Text style={s.small}>{relation==="INDEPENDENT_STORE"?"سينشأ المتجر مستقلًا وغير منشور. ستتمكن من تجهيز المنتجات الآن، ونشر رابطه بعد اكتمال خدمة الاستضافة المباشرة وضوابطها؛ لا يوجد دفع أو توصيل بثواني.":"سينشأ المتجر غير منشور. بعد ذلك يمكنك تجهيز الصور والكتالوج والاتفاق التجاري قبل ظهوره في تطبيق العميل."}</Text>

@@ -32,10 +32,9 @@ test("independent public website never inherits marketplace cart or preview auth
 
 test("Partner public URL reads DSH publication before displaying the same Client Web site", () => {
   const link = read("src/features/partner-onboarding/use-partner-independent-public-link.ts");
-  const url = read("src/features/partner-onboarding/partner-storefront-url.ts");
   assert.match(link, /readPublishedIndependentWebStore/);
   assert.match(link, /EXPO_PUBLIC_CLIENT_WEB_ORIGIN/);
   assert.match(link, /partnerSetupSessionKey/);
   assert.doesNotMatch(link, /EXPO_PUBLIC_INDEPENDENT_STOREFRONT_WEB_ORIGIN/);
-  assert.match(url, /url\.pathname = "\/storefront\/" \+ encodeURIComponent\(store\.id\)/);
+  assert.match(link, /buildPartnerIndependentStorefrontURL\(/);
 });
