@@ -786,6 +786,9 @@ paths:
   /dsh/public/stores/{storeId}/banners:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1stores~1{storeId}~1banners"
 
+  /dsh/public/independent-stores/{storeId}/banners:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1independent-stores~1{storeId}~1banners"
+
   /dsh/public/discovery-content/events:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1discovery-content~1events"
 

@@ -71,11 +71,11 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
   const storefrontPath = (scope?: Parameters<typeof buildFullStorefrontPath>[2]) =>
     buildFullStorefrontPath(storeId, selectedCityID ?? "", scope) as Href;
 
-  const refreshBanners = useCallback(async (storeGeneration: number) => {
+  const refreshBanners = useCallback(async (storeGeneration: number, relation: "marketplace" | "independent") => {
     if (!storeId || !selectedCityID) return;
     const generation = ++bannerID.current;
     try {
-      const response = await listPublicStoreBanners(storeId, selectedCityID);
+      const response = await listPublicStoreBanners(storeId, selectedCityID, relation);
       if (generation !== bannerID.current || storeGeneration !== readID.current) return;
       setBanners(response.items.filter((item) => item.kind === "BANNER" && item.mediaKind === "image" && Boolean(item.mediaUri)));
       setBannerError(false);
@@ -119,7 +119,7 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
           return;
         }
         setState({ kind: "ready", relation: "marketplace", store, catalog });
-        if (!productID) void refreshBanners(generation);
+        if (!productID) void refreshBanners(generation, "marketplace");
         return;
       } catch (cause) {
         if (storeReadFailureKind(cause) !== "unavailable") throw cause;
@@ -131,6 +131,7 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
       });
       if (generation !== readID.current) return;
       setState({ kind: "ready", relation: "independent", store, catalog });
+      if (!productID) void refreshBanners(generation, "independent");
     } catch (cause) {
       if (generation === readID.current) {
         setState({ kind: cause instanceof IndependentStoreUnavailable ? "unavailable" : storeReadFailureKind(cause) });
@@ -354,7 +355,7 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
           : null}
       </BthwaniSurface>
 
-      {bannerError ? <View style={styles.notice}><Text accessibilityRole="alert" style={styles.secondary}>تعذر تحديث بنرات المتجر. يمكنك متابعة التصفح.</Text><BthwaniButton label="إعادة قراءة البنرات" variant="secondary" onPress={() => void refreshBanners(readID.current)} /></View> : null}
+      {bannerError ? <View style={styles.notice}><Text accessibilityRole="alert" style={styles.secondary}>تعذر تحديث بنرات المتجر. يمكنك متابعة التصفح.</Text><BthwaniButton label="إعادة قراءة البنرات" variant="secondary" onPress={() => void refreshBanners(readID.current, state.kind === "ready" ? state.relation : "marketplace")} /></View> : null}
       {banners.length > 0 ? <View style={styles.section} accessibilityLabel="بنرات المتجر المنشورة">
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.bannerRail}>
           {banners.map((banner) => {

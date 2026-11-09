@@ -23,6 +23,7 @@ func TestIndependentPublicStorefrontRequiresReleaseAndLegalApproval(t *testing.T
 			for _, path := range []string{
 				"/dsh/public/independent-stores/private-store?serviceCityId=sanaa",
 				"/dsh/public/independent-stores/private-store/catalog?serviceCityId=sanaa",
+				"/dsh/public/independent-stores/private-store/banners?serviceCityId=sanaa",
 				"/dsh/public/independent-stores/private-store?serviceCityId=sanaa&relationModel=INDEPENDENT_STORE",
 			} {
 				response := httptest.NewRecorder()
@@ -53,6 +54,9 @@ func TestIndependentPublicStorefrontValidatesScopeAndPaginationBeforeReadingDB(t
 	}{
 		{"/dsh/public/independent-stores/store-1", http.StatusBadRequest},
 		{"/dsh/public/independent-stores/store-1/catalog?serviceCityId=sanaa&limit=0", http.StatusBadRequest},
+		{"/dsh/public/independent-stores/store-1/banners?serviceCityId=sanaa&serviceCityId=aden", http.StatusBadRequest},
+		{"/dsh/public/independent-stores/store-1/banners?serviceCityId=sanaa&relationModel=BTHWANI_PARTNER", http.StatusBadRequest},
+		{"/dsh/public/independent-stores/store-1/banners?serviceCityId=sanaa", http.StatusNotFound},
 		{"/dsh/public/independent-stores/store-1/catalog?serviceCityId=sanaa&limit=51", http.StatusBadRequest},
 		{"/dsh/public/independent-stores/store-1/catalog?serviceCityId=sanaa&limit=abc", http.StatusBadRequest},
 		{"/dsh/public/independent-stores/store-1/catalog?serviceCityId=sanaa&serviceCityId=aden", http.StatusBadRequest},

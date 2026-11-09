@@ -3,6 +3,7 @@ package transporthttp
 import (
 	"database/sql"
 	"errors"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	"net"
 	"net/http"
 	"net/url"
@@ -42,6 +43,7 @@ func NewIndependentPublicStorefront(db *sql.DB, releaseEnabled bool, approvedTer
 func (s *IndependentPublicStorefrontServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/public/independent-stores/{storeId}", s.readStore)
 	mux.HandleFunc("GET /dsh/public/independent-stores/{storeId}/catalog", s.readCatalog)
+	mux.HandleFunc("GET /dsh/public/independent-stores/{storeId}/banners", s.readBanners)
 }
 
 func (s *IndependentPublicStorefrontServer) publicScope(w http.ResponseWriter, r *http.Request) (string, string, bool) {
@@ -193,4 +195,35 @@ func (s *IndependentPublicStorefrontServer) readCatalog(w http.ResponseWriter, r
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"storeId": storeID, "categories": page.Categories, "offers": page.Offers, "nextCursor": page.NextCursor})
+}
+
+// readBanners uses the same canonical DSH Discovery Content owner as the
+// marketplace website, but only after the independent legal/host gate passes.
+func (s *IndependentPublicStorefrontServer) readBanners(w http.ResponseWriter, r *http.Request) {
+	storeID, cityID, ok := s.publicScope(w, r)
+	if !ok {
+		return
+	}
+	if _, ok = s.publishedStore(w, r, storeID, cityID); !ok {
+		return
+	}
+	items, err := postgres.ListPublishedIndependentStoreBanners(r.Context(), s.db, storeID, cityID, s.approvedTermsVersion)
+	switch {
+	case errors.Is(err, postgres.ErrIndependentStorefrontNotPublished):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "storefront was not found")
+		return
+	case err != nil:
+		writeError(w, http.StatusServiceUnavailable, "DSH_STORAGE_UNAVAILABLE", "banners are temporarily unavailable")
+		return
+	}
+	values := make([]contract.PublicDiscoveryContentView, 0, len(items))
+	for _, item := range items {
+		if !safeIndependentPublicMediaURI(item.MediaURI) ||
+			item.TargetType != "STORE" || item.TargetID != storeID {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "banners were not found")
+			return
+		}
+		values = append(values, toPublicDiscoveryContentView(item))
+	}
+	writeJSON(w, http.StatusOK, contract.DiscoveryContentListResponse{Items: values})
 }

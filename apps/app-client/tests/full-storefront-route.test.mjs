@@ -67,7 +67,9 @@ test("web site reads the canonical public Store, scoped catalog and Store-owned 
   assert.match(site, /readPublicStoreCatalog\(storeId, selectedCityID/);
   assert.match(site, /verifiedMarketplaceStoreRead\(store, catalog, storeId, selectedCityID\)/);
   assert.match(site, /visiblePublishedOffers\(ready\.catalog\.offers, storeId, productID\)/);
-  assert.match(site, /listPublicStoreBanners\(storeId, selectedCityID\)/);
+  assert.match(site, /listPublicStoreBanners\(storeId, selectedCityID, relation\)/);
+  assert.match(site, /refreshBanners\(generation, "marketplace"\)/);
+  assert.match(site, /refreshBanners\(generation, "independent"\)/);
   assert.match(site, /StorePublicContactCard storeID=\{storeId\}/);
   assert.doesNotMatch(site, /createDshMobileClient|fetch\(|checkout\(|addCatalogOfferToCart|calculatePrice/);
   assert.match(site, /const hideWithdrawnStore = useCallback/);

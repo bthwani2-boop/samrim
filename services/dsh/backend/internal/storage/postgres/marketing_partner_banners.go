@@ -66,8 +66,10 @@ const publishedStoreBannerSQL = `SELECT content.id,content.kind,content.title_ar
    AND (content.ends_at IS NULL OR content.ends_at>statement_timestamp())
    AND (content.service_city_id IS NULL OR content.service_city_id=$2)
    AND store.service_city_id=$2
-   AND store.publication_state='published' AND store.relation_model='BTHWANI_PARTNER'
-   AND store.publication_changed_at IS NOT NULL
+   AND (($3='' AND store.publication_state='published' AND store.relation_model='BTHWANI_PARTNER'
+         AND store.publication_changed_at IS NOT NULL)
+       OR ($3<>'' AND store.relation_model='INDEPENDENT_STORE' AND store.deleted_at IS NULL))
+   AND ($3='' OR (content.target_type='STORE' AND content.target_id=content.source_store_id))
    AND EXISTS (
       SELECT 1 FROM dsh.discovery_content_media_assets asset
       WHERE asset.id=content.media_asset_id AND asset.state='active'
@@ -83,13 +85,14 @@ const publishedStoreBannerSQL = `SELECT content.id,content.kind,content.title_ar
 			WHERE store.id=content.target_id
 			  AND (content.source_store_id IS NULL OR store.id=content.source_store_id)
 			  AND ($2='' OR store.service_city_id=$2)
-			  AND store.publication_state='published' AND store.relation_model='BTHWANI_PARTNER'
-			  AND store.publication_changed_at IS NOT NULL
-			  AND EXISTS (
+			  AND (($3<>'' AND store.relation_model='INDEPENDENT_STORE' AND store.deleted_at IS NULL)
+			     OR ($3='' AND store.publication_state='published' AND store.relation_model='BTHWANI_PARTNER'
+			         AND store.publication_changed_at IS NOT NULL))
+			  AND ($3<>'' OR EXISTS (
 				  SELECT 1 FROM dsh.catalog_store_offers offer
 				  WHERE offer.store_id=store.id
 				    AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=offer.id)
-			  )
+			  ))
 		))
 		OR (content.target_type='PROMOTION' AND EXISTS (
 			SELECT 1
@@ -204,25 +207,71 @@ func PagePartnerStoreBanners(ctx context.Context, db *sql.DB, storeID, cursor st
 // ListPublishedStoreBanners is the Store-scoped customer readback. A banner
 // requires Operator publication, Partner activation, valid media/target,
 // an active time window and a published Store in the requested Service City.
+// ListPublishedStoreBanners is the canonical public market Store banner read.
+// The independent website uses the same DSH content and scan but must first
+// prove its distinct web-publication/legal gate in one repeatable-read snapshot.
 func ListPublishedStoreBanners(ctx context.Context, db *sql.DB, storeID, serviceCityID string) ([]DiscoveryContentRecord, error) {
+	return listPublishedStoreBannersForChannel(ctx, db, storeID, serviceCityID, "")
+}
+
+func ListPublishedIndependentStoreBanners(ctx context.Context, db *sql.DB, storeID, serviceCityID, approvedTermsVersion string) ([]DiscoveryContentRecord, error) {
+	if strings.TrimSpace(approvedTermsVersion) == "" {
+		return nil, ErrIndependentStorefrontNotPublished
+	}
+	return listPublishedStoreBannersForChannel(ctx, db, storeID, serviceCityID, approvedTermsVersion)
+}
+
+func listPublishedStoreBannersForChannel(ctx context.Context, db *sql.DB, storeID, serviceCityID, approvedTermsVersion string) ([]DiscoveryContentRecord, error) {
 	storeID, serviceCityID = strings.TrimSpace(storeID), strings.TrimSpace(serviceCityID)
-	if storeID == "" || serviceCityID == "" || len(storeID) > 128 || len(serviceCityID) > 128 {
+	if db == nil || storeID == "" || serviceCityID == "" || len(storeID) > 128 || len(serviceCityID) > 128 {
 		return nil, ErrDiscoveryContentInvalid
 	}
-	rows, err := db.QueryContext(ctx, publishedStoreBannerSQL, storeID, serviceCityID)
+	var tx *sql.Tx
+	var queryer interface {
+		QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	} = db
+	if approvedTermsVersion != "" {
+		var err error
+		tx, err = db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = tx.Rollback() }()
+		store, err := readPublishedIndependentStoreWithQueryer(ctx, tx, storeID, approvedTermsVersion)
+		if err != nil {
+			return nil, err
+		}
+		if store.ServiceCityID != serviceCityID {
+			return nil, ErrIndependentStorefrontNotPublished
+		}
+		queryer = tx
+	}
+	rows, err := queryer.QueryContext(ctx, publishedStoreBannerSQL, storeID, serviceCityID, approvedTermsVersion)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	result := make([]DiscoveryContentRecord, 0)
 	for rows.Next() {
 		item, scanErr := scanDiscoveryContent(rows)
 		if scanErr != nil {
+			_ = rows.Close()
 			return nil, scanErr
 		}
 		result = append(result, item)
 	}
-	return result, rows.Err()
+	if err = rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err = rows.Close(); err != nil {
+		return nil, err
+	}
+	if tx != nil {
+		if err = tx.Commit(); err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
 }
 
 // SetPartnerStoreBannerEnabled lets the owning Partner hide or restore only

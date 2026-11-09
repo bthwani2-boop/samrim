@@ -63,9 +63,9 @@ export async function listPublicDiscoveryContent(serviceCityID: string): Promise
   return client().listPublicDiscoveryContent(serviceCityID);
 }
 
-export async function listPublicStoreBanners(storeID: string, serviceCityID: string): Promise<DiscoveryContentListResponse> {
-  // Keep synchronous DSH client setup errors catchable by the caller's Promise rejection handler.
-  return await client().listPublicStoreBanners(storeID, serviceCityID);
+export async function listPublicStoreBanners(storeID: string, serviceCityID: string, relation: "marketplace" | "independent" = "marketplace"): Promise<DiscoveryContentListResponse> {
+  // Both sites reuse the DSH Discovery Content reader and its publication rules.
+  return await client().listPublicStoreBanners(storeID, serviceCityID, relation);
 }
 
 export async function resolvePublicDiscoveryContentTarget(contentID: string, serviceCityID: string): Promise<DiscoveryContentTargetResolution> {

@@ -9,7 +9,7 @@ test("customer store banners use only Store-scoped DSH publication, never the ma
  assert.match(client,/listPublicStoreBanners\(storeId, selectedCityID\)/);
  assert.doesNotMatch(client,/listPublicDiscoveryContent\(selectedCityID\)/);
  assert.doesNotMatch(client,/bannerCatalogOffers\.slice\(0, 5\)/);
- assert.match(api,/listPublicStoreBanners\(storeID, serviceCityID\)/);
+ assert.match(api,/listPublicStoreBanners\(storeID, serviceCityID, relation\)/);
 });
 test("client carousel uses one full-width merchant image and allows no-banner fallback",()=>{
  assert.match(client,/accessibilityLabel="بنرات المتجر"/);

@@ -1077,9 +1077,9 @@ func SetDiscoveryContentState(ctx context.Context, db *sql.DB, id, state, idempo
 }
 
 func validateDiscoveryContentPublication(ctx context.Context, tx *sql.Tx, id string) error {
-	var targetType, targetID, contentCityID, sourceStoreID string
+	var kind, targetType, targetID, contentCityID, sourceStoreID string
 	var startsAt time.Time
-	if err := tx.QueryRowContext(ctx, "SELECT target_type,COALESCE(target_id,''),COALESCE(service_city_id,''),COALESCE(source_store_id,''),starts_at FROM dsh.discovery_content content WHERE id=$1", id).Scan(&targetType, &targetID, &contentCityID, &sourceStoreID, &startsAt); errors.Is(err, sql.ErrNoRows) {
+	if err := tx.QueryRowContext(ctx, "SELECT kind,target_type,COALESCE(target_id,''),COALESCE(service_city_id,''),COALESCE(source_store_id,''),starts_at FROM dsh.discovery_content content WHERE id=$1", id).Scan(&kind, &targetType, &targetID, &contentCityID, &sourceStoreID, &startsAt); errors.Is(err, sql.ErrNoRows) {
 		return ErrDiscoveryContentNotFound
 	} else if err != nil {
 		return err
@@ -1093,6 +1093,33 @@ func validateDiscoveryContentPublication(ctx context.Context, tx *sql.Tx, id str
 			return ErrDiscoveryContentTargetInvalid
 		} else if err != nil {
 			return err
+		}
+		if relation == StoreRelationIndependent {
+			// A merchant-direct Store banner is approved only for its OWN
+			// already-reviewed public website, never for marketplace discovery.
+			if kind != "BANNER" || targetType != "STORE" || targetID != sourceStoreID {
+				return ErrDiscoveryContentTargetInvalid
+			}
+			var termsVersion string
+			if err := tx.QueryRowContext(ctx,
+				"SELECT terms_version FROM dsh.independent_store_publications WHERE store_id=$1",
+				sourceStoreID).Scan(&termsVersion); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return ErrDiscoveryContentTargetInvalid
+				}
+				return err
+			}
+			published, err := readPublishedIndependentStoreWithQueryer(ctx, tx, sourceStoreID, termsVersion)
+			if errors.Is(err, ErrIndependentStorefrontNotPublished) {
+				return ErrDiscoveryContentTargetInvalid
+			}
+			if err != nil {
+				return err
+			}
+			if contentCityID != "" && contentCityID != published.ServiceCityID {
+				return ErrDiscoveryContentTargetInvalid
+			}
+			return nil
 		}
 		if relation != StoreRelationBThwaniPartner {
 			return ErrDiscoveryContentTargetInvalid
