@@ -13,7 +13,9 @@ test("the real partner Orders parent remounts each independent Store before show
 });
 
 test("direct Order records are hidden during any revalidation or rejected readback", () => {
-  assert.match(component, /\{!loading && !error && orders\.map\(order => \{/);
-  assert.match(component, /catch \{\s*if \(isCurrent\(\)\) \{(?:\s*\/\/[^\n]*\n)*\s*setOrders\(\[\]\);\s*setCursor\(""\);/);
+  assert.match(component, /const visible = visibleScopeKey === scopeKey;/);
+  assert.match(component, /\{!loading && visible && !error && orders\.map\(order => \{/);
+  assert.match(component, /setVisibleScopeKey\(scopeKey\);/);
+  assert.match(component, /catch \{\s*if \(isCurrent\(\)\) \{(?:\s*\/\/[^\n]*\n)*\s*setOrders\(\[\]\);\s*setCursor\(""\);\s*setVisibleScopeKey\(""\);/);
   assert.match(component, /setError\("تعذر قراءة طلبات الاستلام/);
 });
