@@ -27,6 +27,28 @@ const independentWebOfferPresentationSQL = `
     AND o.currency='YER'
 `
 
+// Immutable query text: every user-selected filter and cursor is a bound
+// parameter. The only concatenations are compile-time canonical SQL constants.
+const independentWebOffersPageSQL = catalogOfferSelect + ` WHERE o.store_id=$1` + independentWebOfferPresentationSQL + `
+    AND ($2::text='' OR EXISTS (
+        SELECT 1 FROM dsh.catalog_product_categories pc
+        JOIN dsh.catalog_categories category
+          ON category.id=pc.category_id AND category.active=true
+         AND category.vertical_id=p.vertical_id
+        WHERE pc.product_id=p.id AND pc.category_id=$2))
+    AND ($3::text='' OR p.id=$3)
+    AND ($4::text='' OR strpos(lower(p.canonical_name),lower($4))>0
+        OR strpos(lower(v.title),lower($4))>0)
+    AND ($5::timestamptz IS NULL OR (o.created_at,o.id)>($5::timestamptz,$6::text))
+    ORDER BY o.created_at ASC,o.id ASC LIMIT $7`
+
+const independentWebCategorySQL = `SELECT DISTINCT c.id FROM dsh.catalog_store_offers o
+    JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
+    JOIN dsh.catalog_products p ON p.id=v.product_id
+    JOIN dsh.catalog_product_categories pc ON pc.product_id=p.id
+    JOIN dsh.catalog_categories c ON c.id=pc.category_id AND c.active=true AND c.vertical_id=p.vertical_id
+    WHERE o.store_id=$1` + independentWebOfferPresentationSQL + ` ORDER BY c.id`
+
 type IndependentPublishedStore struct {
 	StoreID               string
 	ServiceCityID         string
@@ -205,28 +227,13 @@ func listPublishedIndependentOffersInternal(ctx context.Context, db *sql.DB, sto
 	// The authorized Store publication and product page use the same read-only
 	// repeatable-read snapshot. The DSH Store reader owns all independent legal,
 	// media and publication gates; do not clone them into this Catalog query.
-	query := catalogOfferSelect + ` WHERE o.store_id=$1` + independentWebOfferPresentationSQL
-	args := []any{storeID}
-	if categoryID != "" {
-		args = append(args, categoryID)
-		query += " AND EXISTS (SELECT 1 FROM dsh.catalog_product_categories pc JOIN dsh.catalog_categories category ON category.id=pc.category_id AND category.active=true AND category.vertical_id=p.vertical_id WHERE pc.product_id=p.id AND pc.category_id=$" + itoa(len(args)) + ")"
-	}
-	if productID != "" {
-		args = append(args, productID)
-		query += " AND p.id=$" + itoa(len(args))
-	}
-	if search != "" {
-		args = append(args, search)
-		parameter := "$" + itoa(len(args))
-		query += " AND (strpos(lower(p.canonical_name),lower(" + parameter + "))>0 OR strpos(lower(v.title),lower(" + parameter + "))>0)"
-	}
+	var afterCreatedAt any
+	afterOfferID := ""
 	if cursor != nil {
-		args = append(args, cursor.CreatedAt, cursor.OfferID)
-		query += " AND (o.created_at,o.id)>($" + itoa(len(args)-1) + ",$" + itoa(len(args)) + ")"
+		afterCreatedAt, afterOfferID = cursor.CreatedAt, cursor.OfferID
 	}
-	args = append(args, limit+1)
-	query += " ORDER BY o.created_at ASC,o.id ASC LIMIT $" + itoa(len(args))
-	rows, err := tx.QueryContext(ctx, query, args...)
+	rows, err := tx.QueryContext(ctx, independentWebOffersPageSQL,
+		storeID, categoryID, productID, search, afterCreatedAt, afterOfferID, limit+1)
 	if err != nil {
 		return CatalogStoreOfferPage{}, err
 	}
@@ -261,13 +268,7 @@ func listPublishedIndependentOffersInternal(ctx context.Context, db *sql.DB, sto
 	// Reuse the canonical Catalog's category labels/ancestry from this same
 	// read-only Store publication snapshot. The category list covers all
 	// publishable Offers, not just the current product page or filter.
-	categorySQL := `SELECT DISTINCT c.id FROM dsh.catalog_store_offers o
-		JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
-		JOIN dsh.catalog_products p ON p.id=v.product_id
-		JOIN dsh.catalog_product_categories pc ON pc.product_id=p.id
-		JOIN dsh.catalog_categories c ON c.id=pc.category_id AND c.active=true AND c.vertical_id=p.vertical_id
-		WHERE o.store_id=$1` + independentWebOfferPresentationSQL + ` ORDER BY c.id`
-	categoryRows, err := tx.QueryContext(ctx, categorySQL, storeID)
+	categoryRows, err := tx.QueryContext(ctx, independentWebCategorySQL, storeID)
 	if err != nil {
 		return CatalogStoreOfferPage{}, err
 	}

@@ -106,8 +106,9 @@ func TestIndependentStoreMediaEligibilityIsCheckedOncePerPublicationSnapshot(t *
 		t.Errorf("public Store should require nonblank profile and cover URIs: %d guards", got)
 	}
 	if !strings.Contains(publicCatalogSQL, "readPublishedIndependentStoreWithQueryer(ctx, tx, storeID, approvedLegalTermsVersion)") ||
-		!strings.Contains(publicCatalogSQL, "WHERE o.store_id=$1") ||
-		!strings.Contains(publicCatalogSQL, "independentWebOfferPresentationSQL") {
+		!strings.Contains(publicCatalogSQL, "independentWebOffersPageSQL") ||
+		!strings.Contains(independentWebOffersPageSQL, "WHERE o.store_id=$1") ||
+		!strings.Contains(independentWebOffersPageSQL, independentWebOfferPresentationSQL) {
 		t.Fatal("Catalog must use a Store-authorized, Store-scoped product query within one snapshot")
 	}
 	if strings.Contains(publicCatalogSQL, "JOIN dsh.independent_store_publications") ||
@@ -133,7 +134,7 @@ func TestIndependentPublicCatalogUsesOneReadOnlyRepeatableSnapshot(t *testing.T)
 		"db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})",
 		"readPublishedIndependentStoreWithQueryer(ctx, tx, storeID, approvedLegalTermsVersion)",
 		"store.ServiceCityID != expectedCityID",
-		"tx.QueryContext(ctx, query, args...)",
+		"tx.QueryContext(ctx, independentWebOffersPageSQL,",
 		"hydrateCatalogOfferPage(ctx, tx, page.Offers)",
 		"tx.Commit()",
 	} {

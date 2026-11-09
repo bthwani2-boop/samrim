@@ -31,6 +31,14 @@ test("invalid public Contact telephone, email headers and WhatsApp must not beco
   assert.deepEqual(actions, []);
 });
 
+test("public email links reject ambiguous routing and control characters", () => {
+  for (const email of ["a@@example.com", "a@domain", "a@.com", "a@example.", "a@example.com?bcc=other", "a@example.com#other", "a@example.com/other", "a@example.com\ncc:other"]) {
+    const links = buildPublicContactActions({ email });
+    assert.equal(links.filter((link) => link.href.startsWith("mailto:")).length, 0, email);
+  }
+  assert.equal(buildPublicContactActions({ email: "تواصل@مثال.اليمن" }).length, 1);
+});
+
 test("failed public Contact read offers an explicit retry without using another Store's contact", () => {
   assert.match(source, /readStorePublicContact\(storeID\)/u);
   assert.match(source, /result\.contact\.storeId === storeID/u);

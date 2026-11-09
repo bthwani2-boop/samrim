@@ -336,7 +336,7 @@ export default function WorkspaceLayout({ children }: Readonly<{ children: React
   if (state.kind === "signed_out") return <LoadingState title="جارٍ الرجوع إلى بوابة الهوية" message="انتهت الجلسة المحلية أو لم تعد متاحة." />;
 
   const destinationAccessGranted = canOpenWorkspaceRoute(state.identity, pathname);
-  const workspaceScope = JSON.stringify([state.identity.subject, state.identity.sessionId, state.identity.role, [...(state.identity.permissions ?? [])].sort(), state.identity.canManageOperatorPermissions === true]);
+  const workspaceScope = JSON.stringify([state.identity.subject, state.identity.sessionId, state.identity.role, [...(state.identity.permissions ?? [])].sort((left, right) => left.localeCompare(right)), state.identity.canManageOperatorPermissions === true]);
 
   return (
     <ControlShell className="workspace-app-shell" surface="workspace" footer={null} header={<WorkspaceHeader busy={busy} navOpen={navigationOpen} navTriggerRef={navTriggerRef} onLogout={() => { setLocalSignOut(true); void logout(); }} onOpenNavigation={() => setNavigationOpen(true)} pathname={pathname} />}>

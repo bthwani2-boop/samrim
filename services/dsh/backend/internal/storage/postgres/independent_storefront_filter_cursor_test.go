@@ -2,9 +2,31 @@ package postgres
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestIndependentPublicCatalogSQLBindsFiltersAndCursor(t *testing.T) {
+	for _, fragment := range []string{
+		"WHERE o.store_id=$1",
+		"pc.category_id=$2",
+		"p.id=$3",
+		"strpos(lower(p.canonical_name),lower($4))",
+		"strpos(lower(v.title),lower($4))",
+		"$5::timestamptz IS NULL",
+		"$6::text",
+		"LIMIT $7",
+	} {
+		if !strings.Contains(independentWebOffersPageSQL, fragment) {
+			t.Errorf("independent public query lost its bound filter: %s", fragment)
+		}
+	}
+	if !strings.Contains(independentWebOffersPageSQL, independentWebOfferPresentationSQL) ||
+		!strings.Contains(independentWebCategorySQL, independentWebOfferPresentationSQL) {
+		t.Fatal("public pagination and categories must share the canonical publishable Offer gate")
+	}
+}
 
 func TestIndependentCatalogCursorCannotCrossStoreCityTermsOrFilters(t *testing.T) {
 	const store = "store-a"

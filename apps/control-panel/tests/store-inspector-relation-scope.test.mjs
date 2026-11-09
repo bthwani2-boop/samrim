@@ -5,6 +5,7 @@ import { runInNewContext } from "node:vm";
 import ts from "typescript-ast";
 
 const source = readFileSync(new URL("../src/features/stores/store-inspector.tsx", import.meta.url), "utf8");
+const storeWorkspace = readFileSync(new URL("../src/features/stores/store-workspace.tsx", import.meta.url), "utf8");
 const ast = ts.createSourceFile("store-inspector.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 let guard;
 function visit(node) {
@@ -17,6 +18,11 @@ const compiled = ts.transpileModule(guard.getText(ast) + "\nsupportedStoreRelati
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
 }).outputText;
 const supported = runInNewContext(compiled, { exports: {} });
+
+test("Store fulfillment checkbox has its own accessible name", () => {
+  assert.match(storeWorkspace, /<input type="checkbox" aria-label=\{option\.label\}/);
+  assert.match(storeWorkspace, /<strong>\{option\.label\}<\/strong>/);
+});
 
 test("the real Store inspector guard admits only both canonical relation models", () => {
   assert.equal(supported("BTHWANI_PARTNER"), true);

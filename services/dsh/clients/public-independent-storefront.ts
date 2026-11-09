@@ -71,7 +71,9 @@ function publicMedia(uri: unknown): boolean {
 async function readJSON(baseURL: string, path: string, signal?: AbortSignal): Promise<unknown> {
   const base = baseURL.trim();
   if (!base) throw new Error("DSH_BASE_URL_REQUIRED");
-  const response = await fetch(base.replace(new RegExp("/+$"), "") + path, {
+  let end = base.length;
+  while (end > 0 && base.charCodeAt(end - 1) === 47) end -= 1;
+  const response = await fetch(base.slice(0, end) + path, {
     method: "GET", cache: "no-store", credentials: "omit",
     headers: { Accept: "application/json" }, ...(signal ? { signal } : {}),
   });

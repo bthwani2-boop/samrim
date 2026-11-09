@@ -11,7 +11,13 @@ export function buildPublicContactActions(contact: PublicContactFields): PublicC
     actions.push({ label: "اتصال بالمتجر", href: "tel:" + phone, icon: "account" });
   }
   const email = contact.email ?? "";
-  if (/^[^\s@?#/%]+@[^\s@?#/%]+\.[^\s@?#/%]+$/.test(email)) {
+  const atSign = email.indexOf("@");
+  const domain = email.slice(atSign + 1);
+  const dot = domain.indexOf(".");
+  const validEmail = atSign > 0 && atSign === email.lastIndexOf("@") &&
+    dot > 0 && dot < domain.length - 1 &&
+    !Array.from(email).some((character) => /[\s?#/%]/u.test(character));
+  if (validEmail) {
     actions.push({ label: "مراسلة المتجر", href: "mailto:" + encodeURIComponent(email), icon: "notifications" });
   }
   const whatsApp = contact.whatsappPhoneE164 ?? "";
