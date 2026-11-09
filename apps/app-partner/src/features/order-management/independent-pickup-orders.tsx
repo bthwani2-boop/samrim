@@ -66,6 +66,7 @@ export function IndependentPickupOrders({ storeID, canAdvance }: Readonly<{ stor
     return () => { mounted.current = false; unsubscribe(); };
   }, [scope]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Scope change must synchronously clear order and dialog state even for the same actor.
   useEffect(() => {
     // Remove Store A's data and pending dialogs when Store B is selected.
     generation.current += 1;

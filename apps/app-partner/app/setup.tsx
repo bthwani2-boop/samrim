@@ -139,6 +139,7 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
   }
  },[router,scope]);
  useEffect(()=>{void load();},[load]);
+ // biome-ignore lint/correctness/useExhaustiveDependencies: Explicit retry must refetch Store types for the same commercial vertical.
  useEffect(()=>{
   if(!vertical){setTypes([]);setStoreType("");setTypesError(false);setTypesLoading(false);return;}
   let active=true;

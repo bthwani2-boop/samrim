@@ -50,6 +50,7 @@ export function PartnerIndependentCustomerPolicyDraftEditor({ storeID }: Readonl
     setReload(value => value + 1);
   }), []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Manual reload and identity revision intentionally reread the same Store policy.
   useEffect(() => {
     const generation = ++requestGeneration.current;
     savingGeneration.current = null;
