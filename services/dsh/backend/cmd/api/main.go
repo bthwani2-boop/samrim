@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	financialhandoff "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/financialhandoff"
@@ -96,6 +97,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	independentPublicStorefront := transporthttp.NewIndependentPublicStorefront(
+		database,
+		strings.EqualFold(strings.TrimSpace(os.Getenv("DSH_INDEPENDENT_WEB_PUBLIC_RELEASED")), "true"),
+		os.Getenv("DSH_APPROVED_INDEPENDENT_HOSTING_TERMS_VERSION"),
+	)
 	locationCoreServer, err := transporthttp.NewLocationCore(identityClient, database)
 	if err != nil {
 		log.Fatal(err)
@@ -182,6 +188,7 @@ func main() {
 		joiningCaseServer.Register(mux)
 		catalogServer.Register(mux)
 		storePublicationServer.Register(mux)
+		independentPublicStorefront.Register(mux)
 		storeAvailabilityServer.Register(mux)
 		storeAccessServer.Register(mux)
 		locationCoreServer.Register(mux)

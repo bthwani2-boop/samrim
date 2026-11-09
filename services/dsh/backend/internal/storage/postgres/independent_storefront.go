@@ -38,6 +38,7 @@ const independentDirectBuyableOfferSQL = `
 
 type IndependentPublishedStore struct {
 	StoreID               string
+	ServiceCityID         string
 	Name                  string
 	StoreVersion          int
 	PublicationVersion    int
@@ -113,7 +114,7 @@ func readPublishedIndependentStoreWithQueryer(ctx context.Context, db independen
 	}
 	var result IndependentPublishedStore
 	var whatsappEnabled bool
-	err := db.QueryRowContext(ctx, `SELECT s.id,s.name,s.version,p.version,p.published_at,
+	err := db.QueryRowContext(ctx, `SELECT s.id,s.service_city_id,s.name,s.version,p.version,p.published_at,
 		COALESCE(c.phone_e164,''),COALESCE(c.email,''),COALESCE(c.whatsapp_phone_e164,''),COALESCE(c.whatsapp_enabled,false),
 		p.terms_version,cp.policy_version,cp.cancellation_terms,cp.returns_terms,cp.fulfillment_terms,cp.collection_terms,
 		profile_media.uri,cover_media.uri
@@ -154,7 +155,7 @@ func readPublishedIndependentStoreWithQueryer(ctx context.Context, db independen
 			WHERE o.store_id=s.id
 		`+independentDirectBuyableOfferSQL+`
 		  )`, storeID, approvedLegalTermsVersion).Scan(
-		&result.StoreID, &result.Name, &result.StoreVersion,
+		&result.StoreID, &result.ServiceCityID, &result.Name, &result.StoreVersion,
 		&result.PublicationVersion, &result.PublishedAt,
 		&result.BusinessPhoneE164, &result.BusinessEmail,
 		&result.BusinessWhatsAppE164, &whatsappEnabled,
@@ -179,7 +180,7 @@ func readPublishedIndependentStoreWithQueryer(ctx context.Context, db independen
 // ListPublishedIndependentOffers queries the canonical Catalog, never a
 // shadow independent catalog. A Store-specific cursor cannot be replayed to
 // enumerate a different Store. Private draft/hidden offers never leave DSH.
-func listPublishedIndependentOffersInternal(ctx context.Context, db *sql.DB, storeID, approvedLegalTermsVersion string, limit int, rawCursor string) (CatalogStoreOfferPage, error) {
+func listPublishedIndependentOffersInternal(ctx context.Context, db *sql.DB, storeID, approvedLegalTermsVersion, expectedCityID string, limit int, rawCursor string) (CatalogStoreOfferPage, error) {
 	storeID = strings.TrimSpace(storeID)
 	if db == nil || storeID == "" || len(storeID) > 128 || limit < 1 || limit > 100 || len(rawCursor) > 2048 {
 		return CatalogStoreOfferPage{}, ErrCatalogOfferInvalidCursor
@@ -196,8 +197,12 @@ func listPublishedIndependentOffersInternal(ctx context.Context, db *sql.DB, sto
 		return CatalogStoreOfferPage{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := readPublishedIndependentStoreWithQueryer(ctx, tx, storeID, approvedLegalTermsVersion); err != nil {
+	store, err := readPublishedIndependentStoreWithQueryer(ctx, tx, storeID, approvedLegalTermsVersion)
+	if err != nil {
 		return CatalogStoreOfferPage{}, err
+	}
+	if expectedCityID != "" && store.ServiceCityID != expectedCityID {
+		return CatalogStoreOfferPage{}, ErrIndependentStorefrontNotPublished
 	}
 	query := catalogOfferSelect + ` JOIN dsh.independent_store_publications publication ON publication.store_id=s.id
 		JOIN dsh.service_cities city ON city.id=s.service_city_id AND city.active=true
@@ -293,10 +298,27 @@ type IndependentPublicOfferPage struct {
 // authorized HTTP mapping. This method still requires a reviewed public route,
 // verified policy state, customer privacy and abuse controls before activation.
 func ListPublishedIndependentOffers(ctx context.Context, db *sql.DB, storeID, approvedLegalTermsVersion string, limit int, rawCursor string) (IndependentPublicOfferPage, error) {
-	internal, err := listPublishedIndependentOffersInternal(ctx, db, storeID, approvedLegalTermsVersion, limit, rawCursor)
+	internal, err := listPublishedIndependentOffersInternal(ctx, db, storeID, approvedLegalTermsVersion, "", limit, rawCursor)
 	if err != nil {
 		return IndependentPublicOfferPage{}, err
 	}
+	return projectIndependentPublicOffers(internal)
+}
+
+// ListPublishedIndependentOffersForCity binds an unauthenticated website read
+// to the same active City as the Store publication and its Catalog snapshot.
+func ListPublishedIndependentOffersForCity(ctx context.Context, db *sql.DB, storeID, approvedLegalTermsVersion, cityID string, limit int, rawCursor string) (IndependentPublicOfferPage, error) {
+	if strings.TrimSpace(cityID) == "" || len(cityID) > 128 {
+		return IndependentPublicOfferPage{}, ErrIndependentStorefrontNotPublished
+	}
+	internal, err := listPublishedIndependentOffersInternal(ctx, db, storeID, approvedLegalTermsVersion, cityID, limit, rawCursor)
+	if err != nil {
+		return IndependentPublicOfferPage{}, err
+	}
+	return projectIndependentPublicOffers(internal)
+}
+
+func projectIndependentPublicOffers(internal CatalogStoreOfferPage) (IndependentPublicOfferPage, error) {
 	public := IndependentPublicOfferPage{Offers: make([]IndependentPublicOffer, 0, len(internal.Offers)), NextCursor: internal.NextCursor}
 	for _, offer := range internal.Offers {
 		if offer.QuantityMinBaseUnits == nil || offer.QuantityMaxBaseUnits == nil || offer.QuantityStepBaseUnits == nil {

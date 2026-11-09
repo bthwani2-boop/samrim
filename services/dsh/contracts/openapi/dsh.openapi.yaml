@@ -9,6 +9,108 @@ servers:
   - url: http://127.0.0.1:18080
 
 paths:
+  /dsh/public/independent-stores/{storeId}:
+    get:
+      operationId: readPublishedIndependentWebStore
+      summary: Read a separately approved independent web publication, never marketplace discovery
+      security: []
+      parameters:
+        - name: storeId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: serviceCityId
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: DSH-approved independent Store, public business contact, published merchant policy and rights-attested media. Direct checkout remains unavailable.
+          headers:
+            Cache-Control: { schema: { type: string, enum: [no-store] } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [storeId, name, serviceCityId, profileImageUri, coverImageUri, checkoutEnabled]
+                properties:
+                  storeId: { type: string }
+                  name: { type: string }
+                  serviceCityId: { type: string }
+                  profileImageUri: { type: string, format: uri }
+                  coverImageUri: { type: string, format: uri }
+                  businessPhoneE164: { type: string }
+                  businessEmail: { type: string }
+                  businessWhatsAppE164: { type: string }
+                  hostingTermsVersion: { type: string }
+                  merchantPolicyVersion: { type: string }
+                  cancellationTerms: { type: string }
+                  returnsTerms: { type: string }
+                  fulfillmentTerms: { type: string }
+                  collectionTerms: { type: string }
+                  checkoutEnabled: { type: boolean, const: false }
+        '400': { description: Invalid Store or City scope }
+        '404': { description: 'Not released, unpublished, suspended, wrong City or missing approvals; no private data' }
+        '503': { description: DSH publication unavailable; fail closed }
+  /dsh/public/independent-stores/{storeId}/catalog:
+    get:
+      operationId: listPublishedIndependentWebCatalog
+      summary: Read approved independent Store offers from canonical DSH Catalog
+      security: []
+      parameters:
+        - name: storeId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: serviceCityId
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 24 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 2048 }
+      responses:
+        '200':
+          description: Canonical Store-scoped buyable offers only, with rights-attested public HTTPS media and opaque scoped cursor.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [storeId, offers, nextCursor]
+                properties:
+                  storeId: { type: string }
+                  offers:
+                    type: array
+                    items:
+                      type: object
+                      required: [offerId, productId, productName, variantId, variantTitle, priceMinor, currency, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, media]
+                      properties:
+                        offerId: { type: string }
+                        productId: { type: string }
+                        productName: { type: string }
+                        productDescription: { type: string }
+                        variantId: { type: string }
+                        variantTitle: { type: string }
+                        priceMinor: { type: integer, format: int64 }
+                        currency: { type: string }
+                        quantityMinBaseUnits: { type: integer, format: int64 }
+                        quantityMaxBaseUnits: { type: integer, format: int64 }
+                        quantityStepBaseUnits: { type: integer, format: int64 }
+                        media:
+                          type: array
+                          items:
+                            type: object
+                            required: [uri, role]
+                            properties:
+                              uri: { type: string, format: uri }
+                              role: { type: string }
+                  nextCursor: { type: string }
+        '400': { description: 'Invalid scope, limit or cursor' }
+        '404': { description: 'Not released, unpublished, suspended, wrong City or missing approvals' }
+        '503': { description: DSH Catalog unavailable; fail closed }
   /dsh/operator/distance-band-fee-policy:
     get:
       operationId: readOperatorDistanceBandFeePolicy

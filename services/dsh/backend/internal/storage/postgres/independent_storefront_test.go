@@ -93,6 +93,7 @@ func TestIndependentPublicCatalogUsesOneReadOnlyRepeatableSnapshot(t *testing.T)
 	for _, required := range []string{
 		"db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})",
 		"readPublishedIndependentStoreWithQueryer(ctx, tx, storeID, approvedLegalTermsVersion)",
+		"store.ServiceCityID != expectedCityID",
 		"tx.QueryContext(ctx, query, args...)",
 		"hydrateCatalogOfferPage(ctx, tx, page.Offers)",
 		"tx.Commit()",
