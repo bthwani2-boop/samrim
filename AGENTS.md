@@ -183,7 +183,9 @@ Delegate only bounded work with explicit scope and evidence expectations.
 
 Avoid overlapping writers. Parallel work should have disjoint write ownership or remain read-only.
 
-A subagent must not push, merge, repin governance, reset persistent state, expose secrets, perform unauthorized external mutations, or declare final closure.
+A subagent must not merge, repin governance, reset persistent state, expose secrets, perform unauthorized external mutations, or declare final closure. A user may explicitly delegate narrow local Commit and Push authority for a named task and existing authorized branch to separately assigned assistant sessions. Delegation does not grant source ownership outside their assigned paths, and does not authorize PR, Ready, main merge, deployment, force-push, paid actions, permission changes, or destructive work.
+
+When multiple assistants share one worktree, only one named Git writer may stage, commit, or push at a time using a verifiable exclusive handoff/turn. Before staging, verify branch, HEAD, existing index/staged changes, exact own source paths, source ownership, reviewed diff and affected checks. Stage only own accepted files, then check the exact staged path allowlist and commit readback. For Push use the repository's existing safe-push guard: it requires a clean entire worktree and exact remote SHA confirmation. If unrelated agent work remains dirty, local Commit may stand but Push must be recorded BLOCKED_DIRTY_WORKTREE; never bypass the guard, stash/reset peer work, or create a parallel worktree. A vague or stale agent note is not proof of an active Git turn. Human authorization must be explicit for each task/branch; do not carry this privilege to other projects by default.
 
 The lead agent owns integration, conflict resolution, final diff review, final proof and closure claims.
 
