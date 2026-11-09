@@ -99,7 +99,10 @@ test("unpublished and cross-Store public facts fail closed", async () => {
   });
   for (const override of [
     { serviceCityId: "aden" }, { storeId: "store_2" }, { checkoutEnabled: true },
-    { coverImageUri: "http://localhost:18080/private" }, { hostingTermsVersion: "" },
+    { coverImageUri: "http://localhost:18080/private" },
+    { coverImageUri: "https://printer.localhost/private" },
+    { coverImageUri: "https://127.0.0.1/private" },
+    { hostingTermsVersion: "" },
   ]) {
     await withFetch(async () => new Response(JSON.stringify({ ...store, ...override }), { status: 200 }), async () => {
       await assert.rejects(readPublishedIndependentWebStore("https://api.example.com", "store_1", "sanaa"), IndependentStoreUnavailable);
@@ -120,6 +123,7 @@ test("unpublished and cross-Store public facts fail closed", async () => {
     { offers: [{ ...catalog.offers[0], pricingUnitBaseUnits: 0 }] },
     { offers: [{ ...catalog.offers[0], pricingBasis: "PER_UNIT", pricingUnitBaseUnits: 1000 }] },
     { offers: [{ ...catalog.offers[0], media: [{ uri: "file:///secret", role: "primary" }] }] },
+    { offers: [{ ...catalog.offers[0], media: [{ uri: "https://10.0.0.1/private", role: "primary" }] }] },
   ]) {
     await withFetch(async () => new Response(JSON.stringify({ ...catalog, ...override }), { status: 200 }), async () => {
       await assert.rejects(listPublishedIndependentWebCatalog("https://api.example.com", "store_1", "sanaa"), IndependentStoreUnavailable);

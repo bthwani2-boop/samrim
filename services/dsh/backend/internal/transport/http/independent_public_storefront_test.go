@@ -95,6 +95,7 @@ func TestIndependentPublicMediaMustUsePublicHTTPS(t *testing.T) {
 		{"https://store.local./secret.jpg", false},
 		{"https://localhost./secret.jpg", false},
 		{"https://printer/secret.jpg", false},
+		{"https://printer.localhost/secret.jpg", false},
 		{"https://127.1/secret.jpg", false},
 		{"https://2130706433/secret.jpg", false},
 		{"https://cdn.bthwani.com./store/a.jpg", false},

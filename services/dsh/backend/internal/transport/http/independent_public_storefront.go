@@ -94,7 +94,7 @@ func safeIndependentPublicMediaURI(raw string) bool {
 		return false
 	}
 	host := strings.ToLower(parsed.Hostname())
-	if host == "localhost" || strings.HasSuffix(host, ".local") ||
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") || strings.HasSuffix(host, ".local") ||
 		strings.HasSuffix(host, ".internal") || strings.HasSuffix(host, ".") ||
 		strings.Contains(host, "..") {
 		return false

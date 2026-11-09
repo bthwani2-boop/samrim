@@ -58,8 +58,13 @@ function publicMedia(uri: unknown): boolean {
   if (!text(uri) || uri.trim() !== uri) return false;
   try {
     const value = new URL(uri);
-    return value.protocol === "https:" && !!value.hostname && !value.username && !value.password && !value.hash &&
-      value.hostname !== "localhost" && !value.hostname.endsWith(".local") && !value.hostname.endsWith(".internal");
+    const host = value.hostname.toLowerCase();
+    const lastLabel = host.slice(host.lastIndexOf(".") + 1);
+    return value.protocol === "https:" && host.includes(".") && !host.endsWith(".") &&
+      !host.includes("..") && !host.startsWith("[") && !/^[0-9]+$/.test(lastLabel) &&
+      !value.username && !value.password && !value.hash &&
+      host !== "localhost" && !host.endsWith(".localhost") &&
+      !host.endsWith(".local") && !host.endsWith(".internal");
   } catch { return false; }
 }
 
