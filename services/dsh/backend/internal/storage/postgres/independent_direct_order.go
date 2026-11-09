@@ -98,18 +98,12 @@ func normalizedIndependentOrder(input IndependentDirectOrderRequest) (Independen
 	if keyErr != nil || len(attemptKey) != 32 || base64.RawURLEncoding.EncodeToString(attemptKey) != input.IdempotencyKey {
 		return IndependentDirectOrderRequest{}, "", "", ErrIndependentOrderInvalid
 	}
-	// A caller may reuse the original cart slice after quote validation.
-	// Sorting an aliased input slice would mutate its ownership boundary.
-	input.Lines = append([]IndependentDirectOrderLineRequest(nil), input.Lines...)
-	seen := make(map[string]bool, len(input.Lines))
-	for i := range input.Lines {
-		input.Lines[i].OfferID = strings.TrimSpace(input.Lines[i].OfferID)
-		if input.Lines[i].OfferID == "" || len(input.Lines[i].OfferID) > 128 ||
-			!utf8.ValidString(input.Lines[i].OfferID) || strings.ContainsAny(input.Lines[i].OfferID, "\x00\r\n") ||
-			input.Lines[i].QuantityBaseUnits <= 0 || seen[input.Lines[i].OfferID] {
-			return IndependentDirectOrderRequest{}, "", "", ErrIndependentOrderInvalid
-		}
-		seen[input.Lines[i].OfferID] = true
+	// Use the exact same Store/Offer/quantity validation as the read-only
+	// quote. Its copied slice keeps canonical sorting from mutating the cart.
+	var linesErr error
+	input.Lines, linesErr = normalizeIndependentPickupQuoteLines(input.Lines)
+	if linesErr != nil {
+		return IndependentDirectOrderRequest{}, "", "", linesErr
 	}
 	sort.Slice(input.Lines, func(i, j int) bool { return input.Lines[i].OfferID < input.Lines[j].OfferID })
 	// The key is globally unique for an attempt. Reusing it with another Store
@@ -183,15 +177,16 @@ type independentOrderLine struct {
 // The public independent Catalog and the Direct Order writer must enforce the
 // same buyable subset. A known but unlisted Offer ID must not bypass Catalog
 // pricing/quantity/rights guards through this internal writer.
-const independentDirectOrderOfferQuery = `SELECT o.id,v.id,p.id,p.canonical_name,v.title,o.price_minor,
+const independentDirectOrderOfferBaseQuery = `SELECT o.id,v.id,p.id,p.canonical_name,v.title,o.price_minor,
 	o.quantity_min_base_units,o.quantity_max_base_units,o.quantity_step_base_units,
 	o.pricing_unit_base_units,o.pricing_basis,o.inventory_policy
 	FROM dsh.catalog_store_offers o
 	JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
 	JOIN dsh.catalog_products p ON p.id=v.product_id
 	JOIN dsh.stores s ON s.id=o.store_id
-	WHERE o.id=$1 AND o.store_id=$2` + independentDirectBuyableOfferSQL + `
-	FOR SHARE OF o,v,p`
+	WHERE o.id=$1 AND o.store_id=$2` + independentDirectBuyableOfferSQL
+
+const independentDirectOrderOfferQuery = independentDirectOrderOfferBaseQuery + ` FOR SHARE OF o,v,p`
 
 // CreateIndependentPickupOrder is a transactionally idempotent, server-priced,
 // pickup-only DSH owner primitive. Merchant delivery stays disabled until DSH

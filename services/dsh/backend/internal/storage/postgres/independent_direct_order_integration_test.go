@@ -520,6 +520,9 @@ func exerciseIndependentPickupWriter(t *testing.T, ctx context.Context, db *sql.
 		Lines: []postgres.IndependentDirectOrderLineRequest{{OfferID: offerID, QuantityBaseUnits: 2}},
 	}
 	secret := []byte(strings.Repeat("Y", 32))
+	if _, err := postgres.QuoteIndependentPickup(ctx, db, termsVersion, storeID, request.Lines); !errors.Is(err, postgres.ErrIndependentOrderUnavailable) {
+		t.Fatalf("system-initialized pickup hours must not produce a guest quote: %v", err)
+	}
 	if _, err := postgres.CreateIndependentPickupOrder(ctx, db, secret, termsVersion, request); !errors.Is(err, postgres.ErrIndependentOrderUnavailable) {
 		t.Fatalf("legacy system-initialized opening must not admit pickup: %v", err)
 	}
@@ -529,6 +532,29 @@ func exerciseIndependentPickupWriter(t *testing.T, ctx context.Context, db *sql.
 	})
 	if err != nil || availability.Version != 2 || availability.UpdatedByActorID != ownerID {
 		t.Fatalf("explicit pickup hours must persist under the Store owner: %+v %v", availability, err)
+	}
+	// A real pickup Quote requires an actual DSH location, not a fabricated
+	// address from the browser or a marketplace delivery destination.
+	if _, err := db.ExecContext(ctx, `UPDATE dsh.stores
+		SET delivery_origin_latitude=15.350000,delivery_origin_longitude=44.200000 WHERE id=$1`, storeID); err != nil {
+		t.Fatal(err)
+	}
+	quoted, err := postgres.QuoteIndependentPickup(ctx, db, termsVersion, storeID, request.Lines)
+	if err != nil || quoted.StoreID != storeID || quoted.TotalMinor != 1200 ||
+		quoted.SubtotalMinor != 1200 || quoted.DeliveryFeeMinor != 0 ||
+		quoted.Currency != "YER" || quoted.MerchantPolicyVersion != policyVersion ||
+		quoted.HostingTermsVersion != termsVersion || quoted.PickupLatitude != 15.35 ||
+		quoted.PickupLongitude != 44.2 || len(quoted.Lines) != 1 ||
+		quoted.Lines[0].UnitPriceMinor != 600 ||
+		!quoted.ExpiresAt.After(time.Now().UTC()) || quoted.ExpiresAt.After(time.Now().UTC().Add(3*time.Minute)) {
+		t.Fatalf("canonical DSH pickup quote has wrong price, policy, location or lifetime: %+v %v", quoted, err)
+	}
+	if _, err := postgres.QuoteIndependentPickup(ctx, db, termsVersion, marketplaceStoreID, request.Lines); !errors.Is(err, postgres.ErrIndependentOrderUnavailable) {
+		t.Fatalf("marketplace Store must not receive independent pickup quote: %v", err)
+	}
+	tooMany := []postgres.IndependentDirectOrderLineRequest{{OfferID: offerID, QuantityBaseUnits: 6}}
+	if _, err := postgres.QuoteIndependentPickup(ctx, db, termsVersion, storeID, tooMany); !errors.Is(err, postgres.ErrIndependentOrderQuote) {
+		t.Fatalf("quote must reject out-of-range quantity: %v", err)
 	}
 	stale := request
 	stale.ExpectedSubtotalMinor++
