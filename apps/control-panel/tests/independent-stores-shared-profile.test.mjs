@@ -30,8 +30,8 @@ test("independent registry validates DSH relation and remounts on Identity sessi
 
 test("canonical editor is shared, but marketplace WLT finance remains partner-only", () => {
   assert.ok(inspector.includes('import("./store-workspace")'));
-  assert.ok(inspector.includes("<StoreManagement storeId={store.id} embedded"));
-  assert.ok(inspector.includes('canViewFinance={canViewFinance && store.relationModel === "BTHWANI_PARTNER"}'));
+  assert.ok(inspector.includes("<StoreManagement storeId={currentStore.id} embedded"));
+  assert.ok(inspector.includes('canViewFinance={canViewFinance && currentStore.relationModel === "BTHWANI_PARTNER"}'));
   assert.ok(inspector.includes("/api/stores/${encodeURIComponent(storeId)}/publication"));
 });
 
@@ -40,8 +40,8 @@ test("independent Store is never offered public publish while Marketplace readin
   const declaration = inspector.match(/const canPublish = Boolean\([^\n]+\);/)?.[0];
   assert.ok(declaration, "the shared Store inspector must guard its publication action");
   const evaluate = (relationModel, publicationState, ready) => {
-    const store = { relationModel, publicationState, publicationReadiness: { ready } };
-    return Function("store", `${declaration}; return canPublish;`)(store);
+    const currentStore = { relationModel, publicationState, publicationReadiness: { ready } };
+    return Function("currentStore", `${declaration}; return canPublish;`)(currentStore);
   };
   assert.equal(evaluate("INDEPENDENT_STORE", "unpublished", true), false, "readiness alone cannot open independent publication");
   assert.equal(evaluate("INDEPENDENT_STORE", "hidden", true), false);
