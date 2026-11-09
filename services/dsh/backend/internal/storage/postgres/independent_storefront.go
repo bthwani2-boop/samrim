@@ -270,20 +270,8 @@ func listPublishedIndependentOffersInternal(ctx context.Context, db *sql.DB, sto
 	if err != nil {
 		return CatalogStoreOfferPage{}, err
 	}
-	items := make([]CatalogStoreOfferRecord, 0, limit+1)
-	for rows.Next() {
-		item, scanErr := scanCatalogOffer(rows)
-		if scanErr != nil {
-			_ = rows.Close()
-			return CatalogStoreOfferPage{}, scanErr
-		}
-		items = append(items, item)
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return CatalogStoreOfferPage{}, err
-	}
-	if err := rows.Close(); err != nil {
+	items, err := scanCatalogOfferRows(rows, limit+1)
+	if err != nil {
 		return CatalogStoreOfferPage{}, err
 	}
 	page := CatalogStoreOfferPage{Offers: items}

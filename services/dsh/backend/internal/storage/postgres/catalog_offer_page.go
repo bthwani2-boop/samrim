@@ -56,20 +56,8 @@ func listCatalogOfferPageWithQueryer(ctx context.Context, queryer catalogOfferRe
 	if err != nil {
 		return CatalogStoreOfferPage{}, err
 	}
-	items := make([]CatalogStoreOfferRecord, 0, limit+1)
-	for rows.Next() {
-		item, scanErr := scanCatalogOffer(rows)
-		if scanErr != nil {
-			_ = rows.Close()
-			return CatalogStoreOfferPage{}, scanErr
-		}
-		items = append(items, item)
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return CatalogStoreOfferPage{}, err
-	}
-	if err := rows.Close(); err != nil {
+	items, err := scanCatalogOfferRows(rows, limit+1)
+	if err != nil {
 		return CatalogStoreOfferPage{}, err
 	}
 	page := CatalogStoreOfferPage{Offers: items}
@@ -91,6 +79,28 @@ func listCatalogOfferPageWithQueryer(ctx context.Context, queryer catalogOfferRe
 // projections can hydrate media and modifier details from one MVCC snapshot.
 type catalogOfferReadQueryer interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+// scanCatalogOfferRows is the one Catalog scanner for paginated Store Offers.
+// Each caller owns its filter/cursor; SQL row and Close error handling stays shared.
+func scanCatalogOfferRows(rows *sql.Rows, capacity int) ([]CatalogStoreOfferRecord, error) {
+	offers := make([]CatalogStoreOfferRecord, 0, capacity)
+	for rows.Next() {
+		offer, err := scanCatalogOffer(rows)
+		if err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		offers = append(offers, offer)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	return offers, nil
 }
 
 func hydrateCatalogOfferPage(ctx context.Context, db catalogOfferReadQueryer, offers []CatalogStoreOfferRecord) error {
