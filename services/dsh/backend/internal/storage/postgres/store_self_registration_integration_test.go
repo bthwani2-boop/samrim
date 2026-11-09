@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -163,6 +164,38 @@ func TestDirectPartnerFirstStoreUnpublishedAndIdempotentPostgres(t *testing.T) {
 		}
 		if _, _, err := postgres.CreateFirstStoreForPartner(ctx, db, "qa-cross-actor", independentInput, "idem-qa-independent-first-0001"); !errors.Is(err, postgres.ErrSelfStoreIdempotency) {
 			t.Fatalf("cross-actor reuse of an idempotency key was accepted: %v", err)
+		}
+		// Concurrent cross-actor replays must never adopt the original owner's
+		// Store or add another Store/idempotency record. The real SQL advisory
+		// locks and unique key are exercised, not a mocked Store writer.
+		const replayRace = 10
+		races := make(chan error, replayRace)
+		var raceWG sync.WaitGroup
+		for i := 0; i < replayRace; i++ {
+			actor := independentOwner
+			if i%2 != 0 {
+				actor = "qa-cross-actor"
+			}
+			raceWG.Add(1)
+			go func(actor string) {
+				defer raceWG.Done()
+				store, replay, err := postgres.CreateFirstStoreForPartner(ctx, db, actor, independentInput, "idem-qa-independent-first-0001")
+				if actor == independentOwner {
+					if err != nil || !replay || store.ID != independentStore.ID {
+						races <- fmt.Errorf("owner replay returned unexpected Store: id=%s replay=%t err=%v", store.ID, replay, err)
+					}
+				} else if !errors.Is(err, postgres.ErrSelfStoreIdempotency) {
+					races <- fmt.Errorf("foreign actor replay was not rejected: id=%s replay=%t err=%v", store.ID, replay, err)
+				}
+			}(actor)
+		}
+		raceWG.Wait()
+		close(races)
+		for raceErr := range races {
+			t.Fatal(raceErr)
+		}
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.stores WHERE partner_actor_id='qa-cross-actor'").Scan(&count); err != nil || count != 0 {
+			t.Fatalf("concurrent foreign replay created a Store: count=%d err=%v", count, err)
 		}
 		if _, _, err := postgres.CreateFirstStoreForPartner(ctx, db, independentOwner, input, "idem-qa-independent-first-0001"); !errors.Is(err, postgres.ErrSelfStoreIdempotency) {
 			t.Fatalf("same key was reused for different first Store facts: %v", err)
