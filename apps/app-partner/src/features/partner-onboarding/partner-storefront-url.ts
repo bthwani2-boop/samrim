@@ -9,25 +9,24 @@ function safeShareProductId(value: string): boolean {
   });
 }
 
-/** A Store URL is public only after DSH publication and an explicit public web origin. */
-export function buildPartnerStorefrontURL(
-  store: Pick<PartnerAccessibleStore, "id" | "serviceCityId" | "publicationState" | "relationModel">,
+/** Both relationships share one safe Store URL formatter and public website.
+ * DSH still owns the distinct legal/publication entitlement checks above this
+ * pure formatter; it cannot grant publication or checkout eligibility.
+ */
+function publicStorefrontURL(
+  store: Pick<PartnerAccessibleStore, "id" | "serviceCityId">,
   configuredOrigin: string | undefined,
-  allowLocalPreview = false,
+  allowLocalPreview: boolean,
   productId = "",
 ): PartnerStorefrontURL | null {
-  if (store.publicationState !== "published" || store.relationModel !== "BTHWANI_PARTNER") return null;
   if (!/^[A-Za-z0-9_-]{1,150}$/.test(store.id) || !/^[A-Za-z0-9_-]{1,150}$/.test(store.serviceCityId)) return null;
-  if (productId && !safeShareProductId(productId)) return null;
-  if (!configuredOrigin?.trim()) return null;
-
+  if ((productId && !safeShareProductId(productId)) || !configuredOrigin?.trim()) return null;
   try {
     const url = new URL(configuredOrigin.trim());
     if (url.username || url.password || url.search || url.hash || url.pathname !== "/") return null;
     const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
-    const publicHTTPS = url.protocol === "https:" && !loopback;
     const previewOnly = allowLocalPreview && url.protocol === "http:" && loopback;
-    if (!publicHTTPS && !previewOnly) return null;
+    if (!(url.protocol === "https:" && !loopback) && !previewOnly) return null;
     url.pathname = `/storefront/${encodeURIComponent(store.id)}`;
     url.search = new URLSearchParams({ serviceCityId: store.serviceCityId, ...(productId ? { productId } : {}) }).toString();
     return { url: url.toString(), previewOnly };
@@ -36,32 +35,29 @@ export function buildPartnerStorefrontURL(
   }
 }
 
-/** Independent public link requires an actual unauthenticated DSH readback in addition to Store publication. */
+/** Marketplace public link is gated by canonical DSH market publication. */
+export function buildPartnerStorefrontURL(
+  store: Pick<PartnerAccessibleStore, "id" | "serviceCityId" | "publicationState" | "relationModel">,
+  configuredOrigin: string | undefined,
+  allowLocalPreview = false,
+  productId = "",
+): PartnerStorefrontURL | null {
+  if (store.publicationState !== "published" || store.relationModel !== "BTHWANI_PARTNER") return null;
+  return publicStorefrontURL(store, configuredOrigin, allowLocalPreview, productId);
+}
+
+/** Independent public link requires a verified unauthenticated DSH readback.
+ * Its legal publication is distinct from marketplace publicationState.
+ */
 export function buildPartnerIndependentStorefrontURL(
   store: Pick<PartnerAccessibleStore, "id" | "serviceCityId" | "publicationState" | "relationModel">,
   configuredOrigin: string | undefined,
   publicReadVerified: boolean,
   allowLocalPreview = false,
 ): PartnerStorefrontURL | null {
-  // Independent publication is a separate DSH record. Marketplace publicationState
-  // intentionally stays unpublished even when this independent website is live.
   if (!publicReadVerified || store.relationModel !== "INDEPENDENT_STORE") return null;
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(store.id) || !/^[A-Za-z0-9_-]{1,128}$/.test(store.serviceCityId)) return null;
-  if (!configuredOrigin?.trim()) return null;
-  try {
-    const url = new URL(configuredOrigin.trim());
-    if (url.username || url.password || url.search || url.hash || url.pathname !== "/") return null;
-    const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
-    const localDevelopmentSite = allowLocalPreview && url.protocol === "http:" && loopback;
-    if (!(url.protocol === "https:" && !loopback) && !localDevelopmentSite) return null;
-    url.pathname = "/storefront/" + encodeURIComponent(store.id);
-    url.searchParams.set("serviceCityId", store.serviceCityId);
-    // Even on localhost this is the unauthenticated public Store route, never
-    // the owner draft preview; WhatsApp rejects localhost independently.
-    return { url: url.toString(), previewOnly: localDevelopmentSite };
-  } catch {
-    return null;
-  }
+  return publicStorefrontURL(store, configuredOrigin, allowLocalPreview);
 }
 
 /** Share only a published, orderable Offer that belongs to the current authorized Store. */
