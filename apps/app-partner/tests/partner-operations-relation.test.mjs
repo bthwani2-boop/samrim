@@ -94,6 +94,6 @@ test("Store settings guidance never advertises publication for an unknown relati
   assert.equal(label("BTHWANI_PARTNER"), "تجهيز المتجر للنشر");
   assert.equal(label("INDEPENDENT_STORE"), "تجهيز محتوى المتجر المستقل");
   for (const relation of [undefined, null, "", "UNKNOWN"]) {
-    assert.equal(label(relation), "تعذر التحقق من نموذج المتجر");
+    assert.equal(label(relation), "تعذر التحقق من طريقة عمل المتجر");
   }
 });

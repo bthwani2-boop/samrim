@@ -8,15 +8,15 @@ import type { OperationalIconName } from "../../shell/workspace-icon";
 export const policyCapabilities = [
   {
     key: "store-joining", href: "/policies?group=commercial&policy=store-joining&action=manage", label: "انضمام المتاجر",
-    description: "فتح أو إيقاف إنشاء متاجر جديدة لكل نموذج، دون تعطيل المتاجر القائمة أو تجاوز اعتماد النشر.",
+    description: "فتح أو إيقاف إنشاء متاجر جديدة لكل طريقة عمل، دون تعطيل المتاجر القائمة أو تجاوز اعتماد النشر.",
     icon: "pickup", context: "المتاجر والانضمام", summary: "إتاحة الانضمام إلى سوق بثواني أو إنشاء متجر مستقل",
-    scope: "نموذج المتجر", owner: "DSH", createLabel: null, additionalPermission: null, list: null,
+    scope: "طريقة عمل المتجر", owner: "DSH", createLabel: null, additionalPermission: null, list: null,
   },
   {
     key: "store-type-cancellation", href: "/policies?policy=store-type-cancellation&action=manage", label: "إلغاء الطلبات",
-    description: "تحديد إمكانية إلغاء العميل قبل قبول المتجر، أو مراجعة العمليات فقط حسب نوع المتجر التجاري.",
-    icon: "review", context: "أنواع المتاجر", summary: "سياسة الإلغاء حسب نوع المتجر التجاري",
-    scope: "نوع المتجر التجاري", owner: "DSH", createLabel: null, additionalPermission: null, list: null,
+    description: "تحديد إمكانية إلغاء العميل قبل قبول المتجر، أو مراجعة العمليات فقط حسب نوع النشاط.",
+    icon: "review", context: "أنواع المتاجر", summary: "سياسة الإلغاء حسب نوع النشاط",
+    scope: "نوع النشاط", owner: "DSH", createLabel: null, additionalPermission: null, list: null,
   },
   {
     key: "service-cities", href: "/policies?policy=service-cities&action=manage", label: "مدن الخدمة",
@@ -52,9 +52,9 @@ export const policyCapabilities = [
   },
   {
     key: "store-type-commission-defaults", href: "/policies?group=commercial&policy=store-type-commission-defaults&action=manage", label: "عمولات المتاجر المقترحة",
-    description: "اقتراح نسب تفاوضية حسب نوع المتجر التجاري وطريقة التنفيذ؛ لا تصبح نافذة إلا بموافقة الشريك والمالية على اتفاقيته الخاصة.",
+    description: "اقتراح نسب تفاوضية حسب نوع النشاط وطريقة التنفيذ؛ لا تصبح نافذة إلا بموافقة الشريك والمالية على اتفاقيته الخاصة.",
     icon: "finance", context: "الشروط التجارية", summary: "نسب مقترحة لا تُطبّق تلقائيًا",
-    scope: "نوع المتجر التجاري", owner: "WLT", createLabel: null, additionalPermission: "finance", list: null,
+    scope: "نوع النشاط", owner: "WLT", createLabel: null, additionalPermission: "finance", list: null,
   },
   {
     key: "partner-financial-terms", href: "/policies?policy=partner-financial-terms&action=manage", label: "شروط الشريك المالية",

@@ -101,7 +101,7 @@ export function StoreJoiningPolicyWorkspace(){
   <p className="muted">تحدد هذه السياسة إتاحة إنشاء متاجر جديدة فقط. لا توقف المتاجر القائمة ولا تغير نشرها أو اتفاقاتها.</p>
   {!authorized?<p role="alert">يتطلب التعديل صلاحية سياسات المنصة.</p>:loading?<p role="status">جارٍ قراءة السياسات…</p>:!readbackReady?<div className="state-card" role="alert"><p>{error||"السياسات غير متاحة أو تحتاج إعادة قراءة."}</p><button type="button" onClick={()=>setRefresh(value=>value+1)}>إعادة قراءة السياسات</button></div>:<>
    <div className="policy-rich-toolbar">
-    <label>نموذج المتجر
+    <label>طريقة عمل المتجر
      <select value={selected} onChange={e=>{
        const model=e.target.value as Model;
        setSelected(model);

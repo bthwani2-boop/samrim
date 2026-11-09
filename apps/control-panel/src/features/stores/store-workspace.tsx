@@ -205,7 +205,7 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
         selectedModes.some(mode => !fulfillmentModeOptions.some(option => option.value === mode)) ||
         (current.relationModel === "INDEPENDENT_STORE" && selectedModes.includes("BTHWANI_CAPTAIN"))) {
       setNotice("");
-      setError("أوضاع التنفيذ المحددة لا تتوافق مع نموذج المتجر الحالي. راجع بيانات المتجر قبل الحفظ.");
+      setError("أوضاع التنفيذ المحددة لا تتوافق مع طريقة عمل المتجر الحالية. راجع بيانات المتجر قبل الحفظ.");
       return;
     }
     setBusy(true);
@@ -242,7 +242,7 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
   async function saveCommercialType() {
     const current = publication?.store;
     if (!current || !selectedCommercialTypeID || selectedCommercialTypeID === current.commercialStoreTypeId || commercialTypeReason.trim().length < 5) {
-      setError("اختر نوع متجر نشطًا واكتب سبب التغيير.");
+      setError("اختر نوع نشاط نشطًا واكتب سبب التغيير.");
       return;
     }
     setBusy(true);
@@ -255,7 +255,7 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
         body: JSON.stringify({ commercialStoreTypeId: selectedCommercialTypeID, reason: commercialTypeReason.trim(), expectedVersion: current.version }),
       });
       if (!response.ok) {
-        await reconcileFailure(response, "تعذر تعيين نوع المتجر التجاري.");
+        await reconcileFailure(response, "تعذر تعيين نوع النشاط.");
         return;
       }
       const result = await response.json() as SetStoreCommercialTypeResponse;
@@ -265,11 +265,11 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
         return;
       }
       setCommercialTypeReason("");
-      setNotice("حُفظ نوع المتجر التجاري وأُكدت مطابقته في قراءة النظام.");
+      setNotice("حُفظ نوع النشاط وأُكدت مطابقته في قراءة النظام.");
       onUpdated?.();
     } catch {
       await readStore(false);
-      setError("تعذر تأكيد تغيير نوع المتجر التجاري. أُعيدت قراءة النظام؛ راجع الحالة قبل إعادة المحاولة.");
+      setError("تعذر تأكيد تغيير نوع النشاط. أُعيدت قراءة النظام؛ راجع الحالة قبل إعادة المحاولة.");
     } finally {
       setBusy(false);
     }
@@ -335,7 +335,7 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
               <div><dt>الشريك المالك</dt><dd><Link href={`/partners/actors/${encodeURIComponent(store.partnerActorId)}`}>{store.partnerName || "ملف الشريك"}</Link></dd></div>
               <div><dt>مدينة الخدمة</dt><dd>{store.serviceCityName || "غير محددة"}</dd></div>
               <div><dt>المجال التجاري</dt><dd>{store.primaryVerticalName || "غير محددة"}</dd></div>
-              <div><dt>نوع المتجر التجاري</dt><dd>{commercialTypes.find((item) => item.id === store.commercialStoreTypeId)?.nameAr || "غير محدد"}</dd></div>
+              <div><dt>نوع النشاط</dt><dd>{commercialTypes.find((item) => item.id === store.commercialStoreTypeId)?.nameAr || "غير محدد"}</dd></div>
               <div><dt>تاريخ الإنشاء</dt><dd><time dateTime={store.createdAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium", timeStyle: "short" }).format(new Date(store.createdAt))}</time></dd></div>
               <div><dt>آخر تحديث</dt><dd><time dateTime={store.updatedAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium", timeStyle: "short" }).format(new Date(store.updatedAt))}</time></dd></div>
             </dl>
@@ -372,19 +372,19 @@ export function StoreWorkspace({ storeId, embedded = false, onUpdated }: Readonl
         </section> : null}
 
         <details className="store-advanced-settings" open={embedded || !store.commercialStoreTypeId}>
-          <summary>{store.commercialStoreTypeId ? "إعدادات المتجر والإجراءات الإدارية" : "استكمال نوع المتجر التجاري والإعدادات الإدارية"}</summary>
+          <summary>{store.commercialStoreTypeId ? "إعدادات المتجر والإجراءات الإدارية" : "استكمال نوع النشاط والإعدادات الإدارية"}</summary>
         <section className="store-detail-section" aria-labelledby="store-commercial-type-title">
-          <div className="store-detail-heading"><div><h2 id="store-commercial-type-title">نوع المتجر التجاري</h2></div></div>
+          <div className="store-detail-heading"><div><h2 id="store-commercial-type-title">نوع النشاط</h2></div></div>
           <p className="muted">هذا التصنيف التجاري يحدد سياسة عمولة المنصة لهذا المتجر. لا يغيّر فئة منتجات الكتالوج.</p>
-           {store.commercialStoreTypeId ? <output className="managed-status managed-status-info">{commercialTypes.find((item) => item.id === store.commercialStoreTypeId)?.nameAr || "نوع المتجر التجاري محدد"} · تُحتسب العمولة وفق الاتفاقية المعتمدة للمتجر.</output> : <>
+           {store.commercialStoreTypeId ? <output className="managed-status managed-status-info">{commercialTypes.find((item) => item.id === store.commercialStoreTypeId)?.nameAr || "نوع النشاط محدد"} · تُحتسب العمولة وفق الاتفاقية المعتمدة للمتجر.</output> : <>
             <label className="field-label" htmlFor="store-commercial-type"><span>اختر نوعًا تجاريًا نشطًا</span>
               <select id="store-commercial-type" value={selectedCommercialTypeID} onChange={(event) => setSelectedCommercialTypeID(event.target.value)} disabled={busy || loading || !store.primaryVerticalId}>
-                <option value="">اختر نوع المتجر التجاري</option>
+                <option value="">اختر نوع النشاط</option>
                 {commercialTypes.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.nameAr}</option>)}
               </select>
             </label>
             <label className="field-label" htmlFor="store-commercial-type-reason">سبب التعيين<TextArea className="resize-none" id="store-commercial-type-reason" value={commercialTypeReason} onChange={(event) => setCommercialTypeReason(event.target.value)} minLength={5} maxLength={500} rows={2} disabled={busy || loading} /></label>
-            <div className="button-row"><button type="button" className="button button-primary" disabled={busy || loading || !selectedCommercialTypeID || commercialTypeReason.trim().length < 5} onClick={() => void saveCommercialType()}>{busy ? "جارٍ الحفظ…" : "تعيين نوع المتجر التجاري"}</button><button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => { setSelectedCommercialTypeID(""); setCommercialTypeReason(""); }}>إلغاء التغييرات</button></div>
+            <div className="button-row"><button type="button" className="button button-primary" disabled={busy || loading || !selectedCommercialTypeID || commercialTypeReason.trim().length < 5} onClick={() => void saveCommercialType()}>{busy ? "جارٍ الحفظ…" : "تعيين نوع النشاط"}</button><button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => { setSelectedCommercialTypeID(""); setCommercialTypeReason(""); }}>إلغاء التغييرات</button></div>
              <output className="managed-status managed-status-warning">لا تُحتسب العمولة أو استحقاق الميداني لهذا المتجر قبل تثبيت نوعه التجاري وتفعيل السياسة المناسبة لهذا النوع.</output>
           </>}
         </section>

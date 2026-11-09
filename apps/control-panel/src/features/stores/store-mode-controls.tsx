@@ -30,7 +30,7 @@ export function StoreModeControls({ store, onUpdated }: Readonly<{ store: Store;
         selected.some(mode => !modeChoices.includes(mode)) ||
         (store.relationModel === "INDEPENDENT_STORE" && selected.includes("BTHWANI_CAPTAIN"))) {
       setNotice("");
-      setError("أوضاع التنفيذ لا تناسب نموذج المتجر الحالي. حدّث الملف وأعد الاختيار قبل الحفظ.");
+      setError("أوضاع التنفيذ لا تناسب طريقة عمل المتجر الحالية. حدّث الملف وأعد الاختيار قبل الحفظ.");
       return;
     }
     setBusy(true); setError(""); setNotice("");

@@ -69,7 +69,7 @@ export function StoreTypeCommissionDefaultWorkspace({ readOnly = false }: Readon
   }, []);
 
   async function readDefaults(typeID = selectedTypeID.trim()): Promise<readonly StoreTypeCommissionDefault[] | null> {
-    if (!typeID || typeID.length > 128) { setError("اختر نوع متجر أولًا."); return null; }
+    if (!typeID || typeID.length > 128) { setError("اختر نوع نشاط أولًا."); return null; }
     setBusyMode("load"); setError(""); setMessage("");
     try {
       const response = await fetch(`/api/finance/commercial-store-type-commission-defaults?commercialStoreTypeId=${encodeURIComponent(typeID)}`, { cache: "no-store" });
@@ -158,13 +158,13 @@ export function StoreTypeCommissionDefaultWorkspace({ readOnly = false }: Readon
 
   return <section className="form-section" aria-labelledby="store-type-commission-default-title">
     <div className="section-heading">
-      <div><h2 id="store-type-commission-default-title">نسب مقترحة حسب نوع المتجر التجاري</h2></div>
+      <div><h2 id="store-type-commission-default-title">نسب مقترحة حسب نوع النشاط</h2></div>
     </div>
     <p className="muted">نسب مقترحة للتفاوض؛ لا تغيّر الاتفاقيات النافذة أو الطلبات السابقة، ولا تُطبّق تلقائيًا.{readOnly ? " عرض للقراءة فقط؛ التعديل متاح من قسم السياسات وفق الصلاحيات." : ""}</p>
     <div className="form-grid">
-      <label className="field-label" htmlFor="store-type-commission-default-type"><span>نوع المتجر التجاري</span>
+      <label className="field-label" htmlFor="store-type-commission-default-type"><span>نوع النشاط</span>
         <select id="store-type-commission-default-type" value={selectedTypeID} onChange={(event) => { setSelectedTypeID(event.target.value); setLoadedTypeID(""); setDefaults([]); setError(""); setMessage(""); }} disabled={busyMode !== null || options.length === 0}>
-          <option value="">اختر نوع المتجر التجاري</option>
+          <option value="">اختر نوع النشاط</option>
           {options.map(({ type, vertical }) => <option key={type.id} value={type.id}>{vertical.nameAr} · {type.nameAr}</option>)}
         </select>
       </label>

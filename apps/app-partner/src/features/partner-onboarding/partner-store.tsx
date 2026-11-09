@@ -88,7 +88,7 @@ export function PartnerStore() {
           canManageHours={eligibleForSection(selectedStore, "operations")} canReviewAgreement={eligibleForSection(selectedStore, "commercial")}
           preparingIndependent={independent} />
         {selectedStore.owned && selectedStore.publicationState !== "published" ? <View style={styles.card}>
-          <Text style={styles.value}>{selectedStore.relationModel === "INDEPENDENT_STORE" ? "تجهيز محتوى المتجر المستقل" : selectedStore.relationModel === "BTHWANI_PARTNER" ? "تجهيز المتجر للنشر" : "تعذر التحقق من نموذج المتجر"}</Text>
+          <Text style={styles.value}>{selectedStore.relationModel === "INDEPENDENT_STORE" ? "تجهيز محتوى المتجر المستقل" : selectedStore.relationModel === "BTHWANI_PARTNER" ? "تجهيز المتجر للنشر" : "تعذر التحقق من طريقة عمل المتجر"}</Text>
           {selectedStore.relationModel === "INDEPENDENT_STORE" ? <Text style={styles.muted}>يمكنك تجهيز المنتجات والصور. النشر العام والطلب المباشر غير مفعّلين حاليًا، ولا تمنح هذه الخطوة صلاحية النشر.</Text> : null}
           <BthwaniButton label="الانتقال إلى المنتجات" onPress={() => router.push("/products" as Href)} variant="secondary" />
         </View> : null}
