@@ -59,6 +59,7 @@ func (s *StorePublicationServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/operator/stores/{storeId}/restore", s.restoreStore)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/publication", s.publish)
 	mux.HandleFunc("POST /dsh/operator/independent-stores/{storeId}/suspend", s.suspendIndependent)
+	mux.HandleFunc("POST /dsh/operator/independent-stores/{storeId}/review-decision", s.decideIndependentReview)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/fulfillment-modes", s.setFulfillmentModes)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/commercial-type", s.setCommercialStoreType)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/publication", s.readForOperator)

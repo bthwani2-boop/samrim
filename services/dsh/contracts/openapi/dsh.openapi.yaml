@@ -625,6 +625,9 @@ paths:
   /dsh/public/catalog/search:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1public~1catalog~1search"
 
+  /dsh/operator/independent-stores/{storeId}/review-decision:
+    $ref: "./paths/store-publication.yaml#/paths/~1dsh~1operator~1independent-stores~1{storeId}~1review-decision"
+
   /dsh/operator/independent-stores/{storeId}/suspend:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1operator~1independent-stores~1{storeId}~1suspend"
 
