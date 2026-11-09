@@ -125,6 +125,17 @@ func exerciseIndependentPartnerOrderHTTPOnIsolatedDB(t *testing.T, ctx context.C
 	call(http.MethodPatch, "qa-pickup-owner", patchPath,
 		`{"state":"PREPARING","expectedVersion":2}`, "X-Acting-Actor-ID", http.StatusBadRequest)
 
+	// A former revoked invitation may coexist with a newly active grant for
+	// the same delegate. Authorization must never select an arbitrary old row.
+	if _, err := db.ExecContext(ctx, `INSERT INTO dsh.store_access_grants
+		(id,store_id,owner_partner_actor_id,delegate_actor_id,permissions,state,version,expires_at,accepted_at,revoked_at)
+		VALUES('qa-pickup-staff-old', $1, $2, 'qa-pickup-staff-actor',
+			ARRAY['orders','fulfillment'], 'revoked', 2,
+			clock_timestamp()+interval '1 day', clock_timestamp(), clock_timestamp())`, storeID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+	list("qa-pickup-staff", listPath, http.StatusNotFound)
+
 	// Prove the same real DB grant enforces separate read/fulfillment rights.
 	const grantID = "qa-pickup-staff-access"
 	if _, err := db.ExecContext(ctx, `INSERT INTO dsh.store_access_grants

@@ -71,14 +71,18 @@ func authorizeIndependentPartnerOrders(ctx context.Context, tx *sql.Tx, storeID,
 	if ownerID == actorID {
 		return nil
 	}
-	var granted bool
-	query = `SELECT state='active' AND 'orders'=ANY(permissions) AND $3=ANY(permissions)
-		FROM dsh.store_access_grants WHERE store_id=$1 AND delegate_actor_id=$2 AND owner_partner_actor_id=$4`
+	// Historical revoked/declined grants may coexist with one active grant.
+	// Select and lock the qualifying active row, not an arbitrary history row.
+	var grantID string
+	query = `SELECT id FROM dsh.store_access_grants
+		WHERE store_id=$1 AND delegate_actor_id=$2 AND owner_partner_actor_id=$4
+		AND state='active' AND 'orders'=ANY(permissions) AND $3=ANY(permissions)
+		ORDER BY id LIMIT 1`
 	if lock {
 		query += " FOR SHARE"
 	}
-	err := tx.QueryRowContext(ctx, query, storeID, actorID, permission, ownerID).Scan(&granted)
-	if errors.Is(err, sql.ErrNoRows) || err == nil && !granted {
+	err := tx.QueryRowContext(ctx, query, storeID, actorID, permission, ownerID).Scan(&grantID)
+	if errors.Is(err, sql.ErrNoRows) {
 		return ErrOrderNotFound
 	}
 	return err
