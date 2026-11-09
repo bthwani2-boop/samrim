@@ -283,9 +283,9 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
       </Pressable>:null}
     </View>:null}
 
-    {selectedStore && marketplace ? <PartnerStorefrontLink key={sessionScope+":"+selectedStore.id} store={selectedStore} /> : null}
-    {selectedStore?.owned && independent && !desktopWeb ? <BthwaniButton label="معاينة المتجر الخاصة" variant="secondary"
-      onPress={() => router.push({ pathname: "/store", params: { section: "preview", returnTo: "more" } } as Href)} /> : null}
+    {selectedStore && (marketplace || (independent && selectedStore.owned)) ? <PartnerStorefrontLink key={sessionScope+":"+selectedStore.id} store={selectedStore} /> : null}
+    {selectedStore?.owned && independent && !desktopWeb ? <BthwaniButton label="إدارة موقع المتجر وسياساته" variant="secondary"
+      onPress={() => router.push({ pathname: "/store", params: { section: "website", returnTo: "more" } } as Href)} /> : null}
     {desktopWeb?<View style={styles.desktopFooter}><Text style={styles.muted}>© بثواني {today.getFullYear()} — لوحة الشريك</Text><Text style={styles.muted}>البيانات من الخدمات المصرح بها للمتجر الحالي.</Text></View>:null}
     </> : null}
     {(accountOnly || !desktopWeb) ? <>

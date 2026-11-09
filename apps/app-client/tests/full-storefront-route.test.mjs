@@ -25,6 +25,17 @@ test("web route is a separate composition, never the existing marketplace or ind
   assert.doesNotMatch(site + route, /independent-preview|ReadIndependentStorePreview|CreateIndependentPickupOrder/);
 });
 
+test("one Client Web site reads the separately approved independent publication without a Partner preview", () => {
+  assert.match(site, /readPublishedIndependentWebStore\(base, storeId, selectedCityID\)/);
+  assert.match(site, /listPublishedIndependentWebCatalog\(base, storeId, selectedCityID/);
+  assert.match(site, /relation: "independent"/);
+  assert.match(site, /relation: "marketplace"/);
+  assert.match(site, /ready\??\.relation === "independent"/);
+  assert.match(site, /isMarketplace \? <BthwaniButton label=\{"سلة المتجر"/);
+  assert.match(site, /isMarketplace && offers\.some/);
+  assert.doesNotMatch(site, /PartnerIndependentStorePreview|independent-preview/);
+});
+
 test("web site reads the canonical public Store, scoped catalog and Store-owned banners", () => {
   assert.match(site, /readPublishedStore\(storeId, selectedCityID\)/);
   assert.match(site, /readPublicStoreCatalog\(storeId, selectedCityID/);

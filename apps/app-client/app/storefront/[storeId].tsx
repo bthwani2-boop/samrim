@@ -5,12 +5,12 @@ import { Platform } from "react-native";
 import ClientFullStorefront from "../../src/features/store-discovery/full-storefront";
 import { ClientPublicShell } from "../../src/shell/client-shell";
 
-// This bounded read-only route is not an independent public Store release.
-// Keep search indexing disabled until the canonical DSH website-publication
-// contract and public URL policy are approved.
+// One Web-only Store site for both DSH publication relations. No UI flag can
+// grant independent or marketplace eligibility. Keep search indexing disabled
+// until the public URL/hosting release has been independently approved.
 export const generateMetadata: GenerateMetadataFunction = () => ({
   title: "موقع المتجر | بثواني",
-  description: "تصفح منتجات المتاجر الشريكة المنشورة في بثواني.",
+  description: "تصفح المنتجات المعتمدة في مواقع المتاجر المنشورة على بثواني.",
   robots: { index: false, follow: false },
 });
 

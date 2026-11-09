@@ -1,5 +1,5 @@
 import { type CommerceVertical, type CommercialStoreType, type CorrectJoiningCaseRequest, createDshMobileClient, type DshImageUploadInput, type JoiningCaseResponse, type MediaProvenanceInput, type PartnerAccessibleStorePage, type PartnerStoreOperationalAvailabilityMutationResponse, type PartnerStoreOperationalAvailabilityResponse, type ServiceCity, type StoreAccessGrantListResponse, type StoreAccessGrantMutationResponse, type StoreAccessGrantPermissionsRequest, type StoreAccessGrantTransitionRequest, type StoreAccessInvitationCreateRequest, type StoreAccessInvitationDecisionRequest, type StoreAccessPermission, type StoreCaptainInvitationResponse, type StoreCaptainMembershipListResponse, type StoreCaptainMembershipResponse, type StoreCaptainMembershipTransitionRequest, type StoreOperationalAvailabilityRequest } from "@bthwani/dsh";
-import type { CatalogActivityPage, IndependentStorePreview, IndependentCustomerPolicyDraftInput, IndependentCustomerPolicyDraftResponse, IndependentCustomerPolicyDraftMutationResponse } from "@bthwani/dsh";
+import type { CatalogActivityPage, IndependentCustomerPolicyDraftInput, IndependentCustomerPolicyDraftResponse, IndependentCustomerPolicyDraftMutationResponse } from "@bthwani/dsh";
 import type { IndependentPickupOrderTransitionRequest } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
@@ -38,11 +38,6 @@ export async function readOwnJoiningCase(): Promise<JoiningCaseResponse> {
 export async function listPartnerAccessibleStores(cursor = ""): Promise<PartnerAccessibleStorePage> {
   const token = await accessToken();
   return dshClient().listPartnerAccessibleStores(token, 50, cursor);
-}
-
-export async function readOwnIndependentStorePreview(storeID: string, cursor = ""): Promise<IndependentStorePreview> {
-  const token = await accessToken();
-  return dshClient().readPartnerIndependentStorePreview(token, storeID, 20, cursor);
 }
 
 export async function readOwnIndependentCustomerPolicyDraft(storeID: string): Promise<IndependentCustomerPolicyDraftResponse> {

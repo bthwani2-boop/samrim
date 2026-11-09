@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildPartnerOfferShareURL, buildPartnerStorefrontURL, buildPartnerStoreWhatsAppURL } from "../src/features/partner-onboarding/partner-storefront-url.ts";
-import { buildStoreSharePath } from "../../app-client/src/features/store-discovery/store-share-link.ts";
+import { buildPartnerIndependentStorefrontURL, buildPartnerOfferShareURL, buildPartnerStorefrontURL, buildPartnerStoreWhatsAppURL } from "../src/features/partner-onboarding/partner-storefront-url.ts";
+import { buildFullStorefrontPath } from "../../app-client/src/features/store-discovery/full-storefront-model.ts";
 
 const store = { id: "store_123", serviceCityId: "city_sanaa", publicationState: "published", relationModel: "BTHWANI_PARTNER" };
 
 test("published Store uses the same path as the customer Web App", () => {
   const actual = buildPartnerStorefrontURL(store, "https://bthwani.example");
-  assert.equal(actual?.url, "https://bthwani.example/" + buildStoreSharePath(store.id, store.serviceCityId));
+  assert.equal(actual?.url, "https://bthwani.example" + buildFullStorefrontPath(store.id, store.serviceCityId));
   assert.equal(actual?.previewOnly, false);
 });
 
@@ -38,7 +38,7 @@ test("missing, hostile, ambiguous or non-HTTPS public origins fail closed", () =
 test("explicit loopback preview works only when enabled and is never public", () => {
   const result = buildPartnerStorefrontURL(store, "http://localhost:18101", true);
   assert.equal(result?.previewOnly, true);
-  assert.equal(result?.url, "http://localhost:18101/" + buildStoreSharePath(store.id, store.serviceCityId));
+  assert.equal(result?.url, "http://localhost:18101" + buildFullStorefrontPath(store.id, store.serviceCityId));
   assert.equal(buildPartnerStorefrontURL(store, "http://example.com", true), null);
 });
 
@@ -57,7 +57,7 @@ test("published Store may be shared through WhatsApp with preserved Service City
   const target = new URL(url);
   assert.equal(target.origin, "https://wa.me");
   assert.equal(target.pathname, "/");
-  assert.equal(target.searchParams.get("text"), "متجرنا\\nhttps://bthwani.example/store/store_123?serviceCityId=city_sanaa".replace("\\n", "\n"));
+  assert.equal(target.searchParams.get("text"), "متجرنا\\nhttps://bthwani.example/storefront/store_123?serviceCityId=city_sanaa".replace("\\n", "\n"));
 });
 
 test("WhatsApp share never exposes a local preview, unpublished Store, or non-HTTPS URL", () => {
@@ -65,12 +65,12 @@ test("WhatsApp share never exposes a local preview, unpublished Store, or non-HT
   assert.equal(buildPartnerStoreWhatsAppURL(buildPartnerStorefrontURL({ ...store, publicationState: "draft" }, "https://bthwani.example"), "demo"), null);
   assert.equal(buildPartnerStoreWhatsAppURL({ url: "javascript:alert(1)", previewOnly: false }, "demo"), null);
   assert.equal(buildPartnerStoreWhatsAppURL({ url: "https://bthwani.example/elsewhere", previewOnly: false }, "demo"), null);
-  assert.equal(buildPartnerStoreWhatsAppURL({ url: "https://localhost/store/store_123?serviceCityId=city_sanaa", previewOnly: false }, "demo"), null);
+  assert.equal(buildPartnerStoreWhatsAppURL({ url: "https://localhost/storefront/store_123?serviceCityId=city_sanaa", previewOnly: false }, "demo"), null);
 });
 
 test("a published Store can share a specific public product without changing Store/City scope", () => {
   const link = buildPartnerStorefrontURL(store, "https://bthwani.example", false, "product&one");
-  assert.equal(link?.url, "https://bthwani.example/store/store_123?serviceCityId=city_sanaa&productId=product%26one");
+  assert.equal(link?.url, "https://bthwani.example/storefront/store_123?serviceCityId=city_sanaa&productId=product%26one");
   const whatsapp = buildPartnerStoreWhatsAppURL(link, "منتج من متجري");
   assert.ok(whatsapp);
   assert.equal(new URL(whatsapp).searchParams.get("text"), "منتج من متجري\n"+link.url);
@@ -81,7 +81,7 @@ test("product links reject untrusted product input and unsafe WhatsApp query add
     assert.equal(buildPartnerStorefrontURL(store, "https://bthwani.example", false, id), null);
   }
   assert.equal(buildPartnerStorefrontURL({...store,publicationState:"hidden"}, "https://bthwani.example", false, "product-1"),null);
-  assert.equal(buildPartnerStoreWhatsAppURL({url:"https://bthwani.example/store/store_123?serviceCityId=city_sanaa&redirect=https://bad.example",previewOnly:false},"x"),null);
+  assert.equal(buildPartnerStoreWhatsAppURL({url:"https://bthwani.example/storefront/store_123?serviceCityId=city_sanaa&redirect=https://bad.example",previewOnly:false},"x"),null);
   assert.equal(buildPartnerStoreWhatsAppURL(buildPartnerStorefrontURL(store,"http://localhost:18101",true,"product-1"),"x"),null);
 });
 
@@ -92,14 +92,14 @@ test("WhatsApp product link rejects ambiguous duplicate parameters and fragments
     "?serviceCityId=city_sanaa#private",
     "?serviceCityId=city_sanaa&productId=",
   ]) {
-    assert.equal(buildPartnerStoreWhatsAppURL({url:"https://bthwani.example/store/store_123"+suffix,previewOnly:false},"x"),null,suffix);
+    assert.equal(buildPartnerStoreWhatsAppURL({url:"https://bthwani.example/storefront/store_123"+suffix,previewOnly:false},"x"),null,suffix);
   }
 });
 
 test("published, orderable Offer is shareable only in its own published Store", () => {
   const offer = {storeId:store.id,productId:"product_1",publicationState:"published",availability:true,productActive:true,variantActive:true};
   assert.equal(buildPartnerOfferShareURL(store, offer, "https://bthwani.example")?.url,
-    "https://bthwani.example/store/store_123?serviceCityId=city_sanaa&productId=product_1");
+    "https://bthwani.example/storefront/store_123?serviceCityId=city_sanaa&productId=product_1");
   const rejected = [
     {...offer,storeId:"foreign-store"},
     {...offer,productId:""},
@@ -117,4 +117,41 @@ test("published, orderable Offer is shareable only in its own published Store", 
   const local = buildPartnerOfferShareURL(store,offer,"http://localhost:18101",true);
   assert.ok(local?.previewOnly);
   assert.equal(buildPartnerStoreWhatsAppURL(local,"منتج"),null);
+});
+
+
+test("independent public link exists only after real DSH public readback and exact relation", () => {
+  const independent = { ...store, relationModel: "INDEPENDENT_STORE" };
+  assert.equal(buildPartnerIndependentStorefrontURL(independent, "https://bthwani.example", false), null);
+  assert.equal(buildPartnerIndependentStorefrontURL({ ...independent, publicationState: "unpublished" }, "https://bthwani.example", true)?.url,
+    "https://bthwani.example/storefront/store_123?serviceCityId=city_sanaa");
+  assert.equal(buildPartnerIndependentStorefrontURL({ ...independent, relationModel: "BTHWANI_PARTNER" }, "https://bthwani.example", true), null);
+  const result = buildPartnerIndependentStorefrontURL(independent, "https://bthwani.example", true);
+  assert.equal(result?.url, "https://bthwani.example/storefront/store_123?serviceCityId=city_sanaa");
+  assert.equal(result?.previewOnly, false);
+  const shared = buildPartnerStoreWhatsAppURL(result, "متجر مستقل");
+  assert.equal(new URL(shared).searchParams.get("text"), "متجر مستقل\n" + result.url);
+});
+
+test("independent link refuses local or untrusted public URLs and unsupported share params", () => {
+  const independent = { ...store, relationModel: "INDEPENDENT_STORE" };
+  for (const origin of [undefined, "http://localhost:18101", "https://localhost:18101", "http://store.example", "https://user@store.example", "https://store.example/path"]) {
+    assert.equal(buildPartnerIndependentStorefrontURL(independent, origin, true), null, String(origin));
+  }
+  assert.equal(buildPartnerIndependentStorefrontURL({ ...independent, id: "../other" }, "https://store.example", true), null);
+  assert.equal(buildPartnerStoreWhatsAppURL({
+    url: "https://store.example/old-independent-store/store_123?serviceCityId=city_sanaa&productId=other",
+    previewOnly: false,
+  }, "private"), null);
+});
+
+
+test("verified independent Store can open the unauthenticated local site, never WhatsApp localhost", () => {
+  const independent = { ...store, relationModel: "INDEPENDENT_STORE" };
+  const preview = buildPartnerIndependentStorefrontURL(independent, "http://localhost:18101", true, true);
+  assert.equal(preview?.url, "http://localhost:18101/storefront/store_123?serviceCityId=city_sanaa");
+  assert.equal(preview?.previewOnly, true);
+  assert.equal(buildPartnerStoreWhatsAppURL(preview, "متجر مستقل"), null);
+  assert.equal(buildPartnerIndependentStorefrontURL(independent, "http://localhost:18101", false, true), null);
+  assert.equal(buildPartnerIndependentStorefrontURL(independent, "http://example.com", true, true), null);
 });

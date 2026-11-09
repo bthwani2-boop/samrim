@@ -47,16 +47,19 @@ test("non-marketplace owner retains safe Store settings and independent banners"
   assert.equal(eligibleForSection(store(undefined, true), "settings"), true);
 });
 
-test("private storefront preview admits only the owner of an independent Store", () => {
-  assert.equal(eligibleForSection(store("INDEPENDENT_STORE", true), "preview"), true);
-  assert.equal(eligibleForSection(store("INDEPENDENT_STORE", false, ["store_operations"]), "preview"), false);
-  assert.equal(eligibleForSection(store("BTHWANI_PARTNER", true), "preview"), false);
-  assert.equal(eligibleForSection(store("UNKNOWN", true), "preview"), false);
+test("website policy management admits only the owner of an independent Store", () => {
+  assert.equal(eligibleForSection(store("INDEPENDENT_STORE", true), "website"), true);
+  assert.equal(eligibleForSection(store("INDEPENDENT_STORE", false, ["store_operations"]), "website"), false);
+  assert.equal(eligibleForSection(store("BTHWANI_PARTNER", true), "website"), false);
+  assert.equal(eligibleForSection(store("UNKNOWN", true), "website"), false);
 });
 
-test("desktop workspace opens the authorized private preview through the Store route", () => {
-  assert.match(shellSource, /<Link href="\/store\?section=preview" asChild>/);
-  assert.match(storeSource, /section === "preview" \? <View[\s\S]*?<PartnerIndependentStorePreview/);
+test("desktop workspace offers the verified public link, not a private preview share", () => {
+  assert.doesNotMatch(shellSource, /Link href=\{\(\x60\/storefront-preview\?storeId=/);
+  assert.match(shellSource, /usePartnerIndependentPublicLink/);
+  assert.match(shellSource, /Clipboard\.setStringAsync\(storefrontLink\.url\)/);
+  assert.match(storeSource, /section === "website" \? <View[\s\S]*?<PartnerIndependentCustomerPolicyDraftEditor/);
+  assert.doesNotMatch(storeSource, /PartnerIndependentStorePreview/);
 });
 
 test("desktop navigation refuses marketplace operations without exact relation", () => {

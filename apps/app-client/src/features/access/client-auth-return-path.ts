@@ -5,7 +5,7 @@ const existingRoutes = /home|notifications|account|wallet|wallet-cash-in(?:\?(?:
 
 // Only known in-app destinations and explicit commerce scope survive authentication.
 export const clientAuthReturnPathPattern = new RegExp(
-  String.raw`^/(?:${existingRoutes.source}|store/${scopedID}\?${storeCity}|cart/${scopedID}\?source=storefront&${storeCity})$`,
+  String.raw`^/(?:${existingRoutes.source}|store/${scopedID}\?${storeCity}|storefront/${scopedID}\?${storeCity}|cart/${scopedID}\?source=storefront&${storeCity})$`,
   "u",
 );
 

@@ -1,12 +1,13 @@
 import { borders, radius, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { formatMoney, formatQuantity, type PublicCatalogResponse, type PublicDiscoveryContentView, type PublicStoreView } from "@bthwani/dsh";
+import { formatMoney, formatQuantity, IndependentStoreUnavailable, listPublishedIndependentWebCatalog, readPublishedIndependentWebStore, type IndependentPublicStore, type IndependentPublicCatalog, type PublicCatalogResponse, type PublicDiscoveryContentView, type PublicStoreView } from "@bthwani/dsh";
 import { Image as ExpoImage } from "expo-image";
 import { Link, type Href, useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View, type ScrollViewInstance } from "react-native";
 
 import { clientStorefrontCartPath } from "../access/client-auth-return-path";
+import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
 import { useServiceCityScope } from "../service-city/service-city-scope";
 import { mergeCatalog } from "./store-catalog-model";
 import { listPublicStoreBanners, readPublicStoreCatalog, readPublishedStore } from "./store-discovery-client";
@@ -19,7 +20,8 @@ type SiteState =
   | { kind: "loading" }
   | { kind: "unavailable" }
   | { kind: "error" }
-  | { kind: "ready"; store: PublicStoreView; catalog: PublicCatalogResponse };
+  | { kind: "ready"; relation: "marketplace"; store: PublicStoreView; catalog: PublicCatalogResponse }
+  | { kind: "ready"; relation: "independent"; store: IndependentPublicStore; catalog: IndependentPublicCatalog };
 
 type SiteBanner = PublicDiscoveryContentView;
 
@@ -31,6 +33,7 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const router = useRouter();
+  const signedIn = useSyncExternalStore(subscribeIdentitySession, () => currentIdentityState().kind === "authenticated", () => false);
   const { width } = useWindowDimensions();
   const readID = useRef(0);
   const catalogID = useRef(0);
@@ -108,21 +111,35 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
       return;
     }
     try {
-      const [store, catalog] = await Promise.all([
-        readPublishedStore(storeId, selectedCityID),
-        readPublicStoreCatalog(storeId, selectedCityID, categoryID, initialQuery, 24, "", productID),
-      ]);
-      if (generation !== readID.current) return;
-      // DSH independently enforces published BTHWANI_PARTNER eligibility for
-      // both endpoints. No owner preview, independent endpoint or query flag.
-      if (!verifiedMarketplaceStoreRead(store, catalog, storeId, selectedCityID)) {
-        setState({ kind: "unavailable" });
+      // Marketplace and independent web publication are separate DSH facts.
+      // Only a marketplace 404/403 permits trying the independent public reader.
+      try {
+        const [store, catalog] = await Promise.all([
+          readPublishedStore(storeId, selectedCityID),
+          readPublicStoreCatalog(storeId, selectedCityID, categoryID, initialQuery, 24, "", productID),
+        ]);
+        if (generation !== readID.current) return;
+        if (!verifiedMarketplaceStoreRead(store, catalog, storeId, selectedCityID)) {
+          setState({ kind: "unavailable" });
+          return;
+        }
+        setState({ kind: "ready", relation: "marketplace", store, catalog });
+        if (!productID) void refreshBanners(generation);
         return;
+      } catch (cause) {
+        if (storeReadFailureKind(cause) !== "unavailable") throw cause;
       }
-      setState({ kind: "ready", store, catalog });
-      if (!productID) void refreshBanners(generation);
+      const base = process.env.EXPO_PUBLIC_DSH_API_URL ?? "";
+      const store = await readPublishedIndependentWebStore(base, storeId, selectedCityID);
+      const catalog = await listPublishedIndependentWebCatalog(base, storeId, selectedCityID, {
+        categoryID, query: initialQuery, productID,
+      });
+      if (generation !== readID.current) return;
+      setState({ kind: "ready", relation: "independent", store, catalog });
     } catch (cause) {
-      if (generation === readID.current) setState({ kind: storeReadFailureKind(cause) });
+      if (generation === readID.current) {
+        setState({ kind: cause instanceof IndependentStoreUnavailable ? "unavailable" : storeReadFailureKind(cause) });
+      }
     }
   }, [categoryID, initialQuery, productID, refreshBanners, selectedCityID, storeId]);
 
@@ -142,11 +159,24 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
     setCatalogBusy(true);
     setCatalogError(false);
     try {
-      const catalog = await readPublicStoreCatalog(storeId, selectedCityID, categoryID, search.trim(), 24);
-      if (generation !== catalogID.current) return;
-      if (catalog.storeId !== storeId) throw new Error("PUBLIC_CATALOG_STORE_MISMATCH");
-      setState((previous) => previous.kind === "ready" && previous.store.id === storeId &&
-        previous.store.serviceCity.id === selectedCityID ? { ...previous, catalog } : previous);
+      if (state.kind !== "ready") return;
+      if (state.relation === "independent") {
+        const catalog = await listPublishedIndependentWebCatalog(
+          process.env.EXPO_PUBLIC_DSH_API_URL ?? "", storeId, selectedCityID,
+          { categoryID, productID, query: search.trim() },
+        );
+        if (generation !== catalogID.current) return;
+        setState(previous => previous.kind === "ready" && previous.relation === "independent" &&
+          previous.store.storeId === storeId && previous.store.serviceCityId === selectedCityID
+          ? { ...previous, catalog } : previous);
+      } else {
+        const catalog = await readPublicStoreCatalog(storeId, selectedCityID, categoryID, search.trim(), 24);
+        if (generation !== catalogID.current) return;
+        if (catalog.storeId !== storeId) throw new Error("PUBLIC_CATALOG_STORE_MISMATCH");
+        setState(previous => previous.kind === "ready" && previous.relation === "marketplace" &&
+          previous.store.id === storeId && previous.store.serviceCity.id === selectedCityID
+          ? { ...previous, catalog } : previous);
+      }
       setAppliedQuery(search.trim());
     } catch (cause) {
       if (generation !== catalogID.current) return;
@@ -155,7 +185,7 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
     } finally {
       if (generation === catalogID.current) setCatalogBusy(false);
     }
-  }, [categoryID, hideWithdrawnStore, selectedCityID, storeId]);
+  }, [categoryID, hideWithdrawnStore, productID, selectedCityID, state, storeId]);
 
   const loadMore = useCallback(async () => {
     if (state.kind !== "ready" || !selectedCityID || !state.catalog.nextCursor || catalogBusy || loadingMore) return;
@@ -165,11 +195,25 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
     setLoadingMore(true);
     setCatalogError(false);
     try {
-      const next = await readPublicStoreCatalog(storeId, selectedCityID, categoryID, appliedQuery, 24, cursor, productID);
-      if (generation !== catalogID.current) return;
-      if (next.storeId !== storeId || next.nextCursor === cursor) throw new Error("PUBLIC_CATALOG_PAGE_MISMATCH");
-      setState((previous) => previous.kind === "ready" && previous.store.id === storeId &&
-        previous.store.serviceCity.id === selectedCityID ? { ...previous, catalog: mergeCatalog(previous.catalog, next) } : previous);
+      if (state.relation === "independent") {
+        // Recheck publication before merging a page into already visible content.
+        await readPublishedIndependentWebStore(process.env.EXPO_PUBLIC_DSH_API_URL ?? "", storeId, selectedCityID);
+        const next = await listPublishedIndependentWebCatalog(
+          process.env.EXPO_PUBLIC_DSH_API_URL ?? "", storeId, selectedCityID,
+          { categoryID, productID, query: appliedQuery, cursor },
+        );
+        if (generation !== catalogID.current) return;
+        setState(previous => previous.kind === "ready" && previous.relation === "independent" &&
+          previous.store.storeId === storeId && previous.store.serviceCityId === selectedCityID
+          ? { ...previous, catalog: { ...next, offers: [...previous.catalog.offers, ...next.offers] } } : previous);
+      } else {
+        const next = await readPublicStoreCatalog(storeId, selectedCityID, categoryID, appliedQuery, 24, cursor, productID);
+        if (generation !== catalogID.current) return;
+        if (next.storeId !== storeId || next.nextCursor === cursor) throw new Error("PUBLIC_CATALOG_PAGE_MISMATCH");
+        setState(previous => previous.kind === "ready" && previous.relation === "marketplace" &&
+          previous.store.id === storeId && previous.store.serviceCity.id === selectedCityID
+          ? { ...previous, catalog: mergeCatalog(previous.catalog, next) } : previous);
+      }
     } catch (cause) {
       if (generation !== catalogID.current) return;
       if (storeReadFailureKind(cause) === "unavailable") hideWithdrawnStore();
@@ -179,14 +223,23 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
     }
   }, [appliedQuery, catalogBusy, categoryID, hideWithdrawnStore, loadingMore, productID, selectedCityID, state, storeId]);
 
-  const ready = state.kind === "ready" && state.store.id === storeId &&
-    state.store.serviceCity.id === selectedCityID ? state : null;
+  const ready = state.kind === "ready" &&
+    (state.relation === "marketplace" ? state.store.id === storeId &&
+      state.store.serviceCity.id === selectedCityID : state.store.storeId === storeId &&
+      state.store.serviceCityId === selectedCityID) ? state : null;
   const columns = productID ? (width < 720 ? 1 : 2) : storefrontColumns(width);
   const siteWidth = Math.min(width, 1240);
   const innerWidth = Math.max(0, siteWidth - spacing[4] * 2);
   const cardWidth = Math.max(0, Math.floor((innerWidth - (columns - 1) * spacing[3]) / columns));
-  const offers = ready ? visiblePublishedOffers(ready.catalog.offers, storeId, productID) : [];
-  const categories = ready ? ready.catalog.categories.filter((category) => category.active) : [];
+  const offers = ready?.relation === "marketplace"
+    ? visiblePublishedOffers(ready.catalog.offers, storeId, productID).map(offer => ({
+        ...offer, priceUnitLabel: formatQuantity(offer.baseUnit, offer.pricingUnitBaseUnits),
+      }))
+    : ready?.relation === "independent"
+      ? ready.catalog.offers.filter(offer => !productID || offer.productId === productID).map(offer => ({
+          ...offer, availability: true, priceUnitLabel: "",
+        })) : [];
+  const categories = ready?.relation === "marketplace" ? ready.catalog.categories.filter((category) => category.active) : [];
   const openMarketRoute = async (path: Href) => {
     // React state is not a synchronous lock: two taps can arrive before render.
     if (!selectedCityID || openingMarketRef.current) return;
@@ -230,10 +283,14 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
   }
 
   const store = ready.store;
-  const cover = store.storeCoverImage?.uri;
-  const profile = store.storeProfileImage?.uri;
+  const isMarketplace = ready.relation === "marketplace";
+  const cover = ready.relation === "marketplace" ? ready.store.storeCoverImage?.uri : ready.store.coverImageUri;
+  const profile = ready.relation === "marketplace" ? ready.store.storeProfileImage?.uri : ready.store.profileImageUri;
   const product = productID ? offers[0] : undefined;
-  const marketCitySuffix = selectedCityID !== savedCityID ? " في " + store.serviceCity.displayNameAr : "";
+  const cityName = ready.relation === "marketplace" ? ready.store.serviceCity.displayNameAr :
+    cities.find(city => city.id === selectedCityID)?.displayNameAr ?? "";
+  const marketCitySuffix = isMarketplace && selectedCityID !== savedCityID ? " في " + cityName : "";
+  const siteLoginPath = "/?returnTo=" + encodeURIComponent(buildFullStorefrontPath(storeId, selectedCityID ?? "", { productID }));
 
   return <ScrollView
     ref={scrollRef}
@@ -252,7 +309,9 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
           <Pressable accessibilityRole="button" onPress={() => jumpTo(productsOffset.current)} style={styles.navItem}><Text style={styles.navText}>المنتجات</Text></Pressable>
           <Pressable accessibilityRole="button" onPress={() => jumpTo(contactOffset.current)} style={styles.navItem}><Text style={styles.navText}>التواصل</Text></Pressable>
         </View>
-        <BthwaniButton label={"سلة المتجر" + marketCitySuffix} busy={openingMarket} onPress={() => void openMarketRoute(clientStorefrontCartPath(storeId, selectedCityID ?? "", productID) as Href)} />
+        {isMarketplace ? <BthwaniButton label={"سلة المتجر" + marketCitySuffix} busy={openingMarket} onPress={() => void openMarketRoute(clientStorefrontCartPath(storeId, selectedCityID ?? "", productID) as Href)} /> : <Text style={styles.secondary}>الطلب المباشر غير متاح حتى اعتماد خدمة المتجر.</Text>}
+        <BthwaniButton label={signedIn ? "حسابي" : "تسجيل الدخول"} variant="secondary"
+          onPress={() => router.push((signedIn ? "/account" : siteLoginPath) as Href)} />
       </View>
       {marketCityError ? <Text accessibilityRole="alert" style={styles.secondary}>تعذر اختيار مدينة المتجر. أعد المحاولة.</Text> : null}
 
@@ -268,12 +327,12 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
             : <View style={styles.logoFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={26} /></View>}
           <View style={styles.identityCopy}>
             <Text accessibilityRole="header" style={styles.storeName}>{store.name}</Text>
-            {store.addressLine?.trim() ? <Text style={styles.secondary}>{store.addressLine.trim()}</Text> : null}
-            <Text style={styles.secondary}>مدينة الخدمة: {store.serviceCity.displayNameAr}</Text>
+            {ready.relation === "marketplace" && ready.store.addressLine?.trim() ? <Text style={styles.secondary}>{ready.store.addressLine.trim()}</Text> : null}
+            <Text style={styles.secondary}>مدينة الخدمة: {cityName}</Text>
           </View>
         </View>
-        {store.ratingCount > 0
-          ? <Text accessibilityLabel={"تقييم المتجر " + store.ratingAverage.toFixed(1) + " من خمسة"} style={styles.secondary}>★ {store.ratingAverage.toFixed(1)} · {store.ratingCount} تقييم</Text>
+        {ready.relation === "marketplace" && ready.store.ratingCount > 0
+          ? <Text accessibilityLabel={"تقييم المتجر " + ready.store.ratingAverage.toFixed(1) + " من خمسة"} style={styles.secondary}>★ {ready.store.ratingAverage.toFixed(1)} · {ready.store.ratingCount} تقييم</Text>
           : null}
       </BthwaniSurface>
 
@@ -304,7 +363,7 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
         </View>
         {productID ? <View style={styles.navigation}>
           <Link href={storefrontPath()} style={styles.navItem}><Text style={styles.navText}>عرض جميع منتجات المتجر</Text></Link>
-          {offers.some((offer) => offer.availability) ? <BthwaniButton label={"اختيار المنتج عبر بثواني" + marketCitySuffix} busy={openingMarket} onPress={() => void openMarketRoute(marketplacePath(productID))} /> : null}
+          {isMarketplace && offers.some((offer) => offer.availability) ? <BthwaniButton label={"اختيار المنتج عبر بثواني" + marketCitySuffix} busy={openingMarket} onPress={() => void openMarketRoute(marketplacePath(productID))} /> : null}
         </View> : <View style={styles.searchRow}>
           <TextInput
             accessibilityLabel="البحث في منتجات المتجر"
@@ -340,7 +399,7 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
                   : <View style={[styles.productImage, styles.productPlaceholder]}><BthwaniIcon name="store" color={theme.colorMuted} size={26} /><Text style={styles.secondary}>صورة غير متوفرة</Text></View>}
                 <Text style={styles.productName} numberOfLines={2}>{offer.productName}</Text>
                 {offer.variantTitle?.trim() ? <Text style={styles.secondary} numberOfLines={1}>{offer.variantTitle}</Text> : null}
-                <Text style={styles.price}>{formatMoney(offer.priceMinor, offer.currency)} / {formatQuantity(offer.baseUnit, offer.pricingUnitBaseUnits)}</Text>
+                <Text style={styles.price}>{formatMoney(offer.priceMinor, offer.currency)}{offer.priceUnitLabel ? " / " + offer.priceUnitLabel : ""}</Text>
                 {!offer.availability ? <Text style={styles.unavailableLabel}>غير متوفر حاليًا</Text> : null}
               </BthwaniSurface>
             if (productID) return <View key={offer.offerId} style={{ width: Math.min(450, cardWidth) }}>{card}</View>;
@@ -361,12 +420,25 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
 
       <View style={styles.section} onLayout={(event) => { contactOffset.current = event.nativeEvent.layout.y; }}>
         <Text accessibilityRole="header" style={styles.title}>التواصل مع المتجر</Text>
-        <StorePublicContactCard storeID={storeId} />
+        {ready.relation === "marketplace" ? <StorePublicContactCard storeID={storeId} /> : <View style={styles.notice}>
+          {ready.store.businessPhoneE164 ? <Text style={styles.secondary}>الهاتف التجاري: {ready.store.businessPhoneE164}</Text> : null}
+          {ready.store.businessWhatsAppE164 ? <Text style={styles.secondary}>واتساب التجاري: {ready.store.businessWhatsAppE164}</Text> : null}
+          {ready.store.businessEmail ? <Text style={styles.secondary}>البريد التجاري: {ready.store.businessEmail}</Text> : null}
+          {([
+            ["سياسة الإلغاء", ready.store.cancellationTerms],
+            ["سياسة الإرجاع", ready.store.returnsTerms],
+            ["سياسة تجهيز الطلب", ready.store.fulfillmentTerms],
+            ["سياسة الاستلام", ready.store.collectionTerms],
+          ] as const).filter(([, description]) => Boolean(description?.trim())).map(([label, description]) =>
+            <View key={label} style={styles.sectionHeading}>
+              <Text style={styles.title}>{label}</Text><Text style={styles.secondary}>{description}</Text>
+            </View>)}
+        </View>}
       </View>
       <View style={styles.footer}>
         <Text style={styles.footerTitle}>{store.name} · بثواني</Text>
-        <Text style={styles.secondary}>يُعرض هذا الموقع من بيانات المتجر المنشورة في سوق بثواني.</Text>
-        <BthwaniButton label={"العودة إلى المتجر داخل سوق بثواني" + marketCitySuffix} busy={openingMarket} onPress={() => void openMarketRoute(marketplacePath())} variant="secondary" />
+        <Text style={styles.secondary}>{isMarketplace ? "يُعرض هذا الموقع من بيانات المتجر المنشورة في سوق بثواني." : "يُعرض هذا الموقع من بيانات المتجر المستقل المنشورة والمعتمدة في بثواني."}</Text>
+        {isMarketplace ? <BthwaniButton label={"العودة إلى المتجر داخل سوق بثواني" + marketCitySuffix} busy={openingMarket} onPress={() => void openMarketRoute(marketplacePath())} variant="secondary" /> : null}
       </View>
     </View>
   </ScrollView>;

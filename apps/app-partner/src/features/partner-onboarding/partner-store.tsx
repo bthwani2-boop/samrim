@@ -16,14 +16,15 @@ import { StoreOperationalAvailabilityManagement } from "./store-operational-avai
 import { StoreProfileImageEditor } from "./store-profile-image-editor";
 import { PartnerStoreSettingsOverview } from "./partner-store-settings-overview";
 import { PartnerStorePublicContact } from "./partner-store-public-contact";
-import { PartnerIndependentStorePreview } from "./partner-independent-store-preview";
+import { PartnerIndependentCustomerPolicyDraftEditor } from "./partner-independent-customer-policy";
+import { PartnerStorefrontLink } from "./partner-storefront-link";
 
-type StoreSection = "operations" | "promotions" | "team" | "settings" | "commercial" | "banners" | "preview";
+type StoreSection = "operations" | "promotions" | "team" | "settings" | "commercial" | "banners" | "website";
 function isStoreSection(value: string | undefined): value is StoreSection {
-  return value === "operations" || value === "promotions" || value === "team" || value === "settings" || value === "commercial" || value === "banners" || value === "preview";
+  return value === "operations" || value === "promotions" || value === "team" || value === "settings" || value === "commercial" || value === "banners" || value === "website";
 }
 function eligibleForSection(store: PartnerAccessibleStore, section: StoreSection): boolean {
-  if (section === "preview") return store.relationModel === "INDEPENDENT_STORE" && store.owned;
+  if (section === "website") return store.relationModel === "INDEPENDENT_STORE" && store.owned;
   if (section === "banners") return mayPrepareIndependentStoreBanners(store);
   if (section === "operations" && store.relationModel === "INDEPENDENT_STORE") return store.owned;
   if (["operations", "promotions", "team", "commercial"].includes(section) && store.relationModel !== "BTHWANI_PARTNER") return false;
@@ -74,8 +75,11 @@ export function PartnerStore() {
       {section === "operations" ? <StoreOperationalAvailabilityManagement key={selectedStore.id} storeID={selectedStore.id} preparingIndependent={independent} fulfillmentModes={selectedStore.fulfillmentModes.filter(isStoreFulfillmentMode)} /> : null}
       {section === "promotions" ? <PartnerMarketingWorkspace key={selectedStore.id} storeID={selectedStore.id} storeName={selectedStore.name} verticalID={selectedStore.primaryVerticalId} view={marketingView}/> : null}
       {section === "banners" ? <PartnerStoreBanners key={selectedStore.id} storeId={selectedStore.id} storeName={selectedStore.name} independent /> : null}
-      {section === "preview" ? <View style={styles.card}>
-        <PartnerIndependentStorePreview key={selectedStore.id} store={selectedStore} />
+      {section === "website" ? <View style={styles.card}>
+        <Text accessibilityRole="header" style={styles.value}>موقع المتجر المستقل</Text>
+        <Text style={styles.muted}>يُفتح الموقع الحقيقي للزوار بعد اعتماده في DSH؛ المنتجات والصور المنشورة فقط تظهر لهم. تبقى السياسات قيد المراجعة ضمن إدارة المتجر.</Text>
+        <PartnerStorefrontLink key={selectedStore.id + ":website"} store={selectedStore} />
+        <PartnerIndependentCustomerPolicyDraftEditor key={selectedStore.id + ":policy"} storeID={selectedStore.id} />
       </View> : null}
       {section === "team" ? <TeamManagement key={selectedStore.id} storeID={selectedStore.id} /> : null}
       {section === "commercial" ? <StoreCommercialAgreements key={selectedStore.id + ":agreements"} storeID={selectedStore.id} /> : null}

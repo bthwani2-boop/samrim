@@ -5,7 +5,7 @@ import vm from "node:vm";
 import ts from "typescript-ast";
 
 const component = readFileSync(new URL("./partner-independent-customer-policy.tsx", import.meta.url), "utf8");
-const preview = readFileSync(new URL("./partner-independent-store-preview.tsx", import.meta.url), "utf8");
+const workspace = readFileSync(new URL("./partner-store.tsx", import.meta.url), "utf8");
 const client = readFileSync(new URL("./store-readback-client.ts", import.meta.url), "utf8");
 const tree = ts.createSourceFile("partner-independent-customer-policy.tsx", component, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const producers = new Map();
@@ -37,8 +37,9 @@ test("owner editor checks all four terms against canonical readback before claim
 });
 
 test("Store owner-only editor is never the public Store or a marketplace publication control", () => {
-  assert.match(preview, /if \(!store\.owned\)/);
-  assert.match(preview, /PartnerIndependentCustomerPolicyDraftEditor key=\{store\.id\} storeID=\{store\.id\}/);
+  assert.match(workspace, /section === "website"\) return store\.relationModel === "INDEPENDENT_STORE" && store\.owned/);
+  assert.match(workspace, /<PartnerIndependentCustomerPolicyDraftEditor key=\{selectedStore\.id \+ ":policy"\} storeID=\{selectedStore\.id\}/);
+  assert.doesNotMatch(workspace, /PartnerIndependentStorePreview/);
   assert.match(component, /لم تُعتمد للنشر بعد/);
   assert.doesNotMatch(component, /WLT|publishIndependent|checkoutEnabled/);
 });

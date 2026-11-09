@@ -35,6 +35,19 @@ test("sign-in can resume the exact marketplace product and active city", () => {
   assert.doesNotMatch("/store/store-5?serviceCityId=city-9&serviceCityId=city-8", clientAuthReturnPathPattern);
 });
 
+test("Store website login returns only to an exact public Store and City", () => {
+  for (const site of [
+    "/storefront/store-5?serviceCityId=city-9",
+    "/storefront/store-5?serviceCityId=city-9&productId=product%267",
+  ]) assert.match(site, clientAuthReturnPathPattern);
+  for (const attempt of [
+    "/storefront/../other?serviceCityId=city-9",
+    "/storefront/store-5?serviceCityId=city-9&relationModel=INDEPENDENT_STORE",
+    "/storefront/store-5?serviceCityId=city-9&serviceCityId=other",
+    "/storefront/store-5?serviceCityId=city-9&productId=one&productId=two",
+  ]) assert.doesNotMatch(attempt, clientAuthReturnPathPattern);
+});
+
 test("a storefront cart resumes the exact Store, city and public product after sign-in", () => {
   const path = authReturn.clientStorefrontCartPath("store-5", "city-9", "product&7");
   assert.equal(path, "/cart/store-5?source=storefront&serviceCityId=city-9&productId=product%267");
