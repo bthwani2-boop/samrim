@@ -71,7 +71,7 @@ test("independent pickup order UI includes Store-scoped render and pre-dispatch 
   assert.match(source, /const scopeKey = JSON\.stringify\(\[scope, storeID\]\)/u);
   assert.match(source, /isCurrentOrderListRequest\(request, scopeKey, generation\.current, activeScopeKey\.current\)/u);
   assert.match(source, /const visible = visibleScopeKey === scopeKey/u);
-  assert.match(source, /!loading && visible && !error && orders\.map\(order =>/u);
+  assert.match(source, /!loading && visible && orders\.map\(order =>/u);
   assert.match(source, /confirm && visible && confirm\.order\.storeId === storeID/u);
   assert.match(source, /const token = await scopedToken\(scope\);[\s\S]*?if \(!isCurrentAction\(\)\) return;[\s\S]*?transitionIndependentPickupOrder\(token, storeID/u);
 });

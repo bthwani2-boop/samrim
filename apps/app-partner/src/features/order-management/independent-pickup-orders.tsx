@@ -154,8 +154,8 @@ export function IndependentPickupOrders({ storeID, canAdvance }: Readonly<{ stor
     </View>
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     {loading || (!visible && !error) ? <ActivityIndicator accessibilityLabel="جارٍ قراءة الطلبات" color={theme.actionBackground} /> : null}
-    {!loading && visible && !error && orders.length === 0 ? <View style={styles.card}><Text style={styles.muted}>لا توجد طلبات استلام لهذا المتجر.</Text></View> : null}
-    {!loading && visible && !error && orders.map(order => {
+    {!loading && visible && orders.length === 0 ? <View style={styles.card}><Text style={styles.muted}>لا توجد طلبات استلام لهذا المتجر.</Text></View> : null}
+    {!loading && visible && orders.map(order => {
       const action = next[order.state];
       return <View key={order.orderId} style={styles.card}>
         <Text accessibilityRole="header" style={styles.value}>{states[order.state]} · {formatMoney(order.totalMinor, "YER")}</Text>
@@ -172,7 +172,7 @@ export function IndependentPickupOrders({ storeID, canAdvance }: Readonly<{ stor
         </View> : null}
       </View>;
     })}
-    {!loading && visible && !error && cursor ? <BthwaniButton label="عرض طلبات أقدم" disabled={loading || Boolean(busyOrder)} variant="secondary" onPress={() => void load(cursor)} /> : null}
+    {!loading && visible && cursor ? <BthwaniButton label="عرض طلبات أقدم" disabled={loading || Boolean(busyOrder)} variant="secondary" onPress={() => void load(cursor)} /> : null}
     {confirm && visible && confirm.order.storeId === storeID ? <BthwaniConfirmDialog visible title={confirm.state === "REJECTED" ? "رفض الطلب" : "تأكيد الاستلام"}
       description={confirm.state === "REJECTED" ? "سجّل سبب رفض الطلب." : "أكّد بعد تسليم الطلب للعميل في المتجر."}
       confirmLabel={confirm.state === "REJECTED" ? "رفض الطلب" : "تم التسليم"} intent={confirm.state === "REJECTED" ? "danger" : "primary"}
