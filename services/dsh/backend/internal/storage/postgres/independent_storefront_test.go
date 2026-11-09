@@ -46,7 +46,47 @@ func TestIndependentPublishedStoreMediaSingleSnapshotGuard(t *testing.T) {
 	}
 }
 
-func TestIndependentStoreMediaURIEligibilityMatchesStoreCatalogAndCheckout(t *testing.T) {
+// Website publication and purchase acceptance are different DSH capabilities.
+// A reviewed Store with an empty Catalog is a valid read-only public website.
+func TestIndependentPublicWebsitePublicationDoesNotRequireCheckoutOrProducts(t *testing.T) {
+	source, err := os.ReadFile("independent_storefront.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	all := string(source)
+	start := strings.Index(all, "func readPublishedIndependentStoreWithQueryer(")
+	endOffset := strings.Index(all[start:], "func independentCatalogCursorScope(")
+	end := start + endOffset
+	if start < 0 || end <= start {
+		t.Fatal("public Store gate bounds changed")
+	}
+	reader := all[start:end]
+	for _, required := range []string{
+		"p.state='PUBLISHED_INDEPENDENT'",
+		"p.review_state='PASSED'",
+		"p.terms_accepted_at IS NOT NULL",
+		"cp.review_state='PASSED'",
+		"cp.published_at IS NOT NULL",
+		"store_profile_media_assets",
+		"store_public_contacts",
+	} {
+		if !strings.Contains(reader, required) {
+			t.Errorf("missing legal/publication/media boundary: %s", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"'CUSTOMER_PICKUP'=ANY",
+		"catalog_store_offers",
+		"catalog_publishable_offers",
+		"independentWebOfferPresentationSQL",
+	} {
+		if strings.Contains(reader, forbidden) {
+			t.Errorf("public website is incorrectly gated on Checkout/Catalog readiness: %s", forbidden)
+		}
+	}
+}
+
+func TestIndependentStoreMediaEligibilityIsCheckedOncePerPublicationSnapshot(t *testing.T) {
 	storeBytes, err := os.ReadFile("independent_storefront.go")
 	if err != nil {
 		t.Fatal(err)
@@ -61,12 +101,18 @@ func TestIndependentStoreMediaURIEligibilityMatchesStoreCatalogAndCheckout(t *te
 	publicStoreSQL := storeSource[storeReaderStart:catalogStart]
 	publicCatalogSQL := storeSource[catalogStart:catalogEnd]
 	const mediaNotBlank = "NULLIF(btrim(asset.uri),'') IS NOT NULL"
-	const eligibleMediaNotBlank = "NULLIF(btrim(a.uri),'') IS NOT NULL"
 	if got := strings.Count(publicStoreSQL, mediaNotBlank); got != 2 {
 		t.Errorf("public Store should require nonblank profile and cover URIs: %d guards", got)
 	}
-	if got := strings.Count(publicCatalogSQL, eligibleMediaNotBlank); got != 2 {
-		t.Errorf("public Catalog must recheck both Store media URIs: %d guards", got)
+	if !strings.Contains(publicCatalogSQL, "readPublishedIndependentStoreWithQueryer(ctx, tx, storeID, approvedLegalTermsVersion)") ||
+		!strings.Contains(publicCatalogSQL, "WHERE o.store_id=$1") ||
+		!strings.Contains(publicCatalogSQL, "independentWebOfferPresentationSQL") {
+		t.Fatal("Catalog must use a Store-authorized, Store-scoped product query within one snapshot")
+	}
+	if strings.Contains(publicCatalogSQL, "JOIN dsh.independent_store_publications") ||
+		strings.Contains(publicCatalogSQL, "store_profile_media_assets") ||
+		strings.Contains(publicCatalogSQL, "independent_store_customer_policies") {
+		t.Fatal("Catalog query must not recreate DSH publication, media or legal gate machinery")
 	}
 }
 

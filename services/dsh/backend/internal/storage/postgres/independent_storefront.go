@@ -13,7 +13,9 @@ import (
 )
 
 // Independent Store public readers are served only after DSH publication,
-// legal, contact and media eligibility gates; direct checkout remains disabled.
+// legal, contact and media eligibility gates. It does not require an Order-
+// ready fulfillment mode or any publishable Offer: the website can be
+// read-only/empty while direct checkout remains disabled.
 var ErrIndependentStorefrontNotPublished = errors.New("independent storefront was not published")
 
 // Public read-only websites consume the canonical Catalog eligibility view.
@@ -134,17 +136,9 @@ func readPublishedIndependentStoreWithQueryer(ctx context.Context, db independen
 		  AND p.terms_accepted_at IS NOT NULL AND p.published_at IS NOT NULL
 		  AND p.terms_accepted_by_actor_id=s.partner_actor_id
 		  AND (c.phone_e164<>'' OR c.email<>'' OR c.whatsapp_enabled)
-		  AND 'CUSTOMER_PICKUP'=ANY(s.fulfillment_modes)
 		  AND cp.review_state='PASSED' AND cp.published_at IS NOT NULL
 		  AND cp.authored_by_actor_id=s.partner_actor_id
-		  AND NULLIF(btrim(cp.reviewed_by_actor_id),'') IS NOT NULL
-		  AND EXISTS (
-			SELECT 1 FROM dsh.catalog_store_offers o
-			JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
-			JOIN dsh.catalog_products p ON p.id=v.product_id
-			WHERE o.store_id=s.id
-		`+independentWebOfferPresentationSQL+`
-		  )`, storeID, approvedLegalTermsVersion).Scan(
+		  AND NULLIF(btrim(cp.reviewed_by_actor_id),'') IS NOT NULL`, storeID, approvedLegalTermsVersion).Scan(
 		&result.StoreID, &result.ServiceCityID, &result.Name, &result.StoreVersion,
 		&result.PublicationVersion, &result.PublishedAt,
 		&result.BusinessPhoneE164, &result.BusinessEmail,
@@ -209,26 +203,11 @@ func listPublishedIndependentOffersInternal(ctx context.Context, db *sql.DB, sto
 	if expectedCityID != "" && store.ServiceCityID != expectedCityID {
 		return CatalogStoreOfferPage{}, ErrIndependentStorefrontNotPublished
 	}
-	query := catalogOfferSelect + ` JOIN dsh.independent_store_publications publication ON publication.store_id=s.id
-		JOIN dsh.service_cities city ON city.id=s.service_city_id AND city.active=true
-		WHERE s.id=$1 AND s.relation_model='INDEPENDENT_STORE'
-		  AND s.publication_state<>'published' AND s.deleted_at IS NULL
-		  AND publication.state='PUBLISHED_INDEPENDENT' AND publication.review_state='PASSED'
-		  AND publication.terms_version=$2 AND publication.terms_accepted_at IS NOT NULL
-		  AND publication.terms_accepted_by_actor_id=s.partner_actor_id
-		  AND publication.published_at IS NOT NULL
-		  AND 'CUSTOMER_PICKUP'=ANY(s.fulfillment_modes)
-		  AND EXISTS (SELECT 1 FROM dsh.independent_store_customer_policies cp
-		      WHERE cp.store_id=s.id AND cp.review_state='PASSED'
-		        AND cp.published_at IS NOT NULL AND cp.authored_by_actor_id=s.partner_actor_id
-		        AND NULLIF(btrim(cp.reviewed_by_actor_id),'') IS NOT NULL)
-		  AND EXISTS (SELECT 1 FROM dsh.store_public_contacts c
-		      WHERE c.store_id=s.id AND (c.phone_e164<>'' OR c.email<>'' OR c.whatsapp_enabled))
-		  AND EXISTS (SELECT 1 FROM dsh.store_profile_media_assets a
-		      WHERE a.store_id=s.id AND a.media_role='primary' AND a.state='active' AND a.rights_attested_at IS NOT NULL AND NULLIF(btrim(a.uri),'') IS NOT NULL)
-		  AND EXISTS (SELECT 1 FROM dsh.store_profile_media_assets a
-		      WHERE a.store_id=s.id AND a.media_role='cover' AND a.state='active' AND a.rights_attested_at IS NOT NULL AND NULLIF(btrim(a.uri),'') IS NOT NULL)` + independentWebOfferPresentationSQL
-	args := []any{storeID, approvedLegalTermsVersion}
+	// The authorized Store publication and product page use the same read-only
+	// repeatable-read snapshot. The DSH Store reader owns all independent legal,
+	// media and publication gates; do not clone them into this Catalog query.
+	query := catalogOfferSelect + ` WHERE o.store_id=$1` + independentWebOfferPresentationSQL
+	args := []any{storeID}
 	if categoryID != "" {
 		args = append(args, categoryID)
 		query += " AND EXISTS (SELECT 1 FROM dsh.catalog_product_categories pc JOIN dsh.catalog_categories category ON category.id=pc.category_id AND category.active=true AND category.vertical_id=p.vertical_id WHERE pc.product_id=p.id AND pc.category_id=$" + itoa(len(args)) + ")"
