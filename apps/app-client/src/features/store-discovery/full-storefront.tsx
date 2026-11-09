@@ -273,11 +273,19 @@ export default function ClientFullStorefront({ storeId, linkedCityID, categoryID
       {bannerError ? <View style={styles.notice}><Text accessibilityRole="alert" style={styles.secondary}>تعذر تحديث بنرات المتجر. يمكنك متابعة التصفح.</Text><BthwaniButton label="إعادة قراءة البنرات" variant="secondary" onPress={() => void refreshBanners(readID.current)} /></View> : null}
       {banners.length > 0 ? <View style={styles.section} accessibilityLabel="بنرات المتجر المنشورة">
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.bannerRail}>
-          {banners.map((banner) => <View key={banner.id} style={[styles.banner, { width: Math.min(420, Math.max(260, innerWidth)) }]}>
-            <ExpoImage cachePolicy="disk" source={{ uri: banner.mediaUri }} accessibilityLabel={"بنر " + banner.titleAr} contentFit="cover" style={styles.bannerImage} />
-            <Text style={styles.bannerTitle} numberOfLines={2}>{banner.titleAr}</Text>
-            {banner.bodyAr?.trim() ? <Text style={styles.secondary} numberOfLines={2}>{banner.bodyAr}</Text> : null}
-          </View>)}
+          {banners.map((banner) => {
+            const bannerUri = banner.mediaUri ?? "";
+            return <View key={banner.id} style={[styles.banner, { width: Math.min(420, Math.max(260, innerWidth)) }]}>
+              {bannerUri && !brokenImages.has(bannerUri)
+                ? <ExpoImage cachePolicy="disk" source={{ uri: bannerUri }} accessibilityLabel={"بنر " + banner.titleAr} contentFit="cover" style={styles.bannerImage} onError={() => setBrokenImages((previous) => new Set(previous).add(bannerUri))} />
+                : <View style={[styles.bannerImage, styles.coverFallback]} accessibilityLabel={"تعذر تحميل بنر " + banner.titleAr}>
+                  <BthwaniIcon name="store" color={theme.colorMuted} size={26} />
+                  <Text style={styles.secondary}>صورة البنر غير متوفرة</Text>
+                </View>}
+              <Text style={styles.bannerTitle} numberOfLines={2}>{banner.titleAr}</Text>
+              {banner.bodyAr?.trim() ? <Text style={styles.secondary} numberOfLines={2}>{banner.bodyAr}</Text> : null}
+            </View>;
+          })}
         </ScrollView>
       </View> : null}
 

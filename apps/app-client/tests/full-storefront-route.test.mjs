@@ -11,6 +11,7 @@ const marketDetail = readFileSync(path.join(app, "src/features/store-discovery/s
 const cityScope = readFileSync(path.join(app, "src/features/service-city/service-city-scope.tsx"), "utf8");
 const cartRoute = readFileSync(path.join(app, "app/cart/[storeId].tsx"), "utf8");
 const cart = readFileSync(path.join(app, "src/features/cart-checkout/client-cart-screen.tsx"), "utf8");
+const browserProof = readFileSync(path.join(app, "tests/full-storefront-browser.manual.mjs"), "utf8");
 
 test("web route is a separate composition, never the existing marketplace or independent owner preview", () => {
   assert.match(route, /Platform\.OS !== "web"/);
@@ -44,6 +45,20 @@ test("store site offers explicit retry, no-results and themed responsive layout"
   assert.match(site, /storefrontColumns\(width\)/);
   assert.match(site, /useAppearanceTheme\(\)/);
   assert.match(site, /role="main"/);
+});
+
+test("broken Store banner media falls back without hiding its approved content", () => {
+  assert.match(site, /const bannerUri = banner\.mediaUri \?\? ""/);
+  assert.match(site, /bannerUri && !brokenImages\.has\(bannerUri\)/);
+  assert.match(site, /setBrokenImages\(\(previous\) => new Set\(previous\)\.add\(bannerUri\)\)/);
+  assert.match(site, /صورة البنر غير متوفرة/);
+});
+
+test("manual browser proof stays inside the authorized Chrome CDP context", () => {
+  assert.match(browserProof, /browser\.contexts\(\)\[0\]/);
+  assert.doesNotMatch(browserProof, /browser\.newContext\(/);
+  assert.match(browserProof, /await page\.close\(\)/);
+  assert.doesNotMatch(browserProof, /await context\.close\(\)/);
 });
 
 test("a newer search clears pagination and route scope changes discard pending reads", () => {

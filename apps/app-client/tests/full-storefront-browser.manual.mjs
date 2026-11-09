@@ -5,8 +5,13 @@ import { chromium, expect } from "@playwright/test";
 
 const origin = process.env.BTHWANI_CLIENT_WEB_ORIGIN ?? "http://localhost:18101";
 const browser = await chromium.connectOverCDP(process.env.BTHWANI_BROWSER_CDP ?? "http://127.0.0.1:9222");
-const context = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: "ar-YE", colorScheme: "light" });
+// Use a new tab inside the existing authorized CDP context so current actor
+// cookies and browser security policies are never replaced by an isolated profile.
+const context = browser.contexts()[0];
+assert(context, "approved Chrome CDP context is required");
 const page = await context.newPage();
+await page.setViewportSize({ width: 390, height: 844 });
+await page.emulateMedia({ colorScheme: "light" });
 const errors = [];
 page.on("pageerror", error => errors.push({ route: new URL(page.url()).pathname, message: error.message, stack: error.stack?.slice(0, 400) }));
 
@@ -112,6 +117,7 @@ try {
     assert.deepEqual(errors.filter(item => item.route.startsWith("/storefront/")), [], "Storefront JavaScript errors");
   }
 } finally {
-  await context.close();
+  // Only close the tab created by this proof, never the shared Chrome context.
+  await page.close();
   await browser.close();
 }
