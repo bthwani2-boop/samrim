@@ -5,6 +5,11 @@ import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 
 const reportSource = readFileSync(new URL("../src/features/finance/finance-specialized-tabs.tsx", import.meta.url), "utf8");
+const dashboardSource = readFileSync(new URL("../src/features/finance/finance-reference-dashboard.tsx", import.meta.url), "utf8");
+const dashboardStart = dashboardSource.indexOf("function downloadCSV(");
+const dashboardEnd = dashboardSource.indexOf("\nexport function FinanceReferenceDashboard", dashboardStart);
+assert.ok(dashboardStart >= 0 && dashboardEnd > dashboardStart, "command dashboard export function exists");
+const dashboardDownloadAction = dashboardSource.slice(dashboardStart, dashboardEnd);
 const helperSource = readFileSync(new URL("../src/features/shared/registry-csv.ts", import.meta.url), "utf8");
 const start = reportSource.indexOf(" const download=()=>downloadRegistryCsv(");
 const end = reportSource.indexOf(" return <button", start);
@@ -13,7 +18,7 @@ const downloadAction = reportSource.slice(start, end);
 const runnableHelper = stripTypeScriptTypes(helperSource.replace("export function downloadRegistryCsv", "function downloadRegistryCsv"))
   + "\nglobalThis.expose = downloadRegistryCsv;";
 
-async function exportCsv(rows, filename = "bthwani-finance-report") {
+async function exportCsv(rows, filename = "bthwani-finance-report", useDashboard = false) {
   const action = { blob: null, href: null, filename: null, clicked: false, revoked: null };
   const context = {
     Blob,
@@ -33,12 +38,13 @@ async function exportCsv(rows, filename = "bthwani-finance-report") {
     },
   };
   runInNewContext(runnableHelper, context);
-  const trigger = runInNewContext(`${downloadAction}\ndownload;`, {
+  const source = useDashboard ? stripTypeScriptTypes(dashboardDownloadAction) : downloadAction;
+  const trigger = runInNewContext(`${source}\n${useDashboard ? "downloadCSV" : "download"};`, {
     downloadRegistryCsv: context.expose,
     rows,
     file: filename,
   });
-  trigger();
+  trigger(rows);
   assert.equal(action.clicked, true);
   assert.equal(action.href, "blob:finance-report");
   assert.equal(action.revoked, "blob:finance-report");
@@ -103,4 +109,26 @@ test("finance report no longer maintains a second CSV, Blob or object-URL implem
   assert.equal((reportSource.match(/downloadRegistryCsv\(/g) ?? []).length, 1);
   assert.doesNotMatch(downloadAction, /new Blob|URL\.createObjectURL|createElement\("a"\)/);
   assert.match(reportSource, /rows\.map\(r=>\[String\(r\.priority\),r\.category,r\.subject,r\.reference,r\.state,r\.amount,r\.nextStep\]\)/);
+});
+
+test("finance command dashboard export uses canonical sanitized CSV with original filename and headers", async () => {
+  const { csv, bytes, filename } = await exportCsv([
+    row('=HYPERLINK("https://malicious.example","open")', {
+      category: "+SUM(2,3)",
+      nextStep: 'مراجعة "سجل"\r\nإضافي',
+    }),
+  ], "ignored-by-dashboard", true);
+  assert.equal(filename, "bthwani-finance-loaded-rows.csv");
+  assert.deepEqual([...bytes.slice(0, 3)], [0xef, 0xbb, 0xbf]);
+  assert.match(csv, /^"الأولوية","النوع","المستفيد","المرجع","الحالة","المبلغ","الإجراء"\r\n/);
+  assert.ok(csv.includes('"\'+SUM(2,3)"'));
+  assert.ok(csv.includes('"\'=HYPERLINK(""https://malicious.example"",""open"")"'));
+  assert.ok(csv.includes('"مراجعة ""سجل"" إضافي"'));
+  assert.equal(csv.split("\r\n").length, 2);
+});
+
+test("finance command dashboard has one canonical writer and exports the filtered loaded rows", () => {
+  assert.equal((dashboardSource.match(/downloadRegistryCsv\(/g) ?? []).length, 1);
+  assert.doesNotMatch(dashboardDownloadAction, /new Blob|URL\.createObjectURL|createElement\("a"\)/);
+  assert.match(dashboardSource, /onClick=\{\(\)=>downloadCSV\(filtered\)\}/);
 });
