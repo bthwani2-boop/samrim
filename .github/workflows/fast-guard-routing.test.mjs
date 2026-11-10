@@ -69,6 +69,24 @@ test("CI protection does not silently execute invalid retired script remnants", 
   assert.match(workflow, /\.github\/workflows\/fast-guard-routing\.test\.mjs/);
 });
 
+test("Fast Guard executes committed session-isolation and finance CSV regression tests", () => {
+  const start = workflow.indexOf("      - name: Protect checkout, finance, access, and user-facing handoffs");
+  const end = workflow.indexOf("\n      - name: Lint and typecheck affected projects", start);
+  assert.ok(start >= 0 && end > start, "protected Node test step must exist");
+  const step = workflow.slice(start, end);
+  for (const path of [
+    "apps/app-captain/src/features/captain-operations/captain-home-session.test.mjs",
+    "apps/app-captain/src/features/captain-operations/captain-offer-mission-suppression.test.mjs",
+    "apps/app-captain/src/features/captain-operations/captain-offer-poll-freshness.test.mjs",
+    "apps/app-captain/src/features/captain-operations/captain-offer-response-freshness.test.mjs",
+    "apps/app-client/src/features/sharing/client-share-sheet-session.test.mjs",
+    "apps/app-partner/src/features/partner-onboarding/store-commercial-agreements-session.test.mjs",
+    "apps/control-panel/tests/finance-report-csv-safety.test.mjs",
+  ]) {
+    assert.ok(step.includes(`          ${path}\n`), `missing protected regression test: ${path}`);
+  }
+});
+
 test("PowerShell is verified before the mandatory Spec Kit governance test", () => {
   const setup = "      - name: Ensure PowerShell for mandatory Spec Kit proof";
   const governance = "      - name: Verify repository governance and CI routing";

@@ -271,6 +271,13 @@ jobs:
           apps/control-panel/tests/historical-field-finance-readonly.test.mjs
           apps/control-panel/tests/retired-field-wallet-destination-boundary.test.mjs
           apps/control-panel/tests/marketing-budget-route.test.mjs
+          apps/app-captain/src/features/captain-operations/captain-home-session.test.mjs
+          apps/app-captain/src/features/captain-operations/captain-offer-mission-suppression.test.mjs
+          apps/app-captain/src/features/captain-operations/captain-offer-poll-freshness.test.mjs
+          apps/app-captain/src/features/captain-operations/captain-offer-response-freshness.test.mjs
+          apps/app-client/src/features/sharing/client-share-sheet-session.test.mjs
+          apps/app-partner/src/features/partner-onboarding/store-commercial-agreements-session.test.mjs
+          apps/control-panel/tests/finance-report-csv-safety.test.mjs
 
       - name: Lint and typecheck affected projects
         if: steps.changed.outputs.node == 'true'
