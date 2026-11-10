@@ -8,6 +8,7 @@ import { ActivityIndicator, AppState, Modal, Platform, Pressable, ScrollView, St
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { usePartnerStoreScope } from "../partner-onboarding/partner-store-scope-context";
+import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";
 import { OrderConversation } from "./order-conversation";
 import { isCurrentOrderListRequest, mergeOrderPageRecords, tryAcquireOrderAction } from "./order-page-records";
 
@@ -47,9 +48,8 @@ function storeCaptainChoiceLabel(membership: StoreCaptainMembership): string {
   return parts.join(" · ") || "كابتن المتجر";
 }
 
-function currentPartnerActor(): string {
-  const session = currentIdentityState();
-  return session.kind === "authenticated" ? session.identity.subject.trim() : "";
+function currentPartnerSessionKey(): string {
+  return partnerSetupSessionKey(currentIdentityState());
 }
 
 export function OrderManagement({ storeId, storeIds }: { storeId?: string | undefined; storeIds?: ReadonlyArray<string> | undefined }) {
@@ -92,7 +92,7 @@ export function OrderManagement({ storeId, storeIds }: { storeId?: string | unde
   const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
   useEffect(() => { const timer = setTimeout(() => setDebouncedSearch(searchQuery), 350); return () => clearTimeout(timer); }, [searchQuery]);
   const normalizedSearch = targetOrderId || debouncedSearch.trim();
-  const unreadScope = useSyncExternalStore(subscribeIdentitySession, currentPartnerActor, () => "");
+  const unreadScope = useSyncExternalStore(subscribeIdentitySession, currentPartnerSessionKey, () => "");
   const requestScopeKey = JSON.stringify([unreadScope, requestedStoreIDs, filter, normalizedSearch]);
   const activeScopeKey = useRef(requestScopeKey);
   const getChatUnread = useCallback(async (orderId: string) => {
@@ -102,7 +102,7 @@ export function OrderManagement({ storeId, storeIds }: { storeId?: string | unde
   const unreadChatCounts = useConversationUnreadCounts(orders.map(order => order.id), unreadScope, isFocused, getChatUnread, chatOrderId);
 
   const load = useCallback(async (options: { append?: boolean; cursor?: string; quiet?: boolean } = {}) => {
-    if (requestScopeKey !== activeScopeKey.current) return;
+    if (requestScopeKey !== activeScopeKey.current || !unreadScope || currentPartnerSessionKey() !== unreadScope) return;
     const generation = options.append ? loadGeneration.current : ++loadGeneration.current;
     if (options.append) setLoadingMore(true);
     else if (!options.quiet) {
@@ -115,6 +115,7 @@ export function OrderManagement({ storeId, storeIds }: { storeId?: string | unde
     try {
       if (!requestedStoreIDs.length || requestedStoreIDs.length > 200) throw new Error("PARTNER_ORDER_SCOPE_INVALID");
       const token = await getUsableIdentityAccessToken();
+      if (currentPartnerSessionKey() !== unreadScope) return;
       const queueStates = targetOrderId ? undefined : queueFilters.find(({ key }) => key === filter)?.states;
       const response = await client().listPartnerOrders(token, {
         storeIds: requestedStoreIDs,
@@ -123,7 +124,7 @@ export function OrderManagement({ storeId, storeIds }: { storeId?: string | unde
         ...(options.append && options.cursor ? { cursor: options.cursor } : {}),
         limit: 50,
       });
-      if (!isCurrentOrderListRequest(generation, requestScopeKey, loadGeneration.current, activeScopeKey.current)) return;
+      if (currentPartnerSessionKey() !== unreadScope || !isCurrentOrderListRequest(generation, requestScopeKey, loadGeneration.current, activeScopeKey.current)) return;
       if (!Array.isArray(response.orders) || response.orders.some((order) => !requestedStoreIDs.includes(order.storeId))) {
         throw new Error("PARTNER_ORDER_SCOPE_MISMATCH");
       }
@@ -154,7 +155,7 @@ export function OrderManagement({ storeId, storeIds }: { storeId?: string | unde
         }
         })),
       ]);
-      if (!isCurrentOrderListRequest(generation, requestScopeKey, loadGeneration.current, activeScopeKey.current)) return;
+      if (currentPartnerSessionKey() !== unreadScope || !isCurrentOrderListRequest(generation, requestScopeKey, loadGeneration.current, activeScopeKey.current)) return;
       const captainEntries = membershipResults.flatMap((entry): ReadonlyArray<readonly [string, ReadonlyArray<StoreCaptainChoice>]> => entry.status === "fulfilled"
         ? [[entry.value[0], entry.value[1].flatMap((membership: StoreCaptainMembership) => membership.state === "active" && membership.captainActorId ? [{ actorId: membership.captainActorId, label: storeCaptainChoiceLabel(membership) }] : [])]]
         : []);
@@ -166,11 +167,11 @@ export function OrderManagement({ storeId, storeIds }: { storeId?: string | unde
       }
     } catch (cause) {
       console.error("DSH order list failed", cause);
-      if (isCurrentOrderListRequest(generation, requestScopeKey, loadGeneration.current, activeScopeKey.current)) setError("تعذر قراءة الطلبات. ستُعاد المحاولة تلقائيًا.");
+      if (currentPartnerSessionKey() === unreadScope && isCurrentOrderListRequest(generation, requestScopeKey, loadGeneration.current, activeScopeKey.current)) setError("تعذر قراءة الطلبات. ستُعاد المحاولة تلقائيًا.");
     } finally {
-      if (isCurrentOrderListRequest(generation, requestScopeKey, loadGeneration.current, activeScopeKey.current)) { if (!options.quiet) setLoading(false); setLoadingMore(false); }
+      if (currentPartnerSessionKey() === unreadScope && isCurrentOrderListRequest(generation, requestScopeKey, loadGeneration.current, activeScopeKey.current)) { if (!options.quiet) setLoading(false); setLoadingMore(false); }
     }
-  }, [canFulfillOrder, filter, normalizedSearch, requestScopeKey, requestedStoreIDs, targetOrderId]);
+  }, [canFulfillOrder, filter, normalizedSearch, requestScopeKey, requestedStoreIDs, targetOrderId, unreadScope]);
 
   useLayoutEffect(() => {
     activeScopeKey.current = requestScopeKey;

@@ -4,6 +4,7 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript-ast";
 import { isCurrentOrderListRequest } from "../src/features/order-management/order-page-records.ts";
+import { partnerSetupSessionKey } from "../src/features/partner-onboarding/partner-setup-session-scope.ts";
 import { canUseStoreOrders, derivePartnerAuthority, isMarketplaceStore } from "../src/shell/partner-authority.ts";
 
 function deferred() {
@@ -44,12 +45,12 @@ test("a quiet refresh invalidates an older append, and its own page remains curr
 
 test("real partner order list clears prior scope and prevents old mutations from restarting stale reads", () => {
   const source = readFileSync(new URL("../src/features/order-management/order-management.tsx", import.meta.url), "utf8");
-  assert.match(source, /function currentPartnerActor\(\): string \{[\s\S]*?currentIdentityState\(\)[\s\S]*?session\.identity\.subject\.trim\(\)/u);
-  assert.match(source, /useSyncExternalStore\(subscribeIdentitySession, currentPartnerActor, \(\) => ""\)/u);
+  assert.match(source, /function currentPartnerSessionKey\(\): string \{[\s\S]*?partnerSetupSessionKey\(currentIdentityState\(\)\)/u);
+  assert.match(source, /useSyncExternalStore\(subscribeIdentitySession, currentPartnerSessionKey, \(\) => ""\)/u);
   assert.match(source, /const requestScopeKey = JSON\.stringify\(\[unreadScope, requestedStoreIDs, filter, normalizedSearch\]\)/u);
-  assert.match(source, /if \(requestScopeKey !== activeScopeKey\.current\) return;\s*const generation/u);
+  assert.match(source, /if \(requestScopeKey !== activeScopeKey\.current \|\| !unreadScope \|\| currentPartnerSessionKey\(\) !== unreadScope\) return;\s*const generation/u);
   assert.match(source, /useLayoutEffect\(\(\) => \{[\s\S]*?setOrders\(\[\]\);[\s\S]*?setAssignments\(\{\}\);[\s\S]*?setChatOrderId\(""\);/u);
-  assert.match(source, /if \(!isCurrentOrderListRequest\(generation, requestScopeKey, loadGeneration\.current, activeScopeKey\.current\)\) return;/u);
+  assert.match(source, /if \(currentPartnerSessionKey\(\) !== unreadScope \|\| !isCurrentOrderListRequest\(generation, requestScopeKey, loadGeneration\.current, activeScopeKey\.current\)\) return;/u);
   assert.match(source, /finally \{ releaseAction\(\); if \(requestScopeKey === activeScopeKey\.current\) setBusy\(""\); \}/u);
 });
 
@@ -186,12 +187,14 @@ function invokeProductionOrderLoad(requestedStoreIDs, response = { orders: [], n
   const requests = [];
   const errors = [];
   const displayed = [];
+  let liveSessionKey = "actor-a:scope-a";
   const activeScopeKey = { current: "actor-a:scope-a" };
   const loadGeneration = { current: 0 };
   const context = {
     useCallback: fn => fn,
     requestScopeKey: "actor-a:scope-a",
     activeScopeKey, loadGeneration, requestedStoreIDs,
+    unreadScope: "actor-a:scope-a", currentPartnerSessionKey: () => liveSessionKey,
     targetOrderId: "", filter: "ACTIVE", normalizedSearch: "",
     queueFilters: [{ key: "ACTIVE", states: ["CREATED"] }],
     canFulfillOrder: () => false,
@@ -209,7 +212,8 @@ function invokeProductionOrderLoad(requestedStoreIDs, response = { orders: [], n
     console: { error: () => {} },
   };
   const load = runInNewContext(productionInitializer(ordersManagement, "load"), context);
-  return { run: () => load(), requests, errors, displayed, activeScopeKey };
+  return { run: () => load(), requests, errors, displayed, activeScopeKey,
+    switchSession: key => { liveSessionKey = key; } };
 }
 
 test("canonical Partner order reader sends exact selected market scope and rejects a foreign Store in readback", async () => {
@@ -242,4 +246,52 @@ test("missing or oversized Store scope fails closed without falling back to all 
     assert.ok(run.errors.some(Boolean));
   }
   assert.match(ordersManagement, /JSON\.stringify\(\[unreadScope, requestedStoreIDs, filter, normalizedSearch\]\)/);
+});
+
+
+test("Order list session selector distinguishes renewals of the same Merchant without inventing another identity owner", () => {
+  const source = readFileSync(new URL("../src/features/order-management/order-management.tsx", import.meta.url), "utf8");
+  const ast = ts.createSourceFile("order-management.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const selector = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "currentPartnerSessionKey");
+  assert.ok(selector, "production Orders identity selector exists");
+  const runnable = ts.transpileModule(selector.getText(ast) + "\ncurrentPartnerSessionKey()", {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+  }).outputText;
+  const identity = (subject, sessionId, role = "partner") =>
+    ({ kind: "authenticated", identity: { role, subject, sessionId } });
+  const key = state => runInNewContext(runnable, {
+    currentIdentityState: () => state,
+    partnerSetupSessionKey,
+  });
+  const first = key(identity("merchant-a", "session-1"));
+  const refreshed = key(identity("merchant-a", "session-2"));
+  const another = key(identity("merchant-b", "session-1"));
+  assert.ok(first && refreshed && another);
+  assert.notEqual(first, refreshed, "re-authentication by same actor must invalidate Orders and unread messages");
+  assert.notEqual(first, another, "different actor must not share Store Orders");
+  assert.equal(key(identity("merchant-a", "session-2", "operator")), "");
+  assert.equal(key({ kind: "unauthenticated" }), "");
+  const orderScope = session => JSON.stringify([session, ["store-a"], "ACTIVE", ""]);
+  assert.equal(isCurrentOrderListRequest(3, orderScope(first), 3, orderScope(refreshed)), false);
+  assert.match(source, /currentPartnerSessionKey\(\) !== unreadScope \|\| !isCurrentOrderListRequest/);
+  assert.match(source, /useConversationUnreadCounts\(orders\.map\(order => order\.id\), unreadScope/);
+});
+
+test("late same-actor session replacement cannot publish a pending DSH Orders response", async () => {
+  const oldRequest = deferred();
+  const harness = invokeProductionOrderLoad(["market-a"], oldRequest.promise);
+  const operation = harness.run();
+  for (let pass = 0; pass < 4 && !harness.requests.length; pass++) {
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  assert.equal(harness.requests.length, 1, "original session must have issued a real scoped query");
+  harness.switchSession("actor-a:renewed-session");
+  oldRequest.resolve({
+    orders: [{ id: "private-old", storeId: "market-a", state: "CREATED", fulfillmentMode: "CUSTOMER_PICKUP" }],
+    nextCursor: "",
+    attention: null,
+  });
+  await operation;
+  assert.equal(harness.displayed.length, 0, "former-session results cannot become visible");
+  assert.equal(harness.errors.filter(Boolean).length, 0, "former-session error must not replace the new session's UI");
 });

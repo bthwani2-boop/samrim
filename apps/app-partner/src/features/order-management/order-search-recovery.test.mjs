@@ -15,7 +15,7 @@ test("an empty Partner order search offers a scoped one-tap recovery", () => {
 });
 
 test("search recovery does not replace status filters or order authorization", () => {
-  assert.match(source, /requestScopeKey = JSON\.stringify\(\[unreadScope, storeId \?\? "", filter, normalizedSearch\]\)/);
+  assert.match(source, /requestScopeKey = JSON\.stringify\(\[unreadScope, requestedStoreIDs, filter, normalizedSearch\]\)/);
   assert.match(source, /canFulfillOrder\(order\.storeId\)/);
   assert.match(source, /filter === "NEEDS_ACTION"/);
 });
