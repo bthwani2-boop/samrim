@@ -62,7 +62,7 @@ function RootNavigation() {
   const { themeName, theme } = useMobileAppearance();
   // A new session actor must not inherit React screen state or previous responses.
   const actorID = useSyncExternalStore(subscribeIdentitySession, currentMobileActorID, () => "");
-  return <TamaguiProvider config={tamaguiConfig} defaultTheme={themeName}><StatusBar style={themeName === "dark" ? "light" : "dark"} /><Stack key={actorID || "signed-out"} screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }}><Stack.Screen name="(app)" /><Stack.Screen name="offers" options={{ presentation: "card" }} /><Stack.Screen name="deliveries" options={{ presentation: "card" }} /><Stack.Screen name="notifications" options={{ headerShown: false, presentation: "card" }} /></Stack></TamaguiProvider>;
+  return <TamaguiProvider config={tamaguiConfig} defaultTheme={themeName}><StatusBar style={themeName === "dark" ? "light" : "dark"} /><Stack key={actorID || "signed-out"} screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }}><Stack.Screen name="(app)" /><Stack.Screen name="offers" options={{ presentation: "card" }} /><Stack.Screen name="notifications" options={{ headerShown: false, presentation: "card" }} /></Stack></TamaguiProvider>;
 }
 
 function RootNetworkNotice() {

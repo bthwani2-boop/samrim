@@ -19,18 +19,28 @@ test("captain login return path admits protected routes and rejects external or 
   assert.equal(captainReturnPathPattern.test("/offers?next=/account"), false);
 });
 
-test("protected Captain destinations are in the root stack and remain outside the tab bar", () => {
+test("Captain Deliveries is one protected bottom tab and preserves the existing /deliveries URL", () => {
   const rootLayout = readFileSync(new URL("../../../app/_layout.tsx", import.meta.url), "utf8");
   const tabsLayout = readFileSync(new URL("../../../app/(app)/_layout.tsx", import.meta.url), "utf8");
+  const tabShell = readFileSync(new URL("../../shell/captain-shell.tsx", import.meta.url), "utf8");
   const offersRoute = readFileSync(new URL("../../../app/offers.tsx", import.meta.url), "utf8");
-  const deliveriesRoute = readFileSync(new URL("../../../app/deliveries.tsx", import.meta.url), "utf8");
-  const protectedScreen = readFileSync(new URL("../../../src/shell/captain-protected-screen.tsx", import.meta.url), "utf8");
+  const deliveriesRoute = readFileSync(new URL("../../../app/(app)/deliveries.tsx", import.meta.url), "utf8");
+  const protectedScreen = readFileSync(new URL("../../shell/captain-protected-screen.tsx", import.meta.url), "utf8");
 
   assert.match(rootLayout, /<Stack\.Screen name="offers"/u);
-  assert.match(rootLayout, /<Stack\.Screen name="deliveries"/u);
-  assert.doesNotMatch(tabsLayout, /Tabs\.Screen name="(?:offers|deliveries)"/u);
+  assert.doesNotMatch(rootLayout, /<Stack\.Screen name="deliveries"/u);
+  assert.doesNotMatch(tabsLayout, /Tabs\.Screen name="offers"/u);
+  assert.deepEqual(
+    [...tabsLayout.matchAll(/<Tabs\.Screen name="([^"]+)"/gu)].map((match) => match[1]),
+    ["home", "deliveries", "wallet", "account"],
+  );
+  assert.match(tabsLayout, /name="deliveries" options=\{\{ title: "التوصيلات", tabBarAccessibilityLabel: "التوصيلات الحالية" \}\}/u);
+  assert.match(tabsLayout, /<AuthenticatedMobileBoundary binding=\{identity\}/u);
+  assert.match(tabShell, /home: "home", deliveries: "deliveries", wallet: "wallet", account: "account"/u);
   assert.match(offersRoute, /<CaptainProtectedScreen>/u);
-  assert.match(deliveriesRoute, /<CaptainProtectedScreen>/u);
+  assert.match(deliveriesRoute, /<CaptainDeliveries \/>/u);
+  assert.match(deliveriesRoute, /<CaptainScrollScreen>/u);
+  assert.doesNotMatch(deliveriesRoute, /<CaptainProtectedScreen>/u);
   assert.match(rootLayout, /<CaptainPresencePublisher \/>/u);
   assert.match(rootLayout, /<CaptainMissionLocationPublisher \/>/u);
   assert.doesNotMatch(tabsLayout, /Captain(?:Presence|MissionLocation)Publisher/u);
