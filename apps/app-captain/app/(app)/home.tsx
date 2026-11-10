@@ -3,13 +3,12 @@ import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import { AppState, View } from "react-native";
 
+import { captainSessionKey } from "../../src/bootstrap/captain-session-scope";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../src/bootstrap/identity";
-import { CaptainReadiness } from "../../src/features/captain-operations/captain-readiness";
 import { captainClient } from "../../src/features/captain-operations/captain-client";
 import { CaptainOffers } from "../../src/features/captain-operations/captain-offers";
 import { CaptainOpportunities } from "../../src/features/captain-operations/captain-opportunities";
-import { isCurrentCaptainActor } from "../../src/bootstrap/captain-session-scope";
-
+import { CaptainReadiness } from "../../src/features/captain-operations/captain-readiness";
 export type ActiveCaptainMission = Readonly<{
   assignment: CaptainAssignment;
   task: CaptainDeliveryTask;
@@ -19,8 +18,9 @@ export type ActiveCaptainMission = Readonly<{
 // whether it shows opportunity circles or the current delivery destination.
 // Never infer pickup/delivery transitions from local taps or unverified offers.
 export default function CaptainHomeRoute() {
-  const [mission, setMission] = useState<ActiveCaptainMission | null>(null);
-  const [missionReadiness, setMissionReadiness] = useState<"loading" | "ready" | "unavailable">("loading");
+  const [missionSource, setMission] = useState<ActiveCaptainMission | null>(null);
+  const [missionStatus, setMissionReadiness] = useState<"loading" | "ready" | "unavailable">("loading");
+  const [confirmedMissionSession, setConfirmedMissionSession] = useState("");
   const [availabilityRevision, setAvailabilityRevision] = useState(0);
   const onAvailabilityConfirmed = useCallback(() => setAvailabilityRevision((current) => current + 1), []);
 
@@ -32,34 +32,45 @@ export default function CaptainHomeRoute() {
       if (disposed || inFlight || AppState.currentState !== "active") return;
       inFlight = true;
       const requestID = ++generation;
-      const before = currentIdentityState();
-      const actor = before.kind === "authenticated" ? before.identity.subject.trim() : "";
-      if (!actor) {
-        if (!disposed) { setMission(null); setMissionReadiness("unavailable"); }
+      const requestSession = captainSessionKey(currentIdentityState());
+      const isCurrent = () => !disposed && requestID === generation
+        && AppState.currentState === "active"
+        && Boolean(requestSession)
+        && captainSessionKey(currentIdentityState()) === requestSession;
+      if (!requestSession) {
+        if (!disposed && requestID === generation) {
+          setMission(null);
+          setConfirmedMissionSession("");
+          setMissionReadiness("unavailable");
+        }
         inFlight = false;
         return;
       }
       try {
         const token = await getUsableIdentityAccessToken();
+        if (!isCurrent()) return;
         const api = captainClient();
         const result = await api.listOwnCaptainAssignments(token);
+        if (!isCurrent()) return;
         const active = result.assignments.find((a) => a.state === "in_custody"
           || a.state === "assigned" || a.state === "delivery_failed");
         const taskResult = active ? await api.readOwnCaptainDeliveryTask(token, active.id) : null;
-        const after = currentIdentityState();
-        if (disposed || requestID !== generation || after.kind !== "authenticated"
-          || !isCurrentCaptainActor(actor, after.identity.subject.trim())) return;
+        if (!isCurrent()) return;
         if (active && !taskResult) throw new Error("ACTIVE_TASK_NOT_READABLE");
         const next = active && taskResult ? { assignment: active, task: taskResult.task } : null;
-        // Preserve the map instance and camera between unchanged six-second
-        // reads; only an actual assignment/route transition should re-center.
+        // Preserve map camera between unchanged reads, but never across Identity sessions.
         setMission((previous) => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
+        setConfirmedMissionSession(requestSession);
         setMissionReadiness("ready");
       } catch {
-        // Do not ever fall back to the opportunity map if a previously
-        // confirmed mission might still be active. Keep the last safe state.
-        if (!disposed) setMissionReadiness("unavailable");
-      } finally { inFlight = false; }
+        // Never open the idle opportunity map while assignment visibility is uncertain.
+        if (isCurrent()) {
+          setConfirmedMissionSession(requestSession);
+          setMissionReadiness("unavailable");
+        }
+      } finally {
+        if (requestID === generation) inFlight = false;
+      }
     };
     void readMission();
     const interval = setInterval(() => { void readMission(); }, 6000);
@@ -68,7 +79,9 @@ export default function CaptainHomeRoute() {
     });
     const unsubscribe = subscribeIdentitySession(() => {
       generation++;
+      inFlight = false; // Old request may still settle; only the new session may render.
       setMission(null);
+      setConfirmedMissionSession("");
       setMissionReadiness("loading");
       void readMission();
     });
@@ -76,9 +89,15 @@ export default function CaptainHomeRoute() {
       disposed = true; generation++; clearInterval(interval);
       subscription.remove(); unsubscribe();
       setMission(null);
+      setConfirmedMissionSession("");
       setMissionReadiness("loading");
     };
   }, []));
+
+  const currentSession = captainSessionKey(currentIdentityState());
+  const missionReadiness = !currentSession ? "unavailable"
+    : confirmedMissionSession === currentSession ? missionStatus : "loading";
+  const mission = missionReadiness === "ready" ? missionSource : null;
 
   return <View style={{ flex: 1 }}>
     <CaptainOpportunities mission={missionReadiness === "ready" ? mission : null}

@@ -42,8 +42,8 @@ test("dispatch presence stays periodic and separate from the active mission publ
   assert.equal(mission.includes('/assignments/${encodeURIComponent(targetAssignment)}/mission-location'), true);
   assert.equal(mission.includes("subscribeIdentitySession((identity) =>"), true);
   assert.equal(mission.includes("pendingRequest?.abort()"), true);
-  assert.equal(mission.includes("activeAssignment !== targetAssignment"), true);
-  assert.equal(mission.includes("currentSession.identity.subject !== sourceActor"), true);
+  assert.equal(mission.includes("targetAssignment === activeAssignment"), true);
+  assert.equal(mission.includes("captainSessionKey(currentIdentityState()) === targetSession"), true);
   assert.equal(mission.includes("startLocationUpdatesAsync"), false,
     "Foreground publishing must not start a competing background task; the headless owner is tested separately");
 });
@@ -67,6 +67,8 @@ test("unverified captain mission does not disclose cached customer destination",
   assert.match(home, /<CaptainOpportunities mission=\{missionReadiness === "ready" \? mission : null\}/);
   assert.match(home, /missionActive=\{missionReadiness === "ready" && Boolean\(mission\)\}/);
   assert.match(home, /suppressed=\{Boolean\(mission\) \|\| missionReadiness !== "ready"\}/);
+  assert.match(home, /confirmedMissionSession === currentSession \? missionStatus : "loading"/);
+  assert.match(home, /const mission = missionReadiness === "ready" \? missionSource : null/);
 });
 
 test("client order detail does not expose live captain locations", () => {

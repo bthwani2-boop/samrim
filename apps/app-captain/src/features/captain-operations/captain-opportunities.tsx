@@ -1,13 +1,13 @@
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import { BthwaniMap } from "@bthwani/design-system/native/map";
-import { isFreshOpportunitySample, type CaptainAssignment, type CaptainDeliveryTask, type CaptainOpportunityHeatmap } from "@bthwani/dsh";
+import { type CaptainAssignment, type CaptainDeliveryTask, type CaptainOpportunityHeatmap, isFreshOpportunitySample } from "@bthwani/dsh";
 import * as Location from "expo-location";
 import { type Href, Link, useFocusEffect } from "expo-router";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Linking, Text, View } from "react-native";
-import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { captainSessionKey } from "../../bootstrap/captain-session-scope";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
-import { isCurrentCaptainActor } from "../../bootstrap/captain-session-scope";
 
 type Mission = Readonly<{ assignment: CaptainAssignment; task: CaptainDeliveryTask }>;
 type MissionReadiness = "loading" | "ready" | "unavailable";
@@ -27,7 +27,7 @@ function openNavigation(latitude: number, longitude: number) {
   // Let Google Maps handle turn-by-turn voice navigation. The application
   // never streams the Captain's route to any Client or DSH endpoint.
   void Linking.openURL("https://www.google.com/maps/dir/?api=1&destination="
-    + encodeURIComponent(latitude + "," + longitude) + "&travelmode=driving")
+    + encodeURIComponent(`${latitude},${longitude}`) + "&travelmode=driving")
     .catch(() => Alert.alert("تعذر فتح الملاحة", "تحقق من توفر خرائط الهاتف."));
 }
 
@@ -35,30 +35,36 @@ export function CaptainOpportunities({ mission = null, missionReadiness = "ready
   const theme = useAppearanceTheme();
   const [height, setHeight] = useState(0);
   const [data, setData] = useState<CaptainOpportunityHeatmap | null>(null);
+  const [dataSessionKey, setDataSessionKey] = useState("");
   const [ownMapCenter, setOwnMapCenter] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [centerSessionKey, setCenterSessionKey] = useState("");
+  const [identityState, setIdentityState] = useState(currentIdentityState);
+  const sessionKey = captainSessionKey(identityState);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const requestSequence = useRef(0);
+  useEffect(() => subscribeIdentitySession(setIdentityState), []);
 
   const refresh = useCallback(async (quiet = false) => {
     if (mission || missionReadiness !== "ready") {
-      setData(null); setLoading(false); setError(""); return;
+      setData(null); setDataSessionKey(""); setLoading(false); setError(""); return;
     }
     const sequence = ++requestSequence.current;
-    const before = currentIdentityState();
+    const requestSession = captainSessionKey(currentIdentityState());
+    const isCurrent = () => Boolean(requestSession) && requestSession === sessionKey
+      && sequence === requestSequence.current
+      && captainSessionKey(currentIdentityState()) === requestSession;
+    if (!isCurrent()) return;
     if (!quiet) setLoading(true);
     setError("");
-    // A stalled refresh must never leave a stale density layer visible.
+    // Expired samples cannot remain on the map while requesting an owner-backed update.
     setData((previous) => previous && !isFreshOpportunitySample(previous.measuredAt)
       ? null : previous);
-    if (before.kind !== "authenticated") { setLoading(false); setData(null); return; }
-    const actorID = before.identity.subject.trim();
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!isCurrent()) return;
       const result = await captainClient().readOwnCaptainOpportunities(token);
-      const after = currentIdentityState();
-      if (sequence !== requestSequence.current || after.kind !== "authenticated"
-        || !isCurrentCaptainActor(actorID, after.identity.subject.trim())) return;
+      if (!isCurrent()) return;
       if (result.signalType !== "RECENT_ACTIVITY"
         || !isFreshOpportunitySample(result.measuredAt)
         || !Array.isArray(result.cells)
@@ -67,62 +73,65 @@ export function CaptainOpportunities({ mission = null, missionReadiness = "ready
         throw new Error("INVALID_OPPORTUNITY_RESPONSE");
       }
       setData(result);
+      setDataSessionKey(requestSession);
     } catch {
-      const after = currentIdentityState();
-      if (sequence === requestSequence.current && after.kind === "authenticated"
-        && isCurrentCaptainActor(actorID, after.identity.subject.trim())) {
+      if (isCurrent()) {
         setData(null);
         setError("تعذر قراءة النشاط. لا تُعرض بيانات سابقة.");
+        setDataSessionKey("");
       }
-    } finally { if (sequence === requestSequence.current) setLoading(false); }
-  }, [mission, missionReadiness]);
+    } finally { if (isCurrent()) setLoading(false); }
+  }, [mission, missionReadiness, sessionKey]);
 
   useFocusEffect(useCallback(() => {
-    // Re-run the location gate after server-confirmed availability changes.
+    // Re-run the server gate on availability or Identity session change.
     void availabilityRevision;
     let cancelled = false;
+    const requestSession = sessionKey;
+    const isCurrent = () => !cancelled && Boolean(requestSession)
+      && captainSessionKey(currentIdentityState()) === requestSession;
     void refresh();
     void (async () => {
       try {
-        const before = currentIdentityState();
-        if (mission || missionReadiness !== "ready" || before.kind !== "authenticated") return;
-        // An idle Captain may center their map only while DSH confirms pool availability.
+        if (mission || missionReadiness !== "ready" || !isCurrent()) return;
+        // Center the idle map only after canonical DSH admission/availability.
         const token = await getUsableIdentityAccessToken();
+        if (!isCurrent()) return;
         const admission = await captainClient().readOwnCaptainAdmission(token);
-        const current = currentIdentityState();
-        if (cancelled || current.kind !== "authenticated"
-          || !isCurrentCaptainActor(before.identity.subject.trim(), current.identity.subject.trim())
-          || admission.admission.state !== "eligible" || admission.admission.availabilityState !== "available") return;
+        if (!isCurrent() || admission.admission.state !== "eligible"
+          || admission.admission.availabilityState !== "available") return;
         const [permission, enabled] = await Promise.all([
           Location.getForegroundPermissionsAsync(), Location.hasServicesEnabledAsync(),
         ]);
-        const afterPermission = currentIdentityState();
-        if (cancelled || !permission.granted || !enabled || afterPermission.kind !== "authenticated"
-          || !isCurrentCaptainActor(before.identity.subject.trim(), afterPermission.identity.subject.trim())) return;
+        if (!isCurrent() || !permission.granted || !enabled) return;
         const cached = await Location.getLastKnownPositionAsync({ maxAge: 10 * 60_000, requiredAccuracy: 5000 });
-        const afterCache = currentIdentityState();
-        if (cancelled || afterCache.kind !== "authenticated"
-          || !isCurrentCaptainActor(before.identity.subject.trim(), afterCache.identity.subject.trim())) return;
+        if (!isCurrent()) return;
         const fix = cached ?? await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        const after = currentIdentityState();
-        if (!cancelled && after.kind === "authenticated"
-          && isCurrentCaptainActor(before.identity.subject.trim(), after.identity.subject.trim())) {
+        if (isCurrent()) {
           setOwnMapCenter({ latitude: fix.coords.latitude, longitude: fix.coords.longitude });
+          setCenterSessionKey(requestSession);
         }
-      } catch { /* GPS center is local-only and optional; never fabricate coordinates. */ }
+      } catch { /* Own GPS center is optional and never faked or sent to Clients. */ }
     })();
     const timer = setInterval(() => void refresh(true), 60_000);
-    return () => { cancelled = true; clearInterval(timer); requestSequence.current++; setData(null); setOwnMapCenter(null); };
-  }, [refresh, mission, missionReadiness, availabilityRevision]));
+    return () => {
+      cancelled = true; clearInterval(timer); requestSequence.current++;
+      setData(null); setDataSessionKey(""); setOwnMapCenter(null); setCenterSessionKey("");
+    };
+  }, [refresh, mission, missionReadiness, availabilityRevision, sessionKey]));
 
   // The single home map switches with the canonical assignment, never
   // based on an optimistic local offer decision.
+  const liveSession = captainSessionKey(currentIdentityState());
+  const sessionCurrent = Boolean(sessionKey) && sessionKey === liveSession;
+  const visibleData = sessionCurrent && dataSessionKey === sessionKey ? data : null;
+  const visibleMapCenter = sessionCurrent && centerSessionKey === sessionKey ? ownMapCenter : null;
   const target = mission ? mission.assignment.state === "assigned"
     ? mission.task.pickupOrigin : mission.task.customerDestination : null;
   const label = mission?.assignment.state === "assigned" ? "المتجر" : "العميل";
   const circles = !mission && missionReadiness === "ready"
-    ? data?.cells.map((cell) => ({
-      id: cell.kind + ":" + cell.latitude + ":" + cell.longitude,
+    ? visibleData?.cells.map((cell) => ({
+      id: `${cell.kind}:${cell.latitude}:${cell.longitude}`,
       coordinate: { latitude: cell.latitude, longitude: cell.longitude },
       radiusMeters: radii[cell.intensity],
       fillColor: circleStyles[cell.kind].fillColor,
@@ -133,10 +142,10 @@ export function CaptainOpportunities({ mission = null, missionReadiness = "ready
   return <View style={{ flex: 1, overflow: "hidden" }}
     onLayout={(event) => setHeight(Math.round(event.nativeEvent.layout.height))}
     accessibilityLabel={mission ? "خريطة المهمة الحالية" : "خريطة نشاط الطلبات والكباتن"}>
-    {height > 0 ? <BthwaniMap accessibilityLabel={mission ? "خريطة وجهة " + label : "دوائر الطلبات والكباتن"}
+    {height > 0 ? <BthwaniMap accessibilityLabel={mission ? `خريطة وجهة ${label}` : "دوائر الطلبات والكباتن"}
       height={height} circles={circles} markers={markers}
-      initialCoordinate={mission ? target : ownMapCenter} edgeToEdge /> : null}
-    {!mission && missionReadiness === "ready" && loading && !data
+      initialCoordinate={mission ? target : visibleMapCenter} edgeToEdge /> : null}
+    {!mission && missionReadiness === "ready" && loading && !visibleData
       ? <View pointerEvents="none" style={{ position: "absolute", alignSelf: "center", top: "50%" }}>
         <ActivityIndicator color={theme.actionBackground} />
       </View> : null}
@@ -159,7 +168,7 @@ export function CaptainOpportunities({ mission = null, missionReadiness = "ready
       </Text>
       <View style={{ flexDirection: "row", gap: 8 }}>
         <View style={{ flex: 1 }}>
-          <BthwaniButton label={"ملاحة إلى " + label} onPress={() => openNavigation(target.latitude, target.longitude)} />
+          <BthwaniButton label={`ملاحة إلى ${label}`} onPress={() => openNavigation(target.latitude, target.longitude)} />
         </View>
         <View style={{ flex: 1 }}>
           <Link href={"/deliveries" as Href} asChild>
