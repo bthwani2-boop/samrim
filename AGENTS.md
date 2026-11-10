@@ -126,6 +126,12 @@ Use Git to identify changes and Nx to select affected project work when applicab
 
 Execution routing: MA Commander, SentinelX, Remote Desktop Commander, Cmdexa, Remote Arc, MCPENROUZ and Local Commander are equal-status authorized device-control candidates, with no fixed priority. GitHub is the specialized eighth channel for repository/PR/CI state; Light Remote, Shellway and other connected tools are optional. Select by real capability, permission, efficiency, reliability and recovery. Do not use a different channel to bypass DENIED; do not run Codex CLI without a task-specific human instruction and proven direct-tool insufficiency.
 
+### Mandatory specialist-tool discovery across authorized remote channels
+
+Before a task requiring specialist capabilities, identify its necessary MCP servers, CLIs, Plugins, Skills, device/browser/design/test tools and supported invocation paths. **A missing direct MCP integration in ChatGPT is not proof of unavailability.** Check existing authorized remote-control connections for an installed and usable MCP client/server, CLI, local API or application interface. MCP does not inherently require Codex CLI or a separate ChatGPT connector. Verify real connection, permitted invocation and resulting behavior; installation or a tool name alone is insufficient.
+
+Use every **necessary** specialist capability, not every available tool ritualistically. Reuse healthy authenticated sessions and existing processes; do not add duplicate MCP servers, clients, services or speculative integrations. If a required tool fails, inspect its last confirmed effect and try a technically suitable **authorized** path to the same target; never switch channels to bypass DENIED or missing consent. Block only the affected work after confirming no permitted adequate path exists. Parallelize independent work only with disjoint writers/resources and one serialized Git owner. Codex CLI remains subject to the separate task-specific instruction and direct-tool insufficiency rule above.
+
 Default local-first development flow (each external Git action requires its own human authorization):
 
 `DISCOVER -> REUSE EXISTING AUTHORIZED BRANCH/WORKTREE -> COHERENT CHANGE -> AFFECTED PROOF -> LOCAL COMMIT -> [HUMAN-AUTHORIZED PUSH] -> [HUMAN-AUTHORIZED PR] -> EXACT-CANDIDATE CI / REVIEW -> [HUMAN-AUTHORIZED MERGE]`

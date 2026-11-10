@@ -244,6 +244,7 @@ for (const x of [
 	"## 6. Consequential action safety",
 	"## 8. Closure",
 	"Mandatory refoundation capability-conservation and anti-drift gate",
+	"Mandatory specialist-tool discovery across authorized remote channels",
 	"docs/governance/README.md",
 ])
 	if (!law.includes(x)) fail("agent rule lost " + x);
