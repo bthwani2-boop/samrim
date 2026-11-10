@@ -6,12 +6,12 @@ import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
+import { clientOrderSessionKey } from "../orders/order-session-scope";
 
 type WalletCreditNotice = Readonly<{ id: string; orderId: string; amountMinor: number; currency: "YER"; createdAt: string }>;
 
-function activeClientActorID(): string {
-  const current = currentIdentityState();
-  return current.kind === "authenticated" ? current.identity.subject.trim() : "";
+function currentClientNotificationsSessionKey(): string {
+  return clientOrderSessionKey(currentIdentityState());
 }
 
 function dshClient() {
@@ -24,14 +24,16 @@ export function NotificationsInbox() {
   const router = useRouter();
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [actorID, setActorID] = useState(activeClientActorID);
-  const authenticated = Boolean(actorID);
+  const [sessionKey, setSessionKey] = useState(currentClientNotificationsSessionKey);
+  const sessionKeyRef = useRef(sessionKey);
+  const authenticated = Boolean(sessionKey) && currentClientNotificationsSessionKey() === sessionKey;
   const loadSequence = useRef(0);
   const pageSequence = useRef(0);
   const [nextCursor, setNextCursor] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState("");
   const [items, setItems] = useState<ReadonlyArray<Notification>>([]);
+  const [loadedSessionKey, setLoadedSessionKey] = useState("");
   const [shares, setShares] = useState<ReadonlyArray<ClientShareEntry>>([]);
   const [shareBefore, setShareBefore] = useState(0);
   const [shareUnread, setShareUnread] = useState(0);
@@ -52,13 +54,14 @@ export function NotificationsInbox() {
     setNextCursor("");
     setMoreError("");
     setLoadingMore(false);
-    if (!actorID || activeClientActorID() !== actorID) return;
+    if (!sessionKey || currentClientNotificationsSessionKey() !== sessionKey) return;
     if (preserveCurrent) setRefreshing(true); else setLoading(true);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (sequence !== loadSequence.current || currentClientNotificationsSessionKey() !== sessionKey) return;
       const response = await dshClient().listNotifications(token, 50);
-      if (sequence !== loadSequence.current || activeClientActorID() !== actorID) return;
+      if (sequence !== loadSequence.current || currentClientNotificationsSessionKey() !== sessionKey) return;
       setItems(response.notifications);
       setUnreadCount(response.unreadCount);
       setNextCursor(response.nextCursor ?? "");
@@ -66,32 +69,41 @@ export function NotificationsInbox() {
         dshClient().readOwnWallet(token).catch(() => null),
         dshClient().listClientShares(token).catch(() => null),
       ]);
-      if (sequence !== loadSequence.current || activeClientActorID() !== actorID) return;
+      if (sequence !== loadSequence.current || currentClientNotificationsSessionKey() !== sessionKey) return;
       setShares(shareReadback?.items ?? []);
       setShareBefore(shareReadback?.nextBefore ?? 0);
       setShareUnread(shareReadback?.unreadCount ?? 0);
       setShareError(shareReadback ? "" : "تعذر قراءة المشاركات حاليًا.");
       const credits = (walletReadback?.state as (BeneficiaryWalletResponse["state"] & { recentCompensations?: ReadonlyArray<WalletCreditNotice> }) | undefined)?.recentCompensations ?? [];
       setWalletCredits(credits);
+      setLoadedSessionKey(sessionKey);
     } catch (cause) {
       console.error("DSH client notifications readback failed", cause);
-      if (sequence === loadSequence.current && activeClientActorID() === actorID) setError("تعذر قراءة الإشعارات. أعد المحاولة.");
+      if (sequence === loadSequence.current && currentClientNotificationsSessionKey() === sessionKey) {
+        setLoadedSessionKey(sessionKey);
+        setError("تعذر قراءة الإشعارات. أعد المحاولة.");
+      }
     } finally {
-      if (sequence === loadSequence.current && activeClientActorID() === actorID) {
+      if (sequence === loadSequence.current && currentClientNotificationsSessionKey() === sessionKey) {
         if (preserveCurrent) setRefreshing(false); else setLoading(false);
       }
     }
-  }, [actorID]);
+  }, [sessionKey]);
 
   useEffect(() => subscribeIdentitySession(() => {
+    const nextSessionKey = currentClientNotificationsSessionKey();
+    if (sessionKeyRef.current === nextSessionKey) return;
+    sessionKeyRef.current = nextSessionKey;
     loadSequence.current += 1;
     pageSequence.current += 1;
-    setActorID(activeClientActorID());
+    setSessionKey(nextSessionKey);
+    setLoadedSessionKey("");
     setItems([]);
     setShares([]);
     setShareBefore(0);
     setShareUnread(0);
     setShareError("");
+    setShareBusy(false);
     setWalletCredits([]);
     setUnreadCount(0);
     setNextCursor("");
@@ -112,16 +124,16 @@ export function NotificationsInbox() {
   }, [load]));
 
   const loadMore = useCallback(async () => {
-    if (!actorID || !nextCursor || loading || refreshing || loadingMore || activeClientActorID() !== actorID) return;
+    if (!sessionKey || loadedSessionKey !== sessionKey || !nextCursor || loading || refreshing || loadingMore || currentClientNotificationsSessionKey() !== sessionKey) return;
     const sequence = ++pageSequence.current;
     const cursor = nextCursor;
     setLoadingMore(true);
     setMoreError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      if (sequence !== pageSequence.current || activeClientActorID() !== actorID) return;
+      if (sequence !== pageSequence.current || currentClientNotificationsSessionKey() !== sessionKey) return;
       const response = await dshClient().listNotifications(token, 50, cursor);
-      if (sequence !== pageSequence.current || activeClientActorID() !== actorID) return;
+      if (sequence !== pageSequence.current || currentClientNotificationsSessionKey() !== sessionKey) return;
       setItems((previous) => {
         const ids = new Set(previous.map((item) => item.id));
         return [...previous, ...response.notifications.filter((item) => !ids.has(item.id))];
@@ -130,14 +142,14 @@ export function NotificationsInbox() {
       setNextCursor(response.nextCursor && response.nextCursor !== cursor ? response.nextCursor : "");
     } catch (cause) {
       console.error("DSH notifications next-page read failed", cause);
-      if (sequence === pageSequence.current && activeClientActorID() === actorID) setMoreError("تعذر قراءة بقية الإشعارات. حاول مجددًا.");
+      if (sequence === pageSequence.current && currentClientNotificationsSessionKey() === sessionKey) setMoreError("تعذر قراءة بقية الإشعارات. حاول مجددًا.");
     } finally {
-      if (sequence === pageSequence.current && activeClientActorID() === actorID) setLoadingMore(false);
+      if (sequence === pageSequence.current && currentClientNotificationsSessionKey() === sessionKey) setLoadingMore(false);
     }
-  }, [actorID, loading, loadingMore, nextCursor, refreshing]);
+  }, [sessionKey, loadedSessionKey, loading, loadingMore, nextCursor, refreshing]);
 
   async function openNotification(item: Notification) {
-    if (busy || !actorID || activeClientActorID() !== actorID) return;
+    if (busy || loadedSessionKey !== sessionKey || currentClientNotificationsSessionKey() !== sessionKey) return;
     const targetOrderID = item.orderId.trim();
     if (item.readAt) {
       if (targetOrderID) router.push(`/orders/${encodeURIComponent(targetOrderID)}` as Href);
@@ -147,9 +159,9 @@ export function NotificationsInbox() {
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      if (activeClientActorID() !== actorID) return;
+      if (currentClientNotificationsSessionKey() !== sessionKey) return;
       await dshClient().markNotificationRead(token, item.id);
-      if (activeClientActorID() !== actorID) return;
+      if (currentClientNotificationsSessionKey() !== sessionKey) return;
       if (targetOrderID) {
         router.push(`/orders/${encodeURIComponent(targetOrderID)}` as Href);
       } else {
@@ -157,54 +169,56 @@ export function NotificationsInbox() {
       }
     } catch (cause) {
       console.error("DSH client notification read-state write failed", cause);
-      if (activeClientActorID() === actorID) setError("تعذر تحديث حالة الإشعار. حاول مجددًا.");
+      if (currentClientNotificationsSessionKey() === sessionKey) setError("تعذر تحديث حالة الإشعار. حاول مجددًا.");
     } finally {
-      if (activeClientActorID() === actorID) setBusy("");
+      if (currentClientNotificationsSessionKey() === sessionKey) setBusy("");
     }
   }
 
   async function loadMoreShares() {
-    if (!shareBefore || shareBusy) return;
+    if (!shareBefore || shareBusy || loadedSessionKey !== sessionKey || currentClientNotificationsSessionKey() !== sessionKey) return;
     setShareBusy(true); setShareError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (currentClientNotificationsSessionKey() !== sessionKey) return;
       const response = await dshClient().listClientShares(token, shareBefore);
-      if (activeClientActorID() !== actorID) return;
+      if (currentClientNotificationsSessionKey() !== sessionKey) return;
       setShares((previous) => [...previous, ...response.items.filter((item) => !previous.some((existing) => existing.id === item.id))]);
       setShareBefore(response.nextBefore);
       setShareUnread(response.unreadCount);
-    } catch { setShareError("تعذر تحميل مشاركات أقدم."); }
-    finally { setShareBusy(false); }
+    } catch { if (currentClientNotificationsSessionKey() === sessionKey) setShareError("تعذر تحميل مشاركات أقدم."); }
+    finally { if (currentClientNotificationsSessionKey() === sessionKey) setShareBusy(false); }
   }
 
   async function openShare(share: ClientShareEntry) {
-    if (shareBusy) return;
+    if (shareBusy || loadedSessionKey !== sessionKey || currentClientNotificationsSessionKey() !== sessionKey) return;
     setShareBusy(true); setShareError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      if (activeClientActorID() !== actorID) return;
+      if (currentClientNotificationsSessionKey() !== sessionKey) return;
       await dshClient().markClientShareRead(token, share.id);
-      if (activeClientActorID() !== actorID) return;
+      if (currentClientNotificationsSessionKey() !== sessionKey) return;
       const destination = share.contentKind === "CONTENT" ? `/discovery-content/${encodeURIComponent(share.contentId)}` :
         share.storeId ? `/store/${encodeURIComponent(share.storeId)}${share.productId ? `?productId=${encodeURIComponent(share.productId)}` : ""}` : "";
       if (destination) router.push(destination as Href);
       else setShareError("لم يعد لهذا المحتوى رابط قابل للفتح.");
       await load(true);
     } catch {
-      if (activeClientActorID() === actorID) setShareError("تعذر فتح المشاركة. أعد المحاولة.");
-    } finally { setShareBusy(false); }
+      if (currentClientNotificationsSessionKey() === sessionKey) setShareError("تعذر فتح المشاركة. أعد المحاولة.");
+    } finally { if (currentClientNotificationsSessionKey() === sessionKey) setShareBusy(false); }
   }
 
   async function blockShareSender(share: ClientShareEntry) {
-    if (shareBusy) return;
+    if (shareBusy || loadedSessionKey !== sessionKey || currentClientNotificationsSessionKey() !== sessionKey) return;
     setShareBusy(true); setShareError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      if (activeClientActorID() !== actorID) return;
+      if (currentClientNotificationsSessionKey() !== sessionKey) return;
       await dshClient().blockClientShareSender(token, share.senderActorId);
+      if (currentClientNotificationsSessionKey() !== sessionKey) return;
       await load(true);
-    } catch { setShareError("تعذر حظر المرسل، حاول مجددًا."); }
-    finally { setShareBusy(false); }
+    } catch { if (currentClientNotificationsSessionKey() === sessionKey) setShareError("تعذر حظر المرسل، حاول مجددًا."); }
+    finally { if (currentClientNotificationsSessionKey() === sessionKey) setShareBusy(false); }
   }
 
   function renderShare(share: ClientShareEntry) {
@@ -264,7 +278,7 @@ export function NotificationsInbox() {
           <Text style={styles.muted}>ستظهر هنا تحديثات الطلبات بعد تسجيل الدخول.</Text>
           <BthwaniButton label="تسجيل الدخول" onPress={() => router.replace("/?returnTo=/notifications" as Href)} />
         </BthwaniSurface>
-      ) : loading ? (
+      ) : loading || loadedSessionKey !== sessionKey ? (
         <View style={styles.loadingState} accessibilityLabel="جارٍ تجهيز الإشعارات">
           <BthwaniSkeleton width="100%" height={84} />
           <BthwaniSkeleton width="100%" height={142} />
