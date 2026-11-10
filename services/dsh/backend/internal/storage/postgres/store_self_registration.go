@@ -38,8 +38,31 @@ type SelfStoreInput struct {
 // A deterministic fact-derived ID makes identical retries safe and prevents
 // different facts from silently modifying an existing Store.
 func CreateFirstStoreForPartner(ctx context.Context, db *sql.DB, actorID string, input SelfStoreInput, idempotencyKey string) (StoreRecord, bool, error) {
+	return createStoreForPartner(ctx, db, actorID, input, idempotencyKey, true, "", "")
+}
+
+// Both Partner and authorized Operator entry points invoke this same Store writer.
+// The first-Store endpoint retains its original deterministic ID and replay rule.
+func CreateAdditionalStoreForPartner(ctx context.Context, db *sql.DB, actorID string, input SelfStoreInput, idempotencyKey string) (StoreRecord, bool, error) {
+	return createStoreForPartner(ctx, db, actorID, input, idempotencyKey, false, "", "")
+}
+
+// Operator-assisted creation shares the same transaction with an attributable
+// acting Operator; never accept a purported owner or Operator from Store facts.
+func CreateAdditionalStoreForOperator(ctx context.Context, db *sql.DB, actorID, operatorActorID, correlationID string, input SelfStoreInput, idempotencyKey string) (StoreRecord, bool, error) {
+	return createStoreForPartner(ctx, db, actorID, input, idempotencyKey, false, operatorActorID, correlationID)
+}
+
+func createStoreForPartner(ctx context.Context, db *sql.DB, actorID string, input SelfStoreInput, idempotencyKey string, firstOnly bool, operatorActorID, correlationID string) (StoreRecord, bool, error) {
 	actorID = strings.TrimSpace(actorID)
+	operatorActorID = strings.TrimSpace(operatorActorID)
+	correlationID = strings.TrimSpace(correlationID)
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
+	if (operatorActorID == "") != (correlationID == "") ||
+		len(operatorActorID) > 128 || (correlationID != "" && (len(correlationID) < 8 || len(correlationID) > 128)) ||
+		(firstOnly && operatorActorID != "") {
+		return StoreRecord{}, false, ErrSelfStoreInput
+	}
 	input.Name = strings.TrimSpace(input.Name)
 	input.ServiceCityID = strings.TrimSpace(input.ServiceCityID)
 	input.VerticalID = strings.TrimSpace(input.VerticalID)
@@ -83,7 +106,17 @@ func CreateFirstStoreForPartner(ctx context.Context, db *sql.DB, actorID string,
 	}
 	keySum := sha256.Sum256([]byte(idempotencyKey))
 	keyHash := hex.EncodeToString(keySum[:])
-	requestSum := sha256.Sum256([]byte(storeID))
+	requestMaterial := []byte(storeID) // Keep legacy first-Store replay hashes byte-for-byte.
+	if !firstOnly {
+		// Each new intent has its own Store ID; exact key replays cannot mutate facts.
+		idSum := sha256.Sum256([]byte("dsh:additional-store:" + actorID + ":" + keyHash))
+		storeID = "store_" + hex.EncodeToString(idSum[:16])
+		requestMaterial, err = json.Marshal(input)
+		if err != nil {
+			return StoreRecord{}, false, err
+		}
+	}
+	requestSum := sha256.Sum256(requestMaterial)
 	requestHash := hex.EncodeToString(requestSum[:])
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -98,9 +131,12 @@ func CreateFirstStoreForPartner(ctx context.Context, db *sql.DB, actorID string,
 		return StoreRecord{}, false, err
 	}
 	var usedActor, usedRequest, usedStore string
-	err = tx.QueryRowContext(ctx, `SELECT partner_actor_id,request_hash,store_id FROM dsh.first_store_create_idempotency WHERE key_hash=$1`, keyHash).Scan(&usedActor, &usedRequest, &usedStore)
+	var usedOperator, usedCorrelation sql.NullString
+	err = tx.QueryRowContext(ctx, `SELECT partner_actor_id,request_hash,store_id,operator_actor_id,correlation_id FROM dsh.store_create_idempotency WHERE key_hash=$1`, keyHash).
+		Scan(&usedActor, &usedRequest, &usedStore, &usedOperator, &usedCorrelation)
 	if err == nil {
-		if usedActor != actorID || usedRequest != requestHash || usedStore != storeID {
+		if usedActor != actorID || usedRequest != requestHash || usedStore != storeID ||
+			usedOperator.String != operatorActorID || usedCorrelation.String != correlationID {
 			return StoreRecord{}, false, ErrSelfStoreIdempotency
 		}
 		if err := tx.Commit(); err != nil {
@@ -112,28 +148,30 @@ func CreateFirstStoreForPartner(ctx context.Context, db *sql.DB, actorID string,
 	if !errors.Is(err, sql.ErrNoRows) {
 		return StoreRecord{}, false, err
 	}
-	var existing string
-	err = tx.QueryRowContext(ctx, "SELECT id FROM dsh.stores WHERE partner_actor_id=$1 AND deleted_at IS NULL ORDER BY created_at LIMIT 1", actorID).Scan(&existing)
-	if err == nil {
-		if existing != storeID {
-			return StoreRecord{}, false, ErrSelfStoreExists
+	if firstOnly {
+		var existing string
+		err = tx.QueryRowContext(ctx, "SELECT id FROM dsh.stores WHERE partner_actor_id=$1 AND deleted_at IS NULL ORDER BY created_at LIMIT 1", actorID).Scan(&existing)
+		if err == nil {
+			if existing != storeID {
+				return StoreRecord{}, false, ErrSelfStoreExists
+			}
+			if err := recordStoreCreationAttemptTx(ctx, tx, keyHash, requestHash, actorID, storeID, operatorActorID, correlationID); err != nil {
+				return StoreRecord{}, false, err
+			}
+			if err := tx.Commit(); err != nil {
+				return StoreRecord{}, false, err
+			}
+			record, err := ReadStoreOwnedByPartner(ctx, db, storeID, actorID)
+			return record, true, err
 		}
-		if err := recordFirstStoreAttemptTx(ctx, tx, keyHash, requestHash, actorID, storeID); err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
 			return StoreRecord{}, false, err
 		}
-		if err := tx.Commit(); err != nil {
-			return StoreRecord{}, false, err
-		}
-		record, err := ReadStoreOwnedByPartner(ctx, db, storeID, actorID)
-		return record, true, err
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return StoreRecord{}, false, err
 	}
 	if err := createStoreTx(ctx, tx, storeID, actorID, input, nil, json.RawMessage("[]"), actorID); err != nil {
 		return StoreRecord{}, false, err
 	}
-	if err := recordFirstStoreAttemptTx(ctx, tx, keyHash, requestHash, actorID, storeID); err != nil {
+	if err := recordStoreCreationAttemptTx(ctx, tx, keyHash, requestHash, actorID, storeID, operatorActorID, correlationID); err != nil {
 		return StoreRecord{}, false, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -180,9 +218,10 @@ func createStoreTx(ctx context.Context, tx *sql.Tx, storeID, owner string, input
 	return nil
 }
 
-func recordFirstStoreAttemptTx(ctx context.Context, tx *sql.Tx, keyHash, requestHash, actorID, storeID string) error {
-	_, err := tx.ExecContext(ctx, `INSERT INTO dsh.first_store_create_idempotency
-		(key_hash,request_hash,partner_actor_id,store_id) VALUES($1,$2,$3,$4)`, keyHash, requestHash, actorID, storeID)
+func recordStoreCreationAttemptTx(ctx context.Context, tx *sql.Tx, keyHash, requestHash, actorID, storeID, operatorActorID, correlationID string) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO dsh.store_create_idempotency
+		(key_hash,request_hash,partner_actor_id,store_id,operator_actor_id,correlation_id)
+		VALUES($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''))`, keyHash, requestHash, actorID, storeID, operatorActorID, correlationID)
 	return err
 }
 

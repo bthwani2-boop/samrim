@@ -58,6 +58,22 @@ paths:
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+    post:
+      operationId: createPartnerAdditionalStore
+      summary: Create another unpublished Store for the authenticated Merchant with the canonical DSH writer
+      security: [{ userBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerFirstStoreCreateRequest" } } }
+      responses:
+        "201": { description: Store created, content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerFirstStoreCreateResponse" } } } }
+        "200": { description: Exact idempotent replay, content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerFirstStoreCreateResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
 
   /dsh/partner/stores/{storeId}/independent-customer-policy/draft:
     get:

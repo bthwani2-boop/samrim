@@ -682,6 +682,9 @@ paths:
   /dsh/stores:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores"
 
+  /dsh/operator/partners/{actorId}/stores:
+    $ref: "./paths/store-publication.yaml#/paths/~1dsh~1operator~1partners~1{actorId}~1stores"
+
   /dsh/partner/stores/first:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1partner~1stores~1first"
   /dsh/operator/stores/trash:

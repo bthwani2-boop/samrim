@@ -150,6 +150,27 @@ export async function readJoiningCaseForPartnerActor(actorId: string, context: D
   return (await requestDshJson<JoiningCaseResponse>(dshOperationPaths.readJoiningCaseForPartnerActor.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
+export function createOperatorMerchantStore(
+  actorId: string,
+  input: import("@bthwani/dsh").PartnerFirstStoreCreateRequest,
+  context: JoiningCaseMutationContext,
+) {
+  const owner = actorId.trim();
+  if (!owner || owner.length > 128 || !context.operatorActorId.trim() ||
+    context.correlationId.trim().length < 8 || context.idempotencyKey.trim().length < 8) {
+    throw new Error("DSH_STORE_CREATE_CONTEXT_INVALID");
+  }
+  const operation = dshOperationPaths.createOperatorMerchantStore;
+  return requestDshJson<import("@bthwani/dsh").PartnerFirstStoreCreateResponse>(
+    operation.method,
+    operation.path.replace("{actorId}", encodeURIComponent(owner)),
+    input,
+    { "X-Acting-Actor-ID": context.operatorActorId.trim(),
+      "X-Correlation-ID": context.correlationId.trim(),
+      "Idempotency-Key": context.idempotencyKey.trim() },
+  );
+}
+
 export async function listOperatorPartnerStores(actorId: string, limit: number, cursor: string, context: DshOperatorReadContext): Promise<PartnerStoreListResponse> {
   const normalizedActorId = actorId.trim();
   if (!normalizedActorId || !context.operatorActorId.trim() || !Number.isSafeInteger(limit) || limit < 1 || limit > 50 || cursor.length > 128) throw new Error("DSH_PARTNER_STORES_INPUT_INVALID");

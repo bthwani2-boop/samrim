@@ -1,7 +1,7 @@
 import { createDshMobileClient, type CommerceVertical, type CommercialStoreType, type ServiceCity, type StoreFulfillmentMode, type StoreJoiningOption } from "@bthwani/dsh";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { BthwaniMapCoordinate, BthwaniMapProps } from "@bthwani/design-system/native/map";
-import { type Href, useRouter } from "expo-router";
+import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from "react-native";
@@ -32,12 +32,17 @@ function errorText(e:unknown,action:"read"|"save"="save"){
 }
 export default function PartnerStoreSetup(){
  const router=useRouter();
+ const {additional}=useLocalSearchParams<{additional?:string}>();
+ const isAdditional=additional==="1";
  const [actor,setActor]=useState(currentIdentityState);
  const scope=partnerSetupSessionKey(actor);
  const lastScope=useRef(scope);
  useEffect(()=>subscribeIdentitySession(next=>{
   const nextScope=partnerSetupSessionKey(next);
-  if(nextScope!==lastScope.current)clearPartnerSetupDraft(lastScope.current);
+  if(nextScope!==lastScope.current){
+   clearPartnerSetupDraft(lastScope.current);
+   clearPartnerSetupDraft(lastScope.current+":additional");
+  }
   lastScope.current=nextScope;
   setActor(next);
  }),[]);
@@ -53,14 +58,15 @@ export default function PartnerStoreSetup(){
  },[router,scope]);
  if(!scope)return <ActivityIndicator accessibilityLabel="التحقق من حساب الشريك"/>;
  // Remount the entire wizard on actor/session changes; no previous owner's form survives.
- return <PartnerStoreSetupForm key={scope} scope={scope}/>;
+ return <PartnerStoreSetupForm key={scope+":"+isAdditional} scope={scope} additional={isAdditional}/>;
 }
 
-function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
+function PartnerStoreSetupForm({scope,additional}:Readonly<{scope:string;additional:boolean}>){
  const router=useRouter();
+ const draftScope=additional?scope+":additional":scope;
  const theme=useAppearanceTheme();
  const {width}=useWindowDimensions();
- const restored=useMemo(()=>readPartnerSetupDraft(scope),[scope]);
+ const restored=useMemo(()=>readPartnerSetupDraft(draftScope),[draftScope]);
  const [checking,setChecking]=useState(true);
  const [registryReady,setRegistryReady]=useState(false);
  const [busy,setBusy]=useState(false);
@@ -103,8 +109,8 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
  useEffect(()=>{
   // A temporary same-session form draft, never a DSH Store or publication record.
   if(checking||!registryReady||busy||saved)return;
-  rememberPartnerSetupDraft(scope,{step,name,relation,address,city,vertical,storeType,modes,lat,lng});
- },[checking,registryReady,busy,saved,scope,step,name,relation,address,city,vertical,storeType,modes,lat,lng]);
+  rememberPartnerSetupDraft(draftScope,{step,name,relation,address,city,vertical,storeType,modes,lat,lng});
+ },[checking,registryReady,busy,saved,draftScope,step,name,relation,address,city,vertical,storeType,modes,lat,lng]);
  const selected=useMemo<BthwaniMapCoordinate|null>(()=>{
   const a=Number(ascii(lat)),b=Number(ascii(lng));
   if(!lat.trim()||!lng.trim()||!Number.isFinite(a)||!Number.isFinite(b)||a < -90||a >90||b < -180||b >180)return null;
@@ -116,9 +122,26 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
   try{
    if(partnerSetupSessionKey(currentIdentityState())!==scope)return;
    const token=await getUsableIdentityAccessToken();
-   const page=await service().listPartnerAccessibleStores(token,1);
-   if(partnerSetupSessionKey(currentIdentityState())!==scope)return;
-   if(page.stores.length>0){clearPartnerSetupDraft(scope);router.replace("/more" as Href);return;}
+   // First creation and later creation both require an owner readback:
+   // delegated Stores never count as the Merchant's own first Store.
+   let hasOwnedStore=false;
+   let cursor="";
+   const visited=new Set<string>();
+   while(true){
+    const page=await service().listPartnerAccessibleStores(token,50,cursor);
+    if(partnerSetupSessionKey(currentIdentityState())!==scope)return;
+    if(page.stores.some(store=>store.owned)){hasOwnedStore=true;break;}
+    if(!page.nextCursor)break;
+    if(visited.size>=20||visited.has(page.nextCursor))throw Error("STORE_SCOPES_INCOMPLETE");
+    visited.add(page.nextCursor);
+    cursor=page.nextCursor;
+   }
+   if(!additional&&hasOwnedStore){
+    clearPartnerSetupDraft(draftScope);router.replace("/more" as Href);return;
+   }
+   if(additional&&!hasOwnedStore){
+    router.replace("/setup" as Href);return;
+   }
    const [availableCities,availableVerticals,policyReadback]=await Promise.all([
     service().listActiveServiceCities(),
     service().listCatalogVerticals(),
@@ -137,7 +160,7 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
   }finally{
    if(partnerSetupSessionKey(currentIdentityState())===scope)setChecking(false);
   }
- },[router,scope]);
+ },[additional,draftScope,router,scope]);
  useEffect(()=>{void load();},[load]);
  // biome-ignore lint/correctness/useExhaustiveDependencies: Explicit retry must refetch Store types for the same commercial vertical.
  useEffect(()=>{
@@ -198,16 +221,31 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
     addressText:address.trim(),latitude:selected.latitude,longitude:selected.longitude,fulfillmentModes:modes,
    };
    // Stable within this authenticated session and exact submission, including manual retry.
-   const digest=await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256,JSON.stringify([scope,input]));
+   const digest=await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256,JSON.stringify(additional?[scope,"additional",input]:[scope,input]));
    if(partnerSetupSessionKey(currentIdentityState())!==starting)return;
-   const result=await service().createPartnerFirstStore(token,input,"first_store_"+digest);
+   const result=additional
+    ?await service().createPartnerAdditionalStore(token,input,"additional_store_"+digest)
+    :await service().createPartnerFirstStore(token,input,"first_store_"+digest);
    createResponseReceived=true;
    if(result.relationModel!==relation)throw Error("STORE_RELATION_READBACK_MISMATCH");
    if(partnerSetupSessionKey(currentIdentityState())!==starting)return;
-   const confirmed=await service().listPartnerAccessibleStores(token,25);
-   if(partnerSetupSessionKey(currentIdentityState())!==starting)return;
-   if(!confirmed.stores.some(store=>store.id===result.storeId&&store.owned))throw Error("STORE_READBACK_MISMATCH");
-   clearPartnerSetupDraft(scope);
+   // Authoritative paginated readback: do not mistake a truncated first page
+   // for a failed creation when a Merchant owns many Stores.
+   let cursor="";
+   let confirmed=false;
+   const visited=new Set<string>();
+   for(let pageNumber=0;pageNumber<20;pageNumber++){
+    const page=await service().listPartnerAccessibleStores(token,50,cursor);
+    if(partnerSetupSessionKey(currentIdentityState())!==starting)return;
+    if(page.stores.some(store=>store.id===result.storeId&&store.owned)){
+     confirmed=true;break;
+    }
+    if(!page.nextCursor||visited.has(page.nextCursor))break;
+    visited.add(page.nextCursor);
+    cursor=page.nextCursor;
+   }
+   if(!confirmed)throw Error("STORE_READBACK_MISMATCH");
+   clearPartnerSetupDraft(draftScope);
    setRecovered(false);
    setSaved(result.storeId);
   }catch(e){
@@ -270,8 +308,8 @@ function PartnerStoreSetupForm({scope}:Readonly<{scope:string}>){
  </View>;
  return <ScrollView style={s.root} contentContainerStyle={s.inner} keyboardShouldPersistTaps="handled">
   <View style={s.card}>
-   <Text style={s.heading}>إعداد متجرك في بثواني</Text>
-   <Text style={s.small}>يمكنك إنشاء المتجر بنفسك دون طلب انضمام أو انتظار موافقة لإنشاء الحساب.</Text>
+   <Text style={s.heading}>{additional?"إضافة متجر جديد":"إعداد متجرك في بثواني"}</Text>
+   <Text style={s.small}>{additional?"سيكون لهذا المتجر ملفه ومنتجاته وصلاحياته واتفاقه التجاري المستقل.":"يمكنك إنشاء المتجر بنفسك دون طلب انضمام أو انتظار موافقة لإنشاء الحساب."}</Text>
    {restored&&!saved?<Text style={s.small} accessibilityRole="summary">استعدنا بيانات إعدادك غير المحفوظة في جلسة الدخول الحالية. نتحقق من إتاحة الخيارات مجددًا قبل الإنشاء.</Text>:null}
    {checking?<ActivityIndicator accessibilityLabel="التحقق من المتجر"/>:null}
    {!checking&&registryReady&&!saved?<View style={{gap:15}}>

@@ -17,7 +17,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 176
+const SchemaVersion = 177
 
 type MigrationRecord struct {
 	Version int
@@ -26,7 +26,7 @@ type MigrationRecord struct {
 }
 
 var requiredTables = []schemaRelationExpectation{
-	{name: "dsh.first_store_create_idempotency", columns: []string{"key_hash", "request_hash", "partner_actor_id", "store_id", "created_at"}, constraints: []string{"first_store_create_idempotency_pkey", "first_store_create_idem_hash_chk", "first_store_create_idempotency_store_id_fkey"}, indexes: []string{"first_store_create_idempotency_partner_idx"}},
+	{name: "dsh.store_create_idempotency", columns: []string{"key_hash", "request_hash", "partner_actor_id", "store_id", "created_at", "operator_actor_id", "correlation_id"}, constraints: []string{"store_create_idempotency_pkey", "store_create_idem_hash_chk", "store_create_idempotency_store_id_fkey", "store_create_operator_attribution_chk"}, indexes: []string{"store_create_idempotency_partner_idx"}},
 	{name: "dsh.independent_store_publications", columns: []string{"store_id", "state", "version", "terms_version", "terms_accepted_by_actor_id", "terms_accepted_at", "review_state", "published_at"}, constraints: []string{"independent_store_publications_pkey", "independent_store_publication_state_chk", "independent_store_publication_review_chk", "independent_store_publication_terms_chk", "independent_store_publication_published_chk"}, indexes: []string{"independent_store_publications_state_idx"}},
 	{name: "dsh.independent_store_customer_policies", columns: []string{"store_id", "version", "policy_version", "cancellation_terms", "returns_terms", "fulfillment_terms", "collection_terms", "authored_by_actor_id", "review_state", "reviewed_by_actor_id", "published_at"}, constraints: []string{"independent_store_customer_policies_pkey", "independent_store_customer_policy_terms_chk", "independent_store_customer_policy_review_chk"}},
 	{name: "dsh.independent_store_customer_policy_idempotency", columns: []string{"key_hash", "request_hash", "store_id", "owner_actor_id", "result", "created_at"}, constraints: []string{"independent_store_customer_policy_idempotency_pkey", "independent_customer_policy_idem_hash_chk", "independent_customer_policy_idem_result_chk"}, indexes: []string{"independent_store_customer_policy_idem_store_idx"}},

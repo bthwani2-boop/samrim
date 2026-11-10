@@ -161,13 +161,14 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
   ];
   const actions:MenuItem[]=[
     ...(selectedStore?.owned?[{label:"إعدادات المتجر",icon:"edit" as const,href:"/store?section=settings" as Href}]:[]),
+    ...(stores.some(store=>store.owned)?[{label:"إضافة متجر جديد",icon:"store" as const,href:"/setup?additional=1" as Href}]:[]),
     ...(can("catalog")?[{label:"أدوات الكتالوج",icon:"cart" as const,href:"/products?panel=tools" as Href},{label:"سجل تغييرات العروض",icon:"cart" as const,href:"/activity" as Href}]:[]),
     ...(marketplace&&can("promotions")?[{label:"العروض",icon:"offers" as const,section:"promotions" as const}]:[]),
     ...(mayPrepareIndependentStoreBanners(selectedStore)?[{label:"بنرات المتجر المستقل",icon:"store" as const,section:"banners" as const}]:[]),
     ...(selectedStore?.owned?[{label:"الموظفين",icon:"account" as const,href:"/employees" as Href},...(marketplace?[{label:"كباتن المتجر",icon:"deliveries" as const,section:"team" as const}]:[])]:[]),
     {label:"الإشعارات",icon:"notifications" as const,href:"/notifications" as Href},
     {label:"الأداء",icon:"orders",href:"/insights" as Href},
-    ...(state.kind==="ready"&&!stores.length?[{label:"إعداد المتجر",icon:"store" as const,href:"/onboarding" as Href}]:[]),
+    ...(state.kind==="ready"&&!stores.some(store=>store.owned)?[{label:"إنشاء متجري الأول",icon:"store" as const,href:"/setup" as Href}]:[]),
   ];
   const open=(item:MenuItem)=>{
     if(item.section)router.push({pathname:"/store",params:{section:item.section,returnTo:"more"}} as Href);

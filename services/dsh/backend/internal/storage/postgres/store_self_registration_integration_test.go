@@ -201,7 +201,7 @@ func TestDirectPartnerFirstStoreUnpublishedAndIdempotentPostgres(t *testing.T) {
 			t.Fatalf("same key was reused for different first Store facts: %v", err)
 		}
 		var attemptCount int
-		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.first_store_create_idempotency WHERE partner_actor_id=$1", independentOwner).Scan(&attemptCount); err != nil || attemptCount != 1 {
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.store_create_idempotency WHERE partner_actor_id=$1", independentOwner).Scan(&attemptCount); err != nil || attemptCount != 1 {
 			t.Fatalf("unexpected persisted idempotency attempts: %d %v", attemptCount, err)
 		}
 		if _, err := postgres.ReadStoreOwnedByPartner(ctx, db, independentStore.ID, owner); !errors.Is(err, postgres.ErrStoreNotFound) {
@@ -232,7 +232,7 @@ func TestDirectPartnerFirstStoreUnpublishedAndIdempotentPostgres(t *testing.T) {
 		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.stores WHERE partner_actor_id=$1", timeoutOwner).Scan(&count); err != nil || count != 0 {
 			t.Fatalf("timed-out create persisted Store count=%d err=%v", count, err)
 		}
-		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.first_store_create_idempotency WHERE partner_actor_id=$1", timeoutOwner).Scan(&count); err != nil || count != 0 {
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.store_create_idempotency WHERE partner_actor_id=$1", timeoutOwner).Scan(&count); err != nil || count != 0 {
 			t.Fatalf("timed-out create consumed idempotency count=%d err=%v", count, err)
 		}
 		rescued, alreadyCreated, err := postgres.CreateFirstStoreForPartner(ctx, db, timeoutOwner, independentInput, timeoutKey)
@@ -246,7 +246,7 @@ func TestDirectPartnerFirstStoreUnpublishedAndIdempotentPostgres(t *testing.T) {
 		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.stores WHERE partner_actor_id=$1", timeoutOwner).Scan(&count); err != nil || count != 1 {
 			t.Fatalf("recovered create persisted wrong Store count=%d err=%v", count, err)
 		}
-		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.first_store_create_idempotency WHERE partner_actor_id=$1", timeoutOwner).Scan(&count); err != nil || count != 1 {
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.store_create_idempotency WHERE partner_actor_id=$1", timeoutOwner).Scan(&count); err != nil || count != 1 {
 			t.Fatalf("recovered create persisted wrong idempotency count=%d err=%v", count, err)
 		}
 		t.Log("direct Partner Stores: single writer, concurrent replay and timeout recovery, relationship isolation, unpublished")

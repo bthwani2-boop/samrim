@@ -312,6 +312,11 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const op = dshOperationPaths.createPartnerFirstStore;
       return userRequest<PartnerFirstStoreCreateResponse>(accessToken, op.path, op.method, input, { "Idempotency-Key": idempotencyKey.trim() });
     },
+    async createPartnerAdditionalStore(accessToken: string, input: PartnerFirstStoreCreateRequest, idempotencyKey: string): Promise<PartnerFirstStoreCreateResponse> {
+      if (idempotencyKey.trim().length < 8 || idempotencyKey.trim().length > 128) throw new Error("DSH_STORE_IDEMPOTENCY_REQUIRED");
+      const op = dshOperationPaths.createPartnerAdditionalStore;
+      return userRequest<PartnerFirstStoreCreateResponse>(accessToken, op.path, op.method, input, { "Idempotency-Key": idempotencyKey.trim() });
+    },
     async readSelfServiceJoiningApplication(accessToken: string): Promise<JoiningCaseResponse> {
       const op=dshOperationPaths.readSelfServiceJoiningApplication;
       return userRequest<JoiningCaseResponse>(accessToken,op.path,op.method);

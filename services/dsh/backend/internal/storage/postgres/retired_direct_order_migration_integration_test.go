@@ -78,7 +78,7 @@ func TestRetiredDirectOrderUpgradePreservesDurableData(t *testing.T) {
 		}
 		var version int
 		var replayTableCreated bool
-		if err := db.QueryRowContext(ctx, `SELECT MAX(version), to_regclass('dsh.first_store_create_idempotency') IS NOT NULL
+		if err := db.QueryRowContext(ctx, `SELECT MAX(version), to_regclass('dsh.store_create_idempotency') IS NOT NULL
 			FROM dsh.schema_migrations`).Scan(&version, &replayTableCreated); err != nil || version != baseline || replayTableCreated {
 			t.Fatalf("failed upgrade must roll back to v174: version=%d replayTable=%t err=%v", version, replayTableCreated, err)
 		}

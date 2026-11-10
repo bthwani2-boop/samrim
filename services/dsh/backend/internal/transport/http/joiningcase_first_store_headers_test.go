@@ -45,3 +45,42 @@ func TestFirstStoreCreateRejectsActorOverrideAndMissingIdempotency(t *testing.T)
 		})
 	}
 }
+
+func TestAdditionalStoreRejectsSpoofedActorAndUnboundedKeys(t *testing.T) {
+	for _, tc := range []struct{ name, header, value string }{
+		{"absent key", "", ""}, {"short key", "Idempotency-Key", "short"},
+		{"spoofed actor", "X-Actor-ID", "other-partner"},
+		{"spoofed operator", "X-Acting-Actor-ID", "operator"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodPost, "/dsh/partner/stores", strings.NewReader("{}"))
+			r.Header.Set("Authorization", "Bearer authenticated-partner")
+			if tc.header != "" {
+				r.Header.Set(tc.header, tc.value)
+			}
+			if tc.header != "Idempotency-Key" && tc.header != "" {
+				r.Header.Set("Idempotency-Key", "additional-create-key-0001")
+			}
+			w := httptest.NewRecorder()
+			(&JoiningCaseServer{}).createPartnerAdditionalStore(w, r)
+			if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "INVALID_INPUT") {
+				t.Fatalf("unsafe Partner Store request admitted: HTTP %d %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestStoreCreationResponseDoesNotPromotePublication(t *testing.T) {
+	w := httptest.NewRecorder()
+	writeStoreCreationOutcome(w, postgres.StoreRecord{
+		ID: "store_qa_new", RelationModel: postgres.StoreRelationIndependent, PublicationState: "unpublished",
+	}, false, nil)
+	if w.Code != http.StatusCreated || !strings.Contains(w.Body.String(), `"publicationState":"unpublished"`) {
+		t.Fatalf("Store creation must not publish: HTTP %d %s", w.Code, w.Body.String())
+	}
+	w = httptest.NewRecorder()
+	writeStoreCreationOutcome(w, postgres.StoreRecord{}, false, postgres.ErrSelfStoreIdempotency)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "IDEMPOTENCY_CONFLICT") {
+		t.Fatalf("idempotency conflict lost: HTTP %d %s", w.Code, w.Body.String())
+	}
+}

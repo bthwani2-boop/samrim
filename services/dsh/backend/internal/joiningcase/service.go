@@ -64,29 +64,57 @@ func (s *Service) Create(ctx context.Context, input contract.CreateJoiningCaseRe
 	return postgres.CreateJoiningCase(ctx, s.db, postgres.CreateJoiningCaseInput{IdempotencyKey: strings.TrimSpace(idempotencyKey), RequestHash: requestHash, ActingActorID: strings.TrimSpace(actingActorID), CorrelationID: strings.TrimSpace(correlationID), EvidenceKeyring: s.evidenceKeys, Request: request})
 }
 
-// CreateFirstStore lets an already verified Partner set up their first Store
-// immediately. No joining case is created and no Operator admission is needed.
-// Publication and financial permissions remain independent.
+// First Store preserves its existing deterministic ID/replay semantics.
 func (s *Service) CreateFirstStore(ctx context.Context, accessToken string, input contract.PartnerFirstStoreCreateRequest, idempotencyKey string) (postgres.StoreRecord, bool, error) {
 	identity, err := s.requirePartner(ctx, accessToken)
 	if err != nil {
 		return postgres.StoreRecord{}, false, err
 	}
+	return postgres.CreateFirstStoreForPartner(ctx, s.db, identity.Subject, selfStoreInput(input), idempotencyKey)
+}
+
+// The same DSH Store writer serves every further Store. Identity alone supplies
+// the Merchant owner; the UI cannot choose or impersonate an owner.
+func (s *Service) CreateAdditionalStore(ctx context.Context, accessToken string, input contract.PartnerFirstStoreCreateRequest, idempotencyKey string) (postgres.StoreRecord, bool, error) {
+	identity, err := s.requirePartner(ctx, accessToken)
+	if err != nil {
+		return postgres.StoreRecord{}, false, err
+	}
+	return postgres.CreateAdditionalStoreForPartner(ctx, s.db, identity.Subject, selfStoreInput(input), idempotencyKey)
+}
+
+// Operator assistance grants no new Identity role and never binds the Operator
+// as the Store owner. DSH requires a pre-existing verified Merchant and the
+// Operator's canonical partners permission before invoking the same writer.
+func (s *Service) CreateStoreForOperator(ctx context.Context, actingActorID, ownerActorID, correlationID string, input contract.PartnerFirstStoreCreateRequest, idempotencyKey string) (postgres.StoreRecord, bool, error) {
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return postgres.StoreRecord{}, false, err
+	}
+	ownerActorID = strings.TrimSpace(ownerActorID)
+	if ownerActorID == "" || len(ownerActorID) > 128 {
+		return postgres.StoreRecord{}, false, ErrInvalidInput
+	}
+	role, err := s.identity.ReadActorRole(ctx, ownerActorID, "partner")
+	if err != nil {
+		return postgres.StoreRecord{}, false, err
+	}
+	if role.Role != "partner" || role.ActorID != ownerActorID || !role.Enabled || !role.SecurityEnabled || role.ActivatedAt == nil {
+		return postgres.StoreRecord{}, false, ErrPartnerIdentityUnavailable
+	}
+	return postgres.CreateAdditionalStoreForOperator(ctx, s.db, ownerActorID, actingActorID, correlationID, selfStoreInput(input), idempotencyKey)
+}
+
+func selfStoreInput(input contract.PartnerFirstStoreCreateRequest) postgres.SelfStoreInput {
 	modes := make([]string, len(input.FulfillmentModes))
 	for i, mode := range input.FulfillmentModes {
 		modes[i] = string(mode)
 	}
-	return postgres.CreateFirstStoreForPartner(ctx, s.db, identity.Subject, postgres.SelfStoreInput{
-		RelationModel:    input.RelationModel,
-		Name:             input.Name,
-		ServiceCityID:    input.ServiceCityID,
-		VerticalID:       input.PrimaryVerticalID,
-		CommercialTypeID: input.CommercialStoreTypeID,
-		Address:          input.AddressText,
-		Latitude:         input.Latitude,
-		Longitude:        input.Longitude,
+	return postgres.SelfStoreInput{
+		RelationModel: input.RelationModel, Name: input.Name, ServiceCityID: input.ServiceCityID,
+		VerticalID: input.PrimaryVerticalID, CommercialTypeID: input.CommercialStoreTypeID,
+		Address: input.AddressText, Latitude: input.Latitude, Longitude: input.Longitude,
 		FulfillmentModes: modes,
-	}, idempotencyKey)
+	}
 }
 
 func validJoiningCaseProofType(value string) bool {

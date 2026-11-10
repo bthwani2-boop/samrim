@@ -25,12 +25,17 @@ const matchingStore = (id = "store-1") => ({
   fulfillmentModes: ["CUSTOMER_PICKUP"],
 });
 
-function harness({ create, read, modes = ["CUSTOMER_PICKUP"] } = {}) {
+function harness({ create, read, modes = ["CUSTOMER_PICKUP"], additional = false } = {}) {
   const events = { created: 0, read: 0, keys: [], saved: [], recovered: [], errors: [], busy: [], cleared: 0 };
   let activeSession = "partner-a:session-1";
   const setSession = value => { activeSession = value; };
   const client = {
     async createPartnerFirstStore(_token, _input, key) {
+      events.created++;
+      events.keys.push(key);
+      return create ? create() : { storeId: "store-1", relationModel: "INDEPENDENT_STORE" };
+    },
+    async createPartnerAdditionalStore(_token, _input, key) {
       events.created++;
       events.keys.push(key);
       return create ? create() : { storeId: "store-1", relationModel: "INDEPENDENT_STORE" };
@@ -43,6 +48,8 @@ function harness({ create, read, modes = ["CUSTOMER_PICKUP"] } = {}) {
   const environment = {
     busy: false, saveInFlight: { current: false },
     scope: "partner-a:session-1",
+    draftScope: additional ? "partner-a:session-1:additional" : "partner-a:session-1",
+    additional,
     selected: { latitude: 15.3, longitude: 44.2 },
     name: "محل تجريبي", relation: "INDEPENDENT_STORE", city: "city-1",
     vertical: "vertical-1", storeType: "type-1", address: "عنوان تجريبي",
@@ -190,4 +197,63 @@ test("restored independent draft cannot submit stale marketplace Captain to DSH"
 
 test("the wizard sanitizes persisted Store modes using its canonical relation helper", () => {
   assert.match(source, /useState<StoreFulfillmentMode\[\]>\(\(\) => firstStoreModesForRelation\(/);
+});
+
+
+test("additional Store uses its own idempotency namespace without altering first Store replay", async () => {
+  const additional = harness({ additional: true });
+  await additional.save();
+  assert.equal(additional.events.created, 1);
+  assert.match(additional.events.keys[0], /^additional_store_[0-9a-f]{64}$/);
+  assert.deepEqual(additional.events.saved, ["store-1"]);
+  assert.equal(additional.events.cleared, 1);
+
+  const first = harness();
+  await first.save();
+  assert.match(first.events.keys[0], /^first_store_[0-9a-f]{64}$/);
+  assert.notEqual(first.events.keys[0], additional.events.keys[0]);
+});
+
+test("additional Store requires exact owned readback across bounded pages", async () => {
+  let pageNumber = 0;
+  const h = harness({
+    additional: true,
+    read: async () => {
+      pageNumber++;
+      return pageNumber === 1
+        ? { stores: [matchingStore("unrelated")], nextCursor: "next-page" }
+        : { stores: [matchingStore()], nextCursor: "" };
+    },
+  });
+  await h.save();
+  assert.equal(h.events.read, 2);
+  assert.deepEqual(h.events.saved, ["store-1"]);
+  assert.deepEqual(h.events.recovered, [false]);
+});
+
+test("additional Store does not accept unverified result without its exact ID", async () => {
+  const h = harness({
+    additional: true,
+    read: async () => ({ stores: [matchingStore("another")] }),
+  });
+  await h.save();
+  assert.equal(h.events.created, 1);
+  assert.deepEqual(h.events.saved, []);
+  assert.equal(h.events.cleared, 0);
+  assert.match(h.events.errors.at(-1), /STORE_READBACK_MISMATCH/);
+});
+
+test("additional Store manual retry preserves exact request key and does not auto-resubmit", async () => {
+  const h = harness({
+    additional: true,
+    create: async () => { throw { kind: "network", message: "response lost" }; },
+    read: async () => ({ stores: [] }),
+  });
+  await h.save();
+  assert.equal(h.events.created, 1);
+  assert.equal(h.events.cleared, 0);
+  await h.save();
+  assert.equal(h.events.created, 2);
+  assert.equal(h.events.keys[0], h.events.keys[1]);
+  assert.match(h.events.keys[0], /^additional_store_/);
 });
