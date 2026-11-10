@@ -32,7 +32,7 @@ const remoteSource = remoteRoot + "/source";
 const mode = process.argv.includes("--watch") ? "watch" : "once";
 const archiveInputs = [
   "apps/app-client", "apps/app-partner", "apps/app-captain", "apps/control-panel",
-  "packages/design-system", "packages/push-device",
+  "packages/design-system", "packages/push-device", "packages/tamagui-config",
   "services/identity/clients", "services/identity/package.json",
   "services/dsh/clients", "services/dsh/package.json",
   "tools/mobile", "tools/dev", "infra/local",

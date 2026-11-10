@@ -4,7 +4,7 @@ This document is the **operator runbook**, not a second implementation authority
 
 ## Machine boundaries (current local-development setup)
 
-- **Surface / BTHWANI (Windows):** canonical working repository `D:\samrim`, Git and commits, ChatGPT/remote-control tools, browser, ADB and the attached Android device. Native application development servers are *not* owned here when their `runtime-owners.json` entry says `lenovo-native`.
+- **Surface / BTHWANI (Windows):** active UI development source `D:\samrim-governance-refoundation-20261110` (existing Git worktree); the original `D:\samrim` checkout remains separate and is not the active application mirror source. Git, ChatGPT/remote-control tools, browser, ADB and the attached Android device run here. Native application development servers are *not* owned here when their `runtime-owners.json` entry says `lenovo-native`.
 - **Lenovo / BTHWANI-DOCKER (Windows 11):** Docker Desktop owns local backend/state containers through the Surface Docker SSH context `bthwani-docker`. Separately, **native Windows Node.js**, pnpm, Expo/Metro and Next.js run application development servers outside containers. Remote application source is a derived, one-way mirror at `C:\Users\bthwa\BThwaniAppRunner\source`, not another Git repository.
 - **Third-party EAS builds** are independent of Metro runtime placement; do not install native Android/iOS build toolchains merely to move dev servers.
 
@@ -54,7 +54,7 @@ The single per-app SSH tunnel owner is `tools/dev/Start-AppTunnel.ps1`; all four
 Use a Surface PowerShell window for read-only checks:
 
 ```powershell
-git -C D:\samrim status --short --branch
+git -C D:\samrim-governance-refoundation-20261110 status --short --branch
 docker context show
 docker ps --format "{{.Names}} {{.Status}}"
 Get-ScheduledTask -TaskName "BThwani*"
