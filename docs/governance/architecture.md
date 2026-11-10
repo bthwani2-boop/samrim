@@ -17,7 +17,7 @@ Identity
 
 DSH
 → delivery-commerce operational truth
-→ Partner / Store / joining
+→ Merchant / Store registration, ownership and lifecycle
 → Store ownership and Store-scoped delegated authority
 → Store publication and Store operational availability/orderability
 → catalog / assortment / serviceability

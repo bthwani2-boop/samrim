@@ -281,3 +281,32 @@ This is **dated source-derived implementation evidence**, not a duplicate legal 
 | Full direct-store checkout, recurring invoices and BThwani-run direct collection are not released | DSH Order + WLT finance and Identity eligibility with actual owner-backed balances, snapshots, idempotency and negative tests before any launch | NOT_RELEASED |
 
 This table records the **known affected cone**, not an exhaustive review of every repository file; future concrete discoveries are routed to the same canonical owners and the task's bounded proof, not to a new permanent parallel backlog. A source mismatch does not authorize deleting a feature or loosening security simply to make the UI match the target. Even after all rows are resolved, complete platform closure requires every admitted capability and conserved subfeature to pass its applicable authentic end-to-end and independent financial/security review gates.
+
+
+## 14. Chronological approval reconciliation and complete-Product closure — 2026-11-10
+
+**Evidence of current owner approval, not a second authority:** The Product owner explicitly approved the ordered conversations from **zero through sixth** and the compatible recommendations in them. For one disputed meaning, the *later approved decision* prevails; older compatible decisions remain. Current meaning has been updated at the owners routed by `docs/governance/README.md`. This dated table records reconciliation lineage only. Runtime status at the time of an earlier audit is evidence, not approval to keep old code, activate missing operations or bypass a release gate.
+
+| Order | Decision domain reconciled into existing owner | Implication for refoundation acceptance |
+| --- | --- | --- |
+| 0 — branch 40 audit | `architecture.md`, `stores.md`, `finance.md`, `safety.md` | Preserve real canonical engines and lawful obligations; remove duplicate onboarding/Order writers after consumer cutover |
+| 1 — owner clarifications | `platform.md`, `stores.md`, `catalog.md`, `fulfillment.md`, `finance.md` | One Merchant/Customer vocabulary, single Store/Offer writer, policy-driven fulfillment, flexible fee/collection scope; old role/application models are not rebuilt |
+| 2 — evidence and revised design assumptions | `experience.md`, `engineering.md` | Existing Tamagui configuration and Ant Design share one semantic-token source; retained OSS/competitor/Elleen research stays at `docs/reference/README.md` |
+| 3–4 — full closure, UX, Studio and Policies | `experience.md`, `engineering.md`, `finance.md` | One Studio publisher with scoped full-Store merchant authoring; eight primary Operator navigation groups; owner-backed nonempty defaults and configurable **implemented** policies |
+| 5–6 — conservation and agent gates | `AGENTS.md`, `product.md`, `commerce.md`, `fulfillment.md`, `engineering.md` | All material useful subfeatures (heatmaps, short videos, private media, quick prices, bulk catalog, promotions, staff, Captains, reports, links, notifications, recovery) are traced and retested rather than silently dropped |
+
+**Resulting scope:** Greenfield-style rebuilding covers schema/migrations, backend, Expo apps, Control Panel, runtime YAML/config and repository placement where evidence shows that is best. Preserve approved Product semantics, external app/link identities, tooling including Spec Kit and useful Expo capabilities, licensed research references and required financial/legal facts; do not require retaining old source files. Verify the exact isolated data/runtime owner before any separate destructive authorization. Use a *single canonical migration history per owner* for the new baseline. Old schemas/paths are historic implementation evidence, never a template to recreate the same defects.
+
+### Full-closure boundary, beyond implementation-start readiness
+
+A candidate is **not complete** merely because governance passes, the first Store slice works or the new database bootstraps. Completion requires **all admitted `CAPABILITY_ID` sections and their material subfeatures** mapped to real customer, merchant, Captain and Operator work, with each of these categories proven as applicable:
+
+- Identity and merchant lifecycle: one verified person, proper roles, first and further Stores, staff/Captain affiliations, relation conversion, publication and safe Store/session switch;
+- Catalog and commercial journey: shared suggested Products/private Store Products, one StoreOffer, prices/stock, search/import/export, full and compact Store presentation, direct and marketplace checkout, adjustments, pickup, delivery and unavailable-mode refusal;
+- WLT: relation-independent commission/subscription defaults, accepted per-Store contract, invoice renewal/limits, separately selected collection custody, COD coverage **strictly above cash exposure**, wallet/mixed allocation, refunds, earnings, receipts, exact-one ledger effects, idempotency and reconciliation;
+- Operator Policies and Studio: real owner-backed default/effective values, valid editable scopes and impact/audit, preview/publish/rollback in one publisher; correct Customer/Merchant/Captain native/web/Control Panel consumers and Store-only full-web merchant edits;
+- Preserved specialized features and UX: privacy-safe opportunity maps, marketing video processing and moderated publication, Order-conversation text/audio/video isolation, promotions/banners, reports, notifications, deep links, media rights, keyboard/RTL, accessibility, offline and network failure recovery;
+- Platform: clean authoritative database bootstrap, source-controlled config and generated API clients, real integration/negative authorization tests on distinct accounts and Stores, safe concurrent handoffs, actual browser/Android and eligible iOS proof, realistic workload and requisite independent security/finance review;
+- Cleanup and handoff: all competing writers, abandoned paths, unused schemas, old design components and stale references removed **after proven replacement**; exact-HEAD evidence, final diffs, explicit `PASS/FAIL/BLOCKED/NOT_RUN/REVIEW_BLOCKED` and authorized delivery gates.
+
+Use the actual canonical `product.md` capability census and domain owners for the individual requirements; this is a coverage lens, **not** a second editable capability registry or checklist that can replace those owners. `NOT_RUN` and `REVIEW_BLOCKED` remain non-PASS. No user's approval of target behavior is evidence that the refounded service has already been implemented, tested or released.

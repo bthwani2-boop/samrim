@@ -15,15 +15,15 @@ One Human Actor resolves to one permanent `actor_id`; verification, role admissi
 
 ### Ownership
 
-Identity alone owns the permanent `actor_id`, verified identifiers, credential proofs, high-level role admission, sessions, recovery and initial-Operator bootstrap. For a new eligible Partner, Identity may admit the `partner` role directly after the same actor's verified Client proof through the guarded self-registration flow; it does not require a DSH Store or joining-case approval first. Identity blocks caller-chosen actors, cross-role tokens and reactivation of disabled/prior Partner standing by this route. For invited Store staff, DSH owns the accepted Store-grant eligibility and requests the same Identity Partner role where needed; for Captains, DSH-approved standing eligibility precedes an authorized Identity role request. The Partner role authenticates a workspace but never authorizes a Store resource without DSH ownership or an active Store grant. Retired Field standing does not authorize new admissions. Surfaces never grant roles.
+Identity alone owns the permanent `actor_id`, verified identifiers, credential proofs, high-level role admission, sessions, recovery and initial-Operator bootstrap. For a new eligible Partner, Identity may admit the `partner` role directly after the same actor's verified Client proof through the guarded self-registration flow; it does not require a DSH Store or any enrollment-application approval first. Identity blocks caller-chosen actors, cross-role tokens and reactivation of disabled/prior Partner standing by this route. For invited Store staff, DSH owns the accepted Store-grant eligibility and requests the same Identity Partner role where needed; for Captains, DSH-approved standing eligibility precedes an authorized Identity role request. The Partner role authenticates a workspace but never authorizes a Store resource without DSH ownership or an active Store grant. No retired acquisition or enrollment standing grants a current role or Store authority. Surfaces never grant roles.
 
 ### Role-specific lifecycle
 
 The canonical current role set is owned by `docs/governance/platform.md`. Identity applies the following lifecycle distinctions to that set; this section does not independently admit roles.
 
 - Client uses governed self-registration/login/recovery.
-- Partner: verified canonical Client proof → protected direct `partner` role/session admission → DSH first-Store setup, without Operator joining-case approval. Existing disabled or already-provisioned roles require their normal governed recovery, not self-reactivation.
-- Captain: DSH standing eligibility → authorized Identity role admission/enrollment → Captain session. Current dispatch assignment is not a standing admission requirement. Retired Field has no new session or admission path.
+- Partner: verified canonical Client proof → protected direct `partner` role/session admission → DSH first-Store setup, without an Operator admission or enrollment case. Existing disabled or already-provisioned roles require their normal governed recovery, not self-reactivation.
+- Captain: DSH standing eligibility → authorized Identity role admission/enrollment → Captain session. Current dispatch assignment is not a standing admission requirement. No additional referral/acquisition session or admission path exists.
 - A Partner session proves workspace identity only; every Store operation separately checks DSH Store ownership/grant.
 - Operator is the only Operator-workspace human role. First bootstrap is one-time. Normal Operator login requires user-verified WebAuthn/Passkey; Operator password login and SMS-as-normal-login-MFA are not admitted.
 
@@ -62,7 +62,7 @@ Reject duplicate identity, self-granted managed role, repeated activation-as-log
 
 ### Material participants
 
-Client self-access, verified Partner self-registration and Store invitations, managed Captain access, Operator access and Identity runtime/persistence consume this capability. Retired Field records remain historical only. Deployable host names and repository paths remain implementation truth.
+Client self-access, verified Partner self-registration and Store invitations, managed Captain access, Operator access and Identity runtime/persistence consume this capability. Legally binding historical records remain with their original owners and do not grant access. Deployable host names and repository paths remain implementation truth.
 
 ### Operator Finance permission
 

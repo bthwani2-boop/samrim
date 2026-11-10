@@ -13,7 +13,7 @@ The Human Actor/role model is owned by `docs/governance/platform.md`. Bounded sy
 
 ## Current approved Product target
 
-BThwani is one multi-role delivery-commerce network with an admitted merchant-direct web storefront relation on the same canonical Store. It is a directed graph of participant, Store, commerce, fulfillment, financial and bounded collaboration outcomes rather than one global linear lifecycle. The independent Store relation does not grant marketplace discovery, wallet payment, BThwani Captain delivery or a second Store/tenant.
+BThwani is one multi-role delivery-commerce network with an admitted merchant-direct web storefront relation on the same canonical Store. It is a directed graph of participant, Store, commerce, fulfillment, financial and bounded collaboration outcomes rather than one global linear lifecycle. The direct Store relation never grants marketplace discovery or any checkout, wallet or delivery entitlement merely through its label. Fulfillment is independently governed per relation/Store through DSH and applicable WLT/Captain gates; neither relation creates a second Store/tenant.
 
 ```text
 PARTICIPANT ADMISSION ─────────────┐
@@ -93,10 +93,11 @@ Client uses a compact Partner Store view inside the marketplace on Android, iOS 
 
 - the Platform Human Actor/role model is authoritative for participant identity semantics;
 - each canonical Store has one effective Store relationship (BTHWANI_PARTNER or INDEPENDENT_STORE) and retains the same Store identity, merchant catalog, published public link and content when its approved relationship changes;
-- marketplace discovery and checkout remain exclusive to eligible BTHWANI_PARTNER Stores; an independent Store has only a separately admitted direct web publication and direct merchant-controlled checkout after their independent safety gates pass;
+- marketplace discovery and checkout remain exclusive to eligible BTHWANI_PARTNER Stores; a DIRECT Store uses approved direct web publication and checkout through the same canonical DSH Order engine after collection, eligibility, identity and payment safety gates pass;
 - one canonical Store Order belongs to exactly one Store, even when created under a parent multi-Store checkout;
 - fulfillment mode is operational truth and remains distinct from payment method;
 - the admitted fulfillment modes are BThwani Captain delivery, Store-affiliated Partner Captain delivery and Customer Pickup;
+- an authorized DSH policy may offer any supported subset of these three modes for either Store relationship, subject to real Captain affiliation, financial terms/collection exposure, publication/readiness and current orderability; choosing a policy never creates a missing capability;
 - Partner Captain affiliation never creates a sixth high-level Identity role;
 - Store publication, Store operational orderability, Offer availability, geographic serviceability and selected fulfillment-mode availability are distinct truths;
 - checkout never silently converts an unavailable fulfillment mode to another mode;

@@ -20,6 +20,10 @@ Local docs/governance/README.md routes challengeable approved Product/platform/a
 
 Classify each material durable impact as NONE, REVALIDATE_ONLY, UPDATE_REQUIRED or DEFECT_FOUND. Correct the one applicable local durable owner for approved changed meaning in the same coherent change batch as materially affected implementation/tests; if a PR is separately human-authorized, keep them together in that PR. Never invent commercial features, promote speculative instructions, duplicate executable facts or require routine donor reads. AGENTS.md alone owns agent execution law; REPOSITORY-STRUCTURE.md owns placement.
 
+### Approved conversation decisions and temporal precedence
+
+Where the current user explicitly approves a sequence of Product/refoundation discussions, treat the later approved decision as superseding an incompatible earlier recommendation **for that same meaning**; compatible earlier decisions remain. Reconcile once at the relevant canonical governance owner before implementation. Earlier audit/HEAD/implementation claims remain dated evidence only, not authorization to perpetuate obsolete code or rename public identities. A conversation-level Product approval is not separate permission to destroy data, reset shared runtime, make external payments, push, open PRs or merge. Never duplicate an approved decision in the execution plan or agent law.
+
 ## 3. Discovery, ownership and simplification
 
 Do one bounded discovery sufficient to identify the affected cone, current truth, canonical owner, causal root, risk and required proof. Then execute. Widen only when new evidence can materially change the repair.
@@ -220,3 +224,22 @@ Report the exact final HEAD and any material unproven claim. Do not claim closur
 Fixed-point closure is bounded to the authorized objective and its proven affected cone. It does not authorize a platform-wide census of unrelated capabilities, surfaces, history or debt.
 
 When the assigned objective is complete, stop. Do not invent additional scope or ask for another task as a condition of closure.
+
+### Compact refoundation acceptance gate — one agent law
+
+The following labels index the obligations **already defined above**, not a second owner, workflow or replacement for proportional checks. Every affected gate needs attributable evidence or an explicit non-PASS status before reporting completion:
+
+- **G1 STATE:** exact checkout, HEAD, status, runtime owner and concurrent work;
+- **G2 OUTCOME:** authorized scope, actor goal and observable acceptance;
+- **G3 PRESERVE:** affected capabilities/subfeatures and evidence-led disposition;
+- **G4 OWNER:** one authoritative fact writer, engine, contract and source;
+- **G5 SIMPLIFY:** necessity of each new abstraction or dependency;
+- **G6 CUTOVER:** all affected readers/writers/contracts/data safely migrated before deletion;
+- **G7 INTEGRATE:** owner-backed true result across changed surfaces and services;
+- **G8 SAFETY:** finance, privacy, permissions, replay, races and loss scenarios where affected;
+- **G9 UX:** required real platform, RTL, accessibility and failure/recovery proof;
+- **G10 REVIEW:** final diff, true persistent state and still-valid checks;
+- **G11 GIT:** scoped staging and distinct local Commit/Push/PR/Merge authority;
+- **G12 CLOSE:** no known material gap for the authorized slice; remaining full-platform work remains NOT_DONE.
+
+An unresolved protected behavior is `UNRESOLVED`; a missing material test is `NOT_RUN` or `BLOCKED`, never an implied PASS.

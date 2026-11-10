@@ -8,6 +8,12 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 ## Authority
 Human authorization sets mutation scope; live code/contracts/runtime prove implementation. Governance states durable approved product, architecture and policy decisions. Working documentation and historical references are not parallel authority.
 
+## Approval chronology and conflict resolution
+
+The current Product owner has approved the decisions and recommendations in the ordered refoundation discussions (conversation zero, then first through sixth). For the **same decision**, the latest explicit approved user instruction or subsequently approved recommendation supersedes the older alternative; compatible earlier decisions survive. Historical audit snapshots describe **what code did at their measured SHA**, not what the rebuild must continue doing. Examples, sample prices, tentative runtime findings and implementation proposals are never automatically active service settings or financial charges.
+
+Resolve the result **once** in its existing canonical semantic-owner document below. This index routes owners; the dated execution plan may retain reconciliation evidence but must not become an editable decision ledger, second backlog or second policy source. Newer statements never waive separate authorization for destructive data changes, publication, financial disbursements, Push, PR or Merge.
+
 ## Canonical documents
 
 The durable Product root is `docs/governance/product.md`; the bounded ownership root is `docs/governance/architecture.md`. This index contains routes, not duplicate business decisions.

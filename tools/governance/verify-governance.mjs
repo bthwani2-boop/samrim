@@ -165,6 +165,37 @@ if (!experienceGovernance.includes("Merchant management experience") ||
 if (!storeGovernance.includes("Further Stores: one DSH create command") ||
     !storeGovernance.includes("The same validation and state defaults apply"))
   fail("additional Store single-writer/dual-entrypoint contract missing");
+// Chronologically approved Product decisions: static semantic guardrails only,
+// never proof that actual services, contract migrations or financial rails have shipped.
+const governanceIndex = get("docs/governance/README.md");
+const refoundationPlan = get("docs/governance/BTHWANI-FULL-SYSTEM-REFOUNDATION-PLAN.md");
+if (!governanceIndex.includes("Approval chronology and conflict resolution") ||
+    !refoundationPlan.includes("## 14. Chronological approval reconciliation"))
+  fail("newer approved conversation decisions lack a routed owner/reconciliation trail");
+if (!get("docs/governance/platform.md").includes("The clean-slate target uses `Customer`/`Merchant`") ||
+    !storeGovernance.includes("Target customer-facing relation names are `MARKETPLACE`") ||
+    !financeGovernance.includes("Three decisions remain separate"))
+  fail("Customer/Merchant or Store/fee/collection decision dimensions lost");
+if (!financeGovernance.includes("confirmed_order_total < available_cod_coverage") ||
+    !financeGovernance.includes("cash_portion_to_reserve <= available_cod_coverage") ||
+    !financeGovernance.includes("`PLATFORM_COLLECTION`/`MERCHANT_COLLECTION`") ||
+    !storeGovernance.includes("No Store can enable BThwani Captain fulfillment merely") ||
+    !get("docs/governance/fulfillment.md").includes("Both Store relationships may offer any supported subset"))
+  fail("approved configurable fulfillment/collection/COD coverage contract lost");
+if (!experienceGovernance.includes("eight primary navigation groups") ||
+    !experienceGovernance.includes("bounded library of three to five accessible full-Store templates") ||
+    !experienceGovernance.includes("one canonical BThwani brand/semantic-token source"))
+  fail("Operator navigation or single Design Studio/design-token scope lost");
+// Dormant legacy flow names are not part of the current durable Product vocabulary.
+// Historical research/evidence files and Git history retain their own provenance.
+for (const owner of [
+  "platform.md", "identity.md", "stores.md", "catalog.md",
+  "finance.md", "fulfillment.md", "journeys.md", "experience.md", "hr.md",
+]) {
+  if (/\bField\b|\bHYBRID\b|JoiningCase|joining.case/.test(get("docs/governance/" + owner)))
+    fail("retired Product terminology reintroduced in " + owner);
+}
+
 const catalogGovernance = get("docs/governance/catalog.md");
 const engineeringGovernance = get("docs/governance/engineering.md");
 const platformGovernance = get("docs/governance/platform.md");

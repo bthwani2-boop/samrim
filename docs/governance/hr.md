@@ -37,7 +37,7 @@ separate bounded capabilities; this section confers no salary or payment authori
 
 When adopted, verified device attendance is evidence to HR scheduling/leave rules, not final salary deductions. Source events are attributable, idempotent, chronologically preserved and correctable only by audited adjustments; missing device data is not automatically absence. Biometric templates are not centrally copied as ordinary HR data.
 
-HR owns employment terms and salary entitlement calculation; WLT exclusively owns financial posting, payout, external transfer and reconciliation. Salary payment reuses WLT controls where compatible but does not inherit Captain/Partner/Field earnings rules. No historical ledger or payroll approval is permanently deleted. Employee cash advances and equipment custody are distinct; WLT owns monetary advance settlement, HR owns issued equipment and returns.
+HR owns employment terms and salary entitlement calculation; WLT exclusively owns financial posting, payout, external transfer and reconciliation. Salary payment reuses WLT controls where compatible but does not inherit Captain/Merchant earnings rules. No historical ledger or payroll approval is permanently deleted. Employee cash advances and equipment custody are distinct; WLT owns monetary advance settlement, HR owns issued equipment and returns.
 
 ### Experience and safe evolution
 

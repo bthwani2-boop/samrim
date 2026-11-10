@@ -69,11 +69,11 @@ Checkout consumes WLT internal balance/cash allocation. It does not treat an ext
 
 Provider timeout or missing confirmation is not automatic failure or success. Unknown outcomes remain unknown until reconciled, and another rail is not invoked while duplicate movement remains possible.
 
-External provider Cash-In is currently admitted only for Customers and BThwani Captains. Customer funding and Captain funding are separately governed capabilities even when they share a CashInRail implementation. Partner, Field and Store-affiliated Partner Captain funding are not enabled by this admission. The provider rail never chooses the WLT wallet/accounting destination; the server-owned funding purpose does.
+External provider Cash-In is currently admitted only for Customers and BThwani Captains. Customer funding and Captain funding are separately governed capabilities even when they share a CashInRail implementation. Merchant-owner and Store-affiliated Captain funding are not enabled by this admission. The provider rail never chooses the WLT wallet/accounting destination; the server-owned funding purpose does.
 
 ### Captain COD coverage and wallet settlement
 
-A BThwani Captain is an independent service provider who retains cash collected from the Customer. BThwani does not accept physical cash from Captains, Partners or Field actors, and does not disburse cash to them. Cash deposited by a Captain at an external exchanger becomes their *external* official-wallet balance, not WLT funding until a separately verified Cash-In completes.
+A BThwani Captain is an independent service provider who retains cash collected from the Customer. BThwani does not accept physical cash from Captains or Merchants, and does not disburse cash to them. Cash deposited by a Captain at an external exchanger becomes their *external* official-wallet balance, not WLT funding until a separately verified Cash-In completes.
 
 ```text
 available_cod_coverage
@@ -82,12 +82,13 @@ available_cod_coverage
 - active payout holds
 - other governed locks
 
-new_cash_reservation <= available_cod_coverage
+confirmed_order_total < available_cod_coverage
+cash_portion_to_reserve <= available_cod_coverage
 ```
 
 - one initial Captain activation funding threshold may be configured (10,000 YER in the current local policy); it is checked only before the Captain first becomes available, never reset or topped up automatically at midnight;
 - previously activated Captains may receive prepaid Orders regardless of their later COD balance, subject to distinct identity/operational and goods-in-custody risk checks;
-- a Captain accepting an Order with positive cash collection must atomically reserve 100% of the actual cash portion in WLT; multiple Orders cannot spend the same available cover;
+- a Captain accepting a COD or mixed-payment Order with a positive cash portion must have **WLT available unheld coverage strictly greater than the complete confirmed Order payable amount** (products and applicable delivery), not merely the cash portion; WLT atomically holds only the cash amount the Captain will actually collect. This separates the owner's admission threshold for gross Order exposure from the actual cash liability. Reservations for concurrent Orders reduce available cover and cannot be reused. A prepaid Customer Wallet portion is never debited from Captain coverage;
 - when that Captain successfully collects and delivers the Order, WLT posts the relevant delivery entitlement and atomically debits the reserved cash amount from the Captain Wallet against the posted cash receivable once, in terminal state DEBITED; the Captain keeps the collected physical cash;
 - cancellation before collection releases the hold without a wallet debit; mixed Orders cover only the cash portion, not the Customer's prepaid internal-wallet portion;
 - a completed WLT debit must never be followed by a second request to remit the same cash to BThwani; physical Captain cash-remittance routes are obsolete for new Orders;
@@ -95,7 +96,7 @@ new_cash_reservation <= available_cod_coverage
 - personal Cash-In funding is not delivery earnings and is not eligible for earnings withdrawal; eligible earnings remain capped by real posted unheld balance;
 - Store-affiliated Partner Captains and Store-collected cash are owned by the Store relationship, not BThwani Captain custody.
 
-The COD prepayment cover limits exposure to cash retained after successful collection; it does not independently guarantee merchandise already in a Captain's physical custody. Goods-loss risk requires separate bounded controls and evidence.
+The strict gross-Order eligibility threshold and cash-portion hold must be evaluated at the exact atomic assignment/acceptance boundary against authoritative WLT facts. The monetary hold covers collected cash only; it does not itself compensate for lost goods in custody. Merchandise-loss liability requires separate bounded, contractual controls and evidence. If a policy later changes this threshold, old accepted Orders retain their frozen financial meaning.
 
 ### Fees, discounts and commissions
 
@@ -103,7 +104,7 @@ Cash-In provider charges are borne by BThwani under the current provider agreeme
 
 An approved Store-specific commercial agreement with **zero product commission** for `BTHWANI_CAPTAIN` may instead specify a fixed customer delivery markup in YER. WLT quotes the general distance tariff plus that explicit Store markup, and snapshots both the agreement and markup at checkout. On delivery, WLT credits the **entire base distance tariff** to the Captain and books the extra amount only to `PLATFORM_DELIVERY_MARGIN_INCOME`; it may never reduce Captain earnings or be disguised as product commission. The Customer sees the full fee before confirmation. A Store with a nonzero product commission cannot add this markup under the initial admitted rule; Partner Captain/Customer Pickup never create this BThwani delivery margin. A frozen old Order is not repriced when Store agreements change.
 
-Field acquisition rewards are retired: no new attribution, reward policy, entitlement outbox or payout entitlement is created for newly published Stores. Existing ledger entries remain immutable. Previously queued or unpaid obligations require Finance inventory, legally governed settlement or documented disposition and independent review; automated Field reward creation and replay are no longer registered. Deleting financial evidence requires a separately approved, reversible migration and independent review.
+No retired enrollment-attribution or referral reward is issued for new Stores. Historical immutable ledger records remain protected. Any binding unpaid obligation requires Finance inventory, lawful settlement or documented disposition and independent review. Obsolete reward writers, payout routes and beneficiary enrollment are not recreated in the new Product.
 
 ### Refunds, payouts and settlement
 
@@ -131,7 +132,7 @@ For every beneficiary paid through an official-wallet rail, the wallet number is
 
 For a Store-attributed payout that has not been executed, Finance must revalidate the effective Store payout-recipient assignment in WLT and the beneficiary's current Identity eligibility **at the transfer-instruction release boundary**. An unavailable, stale or `RECIPIENT_REVIEW_REQUIRED` result blocks releasing instructions, with an explicit held/review exception until reauthorized. The historical approved snapshot remains immutable, and no beneficiary substitution or silent redirect is permitted. A transfer already performed follows evidence, reconciliation and exception handling, not a fabricated reversal.
 
-For the current approved target, Partner/Captain/Field surfaces are read-only for official-wallet destination master data. Their admission/onboarding intake may capture a provider preference only; that preference does not activate a destination or grant destination-writing authority. Finance creates or changes a destination through the authorized verification/approval workflow; beneficiaries cannot create, update, deactivate, replace or select a payout destination. A destination change cannot rewrite an already approved payout snapshot.
+For the current approved target, Merchant/Captain surfaces are read-only for official-wallet destination master data. Their admission/onboarding intake may capture a provider preference only; that preference does not activate a destination or grant destination-writing authority. Finance creates or changes a destination through the authorized verification/approval workflow; beneficiaries cannot create, update, deactivate, replace or select a payout destination. A destination change cannot rewrite an already approved payout snapshot.
 
 ### Store payout-recipient routing
 
@@ -141,7 +142,7 @@ Recipient assignment selects the responsible Human Actor relationship. It does n
 
 Partner owners may read financial totals aggregated across their owned Stores. A delegated accountant may read or report only for Stores in the accountant's active authorized scope. WLT preserves each Store's economic attribution in every aggregate. Financial data access, payout-intent creation, recipient routing, Finance approval, transfer execution and reconciliation are separate authorities. A payout request is limited to its authorized Store scope and cannot change the recipient. If selected Stores have different effective recipients or verified destinations, WLT partitions them into separate payout groups and transfers; one external transfer never pays multiple beneficiaries or destinations.
 
-Customer balance withdrawal is not a customer-facing or self-service payout capability. A rare exception begins with an Operations-recorded request and authorization/evidence; WLT resolves the eligible internal balance and reserves the approved amount. Authorized Finance staff approve and perform the manual external transfer, attach transfer-specific receipt evidence, and bind the transfer to the period/batch statement evidence. A different authorized operator independently reconciles the transfer and statement row. WLT reduces the customer liability only after required reconciliation; unknown, mismatched or unsupported outcomes remain held/open as an explicit exception. This process is distinct from Customer funding, Partner/Captain/Field earnings settlement and Captain COD remittance.
+Customer balance withdrawal is not a customer-facing or self-service payout capability. A rare exception begins with an Operations-recorded request and authorization/evidence; WLT resolves the eligible internal balance and reserves the approved amount. Authorized Finance staff approve and perform the manual external transfer, attach transfer-specific receipt evidence, and bind the transfer to the period/batch statement evidence. A different authorized operator independently reconciles the transfer and statement row. WLT reduces the customer liability only after required reconciliation; unknown, mismatched or unsupported outcomes remain held/open as an explicit exception. This process is distinct from Customer funding, Merchant/Captain earnings settlement and Captain COD remittance.
 
 ### Beneficiary settlement intake before external transfer
 
@@ -177,9 +178,11 @@ Each Store has one explicit active commercial model and exact terms, accepted by
 
 ### Ownership
 
-WLT owns agreement identity and versions, proposed rates, Partner acceptance, Finance approval, activation, effective and superseded facts and audit. DSH supplies canonical Store context and enabled fulfillment modes and performs the bounded operational handoff; DSH does not write financial rates. The commercial model is chosen independently of DSH's canonical Store `relationModel`: both BTHWANI_PARTNER and INDEPENDENT_STORE may use COMMISSION or SUBSCRIPTION when admitted and activated under a WLT-owned effective policy and accepted Store agreement. Relation still governs commerce channels, fulfillment and publication independently of fees. Authorized Operators may propose the eligible Store-specific terms through the existing DSH-to-WLT agreement route; selecting a model in the UI cannot override the canonical Store relation or create a different financial writer. Partner-management screens may read agreement history but are not a separate model-selection writer. The retired Field proposal path is no longer available. The bound Partner owner accepts exact terms. An authorized Finance actor approves them. ORDER_PAYMENT_COLLECTION alone resolves the active agreement for an applicable Order and owns that Order's immutable agreement snapshot.
+WLT owns agreement identity and versions, proposed rates, Partner acceptance, Finance approval, activation, effective and superseded facts and audit. DSH supplies canonical Store context and enabled fulfillment modes and performs the bounded operational handoff; DSH does not write financial rates. The commercial model is chosen independently of DSH's canonical Store `relationModel`: both BTHWANI_PARTNER and INDEPENDENT_STORE may use COMMISSION or SUBSCRIPTION when admitted and activated under a WLT-owned effective policy and accepted Store agreement. Relation still governs commerce channels, fulfillment and publication independently of fees. Authorized Operators may propose the eligible Store-specific terms through the existing DSH-to-WLT agreement route; selecting a model in the UI cannot override the canonical Store relation or create a different financial writer. Partner-management screens may read agreement history but are not a separate model-selection writer. No retired enrollment source may propose new agreement terms. The bound Partner owner accepts exact terms. An authorized Finance actor approves them. ORDER_PAYMENT_COLLECTION alone resolves the active agreement for an applicable Order and owns that Order's immutable agreement snapshot.
 
 ### Approved Store commercial models
+
+Three decisions remain separate and server-enforced: (1) DSH Store relation `MARKETPLACE`/`DIRECT`, (2) WLT financial model `COMMISSION`/`SUBSCRIPTION`, and (3) WLT-approved Order collection responsibility `PLATFORM_COLLECTION`/`MERCHANT_COLLECTION`. The Operator's versioned relation-specific **default** is proposed automatically at registration, not charged or accepted automatically. Each Store receives its own disclosed, accepted and Finance-approved agreement with an effective date and owner-backed terms. Both fee models and either approved collection responsibility can be assigned to either relation, but none grants marketplace visibility, Captain dispatch or an unimplemented payment rail by itself. Changing the default is prospective; an existing agreement requires renewed consent and a safe cutover.
 
 This rule distinguishes the approved target from deployable readiness. Both Store relations can use **COMMISSION** or **SUBSCRIPTION**, with one WLT agreement/ledger boundary and one effective model per Store agreement version. No separate independent billing engine, shadow agreement table, second settlement writer or automatic subscription collection is admitted. Existing 0% Partner commissions and historical agreement snapshots remain lawful historical/contractual facts, not evidence of an independent plan.
 
@@ -198,7 +201,7 @@ A recurring agreement must identify YER amount, billing period and time zone, ef
 
 **Delivery boundary:** WLT stores explicit versioned commercial-model proposals for COMMISSION and SUBSCRIPTION and DSH carries them to Partner and Operator surfaces for review and consent. Historic agreements remain COMMISSION, including a 0% product commission. **Only currently implemented and validated commission agreements for the existing eligible marketplace Partner route may be Finance-activated today.** Commission on direct independent Orders, subscription for either relation, and any BThwani-operated direct-order collection remain NOT_RELEASED until their respective owner-backed quote/invoice, idempotent posting, evidence/reconciliation, settlement and independent finance/security review pass. WLT's API and DB must reject unsupported activation; no screen or accepted proposal can override these gates.
 
-Historical **HYBRID** agreements are retired. Their immutable records remain readable and auditable, but new proposals and Partner acceptance are prohibited. Existing pending versions require separately authorized, owner-backed resolution; no automatic conversion, deletion or financial charge is allowed.
+Only COMMISSION or SUBSCRIPTION is admitted for a new effective Store agreement; no combined fee model is admitted. Historical financial records requiring retention remain immutable and auditable with owner-backed resolution, never automatic conversion or extra charges.
 
 ### Invariants
 
@@ -213,11 +216,11 @@ Historical **HYBRID** agreements are retired. Their immutable records remain rea
 - materially changing or removing an enabled mode's commercial terms also requires a new agreement version;
 - temporarily pausing/resuming a mode already durably admitted is operational state owned by `STORE_OPERATIONAL_AVAILABILITY` and does not create a new agreement version;
 - an operational toggle cannot activate a fulfillment mode absent from the Store's durable admitted mode policy and active agreement;
-- Store Type policy can suggest amounts or mode-specific terms only within the Store's relation-eligible commercial model; it never overrides the relation or becomes fallback billing authority;
+- Store Type policy can suggest amounts or mode-specific terms only within the WLT-approved effective commercial model; it never overrides the relation or becomes fallback billing authority;
 - an initial Store agreement may have zero product commission for each admitted fulfillment mode; zero rates are explicit Store-specific financial facts, not an implied waiver of Partner acceptance or Finance approval;
 - a zero-commission proposal does not by itself create a timed promotion or authorize automatic paid conversion; a governed duration, effective date, consent evidence and applicable policy must exist before any later paid terms become active;
 - no more than one agreement version is active for a Store at a time;
-- a Partners Operator may propose but cannot accept for the Partner owner; Finance approval is separate except for the Root Owner exception above. Retired Field actors cannot propose or approve on another actor's behalf;
+- a Partners Operator may propose but cannot accept for the Partner owner; Finance approval is separate except for the Root Owner exception above. No unrelated actor may propose or approve on behalf of the Store owner;
 - retries, stale versions and concurrent transitions preserve one auditable result.
 
 ### Failure and recovery
@@ -235,6 +238,12 @@ Every admitted Store Order has one WLT-owned payment/collection truth that conse
 ### Ownership
 
 WLT owns payment intent, customer payment allocation, collection state, Order-adjustment financial deltas, COD receivable/exposure, Partner commission receivable, refund/reversal treatment and financial readback. DSH owns operational Order/fulfillment/adjustment facts that qualify financial effects.
+
+### Collection responsibility and custody gates
+
+Every admitted Store Order snapshots the **approved responsible collector** for product and delivery value, along with the actual physical custodian where different. With `MERCHANT_COLLECTION`, the Merchant or its explicitly affiliated Captain receives its sale proceeds outside BThwani custody; DSH records handoff and collection evidence, and WLT accounts only for BThwani's actual fees/commission receivables, not a fictitious external merchant wallet balance. With `PLATFORM_COLLECTION`, BThwani controls supported payment rails, WLT liabilities, refunds and Store settlement; a BThwani Captain may retain physical COD cash only after adequate WLT reservation, and WLT debits the actual cash collected exactly once upon confirmed delivery. A prepaid Customer Wallet portion is never charged twice.
+
+Collection responsibility is independent of Store relation and fee model, but **a combination cannot be activated until its actual DSH checkout, Identity permission, WLT reconciliation, Captain custody and independent finance/security gates are operationally proven**. The customer sees the actual responsible collector, payment methods and recourse before checkout confirmation. A changed default cannot rewrite accepted agreements or prior Orders.
 
 ### Invariants
 
@@ -310,7 +319,7 @@ WLT owns the Captain FundingIntent, purpose-to-wallet resolution, provider event
 ### Invariants
 
 - this capability applies only to a Captain whose BThwani-owned financial relationship is active;
-- Store-affiliated Partner Captains, Partners and Field actors are not included by this admission;
+- Store-affiliated Captains and Merchant owners are not included by this admission;
 - the Captain uses one WLT balance, not a separate top-up or COD wallet;
 - provider identity never selects the internal wallet or ledger account; server-owned purpose maps the confirmed intent to the correct Captain wallet;
 - provider success is accepted only with evidence sufficient for the approved provider contract;
@@ -324,13 +333,13 @@ WLT owns the Captain FundingIntent, purpose-to-wallet resolution, provider event
 
 Duplicate/replayed event, timeout, unknown result, provider reversal, mismatched amount/reference and delayed confirmation reconcile before another credit is possible. WLT canonical readback resolves whether the Captain balance was credited.
 
-## PARTNER_CAPTAIN_EARNINGS_SETTLEMENT — Partner and Captain Earnings Settlement — Historical Field Obligations
+## PARTNER_CAPTAIN_EARNINGS_SETTLEMENT — Partner and Captain Earnings Settlement
 
 CAPABILITY_ID: PARTNER_CAPTAIN_EARNINGS_SETTLEMENT
 
 ### Outcome
 
-Current Partner and BThwani Captain entitlements are derived from admitted canonical qualifying events and use the governed WLT payout/settlement lifecycle. Previously accrued Field obligations remain available as historical financial readback for authorized Finance review, legally governed settlement or documented disposition; no new Field acquisition rewards, settlement intakes, wallet destinations or payout intents are admitted through the retired workflows. The Operator Finance workspace presents separate beneficiary sections while sharing the payout, execution and reconciliation controls that have the same financial semantics.
+Current Partner and BThwani Captain entitlements are derived from admitted canonical qualifying events and use the governed WLT payout/settlement lifecycle. Previously accrued binding obligations remain available as historical readback for authorized Finance review, lawful settlement or documented disposition. Obsolete beneficiary/reward enrollments cannot create new payment requests or entitlements. The Operator Finance workspace presents separate beneficiary sections while sharing the payout, execution and reconciliation controls that have the same financial semantics.
 
 ### Ownership
 
@@ -343,11 +352,11 @@ WLT owns earnings ledger, beneficiary eligibility/holds, payout intent, official
 - outstanding Partner commission receivables from Store-collected pickup cash reduce that Partner's later eligible earnings before payout; they never offset another Partner's entitlement;
 - a remaining Partner commission receivable may be cleared by a direct Partner remittance only after WLT records and reconciles the verified receipt;
 - Store-collected sale proceeds already retained by the Partner do not become a second WLT Partner wallet credit;
-- Partner/Captain payout execution is currently a governed manual official-wallet transfer; historical Field obligations require separately reviewed disposition; a provider payout API is not implied;
+- Partner/Captain payout execution is currently a governed manual official-wallet transfer; historical obligations require separately reviewed disposition; a provider payout API is not implied;
 - each external transfer has transfer-specific receipt/evidence, while a period/batch statement is retained once and matched statement rows may be linked to multiple transfers;
 - generated spreadsheets are immutable execution artifacts and never a source of WLT financial truth;
-- Partner, BThwani Captain and Field surfaces do not create, update, deactivate, replace or select official-wallet destination master data; Finance owns the governed provisioning/change workflow;
-- official-wallet admission for active Partner and BThwani Captain actors collects a provider preference only; historical Field destinations are retained without new provisioning. WLT derives the number and beneficiary name from current canonical Identity facts under `docs/governance/finance.md`; stale Identity facts require reverification before payout approval or execution;
+- Merchant and BThwani Captain surfaces do not create, update, deactivate, replace or select official-wallet destination master data; Finance owns the governed provisioning/change workflow;
+- official-wallet admission for active Partner and BThwani Captain actors collects a provider preference only; historical legally bound destinations are retained without new provisioning. WLT derives the number and beneficiary name from current canonical Identity facts under `docs/governance/finance.md`; stale Identity facts require reverification before payout approval or execution;
 - a derived wallet number may be shown read-only; it is never an editable destination input;
 - payout approval freezes an immutable beneficiary/destination/amount snapshot;
 - external execution evidence is independently verified/reconciled before completion;
@@ -361,8 +370,8 @@ WLT owns earnings ledger, beneficiary eligibility/holds, payout intent, official
 - a verified-phone or Identity change makes the affected destination require Finance reverification before a future payout; it never silently redirects a payout;
 - recipient changes affect only future payout intents that have not been committed to an immutable snapshot; approved, executing, transferred and reconciled payouts retain their original beneficiary, destination and per-Store allocations;
 - aggregated owner readback preserves per-Store attribution; a payout spanning different recipients or destinations is partitioned into separate canonical groups/transfers, never one transfer to multiple recipients;
-- historical Field reward-policy versions remain audit evidence and never authorize a new reward;
-- an eligible acquisition referral is an auditable DSH-owned fact separate from whether Field or the Partners workspace created the joining case. Past qualifying publication events and immutable Field attributions are preserved as historical evidence; DSH emits no new Field acquisition entitlement. WLT prevents duplicate economic entitlements and retains all prior valid payouts and evidence. Re-attribution after Store admission or publication is prohibited;
+- historical reward-policy records remain audit evidence and never authorize a new reward;
+- binding historical attribution evidence stays at its original owner and cannot authorize a new reward or duplicate economic entitlement. WLT retains prior valid payouts and evidence; re-attribution after Store admission or publication is prohibited;
 - Store-affiliated Partner Captain compensation and cash custody remain outside this capability and WLT unless a separately governed integration is explicitly admitted;
 - no surface edits ledger balances directly.
 
@@ -404,7 +413,7 @@ WLT owns eligibility calculation, amount validation/resolution, hold, payout/tra
 - execution evidence alone does not finalize the WLT liability reduction;
 - WLT finalizes only after required independent reconciliation confirms amount, currency, beneficiary/destination and external reference;
 - unknown, duplicate, mismatched or unreconciled results remain held and enter an explicit exception state;
-- this workflow is distinct from Customer Cash-In, Partner/Captain/Field earnings settlement, refunds and Captain COD remittance.
+- this workflow is distinct from Customer Cash-In, Merchant/Captain earnings settlement, refunds and Captain COD remittance.
 
 ### Failure and recovery
 

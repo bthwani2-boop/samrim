@@ -24,7 +24,7 @@ The currently admitted BThwani roles/personas are:
 
 One Human Actor may hold multiple roles. Role admission, credentials and sessions never create a second human identity.
 
-The retired `field` role is a historical compatibility marker only; new admissions, rewards and independent Field sessions are not admitted.
+No acquisition-agent role, separate enrollment application, referral-reward writer or corresponding user-facing surface is admitted. Binding historical financial obligations remain accessible only through their lawful owner.
 
 `operator` is the human persona for the Operator workspace. First-Operator bootstrap is a one-time Identity lifecycle, not a second role or Product layer.
 
@@ -42,22 +42,22 @@ A delivery recipient may be a person other than the purchasing Client. A recipie
 
 ### User terminology versus deployed identifiers
 
-Use **«عميل» / Customer** for the purchaser and **«تاجر» or «مالك متجر» / Merchant** for merchant-side people in user-facing Arabic and explanatory Product prose, as context requires; **«كابتن» / Captain** and **«مشغّل» / Operator** remain clear. «شريك بثواني» and «متجر مستقل» name the DSH Store relation, **not two human Identity roles or two Merchant apps**. The generic merchant-side management UI serves both relations. Store staff are authorized Store-scoped grants; BThwani employees are HR relationships. Technical Identity role values `client` and `partner`, existing published application IDs, API paths and external Store URLs are compatibility facts, not permission to execute a blind string/filename/identifier rename. Change them only through a traced consumer migration and separate admission where external contracts are affected.
+Use **«عميل» / Customer** for the purchaser and **«تاجر» or «مالك متجر» / Merchant** for merchant-side people in user-facing Arabic and explanatory Product prose, as context requires; **«كابتن» / Captain** and **«مشغّل» / Operator** remain clear. «شريك بثواني» and «متجر مستقل» name the DSH Store relation, **not two human Identity roles or two Merchant apps**. The generic merchant-side management UI serves both relations. Store staff are authorized Store-scoped grants; BThwani employees are HR relationships. The clean-slate target uses `Customer`/`Merchant` for domain and user-facing names. Existing Identity values `client`/`partner`, published application IDs, API paths and external Store URLs are compatibility facts, not permission for a blind rename. Migrate all consumers/contracts before a technical rename and never run the old and new roles as parallel admissions. Preserve published identities and links unless separately authorized.
 
-Historical Field and JoiningCase identifiers remain read-only compatibility/audit facts where required; neither authorizes a live Field application, registration, reward, action or new Store writer. Do not replicate deprecated navigation or APIs in the refoundation. Historical financial obligations are not silently erased.
+Retired enrollment and attribution machinery is not recreated in the refoundation, navigation, APIs or new schemas. Retained binding financial/identity records remain at their original owners and cannot authorize an active writer or role.
 
 ## Surface model
 
 A Surface is an actor-facing deployable presentation/composition host for admitted Product work.
 
-The four actor-facing surfaces are Client, Partner, Captain and Operator. New Partner accounts use verified direct Identity self-registration without a JoiningCase; DSH independently creates their first unpublished Store, while authorized Operators review Store-specific publication readiness. Historical joining cases remain restricted readback, not another current admission workflow. Field applications, new acquisition attribution and new reward issuance are retired; pre-existing Identity, DSH and WLT facts remain auditable until obligations are legally resolved. A Surface may own its shell, navigation, composition, transient presentation state and platform adapters. It never becomes the canonical owner of the business facts it renders or mutates.
+The four actor-facing surfaces are Client, Partner, Captain and Operator. New Merchant accounts use verified direct Identity self-registration; DSH creates an unpublished Store through one canonical operation accessible to authorized Merchant and Operator entry points. Store-specific publication is independently approved. Legally binding historical records are preserved by their original owners without reviving retired enrollment or reward paths. A Surface may own its shell, navigation, composition, transient presentation state and platform adapters. It never becomes the canonical owner of the business facts it renders or mutates.
 
 Brand unity does not imply identical information architecture or shell across roles.
 
 ## Canonical terms
 
 - **Human Actor** — one natural person represented by `actor_id`.
-- **Role** — high-level Identity admission such as client, partner, captain or operator. `field` is retained only as a retired historical compatibility marker.
+- **Role** — high-level Identity admission for Customer, Merchant, Captain or Operator; Store staff and affiliated Captains use scoped resource relations, not extra high-level roles.
 - **Surface** — actor-facing presentation/composition host; never a business owner by itself.
 - **Partner** — authenticated Human Actor with the `partner` role; Store authority is separately determined by DSH ownership/grants.
 - **Captain** — authenticated Human Actor with the `captain` role; operational relationships are separate DSH facts.
@@ -66,7 +66,6 @@ Brand unity does not imply identical information architecture or shell across ro
 - **Store Captain Membership** — DSH-owned Store-scoped relation between a Store and canonical Captain actor; not a role.
 - **Store-scoped access grant** — DSH-owned bounded permission grant within one Store for an appropriately admitted Partner-workspace actor; not a role, tenant or generic team membership.
 - **Delivery recipient** — bounded Order delivery-contact snapshot; not an account/role or Order/payment principal.
-- **Joining Case** — historical DSH Partner intake/correction record retained for authorized readback and outstanding obligations; never required for new Partner admission or first-Store creation.
 - **Canonical owner** — bounded owner of durable meaning and authoritative mutation.
 - **Canonical readback** — owner-backed observable committed state after mutation.
 - **Derived projection** — rebuildable/read-optimized state with no mutation authority.
