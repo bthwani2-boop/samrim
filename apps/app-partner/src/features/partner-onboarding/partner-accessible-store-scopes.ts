@@ -30,11 +30,30 @@ export function usePartnerAccessibleStoreScopes() {
         if(signal.aborted||!stillCurrent())throw new Error("PARTNER_STORE_SCOPE_CANCELLED");
       };
       const stores: PartnerAccessibleStore[] = [];
+      const seenStoreIDs = new Set<string>();
+      const seenCursors = new Set<string>();
       let cursor = "";
       do {
         ensureCurrent();
         const page = await listPartnerAccessibleStores(cursor);
         ensureCurrent();
+        if (!Array.isArray(page.stores) || page.stores.length > 50 || typeof page.nextCursor !== "string") {
+          throw new Error("PARTNER_STORE_SCOPE_INVALID_PAGE");
+        }
+        for (const store of page.stores) {
+          if (typeof store?.id !== "string" || !store.id || seenStoreIDs.has(store.id)) {
+            throw new Error("PARTNER_STORE_SCOPE_INVALID_PAGE");
+          }
+          seenStoreIDs.add(store.id);
+        }
+        // DSH orders by Store ID and uses the final returned ID as its cursor.
+        // Reject cycles, duplicates and incomplete pages before exposing any rights.
+        if (page.nextCursor) {
+          if (page.nextCursor !== page.stores.at(-1)?.id || seenCursors.has(page.nextCursor) || seenCursors.size >= 1000) {
+            throw new Error("PARTNER_STORE_SCOPE_INVALID_PAGE");
+          }
+          seenCursors.add(page.nextCursor);
+        }
         stores.push(...page.stores);
         cursor = page.nextCursor;
       } while (cursor);
