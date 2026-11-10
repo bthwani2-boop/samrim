@@ -76,10 +76,11 @@ export function StoreProfileTabs({
         <p className="store-profile-muted" role="status">ليست لديك صلاحية عرض العمليات لهذا المتجر.</p>}
       {joining?.firstStoreWorkingHours?.intervals.length ? <details className="store-intake-archive">
         <summary>ساعات الانضمام السابقة (للاطلاع فقط)</summary>
+        <p>هذه بيانات الطلب الأولي وليست أوقات التشغيل المعتمدة حاليًا.</p>
         <ul>{[...joining.firstStoreWorkingHours.intervals].sort((a,b) => a.dayOfWeek - b.dayOfWeek || a.opensAt.localeCompare(b.opensAt)).map((item) =>
           <li key={item.dayOfWeek + "-" + item.opensAt + "-" + item.closesAt}>
             <span>{intakeWeekdays[item.dayOfWeek - 1] ?? "يوم " + item.dayOfWeek}</span>
-            <bdi dir="ltr">{item.opensAt}-{item.closesAt}{item.closesNextDay ? " (+1)" : ""}</bdi>
+            <bdi dir="ltr">{item.opensAt}-{item.closesAt}{item.closesNextDay ? " · ينتهي اليوم التالي" : ""}</bdi>
           </li>)}</ul>
       </details> : null}
     </Panel>

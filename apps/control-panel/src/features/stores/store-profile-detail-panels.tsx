@@ -4,7 +4,6 @@ import { fulfillmentModeLabel, type JoiningCaseView, joiningCaseStateLabel, publ
 import type { ActorRoleView } from "@bthwani/identity";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { StoreAvailabilityControls } from "./store-availability-controls";
 import { StoreBranchesPreview } from "./store-branches-preview";
 import { StoreOperationsPreview } from "./store-operations-preview";
 import { StoreProductsWorkspace } from "./store-products-workspace";
@@ -13,7 +12,6 @@ import { StoreOrderRatingsPreview } from "./store-order-ratings-preview";
 import { StoreCustomerActivitySummary } from "./store-customer-activity-summary";
 import { StoreMarketingPerformance } from "./store-marketing-performance";
 import { PartnerFinancialRegister } from "../finance/partner-financial-register";
-import { joiningCaseIsoWeekdayLabels as intakeWeekdays } from "../partner-onboarding/joining-case-weekdays";
 
 type Store = StorePublicationResponse["store"];
 type StoreProfileTabsProps = Readonly<{
@@ -135,17 +133,6 @@ export function StoreProfileDetailPanels({ activeTab, store, partner, partnerErr
     </Panel>
 
 
-    <Panel id="hours" selected={activeTab === "hours"}>
-      {canViewOperations ? <StoreAvailabilityControls key={store.id} storeId={store.id} enabledModes={store.fulfillmentModes}/> :
-        <Unavailable title="أوقات التشغيل وإدارة الاستقبال" reason="تعديل أوقات التشغيل وإيقاف استقبال الطلبات يتطلب صلاحية العمليات."/>}
-      {joining?.firstStoreWorkingHours?.intervals.length ? <details className="store-intake-archive">
-        <summary>ساعات الانضمام الأصلية (للمراجعة فقط)</summary>
-        <p>هذه بيانات الطلب الأولي وليست أوقات التشغيل المعتمدة حاليًا.</p>
-        <ul>{[...joining.firstStoreWorkingHours.intervals].sort((left, right) => left.dayOfWeek - right.dayOfWeek || left.opensAt.localeCompare(right.opensAt)).map((interval) =>
-          <li key={`${interval.dayOfWeek}-${interval.opensAt}-${interval.closesAt}`}><span>{intakeWeekdays[interval.dayOfWeek - 1] ?? `اليوم ${interval.dayOfWeek}`}</span>
-            <bdi dir="ltr">{interval.opensAt}–{interval.closesAt}{interval.closesNextDay ? " · ينتهي اليوم التالي" : ""}</bdi></li>)}</ul>
-      </details> : null}
-    </Panel>
 
     <Panel id="customers" selected={activeTab === "quality"}>
       <div className="store-profile-tab-grid">

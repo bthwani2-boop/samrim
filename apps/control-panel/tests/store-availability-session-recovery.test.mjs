@@ -125,11 +125,14 @@ test("readback must match pauseUntil, not only paused and schedule", () => {
   assert.equal(actualCompatible(sent, { ...base, pauseUntil: sent.pauseUntil }), true);
 });
 
-test("both Store profile presentations remount the availability editor on Store identity changes", () => {
-  for (const name of ["store-profile-tabs.tsx", "store-profile-detail-panels.tsx"]) {
-    const parent = readFileSync(new URL(`../src/features/stores/${name}`, import.meta.url), "utf8");
-    assert.match(parent, /<StoreAvailabilityControls key=\{store\.id\} storeId=\{store\.id\}/);
-  }
+test("one reachable Store availability editor remounts on Store switch with archived intake hours preserved", () => {
+  const tabs = readFileSync(new URL("../src/features/stores/store-profile-tabs.tsx", import.meta.url), "utf8");
+  const details = readFileSync(new URL("../src/features/stores/store-profile-detail-panels.tsx", import.meta.url), "utf8");
+  assert.match(tabs, /<Panel id="operations"[\s\S]*<StoreAvailabilityControls key=\{store\.id\} storeId=\{store\.id\}/);
+  assert.match(tabs, /joining\?\.firstStoreWorkingHours\?\.intervals\.length/);
+  assert.match(tabs, /هذه بيانات الطلب الأولي وليست أوقات التشغيل المعتمدة/);
+  assert.match(tabs, /ينتهي اليوم التالي/);
+  assert.doesNotMatch(details, /StoreAvailabilityControls|<Panel id="hours"/);
   assert.match(source, /inFlightSave\.current\?\.abort\(\)/);
   assert.match(source, /source\?\.availability\.storeId===storeId/);
 });
