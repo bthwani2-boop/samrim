@@ -45,12 +45,15 @@ async function readWorkbench(request: Request, privateQuery?: string): Promise<R
   const kind = p.get("kind") || "all";
   const status = p.get("status") ?? "";
   const city = p.get("serviceCityId") ?? "";
+  const relationModel = p.get("relationModel") ?? "";
   const sort = p.get("sort") === "oldest" ? "oldest" : "newest";
   const q = (privateQuery ?? p.get("q") ?? "").trim();
   if (!["all", "requests", "joining", "access", "store", "partner"].includes(kind) || !states.includes(status) ||
-    q.length > 100 || city.length > 128 || (city && kind !== "all" && kind !== "store") ||
+    Array.from(q).length > (kind === "store" ? 128 : 100) || q.includes("\0") ||
+    city.length > 128 || (city && kind !== "all" && kind !== "store") ||
+    (relationModel && (kind !== "store" || !["BTHWANI_PARTNER", "INDEPENDENT_STORE"].includes(relationModel))) ||
     (privateQuery === undefined && phoneQuery(q))) return rejected(400, "فلاتر غير صالحة.");
-  const scope = createHash("sha256").update(JSON.stringify({ actor: identity.subject, kind, status, city, sort, q })).digest("hex").slice(0, 24);
+  const scope = createHash("sha256").update(JSON.stringify({ actor: identity.subject, session: identity.sessionId, kind, status, city, sort, q, relationModel })).digest("hex").slice(0, 24);
   const cursor = decode(p.get("cursor") ?? "", scope);
   if (!cursor) return rejected(400, "انتهت صلاحية الصفحة أو تغيّرت مرشحاتها.");
   const allowed = {
@@ -97,6 +100,7 @@ async function readWorkbench(request: Request, privateQuery?: string): Promise<R
       url.searchParams.set("sort", sort === "oldest" ? "updated_asc" : "updated_desc");
       if (publication(status)) url.searchParams.set("state", status);
       if (city) url.searchParams.set("serviceCityId", city);
+      if (relationModel) url.searchParams.set("relationModel", relationModel);
       if (next.from.registry) url.searchParams.set("cursor", next.from.registry);
       if (q && !phoneQuery(q)) url.searchParams.set("q", q);
       const response = phoneQuery(q) ?

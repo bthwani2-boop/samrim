@@ -7,6 +7,7 @@ import { Input, Select, Tabs } from "antd";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CursorPagination, useCursorPage } from "../../navigation/cursor-page";
+import { useSession } from "../../session/session-provider";
 import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
 import { PageHeader } from "../../shell/page-header";
 import { PartnerDetailWorkspace } from "../partners/partner-detail-workspace";
@@ -27,7 +28,9 @@ type Row =
   | { kind: "store"; store: OperatorStoreSummary; partnerRole: ActorRoleView | null }
   | { kind: "partner"; actor: ActorRoleView };
 type Kind = "joining" | "access" | "store" | "partner";
+type StoreRelation = OperatorStoreSummary["relationModel"];
 type WorkspaceTab = "directory" | "joining" | "access";
+const relationLabels: Record<StoreRelation, string> = { BTHWANI_PARTNER: "شريك بثواني", INDEPENDENT_STORE: "متجر مستقل" };
 const typesByTab: Record<WorkspaceTab, ReadonlyArray<{ value: Kind; label: string }>> = {
   directory: [{ value: "store", label: "المتاجر" }, { value: "partner", label: "الشركاء دون متجر" }],
   joining: [{ value: "joining", label: "طلبات الانضمام" }],
@@ -54,9 +57,13 @@ const rowId = (row: Row) => row.kind === "joining" ? "joining:" + row.case.id :
   row.kind === "access" ? "access:" + row.grant.id : row.kind === "store" ? "store:" + row.store.id : "partner:" + row.actor.actorId;
 const date = (value?: string) => value ? new Intl.DateTimeFormat("ar-YE", { dateStyle: "medium" }).format(new Date(value)) : "—";
 const isPhone = (value: string) => /^\+?[\d\s-]{5,}$/.test(value) && value.replace(/\D/g, "").length >= 5;
-const caption = (row: Row) => row.kind === "joining" ? "طلب انضمام" : row.kind === "access" ? "اعتماد وصول" : row.kind === "store" ? "متجر" : "شريك دون متجر";
+const caption = (row: Row) => row.kind === "joining" ? "طلب انضمام" : row.kind === "access" ? "اعتماد وصول" : row.kind === "store" ? relationLabels[row.store.relationModel] : "شريك دون متجر";
+const storePublicationLabel = (store: OperatorStoreSummary) => (store.relationModel === "INDEPENDENT_STORE" ? "نشر السوق: " : "") + publicationStateLabel(store.publicationState);
 
 export function PartnersWorkbench() {
+  const { state: session } = useSession();
+  const sessionKey = session.kind === "authenticated" ? JSON.stringify([session.identity.subject, session.identity.sessionId]) : "";
+  const phoneHistoryKey = `partnerWorkbenchPhone:${sessionKey}`;
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -75,18 +82,20 @@ export function PartnersWorkbench() {
   const requestedKind = requestedKindParam || legacyKind || defaultKindByTab[activeTab];
   const kindOptions = typesByTab[activeTab];
   const kind: Kind = kindOptions.some((entry) => entry.value === requestedKind) ? requestedKind as Kind : defaultKindByTab[activeTab];
+  const requestedRelation = params.get("relationModel");
+  const relationModel = kind === "store" && (requestedRelation === "BTHWANI_PARTNER" || requestedRelation === "INDEPENDENT_STORE") ? requestedRelation : "";
   const statusOptions = statusesByKind[kind];
   const status = statusOptions.some((entry) => entry.value === requestedStatus) ? requestedStatus : "";
   const city = activeTab === "directory" && kind === "store" ? (params.get("serviceCityId") ?? "").slice(0, 128) : "";
   const sort = params.get("sort") === "oldest" || params.get("sort") === "updated_asc" ? "oldest" : "newest";
-  const urlSearch = (params.get("q") ?? "").slice(0, 100).trim();
+  const searchLimit = kind === "store" ? 128 : 100;
+  const urlSearch = (params.get("q") ?? "").slice(0, searchLimit).trim();
   const [privateSearch, setPrivateSearch] = useState("");
   const appliedSearch = urlSearch || privateSearch;
   const [search, setSearch] = useState(appliedSearch);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [cities, setCities] = useState<ReadonlyArray<{ id: string; displayNameAr: string }>>([]);
-  const [rows, setRows] = useState<ReadonlyArray<Row>>([]);
-  const [nextCursor, setNextCursor] = useState("");
+  const [readback, setReadback] = useState<{ scope: string; rows: ReadonlyArray<Row>; nextCursor: string } | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [revision, setRevision] = useState(0);
@@ -94,29 +103,37 @@ export function PartnersWorkbench() {
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const attempts = useRef(new Map<string, { idempotencyKey: string; correlationId: string }>());
   const sequence = useRef(0);
+  const activeRead = useRef<AbortController | null>(null);
   const openStore = (params.get("inspect") ?? "").slice(0, 128);
   const openCase = (params.get("case") ?? "").slice(0, 128);
   const openGrant = (params.get("grant") ?? "").slice(0, 128);
   const openPartner = (params.get("actor") ?? "").slice(0, 128);
+  const filterKey = JSON.stringify([activeTab, kind, status, city, sort, relationModel, appliedSearch]);
+  const page = useCursorPage("cursor", filterKey, true, undefined, sessionKey);
+  const cursor = page.cursor;
+  const readScope = JSON.stringify([filterKey, cursor]);
+  const rows = readback?.scope === readScope ? readback.rows : [];
+  const nextCursor = readback?.scope === readScope ? readback.nextCursor : "";
   const selectedGrant = rows.find((r) => r.kind === "access" && r.grant.id === openGrant);
   const selectedPartner = rows.find((r) => r.kind === "partner" && r.actor.actorId === openPartner);
-  const selectedId = openStore || openCase || openGrant || openPartner;
-  const page = useCursorPage("cursor", JSON.stringify([activeTab, kind, status, city, sort, appliedSearch]), true);
-  const cursor = page.cursor;
+  const selectedId = (error ? "" : openStore) || openCase || openGrant || openPartner;
 
   useEffect(() => setSearch(appliedSearch), [appliedSearch]);
   useEffect(() => {
-    const sync = () => setPrivateSearch(typeof window.history.state?.partnerWorkbenchPhone === "string" ? window.history.state.partnerWorkbenchPhone : "");
+    const sync = () => {
+      const saved = window.history.state?.[phoneHistoryKey];
+      setPrivateSearch(typeof saved === "string" ? saved : "");
+    };
     const initial = new URLSearchParams(window.location.search);
     const q = initial.get("q") ?? "";
     if (isPhone(q)) {
       initial.delete("q");
-      window.history.replaceState({ ...window.history.state, partnerWorkbenchPhone: q }, "", window.location.pathname + (initial.size ? "?" + initial : ""));
+      window.history.replaceState({ ...window.history.state, [phoneHistoryKey]: q }, "", window.location.pathname + (initial.size ? "?" + initial : ""));
     }
     sync();
     window.addEventListener("popstate", sync);
     return () => window.removeEventListener("popstate", sync);
-  }, []);
+  }, [phoneHistoryKey]);
   useEffect(() => {
     let active = true;
     void fetch("/api/service-cities", { cache: "no-store" }).then((res) => res.ok ? res.json() as Promise<{cities?: {id:string;displayNameAr:string}[]}> : null)
@@ -124,18 +141,19 @@ export function PartnersWorkbench() {
     return () => { active = false; };
   }, []);
 
-  const navigate = (nextTab: WorkspaceTab, nextKind: Kind, nextStatus: string, nextCity: string, nextSort: string, nextQuery: string) => {
+  const navigate = (nextTab: WorkspaceTab, nextKind: Kind, nextStatus: string, nextCity: string, nextSort: string, nextQuery: string, nextRelation: StoreRelation | "" = relationModel) => {
     page.clearForNavigation();
     const url = new URLSearchParams();
-    if (nextTab !== "directory") url.set("tab", nextTab);
+    url.set("tab", nextTab);
     if (nextKind !== defaultKindByTab[nextTab]) url.set("kind", nextKind);
     if (nextStatus) url.set("status", nextStatus);
     if (nextCity) url.set("serviceCityId", nextCity);
+    if (nextKind === "store" && nextRelation) url.set("relationModel", nextRelation);
     if (nextSort === "oldest") url.set("sort", "oldest");
     if (nextQuery && !isPhone(nextQuery)) url.set("q", nextQuery);
     const href = pathname + (url.size ? "?" + url : "");
     if (isPhone(nextQuery)) {
-      window.history.pushState({ ...window.history.state, partnerWorkbenchPhone: nextQuery }, "", href);
+      window.history.pushState({ ...window.history.state, [phoneHistoryKey]: nextQuery }, "", href);
       setPrivateSearch(nextQuery);
       setRevision((current) => current + 1);
     } else {
@@ -148,39 +166,44 @@ export function PartnersWorkbench() {
 
   const load = useCallback(async () => {
     const request = ++sequence.current;
+    activeRead.current?.abort();
+    const controller = new AbortController();
+    activeRead.current = controller;
     setLoading(true);
     setError("");
     try {
       const query = new URLSearchParams({ kind, sort });
       if (status) query.set("status", status);
       if (city) query.set("serviceCityId", city);
+      if (relationModel) query.set("relationModel", relationModel);
       if (cursor) query.set("cursor", cursor);
       if (appliedSearch && !isPhone(appliedSearch)) query.set("q", appliedSearch);
       const response = await fetch("/api/partners/workbench?" + query, {
         method: isPhone(appliedSearch) ? "POST" : "GET",
         ...(isPhone(appliedSearch) ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ q: appliedSearch }) } : {}),
         cache: "no-store",
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20000)]),
       });
       if (request !== sequence.current) return;
+      if (response.status === 401) throw new Error("انتهت جلسة المشغّل. سجّل الدخول مجددًا ثم أعد المحاولة.");
+      if (response.status === 403) throw new Error("لا تملك صلاحية عرض المتاجر. اطلب صلاحية الشركاء من مسؤول الوصول.");
       if (!response.ok) throw new Error(await partnerErrorMessage(response));
       const result = await response.json() as { rows?: Row[]; nextCursor?: string };
+      if (request !== sequence.current) return;
       if (!Array.isArray(result.rows) || typeof result.nextCursor !== "string") throw new Error("استجابة السجل غير صالحة.");
-      setRows(result.rows);
-      setNextCursor(result.nextCursor);
+      setReadback({ scope: readScope, rows: result.rows, nextCursor: result.nextCursor });
       setSelected((previous) => new Set(result.rows!.filter((row) => previous.has(rowId(row))).map(rowId)));
     } catch (cause) {
       if (request !== sequence.current) return;
       setError(cause instanceof Error ? cause.message : "تعذرت قراءة السجلات.");
-      setRows([]);
-      setNextCursor("");
+      setReadback(null);
     } finally {
       if (request === sequence.current) setLoading(false);
     }
-  }, [kind, status, city, sort, appliedSearch, cursor]);
+  }, [kind, status, city, sort, relationModel, appliedSearch, cursor, readScope]);
   useEffect(() => {
     if (page.ready && revision >= 0) void load();
-    return () => { sequence.current += 1; };
+    return () => { sequence.current += 1; activeRead.current?.abort(); };
   }, [page.ready, load, revision]);
   useReadOnReturn(load, page.ready && !loading && !busyGrant);
 
@@ -223,7 +246,7 @@ export function PartnersWorkbench() {
   const exportSelected = () => {
     downloadRegistryCsv("selected-partners.csv", ["نوع السجل", "المتجر", "الشريك", "الهاتف", "المدينة", "الحالة", "آخر تحديث"],
       selectedRecords.flatMap((row) => row.kind === "store" ?
-        [["متجر", row.store.name, row.store.partnerName || "", row.partnerRole?.phoneE164 || "", row.store.serviceCityName || "", publicationStateLabel(row.store.publicationState), row.store.updatedAt]] :
+        [[relationLabels[row.store.relationModel], row.store.name, row.store.partnerName || "", row.partnerRole?.phoneE164 || "", row.store.serviceCityName || "", storePublicationLabel(row.store), row.store.updatedAt]] :
         row.kind === "joining" ? [["طلب انضمام", row.case.firstStoreName || "", row.case.businessName, row.case.contactPhoneE164, "", joiningCaseStateLabel(row.case.state), row.case.updatedAt]] : []));
   };
 
@@ -256,14 +279,14 @@ export function PartnersWorkbench() {
         <td><button type="button" className="partner-row-action" data-adaptive-record-trigger={`partner-actor-${a.actorId}`} onClick={() => inspect("actor", a.actorId)}>ملف الحساب ←</button></td></tr>;
     }
     const s = row.store;
-    return <tr key={rowId(row)} data-kind="store" tabIndex={0} onClick={(event) => {
+    return <tr key={rowId(row)} data-kind="store" data-relation-model={s.relationModel} tabIndex={0} onClick={(event) => {
       if (event.target instanceof Element && !event.target.closest("a,button,input,label,select")) inspect("inspect", s.id);
     }} onKeyDown={(event) => {
       if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); inspect("inspect", s.id); }
     }}>
       <th scope="row"><div className="store-registry-identity"><input type="checkbox" aria-label={"تحديد متجر " + s.name} checked={selected.has(rowId(row))} onChange={(event) => { const updated = new Set(selected); if (event.target.checked) updated.add(rowId(row)); else updated.delete(rowId(row)); setSelected(updated); }} /><StoreLogo name={s.name} uri={s.storeProfileImage?.uri} /><div className="store-registry-identity-copy"><strong>{s.name}</strong>{s.partnerActorId ? <Link href={`/partners/actors/${encodeURIComponent(s.partnerActorId)}`} title="فتح ملف الشريك المالك">{s.partnerName || "ملف الشريك"}</Link> : <small>حساب الشريك غير محدد</small>}</div></div></th>
-      <td><div className="store-registry-cell-stack"><strong>{s.primaryVerticalName || "متجر"}</strong><small>{s.serviceCityName || "المدينة غير محددة"}</small></div></td>
-      <td><div className="store-registry-cell-stack"><span>{publicationStateLabel(s.publicationState)} <PublicationIndicator state={s.publicationState} /></span><span><AccountIndicator role={row.partnerRole} /></span></div></td>
+      <td><div className="store-registry-cell-stack"><strong>{relationLabels[s.relationModel]}</strong><small>{[s.primaryVerticalName, s.serviceCityName].filter(Boolean).join(" · ") || "النشاط والمدينة غير محددين"}</small></div></td>
+      <td><div className="store-registry-cell-stack"><span>{storePublicationLabel(s)} <PublicationIndicator state={s.publicationState} /></span><span><AccountIndicator role={row.partnerRole} /></span></div></td>
       <td><span className="store-registry-fulfillment-summary" title={s.fulfillmentModes.map(fulfillmentModeLabel).join("، ") || "لا توجد أوضاع توصيل"}>{s.fulfillmentModes.map(fulfillmentModeLabel).join("، ") || "لا توجد أوضاع توصيل"}</span></td>
       <td><time dateTime={s.updatedAt}>{date(s.updatedAt)}</time></td>
       <td><StoreOperationalDecision store={s} role={row.partnerRole} onInspect={() => inspect("inspect", s.id)} /></td>
@@ -277,7 +300,7 @@ export function PartnersWorkbench() {
       row.kind === "access" ? "المدعو: " + (row.grant.delegatePhoneMasked || "هاتف محجوب") :
       row.kind === "store" ? (row.store.partnerName || "شريك المتجر") + " · " + (row.store.serviceCityName || "المدينة غير محددة") : "شريك دون متجر";
     const state = row.kind === "joining" ? joiningCaseStateLabel(row.case.state) :
-      row.kind === "access" ? "اعتماد دور معلق" : row.kind === "store" ? publicationStateLabel(row.store.publicationState) :
+      row.kind === "access" ? "اعتماد دور معلق" : row.kind === "store" ? storePublicationLabel(row.store) :
       row.actor.enabled && row.actor.securityEnabled ? "حساب مفعل" : "حساب موقوف";
     const details = row.kind === "joining" ? (row.case.origin === "field" ? "سجل تاريخي" : row.case.origin === "self_service" ? "تسجيل ذاتي" : "عبر المشغّل") + " · آخر تحديث: " + date(row.case.updatedAt) :
       row.kind === "access" ? row.grant.permissions.map((p) => permissionLabels[p] || "صلاحية إضافية").join("، ") + " · انتهاء: " + date(row.grant.expiresAt) :
@@ -303,7 +326,7 @@ export function PartnersWorkbench() {
 
   const grant = selectedGrant?.kind === "access" ? selectedGrant.grant : null;
   const actor = selectedPartner?.kind === "partner" ? selectedPartner.actor : null;
-  const detail = openStore ? <StoreInspector key={openStore} storeId={openStore} onClose={close} onUpdated={() => void load()} /> :
+  const detail = openStore && !error ? <StoreInspector key={openStore} storeId={openStore} onClose={close} onUpdated={() => void load()} /> :
     openCase ? <AdaptiveRecordPanel title="ملف طلب الانضمام" onClose={close}><JoiningCaseDetail key={openCase} caseId={openCase} embedded /></AdaptiveRecordPanel> :
     grant ? <AdaptiveRecordPanel title="مراجعة اعتماد الوصول" subtitle={grant.storeName} onClose={close}>
       <dl className="facts-grid"><div><dt>المتجر</dt><dd>{grant.storeName}</dd></div><div><dt>المدعو</dt><dd><bdi dir="ltr">{grant.delegatePhoneMasked || "محجوب"}</bdi></dd></div><div><dt>الصلاحيات المطلوبة</dt><dd>{grant.permissions.map((p) => permissionLabels[p] || "صلاحية إضافية").join("، ")}</dd></div><div><dt>تنتهي الدعوة</dt><dd>{date(grant.expiresAt)}</dd></div><div><dt>آخر تحديث</dt><dd>{date(grant.updatedAt)}</dd></div></dl>
@@ -322,8 +345,14 @@ export function PartnersWorkbench() {
   const registryPanel = <section className="partner-unified-tab-panel">
       <form className="workspace-toolbar partner-unified-toolbar" noValidate onSubmit={(event) => event.preventDefault()}>
         <div className="field-label"><label htmlFor="partner-unified-search">{activeTab === "directory" ? "بحث في المتاجر والشركاء" : activeTab === "joining" ? "بحث في طلبات الانضمام" : "بحث في اعتمادات الوصول"}</label>
-          <Input.Search id="partner-unified-search" aria-label={activeTab === "directory" ? "بحث في المتاجر والشركاء" : activeTab === "joining" ? "بحث في طلبات الانضمام" : "بحث في اعتمادات الوصول"} value={search} maxLength={100} onChange={(event) => setSearch(event.target.value)} onSearch={(value) => navigate(activeTab, kind, status, city, sort, value.trim().slice(0, 100))} placeholder={activeTab === "directory" ? "المتجر أو الشريك أو رقم الهاتف" : activeTab === "joining" ? "اسم النشاط أو رقم الهاتف" : "اسم المتجر أو هاتف المدعو"} allowClear enterButton="بحث" />
+          <Input.Search id="partner-unified-search" aria-label={activeTab === "directory" ? "بحث في المتاجر والشركاء" : activeTab === "joining" ? "بحث في طلبات الانضمام" : "بحث في اعتمادات الوصول"} value={search} maxLength={searchLimit} onChange={(event) => setSearch(event.target.value)} onSearch={(value) => navigate(activeTab, kind, status, city, sort, value.trim().slice(0, searchLimit))} placeholder={activeTab === "directory" ? "اسم المتجر أو المعرّف أو رقم الهاتف" : activeTab === "joining" ? "اسم النشاط أو رقم الهاتف" : "اسم المتجر أو هاتف المدعو"} allowClear enterButton="بحث" />
         </div>
+        {kind === "store" ? <div className="field-label partner-relation-filter"><label htmlFor="partner-store-relation">علاقة المتجر</label>
+          <select id="partner-store-relation" value={relationModel} onChange={(event) => navigate("directory", "store", status, city, sort, appliedSearch, event.target.value as StoreRelation | "")}>
+            <option value="">كل العلاقات</option>
+            {Object.entries(relationLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </div> : null}
         {activeTab === "directory" ? <div className="field-label"><label htmlFor="partner-unified-kind">نوع السجل</label>
           <Select id="partner-unified-kind" aria-label="نوع السجل" value={kind} onChange={(value: Kind) => navigate(activeTab, value, "", "", sort, appliedSearch)} options={[...kindOptions]} />
         </div> : null}
@@ -340,7 +369,7 @@ export function PartnersWorkbench() {
           </div> : null}
         </div> : null}
       </form>
-      {kind !== defaultKindByTab[activeTab] || status || city || appliedSearch ? <div className="partner-unified-active"><span>تم تطبيق مرشحات على العرض الحالي</span><button type="button" className="button button-secondary" onClick={() => { setSearch(""); navigate(activeTab, defaultKindByTab[activeTab], "", "", "newest", ""); }}>مسح المرشحات</button></div> : null}
+      {kind !== defaultKindByTab[activeTab] || status || city || relationModel || appliedSearch ? <div className="partner-unified-active"><span>تم تطبيق مرشحات على العرض الحالي</span><button type="button" className="button button-secondary" onClick={() => { setSearch(""); navigate(activeTab, defaultKindByTab[activeTab], "", "", "newest", "", ""); }}>مسح المرشحات</button></div> : null}
       <div className="partner-registry-summary"><span>{activeTab === "joining" ? "طلبات الانضمام" : activeTab === "access" ? "اعتمادات الوصول" : "المتاجر وحسابات الشركاء"} · {rows.length} سجلًا في الصفحة</span>
         {selectedRecords.length ? <div className="partner-registry-bulk-actions"><span>{selectedRecords.length} سجل محدد</span><button type="button" className="button button-secondary" onClick={exportSelected}>تصدير المحدد</button><button type="button" className="button button-secondary" onClick={() => setSelected(new Set())}>إلغاء التحديد</button></div> : null}</div>
       {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذرت قراءة السجلات</strong><p>{error}</p><button type="button" className="button button-secondary" onClick={() => void load()}>إعادة المحاولة</button></div> : null}

@@ -8,7 +8,7 @@ export function StoreOperationalDecision({ store, role, onInspect }: Readonly<{ 
   const pending = role && !role.activatedAt && !paused;
   const attentionReason = !role ? "حالة الحساب غير متاحة" : paused ? "حساب الشريك موقوف" : pending ? "الحساب يحتاج تفعيلًا" : null;
   const next = paused ? "مراجعة حساب الشريك" : pending ? "متابعة تفعيل الشريك" :
-    store.publicationState === "published" ? "إدارة المتجر" :
+    store.relationModel === "INDEPENDENT_STORE" || store.publicationState === "published" ? "إدارة المتجر" :
     store.publicationState === "hidden" ? "مراجعة الإخفاء" : "فحص جاهزية النشر";
   return <div className="partner-decision">
     {attentionReason ? <small>{attentionReason}</small> : null}

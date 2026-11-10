@@ -2,6 +2,7 @@
 
 import { type JoiningCaseView, publicationReadinessBlockedReasonLabel, publicationStateLabel, type StorePublicationResponse } from "@bthwani/dsh";
 import type { ActorRoleView } from "@bthwani/identity";
+import Link from "next/link";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { identityFetch } from "../../session/identity-fetch";
 import { useSession } from "../../session/session-provider";
@@ -129,7 +130,8 @@ export function StoreInspector({ storeId, onClose, onPrevious, onNext, onUpdated
   const canPublish = Boolean(currentStore && (currentStore.publicationState === "published" || (currentStore.relationModel === "BTHWANI_PARTNER" && currentStore.publicationReadiness.ready)));
 
   return <AdaptiveRecordPanel title="تفاصيل المتجر" subtitle="الهوية والجاهزية والإجراءات المعتمدة" onClose={onClose} onPrevious={onPrevious} onNext={onNext}
-    actions={canPublish || confirmHide ? <>
+    actions={currentStore ? <>
+      <Link className="button button-secondary" href={`/partners/stores/${encodeURIComponent(currentStore.id)}`}>فتح الملف الكامل</Link>
       {canPublish ? <button className={currentStore?.publicationState === "published" ? "button button-secondary" : "button button-primary"} type="button"
         disabled={busy || loading} onClick={() => currentStore?.publicationState === "published" && !confirmHide ? setConfirmHideFor(currentStore.id) : void changePublication()}>
         {busy ? "جارٍ التنفيذ…" : confirmHide ? "تأكيد إخفاء المتجر" : publicationAction}

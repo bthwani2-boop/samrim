@@ -3,29 +3,23 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const read = (name) => readFileSync(new URL(name, import.meta.url), "utf8");
-const independent = read("../src/features/stores/independent-stores-workspace.tsx");
+const legacyRoute = read("../app/(workspace)/independent-stores/page.tsx");
 const partners = read("../src/features/partner-onboarding/partners-workbench.tsx");
 const inspector = read("../src/features/stores/store-inspector.tsx");
 const storeRoute = read("../app/(workspace)/partners/stores/[storeId]/page.tsx");
+const workspaceSearch = read("../app/api/workspace/search/route.ts");
+const navigation = read("../src/navigation/workspace-registry.ts");
 
-test("independent and partner registries open exactly the same Store inspector", () => {
+test("the independent bookmark and Store search use the one registry and Store file", () => {
   assert.ok(partners.includes("<StoreInspector key={openStore} storeId={openStore}"));
-  assert.ok(independent.includes('import { StoreInspector } from "./store-inspector"'));
-  assert.ok(independent.includes("<StoreInspector key={selectedStoreId} storeId={selectedStoreId}"));
-  assert.ok(independent.includes("<AdaptiveRecordWorkspace open={Boolean(selectedStoreId)} detail={detail}"));
-  assert.ok(independent.includes('preferenceKey="partners-unified"'));
-  assert.ok(independent.includes("onClick={() => setSelectedStoreId(store.id)}"));
-  assert.ok(independent.includes("data-adaptive-record-trigger="));
-  assert.ok(!independent.includes("<details><summary>بيانات المتجر</summary>"));
+  assert.ok(partners.includes('preferenceKey="partners-unified"'));
+  assert.ok(partners.includes("data-adaptive-record-trigger="));
+  assert.ok(legacyRoute.includes('redirect("/partners?tab=directory&relationModel=INDEPENDENT_STORE")'));
+  assert.doesNotMatch(navigation, /href: "\/independent-stores"/);
   assert.ok(storeRoute.includes("<StoreWorkspace key={storeId} storeId={storeId}"));
-  assert.ok(independent.includes("/partners/stores/${encodeURIComponent(store.id)}"));
-});
-
-test("independent registry validates DSH relation and remounts on Identity session change", () => {
-  assert.ok(independent.includes('store.relationModel !== "INDEPENDENT_STORE"'));
-  assert.ok(independent.includes('state.identity.sessionId'));
-  assert.ok(independent.includes("<IndependentStoresRegistry key={sessionKey}"));
-  assert.ok(independent.includes('onClose={() => setSelectedStoreId("")}'));
+  assert.ok(inspector.includes("/partners/stores/${encodeURIComponent(currentStore.id)}"));
+  assert.ok(workspaceSearch.includes("/partners/stores/${encodeURIComponent(item.id)}"));
+  assert.doesNotMatch(workspaceSearch, /\/independent-stores/);
 });
 
 test("canonical editor is shared, but marketplace WLT finance remains partner-only", () => {

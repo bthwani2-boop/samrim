@@ -1,8 +1,7 @@
-import { PartnerOperatorBoundary } from "../../../src/features/partner-onboarding/partner-workspace";
-import { IndependentStoresWorkspace } from "../../../src/features/stores/independent-stores-workspace";
+import { redirect } from "next/navigation";
 
 export default function IndependentStoresPage() {
-  return <PartnerOperatorBoundary><IndependentStoresWorkspace /></PartnerOperatorBoundary>;
+  redirect("/partners?tab=directory&relationModel=INDEPENDENT_STORE");
 }
 
 export const metadata = { title: "المتاجر المستقلة" };

@@ -5,11 +5,11 @@ import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react"
 type Position = Readonly<{ cursor: string; previous: ReadonlyArray<string> }>;
 
 // Identity cursors can encode personal facts. Keep them and private filters in tab state.
-export function useCursorPage(parameter: string, filterKey = "", privateCursor: boolean | "mixed" = false, restoreFilters?: (key: string) => void) {
+export function useCursorPage(parameter: string, filterKey = "", privateCursor: boolean | "mixed" = false, restoreFilters?: (key: string) => void, historyScope = "") {
   const [position, setPosition] = useState<Position>({ cursor: "", previous: [] });
   const [ready, setReady] = useState(false);
   const [filters, setFilters] = useState(filterKey);
-  const historyKey = `registry:${parameter}`;
+  const historyKey = historyScope ? `registry:${parameter}:${historyScope}` : `registry:${parameter}`;
   const initialFilters = useRef(filterKey);
   const restoringHistory = useRef(false);
   const restoreSavedFilters = useEffectEvent((key: string) => restoreFilters?.(key));

@@ -27,9 +27,10 @@ test("the registry content and actions are rendered through the active item's ch
 });
 
 test("URL filters, private phone search and record details remain on their current owners", () => {
-  assert.match(source, /if \(nextTab !== "directory"\) url\.set\("tab", nextTab\)/);
+  assert.match(source, /const url = new URLSearchParams\(\);\s*url\.set\("tab", nextTab\);/);
   assert.match(source, /if \(nextStatus\) url\.set\("status", nextStatus\)/);
   assert.match(source, /if \(nextCity\) url\.set\("serviceCityId", nextCity\)/);
+  assert.match(source, /if \(nextKind === "store" && nextRelation\) url\.set\("relationModel", nextRelation\)/);
   assert.match(source, /if \(nextQuery && !isPhone\(nextQuery\)\) url\.set\("q", nextQuery\)/);
   assert.match(source, /setPrivateSearch\(nextQuery\)/);
   assert.match(source, /StoreInspector key=\{openStore\} storeId=\{openStore\}/);

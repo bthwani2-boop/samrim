@@ -3089,7 +3089,7 @@ body:has(.store-profile) .adaptive-record-sheet .workspace-side-drawer-header {
 @layer composition {
   /* Partners: one search on all sizes; column filters on desktop, compact toolbar on mobile. */
   @media(min-width:701px) {
-    .partner-unified-toolbar > .field-label:not(:first-child),
+    .partner-unified-toolbar > .field-label:not(:first-child):not(.partner-relation-filter),
     .partner-unified-toolbar > button[aria-expanded],
     .partner-unified-toolbar > .partner-unified-extra {display:none;}
     .partner-unified-toolbar > .field-label:first-child {flex:1 1 auto;min-inline-size:220px;}
