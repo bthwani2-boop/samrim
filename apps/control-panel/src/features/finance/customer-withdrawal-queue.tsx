@@ -1,12 +1,12 @@
 "use client";
-import { preserveFinanceRouteContext } from "./finance-route-context";
 
-import { formatMoney, officialWalletDestinationStatusLabel, officialWalletVerificationStatusLabel, payoutStatusLabel, type CustomerWithdrawalIntakeListResponse, type CustomerWithdrawalIntakeResponse, type CustomerWithdrawalIntakeSummary, type PayoutRequest } from "@bthwani/dsh";
+import { type CustomerWithdrawalIntakeListResponse, type CustomerWithdrawalIntakeResponse, type CustomerWithdrawalIntakeSummary, formatMoney, officialWalletDestinationStatusLabel, officialWalletVerificationStatusLabel, type PayoutRequest, payoutStatusLabel } from "@bthwani/dsh";
 import { usePathname, useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
 import { RegistryColumnHeader } from "../shared/registry-column-header";
 import { useReadOnReturn } from "../shared/use-read-on-return";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { preserveFinanceRouteContext } from "./finance-route-context";
 
 type IntakeStatus = CustomerWithdrawalIntakeSummary["status"];
 type RegistrySort = "requested_desc" | "requested_asc";
@@ -47,6 +47,8 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
   const router = useRouter();
   const pathname = usePathname() ?? "/finance/customer-withdrawals";
   const pendingMutations = useRef(new Map<string, Readonly<{ idempotencyKey: string; correlationId: string }>>());
+  // React loading state does not synchronously exclude two clicks in the same event turn.
+  const mutationInFlight = useRef(false);
   const returnReadController = useRef<AbortController | null>(null);
   const [items, setItems] = useState<ReadonlyArray<CustomerWithdrawalIntakeSummary>>([]);
   const [maskedWalletSearch,setMaskedWalletSearch]=useState("");
@@ -57,8 +59,8 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
   });
   const visibleItems=items.filter((item)=>
     (!maskedWalletSearch.trim() || item.walletIdentifierMasked.includes(maskedWalletSearch.trim()))
-    && (!amountSearch.trim() || item.payoutAmountMinor!=null && Boolean(item.payoutCurrency)
-      && digitText(formatMoney(item.payoutAmountMinor,item.payoutCurrency!)).includes(digitText(amountSearch.trim())))
+    && (!amountSearch.trim() || item.payoutAmountMinor!=null && item.payoutCurrency
+      && digitText(formatMoney(item.payoutAmountMinor,item.payoutCurrency)).includes(digitText(amountSearch.trim())))
   );
   const pageFilterActive=Boolean(maskedWalletSearch||amountSearch);
   const [status, setStatus] = useState(initialQuery.status);
@@ -174,7 +176,7 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
 
   const act = async (action: "prepare-destination" | "verify-destination" | "activate-destination" | "accept" | "reject") => {
     const intake = detail?.intake;
-    if (!intake) return;
+    if (!intake || mutationInFlight.current) return;
     if (action !== "activate-destination" && reason.trim().length < 3) {
       setDetailError("أدخل سبباً واضحاً قبل تنفيذ الإجراء.");
       return;
@@ -183,6 +185,7 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
       setDetailError("أدخل مرجع دليل التحقق من رقم المحفظة.");
       return;
     }
+    mutationInFlight.current = true;
     setDetailError("");
     setNotice("");
     setLoading(true);
@@ -206,13 +209,14 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
     } catch (value) {
       setDetailError(value instanceof Error ? value.message : "تعذر تنفيذ الإجراء");
     } finally {
+      mutationInFlight.current = false;
       setLoading(false);
     }
   };
 
   const transitionPayout = async (action: "prepare" | "approve") => {
     const intake = detail?.intake;
-    if (!intake?.payoutId) return;
+    if (!intake?.payoutId || mutationInFlight.current) return;
     if (reason.trim().length < 3) {
       setDetailError("أدخل سبباً واضحاً قبل تنفيذ الإجراء.");
       return;
@@ -221,6 +225,7 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
       setDetailError("أدخل مرجع دليل تهيئة واعتماد المستحق.");
       return;
     }
+    mutationInFlight.current = true;
     setDetailError("");
     setNotice("");
     setLoading(true);
@@ -242,13 +247,15 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
     } catch (value) {
       setDetailError(value instanceof Error ? value.message : "تعذر تغيير حالة طلب الصرف");
     } finally {
+      mutationInFlight.current = false;
       setLoading(false);
     }
   };
 
   const createPayoutBatch = async () => {
     const payoutId = detail?.intake.payoutId;
-    if (!payoutId || detail?.intake.payoutStatus !== "APPROVED") return;
+    if (!payoutId || detail?.intake.payoutStatus !== "APPROVED" || mutationInFlight.current) return;
+    mutationInFlight.current = true;
     setDetailError("");
     setNotice("");
     setLoading(true);
@@ -268,6 +275,7 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
     } catch (value) {
       setDetailError(value instanceof Error ? value.message : "تعذر إنشاء دفعة الصرف اليدوي");
     } finally {
+      mutationInFlight.current = false;
       setLoading(false);
     }
   };
@@ -344,7 +352,7 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
         <button className="button button-secondary" type="button" onClick={() => void loadRegistry(initialQuery, new AbortController().signal)} disabled={loading}>إعادة المحاولة</button>
       </div> : null}
       {notice ? <p className="state-success" role="status">{notice}</p> : null}
-      <p className="muted" aria-live="polite">{loading ? "جارٍ قراءة السجل…" : error ? "تعذر قراءة السجل" : `${items.length.toLocaleString("ar-YE")} سجلًا في الصفحة${pageFilterActive ? " · معروض من الصفحة " + visibleItems.length + " (مرشحات محلية)" : ""}`}</p>
+      <p className="muted" aria-live="polite">{loading ? "جارٍ قراءة السجل…" : error ? "تعذر قراءة السجل" : `${items.length.toLocaleString("ar-YE")} سجلًا في الصفحة${pageFilterActive ? ` · معروض من الصفحة ${visibleItems.length} (مرشحات محلية)` : ""}`}</p>
 
       <div className="finance-table-wrap">
         <table className="finance-table">
