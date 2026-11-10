@@ -13,7 +13,7 @@ import { captainClient } from "./captain-client";
 import { createCaptainOperationStyles } from "./captain-operation-styles";
 import { canActOnCaptainTask } from "./captain-task-eligibility";
 import { isConfirmedCaptainCompletion } from "./captain-completion-readback";
-import { isCurrentCaptainActor } from "./captain-session-scope";
+import { captainOrderSessionKey, isCurrentCaptainActor } from "./captain-session-scope";
 import { OrderConversation } from "./order-conversation";
 
 type PendingCaptainCompletionAttempt = Readonly<{
@@ -94,7 +94,7 @@ export function CaptainDeliveries() {
     if (!base) throw new Error("DSH_BASE_URL_REQUIRED");
     return (await createDshMobileClient(base,{cryptoRandomUUID:()=>Crypto.randomUUID()}).readOrderConversation(token,orderId,1)).unreadCount;
   }, []);
-  const unreadChatCounts = useConversationUnreadCounts(assignments.map(assignment => assignment.orderId), activeActorID, isFocused, getChatUnread, chatOrderId);
+  const unreadChatCounts = useConversationUnreadCounts(assignments.map(assignment => assignment.orderId), captainOrderSessionKey(identityState), isFocused, getChatUnread, chatOrderId);
 
   const load = useCallback(async (quiet = false) => {
     const sequence = ++readSequence.current;
