@@ -146,6 +146,9 @@ if (!storeGovernance.includes("BTHWANI_PARTNER") ||
     !storeGovernance.includes("INDEPENDENT_STORE") ||
     !storeGovernance.includes("Client Expo Web app"))
   fail("Store relation or shared Client Web presentation decision missing");
+if (!storeGovernance.includes("Both canonical Store-relation admission policies must govern every new Store creation") ||
+    !storeGovernance.includes("fails closed if it is disabled or unavailable"))
+  fail("Store creation across all entry points could bypass paused relation admission");
 if (!financeGovernance.includes("Both Store relations can use **COMMISSION** or **SUBSCRIPTION**") ||
     !financeGovernance.includes("Only currently implemented and validated commission agreements") ||
     !storeGovernance.includes("INDEPENDENT_STORE may use COMMISSION") ||
