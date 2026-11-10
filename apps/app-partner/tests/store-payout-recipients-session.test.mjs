@@ -10,7 +10,7 @@ function operation(name, context) {
   const snippet = source.match(new RegExp(`  const ${name} = async \\([^\\n]*\\) => \\{[\\s\\S]*?\\n  \\};`))?.[0];
   assert.ok(snippet, `${name} must remain a single owner-backed financial operation`);
   const js = snippet.replace(/ = async \(choice: [^\n]+\) => \{/, " = async (choice) => {");
-  return runInNewContext(js + `\n${name};`, context);
+  return runInNewContext(`${js}\n${name};`, context);
 }
 
 function context(overrides = {}) {
@@ -42,7 +42,7 @@ const choice = { storeId: "store-a", grantId: "grant-a", storeName: "Store A", b
 
 test("recipient card is remounted on full Partner session changes and never reuses actor-only UI state", () => {
   assert.match(wallet, /useSyncExternalStore\(subscribeIdentitySession, currentPartnerSessionKey, \(\) => ""\)/);
-  assert.match(wallet, /<StorePayoutRecipientsCard key=\{"recipients:" \+ sessionKey \+ ":" \+ ownerScopeKey\}/);
+  assert.match(wallet, /<StorePayoutRecipientsCard key=\{`recipients:\$\{sessionKey\}:\$\{ownerScopeKey\}`\}/);
   assert.match(source, /useSyncExternalStore\(subscribeIdentitySession, currentPartnerSessionKey, \(\) => ""\)/);
   assert.match(source, /Boolean\(sessionKey\) && currentPartnerSessionKey\(\) === sessionKey/);
   assert.match(source, /if \(!stillCurrent\(\)\) return;\s*const next = await client\(\)\.listPartnerStorePayoutRecipients\(token\)/);

@@ -1,12 +1,13 @@
-import { borders, radius, resolveTheme, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
+import { borders, radius, type resolveTheme, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniConfirmDialog, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, type PartnerPayoutRequestCreateRequest, type PartnerPayoutRequestView, type PartnerPayoutSummary, isDefinitiveDshMobileClientRejection, settlementIntakeStatusLabel, type SettlementIntake } from "@bthwani/dsh";
+import { createDshMobileClient, formatMoney, isDefinitiveDshMobileClientRejection, type PartnerPayoutRequestCreateRequest, type PartnerPayoutRequestView, type PartnerPayoutSummary, type SettlementIntake, settlementIntakeStatusLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import * as SecureStore from "../../bootstrap/compatible-storage";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
-import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import * as SecureStore from "../../bootstrap/compatible-storage";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
+import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";
 import { isRecoverablePartnerPayout, matchesPartnerPayoutReadback } from "./partner-payout-readback";
 
 function client() {
@@ -15,17 +16,11 @@ function client() {
   return createDshMobileClient(baseUrl, { cryptoRandomUUID: () => Crypto.randomUUID() });
 }
 
-function storageKey() {
-    const actor = currentIdentityState();
-    if (actor.kind !== "authenticated") throw new Error("PARTNER_SESSION_REQUIRED");
-    return `bthwani.partner.payout.pending.v2.${encodeURIComponent(actor.identity.subject)}`;
-}
-
-function intakeStorageKey() {
-  const actor = currentIdentityState();
-  if (actor.kind !== "authenticated") throw new Error("PARTNER_SESSION_REQUIRED");
-  return `bthwani.partner.settlement-intake.pending.v1.${encodeURIComponent(actor.identity.subject)}`;
-}
+// Pending attempts stay with their original actor across logout and re-login so the
+// canonical idempotency key can be recovered; the current session never selects a different actor's key.
+const storageKey = (subject: string) => `bthwani.partner.payout.pending.v2.${encodeURIComponent(subject)}`;
+const intakeStorageKey = (subject: string) => `bthwani.partner.settlement-intake.pending.v1.${encodeURIComponent(subject)}`;
+const currentPartnerSessionKey = () => partnerSetupSessionKey(currentIdentityState());
 
 type PayoutMode = "FULL_AVAILABLE" | "SPECIFIED";
 type LegacyAttempt = Readonly<{ mode: PayoutMode; storeAmounts?: ReadonlyArray<{ storeId: string; amountMinor: number }>; idempotencyKey: string; correlationID: string; walletOwnerActorId?: string; reviewRequired?: boolean }>;
@@ -35,7 +30,12 @@ type PayoutAttempt = Readonly<{ walletOwnerActorId: string; body: PartnerPayoutR
 export function PartnerPayoutCard() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const authenticated = currentIdentityState().kind === "authenticated";
+  const sessionKey = useSyncExternalStore(subscribeIdentitySession, currentPartnerSessionKey, () => "");
+  const identity = currentIdentityState();
+  const subject = identity.kind === "authenticated" ? identity.identity.subject : "";
+  const stillCurrent = useCallback(() => Boolean(sessionKey && subject) && currentPartnerSessionKey() === sessionKey, [sessionKey, subject]);
+  const authenticated = stillCurrent();
+  const loadEpoch = useRef(0);
   const [state, setState] = useState<PartnerPayoutSummary | null>(null);
   const [selected, setSelected] = useState<readonly string[]>([]);
   const [selectedSummary, setSelectedSummary] = useState<PartnerPayoutSummary | null>(null);
@@ -53,55 +53,74 @@ export function PartnerPayoutCard() {
   const [confirmRequest, setConfirmRequest] = useState(false);
 
   const load = useCallback(async () => {
-    if (!authenticated) return;
-    setBusy(true);
+    if (!stillCurrent()) return;
+    const epoch = ++loadEpoch.current;
+    const current = () => stillCurrent() && epoch === loadEpoch.current;
+    setBusy(true); setError(""); setState(null); setSelectedSummary(null);
     try {
       const token = await getUsableIdentityAccessToken();
-      const raw = await SecureStore.getItemAsync(storageKey());
+      if (!current()) return;
+      const raw = await SecureStore.getItemAsync(storageKey(subject));
+      if (!current()) return;
+      let nextAttempt: PayoutAttempt | null = null;
+      let nextLegacyPending: LegacyAttempt | null = null;
+      let nextLegacyKey: LegacyAttempt | null = null;
       if (raw) {
         const saved = JSON.parse(raw) as Partial<PayoutAttempt>;
-        if (saved.body && saved.walletOwnerActorId && saved.idempotencyKey && saved.correlationID) setPendingAttempt(saved as PayoutAttempt);
+        if (saved.body && saved.walletOwnerActorId && saved.idempotencyKey && saved.correlationID) nextAttempt = saved as PayoutAttempt;
         else if (!saved.body && saved.idempotencyKey && saved.correlationID) {
           const legacy = saved as LegacyAttempt;
-          if (legacy.reviewRequired && legacy.walletOwnerActorId) setLegacyKey(legacy); else setLegacyPending(legacy);
-        }
-        else throw new Error("INVALID_SAVED_PAYOUT");
+          if (legacy.reviewRequired && legacy.walletOwnerActorId) nextLegacyKey = legacy; else nextLegacyPending = legacy;
+        } else throw new Error("INVALID_SAVED_PAYOUT");
       }
       const summary = (await client().readOwnPartnerPayoutSummary(token)).summary;
+      if (!current()) return;
       const intakes = (await client().listPartnerSettlementIntakes(token)).intakes;
+      if (!current()) return;
+      const savedIntake = await SecureStore.getItemAsync(intakeStorageKey(subject));
+      if (!current()) return;
+      setPendingAttempt(nextAttempt); setLegacyPending(nextLegacyPending); setLegacyKey(nextLegacyKey);
+      setPendingIntake(savedIntake ? JSON.parse(savedIntake) as { body: PartnerPayoutRequestCreateRequest; idempotencyKey: string; correlationID: string } : null);
       setIntake(intakes[0] ?? null);
-      const savedIntake = await SecureStore.getItemAsync(intakeStorageKey());
-      if (savedIntake) setPendingIntake(JSON.parse(savedIntake) as { body: PartnerPayoutRequestCreateRequest; idempotencyKey: string; correlationID: string });
       setState(summary);
-      setSelected((current) => current.length ? current.filter((id) => summary.stores.some((store) => store.storeId === id)) : summary.stores.map((store) => store.storeId));
-    } catch { setState(null); setSelectedSummary(null); setError("تعذر قراءة نطاق طلب الصرف المصرح به."); }
-    finally { setBusy(false); }
-  }, [authenticated]);
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+      setSelected((previous) => previous.length ? previous.filter((id) => summary.stores.some((store) => store.storeId === id)) : summary.stores.map((store) => store.storeId));
+    } catch {
+      if (current()) { setState(null); setSelectedSummary(null); setError("تعذر قراءة نطاق طلب الصرف المصرح به."); }
+    } finally { if (current()) setBusy(false); }
+  }, [stillCurrent, subject]);
+  useFocusEffect(useCallback(() => {
+    void load();
+    return () => { loadEpoch.current += 1; };
+  }, [load]));
   useEffect(() => {
     let active = true;
     setSelectedSummary(null);
-    if (selected.length && state) {
-      void getUsableIdentityAccessToken().then((token) => client().readOwnPartnerPayoutSummary(token, selected)).then((response) => {
-        if (active) setSelectedSummary(response.summary);
-      }).catch(() => { if (active) setError("تعذر تحديث المستحقات للمتاجر المختارة."); });
+    if (stillCurrent() && selected.length && state) {
+      void getUsableIdentityAccessToken().then((token) => {
+        if (!active || !stillCurrent()) return null;
+        return client().readOwnPartnerPayoutSummary(token, selected);
+      }).then((response) => {
+        if (active && stillCurrent() && response) setSelectedSummary(response.summary);
+      }).catch(() => { if (active && stillCurrent()) setError("تعذر تحديث المستحقات للمتاجر المختارة."); });
     }
     return () => { active = false; };
-  }, [selected, state]);
+  }, [selected, state, stillCurrent]);
 
   const request = async () => {
-    if (!pendingAttempt && (!selectedSummary || !selected.length || legacyPending)) return;
-    const attemptStorageKey = storageKey();
+    if (!stillCurrent() || (!pendingAttempt && (!selectedSummary || !selected.length || legacyPending))) return;
+    const attemptStorageKey = storageKey(subject);
     setBusy(true); setError(""); setNotice("");
     try {
       let attempt = pendingAttempt;
       if (!attempt) {
-        const owners = [...new Set(selectedSummary!.stores.map((store) => store.partnerActorId))];
+        const selectedForRequest = selectedSummary;
+        if (!selectedForRequest) throw new Error("PAYOUT_SUMMARY_REQUIRED");
+        const owners = [...new Set(selectedForRequest.stores.map((store) => store.partnerActorId))];
         const walletOwnerActorId = owners[0];
         if (!walletOwnerActorId || owners.length !== 1 || (legacyKey?.walletOwnerActorId && walletOwnerActorId !== legacyKey.walletOwnerActorId)) throw new Error("ORIGINAL_PAYOUT_WALLET_REQUIRED");
         const amounts = selected.flatMap((storeId) => {
           const amountMinor = Number(toAsciiDigits(storeAmounts[storeId] ?? ""));
-          const store = selectedSummary!.stores.find((item) => item.storeId === storeId);
+          const store = selectedForRequest.stores.find((item) => item.storeId === storeId);
           return Number.isSafeInteger(amountMinor) && amountMinor > 0 && store && amountMinor <= store.eligibleAvailableMinor ? [{ storeId, amountMinor }] : [];
         });
         if (mode === "SPECIFIED" && amounts.length !== selected.length) throw new Error("STORE_AMOUNTS_REQUIRED");
@@ -112,49 +131,58 @@ export function PartnerPayoutCard() {
           correlationID: legacyKey?.correlationID ?? `partner_payout_corr_${Crypto.randomUUID()}`,
         };
         await SecureStore.setItemAsync(attemptStorageKey, JSON.stringify(attempt));
+        if (!stillCurrent()) return;
         setPendingAttempt(attempt);
       }
       const token = await getUsableIdentityAccessToken();
+      if (!stillCurrent()) return;
       const response = await client().createPartnerPayoutRequest(token, attempt.body, attempt.idempotencyKey, attempt.correlationID);
+      if (!stillCurrent()) return;
       const canonical = await client().readPartnerPayoutRequestByKey(token, attempt.walletOwnerActorId, attempt.idempotencyKey);
+      if (!stillCurrent()) return;
       if (!matchesPartnerPayoutReadback(attempt.body, response.request, canonical.request)) {
         throw new Error("PARTNER_PAYOUT_CANONICAL_READBACK_MISMATCH");
       }
       await SecureStore.deleteItemAsync(attemptStorageKey);
+      if (!stillCurrent()) return;
       setPendingAttempt(null); setLegacyKey(null); setLastRequest(canonical.request); setStoreAmounts({});
       setNotice(`سُجل طلب الصرف وتم تأكيده: ${formatMoney(canonical.request.totalAmountMinor, canonical.request.currency)} · ${canonical.request.payouts.length} حوالة وفق مستلمي المتاجر.`);
       await load();
     } catch (cause) {
+      if (!stillCurrent()) return;
       if (isDefinitiveDshMobileClientRejection(cause)) {
         await load();
+        if (!stillCurrent()) return;
         setError("تعذر إرسال الطلب وفق الحالة الحالية. تحقق من نتيجته قبل إنشاء طلب آخر، وراجع المتاجر والمبالغ وجاهزية المستلمين.");
       } else {
-      setError(cause instanceof Error && cause.message === "STORE_AMOUNTS_REQUIRED" ? "أدخل مبلغًا صحيحًا لمتجر واحد على الأقل." : "لم نتأكد من نتيجة الطلب السابق؛ تحقق منها قبل إنشاء طلب صرف آخر.");
+        setError(cause instanceof Error && cause.message === "STORE_AMOUNTS_REQUIRED" ? "أدخل مبلغًا صحيحًا لكل متجر." : "لم نتأكد من نتيجة الطلب السابق؛ تحقق منها قبل إنشاء طلب صرف آخر.");
       }
-    } finally { setBusy(false); }
+    } finally { if (stillCurrent()) setBusy(false); }
   };
 
   const recover = async () => {
     const saved = legacyPending ?? pendingAttempt;
-    if (!saved || !state) return;
-    const attemptStorageKey = storageKey();
+    if (!saved || !state || !stillCurrent()) return;
+    const attemptStorageKey = storageKey(subject);
     setBusy(true); setError("");
     try {
-      const actor = currentIdentityState();
-      if (actor.kind !== "authenticated") throw new Error("PARTNER_SESSION_REQUIRED");
       const token = await getUsableIdentityAccessToken();
+      if (!stillCurrent()) return;
       const owners = pendingAttempt ? [pendingAttempt.walletOwnerActorId] : [...new Set(state.stores.map((store) => store.partnerActorId))];
       for (const owner of owners) {
         try {
           const response = await client().readPartnerPayoutRequestByKey(token, owner, saved.idempotencyKey);
+          if (!stillCurrent()) return;
           if (!isRecoverablePartnerPayout(response.request, pendingAttempt?.body)) {
             throw new Error("PARTNER_PAYOUT_RECOVERY_CANONICAL_READBACK_MISMATCH");
           }
           await SecureStore.deleteItemAsync(attemptStorageKey);
+          if (!stillCurrent()) return;
           setLastRequest(response.request); setPendingAttempt(null); setLegacyPending(null); setLegacyKey(null);
           setNotice("تم استرجاع طلب الصرف المعتمد دون إنشاء طلب جديد.");
           await load(); return;
         } catch (cause) {
+          if (!stillCurrent()) return;
           if (!isDefinitiveDshMobileClientRejection(cause) || cause.status !== 404) throw cause;
         }
       }
@@ -164,11 +192,13 @@ export function PartnerPayoutCard() {
       // Keep the original key even after a negative readback. A delayed old
       // request then conflicts instead of creating a second payout.
       const review: LegacyAttempt = legacyPending ?? {
-        mode: pendingAttempt!.body.scopeMode,
-        ...(pendingAttempt!.body.storeAmounts ? {storeAmounts:pendingAttempt!.body.storeAmounts} : {}),
+        mode: pendingAttempt.body.scopeMode,
+        ...(pendingAttempt.body.storeAmounts ? {storeAmounts:pendingAttempt.body.storeAmounts} : {}),
         idempotencyKey: saved.idempotencyKey, correlationID: saved.correlationID, walletOwnerActorId: pendingAttempt.walletOwnerActorId,
       };
+      if (!stillCurrent()) return;
       await SecureStore.setItemAsync(attemptStorageKey, JSON.stringify({ ...review, reviewRequired: true }));
+      if (!stillCurrent()) return;
       setLegacyKey(review); setLegacyPending(null); setPendingAttempt(null);
       setMode(review.mode);
       if (review.mode === "SPECIFIED") {
@@ -176,13 +206,14 @@ export function PartnerPayoutCard() {
         setStoreAmounts(Object.fromEntries((review.storeAmounts ?? []).map((store) => [store.storeId, String(store.amountMinor)])));
       }
       await load();
+      if (!stillCurrent()) return;
       setNotice("لم يظهر طلب معتمد. راجع المتاجر الحالية ثم أعد المحاولة بالبيانات المحفوظة للمتاجر نفسها.");
-    } catch { setError("تعذر التحقق من الطلب المحفوظ ضمن صلاحياتك الحالية. أعد المحاولة قبل إنشاء طلب آخر."); }
-    finally { setBusy(false); }
+    } catch { if (stillCurrent()) setError("تعذر التحقق من الطلب المحفوظ ضمن صلاحياتك الحالية. أعد المحاولة قبل إنشاء طلب آخر."); }
+    finally { if (stillCurrent()) setBusy(false); }
   };
 
   const requestIntake = async () => {
-    if (!selectedSummary || selected.length === 0 || !selectedSummary.attributionComplete) return;
+    if (!stillCurrent() || !selectedSummary || selected.length === 0 || !selectedSummary.attributionComplete) return;
     const amounts = selected.flatMap((storeId) => {
       const value = Number(toAsciiDigits(storeAmounts[storeId] ?? ""));
       const store = selectedSummary.stores.find((item) => item.storeId === storeId);
@@ -195,18 +226,22 @@ export function PartnerPayoutCard() {
         body: mode === "SPECIFIED" ? { scopeMode: mode, storeIds: selected, storeAmounts: amounts } : { scopeMode: mode, storeIds: selected },
         idempotencyKey: `partner_intake_${Crypto.randomUUID()}`, correlationID: `partner_intake_corr_${Crypto.randomUUID()}`,
       };
-      await SecureStore.setItemAsync(intakeStorageKey(), JSON.stringify(saved));
+      await SecureStore.setItemAsync(intakeStorageKey(subject), JSON.stringify(saved));
+      if (!stillCurrent()) return;
       setPendingIntake(saved);
       const token = await getUsableIdentityAccessToken();
+      if (!stillCurrent()) return;
       const created = await client().createPartnerSettlementIntake(token, saved.body, saved.idempotencyKey, saved.correlationID);
+      if (!stillCurrent()) return;
       if (created.intake.status !== "REQUESTED" || created.intake.resolvedAmountMinor <= 0) throw new Error("SETTLEMENT_INTAKE_INVALID_READBACK");
+      await SecureStore.deleteItemAsync(intakeStorageKey(subject));
+      if (!stillCurrent()) return;
       setIntake(created.intake);
-      await SecureStore.deleteItemAsync(intakeStorageKey());
       setPendingIntake(null);
       setNotice("وصل طلب تسوية المتاجر إلى المالية. سيتم التحقق من وجهة التحويل قبل الصرف.");
     } catch {
-      setError("لم نتأكد من استلام الطلب. استخدم نفس المحاولة للاستعادة دون إنشاء طلب آخر.");
-    } finally { setBusy(false); }
+      if (stillCurrent()) setError("لم نتأكد من استلام الطلب. استخدم نفس المحاولة للاستعادة دون إنشاء طلب آخر.");
+    } finally { if (stillCurrent()) setBusy(false); }
   };
   const storeNames = Object.fromEntries((state?.stores ?? []).map((store) => [store.storeId, store.storeName]));
   const selectedOwners = [...new Set((selectedSummary?.stores ?? []).map((store) => store.partnerActorId))];
@@ -222,7 +257,7 @@ export function PartnerPayoutCard() {
   });
   const requestPreviewMinor = mode === "FULL_AVAILABLE" ? selectedSummary?.eligibleAvailableMinor ?? 0 : specifiedTotalMinor;
   const requestReady = Boolean(selectedSummary && singleWallet && selectedSummary.eligibleAvailableMinor > 0 && selectedSummary.attributionComplete && (mode === "FULL_AVAILABLE" || specifiedAmountsReady));
-  const destinationReady = Boolean(selectedSummary && selectedSummary.stores.filter((store) => selected.includes(store.storeId)).every((store) => store.payoutReady));
+  const destinationReady = Boolean(selectedSummary?.stores.filter((store) => selected.includes(store.storeId)).every((store) => store.payoutReady));
   let confirmDescription = "";
   if (selectedSummary) {
     const amountLabel = formatMoney(requestPreviewMinor, selectedSummary.currency);
@@ -232,6 +267,8 @@ export function PartnerPayoutCard() {
       confirmDescription = `سيُرسل طلب تسوية بمبلغ ${amountLabel} للمتاجر المختارة إلى المالية للمراجعة، دون حجز أو تحويل أي مبلغ الآن.`;
     }
   }
+  // React may still own an old render until the Identity subscriber remounts it.
+  if (!stillCurrent()) return null;
   return <BthwaniSurface tone="base" style={styles.card} accessibilityLabel="طلب صرف الشريك">
     <Text style={styles.title}>طلب صرف مستحقات المتاجر</Text>
     <Text style={styles.muted}>هذه المساحة تستخدم صلاحية طلب الصرف لكل متجر. قراءة التقارير المالية وتغيير المستلم صلاحيتان مستقلتان.</Text>
