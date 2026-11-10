@@ -70,7 +70,7 @@ test("Partner orders route scope resets to selected Store when the aggregate par
 test("Partner Orders uses the canonical OrderManagement for both relations", () => {
   const parent = readFileSync(new URL("../src/features/partner-onboarding/partner-orders.tsx", import.meta.url), "utf8");
   const management = readFileSync(new URL("../src/features/order-management/order-management.tsx", import.meta.url), "utf8");
-  assert.match(parent, /<OrderManagement key=\{"orders:" \+ selectedStore\.id\} storeId=\{selectedStore\.id\}/);
+  assert.match(parent, /<OrderManagement key=\{`orders:\$\{identityScope\}:\$\{selectedStore\.id\}`\} storeId=\{selectedStore\.id\}/);
   assert.doesNotMatch(parent, /IndependentPickupOrders|independent-pickup-orders|relationModel === "INDEPENDENT_STORE"/);
   assert.match(management, /client\(\)\.listPartnerOrders\(token,/);
   assert.match(parent, /canManageOrders && !isMarketplaceStore\(selectedStore\)[\s\S]*?استقبال الطلبات المباشرة غير مفعّل/);
@@ -90,7 +90,7 @@ test("More, header selection and Orders honor one authorization rule for both St
   }
 });
 
-function runAuthorizedOrderDeepLink({ targetStoreId, selectedStoreId, permitted = true, kind = "ready" }, appliedTargetStore, selected) {
+function runAuthorizedOrderDeepLink({ targetStoreId, selectedStoreId, permitted = true, kind = "ready", identityScope = "partner-session-a" }, appliedTargetStore, selected) {
   const source = readFileSync(new URL("../src/features/partner-onboarding/partner-orders.tsx", import.meta.url), "utf8");
   const tree = ts.createSourceFile("partner-orders.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let callback;
@@ -103,7 +103,11 @@ function runAuthorizedOrderDeepLink({ targetStoreId, selectedStoreId, permitted 
   }
   visit(tree);
   assert.ok(callback, "the production deep-link effect must be present");
+  const targetAlreadyApplied = appliedTargetStore.current.session === identityScope &&
+    appliedTargetStore.current.storeId === targetStoreId;
   runInNewContext(`(${callback})()`, {
+    identityScope,
+    targetAlreadyApplied,
     state: { kind },
     targetStoreId,
     targetStorePermitted: permitted,
@@ -114,7 +118,7 @@ function runAuthorizedOrderDeepLink({ targetStoreId, selectedStoreId, permitted 
 }
 
 test("Orders deep link selects once and never overrides a later manual Store choice", () => {
-  const appliedTargetStore = { current: "" };
+  const appliedTargetStore = { current: { session: "", storeId: "", observed: false } };
   const selected = [];
   const visit = (targetStoreId, selectedStoreId, permitted) =>
     runAuthorizedOrderDeepLink({ targetStoreId, selectedStoreId, permitted }, appliedTargetStore, selected);
@@ -128,13 +132,13 @@ test("Orders deep link selects once and never overrides a later manual Store cho
   visit("store-c", "store-b", true);
   assert.deepEqual(selected, ["store-a", "store-c"], "a new URL target is a new explicit intent");
   visit(undefined, "store-c", true);
-  assert.equal(appliedTargetStore.current, "", "removing the parameter clears old URL intent");
+  assert.equal(appliedTargetStore.current.storeId, "", "removing the parameter clears old URL intent");
   visit("store-a", "store-c", true);
   assert.deepEqual(selected, ["store-a", "store-c", "store-a"]);
 });
 
 test("unauthorized and unresolved Orders deep links never override the active Store", () => {
-  const appliedTargetStore = { current: "" };
+  const appliedTargetStore = { current: { session: "", storeId: "", observed: false } };
   const selected = [];
   const drive = (kind, permitted) => runAuthorizedOrderDeepLink({
     targetStoreId: "store-secret", selectedStoreId: "store-owned", permitted, kind,
@@ -143,7 +147,7 @@ test("unauthorized and unresolved Orders deep links never override the active St
   drive("ready", false);
   drive("error", true);
   assert.deepEqual(selected, []);
-  assert.equal(appliedTargetStore.current, "", "no unauthorized target is consumed");
+  assert.equal(appliedTargetStore.current.storeId, "", "no unauthorized target is consumed");
   drive("ready", true);
   assert.deepEqual(selected, ["store-secret"]);
 });
@@ -178,7 +182,7 @@ test("marketplace aggregate builds only authorized marketplace Store IDs from ca
     stores, useMemo: fn => fn(), isMarketplaceStore, canUseStoreOrders,
   });
   assert.deepEqual(Array.from(ids), ["market-a", "market-b"]);
-  assert.match(ordersPage, /aggregateMode \? <OrderManagement key="all-marketplace" storeIds=\{marketOrderStoreIDs\}/);
+  assert.match(ordersPage, /aggregateMode \? <OrderManagement key=\{`all-marketplace:\$\{identityScope\}:\$\{marketOrderStoreIDs\.join\(","\)\}`\} storeIds=\{marketOrderStoreIDs\}/);
   assert.match(ordersPage, /marketAggregateTooLarge = marketOrderStoreIDs\.length > 200/);
   assert.match(ordersPage, /غير متاح لأكثر من 200 متجر/);
 });

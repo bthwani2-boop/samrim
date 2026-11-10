@@ -7,8 +7,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import { ActivityIndicator, AppState, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
-import { usePartnerStoreScope } from "../partner-onboarding/partner-store-scope-context";
 import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";
+import { usePartnerStoreScope } from "../partner-onboarding/partner-store-scope-context";
 import { OrderConversation } from "./order-conversation";
 import { isCurrentOrderListRequest, mergeOrderPageRecords, tryAcquireOrderAction } from "./order-page-records";
 
@@ -64,7 +64,7 @@ export function OrderManagement({ storeId, storeIds }: { storeId?: string | unde
   const targetOrderId = (Array.isArray(rawTargetOrder) ? rawTargetOrder[0] : rawTargetOrder)?.trim() ?? "";
   const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
   const { stores: scopedStores } = usePartnerStoreScope();
-  const requestedStoreIDs = useMemo(() => storeId ? [storeId] : [...(storeIds ?? [])].sort(), [storeId, storeIds]);
+  const requestedStoreIDs = useMemo(() => storeId ? [storeId] : [...(storeIds ?? [])].sort((left, right) => left.localeCompare(right)), [storeId, storeIds]);
   const fulfillableStoreIDs = useMemo(() => new Set(scopedStores.filter((store) => store.owned || store.permissions.includes("fulfillment")).map((store) => store.id)), [scopedStores]);
   const canFulfillOrder = useCallback((orderStoreID: string) => fulfillableStoreIDs.has(orderStoreID), [fulfillableStoreIDs]);
   const loadGeneration = useRef(0);

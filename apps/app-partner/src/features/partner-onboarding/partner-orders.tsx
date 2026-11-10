@@ -26,7 +26,7 @@ export function PartnerOrders() {
   const permittedStores = stores.filter(canUseStoreOrders);
   const canManageOrders = Boolean(selectedStore && canUseStoreOrders(selectedStore));
   const marketOrderStoreIDs = useMemo(() => stores.filter(store => isMarketplaceStore(store) && canUseStoreOrders(store))
-    .map(store => store.id).sort(), [stores]);
+    .map(store => store.id).sort((left, right) => left.localeCompare(right)), [stores]);
   const marketAggregateTooLarge = marketOrderStoreIDs.length > 200;
   const showMarketAggregate = !targetStoreId && Boolean(selectedStore && isMarketplaceStore(selectedStore)) &&
     marketOrderStoreIDs.length > 1 && !marketAggregateTooLarge;
