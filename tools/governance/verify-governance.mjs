@@ -225,7 +225,18 @@ for (const [source, content, fragments] of [
 
 if (fs.existsSync(at("knowledge.sources.json")))
 	fail("external donor pin resurrected");
+const placement = get("REPOSITORY-STRUCTURE.md");
+const architectureGovernance = get("docs/governance/architecture.md");
+if (!placement.includes("## Required naming and placement rules for refoundation") ||
+    !placement.includes("## Structural acceptance for each affected slice") ||
+    !architectureGovernance.includes("## Responsibility-shaped implementation boundaries") ||
+    !engineeringGovernance.includes("### Structural cleanup within refoundation slices") ||
+    !platformGovernance.includes("### Refoundation naming cutover") ||
+    !refoundationPlan.includes("## 15. Structural refoundation evidence at each accepted slice"))
+  fail("refoundation structural ownership, naming or cutover gates missing");
 const law = get("AGENTS.md");
+if (!law.includes("### Required structural responsibility check"))
+  fail("agent structural ownership gate missing");
 for (const x of [
 	"## 1. Authority and exact state",
 	"## 4. Local development state",

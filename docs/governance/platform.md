@@ -46,6 +46,10 @@ Use **«عميل» / Customer** for the purchaser and **«تاجر» or «مال
 
 Retired enrollment and attribution machinery is not recreated in the refoundation, navigation, APIs or new schemas. Retained binding financial/identity records remain at their original owners and cannot authorize an active writer or role.
 
+### Refoundation naming cutover
+
+In new internal source, choose one consistent `customer` or `merchant` name for the human/business concept, `store` for its DSH resource, and precise role/capability names for other responsibilities. Do not preserve an obsolete source filename, folder or UI tab merely to avoid moving its consumers; nor create both old and new names as active aliases. A semantic rename must update imports, tests, generated types and references together. Externally registered native IDs, deep-link schemes, API paths, saved records and public Store URLs are **compatibility contracts** and require their own safely reviewed migration rather than a blind bulk rename. Naming and directory placement rules have exactly one owner: `REPOSITORY-STRUCTURE.md`.
+
 ## Surface model
 
 A Surface is an actor-facing deployable presentation/composition host for admitted Product work.

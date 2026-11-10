@@ -52,6 +52,10 @@ When replacing or refounding a canonical path, migrate every materially affected
 
 Preserve required Product behavior, security, authorization, privacy, data integrity, contract integrity and operational safety throughout simplification.
 
+### Required structural responsibility check
+
+For every refoundation slice materially affecting files, names or ownership, consult `REPOSITORY-STRUCTURE.md` before writing: identify the winning owner/path, affected consumers and generated sources, and which old files/aliases must disappear. Keep a small task-scoped mapping of KEEP/MOVE/MERGE/REPLACE/DELETE and objective proof, not a permanent second inventory. After the replacement is verified, inspect Git and relevant dependency/build/contract references for orphan files, duplicate writers, stale names and dead imports/routes; leave unrelated concurrent work untouched. Do not claim slice PASS while a material stale/parallel path remains. A change without structural impact need not perform a repository-wide file census.
+
 ### Mandatory refoundation capability-conservation and anti-drift gate
 
 Before a rewrite, migration, UX redesign, design-system cutover or removal, enumerate the **materially affected existing capabilities and subfeatures** from current source, routes, contracts, tests, runtime configuration, canonical Product owners and preserved research. For each, establish its actor/surface, current status (working/partial/obsolete/unknown), original writer/consumers, durable state, safety/finance/privacy invariants, target disposition (KEEP/REFOUND/MERGE/REPLACE/APPROVED_RETIRE), and falsifiable proof. A named capability and its specialized media, map, search, export, reporting, accessibility or recovery behavior are not disposable merely because an implementation file is old or a redesign omits them. Unknown disposition is `UNRESOLVED` and blocks deleting that behavior.

@@ -310,3 +310,21 @@ A candidate is **not complete** merely because governance passes, the first Stor
 - Cleanup and handoff: all competing writers, abandoned paths, unused schemas, old design components and stale references removed **after proven replacement**; exact-HEAD evidence, final diffs, explicit `PASS/FAIL/BLOCKED/NOT_RUN/REVIEW_BLOCKED` and authorized delivery gates.
 
 Use the actual canonical `product.md` capability census and domain owners for the individual requirements; this is a coverage lens, **not** a second editable capability registry or checklist that can replace those owners. `NOT_RUN` and `REVIEW_BLOCKED` remain non-PASS. No user's approval of target behavior is evidence that the refounded service has already been implemented, tested or released.
+
+
+## 15. Structural refoundation evidence at each accepted slice
+
+This is a **one-time execution handoff format for the affected slice**, not another permanent route map or new semantic owner. `REPOSITORY-STRUCTURE.md` alone defines file placement/names, `architecture.md` defines canonical business ownership, `engineering.md` governs cutover proof, and `AGENTS.md` governs authorized execution.
+
+For each cohesive rebuilding slice, record in the actual task/commit evidence (not a copied global file inventory):
+
+| Evidence item | Required result |
+| --- | --- |
+| Starting truth | Exact branch/HEAD and protected concurrent edits; targeted source owners and real consumers |
+| Structural disposition | For each **affected** file or responsibility: KEEP, MOVE/RENAME, MERGE, REPLACE, DELETE or UNRESOLVED, with canonical destination and reason |
+| Cutover | Old and new importers, exports, routes, generated API contracts, platform adapters, storage/migrations, tests and runtime/config consumers are traced and reconciled |
+| Capability preservation | Real user behavior and financial/security/privacy invariants retained, or uniquely approved for retirement |
+| Clean residue | No tracked old duplicate writer/engine, unused compatibility layer, dead reference, stale file name, contradictory source, orphan test or unauthorized external rename remains in the accepted cone |
+| Proof | Targeted static/build/API/runtime and negative checks appropriate to the change, exact readback, final Git diff and PASS/FAIL/BLOCKED/NOT_RUN/REVIEW_BLOCKED outcomes |
+
+The test is **not the number of files deleted**. The goal is the smallest comprehensible complete source system, with one owner for each mutable fact and no lost Product function. An unresolved protected capability, consumer, migration or external identifier blocks deletion or closure. Refoundation may relocate files and reorganize the repository significantly, but no new Branch/Worktree, shared-data reset, Push/PR/Merge, release or deployment is implied by this plan without its distinct authorization.

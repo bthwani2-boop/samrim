@@ -29,6 +29,12 @@ Classify every material observed subfeature as KEEP, REFOUND, MERGE, REPLACE, AP
 
 Refoundation readiness is a **start gate**, not a claim the rebuilt system is done: authorized exact worktree/HEAD and ownership, protected concurrent edits, canonical decisions reconciled, known feature preservation/proof paths, safe isolated runtime and data boundaries, and one bounded first slice. Product end-to-end PASS comes later from real devices/browser/services, owner-backed state, negative/security, financial and recovery evidence as applicable. Capture truthful PASS/FAIL/BLOCKED/NOT_RUN/INVALIDATED per affected claim; never claim universal 100% safety or quality without impossible exhaustive evidence.
 
+### Structural cleanup within refoundation slices
+
+Every affected implementation slice must apply the placement and naming contract in `REPOSITORY-STRUCTURE.md` while building the capability, **not** postpone cleanup to a final cosmetic phase. Before changing structure, identify actual producers, consumers, imports/exports, public routes, generated API clients, schema/migration ownership, tests, active runtime configuration and protected data. Choose the smallest correct action: keep, direct reuse, move/rename, merge, replace or remove. Record only the slice-specific evidence necessary to prove that choice.
+
+A successful cutover preserves approved behavior and legally protected records, migrates dependent reads/writes and test contracts, proves role/Store isolation and error recovery where affected, and removes redundant paths after verified replacement. Check the exact candidate for stale imports, dead routes, name collisions, duplicate engines, hidden shadow writers and orphaned source/config/tests. Do not equate fewer files with a simpler system; retain necessary platform adapters and meaningful separation. No speculative directory scaffolding, wrapper, second State Manager or second authoritative registry is justified merely by future flexibility.
+
 ### Admission of operator-editable policies
 
 Every admitted feature change or review should consider whether it contains a **currently useful, operator-changeable commercial or operational decision**. Do not wait for a separate request to expose a genuine policy, but do not turn every constant, preference or business record into an operator setting. Classify the affected decision at the smallest useful scope:

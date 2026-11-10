@@ -153,6 +153,12 @@ Governance owns durable runtime invariants only:
 
 Exact ports, commands, package versions, containers and environment-specific composition belong to executable source/config.
 
+## Responsibility-shaped implementation boundaries
+
+Refounding a feature may change its files, packages and module tree, but must **not** move a canonical business fact, writer or access decision into a UI host, shared package or another owner's database. Prefer one cohesive module per real responsibility and direct composition at public owner boundaries. Split combined responsibilities only when each distinct owner remains explicit; merge redundant representations after moving real consumers. A directory rename alone does not repair business ownership, and identical behavior in two files is not evidence that their authority may remain duplicated.
+
+Directory and naming placement details are owned **only** by `REPOSITORY-STRUCTURE.md`; semantic business boundaries remain here.
+
 ## Repository boundary
 
 Repository placement is an implementation concern owned by the consuming repository's operating/placement contract. Governance defines semantic responsibilities; it does not mirror current directories or packages.
