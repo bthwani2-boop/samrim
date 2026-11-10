@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
+import ts from "typescript-ast";
 import { isCurrentOrderListRequest } from "../src/features/order-management/order-page-records.ts";
 import { canUseStoreOrders, derivePartnerAuthority } from "../src/shell/partner-authority.ts";
 
@@ -85,4 +87,62 @@ test("More, header selection and Orders honor one authorization rule for both St
       assert.equal(derivePartnerAuthority([store]).canUse("orders"), allowed);
     }
   }
+});
+
+function runAuthorizedOrderDeepLink({ targetStoreId, selectedStoreId, permitted = true, kind = "ready" }, appliedTargetStore, selected) {
+  const source = readFileSync(new URL("../src/features/partner-onboarding/partner-orders.tsx", import.meta.url), "utf8");
+  const tree = ts.createSourceFile("partner-orders.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let callback;
+  function visit(node) {
+    if (ts.isCallExpression(node) && node.expression.getText(tree) === "useEffect" &&
+        node.arguments[0]?.getText(tree).includes("appliedTargetStore.current")) {
+      callback = node.arguments[0].getText(tree);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(tree);
+  assert.ok(callback, "the production deep-link effect must be present");
+  runInNewContext(`(${callback})()`, {
+    state: { kind },
+    targetStoreId,
+    targetStorePermitted: permitted,
+    appliedTargetStore,
+    selectedStore: selectedStoreId ? { id: selectedStoreId } : undefined,
+    selectStore: value => selected.push(value),
+  });
+}
+
+test("Orders deep link selects once and never overrides a later manual Store choice", () => {
+  const appliedTargetStore = { current: "" };
+  const selected = [];
+  const visit = (targetStoreId, selectedStoreId, permitted) =>
+    runAuthorizedOrderDeepLink({ targetStoreId, selectedStoreId, permitted }, appliedTargetStore, selected);
+
+  visit("store-a", "store-b", true);
+  assert.deepEqual(selected, ["store-a"]);
+  visit("store-a", "store-a", true);
+  visit("store-a", "store-b", true); // Merchant manually selects B while URL still names A.
+  assert.deepEqual(selected, ["store-a"], "the unchanged URL must not reselect Store A");
+
+  visit("store-c", "store-b", true);
+  assert.deepEqual(selected, ["store-a", "store-c"], "a new URL target is a new explicit intent");
+  visit(undefined, "store-c", true);
+  assert.equal(appliedTargetStore.current, "", "removing the parameter clears old URL intent");
+  visit("store-a", "store-c", true);
+  assert.deepEqual(selected, ["store-a", "store-c", "store-a"]);
+});
+
+test("unauthorized and unresolved Orders deep links never override the active Store", () => {
+  const appliedTargetStore = { current: "" };
+  const selected = [];
+  const drive = (kind, permitted) => runAuthorizedOrderDeepLink({
+    targetStoreId: "store-secret", selectedStoreId: "store-owned", permitted, kind,
+  }, appliedTargetStore, selected);
+  drive("loading", true);
+  drive("ready", false);
+  drive("error", true);
+  assert.deepEqual(selected, []);
+  assert.equal(appliedTargetStore.current, "", "no unauthorized target is consumed");
+  drive("ready", true);
+  assert.deepEqual(selected, ["store-secret"]);
 });

@@ -1,6 +1,6 @@
 import { BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
 import { useLocalSearchParams } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Text, View } from "react-native";
 import { OrderManagement } from "../order-management/order-management";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
@@ -25,12 +25,18 @@ export function PartnerOrders() {
     permittedStores.filter(isMarketplaceStore).length > 1;
   const aggregateMode = scope === "ALL_AUTHORIZED" && showMarketAggregate;
   const targetStorePermitted = permittedStores.some(store => store.id === targetStoreId);
+  const appliedTargetStore = useRef("");
 
-  // Never change the store implicitly. Only a contextual order deep link can
-  // select the explicitly named store, after confirming order permission.
+  // Resolve an authorized deep-link target once for each URL value. Reapplying
+  // it after a manual Store selection would trap the Merchant on that Store.
   useEffect(() => {
-    if (state.kind !== "ready" || !targetStoreId || selectedStore?.id === targetStoreId) return;
-    if (targetStorePermitted) selectStore(targetStoreId);
+    if (!targetStoreId) {
+      appliedTargetStore.current = "";
+      return;
+    }
+    if (state.kind !== "ready" || !targetStorePermitted || appliedTargetStore.current === targetStoreId) return;
+    appliedTargetStore.current = targetStoreId;
+    if (selectedStore?.id !== targetStoreId) selectStore(targetStoreId);
   }, [state.kind, targetStoreId, selectedStore?.id, targetStorePermitted, selectStore]);
 
   return <View style={styles.container}>
