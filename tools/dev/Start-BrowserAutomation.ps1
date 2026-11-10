@@ -54,10 +54,10 @@ function Test-ExactBrowserProfile {
 
 function Test-CdpEndpoint {
     param([string]$Name, [string]$Executable, [string]$ProfileDir, [int]$Port)
-    # Some Windows TCP providers report an open listener as state 0. Keep
-    # only peerless candidates and prove the actual endpoint below.
+    # Windows can misreport the state of a listening socket. Use the local
+    # binding to verify ownership, then prove listening with the CDP handshake.
     $connections = @(Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue | Where-Object {
-        $_.State -eq 'Listen' -or ($_.CimInstanceProperties['State'].Value -eq 0 -and $_.RemotePort -eq 0)
+        $_.RemotePort -eq 0
     })
     if ($connections.Count -eq 0) { return $false }
     foreach ($connection in $connections) {
