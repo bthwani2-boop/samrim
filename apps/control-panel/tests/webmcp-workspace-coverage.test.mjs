@@ -76,6 +76,6 @@ test("partner management navigation remains distinct from the Partner workspace"
   const entries = allowedWorkspaceEntries(operator(["partners"]));
   const item = entries.find(entry => entry.href === "/partners");
   assert.equal(item?.label, "الشركاء والمتاجر");
-  assert.equal(item?.context, "إدارة الشركاء");
+  assert.equal(item?.context, "المتاجر");
   assert.ok(entries.every(entry => !entry.href.startsWith("/store?")));
 });
