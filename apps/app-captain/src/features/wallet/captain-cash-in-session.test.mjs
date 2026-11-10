@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { isCurrentCaptainActor } from "../captain-operations/captain-session-scope.ts";
+import { isCurrentCaptainActor } from "../../bootstrap/captain-session-scope.ts";
 
 const source = readFileSync(new URL("./cash-in-panel.tsx", import.meta.url), "utf8");
 const request = source.slice(source.indexOf("  const createIntent = async () => {"), source.indexOf("  const state = wallet?.state;"));

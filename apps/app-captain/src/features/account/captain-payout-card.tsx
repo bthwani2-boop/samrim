@@ -8,7 +8,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { captainClient } from "../captain-operations/captain-client";
-import { isCurrentCaptainActor } from "../captain-operations/captain-session-scope";
+import { isCurrentCaptainActor } from "../../bootstrap/captain-session-scope";
 import { claimCaptainPayoutSubmission } from "./captain-payout-submission-lock";
 
 type PayoutAttempt = Readonly<{ mode: "FULL_AVAILABLE" | "SPECIFIED"; amountMinor?: number; idempotencyKey: string; correlationID: string }>;

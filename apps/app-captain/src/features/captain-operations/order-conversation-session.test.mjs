@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript-ast";
-import { captainOrderSessionKey } from "./captain-session-scope.ts";
+import { captainSessionKey } from "../../bootstrap/captain-session-scope.ts";
 
 const source = readFileSync(new URL("./order-conversation.tsx", import.meta.url), "utf8");
 const ast = ts.createSourceFile("order-conversation.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -32,13 +32,13 @@ const actors = ["conversationActorID", "currentConversationSessionKey", "isCurre
 
 test("captain private media rejects results from an expired session of the same actor", async () => {
   let current = identity("captain-a", "old-session");
-  const oldScope = captainOrderSessionKey(current);
+  const oldScope = captainSessionKey(current);
   let resolveMedia;
   const pendingMedia = new Promise(resolve => { resolveMedia = resolve; });
   let reads = 0;
   const { readPrivateMedia } = productionFunctions([...actors, "readPrivateMedia"], {
     currentIdentityState: () => current,
-    captainOrderSessionKey,
+    captainSessionKey,
     getUsableIdentityAccessToken: async () => "old-token",
     client: () => ({ readOrderConversationMedia: async () => { reads++; return pendingMedia; } }),
   });
@@ -54,11 +54,11 @@ test("captain private media rejects results from an expired session of the same 
 
 test("live Captain session reads media and logout fails closed", async () => {
   let current = identity("captain-a", "session-live");
-  const scope = captainOrderSessionKey(current);
+  const scope = captainSessionKey(current);
   const media = { bytes: "current-private-media" };
   const { readPrivateMedia } = productionFunctions([...actors, "readPrivateMedia"], {
     currentIdentityState: () => current,
-    captainOrderSessionKey,
+    captainSessionKey,
     getUsableIdentityAccessToken: async () => "token",
     client: () => ({ readOrderConversationMedia: async () => media }),
   });
@@ -70,8 +70,8 @@ test("live Captain session reads media and logout fails closed", async () => {
 function submitRuntime(currentSession, extra = {}) {
   return {
     currentIdentityState: currentSession,
-    captainOrderSessionKey,
-    loadedSessionKey: captainOrderSessionKey(currentSession()),
+    captainSessionKey,
+    loadedSessionKey: captainSessionKey(currentSession()),
     correctOwner: true,
     role: "captain",
     orderConversationMessageAttemptStorageKey: () => "pending-message",
@@ -133,13 +133,13 @@ test("live Captain message preserves retry identity and recipient permissions", 
 
 test("Captain chat, unread counters, media and read receipts share Identity session scope", () => {
   const deliveries = readFileSync(new URL("./captain-deliveries.tsx", import.meta.url), "utf8");
-  assert.match(source, /const activeSessionKey = captainOrderSessionKey\(identityState\)/);
+  assert.match(source, /const activeSessionKey = captainSessionKey\(identityState\)/);
   assert.match(source, /loadedSessionKey === activeSessionKey/);
   assert.match(source, /state\.kind === "ready" && !correctOwner/);
   assert.match(source, /\}, \[activeSessionKey, load\]\)/);
   assert.match(source, /const key = loadedSessionKey \+ ":" \+ orderId \+ ":" \+ last\.id/);
   assert.equal((source.match(/actorScope=\{activeSessionKey\}/g) ?? []).length, 2);
   assert.equal((source.match(/readPrivateMedia=\{\(mediaOrderID, mediaID\) => readPrivateMedia\(mediaOrderID, mediaID, loadedSessionKey\)\}/g) ?? []).length, 2);
-  assert.match(deliveries, /useConversationUnreadCounts\(assignments\.map\(assignment => assignment\.orderId\), captainOrderSessionKey\(identityState\)/);
+  assert.match(deliveries, /useConversationUnreadCounts\(assignments\.map\(assignment => assignment\.orderId\), captainSessionKey\(identityState\)/);
   assert.doesNotMatch(source, /isCurrentActor\([^,)]*\)/);
 });

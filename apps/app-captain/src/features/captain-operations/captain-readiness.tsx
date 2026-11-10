@@ -10,7 +10,7 @@ import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySe
 import { captainClient } from "./captain-client";
 import { createCaptainOperationStyles } from "./captain-operation-styles";
 import { publishCaptainPresence } from "./captain-presence-publisher";
-import { isCurrentCaptainActor } from "./captain-session-scope";
+import { isCurrentCaptainActor } from "../../bootstrap/captain-session-scope";
 import { hasBackgroundMissionConsent, setBackgroundMissionConsent } from "./captain-mission-location-background";
 
 function KeepMissionScreenAwake() {

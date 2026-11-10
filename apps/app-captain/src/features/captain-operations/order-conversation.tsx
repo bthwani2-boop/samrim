@@ -8,13 +8,13 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { BthwaniConversationMedia } from "@bthwani/design-system/native/conversation-private-media";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession, role } from "../../bootstrap/identity";
-import { captainOrderSessionKey } from "./captain-session-scope";
+import { captainSessionKey } from "../../bootstrap/captain-session-scope";
 
 function client() { const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim(); if (!value) throw new Error("DSH_BASE_URL_REQUIRED"); return createDshMobileClient(value, { cryptoRandomUUID: () => Crypto.randomUUID() }); }
 function senderLabel(role: string): string { return role==="operator"?"العمليات":role==="client"?"العميل":role==="partner"?"المتجر":"الكابتن"; }
 
 function conversationActorID(): string { const state = currentIdentityState(); return state.kind === "authenticated" ? state.identity.subject.trim() : ""; }
-function currentConversationSessionKey(): string { return captainOrderSessionKey(currentIdentityState()); }
+function currentConversationSessionKey(): string { return captainSessionKey(currentIdentityState()); }
 function isCurrentActor(actorID: string, sessionKey: string): boolean {
   return Boolean(actorID) && Boolean(sessionKey) && actorID === conversationActorID() && sessionKey === currentConversationSessionKey();
 }
@@ -45,7 +45,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
   const [attemptStorageReady, setAttemptStorageReady] = useState(false);
   const [identityState, setIdentityState] = useState(currentIdentityState);
   const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
-  const activeSessionKey = captainOrderSessionKey(identityState);
+  const activeSessionKey = captainSessionKey(identityState);
   const [loadedActorID, setLoadedActorID] = useState("");
   const [loadedSessionKey, setLoadedSessionKey] = useState("");
   const [loadedOrderID, setLoadedOrderID] = useState("");

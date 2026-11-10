@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import ts from "typescript-ast";
 import test from "node:test";
-import { captainOrderSessionKey, isCurrentCaptainActor } from "./captain-session-scope.ts";
+import { captainSessionKey, isCurrentCaptainActor } from "../../bootstrap/captain-session-scope.ts";
 
 const source = readFileSync(new URL("./captain-deliveries.tsx", import.meta.url), "utf8");
 
@@ -62,7 +62,7 @@ test("Captain delivery readback rejects an old session even for the same actor",
     identity: { subject: "captain-a", role: "captain", sessionId },
   });
   let current = identity("first-session");
-  const scope = captainOrderSessionKey(current);
+  const scope = captainSessionKey(current);
   const ast = ts.createSourceFile("captain-deliveries.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const declaration = ast.statements.find(node =>
     ts.isFunctionDeclaration(node) && node.name?.text === "hasCurrentDeliveryActor");
@@ -74,19 +74,19 @@ test("Captain delivery readback rejects an old session even for the same actor",
   const { hasCurrentDeliveryActor } = runInNewContext(script, {
     currentIdentityState: () => current,
     isCurrentCaptainActor,
-    captainOrderSessionKey,
+    captainSessionKey,
   });
   assert.equal(hasCurrentDeliveryActor("captain-a", scope), true);
   current = identity("renewed-session");
   assert.equal(hasCurrentDeliveryActor("captain-a", scope), false);
-  assert.equal(hasCurrentDeliveryActor("captain-a", captainOrderSessionKey(current)), true);
+  assert.equal(hasCurrentDeliveryActor("captain-a", captainSessionKey(current)), true);
   current = { kind: "unauthenticated" };
   assert.equal(hasCurrentDeliveryActor("captain-a", scope), false);
 });
 
 test("Captain delivery tasks, completion and retry require the same session readback", () => {
   assert.match(source, /loadedSessionKey === activeSessionKey && hasCurrentDeliveryActor\(loadedActorID, loadedSessionKey\)/);
-  assert.match(source, /const sessionKey = captainOrderSessionKey\(identity\);/);
+  assert.match(source, /const sessionKey = captainSessionKey\(identity\);/);
   assert.match(source, /const stillCurrent = \(\) => sequence === readSequence\.current && hasCurrentDeliveryActor\(actorID, sessionKey\)/);
   assert.match(source, /\}, \[activeSessionKey, load\]\)/);
   assert.match(source, /!hasCurrentDeliveryActor\(attempt\.actorID, loadedSessionKey\)/);

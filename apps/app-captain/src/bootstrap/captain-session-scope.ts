@@ -1,5 +1,5 @@
-/** Scope private Captain Order data to one authenticated Identity session, not just its actor. */
-export function captainOrderSessionKey(
+/** Scope private Captain data to one authenticated Identity session, not just its actor. */
+export function captainSessionKey(
   state: { kind: string; identity?: { role?: string; subject?: string; sessionId?: string } },
 ): string {
   if (state.kind !== "authenticated" || state.identity?.role !== "captain") return "";

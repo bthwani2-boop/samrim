@@ -8,7 +8,7 @@ import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySe
 import { captainClient } from "./captain-client";
 import { claimCaptainOfferResponse, isCaptainOfferActionable } from "./captain-offer-response-guard";
 import { createCaptainOperationStyles } from "./captain-operation-styles";
-import { isCurrentCaptainActor } from "./captain-session-scope";
+import { isCurrentCaptainActor } from "../../bootstrap/captain-session-scope";
 
 export function CaptainOffers({ compact = false, popup = false, suppressed = false }: { compact?: boolean; popup?: boolean; suppressed?: boolean } = {}) {
   const theme = useAppearanceTheme();

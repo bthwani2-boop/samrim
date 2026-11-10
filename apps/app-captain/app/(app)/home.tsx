@@ -8,7 +8,7 @@ import { CaptainReadiness } from "../../src/features/captain-operations/captain-
 import { captainClient } from "../../src/features/captain-operations/captain-client";
 import { CaptainOffers } from "../../src/features/captain-operations/captain-offers";
 import { CaptainOpportunities } from "../../src/features/captain-operations/captain-opportunities";
-import { isCurrentCaptainActor } from "../../src/features/captain-operations/captain-session-scope";
+import { isCurrentCaptainActor } from "../../src/bootstrap/captain-session-scope";
 
 export type ActiveCaptainMission = Readonly<{
   assignment: CaptainAssignment;

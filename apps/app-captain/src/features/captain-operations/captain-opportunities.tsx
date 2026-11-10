@@ -7,7 +7,7 @@ import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Linking, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
-import { isCurrentCaptainActor } from "./captain-session-scope";
+import { isCurrentCaptainActor } from "../../bootstrap/captain-session-scope";
 
 type Mission = Readonly<{ assignment: CaptainAssignment; task: CaptainDeliveryTask }>;
 type MissionReadiness = "loading" | "ready" | "unavailable";

@@ -8,7 +8,7 @@ import { useFocusEffect } from "expo-router";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "../captain-operations/captain-client";
-import { isCurrentCaptainActor } from "../captain-operations/captain-session-scope";
+import { isCurrentCaptainActor } from "../../bootstrap/captain-session-scope";
 import { matchesCaptainFundingAttempt, matchesCaptainFundingRequest, parseCaptainFundingAttempt, type CaptainFundingAttempt } from "./cash-in-recovery";
 
 type FundingAttempt = CaptainFundingAttempt;

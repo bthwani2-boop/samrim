@@ -13,7 +13,7 @@ import { captainClient } from "./captain-client";
 import { createCaptainOperationStyles } from "./captain-operation-styles";
 import { canActOnCaptainTask } from "./captain-task-eligibility";
 import { isConfirmedCaptainCompletion } from "./captain-completion-readback";
-import { captainOrderSessionKey, isCurrentCaptainActor } from "./captain-session-scope";
+import { captainSessionKey, isCurrentCaptainActor } from "../../bootstrap/captain-session-scope";
 import { OrderConversation } from "./order-conversation";
 
 type PendingCaptainCompletionAttempt = Readonly<{
@@ -64,7 +64,7 @@ function captainCompletionHttpRejected(error: unknown): boolean {
 function hasCurrentDeliveryActor(actorID: string, sessionKey: string): boolean {
   const session = currentIdentityState();
   return session.kind === "authenticated" && isCurrentCaptainActor(actorID, session.identity.subject.trim())
-    && Boolean(sessionKey) && captainOrderSessionKey(session) === sessionKey;
+    && Boolean(sessionKey) && captainSessionKey(session) === sessionKey;
 }
 
 export function CaptainDeliveries() {
@@ -78,7 +78,7 @@ export function CaptainDeliveries() {
   const [loadedSessionKey, setLoadedSessionKey] = useState("");
   const [identityState, setIdentityState] = useState(currentIdentityState);
   const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
-  const activeSessionKey = captainOrderSessionKey(identityState);
+  const activeSessionKey = captainSessionKey(identityState);
   const readSequence = useRef(0);
   const mutationInFlight = useRef(false);
   const mutationSequence = useRef(0);
@@ -98,13 +98,13 @@ export function CaptainDeliveries() {
     if (!base) throw new Error("DSH_BASE_URL_REQUIRED");
     return (await createDshMobileClient(base,{cryptoRandomUUID:()=>Crypto.randomUUID()}).readOrderConversation(token,orderId,1)).unreadCount;
   }, []);
-  const unreadChatCounts = useConversationUnreadCounts(assignments.map(assignment => assignment.orderId), captainOrderSessionKey(identityState), isFocused, getChatUnread, chatOrderId);
+  const unreadChatCounts = useConversationUnreadCounts(assignments.map(assignment => assignment.orderId), captainSessionKey(identityState), isFocused, getChatUnread, chatOrderId);
 
   const load = useCallback(async (quiet = false) => {
     const sequence = ++readSequence.current;
     const identity = currentIdentityState();
     const actorID = identity.kind === "authenticated" ? identity.identity.subject.trim() : "";
-    const sessionKey = captainOrderSessionKey(identity);
+    const sessionKey = captainSessionKey(identity);
     const stillCurrent = () => sequence === readSequence.current && hasCurrentDeliveryActor(actorID, sessionKey) && (!quiet || !mutationInFlight.current);
     if (!quiet) {
       setLoading(true);

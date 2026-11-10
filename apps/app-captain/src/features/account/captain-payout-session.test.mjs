@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { isCurrentCaptainActor } from "../captain-operations/captain-session-scope.ts";
+import { isCurrentCaptainActor } from "../../bootstrap/captain-session-scope.ts";
 
 const source = readFileSync(new URL("./captain-payout-card.tsx", import.meta.url), "utf8");
 
