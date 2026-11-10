@@ -46,14 +46,24 @@ test("mission location recovery is explicit and independent of dispatch availabi
   assert.match(readiness, /Linking\.openSettings\(\)/);
 });
 
-test("cancelled or switched actor cannot start a location fix after permission awaits", () => {
+test("cancelled or renewed Captain Identity session cannot start a location fix after permission awaits", () => {
+  const scopeStart = opportunities.indexOf("const requestSession = sessionKey;");
+  const scopeEnd = opportunities.indexOf("void refresh();", scopeStart);
+  assert.ok(scopeStart > 0 && scopeEnd > scopeStart);
+  const sessionGuard = opportunities.slice(scopeStart, scopeEnd);
+  assert.match(sessionGuard, /const isCurrent = \(\) => !cancelled && Boolean\(requestSession\)/);
+  assert.match(sessionGuard, /captainSessionKey\(currentIdentityState\(\)\) === requestSession/);
+
   const start = opportunities.indexOf("const [permission, enabled]");
   const end = opportunities.indexOf("const fix = cached", start);
   assert.ok(start > 0 && end > start);
   const gate = opportunities.slice(start, end);
-  assert.match(gate, /if \(cancelled \|\| !permission\.granted/);
-  assert.match(gate, /if \(cancelled \|\| afterCache\.kind !== "authenticated"/);
-  assert.ok(gate.indexOf("if (cancelled") < gate.indexOf("Location.getLastKnownPositionAsync"));
+  assert.match(gate, /if \(!isCurrent\(\) \|\| !permission\.granted \|\| !enabled\) return;/);
+  assert.match(gate, /if \(!isCurrent\(\)\) return;/);
+  assert.ok(gate.indexOf("if (!isCurrent() || !permission.granted")
+    < gate.indexOf("Location.getLastKnownPositionAsync"));
+  assert.ok(gate.indexOf("if (!isCurrent()) return;")
+    > gate.indexOf("Location.getLastKnownPositionAsync"));
 });
 
 test("confirmed availability change re-triggers the canonical GPS map gate", () => {
