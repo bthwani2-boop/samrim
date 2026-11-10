@@ -28,6 +28,10 @@ The durable Product root is `docs/governance/product.md`; the bounded ownership 
 
 Every admitted CAPABILITY_ID in product.md has exactly one section in one domain-owner document above. A section ID is not a separate service or semantic owner. Cross-cutting rules belong to the one best-fit document.
 
+## Current refoundation execution plan (non-authoritative)
+
+- `docs/governance/BTHWANI-FULL-SYSTEM-REFOUNDATION-PLAN.md` — owner only of the requested refoundation plan and dated initial audit snapshot. It is not a second Product/System/Policy authority, does not supersede the canonical owners above, and grants no deletion, reset, publication or Git operation permission.
+
 ## Authority and simplicity law
 ONE MATERIAL MEANING → ONE EDITABLE GOVERNANCE OWNER.
 ONE MATERIAL MUTABLE FACT → ONE CANONICAL SERVICE WRITER.
