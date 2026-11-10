@@ -63,7 +63,7 @@ export function StoreProfileTabs({
     <Panel id="operations" activeTab={activeTab}>
       {canViewOperations ? <div className="store-profile-tab-grid store-profile-focused-grid">
         <Card title="استقبال الطلبات وساعات العمل">
-          <StoreAvailabilityControls storeId={store.id} enabledModes={store.fulfillmentModes} />
+          <StoreAvailabilityControls key={store.id} storeId={store.id} enabledModes={store.fulfillmentModes} />
         </Card>
         <Card title="طرق تنفيذ الطلب">
           <StoreModeControls store={store} onUpdated={onUpdated} />

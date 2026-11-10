@@ -136,7 +136,7 @@ export function StoreProfileDetailPanels({ activeTab, store, partner, partnerErr
 
 
     <Panel id="hours" selected={activeTab === "hours"}>
-      {canViewOperations ? <StoreAvailabilityControls storeId={store.id} enabledModes={store.fulfillmentModes}/> :
+      {canViewOperations ? <StoreAvailabilityControls key={store.id} storeId={store.id} enabledModes={store.fulfillmentModes}/> :
         <Unavailable title="أوقات التشغيل وإدارة الاستقبال" reason="تعديل أوقات التشغيل وإيقاف استقبال الطلبات يتطلب صلاحية العمليات."/>}
       {joining?.firstStoreWorkingHours?.intervals.length ? <details className="store-intake-archive">
         <summary>ساعات الانضمام الأصلية (للمراجعة فقط)</summary>
