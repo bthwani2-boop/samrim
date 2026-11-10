@@ -333,3 +333,47 @@ test("a different authenticated login cannot reuse another session's expected re
     /PARTNER_AGREEMENT_SESSION_CHANGED/);
   assert.equal(fetches.length, 0);
 });
+
+test("Partner agreement request discards a response after Identity session changes during fetch", async () => {
+  const original = session("login-1");
+  let login = "login-1";
+  const response = deferred();
+  const fetches = [];
+  const ctx = {
+    currentIdentityState: () => ({ kind: "authenticated", identity: { role: "partner", subject: "merchant-a", sessionId: login } }),
+    partnerSetupSessionKey,
+    getUsableIdentityAccessToken: async () => "access-token-for-first-login",
+    dshBaseUrl: () => "https://dsh.fixture.invalid",
+    fetch: (...args) => { fetches.push(args); return response.promise; },
+    Error,
+  };
+  const request = vm.runInNewContext(requestCode, ctx);
+  const pending = request("/dsh/partner/stores/store-a/commercial-agreements", "GET", undefined, undefined, original);
+  await flush();
+  assert.equal(fetches.length, 1);
+  login = "login-2";
+  response.resolve({ ok: true, json: async () => ({ agreements: [agreement] }) });
+  await assert.rejects(pending, /PARTNER_AGREEMENT_SESSION_CHANGED/);
+});
+
+test("Partner agreement request discards a payload after Identity session changes during JSON read", async () => {
+  const original = session("login-1");
+  let login = "login-1";
+  const body = deferred();
+  let readingBody = false;
+  const ctx = {
+    currentIdentityState: () => ({ kind: "authenticated", identity: { role: "partner", subject: "merchant-a", sessionId: login } }),
+    partnerSetupSessionKey,
+    getUsableIdentityAccessToken: async () => "access-token-for-first-login",
+    dshBaseUrl: () => "https://dsh.fixture.invalid",
+    fetch: async () => ({ ok: true, json: () => { readingBody = true; return body.promise; } }),
+    Error,
+  };
+  const request = vm.runInNewContext(requestCode, ctx);
+  const pending = request("/dsh/partner/stores/store-a/commercial-agreements", "GET", undefined, undefined, original);
+  await flush();
+  assert.equal(readingBody, true);
+  login = "login-2";
+  body.resolve({ agreements: [agreement] });
+  await assert.rejects(pending, /PARTNER_AGREEMENT_SESSION_CHANGED/);
+});

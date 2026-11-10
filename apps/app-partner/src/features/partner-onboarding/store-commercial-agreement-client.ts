@@ -111,6 +111,7 @@ async function request<T>(
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const payload: unknown = await response.json().catch(() => null);
+  if (!sessionCurrent()) throw new Error("PARTNER_AGREEMENT_SESSION_CHANGED");
   if (!response.ok) {
     const error = isRecord(payload) ? (payload as DshErrorPayload).error : undefined;
     throw new StoreCommercialAgreementRequestError(
