@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { CommandFrame, CommandSectionTabs } from "../shared/command-surface";
@@ -21,8 +22,16 @@ export function HRCenterWorkspace() {
     return ()=>window.removeEventListener("popstate",restore);
   },[]);
   if(state.kind!=="authenticated")return null;
-  if(state.identity.role!=="operator"||!state.identity.permissions?.includes("hr"))
-    return <section className="state-content workspace-restricted" role="alert"><h1>صلاحية الموارد البشرية غير متاحة</h1><p>تحتاج إلى صلاحية الموارد البشرية لفتح ملفات الموظفين.</p></section>;
+  const hasHR=state.identity.role==="operator"&&state.identity.permissions?.includes("hr")===true;
+  const canManageOperators=state.identity.role==="operator"&&state.identity.canManageOperatorPermissions===true;
+  if(!hasHR&&!canManageOperators)
+    return <section className="state-content workspace-restricted" role="alert"><h1>صلاحية الإدارة غير متاحة</h1><p>تحتاج إلى صلاحية الموارد البشرية أو إدارة المشغّلين.</p></section>;
+  if(!hasHR) return <section className="workspace-page bt-hr-center" aria-label="الإدارة والموظفون">
+    <CommandFrame title="الإدارة والموظفون" subtitle="إدارة المشغّلين وفق تفويض Identity">
+      <p>سجل الموظفين يتطلب صلاحية الموارد البشرية.</p>
+      <p><Link href="/access" className="button button-secondary">الوصول والصلاحيات</Link></p>
+    </CommandFrame>
+  </section>;
   const navigate=(next:HRView)=>{
     const url=new URL(window.location.href);
     if(next==="command"){url.searchParams.delete("hrView");url.searchParams.delete("employee");}
@@ -38,7 +47,8 @@ export function HRCenterWorkspace() {
     setView("employees");
   };
   return <section className="workspace-page bt-hr-center" data-testid="hr-center">
-    <CommandFrame title="الموارد البشرية" subtitle="ملفات الموظفين والهيكل الإداري وقرارات المتابعة">
+    <CommandFrame title="الإدارة والموظفون" subtitle="ملفات الموظفين وقرارات الإدارة حسب الصلاحيات">
+      {canManageOperators?<p><Link href="/access" className="button button-secondary">الوصول والصلاحيات</Link></p>:null}
       <CommandSectionTabs label="أقسام الموارد البشرية" active={view} tabs={views} onSelect={navigate}/>
       {view==="command"?<HRCommandOverview onEmployee={openEmployee} onRegistry={()=>navigate("employees")}/>:
         <div className="bt-hr-register"><EmployeeDirectory/></div>}

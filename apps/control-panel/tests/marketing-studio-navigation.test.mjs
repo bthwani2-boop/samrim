@@ -20,5 +20,5 @@ test("Legacy Studio route remains reachable from Marketing and registry-backed e
   assert.match(marketingPage, /title: "التسويق والتصميم"/);
   assert.match(marketing, /<Link href="\/studio" className="button button-secondary">فتح استوديو التصميم<\/Link>/);
   assert.match(entries, /entry\.children\.some\(child => path === child\.href \|\| path\.startsWith\(child\.href \+ "\/"\)\)/);
-  assert.match(entries, /if \(destination\.permission && !identity\.permissions\?\.includes\(destination\.permission\)\) return false/);
+  assert.match(entries, /if \(!canOpenWorkspaceRoute\(identity, href\)\) return false/);
 });

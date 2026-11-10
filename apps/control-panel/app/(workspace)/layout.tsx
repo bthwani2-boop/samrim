@@ -8,7 +8,7 @@ import { type ReactNode, type RefObject, useEffect, useRef, useState } from "rea
 import { IdentitySurface } from "../../src/features/access/identity-surface";
 import { StoreCatalogWebMCPTools } from "../../src/features/webmcp/store-catalog-webmcp-tools";
 import { WorkspaceEntryWebMCPTools } from "../../src/features/webmcp/workspace-entry-tools";
-import { currentWorkspaceChild, currentWorkspaceDestination, dynamicWorkspaceRouteLabel, isCurrentWorkspaceDestination, workspaceCatalogResources, workspaceDestinations, workspaceSearchEntries } from "../../src/navigation/workspace-registry";
+import { canOpenWorkspaceDestination, canOpenWorkspaceRoute, currentWorkspaceChild, currentWorkspaceDestination, workspaceCatalogResources, workspaceDestinations, workspaceSearchEntries, dynamicWorkspaceRouteLabel } from "../../src/navigation/workspace-registry";
 import { useSession } from "../../src/session/session-provider";
 import { OperatorAccountDrawer } from "../../src/shell/operator-account-drawer";
 import { ControlShell, LoadingState, UnavailableState } from "../../src/shell/public-shell";
@@ -20,20 +20,6 @@ function currentChild(pathname: string, destination: (typeof workspaceDestinatio
   if (child) return child;
   const label = dynamicWorkspaceRouteLabel(pathname);
   return label ? { href: pathname, label } : null;
-}
-
-function canOpenWorkspaceDestination(identity: ActorIdentity, destination: (typeof workspaceDestinations)[number]) {
-  if (destination.initialOperatorAdminOnly && !identity.canManageOperatorPermissions) return false;
-  return !destination.permission || identity.permissions?.includes(destination.permission) === true;
-}
-
-function canOpenWorkspaceRoute(identity: ActorIdentity, href: string) {
-  // Cross-store catalog history retains both DSH operator grants, even when reached through Catalog.
-  if (href === "/catalog-activity" && !identity.permissions?.includes("partners")) return false;
-  // The shared recovery page serves partners as well as catalog operators.
-  if (href === "/catalog/trash" && identity.permissions?.includes("partners")) return true;
-  const destination = workspaceDestinations.find((candidate) => isCurrentWorkspaceDestination(href, candidate));
-  return !destination || canOpenWorkspaceDestination(identity, destination);
 }
 
 function workspaceNavigationContext(pathname: string, identity: ActorIdentity | null) {
@@ -191,8 +177,9 @@ function WorkspaceNavigation({
   onToggleDensity: () => void;
 }>) {
   const { state } = useSession();
-  const visibleDestinations = state.kind === "authenticated"
-    ? workspaceDestinations.filter((destination) => destination.showInWorkspaceNavigation !== false && canOpenWorkspaceDestination(state.identity, destination))
+  const identity = state.kind === "authenticated" ? state.identity : null;
+  const visibleDestinations = identity
+    ? workspaceDestinations.filter((destination) => destination.showInWorkspaceNavigation !== false && canOpenWorkspaceDestination(identity, destination))
     : [];
   const activeDestination = workspaceNavigationContext(pathname, state.kind === "authenticated" ? state.identity : null).destination;
   const activeChild = currentWorkspaceChild(pathname, activeDestination);
@@ -202,7 +189,7 @@ function WorkspaceNavigation({
   const items: MenuProps["items"] = visibleDestinations.flatMap((destination, index) => {
     const current = activeDestination.href === destination.href;
     const childItems = current && (!compact || open) ? destination.children
-      .filter((child) => child.showInWorkspaceNavigation !== false && child.href !== destination.href)
+      .filter((child) => child.showInWorkspaceNavigation !== false && child.href !== destination.href && identity !== null && canOpenWorkspaceRoute(identity, child.href))
       .map((child) => ({
         key: child.href,
         className: "workspace-nav-child-item",

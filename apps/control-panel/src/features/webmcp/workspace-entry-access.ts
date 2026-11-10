@@ -1,5 +1,5 @@
 import type { ActorIdentity } from "@bthwani/identity";
-import { workspaceDestinations, workspaceSearchEntries } from "../../navigation/workspace-registry";
+import { canOpenWorkspaceRoute, workspaceDestinations, workspaceSearchEntries } from "../../navigation/workspace-registry";
 import { policyCapabilities } from "../policies/policy-capabilities";
 
 export type WorkspaceEntry = Readonly<{ href: string; label: string; context: string }>;
@@ -19,10 +19,7 @@ export function allowedWorkspaceEntries(identity: ActorIdentity): WorkspaceEntry
   const canOpen = (href: string) => {
     const root = categoryRoute(href);
     if (!root) return false;
-    const destination = workspaceDestinations.find(entry => entry.href === root);
-    if (!destination) return false;
-    if (destination.initialOperatorAdminOnly && !identity.canManageOperatorPermissions) return false;
-    if (destination.permission && !identity.permissions?.includes(destination.permission)) return false;
+    if (!canOpenWorkspaceRoute(identity, href)) return false;
     const policy = policyCapabilities.find(value => value.href === href);
     if (policy && policy.additionalPermission && !identity.permissions?.includes(policy.additionalPermission)) return false;
     return true;
