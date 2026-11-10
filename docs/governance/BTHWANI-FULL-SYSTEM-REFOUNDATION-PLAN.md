@@ -264,3 +264,20 @@ An actual plan must be created/edited/versioned **only at WLT** and enforced onl
 ### Full-system closure remains gated
 
 The full refoundation stays **NOT_DONE** until each admitted capability and affected subfeature has canonical owner readback, negative authorization and concurrency/security/financial proof where relevant, Arabic RTL/accessibility/recovery on affected real platforms, proper migration and dependency cutover, and required independent review. A passing governance or static test is a **governance start aid**, not a certificate that the rebuilt product operates.
+
+
+## 13. Verified baseline gaps and implementation acceptance — 2026-11-10
+
+This is **dated source-derived implementation evidence**, not a duplicate legal Product/UX/finance decision, a claim of release, or permission to bypass canonical owners. Re-check source and HEAD immediately before acting, because the baseline may have moved. Owner meaning remains in the routed governance files.
+
+| Verified existing source gap at review | Canonical implementation owner and expected acceptance | Baseline status |
+| --- | --- | --- |
+| Operator navigation still exposes separate `/partners` and `/independent-stores` top-level destinations | Control Panel composition, one DSH Store registry with server relation filters, role-specific actions and both existing links safely cut over | NOT_DONE |
+| `partner-more.tsx` gates Orders entry on `BTHWANI_PARTNER` while `partner-orders.tsx` uses `canUseStoreOrders` for authorized Store selection; `partner-shell.tsx` additionally narrows the Orders Store selector | Partner Expo native/web presentation, canonical DSH availability and checkout readiness; reconcile links, selectors and true unavailable states; prove two owner accounts and real Store-scoped data | NOT_DONE |
+| `joiningcase/store_commercial_agreement.go` still rejects non-marketplace relation in the proposal path | DSH handoff + WLT canonical agreement writer, preserve unsupported activation rejection; demonstrate both relation/model proposals and accepted terms only after independent finance readiness review | NOT_RELEASED |
+| `template-studio-workspace.tsx` remains `CLIENT_HOME`-centric and Store-scoped Partner Design My Store is not proven | DSH one Store-bound Studio publication + Identity grant, same Studio schema and direct Client Expo Web full Store consumer; prove cross-Store denials, revision conflicts, preview/publish/rollback | NOT_DONE |
+| Policies workspace currently exposes a bounded nine-capability UI instead of the whole target policy vocabulary | Existing Control Panel Policies composition calls DSH/WLT/Identity owners; add only actually supported controls with owner-sourced effective values, approved defaults, impact preview and real behavioral readback | PARTIAL |
+| A first-Store writer exists; a public additional-Store creation route was not confirmed in this review | One DSH additional-Store creation contract for Partner and authorized Operator entry, exact owner/scoped replay and multiple-Store selection; never clone the Store table or writer | NOT_PROVEN |
+| Full direct-store checkout, recurring invoices and BThwani-run direct collection are not released | DSH Order + WLT finance and Identity eligibility with actual owner-backed balances, snapshots, idempotency and negative tests before any launch | NOT_RELEASED |
+
+This table records the **known affected cone**, not an exhaustive review of every repository file; future concrete discoveries are routed to the same canonical owners and the task's bounded proof, not to a new permanent parallel backlog. A source mismatch does not authorize deleting a feature or loosening security simply to make the UI match the target. Even after all rows are resolved, complete platform closure requires every admitted capability and conserved subfeature to pass its applicable authentic end-to-end and independent financial/security review gates.

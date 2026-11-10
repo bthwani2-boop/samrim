@@ -50,6 +50,12 @@ Existing joining cases, correction evidence, encrypted proof identifiers, Field-
 - Store publication, current orderability, visible offers, serviceability and checkout eligibility are separately evaluated; publication is not a promise that the Store is open now.
 - One Partner may own several Stores. Subsequent Store creation must reuse DSH and Identity authority but is not represented as delivered by the first-Store-only creation writer.
 
+### Further Stores: one DSH create command, two authorized entry points
+
+The approved **target** for every additional Store is one canonical DSH Store creation operation (with authorized Partner self-service and Operator-administered entry points), not a second "additional Store" engine or duplicate Store identity. Identity supplies the authenticated acting actor and role; DSH verifies the intended owning Merchant actor, Store-scoped operator authority, relation-model admission policy, active City/type/vertical and replay/version rules at mutation time. An Operator cannot use a form to impersonate a Merchant or grant a new Identity role. The same validation and state defaults apply regardless of which entry point invokes the command. The first-Store shortcut may remain a user-experience convenience only when it invokes the original DSH owner and preserves its existing exact replay semantics.
+
+Each new Store gets its own identity, relation, draft catalog/offers, publication/readiness and separately accepted WLT agreement; neither a new Store nor a switch to another Store inherits publication, wallet access, staff grants or paid entitlements from an existing Store. Multiple owned Stores use server-authorized Store selection. Concurrent creation/retry must not create duplicates or overwrite another Store; failure recovery reads DSH's persisted outcome. This is a **target contract**; the present first-Store-only endpoint is not evidence that additional-Store creation has been shipped.
+
 ### Current lifecycle — not legacy JoiningCase
 
 1. Identity verifies the person through the canonical Client proof and directly admits a Partner session for a new eligible Partner, without a new JoiningCase or preliminary Operator approval.

@@ -159,6 +159,12 @@ if (!experienceGovernance.includes("full Store view opened via the Store's direc
 if (!experienceGovernance.includes("one Stores management center") ||
     experienceGovernance.includes("eleven work centers:"))
   fail("single Operator Stores center governance missing or superseded");
+if (!experienceGovernance.includes("Merchant management experience") ||
+    !experienceGovernance.includes("One canonical eligibility/readback decision"))
+  fail("Merchant mobile/web Store management parity contract missing");
+if (!storeGovernance.includes("Further Stores: one DSH create command") ||
+    !storeGovernance.includes("The same validation and state defaults apply"))
+  fail("additional Store single-writer/dual-entrypoint contract missing");
 const catalogGovernance = get("docs/governance/catalog.md");
 const engineeringGovernance = get("docs/governance/engineering.md");
 const platformGovernance = get("docs/governance/platform.md");
