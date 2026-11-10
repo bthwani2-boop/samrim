@@ -4,11 +4,11 @@ import { type Href, Link, useIsFocused, useLocalSearchParams } from "expo-router
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Text, View } from "react-native";
 
+import { captainSessionKey } from "../../bootstrap/captain-session-scope";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
 import { claimCaptainOfferResponse, isCaptainOfferActionable } from "./captain-offer-response-guard";
 import { createCaptainOperationStyles } from "./captain-operation-styles";
-import { isCurrentCaptainActor } from "../../bootstrap/captain-session-scope";
 
 export function CaptainOffers({ compact = false, popup = false, suppressed = false }: { compact?: boolean; popup?: boolean; suppressed?: boolean } = {}) {
   const theme = useAppearanceTheme();
@@ -17,9 +17,11 @@ export function CaptainOffers({ compact = false, popup = false, suppressed = fal
   const { q: rawQuery } = useLocalSearchParams<{ q?: string | string[] }>();
   const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
   const [offers, setOffers] = useState<ReadonlyArray<CaptainOffer>>([]);
-  const [loadedActorID, setLoadedActorID] = useState("");
+  const [loadedSessionKey, setLoadedSessionKey] = useState("");
   const [identityState, setIdentityState] = useState(currentIdentityState);
-  const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
+  const sessionKey = captainSessionKey(identityState);
+  const currentOffersSession = Boolean(sessionKey) && loadedSessionKey === sessionKey
+    && captainSessionKey(currentIdentityState()) === sessionKey;
   const readSequence = useRef(0);
   const responseInFlight = useRef(new Set<string>());
   const [loading, setLoading] = useState(true);
@@ -29,58 +31,56 @@ export function CaptainOffers({ compact = false, popup = false, suppressed = fal
 
   const load = useCallback(async (): Promise<boolean> => {
     const sequence = ++readSequence.current;
-    const session = currentIdentityState();
-    const actorID = session.kind === "authenticated" ? session.identity.subject.trim() : "";
+    const requestSession = captainSessionKey(currentIdentityState());
+    const isCurrent = () => Boolean(requestSession) && sequence === readSequence.current
+      && captainSessionKey(currentIdentityState()) === requestSession;
     setLoading(true);
     setOffers([]);
-    setLoadedActorID("");
+    setLoadedSessionKey("");
     setError("");
-    if (!actorID) {
+    if (!requestSession) {
       setLoading(false);
       setError("سجّل الدخول لقراءة عروض الكابتن.");
       return false;
     }
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!isCurrent()) return false;
       const response = await captainClient().listOwnCaptainOffers(token);
-      const current = currentIdentityState();
-      if (sequence !== readSequence.current || current.kind !== "authenticated" || !isCurrentCaptainActor(actorID, current.identity.subject.trim())) return false;
+      if (!isCurrent()) return false;
       setOffers(response.offers);
-      setLoadedActorID(actorID);
+      setLoadedSessionKey(requestSession);
       return true;
     } catch (cause) {
-      console.error("DSH Captain offers readback failed", cause);
-      const current = currentIdentityState();
-      if (sequence === readSequence.current && current.kind === "authenticated" && isCurrentCaptainActor(actorID, current.identity.subject.trim())) setError("تعذر قراءة عروض التوصيل. أعد المحاولة.");
+      if (isCurrent()) {
+        console.error("DSH Captain offers readback failed", cause);
+        setError("تعذر قراءة عروض التوصيل. أعد المحاولة.");
+      }
       return false;
     } finally {
-      if (sequence === readSequence.current) setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, []);
 
   useEffect(() => subscribeIdentitySession(setIdentityState), []);
   useEffect(() => {
-    if (suppressed) {
+    if (suppressed || !sessionKey) {
       readSequence.current += 1;
       setOffers([]);
-      setLoadedActorID("");
+      setLoadedSessionKey("");
       setLoading(false);
+      setBusy("");
       setError("");
       return;
     }
-    if (!activeActorID) {
-      readSequence.current += 1;
-      setOffers([]);
-      setLoadedActorID("");
-      setLoading(false);
-      return;
-    }
-    if (!suppressed) void load();
-  }, [activeActorID, load, suppressed]);
+    setBusy("");
+    setDismissedOfferId("");
+    void load();
+  }, [sessionKey, load, suppressed]);
   // Losing offers disappear from the active screen after the server's
   // atomic supersession, without requiring the other captain to tap Refresh.
   useEffect(() => {
-    if (!isFocused || suppressed || !activeActorID || loadedActorID !== activeActorID || loading) return;
+    if (!isFocused || suppressed || !currentOffersSession || loading) return;
     let cancelled = false;
     let refreshInFlight = false;
     const refresh = async () => {
@@ -89,9 +89,9 @@ export function CaptainOffers({ compact = false, popup = false, suppressed = fal
       const sequence = readSequence.current;
       try {
         const token = await getUsableIdentityAccessToken();
+        if (cancelled || sequence !== readSequence.current || captainSessionKey(currentIdentityState()) !== sessionKey) return;
         const response = await captainClient().listOwnCaptainOffers(token);
-        const session = currentIdentityState();
-        if (!cancelled && sequence === readSequence.current && session.kind === "authenticated" && isCurrentCaptainActor(activeActorID, session.identity.subject.trim())) {
+        if (!cancelled && sequence === readSequence.current && captainSessionKey(currentIdentityState()) === sessionKey) {
           setOffers(response.offers);
         }
       } catch {
@@ -102,36 +102,33 @@ export function CaptainOffers({ compact = false, popup = false, suppressed = fal
     };
     const timer = setInterval(() => void refresh(), popup ? 2500 : 5000);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [isFocused, suppressed, activeActorID, loadedActorID, busy, loading, popup]);
+  }, [isFocused, suppressed, currentOffersSession, sessionKey, busy, loading, popup]);
 
-  const scopedOffers = isCurrentCaptainActor(loadedActorID, activeActorID) ? offers : [];
+  const scopedOffers = currentOffersSession ? offers : [];
   const filteredOffers = useMemo(() => { const query = searchQuery.trim().toLocaleLowerCase(); if (!query) return scopedOffers; return scopedOffers.filter((offer) => [offer.id, offer.orderId, offer.storeName, offer.deliveryAreaText].join(" ").toLocaleLowerCase().includes(query)); }, [scopedOffers, searchQuery]);
 
   const orderedOffers = [...filteredOffers].filter((offer) => !compact || isCaptainOfferActionable(offer))
     .sort((left, right) => Number(right.state === "offered") - Number(left.state === "offered"));
 
   async function respond(offer: CaptainOffer, decision: "accept" | "reject") {
-    if (busy || loading || !isCurrentCaptainActor(loadedActorID, activeActorID) || !isCaptainOfferActionable(offer) || !offers.some((current) => current.id === offer.id && current.version === offer.version && isCaptainOfferActionable(current))) return;
+    if (busy || loading || !currentOffersSession || !isCaptainOfferActionable(offer) || !offers.some((current) => current.id === offer.id && current.version === offer.version && isCaptainOfferActionable(current))) return;
     if (!claimCaptainOfferResponse(responseInFlight.current, offer.id)) return;
-    const actorID = loadedActorID;
+    const offerSession = loadedSessionKey;
+    const isCurrent = () => Boolean(offerSession) && captainSessionKey(currentIdentityState()) === offerSession;
     setBusy(offer.id);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const current = currentIdentityState();
-      if (current.kind !== "authenticated" || !isCurrentCaptainActor(actorID, current.identity.subject.trim())) return;
+      if (!isCurrent()) return;
       await captainClient().respondToCaptainOffer(token, offer.id, { decision }, offer.version);
-      const after = currentIdentityState();
-      if (after.kind !== "authenticated" || !isCurrentCaptainActor(actorID, after.identity.subject.trim())) return;
+      if (!isCurrent()) return;
       await load();
     } catch (cause) {
       const insufficientFunds = typeof cause === "object" && cause !== null && "code" in cause && cause.code === "INSUFFICIENT_FUNDS";
       if (!insufficientFunds) console.error("DSH Captain offer response failed", cause);
-      const current = currentIdentityState();
-      if (current.kind !== "authenticated" || !isCurrentCaptainActor(actorID, current.identity.subject.trim())) return;
+      if (!isCurrent()) return;
       const verified = await load();
-      const afterRead = currentIdentityState();
-      if (afterRead.kind !== "authenticated" || !isCurrentCaptainActor(actorID, afterRead.identity.subject.trim())) return;
+      if (!isCurrent()) return;
       setError(insufficientFunds && verified
         ? "رصيد محفظتك المتاح لا يكفي لضمان التحصيل النقدي لهذا الطلب. لم يُقبل العرض؛ يلزم توفير الرصيد عبر قناة شحن معتمدة."
         : verified
@@ -139,7 +136,7 @@ export function CaptainOffers({ compact = false, popup = false, suppressed = fal
           : "لم نتأكد من نتيجة الرد وتعذرت إعادة قراءة العروض. لا تعِد إرسال القرار حتى تظهر النتيجة المؤكدة تلقائيًا.");
     } finally {
       responseInFlight.current.delete(offer.id);
-      setBusy("");
+      if (isCurrent()) setBusy("");
     }
   }
 
@@ -182,7 +179,7 @@ export function CaptainOffers({ compact = false, popup = false, suppressed = fal
       {!loading ? orderedOffers.map((offer) => <View key={offer.id} style={compact ? styles.compactOfferCard : styles.card}>
         <View style={styles.orderHeader}>
           <View style={styles.offerIdentity}>
-            {offer.storeProfileImage?.uri ? <Image accessibilityLabel={"شعار متجر " + offer.storeName} source={{ uri: offer.storeProfileImage.uri }} style={styles.offerThumbnail} resizeMode="cover" /> : null}
+            {offer.storeProfileImage?.uri ? <Image accessibilityLabel={`شعار متجر ${offer.storeName}`} source={{ uri: offer.storeProfileImage.uri }} style={styles.offerThumbnail} resizeMode="cover" /> : null}
             <View style={styles.offerIdentityCopy}>
               <Text style={styles.cardTitle}>{offer.storeName}</Text>
               <Text style={styles.muted}>{offer.fulfillmentMode === "PARTNER_CAPTAIN" ? "توصيل المتجر" : "توصيل بثواني"}</Text>
@@ -201,8 +198,8 @@ export function CaptainOffers({ compact = false, popup = false, suppressed = fal
         </View>
         {offer.state === "offered" ? <Text style={styles.muted}>آخر موعد للرد: {new Date(offer.expiresAt).toLocaleString("ar-YE")}</Text> : null}
         {isCaptainOfferActionable(offer) ? <View style={styles.row}>
-          <BthwaniButton busy={busy === offer.id} disabled={Boolean(busy) || loading || !isCurrentCaptainActor(loadedActorID, activeActorID)} label="قبول" onPress={() => void respond(offer, "accept")} style={styles.actionButton} />
-          <BthwaniButton disabled={Boolean(busy) || loading || !isCurrentCaptainActor(loadedActorID, activeActorID)} label="رفض" onPress={() => void respond(offer, "reject")} style={styles.actionButton} variant="secondary" />
+          <BthwaniButton busy={busy === offer.id} disabled={Boolean(busy) || loading || !currentOffersSession} label="قبول" onPress={() => void respond(offer, "accept")} style={styles.actionButton} />
+          <BthwaniButton disabled={Boolean(busy) || loading || !currentOffersSession} label="رفض" onPress={() => void respond(offer, "reject")} style={styles.actionButton} variant="secondary" />
         </View> : offer.state === "offered" ? <Text style={styles.muted}>انتهت مهلة الرد أو لم تعد صالحة. حدّث العروض للتحقق من حالتها.</Text> : null}
       </View>) : null}
       {error && !compact ? <BthwaniButton busy={loading} disabled={Boolean(busy) || loading} label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /> : null}
