@@ -1,17 +1,22 @@
 import { spacing, typography } from "@bthwani/design-system";
 import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { PartnerFinancialSummaryCard } from "../account/partner-financial-summary";
 import { PartnerPayoutCard } from "../account/partner-payout-card";
 import { StorePayoutRecipientsCard } from "./store-payout-recipients-card";
 import { createPartnerSurfaceStyles } from "../partner-onboarding/partner-surface-styles";
 import { usePartnerStoreScope } from "../partner-onboarding/partner-store-scope-context";
+import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
+import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";
+
+const currentPartnerSessionKey = () => partnerSetupSessionKey(currentIdentityState());
 
 type WalletAction = "payout" | "recipients";
 
 export default function PartnerWallet() {
   const theme = useAppearanceTheme();
+  const sessionKey = useSyncExternalStore(subscribeIdentitySession, currentPartnerSessionKey, () => "");
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const premium = useMemo(() => StyleSheet.create({
     title: { ...typography.titleLg, fontSize: 28, fontWeight: "800", color: theme.color },
@@ -45,7 +50,7 @@ export default function PartnerWallet() {
     {canRequestPayout ? actionButton("payout", "طلب صرف") : null}
   </View> : null;
   const workflow = openAction === "payout" && canRequestPayout ? <View style={premium.panel}><PartnerPayoutCard key={"payout:" + payoutScopeKey} /></View>
-    : openAction === "recipients" && ownsAnyStore ? <View style={premium.panel}><StorePayoutRecipientsCard key={"recipients:" + ownerScopeKey} /></View> : null;
+    : openAction === "recipients" && ownsAnyStore ? <View style={premium.panel}><StorePayoutRecipientsCard key={"recipients:" + sessionKey + ":" + ownerScopeKey} /></View> : null;
   return <View style={[styles.container, { gap: 9, paddingTop: 10 }]} accessibilityLabel="محفظة الشريك">
     {canReadFinance ? <PartnerFinancialSummaryCard key={`finance:${financeScopeKey}`} actions={actionRow} workflow={workflow} /> : <>{actionRow}{workflow}</>}
     {!canReadFinance && !canRequestPayout && !ownsAnyStore ? <Text style={styles.muted}>لا توجد صلاحية مالية لهذا الحساب.</Text> : null}
