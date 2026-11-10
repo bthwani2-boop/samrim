@@ -52,7 +52,7 @@ function currentPartnerActor(): string {
   return session.kind === "authenticated" ? session.identity.subject.trim() : "";
 }
 
-export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
+export function OrderManagement({ storeId, storeIds }: { storeId?: string | undefined; storeIds?: ReadonlyArray<string> | undefined }) {
   const router = useRouter();
   const theme = useAppearanceTheme();
   const insets=useSafeAreaInsets();
@@ -64,6 +64,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const targetOrderId = (Array.isArray(rawTargetOrder) ? rawTargetOrder[0] : rawTargetOrder)?.trim() ?? "";
   const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
   const { stores: scopedStores } = usePartnerStoreScope();
+  const requestedStoreIDs = useMemo(() => storeId ? [storeId] : [...(storeIds ?? [])].sort(), [storeId, storeIds]);
   const fulfillableStoreIDs = useMemo(() => new Set(scopedStores.filter((store) => store.owned || store.permissions.includes("fulfillment")).map((store) => store.id)), [scopedStores]);
   const canFulfillOrder = useCallback((orderStoreID: string) => fulfillableStoreIDs.has(orderStoreID), [fulfillableStoreIDs]);
   const loadGeneration = useRef(0);
@@ -92,7 +93,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   useEffect(() => { const timer = setTimeout(() => setDebouncedSearch(searchQuery), 350); return () => clearTimeout(timer); }, [searchQuery]);
   const normalizedSearch = targetOrderId || debouncedSearch.trim();
   const unreadScope = useSyncExternalStore(subscribeIdentitySession, currentPartnerActor, () => "");
-  const requestScopeKey = JSON.stringify([unreadScope, storeId ?? "", filter, normalizedSearch]);
+  const requestScopeKey = JSON.stringify([unreadScope, requestedStoreIDs, filter, normalizedSearch]);
   const activeScopeKey = useRef(requestScopeKey);
   const getChatUnread = useCallback(async (orderId: string) => {
     const token = await getUsableIdentityAccessToken();
@@ -112,16 +113,20 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
     }
     setError("");
     try {
+      if (!requestedStoreIDs.length || requestedStoreIDs.length > 200) throw new Error("PARTNER_ORDER_SCOPE_INVALID");
       const token = await getUsableIdentityAccessToken();
       const queueStates = targetOrderId ? undefined : queueFilters.find(({ key }) => key === filter)?.states;
       const response = await client().listPartnerOrders(token, {
-        ...(storeId ? { storeIds: [storeId] } : {}),
+        storeIds: requestedStoreIDs,
         ...(queueStates ? { state: queueStates.join(",") } : {}),
         ...(normalizedSearch ? { q: normalizedSearch } : {}),
         ...(options.append && options.cursor ? { cursor: options.cursor } : {}),
         limit: 50,
       });
       if (!isCurrentOrderListRequest(generation, requestScopeKey, loadGeneration.current, activeScopeKey.current)) return;
+      if (!Array.isArray(response.orders) || response.orders.some((order) => !requestedStoreIDs.includes(order.storeId))) {
+        throw new Error("PARTNER_ORDER_SCOPE_MISMATCH");
+      }
       setOrders((current) => options.append ? [...current, ...response.orders.filter((order) => !current.some((existing) => existing.id === order.id))] : response.orders);
       setAttention(response.attention);
       setCursor(response.nextCursor ?? "");
@@ -165,7 +170,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
     } finally {
       if (isCurrentOrderListRequest(generation, requestScopeKey, loadGeneration.current, activeScopeKey.current)) { if (!options.quiet) setLoading(false); setLoadingMore(false); }
     }
-  }, [canFulfillOrder, filter, normalizedSearch, requestScopeKey, storeId, targetOrderId]);
+  }, [canFulfillOrder, filter, normalizedSearch, requestScopeKey, requestedStoreIDs, targetOrderId]);
 
   useLayoutEffect(() => {
     activeScopeKey.current = requestScopeKey;

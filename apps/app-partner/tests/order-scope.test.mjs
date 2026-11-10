@@ -4,7 +4,7 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript-ast";
 import { isCurrentOrderListRequest } from "../src/features/order-management/order-page-records.ts";
-import { canUseStoreOrders, derivePartnerAuthority } from "../src/shell/partner-authority.ts";
+import { canUseStoreOrders, derivePartnerAuthority, isMarketplaceStore } from "../src/shell/partner-authority.ts";
 
 function deferred() {
   let resolve;
@@ -46,7 +46,7 @@ test("real partner order list clears prior scope and prevents old mutations from
   const source = readFileSync(new URL("../src/features/order-management/order-management.tsx", import.meta.url), "utf8");
   assert.match(source, /function currentPartnerActor\(\): string \{[\s\S]*?currentIdentityState\(\)[\s\S]*?session\.identity\.subject\.trim\(\)/u);
   assert.match(source, /useSyncExternalStore\(subscribeIdentitySession, currentPartnerActor, \(\) => ""\)/u);
-  assert.match(source, /const requestScopeKey = JSON\.stringify\(\[unreadScope, storeId \?\? "", filter, normalizedSearch\]\)/u);
+  assert.match(source, /const requestScopeKey = JSON\.stringify\(\[unreadScope, requestedStoreIDs, filter, normalizedSearch\]\)/u);
   assert.match(source, /if \(requestScopeKey !== activeScopeKey\.current\) return;\s*const generation/u);
   assert.match(source, /useLayoutEffect\(\(\) => \{[\s\S]*?setOrders\(\[\]\);[\s\S]*?setAssignments\(\{\}\);[\s\S]*?setChatOrderId\(""\);/u);
   assert.match(source, /if \(!isCurrentOrderListRequest\(generation, requestScopeKey, loadGeneration\.current, activeScopeKey\.current\)\) return;/u);
@@ -145,4 +145,101 @@ test("unauthorized and unresolved Orders deep links never override the active St
   assert.equal(appliedTargetStore.current, "", "no unauthorized target is consumed");
   drive("ready", true);
   assert.deepEqual(selected, ["store-secret"]);
+});
+
+function productionInitializer(source, name) {
+  const tree = ts.createSourceFile("merchant-order-scope.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let expression;
+  function visit(node) {
+    if (ts.isVariableDeclaration(node) && node.name.getText(tree) === name && node.initializer) {
+      expression = node.initializer.getText(tree);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(tree);
+  assert.ok(expression, "missing production initializer: " + name);
+  return ts.transpileModule("const " + name + " = " + expression + "; " + name + ";", {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+  }).outputText;
+}
+
+const ordersPage = readFileSync(new URL("../src/features/partner-onboarding/partner-orders.tsx", import.meta.url), "utf8");
+const ordersManagement = readFileSync(new URL("../src/features/order-management/order-management.tsx", import.meta.url), "utf8");
+
+test("marketplace aggregate builds only authorized marketplace Store IDs from canonical Store scopes", () => {
+  const stores = [
+    { id: "market-b", relationModel: "BTHWANI_PARTNER", owned: true, permissions: [] },
+    { id: "independent", relationModel: "INDEPENDENT_STORE", owned: true, permissions: ["orders"] },
+    { id: "market-a", relationModel: "BTHWANI_PARTNER", owned: false, permissions: ["orders"] },
+    { id: "market-forbidden", relationModel: "BTHWANI_PARTNER", owned: false, permissions: ["catalog"] },
+  ];
+  const ids = runInNewContext(productionInitializer(ordersPage, "marketOrderStoreIDs"), {
+    stores, useMemo: fn => fn(), isMarketplaceStore, canUseStoreOrders,
+  });
+  assert.deepEqual(Array.from(ids), ["market-a", "market-b"]);
+  assert.match(ordersPage, /aggregateMode \? <OrderManagement key="all-marketplace" storeIds=\{marketOrderStoreIDs\}/);
+  assert.match(ordersPage, /marketAggregateTooLarge = marketOrderStoreIDs\.length > 200/);
+  assert.match(ordersPage, /غير متاح لأكثر من 200 متجر/);
+});
+
+function invokeProductionOrderLoad(requestedStoreIDs, response = { orders: [], nextCursor: "", attention: null }) {
+  const requests = [];
+  const errors = [];
+  const displayed = [];
+  const activeScopeKey = { current: "actor-a:scope-a" };
+  const loadGeneration = { current: 0 };
+  const context = {
+    useCallback: fn => fn,
+    requestScopeKey: "actor-a:scope-a",
+    activeScopeKey, loadGeneration, requestedStoreIDs,
+    targetOrderId: "", filter: "ACTIVE", normalizedSearch: "",
+    queueFilters: [{ key: "ACTIVE", states: ["CREATED"] }],
+    canFulfillOrder: () => false,
+    getUsableIdentityAccessToken: async () => "token-a",
+    client: () => ({ listPartnerOrders: async (token, options) => {
+      requests.push({ token, options });
+      return response;
+    } }),
+    isCurrentOrderListRequest: (generation, key, currentGeneration, activeKey) =>
+      generation === currentGeneration && key === activeKey,
+    setLoading: () => {}, setLoadingMore: () => {}, setCursor: () => {},
+    setHasMore: () => {}, setSidecarError: () => {}, setAttention: () => {},
+    setError: value => errors.push(value),
+    setOrders: updater => displayed.push(typeof updater === "function" ? updater([]) : updater),
+    console: { error: () => {} },
+  };
+  const load = runInNewContext(productionInitializer(ordersManagement, "load"), context);
+  return { run: () => load(), requests, errors, displayed, activeScopeKey };
+}
+
+test("canonical Partner order reader sends exact selected market scope and rejects a foreign Store in readback", async () => {
+  const good = invokeProductionOrderLoad(["market-a", "market-b"], {
+    orders: [{ id: "order-a", storeId: "market-a", state: "CREATED", fulfillmentMode: "CUSTOMER_PICKUP" }],
+    nextCursor: "", attention: null,
+  });
+  await good.run();
+  assert.equal(good.requests.length, 1);
+  assert.equal(good.requests[0].token, "token-a");
+  assert.deepEqual(Array.from(good.requests[0].options.storeIds), ["market-a", "market-b"]);
+  assert.equal(good.displayed.length, 1);
+
+  const foreign = invokeProductionOrderLoad(["market-a", "market-b"], {
+    orders: [{ id: "independent-order", storeId: "independent", state: "CREATED", fulfillmentMode: "CUSTOMER_PICKUP" }],
+    nextCursor: "", attention: null,
+  });
+  await foreign.run();
+  assert.equal(foreign.requests.length, 1);
+  assert.equal(foreign.displayed.length, 0, "foreign relation readback must never reach visible Order state");
+  assert.ok(foreign.errors.some(Boolean));
+});
+
+test("missing or oversized Store scope fails closed without falling back to all authorized Orders", async () => {
+  for (const ids of [[], Array.from({ length: 201 }, (_, i) => "market-" + i)]) {
+    const run = invokeProductionOrderLoad(ids);
+    await run.run();
+    assert.equal(run.requests.length, 0, "unscoped/oversized reads must never reach DSH");
+    assert.equal(run.displayed.length, 0);
+    assert.ok(run.errors.some(Boolean));
+  }
+  assert.match(ordersManagement, /JSON\.stringify\(\[unreadScope, requestedStoreIDs, filter, normalizedSearch\]\)/);
 });
