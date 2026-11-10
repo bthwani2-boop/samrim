@@ -1,9 +1,8 @@
 import { useLocalSearchParams, useRouter, type Href } from "expo-router";
 import { useEffect, useState } from "react";
 import type { PublicPromotionView } from "@bthwani/dsh";
-import { BthwaniButton, BthwaniIcon, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { resolveTheme, spacing, typography } from "@bthwani/design-system";
-import { StyleSheet, Text, View } from "react-native";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
+import { Button, Heading, Text, View } from "tamagui";
 import { useServiceCityScope } from "../../src/features/service-city/service-city-scope";
 import { resolvedDiscoveryDestination } from "../../src/features/store-discovery/discovery-reel-destination";
 import { listPublicPromotions, resolvePublicDiscoveryContentTarget } from "../../src/features/store-discovery/store-discovery-client";
@@ -13,7 +12,6 @@ import { ClientPublicShell, ClientScrollScreen } from "../../src/shell/client-sh
 export default function DiscoveryContentRoute() {
   const router = useRouter();
   const theme = useAppearanceTheme();
-  const styles = createStyles(theme);
   const { selectedCityID } = useServiceCityScope();
   const { contentId: rawContentId } = useLocalSearchParams<{ contentId?: string | string[] }>();
   const contentId = Array.isArray(rawContentId) ? rawContentId[0] ?? "" : rawContentId ?? "";
@@ -59,25 +57,21 @@ export default function DiscoveryContentRoute() {
   return (
     <ClientPublicShell>
       <ClientScrollScreen>
-        <View style={styles.container}>
-          <BthwaniSurface tone="inset" style={styles.card}>
-            <BthwaniIcon name="store" color={theme.interactiveText} size={56} />
-            <Text accessibilityRole="header" style={styles.title}>وجهة المحتوى</Text>
-            {message ? <Text accessibilityRole="alert" style={styles.message}>{message}</Text> : null}
+        <View style={{ alignItems: "center", justifyContent: "center", minHeight: 480, padding: 16, width: "100%" }}>
+          <View gap="3" style={{ alignItems: "center", backgroundColor: theme.surfaceInset, borderRadius: 24, padding: 20, width: "100%" }}>
+            <Heading accessibilityRole="header" fontSize="8" style={{ color: theme.color, textAlign: "center" }}>وجهة المحتوى</Heading>
+            {message ? <Text accessibilityRole="alert" style={{ color: theme.colorMuted, textAlign: "center" }}>{message}</Text> : null}
             {platformPromotion ? <PromotionCard promotion={platformPromotion} /> : null}
-            <BthwaniButton label="العودة للمشاهدة" onPress={() => router.canGoBack() ? router.back() : router.replace("/home" as Href)} variant="secondary" />
-          </BthwaniSurface>
+            <Button
+              accessibilityLabel="العودة للمشاهدة"
+              style={{ backgroundColor: theme.surface, borderColor: theme.borderColorStrong, borderWidth: 1 }}
+              onPress={() => router.canGoBack() ? router.back() : router.replace("/home" as Href)}
+            >
+              <Text style={{ color: theme.color }}>العودة للمشاهدة</Text>
+            </Button>
+          </View>
         </View>
       </ClientScrollScreen>
     </ClientPublicShell>
   );
-}
-
-function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  return StyleSheet.create({
-    container: { alignItems: "center", justifyContent: "center", minHeight: 480, padding: spacing[4], width: "100%" },
-    card: { alignItems: "center", borderRadius: 24, gap: spacing[3], padding: spacing[5], width: "100%" },
-    title: { ...typography.titleLg, color: theme.color },
-    message: { ...typography.body, color: theme.colorMuted, textAlign: "center" },
-  });
 }

@@ -1,5 +1,6 @@
 import { parseStudioThemePublication } from "@bthwani/design-system";
 import { createDshMobileClient } from "@bthwani/dsh";
+import { tamaguiConfig } from "@bthwani/tamagui-config";
 import { AppearanceProvider, BthwaniNetworkStatusNotice, useMobileAppearance } from "@bthwani/design-system/native";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useNetworkState } from "expo-network";
@@ -8,6 +9,7 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { AppState, Platform } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
+import { TamaguiProvider } from "tamagui";
 
 import { appearance } from "../src/bootstrap/appearance";
 import { createPartnerActorQueryClient } from "../src/bootstrap/actor-query-client";
@@ -68,13 +70,13 @@ function RootNavigation() {
   return <PartnerActorNavigation key={actorID || "signed-out"} actorID={actorID} themeName={themeName} />;
 }
 
-function PartnerActorNavigation({ actorID, themeName }: { actorID: string; themeName: "light" | "dark" | "system" }) {
+function PartnerActorNavigation({ actorID, themeName }: { actorID: string; themeName: "light" | "dark" }) {
   const [queryClient] = useState(createPartnerActorQueryClient);
   useEffect(() => () => { queryClient.clear(); }, [queryClient]);
-  return <QueryClientProvider client={queryClient}>
+  return <TamaguiProvider config={tamaguiConfig} defaultTheme={themeName}><QueryClientProvider client={queryClient}>
     <StatusBar style={themeName === "dark" ? "light" : "dark"} />
     <Stack key={actorID || "signed-out"} screenOptions={{ headerShown: false }} />
-  </QueryClientProvider>;
+  </QueryClientProvider></TamaguiProvider>;
 }
 
 function RootNetworkNotice() {

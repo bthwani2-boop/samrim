@@ -1,5 +1,6 @@
 import { parseStudioThemePublication } from "@bthwani/design-system";
 import { createDshMobileClient } from "@bthwani/dsh";
+import { tamaguiConfig } from "@bthwani/tamagui-config";
 import { AppearanceProvider, BthwaniNetworkStatusNotice, useMobileAppearance } from "@bthwani/design-system/native";
 import { useNetworkState } from "expo-network";
 import { Stack } from "expo-router";
@@ -7,6 +8,7 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect, useSyncExternalStore } from "react";
 import { AppState } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
+import { TamaguiProvider } from "tamagui";
 
 import { appearance } from "../src/bootstrap/appearance";
 import { currentIdentityState, subscribeIdentitySession } from "../src/bootstrap/identity";
@@ -60,7 +62,7 @@ function RootNavigation() {
   const { themeName, theme } = useMobileAppearance();
   // A new session actor must not inherit React screen state or previous responses.
   const actorID = useSyncExternalStore(subscribeIdentitySession, currentMobileActorID, () => "");
-  return <><StatusBar style={themeName === "dark" ? "light" : "dark"} /><Stack key={actorID || "signed-out"} screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }}><Stack.Screen name="(app)" /><Stack.Screen name="offers" options={{ presentation: "card" }} /><Stack.Screen name="deliveries" options={{ presentation: "card" }} /><Stack.Screen name="notifications" options={{ headerShown: false, presentation: "card" }} /></Stack></>;
+  return <TamaguiProvider config={tamaguiConfig} defaultTheme={themeName}><StatusBar style={themeName === "dark" ? "light" : "dark"} /><Stack key={actorID || "signed-out"} screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }}><Stack.Screen name="(app)" /><Stack.Screen name="offers" options={{ presentation: "card" }} /><Stack.Screen name="deliveries" options={{ presentation: "card" }} /><Stack.Screen name="notifications" options={{ headerShown: false, presentation: "card" }} /></Stack></TamaguiProvider>;
 }
 
 function RootNetworkNotice() {
