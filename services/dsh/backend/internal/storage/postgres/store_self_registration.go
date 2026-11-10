@@ -168,7 +168,11 @@ func createStoreForPartner(ctx context.Context, db *sql.DB, actorID string, inpu
 			return StoreRecord{}, false, err
 		}
 	}
-	if err := createStoreTx(ctx, tx, storeID, actorID, input, nil, json.RawMessage("[]"), actorID); err != nil {
+	scheduleActor := actorID
+	if operatorActorID != "" {
+		scheduleActor = operatorActorID
+	}
+	if err := createStoreTx(ctx, tx, storeID, actorID, input, nil, json.RawMessage("[]"), scheduleActor); err != nil {
 		return StoreRecord{}, false, err
 	}
 	if err := recordStoreCreationAttemptTx(ctx, tx, keyHash, requestHash, actorID, storeID, operatorActorID, correlationID); err != nil {

@@ -148,6 +148,16 @@ func TestCanonicalAdditionalStoreWriterPostgres(t *testing.T) {
 		if err != nil || operatorReplay || operatorStore.ID == first.ID || operatorStore.ID == storeID {
 			t.Fatalf("attributed operator Store: %+v replay=%v err=%v", operatorStore, operatorReplay, err)
 		}
+		// Operational availability must attribute each initial write to the
+		// actual actor, not to a Merchant on whose behalf an Operator acted.
+		for _, created := range []struct{ storeID, actingActorID string }{
+			{first.ID, owner}, {storeID, owner}, {operatorStore.ID, operatorID},
+		} {
+			var persistedActor string
+			if err := db.QueryRowContext(ctx, `SELECT updated_by_actor_id FROM dsh.store_operational_availability WHERE store_id=$1`, created.storeID).Scan(&persistedActor); err != nil || persistedActor != created.actingActorID {
+				t.Fatalf("Store %s availability actor=%q, expected=%q, err=%v", created.storeID, persistedActor, created.actingActorID, err)
+			}
+		}
 		var persistedOperator, persistedCorrelation string
 		if err := db.QueryRowContext(ctx, `SELECT operator_actor_id,correlation_id
 			FROM dsh.store_create_idempotency WHERE store_id=$1`, operatorStore.ID).
