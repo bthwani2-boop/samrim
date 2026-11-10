@@ -8,6 +8,7 @@ const ts = require("typescript-ast");
 const source = readFileSync(new URL("../src/navigation/workspace-registry.ts", import.meta.url), "utf8");
 const layout = readFileSync(new URL("../app/(workspace)/layout.tsx", import.meta.url), "utf8");
 const hr = readFileSync(new URL("../src/features/hr/hr-center-workspace.tsx", import.meta.url), "utf8");
+const hrPage = readFileSync(new URL("../app/(workspace)/hr/page.tsx", import.meta.url), "utf8");
 const entries = readFileSync(new URL("../src/features/webmcp/workspace-entry-access.ts", import.meta.url), "utf8");
 
 const compiled = ts.transpileModule(source, {
@@ -62,4 +63,5 @@ test("sidebar, search, WebMCP, and HR hub reuse the same navigation permissions"
   assert.match(hr, /if\(!hasHR\) return <section/);
   assert.match(hr, /canManageOperators\?<p><Link href="\/access"/);
   assert.match(hr, /<EmployeeDirectory\/>/);
+  assert.match(hrPage, /metadata = \{ title: "الإدارة والموظفون" \}/);
 });
