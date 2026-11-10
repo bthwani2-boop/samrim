@@ -48,6 +48,12 @@ When replacing or refounding a canonical path, migrate every materially affected
 
 Preserve required Product behavior, security, authorization, privacy, data integrity, contract integrity and operational safety throughout simplification.
 
+### Mandatory refoundation capability-conservation and anti-drift gate
+
+Before a rewrite, migration, UX redesign, design-system cutover or removal, enumerate the **materially affected existing capabilities and subfeatures** from current source, routes, contracts, tests, runtime configuration, canonical Product owners and preserved research. For each, establish its actor/surface, current status (working/partial/obsolete/unknown), original writer/consumers, durable state, safety/finance/privacy invariants, target disposition (KEEP/REFOUND/MERGE/REPLACE/APPROVED_RETIRE), and falsifiable proof. A named capability and its specialized media, map, search, export, reporting, accessibility or recovery behavior are not disposable merely because an implementation file is old or a redesign omits them. Unknown disposition is `UNRESOLVED` and blocks deleting that behavior.
+
+At each coherent execution boundary, compare the exact current HEAD to the last accepted checkpoint, protect concurrent work and already-valid proof, and state the one unresolved objective and next smallest vertical slice. Reject scope drift, redo of proven work, parallel source/engine creation, placeholder success and broad rewrite without a traced preservation/cutover path. Update the owning governance rule **only when approved meaning changes**; an inventory or audit note is non-authoritative evidence, never a duplicate Product catalog or backlog. An unproven material gate is `BLOCKED` or `NOT_RUN`, not `PASS`; completion cannot promise perpetual 100% correctness.
+
 For every materially affected workflow, enforce the effort-minimal, high-volume actor experience in `docs/governance/experience.md`: require only necessary facts at the current stage, reuse canonical data, make optional inputs non-blocking, minimize repeated user actions and expose clear completion/recovery. Reject unjustified UX or technical machinery; retain essential safety in its existing owner and prove the simpler real task, not just fewer screens.
 
 ## 4. Local development state

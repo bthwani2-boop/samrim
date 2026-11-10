@@ -193,3 +193,45 @@ WORKTREE: `D:\samrim-governance-refoundation-20261110`
 كما أن وحدات تخزين `samrim-local` ليست الوحيدة على Docker؛ توجد موارد أخرى لبيئات واختبارات استعادة. يجب حصر الهدف الفعلي قبل أي Reset، ولا يصح استخدام حذف شامل لكل Docker.
 
 **حالة التدقيق:** جرى تدقيق هيكلي وفحص مصادر الحوكمة وبعض الضوابط الآلية. لم تجرِ مراجعة سطرية شاملة لجميع SQL أو اختبارات نهائية لجميع الوظائف والأجهزة. هذا الملف يحدد **منهج التأسيس وحدوده ومعايير قبول نتائجه**، وليس شهادة باكتمال التدقيق البرمجي أو جاهزية المرشح للإطلاق.
+
+
+## 11. Mandatory preflight and conservation gate for implementation (reviewed 2026-11-10)
+
+**This is a handoff/preflight procedure, not a new Product, financial or design authority.** Decisions live in `docs/governance/README.md`'s routed owners. Current code/API/runtime prove the baseline, not this document's historical counts. The working source baseline may move while another authorized agent works; always re-read the exact HEAD and status before material edits.
+
+### Before the first product mutation
+
+1. Confirm the existing approved worktree and current HEAD; account for uncommitted edits, other Git writers and active runtime owners. Do not create a branch/worktree, start a competing server or reuse stale device evidence.
+2. Check every canonical admitted capability in `product.md` against affected source, API, persistent owner, apps and tests. Identify **subfeatures that a high-level capability label can conceal**; do not infer that a lack of mention means consent to delete.
+3. Record each material feature's present behavior, current platform/actor, target owner, retention/rebuild decision, affected readers/writers, known privacy/finance/regression risk and exact falsifying proof. This dated, task-scoped implementation crosswalk is evidence only; never maintain a competing feature catalog.
+4. Reconcile approved financial-policy independence from Store relation, Store collection responsibility, one Store/catalog/Order engine, one Design Studio publisher and direct Store web presentation with the **real** contracts/DB/API before redesigning them. Future policy defaults do not activate unsupported payment or subscription.
+5. Prove development data and remote runtime isolation before any reset; protect accounts, accepted agreements, historical financial records, media, secrets, identities, shared databases and other work even if much local data is synthetic.
+6. Begin with the smallest vertical slice that tests an unresolved owner boundary. Stop an affected slice as BLOCKED rather than falsely considering a mock, interface placeholder or green typecheck complete.
+
+### Subfeatures that must survive the refoundation unless their owner approves retirement
+
+| Existing functional responsibility | Semantic owner / consumers to trace | Minimum future proof |
+| --- | --- | --- |
+| Privacy-filtered Captain opportunity/heatmap | DSH fulfillment; Captain + authorized Operations | Coarse/thresholded cells, stale rejection, role isolation, actual map interaction |
+| Store-scoped short-form videos and discovery banners | DSH commerce/discovery + media adapters; Partner/Client/Operator | Upload/processing, ownership, moderation, eligible publication, consumption, withdrawal |
+| Order-scoped private text/image/voice/video | DSH conversation + media adapters; authorized Order participants | Privacy/IDOR, message replay, attachment limits, closed-Order negative paths |
+| Store catalog lookup, local products, price and stock, quick edit, import/export | DSH catalog; Partner and Operator/Customer readers | Single product/offer authority, correct bulk results, no duplicate writes, server confirmation |
+| Store campaigns, promotions, discounts and content | DSH commerce/marketing and WLT where financial | Effective eligibility, budget/terms, immutable financial readback |
+| Multi-Store owners, staff, permission scope and Store-linked Captains | Identity + DSH + fulfillment; Partner/Operator/Captain | Two Stores/two actors, session switch, assignment limits and denial |
+| Store financial agreements, commission/subscription plans, collection modes | WLT; DSH and Partner/Operator | Policy defaults versus active accepted terms, exact fees, idempotency, ledger and reconciliation |
+| Store direct links, full responsive web Store, compact marketplace view | DSH + Client Expo Web/native | Independent excluded from marketplace, published public data only, allowed and refused checkout |
+| Operator reports, settlements, search and filters | Canonical DSH/WLT/Identity/HR as applicable; Control Panel | Source reconciliation, server-bounded selection, role isolation, failure/retry |
+| Design Studio global and Store-full-web presentation | DSH publication + Identity rights; all supported consumers | Same publisher, real preview, Store isolation, schema, rollback and accessible rendered output |
+| Native maps, push notifications, customer/captain tracking and local device services | DSH and original technical adapters; affected Expo apps | Owner readback, stale/permission failures, supported OS/platform behavior |
+
+The table is a **minimum safeguard** and explicitly not a complete inventory. More capabilities found in the code, documentation, migrations or operating workflows are added to the affected-scope evidence before removal. Feature conservation includes error paths, ownership boundaries and usability, not just visible labels.
+
+### Partner Android/iOS/Web and full Store web acceptance
+
+The Partner app must allow an authorized Merchant to register, create/manage multiple Stores, understand unpublished/public/orderable state, manage Store staff and affiliated Captains, catalog, offers, quick prices, import/export, Orders, finance/agreements, reports, promotions, short-form videos, notifications, and **Design My Store** on permitted full web presentation. The exact available actions depend on canonical eligibility and release gates, not whether a navigation button happens to appear. One Expo project may adapt mobile cards and desktop tables without two business authors. Test two account owners, a scoped staff actor, store switching with late responses, draft and withdrawn media, offline/replay, wrong-role denial, real Android and web and real iOS when available; label unavailable platform proof NOT_RUN.
+
+### Decision and stop conditions
+
+- **Implementation-start readiness** requires reconciled canonical governance, a passing structural/reference/encoding verifier, a protected exact worktree, an explicit first vertical slice, and a clear strategy to preserve every materially affected function. This is not a claim that the full platform is finished.
+- **No general delete/reset/launch authority** is conferred by this plan. Destructive data mutation, deployment, push, PR and merge retain their distinct authorization boundaries.
+- A successful source audit, isolated unit test or rendered mock is narrower than live E2E acceptance. The final system stays NOT_DONE until every authorized Product slice and material handoff is independently proven.

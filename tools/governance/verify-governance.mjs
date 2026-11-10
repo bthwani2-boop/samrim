@@ -96,6 +96,13 @@ for (const source of governed) {
       fail("governance reference points to absent owner " + source + " -> " + referenced);
   }
 }
+// Resolve referenced local research files as well as governance owners; bare code-span paths are links in practice.
+for (const source of governed) {
+  for (const referenced of get(source).match(/docs\/reference\/[\w./-]+\.(?:md|csv)/g) ?? []) {
+    if (!fs.existsSync(at(referenced)) || !fs.lstatSync(at(referenced)).isFile())
+      fail("reference points to missing research file " + source + " -> " + referenced);
+  }
+}
 // Validate the capability router against the admitted Product IDs and declared owners.
 // This follows the live owner map instead of freezing a donor-era filename list.
 const overview = get("docs/governance/product.md");
@@ -139,15 +146,30 @@ if (!storeGovernance.includes("BTHWANI_PARTNER") ||
     !storeGovernance.includes("INDEPENDENT_STORE") ||
     !storeGovernance.includes("Client Expo Web app"))
   fail("Store relation or shared Client Web presentation decision missing");
-if (!financeGovernance.includes("COMMISSION") ||
-    !financeGovernance.includes("SUBSCRIPTION") ||
-    !financeGovernance.includes("Only relation-eligible COMMISSION may currently be Finance-activated"))
-  fail("relation-based commercial model or subscription activation guard missing");
+if (!financeGovernance.includes("Both Store relations can use **COMMISSION** or **SUBSCRIPTION**") ||
+    !financeGovernance.includes("Only currently implemented and validated commission agreements") ||
+    !storeGovernance.includes("INDEPENDENT_STORE may use COMMISSION") ||
+    !overview.includes("either Store relation"))
+  fail("commercial model independence or unreleased financial activation guard missing");
 if (!identityGovernance.includes("finance\x60, \x60hr\x60") ||
     identityGovernance.includes("Partner/Captain/Field require"))
   fail("Operator HR permission or current-role correction missing");
 if (!experienceGovernance.includes("full Store view opened via the Store's direct URL"))
   fail("unified Store presentation contract missing");
+
+// Protected feature semantics: static deletion sentinels, not proof of runtime delivery.
+const commerceGovernance = get("docs/governance/commerce.md");
+const fulfillmentGovernance = get("docs/governance/fulfillment.md");
+for (const [source, content, fragments] of [
+  ["commerce.md", commerceGovernance, ["SHORT_FORM", "operational video"]],
+  ["fulfillment.md", fulfillmentGovernance, ["opportunity maps", "minimum safe number"]],
+  ["experience.md", experienceGovernance, ["One Studio authoring workflow", "Design My Store"]],
+]) {
+  for (const fragment of fragments) {
+    if (!content.includes(fragment))
+      fail("protected feature invariant missing " + source + " / " + fragment);
+  }
+}
 
 if (fs.existsSync(at("knowledge.sources.json")))
 	fail("external donor pin resurrected");
@@ -158,6 +180,7 @@ for (const x of [
 	"Professional product closure",
 	"## 6. Consequential action safety",
 	"## 8. Closure",
+	"Mandatory refoundation capability-conservation and anti-drift gate",
 	"docs/governance/README.md",
 ])
 	if (!law.includes(x)) fail("agent rule lost " + x);
@@ -211,7 +234,7 @@ for (const p of paths) {
 	)
 		fail("obsolete donor authority in " + p);
 	if (
-		(p.startsWith("docs/governance/") || owners.includes(p)) &&
+		(p.startsWith("docs/governance/") || owners.includes(p) || p === "docs/reference/README.md") &&
 		p.endsWith(".md")
 	) {
 		const re = /\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;

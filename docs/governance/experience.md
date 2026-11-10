@@ -183,7 +183,7 @@ Rendered claims require interaction/accessibility/device/runtime evidence approp
 
 Visual regression can prove stability of a rendered contract when that contract is mature and materially valuable, but it does not replace behavioral, accessibility, RTL or canonical-readback proof.
 
-Use `docs/reference/experience.md` for current external Experience/Design evidence. External references may challenge and improve BThwani interaction and platform fit; they never become BThwani Product, information-architecture or design authority by existence.
+External experience/design evidence, when actually curated, is indexed through `docs/reference/README.md`; absent evidence must not be fabricated. External references may challenge and improve BThwani interaction and platform fit, but never become Product, information-architecture or design authority by mere existence.
 
 ## Design and Visual Identity Policy
 
@@ -237,6 +237,14 @@ Color alone never carries material state or action meaning.
 All four deployable surfaces retain these five compiled defaults, so their design does not depend on an API response, a persisted marketing configuration or connectivity. A later authorized Studio publication may replace **editable semantic presentation roles** with any validated color choices for light/dark and supported individual surfaces. Marketing and Content owns the editing entry point; its published theme state must have one lawful server owner, explicit Identity authorization, schema/version compatibility, preview separate from publication, audit, rollback, and safe restoration to compiled defaults. Per-operator appearance preference remains distinct from organization-wide published colors.
 
 Studio publication changes presentation, not permanent code defaults or mutable Identity, commerce, dispatch or WLT financial state. New roles/colors are not published if they obscure safety or financial meaning, fail applicable WCAG 2.2 AA contrast, break a consumer, or expose arbitrary CSS/JS. A client with no valid or compatible publication must render its compiled defaults without a crash; existing installed applications only accept the supported schema. This policy approves the brand direction and safe override boundary, not evidence that runtime Studio publication is implemented.
+
+### One Studio authoring workflow, one publication authority
+
+BThwani maintains **one** permission-scoped Design Studio authoring workflow, entered by authorized Operators from the Control Panel and by authorized Store owners/staff through **Design My Store** in the same Partner Expo app. The Partner entry is Store-bound: it edits only the full public Store presentation inside the existing Client Expo Web application for either approved Store relation, never the compact marketplace Store presentation, native Client marketplace, another Store or the global platform theme. The Control Panel may author only explicitly supported global/application presentation roles and templates; a UI menu item cannot grant an unimplemented publishable scope. There is no second Partner designer, custom HTML/CSS/JS builder, parallel theme registry, independent Store web app or cloned checkout.
+
+DSH is the sole owner of supported appearance draft/publication state, effective version, Store scope, validation and readback; Identity governs who may edit or publish. A compiled design token set is a safe compatible default, not a competing runtime publisher; Tamagui/Expo and Ant Design consume derived semantic roles appropriate to their surfaces. Validate preview versus published content, accessibility/contrast, Arabic RTL, light/dark, store-owner isolation, version conflict, rollback, malformed schema, offline fallback and real rendered behavior before claiming any Studio scope finished. A merchant's chosen template neither publishes a Store nor authorizes price, offers, Orders, payments, wallet, captain dispatch or financial terms.
+
+For material Expo UI work, assess existing Expo/React Native official platform components and packages for the **actual target platforms** before adding another icon, font, widget or adapter; prefer reusable Tamagui components where they meet the cross-platform contract. An iOS-only native control cannot silently become a web solution. Rebuild information architecture and user journeys before replacing widgets, and protect existing native media/map/conversation capabilities until their consumers and owners are cut over.
 
 ### Typography and numeric expression
 

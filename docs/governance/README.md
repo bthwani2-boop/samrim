@@ -32,6 +32,12 @@ Every admitted CAPABILITY_ID in product.md has exactly one section in one domain
 
 - `docs/governance/BTHWANI-FULL-SYSTEM-REFOUNDATION-PLAN.md` — owner only of the requested refoundation plan and dated initial audit snapshot. It is not a second Product/System/Policy authority, does not supersede the canonical owners above, and grants no deletion, reset, publication or Git operation permission.
 
+## Refoundation working evidence (not additional authority)
+
+- `docs/governance/BTHWANI-DESIGN-UX-EXPO-FIRST-REFOUNDATION-AUDIT-20261110.md` is a dated design/UX/Expo-first source audit and proposed slice plan; it cannot override this router or the durable design owner `experience.md`.
+- `docs/reference/README.md` routes preserved OSS, competitor and Elleen observations. These are non-authoritative evidence, not additional Product decisions or automatic dependencies.
+- The active refoundation plan uses dated capability and subfeature coverage only to protect actual useful behavior during cutover; the canonical Product breadth remains `product.md` and each admitted capability's existing domain-owner section.
+
 ## Authority and simplicity law
 ONE MATERIAL MEANING → ONE EDITABLE GOVERNANCE OWNER.
 ONE MATERIAL MUTABLE FACT → ONE CANONICAL SERVICE WRITER.

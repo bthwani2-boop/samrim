@@ -9,7 +9,7 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 This file owns current Product breadth, non-goals and capability admission law.
 
-The Human Actor/role model is owned by `docs/governance/platform.md`. Bounded system ownership is owned by `docs/governance/architecture.md`. Detailed capability truth lives only in `capabilities/**`; cross-capability, cross-surface orchestration lives only in `docs/governance/journeys.md`.
+The Human Actor/role model is owned by `docs/governance/platform.md`. Bounded system ownership is owned by `docs/governance/architecture.md`. Detailed capability truth lives in exactly one declared domain-owner section per `CAPABILITY_ID`; cross-capability, cross-surface orchestration lives only in `docs/governance/journeys.md`.
 
 ## Current approved Product target
 
@@ -83,11 +83,11 @@ For materially costly-to-reverse identity, relation, state, ownership or public-
 - `DISCOVERY_CONTENT`
 - `MULTI_STORE_CHECKOUT`
 
-Each ID has exactly one capability owner under `capabilities/**`.
+Each ID has exactly one declared capability section in one routed domain-owner document; these sections are verified against the admitted list.
 
 ## Product-wide invariants
 
-BThwani has one canonical Store and commerce engine. The `relationModel` values `BTHWANI_PARTNER` and `INDEPENDENT_STORE` express governed relation variants, not new products or engines. The approved target commercial terms are commission for eligible marketplace Partners and subscription for independent Stores. WLT alone owns exact rates, accepted agreements, billing, conservation and settlements. These decisions do **not** assert that recurring subscription billing, independent direct checkout or relation conversion are ready to activate.
+BThwani has one canonical Store and commerce engine. The `relationModel` values `BTHWANI_PARTNER` and `INDEPENDENT_STORE` express governed relation variants, not new products or engines. The approved target permits `COMMISSION` or `SUBSCRIPTION` for either Store relation, selected through WLT-owned effective policy and a Store-specific accepted, Finance-approved agreement. Store relation controls eligible discovery and commerce channels, not the financial model. WLT alone owns exact rates, accepted agreements, billing, conservation and settlements. These decisions do **not** assert that recurring subscription billing, independent direct checkout or relation conversion are ready to activate.
 
 Client uses a compact Partner Store view inside the marketplace on Android, iOS and Expo Web; an eligible published Store of either relation can be viewed in a full Store presentation via a direct link within the **same existing Client Expo Web application**. No additional Expo app, domain owner, Store writer or checkout engine exists for the full view.
 
@@ -113,11 +113,11 @@ Client uses a compact Partner Store view inside the marketplace on Android, iOS 
 - derived search/cache/analytics/notification/tracking state never becomes mutation authority;
 - successful user-facing mutation requires canonical committed readback;
 - admitted breadth and implementation completion are separate claims;
-- admitted marketplace Partner workspace capabilities remain available by Store scope and authorized permissions, never unlocked by a paid subscription plan or feature tier. A relation-eligible independent Store subscription may control expressly agreed hosting/service limits only, never Identity roles, Store ownership or Partner marketplace rights. Transaction charges, commercial agreements and third-party provider costs remain governed by their actual financial and integration owners.
+- baseline Store ownership, Identity authorization, marketplace eligibility and safety controls never follow a subscription badge. For either Store relation, an effective WLT-owned subscription tier may govern expressly agreed, genuinely implemented capacity or optional service entitlements, enforced by the relevant canonical operational owner (such as DSH), without granting roles, Store ownership, marketplace publication, checkout readiness or financial privileges. An Operator default is not an active Store agreement; change needs exact consent, effective version and Finance approval. Transaction charges, agreements and provider costs remain governed by their own owners.
 
 ## Explicit current non-goals
 
-Not admitted now: loyalty as a standalone Product, a social review/community network, a generic support/ticketing platform, advanced route-optimization Product, generic analytics Product, a standalone notification Product, broad customer-profile/privacy orchestration, generic Partner organization/member/team abstractions beyond bounded Store-scoped access delegation, generic multi-tenant SaaS architecture beyond the admitted bounded independent Store web hosting relation, ERP/POS replacement, speculative multi-currency breadth, scheduled customer orders, generic point-to-point courier requests, generic returns/exchanges, electronics warranty-claim management, prescription-required/specially regulated pharmacy fulfillment, paid customer membership or Partner feature tiers gated by subscription, mandatory Store daily check-in and a predictive/numeric Store-capacity engine.
+Not admitted now: loyalty as a standalone Product, a social review/community network, a generic support/ticketing platform, advanced route-optimization Product, generic analytics Product, a standalone notification Product, broad customer-profile/privacy orchestration, generic Partner organization/member/team abstractions beyond bounded Store-scoped access delegation, generic multi-tenant SaaS architecture beyond the admitted bounded independent Store web hosting relation, ERP/POS replacement, speculative multi-currency breadth, scheduled customer orders, generic point-to-point courier requests, generic returns/exchanges, electronics warranty-claim management, prescription-required/specially regulated pharmacy fulfillment, paid customer membership, mandatory Store daily check-in and a predictive/numeric Store-capacity engine.
 
 Prescription-required or specially regulated pharmacy fulfillment remains outside the current target until explicitly admitted with the required legal/operational owner model. Standard pharmacy commerce must not silently claim that regulated workflow.
 
