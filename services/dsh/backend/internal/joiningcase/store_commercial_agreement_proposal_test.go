@@ -7,22 +7,24 @@ import (
 	"testing"
 )
 
-func TestMarketplaceCommercialProposalRejectsIndependentAndUnknownRelation(t *testing.T) {
-	for _, state := range []string{"unpublished", "hidden", "published"} {
-		if !storeAllowsCommercialAgreementProposal(postgres.StoreRelationBThwaniPartner, state) {
-			t.Fatalf("marketplace Store in state %q should retain its agreement proposal route", state)
-		}
-	}
-	for _, relation := range []string{"", postgres.StoreRelationIndependent, "UNKNOWN"} {
+func TestStoreCommercialProposalUsesOneWLTWriterForBothRelations(t *testing.T) {
+	for _, relation := range []string{postgres.StoreRelationBThwaniPartner, postgres.StoreRelationIndependent} {
 		for _, state := range []string{"unpublished", "hidden", "published"} {
+			if !storeAllowsCommercialAgreementProposal(relation, state) {
+				t.Fatalf("Store relation %q in state %q must retain its WLT proposal route", relation, state)
+			}
+		}
+		for _, state := range []string{"", "INVALID"} {
 			if storeAllowsCommercialAgreementProposal(relation, state) {
-				t.Fatalf("relation %q must never propose a WLT marketplace agreement in state %q", relation, state)
+				t.Fatalf("Store relation %q in invalid state %q must not propose", relation, state)
 			}
 		}
 	}
-	for _, state := range []string{"", "INVALID"} {
-		if storeAllowsCommercialAgreementProposal(postgres.StoreRelationBThwaniPartner, state) {
-			t.Fatalf("marketplace Store in invalid publication state %q must not propose", state)
+	for _, relation := range []string{"", "UNKNOWN"} {
+		for _, state := range []string{"unpublished", "hidden", "published"} {
+			if storeAllowsCommercialAgreementProposal(relation, state) {
+				t.Fatalf("unknown Store relation %q must never propose in state %q", relation, state)
+			}
 		}
 	}
 }

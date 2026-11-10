@@ -40,9 +40,10 @@ type StoreCommercialAgreementAcceptanceInput struct {
 }
 
 func storeAllowsCommercialAgreementProposal(relationModel, publicationState string) bool {
-	// Independent Store hosting is not a marketplace commercial agreement; an
-	// operator must not submit its Store to WLT's marketplace proposal writer.
-	if relationModel != postgres.StoreRelationBThwaniPartner {
+	// Store relation governs publication/fulfillment, not WLT commercial terms.
+	// Both relations propose through the same agreement writer; neither a proposal
+	// nor relation selection activates collection, publication or checkout.
+	if relationModel != postgres.StoreRelationBThwaniPartner && relationModel != postgres.StoreRelationIndependent {
 		return false
 	}
 	// "hidden" is the state the publication endpoint writes when a Store leaves the
