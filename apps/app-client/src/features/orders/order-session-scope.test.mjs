@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { clientOrderAuthenticationReturnPath, isClientActorScopeCurrent, isClientOrderScopeCurrent } from "./order-session-scope.ts";
+import { clientOrderAuthenticationReturnPath, clientOrderSessionKey, isClientActorScopeCurrent, isClientOrderScopeCurrent } from "./order-session-scope.ts";
 
 test("direct order sign-in return preserves the requested order and safely encodes route characters", () => {
   assert.equal(clientOrderAuthenticationReturnPath("order-42"), "/orders/order-42");
@@ -23,4 +23,18 @@ test("orders list never reuses previous actor cached rows", () => {
   assert.equal(isClientActorScopeCurrent("actor-a", "actor-b"), false);
   assert.equal(isClientActorScopeCurrent("actor-a", ""), false);
   assert.equal(isClientActorScopeCurrent("", ""), false);
+});
+
+test("client Orders session scope changes on same-actor reauthentication and rejects non-client sessions", () => {
+  const state = (subject, sessionId, role = "client") => ({ kind: "authenticated", identity: { role, subject, sessionId } });
+  const first = clientOrderSessionKey(state("customer-a", "session-a"));
+  const renewed = clientOrderSessionKey(state("customer-a", "session-b"));
+  const other = clientOrderSessionKey(state("customer-b", "session-a"));
+  assert.ok(first);
+  assert.notEqual(first, renewed);
+  assert.notEqual(first, other);
+  assert.equal(clientOrderSessionKey(state("customer-a", "session-a", "partner")), "");
+  assert.equal(clientOrderSessionKey(state("customer-a", "")), "");
+  assert.equal(clientOrderSessionKey({ kind: "unauthenticated" }), "");
+  assert.notEqual(clientOrderSessionKey(state("actor:a", "session:b")), clientOrderSessionKey(state("actor", "a:session:b")));
 });
