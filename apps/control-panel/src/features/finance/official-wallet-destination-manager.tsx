@@ -1,7 +1,7 @@
 "use client";
 
 import type { OfficialWalletDestination } from "@bthwani/dsh";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useWalletProviders, walletProviderLabel } from "../wallet-provider/use-wallet-providers";
 
 type BeneficiaryActorType = "partner" | "captain";
@@ -79,16 +79,36 @@ export function OfficialWalletDestinationManager({ actorType, actorId, initially
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const mounted = useRef(true);
+  const operationEpoch = useRef(0);
+  const inFlight = useRef(false);
+  useEffect(() => {
+    mounted.current = actorId.trim().length > 0 && (actorType === "partner" || actorType === "captain");
+    return () => {
+      mounted.current = false;
+      operationEpoch.current += 1;
+      inFlight.current = false;
+    };
+  }, [actorType, actorId]);
 
-  async function readCanonical(): Promise<Readonly<{ intent: WalletIntent; operatorActorId: string; destination: OfficialWalletDestination | null }>> {
+  // Do not let an earlier beneficiary or Identity subtree update the current Finance review.
+  const isCurrent = (epoch: number) => mounted.current && operationEpoch.current === epoch;
+
+  async function readCanonical(): Promise<Readonly<{ intent: WalletIntent; operatorActorId: string; destination: OfficialWalletDestination | null }> | null> {
+    const epoch = operationEpoch.current;
+    if (!isCurrent(epoch)) return null;
     const query = `actorType=${encodeURIComponent(actorType)}&actorId=${encodeURIComponent(actorId)}`;
     const intentResponse = await fetch(`/api/finance/actor-destination/intent?${query}`, { cache: "no-store" });
+    if (!isCurrent(epoch)) return null;
     const intentPayload = await intentResponse.json().catch(() => null) as IntentResponse | null;
+    if (!isCurrent(epoch)) return null;
     if (!intentResponse.ok || !intentPayload?.intent || typeof intentPayload.operatorActorId !== "string" || intentPayload.intent.actorType !== actorType || intentPayload.intent.actorId !== actorId || !intentPayload.intent.providerKey.trim()) throw new Error(errorMessage(intentPayload, "تعذر قراءة اختيار مزوّد المحفظة من سجل الانضمام."));
     const destinationResponse = await fetch(`/api/finance/actor-destination?${query}`, { cache: "no-store" });
+    if (!isCurrent(epoch)) return null;
     let nextDestination: OfficialWalletDestination | null = null;
     if (destinationResponse.status !== 404) {
       const destinationPayload = await destinationResponse.json().catch(() => null) as DestinationResponse | null;
+      if (!isCurrent(epoch)) return null;
       if (!destinationResponse.ok || !isDestination(destinationPayload?.destination)) throw new Error(errorMessage(destinationPayload, "تعذرت قراءة الوجهة الحالية من السجل المالي."));
       nextDestination = destinationPayload.destination;
       if (nextDestination.actorType !== actorType || nextDestination.actorId !== actorId) throw new Error("قراءة الوجهة لا تطابق المستفيد المحدد.");
@@ -124,17 +144,27 @@ export function OfficialWalletDestinationManager({ actorType, actorId, initially
   }
 
   async function read() {
+    if (!mounted.current || inFlight.current) return;
+    inFlight.current = true;
+    const epoch = ++operationEpoch.current;
     onReadinessChange?.(false);
+    // A failed refresh must not leave a previous beneficiary/identity destination actionable.
+    setIntent(null); setOperatorActorId(""); setDestination(null); setPendingAttempt(null);
     setBusy(true);
     setError("");
     setNotice("");
     try {
       await readCanonical();
     } catch (cause) {
-      onReadinessChange?.(false);
-      setError(cause instanceof Error ? cause.message : "تعذر قراءة الوجهة.");
+      if (isCurrent(epoch)) {
+        onReadinessChange?.(false);
+        setError(cause instanceof Error ? cause.message : "تعذر قراءة الوجهة.");
+      }
     } finally {
-      setBusy(false);
+      if (isCurrent(epoch)) {
+        inFlight.current = false;
+        setBusy(false);
+      }
     }
   }
 
@@ -144,7 +174,7 @@ export function OfficialWalletDestinationManager({ actorType, actorId, initially
   }
 
   async function runAttempt(existingAttempt?: DestinationAttempt, actionOverride?: DestinationAction) {
-    if (busy || !intent || !operatorActorId) return;
+    if (busy || inFlight.current || !mounted.current || !intent || !operatorActorId) return;
     let attempt: DestinationAttempt;
     if (existingAttempt) {
       attempt = existingAttempt;
@@ -184,6 +214,8 @@ export function OfficialWalletDestinationManager({ actorType, actorId, initially
       setError("يجب أن يعتمد الوجهة موظف المالية آخر غير من نفذ التحقق.");
       return;
     }
+    inFlight.current = true;
+    const epoch = ++operationEpoch.current;
     onReadinessChange?.(false);
     setBusy(true);
     setError("");
@@ -196,7 +228,9 @@ export function OfficialWalletDestinationManager({ actorType, actorId, initially
         ? { changeReason: boundAttempt.changeReason, verificationEvidenceReference: boundAttempt.verificationEvidenceReference, changeEvidenceReference: boundAttempt.changeEvidenceReference }
         : boundAttempt.action === "verify" ? { evidenceReference: boundAttempt.evidenceReference } : {};
       const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": attempt.idempotencyKey, "X-Correlation-ID": attempt.correlationId }, body: JSON.stringify(body) });
+      if (!isCurrent(epoch)) return;
       const payload = await response.json().catch(() => null) as DestinationResponse | null;
+      if (!isCurrent(epoch)) return;
       if (!response.ok) {
         if (response.status >= 400 && response.status < 500) {
           window.sessionStorage.removeItem(storageKey(operatorActorId, actorType, actorId));
@@ -208,21 +242,29 @@ export function OfficialWalletDestinationManager({ actorType, actorId, initially
       const confirmedAttempt = { ...boundAttempt, destinationId: payload.destination.id };
       persistAttempt(confirmedAttempt);
       const canonical = await readCanonical();
+      if (!isCurrent(epoch) || !canonical) return;
       const verifiedIntent = intentPayloadIsCurrent(canonical.intent, actorType, actorId);
-      if (!verifiedIntent) throw new Error("لم تتطابق قراءة نية المزوّد بعد الإجراء.");
+      if (!verifiedIntent) {
+        onReadinessChange?.(false);
+        throw new Error("لم تتطابق قراءة نية المزوّد بعد الإجراء.");
+      }
       const key = storageKey(operatorActorId, actorType, actorId);
       if (canonical.operatorActorId === operatorActorId && expectedReadback(confirmedAttempt, canonical.destination)) {
         window.sessionStorage.removeItem(key);
         setPendingAttempt(null);
         setNotice("نجح الإجراء وتأكدت قراءة السجل المالي المطابقة.");
       } else {
+        onReadinessChange?.(false);
         setPendingAttempt(confirmedAttempt);
         setError("وصل رد الإجراء، لكن قراءة السجل المالي لم تثبت الحالة المتوقعة. أعد المحاولة أو أعد قراءة السجل.");
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "تعذر تأكيد نتيجة الإجراء.");
+      if (isCurrent(epoch)) setError(cause instanceof Error ? cause.message : "تعذر تأكيد نتيجة الإجراء.");
     } finally {
-      setBusy(false);
+      if (isCurrent(epoch)) {
+        inFlight.current = false;
+        setBusy(false);
+      }
     }
   }
 
