@@ -70,6 +70,7 @@ export type MarketingResourceKey = (typeof workspaceMarketingResources)[number][
 // Both marketing resources are visible in one canonical workspace; legacy deep links remain available.
 const marketingChildren: readonly WorkspaceChild[] = [
   { href: "/marketing/customers", label: "العملاء", searchAliases: "Customer 360 ملف العميل شرائح العملاء نشاط العملاء" },
+  { href: "/studio", label: "استوديو التصميم", searchAliases: "استوديو التسويق التصميم القوالب النشر" },
 ];
 
 export const workspaceDestinations: readonly WorkspaceDestination[] = [
@@ -90,8 +91,7 @@ export const workspaceDestinations: readonly WorkspaceDestination[] = [
     ]
   },
   { href: "/catalog", label: "الكتالوج", children: catalogChildren, permission: "catalog" },
-  { href: "/marketing", label: "التسويق والمحتوى", children: marketingChildren, permission: "marketing" },
-  { href: "/studio", label: "استوديو التصميم", children: [], permission: "marketing" },
+  { href: "/marketing", label: "التسويق والتصميم", children: marketingChildren, permission: "marketing" },
   { href: "/finance", label: "المالية", children: financeChildren, permission: "finance" },
   { href: "/hr", label: "الموارد البشرية", children: [{ href: "/hr/employees", label: "الموظفون" }], permission: "hr" },
   { href: "/policies", label: "السياسات", children: policyChildren, permission: "platform_policies" },

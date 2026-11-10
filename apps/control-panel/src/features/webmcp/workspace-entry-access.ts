@@ -7,7 +7,8 @@ export type WorkspaceEntry = Readonly<{ href: string; label: string; context: st
 const categoryRoute = (href: string) => {
   const path = href.split("?")[0] ?? href;
   const destination = workspaceDestinations
-    .filter(entry => path === entry.href || path.startsWith(entry.href + "/"))
+    .filter(entry => path === entry.href || path.startsWith(entry.href + "/") ||
+      entry.children.some(child => path === child.href || path.startsWith(child.href + "/")))
     .sort((a, b) => b.href.length - a.href.length)[0];
   return destination?.href ?? null;
 };
