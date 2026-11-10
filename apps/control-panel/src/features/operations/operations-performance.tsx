@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { OperatorHomeAnalytics, OperatorOperationsSummary, OperatorOperationListItem } from "@bthwani/dsh";
+import type { OperatorHomeAnalytics, OperatorOperationListItem, OperatorOperationsSummary } from "@bthwani/dsh";
 import { formatOrderDate } from "@bthwani/dsh";
+import { useEffect, useState } from "react";
+import { downloadRegistryCsv } from "../shared/registry-csv";
 import { isOperatorHomeAnalytics } from "../workspace/operator-home-analytics";
 import { calculateOperationsReportMetrics } from "./operations-report-metrics";
 
 const number = (n: number) => n.toLocaleString("ar-YE");
-const safeCsv = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`;
 
 export function OperationsPerformance({ summary, loading }: Readonly<{
   summary: OperatorOperationsSummary | null;
@@ -45,12 +45,8 @@ export function OperationsPerformance({ summary, loading }: Readonly<{
     if (!report || !allDays.length) return;
     const head = ["day", "orders", "delivered", "awaiting_dispatch", "in_progress", "failed", "cancelled"];
     const body = days.map(d => [d.day, d.orders, d.delivered, d.awaitingDispatch, d.inProgress, d.failed, d.cancelled]);
-    const meta = [`# source=DSH operator/home-analytics`, `# timezone=${report.timeZone}`, `# measuredAt=${report.measuredAt}`, `# coverage=returned_daily_aggregate`];
-    const csv = "\uFEFF" + [...meta, head.map(safeCsv).join(","), ...body.map(row => row.map(safeCsv).join(","))].join("\r\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url; link.download = "bthwani-operations-daily-" + range + ".csv";
-    link.click(); URL.revokeObjectURL(url);
+    const metadata = ["source=DSH operator/home-analytics", `timezone=${report.timeZone}`, `measuredAt=${report.measuredAt}`, "coverage=returned_daily_aggregate"];
+    downloadRegistryCsv(`bthwani-operations-daily-${range}.csv`, head, body, metadata);
   }
   return <section className="ops-report-workspace" data-testid="operations-performance">
     <header className="ops-decision-heading">
