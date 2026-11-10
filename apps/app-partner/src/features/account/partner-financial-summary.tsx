@@ -4,9 +4,12 @@ import { createDshMobileClient, formatMoney, type PartnerScopedFinancialSummary 
 import { PartnerFinancialActivity } from "../wallet/partner-financial-activity";
 import * as Crypto from "expo-crypto";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
+import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";
+
+const currentPartnerSessionKey = () => partnerSetupSessionKey(currentIdentityState());
 
 function client() {
   const baseUrl = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -17,23 +20,38 @@ function client() {
 export function PartnerFinancialSummaryCard({ actions, workflow }: { actions?: ReactNode; workflow?: ReactNode }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const authenticated = currentIdentityState().kind === "authenticated";
-  const [summary, setSummary] = useState<PartnerScopedFinancialSummary | null>(null);
-  const [loading, setLoading] = useState(authenticated);
-  const [error, setError] = useState("");
+  const sessionKey = useSyncExternalStore(subscribeIdentitySession, currentPartnerSessionKey, () => "");
+  const [readback, setReadback] = useState<{ sessionKey: string; summary: PartnerScopedFinancialSummary } | null>(null);
+  const [readState, setReadState] = useState({ sessionKey: "", loading: false, error: "" });
+  const requestID = useRef(0);
+  const active = Boolean(sessionKey) && currentPartnerSessionKey() === sessionKey;
+  const summary = active && readback?.sessionKey === sessionKey ? readback.summary : null;
+  const loading = active && (readState.sessionKey !== sessionKey || readState.loading);
+  const error = active && readState.sessionKey === sessionKey ? readState.error : "";
   const load = useCallback(async () => {
-    if (!authenticated) return;
-    setLoading(true); setError("");
+    if (!sessionKey || currentPartnerSessionKey() !== sessionKey) return;
+    const sequence = ++requestID.current;
+    const stillCurrent = () => sequence === requestID.current && currentPartnerSessionKey() === sessionKey;
+    setReadback(null);
+    setReadState({ sessionKey, loading: true, error: "" });
     try {
       const token = await getUsableIdentityAccessToken();
-      setSummary((await client().readOwnPartnerFinancialSummary(token)).summary);
+      if (!stillCurrent()) return;
+      const response = await client().readOwnPartnerFinancialSummary(token);
+      if (!stillCurrent()) return;
+      setReadback({ sessionKey, summary: response.summary });
     } catch (cause) {
-      setSummary(null);
+      if (!stillCurrent()) return;
       console.error("DSH partner financial summary readback failed", cause);
-      setError("تعذر قراءة المستحقات. أعد المحاولة.");
-    } finally { setLoading(false); }
-  }, [authenticated]);
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+      setReadState({ sessionKey, loading: false, error: "تعذر قراءة المستحقات. أعد المحاولة." });
+    } finally {
+      if (stillCurrent()) setReadState((state) => ({ ...state, loading: false }));
+    }
+  }, [sessionKey]);
+  useFocusEffect(useCallback(() => {
+    void load();
+    return () => { requestID.current += 1; };
+  }, [load]));
   return <View style={styles.container} accessibilityLabel="ملخص مستحقات الشريك">
     <View style={styles.balanceCard}>
       <View style={styles.balanceCopy}><View style={styles.availableTitle}><View style={[styles.dot, { backgroundColor: theme.success }]} /><Text style={styles.balanceLabel}>الرصيد المتاح للصرف</Text></View>
@@ -53,7 +71,7 @@ export function PartnerFinancialSummaryCard({ actions, workflow }: { actions?: R
     {workflow}
     {summary ? <>
       {!summary.attributionComplete ? <Text style={styles.error}>بعض التحويلات القديمة غير مكتملة النسبة للمتاجر؛ الصرف الجديد يتطلب اكتمال المطابقة.</Text> : null}
-      {summary.stores.length ? <PartnerFinancialActivity stores={summary.stores} /> : <Text style={styles.muted}>لا توجد متاجر مالية مرتبطة بهذا الحساب بعد.</Text>}
+      {summary.stores.length ? <PartnerFinancialActivity key={JSON.stringify([sessionKey, summary.stores.map((store) => store.storeId).sort()])} stores={summary.stores} /> : <Text style={styles.muted}>لا توجد متاجر مالية مرتبطة بهذا الحساب بعد.</Text>}
     </> : null}
     {error ? <Pressable accessibilityRole="button" onPress={() => void load()} style={styles.infoCard}><Text accessibilityRole="alert" style={styles.error}>{error} · إعادة المحاولة</Text></Pressable> : null}
   </View>;

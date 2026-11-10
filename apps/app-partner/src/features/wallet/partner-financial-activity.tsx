@@ -3,11 +3,13 @@ import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
 import { createDshMobileClient, formatMoney, type PartnerFinancialActivity as PartnerFinancialActivityRecord, type PartnerFinancialActivityFilters, type PartnerScopedFinancialSummary } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
+import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";
 
 const pageSize = 25;
+const currentPartnerSessionKey = () => partnerSetupSessionKey(currentIdentityState());
 type Period = "all" | "today" | "week" | "month";
 type Selection = { storeId: string; kind: string; status: string; paymentMethod: string; period: Period };
 const initial: Selection = { storeId: "", kind: "", status: "", paymentMethod: "", period: "month" };
@@ -83,6 +85,7 @@ function ChoiceRow({ title, options, value, onSelect, theme, styles }: {
 export function PartnerFinancialActivity({ stores }: { stores: PartnerScopedFinancialSummary["stores"] }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
+  const sessionKey = useSyncExternalStore(subscribeIdentitySession, currentPartnerSessionKey, () => "");
   const [selection, setSelection] = useState<Selection>(initial);
   const [draft, setDraft] = useState<Selection>(initial);
   const [query, setQuery] = useState("");
@@ -90,6 +93,8 @@ export function PartnerFinancialActivity({ stores }: { stores: PartnerScopedFina
   const [filterOpen, setFilterOpen] = useState(false);
   const [detail, setDetail] = useState<PartnerFinancialActivityRecord | null>(null);
   const [items, setItems] = useState<PartnerFinancialActivityRecord[]>([]);
+  const [visibleScopeKey, setVisibleScopeKey] = useState("");
+  const [errorScopeKey, setErrorScopeKey] = useState("");
   const [cursor, setCursor] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -102,30 +107,45 @@ export function PartnerFinancialActivity({ stores }: { stores: PartnerScopedFina
 
   useEffect(() => { const timer = setTimeout(() => setDebounced(query.trim()), 350); return () => clearTimeout(timer); }, [query]);
   const activeFilters = useMemo(() => buildFilters(selection, debounced), [selection, debounced]);
+  const scopeKey = JSON.stringify([sessionKey, stores.map((store) => store.storeId).sort(), activeFilters]);
+  const activeScopeKey = useRef(scopeKey);
+  activeScopeKey.current = scopeKey;
   const load = useCallback(async (nextCursor = "") => {
-    const current = nextCursor ? generation.current : ++generation.current;
+    if (!sessionKey || currentPartnerSessionKey() !== sessionKey || activeScopeKey.current !== scopeKey) return;
+    const current = ++generation.current;
+    const stillCurrent = () => generation.current === current && currentPartnerSessionKey() === sessionKey && activeScopeKey.current === scopeKey;
     if (nextCursor) setLoadingMore(true);
-    else { setLoading(true); setItems([]); setCursor(""); }
-    setError("");
+    else { setLoading(true); setItems([]); setCursor(""); setDetail(null); setVisibleScopeKey(""); }
+    setError(""); setErrorScopeKey("");
     try {
       if (!activityClient) throw new Error("DSH_BASE_URL_REQUIRED");
       const token = await getUsableIdentityAccessToken();
+      if (!stillCurrent()) return;
       const response = await activityClient.listOwnPartnerFinancialActivity(token, { ...activeFilters, ...(nextCursor ? { cursor: nextCursor } : {}) });
-      if (generation.current !== current) return;
+      if (!stillCurrent()) return;
       setItems((previous) => nextCursor ? [...previous, ...response.items.filter((item) => !previous.some((old) => old.kind === item.kind && old.id === item.id))] : [...response.items]);
       setCursor(response.nextCursor ?? "");
+      setVisibleScopeKey(scopeKey);
     } catch (cause) {
-      console.error("Partner finance activity readback failed", cause);
-      if (generation.current === current) setError("تعذر قراءة الحركات المالية. حاول مرة أخرى.");
+      if (stillCurrent()) {
+        console.error("Partner finance activity readback failed", cause);
+        setError("تعذر قراءة الحركات المالية. حاول مرة أخرى.");
+        setErrorScopeKey(scopeKey);
+      }
     } finally {
-      if (generation.current === current) { setLoading(false); setLoadingMore(false); }
+      if (stillCurrent()) { setLoading(false); setLoadingMore(false); }
     }
-  }, [activityClient, activeFilters]);
+  }, [activityClient, activeFilters, scopeKey, sessionKey]);
   useFocusEffect(useCallback(() => { void load(); return () => { generation.current++; }; }, [load]));
   const applyFilter = () => { setSelection(draft); setFilterOpen(false); };
   const storeOptions = [{ id: "", label: "جميع المتاجر" }, ...stores.map((store) => ({ id: store.storeId, label: store.storeName }))];
   const activeCount = [selection.storeId, selection.kind, selection.status, selection.paymentMethod].filter(Boolean).length;
-  const rows = items.map((item) => {
+  const visible = Boolean(sessionKey) && currentPartnerSessionKey() === sessionKey && visibleScopeKey === scopeKey;
+  const visibleItems = visible ? items : [];
+  const visibleCursor = visible ? cursor : "";
+  const visibleDetail = visible ? detail : null;
+  const visibleError = errorScopeKey === scopeKey && sessionKey && currentPartnerSessionKey() === sessionKey ? error : "";
+  const rows = visibleItems.map((item) => {
     const credit = item.direction === "CREDIT";
     const caution = item.direction === "RECEIVABLE" || item.status === "EXCEPTION";
     const color = credit ? theme.success : caution ? theme.warning : theme.color;
@@ -158,13 +178,13 @@ export function PartnerFinancialActivity({ stores }: { stores: PartnerScopedFina
     </ScrollView>
     <View style={styles.contextRow}>
       <Text style={styles.secondary}>{selection.storeId ? stores.find((store) => store.storeId === selection.storeId)?.storeName : "جميع المتاجر"} · {periods.find((period) => period.id === selection.period)?.label}</Text>
-      <Text style={styles.secondary}>{items.length.toLocaleString("ar-YE")}{cursor ? "+" : ""} حركة</Text>
+      <Text style={styles.secondary}>{visibleItems.length.toLocaleString("ar-YE")}{visibleCursor ? "+" : ""} حركة</Text>
     </View>
     {loading ? <ActivityIndicator accessibilityLabel="جارٍ تحميل الكشف المالي" color={theme.brandAction} /> : null}
-    {error ? <Pressable accessibilityRole="button" onPress={() => void load()} style={styles.error}><Text style={styles.errorText}>{error} · إعادة المحاولة</Text></Pressable> : null}
-    {!loading && !error && rows.length === 0 ? <Text style={styles.empty}>لا توجد حركات مطابقة. جرّب تغيير الفلاتر.</Text> : null}
+    {visibleError ? <Pressable accessibilityRole="button" onPress={() => void load()} style={styles.error}><Text style={styles.errorText}>{visibleError} · إعادة المحاولة</Text></Pressable> : null}
+    {visible && !loading && !visibleError && rows.length === 0 ? <Text style={styles.empty}>لا توجد حركات مطابقة. جرّب تغيير الفلاتر.</Text> : null}
     <View style={styles.rows}>{rows}</View>
-    {cursor && !loading ? <Pressable accessibilityRole="button" disabled={loadingMore} onPress={() => void load(cursor)} style={styles.more}>{loadingMore ? <ActivityIndicator color={theme.brandAction}/> : <Text style={styles.moreLabel}>عرض المزيد من الحركات</Text>}</Pressable> : null}
+    {visibleCursor && !loading ? <Pressable accessibilityRole="button" disabled={loadingMore} onPress={() => void load(visibleCursor)} style={styles.more}>{loadingMore ? <ActivityIndicator color={theme.brandAction}/> : <Text style={styles.moreLabel}>عرض المزيد من الحركات</Text>}</Pressable> : null}
     <Modal transparent animationType="slide" visible={filterOpen} onRequestClose={() => setFilterOpen(false)}>
       <View style={styles.overlay}><Pressable accessibilityLabel="إغلاق الفلاتر" accessibilityRole="button" style={styles.dismiss} onPress={() => setFilterOpen(false)} />
         <View style={styles.sheet}><View style={styles.sheetHeader}><Pressable accessibilityRole="button" onPress={() => setFilterOpen(false)}><BthwaniIcon name="close" color={theme.color} size={22}/></Pressable><Text style={styles.title}>فلترة الكشف المالي</Text><Pressable accessibilityRole="button" onPress={() => setDraft(initial)}><Text style={styles.reset}>إعادة تعيين</Text></Pressable></View>
@@ -179,21 +199,21 @@ export function PartnerFinancialActivity({ stores }: { stores: PartnerScopedFina
         </View>
       </View>
     </Modal>
-    <Modal transparent animationType="slide" visible={Boolean(detail)} onRequestClose={() => setDetail(null)}>
+    <Modal transparent animationType="slide" visible={Boolean(visibleDetail)} onRequestClose={() => setDetail(null)}>
       <View style={styles.overlay}><Pressable accessibilityRole="button" accessibilityLabel="إغلاق التفاصيل" style={styles.dismiss} onPress={() => setDetail(null)}/>
         <View style={styles.sheet}><View style={styles.sheetHeader}><Pressable onPress={() => setDetail(null)} accessibilityRole="button"><BthwaniIcon name="close" color={theme.color} size={22}/></Pressable><Text style={styles.title}>تفاصيل الحركة المالية</Text><View style={{width:22}}/></View>
-          {detail ? <ScrollView contentContainerStyle={styles.sheetBody}>
-            <View style={styles.detailHero}><Text style={styles.secondary}>{itemTitle(detail)}</Text><Text style={styles.bigAmount}>{amountPrefix(detail)}{money(detail.amountMinor)}</Text><Text style={styles.secondary}>{stateLabel(detail)}</Text></View>
+          {visibleDetail ? <ScrollView contentContainerStyle={styles.sheetBody}>
+            <View style={styles.detailHero}><Text style={styles.secondary}>{itemTitle(visibleDetail)}</Text><Text style={styles.bigAmount}>{amountPrefix(visibleDetail)}{money(visibleDetail.amountMinor)}</Text><Text style={styles.secondary}>{stateLabel(visibleDetail)}</Text></View>
             {[
-              ["المتجر", detail.storeName],
-              ["رقم المرجع", reference(detail)],
-              ["التاريخ", dateLabel(detail.createdAt)],
-              ["طريقة الدفع", paymentLabel(detail)],
-              ["الحالة", stateLabel(detail)],
-              ...(detail.kind !== "PAYOUT" ? [["إجمالي المنتجات", money(detail.grossMinor)], ["عمولة المنصة", money(detail.commissionMinor)]] : []),
-              ...(detail.offsetMinor ? [["مقاصة عمولة سابقة", money(detail.offsetMinor)]] : []),
-              ["الأثر المالي", detail.direction === "RECEIVABLE" ? "ذمة للمنصة، وليست خصمًا من الرصيد" : detail.direction === "HOLD" ? "حجز مؤقت، وليس صرفًا مكتملًا" : detail.direction === "DEBIT" ? "صرف مكتمل" : detail.direction === "NONE" ? "لا حركة مباشرة على رصيد المحفظة" : "إضافة مثبتة للرصيد"],
-              ...(detail.ledgerTransactionId ? [["مرجع القيد", detail.ledgerTransactionId]] : []),
+              ["المتجر", visibleDetail.storeName],
+              ["رقم المرجع", reference(visibleDetail)],
+              ["التاريخ", dateLabel(visibleDetail.createdAt)],
+              ["طريقة الدفع", paymentLabel(visibleDetail)],
+              ["الحالة", stateLabel(visibleDetail)],
+              ...(visibleDetail.kind !== "PAYOUT" ? [["إجمالي المنتجات", money(visibleDetail.grossMinor)], ["عمولة المنصة", money(visibleDetail.commissionMinor)]] : []),
+              ...(visibleDetail.offsetMinor ? [["مقاصة عمولة سابقة", money(visibleDetail.offsetMinor)]] : []),
+              ["الأثر المالي", visibleDetail.direction === "RECEIVABLE" ? "ذمة للمنصة، وليست خصمًا من الرصيد" : visibleDetail.direction === "HOLD" ? "حجز مؤقت، وليس صرفًا مكتملًا" : visibleDetail.direction === "DEBIT" ? "صرف مكتمل" : visibleDetail.direction === "NONE" ? "لا حركة مباشرة على رصيد المحفظة" : "إضافة مثبتة للرصيد"],
+              ...(visibleDetail.ledgerTransactionId ? [["مرجع القيد", visibleDetail.ledgerTransactionId]] : []),
             ].map(([label, value]) => <View key={label} style={styles.detailLine}><Text style={styles.secondary}>{label}</Text><Text selectable style={styles.detailValue}>{value}</Text></View>)}
           </ScrollView> : null}
         </View>
