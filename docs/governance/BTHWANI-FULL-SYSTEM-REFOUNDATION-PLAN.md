@@ -235,3 +235,32 @@ The Partner app must allow an authorized Merchant to register, create/manage mul
 - **Implementation-start readiness** requires reconciled canonical governance, a passing structural/reference/encoding verifier, a protected exact worktree, an explicit first vertical slice, and a clear strategy to preserve every materially affected function. This is not a claim that the full platform is finished.
 - **No general delete/reset/launch authority** is conferred by this plan. Destructive data mutation, deployment, push, PR and merge retain their distinct authorization boundaries.
 - A successful source audit, isolated unit test or rendered mock is narrower than live E2E acceptance. The final system stays NOT_DONE until every authorized Product slice and material handoff is independently proven.
+
+
+## 12. Decision reconciliation and first-slice handoff — 2026-11-10
+
+This section supersedes **planning assumptions**, not the durable owners. `experience.md` owns the target **one Stores** operator work center; the earlier eleven-center description in the dated design audit remains observation only. `platform.md` owns user-facing Customer/Merchant terminology versus stable deployed role IDs. `catalog.md` owns one product/suggestion/offer flow. `finance.md` owns commission/subscription agreements and collection accountability for both Store relations. `engineering.md` owns controlled owner-backed defaults and their release gates. No second policy catalog, finance engine or Store registry is to be made by this plan.
+
+### Suggested development-only package examples (not active contracts or product entitlement)
+
+The following are **illustrative fixtures for testing a WLT plan schema**, subject to price, operations and Finance approval before any activation. They are neither official rates nor a second policy/default source:
+
+| Example | Monthly YER | Listed products | Authorized Store staff seats |
+| --- | ---: | ---: | ---: |
+| Start | 5,000 | 100 | 2 |
+| Growth | 15,000 | 1,000 | 5 |
+| Professional | 30,000 | 5,000 | 15 |
+
+An actual plan must be created/edited/versioned **only at WLT** and enforced only where DSH already has an authorized entitlement/seat/product-limit check. Changing a test fixture must not mutate accepted terms. Catalogue imports, reporting, media processing and the public Store link are not silently disabled merely because a test tier table omits them. Price tiers are not acceptable proof of invoicing, debiting or delivery of features.
+
+### First implementation slice recommendation (conditional green light)
+
+1. Verify the current existing authorized Git worktree/HEAD/status, installed agent law, service/version ownership, safe DB/environment isolation, and absence of a concurrent writer on the same affected files.
+2. Compare the **single Stores center** and Partner navigation to DSH Store record APIs and Identity permissions. Define the smallest real Store listing/detail/edit flow reusing the existing DSH owner for both relation values; use exact-server filtering, a single Store identity and explicit unpublished/disabled states. Keep the existing app/route entry points until consumers are safely moved.
+3. Demonstrate one Operator editing a permitted non-financial Store fact and one Store owner reading only their authorized Store, while a second actor is denied access; verify API and persisted DSH readback, stale-version and session-switch handling.
+4. Add only the smallest UI and contract changes necessary for that slice. Do **not** add new Store tables, admin app, policy engine, role, network service or financial state writer, and do not activate direct checkout/subscription merely to finish navigation.
+5. Re-run affected tests and a real browser flow. Record exact SHA, role/store identities in redacted form, runtime revision, PASS/FAIL/BLOCKED/NOT_RUN and the next unresolved source-backed slice. Commit locally after review on the existing authorized branch. Push/PR/merge/deploy remain separate human decisions.
+
+### Full-system closure remains gated
+
+The full refoundation stays **NOT_DONE** until each admitted capability and affected subfeature has canonical owner readback, negative authorization and concurrency/security/financial proof where relevant, Arabic RTL/accessibility/recovery on affected real platforms, proper migration and dependency cutover, and required independent review. A passing governance or static test is a **governance start aid**, not a certificate that the rebuilt product operates.

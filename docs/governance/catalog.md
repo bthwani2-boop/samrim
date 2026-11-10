@@ -200,6 +200,14 @@ read model, with bounded pagination/search and category/section filters when
 material. Direct IDs cannot bypass the evaluator and a Store detail response
 does not inline an unbounded catalog.
 
+### Minimal Store product-entry path — one catalog engine
+
+For normal merchant product entry, **one DSH lookup** accepts a typed name, barcode, or similar text and suggests eligible existing Shared Products with recognizable image, name and package. Selecting one does **not** duplicate the Product: it creates or updates this Store's single `StoreOffer` for the eligible sellable variant with its **own price and availability**. Missing price/tariff or invalid variant must not be guessed. An unpublished Store may prepare draft offers, but public visibility and checkout still require the independent DSH publication/orderability gates. The user sees only necessary facts at the current step and the exact saved result from DSH.
+
+If no suitable Shared Product exists, the merchant may **create a Store-scoped Product and its first offer** in the same canonical catalog model, without being forced through a central proposal/review workflow; Shared identity creation still requires the separately authorized Operator path. Both alternatives use the same Store search, offer writer, permission and customer-eligibility rules. A Store-local identity is a scope of `Product`, **not a second catalog table family, search backend or independent Store catalog service**. Preserve attribution and avoid duplicates on concurrent retries.
+
+The default form is search/select → Store price and availability → save; only reveal size/variant, unit, measured quantity, customization, SKU, classification and media inputs when actual Product semantics or a valid validation requirement demand them. Catalog taxonomy, vertical and Store Type remain distinct reference classifications but do not force a deep taxonomy wizard or manual IDs into routine entry. Show conflicts, unrecognized barcode, unapproved media and retry/recovery clearly. Bulk import and Quick Prices are alternative **interfaces to the same writer**, never second price/offer authority.
+
 ### Operator and Partner operations
 
 The Operator Catalog workspace may manage verticals, shared taxonomy, typed

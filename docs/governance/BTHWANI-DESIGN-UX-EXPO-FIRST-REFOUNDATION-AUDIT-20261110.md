@@ -316,3 +316,18 @@ STATUS: SOURCE_AUDIT_COMPLETE_FOR_IDENTIFIED_CONE; FULL_VISUAL_AND_LIVE_E2E_NOT_
 **أفضل خطوة تالية:** اعتماد تجربة المرجع للأدوار الأربعة وحدود Studio القانونية/المرئية، ثم تنفيذ أول شريحة *مكتملة من المسودة إلى النشر والعرض والعزل* على مالكها الصحيح؛ تتبعها إعادة تنظيم مركز عمل فعلي في لوحة التحكم، لا إعادة طلاء آلاف الأسطر بلا تغيير تجربة.
 
 **حالة المهام:** SOURCE_AUDIT: PASS في النطاق المحدد؛ STUDIO_SELECTED_SOURCE_TESTS: PASS 18/18؛ FULL_BROWSER_DEVICE_UX: NOT_RUN؛ PARTNER_SCOPED_STUDIO_E2E: NOT_RUN؛ FULL_PANEL_ROUTE_AUDIT: NOT_RUN؛ APP-WIDE-REFOUNDATION: NOT_DONE. لا يتضمن هذا التقرير أي إدعاء دقة أو اكتمال 100%.
+
+
+## 11. Follow-up semantic review of governance readiness — 2026-11-10
+
+This is a **dated non-authoritative correction to conclusions and implementation leads**, not a rewrite of the original source audit or another current design owner. Current binding decisions remain in `experience.md`, `platform.md`, `catalog.md`, `finance.md` and `engineering.md`; actual released behavior remains determined by source and live owner readback.
+
+- The earlier description of **eleven permanent top-level Operator work centers** was a snapshot, not an irrevocable UX rule. The approved **target** consolidates Partner and Independent Store management into one **Stores** work center, with relation filters and Store-scoped workflows, while Catalog retains its independent semantic work. Existing separate routes are implementation candidates for cutover, not evidence of two business owners. The target is **ten** top-level job-oriented centers subject to representative usability validation.
+- The approved Store product-entry target is **one DSH catalog engine**: suggest a Shared Product by name/barcode, create a Store-specific offer with price/availability, or create a Store-scoped Product when missing. This is neither a second local catalog engine nor permission to mutate the Shared Product from a merchant account. Specialized units/modifiers and bulk imports retain needed behavior.
+- Store financial model defaults and subscription packages are configurable only through WLT-owned policy and accepted Store-specific contracts; the model is independent of Store relation. Merchant-direct collection and platform collection are separate legal/technical facts. **No unimplemented subscription collection, direct checkout or entitlement is considered released** by this design decision.
+- Use user-facing **Customer/عميل** and **Merchant/تاجر** terminology where appropriate without blindly renaming deployed `client`/`partner` roles, native package identities, API paths or public Store links. Historical Field/JoiningCase evidence is not an active flow and cannot be deleted solely to remove old labels.
+- Preserve OSS/competitor/Elleen research and any lawful unique capabilities before a refoundation; see the non-authoritative `docs/reference/README.md` index. It is not a license to copy competitor code/assets.
+- `AGENTS.md` already includes mandatory exact-HEAD, owner, capability-conservation, no-parallel-engine, data-protection and evidence/commit authority gates. No extra copy of those agent laws is required in this audit.
+- **Implementation evidence still missing:** owner-backed subscription billing, new relation-default propagation, Partner/Operator single-Store-registry UX, real Store-scoped Studio preview/publish, full direct checkout, and mobile/browser end-to-end validation. These are **NOT_RUN/NOT_RELEASED** as applicable, not PASS.
+
+The appropriate start authorization is **only for the first bounded, non-destructive refoundation slice after a fresh preflight**. It is not authorization to reset a shared database or promise universal correctness.

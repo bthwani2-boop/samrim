@@ -45,6 +45,14 @@ When **ADD NOW** is justified, extend the existing Operator Policies workspace r
 
 Keep the classification lightweight and proportional to the feature. Record the reason when it materially changes product behavior or accepted scope; do not create a parallel registry, mandatory ceremony or speculative policies merely to document the assessment.
 
+### Policy defaults, runtime eligibility and owner-backed bootstrap
+
+Approved configuration defaults are delivered by their **existing service owner** (DSH operational/discovery/Store policies, WLT agreements/fees/collection, Identity admission); they are not duplicated in the Control Panel, a compiled client config or an extra cross-service policy engine. An isolated fresh development bootstrap may install one reviewed, versioned owner-backed default set through a canonical migration/seed/owner API appropriate to that domain. Exact local settings, active agreement terms, deployment values and synthetic records remain distinguishable. Restarting an app must not overwrite policies changed by an authorized Operator; previously accepted Store contracts and Order snapshots are immutable to later defaults.
+
+For admitted scoped policies prefer effective resolution: approved general default → applicable Store relation default → expressly authorized Store exception **only where the actual owner supports it**. A Store's accepted WLT contract supersedes any mutable default for its financial obligations; no policy overrides authorization, publication, sanctions, ledger integrity or consent. A role change or deployment version cannot silently activate a deferred payment rail, independent checkout, subscription invoice or unsupported entitlement.
+
+Operator edits must be read from and written through the original owner with validation, version/effective date, attribution, audit and owner readback. A safe rollback creates a new explicit effective version; it does not erase history, retroactively modify fees or rewrite pending transactions. Verify a changed default on the **actual new eligible Store/order** and check existing agreements unaffected; the administrative screen or seed fixture is not enough. Retain a bounded list of actually supported controls rather than a generic rule interpreter.
+
 ## Quality Policy
 
 Quality is the correctness of the approved outcome for its intended actors and materially affected use, not a score, tool count or universal checklist.

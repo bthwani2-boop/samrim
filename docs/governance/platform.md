@@ -40,6 +40,12 @@ Store-scoped delegated access is not a new high-level Identity role. It is an ex
 
 A delivery recipient may be a person other than the purchasing Client. A recipient snapshot is bounded delivery-contact data attached to the Store Order; it does not create a Human Actor, role, account, payment authority or support authority. The purchasing Client remains the Order/payment principal.
 
+### User terminology versus deployed identifiers
+
+Use **«عميل» / Customer** for the purchaser and **«تاجر» or «مالك متجر» / Merchant** for merchant-side people in user-facing Arabic and explanatory Product prose, as context requires; **«كابتن» / Captain** and **«مشغّل» / Operator** remain clear. «شريك بثواني» and «متجر مستقل» name the DSH Store relation, **not two human Identity roles or two Merchant apps**. The generic merchant-side management UI serves both relations. Store staff are authorized Store-scoped grants; BThwani employees are HR relationships. Technical Identity role values `client` and `partner`, existing published application IDs, API paths and external Store URLs are compatibility facts, not permission to execute a blind string/filename/identifier rename. Change them only through a traced consumer migration and separate admission where external contracts are affected.
+
+Historical Field and JoiningCase identifiers remain read-only compatibility/audit facts where required; neither authorizes a live Field application, registration, reward, action or new Store writer. Do not replicate deprecated navigation or APIs in the refoundation. Historical financial obligations are not silently erased.
+
 ## Surface model
 
 A Surface is an actor-facing deployable presentation/composition host for admitted Product work.

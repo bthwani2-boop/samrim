@@ -156,6 +156,18 @@ if (!identityGovernance.includes("finance\x60, \x60hr\x60") ||
   fail("Operator HR permission or current-role correction missing");
 if (!experienceGovernance.includes("full Store view opened via the Store's direct URL"))
   fail("unified Store presentation contract missing");
+if (!experienceGovernance.includes("one Stores management center") ||
+    experienceGovernance.includes("eleven work centers:"))
+  fail("single Operator Stores center governance missing or superseded");
+const catalogGovernance = get("docs/governance/catalog.md");
+const engineeringGovernance = get("docs/governance/engineering.md");
+const platformGovernance = get("docs/governance/platform.md");
+if (!catalogGovernance.includes("Minimal Store product-entry path") ||
+    !catalogGovernance.includes("not a second catalog table family"))
+  fail("single catalog with minimal Store offer creation safeguard missing");
+if (!engineeringGovernance.includes("Policy defaults, runtime eligibility and owner-backed bootstrap") ||
+    !platformGovernance.includes("User terminology versus deployed identifiers"))
+  fail("owner policy bootstrap or user/deployable terminology boundary missing");
 
 // Protected feature semantics: static deletion sentinels, not proof of runtime delivery.
 const commerceGovernance = get("docs/governance/commerce.md");
