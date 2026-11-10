@@ -9,8 +9,8 @@ import { PremiumOrderProgress, PremiumStoreIdentity, premiumColors } from "../or
 import { orderJourneyPresentation } from "./order-journey";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { emptyOrdersNextAction, isPartialOrderListEmpty, matchesOrderFilters, matchesOrderStatus, type OrderFulfillmentFilter } from "./order-list-filter";
-import { isClientActorScopeCurrent } from "./order-session-scope";
-import { acquireRepeatOrder, createRepeatOrderGate, invalidateRepeatOrderForActorChange, ownsRepeatOrder, releaseRepeatOrder } from "./repeat-order-gate";
+import { clientOrderSessionKey, isClientActorScopeCurrent } from "./order-session-scope";
+import { acquireRepeatOrder, createRepeatOrderGate, invalidateRepeatOrderForSessionChange, ownsRepeatOrder, releaseRepeatOrder } from "./repeat-order-gate";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const statusOptions = [
@@ -27,7 +27,7 @@ const fulfillmentOptions = [
   { key: "pickup", label: "استلم بنفسك" },
 ] as const;
 
-type OrdersState = { kind: "loading" } | { kind: "ready"; orders: ReadonlyArray<Order>; actorID: string; nextCursor: string } | { kind: "error" } | { kind: "auth_required" };
+type OrdersState = { kind: "loading" } | { kind: "ready"; orders: ReadonlyArray<Order>; actorID: string; sessionKey: string; nextCursor: string } | { kind: "error" } | { kind: "auth_required" };
 
 function baseUrl(): string {
   const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -37,9 +37,8 @@ function baseUrl(): string {
 
 const client = () => createDshMobileClient(baseUrl(), { cryptoRandomUUID: () => Crypto.randomUUID() });
 
-function hasCurrentOrdersActor(actorID: string): boolean {
-  const session = currentIdentityState();
-  return session.kind === "authenticated" && isClientActorScopeCurrent(actorID, session.identity.subject.trim());
+function hasCurrentOrdersSession(sessionKey: string): boolean {
+  return Boolean(sessionKey) && clientOrderSessionKey(currentIdentityState()) === sessionKey;
 }
 
 export default function ClientOrders() {
@@ -52,6 +51,7 @@ export default function ClientOrders() {
   const [state, setState] = useState<OrdersState>({ kind: "loading" });
   const [identityState, setIdentityState] = useState(currentIdentityState);
   const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
+  const activeSessionKey = clientOrderSessionKey(identityState);
   const loadSequence = useRef(0);
   const pageSequence = useRef(0);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -73,33 +73,33 @@ export default function ClientOrders() {
     setLoadingMore(false);
     setLoadMoreError("");
     const session = currentIdentityState();
-    if (session.kind !== "authenticated" || !session.identity.subject.trim()) { setState({ kind: "auth_required" }); return; }
+    const sessionKey = clientOrderSessionKey(session);
+    if (session.kind !== "authenticated" || !sessionKey) { setState({ kind: "auth_required" }); return; }
     const actorID = session.identity.subject.trim();
     setState({ kind: "loading" });
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!hasCurrentOrdersSession(sessionKey)) return;
       const response = await client().listClientOrders(token, 50);
-      const current = currentIdentityState();
-      if (sequence !== loadSequence.current || current.kind !== "authenticated" || !isClientActorScopeCurrent(actorID, current.identity.subject.trim())) return;
-      setState({ kind: "ready", orders: response.orders, actorID, nextCursor: response.nextCursor ?? "" });
+      if (sequence !== loadSequence.current || !hasCurrentOrdersSession(sessionKey)) return;
+      setState({ kind: "ready", orders: response.orders, actorID, sessionKey, nextCursor: response.nextCursor ?? "" });
     } catch (error) {
       console.error("DSH client orders read failed", error);
-      const current = currentIdentityState();
-      if (sequence !== loadSequence.current || current.kind !== "authenticated" || !isClientActorScopeCurrent(actorID, current.identity.subject.trim())) return;
+      if (sequence !== loadSequence.current || !hasCurrentOrdersSession(sessionKey)) return;
       setState({ kind: "error" });
     }
   }, []);
 
   const visibleOrders = useMemo(() => {
-    if (state.kind !== "ready") return [];
+    if (state.kind !== "ready" || state.sessionKey !== activeSessionKey) return [];
     return state.orders.filter((order) => {
       if (!matchesOrderFilters(order, fulfillmentFilter)) return false;
       if (!matchesOrderStatus(order.state, statusFilter)) return false;
       const q = search.trim().toLocaleLowerCase("ar");
       return !q || order.storeName.toLocaleLowerCase("ar").includes(q) || order.id.toLowerCase().includes(q);
     });
-  }, [fulfillmentFilter, statusFilter, search, state]);
-  const partialEmpty = state.kind === "ready" && isPartialOrderListEmpty(visibleOrders.length, state.nextCursor);
+  }, [fulfillmentFilter, statusFilter, search, state, activeSessionKey]);
+  const partialEmpty = state.kind === "ready" && state.sessionKey === activeSessionKey && isPartialOrderListEmpty(visibleOrders.length, state.nextCursor);
   const emptyStateTitle = partialEmpty ? "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0645\u0637\u0627\u0628\u0642\u0629 \u0636\u0645\u0646 \u0627\u0644\u0637\u0644\u0628\u0627\u062a \u0627\u0644\u0645\u062d\u0645\u0651\u0644\u0629"
     : search.trim() || fulfillmentFilter !== "all" ? "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0645\u0637\u0627\u0628\u0642\u0629"
     : statusFilter === "cancelled" ? "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0645\u0644\u063a\u0627\u0629"
@@ -111,45 +111,46 @@ export default function ClientOrders() {
     const token = await getUsableIdentityAccessToken();
     return (await client().readOrderConversation(token, orderId, 1)).unreadCount;
   }, []);
-  const unreadChatCounts = useConversationUnreadCounts(visibleOrders.map(order => order.id), activeActorID, ordersFocused, getChatUnread);
+  const unreadChatCounts = useConversationUnreadCounts(visibleOrders.map(order => order.id), activeSessionKey, ordersFocused, getChatUnread);
 
   const loadMore = useCallback(async () => {
-    if (state.kind !== "ready" || !state.nextCursor || loadingMore || !isClientActorScopeCurrent(state.actorID, activeActorID) || !hasCurrentOrdersActor(state.actorID)) return;
+    if (state.kind !== "ready" || !state.nextCursor || loadingMore || !isClientActorScopeCurrent(state.actorID, activeActorID) || !hasCurrentOrdersSession(state.sessionKey)) return;
     const sequence = ++pageSequence.current;
     const loadID = loadSequence.current;
     const cursor = state.nextCursor;
     const actorID = state.actorID;
+    const sessionKey = state.sessionKey;
     setLoadMoreError("");
     setLoadingMore(true);
     try {
       const token = await getUsableIdentityAccessToken();
-      if (sequence !== pageSequence.current || loadID !== loadSequence.current || !hasCurrentOrdersActor(actorID)) return;
+      if (sequence !== pageSequence.current || loadID !== loadSequence.current || !hasCurrentOrdersSession(sessionKey)) return;
       const response = await client().listClientOrders(token, 50, "", cursor);
-      if (sequence !== pageSequence.current || loadID !== loadSequence.current || !hasCurrentOrdersActor(actorID)) return;
+      if (sequence !== pageSequence.current || loadID !== loadSequence.current || !hasCurrentOrdersSession(sessionKey)) return;
       setState((current) => {
-        if (current.kind !== "ready" || current.actorID !== actorID || current.nextCursor !== cursor) return current;
+        if (current.kind !== "ready" || current.sessionKey !== sessionKey || current.actorID !== actorID || current.nextCursor !== cursor) return current;
         const existingIDs = new Set(current.orders.map((item) => item.id));
         return { ...current, orders: [...current.orders, ...response.orders.filter((item) => !existingIDs.has(item.id))], nextCursor: response.nextCursor && response.nextCursor !== cursor ? response.nextCursor : "" };
       });
     } catch (error) {
       console.error("DSH client orders next-page read failed", error);
-      if (sequence === pageSequence.current && loadID === loadSequence.current && hasCurrentOrdersActor(actorID)) setLoadMoreError("تعذر تحميل الطلبات الأقدم. أعد المحاولة.");
+      if (sequence === pageSequence.current && loadID === loadSequence.current && hasCurrentOrdersSession(sessionKey)) setLoadMoreError("تعذر تحميل الطلبات الأقدم. أعد المحاولة.");
     } finally {
-      if (sequence === pageSequence.current && loadID === loadSequence.current && hasCurrentOrdersActor(actorID)) setLoadingMore(false);
+      if (sequence === pageSequence.current && loadID === loadSequence.current && hasCurrentOrdersSession(sessionKey)) setLoadingMore(false);
     }
-  }, [state, loadingMore, activeActorID]);
+  }, [state, loadingMore, activeSessionKey, activeActorID]);
 
   const repeatOrder = useCallback(async (order: Order) => {
-    if (state.kind !== "ready" || !isClientActorScopeCurrent(state.actorID, activeActorID) || !hasCurrentOrdersActor(state.actorID) || !order.lines.length) return;
-    const actorID = state.actorID;
-    const lease = acquireRepeatOrder(repeatOrderGate.current, actorID, order.id);
+    if (state.kind !== "ready" || !isClientActorScopeCurrent(state.actorID, activeActorID) || !hasCurrentOrdersSession(state.sessionKey) || !order.lines.length) return;
+    const sessionKey = state.sessionKey;
+    const lease = acquireRepeatOrder(repeatOrderGate.current, sessionKey, order.id);
     if (!lease) return;
     setRepeatingOrderID(order.id);
     setRepeatError("");
     let appliedCount = 0;
     try {
       const token = await getUsableIdentityAccessToken();
-      if (!ownsRepeatOrder(repeatOrderGate.current, lease) || !hasCurrentOrdersActor(actorID)) return;
+      if (!ownsRepeatOrder(repeatOrderGate.current, lease) || !hasCurrentOrdersSession(sessionKey)) return;
       let cart: Cart | null = null;
       try {
         cart = (await client().readOpenCart(token, order.storeId)).cart;
@@ -158,7 +159,7 @@ export default function ClientOrders() {
         if (!missingCart) throw error;
       }
 
-      if (!ownsRepeatOrder(repeatOrderGate.current, lease) || !hasCurrentOrdersActor(actorID)) return;
+      if (!ownsRepeatOrder(repeatOrderGate.current, lease) || !hasCurrentOrdersSession(sessionKey)) return;
       const plan = order.lines.map((line) => {
         const existing = cart?.lines.find((cartLine) => cartLine.storeOfferId === line.storeOfferId);
         if (existing && !sameIDs(existing.selectedModifierOptionIds, line.selectedModifierOptionIds)) {
@@ -179,7 +180,7 @@ export default function ClientOrders() {
       let expectedVersion = cart?.version ?? 0;
       for (const item of plan) {
         if (item.error) continue;
-        if (!ownsRepeatOrder(repeatOrderGate.current, lease) || !hasCurrentOrdersActor(actorID)) return;
+        if (!ownsRepeatOrder(repeatOrderGate.current, lease) || !hasCurrentOrdersSession(sessionKey)) return;
         const response = await client().upsertCartLine(token, {
           storeId: order.storeId,
           storeOfferId: item.storeOfferId,
@@ -189,46 +190,45 @@ export default function ClientOrders() {
         expectedVersion = response.cart.version;
         appliedCount += 1;
       }
-      if (!ownsRepeatOrder(repeatOrderGate.current, lease) || !hasCurrentOrdersActor(actorID)) return;
+      if (!ownsRepeatOrder(repeatOrderGate.current, lease) || !hasCurrentOrdersSession(sessionKey)) return;
       router.push(`/cart/${encodeURIComponent(order.storeId)}?fulfillmentMode=${encodeURIComponent(order.fulfillmentMode)}` as Href);
     } catch (error) {
       console.error("DSH client order repeat failed", error);
-      if (!ownsRepeatOrder(repeatOrderGate.current, lease) || !hasCurrentOrdersActor(actorID)) return;
+      if (!ownsRepeatOrder(repeatOrderGate.current, lease) || !hasCurrentOrdersSession(sessionKey)) return;
       setRepeatError(appliedCount ? `تعذر إكمال التكرار؛ أُضيف ${appliedCount} من ${order.lines.length} منتجات. راجع السلة قبل المتابعة.` : "تعذر تكرار الطلب. قد يتغير توفر المنتجات أو خياراتها؛ حدّث القائمة وحاول مجددًا.");
     } finally {
       if (releaseRepeatOrder(repeatOrderGate.current, lease)) {
         setRepeatingOrderID((current) => repeatOrderGate.current.current === null && current === order.id ? "" : current);
       }
     }
-  }, [activeActorID, router, state]);
+  }, [activeSessionKey, activeActorID, router, state]);
 
   useEffect(() => subscribeIdentitySession((next) => {
-    const nextActorID = next.kind === "authenticated" ? next.identity.subject.trim() : "";
-    const invalidated = invalidateRepeatOrderForActorChange(repeatOrderGate.current, nextActorID);
+    const invalidated = invalidateRepeatOrderForSessionChange(repeatOrderGate.current, clientOrderSessionKey(next));
     if (invalidated) {
       setRepeatingOrderID((current) => repeatOrderGate.current.current === null && current === invalidated.orderID ? "" : current);
     }
     setIdentityState(next);
   }), []);
   useEffect(() => {
-    if (state.kind !== "ready" || !hasCurrentOrdersActor(state.actorID)) {
+    if (state.kind !== "ready" || !hasCurrentOrdersSession(state.sessionKey)) {
       setStoreIdentity({});
       return;
     }
     let live = true;
-    const actorID = state.actorID;
+    const sessionKey = state.sessionKey;
     const uniqueStores = [...new Map(state.orders.slice(0, 12).map((order) => [order.storeId, { storeId: order.storeId, cityId: order.serviceCityId }])).values()];
     void Promise.all(uniqueStores.map(async ({ storeId, cityId }) => {
       try { return [storeId, await client().readPublishedStore(storeId, cityId)] as const; }
       catch { return null; }
     })).then((results) => {
-      if (live && hasCurrentOrdersActor(actorID)) setStoreIdentity(Object.fromEntries(results.filter((result): result is readonly [string, PublicStoreView] => result !== null)));
+      if (live && hasCurrentOrdersSession(sessionKey)) setStoreIdentity(Object.fromEntries(results.filter((result): result is readonly [string, PublicStoreView] => result !== null)));
     });
     return () => { live = false; };
   }, [state]);
 
   useFocusEffect(useCallback(() => {
-    if (!activeActorID) {
+    if (!activeSessionKey) {
       loadSequence.current += 1;
       pageSequence.current += 1;
       setState({ kind: "auth_required" });
@@ -239,9 +239,9 @@ export default function ClientOrders() {
       loadSequence.current += 1;
       pageSequence.current += 1;
     };
-  }, [activeActorID, load]));
+  }, [activeSessionKey, load]));
 
-  if (state.kind === "ready" && !isClientActorScopeCurrent(state.actorID, activeActorID)) {
+  if (state.kind === "ready" && (state.sessionKey !== activeSessionKey || !isClientActorScopeCurrent(state.actorID, activeActorID))) {
     return <View style={styles.state} accessibilityLabel="جارٍ التحقق من صاحب الطلبات"><BthwaniSkeleton height={112} /><Text style={styles.muted}>جارٍ التحقق من الجلسة وملكية الطلبات…</Text></View>;
   }
   if (state.kind === "auth_required") {

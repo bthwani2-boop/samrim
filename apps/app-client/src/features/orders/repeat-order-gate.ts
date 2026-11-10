@@ -1,5 +1,5 @@
 export type RepeatOrderLease = Readonly<{
-  actorID: string;
+  sessionKey: string;
   orderID: string;
 }>;
 
@@ -11,11 +11,11 @@ export function createRepeatOrderGate(): RepeatOrderGate {
 
 export function acquireRepeatOrder(
   gate: RepeatOrderGate,
-  actorID: string,
+  sessionKey: string,
   orderID: string,
 ): RepeatOrderLease | null {
-  if (!actorID.trim() || gate.current?.actorID === actorID) return null;
-  const lease = { actorID, orderID };
+  if (!sessionKey.trim() || gate.current?.sessionKey === sessionKey) return null;
+  const lease = { sessionKey, orderID };
   gate.current = lease;
   return lease;
 }
@@ -30,12 +30,12 @@ export function releaseRepeatOrder(gate: RepeatOrderGate, lease: RepeatOrderLeas
   return true;
 }
 
-export function invalidateRepeatOrderForActorChange(
+export function invalidateRepeatOrderForSessionChange(
   gate: RepeatOrderGate,
-  activeActorID: string,
+  activeSessionKey: string,
 ): RepeatOrderLease | null {
   const current = gate.current;
-  if (!current || current.actorID === activeActorID) return null;
+  if (!current || current.sessionKey === activeSessionKey) return null;
   gate.current = null;
   return current;
 }
