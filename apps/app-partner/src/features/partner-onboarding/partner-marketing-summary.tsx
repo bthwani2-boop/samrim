@@ -1,11 +1,14 @@
 import { typography } from "@bthwani/design-system";
 import { useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, storeContentEventRatios, verifiedStoreContentPerformance, type StoreContentPerformanceSummary } from "@bthwani/dsh";
+import { createDshMobileClient, type StoreContentPerformanceSummary, storeContentEventRatios, verifiedStoreContentPerformance } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
+import { partnerSetupSessionKey } from "./partner-setup-session-scope";
+
+const currentPartnerSessionKey = () => partnerSetupSessionKey(currentIdentityState());
 
 export function PartnerStoreMarketingSummary({ storeId }: Readonly<{ storeId: string }>) {
   const theme = useAppearanceTheme();
@@ -19,11 +22,10 @@ export function PartnerStoreMarketingSummary({ storeId }: Readonly<{ storeId: st
     error: { ...typography.bodySm, color: theme.danger },
     action: { backgroundColor: theme.actionSoft, padding: 12, borderRadius: 10, alignSelf: "flex-start" },
   }), [theme]);
-  const [identityState, setIdentityState] = useState(currentIdentityState);
-  useEffect(() => subscribeIdentitySession(setIdentityState), []);
-  const activeActor = identityState.kind === "authenticated" ? identityState.identity.subject : "";
+  const sessionKey = useSyncExternalStore(subscribeIdentitySession, currentPartnerSessionKey, () => "");
   const [loadedScope, setLoadedScope] = useState("");
   const [period, setPeriod] = useState<"7d" | "30d" | "all">("all");
+  const scopeKey = JSON.stringify([sessionKey, storeId, period]);
   const [summary, setSummary] = useState<StoreContentPerformanceSummary | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -33,14 +35,10 @@ export function PartnerStoreMarketingSummary({ storeId }: Readonly<{ storeId: st
     void retry;
     let active = true;
     setSummary(null); setLoadedScope(""); setError(""); setLoading(true);
-    const actorId = activeActor;
-    const valid = () => {
-      const now = currentIdentityState();
-      return active && Boolean(actorId) && now.kind === "authenticated" && now.identity.subject === actorId;
-    };
+    const valid = () => active && Boolean(sessionKey) && currentPartnerSessionKey() === sessionKey;
     void (async () => {
       const base = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-      if (!base || !actorId) throw new Error("MARKETING_SESSION_REQUIRED");
+      if (!base || !sessionKey) throw new Error("MARKETING_SESSION_REQUIRED");
       const token = await getUsableIdentityAccessToken();
       if (!valid()) return;
       const api = createDshMobileClient(base, { cryptoRandomUUID: () => Crypto.randomUUID() });
@@ -49,12 +47,12 @@ export function PartnerStoreMarketingSummary({ storeId }: Readonly<{ storeId: st
       const verified = verifiedStoreContentPerformance(result, storeId, period);
       if (!verified) throw new Error("MARKETING_SUMMARY_SCOPE_MISMATCH");
       setSummary(verified);
-      setLoadedScope(actorId + "|" + storeId + "|" + period);
+      setLoadedScope(scopeKey);
     })().catch(() => { if (valid()) setError("تعذرت قراءة تحليلات مقاطع هذا المتجر. تحقق من الصلاحية والاتصال ثم أعد المحاولة."); })
       .finally(() => { if (valid()) setLoading(false); });
     return () => { active = false; };
-  }, [storeId, retry, activeActor, period]));
-  const visibleSummary = activeActor && loadedScope === activeActor + "|" + storeId + "|" + period ? summary : null;
+  }, [storeId, retry, sessionKey, scopeKey, period]));
+  const visibleSummary = sessionKey && currentPartnerSessionKey() === sessionKey && loadedScope === scopeKey ? summary : null;
   const ratios = storeContentEventRatios(visibleSummary);
 
   return <View style={styles.panel} accessibilityLabel="ملخص أداء مقاطع المتجر">
@@ -66,9 +64,9 @@ export function PartnerStoreMarketingSummary({ storeId }: Readonly<{ storeId: st
           accessibilityState={{selected:period===item.value}} onPress={()=>setPeriod(item.value)}
           style={styles.action}><Text style={styles.muted}>{item.label}</Text></Pressable>)}
     </View>
-    {!activeActor ? <Text style={styles.error}>يلزم تسجيل الدخول لقراءة تحليلات المتجر.</Text> : null}
-    {activeActor && loading ? <ActivityIndicator accessibilityLabel="جارٍ تحميل تحليلات التسويق" color={theme.brandAction}/> : null}
-    {activeActor && error ? <View style={{ gap: 9 }}><Text accessibilityRole="alert" style={styles.error}>{error}</Text>
+    {!sessionKey ? <Text style={styles.error}>يلزم تسجيل الدخول لقراءة تحليلات المتجر.</Text> : null}
+    {sessionKey && loading ? <ActivityIndicator accessibilityLabel="جارٍ تحميل تحليلات التسويق" color={theme.brandAction}/> : null}
+    {sessionKey && error ? <View style={{ gap: 9 }}><Text accessibilityRole="alert" style={styles.error}>{error}</Text>
       <Pressable accessibilityRole="button" accessibilityLabel="إعادة قراءة تحليلات المقاطع" style={styles.action} onPress={() => setRetry(v => v + 1)}>
         <Text style={styles.heading}>إعادة المحاولة</Text>
       </Pressable>
