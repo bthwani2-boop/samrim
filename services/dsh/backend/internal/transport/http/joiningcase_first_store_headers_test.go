@@ -5,7 +5,17 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
+
+func TestJoiningCaseAdmissionClosureUsesConflictResponse(t *testing.T) {
+	response := httptest.NewRecorder()
+	writeJoiningCaseError(response, postgres.ErrStoreJoiningClosed)
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"code":"STORE_JOINING_CLOSED"`) {
+		t.Fatalf("paused Store admission must return a recoverable conflict: HTTP %d %s", response.Code, response.Body.String())
+	}
+}
 
 func TestFirstStoreCreateRejectsActorOverrideAndMissingIdempotency(t *testing.T) {
 	for _, tc := range []struct {

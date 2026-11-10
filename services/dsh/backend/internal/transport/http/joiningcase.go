@@ -116,10 +116,6 @@ func (s *JoiningCaseServer) createPartnerFirstStore(w http.ResponseWriter, r *ht
 	}
 	store, replayed, err := s.service.CreateFirstStore(r.Context(), token, input, idempotencyKey)
 	if err != nil {
-		if errors.Is(err, postgres.ErrStoreJoiningClosed) {
-			writeError(w, http.StatusConflict, "STORE_JOINING_CLOSED", "new Stores in the chosen relation are currently unavailable")
-			return
-		}
 		if errors.Is(err, postgres.ErrSelfStoreIdempotency) {
 			writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key belongs to another first Store request or actor")
 			return
@@ -438,6 +434,8 @@ func writeJoiningCaseError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "JOINING_CASE_EXISTS", "an active joining case already exists for this phone")
 	case errors.Is(err, postgres.ErrJoiningCaseStoreExists):
 		writeError(w, http.StatusConflict, "STORE_EXISTS", "partner already has a canonical store")
+	case errors.Is(err, postgres.ErrStoreJoiningClosed):
+		writeError(w, http.StatusConflict, "STORE_JOINING_CLOSED", "new Stores in the chosen relation are currently unavailable")
 	case errors.Is(err, postgres.ErrJoiningCaseInvalidDecision):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "review decision is invalid")
 	case errors.Is(err, postgres.ErrJoiningCasePartnerAccess):

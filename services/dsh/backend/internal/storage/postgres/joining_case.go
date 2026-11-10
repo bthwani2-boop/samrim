@@ -866,7 +866,7 @@ func createJoiningCaseReviewStoreTx(ctx context.Context, tx *sql.Tx, current Joi
 	if current.FirstStoreCommercialTypeID == "" {
 		return "", ErrCommercialStoreTypeNotFound
 	}
-	if err := requireActiveJoiningCaseOptionsTx(ctx, tx, current.FirstStoreServiceCityID, current.FirstStoreVerticalID, current.FirstStoreCommercialTypeID); err != nil {
+	if err := lockFirstStoreOwnerTx(ctx, tx, current.PartnerActorID); err != nil {
 		return "", err
 	}
 	var existingStore string
@@ -879,9 +879,6 @@ func createJoiningCaseReviewStoreTx(ctx context.Context, tx *sql.Tx, current Joi
 	if err != nil {
 		return "", err
 	}
-	if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.stores(id,partner_actor_id,name,service_city_id,primary_vertical_id,commercial_store_type_id,address_text,business_working_hours,delivery_origin_latitude,delivery_origin_longitude,delivery_origin_version,delivery_origin_updated_at,fulfillment_modes) VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,''),NULLIF($8,'')::jsonb,$9,$10,1,clock_timestamp(),$11)", storeID, current.PartnerActorID, current.FirstStoreName, current.FirstStoreServiceCityID, current.FirstStoreVerticalID, current.FirstStoreCommercialTypeID, current.FirstStoreAddress, string(current.FirstStoreWorkingHours), *current.FirstStoreLatitude, *current.FirstStoreLongitude, pq.Array(current.FirstStoreFulfillmentModes)); err != nil {
-		return "", fmt.Errorf("create canonical store: %w", err)
-	}
 	// Seed the actual orderability owner from the accepted intake schedule in
 	// the same transaction as Store creation. Never default this Store to 24/7.
 	windows, err := operationalWindowsFromJoiningHours(current.FirstStoreWorkingHours)
@@ -892,11 +889,15 @@ func createJoiningCaseReviewStoreTx(ctx context.Context, tx *sql.Tx, current Joi
 	if err != nil {
 		return "", fmt.Errorf("encode initial operating hours: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.store_operational_availability
-		(store_id,schedule_mode,schedule_timezone,weekly_schedule,paused,unavailable_fulfillment_modes,version,updated_by_actor_id)
-		VALUES($1,'WEEKLY',$2,$3::jsonb,false,ARRAY[]::text[],1,$4)`,
-		storeID, StoreScheduleTimezone, string(scheduleJSON), "system:joining-case"); err != nil {
-		return "", fmt.Errorf("initialize canonical Store orderability: %w", err)
+	input := SelfStoreInput{
+		RelationModel: StoreRelationBThwaniPartner, Name: current.FirstStoreName,
+		ServiceCityID: current.FirstStoreServiceCityID, VerticalID: current.FirstStoreVerticalID,
+		CommercialTypeID: current.FirstStoreCommercialTypeID, Address: current.FirstStoreAddress,
+		Latitude: *current.FirstStoreLatitude, Longitude: *current.FirstStoreLongitude,
+		FulfillmentModes: current.FirstStoreFulfillmentModes,
+	}
+	if err := createStoreTx(ctx, tx, storeID, current.PartnerActorID, input, current.FirstStoreWorkingHours, scheduleJSON, "system:joining-case"); err != nil {
+		return "", err
 	}
 	if err := AttachStoreProfileMediaToStoreTx(ctx, tx, caseID, storeID); err != nil {
 		return "", fmt.Errorf("attach canonical store profile image: %w", err)

@@ -34,7 +34,7 @@ test("setup distinguishes authentication and genuine network errors", () => {
 
 test("read-only 404 handling does not change save errors or unlock enrollment", () => {
   assert.match(errorText({ kind: "http", status: 404 }, "save"), /تعذر حفظ المتجر/);
-  assert.match(errorText({ kind: "http", status: 409, code: "STORE_JOINING_CLOSED" }, "read"), /غير متاح للانضمام/);
+  assert.match(errorText({ kind: "http", status: 409, code: "STORE_JOINING_CLOSED" }, "read"), /غير متاحة للانضمام/);
   assert.match(source, /setRegistryReady\(false\)/);
   assert.match(source, /!checking&&registryReady&&!saved/);
   assert.match(source, /service\(\)\.listStoreJoiningPolicies\(\)/);
