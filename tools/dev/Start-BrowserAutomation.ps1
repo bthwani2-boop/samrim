@@ -54,7 +54,11 @@ function Test-ExactBrowserProfile {
 
 function Test-CdpEndpoint {
     param([string]$Name, [string]$Executable, [string]$ProfileDir, [int]$Port)
-    $connections = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
+    # Some Windows TCP providers report an open listener as state 0. Keep
+    # only peerless candidates and prove the actual endpoint below.
+    $connections = @(Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue | Where-Object {
+        $_.State -eq 'Listen' -or ($_.CimInstanceProperties['State'].Value -eq 0 -and $_.RemotePort -eq 0)
+    })
     if ($connections.Count -eq 0) { return $false }
     foreach ($connection in $connections) {
         if ($connection.LocalAddress -notin @('127.0.0.1', '::1')) {
