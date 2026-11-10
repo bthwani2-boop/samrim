@@ -1,5 +1,5 @@
-import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniIcon, BthwaniIconButton, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { type resolveTheme, sizing, typography } from "@bthwani/design-system";
+import { BthwaniButton, BthwaniIcon, BthwaniIconButton, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { createDshMobileClient, type Notification } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { usePartnerStoreScope } from "../partner-onboarding/partner-store-scope-context";
+import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";
 
 const copy = {
   accessibilityLabel: "إشعارات الشريك",
@@ -20,9 +21,12 @@ function dshClient() {
   return createDshMobileClient(value, { cryptoRandomUUID: () => Crypto.randomUUID() });
 }
 
-function activeActorID(): string {
-  const session = currentIdentityState();
-  return session.kind === "authenticated" ? session.identity.subject.trim() : "";
+function currentNotificationsSessionKey(): string {
+  return partnerSetupSessionKey(currentIdentityState());
+}
+
+function isCurrentNotificationsSession(sessionKey: string): boolean {
+  return Boolean(sessionKey) && currentNotificationsSessionKey() === sessionKey;
 }
 
 export function NotificationsInbox() {
@@ -30,42 +34,55 @@ export function NotificationsInbox() {
   const { stores, selectStore, selectedStore } = usePartnerStoreScope();
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [actorID, setActorID] = useState(activeActorID);
-  const authenticated = Boolean(actorID);
+  const [sessionKey, setSessionKey] = useState(currentNotificationsSessionKey);
+  const sessionKeyRef = useRef(sessionKey);
+  const authenticated = isCurrentNotificationsSession(sessionKey);
   const requestID = useRef(0);
   const [items, setItems] = useState<ReadonlyArray<Notification>>([]);
+  const [loadedSessionKey, setLoadedSessionKey] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(authenticated);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  const unreadItems = useMemo(() => items.filter((item) => !item.readAt), [items]);
-  const readItems = useMemo(() => items.filter((item) => Boolean(item.readAt)), [items]);
+  // Old private results never render during a same-actor session renewal.
+  const visibleItems = authenticated && loadedSessionKey === sessionKey ? items : [];
+  const visibleUnreadCount = authenticated && loadedSessionKey === sessionKey ? unreadCount : 0;
+  const unreadItems = visibleItems.filter((item) => !item.readAt);
+  const readItems = visibleItems.filter((item) => Boolean(item.readAt));
 
   const load = useCallback(async (preserveCurrent = false) => {
-    if (!actorID || activeActorID() !== actorID) return;
+    if (!isCurrentNotificationsSession(sessionKey)) return;
     const sequence = ++requestID.current;
     if (!preserveCurrent) setLoading(true);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      if (sequence !== requestID.current || activeActorID() !== actorID) return;
+      if (sequence !== requestID.current || !isCurrentNotificationsSession(sessionKey)) return;
       const response = await dshClient().listNotifications(token, 50);
-      if (sequence !== requestID.current || activeActorID() !== actorID) return;
+      if (sequence !== requestID.current || !isCurrentNotificationsSession(sessionKey)) return;
       setItems(response.notifications);
       setUnreadCount(response.unreadCount);
+      setLoadedSessionKey(sessionKey);
     } catch (cause) {
       console.error("DSH partner notifications readback failed", cause);
-      if (sequence === requestID.current && activeActorID() === actorID) setError("تعذر قراءة الإشعارات. أعد المحاولة.");
+      if (sequence === requestID.current && isCurrentNotificationsSession(sessionKey)) {
+        setLoadedSessionKey(sessionKey);
+        setError("تعذر قراءة الإشعارات. أعد المحاولة.");
+      }
     } finally {
-      if (sequence === requestID.current && activeActorID() === actorID) {
+      if (sequence === requestID.current && isCurrentNotificationsSession(sessionKey)) {
         if (!preserveCurrent) setLoading(false);
       }
     }
-  }, [actorID]);
+  }, [sessionKey]);
 
   useEffect(() => subscribeIdentitySession(() => {
+    const nextSessionKey = currentNotificationsSessionKey();
+    if (sessionKeyRef.current === nextSessionKey) return;
+    sessionKeyRef.current = nextSessionKey;
     requestID.current += 1;
-    setActorID(activeActorID());
+    setSessionKey(nextSessionKey);
+    setLoadedSessionKey("");
     setItems([]);
     setUnreadCount(0);
     setLoading(false);
@@ -96,17 +113,17 @@ export function NotificationsInbox() {
   }
 
   async function markRead(item: Notification) {
-    if (busy || !actorID || activeActorID() !== actorID) return;
+    if (busy || loadedSessionKey !== sessionKey || !isCurrentNotificationsSession(sessionKey)) return;
     setBusy(item.id);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      if (activeActorID() !== actorID) return;
+      if (!isCurrentNotificationsSession(sessionKey)) return;
       if (!item.readAt) {
         await dshClient().markNotificationRead(token, item.id);
-        if (activeActorID() === actorID) await load(true);
+        if (isCurrentNotificationsSession(sessionKey)) await load(true);
       }
-      if (activeActorID() === actorID) {
+      if (isCurrentNotificationsSession(sessionKey)) {
         const target = destination(item);
         if (target) {
           if (item.storeId && selectedStore?.id !== item.storeId) selectStore(item.storeId);
@@ -117,9 +134,9 @@ export function NotificationsInbox() {
       }
     } catch (cause) {
       console.error("DSH partner notification read-state write failed", cause);
-      if (activeActorID() === actorID) setError("تعذر تحديث حالة الإشعار.");
+      if (isCurrentNotificationsSession(sessionKey)) setError("تعذر تحديث حالة الإشعار.");
     } finally {
-      if (activeActorID() === actorID) setBusy("");
+      if (isCurrentNotificationsSession(sessionKey)) setBusy("");
     }
   }
 
@@ -155,12 +172,12 @@ export function NotificationsInbox() {
           <Text style={styles.muted}>{copy.unauthenticatedDescription}</Text>
           <BthwaniButton label="تسجيل الدخول" onPress={() => router.replace("/?returnTo=/notifications" as Href)} />
         </BthwaniSurface>
-      ) : loading ? (
+      ) : loading || loadedSessionKey !== sessionKey ? (
         <View style={styles.loadingState} accessibilityLabel="جارٍ تجهيز الإشعارات">
           <BthwaniSkeleton width="100%" height={70} />
           <BthwaniSkeleton width="100%" height={70} />
         </View>
-      ) : !items.length && error ? (
+      ) : !visibleItems.length && error ? (
         <BthwaniSurface tone="inset" style={styles.state}>
           <View style={styles.stateIcon}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /></View>
           <Text accessibilityRole="alert" style={styles.cardTitle}>تعذر قراءة الإشعارات</Text>
@@ -169,10 +186,10 @@ export function NotificationsInbox() {
         </BthwaniSurface>
       ) : (
         <>
-          {unreadCount > 0 ? <Text style={styles.unreadSummary}>{unreadCount === 1 ? "إشعار جديد" : unreadCount + " إشعارات جديدة"}</Text> : null}
+          {visibleUnreadCount > 0 ? <Text style={styles.unreadSummary}>{visibleUnreadCount === 1 ? "إشعار جديد" : visibleUnreadCount + " إشعارات جديدة"}</Text> : null}
           {unreadItems.length ? <View style={styles.group}><View style={styles.groupHeader}><Text style={styles.groupTitle}>الجديدة</Text><Text style={styles.groupCount}>{unreadItems.length}</Text></View><View style={styles.list}>{unreadItems.map(renderItem)}</View></View> : null}
           {readItems.length ? <View style={styles.group}><View style={styles.groupHeader}><Text style={styles.groupTitle}>المقروءة</Text><Text style={styles.groupCount}>{readItems.length}</Text></View><View style={styles.list}>{readItems.map(renderItem)}</View></View> : null}
-          {!items.length ? <Text style={styles.muted}>لا توجد إشعارات.</Text> : null}
+          {!visibleItems.length ? <Text style={styles.muted}>لا توجد إشعارات.</Text> : null}
           {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
         </>
       )}
