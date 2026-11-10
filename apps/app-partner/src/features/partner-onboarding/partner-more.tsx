@@ -46,7 +46,7 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
   const hour=Number(new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Aden",hour:"2-digit",hourCycle:"h23"}).format(today));
   const greeting=hour<12?"صباح الخير":"مساء الخير";
   const styles=useMemo(()=>createStyles(theme,desktopWeb),[theme,desktopWeb]);
-  const {selectedStore,stores,state,reload}=usePartnerStoreScope();
+  const {selectedStore,stores,state,reload,authority}=usePartnerStoreScope();
   const [actor,setActor]=useState(actorID);
   const [sessionScope,setSessionScope]=useState(()=>partnerSetupSessionKey(currentIdentityState()));
   const stillCurrentSession=useCallback(()=>Boolean(sessionScope)&&partnerSetupSessionKey(currentIdentityState())===sessionScope,[sessionScope]);
@@ -66,7 +66,7 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
   const independent=selectedStore?.relationModel==="INDEPENDENT_STORE";
   const canOperate=Boolean(marketplace && selectedStore && (selectedStore.owned||selectedStore.permissions.includes("store_operations")));
   const can=(permission:"promotions"|"catalog")=>Boolean(selectedStore&&(selectedStore.owned||selectedStore.permissions.includes(permission)));
-  const canOrders=Boolean(marketplace && selectedStore&&(selectedStore.owned||selectedStore.permissions.includes("orders")));
+  const canOrders=authority.canUse("orders");
   const canWallet=Boolean(marketplace && selectedStore&&(selectedStore.owned||selectedStore.permissions.includes("finance_read")||selectedStore.permissions.includes("payout_request")));
   const storeID=canOperate?selectedID:undefined;
 
@@ -155,7 +155,7 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
   const visibleIdentity:IdentityDisplay=stillCurrentSession()?identity:{name:"الحساب الحالي",role:"جارٍ التحقق من الصفة"};
   const visibleStoreImages=stillCurrentSession()?storeImages:null;
   const primaryActions:MenuItem[]=[
-    ...(canOrders?[{label:"الطلبات",description:"قبول الطلبات وتجهيزها ومتابعة التسليم",icon:"orders" as const,href:"/orders" as Href}]:[]),
+    ...(canOrders?[{label:"الطلبات",description:independent?"عرض سجل الطلبات المتاح للمتجر":"قبول الطلبات وتجهيزها ومتابعة التسليم",icon:"orders" as const,href:"/orders" as Href}]:[]),
     ...(can("catalog")?[{label:"المنتجات",description:"إضافة المنتجات والأسعار وتحديث التوفر",icon:"cart" as const,href:"/products" as Href}]:[]),
     ...(canWallet?[{label:"المحفظة",description:"متابعة الرصيد والتسويات المصرّح بها",icon:"wallet" as const,href:"/wallet" as Href}]:[]),
   ];

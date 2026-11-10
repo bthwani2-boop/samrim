@@ -39,6 +39,8 @@ export function PartnerOrders() {
       <BthwaniChip label="جميع متاجر السوق" onPress={() => setScope("ALL_AUTHORIZED")} selected={aggregateMode} />
     </View> : null}
     {!aggregateMode && (permittedStores.length > 1 || !canManageOrders) ? <PartnerStoreScopeSelector eligible={canUseStoreOrders} /> : null}
+    {!aggregateMode && selectedStore && canManageOrders && !isMarketplaceStore(selectedStore) ?
+      <View style={styles.card}><Text accessibilityRole="text" style={styles.muted}>استقبال الطلبات المباشرة غير مفعّل حاليًا. يمكنك مراجعة سجل الطلبات لهذا المتجر.</Text></View> : null}
     {!aggregateMode && selectedStore && canManageOrders ? <OrderManagement key={"orders:" + selectedStore.id} storeId={selectedStore.id} /> : null}
     {aggregateMode ? <OrderManagement key="all-authorized" /> : null}
     {state.kind === "ready" && targetStoreId && !permittedStores.some(store => store.id === targetStoreId) ? <View style={styles.card}><Text style={styles.muted}>لا توجد صلاحية لطلبات هذا المتجر.</Text></View> : null}

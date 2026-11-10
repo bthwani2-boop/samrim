@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { isCurrentOrderListRequest } from "../src/features/order-management/order-page-records.ts";
+import { canUseStoreOrders, derivePartnerAuthority } from "../src/shell/partner-authority.ts";
 
 function deferred() {
   let resolve;
@@ -69,4 +70,19 @@ test("Partner Orders uses the canonical OrderManagement for both relations", () 
   assert.match(parent, /<OrderManagement key=\{"orders:" \+ selectedStore\.id\} storeId=\{selectedStore\.id\}/);
   assert.doesNotMatch(parent, /IndependentPickupOrders|independent-pickup-orders|relationModel === "INDEPENDENT_STORE"/);
   assert.match(management, /client\(\)\.listPartnerOrders\(token,/);
+  assert.match(parent, /canManageOrders && !isMarketplaceStore\(selectedStore\)[\s\S]*?استقبال الطلبات المباشرة غير مفعّل/);
+});
+
+test("More, header selection and Orders honor one authorization rule for both Store relations", () => {
+  const more = readFileSync(new URL("../src/features/partner-onboarding/partner-more.tsx", import.meta.url), "utf8");
+  assert.match(more, /const canOrders=authority\.canUse\("orders"\)/);
+  assert.match(more, /canOrders\?\[\{label:"الطلبات",description:independent\?/);
+  for (const relationModel of ["BTHWANI_PARTNER", "INDEPENDENT_STORE", "UNKNOWN"]) {
+    for (const [owned, permissions] of [[true, []], [false, ["orders"]], [false, ["catalog"]]]) {
+      const store = { relationModel, owned, permissions };
+      const allowed = relationModel !== "UNKNOWN" && (owned || permissions.includes("orders"));
+      assert.equal(canUseStoreOrders(store), allowed);
+      assert.equal(derivePartnerAuthority([store]).canUse("orders"), allowed);
+    }
+  }
 });

@@ -9,7 +9,7 @@ import { dispatchPartnerProductAction } from "./partner-product-actions";
 import { type PropsWithChildren, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BackHandler, type ColorValue, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, type TextInputInstance, View } from "react-native";
 import { usePartnerStoreScope } from "../features/partner-onboarding/partner-store-scope-context";
-import { isMarketplaceStore } from "./partner-authority";
+import { canUseStoreOrders, isMarketplaceStore } from "./partner-authority";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 type PartnerSearchNavigation = {
@@ -69,7 +69,7 @@ function PartnerHeader({ title, isOrders, isProducts, isCatalogSurface, isSubpag
   const router = useRouter();
   const { stores, selectedStore, selectStore } = usePartnerStoreScope();
   const scopedStores = isCatalogSurface ? stores.filter((store) => store.owned || store.permissions.includes("catalog"))
-    : isOrders ? stores.filter((store) => isMarketplaceStore(store) && (store.owned || store.permissions.includes("orders"))) : stores;
+    : isOrders ? stores.filter(canUseStoreOrders) : stores;
   const selectedScopedStore = scopedStores.find((store) => store.id === selectedStore?.id);
   const [pickerOpen, setPickerOpen] = useState(false);
   const focus = Array.isArray(rawFocus) ? rawFocus[0] : rawFocus;
