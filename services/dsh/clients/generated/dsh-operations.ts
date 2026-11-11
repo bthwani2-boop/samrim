@@ -204,6 +204,8 @@ export const dshOperationPaths = {
   proposePartnersStoreCommercialAgreement: { method: "POST", path: "/dsh/operator/partners/stores/{storeId}/commercial-agreements" },
   readFinanceStoreCommercialAgreements: { method: "GET", path: "/dsh/operator/stores/{storeId}/commercial-agreements" },
   decideFinanceStoreCommercialAgreement: { method: "POST", path: "/dsh/operator/stores/{storeId}/commercial-agreements/{agreementId}/decision" },
+  readOperatorStoreRelationCommercialModelDefaults: { method: "GET", path: "/dsh/operator/store-relation-commercial-model-defaults" },
+  updateOperatorStoreRelationCommercialModelDefault: { method: "POST", path: "/dsh/operator/store-relation-commercial-model-defaults" },
   readFinanceStoreTypeCommissionDefaults: { method: "GET", path: "/dsh/operator/commercial-store-types/{commercialStoreTypeId}/commission-defaults" },
   updateFinanceStoreTypeCommissionDefault: { method: "POST", path: "/dsh/operator/commercial-store-types/{commercialStoreTypeId}/commission-defaults" },
   listPartnerStoreOrderRatings: { method: "GET", path: "/dsh/partner/stores/{storeId}/ratings" },

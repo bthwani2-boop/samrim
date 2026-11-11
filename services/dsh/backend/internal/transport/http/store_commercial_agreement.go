@@ -20,6 +20,8 @@ func (s *JoiningCaseServer) RegisterStoreCommercialAgreementRoutes(mux *http.Ser
 	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/commercial-agreements", s.readFinanceStoreCommercialAgreements)
 	mux.HandleFunc("GET /dsh/operator/store-commercial-agreements", s.listFinanceStoreCommercialAgreements)
 	mux.HandleFunc("POST /dsh/operator/stores/{storeId}/commercial-agreements/{agreementId}/decision", s.decideFinanceStoreCommercialAgreement)
+	mux.HandleFunc("GET /dsh/operator/store-relation-commercial-model-defaults", s.readStoreRelationCommercialModelDefaults)
+	mux.HandleFunc("POST /dsh/operator/store-relation-commercial-model-defaults", s.updateStoreRelationCommercialModelDefault)
 	mux.HandleFunc("GET /dsh/operator/commercial-store-types/{commercialStoreTypeId}/commission-defaults", s.readFinanceStoreCommissionDefaults)
 	mux.HandleFunc("POST /dsh/operator/commercial-store-types/{commercialStoreTypeId}/commission-defaults", s.updateFinanceStoreCommissionDefault)
 }

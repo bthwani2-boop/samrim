@@ -634,6 +634,8 @@ paths:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1commercial-agreements"
   /dsh/operator/stores/{storeId}/commercial-agreements/{agreementId}/decision:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1stores~1{storeId}~1commercial-agreements~1{agreementId}~1decision"
+  /dsh/operator/store-relation-commercial-model-defaults:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1store-relation-commercial-model-defaults"
   /dsh/operator/commercial-store-types/{commercialStoreTypeId}/commission-defaults:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1commercial-store-types~1{commercialStoreTypeId}~1commission-defaults"
 
@@ -4605,6 +4607,44 @@ components:
         nextCursor:
           type: string
 
+    StoreRelationCommercialModelDefault:
+      type: object
+      required: [relationModel, commercialModel, policyVersion, updatedAt, changedByActorId, changeReason]
+      additionalProperties: false
+      properties:
+        relationModel: { type: string, enum: [BTHWANI_PARTNER, INDEPENDENT_STORE] }
+        commercialModel: { type: string, enum: [COMMISSION, SUBSCRIPTION] }
+        policyVersion: { type: integer, minimum: 1 }
+        updatedAt: { type: string, format: date-time }
+        changedByActorId: { type: string, minLength: 1, maxLength: 128 }
+        changeReason: { type: string, minLength: 8, maxLength: 500 }
+    StoreRelationCommercialModelDefaultsResponse:
+      type: object
+      required: [defaults]
+      additionalProperties: false
+      properties:
+        defaults:
+          type: array
+          maxItems: 2
+          items:
+            $ref: "#/components/schemas/StoreRelationCommercialModelDefault"
+    StoreRelationCommercialModelUpdate:
+      type: object
+      required: [relationModel, commercialModel, expectedVersion, reason]
+      additionalProperties: false
+      properties:
+        relationModel: { type: string, enum: [BTHWANI_PARTNER, INDEPENDENT_STORE] }
+        commercialModel: { type: string, enum: [COMMISSION, SUBSCRIPTION] }
+        expectedVersion: { type: integer, minimum: 0, maximum: 999999 }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+    StoreRelationCommercialModelUpdateResponse:
+      type: object
+      required: [default, idempotentReplay]
+      additionalProperties: false
+      properties:
+        default:
+          $ref: "#/components/schemas/StoreRelationCommercialModelDefault"
+        idempotentReplay: { type: boolean }
     StoreTypeCommissionDefault:
       type: object
       required: [commercialStoreTypeId, fulfillmentMode, suggestedCommissionRateBps, defaultVersion, updatedAt]

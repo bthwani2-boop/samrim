@@ -1134,6 +1134,30 @@ export type FinanceStoreCommercialAgreementQueueResponse = {
   readonly nextCursor?: string;
 };
 
+export type StoreRelationCommercialModelDefault = {
+  readonly relationModel: "BTHWANI_PARTNER" | "INDEPENDENT_STORE";
+  readonly commercialModel: "COMMISSION" | "SUBSCRIPTION";
+  readonly policyVersion: number;
+  readonly updatedAt: string;
+  readonly changedByActorId: string;
+  readonly changeReason: string;
+};
+
+export type StoreRelationCommercialModelDefaultsResponse = {
+  readonly defaults: ReadonlyArray<StoreRelationCommercialModelDefault>;
+};
+
+export type StoreRelationCommercialModelUpdate = {
+  readonly relationModel: StoreRelationCommercialModelDefault["relationModel"];
+  readonly commercialModel: StoreRelationCommercialModelDefault["commercialModel"];
+  readonly expectedVersion: number;
+  readonly reason: string;
+};
+
+export type StoreRelationCommercialModelUpdateResponse = {
+  readonly default: StoreRelationCommercialModelDefault;
+  readonly idempotentReplay: boolean;
+};
 export type StoreTypeCommissionDefault = {
   readonly commercialStoreTypeId: string;
   readonly fulfillmentMode: "BTHWANI_CAPTAIN" | "PARTNER_CAPTAIN" | "CUSTOMER_PICKUP";

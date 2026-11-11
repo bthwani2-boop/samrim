@@ -1,12 +1,12 @@
 "use client";
 
-import { type StoreFulfillmentMode } from "@bthwani/dsh";
+import type { StoreFulfillmentMode } from "@bthwani/dsh";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
-import { stablePartnerMutationHeaders } from "../partners/partner-request";
 import { storeCommercialStatusLabel } from "../finance/store-commercial-agreement-types";
+import { stablePartnerMutationHeaders } from "../partners/partner-request";
 import { nextStoreCommercialAgreementVersion } from "./store-commercial-agreement-version";
-import { matchesProposedStoreAgreement, storeCommercialRatesForProposal, type ExpectedStoreCommercialProposal, type StoreCommercialProposalReadback } from "./store-commercial-proposal-rates";
+import { type ExpectedStoreCommercialProposal, matchesProposedStoreAgreement, type StoreCommercialProposalReadback, storeCommercialRatesForProposal } from "./store-commercial-proposal-rates";
 
 type AgreementRate = StoreCommercialProposalReadback["rates"][number] & Readonly<{
   deliveryMarkupMinor?: number;
@@ -44,7 +44,7 @@ function hasOnlyDefaultDeliveryFeeTerms(item: Agreement): boolean {
     (rate.deliveryFixedFeeMinor ?? 0) === 0);
 }
 
-export function StoreCommercialAgreementProposal(props: Readonly<{storeId: string; modes: readonly StoreFulfillmentMode[]; readOnly?: boolean}>) {
+export function StoreCommercialAgreementProposal(props: Readonly<{storeId: string; modes: readonly StoreFulfillmentMode[]; readOnly?: boolean; suggestedModel?: "COMMISSION" | "SUBSCRIPTION"}>) {
   const { state } = useSession();
   const permitted = state.kind === "authenticated" && state.identity.role === "operator"
     && state.identity.permissions?.includes("partners") === true
@@ -58,7 +58,7 @@ export function StoreCommercialAgreementProposal(props: Readonly<{storeId: strin
   return <StoreCommercialAgreementEditor key={sessionKey} {...props} />;
 }
 
-function StoreCommercialAgreementEditor({ storeId, modes, readOnly = true }: Readonly<{storeId: string; modes: readonly StoreFulfillmentMode[]; readOnly?: boolean}>) {
+function StoreCommercialAgreementEditor({ storeId, modes, readOnly = true, suggestedModel = "COMMISSION" }: Readonly<{storeId: string; modes: readonly StoreFulfillmentMode[]; readOnly?: boolean; suggestedModel?: "COMMISSION" | "SUBSCRIPTION"}>) {
   const { state: sessionState } = useSession();
   const actorId = sessionState.kind === "authenticated" ? sessionState.identity.subject : "";
   const [agreements, setAgreements] = useState<readonly Agreement[] | null>(null);
@@ -68,7 +68,7 @@ function StoreCommercialAgreementEditor({ storeId, modes, readOnly = true }: Rea
   const [requiresConfirmation, setRequiresConfirmation] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [commercialModel, setCommercialModel] = useState<"COMMISSION" | "SUBSCRIPTION">("COMMISSION");
+  const [commercialModel, setCommercialModel] = useState<"COMMISSION" | "SUBSCRIPTION">(suggestedModel);
   const [commissionPercentByMode, setCommissionPercentByMode] = useState<Record<StoreFulfillmentMode, string>>({
     BTHWANI_CAPTAIN: "0", PARTNER_CAPTAIN: "0", CUSTOMER_PICKUP: "0",
   });

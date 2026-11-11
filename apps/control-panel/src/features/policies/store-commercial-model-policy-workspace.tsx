@@ -1,16 +1,17 @@
 "use client";
 
-import type { StorePublicationResponse } from "@bthwani/dsh";
+import type { StorePublicationResponse, StoreRelationCommercialModelDefault } from "@bthwani/dsh";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { StoreCommercialAgreementProposal } from "../partner-onboarding/store-commercial-agreement-proposal";
+import { StoreRelationCommercialModelDefaults } from "./store-relation-commercial-model-defaults";
 
 type Store = StorePublicationResponse["store"];
 const validModes = new Set(["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"]);
 
-/** The Store agreement remains the WLT-owned commercial fact. This policy surface
- * selects its model through the existing versioned proposal, not a second store setting. */
+/** WLT owns two distinct facts: prospective relation defaults and Store-specific agreements.
+ * Neither this panel nor DSH may post a charge or overwrite accepted terms. */
 export function StoreCommercialModelPolicyWorkspace() {
   const { state } = useSession();
   const permissions = state.kind === "authenticated" ? state.identity.permissions : null;
@@ -23,10 +24,12 @@ export function StoreCommercialModelPolicyWorkspace() {
   </p>;
   // Remount owner-dependent Store and WLT agreement state on every Identity session.
   const sessionKey = JSON.stringify([state.identity.subject, state.identity.sessionId]);
-  return <StoreCommercialModelPolicyEditor key={sessionKey} />;
+  return <StoreCommercialModelPolicyEditor key={sessionKey} sessionScope={sessionKey} />;
 }
 
-function StoreCommercialModelPolicyEditor() {
+function StoreCommercialModelPolicyEditor({ sessionScope }: Readonly<{ sessionScope: string }>) {
+  const [defaults, setDefaults] = useState<readonly StoreRelationCommercialModelDefault[] | null>(null);
+  const onReadDefaults = useCallback((items: readonly StoreRelationCommercialModelDefault[] | null) => setDefaults(items), []);
   const [input, setInput] = useState("");
   const [selected, setSelected] = useState<Store | null>(null);
   const [loading, setLoading] = useState(false);
@@ -84,7 +87,10 @@ function StoreCommercialModelPolicyEditor() {
     };
   }, [readStore]);
 
+  const selectedDefault = selected && defaults?.find(item => item.relationModel === selected.relationModel);
+
   return <section className="form-section" aria-label="سياسة نموذج الاتفاق التجاري للمتجر">
+    <StoreRelationCommercialModelDefaults onRead={onReadDefaults} sessionScope={sessionScope} />
     <h3>اختيار نموذج التعاقد للمتجر</h3>
     <p className="muted">اختر متجرًا لتحديد نموذج اتفاقيته: عمولة أو اشتراك. يُنشأ مقترح جديد للمتجر نفسه، وتبقى الاتفاقية السارية والطلبات السابقة دون تغيير حتى القبول والموافقة.</p>
     <p className="muted">الاشتراك غير قابل للتفعيل أو التحصيل حاليًا حتى تكتمل فوترة WLT والمراجعة المستقلة. لا تتحكم هذه السياسة في ميزات تطبيق الشريك أو صلاحياته.</p>
@@ -101,7 +107,11 @@ function StoreCommercialModelPolicyEditor() {
       <Link href="/partners" className="button button-secondary">اختيار متجر من قسم الشركاء</Link>
     </form>
     {error ? <p role="alert" className="validation-error">{error}</p> : null}
-    {selected ? <StoreCommercialAgreementProposal key={selected.id} storeId={selected.id}
-      modes={selected.fulfillmentModes} readOnly={false} /> : null}
+    {selected && defaults === null ? <p role="status" className="muted">لم تتوفر قراءة النموذج الافتراضي بعد. يظل اقتراح اتفاق خاص بالمتجر متاحًا بعد قراءة اتفاقياته من WLT، دون افتراض عمولة أو اشتراك نافذ.</p> : null}
+    {selected ? <>
+      <p className="muted">طريقة عمل المتجر: {selected.relationModel === "INDEPENDENT_STORE" ? "متجر مستقل" : "شريك بثواني"}، والنموذج الافتراضي المقترح: {selectedDefault ? selectedDefault.commercialModel === "SUBSCRIPTION" ? "اشتراك" : "عمولة" : "لم يُحدّد؛ اختر النموذج داخل المقترح"}.</p>
+      <StoreCommercialAgreementProposal key={selected.id + ":" + (selectedDefault?.policyVersion ?? 0)} storeId={selected.id}
+        modes={selected.fulfillmentModes} {...(selectedDefault ? { suggestedModel: selectedDefault.commercialModel } : {})} readOnly={false} />
+    </> : null}
   </section>;
 }
