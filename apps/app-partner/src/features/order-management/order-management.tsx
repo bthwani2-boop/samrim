@@ -128,7 +128,6 @@ export function OrderManagement({ storeId, storeIds }: { storeId?: string | unde
       const nextOrders = response.orders;
       const assignmentOrders = nextOrders.filter((order) => canFulfillOrder(order.storeId) && (order.state === "CAPTAIN_ASSIGNED" || order.state === "IN_CUSTODY"));
       const offerOrders = nextOrders.filter((order) => canFulfillOrder(order.storeId) && order.fulfillmentMode === "PARTNER_CAPTAIN" && order.state === "READY_FOR_DISPATCH");
-      if (assignmentOrders.length === 0 && offerOrders.length === 0) return;
       const offerStoreIDs = [...new Set(offerOrders.map((order) => order.storeId))];
       const [membershipResults, assignmentResults, offerResults] = await Promise.all([
         Promise.allSettled(offerStoreIDs.map(async (offerStoreID) => [offerStoreID, (await client().listPartnerStoreCaptainMemberships(token, offerStoreID)).memberships] as const)),

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
-import { mergeOrderPageRecords, tryAcquireOrderAction } from "./order-page-records.ts";
+import { isCurrentOrderListRequest, mergeOrderPageRecords, tryAcquireOrderAction } from "./order-page-records.ts";
 
 test("appending a page retains earlier assignment and offer readbacks", () => {
   const firstPage = { order1: { state: "assigned" } };
@@ -129,4 +129,69 @@ test("real Partner Order callbacks suppress simultaneous same-order adjustment, 
 
 test("real Partner Order callbacks release each action lock after an ambiguous failed write", async () => {
   for (const action of guardedOrderActions) await checkSingleFlightOrderMutation(action, true);
+});
+
+
+test("Partner Order canonical refresh evicts old Captain sidecars but later pages retain previous sidecars", async () => {
+  const prefix = "  const load = useCallback(";
+  const suffix = "\n  }, [canFulfillOrder, filter, normalizedSearch, requestScopeKey, requestedStoreIDs, targetOrderId, unreadScope]);";
+  const start = orderManagementSource.indexOf(prefix);
+  const end = orderManagementSource.indexOf(suffix, start);
+  assert.ok(start >= 0 && end > start, "the production Order load callback must be present");
+  const compiled = stripTypeScriptTypes(orderManagementSource.slice(start, end + suffix.length));
+
+  for (const append of [false, true]) {
+    let listReads = 0;
+    let sidecarReads = 0;
+    let orders = [{ id: "previous-order", storeId: "store-1" }];
+    let assignments = { "previous-order": { id: "previous-assignment" } };
+    let captainChoices = { "store-1": [{ actorId: "previous-captain", label: "previous" }] };
+    let dispatchOffers = { "previous-order": { state: "offered" } };
+    const context = {
+      useCallback: (callback) => callback,
+      unreadScope: "session-current",
+      currentPartnerSessionKey: () => "session-current",
+      requestScopeKey: "scope-current",
+      activeScopeKey: { current: "scope-current" },
+      loadGeneration: { current: 0 },
+      requestedStoreIDs: ["store-1"],
+      filter: "ACTIVE",
+      normalizedSearch: "",
+      targetOrderId: "",
+      queueFilters: [{ key: "ACTIVE", states: ["PARTNER_ACCEPTED"] }],
+      canFulfillOrder: () => true,
+      getUsableIdentityAccessToken: async () => "test-token",
+      isCurrentOrderListRequest,
+      mergeOrderPageRecords,
+      setOrders: (update) => { orders = update(orders); },
+      setAssignments: (update) => { assignments = update(assignments); },
+      setStoreCaptainsByStore: (update) => { captainChoices = update(captainChoices); },
+      setDispatchOffers: (update) => { dispatchOffers = update(dispatchOffers); },
+      setAttention: () => {},
+      setCursor: () => {},
+      setHasMore: () => {},
+      setLoading: () => {},
+      setLoadingMore: () => {},
+      setError: () => {},
+      setSidecarError: () => {},
+      client: () => ({
+        listPartnerOrders: async () => {
+          listReads++;
+          return { orders: [], attention: { newOrders: 0, awaitingDispatch: 0, deliveryRecovery: 0 }, nextCursor: null };
+        },
+        listPartnerStoreCaptainMemberships: async () => { sidecarReads++; throw new Error("No eligible Orders"); },
+        readStoreCaptainAssignment: async () => { sidecarReads++; throw new Error("No eligible Orders"); },
+        readPartnerStoreCaptainDispatchOffer: async () => { sidecarReads++; throw new Error("No eligible Orders"); },
+      }),
+      console: { error: () => {} },
+    };
+    const load = runInNewContext(compiled + "\nload;", context);
+    await load(append ? { append: true, cursor: "next-page" } : {});
+    assert.equal(listReads, 1);
+    assert.equal(sidecarReads, 0, "a page with no Captain work must not fetch sidecars");
+    assert.equal(orders.length, append ? 1 : 0, "canonical page append/replace semantics");
+    assert.deepEqual(JSON.parse(JSON.stringify(assignments)), append ? { "previous-order": { id: "previous-assignment" } } : {}, "assignment sidecars must obey append/replace");
+    assert.deepEqual(JSON.parse(JSON.stringify(captainChoices)), append ? { "store-1": [{ actorId: "previous-captain", label: "previous" }] } : {}, "membership sidecars must obey append/replace");
+    assert.deepEqual(JSON.parse(JSON.stringify(dispatchOffers)), append ? { "previous-order": { state: "offered" } } : {}, "dispatch offer sidecars must obey append/replace");
+  }
 });
