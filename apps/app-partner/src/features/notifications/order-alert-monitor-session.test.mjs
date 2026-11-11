@@ -73,7 +73,7 @@ function harness({ urgent = true, remotePushActive = false } = {}) {
     console: { warn: () => {} },
   };
   return {
-    state, runtime, Notifications, 
+    state, runtime, Notifications,
     renew: () => { identity = { ...identity, identity: { ...identity.identity, sessionId: "session-two" } }; },
     logout: () => { identity = { kind: "unauthenticated" }; },
     owner: () => partnerSetupSessionKey(identity),
