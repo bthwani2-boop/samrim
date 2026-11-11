@@ -7,8 +7,17 @@ import { ActivityIndicator, Image, Text, View } from "react-native";
 import { captainSessionKey } from "../../bootstrap/captain-session-scope";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
-import { claimCaptainOfferResponse, isCaptainOfferActionable } from "./captain-offer-response-guard";
 import { createCaptainOperationStyles } from "./captain-operation-styles";
+
+function isCaptainOfferActionable(offer: Pick<CaptainOffer, "state" | "expiresAt">, now = Date.now()): boolean {
+  return offer.state === "offered" && Number.isFinite(now) && Date.parse(offer.expiresAt) > now;
+}
+
+function claimCaptainOfferResponse(inFlight: Set<string>, offerID: string): boolean {
+  if (inFlight.size > 0) return false;
+  inFlight.add(offerID);
+  return true;
+}
 
 export function CaptainOffers({ compact = false, popup = false, suppressed = false }: { compact?: boolean; popup?: boolean; suppressed?: boolean } = {}) {
   const theme = useAppearanceTheme();

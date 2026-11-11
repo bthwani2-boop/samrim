@@ -1,11 +1,39 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript-ast";
-import test from "node:test";
 import { captainSessionKey, isCurrentCaptainActor } from "../../bootstrap/captain-session-scope.ts";
 
 const source = readFileSync(new URL("./captain-deliveries.tsx", import.meta.url), "utf8");
+
+const deliveryAst = ts.createSourceFile("captain-deliveries.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const taskGuard = deliveryAst.statements.find(node =>
+  ts.isFunctionDeclaration(node) && node.name?.text === "canActOnCaptainTask");
+assert.ok(taskGuard, "current DSH task guard must belong to the delivery screen");
+const taskGuardJs = ts.transpileModule(taskGuard.getText(deliveryAst) + "\n({canActOnCaptainTask})", {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+}).outputText;
+const { canActOnCaptainTask } = runInNewContext(taskGuardJs);
+const assigned = { id: "assignment-1", state: "assigned", handoff: { state: "store_confirmed" } };
+const custody = { id: "assignment-1", state: "in_custody", handoff: { state: "completed" } };
+
+test("missing authoritative delivery task prevents custody or completion", () => {
+  assert.equal(canActOnCaptainTask(assigned, undefined), false);
+  assert.equal(canActOnCaptainTask(custody, undefined), false);
+});
+
+test("wrong assignment, stale delivery or stale handoff prevents mutation", () => {
+  assert.equal(canActOnCaptainTask(assigned, { assignmentId: "assignment-2", deliveryState: "assigned", handoffState: "store_confirmed" }), false);
+  assert.equal(canActOnCaptainTask(assigned, { assignmentId: "assignment-1", deliveryState: "in_custody", handoffState: "store_confirmed" }), false);
+  assert.equal(canActOnCaptainTask(assigned, { assignmentId: "assignment-1", deliveryState: "assigned", handoffState: "pending" }), false);
+  assert.equal(canActOnCaptainTask(custody, { assignmentId: "assignment-1", deliveryState: "assigned", handoffState: "completed" }), false);
+});
+
+test("matching current task admits corresponding delivery actions", () => {
+  assert.equal(canActOnCaptainTask(assigned, { assignmentId: "assignment-1", deliveryState: "assigned", handoffState: "store_confirmed" }), true);
+  assert.equal(canActOnCaptainTask(custody, { assignmentId: "assignment-1", deliveryState: "in_custody", handoffState: "completed" }), true);
+});
 
 function mutationBody(name) {
   const start = source.indexOf(`  async function ${name}(`);

@@ -4,7 +4,6 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript-ast";
 import { captainSessionKey } from "../../bootstrap/captain-session-scope.ts";
-import { claimCaptainOfferResponse, isCaptainOfferActionable } from "./captain-offer-response-guard.ts";
 
 const source = readFileSync(new URL("./captain-offers.tsx", import.meta.url), "utf8");
 const ast = ts.createSourceFile("captain-offers.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -41,6 +40,9 @@ function production(name, runtime) {
   return runInNewContext(js, runtime)[name];
 }
 
+const claimCaptainOfferResponse = production("claimCaptainOfferResponse", {});
+const isCaptainOfferActionable = production("isCaptainOfferActionable", {});
+
 function harness(extractLoad = true) {
   const state = {
     current: identity("captain-1", "session-1"),
@@ -69,6 +71,27 @@ function harness(extractLoad = true) {
   };
   return { state, runtime, load: extractLoad ? production("load", runtime) : undefined };
 }
+
+test("an offer response serializes mutations across all offers", () => {
+  const inFlight = new Set();
+  assert.equal(claimCaptainOfferResponse(inFlight, "offer-1"), true);
+  assert.equal(claimCaptainOfferResponse(inFlight, "offer-1"), false);
+  assert.equal(claimCaptainOfferResponse(inFlight, "offer-2"), false);
+  inFlight.delete("offer-1");
+  assert.equal(claimCaptainOfferResponse(inFlight, "offer-2"), true);
+});
+
+test("expired, invalid or already accepted offers are not actionable", () => {
+  const now = Date.parse("2026-11-01T01:00:00.000Z");
+  const future = new Date(now + 1).toISOString();
+  const expired = new Date(now - 1).toISOString();
+  assert.equal(isCaptainOfferActionable({ state: "offered", expiresAt: future }, now), true);
+  assert.equal(isCaptainOfferActionable({ state: "offered", expiresAt: future }, now + 1), false);
+  assert.equal(isCaptainOfferActionable({ state: "offered", expiresAt: expired }, now), false);
+  assert.equal(isCaptainOfferActionable({ state: "accepted", expiresAt: future }, now), false);
+  assert.equal(isCaptainOfferActionable({ state: "offered", expiresAt: "invalid" }, now), false);
+  assert.equal(isCaptainOfferActionable({ state: "offered", expiresAt: future }, Number.NaN), false);
+});
 
 test("Captain offer list loads and binds to its exact authenticated session", async () => {
   const h = harness();

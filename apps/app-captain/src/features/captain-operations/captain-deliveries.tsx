@@ -1,19 +1,18 @@
-import { BthwaniButton, BthwaniConversationSheet, useConversationUnreadCounts, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniConversationSheet, BthwaniStatusBadge, useAppearanceTheme, useConversationUnreadCounts } from "@bthwani/design-system/native";
 import { BthwaniMap } from "@bthwani/design-system/native/map";
-import { createDshMobileClient, type CaptainAssignment, type CaptainCompletionRequest, type CaptainDeliveryTask, captainAssignmentStateLabel, captainHandoffStateLabel, captainTaskProgressLabel, formatMoney, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
+import { type CaptainAssignment, type CaptainCompletionRequest, type CaptainDeliveryTask, captainAssignmentStateLabel, captainHandoffStateLabel, captainTaskProgressLabel, createDshMobileClient, formatMoney, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import * as SecureStore from "expo-secure-store";
 import { useIsFocused } from "expo-router";
+import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, AppState, Image, Linking, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { captainSessionKey, isCurrentCaptainActor } from "../../bootstrap/captain-session-scope";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
-import { createCaptainOperationStyles } from "./captain-operation-styles";
-import { canActOnCaptainTask } from "./captain-task-eligibility";
 import { isConfirmedCaptainCompletion } from "./captain-completion-readback";
-import { captainSessionKey, isCurrentCaptainActor } from "../../bootstrap/captain-session-scope";
+import { createCaptainOperationStyles } from "./captain-operation-styles";
 import { OrderConversation } from "./order-conversation";
 
 type PendingCaptainCompletionAttempt = Readonly<{
@@ -25,6 +24,15 @@ type PendingCaptainCompletionAttempt = Readonly<{
   idempotencyKey: string;
   correlationID: string;
 }>;
+
+// A current DSH delivery task must match the assignment and handoff before mutations.
+function canActOnCaptainTask(
+  assignment: Pick<CaptainAssignment, "id" | "state" | "handoff">,
+  task: Pick<CaptainDeliveryTask, "assignmentId" | "deliveryState" | "handoffState"> | undefined,
+): boolean {
+  return Boolean(task && task.assignmentId === assignment.id
+    && task.deliveryState === assignment.state && task.handoffState === assignment.handoff.state);
+}
 
 function openCaptainDirections(latitude: number, longitude: number) {
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {

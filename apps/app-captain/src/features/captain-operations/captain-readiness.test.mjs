@@ -28,7 +28,7 @@ test("inactive Captains do not acquire a new GPS fix just to center the map", ()
 });
 
 test("dispatch location remains availability-gated while mission tracking is separate", () => {
-  assert.match(presence, /shouldPublishCaptainPresence\(/);
+  assert.match(presence, /if \(!isCurrent\(\) \|\| !available\) return;/);
   assert.match(presence, /readOwnCaptainAdmission\(token\)/);
   assert.match(readiness, /setBackgroundMissionConsent\(next, actorID, missionAssignmentId\)/);
 });

@@ -4,7 +4,6 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript-ast";
 import { captainSessionKey } from "../../bootstrap/captain-session-scope.ts";
-import { shouldPublishCaptainPresence } from "./captain-presence-policy.ts";
 
 const source = readFileSync(new URL("./captain-presence-publisher.tsx", import.meta.url), "utf8");
 const ast = ts.createSourceFile("captain-presence-publisher.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -57,7 +56,6 @@ function harness() {
         return { admission: { state: state.eligible ? "eligible" : "review", availabilityState: "available" } };
       },
     }),
-    shouldPublishCaptainPresence,
     process: { env: { EXPO_PUBLIC_DSH_API_URL: "https://test.invalid/" } },
     AbortSignal: { timeout: () => ({}) },
     fetch: async (...args) => { state.posts.push(args); return { ok: true }; },
@@ -216,8 +214,8 @@ test("foreground presence reuses one canonical session scope and existing DSH en
   assert.match(source, /const isCurrent = \(\) => Boolean\(sessionKey\)/);
   assert.match(source, /if \(!isCurrent\(\)\) return/);
   assert.match(source, /lastSubmittedSession = sessionKey/);
-  assert.match(source, /captainPresenceIntervalMs/);
-  assert.match(source, /shouldPublishCaptainPresence\(/);
+  assert.match(source, /setInterval\(\(\) => \{ void tick\(\); \}, 5 \* 60 \* 1000\)/);
+  assert.match(source, /if \(!isCurrent\(\) \|\| !available\) return;/);
   assert.match(source, /\/dsh\/captains\/me\/presence/);
   assert.doesNotMatch(source, /lastSubmittedActor|before\.identity\.subject/);
 });

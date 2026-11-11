@@ -4,7 +4,6 @@ import { AppState } from "react-native";
 import { captainSessionKey } from "../../bootstrap/captain-session-scope";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
-import { captainPresenceIntervalMs, shouldPublishCaptainPresence } from "./captain-presence-policy";
 
 let lastSubmittedAt = 0;
 let lastSubmittedSession = "";
@@ -23,10 +22,7 @@ async function sendCurrentPresence() {
   const api = captainClient();
   const admission = await api.readOwnCaptainAdmission(token);
   const available = admission.admission.state === "eligible" && admission.admission.availabilityState === "available";
-  if (!shouldPublishCaptainPresence(
-    AppState.currentState === "active", permission.granted,
-    isCurrent(), available, locationServicesEnabled,
-  )) return;
+  if (!isCurrent() || !available) return;
   const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
   if (!isCurrent()) return;
   const base = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -76,7 +72,7 @@ export function CaptainPresencePublisher() {
       void tick();
     });
     const subscription = AppState.addEventListener("change", (state) => { if (state === "active") void tick(); });
-    const interval = setInterval(() => { void tick(); }, captainPresenceIntervalMs);
+    const interval = setInterval(() => { void tick(); }, 5 * 60 * 1000);
     return () => { disposed = true; unsubscribeIdentity(); subscription.remove(); clearInterval(interval); };
   }, []);
   return null;
