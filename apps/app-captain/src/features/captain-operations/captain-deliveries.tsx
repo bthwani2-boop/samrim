@@ -1,6 +1,6 @@
 import { BthwaniButton, BthwaniConversationSheet, BthwaniStatusBadge, useAppearanceTheme, useConversationUnreadCounts } from "@bthwani/design-system/native";
 import { BthwaniMap } from "@bthwani/design-system/native/map";
-import { type CaptainAssignment, type CaptainCompletionRequest, type CaptainDeliveryTask, captainAssignmentStateLabel, captainHandoffStateLabel, captainTaskProgressLabel, createDshMobileClient, formatMoney, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
+import { type CaptainAssignment, type CaptainAssignmentResponse, type CaptainCompletionRequest, type CaptainDeliveryTask, captainAssignmentStateLabel, captainHandoffStateLabel, captainTaskProgressLabel, createDshMobileClient, formatMoney, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useIsFocused } from "expo-router";
 import * as SecureStore from "expo-secure-store";
@@ -11,7 +11,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { captainSessionKey, isCurrentCaptainActor } from "../../bootstrap/captain-session-scope";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
-import { isConfirmedCaptainCompletion } from "./captain-completion-readback";
 import { createCaptainOperationStyles } from "./captain-operation-styles";
 import { OrderConversation } from "./order-conversation";
 
@@ -24,6 +23,24 @@ type PendingCaptainCompletionAttempt = Readonly<{
   idempotencyKey: string;
   correlationID: string;
 }>;
+
+// DSH must confirm the same Captain, terminal outcome and advanced version before
+// the local idempotent completion attempt can be removed from secure storage.
+function isConfirmedCaptainCompletion(
+  response: CaptainAssignmentResponse | null | undefined,
+  attempt: PendingCaptainCompletionAttempt,
+): boolean {
+  const assignment = response?.assignment;
+  return Boolean(assignment
+    && assignment.id === attempt.assignmentID
+    && assignment.captainActorId === attempt.actorID
+    && assignment.state === attempt.request.result
+    && assignment.terminalResult === attempt.request.result
+    && Number.isSafeInteger(assignment.version)
+    && assignment.version > attempt.expectedVersion
+    && typeof assignment.terminalAt === "string"
+    && assignment.terminalAt.length > 0);
+}
 
 // A current DSH delivery task must match the assignment and handoff before mutations.
 function canActOnCaptainTask(

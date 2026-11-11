@@ -35,6 +35,56 @@ test("matching current task admits corresponding delivery actions", () => {
   assert.equal(canActOnCaptainTask(custody, { assignmentId: "assignment-1", deliveryState: "in_custody", handoffState: "completed" }), true);
 });
 
+const confirmationGuard = deliveryAst.statements.find(node =>
+  ts.isFunctionDeclaration(node) && node.name?.text === "isConfirmedCaptainCompletion");
+assert.ok(confirmationGuard, "DSH terminal result guard must belong to the delivery owner");
+const confirmationGuardJs = ts.transpileModule(confirmationGuard.getText(deliveryAst) + "\n({isConfirmedCaptainCompletion})", {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+}).outputText;
+const { isConfirmedCaptainCompletion } = runInNewContext(confirmationGuardJs);
+const completionAttempt = Object.freeze({
+  actorID: "captain-a",
+  assignmentID: "assignment-a",
+  expectedVersion: 4,
+  request: { result: "delivered" },
+});
+const confirmedCompletion = Object.freeze({
+  assignment: {
+    id: "assignment-a",
+    captainActorId: "captain-a",
+    state: "delivered",
+    terminalResult: "delivered",
+    terminalAt: "2026-11-01T01:00:00Z",
+    version: 5,
+  },
+  idempotentReplay: false,
+});
+
+test("DSH terminal readback clears only a matching Captain attempt and idempotent replay", () => {
+  assert.equal(isConfirmedCaptainCompletion(confirmedCompletion, completionAttempt), true);
+  assert.equal(isConfirmedCaptainCompletion({ ...confirmedCompletion, idempotentReplay: true }, completionAttempt), true);
+  assert.equal(isConfirmedCaptainCompletion({
+    ...confirmedCompletion,
+    assignment: { ...confirmedCompletion.assignment, state: "delivery_failed", terminalResult: "delivery_failed" },
+  }, { ...completionAttempt, request: { result: "delivery_failed" } }), true);
+});
+
+test("invalid terminal readback must retain the durable attempt for reconciliation", () => {
+  assert.equal(isConfirmedCaptainCompletion(null, completionAttempt), false);
+  for (const assignment of [
+    { ...confirmedCompletion.assignment, id: "assignment-b" },
+    { ...confirmedCompletion.assignment, captainActorId: "captain-b" },
+    { ...confirmedCompletion.assignment, state: "in_custody" },
+    { ...confirmedCompletion.assignment, terminalResult: "delivery_failed" },
+    { ...confirmedCompletion.assignment, version: 4 },
+    { ...confirmedCompletion.assignment, version: 3 },
+    { ...confirmedCompletion.assignment, terminalAt: null },
+    { ...confirmedCompletion.assignment, terminalAt: "" },
+  ]) {
+    assert.equal(isConfirmedCaptainCompletion({ ...confirmedCompletion, assignment }, completionAttempt), false);
+  }
+});
+
 function mutationBody(name) {
   const start = source.indexOf(`  async function ${name}(`);
   assert.notEqual(start, -1, `missing ${name} mutation`);
