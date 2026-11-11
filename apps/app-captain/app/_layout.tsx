@@ -1,7 +1,7 @@
 import { parseStudioThemePublication } from "@bthwani/design-system";
+import { AppearanceProvider, BthwaniNetworkStatusNotice, useMobileAppearance } from "@bthwani/design-system/native";
 import { createDshMobileClient } from "@bthwani/dsh";
 import { tamaguiConfig } from "@bthwani/tamagui-config";
-import { AppearanceProvider, BthwaniNetworkStatusNotice, useMobileAppearance } from "@bthwani/design-system/native";
 import { useNetworkState } from "expo-network";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -11,15 +11,15 @@ import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-cont
 import { TamaguiProvider } from "tamagui";
 
 import { appearance } from "../src/bootstrap/appearance";
+import { captainSessionKey } from "../src/bootstrap/captain-session-scope";
 import { currentIdentityState, subscribeIdentitySession } from "../src/bootstrap/identity";
 import { CaptainMissionLocationPublisher } from "../src/features/captain-operations/captain-mission-location-publisher";
 import { CaptainPresencePublisher } from "../src/features/captain-operations/captain-presence-publisher";
 import { OrderAlertMonitor } from "../src/features/notifications/order-alert-monitor";
 
 
-function currentMobileActorID(): string {
-  const session = currentIdentityState();
-  return session.kind === "authenticated" ? session.identity.subject.trim() : "";
+function currentCaptainNavigationSessionKey(): string {
+  return captainSessionKey(currentIdentityState());
 }
 
 
@@ -60,9 +60,9 @@ export default function RootLayout() {
 
 function RootNavigation() {
   const { themeName, theme } = useMobileAppearance();
-  // A new session actor must not inherit React screen state or previous responses.
-  const actorID = useSyncExternalStore(subscribeIdentitySession, currentMobileActorID, () => "");
-  return <TamaguiProvider config={tamaguiConfig} defaultTheme={themeName}><StatusBar style={themeName === "dark" ? "light" : "dark"} /><Stack key={actorID || "signed-out"} screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }}><Stack.Screen name="(app)" /><Stack.Screen name="offers" options={{ presentation: "card" }} /><Stack.Screen name="notifications" options={{ headerShown: false, presentation: "card" }} /></Stack></TamaguiProvider>;
+  // Remount private navigation even when the same Captain authenticates in a new Identity session.
+  const sessionKey = useSyncExternalStore(subscribeIdentitySession, currentCaptainNavigationSessionKey, () => "");
+  return <TamaguiProvider config={tamaguiConfig} defaultTheme={themeName}><StatusBar style={themeName === "dark" ? "light" : "dark"} /><Stack key={sessionKey || "signed-out"} screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }}><Stack.Screen name="(app)" /><Stack.Screen name="offers" options={{ presentation: "card" }} /><Stack.Screen name="notifications" options={{ headerShown: false, presentation: "card" }} /></Stack></TamaguiProvider>;
 }
 
 function RootNetworkNotice() {
