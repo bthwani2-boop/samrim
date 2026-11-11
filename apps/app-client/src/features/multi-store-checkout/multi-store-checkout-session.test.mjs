@@ -184,7 +184,7 @@ test("stale reconciliation 404 cannot trigger a DSH create POST after the sessio
   };
   const attempt = { kind: "CREATE", actorID: "client-a", idempotencyKey: "idem-abc12345", correlationID: "corr-abc12345", request: { id: "multi-1", children: [] } };
   const { resolvePendingMultiStoreAttempt } = production(x.runtime, ["resolvePendingMultiStoreAttempt"]);
-  const check = resolvePendingMultiStoreAttempt(attempt, () => clientOrderSessionKey(x.runtime.currentIdentityState()) === x.sessionKey);
+  const check = resolvePendingMultiStoreAttempt(attempt, () => clientOrderSessionKey(x.runtime.currentIdentityState()) === x.sessionKey, x.sessionKey);
   await started.promise;
   x.renew();
   reading.reject({ kind: "http", status: 404 });

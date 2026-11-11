@@ -2,6 +2,7 @@ import { type CartResponse, type CatalogStoreOffer, type CheckoutQuoteResponse, 
 import * as Crypto from "expo-crypto";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { listOwnDeliveryAddresses } from "../location-core/delivery-address-client";
+import { clientOrderSessionKey } from "../orders/order-session-scope";
 
 function dshBaseUrl(): string {
   const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -21,6 +22,15 @@ function assertStoreActor(expectedActorID: string): void {
 async function tokenForStoreActor(expectedActorID: string): Promise<string> {
   const accessToken = await getUsableIdentityAccessToken();
   assertStoreActor(expectedActorID);
+  return accessToken;
+}
+
+// The multi-Store quote/create/recovery flow must not dispatch a previous
+// session's consented operation with a token acquired after reauthentication.
+async function tokenForMultiStoreSession(sessionKey: string): Promise<string> {
+  if (!sessionKey || clientOrderSessionKey(currentIdentityState()) !== sessionKey) throw new Error("CLIENT_STORE_SESSION_CHANGED");
+  const accessToken = await getUsableIdentityAccessToken();
+  if (clientOrderSessionKey(currentIdentityState()) !== sessionKey) throw new Error("CLIENT_STORE_SESSION_CHANGED");
   return accessToken;
 }
 
@@ -136,18 +146,18 @@ export async function listOwnOpenCarts(): Promise<ClientOpenCartListResponse> {
   return client().listClientOpenCarts(accessToken);
 }
 
-export async function quoteMultiStoreChildCheckout(input: CheckoutRequest, expectedCartVersion: number): Promise<CheckoutQuoteResponse> {
-  const accessToken = await getUsableIdentityAccessToken();
+export async function quoteMultiStoreChildCheckout(input: CheckoutRequest, expectedCartVersion: number, sessionKey: string): Promise<CheckoutQuoteResponse> {
+  const accessToken = await tokenForMultiStoreSession(sessionKey);
   return client().quoteCheckout(accessToken, input, expectedCartVersion);
 }
 
-export async function createMultiStoreCheckout(input: MultiStoreCheckoutRequest, idempotencyKey: string, correlationID: string): Promise<MultiStoreCheckoutResponse> {
-  const accessToken = await getUsableIdentityAccessToken();
+export async function createMultiStoreCheckout(input: MultiStoreCheckoutRequest, idempotencyKey: string, correlationID: string, sessionKey: string): Promise<MultiStoreCheckoutResponse> {
+  const accessToken = await tokenForMultiStoreSession(sessionKey);
   return client().createMultiStoreCheckout(accessToken, input, idempotencyKey, correlationID);
 }
 
-export async function readOwnMultiStoreCheckout(checkoutID: string): Promise<MultiStoreCheckoutResponse> {
-  const accessToken = await getUsableIdentityAccessToken();
+export async function readOwnMultiStoreCheckout(checkoutID: string, sessionKey: string): Promise<MultiStoreCheckoutResponse> {
+  const accessToken = await tokenForMultiStoreSession(sessionKey);
   return client().readMultiStoreCheckout(accessToken, checkoutID);
 }
 
@@ -202,8 +212,8 @@ export async function adjustSimpleOfferQuantity(storeID: string, offer: CatalogS
   assertStoreActor(actorID);
   const line = current?.cart.lines.find((item) => item.storeOfferId === offer.offerId);
   if (direction === -1 && !line) throw new Error("HOME_OFFER_NOT_IN_CART");
-  if (direction === -1 && line && line.quantityBaseUnits <= offer.quantityMinBaseUnits) {
-    return client().removeCartLine(accessToken, line.id, current!.cart.version);
+  if (direction === -1 && current && line && line.quantityBaseUnits <= offer.quantityMinBaseUnits) {
+    return client().removeCartLine(accessToken, line.id, current.cart.version);
   }
   const quantityBaseUnits = line
     ? line.quantityBaseUnits + direction * offer.quantityStepBaseUnits

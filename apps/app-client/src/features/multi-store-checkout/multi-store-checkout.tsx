@@ -166,10 +166,10 @@ function isTerminalMultiStoreCheckout(checkout: MultiStoreCheckout): boolean {
   return checkout.state === "COMPLETE" || checkout.state === "FAILED" || checkout.state === "PARTIAL_FAILURE" || checkout.state === "CANCELLED";
 }
 
-async function resolvePendingMultiStoreAttempt(attempt: PendingMultiStoreAttempt, isCurrent: () => boolean): Promise<PendingMultiStoreOutcome> {
+async function resolvePendingMultiStoreAttempt(attempt: PendingMultiStoreAttempt, isCurrent: () => boolean, sessionKey: string): Promise<PendingMultiStoreOutcome> {
   if (attempt.kind === "LEGACY_CREATE") {
     try {
-      const checkout = (await readOwnMultiStoreCheckout(attempt.checkoutID)).checkout;
+      const checkout = (await readOwnMultiStoreCheckout(attempt.checkoutID, sessionKey)).checkout;
       return { checkout, terminal: isTerminalMultiStoreCheckout(checkout) };
     } catch (error) {
       // Keep the historical receipt for future canonical reconciliation;
@@ -179,7 +179,7 @@ async function resolvePendingMultiStoreAttempt(attempt: PendingMultiStoreAttempt
   }
   let checkout: MultiStoreCheckout | undefined;
   try {
-    checkout = (await readOwnMultiStoreCheckout(attempt.request.id)).checkout;
+    checkout = (await readOwnMultiStoreCheckout(attempt.request.id, sessionKey)).checkout;
     if (isTerminalMultiStoreCheckout(checkout)) return { checkout, terminal: true };
   } catch (error) {
     if (!isDshHttpStatus(error, 404)) return { terminal: false, error };
@@ -187,11 +187,11 @@ async function resolvePendingMultiStoreAttempt(attempt: PendingMultiStoreAttempt
 
   if (!isCurrent()) return { terminal: false };
   try {
-    checkout = (await createMultiStoreCheckout(attempt.request, attempt.idempotencyKey, attempt.correlationID)).checkout;
+    checkout = (await createMultiStoreCheckout(attempt.request, attempt.idempotencyKey, attempt.correlationID, sessionKey)).checkout;
     return { checkout, terminal: isTerminalMultiStoreCheckout(checkout) };
   } catch (error) {
     try {
-      checkout = (await readOwnMultiStoreCheckout(attempt.request.id)).checkout;
+      checkout = (await readOwnMultiStoreCheckout(attempt.request.id, sessionKey)).checkout;
       return { checkout, terminal: isTerminalMultiStoreCheckout(checkout), error };
     } catch {
       return { terminal: false, error };
@@ -260,7 +260,7 @@ export default function MultiStoreCheckoutScreen() {
       let attemptError = "";
       if (attempt) {
         if (!isCurrent()) return;
-        const outcome = await resolvePendingMultiStoreAttempt(attempt, isCurrent);
+        const outcome = await resolvePendingMultiStoreAttempt(attempt, isCurrent, sessionKey);
         checkout = outcome.checkout;
         if (outcome.attempt) unresolvedAttempt = outcome.attempt;
         if (outcome.error) attemptError = "تعذر تأكيد نتيجة الطلب السابق. ستبقى المحاولة محفوظة؛ تحقق من حالتها لإكمال الاستعادة بأمان.";
@@ -364,7 +364,7 @@ export default function MultiStoreCheckoutScreen() {
       if (!quotePreview || quotePreview.fingerprint !== fingerprint) {
         const quotes = await Promise.all(selectedStoreCarts.map(async ({ store, cart, fulfillmentMode }) => {
           const addressId = fulfillmentMode === "CUSTOMER_PICKUP" ? "" : state.selectedAddressID;
-          const response = await quoteMultiStoreChildCheckout({ cartId: cart.id, storeId: store.storeId, addressId, fulfillmentMode }, cart.version);
+          const response = await quoteMultiStoreChildCheckout({ cartId: cart.id, storeId: store.storeId, addressId, fulfillmentMode }, cart.version, sessionKey);
           const quote = response.quote;
           if (quote.cartId !== cart.id || quote.storeId !== store.storeId || quote.addressId !== addressId || quote.fulfillmentMode !== fulfillmentMode || quote.cartVersion !== cart.version || quote.currency !== "YER" || !Number.isSafeInteger(quote.totalAmountMinor) || quote.totalAmountMinor <= 0) {
             throw new Error("INVALID_MULTI_STORE_QUOTE");
@@ -405,9 +405,9 @@ export default function MultiStoreCheckoutScreen() {
       setPendingAttempt(attempt);
       let checkout: MultiStoreCheckout;
       try {
-        checkout = (await createMultiStoreCheckout(request, attempt.idempotencyKey, attempt.correlationID)).checkout;
+        checkout = (await createMultiStoreCheckout(request, attempt.idempotencyKey, attempt.correlationID, sessionKey)).checkout;
       } catch {
-        const outcome = await resolvePendingMultiStoreAttempt(attempt, isCurrent);
+        const outcome = await resolvePendingMultiStoreAttempt(attempt, isCurrent, sessionKey);
         if (!outcome.checkout) throw outcome.error ?? new Error("CHECKOUT_OUTCOME_UNKNOWN");
         checkout = outcome.checkout;
       }
