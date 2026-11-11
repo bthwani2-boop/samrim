@@ -24,13 +24,13 @@ import { AccessibilityInfo, ActivityIndicator, Image, Linking, Modal, Platform, 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { onPartnerProductAction } from "../../shell/partner-product-actions";
 import { buildPartnerOfferShareURL, buildPartnerStoreWhatsAppURL } from "../partner-onboarding/partner-storefront-url";
-import { type StoreOfferListFilter, storeOfferServerQuery } from "./catalog-offer-filters";
-import { isCurrentCatalogProductRequest, mergeCatalogProductPage, releaseCatalogProductPageRequest, replaceCatalogProductInPage } from "./catalog-product-pages";
-import { isOfferStockout } from "./inventory-stockout";
+import { isOfferStockout, type StoreOfferListFilter, storeOfferServerQuery } from "./catalog-offer-read-model";
+import { isCurrentCatalogProductRequest, mergeCatalogProductPage, reconcileStoreProductSave, releaseCatalogProductPageRequest, replaceCatalogProductInPage } from "./catalog-product-pages";
+
 import { acquireOfferMutation } from "./offer-mutation-lock";
 import { PartnerStorePromotionBanner } from "./partner-promotion-banner";
 import { StoreCatalogExportCard } from "./store-catalog-export";
-import { reconcileStoreProductSave } from "./store-product-save";
+
 import { StoreProductTrash } from "./store-product-trash";
 
 type OfferState = { kind: "loading" } | { kind: "ready"; offers: ReadonlyArray<CatalogStoreOffer>; proposals: ReadonlyArray<CatalogProductProposal> } | { kind: "error" };

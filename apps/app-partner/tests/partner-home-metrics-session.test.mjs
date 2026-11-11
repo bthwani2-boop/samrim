@@ -49,7 +49,7 @@ function peekFixture() {
     sessionKey: first, scopeKey: JSON.stringify([first, "store-a"]),
     store: { id: "store-a", owned: true }, currentPartnerSessionKey: () => currentSession,
     getUsableIdentityAccessToken: () => token.promise,
-    createDshMobileClient: () => ({
+    createPartnerDshClient: () => ({
       readOwnPartnerFinancialSummary: () => { apiCalls++; return reply.promise; },
     }),
     setData: value => events.push(["data", value]),
@@ -113,7 +113,7 @@ function desktopFixture() {
     canOrders: false, canCatalog: true, canFinance: false, marketplace: false,
     currentPartnerSessionKey: () => currentSession,
     getUsableIdentityAccessToken: () => token.promise,
-    createDshMobileClient: () => ({
+    createPartnerDshClient: () => ({
       readOwnStoreOffers: () => { apiCalls++; return offers.promise; },
       readOwnStoreInventorySummary: async () => null,
     }),

@@ -12,7 +12,7 @@ import { createPartnerDshClient } from "../../bootstrap/dsh-client";
 
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { isMarketplaceStore } from "../../shell/partner-authority";
-import { catalogPublishedAvailability, isOfferStockout } from "../store-offer/inventory-stockout";
+import { catalogPublishedAvailability, isOfferStockout } from "../store-offer/catalog-offer-read-model";
 import { scopedPartnerPopularOffers } from "./partner-home-popularity";
 import { nextStoreSetupFocus, storeSetupProgress } from "./partner-onboarding-next-step";
 import { partnerSetupSessionKey } from "./partner-setup-session-scope";

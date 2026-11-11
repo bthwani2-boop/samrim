@@ -24,3 +24,16 @@ export function isCurrentCatalogProductRequest(requestSequence: number, currentS
 export function releaseCatalogProductPageRequest(activeSequence: number | null, requestSequence: number): number | null {
   return activeSequence === requestSequence ? null : activeSequence;
 }
+
+export function reconcileStoreProductSave<T extends { id: string }>(
+  requestProductID: string,
+  updatedProduct: T,
+  currentSelectedProductID: string | null,
+  updateCatalog: (product: T) => void,
+  updateSelection: (product: T) => void,
+): boolean {
+  updateCatalog(updatedProduct);
+  if (currentSelectedProductID !== requestProductID) return false;
+  updateSelection(updatedProduct);
+  return true;
+}

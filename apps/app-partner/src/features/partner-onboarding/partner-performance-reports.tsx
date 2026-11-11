@@ -10,7 +10,7 @@ import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "re
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { createPartnerDshClient } from "../../bootstrap/dsh-client";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
-import { isOfferStockout } from "../store-offer/inventory-stockout";
+import { isOfferStockout } from "../store-offer/catalog-offer-read-model";
 import { PartnerInventorySummary } from "./partner-inventory-summary";
 import { partnerSetupSessionKey } from "./partner-setup-session-scope";
 
