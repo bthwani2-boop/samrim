@@ -175,15 +175,15 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		if err != nil {
 			t.Fatalf("list client orders with store pickup details: %v", err)
 		}
-		clientPage1, err := postgres.ListOrdersForClientPage(ctx, db, "client_operator_ops", 2, "")
+		clientPage1, err := postgres.ListOrdersForClientPage(ctx, db, "client_operator_ops", 2, "", postgres.ClientOrdersFilters{})
 		if err != nil || len(clientPage1.Orders) != 2 || clientPage1.Orders[0].ID != "operator_order_03" || clientPage1.Orders[1].ID != "operator_order_02" || clientPage1.NextCursor == "" {
 			t.Fatalf("client first keyset page incorrect: %+v err=%v", clientPage1, err)
 		}
-		clientPage2, err := postgres.ListOrdersForClientPage(ctx, db, "client_operator_ops", 2, clientPage1.NextCursor)
+		clientPage2, err := postgres.ListOrdersForClientPage(ctx, db, "client_operator_ops", 2, clientPage1.NextCursor, postgres.ClientOrdersFilters{})
 		if err != nil || len(clientPage2.Orders) != 1 || clientPage2.Orders[0].ID != "operator_order_01" || clientPage2.NextCursor != "" {
 			t.Fatalf("client second keyset page incorrect: %+v err=%v", clientPage2, err)
 		}
-		if _, err := postgres.ListOrdersForClientPage(ctx, db, "another_client", 2, clientPage1.NextCursor); !errors.Is(err, postgres.ErrClientOrdersInvalidCursor) {
+		if _, err := postgres.ListOrdersForClientPage(ctx, db, "another_client", 2, clientPage1.NextCursor, postgres.ClientOrdersFilters{}); !errors.Is(err, postgres.ErrClientOrdersInvalidCursor) {
 			t.Fatalf("cross-client cursor unexpectedly allowed: %v", err)
 		}
 		partnerStores, err := postgres.ListPartnerOrdersAuthorizedStoreIDs(ctx, db, "partner_operator_ops")
@@ -290,6 +290,10 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 
 		// Old orders awaiting the partner must be visible for operator review,
 		// but recent work and completed orders must not pollute the queue.
+		var reviewNow time.Time
+		if err := db.QueryRowContext(ctx, "SELECT statement_timestamp()").Scan(&reviewNow); err != nil {
+			t.Fatalf("read operator queue database clock: %v", err)
+		}
 		for _, fixture := range []struct {
 			id    string
 			state string
@@ -303,10 +307,18 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 			if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commerce_carts(id,client_actor_id,store_id,state,version) VALUES($1,$2,$3,'checked_out',1)", cartID, "client_operator_ops", "store_operator_ops"); err != nil {
 				t.Fatalf("insert review cart %s: %v", fixture.id, err)
 			}
-			changedAt := time.Now().UTC().Add(fixture.age)
+			changedAt := reviewNow.Add(fixture.age)
 			if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,total_amount_minor,payment_cash_amount_minor,currency,version,created_at,updated_at)
-				VALUES($1,$2,$3,$4,$5,1,$6,15.3694457,44.1910064,$7,'CITY_SCOPE_V1','SERVICEABLE',1,1,$8,1800,1800,'YER',1,$9,$9)`, fixture.id, "client_operator_ops", "store_operator_ops", cartID, "address_"+fixture.id, "عنوان الاختبار", "sanaa_operator_ops", fixture.state, changedAt); err != nil {
+				VALUES($1,$2,$3,$4,$5,1,$6,15.3694457,44.1910064,$7,'CITY_SCOPE_V1','SERVICEABLE',1,1,$8,1800,1800,'YER',2,$9,$9)`, fixture.id, "client_operator_ops", "store_operator_ops", cartID, "address_"+fixture.id, "عنوان الاختبار", "sanaa_operator_ops", fixture.state, changedAt); err != nil {
 				t.Fatalf("insert review order %s: %v", fixture.id, err)
+			}
+			if fixture.state == "PREPARING" {
+				if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_order_audit
+					(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,from_state,to_state,from_version,result_version,request_hash,created_at)
+					VALUES('order_preparing',$1,$2,'partner_operator_ops',$3,'PARTNER_ACCEPTED','PREPARING',1,2,'review-proof',$4)`,
+					"prepare-"+fixture.id, "review-"+fixture.id, fixture.id, changedAt); err != nil {
+					t.Fatalf("insert canonical review stage event for %s: %v", fixture.id, err)
+				}
 			}
 		}
 		stalled, err := postgres.ListOrdersForOperator(ctx, db, "", "operator_review_", "updated_desc", true, 10, "")

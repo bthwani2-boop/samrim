@@ -612,10 +612,29 @@ paths:
         - name: cursor
           in: query
           required: false
-          description: Keyset continuation for the client's history. Not combined with cartId.
+          description: Keyset continuation for the same authenticated Client and history filters. Incompatible with cartId.
           schema:
             type: string
             maxLength: 4096
+        - name: q
+          in: query
+          required: false
+          description: Case-insensitive literal substring of the Order ID or Store name. Incompatible with cartId.
+          schema:
+            type: string
+            maxLength: 128
+        - name: status
+          in: query
+          required: false
+          description: Lifecycle group for history. Omit for all states. Incompatible with cartId.
+          schema:
+            $ref: "../dsh.openapi.yaml#/components/schemas/ClientOrderHistoryStatus"
+        - name: fulfillmentMode
+          in: query
+          required: false
+          description: Exact fulfillment mode for history. Incompatible with cartId.
+          schema:
+            $ref: "../dsh.openapi.yaml#/components/schemas/FulfillmentMode"
       responses:
         "200":
           description: Paginated client Order history; cartId performs bounded checkout recovery.
@@ -623,6 +642,8 @@ paths:
             application/json:
               schema:
                 $ref: "../dsh.openapi.yaml#/components/schemas/OrderListResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
         "401":
           $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
         "403":

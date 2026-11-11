@@ -258,7 +258,7 @@ func ReconcileManualTransfer(ctx context.Context, db *sql.DB, cipher *Destinatio
 	if _, err := tx.ExecContext(ctx, "UPDATE wlt.manual_transfer_executions SET execution_status='RECONCILED',statement_row_id=$2,reconciled_by=$3,reconciled_at=clock_timestamp() WHERE id=$1 AND execution_status='VERIFIED'", input.TransferID, input.StatementRowID, input.ActorID); err != nil {
 		return ManualTransferExecutionRecord{}, err
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE wlt.settlement_batches SET status=CASE WHEN (SELECT COUNT(*) FROM wlt.payout_requests p JOIN wlt.settlement_batch_items i ON i.payout_id=p.id WHERE i.batch_id=$1 AND p.status='COMPLETED')=row_count THEN 'COMPLETED' ELSE 'AWAITING_RECONCILIATION' END,updated_at=clock_timestamp() WHERE id=$1", transfer.BatchID); err != nil {
+	if err := refreshManualTransferBatchProgress(ctx, tx, transfer.BatchID); err != nil {
 		return ManualTransferExecutionRecord{}, err
 	}
 	if err := insertPayoutAudit(ctx, tx, "TRANSFER_RECONCILED", transfer.PayoutID, transfer.BatchID, input.ActorID, "", input.StatementRowID, input.IdempotencyKey, hash, input.CorrelationID); err != nil {

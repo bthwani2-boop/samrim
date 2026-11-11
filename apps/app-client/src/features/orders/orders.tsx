@@ -1,6 +1,6 @@
 import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme, useConversationUnreadCounts } from "@bthwani/design-system/native";
-import { type Cart, formatMoney, formatOrderDate, fulfillmentModeLabel, type Order, orderPaymentDisclosure, orderStateLabel, type PublicStoreView, paymentStateLabel } from "@bthwani/dsh";
+import { type Cart, type ClientOrderHistoryStatus, formatMoney, formatOrderDate, fulfillmentModeLabel, type FulfillmentMode, type Order, type PublicStoreView } from "@bthwani/dsh";
 import { type Href, useFocusEffect, useIsFocused, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Keyboard, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
@@ -10,25 +10,28 @@ import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySe
 import { clientSessionKey } from "../access/client-session-scope";
 import { PremiumOrderProgress, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
 import { orderJourneyPresentation } from "./order-journey";
-import { emptyOrdersNextAction, isPartialOrderListEmpty, matchesOrderFilters, matchesOrderStatus, type OrderFulfillmentFilter } from "./order-list-filter";
 import { isClientActorScopeCurrent } from "./order-session-scope";
 import { acquireRepeatOrder, createRepeatOrderGate, invalidateRepeatOrderForSessionChange, ownsRepeatOrder, releaseRepeatOrder } from "./repeat-order-gate";
 
 const statusOptions = [
-  { key: "all", label: "الكل" },
-  { key: "active", label: "نشطة" },
-  { key: "completed", label: "مكتملة" },
-  { key: "cancelled", label: "ملغاة" },
+  { key: "all", label: "الكل", emptyTitle: "لا توجد طلبات بعد" },
+  { key: "active", label: "نشطة", emptyTitle: "لا توجد طلبات نشطة" },
+  { key: "completed", label: "مكتملة", emptyTitle: "لا توجد طلبات مكتملة" },
+  { key: "cancelled", label: "ملغاة", emptyTitle: "لا توجد طلبات ملغاة" },
 ] as const;
 
 const fulfillmentOptions = [
   { key: "all", label: "كل الطرق" },
-  { key: "bthwani", label: "توصيل بثواني" },
-  { key: "store", label: "توصيل المتجر" },
-  { key: "pickup", label: "استلم بنفسك" },
+  { key: "BTHWANI_CAPTAIN", label: "توصيل بثواني" },
+  { key: "PARTNER_CAPTAIN", label: "توصيل المتجر" },
+  { key: "CUSTOMER_PICKUP", label: "استلم بنفسك" },
 ] as const;
 
-type OrdersState = { kind: "loading" } | { kind: "ready"; orders: ReadonlyArray<Order>; actorID: string; sessionKey: string; nextCursor: string } | { kind: "error" } | { kind: "auth_required" };
+type OrdersState =
+  | { kind: "loading" }
+  | { kind: "ready"; orders: ReadonlyArray<Order>; actorID: string; sessionKey: string; queryKey: string; nextCursor: string }
+  | { kind: "error"; sessionKey: string; queryKey: string }
+  | { kind: "auth_required" };
 
 function hasCurrentOrdersSession(sessionKey: string): boolean {
   return Boolean(sessionKey) && clientSessionKey(currentIdentityState()) === sessionKey;
@@ -45,21 +48,38 @@ export default function ClientOrders() {
   const [identityState, setIdentityState] = useState(currentIdentityState);
   const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
   const activeSessionKey = clientSessionKey(identityState);
+  const lastSessionKey = useRef(activeSessionKey);
   const loadSequence = useRef(0);
   const pageSequence = useRef(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "completed" | "cancelled">("all");
+  const [statusFilter, setStatusFilter] = useState<ClientOrderHistoryStatus | "all">("all");
   const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [storeIdentity, setStoreIdentity] = useState<Readonly<Record<string, PublicStoreView>>>({});
-  const [fulfillmentFilter, setFulfillmentFilter] = useState<OrderFulfillmentFilter>("all");
+  const [fulfillmentFilter, setFulfillmentFilter] = useState<FulfillmentMode | "all">("all");
   const [repeatingOrderID, setRepeatingOrderID] = useState("");
   const [repeatError, setRepeatError] = useState("");
   const repeatOrderGate = useRef(createRepeatOrderGate());
-  const selectedStatusLabel = statusOptions.find((option) => option.key === statusFilter)?.label ?? "الكل";
+  const selectedStatus = statusOptions.find((option) => option.key === statusFilter) ?? statusOptions[0];
+  const selectedStatusLabel = selectedStatus.label;
   const selectedFulfillmentLabel = fulfillmentOptions.find((option) => option.key === fulfillmentFilter)?.label ?? "كل الطرق";
   const filterButtonLabel = statusFilter !== "all" ? selectedStatusLabel : fulfillmentFilter !== "all" ? selectedFulfillmentLabel : "تصفية";
+  const searchPending = search.trim() !== appliedSearch;
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (hasCurrentOrdersSession(activeSessionKey)) setAppliedSearch(search.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search, activeSessionKey]);
+  const historyFilters = useMemo(() => ({
+    q: appliedSearch,
+    ...(statusFilter === "all" ? {} : { status: statusFilter }),
+    ...(fulfillmentFilter === "all" ? {} : { fulfillmentMode: fulfillmentFilter }),
+  }), [appliedSearch, statusFilter, fulfillmentFilter]);
+  const historyQueryKey = JSON.stringify(historyFilters);
+
   const load = useCallback(async () => {
     const sequence = ++loadSequence.current;
     pageSequence.current += 1;
@@ -72,33 +92,23 @@ export default function ClientOrders() {
     setState({ kind: "loading" });
     try {
       const token = await getUsableIdentityAccessToken();
-      if (!hasCurrentOrdersSession(sessionKey)) return;
-      const response = await createClientDsh().listClientOrders(token, 50);
       if (sequence !== loadSequence.current || !hasCurrentOrdersSession(sessionKey)) return;
-      setState({ kind: "ready", orders: response.orders, actorID, sessionKey, nextCursor: response.nextCursor ?? "" });
+      const response = await createClientDsh().listClientOrders(token, { ...historyFilters, limit: 50 });
+      if (sequence !== loadSequence.current || !hasCurrentOrdersSession(sessionKey)) return;
+      setState({ kind: "ready", orders: response.orders, actorID, sessionKey, queryKey: historyQueryKey, nextCursor: response.nextCursor ?? "" });
     } catch (error) {
       console.error("DSH client orders read failed", error);
       if (sequence !== loadSequence.current || !hasCurrentOrdersSession(sessionKey)) return;
-      setState({ kind: "error" });
+      setState({ kind: "error", sessionKey, queryKey: historyQueryKey });
     }
-  }, []);
+  }, [historyFilters, historyQueryKey]);
 
-  const visibleOrders = useMemo(() => {
-    if (state.kind !== "ready" || state.sessionKey !== activeSessionKey) return [];
-    return state.orders.filter((order) => {
-      if (!matchesOrderFilters(order, fulfillmentFilter)) return false;
-      if (!matchesOrderStatus(order.state, statusFilter)) return false;
-      const q = search.trim().toLocaleLowerCase("ar");
-      return !q || order.storeName.toLocaleLowerCase("ar").includes(q) || order.id.toLowerCase().includes(q);
-    });
-  }, [fulfillmentFilter, statusFilter, search, state, activeSessionKey]);
-  const partialEmpty = state.kind === "ready" && state.sessionKey === activeSessionKey && isPartialOrderListEmpty(visibleOrders.length, state.nextCursor);
-  const emptyStateTitle = partialEmpty ? "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0645\u0637\u0627\u0628\u0642\u0629 \u0636\u0645\u0646 \u0627\u0644\u0637\u0644\u0628\u0627\u062a \u0627\u0644\u0645\u062d\u0645\u0651\u0644\u0629"
-    : search.trim() || fulfillmentFilter !== "all" ? "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0645\u0637\u0627\u0628\u0642\u0629"
-    : statusFilter === "cancelled" ? "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0645\u0644\u063a\u0627\u0629"
-    : statusFilter === "completed" ? "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0645\u0643\u062a\u0645\u0644\u0629"
-    : statusFilter === "active" ? "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0646\u0634\u0637\u0629"
-    : state.kind === "ready" && state.orders.length === 0 ? "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0628\u0639\u062f" : "\u0644\u0627 \u062a\u0648\u062c\u062f \u0637\u0644\u0628\u0627\u062a \u0645\u0637\u0627\u0628\u0642\u0629";
+  const currentResult = !searchPending && (state.kind === "ready" || state.kind === "error") &&
+    state.queryKey === historyQueryKey && state.sessionKey === activeSessionKey ? state : null;
+  const readyState = currentResult?.kind === "ready" ? currentResult : null;
+  const visibleOrders = readyState?.orders ?? [];
+  const hasFilters = Boolean(appliedSearch || statusFilter !== "all" || fulfillmentFilter !== "all");
+  const emptyStateTitle = appliedSearch || fulfillmentFilter !== "all" ? "لا توجد طلبات مطابقة" : selectedStatus.emptyTitle;
 
   const getChatUnread = useCallback(async (orderId: string) => {
     const token = await getUsableIdentityAccessToken();
@@ -107,21 +117,21 @@ export default function ClientOrders() {
   const unreadChatCounts = useConversationUnreadCounts(visibleOrders.map(order => order.id), activeSessionKey, ordersFocused, getChatUnread);
 
   const loadMore = useCallback(async () => {
-    if (state.kind !== "ready" || !state.nextCursor || loadingMore || !isClientActorScopeCurrent(state.actorID, activeActorID) || !hasCurrentOrdersSession(state.sessionKey)) return;
+    if (!readyState?.nextCursor || loadingMore || !isClientActorScopeCurrent(readyState.actorID, activeActorID) || !hasCurrentOrdersSession(readyState.sessionKey)) return;
     const sequence = ++pageSequence.current;
     const loadID = loadSequence.current;
-    const cursor = state.nextCursor;
-    const actorID = state.actorID;
-    const sessionKey = state.sessionKey;
+    const cursor = readyState.nextCursor;
+    const actorID = readyState.actorID;
+    const sessionKey = readyState.sessionKey;
     setLoadMoreError("");
     setLoadingMore(true);
     try {
       const token = await getUsableIdentityAccessToken();
       if (sequence !== pageSequence.current || loadID !== loadSequence.current || !hasCurrentOrdersSession(sessionKey)) return;
-      const response = await createClientDsh().listClientOrders(token, 50, "", cursor);
+      const response = await createClientDsh().listClientOrders(token, { ...historyFilters, limit: 50, cursor });
       if (sequence !== pageSequence.current || loadID !== loadSequence.current || !hasCurrentOrdersSession(sessionKey)) return;
       setState((current) => {
-        if (current.kind !== "ready" || current.sessionKey !== sessionKey || current.actorID !== actorID || current.nextCursor !== cursor) return current;
+        if (current.kind !== "ready" || current.sessionKey !== sessionKey || current.actorID !== actorID || current.queryKey !== historyQueryKey || current.nextCursor !== cursor) return current;
         const existingIDs = new Set(current.orders.map((item) => item.id));
         return { ...current, orders: [...current.orders, ...response.orders.filter((item) => !existingIDs.has(item.id))], nextCursor: response.nextCursor && response.nextCursor !== cursor ? response.nextCursor : "" };
       });
@@ -131,11 +141,11 @@ export default function ClientOrders() {
     } finally {
       if (sequence === pageSequence.current && loadID === loadSequence.current && hasCurrentOrdersSession(sessionKey)) setLoadingMore(false);
     }
-  }, [state, loadingMore, activeActorID]);
+  }, [readyState, loadingMore, activeActorID, historyFilters, historyQueryKey]);
 
   const repeatOrder = useCallback(async (order: Order) => {
-    if (state.kind !== "ready" || !isClientActorScopeCurrent(state.actorID, activeActorID) || !hasCurrentOrdersSession(state.sessionKey) || !order.lines.length) return;
-    const sessionKey = state.sessionKey;
+    if (!readyState || !isClientActorScopeCurrent(readyState.actorID, activeActorID) || !hasCurrentOrdersSession(readyState.sessionKey) || !order.lines.length) return;
+    const sessionKey = readyState.sessionKey;
     const lease = acquireRepeatOrder(repeatOrderGate.current, sessionKey, order.id);
     if (!lease) return;
     setRepeatingOrderID(order.id);
@@ -194,10 +204,17 @@ export default function ClientOrders() {
         setRepeatingOrderID((current) => repeatOrderGate.current.current === null && current === order.id ? "" : current);
       }
     }
-  }, [activeActorID, router, state]);
+  }, [activeActorID, router, readyState]);
 
   useEffect(() => subscribeIdentitySession((next) => {
-    const invalidated = invalidateRepeatOrderForSessionChange(repeatOrderGate.current, clientSessionKey(next));
+    const nextSessionKey = clientSessionKey(next);
+    if (lastSessionKey.current !== nextSessionKey) {
+      lastSessionKey.current = nextSessionKey;
+      setSearch("");
+      setAppliedSearch("");
+      setRepeatError("");
+    }
+    const invalidated = invalidateRepeatOrderForSessionChange(repeatOrderGate.current, nextSessionKey);
     if (invalidated) {
       setRepeatingOrderID((current) => repeatOrderGate.current.current === null && current === invalidated.orderID ? "" : current);
     }
@@ -234,20 +251,9 @@ export default function ClientOrders() {
     };
   }, [activeSessionKey, load]));
 
-  if (state.kind === "ready" && (state.sessionKey !== activeSessionKey || !isClientActorScopeCurrent(state.actorID, activeActorID))) {
-    return <View style={styles.state} accessibilityLabel="جارٍ التحقق من صاحب الطلبات"><BthwaniSkeleton height={112} /><Text style={styles.muted}>جارٍ التحقق من الجلسة وملكية الطلبات…</Text></View>;
-  }
-  if (state.kind === "auth_required") {
+  if (!activeSessionKey || state.kind === "auth_required") {
     return <View style={styles.state}><BthwaniIcon name="account" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.title}>سجّل الدخول لمتابعة طلباتك</Text><Text style={styles.muted}>ستظهر طلباتك وحالاتها هنا بعد تسجيل الدخول.</Text><BthwaniButton label="تسجيل الدخول" onPress={() => router.replace("/?returnTo=/orders" as Href)} /></View>;
   }
-  if (state.kind === "loading") {
-    return <View style={styles.state} accessibilityLabel="جارٍ تجهيز الطلبات"><BthwaniSkeleton width="42%" height={28} /><BthwaniSkeleton height={112} /><BthwaniSkeleton height={112} /></View>;
-  }
-  if (state.kind === "error") {
-    return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر قراءة الطلبات</Text><Text style={styles.muted}>تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View>;
-  }
-
-  const emptyAction = emptyOrdersNextAction(state.nextCursor, statusFilter, fulfillmentFilter, search);
 
   return <View style={styles.container} accessibilityLabel="طلباتي">
     <View style={styles.ordersHeader}><Text style={styles.screenTitle}>طلباتي</Text><Pressable accessibilityRole="button" accessibilityLabel="الرجوع" style={styles.backAction} onPress={() => router.back()}><BthwaniIcon name="back" color={premium.text} size={24} /></Pressable></View>
@@ -260,26 +266,30 @@ export default function ClientOrders() {
         <View style={[styles.filterIndicator, (statusFilter !== "all" || fulfillmentFilter !== "all") && styles.filterIndicatorActive]} />
       </Pressable>
       <TextInput accessibilityLabel="البحث في طلباتي" style={styles.searchInput} placeholder="ابحث في طلباتك..." placeholderTextColor={premium.muted}
-        value={search} onChangeText={setSearch} />
+        value={search} onChangeText={setSearch} maxLength={128} returnKeyType="search" />
     </View>
-    {repeatError ? <Text accessibilityRole="alert" style={styles.error}>{repeatError}</Text> : null}
-    {visibleOrders.length === 0 ? <BthwaniSurface tone="raised" style={styles.emptyState}>
+    {readyState && repeatError ? <Text accessibilityRole="alert" style={styles.error}>{repeatError}</Text> : null}
+    {currentResult?.kind === "error" ? <View style={styles.state}>
+      <BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} />
+      <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر قراءة الطلبات</Text>
+      <Text style={styles.muted}>تحقق من الاتصال ثم أعد المحاولة.</Text>
+      <BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" />
+    </View> : !readyState ? <View style={styles.state} accessibilityLabel="جارٍ تجهيز الطلبات">
+      <BthwaniSkeleton width="42%" height={28} /><BthwaniSkeleton height={112} /><BthwaniSkeleton height={112} />
+    </View> : visibleOrders.length === 0 ? <BthwaniSurface tone="raised" style={styles.emptyState}>
       <BthwaniIcon name="orders" color={premium.orange} size={sizing.iconXl} />
       <Text style={styles.cardTitle}>{emptyStateTitle}</Text>
-      <Text style={styles.muted}>{partialEmpty ? "\u0642\u062f \u062a\u062d\u062a\u0648\u064a \u0627\u0644\u0635\u0641\u062d\u0627\u062a \u0627\u0644\u0623\u0642\u062f\u0645 \u0639\u0644\u0649 \u0646\u062a\u0627\u0626\u062c. \u062d\u0645\u0651\u0644 \u0627\u0644\u0645\u0632\u064a\u062f \u0644\u0645\u062a\u0627\u0628\u0639\u0629 \u0627\u0644\u0628\u062d\u062b." : state.orders.length === 0 && statusFilter === "all" && fulfillmentFilter === "all" && !search.trim() ? "ستظهر طلباتك هنا بعد تأكيدها." : "جرّب تغيير البحث أو التصفية."}</Text>
+      <Text style={styles.muted}>{hasFilters ? "جرّب تغيير البحث أو التصفية." : "ستظهر طلباتك هنا بعد تأكيدها."}</Text>
       <BthwaniButton
-        label={emptyAction === "browse" ? "استكشف المتاجر" : emptyAction === "loadMore" ? "عرض طلبات أقدم" : "عرض الكل"}
-        busy={emptyAction === "loadMore" && loadingMore}
-        disabled={emptyAction === "loadMore" && loadingMore}
+        label={hasFilters ? "عرض الكل" : "استكشف المتاجر"}
         onPress={() => {
-          if (emptyAction === "browse") { router.push("/home" as Href); return; }
-          if (emptyAction === "loadMore") { void loadMore(); return; }
+          if (!hasFilters) { router.push("/home" as Href); return; }
           setSearch("");
+          setAppliedSearch("");
           setStatusFilter("all");
           setFulfillmentFilter("all");
         }}
       />
-      {emptyAction === "loadMore" && loadMoreError ? <Text accessibilityRole="alert" style={styles.error}>{loadMoreError}</Text> : null}
     </BthwaniSurface> : <View style={styles.list}>
       {visibleOrders.map((order) => {
         const journey = orderJourneyPresentation(order);
@@ -318,7 +328,7 @@ export default function ClientOrders() {
         </BthwaniSurface>;
       })}
     </View>}
-    {state.nextCursor && (visibleOrders.length > 0 || emptyAction !== "loadMore") ? <View style={styles.list}>
+    {readyState?.nextCursor ? <View style={styles.list}>
       {loadMoreError ? <Text accessibilityRole="alert" style={styles.error}>{loadMoreError}</Text> : null}
       <BthwaniButton label="عرض طلبات أقدم" busy={loadingMore} disabled={loadingMore || Boolean(repeatingOrderID)} onPress={() => void loadMore()} variant="secondary" />
     </View> : null}

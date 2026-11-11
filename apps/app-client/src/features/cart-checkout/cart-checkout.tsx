@@ -180,7 +180,7 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
   }, [order, router]);
 
   const readOrderForCart = useCallback(async (accessToken: string, cartID: string): Promise<Order | null> => {
-    const response = await createClientDsh().listClientOrders(accessToken, 1, cartID);
+    const response = await createClientDsh().listClientOrders(accessToken, { limit: 1, cartId: cartID });
     return response.orders.find((item) => item.cartId === cartID) ?? null;
   }, []);
 

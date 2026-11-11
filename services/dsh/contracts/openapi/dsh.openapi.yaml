@@ -10167,6 +10167,10 @@ components:
         idempotentReplay:
           type: boolean
 
+    ClientOrderHistoryStatus:
+      type: string
+      enum: [active, completed, cancelled]
+
     OrderListResponse:
       type: object
       required: [orders]

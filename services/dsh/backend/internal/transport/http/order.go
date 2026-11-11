@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -328,13 +329,29 @@ func (s *OrderServer) listClient(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	cartID := strings.TrimSpace(r.URL.Query().Get("cartId"))
-	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "client Order history query is invalid")
+		return
+	}
+	for _, key := range []string{"limit", "cartId", "cursor", "q", "status", "fulfillmentMode"} {
+		if len(query[key]) > 1 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "client Order history parameters must appear at most once")
+			return
+		}
+	}
+	cartID := strings.TrimSpace(query.Get("cartId"))
+	cursor := strings.TrimSpace(query.Get("cursor"))
 	if len(cartID) > 128 || len(cursor) > 4096 || (cartID != "" && cursor != "") {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "client Order filter or cursor is invalid")
 		return
 	}
-	page, err := s.service.ListForClient(r.Context(), bearerToken(r), limit, cartID, cursor)
+	filters := postgres.ClientOrdersFilters{
+		Search:          strings.TrimSpace(query.Get("q")),
+		Status:          strings.TrimSpace(query.Get("status")),
+		FulfillmentMode: strings.TrimSpace(query.Get("fulfillmentMode")),
+	}
+	page, err := s.service.ListForClient(r.Context(), bearerToken(r), limit, cartID, cursor, filters)
 	if err != nil {
 		writeOrderError(w, err)
 		return
@@ -1120,6 +1137,8 @@ func writeOrderError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partner orders Store scope is invalid")
 	case errors.Is(err, postgres.ErrClientOrdersInvalidCursor), errors.Is(err, postgres.ErrOperatorCustomerOrdersInvalidCursor):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "customer Order history cursor is invalid")
+	case errors.Is(err, postgres.ErrClientOrdersInvalidFilters):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "customer Order history filters are invalid")
 	case errors.Is(err, postgres.ErrPartnerOrdersInvalidState), errors.Is(err, postgres.ErrPartnerOrdersInvalidQuery), errors.Is(err, postgres.ErrPartnerOrdersInvalidCursor), errors.Is(err, postgres.ErrOperatorOperationInvalidCursor), errors.Is(err, postgres.ErrOperatorOperationInvalidLimit), errors.Is(err, postgres.ErrOperatorOperationInvalidQuery), errors.Is(err, postgres.ErrOperatorOperationInvalidSort):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partner or operator orders pagination, state, or search is invalid")
 	case errors.Is(err, orderdomain.ErrClientSessionForbidden), errors.Is(err, orderdomain.ErrPartnerSessionForbidden), errors.Is(err, orderdomain.ErrStoreOwnershipForbidden), errors.Is(err, orderdomain.ErrOperatorNotActive):
