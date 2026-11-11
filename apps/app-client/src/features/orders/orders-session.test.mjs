@@ -57,7 +57,7 @@ function harness(options = {}) {
     clientSessionKey,
     hasCurrentOrdersSession: scope => Boolean(scope) && clientSessionKey(currentIdentityState()) === scope,
     getUsableIdentityAccessToken: options.getUsableIdentityAccessToken ?? (async () => "token"),
-    client: () => ({ listClientOrders: async (...args) => {
+    createClientDsh: () => ({ listClientOrders: async (...args) => {
       dshCalls++;
       return listClientOrders(...args);
     } }),

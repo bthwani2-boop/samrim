@@ -19,7 +19,7 @@ test("closed store prevents checkout pricing and provides refresh", () => {
   assert.match(checkout, /"STORE_NOT_ACCEPTING_ORDERS"/);
 });
 test("delivery fee remains server-quoted, never replaced by a local guess", () => {
-  assert.match(checkout, /client\(\)\.quoteCheckout\(/);
+  assert.match(checkout, /createClientDsh\(\)\.quoteCheckout\(/);
   assert.match(checkout, /verifiedQuote\.deliveryFeeMinor/);
   assert.match(checkout, /expectedTotalAmountMinor: quote\.quote\.totalAmountMinor/);
 });

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript-ast";
@@ -46,7 +46,7 @@ test("favorite Store must not write under B when actor A's token resolves after 
   const run = productionFunction("setFavoriteStore", {
     getUsableIdentityAccessToken: () => token.promise,
     currentIdentityState: () => ({ kind: "authenticated", identity: { subject: actor } }),
-    client: () => ({ addClientFavoriteStore: async () => { writes += 1; return { isFavorite: true }; } }),
+    createClientDsh: () => ({ addClientFavoriteStore: async () => { writes += 1; return { isFavorite: true }; } }),
   });
   const pending = run("store-A", true, "actor-A");
   actor = "actor-B";
@@ -61,7 +61,7 @@ test("favorite offer must not write if A loses session while identity token refr
   const run = productionFunction("setFavoriteStoreOffer", {
     getUsableIdentityAccessToken: () => token.promise,
     currentIdentityState: () => ({ kind: "authenticated", identity: { subject: actor } }),
-    client: () => ({ addClientFavoriteStoreOffer: async () => { writes += 1; return { isFavorite: true }; } }),
+    createClientDsh: () => ({ addClientFavoriteStoreOffer: async () => { writes += 1; return { isFavorite: true }; } }),
   });
   const pending = run("offer-A", true, "actor-A");
   actor = "";
@@ -76,7 +76,7 @@ test("cart read finishing after A-to-B switch cannot trigger A-context upsert", 
   const run = productionFunction("addCatalogOfferToCart", {
     getUsableIdentityAccessToken: async () => "token-A",
     currentIdentityState: () => ({ kind: "authenticated", identity: { subject: actor } }),
-    client: () => ({
+    createClientDsh: () => ({
       readOpenCart: () => { readStarted.resolve(); return cartRead.promise; },
       upsertCartLine: async () => { writes += 1; return { cart: { version: 5 } }; },
     }),
@@ -95,7 +95,7 @@ test("cart 404 recovery after actor switch may not create a cart for wrong actor
   const run = productionFunction("addCatalogOfferToCart", {
     getUsableIdentityAccessToken: async () => "token-A",
     currentIdentityState: () => ({ kind: "authenticated", identity: { subject: actor } }),
-    client: () => ({
+    createClientDsh: () => ({
       readOpenCart: () => { readStarted.resolve(); return cartRead.promise; },
       upsertCartLine: async () => { writes += 1; return { cart: {} }; },
     }),
@@ -113,7 +113,7 @@ test("same actor can add Store offer after reading canonical cart version", asyn
   const run = productionFunction("addCatalogOfferToCart", {
     getUsableIdentityAccessToken: async () => "token-A",
     currentIdentityState: () => ({ kind: "authenticated", identity: { subject: "actor-A" } }),
-    client: () => ({
+    createClientDsh: () => ({
       readOpenCart: async () => ({ cart: { version: 3 } }),
       upsertCartLine: async (token, input, version) => {
         writes.push({ token, input, version });
@@ -132,7 +132,7 @@ test("same actor favorite remains functional", async () => {
   const run = productionFunction("setFavoriteStore", {
     getUsableIdentityAccessToken: async () => "token-A",
     currentIdentityState: () => ({ kind: "authenticated", identity: { subject: "actor-A" } }),
-    client: () => ({ removeClientFavoriteStore: async () => ({ isFavorite: false }) }),
+    createClientDsh: () => ({ removeClientFavoriteStore: async () => ({ isFavorite: false }) }),
   });
   assert.equal(await run("store-A", false, "actor-A"), false);
 });
@@ -147,7 +147,7 @@ test("home quantity adjustment cannot write with B's token after actor A loses t
   const run = productionFunction("adjustSimpleOfferQuantity", {
     getUsableIdentityAccessToken: () => token.promise,
     currentIdentityState: () => ({ kind: "authenticated", identity: { subject: actor } }),
-    client: () => ({
+    createClientDsh: () => ({
       readOpenCart: async () => ({ cart: { lines: [], version: 2 } }),
       upsertCartLine: async () => { writes += 1; return { cart: {} }; },
     }),
@@ -165,7 +165,7 @@ test("home quantity mutation does not write if old actor A cart read finishes in
   const run = productionFunction("adjustSimpleOfferQuantity", {
     getUsableIdentityAccessToken: async () => "token-A",
     currentIdentityState: () => ({ kind: "authenticated", identity: { subject: actor } }),
-    client: () => ({
+    createClientDsh: () => ({
       readOpenCart: () => { readStarted.resolve(); return cartRead.promise; },
       upsertCartLine: async () => { writes += 1; return { cart: {} }; },
       removeCartLine: async () => { writes += 1; return { cart: {} }; },
@@ -184,7 +184,7 @@ test("same actor home quantity increase uses canonical cart version", async () =
   const run = productionFunction("adjustSimpleOfferQuantity", {
     getUsableIdentityAccessToken: async () => "token-A",
     currentIdentityState: () => ({ kind: "authenticated", identity: { subject: "actor-A" } }),
-    client: () => ({
+    createClientDsh: () => ({
       readOpenCart: async () => ({ cart: { version: 8, lines: [{ storeOfferId: "offer-A", quantityBaseUnits: 2 }] } }),
       upsertCartLine: async (token, line, version) => {
         writes.push({ token, line, version });
@@ -205,7 +205,7 @@ test("old actor A cannot remove a cart line after switching to B during cart rea
   const run = productionFunction("adjustSimpleOfferQuantity", {
     getUsableIdentityAccessToken: async () => "token-A",
     currentIdentityState: () => ({ kind: "authenticated", identity: { subject: actor } }),
-    client: () => ({
+    createClientDsh: () => ({
       readOpenCart: () => { started.resolve(); return pendingCart.promise; },
       removeCartLine: async () => { removes += 1; return { cart: {} }; },
       upsertCartLine: async () => { upserts += 1; return { cart: {} }; },
@@ -227,7 +227,7 @@ test("same actor may remove an offer at minimum quantity using the owner cart ve
   const run = productionFunction("adjustSimpleOfferQuantity", {
     getUsableIdentityAccessToken: async () => "token-A",
     currentIdentityState: () => ({ kind: "authenticated", identity: { subject: "actor-A" } }),
-    client: () => ({
+    createClientDsh: () => ({
       readOpenCart: async () => ({ cart: {
         version: 7, lines: [{ id: "line-A", storeOfferId: "offer-A", quantityBaseUnits: 1 }],
       } }),
@@ -266,7 +266,7 @@ test("Store discovery cannot become a second Cart/checkout API owner", async () 
 test("multi-Store preview reads the canonical DSH Cart with the original acquired token", async () => {
   const called = [];
   const read = productionFunction("readCartForPreview", {
-    client: () => ({ readOpenCart: async (...args) => {
+    createClientDsh: () => ({ readOpenCart: async (...args) => {
       called.push(args);
       return { cart: { id: "cart-a", version: 2 } };
     } }),
@@ -277,4 +277,54 @@ test("multi-Store preview reads the canonical DSH Cart with the original acquire
   assert.equal(called.length, 1);
   assert.equal(called[0][0], "captured-client-token");
   assert.equal(called[0][1], "store-a");
+});
+
+test("Client DSH bootstrap owns the single configured SDK constructor, without caching user context", () => {
+  const ownerSource = readFileSync(new URL("../src/bootstrap/dsh.ts", import.meta.url), "utf8");
+  const ownerAST = ts.createSourceFile("dsh.ts", ownerSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const functionText = ownerAST.statements
+    .filter(statement => ts.isFunctionDeclaration(statement) && ["clientDshBaseURL", "createClientDsh"].includes(statement.name?.text))
+    .map(statement => statement.getText(ownerAST)).join("\n");
+  const seen = [];
+  const env = { EXPO_PUBLIC_DSH_API_URL: "  https://dsh.example.test/  " };
+  const bindings = {
+    process: { env },
+    Crypto: { randomUUID: () => "safe-uuid" },
+    createDshMobileClient: (url, options) => {
+      seen.push({ url, options });
+      return { request: seen.length };
+    },
+  };
+  const js = ts.transpileModule(functionText + "\n({clientDshBaseURL,createClientDsh})", {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+  }).outputText;
+  const configured = vm.runInNewContext(js, { exports: {}, ...bindings });
+  const first = configured.createClientDsh();
+  const second = configured.createClientDsh();
+  assert.equal(first.request, 1);
+  assert.equal(second.request, 2, "never keep a client or session-bound credentials in a singleton");
+  assert.deepEqual(seen.map(item => item.url), ["https://dsh.example.test/", "https://dsh.example.test/"]);
+  assert.equal(seen[0].options.cryptoRandomUUID(), "safe-uuid");
+  env.EXPO_PUBLIC_DSH_API_URL = "";
+  assert.throws(() => configured.createClientDsh(), /DSH_BASE_URL_REQUIRED/);
+
+  const paths = [
+    "../src/features/store-discovery/store-discovery-client.ts",
+    "../src/features/cart-checkout/cart-client.ts",
+    "../src/features/cart-checkout/cart-checkout.tsx",
+    "../src/features/orders/orders.tsx",
+    "../src/features/orders/order-detail.tsx",
+    "../src/features/orders/order-conversation.tsx",
+    "../src/features/notifications/notifications-inbox.tsx",
+    "../src/features/wallet/cash-in-panel.tsx",
+    "../src/features/location-core/delivery-address-client.ts",
+    "../src/features/service-city/service-city-scope.tsx",
+  ];
+  for (const path of paths) {
+    const source = readFileSync(new URL(path, import.meta.url), "utf8");
+    assert.match(source, /createClientDsh\(/, path + " must use the shared Client DSH bootstrap");
+    assert.doesNotMatch(source, /createDshMobileClient\(/, path + " must not recreate DSH SDK configuration");
+  }
+  assert.equal(existsSync(new URL("../src/features/service-city/service-city-client.ts", import.meta.url)), false,
+    "the old single-use city adapter must be removed after its last consumer cutover");
 });

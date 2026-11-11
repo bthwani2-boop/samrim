@@ -1,15 +1,7 @@
-import { createDshMobileClient, type DiscoveryContentEventRequest, type DiscoveryContentListResponse, type DiscoveryContentTargetResolution, type PromotionListResponse, type PublicCatalogResponse, type PublicCatalogSearchResponse, type PublicStoreOrderabilityResponse, type PublicStoreView, type PublishedStoreListResponse } from "@bthwani/dsh";
-import * as Crypto from "expo-crypto";
+import type { DiscoveryContentEventRequest, DiscoveryContentListResponse, DiscoveryContentTargetResolution, PromotionListResponse, PublicCatalogResponse, PublicCatalogSearchResponse, PublicStoreOrderabilityResponse, PublicStoreView, PublishedStoreListResponse } from "@bthwani/dsh";
+import { clientDshBaseURL, createClientDsh } from "../../bootstrap/dsh";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { tokenForClientActor } from "../access/client-request-token";
-
-function dshBaseUrl(): string {
-  const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-  if (!value) throw new Error("DSH_BASE_URL_REQUIRED");
-  return value;
-}
-
-const client = () => createDshMobileClient(dshBaseUrl(), { cryptoRandomUUID: () => Crypto.randomUUID() });
 
 export async function listPublishedStores(serviceCityID: string, options: Readonly<{
   q?: string;
@@ -24,22 +16,22 @@ export async function listPublishedStores(serviceCityID: string, options: Readon
 }> = {}): Promise<PublishedStoreListResponse> {
   if (options.favoritesOnly) {
     const accessToken = await getUsableIdentityAccessToken();
-    return client().listPublishedStores(serviceCityID, { ...options, accessToken });
+    return createClientDsh().listPublishedStores(serviceCityID, { ...options, accessToken });
   }
-  return client().listPublishedStores(serviceCityID, options);
+  return createClientDsh().listPublishedStores(serviceCityID, options);
 }
 
 export async function readPublicStudioLayout() {
-  return client().readPublicStudioLayout();
+  return createClientDsh().readPublicStudioLayout();
 }
 
 export async function listPublicPromotions(serviceCityID: string, storeID = ""): Promise<PromotionListResponse> {
-  return client().listPublicPromotions(serviceCityID, storeID);
+  return createClientDsh().listPublicPromotions(serviceCityID, storeID);
 }
 
 export type BannerPresentation = Readonly<{ placement: "HOME"; mode: "STATIC" | "CINEMATIC" | "CROSSFADE"; intervalSeconds: number; version: number }>;
 export async function readPublicBannerPresentation(): Promise<BannerPresentation> {
-  const response = await fetch(`${dshBaseUrl()}/dsh/public/banner-presentation`, { headers: { Accept: "application/json" } });
+  const response = await fetch(`${clientDshBaseURL()}/dsh/public/banner-presentation`, { headers: { Accept: "application/json" } });
   if (!response.ok) throw new Error("BANNER_PRESENTATION_UNAVAILABLE");
   const value = await response.json() as BannerPresentation;
   if (!["STATIC", "CINEMATIC", "CROSSFADE"].includes(value.mode) || !Number.isInteger(value.intervalSeconds) || value.intervalSeconds < 3 || value.intervalSeconds > 10) throw new Error("BANNER_PRESENTATION_INVALID");
@@ -47,68 +39,68 @@ export async function readPublicBannerPresentation(): Promise<BannerPresentation
 }
 
 export async function listPublicDiscoveryContent(serviceCityID: string): Promise<DiscoveryContentListResponse> {
-  return client().listPublicDiscoveryContent(serviceCityID);
+  return createClientDsh().listPublicDiscoveryContent(serviceCityID);
 }
 
 export async function listPublicStoreBanners(storeID: string, serviceCityID: string, relation: "marketplace" | "independent" = "marketplace"): Promise<DiscoveryContentListResponse> {
   // Both sites reuse the DSH Discovery Content reader and its publication rules.
-  return await client().listPublicStoreBanners(storeID, serviceCityID, relation);
+  return await createClientDsh().listPublicStoreBanners(storeID, serviceCityID, relation);
 }
 
 export async function resolvePublicDiscoveryContentTarget(contentID: string, serviceCityID: string): Promise<DiscoveryContentTargetResolution> {
-  return client().resolvePublicDiscoveryContentTarget(contentID, serviceCityID);
+  return createClientDsh().resolvePublicDiscoveryContentTarget(contentID, serviceCityID);
 }
 
 export async function recordPublicDiscoveryContentEvent(input: DiscoveryContentEventRequest): Promise<void> {
   const accessToken = input.eventType === "CONVERSION" ? await getUsableIdentityAccessToken() : "";
-  await client().recordPublicDiscoveryContentEvent(input, accessToken);
+  await createClientDsh().recordPublicDiscoveryContentEvent(input, accessToken);
 }
 
 export async function listFavoriteStoreIDs(): Promise<ReadonlyArray<string>> {
   const accessToken = await getUsableIdentityAccessToken();
-  return (await client().listClientFavoriteStores(accessToken)).storeIds;
+  return (await createClientDsh().listClientFavoriteStores(accessToken)).storeIds;
 }
 
 export async function setFavoriteStore(storeID: string, isFavorite: boolean, actorID: string): Promise<boolean> {
   const accessToken = await tokenForClientActor(actorID);
-  const result = isFavorite ? await client().addClientFavoriteStore(accessToken, storeID) : await client().removeClientFavoriteStore(accessToken, storeID);
+  const result = isFavorite ? await createClientDsh().addClientFavoriteStore(accessToken, storeID) : await createClientDsh().removeClientFavoriteStore(accessToken, storeID);
   return result.isFavorite;
 }
 
 export async function listFavoriteStoreOfferIDs(storeID: string): Promise<ReadonlyArray<string>> {
   const accessToken = await getUsableIdentityAccessToken();
-  return (await client().listClientFavoriteStoreOffers(accessToken, storeID)).offerIds;
+  return (await createClientDsh().listClientFavoriteStoreOffers(accessToken, storeID)).offerIds;
 }
 
 export async function setFavoriteStoreOffer(storeOfferID: string, isFavorite: boolean, actorID: string): Promise<boolean> {
   const accessToken = await tokenForClientActor(actorID);
   const result = isFavorite
-    ? await client().addClientFavoriteStoreOffer(accessToken, storeOfferID)
-    : await client().removeClientFavoriteStoreOffer(accessToken, storeOfferID);
+    ? await createClientDsh().addClientFavoriteStoreOffer(accessToken, storeOfferID)
+    : await createClientDsh().removeClientFavoriteStoreOffer(accessToken, storeOfferID);
   return result.isFavorite;
 }
 
 export async function readFavoriteStoreCatalog(storeID: string, serviceCityID: string, limit = 20, cursor = ""): Promise<PublicCatalogResponse> {
   const accessToken = await getUsableIdentityAccessToken();
-  return client().readClientFavoriteStoreCatalog(accessToken, storeID, serviceCityID, limit, cursor);
+  return createClientDsh().readClientFavoriteStoreCatalog(accessToken, storeID, serviceCityID, limit, cursor);
 }
 
 export async function readPublishedStore(storeID: string, serviceCityID: string): Promise<PublicStoreView> {
-  return client().readPublishedStore(storeID, serviceCityID);
+  return createClientDsh().readPublishedStore(storeID, serviceCityID);
 }
 
 export async function readStorePublicContact(storeID: string) {
-  return client().readPublishedStorePublicContact(storeID);
+  return createClientDsh().readPublishedStorePublicContact(storeID);
 }
 
 export async function readPublicStoreOrderability(storeID: string, serviceCityID: string): Promise<PublicStoreOrderabilityResponse> {
-  return client().readPublicStoreOrderability(storeID, serviceCityID);
+  return createClientDsh().readPublicStoreOrderability(storeID, serviceCityID);
 }
 
 export async function readPublicStoreCatalog(storeID: string, serviceCityID: string, categoryID = "", query = "", limit = 20, cursor = "", productID = "", sort: "" | "MOST_ORDERED_30_DAYS" = ""): Promise<PublicCatalogResponse> {
-  return client().readPublicStoreCatalog(storeID, serviceCityID, categoryID, query, limit, cursor, productID, sort);
+  return createClientDsh().readPublicStoreCatalog(storeID, serviceCityID, categoryID, query, limit, cursor, productID, sort);
 }
 
 export async function searchPublicCatalog(serviceCityID: string, query: string, categoryID = "", limit = 20, cursor = "", verticalID = "", shortcutID = "", sort: "" | "PRICE_ASC" | "PRICE_DESC" = ""): Promise<PublicCatalogSearchResponse> {
-  return client().searchPublicCatalog(serviceCityID, query, categoryID, limit, cursor, verticalID, shortcutID, sort);
+  return createClientDsh().searchPublicCatalog(serviceCityID, query, categoryID, limit, cursor, verticalID, shortcutID, sort);
 }

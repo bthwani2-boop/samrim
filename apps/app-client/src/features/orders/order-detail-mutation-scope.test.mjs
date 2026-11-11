@@ -61,7 +61,7 @@ test("token acquisition must revalidate actor and order before each outbound mut
   for (const [name, operation] of operations) {
     const body = callback(name);
     const tokenIndex = body.indexOf("const token = await getUsableIdentityAccessToken();");
-    const mutationIndex = body.indexOf(`await client().${operation}(`, tokenIndex);
+    const mutationIndex = body.indexOf(`await createClientDsh().${operation}(`, tokenIndex);
     assert.ok(tokenIndex >= 0 && mutationIndex > tokenIndex, `${name} must acquire a token before ${operation}`);
     const beforeMutation = body.slice(tokenIndex, mutationIndex);
     assert.match(beforeMutation, /if \(!hasCurrentOrderScope\(state\.actorID, state\.order\.id\)\) return;/,

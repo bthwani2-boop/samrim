@@ -61,7 +61,7 @@ function fixture() {
   const api = actualClientCalls({
     currentIdentityState: () => identity,
     getUsableIdentityAccessToken: () => { tokenStarted.resolve(); return tokenGate.promise; },
-    client: () => dsh,
+    createClientDsh: () => dsh,
   });
   return {
     api, sessionKey, calls, tokenStarted, tokenGate,

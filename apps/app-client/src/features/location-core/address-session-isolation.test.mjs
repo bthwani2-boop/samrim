@@ -234,7 +234,7 @@ test("a token resolving after A to B switch is denied before any address write",
   const create = method("createOwnDeliveryAddress", {
     exports: {},
     tokenForActor: () => Promise.reject(new Error("CLIENT_ADDRESS_SESSION_CHANGED")),
-    client: () => ({ createOwnDeliveryAddress: () => writes.push("write") }),
+    createClientDsh: () => ({ createOwnDeliveryAddress: () => writes.push("write") }),
   }, clientAst);
   await assert.rejects(create({ addressText: "A" }, "actor-A"), /CLIENT_ADDRESS_SESSION_CHANGED/);
   assert.deepEqual(writes, []);

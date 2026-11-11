@@ -1,10 +1,10 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, BthwaniIconButton, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type BeneficiaryWalletResponse, type ClientShareEntry, clientShareMessageLabel, createDshMobileClient, type Notification } from "@bthwani/dsh";
-import * as Crypto from "expo-crypto";
+import { type BeneficiaryWalletResponse, type ClientShareEntry, clientShareMessageLabel, type Notification } from "@bthwani/dsh";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { createClientDsh } from "../../bootstrap/dsh";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { clientSessionKey } from "../access/client-session-scope";
 
@@ -12,12 +12,6 @@ type WalletCreditNotice = Readonly<{ id: string; orderId: string; amountMinor: n
 
 function currentClientNotificationsSessionKey(): string {
   return clientSessionKey(currentIdentityState());
-}
-
-function dshClient() {
-  const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-  if (!value) throw new Error("DSH_BASE_URL_REQUIRED");
-  return createDshMobileClient(value, { cryptoRandomUUID: () => Crypto.randomUUID() });
 }
 
 export function NotificationsInbox() {
@@ -60,14 +54,14 @@ export function NotificationsInbox() {
     try {
       const token = await getUsableIdentityAccessToken();
       if (sequence !== loadSequence.current || currentClientNotificationsSessionKey() !== sessionKey) return;
-      const response = await dshClient().listNotifications(token, 50);
+      const response = await createClientDsh().listNotifications(token, 50);
       if (sequence !== loadSequence.current || currentClientNotificationsSessionKey() !== sessionKey) return;
       setItems(response.notifications);
       setUnreadCount(response.unreadCount);
       setNextCursor(response.nextCursor ?? "");
       const [walletReadback, shareReadback] = await Promise.all([
-        dshClient().readOwnWallet(token).catch(() => null),
-        dshClient().listClientShares(token).catch(() => null),
+        createClientDsh().readOwnWallet(token).catch(() => null),
+        createClientDsh().listClientShares(token).catch(() => null),
       ]);
       if (sequence !== loadSequence.current || currentClientNotificationsSessionKey() !== sessionKey) return;
       setShares(shareReadback?.items ?? []);
@@ -132,7 +126,7 @@ export function NotificationsInbox() {
     try {
       const token = await getUsableIdentityAccessToken();
       if (sequence !== pageSequence.current || currentClientNotificationsSessionKey() !== sessionKey) return;
-      const response = await dshClient().listNotifications(token, 50, cursor);
+      const response = await createClientDsh().listNotifications(token, 50, cursor);
       if (sequence !== pageSequence.current || currentClientNotificationsSessionKey() !== sessionKey) return;
       setItems((previous) => {
         const ids = new Set(previous.map((item) => item.id));
@@ -160,7 +154,7 @@ export function NotificationsInbox() {
     try {
       const token = await getUsableIdentityAccessToken();
       if (currentClientNotificationsSessionKey() !== sessionKey) return;
-      await dshClient().markNotificationRead(token, item.id);
+      await createClientDsh().markNotificationRead(token, item.id);
       if (currentClientNotificationsSessionKey() !== sessionKey) return;
       if (targetOrderID) {
         router.push(`/orders/${encodeURIComponent(targetOrderID)}` as Href);
@@ -181,7 +175,7 @@ export function NotificationsInbox() {
     try {
       const token = await getUsableIdentityAccessToken();
       if (currentClientNotificationsSessionKey() !== sessionKey) return;
-      const response = await dshClient().listClientShares(token, shareBefore);
+      const response = await createClientDsh().listClientShares(token, shareBefore);
       if (currentClientNotificationsSessionKey() !== sessionKey) return;
       setShares((previous) => [...previous, ...response.items.filter((item) => !previous.some((existing) => existing.id === item.id))]);
       setShareBefore(response.nextBefore);
@@ -196,7 +190,7 @@ export function NotificationsInbox() {
     try {
       const token = await getUsableIdentityAccessToken();
       if (currentClientNotificationsSessionKey() !== sessionKey) return;
-      await dshClient().markClientShareRead(token, share.id);
+      await createClientDsh().markClientShareRead(token, share.id);
       if (currentClientNotificationsSessionKey() !== sessionKey) return;
       const destination = share.contentKind === "CONTENT" ? `/discovery-content/${encodeURIComponent(share.contentId)}` :
         share.storeId ? `/store/${encodeURIComponent(share.storeId)}${share.productId ? `?productId=${encodeURIComponent(share.productId)}` : ""}` : "";
@@ -214,7 +208,7 @@ export function NotificationsInbox() {
     try {
       const token = await getUsableIdentityAccessToken();
       if (currentClientNotificationsSessionKey() !== sessionKey) return;
-      await dshClient().blockClientShareSender(token, share.senderActorId);
+      await createClientDsh().blockClientShareSender(token, share.senderActorId);
       if (currentClientNotificationsSessionKey() !== sessionKey) return;
       await load(true);
     } catch { if (currentClientNotificationsSessionKey() === sessionKey) setShareError("تعذر حظر المرسل، حاول مجددًا."); }

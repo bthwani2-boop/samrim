@@ -1,12 +1,13 @@
 import { borders, radius, type resolveTheme, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type BeneficiaryWalletResponse, type CashInFundingIntent, type CashInSimulatorOutcome, cashInSimulatorMutationHeaders, cashInSimulatorOptions, cashInSimulatorStateMatches, createDshMobileClient, formatMoney, type WalletProvider } from "@bthwani/dsh";
+import { type BeneficiaryWalletResponse, type CashInFundingIntent, type CashInSimulatorOutcome, cashInSimulatorMutationHeaders, cashInSimulatorOptions, cashInSimulatorStateMatches, formatMoney, type WalletProvider } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "../../bootstrap/compatible-storage";
+import { createClientDsh } from "../../bootstrap/dsh";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { clientSessionKey } from "../access/client-session-scope";
 import { isOwnCustomerWalletResponse } from "./customer-wallet-readback";
@@ -66,12 +67,6 @@ function providerLogoUri(uri: string): string {
   }
 }
 
-const api = () => {
-  const url = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-  if (!url) throw new Error("DSH_BASE_URL_REQUIRED");
-  return createDshMobileClient(url, { cryptoRandomUUID: () => Crypto.randomUUID() });
-};
-
 export function ClientCashInPanel({ mode = "wallet", onAddFunds, initialAmountMinor = 0, returnToCheckout = false }: {
   mode?: PanelMode; onAddFunds?: () => void; initialAmountMinor?: number; returnToCheckout?: boolean;
 }) {
@@ -124,7 +119,7 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds, initialAmountMi
     try {
       const token = await getUsableIdentityAccessToken();
       if (currentClientWalletSessionKey() !== scope) return;
-      const response = await api().listWalletProviders(token);
+      const response = await createClientDsh().listWalletProviders(token);
       if (currentClientWalletSessionKey() !== scope) return;
       setProviders(response.walletProviders.filter((provider) => provider.active));
       setProvidersStatus("ready");
@@ -163,7 +158,7 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds, initialAmountMi
       const storageKey = attemptKey(actorID);
       const restoredAttempt = parseFundingAttempt(await SecureStore.getItemAsync(storageKey), actorID);
       if (!isCurrent()) return;
-      const client = api();
+      const client = createClientDsh();
       const walletResponse = await client.readOwnWallet(token);
       if (!isCurrent()) return;
       if (!isOwnCustomerWalletResponse(walletResponse, actorID)) throw new Error("CUSTOMER_WALLET_SCOPE_MISMATCH");
@@ -243,7 +238,7 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds, initialAmountMi
       setPending(attempt);
       const token = await getUsableIdentityAccessToken();
       if (!isCurrent()) return;
-      const client = api();
+      const client = createClientDsh();
       const response = pending?.fundingIntentID
         ? { intent: (await client.readOwnFundingIntent(token, pending.fundingIntentID)).intent, simulator: simulatorInDevelopment }
         : await client.createOwnFundingIntent(token, parsedAmount, attempt.idempotencyKey, attempt.correlationID, attempt.providerKey);

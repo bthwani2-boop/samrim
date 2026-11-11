@@ -1,22 +1,17 @@
 import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniConversationComposer, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { BthwaniConversationMedia } from "@bthwani/design-system/native/conversation-private-media";
-import { createDshMobileClient, createOrderConversationMessageAttempt, isDefinitiveDshMobileClientRejection, type OrderConversationMessageAttempt, orderConversationMessageAttemptStorageKey, parseOrderConversationMessageAttempt } from "@bthwani/dsh";
+import { createOrderConversationMessageAttempt, isDefinitiveDshMobileClientRejection, type OrderConversationMessageAttempt, orderConversationMessageAttemptStorageKey, parseOrderConversationMessageAttempt } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { File, Paths } from "expo-file-system";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import * as SecureStore from "../../bootstrap/compatible-storage";
+import { createClientDsh } from "../../bootstrap/dsh";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { clientSessionKey } from "../access/client-session-scope";
 
 const conversationRole = "client" as const;
-
-function client() {
-  const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-  if (!value) throw new Error("DSH_BASE_URL_REQUIRED");
-  return createDshMobileClient(value, { cryptoRandomUUID: () => Crypto.randomUUID() });
-}
 
 function senderLabel(role: string): string {
   return role === "operator" ? "عمليات بثواني" : role === "client" ? "العميل" : role === "partner" ? "المتجر" : "الكابتن";
@@ -33,7 +28,7 @@ async function readPrivateMedia(orderID: string, messageID: string, sessionKey: 
   if (!isCurrentActor(actorID, sessionKey)) throw new Error("PRIVATE_MEDIA_SESSION_REQUIRED");
   const token = await getUsableIdentityAccessToken();
   if (!isCurrentActor(actorID, sessionKey)) throw new Error("PRIVATE_MEDIA_SESSION_CHANGED");
-  const media = await client().readOrderConversationMedia(token, orderID, messageID);
+  const media = await createClientDsh().readOrderConversationMedia(token, orderID, messageID);
   if (!isCurrentActor(actorID, sessionKey)) throw new Error("PRIVATE_MEDIA_SESSION_CHANGED");
   return media;
 }
@@ -48,7 +43,7 @@ const AudioRecorderControls = lazy(async () => {
 export function OrderConversation({ orderId }: { orderId: string }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [state, setState] = useState<{ kind: "loading" } | { kind: "ready"; value: Awaited<ReturnType<ReturnType<typeof client>["readOrderConversation"]>> } | { kind: "error" }>({ kind: "loading" });
+  const [state, setState] = useState<{ kind: "loading" } | { kind: "ready"; value: Awaited<ReturnType<ReturnType<typeof createClientDsh>["readOrderConversation"]>> } | { kind: "error" }>({ kind: "loading" });
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -90,7 +85,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
       setPendingAttempt(attempt);
       if (attempt) setBody(attempt.body);
       setAttemptStorageReady(true);
-      const value = await client().readOrderConversation(token, orderId, 100);
+      const value = await createClientDsh().readOrderConversation(token, orderId, 100);
       if (sequence !== readSequence.current || !isCurrentActor(actorID, requestedSessionKey)) return false;
       setLoadedActorID(actorID);
       setLoadedSessionKey(requestedSessionKey);
@@ -120,7 +115,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
       const mediaBase64 = attempt.mediaKind && attempt.mediaContentType && attempt.mediaFileUri
         ? await new File(attempt.mediaFileUri).base64() : undefined;
       if (!isCurrentActor(attempt.actorID, loadedSessionKey)) return;
-      await client().sendOrderConversationMessage(token, attempt.orderID, {
+      await createClientDsh().sendOrderConversationMessage(token, attempt.orderID, {
         body: attempt.body,
         ...(attempt.recipientRoles ? { recipientRoles: attempt.recipientRoles } : {}),
         ...(mediaBase64 !== undefined && attempt.mediaKind && attempt.mediaContentType ? {
@@ -283,7 +278,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
     try {
       const token = await getUsableIdentityAccessToken();
       if (!isCurrentActor(loadedActorID, loadedSessionKey)) return;
-      await client().markOrderConversationRead(token, orderId, { messageId: last.id });
+      await createClientDsh().markOrderConversationRead(token, orderId, { messageId: last.id });
       if (isCurrentActor(loadedActorID, loadedSessionKey)) await load();
     } catch (cause) {
       console.error("DSH client order conversation read-state write failed", cause);

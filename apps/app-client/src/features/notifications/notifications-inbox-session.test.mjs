@@ -60,7 +60,7 @@ function harness(overrides = {}) {
   const runtime = {
     sessionKey, loadedSessionKey: sessionKey, loadSequence: { current: 0 }, pageSequence: { current: 0 },
     currentIdentityState: () => current, getUsableIdentityAccessToken: async () => "first-session-token",
-    dshClient: () => api, setItems: value => {
+    createClientDsh: () => api, setItems: value => {
       observed.items = typeof value === "function" ? value(observed.items) : value;
     },
     setShares: value => {

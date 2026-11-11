@@ -1,11 +1,11 @@
 import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme, useConversationUnreadCounts } from "@bthwani/design-system/native";
-import { type Cart, createDshMobileClient, formatMoney, formatOrderDate, fulfillmentModeLabel, type Order, orderPaymentDisclosure, orderStateLabel, type PublicStoreView, paymentStateLabel } from "@bthwani/dsh";
-import * as Crypto from "expo-crypto";
+import { type Cart, formatMoney, formatOrderDate, fulfillmentModeLabel, type Order, orderPaymentDisclosure, orderStateLabel, type PublicStoreView, paymentStateLabel } from "@bthwani/dsh";
 import { type Href, useFocusEffect, useIsFocused, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Keyboard, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { createClientDsh } from "../../bootstrap/dsh";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { clientSessionKey } from "../access/client-session-scope";
 import { PremiumOrderProgress, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
@@ -29,14 +29,6 @@ const fulfillmentOptions = [
 ] as const;
 
 type OrdersState = { kind: "loading" } | { kind: "ready"; orders: ReadonlyArray<Order>; actorID: string; sessionKey: string; nextCursor: string } | { kind: "error" } | { kind: "auth_required" };
-
-function baseUrl(): string {
-  const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-  if (!value) throw new Error("DSH_BASE_URL_REQUIRED");
-  return value;
-}
-
-const client = () => createDshMobileClient(baseUrl(), { cryptoRandomUUID: () => Crypto.randomUUID() });
 
 function hasCurrentOrdersSession(sessionKey: string): boolean {
   return Boolean(sessionKey) && clientSessionKey(currentIdentityState()) === sessionKey;
@@ -81,7 +73,7 @@ export default function ClientOrders() {
     try {
       const token = await getUsableIdentityAccessToken();
       if (!hasCurrentOrdersSession(sessionKey)) return;
-      const response = await client().listClientOrders(token, 50);
+      const response = await createClientDsh().listClientOrders(token, 50);
       if (sequence !== loadSequence.current || !hasCurrentOrdersSession(sessionKey)) return;
       setState({ kind: "ready", orders: response.orders, actorID, sessionKey, nextCursor: response.nextCursor ?? "" });
     } catch (error) {
@@ -110,7 +102,7 @@ export default function ClientOrders() {
 
   const getChatUnread = useCallback(async (orderId: string) => {
     const token = await getUsableIdentityAccessToken();
-    return (await client().readOrderConversation(token, orderId, 1)).unreadCount;
+    return (await createClientDsh().readOrderConversation(token, orderId, 1)).unreadCount;
   }, []);
   const unreadChatCounts = useConversationUnreadCounts(visibleOrders.map(order => order.id), activeSessionKey, ordersFocused, getChatUnread);
 
@@ -126,7 +118,7 @@ export default function ClientOrders() {
     try {
       const token = await getUsableIdentityAccessToken();
       if (sequence !== pageSequence.current || loadID !== loadSequence.current || !hasCurrentOrdersSession(sessionKey)) return;
-      const response = await client().listClientOrders(token, 50, "", cursor);
+      const response = await createClientDsh().listClientOrders(token, 50, "", cursor);
       if (sequence !== pageSequence.current || loadID !== loadSequence.current || !hasCurrentOrdersSession(sessionKey)) return;
       setState((current) => {
         if (current.kind !== "ready" || current.sessionKey !== sessionKey || current.actorID !== actorID || current.nextCursor !== cursor) return current;
@@ -154,7 +146,7 @@ export default function ClientOrders() {
       if (!ownsRepeatOrder(repeatOrderGate.current, lease) || !hasCurrentOrdersSession(sessionKey)) return;
       let cart: Cart | null = null;
       try {
-        cart = (await client().readOpenCart(token, order.storeId)).cart;
+        cart = (await createClientDsh().readOpenCart(token, order.storeId)).cart;
       } catch (error) {
         const missingCart = typeof error === "object" && error !== null && "kind" in error && (error as { kind?: unknown }).kind === "http" && "status" in error && (error as { status?: unknown }).status === 404;
         if (!missingCart) throw error;
@@ -182,7 +174,7 @@ export default function ClientOrders() {
       for (const item of plan) {
         if (item.error) continue;
         if (!ownsRepeatOrder(repeatOrderGate.current, lease) || !hasCurrentOrdersSession(sessionKey)) return;
-        const response = await client().upsertCartLine(token, {
+        const response = await createClientDsh().upsertCartLine(token, {
           storeId: order.storeId,
           storeOfferId: item.storeOfferId,
           quantityBaseUnits: item.quantityBaseUnits,
@@ -220,7 +212,7 @@ export default function ClientOrders() {
     const sessionKey = state.sessionKey;
     const uniqueStores = [...new Map(state.orders.slice(0, 12).map((order) => [order.storeId, { storeId: order.storeId, cityId: order.serviceCityId }])).values()];
     void Promise.all(uniqueStores.map(async ({ storeId, cityId }) => {
-      try { return [storeId, await client().readPublishedStore(storeId, cityId)] as const; }
+      try { return [storeId, await createClientDsh().readPublishedStore(storeId, cityId)] as const; }
       catch { return null; }
     })).then((results) => {
       if (live && hasCurrentOrdersSession(sessionKey)) setStoreIdentity(Object.fromEntries(results.filter((result): result is readonly [string, PublicStoreView] => result !== null)));

@@ -56,7 +56,7 @@ test("token-backed order reads check the current scope before dispatch", () => {
   ]) {
     const body = callbackSource(name);
     const tokenIndex = body.indexOf("const token = await getUsableIdentityAccessToken();");
-    const readIndex = body.indexOf(`client().${operation}(`, tokenIndex);
+    const readIndex = body.indexOf(`createClientDsh().${operation}(`, tokenIndex);
     assert.ok(tokenIndex >= 0 && readIndex > tokenIndex, `${name} must acquire a token for ${operation}`);
     const beforeRead = body.slice(tokenIndex, readIndex);
     if (name === "load") {

@@ -41,7 +41,7 @@ test("private media is never returned to a renewed session of the same customer"
     currentIdentityState: () => current,
     clientSessionKey,
     getUsableIdentityAccessToken: async () => "old-token",
-    client: () => ({
+    createClientDsh: () => ({
       readOrderConversationMedia: async () => { reads += 1; return pendingMedia; },
     }),
   });
@@ -63,7 +63,7 @@ test("private media is readable by its active customer session and blocked after
     currentIdentityState: () => current,
     clientSessionKey,
     getUsableIdentityAccessToken: async () => "token",
-    client: () => ({ readOrderConversationMedia: async () => media }),
+    createClientDsh: () => ({ readOrderConversationMedia: async () => media }),
   });
   assert.deepEqual({ ...(await readPrivateMedia("order-a", "media-a", scope)) }, media);
   current = { kind: "unauthenticated" };
@@ -98,7 +98,7 @@ test("session replacement during media encoding prevents a stale DSH write and p
   const runtime = submitRuntime(() => current, {
     loadedSessionKey: formerScope,
     File: class { base64() { return encoding; } },
-    client: () => ({ sendOrderConversationMessage: async () => { writes++; } }),
+    createClientDsh: () => ({ sendOrderConversationMessage: async () => { writes++; } }),
     SecureStore: { deleteItemAsync: async () => { recoveryDeletes++; } },
   });
   const { submitAttempt } = productionFunctions([...actors, "submitAttempt"], runtime);
@@ -121,7 +121,7 @@ test("current customer media submission retains recipient list and original retr
   let recovered = 0;
   const runtime = submitRuntime(() => current, {
     File: class { base64() { return Promise.resolve("encoded-video"); } delete() {} },
-    client: () => ({ sendOrderConversationMessage: async (...args) => { calls.push(args); } }),
+    createClientDsh: () => ({ sendOrderConversationMessage: async (...args) => { calls.push(args); } }),
     SecureStore: { deleteItemAsync: async () => { recovered++; } },
   });
   const { submitAttempt } = productionFunctions([...actors, "submitAttempt"], runtime);

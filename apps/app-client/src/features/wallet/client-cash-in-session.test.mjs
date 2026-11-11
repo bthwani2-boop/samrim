@@ -80,7 +80,7 @@ function fixture() {
     simulatorInDevelopment: true, providerMockInDevelopment: false, simulatorOutcome: "SUCCESS",
     readSequence: { current: 0 }, fundingInFlight: { current: false },
     getUsableIdentityAccessToken: async () => "token-1",
-    api: () => apiClient,
+    createClientDsh: () => apiClient,
     SecureStore: {
       getItemAsync: async key => store.get(key) ?? null,
       setItemAsync: async (key, value) => { store.set(key, value); },
@@ -307,7 +307,10 @@ test("missing settled wallet evidence preserves the funding retry attempt, witho
 });
 
 test("one original WLT/DSH engine and existing actor-specific secure retry key remain", () => {
-  assert.match(source, /createDshMobileClient\(url, \{ cryptoRandomUUID: \(\) => Crypto\.randomUUID\(\) \}\)/);
+  assert.match(source, /createClientDsh\(\)/);
+  assert.doesNotMatch(source, /createDshMobileClient/);
+  const dshBootstrap = readFileSync(new URL("../../bootstrap/dsh.ts", import.meta.url), "utf8");
+  assert.match(dshBootstrap, /createDshMobileClient\(clientDshBaseURL\(\), \{ cryptoRandomUUID: \(\) => Crypto\.randomUUID\(\) \}\)/);
   assert.match(source, /bthwani\.client\.cash-in\.pending\.v1/);
   assert.match(source, /client\.createOwnFundingIntent\(token, parsedAmount, attempt\.idempotencyKey, attempt\.correlationID, attempt\.providerKey\)/);
   assert.match(source, /fundingInFlight\.current = true/);
