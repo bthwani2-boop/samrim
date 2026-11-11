@@ -22,6 +22,7 @@ export function orderStateLabel(state: Order["state"]): string {
 }
 
 export function formatMoney(amount: number, currency: Order["currency"]): string {
+  if (!Number.isFinite(amount)) throw new Error("Invalid finance amount");
   const currencyLabel = currency === "YER" ? "ريال يمني" : currency;
   return `${new Intl.NumberFormat(arabicTextLatinNumbersLocale, { maximumFractionDigits: 0 }).format(amount)} ${currencyLabel}`;
 }

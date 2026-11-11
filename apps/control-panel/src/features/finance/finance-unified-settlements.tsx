@@ -1,10 +1,9 @@
 "use client";
 
-import type { BeneficiaryPayoutState } from "@bthwani/dsh";
+import { formatMoney, type BeneficiaryPayoutState } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BeneficiarySettlementWorkspace } from "./beneficiary-settlement-workspace";
 import { CustomerWithdrawalQueue } from "./customer-withdrawal-queue";
-import { financeAmount } from "./finance-amount";
 import type { FinanceReferenceRow } from "./finance-reference-types";
 import { SettlementIntakeInbox } from "./settlement-intake-inbox";
 import "./finance-unified-settlements.css";
@@ -153,15 +152,15 @@ export function FinanceUnifiedSettlements({rows,intakes,onChanged}:Readonly<{row
       <div className="fs-panel fu-list">
         <div className="fs-panel-heading"><h3>{kindNames[kind]}</h3><small>{loaded.length&&kind==="beneficiary"?"السجلات المسترجعة: ":"السجلات المعروضة: "}{filtered.length.toLocaleString("ar-YE")}{canLoadMore?hasNextPage?" · توجد صفحات أخرى":" · مصادر لم تُحمّل بعد":""}</small></div>
         <div className="fs-table-scroll"><table><caption className="sr-only">سجلات الصرف والتسويات المعروضة</caption><thead><tr><th scope="col">الطرف / المرجع</th><th scope="col">النوع</th><th scope="col">المبلغ المؤهل / المطلوب</th><th scope="col">المحجوز</th><th scope="col">الحالة</th><th scope="col">الإجراء</th></tr></thead><tbody>
-          {filtered.map(record=><tr key={record.id} className={active?.id===record.id?"fu-selected":""}><td><strong>{record.name}</strong><small dir="auto">{record.reference}</small></td><td>{kindNames[record.kind]}{record.actorType?` · ${actorNames[record.actorType]}`:""}</td><td dir="ltr" className="fu-money">{record.amount===undefined?"—":financeAmount(record.amount)}</td><td dir="ltr">{record.held===undefined?"—":financeAmount(record.held)}</td><td>{financeStatus(record)}</td><td><button type="button" className="fs-action" aria-label={`تفاصيل ${record.name}`} onClick={()=>showRecord(record)}>التفاصيل ←</button></td></tr>)}
+          {filtered.map(record=><tr key={record.id} className={active?.id===record.id?"fu-selected":""}><td><strong>{record.name}</strong><small dir="auto">{record.reference}</small></td><td>{kindNames[record.kind]}{record.actorType?` · ${actorNames[record.actorType]}`:""}</td><td dir="ltr" className="fu-money">{record.amount===undefined?"—":formatMoney(record.amount, "YER")}</td><td dir="ltr">{record.held===undefined?"—":formatMoney(record.held, "YER")}</td><td>{financeStatus(record)}</td><td><button type="button" className="fs-action" aria-label={`تفاصيل ${record.name}`} onClick={()=>showRecord(record)}>التفاصيل ←</button></td></tr>)}
         </tbody></table>{!filtered.length?<p className="fs-empty">{loading?"جارٍ قراءة البيانات...":error?"لم تكتمل قراءة مصادر المستحقات؛ أعد المحاولة.":"لا توجد سجلات مطابقة ضمن البيانات المحمّلة."}</p>:null}</div>
         {canLoadMore?<button type="button" className="fs-secondary" disabled={loading} onClick={()=>void loadRoster(actorTypes,true,cursors,failedTypes)}>{loading?"جارٍ التحميل...":hasNextPage?needsRetry?"تحميل المزيد وإعادة المحاولة":"تحميل الصفحة التالية":"إعادة محاولة المصادر المتعثرة"}</button>:null}
         <p className="fs-note">البحث يعمل في السجلات المحمّلة، ولا يعد بحثًا شاملًا في جميع صفحات الدفتر. لا تُستنتج الإجماليات من هذه القائمة.</p>
       </div>
       {active?<aside className="fs-panel fu-inspector" aria-label="تفاصيل السجل المالي">
         <div className="fs-panel-heading"><h3>تفاصيل {kindNames[active.kind]}</h3><button type="button" className="fu-close" aria-label="إغلاق تفاصيل السجل المالي" onClick={close}>×</button></div>
-        <div className="fu-hero"><small>المبلغ المعتمد في المصدر</small><strong dir="ltr">{active.amount===undefined?"—":financeAmount(active.amount)}</strong></div>
-        <dl className="fu-facts"><dt>المستفيد</dt><dd>{active.name}</dd><dt>المرجع</dt><dd dir="auto">{active.reference}</dd><dt>الحالة</dt><dd>{financeStatus(active)}</dd>{active.held!==undefined?<><dt>المحجوز</dt><dd>{financeAmount(active.held)}</dd></>:null}<dt>الإجراء التالي</dt><dd>{active.reason}</dd></dl>
+        <div className="fu-hero"><small>المبلغ المعتمد في المصدر</small><strong dir="ltr">{active.amount===undefined?"—":formatMoney(active.amount, "YER")}</strong></div>
+        <dl className="fu-facts"><dt>المستفيد</dt><dd>{active.name}</dd><dt>المرجع</dt><dd dir="auto">{active.reference}</dd><dt>الحالة</dt><dd>{financeStatus(active)}</dd>{active.held!==undefined?<><dt>المحجوز</dt><dd>{formatMoney(active.held, "YER")}</dd></>:null}<dt>الإجراء التالي</dt><dd>{active.reason}</dd></dl>
         {active.beneficiary?<div className="fu-destination"><strong>جهة الاستلام</strong><p>{active.beneficiary.destination?"توجد جهة استلام مسجلة؛ تحقق من صلاحيتها قبل الصرف.":"لا توجد جهة استلام معتمدة في هذا السجل."}</p></div>:null}
         {active.actorType==="field"?<p role="status" className="fs-note">سجل مالي تاريخي للقراءة فقط. لا ينشئ طلب صرف أو اعتمادًا جديدًا.</p>:<button type="button" className="fu-advanced-toggle" aria-expanded={advanced} onClick={()=>setAdvanced(v=>!v)}>{advanced?"إخفاء إجراءات السجل":"فتح إجراءات السجل المعتمدة"} <span aria-hidden="true">{advanced?"−":"+"}</span></button>}
       </aside>:null}

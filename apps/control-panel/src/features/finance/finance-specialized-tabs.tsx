@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { downloadRegistryCsv } from "../shared/registry-csv";
-import { financeAmount } from "./finance-amount";
+import { formatMoney } from "@bthwani/dsh";
 import type { FinanceReferenceRow, FinanceReferenceTab, FinanceReferenceWorkflow } from "./finance-reference-types";
 import { FinanceUnifiedSettlements } from "./finance-unified-settlements";
 import { FinanceWalletRegistry } from "./finance-wallet-registry";
@@ -18,7 +18,7 @@ type ViewProps = Readonly<{ rows:readonly FinanceReferenceRow[]; intakes:readonl
 const actors:ReadonlyArray<{key:ActorType;label:string}> = [{key:"customer",label:"العملاء"},{key:"partner",label:"الشركاء"},{key:"captain",label:"الكباتن"},{key:"field",label:"أرشيف الميداني"}];
 const cashSources = [{key:"custody",label:"تحصيل COD"},{key:"commissions",label:"ذمم العمولات"}] as const;
 const num=(v:number)=>new Intl.NumberFormat("ar-YE",{maximumFractionDigits:0}).format(v);
-const money=(amount:number)=>financeAmount(amount);
+const money=(amount:number)=>formatMoney(amount, "YER");
 const shortDate=(date?:string)=>date && !Number.isNaN(Date.parse(date))?new Intl.DateTimeFormat("ar-YE",{dateStyle:"medium",timeZone:"Asia/Aden"}).format(new Date(date)):"—";
 const daysOld=(date?:string)=>date && !Number.isNaN(Date.parse(date))?Math.max(0,Math.floor((Date.now()-Date.parse(date))/86400000)):null;
 const ageLabel=(date?:string,missing="غير محدد")=>{const days=daysOld(date);return days===null?missing:`${num(days)} يوم`;};

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Flex, Grid, Input, Segmented, Table, Tag, Typography, type TableColumnsType } from "antd";
-import { financeAmount } from "./finance-amount";
+import { formatMoney } from "@bthwani/dsh";
 
 type ActorType = "customer" | "partner" | "captain" | "field";
 type WalletRow = Readonly<{
@@ -27,7 +27,7 @@ const actors: Array<{ value: ActorType; label: string }> = [
 ];
 
 export function money(minor: number): string {
-  return financeAmount(minor);
+  return formatMoney(minor, "YER");
 }
 function periodDate(date: Date): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Aden", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);

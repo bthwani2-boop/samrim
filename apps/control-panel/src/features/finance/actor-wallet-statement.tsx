@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import "./finance-command-center.css";
-import { financeAmount } from "./finance-amount";
+import { formatMoney } from "@bthwani/dsh";
 
 type ActorType = "customer" | "partner" | "captain" | "field";
 type Statement = Readonly<{
@@ -12,7 +12,7 @@ type Statement = Readonly<{
   entries: ReadonlyArray<Readonly<{ transactionId: string; transactionType: string; direction: "DEBIT" | "CREDIT"; amountMinor: number; createdAt: string; sourceId: string }>>;
   nextCursor?: string;
 }>;
-const format = (value: number) => financeAmount(value);
+const format = (value: number) => formatMoney(value, "YER");
 function currentRange() {
   const formatDay = (date: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Aden", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
   const today = new Date();
