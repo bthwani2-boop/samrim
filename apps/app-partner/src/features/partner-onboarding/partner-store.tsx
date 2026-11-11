@@ -1,23 +1,24 @@
-import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type JoiningCaseResponse, type PublicationState, publicationStateLabel, type StoreFulfillmentMode } from "@bthwani/dsh";
+import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
+import { type JoiningCaseResponse, type StoreFulfillmentMode } from "@bthwani/dsh";
 import { type Href, Link, Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo } from "react";
 import { Text, View } from "react-native";
-import { PartnerMarketingWorkspace, parsePartnerMarketingView } from "./partner-marketing-workspace";
-import { mayPrepareIndependentStoreBanners } from "./independent-store-banner-access";
+import { canManageStoreAvailability } from "../../shell/partner-authority";
 import { PartnerStoreBanners } from "../store-offer/partner-store-banners";
+import { mayPrepareIndependentStoreBanners } from "./independent-store-banner-access";
+import { PartnerIndependentCustomerPolicyDraftEditor } from "./partner-independent-customer-policy";
+import { PartnerMarketingWorkspace, parsePartnerMarketingView } from "./partner-marketing-workspace";
 import { usePartnerStoreContext } from "./partner-store-context";
+import { PartnerStorePublicContact } from "./partner-store-public-contact";
 import { type PartnerAccessibleStore, usePartnerStoreScope } from "./partner-store-scope-context";
 import { PartnerStoreScopeSelector } from "./partner-store-scope-selector";
+import { PartnerStoreSettingsOverview } from "./partner-store-settings-overview";
+import { PartnerStorefrontLink } from "./partner-storefront-link";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 import { StoreCaptainMembershipManagement } from "./store-captain-memberships";
 import { StoreCommercialAgreements } from "./store-commercial-agreements";
 import { StoreOperationalAvailabilityManagement } from "./store-operational-availability";
 import { StoreProfileImageEditor } from "./store-profile-image-editor";
-import { PartnerStoreSettingsOverview } from "./partner-store-settings-overview";
-import { PartnerStorePublicContact } from "./partner-store-public-contact";
-import { PartnerIndependentCustomerPolicyDraftEditor } from "./partner-independent-customer-policy";
-import { PartnerStorefrontLink } from "./partner-storefront-link";
 
 type StoreSection = "operations" | "promotions" | "team" | "settings" | "commercial" | "banners" | "website";
 function isStoreSection(value: string | undefined): value is StoreSection {
@@ -27,11 +28,10 @@ function eligibleForSection(store: PartnerAccessibleStore, section: StoreSection
   if (section === "commercial") return store.owned && (store.relationModel === "BTHWANI_PARTNER" || store.relationModel === "INDEPENDENT_STORE");
   if (section === "website") return store.relationModel === "INDEPENDENT_STORE" && store.owned;
   if (section === "banners") return mayPrepareIndependentStoreBanners(store);
-  if (section === "operations" && store.relationModel === "INDEPENDENT_STORE") return store.owned;
-  if (["operations", "promotions", "team"].includes(section) && store.relationModel !== "BTHWANI_PARTNER") return false;
+  if (section === "operations") return canManageStoreAvailability(store);
+  if (["promotions", "team"].includes(section) && store.relationModel !== "BTHWANI_PARTNER") return false;
   if (store.owned) return true;
-  return section === "operations" ? store.permissions.includes("store_operations")
-    : section === "promotions" ? store.permissions.includes("promotions") : false;
+  return section === "promotions" ? store.permissions.includes("promotions") : false;
 }
 function isStoreFulfillmentMode(value: string): value is StoreFulfillmentMode {
   return value === "BTHWANI_CAPTAIN" || value === "PARTNER_CAPTAIN" || value === "CUSTOMER_PICKUP";

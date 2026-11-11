@@ -11,6 +11,13 @@ const PARTNER_SURFACE_PATHS: Record<PartnerSurface, PartnerSurfacePath> = {
 const STORE_SURFACE_PERMISSIONS: ReadonlyArray<StoreAccessPermission> = ["store_operations", "promotions"];
 const WALLET_SURFACE_PERMISSIONS: ReadonlyArray<StoreAccessPermission> = ["finance_read", "payout_request"];
 
+/** Store management uses one DSH availability owner for either selected relation.
+ * This is only presentation eligibility; DSH still authorizes every mutation. */
+export function canManageStoreAvailability(store: Pick<PartnerAccessibleStore, "relationModel" | "owned" | "permissions">): boolean {
+  if (store.relationModel === "INDEPENDENT_STORE") return store.owned;
+  return store.relationModel === "BTHWANI_PARTNER" && (store.owned || store.permissions.includes("store_operations"));
+}
+
 /** Independent Store catalog rights never grant marketplace order or money surfaces. */
 export function isMarketplaceStore(store: Pick<PartnerAccessibleStore, "relationModel">): boolean {
   return store.relationModel === "BTHWANI_PARTNER";

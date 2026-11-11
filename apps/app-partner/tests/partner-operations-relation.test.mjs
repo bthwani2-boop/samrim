@@ -3,11 +3,15 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
+import { canManageStoreAvailability } from "../src/shell/partner-authority.ts";
 
 const storePath = path.resolve(import.meta.dirname, "../src/features/partner-onboarding/partner-store.tsx");
 const shellPath = path.resolve(import.meta.dirname, "../src/shell/partner-desktop-workspace.tsx");
 const storeSource = readFileSync(storePath, "utf8");
 const shellSource = readFileSync(shellPath, "utf8");
+const moreSource = readFileSync(path.resolve(import.meta.dirname, "../src/features/partner-onboarding/partner-more.tsx"), "utf8");
+const desktopHomeSource = readFileSync(path.resolve(import.meta.dirname, "../src/features/partner-onboarding/partner-desktop-home.tsx"), "utf8");
+const selectorSource = readFileSync(path.resolve(import.meta.dirname, "../src/features/partner-onboarding/partner-store-scope-selector.tsx"), "utf8");
 
 const begin = storeSource.indexOf("function eligibleForSection(");
 const end = storeSource.indexOf("\nfunction isStoreFulfillmentMode(", begin);
@@ -19,6 +23,7 @@ const js = declaration.replace(
 );
 const eligibleForSection = runInNewContext(js + "\neligibleForSection", {
   mayPrepareIndependentStoreBanners: store => store?.relationModel === "INDEPENDENT_STORE" && store.owned === true,
+  canManageStoreAvailability,
 });
 const store = (relationModel, owned, permissions = []) => ({ relationModel, owned, permissions });
 
@@ -41,6 +46,22 @@ test("the existing hours editor admits the independent owner without admitting o
     for (const section of ["promotions", "commercial", "team"])
       assert.equal(eligibleForSection(store(relation, true), section), false);
   }
+});
+
+test("one Store availability management entry is shared by both relation choices without activating direct checkout", () => {
+  assert.equal(canManageStoreAvailability(store("BTHWANI_PARTNER", true)), true);
+  assert.equal(canManageStoreAvailability(store("BTHWANI_PARTNER", false, ["store_operations"])), true);
+  assert.equal(canManageStoreAvailability(store("INDEPENDENT_STORE", true)), true);
+  assert.equal(canManageStoreAvailability(store("INDEPENDENT_STORE", false, ["store_operations"])), false);
+  for (const invalidRelation of [undefined, null, "", "UNKNOWN"]) {
+    assert.equal(canManageStoreAvailability(store(invalidRelation, true)), false);
+  }
+  assert.match(moreSource, /const canOperate=Boolean\(selectedStore && canManageStoreAvailability\(selectedStore\)\);/);
+  assert.match(storeSource, /if \(section === "operations"\) return canManageStoreAvailability\(store\);/);
+  assert.match(moreSource, /"ساعات المتجر: "\+operationalState\+" · الطلب المباشر غير مفعّل"/);
+  assert.match(desktopHomeSource, /"ساعات المتجر: " \+ operationalState \+ " · الطلب المباشر غير مفعّل"/);
+  assert.doesNotMatch(selectorSource, /marketplaceOnly|independentOnly/);
+  assert.match(selectorSource, /const visibleSelection = visibleStores\.find/);
 });
 
 test("non-marketplace owner retains safe Store settings and independent banners", () => {

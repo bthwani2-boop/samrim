@@ -1,27 +1,28 @@
+import { type resolveTheme, typography } from "@bthwani/design-system";
+import { AppearancePicker, BthwaniButton, BthwaniIcon, type MobileIconName, useMobileAppearance } from "@bthwani/design-system/native";
+import type { PartnerStoreOperationalAvailabilityResponse, StoreAccessGrant, StoreImagesResponse } from "@bthwani/dsh";
 import { Button, Host } from "@expo/ui";
 import * as Application from "expo-application";
 import * as Clipboard from "expo-clipboard";
 import * as Device from "expo-device";
-import { type resolveTheme, typography } from "@bthwani/design-system";
-import { AppearancePicker, BthwaniButton, BthwaniIcon, type MobileIconName, useMobileAppearance } from "@bthwani/design-system/native";
-import type { PartnerStoreOperationalAvailabilityResponse, StoreAccessGrant, StoreImagesResponse } from "@bthwani/dsh";
 import { Image as ExpoImage } from "expo-image";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { currentIdentityState, logoutIdentity, subscribeIdentitySession } from "../../bootstrap/identity";
-import { PartnerPerformancePeek } from "./partner-performance-peek";
-import { mayPrepareIndependentStoreBanners } from "./independent-store-banner-access";
-import { PartnerInsights } from "./partner-insights";
-import { PartnerDesktopHome } from "./partner-desktop-home";
-import { readOwnStoreCommercialAgreements } from "./store-commercial-agreement-client";
-import { agreementReadinessMessage, ownStoreAgreementReadiness, type StoreAgreementReadback } from "./store-agreement-readiness";
+import { canManageStoreAvailability } from "../../shell/partner-authority";
 import { dispatchPartnerProductAction } from "../../shell/partner-product-actions";
+import { mayPrepareIndependentStoreBanners } from "./independent-store-banner-access";
+import { PartnerDesktopHome } from "./partner-desktop-home";
+import { PartnerInsights } from "./partner-insights";
+import { PartnerPerformancePeek } from "./partner-performance-peek";
+import { partnerSetupSessionKey } from "./partner-setup-session-scope";
 import { usePartnerStoreScope } from "./partner-store-scope-context";
 import { PartnerStoreScopeSelector } from "./partner-store-scope-selector";
 import { PartnerStorefrontLink } from "./partner-storefront-link";
-import { partnerSetupSessionKey } from "./partner-setup-session-scope";
+import { agreementReadinessMessage, ownStoreAgreementReadiness, type StoreAgreementReadback } from "./store-agreement-readiness";
 import { onStoreAvailabilityChanged } from "./store-availability-events";
+import { readOwnStoreCommercialAgreements } from "./store-commercial-agreement-client";
 import { listOwnStoreAccessInvitations, readOwnJoiningCase, readOwnStoreImages, readOwnStoreOperationalAvailability } from "./store-readback-client";
 
 type MenuItem = Readonly<{label:string;icon:MobileIconName;href?:Href;section?:"promotions"|"team"|"banners";description?:string}>;
@@ -65,7 +66,7 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
   const marketplace=selectedStore?.relationModel==="BTHWANI_PARTNER";
   const independent=selectedStore?.relationModel==="INDEPENDENT_STORE";
   const canReviewAgreement=Boolean(selectedStore?.owned && (marketplace||independent));
-  const canOperate=Boolean(marketplace && selectedStore && (selectedStore.owned||selectedStore.permissions.includes("store_operations")));
+  const canOperate=Boolean(selectedStore && canManageStoreAvailability(selectedStore));
   const can=(permission:"promotions"|"catalog")=>Boolean(selectedStore&&(selectedStore.owned||selectedStore.permissions.includes(permission)));
   const canOrders=authority.canUse("orders");
   const canWallet=Boolean(marketplace && selectedStore&&(selectedStore.owned||selectedStore.permissions.includes("finance_read")||selectedStore.permissions.includes("payout_request")));
@@ -193,7 +194,7 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
     {desktopWeb && selectedStore ? <View style={styles.topAlert} accessibilityLabel="حالة المتجر الحالية">
       <View style={[styles.dot,{backgroundColor:marketplace&&selectedStore.publicationState==="published"?theme.success:theme.warning}]}/>
       <Text style={styles.topAlertText}>{marketplace ? (selectedStore.publicationState==="published" ? "المتجر منشور للعملاء" : "المتجر لم يُنشر للعملاء بعد") : independent ? "المتجر مستقل · المعاينة خاصة بالمالك" : "تعذر التحقق من طريقة عمل المتجر"}</Text>
-      <Text style={styles.topAlertHint}>{canOperate ? "استقبال الطلبات: "+operationalState : marketplace ? "الحالة تعتمد على نشر المتجر والصلاحيات" : independent ? "لم يُفعّل النشر أو استقبال الطلب المباشر" : "أعد قراءة بيانات المتجر من DSH قبل التشغيل"}</Text>
+      <Text style={styles.topAlertHint}>{canOperate ? (marketplace ? "استقبال الطلبات: "+operationalState : "ساعات المتجر: "+operationalState+" · الطلب المباشر غير مفعّل") : marketplace ? "الحالة تعتمد على نشر المتجر والصلاحيات" : independent ? "لم يُفعّل النشر أو استقبال الطلب المباشر" : "أعد قراءة بيانات المتجر من DSH قبل التشغيل"}</Text>
     </View> : null}
     <View style={styles.dashboardHeader}>
       <View style={styles.dashboardCopy}>
@@ -207,7 +208,7 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
       </View>:selectedStore?<View style={styles.statusPanel}>
         <View style={styles.statusLine}>
           <View style={[styles.dot,{backgroundColor:visibleAvailabilityError?theme.warning:orderable&&!stopped?theme.success:theme.warning}]}/>
-          <Text style={styles.statusText}>{canOperate ? "استقبال الطلبات: "+operationalState : marketplace ? "المتجر: "+(selectedStore.publicationState==="published"?"منشور":"قيد الإعداد") : independent ? "المتجر المستقل قيد الإعداد" : "تعذر التحقق من طريقة عمل المتجر"}</Text>
+          <Text style={styles.statusText}>{canOperate ? (marketplace ? "استقبال الطلبات: "+operationalState : "ساعات المتجر: "+operationalState+" · الطلب المباشر غير مفعّل") : marketplace ? "المتجر: "+(selectedStore.publicationState==="published"?"منشور":"قيد الإعداد") : independent ? "المتجر المستقل قيد الإعداد" : "تعذر التحقق من طريقة عمل المتجر"}</Text>
         </View>
         {canOperate?<Pressable accessibilityRole="button" accessibilityLabel="فتح إدارة تشغيل المتجر" style={styles.statusButton}
           onPress={()=>router.push({pathname:"/store",params:{section:"operations",returnTo:"more"}} as Href)}>
@@ -277,10 +278,10 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
           {selectedStore.owned?<BthwaniIcon name="edit" color={theme.brandAction} size={18}/>:null}
         </View>
       </Pressable>
-      {canOperate?<Pressable accessibilityRole="button" accessibilityLabel={"التشغيل "+operationalState} style={styles.operationRow}
+      {canOperate?<Pressable accessibilityRole="button" accessibilityLabel={(marketplace ? "التشغيل " : "ساعات المتجر ")+operationalState} style={styles.operationRow}
         onPress={()=>router.push({pathname:"/store",params:{section:"operations",returnTo:"more"}} as Href)}>
         <View style={[styles.dot,{backgroundColor:orderable&&!stopped?theme.success:theme.warning}]}/>
-        <Text style={styles.operationLabel}>التشغيل: {operationalState}</Text>
+        <Text style={styles.operationLabel}>{marketplace ? "التشغيل" : "ساعات المتجر"}: {operationalState}</Text>
         <Text style={styles.operationAction}>إدارة التشغيل ←</Text>
       </Pressable>:null}
     </View>:null}
