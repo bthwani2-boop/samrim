@@ -91,6 +91,11 @@ test("Fast Guard executes committed session-isolation and finance CSV regression
     "apps/app-captain/src/features/captain-operations/captain-offer-response-freshness.test.mjs",
     "apps/app-client/src/features/sharing/client-share-sheet-session.test.mjs",
     "apps/app-partner/src/features/partner-onboarding/store-commercial-agreements-session.test.mjs",
+    "apps/app-partner/src/features/store-offer/catalog-offer-read-model.test.mjs",
+    "apps/app-partner/src/features/store-offer/catalog-product-pages.test.mjs",
+    "apps/app-partner/tests/partner-home-metrics-session.test.mjs",
+    "apps/control-panel/tests/store-workbench-relation.test.mjs",
+    "apps/app-captain/src/features/wallet/captain-cash-in-session.test.mjs",
     "apps/control-panel/tests/finance-report-csv-safety.test.mjs",
   ]) {
     assert.ok(step.includes(`          ${path}\n`), `missing protected regression test: ${path}`);
