@@ -28,8 +28,12 @@ test("the existing hours editor admits the independent owner without admitting o
   assert.equal(eligibleForSection(store("BTHWANI_PARTNER", false), "operations"), false);
   assert.equal(eligibleForSection(store("INDEPENDENT_STORE", true), "operations"), true);
   assert.equal(eligibleForSection(store("INDEPENDENT_STORE", false, ["store_operations"]), "operations"), false);
-  for (const section of ["promotions", "commercial", "team"])
+  for (const section of ["promotions", "team"])
     assert.equal(eligibleForSection(store("INDEPENDENT_STORE", true), section), false);
+  assert.equal(eligibleForSection(store("INDEPENDENT_STORE", true), "commercial"), true,
+    "independent owners retain their own WLT agreement review and consent");
+  assert.equal(eligibleForSection(store("INDEPENDENT_STORE", false, ["store_operations"]), "commercial"), false,
+    "a delegate cannot review or accept Store-owner commercial terms");
   for (const relation of [undefined, null, "", "UNKNOWN"]) {
     assert.equal(eligibleForSection(store(relation, true), "operations"), false, "owner cannot bypass unknown relation");
     assert.equal(eligibleForSection(store(relation, false, ["store_operations"]), "operations"), false,

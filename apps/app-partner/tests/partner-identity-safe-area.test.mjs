@@ -7,6 +7,7 @@ const gate = readFileSync(path.resolve(import.meta.dirname, "../src/features/acc
 
 test("partner sign-up action respects the bottom system navigation inset", () => {
   assert.match(gate, /SafeAreaView edges=\{\["bottom"\]\}/);
-  assert.match(gate, /انضم كمتجر جديد دون ميداني/);
+  assert.match(gate, /BthwaniButton label="إنشاء حساب شريك"/);
+  assert.match(gate, /router\.push\("\/apply" as Href\)/);
   assert.doesNotMatch(gate, /<View style=\{\{ paddingHorizontal: 16, paddingBottom: 16 \}\}>/);
 });

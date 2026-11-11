@@ -90,7 +90,7 @@ function fixture() {
       if (options?.method === "POST") return post.promise;
       return url.endsWith("/discovery-targets") ? targets.promise : list.promise;
     },
-    createDshMobileClient: () => ({
+    createPartnerDshClient: () => ({
       listPartnerStoreContentAnalytics: (...args) => {
         analyticsCalls.push(args);
         return analytics.promise;

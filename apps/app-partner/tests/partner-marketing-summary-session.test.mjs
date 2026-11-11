@@ -50,7 +50,7 @@ function fixture({ storeId = "store-a", period = "all" } = {}) {
     setError: value => events.push(["error", value]),
     setLoading: value => events.push(["loading", value]),
     getUsableIdentityAccessToken: () => token.promise,
-    createDshMobileClient: () => ({
+    createPartnerDshClient: () => ({
       readPartnerStoreContentPerformanceSummary: (...args) => {
         readCount++;
         assert.equal(args[1], storeId);

@@ -91,7 +91,8 @@ test("operational and commercial snapshots are session guarded, independent Stor
   assert.match(source, /agreementState\?\.actor===actor && agreementState\.sessionScope===sessionScope/);
   assert.match(source, /const visibleIdentity:IdentityDisplay=stillCurrentSession\(\)\?identity:/);
   assert.match(source, /const visibleStoreImages=stillCurrentSession\(\)\?storeImages:null/);
-  assert.match(source, /selectedStore\?\.owned && marketplace && !desktopWeb \? <Pressable/);
+  assert.match(source, /const canWallet=Boolean\(marketplace && selectedStore/);
+  assert.match(source, /selectedStore\?\.owned && independent && !desktopWeb \? <BthwaniButton label="إدارة موقع المتجر وسياساته"/);
   assert.match(source, /independent \? "المتجر المستقل قيد الإعداد" : "تعذر التحقق من طريقة عمل المتجر"/);
 });
 

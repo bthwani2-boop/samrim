@@ -65,7 +65,7 @@ function focusFixture({ storeId = "store-1", cursor = "" } = {}) {
     setLoading: capture("loading"),
     currentPartnerSessionKey: () => currentSession,
     getUsableIdentityAccessToken: () => token.promise,
-    createDshMobileClient: () => ({
+    createPartnerDshClient: () => ({
       listPartnerStoreOrderRatings: (...args) => { calls.push(args); return reply.promise; },
     }),
     Crypto: { randomUUID: () => "test-uuid" },
