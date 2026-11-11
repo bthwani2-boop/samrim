@@ -27,6 +27,33 @@ test("WLT contract-only changes schedule wallet financial proof and generated co
 test("Identity contract-only changes schedule identity and consumer verification", () => {
   requireGates("services/identity/contracts/openapi/identity.openapi.yaml", ["identity", "node"]);
 });
+test("SQL and Go changes activate owner and boundary checks", () => {
+  requireGates("services/identity/database/migrations/030_retire_redundant_legal_name_version_index.sql", ["identity", "node"]);
+  requireGates("services/wlt/database/migrations/063_store_relation_model_default_event_integrity.sql", ["wlt", "finance", "node"]);
+  requireGates("services/dsh/backend/internal/storage/postgres/migrations/180_multi_store_checkout_child_lineage.sql", ["dsh", "finance", "node"]);
+  requireGates("services/dsh/database/migrations/001_baseline.sql", ["dsh", "finance", "node"]);
+  requireGates("services/wlt/backend/internal/storage/postgres/migrate.go", ["wlt", "finance", "node"]);
+  requireGates("services/identity/backend/internal/runtime/migrations.go", ["identity", "node"]);
+  requireGates(".github/workflows/fast-guard.yml", ["finance", "node"]);
+});
+
+test("cross-service import scanner is a blocking CI step", () => {
+  const install = workflow.indexOf("      - name: Install workspace only for affected JS or TS code");
+  const guard = workflow.indexOf("      - name: Enforce cross-service import boundaries");
+  const next = workflow.indexOf("\n      - name:", guard + 1);
+  assert.ok(install >= 0 && guard > install && next > guard, "boundary scan must follow dependency installation");
+  const step = workflow.slice(guard, next);
+  assert.match(step, /^        if: steps\.changed\.outputs\.node == 'true'$/m);
+  assert.match(step, /^          node --test tools\/governance\/check-service-import-boundaries\.test\.mjs$/m);
+  assert.match(step, /^          node tools\/governance\/check-service-import-boundaries\.mjs$/m);
+  assert.doesNotMatch(step, /continue-on-error:\s*true/);
+  const mutant = step.replace("node tools/governance/check-service-import-boundaries.mjs", "node --version");
+  assert.throws(
+    () => assert.match(mutant, /^          node tools\/governance\/check-service-import-boundaries\.mjs$/m),
+    assert.AssertionError,
+  );
+});
+
 test("checkout and financial client changes select disposable PostgreSQL proof", () => {
   for (const file of [
     "apps/app-client/src/features/cart-checkout/cart-checkout.tsx",

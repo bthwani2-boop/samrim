@@ -48,11 +48,11 @@ jobs:
           git diff --name-only "$base" "$CANDIDATE_SHA" > "$RUNNER_TEMP/changed-files"
           cat "$RUNNER_TEMP/changed-files"
           changed() { grep -Eq "$1" "$RUNNER_TEMP/changed-files"; }
-          if changed '^(services/dsh/(backend|contracts)/|services/identity/clients/go/|go\.work(\.sum)?$)'; then echo 'dsh=true' >> "$GITHUB_OUTPUT"; fi
-          if changed '^(services/wlt/(backend|contracts)/|go\.work(\.sum)?$)'; then echo 'wlt=true' >> "$GITHUB_OUTPUT"; fi
-          if changed '^(services/identity/(backend|contracts)/|services/identity/clients/go/|go\.work(\.sum)?$)'; then echo 'identity=true' >> "$GITHUB_OUTPUT"; fi
+          if changed '^(services/dsh/(backend|contracts|database)/|services/identity/clients/go/|go\.work(\.sum)?$)'; then echo 'dsh=true' >> "$GITHUB_OUTPUT"; fi
+          if changed '^(services/wlt/(backend|contracts|database)/|go\.work(\.sum)?$)'; then echo 'wlt=true' >> "$GITHUB_OUTPUT"; fi
+          if changed '^(services/identity/(backend|contracts|database)/|services/identity/clients/go/|go\.work(\.sum)?$)'; then echo 'identity=true' >> "$GITHUB_OUTPUT"; fi
           if changed '^(\.github/workflows/fast-guard\.yml$|services/(dsh|wlt)/backend/.*(captain|dispatch|assignment|delivery|payment|financial|wallet|order|checkout|settlement|promotion|payout|compensation|postgres)|services/(dsh|wlt)/database/|services/wlt/contracts/|services/wlt/clients/|services/dsh/contracts/openapi/paths/beneficiary-finance\.yaml$|services/dsh/clients/(mobile\.ts$|presentation/order-payment)|apps/app-client/src/features/(cart-checkout/|wallet/|orders/order-detail\.tsx$)|apps/app-captain/src/features/wallet/|apps/app-partner/src/features/(wallet/|account/partner-payout-card\.tsx$|order-management/))'; then echo 'finance=true' >> "$GITHUB_OUTPUT"; fi
-          if changed '^(apps/|packages/|services/(dsh|identity)/((clients|tools|contracts)/|project\.json$)|services/wlt/((clients|tools|contracts)/|project\.json$)|tools/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|package\.json$|nx\.json$|tsconfig\.base\.json$|biome\.json$)'; then echo 'node=true' >> "$GITHUB_OUTPUT"; fi
+          if changed '^(apps/|packages/|services/(dsh|identity|wlt)/((backend|database|clients|tools|contracts)/|project\.json$)|\.github/workflows/fast-guard\.yml$|tools/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|package\.json$|nx\.json$|tsconfig\.base\.json$|biome\.json$)'; then echo 'node=true' >> "$GITHUB_OUTPUT"; fi
 
       - name: Reject committed secrets
         run: node tools/security/verify-secrets.mjs
@@ -240,6 +240,12 @@ jobs:
       - name: Install workspace only for affected JS or TS code
         if: steps.changed.outputs.node == 'true'
         run: pnpm install --frozen-lockfile
+
+      - name: Enforce cross-service import boundaries
+        if: steps.changed.outputs.node == 'true'
+        run: |
+          node --test tools/governance/check-service-import-boundaries.test.mjs
+          node tools/governance/check-service-import-boundaries.mjs
 
       - name: Protect checkout, finance, access, and user-facing handoffs
         if: steps.changed.outputs.node == 'true'

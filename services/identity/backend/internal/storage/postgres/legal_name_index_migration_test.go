@@ -32,7 +32,10 @@ func TestIdentityLegalNameIndexMigrationRetainsHistoricalNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	directory := filepath.Clean("../../../../database/migrations")
-	records := identityMigrationRecords(t, directory)
+	records, err := postgres.LoadMigrationRecords(directory)
+	if err != nil {
+		t.Fatalf("load canonical Identity migrations: %v", err)
+	}
 	if len(records) != postgres.SchemaVersion || records[29].Name != "030_retire_redundant_legal_name_version_index.sql" {
 		t.Fatalf("unexpected canonical Identity SQL migration tail: %+v", records[len(records)-1])
 	}

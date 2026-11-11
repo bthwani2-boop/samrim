@@ -87,14 +87,14 @@ func Run(_, _, defaultPort string) error {
 	db.SetMaxOpenConns(20)
 	db.SetMaxIdleConns(10)
 	db.SetConnMaxLifetime(30 * time.Minute)
-	migrationRecords, err := loadMigrationRecords(cfg.migrationDir)
+	migrationRecords, err := postgres.LoadMigrationRecords(cfg.migrationDir)
 	if err != nil {
 		return err
 	}
 	if cfg.autoMigrate {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if err := applyMigrations(ctx, db, cfg.migrationDir, migrationRecords); err != nil {
+		if err := postgres.ApplyMigrations(ctx, db, cfg.migrationDir, migrationRecords); err != nil {
 			return err
 		}
 	}

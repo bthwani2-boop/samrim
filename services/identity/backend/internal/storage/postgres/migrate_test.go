@@ -795,7 +795,10 @@ func TestManagedRecoveryMigrationFreshBootstrapAndV25Upgrade(t *testing.T) {
 	if migDir == "" {
 		t.Fatal("could not find identity migrations directory")
 	}
-	records := identityMigrationRecords(t, migDir)
+	records, err := postgres.LoadMigrationRecords(migDir)
+	if err != nil {
+		t.Fatalf("load canonical Identity migrations: %v", err)
+	}
 	if len(records) != postgres.SchemaVersion {
 		t.Fatalf("identity migration count = %d, want %d", len(records), postgres.SchemaVersion)
 	}
@@ -1264,37 +1267,6 @@ func (s *migrationChallengeSender) Send(ctx context.Context, message challengede
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-}
-
-func identityMigrationRecords(t *testing.T, directory string) []postgres.MigrationRecord {
-	t.Helper()
-	entries, err := os.ReadDir(directory)
-	if err != nil {
-		t.Fatalf("read identity migration directory: %v", err)
-	}
-	records := make([]postgres.MigrationRecord, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
-			continue
-		}
-		var version int
-		if _, err := fmt.Sscanf(entry.Name(), "%03d_", &version); err != nil {
-			t.Fatalf("parse migration version from %s: %v", entry.Name(), err)
-		}
-		content, err := os.ReadFile(filepath.Join(directory, entry.Name()))
-		if err != nil {
-			t.Fatalf("read migration %s: %v", entry.Name(), err)
-		}
-		hash := sha256.Sum256(content)
-		records = append(records, postgres.MigrationRecord{Version: version, Name: entry.Name(), SHA256: hex.EncodeToString(hash[:])})
-	}
-	sort.Slice(records, func(i, j int) bool { return records[i].Version < records[j].Version })
-	for index, record := range records {
-		if record.Version != index+1 {
-			t.Fatalf("migration sequence at %d has version %d", index+1, record.Version)
-		}
-	}
-	return records
 }
 
 func createIsolatedMigrationDatabase(t *testing.T, ctx context.Context, rootDB *sql.DB, databaseURL, prefix string) (*sql.DB, string) {

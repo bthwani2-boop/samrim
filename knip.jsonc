@@ -13,32 +13,28 @@
     },
     "apps/app-captain": {
       "entry": [
-        "index.js",
-        "app/**/*.ts",
-        "app/**/*.tsx",
-        "app.config.ts"
+        "app/**/*.tsx"
       ]
     },
     "apps/app-client": {
       "entry": [
-        "index.js",
-        "app/**/*.ts",
         "app/**/*.tsx",
-        "app.config.ts"
+        "tests/**/*.e2e.cjs",
+        "tests/**/*.manual.mjs"
       ]
     },
     "apps/app-partner": {
       "entry": [
-        "index.js",
-        "app/**/*.ts",
         "app/**/*.tsx",
-        "app.config.ts"
+        "tests/**/*.e2e.cjs",
+        "tests/**/*-session-probe.cjs"
       ]
     },
     "apps/control-panel": {
       "entry": [
         "hash-secret-input.mjs",
-        "app/**/route.ts"
+        "app/**/route.ts",
+        "tests/**/*.e2e.cjs"
       ]
     },
     "packages/design-system": {
