@@ -71,7 +71,7 @@ function harness(options = {}) {
       assert.equal(stillCurrent(), true);
       return Boolean(options.remoteActive);
     },
-    createDshMobileClient: () => api,
+    createClientDsh: () => api,
     alerts: {
       reset: key => observed.resets.push(key),
       receive: (_role, key) => {

@@ -1,7 +1,6 @@
 import { parseStudioThemePublication } from "@bthwani/design-system";
 import { AppearanceProvider, BthwaniNetworkStatusNotice, useMobileAppearance } from "@bthwani/design-system/native";
 import { AppKeyboardProvider } from "@bthwani/design-system/native/keyboard-provider";
-import { createDshMobileClient } from "@bthwani/dsh";
 import { tamaguiConfig } from "@bthwani/tamagui-config";
 import { useNetworkState } from "expo-network";
 import { Stack } from "expo-router";
@@ -12,6 +11,7 @@ import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-cont
 import { TamaguiProvider } from "tamagui";
 
 import { appearance } from "../src/bootstrap/appearance";
+import { createClientDsh } from "../src/bootstrap/dsh";
 import { currentIdentityState, restoreIdentitySession, subscribeIdentitySession } from "../src/bootstrap/identity";
 import { OrderAlertMonitor } from "../src/features/notifications/order-alert-monitor";
 import ServiceCityScope from "../src/features/service-city/service-city-scope";
@@ -34,7 +34,7 @@ export default function RootLayout() {
     if (!baseUrl) return;
     let mounted = true;
     let latestRequest = 0;
-    const api = createDshMobileClient(baseUrl);
+    const api = createClientDsh();
     const refresh = () => {
       const requestId = ++latestRequest;
       void Promise.resolve().then(() => api.readPublicStudioTheme()).then((value) => {

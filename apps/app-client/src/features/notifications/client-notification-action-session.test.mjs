@@ -60,7 +60,7 @@ function fixture(overrides = {}) {
     subscribeIdentitySession: callback => { eventListener = callback; return () => {}; },
     getUsableIdentityAccessToken: async () => "token-session-1",
     process: { env: { EXPO_PUBLIC_DSH_API_URL: "http://dsh.invalid" } },
-    createDshMobileClient: () => api,
+    createClientDsh: () => api,
     Crypto: { randomUUID: () => "random" },
     ...overrides,
   };

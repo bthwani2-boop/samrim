@@ -1,10 +1,10 @@
-import { createDshMobileClient, OrderAlertCursor } from "@bthwani/dsh";
+import { OrderAlertCursor } from "@bthwani/dsh";
 import { hasNativeNotificationModules, registerOwnPushDevice } from "@bthwani/push-device";
 import { currentOrderAlertToneForIdentity as currentAlertTone } from "@bthwani/push-device/alert-tone";
-import * as Crypto from "expo-crypto";
 import { type Href, useRouter } from "expo-router";
 import { useEffect } from "react";
 import { AppState, Platform } from "react-native";
+import { createClientDsh } from "../../bootstrap/dsh";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { clientSessionKey } from "../access/client-session-scope";
 import { clientPushDestination } from "./notification-tap-destination";
@@ -103,7 +103,7 @@ export function OrderAlertMonitor() {
         if (!stillCurrent()) return;
         const remotePushActive = await registerOwnPushDevice(token, actor, chosenTone, stillCurrent, url);
         if (!stillCurrent()) return;
-        const data = await createDshMobileClient(url, { cryptoRandomUUID: () => Crypto.randomUUID() }).listNotifications(token, 35);
+        const data = await createClientDsh().listNotifications(token, 35);
         if (!stillCurrent()) return;
         // Re-prime the cursor on a renewed Identity session, even for the same Client.
         const newlyUrgent = alerts.receive(role, sessionKey, data.notifications);

@@ -1,10 +1,9 @@
 import { borders, radius, type resolveTheme, sizing, typography } from "@bthwani/design-system";
 import { BthwaniIconButton, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient } from "@bthwani/dsh";
-import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { createClientDsh } from "../../bootstrap/dsh";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { clientSessionKey } from "../access/client-session-scope";
 
@@ -42,7 +41,7 @@ export function ClientNotificationAction() {
         if (sequence !== requestID.current || currentClientNotificationSessionKey() !== sessionKey) return;
         const url = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
         if (!url) return;
-        const client = createDshMobileClient(url, { cryptoRandomUUID: () => Crypto.randomUUID() });
+        const client = createClientDsh();
         const [result, shares] = await Promise.all([client.listNotifications(token, 1), client.listClientShares(token).catch(() => null)]);
         if (sequence === requestID.current && currentClientNotificationSessionKey() === sessionKey) {
           setUnreadCount(Math.max(0, result.unreadCount || 0) + Math.max(0, shares?.unreadCount || 0));

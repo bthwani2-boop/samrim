@@ -319,12 +319,19 @@ test("Client DSH bootstrap owns the single configured SDK constructor, without c
     "../src/features/wallet/cash-in-panel.tsx",
     "../src/features/location-core/delivery-address-client.ts",
     "../src/features/service-city/service-city-scope.tsx",
+    "../src/features/sharing/client-share-sheet.tsx",
+    "../src/features/notifications/order-alert-monitor.tsx",
+    "../src/features/notifications/client-notification-action.tsx",
+    "../app/_layout.tsx",
   ];
   for (const path of paths) {
     const source = readFileSync(new URL(path, import.meta.url), "utf8");
     assert.match(source, /createClientDsh\(/, path + " must use the shared Client DSH bootstrap");
     assert.doesNotMatch(source, /createDshMobileClient\(/, path + " must not recreate DSH SDK configuration");
   }
+  const injectedInvitationOwner = readFileSync(new URL("../src/features/account/store-access-invitation-inbox.tsx", import.meta.url), "utf8");
+  assert.match(injectedInvitationOwner, /createDshMobileClient\(normalizedBaseURL, \{ cryptoRandomUUID \}\)/,
+    "injected Store invitation SDK preserves its explicit provider contract instead of using the global Expo URL");
   assert.equal(existsSync(new URL("../src/features/service-city/service-city-client.ts", import.meta.url)), false,
     "the old single-use city adapter must be removed after its last consumer cutover");
 });

@@ -73,7 +73,7 @@ function fixture() {
     Crypto: { randomUUID: () => `uuid-${String(++seq)}` },
     normalizeYemenPhoneE164: value => value,
     process: { env: { EXPO_PUBLIC_DSH_API_URL: "https://dsh.invalid" } },
-    createDshMobileClient: () => service,
+    createClientDsh: () => service,
     setSuccessScope: value => actions.successes.push(value),
     setError: value => actions.errors.push(value),
     setBusy: value => actions.busy.push(value),

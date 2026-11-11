@@ -1,12 +1,13 @@
 import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type ClientShareKind, type ClientShareMessage, clientShareMessageLabel, createDshMobileClient } from "@bthwani/dsh";
+import { type ClientShareKind, type ClientShareMessage, clientShareMessageLabel } from "@bthwani/dsh";
 import { normalizeYemenPhoneE164 } from "@bthwani/identity/phone";
 import * as Clipboard from "expo-clipboard";
 import { Contact } from "expo-contacts";
 import * as Crypto from "expo-crypto";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { KeyboardAvoidingView, Modal, Platform, Pressable, Share, StyleSheet, Text, TextInput, View } from "react-native";
+import { createClientDsh } from "../../bootstrap/dsh";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { clientSessionKey } from "../access/client-session-scope";
 
@@ -122,9 +123,7 @@ export function ClientShareSheet({ target, onClose }: { target: ClientShareTarge
     try {
       const token = await getUsableIdentityAccessToken();
       if (!isCurrent()) return;
-      const baseUrl = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-      if (!baseUrl) throw new Error("DSH_BASE_URL_REQUIRED");
-      const response = await createDshMobileClient(baseUrl).sendClientShare(token, {
+      const response = await createClientDsh().sendClientShare(token, {
         recipientPhoneE164, contentKind, contentId, messageCode: message,
       }, idempotencyKey);
       if (!isCurrent()) return;
