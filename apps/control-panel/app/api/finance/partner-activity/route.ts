@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-transport";
-import { readOperatorPartnerFinancialActivity } from "../../../../src/server/dsh/finance-bff";
+import { readOperatorPartnerFinancialActivity } from "../../../../src/server/dsh/finance-custody-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 
 const allowedFilters = ["storeId", "kind", "status", "paymentMethod", "search", "from", "to", "cursor", "limit"] as const;

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-transport";
-import { type FinanceEvidencePurpose, uploadOperatorFinanceEvidence } from "../../../../src/server/dsh/finance-bff";
+import { type FinanceEvidencePurpose, uploadOperatorFinanceEvidence } from "../../../../src/server/dsh/finance-settlement-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";
 

@@ -9,7 +9,7 @@ const custody = readFileSync(new URL("src/features/finance/cash-custody-workspac
 const submit = readFileSync(new URL("app/api/finance/captain-cod-legacy-reviews/route.ts", root), "utf8");
 const approve = readFileSync(new URL("app/api/finance/captain-cod-legacy-reviews/[reviewId]/approve/route.ts", root), "utf8");
 const evidenceRoute = readFileSync(new URL("app/api/finance/evidence/route.ts", root), "utf8");
-const financeClient = readFileSync(new URL("src/server/dsh/finance-bff.ts", root), "utf8");
+const financeClient = readFileSync(new URL("src/server/dsh/finance-settlement-bff.ts", root), "utf8");
 
 test("historical COD review is reachable from the existing Finance cash custody screen", () => {
   assert.match(custody, /<CaptainCODLegacyRecoveryWorkspace key=\{operatorActorId \+ ":" \+ legacyPaymentId\}/);

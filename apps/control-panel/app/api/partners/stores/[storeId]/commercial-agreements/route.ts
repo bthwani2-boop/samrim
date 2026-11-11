@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../../src/server/dsh/dsh-transport";
-import { proposePartnersStoreCommercialAgreement, readPartnersStoreCommercialAgreements } from "../../../../../../src/server/dsh/finance-bff";
+import { proposePartnersStoreCommercialAgreement, readPartnersStoreCommercialAgreements } from "../../../../../../src/server/dsh/finance-commercial-bff";
 import { readOperatorSession } from "../../../../../../src/server/identity/identity-bff";
 import { verifySameOrigin } from "../../../../../../src/server/security/csrf";
 

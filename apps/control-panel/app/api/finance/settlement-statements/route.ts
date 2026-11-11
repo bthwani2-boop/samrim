@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-transport";
-import { listOperatorWalletProviders, readOperatorSettlementBatch, registerOperatorSettlementStatement } from "../../../../src/server/dsh/finance-bff";
+import { readOperatorSettlementBatch, registerOperatorSettlementStatement } from "../../../../src/server/dsh/finance-settlement-bff";
+import { listOperatorWalletProviders } from "../../../../src/server/dsh/finance-wallet-provider-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 
 export async function POST(request: Request) {

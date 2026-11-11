@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../src/server/dsh/dsh-transport";
-import { verifyOperatorDestination } from "../../../../../src/server/dsh/finance-bff";
+import { verifyOperatorDestination } from "../../../../../src/server/dsh/finance-payout-bff";
 import { readOperatorSession } from "../../../../../src/server/identity/identity-bff";
 
 export async function POST(request: Request) {

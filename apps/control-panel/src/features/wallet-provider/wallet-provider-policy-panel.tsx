@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { WalletProvider, WalletProviderListResponse } from "../../server/dsh/finance-bff";
+import type { WalletProvider, WalletProviderListResponse } from "../../server/dsh/finance-wallet-provider-bff";
 import { useSession } from "../../session/session-provider";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 

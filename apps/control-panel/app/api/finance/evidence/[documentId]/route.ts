@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../src/server/dsh/dsh-transport";
-import { readOperatorFinanceEvidence } from "../../../../../src/server/dsh/finance-bff";
+import { readOperatorFinanceEvidence } from "../../../../../src/server/dsh/finance-settlement-bff";
 import { readOperatorSession } from "../../../../../src/server/identity/identity-bff";
 
 export async function GET(_request: Request, context: { params: Promise<{ documentId: string }> }) {
