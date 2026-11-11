@@ -138,7 +138,7 @@ export default function ClientOrders() {
     } finally {
       if (sequence === pageSequence.current && loadID === loadSequence.current && hasCurrentOrdersSession(sessionKey)) setLoadingMore(false);
     }
-  }, [state, loadingMore, activeSessionKey, activeActorID]);
+  }, [state, loadingMore, activeActorID]);
 
   const repeatOrder = useCallback(async (order: Order) => {
     if (state.kind !== "ready" || !isClientActorScopeCurrent(state.actorID, activeActorID) || !hasCurrentOrdersSession(state.sessionKey) || !order.lines.length) return;
@@ -201,7 +201,7 @@ export default function ClientOrders() {
         setRepeatingOrderID((current) => repeatOrderGate.current.current === null && current === order.id ? "" : current);
       }
     }
-  }, [activeSessionKey, activeActorID, router, state]);
+  }, [activeActorID, router, state]);
 
   useEffect(() => subscribeIdentitySession((next) => {
     const invalidated = invalidateRepeatOrderForSessionChange(repeatOrderGate.current, clientOrderSessionKey(next));
