@@ -6,40 +6,51 @@ import { useFocusEffect } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { captainSessionKey } from "../../bootstrap/captain-session-scope";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { captainClient } from "../captain-operations/captain-client";
-import { isCurrentCaptainActor } from "../../bootstrap/captain-session-scope";
-import { claimCaptainPayoutSubmission } from "./captain-payout-submission-lock";
 
 type PayoutAttempt = Readonly<{ mode: "FULL_AVAILABLE" | "SPECIFIED"; amountMinor?: number; idempotencyKey: string; correlationID: string }>;
 
-function hasCurrentPayoutActor(actorID: string): boolean {
-  const identity = currentIdentityState();
-  return identity.kind === "authenticated" && isCurrentCaptainActor(actorID, identity.identity.subject.trim());
+function hasCurrentPayoutSession(sessionKey: string): boolean {
+  return Boolean(sessionKey) && captainSessionKey(currentIdentityState()) === sessionKey;
 }
 
 export function CaptainPayoutCard() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const authenticated = currentIdentityState().kind === "authenticated";
-  const [state, setState] = useState<BeneficiaryPayoutState | null>(null);
+  const authenticated = Boolean(captainSessionKey(currentIdentityState()));
+  const [loadedState, setState] = useState<BeneficiaryPayoutState | null>(null);
   const [amount, setAmount] = useState("");
   const [showPartial, setShowPartial] = useState(false);
   const [busy, setBusy] = useState(authenticated);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [pendingAttempt, setPendingAttempt] = useState<PayoutAttempt | null>(null);
+  const [savedPendingAttempt, setPendingAttempt] = useState<PayoutAttempt | null>(null);
   const financialRequestInFlight = useRef(false);
+  const claimFinancialRequest = () => {
+    if (financialRequestInFlight.current) return false;
+    financialRequestInFlight.current = true;
+    return true;
+  };
   const readSequence = useRef(0);
-  const [loadedActorID, setLoadedActorID] = useState("");
-  const [intake, setIntake] = useState<SettlementIntake | null>(null);
-  const [pendingIntakeAttempt, setPendingIntakeAttempt] = useState<PayoutAttempt | null>(null);
+  const [loadedSessionKey, setLoadedSessionKey] = useState("");
+  const [loadedIntake, setIntake] = useState<SettlementIntake | null>(null);
+  const [savedIntakeAttempt, setPendingIntakeAttempt] = useState<PayoutAttempt | null>(null);
   const [confirmIntakeMode, setConfirmIntakeMode] = useState<"FULL_AVAILABLE" | "SPECIFIED" | null>(null);
+  // Financial snapshots are private to the exact Identity session. Durable
+  // recovery keys stay actor-scoped so a renewed session can safely reconcile.
+  const currentSessionReadback = hasCurrentPayoutSession(loadedSessionKey);
+  const state = currentSessionReadback ? loadedState : null;
+  const pendingAttempt = currentSessionReadback ? savedPendingAttempt : null;
+  const pendingIntakeAttempt = currentSessionReadback ? savedIntakeAttempt : null;
+  const intake = currentSessionReadback ? loadedIntake : null;
   const load = useCallback(async () => {
     const sequence = ++readSequence.current;
     const identity = currentIdentityState();
-    const actorID = identity.kind === "authenticated" ? identity.identity.subject.trim() : "";
-    const stillCurrent = () => sequence === readSequence.current && hasCurrentPayoutActor(actorID);
+    const requestSession = captainSessionKey(identity);
+    const actorID = identity.kind === "authenticated" && requestSession ? identity.identity.subject.trim() : "";
+    const stillCurrent = () => sequence === readSequence.current && hasCurrentPayoutSession(requestSession);
     setBusy(true);
     setError("");
     setNotice("");
@@ -47,8 +58,8 @@ export function CaptainPayoutCard() {
     setIntake(null);
     setPendingAttempt(null);
     setPendingIntakeAttempt(null);
-    setLoadedActorID(actorID);
-    if (!actorID) { setBusy(false); return; }
+    setLoadedSessionKey(requestSession);
+    if (!requestSession) { setBusy(false); return; }
     try {
       const token = await getUsableIdentityAccessToken();
       if (!stillCurrent()) return;
@@ -79,7 +90,8 @@ export function CaptainPayoutCard() {
     return () => { readSequence.current += 1; };
   }, [load]));
   const request = async (mode: "FULL_AVAILABLE" | "SPECIFIED") => {
-    if (!hasCurrentPayoutActor(loadedActorID) || busy) return;
+    if (!hasCurrentPayoutSession(loadedSessionKey) || busy) return;
+    const requestSession = loadedSessionKey;
     if (pendingAttempt) mode = pendingAttempt.mode;
     const normalizedAmount = toAsciiDigits(amount.trim()).replace(/[^0-9]/g, "");
     const parsed = pendingAttempt?.amountMinor ?? (mode === "SPECIFIED" ? Number(normalizedAmount) : undefined);
@@ -87,36 +99,29 @@ export function CaptainPayoutCard() {
       setError("أدخل مبلغ سحب صحيحًا.");
       return;
     }
-    const releaseFinancialRequest = claimCaptainPayoutSubmission(financialRequestInFlight);
-    if (!releaseFinancialRequest) return;
+    if (!claimFinancialRequest()) return;
     setBusy(true); setError(""); setNotice("");
     try {
       const actorBeforeToken = currentIdentityState();
-      if (actorBeforeToken.kind !== "authenticated" || !actorBeforeToken.identity.subject.trim()) throw new Error("CAPTAIN_SESSION_REQUIRED");
+      if (captainSessionKey(actorBeforeToken) !== requestSession) throw new Error("CAPTAIN_SESSION_REQUIRED");
       const token = await getUsableIdentityAccessToken();
       const actor = currentIdentityState();
-      if (actor.kind !== "authenticated" ||
-          !isCurrentCaptainActor(actorBeforeToken.identity.subject.trim(), actor.identity.subject.trim()) ||
-          !isCurrentCaptainActor(loadedActorID, actor.identity.subject.trim())) {
+      if (actor.kind !== "authenticated" || captainSessionKey(actor) !== requestSession) {
         throw new Error("CAPTAIN_PAYOUT_SESSION_CHANGED");
       }
       const storageKey = `bthwani.captain.payout.pending.v1.${encodeURIComponent(actor.identity.subject)}`;
       const attempt = pendingAttempt ?? { mode, ...(parsed === undefined ? {} : { amountMinor: parsed }), idempotencyKey: `captain_payout_${Crypto.randomUUID()}`, correlationID: `captain_payout_corr_${Crypto.randomUUID()}` };
       await SecureStore.setItemAsync(storageKey, JSON.stringify(attempt));
-      const actorAfterPersist = currentIdentityState();
-      if (actorAfterPersist.kind !== "authenticated" ||
-          !isCurrentCaptainActor(actor.identity.subject.trim(), actorAfterPersist.identity.subject.trim())) {
-        // A newly persisted, unsent attempt is not a financial request.
-        // Preserve an older uncertain attempt rather than creating another key.
-        if (!pendingAttempt) await SecureStore.deleteItemAsync(storageKey).catch(() => {});
+      if (!hasCurrentPayoutSession(requestSession)) {
         throw new Error("CAPTAIN_PAYOUT_SESSION_CHANGED");
       }
       setPendingAttempt(attempt);
       const result = await captainClient().createOwnPayoutIntent(token, mode, parsed, attempt.idempotencyKey, attempt.correlationID);
+      if (!hasCurrentPayoutSession(requestSession)) throw new Error("CAPTAIN_PAYOUT_SESSION_CHANGED");
       // An acknowledged mutation is not enough; verify the WLT read model and actor scope
       // before clearing the durable retry key or reporting financial success.
       const readback = (await captainClient().readOwnPayoutState(token)).state;
-      if (!hasCurrentPayoutActor(actor.identity.subject.trim())) throw new Error("CAPTAIN_PAYOUT_SESSION_CHANGED");
+      if (!hasCurrentPayoutSession(requestSession)) throw new Error("CAPTAIN_PAYOUT_SESSION_CHANGED");
       if (result.payout.actorType !== "captain" ||
           result.payout.actorId !== actor.identity.subject ||
           result.payout.resolvedAmountMinor <= 0 ||
@@ -126,7 +131,7 @@ export function CaptainPayoutCard() {
         throw new Error("CAPTAIN_PAYOUT_READBACK_MISMATCH");
       }
       await SecureStore.deleteItemAsync(storageKey);
-      if (!hasCurrentPayoutActor(actor.identity.subject.trim())) throw new Error("CAPTAIN_PAYOUT_SESSION_CHANGED");
+      if (!hasCurrentPayoutSession(requestSession)) throw new Error("CAPTAIN_PAYOUT_SESSION_CHANGED");
       setPendingAttempt(null);
       setNotice("تم تقديم طلب سحب الأرباح.");
       setAmount("");
@@ -134,63 +139,67 @@ export function CaptainPayoutCard() {
       await load();
     } catch (cause) {
       console.error("DSH captain payout intent failed", cause);
-      setError(pendingAttempt ? "تحقق من الطلب السابق قبل إعادة المحاولة." : "تعذر طلب سحب الأرباح. تحقق من الرصيد ووجهة الصرف.");
+      if (hasCurrentPayoutSession(requestSession)) {
+        setError(pendingAttempt ? "تحقق من الطلب السابق قبل إعادة المحاولة." : "تعذر طلب سحب الأرباح. تحقق من الرصيد ووجهة الصرف.");
+      }
     } finally {
-      releaseFinancialRequest();
-      setBusy(false);
+      financialRequestInFlight.current = false;
+      if (hasCurrentPayoutSession(requestSession)) setBusy(false);
     }
   };
   const requestIntake = async (mode: "FULL_AVAILABLE" | "SPECIFIED") => {
     const actor = currentIdentityState();
-    if (actor.kind !== "authenticated" || !isCurrentCaptainActor(loadedActorID, actor.identity.subject.trim()) || busy ||
+    const requestSession = captainSessionKey(actor);
+    if (actor.kind !== "authenticated" || !requestSession || loadedSessionKey !== requestSession || busy ||
         (!pendingIntakeAttempt && (!state || state.eligibleAvailableMinor <= 0))) return;
     const effectiveMode = pendingIntakeAttempt?.mode ?? mode;
     const parsed = pendingIntakeAttempt?.amountMinor ?? (effectiveMode === "SPECIFIED" ? Number(toAsciiDigits(amount).replace(/[^0-9]/g, "")) : undefined);
     if (!pendingIntakeAttempt && effectiveMode === "SPECIFIED" && (!Number.isSafeInteger(parsed) || (parsed ?? 0) <= 0 || (parsed ?? 0) > (state?.eligibleAvailableMinor ?? 0))) {
       setError("المبلغ يتجاوز الأرباح المتاحة للسحب."); return;
     }
-    const releaseFinancialRequest = claimCaptainPayoutSubmission(financialRequestInFlight);
-    if (!releaseFinancialRequest) return;
+    if (!claimFinancialRequest()) return;
     const key = `bthwani.captain.settlement-intake.pending.v1.${encodeURIComponent(actor.identity.subject)}`;
     setBusy(true); setError(""); setNotice("");
     try {
       const raw = await SecureStore.getItemAsync(key);
+      if (!hasCurrentPayoutSession(requestSession)) throw new Error("CAPTAIN_INTAKE_SESSION_CHANGED");
       const stored = raw ? JSON.parse(raw) as PayoutAttempt : null;
       if (pendingIntakeAttempt
         ? !stored || stored.idempotencyKey !== pendingIntakeAttempt.idempotencyKey || stored.correlationID !== pendingIntakeAttempt.correlationID || stored.mode !== pendingIntakeAttempt.mode || stored.amountMinor !== pendingIntakeAttempt.amountMinor
         : Boolean(stored)) throw new Error("CAPTAIN_INTAKE_STORED_ATTEMPT_CHANGED");
       const saved = pendingIntakeAttempt ?? { mode: effectiveMode, ...(parsed === undefined ? {} : { amountMinor: parsed }), idempotencyKey: `captain_intake_${Crypto.randomUUID()}`, correlationID: `captain_intake_corr_${Crypto.randomUUID()}` };
+      if (!hasCurrentPayoutSession(requestSession)) throw new Error("CAPTAIN_INTAKE_SESSION_CHANGED");
       await SecureStore.setItemAsync(key, JSON.stringify(saved));
+      if (!hasCurrentPayoutSession(requestSession)) throw new Error("CAPTAIN_INTAKE_SESSION_CHANGED");
       const token = await getUsableIdentityAccessToken();
-      const actorAfterPersist = currentIdentityState();
-      if (actorAfterPersist.kind !== "authenticated" ||
-          !isCurrentCaptainActor(actor.identity.subject.trim(), actorAfterPersist.identity.subject.trim())) {
-        if (!pendingIntakeAttempt) await SecureStore.deleteItemAsync(key).catch(() => {});
+      if (!hasCurrentPayoutSession(requestSession)) {
         throw new Error("CAPTAIN_INTAKE_SESSION_CHANGED");
       }
       setPendingIntakeAttempt(saved);
       const created = await captainClient().createOwnSettlementIntake(token, saved.mode, saved.amountMinor, saved.idempotencyKey, saved.correlationID);
-      const actorAfterCreate = currentIdentityState();
-      if (actorAfterCreate.kind !== "authenticated" ||
-          !isCurrentCaptainActor(actor.identity.subject.trim(), actorAfterCreate.identity.subject.trim())) {
+      if (!hasCurrentPayoutSession(requestSession)) {
         throw new Error("CAPTAIN_INTAKE_SESSION_CHANGED");
       }
       const readback = (await captainClient().listOwnSettlementIntakes(token)).intakes.find((item) => item.id === created.intake.id);
-      const actorAfterReadback = currentIdentityState();
-      if (actorAfterReadback.kind !== "authenticated" ||
-          !isCurrentCaptainActor(actor.identity.subject.trim(), actorAfterReadback.identity.subject.trim())) {
+      if (!hasCurrentPayoutSession(requestSession)) {
         throw new Error("CAPTAIN_INTAKE_SESSION_CHANGED");
       }
       if (readback?.status !== "REQUESTED" || readback.resolvedAmountMinor !== created.intake.resolvedAmountMinor) throw new Error("SETTLEMENT_INTAKE_READBACK_MISMATCH");
       setIntake(readback);
       await SecureStore.deleteItemAsync(key);
+      if (!hasCurrentPayoutSession(requestSession)) throw new Error("CAPTAIN_INTAKE_SESSION_CHANGED");
       setPendingIntakeAttempt(null);
       setNotice("وصل طلب سحب الأرباح إلى المالية.");
       setAmount("");
       setShowPartial(false);
     } catch {
-      setError("تعذّر تأكيد الطلب؛ يمكن إعادة المحاولة بالمرجع نفسه دون تكرار.");
-    } finally { releaseFinancialRequest(); setBusy(false); }
+      if (hasCurrentPayoutSession(requestSession)) {
+        setError("تعذّر تأكيد الطلب؛ يمكن إعادة المحاولة بالمرجع نفسه دون تكرار.");
+      }
+    } finally {
+      financialRequestInFlight.current = false;
+      if (hasCurrentPayoutSession(requestSession)) setBusy(false);
+    }
   };
   const destinationReady = state?.destination?.status === "ACTIVE_FOR_PAYOUT" &&
     state.destination.verificationStatus === "VERIFIED";
@@ -252,11 +261,11 @@ export function CaptainPayoutCard() {
         </Text> : null}
       </> : null}
 
-      {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
-      {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      {authenticated && error ? <BthwaniButton label="إعادة المحاولة" disabled={busy} busy={busy}
+      {currentSessionReadback && notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
+      {currentSessionReadback && error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+      {authenticated && currentSessionReadback && error ? <BthwaniButton label="إعادة المحاولة" disabled={busy} busy={busy}
         onPress={() => void load()} variant="secondary" /> : null}
-      <BthwaniConfirmDialog busy={busy} visible={Boolean(confirmIntakeMode)}
+      <BthwaniConfirmDialog busy={busy} visible={currentSessionReadback && Boolean(confirmIntakeMode)}
         title="سحب الأرباح" description={intakeConfirmDescription}
         confirmLabel="تأكيد الطلب"
         onCancel={() => setConfirmIntakeMode(null)}
