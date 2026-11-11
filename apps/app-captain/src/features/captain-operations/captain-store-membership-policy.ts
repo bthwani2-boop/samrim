@@ -9,6 +9,9 @@ export function visibleCaptainStoreMemberships<T extends Pick<StoreCaptainMember
 export function preferredCaptainProfileMembership<
   T extends Pick<StoreCaptainMembership, "state" | "displayNameAr">,
 >(memberships: readonly T[]): T | undefined {
-  const visible = visibleCaptainStoreMemberships(memberships).filter((item) => Boolean(item.displayNameAr?.trim()));
-  return visible.find((item) => item.state === "active") ?? visible[0];
+  const visible = visibleCaptainStoreMemberships(memberships);
+  // DSH's accepted membership state is authoritative; a Store-provided display
+  // label must not demote a valid Captain to a pending or absent profile.
+  return visible.find((item) => item.state === "active")
+    ?? visible.find((item) => Boolean(item.displayNameAr?.trim()));
 }

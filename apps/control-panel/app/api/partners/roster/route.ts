@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
-import { authorizeDshPartnerReenrollment, dshErrorPayload, dshHttpStatus, isDshClientError, setDshPartnerRoleEnabled } from "../../../../src/server/dsh/dsh-bff";
+import { authorizeDshPartnerReenrollment, setDshPartnerRoleEnabled } from "../../../../src/server/dsh/captain-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-transport";
 import { identityErrorPayload, identityHttpStatus, readOperatorSession, searchIdentityRoles } from "../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";

@@ -316,7 +316,7 @@ export function JoiningCaseDetail({ caseId, embedded = false }: { caseId: string
               <div><dt>مدينة الخدمة</dt><dd>{cityName}</dd></div>
               <div><dt>العنوان</dt><dd>{current.firstStoreAddress || "غير متاح في بيانات الحالة القديمة"}</dd></div>
               <div><dt>المجال التجاري</dt><dd>{verticalName}</dd></div>
-              <div><dt>نوع المتجر</dt><dd>{commercialTypeName}</dd></div>
+              <div><dt>نوع النشاط</dt><dd>{commercialTypeName}</dd></div>
               <div><dt>موقع المتجر على الخريطة</dt><dd>{current.firstStoreLatitude != null && current.firstStoreLongitude != null ? <a href={`https://www.google.com/maps?q=${current.firstStoreLatitude},${current.firstStoreLongitude}`} target="_blank" rel="noopener noreferrer">فتح موقع المتجر على الخريطة</a> : "غير متاح في بيانات الحالة القديمة"}</dd></div>
               <div><dt>ساعات العمل</dt><dd>{current.firstStoreWorkingHours ? current.firstStoreWorkingHours.intervals.length > 0 ? <ul>{current.firstStoreWorkingHours.intervals.map((interval) => <li key={`${interval.dayOfWeek}-${interval.opensAt}-${interval.closesAt}`}>{weekdays[interval.dayOfWeek - 1] ?? `اليوم ${interval.dayOfWeek}`}: {interval.opensAt}–{interval.closesAt}{interval.closesNextDay ? " (اليوم التالي)" : ""}</li>)}</ul> : "لا توجد فترات عمل مسجلة" : "غير متاحة في بيانات الحالة القديمة"}</dd></div>
               <div><dt>نوع الإثبات</dt><dd>{current.firstStoreProofType ? proofTypeLabels[current.firstStoreProofType] ?? "وثيقة نشاط" : "غير متاح في بيانات الحالة القديمة"}</dd></div>

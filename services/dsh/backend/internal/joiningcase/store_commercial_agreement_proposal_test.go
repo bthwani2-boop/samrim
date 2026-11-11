@@ -3,8 +3,31 @@ package joiningcase
 import (
 	"errors"
 	wlt "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	"testing"
 )
+
+func TestStoreCommercialProposalUsesOneWLTWriterForBothRelations(t *testing.T) {
+	for _, relation := range []string{postgres.StoreRelationBThwaniPartner, postgres.StoreRelationIndependent} {
+		for _, state := range []string{"unpublished", "hidden", "published"} {
+			if !storeAllowsCommercialAgreementProposal(relation, state) {
+				t.Fatalf("Store relation %q in state %q must retain its WLT proposal route", relation, state)
+			}
+		}
+		for _, state := range []string{"", "INVALID"} {
+			if storeAllowsCommercialAgreementProposal(relation, state) {
+				t.Fatalf("Store relation %q in invalid state %q must not propose", relation, state)
+			}
+		}
+	}
+	for _, relation := range []string{"", "UNKNOWN"} {
+		for _, state := range []string{"unpublished", "hidden", "published"} {
+			if storeAllowsCommercialAgreementProposal(relation, state) {
+				t.Fatalf("unknown Store relation %q must never propose in state %q", relation, state)
+			}
+		}
+	}
+}
 
 func TestInitialZeroCommissionRatesCoverOnlyAdmittedModes(t *testing.T) {
 	modes := []string{"CUSTOMER_PICKUP", "BTHWANI_CAPTAIN", "PARTNER_CAPTAIN"}

@@ -11,6 +11,7 @@ export async function partnerErrorMessage(response: Response): Promise<string> {
     case "STATE_CONFLICT": return "لا تسمح حالة الانضمام الحالية بهذه العملية.";
     case "INVALID_INPUT": return "بيانات العملية غير صالحة.";
     case "STORE_EXISTS": return "لدى الشريك متجر قانوني بالفعل.";
+    case "STORE_JOINING_CLOSED": return "إنشاء متاجر جديدة بهذه العلاقة متوقف مؤقتًا. تظل الحالة قيد المراجعة، ويمكن إعادة المحاولة بعد استئناف الانضمام.";
     case "IDEMPOTENCY_CONFLICT": return "تعذر تكرار العملية لأن الطلب المحفوظ يختلف عن البيانات الحالية. أعد بدء الطلب بالبيانات الصحيحة.";
     case "FORBIDDEN": return "هذا الإجراء متاح لموظف لوحة التحكم المصرح فقط.";
     case "READINESS_BLOCKED": return "لا يمكن نشر المتجر قبل اجتياز جاهزية النشر الحالية.";

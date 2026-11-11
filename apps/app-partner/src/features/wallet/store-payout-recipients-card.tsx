@@ -1,16 +1,16 @@
 import { borders, opacity, radius, resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniConfirmDialog, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, type StoreAccessGrant, type StorePayoutBeneficiaryProfile, type StorePayoutRecipientListResponse, type StorePayoutRecipientRecord } from "@bthwani/dsh";
+import { formatMoney, type StoreAccessGrant, type StorePayoutBeneficiaryProfile, type StorePayoutRecipientListResponse, type StorePayoutRecipientRecord } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { createPartnerDshClient } from "../../bootstrap/dsh-client";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
+import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";
 
-function client() {
-  const baseUrl = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-  if (!baseUrl) throw new Error("DSH_BASE_URL_REQUIRED");
-  return createDshMobileClient(baseUrl, { cryptoRandomUUID: () => Crypto.randomUUID() });
-}
+const currentPartnerSessionKey = () => partnerSetupSessionKey(currentIdentityState());
+
+const client = createPartnerDshClient;
 
 type RecipientConfirmation =
   | Readonly<{ kind: "select"; storeId: string; grantId: string; storeName: string; beneficiaryName: string; phoneMasked: string; providerKey: string; walletIdentifierMasked: string }>
@@ -45,7 +45,10 @@ function recipientStateLabel(record: StorePayoutRecipientRecord, profiles: Reado
 export function StorePayoutRecipientsCard() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const authenticated = currentIdentityState().kind === "authenticated";
+  const sessionKey = useSyncExternalStore(subscribeIdentitySession, currentPartnerSessionKey, () => "");
+  const stillCurrent = useCallback(() => Boolean(sessionKey) && currentPartnerSessionKey() === sessionKey, [sessionKey]);
+  const authenticated = stillCurrent();
+  const readEpoch = useRef(0);
   const [state, setState] = useState<StorePayoutRecipientListResponse | null>(null);
   const [walletProviders, setWalletProviders] = useState<ReadonlyArray<WalletProvider>>([]);
   const [busyStoreId, setBusyStoreId] = useState("");
@@ -56,52 +59,68 @@ export function StorePayoutRecipientsCard() {
   const [confirmation, setConfirmation] = useState<RecipientConfirmation>(null);
 
   const load = useCallback(async () => {
-    if (!authenticated) return;
+    if (!stillCurrent()) return;
+    const epoch = ++readEpoch.current;
+    setState(null);
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!stillCurrent() || epoch !== readEpoch.current) return;
       const next = await client().listPartnerStorePayoutRecipients(token);
+      if (!stillCurrent() || epoch !== readEpoch.current) return;
       setState(next);
       setError("");
     } catch (cause) {
+      if (!stillCurrent() || epoch !== readEpoch.current) return;
       console.error("DSH store payout recipients readback failed", cause);
       setError("تعذر قراءة مستلمي الصرف للمتاجر.");
     }
-  }, [authenticated]);
+  }, [stillCurrent]);
   useEffect(() => { void load(); }, [load]);
 
   const loadWalletProviders = useCallback(async () => {
-    if (!authenticated) return;
+    if (!stillCurrent()) return;
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!stillCurrent()) return;
       const response = await client().listWalletProviders(token);
+      if (!stillCurrent()) return;
       setWalletProviders(response.walletProviders.filter((provider) => provider.active));
     } catch (cause) {
-      console.error("DSH wallet provider catalog read failed", cause);
+      if (stillCurrent()) console.error("DSH wallet provider catalog read failed", cause);
     }
-  }, [authenticated]);
+  }, [stillCurrent]);
   useEffect(() => { void loadWalletProviders(); }, [loadWalletProviders]);
 
   const openPicker = async (storeId: string) => {
+    if (!stillCurrent()) return;
     setBusyStoreId(storeId); setError(""); setNotice(""); setGrants([]);
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!stillCurrent()) return;
       const page = await client().listPartnerStoreAccessGrants(token, storeId);
+      if (!stillCurrent()) return;
       const active = page.items.filter((grant) => grant.state === "active");
       setGrants(active);
       setPickerStoreId(storeId);
       if (active.length === 0) setNotice("لا يوجد موظف نشط على هذا المتجر؛ أضف عضو فريق أولًا من مساحة المتجر.");
     } catch (cause) {
+      if (!stillCurrent()) return;
       console.error("DSH store access grants read failed", cause);
       setError("تعذر قراءة فريق المتجر.");
-    } finally { setBusyStoreId(""); }
+    } finally { if (stillCurrent()) setBusyStoreId(""); }
   };
 
   const select = async (choice: Extract<RecipientConfirmation, { kind: "select" }>) => {
+    if (!stillCurrent()) return;
     setBusyStoreId(choice.storeId); setError(""); setNotice("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!stillCurrent()) return;
+      readEpoch.current += 1;
       const mutation = await client().selectPartnerStorePayoutRecipient(token, choice.storeId, { grantId: choice.grantId, reason: "اختيار مستلم صرف المتجر من قِبل المالك بعد تأكيد بيانات المستلم والمحفظة" }, `recipient_select_${Crypto.randomUUID()}`, `recipient_select_corr_${Crypto.randomUUID()}`);
+      if (!stillCurrent()) return;
       const next = await client().listPartnerStorePayoutRecipients(token);
+      if (!stillCurrent()) return;
       const readback = next.readback.recipients.find((record) => record.storeId === choice.storeId);
       if (!readback || readback.state !== "SELECTED_VERIFIED_STAFF" || readback.beneficiaryActorId !== mutation.assignment.beneficiaryActorId) {
         throw new Error("RECIPIENT_READBACK_MISMATCH");
@@ -111,18 +130,24 @@ export function StorePayoutRecipientsCard() {
       setPickerStoreId("");
       setConfirmation(null);
     } catch (cause) {
+      if (!stillCurrent()) return;
       console.error("DSH payout recipient select failed", cause);
       setConfirmation(null);
       setError("تعذر تأكيد مستلم الصرف من سجل المحفظة. لم تُعرض العملية كناجحة؛ أعد القراءة قبل المحاولة مجددًا.");
-    } finally { setBusyStoreId(""); }
+    } finally { if (stillCurrent()) setBusyStoreId(""); }
   };
 
   const revert = async (choice: Extract<RecipientConfirmation, { kind: "revert" }>) => {
+    if (!stillCurrent()) return;
     setBusyStoreId(choice.storeId); setError(""); setNotice("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!stillCurrent()) return;
+      readEpoch.current += 1;
       await client().revertPartnerStorePayoutRecipient(token, choice.storeId, { reason: "إعادة مستلم الصرف إلى مالك المتجر بعد تأكيد المالك" }, `recipient_revert_${Crypto.randomUUID()}`, `recipient_revert_corr_${Crypto.randomUUID()}`);
+      if (!stillCurrent()) return;
       const next = await client().listPartnerStorePayoutRecipients(token);
+      if (!stillCurrent()) return;
       const readback = next.readback.recipients.find((record) => record.storeId === choice.storeId);
       if (!readback || readback.state !== "DEFAULT_OWNER") throw new Error("RECIPIENT_REVERT_READBACK_MISMATCH");
       setState(next);
@@ -130,10 +155,11 @@ export function StorePayoutRecipientsCard() {
       setPickerStoreId("");
       setConfirmation(null);
     } catch (cause) {
+      if (!stillCurrent()) return;
       console.error("DSH payout recipient revert failed", cause);
       setConfirmation(null);
       setError("تعذر تأكيد إعادة مستلم الصرف إلى المالك من سجل المحفظة. أعد القراءة قبل المحاولة مجددًا.");
-    } finally { setBusyStoreId(""); }
+    } finally { if (stillCurrent()) setBusyStoreId(""); }
   };
 
   if (!authenticated) return null;

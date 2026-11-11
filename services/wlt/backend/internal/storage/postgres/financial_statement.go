@@ -154,7 +154,14 @@ func ReadFinancialStatement(ctx context.Context, db *sql.DB, actorType, actorID 
 	}
 	accountCode := map[string]string{"customer": "CUSTOMER_WALLET", "partner": "PARTNER_WALLET", "captain": "CAPTAIN_WALLET", "field": "FIELD_WALLET"}[actorType]
 	result := FinancialStatementRecord{ActorType: actorType, ActorID: actorID, Currency: "YER", PeriodStart: periodStart.UTC(), PeriodEndExclusive: periodEndExclusive.UTC(), Entries: make([]FinancialStatementEntry, 0), Limit: limit}
-	if err := db.QueryRowContext(ctx, `SELECT
+	// The totals and paged entries must describe the same committed ledger snapshot.
+	// A later posting must not appear in one query but be absent in the other.
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+	if err != nil {
+		return FinancialStatementRecord{}, err
+	}
+	defer tx.Rollback()
+	if err := tx.QueryRowContext(ctx, `SELECT
 		COALESCE(SUM(CASE WHEN t.created_at < $4 THEN CASE e.direction WHEN 'CREDIT' THEN e.amount_minor ELSE -e.amount_minor END ELSE 0 END),0),
 		COALESCE(SUM(e.amount_minor) FILTER (WHERE t.created_at >= $4 AND t.created_at < $5 AND e.direction='CREDIT'),0),
 		COALESCE(SUM(e.amount_minor) FILTER (WHERE t.created_at >= $4 AND t.created_at < $5 AND e.direction='DEBIT'),0),
@@ -179,7 +186,7 @@ func ReadFinancialStatement(ctx context.Context, db *sql.DB, actorType, actorID 
 	}
 	query += ` ORDER BY created_at DESC,transaction_id DESC LIMIT $` + formatInt(len(args)+1)
 	args = append(args, limit+1)
-	rows, err := db.QueryContext(ctx, query, args...)
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return FinancialStatementRecord{}, err
 	}
@@ -194,10 +201,18 @@ func ReadFinancialStatement(ctx context.Context, db *sql.DB, actorType, actorID 
 	if err := rows.Err(); err != nil {
 		return FinancialStatementRecord{}, err
 	}
+	// Release the cursor before committing: PostgreSQL transactions must not
+	// outlive their result sets, including an empty statement page.
+	if err := rows.Close(); err != nil {
+		return FinancialStatementRecord{}, err
+	}
 	if len(result.Entries) > limit {
 		last := result.Entries[limit-1]
 		result.NextCursor = last.CreatedAt.UTC().Format(time.RFC3339Nano) + "|" + last.TransactionID
 		result.Entries = result.Entries[:limit]
+	}
+	if err := tx.Commit(); err != nil {
+		return FinancialStatementRecord{}, err
 	}
 	return result, nil
 }

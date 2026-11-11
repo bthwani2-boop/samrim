@@ -1,6 +1,6 @@
 "use client";
 import type { PartnerStoreOperationalAvailabilityResponse, StoreFulfillmentMode, StoreOperationalAvailability, StoreOperationalAvailabilityRequest, StoreScheduleWindow } from "@bthwani/dsh";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { partnerErrorMessage } from "../partners/partner-error-message";
 
 const days = ["الأحد","الإثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
@@ -29,6 +29,7 @@ function asDraft(item: StoreOperationalAvailability): StoreOperationalAvailabili
 function compatible(a:StoreOperationalAvailabilityRequest,b:StoreOperationalAvailability) {
   return a.scheduleMode===b.scheduleMode && a.paused===b.paused &&
     (a.pauseReason??null)===(b.pauseReason??null) &&
+    (a.pauseUntil??null)===(b.pauseUntil??null) &&
     (a.preparationMinutes??null)===(b.preparationMinutes??null) &&
     JSON.stringify(ordered(a.weeklySchedule))===JSON.stringify(ordered(b.weeklySchedule)) &&
     [...a.unavailableFulfillmentModes].sort((a, b) => a.localeCompare(b)).join(",")===[...b.unavailableFulfillmentModes].sort((a, b) => a.localeCompare(b)).join(",");
@@ -39,6 +40,8 @@ export function StoreAvailabilityControls({storeId,enabledModes}:Readonly<{store
   const [editing,setEditing] = useState(false);
   const [loading,setLoading] = useState(true);
   const [saving,setSaving] = useState(false);
+  const inFlightSave = useRef<AbortController|null>(null);
+  const attemptedMutation = useRef<{fingerprint:string;key:string;correlationId:string}|null>(null);
   const [error,setError] = useState("");
   const [notice,setNotice] = useState("");
   const endpoint = `/api/stores/${encodeURIComponent(storeId)}/operational-availability`;
@@ -53,39 +56,61 @@ export function StoreAvailabilityControls({storeId,enabledModes}:Readonly<{store
 
   useEffect(()=>{
     const controller=new AbortController();
-    setLoading(true);setError("");setSource(null);setDraft(null);setEditing(false);
+    setLoading(true);setSaving(false);setError("");setSource(null);setDraft(null);setEditing(false);
     void read(controller.signal).then(value=>{
       if(!controller.signal.aborted){setSource(value);setDraft(asDraft(value.availability));}
     }).catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:"تعذرت قراءة الأوقات.");})
       .finally(()=>{if(!controller.signal.aborted)setLoading(false);});
-    return()=>controller.abort();
+    return()=>{
+      controller.abort();
+      inFlightSave.current?.abort();
+      inFlightSave.current=null;
+      attemptedMutation.current=null;
+    };
   },[read]);
   const patch=(change:Partial<StoreOperationalAvailabilityRequest>)=>setDraft(old=>old?{...old,...change}:null);
   const setWindow=(index:number,change:Partial<StoreScheduleWindow>)=>setDraft(old=>old?{
     ...old,weeklySchedule:old.weeklySchedule.map((w,i)=>i===index?{...w,...change}:w)
   }:null);
   async function save(){
-    if(!draft || !source || saving) return;
+    if(!draft || !source || saving || inFlightSave.current || source.availability.storeId!==storeId) return;
     if(draft.scheduleMode==="WEEKLY" && !validWeeklyWindows(draft.weeklySchedule)) {setError("صحح ساعات العمل: يجب أن تكون كل فترة صالحة وبدون تداخل.");return;}
     if(draft.paused && (draft.pauseReason??"").trim().length<2){setError("اكتب سبب الإيقاف المؤقت.");return;}
+    const payload={...draft,weeklySchedule:ordered(draft.weeklySchedule)};
+    const fingerprint=JSON.stringify([storeId,payload]);
+    const mutation=attemptedMutation.current?.fingerprint===fingerprint
+      ? attemptedMutation.current
+      : {fingerprint,key:crypto.randomUUID(),correlationId:crypto.randomUUID()};
+    attemptedMutation.current=mutation;
+    const controller=new AbortController();
+    inFlightSave.current=controller;
     setSaving(true);setError("");setNotice("");
     try{
-      const payload={...draft,weeklySchedule:ordered(draft.weeklySchedule)};
       const response=await fetch(endpoint,{
-        method:"PATCH",headers:{"Content-Type":"application/json","Idempotency-Key":crypto.randomUUID(),"X-Correlation-ID":crypto.randomUUID()},
-        body:JSON.stringify(payload),
+        method:"PATCH",headers:{"Content-Type":"application/json","Idempotency-Key":mutation.key,"X-Correlation-ID":mutation.correlationId},
+        signal:controller.signal,body:JSON.stringify(payload),
       });
+      if(controller.signal.aborted)return;
       const failure=response.ok?"":await partnerErrorMessage(response);
-      const current=await read();
+      if(controller.signal.aborted)return;
+      const current=await read(controller.signal);
+      if(controller.signal.aborted)return;
+      if(current.availability.storeId!==storeId)throw new Error("Store availability readback does not belong to the selected Store");
       setSource(current);setDraft(asDraft(current.availability));
       if(!response.ok || !compatible(payload,current.availability)){
         throw new Error(failure||"لم تتطابق حالة التشغيل مع قراءة النظام. راجعها قبل تكرار العملية.");
       }
+      attemptedMutation.current=null;
       setEditing(false);setNotice("حُفظت أوقات التشغيل وتأكد تطبيقها على أهلية استقبال الطلبات.");
-    }catch(cause){setError(cause instanceof Error?cause.message:"تعذر تأكيد حفظ الأوقات.");}
-    finally{setSaving(false);}
+    }catch(cause){if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:"تعذر تأكيد حفظ الأوقات.");}
+    finally{
+      if(inFlightSave.current===controller){
+        inFlightSave.current=null;
+        if(!controller.signal.aborted)setSaving(false);
+      }
+    }
   }
-  const availability=source?.availability;
+  const availability=source?.availability.storeId===storeId?source.availability:null;
   return <section className="store-availability-editor" aria-label="إدارة تشغيل المتجر وأوقاته">
     <div className="store-availability-topline">
       <div><strong>التشغيل الفعلي</strong><small>المنطقة الزمنية: صنعاء (Asia/Aden)</small></div>

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -53,7 +54,7 @@ func TestDirectPartnerFirstStoreUnpublishedAndIdempotentPostgres(t *testing.T) {
 		}
 		const owner = "qa-direct-partner"
 		// The same caller may retry concurrently; exactly one first Store is created.
-		const callers = 8
+		const callers = 10
 		type outcome struct {
 			id     string
 			replay bool
@@ -65,7 +66,7 @@ func TestDirectPartnerFirstStoreUnpublishedAndIdempotentPostgres(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				store, replay, err := postgres.CreateFirstStoreForPartner(ctx, db, owner, input)
+				store, replay, err := postgres.CreateFirstStoreForPartner(ctx, db, owner, input, "idem-qa-owner-concurrent-0001")
 				results <- outcome{id: store.ID, replay: replay, err: err}
 			}()
 		}
@@ -119,12 +120,12 @@ func TestDirectPartnerFirstStoreUnpublishedAndIdempotentPostgres(t *testing.T) {
 		}
 		different := input
 		different.Name = "Changed Store"
-		if _, _, err := postgres.CreateFirstStoreForPartner(ctx, db, owner, different); !errors.Is(err, postgres.ErrSelfStoreExists) {
+		if _, _, err := postgres.CreateFirstStoreForPartner(ctx, db, owner, different, "idem-qa-owner-changed-0001"); !errors.Is(err, postgres.ErrSelfStoreExists) {
 			t.Fatalf("second first Store allowed: %v", err)
 		}
 		malformed := input
 		malformed.Name = ""
-		if _, _, err := postgres.CreateFirstStoreForPartner(ctx, db, "new-owner", malformed); !errors.Is(err, postgres.ErrSelfStoreInput) {
+		if _, _, err := postgres.CreateFirstStoreForPartner(ctx, db, "new-owner", malformed, "idem-qa-invalid-fields-0001"); !errors.Is(err, postgres.ErrSelfStoreInput) {
 			t.Fatalf("invalid payload was accepted: %v", err)
 		}
 		// The independent merchant is the same canonical Store writer, but may
@@ -133,11 +134,11 @@ func TestDirectPartnerFirstStoreUnpublishedAndIdempotentPostgres(t *testing.T) {
 		independentInput.RelationModel = postgres.StoreRelationIndependent
 		independentInput.FulfillmentModes = []string{"PARTNER_CAPTAIN", "CUSTOMER_PICKUP"}
 		independentOwner := "qa-independent-partner"
-		independentStore, independentReplay, err := postgres.CreateFirstStoreForPartner(ctx, db, independentOwner, independentInput)
+		independentStore, independentReplay, err := postgres.CreateFirstStoreForPartner(ctx, db, independentOwner, independentInput, "idem-qa-independent-first-0001")
 		if err != nil || independentReplay || independentStore.RelationModel != postgres.StoreRelationIndependent || independentStore.PublicationState != "unpublished" {
 			t.Fatalf("independent first Store invalid: %+v replay=%v err=%v", independentStore, independentReplay, err)
 		}
-		independentAgain, independentReplayed, err := postgres.CreateFirstStoreForPartner(ctx, db, independentOwner, independentInput)
+		independentAgain, independentReplayed, err := postgres.CreateFirstStoreForPartner(ctx, db, independentOwner, independentInput, "idem-qa-independent-first-0001")
 		if err != nil || !independentReplayed || independentAgain.ID != independentStore.ID {
 			t.Fatalf("independent exact retry changed Store: %+v replay=%v err=%v", independentAgain, independentReplayed, err)
 		}
@@ -150,20 +151,104 @@ func TestDirectPartnerFirstStoreUnpublishedAndIdempotentPostgres(t *testing.T) {
 		}
 		invalidRelation := independentInput
 		invalidRelation.RelationModel = "NOT_A_STORE_RELATION"
-		if _, _, err := postgres.CreateFirstStoreForPartner(ctx, db, "qa-invalid-relation", invalidRelation); !errors.Is(err, postgres.ErrSelfStoreInput) {
+		if _, _, err := postgres.CreateFirstStoreForPartner(ctx, db, "qa-invalid-relation", invalidRelation, "idem-qa-invalid-relation-0001"); !errors.Is(err, postgres.ErrSelfStoreInput) {
 			t.Fatalf("unsupported relation must fail closed: %v", err)
 		}
 		invalidIndependent := independentInput
 		invalidIndependent.FulfillmentModes = []string{"BTHWANI_CAPTAIN"}
-		if _, _, err := postgres.CreateFirstStoreForPartner(ctx, db, "qa-invalid-independent", invalidIndependent); !errors.Is(err, postgres.ErrSelfStoreInput) {
+		if _, _, err := postgres.CreateFirstStoreForPartner(ctx, db, "qa-invalid-independent", invalidIndependent, "idem-qa-invalid-independent-0001"); !errors.Is(err, postgres.ErrSelfStoreInput) {
 			t.Fatalf("independent must reject BThwani Captain: %v", err)
 		}
-		if _, _, err := postgres.CreateFirstStoreForPartner(ctx, db, independentOwner, input); !errors.Is(err, postgres.ErrSelfStoreExists) {
+		if _, _, err := postgres.CreateFirstStoreForPartner(ctx, db, independentOwner, input, "idem-qa-independent-changed-0001"); !errors.Is(err, postgres.ErrSelfStoreExists) {
 			t.Fatalf("independent Store may not be recreated as marketplace: %v", err)
+		}
+		if _, _, err := postgres.CreateFirstStoreForPartner(ctx, db, "qa-cross-actor", independentInput, "idem-qa-independent-first-0001"); !errors.Is(err, postgres.ErrSelfStoreIdempotency) {
+			t.Fatalf("cross-actor reuse of an idempotency key was accepted: %v", err)
+		}
+		// Concurrent cross-actor replays must never adopt the original owner's
+		// Store or add another Store/idempotency record. The real SQL advisory
+		// locks and unique key are exercised, not a mocked Store writer.
+		const replayRace = 10
+		races := make(chan error, replayRace)
+		var raceWG sync.WaitGroup
+		for i := 0; i < replayRace; i++ {
+			actor := independentOwner
+			if i%2 != 0 {
+				actor = "qa-cross-actor"
+			}
+			raceWG.Add(1)
+			go func(actor string) {
+				defer raceWG.Done()
+				store, replay, err := postgres.CreateFirstStoreForPartner(ctx, db, actor, independentInput, "idem-qa-independent-first-0001")
+				if actor == independentOwner {
+					if err != nil || !replay || store.ID != independentStore.ID {
+						races <- fmt.Errorf("owner replay returned unexpected Store: id=%s replay=%t err=%v", store.ID, replay, err)
+					}
+				} else if !errors.Is(err, postgres.ErrSelfStoreIdempotency) {
+					races <- fmt.Errorf("foreign actor replay was not rejected: id=%s replay=%t err=%v", store.ID, replay, err)
+				}
+			}(actor)
+		}
+		raceWG.Wait()
+		close(races)
+		for raceErr := range races {
+			t.Fatal(raceErr)
+		}
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.stores WHERE partner_actor_id='qa-cross-actor'").Scan(&count); err != nil || count != 0 {
+			t.Fatalf("concurrent foreign replay created a Store: count=%d err=%v", count, err)
+		}
+		if _, _, err := postgres.CreateFirstStoreForPartner(ctx, db, independentOwner, input, "idem-qa-independent-first-0001"); !errors.Is(err, postgres.ErrSelfStoreIdempotency) {
+			t.Fatalf("same key was reused for different first Store facts: %v", err)
+		}
+		var attemptCount int
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.store_create_idempotency WHERE partner_actor_id=$1", independentOwner).Scan(&attemptCount); err != nil || attemptCount != 1 {
+			t.Fatalf("unexpected persisted idempotency attempts: %d %v", attemptCount, err)
 		}
 		if _, err := postgres.ReadStoreOwnedByPartner(ctx, db, independentStore.ID, owner); !errors.Is(err, postgres.ErrStoreNotFound) {
 			t.Fatalf("cross-owner independent Store was readable: %v", err)
 		}
-		t.Log("direct Partner Stores: single writer, exact replays, relationship isolation, no joining case, unpublished")
+		// A timed-out create blocked on the actor's advisory lock must leave
+		// no half-created Store or consumed key. Retrying the same attempt
+		// after the lock is released must create exactly one canonical Store.
+		const timeoutOwner = "qa-first-store-timeout-owner"
+		const timeoutKey = "idem-qa-first-store-timeout-0001"
+		lockTx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = lockTx.Rollback() }()
+		if _, err := lockTx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:first-store:"+timeoutOwner); err != nil {
+			t.Fatal(err)
+		}
+		timeoutCtx, timeoutCancel := context.WithTimeout(ctx, 250*time.Millisecond)
+		_, _, timeoutErr := postgres.CreateFirstStoreForPartner(timeoutCtx, db, timeoutOwner, independentInput, timeoutKey)
+		timeoutCancel()
+		if timeoutErr == nil {
+			t.Fatal("a timed-out first Store attempt succeeded while its owner lock was held")
+		}
+		if err := lockTx.Rollback(); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.stores WHERE partner_actor_id=$1", timeoutOwner).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("timed-out create persisted Store count=%d err=%v", count, err)
+		}
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.store_create_idempotency WHERE partner_actor_id=$1", timeoutOwner).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("timed-out create consumed idempotency count=%d err=%v", count, err)
+		}
+		rescued, alreadyCreated, err := postgres.CreateFirstStoreForPartner(ctx, db, timeoutOwner, independentInput, timeoutKey)
+		if err != nil || alreadyCreated || rescued.ID == "" || rescued.PublicationState != "unpublished" {
+			t.Fatalf("same-key recovery after timeout failed: id=%s replay=%t state=%s err=%v", rescued.ID, alreadyCreated, rescued.PublicationState, err)
+		}
+		recovered, replayedAfterTimeout, err := postgres.CreateFirstStoreForPartner(ctx, db, timeoutOwner, independentInput, timeoutKey)
+		if err != nil || !replayedAfterTimeout || recovered.ID != rescued.ID {
+			t.Fatalf("post-timeout exact retry changed Store: id=%s replay=%t err=%v", recovered.ID, replayedAfterTimeout, err)
+		}
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.stores WHERE partner_actor_id=$1", timeoutOwner).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("recovered create persisted wrong Store count=%d err=%v", count, err)
+		}
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.store_create_idempotency WHERE partner_actor_id=$1", timeoutOwner).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("recovered create persisted wrong idempotency count=%d err=%v", count, err)
+		}
+		t.Log("direct Partner Stores: single writer, concurrent replay and timeout recovery, relationship isolation, unpublished")
 	}, 5*time.Minute)
 }

@@ -48,11 +48,11 @@ jobs:
           git diff --name-only "$base" "$CANDIDATE_SHA" > "$RUNNER_TEMP/changed-files"
           cat "$RUNNER_TEMP/changed-files"
           changed() { grep -Eq "$1" "$RUNNER_TEMP/changed-files"; }
-          if changed '^(services/dsh/(backend|contracts)/|services/identity/clients/go/|go\.work(\.sum)?$)'; then echo 'dsh=true' >> "$GITHUB_OUTPUT"; fi
-          if changed '^(services/wlt/(backend|contracts)/|go\.work(\.sum)?$)'; then echo 'wlt=true' >> "$GITHUB_OUTPUT"; fi
-          if changed '^(services/identity/(backend|contracts)/|services/identity/clients/go/|go\.work(\.sum)?$)'; then echo 'identity=true' >> "$GITHUB_OUTPUT"; fi
+          if changed '^(services/dsh/(backend|contracts|database)/|services/identity/clients/go/|go\.work(\.sum)?$)'; then echo 'dsh=true' >> "$GITHUB_OUTPUT"; fi
+          if changed '^(services/wlt/(backend|contracts|database)/|go\.work(\.sum)?$)'; then echo 'wlt=true' >> "$GITHUB_OUTPUT"; fi
+          if changed '^(services/identity/(backend|contracts|database)/|services/identity/clients/go/|go\.work(\.sum)?$)'; then echo 'identity=true' >> "$GITHUB_OUTPUT"; fi
           if changed '^(\.github/workflows/fast-guard\.yml$|services/(dsh|wlt)/backend/.*(captain|dispatch|assignment|delivery|payment|financial|wallet|order|checkout|settlement|promotion|payout|compensation|postgres)|services/(dsh|wlt)/database/|services/wlt/contracts/|services/wlt/clients/|services/dsh/contracts/openapi/paths/beneficiary-finance\.yaml$|services/dsh/clients/(mobile\.ts$|presentation/order-payment)|apps/app-client/src/features/(cart-checkout/|wallet/|orders/order-detail\.tsx$)|apps/app-captain/src/features/wallet/|apps/app-partner/src/features/(wallet/|account/partner-payout-card\.tsx$|order-management/))'; then echo 'finance=true' >> "$GITHUB_OUTPUT"; fi
-          if changed '^(apps/|packages/|services/(dsh|identity)/((clients|tools|contracts)/|project\.json$)|services/wlt/((clients|tools|contracts)/|project\.json$)|tools/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|package\.json$|nx\.json$|tsconfig\.base\.json$|biome\.json$)'; then echo 'node=true' >> "$GITHUB_OUTPUT"; fi
+          if changed '^(apps/|packages/|services/(dsh|identity|wlt)/((backend|database|clients|tools|contracts)/|project\.json$)|\.github/workflows/fast-guard\.yml$|tools/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|package\.json$|nx\.json$|tsconfig\.base\.json$|biome\.json$)'; then echo 'node=true' >> "$GITHUB_OUTPUT"; fi
 
       - name: Reject committed secrets
         run: node tools/security/verify-secrets.mjs
@@ -146,7 +146,7 @@ jobs:
           export BTHWANI_EXPECTED_DATABASE_USER=postgres
           export BTHWANI_EXPECTED_DATABASE_NAME=wlt_proof
           export WLT_TEST_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/wlt_proof?sslmode=disable"
-          financial_go_proof services/wlt/backend ./internal/storage/postgres -run "^(TestFundedPromotionPaymentPersistedReplayHasOneFrozenSplit|TestFundedStoreCashCollectionPostsPlatformSubsidyExactlyOnce|TestFieldAcquisitionEntitlementPostgresLifecycle|TestConcurrentFieldAcquisitionReplayHasOneLedgerEffect|TestPartnerStoreFinanceAndRecipientSettlementLifecycle|TestSettlementExportDownloadBlocksRevokedRecipient|TestCaptainWalletBalanceLockSerializesTransactions|TestCaptainCODCashDebitIsExactlyOnce|TestConcurrentCaptainOffersYieldOneCODHoldAndReleasableWinner|TestSettlementIntakeWithoutDestinationPreservesFieldLedger|TestSettlementIntakePartnerStoreScopeWithoutHold|TestStoreCommercialAgreementLifecycleAndOrderSnapshots|TestSelfServiceZeroCommissionAgreementAllFulfillmentModes|TestPaymentRetryLostResponseAndParallelWorkers|TestConcurrentMixedPaymentCollectionAndCancellationHasSingleWinner|TestLegacyCODReviewRequiresIndependentFundedEvidenceAndSettlesExactlyOnce|TestLegacyCODReleasedOnlyReservationAllowsEvidenceBoundSubmission)$" -count=1 -timeout 7m
+          financial_go_proof services/wlt/backend ./internal/storage/postgres -run "^(TestFundedPromotionPaymentPersistedReplayHasOneFrozenSplit|TestFundedStoreCashCollectionPostsPlatformSubsidyExactlyOnce|TestFieldAcquisitionEntitlementPostgresLifecycle|TestConcurrentFieldAcquisitionReplayHasOneLedgerEffect|TestPartnerStoreFinanceAndRecipientSettlementLifecycle|TestSettlementExportDownloadBlocksRevokedRecipient|TestCaptainWalletBalanceLockSerializesTransactions|TestCaptainCODCashDebitIsExactlyOnce|TestConcurrentCaptainOffersYieldOneCODHoldAndReleasableWinner|TestSettlementIntakeWithoutDestinationPreservesFieldLedger|TestSettlementIntakePartnerStoreScopeWithoutHold|TestStoreCommercialAgreementLifecycleAndOrderSnapshots|TestStoreRelationCommercialModelDefaultPersistedIsolation|TestSelfServiceZeroCommissionAgreementAllFulfillmentModes|TestPaymentRetryLostResponseAndParallelWorkers|TestFinancialStatementSnapshotLedgerReadbackAndActorIsolation|TestConcurrentMixedPaymentCollectionAndCancellationHasSingleWinner|TestLegacyCODReviewRequiresIndependentFundedEvidenceAndSettlesExactlyOnce|TestLegacyCODReleasedOnlyReservationAllowsEvidenceBoundSubmission)$" -count=1 -timeout 7m
           unset WLT_TEST_DATABASE_URL
           # Preserve historical COD, allocation, evidence and wallet postings
           # across the v60 -> v61 upgrade in a separate pristine CI database.
@@ -162,22 +162,25 @@ jobs:
           # the existing integration tests; never touch the persistent local DB.
           export BTHWANI_ENV=test
           export BTHWANI_FINANCIAL_PROOF_ISOLATED=1
+          # This disposable CI target matches the strict DSH fulfillment QA
+          # guard; it cannot point at the retained local Store/Order database.
+          export BTHWANI_DSH_QA_ISOLATED=1
           export DSH_FINANCIAL_HANDOFF_TEST_DATABASE_URL="$DSH_DATABASE_URL"
-          financial_go_proof services/dsh/backend ./internal/storage/postgres -run '^(TestPartnerFinanceAndPayoutStoreAuthorityBoundary|TestCaptainParallelDispatchThreeOnlyOneWins|TestFailedCustodyCaptainCannotReceiveAnotherDispatch|TestStoreCaptainDispatchReadRespectsDelegation|TestOrderHTTPActorScopeAndPartnerTransitionRetry|TestLocationHTTPRejectsAuthenticatedCrossActorAddressAndStoreAccess|TestNotificationsAreIsolatedByActorAndStore|TestCaptainMissionLocationOwnerLatestAndTerminalPurge|TestPendingCancellationRequestsPaginationOverHundred|TestStoreTypeCancellationPolicyAndLockedOrderTransition|TestFinancialHandoffUnknownOutcomeAndConcurrentWorkers|TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay|TestConcurrentSingleStoreCheckoutPersistsExactlyOneOrder|TestStoreRelationFreshBootstrapAndV171Upgrade|TestIndependentStorePreviewOwnershipAndChannelIsolation|TestIndependentStoreBannerDraftRejectsMarketplacePublication|TestMarketingPartnerParticipationSummaryDoesNotTruncateAfter100Campaigns|TestMarketplaceContentTargetRejectsPublishedIndependentOffer|TestClientShareRejectsIndependentStorePromotionsAndContent|TestOperatorStoreRelationScopedList)$' -count=1 -timeout 9m
-          unset DSH_FINANCIAL_HANDOFF_TEST_DATABASE_URL
+          financial_go_proof services/dsh/backend ./internal/storage/postgres -run '^(TestPartnerFinanceAndPayoutStoreAuthorityBoundary|TestCaptainParallelDispatchThreeOnlyOneWins|TestFailedCustodyCaptainCannotReceiveAnotherDispatch|TestStoreCaptainDispatchReadRespectsDelegation|TestOrderHTTPActorScopeAndPartnerTransitionRetry|TestLocationHTTPRejectsAuthenticatedCrossActorAddressAndStoreAccess|TestNotificationsAreIsolatedByActorAndStore|TestCaptainMissionLocationOwnerLatestAndTerminalPurge|TestPendingCancellationRequestsPaginationOverHundred|TestStoreTypeCancellationPolicyAndLockedOrderTransition|TestFinancialHandoffUnknownOutcomeAndConcurrentWorkers|TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay|TestConcurrentSingleStoreCheckoutPersistsExactlyOneOrder|TestStoreRelationFreshBootstrapAndV171Upgrade|TestIndependentStoreCanonicalCatalogAndOwnerScope|TestStoreFulfillmentModesIndependentScopeIsolatedPostgres|TestIndependentStorePreviewOwnershipAndChannelIsolation|TestIndependentStoreBannerDraftRejectsMarketplacePublication|TestMarketingPartnerParticipationSummaryDoesNotTruncateAfter100Campaigns|TestMarketplaceContentTargetRejectsPublishedIndependentOffer|TestClientShareRejectsIndependentStorePromotionsAndContent|TestOperatorStoreRelationScopedList)$' -count=1 -timeout 9m
+          unset DSH_FINANCIAL_HANDOFF_TEST_DATABASE_URL BTHWANI_DSH_QA_ISOLATED
           # Prove one 5,000-row Store Catalog run reaches persisted preview,
           # partial canonical Product/StoreOffer commit, isolated readback,
           # actor denial and replay in the disposable DSH child database.
           export BTHWANI_IMPORT_SCALE_PROOF_ISOLATED=1
           financial_go_proof services/dsh/backend ./internal/catalog -run '^TestStoreCatalogImport5000RowsPartialCommitReadback$' -count=1 -timeout 7m
           unset BTHWANI_IMPORT_SCALE_PROOF_ISOLATED
-          # Admission and prepublication visibility of both joining origins.
+          # Store admission, prepublication visibility, and safe retired Order upgrade.
           # The disposable PostgreSQL container owns an isolated parent database.
           docker exec "$container" psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c "CREATE DATABASE dsh_join_qa;"
           export BTHWANI_JOINING_QA_ISOLATED=1
           export BTHWANI_EXPECTED_DATABASE_NAME=dsh_join_qa
           export DSH_JOINING_QA_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19432/dsh_join_qa?sslmode=disable"
-          financial_go_proof services/dsh/backend ./internal/storage/postgres -run '^(TestSelfServiceCorrectionApprovalAndFinanceIsolationPostgres|TestApprovedJoiningToCustomerVisibleCatalog|TestDirectPartnerFirstStoreUnpublishedAndIdempotentPostgres)$' -count=1 -timeout 7m
+          financial_go_proof services/dsh/backend ./internal/storage/postgres -run '^(TestSelfServiceCorrectionApprovalAndFinanceIsolationPostgres|TestApprovedJoiningToCustomerVisibleCatalog|TestDirectPartnerFirstStoreUnpublishedAndIdempotentPostgres|TestStoreJoiningAdmissionPolicyControlsCreationPostgres|TestRetiredDirectOrderUpgradePreservesDurableData)$' -count=1 -timeout 7m
           unset DSH_JOINING_QA_DATABASE_URL BTHWANI_JOINING_QA_ISOLATED
           # Existing end-to-end adapter proof needs two pristine databases and
           # the real WLT HTTP handler. Never point it at the durable local world.
@@ -207,12 +210,12 @@ jobs:
           done
           test "$ready" = true
           export IDENTITY_DATABASE_URL="postgres://postgres:$password@127.0.0.1:19433/identity_proof?sslmode=disable"
-          (cd services/identity/backend && go test ./internal/session -run '^(TestHistoricalRefreshReconciliationUsesDatabaseTime|TestDevelopmentOperatorSessionUsesCanonicalInitialOperator|TestRevokeRoleSessionIsScopedToTargetActor|TestRefreshRejectsExpiredDatabaseLifetimeDespiteHostClockSkew|TestSessionCreationUsesDatabaseClockDespiteHostSkew|TestConcurrentRefreshUsesOnePersistedGeneration|TestSessionActorDeviceAndExpiryIsolation|TestOneActorDifferentSurfaceRolesRemainSeparated)$' -v -count=1 -timeout 6m) | tee "$RUNNER_TEMP/identity-postgres.log"
+          (cd services/identity/backend && go test ./internal/session -run '^(TestHistoricalRefreshReconciliationUsesDatabaseTime|TestDevelopmentOperatorSessionUsesCanonicalInitialOperator|TestRevokeRoleSessionIsScopedToTargetActor|TestRefreshRejectsExpiredDatabaseLifetimeDespiteHostClockSkew|TestSessionCreationUsesDatabaseClockDespiteHostSkew|TestConcurrentRefreshUsesOnePersistedGeneration|TestSessionActorDeviceAndExpiryIsolation|TestOneActorDifferentSurfaceRolesRemainSeparated|TestAccessResolutionCannotUsePermissionGrantedToRevokedSession)$' -v -count=1 -timeout 6m) | tee "$RUNNER_TEMP/identity-postgres.log"
           if grep -q -- '--- SKIP:' "$RUNNER_TEMP/identity-postgres.log"; then
             echo "::error::Identity PostgreSQL proof was skipped"
             exit 1
           fi
-          for name in TestHistoricalRefreshReconciliationUsesDatabaseTime TestDevelopmentOperatorSessionUsesCanonicalInitialOperator TestRevokeRoleSessionIsScopedToTargetActor TestRefreshRejectsExpiredDatabaseLifetimeDespiteHostClockSkew TestSessionCreationUsesDatabaseClockDespiteHostSkew TestConcurrentRefreshUsesOnePersistedGeneration TestSessionActorDeviceAndExpiryIsolation TestOneActorDifferentSurfaceRolesRemainSeparated; do
+          for name in TestHistoricalRefreshReconciliationUsesDatabaseTime TestDevelopmentOperatorSessionUsesCanonicalInitialOperator TestRevokeRoleSessionIsScopedToTargetActor TestRefreshRejectsExpiredDatabaseLifetimeDespiteHostClockSkew TestSessionCreationUsesDatabaseClockDespiteHostSkew TestConcurrentRefreshUsesOnePersistedGeneration TestSessionActorDeviceAndExpiryIsolation TestOneActorDifferentSurfaceRolesRemainSeparated TestAccessResolutionCannotUsePermissionGrantedToRevokedSession; do
             if ! grep -q -- "--- PASS: $name " "$RUNNER_TEMP/identity-postgres.log"; then
               echo "::error::Required Identity integration test did not pass: $name"
               exit 1
@@ -238,19 +241,31 @@ jobs:
         if: steps.changed.outputs.node == 'true'
         run: pnpm install --frozen-lockfile
 
+      - name: Reject orphaned JavaScript and TypeScript files
+        if: steps.changed.outputs.node == 'true'
+        run: pnpm exec knip --files
+
+      - name: Enforce cross-service import boundaries
+        if: steps.changed.outputs.node == 'true'
+        run: |
+          node --test tools/governance/check-service-import-boundaries.test.mjs
+          node tools/governance/check-service-import-boundaries.mjs
+
       - name: Protect checkout, finance, access, and user-facing handoffs
         if: steps.changed.outputs.node == 'true'
         run: >-
           node --test
           apps/app-captain/src/features/captain-operations/captain-no-live-tracking.test.mjs
-          apps/app-captain/src/features/captain-operations/captain-presence-policy.test.mjs
-          apps/app-captain/src/features/captain-operations/captain-session-scope.test.mjs
+          apps/app-captain/src/features/captain-operations/captain-presence-session.test.mjs
+          apps/app-captain/src/bootstrap/captain-session-scope.test.mjs
           apps/app-captain/src/features/captain-operations/captain-deliveries-session-scope.test.mjs
-          apps/app-captain/src/features/wallet/wallet-actor-isolation.test.mjs
-          apps/app-captain/src/features/captain-operations/captain-task-eligibility.test.mjs
+          apps/app-captain/src/features/wallet/wallet-session-isolation.test.mjs
+          apps/app-captain/src/features/wallet/captain-financial-session-races.test.mjs
+          apps/app-captain/src/features/captain-operations/captain-readiness.test.mjs
+          apps/app-captain/src/features/captain-operations/captain-offers-session.test.mjs
           apps/app-client/src/features/location-core/address-pagination.test.mjs
           apps/app-client/src/features/orders/order-session-scope.test.mjs
-          apps/app-client/src/features/orders/order-list-filter.test.mjs
+          apps/app-client/src/features/orders/orders-session.test.mjs
           apps/app-client/tests/cart-checkout-single-flight.test.mjs
           apps/app-client/tests/discovery-click-attribution.test.mjs
           apps/app-client/tests/multi-store-quote-consent.test.mjs
@@ -268,6 +283,21 @@ jobs:
           apps/control-panel/tests/historical-field-finance-readonly.test.mjs
           apps/control-panel/tests/retired-field-wallet-destination-boundary.test.mjs
           apps/control-panel/tests/marketing-budget-route.test.mjs
+          apps/app-captain/src/features/captain-operations/captain-home-session.test.mjs
+          apps/app-captain/src/features/captain-operations/captain-offer-mission-suppression.test.mjs
+          apps/app-captain/src/features/captain-operations/captain-offer-poll-freshness.test.mjs
+          apps/app-captain/src/features/captain-operations/captain-offer-response-freshness.test.mjs
+          apps/app-client/src/features/sharing/client-share-sheet-session.test.mjs
+          apps/app-partner/src/features/partner-onboarding/store-commercial-agreements-session.test.mjs
+          apps/app-partner/src/features/store-offer/catalog-offer-read-model.test.mjs
+          apps/app-partner/src/features/store-offer/catalog-product-pages.test.mjs
+          apps/app-partner/tests/partner-home-metrics-session.test.mjs
+          apps/control-panel/tests/store-workbench-relation.test.mjs
+          apps/control-panel/tests/central-catalog-product-file.test.mjs
+          apps/control-panel/tests/catalog-taxonomy-query.test.mjs
+          apps/control-panel/tests/store-products-search.test.mjs
+          apps/app-captain/src/features/wallet/captain-cash-in-session.test.mjs
+          apps/control-panel/tests/finance-report-csv-safety.test.mjs
 
       - name: Lint and typecheck affected projects
         if: steps.changed.outputs.node == 'true'

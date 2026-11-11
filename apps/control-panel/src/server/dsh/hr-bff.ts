@@ -1,5 +1,5 @@
-import { type HRAccessRequest as DshHRAccessRequest, type HRAccessRequestInput as DshHRAccessRequestInput, type HRAccessRequestMutationResponse as DshHRAccessRequestMutationResponse, type HRAccessRequestPage as DshHRAccessRequestPage, type HRAccessRequestReadResponse as DshHRAccessRequestReadResponse, type HREmployee as DshHREmployee, type HREmployeePage as DshHREmployeePage, type HRUpdateEmployeeRequest as DshHRUpdateEmployeeRequest, type HRUpdateEmployeeResponse as DshHRUpdateEmployeeResponse, type HRCreateEmployeeRequest } from "@bthwani/dsh";
-import { requestDshJson, validateAttributedMutationContext, type DshOperatorReadContext, type JoiningCaseMutationContext } from "./dsh-transport";
+import { type HRAccessRequest as DshHRAccessRequest, type HRAccessRequestInput as DshHRAccessRequestInput, type HRAccessRequestMutationResponse as DshHRAccessRequestMutationResponse, type HRAccessRequestPage as DshHRAccessRequestPage, type HRAccessRequestReadResponse as DshHRAccessRequestReadResponse, type HREmployee as DshHREmployee, type HREmployeePage as DshHREmployeePage, type HRUpdateEmployeeRequest as DshHRUpdateEmployeeRequest, type HRUpdateEmployeeResponse as DshHRUpdateEmployeeResponse, dshOperationPaths, type HRCreateEmployeeRequest } from "@bthwani/dsh";
+import { type DshOperatorReadContext, type JoiningCaseMutationContext, requestDshJson, validateAttributedMutationContext } from "./dsh-transport";
 
 export type HREmployee = DshHREmployee;
 export type HREmployeeInput = HRCreateEmployeeRequest;
@@ -115,9 +115,11 @@ export async function createHRAccessRequest(input: HRAccessRequestInput, context
   });
   return response.payload.request;
 }
-export async function decideHRAccessRequest(id: string, operation: "reject" | "provision", input: {expectedVersion:number;reason?:string}, context: JoiningCaseMutationContext): Promise<HRAccessRequest> {
+export async function rejectHRAccessRequest(id: string, input: {expectedVersion:number;reason?:string}, context: JoiningCaseMutationContext): Promise<HRAccessRequest> {
  validateAttributedMutationContext(context);
- const response=await requestDshJson<DshHRAccessRequestMutationResponse>("POST",`/dsh/hr/access-requests/${encodeURIComponent(id)}/${operation}`,input,{
+ const operation = dshOperationPaths.rejectHRAccessRequest;
+ const path = operation.path.replace("{requestId}", encodeURIComponent(id));
+ const response=await requestDshJson<DshHRAccessRequestMutationResponse>(operation.method,path,input,{
   "X-Acting-Actor-ID":context.operatorActorId,"X-Correlation-ID":context.correlationId,"Idempotency-Key":context.idempotencyKey,
  });
  return response.payload.request;

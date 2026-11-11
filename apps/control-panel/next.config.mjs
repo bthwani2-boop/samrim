@@ -26,10 +26,32 @@ const nextConfig = {
   // Keep Next dev from scaffolding agent instruction files inside this app.
   agentRules: false,
   async redirects() {
+    // The independent Store has no second operator registry. Keep historic
+    // bookmarks through the native router, not a duplicate workspace page.
+    const legacyStoreRegistry = {
+      source: "/independent-stores",
+      destination: "/partners?tab=directory&relationModel=INDEPENDENT_STORE",
+      permanent: false,
+    };
+    const legacyPartnerEarnings = {
+      source: "/finance/partner-earnings",
+      destination: "/finance/partner-commission-receivables",
+      permanent: false,
+    };
+    // These are navigation aliases, not independent workspace owners.
+    // Next preserves incoming query parameters (including store inspection
+    // and finance batch selection) while the destination enforces access.
+    const legacyRoutes = [
+      legacyStoreRegistry,
+      legacyPartnerEarnings,
+      { source: "/catalog-activity", destination: "/catalog?catalogView=activity", permanent: false },
+      { source: "/partners/stores", destination: "/partners?tab=directory", permanent: false },
+      { source: "/finance/beneficiary-settlement", destination: "/finance/beneficiary-settlement/partners", permanent: false },
+    ];
     // Canonicalize browser navigation in local development only.
     const canonicalOrigin = process.env.CONTROL_PANEL_PUBLIC_ORIGIN?.trim();
-    if (process.env.NODE_ENV !== "development" || !/^http:\/\/localhost:\d+$/.test(canonicalOrigin ?? "")) return [];
-    return [{
+    if (process.env.NODE_ENV !== "development" || !/^http:\/\/localhost:\d+$/.test(canonicalOrigin ?? "")) return legacyRoutes;
+    return [...legacyRoutes, {
       source: "/:path*",
       has: [
         { type: "host", value: "127\\.0\\.0\\.1" },

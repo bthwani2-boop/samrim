@@ -5,6 +5,14 @@ import { useAppearanceTheme } from "./appearance";
  * Read-only connectivity notice. Do not trigger a request or financial retry
  * from a network event: the server remains the source of truth.
  */
+// A single stale network signal must not report a confirmed offline state.
+export function isConfirmedOffline(
+  isConnected: boolean | null | undefined,
+  isInternetReachable: boolean | null | undefined,
+): boolean {
+  return isConnected === false && isInternetReachable === false;
+}
+
 export function BthwaniNetworkStatusNotice({ top, offline }: { top: number; offline: boolean }) {
   const theme = useAppearanceTheme();
   if (!offline) return null;

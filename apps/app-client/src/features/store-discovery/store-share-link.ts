@@ -17,11 +17,17 @@ export function buildPublicStoreShareURL(
   allowLocalPreview = false,
 ): string | null {
   if (!/^[A-Za-z0-9_-]{1,150}$/.test(storeId) || !/^[A-Za-z0-9_-]{1,150}$/.test(serviceCityId)) return null;
+  if (productId.length > 150 || Array.from(productId).some((character) => {
+    const code = character.charCodeAt(0);
+    return code < 32 || code === 127;
+  })) return null;
   if (!publicOrigin?.trim()) return null;
   try {
     const origin = new URL(publicOrigin.trim());
     const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(origin.hostname);
-    const publicHTTPS = origin.protocol === "https:" && !loopback;
+    // Public shared links require a DNS host; URL normalizes alternate IP encodings.
+    const literalIP = /^\d+(?:\.\d+){3}$/.test(origin.hostname) || origin.hostname.startsWith("[");
+    const publicHTTPS = origin.protocol === "https:" && !loopback && !literalIP;
     const localPreview = allowLocalPreview && origin.protocol === "http:" && loopback;
     if (!publicHTTPS && !localPreview) return null;
     if (origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) return null;

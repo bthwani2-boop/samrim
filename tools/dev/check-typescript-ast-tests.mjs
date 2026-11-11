@@ -1,9 +1,10 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { resolveTrustedExecutable } from "./trusted-executables.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "../..");
-const tracked = execFileSync("git", ["ls-files", "-z", "--", "*.test.mjs", "*.test.js"], {
+const tracked = execFileSync(resolveTrustedExecutable("git"), ["ls-files", "-z", "--", "*.test.mjs", "*.test.js"], {
   cwd: repositoryRoot,
   encoding: "utf8",
 }).split("\0").filter(Boolean);

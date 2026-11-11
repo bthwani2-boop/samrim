@@ -6,4 +6,25 @@ import { currentIdentityState, restoreIdentitySession, subscribeIdentitySession 
 import { createCaptainTabOptions } from "../../src/shell/captain-shell";
 
 const identity = { restoreIdentitySession, currentIdentityState, subscribe: subscribeIdentitySession };
-export default function CaptainAppLayout() { const router = useRouter(); const pathname = usePathname(); const theme = useAppearanceTheme(); const tabOptions = useMemo(() => createCaptainTabOptions(theme), [theme]); const onUnauthenticated = useCallback(() => router.replace(pathname === "/" ? "/" : `/?returnTo=${encodeURIComponent(pathname)}` as Href), [pathname, router]); return <AuthenticatedMobileBoundary binding={identity} onUnauthenticated={onUnauthenticated}><Tabs screenOptions={tabOptions}><Tabs.Screen name="home" options={{ title: "الرئيسية", tabBarAccessibilityLabel: "الخريطة والمهمة الحالية" }} /><Tabs.Screen name="wallet" options={{ title: "المحفظة", tabBarAccessibilityLabel: "محفظة الكابتن" }} /><Tabs.Screen name="account" options={{ title: "حسابي", tabBarAccessibilityLabel: "حساب الكابتن" }} /></Tabs></AuthenticatedMobileBoundary>; }
+
+export default function CaptainAppLayout() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const theme = useAppearanceTheme();
+  const tabOptions = useMemo(() => createCaptainTabOptions(theme), [theme]);
+  const onUnauthenticated = useCallback(
+    () => router.replace(pathname === "/" ? "/" : `/?returnTo=${encodeURIComponent(pathname)}` as Href),
+    [pathname, router],
+  );
+
+  return (
+    <AuthenticatedMobileBoundary binding={identity} onUnauthenticated={onUnauthenticated}>
+      <Tabs screenOptions={tabOptions}>
+        <Tabs.Screen name="home" options={{ title: "الرئيسية", tabBarAccessibilityLabel: "الخريطة والمهمة الحالية" }} />
+        <Tabs.Screen name="deliveries" options={{ title: "التوصيلات", tabBarAccessibilityLabel: "التوصيلات الحالية" }} />
+        <Tabs.Screen name="wallet" options={{ title: "المحفظة", tabBarAccessibilityLabel: "محفظة الكابتن" }} />
+        <Tabs.Screen name="account" options={{ title: "حسابي", tabBarAccessibilityLabel: "حساب الكابتن" }} />
+      </Tabs>
+    </AuthenticatedMobileBoundary>
+  );
+}

@@ -2,8 +2,8 @@
 import type { StoreAccessGrant } from "@bthwani/dsh";
 import Link from "next/link";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import type { OperatorPartnerTeamPage } from "../../server/dsh/joining-bff";
 import { identityFetch } from "../../session/identity-fetch";
-import type { OperatorPartnerTeamPage } from "../../server/dsh/dsh-bff";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 
 const permissionLabels: Record<string,string> = {

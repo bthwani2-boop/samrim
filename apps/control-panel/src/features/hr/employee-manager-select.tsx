@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { HREmployee, HREmployeePage } from "../../server/dsh/dsh-bff";
+import type { HREmployee, HREmployeePage } from "../../server/dsh/hr-bff";
 import { identityFetch } from "../../session/identity-fetch";
 
 type Props = Readonly<{

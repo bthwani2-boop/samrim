@@ -1,20 +1,24 @@
 import { typography } from "@bthwani/design-system";
 import { BthwaniIcon, type MobileIconName, useAppearanceTheme } from "@bthwani/design-system/native";
 import {
-  createDshMobileClient, formatMoney, scopedCatalogInventorySummary, type CatalogInventorySummary, type CatalogStoreOffer, type Order,
-  type PartnerAccessibleStore, type PartnerOrderAttentionCounts, type PartnerScopedFinanceStore, type PartnerStoreOrderSummary,
+  type CatalogInventorySummary, type CatalogStoreOffer, formatMoney, type Order,
+  type PartnerAccessibleStore, type PartnerOrderAttentionCounts, type PartnerScopedFinanceStore,
+  type PartnerStoreOrderSummary, scopedCatalogInventorySummary,
 } from "@bthwani/dsh";
-import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { createPartnerDshClient } from "../../bootstrap/dsh-client";
 
-import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { isMarketplaceStore } from "../../shell/partner-authority";
-import { catalogPublishedAvailability, isOfferStockout } from "../store-offer/inventory-stockout";
-import { agreementReadinessMessage, type StoreAgreementReadback } from "./store-agreement-readiness";
+import { catalogPublishedAvailability, isOfferStockout, scopedPartnerPopularOffers } from "../store-offer/catalog-offer-read-model";
+
 import { nextStoreSetupFocus, storeSetupProgress } from "./partner-onboarding-next-step";
-import { scopedPartnerPopularOffers } from "./partner-home-popularity";
+import { partnerSetupSessionKey } from "./partner-setup-session-scope";
+import { agreementReadinessMessage, type StoreAgreementReadback } from "./store-agreement-readiness";
+
+const currentPartnerSessionKey = () => partnerSetupSessionKey(currentIdentityState());
 
 type Data = Readonly<{
   attention: PartnerOrderAttentionCounts | null;
@@ -74,7 +78,10 @@ export function recentOrderDays(orders: ReadonlyArray<Pick<Order, "createdAt">>,
     const date = new Date(order.createdAt);
     if (Number.isNaN(date.getTime())) continue;
     const index = lookup.get(adenDay(date));
-    if (index !== undefined) dates[index]!.count++;
+    if (index !== undefined) {
+      const day = dates[index];
+      if (day) day.count++;
+    }
   }
   return dates;
 }
@@ -96,9 +103,14 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const router = useRouter();
-  const [data, setData] = useState<Data>(empty);
+  const sessionKey = useSyncExternalStore(subscribeIdentitySession, currentPartnerSessionKey, () => "");
+  const scopeKey = JSON.stringify([sessionKey, store.id]);
+  const [storedData, setStoredData] = useState<Data>(empty);
+  const [visibleScopeKey, setVisibleScopeKey] = useState("");
   const [loading, setLoading] = useState(true);
+  const data = sessionKey && currentPartnerSessionKey() === sessionKey && visibleScopeKey === scopeKey ? storedData : empty;
   const marketplace = isMarketplaceStore(store);
+  const independent = store.relationModel === "INDEPENDENT_STORE";
   const canOrders = marketplace && (store.owned || store.permissions.includes("orders"));
   const canCatalog = store.owned || store.permissions.includes("catalog");
   const canPromotions = marketplace && (store.owned || store.permissions.includes("promotions"));
@@ -106,18 +118,19 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
 
   useFocusEffect(useCallback(() => {
     let active = true;
-    setData(empty);
+    setStoredData(empty);
+    setVisibleScopeKey("");
     setLoading(true);
-    const identity = currentIdentityState();
-    const actor = identity.kind === "authenticated" ? identity.identity.subject : "";
+    const stillCurrent = () => active && Boolean(sessionKey) && currentPartnerSessionKey() === sessionKey;
     const base = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-    if (!actor || !base) {
+    if (!sessionKey || !base) {
       setLoading(false);
       return () => { active = false; };
     }
-    const client = createDshMobileClient(base, { cryptoRandomUUID: () => Crypto.randomUUID() });
+    const client = createPartnerDshClient();
     void (async () => {
       const token = await getUsableIdentityAccessToken();
+      if (!stillCurrent()) return;
       const [orders, offers, financial, weekly, popular, inventory] = await Promise.allSettled([
         canOrders ? client.listPartnerOrders(token, { storeIds: [store.id], limit: 24 }) : Promise.resolve(null),
         canCatalog ? client.readOwnStoreOffers(token, store.id, 100) : Promise.resolve(null),
@@ -128,8 +141,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
           : Promise.resolve(null),
         canCatalog ? client.readOwnStoreInventorySummary(token, store.id) : Promise.resolve(null),
       ]);
-      const current = currentIdentityState();
-      if (!active || current.kind !== "authenticated" || current.identity.subject !== actor) return;
+      if (!stillCurrent()) return;
       const orderPage = orders.status === "fulfilled" ? orders.value : null;
       const offerPage = offers.status === "fulfilled" ? offers.value : null;
       const financePage = financial.status === "fulfilled" ? financial.value : null;
@@ -139,7 +151,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
       const weeklySummary = weeklyPage?.summary;
       const verifiedWeekly = weeklySummary?.storeId === store.id && weeklySummary.period === "7d" &&
         Number.isSafeInteger(weeklySummary.totalOrders) && weeklySummary.totalOrders >= 0 ? weeklySummary : null;
-      setData({
+      setStoredData({
         attention: orderPage?.attention ?? null,
         recentOrders: orderPage?.orders ?? null,
         ordersPartial: Boolean(orderPage?.nextCursor),
@@ -150,15 +162,16 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
         offersPartial: Boolean(offerPage?.nextCursor),
         finance: financePage?.summary.stores.find(item => item.storeId === store.id) ?? null,
       });
+      setVisibleScopeKey(scopeKey);
       setLoading(false);
-    })().catch(() => { if (active) setLoading(false); });
+    })().catch(() => { if (stillCurrent()) setLoading(false); });
     return () => { active = false; };
-  }, [store.id, store.owned, store.serviceCityId, store.publicationState, canCatalog, canOrders, canFinance, marketplace]));
+  }, [sessionKey, scopeKey, store.id, store.owned, store.serviceCityId, store.publicationState, canCatalog, canOrders, canFinance, marketplace]));
 
   const stockout = data.offers?.filter(isOfferStockout) ?? [];
   const unavailable = data.offers?.filter(item => item.publicationState === "published" && !item.availability) ?? [];
   const catalogReady = catalogPublishedAvailability(data.offers, data.offersPartial);
-  const financialReady = Boolean(data.finance?.attributionComplete);
+  const verifiedFinance = data.finance?.attributionComplete ? data.finance : null;
   const orders = data.recentOrders ?? [];
   const groups = groupOrders(orders);
   const recentDays = recentOrderDays(orders, new Date());
@@ -214,8 +227,8 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
           {canOrders ? tile("الطلبات الجديدة", data.attention?.newOrders.toLocaleString("ar-YE") ?? "—", data.attention ? "تحتاج قبولًا أو مراجعة" : "تعذر قراءة العدد", "orders", "/orders" as Href) : null}
           {canOrders ? tile("بانتظار التسليم", data.attention?.awaitingDispatch.toLocaleString("ar-YE") ?? "—", "طابور المتجر الحالي", "deliveries", "/orders" as Href) : null}
           {canOrders ? tile("طلبات ٧ أيام", data.weeklyOrderSummary?.totalOrders.toLocaleString("ar-YE") ?? "—", data.weeklyOrderSummary ? "جميع طلبات هذا المتجر المنشأة خلال الفترة، من DSH" : "تعذر قراءة ملخص المتجر الكامل", "orders", "/orders" as Href) : null}
-          {canCatalog ? tile("المنتجات المتاحة", data.inventory?.availableOffers.toLocaleString("ar-YE") ?? "—", data.inventory ? (marketplace ? "من جميع عروض المتجر المنشورة، DSH" : "من الكتالوج الخاص؛ ليس نشرًا للعملاء") : "تعذر قراءة إجمالي المخزون", "cart", "/products" as Href) : null}
-          {canFinance && store.owned ? tile("المستحقات المكتسبة", financialReady ? formatMoney(data.finance!.earnedMinor, "YER") : "—", financialReady ? "من ملخص التسوية الموثق" : "لم تكتمل قراءة المالية", "wallet", "/wallet" as Href) : null}
+          {canCatalog ? tile("المنتجات المتاحة", data.inventory?.availableOffers.toLocaleString("ar-YE") ?? "—", data.inventory ? (marketplace ? "من جميع عروض المتجر المنشورة، DSH" : independent ? "من الكتالوج الخاص؛ ليس نشرًا للعملاء" : "طريقة عمل المتجر غير مؤكدة؛ لا تعتمد نشر الكتالوج") : "تعذر قراءة إجمالي المخزون", "cart", "/products" as Href) : null}
+          {canFinance && store.owned ? tile("المستحقات المكتسبة", verifiedFinance ? formatMoney(verifiedFinance.earnedMinor, "YER") : "—", verifiedFinance ? "من ملخص التسوية الموثق" : "لم تكتمل قراءة المالية", "wallet", "/wallet" as Href) : null}
         </View>
 
         <View style={styles.panel}>
@@ -242,10 +255,10 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
             </Pressable> : null}
           </View> : null}
           <View style={styles.setupGrid}>
-            {store.owned ? action("هوية المتجر", !marketplace ? "معاينة خاصة؛ النشر العام غير مفعل" : store.publicationState === "published" ? "المتجر منشور للعملاء" : "مراجعة بيانات المتجر والنشر", "/store?section=settings" as Href, "store", marketplace && store.publicationState === "published") : null}
-            {canCatalog ? action("إعداد الكتالوج", data.offers === null ? "البيانات غير متاحة حاليًا" : catalogReady === null ? "لم تكتمل قراءة الكتالوج؛ راجع بقية المنتجات" : catalogReady ? (marketplace ? "يوجد منتجات متاحة للطلب" : "المنتجات جاهزة للمعاينة الخاصة؛ الطلب المباشر غير مفعل") : "راجع المنتجات والأسعار", "/products" as Href, "cart", catalogReady) : null}
+            {store.owned ? action("هوية المتجر", marketplace ? (store.publicationState === "published" ? "المتجر منشور للعملاء" : "مراجعة بيانات المتجر والنشر") : independent ? "معاينة خاصة؛ النشر العام غير مفعل" : "تعذر التحقق من طريقة عمل المتجر", "/store?section=settings" as Href, "store", marketplace && store.publicationState === "published") : null}
+            {canCatalog ? action("إعداد الكتالوج", data.offers === null ? "البيانات غير متاحة حاليًا" : catalogReady === null ? "لم تكتمل قراءة الكتالوج؛ راجع بقية المنتجات" : catalogReady ? (marketplace ? "يوجد منتجات متاحة للطلب" : independent ? "المنتجات جاهزة للمعاينة الخاصة؛ الطلب المباشر غير مفعل" : "طريقة عمل المتجر غير مؤكدة؛ الطلب غير متاح") : "راجع المنتجات والأسعار", "/products" as Href, "cart", catalogReady) : null}
             {canOperate ? action("إعدادات التشغيل", operationalKnown ? "استقبال الطلبات: " + operationalState : "تعذر قراءة حالة التشغيل", "/store?section=operations" as Href, "deliveries") : null}
-            {marketplace && store.owned ? action("الاتفاقية التجارية", agreementReadinessMessage(commercialAgreement), "/store?section=commercial" as Href, "wallet", commercialAgreement === null || commercialAgreement === "UNAVAILABLE" ? null : commercialAgreement === "ACTIVE") : null}
+            {(marketplace || independent) && store.owned ? action("الاتفاقية التجارية", agreementReadinessMessage(commercialAgreement), "/store?section=commercial" as Href, "wallet", commercialAgreement === null || commercialAgreement === "UNAVAILABLE" ? null : commercialAgreement === "ACTIVE") : null}
             {canPromotions ? action("العروض", "تحرير العروض المتاحة للمتجر", "/store?section=promotions" as Href, "offers") : null}
             {store.owned ? action("الموظفين", "دعوة الموظفين وإدارة صلاحياتهم", "/employees" as Href, "account") : null}
             {marketplace && store.owned ? action("كباتن المتجر", "إدارة عضويات كباتن المتجر", "/store?section=team" as Href, "deliveries") : null}

@@ -2,27 +2,9 @@ package runtime
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 	"testing"
 )
-
-func TestManagedRoleRecoveryMigrationIsRegistered(t *testing.T) {
-	directory := filepath.Join("..", "..", "..", "database", "migrations")
-	records, err := loadMigrationRecords(directory)
-	if err != nil {
-		t.Fatalf("load identity migrations: %v", err)
-	}
-	if len(records) < 29 {
-		t.Fatalf("identity migration count = %d, want at least 29 including recovery and HR permissions", len(records))
-	}
-	if recovery := records[27]; recovery.Version != 28 || recovery.Name != "028_operator_recovery_reservation.sql" {
-		t.Fatalf("operator recovery migration = %#v, want v28 reservation", recovery)
-	}
-	if hrPermission := records[28]; hrPermission.Version != 29 || hrPermission.Name != "029_operator_hr_permission.sql" {
-		t.Fatalf("HR permission migration = %#v, want v29 operator HR permission", hrPermission)
-	}
-}
 
 func TestRunMigrationsBlocksProductionBeforeDatabaseAccess(t *testing.T) {
 	err := RunMigrations(

@@ -72,14 +72,24 @@ BEGIN
       RAISE EXCEPTION 'unsafe database authority for %',role_name;
     END IF;
   END LOOP;
-  IF NOT has_table_privilege('samrim_identity_runtime','public.identity_actors','SELECT,INSERT,UPDATE')
+  -- PostgreSQL treats comma-separated privilege names as ANY, not ALL.
+  -- Require each positive privilege explicitly; keep ANY for denial checks.
+  IF NOT has_table_privilege('samrim_identity_runtime','public.identity_actors','SELECT')
+    OR NOT has_table_privilege('samrim_identity_runtime','public.identity_actors','INSERT')
+    OR NOT has_table_privilege('samrim_identity_runtime','public.identity_actors','UPDATE')
     OR has_table_privilege('samrim_identity_runtime','public.identity_security_audit','UPDATE')
     OR has_table_privilege('samrim_identity_runtime','public.identity_security_audit','DELETE')
     OR has_table_privilege('samrim_identity_runtime','public.identity_schema_migrations','INSERT')
     OR NOT has_table_privilege('samrim_identity_maintenance','public.identity_security_audit','DELETE')
     OR has_table_privilege('samrim_identity_maintenance','public.identity_security_audit','INSERT')
-    OR NOT has_table_privilege('samrim_dsh_runtime','dsh.stores','SELECT,INSERT,UPDATE,DELETE')
-    OR NOT has_table_privilege('samrim_wlt_runtime','wlt.payment_intents','SELECT,INSERT,UPDATE,DELETE')
+    OR NOT has_table_privilege('samrim_dsh_runtime','dsh.stores','SELECT')
+    OR NOT has_table_privilege('samrim_dsh_runtime','dsh.stores','INSERT')
+    OR NOT has_table_privilege('samrim_dsh_runtime','dsh.stores','UPDATE')
+    OR NOT has_table_privilege('samrim_dsh_runtime','dsh.stores','DELETE')
+    OR NOT has_table_privilege('samrim_wlt_runtime','wlt.payment_intents','SELECT')
+    OR NOT has_table_privilege('samrim_wlt_runtime','wlt.payment_intents','INSERT')
+    OR NOT has_table_privilege('samrim_wlt_runtime','wlt.payment_intents','UPDATE')
+    OR NOT has_table_privilege('samrim_wlt_runtime','wlt.payment_intents','DELETE')
     OR has_table_privilege('samrim_dsh_runtime','wlt.payment_intents','SELECT')
     OR NOT has_table_privilege('samrim_wlt_runtime','dsh.commerce_financial_handoff_outbox','SELECT')
     OR NOT has_table_privilege('samrim_wlt_runtime','dsh.commerce_orders','SELECT')

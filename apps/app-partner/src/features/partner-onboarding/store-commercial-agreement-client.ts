@@ -1,7 +1,8 @@
 import * as Crypto from "expo-crypto";
 
-import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
-import { normalizeHistoricalCommissionReadback } from "./store-commercial-agreement-legacy";
+import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { partnerSetupSessionKey } from "./partner-setup-session-scope";
+import { normalizeHistoricalCommissionReadback } from "./store-agreement-readiness";
 
 type StoreCommercialAgreementRate = Readonly<{
   fulfillmentMode: string;
@@ -87,8 +88,18 @@ function isAgreement(value: unknown): value is StoreCommercialAgreement {
     Number.isSafeInteger(rate.commissionRateBps) && rate.commissionRateBps >= 0 && rate.commissionRateBps <= 10000);
 }
 
-async function request<T>(path: string, method: "GET" | "POST", body?: unknown, mutation?: Readonly<{ idempotencyKey: string; correlationID: string }>): Promise<T> {
+async function request<T>(
+  path: string,
+  method: "GET" | "POST",
+  body?: unknown,
+  mutation?: Readonly<{ idempotencyKey: string; correlationID: string }>,
+  expectedSession?: string,
+): Promise<T> {
+  const requestedSession = expectedSession ?? partnerSetupSessionKey(currentIdentityState());
+  const sessionCurrent = () => Boolean(requestedSession) && partnerSetupSessionKey(currentIdentityState()) === requestedSession;
+  if (!sessionCurrent()) throw new Error("PARTNER_AGREEMENT_SESSION_CHANGED");
   const token = await getUsableIdentityAccessToken();
+  if (!sessionCurrent()) throw new Error("PARTNER_AGREEMENT_SESSION_CHANGED");
   const response = await fetch(`${dshBaseUrl()}${path}`, {
     method,
     headers: {
@@ -100,6 +111,7 @@ async function request<T>(path: string, method: "GET" | "POST", body?: unknown, 
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const payload: unknown = await response.json().catch(() => null);
+  if (!sessionCurrent()) throw new Error("PARTNER_AGREEMENT_SESSION_CHANGED");
   if (!response.ok) {
     const error = isRecord(payload) ? (payload as DshErrorPayload).error : undefined;
     throw new StoreCommercialAgreementRequestError(
@@ -111,13 +123,19 @@ async function request<T>(path: string, method: "GET" | "POST", body?: unknown, 
   return payload as T;
 }
 
-export async function readOwnStoreCommercialAgreements(storeID: string): Promise<ReadonlyArray<StoreCommercialAgreement>> {
+export async function readOwnStoreCommercialAgreements(
+  storeID: string,
+  expectedSession?: string,
+): Promise<ReadonlyArray<StoreCommercialAgreement>> {
   const normalizedStoreID = storeID.trim();
   if (!normalizedStoreID) throw new StoreCommercialAgreementRequestError(400, "INVALID_INPUT", "Store is required");
-  const payload = await request<{ agreements?: unknown }>(`/dsh/partner/stores/${encodeURIComponent(normalizedStoreID)}/commercial-agreements`, "GET");
+  const payload = await request<{ agreements?: unknown }>(
+    `/dsh/partner/stores/${encodeURIComponent(normalizedStoreID)}/commercial-agreements`,
+    "GET", undefined, undefined, expectedSession,
+  );
   const agreements = Array.isArray(payload?.agreements)
     ? payload.agreements.map(normalizeHistoricalCommissionReadback) : null;
-  if (!agreements || !agreements.every(isAgreement)) {
+  if (!agreements?.every(isAgreement)) {
     throw new StoreCommercialAgreementRequestError(502, "INVALID_RESPONSE", "DSH returned an invalid Store commercial agreement list");
   }
   if (agreements.some((agreement) => agreement.storeId !== normalizedStoreID)) {
@@ -132,6 +150,7 @@ export async function acceptOwnStoreCommercialAgreement(
   input: StoreCommercialAgreementAcceptance,
   idempotencyKey: string,
   correlationID: string,
+  expectedSession?: string,
 ): Promise<StoreCommercialAgreement> {
   const normalizedStoreID = storeID.trim();
   if (!normalizedStoreID) throw new StoreCommercialAgreementRequestError(400, "INVALID_INPUT", "Store is required");
@@ -140,6 +159,7 @@ export async function acceptOwnStoreCommercialAgreement(
     "POST",
     input,
     { idempotencyKey, correlationID },
+    expectedSession,
   );
   if (!isAgreement(payload?.agreement)) {
     throw new StoreCommercialAgreementRequestError(502, "INVALID_RESPONSE", "DSH returned an invalid Store commercial agreement acceptance");

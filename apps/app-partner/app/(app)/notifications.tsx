@@ -1,8 +1,8 @@
 import { useAppearanceTheme } from "@bthwani/design-system/native";
+import { OrderAlertPreferences } from "@bthwani/push-device/order-alert-preferences";
 import { SafeAreaView } from "react-native-safe-area-context";
-
+import { currentIdentityState, subscribeIdentitySession } from "../../src/bootstrap/identity";
 import { NotificationsInbox } from "../../src/features/notifications/notifications-inbox";
-import { OrderAlertPreferences } from "../../src/features/notifications/order-alert-preferences";
 import { PartnerAccessInvitationsCard } from "../../src/features/partner-onboarding/partner-access-invitations";
 import { PartnerScrollScreen } from "../../src/shell/partner-shell";
 
@@ -13,7 +13,7 @@ export default function PartnerNotificationsRoute() {
     <PartnerScrollScreen>
       <NotificationsInbox />
       <PartnerAccessInvitationsCard />
-      <OrderAlertPreferences />
+      <OrderAlertPreferences currentIdentityState={currentIdentityState} subscribeIdentitySession={subscribeIdentitySession} />
     </PartnerScrollScreen>
   </SafeAreaView>;
 }

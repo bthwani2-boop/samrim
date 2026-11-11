@@ -6,12 +6,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
+import { listOwnDeliveryAddresses } from "../location-core/delivery-address-client";
+import { PremiumFulfillmentSelector, PremiumStickyFooter, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
 import { useServiceCityScope } from "../service-city/service-city-scope";
-import { evaluateStoreServiceability, listOwnDeliveryAddresses, readPublishedStore } from "../store-discovery/store-discovery-client";
+import { buildFullStorefrontPath, resolveFullStorefrontCityID } from "../store-discovery/full-storefront-model";
+import { readPublishedStore } from "../store-discovery/store-discovery-client";
 import { CartCheckout, type CheckoutFooterState } from "./cart-checkout";
+import { evaluateStoreServiceability } from "./cart-client";
 import { isClientCartScopeCurrent, subscribeClientCartActorChanges } from "./cart-session-scope";
 import { readSavedFulfillmentMode, resolveFulfillmentChoice, saveFulfillmentMode } from "./fulfillment-choice";
-import { PremiumFulfillmentSelector, PremiumStickyFooter, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
 
 const fulfillmentDetails: Readonly<Record<CustomerFulfillmentMode, string>> = {
   BTHWANI_CAPTAIN: "كابتن من بثواني",
@@ -36,13 +39,16 @@ type ServiceabilityState =
   | { kind: "ready"; addressId: string; result: ServiceabilityResponse }
   | { kind: "error"; addressId: string };
 
-export default function ClientCartScreen() {
+export default function ClientCartScreen({ storefront }: Readonly<{
+  storefront: { cityID: string; productID: string } | null;
+}>) {
   const { storeId: rawStoreId, fulfillmentMode: rawFulfillmentMode, promotionCode: rawPromotionCode } = useLocalSearchParams<{ storeId?: string | string[]; fulfillmentMode?: string | string[]; promotionCode?: string | string[] }>();
   const storeId = Array.isArray(rawStoreId) ? rawStoreId[0] ?? "" : rawStoreId ?? "";
   const requestedFulfillmentMode = Array.isArray(rawFulfillmentMode) ? rawFulfillmentMode[0] ?? "" : rawFulfillmentMode ?? "";
   const requestedPromotionCode = Array.isArray(rawPromotionCode) ? rawPromotionCode[0] ?? "" : rawPromotionCode ?? "";
   const router = useRouter();
-  const { selectedCityID } = useServiceCityScope();
+  const { cities, selectedCityID: savedCityID } = useServiceCityScope();
+  const selectedCityID = storefront ? resolveFullStorefrontCityID(storefront.cityID, savedCityID, cities) : savedCityID;
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<CartScreenState>({ kind: "loading" });
@@ -69,6 +75,13 @@ export default function ClientCartScreen() {
     });
   }, []);
   const openRequiredAddress = useCallback(() => setExpandedAddresses(true), []);
+  const returnToStore = () => {
+    if (storefront) {
+      router.replace(buildFullStorefrontPath(storeId, storefront.cityID, { productID: storefront.productID }) as Href);
+    } else {
+      router.push(("/store/" + encodeURIComponent(storeId)) as Href);
+    }
+  };
   const loadRequestID = useRef(0);
   const requestedFulfillmentModeRef = useRef(requestedFulfillmentMode);
   requestedFulfillmentModeRef.current = requestedFulfillmentMode;
@@ -192,11 +205,11 @@ export default function ClientCartScreen() {
     return <View style={styles.state} accessibilityLabel="جارٍ تجهيز السلة"><BthwaniSkeleton width="35%" height={28} /><BthwaniSkeleton height={88} /><BthwaniSkeleton height={152} /></View>;
   }
   if (state.kind === "error") {
-    return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر تجهيز السلة</Text><Text style={styles.muted}>تحقق من الاتصال أو أهلية المتجر ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /><BthwaniButton label="العودة إلى المتجر" onPress={() => router.back()} variant="secondary" /></View>;
+    return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر تجهيز السلة</Text><Text style={styles.muted}>تحقق من الاتصال أو أهلية المتجر ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /><BthwaniButton label="العودة إلى المتجر" onPress={storefront ? returnToStore : () => router.back()} variant="secondary" /></View>;
   }
 
   const availableFulfillmentModes = availableCustomerFulfillmentModes(state.store.fulfillmentModes);
-  if (availableFulfillmentModes.length === 0) return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text style={styles.title}>لا تتوفر طريقة استلام مدعومة لهذا المتجر</Text><Text style={styles.muted}>اختر متجرًا آخر؛ خيارات هذا المتجر لا تسمح حاليًا بإتمام طلب العميل.</Text><BthwaniButton label="العودة إلى المتجر" onPress={() => router.push(`/store/${encodeURIComponent(state.store.id)}` as Href)} variant="secondary" /></View>;
+  if (availableFulfillmentModes.length === 0) return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text style={styles.title}>لا تتوفر طريقة استلام مدعومة لهذا المتجر</Text><Text style={styles.muted}>اختر متجرًا آخر؛ خيارات هذا المتجر لا تسمح حاليًا بإتمام طلب العميل.</Text><BthwaniButton label="العودة إلى المتجر" onPress={returnToStore} variant="secondary" /></View>;
   const serviceableAddressId = fulfillmentMode !== null && fulfillmentMode !== "CUSTOMER_PICKUP" && serviceability.kind === "ready" && serviceability.result.status === "SERVICEABLE" ? serviceability.addressId : undefined;
   const chosenAddress = serviceability.kind === "ready" ? addressesState.addresses.find((address) => address.id === serviceability.addressId) : undefined;
   const selectedOrderability = state.store.orderabilityByMode.find((item) => item.fulfillmentMode === fulfillmentMode);
@@ -208,7 +221,7 @@ export default function ClientCartScreen() {
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
         <View style={styles.header}>
           <Text style={styles.title}>تأكيد الطلب</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى المتجر" onPress={() => router.push(("/store/" + encodeURIComponent(state.store.id)) as Href)} style={styles.headerBack}>
+          <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى المتجر" onPress={returnToStore} style={styles.headerBack}>
             <BthwaniIcon name="back" color={theme.interactiveText} size={sizing.iconLg} />
           </Pressable>
         </View>

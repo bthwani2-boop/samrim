@@ -2,7 +2,7 @@
 
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { HREmployee, HREmployeeInput, HREmployeePage } from "../../server/dsh/dsh-bff";
+import type { HREmployee, HREmployeeInput, HREmployeePage } from "../../server/dsh/hr-bff";
 import { identityFetch } from "../../session/identity-fetch";
 import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
 import { PageHeader } from "../../shell/page-header";

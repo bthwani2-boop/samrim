@@ -19,7 +19,6 @@ test("all intake and store profile consumers share the ISO weekday labels", asyn
     ["../src/features/partner-onboarding/joining-case-create.tsx", "weekdays"],
     ["../src/features/partner-onboarding/joining-case-detail.tsx", "weekdays"],
     ["../src/features/stores/store-profile-tabs.tsx", "intakeWeekdays"],
-    ["../src/features/stores/store-profile-detail-panels.tsx", "intakeWeekdays"],
   ]) {
     const source = await readFile(new URL(path, import.meta.url), "utf8");
     assert.ok(source.includes(`import { joiningCaseIsoWeekdayLabels as ${alias} } from "`), path);

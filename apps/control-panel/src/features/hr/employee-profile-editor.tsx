@@ -1,7 +1,7 @@
 "use client";
 
 import { type FormEvent, useRef, useState } from "react";
-import type { HREmployee, HRUpdateEmployeeInput } from "../../server/dsh/dsh-bff";
+import type { HREmployee, HRUpdateEmployeeInput } from "../../server/dsh/hr-bff";
 import { identityFetch } from "../../session/identity-fetch";
 import { EmployeeManagerSelect } from "./employee-manager-select";
 

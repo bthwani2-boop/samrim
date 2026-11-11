@@ -6,6 +6,7 @@ import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
+import { captainSessionKey } from "../../bootstrap/captain-session-scope";
 
 const copy = {
   accessibilityLabel: "إشعارات الكابتن",
@@ -23,17 +24,21 @@ function dshClient() {
   return createDshMobileClient(value, { cryptoRandomUUID: () => Crypto.randomUUID() });
 }
 
-function activeActorID(): string {
-  const session = currentIdentityState();
-  return session.kind === "authenticated" ? session.identity.subject.trim() : "";
+function currentInboxSessionKey(): string {
+  return captainSessionKey(currentIdentityState());
+}
+
+function isCurrentInboxSession(sessionKey: string): boolean {
+  return Boolean(sessionKey) && currentInboxSessionKey() === sessionKey;
 }
 
 export function NotificationsInbox() {
   const router = useRouter();
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [actorID, setActorID] = useState(activeActorID);
-  const authenticated = Boolean(actorID);
+  const [identityState, setIdentityState] = useState(currentIdentityState);
+  const sessionKey = captainSessionKey(identityState);
+  const authenticated = isCurrentInboxSession(sessionKey);
   const requestID = useRef(0);
   const [items, setItems] = useState<ReadonlyArray<Notification>>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -41,34 +46,35 @@ export function NotificationsInbox() {
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  const unreadItems = useMemo(() => items.filter((item) => !item.readAt), [items]);
-  const readItems = useMemo(() => items.filter((item) => Boolean(item.readAt)), [items]);
+  const visibleItems = authenticated ? items : [];
+  const unreadItems = visibleItems.filter((item) => !item.readAt);
+  const readItems = visibleItems.filter((item) => Boolean(item.readAt));
 
   const load = useCallback(async (preserveCurrent = false) => {
-    if (!actorID || activeActorID() !== actorID) return;
+    if (!isCurrentInboxSession(sessionKey)) return;
     const sequence = ++requestID.current;
     if (preserveCurrent) setRefreshing(true); else setLoading(true);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      if (sequence !== requestID.current || activeActorID() !== actorID) return;
+      if (sequence !== requestID.current || !isCurrentInboxSession(sessionKey)) return;
       const response = await dshClient().listNotifications(token, 50);
-      if (sequence !== requestID.current || activeActorID() !== actorID) return;
+      if (sequence !== requestID.current || !isCurrentInboxSession(sessionKey)) return;
       setItems(response.notifications);
       setUnreadCount(response.unreadCount);
     } catch (cause) {
       console.error("DSH captain notifications readback failed", cause);
-      if (sequence === requestID.current && activeActorID() === actorID) setError("تعذر قراءة الإشعارات. أعد المحاولة.");
+      if (sequence === requestID.current && isCurrentInboxSession(sessionKey)) setError("تعذر قراءة الإشعارات. أعد المحاولة.");
     } finally {
-      if (sequence === requestID.current && activeActorID() === actorID) {
+      if (sequence === requestID.current && isCurrentInboxSession(sessionKey)) {
         if (preserveCurrent) setRefreshing(false); else setLoading(false);
       }
     }
-  }, [actorID]);
+  }, [sessionKey]);
 
   useEffect(() => subscribeIdentitySession(() => {
     requestID.current += 1;
-    setActorID(activeActorID());
+    setIdentityState(currentIdentityState());
     setItems([]);
     setUnreadCount(0);
     setLoading(false);
@@ -83,7 +89,7 @@ export function NotificationsInbox() {
   }, [load]));
 
   async function openNotification(item: Notification) {
-    if (busy || !actorID || activeActorID() !== actorID) return;
+    if (busy || !authenticated) return;
     const offerOrderID = item.kind === "CAPTAIN_OFFER" ? item.orderId.trim() : "";
     if (item.readAt) {
       if (offerOrderID) router.push({ pathname: "/offers", params: { q: offerOrderID } } as Href);
@@ -93,16 +99,16 @@ export function NotificationsInbox() {
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      if (activeActorID() !== actorID) return;
+      if (!isCurrentInboxSession(sessionKey)) return;
       await dshClient().markNotificationRead(token, item.id);
-      if (activeActorID() !== actorID) return;
+      if (!isCurrentInboxSession(sessionKey)) return;
       if (offerOrderID) router.push({ pathname: "/offers", params: { q: offerOrderID } } as Href);
       else await load(true);
     } catch (cause) {
       console.error("DSH captain notification read-state write failed", cause);
-      if (activeActorID() === actorID) setError("تعذر تحديث حالة الإشعار.");
+      if (isCurrentInboxSession(sessionKey)) setError("تعذر تحديث حالة الإشعار.");
     } finally {
-      if (activeActorID() === actorID) setBusy("");
+      if (isCurrentInboxSession(sessionKey)) setBusy("");
     }
   }
 
@@ -157,7 +163,7 @@ export function NotificationsInbox() {
           <BthwaniSkeleton width="100%" height={142} />
           <BthwaniSkeleton width="100%" height={142} />
         </View>
-      ) : !items.length && error ? (
+      ) : !visibleItems.length && error ? (
         <BthwaniSurface tone="inset" style={styles.state}>
           <View style={styles.stateIcon}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /></View>
           <Text accessibilityRole="alert" style={styles.cardTitle}>تعذر قراءة الإشعارات</Text>
@@ -175,7 +181,7 @@ export function NotificationsInbox() {
           </BthwaniSurface>
           {unreadItems.length ? <View style={styles.group}><View style={styles.groupHeader}><Text style={styles.groupTitle}>الجديدة</Text><Text style={styles.groupCount}>{unreadItems.length}</Text></View><View style={styles.list}>{unreadItems.map(renderItem)}</View></View> : null}
           {readItems.length ? <View style={styles.group}><View style={styles.groupHeader}><Text style={styles.groupTitle}>المقروءة</Text><Text style={styles.groupCount}>{readItems.length}</Text></View><View style={styles.list}>{readItems.map(renderItem)}</View></View> : null}
-          {!items.length ? <BthwaniSurface tone="inset" style={styles.state}><View style={styles.stateIcon}><BthwaniIcon name="notifications" color={theme.colorMuted} size={sizing.iconXl} /></View><Text style={styles.cardTitle}>لا توجد إشعارات حالياً</Text><Text style={styles.muted}>ستظهر تحديثات التوصيل هنا عند توفرها.</Text></BthwaniSurface> : null}
+          {!visibleItems.length ? <BthwaniSurface tone="inset" style={styles.state}><View style={styles.stateIcon}><BthwaniIcon name="notifications" color={theme.colorMuted} size={sizing.iconXl} /></View><Text style={styles.cardTitle}>لا توجد إشعارات حالياً</Text><Text style={styles.muted}>ستظهر تحديثات التوصيل هنا عند توفرها.</Text></BthwaniSurface> : null}
           {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
           <BthwaniButton busy={refreshing} disabled={Boolean(busy)} label="تحديث الإشعارات" onPress={() => void load(true)} variant="secondary" />
         </>

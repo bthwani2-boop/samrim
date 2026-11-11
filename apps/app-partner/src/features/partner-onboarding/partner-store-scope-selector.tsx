@@ -5,14 +5,14 @@ import { useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
-import { usePartnerStoreScope } from "./partner-store-scope-context";
+import { type PartnerAccessibleStore, usePartnerStoreScope } from "./partner-store-scope-context";
 
-export function PartnerStoreScopeSelector({ requiredPermissions, ownedOnly = false, marketplaceOnly = false, independentOnly = false }: Readonly<{ requiredPermissions?: ReadonlyArray<StoreAccessPermission>; ownedOnly?: boolean; marketplaceOnly?: boolean; independentOnly?: boolean }>) {
+export function PartnerStoreScopeSelector({ requiredPermissions, ownedOnly = false, marketplaceOnly = false, independentOnly = false, eligible }: Readonly<{ requiredPermissions?: ReadonlyArray<StoreAccessPermission>; ownedOnly?: boolean; marketplaceOnly?: boolean; independentOnly?: boolean; eligible?: (store: PartnerAccessibleStore) => boolean }>) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const { state, stores, selectedStore, selectStore, reload } = usePartnerStoreScope();
   const [expanded, setExpanded] = useState(false);
-  const visibleStores = ownedOnly ? stores.filter((store) => store.owned)
+  const visibleStores = eligible ? stores.filter(eligible) : ownedOnly ? stores.filter((store) => store.owned)
     : requiredPermissions ? stores.filter((store) => store.owned || requiredPermissions.some((permission) => store.permissions.includes(permission)))
     : stores;
   const eligibleStores = marketplaceOnly ? visibleStores.filter((store) => store.relationModel === "BTHWANI_PARTNER")

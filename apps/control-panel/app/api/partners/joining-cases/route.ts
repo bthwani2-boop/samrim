@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
+import { type CreateJoiningCaseRequest, isValidStoreWorkingHours, type JoiningCaseState } from "@bthwani/dsh";
 import { normalizeYemenPhoneE164 } from "@bthwani/identity/phone";
-import { isValidStoreWorkingHours, type CreateJoiningCaseRequest, type JoiningCaseState } from "@bthwani/dsh";
 import { NextResponse } from "next/server";
-
-import { createJoiningCase, dshErrorPayload, dshHttpStatus, isDshClientError, listJoiningCases } from "../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-transport";
+import { createJoiningCase, listJoiningCases } from "../../../../src/server/dsh/joining-bff";
+import { isJoiningIntakeHoursShape, isValidOptionalJoiningWalletProvider } from "../../../../src/server/dsh/joining-intake-validation";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";
-import { isJoiningIntakeHoursShape, isValidOptionalJoiningWalletProvider } from "../../../../src/server/dsh/joining-intake-validation";
 
 function errorResponse(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status, headers: { "Cache-Control": "no-store" } });

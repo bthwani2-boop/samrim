@@ -6,7 +6,7 @@ PRODUCT_AUTHORITY: NONE
 
 ## Authority boundary
 
-This file owns vulnerability-reporting and repository secret-handling guidance only. Approved enduring security engineering requirements are owned by `docs/governance/policies/security.md`; current implementation/security state is proven from executable source, configuration, runtime and evidence.
+This file owns vulnerability-reporting and repository secret-handling guidance only. Approved enduring security engineering requirements are owned by `docs/governance/safety.md`; current implementation/security state is proven from executable source, configuration, runtime and evidence.
 
 ## Reporting a vulnerability
 

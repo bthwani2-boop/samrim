@@ -62,14 +62,16 @@ try {
         }
         node --test apps/control-panel/tests/finance-operator-recovery-scope.test.mjs
         if ($LASTEXITCODE -ne 0) { throw 'Candidate finance operator recovery isolation failed.' }
-        node --test tools/mobile/check-actor-scoped-navigation.test.mjs
+        node --test tests/mobile/check-actor-scoped-navigation.test.mjs
         if ($LASTEXITCODE -ne 0) { throw 'Candidate mobile actor-scoped navigation failed.' }
         node --test apps/app-client/src/features/cart-checkout/fulfillment-choice-session.test.mjs
         if ($LASTEXITCODE -ne 0) { throw 'Candidate customer fulfillment actor isolation failed.' }
-        node --test tools/mobile/check-client-partner-native-contract.test.mjs
+        node --test tests/mobile/check-client-partner-native-contract.test.mjs
         if ($LASTEXITCODE -ne 0) { throw 'Candidate client/partner native contract check failed.' }
-        node --test tools/mobile/check-captain-native-scope.test.mjs
+        node --test apps/app-captain/tests/check-captain-native-scope.test.mjs
         if ($LASTEXITCODE -ne 0) { throw 'Candidate captain native permission scope failed.' }
+        node --test tests/mobile/check-keyboard-provider-owner.test.mjs tests/mobile/check-push-device-platforms.test.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'Candidate shared mobile owner boundaries failed.' }
         node --test tools/mobile/check-eas-offline-plan.test.mjs
         if ($LASTEXITCODE -ne 0) { throw 'Candidate EAS offline plan contract failed.' }
         if (@($candidateFiles | Where-Object { $_ -notmatch $governanceOnlyPattern }).Count -gt 0) {
@@ -116,14 +118,16 @@ try {
     }
     node --test apps/control-panel/tests/finance-operator-recovery-scope.test.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Local finance operator recovery isolation failed.' }
-    node --test tools/mobile/check-actor-scoped-navigation.test.mjs
+    node --test tests/mobile/check-actor-scoped-navigation.test.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Local mobile actor-scoped navigation failed.' }
     node --test apps/app-client/src/features/cart-checkout/fulfillment-choice-session.test.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Local customer fulfillment actor isolation failed.' }
-    node --test tools/mobile/check-client-partner-native-contract.test.mjs
+    node --test tests/mobile/check-client-partner-native-contract.test.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Local client/partner native contract check failed.' }
-    node --test tools/mobile/check-captain-native-scope.test.mjs
+    node --test apps/app-captain/tests/check-captain-native-scope.test.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Local captain native permission scope failed.' }
+    node --test tests/mobile/check-keyboard-provider-owner.test.mjs tests/mobile/check-push-device-platforms.test.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Local shared mobile owner boundaries failed.' }
     node --test tools/mobile/check-eas-offline-plan.test.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Local EAS offline plan contract failed.' }
 

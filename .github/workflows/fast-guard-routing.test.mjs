@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const workflow = readFileSync(new URL("./fast-guard.yml", import.meta.url), "utf8");
@@ -27,6 +27,44 @@ test("WLT contract-only changes schedule wallet financial proof and generated co
 test("Identity contract-only changes schedule identity and consumer verification", () => {
   requireGates("services/identity/contracts/openapi/identity.openapi.yaml", ["identity", "node"]);
 });
+test("SQL and Go changes activate owner and boundary checks", () => {
+  requireGates("services/identity/database/migrations/030_retire_redundant_legal_name_version_index.sql", ["identity", "node"]);
+  requireGates("services/wlt/database/migrations/063_store_relation_model_default_event_integrity.sql", ["wlt", "finance", "node"]);
+  requireGates("services/dsh/backend/internal/storage/postgres/migrations/180_multi_store_checkout_child_lineage.sql", ["dsh", "finance", "node"]);
+  requireGates("services/dsh/database/migrations/001_baseline.sql", ["dsh", "finance", "node"]);
+  requireGates("services/wlt/backend/internal/storage/postgres/migrate.go", ["wlt", "finance", "node"]);
+  requireGates("services/identity/backend/internal/runtime/migrations.go", ["identity", "node"]);
+  requireGates(".github/workflows/fast-guard.yml", ["finance", "node"]);
+});
+
+test("Knip rejects orphan source files after installing dependencies, without deleting files", () => {
+  const install = workflow.indexOf("      - name: Install workspace only for affected JS or TS code");
+  const knip = workflow.indexOf("      - name: Reject orphaned JavaScript and TypeScript files");
+  const boundary = workflow.indexOf("      - name: Enforce cross-service import boundaries");
+  assert.ok(install >= 0 && knip > install && boundary > knip);
+  const step = workflow.slice(knip, boundary);
+  assert.match(step, /^        if: steps\.changed\.outputs\.node == 'true'$/m);
+  assert.match(step, /^        run: pnpm exec knip --files$/m);
+  assert.doesNotMatch(step, /continue-on-error:\s*true|knip.*--fix/);
+});
+
+test("cross-service import scanner is a blocking CI step", () => {
+  const install = workflow.indexOf("      - name: Install workspace only for affected JS or TS code");
+  const guard = workflow.indexOf("      - name: Enforce cross-service import boundaries");
+  const next = workflow.indexOf("\n      - name:", guard + 1);
+  assert.ok(install >= 0 && guard > install && next > guard, "boundary scan must follow dependency installation");
+  const step = workflow.slice(guard, next);
+  assert.match(step, /^        if: steps\.changed\.outputs\.node == 'true'$/m);
+  assert.match(step, /^          node --test tools\/governance\/check-service-import-boundaries\.test\.mjs$/m);
+  assert.match(step, /^          node tools\/governance\/check-service-import-boundaries\.mjs$/m);
+  assert.doesNotMatch(step, /continue-on-error:\s*true/);
+  const mutant = step.replace("node tools/governance/check-service-import-boundaries.mjs", "node --version");
+  assert.throws(
+    () => assert.match(mutant, /^          node tools\/governance\/check-service-import-boundaries\.mjs$/m),
+    assert.AssertionError,
+  );
+});
+
 test("checkout and financial client changes select disposable PostgreSQL proof", () => {
   for (const file of [
     "apps/app-client/src/features/cart-checkout/cart-checkout.tsx",
@@ -54,6 +92,10 @@ test("financial integration proof cannot silently skip selected tests", () => {
   assert.match(workflow, /No financial integration test executed/);
   assert.match(workflow, /Financial integration test skipped/);
   assert.match(workflow, /TestLegacyCODV61UpgradePreservesHistoricalCollectedPayment/);
+  const isolatedWltTests = workflow.match(/financial_go_proof services\/wlt\/backend \.\/internal\/storage\/postgres -run "([^"\n]+)"/)?.[1];
+  assert.ok(isolatedWltTests, "WLT isolated PostgreSQL proof must execute real Go tests");
+  assert.match(isolatedWltTests, /\|TestFinancialStatementSnapshotLedgerReadbackAndActorIsolation\|/, "a torn WLT statement snapshot must block Fast Guard");
+  assert.match(isolatedWltTests, /\|TestStoreRelationCommercialModelDefaultPersistedIsolation\|/, "store relation financial policy versioning and replay must block Fast Guard");
   assert.match(workflow, /BTHWANI_IMPORT_SCALE_PROOF_ISOLATED=1/);
   assert.match(workflow, /TestStoreCatalogImport5000RowsPartialCommitReadback/);
   assert.equal((workflow.match(/financial_go_proof services\/(?:wlt|dsh)\/backend/g) ?? []).length, 6);
@@ -67,6 +109,45 @@ test("CI protection does not silently execute invalid retired script remnants", 
   assert.match(workflow, /apps\/control-panel\/tests\/historical-field-finance-readonly\.test\.mjs/);
   assert.match(workflow, /apps\/control-panel\/tests\/retired-field-wallet-destination-boundary\.test\.mjs/);
   assert.match(workflow, /\.github\/workflows\/fast-guard-routing\.test\.mjs/);
+});
+
+test("Fast Guard executes committed session-isolation and finance CSV regression tests", () => {
+  const start = workflow.indexOf("      - name: Protect checkout, finance, access, and user-facing handoffs");
+  const end = workflow.indexOf("\n      - name: Lint and typecheck affected projects", start);
+  assert.ok(start >= 0 && end > start, "protected Node test step must exist");
+  const step = workflow.slice(start, end);
+  for (const path of [
+    "apps/app-captain/src/features/captain-operations/captain-home-session.test.mjs",
+    "apps/app-captain/src/bootstrap/captain-session-scope.test.mjs",
+    "apps/app-captain/src/features/captain-operations/captain-presence-session.test.mjs",
+    "apps/app-captain/src/features/captain-operations/captain-readiness.test.mjs",
+    "apps/app-captain/src/features/captain-operations/captain-offers-session.test.mjs",
+    "apps/app-captain/src/features/wallet/wallet-session-isolation.test.mjs",
+    "apps/app-captain/src/features/wallet/captain-financial-session-races.test.mjs",
+    "apps/app-captain/src/features/captain-operations/captain-offer-mission-suppression.test.mjs",
+    "apps/app-captain/src/features/captain-operations/captain-offer-poll-freshness.test.mjs",
+    "apps/app-captain/src/features/captain-operations/captain-offer-response-freshness.test.mjs",
+    "apps/app-client/src/features/sharing/client-share-sheet-session.test.mjs",
+    "apps/app-partner/src/features/partner-onboarding/store-commercial-agreements-session.test.mjs",
+    "apps/app-partner/src/features/store-offer/catalog-offer-read-model.test.mjs",
+    "apps/app-partner/src/features/store-offer/catalog-product-pages.test.mjs",
+    "apps/app-partner/tests/partner-home-metrics-session.test.mjs",
+    "apps/control-panel/tests/store-workbench-relation.test.mjs",
+    "apps/control-panel/tests/central-catalog-product-file.test.mjs",
+    "apps/control-panel/tests/catalog-taxonomy-query.test.mjs",
+    "apps/control-panel/tests/store-products-search.test.mjs",
+    "apps/app-captain/src/features/wallet/captain-cash-in-session.test.mjs",
+    "apps/control-panel/tests/finance-report-csv-safety.test.mjs",
+  ]) {
+    assert.ok(step.includes(`          ${path}\n`), `missing protected regression test: ${path}`);
+  }
+  const protectedPaths = [...step.matchAll(/^\s{10}((?:apps|services|tools)\/[^\s]+\.test\.mjs)$/gm)]
+    .map((match) => match[1]);
+  assert.ok(protectedPaths.length >= 30, "mandatory Node protection must remain broad");
+  for (const file of protectedPaths) {
+    assert.ok(existsSync(new URL(`../../${file}`, import.meta.url)),
+      `Fast Guard still selects a retired test path: ${file}`);
+  }
 });
 
 test("PowerShell is verified before the mandatory Spec Kit governance test", () => {

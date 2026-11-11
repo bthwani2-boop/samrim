@@ -3,8 +3,14 @@
   "workspaces": {
     ".": {
       "entry": [
+        "tools/dev/check-encoding.mjs",
+        "tools/dev/check-finance-surface-auth.mjs",
+        "tools/dev/check-openapi.mjs",
+        "tools/dev/check-typescript-ast-tests.mjs",
+        "tools/dev/payment-provider-mock.mjs",
+        "tools/dev/sync-lenovo-source.mjs",
         "tools/go/format-check.mjs",
-        "tools/security/verify-secrets.mjs",
+        "tools/mobile/check-android-expo-readiness.mjs",
         "tools/mobile/export-mobile-smoke.mjs",
         "tools/mobile/hash-mobile-secret-input.mjs",
         "tools/dev/trusted-executables.mjs",
@@ -13,44 +19,32 @@
     },
     "apps/app-captain": {
       "entry": [
-        "index.js",
-        "app/**/*.ts",
-        "app/**/*.tsx",
-        "app.config.ts"
+        "app/**/*.tsx"
       ]
     },
     "apps/app-client": {
       "entry": [
-        "index.js",
-        "app/**/*.ts",
         "app/**/*.tsx",
-        "app.config.ts"
+        "tests/**/*.e2e.cjs",
+        "tests/**/*.manual.mjs"
       ]
     },
     "apps/app-partner": {
       "entry": [
-        "index.js",
-        "app/**/*.ts",
         "app/**/*.tsx",
-        "app.config.ts"
+        "tests/**/*.e2e.cjs",
+        "tests/**/*-session-probe.cjs"
       ]
     },
     "apps/control-panel": {
       "entry": [
         "hash-secret-input.mjs",
-        "app/**/route.ts"
-      ]
-    },
-    "packages/design-system": {
-      "entry": [
-        "src/index.ts",
-        "src/native/index.tsx",
-        "tools/verify-theme-authority.mjs"
+        "app/**/route.ts",
+        "tests/**/*.e2e.cjs"
       ]
     }
   },
   "ignore": [
-    ".kilo/worktrees/**",
     "apps/*/fingerprint.config.js",
     "services/dsh/tools/generate-types.mjs",
     "services/identity/tools/generate-types.mjs",

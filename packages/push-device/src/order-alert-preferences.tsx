@@ -1,19 +1,24 @@
-import { useEffect, useRef, useState } from "react";
-import { AppState, Linking, Platform, Pressable, Text, View } from "react-native";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
-import type { AlertTone } from "./alert-tone";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { AppState, Linking, Platform, Pressable, Text, View } from "react-native";
+import { type AlertIdentitySnapshot, type AlertTone, actorIDFromAlertIdentity, readAlertToneForActor, saveAlertToneForActor } from "./alert-tone";
 
 export type { AlertTone } from "./alert-tone";
+
 const names: Record<AlertTone, string> = { classic: "الأساسي", soft: "هادئ", urgent: "واضح" };
 const tones: readonly AlertTone[] = ["classic", "soft", "urgent"];
-export function BthwaniOrderAlertPreferences({
-  actorID, readTone, saveTone, isCurrentActor,
+/** One notification preferences view, bound to the hosting app's Identity session.
+ * The Identity runtime remains the owner of authentication; the shared Push UI only reads it.
+ */
+export function OrderAlertPreferences({
+  currentIdentityState, subscribeIdentitySession,
 }: Readonly<{
-  actorID: string;
-  readTone: (actorID: string) => Promise<AlertTone>;
-  saveTone: (actorID: string, tone: AlertTone, isCurrentActor: (actorID: string) => boolean) => Promise<boolean>;
-  isCurrentActor: (actorID: string) => boolean;
+  currentIdentityState: () => AlertIdentitySnapshot;
+  subscribeIdentitySession: (listener: () => void) => () => void;
 }>) {
+  const currentActorID = useCallback(() => actorIDFromAlertIdentity(currentIdentityState()), [currentIdentityState]);
+  const actorID = useSyncExternalStore(subscribeIdentitySession, currentActorID, () => "");
+  const isCurrentActor = useCallback((id: string) => Boolean(id) && currentActorID() === id, [currentActorID]);
   const theme = useAppearanceTheme();
   const [toneState, setToneState] = useState<{ actorID: string; tone: AlertTone }>({ actorID: "", tone: "classic" });
   const tone = toneState.actorID === actorID ? toneState.tone : "classic";
@@ -24,12 +29,12 @@ export function BthwaniOrderAlertPreferences({
     let active = true;
     setToneState({ actorID, tone: "classic" });
     if (actorID) {
-      void readTone(actorID).then(value => {
+      void readAlertToneForActor(actorID).then(value => {
         if (active && actorRef.current === actorID && isCurrentActor(actorID)) setToneState({ actorID, tone: value });
       }).catch(() => { /* Keep the default sound when storage is unavailable. */ });
     }
     return () => { active = false; };
-  }, [actorID, readTone, isCurrentActor]);
+  }, [actorID, isCurrentActor]);
   useEffect(() => {
     if (Platform.OS === "web") return;
     let active = true;
@@ -52,7 +57,7 @@ export function BthwaniOrderAlertPreferences({
   const choose = async (value: AlertTone) => {
     const selectedActor = actorID;
     if (!selectedActor || !isCurrentActor(selectedActor)) return;
-    const saved = await saveTone(selectedActor, value, isCurrentActor);
+    const saved = await saveAlertToneForActor(selectedActor, value, isCurrentActor);
     if (saved && actorRef.current === selectedActor && isCurrentActor(selectedActor)) setToneState({ actorID: selectedActor, tone: value });
   };
   const enableNotifications = async () => {

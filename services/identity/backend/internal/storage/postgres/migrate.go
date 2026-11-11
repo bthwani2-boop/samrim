@@ -2,18 +2,93 @@ package postgres
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strconv"
 	"time"
 )
 
-const SchemaVersion = 29
+const SchemaVersion = 30
 
 type MigrationRecord struct {
 	Version int
 	Name    string
 	SHA256  string
+}
+
+var migrationFileName = regexp.MustCompile(`^([0-9]{3})_([a-z0-9_]+)\.sql$`)
+
+func LoadMigrationRecords(directory string) ([]MigrationRecord, error) {
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return nil, fmt.Errorf("read identity migration directory: %w", err)
+	}
+	records := make([]MigrationRecord, 0, len(entries))
+	seen := map[int]bool{}
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() {
+			return nil, fmt.Errorf("unexpected nonregular identity migration artifact: %s", entry.Name())
+		}
+		match := migrationFileName.FindStringSubmatch(entry.Name())
+		if match == nil {
+			return nil, fmt.Errorf("unexpected identity migration artifact: %s", entry.Name())
+		}
+		version, err := strconv.Atoi(match[1])
+		if err != nil || version < 1 || version > SchemaVersion {
+			return nil, fmt.Errorf("unsupported identity migration version in %s", entry.Name())
+		}
+		if seen[version] {
+			return nil, fmt.Errorf("duplicate identity migration version %d", version)
+		}
+		seen[version] = true
+		raw, err := os.ReadFile(filepath.Join(directory, entry.Name()))
+		if err != nil {
+			return nil, fmt.Errorf("read identity migration v%d: %w", version, err)
+		}
+		digest := sha256.Sum256(raw)
+		records = append(records, MigrationRecord{Version: version, Name: entry.Name(), SHA256: hex.EncodeToString(digest[:])})
+	}
+	sort.Slice(records, func(i, j int) bool { return records[i].Version < records[j].Version })
+	for index, record := range records {
+		expected := index + 1
+		if record.Version != expected {
+			return nil, fmt.Errorf("missing identity migration version %d", expected)
+		}
+	}
+	if len(records) != SchemaVersion {
+		return nil, fmt.Errorf("identity migration count mismatch: got %d want %d", len(records), SchemaVersion)
+	}
+	return records, nil
+}
+
+func ApplyMigrations(ctx context.Context, db *sql.DB, directory string, records []MigrationRecord) error {
+	current, err := CurrentSchemaVersion(ctx, db)
+	if err != nil {
+		return err
+	}
+	if current > SchemaVersion {
+		return fmt.Errorf("database schema v%d is newer than runtime v%d", current, SchemaVersion)
+	}
+	for _, record := range records {
+		if record.Version <= current {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(directory, record.Name))
+		if err != nil {
+			return fmt.Errorf("read identity migration v%d: %w", record.Version, err)
+		}
+		if err := Migrate(ctx, db, record.Version, record.Name, record.SHA256, string(raw)); err != nil {
+			return err
+		}
+	}
+	return SynchronizeMigrationHistory(ctx, db, records)
 }
 
 type schemaRequirement struct {

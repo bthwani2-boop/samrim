@@ -1,6 +1,7 @@
 "use client";
 
 import type { DiscoveryContentAnalytics, DiscoveryContentView, OperatorDiscoveryContentRegistryResponse, OperatorMarketingSummary } from "@bthwani/dsh";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { CustomerDirectory } from "../customers/customer-directory";
@@ -150,8 +151,9 @@ function MarketingAuthorizedCenter() {
     setActive(next);
     setVisited(previous => previous.includes(next) ? previous : [...previous,next]);
   };
-  return <section className="workspace-page marketing-center" aria-label="التسويق والمحتوى">
-    <CommandFrame title="التسويق والمحتوى" subtitle="إدارة الحملات والخصومات والبنرات والموافقات والنتائج">
+  return <section className="workspace-page marketing-center" aria-label="التسويق والتصميم">
+    <CommandFrame title="التسويق والتصميم" subtitle="إدارة الحملات والمحتوى واستوديو التصميم من مركز واحد">
+      <p><Link href="/studio" className="button button-secondary">فتح استوديو التصميم</Link></p>
       <CommandSectionTabs label="أقسام التسويق" active={active} tabs={sections} onSelect={selectSection}/>
     {sections.map((section) => <section key={section.id} hidden={active !== section.id} aria-label={section.label} className="work-stack">
       {visited.includes(section.id) ? <>

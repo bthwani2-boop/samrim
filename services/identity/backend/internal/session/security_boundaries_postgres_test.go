@@ -3,13 +3,122 @@ package session
 import (
 	"database/sql"
 	"errors"
+	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/actor"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/domain"
 	identitysecurity "github.com/bthwani2-boop/samrim/services/identity/backend/internal/security"
 )
+
+func TestAccessResolutionCannotUsePermissionGrantedToRevokedSession(t *testing.T) {
+	ctx, db := newIsolatedIdentityDatabase(t)
+	actors := actor.New(db, "")
+	root, err := actors.ProvisionFirstOperatorBootstrap(ctx, "operator-bootstrap", domain.ProvisionActorRoleInput{PhoneE164: "+15555550123"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := actors.CreateOperatorProfile(ctx, "dsh", root.ActorID, "profile-create-proof", "profile-create-key", domain.OperatorProfileCreateRequest{
+		FullNameAr: "مشغل اختبار", PhoneE164: "+15555550124", JobTitle: "مسؤول دعم", Department: "العمليات",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	approved, err := actors.ApproveOperatorProfile(ctx, "control-panel", root.ActorID, "profile-approve-proof", "profile-approve-key", created.Profile.ID, created.Profile.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := actors.GrantOperatorProfile(ctx, "control-panel", root.ActorID, "profile-grant-proof", "profile-grant-key", approved.Profile.ID, approved.Profile.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc := New(db, []byte("01234567890123456789012345678901"), false, nil)
+	issue := func() domain.TokenPair {
+		t.Helper()
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		// Session issuance here starts after the separate credential ceremony.
+		pair, err := svc.createTx(ctx, tx, target.Role.ActorID, "operator", "operator-permission-race")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+		return pair
+	}
+	old := issue()
+	resolved, err := svc.ResolveAccessToken(ctx, old.AccessToken)
+	if err != nil || resolved.Subject != target.Role.ActorID || slices.Contains(resolved.Permissions, domain.OperatorPermissionCatalog) {
+		t.Fatalf("existing session must authenticate without Catalog permission: %+v, %v", resolved, err)
+	}
+
+	// Hold the changes that the Identity permission writer commits together so
+	// the access resolution must contend with the session update.
+	grant, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = grant.Rollback() }()
+	if _, err := grant.ExecContext(ctx, `UPDATE identity_operator_permissions
+		SET enabled=true, version=version+1, changed_by_actor_id=$2, reason='isolated permission race proof'
+		WHERE actor_id=$1 AND permission=$3`, target.Role.ActorID, root.ActorID, domain.OperatorPermissionCatalog); err != nil {
+		t.Fatal(err)
+	}
+	var blockerPID int
+	if err := grant.QueryRowContext(ctx, `UPDATE identity_sessions SET revoked_at=clock_timestamp(),version=version+1
+		WHERE id=$1 AND actor_id=$2 RETURNING pg_backend_pid()`, old.Identity.SessionID, target.Role.ActorID).Scan(&blockerPID); err != nil {
+		t.Fatal(err)
+	}
+
+	type resolution struct {
+		identity domain.ActorIdentity
+		err      error
+	}
+	result := make(chan resolution, 1)
+	go func() {
+		identity, err := svc.ResolveAccessToken(ctx, old.AccessToken)
+		result <- resolution{identity, err}
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var waiting bool
+		if err := db.QueryRowContext(ctx, `SELECT EXISTS (
+			SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock'
+			AND $1=ANY(pg_blocking_pids(pid)))`, blockerPID).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("access resolution did not wait on the grant transaction")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err := grant.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case outcome := <-result:
+		if !errors.Is(outcome.err, domain.ErrUnauthenticated) || slices.Contains(outcome.identity.Permissions, domain.OperatorPermissionCatalog) {
+			t.Fatalf("revoked token received a new permission: %+v, %v", outcome.identity, outcome.err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	fresh := issue()
+	resolved, err = svc.ResolveAccessToken(ctx, fresh.AccessToken)
+	if err != nil || resolved.Subject != target.Role.ActorID || !slices.Contains(resolved.Permissions, domain.OperatorPermissionCatalog) {
+		t.Fatalf("new session cannot read the committed Catalog grant: %+v, %v", resolved, err)
+	}
+}
 
 // TestConcurrentRefreshUsesOnePersistedGeneration verifies that racing refresh
 // attempts cannot create two session generations or cross a request-ID boundary.

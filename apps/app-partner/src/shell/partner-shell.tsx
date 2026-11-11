@@ -1,16 +1,14 @@
 import { borders, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { BthwaniIcon, BthwaniIconButton, BthwaniSearchField, useAppearanceTheme } from "@bthwani/design-system/native";
-
-import { PartnerOrderAvailability } from "../features/partner-onboarding/partner-order-availability";
-import { PartnerNotificationsHeaderAction } from "../features/notifications/partner-notifications-header-action";
-import { dispatchPartnerProductAction } from "./partner-product-actions";
-
+import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { type PropsWithChildren, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BackHandler, type ColorValue, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, type TextInputInstance, View } from "react-native";
-import { usePartnerStoreScope } from "../features/partner-onboarding/partner-store-scope-context";
-import { isMarketplaceStore } from "./partner-authority";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { PartnerNotificationsHeaderAction } from "../features/notifications/partner-notifications-header-action";
+import { PartnerOrderAvailability } from "../features/partner-onboarding/partner-order-availability";
+import { usePartnerStoreScope } from "../features/partner-onboarding/partner-store-scope-context";
+import { canUseStoreOrders, isMarketplaceStore } from "./partner-authority";
+import { dispatchPartnerProductAction } from "./partner-product-actions";
 
 type PartnerSearchNavigation = {
   navigate: ((screen: "orders" | "products", params: { focus: "search" }) => void) & ((screen: "more") => void);
@@ -45,8 +43,8 @@ export function createPartnerTabOptions(theme: ReturnType<typeof resolveTheme>, 
   return ({ route }: { route: { name: string } }) => ({
     headerShown: route.name !== "more",
     header: ({ route: headerRoute, navigation }: { route: { name: string; params?: unknown }; navigation: unknown }) => {
-      const params = headerRoute.params as { focus?: string | string[]; q?: string | string[]; returnTo?: string; panel?: string } | undefined;
-      return <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><PartnerHeader title={headerRoute.name === "orders" ? "الطلبات" : headerRoute.name === "products" ? ((headerRoute.params as { panel?: string } | undefined)?.panel === "tools" ? "الكتالوج" : "المنتجات") : headerRoute.name === "wallet" ? "المحفظة" : headerRoute.name === "insights" ? "الأداء" : headerRoute.name === "account" ? "الحساب" : headerRoute.name === "onboarding" ? "الانضمام" : headerRoute.name === "store" ? ((headerRoute.params as { section?: string } | undefined)?.section === "promotions" ? "التسويق" : (headerRoute.params as { section?: string } | undefined)?.section === "team" ? "الفريق" : (headerRoute.params as { section?: string } | undefined)?.section === "settings" ? "ملف المتجر" : "التشغيل") : "المزيد"} isOrders={headerRoute.name === "orders"} isProducts={headerRoute.name === "products" && params?.panel !== "tools"} isCatalogSurface={headerRoute.name === "products"} isSubpage={["store", "account", "onboarding", "insights"].includes(headerRoute.name) || (headerRoute.name === "products" && params?.panel === "tools")} returnTo={params?.returnTo} canSearchOrders={canSearchOrders && headerRoute.name === "orders"} focus={params?.focus} searchQuery={params?.q} navigation={navigation as PartnerSearchNavigation} styles={styles} /></SafeAreaView>;
+      const params = headerRoute.params as { focus?: string | string[]; q?: string | string[]; returnTo?: string; panel?: string; storeId?: string | string[] } | undefined;
+      return <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><PartnerHeader title={headerRoute.name === "orders" ? "الطلبات" : headerRoute.name === "products" ? ((headerRoute.params as { panel?: string } | undefined)?.panel === "tools" ? "الكتالوج" : "المنتجات") : headerRoute.name === "wallet" ? "المحفظة" : headerRoute.name === "insights" ? "الأداء" : headerRoute.name === "account" ? "الحساب" : headerRoute.name === "onboarding" ? "الانضمام" : headerRoute.name === "store" ? ((headerRoute.params as { section?: string } | undefined)?.section === "promotions" ? "التسويق" : (headerRoute.params as { section?: string } | undefined)?.section === "team" ? "الفريق" : (headerRoute.params as { section?: string } | undefined)?.section === "settings" ? "ملف المتجر" : "التشغيل") : "المزيد"} isOrders={headerRoute.name === "orders"} orderTargetStoreId={headerRoute.name === "orders" ? params?.storeId : undefined} isProducts={headerRoute.name === "products" && params?.panel !== "tools"} isCatalogSurface={headerRoute.name === "products"} isSubpage={["store", "account", "onboarding", "insights"].includes(headerRoute.name) || (headerRoute.name === "products" && params?.panel === "tools")} returnTo={params?.returnTo} canSearchOrders={canSearchOrders && headerRoute.name === "orders"} focus={params?.focus} searchQuery={params?.q} navigation={navigation as PartnerSearchNavigation} styles={styles} /></SafeAreaView>;
     },
     tabBarPosition: desktopWeb ? "right" as const : "bottom" as const,
     tabBarVariant: desktopWeb ? "material" as const : "uikit" as const,
@@ -64,13 +62,17 @@ export function createPartnerTabOptions(theme: ReturnType<typeof resolveTheme>, 
   });
 }
 
-function PartnerHeader({ title, isOrders, isProducts, isCatalogSurface, isSubpage, returnTo, canSearchOrders, focus: rawFocus, searchQuery: rawQuery, navigation, styles }: { title: string; isOrders: boolean; isProducts: boolean; isCatalogSurface: boolean; isSubpage: boolean; returnTo?: string | undefined; canSearchOrders: boolean; focus?: string | string[] | undefined; searchQuery?: string | string[] | undefined; navigation: PartnerSearchNavigation; styles: ReturnType<typeof createStyles> }) {
+function PartnerHeader({ title, isOrders, orderTargetStoreId: rawOrderTargetStoreId, isProducts, isCatalogSurface, isSubpage, returnTo, canSearchOrders, focus: rawFocus, searchQuery: rawQuery, navigation, styles }: { title: string; isOrders: boolean; orderTargetStoreId?: string | string[] | undefined; isProducts: boolean; isCatalogSurface: boolean; isSubpage: boolean; returnTo?: string | undefined; canSearchOrders: boolean; focus?: string | string[] | undefined; searchQuery?: string | string[] | undefined; navigation: PartnerSearchNavigation; styles: ReturnType<typeof createStyles> }) {
   const theme = useAppearanceTheme();
-  const router = useRouter();
   const { stores, selectedStore, selectStore } = usePartnerStoreScope();
   const scopedStores = isCatalogSurface ? stores.filter((store) => store.owned || store.permissions.includes("catalog"))
-    : isOrders ? stores.filter((store) => isMarketplaceStore(store) && (store.owned || store.permissions.includes("orders"))) : stores;
+    : isOrders ? stores.filter(canUseStoreOrders) : stores;
   const selectedScopedStore = scopedStores.find((store) => store.id === selectedStore?.id);
+  const orderTargetStoreId = Array.isArray(rawOrderTargetStoreId) ? rawOrderTargetStoreId[0] : rawOrderTargetStoreId;
+  // A URL target that has not been selected must not display another Store's availability.
+  const showOrderAvailability = Boolean(isOrders && selectedStore &&
+    (!orderTargetStoreId || selectedStore.id === orderTargetStoreId) &&
+    isMarketplaceStore(selectedStore) && (selectedStore.owned || selectedStore.permissions.includes("store_operations")));
   const [pickerOpen, setPickerOpen] = useState(false);
   const focus = Array.isArray(rawFocus) ? rawFocus[0] : rawFocus;
   const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
@@ -92,7 +94,7 @@ function PartnerHeader({ title, isOrders, isProducts, isCatalogSurface, isSubpag
       </View> : <>
         <View style={styles.headerMain}>
           <Text accessibilityRole="header" numberOfLines={1} style={styles.headerTitle}>{title}</Text>
-          {isOrders && selectedStore && isMarketplaceStore(selectedStore) && (selectedStore.owned || selectedStore.permissions.includes("store_operations")) ? <PartnerOrderAvailability key={selectedStore.id} storeID={selectedStore.id} published={selectedStore.publicationState === "published"} /> : null}
+          {showOrderAvailability && selectedStore ? <PartnerOrderAvailability key={selectedStore.id} storeID={selectedStore.id} published={selectedStore.publicationState === "published"} /> : null}
         </View>
         <View style={styles.headerActions}>
           {isOrders ? <PartnerNotificationsHeaderAction /> : null}

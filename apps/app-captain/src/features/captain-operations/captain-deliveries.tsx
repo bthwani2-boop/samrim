@@ -1,19 +1,17 @@
-import { BthwaniButton, BthwaniConversationSheet, useConversationUnreadCounts, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniConversationSheet, BthwaniStatusBadge, useAppearanceTheme, useConversationUnreadCounts } from "@bthwani/design-system/native";
 import { BthwaniMap } from "@bthwani/design-system/native/map";
-import { createDshMobileClient, type CaptainAssignment, type CaptainCompletionRequest, type CaptainDeliveryTask, captainAssignmentStateLabel, captainHandoffStateLabel, captainTaskProgressLabel, formatMoney, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
+import { type CaptainAssignment, type CaptainAssignmentResponse, type CaptainCompletionRequest, type CaptainDeliveryTask, captainAssignmentStateLabel, captainHandoffStateLabel, captainTaskProgressLabel, createDshMobileClient, formatMoney, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import * as SecureStore from "expo-secure-store";
 import { useIsFocused } from "expo-router";
+import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, AppState, Image, Linking, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { captainSessionKey, isCurrentCaptainActor } from "../../bootstrap/captain-session-scope";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
 import { createCaptainOperationStyles } from "./captain-operation-styles";
-import { canActOnCaptainTask } from "./captain-task-eligibility";
-import { isConfirmedCaptainCompletion } from "./captain-completion-readback";
-import { isCurrentCaptainActor } from "./captain-session-scope";
 import { OrderConversation } from "./order-conversation";
 
 type PendingCaptainCompletionAttempt = Readonly<{
@@ -25,6 +23,33 @@ type PendingCaptainCompletionAttempt = Readonly<{
   idempotencyKey: string;
   correlationID: string;
 }>;
+
+// DSH must confirm the same Captain, terminal outcome and advanced version before
+// the local idempotent completion attempt can be removed from secure storage.
+function isConfirmedCaptainCompletion(
+  response: CaptainAssignmentResponse | null | undefined,
+  attempt: PendingCaptainCompletionAttempt,
+): boolean {
+  const assignment = response?.assignment;
+  return Boolean(assignment
+    && assignment.id === attempt.assignmentID
+    && assignment.captainActorId === attempt.actorID
+    && assignment.state === attempt.request.result
+    && assignment.terminalResult === attempt.request.result
+    && Number.isSafeInteger(assignment.version)
+    && assignment.version > attempt.expectedVersion
+    && typeof assignment.terminalAt === "string"
+    && assignment.terminalAt.length > 0);
+}
+
+// A current DSH delivery task must match the assignment and handoff before mutations.
+function canActOnCaptainTask(
+  assignment: Pick<CaptainAssignment, "id" | "state" | "handoff">,
+  task: Pick<CaptainDeliveryTask, "assignmentId" | "deliveryState" | "handoffState"> | undefined,
+): boolean {
+  return Boolean(task && task.assignmentId === assignment.id
+    && task.deliveryState === assignment.state && task.handoffState === assignment.handoff.state);
+}
 
 function openCaptainDirections(latitude: number, longitude: number) {
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
@@ -61,9 +86,10 @@ function captainCompletionHttpRejected(error: unknown): boolean {
   return value.kind === "http" && typeof value.status === "number" && value.status >= 400 && value.status < 500;
 }
 
-function hasCurrentDeliveryActor(actorID: string): boolean {
+function hasCurrentDeliveryActor(actorID: string, sessionKey: string): boolean {
   const session = currentIdentityState();
-  return session.kind === "authenticated" && isCurrentCaptainActor(actorID, session.identity.subject.trim());
+  return session.kind === "authenticated" && isCurrentCaptainActor(actorID, session.identity.subject.trim())
+    && Boolean(sessionKey) && captainSessionKey(session) === sessionKey;
 }
 
 export function CaptainDeliveries() {
@@ -74,10 +100,13 @@ export function CaptainDeliveries() {
   const [assignments, setAssignments] = useState<ReadonlyArray<CaptainAssignment>>([]);
   const [chatOrderId,setChatOrderId]=useState("");
   const [loadedActorID, setLoadedActorID] = useState("");
+  const [loadedSessionKey, setLoadedSessionKey] = useState("");
   const [identityState, setIdentityState] = useState(currentIdentityState);
   const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
+  const activeSessionKey = captainSessionKey(identityState);
   const readSequence = useRef(0);
   const mutationInFlight = useRef(false);
+  const mutationSequence = useRef(0);
   const [tasks, setTasks] = useState<Readonly<Record<string, CaptainDeliveryTask>>>({});
   const [arrivalStatus, setArrivalStatus] = useState<Readonly<Record<string, boolean>>>({});
   const [loading, setLoading] = useState(true);
@@ -87,23 +116,25 @@ export function CaptainDeliveries() {
   const [completionStorageReady, setCompletionStorageReady] = useState(false);
   const [completionStorageIssue, setCompletionStorageIssue] = useState(false);
   const [completionRejected, setCompletionRejected] = useState(false);
-  const currentActorReadback = isCurrentCaptainActor(loadedActorID, activeActorID);
+  const currentActorReadback = isCurrentCaptainActor(loadedActorID, activeActorID) && loadedSessionKey === activeSessionKey && hasCurrentDeliveryActor(loadedActorID, loadedSessionKey);
   const getChatUnread = useCallback(async (orderId: string) => {
     const token = await getUsableIdentityAccessToken();
     const base = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
     if (!base) throw new Error("DSH_BASE_URL_REQUIRED");
     return (await createDshMobileClient(base,{cryptoRandomUUID:()=>Crypto.randomUUID()}).readOrderConversation(token,orderId,1)).unreadCount;
   }, []);
-  const unreadChatCounts = useConversationUnreadCounts(assignments.map(assignment => assignment.orderId), activeActorID, isFocused, getChatUnread, chatOrderId);
+  const unreadChatCounts = useConversationUnreadCounts(assignments.map(assignment => assignment.orderId), captainSessionKey(identityState), isFocused, getChatUnread, chatOrderId);
 
   const load = useCallback(async (quiet = false) => {
     const sequence = ++readSequence.current;
     const identity = currentIdentityState();
     const actorID = identity.kind === "authenticated" ? identity.identity.subject.trim() : "";
-    const stillCurrent = () => sequence === readSequence.current && hasCurrentDeliveryActor(actorID) && (!quiet || !mutationInFlight.current);
+    const sessionKey = captainSessionKey(identity);
+    const stillCurrent = () => sequence === readSequence.current && hasCurrentDeliveryActor(actorID, sessionKey) && (!quiet || !mutationInFlight.current);
     if (!quiet) {
       setLoading(true);
       setLoadedActorID("");
+      setLoadedSessionKey("");
       setAssignments([]);
       setPendingCompletion(null);
       setTasks({});
@@ -112,7 +143,7 @@ export function CaptainDeliveries() {
     }
     setError("");
     try {
-      if (!actorID) throw new Error("CAPTAIN_SESSION_REQUIRED");
+      if (!actorID || !sessionKey) throw new Error("CAPTAIN_SESSION_REQUIRED");
       const token = await getUsableIdentityAccessToken();
       if (!stillCurrent()) return;
       const rawAttempt = await SecureStore.getItemAsync(pendingCaptainCompletionKey(actorID));
@@ -126,6 +157,7 @@ export function CaptainDeliveries() {
       }
       if (!stillCurrent()) return;
       setLoadedActorID(actorID);
+      setLoadedSessionKey(sessionKey);
       setPendingCompletion(attempt);
       setCompletionRejected(false);
       setCompletionStorageIssue(false);
@@ -156,90 +188,103 @@ export function CaptainDeliveries() {
       if (stillCurrent()) setArrivalStatus(Object.fromEntries(arrivalEntries.filter((entry): entry is readonly [string, boolean] => entry !== null)));
     } catch (cause) {
       console.error("DSH Captain deliveries readback failed", cause);
-      if (sequence === readSequence.current && (!quiet || !mutationInFlight.current) && (!actorID || hasCurrentDeliveryActor(actorID))) {
+      if (sequence === readSequence.current && (!quiet || !mutationInFlight.current) && (!actorID || hasCurrentDeliveryActor(actorID, sessionKey))) {
         setAssignments([]);
         setTasks({});
         setError("تعذر قراءة التوصيلات. أعد المحاولة.");
       }
     } finally {
-      if (sequence === readSequence.current && !quiet) setLoading(false);
+      if (sequence === readSequence.current && !quiet && (!actorID || hasCurrentDeliveryActor(actorID, sessionKey))) setLoading(false);
     }
   }, []);
 
   useEffect(() => subscribeIdentitySession(setIdentityState), []);
   useEffect(() => {
-    if (!activeActorID) {
+    mutationSequence.current += 1;
+    mutationInFlight.current = false;
+    setBusy("");
+    if (!activeSessionKey) {
       readSequence.current += 1;
       setLoadedActorID("");
+      setLoadedSessionKey("");
       setAssignments([]);
       setTasks({});
       setArrivalStatus({});
       setPendingCompletion(null);
       setCompletionStorageReady(false);
+      setChatOrderId("");
       setLoading(false);
       return;
     }
+    setChatOrderId("");
     void load();
-  }, [activeActorID, load]);
+  }, [activeSessionKey, load]);
   useEffect(() => {
-    if (!isFocused || !activeActorID || loading || busy || mutationInFlight.current) return;
+    if (!isFocused || !activeSessionKey || loading || busy || mutationInFlight.current) return;
     const update = () => { if (AppState.currentState === "active" && !mutationInFlight.current) void load(true); };
     const timer = setInterval(update, 20_000);
     const resume = AppState.addEventListener("change", (state) => { if (state === "active") update(); });
     return () => { clearInterval(timer); resume.remove(); };
-  }, [isFocused, activeActorID, loading, busy, load]);
+  }, [isFocused, activeSessionKey, loading, busy, load]);
 
   async function confirmArrival(assignment: CaptainAssignment) {
-    if (!hasCurrentDeliveryActor(loadedActorID) || busy || mutationInFlight.current || assignment.state !== "in_custody" || arrivalStatus[assignment.id] !== false) return;
+    if (!hasCurrentDeliveryActor(loadedActorID, loadedSessionKey) || busy || mutationInFlight.current || assignment.state !== "in_custody" || arrivalStatus[assignment.id] !== false) return;
     mutationInFlight.current = true;
+    const mutationID = ++mutationSequence.current;
     setBusy(assignment.id);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      if (!hasCurrentDeliveryActor(loadedActorID)) return;
+      if (!hasCurrentDeliveryActor(loadedActorID, loadedSessionKey)) return;
       const response = await captainClient().confirmOwnCaptainArrival(token, assignment.id);
-      if (!hasCurrentDeliveryActor(loadedActorID)) return;
+      if (!hasCurrentDeliveryActor(loadedActorID, loadedSessionKey)) return;
       if (!response.arrivedAt) throw new Error("ARRIVAL_CONFIRMATION_MISSING");
       setArrivalStatus(previous => ({ ...previous, [assignment.id]: true }));
     } catch (cause) {
-      if (!hasCurrentDeliveryActor(loadedActorID)) return;
+      if (!hasCurrentDeliveryActor(loadedActorID, loadedSessionKey)) return;
       console.error("DSH captain arrival failed", cause);
       setError("تعذر تأكيد الوصول؛ تحقّق من الاتصال وحالة المهمة ثم أعد المحاولة.");
     } finally {
-      mutationInFlight.current = false;
-      setBusy("");
+      if (mutationSequence.current === mutationID) {
+        mutationInFlight.current = false;
+        setBusy("");
+      }
     }
   }
 
   async function pickup(assignment: CaptainAssignment) {
-    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || busy || mutationInFlight.current || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "assigned" || !canActOnCaptainTask(assignment, tasks[assignment.id])) return;
+    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID, loadedSessionKey) || busy || mutationInFlight.current || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "assigned" || !canActOnCaptainTask(assignment, tasks[assignment.id])) return;
     mutationInFlight.current = true;
+    const mutationID = ++mutationSequence.current;
     setBusy(assignment.id);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      if (!hasCurrentDeliveryActor(loadedActorID)) return;
+      if (!hasCurrentDeliveryActor(loadedActorID, loadedSessionKey)) return;
       await captainClient().completeCaptainPickup(token, assignment.id, assignment.handoff.version);
-      if (hasCurrentDeliveryActor(loadedActorID)) await load();
+      if (hasCurrentDeliveryActor(loadedActorID, loadedSessionKey)) await load();
     } catch (cause) {
-      if (!hasCurrentDeliveryActor(loadedActorID)) return;
+      if (!hasCurrentDeliveryActor(loadedActorID, loadedSessionKey)) return;
       console.error("DSH Captain pickup failed", cause);
       setError("لا يمكن تأكيد الاستلام قبل تأكيد المتجر أو عند تعارض النسخة.");
     } finally {
-      mutationInFlight.current = false;
-      setBusy("");
+      if (mutationSequence.current === mutationID) {
+        mutationInFlight.current = false;
+        setBusy("");
+      }
     }
   }
 
   async function complete(assignment: CaptainAssignment, result: "delivered" | "delivery_failed") {
-    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || busy || mutationInFlight.current || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "in_custody" || !canActOnCaptainTask(assignment, tasks[assignment.id])) return;
+    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID, loadedSessionKey) || busy || mutationInFlight.current || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "in_custody" || !canActOnCaptainTask(assignment, tasks[assignment.id])) return;
     mutationInFlight.current = true;
+    const mutationID = ++mutationSequence.current;
     setBusy(assignment.id);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
       const identity = currentIdentityState();
-      if (identity.kind !== "authenticated" || !isCurrentCaptainActor(loadedActorID, identity.identity.subject.trim())) throw new Error("CAPTAIN_SESSION_REQUIRED");
+      if (identity.kind !== "authenticated" || !hasCurrentDeliveryActor(loadedActorID, loadedSessionKey)) throw new Error("CAPTAIN_SESSION_REQUIRED");
       // Collection amount is canonical in DSH/WLT; the Captain only confirms the outcome.
       const request: CaptainCompletionRequest = { result };
       const attempt: PendingCaptainCompletionAttempt = {
@@ -252,68 +297,74 @@ export function CaptainDeliveries() {
         correlationID: `captain_complete_corr_${Crypto.randomUUID()}`,
       };
       await SecureStore.setItemAsync(pendingCaptainCompletionKey(attempt.actorID), JSON.stringify(attempt));
-      if (!hasCurrentDeliveryActor(attempt.actorID)) return;
+      if (!hasCurrentDeliveryActor(attempt.actorID, loadedSessionKey)) return;
       setPendingCompletion(attempt);
       setCompletionRejected(false);
       const confirmation = await captainClient().completeCaptainAssignment(token, attempt.assignmentID, attempt.request, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
-      if (!hasCurrentDeliveryActor(attempt.actorID)) return;
+      if (!hasCurrentDeliveryActor(attempt.actorID, loadedSessionKey)) return;
       if (!isConfirmedCaptainCompletion(confirmation, attempt)) throw new Error("CAPTAIN_COMPLETION_CANONICAL_READBACK_MISMATCH");
       await SecureStore.deleteItemAsync(pendingCaptainCompletionKey(attempt.actorID));
-      if (!hasCurrentDeliveryActor(attempt.actorID)) return;
+      if (!hasCurrentDeliveryActor(attempt.actorID, loadedSessionKey)) return;
       setPendingCompletion(null);
       await load();
     } catch (cause) {
-      if (!hasCurrentDeliveryActor(loadedActorID)) return;
+      if (!hasCurrentDeliveryActor(loadedActorID, loadedSessionKey)) return;
       console.error("DSH Captain completion failed", cause);
       setCompletionRejected(captainCompletionHttpRejected(cause));
       setError(captainCompletionHttpRejected(cause) ? "لم تُحدّث المهمة. تحقق منها قبل إعادة المحاولة." : "تعذر تأكيد النتيجة. بقيت المحاولة محفوظة؛ أعد المحاولة من الزر نفسه.");
     } finally {
-      mutationInFlight.current = false;
-      setBusy("");
+      if (mutationSequence.current === mutationID) {
+        mutationInFlight.current = false;
+        setBusy("");
+      }
     }
   }
 
   async function retryPendingCompletion() {
     const attempt = pendingCompletion;
-    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || !attempt || !isCurrentCaptainActor(attempt.actorID, loadedActorID) || busy || mutationInFlight.current || !completionStorageReady) return;
+    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID, loadedSessionKey) || !attempt || !isCurrentCaptainActor(attempt.actorID, loadedActorID) || busy || mutationInFlight.current || !completionStorageReady) return;
     mutationInFlight.current = true;
+    const mutationID = ++mutationSequence.current;
     setBusy(attempt.assignmentID);
     setError("");
     setCompletionRejected(false);
     try {
       const token = await getUsableIdentityAccessToken();
       const identity = currentIdentityState();
-      if (identity.kind !== "authenticated" || identity.identity.subject.trim() !== attempt.actorID) throw new Error("CAPTAIN_SESSION_CHANGED");
+      if (identity.kind !== "authenticated" || identity.identity.subject.trim() !== attempt.actorID || !hasCurrentDeliveryActor(attempt.actorID, loadedSessionKey)) throw new Error("CAPTAIN_SESSION_CHANGED");
       const confirmation = await captainClient().completeCaptainAssignment(token, attempt.assignmentID, attempt.request, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
-      if (!hasCurrentDeliveryActor(attempt.actorID)) return;
+      if (!hasCurrentDeliveryActor(attempt.actorID, loadedSessionKey)) return;
       if (!isConfirmedCaptainCompletion(confirmation, attempt)) throw new Error("CAPTAIN_COMPLETION_CANONICAL_READBACK_MISMATCH");
       await SecureStore.deleteItemAsync(pendingCaptainCompletionKey(attempt.actorID));
-      if (!hasCurrentDeliveryActor(attempt.actorID)) return;
+      if (!hasCurrentDeliveryActor(attempt.actorID, loadedSessionKey)) return;
       setPendingCompletion(null);
       await load();
     } catch (cause) {
-      if (!hasCurrentDeliveryActor(attempt.actorID)) return;
+      if (!hasCurrentDeliveryActor(attempt.actorID, loadedSessionKey)) return;
       console.error("DSH Captain completion recovery failed", cause);
       setCompletionRejected(captainCompletionHttpRejected(cause));
       setError(captainCompletionHttpRejected(cause) ? "لم تُحدّث المهمة. تحقق منها قبل إعادة المحاولة." : "لم نتأكد من النتيجة. بقيت المحاولة محفوظة؛ أعد المحاولة من الزر نفسه.");
     } finally {
-      mutationInFlight.current = false;
-      setBusy("");
+      if (mutationSequence.current === mutationID) {
+        mutationInFlight.current = false;
+        setBusy("");
+      }
     }
   }
 
   async function replaceRejectedCompletionAfterReadback() {
     const attempt = pendingCompletion;
-    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID) || !attempt || !isCurrentCaptainActor(attempt.actorID, loadedActorID) || !completionRejected || busy || mutationInFlight.current) return;
+    if (!currentActorReadback || !hasCurrentDeliveryActor(loadedActorID, loadedSessionKey) || !attempt || !isCurrentCaptainActor(attempt.actorID, loadedActorID) || !completionRejected || busy || mutationInFlight.current) return;
     mutationInFlight.current = true;
+    const mutationID = ++mutationSequence.current;
     setBusy(attempt.assignmentID);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
       const identity = currentIdentityState();
-      if (identity.kind !== "authenticated" || identity.identity.subject.trim() !== attempt.actorID) throw new Error("CAPTAIN_SESSION_CHANGED");
+      if (identity.kind !== "authenticated" || identity.identity.subject.trim() !== attempt.actorID || !hasCurrentDeliveryActor(attempt.actorID, loadedSessionKey)) throw new Error("CAPTAIN_SESSION_CHANGED");
       const response = await captainClient().listOwnCaptainAssignments(token);
-      if (!hasCurrentDeliveryActor(attempt.actorID)) return;
+      if (!hasCurrentDeliveryActor(attempt.actorID, loadedSessionKey)) return;
       const current = response.assignments.find((item) => item.id === attempt.assignmentID);
       if (!current || current.state !== "in_custody" || current.version !== attempt.expectedVersion) {
         setCompletionRejected(false);
@@ -321,19 +372,21 @@ export function CaptainDeliveries() {
         return;
       }
       await SecureStore.deleteItemAsync(pendingCaptainCompletionKey(attempt.actorID));
-      if (!hasCurrentDeliveryActor(attempt.actorID)) return;
+      if (!hasCurrentDeliveryActor(attempt.actorID, loadedSessionKey)) return;
       setPendingCompletion(null);
       setCompletionRejected(false);
       await load();
-      if (!hasCurrentDeliveryActor(attempt.actorID)) return;
+      if (!hasCurrentDeliveryActor(attempt.actorID, loadedSessionKey)) return;
       setError("ثبت أن المحاولة لم تُنفذ وأن المهمة ما زالت في عهدتك؛ يمكنك إعادة تأكيد النتيجة.");
     } catch (cause) {
-      if (!hasCurrentDeliveryActor(attempt.actorID)) return;
+      if (!hasCurrentDeliveryActor(attempt.actorID, loadedSessionKey)) return;
       console.error("DSH Captain completion rejection reconciliation failed", cause);
       setError("تعذر تأكيد حالة المهمة. بقيت المحاولة الأصلية محفوظة كما هي.");
     } finally {
-      mutationInFlight.current = false;
-      setBusy("");
+      if (mutationSequence.current === mutationID) {
+        mutationInFlight.current = false;
+        setBusy("");
+      }
     }
   }
 

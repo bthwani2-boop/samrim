@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-
-import { createOperatorDestination, dshErrorPayload, dshHttpStatus, isDshClientError, readOperatorDestination } from "../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-transport";
+import { createOperatorDestination, readOperatorDestination } from "../../../../src/server/dsh/finance-payout-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 
 const destinationReadActorTypes = new Set(["customer", "partner", "captain"]);

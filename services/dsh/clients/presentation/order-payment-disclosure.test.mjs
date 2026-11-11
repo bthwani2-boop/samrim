@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { cashCollectionPartyLabel, checkoutWalletAllocation, orderPaymentDisclosure, paymentMethodLabel } from "./order-presentation.ts";
+import { cashCollectionPartyLabel, checkoutWalletAllocation, formatMoney, orderPaymentDisclosure, paymentMethodLabel } from "./order-presentation.ts";
 
 const cashDelivery = {
   state: "CREATED",
@@ -67,4 +67,17 @@ test("cash recipient follows fulfillment ownership, not cash payment method name
   assert.match(paymentMethodLabel("CASH_AT_STORE", "PARTNER_CAPTAIN", 500), /للمتجر أو مندوبه/);
   assert.match(paymentMethodLabel("CASH_AT_STORE", "CUSTOMER_PICKUP", 500), /للمتجر/);
   assert.equal(paymentMethodLabel("CASH_AT_STORE", "PARTNER_CAPTAIN", 0), "الدفع من رصيد المحفظة");
+});
+
+test("canonical YER formatter preserves finance amounts without cent conversion", () => {
+  const label = new Intl.NumberFormat("ar-YE-u-nu-latn", { maximumFractionDigits: 0 }).format(1250);
+  assert.equal(formatMoney(1250, "YER"), `${label} ريال يمني`);
+  assert.match(formatMoney(0, "YER"), /0.*ريال يمني/);
+  assert.match(formatMoney(-50, "YER"), /-50.*ريال يمني/);
+});
+
+test("canonical formatter refuses invalid non-finite amounts for every consuming surface", () => {
+  for (const invalid of [NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+    assert.throws(() => formatMoney(invalid, "YER"), /Invalid finance amount/);
+  }
 });

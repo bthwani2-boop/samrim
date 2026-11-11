@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { OperatorPermission } from "@bthwani/identity";
 import { NextResponse } from "next/server";
-import { dshErrorPayload, dshHttpStatus, isDshClientError, readHRAccessRequest } from "../../../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../../src/server/dsh/dsh-transport";
+import { readHRAccessRequest } from "../../../../../../src/server/dsh/hr-bff";
 import { identityErrorPayload, identityHttpStatus, readOperatorPermission, readOperatorSession, setOperatorPermission } from "../../../../../../src/server/identity/identity-bff";
 import { verifySameOrigin } from "../../../../../../src/server/security/csrf";
 import { operatorWorkspacePermissions } from "../../../../../../src/session/operator-permissions";

@@ -18,7 +18,9 @@ test("home map never obtains a new idle GPS fix without a DSH-eligible available
   assert.ok(opportunities.includes("readOwnCaptainAdmission(token)"));
   assert.ok(opportunities.includes('mission || missionReadiness !== "ready"'));
   assert.ok(gate > 0 && gps > gate, "service eligibility and availability must precede GPS acquisition");
-  assert.match(opportunities, /cancelled \|\| current.kind !== "authenticated"/);
+  assert.match(opportunities, /const requestSession = sessionKey/);
+  assert.match(opportunities, /captainSessionKey\(currentIdentityState\(\)\) === requestSession/);
+  assert.match(opportunities, /if \(!isCurrent\(\) \|\| admission\.admission\.state !== "eligible"/);
   assert.match(readiness, /accessibilityLabel="مفتاح GPS الهاتف"/, "keep the distinct governed GPS control");
   assert.match(readiness, /setBackgroundMissionConsent\(next, actorID, missionAssignmentId\)/);
 });

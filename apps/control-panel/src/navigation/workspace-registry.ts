@@ -1,4 +1,4 @@
-import type { OperatorPermission } from "@bthwani/identity";
+import type { ActorIdentity, OperatorPermission } from "@bthwani/identity";
 import { policyCapabilities as workspacePolicyResources } from "../features/policies/policy-capabilities";
 
 type WorkspaceChild = Readonly<{
@@ -13,7 +13,6 @@ export type WorkspaceDestination = Readonly<{
   label: string;
   children: readonly WorkspaceChild[];
   permission?: OperatorPermission;
-  initialOperatorAdminOnly?: boolean;
   showInWorkspaceNavigation?: boolean;
 }>;
 
@@ -70,6 +69,7 @@ export type MarketingResourceKey = (typeof workspaceMarketingResources)[number][
 // Both marketing resources are visible in one canonical workspace; legacy deep links remain available.
 const marketingChildren: readonly WorkspaceChild[] = [
   { href: "/marketing/customers", label: "العملاء", searchAliases: "Customer 360 ملف العميل شرائح العملاء نشاط العملاء" },
+  { href: "/studio", label: "استوديو التصميم", searchAliases: "استوديو التسويق التصميم القوالب النشر" },
 ];
 
 export const workspaceDestinations: readonly WorkspaceDestination[] = [
@@ -83,20 +83,20 @@ export const workspaceDestinations: readonly WorkspaceDestination[] = [
   },
   {
     href: "/partners",
-    label: "إدارة الشركاء",
+    label: "المتاجر",
     permission: "partners",
     children: [
       { href: "/partners", label: "الشركاء والمتاجر", searchAliases: "سجل الشركاء سجل المتاجر حسابات الشركاء", showInWorkspaceNavigation: false }
     ]
   },
-  { href: "/independent-stores", label: "المتاجر المستقلة", children: [], permission: "partners" },
   { href: "/catalog", label: "الكتالوج", children: catalogChildren, permission: "catalog" },
-  { href: "/marketing", label: "التسويق والمحتوى", children: marketingChildren, permission: "marketing" },
-  { href: "/studio", label: "استوديو التصميم", children: [], permission: "marketing" },
+  { href: "/marketing", label: "التسويق والتصميم", children: marketingChildren, permission: "marketing" },
   { href: "/finance", label: "المالية", children: financeChildren, permission: "finance" },
-  { href: "/hr", label: "الموارد البشرية", children: [{ href: "/hr/employees", label: "الموظفون" }], permission: "hr" },
-  { href: "/policies", label: "السياسات", children: policyChildren, permission: "platform_policies" },
-  { href: "/access", label: "الوصول والصلاحيات", children: [], initialOperatorAdminOnly: true }
+  { href: "/hr", label: "الإدارة والموظفون", children: [
+    { href: "/hr/employees", label: "الموظفون" },
+    { href: "/access", label: "الوصول والصلاحيات", searchAliases: "إدارة حسابات المشغلين" },
+  ] },
+  { href: "/policies", label: "السياسات", children: policyChildren, permission: "platform_policies" }
 ];
 
 export const workspaceSearchEntries = [...workspaceDestinations.filter((destination) => destination.showInWorkspaceNavigation !== false).flatMap((destination) => [
@@ -134,6 +134,29 @@ export function isCurrentWorkspaceDestination(pathname: string, destination: Wor
 
 export function currentWorkspaceDestination(pathname: string) {
   return workspaceDestinations.find((destination) => isCurrentWorkspaceDestination(pathname, destination)) ?? workspaceDestinations[0]!;
+}
+
+/** Navigation only: the actual HR and Identity APIs enforce their own rights. */
+export function canOpenWorkspaceDestination(identity: ActorIdentity, destination: WorkspaceDestination): boolean {
+  if (destination.href === "/hr") {
+    return identity.role === "operator" &&
+      (identity.permissions?.includes("hr") === true || identity.canManageOperatorPermissions === true);
+  }
+  return !destination.permission || identity.permissions?.includes(destination.permission) === true;
+}
+
+export function canOpenWorkspaceRoute(identity: ActorIdentity, href: string): boolean {
+  const pathname = href.split("?")[0] ?? href;
+  if (pathname === "/access" || pathname.startsWith("/access/")) {
+    return identity.role === "operator" && identity.canManageOperatorPermissions === true;
+  }
+  if (pathname === "/hr/employees" || pathname.startsWith("/hr/employees/")) {
+    return identity.role === "operator" && identity.permissions?.includes("hr") === true;
+  }
+  if (pathname === "/catalog-activity" && !identity.permissions?.includes("partners")) return false;
+  if (pathname === "/catalog/trash" && identity.permissions?.includes("partners")) return true;
+  const destination = workspaceDestinations.find((candidate) => isCurrentWorkspaceDestination(pathname, candidate));
+  return !destination || canOpenWorkspaceDestination(identity, destination);
 }
 
 export function currentWorkspaceChild(pathname: string, destination: WorkspaceDestination) {

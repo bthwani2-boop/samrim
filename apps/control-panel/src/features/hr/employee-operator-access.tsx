@@ -2,7 +2,7 @@
 
 import { TextArea } from "@bthwani/design-system/web";
 import { useState } from "react";
-import type { HREmployee } from "../../server/dsh/dsh-bff";
+import type { HREmployee } from "../../server/dsh/hr-bff";
 import { identityFetch } from "../../session/identity-fetch";
 import { useSession } from "../../session/session-provider";
 

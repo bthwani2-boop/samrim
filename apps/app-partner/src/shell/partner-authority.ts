@@ -16,6 +16,11 @@ export function isMarketplaceStore(store: Pick<PartnerAccessibleStore, "relation
   return store.relationModel === "BTHWANI_PARTNER";
 }
 
+export function canUseStoreOrders(store: Pick<PartnerAccessibleStore, "relationModel" | "owned" | "permissions">): boolean {
+  return (isMarketplaceStore(store) || store.relationModel === "INDEPENDENT_STORE") &&
+    (store.owned || store.permissions.includes("orders"));
+}
+
 export type PartnerAuthority = Readonly<{
   owner: boolean;
   surfaces: ReadonlyArray<PartnerSurface>;
@@ -34,7 +39,7 @@ export function derivePartnerAuthority(stores: ReadonlyArray<PartnerAccessibleSt
   const marketplaceGrants = (permission: StoreAccessPermission) => stores.some((store) => isMarketplaceStore(store) && store.permissions.includes(permission));
   const marketplaceOwner = stores.some((store) => isMarketplaceStore(store) && store.owned);
   const canUseStore = owner || stores.length === 0 || STORE_SURFACE_PERMISSIONS.some(grants);
-  const canUseOrders = marketplaceOwner || marketplaceGrants("orders");
+  const canUseOrders = stores.some(canUseStoreOrders);
   const canUseProducts = owner || grants("catalog");
   const canUseWallet = marketplaceOwner || WALLET_SURFACE_PERMISSIONS.some(marketplaceGrants);
   const surfaces = [

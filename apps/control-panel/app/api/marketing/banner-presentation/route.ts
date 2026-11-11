@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
+import { dshErrorPayload, dshHttpStatus, isDshClientError, requestDshJson } from "../../../../src/server/dsh/dsh-transport";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";
-import { requestDshJson, isDshClientError, dshErrorPayload, dshHttpStatus } from "../../../../src/server/dsh/dsh-bff";
 
 const failure = (status: number, code: string) => NextResponse.json({ error: { code } }, { status, headers: { "Cache-Control": "no-store" } });
 async function authorize() {

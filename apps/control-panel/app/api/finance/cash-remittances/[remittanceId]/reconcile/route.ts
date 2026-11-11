@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
-import { dshErrorPayload, dshHttpStatus, isDshClientError, reconcileOperatorCashRemittance } from "../../../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../../src/server/dsh/dsh-transport";
+import { reconcileOperatorCashRemittance } from "../../../../../../src/server/dsh/finance-custody-bff";
 import { readOperatorSession } from "../../../../../../src/server/identity/identity-bff";
 
 function errorResponse(code: string, message: string, status: number) {

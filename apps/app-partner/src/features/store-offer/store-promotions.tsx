@@ -1,11 +1,12 @@
 import { borders, radius, resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniConfirmDialog, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, type CatalogCategoryListItem, type CatalogProduct, type OperatorPromotionRegistryResponse, type PartnerCampaignListResponse, type PartnerCampaignView, type PromotionTarget, type PromotionView } from "@bthwani/dsh";
+import { type CatalogCategoryListItem, type CatalogProduct, formatMoney, type OperatorPromotionRegistryResponse, type PartnerCampaignListResponse, type PartnerCampaignView, type PromotionTarget, type PromotionView } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { createPartnerDshClient } from "../../bootstrap/dsh-client";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
-import { promotionBucket, type PromotionBucket } from "./promotion-lifecycle";
+import { type PromotionBucket, promotionBucket } from "./promotion-lifecycle";
 
 type TargetKind = "NONE" | PromotionTarget["targetKind"];
 type TargetOption = Readonly<{ id: string; label: string }>;
@@ -16,11 +17,7 @@ type ScopedPromotions = Readonly<{
   campaigns: PartnerCampaignListResponse | null;
 }>;
 
-function client() {
-  const baseUrl = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-  if (!baseUrl) throw new Error("DSH_BASE_URL_REQUIRED");
-  return createDshMobileClient(baseUrl, { cryptoRandomUUID: () => Crypto.randomUUID() });
-}
+const client = createPartnerDshClient;
 
 function benefitLabel(promotion: PromotionView): string {
   return promotion.kind === "PERCENTAGE" ? "خصم " + promotion.valueMinor + "%" : "خصم " + formatMoney(promotion.valueMinor, "YER");

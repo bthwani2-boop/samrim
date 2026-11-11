@@ -58,6 +58,9 @@ func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/operator/stores/{storeId}/images", s.operatorStoreImages)
 	mux.HandleFunc("POST /dsh/joining-cases", s.create)
 	mux.HandleFunc("POST /dsh/partner/stores/first", s.createPartnerFirstStore)
+	mux.HandleFunc("POST /dsh/partner/stores", s.createPartnerAdditionalStore)
+	mux.HandleFunc("POST /dsh/operator/partners/{actorId}/stores", s.createStoreForOperator)
+	mux.HandleFunc("GET /dsh/public/store-joining-policies", s.readPublicStoreJoiningPolicies)
 	mux.HandleFunc("GET /dsh/partner-applications/self", s.selfServiceApplication)
 	mux.HandleFunc("POST /dsh/partner-applications/self", s.selfServiceApplication)
 	mux.HandleFunc("GET /dsh/partner-applications/self/contact", s.selfServiceApplicantContact)
@@ -79,7 +82,30 @@ func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
 	s.RegisterStoreCommercialAgreementRoutes(mux)
 }
 
+func (s *JoiningCaseServer) readPublicStoreJoiningPolicies(w http.ResponseWriter, r *http.Request) {
+	policies, err := postgres.ReadStoreJoiningPolicies(r.Context(), s.db)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "POLICY_UNAVAILABLE", "Store joining policies are unavailable")
+		return
+	}
+	// Public registration choices must not expose operator actor IDs or policy reasons.
+	options := make([]map[string]any, 0, len(policies))
+	for _, policy := range policies {
+		options = append(options, map[string]any{"relationModel": policy.RelationModel, "enrollmentEnabled": policy.EnrollmentEnabled})
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"items": options})
+}
+
 func (s *JoiningCaseServer) createPartnerFirstStore(w http.ResponseWriter, r *http.Request) {
+	s.createPartnerStore(w, r, true)
+}
+
+func (s *JoiningCaseServer) createPartnerAdditionalStore(w http.ResponseWriter, r *http.Request) {
+	s.createPartnerStore(w, r, false)
+}
+
+func (s *JoiningCaseServer) createPartnerStore(w http.ResponseWriter, r *http.Request, firstOnly bool) {
 	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "actor override is forbidden")
 		return
@@ -89,21 +115,66 @@ func (s *JoiningCaseServer) createPartnerFirstStore(w http.ResponseWriter, r *ht
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Partner identity is required")
 		return
 	}
+	idempotencyKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if len(idempotencyKey) < 8 || len(idempotencyKey) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "bounded Idempotency-Key is required")
+		return
+	}
 	var input contract.PartnerFirstStoreCreateRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	store, replayed, err := s.service.CreateFirstStore(r.Context(), token, input)
+	var store postgres.StoreRecord
+	var replayed bool
+	var err error
+	if firstOnly {
+		store, replayed, err = s.service.CreateFirstStore(r.Context(), token, input, idempotencyKey)
+	} else {
+		store, replayed, err = s.service.CreateAdditionalStore(r.Context(), token, input, idempotencyKey)
+	}
+	writeStoreCreationOutcome(w, store, replayed, err)
+}
+
+// Operator assistance uses the same DSH writer, with a distinct, service-
+// authenticated identity boundary. The Operator never becomes the owner.
+func (s *JoiningCaseServer) createStoreForOperator(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "actor override is forbidden")
+		return
+	}
+	actorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	ownerID := strings.TrimSpace(r.PathValue("actorId"))
+	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	correlationID := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
+	if actorID == "" || len(actorID) > 128 || ownerID == "" || len(ownerID) > 128 ||
+		len(key) < 8 || len(key) > 128 || len(correlationID) < 8 || len(correlationID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Operator, verified Merchant, correlation and Idempotency-Key are required")
+		return
+	}
+	var input contract.PartnerFirstStoreCreateRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	store, replayed, err := s.service.CreateStoreForOperator(r.Context(), actorID, ownerID, correlationID, input, key)
+	writeStoreCreationOutcome(w, store, replayed, err)
+}
+
+func writeStoreCreationOutcome(w http.ResponseWriter, store postgres.StoreRecord, replayed bool, err error) {
 	if err != nil {
-		if errors.Is(err, postgres.ErrSelfStoreExists) {
-			writeError(w, http.StatusConflict, "STORE_ALREADY_EXISTS", "use the existing Store")
-			return
-		}
-		if errors.Is(err, postgres.ErrSelfStoreInput) {
+		switch {
+		case errors.Is(err, postgres.ErrSelfStoreIdempotency):
+			writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key belongs to a different Store request or actor")
+		case errors.Is(err, postgres.ErrSelfStoreExists):
+			writeError(w, http.StatusConflict, "STORE_ALREADY_EXISTS", "use the existing first Store")
+		case errors.Is(err, postgres.ErrSelfStoreInput):
 			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Store setup fields are invalid")
-			return
+		default:
+			writeJoiningCaseError(w, err)
 		}
-		writeJoiningCaseError(w, err)
 		return
 	}
 	status := http.StatusCreated
@@ -409,6 +480,8 @@ func writeJoiningCaseError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "JOINING_CASE_EXISTS", "an active joining case already exists for this phone")
 	case errors.Is(err, postgres.ErrJoiningCaseStoreExists):
 		writeError(w, http.StatusConflict, "STORE_EXISTS", "partner already has a canonical store")
+	case errors.Is(err, postgres.ErrStoreJoiningClosed):
+		writeError(w, http.StatusConflict, "STORE_JOINING_CLOSED", "new Stores in the chosen relation are currently unavailable")
 	case errors.Is(err, postgres.ErrJoiningCaseInvalidDecision):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "review decision is invalid")
 	case errors.Is(err, postgres.ErrJoiningCasePartnerAccess):

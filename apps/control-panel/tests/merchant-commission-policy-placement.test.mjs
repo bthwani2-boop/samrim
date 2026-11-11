@@ -48,7 +48,7 @@ test("commission suggestion preview does not wait for a nonexistent aggregate", 
 });
 
 test("governed agreement versions explicitly identify their commercial model", () => {
-  const contract = readFileSync(new URL("../../docs/governance/product/capabilities/finance/store-commercial-agreement.md", root), "utf8");
+  const contract = readFileSync(new URL("../../docs/governance/finance.md", root), "utf8");
   assert.match(contract, /each version explicitly identifies Store, the selected commercial model/);
   assert.match(contract, /zero product commission never implies subscription/);
 });

@@ -63,7 +63,7 @@ export function StoreProfileTabs({
     <Panel id="operations" activeTab={activeTab}>
       {canViewOperations ? <div className="store-profile-tab-grid store-profile-focused-grid">
         <Card title="استقبال الطلبات وساعات العمل">
-          <StoreAvailabilityControls storeId={store.id} enabledModes={store.fulfillmentModes} />
+          <StoreAvailabilityControls key={store.id} storeId={store.id} enabledModes={store.fulfillmentModes} />
         </Card>
         <Card title="طرق تنفيذ الطلب">
           <StoreModeControls store={store} onUpdated={onUpdated} />
@@ -76,10 +76,11 @@ export function StoreProfileTabs({
         <p className="store-profile-muted" role="status">ليست لديك صلاحية عرض العمليات لهذا المتجر.</p>}
       {joining?.firstStoreWorkingHours?.intervals.length ? <details className="store-intake-archive">
         <summary>ساعات الانضمام السابقة (للاطلاع فقط)</summary>
+        <p>هذه بيانات الطلب الأولي وليست أوقات التشغيل المعتمدة حاليًا.</p>
         <ul>{[...joining.firstStoreWorkingHours.intervals].sort((a,b) => a.dayOfWeek - b.dayOfWeek || a.opensAt.localeCompare(b.opensAt)).map((item) =>
           <li key={item.dayOfWeek + "-" + item.opensAt + "-" + item.closesAt}>
             <span>{intakeWeekdays[item.dayOfWeek - 1] ?? "يوم " + item.dayOfWeek}</span>
-            <bdi dir="ltr">{item.opensAt}-{item.closesAt}{item.closesNextDay ? " (+1)" : ""}</bdi>
+            <bdi dir="ltr">{item.opensAt}-{item.closesAt}{item.closesNextDay ? " · ينتهي اليوم التالي" : ""}</bdi>
           </li>)}</ul>
       </details> : null}
     </Panel>

@@ -107,6 +107,37 @@ func TestOperatorMissionLossOpensOnceAndRequiresRecovery(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// The database is the trust boundary for detector readback. A future
+		// timestamp from an incorrect internal writer is not recovered GPS.
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_mission_latest
+            (assignment_id,captain_actor_id,latitude,longitude,accuracy_meters,recorded_at,received_at,sequence)
+            VALUES('assignment_lost_gps_auto','captain_lost_gps_auto',15.38,44.2,11,
+                   clock_timestamp()+interval '10 minutes',clock_timestamp(),1)`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_mission_latest
+            (assignment_id,captain_actor_id,latitude,longitude,accuracy_meters,recorded_at,received_at,sequence)
+            VALUES('assignment_lost_gps_missing','captain_lost_gps_missing',15.38,44.2,11,
+                   clock_timestamp(),clock_timestamp()+interval '10 minutes',1)`); err != nil {
+			t.Fatal(err)
+		}
+		if n, err := postgres.DetectOperatorOrderExceptions(ctx, db, 25); err != nil || n != 0 {
+			t.Fatalf("future-dated GPS reopened a case: count=%d err=%v", n, err)
+		}
+		var prematureState string
+		if err := db.QueryRowContext(ctx, "SELECT state FROM dsh.operator_order_cases WHERE id=$1", automatic.ID).Scan(&prematureState); err != nil || prematureState != "OPEN" {
+			t.Fatalf("future GPS automatically resolved an unclaimed case: state=%s err=%v", prematureState, err)
+		}
+		if _, _, err := postgres.UpdateOpsCase(ctx, db, c.OrderID, c.ID, "lost_gps_operator", "RESOLVE",
+			"Future GPS cannot prove the mission is recovered", "gps-future-idem-001", "gps-future-corr-001", claimed.Version); !errors.Is(err, postgres.ErrOpsCaseUnverified) {
+			t.Fatalf("future GPS manually resolved a claimed case: %v", err)
+		}
+		// Remove only these deliberately malformed, isolated test rows before
+		// exercising the real Captain update and canonical recovery below.
+		if _, err := db.ExecContext(ctx, `DELETE FROM dsh.captain_mission_latest
+            WHERE assignment_id IN ('assignment_lost_gps_auto','assignment_lost_gps_missing')`); err != nil {
+			t.Fatal(err)
+		}
 		if err := postgres.UpdateCaptainMissionLocation(ctx, db, "assignment_lost_gps_auto", "captain_lost_gps_auto", 15.38, 44.2, 11, time.Now().UTC(), 1); err != nil {
 			t.Fatal(err)
 		}

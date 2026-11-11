@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { dshErrorPayload, dshHttpStatus, isDshClientError, readHREmployeeByOperatorActor } from "../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-transport";
+import { readHREmployeeByOperatorActor } from "../../../../src/server/dsh/hr-bff";
 
 import { identityErrorPayload, identityHttpStatus, readOperatorSession, setIdentityRoleEnabled, setIdentitySecurityEnabled } from "../../../../src/server/identity/identity-bff";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";

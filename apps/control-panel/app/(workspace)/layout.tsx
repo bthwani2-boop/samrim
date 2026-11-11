@@ -8,7 +8,7 @@ import { type ReactNode, type RefObject, useEffect, useRef, useState } from "rea
 import { IdentitySurface } from "../../src/features/access/identity-surface";
 import { StoreCatalogWebMCPTools } from "../../src/features/webmcp/store-catalog-webmcp-tools";
 import { WorkspaceEntryWebMCPTools } from "../../src/features/webmcp/workspace-entry-tools";
-import { currentWorkspaceChild, currentWorkspaceDestination, dynamicWorkspaceRouteLabel, isCurrentWorkspaceDestination, workspaceCatalogResources, workspaceDestinations, workspaceSearchEntries } from "../../src/navigation/workspace-registry";
+import { canOpenWorkspaceDestination, canOpenWorkspaceRoute, currentWorkspaceChild, currentWorkspaceDestination, workspaceCatalogResources, workspaceDestinations, workspaceSearchEntries, dynamicWorkspaceRouteLabel } from "../../src/navigation/workspace-registry";
 import { useSession } from "../../src/session/session-provider";
 import { OperatorAccountDrawer } from "../../src/shell/operator-account-drawer";
 import { ControlShell, LoadingState, UnavailableState } from "../../src/shell/public-shell";
@@ -20,20 +20,6 @@ function currentChild(pathname: string, destination: (typeof workspaceDestinatio
   if (child) return child;
   const label = dynamicWorkspaceRouteLabel(pathname);
   return label ? { href: pathname, label } : null;
-}
-
-function canOpenWorkspaceDestination(identity: ActorIdentity, destination: (typeof workspaceDestinations)[number]) {
-  if (destination.initialOperatorAdminOnly && !identity.canManageOperatorPermissions) return false;
-  return !destination.permission || identity.permissions?.includes(destination.permission) === true;
-}
-
-function canOpenWorkspaceRoute(identity: ActorIdentity, href: string) {
-  // Cross-store catalog history retains both DSH operator grants, even when reached through Catalog.
-  if (href === "/catalog-activity" && !identity.permissions?.includes("partners")) return false;
-  // The shared recovery page serves partners as well as catalog operators.
-  if (href === "/catalog/trash" && identity.permissions?.includes("partners")) return true;
-  const destination = workspaceDestinations.find((candidate) => isCurrentWorkspaceDestination(href, candidate));
-  return !destination || canOpenWorkspaceDestination(identity, destination);
 }
 
 function workspaceNavigationContext(pathname: string, identity: ActorIdentity | null) {
@@ -191,8 +177,9 @@ function WorkspaceNavigation({
   onToggleDensity: () => void;
 }>) {
   const { state } = useSession();
-  const visibleDestinations = state.kind === "authenticated"
-    ? workspaceDestinations.filter((destination) => destination.showInWorkspaceNavigation !== false && canOpenWorkspaceDestination(state.identity, destination))
+  const identity = state.kind === "authenticated" ? state.identity : null;
+  const visibleDestinations = identity
+    ? workspaceDestinations.filter((destination) => destination.showInWorkspaceNavigation !== false && canOpenWorkspaceDestination(identity, destination))
     : [];
   const activeDestination = workspaceNavigationContext(pathname, state.kind === "authenticated" ? state.identity : null).destination;
   const activeChild = currentWorkspaceChild(pathname, activeDestination);
@@ -202,7 +189,7 @@ function WorkspaceNavigation({
   const items: MenuProps["items"] = visibleDestinations.flatMap((destination, index) => {
     const current = activeDestination.href === destination.href;
     const childItems = current && (!compact || open) ? destination.children
-      .filter((child) => child.showInWorkspaceNavigation !== false && child.href !== destination.href)
+      .filter((child) => child.showInWorkspaceNavigation !== false && child.href !== destination.href && identity !== null && canOpenWorkspaceRoute(identity, child.href))
       .map((child) => ({
         key: child.href,
         className: "workspace-nav-child-item",
@@ -336,6 +323,7 @@ export default function WorkspaceLayout({ children }: Readonly<{ children: React
   if (state.kind === "signed_out") return <LoadingState title="جارٍ الرجوع إلى بوابة الهوية" message="انتهت الجلسة المحلية أو لم تعد متاحة." />;
 
   const destinationAccessGranted = canOpenWorkspaceRoute(state.identity, pathname);
+  const workspaceScope = JSON.stringify([state.identity.subject, state.identity.sessionId, state.identity.role, [...(state.identity.permissions ?? [])].sort((left, right) => left.localeCompare(right)), state.identity.canManageOperatorPermissions === true]);
 
   return (
     <ControlShell className="workspace-app-shell" surface="workspace" footer={null} header={<WorkspaceHeader busy={busy} navOpen={navigationOpen} navTriggerRef={navTriggerRef} onLogout={() => { setLocalSignOut(true); void logout(); }} onOpenNavigation={() => setNavigationOpen(true)} pathname={pathname} />}>
@@ -345,7 +333,7 @@ export default function WorkspaceLayout({ children }: Readonly<{ children: React
       <div className="workspace-layout" data-nav-compact={navigationCompact ? "true" : "false"} data-table-density={tableDense ? "compact" : "comfortable"}>
         {navigationOpen ? <button type="button" className="workspace-nav-backdrop" aria-label="إغلاق مسارات العمل" onClick={closeNavigation} /> : null}
         <WorkspaceNavigation firstLinkRef={navFirstLinkRef} navRef={navRef} onClose={closeNavigation} open={navigationOpen} pathname={pathname} compact={navigationCompact} onToggleCompact={toggleNavigationCompact} dense={tableDense} onToggleDensity={toggleTableDensity} />
-        <main key={state.identity.subject} ref={mainRef} id="workspace-main" className="workspace-main" data-workspace-section={pathname?.split("/")[1] || "workspace"} tabIndex={-1}>
+        <main key={workspaceScope} ref={mainRef} id="workspace-main" className="workspace-main" data-workspace-section={pathname?.split("/")[1] || "workspace"} tabIndex={-1}>
           {destinationAccessGranted ? children : <section className="collection-state" role="status"><strong>الوصول إلى هذه المساحة غير مفعّل</strong><p>تحتاج إلى صلاحية النطاق المناسبة من إدارة صلاحيات المشغّلين.</p><Link className="button button-secondary" href="/workspace">العودة إلى الرئيسية</Link></section>}
         </main>
       </div>

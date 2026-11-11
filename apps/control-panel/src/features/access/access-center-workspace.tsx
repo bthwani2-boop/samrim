@@ -5,14 +5,14 @@ import type { ActorRoleView, OperatorProfile, OperatorProfilePage } from "@bthwa
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { HRAccessRequest, HRAccessRequestPage } from "../../server/dsh/dsh-bff";
+import type { HRAccessRequest, HRAccessRequestPage } from "../../server/dsh/hr-bff";
 import { identityFetch } from "../../session/identity-fetch";
 import { operatorWorkspacePermissions } from "../../session/operator-permissions";
 import { useSession } from "../../session/session-provider";
 import { AdaptiveRecordPanel, AdaptiveRecordWorkspace } from "../../shell/adaptive-record-workspace";
-import { AccountAccessPanel } from "./account-access-panel";
-import { useReadOnReturn } from "../shared/use-read-on-return";
 import { RegistryColumnHeader } from "../shared/registry-column-header";
+import { useReadOnReturn } from "../shared/use-read-on-return";
+import { AccountAccessPanel } from "./account-access-panel";
 import { HRPermissionReview } from "./hr-permission-review";
 
 type Source = "requests" | "profiles" | "operators";

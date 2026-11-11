@@ -48,5 +48,5 @@ func main() {
 	if err := postgres.VerifySchema(ctx, db, records); err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("WLT_SCHEMA_VERIFY=PASS schema v%d", postgres.SchemaVersion)
+	log.Printf("WLT_SCHEMA_VERIFY=PASS schema v%d", len(records))
 }

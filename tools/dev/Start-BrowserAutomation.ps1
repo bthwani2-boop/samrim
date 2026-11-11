@@ -54,7 +54,11 @@ function Test-ExactBrowserProfile {
 
 function Test-CdpEndpoint {
     param([string]$Name, [string]$Executable, [string]$ProfileDir, [int]$Port)
-    $connections = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
+    # Windows can misreport the state of a listening socket. Use the local
+    # binding to verify ownership, then prove listening with the CDP handshake.
+    $connections = @(Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue | Where-Object {
+        $_.RemotePort -eq 0
+    })
     if ($connections.Count -eq 0) { return $false }
     foreach ($connection in $connections) {
         if ($connection.LocalAddress -notin @('127.0.0.1', '::1')) {

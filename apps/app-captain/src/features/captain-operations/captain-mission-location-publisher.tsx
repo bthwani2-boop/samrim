@@ -2,81 +2,104 @@ import * as Location from "expo-location";
 import { useEffect } from "react";
 import { AppState } from "react-native";
 
+import { captainSessionKey } from "../../bootstrap/captain-session-scope";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
-import { backgroundMissionRunning, reconcileBackgroundMissionLocation, stopBackgroundMissionLocation } from "./captain-mission-location-background";
+import { reconcileBackgroundMissionLocation, stopBackgroundMissionLocation } from "./captain-mission-location-background";
 
-// The foreground watcher is the fallback when explicit native background
-// consent is absent. These mission fixes remain separate from dispatch presence.
+// Foreground mission fixes are a fallback when native background consent is absent.
+// Neither publisher supplies a Customer location feed or movement history.
 export function CaptainMissionLocationPublisher() {
   useEffect(() => {
     let disposed = false;
     let activeAssignment = "";
+    let ownerSession = "";
     let watcher: Location.LocationSubscription | null = null;
     let sequence = Date.now();
     let posting = false;
     let discovering = false;
-    let owner = "";
+    let discoveryPending = false;
+    let stopping: Promise<void> | null = null;
     let pendingRequest: AbortController | null = null;
+    let observedSession = captainSessionKey(currentIdentityState());
+
     async function stop(endMission = true) {
       activeAssignment = "";
-      owner = "";
+      ownerSession = "";
       watcher?.remove();
       watcher = null;
       pendingRequest?.abort();
       pendingRequest = null;
       posting = false;
-      if (endMission) await stopBackgroundMissionLocation(false);
+      if (!endMission) return;
+      const operation = stopBackgroundMissionLocation(false);
+      stopping = operation;
+      let stopped = false;
+      try { await operation; stopped = true; }
+      finally {
+        if (stopping === operation) stopping = null;
+        if (!stopped) discoveryPending = false;
+        else if (discoveryPending && !discovering && !disposed) {
+          discoveryPending = false;
+          void update();
+        }
+      }
     }
+
     async function update() {
-      if (disposed || discovering) return;
+      if (disposed) return;
+      if (discovering || stopping) { discoveryPending = true; return; }
       const identity = currentIdentityState();
       if (AppState.currentState !== "active") { await stop(false); return; }
-      if (identity.kind !== "authenticated") { await stop(); return; }
+      const sessionKey = captainSessionKey(identity);
+      if (!sessionKey || identity.kind !== "authenticated") { await stop(); return; }
+      const actor = identity.identity.subject;
+      const isCurrent = () => !disposed && AppState.currentState === "active"
+        && captainSessionKey(currentIdentityState()) === sessionKey;
       discovering = true;
       try {
-        const actor = identity.identity.subject;
         const token = await getUsableIdentityAccessToken();
+        if (!isCurrent()) { await stop(); return; }
         const result = await captainClient().listOwnCaptainAssignments(token);
-        if (disposed || AppState.currentState !== "active") { await stop(false); return; }
-        if (currentIdentityState().kind !== "authenticated") { await stop(); return; }
-        const candidate = result.assignments.find((a) => a.state === "assigned" || a.state === "in_custody");
-        if (!candidate) { await stop();return; }
+        if (!isCurrent()) { await stop(); return; }
+        const candidate = result.assignments.find((item) => item.state === "assigned" || item.state === "in_custody");
+        if (!candidate) { await stop(); return; }
         const task = await captainClient().readOwnCaptainDeliveryTask(token, candidate.id);
-        const currentSession = currentIdentityState();
-        if (disposed || AppState.currentState !== "active") { await stop(false); return; }
-        if (task.task.fulfillmentMode !== "BTHWANI_CAPTAIN" ||
-            currentSession.kind !== "authenticated" || currentSession.identity.subject !== actor) {
+        if (!isCurrent() || task.task.fulfillmentMode !== "BTHWANI_CAPTAIN") {
           await stop(); return;
         }
-        if (candidate.id === activeAssignment && owner === actor && watcher) {
-          if (await reconcileBackgroundMissionLocation(actor, candidate.id)) {
-            watcher.remove(); watcher = null;
-          }
+        if (candidate.id === activeAssignment && ownerSession === sessionKey && watcher) {
+          const backgroundActive = await reconcileBackgroundMissionLocation(actor, candidate.id);
+          if (!isCurrent()) { await stop(); return; }
+          if (backgroundActive) { watcher.remove(); watcher = null; }
           return;
         }
         await stop(false);
-        if (await reconcileBackgroundMissionLocation(actor, candidate.id)) {
+        if (!isCurrent()) { await stop(); return; }
+        const backgroundActive = await reconcileBackgroundMissionLocation(actor, candidate.id);
+        if (!isCurrent()) { await stop(); return; }
+        if (backgroundActive) {
           activeAssignment = candidate.id;
-          owner = actor;
+          ownerSession = sessionKey;
           return;
         }
         const permission = await Location.getForegroundPermissionsAsync();
-        if (!permission.granted || disposed || AppState.currentState !== "active") return;
-        owner = actor;
+        if (!isCurrent() || !permission.granted) return;
         activeAssignment = candidate.id;
+        ownerSession = sessionKey;
         const targetAssignment = candidate.id;
-        const sourceActor = actor;
+        const targetSession = sessionKey;
+        const isWatcherCurrent = () => !disposed && AppState.currentState === "active"
+          && targetAssignment === activeAssignment && ownerSession === targetSession
+          && captainSessionKey(currentIdentityState()) === targetSession;
+
         const subscription = await Location.watchPositionAsync({
           accuracy: Location.Accuracy.Balanced,
           timeInterval: 20_000,
           // A stationary Captain still needs periodic location updates.
           distanceInterval: 0,
         }, (position) => {
-          const session = currentIdentityState();
-          if (disposed || posting || AppState.currentState !== "active" ||
-              targetAssignment !== activeAssignment || session.kind !== "authenticated" ||
-              session.identity.subject !== sourceActor) return;
+          if (posting || !isWatcherCurrent()) return;
           const url = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
           if (!url) return;
           sequence = Math.max(sequence + 1, Date.now());
@@ -86,33 +109,27 @@ export function CaptainMissionLocationPublisher() {
           pendingRequest = requestController;
           void (async () => {
             const accessToken = await getUsableIdentityAccessToken();
-            const currentSession = currentIdentityState();
-            if (disposed || requestController.signal.aborted ||
-                AppState.currentState !== "active" ||
-                activeAssignment !== targetAssignment ||
-                currentSession.kind !== "authenticated" ||
-                currentSession.identity.subject !== sourceActor) return;
+            if (requestController.signal.aborted || !isWatcherCurrent()) return;
             const timeout = setTimeout(() => requestController.abort(), 12_000);
             try {
-              const response = await fetch(url.replace(/\/$/, "") +
-                `/dsh/captains/me/assignments/${encodeURIComponent(targetAssignment)}/mission-location`, {
-                method: "POST",
-                signal: requestController.signal,
-                headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  latitude: position.coords.latitude,
-                  longitude: position.coords.longitude,
-                  accuracyMeters: Math.max(0, position.coords.accuracy ?? 5000),
-                  recordedAt: new Date(position.timestamp).toISOString(),
-                  sequence: fixSequence,
-                }),
-              });
+              const response = await fetch(
+                `${url.replace(/\/$/, "")}/dsh/captains/me/assignments/${encodeURIComponent(targetAssignment)}/mission-location`, {
+                  method: "POST",
+                  signal: requestController.signal,
+                  headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                    accuracyMeters: Math.max(0, position.coords.accuracy ?? 5000),
+                    recordedAt: new Date(position.timestamp).toISOString(),
+                    sequence: fixSequence,
+                  }),
+                },
+              );
               if (!response.ok && response.status !== 409) throw new Error("MISSION_LOCATION_REJECTED");
-            } finally {
-              clearTimeout(timeout);
-            }
+            } finally { clearTimeout(timeout); }
           })().catch(() => {
-            // Operator displays LOST when fixes cannot be submitted. No synthetic position.
+            // No synthetic position: Operations reports STALE/LOST during failure.
           }).finally(() => {
             if (pendingRequest === requestController) {
               pendingRequest = null;
@@ -120,35 +137,41 @@ export function CaptainMissionLocationPublisher() {
             }
           });
         }, () => {
-          // Android can invalidate a watcher when GPS or permission changes.
-          // Let the existing foreground discovery loop safely re-register it.
-          if (targetAssignment === activeAssignment) {
-            watcher?.remove();
-            watcher = null;
-          }
+          // Android may invalidate a watcher when GPS or permission changes.
+          if (isWatcherCurrent()) { watcher?.remove(); watcher = null; }
         });
-        if (disposed || AppState.currentState !== "active" || activeAssignment !== targetAssignment) {
-          subscription.remove();
-          return;
-        }
+        if (!isWatcherCurrent()) { subscription.remove(); return; }
         watcher = subscription;
       } catch {
         await stop(false);
       } finally {
         discovering = false;
+        if (discoveryPending && !disposed) {
+          discoveryPending = false;
+          void update();
+        }
       }
     }
+
     void update();
     const appListener = AppState.addEventListener("change", (state) => {
       if (state !== "active") { void stop(false); return; }
       void update();
     });
     const unsubscribeIdentity = subscribeIdentitySession((identity) => {
-      if (identity.kind !== "authenticated" || (owner && owner !== identity.identity.subject)) {
-        void stop();
+      const nextSession = captainSessionKey(identity);
+      if (nextSession !== observedSession) {
+        observedSession = nextSession;
+        discoveryPending = Boolean(nextSession);
+        void stop().then(() => {
+          if (nextSession && !disposed) void update();
+        }).catch(() => {
+          // An unconfirmed native stop must not start another GPS watcher.
+          // The headless task independently rejects the superseded session.
+        });
         return;
       }
-      void update();
+      if (nextSession) void update();
     });
     const interval = setInterval(() => { void update(); }, 40_000);
     return () => {
@@ -156,7 +179,7 @@ export function CaptainMissionLocationPublisher() {
       unsubscribeIdentity();
       appListener.remove();
       clearInterval(interval);
-      // Unmounting the tab layout is not a signed-out or completed mission.
+      // Unmounting the tab layout is not a completed mission.
       void stop(false);
     };
   }, []);

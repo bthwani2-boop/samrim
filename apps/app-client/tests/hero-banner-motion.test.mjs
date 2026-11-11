@@ -71,3 +71,15 @@ test("marketing settings remain server-authoritative", () => {
   assert.match(discovery, /readPublicBannerPresentation\(\)/);
   assert.match(discovery, /setInterval\(refresh, 60_000\)/);
 });
+
+test("offer carousel retains swipe, RTL, video and failure states without a second hero engine", () => {
+  const offers = discovery.slice(discovery.indexOf("function DiscoveryMediaCarousel("));
+  assert.match(offers, /<ScrollView/);
+  assert.match(offers, /I18nManager\.isRTL \? -1 : 1/);
+  assert.match(offers, /onMomentumScrollEnd/);
+  assert.match(offers, /recordDiscoveryImpression\(activeItem\.id\)/);
+  assert.match(offers, /posterUri/);
+  assert.match(offers, /failedMedia\.has/);
+  assert.match(offers, /accessibilityState=\{\{ selected: index === activeIndex \}\}/);
+  assert.doesNotMatch(offers, /presentation|physicalIndex|fadeOpacity|setInterval|resetTimer|Animated\.ScrollView/);
+});

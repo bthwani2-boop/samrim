@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { readOperatorFinancialPolicyRegistry, dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-transport";
+import { readOperatorFinancialPolicyRegistry } from "../../../../src/server/dsh/policy-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 export async function GET() {
  const session=await readOperatorSession();

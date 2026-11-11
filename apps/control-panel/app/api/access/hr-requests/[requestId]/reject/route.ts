@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { decideHRAccessRequest, dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../../src/server/dsh/dsh-transport";
+import { rejectHRAccessRequest } from "../../../../../../src/server/dsh/hr-bff";
 import { readOperatorSession } from "../../../../../../src/server/identity/identity-bff";
 import { verifySameOrigin } from "../../../../../../src/server/security/csrf";
 
@@ -19,7 +20,7 @@ export async function POST(request: Request, context: {params: Promise<{requestI
  const key=request.headers.get("Idempotency-Key")?.trim()??"";
  if(key.length<8||key.length>128)return NextResponse.json({error:{code:"INVALID_INPUT"}},{status:400});
  try{
-  const result=await decideHRAccessRequest(id,"reject",{expectedVersion:body.expectedVersion,reason:body.reason.trim()},{
+  const result=await rejectHRAccessRequest(id,{expectedVersion:body.expectedVersion,reason:body.reason.trim()},{
    operatorActorId:identity.subject,correlationId:randomUUID(),idempotencyKey:key,
   });
   return NextResponse.json({request:result},{headers:{"Cache-Control":"no-store"}});

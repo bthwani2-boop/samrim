@@ -7,7 +7,7 @@ const tones: readonly AlertTone[] = ["classic", "soft", "urgent"];
 
 async function keyForActor(actorID: string): Promise<string> {
   const digest = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, actorID);
-  return "order-alert-tone-" + digest;
+  return `order-alert-tone-${digest}`;
 }
 export async function readAlertToneForActor(actorID: string): Promise<AlertTone> {
   if (!actorID.trim() || Platform.OS === "web") return "classic";
@@ -32,4 +32,15 @@ export async function saveAlertToneForActor(
     await SecureStore.setItemAsync(key, tone);
     return isCurrentActor(selectedActor);
   } catch { return false; }
+}
+
+/** Only Identity owns session truth; push preferences consume its authenticated actor snapshot. */
+export type AlertIdentitySnapshot = { kind: string; identity?: { subject: string } };
+
+export function actorIDFromAlertIdentity(state: AlertIdentitySnapshot): string {
+  return state.kind === "authenticated" ? (state.identity?.subject.trim() ?? "") : "";
+}
+
+export function currentOrderAlertToneForIdentity(currentIdentityState: () => AlertIdentitySnapshot): Promise<AlertTone> {
+  return currentOrderAlertTone(() => actorIDFromAlertIdentity(currentIdentityState()));
 }

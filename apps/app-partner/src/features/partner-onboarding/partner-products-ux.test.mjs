@@ -8,7 +8,8 @@ const shell = readFileSync(new URL("../../shell/partner-shell.tsx", import.meta.
 
 test("catalog header keeps store switching inside the catalog-authorized scope", () => {
   assert.match(shell, /isCatalogSurface=\{headerRoute\.name === "products"\}/);
-  assert.match(shell, /const scopedStores = isCatalogSurface \? stores\.filter\(\(store\) => store\.owned \|\| store\.permissions\.includes\("catalog"\)\) : stores/);
+  assert.match(shell, /const scopedStores = isCatalogSurface \? stores\.filter\(\(store\) => store\.owned \|\| store\.permissions\.includes\("catalog"\)\)/);
+  assert.match(shell, /: isOrders \? stores\.filter\(canUseStoreOrders\) : stores/);
   assert.match(shell, /isProducts && selectedScopedStore/);
   assert.match(shell, /scopedStores\.map\(\(store\)/);
   assert.doesNotMatch(products, /PartnerStoreScopeSelector/);

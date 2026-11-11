@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { register } from "node:module";
-import { test } from "node:test";
 import path from "node:path";
+import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 
 register(pathToFileURL(path.resolve(import.meta.dirname, "../../../packages/design-system/tools/ts-resolver.mjs")).href, import.meta.url);
@@ -80,8 +80,9 @@ test("contrast diagnostics detect unsafe semantic text and surface combinations"
   assert.ok(studioPaletteWarnings({ ...defaultStudioDraft().palette, navy: "#FFFFFF" }).length >= 1);
 });
 
-test("studio is independently authorized and reuses the canonical DSH banner owner", () => {
-  assert.match(nav, /href: "\/studio", label: "استوديو التصميم", children: \[\], permission: "marketing"/);
+test("studio inherits the canonical Marketing workspace permission and reuses the DSH banner owner", () => {
+  assert.match(nav, /const marketingChildren: readonly WorkspaceChild\[\] = \[[^\]]*href: "\/studio", label: "استوديو التصميم"/);
+  assert.match(nav, /href: "\/marketing", label: "التسويق والتصميم", children: marketingChildren, permission: "marketing"/);
   assert.match(route, /TemplateStudioWorkspace/);
   assert.match(editor, /state\.identity\.role !== "operator"/);
   assert.match(editor, /!state\.identity\.permissions\?\.includes\("marketing"\)/);

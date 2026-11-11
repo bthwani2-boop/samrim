@@ -3,7 +3,7 @@
 > **النوع:** مواصفة تنفيذية لواجهة المشغّل؛ ليست سياسة حوكمة جديدة وليست دليلًا على اكتمال التنفيذ.
 > **التاريخ:** 2026-10-16. **المستودع:** `D:\samrim`، الفرع `19`، أساس القراءة `8853460d42ddf28d9d1a0e44cef2f500f16d69d0`.
 > **الحالة:** تنفيذ مرحلي على الفرع `19`؛ ملف المتجر التكيفي ومنطق العرض وبعض إجراءات الإدارة منفّذة ومختبرة، بينما اكتمال ملف الشريك والعميل والمنتجات المحلية والعلاقات والصلاحيات لا يزال يتطلب عملًا وإثباتًا. لا يُستنتج الاكتمال العام من هذا الملف.
-> **مرجعية القرار:** `docs/governance/policies/experience.md` و`design.md` و`quality.md` و`security.md`؛ لا تكرر هذه الوثيقة ملكية السياسات أو حقائق الخدمات.
+> **مرجعية القرار:** `docs/governance/experience.md` و`design.md` و`quality.md` و`security.md`؛ لا تكرر هذه الوثيقة ملكية السياسات أو حقائق الخدمات.
 > **النطاق:** لوحة التحكم فقط، مع الاستفادة من العقود الحقيقية في Identity وDSH وWLT وHR دون تغيير مالكي البيانات.
 
 ## 1. الهدف والقرار
@@ -218,8 +218,8 @@
 
 ## 15. مراجع العمل
 
-- السياسة المعتمدة داخليًا: `docs/governance/policies/experience.md`
-- التصميم المعتمد داخليًا: `docs/governance/policies/design.md`
+- السياسة المعتمدة داخليًا: `docs/governance/experience.md`
+- التصميم المعتمد داخليًا: `docs/governance/experience.md`
 - ملكية المسارات: `REPOSITORY-STRUCTURE.md`
 - WAI-ARIA Window Splitter: https://www.w3.org/WAI/ARIA/apg/patterns/windowsplitter/
 - NN/g — Data Tables: https://www.nngroup.com/articles/data-tables/

@@ -1,9 +1,9 @@
 import { borders, radius, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type CatalogProduct, createDshMobileClient, type StoreDeletedCatalogProduct } from "@bthwani/dsh";
-import * as Crypto from "expo-crypto";
+import { type CatalogProduct, type StoreDeletedCatalogProduct } from "@bthwani/dsh";
 import { useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
+import { createPartnerDshClient } from "../../bootstrap/dsh-client";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 type Props = Readonly<{
@@ -13,11 +13,7 @@ type Props = Readonly<{
   onRestored: () => void;
 }>;
 
-function client() {
-  const url = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-  if (!url) throw new Error("DSH_BASE_URL_REQUIRED");
-  return createDshMobileClient(url, { cryptoRandomUUID: () => Crypto.randomUUID() });
-}
+const client = createPartnerDshClient;
 
 function message(error: unknown): string {
   if (error && typeof error === "object" && "status" in error) {

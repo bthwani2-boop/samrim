@@ -1,19 +1,18 @@
-import { collectStoreCatalogCsv, createDshMobileClient, STORE_CATALOG_EXPORT_PAGE_SIZE } from "@bthwani/dsh";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
+import { collectStoreCatalogCsv, STORE_CATALOG_EXPORT_PAGE_SIZE } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Platform, StyleSheet, Text, View } from "react-native";
+import { createPartnerDshClient } from "../../bootstrap/dsh-client";
 
-import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
+import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";
 
+const currentPartnerSessionKey = () => partnerSetupSessionKey(currentIdentityState());
 
-function client() {
-  const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-  if (!value) throw new Error("DSH_BASE_URL_REQUIRED");
-  return createDshMobileClient(value, { cryptoRandomUUID: () => Crypto.randomUUID() });
-}
+const client = createPartnerDshClient;
 
 export function StoreCatalogExportCard({ storeId, storeName }: Readonly<{ storeId: string; storeName?: string }>) {
   const theme = useAppearanceTheme();
@@ -23,28 +22,37 @@ export function StoreCatalogExportCard({ storeId, storeName }: Readonly<{ storeI
     muted: { color: theme.colorMuted, fontSize: 14 },
     error: { color: theme.danger, fontSize: 14 },
   }), [theme]);
+  const sessionKey = useSyncExternalStore(subscribeIdentitySession, currentPartnerSessionKey, () => "");
+  const scopeKey = JSON.stringify([sessionKey, storeId]);
   const [busy, setBusy] = useState(false);
+  const [feedbackScope, setFeedbackScope] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [progress, setProgress] = useState(0);
   const activeStoreId = useRef(storeId);
+  const activeRun = useRef(0);
   activeStoreId.current = storeId;
+  useEffect(() => {
+    // A Store or Identity-session change cancels an export from the previous scope.
+    void scopeKey;
+    return () => { activeRun.current += 1; };
+  }, [scopeKey]);
+  const statusCurrent = Boolean(sessionKey) && currentPartnerSessionKey() === sessionKey && feedbackScope === scopeKey;
+  const visibleBusy = statusCurrent && busy;
 
   async function exportCatalog() {
-    if (busy || !storeId.trim()) return;
+    if (visibleBusy || !storeId.trim() || !sessionKey || currentPartnerSessionKey() !== sessionKey) return;
+    const run = ++activeRun.current;
+    setFeedbackScope(scopeKey);
     setBusy(true);
     setError("");
     setNotice("");
     setProgress(0);
-    const actor = currentIdentityState();
-    const actorId = actor.kind === "authenticated" ? actor.identity.subject.trim() : "";
-    const scopeCurrent = () => {
-      const active = currentIdentityState();
-      return Boolean(actorId) && active.kind === "authenticated" && active.identity.subject.trim() === actorId && activeStoreId.current === storeId;
-    };
+    const scopeCurrent = () => activeRun.current === run && currentPartnerSessionKey() === sessionKey && activeStoreId.current === storeId;
     try {
       if (!scopeCurrent()) throw new Error("STORE_EXPORT_SESSION_CHANGED");
       const token = await getUsableIdentityAccessToken();
+      if (!scopeCurrent()) throw new Error("STORE_EXPORT_SESSION_CHANGED");
       const api = client();
       const result = await collectStoreCatalogCsv(storeId, async cursor => {
         if (!scopeCurrent()) throw new Error("STORE_EXPORT_SESSION_CHANGED");
@@ -80,16 +88,16 @@ export function StoreCatalogExportCard({ storeId, storeName }: Readonly<{ storeI
       const code = cause instanceof Error ? cause.message : "";
       if (scopeCurrent()) setError(code === "STORE_EXPORT_TOO_LARGE_OR_INCONSISTENT" ? "الكتالوج أكبر من الحد الآمن للتصدير على الجهاز أو تغيرت صفحاته. لم يُصدر ملف ناقص؛ استخدم تصديرًا مجزأً." : code === "STORE_EXPORT_SESSION_CHANGED" ? "تغير الحساب أو المتجر. أُلغيت عملية التصدير لحماية البيانات." : "تعذر تجهيز ملف الكتالوج. تحقق من الاتصال والصلاحيات ثم أعد المحاولة.");
     } finally {
-      setBusy(false);
+      if (activeRun.current === run) setBusy(false);
     }
   }
 
   return <View accessibilityLabel="تصدير كتالوج المتجر" style={styles.block}>
     <Text style={styles.title}>تصدير الكتالوج</Text>
     <Text style={styles.muted}>تصدير ملف CSV فعلي من عروض المتجر الحالية، بما فيها الأسعار والتوافر وحالة النشر. يشمل كل الصفحات ضمن حد حماية أداء الجهاز، ولا ينتج ملفًا ناقصًا بصمت.</Text>
-    {busy ? <Text accessibilityLiveRegion="polite" style={styles.muted}>جارٍ قراءة عروض المتجر: {progress}</Text> : null}
-    <BthwaniButton busy={busy} disabled={busy} label="تصدير عروض المتجر" onPress={() => void exportCatalog()} variant="secondary" />
-    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    {notice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}
+    {visibleBusy ? <Text accessibilityLiveRegion="polite" style={styles.muted}>جارٍ قراءة عروض المتجر: {progress}</Text> : null}
+    <BthwaniButton busy={visibleBusy} disabled={visibleBusy || !sessionKey} label="تصدير عروض المتجر" onPress={() => void exportCatalog()} variant="secondary" />
+    {statusCurrent && error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+    {statusCurrent && notice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}
   </View>;
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { listOperatorPolicyHistory, dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-transport";
+import { listOperatorPolicyHistory } from "../../../../src/server/dsh/policy-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 export async function GET(request:Request){
  const identity=await readOperatorSession();

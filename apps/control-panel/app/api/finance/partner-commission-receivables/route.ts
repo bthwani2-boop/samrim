@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { dshErrorPayload, dshHttpStatus, isDshClientError, listOperatorPartnerCommissionReceivables } from "../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-transport";
+import { listOperatorPartnerCommissionReceivables } from "../../../../src/server/dsh/finance-custody-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 
 const allowedSorts = ["actor_asc", "actor_desc"] as const;

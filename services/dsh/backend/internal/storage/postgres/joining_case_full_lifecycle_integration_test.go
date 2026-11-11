@@ -263,6 +263,24 @@ func TestSelfServiceCorrectionApprovalAndFinanceIsolationPostgres(t *testing.T) 
 		}
 		operatorApproval.RequestHash = postgres.HashJoiningCaseReviewWithFinancialTerms(
 			operatorDraft.Case.ID, "approved", "", operatorSubmitted.Case.Version, "", "")
+		if _, err := postgres.SetStoreJoiningPolicy(ctx, db, postgres.StoreRelationBThwaniPartner, false, 1,
+			"qa-policy-operator", "Pause new marketplace Stores", "qa-review-market-pause"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := postgres.ReviewJoiningCase(ctx, db, operatorApproval); !errors.Is(err, postgres.ErrStoreJoiningClosed) {
+			t.Fatalf("operator approval bypassed paused Store admission: %v", err)
+		}
+		stillSubmitted, err := postgres.ReadJoiningCase(ctx, db, operatorDraft.Case.ID)
+		if err != nil || stillSubmitted.Case.State != "submitted" || stillSubmitted.Case.Version != operatorSubmitted.Case.Version || stillSubmitted.Case.StoreID != "" {
+			t.Fatalf("blocked approval changed canonical case: %+v err=%v", stillSubmitted, err)
+		}
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.stores WHERE partner_actor_id=$1", "qa-operator-partner").Scan(&storeCount); err != nil || storeCount != 0 {
+			t.Fatalf("blocked approval persisted a Store: count=%d err=%v", storeCount, err)
+		}
+		if _, err := postgres.SetStoreJoiningPolicy(ctx, db, postgres.StoreRelationBThwaniPartner, true, 2,
+			"qa-policy-operator", "Resume new marketplace Stores", "qa-review-market-resume"); err != nil {
+			t.Fatal(err)
+		}
 		operatorApproved, err := postgres.ReviewJoiningCase(ctx, db, operatorApproval)
 		if err != nil || operatorApproved.Case.State != "approved" || operatorApproved.Case.StoreID == "" ||
 			operatorApproved.Case.FinancialProfileState != "REQUIRED" {
@@ -280,6 +298,65 @@ func TestSelfServiceCorrectionApprovalAndFinanceIsolationPostgres(t *testing.T) 
 		}
 		if _, err := postgres.ReadPublishedStore(ctx, db, operatorApproved.Case.StoreID, operatorInput.ServiceCityID); !errors.Is(err, postgres.ErrStoreNotFound) {
 			t.Fatalf("operator-created Store leaked to customer before publication: %v", err)
+		}
+		owned, err := postgres.ReadStoreOwnedByPartner(ctx, db, operatorApproved.Case.StoreID, "qa-operator-partner")
+		if err != nil || owned.RelationModel != postgres.StoreRelationBThwaniPartner {
+			t.Fatalf("created Store missing from owner's workspace: %+v err=%v", owned, err)
+		}
+		if _, err := postgres.ReadStoreOwnedByPartner(ctx, db, owned.ID, "qa-partner"); !errors.Is(err, postgres.ErrStoreNotFound) {
+			t.Fatalf("different Partner read the new Store as owner: %v", err)
+		}
+		if _, err := postgres.SetStoreJoiningPolicy(ctx, db, postgres.StoreRelationBThwaniPartner, false, 3,
+			"qa-policy-operator", "Pause after the Store was created", "qa-review-market-pause-again"); err != nil {
+			t.Fatal(err)
+		}
+		replayed, err := postgres.ReviewJoiningCase(ctx, db, operatorApproval)
+		if err != nil || !replayed.Replayed || replayed.Case.StoreID != owned.ID {
+			t.Fatalf("pausing admission must preserve exact approval replay: %+v err=%v", replayed, err)
+		}
+
+		if _, err := postgres.SetStoreJoiningPolicy(ctx, db, postgres.StoreRelationBThwaniPartner, true, 4,
+			"qa-policy-operator", "Resume for concurrent first Store setup", "qa-review-market-resume-race"); err != nil {
+			t.Fatal(err)
+		}
+		const concurrentOwner = "qa-concurrent-first-store-owner"
+		operatorCreate.Request.Phone = "+967700000012"
+		operatorCreate.IdempotencyKey = "qa-concurrent-create"
+		operatorCreate.RequestHash = postgres.HashJoiningCaseRequest(operatorCreate.Request)
+		concurrentDraft, err := postgres.CreateJoiningCase(ctx, db, operatorCreate)
+		if err != nil {
+			t.Fatal(err)
+		}
+		concurrentSubmitted, err := postgres.SubmitJoiningCase(ctx, db, concurrentDraft.Case.ID, concurrentOwner, concurrentDraft.Case.Version,
+			"qa-concurrent-submit", postgres.HashJoiningCaseSubmit(concurrentDraft.Case.ID, concurrentOwner, concurrentDraft.Case.Version),
+			"qa-operator-creator", "qa-concurrent-submit-correlation")
+		if err != nil {
+			t.Fatal(err)
+		}
+		operatorApproval.CaseID = concurrentDraft.Case.ID
+		operatorApproval.ExpectedVersion = concurrentSubmitted.Case.Version
+		operatorApproval.IdempotencyKey = "qa-concurrent-approve"
+		operatorApproval.RequestHash = postgres.HashJoiningCaseReviewWithFinancialTerms(concurrentDraft.Case.ID, "approved", "", concurrentSubmitted.Case.Version, "", "")
+
+		selfResult := make(chan error, 1)
+		go func() {
+			_, _, err := postgres.CreateFirstStoreForPartner(ctx, db, concurrentOwner, postgres.SelfStoreInput{
+				RelationModel: postgres.StoreRelationBThwaniPartner, Name: "Concurrent self-service Store",
+				ServiceCityID: input.ServiceCityID, VerticalID: input.VerticalID, CommercialTypeID: input.CommercialTypeID,
+				Address: input.FirstStoreAddress, Latitude: input.Latitude, Longitude: input.Longitude,
+				FulfillmentModes: []string{"CUSTOMER_PICKUP"},
+			}, "qa-concurrent-self")
+			selfResult <- err
+		}()
+		_, operatorErr := postgres.ReviewJoiningCase(ctx, db, operatorApproval)
+		selfErr := <-selfResult
+		if !(operatorErr == nil && errors.Is(selfErr, postgres.ErrSelfStoreExists)) &&
+			!(selfErr == nil && errors.Is(operatorErr, postgres.ErrJoiningCaseStoreExists)) {
+			t.Fatalf("exactly one first Store must win: self=%v operator=%v", selfErr, operatorErr)
+		}
+		stores, err := postgres.ListStoresForPartnerActor(ctx, db, concurrentOwner, 10, "")
+		if err != nil || len(stores.Stores) != 1 {
+			t.Fatalf("concurrent creation must persist one Store: %+v err=%v", stores, err)
 		}
 	}, 5*60*1000000000)
 }

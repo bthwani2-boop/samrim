@@ -15,6 +15,7 @@ import (
 var ErrCatalogOfferInvalidCursor = errors.New("catalog StoreOffer cursor is invalid")
 
 type CatalogStoreOfferPage struct {
+	Categories []CatalogCategoryRecord
 	Offers     []CatalogStoreOfferRecord
 	NextCursor string
 }
@@ -27,11 +28,15 @@ type catalogStoreOfferCursor struct {
 }
 
 func ListCatalogOfferPage(ctx context.Context, db *sql.DB, storeID string, limit int, rawCursor string) (CatalogStoreOfferPage, error) {
-	storeID = strings.TrimSpace(storeID)
-	rawCursor = strings.TrimSpace(rawCursor)
 	if db == nil {
 		return CatalogStoreOfferPage{}, errors.New("DSH database is nil")
 	}
+	return listCatalogOfferPageWithQueryer(ctx, db, storeID, limit, rawCursor)
+}
+
+func listCatalogOfferPageWithQueryer(ctx context.Context, queryer catalogOfferReadQueryer, storeID string, limit int, rawCursor string) (CatalogStoreOfferPage, error) {
+	storeID = strings.TrimSpace(storeID)
+	rawCursor = strings.TrimSpace(rawCursor)
 	if storeID == "" || len(storeID) > 128 || limit < 1 || limit > 100 || len(rawCursor) > 2048 {
 		return CatalogStoreOfferPage{}, ErrCatalogOfferInvalidCursor
 	}
@@ -47,24 +52,12 @@ func ListCatalogOfferPage(ctx context.Context, db *sql.DB, storeID string, limit
 	}
 	args = append(args, limit+1)
 	query += " ORDER BY o.created_at ASC,o.id ASC LIMIT $" + itoa(len(args))
-	rows, err := db.QueryContext(ctx, query, args...)
+	rows, err := queryer.QueryContext(ctx, query, args...)
 	if err != nil {
 		return CatalogStoreOfferPage{}, err
 	}
-	items := make([]CatalogStoreOfferRecord, 0, limit+1)
-	for rows.Next() {
-		item, scanErr := scanCatalogOffer(rows)
-		if scanErr != nil {
-			_ = rows.Close()
-			return CatalogStoreOfferPage{}, scanErr
-		}
-		items = append(items, item)
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return CatalogStoreOfferPage{}, err
-	}
-	if err := rows.Close(); err != nil {
+	items, err := scanCatalogOfferRows(rows, limit+1)
+	if err != nil {
 		return CatalogStoreOfferPage{}, err
 	}
 	page := CatalogStoreOfferPage{Offers: items}
@@ -76,13 +69,41 @@ func ListCatalogOfferPage(ctx context.Context, db *sql.DB, storeID string, limit
 			return CatalogStoreOfferPage{}, err
 		}
 	}
-	if err := hydrateCatalogOfferPage(ctx, db, page.Offers); err != nil {
+	if err := hydrateCatalogOfferPage(ctx, queryer, page.Offers); err != nil {
 		return CatalogStoreOfferPage{}, err
 	}
 	return page, nil
 }
 
-func hydrateCatalogOfferPage(ctx context.Context, db *sql.DB, offers []CatalogStoreOfferRecord) error {
+// Accept a DB connection or an existing read-only transaction so consumer
+// projections can hydrate media and modifier details from one MVCC snapshot.
+type catalogOfferReadQueryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+// scanCatalogOfferRows is the one Catalog scanner for paginated Store Offers.
+// Each caller owns its filter/cursor; SQL row and Close error handling stays shared.
+func scanCatalogOfferRows(rows *sql.Rows, capacity int) ([]CatalogStoreOfferRecord, error) {
+	offers := make([]CatalogStoreOfferRecord, 0, capacity)
+	for rows.Next() {
+		offer, err := scanCatalogOffer(rows)
+		if err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		offers = append(offers, offer)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	return offers, nil
+}
+
+func hydrateCatalogOfferPage(ctx context.Context, db catalogOfferReadQueryer, offers []CatalogStoreOfferRecord) error {
 	if len(offers) == 0 {
 		return nil
 	}

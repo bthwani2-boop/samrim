@@ -1,10 +1,11 @@
 import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniConfirmDialog, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import * as SecureStore from "../../bootstrap/compatible-storage";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, AppState, StyleSheet, Text, View } from "react-native";
+import * as SecureStore from "../../bootstrap/compatible-storage";
 
-import { currentIdentityState } from "../../bootstrap/identity";
+import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
+import { partnerSetupSessionKey } from "./partner-setup-session-scope";
 import { hasReviewableStoreAgreementRates, isConfirmedOwnStoreAgreementAcceptance } from "./store-agreement-acceptance-readback";
 import { agreementReadbackErrorMessage, agreementStatusLabel } from "./store-agreement-readiness";
 import {
@@ -15,6 +16,7 @@ import {
 } from "./store-commercial-agreement-client";
 
 const DEFAULT_ACCEPTANCE_REASON = "أوافق على النموذج التجاري وجميع شروط الاتفاقية المعروضة";
+const currentPartnerSessionKey = () => partnerSetupSessionKey(currentIdentityState());
 
 type AcceptanceAttempt = Readonly<{
   agreementId: string;
@@ -44,7 +46,7 @@ function modeLabel(mode: string): string {
 }
 
 function rateValue(commissionRateBps: number): string {
-  return new Intl.NumberFormat("ar-YE-u-nu-latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(commissionRateBps / 100) + "%";
+  return `${new Intl.NumberFormat("ar-YE-u-nu-latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(commissionRateBps / 100)}%`;
 }
 
 function commercialConsentSummary(agreement: StoreCommercialAgreement): string {
@@ -70,14 +72,19 @@ function acceptanceErrorMessage(cause: unknown, hasSavedAttempt: boolean): strin
 export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: string }>) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const sessionKey = useSyncExternalStore(subscribeIdentitySession, currentPartnerSessionKey, () => "");
   const identity = currentIdentityState();
-  const actorID = identity.kind === "authenticated" ? identity.identity.subject.trim() : "";
+  const actorID = sessionKey && identity.kind === "authenticated" ? identity.identity.subject.trim() : "";
+  // Durable retry identity belongs to a Partner and Store, not a renewable login session.
   const storageKey = actorID && storeID ? `bthwani.partner.store-agreement.accept.pending.v1.${encodeURIComponent(actorID)}.${encodeURIComponent(storeID)}` : "";
+  const viewScope = JSON.stringify([sessionKey, storeID]);
   const [agreements, setAgreements] = useState<ReadonlyArray<StoreCommercialAgreement> | null>(null);
   const [agreementsScope, setAgreementsScope] = useState("");
   const [feedbackScope, setFeedbackScope] = useState("");
-  const activeScope = useRef(storageKey);
-  activeScope.current = storageKey;
+  const activeScope = useRef(viewScope);
+  activeScope.current = viewScope;
+  const sessionCurrent = () => Boolean(sessionKey) && activeScope.current === viewScope &&
+    currentPartnerSessionKey() === sessionKey;
   const readSequence = useRef(0);
   const [pendingAttempt, setPendingAttempt] = useState<AcceptanceAttempt | null>(null);
   const [pendingStorageReady, setPendingStorageReady] = useState(false);
@@ -90,9 +97,10 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
 
   const load = useCallback(async (): Promise<ReadonlyArray<StoreCommercialAgreement> | null> => {
     const sequence = ++readSequence.current;
-    const isCurrent = () => activeScope.current === storageKey && readSequence.current === sequence;
-    setFeedbackScope(storageKey);
-    if (!storageKey) {
+    const isCurrent = () => Boolean(sessionKey) && currentPartnerSessionKey() === sessionKey &&
+      activeScope.current === viewScope && readSequence.current === sequence;
+    setFeedbackScope(viewScope);
+    if (!storageKey || !sessionKey) {
       setAgreements(null);
       setAgreementsScope("");
       setLoading(false);
@@ -120,7 +128,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
         setPendingStorageReady(false);
         setError("تعذر قراءة متابعة القبول المحفوظة بأمان؛ أعد المحاولة قبل قبول أي اتفاقية.");
       }
-      const currentAgreements = await readOwnStoreCommercialAgreements(storeID);
+      const currentAgreements = await readOwnStoreCommercialAgreements(storeID, sessionKey);
       if (!isCurrent()) return null;
       if (currentAgreements.some((agreement) => agreement.partnerActorId !== actorID)) {
         throw new Error("AGREEMENT_ACTOR_SCOPE_MISMATCH");
@@ -139,7 +147,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
         setPendingAttempt(null);
       }
       setAgreements(currentAgreements);
-      setAgreementsScope(storageKey);
+      setAgreementsScope(viewScope);
       return currentAgreements;
     } catch (cause) {
       if (isCurrent()) {
@@ -149,10 +157,14 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
     } finally {
       if (isCurrent()) setLoading(false);
     }
-  }, [actorID, storageKey, storeID]);
+  }, [actorID, sessionKey, storageKey, storeID, viewScope]);
 
   useEffect(() => {
     setAgreementToConfirm(null);
+    setPendingAttempt(null);
+    setPendingStorageReady(false);
+    setBusyAgreementID("");
+    acceptanceBusy.current = false;
     setNotice("");
     void load();
     const listener = AppState.addEventListener("change", (state) => { if (state === "active") void load(); });
@@ -160,7 +172,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
   }, [load]);
 
   function requestAcceptanceConfirmation(agreement: StoreCommercialAgreement) {
-    if (activeScope.current !== storageKey || agreementsScope !== storageKey ||
+    if (!sessionCurrent() || agreementsScope !== viewScope ||
       agreement.storeId !== storeID || agreement.partnerActorId !== actorID ||
       agreement.commercialModel === "HYBRID" || !hasReviewableStoreAgreementRates(agreement)) return;
     const savedAttempt = pendingAttempt?.agreementId === agreement.agreementId ? pendingAttempt : null;
@@ -174,8 +186,8 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
   }
 
   async function accept(agreement: StoreCommercialAgreement) {
-    if (acceptanceBusy.current || busyAgreementID || agreement.status !== "PROPOSED" || !storageKey ||
-      !pendingStorageReady || agreementsScope !== storageKey || activeScope.current !== storageKey ||
+    if (!sessionCurrent() || acceptanceBusy.current || busyAgreementID || agreement.status !== "PROPOSED" || !storageKey ||
+      !pendingStorageReady || agreementsScope !== viewScope ||
       agreement.storeId !== storeID || agreement.partnerActorId !== actorID ||
       agreement.commercialModel === "HYBRID" || !hasReviewableStoreAgreementRates(agreement)) return;
     const savedAttempt = pendingAttempt?.agreementId === agreement.agreementId ? pendingAttempt : null;
@@ -204,42 +216,44 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
       if (!savedAttempt) {
         await SecureStore.setItemAsync(storageKey, JSON.stringify(attempt));
         attemptSaved = true;
-        if (activeScope.current !== storageKey) return;
+        if (!sessionCurrent()) return;
         setPendingAttempt(attempt);
       }
-      if (activeScope.current !== storageKey) return;
+      if (!sessionCurrent()) return;
       const accepted = await acceptOwnStoreCommercialAgreement(storeID, attempt.agreementId, {
         expectedAgreementVersion: attempt.expectedAgreementVersion,
         reason: attempt.reason,
-      }, attempt.idempotencyKey, attempt.correlationID);
-      if (activeScope.current !== storageKey) return;
+      }, attempt.idempotencyKey, attempt.correlationID, sessionKey);
+      if (!sessionCurrent()) return;
       const expected = { storeID, actorID, agreementID: attempt.agreementId, expectedVersion: attempt.expectedAgreementVersion, reviewedAgreement: agreement };
       if (!isConfirmedOwnStoreAgreementAcceptance(accepted, expected)) {
         throw new Error("PARTNER_ACCEPTANCE_READBACK_MISMATCH");
       }
       const canonicalReadback = await load();
-      if (activeScope.current !== storageKey) return;
+      if (!sessionCurrent()) return;
       const canonical = canonicalReadback?.find((item) => item.agreementId === attempt.agreementId);
       if (!isConfirmedOwnStoreAgreementAcceptance(canonical, expected)) {
         throw new Error("PARTNER_ACCEPTANCE_CANONICAL_READBACK_MISMATCH");
       }
       await SecureStore.deleteItemAsync(storageKey);
-      if (activeScope.current !== storageKey) return;
+      if (!sessionCurrent()) return;
       setPendingAttempt(null);
       setNotice("سُجل قبولك وتم تأكيد الاتفاقية.");
     } catch (cause) {
-      if (activeScope.current === storageKey) setError(acceptanceErrorMessage(cause, attemptSaved));
+      if (sessionCurrent()) setError(acceptanceErrorMessage(cause, attemptSaved));
     } finally {
-      acceptanceBusy.current = false;
-      setBusyAgreementID("");
+      if (sessionCurrent()) {
+        acceptanceBusy.current = false;
+        setBusyAgreementID("");
+      }
     }
   }
 
-  const visibleAgreements = agreementsScope === storageKey ? agreements : null;
-  const scopedPendingAttempt = agreementsScope === storageKey ? pendingAttempt : null;
-  const visibleError = feedbackScope === storageKey ? error : "";
-  const visibleNotice = feedbackScope === storageKey ? notice : "";
-  const readingCurrentStore = loading || (Boolean(storageKey) && agreementsScope !== storageKey && !visibleError);
+  const visibleAgreements = sessionCurrent() && agreementsScope === viewScope ? agreements : null;
+  const scopedPendingAttempt = sessionCurrent() && agreementsScope === viewScope ? pendingAttempt : null;
+  const visibleError = sessionCurrent() && feedbackScope === viewScope ? error : "";
+  const visibleNotice = sessionCurrent() && feedbackScope === viewScope ? notice : "";
+  const readingCurrentStore = sessionCurrent() && (loading || (agreementsScope !== viewScope && !visibleError));
 
   return (
     <BthwaniSurface tone="base" style={styles.panel} accessibilityLabel="اتفاقية المتجر التجارية">
@@ -249,6 +263,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
         <Text style={styles.muted}>راجع النموذج التجاري ومبلغ الاشتراك إن وجد ونسب التنفيذ. لا يسري أي اتفاق دون قبولك وموافقة المالية.</Text>
       </View>
       {readingCurrentStore && visibleAgreements === null ? <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة اتفاقيات المتجر" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الاتفاقيات…</Text></View> : null}
+      {!sessionKey ? <Text accessibilityRole="alert" style={styles.error}>يلزم تسجيل دخول الشريك لقراءة اتفاقية المتجر.</Text> : null}
       {visibleError ? <Text accessibilityRole="alert" style={styles.error}>{visibleError}</Text> : null}
       {visibleNotice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{visibleNotice}</Text> : null}
       {visibleAgreements?.length === 0 ? <Text style={styles.muted}>لا توجد اتفاقية بانتظارك الآن. يجهّز قسم الشركاء المقترح؛ ستظهر الشروط هنا لمراجعتها وقبولها قبل سريانها. يمكنك تجهيز المنتجات والصور بالتوازي.</Text> : null}
@@ -290,12 +305,12 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
           </View>
         );
       })}
-      <BthwaniButton busy={loading} disabled={Boolean(busyAgreementID)} label="إعادة قراءة الاتفاقيات" onPress={() => void load()} variant="secondary" />
+      <BthwaniButton busy={loading && Boolean(sessionKey)} disabled={!sessionKey || Boolean(busyAgreementID)} label="إعادة قراءة الاتفاقيات" onPress={() => void load()} variant="secondary" />
       <BthwaniConfirmDialog
         busy={Boolean(agreementToConfirm && busyAgreementID === agreementToConfirm.agreementId)}
         confirmLabel="تأكيد قبول الاتفاقية"
         description={agreementToConfirm
-          ? commercialConsentSummary(agreementToConfirm) + `النسب: ${agreementToConfirm.rates.map((rate) => `${modeLabel(rate.fulfillmentMode)}: ${rateValue(rate.commissionRateBps)}${rate.fulfillmentMode === "PARTNER_CAPTAIN" ? ` · رسوم توصيل المتجر: ${rate.deliveryPricingMode === "FREE" ? "مجاني" : rate.deliveryPricingMode === "FIXED" ? `${rate.deliveryFixedFeeMinor ?? 0} ريال` : "حسب المسافة"}` : ""}${rate.deliveryMarkupMinor ? ` + ${rate.deliveryMarkupMinor} ريال هامش توصيل لبثواني` : ""}`).join("، ")}. بعد قبولك تراجعها الإدارة المالية قبل أن تصبح سارية.`
+          ? `${commercialConsentSummary(agreementToConfirm)}النسب: ${agreementToConfirm.rates.map((rate) => `${modeLabel(rate.fulfillmentMode)}: ${rateValue(rate.commissionRateBps)}${rate.fulfillmentMode === "PARTNER_CAPTAIN" ? ` · رسوم توصيل المتجر: ${rate.deliveryPricingMode === "FREE" ? "مجاني" : rate.deliveryPricingMode === "FIXED" ? `${rate.deliveryFixedFeeMinor ?? 0} ريال` : "حسب المسافة"}` : ""}${rate.deliveryMarkupMinor ? ` + ${rate.deliveryMarkupMinor} ريال هامش توصيل لبثواني` : ""}`).join("، ")}. بعد قبولك تراجعها الإدارة المالية قبل أن تصبح سارية.`
           : ""}
         onCancel={() => setAgreementToConfirm(null)}
         onConfirm={() => {
@@ -304,7 +319,7 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
           if (agreement) void accept(agreement);
         }}
         title="تأكيد الشروط التجارية"
-        visible={Boolean(agreementToConfirm && agreementsScope === storageKey && agreementToConfirm.storeId === storeID && agreementToConfirm.partnerActorId === actorID)}
+        visible={Boolean(sessionCurrent() && agreementToConfirm && agreementsScope === viewScope && agreementToConfirm.storeId === storeID && agreementToConfirm.partnerActorId === actorID)}
       />
     </BthwaniSurface>
   );

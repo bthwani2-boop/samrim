@@ -26,8 +26,9 @@ func DetectOperatorOrderExceptions(ctx context.Context, db *sql.DB, max int) (in
    JOIN dsh.captain_mission_latest ml ON ml.assignment_id=a.id
    WHERE a.order_id=c.order_id AND a.state IN ('assigned','in_custody')
    AND o.state IN ('CAPTAIN_ASSIGNED','IN_CUSTODY')
-   AND ml.received_at>=statement_timestamp()-interval '90 seconds'
-   AND ml.recorded_at>=statement_timestamp()-interval '90 seconds'
+   AND o.fulfillment_mode='BTHWANI_CAPTAIN'
+   AND ml.received_at BETWEEN statement_timestamp()-interval '90 seconds' AND statement_timestamp()+interval '1 minute'
+   AND ml.recorded_at BETWEEN statement_timestamp()-interval '90 seconds' AND statement_timestamp()+interval '1 minute'
  ) OR EXISTS(
    SELECT 1 FROM dsh.commerce_orders o
    JOIN dsh.commerce_order_delivery_proofs p ON p.order_id=o.id
@@ -159,7 +160,9 @@ WITH candidates AS MATERIALIZED (
      AND mission.created_at<=statement_timestamp()-interval '3 minutes'
      AND (ml.assignment_id IS NULL
        OR ml.received_at<statement_timestamp()-interval '3 minutes'
-       OR ml.recorded_at<statement_timestamp()-interval '3 minutes')
+       OR ml.recorded_at<statement_timestamp()-interval '3 minutes'
+       OR ml.received_at>statement_timestamp()+interval '1 minute'
+       OR ml.recorded_at>statement_timestamp()+interval '1 minute')
  ) gps ON true
  LEFT JOIN dsh.store_operational_availability soa ON soa.store_id=o.store_id
  LEFT JOIN dsh.customer_order_contact_reviews verification

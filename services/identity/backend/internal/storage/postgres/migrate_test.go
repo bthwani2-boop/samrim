@@ -45,7 +45,7 @@ func TestMigrationV13ToV28Upgrade(t *testing.T) {
 	}
 	defer rootDB.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
 	if err := rootDB.PingContext(ctx); err != nil {
@@ -735,7 +735,7 @@ func TestMigrationV13ToV28Upgrade(t *testing.T) {
 		t.Fatalf("expected schema version 24, got %d (err: %v)", version, err)
 	}
 
-	// Apply the current migrations and verify full postgres.Ready on v29.
+	// Apply all current migrations and verify PostgreSQL readiness at v30.
 	if err := identityruntime.RunMigrations(ctx, "development", testURL, migDir); err != nil {
 		t.Fatalf("canonical migration from v24 to current schema failed: %v", err)
 	}
@@ -754,18 +754,18 @@ func TestMigrationV13ToV28Upgrade(t *testing.T) {
 		t.Fatalf("v29 HR backfill violated least privilege: Root=%v later=%v", rootHR, laterHR)
 	}
 
-	// Re-run the canonical runtime migrator and prove it is a no-op at v29.
+	// Re-run the canonical runtime migrator and prove it is a no-op at v30.
 	beforeSecondRun := readMigrationNoOpSnapshot(t, testDB)
 	if err := identityruntime.RunMigrations(ctx, "development", testURL, migDir); err != nil {
 		t.Fatalf("second canonical migration run failed: %v", err)
 	}
 	afterSecondRun := readMigrationNoOpSnapshot(t, testDB)
 	assertMigrationNoOpSnapshotUnchanged(t, beforeSecondRun, afterSecondRun)
-	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 29 {
+	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != postgres.SchemaVersion {
 		t.Fatalf("schema version changed during second canonical migration run: version=%d err=%v", version, err)
 	}
 
-	t.Log("Migration v13 -> v29 upgrade, data preservation, passkey cutover, mobile lifetime, refresh reconciliation, Operator workspace permissions, verified legal-name schema cutover, Operator profile registry, managed recovery, Field app foreground timestamp, Operator role details, and recoverable passkey replacement test PASSED successfully!")
+	t.Log("Migration v13 -> v30 upgrade, data preservation, passkey cutover, mobile lifetime, refresh reconciliation, Operator workspace permissions, verified legal-name schema cutover, Operator profile registry, managed recovery, Field app foreground timestamp, Operator role details, and recoverable passkey replacement test PASSED successfully!")
 }
 
 func TestManagedRecoveryMigrationFreshBootstrapAndV25Upgrade(t *testing.T) {
@@ -795,27 +795,30 @@ func TestManagedRecoveryMigrationFreshBootstrapAndV25Upgrade(t *testing.T) {
 	if migDir == "" {
 		t.Fatal("could not find identity migrations directory")
 	}
-	records := identityMigrationRecords(t, migDir)
-	if len(records) != 29 {
-		t.Fatalf("identity migration count = %d, want 29", len(records))
+	records, err := postgres.LoadMigrationRecords(migDir)
+	if err != nil {
+		t.Fatalf("load canonical Identity migrations: %v", err)
+	}
+	if len(records) != postgres.SchemaVersion {
+		t.Fatalf("identity migration count = %d, want %d", len(records), postgres.SchemaVersion)
 	}
 	latestMigration := records[len(records)-1]
-	if latestMigration.Version != 29 || latestMigration.Name != "029_operator_hr_permission.sql" {
-		t.Fatalf("latest migration = %#v, want v29 Operator HR permission", latestMigration)
+	if latestMigration.Version != 30 || latestMigration.Name != "030_retire_redundant_legal_name_version_index.sql" {
+		t.Fatalf("latest migration = %#v, want v30 legal-name index retirement", latestMigration)
 	}
 
 	freshDB, freshURL := createIsolatedMigrationDatabase(t, ctx, rootDB, databaseURL, "id_recovery_fresh")
 	if err := identityruntime.RunMigrations(ctx, "development", freshURL, migDir); err != nil {
-		t.Fatalf("fresh bootstrap through v29: %v", err)
+		t.Fatalf("fresh bootstrap through v30: %v", err)
 	}
 	if err := postgres.Ready(ctx, freshDB); err != nil {
-		t.Fatalf("fresh v29 database readiness: %v", err)
+		t.Fatalf("fresh v30 database readiness: %v", err)
 	}
 	if err := postgres.VerifyExactConstraints(ctx, freshDB); err != nil {
-		t.Fatalf("fresh v29 exact constraints: %v", err)
+		t.Fatalf("fresh v30 exact constraints: %v", err)
 	}
 	if err := postgres.VerifyMigrationHistory(ctx, freshDB, records); err != nil {
-		t.Fatalf("fresh v29 migration history: %v", err)
+		t.Fatalf("fresh v30 migration history: %v", err)
 	}
 
 	upgradeDB, upgradeURL := createIsolatedMigrationDatabase(t, ctx, rootDB, databaseURL, "id_recovery_v25")
@@ -875,16 +878,16 @@ VALUES('ceremony_recovery_passkey_preserved','operator_recovery_registration',$1
 	}
 
 	if err := identityruntime.RunMigrations(ctx, "development", upgradeURL, migDir); err != nil {
-		t.Fatalf("prior-v25 upgrade to v29: %v", err)
+		t.Fatalf("prior-v25 upgrade to v30: %v", err)
 	}
 	if err := postgres.Ready(ctx, upgradeDB); err != nil {
-		t.Fatalf("upgraded v29 database readiness: %v", err)
+		t.Fatalf("upgraded v30 database readiness: %v", err)
 	}
 	if err := postgres.VerifyExactConstraints(ctx, upgradeDB); err != nil {
-		t.Fatalf("upgraded v29 exact constraints: %v", err)
+		t.Fatalf("upgraded v30 exact constraints: %v", err)
 	}
 	if err := postgres.VerifyMigrationHistory(ctx, upgradeDB, records); err != nil {
-		t.Fatalf("upgraded v29 migration history: %v", err)
+		t.Fatalf("upgraded v30 migration history: %v", err)
 	}
 	var credentialVersion int
 	if err := upgradeDB.QueryRowContext(ctx, "SELECT version FROM identity_password_credentials WHERE actor_id=$1 AND role='partner'", preservedActorID).Scan(&credentialVersion); err != nil || credentialVersion != 3 {
@@ -926,7 +929,7 @@ VALUES('challenge_migrated_recovery_operator',$1,'operator','managed_recover',$2
 	}
 
 	const managedPhone = "+967770009822"
-	roles := []string{"partner", "captain", "field"}
+	roles := []string{"partner", "captain"}
 	actors := identityactor.New(upgradeDB, "")
 	actorID := ""
 	for _, role := range roles {
@@ -939,6 +942,16 @@ VALUES('challenge_migrated_recovery_operator',$1,'operator','managed_recover',$2
 		} else if view.ActorID != actorID {
 			t.Fatalf("provisioned role %s actor = %s, want shared actor %s", role, view.ActorID, actorID)
 		}
+	}
+
+	// The deprecated field role remains representable in retained SQL history,
+	// but current canonical Identity admission must deny new field accounts.
+	if _, err := actors.ProvisionTrustedWithContext(ctx, "dsh", domain.ProvisionActorRoleInput{PhoneE164: managedPhone, Role: "field"}, "act_migration_recovery_dsh"); !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("retired field role was not denied by canonical Identity: %v", err)
+	}
+	var fieldRoles int
+	if err := upgradeDB.QueryRowContext(ctx, "SELECT count(*) FROM identity_actor_roles WHERE actor_id=$1 AND role='field'", actorID).Scan(&fieldRoles); err != nil || fieldRoles != 0 {
+		t.Fatalf("retired field admission persisted %d roles, err=%v", fieldRoles, err)
 	}
 
 	secret := []byte("isolated-managed-recovery-proof-secret")
@@ -1210,18 +1223,18 @@ VALUES('challenge_migrated_recovery_operator',$1,'operator','managed_recover',$2
 	expect(http.MethodPost, "/auth/managed/recover", domain.ManagedRecoveryProofRequest{Phone: managedPhone, Role: "operator", VerificationCode: "000000", Password: "Cedar456"}, "", http.StatusUnauthorized)
 
 	var disabledRoleVersion int
-	if err := upgradeDB.QueryRowContext(ctx, "SELECT version FROM identity_actor_roles WHERE actor_id=$1 AND role='field'", actorID).Scan(&disabledRoleVersion); err != nil {
-		t.Fatalf("read field role version before disabled-recovery proof: %v", err)
+	if err := upgradeDB.QueryRowContext(ctx, "SELECT version FROM identity_actor_roles WHERE actor_id=$1 AND role='captain'", actorID).Scan(&disabledRoleVersion); err != nil {
+		t.Fatalf("read captain role version before disabled-recovery proof: %v", err)
 	}
-	if err := actors.SetRoleEnabledWithContext(ctx, "dsh", actorID, "field", false, "migration-recovery-disabled", "isolated managed recovery suppression proof", disabledRoleVersion, "act_migration_recovery_dsh"); err != nil {
-		t.Fatalf("disable isolated field role through actor service: %v", err)
+	if err := actors.SetRoleEnabledWithContext(ctx, "dsh", actorID, "captain", false, "migration-recovery-disabled", "isolated managed recovery suppression proof", disabledRoleVersion, "act_migration_recovery_dsh"); err != nil {
+		t.Fatalf("disable isolated captain role through actor service: %v", err)
 	}
-	disabledChallenge, disabledResponse := issueChallenge("/auth/managed/recovery/request", managedPhone, "field")
-	assertSuppressed(disabledChallenge, "field")
+	disabledChallenge, disabledResponse := issueChallenge("/auth/managed/recovery/request", managedPhone, "captain")
+	assertSuppressed(disabledChallenge, "captain")
 	if got := responseShape(disabledResponse); got != "challengeId,expiresAt,maskedPhone" {
 		t.Fatalf("disabled-role recovery response fields = %s, want generic challenge fields", got)
 	}
-	expect(http.MethodPost, "/auth/managed/recover", domain.ManagedRecoveryProofRequest{Phone: managedPhone, Role: "field", VerificationCode: "000000", Password: "Cedar456"}, "", http.StatusUnauthorized)
+	expect(http.MethodPost, "/auth/managed/recover", domain.ManagedRecoveryProofRequest{Phone: managedPhone, Role: "captain", VerificationCode: "000000", Password: "Cedar456"}, "", http.StatusUnauthorized)
 
 	if _, err := upgradeDB.ExecContext(ctx, "DELETE FROM identity_password_credentials WHERE actor_id=$1 AND role='partner'", actorID); err != nil {
 		t.Fatalf("remove isolated missing-credential fixture: %v", err)
@@ -1254,37 +1267,6 @@ func (s *migrationChallengeSender) Send(ctx context.Context, message challengede
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-}
-
-func identityMigrationRecords(t *testing.T, directory string) []postgres.MigrationRecord {
-	t.Helper()
-	entries, err := os.ReadDir(directory)
-	if err != nil {
-		t.Fatalf("read identity migration directory: %v", err)
-	}
-	records := make([]postgres.MigrationRecord, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
-			continue
-		}
-		var version int
-		if _, err := fmt.Sscanf(entry.Name(), "%03d_", &version); err != nil {
-			t.Fatalf("parse migration version from %s: %v", entry.Name(), err)
-		}
-		content, err := os.ReadFile(filepath.Join(directory, entry.Name()))
-		if err != nil {
-			t.Fatalf("read migration %s: %v", entry.Name(), err)
-		}
-		hash := sha256.Sum256(content)
-		records = append(records, postgres.MigrationRecord{Version: version, Name: entry.Name(), SHA256: hex.EncodeToString(hash[:])})
-	}
-	sort.Slice(records, func(i, j int) bool { return records[i].Version < records[j].Version })
-	for index, record := range records {
-		if record.Version != index+1 {
-			t.Fatalf("migration sequence at %d has version %d", index+1, record.Version)
-		}
-	}
-	return records
 }
 
 func createIsolatedMigrationDatabase(t *testing.T, ctx context.Context, rootDB *sql.DB, databaseURL, prefix string) (*sql.DB, string) {

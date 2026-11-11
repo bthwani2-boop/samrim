@@ -4,6 +4,7 @@ import { availableCustomerFulfillmentModes, type PublicStoreView } from "@bthwan
 import { Image as ExpoImage } from "expo-image";
 import { useEffect, useMemo, useRef } from "react";
 import { AccessibilityInfo, Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
+import { summarizeStoreDirectoryAvailability } from "./store-availability-summary";
 
 /** A compact visual store tile. Store images, ratings, offers and orderability are all DSH-owned facts. */
 export function StoreDirectoryCard({
@@ -39,10 +40,10 @@ export function StoreDirectoryCard({
 
   const modes = availableCustomerFulfillmentModes(store.fulfillmentModes);
   const statuses = (store.orderabilityByMode ?? []).filter((item) => modes.includes(item.fulfillmentMode));
-  const open = statuses.some((item) => item.state === "OPEN_FOR_ORDERS");
-  const paused = !open && statuses.some((item) => item.state === "PAUSED");
-  const scheduledClosed = statuses.length > 0 && statuses.every((item) => item.state === "CLOSED_BY_SCHEDULE");
-  const statusLabel = !statuses.length ? "" : open ? "مفتوح" : paused ? "متوقف مؤقتًا" : scheduledClosed ? "مغلق" : "غير متاح";
+  const availability = summarizeStoreDirectoryAvailability(statuses);
+  const statusLabel = availability.label;
+  const open = availability.tone === "open";
+  const paused = availability.tone === "paused";
   const hasRating = store.ratingCount > 0 && Number.isFinite(store.ratingAverage) && store.ratingAverage >= 1 && store.ratingAverage <= 5;
   const ratingValue = hasRating ? store.ratingAverage.toFixed(1) : "";
   const offerLabel = promotionCount !== null && promotionCount > 0
@@ -73,10 +74,10 @@ export function StoreDirectoryCard({
             style={styles.image}
           /> : <View style={styles.imageFallback}><BthwaniIcon name="store" size={sizing.iconXl} color={theme.interactiveText} /></View>}
           {offerLabel ? <View style={[styles.offerBadge, compact && styles.compactOfferBadge]}><BthwaniIcon name="offers" size={sizing.iconSm} color="#FFFFFF" /><Text style={styles.offerText} numberOfLines={1}>{offerLabel}</Text></View> : null}
-          {statusLabel ? <View style={[styles.statusBadge, compact && styles.compactStatusBadge, open ? styles.statusOpen : paused ? styles.statusPaused : styles.statusClosed]}>
+          <View style={[styles.statusBadge, compact && styles.compactStatusBadge, open ? styles.statusOpen : paused ? styles.statusPaused : styles.statusClosed]}>
             <View style={[styles.statusDot, { backgroundColor: open ? theme.success : paused ? theme.warning : theme.colorMuted }]} />
             <Text style={[styles.statusText, { color: open ? theme.successText : paused ? theme.warningText : theme.colorSecondary }]} numberOfLines={1}>{statusLabel}</Text>
-          </View> : null}
+          </View>
         </View>
         <View style={[styles.copy, compact && styles.compactCopy]}>
           <Text numberOfLines={2} style={[styles.name, compact && styles.compactName]}>{store.name}</Text>

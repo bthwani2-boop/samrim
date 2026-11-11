@@ -1,25 +1,19 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniConversationSheet, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { BthwaniMap } from "@bthwani/design-system/native/map";
-import { cashCollectionPartyLabel, createDshMobileClient, type DeliveryProofResponse, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderRatingResponse, orderPaymentDisclosure, orderStateLabel, type PublicStoreView } from "@bthwani/dsh";
+import { cashCollectionPartyLabel, type DeliveryProofResponse, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderRatingResponse, orderPaymentDisclosure, orderStateLabel, type PublicStoreView } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { createClientDsh } from "../../bootstrap/dsh";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
+import { clientOrderAuthenticationReturnPath } from "../access/client-auth-return-path";
+import { isClientOrderScopeCurrent } from "../access/client-session-scope";
 import { PremiumOrderProgress, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
 import { OrderConversation } from "./order-conversation";
 import { orderJourneyPresentation } from "./order-journey";
-import { clientOrderAuthenticationReturnPath, isClientOrderScopeCurrent } from "./order-session-scope";
-
-function baseUrl(): string {
-  const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-  if (!value) throw new Error("DSH_BASE_URL_REQUIRED");
-  return value;
-}
-
-const client = () => createDshMobileClient(baseUrl(), { cryptoRandomUUID: () => Crypto.randomUUID() });
 
 function hasCurrentClientActor(actorID: string): boolean {
   const session = currentIdentityState();
@@ -75,7 +69,7 @@ export default function ClientOrderDetail() {
     try {
       const token = await getUsableIdentityAccessToken();
       if (!hasCurrentOrderScope(actorID, orderId)) return;
-      const value = await client().readClientDeliveryProof(token, orderId);
+      const value = await createClientDsh().readClientDeliveryProof(token, orderId);
       if (hasCurrentOrderScope(actorID, orderId)) setDeliveryProof({ kind: "ready", value });
     } catch (error) {
       console.error("DSH client delivery proof read failed", error);
@@ -96,7 +90,7 @@ export default function ClientOrderDetail() {
     try {
       const token = await getUsableIdentityAccessToken();
       if (!hasCurrentOrderScope(actorID, orderId)) return;
-      const value = await client().readClientOrderRating(token, orderId);
+      const value = await createClientDsh().readClientOrderRating(token, orderId);
       if (!hasCurrentOrderScope(actorID, orderId)) return;
       setSelectedRating(value.rating.rating);
       setReview(value.rating.review);
@@ -116,7 +110,7 @@ export default function ClientOrderDetail() {
 
   const readCancellationReview = useCallback(async (token: string, requestedOrderID: string, actorID: string) => {
     try {
-      const result = await client().readOrderCancellationReview(token, requestedOrderID);
+      const result = await createClientDsh().readOrderCancellationReview(token, requestedOrderID);
       if (hasCurrentOrderScope(actorID, requestedOrderID)) setCancellationReview(result.request);
     } catch (error) {
       if (hasCurrentOrderScope(actorID, requestedOrderID) && typeof error === "object" && error !== null && "status" in error && (error as {status?:unknown}).status === 404) setCancellationReview(null);
@@ -149,7 +143,7 @@ export default function ClientOrderDetail() {
     try {
       const token = await getUsableIdentityAccessToken();
       if (sequence !== loadSequence.current || !hasCurrentOrderScope(actorID, orderId)) return;
-      const order = (await client().readOrder(token, orderId)).order;
+      const order = (await createClientDsh().readOrder(token, orderId)).order;
       const current = currentIdentityState();
       if (sequence !== loadSequence.current || current.kind !== "authenticated" || !isClientOrderScopeCurrent(actorID, order.id, current.identity.subject.trim(), orderId)) return;
       latestOrderState.current = order.state;
@@ -174,7 +168,7 @@ export default function ClientOrderDetail() {
     let current = true;
     setStoreIdentity(null);
     if (storeIdForMedia && cityIdForMedia) {
-      void client().readPublishedStore(storeIdForMedia, cityIdForMedia)
+      void createClientDsh().readPublishedStore(storeIdForMedia, cityIdForMedia)
         .then((store) => { if (current) setStoreIdentity(store); })
         .catch(() => { if (current) setStoreIdentity(null); });
     }
@@ -188,7 +182,7 @@ export default function ClientOrderDetail() {
     try {
       const token = await getUsableIdentityAccessToken();
       if (!hasCurrentOrderScope(state.actorID, state.order.id)) return;
-      const value = await client().createClientOrderRating(token, state.order.id, { rating: selectedRating, review }, state.order.version);
+      const value = await createClientDsh().createClientOrderRating(token, state.order.id, { rating: selectedRating, review }, state.order.version);
       if (!hasCurrentOrderScope(state.actorID, state.order.id)) return;
       setOrderRating({ kind: "ready", value });
       setReview(value.rating.review);
@@ -208,7 +202,7 @@ export default function ClientOrderDetail() {
     try {
       const token = await getUsableIdentityAccessToken();
       if (!hasCurrentOrderScope(state.actorID, state.order.id)) return;
-      const result = await client().requestOrderCancellationReview(token, state.order.id, cancellationReason.trim(), Crypto.randomUUID());
+      const result = await createClientDsh().requestOrderCancellationReview(token, state.order.id, cancellationReason.trim(), Crypto.randomUUID());
       if (hasCurrentOrderScope(state.actorID, state.order.id)) setCancellationReview(result.request);
     } catch {
       if (hasCurrentOrderScope(state.actorID, state.order.id)) {
@@ -227,7 +221,7 @@ export default function ClientOrderDetail() {
     try {
       const token = await getUsableIdentityAccessToken();
       if (!hasCurrentOrderScope(state.actorID, state.order.id)) return;
-      const outcome = await client().cancelClientOrder(token, state.order.id, state.order.version);
+      const outcome = await createClientDsh().cancelClientOrder(token, state.order.id, state.order.version);
       if (hasCurrentOrderScope(state.actorID, state.order.id) && outcome.order.id === orderId) {
         setState({ kind: "ready", actorID: state.actorID, order: outcome.order });
       }
@@ -246,7 +240,7 @@ export default function ClientOrderDetail() {
     try {
       const token = await getUsableIdentityAccessToken();
       if (!hasCurrentOrderScope(state.actorID, state.order.id)) return;
-      const result = await client().decideClientOrderAdjustment(token, state.order.id, adjustmentId, { decision, expectedAdjustmentVersion: state.order.adjustments.find((item) => item.id === adjustmentId)?.version ?? 0 }, state.order.version);
+      const result = await createClientDsh().decideClientOrderAdjustment(token, state.order.id, adjustmentId, { decision, expectedAdjustmentVersion: state.order.adjustments.find((item) => item.id === adjustmentId)?.version ?? 0 }, state.order.version);
       if (!hasCurrentOrderScope(state.actorID, state.order.id) || result.order.id !== orderId) return;
       setState({ kind: "ready", order: result.order, actorID: state.actorID });
     } catch (error) {

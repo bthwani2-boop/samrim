@@ -58,15 +58,30 @@ func (s *BeneficiaryFinanceServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/partner/payout-requests", s.createPartnerPayoutRequest)
 	mux.HandleFunc("GET /dsh/partner/payout-requests/{partnerActorId}/{requestId}", s.readPartnerPayoutRequest)
 	mux.HandleFunc("GET /dsh/partner/payout-requests/{partnerActorId}", s.readPartnerPayoutRequest)
-	mux.HandleFunc("GET /dsh/operator/{actorType}/{actorId}/payout-state", s.readOperatorPayoutState)
-	mux.HandleFunc("GET /dsh/operator/{actorType}/{actorId}/official-wallet-destination", s.readOperatorDestination)
-	mux.HandleFunc("GET /dsh/operator/{actorType}/{actorId}/wallet-provider-intent", s.readOperatorWalletProviderIntent)
+	// Three actor finance GET routes overlap legacy COD lookup in Go ServeMux.
+	// Dispatch exactly the approved suffixes; the specific legacy route wins.
+	mux.HandleFunc("GET /dsh/operator/{actorType}/{actorId}/{financeAction...}", s.readOperatorPayoutStateRoute)
 	mux.HandleFunc("POST /dsh/operator/orders/{orderId}/adjustments/{adjustmentId}/wallet-compensation", s.creditOperatorOrderAdjustmentWallet)
 	mux.HandleFunc("POST /dsh/operator/{actorType}/{actorId}/official-wallet-destination", s.createOperatorDestination)
 	mux.HandleFunc("POST /dsh/operator/{actorType}/{actorId}/official-wallet-destination/{destinationId}/verify", s.verifyOperatorDestination)
 	mux.HandleFunc("POST /dsh/operator/{actorType}/{actorId}/official-wallet-destination/{destinationId}/activate", s.activateOperatorDestination)
 	s.RegisterSettlementGovernance(mux)
 	s.RegisterCustomerWithdrawalGovernance(mux)
+}
+
+// readOperatorPayoutStateRoute preserves the three published finance URLs
+// without introducing incomparable ServeMux patterns.
+func (s *BeneficiaryFinanceServer) readOperatorPayoutStateRoute(w http.ResponseWriter, r *http.Request) {
+	switch r.PathValue("financeAction") {
+	case "payout-state":
+		s.readOperatorPayoutState(w, r)
+	case "official-wallet-destination":
+		s.readOperatorDestination(w, r)
+	case "wallet-provider-intent":
+		s.readOperatorWalletProviderIntent(w, r)
+	default:
+		http.NotFound(w, r)
+	}
 }
 
 func (s *BeneficiaryFinanceServer) readOwnWallet(w http.ResponseWriter, r *http.Request) {

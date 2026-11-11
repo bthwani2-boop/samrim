@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { verifySameOrigin } from "../../../../../../src/server/security/csrf";
-import { approveOperatorLegacyCODRecovery, dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../../src/server/dsh/dsh-transport";
+import { approveOperatorLegacyCODRecovery } from "../../../../../../src/server/dsh/finance-custody-bff";
 import { readOperatorSession } from "../../../../../../src/server/identity/identity-bff";
+import { verifySameOrigin } from "../../../../../../src/server/security/csrf";
 
 export async function POST(request: Request, context: { params: Promise<{ reviewId: string }> }) {
   if (!verifySameOrigin(request)) return NextResponse.json({ error: { code: "FORBIDDEN", message: "cross-site requests are forbidden" } }, { status: 403 });

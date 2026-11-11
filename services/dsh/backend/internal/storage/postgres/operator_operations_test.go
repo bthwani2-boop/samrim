@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +13,34 @@ import (
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
+
+func TestPartnerOrderPageRejectsUnsafeSearchAndCursor(t *testing.T) {
+	// No database connection is available: invalid input must be rejected
+	// before any SQL is sent, including non-UTF8 and embedded NUL bytes.
+	db, err := sql.Open("postgres", "postgres://invalid:invalid@127.0.0.1:1/not_used?sslmode=disable")
+	if err != nil {
+		t.Fatalf("create disconnected database handle: %v", err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	stores := []string{"store_owned"}
+	for _, query := range []string{"\x00", string([]byte{0xff}), strings.Repeat("ع", 129)} {
+		if _, err := postgres.ListOrdersForPartnerStores(ctx, db, stores, nil, query, 10, ""); !errors.Is(err, postgres.ErrPartnerOrdersInvalidQuery) {
+			t.Fatalf("unsafe Partner order query %q was not rejected before SQL: %v", query, err)
+		}
+	}
+	for _, cursor := range []string{"malformed", strings.Repeat("A", 4097)} {
+		if _, err := postgres.ListOrdersForPartnerStores(ctx, db, stores, nil, "", 10, cursor); !errors.Is(err, postgres.ErrPartnerOrdersInvalidCursor) {
+			t.Fatalf("unsafe Partner order cursor was not rejected before SQL: %v", err)
+		}
+	}
+	// A structurally valid cursor from a different Store scope must be denied
+	// before any database connection is attempted, not silently trim the page.
+	foreignScopeCursor := base64.RawURLEncoding.EncodeToString([]byte(`{"createdAt":"2026-11-11T10:00:00Z","id":"order_01","state":"","query":"","storeScope":"foreign_store_scope"}`))
+	if _, err := postgres.ListOrdersForPartnerStores(ctx, db, stores, nil, "", 10, foreignScopeCursor); !errors.Is(err, postgres.ErrPartnerOrdersInvalidCursor) {
+		t.Fatalf("foreign Store-scope cursor unexpectedly reached SQL: %v", err)
+	}
+}
 
 func TestOperatorOperationsCursorPagination(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("DSH_DATABASE_URL"))
@@ -52,6 +81,40 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 			if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,total_amount_minor,payment_cash_amount_minor,currency,version,created_at,updated_at) VALUES($1,$2,$3,$4,$5,1,$6,15.3694457,44.1910064,$7,'CITY_SCOPE_V1','SERVICEABLE',1,1,'READY_FOR_DISPATCH',1800,1800,'YER',1,$8,$8)`, orderID, "client_operator_ops", "store_operator_ops", cartID, "address_"+orderID, "عنوان التشغيل", "sanaa_operator_ops", updatedAt); err != nil {
 				t.Fatalf("insert order fixture %s: %v", orderID, err)
 			}
+		}
+
+		// Partner page batching must preserve nonempty canonical Order lines,
+		// per-line immutable snapshots and attributed adjustments, including
+		// an Order on the continuation page and an empty child collection.
+		for _, orderID := range []string{"operator_order_01", "operator_order_03"} {
+			lineID := "line_" + orderID
+			if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_order_lines
+				(id,order_id,store_offer_id,variant_id,product_id,product_name,variant_title,
+				 measurement_kind,base_unit,pricing_basis,quantity_policy,quantity_min_base_units,
+				 quantity_max_base_units,quantity_step_base_units,pricing_unit_base_units,
+				 requested_quantity_base_units,unit_price_minor,line_amount_minor,currency)
+				VALUES($1,$2,$3,$4,$5,'سلعة','أساسي','COUNT','unit','PER_UNIT',
+				'FIXED',1,100,1,1,2,900,1800,'YER')`,
+				lineID, orderID, "offer_"+orderID, "variant_"+orderID, "product_"+orderID); err != nil {
+				t.Fatalf("insert Partner Order line %s: %v", orderID, err)
+			}
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_order_line_modifier_snapshots
+			(order_line_id,option_id,option_name_ar,price_delta_minor)
+			VALUES('line_operator_order_03','addon_03','إضافة',0)`); err != nil {
+			t.Fatalf("insert Partner Order modifier snapshot: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_order_line_attribute_snapshots
+			(order_line_id,attribute_id,attribute_code,value_kind,text_value)
+			VALUES('line_operator_order_03','size_03','size','TEXT','large')`); err != nil {
+			t.Fatalf("insert Partner Order attribute snapshot: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_order_adjustments
+			(id,order_id,order_line_id,kind,state,customer_decision_required,
+			requested_by_actor_id,requested_by_role)
+			VALUES('adjust_order_01','operator_order_01','line_operator_order_01',
+			'REMOVE_ITEM','PROPOSED',false,'partner_operator_ops','partner')`); err != nil {
+			t.Fatalf("insert Partner Order adjustment: %v", err)
 		}
 
 		// The current stage clock is an owner transition event, not a
@@ -175,15 +238,15 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		if err != nil {
 			t.Fatalf("list client orders with store pickup details: %v", err)
 		}
-		clientPage1, err := postgres.ListOrdersForClientPage(ctx, db, "client_operator_ops", 2, "")
+		clientPage1, err := postgres.ListOrdersForClientPage(ctx, db, "client_operator_ops", 2, "", postgres.ClientOrdersFilters{})
 		if err != nil || len(clientPage1.Orders) != 2 || clientPage1.Orders[0].ID != "operator_order_03" || clientPage1.Orders[1].ID != "operator_order_02" || clientPage1.NextCursor == "" {
 			t.Fatalf("client first keyset page incorrect: %+v err=%v", clientPage1, err)
 		}
-		clientPage2, err := postgres.ListOrdersForClientPage(ctx, db, "client_operator_ops", 2, clientPage1.NextCursor)
+		clientPage2, err := postgres.ListOrdersForClientPage(ctx, db, "client_operator_ops", 2, clientPage1.NextCursor, postgres.ClientOrdersFilters{})
 		if err != nil || len(clientPage2.Orders) != 1 || clientPage2.Orders[0].ID != "operator_order_01" || clientPage2.NextCursor != "" {
 			t.Fatalf("client second keyset page incorrect: %+v err=%v", clientPage2, err)
 		}
-		if _, err := postgres.ListOrdersForClientPage(ctx, db, "another_client", 2, clientPage1.NextCursor); !errors.Is(err, postgres.ErrClientOrdersInvalidCursor) {
+		if _, err := postgres.ListOrdersForClientPage(ctx, db, "another_client", 2, clientPage1.NextCursor, postgres.ClientOrdersFilters{}); !errors.Is(err, postgres.ErrClientOrdersInvalidCursor) {
 			t.Fatalf("cross-client cursor unexpectedly allowed: %v", err)
 		}
 		partnerStores, err := postgres.ListPartnerOrdersAuthorizedStoreIDs(ctx, db, "partner_operator_ops")
@@ -198,9 +261,38 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		if err != nil || len(partnerPage1.Orders) != 2 || partnerPage1.NextCursor == "" {
 			t.Fatalf("partner orders first page = %+v err=%v", partnerPage1, err)
 		}
+		// The same opaque cursor must not be reused if the server-authorized
+		// Store set changes, even though no forbidden Order is returned by SQL.
+		if _, err := postgres.ListOrdersForPartnerStores(ctx, db, []string{"some_other_store"}, nil, "", 2, partnerPage1.NextCursor); !errors.Is(err, postgres.ErrPartnerOrdersInvalidCursor) {
+			t.Fatalf("Partner cursor ignored authorized Store-scope change: %v", err)
+		}
 		partnerPage2, err := postgres.ListOrdersForPartnerStores(ctx, db, partnerStores, nil, "", 2, partnerPage1.NextCursor)
 		if err != nil || len(partnerPage2.Orders) != 1 || partnerPage2.NextCursor != "" {
 			t.Fatalf("partner orders second page = %+v err=%v", partnerPage2, err)
+		}
+		// Both pages use the same sorted Order projection, and children must
+		// be attached only to their corresponding canonical Order.
+		pageByID := make(map[string]postgres.OrderRecord)
+		for _, order := range append(partnerPage1.Orders, partnerPage2.Orders...) {
+			pageByID[order.ID] = order
+		}
+		withModifiers := pageByID["operator_order_03"]
+		if len(withModifiers.Lines) != 1 || withModifiers.Lines[0].ID != "line_operator_order_03" ||
+			len(withModifiers.Lines[0].ModifierSnapshots) != 1 || withModifiers.Lines[0].ModifierSnapshots[0].OptionID != "addon_03" ||
+			len(withModifiers.Lines[0].AttributeSnapshots) != 1 || withModifiers.Lines[0].AttributeSnapshots[0].Code != "size" ||
+			len(withModifiers.Adjustments) != 0 {
+			t.Fatalf("Partner batch lost or misrouted historical line snapshots: %+v", withModifiers)
+		}
+		withAdjustment := pageByID["operator_order_01"]
+		if len(withAdjustment.Lines) != 1 || withAdjustment.Lines[0].ID != "line_operator_order_01" ||
+			len(withAdjustment.Lines[0].ModifierSnapshots) != 0 || len(withAdjustment.Lines[0].AttributeSnapshots) != 0 ||
+			len(withAdjustment.Adjustments) != 1 || withAdjustment.Adjustments[0].ID != "adjust_order_01" {
+			t.Fatalf("Partner continuation batch lost or misrouted Order adjustment: %+v", withAdjustment)
+		}
+		emptyChildren := pageByID["operator_order_02"]
+		if emptyChildren.ID != "operator_order_02" || emptyChildren.Lines == nil || emptyChildren.Adjustments == nil ||
+			len(emptyChildren.Lines) != 0 || len(emptyChildren.Adjustments) != 0 {
+			t.Fatalf("Partner batch changed empty Order child collections: %+v", emptyChildren)
 		}
 		filtered, err := postgres.ListOrdersForPartnerStores(ctx, db, partnerStores, []string{"READY_FOR_DISPATCH"}, "", 10, "")
 		if err != nil || len(filtered.Orders) != 2 || filtered.NextCursor != "" {
@@ -209,6 +301,24 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		noAccess, err := postgres.ListPartnerOrdersAuthorizedStoreIDs(ctx, db, "another-partner")
 		if err != nil || len(noAccess) != 0 {
 			t.Fatalf("unauthorized partner unexpectedly has store access: %+v err=%v", noAccess, err)
+		}
+		// Store grants are returned as a set, not in a stable query order.
+		// Reordering the same two authorized Stores must preserve continuation.
+		insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{
+			ID: "store_operator_ops_second", PartnerActorID: "partner_operator_ops", Name: "متجر ثانٍ",
+		})
+		bothStores, err := postgres.ListPartnerOrdersAuthorizedStoreIDs(ctx, db, "partner_operator_ops")
+		if err != nil || len(bothStores) != 2 {
+			t.Fatalf("expected two authorized Partner Stores: %+v err=%v", bothStores, err)
+		}
+		pageWithBoth, err := postgres.ListOrdersForPartnerStores(ctx, db, bothStores, nil, "", 2, "")
+		if err != nil || len(pageWithBoth.Orders) != 2 || pageWithBoth.NextCursor == "" {
+			t.Fatalf("multi-Store Partner page missing cursor: %+v err=%v", pageWithBoth, err)
+		}
+		reversed := []string{bothStores[1], bothStores[0]}
+		continuation, err := postgres.ListOrdersForPartnerStores(ctx, db, reversed, nil, "", 2, pageWithBoth.NextCursor)
+		if err != nil || len(continuation.Orders) != 1 || continuation.Orders[0].ID != "operator_order_01" {
+			t.Fatalf("authorized Store order changed Partner continuation: %+v err=%v", continuation, err)
 		}
 		var pickupOrder *postgres.OrderRecord
 		for index := range clientOrders {
@@ -290,6 +400,10 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 
 		// Old orders awaiting the partner must be visible for operator review,
 		// but recent work and completed orders must not pollute the queue.
+		var reviewNow time.Time
+		if err := db.QueryRowContext(ctx, "SELECT statement_timestamp()").Scan(&reviewNow); err != nil {
+			t.Fatalf("read operator queue database clock: %v", err)
+		}
 		for _, fixture := range []struct {
 			id    string
 			state string
@@ -303,10 +417,18 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 			if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commerce_carts(id,client_actor_id,store_id,state,version) VALUES($1,$2,$3,'checked_out',1)", cartID, "client_operator_ops", "store_operator_ops"); err != nil {
 				t.Fatalf("insert review cart %s: %v", fixture.id, err)
 			}
-			changedAt := time.Now().UTC().Add(fixture.age)
+			changedAt := reviewNow.Add(fixture.age)
 			if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,total_amount_minor,payment_cash_amount_minor,currency,version,created_at,updated_at)
-				VALUES($1,$2,$3,$4,$5,1,$6,15.3694457,44.1910064,$7,'CITY_SCOPE_V1','SERVICEABLE',1,1,$8,1800,1800,'YER',1,$9,$9)`, fixture.id, "client_operator_ops", "store_operator_ops", cartID, "address_"+fixture.id, "عنوان الاختبار", "sanaa_operator_ops", fixture.state, changedAt); err != nil {
+				VALUES($1,$2,$3,$4,$5,1,$6,15.3694457,44.1910064,$7,'CITY_SCOPE_V1','SERVICEABLE',1,1,$8,1800,1800,'YER',2,$9,$9)`, fixture.id, "client_operator_ops", "store_operator_ops", cartID, "address_"+fixture.id, "عنوان الاختبار", "sanaa_operator_ops", fixture.state, changedAt); err != nil {
 				t.Fatalf("insert review order %s: %v", fixture.id, err)
+			}
+			if fixture.state == "PREPARING" {
+				if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_order_audit
+					(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,from_state,to_state,from_version,result_version,request_hash,created_at)
+					VALUES('order_preparing',$1,$2,'partner_operator_ops',$3,'PARTNER_ACCEPTED','PREPARING',1,2,'review-proof',$4)`,
+					"prepare-"+fixture.id, "review-"+fixture.id, fixture.id, changedAt); err != nil {
+					t.Fatalf("insert canonical review stage event for %s: %v", fixture.id, err)
+				}
 			}
 		}
 		stalled, err := postgres.ListOrdersForOperator(ctx, db, "", "operator_review_", "updated_desc", true, 10, "")

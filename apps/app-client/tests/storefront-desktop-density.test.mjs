@@ -5,6 +5,7 @@ import { test } from "node:test";
 
 const feature = path.resolve(import.meta.dirname, "../src/features/store-discovery");
 const detail = readFileSync(path.join(feature, "store-detail.tsx"), "utf8");
+const banners = readFileSync(path.join(feature, "store-banner-carousel.tsx"), "utf8");
 const styles = readFileSync(path.join(feature, "store-detail-styles.ts"), "utf8");
 
 test("desktop store exposes published products earlier via a compact hero and store summary", () => {
@@ -20,8 +21,10 @@ test("desktop store exposes published products earlier via a compact hero and st
 test("desktop storefront does not duplicate ordinary catalog offers as promotional banners", () => {
   assert.match(detail, /listPublicStoreBanners\(storeId, selectedCityID\)/);
   assert.doesNotMatch(detail, /bannerCatalogOffers/);
-  assert.match(detail, /bannerItems\.map/);
-  assert.match(detail, /accessibilityLabel="بنرات المتجر"/);
+  assert.match(detail, /<StoreBannerCarousel/);
+  assert.match(banners, /displayableStoreBanners/);
+  assert.match(banners, /items\.map/);
+  assert.match(banners, /accessibilityLabel="بنرات المتجر"/);
 });
 
 test("compact desktop retains store status, delivery mode selection and mobile presentation", () => {

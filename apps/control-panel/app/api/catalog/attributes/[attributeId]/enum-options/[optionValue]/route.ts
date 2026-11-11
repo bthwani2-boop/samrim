@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { NextResponse } from "next/server";
 import type { UpdateCatalogAttributeEnumOptionRequest } from "@bthwani/dsh";
-import { dshErrorPayload, dshHttpStatus, isDshClientError, updateCatalogAttributeEnumOption } from "../../../../../../../src/server/dsh/dsh-bff";
+import { NextResponse } from "next/server";
+import { updateCatalogAttributeEnumOption } from "../../../../../../../src/server/dsh/catalog-taxonomy-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../../../src/server/dsh/dsh-transport";
 import { readOperatorSession } from "../../../../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../../../../src/server/security/csrf";

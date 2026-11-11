@@ -18,7 +18,11 @@ Preserve unrelated changes, secrets, durable data and active user state.
 
 Local docs/governance/README.md routes challengeable approved Product/platform/architecture/policy decisions. Actual source, schemas, API contracts, tests, configuration and runtime readback own current implementation truth. Historical external governance and competitor research are read-only evidence, not operational dependencies.
 
-Classify each material durable impact as NONE, REVALIDATE_ONLY, UPDATE_REQUIRED or DEFECT_FOUND. Correct the one applicable local durable owner for approved changed meaning in the same coherent samrim PR as materially affected implementation/tests. Never invent commercial features, promote speculative instructions, duplicate executable facts or require routine donor reads. AGENTS.md alone owns agent execution law; REPOSITORY-STRUCTURE.md owns placement.
+Classify each material durable impact as NONE, REVALIDATE_ONLY, UPDATE_REQUIRED or DEFECT_FOUND. Correct the one applicable local durable owner for approved changed meaning in the same coherent change batch as materially affected implementation/tests; if a PR is separately human-authorized, keep them together in that PR. Never invent commercial features, promote speculative instructions, duplicate executable facts or require routine donor reads. AGENTS.md alone owns agent execution law; REPOSITORY-STRUCTURE.md owns placement.
+
+### Approved conversation decisions and temporal precedence
+
+Where the current user explicitly approves a sequence of Product/refoundation discussions, treat the later approved decision as superseding an incompatible earlier recommendation **for that same meaning**; compatible earlier decisions remain. Reconcile once at the relevant canonical governance owner before implementation. Earlier audit/HEAD/implementation claims remain dated evidence only, not authorization to perpetuate obsolete code or rename public identities. A conversation-level Product approval is not separate permission to destroy data, reset shared runtime, make external payments, push, open PRs or merge. Never duplicate an approved decision in the execution plan or agent law.
 
 ## 3. Discovery, ownership and simplification
 
@@ -42,11 +46,23 @@ Do not solve complexity by adding another layer around it.
 
 Give each mutable fact one canonical owner/writer. During replacement, migrate callers, configuration, contracts, tests and required documentation; cut over; then delete the losing path and stale references.
 
+**MANDATORY — NO PARALLEL BUSINESS ENGINES:** One canonical engine per essential operation in its existing bounded owner. BTHWANI_PARTNER versus INDEPENDENT_STORE differences belong to canonical policies, eligibility, publication, fulfillment and agreements; they never justify a cloned Store/catalog/price/inventory/checkout/order/finance engine, competing table/schema, service, shadow state or dual writer. Reject any such parallelism in design, code or review, regardless of its name, existing files or perceived convenience. Before adding a truly distinct mechanism, establish the existing owner's actual inability to represent the unique responsibility correctly and obtain explicit governance approval under `docs/governance/architecture.md`; no exception can duplicate an existing fact's writer or essential engine. Derived read models and bounded technical adapters remain non-authoritative. Migrate and prove the cutover before retiring legacy paths; do not delete durable data or active consumers merely to enforce this rule.
+
 When replacing or refounding a canonical path, migrate every materially affected producer, consumer, contract, durable state/persistence path, runtime/configuration dependency and required proof before deleting the losing path. A cutover is incomplete while any material writer, reader, state owner, runtime dependency or contract still relies on the losing path.
 
 Preserve required Product behavior, security, authorization, privacy, data integrity, contract integrity and operational safety throughout simplification.
 
-For every materially affected workflow, enforce the effort-minimal, high-volume actor experience in `docs/governance/policies/experience.md`: require only necessary facts at the current stage, reuse canonical data, make optional inputs non-blocking, minimize repeated user actions and expose clear completion/recovery. Reject unjustified UX or technical machinery; retain essential safety in its existing owner and prove the simpler real task, not just fewer screens.
+### Required structural responsibility check
+
+For every refoundation slice materially affecting files, names or ownership, consult `REPOSITORY-STRUCTURE.md` before writing: identify the winning owner/path, affected consumers and generated sources, and which old files/aliases must disappear. Keep a small task-scoped mapping of KEEP/MOVE/MERGE/REPLACE/DELETE and objective proof, not a permanent second inventory. After the replacement is verified, inspect Git and relevant dependency/build/contract references for orphan files, duplicate writers, stale names and dead imports/routes; leave unrelated concurrent work untouched. Do not claim slice PASS while a material stale/parallel path remains. A change without structural impact need not perform a repository-wide file census.
+
+### Mandatory refoundation capability-conservation and anti-drift gate
+
+Before a rewrite, migration, UX redesign, design-system cutover or removal, enumerate the **materially affected existing capabilities and subfeatures** from current source, routes, contracts, tests, runtime configuration, canonical Product owners and preserved research. For each, establish its actor/surface, current status (working/partial/obsolete/unknown), original writer/consumers, durable state, safety/finance/privacy invariants, target disposition (KEEP/REFOUND/MERGE/REPLACE/APPROVED_RETIRE), and falsifiable proof. A named capability and its specialized media, map, search, export, reporting, accessibility or recovery behavior are not disposable merely because an implementation file is old or a redesign omits them. Unknown disposition is `UNRESOLVED` and blocks deleting that behavior.
+
+At each coherent execution boundary, compare the exact current HEAD to the last accepted checkpoint, protect concurrent work and already-valid proof, and state the one unresolved objective and next smallest vertical slice. Reject scope drift, redo of proven work, parallel source/engine creation, placeholder success and broad rewrite without a traced preservation/cutover path. Update the owning governance rule **only when approved meaning changes**; an inventory or audit note is non-authoritative evidence, never a duplicate Product catalog or backlog. An unproven material gate is `BLOCKED` or `NOT_RUN`, not `PASS`; completion cannot promise perpetual 100% correctness.
+
+For every materially affected workflow, enforce the effort-minimal, high-volume actor experience in `docs/governance/experience.md`: require only necessary facts at the current stage, reuse canonical data, make optional inputs non-blocking, minimize repeated user actions and expose clear completion/recovery. Reject unjustified UX or technical machinery; retain essential safety in its existing owner and prove the simpler real task, not just fewer screens.
 
 ## 4. Local development state
 
@@ -106,13 +122,25 @@ Complete related edits before running TypeScript, tests, device checks or other 
 
 Use Git to identify changes and Nx to select affected project work when applicable. `pnpm check` is the normal local feedback command for uncommitted work; use narrower direct commands when they are sufficient. `pnpm verify` is explicit candidate-wide local proof, not a default step and not an implicit prerequisite to push.
 
-**MANDATORY — ZERO MOJIBAKE:** All new/modified text MUST be valid UTF-8 without BOM or confirmed encoding corruption. Run `node tools/dev/check-encoding.mjs`; any confirmed violation BLOCKS closure until its root cause is fixed—never blindly replace characters. Details: `docs/governance/policies/quality.md`.
+**MANDATORY — ZERO MOJIBAKE:** All new/modified text MUST be valid UTF-8 without BOM or confirmed encoding corruption. Run `node tools/dev/check-encoding.mjs`; any confirmed violation BLOCKS closure until its root cause is fixed—never blindly replace characters. Details: `docs/governance/engineering.md`.
 
-Default integration flow (external steps require their own authorization):
+Execution routing: MA Commander, SentinelX, Remote Desktop Commander, Cmdexa, Remote Arc, MCPENROUZ and Local Commander are equal-status authorized device-control candidates, with no fixed priority. GitHub is the specialized eighth channel for repository/PR/CI state; Light Remote, Shellway and other connected tools are optional. Select by real capability, permission, efficiency, reliability and recovery. Do not use a different channel to bypass DENIED; do not run Codex CLI without a task-specific human instruction and proven direct-tool insufficiency.
 
-`DISCOVER -> TASK BRANCH -> CHANGE -> AFFECTED PROOF -> LOCAL COMMIT -> [AUTHORIZED SAFE PUSH] -> [AUTHORIZED DRAFT PR] -> REVIEW / CI -> READY FOR REVIEW`
+### Mandatory specialist-tool discovery across authorized remote channels
 
-For each authorized independent coding task, use a task branch, or the existing branch explicitly designated by the user. When push authority is explicit, safely push the first coherent, affected-tested commit. When Draft PR creation is explicitly authorized and a PR is the approved promotion mechanism, open a Draft PR against the intended base. After each subsequent complete logical change, review its diff, rerun invalidated affected checks, and commit locally; only when push authority is explicit, safely push and verify the remote SHA matches. Track applicable CI, CodeRabbit and SonarQube findings without skipping mandatory review. Mark the PR Ready for Review only after applicable gates and required independent reviews pass; never merge or deploy without separate explicit authorization.
+Before a task requiring specialist capabilities, identify its necessary MCP servers, CLIs, Plugins, Skills, device/browser/design/test tools and supported invocation paths. **A missing direct MCP integration in ChatGPT is not proof of unavailability.** Check existing authorized remote-control connections for an installed and usable MCP client/server, CLI, local API or application interface. MCP does not inherently require Codex CLI or a separate ChatGPT connector. Verify real connection, permitted invocation and resulting behavior; installation or a tool name alone is insufficient.
+
+Use every **necessary** specialist capability, not every available tool ritualistically. Reuse healthy authenticated sessions and existing processes; do not add duplicate MCP servers, clients, services or speculative integrations. If a required tool fails, inspect its last confirmed effect and try a technically suitable **authorized** path to the same target; never switch channels to bypass DENIED or missing consent. Block only the affected work after confirming no permitted adequate path exists. Parallelize independent work only with disjoint writers/resources and one serialized Git owner. Codex CLI remains subject to the separate task-specific instruction and direct-tool insufficiency rule above.
+
+Default local-first development flow (each external Git action requires its own human authorization):
+
+`DISCOVER -> REUSE EXISTING AUTHORIZED BRANCH/WORKTREE -> COHERENT CHANGE -> AFFECTED PROOF -> LOCAL COMMIT -> [HUMAN-AUTHORIZED PUSH] -> [HUMAN-AUTHORIZED PR] -> EXACT-CANDIDATE CI / REVIEW -> [HUMAN-AUTHORIZED MERGE]`
+
+Reuse the existing, explicitly authorized branch and checkout for related changes. **Never create a branch, create a worktree, or open a new Pull Request without an explicit human command for that action.** Do not silently switch to another branch or add unrelated work to an occupied branch. If no suitable authorized branch is available, preserve the state and request the necessary branch authorization rather than contaminating another task. A worktree is optional even for concurrent sessions and requires separate human authorization; serialize shared writes when isolation is unavailable.
+
+Complete related changes as coherent batches; review their diff and run the smallest sufficient affected checks, then create authorized local commits at meaningful checkpoints, not per file or keystroke. Push only under an explicit human authorization with its agreed scope/cadence, and verify remote SHA. A Push does not authorize a PR; a PR does not authorize Ready, merge, or deployment. When a PR already exists, reuse it for the same bounded deliverable; never manufacture a PR cascade for incidental fixes.
+
+CI, CodeRabbit and SonarQube are feedback, **not a per-edit blocking loop**. Do not repeatedly poll them or run candidate-wide suites after minor edits. Continue independently safe development while checks run; address confirmed critical findings at their causal owner. At human-authorized delivery and before declaring a PR ready, verify applicable required checks, reviewer findings, and independent high-risk proofs on the exact candidate SHA and applicable target base. Missing or failed required gates are BLOCKED/REVIEW_BLOCKED, never PASS. Local task completion is distinct from remote delivery/merge completion.
 
 `pnpm safe:push` is a Git transport/safety interlock only. It must not duplicate candidate-wide proof already owned by explicit `pnpm verify` or final CI.
 
@@ -142,7 +170,7 @@ Model context is a scarce working set, not an archive. Reduce context without re
 - Do not carry raw logs, unchanged source, giant diffs or already-proven evidence across material closure cells. Retain only evidence that can still change the repair decision.
 - At a material cell boundary retain a compact checkpoint: exact HEAD, material decisions, affected owners/paths, still-valid proof, remaining dependencies and blockers. Discard superseded execution noise.
 - Keep the objective dependency map, but use a fresh bounded execution context for the next material cell instead of accumulating prior cell transcripts.
-- Each completed logical development batch is a reviewable checkpoint: inspect diff and affected proof and commit locally. When push authority is explicit, safely push the authorized task branch and verify its remote SHA. When Draft PR creation is explicitly authorized and a PR is the approved promotion mechanism, open it after the first valid push and keep review/CI state visible. Without either authority, stop at the local checkpoint and report that step as blocked; avoid redundant full-suite runs. A failed or blocked gate leaves the PR in Draft; no premature Ready for Review.
+- Each coherent development batch is a local checkpoint: inspect the diff and affected proof, then commit locally when authorized. Neither a Push nor a PR is needed to continue or finish an authorized local development task. Only on a separate human delivery command, safely push within the approved scope and verify remote SHA; create or update a PR only when that operation is explicitly authorized. A failed required gate leaves the candidate unready; do not perform repetitive full-suite reviews while development continues.
 - Candidate-wide proof should normally run once after feature freeze. Rerun only proof invalidated by a later affected change.
 
 When asked to plan, emit one bounded objective command anchored to current HEAD, approved outcome, affected owners, necessary proof and safe stop point; do not add another permanent planning contract.
@@ -153,7 +181,7 @@ Before implementation, verify the approved outcome, what already works, acceptan
 
 For materially affected UI, deliver real professional fit-and-finish using the Design System: useful hierarchy/navigation, coherent layout, complete forms, validation, messages and recovery; correct Arabic/RTL where required; responsive layouts, touch/keyboard/focus/screen-reader support, WCAG 2.2 AA where applicable, and supported themes/reduced motion. Render representative browser/device states and verify materially relevant loading, populated, empty, no-results, forbidden, invalid, network error/retry, busy/success/failure, concurrency and destructive confirmation/undo behavior. State applicability is justified, not a ceremonial full matrix. Backend-only or trivial text work has no fictitious visual gate.
 
-Before extending an app UI, read its maintained design/UX contract and reuse or extend the canonical tokens, controls and composition owners; reject a competing page-local foundation. Follow `docs/governance/policies/quality.md` for structural and visual regression proof. Review intentional visual baseline changes on the exact candidate; never auto-accept a changed image merely to pass CI.
+Before extending an app UI, read its maintained design/UX contract and reuse or extend the canonical tokens, controls and composition owners; reject a competing page-local foundation. Follow `docs/governance/engineering.md` for structural and visual regression proof. Review intentional visual baseline changes on the exact candidate; never auto-accept a changed image merely to pass CI.
 
 For affected functionality, verify the authorized actor finishes the task and the next authorized actor reads canonical persistent state. Include real negative/security/tenant/role boundaries, retry/idempotency, concurrency, settlement/financial conservation and failure recovery where materially applicable. No mocked screen, isolated HTTP 200 or green CI alone proves full journey closure. Use bounded disposable owned fixtures and actual state owners; do not change user data, invent features or rebuild healthy code.
 
@@ -177,7 +205,9 @@ Delegate only bounded work with explicit scope and evidence expectations.
 
 Avoid overlapping writers. Parallel work should have disjoint write ownership or remain read-only.
 
-A subagent must not push, merge, repin governance, reset persistent state, expose secrets, perform unauthorized external mutations, or declare final closure.
+A subagent must not merge, repin governance, reset persistent state, expose secrets, perform unauthorized external mutations, or declare final closure. A user may explicitly delegate narrow local Commit and Push authority for a named task and existing authorized branch to separately assigned assistant sessions. Delegation does not grant source ownership outside their assigned paths, and does not authorize PR, Ready, main merge, deployment, force-push, paid actions, permission changes, or destructive work.
+
+When multiple assistants share one worktree, only one named Git writer may stage, commit, or push at a time using a verifiable exclusive handoff/turn. Before staging, verify branch, HEAD, existing index/staged changes, exact own source paths, source ownership, reviewed diff and affected checks. Stage only own accepted files, then check the exact staged path allowlist and commit readback. For Push use the repository's safe-push guard and confirm the exact remote SHA. A clean entire worktree is **not** required: Git pushes committed HEAD history only, so unrelated staged, unstaged or untracked peer changes must remain untouched. Before Push, verify that the exact committed HEAD contains only reviewed, authorized changes (including no previously unpushed unrelated commits), that the remote branch is a fast-forward ancestor, and that the Git turn belongs to this task. Never bypass the guard, stash/reset peer work, stage/commit another writer's changes, or create a parallel worktree. A dirty working tree alone is not a Push blocker; any inability to prove committed scope, exclusive Git ownership or remote ancestry is BLOCKED. A vague or stale agent note is not proof of an active Git turn. Human authorization must be explicit for each task/branch; do not carry this privilege to other projects by default.
 
 The lead agent owns integration, conflict resolution, final diff review, final proof and closure claims.
 
@@ -204,3 +234,22 @@ Report the exact final HEAD and any material unproven claim. Do not claim closur
 Fixed-point closure is bounded to the authorized objective and its proven affected cone. It does not authorize a platform-wide census of unrelated capabilities, surfaces, history or debt.
 
 When the assigned objective is complete, stop. Do not invent additional scope or ask for another task as a condition of closure.
+
+### Compact refoundation acceptance gate — one agent law
+
+The following labels index the obligations **already defined above**, not a second owner, workflow or replacement for proportional checks. Every affected gate needs attributable evidence or an explicit non-PASS status before reporting completion:
+
+- **G1 STATE:** exact checkout, HEAD, status, runtime owner and concurrent work;
+- **G2 OUTCOME:** authorized scope, actor goal and observable acceptance;
+- **G3 PRESERVE:** affected capabilities/subfeatures and evidence-led disposition;
+- **G4 OWNER:** one authoritative fact writer, engine, contract and source;
+- **G5 SIMPLIFY:** necessity of each new abstraction or dependency;
+- **G6 CUTOVER:** all affected readers/writers/contracts/data safely migrated before deletion;
+- **G7 INTEGRATE:** owner-backed true result across changed surfaces and services;
+- **G8 SAFETY:** finance, privacy, permissions, replay, races and loss scenarios where affected;
+- **G9 UX:** required real platform, RTL, accessibility and failure/recovery proof;
+- **G10 REVIEW:** final diff, true persistent state and still-valid checks;
+- **G11 GIT:** scoped staging and distinct local Commit/Push/PR/Merge authority;
+- **G12 CLOSE:** no known material gap for the authorized slice; remaining full-platform work remains NOT_DONE.
+
+An unresolved protected behavior is `UNRESOLVED`; a missing material test is `NOT_RUN` or `BLOCKED`, never an implied PASS.

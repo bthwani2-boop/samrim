@@ -1,23 +1,25 @@
 import { parseStudioThemePublication } from "@bthwani/design-system";
-import { createDshMobileClient } from "@bthwani/dsh";
-import { AppearanceProvider, BthwaniNetworkStatusNotice, useMobileAppearance } from "@bthwani/design-system/native";
+import { AppearanceProvider, BthwaniNetworkStatusNotice, isConfirmedOffline, useMobileAppearance } from "@bthwani/design-system/native";
+import { AppKeyboardProvider } from "@bthwani/design-system/native/keyboard-provider";
+import { tamaguiConfig } from "@bthwani/tamagui-config";
 import { useNetworkState } from "expo-network";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useSyncExternalStore } from "react";
 import { AppState, Platform } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
+import { TamaguiProvider } from "tamagui";
 
 import { appearance } from "../src/bootstrap/appearance";
+import { createClientDsh } from "../src/bootstrap/dsh";
 import { currentIdentityState, restoreIdentitySession, subscribeIdentitySession } from "../src/bootstrap/identity";
-
-function currentMobileActorID(): string {
-  const session = currentIdentityState();
-  return session.kind === "authenticated" ? session.identity.subject.trim() : "";
-}
-import { AppKeyboardProvider } from "../src/bootstrap/keyboard-provider";
+import { clientSessionKey } from "../src/features/access/client-session-scope";
 import { OrderAlertMonitor } from "../src/features/notifications/order-alert-monitor";
 import ServiceCityScope from "../src/features/service-city/service-city-scope";
+
+function currentClientNavigationSessionKey(): string {
+  return clientSessionKey(currentIdentityState());
+}
 
 export default function RootLayout() {
   useEffect(() => {
@@ -32,7 +34,7 @@ export default function RootLayout() {
     if (!baseUrl) return;
     let mounted = true;
     let latestRequest = 0;
-    const api = createDshMobileClient(baseUrl);
+    const api = createClientDsh();
     const refresh = () => {
       const requestId = ++latestRequest;
       void Promise.resolve().then(() => api.readPublicStudioTheme()).then((value) => {
@@ -69,13 +71,13 @@ export default function RootLayout() {
 
 function RootNavigation() {
   const { themeName, theme } = useMobileAppearance();
-  // A new session actor must not inherit React screen state or previous responses.
-  const actorID = useSyncExternalStore(subscribeIdentitySession, currentMobileActorID, () => "");
-  return <><StatusBar style={themeName === "dark" ? "light" : "dark"} /><Stack key={actorID || "signed-out"} screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }}><Stack.Screen name="notifications" options={{ headerShown: false }} /></Stack></>;
+  // No private screen state survives an actor switch or renewed same-actor session.
+  const sessionKey = useSyncExternalStore(subscribeIdentitySession, currentClientNavigationSessionKey, () => "");
+  return <TamaguiProvider config={tamaguiConfig} defaultTheme={themeName}><StatusBar style={themeName === "dark" ? "light" : "dark"} /><Stack key={sessionKey || "signed-out"} screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }}><Stack.Screen name="notifications" options={{ headerShown: false }} /></Stack></TamaguiProvider>;
 }
 
 function RootNetworkNotice() {
   const { top } = useSafeAreaInsets();
   const { isConnected, isInternetReachable } = useNetworkState();
-  return <BthwaniNetworkStatusNotice top={top} offline={isConnected === false || isInternetReachable === false} />;
+  return <BthwaniNetworkStatusNotice top={top} offline={isConfirmedOffline(isConnected, isInternetReachable)} />;
 }

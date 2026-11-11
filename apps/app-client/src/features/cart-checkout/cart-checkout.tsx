@@ -1,12 +1,13 @@
 import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type Cart, type CatalogStoreOffer, type CheckoutQuote, type CheckoutRequest, cashCollectionPartyLabel, createDshMobileClient, type DeliveryAddress, type FulfillmentMode, formatMoney, formatQuantity, type Order, orderPaymentDisclosure, orderStateLabel } from "@bthwani/dsh";
+import { type Cart, type CatalogStoreOffer, type CheckoutQuote, type CheckoutRequest, cashCollectionPartyLabel, type DeliveryAddress, type FulfillmentMode, formatMoney, formatQuantity, type Order, orderPaymentDisclosure, orderStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useNetworkState } from "expo-network";
 import { type Href, Link, useFocusEffect, useRouter } from "expo-router";
 import { type MutableRefObject, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import * as SecureStore from "../../bootstrap/compatible-storage";
+import { createClientDsh } from "../../bootstrap/dsh";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { premiumColors } from "../order-experience/premium-order-ui";
 import { acknowledgedDiscoveryClickForCheckout } from "../store-discovery/discovery-analytics";
@@ -65,14 +66,6 @@ function quoteMatchesCheckout(quote: CheckoutQuote, cart: Cart, storeID: string,
     && quote.fulfillmentMode === fulfillmentMode
     && (quote.promotionCode ?? "") === promotionCode.trim().toUpperCase();
 }
-
-function baseUrl(): string {
-  const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-  if (!value) throw new Error("DSH_BASE_URL_REQUIRED");
-  return value;
-}
-
-const client = () => createDshMobileClient(baseUrl(), { cryptoRandomUUID: () => Crypto.randomUUID() });
 
 function isNotFound(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && (error as { kind?: unknown; status?: unknown }).kind === "http" && (error as { status?: unknown }).status === 404);
@@ -160,7 +153,7 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
     setWallet({ kind: "loading" });
     try {
       const token = accessToken ?? await getUsableIdentityAccessToken();
-      const response = await client().readOwnWallet(token);
+      const response = await createClientDsh().readOwnWallet(token);
       if (isCurrent()) setWallet({ kind: "ready", availableMinor: response.state.availableMinor });
     } catch {
       if (isCurrent()) setWallet({ kind: "error" });
@@ -187,7 +180,7 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
   }, [order, router]);
 
   const readOrderForCart = useCallback(async (accessToken: string, cartID: string): Promise<Order | null> => {
-    const response = await client().listClientOrders(accessToken, 1, cartID);
+    const response = await createClientDsh().listClientOrders(accessToken, { limit: 1, cartId: cartID });
     return response.orders.find((item) => item.cartId === cartID) ?? null;
   }, []);
 
@@ -242,7 +235,7 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
           return;
         }
         try {
-          const result = await client().checkoutCart(token, attempt.request, attempt.expectedCartVersion, attempt.idempotencyKey, attempt.correlationID);
+          const result = await createClientDsh().checkoutCart(token, attempt.request, attempt.expectedCartVersion, attempt.idempotencyKey, attempt.correlationID);
           await finishCheckout(result.order, token, storageKey, () => isCurrent() && checkoutAttemptBelongsToCurrentActor(actorID));
           return;
         } catch (cause) {
@@ -275,7 +268,7 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
         setPendingCheckout(null);
       }
       if (!isCurrent()) return;
-      const result = await client().readOpenCart(token, storeId);
+      const result = await createClientDsh().readOpenCart(token, storeId);
       if (isCurrent()) setState(result.cart.lines.length ? { kind: "ready", cart: result.cart } : { kind: "empty" });
     } catch (cause) {
       if (isCurrent()) {
@@ -317,7 +310,7 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
     setQuote({ kind: "loading" });
     try {
       const token = await getUsableIdentityAccessToken();
-      const result = await client().quoteCheckout(token, { cartId: cart.id, storeId, addressId: quoteAddressID ?? "", fulfillmentMode, ...(appliedPromotionCode ? { promotionCode: appliedPromotionCode } : {}) }, cart.version);
+      const result = await createClientDsh().quoteCheckout(token, { cartId: cart.id, storeId, addressId: quoteAddressID ?? "", fulfillmentMode, ...(appliedPromotionCode ? { promotionCode: appliedPromotionCode } : {}) }, cart.version);
       if (requestID === quoteRequestID.current) setQuote({ kind: "ready", quote: result.quote });
     } catch (cause) {
       console.error("DSH checkout quote failed", cause);
@@ -349,7 +342,7 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const result = await client().updateCartLine(token, line.id, { quantityBaseUnits: nextQuantity, selectedModifierOptionIds: line.selectedModifierOptionIds }, state.cart.version);
+      const result = await createClientDsh().updateCartLine(token, line.id, { quantityBaseUnits: nextQuantity, selectedModifierOptionIds: line.selectedModifierOptionIds }, state.cart.version);
       setState(result.cart.lines.length ? { kind: "ready", cart: result.cart } : { kind: "empty" });
       setEditingOptions(null);
     } catch (cause) {
@@ -367,7 +360,7 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const result = await client().removeCartLine(token, line.id, state.cart.version);
+      const result = await createClientDsh().removeCartLine(token, line.id, state.cart.version);
       setState(result.cart.lines.length ? { kind: "ready", cart: result.cart } : { kind: "empty" });
       setEditingOptions(null);
     } catch (cause) {
@@ -431,7 +424,7 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const result = await client().updateCartLine(token, line.id, { quantityBaseUnits: line.quantityBaseUnits, selectedModifierOptionIds: edit.selectedIds }, state.cart.version);
+      const result = await createClientDsh().updateCartLine(token, line.id, { quantityBaseUnits: line.quantityBaseUnits, selectedModifierOptionIds: edit.selectedIds }, state.cart.version);
       setState(result.cart.lines.length ? { kind: "ready", cart: result.cart } : { kind: "empty" });
       setEditingOptions(null);
     } catch (cause) {
@@ -499,7 +492,7 @@ export function CartCheckout({ storeId, serviceCityId, addresses, serviceableAdd
       }
       setPendingCheckout(attempt);
       try {
-        const result = await client().checkoutCart(token, request, attempt.expectedCartVersion, attempt.idempotencyKey, attempt.correlationID);
+        const result = await createClientDsh().checkoutCart(token, request, attempt.expectedCartVersion, attempt.idempotencyKey, attempt.correlationID);
         const isCurrentActor = () => checkoutAttemptBelongsToCurrentActor(actorID);
         if (!isCurrentActor()) {
           setError("تغيّرت جلسة العميل. احتفظنا بمحاولة الطلب للتحقق من نتيجتها عند العودة إلى الحساب نفسه.");

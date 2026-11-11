@@ -1,6 +1,6 @@
 import { parseStudioThemePublication } from "@bthwani/design-system/theme";
 import { NextResponse } from "next/server";
-import { requestDshJson } from "../../../../src/server/dsh/dsh-bff";
+import { requestDshJson } from "../../../../src/server/dsh/dsh-transport";
 
 const noStore = { "Cache-Control": "no-store" };
 

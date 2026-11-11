@@ -39,3 +39,35 @@ test("contract proposal mutation requires operator partners and platform policy 
   assert.match(route, /permissions\?\.includes\("partners"\)/);
   assert.match(manifest, /permissions\.includes\("partners"\)/);
 });
+
+test("WLT relation defaults are owner-backed for both Merchant relations and remain prospective", () => {
+  const policy = read("src/features/policies/store-relation-commercial-model-defaults.tsx");
+  const view = read("src/features/policies/store-commercial-model-policy-workspace.tsx");
+  const route = read("app/api/policies/store-commercial-model-defaults/route.ts");
+  const server = read("src/server/dsh/store-relation-commercial-model.ts");
+  const contract = read("../../services/dsh/contracts/openapi/paths/commerce.yaml");
+  const wlt = read("../../services/wlt/backend/internal/storage/postgres/store_relation_commercial_model_default.go");
+  assert.match(policy, /"INDEPENDENT_STORE"/);
+  assert.match(policy, /"BTHWANI_PARTNER"/);
+  assert.match(policy, /"COMMISSION"/);
+  assert.match(policy, /"SUBSCRIPTION"/);
+  assert.match(policy, /stablePartnerMutationHeaders/);
+  assert.match(policy, /expectedVersion/);
+  assert.match(policy, /await read\(\)/);
+  assert.match(view, /StoreRelationCommercialModelDefaults/);
+  assert.match(view, /suggestedModel/);
+  // A prospective default service rollout must never disable the existing Store agreement writer.
+  assert.match(view, /\{selected \? <>/);
+  assert.doesNotMatch(view, /selected && defaults !== null \? <>/);
+  assert.match(route, /verifySameOrigin/);
+  for (const permission of ["platform_policies", "partners", "finance"]) {
+    assert.ok(route.includes(`includes("${permission}")`), "missing route permission " + permission);
+  }
+  assert.match(server, /requestDshJson/);
+  assert.match(server, /dshOperationPaths/);
+  assert.match(contract, /readOperatorStoreRelationCommercialModelDefaults/);
+  assert.match(contract, /updateOperatorStoreRelationCommercialModelDefault/);
+  assert.match(wlt, /wlt\.store_relation_commercial_model_defaults/);
+  assert.match(wlt, /wlt\.store_relation_commercial_model_default_events/);
+  assert.doesNotMatch(wlt, /UPDATE wlt\.store_commercial_agreements/);
+});

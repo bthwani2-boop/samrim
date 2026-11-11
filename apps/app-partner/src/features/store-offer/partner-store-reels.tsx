@@ -1,16 +1,19 @@
-import { createDshMobileClient, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentView, type OperatorDiscoveryContentRegistryResponse } from "@bthwani/dsh";
 import { typography } from "@bthwani/design-system";
 import { useAppearanceTheme } from "@bthwani/design-system/native";
+import { type DiscoveryContentAnalyticsListResponse, type DiscoveryContentView, type OperatorDiscoveryContentRegistryResponse } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as DocumentPicker from "expo-document-picker";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { createPartnerDshClient } from "../../bootstrap/dsh-client";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
+import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";
 
 type Reel = DiscoveryContentView;
 type ReelTargetType = "STORE" | "PRODUCT" | "PROMOTION";
 type ReelTarget = Readonly<{ targetType: "PRODUCT" | "PROMOTION"; targetId: string; label: string }>;
 const targetLabels: Record<ReelTargetType, string> = { STORE: "المتجر", PRODUCT: "منتج", PROMOTION: "عرض" };
+const currentPartnerSessionKey = () => partnerSetupSessionKey(currentIdentityState());
 const baseUrl = () => {
   const url = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
   if (!url) throw new Error("DSH_BASE_URL_REQUIRED");
@@ -24,6 +27,11 @@ function statusLabel(value: Reel["state"]): string {
 export function PartnerStoreReels({ storeId, storeName }: { storeId: string; storeName: string }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const sessionKey = useSyncExternalStore(subscribeIdentitySession, currentPartnerSessionKey, () => "");
+  const scopeKey = JSON.stringify([sessionKey, storeId]);
+  const activeScope = useRef(scopeKey);
+  activeScope.current = scopeKey;
+  const scopeCurrent = () => Boolean(sessionKey) && activeScope.current === scopeKey && currentPartnerSessionKey() === sessionKey;
   const [items, setItems] = useState<ReadonlyArray<Reel>>([]);
   const [targets, setTargets] = useState<ReadonlyArray<ReelTarget>>([]);
   const [targetType, setTargetType] = useState<ReelTargetType>("STORE");
@@ -41,14 +49,27 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
   const [analytics, setAnalytics] = useState<DiscoveryContentAnalyticsListResponse | null>(null);
   const [analyticsError, setAnalyticsError] = useState("");
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [readScope, setReadScope] = useState("");
+  const [analyticsScope, setAnalyticsScope] = useState("");
+  const [feedbackScope, setFeedbackScope] = useState("");
+  const [draftScope, setDraftScope] = useState(scopeKey);
+  const [busyScope, setBusyScope] = useState("");
+  const readRequest = useRef(0);
   const analyticsRequest = useRef(0);
+  const uploadRequest = useRef(0);
+  const uploadBusyScope = useRef("");
   // Preserve one server idempotency key across retries of the same draft.
   const attempt = useRef<{ fingerprint: string; contentId: string; idempotencyKey: string; correlationId: string; startsAt: string } | null>(null);
 
   const read = useCallback(async () => {
+    const request = ++readRequest.current;
+    const valid = () => Boolean(sessionKey) && activeScope.current === scopeKey &&
+      currentPartnerSessionKey() === sessionKey && readRequest.current === request;
+    if (!valid()) return;
     setLoading(true);
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!valid()) return;
       const prefix = `${baseUrl()}/dsh/partner/stores/${encodeURIComponent(storeId)}`;
       const headers = { Authorization: `Bearer ${token}`, Accept: "application/json" };
       const [list, destinations] = await Promise.allSettled([
@@ -63,34 +84,43 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
           return response.json() as Promise<{ targets: ReadonlyArray<ReelTarget> }>;
         })(),
       ]);
-      if (list.status === "fulfilled") setItems(list.value.items);
+      if (!valid()) return;
+      setItems(list.status === "fulfilled" ? list.value.items : []);
+      setTargets(destinations.status === "fulfilled" ? destinations.value.targets : []);
+      setReadScope(scopeKey);
       setListError(list.status === "fulfilled" ? "" : "تعذر قراءة مقاطع المتجر. أعد المحاولة.");
-      if (destinations.status === "fulfilled") setTargets(destinations.value.targets);
       setTargetsError(destinations.status === "fulfilled" ? "" : "تعذر قراءة وجهات المقاطع. يمكن متابعة المقاطع الحالية.");
     } catch {
+      if (!valid()) return;
+      setItems([]);
+      setTargets([]);
+      setReadScope(scopeKey);
       setListError("تعذر قراءة مقاطع المتجر. تحقق من الاتصال.");
       setTargetsError("تعذر قراءة وجهات المقاطع. تحقق من الاتصال.");
     } finally {
-      setLoading(false);
+      if (valid()) setLoading(false);
     }
-  }, [storeId]);
+  }, [scopeKey, sessionKey, storeId]);
 
   const loadAnalytics = async (contentID: string) => {
-    const request = analyticsRequest.current + 1;
-    analyticsRequest.current = request;
+    if (!scopeCurrent()) return;
+    const request = ++analyticsRequest.current;
+    const valid = () => scopeCurrent() && analyticsRequest.current === request;
+    setAnalyticsScope(scopeKey);
     setAnalyticsID(contentID);
     setAnalytics(null);
     setAnalyticsError("");
     setAnalyticsLoading(true);
     try {
       const token = await getUsableIdentityAccessToken();
-      const result = await createDshMobileClient(baseUrl(), { cryptoRandomUUID: () => Crypto.randomUUID() })
+      if (!valid()) return;
+      const result = await createPartnerDshClient()
         .listPartnerStoreContentAnalytics(token, storeId, contentID);
-      if (analyticsRequest.current === request) setAnalytics(result);
+      if (valid()) setAnalytics(result);
     } catch {
-      if (analyticsRequest.current === request) setAnalyticsError("تعذر قراءة نتائج هذا المقطع؛ أعد المحاولة.");
+      if (valid()) setAnalyticsError("تعذر قراءة نتائج هذا المقطع؛ أعد المحاولة.");
     } finally {
-      if (analyticsRequest.current === request) setAnalyticsLoading(false);
+      if (valid()) setAnalyticsLoading(false);
     }
   };
 
@@ -98,33 +128,60 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
     setTargetType("STORE");
     setTargetId(storeId);
     setTargetSearch("");
+    setFile(null);
+    setCaption("");
+    setRights(false);
+    setDraftScope(scopeKey);
+    setFeedbackScope("");
+    setBusyScope("");
+    uploadBusyScope.current = "";
+    setBusy(false);
+    setMessage("");
     setItems([]);
     setTargets([]);
+    setReadScope("");
     setAnalyticsID("");
     setAnalytics(null);
+    setAnalyticsScope("");
     setListError("");
     setTargetsError("");
+    setLoading(Boolean(sessionKey));
     analyticsRequest.current++;
     attempt.current = null;
     void read();
-  }, [read, storeId]);
+    return () => {
+      readRequest.current++;
+      analyticsRequest.current++;
+      uploadRequest.current++;
+    };
+  }, [read, scopeKey, sessionKey, storeId]);
   const selectKind = (kind: ReelTargetType) => {
     setTargetType(kind);
     setTargetId(kind === "STORE" ? storeId : "");
     setTargetSearch("");
     attempt.current = null;
   };
-  const visibleTargets = targets.filter(item => item.targetType === targetType)
+  const visibleItems = readScope === scopeKey && scopeCurrent() ? items : [];
+  const visibleTargets = (readScope === scopeKey && scopeCurrent() ? targets : [])
+    .filter(item => item.targetType === targetType)
     .filter(item => !targetSearch.trim() || item.label.toLocaleLowerCase().includes(targetSearch.trim().toLocaleLowerCase())).slice(0, 8);
+  const visibleFile = draftScope === scopeKey && scopeCurrent() ? file : null;
+  const visibleBusy = busyScope === scopeKey && scopeCurrent() && busy;
+  const visibleMessage = feedbackScope === scopeKey && scopeCurrent() ? message : "";
+  const visibleListError = readScope === scopeKey && scopeCurrent() ? listError : "";
+  const visibleTargetsError = readScope === scopeKey && scopeCurrent() ? targetsError : "";
+  const visibleLoading = scopeCurrent() && (loading || readScope !== scopeKey);
+  const showingAnalytics = analyticsScope === scopeKey && scopeCurrent();
 
   const choose = async () => {
-    if (busy) return;
+    if (visibleBusy || !scopeCurrent()) return;
     try {
       const selected = await DocumentPicker.getDocumentAsync({
         type: ["video/mp4"], copyToCacheDirectory: true,
       });
-      if (selected.canceled || !selected.assets[0]) return;
+      if (!scopeCurrent() || selected.canceled || !selected.assets[0]) return;
       const value = selected.assets[0];
+      setFeedbackScope(scopeKey);
       if (!value.size || value.size > 10 * 1024 * 1024) {
         setMessage("الحد الأقصى 10 ميجابايت. اختر فيديو مضغوطًا.");
         return;
@@ -134,25 +191,33 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
         return;
       }
       setFile(value);
+      setDraftScope(scopeKey);
       attempt.current = null;
       setMessage("");
     } catch {
-      setMessage("تعذر اختيار الوسيط.");
+      if (scopeCurrent()) {
+        setFeedbackScope(scopeKey);
+        setMessage("تعذر اختيار الوسيط.");
+      }
     }
   };
 
   const submit = async () => {
-    if (busy || !file || !caption.trim() || !rights || !targetId) return;
-    if (currentIdentityState().kind !== "authenticated") {
-      setMessage("سجل الدخول لإضافة الفيديو.");
-      return;
-    }
+    const selectedFile = visibleFile;
+    if (!scopeCurrent() || uploadBusyScope.current === scopeKey || !selectedFile ||
+      !caption.trim() || !rights || !targetId) return;
+    const request = ++uploadRequest.current;
+    const valid = () => scopeCurrent() && uploadRequest.current === request;
+    uploadBusyScope.current = scopeKey;
+    setBusyScope(scopeKey);
+    setFeedbackScope(scopeKey);
     setBusy(true);
     setMessage("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const mime = file.mimeType ?? "video/mp4";
-      const fingerprint = [storeId, targetType, targetId, file.uri, file.size, caption.trim()].join(":");
+      if (!valid()) return;
+      const mime = selectedFile.mimeType ?? "video/mp4";
+      const fingerprint = [storeId, targetType, targetId, selectedFile.uri, selectedFile.size, caption.trim()].join(":");
       if (!attempt.current || attempt.current.fingerprint !== fingerprint) {
         attempt.current = {
           fingerprint,
@@ -174,7 +239,7 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
       input.append("sourceDescription", "محتوى أصلي مقدم من المتجر");
       input.append("rightsStatement", "أؤكد امتلاك المتجر حقوق نشر هذا الفيديو وعرضه في بثواني.");
       input.append("rightsAttested", "true");
-      input.append("file", { uri: file.uri, name: file.name, type: mime } as unknown as Blob);
+      input.append("file", { uri: selectedFile.uri, name: selectedFile.name, type: mime } as unknown as Blob);
       const response = await fetch(`${baseUrl()}/dsh/partner/stores/${encodeURIComponent(storeId)}/discovery-content`, {
         method: "POST",
         headers: {
@@ -184,6 +249,7 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
         },
         body: input,
       });
+      if (!valid()) return;
       if (!response.ok) throw new Error("REELS_UPLOAD_FAILED");
       attempt.current = null;
       setFile(null);
@@ -191,21 +257,25 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
       setRights(false);
       selectKind("STORE");
       await read();
-      setMessage("تم إرسال الفيديو للمراجعة. يظهر للعملاء بعد موافقة بثواني.");
+      if (valid()) setMessage("تم إرسال الفيديو للمراجعة. يظهر للعملاء بعد موافقة بثواني.");
     } catch {
-      setMessage("تعذر إرسال الفيديو؛ تحقق من الاتصال والملف ثم أعد المحاولة.");
+      if (valid()) setMessage("تعذر إرسال الفيديو؛ تحقق من الاتصال والملف ثم أعد المحاولة.");
     } finally {
-      setBusy(false);
+      if (uploadRequest.current === request && uploadBusyScope.current === scopeKey) {
+        uploadBusyScope.current = "";
+        setBusy(false);
+      }
     }
   };
 
   return <View style={styles.root} accessibilityLabel="فيديوهات المتجر">
     <Text style={styles.heading}>فيديوهات المتجر</Text>
     <Text style={styles.note}>مقطع MP4 حتى 30 ثانية و10 ميجابايت. يُنشر بعد موافقة بثواني، ويقود إلى المتجر أو منتج أو عرض مصرح به.</Text>
-    <Pressable accessibilityRole="button" disabled={busy} style={styles.action} onPress={() => { void choose(); }}>
-      <Text style={styles.actionText}>{file ? file.name : "اختر مقطع MP4"}</Text>
+    {!sessionKey ? <Text accessibilityRole="alert" style={styles.note}>يلزم تسجيل الدخول لإدارة مقاطع المتجر.</Text> : null}
+    <Pressable accessibilityRole="button" disabled={visibleBusy || !sessionKey} style={styles.action} onPress={() => { void choose(); }}>
+      <Text style={styles.actionText}>{visibleFile ? visibleFile.name : "اختر مقطع MP4"}</Text>
     </Pressable>
-    {file ? <>
+    {visibleFile ? <>
       <TextInput accessibilityLabel="وصف الفيديو" placeholder="عنوان قصير للمقطع" value={caption} onChangeText={setCaption} maxLength={160} style={styles.input} />
       <Text style={styles.note}>إلى أين ينتقل العميل من الفيديو؟</Text>
       <View style={styles.kindRow}>
@@ -227,26 +297,26 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
       <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: rights }} onPress={() => setRights(value => !value)} style={styles.rights}>
         <Text style={styles.note}>{rights ? "☑" : "☐"} أؤكد امتلاك حقوق نشر هذا المحتوى.</Text>
       </Pressable>
-      <Pressable accessibilityRole="button" disabled={busy || !rights || !targetId || caption.trim().length < 2} style={[styles.action, (busy || !rights || !targetId || caption.trim().length < 2) && styles.disabled]} onPress={() => { void submit(); }}>
-        <Text style={styles.actionText}>{busy ? "جارٍ الإرسال…" : "إرسال للمراجعة"}</Text>
+      <Pressable accessibilityRole="button" disabled={visibleBusy || !rights || !targetId || caption.trim().length < 2} style={[styles.action, (visibleBusy || !rights || !targetId || caption.trim().length < 2) && styles.disabled]} onPress={() => { void submit(); }}>
+        <Text style={styles.actionText}>{visibleBusy ? "جارٍ الإرسال…" : "إرسال للمراجعة"}</Text>
       </Pressable>
     </> : null}
-    {message ? <Text accessibilityRole="alert" style={styles.note}>{message}</Text> : null}
-    {listError || targetsError ? <View style={styles.item}>
-      {listError ? <Text accessibilityRole="alert" style={styles.note}>{listError}</Text> : null}
-      {targetsError ? <Text accessibilityRole="alert" style={styles.note}>{targetsError}</Text> : null}
+    {visibleMessage ? <Text accessibilityRole="alert" style={styles.note}>{visibleMessage}</Text> : null}
+    {visibleListError || visibleTargetsError ? <View style={styles.item}>
+      {visibleListError ? <Text accessibilityRole="alert" style={styles.note}>{visibleListError}</Text> : null}
+      {visibleTargetsError ? <Text accessibilityRole="alert" style={styles.note}>{visibleTargetsError}</Text> : null}
       <Pressable accessibilityRole="button" accessibilityLabel="إعادة تحميل المقاطع والوجهات"
         style={styles.target} onPress={() => { void read(); }}><Text style={styles.kindText}>إعادة تحميل</Text></Pressable>
     </View> : null}
-    {loading ? <ActivityIndicator /> : items.map(item =>
+    {visibleLoading ? <ActivityIndicator /> : visibleItems.map(item =>
       <View key={item.id} style={styles.item}>
         <Text style={styles.title}>{item.titleAr}</Text>
         <Text style={styles.note}>{statusLabel(item.state)}</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel={"عرض أداء المقطع " + item.titleAr}
+        <Pressable accessibilityRole="button" accessibilityLabel={`عرض أداء المقطع ${item.titleAr}`}
           style={styles.target} onPress={() => { void loadAnalytics(item.id); }}>
           <Text style={styles.kindText}>عرض النتائج</Text>
         </Pressable>
-        {analyticsID === item.id ? <View style={styles.analyticsBox}>
+        {showingAnalytics && analyticsID === item.id ? <View style={styles.analyticsBox}>
           {analyticsLoading ? <ActivityIndicator accessibilityLabel="جارٍ قراءة نتائج المقطع"/> : null}
           {analyticsError ? <Text accessibilityRole="alert" style={styles.note}>{analyticsError}</Text> : null}
           {analytics ? ([

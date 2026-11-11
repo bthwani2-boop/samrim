@@ -159,7 +159,7 @@ func (s *Service) MarkOrderConversationRead(ctx context.Context, accessToken, or
 	return postgres.MarkOrderConversationRead(ctx, s.db, orderID, actorID, role, messageID)
 }
 
-func (s *Service) ListForClient(ctx context.Context, accessToken string, limit int, cartID, cursor string) (postgres.ClientOrdersPage, error) {
+func (s *Service) ListForClient(ctx context.Context, accessToken string, limit int, cartID, cursor string, filters postgres.ClientOrdersFilters) (postgres.ClientOrdersPage, error) {
 	identity, err := s.requireSession(ctx, accessToken, "client", "app-client")
 	if err != nil {
 		return postgres.ClientOrdersPage{}, err
@@ -168,10 +168,13 @@ func (s *Service) ListForClient(ctx context.Context, accessToken string, limit i
 		if cursor != "" {
 			return postgres.ClientOrdersPage{}, postgres.ErrClientOrdersInvalidCursor
 		}
+		if filters != (postgres.ClientOrdersFilters{}) {
+			return postgres.ClientOrdersPage{}, postgres.ErrClientOrdersInvalidFilters
+		}
 		orders, err := postgres.ListOrdersForClientByCart(ctx, s.db, identity, cartID)
 		return postgres.ClientOrdersPage{Orders: orders}, err
 	}
-	return postgres.ListOrdersForClientPage(ctx, s.db, identity, limit, cursor)
+	return postgres.ListOrdersForClientPage(ctx, s.db, identity, limit, cursor, filters)
 }
 
 // CancelForOperator requires the actual Operations permission and a reviewed decision.

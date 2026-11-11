@@ -20,6 +20,16 @@ export function summarizeStoreAvailability(
   if (!modes.length) return { label: "غير متاح", reason: "تعذر التحقق من استقبال الطلبات. أعد فتح المتجر للمحاولة." };
   if (modes.some((mode) => mode.state === "OPEN_FOR_ORDERS")) return { label: "اختر طريقة الطلب", reason: "" };
   if (modes.every((mode) => mode.state === "CLOSED_BY_SCHEDULE")) return { label: "مغلق", reason: "خارج ساعات العمل الآن." };
-  if (modes.every((mode) => mode.state === "PAUSED")) return { label: "متوقف", reason: pausedReason(modes[0]!) };
+  if (modes[0] && modes.every((mode) => mode.state === "PAUSED")) return { label: "متوقف", reason: pausedReason(modes[0]) };
   return { label: "غير متاح", reason: "لا توجد طريقة طلب متاحة حاليًا." };
+}
+
+/** The directory lists a published Store; it does not select or authorize checkout. */
+export function summarizeStoreDirectoryAvailability(
+  modes: ReadonlyArray<Orderability>,
+): Readonly<{ label: string; tone: "open" | "paused" | "unavailable" }> {
+  const { label } = summarizeStoreAvailability(modes, null);
+  if (label === "اختر طريقة الطلب") return { label: "مفتوح", tone: "open" };
+  if (label === "متوقف") return { label: "متوقف مؤقتًا", tone: "paused" };
+  return { label, tone: "unavailable" };
 }

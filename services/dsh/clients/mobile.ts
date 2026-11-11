@@ -1,11 +1,11 @@
 import { normalizeYemenPhoneE164 } from "@bthwani/identity/phone";
 import { dshOperationPaths } from "./generated/dsh-operations";
-import type { IndependentStorePreview } from "./generated/dsh-types";
+import type { IndependentCustomerPolicyDraftInput, IndependentCustomerPolicyDraftResponse, IndependentCustomerPolicyDraftMutationResponse } from "./generated/dsh-types";
 import type { CatalogActivityPage, StoreOrderRatingListResponse, StoreContentPerformanceSummary, StudioLayoutPublication, StorePublicContactInput, StorePublicContactResponse, StorePublicContactMutationResponse } from "./generated/dsh-types";
 import type { ClientSharePage, ClientShareSendRequest, ClientShareSendResponse } from "./client-share-types";
 import type { AcceptStoreCaptainInvitationRequest, BeneficiaryFundingIntentResponse, BeneficiaryPayoutStateResponse, BeneficiaryWalletResponse, CampaignOptInRequest, CaptainAdmissionResponse, CaptainAssignmentListResponse, CaptainAssignmentResponse, CaptainAvailabilityRequest, CaptainCompletionRequest, CaptainDeliveryTaskResponse, CaptainOfferDecisionRequest, CaptainOfferListResponse, CaptainOpportunityHeatmap, CaptainOfferResponse, CartResponse, CashInFundingIntent, CashLiabilityResponse, CatalogAttributeEnumOptionListResponse, CatalogAttributeRuleListResponse, CatalogCategoryListResponse, CatalogIdentifierResolveResponse, CatalogImportCommitResponse, CatalogImportPreviewResponse, CatalogImportRunResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposal, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogProductResponse, CatalogQuickPriceCommitRequest, CatalogQuickPriceCommitResponse, CatalogStorefrontSectionListResponse, CatalogStorefrontSectionResponse, CatalogInventorySummaryResponse, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogVariantResponse, CheckoutQuoteResponse, CheckoutRequest, ClientOpenCartListResponse, CommerceVerticalListResponse, CommercialStoreTypeListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, CreateJoiningCaseRequest, CreateOrderConversationMessageRequest, CreateOrderRatingRequest, CreatePromotionRequest, CreateStoreOfferRequest, DeliveryAddressListResponse, DeliveryAddressResponse, DeliveryProofResponse, DiscoveryContentAnalyticsListResponse, DiscoveryContentEventRequest, DiscoveryContentListResponse, DiscoveryContentTargetResolution, FavoriteStoreListResponse, StudioThemePublication, FavoriteStoreOfferListResponse, FavoriteStoreOfferResponse, FavoriteStoreResponse, JoiningCaseListResponse, JoiningCaseResponse, MarketingPublicationRequest, MarkOrderConversationReadRequest, MediaProvenanceInput, MultiStoreCheckoutRequest, MultiStoreCheckoutResponse, NotificationListResponse, NotificationReadResponse, OperatorPromotionRegistryResponse, OrderAdjustmentDecisionRequest, OrderAdjustmentProposalRequest, OrderConversationMessageResponse, OrderConversationPrivateMediaResponse, OrderConversationReadResponse, OrderConversationResponse, OrderListResponse, OrderRatingResponse, OrderResponse, OrderTransitionRequest, PartnerAccessibleStorePage, PartnerCampaignListResponse, PartnerCampaignOptInResponse, PartnerOrdersResponse, PartnerStoreOrderSummaryResponse, PartnerPayoutRequestCreateRequest, PartnerPayoutRequestResponse, PartnerPayoutSummaryResponse, PartnerScopedFinancialSummaryResponse, PartnerStoreOperationalAvailabilityMutationResponse, PartnerStoreOperationalAvailabilityResponse, PayoutRequest, PromotionListResponse, PromotionResponse, PublicCatalogResponse, PublicCatalogSearchResponse, PublicStoreOrderabilityResponse, PublicStoreView, PublishedStoreListResponse, ReplaceCatalogProductMediaRequest, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, SetStoreFulfillmentModesRequest, StoreAccessGrantActivationRequest, StoreAccessGrantListResponse, StoreAccessGrantMutationResponse, StoreAccessGrantPermissionsRequest, StoreAccessGrantTransitionRequest, StoreAccessInvitationCreateRequest, StoreAccessInvitationDecisionRequest, StoreAccessPermission, StoreCaptainDispatchRequest, StoreCaptainInvitationResponse, StoreCaptainMembershipListResponse, StoreCaptainMembershipResponse, StoreCaptainMembershipTransitionRequest, StoreCommercialAgreementMutationResponse, StoreCommercialAgreementProposalRequest, StoreDeliveryOriginResponse, StoreFulfillmentModesResponse, StoreImagesResponse, StoreOperationalAvailabilityRequest, PartnerFirstStoreCreateRequest, PartnerFirstStoreCreateResponse, StorePayoutRecipientListResponse, StorePayoutRecipientMutationResponse, StorePayoutRecipientRevertRequest, StorePayoutRecipientRevertResponse, StorePayoutRecipientSelectRequest, UpdateCartLineRequest, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateDeliveryAddressRequest, UpdateStoreOfferRequest, UpsertCartLineRequest, WalletProviderListResponse } from "./generated/dsh-types";
 import { joiningCaseImageMultipartPart } from "./joining-case-media";
-import type { SelfServiceApplicantContactResponse } from "./generated/dsh-types";
+import type { ClientOrderHistoryStatus, FulfillmentMode, SelfServiceApplicantContactResponse } from "./generated/dsh-types";
 import { normalizeStoreAccessInvitationInput, validStoreAccessPermissionSet } from "./store-access-request";
 
 export type PartnerFinancialActivity = Readonly<{
@@ -149,6 +149,12 @@ async function requestWithTimeout<T>(request: (signal: AbortSignal) => Promise<T
     if (timeout !== undefined) clearTimeout(timeout);
   }
 }
+
+export type StoreJoiningOption = Readonly<{
+  relationModel: "BTHWANI_PARTNER" | "INDEPENDENT_STORE";
+  enrollmentEnabled: boolean;
+}>;
+export type PublicStoreJoiningOptions = Readonly<{items:ReadonlyArray<StoreJoiningOption>}>;
 
 export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClientOptions = {}) {
   const timeoutMs = options.timeoutMs ?? 8_000;
@@ -301,9 +307,15 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const op = dshOperationPaths.readSelfServiceApplicantContact;
       return userRequest<SelfServiceApplicantContactResponse>(accessToken, op.path, op.method);
     },
-    async createPartnerFirstStore(accessToken: string, input: PartnerFirstStoreCreateRequest): Promise<PartnerFirstStoreCreateResponse> {
+    async createPartnerFirstStore(accessToken: string, input: PartnerFirstStoreCreateRequest, idempotencyKey: string): Promise<PartnerFirstStoreCreateResponse> {
+      if (idempotencyKey.trim().length < 8 || idempotencyKey.trim().length > 128) throw new Error("DSH_FIRST_STORE_IDEMPOTENCY_REQUIRED");
       const op = dshOperationPaths.createPartnerFirstStore;
-      return userRequest<PartnerFirstStoreCreateResponse>(accessToken, op.path, op.method, input);
+      return userRequest<PartnerFirstStoreCreateResponse>(accessToken, op.path, op.method, input, { "Idempotency-Key": idempotencyKey.trim() });
+    },
+    async createPartnerAdditionalStore(accessToken: string, input: PartnerFirstStoreCreateRequest, idempotencyKey: string): Promise<PartnerFirstStoreCreateResponse> {
+      if (idempotencyKey.trim().length < 8 || idempotencyKey.trim().length > 128) throw new Error("DSH_STORE_IDEMPOTENCY_REQUIRED");
+      const op = dshOperationPaths.createPartnerAdditionalStore;
+      return userRequest<PartnerFirstStoreCreateResponse>(accessToken, op.path, op.method, input, { "Idempotency-Key": idempotencyKey.trim() });
     },
     async readSelfServiceJoiningApplication(accessToken: string): Promise<JoiningCaseResponse> {
       const op=dshOperationPaths.readSelfServiceJoiningApplication;
@@ -328,13 +340,29 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (cursor.trim()) query.set("cursor", cursor.trim());
       return userRequest<PartnerAccessibleStorePage>(accessToken, `${dshOperationPaths.listPartnerAccessibleStores.path}?${query.toString()}`, dshOperationPaths.listPartnerAccessibleStores.method);
     },
-    async readPartnerIndependentStorePreview(accessToken: string, storeID: string, limit = 20, cursor = ""): Promise<IndependentStorePreview> {
-      const normalizedStore = storeID.trim();
-      if (!normalizedStore || normalizedStore.length > 128 || !Number.isInteger(limit) || limit < 1 || limit > 50 || cursor.length > 2048) throw new Error("DSH_INDEPENDENT_PREVIEW_INPUT_INVALID");
-      const query = new URLSearchParams({ limit: String(limit) });
-      if (cursor) query.set("cursor", cursor);
-      const path = dshOperationPaths.readPartnerIndependentStorePreview.path.replace("{storeId}", encodeURIComponent(normalizedStore));
-      return userRequest<IndependentStorePreview>(accessToken, `${path}?${query.toString()}`, dshOperationPaths.readPartnerIndependentStorePreview.method);
+    async readPartnerIndependentCustomerPolicyDraft(accessToken: string, storeID: string): Promise<IndependentCustomerPolicyDraftResponse> {
+      const store = storeID.trim();
+      if (!store || store.length > 128) throw new Error("DSH_INDEPENDENT_POLICY_STORE_INVALID");
+      const op = dshOperationPaths.readPartnerIndependentCustomerPolicyDraft;
+      const response = await userRequest<IndependentCustomerPolicyDraftResponse>(accessToken, op.path.replace("{storeId}", encodeURIComponent(store)), op.method);
+      if (response.draftOnly !== true || response.policy?.storeId !== store) {
+        throw new Error("DSH_INDEPENDENT_POLICY_SCOPE_MISMATCH");
+      }
+      return response;
+    },
+    async savePartnerIndependentCustomerPolicyDraft(accessToken: string, storeID: string, input: IndependentCustomerPolicyDraftInput, idempotencyKey: string, correlationID: string): Promise<IndependentCustomerPolicyDraftMutationResponse> {
+      const store = storeID.trim();
+      if (!store || store.length > 128 || !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 0 ||
+          idempotencyKey.trim().length < 16 || idempotencyKey.trim().length > 128 ||
+          correlationID.trim().length < 8 || correlationID.trim().length > 128) {
+        throw new Error("DSH_INDEPENDENT_POLICY_DRAFT_INPUT_INVALID");
+      }
+      const op = dshOperationPaths.savePartnerIndependentCustomerPolicyDraft;
+      const response = await userRequest<IndependentCustomerPolicyDraftMutationResponse>(accessToken, op.path.replace("{storeId}", encodeURIComponent(store)), op.method, input, mutationHeaders(idempotencyKey, correlationID));
+      if (response.draftOnly !== true || response.policy?.storeId !== store) {
+        throw new Error("DSH_INDEPENDENT_POLICY_SCOPE_MISMATCH");
+      }
+      return response;
     },
     async listPartnerStoreAccessGrants(accessToken: string, storeID: string): Promise<StoreAccessGrantListResponse> {
       const normalizedStore = storeID.trim();
@@ -447,7 +475,9 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const store = storeID.trim();
       if (!store || store.length > 128) throw new Error("DSH_STORE_CONTACT_SCOPE_INVALID");
       const path = dshOperationPaths.readPublishedStorePublicContact.path.replace("{storeId}", encodeURIComponent(store));
-      return publicRequest<StorePublicContactResponse>(path);
+      const response = await publicRequest<StorePublicContactResponse>(path);
+      if (response.contact?.storeId !== store) throw new Error("DSH_PUBLIC_CONTACT_SCOPE_MISMATCH");
+      return response;
     },
     async readPartnerStoreOperationalAvailability(accessToken: string, storeID: string): Promise<PartnerStoreOperationalAvailabilityResponse> {
       const normalizedStore = storeID.trim();
@@ -802,13 +832,21 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.cancelMultiStoreCheckout.path.replace("{checkoutId}", encodeURIComponent(normalized));
       return userRequest<MultiStoreCheckoutResponse>(accessToken, path, dshOperationPaths.cancelMultiStoreCheckout.method, undefined, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) });
     },
-    async listClientOrders(accessToken: string, limit = 50, cartID = "", cursor = ""): Promise<OrderListResponse> {
-      const normalizedCartID = cartID.trim();
+    async listClientOrders(accessToken: string, options: { limit?: number; cartId?: string; cursor?: string; q?: string; status?: ClientOrderHistoryStatus; fulfillmentMode?: FulfillmentMode } = {}): Promise<OrderListResponse> {
+      const { limit = 50, cartId = "", cursor = "", q = "", status, fulfillmentMode } = options;
+      const normalizedCartID = cartId.trim();
       const normalizedCursor = cursor.trim();
-      if (limit < 1 || limit > 100 || normalizedCartID.length > 128 || normalizedCursor.length > 4096 || (normalizedCartID && normalizedCursor)) throw new Error("DSH_ORDER_LIST_INPUT_INVALID");
+      const normalizedSearch = q.trim();
+      if (limit < 1 || limit > 100 || normalizedCartID.length > 128 || normalizedCursor.length > 4096 ||
+          Array.from(normalizedSearch).length > 128 || (normalizedCartID && (normalizedCursor || normalizedSearch || status || fulfillmentMode))) {
+        throw new Error("DSH_ORDER_LIST_INPUT_INVALID");
+      }
       const query = new URLSearchParams({ limit: String(limit) });
       if (normalizedCartID) query.set("cartId", normalizedCartID);
       if (normalizedCursor) query.set("cursor", normalizedCursor);
+      if (normalizedSearch) query.set("q", normalizedSearch);
+      if (status) query.set("status", status);
+      if (fulfillmentMode) query.set("fulfillmentMode", fulfillmentMode);
       return userRequest<OrderListResponse>(accessToken, `${dshOperationPaths.listClientOrders.path}?${query.toString()}`, dshOperationPaths.listClientOrders.method);
     },
     async listNotifications(accessToken: string, limit = 50, cursor = ""): Promise<NotificationListResponse> {
@@ -1199,6 +1237,16 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.setStoreFulfillmentModes.path.replace("{storeId}", encodeURIComponent(normalizedStore));
       return userRequest<StoreFulfillmentModesResponse>(accessToken, path, dshOperationPaths.setStoreFulfillmentModes.method, { fulfillmentModes }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
     },
+    async listStoreJoiningPolicies(): Promise<PublicStoreJoiningOptions> {
+      const result = await publicRequest<PublicStoreJoiningOptions>(dshOperationPaths.listPublicStoreJoiningOptions.path);
+      if (!Array.isArray(result.items) || result.items.length !== 2 ||
+          !result.items.some(item=>item.relationModel==="BTHWANI_PARTNER") ||
+          !result.items.some(item=>item.relationModel==="INDEPENDENT_STORE") ||
+          !result.items.every(item=>typeof item.enrollmentEnabled==="boolean")) {
+        throw new Error("DSH_STORE_JOINING_POLICY_INVALID");
+      }
+      return result;
+    },
     async listActiveServiceCities(): Promise<ReadonlyArray<ServiceCity>> {
       return (await publicRequest<ServiceCityListResponse>(dshOperationPaths.listActiveServiceCities.path)).cities;
     },
@@ -1306,11 +1354,13 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalizedCity) throw new Error("DSH_SERVICE_CITY_REQUIRED");
       return publicRequest<DiscoveryContentListResponse>(`${dshOperationPaths.listPublicDiscoveryContent.path}?${new URLSearchParams({ serviceCityId: normalizedCity }).toString()}`);
     },
-    async listPublicStoreBanners(storeID: string, serviceCityID: string): Promise<DiscoveryContentListResponse> {
+    async listPublicStoreBanners(storeID: string, serviceCityID: string, relation: "marketplace" | "independent" = "marketplace"): Promise<DiscoveryContentListResponse> {
       const normalizedStore = storeID.trim();
       const normalizedCity = serviceCityID.trim();
       if (!normalizedStore || !normalizedCity) throw new Error("DSH_STORE_BANNER_SCOPE_REQUIRED");
-      const path = dshOperationPaths.listPublicStoreBanners.path.replace("{storeId}", encodeURIComponent(normalizedStore));
+      const path = (relation === "independent"
+        ? dshOperationPaths.listPublicIndependentStoreBanners.path
+        : dshOperationPaths.listPublicStoreBanners.path).replace("{storeId}", encodeURIComponent(normalizedStore));
       return publicRequest<DiscoveryContentListResponse>(`${path}?${new URLSearchParams({ serviceCityId: normalizedCity }).toString()}`);
     },
     async resolvePublicDiscoveryContentTarget(contentID: string, serviceCityID: string): Promise<DiscoveryContentTargetResolution> {
@@ -1334,7 +1384,13 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const normalizedCity = serviceCityID.trim();
       if (!normalized || !normalizedCity) throw new Error("DSH_STORE_SCOPE_REQUIRED");
       const path = `${dshOperationPaths.readPublishedStore.path.replace("{storeId}", encodeURIComponent(normalized))}?${new URLSearchParams({ serviceCityId: normalizedCity }).toString()}`;
-      return publicRequest<PublicStoreView>(path);
+      const result = await publicRequest<PublicStoreView>(path);
+      if (result.id !== normalized || result.serviceCity?.id !== normalizedCity ||
+          !Array.isArray(result.orderabilityByMode) ||
+          result.orderabilityByMode.some(item => item.storeId !== normalized)) {
+        throw new Error("DSH_PUBLIC_STORE_SCOPE_MISMATCH");
+      }
+      return result;
     },
     async readPublicStoreOrderability(storeID: string, serviceCityID: string): Promise<PublicStoreOrderabilityResponse> {
       const normalizedStore = storeID.trim();
@@ -1342,7 +1398,13 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalizedStore || !normalizedCity) throw new Error("DSH_STORE_ORDERABILITY_SCOPE_REQUIRED");
       const query = new URLSearchParams({ serviceCityId: normalizedCity });
       const path = `${dshOperationPaths.readPublicStoreOrderability.path.replace("{storeId}", encodeURIComponent(normalizedStore))}?${query.toString()}`;
-      return publicRequest<PublicStoreOrderabilityResponse>(path);
+      const result = await publicRequest<PublicStoreOrderabilityResponse>(path);
+      if (result.storeId !== normalizedStore || result.serviceCityId !== normalizedCity ||
+          !Array.isArray(result.orderabilityByMode) ||
+          result.orderabilityByMode.some(item => item.storeId !== normalizedStore)) {
+        throw new Error("DSH_PUBLIC_ORDERABILITY_SCOPE_MISMATCH");
+      }
+      return result;
     },
     async readPublicStoreCatalog(storeID: string, serviceCityID: string, categoryID = "", query = "", limit = 100, cursor = "", productID = "", sort: "" | "MOST_ORDERED_30_DAYS" = ""): Promise<PublicCatalogResponse> {
       const normalizedStore = storeID.trim();
@@ -1361,7 +1423,14 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       params.set("limit", String(limit));
       if (cursor.trim()) params.set("cursor", cursor.trim());
       const path = `${dshOperationPaths.readPublicStoreCatalog.path.replace("{storeId}", encodeURIComponent(normalizedStore))}?${params.toString()}`;
-      return publicRequest<PublicCatalogResponse>(path);
+      const result = await publicRequest<PublicCatalogResponse>(path);
+      if (result.storeId !== normalizedStore || !Array.isArray(result.offers) ||
+          !Array.isArray(result.sections) ||
+          result.offers.some(offer => offer.storeId !== normalizedStore) ||
+          result.sections.some(section => section.storeId !== normalizedStore)) {
+        throw new Error("DSH_PUBLIC_CATALOG_SCOPE_MISMATCH");
+      }
+      return result;
     },
     async searchPublicCatalog(serviceCityID: string, query: string, categoryID = "", limit = 20, cursor = "", verticalID = "", shortcutID = "", sort: "" | "PRICE_ASC" | "PRICE_DESC" = ""): Promise<PublicCatalogSearchResponse> {
       const normalizedCity = serviceCityID.trim();

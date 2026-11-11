@@ -9,6 +9,7 @@ import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { PageHeader } from "../../shell/page-header";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { StoreLogo } from "../stores/store-logo";
+import { OperatorStoreCreationForm } from "../stores/operator-store-creation-form";
 import { ActorWalletStatement } from "../finance/actor-wallet-statement";
 import { PartnerFinancialRegister } from "../finance/partner-financial-register";
 import { ActorLegalNameWorkspace } from "./actor-legal-name-workspace";
@@ -322,6 +323,9 @@ export function PartnerDetailWorkspace({ actorId, embedded = false }: Readonly<{
 
     {detail && activeTab === "stores" ? <section className="partner-detail-section" aria-labelledby="partner-stores-title">
       <div className="partner-detail-section-heading"><div><h2 id="partner-stores-title">متاجر الشريك</h2></div></div>
+      {detail.partner.enabled && detail.partner.securityEnabled && detail.partner.activatedAt ?
+        <OperatorStoreCreationForm key={actorId} actorId={actorId} onCreated={() => void loadStores()} /> :
+        <p className="muted">إنشاء متجر لشريك يتطلب هوية مفعلّة ومتحققًا منها.</p>}
       {storesError ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذرت قراءة المتاجر</strong><p>{storesError}</p><button type="button" className="button button-secondary" onClick={() => void loadStores(new URLSearchParams(window.location.search).get("cursor") ?? "", storesPageStack)} disabled={loadingStores}>إعادة المحاولة</button></div> : null}
       {loadingStores && stores.length === 0 ? <div className="collection-state" role="status"><strong>جارٍ قراءة المتاجر </strong></div> : null}
       {!loadingStores && !storesError && stores.length === 0 ? <div className="collection-state"><strong>لا توجد متاجر مرتبطة بهذا الشريك</strong><p>هذه نتيجة القراءة الحالية .</p></div> : null}

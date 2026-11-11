@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
+	"github.com/lib/pq"
 )
 
 func TestCaptainMissionLocationOwnerLatestAndTerminalPurge(t *testing.T) {
@@ -53,6 +54,15 @@ func TestCaptainMissionLocationOwnerLatestAndTerminalPurge(t *testing.T) {
         VALUES('mission_assignment','mission_order','mission_captain','mission_offer','assigned')`); err != nil {
 			t.Fatal(err)
 		}
+		// The database itself rejects forged mission attribution even if a future
+		// internal writer bypasses the Go assignment ownership check.
+		_, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_mission_latest
+		    (assignment_id,captain_actor_id,latitude,longitude,accuracy_meters,recorded_at,sequence)
+		    VALUES('mission_assignment','different_captain',15.37,44.20,14,clock_timestamp(),1)`)
+		var fkError *pq.Error
+		if !errors.As(err, &fkError) || fkError.Code != "23503" {
+			t.Fatalf("mismatched mission owner insert must fail its foreign key: %v", err)
+		}
 		missing, err := postgres.ReadOperatorMissionLocation(ctx, db, "mission_order")
 		if err != nil || missing.State != "NO_SIGNAL" || missing.Latitude != nil {
 			t.Fatalf("no signal leaked coords: %+v err=%v", missing, err)
@@ -66,6 +76,10 @@ func TestCaptainMissionLocationOwnerLatestAndTerminalPurge(t *testing.T) {
 		}
 		if err := postgres.UpdateCaptainMissionLocation(ctx, db, "mission_assignment", "mission_captain", 15.37, 44.20, 14, now, 1); err != nil {
 			t.Fatalf("current owner fix rejected: %v", err)
+		}
+		_, err = db.ExecContext(ctx, "UPDATE dsh.captain_mission_latest SET captain_actor_id='different_captain' WHERE assignment_id='mission_assignment'")
+		if !errors.As(err, &fkError) || fkError.Code != "23503" {
+			t.Fatalf("mismatched mission owner update must fail its foreign key: %v", err)
 		}
 		if err := postgres.UpdateCaptainMissionLocation(ctx, db, "mission_assignment", "mission_captain", 15.38, 44.21, 14, now, 1); !errors.Is(err, postgres.ErrMissionLocationStale) {
 			t.Fatalf("duplicate sequence overwrote position: %v", err)

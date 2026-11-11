@@ -33,6 +33,7 @@ test("commercial agreement rereads guard stale responses and preserve the latest
   const write = read.indexOf("setAgreements(items)");
   assert.ok(guard >= 0 && guard < write, "superseded read must be rejected before UI state updates");
   assert.match(read, /catch \(cause\) \{[\s\S]*?request !== readSequence.current/);
-  assert.match(proposal, /controller\.abort\(\); readSequence\.current\+\+/);
+  assert.match(proposal, /return \(\) => \{\s*controller\.abort\(\);\s*readSequence\.current\+\+;/);
+  assert.match(proposal, /proposalController\.current\?\.abort\(\)/);
   assert.match(proposal, /cause\.message === "AGREEMENT_READ_SUPERSEDED"/);
 });

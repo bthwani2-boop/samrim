@@ -1,40 +1,38 @@
-import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
-import { BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 import { formatMoney, type PublicPromotionView } from "@bthwani/dsh";
-import { useMemo } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Button, Card, Text, View } from "tamagui";
 
 export function PromotionCard({ promotion, onUse }: { promotion: PublicPromotionView; onUse?: () => void }) {
   const theme = useAppearanceTheme();
-  const styles = useMemo(() => createStyles(theme), [theme]);
   const benefit = promotion.kind === "PERCENTAGE" ? `خصم ${promotion.valueMinor}%` : `خصم ${discoveryMoney(promotion.valueMinor, "YER")}`;
   return (
-    <BthwaniSurface tone="raised" style={styles.card}>
-      <View style={styles.copy}>
-        <Text style={styles.title}>{promotion.nameAr}</Text>
-        <Text style={styles.muted}>{promotion.descriptionAr || benefit}</Text>
-        {promotion.descriptionAr ? <Text style={styles.benefit}>{benefit}</Text> : null}
-        {promotion.maxDiscountMinor ? <Text style={styles.muted}>الحد الأعلى للخصم {discoveryMoney(promotion.maxDiscountMinor, "YER")}</Text> : null}
-        {promotion.endsAt ? <Text style={styles.muted}>يسري حتى {new Date(promotion.endsAt).toLocaleDateString("ar-YE", { dateStyle: "medium" })}</Text> : null}
-        {onUse ? <Pressable accessibilityRole="button" accessibilityLabel={`استخدام عرض ${promotion.nameAr} في سلة المتجر`} onPress={onUse} hitSlop={8}><Text style={styles.useAction}>استخدام العرض في السلة</Text></Pressable> : null}
+    <Card style={{ alignItems: "center", backgroundColor: theme.surfaceRaised, borderRadius: 12, flexDirection: "row", gap: 12, padding: 12 }}>
+      <View style={{ flex: 1, gap: 4 }}>
+        <Text style={{ color: theme.color, fontSize: 14, fontWeight: "600", textAlign: "right" }}>{promotion.nameAr}</Text>
+        <Text style={{ color: theme.colorMuted, fontSize: 12, textAlign: "right" }}>{promotion.descriptionAr || benefit}</Text>
+        {promotion.descriptionAr ? <Text style={{ color: theme.interactiveText, fontSize: 12, textAlign: "right" }}>{benefit}</Text> : null}
+        {promotion.maxDiscountMinor ? <Text style={{ color: theme.colorMuted, fontSize: 12, textAlign: "right" }}>الحد الأعلى للخصم {discoveryMoney(promotion.maxDiscountMinor, "YER")}</Text> : null}
+        {promotion.endsAt ? <Text style={{ color: theme.colorMuted, fontSize: 12, textAlign: "right" }}>يسري حتى {new Date(promotion.endsAt).toLocaleDateString("ar-YE", { dateStyle: "medium" })}</Text> : null}
+        {onUse ? (
+          <Button
+            accessibilityLabel={`استخدام عرض ${promotion.nameAr} في سلة المتجر`}
+            onPress={onUse}
+            style={{ alignSelf: "flex-start" }}
+          >
+            <Text style={{ color: theme.interactiveText, textAlign: "right" }}>استخدام العرض في السلة</Text>
+          </Button>
+        ) : null}
       </View>
-      <Text accessibilityLabel={`رمز العرض ${promotion.code}`} style={styles.code}>{promotion.code}</Text>
-    </BthwaniSurface>
+      <Text
+        accessibilityLabel={`رمز العرض ${promotion.code}`}
+        style={{ backgroundColor: theme.actionSoft, borderColor: theme.interactiveText, borderRadius: 8, borderWidth: 1, color: theme.interactiveText, paddingHorizontal: 8, paddingVertical: 4, textAlign: "left", writingDirection: "ltr" }}
+      >
+        {promotion.code}
+      </Text>
+    </Card>
   );
 }
 
 function discoveryMoney(amountMinor: number, currency: string): string {
   return (currency === "YER" ? formatMoney(amountMinor, "YER") : `${amountMinor} ${currency}`).replace(/ريال يمني/g, "ريال");
-}
-
-function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  return StyleSheet.create({
-    card: { alignItems: "center", borderRadius: radius.lg, flexDirection: "row", gap: spacing[3], padding: spacing[3] },
-    copy: { flex: 1, gap: spacing[1] },
-    title: { ...typography.bodyStrong, color: theme.color },
-    muted: { ...typography.bodySm, color: theme.colorMuted },
-    benefit: { ...typography.bodySm, color: theme.interactiveText },
-    code: { ...typography.label, backgroundColor: theme.actionSoft, borderColor: theme.interactiveText, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.interactiveText, paddingHorizontal: spacing[2], paddingVertical: spacing[1], textAlign: "left", writingDirection: "ltr" },
-    useAction: { ...typography.label, color: theme.interactiveText, paddingVertical: spacing[2], textAlign: "right" },
-  });
 }

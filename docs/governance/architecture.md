@@ -17,7 +17,7 @@ Identity
 
 DSH
 → delivery-commerce operational truth
-→ Partner / Store / joining
+→ Merchant / Store registration, ownership and lifecycle
 → Store ownership and Store-scoped delegated authority
 → Store publication and Store operational availability/orderability
 → catalog / assortment / serviceability
@@ -48,11 +48,23 @@ WLT
 → payout / settlement / reconciliation
 ```
 
-A service existing in source does not automatically admit Product breadth; Product admission is owned by `docs/governance/product/overview.md`.
+A service existing in source does not automatically admit Product breadth; Product admission is owned by `docs/governance/product.md`.
 
 ## Architecture selection
 
 DDD, rich domain models, Clean/Hexagonal Architecture, ports/adapters and SOLID are design techniques, not mandatory layers, directory layouts or compliance targets. Choose the smallest implementation that preserves domain ownership, business invariants, transaction/concurrency correctness, authorization and contract evolution. Add an abstraction only for a proven current need whose benefit exceeds its complexity; never refactor correct code solely to match a named pattern.
+
+## Mandatory single-owner and single-engine law
+
+Every mutable commercial fact has **exactly one canonical semantic owner, governed writer and authoritative readback**. Every essential operation has **one existing canonical engine** within its bounded owner: Identity owns identity/access; DSH owns Store, catalog/offer, price and availability evaluation, publication, checkout/Order and fulfillment; WLT owns agreements, payment and financial ledger/settlement. Different public routes, actors, clients and commercial relationships must compose these engines, not instantiate competing ones.
+
+**Prohibited by default:** a second engine, service, table/schema, state machine, catalog, pricing/inventory calculator, checkout/order writer, financial ledger, data writer or synchronization path that independently implements or owns the **same** responsibility or mutable truth. Renaming it per Store model, channel, team or deployment does not make it a distinct responsibility. A shadow writer, dual-source-of-truth or permanent parallel legacy implementation is not an approved shortcut.
+
+BTHWANI_PARTNER and INDEPENDENT_STORE are Store **policy, eligibility, publication, fulfillment, contractual and financial-term variants**, not grounds for parallel commerce infrastructure. Distinct lawful Order routes or presentations are implemented through the **same canonical DSH/WLT/Identity owners** with explicit guarded policies and contracts; no client flag or second database may decide ownership, price, authorization or money.
+
+Before proposing any *new distinct* persistence structure, service or execution mechanism, the proponent must demonstrate a current responsibility **not correctly expressible inside its existing owner**, show why direct reuse/extension is insufficient, identify its unique fact/contract/writer and obtain explicit approval in the canonical governance owner. **Duplicating an existing canonical engine or writer for the same responsibility is forbidden even under this exception.** Bounded derived projections, indexes and technical provider adapters are permitted only as non-authoritative, rebuildable consumers of canonical truth, never as substitute writers. A temporary migration coexistence requires a controlled, evidenced cutover, preserved readback and removal of the losing path; it is not permission to operate two permanent engines.
+
+Architecture and code reviews **must reject** an unproven parallel owner/engine/table/service, and require correction at the current owner rather than approval by convenience, speed or mere presence of legacy code. This rule governs new work and remediation; removal of existing violations requires safe consumer/data migration and verification, not destructive deletion on discovery.
 
 ## Adapter boundary
 
@@ -140,6 +152,12 @@ Governance owns durable runtime invariants only:
 - recovery procedures prove canonical readback.
 
 Exact ports, commands, package versions, containers and environment-specific composition belong to executable source/config.
+
+## Responsibility-shaped implementation boundaries
+
+Refounding a feature may change its files, packages and module tree, but must **not** move a canonical business fact, writer or access decision into a UI host, shared package or another owner's database. Prefer one cohesive module per real responsibility and direct composition at public owner boundaries. Split combined responsibilities only when each distinct owner remains explicit; merge redundant representations after moving real consumers. A directory rename alone does not repair business ownership, and identical behavior in two files is not evidence that their authority may remain duplicated.
+
+Directory and naming placement details are owned **only** by `REPOSITORY-STRUCTURE.md`; semantic business boundaries remain here.
 
 ## Repository boundary
 

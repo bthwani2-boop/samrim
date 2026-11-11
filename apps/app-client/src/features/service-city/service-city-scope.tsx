@@ -1,11 +1,11 @@
 import { borders, opacity, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
-import { useGlobalSearchParams, usePathname } from "expo-router";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { ServiceCity } from "@bthwani/dsh";
-import * as SecureStore from "../../bootstrap/compatible-storage";
+import { useGlobalSearchParams, usePathname } from "expo-router";
 import { createContext, type PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Pressable, StyleSheet, Text, View } from "react-native";
-import { listActiveServiceCities } from "./service-city-client";
+import * as SecureStore from "../../bootstrap/compatible-storage";
+import { createClientDsh } from "../../bootstrap/dsh";
 import { persistCitySelection, readCitySelection, resolveLinkedServiceCityID } from "./service-city-preference";
 
 const PREFERENCE_KEY = "samrim.app-client.service-city";
@@ -34,7 +34,7 @@ export function useServiceCityScope(): ScopeContextValue {
 export default function ServiceCityScope({ children }: PropsWithChildren) {
   const pathname = usePathname();
   const { serviceCityId } = useGlobalSearchParams<{ serviceCityId?: string | string[] }>();
-  const linkedCityID = pathname.startsWith("/store/") && typeof serviceCityId === "string" ? serviceCityId.trim() : "";
+  const linkedCityID = (pathname.startsWith("/store/") || pathname.startsWith("/storefront/")) && typeof serviceCityId === "string" ? serviceCityId.trim() : "";
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
@@ -47,7 +47,7 @@ export default function ServiceCityScope({ children }: PropsWithChildren) {
     const generation = ++refreshGenerationRef.current;
     // Foreground refresh must not unmount the navigator and reset the current route.
     try {
-      const nextCities = await listActiveServiceCities();
+      const nextCities = await createClientDsh().listActiveServiceCities();
       if (generation !== refreshGenerationRef.current) return;
       const activeIDs = new Set(nextCities.map((city) => city.id));
       // A device preference is optional and cannot turn a valid DSH response into an outage.

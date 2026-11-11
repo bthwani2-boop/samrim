@@ -1,14 +1,22 @@
 "use client";
 
-import { type StoreFulfillmentMode } from "@bthwani/dsh";
+import type { StoreFulfillmentMode } from "@bthwani/dsh";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
-import { stablePartnerMutationHeaders } from "../partners/partner-request";
 import { storeCommercialStatusLabel } from "../finance/store-commercial-agreement-types";
+import { stablePartnerMutationHeaders } from "../partners/partner-request";
 import { nextStoreCommercialAgreementVersion } from "./store-commercial-agreement-version";
-import { matchesProposedStoreAgreement, storeCommercialRatesForProposal, type ExpectedStoreCommercialProposal, type StoreCommercialProposalReadback } from "./store-commercial-proposal-rates";
+import { type ExpectedStoreCommercialProposal, matchesProposedStoreAgreement, type StoreCommercialProposalReadback, storeCommercialRatesForProposal } from "./store-commercial-proposal-rates";
 
-type Agreement = StoreCommercialProposalReadback & Readonly<{ partnerActorId: string }>;
+type AgreementRate = StoreCommercialProposalReadback["rates"][number] & Readonly<{
+  deliveryMarkupMinor?: number;
+  deliveryPricingMode?: "DISTANCE" | "FIXED" | "FREE";
+  deliveryFixedFeeMinor?: number;
+}>;
+type Agreement = Omit<StoreCommercialProposalReadback, "rates"> & Readonly<{
+  partnerActorId: string;
+  rates: readonly AgreementRate[];
+}>;
 
 const labels: Record<string, string> = {
   BTHWANI_CAPTAIN: "توصيل بثواني",
@@ -16,15 +24,51 @@ const labels: Record<string, string> = {
   CUSTOMER_PICKUP: "استلام العميل",
 };
 
-export function StoreCommercialAgreementProposal({ storeId, modes, readOnly = true }: Readonly<{storeId: string; modes: readonly StoreFulfillmentMode[]; readOnly?: boolean}>) {
+function commercialRateDescription(rate: AgreementRate): string {
+  const parts = [`${labels[rate.fulfillmentMode]}: ${rate.commissionRateBps / 100}%`];
+  if ((rate.deliveryMarkupMinor ?? 0) > 0) parts.push(`إضافة على رسوم توصيل العميل: ${rate.deliveryMarkupMinor} ريال`);
+  if (rate.fulfillmentMode === "PARTNER_CAPTAIN") {
+    const mode = rate.deliveryPricingMode ?? "DISTANCE";
+    parts.push(mode === "FREE" ? "توصيل المتجر: مجاني" :
+      mode === "FIXED" ? `توصيل المتجر: ثابت ${rate.deliveryFixedFeeMinor} ريال` :
+      "توصيل المتجر: حسب المسافة");
+  }
+  return parts.join(" · ");
+}
+
+// The proposal UI submits commission rates only. Additional WLT delivery fees
+// are valid for older contracts, but cannot be silently added to this proposal.
+function hasOnlyDefaultDeliveryFeeTerms(item: Agreement): boolean {
+  return item.rates.every(rate => (rate.deliveryMarkupMinor ?? 0) === 0 &&
+    (rate.deliveryPricingMode ?? "DISTANCE") === "DISTANCE" &&
+    (rate.deliveryFixedFeeMinor ?? 0) === 0);
+}
+
+export function StoreCommercialAgreementProposal(props: Readonly<{storeId: string; modes: readonly StoreFulfillmentMode[]; readOnly?: boolean; suggestedModel?: "COMMISSION" | "SUBSCRIPTION"}>) {
+  const { state } = useSession();
+  const permitted = state.kind === "authenticated" && state.identity.role === "operator"
+    && state.identity.permissions?.includes("partners") === true
+    && (props.readOnly !== false || (state.identity.permissions.includes("platform_policies")
+      && state.identity.permissions.includes("finance")))
+    && Boolean(state.identity.subject && state.identity.sessionId);
+  if (!permitted || state.kind !== "authenticated") {
+    return <p role="alert" className="identity-error">لا يمكن عرض الاتفاقات دون جلسة مشغّل فعّالة وصلاحيات الاتفاق المطلوبة.</p>;
+  }
+  const sessionKey = JSON.stringify([state.identity.subject, state.identity.sessionId, props.storeId]);
+  return <StoreCommercialAgreementEditor key={sessionKey} {...props} />;
+}
+
+function StoreCommercialAgreementEditor({ storeId, modes, readOnly = true, suggestedModel = "COMMISSION" }: Readonly<{storeId: string; modes: readonly StoreFulfillmentMode[]; readOnly?: boolean; suggestedModel?: "COMMISSION" | "SUBSCRIPTION"}>) {
   const { state: sessionState } = useSession();
   const actorId = sessionState.kind === "authenticated" ? sessionState.identity.subject : "";
   const [agreements, setAgreements] = useState<readonly Agreement[] | null>(null);
   const readSequence = useRef(0);
+  const proposalController = useRef<AbortController | null>(null);
   const [busy, setBusy] = useState(false);
+  const [requiresConfirmation, setRequiresConfirmation] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [commercialModel, setCommercialModel] = useState<"COMMISSION" | "SUBSCRIPTION">("COMMISSION");
+  const [commercialModel, setCommercialModel] = useState<"COMMISSION" | "SUBSCRIPTION">(suggestedModel);
   const [commissionPercentByMode, setCommissionPercentByMode] = useState<Record<StoreFulfillmentMode, string>>({
     BTHWANI_CAPTAIN: "0", PARTNER_CAPTAIN: "0", CUSTOMER_PICKUP: "0",
   });
@@ -43,14 +87,59 @@ export function StoreCommercialAgreementProposal({ storeId, modes, readOnly = tr
 
   const read = useCallback(async (signal?: AbortSignal) => {
     const request = ++readSequence.current;
+    // Never keep an old version actionable while canonical WLT readback is pending.
+    setAgreements(null);
+    setNotice("");
     try {
-      const response = await fetch(url, { cache: "no-store", signal: signal ?? null });
+      const readSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(12_000)]) : AbortSignal.timeout(12_000);
+      const response = await fetch(url, { cache: "no-store", signal: readSignal });
       const body: unknown = await response.json();
       if (!response.ok || !body || typeof body !== "object" || !("agreements" in body) || !Array.isArray(body.agreements)) {
         throw new Error("AGREEMENT_READ_UNAVAILABLE");
       }
       const items = body.agreements as Agreement[];
-      if (items.some(item => !item.agreementId || item.storeId !== storeId || !Array.isArray(item.rates))) throw new Error("AGREEMENT_READ_INVALID");
+      if (items.some(item => !item || typeof item.agreementId !== "string" || !item.agreementId.trim() ||
+        item.storeId !== storeId || typeof item.partnerActorId !== "string" || !item.partnerActorId.trim() ||
+        typeof item.proposedByActorId !== "string" || !item.proposedByActorId.trim() ||
+        typeof item.status !== "string" || typeof item.reason !== "string" ||
+        !["COMMISSION", "SUBSCRIPTION", "HYBRID"].includes(item.commercialModel) ||
+        !Number.isSafeInteger(item.recurringAmountMinor) || item.recurringAmountMinor < 0 ||
+        item.recurringAmountMinor > 100000000 ||
+        !["NONE", "MONTHLY", "ANNUAL"].includes(item.billingPeriod) ||
+        item.billingTimeZone !== "Asia/Aden" ||
+        !Number.isSafeInteger(item.invoiceDueDays) || item.invoiceDueDays < 0 || item.invoiceDueDays > 30 ||
+        !Number.isSafeInteger(item.graceDays) || item.graceDays < 0 || item.graceDays > 30 ||
+        !["NONE", "MANUAL", "AUTOMATIC"].includes(item.renewalPolicy) ||
+        typeof item.terminationTerms !== "string" || typeof item.adjustmentTerms !== "string" ||
+        !Number.isSafeInteger(item.agreementVersion) || item.agreementVersion < 1 ||
+        !Array.isArray(item.rates) || item.rates.length < 1 || item.rates.length > 3 ||
+        item.rates.some(rate => !rate || !Object.hasOwn(labels, rate.fulfillmentMode) ||
+          !Number.isSafeInteger(rate.commissionRateBps) || rate.commissionRateBps < 0 ||
+          rate.commissionRateBps > 10000 ||
+          (rate.deliveryMarkupMinor !== undefined && (!Number.isSafeInteger(rate.deliveryMarkupMinor) ||
+            rate.deliveryMarkupMinor < 0 || rate.deliveryMarkupMinor > 10000)) ||
+          (rate.deliveryFixedFeeMinor !== undefined && (!Number.isSafeInteger(rate.deliveryFixedFeeMinor) ||
+            rate.deliveryFixedFeeMinor < 0 || rate.deliveryFixedFeeMinor > 20000)) ||
+          (rate.deliveryPricingMode !== undefined && !["DISTANCE", "FIXED", "FREE"].includes(rate.deliveryPricingMode)) ||
+          ((rate.deliveryMarkupMinor ?? 0) > 0 && (rate.fulfillmentMode !== "BTHWANI_CAPTAIN" || rate.commissionRateBps !== 0)) ||
+          (rate.fulfillmentMode !== "PARTNER_CAPTAIN" &&
+            ((rate.deliveryPricingMode ?? "DISTANCE") !== "DISTANCE" || (rate.deliveryFixedFeeMinor ?? 0) !== 0)) ||
+          (rate.fulfillmentMode === "PARTNER_CAPTAIN" && (
+            ((rate.deliveryPricingMode ?? "DISTANCE") === "FIXED" && (rate.deliveryFixedFeeMinor ?? 0) <= 0) ||
+            ((rate.deliveryPricingMode ?? "DISTANCE") !== "FIXED" && (rate.deliveryFixedFeeMinor ?? 0) !== 0)))) ||
+        new Set(item.rates.map(rate => rate.fulfillmentMode)).size !== item.rates.length ||
+        (item.commercialModel === "COMMISSION" && (item.recurringAmountMinor !== 0 ||
+          item.billingPeriod !== "NONE" || item.invoiceDueDays !== 0 || item.graceDays !== 0 ||
+          item.renewalPolicy !== "NONE" || item.terminationTerms !== "" || item.adjustmentTerms !== "")) ||
+        (item.commercialModel === "SUBSCRIPTION" && (item.recurringAmountMinor < 1 ||
+          !["MONTHLY", "ANNUAL"].includes(item.billingPeriod) ||
+          !["MANUAL", "AUTOMATIC"].includes(item.renewalPolicy) ||
+          item.rates.some(rate => rate.commissionRateBps !== 0) ||
+          Array.from(item.terminationTerms).length < 8 || Array.from(item.terminationTerms).length > 500 ||
+          Array.from(item.adjustmentTerms).length < 8 || Array.from(item.adjustmentTerms).length > 500))) ||
+        new Set(items.map(item => item.agreementId)).size !== items.length) {
+        throw new Error("AGREEMENT_READ_INVALID");
+      }
       if (request !== readSequence.current || signal?.aborted) throw new Error("AGREEMENT_READ_SUPERSEDED");
       setAgreements(items);
       return items;
@@ -68,11 +157,17 @@ export function StoreCommercialAgreementProposal({ storeId, modes, readOnly = tr
     void read(controller.signal).catch((cause: unknown) => {
       if (!controller.signal.aborted && !(cause instanceof Error && cause.message === "AGREEMENT_READ_SUPERSEDED")) setError(cause instanceof Error ? "تعذرت قراءة الاتفاقات؛ أعد المحاولة قبل اقتراح أي شروط." : "تعذرت قراءة الاتفاقات.");
     });
-    return () => { controller.abort(); readSequence.current++; };
+    return () => {
+      controller.abort();
+      readSequence.current++;
+      // A pending POST may have committed. Suppress late updates and never replay.
+      proposalController.current?.abort();
+      proposalController.current = null;
+    };
   }, [read]);
 
   async function propose() {
-    if (readOnly || busy || !actorId || nextProposalVersion === null || modes.length === 0) return;
+    if (readOnly || busy || proposalController.current || requiresConfirmation || !actorId || nextProposalVersion === null || modes.length === 0) return;
     const distinct = [...new Set(modes)];
     if (distinct.length !== modes.length || distinct.some(mode => !(mode in labels))) return;
     const rates = storeCommercialRatesForProposal(distinct, commissionPercentByMode, commercialModel);
@@ -107,34 +202,57 @@ export function StoreCommercialAgreementProposal({ storeId, modes, readOnly = tr
       terminationTerms: recurring ? terminationTerms.trim() : "",
       adjustmentTerms: recurring ? adjustmentTerms.trim() : "",
     };
+    const controller = new AbortController();
+    proposalController.current = controller;
     setBusy(true);
     setError("");
     setNotice("");
+    let postAttempted = false;
     try {
       const headers = await stablePartnerMutationHeaders("commercial-proposal:" + actorId + ":" + storeId + ":" + nextProposalVersion + ":" + JSON.stringify(payload));
+      if (controller.signal.aborted) return;
+      postAttempted = true;
       const response = await fetch(url, {
         method: "POST", headers, body: JSON.stringify(payload),
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]),
       });
+      if (controller.signal.aborted) return;
       if (!response.ok) throw new Error("PROPOSAL_REJECTED");
       const body = await response.json() as { agreement?: Agreement };
+      if (controller.signal.aborted) return;
       const proposed = body.agreement;
-      if (!proposed || !matchesProposedStoreAgreement(proposed, expected)) {
+      if (!proposed || !matchesProposedStoreAgreement(proposed, expected) ||
+        !hasOnlyDefaultDeliveryFeeTerms(proposed)) {
         throw new Error("PROPOSAL_READBACK_MISMATCH");
       }
-      const actual = await read();
+      const actual = await read(controller.signal);
+      if (controller.signal.aborted) return;
       const confirmed = actual.filter(item =>
         item.agreementId === proposed.agreementId &&
         item.partnerActorId === proposed.partnerActorId &&
-        matchesProposedStoreAgreement(item, expected));
+        matchesProposedStoreAgreement(item, expected) &&
+        hasOnlyDefaultDeliveryFeeTerms(item));
       if (confirmed.length !== 1) {
         throw new Error("PROPOSAL_CANONICAL_READBACK_MISMATCH");
       }
       setNotice(recurring ? "حُفظ اقتراح الاشتراك بانتظار قبول صاحب المتجر. التحصيل والاعتماد المالي معطّلان حتى اكتمال الفوترة." :
         "حُفظ اقتراح العمولة بانتظار قبول صاحب المتجر واعتماد المالية.");
     } catch {
-      try { await read(); } catch { setAgreements(null); }
-      setError("لم نؤكد نتيجة الاقتراح. أعد قراءة الاتفاقات أولًا؛ لا تُنشئ عرضًا ثانيًا قبل التحقق.");
-    } finally { setBusy(false); }
+      if (controller.signal.aborted) return;
+      if (!postAttempted) {
+        // Header generation failed locally; WLT was never called.
+        setError("تعذر تجهيز طلب الاقتراح، ولم يُرسل أي طلب. تحقق من المتصفح ثم حاول مجددًا.");
+        return;
+      }
+      try { await read(controller.signal); } catch { if (!controller.signal.aborted) setAgreements(null); }
+      if (!controller.signal.aborted) {
+        setRequiresConfirmation(true);
+        setError("لم نؤكد نتيجة الاقتراح. أعد قراءة الاتفاقات أولًا؛ لا تُنشئ عرضًا ثانيًا قبل التحقق.");
+      }
+    } finally {
+      if (proposalController.current === controller) proposalController.current = null;
+      if (!controller.signal.aborted) setBusy(false);
+    }
   }
 
   return <section className="access-card" aria-label="الاتفاقات التجارية للمتجر">
@@ -144,7 +262,7 @@ export function StoreCommercialAgreementProposal({ storeId, modes, readOnly = tr
       <p>توجد {agreements.length} نسخة محفوظة. {hasActiveAgreement
         ? "تظل الاتفاقية السارية نافذة حتى يقبل الشريك النسخة الجديدة وتعتمدها المالية، دون تعديل الطلبات السابقة."
         : "لا تُستبدل أي اتفاقية معلقة قبل حسمها."}</p>
-      {agreements.map(item => <p key={item.agreementId}>النسخة {item.agreementVersion} · {storeCommercialStatusLabel(item)} · {item.commercialModel} {item.commercialModel !== "COMMISSION" ? "· " + item.recurringAmountMinor + " ريال " + item.billingPeriod : ""} · {item.rates.map(rate => labels[rate.fulfillmentMode] + ": " + (rate.commissionRateBps / 100) + "%").join("، ")}</p>)}
+      {agreements.map(item => <p key={item.agreementId}>النسخة {item.agreementVersion} · {storeCommercialStatusLabel(item)} · {item.commercialModel} {item.commercialModel !== "COMMISSION" ? "· " + item.recurringAmountMinor + " ريال " + item.billingPeriod : ""} · {item.rates.map(commercialRateDescription).join("، ")}</p>)}
       {hasUnknownAgreementStatus && !error ? <p role="alert" className="identity-error">توجد حالة اتفاق غير معروفة. لا يمكن اقتراح شروط قبل مراجعة السجل. <button className="button button-secondary" type="button" disabled={busy} onClick={() => void read().catch((cause: unknown) => { if (!(cause instanceof Error && cause.message === "AGREEMENT_READ_SUPERSEDED")) setError("تعذرت إعادة قراءة الاتفاقات."); })}>إعادة قراءة السجل</button></p> : null}
       </> : null}
       {!readOnly ? <>
@@ -204,13 +322,13 @@ export function StoreCommercialAgreementProposal({ storeId, modes, readOnly = tr
       </div>
       {commercialModel !== "COMMISSION" ? <p className="muted">الاشتراك اقتراح قابل للقبول فقط حاليًا؛ يمنع WLT الاعتماد والتحصيل حتى تنفيذ الفوترة والقيود والتسويات والمراجعة المستقلة.</p> :
         <p className="muted">عمولة 0% ليست اشتراكًا ولا تتحول تلقائيًا إلى اتفاق مدفوع.</p>}
-      <button type="button" className="button button-secondary" disabled={busy || !actorId || modes.length === 0} onClick={() => void propose()}>
+      <button type="button" className="button button-secondary" disabled={busy || requiresConfirmation || !actorId || modes.length === 0} onClick={() => void propose()}>
         {busy ? "جارٍ إرسال الاقتراح…" : hasActiveAgreement ? "اقتراح تعديل الاتفاق الساري" : nextProposalVersion > 0 ? "إعادة اقتراح الاتفاق بعد التصحيح" : "اقتراح الاتفاق التجاري"}
       </button>
       </>}
       </> : <p className="muted">يُحدّد نموذج العمولة أو الاشتراك من قسم السياسات في لوحة التحكم بواسطة المشغّل المخوّل. هذه الصفحة تعرض سجل الاتفاقيات للمتابعة فقط؛ القبول والاعتماد يظلان مستقلين.</p>}
     </>}
-    {error ? <p role="alert" className="identity-error">{error} <button className="button button-secondary" type="button" disabled={busy} onClick={() => {setError("");void read().catch(() => setError("تعذرت إعادة القراءة."));}}>إعادة القراءة</button></p> : null}
+    {error ? <p role="alert" className="identity-error">{error} <button className="button button-secondary" type="button" disabled={busy} onClick={() => { setError(""); void read().then(() => setRequiresConfirmation(false)).catch(() => setError("تعذرت إعادة القراءة.")); }}>إعادة القراءة</button></p> : null}
     {notice ? <output>{notice}</output> : null}
   </section>;
 }

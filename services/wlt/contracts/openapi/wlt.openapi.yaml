@@ -650,6 +650,36 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PartnerFinancialProfileResponse' }
+  /wlt/v1/operator/store-relation-commercial-model-defaults:
+    get:
+      operationId: readOperatorStoreRelationCommercialModelDefaults
+      security: [{ serviceToken: [] }]
+      responses:
+        '200':
+          description: Explicit prospective fee models; absent relation means unconfigured.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StoreRelationCommercialModelDefaultsResponse' }
+    post:
+      operationId: updateOperatorStoreRelationCommercialModelDefault
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ActingActorId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateStoreRelationCommercialModelDefaultRequest' }
+      responses:
+        '200':
+          description: Versioned prospective default or original replay, not active billing.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StoreRelationCommercialModelDefaultUpdateResponse' }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /wlt/v1/operator/commercial-store-type-commission-defaults:
     get:
       operationId: readOperatorCommercialStoreTypeCommissionDefaults
@@ -3203,6 +3233,42 @@ components:
         profileVersion: { type: integer, minimum: 1 }
         roundingUnitMinor: { type: integer, const: 50 }
         settlementPeriod: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
+    StoreRelationCommercialModelDefault:
+      type: object
+      additionalProperties: false
+      required: [relationModel, commercialModel, policyVersion, updatedAt, changedByActorId, changeReason]
+      properties:
+        relationModel: { type: string, enum: [BTHWANI_PARTNER, INDEPENDENT_STORE] }
+        commercialModel: { type: string, enum: [COMMISSION, SUBSCRIPTION] }
+        policyVersion: { type: integer, minimum: 1 }
+        updatedAt: { type: string, format: date-time }
+        changedByActorId: { type: string, minLength: 1, maxLength: 128 }
+        changeReason: { type: string, minLength: 8, maxLength: 500 }
+    StoreRelationCommercialModelDefaultsResponse:
+      type: object
+      additionalProperties: false
+      required: [defaults]
+      properties:
+        defaults:
+          type: array
+          maxItems: 2
+          items: { $ref: '#/components/schemas/StoreRelationCommercialModelDefault' }
+    UpdateStoreRelationCommercialModelDefaultRequest:
+      type: object
+      additionalProperties: false
+      required: [relationModel, commercialModel, expectedVersion, reason]
+      properties:
+        relationModel: { type: string, enum: [BTHWANI_PARTNER, INDEPENDENT_STORE] }
+        commercialModel: { type: string, enum: [COMMISSION, SUBSCRIPTION] }
+        expectedVersion: { type: integer, minimum: 0, maximum: 999999 }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+    StoreRelationCommercialModelDefaultUpdateResponse:
+      type: object
+      additionalProperties: false
+      required: [default, idempotentReplay]
+      properties:
+        default: { $ref: '#/components/schemas/StoreRelationCommercialModelDefault' }
+        idempotentReplay: { type: boolean }
     StoreTypeCommissionDefault:
       type: object
       additionalProperties: false

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
-import { dshErrorPayload, dshHttpStatus, isDshClientError, listOperatorPartnerTeam } from "../../../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../../src/server/dsh/dsh-transport";
+import { listOperatorPartnerTeam } from "../../../../../../src/server/dsh/joining-bff";
 import { readOperatorSession } from "../../../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../../../src/server/identity/operator-workspace-access";
+
 const headers={"Cache-Control":"private, no-store"};
 function fail(code:string,status:number){return NextResponse.json({error:{code,message:"تعذر قراءة فريق الشريك."}},{status,headers});}
 export async function GET(request:Request,context:{params:Promise<{actorId:string}>}){

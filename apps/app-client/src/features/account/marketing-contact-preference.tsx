@@ -1,10 +1,10 @@
-import { Host, Switch } from "@expo/ui";
 import { BthwaniButton, useMobileAppearance } from "@bthwani/design-system/native";
+import { Host, Switch } from "@expo/ui";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
-import { isCurrentMarketingConsentActor, marketingConsentActorID } from "./marketing-consent-session";
+import { clientSessionKey } from "../access/client-session-scope";
 
 // Promotional PUSH requires explicit opt-in. Delivery and order alerts are
 // transactional and deliberately independent of this preference.
@@ -14,27 +14,27 @@ const endpoint = `${base}/dsh/client/marketing-consent/PUSH`;
 
 export function MarketingContactPreference({ active }: Readonly<{ active: boolean }>) {
   const { themeName, theme } = useMobileAppearance();
-  const [actorID, setActorID] = useState(() => marketingConsentActorID(currentIdentityState()));
+  const [sessionKey, setSessionKey] = useState(() => clientSessionKey(currentIdentityState()));
   const [consent, setConsent] = useState<Consent | null>(null);
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState("");
   const loadRequestID = useRef(0);
-  const currentConsent = isCurrentMarketingConsentActor(active, actorID, currentIdentityState()) ? consent : null;
+  const currentConsent = active && sessionKey.length > 0 && clientSessionKey(currentIdentityState()) === sessionKey ? consent : null;
 
   useEffect(() => {
-    const unsubscribe = subscribeIdentitySession((session) => setActorID(marketingConsentActorID(session)));
-    setActorID(marketingConsentActorID(currentIdentityState()));
+    const unsubscribe = subscribeIdentitySession((session) => setSessionKey(clientSessionKey(session)));
+    setSessionKey(clientSessionKey(currentIdentityState()));
     return unsubscribe;
   }, []);
 
   const load = useCallback(async () => {
     const requestID = ++loadRequestID.current;
     const isCurrent = () => requestID === loadRequestID.current
-      && isCurrentMarketingConsentActor(active, actorID, currentIdentityState());
+      && active && sessionKey.length > 0 && clientSessionKey(currentIdentityState()) === sessionKey;
     setConsent(null);
     setNotice("");
     setPending(false);
-    if (!active || !actorID) return;
+    if (!active || !sessionKey) return;
     if (!base) {
       if (isCurrent()) setNotice("تعذر الاتصال بخدمة تفضيلات العروض.");
       return;
@@ -50,7 +50,7 @@ export function MarketingContactPreference({ active }: Readonly<{ active: boolea
     } catch {
       if (isCurrent()) setNotice("تعذر قراءة تفضيل إشعارات العروض.");
     }
-  }, [active, actorID]);
+  }, [active, sessionKey]);
 
   useEffect(() => {
     void load();
@@ -58,7 +58,7 @@ export function MarketingContactPreference({ active }: Readonly<{ active: boolea
   }, [load]);
 
   const update = async (next: boolean) => {
-    const isCurrent = () => isCurrentMarketingConsentActor(active, actorID, currentIdentityState());
+    const isCurrent = () => active && sessionKey.length > 0 && clientSessionKey(currentIdentityState()) === sessionKey;
     if (pending || !consent || !isCurrent()) return;
     setPending(true);
     setNotice("");

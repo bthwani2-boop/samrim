@@ -155,7 +155,7 @@ export function PartnerFinancialRegister({ partnerActorId, storeId = "", compact
 
   return <section className="pfr-root" aria-label="الحركات المالية للشريك">
     <div className="pfr-head"><div><h3>الكشف المالي للمتاجر</h3><p>حركات موثقة من الدفتر المالي WLT، وليست تقديرات من الطلبات</p></div>
-      {compact ? <Link href={"/finance/partner-earnings?partnerActorId=" + encodeURIComponent(partnerActorId)} className="button button-secondary">فتح الإدارة المالية</Link> : null}
+      {compact ? <Link href={"/finance/partner-commission-receivables?partnerActorId=" + encodeURIComponent(partnerActorId)} className="button button-secondary">فتح الإدارة المالية</Link> : null}
     </div>
     {!compact ? <div className="pfr-toolbar">
       <label className="pfr-field pfr-search"><span>بحث برقم الطلب أو الصرف</span><input value={search} onChange={(event) => setSearch(event.target.value)} type="search" maxLength={128} placeholder="ابحث في جميع الحركات..." /></label>

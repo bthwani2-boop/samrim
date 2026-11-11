@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { dshErrorPayload, dshHttpStatus, isDshClientError, listArchivedStores } from "../../../../src/server/dsh/dsh-bff";
+import { listArchivedStores } from "../../../../src/server/dsh/catalog-trash-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-transport";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../src/server/identity/operator-workspace-access";
 

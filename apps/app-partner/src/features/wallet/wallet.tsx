@@ -1,17 +1,22 @@
-import { spacing, typography } from "@bthwani/design-system";
+import { typography } from "@bthwani/design-system";
 import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
 import { PartnerFinancialSummaryCard } from "../account/partner-financial-summary";
 import { PartnerPayoutCard } from "../account/partner-payout-card";
-import { StorePayoutRecipientsCard } from "./store-payout-recipients-card";
-import { createPartnerSurfaceStyles } from "../partner-onboarding/partner-surface-styles";
+import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";
 import { usePartnerStoreScope } from "../partner-onboarding/partner-store-scope-context";
+import { createPartnerSurfaceStyles } from "../partner-onboarding/partner-surface-styles";
+import { StorePayoutRecipientsCard } from "./store-payout-recipients-card";
+
+const currentPartnerSessionKey = () => partnerSetupSessionKey(currentIdentityState());
 
 type WalletAction = "payout" | "recipients";
 
 export default function PartnerWallet() {
   const theme = useAppearanceTheme();
+  const sessionKey = useSyncExternalStore(subscribeIdentitySession, currentPartnerSessionKey, () => "");
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const premium = useMemo(() => StyleSheet.create({
     title: { ...typography.titleLg, fontSize: 28, fontWeight: "800", color: theme.color },
@@ -33,19 +38,19 @@ export default function PartnerWallet() {
   const actionButton = (action: WalletAction, label: string) => {
     const expanded = openAction === action;
     const primary = action === "payout";
-    return <Pressable accessibilityRole="button" accessibilityLabel={expanded ? "إغلاق " + label : label} accessibilityState={{ expanded }}
+    return <Pressable accessibilityRole="button" accessibilityLabel={expanded ? `إغلاق ${label}` : label} accessibilityState={{ expanded }}
       key={action} onPress={() => setOpenAction((current) => current === action ? null : action)}
       style={[premium.action, { backgroundColor: primary ? theme.brandAction : theme.surface }]}>
       <BthwaniIcon name={primary ? "wallet" : "account"} size={18} color={primary ? theme.onAction : theme.color} />
-      <Text style={[premium.actionLabel, { color: primary ? theme.onAction : theme.color }]}>{expanded ? "إغلاق " + label : label}</Text>
+      <Text style={[premium.actionLabel, { color: primary ? theme.onAction : theme.color }]}>{expanded ? `إغلاق ${label}` : label}</Text>
     </Pressable>;
   };
   const actionRow = canRequestPayout || ownsAnyStore ? <View style={premium.actionRow}>
     {ownsAnyStore ? actionButton("recipients", "حسابات الاستلام") : null}
     {canRequestPayout ? actionButton("payout", "طلب صرف") : null}
   </View> : null;
-  const workflow = openAction === "payout" && canRequestPayout ? <View style={premium.panel}><PartnerPayoutCard key={"payout:" + payoutScopeKey} /></View>
-    : openAction === "recipients" && ownsAnyStore ? <View style={premium.panel}><StorePayoutRecipientsCard key={"recipients:" + ownerScopeKey} /></View> : null;
+  const workflow = openAction === "payout" && canRequestPayout ? <View style={premium.panel}><PartnerPayoutCard key={`payout:${sessionKey}:${payoutScopeKey}`} /></View>
+    : openAction === "recipients" && ownsAnyStore ? <View style={premium.panel}><StorePayoutRecipientsCard key={`recipients:${sessionKey}:${ownerScopeKey}`} /></View> : null;
   return <View style={[styles.container, { gap: 9, paddingTop: 10 }]} accessibilityLabel="محفظة الشريك">
     {canReadFinance ? <PartnerFinancialSummaryCard key={`finance:${financeScopeKey}`} actions={actionRow} workflow={workflow} /> : <>{actionRow}{workflow}</>}
     {!canReadFinance && !canRequestPayout && !ownsAnyStore ? <Text style={styles.muted}>لا توجد صلاحية مالية لهذا الحساب.</Text> : null}

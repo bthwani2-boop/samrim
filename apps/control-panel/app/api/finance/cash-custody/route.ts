@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { dshErrorPayload, dshHttpStatus, isDshClientError, listOperatorCashCustody, readOperatorDestination } from "../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-transport";
+import { listOperatorCashCustody } from "../../../../src/server/dsh/finance-custody-bff";
+import { readOperatorDestination } from "../../../../src/server/dsh/finance-payout-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 
 function errorResponse(code: string, message: string, status: number) {

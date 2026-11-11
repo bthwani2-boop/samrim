@@ -82,7 +82,7 @@ function scenario({ accessToken, persist, submit, recover, isOffline = false } =
       deleteItemAsync: async () => { counts.deletes++; },
     },
     setPendingCheckout: (value) => counts.pending.push(value),
-    client: () => ({
+    createClientDsh: () => ({
       checkoutCart: async (...args) => {
         counts.submit++;
         return submit ? submit(...args) : { order: { id: "order-1" } };
@@ -113,7 +113,7 @@ test("pending recovery stops after an actor switch during canonical order readba
   const orderRead = load.indexOf("await readOrderForCart(token, attempt.cartID)");
   const ownerGuard = load.indexOf("!checkoutAttemptBelongsToCurrentActor(actorID)", orderRead);
   const recoveredOrder = load.indexOf("if (existingOrder)", ownerGuard);
-  const retry = load.indexOf("client().checkoutCart(token, attempt.request", ownerGuard);
+  const retry = load.indexOf("createClientDsh().checkoutCart(token, attempt.request", ownerGuard);
   const retryReadback = load.indexOf("await readOrderForCart(token, attempt.cartID)", orderRead + 1);
   const retryReadbackGuard = load.indexOf("!checkoutAttemptBelongsToCurrentActor(actorID)", retryReadback);
   assert.ok(orderRead >= 0 && ownerGuard > orderRead && recoveredOrder > ownerGuard && retry > ownerGuard,
@@ -376,7 +376,7 @@ test("typing a coupon does not change the quote request until the applied coupon
     quoteRequestID: { current: 0 },
     setQuote: (state) => quoteStates.push(state),
     getUsableIdentityAccessToken: async () => "token",
-    client: () => ({ quoteCheckout: async (_, request, version) => {
+    createClientDsh: () => ({ quoteCheckout: async (_, request, version) => {
       requests.push({ request, version });
       return { quote: { cartId: request.cartId, promotionCode: request.promotionCode } };
     } }),
@@ -414,7 +414,7 @@ test("late quote response cannot replace the quote for the latest cart version",
     quoteRequestID: { current: 0 },
     setQuote: (state) => quoteStates.push(state),
     getUsableIdentityAccessToken: async () => "token",
-    client: () => ({ quoteCheckout: (_token, request, version) => new Promise((resolve) => {
+    createClientDsh: () => ({ quoteCheckout: (_token, request, version) => new Promise((resolve) => {
       requests.push({ request, version, resolve });
       requestWaiters[requests.length]?.();
     }) }),
@@ -458,7 +458,7 @@ test("cart with unavailable modifier never calls the checkout quote API", async 
     quoteRequestID: { current: 12 },
     setQuote: (state) => states.push(state),
     getUsableIdentityAccessToken: async () => { throw new Error("no identity read for invalid cart"); },
-    client: () => ({ quoteCheckout: async () => { requests++; throw new Error("invalid cart must not be quoted"); } }),
+    createClientDsh: () => ({ quoteCheckout: async () => { requests++; throw new Error("invalid cart must not be quoted"); } }),
     useCallback: (callback) => callback,
     console: { error: () => {} },
   };
@@ -510,7 +510,7 @@ test("legacy pending checkout cannot resubmit without accepted amount", () => {
 
   const loadStart = source.indexOf("const load = useCallback(async () => {");
   const legacyGuard = source.indexOf("if (!pendingCheckoutHasAcceptedTotal(attempt))", loadStart);
-  const submitAfterGuard = source.indexOf("client().checkoutCart(token, attempt.request", loadStart);
+  const submitAfterGuard = source.indexOf("createClientDsh().checkoutCart(token, attempt.request", loadStart);
   assert.ok(loadStart >= 0 && legacyGuard > loadStart && submitAfterGuard > legacyGuard,
     "check the persisted amount before any recovery submission");
   assert.match(source.slice(legacyGuard, submitAfterGuard), /setBusy\(false\)/,
@@ -549,7 +549,7 @@ test("checkout quote explains unavailable, invalid and out-of-scope offers witho
     quoteRequestID: { current: 0 },
     setQuote: (state) => calls.push(state),
     getUsableIdentityAccessToken: async () => "token",
-    client: () => ({ quoteCheckout: async () => { throw { code: "PROMOTION_UNAVAILABLE" }; } }),
+    createClientDsh: () => ({ quoteCheckout: async () => { throw { code: "PROMOTION_UNAVAILABLE" }; } }),
     useCallback: (fn) => fn,
     console: { error: () => {} },
   });

@@ -23,10 +23,10 @@ assert_denied() {
   fi
 }
 
-assert_true samrim_identity_runtime "$SAMRIM_IDENTITY_DB_PASSWORD" "SELECT has_table_privilege(current_user,'public.identity_actors','SELECT,INSERT,UPDATE') AND NOT has_table_privilege(current_user,'public.identity_security_audit','UPDATE') AND NOT has_table_privilege(current_user,'public.identity_schema_migrations','INSERT')" identity_runtime
+assert_true samrim_identity_runtime "$SAMRIM_IDENTITY_DB_PASSWORD" "SELECT has_table_privilege(current_user,'public.identity_actors','SELECT') AND has_table_privilege(current_user,'public.identity_actors','INSERT') AND has_table_privilege(current_user,'public.identity_actors','UPDATE') AND NOT has_table_privilege(current_user,'public.identity_security_audit','UPDATE') AND NOT has_table_privilege(current_user,'public.identity_schema_migrations','INSERT')" identity_runtime
 assert_true samrim_identity_maintenance "$SAMRIM_IDENTITY_MAINTENANCE_DB_PASSWORD" "SELECT has_table_privilege(current_user,'public.identity_security_audit','DELETE') AND NOT has_table_privilege(current_user,'public.identity_security_audit','INSERT')" identity_maintenance
-assert_true samrim_dsh_runtime "$SAMRIM_DSH_DB_PASSWORD" "SELECT has_table_privilege(current_user,'dsh.stores','SELECT,INSERT,UPDATE,DELETE')" dsh_runtime
-assert_true samrim_wlt_runtime "$SAMRIM_WLT_DB_PASSWORD" "SELECT has_table_privilege(current_user,'wlt.payment_intents','SELECT,INSERT,UPDATE,DELETE')" wlt_runtime
+assert_true samrim_dsh_runtime "$SAMRIM_DSH_DB_PASSWORD" "SELECT has_table_privilege(current_user,'dsh.stores','SELECT') AND has_table_privilege(current_user,'dsh.stores','INSERT') AND has_table_privilege(current_user,'dsh.stores','UPDATE') AND has_table_privilege(current_user,'dsh.stores','DELETE')" dsh_runtime
+assert_true samrim_wlt_runtime "$SAMRIM_WLT_DB_PASSWORD" "SELECT has_table_privilege(current_user,'wlt.payment_intents','SELECT') AND has_table_privilege(current_user,'wlt.payment_intents','INSERT') AND has_table_privilege(current_user,'wlt.payment_intents','UPDATE') AND has_table_privilege(current_user,'wlt.payment_intents','DELETE')" wlt_runtime
 
 assert_denied samrim_identity_runtime "$SAMRIM_IDENTITY_DB_PASSWORD" 'SELECT id FROM wlt.payment_intents LIMIT 0' identity_finance_denied
 assert_denied samrim_dsh_runtime "$SAMRIM_DSH_DB_PASSWORD" 'SELECT id FROM wlt.payment_intents LIMIT 0' dsh_finance_denied

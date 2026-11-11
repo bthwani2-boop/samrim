@@ -1,12 +1,12 @@
 "use client";
 
+import { Tabs } from "antd";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { AccountAccessPanel, type ManagedOperatorStatus } from "../../../../../src/features/access/account-access-panel";
 import { EmployeePerformance } from "../../../../../src/features/hr/employee-performance";
-import { Tabs } from "antd";
-import type { HREmployee } from "../../../../../src/server/dsh/dsh-bff";
+import type { HREmployee } from "../../../../../src/server/dsh/hr-bff";
 import { identityFetch } from "../../../../../src/session/identity-fetch";
 import { useSession } from "../../../../../src/session/session-provider";
 

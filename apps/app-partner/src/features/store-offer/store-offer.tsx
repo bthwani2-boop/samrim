@@ -1,59 +1,41 @@
-import { createStyles } from "./store-offer-styles";
 import { toAsciiDigits } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type BaseUnit, baseUnitLabel, type CatalogAttributeRule, type CatalogAttributeValueInput, type CatalogCategoryListResponse, type CatalogIdentifierResolution, type CatalogMedia, type CatalogProduct, type CatalogProductProposal, type CatalogStorefrontSection, type CatalogStoreOffer, type CatalogVariant, type CommerceVertical, catalogProductProposalStateLabel, createDshMobileClient, type DshImageUploadInput, formatMoney, isMediaProvenanceInputValid, type MeasurementKind, type MediaProvenanceInput, measurementKindLabel as sharedMeasurementKindLabel, pricingBasisLabel as sharedPricingBasisLabel, quantityPolicyLabel as sharedQuantityPolicyLabel, storeOfferPublicationStateLabel } from "@bthwani/dsh";
-import { MobileStoreCatalogImportWorkspace } from "./mobile-store-catalog-import";
-import { MobileStoreQuickPricesWorkspace } from "./mobile-store-quick-prices";
+import { type BaseUnit, baseUnitLabel, type CatalogAttributeRule, type CatalogCategoryListResponse, type CatalogIdentifierResolution, type CatalogMedia, type CatalogProduct, type CatalogProductProposal, type CatalogStorefrontSection, type CatalogStoreOffer, type CatalogVariant, type CommerceVertical, catalogProductProposalStateLabel, type DshImageUploadInput, formatMoney, isMediaProvenanceInputValid, type MeasurementKind, type MediaProvenanceInput, pricingBasisLabel, quantityPolicyLabel, measurementKindLabel as sharedMeasurementKindLabel, storeOfferPublicationStateLabel } from "@bthwani/dsh";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { useKeepAwake } from "expo-keep-awake";
-
-function AwakeWhileBarcodeScanning() {
-  useKeepAwake();
-  return null;
-}
 import * as Clipboard from "expo-clipboard";
 import * as Crypto from "expo-crypto";
 import * as DocumentPicker from "expo-document-picker";
 import { Image as ExpoImage } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
+import { useKeepAwake } from "expo-keep-awake";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { type ComponentProps, type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, ActivityIndicator, Image, Linking, Modal, Platform, Pressable, ScrollView, Switch, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { createPartnerDshClient as dshClient } from "../../bootstrap/dsh-client";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { onPartnerProductAction } from "../../shell/partner-product-actions";
-import { PartnerStorePromotionBanner } from "./partner-promotion-banner";
 import { buildPartnerOfferShareURL, buildPartnerStoreWhatsAppURL } from "../partner-onboarding/partner-storefront-url";
-import { StoreCatalogExportCard } from "./store-catalog-export";
-import { StoreProductTrash } from "./store-product-trash";
-import { isOfferStockout } from "./inventory-stockout";
-import { storeOfferServerQuery, type StoreOfferListFilter } from "./catalog-offer-filters";
-import { isCurrentCatalogProductRequest, mergeCatalogProductPage, releaseCatalogProductPageRequest, replaceCatalogProductInPage } from "./catalog-product-pages";
+import { type AttributeDrafts, baseUnitOptions, buildAttributeInputs, emptyMediaProvenance, expectedPricingBasisFor, identifierResolutionNotice, isResolvedProductMatch, type PricingBasis, type ResolvedProductMatch } from "./catalog-offer-form-model";
+import { getPrimaryMedia, isOfferListFilter, isOfferStockout, type StoreOfferListFilter, sortStoreOffersByCreation, storeOfferServerQuery } from "./catalog-offer-read-model";
+import { isCurrentCatalogProductRequest, mergeCatalogProductPage, reconcileStoreProductSave, releaseCatalogProductPageRequest, replaceCatalogProductInPage } from "./catalog-product-pages";
+import { MobileStoreCatalogImportWorkspace } from "./mobile-store-catalog-import";
+import { MobileStoreQuickPricesWorkspace } from "./mobile-store-quick-prices";
 import { acquireOfferMutation } from "./offer-mutation-lock";
-import { reconcileStoreProductSave } from "./store-product-save";
+import { PartnerStorePromotionBanner } from "./partner-promotion-banner";
+import { StoreCatalogExportCard } from "./store-catalog-export";
+import { createStyles } from "./store-offer-styles";
+import { StoreProductTrash } from "./store-product-trash";
+
+function AwakeWhileBarcodeScanning() {
+  useKeepAwake();
+  return null;
+}
 
 type OfferState = { kind: "loading" } | { kind: "ready"; offers: ReadonlyArray<CatalogStoreOffer>; proposals: ReadonlyArray<CatalogProductProposal> } | { kind: "error" };
 type RemoteOfferState = { kind: "idle" | "loading" | "error" } | { kind: "ready"; offers: ReadonlyArray<CatalogStoreOffer>; nextCursor: string };
-function isOfferListFilter(value: string | undefined): value is StoreOfferListFilter {
-  return value === "all" || value === "popular" || value === "offers" || value === "published"
-    || value === "unavailable" || value === "hidden" || value === "stockout";
-}
 type QuantityPolicy = "DISCRETE" | "MEASURED" | "VARIABLE_MEASURE";
-type PricingBasis = "PER_UNIT" | "PER_MEASURE";
 type InventoryPolicy = "AVAILABILITY_ONLY" | "QUANTITY_ON_HAND";
 type PendingProductMedia = Readonly<{ productID: string; expectedVersion: number; image: DshImageUploadInput; provenance: MediaProvenanceInput; idempotencyKey: string }>;
-type AttributeDrafts = Readonly<Record<string, string>>;
-type AttributeInputSet = Readonly<{ productValues: ReadonlyArray<CatalogAttributeValueInput>; variantValues: ReadonlyArray<CatalogAttributeValueInput> }>;
-
-function expectedPricingBasisFor(measurementKind: MeasurementKind | undefined): PricingBasis | "" {
-  if (measurementKind === "DISCRETE") return "PER_UNIT";
-  if (measurementKind === "MEASURED") return "PER_MEASURE";
-  return "";
-}
-
-function emptyMediaProvenance(): MediaProvenanceInput {
-  return { creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false };
-}
-
 function MediaProvenanceFields({ value, onChange, disabled, styles }: {
   value: MediaProvenanceInput;
   onChange: (value: MediaProvenanceInput) => void;
@@ -71,45 +53,6 @@ function MediaProvenanceFields({ value, onChange, disabled, styles }: {
   </View>;
 }
 
-function sortStoreOffersByCreation(offers: ReadonlyArray<CatalogStoreOffer>): CatalogStoreOffer[] {
-  return [...offers].sort((left, right) => {
-    const leftMillis = Date.parse(left.createdAt);
-    const rightMillis = Date.parse(right.createdAt);
-    if (Number.isFinite(leftMillis) && Number.isFinite(rightMillis) && leftMillis !== rightMillis) return leftMillis - rightMillis;
-    const fraction = (value: string) => value.match(/\.(\d+)(?:Z|[+-]\d{2}:\d{2})$/)?.[1]?.padEnd(9, "0").slice(0, 9) ?? "000000000";
-    const leftFraction = fraction(left.createdAt);
-    const rightFraction = fraction(right.createdAt);
-    if (leftFraction !== rightFraction) return leftFraction < rightFraction ? -1 : 1;
-    if (left.offerId < right.offerId) return -1;
-    if (left.offerId > right.offerId) return 1;
-    return 0;
-  });
-}
-
-function buildAttributeInputs(rules: ReadonlyArray<CatalogAttributeRule>, drafts: AttributeDrafts): AttributeInputSet | null {
-  const productValues: CatalogAttributeValueInput[] = [];
-  const variantValues: CatalogAttributeValueInput[] = [];
-  for (const rule of rules) {
-    const raw = drafts[rule.attributeId]?.trim() ?? "";
-    if (!raw) { if (rule.required) return null; continue; }
-    let value: CatalogAttributeValueInput | null = null;
-    switch (rule.valueKind) {
-      case "TEXT": value = { attributeId: rule.attributeId, valueKind: rule.valueKind, textValue: raw }; break;
-      case "INTEGER": { const parsed = Number(raw); if (!Number.isSafeInteger(parsed)) return null; value = { attributeId: rule.attributeId, valueKind: rule.valueKind, integerValue: parsed }; break; }
-      case "DECIMAL": { if (!Number.isFinite(Number(raw))) return null; value = { attributeId: rule.attributeId, valueKind: rule.valueKind, decimalValue: raw }; break; }
-      case "MEASUREMENT": { const measurementUnit = drafts[rule.attributeId + ":unit"]?.trim() ?? ""; if (!Number.isFinite(Number(raw)) || !measurementUnit) return null; value = { attributeId: rule.attributeId, valueKind: rule.valueKind, decimalValue: raw, measurementUnit }; break; }
-      case "BOOLEAN": if (raw !== "true" && raw !== "false") return null; value = { attributeId: rule.attributeId, valueKind: rule.valueKind, booleanValue: raw === "true" }; break;
-      case "ENUM": value = { attributeId: rule.attributeId, valueKind: rule.valueKind, enumValue: raw }; break;
-      case "DATE": value = { attributeId: rule.attributeId, valueKind: rule.valueKind, dateValue: raw }; break;
-    }
-    if (!value) return null;
-    (rule.variantAxis ? variantValues : productValues).push(value);
-  }
-  return { productValues, variantValues };
-}
-
-function baseUrl(): string { const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim(); if (!value) throw new Error("DSH_BASE_URL_REQUIRED"); return value; }
-const dshClient = () => createDshMobileClient(baseUrl(), { cryptoRandomUUID: () => Crypto.randomUUID() });
 
 function errorText(error: unknown): string {
   if (error && typeof error === "object") {
@@ -123,27 +66,6 @@ function errorText(error: unknown): string {
 }
 
 function reportError(error: unknown): void { console.error("DSH StoreOffer request failed", error); }
-
-function identifierResolutionNotice(match: CatalogIdentifierResolution): string {
-  switch (match.outcome) {
-    case "EXISTING_STORE_OFFER":
-      return match.productName ? `هذا المنتج له عرض قائم في متجرك: ${match.productName}. عدّله من قائمة العروض أدناه.` : "هذا المنتج له عرض قائم في متجرك. عدّله من قائمة العروض أدناه.";
-    case "UNKNOWN_IDENTIFIER":
-      return "لم يُعثر على المنتج. أنشئ منتجًا خاصًا بهذا المتجر من قسم منتجات المتجر، أو أرسل مقترحًا للمراجعة.";
-    case "VARIABLE_MEASURE_IDENTIFIER":
-      return "هذا المنتج يباع بكمية متغيرة، ولا يمكن إنشاء عرض قابل للطلب حتى يكتمل مسار الكمية الفعلية.";
-    case "UNAVAILABLE_IN_STORE":
-      return "هذا المنتج مرتبط بمتجر آخر، ولا يمكن استخدامه في هذا المتجر.";
-    default:
-      return "تطابق الرمز مع أكثر من منتج. أوقف استخدامه واطلب مراجعة اسم المنتج.";
-  }
-}
-
-type ResolvedProductMatch = CatalogIdentifierResolution & { readonly outcome: "SHARED_PRODUCT_MATCH" | "STORE_LOCAL_PRODUCT_MATCH" };
-
-function isResolvedProductMatch(match: CatalogIdentifierResolution): match is ResolvedProductMatch {
-  return match.outcome === "SHARED_PRODUCT_MATCH" || match.outcome === "STORE_LOCAL_PRODUCT_MATCH";
-}
 
 // React Native Web switches need a DOM direction override to keep the thumb inside
 // its track in RTL. The attribute is omitted on native platforms.
@@ -1111,29 +1033,8 @@ const theme = useAppearanceTheme();
   );
 }
 
-
-
 function measurementKindLabel(kind: MeasurementKind, baseUnit?: BaseUnit): string {
   const label = sharedMeasurementKindLabel(kind);
   if (kind === "DISCRETE" || !baseUnit) return label;
   return `${label} · ${baseUnitLabel(baseUnit)}`;
-}
-
-function quantityPolicyLabel(policy: QuantityPolicy): string {
-  return sharedQuantityPolicyLabel(policy);
-}
-
-function pricingBasisLabel(basis: PricingBasis): string {
-  return sharedPricingBasisLabel(basis);
-}
-
-function baseUnitOptions(kind: MeasurementKind | ""): BaseUnit[] {
-  if (kind === "DISCRETE") return ["COUNT"];
-  if (kind === "MEASURED" || kind === "VARIABLE_MEASURE") return ["GRAM", "MILLILITER"];
-  return [];
-}
-
-function getPrimaryMedia(media: ReadonlyArray<CatalogMedia>): CatalogMedia | null {
-  const candidate = media.find((item) => item.role === "primary") ?? media[0];
-  return candidate?.uri.trim() ? candidate : null;
 }

@@ -1,8 +1,10 @@
 import { BthwaniButton, BthwaniSectionHeader, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import type { StoreAccessGrant } from "@bthwani/dsh";
 import { createDshMobileClient } from "@bthwani/dsh";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
+import { clientSessionKey } from "../access/client-session-scope";
 
 export type StoreAccessInvitationInboxProps = Readonly<{
   baseURL: string;
@@ -25,6 +27,10 @@ function grantStateLabel(state: StoreAccessGrant["state"]): string {
   }
 }
 
+function currentInvitationSessionKey(): string {
+  return clientSessionKey(currentIdentityState());
+}
+
 const permissionLabels: Readonly<Record<string, string>> = {
   orders: "الطلبات",
   catalog: "الكتالوج",
@@ -38,11 +44,31 @@ const permissionLabels: Readonly<Record<string, string>> = {
 export function StoreAccessInvitationInbox({ baseURL, cryptoRandomUUID, getAccessToken, showTitle = true, hideWhenEmpty = false }: StoreAccessInvitationInboxProps) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const [sessionKey, setSessionKey] = useState(currentInvitationSessionKey);
+  const sessionKeyRef = useRef(sessionKey);
+  const requestID = useRef(0);
+  const [loadedSessionKey, setLoadedSessionKey] = useState("");
   const [items, setItems] = useState<ReadonlyArray<StoreAccessGrant>>([]);
   const [loading, setLoading] = useState(true);
   const [busyGrantID, setBusyGrantID] = useState("");
+  const busyGrantRef = useRef("");
   const [error, setError] = useState("");
   const attempts = useRef(new Map<string, Readonly<{ idempotencyKey: string; correlationID: string }>>());
+  const isCurrentSession = () => Boolean(sessionKey) && currentInvitationSessionKey() === sessionKey;
+  const currentItems = isCurrentSession() && loadedSessionKey === sessionKey ? items : [];
+
+  useEffect(() => subscribeIdentitySession(() => {
+    const next = currentInvitationSessionKey();
+    if (next === sessionKeyRef.current) return;
+    sessionKeyRef.current = next;
+    requestID.current += 1;
+    setSessionKey(next);
+    setLoadedSessionKey("");
+    setItems([]);
+    setError("");
+    busyGrantRef.current = "";
+    setBusyGrantID("");
+  }), []);
 
   const createClient = useCallback(() => {
     const normalizedBaseURL = baseURL.trim();
@@ -51,27 +77,44 @@ export function StoreAccessInvitationInbox({ baseURL, cryptoRandomUUID, getAcces
   }, [baseURL, cryptoRandomUUID]);
 
   const reload = useCallback(async () => {
+    const sequence = ++requestID.current;
+    const isCurrent = () => sequence === requestID.current && Boolean(sessionKey) && currentInvitationSessionKey() === sessionKey;
     setLoading(true);
     setError("");
+    if (!isCurrent()) { setLoading(false); return; }
     try {
       const token = await getAccessToken();
+      if (!isCurrent()) return;
       const response = await createClient().listActorStoreAccessInvitations(token);
+      if (!isCurrent()) return;
       setItems(response.items);
+      setLoadedSessionKey(sessionKey);
     } catch {
-      setItems([]);
-      setError("تعذر قراءة دعوات الوصول من المنصة.");
+      if (isCurrent()) {
+        setItems([]);
+        setLoadedSessionKey(sessionKey);
+        setError("تعذر قراءة دعوات الوصول من المنصة.");
+      }
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [createClient, getAccessToken]);
+  }, [createClient, getAccessToken, sessionKey]);
 
-  useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => {
+    void reload();
+    return () => { requestID.current += 1; };
+  }, [reload]);
 
   async function decide(grant: StoreAccessGrant, decision: "accept" | "decline") {
-    if (busyGrantID) return;
+    const isCurrent = () => isCurrentSession() && loadedSessionKey === sessionKey;
+    if (busyGrantID || busyGrantRef.current || !isCurrent()) return;
+    const identity = currentIdentityState();
+    if (identity.kind !== "authenticated") return;
+    busyGrantRef.current = grant.id;
     setBusyGrantID(grant.id);
     setError("");
-    const attemptKey = `${grant.id}:${grant.version}:${decision}`;
+    // Retain uncertain retries for the same actor across sessions, never across accounts.
+    const attemptKey = `${identity.identity.subject.trim()}:${grant.id}:${grant.version}:${decision}`;
     const headers = attempts.current.get(attemptKey) ?? (() => {
       const id = cryptoRandomUUID();
       return { idempotencyKey: `store_access_decision_${id}`, correlationID: `store_access_decision_corr_${id}` };
@@ -79,25 +122,32 @@ export function StoreAccessInvitationInbox({ baseURL, cryptoRandomUUID, getAcces
     attempts.current.set(attemptKey, headers);
     try {
       const token = await getAccessToken();
+      if (!isCurrent()) return;
       await createClient().decideActorStoreAccessInvitation(token, grant.id, { decision, expectedVersion: grant.version }, headers.idempotencyKey, headers.correlationID);
+      if (!isCurrent()) return;
       attempts.current.delete(attemptKey);
       await reload();
     } catch {
+      if (!isCurrent()) return;
       await reload();
-      setError("تعذر تأكيد القرار أو تغيرت الدعوة. أُعيدت قراءة الحالة المعتمدة.");
+      if (isCurrent()) setError("تعذر تأكيد القرار أو تغيرت الدعوة. أُعيدت قراءة الحالة المعتمدة.");
     } finally {
-      setBusyGrantID("");
+      if (isCurrent()) {
+        busyGrantRef.current = "";
+        setBusyGrantID("");
+      }
     }
   }
 
-  if (hideWhenEmpty && (loading || (!error && items.length === 0))) return null;
+  if (!isCurrentSession()) return null;
+  if (hideWhenEmpty && (loading || loadedSessionKey !== sessionKey || (!error && currentItems.length === 0))) return null;
 
   return <View style={styles.container}>
     {showTitle ? <BthwaniSectionHeader title="دعوات الوصول للمتاجر" subtitle="اقبل الدعوة أولًا؛ تفعيل صلاحيات المتجر يحتاج جلسة شريك مستقلة." /> : <Text style={styles.muted}>اقبل الدعوة أولًا؛ تفعيل صلاحيات المتجر يحتاج جلسة شريك مستقلة.</Text>}
     <BthwaniSurface tone="raised" style={styles.panel}>
       {loading ? <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة دعوات الوصول" color={theme.interactiveText} /><Text style={styles.muted}>جارٍ قراءة الحالة المعتمدة…</Text></View> : null}
-      {!loading && items.length === 0 && !error ? <Text style={styles.muted}>لا توجد دعوات وصول موجهة إلى حسابك.</Text> : null}
-      {items.map((grant) => <View key={grant.id} style={styles.invitation}>
+      {!loading && loadedSessionKey === sessionKey && currentItems.length === 0 && !error ? <Text style={styles.muted}>لا توجد دعوات وصول موجهة إلى حسابك.</Text> : null}
+      {currentItems.map((grant) => <View key={grant.id} style={styles.invitation}>
         <Text style={styles.title}>{grant.storeName}</Text>
         <Text style={styles.muted}>الصلاحيات المطلوبة: {grant.permissions.map((permission) => permissionLabels[permission] ?? "صلاحية إضافية").join("، ")}</Text>
         <Text style={styles.status}>{grantStateLabel(grant.state)}</Text>

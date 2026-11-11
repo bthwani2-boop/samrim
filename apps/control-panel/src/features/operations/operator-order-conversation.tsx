@@ -84,7 +84,7 @@ export function OperatorOrderConversation({ orderId }: Readonly<{ orderId: strin
 
   async function send() {
     const message = body.trim();
-    const chosen = [...recipients].sort();
+    const chosen = [...recipients].sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
     if (!conversation?.canSend || busy || !message || !chosen.length) return;
     const fingerprint = message + ":" + chosen.join(",");
     if (pending.current && pending.current.body + ":" + pending.current.recipients !== fingerprint) {

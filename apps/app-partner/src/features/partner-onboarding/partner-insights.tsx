@@ -1,16 +1,17 @@
 import { typography } from "@bthwani/design-system";
 import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, scopedCatalogInventorySummary, type PartnerOrderAttentionCounts, type PartnerScopedFinanceStore, type PartnerStoreOrderSummary } from "@bthwani/dsh";
-import * as Crypto from "expo-crypto";
+import { formatMoney, type PartnerOrderAttentionCounts, type PartnerScopedFinanceStore, type PartnerStoreOrderSummary, scopedCatalogInventorySummary } from "@bthwani/dsh";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
-import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { createPartnerDshClient } from "../../bootstrap/dsh-client";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { isMarketplaceStore } from "../../shell/partner-authority";
-import { usePartnerStoreScope } from "./partner-store-scope-context";
-import { PartnerPerformanceReport } from "./partner-performance-reports";
-import { PartnerStoreRatings } from "./partner-store-ratings";
 import { partnerRepeatBuyerPercentage, verifiedPartnerCustomerActivity } from "./partner-customer-activity";
+import { PartnerPerformanceReport } from "./partner-performance-reports";
+import { partnerSetupSessionKey } from "./partner-setup-session-scope";
+import { PartnerStoreRatings } from "./partner-store-ratings";
+import { usePartnerStoreScope } from "./partner-store-scope-context";
 
 type Snapshot = Readonly<{
   orders: PartnerOrderAttentionCounts | null;
@@ -22,6 +23,7 @@ type Snapshot = Readonly<{
   customerActivity: PartnerStoreOrderSummary | null;
 }>;
 const blank: Snapshot = { orders: null, available: null, unavailable: null, stockout: null, promotions: null, finance: null, customerActivity: null };
+const currentPartnerSessionKey = () => partnerSetupSessionKey(currentIdentityState());
 
 export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: boolean }> = {}) {
   const theme = useAppearanceTheme();
@@ -30,6 +32,10 @@ export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: bool
   const { width } = useWindowDimensions();
   const desktopWeb = Platform.OS === "web" && width >= 1024;
   const { selectedStore } = usePartnerStoreScope();
+  const sessionKey = useSyncExternalStore(subscribeIdentitySession, currentPartnerSessionKey, () => "");
+  const storeScopeKey = JSON.stringify([sessionKey, selectedStore?.id ?? ""]);
+  const activeScopeKey = useRef(storeScopeKey);
+  activeScopeKey.current = storeScopeKey;
   const canOrders = Boolean(selectedStore && isMarketplaceStore(selectedStore) && (selectedStore.owned || selectedStore.permissions.includes("orders")));
   const canCatalog = Boolean(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("catalog")));
   const reportView = !embedded && ((canOrders && (view === "orders" || view === "ratings")) || (canCatalog && view === "catalog")) ? view : "overview";
@@ -59,11 +65,14 @@ export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: bool
     noticeTitle: { ...typography.bodySm, color: theme.color, fontWeight: "700" },
     noticeText: { ...typography.caption, color: theme.colorMuted },
   }), [theme, desktopWeb, embedded]);
-  const [snapshot, setSnapshot] = useState<Snapshot>(blank);
+  const [storedSnapshot, setSnapshot] = useState<Snapshot>(blank);
+  const [visibleScopeKey, setVisibleScopeKey] = useState("");
+  const snapshot = sessionKey && currentPartnerSessionKey() === sessionKey && visibleScopeKey === storeScopeKey ? storedSnapshot : blank;
   const [loading, setLoading] = useState(true);
   useFocusEffect(useCallback(() => {
     let active = true;
     setSnapshot(blank);
+    setVisibleScopeKey("");
     setLoading(true);
     if (!embedded && reportView !== "overview") { setLoading(false); return () => { active = false; }; }
     const store = selectedStore;
@@ -73,14 +82,12 @@ export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: bool
     const orders = marketplace && (store.owned || store.permissions.includes("orders"));
     const base = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
     if (!base) { setLoading(false); return; }
-    const api = createDshMobileClient(base, { cryptoRandomUUID: () => Crypto.randomUUID() });
-    const identity = currentIdentityState();
-    const actorID = identity.kind === "authenticated" ? identity.identity.subject.trim() : "";
+    const api = createPartnerDshClient();
     const stillCurrent = () => {
-      const latest = currentIdentityState();
-      return active && Boolean(actorID) && latest.kind === "authenticated" && latest.identity.subject.trim() === actorID;
+      return active && Boolean(sessionKey) && currentPartnerSessionKey() === sessionKey &&
+        activeScopeKey.current === storeScopeKey;
     };
-    if (!actorID) { setLoading(false); return () => { active = false; }; }
+    if (!sessionKey) { setLoading(false); return () => { active = false; }; }
     const read = async () => {
       const token = await getUsableIdentityAccessToken();
       if (!stillCurrent()) return;
@@ -106,11 +113,12 @@ export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: bool
         finance: financial?.summary.stores.find((item) => item.storeId === store.id) ?? null,
         customerActivity: verifiedPartnerCustomerActivity(customerSummary, store.id, "30d"),
       });
+      setVisibleScopeKey(storeScopeKey);
       setLoading(false);
     };
     void read().catch(() => { if (stillCurrent()) setLoading(false); });
     return () => { active = false; };
-  }, [selectedStore, embedded, reportView]));
+  }, [selectedStore, embedded, reportView, sessionKey, storeScopeKey]));
   const metric = (label: string, value: string, icon: "orders" | "cart" | "wallet" | "store", href?: Href) =>
     <Pressable key={label} disabled={!href} accessibilityRole={href ? "button" : undefined} accessibilityLabel={href ? label + "، عرض التفاصيل" : undefined}
       onPress={() => { if (href) router.navigate(href); }} style={styles.metric}>

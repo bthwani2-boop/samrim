@@ -1,11 +1,11 @@
 "use client";
 
+import { Tabs } from "antd";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import type { HREmployee } from "../../server/dsh/dsh-bff";
+import type { HREmployee } from "../../server/dsh/hr-bff";
 import { identityFetch } from "../../session/identity-fetch";
 import { useSession } from "../../session/session-provider";
-import { Tabs } from "antd";
 import { useReadOnReturn } from "../shared/use-read-on-return";
 import { EmployeeAccessRequest } from "./employee-access-request";
 import { EmployeeAttendance } from "./employee-attendance";

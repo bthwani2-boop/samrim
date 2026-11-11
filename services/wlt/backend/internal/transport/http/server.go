@@ -122,6 +122,8 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/partner-financial-profiles", s.preparePartnerFinancialProfile)
 	mux.HandleFunc("GET /wlt/v1/partner-financial-profiles/{profileId}", s.readPartnerFinancialProfile)
 	mux.HandleFunc("POST /wlt/v1/partner-financial-profiles/{profileId}/activate", s.activatePartnerFinancialProfile)
+	mux.HandleFunc("GET /wlt/v1/operator/store-relation-commercial-model-defaults", s.readStoreRelationCommercialModelDefaults)
+	mux.HandleFunc("POST /wlt/v1/operator/store-relation-commercial-model-defaults", s.updateStoreRelationCommercialModelDefault)
 	mux.HandleFunc("GET /wlt/v1/operator/commercial-store-type-commission-defaults", s.readStoreTypeCommissionDefaults)
 	mux.HandleFunc("POST /wlt/v1/operator/commercial-store-type-commission-defaults", s.updateStoreTypeCommissionDefault)
 	mux.HandleFunc("GET /wlt/v1/store-commercial-agreements", s.readStoreCommercialAgreements)

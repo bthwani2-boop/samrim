@@ -4,11 +4,10 @@ import type { CatalogCategoryListItem, CommercialStoreType, ShoppingShortcut } f
 import { Button, Checkbox, Form, Input, InputNumber } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
-import { retainSelectedCategoryOptions } from "./catalog-shopping-shortcut-selection";
+import { retainSelectedCategoryOptions, type ShortcutCategoryOption } from "./catalog-taxonomy-query";
 
-type Option = Readonly<{ id: string; nameAr: string; active: boolean; pathAr: string }>;
 type FormValues = Readonly<{ titleAr: string; ordinal: number; active: boolean; reason: string }>;
-type Options = Readonly<{ types: ReadonlyArray<CommercialStoreType>; categories: ReadonlyArray<Option>; selectedCategories: ReadonlyArray<Option>; nextCursor?: string }>;
+type Options = Readonly<{ types: ReadonlyArray<CommercialStoreType>; categories: ReadonlyArray<ShortcutCategoryOption>; selectedCategories: ReadonlyArray<ShortcutCategoryOption>; nextCursor?: string }>;
 type CategoryDetailResponse = Readonly<{ category: CatalogCategoryListItem }>;
 type CategoryResponse = Readonly<{ categories: ReadonlyArray<CatalogCategoryListItem>; nextCursor?: string }>;
 
@@ -20,7 +19,7 @@ function errorMessage(input: unknown): string {
   return "تعذر تنفيذ العملية. أعد المحاولة.";
 }
 
-function toOption(item: CatalogCategoryListItem): Option {
+function toOption(item: CatalogCategoryListItem): ShortcutCategoryOption {
   return { id: item.id, nameAr: item.nameAr, active: item.active, pathAr: item.pathAr };
 }
 
@@ -60,8 +59,8 @@ export function CatalogShoppingShortcutEditor({ verticalId, initialShortcut, onS
   const canEdit = state.kind === "authenticated" && state.identity.permissions?.includes("catalog") === true;
   const [form] = Form.useForm<FormValues>();
   const [types, setTypes] = useState<ReadonlyArray<CommercialStoreType>>([]);
-  const [categories, setCategories] = useState<ReadonlyArray<Option>>([]);
-  const [selectedCategories, setSelectedCategories] = useState<ReadonlyArray<Option>>([]);
+  const [categories, setCategories] = useState<ReadonlyArray<ShortcutCategoryOption>>([]);
+  const [selectedCategories, setSelectedCategories] = useState<ReadonlyArray<ShortcutCategoryOption>>([]);
   const [categoryQuery, setCategoryQuery] = useState("");
   const [categoryCursor, setCategoryCursor] = useState("");
   const [categoryLoading, setCategoryLoading] = useState(false);

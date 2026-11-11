@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { clientOrderAuthenticationReturnPath, isClientActorScopeCurrent, isClientOrderScopeCurrent } from "./order-session-scope.ts";
+import { clientOrderAuthenticationReturnPath } from "../access/client-auth-return-path.ts";
+import { isClientActorScopeCurrent, isClientOrderScopeCurrent } from "../access/client-session-scope.ts";
 
 test("direct order sign-in return preserves the requested order and safely encodes route characters", () => {
   assert.equal(clientOrderAuthenticationReturnPath("order-42"), "/orders/order-42");

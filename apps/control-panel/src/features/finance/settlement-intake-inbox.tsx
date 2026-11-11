@@ -1,10 +1,10 @@
 "use client";
 
+import { formatMoney } from "@bthwani/dsh";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { formatMoney } from "@bthwani/dsh";
-import { OfficialWalletDestinationManager } from "./official-wallet-destination-manager";
 import { useReadOnReturn } from "../shared/use-read-on-return";
+import { OfficialWalletDestinationManager } from "./official-wallet-destination-manager";
 
 type Intake = Readonly<{
   id: string; actorType: "partner" | "captain" | "field"; actorId: string;
@@ -32,6 +32,14 @@ export function SettlementIntakeInbox({
   const [notice, setNotice] = useState("");
   const closeRef = useRef<HTMLButtonElement>(null);
   const originRef = useRef<HTMLButtonElement | null>(null);
+  // The latest read alone may update this inbox; an unmounted operator view is never a reader.
+  const readEpoch = useRef(0);
+  const mounted = useRef(true);
+  const actionInFlight = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; readEpoch.current += 1; };
+  }, []);
   const selected = items.find((item) => item.id === selectedId) ?? null;
   const normalized = search.trim().toLocaleLowerCase("ar");
   const filtered = normalized ? items.filter((item) =>
@@ -40,20 +48,30 @@ export function SettlementIntakeInbox({
   ) : items;
 
   const load = useCallback(async () => {
+    if (!mounted.current) return;
+    const epoch = ++readEpoch.current;
+    const current = () => mounted.current && readEpoch.current === epoch;
     setLoading(true);
     try {
       const response = await fetch("/api/finance/settlement-intakes", { cache: "no-store" });
+      if (!current()) return;
       if (!response.ok) throw new Error("تعذرت قراءة طلبات التسوية من المالية");
       const body = await response.json() as { intakes?: readonly Intake[] };
-      if (!Array.isArray(body.intakes)) throw new Error("استجابة المالية غير صالحة");
-      setItems(body.intakes);
-      onCountChange?.(body.intakes.length);
-      setSelectedId((previous) => body.intakes?.some((item) => item.id === previous) ? previous : null);
+      if (!current()) return;
+      const intakes = body.intakes;
+      if (!Array.isArray(intakes)) throw new Error("استجابة المالية غير صالحة");
+      setItems(intakes);
+      onCountChange?.(intakes.length);
+      setSelectedId((previous) => intakes.some((item) => item.id === previous) ? previous : null);
       setError("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "تعذر تحميل طلبات التسوية");
-      onCountChange?.(null);
-    } finally { setLoading(false); }
+      if (current()) {
+        setError(cause instanceof Error ? cause.message : "تعذر تحميل طلبات التسوية");
+        onCountChange?.(null);
+      }
+    } finally {
+      if (current()) setLoading(false);
+    }
   }, [onCountChange]);
 
   useEffect(() => { void load(); }, [load]);
@@ -97,37 +115,53 @@ export function SettlementIntakeInbox({
   }
 
   async function convert(id: string) {
-    setBusyId(id); setError(""); setNotice("");
+    if (!mounted.current || actionInFlight.current) return;
+    actionInFlight.current = true;
+    readEpoch.current += 1; // Discard a pre-conversion list that can arrive after the action.
+    setLoading(false); setBusyId(id); setError(""); setNotice("");
     try {
       // Authorization, wallet verification, eligibility and idempotency remain
       // enforced by the owning finance service; UI review is not authorization.
-      const response = await fetch("/api/finance/settlement-intakes/" + encodeURIComponent(id) + "/convert", { method: "POST" });
+      const response = await fetch(`/api/finance/settlement-intakes/${encodeURIComponent(id)}/convert`, { method: "POST" });
+      if (!mounted.current) return;
       if (!response.ok) {
         const body = await response.json().catch(() => null) as { error?: { message?: string } } | null;
+        if (!mounted.current) return;
         throw new Error(body?.error?.message || "الطلب يحتاج اعتماد وجهة الصرف أو مراجعة المستحقات أولًا");
       }
       setNotice("أُحيل الطلب إلى مسار الصرف المعتمد. تابع نتيجته والمطابقة في الدفعات.");
       setSelectedId(null); setReviewOpen(false);
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "تعذر إحالة الطلب للصرف");
-    } finally { setBusyId(null); }
+      if (mounted.current) setError(cause instanceof Error ? cause.message : "تعذر إحالة الطلب للصرف");
+    } finally {
+      actionInFlight.current = false;
+      if (mounted.current) setBusyId(null);
+    }
   }
 
   async function cancelIntake(id: string) {
     const reason = cancelReason.trim();
     if (!reason || reason.length > 512) { setError("حدد سبب إلغاء الطلب."); return; }
-    setBusyId(id); setError(""); setNotice("");
+    if (!mounted.current || actionInFlight.current) return;
+    actionInFlight.current = true;
+    readEpoch.current += 1; // A list read made before cancellation is no longer authoritative.
+    setLoading(false); setBusyId(id); setError(""); setNotice("");
     try {
-      const response = await fetch("/api/finance/settlement-intakes/" + encodeURIComponent(id) + "/cancel", {
+      const response = await fetch(`/api/finance/settlement-intakes/${encodeURIComponent(id)}/cancel`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }),
       });
+      if (!mounted.current) return;
       if (!response.ok) throw new Error("لم يتم إلغاء الطلب. راجع حالته قبل المحاولة مجددًا.");
       setSelectedId(null); setReviewOpen(false); setCancelReason("");
       setNotice("أُلغي طلب التسوية دون خصم أو تحويل.");
       await load();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "تعذر إلغاء الطلب"); }
-    finally { setBusyId(null); }
+    } catch (cause) {
+      if (mounted.current) setError(cause instanceof Error ? cause.message : "تعذر إلغاء الطلب");
+    } finally {
+      actionInFlight.current = false;
+      if (mounted.current) setBusyId(null);
+    }
   }
 
   return <>

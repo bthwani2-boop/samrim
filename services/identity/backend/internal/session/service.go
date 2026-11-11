@@ -212,11 +212,23 @@ func (s *Service) ResolveAccessToken(ctx context.Context, accessToken string) (d
 	if accessToken == "" {
 		return domain.ActorIdentity{}, domain.ErrUnauthenticated
 	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.ActorIdentity{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	var actorID, sessionID, role string
 	var expires time.Time
-	err := s.db.QueryRowContext(ctx, `SELECT s.actor_id,s.id,s.role,s.access_expires_at FROM identity_sessions s
-JOIN identity_actor_roles r ON r.actor_id=s.actor_id AND r.role=s.role JOIN identity_actors a ON a.id=s.actor_id
-	WHERE s.access_token_hash=$1 AND s.revoked_at IS NULL AND s.access_expires_at>clock_timestamp() AND s.absolute_expires_at>clock_timestamp() AND r.enabled=true AND a.security_enabled=true`, identitysecurity.SHA256Hex(accessToken)).Scan(&actorID, &sessionID, &role, &expires)
+	// A permission change revokes the affected operator sessions in its own
+	// transaction. Hold this session row while reading permissions so a stale
+	// token cannot pick up a new grant after concurrent revocation.
+	err = tx.QueryRowContext(ctx, `UPDATE identity_sessions s SET last_used_at=clock_timestamp()
+	FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id
+	WHERE s.access_token_hash=$1 AND s.revoked_at IS NULL
+	  AND s.access_expires_at>clock_timestamp() AND s.absolute_expires_at>clock_timestamp()
+	  AND r.actor_id=s.actor_id AND r.role=s.role AND r.enabled=true AND a.security_enabled=true
+	RETURNING s.actor_id,s.id,s.role,s.access_expires_at`, identitysecurity.SHA256Hex(accessToken)).Scan(&actorID, &sessionID, &role, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.ActorIdentity{}, domain.ErrUnauthenticated
 	}
@@ -227,10 +239,14 @@ JOIN identity_actor_roles r ON r.actor_id=s.actor_id AND r.role=s.role JOIN iden
 	if _, admitted := domain.SurfaceForRole(role); !admitted {
 		return domain.ActorIdentity{}, domain.ErrUnauthenticated
 	}
-	if _, err := s.db.ExecContext(ctx, "UPDATE identity_sessions SET last_used_at=clock_timestamp() WHERE id=$1 AND revoked_at IS NULL", sessionID); err != nil {
+	identity, err := s.identityOf(ctx, tx, actorID, sessionID, role, expires)
+	if err != nil {
 		return domain.ActorIdentity{}, err
 	}
-	return s.identityOf(ctx, s.db, actorID, sessionID, role, expires)
+	if err := tx.Commit(); err != nil {
+		return domain.ActorIdentity{}, err
+	}
+	return identity, nil
 }
 
 func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (domain.TokenPair, error) {
@@ -477,16 +493,13 @@ func (s *Service) RevokeRoleAll(ctx context.Context, actorID, role, principal, c
 	return tx.Commit()
 }
 
-func (s *Service) identityOf(ctx context.Context, source interface {
-	QueryRowContext(context.Context, string, ...any) *sql.Row
-	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
-}, actorID, sessionID, role string, expires time.Time) (domain.ActorIdentity, error) {
+func (s *Service) identityOf(ctx context.Context, tx *sql.Tx, actorID, sessionID, role string, expires time.Time) (domain.ActorIdentity, error) {
 	surface, _ := domain.SurfaceForRole(role)
 	identity := domain.ActorIdentity{Subject: actorID, SessionID: sessionID, Role: role, Surface: surface, ExpiresAt: expires}
 	if role != "operator" {
 		return identity, nil
 	}
-	rows, err := source.QueryContext(ctx, `SELECT permission FROM identity_operator_permissions WHERE actor_id=$1 AND enabled=true ORDER BY permission`, actorID)
+	rows, err := tx.QueryContext(ctx, `SELECT permission FROM identity_operator_permissions WHERE actor_id=$1 AND enabled=true ORDER BY permission`, actorID)
 	if err != nil {
 		return domain.ActorIdentity{}, err
 	}
@@ -505,7 +518,7 @@ func (s *Service) identityOf(ctx context.Context, source interface {
 	if s.development {
 		developmentOperatorActorID = s.developmentActorIDs["operator"]
 	}
-	canManagePermissions, err := actor.IsOperatorPermissionAdministrator(ctx, source, actorID, developmentOperatorActorID)
+	canManagePermissions, err := actor.IsOperatorPermissionAdministrator(ctx, tx, actorID, developmentOperatorActorID)
 	if err != nil {
 		return domain.ActorIdentity{}, err
 	}

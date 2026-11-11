@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript-ast";
+import { clientSessionKey } from "../src/features/access/client-session-scope.ts";
 
 // Exercise the real asynchronous read callback, not a duplicated actor-scope decision.
 const source = fs.readFileSync(path.resolve(import.meta.dirname, "../src/features/multi-store-checkout/multi-store-checkout.tsx"), "utf8");
@@ -15,27 +16,29 @@ function walk(node) {
 }
 walk(ast);
 assert.ok(loadNode?.initializer, "the real multi-store load callback must exist");
-const runnable = ts.transpileModule("const load = " + loadNode.initializer.getText(ast) + "; load;", {
+const runnable = ts.transpileModule(`const load = ${loadNode.initializer.getText(ast)}; load;`, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
 }).outputText;
 
 function scenario({ switchDuringRead = false } = {}) {
   const states = [];
   let actorID = "client-A";
-  const session = () => ({ kind: "authenticated", identity: { subject: actorID } });
+  const session = () => ({ kind: "authenticated", identity: { role: "client", subject: actorID, sessionId: "session-1" } });
   const ctx = {
     useCallback: (callback) => callback,
     loadRequestID: { current: 0 },
     selectedCityID: "city-1",
+    currentIdentityState: session,
+    clientSessionKey,
     setState: (value) => states.push(value),
     setQuotePreview: () => {},
     setError: () => {},
     setPendingAttempt: () => {},
     authenticatedClientActorID: async () => "client-A",
-    pendingMultiStoreAttemptKey: (actor) => "pending:" + actor,
+    pendingMultiStoreAttemptKey: (actor) => `pending:${actor}`,
     SecureStore: { getItemAsync: async () => null, deleteItemAsync: async () => {} },
     parsePendingMultiStoreAttempt: () => null,
-    hasCurrentMultiStoreActor: (actor) => session().kind === "authenticated" && session().identity.subject === actor,
+    hasCurrentMultiStoreSession: (key) => key === clientSessionKey(session()),
     listOwnOpenCarts: async () => {
       if (switchDuringRead) actorID = "client-B";
       return { carts: [
@@ -87,13 +90,18 @@ const submitCode = ts.transpileModule(submitNode.getText(ast), {
 }).outputText;
 function quotedCheckoutScenario(switchDuringQuote) {
   let actorID = "client-A";
+  const session = () => ({ kind: "authenticated", identity: { role: "client", subject: actorID, sessionId: "session-1" } });
   const previews = [];
   const calls = { quote: 0, persist: 0, create: 0 };
   const stores = ["store-A", "store-B"].map((id) => ({
     store: { storeId: id, storeName: id, publicationState: "published", fulfillmentModes: ["CUSTOMER_PICKUP"] },
-    cart: { id: "cart-" + id, version: 2, lineCount: 1 },
+    cart: { id: `cart-${id}`, version: 2, lineCount: 1 },
   }));
   const ctx = {
+    currentIdentityState: session,
+    clientSessionKey,
+    activeSessionRef: { current: clientSessionKey(session()) },
+    submitAttemptID: { current: 0 },
     submitInFlight: { current: false },
     busy: false,
     pendingAttempt: null,
@@ -108,7 +116,7 @@ function quotedCheckoutScenario(switchDuringQuote) {
     setPendingAttempt: () => {},
     setState: () => {},
     authenticatedClientActorID: async () => "client-A",
-    hasCurrentMultiStoreActor: (expected) => actorID === expected,
+    hasCurrentMultiStoreSession: (key) => key === clientSessionKey(session()),
     quoteMultiStoreChildCheckout: async (request, version) => {
       calls.quote++;
       if (switchDuringQuote) actorID = "client-B";
@@ -120,7 +128,7 @@ function quotedCheckoutScenario(switchDuringQuote) {
     checkoutRecipient: () => ({ mode: "SELF" }),
     console: { error: () => {} },
   };
-  const submit = vm.runInNewContext(submitCode + "\nsubmit", ctx);
+  const submit = vm.runInNewContext(`${submitCode}\nsubmit`, ctx);
   return { submit, previews, calls };
 }
 
@@ -143,6 +151,7 @@ test("quote returning after actor switch never publishes the prior customer's qu
 });
 
 test("multi-store checkout subscribes to identity change and invalidates stale state", () => {
-  assert.match(source, /subscribeIdentitySession\(\(session\) =>/);
-  assert.match(source, /loadRequestID\.current \+= 1;[\s\S]*?setPendingAttempt\(null\);[\s\S]*?setQuotePreview\(null\);/);
+  assert.match(source, /subscribeIdentitySession\(onSessionChange\)/);
+  assert.match(source, /const nextSessionKey = clientSessionKey\(session\)/);
+  assert.match(source, /loadRequestID\.current \+= 1;[\s\S]*?submitAttemptID\.current \+= 1;[\s\S]*?setPendingAttempt\(null\);[\s\S]*?setQuotePreview\(null\);/);
 });

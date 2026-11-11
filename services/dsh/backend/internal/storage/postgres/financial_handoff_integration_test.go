@@ -182,5 +182,81 @@ func TestFinancialHandoffUnknownOutcomeAndConcurrentWorkers(t *testing.T) {
 				t.Fatalf("WLT calls=%d distinct nonempty keys=%d, want 2/1", calls, len(seen))
 			}
 		})
+		t.Run("store_cash_workers_replay_one_acknowledgment", func(t *testing.T) {
+			const assignment = "handoff-store-cash-assignment"
+			const captain = "handoff-captain"
+			const partner = "handoff-partner"
+			const confirmation = "handoff-store-cash-confirmation"
+			const correlation = "handoff-store-cash-correlation"
+			for _, statement := range []string{
+				`UPDATE dsh.commerce_orders SET state='DELIVERED',payment_method='CASH_AT_STORE',fulfillment_mode='PARTNER_CAPTAIN'
+					WHERE id='handoff-order'`,
+				`INSERT INTO dsh.captain_dispatch_offers(id,order_id,captain_actor_id,state,expires_at,idempotency_key,request_hash)
+					VALUES('handoff-store-cash-offer','handoff-order','handoff-captain','accepted',now()+interval '1 hour',
+						'handoff-store-cash-offer-key','handoff-store-cash-offer-hash')`,
+				`INSERT INTO dsh.captain_assignments(id,order_id,captain_actor_id,accepted_offer_id,state,custody_started_at,terminal_result,terminal_at)
+					VALUES('handoff-store-cash-assignment','handoff-order','handoff-captain','handoff-store-cash-offer','delivered',
+						now()-interval '5 minutes','delivered',now())`,
+				`INSERT INTO dsh.commerce_order_store_cash_handoffs(order_id,assignment_id,store_id,captain_actor_id,partner_actor_id,amount_minor,completion_idempotency_key)
+					VALUES('handoff-order','handoff-store-cash-assignment','handoff-store','handoff-captain','handoff-partner',1800,'handoff-store-cash-completion')`,
+			} {
+				if _, err := db.ExecContext(ctx, statement); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, replayed, err := postgres.ConfirmStoreCaptainCashHandoff(ctx, db, store, order, partner, 1, confirmation, correlation); err != nil || replayed {
+				t.Fatalf("canonical Partner cash confirmation failed: replayed=%v err=%v", replayed, err)
+			}
+			items, err := postgres.ListPendingFinancialHandoffs(ctx, db, 2)
+			if err != nil || len(items) != 1 {
+				t.Fatalf("pending Store cash handoff=%+v err=%v", items, err)
+			}
+			item := items[0]
+			if item.ID == "" || item.EffectType != "PARTNER_CAPTAIN_STORE_CASH_COLLECTION" || item.SourceRef != assignment ||
+				item.OrderID != order || item.PaymentIntentID != "handoff-payment" || item.CaptainActorID != captain || item.PartnerActorID != partner ||
+				item.AmountMinor != 1800 || item.IdempotencyKey != confirmation || item.CorrelationID != correlation || item.ActingActorID != partner {
+				t.Fatalf("unexpected Store cash outbox identity: %+v", item)
+			}
+			// Model workers that both loaded the same durable item before either
+			// reached the DSH acknowledgment boundary.
+			start := make(chan struct{})
+			results := make(chan error, 2)
+			for range 2 {
+				go func() {
+					<-start
+					results <- postgres.MarkFinancialHandoffPosted(ctx, db, item)
+				}()
+			}
+			close(start)
+			if err := errors.Join(<-results, <-results); err != nil {
+				t.Errorf("both acknowledgments must succeed for the same WLT result: %v", err)
+			}
+			for _, changed := range []func(*postgres.FinancialHandoffOutbox){
+				func(item *postgres.FinancialHandoffOutbox) { item.ID = "missing-handoff" },
+				func(item *postgres.FinancialHandoffOutbox) { item.SourceRef = "foreign-assignment" },
+				func(item *postgres.FinancialHandoffOutbox) { item.IdempotencyKey = "foreign-confirmation" },
+				func(item *postgres.FinancialHandoffOutbox) { item.EffectType = "CAPTAIN_COD_RELEASE" },
+				func(item *postgres.FinancialHandoffOutbox) { item.AmountMinor++ },
+			} {
+				mismatch := item
+				changed(&mismatch)
+				if err := postgres.MarkFinancialHandoffPosted(ctx, db, mismatch); !errors.Is(err, postgres.ErrPaymentStateConflict) {
+					t.Errorf("acknowledgment with a mismatched outbox identity was not refused: %+v err=%v", mismatch, err)
+				}
+			}
+			assertState(item.ID, "POSTED", 1)
+			var paymentState, cashState string
+			var cashVersion, auditRows, exactAuditRows int
+			if err := db.QueryRowContext(ctx, `SELECT o.payment_state,cash.state,cash.version,
+				(SELECT count(*) FROM dsh.commerce_order_payment_audit WHERE order_id=o.id),
+				(SELECT count(*) FROM dsh.commerce_order_payment_audit WHERE order_id=o.id AND event_type='payment_collected'
+					AND idempotency_key=$2 AND correlation_id=$3 AND acting_actor_id=$4 AND payment_intent_id=o.payment_intent_id AND amount_minor=1800)
+				FROM dsh.commerce_orders o JOIN dsh.commerce_order_store_cash_handoffs cash ON cash.order_id=o.id
+				WHERE o.id=$1 AND cash.assignment_id=$5 AND cash.settled_at IS NOT NULL`,
+				order, confirmation, correlation, partner, assignment).Scan(&paymentState, &cashState, &cashVersion, &auditRows, &exactAuditRows); err != nil || paymentState != "COLLECTED" || cashState != "SETTLED" || cashVersion != 3 || auditRows != 1 || exactAuditRows != 1 {
+				t.Fatalf("Store cash settlement did not persist exactly once: %s/%s version=%d audit=%d exactAudit=%d err=%v",
+					paymentState, cashState, cashVersion, auditRows, exactAuditRows, err)
+			}
+		})
 	})
 }

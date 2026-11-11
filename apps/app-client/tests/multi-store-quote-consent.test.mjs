@@ -75,7 +75,9 @@ test("UI does not create a parent before customer sees the complete per-store qu
   assert.match(submit, /STALE_MULTI_STORE_ACCEPTED_QUOTE/);
   assert.match(submit, /if \(submitInFlight\.current \|\| busy/);
   assert.ok(submit.indexOf("submitInFlight.current = true") < submit.indexOf("SecureStore.setItemAsync("), "single-flight lock precedes durable mutation");
-  assert.match(submit, /finally \{\s*submitInFlight\.current = false;/);
+  assert.match(submit, /finally \{\s*if \(submitID === submitAttemptID\.current\) \{\s*submitInFlight\.current = false;/);
+  assert.match(submit, /const isCurrent = \(\) => submitID === submitAttemptID\.current && hasCurrentMultiStoreSession\(sessionKey\)/);
+  assert.match(submit, /if \(!isCurrent\(\)\) return;\s*setPendingAttempt\(attempt\)/);
   assert.match(source, /label=\{quotePreview \? "[^"]+" : "[^"]+"\}/, "confirming a displayed quote has a distinct action label");
 });
 

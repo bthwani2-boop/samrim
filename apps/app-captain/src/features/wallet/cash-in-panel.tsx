@@ -1,23 +1,74 @@
-import { borders, radius, resolveTheme, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
+import { borders, radius, type resolveTheme, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { formatMoney, cashInSimulatorMutationHeaders, cashInSimulatorOptions, cashInSimulatorStateMatches, type CashInSimulatorOutcome, type WalletProvider, type BeneficiaryWalletResponse, type CashInFundingIntent } from "@bthwani/dsh";
+import { type BeneficiaryWalletResponse, type CashInFundingIntent, type CashInSimulatorOutcome, cashInSimulatorMutationHeaders, cashInSimulatorOptions, cashInSimulatorStateMatches, formatMoney, type WalletProvider } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
+import { useFocusEffect } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useFocusEffect } from "expo-router";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { captainSessionKey } from "../../bootstrap/captain-session-scope";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "../captain-operations/captain-client";
-import { isCurrentCaptainActor } from "../captain-operations/captain-session-scope";
-import { matchesCaptainFundingAttempt, matchesCaptainFundingRequest, parseCaptainFundingAttempt, type CaptainFundingAttempt } from "./cash-in-recovery";
 
-type FundingAttempt = CaptainFundingAttempt;
+type FundingAttempt = Readonly<{
+  version: 1;
+  actorID: string;
+  amountMinor: number;
+  idempotencyKey: string;
+  correlationID: string;
+  fundingIntentID?: string;
+  providerKey?: string;
+}>;
+
+// Persisted retry data is actor-scoped, but WLT is the only authority for its
+// financial outcome. Invalid or foreign attempts must fail closed.
+function parseCaptainFundingAttempt(raw: string | null, actorID: string): FundingAttempt | null {
+  if (!raw) return null;
+  const parsed = JSON.parse(raw) as Partial<FundingAttempt> | null;
+  const validFundingIntentID = parsed?.fundingIntentID === undefined || (
+    typeof parsed.fundingIntentID === "string" && parsed.fundingIntentID.length > 0 && parsed.fundingIntentID.length <= 128
+  );
+  if (parsed?.version !== 1 ||
+    parsed.actorID !== actorID ||
+    !Number.isSafeInteger(parsed.amountMinor) ||
+    Number(parsed.amountMinor) <= 0 ||
+    typeof parsed.idempotencyKey !== "string" ||
+    parsed.idempotencyKey.length < 8 ||
+    parsed.idempotencyKey.length > 128 ||
+    typeof parsed.correlationID !== "string" ||
+    parsed.correlationID.length < 8 ||
+    parsed.correlationID.length > 128 ||
+    !validFundingIntentID || (parsed.providerKey !== undefined && (typeof parsed.providerKey !== "string" || parsed.providerKey.length === 0 || parsed.providerKey.length > 64))
+  ) throw new Error("CASH_IN_RETRY_STATE_INVALID");
+  return parsed as FundingAttempt;
+}
+
+function matchesCaptainFundingRequest(intent: CashInFundingIntent, actorID: string, amountMinor: number): boolean {
+  return intent.actorType === "captain" &&
+    intent.actorId === actorID &&
+    intent.fundingPurpose === "CAPTAIN_TOPUP" &&
+    intent.amountMinor === amountMinor &&
+    intent.currency === "YER";
+}
+
+function matchesCaptainFundingAttempt(intent: CashInFundingIntent, attempt: FundingAttempt): boolean {
+  return Boolean(attempt.fundingIntentID && intent.id === attempt.fundingIntentID) && matchesCaptainFundingRequest(intent, attempt.actorID, attempt.amountMinor) && (!attempt.providerKey || intent.providerKey === attempt.providerKey.toUpperCase());
+}
 
 const attemptKey = (actorID: string) => `bthwani.captain.cash-in.pending.v1.${encodeURIComponent(actorID)}`;
 
-function hasCurrentFundingActor(actorID: string): boolean {
-  const identity = currentIdentityState();
-  return identity.kind === "authenticated" && isCurrentCaptainActor(actorID, identity.identity.subject.trim());
+function sameFundingAttempt(stored: FundingAttempt | null, expected: FundingAttempt): boolean {
+  return Boolean(stored &&
+    stored.actorID === expected.actorID &&
+    stored.idempotencyKey === expected.idempotencyKey &&
+    stored.correlationID === expected.correlationID &&
+    stored.amountMinor === expected.amountMinor &&
+    stored.providerKey === expected.providerKey &&
+    stored.fundingIntentID === expected.fundingIntentID);
+}
+
+function hasCurrentFundingSession(sessionKey: string): boolean {
+  return Boolean(sessionKey) && captainSessionKey(currentIdentityState()) === sessionKey;
 }
 
 export function CaptainCashInPanel() {
@@ -30,9 +81,9 @@ export function CaptainCashInPanel() {
   const fundingInFlight = useRef(false);
   const readSequence = useRef(0);
   const [identityState, setIdentityState] = useState(currentIdentityState);
-  const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
-  const [loadedActorID, setLoadedActorID] = useState("");
-  const currentActorReadback = isCurrentCaptainActor(loadedActorID, activeActorID) && hasCurrentFundingActor(loadedActorID);
+  const sessionKey = captainSessionKey(identityState);
+  const [loadedSessionKey, setLoadedSessionKey] = useState("");
+  const currentSessionReadback = Boolean(sessionKey) && loadedSessionKey === sessionKey && hasCurrentFundingSession(sessionKey);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [simulatorOutcome, setSimulatorOutcome] = useState<CashInSimulatorOutcome>("SUCCESS");
@@ -43,17 +94,18 @@ export function CaptainCashInPanel() {
   const load = useCallback(async () => {
     const sequence = ++readSequence.current;
     const identity = currentIdentityState();
-    const actorID = identity.kind === "authenticated" ? identity.identity.subject.trim() : "";
-    const stillCurrent = () => sequence === readSequence.current && hasCurrentFundingActor(actorID) && isCurrentCaptainActor(actorID, activeActorID);
+    const requestSession = captainSessionKey(identity);
+    const actorID = identity.kind === "authenticated" && requestSession ? identity.identity.subject.trim() : "";
+    const stillCurrent = () => sequence === readSequence.current && hasCurrentFundingSession(requestSession);
     setBusy(true);
     setError("");
     setNotice("");
-    setLoadedActorID(actorID);
+    setLoadedSessionKey(requestSession);
     setWallet(null);
     setPending(null);
     setProviders([]);
     setSelectedProviderKey("");
-    if (!actorID) { setBusy(false); return; }
+    if (!requestSession) { setBusy(false); return; }
     try {
       const rawAttempt = await SecureStore.getItemAsync(attemptKey(actorID));
       if (!stillCurrent()) return;
@@ -83,7 +135,7 @@ export function CaptainCashInPanel() {
       let intent = (await client.readOwnFundingIntent(token, attempt.fundingIntentID)).intent;
       if (!stillCurrent()) return;
       if (walletResponse.state.providerMock && !["SETTLED", "FAILED"].includes(intent.state) && intent.providerKey !== "DEVELOPMENT_SIMULATOR") {
-        intent = (await client.reconcileOwnFundingIntent(token, intent.id, attempt.idempotencyKey + "_recover", attempt.correlationID)).intent;
+        intent = (await client.reconcileOwnFundingIntent(token, intent.id, `${attempt.idempotencyKey}_recover`, attempt.correlationID)).intent;
         if (!stillCurrent()) return;
       }
       if (!matchesCaptainFundingAttempt(intent, attempt)) throw new Error("CASH_IN_RETRY_STATE_CONFLICT");
@@ -109,19 +161,23 @@ export function CaptainCashInPanel() {
     } finally {
       if (stillCurrent()) setBusy(false);
     }
-  }, [activeActorID]);
+  }, []);
   useEffect(() => subscribeIdentitySession(setIdentityState), []);
   useFocusEffect(useCallback(() => {
-    void load();
+    if (sessionKey) void load();
     return () => { readSequence.current += 1; };
-  }, [load]));
+  }, [load, sessionKey]));
 
   const createIntent = async () => {
     if (busy || fundingInFlight.current) return;
     const identity = currentIdentityState();
-    if (identity.kind !== "authenticated" || !identity.identity.subject.trim()) { setError("يلزم تسجيل الدخول لقراءة محفظة الكابتن."); return; }
+    const requestSession = captainSessionKey(identity);
+    if (identity.kind !== "authenticated" || !requestSession) {
+      setError("يلزم تسجيل الدخول لقراءة محفظة الكابتن."); return;
+    }
     const actorID = identity.identity.subject.trim();
-    if (!isCurrentCaptainActor(loadedActorID, actorID) || !hasCurrentFundingActor(actorID)) return;
+    const isCurrent = () => hasCurrentFundingSession(requestSession);
+    if (loadedSessionKey !== requestSession || !isCurrent()) return;
     const parsedAmount = pending?.actorID === actorID ? pending.amountMinor : Number(toAsciiDigits(amount.trim()).replace(/[^0-9]/g, ""));
     if (!Number.isSafeInteger(parsedAmount) || parsedAmount <= 0) { setError("أدخل مبلغ شحن صحيحًا أكبر من صفر."); return; }
     if (!pending && wallet?.state.providerMock && !providers.some((provider) => provider.key === selectedProviderKey)) {setError("اختر مزود الدفع أولًا.");return;}
@@ -129,65 +185,77 @@ export function CaptainCashInPanel() {
     fundingInFlight.current = true;
     setBusy(true); setError(""); setNotice("");
     try {
+      // Never overwrite an unknown financial attempt left by an older session.
+      // Resume only the exact attempt already displayed from the owner readback.
+      const storedAttempt = parseCaptainFundingAttempt(
+        await SecureStore.getItemAsync(attemptKey(actorID)), actorID,
+      );
+      if (!isCurrent()) throw new Error("CAPTAIN_CASH_IN_SESSION_CHANGED");
+      if (pending ? !sameFundingAttempt(storedAttempt, pending) : Boolean(storedAttempt)) {
+        throw new Error("CASH_IN_STORED_ATTEMPT_CHANGED");
+      }
       await SecureStore.setItemAsync(attemptKey(actorID), JSON.stringify(attempt));
-      if (!hasCurrentFundingActor(actorID)) throw new Error("CAPTAIN_CASH_IN_SESSION_CHANGED");
+      if (!isCurrent()) throw new Error("CAPTAIN_CASH_IN_SESSION_CHANGED");
       setPending(attempt);
       const token = await getUsableIdentityAccessToken();
-      if (!hasCurrentFundingActor(actorID)) throw new Error("CAPTAIN_CASH_IN_SESSION_CHANGED");
+      if (!isCurrent()) throw new Error("CAPTAIN_CASH_IN_SESSION_CHANGED");
       const client = captainClient();
       const response = pending?.fundingIntentID
         ? { intent: (await client.readOwnFundingIntent(token, pending.fundingIntentID)).intent, simulator: Boolean(__DEV__ && wallet?.state.simulator) }
         : await client.createOwnFundingIntent(token, parsedAmount, attempt.idempotencyKey, attempt.correlationID, attempt.providerKey);
-      if (!hasCurrentFundingActor(actorID)) throw new Error("CAPTAIN_CASH_IN_SESSION_CHANGED");
+      if (!isCurrent()) throw new Error("CAPTAIN_CASH_IN_SESSION_CHANGED");
       if (!matchesCaptainFundingRequest(response.intent, actorID, parsedAmount) ||
           !response.intent.id.trim() || response.intent.id.length > 128 ||
           (pending?.fundingIntentID && response.intent.id !== pending.fundingIntentID)) throw new Error("CASH_IN_RESPONSE_MISMATCH");
       const confirmed: FundingAttempt = { ...attempt, fundingIntentID: response.intent.id };
+      // A response from WLT must not overwrite a newer session's saved attempt.
+      const beforeConfirm = parseCaptainFundingAttempt(
+        await SecureStore.getItemAsync(attemptKey(actorID)), actorID,
+      );
+      if (!isCurrent()) throw new Error("CAPTAIN_CASH_IN_SESSION_CHANGED");
+      if (!sameFundingAttempt(beforeConfirm, attempt)) throw new Error("CASH_IN_STORED_ATTEMPT_CHANGED");
       await SecureStore.setItemAsync(attemptKey(actorID), JSON.stringify(confirmed));
-      if (!hasCurrentFundingActor(actorID)) throw new Error("CAPTAIN_CASH_IN_SESSION_CHANGED");
+      if (!isCurrent()) throw new Error("CAPTAIN_CASH_IN_SESSION_CHANGED");
       setPending(confirmed);
       setAmount("");
       let finalIntent = response.intent;
-      if (!hasCurrentFundingActor(actorID)) throw new Error("CAPTAIN_CASH_IN_SESSION_CHANGED");
+      if (!isCurrent()) throw new Error("CAPTAIN_CASH_IN_SESSION_CHANGED");
       if (__DEV__ && response.simulator && finalIntent.providerKey === "DEVELOPMENT_SIMULATOR" && !["SETTLED", "FAILED"].includes(finalIntent.state)) {
         const headers = cashInSimulatorMutationHeaders(attempt, simulatorOutcome);
         const result = await client.simulateOwnFundingIntent(
           token, finalIntent.id, simulatorOutcome,
           headers.idempotencyKey, headers.correlationID,
         );
-        const current = currentIdentityState();
-        if (current.kind !== "authenticated" || current.identity.subject.trim() !== actorID) throw new Error("CAPTAIN_SESSION_CHANGED");
+        if (!isCurrent()) throw new Error("CAPTAIN_CASH_IN_SESSION_CHANGED");
         if (!matchesCaptainFundingRequest(result.intent, actorID, parsedAmount) || result.intent.id !== finalIntent.id ||
             !cashInSimulatorStateMatches(simulatorOutcome, result.intent.state)) throw new Error("CASH_IN_SIMULATOR_READBACK_MISMATCH");
         finalIntent = result.intent;
       }
-      if (!hasCurrentFundingActor(actorID)) throw new Error("CAPTAIN_CASH_IN_SESSION_CHANGED");
+      if (!isCurrent()) throw new Error("CAPTAIN_CASH_IN_SESSION_CHANGED");
       if (wallet?.state.providerMock && !["SETTLED", "FAILED"].includes(finalIntent.state)) {
-        finalIntent = (await client.reconcileOwnFundingIntent(token, finalIntent.id, attempt.idempotencyKey + "_recover", attempt.correlationID)).intent;
+        finalIntent = (await client.reconcileOwnFundingIntent(token, finalIntent.id, `${attempt.idempotencyKey}_recover`, attempt.correlationID)).intent;
       }
-      if (!hasCurrentFundingActor(actorID)) throw new Error("CAPTAIN_CASH_IN_SESSION_CHANGED");
-      if (["SETTLED", "FAILED"].includes(finalIntent.state)) {
-        await SecureStore.deleteItemAsync(attemptKey(actorID));
-        setPending(null);
-        setNotice(finalIntent.state === "SETTLED" ? "نجح شحن المحفظة، وسيظهر الرصيد بعد التحديث." : "لم تتم إضافة الرصيد. يمكنك المحاولة مجددًا.");
-      } else {
-        setNotice("سُجل طلب الشحن، وسيظهر الرصيد بعد تأكيد المزود المالي.");
-      }
-      if (hasCurrentFundingActor(actorID)) await load();
+      if (!isCurrent()) throw new Error("CAPTAIN_CASH_IN_SESSION_CHANGED");
+      // Only load() reconciles and retires a durable funding attempt after
+      // checking WLT's canonical owner readback and the saved idempotency key.
+      if (isCurrent()) await load();
     } catch (cause) {
       console.error("DSH captain Cash-In request failed", cause);
-      if (hasCurrentFundingActor(actorID)) setError("لم نتأكد من نتيجة طلب الشحن. أعد المحاولة بالمبلغ نفسه لتجنب تكرار الطلب.");
-    } finally { fundingInFlight.current = false; setBusy(false); }
+      if (isCurrent()) setError("لم نتأكد من نتيجة طلب الشحن. أعد المحاولة بالمبلغ نفسه لتجنب تكرار الطلب.");
+    } finally {
+      fundingInFlight.current = false;
+      if (isCurrent()) setBusy(false);
+    }
   };
 
-  const visibleWallet = currentActorReadback ? wallet : null;
+  const visibleWallet = currentSessionReadback ? wallet : null;
   const state = visibleWallet?.state;
   const simulatorInDevelopment = Boolean(__DEV__ && state?.simulator && state.cashInEnabled);
   const providerMockInDevelopment = Boolean(simulatorInDevelopment && state?.providerMock);
   const latest = (visibleWallet?.fundingIntents ?? []).filter((intent) =>
     simulatorInDevelopment || intent.providerKey !== "DEVELOPMENT_SIMULATOR");
   const userCanAddFunds = Boolean(state?.cashInEnabled && (!state.simulator || simulatorInDevelopment));
-  const userHasPending = Boolean(currentActorReadback && pending);
+  const userHasPending = Boolean(currentSessionReadback && pending);
   const fundingStateLabel = (value: CashInFundingIntent["state"]) =>
     ({ PENDING_PROVIDER: "قيد التأكيد", UNKNOWN: "قيد التحقق", SETTLED: "تم", FAILED: "فشل" })[value];
 
@@ -220,7 +288,7 @@ export function CaptainCashInPanel() {
         placeholder="المبلغ بالريال اليمني" placeholderTextColor={theme.colorMuted} style={styles.input} />
       {!userHasPending ? <View style={styles.presets}>
         {[1000, 5000, 10000].map((value) =>
-          <Pressable key={value} accessibilityRole="button" accessibilityLabel={"اختيار " + value + " ريال"}
+          <Pressable key={value} accessibilityRole="button" accessibilityLabel={`اختيار ${value} ريال`}
             disabled={busy} onPress={() => setAmount(String(value))}
             style={[styles.preset, Number(amount) === value && styles.presetActive]}>
             <Text style={styles.presetText}>{value.toLocaleString("en-US")}</Text>
@@ -256,7 +324,7 @@ export function CaptainCashInPanel() {
       </> : null}
     </> : state ? <Text style={styles.muted}>الشحن غير متاح.</Text> : null}
 
-    {userHasPending ? <Text style={styles.muted}>طلب قيد التأكيد: {formatMoney(pending!.amountMinor, "YER")}</Text> : null}
+    {userHasPending && pending ? <Text style={styles.muted}>طلب قيد التأكيد: {formatMoney(pending.amountMinor, "YER")}</Text> : null}
     {latest.length > 0 ? <View style={styles.history}>
       <Text style={styles.muted}>آخر شحن</Text>
       {latest.slice(0, 3).map((intent) =>
@@ -265,9 +333,9 @@ export function CaptainCashInPanel() {
           <Text style={styles.label}>{formatMoney(intent.amountMinor, intent.currency)}</Text>
         </View>)}
     </View> : null}
-    {currentActorReadback && notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
-    {currentActorReadback && error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    {currentActorReadback && error ? <BthwaniButton disabled={busy} busy={busy} label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /> : null}
+    {currentSessionReadback && notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
+    {currentSessionReadback && error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+    {currentSessionReadback && error ? <BthwaniButton disabled={busy} busy={busy} label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /> : null}
   </BthwaniSurface>;
 }
 

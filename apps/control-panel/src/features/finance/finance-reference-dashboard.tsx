@@ -1,17 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { downloadRegistryCsv } from "../shared/registry-csv";
+import { formatMoney } from "@bthwani/dsh";
 import { FinanceSpecializedTab } from "./finance-specialized-tabs";
-import { financeAmount } from "./finance-amount";
 import { SettlementIntakeInbox } from "./settlement-intake-inbox";
 import "./finance-reference-dashboard.css";
 import "./finance-detail-unified.css";
 
-import type { FinanceReferenceRow, FinanceReferenceWorkflow, FinanceReferenceTab } from "./finance-reference-types";
-export type { FinanceReferenceRow, FinanceReferenceWorkflow, FinanceReferenceTab } from "./finance-reference-types";
+import type { FinanceReferenceRow, FinanceReferenceTab, FinanceReferenceWorkflow } from "./finance-reference-types";
+
+export type { FinanceReferenceRow, FinanceReferenceTab, FinanceReferenceWorkflow } from "./finance-reference-types";
+
 type ActorType = "customer" | "partner" | "captain" | "field";
-type WalletSummary = Readonly<{ actorId: string; currentBalanceMinor: number; heldMinor: number; availableMinor: number; creditsMinor: number; debitsMinor: number; currency: "YER" }>;
-type WalletRegistry = Readonly<{ summaries: readonly WalletSummary[]; nextCursor?: string }>;
 type WalletGroup = Readonly<{ type: ActorType; name: string; amount: number; count: number; loaded: boolean; complete: boolean; error?: string }>;
 type Intake = Readonly<{ id: string; actorId: string; actorType: "partner" | "captain" | "field"; resolvedAmountMinor: number; currency: "YER"; createdAt: string }>;
 const groupDefinitions = [
@@ -34,7 +35,7 @@ const workflowLabels: Record<FinanceReferenceWorkflow, string> = {
 const emptyGroups: readonly WalletGroup[] = groupDefinitions.map((group) => ({ type: group.type, name: group.name, amount: 0, count: 0, loaded: false, complete: false }));
 const number = (value: number) => new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
 const riyals = (amount: number) => number(Math.round(amount));
-const displayMoney = (amount: number) => financeAmount(amount);
+const displayMoney = (amount: number) => formatMoney(amount, "YER");
 function dateInYemen(d: Date) { return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Aden", day: "2-digit", month: "2-digit", year: "numeric" }).format(d); }
 function financeDates() { const now = new Date(); const start = new Date(now); start.setUTCDate(now.getUTCDate() - 29); return { from: dateInYemen(start), to: dateInYemen(now) }; }
 const range = financeDates();
@@ -104,10 +105,11 @@ function MovementGraph({ rows }: { rows: readonly FinanceReferenceRow[] }) {
   </div>;
 }
 function downloadCSV(rows: readonly FinanceReferenceRow[]) {
-  const lines = [["الأولوية","النوع","المستفيد","المرجع","الحالة","المبلغ","الإجراء"].join(","), ...rows.map(row => [row.priority, row.category, row.subject, row.reference, row.state, row.amount, row.nextStep].map(value => '"' + String(value).replaceAll('"','""') + '"').join(","))];
-  const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob), link = document.createElement("a");
-  link.href = url; link.download = "bthwani-finance-loaded-rows.csv"; link.click(); URL.revokeObjectURL(url);
+  downloadRegistryCsv(
+    "bthwani-finance-loaded-rows.csv",
+    ["الأولوية", "النوع", "المستفيد", "المرجع", "الحالة", "المبلغ", "الإجراء"],
+    rows.map(row => [row.priority, row.category, row.subject, row.reference, row.state, row.amount, row.nextStep]),
+  );
 }
 export function FinanceReferenceDashboard({ rows, errors, hasData, hasMore, onOpenWorkflow, initialTab = "command", detailPanel, detailTitle, onCloseDetail }: Readonly<{
   rows: readonly FinanceReferenceRow[]; errors: readonly string[]; hasData: boolean; hasMore: boolean;

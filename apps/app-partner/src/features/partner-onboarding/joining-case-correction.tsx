@@ -292,7 +292,7 @@ export function JoiningCaseCorrection({ value, cities, onUpdated, submitCorrecti
       } else if (code === "VERTICAL_UNAVAILABLE") {
         setError("المجال التجاري لم يعد نشطًا. أعد قراءة الأنشطة واختر نشاطًا آخر قبل إعادة الإرسال.");
       } else if (code === "COMMERCIAL_STORE_TYPE_UNAVAILABLE") {
-        setError("نوع المتجر لم يعد نشطًا لهذا المجال التجاري. أعد قراءة الأنواع واختر نوعًا متاحًا.");
+        setError("نوع النشاط لم يعد نشطًا لهذا المجال التجاري. أعد قراءة الأنواع واختر نوعًا متاحًا.");
       } else if (code === "VERSION_CONFLICT" || code === "STATE_CONFLICT") {
         setError("تغيّرت الحالة أثناء التصحيح. أعد قراءة حالة الانضمام ثم حاول مجددًا.");
       } else {
@@ -333,7 +333,7 @@ export function JoiningCaseCorrection({ value, cities, onUpdated, submitCorrecti
       {optionsLoading ? <Text style={styles.muted}>جارٍ قراءة الأنشطة المتاحة…</Text> : null}
       {optionsError ? <View style={styles.optionError}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة المجالات التجارية.</Text><BthwaniButton label="إعادة قراءة الأنشطة" onPress={() => void loadOptions()} variant="secondary" /></View> : null}
       <View style={styles.cityList}>{verticals.map((vertical) => <BthwaniChip key={vertical.id} disabled={busy} label={vertical.nameAr} onPress={() => { setVerticalId(vertical.id); setCommercialTypeId(""); }} selected={verticalId === vertical.id} />)}</View>
-      <Text style={styles.label}>نوع المتجر التجاري</Text>
+      <Text style={styles.label}>نوع النشاط</Text>
       {commercialTypesLoading ? <Text style={styles.muted}>جارٍ قراءة أنواع المتاجر لهذا المجال التجاري…</Text> : null}
       {commercialTypesError ? <View style={styles.optionError}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة أنواع المتاجر.</Text><BthwaniButton label="إعادة قراءة الأنواع" disabled={busy || !verticalId} onPress={() => void loadCommercialTypes(verticalId)} variant="secondary" /></View> : null}
       {!commercialTypesLoading && !commercialTypesError && verticalId && commercialTypes.length === 0 ? <Text style={styles.muted}>لا توجد أنواع متاجر مفعّلة لهذا المجال التجاري. اطلب من المشغّل إعداد النوع التجاري.</Text> : null}

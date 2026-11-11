@@ -4,4 +4,4 @@ export default function MarketingPage() {
   return <MarketingCenterWorkspace />;
 }
 
-export const metadata = { title: "التسويق والمحتوى" };
+export const metadata = { title: "التسويق والتصميم" };

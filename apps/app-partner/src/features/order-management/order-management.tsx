@@ -1,23 +1,16 @@
-import { borders, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { borders, radius, type resolveTheme, sizing, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniConfirmDialog, BthwaniConversationSheet, BthwaniIcon, BthwaniStatusBadge, useAppearanceTheme, useConversationUnreadCounts } from "@bthwani/design-system/native";
-import { type CaptainAssignment, type CaptainOffer, captainHandoffStateLabel, createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderAdjustmentProposalRequest, type OrderTransitionRequest, orderStateLabel, paymentMethodLabel, paymentStateLabel, type StoreCaptainMembership } from "@bthwani/dsh";
-import * as Crypto from "expo-crypto";
+import { type CaptainAssignment, type CaptainOffer, captainHandoffStateLabel, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderAdjustmentProposalRequest, type OrderTransitionRequest, orderStateLabel, paymentMethodLabel, paymentStateLabel, pricingBasisLabel, type StoreCaptainMembership } from "@bthwani/dsh";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, AppState, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { createPartnerDshClient as client } from "../../bootstrap/dsh-client";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
+import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";
 import { usePartnerStoreScope } from "../partner-onboarding/partner-store-scope-context";
 import { OrderConversation } from "./order-conversation";
 import { isCurrentOrderListRequest, mergeOrderPageRecords, tryAcquireOrderAction } from "./order-page-records";
-
-function baseUrl(): string {
-  const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-  if (!value) throw new Error("DSH_BASE_URL_REQUIRED");
-  return value;
-}
-
-const client = () => createDshMobileClient(baseUrl(), { cryptoRandomUUID: () => Crypto.randomUUID() });
 
 function nextState(order: Order): OrderTransitionRequest["state"] | null {
   if (order.state === "CREATED") return "PARTNER_ACCEPTED";
@@ -47,12 +40,11 @@ function storeCaptainChoiceLabel(membership: StoreCaptainMembership): string {
   return parts.join(" · ") || "كابتن المتجر";
 }
 
-function currentPartnerActor(): string {
-  const session = currentIdentityState();
-  return session.kind === "authenticated" ? session.identity.subject.trim() : "";
+function currentPartnerSessionKey(): string {
+  return partnerSetupSessionKey(currentIdentityState());
 }
 
-export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
+export function OrderManagement({ storeId, storeIds }: { storeId?: string | undefined; storeIds?: ReadonlyArray<string> | undefined }) {
   const router = useRouter();
   const theme = useAppearanceTheme();
   const insets=useSafeAreaInsets();
@@ -64,6 +56,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const targetOrderId = (Array.isArray(rawTargetOrder) ? rawTargetOrder[0] : rawTargetOrder)?.trim() ?? "";
   const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
   const { stores: scopedStores } = usePartnerStoreScope();
+  const requestedStoreIDs = useMemo(() => storeId ? [storeId] : [...(storeIds ?? [])].sort((left, right) => left.localeCompare(right)), [storeId, storeIds]);
   const fulfillableStoreIDs = useMemo(() => new Set(scopedStores.filter((store) => store.owned || store.permissions.includes("fulfillment")).map((store) => store.id)), [scopedStores]);
   const canFulfillOrder = useCallback((orderStoreID: string) => fulfillableStoreIDs.has(orderStoreID), [fulfillableStoreIDs]);
   const loadGeneration = useRef(0);
@@ -91,8 +84,8 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
   useEffect(() => { const timer = setTimeout(() => setDebouncedSearch(searchQuery), 350); return () => clearTimeout(timer); }, [searchQuery]);
   const normalizedSearch = targetOrderId || debouncedSearch.trim();
-  const unreadScope = useSyncExternalStore(subscribeIdentitySession, currentPartnerActor, () => "");
-  const requestScopeKey = JSON.stringify([unreadScope, storeId ?? "", filter, normalizedSearch]);
+  const unreadScope = useSyncExternalStore(subscribeIdentitySession, currentPartnerSessionKey, () => "");
+  const requestScopeKey = JSON.stringify([unreadScope, requestedStoreIDs, filter, normalizedSearch]);
   const activeScopeKey = useRef(requestScopeKey);
   const getChatUnread = useCallback(async (orderId: string) => {
     const token = await getUsableIdentityAccessToken();
@@ -101,7 +94,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const unreadChatCounts = useConversationUnreadCounts(orders.map(order => order.id), unreadScope, isFocused, getChatUnread, chatOrderId);
 
   const load = useCallback(async (options: { append?: boolean; cursor?: string; quiet?: boolean } = {}) => {
-    if (requestScopeKey !== activeScopeKey.current) return;
+    if (requestScopeKey !== activeScopeKey.current || !unreadScope || currentPartnerSessionKey() !== unreadScope) return;
     const generation = options.append ? loadGeneration.current : ++loadGeneration.current;
     if (options.append) setLoadingMore(true);
     else if (!options.quiet) {
@@ -112,16 +105,21 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
     }
     setError("");
     try {
+      if (!requestedStoreIDs.length || requestedStoreIDs.length > 200) throw new Error("PARTNER_ORDER_SCOPE_INVALID");
       const token = await getUsableIdentityAccessToken();
+      if (currentPartnerSessionKey() !== unreadScope) return;
       const queueStates = targetOrderId ? undefined : queueFilters.find(({ key }) => key === filter)?.states;
       const response = await client().listPartnerOrders(token, {
-        ...(storeId ? { storeIds: [storeId] } : {}),
+        storeIds: requestedStoreIDs,
         ...(queueStates ? { state: queueStates.join(",") } : {}),
         ...(normalizedSearch ? { q: normalizedSearch } : {}),
         ...(options.append && options.cursor ? { cursor: options.cursor } : {}),
         limit: 50,
       });
-      if (!isCurrentOrderListRequest(generation, requestScopeKey, loadGeneration.current, activeScopeKey.current)) return;
+      if (currentPartnerSessionKey() !== unreadScope || !isCurrentOrderListRequest(generation, requestScopeKey, loadGeneration.current, activeScopeKey.current)) return;
+      if (!Array.isArray(response.orders) || response.orders.some((order) => !requestedStoreIDs.includes(order.storeId))) {
+        throw new Error("PARTNER_ORDER_SCOPE_MISMATCH");
+      }
       setOrders((current) => options.append ? [...current, ...response.orders.filter((order) => !current.some((existing) => existing.id === order.id))] : response.orders);
       setAttention(response.attention);
       setCursor(response.nextCursor ?? "");
@@ -130,7 +128,6 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
       const nextOrders = response.orders;
       const assignmentOrders = nextOrders.filter((order) => canFulfillOrder(order.storeId) && (order.state === "CAPTAIN_ASSIGNED" || order.state === "IN_CUSTODY"));
       const offerOrders = nextOrders.filter((order) => canFulfillOrder(order.storeId) && order.fulfillmentMode === "PARTNER_CAPTAIN" && order.state === "READY_FOR_DISPATCH");
-      if (assignmentOrders.length === 0 && offerOrders.length === 0) return;
       const offerStoreIDs = [...new Set(offerOrders.map((order) => order.storeId))];
       const [membershipResults, assignmentResults, offerResults] = await Promise.all([
         Promise.allSettled(offerStoreIDs.map(async (offerStoreID) => [offerStoreID, (await client().listPartnerStoreCaptainMemberships(token, offerStoreID)).memberships] as const)),
@@ -149,7 +146,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
         }
         })),
       ]);
-      if (!isCurrentOrderListRequest(generation, requestScopeKey, loadGeneration.current, activeScopeKey.current)) return;
+      if (currentPartnerSessionKey() !== unreadScope || !isCurrentOrderListRequest(generation, requestScopeKey, loadGeneration.current, activeScopeKey.current)) return;
       const captainEntries = membershipResults.flatMap((entry): ReadonlyArray<readonly [string, ReadonlyArray<StoreCaptainChoice>]> => entry.status === "fulfilled"
         ? [[entry.value[0], entry.value[1].flatMap((membership: StoreCaptainMembership) => membership.state === "active" && membership.captainActorId ? [{ actorId: membership.captainActorId, label: storeCaptainChoiceLabel(membership) }] : [])]]
         : []);
@@ -161,11 +158,11 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
       }
     } catch (cause) {
       console.error("DSH order list failed", cause);
-      if (isCurrentOrderListRequest(generation, requestScopeKey, loadGeneration.current, activeScopeKey.current)) setError("تعذر قراءة الطلبات. ستُعاد المحاولة تلقائيًا.");
+      if (currentPartnerSessionKey() === unreadScope && isCurrentOrderListRequest(generation, requestScopeKey, loadGeneration.current, activeScopeKey.current)) setError("تعذر قراءة الطلبات. ستُعاد المحاولة تلقائيًا.");
     } finally {
-      if (isCurrentOrderListRequest(generation, requestScopeKey, loadGeneration.current, activeScopeKey.current)) { if (!options.quiet) setLoading(false); setLoadingMore(false); }
+      if (currentPartnerSessionKey() === unreadScope && isCurrentOrderListRequest(generation, requestScopeKey, loadGeneration.current, activeScopeKey.current)) { if (!options.quiet) setLoading(false); setLoadingMore(false); }
     }
-  }, [canFulfillOrder, filter, normalizedSearch, requestScopeKey, storeId, targetOrderId]);
+  }, [canFulfillOrder, filter, normalizedSearch, requestScopeKey, requestedStoreIDs, targetOrderId, unreadScope]);
 
   useLayoutEffect(() => {
     activeScopeKey.current = requestScopeKey;
@@ -212,28 +209,39 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
 
   async function transition(order: Order, requestedState = nextState(order)) {
     if (!requestedState || busy || loading) return;
+    if (!unreadScope || currentPartnerSessionKey() !== unreadScope || requestScopeKey !== activeScopeKey.current) return;
     const releaseAction = tryAcquireOrderAction(orderActionLocks.current, order.id);
     if (!releaseAction) return;
     setBusy(order.id); setError("");
-    try { const token = await getUsableIdentityAccessToken(); await client().transitionStoreOrder(token, order.storeId, order.id, { state: requestedState }, order.version); await load(); }
-    catch (cause) { console.error("DSH order transition failed", cause); await load(); if (requestScopeKey === activeScopeKey.current) setError("تعذر تأكيد نتيجة الإجراء؛ أُعيدت قراءة الحالة الحالية قبل أي إعادة محاولة."); }
-    finally { releaseAction(); if (requestScopeKey === activeScopeKey.current) setBusy(""); }
+    try {
+      const token = await getUsableIdentityAccessToken();
+      if (!unreadScope || currentPartnerSessionKey() !== unreadScope || requestScopeKey !== activeScopeKey.current) return;
+      await client().transitionStoreOrder(token, order.storeId, order.id, { state: requestedState }, order.version);
+      await load();
+    }
+    catch (cause) { console.error("DSH order transition failed", cause); await load(); if (requestScopeKey === activeScopeKey.current && currentPartnerSessionKey() === unreadScope) setError("تعذر تأكيد نتيجة الإجراء؛ أُعيدت قراءة الحالة الحالية قبل أي إعادة محاولة."); }
+    finally { releaseAction(); if (requestScopeKey === activeScopeKey.current && currentPartnerSessionKey() === unreadScope) setBusy(""); }
   }
 
   async function proposeAdjustment(order: Order, lineID: string, kind: OrderAdjustmentProposalRequest["kind"], actualQuantityBaseUnits?: number) {
     if (busy || loading || !["PARTNER_ACCEPTED", "PREPARING"].includes(order.state)) return;
+    if (!unreadScope || currentPartnerSessionKey() !== unreadScope || requestScopeKey !== activeScopeKey.current) return;
+    const releaseAction = tryAcquireOrderAction(orderActionLocks.current, order.id);
+    if (!releaseAction) return;
     setBusy(order.id); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
       const input: OrderAdjustmentProposalRequest = { orderLineId: lineID, kind, ...(actualQuantityBaseUnits === undefined ? {} : { actualQuantityBaseUnits }) };
+      if (!unreadScope || currentPartnerSessionKey() !== unreadScope || requestScopeKey !== activeScopeKey.current) return;
       const result = await client().proposePartnerOrderAdjustment(token, order.storeId, order.id, input, order.version);
-      if (requestScopeKey !== activeScopeKey.current) return;
+      if (!unreadScope || currentPartnerSessionKey() !== unreadScope || requestScopeKey !== activeScopeKey.current) return;
       setOrders((current) => current.map((item) => item.id === order.id ? result.order : item));
       setAdjustmentQuantities((current) => ({ ...current, [lineID]: "" }));
     } catch (cause) {
       console.error("DSH order adjustment proposal failed", cause);
-      if (requestScopeKey === activeScopeKey.current) setError("تعذر إرسال التعديل؛ تحقق من حالة الطلب بعد المزامنة التلقائية قبل إعادة المحاولة.");
-    } finally { if (requestScopeKey === activeScopeKey.current) setBusy(""); }
+      await load();
+      if (requestScopeKey === activeScopeKey.current && currentPartnerSessionKey() === unreadScope) setError("تعذر إرسال التعديل؛ تحقق من حالة الطلب بعد المزامنة التلقائية قبل إعادة المحاولة.");
+    } finally { releaseAction(); if (requestScopeKey === activeScopeKey.current && currentPartnerSessionKey() === unreadScope) setBusy(""); }
   }
 
   function confirmRemoveLine(order: Order, lineID: string) {
@@ -243,26 +251,34 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   async function confirmStorePickup(order: Order) {
     const code = toAsciiDigits(pickupCodes[order.id] ?? "").trim();
     if (!/^\d{6}$/.test(code) || busy || loading || order.state !== "READY_FOR_PICKUP") return;
+    if (!unreadScope || currentPartnerSessionKey() !== unreadScope || requestScopeKey !== activeScopeKey.current) return;
+    const releaseAction = tryAcquireOrderAction(orderActionLocks.current, order.id);
+    if (!releaseAction) return;
     setBusy(order.id); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!unreadScope || currentPartnerSessionKey() !== unreadScope || requestScopeKey !== activeScopeKey.current) return;
       await client().transitionStoreOrder(token, order.storeId, order.id, { state: "PICKED_UP", code }, order.version);
-      if (requestScopeKey !== activeScopeKey.current) return;
+      if (!unreadScope || currentPartnerSessionKey() !== unreadScope || requestScopeKey !== activeScopeKey.current) return;
       setPickupCodes((current) => ({ ...current, [order.id]: "" }));
       await load();
-    } catch (cause) { console.error("DSH store pickup confirmation failed", cause); if (requestScopeKey === activeScopeKey.current) setError("تعذر تأكيد الاستلام؛ تحقق من الرمز والحالة الظاهرة قبل المحاولة مجددًا."); }
-    finally { if (requestScopeKey === activeScopeKey.current) setBusy(""); }
+    } catch (cause) { console.error("DSH store pickup confirmation failed", cause); await load(); if (requestScopeKey === activeScopeKey.current && currentPartnerSessionKey() === unreadScope) setError("تعذر تأكيد الاستلام؛ تحقق من الرمز والحالة الظاهرة قبل المحاولة مجددًا."); }
+    finally { releaseAction(); if (requestScopeKey === activeScopeKey.current && currentPartnerSessionKey() === unreadScope) setBusy(""); }
   }
 
   async function confirmStoreCaptainCashHandoff(order: Order) {
     if (!canFulfillOrder(order.storeId) || busy || loading || order.fulfillmentMode !== "PARTNER_CAPTAIN" || order.state !== "DELIVERED" || order.storeCashHandoffState !== "AWAITING_STORE_HANDOFF") return;
+    if (!unreadScope || currentPartnerSessionKey() !== unreadScope || requestScopeKey !== activeScopeKey.current) return;
+    const releaseAction = tryAcquireOrderAction(orderActionLocks.current, order.id);
+    if (!releaseAction) return;
     setBusy(order.id); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!unreadScope || currentPartnerSessionKey() !== unreadScope || requestScopeKey !== activeScopeKey.current) return;
       await client().confirmPartnerCaptainCashHandoff(token, order.storeId, order.id, order.version);
       await load();
-    } catch (cause) { console.error("DSH Store Captain cash handoff confirmation failed", cause); if (requestScopeKey === activeScopeKey.current) setError("تعذر تأكيد استلام النقد؛ تحقق من الاستلام الفعلي وانتظر الحالة المؤكدة قبل المحاولة مجددًا."); }
-    finally { if (requestScopeKey === activeScopeKey.current) setBusy(""); }
+    } catch (cause) { console.error("DSH Store Captain cash handoff confirmation failed", cause); await load(); if (requestScopeKey === activeScopeKey.current && currentPartnerSessionKey() === unreadScope) setError("تعذر تأكيد استلام النقد؛ تحقق من الاستلام الفعلي وانتظر الحالة المؤكدة قبل المحاولة مجددًا."); }
+    finally { releaseAction(); if (requestScopeKey === activeScopeKey.current && currentPartnerSessionKey() === unreadScope) setBusy(""); }
   }
 
   function markPickupNoShow(order: Order) {
@@ -272,23 +288,35 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
 
   async function confirmHandoff(order: Order, assignment: CaptainAssignment) {
     if (!canFulfillOrder(order.storeId) || busy || loading || assignment.handoff.state !== "pending") return;
+    if (!unreadScope || currentPartnerSessionKey() !== unreadScope || requestScopeKey !== activeScopeKey.current) return;
+    const releaseAction = tryAcquireOrderAction(orderActionLocks.current, order.id);
+    if (!releaseAction) return;
     setBusy(order.id); setError("");
-    try { const token = await getUsableIdentityAccessToken(); await client().confirmCaptainStoreHandoff(token, order.storeId, order.id, assignment.id, assignment.handoff.version); await load(); }
-    catch (cause) { console.error("DSH Captain handoff failed", cause); if (requestScopeKey === activeScopeKey.current) setError("تعذر تأكيد جاهزية التسليم. أعد القراءة ثم حاول مرة أخرى."); }
-    finally { if (requestScopeKey === activeScopeKey.current) setBusy(""); }
+    try {
+      const token = await getUsableIdentityAccessToken();
+      if (!unreadScope || currentPartnerSessionKey() !== unreadScope || requestScopeKey !== activeScopeKey.current) return;
+      await client().confirmCaptainStoreHandoff(token, order.storeId, order.id, assignment.id, assignment.handoff.version);
+      await load();
+    }
+    catch (cause) { console.error("DSH Captain handoff failed", cause); await load(); if (requestScopeKey === activeScopeKey.current && currentPartnerSessionKey() === unreadScope) setError("تعذر تأكيد جاهزية التسليم. أعد القراءة ثم حاول مرة أخرى."); }
+    finally { releaseAction(); if (requestScopeKey === activeScopeKey.current && currentPartnerSessionKey() === unreadScope) setBusy(""); }
   }
 
   async function dispatchToStoreCaptain(order: Order, captainActorId: string) {
     if (!canFulfillOrder(order.storeId) || busy || loading || order.fulfillmentMode !== "PARTNER_CAPTAIN" || order.state !== "READY_FOR_DISPATCH" || dispatchOffers[order.id]?.state === "offered") return;
+    if (!unreadScope || currentPartnerSessionKey() !== unreadScope || requestScopeKey !== activeScopeKey.current) return;
+    const releaseAction = tryAcquireOrderAction(orderActionLocks.current, order.id);
+    if (!releaseAction) return;
     setBusy(order.id); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      if (!unreadScope || currentPartnerSessionKey() !== unreadScope || requestScopeKey !== activeScopeKey.current) return;
       const result = await client().createPartnerStoreCaptainDispatchOffer(token, order.storeId, order.id, { captainActorId }, order.version);
-      if (requestScopeKey !== activeScopeKey.current) return;
+      if (!unreadScope || currentPartnerSessionKey() !== unreadScope || requestScopeKey !== activeScopeKey.current) return;
       setDispatchOffers((current) => ({ ...current, [order.id]: result.offer }));
       await load();
-    } catch (cause) { console.error("DSH Store Captain dispatch failed", cause); if (requestScopeKey === activeScopeKey.current) setError("تعذر إرسال الطلب إلى كابتن المتجر؛ تحقق من الحالة بعد المزامنة التلقائية قبل إعادة الإرسال."); }
-    finally { if (requestScopeKey === activeScopeKey.current) setBusy(""); }
+    } catch (cause) { console.error("DSH Store Captain dispatch failed", cause); await load(); if (requestScopeKey === activeScopeKey.current && currentPartnerSessionKey() === unreadScope) setError("تعذر إرسال الطلب إلى كابتن المتجر؛ تحقق من الحالة بعد المزامنة التلقائية قبل إعادة الإرسال."); }
+    finally { releaseAction(); if (requestScopeKey === activeScopeKey.current && currentPartnerSessionKey() === unreadScope) setBusy(""); }
   }
 
   return (
@@ -546,12 +574,6 @@ function isValidAdjustmentQuantity(line: Order["lines"][number], value: string):
     && actual <= line.quantityMaxBaseUnits
     && (actual - line.quantityMinBaseUnits) % step === 0;
 }
-
-function toAsciiDigits(value: string): string {
-  return value.replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 1632)).replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 1776));
-}
-
-function pricingBasisLabel(basis: Order["lines"][number]["pricingBasis"]): string { return basis === "PER_UNIT" ? "لكل قطعة" : "لكل وحدة قياس"; }
 
 function attributeSnapshotValue(attribute: Order["lines"][number]["attributeSnapshots"][number]): string {
   if (attribute.textValue) return attribute.textValue;

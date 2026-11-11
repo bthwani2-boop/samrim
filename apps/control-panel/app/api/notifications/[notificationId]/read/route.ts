@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-
-import { dshErrorPayload, dshHttpStatus, isDshClientError, markOperatorNotificationRead } from "../../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../src/server/dsh/dsh-transport";
+import { markOperatorNotificationRead } from "../../../../../src/server/dsh/operations-bff";
 import { readOperatorSession } from "../../../../../src/server/identity/identity-bff";
 import { verifySameOrigin } from "../../../../../src/server/security/csrf";
 

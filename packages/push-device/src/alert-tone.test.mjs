@@ -17,7 +17,7 @@ function setup(platform = "android", overrides = {}) {
   const modules = {
     "expo-crypto": {
       CryptoDigestAlgorithm: { SHA256: "SHA256" },
-      digestStringAsync: async (_algorithm, actor) => "hashed-" + actor,
+      digestStringAsync: async (_algorithm, actor) => `hashed-${actor}`,
     },
     "expo-secure-store": {
       getItemAsync: async (key) => {
@@ -35,7 +35,7 @@ function setup(platform = "android", overrides = {}) {
   runInNewContext(compiled, {
     exports,
     require: (name) => {
-      if (!(name in modules)) throw new Error("Unexpected import: " + name);
+      if (!(name in modules)) throw new Error(`Unexpected import: ${name}`);
       return modules[name];
     },
   }, { filename: "alert-tone.js" });
@@ -89,4 +89,25 @@ test("actor changed while hashing blocks any write", async () => {
   const stillCurrent = () => ++checks === 1;
   assert.equal(await api.saveAlertToneForActor("actor-a", "soft", stillCurrent), false);
   assert.equal(calls.length, 0);
+});
+
+test("canonical notification actor snapshot rejects signed-out or missing identities", () => {
+  const { api } = setup();
+  assert.equal(api.actorIDFromAlertIdentity({ kind: "signed_out" }), "");
+  assert.equal(api.actorIDFromAlertIdentity({ kind: "authenticated", identity: { subject: "  client-a  " } }), "client-a");
+  assert.equal(api.actorIDFromAlertIdentity({ kind: "authenticated", identity: { subject: "" } }), "");
+});
+
+test("shared identity-backed tone read never exposes the former actor after an async switch", async () => {
+  let settle;
+  const { api } = setup("android", { read: () => new Promise(resolve => { settle = resolve; }) });
+  let state = { kind: "authenticated", identity: { subject: "client-a" } };
+  const pending = api.currentOrderAlertToneForIdentity(() => state);
+  for (let n = 0; n < 15 && !settle; n++) await Promise.resolve();
+  assert.equal(typeof settle, "function");
+  state = { kind: "authenticated", identity: { subject: "client-b" } };
+  settle("urgent");
+  assert.equal(await pending, "classic");
+  state = { kind: "signed_out" };
+  assert.equal(await api.currentOrderAlertToneForIdentity(() => state), "classic");
 });

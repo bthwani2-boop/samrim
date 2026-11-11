@@ -15,7 +15,7 @@ export function CaptainScrollScreen({ children, wide = false }: PropsWithChildre
 
 export function createCaptainTabOptions(theme: ReturnType<typeof resolveTheme>) {
   const styles = createStyles(theme);
-  const icons = { home: "home", wallet: "wallet", account: "account" } as const;
+  const icons = { home: "home", deliveries: "deliveries", wallet: "wallet", account: "account" } as const;
   return ({ route }: { route: { name: string } }) => ({
     headerShown: true,
     header: () => <SafeAreaView edges={["top"]} style={styles.headerSafeArea}>

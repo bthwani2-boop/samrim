@@ -1,38 +1,46 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { OperatorHomeAnalytics, OperatorOperationsSummary, OperatorOperationListItem } from "@bthwani/dsh";
+import type { OperatorHomeAnalytics, OperatorOperationListItem, OperatorOperationsSummary } from "@bthwani/dsh";
 import { formatOrderDate } from "@bthwani/dsh";
+import { useEffect, useState } from "react";
+import { downloadRegistryCsv } from "../shared/registry-csv";
 import { isOperatorHomeAnalytics } from "../workspace/operator-home-analytics";
 import { calculateOperationsReportMetrics } from "./operations-report-metrics";
 
 const number = (n: number) => n.toLocaleString("ar-YE");
-const safeCsv = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`;
 
 export function OperationsPerformance({ summary, loading }: Readonly<{
   summary: OperatorOperationsSummary | null;
   operations: readonly OperatorOperationListItem[];
   loading: boolean;
 }>) {
-  const [report, setReport] = useState<OperatorHomeAnalytics | null>(null);
-  const [pending, setPending] = useState(true);
-  const [error, setError] = useState("");
   const [range, setRange] = useState<7 | 30>(7);
+  const [result, setResult] = useState<{
+    range: 7 | 30;
+    report: OperatorHomeAnalytics | null;
+    pending: boolean;
+    error: string;
+  }>({ range: 7, report: null, pending: true, error: "" });
+  const activeResult = result.range === range ? result : null;
+  const report = activeResult?.report ?? null;
+  const pending = activeResult?.pending ?? true;
+  const error = activeResult?.error ?? "";
   useEffect(() => {
     let active = true;
     async function read() {
-      setReport(null);
-      setError("");
-      setPending(true);
+      setResult({ range, report: null, pending: true, error: "" });
       try {
         const res = await fetch(`/api/operations/home-analytics?period=${range}d`, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
         if (!res.ok) throw new Error("تعذرت قراءة التقرير اليومي من المصدر.");
         const body: unknown = await res.json();
         if (!isOperatorHomeAnalytics(body, range)) throw new Error("بيانات التقرير اليومي غير صالحة.");
-        if (active) { setReport(body); setError(""); }
+        if (active) setResult({ range, report: body, pending: false, error: "" });
       } catch (cause) {
-        if (active) { setReport(null); setError(cause instanceof Error ? cause.message : "تعذر عرض التقرير."); }
-      } finally { if (active) setPending(false); }
+        if (active) setResult({
+          range, report: null, pending: false,
+          error: cause instanceof Error ? cause.message : "تعذر عرض التقرير.",
+        });
+      }
     }
     void read();
     return () => { active = false; };
@@ -42,15 +50,11 @@ export function OperationsPerformance({ summary, loading }: Readonly<{
   const { totalOrders, delivered: totalDelivered, failed: totalFailed, cancelled: totalCancelled, averageOrdersPerDay, peakDay, peakOrders } = calculateOperationsReportMetrics(days);
   const maxValue = Math.max(1, ...days.map(item => item.orders));
   function exportReport() {
-    if (!report || !allDays.length) return;
+    if (!report || pending || allDays.length !== range) return;
     const head = ["day", "orders", "delivered", "awaiting_dispatch", "in_progress", "failed", "cancelled"];
     const body = days.map(d => [d.day, d.orders, d.delivered, d.awaitingDispatch, d.inProgress, d.failed, d.cancelled]);
-    const meta = [`# source=DSH operator/home-analytics`, `# timezone=${report.timeZone}`, `# measuredAt=${report.measuredAt}`, `# coverage=returned_daily_aggregate`];
-    const csv = "\uFEFF" + [...meta, head.map(safeCsv).join(","), ...body.map(row => row.map(safeCsv).join(","))].join("\r\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url; link.download = "bthwani-operations-daily-" + range + ".csv";
-    link.click(); URL.revokeObjectURL(url);
+    const metadata = ["source=DSH operator/home-analytics", `timezone=${report.timeZone}`, `measuredAt=${report.measuredAt}`, "coverage=returned_daily_aggregate"];
+    downloadRegistryCsv(`bthwani-operations-daily-${range}.csv`, head, body, metadata);
   }
   return <section className="ops-report-workspace" data-testid="operations-performance">
     <header className="ops-decision-heading">

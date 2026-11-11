@@ -319,6 +319,7 @@ paths:
     post:
       operationId: reviewJoiningCase
       summary: Approve or return a submitted joining case for correction
+      description: Approval can create a marketplace Store and returns STORE_JOINING_CLOSED (409) while new Stores in that relation are paused. A completed review remains replayable.
       security: [{ serviceBearer: [] }]
       parameters:
         - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
@@ -338,6 +339,7 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
   /dsh/joining-cases/{caseId}/financial-terms:
     post:
       operationId: bindJoiningCaseFinancialTerms

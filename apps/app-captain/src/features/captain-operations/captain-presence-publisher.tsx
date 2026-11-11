@@ -1,66 +1,79 @@
 import * as Location from "expo-location";
 import { useEffect, useRef } from "react";
 import { AppState } from "react-native";
-import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { captainSessionKey } from "../../bootstrap/captain-session-scope";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
-import { captainPresenceIntervalMs, shouldPublishCaptainPresence } from "./captain-presence-policy";
 
 let lastSubmittedAt = 0;
-let lastSubmittedActor = "";
+let lastSubmittedSession = "";
 async function sendCurrentPresence() {
-  const before = currentIdentityState();
-  if (before.kind !== "authenticated" || AppState.currentState !== "active") return;
+  const sessionKey = captainSessionKey(currentIdentityState());
+  const isCurrent = () => Boolean(sessionKey) && AppState.currentState === "active"
+    && captainSessionKey(currentIdentityState()) === sessionKey;
+  if (!isCurrent()) return;
   const [permission, locationServicesEnabled] = await Promise.all([
     Location.getForegroundPermissionsAsync(),
     Location.hasServicesEnabledAsync(),
   ]);
-  if (!permission.granted || !locationServicesEnabled) return;
+  if (!isCurrent() || !permission.granted || !locationServicesEnabled) return;
   const token = await getUsableIdentityAccessToken();
+  if (!isCurrent()) return;
   const api = captainClient();
   const admission = await api.readOwnCaptainAdmission(token);
   const available = admission.admission.state === "eligible" && admission.admission.availabilityState === "available";
-  const current = currentIdentityState();
-  if (!shouldPublishCaptainPresence(
-    AppState.currentState === "active", permission.granted,
-    current.kind === "authenticated" && current.identity.subject === before.identity.subject,
-    available, locationServicesEnabled,
-  )) return;
+  if (!isCurrent() || !available) return;
   const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-  const after = currentIdentityState();
-  if (AppState.currentState !== "active" || after.kind !== "authenticated" || after.identity.subject !== before.identity.subject) return;
+  if (!isCurrent()) return;
   const base = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
   if (!base) return;
-  const response = await fetch(base.replace(/\/$/, "") + "/dsh/captains/me/presence", {
+  const response = await fetch(`${base.replace(/\/$/, "")}/dsh/captains/me/presence`, {
     method: "POST",
     signal: AbortSignal.timeout(12_000),
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ latitude: position.coords.latitude, longitude: position.coords.longitude }),
   });
   if (!response.ok) throw new Error("CAPTAIN_PRESENCE_NOT_ACCEPTED");
+  if (!isCurrent()) return;
   lastSubmittedAt = Date.now();
-  lastSubmittedActor = after.identity.subject;
+  lastSubmittedSession = sessionKey;
 }
 export async function publishCaptainPresence(force = false) {
-  const session = currentIdentityState();
-  if (session.kind !== "authenticated") return;
-  if (!force && lastSubmittedActor === session.identity.subject && Date.now() - lastSubmittedAt < 60_000) return;
+  const sessionKey = captainSessionKey(currentIdentityState());
+  if (!sessionKey) return;
+  if (!force && lastSubmittedSession === sessionKey && Date.now() - lastSubmittedAt < 60_000) return;
   await sendCurrentPresence();
 }
 export function CaptainPresencePublisher() {
   const inFlight = useRef(false);
   useEffect(() => {
     let disposed = false;
+    let refreshPending = false;
+    let observedSession = captainSessionKey(currentIdentityState());
     const tick = async () => {
-      if (disposed || inFlight.current || AppState.currentState !== "active") return;
+      if (disposed || AppState.currentState !== "active") return;
+      if (inFlight.current) { refreshPending = true; return; }
       inFlight.current = true;
       try { await publishCaptainPresence(); }
       catch { /* A failed update is not queued: retry with current GPS on the next tick. */ }
-      finally { inFlight.current = false; }
+      finally {
+        inFlight.current = false;
+        if (refreshPending && !disposed) {
+          refreshPending = false;
+          void tick();
+        }
+      }
     };
     void tick();
+    const unsubscribeIdentity = subscribeIdentitySession((identity) => {
+      const nextSession = captainSessionKey(identity);
+      if (nextSession === observedSession) return;
+      observedSession = nextSession;
+      void tick();
+    });
     const subscription = AppState.addEventListener("change", (state) => { if (state === "active") void tick(); });
-    const interval = setInterval(() => { void tick(); }, captainPresenceIntervalMs);
-    return () => { disposed = true; subscription.remove(); clearInterval(interval); };
+    const interval = setInterval(() => { void tick(); }, 5 * 60 * 1000);
+    return () => { disposed = true; unsubscribeIdentity(); subscription.remove(); clearInterval(interval); };
   }, []);
   return null;
 }

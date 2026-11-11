@@ -88,72 +88,94 @@ func MarkFinancialHandoffPosted(ctx context.Context, db *sql.DB, item FinancialH
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	var targetPaymentState, auditEvent string
 	switch item.EffectType {
 	case "DELIVERY_SETTLEMENT", "STORE_PICKUP_COLLECTION", "PARTNER_CAPTAIN_STORE_CASH_COLLECTION", "PARTNER_CAPTAIN_BALANCE_SETTLEMENT":
-		var current string
-		if err := tx.QueryRowContext(ctx, `SELECT payment_state FROM dsh.commerce_orders WHERE id=$1 AND payment_intent_id=$2 FOR UPDATE`, item.OrderID, item.PaymentIntentID).Scan(&current); err != nil {
+		targetPaymentState, auditEvent = "COLLECTED", "payment_collected"
+	case "PAYMENT_CANCEL":
+		targetPaymentState, auditEvent = "CANCELLED", "payment_cancelled"
+	case "CAPTAIN_COD_RELEASE", "ORDER_ADJUSTMENT_RECONCILIATION":
+	default:
+		return errors.New("unknown financial handoff effect")
+	}
+
+	var currentPaymentState string
+	var orderTotal int64
+	if targetPaymentState != "" {
+		// Order transitions lock the Order before enqueueing its outbox item.
+		err = tx.QueryRowContext(ctx, `SELECT payment_state,total_amount_minor FROM dsh.commerce_orders
+			WHERE id=$1 AND payment_intent_id=$2 FOR UPDATE`, item.OrderID, item.PaymentIntentID).Scan(&currentPaymentState, &orderTotal)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrPaymentStateConflict
+		}
+		if err != nil {
 			return err
 		}
-		if current == "REQUIRES_COLLECTION" {
-			if result, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_orders SET payment_state='COLLECTED',updated_at=clock_timestamp() WHERE id=$1 AND payment_intent_id=$2 AND payment_state='REQUIRES_COLLECTION'`, item.OrderID, item.PaymentIntentID); err != nil {
+	}
+
+	// Validate the exact durable event before mutating payment or cash state.
+	// Attempts may have changed since the worker read the immutable facts.
+	var outboxState string
+	err = tx.QueryRowContext(ctx, `SELECT state FROM dsh.commerce_financial_handoff_outbox
+		WHERE id=$1 AND effect_type=$2 AND source_ref=$3 AND order_id=$4 AND payment_intent_id=$5
+			AND COALESCE(captain_actor_id,'')=$6 AND COALESCE(partner_actor_id,'')=$7 AND amount_minor=$8
+			AND COALESCE(reason,'')=$9 AND idempotency_key=$10 AND correlation_id=$11 AND acting_actor_id=$12
+		FOR UPDATE`, item.ID, item.EffectType, item.SourceRef, item.OrderID, item.PaymentIntentID,
+		item.CaptainActorID, item.PartnerActorID, item.AmountMinor, item.Reason, item.IdempotencyKey, item.CorrelationID, item.ActingActorID).Scan(&outboxState)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrPaymentStateConflict
+	}
+	if err != nil {
+		return err
+	}
+	if outboxState == "POSTED" {
+		return tx.Commit()
+	}
+
+	if targetPaymentState != "" {
+		if currentPaymentState == "REQUIRES_COLLECTION" {
+			result, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_orders SET payment_state=$3,updated_at=clock_timestamp()
+				WHERE id=$1 AND payment_intent_id=$2 AND payment_state='REQUIRES_COLLECTION'`, item.OrderID, item.PaymentIntentID, targetPaymentState)
+			if err != nil {
 				return err
-			} else if rows, err := result.RowsAffected(); err != nil || rows != 1 {
-				if err != nil {
-					return err
-				}
+			}
+			affected, err := result.RowsAffected()
+			if err != nil {
+				return err
+			}
+			if affected != 1 {
 				return ErrPaymentStateConflict
 			}
-		} else if current != "COLLECTED" {
+		} else if currentPaymentState != targetPaymentState {
 			return ErrPaymentStateConflict
 		}
 		auditAmount := item.AmountMinor
 		if item.EffectType == "PARTNER_CAPTAIN_BALANCE_SETTLEMENT" {
-			if err := tx.QueryRowContext(ctx, `SELECT total_amount_minor FROM dsh.commerce_orders WHERE id=$1 AND payment_intent_id=$2`, item.OrderID, item.PaymentIntentID).Scan(&auditAmount); err != nil {
-				return err
-			}
+			auditAmount = orderTotal
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_payment_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,payment_intent_id,from_state,to_state,amount_minor)
-			VALUES('payment_collected',$1,$2,$3,$4,$5,'REQUIRES_COLLECTION','COLLECTED',$6)
-			ON CONFLICT (event_type,idempotency_key) DO NOTHING`, item.IdempotencyKey, item.CorrelationID, item.ActingActorID, item.OrderID, item.PaymentIntentID, auditAmount); err != nil {
+			VALUES($1,$2,$3,$4,$5,$6,'REQUIRES_COLLECTION',$7,$8)
+			ON CONFLICT (event_type,idempotency_key) DO NOTHING`, auditEvent, item.IdempotencyKey, item.CorrelationID, item.ActingActorID,
+			item.OrderID, item.PaymentIntentID, targetPaymentState, auditAmount); err != nil {
 			return err
 		}
-		if item.EffectType == "PARTNER_CAPTAIN_STORE_CASH_COLLECTION" {
-			result, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_order_store_cash_handoffs SET state='SETTLED',settled_at=clock_timestamp(),version=version+1,updated_at=clock_timestamp() WHERE order_id=$1 AND state='STORE_CONFIRMED' AND assignment_id=$2`, item.OrderID, item.SourceRef)
-			if err != nil {
-				return err
-			}
-			if affected, err := result.RowsAffected(); err != nil || affected != 1 {
-				if err != nil {
-					return err
-				}
-				return ErrPaymentStateConflict
-			}
-		}
-	case "PAYMENT_CANCEL":
-		var current string
-		if err := tx.QueryRowContext(ctx, `SELECT payment_state FROM dsh.commerce_orders WHERE id=$1 AND payment_intent_id=$2 FOR UPDATE`, item.OrderID, item.PaymentIntentID).Scan(&current); err != nil {
+	}
+	if item.EffectType == "PARTNER_CAPTAIN_STORE_CASH_COLLECTION" {
+		result, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_order_store_cash_handoffs
+			SET state='SETTLED',settled_at=clock_timestamp(),version=version+1,updated_at=clock_timestamp()
+			WHERE order_id=$1 AND assignment_id=$2 AND captain_actor_id=$3 AND partner_actor_id=$4 AND amount_minor=$5
+				AND confirmation_idempotency_key=$6 AND store_confirmed_by=$7 AND state='STORE_CONFIRMED'`,
+			item.OrderID, item.SourceRef, item.CaptainActorID, item.PartnerActorID, item.AmountMinor, item.IdempotencyKey, item.ActingActorID)
+		if err != nil {
 			return err
 		}
-		if current == "REQUIRES_COLLECTION" {
-			if result, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_orders SET payment_state='CANCELLED',updated_at=clock_timestamp() WHERE id=$1 AND payment_intent_id=$2 AND payment_state='REQUIRES_COLLECTION'`, item.OrderID, item.PaymentIntentID); err != nil {
-				return err
-			} else if rows, err := result.RowsAffected(); err != nil || rows != 1 {
-				if err != nil {
-					return err
-				}
-				return ErrPaymentStateConflict
-			}
-		} else if current != "CANCELLED" {
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if affected != 1 {
 			return ErrPaymentStateConflict
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_payment_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,payment_intent_id,from_state,to_state,amount_minor)
-			VALUES('payment_cancelled',$1,$2,$3,$4,$5,'REQUIRES_COLLECTION','CANCELLED',$6)
-			ON CONFLICT (event_type,idempotency_key) DO NOTHING`, item.IdempotencyKey, item.CorrelationID, item.ActingActorID, item.OrderID, item.PaymentIntentID, item.AmountMinor); err != nil {
-			return err
-		}
-	case "CAPTAIN_COD_RELEASE", "ORDER_ADJUSTMENT_RECONCILIATION":
-	default:
-		return errors.New("unknown financial handoff effect")
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_financial_handoff_outbox SET state='POSTED',attempts=attempts+1,last_error=NULL,next_attempt_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1 AND state<>'POSTED'`, item.ID); err != nil {
 		return err

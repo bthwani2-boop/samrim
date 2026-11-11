@@ -65,3 +65,19 @@ export function sortTaxonomyRows<T extends Readonly<{ nameAr: string }>>(
   const direction = sort === "name_asc" ? 1 : -1;
   return [...rows].sort((left, right) => direction * left.nameAr.localeCompare(right.nameAr, "ar"));
 }
+
+export type ShortcutCategoryOption = Readonly<{ id: string; nameAr: string; active: boolean; pathAr: string }>;
+
+// Keep selected categories visible while the server-paginated search shows a
+// different page; dropping an ID from selection removes it from this view.
+export function retainSelectedCategoryOptions(
+  selectedOptions: ReadonlyArray<ShortcutCategoryOption>,
+  visibleOptions: ReadonlyArray<ShortcutCategoryOption>,
+  selectedIds: ReadonlyArray<string>,
+): ReadonlyArray<ShortcutCategoryOption> {
+  const optionsById = new Map([...selectedOptions, ...visibleOptions].map((option) => [option.id, option]));
+  return selectedIds.flatMap((id) => {
+    const option = optionsById.get(id);
+    return option ? [option] : [];
+  });
+}

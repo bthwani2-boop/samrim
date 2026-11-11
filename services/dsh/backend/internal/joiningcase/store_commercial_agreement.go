@@ -39,7 +39,13 @@ type StoreCommercialAgreementAcceptanceInput struct {
 	CorrelationID            string
 }
 
-func storeAllowsCommercialAgreementProposal(publicationState string) bool {
+func storeAllowsCommercialAgreementProposal(relationModel, publicationState string) bool {
+	// Store relation governs publication/fulfillment, not WLT commercial terms.
+	// Both relations propose through the same agreement writer; neither a proposal
+	// nor relation selection activates collection, publication or checkout.
+	if relationModel != postgres.StoreRelationBThwaniPartner && relationModel != postgres.StoreRelationIndependent {
+		return false
+	}
 	// "hidden" is the state the publication endpoint writes when a Store leaves the
 	// storefront; "unpublished" is accepted for legacy rows.
 	return publicationState == "hidden" || publicationState == "unpublished" || publicationState == "published"
@@ -110,7 +116,7 @@ func (s *Service) ProposeStoreCommercialAgreementForOperatorPartners(ctx context
 	if err != nil {
 		return wltintegration.StoreCommercialAgreement{}, false, err
 	}
-	if store.PartnerActorID == "" || store.PartnerActorID == actingActorID || !storeAllowsCommercialAgreementProposal(store.PublicationState) {
+	if store.PartnerActorID == "" || store.PartnerActorID == actingActorID || !storeAllowsCommercialAgreementProposal(store.RelationModel, store.PublicationState) {
 		return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementState
 	}
 	rates, err := normalizeStoreAgreementRates(store.FulfillmentModes, input.Rates)

@@ -9,7 +9,7 @@ const periods = [
   { value: "all", label: "كل الفترات" },
 ] as const;
 
-export function StoreCustomerActivitySummary({ storeId }: Readonly<{ storeId: string }>) {
+function MarketplaceCustomerActivitySummary({ storeId }: Readonly<{ storeId: string }>) {
   const [period, setPeriod] = useState<"7d" | "30d" | "all">("30d");
   const [summary, setSummary] = useState<PartnerStoreOrderSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -54,4 +54,12 @@ export function StoreCustomerActivitySummary({ storeId }: Readonly<{ storeId: st
       <div><dt>الطلبات المكتملة</dt><dd>{(summary.deliveredOrders + summary.pickedUpOrders).toLocaleString("ar-YE")}</dd></div>
     </dl> : null}
   </section>;
+}
+
+export function StoreCustomerActivitySummary({ storeId, relationModel }: Readonly<{ storeId: string; relationModel: "BTHWANI_PARTNER" | "INDEPENDENT_STORE" }>) {
+  if (relationModel === "BTHWANI_PARTNER") return <MarketplaceCustomerActivitySummary storeId={storeId}/>;
+  if (relationModel === "INDEPENDENT_STORE") {
+    return <section aria-label="نشاط عملاء المتجر المستقل"><p role="status" className="store-profile-muted">هذا المتجر مستقل. إحصاءات عملاء طلبات سوق بثواني لا تمثل عملاء الطلبات المباشرة لهذا المتجر. ستتاح إحصاءات الطلبات المباشرة بعد اعتماد مسارها في DSH.</p></section>;
+  }
+  return <section aria-label="نوع علاقة المتجر غير معروف"><p role="alert" className="store-profile-muted">تعذر تحديد علاقة المتجر؛ لم تُعرض إحصاءات السوق. أعد قراءة بيانات المتجر من DSH.</p></section>;
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -21,16 +22,16 @@ import (
 // Validate actor-level HTTP order scope and partner transition retries against real SQL ownership rules.
 // No WLT money is mutated; reads and Partner acceptance must not contact the payment dependency.
 func TestOrderHTTPActorScopeAndPartnerTransitionRetry(t *testing.T) {
-	url := strings.TrimSpace(os.Getenv("DSH_DATABASE_URL"))
-	if url == "" {
+	databaseURL := strings.TrimSpace(os.Getenv("DSH_DATABASE_URL"))
+	if databaseURL == "" {
 		t.Skip("isolated DSH_DATABASE_URL required")
 	}
-	root, err := sql.Open("postgres", url)
+	root, err := sql.Open("postgres", databaseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = root.Close() })
-	withFreshDatabase(t, root, url, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrations []string) {
+	withFreshDatabase(t, root, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrations []string) {
 		if err := postgres.Migrate(ctx, db, records, migrations, testDeliveryProofKeyring(t)); err != nil {
 			t.Fatal(err)
 		}
@@ -219,6 +220,81 @@ func TestOrderHTTPActorScopeAndPartnerTransitionRetry(t *testing.T) {
 		if !strings.Contains(listA.Body.String(), order) || strings.Contains(listB.Body.String(), order) {
 			t.Fatal("client order list leaked across actor boundary")
 		}
+		t.Run("search and filters apply before pagination", func(t *testing.T) {
+			// Create newer orders in the disposable database so the sole Store
+			// match is outside the default first page.
+			if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_carts(id,client_actor_id,store_id,state,version)
+				SELECT 'history-cart-'||n,$1,$2,'checked_out',1 FROM generate_series(1,51) AS series(n)`, clientA, otherStore); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_orders
+				(id,client_actor_id,store_id,cart_id,address_id,address_version,address_text,address_latitude,address_longitude,
+				service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,
+				serviceability_address_version,state,total_amount_minor,currency,version,payment_intent_id,
+				payment_method,payment_state,fulfillment_mode,payment_cash_amount_minor,created_at)
+				SELECT 'history-order-'||n,$1,$2,'history-cart-'||n,'history-address',1,'History address',15.3694457,44.1910064,
+					'orders-http-city','CITY_SCOPE_V1','SERVICEABLE',1,1,
+					CASE n WHEN 1 THEN 'DELIVERED' WHEN 2 THEN 'CANCELLED' ELSE 'CREATED' END,
+					1800,'YER',1,'history-payment-'||n,'CASH_ON_DELIVERY','REQUIRES_COLLECTION','BTHWANI_CAPTAIN',1800,
+					clock_timestamp()+make_interval(secs=>n)
+				FROM generate_series(1,51) AS series(n)`, clientA, otherStore); err != nil {
+				t.Fatal(err)
+			}
+			type page struct {
+				Orders     []struct{ ID string } `json:"orders"`
+				NextCursor string                `json:"nextCursor"`
+			}
+			read := func(token, query string) page {
+				t.Helper()
+				response := call(token, http.MethodGet, "/dsh/orders?"+query, clientA, http.StatusOK)
+				var result page
+				if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+					t.Fatal(err)
+				}
+				return result
+			}
+			const token = "orders-token-client-a"
+			if first := read(token, "limit=50"); len(first.Orders) != 50 || first.NextCursor == "" {
+				t.Fatalf("expected a first page of 50 newer Orders, got %d", len(first.Orders))
+			}
+			for _, tc := range []struct{ query, expected string }{
+				{"q=http+STORE&status=active&fulfillmentMode=BTHWANI_CAPTAIN", order},
+				{"q=ORDER-A", order},
+				{"q=other+STORE&status=completed", "history-order-1"},
+				{"q=other+STORE&status=cancelled", "history-order-2"},
+				{"cartId=orders-http-cart", order},
+			} {
+				result := read(token, tc.query)
+				if len(result.Orders) != 1 || result.Orders[0].ID != tc.expected || result.NextCursor != "" {
+					t.Fatalf("query %q returned %+v, want only %s", tc.query, result, tc.expected)
+				}
+			}
+			for _, query := range []string{"q=%25", "q=ORDER-A&fulfillmentMode=CUSTOMER_PICKUP"} {
+				if result := read(token, query); len(result.Orders) != 0 || result.NextCursor != "" {
+					t.Fatalf("query %q returned unrelated Orders: %+v", query, result)
+				}
+			}
+			if result := read("orders-token-client-b", "q=ORDER-A"); len(result.Orders) != 0 {
+				t.Fatalf("other Client saw private matching Orders: %+v", result)
+			}
+			const filter = "q=history-order&status=active&limit=1"
+			first := read(token, filter)
+			if len(first.Orders) != 1 || first.Orders[0].ID != "history-order-51" || first.NextCursor == "" {
+				t.Fatalf("filtered first page %+v", first)
+			}
+			cursor := "&cursor=" + url.QueryEscape(first.NextCursor)
+			if second := read(token, filter+cursor); len(second.Orders) != 1 || second.Orders[0].ID != "history-order-50" {
+				t.Fatalf("filtered second page %+v", second)
+			}
+			call("orders-token-client-b", http.MethodGet, "/dsh/orders?"+filter+cursor, clientA, http.StatusBadRequest)
+			for _, invalid := range []string{
+				"q=order-a" + cursor, "cartId=orders-http-cart&q=order-a", "status=other", "fulfillmentMode=OTHER",
+				"q=%ZZ", "q=%FF", "q=%00", "q=" + url.QueryEscape(strings.Repeat("ع", 129)),
+				"q=order-a&q=other", "status=active&status=completed", "fulfillmentMode=BTHWANI_CAPTAIN&fulfillmentMode=CUSTOMER_PICKUP",
+			} {
+				call(token, http.MethodGet, "/dsh/orders?"+invalid, "", http.StatusBadRequest)
+			}
+		})
 		if unexpectedPayment != 0 {
 			t.Fatalf("read-only HTTP owner checks sent %d unexpected calls to WLT", unexpectedPayment)
 		}

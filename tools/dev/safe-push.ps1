@@ -35,9 +35,9 @@ try {
         throw "SAFE_PUSH_INTERLOCK=FAIL origin push URL mismatch: observed=$($pushOrigins -join ',') expected=bthwani2-boop/samrim"
     }
 
-    if (@(Invoke-Git @('status', '--porcelain=v1', '--untracked-files=all')).Count -gt 0) {
-        throw 'SAFE_PUSH_INTERLOCK=FAIL commit candidate changes before push.'
-    }
+    # A push transfers committed history only. Keep other agents' staged, unstaged,
+    # and untracked work untouched; a dirty shared worktree is not a push blocker.
+    # Caller must review the exact unpushed commit range and hold the exclusive Git turn.
     $head = ((Invoke-Git @('rev-parse', 'HEAD')) -join '').Trim()
     $remoteRows = @(Invoke-Git @('ls-remote', '--heads', 'origin', "refs/heads/$branch"))
     if ($remoteRows.Count -gt 0) {

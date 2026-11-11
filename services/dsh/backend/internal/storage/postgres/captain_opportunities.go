@@ -59,8 +59,8 @@ func ReadCaptainOpportunityHeatmap(ctx context.Context, db *sql.DB) (CaptainOppo
 	// Do not reveal sparse demand: require at least six distinct orders
 	// originating from at least three independent published Stores per cell.
 	orders, err := db.QueryContext(ctx, `
-SELECT floor(s.delivery_origin_latitude::double precision / 0.05)::integer,
-       floor(s.delivery_origin_longitude::double precision / 0.05)::integer,
+SELECT floor(s.delivery_origin_latitude::double precision / $3::double precision)::integer,
+       floor(s.delivery_origin_longitude::double precision / $3::double precision)::integer,
        count(*)::bigint
 FROM dsh.commerce_orders o
 JOIN dsh.stores s ON s.id=o.store_id
@@ -74,7 +74,7 @@ WHERE o.fulfillment_mode='BTHWANI_CAPTAIN'
   AND s.delivery_origin_longitude IS NOT NULL
 GROUP BY 1,2
 HAVING count(*)>=6 AND count(DISTINCT o.store_id)>=3
-ORDER BY count(*) DESC, 1,2 LIMIT 100`, start, end)
+ORDER BY count(*) DESC, 1,2 LIMIT 100`, start, end, opportunityGridDegrees)
 	if err != nil {
 		return CaptainOpportunityHeatmap{}, err
 	}
@@ -101,8 +101,8 @@ ORDER BY count(*) DESC, 1,2 LIMIT 100`, start, end)
 	// foreground fix. Suppress cells with fewer than four available Captains.
 	// A Captain with an active offer/assignment is not available for new work.
 	captains, err := db.QueryContext(ctx, `
-SELECT floor(p.latitude::double precision / 0.05)::integer,
-       floor(p.longitude::double precision / 0.05)::integer,
+SELECT floor(p.latitude::double precision / $3::double precision)::integer,
+       floor(p.longitude::double precision / $3::double precision)::integer,
        count(*)::bigint
 FROM dsh.captain_presence_latest p
 JOIN dsh.captain_admissions a ON a.actor_id=p.captain_actor_id
@@ -119,7 +119,7 @@ WHERE a.state='eligible' AND a.availability_state='available'
   )
 GROUP BY 1,2
 HAVING count(*)>=4
-ORDER BY count(*) DESC, 1,2 LIMIT 100`, end.Add(-15*time.Minute), end)
+ORDER BY count(*) DESC, 1,2 LIMIT 100`, end.Add(-15*time.Minute), end, opportunityGridDegrees)
 	if err != nil {
 		return CaptainOpportunityHeatmap{}, err
 	}

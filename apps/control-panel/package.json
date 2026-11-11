@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "node ../../tools/dev/start-surface.mjs",
     "build": "next build",
-    "typecheck": "next typegen && tsc --noEmit -p tsconfig.json"
+    "typecheck": "next typegen && tsc --noEmit -p tsconfig.json",
+    "verify:csp": "node tests/verify-live-csp.mjs"
   },
   "dependencies": {
     "@ant-design/cssinjs": "2.1.2",

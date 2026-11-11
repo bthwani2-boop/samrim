@@ -1,16 +1,17 @@
+import { elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { AppearancePicker, BthwaniIcon, BthwaniNavigationRow, BthwaniSectionHeader, BthwaniSurface, useMobileAppearance } from "@bthwani/design-system/native";
 import { Button, Host } from "@expo/ui";
 import * as Application from "expo-application";
 import * as Clipboard from "expo-clipboard";
 import * as Device from "expo-device";
-import { elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { AppearancePicker, BthwaniIcon, BthwaniNavigationRow, BthwaniSectionHeader, BthwaniSurface, useMobileAppearance } from "@bthwani/design-system/native";
 import { type Href, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { getUsableIdentityAccessToken, logoutIdentity } from "../../bootstrap/identity";
+import { captainSessionKey } from "../../bootstrap/captain-session-scope";
+import { currentIdentityState, getUsableIdentityAccessToken, logoutIdentity, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "../captain-operations/captain-client";
-import { StoreCaptainMemberships } from "../captain-operations/store-memberships";
 import { preferredCaptainProfileMembership } from "../captain-operations/captain-store-membership-policy";
+import { StoreCaptainMemberships } from "../captain-operations/store-memberships";
 
 const actions: ReadonlyArray<Readonly<{
   description: string;
@@ -23,43 +24,66 @@ const actions: ReadonlyArray<Readonly<{
   { description: "راجع مستحقاتك وطلبات التسوية", icon: "wallet", label: "محفظة الكابتن", route: "/wallet" as Href },
 ];
 
+type CaptainProfileRead = Readonly<{
+  sessionKey: string;
+  status: "loading" | "ready" | "error";
+  profile: Readonly<{ fullNameAr?: string | null; contactPhoneE164?: string | null; state: string }> | null;
+}>;
+
 export default function CaptainAccount() {
   const router = useRouter();
   const { theme, themeName } = useMobileAppearance();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
-  const [profile, setProfile] = useState<Readonly<{ fullNameAr?: string | null; contactPhoneE164?: string | null; state: string }> | null>(null);
-  const [profileState, setProfileState] = useState<"loading" | "ready" | "error">("loading");
+  const [identityState, setIdentityState] = useState(currentIdentityState);
+  const sessionKey = captainSessionKey(identityState);
+  const [profileRead, setProfileRead] = useState<CaptainProfileRead>({ sessionKey: "", status: "loading", profile: null });
+  // Never render cached private data while the new Identity session is being restored.
+  const visibleRead = sessionKey && captainSessionKey(currentIdentityState()) === sessionKey
+    && profileRead.sessionKey === sessionKey ? profileRead : null;
+  const profile = visibleRead?.profile ?? null;
+  const profileState = visibleRead?.status ?? "loading";
+
+  useEffect(() => subscribeIdentitySession(setIdentityState), []);
 
   useEffect(() => {
-    let current = true;
-    void (async () => {
+    let cancelled = false;
+    const isCurrent = () => !cancelled && Boolean(sessionKey) && captainSessionKey(currentIdentityState()) === sessionKey;
+    if (!isCurrent()) return;
+    setProfileRead({ sessionKey, status: "loading", profile: null });
+
+    const loadProfile = async () => {
       try {
         const token = await getUsableIdentityAccessToken();
+        if (!isCurrent()) return;
         const response = await captainClient().readOwnCaptainAdmission(token);
-        if (current) { setProfile(response.admission); setProfileState("ready"); }
+        if (isCurrent()) setProfileRead({ sessionKey, status: "ready", profile: response.admission });
       } catch (cause) {
-        // The Store owner may create a private Captain without admitting
-        // them to the BThwani public dispatch pool.
+        if (!isCurrent()) return;
+        // Store-owned Captains may have a membership without public dispatch admission.
         try {
           const token = await getUsableIdentityAccessToken();
+          if (!isCurrent()) return;
           const memberships = await captainClient().listOwnStoreCaptainMemberships(token);
+          if (!isCurrent()) return;
           const directed = preferredCaptainProfileMembership(memberships.memberships);
           if (directed) {
-            if (current) {
-              setProfile({ fullNameAr: directed.displayNameAr ?? null, state: directed.state === "active" ? "store_only" : "store_pending" });
-              setProfileState("ready");
-            }
+            setProfileRead({
+              sessionKey, status: "ready",
+              profile: { fullNameAr: directed.displayNameAr ?? null, state: directed.state === "active" ? "store_only" : "store_pending" },
+            });
             return;
           }
         } catch { /* Keep the original error state if both readbacks fail. */ }
+        if (!isCurrent()) return;
         console.error("DSH Captain profile readback failed", cause);
-        if (current) setProfileState("error");
+        setProfileRead({ sessionKey, status: "error", profile: null });
       }
-    })();
-    return () => { current = false; };
-  }, []);
+    };
+    void loadProfile();
+    return () => { cancelled = true; };
+  }, [sessionKey]);
 
   async function logout() {
     if (busy) return;
@@ -107,12 +131,12 @@ export default function CaptainAccount() {
     <Pressable accessibilityRole="button" accessibilityLabel="نسخ معلومات إصدار التطبيق"
       onPress={() => void Clipboard.setStringAsync([
         "بثواني", Application.nativeApplicationVersion ?? "—",
-        "build:" + (Application.nativeBuildVersion ?? "—"),
+        `build:${Application.nativeBuildVersion ?? "—"}`,
         Device.modelName ?? "جهاز غير معروف", Device.osVersion ?? "—",
       ].join(" · ")).then(() => setNotice("تم نسخ معلومات إصدار التطبيق")).catch(() => setNotice("تعذر نسخ معلومات التطبيق"))}
       style={{ paddingVertical: 7, alignItems: "center" }}>
       <Text style={{ color: theme.colorMuted, fontSize: 12 }}>
-        {"إصدار التطبيق " + (Application.nativeApplicationVersion ?? "—") + " · نسخ معلومات الإصدار"}
+        {`إصدار التطبيق ${Application.nativeApplicationVersion ?? "—"} · نسخ معلومات الإصدار`}
       </Text>
     </Pressable>
       <Host colorScheme={themeName} matchContents seedColor={theme.brandAction}>

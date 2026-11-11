@@ -79,7 +79,7 @@ func RecordManualTransfer(ctx context.Context, db *sql.DB, input RecordTransferI
 	if _, err := tx.ExecContext(ctx, "UPDATE wlt.payout_requests SET status='EXECUTED',updated_at=clock_timestamp() WHERE id=$1", input.PayoutID); err != nil {
 		return ManualTransferExecutionRecord{}, err
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE wlt.settlement_batches SET status=CASE WHEN (SELECT COUNT(*) FROM wlt.manual_transfer_executions WHERE batch_id=$1)=row_count THEN 'AWAITING_VERIFICATION' ELSE 'EXECUTION_IN_PROGRESS' END,updated_at=clock_timestamp() WHERE id=$1", input.BatchID); err != nil {
+	if err := refreshManualTransferBatchProgress(ctx, tx, input.BatchID); err != nil {
 		return ManualTransferExecutionRecord{}, err
 	}
 	if err := insertPayoutAudit(ctx, tx, "TRANSFER_EXECUTED", input.PayoutID, input.BatchID, input.ActorID, "", input.ReceiptDocumentID, input.IdempotencyKey, hash, input.CorrelationID); err != nil {
@@ -106,6 +106,9 @@ func VerifyManualTransfer(ctx context.Context, db *sql.DB, input VerifyTransferI
 		return ManualTransferExecutionRecord{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:manual-transfer-verify:"+input.IdempotencyKey); err != nil {
+		return ManualTransferExecutionRecord{}, err
+	}
 	hash := hashFacts("transfer-verified", input.TransferID, input.ActorID)
 	if found, payoutID, _, err := existingPayoutAudit(ctx, tx, "TRANSFER_VERIFIED", input.IdempotencyKey, hash); err != nil {
 		return ManualTransferExecutionRecord{}, err
@@ -134,7 +137,7 @@ func VerifyManualTransfer(ctx context.Context, db *sql.DB, input VerifyTransferI
 	if _, err := tx.ExecContext(ctx, "UPDATE wlt.manual_transfer_executions SET execution_status='VERIFIED',verified_by=$2,verified_at=clock_timestamp() WHERE id=$1", input.TransferID, input.ActorID); err != nil {
 		return ManualTransferExecutionRecord{}, err
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE wlt.settlement_batches SET status=CASE WHEN (SELECT COUNT(*) FROM wlt.manual_transfer_executions WHERE batch_id=$1 AND execution_status='VERIFIED')=row_count THEN 'AWAITING_RECONCILIATION' ELSE 'AWAITING_VERIFICATION' END,updated_at=clock_timestamp() WHERE id=$1", transfer.BatchID); err != nil {
+	if err := refreshManualTransferBatchProgress(ctx, tx, transfer.BatchID); err != nil {
 		return ManualTransferExecutionRecord{}, err
 	}
 	if err := insertPayoutAudit(ctx, tx, "TRANSFER_VERIFIED", transfer.PayoutID, transfer.BatchID, input.ActorID, "", transfer.ReceiptDocumentID, input.IdempotencyKey, hash, input.CorrelationID); err != nil {
@@ -148,4 +151,31 @@ func VerifyManualTransfer(ctx context.Context, db *sql.DB, input VerifyTransferI
 		return ManualTransferExecutionRecord{}, err
 	}
 	return item, nil
+}
+
+func refreshManualTransferBatchProgress(ctx context.Context, tx *sql.Tx, batchID string) error {
+	// Take the batch lock before the tally so the next statement observes
+	// transfers committed while this transaction waited for another worker.
+	var rowCount int
+	if err := tx.QueryRowContext(ctx, "SELECT row_count FROM wlt.settlement_batches WHERE id=$1 FOR NO KEY UPDATE", batchID).Scan(&rowCount); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, `UPDATE wlt.settlement_batches b
+		SET status=CASE
+			WHEN progress.executed < $2 THEN 'EXECUTION_IN_PROGRESS'
+			WHEN progress.completed = $2 THEN 'COMPLETED'
+			WHEN progress.verified = $2 THEN 'AWAITING_RECONCILIATION'
+			ELSE 'AWAITING_VERIFICATION'
+		END, updated_at=clock_timestamp()
+		FROM (
+			SELECT COUNT(t.id) AS executed,
+				COUNT(*) FILTER (WHERE t.execution_status IN ('VERIFIED','RECONCILED')) AS verified,
+				COUNT(*) FILTER (WHERE t.execution_status='RECONCILED' AND p.status='COMPLETED') AS completed
+			FROM wlt.settlement_batch_items i
+			JOIN wlt.payout_requests p ON p.id=i.payout_id
+			LEFT JOIN wlt.manual_transfer_executions t ON t.batch_id=i.batch_id AND t.payout_id=i.payout_id
+			WHERE i.batch_id=$1
+		) progress
+		WHERE b.id=$1`, batchID, rowCount)
+	return err
 }

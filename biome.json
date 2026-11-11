@@ -23,6 +23,7 @@
       "tools/**/*.ts",
       "tools/**/*.tsx",
       "!!**/node_modules/**",
+      "!!**/.expo/**",
       "!!**/.next/**",
       "!!**/.next-dev/**",
       "!!**/dist/**",

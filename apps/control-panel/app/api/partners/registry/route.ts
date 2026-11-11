@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import type { ActorRoleView } from "@bthwani/identity";
 import type { OperatorStoreSummary } from "@bthwani/dsh";
+import type { ActorRoleView } from "@bthwani/identity";
 import { NextResponse } from "next/server";
-import { dshErrorPayload, dshHttpStatus, isDshClientError, listOperatorStores, readOperatorPartnerStorePresence } from "../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-transport";
+import { listOperatorStores, readOperatorPartnerStorePresence } from "../../../../src/server/dsh/store-operations-bff";
 import { identityErrorPayload, identityHttpStatus, readManagedIdentityRolesBatch, readOperatorSession, searchIdentityRoles } from "../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";
@@ -43,18 +44,34 @@ async function registry(request: Request, privateQuery?: string) {
   const serviceCityId = p.get("serviceCityId") ?? "";
   const sort = p.get("sort") ?? "updated_desc";
   const mode = p.get("mode") ?? "all";
-  if (q.length > 100 || serviceCityId.length > 128 || !["", "unpublished", "published", "hidden"].includes(state) || !["updated_desc", "updated_asc"].includes(sort) || !["all", "stores", "without_store"].includes(mode)) {
+  const relationModel = p.get("relationModel") ?? "";
+  if (Array.from(q).length > (mode === "stores" ? 128 : 100) || q.includes("\0") || serviceCityId.length > 128 ||
+    !["", "unpublished", "published", "hidden"].includes(state) || !["updated_desc", "updated_asc"].includes(sort) ||
+    !["all", "stores", "without_store"].includes(mode) ||
+    (relationModel !== "" && relationModel !== "BTHWANI_PARTNER" && relationModel !== "INDEPENDENT_STORE") ||
+    (relationModel && mode !== "stores")) {
     return errorResponse(400, "INVALID_INPUT", "invalid registry filters");
   }
   const allowPartnerOnly = !state && !serviceCityId && mode !== "stores";
-  const scope = createHash("sha256").update(JSON.stringify({ q, state, serviceCityId, sort, mode })).digest("hex").slice(0, 20);
+  const scope = createHash("sha256").update(JSON.stringify({ actor: identity.subject, session: identity.sessionId, q, state, serviceCityId, sort, mode, relationModel })).digest("hex").slice(0, 20);
   const requested = decode(p.get("cursor") ?? "", scope);
   if (!requested) return errorResponse(400, "INVALID_CURSOR", "cursor does not match the selected filters");
   const cursor: Cursor = mode === "without_store" && requested.phase === "stores" ? { ...requested, phase: "partners", from: "" } : requested;
   const context = { operatorActorId: identity.subject };
   try {
     if (cursor.phase === "stores" && mode !== "without_store") {
-      const page = await listOperatorStores(state, q, serviceCityId, "contains", sort, PAGE_SIZE, cursor.from, context, "BTHWANI_PARTNER");
+      const page = await listOperatorStores(state, q, serviceCityId, "contains", sort, PAGE_SIZE, cursor.from, context, relationModel);
+      if (!page || !Array.isArray(page.stores) || page.stores.length > PAGE_SIZE ||
+        (page.nextCursor !== undefined && (typeof page.nextCursor !== "string" || page.nextCursor.length > 1024)) ||
+        page.stores.some((store) => !store || typeof store.id !== "string" || !store.id.trim() || store.id.length > 128 ||
+          typeof store.partnerActorId !== "string" || !store.partnerActorId.trim() || typeof store.name !== "string" || !store.name.trim() ||
+          !Number.isSafeInteger(store.version) || store.version < 1 || !Array.isArray(store.fulfillmentModes) ||
+          (store.relationModel !== "BTHWANI_PARTNER" && store.relationModel !== "INDEPENDENT_STORE") ||
+          (relationModel && store.relationModel !== relationModel) ||
+          !["unpublished", "hidden", ...(store.relationModel === "BTHWANI_PARTNER" ? ["published"] : [])].includes(store.publicationState)) ||
+        new Set(page.stores.map((store) => store.id)).size !== page.stores.length) {
+        return errorResponse(502, "DEPENDENCY_UNAVAILABLE", "Store registry readback is inconsistent");
+      }
       const ids = [...new Set(page.stores.map((store) => store.partnerActorId))];
       const roles = await readManagedIdentityRolesBatch(ids);
       const byActor = new Map(roles.map((role) => [role.actorId, role]));
