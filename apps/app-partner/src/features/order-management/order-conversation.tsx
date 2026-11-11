@@ -1,16 +1,17 @@
 import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniConversationComposer, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, createOrderConversationMessageAttempt, isDefinitiveDshMobileClientRejection, orderConversationMessageAttemptStorageKey, parseOrderConversationMessageAttempt, type OrderConversationMessageAttempt } from "@bthwani/dsh";
+import { BthwaniConversationMedia } from "@bthwani/design-system/native/conversation-private-media";
+import { createOrderConversationMessageAttempt, isDefinitiveDshMobileClientRejection, type OrderConversationMessageAttempt, orderConversationMessageAttemptStorageKey, parseOrderConversationMessageAttempt } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { File, Paths } from "expo-file-system";
-import * as SecureStore from "../../bootstrap/compatible-storage";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { BthwaniConversationMedia } from "@bthwani/design-system/native/conversation-private-media";
-import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession, role } from "../../bootstrap/identity";
+import * as SecureStore from "../../bootstrap/compatible-storage";
+import { createPartnerDshClient } from "../../bootstrap/dsh-client";
+import { currentIdentityState, getUsableIdentityAccessToken, role, subscribeIdentitySession } from "../../bootstrap/identity";
 import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";
 
-function client() { const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim(); if (!value) throw new Error("DSH_BASE_URL_REQUIRED"); return createDshMobileClient(value, { cryptoRandomUUID: () => Crypto.randomUUID() }); }
+const client = createPartnerDshClient;
 function senderLabel(role: string): string { return role==="operator"?"العمليات":role==="client"?"العميل":role==="partner"?"المتجر":"الكابتن"; }
 
 function conversationActorID(): string { const state = currentIdentityState(); return state.kind === "authenticated" ? state.identity.subject.trim() : ""; }

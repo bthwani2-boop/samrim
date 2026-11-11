@@ -1,21 +1,17 @@
 import { type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, type PartnerScopedFinancialSummary } from "@bthwani/dsh";
-import { PartnerFinancialActivity } from "../wallet/partner-financial-activity";
-import * as Crypto from "expo-crypto";
+import { formatMoney, type PartnerScopedFinancialSummary } from "@bthwani/dsh";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { type ReactNode, useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { createPartnerDshClient } from "../../bootstrap/dsh-client";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";
+import { PartnerFinancialActivity } from "../wallet/partner-financial-activity";
 
 const currentPartnerSessionKey = () => partnerSetupSessionKey(currentIdentityState());
 
-function client() {
-  const baseUrl = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-  if (!baseUrl) throw new Error("DSH_BASE_URL_REQUIRED");
-  return createDshMobileClient(baseUrl, { cryptoRandomUUID: () => Crypto.randomUUID() });
-}
+const client = createPartnerDshClient;
 
 export function PartnerFinancialSummaryCard({ actions, workflow }: { actions?: ReactNode; workflow?: ReactNode }) {
   const theme = useAppearanceTheme();

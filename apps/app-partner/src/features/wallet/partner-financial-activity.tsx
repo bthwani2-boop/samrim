@@ -1,10 +1,10 @@
 import { type resolveTheme, typography } from "@bthwani/design-system";
 import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, type PartnerFinancialActivity as PartnerFinancialActivityRecord, type PartnerFinancialActivityFilters, type PartnerScopedFinancialSummary } from "@bthwani/dsh";
-import * as Crypto from "expo-crypto";
+import { formatMoney, type PartnerFinancialActivityFilters, type PartnerFinancialActivity as PartnerFinancialActivityRecord, type PartnerScopedFinancialSummary } from "@bthwani/dsh";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { createPartnerDshClient } from "../../bootstrap/dsh-client";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";
 
@@ -102,7 +102,7 @@ export function PartnerFinancialActivity({ stores }: { stores: PartnerScopedFina
   const generation = useRef(0);
   const activityClient = useMemo(() => {
     const baseUrl = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-    return baseUrl ? createDshMobileClient(baseUrl, { cryptoRandomUUID: () => Crypto.randomUUID() }) : null;
+    return baseUrl ? createPartnerDshClient() : null;
   }, []);
 
   useEffect(() => { const timer = setTimeout(() => setDebounced(query.trim()), 350); return () => clearTimeout(timer); }, [query]);

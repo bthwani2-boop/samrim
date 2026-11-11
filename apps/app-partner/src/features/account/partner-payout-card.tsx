@@ -1,20 +1,17 @@
 import { borders, radius, type resolveTheme, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniConfirmDialog, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, isDefinitiveDshMobileClientRejection, type PartnerPayoutRequestCreateRequest, type PartnerPayoutRequestView, type PartnerPayoutSummary, type SettlementIntake, settlementIntakeStatusLabel } from "@bthwani/dsh";
+import { formatMoney, isDefinitiveDshMobileClientRejection, type PartnerPayoutRequestCreateRequest, type PartnerPayoutRequestView, type PartnerPayoutSummary, type SettlementIntake, settlementIntakeStatusLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
 import * as SecureStore from "../../bootstrap/compatible-storage";
+import { createPartnerDshClient } from "../../bootstrap/dsh-client";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";
 import { isRecoverablePartnerPayout, matchesPartnerPayoutReadback } from "./partner-payout-readback";
 
-function client() {
-  const baseUrl = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-  if (!baseUrl) throw new Error("DSH_BASE_URL_REQUIRED");
-  return createDshMobileClient(baseUrl, { cryptoRandomUUID: () => Crypto.randomUUID() });
-}
+const client = createPartnerDshClient;
 
 // Pending attempts stay with their original actor across logout and re-login so the
 // canonical idempotency key can be recovered; the current session never selects a different actor's key.

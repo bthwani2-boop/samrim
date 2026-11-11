@@ -1,14 +1,14 @@
 import { typography } from "@bthwani/design-system";
 import { BthwaniIcon, type MobileIconName, useAppearanceTheme } from "@bthwani/design-system/native";
 import {
-  type CatalogInventorySummary, type CatalogStoreOffer, createDshMobileClient, formatMoney, type Order,
+  type CatalogInventorySummary, type CatalogStoreOffer, formatMoney, type Order,
   type PartnerAccessibleStore, type PartnerOrderAttentionCounts, type PartnerScopedFinanceStore,
   type PartnerStoreOrderSummary, scopedCatalogInventorySummary,
 } from "@bthwani/dsh";
-import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { createPartnerDshClient } from "../../bootstrap/dsh-client";
 
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { isMarketplaceStore } from "../../shell/partner-authority";
@@ -127,7 +127,7 @@ export function PartnerDesktopHome({ store, operationalState, operationalKnown, 
       setLoading(false);
       return () => { active = false; };
     }
-    const client = createDshMobileClient(base, { cryptoRandomUUID: () => Crypto.randomUUID() });
+    const client = createPartnerDshClient();
     void (async () => {
       const token = await getUsableIdentityAccessToken();
       if (!stillCurrent()) return;

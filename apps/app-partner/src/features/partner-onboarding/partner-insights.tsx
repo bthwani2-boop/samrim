@@ -1,17 +1,17 @@
 import { typography } from "@bthwani/design-system";
 import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, scopedCatalogInventorySummary, type PartnerOrderAttentionCounts, type PartnerScopedFinanceStore, type PartnerStoreOrderSummary } from "@bthwani/dsh";
-import * as Crypto from "expo-crypto";
+import { formatMoney, type PartnerOrderAttentionCounts, type PartnerScopedFinanceStore, type PartnerStoreOrderSummary, scopedCatalogInventorySummary } from "@bthwani/dsh";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { createPartnerDshClient } from "../../bootstrap/dsh-client";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { isMarketplaceStore } from "../../shell/partner-authority";
-import { usePartnerStoreScope } from "./partner-store-scope-context";
-import { partnerSetupSessionKey } from "./partner-setup-session-scope";
-import { PartnerPerformanceReport } from "./partner-performance-reports";
-import { PartnerStoreRatings } from "./partner-store-ratings";
 import { partnerRepeatBuyerPercentage, verifiedPartnerCustomerActivity } from "./partner-customer-activity";
+import { PartnerPerformanceReport } from "./partner-performance-reports";
+import { partnerSetupSessionKey } from "./partner-setup-session-scope";
+import { PartnerStoreRatings } from "./partner-store-ratings";
+import { usePartnerStoreScope } from "./partner-store-scope-context";
 
 type Snapshot = Readonly<{
   orders: PartnerOrderAttentionCounts | null;
@@ -82,7 +82,7 @@ export function PartnerInsights({ embedded = false }: Readonly<{ embedded?: bool
     const orders = marketplace && (store.owned || store.permissions.includes("orders"));
     const base = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
     if (!base) { setLoading(false); return; }
-    const api = createDshMobileClient(base, { cryptoRandomUUID: () => Crypto.randomUUID() });
+    const api = createPartnerDshClient();
     const stillCurrent = () => {
       return active && Boolean(sessionKey) && currentPartnerSessionKey() === sessionKey &&
         activeScopeKey.current === storeScopeKey;

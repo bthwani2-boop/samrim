@@ -1,19 +1,16 @@
 import { borders, opacity, radius, resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniConfirmDialog, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, type StoreAccessGrant, type StorePayoutBeneficiaryProfile, type StorePayoutRecipientListResponse, type StorePayoutRecipientRecord } from "@bthwani/dsh";
+import { formatMoney, type StoreAccessGrant, type StorePayoutBeneficiaryProfile, type StorePayoutRecipientListResponse, type StorePayoutRecipientRecord } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { createPartnerDshClient } from "../../bootstrap/dsh-client";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";
 
 const currentPartnerSessionKey = () => partnerSetupSessionKey(currentIdentityState());
 
-function client() {
-  const baseUrl = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-  if (!baseUrl) throw new Error("DSH_BASE_URL_REQUIRED");
-  return createDshMobileClient(baseUrl, { cryptoRandomUUID: () => Crypto.randomUUID() });
-}
+const client = createPartnerDshClient;
 
 type RecipientConfirmation =
   | Readonly<{ kind: "select"; storeId: string; grantId: string; storeName: string; beneficiaryName: string; phoneMasked: string; providerKey: string; walletIdentifierMasked: string }>

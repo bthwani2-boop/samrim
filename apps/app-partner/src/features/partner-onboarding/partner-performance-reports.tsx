@@ -1,13 +1,14 @@
 import { typography } from "@bthwani/design-system";
 import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
-import { collectPartnerOrderReportCsv, collectStoreCatalogCsv, createDshMobileClient, formatMoney, orderStateLabel, PARTNER_ORDER_REPORT_PAGE_SIZE, STORE_CATALOG_EXPORT_PAGE_SIZE, type CatalogStoreOffer, type Order, type PartnerAccessibleStore, type PartnerStoreOrderSummary } from "@bthwani/dsh";
+import { type CatalogStoreOffer, collectPartnerOrderReportCsv, collectStoreCatalogCsv, formatMoney, type Order, orderStateLabel, PARTNER_ORDER_REPORT_PAGE_SIZE, type PartnerAccessibleStore, type PartnerStoreOrderSummary, STORE_CATALOG_EXPORT_PAGE_SIZE } from "@bthwani/dsh";
 import * as Clipboard from "expo-clipboard";
 import * as Crypto from "expo-crypto";
 import { File, Paths } from "expo-file-system";
-import * as Sharing from "expo-sharing";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
+import * as Sharing from "expo-sharing";
 import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { createPartnerDshClient } from "../../bootstrap/dsh-client";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { isOfferStockout } from "../store-offer/inventory-stockout";
 import { PartnerInventorySummary } from "./partner-inventory-summary";
@@ -98,7 +99,7 @@ export function PartnerPerformanceReport({ store, view }: { store: PartnerAccess
     setLoading(true);
     const base = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
     if (!base) { setLoading(false); setError("عنوان خدمة البيانات غير متاح."); return () => { active = false; }; }
-    const api = createDshMobileClient(base, { cryptoRandomUUID: () => Crypto.randomUUID() });
+    const api = createPartnerDshClient();
     const stillCurrent = () => {
       return active && Boolean(sessionKey) && currentPartnerSessionKey() === sessionKey &&
         activeScopeKey.current === scopeKey;
@@ -127,7 +128,7 @@ export function PartnerPerformanceReport({ store, view }: { store: PartnerAccess
     setSummaryLoading(true);
     const base = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
     if (!base) { setSummaryLoading(false); setSummaryError("تعذر الوصول إلى خدمة مؤشرات الطلبات."); return () => { active = false; }; }
-    const api = createDshMobileClient(base, { cryptoRandomUUID: () => Crypto.randomUUID() });
+    const api = createPartnerDshClient();
     const stillCurrent = () => {
       return active && Boolean(sessionKey) && currentPartnerSessionKey() === sessionKey &&
         activeScopeKey.current === scopeKey;
@@ -188,7 +189,7 @@ export function PartnerPerformanceReport({ store, view }: { store: PartnerAccess
       if (!base) throw new Error("REPORT_EXPORT_SERVICE_MISSING");
       const token = await getUsableIdentityAccessToken();
       if (!isCurrent()) throw new Error("REPORT_EXPORT_SESSION_CHANGED");
-      const api = createDshMobileClient(base, { cryptoRandomUUID: () => Crypto.randomUUID() });
+      const api = createPartnerDshClient();
       const result = view === "orders"
         ? await collectPartnerOrderReportCsv(store.id, async pageCursor => {
           if (!isCurrent()) throw new Error("REPORT_EXPORT_SESSION_CHANGED");

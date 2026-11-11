@@ -1,5 +1,5 @@
-import { isDefinitiveDshMobileClientRejection, type StorePublicContact, type StorePublicContactInput } from "@bthwani/dsh";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
+import { isDefinitiveDshMobileClientRejection, type StorePublicContact, type StorePublicContactInput } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -7,7 +7,7 @@ import { Switch, Text, TextInput, View } from "react-native";
 import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
 import { partnerSetupSessionKey } from "./partner-setup-session-scope";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
-import { readPartnerStoreContact, savePartnerStoreContact } from "./store-public-contact-client";
+import { readPartnerStoreContact, savePartnerStoreContact } from "./store-readback-client";
 
 type State = { kind: "loading" } | { kind: "error" } | { kind: "ready"; contact: StorePublicContact };
 type Draft = Pick<StorePublicContactInput, "phoneE164" | "email" | "whatsappPhoneE164" | "whatsappEnabled">;

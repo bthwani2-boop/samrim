@@ -1,21 +1,18 @@
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
-import { collectStoreCatalogCsv, createDshMobileClient, STORE_CATALOG_EXPORT_PAGE_SIZE } from "@bthwani/dsh";
+import { collectStoreCatalogCsv, STORE_CATALOG_EXPORT_PAGE_SIZE } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Platform, StyleSheet, Text, View } from "react-native";
+import { createPartnerDshClient } from "../../bootstrap/dsh-client";
 
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";
 
 const currentPartnerSessionKey = () => partnerSetupSessionKey(currentIdentityState());
 
-function client() {
-  const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-  if (!value) throw new Error("DSH_BASE_URL_REQUIRED");
-  return createDshMobileClient(value, { cryptoRandomUUID: () => Crypto.randomUUID() });
-}
+const client = createPartnerDshClient;
 
 export function StoreCatalogExportCard({ storeId, storeName }: Readonly<{ storeId: string; storeName?: string }>) {
   const theme = useAppearanceTheme();

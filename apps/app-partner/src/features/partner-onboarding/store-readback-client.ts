@@ -1,18 +1,13 @@
-import { type CommerceVertical, type CommercialStoreType, type CorrectJoiningCaseRequest, createDshMobileClient, type DshImageUploadInput, type JoiningCaseResponse, type MediaProvenanceInput, type PartnerAccessibleStorePage, type PartnerStoreOperationalAvailabilityMutationResponse, type PartnerStoreOperationalAvailabilityResponse, type ServiceCity, type StoreAccessGrantListResponse, type StoreAccessGrantMutationResponse, type StoreAccessGrantPermissionsRequest, type StoreAccessGrantTransitionRequest, type StoreAccessInvitationCreateRequest, type StoreAccessInvitationDecisionRequest, type StoreAccessPermission, type StoreCaptainInvitationResponse, type StoreCaptainMembershipListResponse, type StoreCaptainMembershipResponse, type StoreCaptainMembershipTransitionRequest, type StoreOperationalAvailabilityRequest } from "@bthwani/dsh";
-import type { CatalogActivityPage, IndependentCustomerPolicyDraftInput, IndependentCustomerPolicyDraftResponse, IndependentCustomerPolicyDraftMutationResponse } from "@bthwani/dsh";
+import type { CatalogActivityPage, IndependentCustomerPolicyDraftInput, IndependentCustomerPolicyDraftMutationResponse, IndependentCustomerPolicyDraftResponse } from "@bthwani/dsh";
+import { type CommerceVertical, type CommercialStoreType, type CorrectJoiningCaseRequest, type DshImageUploadInput, type JoiningCaseResponse, type MediaProvenanceInput, type PartnerAccessibleStorePage, type PartnerStoreOperationalAvailabilityMutationResponse, type PartnerStoreOperationalAvailabilityResponse, type ServiceCity, type StoreAccessGrantListResponse, type StoreAccessGrantMutationResponse, type StoreAccessGrantPermissionsRequest, type StoreAccessGrantTransitionRequest, type StoreAccessInvitationCreateRequest, type StoreAccessInvitationDecisionRequest, type StoreAccessPermission, type StoreCaptainInvitationResponse, type StoreCaptainMembershipListResponse, type StoreCaptainMembershipResponse, type StoreCaptainMembershipTransitionRequest, type StoreOperationalAvailabilityRequest, type StorePublicContactInput } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
+import { createPartnerDshClient } from "../../bootstrap/dsh-client";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { partnerCorrectionIdentityPayload } from "./partner-correction-recovery";
 
-function dshBaseUrl(): string {
-  const explicit = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-  if (!explicit) throw new Error("DSH_BASE_URL_REQUIRED");
-  return explicit;
-}
 
-function dshClient() {
-  return createDshMobileClient(dshBaseUrl(), { cryptoRandomUUID: () => Crypto.randomUUID() });
-}
+
+const dshClient = createPartnerDshClient;
 
 const accessToken = getUsableIdentityAccessToken;
 
@@ -148,4 +143,14 @@ export async function readOwnStoreImages(storeID: string) {
 }
 export async function uploadOwnStoreImage(storeID: string,image: DshImageUploadInput,provenance: MediaProvenanceInput,expectedVersion: number,idempotencyKey: string,correlationID: string,role: "primary" | "cover") {
  return dshClient().uploadPartnerStoreImage(await accessToken(),storeID,image,provenance,expectedVersion,idempotencyKey,correlationID,role);
+}
+
+export async function readPartnerStoreContact(storeID: string) {
+  const token = await accessToken();
+  return dshClient().readPartnerStorePublicContact(token, storeID);
+}
+
+export async function savePartnerStoreContact(storeID: string, input: StorePublicContactInput, key: string, correlation: string) {
+  const token = await accessToken();
+  return dshClient().updatePartnerStorePublicContact(token, storeID, input, key, correlation);
 }

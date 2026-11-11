@@ -1,16 +1,18 @@
-import { createStyles } from "./store-offer-styles";
 import { toAsciiDigits } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type BaseUnit, baseUnitLabel, type CatalogAttributeRule, type CatalogAttributeValueInput, type CatalogCategoryListResponse, type CatalogIdentifierResolution, type CatalogMedia, type CatalogProduct, type CatalogProductProposal, type CatalogStorefrontSection, type CatalogStoreOffer, type CatalogVariant, type CommerceVertical, catalogProductProposalStateLabel, createDshMobileClient, type DshImageUploadInput, formatMoney, isMediaProvenanceInputValid, type MeasurementKind, type MediaProvenanceInput, measurementKindLabel as sharedMeasurementKindLabel, pricingBasisLabel as sharedPricingBasisLabel, quantityPolicyLabel as sharedQuantityPolicyLabel, storeOfferPublicationStateLabel } from "@bthwani/dsh";
-import { MobileStoreCatalogImportWorkspace } from "./mobile-store-catalog-import";
-import { MobileStoreQuickPricesWorkspace } from "./mobile-store-quick-prices";
+import { type BaseUnit, baseUnitLabel, type CatalogAttributeRule, type CatalogAttributeValueInput, type CatalogCategoryListResponse, type CatalogIdentifierResolution, type CatalogMedia, type CatalogProduct, type CatalogProductProposal, type CatalogStorefrontSection, type CatalogStoreOffer, type CatalogVariant, type CommerceVertical, catalogProductProposalStateLabel, type DshImageUploadInput, formatMoney, isMediaProvenanceInputValid, type MeasurementKind, type MediaProvenanceInput, measurementKindLabel as sharedMeasurementKindLabel, pricingBasisLabel as sharedPricingBasisLabel, quantityPolicyLabel as sharedQuantityPolicyLabel, storeOfferPublicationStateLabel } from "@bthwani/dsh";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useKeepAwake } from "expo-keep-awake";
+import { createPartnerDshClient } from "../../bootstrap/dsh-client";
+import { MobileStoreCatalogImportWorkspace } from "./mobile-store-catalog-import";
+import { MobileStoreQuickPricesWorkspace } from "./mobile-store-quick-prices";
+import { createStyles } from "./store-offer-styles";
 
 function AwakeWhileBarcodeScanning() {
   useKeepAwake();
   return null;
 }
+
 import * as Clipboard from "expo-clipboard";
 import * as Crypto from "expo-crypto";
 import * as DocumentPicker from "expo-document-picker";
@@ -21,15 +23,15 @@ import { type ComponentProps, type ComponentType, useCallback, useEffect, useMem
 import { AccessibilityInfo, ActivityIndicator, Image, Linking, Modal, Platform, Pressable, ScrollView, Switch, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { onPartnerProductAction } from "../../shell/partner-product-actions";
-import { PartnerStorePromotionBanner } from "./partner-promotion-banner";
 import { buildPartnerOfferShareURL, buildPartnerStoreWhatsAppURL } from "../partner-onboarding/partner-storefront-url";
-import { StoreCatalogExportCard } from "./store-catalog-export";
-import { StoreProductTrash } from "./store-product-trash";
-import { isOfferStockout } from "./inventory-stockout";
-import { storeOfferServerQuery, type StoreOfferListFilter } from "./catalog-offer-filters";
+import { type StoreOfferListFilter, storeOfferServerQuery } from "./catalog-offer-filters";
 import { isCurrentCatalogProductRequest, mergeCatalogProductPage, releaseCatalogProductPageRequest, replaceCatalogProductInPage } from "./catalog-product-pages";
+import { isOfferStockout } from "./inventory-stockout";
 import { acquireOfferMutation } from "./offer-mutation-lock";
+import { PartnerStorePromotionBanner } from "./partner-promotion-banner";
+import { StoreCatalogExportCard } from "./store-catalog-export";
 import { reconcileStoreProductSave } from "./store-product-save";
+import { StoreProductTrash } from "./store-product-trash";
 
 type OfferState = { kind: "loading" } | { kind: "ready"; offers: ReadonlyArray<CatalogStoreOffer>; proposals: ReadonlyArray<CatalogProductProposal> } | { kind: "error" };
 type RemoteOfferState = { kind: "idle" | "loading" | "error" } | { kind: "ready"; offers: ReadonlyArray<CatalogStoreOffer>; nextCursor: string };
@@ -108,8 +110,8 @@ function buildAttributeInputs(rules: ReadonlyArray<CatalogAttributeRule>, drafts
   return { productValues, variantValues };
 }
 
-function baseUrl(): string { const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim(); if (!value) throw new Error("DSH_BASE_URL_REQUIRED"); return value; }
-const dshClient = () => createDshMobileClient(baseUrl(), { cryptoRandomUUID: () => Crypto.randomUUID() });
+
+const dshClient = createPartnerDshClient;
 
 function errorText(error: unknown): string {
   if (error && typeof error === "object") {

@@ -1,11 +1,11 @@
 import { typography } from "@bthwani/design-system";
 import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, type PublicDiscoveryContentView, type PublicPromotionView } from "@bthwani/dsh";
-import * as Crypto from "expo-crypto";
+import { formatMoney, type PublicDiscoveryContentView, type PublicPromotionView } from "@bthwani/dsh";
 import { Image as ExpoImage } from "expo-image";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, AppState, Easing, PanResponder, Pressable, StyleSheet, Text, View } from "react-native";
+import { createPartnerDshClient } from "../../bootstrap/dsh-client";
 
 type BannerMode = "STATIC" | "CINEMATIC" | "CROSSFADE";
 type BannerData = Readonly<{ promotion: PublicPromotionView; content: PublicDiscoveryContentView | undefined }>;
@@ -14,11 +14,7 @@ function offerLabel(promotion: PublicPromotionView) {
     ? `خصم ${promotion.valueMinor}%`
     : `خصم ${formatMoney(promotion.valueMinor, "YER")}`;
 }
-const service = () => {
-  const base = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-  if (!base) throw new Error("DSH_BASE_URL_REQUIRED");
-  return createDshMobileClient(base, { cryptoRandomUUID: () => Crypto.randomUUID() });
-};
+const service = createPartnerDshClient;
 
 /** Store-scoped, published media. Customer/banner policy controls motion; DSH decides eligible promotions. */
 export function PartnerStorePromotionBanner({ storeId, serviceCityId, canManage, offersOnly = false }: Readonly<{

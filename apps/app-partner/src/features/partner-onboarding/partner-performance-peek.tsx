@@ -1,10 +1,10 @@
 import { typography } from "@bthwani/design-system";
 import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, type PartnerAccessibleStore, type PartnerScopedFinanceStore } from "@bthwani/dsh";
-import * as Crypto from "expo-crypto";
+import { formatMoney, type PartnerAccessibleStore, type PartnerScopedFinanceStore } from "@bthwani/dsh";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { createPartnerDshClient } from "../../bootstrap/dsh-client";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { partnerSetupSessionKey } from "./partner-setup-session-scope";
 
@@ -40,7 +40,7 @@ export function PartnerPerformancePeek({ store }: { store: PartnerAccessibleStor
       if (!base) return;
       const token = await getUsableIdentityAccessToken();
       if (!stillCurrent()) return;
-      const api = createDshMobileClient(base, { cryptoRandomUUID: () => Crypto.randomUUID() });
+      const api = createPartnerDshClient();
       const result = await api.readOwnPartnerFinancialSummary(token);
       if (!stillCurrent()) return;
       const summary = result.summary.stores.find(item => item.storeId === storeID);

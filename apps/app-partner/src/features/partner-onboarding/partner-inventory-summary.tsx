@@ -1,10 +1,10 @@
 import { typography } from "@bthwani/design-system";
 import { useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, scopedCatalogInventorySummary, type CatalogInventorySummary, type PartnerAccessibleStore } from "@bthwani/dsh";
-import * as Crypto from "expo-crypto";
+import { type CatalogInventorySummary, type PartnerAccessibleStore, scopedCatalogInventorySummary } from "@bthwani/dsh";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { createPartnerDshClient } from "../../bootstrap/dsh-client";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { partnerSetupSessionKey } from "./partner-setup-session-scope";
 
@@ -42,7 +42,7 @@ export function PartnerInventorySummary({ store }: Readonly<{ store: PartnerAcce
   void(async()=>{
    const token=await getUsableIdentityAccessToken();
    if(!current())return;
-   const client=createDshMobileClient(base,{cryptoRandomUUID:()=>Crypto.randomUUID()});
+   const client=createPartnerDshClient();
    const result=await client.readOwnStoreInventorySummary(token,store.id);
    if(!current())return;
    const parsed=scopedCatalogInventorySummary(result,store.id);

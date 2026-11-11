@@ -1,10 +1,11 @@
 import { typography } from "@bthwani/design-system";
 import { useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentView, type OperatorDiscoveryContentRegistryResponse } from "@bthwani/dsh";
+import { type DiscoveryContentAnalyticsListResponse, type DiscoveryContentView, type OperatorDiscoveryContentRegistryResponse } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as DocumentPicker from "expo-document-picker";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { createPartnerDshClient } from "../../bootstrap/dsh-client";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";
 
@@ -113,7 +114,7 @@ export function PartnerStoreReels({ storeId, storeName }: { storeId: string; sto
     try {
       const token = await getUsableIdentityAccessToken();
       if (!valid()) return;
-      const result = await createDshMobileClient(baseUrl(), { cryptoRandomUUID: () => Crypto.randomUUID() })
+      const result = await createPartnerDshClient()
         .listPartnerStoreContentAnalytics(token, storeId, contentID);
       if (valid()) setAnalytics(result);
     } catch {

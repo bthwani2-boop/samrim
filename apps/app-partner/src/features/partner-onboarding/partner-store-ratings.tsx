@@ -1,10 +1,10 @@
 import { typography } from "@bthwani/design-system";
 import { useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, type OrderRating, type StoreOrderRatingSummary } from "@bthwani/dsh";
-import * as Crypto from "expo-crypto";
+import { type OrderRating, type StoreOrderRatingSummary } from "@bthwani/dsh";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { createPartnerDshClient } from "../../bootstrap/dsh-client";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { partnerSetupSessionKey } from "./partner-setup-session-scope";
 
@@ -59,7 +59,7 @@ export function PartnerStoreRatings({ storeId }: Readonly<{ storeId: string }>) 
       if (!base || !sessionKey) throw new Error("PARTNER_SESSION_REQUIRED");
       const token = await getUsableIdentityAccessToken();
       if (!valid()) return;
-      const api = createDshMobileClient(base, { cryptoRandomUUID: () => Crypto.randomUUID() });
+      const api = createPartnerDshClient();
       const response = await api.listPartnerStoreOrderRatings(token, storeId, PAGE_SIZE, cursor);
       if (!valid()) return;
       const stats = response.summary;
