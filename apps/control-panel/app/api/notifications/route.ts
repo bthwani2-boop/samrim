@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { listOperatorNotifications } from "../../../src/server/dsh/dsh-bff";
 import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../src/server/dsh/dsh-transport";
+import { listOperatorNotifications } from "../../../src/server/dsh/operations-bff";
 import { readOperatorSession } from "../../../src/server/identity/identity-bff";
 
 function errorResponse(code: string, message: string, status: number) {

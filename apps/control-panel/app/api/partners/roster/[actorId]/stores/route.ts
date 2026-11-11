@@ -1,7 +1,8 @@
 import type { PartnerFirstStoreCreateRequest } from "@bthwani/dsh";
 import { NextResponse } from "next/server";
-import { createOperatorMerchantStore, listOperatorPartnerStores } from "../../../../../../src/server/dsh/dsh-bff";
 import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../../src/server/dsh/dsh-transport";
+import { createOperatorMerchantStore } from "../../../../../../src/server/dsh/joining-bff";
+import { listOperatorPartnerStores } from "../../../../../../src/server/dsh/store-operations-bff";
 import { identityErrorPayload, identityHttpStatus, readOperatorSession } from "../../../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../../../src/server/security/csrf";

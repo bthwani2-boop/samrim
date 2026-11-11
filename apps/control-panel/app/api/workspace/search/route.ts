@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { listCatalogProductRegistry } from "../../../../src/server/dsh/catalog-bff";
-import { listOperatorOperations, listOperatorStores } from "../../../../src/server/dsh/dsh-bff";
+import { listOperatorOperations } from "../../../../src/server/dsh/operations-bff";
+import { listOperatorStores } from "../../../../src/server/dsh/store-operations-bff";
 import { readOperatorSession, searchIdentityRoles } from "../../../../src/server/identity/identity-bff";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";
 

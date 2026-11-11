@@ -44,7 +44,8 @@ function setup() {
       dshErrorPayload: () => ({ code: "DSH_ERROR", message: "DSH read failed" }),
       dshHttpStatus: () => 502,
     },
-    "dsh-bff": { listOperatorStores: async (...args) => {
+    "joining-bff": { listJoiningCases: async () => ({ cases: [], nextCursor: "" }), listStoreAccessRoleAdmissionsForOperator: async () => ({ grants: [], nextCursor: "" }) },
+    "store-operations-bff": { listOperatorStores: async (...args) => {
       calls.push(args);
       const relation = args[8];
       return answer ?? { stores: [market, independent].filter((item) => !relation || item.relationModel === relation), nextCursor: "next-owner-page" };

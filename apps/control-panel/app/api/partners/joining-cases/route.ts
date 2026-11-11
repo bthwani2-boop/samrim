@@ -2,9 +2,8 @@ import { randomUUID } from "node:crypto";
 import { type CreateJoiningCaseRequest, isValidStoreWorkingHours, type JoiningCaseState } from "@bthwani/dsh";
 import { normalizeYemenPhoneE164 } from "@bthwani/identity/phone";
 import { NextResponse } from "next/server";
-
-import { createJoiningCase, listJoiningCases } from "../../../../src/server/dsh/dsh-bff";
 import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-transport";
+import { createJoiningCase, listJoiningCases } from "../../../../src/server/dsh/joining-bff";
 import { isJoiningIntakeHoursShape, isValidOptionalJoiningWalletProvider } from "../../../../src/server/dsh/joining-intake-validation";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../src/server/identity/operator-workspace-access";

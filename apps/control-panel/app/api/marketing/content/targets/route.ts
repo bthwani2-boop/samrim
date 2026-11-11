@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { listCatalogCategories, listCatalogProductRegistry, listCatalogVerticals } from "../../../../../src/server/dsh/catalog-bff";
-import { listOperatorStores } from "../../../../../src/server/dsh/dsh-bff";
 import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../src/server/dsh/dsh-transport";
 import { listMarketingPromotions } from "../../../../../src/server/dsh/marketing-bff";
+import { listOperatorStores } from "../../../../../src/server/dsh/store-operations-bff";
 import { readOperatorSession } from "../../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../../src/server/identity/operator-workspace-access";
 
