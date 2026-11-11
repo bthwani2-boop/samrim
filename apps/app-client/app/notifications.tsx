@@ -1,9 +1,9 @@
 import { AuthenticatedMobileBoundary } from "@bthwani/identity/presentation";
+import { OrderAlertPreferences } from "@bthwani/push-device/order-alert-preferences";
 import { type Href, useRouter } from "expo-router";
 import { useCallback } from "react";
 import { currentIdentityState, restoreIdentitySession, subscribeIdentitySession } from "../src/bootstrap/identity";
 import { NotificationsInbox } from "../src/features/notifications/notifications-inbox";
-import { OrderAlertPreferences } from "../src/features/notifications/order-alert-preferences";
 import { ClientScrollScreen } from "../src/shell/client-shell";
 
 const identity = { restoreIdentitySession, currentIdentityState, subscribe: subscribeIdentitySession };
@@ -11,5 +11,5 @@ const identity = { restoreIdentitySession, currentIdentityState, subscribe: subs
 export default function ClientNotificationsRoute() {
   const router = useRouter();
   const onUnauthenticated = useCallback(() => router.replace("/?returnTo=/notifications" as Href), [router]);
-  return <AuthenticatedMobileBoundary binding={identity} onUnauthenticated={onUnauthenticated}><ClientScrollScreen><NotificationsInbox /><OrderAlertPreferences /></ClientScrollScreen></AuthenticatedMobileBoundary>;
+  return <AuthenticatedMobileBoundary binding={identity} onUnauthenticated={onUnauthenticated}><ClientScrollScreen><NotificationsInbox /><OrderAlertPreferences currentIdentityState={currentIdentityState} subscribeIdentitySession={subscribeIdentitySession} /></ClientScrollScreen></AuthenticatedMobileBoundary>;
 }

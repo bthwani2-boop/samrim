@@ -1,5 +1,6 @@
 import { createDshMobileClient, OrderAlertCursor } from "@bthwani/dsh";
 import { hasNativeNotificationModules, registerOwnPushDevice } from "@bthwani/push-device";
+import { currentOrderAlertToneForIdentity as currentAlertTone } from "@bthwani/push-device/alert-tone";
 import * as Crypto from "expo-crypto";
 import { type Href, useRouter } from "expo-router";
 import { useEffect } from "react";
@@ -7,7 +8,6 @@ import { AppState, Platform } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { clientSessionKey } from "../access/client-session-scope";
 import { clientPushDestination } from "./notification-tap-destination";
-import { currentAlertTone } from "./order-alert-preferences";
 
 const role = "client" as const;
 const alerts = new OrderAlertCursor();
@@ -99,7 +99,7 @@ export function OrderAlertMonitor() {
         if (!stillCurrent()) return;
         // Registration is best effort. Foreground polling remains functional
         // without Firebase credentials before the first EAS development build.
-        const chosenTone = await currentAlertTone();
+        const chosenTone = await currentAlertTone(currentIdentityState);
         if (!stillCurrent()) return;
         const remotePushActive = await registerOwnPushDevice(token, actor, chosenTone, stillCurrent, url);
         if (!stillCurrent()) return;
@@ -115,7 +115,7 @@ export function OrderAlertMonitor() {
         // At most one audible notification per poll; no overlapping alarms.
         const item = newlyUrgent.at(-1);
         if (!item) return;
-        const selected = await currentAlertTone();
+        const selected = await currentAlertTone(currentIdentityState);
         if (!stillCurrent()) return;
         const channel = channels.find(([tone]) => tone === selected) ?? channels[0];
         const notificationId = await Notifications.scheduleNotificationAsync({

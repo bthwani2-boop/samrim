@@ -23,7 +23,7 @@ function production(names, runtime) {
   visit(ast);
   for (const name of names) assert.ok(found.has(name), `Missing production function ${name}`);
   const script = ts.transpileModule(
-    found.values().toArray().join("\n") + "\n({" + names.join(",") + "})",
+    `${found.values().toArray().join("\n")}\n({${names.join(",")}})`,
     { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } },
   ).outputText;
   return runInNewContext(script, runtime);
@@ -40,7 +40,7 @@ function productionLoad(runtime) {
   visit(ast);
   assert.ok(initializer, "missing production inbox load callback");
   const compiled = ts.transpileModule(
-    "const load = " + initializer + "; ({load})",
+    `const load = ${initializer}; ({load})`,
     { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } },
   ).outputText;
   return runInNewContext(compiled, runtime).load;
@@ -151,7 +151,7 @@ test("Captain notifications reuse the protected Safe Area shell rather than a du
   assert.match(route, /<CaptainProtectedScreen>/);
   assert.match(route, /<CaptainScrollScreen>/);
   assert.match(route, /<NotificationsInbox \/>/);
-  assert.match(route, /<OrderAlertPreferences \/>/);
+  assert.match(route, /<OrderAlertPreferences currentIdentityState=\{currentIdentityState\} subscribeIdentitySession=\{subscribeIdentitySession\} \/>/);
   assert.match(wrapper, /SafeAreaView edges=\{\["top"\]\}/);
   assert.doesNotMatch(route, /AuthenticatedMobileBoundary|useRouter\(/);
 });

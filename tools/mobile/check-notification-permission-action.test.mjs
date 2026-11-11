@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import ts from "typescript-ast";
@@ -32,28 +32,41 @@ test("shared notification permissions are checked but never prompted without a u
 test("shared UI reinitializes when actor changes and rejects stale async results", () => {
   assert.match(ui, /toneState\.actorID === actorID \? toneState\.tone : "classic"/);
   assert.match(ui, /setToneState\(\{ actorID, tone: "classic" \}\)/);
-  assert.match(ui, /\[actorID, readTone, isCurrentActor\]/);
+  assert.match(ui, /\[actorID, isCurrentActor\]/);
   assert.match(ui, /active && actorRef\.current === actorID && isCurrentActor\(actorID\)/);
   assert.match(ui, /saved && actorRef\.current === selectedActor && isCurrentActor\(selectedActor\)/);
   assert.match(ui, /setToneState\(\{ actorID: selectedActor, tone: value \}\)/);
-  assert.doesNotMatch(ui, /currentIdentityState|SecureStore|Crypto\.digestStringAsync/);
+  assert.doesNotMatch(ui, /SecureStore|Crypto\.digestStringAsync/);
   assert.match(storage, /currentOrderAlertTone/);
   assert.match(storage, /actorIDNow\(\) === selectedActor/);
   assert.match(storage, /if \(!isCurrentActor\(selectedActor\)\) return false/);
 });
 
-for (const app of ["app-client", "app-partner", "app-captain"]) {
-  const file = path.resolve(root, "apps", app, "src/features/notifications/order-alert-preferences.tsx");
-  const source = readFileSync(file, "utf8");
 
-  test(app + " subscribes to identity changes and consumes the canonical push-device owner", () => {
-    const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-    assert.equal(ast.parseDiagnostics.length, 0);
-    assert.match(source, /useSyncExternalStore\(subscribeIdentitySession, currentActorID, \(\) => ""\)/);
-    assert.match(source, /from "@bthwani\/push-device\/alert-tone"/);
-    assert.match(source, /from "@bthwani\/push-device\/order-alert-preferences"/);
-    assert.match(source, /currentOrderAlertTone\(currentActorID\)/);
-    assert.match(source, /state\.kind === "authenticated"/);
-    assert.doesNotMatch(source, /getPermissionsAsync|requestPermissionsAsync|SecureStore|Crypto\.digestStringAsync/);
+test("one shared Identity-subscribed preference bridge guards actor switches", () => {
+  assert.match(ui, /export function OrderAlertPreferences\(/);
+  assert.match(ui, /useSyncExternalStore\(subscribeIdentitySession, currentActorID, \(\) => ""\)/);
+  assert.match(ui, /actorIDFromAlertIdentity\(currentIdentityState\(\)\)/);
+  assert.match(ui, /isCurrentActor = useCallback/);
+  assert.match(storage, /currentOrderAlertToneForIdentity/);
+  assert.match(storage, /currentOrderAlertTone\(\(\) => actorIDFromAlertIdentity\(currentIdentityState\(\)\)\)/);
+});
+
+for (const app of ["app-client", "app-partner", "app-captain"]) {
+  const losingPath = path.resolve(root, "apps", app, "src/features/notifications/order-alert-preferences.tsx");
+  const routePath = app === "app-partner" ? "app/(app)/notifications.tsx" : "app/notifications.tsx";
+  const route = readFileSync(path.resolve(root, "apps", app, routePath), "utf8");
+  const monitor = readFileSync(path.resolve(root, "apps", app, "src/features/notifications/order-alert-monitor.tsx"), "utf8");
+
+  test(`${app} consumes canonical shared prefs and tone without a parallel app wrapper`, () => {
+    assert.equal(existsSync(losingPath), false, "obsolete duplicate UI wrapper must be removed");
+    assert.match(route, /from "@bthwani\/push-device\/order-alert-preferences"/);
+    assert.match(route, /currentIdentityState=\{currentIdentityState\}/);
+    assert.match(route, /subscribeIdentitySession=\{subscribeIdentitySession\}/);
+    assert.match(monitor, /from "@bthwani\/push-device\/alert-tone"/);
+    assert.match(monitor, /currentOrderAlertToneForIdentity as currentAlertTone/);
+    assert.match(monitor, /currentAlertTone\(currentIdentityState\)/);
+    assert.doesNotMatch(route, /src\/features\/notifications\/order-alert-preferences/);
+    assert.doesNotMatch(monitor, /from "\.\/order-alert-preferences"/);
   });
 }

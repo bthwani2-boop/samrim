@@ -1,11 +1,11 @@
 import { createDshMobileClient, OrderAlertCursor } from "@bthwani/dsh";
 import { hasNativeNotificationModules, registerOwnPushDevice } from "@bthwani/push-device";
+import { currentOrderAlertToneForIdentity as currentAlertTone } from "@bthwani/push-device/alert-tone";
 import * as Crypto from "expo-crypto";
 import { type Href, useRouter } from "expo-router";
 import { useEffect } from "react";
 import { AppState, Platform } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
-import { currentAlertTone } from "./order-alert-preferences";
 
 const role = "partner" as const;
 const alerts = new OrderAlertCursor();
@@ -82,7 +82,7 @@ export function OrderAlertMonitor() {
         const token = await getUsableIdentityAccessToken();
         // Registration is best effort. Foreground polling remains functional
         // without Firebase credentials before the first EAS development build.
-        const chosenTone = await currentAlertTone();
+        const chosenTone = await currentAlertTone(currentIdentityState);
         const remotePushActive = await registerOwnPushDevice(token, actor, chosenTone, () => {
           const current = currentIdentityState();
           return !cancelled && current.kind === "authenticated" && current.identity.subject.trim() === actor;
@@ -98,8 +98,9 @@ export function OrderAlertMonitor() {
         const alertPermission = await Notifications.getPermissionsAsync();
         if (!alertPermission.granted) return;
         // At most one audible notification per poll; no overlapping alarms.
-        const item = newlyUrgent.at(-1)!;
-        const selected = await currentAlertTone();
+        const item = newlyUrgent.at(-1);
+        if (!item) return;
+        const selected = await currentAlertTone(currentIdentityState);
         const channel = channels.find(([tone]) => tone === selected) ?? channels[0];
         const latestSession = currentIdentityState();
         if (cancelled || latestSession.kind !== "authenticated" || latestSession.identity.subject.trim() !== actor) return;
