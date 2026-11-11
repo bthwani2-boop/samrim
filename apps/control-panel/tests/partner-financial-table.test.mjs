@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import nextConfig from "../next.config.mjs";
 import test from "node:test";
 import vm from "node:vm";
 
@@ -100,4 +102,16 @@ test("component guards first-page and cursor-page success, failure, and loading 
   assert.match(source, /CASH_COMMISSION/);
   assert.match(source, /offsetMinor/);
   assert.match(source, /ledgerTransactionId/);
+});
+
+test("Partner finance links open the canonical WLT receivables page with the selected actor", async () => {
+  const storePanel = await readFile(new URL("../src/features/stores/store-profile-detail-panels.tsx", import.meta.url), "utf8");
+  const receivables = await readFile(new URL("../app/(workspace)/finance/partner-commission-receivables/page.tsx", import.meta.url), "utf8");
+  assert.ok(source.includes('href={"/finance/partner-commission-receivables?partnerActorId=" + encodeURIComponent(partnerActorId)}'));
+  assert.ok(storePanel.includes('href={"/finance/partner-commission-receivables?partnerActorId=" + encodeURIComponent(store.partnerActorId)}'));
+  assert.match(receivables, /partnerActorId: first\("partnerActorId"\)\.trim\(\)\.slice\(0, 128\)/);
+  assert.match(receivables, /<FinanceWorkspace resource="partner-commission-receivables">/);
+  assert.equal(existsSync(new URL("../app/(workspace)/finance/partner-earnings/page.tsx", import.meta.url)), false);
+  const legacy = (await nextConfig.redirects()).filter((rule) => rule.source === "/finance/partner-earnings");
+  assert.deepEqual(legacy, [{ source: "/finance/partner-earnings", destination: "/finance/partner-commission-receivables", permanent: false }]);
 });

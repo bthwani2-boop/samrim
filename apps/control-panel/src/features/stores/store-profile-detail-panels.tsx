@@ -198,7 +198,7 @@ export function StoreProfileDetailPanels({ activeTab, store, partner, partnerErr
         {store.partnerActorId ? <PartnerFinancialRegister partnerActorId={store.partnerActorId} storeId={store.id} /> :
           <p className="store-profile-muted">لا يمكن قراءة الكشف المالي قبل ربط المتجر بحساب الشريك.</p>}
         <div className="store-profile-finance-actions">
-          <Link className="button button-secondary" href={"/finance/partner-earnings?partnerActorId=" + encodeURIComponent(store.partnerActorId)}>مركز مالية الشريك</Link>
+          <Link className="button button-secondary" href={"/finance/partner-commission-receivables?partnerActorId=" + encodeURIComponent(store.partnerActorId)}>مركز مالية الشريك</Link>
           <Link className="button button-quiet" href="/finance/partner-store-commissions">اتفاقيات عمولة المتاجر</Link>
         </div>
       </> : <p className="store-profile-muted" role="status">هذه البيانات المالية تخص سوق بثواني فقط؛ لا يوجد سجل مالي لطلبات المتجر المستقل في WLT ضمن المسار الحالي.</p>}

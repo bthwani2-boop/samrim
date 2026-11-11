@@ -33,10 +33,16 @@ const nextConfig = {
       destination: "/partners?tab=directory&relationModel=INDEPENDENT_STORE",
       permanent: false,
     };
+    const legacyPartnerEarnings = {
+      source: "/finance/partner-earnings",
+      destination: "/finance/partner-commission-receivables",
+      permanent: false,
+    };
+    const legacyRoutes = [legacyStoreRegistry, legacyPartnerEarnings];
     // Canonicalize browser navigation in local development only.
     const canonicalOrigin = process.env.CONTROL_PANEL_PUBLIC_ORIGIN?.trim();
-    if (process.env.NODE_ENV !== "development" || !/^http:\/\/localhost:\d+$/.test(canonicalOrigin ?? "")) return [legacyStoreRegistry];
-    return [legacyStoreRegistry, {
+    if (process.env.NODE_ENV !== "development" || !/^http:\/\/localhost:\d+$/.test(canonicalOrigin ?? "")) return legacyRoutes;
+    return [...legacyRoutes, {
       source: "/:path*",
       has: [
         { type: "host", value: "127\\.0\\.0\\.1" },
