@@ -13,14 +13,17 @@ func TestManagedRoleRecoveryMigrationIsRegistered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load identity migrations: %v", err)
 	}
-	if len(records) < 29 {
-		t.Fatalf("identity migration count = %d, want at least 29 including recovery and HR permissions", len(records))
+	if len(records) != 30 {
+		t.Fatalf("identity migration count = %d, want 30 including recovery, HR permissions and legal-name index retirement", len(records))
 	}
 	if recovery := records[27]; recovery.Version != 28 || recovery.Name != "028_operator_recovery_reservation.sql" {
 		t.Fatalf("operator recovery migration = %#v, want v28 reservation", recovery)
 	}
 	if hrPermission := records[28]; hrPermission.Version != 29 || hrPermission.Name != "029_operator_hr_permission.sql" {
 		t.Fatalf("HR permission migration = %#v, want v29 operator HR permission", hrPermission)
+	}
+	if retiredIndex := records[29]; retiredIndex.Version != 30 || retiredIndex.Name != "030_retire_redundant_legal_name_version_index.sql" {
+		t.Fatalf("legal-name index retirement migration = %#v, want v30", retiredIndex)
 	}
 }
 

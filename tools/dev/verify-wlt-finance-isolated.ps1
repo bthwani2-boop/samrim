@@ -3,15 +3,16 @@ param(
   [string]$DshTestPattern = '',
   [string]$WltHttpTestPattern = '',
   [string]$CrossServiceTestPattern = '',
-  [string]$IdentityTestPattern = ''
+  [string]$IdentityTestPattern = '',
+  [string]$IdentityStorageTestPattern = ''
 )
 $ErrorActionPreference = 'Stop'
 # The DSH -> real WLT proof must start with TWO pristine, separate databases.
 # Do not mix it with tests that already migrate the primary WLT database.
-if ($CrossServiceTestPattern -and ($WltTestPattern -or $DshTestPattern -or $WltHttpTestPattern -or $IdentityTestPattern)) {
+if ($CrossServiceTestPattern -and ($WltTestPattern -or $DshTestPattern -or $WltHttpTestPattern -or $IdentityTestPattern -or $IdentityStorageTestPattern)) {
   throw 'CROSS_SERVICE_FINANCE_PROOF=BLOCKED select cross-service alone with -WltTestPattern empty'
 }
-if ($IdentityTestPattern -and ($WltTestPattern -or $DshTestPattern -or $WltHttpTestPattern)) {
+if (($IdentityTestPattern -or $IdentityStorageTestPattern) -and ($WltTestPattern -or $DshTestPattern -or $WltHttpTestPattern)) {
   throw 'IDENTITY_TWO_ACTOR_PROOF=BLOCKED select isolated Identity alone with -WltTestPattern empty'
 }
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -147,6 +148,15 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Identity two-actor isolated session tests failed' }
     Assert-ProofRan 'Identity two-actor sessions' $identityProofOutput
     Write-Output 'IDENTITY_TWO_ACTOR_ISOLATED_TESTS=PASS'
+  }
+  if ($IdentityStorageTestPattern) {
+    # Reuse the same disposable Postgres owner for Identity schema migrations.
+    # Its storage tests create and drop only their own isolated test databases.
+    $env:IDENTITY_DATABASE_URL = $databaseUrl
+    & go test ./services/identity/backend/internal/storage/postgres -run $IdentityStorageTestPattern -v -count=1 -timeout 12m 2>&1 | Tee-Object -Variable identitySchemaProofOutput
+    if ($LASTEXITCODE -ne 0) { throw 'Identity isolated SQL migration tests failed' }
+    Assert-ProofRan 'Identity SQL migrations' $identitySchemaProofOutput
+    Write-Output 'IDENTITY_SQL_ISOLATED_TESTS=PASS'
   }
   if ($WltHttpTestPattern) {
     & go test ./services/wlt/backend/internal/transport/http -run $WltHttpTestPattern -v -count=1 -timeout 180s 2>&1 | Tee-Object -Variable wltHttpProofOutput
