@@ -173,9 +173,6 @@ var requiredTables = []schemaRelationExpectation{
 	{name: "dsh.wallet_provider_logo_uploads", columns: []string{"idempotency_key", "provider_key", "expected_version", "request_hash", "object_key", "logo_uri", "content_sha256", "content_type", "acting_actor_id", "correlation_id", "creator", "source_description", "source_uri", "rights_statement", "rights_uri", "created_at"}, constraints: []string{"wallet_provider_logo_uploads_pkey", "wallet_provider_logo_uploads_provider_key_fkey", "wallet_provider_logo_uploads_object_key_key"}},
 	{name: "dsh.wallet_provider_mutation_idempotency", columns: []string{"idempotency_key", "request_hash", "provider_key", "operation", "expected_version", "created_at"}, constraints: []string{"wallet_provider_mutation_idempotency_pkey"}},
 	{name: "dsh.wallet_provider_audit", columns: []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "provider_key", "from_version", "result_version", "from_active", "to_active", "request_hash", "display_name_ar", "created_at"}, constraints: []string{"wallet_provider_audit_pkey"}},
-}
-
-var journeyRefoundationRelations = []schemaRelationExpectation{
 	{
 		name:        "dsh.joining_case_review_photos",
 		columns:     []string{"joining_case_id", "image_bytes", "content_type", "content_sha256", "uploaded_by_field_actor_id", "updated_at"},

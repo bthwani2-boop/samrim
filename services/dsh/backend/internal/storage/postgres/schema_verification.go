@@ -79,11 +79,6 @@ func VerifySchema(ctx context.Context, db *sql.DB, records []MigrationRecord) er
 			return err
 		}
 	}
-	for _, relation := range journeyRefoundationRelations {
-		if err := verifySchemaRelation(ctx, db, relation.name, relation.columns, relation.forbiddenColumns, relation.constraints, relation.indexes); err != nil {
-			return err
-		}
-	}
 	if err := verifyStoreRelationConstraints(ctx, db); err != nil {
 		return err
 	}
