@@ -89,6 +89,8 @@ async function checkSingleFlightOrderMutation(action, shouldFail) {
     client: () => fakeClient,
     load: async () => { readbacks += 1; if (blockedReadback) await blockedReadback; },
     canFulfillOrder: () => true,
+    unreadScope: "current-session",
+    currentPartnerSessionKey: () => "current-session",
     requestScopeKey: "current-session",
     activeScopeKey: { current: "current-session" },
     setOrders: () => {},
@@ -193,5 +195,191 @@ test("Partner Order canonical refresh evicts old Captain sidecars but later page
     assert.deepEqual(JSON.parse(JSON.stringify(assignments)), append ? { "previous-order": { id: "previous-assignment" } } : {}, "assignment sidecars must obey append/replace");
     assert.deepEqual(JSON.parse(JSON.stringify(captainChoices)), append ? { "store-1": [{ actorId: "previous-captain", label: "previous" }] } : {}, "membership sidecars must obey append/replace");
     assert.deepEqual(JSON.parse(JSON.stringify(dispatchOffers)), append ? { "previous-order": { state: "offered" } } : {}, "dispatch offer sidecars must obey append/replace");
+  }
+});
+
+test("Partner Order mutations cannot dispatch after the Identity session or Store scope switches during token acquisition", async () => {
+  const actions = [
+    { name: "transition", state: "CREATED", args: (order) => [order, "PARTNER_ACCEPTED"] },
+    ...guardedOrderActions,
+  ];
+  for (const changedDimension of ["identity-session", "store-scope"]) {
+    for (const action of actions) {
+      const order = {
+        id: "order-1",
+        storeId: "store-1",
+        version: 7,
+        state: action.state,
+        fulfillmentMode: action.mode ?? "CUSTOMER_PICKUP",
+        storeCashHandoffState: "AWAITING_STORE_HANDOFF",
+      };
+      let currentSession = "session-a";
+      const activeScopeKey = { current: "scope-a" };
+      const orderActionLocks = { current: new Set() };
+      let releaseToken;
+      const pendingToken = new Promise((resolve) => { releaseToken = resolve; });
+      let writes = 0;
+      let readbacks = 0;
+      const countWrite = async () => {
+        writes += 1;
+        return { order, offer: { state: "offered" } };
+      };
+      const context = {
+        busy: "",
+        loading: false,
+        orderActionLocks,
+        tryAcquireOrderAction,
+        setBusy: () => {},
+        setError: () => {},
+        getUsableIdentityAccessToken: () => pendingToken,
+        currentPartnerSessionKey: () => currentSession,
+        unreadScope: "session-a",
+        requestScopeKey: "scope-a",
+        activeScopeKey,
+        client: () => ({
+          transitionStoreOrder: countWrite,
+          proposePartnerOrderAdjustment: countWrite,
+          confirmPartnerCaptainCashHandoff: countWrite,
+          confirmCaptainStoreHandoff: countWrite,
+          createPartnerStoreCaptainDispatchOffer: countWrite,
+        }),
+        load: async () => { readbacks += 1; },
+        canFulfillOrder: () => true,
+        setOrders: () => {},
+        setAdjustmentQuantities: () => {},
+        pickupCodes: { "order-1": "123456" },
+        toAsciiDigits: (value) => value,
+        setPickupCodes: () => {},
+        dispatchOffers: {},
+        setDispatchOffers: () => {},
+        console: { error: () => {} },
+      };
+      const mutate = realPartnerOrderAction(action.name, context);
+      const running = mutate(...action.args(order));
+      assert.equal(orderActionLocks.current.has(order.id), true);
+      if (changedDimension === "identity-session") currentSession = "session-b";
+      else activeScopeKey.current = "scope-b";
+      releaseToken("token-issued-for-old-session");
+      await running;
+      assert.equal(writes, 0, action.name + " must not send an Order mutation after " + changedDimension + " changes");
+      assert.equal(readbacks, 0, action.name + " must not consume stale Order readback after " + changedDimension + " changes");
+      assert.equal(orderActionLocks.current.size, 0, action.name + " must release its lock after abort");
+    }
+  }
+});
+
+
+test("late successful Partner Order responses do not update another Identity session or Store scope", async () => {
+  for (const change of ["identity-session", "store-scope"]) {
+    for (const action of [
+      { name: "proposeAdjustment", state: "PARTNER_ACCEPTED", args: (order) => [order, "line-1", "REMOVE_ITEM"] },
+      { name: "confirmStorePickup", state: "READY_FOR_PICKUP", args: (order) => [order] },
+      { name: "dispatchToStoreCaptain", state: "READY_FOR_DISPATCH", mode: "PARTNER_CAPTAIN", args: (order) => [order, "captain-1"] },
+    ]) {
+      const order = {
+        id: "order-1", storeId: "store-1", version: 1, state: action.state,
+        fulfillmentMode: action.mode ?? "CUSTOMER_PICKUP",
+      };
+      let currentSession = "session-a";
+      const activeScopeKey = { current: "scope-a" };
+      const orderActionLocks = { current: new Set() };
+      let completeWrite;
+      const pendingWrite = new Promise((resolve) => { completeWrite = resolve; });
+      let writes = 0;
+      let staleUIUpdates = 0;
+      let readbacks = 0;
+      const sendWrite = () => { writes++; return pendingWrite; };
+      const context = {
+        busy: "", loading: false, orderActionLocks, tryAcquireOrderAction,
+        setBusy: () => {}, setError: () => {},
+        getUsableIdentityAccessToken: async () => "token-a",
+        currentPartnerSessionKey: () => currentSession,
+        unreadScope: "session-a",
+        requestScopeKey: "scope-a",
+        activeScopeKey,
+        client: () => ({
+          proposePartnerOrderAdjustment: sendWrite,
+          transitionStoreOrder: sendWrite,
+          createPartnerStoreCaptainDispatchOffer: sendWrite,
+        }),
+        load: async () => { readbacks++; },
+        canFulfillOrder: () => true,
+        setOrders: () => { staleUIUpdates++; },
+        setAdjustmentQuantities: () => { staleUIUpdates++; },
+        pickupCodes: { "order-1": "123456" },
+        toAsciiDigits: (value) => value,
+        setPickupCodes: () => { staleUIUpdates++; },
+        dispatchOffers: {},
+        setDispatchOffers: () => { staleUIUpdates++; },
+        console: { error: () => {} },
+      };
+      const mutate = realPartnerOrderAction(action.name, context);
+      const inFlight = mutate(...action.args(order));
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(writes, 1, action.name + " should have started under the old session");
+      if (change === "identity-session") currentSession = "session-b";
+      else activeScopeKey.current = "scope-b";
+      completeWrite({ order, offer: { state: "offered" } });
+      await inFlight;
+      assert.equal(staleUIUpdates, 0, action.name + " cannot publish late result after " + change);
+      assert.equal(readbacks, 0, action.name + " cannot refresh stale Order scope after " + change);
+      assert.equal(orderActionLocks.current.size, 0);
+    }
+  }
+});
+
+
+test("callbacks captured from a former Partner scope cannot start a new Order action", async () => {
+  const actions = [
+    { name: "transition", state: "CREATED", args: (order) => [order, "PARTNER_ACCEPTED"] },
+    ...guardedOrderActions,
+  ];
+  for (const change of ["identity-session", "store-scope"]) {
+    for (const action of actions) {
+      const order = {
+        id: "order-1", storeId: "store-1", version: 7, state: action.state,
+        fulfillmentMode: action.mode ?? "CUSTOMER_PICKUP",
+        storeCashHandoffState: "AWAITING_STORE_HANDOFF",
+      };
+      const locks = { current: new Set() };
+      let tokenRequests = 0;
+      let busyUpdates = 0;
+      let writes = 0;
+      const sendWrite = async () => { writes++; return { order, offer: {} }; };
+      const context = {
+        busy: "", loading: false,
+        orderActionLocks: locks,
+        tryAcquireOrderAction,
+        currentPartnerSessionKey: () => change === "identity-session" ? "session-b" : "session-a",
+        unreadScope: "session-a",
+        requestScopeKey: "scope-a",
+        activeScopeKey: { current: change === "store-scope" ? "scope-b" : "scope-a" },
+        setBusy: () => { busyUpdates++; },
+        setError: () => {},
+        getUsableIdentityAccessToken: async () => { tokenRequests++; return "old-token"; },
+        client: () => ({
+          transitionStoreOrder: sendWrite,
+          proposePartnerOrderAdjustment: sendWrite,
+          confirmPartnerCaptainCashHandoff: sendWrite,
+          confirmCaptainStoreHandoff: sendWrite,
+          createPartnerStoreCaptainDispatchOffer: sendWrite,
+        }),
+        load: async () => {},
+        canFulfillOrder: () => true,
+        setOrders: () => {},
+        setAdjustmentQuantities: () => {},
+        pickupCodes: { "order-1": "123456" },
+        toAsciiDigits: (value) => value,
+        setPickupCodes: () => {},
+        dispatchOffers: {},
+        setDispatchOffers: () => {},
+        console: { error: () => {} },
+      };
+      await realPartnerOrderAction(action.name, context)(...action.args(order));
+      assert.equal(tokenRequests, 0, action.name + " must not obtain a token for a stale " + change);
+      assert.equal(writes, 0, action.name + " must not issue a stale write");
+      assert.equal(busyUpdates, 0, action.name + " must not update new session busy state");
+      assert.equal(locks.current.size, 0, action.name + " must not acquire an obsolete lock");
+    }
   }
 });

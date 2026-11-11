@@ -51,7 +51,7 @@ test("real partner order list clears prior scope and prevents old mutations from
   assert.match(source, /if \(requestScopeKey !== activeScopeKey\.current \|\| !unreadScope \|\| currentPartnerSessionKey\(\) !== unreadScope\) return;\s*const generation/u);
   assert.match(source, /useLayoutEffect\(\(\) => \{[\s\S]*?setOrders\(\[\]\);[\s\S]*?setAssignments\(\{\}\);[\s\S]*?setChatOrderId\(""\);/u);
   assert.match(source, /if \(currentPartnerSessionKey\(\) !== unreadScope \|\| !isCurrentOrderListRequest\(generation, requestScopeKey, loadGeneration\.current, activeScopeKey\.current\)\) return;/u);
-  assert.match(source, /finally \{ releaseAction\(\); if \(requestScopeKey === activeScopeKey\.current\) setBusy\(""\); \}/u);
+  assert.match(source, /finally \{ releaseAction\(\); if \(requestScopeKey === activeScopeKey\.current && currentPartnerSessionKey\(\) === unreadScope\) setBusy\(""\); \}/u);
 });
 
 test("failed Partner order search can clear both q and pinned orderId without hiding empty-result recovery", () => {
