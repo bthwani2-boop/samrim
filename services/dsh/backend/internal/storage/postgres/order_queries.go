@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -67,10 +68,21 @@ type PartnerOrderAttentionCounts struct {
 }
 
 type partnerOrdersCursor struct {
-	CreatedAt time.Time `json:"createdAt"`
-	ID        string    `json:"id"`
-	State     string    `json:"state"`
-	Query     string    `json:"query"`
+	CreatedAt  time.Time `json:"createdAt"`
+	ID         string    `json:"id"`
+	State      string    `json:"state"`
+	Query      string    `json:"query"`
+	StoreScope string    `json:"storeScope"`
+}
+
+// A Partner continuation is valid only for the same canonical authorized
+// Store set. Sort a copy so authorization query ordering cannot expire it.
+func partnerOrdersStoreScope(storeIDs []string) string {
+	canonical := append([]string(nil), storeIDs...)
+	sort.Strings(canonical)
+	scope := strings.Join(canonical, "\x00")
+	digest := sha256.Sum256([]byte(scope))
+	return base64.RawURLEncoding.EncodeToString(digest[:])
 }
 
 func encodePartnerOrdersCursor(cursor partnerOrdersCursor) string {
@@ -78,7 +90,7 @@ func encodePartnerOrdersCursor(cursor partnerOrdersCursor) string {
 	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
-func decodePartnerOrdersCursor(raw, state, query string) (partnerOrdersCursor, error) {
+func decodePartnerOrdersCursor(raw, state, query, storeScope string) (partnerOrdersCursor, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || len(raw) > 4096 {
 		return partnerOrdersCursor{}, ErrPartnerOrdersInvalidCursor
@@ -91,7 +103,7 @@ func decodePartnerOrdersCursor(raw, state, query string) (partnerOrdersCursor, e
 	if err := json.Unmarshal(decoded, &cursor); err != nil {
 		return partnerOrdersCursor{}, ErrPartnerOrdersInvalidCursor
 	}
-	if cursor.State != state || cursor.Query != query || cursor.ID == "" || cursor.CreatedAt.IsZero() {
+	if cursor.State != state || cursor.Query != query || cursor.StoreScope != storeScope || cursor.ID == "" || cursor.CreatedAt.IsZero() {
 		return partnerOrdersCursor{}, ErrPartnerOrdersInvalidCursor
 	}
 	return cursor, nil
@@ -141,6 +153,7 @@ func ListOrdersForPartnerStores(ctx context.Context, db *sql.DB, storeIDs []stri
 		return PartnerOrdersPage{}, ErrPartnerOrdersInvalidQuery
 	}
 	statesKey := strings.Join(states, ",")
+	storeScope := partnerOrdersStoreScope(storeIDs)
 	args := []any{pq.Array(storeIDs)}
 	where := "o.store_id = ANY($1)"
 	if len(states) > 0 {
@@ -152,7 +165,7 @@ func ListOrdersForPartnerStores(ctx context.Context, db *sql.DB, storeIDs []stri
 		where += " AND (o.id ILIKE $" + strconv.Itoa(len(args)) + " ESCAPE '!' OR s.name ILIKE $" + strconv.Itoa(len(args)) + " ESCAPE '!')"
 	}
 	if strings.TrimSpace(cursor) != "" {
-		decoded, err := decodePartnerOrdersCursor(cursor, statesKey, query)
+		decoded, err := decodePartnerOrdersCursor(cursor, statesKey, query, storeScope)
 		if err != nil {
 			return PartnerOrdersPage{}, err
 		}
@@ -190,7 +203,7 @@ func ListOrdersForPartnerStores(ctx context.Context, db *sql.DB, storeIDs []stri
 	if len(items) > limit {
 		last := items[limit-1]
 		page.Orders = items[:limit]
-		page.NextCursor = encodePartnerOrdersCursor(partnerOrdersCursor{CreatedAt: last.CreatedAt, ID: last.ID, State: statesKey, Query: query})
+		page.NextCursor = encodePartnerOrdersCursor(partnerOrdersCursor{CreatedAt: last.CreatedAt, ID: last.ID, State: statesKey, Query: query, StoreScope: storeScope})
 	}
 	var lineErr error
 	for index := range page.Orders {

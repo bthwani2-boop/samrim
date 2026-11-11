@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -32,6 +33,12 @@ func TestPartnerOrderPageRejectsUnsafeSearchAndCursor(t *testing.T) {
 		if _, err := postgres.ListOrdersForPartnerStores(ctx, db, stores, nil, "", 10, cursor); !errors.Is(err, postgres.ErrPartnerOrdersInvalidCursor) {
 			t.Fatalf("unsafe Partner order cursor was not rejected before SQL: %v", err)
 		}
+	}
+	// A structurally valid cursor from a different Store scope must be denied
+	// before any database connection is attempted, not silently trim the page.
+	foreignScopeCursor := base64.RawURLEncoding.EncodeToString([]byte(`{"createdAt":"2026-11-11T10:00:00Z","id":"order_01","state":"","query":"","storeScope":"foreign_store_scope"}`))
+	if _, err := postgres.ListOrdersForPartnerStores(ctx, db, stores, nil, "", 10, foreignScopeCursor); !errors.Is(err, postgres.ErrPartnerOrdersInvalidCursor) {
+		t.Fatalf("foreign Store-scope cursor unexpectedly reached SQL: %v", err)
 	}
 }
 
@@ -220,6 +227,11 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		if err != nil || len(partnerPage1.Orders) != 2 || partnerPage1.NextCursor == "" {
 			t.Fatalf("partner orders first page = %+v err=%v", partnerPage1, err)
 		}
+		// The same opaque cursor must not be reused if the server-authorized
+		// Store set changes, even though no forbidden Order is returned by SQL.
+		if _, err := postgres.ListOrdersForPartnerStores(ctx, db, []string{"some_other_store"}, nil, "", 2, partnerPage1.NextCursor); !errors.Is(err, postgres.ErrPartnerOrdersInvalidCursor) {
+			t.Fatalf("Partner cursor ignored authorized Store-scope change: %v", err)
+		}
 		partnerPage2, err := postgres.ListOrdersForPartnerStores(ctx, db, partnerStores, nil, "", 2, partnerPage1.NextCursor)
 		if err != nil || len(partnerPage2.Orders) != 1 || partnerPage2.NextCursor != "" {
 			t.Fatalf("partner orders second page = %+v err=%v", partnerPage2, err)
@@ -231,6 +243,24 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		noAccess, err := postgres.ListPartnerOrdersAuthorizedStoreIDs(ctx, db, "another-partner")
 		if err != nil || len(noAccess) != 0 {
 			t.Fatalf("unauthorized partner unexpectedly has store access: %+v err=%v", noAccess, err)
+		}
+		// Store grants are returned as a set, not in a stable query order.
+		// Reordering the same two authorized Stores must preserve continuation.
+		insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{
+			ID: "store_operator_ops_second", PartnerActorID: "partner_operator_ops", Name: "متجر ثانٍ",
+		})
+		bothStores, err := postgres.ListPartnerOrdersAuthorizedStoreIDs(ctx, db, "partner_operator_ops")
+		if err != nil || len(bothStores) != 2 {
+			t.Fatalf("expected two authorized Partner Stores: %+v err=%v", bothStores, err)
+		}
+		pageWithBoth, err := postgres.ListOrdersForPartnerStores(ctx, db, bothStores, nil, "", 2, "")
+		if err != nil || len(pageWithBoth.Orders) != 2 || pageWithBoth.NextCursor == "" {
+			t.Fatalf("multi-Store Partner page missing cursor: %+v err=%v", pageWithBoth, err)
+		}
+		reversed := []string{bothStores[1], bothStores[0]}
+		continuation, err := postgres.ListOrdersForPartnerStores(ctx, db, reversed, nil, "", 2, pageWithBoth.NextCursor)
+		if err != nil || len(continuation.Orders) != 1 || continuation.Orders[0].ID != "operator_order_01" {
+			t.Fatalf("authorized Store order changed Partner continuation: %+v err=%v", continuation, err)
 		}
 		var pickupOrder *postgres.OrderRecord
 		for index := range clientOrders {
