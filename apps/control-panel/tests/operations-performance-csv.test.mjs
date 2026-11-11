@@ -45,7 +45,7 @@ async function actualCsv(report, range) {
   runInNewContext(canonical, exporter);
   const allDays = report?.days ?? [];
   const trigger = runInNewContext(`${exportSource}\nexportReport;`, {
-    report, allDays, days: allDays.slice(-range), range,
+    report, allDays, days: allDays.slice(-range), range, pending: false,
     downloadRegistryCsv: exporter.download,
   });
   trigger();
@@ -58,7 +58,7 @@ async function actualCsv(report, range) {
 }
 
 test("operator daily operations CSV preserves DSH metadata, headers, filename and BOM", async () => {
-  const exported = await actualCsv(dailyReport(), 7);
+  const exported = await actualCsv(dailyReport(7), 7);
   assert.equal(exported.filename, "bthwani-operations-daily-7.csv");
   assert.equal(exported.clicked, true);
   assert.equal(exported.href, "blob:operations-report");
@@ -73,8 +73,8 @@ test("operator daily operations CSV preserves DSH metadata, headers, filename an
     '"day","orders","delivered","awaiting_dispatch","in_progress","failed","cancelled"',
   ]);
   assert.equal(lines.length, 12, "four provenance lines, header and seven daily rows");
-  assert.equal(lines[5], '"2026-10-24","24","23","1","0","0","0"');
-  assert.equal(lines[11], '"2026-10-30","30","29","1","0","0","0"');
+  assert.equal(lines[5], '"2026-10-01","1","0","1","0","0","0"');
+  assert.equal(lines[11], '"2026-10-07","7","6","1","0","0","0"');
 });
 
 test("30 day export keeps the full period and original filename", async () => {
@@ -101,6 +101,25 @@ test("OperationsPerformance retains canonical report pagination/availability wit
   assert.doesNotMatch(operationsSource, /const safeCsv/);
   assert.match(operationsSource, /disabled=\{pending \|\| !report \|\| days\.length !== range\}/);
   assert.match(operationsSource, /allDays\.slice\(-range\)/);
+});
+
+test("report selection binds the visible result, loading and errors to the selected DSH period", () => {
+  const start = operationsSource.indexOf("  const activeResult = ");
+  const end = operationsSource.indexOf("  useEffect(", start);
+  assert.ok(start >= 0 && end > start, "Production report has one period-bound selected result");
+  const snippet = operationsSource.slice(start, end);
+  const select = runInNewContext(`(function(result, range) { ${snippet} return {report, pending, error}; })`);
+  const thirty = dailyReport(30);
+  assert.equal(select({range: 30, report: thirty, error: "", pending: false}, 7).report, null);
+  assert.equal(select({range: 30, report: thirty, error: "previous failure", pending: false}, 7).pending, true);
+  assert.equal(select({range: 30, report: thirty, error: "previous failure", pending: false}, 7).error, "");
+  assert.equal(select({range: 30, report: thirty, error: "", pending: false}, 30).report, thirty);
+  assert.equal(select({range: 7, report: dailyReport(7), error: "read failed", pending: false}, 7).error, "read failed");
+});
+
+test("CSV handler refuses a 30-day source on a 7-day screen", async () => {
+  const exported = await actualCsv(dailyReport(30), 7);
+  assert.equal(exported.clicked, false, "No stale cross-period CSV should be downloaded");
 });
 
 test("no download is produced when the report is absent or has no records", async () => {
