@@ -38,6 +38,7 @@ func TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay(t *testing.T) 
 		const (
 			cityID        = "multi-checkout-city"
 			clientID      = "multi-checkout-client"
+			otherClientID = "multi-checkout-other-client"
 			firstStoreID  = "multi-checkout-store-one"
 			secondStoreID = "multi-checkout-store-two"
 			firstCartID   = "multi-checkout-cart-one"
@@ -59,6 +60,17 @@ func TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay(t *testing.T) 
 		for _, cart := range []struct{ id, storeID string }{{firstCartID, firstStoreID}, {secondCartID, secondStoreID}} {
 			if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commerce_carts(id,client_actor_id,store_id,state,version) VALUES($1,$2,$3,'checked_out',1)", cart.id, clientID, cart.storeID); err != nil {
 				t.Fatalf("insert cart %s: %v", cart.id, err)
+			}
+		}
+
+		// A second genuinely distinct Client owns two carts for the same public
+		// Stores. This fixture is scoped to the disposable migrated DSH database.
+		for _, cart := range []struct{ id, storeID string }{
+			{"multi-checkout-other-cart-one", firstStoreID},
+			{"multi-checkout-other-cart-two", secondStoreID},
+		} {
+			if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commerce_carts(id,client_actor_id,store_id,state,version) VALUES($1,$2,$3,'checked_out',1)", cart.id, otherClientID, cart.storeID); err != nil {
+				t.Fatalf("insert other Client cart %s: %v", cart.id, err)
 			}
 		}
 
@@ -133,8 +145,33 @@ func TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay(t *testing.T) 
 		if _, _, err := postgres.CreateMultiStoreCheckout(ctx, db, changed, createKey, postgres.HashMultiStoreCheckoutRequest(changed)); !errors.Is(err, postgres.ErrMultiStoreCheckoutIdempotencyConflict) {
 			t.Fatalf("changed same-key create = %v; want idempotency conflict", err)
 		}
-		if _, err := postgres.ReadMultiStoreCheckoutForClient(ctx, db, checkoutID, "another-client"); !errors.Is(err, postgres.ErrMultiStoreCheckoutNotFound) {
-			t.Fatalf("cross-client parent read = %v; want not found", err)
+		// Positive two-actor proof: B creates its own parent from its two
+		// persisted carts, without acquiring A's private parent or replay.
+		otherInput := postgres.MultiStoreCheckoutInput{
+			ID: "multi-checkout-other-parent", ClientActorID: otherClientID,
+			Children: []postgres.MultiStoreCheckoutChildInput{
+				{CartID: "multi-checkout-other-cart-one", StoreID: firstStoreID, AddressID: "other-address-one", CartVersion: 1, ExpectedTotalAmountMinor: 1900, FulfillmentMode: "BTHWANI_CAPTAIN"},
+				{CartID: "multi-checkout-other-cart-two", StoreID: secondStoreID, AddressID: "other-address-two", CartVersion: 1, ExpectedTotalAmountMinor: 1900, FulfillmentMode: "BTHWANI_CAPTAIN"},
+			},
+		}
+		otherParent, otherReplay, err := postgres.CreateMultiStoreCheckout(ctx, db, otherInput, "other-client-create-key", postgres.HashMultiStoreCheckoutRequest(otherInput))
+		if err != nil || otherReplay || otherParent.ClientActorID != otherClientID || len(otherParent.Children) != 2 {
+			t.Fatalf("second Client two-cart parent = %+v replay=%t err=%v", otherParent, otherReplay, err)
+		}
+		if _, err := postgres.ReadMultiStoreCheckoutForClient(ctx, db, checkoutID, otherClientID); !errors.Is(err, postgres.ErrMultiStoreCheckoutNotFound) {
+			t.Fatalf("Client B read Client A parent = %v; want not found", err)
+		}
+		if _, err := postgres.ReadMultiStoreCheckoutForClient(ctx, db, otherParent.ID, clientID); !errors.Is(err, postgres.ErrMultiStoreCheckoutNotFound) {
+			t.Fatalf("Client A read Client B parent = %v; want not found", err)
+		}
+		otherReusingAKey := otherInput
+		otherReusingAKey.ID = "other-client-reuse-attempt"
+		if _, _, err := postgres.CreateMultiStoreCheckout(ctx, db, otherReusingAKey, createKey, postgres.HashMultiStoreCheckoutRequest(otherReusingAKey)); !errors.Is(err, postgres.ErrMultiStoreCheckoutIdempotencyConflict) {
+			t.Fatalf("cross-client idempotency identity reused A's parent: %v", err)
+		}
+		otherReadback, err := postgres.ReadMultiStoreCheckoutForClient(ctx, db, otherParent.ID, otherClientID)
+		if err != nil || otherReadback.ID != otherParent.ID || len(otherReadback.Children) != 2 {
+			t.Fatalf("second Client canonical readback = %+v err=%v", otherReadback, err)
 		}
 
 		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,total_amount_minor,currency,version,payment_intent_id,payment_method,payment_state,fulfillment_mode,payment_cash_amount_minor)

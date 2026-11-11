@@ -2,13 +2,17 @@ param(
   [string]$WltTestPattern = 'TestPartnerStoreFinanceAndRecipientSettlementLifecycle|TestCashIn|TestStoreCommercialAgreementLifecycleAndOrderSnapshots|TestPaymentRetryLostResponseAndParallelWorkers',
   [string]$DshTestPattern = '',
   [string]$WltHttpTestPattern = '',
-  [string]$CrossServiceTestPattern = ''
+  [string]$CrossServiceTestPattern = '',
+  [string]$IdentityTestPattern = ''
 )
 $ErrorActionPreference = 'Stop'
 # The DSH -> real WLT proof must start with TWO pristine, separate databases.
 # Do not mix it with tests that already migrate the primary WLT database.
-if ($CrossServiceTestPattern -and ($WltTestPattern -or $DshTestPattern -or $WltHttpTestPattern)) {
+if ($CrossServiceTestPattern -and ($WltTestPattern -or $DshTestPattern -or $WltHttpTestPattern -or $IdentityTestPattern)) {
   throw 'CROSS_SERVICE_FINANCE_PROOF=BLOCKED select cross-service alone with -WltTestPattern empty'
+}
+if ($IdentityTestPattern -and ($WltTestPattern -or $DshTestPattern -or $WltHttpTestPattern)) {
+  throw 'IDENTITY_TWO_ACTOR_PROOF=BLOCKED select isolated Identity alone with -WltTestPattern empty'
 }
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Set-Location $repositoryRoot
@@ -19,7 +23,9 @@ if (-not [string]::IsNullOrWhiteSpace($env:DOCKER_HOST)) {
 }
 function Assert-ProofRan([string]$label, [object[]]$lines) {
   $text = @($lines) -join "`n"
-  $started = [regex]::Matches($text, '(?m)^=== RUN[ \t]+(\S+)')
+  # Exclude slash-qualified Go subtests: they are printed under their
+  # top-level parent, which must pass as one selected proof.
+  $started = [regex]::Matches($text, '(?m)^=== RUN[ \t]+([^/\s\r\n]+)[ \t]*\r?$')
   # Go prints nested/subprocess PASS lines indented; count only top-level
   # selected tests here. The go test exit code already rejects child failures.
   $passed = [regex]::Matches($text, '(?m)^--- PASS:[ \t]+(\S+)')
@@ -132,6 +138,15 @@ try {
     Write-Output 'WLT_FINANCE_ISOLATED_TESTS=PASS'
   } else {
     Write-Output 'WLT_FINANCE_ISOLATED_TESTS=NOT_RUN'
+  }
+  if ($IdentityTestPattern) {
+    # Identity creates and drops its own per-test database under this exclusively
+    # owned tmpfs PostgreSQL instance. Never aim it at the active Identity DB.
+    $env:IDENTITY_DATABASE_URL = $databaseUrl
+    & go test ./services/identity/backend/internal/session -run $IdentityTestPattern -v -count=1 -timeout 6m 2>&1 | Tee-Object -Variable identityProofOutput
+    if ($LASTEXITCODE -ne 0) { throw 'Identity two-actor isolated session tests failed' }
+    Assert-ProofRan 'Identity two-actor sessions' $identityProofOutput
+    Write-Output 'IDENTITY_TWO_ACTOR_ISOLATED_TESTS=PASS'
   }
   if ($WltHttpTestPattern) {
     & go test ./services/wlt/backend/internal/transport/http -run $WltHttpTestPattern -v -count=1 -timeout 180s 2>&1 | Tee-Object -Variable wltHttpProofOutput
