@@ -57,6 +57,16 @@ function matchesCaptainFundingAttempt(intent: CashInFundingIntent, attempt: Fund
 
 const attemptKey = (actorID: string) => `bthwani.captain.cash-in.pending.v1.${encodeURIComponent(actorID)}`;
 
+function sameFundingAttempt(stored: FundingAttempt | null, expected: FundingAttempt): boolean {
+  return Boolean(stored &&
+    stored.actorID === expected.actorID &&
+    stored.idempotencyKey === expected.idempotencyKey &&
+    stored.correlationID === expected.correlationID &&
+    stored.amountMinor === expected.amountMinor &&
+    stored.providerKey === expected.providerKey &&
+    stored.fundingIntentID === expected.fundingIntentID);
+}
+
 function hasCurrentFundingSession(sessionKey: string): boolean {
   return Boolean(sessionKey) && captainSessionKey(currentIdentityState()) === sessionKey;
 }
@@ -175,6 +185,15 @@ export function CaptainCashInPanel() {
     fundingInFlight.current = true;
     setBusy(true); setError(""); setNotice("");
     try {
+      // Never overwrite an unknown financial attempt left by an older session.
+      // Resume only the exact attempt already displayed from the owner readback.
+      const storedAttempt = parseCaptainFundingAttempt(
+        await SecureStore.getItemAsync(attemptKey(actorID)), actorID,
+      );
+      if (!isCurrent()) throw new Error("CAPTAIN_CASH_IN_SESSION_CHANGED");
+      if (pending ? !sameFundingAttempt(storedAttempt, pending) : Boolean(storedAttempt)) {
+        throw new Error("CASH_IN_STORED_ATTEMPT_CHANGED");
+      }
       await SecureStore.setItemAsync(attemptKey(actorID), JSON.stringify(attempt));
       if (!isCurrent()) throw new Error("CAPTAIN_CASH_IN_SESSION_CHANGED");
       setPending(attempt);
@@ -189,6 +208,12 @@ export function CaptainCashInPanel() {
           !response.intent.id.trim() || response.intent.id.length > 128 ||
           (pending?.fundingIntentID && response.intent.id !== pending.fundingIntentID)) throw new Error("CASH_IN_RESPONSE_MISMATCH");
       const confirmed: FundingAttempt = { ...attempt, fundingIntentID: response.intent.id };
+      // A response from WLT must not overwrite a newer session's saved attempt.
+      const beforeConfirm = parseCaptainFundingAttempt(
+        await SecureStore.getItemAsync(attemptKey(actorID)), actorID,
+      );
+      if (!isCurrent()) throw new Error("CAPTAIN_CASH_IN_SESSION_CHANGED");
+      if (!sameFundingAttempt(beforeConfirm, attempt)) throw new Error("CASH_IN_STORED_ATTEMPT_CHANGED");
       await SecureStore.setItemAsync(attemptKey(actorID), JSON.stringify(confirmed));
       if (!isCurrent()) throw new Error("CAPTAIN_CASH_IN_SESSION_CHANGED");
       setPending(confirmed);
@@ -211,13 +236,8 @@ export function CaptainCashInPanel() {
         finalIntent = (await client.reconcileOwnFundingIntent(token, finalIntent.id, `${attempt.idempotencyKey}_recover`, attempt.correlationID)).intent;
       }
       if (!isCurrent()) throw new Error("CAPTAIN_CASH_IN_SESSION_CHANGED");
-      if (["SETTLED", "FAILED"].includes(finalIntent.state)) {
-        await SecureStore.deleteItemAsync(attemptKey(actorID));
-        setPending(null);
-        setNotice(finalIntent.state === "SETTLED" ? "نجح شحن المحفظة، وسيظهر الرصيد بعد التحديث." : "لم تتم إضافة الرصيد. يمكنك المحاولة مجددًا.");
-      } else {
-        setNotice("سُجل طلب الشحن، وسيظهر الرصيد بعد تأكيد المزود المالي.");
-      }
+      // Only load() reconciles and retires a durable funding attempt after
+      // checking WLT's canonical owner readback and the saved idempotency key.
       if (isCurrent()) await load();
     } catch (cause) {
       console.error("DSH captain Cash-In request failed", cause);

@@ -104,11 +104,13 @@ test("cash-in protects simulator/reconciliation and retains canonical idempotent
   const confirmed = request.indexOf("await SecureStore.setItemAsync(attemptKey(actorID), JSON.stringify(confirmed));", create);
   const simulate = request.indexOf("client.simulateOwnFundingIntent(", confirmed);
   const reconcile = request.indexOf("client.reconcileOwnFundingIntent(", simulate);
-  const cleared = request.indexOf("await SecureStore.deleteItemAsync(attemptKey(actorID));", reconcile);
-  assert.ok(create >= 0 && confirmed > create && simulate > confirmed && reconcile > simulate && cleared > reconcile);
-  for (const [start, end] of [[create, confirmed], [confirmed, simulate], [simulate, reconcile], [reconcile, cleared]]) {
+  const ownerReadback = request.indexOf("if (isCurrent()) await load();", reconcile);
+  assert.ok(create >= 0 && confirmed > create && simulate > confirmed && reconcile > simulate && ownerReadback > reconcile);
+  for (const [start, end] of [[create, confirmed], [confirmed, simulate], [simulate, reconcile], [reconcile, ownerReadback]]) {
     assert.match(request.slice(start, end), /if \(!isCurrent\(\)\) throw new Error\("CAPTAIN_CASH_IN_SESSION_CHANGED"\)/);
   }
+  assert.doesNotMatch(request, /SecureStore\.deleteItemAsync\(/, "only canonical owner readback may retire a confirmed financial attempt");
+  assert.match(source, /if \(terminal\) \{[\s\S]*?SecureStore\.deleteItemAsync\(attemptKey\(actorID\)\)/);
   assert.match(request, /fundingInFlight\.current = true/);
   assert.match(request, /fundingInFlight\.current = false/);
   assert.match(request, /if \(isCurrent\(\)\) setBusy\(false\)/);

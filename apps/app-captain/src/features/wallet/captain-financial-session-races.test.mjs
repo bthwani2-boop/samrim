@@ -43,8 +43,8 @@ function production(source, name, runtime) {
   return runInNewContext(js, runtime)[name];
 }
 
-function makeCashHarness(tokenGate = deferred()) {
-  const state = { current: actor("captain-a", "login-1"), saved: [], created: 0, errors: [], notices: [] };
+function makeCashHarness(tokenGate = deferred(), onCreate) {
+  const state = { current: actor("captain-a", "login-1"), saved: [], stored: null, deleted: [], loads: 0, created: 0, errors: [], notices: [] };
   const enteredToken = deferred();
   const ref = { current: false };
   const runtime = {
@@ -61,23 +61,35 @@ function makeCashHarness(tokenGate = deferred()) {
     toAsciiDigits: value => value,
     attemptKey: id => `bthwani.captain.cash-in.pending.v1.${encodeURIComponent(id)}`,
     Crypto: { randomUUID: () => "test-correlation" },
-    SecureStore: { setItemAsync: async (key, value) => { state.saved.push({ key, value }); } },
+    SecureStore: {
+      getItemAsync: async () => state.stored,
+      setItemAsync: async (key, value) => { state.stored = value; state.saved.push({ key, value }); },
+      deleteItemAsync: async key => { state.deleted.push(key); state.stored = null; },
+    },
     getUsableIdentityAccessToken: async () => {
       enteredToken.resolve();
       return tokenGate.promise;
     },
     captainClient: () => ({
-      createOwnFundingIntent: async () => { state.created++; throw new Error("Former session invoked payment"); },
+      createOwnFundingIntent: async () => {
+        state.created++;
+        if (onCreate) return onCreate(state);
+        throw new Error("Former session invoked payment");
+      },
     }),
     setBusy: () => {},
     setError: value => state.errors.push(value),
     setNotice: value => state.notices.push(value),
     setPending: () => {},
     setAmount: () => {},
+    load: async () => { state.loads++; },
     console: { error: () => {} },
     __DEV__: false,
   };
   runtime.hasCurrentFundingSession = production(cashSource, "hasCurrentFundingSession", runtime);
+  runtime.parseCaptainFundingAttempt = production(cashSource, "parseCaptainFundingAttempt", runtime);
+  runtime.sameFundingAttempt = production(cashSource, "sameFundingAttempt", runtime);
+  runtime.matchesCaptainFundingRequest = production(cashSource, "matchesCaptainFundingRequest", runtime);
   return { state, runtime, enteredToken, tokenGate, create: production(cashSource, "createIntent", runtime) };
 }
 
@@ -148,6 +160,63 @@ function makePayoutHarness({ tokenGate = deferred(), mutationGate = null } = {})
     requestIntake: production(payoutSource, "requestIntake", runtime),
   };
 }
+
+test("Cash-In refuses to overwrite another saved attempt after a stale wallet snapshot", async () => {
+  const h = makeCashHarness();
+  const savedAttempt = {
+    version: 1, actorID: "captain-a", amountMinor: 2500,
+    idempotencyKey: "captain_cashin_existing", correlationID: "captain_cashin_corr_existing",
+  };
+  h.state.stored = JSON.stringify(savedAttempt);
+  await h.create();
+  assert.equal(h.state.stored, JSON.stringify(savedAttempt));
+  assert.equal(h.state.saved.length, 0, "no replacement of an unknown financial reference");
+  assert.equal(h.state.created, 0, "no second WLT funding request");
+  assert.equal(h.runtime.fundingInFlight.current, false);
+  assert.ok(h.state.errors.some(Boolean), "ask for canonical retry/recovery");
+});
+
+test("Cash-In rejects a changed durable attempt before persisting a WLT response", async () => {
+  const token = deferred();
+  token.resolve("token");
+  const h = makeCashHarness(token, async state => {
+    state.stored = JSON.stringify({
+      version: 1, actorID: "captain-a", amountMinor: 2500,
+      idempotencyKey: "captain_cashin_other", correlationID: "captain_cashin_corr_other",
+    });
+    return {
+      intent: {
+        id: "intent-a", actorType: "captain", actorId: "captain-a",
+        fundingPurpose: "CAPTAIN_TOPUP", amountMinor: 2500, currency: "YER",
+        providerKey: "PROVIDER-A", state: "SETTLED",
+      }, simulator: false,
+    };
+  });
+  await h.create();
+  assert.equal(h.state.created, 1);
+  assert.equal(h.state.saved.length, 1, "old session must not overwrite another stored attempt");
+  assert.match(h.state.stored, /captain_cashin_other/);
+  assert.equal(h.state.deleted.length, 0);
+  assert.equal(h.state.loads, 0, "unknown attempt requires explicit canonical recovery");
+});
+
+test("Cash-In keeps terminal attempt until the sole WLT owner readback reconciles it", async () => {
+  const token = deferred();
+  token.resolve("token");
+  const h = makeCashHarness(token, async () => ({
+    intent: {
+      id: "intent-a", actorType: "captain", actorId: "captain-a",
+      fundingPurpose: "CAPTAIN_TOPUP", amountMinor: 2500, currency: "YER",
+      providerKey: "PROVIDER-A", state: "SETTLED",
+    }, simulator: false,
+  }));
+  await h.create();
+  assert.equal(h.state.created, 1);
+  assert.equal(h.state.saved.length, 2, "retain idempotent recovery with WLT intent identity");
+  assert.equal(h.state.deleted.length, 0, "submitter must never retire the durable retry");
+  assert.equal(h.state.loads, 1, "canonical owner readback decides terminal cleanup");
+  assert.match(h.state.stored, /intent-a/);
+});
 
 for (const [label, replacement] of [
   ["renewed same-actor session", actor("captain-a", "login-2")],
