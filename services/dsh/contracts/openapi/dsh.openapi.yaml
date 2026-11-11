@@ -4612,12 +4612,26 @@ components:
       required: [relationModel, commercialModel, policyVersion, updatedAt, changedByActorId, changeReason]
       additionalProperties: false
       properties:
-        relationModel: { type: string, enum: [BTHWANI_PARTNER, INDEPENDENT_STORE] }
-        commercialModel: { type: string, enum: [COMMISSION, SUBSCRIPTION] }
-        policyVersion: { type: integer, minimum: 1 }
-        updatedAt: { type: string, format: date-time }
-        changedByActorId: { type: string, minLength: 1, maxLength: 128 }
-        changeReason: { type: string, minLength: 8, maxLength: 500 }
+        relationModel:
+          type: string
+          enum: [BTHWANI_PARTNER, INDEPENDENT_STORE]
+        commercialModel:
+          type: string
+          enum: [COMMISSION, SUBSCRIPTION]
+        policyVersion:
+          type: integer
+          minimum: 1
+        updatedAt:
+          type: string
+          format: date-time
+        changedByActorId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        changeReason:
+          type: string
+          minLength: 8
+          maxLength: 500
     StoreRelationCommercialModelDefaultsResponse:
       type: object
       required: [defaults]
@@ -4633,10 +4647,20 @@ components:
       required: [relationModel, commercialModel, expectedVersion, reason]
       additionalProperties: false
       properties:
-        relationModel: { type: string, enum: [BTHWANI_PARTNER, INDEPENDENT_STORE] }
-        commercialModel: { type: string, enum: [COMMISSION, SUBSCRIPTION] }
-        expectedVersion: { type: integer, minimum: 0, maximum: 999999 }
-        reason: { type: string, minLength: 8, maxLength: 500 }
+        relationModel:
+          type: string
+          enum: [BTHWANI_PARTNER, INDEPENDENT_STORE]
+        commercialModel:
+          type: string
+          enum: [COMMISSION, SUBSCRIPTION]
+        expectedVersion:
+          type: integer
+          minimum: 0
+          maximum: 999999
+        reason:
+          type: string
+          minLength: 8
+          maxLength: 500
     StoreRelationCommercialModelUpdateResponse:
       type: object
       required: [default, idempotentReplay]
@@ -4644,7 +4668,8 @@ components:
       properties:
         default:
           $ref: "#/components/schemas/StoreRelationCommercialModelDefault"
-        idempotentReplay: { type: boolean }
+        idempotentReplay:
+          type: boolean
     StoreTypeCommissionDefault:
       type: object
       required: [commercialStoreTypeId, fulfillmentMode, suggestedCommissionRateBps, defaultVersion, updatedAt]

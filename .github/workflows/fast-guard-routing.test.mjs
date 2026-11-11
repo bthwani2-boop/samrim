@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const workflow = readFileSync(new URL("./fast-guard.yml", import.meta.url), "utf8");
@@ -80,6 +80,12 @@ test("Fast Guard executes committed session-isolation and finance CSV regression
   const step = workflow.slice(start, end);
   for (const path of [
     "apps/app-captain/src/features/captain-operations/captain-home-session.test.mjs",
+    "apps/app-captain/src/bootstrap/captain-session-scope.test.mjs",
+    "apps/app-captain/src/features/captain-operations/captain-presence-session.test.mjs",
+    "apps/app-captain/src/features/captain-operations/captain-readiness.test.mjs",
+    "apps/app-captain/src/features/captain-operations/captain-offers-session.test.mjs",
+    "apps/app-captain/src/features/wallet/wallet-session-isolation.test.mjs",
+    "apps/app-captain/src/features/wallet/captain-financial-session-races.test.mjs",
     "apps/app-captain/src/features/captain-operations/captain-offer-mission-suppression.test.mjs",
     "apps/app-captain/src/features/captain-operations/captain-offer-poll-freshness.test.mjs",
     "apps/app-captain/src/features/captain-operations/captain-offer-response-freshness.test.mjs",
@@ -88,6 +94,13 @@ test("Fast Guard executes committed session-isolation and finance CSV regression
     "apps/control-panel/tests/finance-report-csv-safety.test.mjs",
   ]) {
     assert.ok(step.includes(`          ${path}\n`), `missing protected regression test: ${path}`);
+  }
+  const protectedPaths = [...step.matchAll(/^\s{10}((?:apps|services|tools)\/[^\s]+\.test\.mjs)$/gm)]
+    .map((match) => match[1]);
+  assert.ok(protectedPaths.length >= 30, "mandatory Node protection must remain broad");
+  for (const file of protectedPaths) {
+    assert.ok(existsSync(new URL(`../../${file}`, import.meta.url)),
+      `Fast Guard still selects a retired test path: ${file}`);
   }
 });
 
