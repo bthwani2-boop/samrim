@@ -30,6 +30,7 @@ async function main() {
     assert.ok(Array.isArray(body?.agreements), "AGREEMENT_ARRAY_REQUIRED");
     assert.ok(body.agreements.every(item => item && item.storeId === storeID),
       "CROSS_STORE_AGREEMENT_READBACK");
+    console.log("PARTNER_AGREEMENT_GET=PASS_200_SCOPE_MATCH agreements=" + (body.agreements.length ? "NONEMPTY" : "EMPTY"));
     const validModel = agreement =>
       ["COMMISSION", "SUBSCRIPTION", "HYBRID"].includes(agreement.commercialModel) &&
       ["NONE", "MONTHLY", "ANNUAL"].includes(agreement.billingPeriod) &&
@@ -52,7 +53,7 @@ async function main() {
       return {
         warning: text.includes("تعذر التحقق من الاتفاقية"),
         active: text.includes("الاتفاقية سارية"),
-        dashboard: text.includes("أحدث الطلبات"),
+        dashboard: text.includes("لوحة الشريك"),
         rtl: document.documentElement.dir === "rtl",
         noOverflow: document.documentElement.scrollWidth <= innerWidth + 2,
       };
@@ -124,7 +125,8 @@ async function main() {
     console.log("PARTNER_AGREEMENT_NAV=PASS_DESKTOP_MOBILE_DIRECT_ACCESS");
     console.log(hasLegacyBridge
       ? "PARTNER_AGREEMENT=PASS_LEGACY_COMMISSION_DISPLAY_ONLY_WLT_UPGRADE_STILL_REQUIRED"
-      : "PARTNER_AGREEMENT=PASS_COMPATIBLE_CONTRACT_READBACK");
+      : body.agreements.length === 0 ? "PARTNER_AGREEMENT=PASS_EMPTY_AGREEMENT_READBACK_NO_FINANCE_LIFECYCLE_PROVEN"
+        : "PARTNER_AGREEMENT=PASS_COMPATIBLE_CONTRACT_READBACK");
   } finally {
     if (page) await page.close().catch(() => {});
     await browser.close();

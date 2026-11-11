@@ -64,6 +64,7 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
   const selectedID=selectedStore?.id;
   const marketplace=selectedStore?.relationModel==="BTHWANI_PARTNER";
   const independent=selectedStore?.relationModel==="INDEPENDENT_STORE";
+  const canReviewAgreement=Boolean(selectedStore?.owned && (marketplace||independent));
   const canOperate=Boolean(marketplace && selectedStore && (selectedStore.owned||selectedStore.permissions.includes("store_operations")));
   const can=(permission:"promotions"|"catalog")=>Boolean(selectedStore&&(selectedStore.owned||selectedStore.permissions.includes(permission)));
   const canOrders=authority.canUse("orders");
@@ -137,8 +138,8 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
   useFocusEffect(useCallback(()=>{
     let active=true;
     setAgreementState(null);
-    if(accountOnly || !marketplace || !actor || !sessionScope || !selectedStore?.owned) return ()=>{active=false;};
-    const scope=selectedStore.id;
+    if(accountOnly || !canReviewAgreement || !selectedID || !actor || !sessionScope) return ()=>{active=false;};
+    const scope=selectedID;
     const isCurrent=()=>{
       const current=currentIdentityState();
       return active && stillCurrentSession() && current.kind==="authenticated" && current.identity.subject===actor;
@@ -148,7 +149,7 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
       setAgreementState({actor,sessionScope,storeId:scope,status:ownStoreAgreementReadiness(agreements,scope,actor)});
     }).catch(()=>{if(isCurrent())setAgreementState({actor,sessionScope,storeId:scope,status:"UNAVAILABLE"});});
     return ()=>{active=false;};
-  },[accountOnly,actor,sessionScope,stillCurrentSession,marketplace,selectedStore?.id,selectedStore?.owned]));
+  },[accountOnly,actor,sessionScope,stillCurrentSession,canReviewAgreement,selectedID]));
   const commercialAgreement:StoreAgreementReadback=selectedStore?.owned && actor && stillCurrentSession()
     && agreementState?.actor===actor && agreementState.sessionScope===sessionScope
     && agreementState.storeId===selectedStore.id ? agreementState.status : null;
@@ -254,7 +255,7 @@ export function PartnerMore({ accountOnly = false }: { accountOnly?: boolean } =
     </View> : null}
     {!desktopWeb?<PartnerPerformancePeek key={"performance:"+sessionScope+":"+(selectedStore?.id??"")} store={selectedStore}/>:null}
     {!desktopWeb?<Text style={styles.sectionTitle}>ملف المتجر وإعداداته</Text>:null}
-    {selectedStore?.owned && marketplace && !desktopWeb ? <Pressable accessibilityRole="button"
+    {canReviewAgreement && !desktopWeb ? <Pressable accessibilityRole="button"
       accessibilityLabel={"مراجعة الاتفاقية التجارية: "+agreementReadinessMessage(commercialAgreement)}
       style={styles.quickCard} onPress={()=>router.push({pathname:"/store",params:{section:"commercial",returnTo:"more"}} as Href)}>
       <View style={styles.quickIcon}><BthwaniIcon name="wallet" color={commercialAgreement==="ACTIVE"?theme.success:theme.brandAction} size={22}/></View>

@@ -24,10 +24,11 @@ function isStoreSection(value: string | undefined): value is StoreSection {
   return value === "operations" || value === "promotions" || value === "team" || value === "settings" || value === "commercial" || value === "banners" || value === "website";
 }
 function eligibleForSection(store: PartnerAccessibleStore, section: StoreSection): boolean {
+  if (section === "commercial") return store.owned && (store.relationModel === "BTHWANI_PARTNER" || store.relationModel === "INDEPENDENT_STORE");
   if (section === "website") return store.relationModel === "INDEPENDENT_STORE" && store.owned;
   if (section === "banners") return mayPrepareIndependentStoreBanners(store);
   if (section === "operations" && store.relationModel === "INDEPENDENT_STORE") return store.owned;
-  if (["operations", "promotions", "team", "commercial"].includes(section) && store.relationModel !== "BTHWANI_PARTNER") return false;
+  if (["operations", "promotions", "team"].includes(section) && store.relationModel !== "BTHWANI_PARTNER") return false;
   if (store.owned) return true;
   return section === "operations" ? store.permissions.includes("store_operations")
     : section === "promotions" ? store.permissions.includes("promotions") : false;
