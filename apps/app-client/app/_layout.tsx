@@ -1,7 +1,8 @@
 import { parseStudioThemePublication } from "@bthwani/design-system";
+import { AppearanceProvider, BthwaniNetworkStatusNotice, useMobileAppearance } from "@bthwani/design-system/native";
+import { AppKeyboardProvider } from "@bthwani/design-system/native/keyboard-provider";
 import { createDshMobileClient } from "@bthwani/dsh";
 import { tamaguiConfig } from "@bthwani/tamagui-config";
-import { AppearanceProvider, BthwaniNetworkStatusNotice, useMobileAppearance } from "@bthwani/design-system/native";
 import { useNetworkState } from "expo-network";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -12,14 +13,13 @@ import { TamaguiProvider } from "tamagui";
 
 import { appearance } from "../src/bootstrap/appearance";
 import { currentIdentityState, restoreIdentitySession, subscribeIdentitySession } from "../src/bootstrap/identity";
+import { OrderAlertMonitor } from "../src/features/notifications/order-alert-monitor";
+import ServiceCityScope from "../src/features/service-city/service-city-scope";
 
 function currentMobileActorID(): string {
   const session = currentIdentityState();
   return session.kind === "authenticated" ? session.identity.subject.trim() : "";
 }
-import { AppKeyboardProvider } from "../src/bootstrap/keyboard-provider";
-import { OrderAlertMonitor } from "../src/features/notifications/order-alert-monitor";
-import ServiceCityScope from "../src/features/service-city/service-city-scope";
 
 export default function RootLayout() {
   useEffect(() => {

@@ -1,5 +1,6 @@
 import { parseStudioThemePublication } from "@bthwani/design-system";
 import { AppearanceProvider, BthwaniNetworkStatusNotice, useMobileAppearance } from "@bthwani/design-system/native";
+import { AppKeyboardProvider } from "@bthwani/design-system/native/keyboard-provider";
 import { createDshMobileClient } from "@bthwani/dsh";
 import { tamaguiConfig } from "@bthwani/tamagui-config";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -13,7 +14,6 @@ import { TamaguiProvider } from "tamagui";
 import { createPartnerActorQueryClient } from "../src/bootstrap/actor-query-client";
 import { appearance } from "../src/bootstrap/appearance";
 import { currentIdentityState, subscribeIdentitySession } from "../src/bootstrap/identity";
-import { AppKeyboardProvider } from "../src/bootstrap/keyboard-provider";
 import { OrderAlertMonitor } from "../src/features/notifications/order-alert-monitor";
 import { partnerSetupSessionKey } from "../src/features/partner-onboarding/partner-setup-session-scope";
 
