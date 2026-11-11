@@ -35,13 +35,17 @@ func TestRetiredDirectOrderMigrationFailsClosedForDurableData(t *testing.T) {
 	if !strings.Contains(migration, "RAISE EXCEPTION") || strings.Contains(migration, "CASCADE") {
 		t.Fatal("retirement must fail closed rather than cascade through durable data")
 	}
-	source, err := os.ReadFile("migrate.go")
+	source, err := os.ReadFile("schema_verification.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectations, err := os.ReadFile("schema_expectations.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, table := range []string{"dsh.independent_direct_orders", "dsh.independent_direct_order_lines", "dsh.independent_direct_order_idempotency", "dsh.independent_direct_order_audit"} {
 		if !strings.Contains(string(source), "retired parallel direct Order storage still exists") ||
-			strings.Contains(string(source), "{name: \""+table+"\"") {
+			strings.Contains(string(expectations), "{name: \""+table+"\"") {
 			t.Errorf("schema verification still treats parallel Order storage as an authoritative relation: %s", table)
 		}
 	}

@@ -209,6 +209,33 @@ func TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay(t *testing.T) 
 			VALUES($1,$2,$3,$4,$5,1,$6,15.3694457,44.1910064,$7,'CITY_SCOPE_V1','SERVICEABLE',1,1,'CREATED',1800,'YER',1,$8,'CASH_ON_DELIVERY','REQUIRES_COLLECTION','BTHWANI_CAPTAIN',1800)`, orderID, clientID, firstStoreID, firstCartID, "address-one", "عنوان الطلب الأول", cityID, "multi-checkout-payment-one"); err != nil {
 			t.Fatalf("insert canonical child order: %v", err)
 		}
+		// A forged Order writer must not attach another Client's or Store's
+		// Cart, even if both referenced actors and Stores exist. The database
+		// itself enforces this boundary, independently of Go authorization.
+		for _, mismatch := range []struct {
+			name, column, value string
+		}{
+			{"other Client", "client_actor_id", otherClientID},
+			{"other Store", "store_id", secondStoreID},
+		} {
+			t.Run(mismatch.name, func(t *testing.T) {
+				_, err := db.ExecContext(ctx,
+					"UPDATE dsh.commerce_orders SET "+mismatch.column+"=$1 WHERE id=$2",
+					mismatch.value, orderID)
+				var pgErr *pq.Error
+				if !errors.As(err, &pgErr) || pgErr.Code != "23503" ||
+					pgErr.Constraint != "commerce_orders_cart_store_client_fk" {
+					t.Fatalf("cross-owner Order/Cart update rejection = %v; want composite SQL FK", err)
+				}
+				var storedClient, storedStore string
+				if err := db.QueryRowContext(ctx,
+					"SELECT client_actor_id,store_id FROM dsh.commerce_orders WHERE id=$1",
+					orderID).Scan(&storedClient, &storedStore); err != nil ||
+					storedClient != clientID || storedStore != firstStoreID {
+					t.Fatalf("rejected update changed canonical Order: client=%q store=%q err=%v", storedClient, storedStore, err)
+				}
+			})
+		}
 		// A real Order cannot be attached to another Store's child, even when
 		// the Order ID itself exists and the parent belongs to the same Client.
 		if _, err := postgres.MarkMultiStoreCheckoutChildSucceeded(ctx, db, checkoutID, checkout.Children[1].ID, orderID); !errors.Is(err, postgres.ErrMultiStoreCheckoutChildConflict) {
@@ -427,11 +454,79 @@ func TestMultiStoreCheckoutMigrationUpgradesV177WithPersistedChildren(t *testing
 		if _, err := db.ExecContext(ctx, "DELETE FROM dsh.commerce_multi_store_checkouts WHERE id=$1", otherID); err != nil {
 			t.Fatal(err)
 		}
+		// Install v180 in this disposable database to prove that v181
+		// refuses a pre-existing cross-Client Order without rewriting it.
+		if len(records) < 181 || records[180].Name != "181_commerce_order_cart_actor_integrity.sql" {
+			t.Fatalf("missing canonical v181 actor integrity migration: %d records", len(records))
+		}
+		baselineTx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := baselineTx.ExecContext(ctx, migrationSQL[179]); err != nil {
+			_ = baselineTx.Rollback()
+			t.Fatalf("install historical v180: %v", err)
+		}
+		if _, err := baselineTx.ExecContext(ctx,
+			"INSERT INTO dsh.schema_migrations(version,name,sha256) VALUES($1,$2,$3)",
+			records[179].Version, records[179].Name, records[179].SHA256); err != nil {
+			_ = baselineTx.Rollback()
+			t.Fatal(err)
+		}
+		if err := baselineTx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+		const retainedOrderID = "checkout-upgrade-foreign-client-order"
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(
+			id,client_actor_id,store_id,cart_id,address_id,address_version,address_text,
+			address_latitude,address_longitude,service_city_id,serviceability_policy_version,
+			serviceability_status,serviceability_store_version,serviceability_address_version,
+			state,total_amount_minor,currency,version,payment_intent_id,payment_method,
+			payment_state,fulfillment_mode,payment_cash_amount_minor)
+			VALUES($1,'other-checkout-client','checkout-upgrade-store-a',
+			'checkout-upgrade-cart-checkout-upgrade-store-a','test-address',1,'Test address',
+			15.3694457,44.1910064,'checkout-upgrade-city','CITY_SCOPE_V1','SERVICEABLE',
+			1,1,'CREATED',1800,'YER',1,'test-payment','CASH_ON_DELIVERY',
+			'REQUIRES_COLLECTION','BTHWANI_CAPTAIN',1800)`, retainedOrderID); err != nil {
+			t.Fatalf("seed test-only v180 cross-Client Order: %v", err)
+		}
+		err = postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t))
+		var actorFKError *pq.Error
+		if !errors.As(err, &actorFKError) || actorFKError.Code != "23503" ||
+			actorFKError.Constraint != "commerce_orders_cart_store_client_fk" {
+			t.Fatalf("unsafe v181 Order upgrade = %v; want named 23503 FK rejection", err)
+		}
+		if err := db.QueryRowContext(ctx, "SELECT max(version) FROM dsh.schema_migrations").
+			Scan(&currentVersion); err != nil || currentVersion != 180 {
+			t.Fatalf("rejected v181 upgrade advanced history: version=%d err=%v", currentVersion, err)
+		}
+		var retainedClient string
+		if err := db.QueryRowContext(ctx,
+			"SELECT client_actor_id FROM dsh.commerce_orders WHERE id=$1",
+			retainedOrderID).Scan(&retainedClient); err != nil ||
+			retainedClient != "other-checkout-client" {
+			t.Fatalf("failed v181 migration altered historical Order: client=%q err=%v", retainedClient, err)
+		}
+		// Repair only the disposable test fixture, not an adopted installation.
+		if _, err := db.ExecContext(ctx,
+			"UPDATE dsh.commerce_orders SET client_actor_id=$1 WHERE id=$2",
+			clientID, retainedOrderID); err != nil {
+			t.Fatal(err)
+		}
 		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
-			t.Fatalf("upgrade retained v179 DSH data: %v", err)
+			t.Fatalf("upgrade retained v180 DSH data: %v", err)
 		}
 		if err := postgres.VerifySchema(ctx, db, records); err != nil {
 			t.Fatalf("verify fully upgraded DSH schema: %v", err)
+		}
+		var verifiedClient string
+		var verifiedTotal int64
+		if err := db.QueryRowContext(ctx,
+			"SELECT client_actor_id,total_amount_minor FROM dsh.commerce_orders WHERE id=$1",
+			retainedOrderID).Scan(&verifiedClient, &verifiedTotal); err != nil ||
+			verifiedClient != clientID || verifiedTotal != 1800 {
+			t.Fatalf("safe v181 upgrade lost retained Order: client=%q total=%d err=%v",
+				verifiedClient, verifiedTotal, err)
 		}
 		retained, err := postgres.ReadMultiStoreCheckoutForClient(ctx, db, parentID, clientID)
 		if err != nil || retained.Version != 4 || retained.State != "PROCESSING" ||
