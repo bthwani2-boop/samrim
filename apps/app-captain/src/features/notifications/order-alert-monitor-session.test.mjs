@@ -39,6 +39,26 @@ function production(name, runtime) {
   return runInNewContext(compiled, runtime)[name];
 }
 
+function deferred() {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  return { promise, resolve };
+}
+
+async function waitForObservedCall(promise, operation) {
+  let timeout;
+  try {
+    await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(operation + " was never invoked")), 3_000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function harness() {
   const state = {
     current: identity("captain-7", "session-1"),
@@ -114,16 +134,16 @@ test("late notification fetch from former same-actor session never rings or prim
   const h = harness();
   h.state.notifications = [notice("offer-1")];
   await h.tick();
-  let release;
-  const delayed = new Promise(resolve => { release = resolve; });
+  const delayed = deferred();
+  const enteredRead = deferred();
   h.runtime.createDshMobileClient = () => ({
-    listNotifications: async () => { h.state.requests++; return delayed; },
+    listNotifications: async () => { h.state.requests++; enteredRead.resolve(); return delayed.promise; },
   });
   const staleTick = h.tick();
-  for (let i = 0; i < 6 && h.state.requests < 2; i++) await new Promise(resolve => setImmediate(resolve));
+  await waitForObservedCall(enteredRead.promise, "the former session inbox read");
   assert.equal(h.state.requests, 2);
   h.state.current = identity("captain-7", "session-2");
-  release({ notifications: [notice("late-offer"), notice("offer-1")] });
+  delayed.resolve({ notifications: [notice("late-offer"), notice("offer-1")] });
   await staleTick;
   assert.equal(h.state.scheduled.length, 0);
   h.runtime.createDshMobileClient = () => ({
@@ -175,18 +195,19 @@ test("a locally scheduled notification completing after logout is cancelled, not
   const h = harness();
   h.state.notifications = [notice("baseline")];
   await h.tick();
-  let release;
-  const delayed = new Promise(resolve => { release = resolve; });
+  const delayed = deferred();
+  const enteredSchedule = deferred();
   h.Notifications.scheduleNotificationAsync = async options => {
     h.state.scheduled.push(options);
-    return delayed;
+    enteredSchedule.resolve();
+    return delayed.promise;
   };
   h.state.notifications = [notice("new-offer"), notice("baseline")];
   const pending = h.tick();
-  for (let i = 0; i < 6 && !h.state.scheduled.length; i++) await new Promise(resolve => setImmediate(resolve));
+  await waitForObservedCall(enteredSchedule.promise, "the local notification schedule");
   assert.equal(h.state.scheduled.length, 1);
   h.state.current = { kind: "unauthenticated" };
-  release("late-local");
+  delayed.resolve("late-local");
   await pending;
   assert.deepEqual(h.state.cancelledIds, ["late-local"]);
   assert.equal(h.scheduledSessions.size, 0);
