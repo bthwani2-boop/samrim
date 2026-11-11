@@ -12,6 +12,13 @@ test("captain displays pending memberships without treating them as active", () 
   assert.equal(preferredCaptainProfileMembership([revoked]), undefined);
 });
 
+test("an accepted Store Captain remains active even without a Store display label", () => {
+  const pendingNamed = { id: "pending-named", state: "pending", displayNameAr: "معلق" };
+  const activeUnnamed = { id: "active-unnamed", state: "active", displayNameAr: "  " };
+  assert.equal(preferredCaptainProfileMembership([pendingNamed, activeUnnamed]), activeUnnamed);
+  assert.equal(preferredCaptainProfileMembership([{ id: "active", state: "active" }]).state, "active");
+});
+
 test("an unnamed pending membership cannot produce a misleading profile", () => {
   assert.equal(preferredCaptainProfileMembership([
     { id: "empty", state: "pending", displayNameAr: " " },

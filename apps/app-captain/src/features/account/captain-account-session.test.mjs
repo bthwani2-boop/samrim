@@ -118,6 +118,21 @@ test("Store-owned Captain profile fallback remains functional and session-scoped
   assert.equal(h.state.failures.length, 0);
 });
 
+test("Store Captain active membership without a display name still shows the true DSH state", async () => {
+  const h = accountHarness();
+  h.runtime.captainClient = () => ({
+    readOwnCaptainAdmission: async () => { throw new Error("NO_GENERAL_DISPATCH_ADMISSION"); },
+    listOwnStoreCaptainMemberships: async () => ({
+      memberships: [{ id: "store-a", state: "active", displayNameAr: null }],
+    }),
+  });
+  await h.loadProfile();
+  assert.equal(h.state.reads.length, 1);
+  assert.equal(h.state.reads[0].profile.fullNameAr, null);
+  assert.equal(h.state.reads[0].profile.state, "store_only");
+  assert.equal(h.state.failures.length, 0);
+});
+
 test("failed public admission cannot load a store profile into a renewed session", async () => {
   const h = accountHarness();
   let release;

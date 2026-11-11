@@ -4,6 +4,7 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript-ast";
 import { captainSessionKey } from "../../bootstrap/captain-session-scope.ts";
+import { visibleCaptainStoreMemberships } from "./captain-store-membership-policy.ts";
 
 const source = readFileSync(new URL("./captain-readiness.tsx", import.meta.url), "utf8");
 const ast = ts.createSourceFile("captain-readiness.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -43,6 +44,7 @@ function harness(extractLoad = true) {
   const runtime = {
     currentIdentityState: () => state.current,
     captainSessionKey,
+    visibleCaptainStoreMemberships,
     readSequence: { current: 0 },
     getUsableIdentityAccessToken: async () => { state.tokenReads++; return "token"; },
     captainClient: () => ({
@@ -147,6 +149,34 @@ test("a session replaced during token acquisition cannot start private admission
   release("old-token");
   assert.equal(await pending, false);
   assert.equal(h.state.admissionReads, 0);
+});
+
+test("accepted Store Captain readiness does not depend on the display label", async () => {
+  const h = harness();
+  h.runtime.captainClient = () => ({
+    readOwnCaptainAdmission: async () => { throw new Error("NO_GENERAL_DISPATCH_ADMISSION"); },
+    listOwnStoreCaptainMemberships: async () => ({
+      memberships: [{ id: "store-a", state: "active", displayNameAr: null }],
+    }),
+  });
+  assert.equal(await h.load(), true);
+  assert.equal(values(h.state, "storeOnly").at(-1), true);
+  assert.equal(values(h.state, "loadedKey").at(-1), captainSessionKey(h.state.current));
+  assert.equal(h.state.mutations.length, 0);
+});
+
+test("pending Store membership never grants active Store-only readiness", async () => {
+  const h = harness();
+  h.runtime.captainClient = () => ({
+    readOwnCaptainAdmission: async () => { throw new Error("NO_GENERAL_DISPATCH_ADMISSION"); },
+    listOwnStoreCaptainMemberships: async () => ({
+      memberships: [{ id: "store-pending", state: "pending", displayNameAr: "بانتظار" }],
+    }),
+  });
+  assert.equal(await h.load(), false);
+  assert.equal(values(h.state, "storeOnly").at(-1), false);
+  assert.equal(values(h.state, "loadedKey").filter(Boolean).length, 0);
+  assert.equal(h.state.mutations.length, 0);
 });
 
 test("Store-only Captain fallback survives without joining the public dispatch pool", async () => {

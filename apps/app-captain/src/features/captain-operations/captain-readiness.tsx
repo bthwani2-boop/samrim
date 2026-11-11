@@ -11,6 +11,7 @@ import { captainClient } from "./captain-client";
 import { hasBackgroundMissionConsent, setBackgroundMissionConsent } from "./captain-mission-location-background";
 import { createCaptainOperationStyles } from "./captain-operation-styles";
 import { publishCaptainPresence } from "./captain-presence-publisher";
+import { visibleCaptainStoreMemberships } from "./captain-store-membership-policy";
 
 function KeepMissionScreenAwake() {
   useKeepAwake();
@@ -109,7 +110,7 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
         if (!isCurrent()) return false;
         const memberships = await captainClient().listOwnStoreCaptainMemberships(token);
         if (!isCurrent()) return false;
-        if (memberships.memberships.some((item) => item.state === "active" && Boolean(item.displayNameAr))) {
+        if (visibleCaptainStoreMemberships(memberships.memberships).some((item) => item.state === "active")) {
           setStoreOnly(true);
           setLoadedSessionKey(requestSession);
           setError("");
