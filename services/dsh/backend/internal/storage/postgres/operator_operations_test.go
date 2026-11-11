@@ -13,6 +13,28 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
 
+func TestPartnerOrderPageRejectsUnsafeSearchAndCursor(t *testing.T) {
+	// No database connection is available: invalid input must be rejected
+	// before any SQL is sent, including non-UTF8 and embedded NUL bytes.
+	db, err := sql.Open("postgres", "postgres://invalid:invalid@127.0.0.1:1/not_used?sslmode=disable")
+	if err != nil {
+		t.Fatalf("create disconnected database handle: %v", err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	stores := []string{"store_owned"}
+	for _, query := range []string{"\x00", string([]byte{0xff}), strings.Repeat("ع", 129)} {
+		if _, err := postgres.ListOrdersForPartnerStores(ctx, db, stores, nil, query, 10, ""); !errors.Is(err, postgres.ErrPartnerOrdersInvalidQuery) {
+			t.Fatalf("unsafe Partner order query %q was not rejected before SQL: %v", query, err)
+		}
+	}
+	for _, cursor := range []string{"malformed", strings.Repeat("A", 4097)} {
+		if _, err := postgres.ListOrdersForPartnerStores(ctx, db, stores, nil, "", 10, cursor); !errors.Is(err, postgres.ErrPartnerOrdersInvalidCursor) {
+			t.Fatalf("unsafe Partner order cursor was not rejected before SQL: %v", err)
+		}
+	}
+}
+
 func TestOperatorOperationsCursorPagination(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("DSH_DATABASE_URL"))
 	if databaseURL == "" {

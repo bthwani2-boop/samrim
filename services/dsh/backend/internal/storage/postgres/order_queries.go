@@ -79,7 +79,11 @@ func encodePartnerOrdersCursor(cursor partnerOrdersCursor) string {
 }
 
 func decodePartnerOrdersCursor(raw, state, query string) (partnerOrdersCursor, error) {
-	decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
+	raw = strings.TrimSpace(raw)
+	if raw == "" || len(raw) > 4096 {
+		return partnerOrdersCursor{}, ErrPartnerOrdersInvalidCursor
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(raw)
 	if err != nil {
 		return partnerOrdersCursor{}, ErrPartnerOrdersInvalidCursor
 	}
@@ -133,7 +137,7 @@ func ListOrdersForPartnerStores(ctx context.Context, db *sql.DB, storeIDs []stri
 		return PartnerOrdersPage{}, err
 	}
 	query = strings.TrimSpace(query)
-	if utf8.RuneCountInString(query) > 128 {
+	if !utf8.ValidString(query) || utf8.RuneCountInString(query) > 128 || strings.ContainsRune(query, 0) {
 		return PartnerOrdersPage{}, ErrPartnerOrdersInvalidQuery
 	}
 	statesKey := strings.Join(states, ",")
@@ -156,7 +160,14 @@ func ListOrdersForPartnerStores(ctx context.Context, db *sql.DB, storeIDs []stri
 		where += " AND (o.created_at,o.id) < ($" + strconv.Itoa(len(args)-1) + ",$" + strconv.Itoa(len(args)) + ")"
 	}
 	args = append(args, limit+1)
-	rows, err := db.QueryContext(ctx, "SELECT "+orderSelectColumnsWithStore+" FROM dsh.commerce_orders o JOIN dsh.stores s ON s.id=o.store_id WHERE "+where+" ORDER BY o.created_at DESC,o.id DESC LIMIT $"+strconv.Itoa(len(args)), args...)
+	// A page and its mutable lines/adjustments must reflect one committed
+	// PostgreSQL snapshot, not separate autocommit reads during an update.
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return PartnerOrdersPage{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	rows, err := tx.QueryContext(ctx, "SELECT "+orderSelectColumnsWithStore+" FROM dsh.commerce_orders o JOIN dsh.stores s ON s.id=o.store_id WHERE "+where+" ORDER BY o.created_at DESC,o.id DESC LIMIT $"+strconv.Itoa(len(args)), args...)
 	if err != nil {
 		return PartnerOrdersPage{}, err
 	}
@@ -172,7 +183,9 @@ func ListOrdersForPartnerStores(ctx context.Context, db *sql.DB, storeIDs []stri
 	if err := rows.Err(); err != nil {
 		return PartnerOrdersPage{}, err
 	}
-	rows.Close()
+	if err := rows.Close(); err != nil {
+		return PartnerOrdersPage{}, err
+	}
 	page := PartnerOrdersPage{Orders: items}
 	if len(items) > limit {
 		last := items[limit-1]
@@ -181,14 +194,17 @@ func ListOrdersForPartnerStores(ctx context.Context, db *sql.DB, storeIDs []stri
 	}
 	var lineErr error
 	for index := range page.Orders {
-		page.Orders[index].Lines, lineErr = listOrderLines(ctx, db, page.Orders[index].ID)
+		page.Orders[index].Lines, lineErr = listOrderLines(ctx, tx, page.Orders[index].ID)
 		if lineErr != nil {
 			return PartnerOrdersPage{}, lineErr
 		}
-		page.Orders[index].Adjustments, lineErr = listOrderAdjustments(ctx, db, page.Orders[index].ID)
+		page.Orders[index].Adjustments, lineErr = listOrderAdjustments(ctx, tx, page.Orders[index].ID)
 		if lineErr != nil {
 			return PartnerOrdersPage{}, lineErr
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		return PartnerOrdersPage{}, err
 	}
 	return page, nil
 }
