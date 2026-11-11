@@ -20,6 +20,10 @@ export function StoreCaptainMemberships() {
   const [identityState, setIdentityState] = useState(currentIdentityState);
   const sessionKey = captainSessionKey(identityState);
   const [state, setState] = useState<MembershipState>({ kind: "loading", sessionKey: "" });
+  const [acceptingID, setAcceptingID] = useState("");
+  const [notice, setNotice] = useState("");
+  const [requiresReload, setRequiresReload] = useState(false);
+  const mutationInFlight = useRef<{ request: number; sessionKey: string } | null>(null);
   const requestID = useRef(0);
   const currentSession = captainSessionKey(currentIdentityState());
   // Store names belong to the session which loaded them, even for the same actor.
@@ -27,21 +31,75 @@ export function StoreCaptainMemberships() {
     ? state : { kind: "loading" as const, sessionKey };
 
   const reload = useCallback(async () => {
+    // A same-session refresh must not supersede the acceptance readback.
+    if (mutationInFlight.current?.sessionKey === sessionKey) return;
     const request = ++requestID.current;
     const isCurrent = () => Boolean(sessionKey) && request === requestID.current
       && captainSessionKey(currentIdentityState()) === sessionKey;
     if (!isCurrent()) return;
+    setNotice("");
     setState({ kind: "loading", sessionKey });
     try {
       const token = await getUsableIdentityAccessToken();
       if (!isCurrent()) return;
       const response = await captainClient().listOwnStoreCaptainMemberships(token);
-      if (isCurrent()) setState({ kind: "ready", sessionKey, memberships: response.memberships });
+      if (isCurrent()) {
+        setRequiresReload(false);
+        setState({ kind: "ready", sessionKey, memberships: response.memberships });
+      }
     } catch {
       if (isCurrent()) setState({ kind: "error", sessionKey });
     }
   }, [sessionKey]);
 
+  const acceptMembership = async (membershipID: string) => {
+    // Only the invited Captain may accept a currently visible, pending membership.
+    // DSH independently enforces that actor/membership ownership and status.
+    if (!sessionKey || state.kind !== "ready" || state.sessionKey !== sessionKey ||
+        !state.memberships.some((item) => item.id === membershipID && item.state === "pending") ||
+        mutationInFlight.current?.sessionKey === sessionKey || requiresReload ||
+        captainSessionKey(currentIdentityState()) !== sessionKey) return;
+    const request = ++requestID.current;
+    const isCurrent = () => request === requestID.current &&
+      captainSessionKey(currentIdentityState()) === sessionKey;
+    mutationInFlight.current = { request, sessionKey };
+    setAcceptingID(membershipID);
+    setNotice("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      if (!isCurrent()) return;
+      // A timeout/unknown mutation result is not a rejection or acceptance.
+      // The authenticated DSH membership readback is the only final UI truth.
+      try {
+        await captainClient().acceptTargetedStoreCaptainInvitation(token, membershipID);
+      } catch { /* Canonical readback below distinguishes committed from unresolved. */ }
+      if (!isCurrent()) return;
+      const response = await captainClient().listOwnStoreCaptainMemberships(token);
+      if (!isCurrent()) return;
+      setState({ kind: "ready", sessionKey, memberships: response.memberships });
+      const accepted = response.memberships.some((item) => item.id === membershipID && item.state === "active");
+      if (!accepted) setRequiresReload(true);
+      setNotice(accepted
+        ? "تم قبول دعوة المتجر."
+        : "لم يُؤكَّد قبول الدعوة بعد. تحقق من حالة العضوية قبل المحاولة مجددًا.");
+    } catch {
+      if (isCurrent()) {
+        setRequiresReload(true);
+        setNotice("تعذر التحقق من نتيجة قبول الدعوة. أعد قراءة العضويات قبل إعادة المحاولة.");
+      }
+    } finally {
+      if (mutationInFlight.current?.request === request) mutationInFlight.current = null;
+      if (captainSessionKey(currentIdentityState()) === sessionKey) setAcceptingID("");
+    }
+  };
+
+  useEffect(() => {
+    // Only the current Identity session can reset its invitation UI.
+    if (captainSessionKey(currentIdentityState()) !== sessionKey) return;
+    setAcceptingID("");
+    setNotice("");
+    setRequiresReload(false);
+  }, [sessionKey]);
   useEffect(() => subscribeIdentitySession(setIdentityState), []);
   useFocusEffect(useCallback(() => {
     void reload();
@@ -70,10 +128,25 @@ export function StoreCaptainMemberships() {
       {visibleState.kind === "ready" && visibleMemberships.length === 0 ? (
         <Text style={styles.description}>لا توجد عضويات متاجر نشطة أو قيد التفعيل مرتبطة بحسابك.</Text>
       ) : null}
+      {visibleState.kind === "ready" && notice ? (
+        <Text accessibilityRole="alert" style={styles.description}>{notice}</Text>
+      ) : null}
+      {visibleState.kind === "ready" && requiresReload ? (
+        <BthwaniButton label="تحديث حالة العضويات" onPress={() => void reload()} variant="secondary" />
+      ) : null}
       {visibleMemberships.map((membership) => (
         <View key={membership.id} style={styles.membership}>
           <Text style={styles.title}>{membership.storeName}</Text>
-          <Text style={styles.description}>{membership.state === "active" ? "نشط" : "بانتظار التفعيل"}</Text>
+          <Text style={styles.description}>{membership.state === "active" ? "نشط" : "بانتظار قبول الدعوة"}</Text>
+          {membership.state === "pending" ? (
+            <BthwaniButton
+              label={acceptingID === membership.id ? "جارٍ التحقق من الدعوة…" : "قبول دعوة المتجر"}
+              busy={acceptingID === membership.id}
+              disabled={Boolean(acceptingID) || requiresReload}
+              onPress={() => void acceptMembership(membership.id)}
+              variant="secondary"
+            />
+          ) : null}
         </View>
       ))}
     </BthwaniSurface>
