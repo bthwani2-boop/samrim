@@ -13,6 +13,7 @@ test("changing to an independent Store drops BThwani Captain and selects the saf
   assert.deepEqual(firstStoreModesForRelation("BTHWANI_PARTNER", "INDEPENDENT_STORE", ["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN"]), ["CUSTOMER_PICKUP"]);
   assert.deepEqual(firstStoreModesForRelation("", "INDEPENDENT_STORE", ["BTHWANI_CAPTAIN"]), ["CUSTOMER_PICKUP"]);
   assert.deepEqual(firstStoreModesForRelation("INDEPENDENT_STORE", "BTHWANI_PARTNER", ["PARTNER_CAPTAIN"]), ["BTHWANI_CAPTAIN"]);
+  assert.deepEqual(firstStoreModesForRelation("INDEPENDENT_STORE", "BTHWANI_PARTNER", ["CUSTOMER_PICKUP"]), ["BTHWANI_CAPTAIN"]);
 });
 
 test("review labels reflect each exact fulfillment choice, without invented availability", () => {
@@ -27,6 +28,18 @@ test("returning to independent enrollment drops a stale marketplace Captain even
     ["PARTNER_CAPTAIN", "CUSTOMER_PICKUP"],
   );
   assert.deepEqual(firstStoreModesForRelation("INDEPENDENT_STORE", "INDEPENDENT_STORE", ["BTHWANI_CAPTAIN"]), []);
+});
+
+test("first Store enrollment only shows an explicitly enabled DSH relation", () => {
+  const policies = [
+    { relationModel: "BTHWANI_PARTNER", enrollmentEnabled: true },
+    { relationModel: "INDEPENDENT_STORE", enrollmentEnabled: false },
+  ];
+  assert.equal(firstStoreRelationCanEnroll(policies, "BTHWANI_PARTNER"), true);
+  assert.equal(firstStoreRelationCanEnroll(policies, "INDEPENDENT_STORE"), false);
+  assert.equal(firstStoreRelationCanEnroll(policies, ""), false);
+  assert.equal(firstStoreRelationCanEnroll([], "BTHWANI_PARTNER"), false);
+  assert.equal(firstStoreRelationCanEnroll([{ relationModel: "INDEPENDENT_STORE", enrollmentEnabled: true }], "BTHWANI_PARTNER"), false);
 });
 
 test("unrecognized relation and mode cannot silently enable marketplace delivery", () => {
