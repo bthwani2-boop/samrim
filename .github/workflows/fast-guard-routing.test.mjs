@@ -54,6 +54,10 @@ test("financial integration proof cannot silently skip selected tests", () => {
   assert.match(workflow, /No financial integration test executed/);
   assert.match(workflow, /Financial integration test skipped/);
   assert.match(workflow, /TestLegacyCODV61UpgradePreservesHistoricalCollectedPayment/);
+  const isolatedWltTests = workflow.match(/financial_go_proof services\/wlt\/backend \.\/internal\/storage\/postgres -run "([^"\n]+)"/)?.[1];
+  assert.ok(isolatedWltTests, "WLT isolated PostgreSQL proof must execute real Go tests");
+  assert.match(isolatedWltTests, /\|TestFinancialStatementSnapshotLedgerReadbackAndActorIsolation\|/, "a torn WLT statement snapshot must block Fast Guard");
+  assert.match(isolatedWltTests, /\|TestStoreRelationCommercialModelDefaultPersistedIsolation\|/, "store relation financial policy versioning and replay must block Fast Guard");
   assert.match(workflow, /BTHWANI_IMPORT_SCALE_PROOF_ISOLATED=1/);
   assert.match(workflow, /TestStoreCatalogImport5000RowsPartialCommitReadback/);
   assert.equal((workflow.match(/financial_go_proof services\/(?:wlt|dsh)\/backend/g) ?? []).length, 6);
