@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { catalogPublishedAvailability, isOfferStockout, storeOfferServerQuery } from "./catalog-offer-read-model.ts";
+import { catalogPublishedAvailability, isOfferStockout, scopedPartnerPopularOffers, storeOfferServerQuery } from "./catalog-offer-read-model.ts";
 
 test("unfiltered catalog keeps its stable Store-owned page; promotions and popular are separate sources", () => {
   for (const filter of ["all", "offers", "popular"]) {
@@ -62,4 +62,27 @@ test("a complete page with no published available offers is definitively not rea
   assert.equal(catalogPublishedAvailability([{ publicationState: "draft", availability: true }], false), false);
   assert.equal(catalogPublishedAvailability([], false), false);
   assert.equal(catalogPublishedAvailability(null, false), null);
+});
+
+const popularOffer = { offerId: "offer-1", storeId: "store-1", productName: "منتج موثق", publicationState: "published", availability: true };
+
+test("partner home uses only DSH's scoped public popular ranking", () => {
+  assert.deepEqual(scopedPartnerPopularOffers("store-1", { storeId: "store-1", offers: [popularOffer] }), [popularOffer]);
+  assert.deepEqual(scopedPartnerPopularOffers("store-1", { storeId: "store-1", offers: [] }), []);
+});
+
+test("partner home never shows foreign or invalid offers as popular", () => {
+  const failures = [
+    null,
+    { storeId: "store-1" },
+    { storeId: "store-2", offers: [popularOffer] },
+    { storeId: "store-1", offers: [{ ...popularOffer, storeId: "store-2" }] },
+    { storeId: "store-1", offers: [popularOffer, popularOffer] },
+    { storeId: "store-1", offers: [{ ...popularOffer, offerId: "" }] },
+    { storeId: "store-1", offers: [{ ...popularOffer, productName: "" }] },
+    { storeId: "store-1", offers: [{ ...popularOffer, publicationState: "draft" }] },
+    { storeId: "store-1", offers: [{ ...popularOffer, availability: false }] },
+    { storeId: "store-1", offers: Array.from({ length: 5 }, (_, index) => ({ ...popularOffer, offerId: "offer-" + index })) },
+  ];
+  for (const failure of failures) assert.equal(scopedPartnerPopularOffers("store-1", failure), null);
 });

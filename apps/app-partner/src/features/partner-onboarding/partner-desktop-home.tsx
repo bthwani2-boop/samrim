@@ -12,8 +12,8 @@ import { createPartnerDshClient } from "../../bootstrap/dsh-client";
 
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { isMarketplaceStore } from "../../shell/partner-authority";
-import { catalogPublishedAvailability, isOfferStockout } from "../store-offer/catalog-offer-read-model";
-import { scopedPartnerPopularOffers } from "./partner-home-popularity";
+import { catalogPublishedAvailability, isOfferStockout, scopedPartnerPopularOffers } from "../store-offer/catalog-offer-read-model";
+
 import { nextStoreSetupFocus, storeSetupProgress } from "./partner-onboarding-next-step";
 import { partnerSetupSessionKey } from "./partner-setup-session-scope";
 import { agreementReadinessMessage, type StoreAgreementReadback } from "./store-agreement-readiness";
