@@ -1,9 +1,15 @@
 param(
   [string]$WltTestPattern = 'TestPartnerStoreFinanceAndRecipientSettlementLifecycle|TestCashIn|TestStoreCommercialAgreementLifecycleAndOrderSnapshots|TestPaymentRetryLostResponseAndParallelWorkers',
   [string]$DshTestPattern = '',
-  [string]$WltHttpTestPattern = ''
+  [string]$WltHttpTestPattern = '',
+  [string]$CrossServiceTestPattern = ''
 )
 $ErrorActionPreference = 'Stop'
+# The DSH -> real WLT proof must start with TWO pristine, separate databases.
+# Do not mix it with tests that already migrate the primary WLT database.
+if ($CrossServiceTestPattern -and ($WltTestPattern -or $DshTestPattern -or $WltHttpTestPattern)) {
+  throw 'CROSS_SERVICE_FINANCE_PROOF=BLOCKED select cross-service alone with -WltTestPattern empty'
+}
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Set-Location $repositoryRoot
 # A DOCKER_HOST override changes the effective daemon without changing context inspect.
@@ -14,7 +20,9 @@ if (-not [string]::IsNullOrWhiteSpace($env:DOCKER_HOST)) {
 function Assert-ProofRan([string]$label, [object[]]$lines) {
   $text = @($lines) -join "`n"
   $started = [regex]::Matches($text, '(?m)^=== RUN[ \t]+(\S+)')
-  $passed = [regex]::Matches($text, '(?m)^[ \t]*--- PASS:[ \t]+(\S+)')
+  # Go prints nested/subprocess PASS lines indented; count only top-level
+  # selected tests here. The go test exit code already rejects child failures.
+  $passed = [regex]::Matches($text, '(?m)^--- PASS:[ \t]+(\S+)')
   if ($text -match '\[no tests to run\]' -or $text -match '(?m)^[ \t]*--- SKIP:' -or
       $started.Count -eq 0 -or $started.Count -ne $passed.Count) {
     throw "$label did not execute and pass all its selected tests"
@@ -54,6 +62,7 @@ switch ($dockerUri.Scheme) {
 $name = 'bthwani-wlt-proof-isolated'
 $port = 15439
 $dbName = 'bthwani_wlt_finance_proof'
+$dshDbName = 'bthwani_dsh_finance_proof'
 $dbUser = 'finance_proof'
 $passwordBytes = New-Object byte[] 20
 $random = [System.Security.Cryptography.RandomNumberGenerator]::Create()
@@ -144,6 +153,19 @@ try {
     if ($LASTEXITCODE -ne 0) {throw 'DSH isolated checkout integration tests failed'}
     Assert-ProofRan 'DSH integration' $dshProofOutput
     Write-Output 'DSH_CHECKOUT_ISOLATED_TESTS=PASS'
+  }
+  if ($CrossServiceTestPattern) {
+    # Both PostgreSQL databases are created in THIS disposable container.
+    # WLT and DSH retain distinct migration histories and domain schemas.
+    docker exec $name psql -h 127.0.0.1 -U $dbUser -d $dbName -v ON_ERROR_STOP=1 -c "CREATE DATABASE $dshDbName" | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot create isolated DSH financial handoff database' }
+    $env:DSH_FINANCIAL_HANDOFF_TEST_DATABASE_URL = "postgres://$($dbUser):$($password)@127.0.0.1:$($port)/$($dshDbName)?sslmode=disable&connect_timeout=5"
+    $env:BTHWANI_FINANCIAL_PROOF_ISOLATED = '1'
+    $env:BTHWANI_ENV = 'test'
+    & go test ./services/wlt/backend/cmd/api -run $CrossServiceTestPattern -v -count=1 -timeout 12m 2>&1 | Tee-Object -Variable crossServiceProofOutput
+    if ($LASTEXITCODE -ne 0) { throw 'DSH to real WLT financial handoff integration test failed' }
+    Assert-ProofRan 'DSH and WLT financial handoff' $crossServiceProofOutput
+    Write-Output 'DSH_WLT_HANDOFF_ISOLATED_TESTS=PASS'
   }
 } catch {
   Write-Output "WLT_PROOF_ERROR=$($_.Exception.Message)"

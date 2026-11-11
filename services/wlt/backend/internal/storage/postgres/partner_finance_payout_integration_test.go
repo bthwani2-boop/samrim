@@ -11,7 +11,10 @@ import (
 )
 
 func TestPartnerStoreFinanceAndRecipientSettlementLifecycle(t *testing.T) {
-	s := newFieldAcquisitionScenario(t)
+	// The multi-stage payout, evidence, reconciliation and recipient-rotation
+	// scenario also migrates the full isolated WLT schema. The 45s default
+	// expires mid-proof on the remote disposable PostgreSQL test container.
+	s := newFieldAcquisitionScenarioWithTimeout(t, 2*time.Minute)
 	owner, staff, a, b, c, facts, staffFacts, cipher, earn := setupPartnerFinanceProof(t, s, true)
 	rows, err := ReadPartnerStoreFinance(s.ctx, s.db, owner, nil)
 	if err != nil || len(rows) != 3 {
