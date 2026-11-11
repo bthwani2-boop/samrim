@@ -5,6 +5,7 @@ import vm from "node:vm";
 import ts from "typescript-ast";
 
 const source = readFileSync(new URL("./store-detail.tsx", import.meta.url), "utf8");
+const discoverySource = readFileSync(new URL("./store-discovery.tsx", import.meta.url), "utf8");
 const ast = ts.createSourceFile("store-detail.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 
 function executableFunction(name, environment) {
@@ -34,7 +35,7 @@ test("Store detail subscribes to account changes and clears private state before
   assert.match(subscription, /subscribeIdentitySession/);
   assert.match(subscription, /actorRevisionRef.current \+= 1/);
   for (const reset of [
-    "setFavoriteBusy(false)", 'setFavoriteOfferBusyID("")',
+    'setFavoriteOfferBusyID("")',
     "setFavoriteLoading(false)", 'setBusyOfferId("")', 'setAddedOfferId("")',
     "setQuantities({})", "setSelectedModifierOptionIds({})",
     'setError("")', "void load()",
@@ -45,7 +46,7 @@ test("Store detail subscribes to account changes and clears private state before
   for (const reset of [
     "setCatalogTabs({})", "setFavoritesView(false)", "setPopularView(false)",
     "setFavoriteLoadError(false)", "setCatalogRefreshing(false)", "setOpenCart(null)",
-    "setCartReadError(false)", "setIsFavorite(false)", "setFavoriteOfferIDs(new Set())",
+    "setCartReadError(false)", "setFavoriteOfferIDs(new Set())",
     "setDetailOffer(null)", 'setState({ kind: "loading" })',
   ]) assert.ok(beforeNetwork.includes(reset), `load must synchronously clear actor-private state: ${reset}`);
   assert.match(source, /subscription\.unsubscribe\(\)/);
@@ -80,28 +81,15 @@ test("an in-flight add-to-cart from actor A cannot display actor A's cart after 
   assert.equal(events.some(([kind, value]) => kind === "busy" && value === ""), false, "old request cannot clear B's busy state");
 });
 
-test("old actor favorite mutation and recovery results cannot overwrite the new actor", async () => {
-  const favorite = deferred();
-  const actorRevisionRef = { current: 1 };
-  const events = [];
-  const run = executableFunction("toggleFavorite", {
-    favoriteBusy: false, isFavorite: false, storeId: "store-a",
-    currentIdentityState: () => ({ kind: "authenticated" }),
-    actorRevisionRef, setFavoriteBusy: (v) => events.push(["busy", v]),
-    setError: (v) => events.push(["error", v]),
-    setFavoriteStore: () => favorite.promise,
-    setIsFavorite: (v) => events.push(["favorite", v]),
-  });
-  const pending = run();
-  actorRevisionRef.current = 2;
-  favorite.resolve(true);
-  await pending;
-  assert.equal(events.some(([kind]) => kind === "favorite"), false);
-  assert.equal(events.some(([kind, value]) => kind === "busy" && value === false), false);
+test("Store favorites use only the rendered directory action; detail retains separate offer favorites", () => {
+  assert.match(discoverySource, /onFavorite=\{\(\) => \{ void toggleFavorite\(store.id\); \}\}/);
+  assert.doesNotMatch(source, /async function toggleFavorite\(/);
+  assert.doesNotMatch(source, /listFavoriteStoreIDs\(/);
+  assert.match(source, /listFavoriteStoreOfferIDs\(storeId\)/);
+  assert.match(source, /async function toggleOfferFavorite\(/);
 });
 
-test("old actor favorites refresh cannot expose previous account lists", async () => {
-  const stores = deferred();
+test("old actor Store-offer favorites refresh cannot expose a previous account list", async () => {
   const offers = deferred();
   const actorRevisionRef = { current: 10 };
   const events = [];
@@ -109,18 +97,15 @@ test("old actor favorites refresh cannot expose previous account lists", async (
     actorRevisionRef, storeId: "store-a",
     currentIdentityState: () => ({ kind: "authenticated" }),
     setFavoriteLoading: (value) => events.push(["loading", value]),
-    listFavoriteStoreIDs: () => stores.promise,
     listFavoriteStoreOfferIDs: () => offers.promise,
-    setIsFavorite: (value) => events.push(["favorite", value]),
     setFavoriteOfferIDs: (value) => events.push(["offers", value]),
     setFavoriteLoadError: (value) => events.push(["error", value]),
   });
   const pending = reload();
   actorRevisionRef.current += 1;
-  stores.resolve(["store-a"]);
   offers.resolve(["private-offer-a"]);
   await pending;
-  assert.equal(events.some(([kind]) => kind === "favorite" || kind === "offers"), false);
+  assert.equal(events.some(([kind]) => kind === "offers"), false);
   assert.equal(events.some(([kind, value]) => kind === "loading" && value === false), false);
 });
 
@@ -196,7 +181,7 @@ test("actor switch invokes the Store loader's synchronous private-cache reset be
   const activeActorIDRef = { current: "actor-A" };
   const actorRevisionRef = { current: 1 };
   let failRead;
-  const slowRead = new Promise((resolve, reject) => { failRead = reject; });
+  const slowRead = new Promise((_resolve, reject) => { failRead = reject; });
   let refresh;
   const changes = [];
   const record = (name) => (value) => changes.push([name, value]);
@@ -209,10 +194,8 @@ test("actor switch invokes the Store loader's synchronous private-cache reset be
     setError: (value) => { error = value; },
     setOpenCart: record("cart"),
     setCartReadError: record("cartError"),
-    setIsFavorite: record("favorite"),
     setFavoriteOfferIDs: record("favoriteOfferIDs"),
     setPopularView: record("popularView"),
-    setFavoriteBusy: record("favoriteBusy"),
     setFavoriteOfferBusyID: record("favoriteOfferBusyID"),
     setFavoriteLoading: record("favoriteLoading"),
     setBusyOfferId: record("busyOffer"),
@@ -250,4 +233,32 @@ test("actor switch invokes the Store loader's synchronous private-cache reset be
   await refresh;
   assert.deepEqual(Object.keys(tabs), [], "failed DSH refresh must not restore actor A's private catalog");
   assert.equal(favoriteView, false);
+});
+
+test("same actor Store-offer favorite refresh uses one DSH read and clears recovery state", async () => {
+  const updates = [];
+  const reload = executableFunction("reloadFavorites", {
+    actorRevisionRef: { current: 10 }, storeId: "store-a",
+    currentIdentityState: () => ({ kind: "authenticated" }),
+    listFavoriteStoreOfferIDs: async () => ["own-offer-a"],
+    setFavoriteLoading: (value) => updates.push(["loading", value]),
+    setFavoriteOfferIDs: (value) => updates.push(["offers", Array.from(value)]),
+    setFavoriteLoadError: (value) => updates.push(["error", value]),
+  });
+  await reload();
+  assert.deepEqual(updates, [["loading", true], ["offers", ["own-offer-a"]], ["error", false], ["loading", false]]);
+});
+
+test("Store-offer favorite refresh fails recoverably without writing stale favorites", async () => {
+  const updates = [];
+  const reload = executableFunction("reloadFavorites", {
+    actorRevisionRef: { current: 3 }, storeId: "store-a",
+    currentIdentityState: () => ({ kind: "authenticated" }),
+    listFavoriteStoreOfferIDs: async () => { throw new Error("DSH temporarily unavailable"); },
+    setFavoriteLoading: (value) => updates.push(["loading", value]),
+    setFavoriteOfferIDs: () => updates.push(["offers"]),
+    setFavoriteLoadError: (value) => updates.push(["error", value]),
+  });
+  await reload();
+  assert.deepEqual(updates, [["loading", true], ["error", true], ["loading", false]]);
 });

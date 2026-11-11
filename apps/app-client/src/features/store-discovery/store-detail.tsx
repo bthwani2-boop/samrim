@@ -1,12 +1,12 @@
 import { sizing, spacing } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniIcon, BthwaniIconButton, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { availableCustomerFulfillmentModes, type CartResponse, type CustomerFulfillmentMode, formatMoney, fulfillmentModeLabel, type PublicCatalogResponse, type PublicDiscoveryContentView, type PublicPromotionView, type PublicStoreView, type StoreOrderability } from "@bthwani/dsh";
 import { Image as ExpoImage } from "expo-image";
 import * as ExpoLinking from "expo-linking";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, FlatList, Platform, Pressable, ScrollView, Text, useWindowDimensions, View, type ViewInstance } from "react-native";
+import { FlatList, Platform, Pressable, ScrollView, Text, useWindowDimensions, View, type ViewInstance } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -22,7 +22,7 @@ import { StoreBannerCarousel } from "./store-banner-carousel";
 import type { StoreCatalogRow } from "./store-catalog-model";
 import { buildCatalogRows, buildDisplayCatalogRows, categoryTrail, dshMutationErrorMessage, filterCatalogToProduct, formatQuantity, isQuantityAllowed, mergeCatalog, validateModifierSelection } from "./store-catalog-model";
 import { createStyles } from "./store-detail-styles";
-import { listFavoriteStoreIDs, listFavoriteStoreOfferIDs, listPublicPromotions, listPublicStoreBanners, readFavoriteStoreCatalog, readPublicStoreCatalog, readPublicStoreOrderability, readPublishedStore, setFavoriteStore, setFavoriteStoreOffer } from "./store-discovery-client";
+import { listFavoriteStoreOfferIDs, listPublicPromotions, listPublicStoreBanners, readFavoriteStoreCatalog, readPublicStoreCatalog, readPublicStoreOrderability, readPublishedStore, setFavoriteStoreOffer } from "./store-discovery-client";
 import type { GallerySourceRect } from "./store-product-gallery";
 import { StoreProductSheet } from "./store-product-sheet";
 import { StorePublicContactCard } from "./store-public-contact";
@@ -85,8 +85,6 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const promotionRequestID = useRef(0);
 
   const [error, setError] = useState("");
-  const [isFavorite, setIsFavorite] = useState(false);
-  const [favoriteBusy, setFavoriteBusy] = useState(false);
   const [favoriteOfferIDs, setFavoriteOfferIDs] = useState<ReadonlySet<string>>(new Set());
   const [failedProductImageURIs, setFailedProductImageURIs] = useState<ReadonlySet<string>>(new Set());
   const [failedCategoryImageIDs, setFailedCategoryImageIDs] = useState<ReadonlySet<string>>(new Set());
@@ -139,7 +137,6 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           actorRevisionRef.current += 1;
           setBusyOfferId("");
           setAddedOfferId("");
-          setFavoriteBusy(false);
           setFavoriteOfferBusyID("");
           setFavoriteLoading(false);
           ++storeRequestID.current;
@@ -182,7 +179,6 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     actorRevisionRef.current += 1;
     setBusyOfferId("");
     setAddedOfferId("");
-    setFavoriteBusy(false);
     setFavoriteOfferBusyID("");
     setFavoriteLoading(false);
     setQuantities({});
@@ -217,7 +213,6 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     setFailedStoreCover(false);
     setFailedProductImageURIs(new Set());
     setHeroVisible(true);
-    setIsFavorite(false);
     setFavoriteOfferIDs(new Set());
     setFavoritesView(false);
     setPopularView(false);
@@ -266,11 +261,12 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       setState({ kind: "ready", store, catalog });
       setCatalogTabs({ 0: { catalog, categoryID: categoryId.trim() || null, sectionID: null, query: "", productID: productId.trim() } });
       if (currentIdentityState().kind === "authenticated") {
-        void Promise.allSettled([listFavoriteStoreIDs(), listFavoriteStoreOfferIDs(storeId)]).then(([storesResult, offersResult]) => {
+        void listFavoriteStoreOfferIDs(storeId).then((offerIDs) => {
           if (requestID !== storeRequestID.current) return;
-          if (storesResult.status === "fulfilled") setIsFavorite(storesResult.value.includes(storeId));
-          if (offersResult.status === "fulfilled") setFavoriteOfferIDs(new Set(offersResult.value));
-          setFavoriteLoadError(storesResult.status === "rejected" || offersResult.status === "rejected");
+          setFavoriteOfferIDs(new Set(offerIDs));
+          setFavoriteLoadError(false);
+        }).catch(() => {
+          if (requestID === storeRequestID.current) setFavoriteLoadError(true);
         });
         void readOwnStoreCart(storeId).then((result) => {
           if (requestID !== storeRequestID.current || cartRequestID !== cartReadRequestID.current) return;
@@ -418,7 +414,6 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         // load() synchronously clears private Store/cart/favorite snapshots
         // before its first network await; reset only mutation-local state here.
         setError("");
-        setFavoriteBusy(false);
         setFavoriteOfferBusyID("");
         setFavoriteLoading(false);
         setBusyOfferId("");
@@ -607,26 +602,6 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     }
   }
 
-  async function toggleFavorite() {
-    if (favoriteBusy) return;
-    if (currentIdentityState().kind !== "authenticated") {
-      requireAuthentication();
-      return;
-    }
-    const actorRevision = actorRevisionRef.current;
-    const actorID = currentStoreActorID();
-    setFavoriteBusy(true);
-    setError("");
-    try {
-      const favorite = await setFavoriteStore(storeId, !isFavorite, actorID);
-      if (actorRevision === actorRevisionRef.current) setIsFavorite(favorite);
-    } catch {
-      if (actorRevision === actorRevisionRef.current) setError("تعذر تحديث المفضلة. أعد المحاولة.");
-    } finally {
-      if (actorRevision === actorRevisionRef.current) setFavoriteBusy(false);
-    }
-  }
-
   function shareStore() {
     setShareTarget({ kind: "STORE", id: storeId, title: state.kind === "ready" ? state.store.name : "متجر", link: buildPublicStoreShareURL(storeId, selectedCityID ?? "", process.env.EXPO_PUBLIC_CLIENT_WEB_ORIGIN, "", __DEV__) ?? ExpoLinking.createURL(buildStoreSharePath(storeId, selectedCityID ?? "")) });
   }
@@ -720,11 +695,12 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     const actorRevision = actorRevisionRef.current;
     setFavoriteLoading(true);
     try {
-      const [storesResult, offersResult] = await Promise.allSettled([listFavoriteStoreIDs(), listFavoriteStoreOfferIDs(storeId)]);
+      const offerIDs = await listFavoriteStoreOfferIDs(storeId);
       if (actorRevision !== actorRevisionRef.current) return;
-      if (storesResult.status === "fulfilled") setIsFavorite(storesResult.value.includes(storeId));
-      if (offersResult.status === "fulfilled") setFavoriteOfferIDs(new Set(offersResult.value));
-      setFavoriteLoadError(storesResult.status === "rejected" || offersResult.status === "rejected");
+      setFavoriteOfferIDs(new Set(offerIDs));
+      setFavoriteLoadError(false);
+    } catch {
+      if (actorRevision === actorRevisionRef.current) setFavoriteLoadError(true);
     } finally {
       if (actorRevision === actorRevisionRef.current) setFavoriteLoading(false);
     }
@@ -923,10 +899,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         </View>
         </View>
         {availabilitySummary.reason ? <Text accessibilityRole="alert" style={styles.muted}>{availabilitySummary.reason}</Text> : null}
-        {fulfillmentModes.length === 1 ? <View style={styles.storeInfoModes}>
+        {fulfillmentModes.length === 1 && fulfillmentModes[0] ? <View style={styles.storeInfoModes}>
           <BthwaniIcon name={fulfillmentModes[0] === "CUSTOMER_PICKUP" ? "account" : fulfillmentModes[0] === "PARTNER_CAPTAIN" ? "store" : "location"} color={theme.interactiveText} size={sizing.iconLg} />
           <View style={{ flex: 1 }}>
-            <Text style={styles.storeInfoModeText}>{fulfillmentModeLabel(fulfillmentModes[0]!)}</Text>
+            <Text style={styles.storeInfoModeText}>{fulfillmentModeLabel(fulfillmentModes[0])}</Text>
             <Text style={styles.muted}>الطريقة التي يدعمها المتجر · {orderabilityEta(effectiveOrderability.find((item) => item.fulfillmentMode === fulfillmentModes[0]))}</Text>
           </View>
         </View> : null}

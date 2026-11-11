@@ -41,7 +41,6 @@ function createHarness() {
   let state = { kind: "loading" };
   let openCart = null;
   let fulfillmentMode = null;
-  let favorite = false;
   const events = [];
   const setters = {};
   for (const name of [
@@ -52,7 +51,7 @@ function createHarness() {
     "setSelectedFulfillmentMode", "setOrderabilityByMode", "setCartReadError",
     "setFailedStoreImage", "setFailedStoreCover", "setFailedProductImageURIs",
     "setHeroVisible", "setFavoriteOfferIDs", "setFavoritesView", "setPopularView",
-    "setFavoriteLoadError", "setError", "setFavoriteBusy",
+    "setFavoriteLoadError", "setError",
     "setFavoriteOfferBusyID", "setFavoriteLoading", "setBusyOfferId",
     "setAddedOfferId", "setQuantities", "setSelectedModifierOptionIds",
     "setShareTarget",
@@ -61,7 +60,6 @@ function createHarness() {
     if (name === "setSelectedFulfillmentMode") fulfillmentMode = value;
   };
   setters.setOpenCart = (value) => { openCart = value; events.push(["setOpenCart", value]); };
-  setters.setIsFavorite = (value) => { favorite = value; events.push(["setIsFavorite", value]); };
   setters.setState = (value) => {
     state = typeof value === "function" ? value(state) : value;
     events.push(["setState", state]);
@@ -85,7 +83,7 @@ function createHarness() {
   }
   return {
     refs, events, loader,
-    current: () => ({ state, openCart, fulfillmentMode, favorite }),
+    current: () => ({ state, openCart, fulfillmentMode }),
   };
 }
 
@@ -100,7 +98,6 @@ test("fast Store A to B navigation never paints A's late public catalog over B",
   assert.equal(h.current().state.kind, "loading");
   assert.equal(h.current().openCart, null);
   assert.equal(h.current().fulfillmentMode, null);
-  assert.equal(h.current().favorite, false);
 
   bStore.resolve({ id: "store-b", name: "B" });
   bCatalog.resolve({ offers: [{ offerId: "offer-b" }], sections: [], categories: [] });
@@ -201,28 +198,6 @@ test("Store A late add-to-cart cannot replace B's cart after same-actor Store na
     "new Store clears old Store's in-flight busy button");
 });
 
-test("Store A late favorite response cannot change Store B favorite badge", async () => {
-  const h = createHarness();
-  const pending = deferred();
-  const toggle = productionAction("toggleFavorite", {
-    favoriteBusy: false, isFavorite: false, storeId: "store-A",
-    currentIdentityState: () => ({ kind: "authenticated" }),
-    actorRevisionRef: h.refs.actorRevisionRef,
-    setFavoriteBusy: (v) => h.events.push(["favoriteBusy", v]),
-    setError: (v) => h.events.push(["error", v]),
-    setFavoriteStore: () => pending.promise,
-    setIsFavorite: (v) => h.events.push(["favorite", v]),
-  });
-  const oldWrite = toggle();
-  const storeB = deferred(), catalogB = deferred();
-  void h.loader("store-B", storeB, catalogB)();
-  const eventsAfterSwitch = h.events.length;
-  pending.resolve(true);
-  await oldWrite;
-  assert.equal(h.events.slice(eventsAfterSwitch).some(([kind]) => ["favorite", "favoriteBusy"].includes(kind)), false,
-    "A's favorite response cannot repaint Store B after the Store changed");
-});
-
 test("withdrawn Store invalidates an in-flight cart mutation before stale completion", async () => {
   let focus;
   function visit(node) {
@@ -263,7 +238,6 @@ test("withdrawn Store invalidates an in-flight cart mutation before stale comple
     setOrderabilityByMode: (v) => h.events.push(["orderability", v]),
     setBusyOfferId: (v) => h.events.push(["busy", v]),
     setAddedOfferId: (v) => h.events.push(["added", v]),
-    setFavoriteBusy: (v) => h.events.push(["favoriteBusy", v]),
     setFavoriteOfferBusyID: (v) => h.events.push(["offerBusy", v]),
     setFavoriteLoading: (v) => h.events.push(["favoriteLoading", v]),
     setState: (v) => h.events.push(["state", v]),
