@@ -36,7 +36,7 @@ func TestStoreRelationCommercialModelDefaultUpgradePreservesV61Agreements(t *tes
 		t.Fatal(err)
 	}
 	records, sqls, err := LoadMigrations(filepath.Join("..", "..", "..", "..", "database", "migrations"))
-	if err != nil || len(records) != SchemaVersion || len(sqls) != SchemaVersion {
+	if err != nil || len(records) == 0 || len(records) != len(sqls) {
 		t.Fatalf("canonical WLT migration catalog unavailable: %v", err)
 	}
 	// This isolated test's database must be empty. Never downgrade or mutate
@@ -163,7 +163,7 @@ func TestStoreRelationCommercialModelDefaultEventV62UpgradePreservesHistory(t *t
 		t.Fatal(err)
 	}
 	records, sqls, err := LoadMigrations(filepath.Join("..", "..", "..", "..", "database", "migrations"))
-	if err != nil || len(records) != SchemaVersion || len(records) < 63 {
+	if err != nil || len(records) < 63 || len(records) != len(sqls) {
 		t.Fatalf("canonical WLT v63 migration manifest is unavailable: %v", err)
 	}
 	var existing sql.NullString

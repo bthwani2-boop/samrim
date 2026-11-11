@@ -7,9 +7,8 @@ import (
 	"testing"
 )
 
-// All SQL migrations must be present in the canonical owner manifest.
-// Otherwise the migration CLI can claim exact schema parity while ignoring
-// a newly authored migration file.
+// The canonical SQL files themselves own the migration inventory.
+// The loader must reject gaps, duplicates and unexpected SQL paths.
 func TestMigrationInventoryMatchesCanonicalDirectory(t *testing.T) {
 	directory := filepath.Join("..", "..", "..", "..", "database", "migrations")
 	files, err := filepath.Glob(filepath.Join(directory, "*.sql"))
@@ -23,8 +22,8 @@ func TestMigrationInventoryMatchesCanonicalDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != SchemaVersion || len(records) != len(files) || len(statements) != len(files) {
-		t.Fatalf("migration inventory drift: files=%d schemaVersion=%d records=%d statements=%d", len(files), SchemaVersion, len(records), len(statements))
+	if len(records) != len(files) || len(statements) != len(files) {
+		t.Fatalf("migration inventory drift: files=%d records=%d statements=%d", len(files), len(records), len(statements))
 	}
 	for i, file := range files {
 		if records[i].Version != i+1 || records[i].Name != filepath.Base(file) {
@@ -33,9 +32,9 @@ func TestMigrationInventoryMatchesCanonicalDirectory(t *testing.T) {
 	}
 }
 
-func TestLoadMigrationsRejectsGapsAndExtraSQL(t *testing.T) {
+func TestLoadMigrationsRejectsGapsAndUnexpectedSQL(t *testing.T) {
 	directory := t.TempDir()
-	for version := 1; version <= SchemaVersion; version++ {
+	for version := 1; version <= 3; version++ {
 		name := fmt.Sprintf("%03d_sample.sql", version)
 		if err := os.WriteFile(filepath.Join(directory, name), []byte("SELECT 1;\n"), 0600); err != nil {
 			t.Fatal(err)
@@ -53,10 +52,17 @@ func TestLoadMigrationsRejectsGapsAndExtraSQL(t *testing.T) {
 	if err := os.Rename(filepath.Join(directory, "002_duplicate.sql"), filepath.Join(directory, "003_sample.sql")); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(directory, "064_extra.sql"), []byte("SELECT 1;\n"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(directory, "005_unexpected.sql"), []byte("SELECT 1;\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := LoadMigrations(directory); err == nil {
-		t.Fatal("migration loader accepted an unregistered extra SQL migration")
+		t.Fatal("migration loader accepted a noncontiguous new SQL migration")
+	}
+	if err := os.Rename(filepath.Join(directory, "005_unexpected.sql"), filepath.Join(directory, "004_next.sql")); err != nil {
+		t.Fatal(err)
+	}
+	records, _, err := LoadMigrations(directory)
+	if err != nil || len(records) != 4 || records[3].Version != 4 {
+		t.Fatalf("migration loader failed to derive the new sequential version: records=%v err=%v", records, err)
 	}
 }

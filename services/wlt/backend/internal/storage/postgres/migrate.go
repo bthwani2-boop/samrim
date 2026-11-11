@@ -15,8 +15,6 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 63
-
 type MigrationRecord struct {
 	Version int
 	Name    string
@@ -58,8 +56,8 @@ func LoadMigrations(directory string) ([]MigrationRecord, []string, error) {
 		}
 		names = append(names, entry.Name())
 	}
-	if len(names) != SchemaVersion {
-		return nil, nil, fmt.Errorf("WLT migration count mismatch: found %d, want %d", len(names), SchemaVersion)
+	if len(names) == 0 {
+		return nil, nil, errors.New("WLT migration directory has no SQL files")
 	}
 	for version, name := range names {
 		if !strings.HasPrefix(name, fmt.Sprintf("%03d_", version+1)) {
@@ -84,7 +82,7 @@ func LoadMigrations(directory string) ([]MigrationRecord, []string, error) {
 }
 
 func Migrate(ctx context.Context, db *sql.DB, records []MigrationRecord, migrationSQL []string) error {
-	if db == nil || len(records) != SchemaVersion || len(migrationSQL) != SchemaVersion {
+	if db == nil || len(records) == 0 || len(records) != len(migrationSQL) {
 		return errors.New("invalid WLT migration input")
 	}
 	tx, err := db.BeginTx(ctx, nil)
@@ -105,7 +103,7 @@ func Migrate(ctx context.Context, db *sql.DB, records []MigrationRecord, migrati
 	if err := tx.QueryRowContext(ctx, "SELECT COALESCE(MAX(version), 0) FROM wlt.schema_migrations").Scan(&current); err != nil {
 		return fmt.Errorf("read WLT migration history: %w", err)
 	}
-	if current > SchemaVersion {
+	if current > len(records) {
 		return fmt.Errorf("WLT schema is newer than this binary: %d", current)
 	}
 	for _, record := range records {
@@ -120,7 +118,7 @@ func Migrate(ctx context.Context, db *sql.DB, records []MigrationRecord, migrati
 			return fmt.Errorf("WLT migration checksum mismatch at v%d", record.Version)
 		}
 	}
-	for index := current; index < SchemaVersion; index++ {
+	for index := current; index < len(records); index++ {
 		record := records[index]
 		if record.Version != current+1 {
 			return fmt.Errorf("WLT migration v%d cannot follow schema v%d", record.Version, current)
@@ -140,7 +138,7 @@ func Migrate(ctx context.Context, db *sql.DB, records []MigrationRecord, migrati
 }
 
 func VerifySchema(ctx context.Context, db *sql.DB, records []MigrationRecord) error {
-	if db == nil || len(records) != SchemaVersion {
+	if db == nil || len(records) == 0 {
 		return errors.New("invalid WLT schema verification input")
 	}
 	if err := db.PingContext(ctx); err != nil {
