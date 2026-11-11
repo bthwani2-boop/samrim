@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { test } from "node:test";
 
 const require = createRequire(import.meta.url);
-const { defineSamrimExpoApp } = require("./define-samrim-expo-app.cjs");
+const { defineSamrimExpoApp } = require("../../tools/mobile/define-samrim-expo-app.cjs");
 const root = resolve(import.meta.dirname, "../..");
 const apps = ["app-client", "app-partner"];
 

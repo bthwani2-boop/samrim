@@ -7,8 +7,13 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
+import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";
 
-type PendingOrderAlert = Readonly<{ actorId: string; orderId: string; storeId: string }>;
+type PendingOrderAlert = Readonly<{ sessionKey: string; actorId: string; orderId: string; storeId: string }>;
+
+function currentPartnerSessionKey(): string {
+  return partnerSetupSessionKey(currentIdentityState());
+}
 
 function currentActorID(): string {
   const state = currentIdentityState();
@@ -20,7 +25,8 @@ function currentActorID(): string {
  * notification permission, service worker or duplicate push channel is needed.
  */
 export function OrderAlertMonitor() {
-  const actorId = useSyncExternalStore(subscribeIdentitySession, currentActorID, () => "");
+  const sessionKey = useSyncExternalStore(subscribeIdentitySession, currentPartnerSessionKey, () => "");
+  const actorId = currentActorID();
   const router = useRouter();
   const theme = useAppearanceTheme();
   const [notice, setNotice] = useState<PendingOrderAlert | null>(null);
@@ -32,16 +38,16 @@ export function OrderAlertMonitor() {
     setNotice(null);
 
     const poll = async () => {
-      if (!actorId || !active || busy || document.visibilityState !== "visible") return;
+      if (!sessionKey || !actorId || !active || busy || document.visibilityState !== "visible") return;
       const apiUrl = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
       if (!apiUrl) return;
       busy = true;
       try {
         const token = await getUsableIdentityAccessToken();
-        if (!active || currentActorID() !== actorId) return;
+        if (!active || currentPartnerSessionKey() !== sessionKey) return;
         const api = createDshMobileClient(apiUrl, { cryptoRandomUUID: () => Crypto.randomUUID() });
         const response = await api.listNotifications(token, 35);
-        if (!active || currentActorID() !== actorId) return;
+        if (!active || currentPartnerSessionKey() !== sessionKey) return;
         const recent = [...response.notifications];
         let nextCursor = response.nextCursor ?? "";
         // Read beyond the first 35 only during bursts. Action alerts older
@@ -55,14 +61,15 @@ export function OrderAlertMonitor() {
           } catch {
             break; // A later page must not discard an unrung first-page alert.
           }
-          if (!active || currentActorID() !== actorId) return;
+          if (!active || currentPartnerSessionKey() !== sessionKey) return;
           recent.push(...next.notifications);
           if (!next.nextCursor || next.nextCursor === nextCursor) break;
           nextCursor = next.nextCursor;
         }
-        const fresh = cursor.receive("partner", actorId, recent);
+        const fresh = cursor.receive("partner", sessionKey, recent);
         const newest = fresh.at(-1);
-        if (newest) setNotice({
+        if (newest && currentPartnerSessionKey() === sessionKey) setNotice({
+          sessionKey,
           actorId,
           orderId: newest.orderId ?? "",
           storeId: newest.storeId ?? "",
@@ -83,11 +90,12 @@ export function OrderAlertMonitor() {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [actorId]);
+  }, [actorId, sessionKey]);
 
-  if (!notice || !actorId || notice.actorId !== actorId) return null;
+  if (!notice || !sessionKey || notice.sessionKey !== sessionKey || notice.actorId !== actorId) return null;
 
   const openOrders = () => {
+    if (currentPartnerSessionKey() !== sessionKey) return;
     setNotice(null);
     const idValid = /^[A-Za-z0-9._~-]{1,160}$/.test(notice.orderId);
     const storeValid = /^[A-Za-z0-9._~-]{1,160}$/.test(notice.storeId);

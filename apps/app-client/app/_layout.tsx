@@ -1,5 +1,5 @@
 import { parseStudioThemePublication } from "@bthwani/design-system";
-import { AppearanceProvider, BthwaniNetworkStatusNotice, useMobileAppearance } from "@bthwani/design-system/native";
+import { AppearanceProvider, BthwaniNetworkStatusNotice, isConfirmedOffline, useMobileAppearance } from "@bthwani/design-system/native";
 import { AppKeyboardProvider } from "@bthwani/design-system/native/keyboard-provider";
 import { tamaguiConfig } from "@bthwani/tamagui-config";
 import { useNetworkState } from "expo-network";
@@ -79,5 +79,5 @@ function RootNavigation() {
 function RootNetworkNotice() {
   const { top } = useSafeAreaInsets();
   const { isConnected, isInternetReachable } = useNetworkState();
-  return <BthwaniNetworkStatusNotice top={top} offline={isConnected === false || isInternetReachable === false} />;
+  return <BthwaniNetworkStatusNotice top={top} offline={isConfirmedOffline(isConnected, isInternetReachable)} />;
 }

@@ -5,6 +5,7 @@ import test from "node:test";
 
 const root = resolve(import.meta.dirname, "../..");
 const applications = ["app-client", "app-partner", "app-captain"];
+const scopeByApp = { "app-client": "clientSessionKey", "app-partner": "partnerSetupSessionKey", "app-captain": "captainSessionKey" };
 const owner = resolve(root, "packages/push-device/src/index.ts");
 const source = readFileSync(owner, "utf8");
 
@@ -35,7 +36,14 @@ for (const app of applications) {
     assert.match(login, /import \{ unregisterOwnPushDevice \} from "@bthwani\/push-device"/);
     assert.match(login, /await unregisterOwnPushDevice\(token, process\.env\.EXPO_PUBLIC_DSH_API_URL\)/);
     assert.match(monitor, /import \{ hasNativeNotificationModules, registerOwnPushDevice \} from "@bthwani\/push-device"/);
-    assert.match(monitor, /current\.identity\.subject\.trim\(\) === actor;\s*\}, url\)/);
+    const scope = scopeByApp[app];
+    assert.ok(monitor.includes(`const sessionKey = ${scope}(session);`), "the monitor must use the existing app-owned Identity session scope");
+    assert.match(monitor, /const stillCurrent = \(\) => !cancelled && AppState.currentState === "active" && isCurrentAlertSession\(sessionKey\);/);
+    assert.match(monitor, /registerOwnPushDevice\(token, actor, chosenTone, stillCurrent, url\)/);
+    assert.match(monitor, /alerts.receive\(role, sessionKey, data.notifications\)/);
+    assert.match(monitor, /scheduledSessions.get\(result.notification.request.identifier\)/);
+    assert.match(monitor, /cancelScheduledNotificationAsync\(notificationId\)/);
+    assert.doesNotMatch(monitor, /alerts.receive\(role, actor, data.notifications\)/);
     assert.doesNotMatch(login + monitor, /from ["'](?:\.\/|\.\.\/features\/notifications\/)push-device["']/);
   });
 }

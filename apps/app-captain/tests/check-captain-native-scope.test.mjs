@@ -5,8 +5,8 @@ import { resolve } from "node:path";
 import { test } from "node:test";
 
 const require = createRequire(import.meta.url);
-const { defineSamrimExpoApp } = require("./define-samrim-expo-app.cjs");
-const root = resolve(import.meta.dirname, "../..");
+const { defineSamrimExpoApp } = require("../../../tools/mobile/define-samrim-expo-app.cjs");
+const root = resolve(import.meta.dirname, "../../..");
 const savedAndroid = process.env.GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN;
 const savedIos = process.env.GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN;
 let captain;
