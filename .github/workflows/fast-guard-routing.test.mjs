@@ -95,6 +95,9 @@ test("Fast Guard executes committed session-isolation and finance CSV regression
     "apps/app-partner/src/features/store-offer/catalog-product-pages.test.mjs",
     "apps/app-partner/tests/partner-home-metrics-session.test.mjs",
     "apps/control-panel/tests/store-workbench-relation.test.mjs",
+    "apps/control-panel/tests/central-catalog-product-file.test.mjs",
+    "apps/control-panel/tests/catalog-taxonomy-query.test.mjs",
+    "apps/control-panel/tests/store-products-search.test.mjs",
     "apps/app-captain/src/features/wallet/captain-cash-in-session.test.mjs",
     "apps/control-panel/tests/finance-report-csv-safety.test.mjs",
   ]) {
