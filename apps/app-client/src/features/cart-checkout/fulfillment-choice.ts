@@ -1,5 +1,5 @@
 import type { CustomerFulfillmentMode } from "@bthwani/dsh";
-import * as SecureStore from "../../bootstrap/compatible-storage";
+import * as SecureStore from "@bthwani/identity/secure-storage";
 import { currentIdentityState } from "../../bootstrap/identity";
 
 import { resolveFulfillmentChoice } from "./fulfillment-choice-core";

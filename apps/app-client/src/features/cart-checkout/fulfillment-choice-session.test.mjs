@@ -28,7 +28,7 @@ function fixture(readStorage) {
     setItemAsync: async (key, value) => { saved.set(key, value); },
   };
   const api = run(transpile("fulfillment-choice.ts"), {
-    "../../bootstrap/compatible-storage": storage,
+    "@bthwani/identity/secure-storage": storage,
     "../../bootstrap/identity": { currentIdentityState: () => ({ kind: "authenticated", identity: { subject: actor } }) },
     "./fulfillment-choice-core": core,
   });

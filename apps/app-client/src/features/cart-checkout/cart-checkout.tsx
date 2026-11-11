@@ -6,7 +6,7 @@ import { useNetworkState } from "expo-network";
 import { type Href, Link, useFocusEffect, useRouter } from "expo-router";
 import { type MutableRefObject, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import * as SecureStore from "../../bootstrap/compatible-storage";
+import * as SecureStore from "@bthwani/identity/secure-storage";
 import { createClientDsh } from "../../bootstrap/dsh";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { premiumColors } from "../order-experience/premium-order-ui";

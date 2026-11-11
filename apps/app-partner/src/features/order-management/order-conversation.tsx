@@ -6,7 +6,7 @@ import * as Crypto from "expo-crypto";
 import { File, Paths } from "expo-file-system";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import * as SecureStore from "../../bootstrap/compatible-storage";
+import * as SecureStore from "@bthwani/identity/secure-storage";
 import { createPartnerDshClient } from "../../bootstrap/dsh-client";
 import { currentIdentityState, getUsableIdentityAccessToken, role, subscribeIdentitySession } from "../../bootstrap/identity";
 import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";

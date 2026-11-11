@@ -6,7 +6,7 @@ import {
 import { unregisterOwnPushDevice } from "@bthwani/push-device";
 import * as Crypto from "expo-crypto";
 import { Platform } from "react-native";
-import * as SecureStore from "./compatible-storage";
+import * as SecureStore from "@bthwani/identity/secure-storage";
 
 const role = "client" as const;
 const surface = "app-client" as const;

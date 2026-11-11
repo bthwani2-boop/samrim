@@ -1,7 +1,7 @@
 import { createMobileIdentityRuntime, type IdentitySessionState } from "@bthwani/identity";
 import * as Crypto from "expo-crypto";
 import { Platform } from "react-native";
-import * as SecureStore from "./compatible-storage";
+import * as SecureStore from "@bthwani/identity/secure-storage";
 
 // An applicant uses an existing Identity client-role proof before admission.
 // It has a separate local session namespace and cannot operate Partner surfaces.

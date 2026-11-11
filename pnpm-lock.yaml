@@ -952,6 +952,9 @@ importers:
       '@types/react':
         specifier: 19.3.0
         version: 19.3.0
+      expo-secure-store:
+        specifier: 58.0.2
+        version: 58.0.2(expo@58.0.19)
       react:
         specifier: 19.3.0
         version: 19.3.0

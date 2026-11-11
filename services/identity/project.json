@@ -12,7 +12,7 @@
     "contract": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "node services/identity/tools/generate-types.mjs --check && node tools/dev/check-openapi.mjs identity && node --test services/identity/clients/session-browser-logout.test.mjs"
+        "command": "node services/identity/tools/generate-types.mjs --check && node tools/dev/check-openapi.mjs identity && node --test services/identity/clients/session-browser-logout.test.mjs services/identity/clients/secure-storage-export.test.mjs"
       },
       "inputs": [
         "default",

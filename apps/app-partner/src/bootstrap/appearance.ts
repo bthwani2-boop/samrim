@@ -1,4 +1,4 @@
-import * as SecureStore from "./compatible-storage";
+import * as SecureStore from "@bthwani/identity/secure-storage";
 
 import { createMobileAppearanceController } from "@bthwani/design-system/native";
 

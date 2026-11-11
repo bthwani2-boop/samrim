@@ -4,7 +4,7 @@ import type { ServiceCity } from "@bthwani/dsh";
 import { useGlobalSearchParams, usePathname } from "expo-router";
 import { createContext, type PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Pressable, StyleSheet, Text, View } from "react-native";
-import * as SecureStore from "../../bootstrap/compatible-storage";
+import * as SecureStore from "@bthwani/identity/secure-storage";
 import { createClientDsh } from "../../bootstrap/dsh";
 import { persistCitySelection, readCitySelection, resolveLinkedServiceCityID } from "./service-city-preference";
 

@@ -5,7 +5,7 @@ import * as Crypto from "expo-crypto";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
-import * as SecureStore from "../../bootstrap/compatible-storage";
+import * as SecureStore from "@bthwani/identity/secure-storage";
 import { createPartnerDshClient } from "../../bootstrap/dsh-client";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";

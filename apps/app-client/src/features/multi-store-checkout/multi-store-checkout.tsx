@@ -6,7 +6,7 @@ import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import * as SecureStore from "../../bootstrap/compatible-storage";
+import * as SecureStore from "@bthwani/identity/secure-storage";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { clientSessionKey } from "../access/client-session-scope";
 import { createMultiStoreCheckout, listOwnOpenCarts, quoteMultiStoreChildCheckout, readCartForPreview, readOwnMultiStoreCheckout } from "../cart-checkout/cart-client";

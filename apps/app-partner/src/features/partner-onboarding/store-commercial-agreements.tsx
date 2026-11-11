@@ -2,7 +2,7 @@ import { borders, radius, type resolveTheme, spacing, typography } from "@bthwan
 import { BthwaniButton, BthwaniConfirmDialog, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, AppState, StyleSheet, Text, View } from "react-native";
-import * as SecureStore from "../../bootstrap/compatible-storage";
+import * as SecureStore from "@bthwani/identity/secure-storage";
 
 import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
 import { partnerSetupSessionKey } from "./partner-setup-session-scope";
