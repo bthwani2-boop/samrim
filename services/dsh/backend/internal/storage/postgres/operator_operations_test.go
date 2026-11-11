@@ -83,6 +83,40 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 			}
 		}
 
+		// Partner page batching must preserve nonempty canonical Order lines,
+		// per-line immutable snapshots and attributed adjustments, including
+		// an Order on the continuation page and an empty child collection.
+		for _, orderID := range []string{"operator_order_01", "operator_order_03"} {
+			lineID := "line_" + orderID
+			if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_order_lines
+				(id,order_id,store_offer_id,variant_id,product_id,product_name,variant_title,
+				 measurement_kind,base_unit,pricing_basis,quantity_policy,quantity_min_base_units,
+				 quantity_max_base_units,quantity_step_base_units,pricing_unit_base_units,
+				 requested_quantity_base_units,unit_price_minor,line_amount_minor,currency)
+				VALUES($1,$2,$3,$4,$5,'سلعة','أساسي','COUNT','unit','PER_UNIT',
+				'FIXED',1,100,1,1,2,900,1800,'YER')`,
+				lineID, orderID, "offer_"+orderID, "variant_"+orderID, "product_"+orderID); err != nil {
+				t.Fatalf("insert Partner Order line %s: %v", orderID, err)
+			}
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_order_line_modifier_snapshots
+			(order_line_id,option_id,option_name_ar,price_delta_minor)
+			VALUES('line_operator_order_03','addon_03','إضافة',0)`); err != nil {
+			t.Fatalf("insert Partner Order modifier snapshot: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_order_line_attribute_snapshots
+			(order_line_id,attribute_id,attribute_code,value_kind,text_value)
+			VALUES('line_operator_order_03','size_03','size','TEXT','large')`); err != nil {
+			t.Fatalf("insert Partner Order attribute snapshot: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_order_adjustments
+			(id,order_id,order_line_id,kind,state,customer_decision_required,
+			requested_by_actor_id,requested_by_role)
+			VALUES('adjust_order_01','operator_order_01','line_operator_order_01',
+			'REMOVE_ITEM','PROPOSED',false,'partner_operator_ops','partner')`); err != nil {
+			t.Fatalf("insert Partner Order adjustment: %v", err)
+		}
+
 		// The current stage clock is an owner transition event, not a
 		// refreshed order updated_at value. The synthetic source is 1 min earlier.
 		stageAt := updatedAt.Add(-time.Minute)
@@ -235,6 +269,30 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		partnerPage2, err := postgres.ListOrdersForPartnerStores(ctx, db, partnerStores, nil, "", 2, partnerPage1.NextCursor)
 		if err != nil || len(partnerPage2.Orders) != 1 || partnerPage2.NextCursor != "" {
 			t.Fatalf("partner orders second page = %+v err=%v", partnerPage2, err)
+		}
+		// Both pages use the same sorted Order projection, and children must
+		// be attached only to their corresponding canonical Order.
+		pageByID := make(map[string]postgres.OrderRecord)
+		for _, order := range append(partnerPage1.Orders, partnerPage2.Orders...) {
+			pageByID[order.ID] = order
+		}
+		withModifiers := pageByID["operator_order_03"]
+		if len(withModifiers.Lines) != 1 || withModifiers.Lines[0].ID != "line_operator_order_03" ||
+			len(withModifiers.Lines[0].ModifierSnapshots) != 1 || withModifiers.Lines[0].ModifierSnapshots[0].OptionID != "addon_03" ||
+			len(withModifiers.Lines[0].AttributeSnapshots) != 1 || withModifiers.Lines[0].AttributeSnapshots[0].Code != "size" ||
+			len(withModifiers.Adjustments) != 0 {
+			t.Fatalf("Partner batch lost or misrouted historical line snapshots: %+v", withModifiers)
+		}
+		withAdjustment := pageByID["operator_order_01"]
+		if len(withAdjustment.Lines) != 1 || withAdjustment.Lines[0].ID != "line_operator_order_01" ||
+			len(withAdjustment.Lines[0].ModifierSnapshots) != 0 || len(withAdjustment.Lines[0].AttributeSnapshots) != 0 ||
+			len(withAdjustment.Adjustments) != 1 || withAdjustment.Adjustments[0].ID != "adjust_order_01" {
+			t.Fatalf("Partner continuation batch lost or misrouted Order adjustment: %+v", withAdjustment)
+		}
+		emptyChildren := pageByID["operator_order_02"]
+		if emptyChildren.ID != "operator_order_02" || emptyChildren.Lines == nil || emptyChildren.Adjustments == nil ||
+			len(emptyChildren.Lines) != 0 || len(emptyChildren.Adjustments) != 0 {
+			t.Fatalf("Partner batch changed empty Order child collections: %+v", emptyChildren)
 		}
 		filtered, err := postgres.ListOrdersForPartnerStores(ctx, db, partnerStores, []string{"READY_FOR_DISPATCH"}, "", 10, "")
 		if err != nil || len(filtered.Orders) != 2 || filtered.NextCursor != "" {

@@ -205,21 +205,160 @@ func ListOrdersForPartnerStores(ctx context.Context, db *sql.DB, storeIDs []stri
 		page.Orders = items[:limit]
 		page.NextCursor = encodePartnerOrdersCursor(partnerOrdersCursor{CreatedAt: last.CreatedAt, ID: last.ID, State: statesKey, Query: query, StoreScope: storeScope})
 	}
-	var lineErr error
-	for index := range page.Orders {
-		page.Orders[index].Lines, lineErr = listOrderLines(ctx, tx, page.Orders[index].ID)
-		if lineErr != nil {
-			return PartnerOrdersPage{}, lineErr
-		}
-		page.Orders[index].Adjustments, lineErr = listOrderAdjustments(ctx, tx, page.Orders[index].ID)
-		if lineErr != nil {
-			return PartnerOrdersPage{}, lineErr
-		}
+	if err := hydratePartnerOrderPage(ctx, tx, page.Orders); err != nil {
+		return PartnerOrdersPage{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return PartnerOrdersPage{}, err
 	}
 	return page, nil
+}
+
+type partnerOrderLinePosition struct {
+	order int
+	line  int
+}
+
+// hydratePartnerOrderPage loads each canonical Order child collection once for
+// the bounded page, using the same read-only REPEATABLE READ transaction as
+// the Order headers. It must never read another Store's Order by broadening the
+// caller's scoped Order IDs, and historical empty collections remain [].
+func hydratePartnerOrderPage(ctx context.Context, source queryer, orders []OrderRecord) error {
+	if len(orders) == 0 {
+		return nil
+	}
+	orderIDs := make([]string, 0, len(orders))
+	orderPositions := make(map[string]int, len(orders))
+	for i := range orders {
+		orderIDs = append(orderIDs, orders[i].ID)
+		orderPositions[orders[i].ID] = i
+		orders[i].Lines = make([]OrderLineRecord, 0)
+		orders[i].Adjustments = make([]OrderAdjustmentRecord, 0)
+	}
+	rows, err := source.QueryContext(ctx,
+		"SELECT "+orderLineSelectColumns+" FROM dsh.commerce_order_lines WHERE order_id=ANY($1) ORDER BY order_id,created_at,id",
+		pq.Array(orderIDs))
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		line, scanErr := scanOrderLine(rows)
+		if scanErr != nil {
+			_ = rows.Close()
+			return scanErr
+		}
+		orderIndex, found := orderPositions[line.OrderID]
+		if !found {
+			_ = rows.Close()
+			return fmt.Errorf("line for an unexpected Partner page order")
+		}
+		line.ModifierSnapshots = make([]OrderLineModifierSnapshotRecord, 0)
+		line.AttributeSnapshots = make([]OrderLineAttributeSnapshotRecord, 0)
+		orders[orderIndex].Lines = append(orders[orderIndex].Lines, line)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+
+	lineIDs := make([]string, 0)
+	linePositions := make(map[string]partnerOrderLinePosition)
+	for orderIndex := range orders {
+		for lineIndex := range orders[orderIndex].Lines {
+			line := orders[orderIndex].Lines[lineIndex]
+			lineIDs = append(lineIDs, line.ID)
+			linePositions[line.ID] = partnerOrderLinePosition{order: orderIndex, line: lineIndex}
+		}
+	}
+	if len(lineIDs) > 0 {
+		modifierRows, err := source.QueryContext(ctx, `SELECT order_line_id,option_id,option_name_ar,price_delta_minor
+			FROM dsh.commerce_order_line_modifier_snapshots WHERE order_line_id=ANY($1)
+			ORDER BY order_line_id,created_at,option_id`, pq.Array(lineIDs))
+		if err != nil {
+			return err
+		}
+		for modifierRows.Next() {
+			var lineID string
+			var item OrderLineModifierSnapshotRecord
+			if err := modifierRows.Scan(&lineID, &item.OptionID, &item.OptionNameAr, &item.PriceDeltaMinor); err != nil {
+				_ = modifierRows.Close()
+				return err
+			}
+			pos, found := linePositions[lineID]
+			if !found {
+				_ = modifierRows.Close()
+				return fmt.Errorf("modifier for an unexpected Partner page line")
+			}
+			line := &orders[pos.order].Lines[pos.line]
+			line.ModifierSnapshots = append(line.ModifierSnapshots, item)
+		}
+		if err := modifierRows.Err(); err != nil {
+			_ = modifierRows.Close()
+			return err
+		}
+		if err := modifierRows.Close(); err != nil {
+			return err
+		}
+
+		attributeRows, err := source.QueryContext(ctx, `SELECT order_line_id,attribute_id,attribute_code,value_kind,text_value,integer_value,decimal_value,boolean_value,enum_value,date_value,measurement_unit
+			FROM dsh.commerce_order_line_attribute_snapshots WHERE order_line_id=ANY($1)
+			ORDER BY order_line_id,created_at,attribute_id`, pq.Array(lineIDs))
+		if err != nil {
+			return err
+		}
+		for attributeRows.Next() {
+			var lineID string
+			var item OrderLineAttributeSnapshotRecord
+			if err := attributeRows.Scan(&lineID, &item.AttributeID, &item.Code, &item.ValueKind,
+				&item.TextValue, &item.IntegerValue, &item.DecimalValue, &item.BooleanValue,
+				&item.EnumValue, &item.DateValue, &item.MeasurementUnit); err != nil {
+				_ = attributeRows.Close()
+				return err
+			}
+			pos, found := linePositions[lineID]
+			if !found {
+				_ = attributeRows.Close()
+				return fmt.Errorf("attribute for an unexpected Partner page line")
+			}
+			line := &orders[pos.order].Lines[pos.line]
+			line.AttributeSnapshots = append(line.AttributeSnapshots, item)
+		}
+		if err := attributeRows.Err(); err != nil {
+			_ = attributeRows.Close()
+			return err
+		}
+		if err := attributeRows.Close(); err != nil {
+			return err
+		}
+	}
+
+	adjustmentRows, err := source.QueryContext(ctx,
+		"SELECT "+orderAdjustmentSelectColumns+" FROM dsh.commerce_order_adjustments WHERE order_id=ANY($1) ORDER BY order_id,created_at,id",
+		pq.Array(orderIDs))
+	if err != nil {
+		return err
+	}
+	for adjustmentRows.Next() {
+		item, err := scanOrderAdjustment(adjustmentRows)
+		if err != nil {
+			_ = adjustmentRows.Close()
+			return err
+		}
+		orderIndex, found := orderPositions[item.OrderID]
+		if !found {
+			_ = adjustmentRows.Close()
+			return fmt.Errorf("adjustment for an unexpected Partner page order")
+		}
+		orders[orderIndex].Adjustments = append(orders[orderIndex].Adjustments, item)
+	}
+	if err := adjustmentRows.Err(); err != nil {
+		_ = adjustmentRows.Close()
+		return err
+	}
+	return adjustmentRows.Close()
 }
 
 // canonicalOrderStates validates a bounded order-state filter: every entry must
@@ -844,21 +983,32 @@ func listOrders(ctx context.Context, db *sql.DB, where string, args []any, state
 	return items, nil
 }
 
+const orderLineSelectColumns = "id,order_id,store_offer_id,variant_id,product_id,product_name,variant_title,measurement_kind,base_unit,pricing_basis,quantity_policy,quantity_min_base_units,quantity_max_base_units,quantity_step_base_units,pricing_unit_base_units,requested_quantity_base_units,final_quantity_base_units,unit_price_minor,line_amount_minor,currency,selected_modifier_option_ids,modifier_amount_minor,created_at"
+
+func scanOrderLine(row rowScanner) (OrderLineRecord, error) {
+	var item OrderLineRecord
+	var finalQuantity sql.NullInt64
+	if err := row.Scan(&item.ID, &item.OrderID, &item.StoreOfferID, &item.VariantID, &item.ProductID, &item.ProductName, &item.VariantTitle, &item.MeasurementKind, &item.BaseUnit, &item.PricingBasis, &item.QuantityPolicy, &item.QuantityMinBaseUnits, &item.QuantityMaxBaseUnits, &item.QuantityStepBaseUnits, &item.PricingUnitBaseUnits, &item.RequestedQuantityBaseUnits, &finalQuantity, &item.UnitPriceMinor, &item.LineAmountMinor, &item.Currency, pq.Array(&item.SelectedModifierOptionIDs), &item.ModifierAmountMinor, &item.CreatedAt); err != nil {
+		return OrderLineRecord{}, err
+	}
+	if finalQuantity.Valid {
+		value := finalQuantity.Int64
+		item.FinalQuantityBaseUnits = &value
+	}
+	return item, nil
+}
+
 func listOrderLines(ctx context.Context, source queryer, orderID string) ([]OrderLineRecord, error) {
-	rows, err := source.QueryContext(ctx, `SELECT id,order_id,store_offer_id,variant_id,product_id,product_name,variant_title,measurement_kind,base_unit,pricing_basis,quantity_policy,quantity_min_base_units,quantity_max_base_units,quantity_step_base_units,pricing_unit_base_units,requested_quantity_base_units,final_quantity_base_units,unit_price_minor,line_amount_minor,currency,selected_modifier_option_ids,modifier_amount_minor,created_at FROM dsh.commerce_order_lines WHERE order_id=$1 ORDER BY created_at,id`, orderID)
+	rows, err := source.QueryContext(ctx, "SELECT "+orderLineSelectColumns+" FROM dsh.commerce_order_lines WHERE order_id=$1 ORDER BY created_at,id", orderID)
 	if err != nil {
 		return nil, err
 	}
 	items := make([]OrderLineRecord, 0)
 	for rows.Next() {
-		var item OrderLineRecord
-		var finalQuantity sql.NullInt64
-		if err := rows.Scan(&item.ID, &item.OrderID, &item.StoreOfferID, &item.VariantID, &item.ProductID, &item.ProductName, &item.VariantTitle, &item.MeasurementKind, &item.BaseUnit, &item.PricingBasis, &item.QuantityPolicy, &item.QuantityMinBaseUnits, &item.QuantityMaxBaseUnits, &item.QuantityStepBaseUnits, &item.PricingUnitBaseUnits, &item.RequestedQuantityBaseUnits, &finalQuantity, &item.UnitPriceMinor, &item.LineAmountMinor, &item.Currency, pq.Array(&item.SelectedModifierOptionIDs), &item.ModifierAmountMinor, &item.CreatedAt); err != nil {
+		item, err := scanOrderLine(rows)
+		if err != nil {
+			_ = rows.Close()
 			return nil, err
-		}
-		if finalQuantity.Valid {
-			value := finalQuantity.Int64
-			item.FinalQuantityBaseUnits = &value
 		}
 		items = append(items, item)
 	}

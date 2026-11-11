@@ -85,8 +85,9 @@ func scanOrderAdjustment(row rowScanner) (OrderAdjustmentRecord, error) {
 }
 
 const (
-	listOrderAdjustmentsSQL = `SELECT id,order_id,order_line_id,kind,state,actual_quantity_base_units,customer_decision_required,requested_by_actor_id,requested_by_role,customer_actor_id,customer_decided_at,applied_at,version,created_at,updated_at
-		FROM dsh.commerce_order_adjustments WHERE order_id=$1 ORDER BY created_at ASC,id`
+	orderAdjustmentSelectColumns = "id,order_id,order_line_id,kind,state,actual_quantity_base_units,customer_decision_required,requested_by_actor_id,requested_by_role,customer_actor_id,customer_decided_at,applied_at,version,created_at,updated_at"
+	listOrderAdjustmentsSQL      = "SELECT " + orderAdjustmentSelectColumns +
+		" FROM dsh.commerce_order_adjustments WHERE order_id=$1 ORDER BY created_at ASC,id"
 	readOrderAdjustmentByOrderAndIDSQL = `SELECT id,order_id,order_line_id,kind,state,actual_quantity_base_units,customer_decision_required,requested_by_actor_id,requested_by_role,customer_actor_id,customer_decided_at,applied_at,version,created_at,updated_at
 		FROM dsh.commerce_order_adjustments WHERE order_id=$1 AND id=$2`
 	lockOrderAdjustmentByOrderAndIDSQL = `SELECT id,order_id,order_line_id,kind,state,actual_quantity_base_units,customer_decision_required,requested_by_actor_id,requested_by_role,customer_actor_id,customer_decided_at,applied_at,version,created_at,updated_at
