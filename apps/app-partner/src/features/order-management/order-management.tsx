@@ -1,20 +1,16 @@
-import { borders, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { borders, radius, type resolveTheme, sizing, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniConfirmDialog, BthwaniConversationSheet, BthwaniIcon, BthwaniStatusBadge, useAppearanceTheme, useConversationUnreadCounts } from "@bthwani/design-system/native";
-import { type CaptainAssignment, type CaptainOffer, captainHandoffStateLabel, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderAdjustmentProposalRequest, type OrderTransitionRequest, orderStateLabel, paymentMethodLabel, paymentStateLabel, type StoreCaptainMembership } from "@bthwani/dsh";
+import { type CaptainAssignment, type CaptainOffer, captainHandoffStateLabel, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderAdjustmentProposalRequest, type OrderTransitionRequest, orderStateLabel, paymentMethodLabel, paymentStateLabel, pricingBasisLabel, type StoreCaptainMembership } from "@bthwani/dsh";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, AppState, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { createPartnerDshClient } from "../../bootstrap/dsh-client";
+import { createPartnerDshClient as client } from "../../bootstrap/dsh-client";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { partnerSetupSessionKey } from "../partner-onboarding/partner-setup-session-scope";
 import { usePartnerStoreScope } from "../partner-onboarding/partner-store-scope-context";
 import { OrderConversation } from "./order-conversation";
 import { isCurrentOrderListRequest, mergeOrderPageRecords, tryAcquireOrderAction } from "./order-page-records";
-
-
-
-const client = createPartnerDshClient;
 
 function nextState(order: Order): OrderTransitionRequest["state"] | null {
   if (order.state === "CREATED") return "PARTNER_ACCEPTED";
@@ -548,12 +544,6 @@ function isValidAdjustmentQuantity(line: Order["lines"][number], value: string):
     && actual <= line.quantityMaxBaseUnits
     && (actual - line.quantityMinBaseUnits) % step === 0;
 }
-
-function toAsciiDigits(value: string): string {
-  return value.replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 1632)).replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 1776));
-}
-
-function pricingBasisLabel(basis: Order["lines"][number]["pricingBasis"]): string { return basis === "PER_UNIT" ? "لكل قطعة" : "لكل وحدة قياس"; }
 
 function attributeSnapshotValue(attribute: Order["lines"][number]["attributeSnapshots"][number]): string {
   if (attribute.textValue) return attribute.textValue;

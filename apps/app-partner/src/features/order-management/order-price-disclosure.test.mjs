@@ -8,3 +8,12 @@ test("partner order details distinguish unit price from the charged line total",
   assert.match(source, /إجمالي السطر: \{formatMoney\(line\.lineAmountMinor, line\.currency\)\}/);
   assert.doesNotMatch(source, /pricingBasisLabel\(line\.pricingBasis\)} · \{formatMoney\(line\.lineAmountMinor, line\.currency\)\}/);
 });
+
+test("Partner order presentation uses canonical DSH price labels and design-system digit normalization", () => {
+  const source = readFileSync(new URL("./order-management.tsx", import.meta.url), "utf8");
+  assert.match(source, /import \{[^;\n]*\btoAsciiDigits\b[^;\n]*\} from "@bthwani\/design-system";/);
+  assert.match(source, /import \{[^;\n]*\bpricingBasisLabel\b[^;\n]*\} from "@bthwani\/dsh";/);
+  assert.match(source, /import \{ createPartnerDshClient as client \} from "\.\.\/\.\.\/bootstrap\/dsh-client";/);
+  assert.doesNotMatch(source, /function (?:toAsciiDigits|pricingBasisLabel)\(/);
+  assert.doesNotMatch(source, /const client = createPartnerDshClient;/);
+});
