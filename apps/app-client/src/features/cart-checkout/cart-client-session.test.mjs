@@ -20,7 +20,7 @@ for (const [name, content] of [["cart-client.ts", source], ["client-request-toke
 }
 
 function actualClientCalls(runtime) {
-  const names = ["tokenForClientSession", "quoteMultiStoreChildCheckout", "createMultiStoreCheckout", "readOwnMultiStoreCheckout"];
+  const names = ["assertClientSession", "tokenForClientSession", "quoteMultiStoreChildCheckout", "createMultiStoreCheckout", "readOwnMultiStoreCheckout"];
   const original = names.map((name) => {
     assert.ok(declarations.has(name), `missing production DSH boundary: ${name}`);
     return declarations.get(name).replace(/^export\s+/u, "");

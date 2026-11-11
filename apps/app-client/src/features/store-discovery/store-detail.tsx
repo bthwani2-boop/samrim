@@ -11,6 +11,7 @@ import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-g
 import { runOnJS } from "react-native-reanimated";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
+import { clientSessionKey } from "../access/client-session-scope";
 import { addCatalogOfferToCart, readOwnStoreCart } from "../cart-checkout/cart-client";
 import { subscribeClientCartActorChanges } from "../cart-checkout/cart-session-scope";
 import { readSavedFulfillmentMode, saveFulfillmentMode } from "../cart-checkout/fulfillment-choice";
@@ -39,9 +40,8 @@ type CatalogSnapshot = { catalog: PublicCatalogResponse; categoryID: string | nu
 
 const EMPTY_GRID_CELL_KEYS = ["empty-grid-cell:1", "empty-grid-cell:2", "empty-grid-cell:3", "empty-grid-cell:4", "empty-grid-cell:5"] as const;
 
-function currentStoreActorID(): string {
-  const session = currentIdentityState();
-  return session.kind === "authenticated" ? session.identity.subject.trim() : "";
+function currentStoreSessionKey(): string {
+  return clientSessionKey(currentIdentityState());
 }
 
 export default function ClientStoreDetail({ storeId, categoryId = "", productId = "", promotionId = "" }: { storeId: string; categoryId?: string; productId?: string; promotionId?: string }) {
@@ -80,7 +80,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const orderabilityRequestID = useRef(0);
   const [catalogTabs, setCatalogTabs] = useState<Partial<Record<number, CatalogSnapshot>>>({});
   const cartReadRequestID = useRef(0);
-  const activeActorIDRef = useRef(currentStoreActorID());
+  const activeSessionKeyRef = useRef(currentStoreSessionKey());
   const actorRevisionRef = useRef(0);
   const promotionRequestID = useRef(0);
 
@@ -403,13 +403,13 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     // The public Store is unchanged by login, but cart and favorites are actor-private.
     // Subscribe before reading the current actor to close the account-switch race.
     const subscription = subscribeClientCartActorChanges(
-      activeActorIDRef.current,
-      currentStoreActorID,
+      activeSessionKeyRef.current,
+      currentStoreSessionKey,
       (listener) => subscribeIdentitySession((session) => {
-        listener(session.kind === "authenticated" ? session.identity.subject.trim() : "");
+        listener(clientSessionKey(session));
       }),
-      (nextActorID) => {
-        activeActorIDRef.current = nextActorID;
+      (nextSessionKey) => {
+        activeSessionKeyRef.current = nextSessionKey;
         actorRevisionRef.current += 1;
         // load() synchronously clears private Store/cart/favorite snapshots
         // before its first network await; reset only mutation-local state here.
@@ -582,13 +582,13 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       return;
     }
     const actorRevision = actorRevisionRef.current;
-    const actorID = currentStoreActorID();
+    const sessionKey = currentStoreSessionKey();
     setBusyOfferId(offer.offerId);
     cartReadRequestID.current += 1;
     setAddedOfferId("");
     setError("");
     try {
-      const result = await addCatalogOfferToCart(storeId, offer, quantity, selectedModifierOptionIds[offer.offerId] ?? [], actorID);
+      const result = await addCatalogOfferToCart(storeId, offer, quantity, selectedModifierOptionIds[offer.offerId] ?? [], sessionKey);
       if (actorRevision !== actorRevisionRef.current) return;
       setOpenCart(result.cart);
       setCartReadError(false);
@@ -617,11 +617,11 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       return;
     }
     const actorRevision = actorRevisionRef.current;
-    const actorID = currentStoreActorID();
+    const sessionKey = currentStoreSessionKey();
     setFavoriteOfferBusyID(offerID);
     setError("");
     try {
-      const isFavoriteNow = await setFavoriteStoreOffer(offerID, !favoriteOfferIDs.has(offerID), actorID);
+      const isFavoriteNow = await setFavoriteStoreOffer(offerID, !favoriteOfferIDs.has(offerID), sessionKey);
       if (actorRevision !== actorRevisionRef.current) return;
       setCatalogTabs((current) => { const next = { ...current }; delete next[1]; return next; });
       setFavoriteOfferIDs((current) => {

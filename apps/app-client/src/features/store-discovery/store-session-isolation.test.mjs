@@ -19,7 +19,7 @@ function executableFunction(name, environment) {
   const js = ts.transpileModule(`${declaration.getText(ast)}; ${name};`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
   }).outputText;
-  return vm.runInNewContext(js, { currentStoreActorID: () => "actor-A", ...environment });
+  return vm.runInNewContext(js, { currentStoreSessionKey: () => "actor-A", ...environment });
 }
 
 function deferred() {
@@ -31,7 +31,7 @@ function deferred() {
 test("Store detail subscribes to account changes and clears private state before refetching", () => {
   const subscription = source.split("const subscription = subscribeClientCartActorChanges(")[1]?.split("if (!subscription.changedDuringSync)", 1)[0];
   assert.ok(subscription, "reuse the existing client-cart actor subscription");
-  assert.match(subscription, /currentStoreActorID/);
+  assert.match(subscription, /currentStoreSessionKey/);
   assert.match(subscription, /subscribeIdentitySession/);
   assert.match(subscription, /actorRevisionRef.current \+= 1/);
   for (const reset of [
@@ -160,7 +160,7 @@ test("same-actor add-to-cart still displays the new authoritative cart", async (
   assert.ok(updates.some(([kind, value]) => kind === "busy" && value === ""));
 });
 
-test("actor switch invokes the Store loader's synchronous private-cache reset before a failed refresh", async () => {
+test("same-actor renewed session invokes Store private-cache reset before a failed refresh", async () => {
   let handler;
   function findActorHandler(node) {
     if (ts.isCallExpression(node) &&
@@ -178,7 +178,7 @@ test("actor switch invokes the Store loader's synchronous private-cache reset be
   let favoriteError = true;
   let catalogRefreshing = true;
   let error = "old actor error";
-  const activeActorIDRef = { current: "actor-A" };
+  const activeSessionKeyRef = { current: JSON.stringify(["actor-A", "session-A"]) };
   const actorRevisionRef = { current: 1 };
   let failRead;
   const slowRead = new Promise((_resolve, reject) => { failRead = reject; });
@@ -186,7 +186,7 @@ test("actor switch invokes the Store loader's synchronous private-cache reset be
   const changes = [];
   const record = (name) => (value) => changes.push([name, value]);
   const context = {
-    activeActorIDRef, actorRevisionRef,
+    activeSessionKeyRef, actorRevisionRef,
     setCatalogTabs: (value) => { tabs = value; changes.push(["tabs", value]); },
     setFavoritesView: (value) => { favoriteView = value; changes.push(["favoritesView", value]); },
     setFavoriteLoadError: (value) => { favoriteError = value; },
@@ -218,9 +218,9 @@ test("actor switch invokes the Store loader's synchronous private-cache reset be
     { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } },
   ).outputText;
   const onActorChange = vm.runInNewContext(compiled, context);
-  onActorChange("actor-B");
+  onActorChange(JSON.stringify(["actor-A", "session-B"]));
 
-  assert.equal(activeActorIDRef.current, "actor-B");
+  assert.equal(activeSessionKeyRef.current, JSON.stringify(["actor-A", "session-B"]));
   assert.equal(actorRevisionRef.current, 2);
   assert.deepEqual(Object.keys(tabs), [], "actor A's private tab is removed before awaiting DSH");
   assert.equal(favoriteView, false, "the previous actor's favorites filter must close");

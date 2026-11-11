@@ -8,6 +8,7 @@ import { type ComponentProps, type ReactNode, useCallback, useEffect, useMemo, u
 import { AccessibilityInfo, Animated, AppState, I18nManager, Platform, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import Reanimated, { runOnJS, type SharedValue, useAnimatedReaction, useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated";
 import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
+import { clientSessionKey } from "../access/client-session-scope";
 import { subscribeClientCartActorChanges } from "../cart-checkout/cart-session-scope";
 import { listOwnDeliveryAddresses } from "../location-core/delivery-address-client";
 import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
@@ -162,7 +163,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     setPublishedSlideIndex(0);
   }, [publishedStoreCount, publishedLayout?.version, selectedCityID]);
   const discoveryLoadRequestID = useRef(0);
-  const activeActorIDRef = useRef(currentDiscoveryActorID());
+  const activeSessionKeyRef = useRef(clientSessionKey(currentIdentityState()));
   const directoryRequestID = useRef(0);
   const directoryRequestKey = useRef("");
   const nearbyAddressRequestID = useRef(0);
@@ -223,13 +224,13 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
 
   useEffect(() => {
     const subscription = subscribeClientCartActorChanges(
-      activeActorIDRef.current,
-      currentDiscoveryActorID,
+      activeSessionKeyRef.current,
+      () => clientSessionKey(currentIdentityState()),
       (listener) => subscribeIdentitySession((session) => {
-        listener(session.kind === "authenticated" ? session.identity.subject.trim() : "");
+        listener(clientSessionKey(session));
       }),
-      (actorID) => {
-        activeActorIDRef.current = actorID;
+      (sessionKey) => {
+        activeSessionKeyRef.current = sessionKey;
         // load() resets the directory, private favorites and nearby address
         // before its first network await, regardless of auth boolean changes.
         void load();
@@ -537,8 +538,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   }
 
   async function toggleFavorite(storeID: string) {
-    const actorID = currentDiscoveryActorID();
-    if (!isAuthenticated || !actorID) {
+    const sessionKey = clientSessionKey(currentIdentityState());
+    if (!isAuthenticated || !sessionKey) {
       onRequireAuthentication?.();
       return;
     }
@@ -548,7 +549,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     setFavoriteBusyStoreID(storeID);
     setFavoriteError("");
     try {
-      const nextValue = await setFavoriteStore(storeID, !isFavorite, actorID);
+      const nextValue = await setFavoriteStore(storeID, !isFavorite, sessionKey);
       if (requestID !== discoveryLoadRequestID.current) return;
       setState((current) => {
         if (current.kind !== "ready") return current;

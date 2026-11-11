@@ -48,7 +48,7 @@ const offer = { storeId: "store-A", offerId: "offer-A", quantityPolicy: "DISCRET
 
 test("home product feed subscribes to the identity actor, not only isAuthenticated boolean", () => {
   assert.match(source, /subscribeClientCartActorChanges\(/);
-  assert.match(source, /currentHomeActorID/);
+  assert.match(source, /currentHomeSessionKey/);
   assert.match(source, /subscribeIdentitySession/);
   assert.match(source, /subscription\.unsubscribe\(\)/);
   assert.match(source, /cartReadRevisionRef.current \+= 1/);
@@ -57,20 +57,20 @@ test("home product feed subscribes to the identity actor, not only isAuthenticat
   assert.match(source, /cancelled \|\| revision !== cartReadRevisionRef.current/);
 });
 
-test("switching A to B synchronously clears private cart badges and mutation feedback", () => {
-  const activeActorIDRef = { current: "actor-A" };
+test("same-actor renewed session synchronously clears private cart badges and feedback", () => {
+  const activeSessionKeyRef = { current: JSON.stringify(["actor-A", "session-A"]) };
   const cartReadRevisionRef = { current: 4 };
   const busyOfferRef = { current: "offer-A" };
   const events = [];
   const onActorChange = actorChange({
-    activeActorIDRef, cartReadRevisionRef, busyOfferRef,
+    activeSessionKeyRef, cartReadRevisionRef, busyOfferRef,
     setCartQuantities: (value) => events.push(["quantities", value]),
     setCartMessage: (value) => events.push(["message", value]),
     setBusyID: (value) => events.push(["busy", value]),
     setActorRevision: (update) => events.push(["revision", update(5)]),
   });
-  onActorChange("actor-B");
-  assert.equal(activeActorIDRef.current, "actor-B");
+  onActorChange(JSON.stringify(["actor-A", "session-B"]));
+  assert.equal(activeSessionKeyRef.current, JSON.stringify(["actor-A", "session-B"]));
   assert.equal(cartReadRevisionRef.current, 5);
   assert.equal(busyOfferRef.current, "");
   assert.equal(events[0][0], "quantities");
@@ -86,7 +86,7 @@ test("old account delayed cart adjustment cannot show its quantities or haptics 
   const busyOfferRef = { current: "" };
   const events = [];
   const adjust = adjustHandler({
-    busyOfferRef, isAuthenticated: true, currentHomeActorID: () => "actor-A",
+    busyOfferRef, isAuthenticated: true, currentHomeSessionKey: () => "actor-A",
     cartReadRevisionRef,
     setBusyID: (v) => events.push(["busy", v]),
     setCartMessage: (v) => events.push(["message", v]),
@@ -107,7 +107,7 @@ test("old account failed cart adjustment cannot show B an error or clear B's bus
   const cartReadRevisionRef = { current: 4 };
   const events = [];
   const adjust = adjustHandler({
-    busyOfferRef: { current: "" }, isAuthenticated: true, currentHomeActorID: () => "actor-A",
+    busyOfferRef: { current: "" }, isAuthenticated: true, currentHomeSessionKey: () => "actor-A",
     cartReadRevisionRef,
     setBusyID: (v) => events.push(["busy", v]),
     setCartMessage: (v) => events.push(["message", v]),
@@ -125,7 +125,7 @@ test("same actor cart adjustments still update the right offer badges", async ()
   const events = [];
   let values = {};
   const adjust = adjustHandler({
-    busyOfferRef: { current: "" }, isAuthenticated: true, currentHomeActorID: () => "actor-A",
+    busyOfferRef: { current: "" }, isAuthenticated: true, currentHomeSessionKey: () => "actor-A",
     cartReadRevisionRef: { current: 4 },
     setBusyID: (v) => events.push(["busy", v]),
     setCartMessage: () => {},

@@ -1,7 +1,7 @@
 import type { DiscoveryContentEventRequest, DiscoveryContentListResponse, DiscoveryContentTargetResolution, PromotionListResponse, PublicCatalogResponse, PublicCatalogSearchResponse, PublicStoreOrderabilityResponse, PublicStoreView, PublishedStoreListResponse } from "@bthwani/dsh";
 import { clientDshBaseURL, createClientDsh } from "../../bootstrap/dsh";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
-import { tokenForClientActor } from "../access/client-request-token";
+import { tokenForClientSession } from "../access/client-request-token";
 
 export async function listPublishedStores(serviceCityID: string, options: Readonly<{
   q?: string;
@@ -61,8 +61,8 @@ export async function listFavoriteStoreIDs(): Promise<ReadonlyArray<string>> {
   return (await createClientDsh().listClientFavoriteStores(accessToken)).storeIds;
 }
 
-export async function setFavoriteStore(storeID: string, isFavorite: boolean, actorID: string): Promise<boolean> {
-  const accessToken = await tokenForClientActor(actorID);
+export async function setFavoriteStore(storeID: string, isFavorite: boolean, sessionKey: string): Promise<boolean> {
+  const accessToken = await tokenForClientSession(sessionKey);
   const result = isFavorite ? await createClientDsh().addClientFavoriteStore(accessToken, storeID) : await createClientDsh().removeClientFavoriteStore(accessToken, storeID);
   return result.isFavorite;
 }
@@ -72,8 +72,8 @@ export async function listFavoriteStoreOfferIDs(storeID: string): Promise<Readon
   return (await createClientDsh().listClientFavoriteStoreOffers(accessToken, storeID)).offerIds;
 }
 
-export async function setFavoriteStoreOffer(storeOfferID: string, isFavorite: boolean, actorID: string): Promise<boolean> {
-  const accessToken = await tokenForClientActor(actorID);
+export async function setFavoriteStoreOffer(storeOfferID: string, isFavorite: boolean, sessionKey: string): Promise<boolean> {
+  const accessToken = await tokenForClientSession(sessionKey);
   const result = isFavorite
     ? await createClientDsh().addClientFavoriteStoreOffer(accessToken, storeOfferID)
     : await createClientDsh().removeClientFavoriteStoreOffer(accessToken, storeOfferID);

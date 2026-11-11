@@ -47,7 +47,7 @@ function deferred() {
 test("discovery subscribes to actual actor identity and reloads private fields before network I/O", () => {
   const entry = source.split("const subscription = subscribeClientCartActorChanges(")[1]?.split("if (!subscription.changedDuringSync)", 1)[0];
   assert.ok(entry);
-  assert.match(entry, /currentDiscoveryActorID/);
+  assert.match(entry, /clientSessionKey/);
   assert.match(entry, /subscribeIdentitySession/);
   assert.match(entry, /void load\(\)/);
   assert.match(source, /subscription\.unsubscribe\(\)/);
@@ -68,15 +68,15 @@ test("discovery subscribes to actual actor identity and reloads private fields b
   assert.match(source, /if \(isAuthenticated && currentDiscoveryActorID\(\)\)/);
 });
 
-test("actor A-to-B switch initiates one synchronous private-data reset, not only boolean auth rerender", () => {
-  const activeActorIDRef = { current: "actor-A" };
+test("same Client actor reauthentication immediately resets directory favorites and private state", () => {
+  const activeSessionKeyRef = { current: JSON.stringify(["actor-A", "session-A"]) };
   const events = [];
   const onActorChange = actorChangeCallback({
-    activeActorIDRef,
+    activeSessionKeyRef,
     load: () => events.push("reset-and-reload"),
   });
-  onActorChange("actor-B");
-  assert.equal(activeActorIDRef.current, "actor-B");
+  onActorChange(JSON.stringify(["actor-A", "session-B"]));
+  assert.equal(activeSessionKeyRef.current, JSON.stringify(["actor-A", "session-B"]));
   assert.deepEqual(events, ["reset-and-reload"]);
 });
 
@@ -86,7 +86,7 @@ test("A's delayed favorite toggle cannot overwrite B's favorites or clear B's bu
   const events = [];
   const currentIdentityState = () => ({ kind: "authenticated", identity: { subject: "actor-A" } });
   const environment = {
-    isAuthenticated: true, currentDiscoveryActorID: () => currentIdentityState().identity.subject,
+    isAuthenticated: true, clientSessionKey: () => JSON.stringify(["actor-A", "session-A"]), currentIdentityState: () => ({ kind: "authenticated" }),
     favoriteBusyStoreID: "", state: { kind: "ready", favoriteStoreIDs: ["store-A"] },
     discoveryLoadRequestID: requestID,
     setFavoriteBusyStoreID: (value) => events.push(["busy", value]),
@@ -110,7 +110,7 @@ test("A's rejected favorite toggle cannot raise errors in B's session", async ()
   const requestID = { current: 8 };
   const events = [];
   const toggle = productionFunction("toggleFavorite", {
-    isAuthenticated: true, currentDiscoveryActorID: () => "actor-A",
+    isAuthenticated: true, clientSessionKey: () => JSON.stringify(["actor-A", "session-A"]), currentIdentityState: () => ({ kind: "authenticated" }),
     favoriteBusyStoreID: "", state: { kind: "ready", favoriteStoreIDs: [] },
     discoveryLoadRequestID: requestID, setFavoriteBusyStoreID: (v) => events.push(["busy", v]),
     setFavoriteError: (v) => events.push(["error", v]),
@@ -128,7 +128,7 @@ test("same actor favorite mutation still updates the authorized directory", asyn
   const events = [];
   let updatedIDs = [];
   const toggle = productionFunction("toggleFavorite", {
-    isAuthenticated: true, currentDiscoveryActorID: () => "actor-A",
+    isAuthenticated: true, clientSessionKey: () => JSON.stringify(["actor-A", "session-A"]), currentIdentityState: () => ({ kind: "authenticated" }),
     favoriteBusyStoreID: "", state: { kind: "ready", favoriteStoreIDs: [] },
     discoveryLoadRequestID: { current: 7 },
     setFavoriteBusyStoreID: (v) => events.push(["busy", v]),
@@ -195,10 +195,10 @@ test("production discovery reload rejects A's delayed favorites after B becomes 
   await load();
   assert.equal(state.kind, "ready");
   assert.equal(state.favoriteStoreIDs.length, 0);
-  const activeActorIDRef = { current: "actor-A" };
-  const onActorChange = actorChangeCallback({ activeActorIDRef, load });
+  const activeSessionKeyRef = { current: JSON.stringify(["actor-A", "session-A"]) };
+  const onActorChange = actorChangeCallback({ activeSessionKeyRef, load });
   actor = "actor-B";
-  onActorChange("actor-B");
+  onActorChange(JSON.stringify(["actor-A", "session-B"]));
   assert.equal(state.kind, "loading", "private favorites are cleared before B's DSH read");
   await Promise.resolve();
   await Promise.resolve();

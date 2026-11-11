@@ -1,7 +1,7 @@
 import type { CartResponse, CatalogStoreOffer, CheckoutQuoteResponse, CheckoutRequest, ClientOpenCartListResponse, MultiStoreCheckoutRequest, MultiStoreCheckoutResponse, ServiceabilityResponse } from "@bthwani/dsh";
 import { createClientDsh } from "../../bootstrap/dsh";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
-import { assertClientActor, tokenForClientActor, tokenForClientSession } from "../access/client-request-token";
+import { assertClientSession, tokenForClientSession } from "../access/client-request-token";
 
 /** Read a DSH-owned cart for multi-Store checkout preview without another UI transport. */
 export async function readCartForPreview(accessToken: string, storeID: string) {
@@ -49,9 +49,9 @@ export async function addCatalogOfferToCart(
   offer: CatalogStoreOffer,
   quantityBaseUnits: number,
   selectedModifierOptionIds: ReadonlyArray<string>,
-  actorID: string,
+  sessionKey: string,
 ): Promise<CartResponse> {
-  const accessToken = await tokenForClientActor(actorID);
+  const accessToken = await tokenForClientSession(sessionKey);
   let expectedVersion = 0;
   try {
     expectedVersion = (await createClientDsh().readOpenCart(accessToken, storeID)).cart.version;
@@ -59,16 +59,16 @@ export async function addCatalogOfferToCart(
     const notFound = error && typeof error === "object" && (error as { kind?: unknown; status?: unknown }).kind === "http" && (error as { status?: unknown }).status === 404;
     if (!notFound) throw error;
   }
-  assertClientActor(actorID);
+  assertClientSession(sessionKey);
   return createClientDsh().upsertCartLine(accessToken, { storeId: storeID, storeOfferId: offer.offerId, quantityBaseUnits, selectedModifierOptionIds }, expectedVersion);
 }
 
 /** Update one simple, discrete home offer using DSH's authoritative cart version. */
-export async function adjustSimpleOfferQuantity(storeID: string, offer: CatalogStoreOffer, direction: 1 | -1, actorID: string): Promise<CartResponse> {
+export async function adjustSimpleOfferQuantity(storeID: string, offer: CatalogStoreOffer, direction: 1 | -1, sessionKey: string): Promise<CartResponse> {
   if (offer.quantityPolicy !== "DISCRETE" || offer.modifierGroups.length > 0 || !offer.availability) {
     throw new Error("HOME_OFFER_REQUIRES_DETAIL");
   }
-  const accessToken = await tokenForClientActor(actorID);
+  const accessToken = await tokenForClientSession(sessionKey);
   let current: CartResponse | null = null;
   try {
     current = await createClientDsh().readOpenCart(accessToken, storeID);
@@ -76,7 +76,7 @@ export async function adjustSimpleOfferQuantity(storeID: string, offer: CatalogS
     const missing = error && typeof error === "object" && (error as { status?: unknown }).status === 404;
     if (!missing) throw error;
   }
-  assertClientActor(actorID);
+  assertClientSession(sessionKey);
   const line = current?.cart.lines.find((item) => item.storeOfferId === offer.offerId);
   if (direction === -1 && !line) throw new Error("HOME_OFFER_NOT_IN_CART");
   if (direction === -1 && current && line && line.quantityBaseUnits <= offer.quantityMinBaseUnits) {

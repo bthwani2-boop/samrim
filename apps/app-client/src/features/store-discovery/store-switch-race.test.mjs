@@ -164,7 +164,7 @@ function productionAction(name, environment) {
   const code = ts.transpileModule(fn.getText(ast) + "; " + name + ";", {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
   }).outputText;
-  return vm.runInNewContext(code, { currentStoreActorID: () => "actor-A", ...environment });
+  return vm.runInNewContext(code, { currentStoreSessionKey: () => "actor-A", ...environment });
 }
 
 test("Store A late add-to-cart cannot replace B's cart after same-actor Store navigation", async () => {
@@ -299,8 +299,8 @@ test("leaving Store while a cart mutation is pending cannot repaint an unmounted
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
   }).outputText;
   const runEffect = vm.runInNewContext(code, {
-    ...h.refs, activeActorIDRef: { current: "actor-A" },
-    currentStoreActorID: () => "actor-A",
+    ...h.refs, activeSessionKeyRef: { current: JSON.stringify(["actor-A", "session-A"]) },
+    currentStoreSessionKey: () => "actor-A",
     subscribeClientCartActorChanges: () => ({ changedDuringSync: true, unsubscribe: () => {} }),
     subscribeIdentitySession: () => () => {},
     load: async () => {},

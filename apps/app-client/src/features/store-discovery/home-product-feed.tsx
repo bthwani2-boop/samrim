@@ -8,6 +8,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import Reanimated, { FadeInDown, ReduceMotion } from "react-native-reanimated";
 import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
+import { clientSessionKey } from "../access/client-session-scope";
 import { adjustSimpleOfferQuantity, listOwnOpenCarts, readOwnStoreCart } from "../cart-checkout/cart-client";
 import { subscribeClientCartActorChanges } from "../cart-checkout/cart-session-scope";
 import { searchPublicCatalog } from "./store-discovery-client";
@@ -21,9 +22,8 @@ type FeedState =
 
 const PAGE_SIZE = 18;
 
-function currentHomeActorID(): string {
-  const session = currentIdentityState();
-  return session.kind === "authenticated" ? session.identity.subject.trim() : "";
+function currentHomeSessionKey(): string {
+  return clientSessionKey(currentIdentityState());
 }
 
 type CatalogPriceSort = "" | "PRICE_ASC" | "PRICE_DESC";
@@ -62,7 +62,7 @@ export function HomeProductFeed({
   const [cartQuantities, setCartQuantities] = useState<Readonly<Record<string, number>>>({});
   const busyOfferRef = useRef("");
   const requestID = useRef(0);
-  const activeActorIDRef = useRef(currentHomeActorID());
+  const activeSessionKeyRef = useRef(currentHomeSessionKey());
   const cartReadRevisionRef = useRef(0);
   const [actorRevision, setActorRevision] = useState(0);
 
@@ -118,13 +118,13 @@ export function HomeProductFeed({
 
   useEffect(() => {
     const subscription = subscribeClientCartActorChanges(
-      activeActorIDRef.current,
-      currentHomeActorID,
+      activeSessionKeyRef.current,
+      currentHomeSessionKey,
       (listener) => subscribeIdentitySession((session) => {
-        listener(session.kind === "authenticated" ? session.identity.subject.trim() : "");
+        listener(clientSessionKey(session));
       }),
-      (actorID) => {
-        activeActorIDRef.current = actorID;
+      (sessionKey) => {
+        activeSessionKeyRef.current = sessionKey;
         cartReadRevisionRef.current += 1;
         // Product catalog is public; cart quantities and pending mutations are not.
         setCartQuantities({});
@@ -142,7 +142,7 @@ export function HomeProductFeed({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: Actor revision must trigger a fresh private cart read when the signed-in account changes without changing public catalog state.
   useEffect(() => {
-    if (!isAuthenticated || !currentHomeActorID() || state.kind !== "ready") {
+    if (!isAuthenticated || !currentHomeSessionKey() || state.kind !== "ready") {
       setCartQuantities({});
       return;
     }
@@ -169,8 +169,8 @@ export function HomeProductFeed({
 
   const adjust = async (offer: CatalogStoreOffer, direction: 1 | -1) => {
     if (busyOfferRef.current) return;
-    const actorID = currentHomeActorID();
-    if (!isAuthenticated || !actorID) {
+    const sessionKey = currentHomeSessionKey();
+    if (!isAuthenticated || !sessionKey) {
       onRequireAuthentication?.();
       return;
     }
@@ -184,7 +184,7 @@ export function HomeProductFeed({
     setBusyID(offer.offerId);
     setCartMessage("");
     try {
-      const result = await adjustSimpleOfferQuantity(offer.storeId, offer, direction, actorID);
+      const result = await adjustSimpleOfferQuantity(offer.storeId, offer, direction, sessionKey);
       if (revision !== cartReadRevisionRef.current) return;
       void Haptics.selectionAsync().catch(() => { /* Feedback is optional; the committed cart is authoritative. */ });
       setCartQuantities((current) => {

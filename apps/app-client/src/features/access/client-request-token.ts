@@ -15,10 +15,14 @@ export async function tokenForClientActor(expectedActorID: string): Promise<stri
   return accessToken;
 }
 
-/** Fence a checkout mutation/read against same-actor reauthentication too. */
-export async function tokenForClientSession(sessionKey: string): Promise<string> {
+/** Fence private operations against both actor switches and same-actor reauthentication. */
+export function assertClientSession(sessionKey: string): void {
   if (!sessionKey || clientSessionKey(currentIdentityState()) !== sessionKey) throw new Error("CLIENT_STORE_SESSION_CHANGED");
+}
+
+export async function tokenForClientSession(sessionKey: string): Promise<string> {
+  assertClientSession(sessionKey);
   const accessToken = await getUsableIdentityAccessToken();
-  if (clientSessionKey(currentIdentityState()) !== sessionKey) throw new Error("CLIENT_STORE_SESSION_CHANGED");
+  assertClientSession(sessionKey);
   return accessToken;
 }
