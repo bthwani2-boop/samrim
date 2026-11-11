@@ -4,6 +4,8 @@ import (
 	"errors"
 	"sync"
 	"testing"
+
+	"github.com/lib/pq"
 )
 
 func TestStoreRelationCommercialModelDefaultValidation(t *testing.T) {
@@ -164,5 +166,59 @@ func TestStoreRelationCommercialModelDefaultPersistedIsolation(t *testing.T) {
 	}
 	if err := s.db.QueryRowContext(s.ctx, "SELECT COUNT(*) FROM wlt.store_relation_commercial_model_default_events").Scan(&eventCount); err != nil || eventCount != 4 {
 		t.Fatalf("expected exactly four model-change events after serialized race: count=%d err=%v", eventCount, err)
+	}
+}
+
+// A policy audit event is evidence, not just an arbitrary row. PostgreSQL must
+// reject malformed hashes and impossible first/change transitions even if an
+// unexpected caller attempts to bypass the sole WLT service writer.
+func TestStoreRelationCommercialModelDefaultEventSQLConstraints(t *testing.T) {
+	s := newFieldAcquisitionScenario(t)
+	actor := "model-audit-operator-" + s.suffix
+	relation := "INDEPENDENT_STORE"
+	input := StoreRelationCommercialModelDefaultUpdate{
+		RelationModel: relation, CommercialModel: "COMMISSION", ExpectedVersion: 0,
+		ActingActorID: actor, Reason: "Initial canonical financial model policy",
+		IdempotencyKey: "model-audit-create-" + s.suffix,
+		CorrelationID:  "model-audit-correlation-" + s.suffix,
+	}
+	created, replayed, err := UpdateStoreRelationCommercialModelDefault(s.ctx, s.db, input)
+	if err != nil || replayed || created.PolicyVersion != 1 {
+		t.Fatalf("original WLT policy writer failed: %+v replayed=%t err=%v", created, replayed, err)
+	}
+	tests := []struct {
+		name            string
+		hash            string
+		previousModel   any
+		newModel        string
+		previousVersion any
+		newVersion      int
+		constraint      string
+	}{
+		{"invalid_hash", "not-a-sha256", nil, "COMMISSION", nil, 1, "store_relation_model_default_event_hash_chk"},
+		{"orphaned_previous_version", hashFacts("audit-orphaned-version"), nil, "SUBSCRIPTION", 1, 2, "store_relation_model_default_event_transition_chk"},
+		{"skipped_version", hashFacts("audit-skipped-version"), "COMMISSION", "SUBSCRIPTION", 1, 3, "store_relation_model_default_event_transition_chk"},
+		{"unchanged_model", hashFacts("audit-unchanged-model"), "COMMISSION", "COMMISSION", 1, 2, "store_relation_model_default_event_transition_chk"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, insertErr := s.db.ExecContext(s.ctx, `INSERT INTO wlt.store_relation_commercial_model_default_events
+				(idempotency_key,request_hash,relation_model,previous_model,new_model,
+				 previous_policy_version,new_policy_version,changed_by_actor_id,reason,correlation_id)
+				VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+				"invalid-audit-"+tc.name+"-"+s.suffix, tc.hash, relation, tc.previousModel,
+				tc.newModel, tc.previousVersion, tc.newVersion, actor,
+				"Invalid WLT audit event must be rejected by PostgreSQL",
+				"invalid-audit-correlation-"+s.suffix)
+			var pgErr *pq.Error
+			if !errors.As(insertErr, &pgErr) || string(pgErr.Code) != "23514" || pgErr.Constraint != tc.constraint {
+				t.Fatalf("expected SQL CHECK %q rejection, got %v", tc.constraint, insertErr)
+			}
+		})
+	}
+	var count int
+	if err := s.db.QueryRowContext(s.ctx, `SELECT COUNT(*)
+		FROM wlt.store_relation_commercial_model_default_events WHERE relation_model=$1`, relation).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("invalid audit attempts changed canonical event count: count=%d err=%v", count, err)
 	}
 }
