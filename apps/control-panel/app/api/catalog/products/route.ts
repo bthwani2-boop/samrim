@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { CreateCatalogProductRequest } from "@bthwani/dsh";
 import { NextResponse } from "next/server";
-import { createCatalogProduct, listCatalogProducts } from "../../../../src/server/dsh/catalog-bff";
+import { createCatalogProduct, listCatalogProducts } from "../../../../src/server/dsh/catalog-products-bff";
 import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-transport";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../src/server/identity/operator-workspace-access";

@@ -1,4 +1,5 @@
 import type { MediaProvenanceInput } from "@bthwani/dsh";
+import { isMediaProvenanceInputValid } from "@bthwani/dsh";
 import { validateServiceUrl } from "@bthwani/identity";
 
 export type DshClientError =
@@ -156,4 +157,17 @@ export function appendMediaProvenance(body: FormData, provenance: MediaProvenanc
   body.set("rightsStatement", provenance.rightsStatement.trim());
   body.set("rightsUri", provenance.rightsUri?.trim() ?? "");
   body.set("rightsAttested", String(provenance.rightsAttested));
+}
+
+
+
+export function readMediaProvenanceInput(form: FormData): MediaProvenanceInput | null {
+  const creator = form.get("creator");
+  const sourceDescription = form.get("sourceDescription");
+  const sourceUri = form.get("sourceUri");
+  const rightsStatement = form.get("rightsStatement");
+  const rightsUri = form.get("rightsUri");
+  if (typeof creator !== "string" || typeof sourceDescription !== "string" || (sourceUri !== null && typeof sourceUri !== "string") || typeof rightsStatement !== "string" || (rightsUri !== null && typeof rightsUri !== "string") || form.get("rightsAttested") !== "true") return null;
+  const value: MediaProvenanceInput = { creator, sourceDescription, ...(sourceUri ? { sourceUri } : {}), rightsStatement, ...(rightsUri ? { rightsUri } : {}), rightsAttested: true };
+  return isMediaProvenanceInputValid(value) ? value : null;
 }

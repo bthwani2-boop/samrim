@@ -1,5 +1,5 @@
 import type { PartnerStoreOrderSummaryResponse, StoreImagesResponse, StoreOrderRatingListResponse, StorePublicContactResponse } from "@bthwani/dsh";
-import { dshOperationPaths, isMediaProvenanceInputValid, type MediaProvenanceInput, type OperatorStoreListResponse, type PartnerStoreListResponse, type PartnerStoreOperationalAvailabilityMutationResponse, type PartnerStoreOperationalAvailabilityResponse, type StoreOperationalAvailabilityRequest } from "@bthwani/dsh";
+import { type CreateServiceCityRequest, dshOperationPaths, isMediaProvenanceInputValid, type MediaProvenanceInput, type OperatorStoreListResponse, type PartnerStoreListResponse, type PartnerStoreOperationalAvailabilityMutationResponse, type PartnerStoreOperationalAvailabilityResponse, type ServiceCityListResponse, type ServiceCityResponse, type StoreOperationalAvailabilityRequest, type UpdateServiceCityRequest } from "@bthwani/dsh";
 import { appendMediaProvenance, type DshOperatorReadContext, type JoiningCaseMutationContext, requestDshFile, requestDshJson, requestDshMultipart, type StorePublicationMutationContext, validateAttributedMutationContext, validateVersionedMutationContext } from "./dsh-transport";
 
 export async function readOperatorStoreAvailability(storeId: string, context: DshOperatorReadContext): Promise<PartnerStoreOperationalAvailabilityResponse> {
@@ -121,4 +121,36 @@ export async function downloadOperatorStoreInternalPhoto(storeId: string, photoI
   if (!normalizedStoreId || !normalizedPhotoId || !context.operatorActorId.trim()) throw new Error("DSH_STORE_INTERNAL_PHOTO_INPUT_INVALID");
   const path = dshOperationPaths.readOperatorStoreInternalPhoto.path.replace("{storeId}", encodeURIComponent(normalizedStoreId)).replace("{photoId}", encodeURIComponent(normalizedPhotoId));
   return requestDshFile(path, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": `cp_store_photo_${crypto.randomUUID()}` });
+}
+
+
+
+
+
+
+export async function listServiceCities(includeInactive: boolean, context: DshOperatorReadContext): Promise<ServiceCityListResponse> {
+  if (!context.operatorActorId.trim()) throw new Error("DSH_SERVICE_CITY_READ_INPUT_INVALID");
+  const query = includeInactive ? "?includeInactive=true" : "";
+  return (await requestDshJson<ServiceCityListResponse>(dshOperationPaths.listServiceCities.method, `${dshOperationPaths.listServiceCities.path}${query}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function readServiceCity(cityId: string, context: DshOperatorReadContext): Promise<ServiceCityResponse> {
+  if (!cityId.trim() || !context.operatorActorId.trim()) throw new Error("DSH_SERVICE_CITY_READ_INPUT_INVALID");
+  const path = dshOperationPaths.readServiceCity.path.replace("{cityId}", encodeURIComponent(cityId.trim()));
+  return (await requestDshJson<ServiceCityResponse>(dshOperationPaths.readServiceCity.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function createServiceCity(input: CreateServiceCityRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: ServiceCityResponse }>> {
+  if (!input.displayNameAr.trim()) throw new Error("DSH_SERVICE_CITY_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_SERVICE_CITY_IDEMPOTENCY_INVALID");
+  return requestDshJson<ServiceCityResponse>(dshOperationPaths.createServiceCity.method, dshOperationPaths.createServiceCity.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function updateServiceCity(cityId: string, input: UpdateServiceCityRequest, context: StorePublicationMutationContext): Promise<Readonly<{ status: number; payload: ServiceCityResponse }>> {
+  if (!cityId.trim() || !input.displayNameAr.trim()) throw new Error("DSH_SERVICE_CITY_INPUT_INVALID");
+  validateVersionedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_SERVICE_CITY_IDEMPOTENCY_INVALID");
+  const path = dshOperationPaths.updateServiceCity.path.replace("{cityId}", encodeURIComponent(cityId.trim()));
+  return requestDshJson<ServiceCityResponse>(dshOperationPaths.updateServiceCity.method, path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
 }

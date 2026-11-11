@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-
-import { createServiceCity, listServiceCities } from "../../../src/server/dsh/catalog-bff";
 import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../src/server/dsh/dsh-transport";
+import { createServiceCity, listServiceCities } from "../../../src/server/dsh/store-operations-bff";
 import { readOperatorSession } from "../../../src/server/identity/identity-bff";
 import { verifySameOrigin } from "../../../src/server/security/csrf";
 
