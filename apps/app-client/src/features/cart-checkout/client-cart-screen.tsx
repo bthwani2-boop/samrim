@@ -6,13 +6,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
+import { listOwnDeliveryAddresses } from "../location-core/delivery-address-client";
+import { PremiumFulfillmentSelector, PremiumStickyFooter, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
 import { useServiceCityScope } from "../service-city/service-city-scope";
-import { evaluateStoreServiceability, listOwnDeliveryAddresses, readPublishedStore } from "../store-discovery/store-discovery-client";
 import { buildFullStorefrontPath, resolveFullStorefrontCityID } from "../store-discovery/full-storefront-model";
+import { readPublishedStore } from "../store-discovery/store-discovery-client";
 import { CartCheckout, type CheckoutFooterState } from "./cart-checkout";
+import { evaluateStoreServiceability } from "./cart-client";
 import { isClientCartScopeCurrent, subscribeClientCartActorChanges } from "./cart-session-scope";
 import { readSavedFulfillmentMode, resolveFulfillmentChoice, saveFulfillmentMode } from "./fulfillment-choice";
-import { PremiumFulfillmentSelector, PremiumStickyFooter, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
 
 const fulfillmentDetails: Readonly<Record<CustomerFulfillmentMode, string>> = {
   BTHWANI_CAPTAIN: "كابتن من بثواني",

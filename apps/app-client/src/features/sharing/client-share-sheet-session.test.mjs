@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript-ast";
-import { clientOrderSessionKey } from "../orders/order-session-scope.ts";
+import { clientSessionKey } from "../access/client-session-scope.ts";
 
 const source = readFileSync(new URL("./client-share-sheet.tsx", import.meta.url), "utf8");
 const ast = ts.createSourceFile("client-share-sheet.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -30,13 +30,13 @@ function production(runtime, names) {
   const compiled = ts.transpileModule(`${program}\n({${names.join(", ")}})`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  return runInNewContext(compiled, { clientOrderSessionKey, ...runtime });
+  return runInNewContext(compiled, { clientSessionKey, ...runtime });
 }
 
 function fixture() {
   let identity = actor("client-a", "session-1");
   let seq = 0;
-  const sessionKey = clientOrderSessionKey(identity);
+  const sessionKey = clientSessionKey(identity);
   const target = { kind: "STORE", id: "store-a", title: "المتجر", link: "https://store.example/store-a" };
   const targetKey = JSON.stringify([target.kind, target.id, target.link]);
   const activeScope = JSON.stringify([sessionKey, targetKey]);
@@ -54,7 +54,7 @@ function fixture() {
   const runtime = {
     currentIdentityState: () => identity,
     getUsableIdentityAccessToken: async () => "token-1",
-    clientOrderSessionKey,
+    clientSessionKey,
     target,
     targetKey,
     targetKeyRef,
@@ -96,7 +96,7 @@ function fixture() {
       identity = actor(actorId, sessionId);
       const nextTarget = { ...target, id: contentId };
       const nextTargetKey = JSON.stringify([nextTarget.kind, nextTarget.id, nextTarget.link]);
-      const nextSessionKey = clientOrderSessionKey(identity);
+      const nextSessionKey = clientSessionKey(identity);
       targetKeyRef.current = nextTargetKey;
       return {
         ...runtime, target: nextTarget, targetKey: nextTargetKey,
@@ -319,7 +319,7 @@ test("authenticated session subscription resets private recipient, feedback and 
   const js = ts.transpileModule(`${helpers}\nconst subscribe = ${effect};\nsubscribe;`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  runInNewContext(js, { clientOrderSessionKey, ...runtime })();
+  runInNewContext(js, { clientSessionKey, ...runtime })();
   x.sameSessionRefresh();
   cb();
   assert.equal(x.requestSequence.current, 0);

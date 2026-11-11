@@ -1,8 +1,7 @@
-import { type CartResponse, type CatalogStoreOffer, type CheckoutQuoteResponse, type CheckoutRequest, type ClientOpenCartListResponse, createDshMobileClient, type DiscoveryContentEventRequest, type DiscoveryContentListResponse, type DiscoveryContentTargetResolution, type MultiStoreCheckoutRequest, type MultiStoreCheckoutResponse, type PromotionListResponse, type PublicCatalogResponse, type PublicCatalogSearchResponse, type PublicStoreOrderabilityResponse, type PublicStoreView, type PublishedStoreListResponse, type ServiceabilityResponse } from "@bthwani/dsh";
+import { createDshMobileClient, type DiscoveryContentEventRequest, type DiscoveryContentListResponse, type DiscoveryContentTargetResolution, type PromotionListResponse, type PublicCatalogResponse, type PublicCatalogSearchResponse, type PublicStoreOrderabilityResponse, type PublicStoreView, type PublishedStoreListResponse } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
-import { listOwnDeliveryAddresses } from "../location-core/delivery-address-client";
-import { clientOrderSessionKey } from "../orders/order-session-scope";
+import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { tokenForClientActor } from "../access/client-request-token";
 
 function dshBaseUrl(): string {
   const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -11,28 +10,6 @@ function dshBaseUrl(): string {
 }
 
 const client = () => createDshMobileClient(dshBaseUrl(), { cryptoRandomUUID: () => Crypto.randomUUID() });
-
-function assertStoreActor(expectedActorID: string): void {
-  const session = currentIdentityState();
-  if (!expectedActorID || session.kind !== "authenticated" || session.identity.subject.trim() !== expectedActorID) {
-    throw new Error("CLIENT_STORE_SESSION_CHANGED");
-  }
-}
-
-async function tokenForStoreActor(expectedActorID: string): Promise<string> {
-  const accessToken = await getUsableIdentityAccessToken();
-  assertStoreActor(expectedActorID);
-  return accessToken;
-}
-
-// The multi-Store quote/create/recovery flow must not dispatch a previous
-// session's consented operation with a token acquired after reauthentication.
-async function tokenForMultiStoreSession(sessionKey: string): Promise<string> {
-  if (!sessionKey || clientOrderSessionKey(currentIdentityState()) !== sessionKey) throw new Error("CLIENT_STORE_SESSION_CHANGED");
-  const accessToken = await getUsableIdentityAccessToken();
-  if (clientOrderSessionKey(currentIdentityState()) !== sessionKey) throw new Error("CLIENT_STORE_SESSION_CHANGED");
-  return accessToken;
-}
 
 export async function listPublishedStores(serviceCityID: string, options: Readonly<{
   q?: string;
@@ -93,7 +70,7 @@ export async function listFavoriteStoreIDs(): Promise<ReadonlyArray<string>> {
 }
 
 export async function setFavoriteStore(storeID: string, isFavorite: boolean, actorID: string): Promise<boolean> {
-  const accessToken = await tokenForStoreActor(actorID);
+  const accessToken = await tokenForClientActor(actorID);
   const result = isFavorite ? await client().addClientFavoriteStore(accessToken, storeID) : await client().removeClientFavoriteStore(accessToken, storeID);
   return result.isFavorite;
 }
@@ -104,7 +81,7 @@ export async function listFavoriteStoreOfferIDs(storeID: string): Promise<Readon
 }
 
 export async function setFavoriteStoreOffer(storeOfferID: string, isFavorite: boolean, actorID: string): Promise<boolean> {
-  const accessToken = await tokenForStoreActor(actorID);
+  const accessToken = await tokenForClientActor(actorID);
   const result = isFavorite
     ? await client().addClientFavoriteStoreOffer(accessToken, storeOfferID)
     : await client().removeClientFavoriteStoreOffer(accessToken, storeOfferID);
@@ -135,97 +112,3 @@ export async function readPublicStoreCatalog(storeID: string, serviceCityID: str
 export async function searchPublicCatalog(serviceCityID: string, query: string, categoryID = "", limit = 20, cursor = "", verticalID = "", shortcutID = "", sort: "" | "PRICE_ASC" | "PRICE_DESC" = ""): Promise<PublicCatalogSearchResponse> {
   return client().searchPublicCatalog(serviceCityID, query, categoryID, limit, cursor, verticalID, shortcutID, sort);
 }
-
-export async function evaluateStoreServiceability(storeID: string, addressID: string): Promise<ServiceabilityResponse> {
-  const accessToken = await getUsableIdentityAccessToken();
-  return client().evaluateServiceability(accessToken, storeID, addressID);
-}
-
-export async function listOwnOpenCarts(): Promise<ClientOpenCartListResponse> {
-  const accessToken = await getUsableIdentityAccessToken();
-  return client().listClientOpenCarts(accessToken);
-}
-
-export async function quoteMultiStoreChildCheckout(input: CheckoutRequest, expectedCartVersion: number, sessionKey: string): Promise<CheckoutQuoteResponse> {
-  const accessToken = await tokenForMultiStoreSession(sessionKey);
-  return client().quoteCheckout(accessToken, input, expectedCartVersion);
-}
-
-export async function createMultiStoreCheckout(input: MultiStoreCheckoutRequest, idempotencyKey: string, correlationID: string, sessionKey: string): Promise<MultiStoreCheckoutResponse> {
-  const accessToken = await tokenForMultiStoreSession(sessionKey);
-  return client().createMultiStoreCheckout(accessToken, input, idempotencyKey, correlationID);
-}
-
-export async function readOwnMultiStoreCheckout(checkoutID: string, sessionKey: string): Promise<MultiStoreCheckoutResponse> {
-  const accessToken = await tokenForMultiStoreSession(sessionKey);
-  return client().readMultiStoreCheckout(accessToken, checkoutID);
-}
-
-export async function cancelMultiStoreCheckout(checkoutID: string, expectedVersion: number, idempotencyKey: string, correlationID: string): Promise<MultiStoreCheckoutResponse> {
-  const accessToken = await getUsableIdentityAccessToken();
-  return client().cancelMultiStoreCheckout(accessToken, checkoutID, expectedVersion, idempotencyKey, correlationID);
-}
-
-export async function readOwnStoreCart(storeID: string): Promise<CartResponse | null> {
-  const accessToken = await getUsableIdentityAccessToken();
-  try {
-    return await client().readOpenCart(accessToken, storeID);
-  } catch (error) {
-    const notFound = error && typeof error === "object" && (error as { kind?: unknown; status?: unknown }).kind === "http" && (error as { status?: unknown }).status === 404;
-    if (notFound) return null;
-    throw error;
-  }
-}
-
-export async function addCatalogOfferToCart(
-  storeID: string,
-  offer: CatalogStoreOffer,
-  quantityBaseUnits: number,
-  selectedModifierOptionIds: ReadonlyArray<string>,
-  actorID: string,
-): Promise<CartResponse> {
-  const accessToken = await tokenForStoreActor(actorID);
-  let expectedVersion = 0;
-  try {
-    expectedVersion = (await client().readOpenCart(accessToken, storeID)).cart.version;
-  } catch (error) {
-    const notFound = error && typeof error === "object" && (error as { kind?: unknown; status?: unknown }).kind === "http" && (error as { status?: unknown }).status === 404;
-    if (!notFound) throw error;
-  }
-  assertStoreActor(actorID);
-  return client().upsertCartLine(accessToken, { storeId: storeID, storeOfferId: offer.offerId, quantityBaseUnits, selectedModifierOptionIds }, expectedVersion);
-}
-
-/** Update one simple, discrete home offer using DSH's authoritative cart version. */
-export async function adjustSimpleOfferQuantity(storeID: string, offer: CatalogStoreOffer, direction: 1 | -1, actorID: string): Promise<CartResponse> {
-  if (offer.quantityPolicy !== "DISCRETE" || offer.modifierGroups.length > 0 || !offer.availability) {
-    throw new Error("HOME_OFFER_REQUIRES_DETAIL");
-  }
-  const accessToken = await tokenForStoreActor(actorID);
-  let current: CartResponse | null = null;
-  try {
-    current = await client().readOpenCart(accessToken, storeID);
-  } catch (error) {
-    const missing = error && typeof error === "object" && (error as { status?: unknown }).status === 404;
-    if (!missing) throw error;
-  }
-  assertStoreActor(actorID);
-  const line = current?.cart.lines.find((item) => item.storeOfferId === offer.offerId);
-  if (direction === -1 && !line) throw new Error("HOME_OFFER_NOT_IN_CART");
-  if (direction === -1 && current && line && line.quantityBaseUnits <= offer.quantityMinBaseUnits) {
-    return client().removeCartLine(accessToken, line.id, current.cart.version);
-  }
-  const quantityBaseUnits = line
-    ? line.quantityBaseUnits + direction * offer.quantityStepBaseUnits
-    : offer.quantityMinBaseUnits;
-  if (!Number.isSafeInteger(quantityBaseUnits) || quantityBaseUnits < offer.quantityMinBaseUnits || quantityBaseUnits > offer.quantityMaxBaseUnits) {
-    throw new Error("HOME_OFFER_QUANTITY_LIMIT");
-  }
-  return client().upsertCartLine(
-    accessToken,
-    { storeId: storeID, storeOfferId: offer.offerId, quantityBaseUnits, selectedModifierOptionIds: [] },
-    current?.cart.version ?? 0,
-  );
-}
-
-export { listOwnDeliveryAddresses };

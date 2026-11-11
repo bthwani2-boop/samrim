@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript-ast";
-import { clientOrderSessionKey } from "../orders/order-session-scope.ts";
+import { clientSessionKey } from "../access/client-session-scope.ts";
 import { isOwnCustomerWalletResponse } from "./customer-wallet-readback.ts";
 
 const source = readFileSync(new URL("./cash-in-panel.tsx", import.meta.url), "utf8");
@@ -43,13 +43,13 @@ function production(runtime, names) {
   const js = ts.transpileModule(`${code.join("\n")}\n({${names.join(", ")}})`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  return runInNewContext(js, { clientOrderSessionKey, isOwnCustomerWalletResponse, ...runtime });
+  return runInNewContext(js, { clientSessionKey, isOwnCustomerWalletResponse, ...runtime });
 }
 
 function fixture() {
   let identity = actor();
   let serial = 0;
-  const sessionKey = clientOrderSessionKey(identity);
+  const sessionKey = clientSessionKey(identity);
   const intent = {
     id: "intent-1", actorType: "customer", actorId: "customer-a", currency: "YER",
     fundingPurpose: "CUSTOMER_TOPUP", amountMinor: 1500,
@@ -320,7 +320,7 @@ test("one original WLT/DSH engine and existing actor-specific secure retry key r
 
 test("same-account session subscription resets private wallet state without resetting token-refresh view", () => {
   let identity = actor();
-  const originalKey = clientOrderSessionKey(identity);
+  const originalKey = clientSessionKey(identity);
   const events = [];
   let subscription;
   const runtime = {
@@ -354,7 +354,7 @@ test("same-account session subscription resets private wallet state without rese
   const js = ts.transpileModule(`${helper}\nconst install = ${effect};\ninstall;`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  runInNewContext(js, { clientOrderSessionKey, ...runtime })();
+  runInNewContext(js, { clientSessionKey, ...runtime })();
   identity = actor("customer-a", "session-1");
   subscription();
   assert.equal(runtime.readSequence.current, 4);
@@ -363,7 +363,7 @@ test("same-account session subscription resets private wallet state without rese
   subscription();
   assert.equal(runtime.readSequence.current, 5);
   assert.equal(events[0][0], "session");
-  assert.equal(events[0][1], clientOrderSessionKey(identity));
+  assert.equal(events[0][1], clientSessionKey(identity));
   assert.deepEqual(events.filter(value => ["wallet", "pending", "settled"].includes(value[0])).map(value => value[1]), [null, null, null]);
 });
 

@@ -9,6 +9,7 @@ import { AccessibilityInfo, Animated, AppState, I18nManager, Platform, Pressable
 import Reanimated, { runOnJS, type SharedValue, useAnimatedReaction, useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated";
 import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
 import { subscribeClientCartActorChanges } from "../cart-checkout/cart-session-scope";
+import { listOwnDeliveryAddresses } from "../location-core/delivery-address-client";
 import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
 import { ClientShareSheet, type ClientShareTarget } from "../sharing/client-share-sheet";
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
@@ -18,7 +19,7 @@ import { HomeProductFeed } from "./home-product-feed";
 import { LoopingHeroBanner } from "./looping-hero-banner";
 import { PromotionCard } from "./promotion-card";
 import { StoreDirectoryCard } from "./store-directory-card";
-import { type BannerPresentation, listFavoriteStoreIDs, listOwnDeliveryAddresses, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, readPublicBannerPresentation, readPublicStudioLayout, searchPublicCatalog, setFavoriteStore } from "./store-discovery-client";
+import { type BannerPresentation, listFavoriteStoreIDs, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, readPublicBannerPresentation, readPublicStudioLayout, searchPublicCatalog, setFavoriteStore } from "./store-discovery-client";
 import { createStyles } from "./store-discovery-styles";
 
 function activityIcon(nameAr: string, nameEn: string): ComponentProps<typeof BthwaniIcon>["name"] {

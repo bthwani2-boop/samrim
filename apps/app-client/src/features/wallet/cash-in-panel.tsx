@@ -8,7 +8,7 @@ import { ActivityIndicator, AppState, Image, Pressable, ScrollView, StyleSheet, 
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "../../bootstrap/compatible-storage";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
-import { clientOrderSessionKey } from "../orders/order-session-scope";
+import { clientSessionKey } from "../access/client-session-scope";
 import { isOwnCustomerWalletResponse } from "./customer-wallet-readback";
 
 type FundingAttempt = Readonly<{ version: 1; actorID: string; amountMinor: number; idempotencyKey: string; correlationID: string; fundingIntentID?: string; providerKey?: string }>;
@@ -50,7 +50,7 @@ function walletWithFundingIntent(wallet: BeneficiaryWalletResponse, intent: Cash
 const attemptKey = (actorID: string) => `bthwani.client.cash-in.pending.v1.${encodeURIComponent(actorID)}`;
 
 function currentClientWalletSessionKey(): string {
-  return clientOrderSessionKey(currentIdentityState());
+  return clientSessionKey(currentIdentityState());
 }
 
 // Keep media under the DSH origin reachable by the actual Android device.

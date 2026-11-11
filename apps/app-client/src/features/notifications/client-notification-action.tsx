@@ -6,10 +6,10 @@ import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
-import { clientOrderSessionKey } from "../orders/order-session-scope";
+import { clientSessionKey } from "../access/client-session-scope";
 
 function currentClientNotificationSessionKey(): string {
-  return clientOrderSessionKey(currentIdentityState());
+  return clientSessionKey(currentIdentityState());
 }
 
 /** A server-owned unread count, never a local approximation based on the first page. */

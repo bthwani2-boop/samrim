@@ -8,12 +8,12 @@ import * as Crypto from "expo-crypto";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { KeyboardAvoidingView, Modal, Platform, Pressable, Share, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
-import { clientOrderSessionKey } from "../orders/order-session-scope";
+import { clientSessionKey } from "../access/client-session-scope";
 
 export type ClientShareTarget = Readonly<{ kind: ClientShareKind; id: string; title: string; link: string }>;
 
 function clientShareSessionKey(): string {
-  return clientOrderSessionKey(currentIdentityState());
+  return clientSessionKey(currentIdentityState());
 }
 
 function clientShareTargetKey(target: ClientShareTarget | null): string {

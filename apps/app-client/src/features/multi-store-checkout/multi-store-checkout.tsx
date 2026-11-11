@@ -1,6 +1,6 @@
 import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { availableCustomerFulfillmentModes, type CheckoutQuote, type ClientOpenCartSummary, type CustomerFulfillmentMode, createDshMobileClient, type DeliveryAddress, formatMoney, fulfillmentModeLabel, type MultiStoreCheckout, type MultiStoreCheckoutRequest, type PublicStoreView } from "@bthwani/dsh";
+import { availableCustomerFulfillmentModes, type CheckoutQuote, type ClientOpenCartSummary, type CustomerFulfillmentMode, type DeliveryAddress, formatMoney, fulfillmentModeLabel, type MultiStoreCheckout, type MultiStoreCheckoutRequest, type PublicStoreView } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -8,19 +8,16 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as SecureStore from "../../bootstrap/compatible-storage";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
+import { clientSessionKey } from "../access/client-session-scope";
+import { createMultiStoreCheckout, listOwnOpenCarts, quoteMultiStoreChildCheckout, readCartForPreview, readOwnMultiStoreCheckout } from "../cart-checkout/cart-client";
 import { checkoutRecipient, DeliveryRecipientForm, type DeliveryRecipientInput, deliveryRecipientIsValid } from "../cart-checkout/delivery-recipient-form";
 import { readSavedFulfillmentMode, resolveFulfillmentChoice, saveFulfillmentMode } from "../cart-checkout/fulfillment-choice";
+import { listOwnDeliveryAddresses } from "../location-core/delivery-address-client";
 import { PremiumFulfillmentSelector, PremiumOutlineAction, PremiumStickyFooter, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
-import { clientOrderSessionKey } from "../orders/order-session-scope";
 import { useServiceCityScope } from "../service-city/service-city-scope";
 import { acknowledgedDiscoveryClickForCheckout } from "../store-discovery/discovery-analytics";
-import { createMultiStoreCheckout, listOwnDeliveryAddresses, listOwnOpenCarts, quoteMultiStoreChildCheckout, readOwnMultiStoreCheckout, readPublishedStore } from "../store-discovery/store-discovery-client";
+import { readPublishedStore } from "../store-discovery/store-discovery-client";
 
-async function readCartForPreview(token: string, storeID: string) {
-  const url = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-  if (!url) throw new Error("DSH_BASE_URL_REQUIRED");
-  return (await createDshMobileClient(url, { cryptoRandomUUID: () => Crypto.randomUUID() }).readOpenCart(token, storeID)).cart;
-}
 type StoreCart = Readonly<{ store: ClientOpenCartSummary; cart: Readonly<{ id: string; version: number; lineCount: number }>; identity: PublicStoreView | null; subtotalMinor: number | null }>;
 type PendingMultiStoreAttempt =
   | Readonly<{ version: 3 | 4; kind: "CREATE"; actorID: string; idempotencyKey: string; correlationID: string; request: MultiStoreCheckoutRequest }>
@@ -44,7 +41,7 @@ async function authenticatedClientActorID(): Promise<string> {
 }
 
 function hasCurrentMultiStoreSession(sessionKey: string): boolean {
-  return Boolean(sessionKey) && sessionKey === clientOrderSessionKey(currentIdentityState());
+  return Boolean(sessionKey) && sessionKey === clientSessionKey(currentIdentityState());
 }
 
 function pendingMultiStoreAttemptKey(actorID: string): string {
@@ -217,11 +214,11 @@ export default function MultiStoreCheckoutScreen() {
   const loadRequestID = useRef(0);
   const submitInFlight = useRef(false);
   const submitAttemptID = useRef(0);
-  const activeSessionRef = useRef(clientOrderSessionKey(currentIdentityState()));
+  const activeSessionRef = useRef(clientSessionKey(currentIdentityState()));
 
   const load = useCallback(async () => {
     const requestID = ++loadRequestID.current;
-    const sessionKey = clientOrderSessionKey(currentIdentityState());
+    const sessionKey = clientSessionKey(currentIdentityState());
     if (!selectedCityID || !sessionKey) {
       setState({ kind: "error" });
       return;
@@ -300,7 +297,7 @@ export default function MultiStoreCheckoutScreen() {
 
   useEffect(() => {
     const onSessionChange = (session: ReturnType<typeof currentIdentityState>) => {
-      const nextSessionKey = clientOrderSessionKey(session);
+      const nextSessionKey = clientSessionKey(session);
       if (nextSessionKey === activeSessionRef.current) return false;
       activeSessionRef.current = nextSessionKey;
       loadRequestID.current += 1;
@@ -345,7 +342,7 @@ export default function MultiStoreCheckoutScreen() {
       setError("أدخل اسمًا ورقمًا يمنيًا صحيحًا للمستلم، محليًا أو دوليًا، قبل تأكيد الطلب.");
       return;
     }
-    const sessionKey = clientOrderSessionKey(currentIdentityState());
+    const sessionKey = clientSessionKey(currentIdentityState());
     if (!sessionKey || sessionKey !== activeSessionRef.current) return;
     const submitID = ++submitAttemptID.current;
     const isCurrent = () => submitID === submitAttemptID.current && hasCurrentMultiStoreSession(sessionKey);
@@ -429,7 +426,7 @@ export default function MultiStoreCheckoutScreen() {
   }
 
   // Never render previous-session recipient, quote or child checkout during a session transition.
-  if (clientOrderSessionKey(currentIdentityState()) !== activeSessionRef.current) return <View style={styles.state} accessibilityLabel="جارٍ التحقق من جلسة العميل"><BthwaniSkeleton width="50%" height={26} /></View>;
+  if (clientSessionKey(currentIdentityState()) !== activeSessionRef.current) return <View style={styles.state} accessibilityLabel="جارٍ التحقق من جلسة العميل"><BthwaniSkeleton width="50%" height={26} /></View>;
   if (state.kind === "loading") return <View style={styles.state} accessibilityLabel="جارٍ تجهيز طلب المتاجر"><BthwaniSkeleton width="50%" height={26} /><BthwaniSkeleton height={92} /><BthwaniSkeleton height={120} /></View>;
   if (state.kind === "error") return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" style={styles.title}>تعذر تجهيز الطلب المتعدد</Text><Text style={styles.muted}>تحقق من مدينة الخدمة والاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /></View>;
   if (state.kind === "empty") return <View style={styles.state}><BthwaniIcon name="cart" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.title}>{state.otherCityCartCount > 0 ? "سلالك في مدينة خدمة أخرى" : "سلة التسوق فارغة"}</Text><Text style={styles.muted}>{state.otherCityCartCount > 0 ? "غيّر مدينة الخدمة لعرض السلال المحفوظة هناك." : "أضف منتجات من المتاجر لتظهر سلالك هنا."}</Text><BthwaniButton label="استكشف المتاجر" onPress={() => router.push("/home" as Href)} /></View>;

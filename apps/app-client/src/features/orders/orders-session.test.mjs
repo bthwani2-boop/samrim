@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript-ast";
-import { clientOrderSessionKey } from "./order-session-scope.ts";
+import { clientSessionKey } from "../access/client-session-scope.ts";
 
 const source = readFileSync(new URL("./orders.tsx", import.meta.url), "utf8");
 const ast = ts.createSourceFile("orders.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -54,8 +54,8 @@ function harness(options = {}) {
   const listClientOrders = options.listClientOrders ?? (async () => ({ orders: [{ id: "old-order" }], nextCursor: "" }));
   const load = createOrderLoader({
     loadSequence, pageSequence, currentIdentityState,
-    clientOrderSessionKey,
-    hasCurrentOrdersSession: scope => Boolean(scope) && clientOrderSessionKey(currentIdentityState()) === scope,
+    clientSessionKey,
+    hasCurrentOrdersSession: scope => Boolean(scope) && clientSessionKey(currentIdentityState()) === scope,
     getUsableIdentityAccessToken: options.getUsableIdentityAccessToken ?? (async () => "token"),
     client: () => ({ listClientOrders: async (...args) => {
       dshCalls++;
@@ -71,7 +71,7 @@ function harness(options = {}) {
     states,
     get dshCalls() { return dshCalls; },
     switchSession: sessionId => { current = identity(sessionId); },
-    currentSession: () => clientOrderSessionKey(current),
+    currentSession: () => clientSessionKey(current),
   };
 }
 
@@ -118,7 +118,7 @@ test("Orders UI, unread counts, pagination and repeat gate all bind to the curre
   assert.match(source, /useConversationUnreadCounts\(visibleOrders\.map\(order => order\.id\), activeSessionKey/);
   assert.match(source, /current\.sessionKey !== sessionKey/);
   assert.match(source, /acquireRepeatOrder\(repeatOrderGate\.current, sessionKey, order\.id\)/);
-  assert.match(source, /invalidateRepeatOrderForSessionChange\(repeatOrderGate\.current, clientOrderSessionKey\(next\)\)/);
+  assert.match(source, /invalidateRepeatOrderForSessionChange\(repeatOrderGate\.current, clientSessionKey\(next\)\)/);
   assert.match(source, /\}, \[activeSessionKey, load\]\)/);
   assert.doesNotMatch(source, /hasCurrentOrdersActor\(/);
 });

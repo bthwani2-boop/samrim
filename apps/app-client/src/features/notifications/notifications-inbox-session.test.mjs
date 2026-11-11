@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript-ast";
-import { clientOrderSessionKey } from "../orders/order-session-scope.ts";
+import { clientSessionKey } from "../access/client-session-scope.ts";
 
 const source = readFileSync(new URL("./notifications-inbox.tsx", import.meta.url), "utf8");
 const ast = ts.createSourceFile("notifications-inbox.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -32,12 +32,12 @@ function production(runtime, names) {
   const output = ts.transpileModule(program, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
   }).outputText;
-  return runInNewContext(output, { clientOrderSessionKey, console: { error: () => {} }, ...runtime });
+  return runInNewContext(output, { clientSessionKey, console: { error: () => {} }, ...runtime });
 }
 
 function harness(overrides = {}) {
   let current = actor("client-a", "first");
-  const sessionKey = clientOrderSessionKey(current);
+  const sessionKey = clientSessionKey(current);
   const observed = { items: [], shares: [], credits: [], unread: -1, loadedSession: "", writes: 0, navigation: [],
     shareFetches: 0, walletFetches: 0, firstFetches: 0, errors: [], refreshes: 0 };
   const api = {
@@ -204,9 +204,9 @@ test("inbox rendering and pagination fail closed until current actor and session
   assert.match(source, /if \(sessionKeyRef\.current === nextSessionKey\) return/);
   assert.match(source, /loadedSessionKey !== sessionKey \|\| !nextCursor/);
   assert.doesNotMatch(source, /activeClientActorID|setActorID/);
-  const original = clientOrderSessionKey(actor("client-a", "first"));
-  assert.notEqual(original, clientOrderSessionKey(actor("client-a", "second")));
-  assert.equal(clientOrderSessionKey({ kind: "signed_out" }), "");
+  const original = clientSessionKey(actor("client-a", "first"));
+  assert.notEqual(original, clientSessionKey(actor("client-a", "second")));
+  assert.equal(clientSessionKey({ kind: "signed_out" }), "");
 });
 
 test("stale notification pagination cannot append another page after session rotation", async () => {

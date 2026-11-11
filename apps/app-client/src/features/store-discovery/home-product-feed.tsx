@@ -1,15 +1,16 @@
-import { borders, radius, spacing, typography, type resolveTheme } from "@bthwani/design-system";
+import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type CatalogStoreOffer, formatMoney } from "@bthwani/dsh";
-import { Image as ExpoImage } from "expo-image";
 import * as Haptics from "expo-haptics";
+import { Image as ExpoImage } from "expo-image";
 import { type Href, useRouter } from "expo-router";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
-import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
-import { subscribeClientCartActorChanges } from "../cart-checkout/cart-session-scope";
 import Reanimated, { FadeInDown, ReduceMotion } from "react-native-reanimated";
-import { adjustSimpleOfferQuantity, listOwnOpenCarts, readOwnStoreCart, searchPublicCatalog } from "./store-discovery-client";
+import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
+import { adjustSimpleOfferQuantity, listOwnOpenCarts, readOwnStoreCart } from "../cart-checkout/cart-client";
+import { subscribeClientCartActorChanges } from "../cart-checkout/cart-session-scope";
+import { searchPublicCatalog } from "./store-discovery-client";
 
 type FeedState =
   | { kind: "loading" }

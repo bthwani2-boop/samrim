@@ -1,17 +1,18 @@
 import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSkeleton, BthwaniSurface, useConversationUnreadCounts, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, formatOrderDate, fulfillmentModeLabel, orderPaymentDisclosure, paymentStateLabel, type Cart, type Order, type PublicStoreView, orderStateLabel } from "@bthwani/dsh";
+import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme, useConversationUnreadCounts } from "@bthwani/design-system/native";
+import { type Cart, createDshMobileClient, formatMoney, formatOrderDate, fulfillmentModeLabel, type Order, orderPaymentDisclosure, orderStateLabel, type PublicStoreView, paymentStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useIsFocused, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Keyboard, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
+import { clientSessionKey } from "../access/client-session-scope";
 import { PremiumOrderProgress, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
 import { orderJourneyPresentation } from "./order-journey";
-import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { emptyOrdersNextAction, isPartialOrderListEmpty, matchesOrderFilters, matchesOrderStatus, type OrderFulfillmentFilter } from "./order-list-filter";
-import { clientOrderSessionKey, isClientActorScopeCurrent } from "./order-session-scope";
+import { isClientActorScopeCurrent } from "./order-session-scope";
 import { acquireRepeatOrder, createRepeatOrderGate, invalidateRepeatOrderForSessionChange, ownsRepeatOrder, releaseRepeatOrder } from "./repeat-order-gate";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const statusOptions = [
   { key: "all", label: "الكل" },
@@ -38,7 +39,7 @@ function baseUrl(): string {
 const client = () => createDshMobileClient(baseUrl(), { cryptoRandomUUID: () => Crypto.randomUUID() });
 
 function hasCurrentOrdersSession(sessionKey: string): boolean {
-  return Boolean(sessionKey) && clientOrderSessionKey(currentIdentityState()) === sessionKey;
+  return Boolean(sessionKey) && clientSessionKey(currentIdentityState()) === sessionKey;
 }
 
 export default function ClientOrders() {
@@ -51,7 +52,7 @@ export default function ClientOrders() {
   const [state, setState] = useState<OrdersState>({ kind: "loading" });
   const [identityState, setIdentityState] = useState(currentIdentityState);
   const activeActorID = identityState.kind === "authenticated" ? identityState.identity.subject.trim() : "";
-  const activeSessionKey = clientOrderSessionKey(identityState);
+  const activeSessionKey = clientSessionKey(identityState);
   const loadSequence = useRef(0);
   const pageSequence = useRef(0);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -73,7 +74,7 @@ export default function ClientOrders() {
     setLoadingMore(false);
     setLoadMoreError("");
     const session = currentIdentityState();
-    const sessionKey = clientOrderSessionKey(session);
+    const sessionKey = clientSessionKey(session);
     if (session.kind !== "authenticated" || !sessionKey) { setState({ kind: "auth_required" }); return; }
     const actorID = session.identity.subject.trim();
     setState({ kind: "loading" });
@@ -204,7 +205,7 @@ export default function ClientOrders() {
   }, [activeActorID, router, state]);
 
   useEffect(() => subscribeIdentitySession((next) => {
-    const invalidated = invalidateRepeatOrderForSessionChange(repeatOrderGate.current, clientOrderSessionKey(next));
+    const invalidated = invalidateRepeatOrderForSessionChange(repeatOrderGate.current, clientSessionKey(next));
     if (invalidated) {
       setRepeatingOrderID((current) => repeatOrderGate.current.current === null && current === invalidated.orderID ? "" : current);
     }

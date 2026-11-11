@@ -1,6 +1,3 @@
-import { buildDisplayCatalogRows, categoryTrail, filterCatalogToProduct, mergeCatalog, formatQuantity, isQuantityAllowed, validateModifierSelection, dshMutationErrorMessage, buildCatalogRows } from "./store-catalog-model";
-import type { StoreCatalogRow } from "./store-catalog-model";
-import { createStyles } from "./store-detail-styles";
 import { sizing, spacing } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { availableCustomerFulfillmentModes, type CartResponse, type CustomerFulfillmentMode, formatMoney, fulfillmentModeLabel, type PublicCatalogResponse, type PublicDiscoveryContentView, type PublicPromotionView, type PublicStoreView, type StoreOrderability } from "@bthwani/dsh";
@@ -14,6 +11,7 @@ import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-g
 import { runOnJS } from "react-native-reanimated";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
+import { addCatalogOfferToCart, readOwnStoreCart } from "../cart-checkout/cart-client";
 import { subscribeClientCartActorChanges } from "../cart-checkout/cart-session-scope";
 import { readSavedFulfillmentMode, saveFulfillmentMode } from "../cart-checkout/fulfillment-choice";
 import { useServiceCityScope } from "../service-city/service-city-scope";
@@ -21,11 +19,14 @@ import { ClientShareSheet, type ClientShareTarget } from "../sharing/client-shar
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
 import { PromotionCard } from "./promotion-card";
 import { summarizeStoreAvailability } from "./store-availability-summary";
-import { storeReadFailureKind } from "./store-read-state";
-import { addCatalogOfferToCart, listFavoriteStoreIDs, listFavoriteStoreOfferIDs, listPublicStoreBanners, listPublicPromotions, readFavoriteStoreCatalog, readOwnStoreCart, readPublicStoreCatalog, readPublicStoreOrderability, readPublishedStore, setFavoriteStore, setFavoriteStoreOffer } from "./store-discovery-client";
+import type { StoreCatalogRow } from "./store-catalog-model";
+import { buildCatalogRows, buildDisplayCatalogRows, categoryTrail, dshMutationErrorMessage, filterCatalogToProduct, formatQuantity, isQuantityAllowed, mergeCatalog, validateModifierSelection } from "./store-catalog-model";
+import { createStyles } from "./store-detail-styles";
+import { listFavoriteStoreIDs, listFavoriteStoreOfferIDs, listPublicPromotions, listPublicStoreBanners, readFavoriteStoreCatalog, readPublicStoreCatalog, readPublicStoreOrderability, readPublishedStore, setFavoriteStore, setFavoriteStoreOffer } from "./store-discovery-client";
 import type { GallerySourceRect } from "./store-product-gallery";
 import { StoreProductSheet } from "./store-product-sheet";
 import { StorePublicContactCard } from "./store-public-contact";
+import { storeReadFailureKind } from "./store-read-state";
 import { buildPublicStoreShareURL, buildStoreSharePath } from "./store-share-link";
 
 type DetailState =

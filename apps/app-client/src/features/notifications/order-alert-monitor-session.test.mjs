@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript-ast";
-import { clientOrderSessionKey } from "../orders/order-session-scope.ts";
+import { clientSessionKey } from "../access/client-session-scope.ts";
 import { clientPushDestination } from "./notification-tap-destination.ts";
 
 const source = readFileSync(new URL("./order-alert-monitor.tsx", import.meta.url), "utf8");
@@ -31,12 +31,12 @@ function production(runtime) {
     "const handleResponse = " + arrows.get("handleResponse") + ";\n" +
     "const tick = " + arrows.get("tick") + ";\n({ tick, handleResponse, scheduledSessions })";
   const js = ts.transpileModule(program, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-  return runInNewContext(js, { clientOrderSessionKey, clientPushDestination, ...runtime });
+  return runInNewContext(js, { clientSessionKey, clientPushDestination, ...runtime });
 }
 
 function harness(options = {}) {
   let identity = actor("session-1");
-  const owner = clientOrderSessionKey(identity);
+  const owner = clientSessionKey(identity);
   const observed = { requested: 0, registered: 0, cursors: [], resets: [], scheduled: [],
     cancelled: [], cleared: 0, routes: [] };
   const latest = { id: "alert-1", orderId: "order-1", title: "Arrived",
@@ -216,11 +216,11 @@ test("strictly reject cross-actor push and preserve canonical destination valida
 });
 
 test("source matches canonical Client session and retains actor-only remote Push payload compatibility", () => {
-  assert.match(source, /const sessionKey = clientOrderSessionKey\(session\)/);
+  assert.match(source, /const sessionKey = clientSessionKey\(session\)/);
   assert.match(source, /const stillCurrent = \(\) => !cancelled && AppState\.currentState === "active" && isCurrentAlertSession\(sessionKey\)/);
   assert.match(source, /alerts\.receive\(role, sessionKey, data\.notifications\)/);
-  assert.match(source, /scheduledSessions\.get\(result\.notification\.request\.identifier\) !== clientOrderSessionKey\(session\)/);
+  assert.match(source, /scheduledSessions\.get\(result\.notification\.request\.identifier\) !== clientSessionKey\(session\)/);
   assert.match(source, /cancelScheduledNotificationAsync\(notificationId\)/);
   assert.doesNotMatch(source, /data: \{[^}]*sessionId/);
-  assert.notEqual(clientOrderSessionKey(actor("session-1")), clientOrderSessionKey(actor("session-2")));
+  assert.notEqual(clientSessionKey(actor("session-1")), clientSessionKey(actor("session-2")));
 });

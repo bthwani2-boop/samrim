@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript-ast";
-import { clientOrderSessionKey } from "../orders/order-session-scope.ts";
+import { clientSessionKey } from "../access/client-session-scope.ts";
 
 const source = readFileSync(new URL("./client-notification-action.tsx", import.meta.url), "utf8");
 const ast = ts.createSourceFile("client-notification-action.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -33,7 +33,7 @@ function production(runtime) {
   const text = helper + "\nconst focus = " + focused + ";\nconst identityEffect = " + identityEffect +
     ";\n({ focus, identityEffect })";
   const js = ts.transpileModule(text, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-  return runInNewContext(js, { clientOrderSessionKey, ...runtime });
+  return runInNewContext(js, { clientSessionKey, ...runtime });
 }
 
 async function flush() {
@@ -45,7 +45,7 @@ function fixture(overrides = {}) {
   let eventListener;
   const observed = { unread: [], owner: [], requests: 0 };
   const requestID = { current: 0 };
-  const sessionKey = clientOrderSessionKey(identity);
+  const sessionKey = clientSessionKey(identity);
   const sessionKeyRef = { current: sessionKey };
   const api = {
     listNotifications: async () => { observed.requests++; return { unreadCount: 4 }; },
@@ -133,5 +133,5 @@ test("private badge and accessibility count fail closed even before Identity eff
   assert.match(source, /label=\{visibleUnreadCount \?/);
   assert.match(source, /\{visibleUnreadCount > 0 \?/);
   assert.doesNotMatch(source, /currentClientActorID|setActorID/);
-  assert.notEqual(clientOrderSessionKey(actor("session-1")), clientOrderSessionKey(actor("session-2")));
+  assert.notEqual(clientSessionKey(actor("session-1")), clientSessionKey(actor("session-2")));
 });

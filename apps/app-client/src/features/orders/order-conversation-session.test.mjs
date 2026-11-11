@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript-ast";
-import { clientOrderSessionKey } from "./order-session-scope.ts";
+import { clientSessionKey } from "../access/client-session-scope.ts";
 
 const source = readFileSync(new URL("./order-conversation.tsx", import.meta.url), "utf8");
 const ast = ts.createSourceFile("order-conversation.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -33,13 +33,13 @@ const actors = ["conversationActorID", "currentConversationSessionKey", "isCurre
 
 test("private media is never returned to a renewed session of the same customer", async () => {
   let current = identity("customer-a", "session-old");
-  const formerKey = clientOrderSessionKey(current);
+  const formerKey = clientSessionKey(current);
   let resolveMedia;
   const pendingMedia = new Promise(resolve => { resolveMedia = resolve; });
   let reads = 0;
   const { readPrivateMedia } = productionFunctions([...actors, "readPrivateMedia"], {
     currentIdentityState: () => current,
-    clientOrderSessionKey,
+    clientSessionKey,
     getUsableIdentityAccessToken: async () => "old-token",
     client: () => ({
       readOrderConversationMedia: async () => { reads += 1; return pendingMedia; },
@@ -57,11 +57,11 @@ test("private media is never returned to a renewed session of the same customer"
 
 test("private media is readable by its active customer session and blocked after logout", async () => {
   let current = identity("customer-a", "session-live");
-  const scope = clientOrderSessionKey(current);
+  const scope = clientSessionKey(current);
   const media = { contentType: "audio/m4a", bytes: "allowed" };
   const { readPrivateMedia } = productionFunctions([...actors, "readPrivateMedia"], {
     currentIdentityState: () => current,
-    clientOrderSessionKey,
+    clientSessionKey,
     getUsableIdentityAccessToken: async () => "token",
     client: () => ({ readOrderConversationMedia: async () => media }),
   });
@@ -73,8 +73,8 @@ test("private media is readable by its active customer session and blocked after
 function submitRuntime(currentSession, extra = {}) {
   return {
     currentIdentityState: currentSession,
-    clientOrderSessionKey,
-    loadedSessionKey: clientOrderSessionKey(currentSession()),
+    clientSessionKey,
+    loadedSessionKey: clientSessionKey(currentSession()),
     correctOwner: true,
     conversationRole: "client",
     orderConversationMessageAttemptStorageKey: () => "saved-message",
@@ -90,7 +90,7 @@ function submitRuntime(currentSession, extra = {}) {
 
 test("session replacement during media encoding prevents a stale DSH write and preserves recovery", async () => {
   let current = identity("customer-a", "session-1");
-  const formerScope = clientOrderSessionKey(current);
+  const formerScope = clientSessionKey(current);
   let finishEncoding;
   const encoding = new Promise(resolve => { finishEncoding = resolve; });
   let writes = 0;
@@ -141,7 +141,7 @@ test("current customer media submission retains recipient list and original retr
 });
 
 test("conversation messages, media and read receipts use the same live session scope", () => {
-  assert.match(source, /const activeSessionKey = clientOrderSessionKey\(identityState\)/);
+  assert.match(source, /const activeSessionKey = clientSessionKey\(identityState\)/);
   assert.match(source, /loadedSessionKey === activeSessionKey/);
   assert.match(source, /state\.kind === "ready" && !correctOwner/);
   assert.match(source, /\}, \[activeSessionKey, load\]\)/);

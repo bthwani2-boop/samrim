@@ -4,7 +4,7 @@ import { createDshMobileClient } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
-import { clientOrderSessionKey } from "../orders/order-session-scope";
+import { clientSessionKey } from "../access/client-session-scope";
 
 export type StoreAccessInvitationInboxProps = Readonly<{
   baseURL: string;
@@ -28,7 +28,7 @@ function grantStateLabel(state: StoreAccessGrant["state"]): string {
 }
 
 function currentInvitationSessionKey(): string {
-  return clientOrderSessionKey(currentIdentityState());
+  return clientSessionKey(currentIdentityState());
 }
 
 const permissionLabels: Readonly<Record<string, string>> = {

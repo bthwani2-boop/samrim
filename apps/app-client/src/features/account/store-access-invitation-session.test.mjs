@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript-ast";
-import { clientOrderSessionKey } from "../orders/order-session-scope.ts";
+import { clientSessionKey } from "../access/client-session-scope.ts";
 
 const source = readFileSync(new URL("./store-access-invitation-inbox.tsx", import.meta.url), "utf8");
 const ast = ts.createSourceFile("store-access-invitation-inbox.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -31,13 +31,13 @@ function production(runtime, names) {
   for (const key of keys) assert.ok(nodes.has(key), `production function not found: ${key}`);
   const program = `${keys.map(key => nodes.get(key)).join("\n")}\n({ reload, decide, isCurrentSession })`;
   const js = ts.transpileModule(program, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-  const value = runInNewContext(js, { clientOrderSessionKey, ...runtime });
+  const value = runInNewContext(js, { clientSessionKey, ...runtime });
   return Object.fromEntries(names.map(name => [name, value[name]]));
 }
 
 function harness(overrides = {}) {
   let identity = actor("client-a", "session-1");
-  const sessionKey = clientOrderSessionKey(identity);
+  const sessionKey = clientSessionKey(identity);
   const observed = { requests: 0, decisions: 0, items: [], owners: [], errors: [], busy: [], loads: [] };
   const data = { items: [{ id: "grant-a", state: "pending_acceptance", version: 3, storeName: "Store" }] };
   const api = {
@@ -199,7 +199,7 @@ function productionSubscription(runtime) {
   assert.ok(helper && callback, "production identity subscription must be present");
   const program = `${helper}\nconst install = ${callback};\ninstall;`;
   const js = ts.transpileModule(program, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-  return runInNewContext(js, { clientOrderSessionKey, ...runtime });
+  return runInNewContext(js, { clientSessionKey, ...runtime });
 }
 
 function identitySubscriptionFixture() {
@@ -208,7 +208,7 @@ function identitySubscriptionFixture() {
   const events = [];
   const runtime = {
     currentIdentityState: () => current,
-    sessionKeyRef: { current: clientOrderSessionKey(current) },
+    sessionKeyRef: { current: clientSessionKey(current) },
     requestID: { current: 7 },
     subscribeIdentitySession: cb => { listener = cb; return () => {}; },
     setSessionKey: key => events.push(["session", key]),
@@ -222,7 +222,7 @@ function identitySubscriptionFixture() {
   install();
   return { runtime, events, notify: () => listener(),
     setSession: sessionId => { current = actor("client-a", sessionId); },
-    nextKey: sessionId => clientOrderSessionKey(actor("client-a", sessionId)),
+    nextKey: sessionId => clientSessionKey(actor("client-a", sessionId)),
   };
 }
 
@@ -282,7 +282,7 @@ test("an uncertain retry key is retained for same actor but not reused by anothe
   x.api.decideActorStoreAccessInvitation = async (...args) => {
     recorded.push(args[3]);
   };
-  const otherKey = clientOrderSessionKey(actor("client-b", "session-1"));
+  const otherKey = clientSessionKey(actor("client-b", "session-1"));
   const next = production({ ...x.runtime, sessionKey: otherKey, loadedSessionKey: otherKey }, ["decide"]);
   await next.decide(x.grant, "accept");
   assert.equal(recorded.length, 2);

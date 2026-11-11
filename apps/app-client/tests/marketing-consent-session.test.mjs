@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript-ast";
-import { clientOrderSessionKey } from "../src/features/orders/order-session-scope.ts";
+import { clientSessionKey } from "../src/features/access/client-session-scope.ts";
 
 const source = readFileSync(new URL("../src/features/account/marketing-contact-preference.tsx", import.meta.url), "utf8");
 const ast = ts.createSourceFile("marketing-contact-preference.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -34,12 +34,12 @@ function production(runtime) {
     ";\nconst currentConsent = " + expressions.get("currentConsent") +
     ";\n({load, update, currentConsent})";
   const js = ts.transpileModule(program, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-  return runInNewContext(js, { clientOrderSessionKey, ...runtime });
+  return runInNewContext(js, { clientSessionKey, ...runtime });
 }
 
 function fixture(overrides = {}) {
   let identity = actor("client-A", "session-1");
-  const sessionKey = clientOrderSessionKey(identity);
+  const sessionKey = clientSessionKey(identity);
   const oldConsent = { channel: "PUSH", decision: "OPTED_OUT", version: 3 };
   const observed = { consent: [], notice: [], pending: [], fetches: [], responses: 0 };
   const runtime = {
@@ -78,13 +78,13 @@ function fixture(overrides = {}) {
 }
 
 test("marketing consent source uses one canonical Identity actor+session key", () => {
-  const first = clientOrderSessionKey(actor(" client-A ", "session-1"));
-  assert.equal(first, clientOrderSessionKey(actor("client-A", "session-1")));
-  assert.notEqual(first, clientOrderSessionKey(actor("client-A", "session-2")));
-  assert.notEqual(first, clientOrderSessionKey(actor("client-B", "session-1")));
-  assert.equal(clientOrderSessionKey({ kind: "signed_out" }), "");
-  assert.equal(clientOrderSessionKey({ kind: "authenticated", identity: { role: "partner", subject: "client-A", sessionId: "session-1" } }), "");
-  assert.match(source, /subscribeIdentitySession\(\(session\) => setSessionKey\(clientOrderSessionKey\(session\)\)\)/);
+  const first = clientSessionKey(actor(" client-A ", "session-1"));
+  assert.equal(first, clientSessionKey(actor("client-A", "session-1")));
+  assert.notEqual(first, clientSessionKey(actor("client-A", "session-2")));
+  assert.notEqual(first, clientSessionKey(actor("client-B", "session-1")));
+  assert.equal(clientSessionKey({ kind: "signed_out" }), "");
+  assert.equal(clientSessionKey({ kind: "authenticated", identity: { role: "partner", subject: "client-A", sessionId: "session-1" } }), "");
+  assert.match(source, /subscribeIdentitySession\(\(session\) => setSessionKey\(clientSessionKey\(session\)\)\)/);
   assert.doesNotMatch(source, /marketingConsentActorID|isCurrentMarketingConsentActor|marketing-consent-session"/);
 });
 

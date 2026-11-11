@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript-ast";
-import { clientOrderSessionKey } from "../orders/order-session-scope.ts";
+import { clientSessionKey } from "../access/client-session-scope.ts";
 
 const source = readFileSync(new URL("./multi-store-checkout.tsx", import.meta.url), "utf8");
 const ast = ts.createSourceFile("multi-store-checkout.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -30,7 +30,7 @@ function production(runtime, names) {
   const compiled = ts.transpileModule(`${selected.map(name => declarations.get(name)).join("\n")}\n({${names.join(", ")}})`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  return runInNewContext(compiled, { clientOrderSessionKey, ...runtime });
+  return runInNewContext(compiled, { clientSessionKey, ...runtime });
 }
 
 function actor(subject = "client-a", sessionId = "session-1", role = "client") {
@@ -45,7 +45,7 @@ function deferred() {
 function fixture() {
   let identity = actor();
   let sequence = 0;
-  const sessionKey = clientOrderSessionKey(identity);
+  const sessionKey = clientSessionKey(identity);
   const stores = ["store-1", "store-2"].map((storeId, index) => ({
     store: { storeId, storeName: `Store ${index + 1}`, publicationState: "published", fulfillmentModes: ["CUSTOMER_PICKUP"] },
     cart: { id: `cart-${index + 1}`, version: 1 },
@@ -60,7 +60,7 @@ function fixture() {
   const actions = { quote: [], created: [], pending: [], state: [], errors: [], busy: [], deleted: [], stored: [] };
   const runtime = {
     currentIdentityState: () => identity,
-    clientOrderSessionKey,
+    clientSessionKey,
     getUsableIdentityAccessToken: async () => "identity-token",
     activeSessionRef: { current: sessionKey },
     submitAttemptID: { current: 0 },
@@ -120,7 +120,7 @@ test("multi-Store session identity rejects same-actor reauthentication and non-c
   assert.equal(hasCurrentMultiStoreSession(x.sessionKey), false);
   x.signOut();
   assert.equal(hasCurrentMultiStoreSession(x.sessionKey), false);
-  assert.equal(clientOrderSessionKey(actor("client-a", "session-1", "partner")), "");
+  assert.equal(clientSessionKey(actor("client-a", "session-1", "partner")), "");
 });
 
 test("a quote returned to the old same-actor session is never exposed for acceptance", async () => {
@@ -184,7 +184,7 @@ test("stale reconciliation 404 cannot trigger a DSH create POST after the sessio
   };
   const attempt = { kind: "CREATE", actorID: "client-a", idempotencyKey: "idem-abc12345", correlationID: "corr-abc12345", request: { id: "multi-1", children: [] } };
   const { resolvePendingMultiStoreAttempt } = production(x.runtime, ["resolvePendingMultiStoreAttempt"]);
-  const check = resolvePendingMultiStoreAttempt(attempt, () => clientOrderSessionKey(x.runtime.currentIdentityState()) === x.sessionKey, x.sessionKey);
+  const check = resolvePendingMultiStoreAttempt(attempt, () => clientSessionKey(x.runtime.currentIdentityState()) === x.sessionKey, x.sessionKey);
   await started.promise;
   x.renew();
   reading.reject({ kind: "http", status: 404 });
@@ -200,7 +200,7 @@ test("Identity session subscription resets previous recipients, quotes, busy sta
   let reloads = 0;
   const reset = { recipient: [], quote: [], pending: [], state: [], busy: [], modes: [], errors: [] };
   const context = {
-    clientOrderSessionKey,
+    clientSessionKey,
     currentIdentityState: x.runtime.currentIdentityState,
     load: () => { reloads++; },
     subscribeIdentitySession: callback => { subscriber = callback; return () => {}; },
@@ -237,7 +237,7 @@ test("the existing actor-keyed receipt and quoted child amounts remain authorita
   assert.match(source, /pendingMultiStoreAttemptKey\(actorID\)/);
   assert.match(source, /expectedTotalAmountMinor: accepted\.totalAmountMinor/);
   assert.match(source, /isTerminalMultiStoreCheckout\(checkout\)/);
-  assert.match(source, /clientOrderSessionKey\(currentIdentityState\(\)\) !== activeSessionRef\.current/);
+  assert.match(source, /clientSessionKey\(currentIdentityState\(\)\) !== activeSessionRef\.current/);
   assert.doesNotMatch(source, /hasCurrentMultiStoreActor/);
 });
 
@@ -248,7 +248,7 @@ test("stale load after same-actor reauthentication never reads the previous pend
   const started = deferred();
   const reads = [];
   const runtime = {
-    clientOrderSessionKey,
+    clientSessionKey,
     currentIdentityState: () => identity,
     selectedCityID: "sanaa",
     loadRequestID: { current: 0 },
@@ -256,7 +256,7 @@ test("stale load after same-actor reauthentication never reads the previous pend
     setQuotePreview: () => {},
     setError: () => {},
     authenticatedClientActorID: () => { started.resolve(); return gate.promise; },
-    hasCurrentMultiStoreSession: key => key === clientOrderSessionKey(identity),
+    hasCurrentMultiStoreSession: key => key === clientSessionKey(identity),
     SecureStore: { getItemAsync: async key => { reads.push(key); return null; } },
   };
   const compiled = ts.transpileModule(`const load = ${loadCallback}; load;`, {
@@ -276,7 +276,7 @@ test("a session switch between render and subscription registration is recovered
   x.renew();
   const events = { quotes: [], recipients: [], reloads: 0 };
   const runtime = {
-    clientOrderSessionKey,
+    clientSessionKey,
     currentIdentityState: x.runtime.currentIdentityState,
     activeSessionRef: x.runtime.activeSessionRef,
     loadRequestID: { current: 0 },
@@ -298,7 +298,7 @@ test("a session switch between render and subscription registration is recovered
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
   }).outputText;
   runInNewContext(compiled, runtime)();
-  assert.equal(runtime.activeSessionRef.current, clientOrderSessionKey(x.runtime.currentIdentityState()));
+  assert.equal(runtime.activeSessionRef.current, clientSessionKey(x.runtime.currentIdentityState()));
   assert.equal(events.quotes.length, 1);
   assert.equal(events.quotes[0], null);
   assert.equal(events.recipients[0].mode, "SELF");

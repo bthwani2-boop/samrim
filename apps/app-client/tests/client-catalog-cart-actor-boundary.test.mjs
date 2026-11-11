@@ -4,31 +4,36 @@ import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript-ast";
 
-const source = readFileSync(new URL("./store-discovery-client.ts", import.meta.url), "utf8");
-const ast = ts.createSourceFile("store-discovery-client.ts", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-function productionFunction(name, environment) {
-  let declaration;
-  const visit = (node) => {
-    if (ts.isFunctionDeclaration(node) && node.name?.text === name) declaration = node;
+// This is an app-level boundary proof: Discovery favorites and Catalog-to-Cart
+// mutations use one Identity guard, while DSH remains the cart's only writer.
+const functions = new Map();
+for (const relativePath of [
+  "../src/features/store-discovery/store-discovery-client.ts",
+  "../src/features/cart-checkout/cart-client.ts",
+  "../src/features/access/client-request-token.ts",
+]) {
+  const source = readFileSync(new URL(relativePath, import.meta.url), "utf8");
+  const ast = ts.createSourceFile(relativePath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  function visit(node) {
+    if (ts.isFunctionDeclaration(node) && node.name) functions.set(node.name.text, node.getText(ast));
     ts.forEachChild(node, visit);
-  };
+  }
   visit(ast);
-  assert.ok(declaration, name + " must come from actual Store DSH client");
-  const ownerHelpers = ["assertStoreActor", "tokenForStoreActor"].map((helperName) => {
-    let node;
-    const seek = (candidate) => {
-      if (ts.isFunctionDeclaration(candidate) && candidate.name?.text === helperName) node = candidate;
-      ts.forEachChild(candidate, seek);
-    };
-    seek(ast);
-    assert.ok(node, "client must implement actor-bound " + helperName);
-    return node.getText(ast);
+}
+function productionFunction(name, environment) {
+  const declaration = functions.get(name);
+  assert.ok(declaration, `${name} must come from the correct authored DSH client owner`);
+  const ownerHelpers = ["assertClientActor", "tokenForClientActor"].map((helperName) => {
+    const helper = functions.get(helperName);
+    assert.ok(helper, `client must implement actor-bound ${helperName}`);
+    return helper;
   }).join("\n");
-  const code = ts.transpileModule(ownerHelpers + "\n" + declaration.getText(ast) + "; " + name + ";", {
+  const code = ts.transpileModule(`${ownerHelpers}\n${declaration}; ${name};`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
   }).outputText;
   return vm.runInNewContext(code, { exports: {}, ...environment });
 }
+
 function deferred() {
   let resolve, reject;
   const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
@@ -239,4 +244,37 @@ test("same actor may remove an offer at minimum quantity using the owner cart ve
   assert.equal(removals[0].lineID, "line-A");
   assert.equal(removals[0].version, 7);
   assert.equal(removals[0].accessToken, "token-A");
+});
+
+// Guard the structural refoundation, not just the current visual route:
+ // DSH stays the only business writer; Discovery must not regain cart/Order commands.
+test("Store discovery cannot become a second Cart/checkout API owner", async () => {
+  const discovery = readFileSync(new URL("../src/features/store-discovery/store-discovery-client.ts", import.meta.url), "utf8");
+  const cart = readFileSync(new URL("../src/features/cart-checkout/cart-client.ts", import.meta.url), "utf8");
+  const screen = readFileSync(new URL("../src/features/multi-store-checkout/multi-store-checkout.tsx", import.meta.url), "utf8");
+  for (const name of ["readOwnStoreCart", "addCatalogOfferToCart", "adjustSimpleOfferQuantity",
+    "listOwnOpenCarts", "quoteMultiStoreChildCheckout", "createMultiStoreCheckout", "readOwnMultiStoreCheckout"]) {
+    assert.ok(!discovery.includes(`export async function ${name}(`), `Discovery must not own ${name}`);
+    assert.ok(cart.includes(`export async function ${name}(`), `Cart owner must keep ${name}`);
+  }
+  assert.ok(cart.includes("export async function readCartForPreview("));
+  assert.ok(screen.includes('from "../cart-checkout/cart-client"'));
+  assert.ok(!screen.includes("createDshMobileClient("), "checkout screen cannot recreate an independent DSH transport");
+  assert.ok(!discovery.includes("export { listOwnDeliveryAddresses }"), "addresses must keep their location owner");
+});
+
+test("multi-Store preview reads the canonical DSH Cart with the original acquired token", async () => {
+  const called = [];
+  const read = productionFunction("readCartForPreview", {
+    client: () => ({ readOpenCart: async (...args) => {
+      called.push(args);
+      return { cart: { id: "cart-a", version: 2 } };
+    } }),
+  });
+  const cart = await read("captured-client-token", "store-a");
+  assert.equal(cart.id, "cart-a");
+  assert.equal(cart.version, 2);
+  assert.equal(called.length, 1);
+  assert.equal(called[0][0], "captured-client-token");
+  assert.equal(called[0][1], "store-a");
 });

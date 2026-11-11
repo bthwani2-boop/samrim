@@ -4,7 +4,7 @@ import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
-import { clientOrderSessionKey } from "../orders/order-session-scope";
+import { clientSessionKey } from "../access/client-session-scope";
 
 // Promotional PUSH requires explicit opt-in. Delivery and order alerts are
 // transactional and deliberately independent of this preference.
@@ -14,23 +14,23 @@ const endpoint = `${base}/dsh/client/marketing-consent/PUSH`;
 
 export function MarketingContactPreference({ active }: Readonly<{ active: boolean }>) {
   const { themeName, theme } = useMobileAppearance();
-  const [sessionKey, setSessionKey] = useState(() => clientOrderSessionKey(currentIdentityState()));
+  const [sessionKey, setSessionKey] = useState(() => clientSessionKey(currentIdentityState()));
   const [consent, setConsent] = useState<Consent | null>(null);
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState("");
   const loadRequestID = useRef(0);
-  const currentConsent = active && sessionKey.length > 0 && clientOrderSessionKey(currentIdentityState()) === sessionKey ? consent : null;
+  const currentConsent = active && sessionKey.length > 0 && clientSessionKey(currentIdentityState()) === sessionKey ? consent : null;
 
   useEffect(() => {
-    const unsubscribe = subscribeIdentitySession((session) => setSessionKey(clientOrderSessionKey(session)));
-    setSessionKey(clientOrderSessionKey(currentIdentityState()));
+    const unsubscribe = subscribeIdentitySession((session) => setSessionKey(clientSessionKey(session)));
+    setSessionKey(clientSessionKey(currentIdentityState()));
     return unsubscribe;
   }, []);
 
   const load = useCallback(async () => {
     const requestID = ++loadRequestID.current;
     const isCurrent = () => requestID === loadRequestID.current
-      && active && sessionKey.length > 0 && clientOrderSessionKey(currentIdentityState()) === sessionKey;
+      && active && sessionKey.length > 0 && clientSessionKey(currentIdentityState()) === sessionKey;
     setConsent(null);
     setNotice("");
     setPending(false);
@@ -58,7 +58,7 @@ export function MarketingContactPreference({ active }: Readonly<{ active: boolea
   }, [load]);
 
   const update = async (next: boolean) => {
-    const isCurrent = () => active && sessionKey.length > 0 && clientOrderSessionKey(currentIdentityState()) === sessionKey;
+    const isCurrent = () => active && sessionKey.length > 0 && clientSessionKey(currentIdentityState()) === sessionKey;
     if (pending || !consent || !isCurrent()) return;
     setPending(true);
     setNotice("");

@@ -1,17 +1,17 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, BthwaniIconButton, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { clientShareMessageLabel, createDshMobileClient, type ClientShareEntry, type BeneficiaryWalletResponse, type Notification } from "@bthwani/dsh";
+import { type BeneficiaryWalletResponse, type ClientShareEntry, clientShareMessageLabel, createDshMobileClient, type Notification } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
-import { clientOrderSessionKey } from "../orders/order-session-scope";
+import { clientSessionKey } from "../access/client-session-scope";
 
 type WalletCreditNotice = Readonly<{ id: string; orderId: string; amountMinor: number; currency: "YER"; createdAt: string }>;
 
 function currentClientNotificationsSessionKey(): string {
-  return clientOrderSessionKey(currentIdentityState());
+  return clientSessionKey(currentIdentityState());
 }
 
 function dshClient() {

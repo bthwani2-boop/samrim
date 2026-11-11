@@ -5,7 +5,7 @@ import { type Href, useRouter } from "expo-router";
 import { useEffect } from "react";
 import { AppState, Platform } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
-import { clientOrderSessionKey } from "../orders/order-session-scope";
+import { clientSessionKey } from "../access/client-session-scope";
 import { clientPushDestination } from "./notification-tap-destination";
 import { currentAlertTone } from "./order-alert-preferences";
 
@@ -14,7 +14,7 @@ const alerts = new OrderAlertCursor();
 let initialized = false;
 
 function isCurrentAlertSession(sessionKey: string): boolean {
-  return Boolean(sessionKey) && clientOrderSessionKey(currentIdentityState()) === sessionKey;
+  return Boolean(sessionKey) && clientSessionKey(currentIdentityState()) === sessionKey;
 }
 
 const channels = [
@@ -57,7 +57,7 @@ export function OrderAlertMonitor() {
       const session = currentIdentityState();
       if (session.kind !== "authenticated") return;
       if (data?.source === "client-foreground"
-        && scheduledSessions.get(result.notification.request.identifier) !== clientOrderSessionKey(session)) {
+        && scheduledSessions.get(result.notification.request.identifier) !== clientSessionKey(session)) {
         void Notifications?.clearLastNotificationResponseAsync().catch(() => undefined);
         return;
       }
@@ -76,7 +76,7 @@ export function OrderAlertMonitor() {
       if (busy || cancelled || AppState.currentState !== "active") return;
       const session = currentIdentityState();
       const actor = session.kind === "authenticated" ? session.identity.subject.trim() : "";
-      const sessionKey = clientOrderSessionKey(session);
+      const sessionKey = clientSessionKey(session);
       if (!sessionKey) { alerts.reset(""); return; }
       const stillCurrent = () => !cancelled && AppState.currentState === "active" && isCurrentAlertSession(sessionKey);
       if (Notifications) void Notifications.getLastNotificationResponseAsync()

@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript-ast";
-import { clientOrderSessionKey } from "../src/features/orders/order-session-scope.ts";
+import { clientSessionKey } from "../src/features/access/client-session-scope.ts";
 
 // Exercise the real asynchronous read callback, not a duplicated actor-scope decision.
 const source = fs.readFileSync(path.resolve(import.meta.dirname, "../src/features/multi-store-checkout/multi-store-checkout.tsx"), "utf8");
@@ -29,7 +29,7 @@ function scenario({ switchDuringRead = false } = {}) {
     loadRequestID: { current: 0 },
     selectedCityID: "city-1",
     currentIdentityState: session,
-    clientOrderSessionKey,
+    clientSessionKey,
     setState: (value) => states.push(value),
     setQuotePreview: () => {},
     setError: () => {},
@@ -38,7 +38,7 @@ function scenario({ switchDuringRead = false } = {}) {
     pendingMultiStoreAttemptKey: (actor) => `pending:${actor}`,
     SecureStore: { getItemAsync: async () => null, deleteItemAsync: async () => {} },
     parsePendingMultiStoreAttempt: () => null,
-    hasCurrentMultiStoreSession: (key) => key === clientOrderSessionKey(session()),
+    hasCurrentMultiStoreSession: (key) => key === clientSessionKey(session()),
     listOwnOpenCarts: async () => {
       if (switchDuringRead) actorID = "client-B";
       return { carts: [
@@ -99,8 +99,8 @@ function quotedCheckoutScenario(switchDuringQuote) {
   }));
   const ctx = {
     currentIdentityState: session,
-    clientOrderSessionKey,
-    activeSessionRef: { current: clientOrderSessionKey(session()) },
+    clientSessionKey,
+    activeSessionRef: { current: clientSessionKey(session()) },
     submitAttemptID: { current: 0 },
     submitInFlight: { current: false },
     busy: false,
@@ -116,7 +116,7 @@ function quotedCheckoutScenario(switchDuringQuote) {
     setPendingAttempt: () => {},
     setState: () => {},
     authenticatedClientActorID: async () => "client-A",
-    hasCurrentMultiStoreSession: (key) => key === clientOrderSessionKey(session()),
+    hasCurrentMultiStoreSession: (key) => key === clientSessionKey(session()),
     quoteMultiStoreChildCheckout: async (request, version) => {
       calls.quote++;
       if (switchDuringQuote) actorID = "client-B";
@@ -152,6 +152,6 @@ test("quote returning after actor switch never publishes the prior customer's qu
 
 test("multi-store checkout subscribes to identity change and invalidates stale state", () => {
   assert.match(source, /subscribeIdentitySession\(onSessionChange\)/);
-  assert.match(source, /const nextSessionKey = clientOrderSessionKey\(session\)/);
+  assert.match(source, /const nextSessionKey = clientSessionKey\(session\)/);
   assert.match(source, /loadRequestID\.current \+= 1;[\s\S]*?submitAttemptID\.current \+= 1;[\s\S]*?setPendingAttempt\(null\);[\s\S]*?setQuotePreview\(null\);/);
 });

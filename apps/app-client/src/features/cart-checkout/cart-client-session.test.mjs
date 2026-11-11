@@ -3,21 +3,24 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript-ast";
-import { clientOrderSessionKey } from "../orders/order-session-scope.ts";
+import { clientSessionKey } from "../access/client-session-scope.ts";
 
-const source = readFileSync(new URL("./store-discovery-client.ts", import.meta.url), "utf8");
-const ast = ts.createSourceFile("store-discovery-client.ts", source, ts.ScriptTarget.Latest, true);
+const source = readFileSync(new URL("./cart-client.ts", import.meta.url), "utf8");
+const accessSource = readFileSync(new URL("../access/client-request-token.ts", import.meta.url), "utf8");
 const declarations = new Map();
-function visit(node) {
+function visit(node, ast) {
   if (ts.isFunctionDeclaration(node) && node.name) {
     declarations.set(node.name.text, node.getText(ast));
   }
-  ts.forEachChild(node, visit);
+  ts.forEachChild(node, (child) => visit(child, ast));
 }
-visit(ast);
+for (const [name, content] of [["cart-client.ts", source], ["client-request-token.ts", accessSource]]) {
+  const ast = ts.createSourceFile(name, content, ts.ScriptTarget.Latest, true);
+  visit(ast, ast);
+}
 
 function actualClientCalls(runtime) {
-  const names = ["tokenForMultiStoreSession", "quoteMultiStoreChildCheckout", "createMultiStoreCheckout", "readOwnMultiStoreCheckout"];
+  const names = ["tokenForClientSession", "quoteMultiStoreChildCheckout", "createMultiStoreCheckout", "readOwnMultiStoreCheckout"];
   const original = names.map((name) => {
     assert.ok(declarations.has(name), `missing production DSH boundary: ${name}`);
     return declarations.get(name).replace(/^export\s+/u, "");
@@ -25,7 +28,7 @@ function actualClientCalls(runtime) {
   const js = ts.transpileModule(`${original}\n({${names.join(", ")}})`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  return runInNewContext(js, { clientOrderSessionKey, ...runtime });
+  return runInNewContext(js, { clientSessionKey, ...runtime });
 }
 
 function actor(subject = "client-a", sessionId = "session-1") {
@@ -46,7 +49,7 @@ const operations = {
 
 function fixture() {
   let identity = actor();
-  const sessionKey = clientOrderSessionKey(identity);
+  const sessionKey = clientSessionKey(identity);
   const tokenGate = deferred();
   const tokenStarted = deferred();
   const calls = [];
