@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-
-import { dshErrorPayload, dshHttpStatus, isDshClientError, readCaptainAdmissionByActor } from "../../../../src/server/dsh/dsh-bff";
+import { readCaptainAdmissionByActor } from "../../../../src/server/dsh/captain-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-transport";
 import { identityErrorPayload, identityHttpStatus, readManagedIdentityRole, readOperatorSession } from "../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../src/server/identity/operator-workspace-access";
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { HRAttendancePage, HRAttendanceRecord } from "../../server/dsh/dsh-bff";
+import type { HRAttendancePage, HRAttendanceRecord } from "../../server/dsh/hr-bff";
 import { identityFetch } from "../../session/identity-fetch";
 import { RegistryColumnHeader } from "../shared/registry-column-header";
 

@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import type { HREmployee,HREmployeeEvent,HREmployeeEventsPage } from "../../server/dsh/dsh-bff";
+import type { HREmployee, HREmployeeEvent, HREmployeeEventsPage } from "../../server/dsh/hr-bff";
 import { identityFetch } from "../../session/identity-fetch";
 
 const eventLabel:Readonly<Record<HREmployeeEvent["eventType"],string>>={

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-
-import { approveOperatorPayout, cancelOperatorPayout, dshErrorPayload, dshHttpStatus, isDshClientError, prepareOperatorPayout } from "../../../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../../src/server/dsh/dsh-transport";
+import { approveOperatorPayout, cancelOperatorPayout, prepareOperatorPayout } from "../../../../../../src/server/dsh/finance-bff";
 import { readOperatorSession } from "../../../../../../src/server/identity/identity-bff";
 
 export async function POST(request: Request, context: { params: Promise<{ payoutId: string; action: string }> }) {

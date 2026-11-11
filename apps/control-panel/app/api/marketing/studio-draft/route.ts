@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
+import { dshErrorPayload, dshHttpStatus, isDshClientError, requestDshJson } from "../../../../src/server/dsh/dsh-transport";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";
 import { readBoundedJson } from "../../../../src/server/security/read-bounded-json";
-import { dshErrorPayload, dshHttpStatus, isDshClientError, requestDshJson } from "../../../../src/server/dsh/dsh-bff";
 
 const responseHeaders = { "Cache-Control": "no-store" };
 const fail = (status: number, code: string) => NextResponse.json({ error: { code } }, { status, headers: responseHeaders });

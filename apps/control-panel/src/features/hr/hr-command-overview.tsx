@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { HRSummary } from "../../server/dsh/hr-bff";
 import { identityFetch } from "../../session/identity-fetch";
 import { CommandBarPanel, CommandMetricStrip } from "../shared/command-surface";
-import type { HRSummary } from "../../server/dsh/dsh-bff";
 
 function validSummary(value: unknown): value is HRSummary {
   if (!value || typeof value !== "object") return false;

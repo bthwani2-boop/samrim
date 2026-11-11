@@ -1,6 +1,6 @@
 "use client";
 import { type CSSProperties, type RefObject, useEffect, useLayoutEffect, useState } from "react";
-import type { OperatorPolicyChange } from "../../server/dsh/dsh-bff";
+import type { OperatorPolicyChange } from "../../server/dsh/policy-bff";
 import type { PolicyCapability } from "./policy-capabilities";
 
 

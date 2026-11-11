@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { dshErrorPayload, dshHttpStatus, isDshClientError, readOperatorCustomerWithdrawalIntake } from "../../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../src/server/dsh/dsh-transport";
+import { readOperatorCustomerWithdrawalIntake } from "../../../../../src/server/dsh/finance-bff";
 import { readOperatorSession } from "../../../../../src/server/identity/identity-bff";
 
 export async function GET(_request: Request, context: Readonly<{ params: Promise<{ intakeId: string }> }>) {

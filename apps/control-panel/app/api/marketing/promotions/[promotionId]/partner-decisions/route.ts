@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { dshErrorPayload, dshHttpStatus, isDshClientError, listMarketingPartnerDecisions } from "../../../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../../src/server/dsh/dsh-transport";
+import { listMarketingPartnerDecisions } from "../../../../../../src/server/dsh/marketing-bff";
 import { readOperatorSession } from "../../../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../../../src/server/identity/operator-workspace-access";
 

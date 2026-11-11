@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { dshErrorPayload, dshHttpStatus, isDshClientError, requestDshJson } from "../../../../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError, requestDshJson } from "../../../../../../../src/server/dsh/dsh-transport";
 import { readOperatorSession } from "../../../../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../../../../src/server/security/csrf";
+
 const headers = { "Cache-Control": "no-store" };
 function failure(code:string,message:string,status:number) {return NextResponse.json({error:{code,message}},{status,headers});}
 export async function POST(request:Request,context:Readonly<{params:Promise<{orderId:string;caseId:string}>}>) {

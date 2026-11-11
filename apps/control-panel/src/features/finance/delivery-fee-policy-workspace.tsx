@@ -2,7 +2,7 @@
 
 import { TextArea } from "@bthwani/design-system/web";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { DistanceFeePolicy, DistanceFeeBand } from "../../server/dsh/dsh-bff";
+import type { DistanceFeeBand, DistanceFeePolicy } from "../../server/dsh/policy-bff";
 import { useSession } from "../../session/session-provider";
 
 type City = Readonly<{id:string;displayNameAr:string;active:boolean}>;

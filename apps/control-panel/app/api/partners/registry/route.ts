@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import type { ActorRoleView } from "@bthwani/identity";
 import type { OperatorStoreSummary } from "@bthwani/dsh";
+import type { ActorRoleView } from "@bthwani/identity";
 import { NextResponse } from "next/server";
-import { dshErrorPayload, dshHttpStatus, isDshClientError, listOperatorStores, readOperatorPartnerStorePresence } from "../../../../src/server/dsh/dsh-bff";
+import { listOperatorStores, readOperatorPartnerStorePresence } from "../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-transport";
 import { identityErrorPayload, identityHttpStatus, readManagedIdentityRolesBatch, readOperatorSession, searchIdentityRoles } from "../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";

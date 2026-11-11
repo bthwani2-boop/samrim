@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { dshErrorPayload,dshHttpStatus,isDshClientError,readOperatorStoreProduct,updateOperatorStoreProduct } from "../../../../../../src/server/dsh/dsh-bff";
+import { readOperatorStoreProduct, updateOperatorStoreProduct } from "../../../../../../src/server/dsh/catalog-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../../src/server/dsh/dsh-transport";
 import { readOperatorSession } from "../../../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../../../src/server/security/csrf";
+
 const fail=(code:string,message:string,status:number)=>NextResponse.json({error:{code,message}},{status,headers:{"Cache-Control":"no-store"}});
 async function access(request:Request){
   if(!verifySameOrigin(request))return {response:fail("FORBIDDEN","Cross-origin request",403)};

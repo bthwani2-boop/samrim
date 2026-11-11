@@ -1,7 +1,7 @@
 "use client";
 import { TextArea } from "@bthwani/design-system/web";
 import { useCallback, useEffect, useState } from "react";
-import type { CaptainMinimumBalancePolicy } from "../../server/dsh/dsh-bff";
+import type { CaptainMinimumBalancePolicy } from "../../server/dsh/policy-bff";
 import { useSession } from "../../session/session-provider";
 
 type State="loading"|"ready"|"missing"|"error";

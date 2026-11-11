@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { dshErrorPayload, isDshClientError, listOperatorFinancialStatementSummaries } from "../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, isDshClientError } from "../../../../src/server/dsh/dsh-transport";
+import { listOperatorFinancialStatementSummaries } from "../../../../src/server/dsh/finance-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 
 const actorTypes = ["customer", "partner", "captain", "field"] as const;

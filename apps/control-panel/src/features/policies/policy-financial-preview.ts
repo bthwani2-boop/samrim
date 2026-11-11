@@ -1,4 +1,4 @@
-import type { CaptainMinimumBalanceResponse, OperatorFinancialPolicyRegistry } from "../../server/dsh/dsh-bff";
+import type { CaptainMinimumBalanceResponse, OperatorFinancialPolicyRegistry } from "../../server/dsh/policy-bff";
 import type { PolicyResourceKey } from "./policy-capabilities";
 import type { PolicyPreviewState } from "./policy-quick-peek";
 

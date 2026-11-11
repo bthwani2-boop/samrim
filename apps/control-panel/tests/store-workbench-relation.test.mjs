@@ -39,6 +39,11 @@ function setup() {
     "identity-bff": { readOperatorSession: async () => identity, readManagedIdentityRolesBatch: async () => [] },
     "operator-workspace-access": { operatorWorkspacePermissionDenied: (actor, permission) => actor.permissions.includes(permission) ? null : new Response(null, { status: 403 }) },
     "csrf": { verifySameOrigin: () => true },
+    "dsh-transport": {
+      isDshClientError: () => false,
+      dshErrorPayload: () => ({ code: "DSH_ERROR", message: "DSH read failed" }),
+      dshHttpStatus: () => 502,
+    },
     "dsh-bff": { listOperatorStores: async (...args) => {
       calls.push(args);
       const relation = args[8];

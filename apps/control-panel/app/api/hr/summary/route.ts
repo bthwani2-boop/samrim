@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { dshErrorPayload, dshHttpStatus, isDshClientError, readHRSummary } from "../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-transport";
+import { readHRSummary } from "../../../../src/server/dsh/hr-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 
 export async function GET() {

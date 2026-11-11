@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-
-import { dshErrorPayload, dshHttpStatus, isDshClientError, readJoiningCaseProofDetails } from "../../../../../../src/server/dsh/dsh-bff";
+import { readJoiningCaseProofDetails } from "../../../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../../src/server/dsh/dsh-transport";
 import { readOperatorSession } from "../../../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../../../src/server/security/csrf";

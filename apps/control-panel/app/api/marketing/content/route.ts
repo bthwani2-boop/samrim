@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { NextResponse } from "next/server";
 import { isMediaProvenanceInputValid, type MediaProvenanceInput } from "@bthwani/dsh";
-import { createMarketingContentWithMedia, dshErrorPayload, dshHttpStatus, isDshClientError, listMarketingContent } from "../../../../src/server/dsh/dsh-bff";
+import { NextResponse } from "next/server";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-transport";
+import { createMarketingContentWithMedia, listMarketingContent } from "../../../../src/server/dsh/marketing-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";

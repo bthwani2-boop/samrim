@@ -2,7 +2,7 @@
 
 import { TextArea } from "@bthwani/design-system/web";
 import { useId, useState } from "react";
-import type { HRAccessRequest } from "../../server/dsh/dsh-bff";
+import type { HRAccessRequest } from "../../server/dsh/hr-bff";
 import { identityFetch } from "../../session/identity-fetch";
 import { operatorWorkspacePermissions } from "../../session/operator-permissions";
 

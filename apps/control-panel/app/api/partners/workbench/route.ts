@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import type { JoiningCaseSummary, StoreAccessGrant } from "@bthwani/dsh";
 import { NextResponse } from "next/server";
-import { dshErrorPayload, dshHttpStatus, isDshClientError, listJoiningCases, listStoreAccessRoleAdmissionsForOperator } from "../../../../src/server/dsh/dsh-bff";
+import { listJoiningCases, listStoreAccessRoleAdmissionsForOperator } from "../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-transport";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";

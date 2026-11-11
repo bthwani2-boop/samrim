@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { normalizeYemenPhoneE164 } from "@bthwani/identity/phone";
 import { NextResponse } from "next/server";
 
-import { admitCaptain, approveCaptainAdmission, authorizeDshCaptainReenrollment, dispatchCaptainOffer, dshErrorPayload, dshHttpStatus, isDshClientError, listCaptainAdmissions, provisionCaptainAdmission, readCaptainAdmissionByActor, reassignCaptainOffer, recoverCaptainDelivery, reviewCaptainAdmissionProfile, setDshCaptainAvailability, setDshCaptainRoleEnabled, updateCaptainAdmissionProfile } from "../../../src/server/dsh/dsh-bff";
+import { admitCaptain, approveCaptainAdmission, authorizeDshCaptainReenrollment, dispatchCaptainOffer, listCaptainAdmissions, provisionCaptainAdmission, readCaptainAdmissionByActor, reassignCaptainOffer, recoverCaptainDelivery, reviewCaptainAdmissionProfile, setDshCaptainAvailability, setDshCaptainRoleEnabled, updateCaptainAdmissionProfile } from "../../../src/server/dsh/captain-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../src/server/dsh/dsh-transport";
 import { identityErrorPayload, identityHttpStatus, readOperatorSession, searchIdentityRoles } from "../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../src/server/security/csrf";

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { dshErrorPayload, dshHttpStatus, isDshClientError, readOperatorStoreCommercialAgreementsForFinance } from "../../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../src/server/dsh/dsh-transport";
+import { readOperatorStoreCommercialAgreementsForFinance } from "../../../../../src/server/dsh/finance-bff";
 import { readOperatorSession } from "../../../../../src/server/identity/identity-bff";
 
 function errorResponse(code: string, message: string, status: number) {

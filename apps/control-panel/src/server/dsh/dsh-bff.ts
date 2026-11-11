@@ -1,11 +1,9 @@
-import type { HRAccessRequest as DshHRAccessRequest, HRAccessRequestInput as DshHRAccessRequestInput, HRAccessRequestMutationResponse as DshHRAccessRequestMutationResponse, HRAccessRequestPage as DshHRAccessRequestPage, HRAccessRequestReadResponse as DshHRAccessRequestReadResponse, HREmployee as DshHREmployee, HREmployeePage as DshHREmployeePage, HRUpdateEmployeeRequest as DshHRUpdateEmployeeRequest, HRUpdateEmployeeResponse as DshHRUpdateEmployeeResponse, StoreTypeCommissionDefaultsResponse as DshStoreTypeCommissionDefaultsResponse, FinanceStoreCommercialAgreementQueueResponse, HRCreateEmployeeRequest, JoiningCaseProofDetailsResponse, OperatorMarketingSummary, PromotionSettlementSummary, StoreAccessGrantListResponse, StoreAccessGrantMutationResponse, StoreCommercialAgreementListResponse, StoreCommercialAgreementMutationResponse, StoreImagesResponse, StorePayoutRecipientListResponse, UpdateCatalogAttributeDefinitionRequest, UpdateCatalogAttributeEnumOptionRequest } from "@bthwani/dsh";
-import { type ActorLegalName, type BeneficiaryPayoutState, type BeneficiaryPayoutStateResponse, type CaptainAdmissionListResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CashCustodyRegistryResponse, type CatalogAttributeDefinitionListResponse, type CatalogAttributeDefinitionResponse, type CatalogAttributeEnumOptionListResponse, type CatalogAttributeEnumOptionResponse, type CatalogAttributeRuleListResponse, type CatalogCategoryDetailResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProduct, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductRegistryResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CommercialStoreTypeListResponse, type CommercialStoreTypeResponse, type CreateCatalogAttributeDefinitionRequest, type CreateCatalogAttributeEnumOptionRequest, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateCommercialStoreTypeRequest, type CreateCustomerWithdrawalIntakeRequest, type CreateDeliveryFeePolicyRequest, type CreateJoiningCaseRequest, type CreatePartnerFinancialTermsPolicyRequest, type CreatePromotionRequest, type CreateServiceCityRequest, type CustomerWithdrawalDecisionRequest, type CustomerWithdrawalIntakeListResponse, type CustomerWithdrawalIntakeResponse, type DeliveryFeePolicyResponse, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentResponse, dshOperationPaths, type FinanceEvidenceDocument, isMediaProvenanceInputValid, type JoiningCaseListResponse, type JoiningCaseResponse, type ManagedCaptainAvailabilityRequest, type ManagedRoleMutationRequest, type ManagedRoleReenrollmentRequest, type MarketingPublicationRequest, type MediaProvenanceInput, type NotificationListResponse, type NotificationReadResponse, type OfficialWalletDestination, type OperatorDiscoveryContentRegistryResponse, type OperatorFieldFinanceRosterResponse, type OperatorOperationResponse, type OperatorOperationsResponse, type OperatorPromotionRegistryResponse, type OperatorStoreListResponse, type PartnerCommissionReceivableRegistryResponse, type PartnerCommissionRemittanceRequest, type PartnerCommissionRemittanceResponse, type PartnerFinancialSummaryResponse, type PartnerFinancialTermsPolicyResponse, type PartnerStoreListResponse, type PayoutRequest, type PromotionResponse, type PublicationAction, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type ReviewJoiningCaseRequest, type ServiceCityListResponse, type ServiceCityResponse, type SetStoreCommercialTypeRequest, type SetStoreCommercialTypeResponse, type SetStoreFulfillmentModesRequest, type SettlementBatch, type SettlementBatchExport, type StoreFulfillmentModesResponse, type StorePublicationRequest, type StorePublicationResponse, type StoreTypeCommissionDefaultsResponse, type StoreTypeCommissionDefaultUpdateResponse, type SubmitActorLegalNameRequest, type UpdateCatalogCategoryRequest, type UpdateCatalogProductRequest, type UpdateCommerceVerticalRequest, type UpdateCommercialStoreTypeRequest, type UpdateServiceCityRequest, type UpdateStoreTypeCommissionDefaultRequest, type UpsertCatalogAttributeRuleRequest, type VerifyActorLegalNameRequest } from "@bthwani/dsh";
+import type { JoiningCaseProofDetailsResponse, StoreAccessGrantListResponse, StoreAccessGrantMutationResponse, StoreImagesResponse } from "@bthwani/dsh";
+import { type CreateJoiningCaseRequest, type CreateServiceCityRequest, dshOperationPaths, isMediaProvenanceInputValid, type JoiningCaseListResponse, type JoiningCaseResponse, type MediaProvenanceInput, type NotificationListResponse, type NotificationReadResponse, type OperatorOperationResponse, type OperatorOperationsResponse, type OperatorStoreListResponse, type PartnerStoreListResponse, type ServiceCityListResponse, type ServiceCityResponse, type UpdateServiceCityRequest } from "@bthwani/dsh";
 import { normalizeYemenPhoneE164 } from "@bthwani/identity/phone";
-import type { DshAttributedMutationContext, DshClientError, DshOperatorReadContext, DshVersionedMutationContext, JoiningCaseMutationContext, StorePublicationMutationContext } from "./dsh-transport";
-import { appendMediaProvenance, dshBaseUrl, dshToken, parseErrorPayload, requestDshFile, requestDshJson, requestDshMultipart, validateAttributedMutationContext, validateVersionedMutationContext } from "./dsh-transport";
+import type { DshOperatorReadContext, JoiningCaseMutationContext, StorePublicationMutationContext } from "./dsh-transport";
+import { appendMediaProvenance, requestDshFile, requestDshJson, requestDshMultipart, validateAttributedMutationContext, validateVersionedMutationContext } from "./dsh-transport";
 
-export type { DshOperatorReadContext, DshVersionedMutationContext, JoiningCaseMutationContext, StorePublicationMutationContext } from "./dsh-transport";
-export { dshErrorPayload, dshHttpStatus, isDshClientError, requestDshJson } from "./dsh-transport";
 
 const phoneE164Pattern = /^\+[1-9][0-9]{7,14}$/;
 
@@ -41,7 +39,6 @@ export async function uploadOperatorWalletProviderLogo(providerKey: string,file:
  return requestDshMultipart<WalletProviderResponse>("POST","/dsh/wallet-providers/"+encodeURIComponent(providerKey.trim())+"/logo/upload",body,{"X-Acting-Actor-ID":context.operatorActorId.trim(),"X-Correlation-ID":context.correlationId.trim(),"X-Expected-Version":String(context.expectedVersion),"Idempotency-Key":context.idempotencyKey.trim()});
 }
 
-export * from "./hr-bff";
 
 export async function listServiceCities(includeInactive: boolean, context: DshOperatorReadContext): Promise<ServiceCityListResponse> {
   if (!context.operatorActorId.trim()) throw new Error("DSH_SERVICE_CITY_READ_INPUT_INVALID");
@@ -211,7 +208,6 @@ export async function readOperatorOperation(orderId: string, context: DshOperato
 	return (await requestDshJson<OperatorOperationResponse>(dshOperationPaths.readOperatorOperation.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export * from "./finance-bff";
 
 export async function listJoiningCases(state: string, query: string, sort: "created_asc" | "created_desc", limit: number, cursor: string, context: DshOperatorReadContext): Promise<JoiningCaseListResponse> {
   if (!context.operatorActorId.trim() || !Number.isInteger(limit) || limit < 1 || limit > 50 || Array.from(query.trim()).length > 128 || cursor.trim().length > 2048) throw new Error("DSH_JOINING_CASE_QUEUE_INPUT_INVALID");
@@ -322,15 +318,9 @@ export async function downloadOperatorStoreInternalPhoto(storeId: string, photoI
 }
 
 
-export * from "./captain-bff";
-export * from "./catalog-bff";
-export * from "./joining-bff";
 
-export * from "./marketing-bff";
 
-export * from "./policy-bff";
 
-export * from "./store-operations-bff";
 
 // Operator and Captain see the same coarse, privacy-filtered Store-origin signal.
 import type { CaptainOpportunityHeatmap } from "@bthwani/dsh";

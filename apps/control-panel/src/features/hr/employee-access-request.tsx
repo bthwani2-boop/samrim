@@ -2,7 +2,7 @@
 
 import { TextArea } from "@bthwani/design-system/web";
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import type { HRAccessRequest, HREmployee } from "../../server/dsh/dsh-bff";
+import type { HRAccessRequest, HREmployee } from "../../server/dsh/hr-bff";
 import { identityFetch } from "../../session/identity-fetch";
 
 const workspaces = [

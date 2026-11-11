@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { dshErrorPayload, dshHttpStatus, isDshClientError, readOperatorPayoutState } from "../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-transport";
+import { readOperatorPayoutState } from "../../../../src/server/dsh/finance-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 
 const actorTypes = new Set(["partner", "captain", "field"]);

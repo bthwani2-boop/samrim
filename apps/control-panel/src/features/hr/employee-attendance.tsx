@@ -1,7 +1,7 @@
 "use client";
 import { TextArea } from "@bthwani/design-system/web";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import type { HRAttendanceRecord,HRAttendanceStatus,HRAttendancePage } from "../../server/dsh/dsh-bff";
+import type { HRAttendancePage, HRAttendanceRecord, HRAttendanceStatus } from "../../server/dsh/hr-bff";
 import { identityFetch } from "../../session/identity-fetch";
 import { RegistryColumnHeader } from "../shared/registry-column-header";
 

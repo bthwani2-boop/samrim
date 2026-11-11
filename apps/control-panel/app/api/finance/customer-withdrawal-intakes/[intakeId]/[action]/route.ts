@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-
-import { acceptOperatorCustomerWithdrawal, activateOperatorCustomerWithdrawalDestination, dshErrorPayload, dshHttpStatus, isDshClientError, prepareOperatorCustomerWithdrawalDestination, rejectOperatorCustomerWithdrawal, verifyOperatorCustomerWithdrawalDestination } from "../../../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../../src/server/dsh/dsh-transport";
+import { acceptOperatorCustomerWithdrawal, activateOperatorCustomerWithdrawalDestination, prepareOperatorCustomerWithdrawalDestination, rejectOperatorCustomerWithdrawal, verifyOperatorCustomerWithdrawalDestination } from "../../../../../../src/server/dsh/finance-bff";
 import { readOperatorSession } from "../../../../../../src/server/identity/identity-bff";
 
 type RouteContext = Readonly<{ params: Promise<{ intakeId: string; action: string }> }>;

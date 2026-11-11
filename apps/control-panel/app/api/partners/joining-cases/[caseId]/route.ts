@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-
-import { dshErrorPayload, dshHttpStatus, isDshClientError, readJoiningCase } from "../../../../../src/server/dsh/dsh-bff";
-import { verifySameOrigin } from "../../../../../src/server/security/csrf";
+import { readJoiningCase } from "../../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../src/server/dsh/dsh-transport";
 import { readOperatorSession } from "../../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../../src/server/identity/operator-workspace-access";
+import { verifySameOrigin } from "../../../../../src/server/security/csrf";
 
 function errorResponse(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status, headers: { "Cache-Control": "no-store" } });
