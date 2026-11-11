@@ -25,6 +25,7 @@ export function StoreCaptainMemberships() {
   const [requiresReload, setRequiresReload] = useState(false);
   const mutationInFlight = useRef<{ request: number; sessionKey: string } | null>(null);
   const requestID = useRef(0);
+  const focused = useRef(false);
   const currentSession = captainSessionKey(currentIdentityState());
   // Store names belong to the session which loaded them, even for the same actor.
   const visibleState = sessionKey && currentSession === sessionKey && state.sessionKey === sessionKey
@@ -88,8 +89,15 @@ export function StoreCaptainMemberships() {
         setNotice("تعذر التحقق من نتيجة قبول الدعوة. أعد قراءة العضويات قبل إعادة المحاولة.");
       }
     } finally {
-      if (mutationInFlight.current?.request === request) mutationInFlight.current = null;
-      if (captainSessionKey(currentIdentityState()) === sessionKey) setAcceptingID("");
+      const ownsMutation = mutationInFlight.current?.request === request;
+      if (ownsMutation) mutationInFlight.current = null;
+      const currentSession = captainSessionKey(currentIdentityState()) === sessionKey;
+      if (currentSession) setAcceptingID("");
+      // A blur can invalidate the mutation readback while an immediate refocus
+      // is blocked by the in-flight lock. Fetch the canonical state afterward.
+      if (ownsMutation && focused.current && currentSession && requestID.current !== request) {
+        void reload();
+      }
     }
   };
 
@@ -102,8 +110,9 @@ export function StoreCaptainMemberships() {
   }, [sessionKey]);
   useEffect(() => subscribeIdentitySession(setIdentityState), []);
   useFocusEffect(useCallback(() => {
+    focused.current = true;
     void reload();
-    return () => { requestID.current++; };
+    return () => { focused.current = false; requestID.current++; };
   }, [reload]));
 
   const visibleMemberships = visibleState.kind === "ready"

@@ -63,6 +63,7 @@ function membershipHarness() {
     sessionKey: captainSessionKey(state.current),
     requestID: { current: 0 },
     mutationInFlight: { current: null },
+    focused: { current: false },
     acceptingID: "",
     requiresReload: false,
     state: { kind: "ready", sessionKey: captainSessionKey(state.current),
@@ -80,9 +81,9 @@ function membershipHarness() {
       acceptTargetedStoreCaptainInvitation: async () => { state.acceptCalls++; },
     }),
   };
-  return { state, runtime,
-    reload: production(membershipsSource, "reload", runtime),
-    accept: production(membershipsSource, "acceptMembership", runtime) };
+  runtime.reload = production(membershipsSource, "reload", runtime);
+  runtime.accept = production(membershipsSource, "acceptMembership", runtime);
+  return { state, runtime, reload: runtime.reload, accept: runtime.accept };
 }
 
 test("account's canonical guard rejects the same Captain with a renewed session", () => {
@@ -285,6 +286,41 @@ test("Store membership refresh cannot supersede an in-flight invitation readback
   assert.equal(h.runtime.mutationInFlight.current, null);
 });
 
+test("refocus during a pending Store invitation eventually reloads canonical DSH membership", async () => {
+  const h = membershipHarness();
+  let release;
+  let mutationStarted = false;
+  let reads = 0;
+  const pendingMutation = new Promise(resolve => { release = resolve; });
+  h.runtime.focused.current = true;
+  h.runtime.captainClient = () => ({
+    acceptTargetedStoreCaptainInvitation: async () => {
+      mutationStarted = true;
+      return pendingMutation;
+    },
+    listOwnStoreCaptainMemberships: async () => {
+      reads++;
+      return { memberships: [{ id: "invite-a", storeName: "متجر ألف", state: "active" }] };
+    },
+  });
+  const acceptance = h.accept("invite-a");
+  for (let i = 0; i < 8 && !mutationStarted; i++) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(mutationStarted, true);
+  // Expo keeps the tab mounted: blur invalidates old readbacks, then focus
+  // tries to refresh while the previous acceptance still owns the lock.
+  h.runtime.focused.current = false;
+  h.runtime.requestID.current++;
+  h.runtime.focused.current = true;
+  await h.reload();
+  assert.equal(reads, 0, "focus cannot overtake the mutation's canonical readback");
+  release();
+  await acceptance;
+  for (let i = 0; i < 8 && reads === 0; i++) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(reads, 1, "the latest focused session must reload when the mutation settles");
+  assert.equal(h.runtime.state.kind, "ready");
+  assert.equal(h.runtime.state.memberships[0].state, "active");
+});
+
 test("Captain session renewal while invitation token is pending never sends a DSH accept", async () => {
   const h = membershipHarness();
   let release;
@@ -383,7 +419,7 @@ test("visible Captain profile and membership values are keyed before rendering",
   assert.match(membershipsSource, /state\.sessionKey === sessionKey/);
   assert.match(membershipsSource, /currentSession === sessionKey/);
   assert.match(membershipsSource, /useFocusEffect\(useCallback\(\(\) => \{/);
-  assert.match(membershipsSource, /return \(\) => \{ requestID\.current\+\+; \}/);
+  assert.match(membershipsSource, /return \(\) => \{ focused\.current = false; requestID\.current\+\+; \}/);
 });
 
 test("a token returned after Captain session replacement never starts the former profile read", async () => {
