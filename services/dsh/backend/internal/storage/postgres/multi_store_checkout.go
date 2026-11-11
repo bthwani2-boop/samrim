@@ -166,6 +166,17 @@ func CreateMultiStoreCheckout(ctx context.Context, db *sql.DB, input MultiStoreC
 		return MultiStoreCheckoutRecord{}, false, err
 	}
 	for index, child := range input.Children {
+		// Cart ownership and Store scope are canonical DSH facts, not
+		// assertions supplied by a caller constructing a checkout parent.
+		var cartOwner, cartStore string
+		err := tx.QueryRowContext(ctx, `SELECT client_actor_id,store_id FROM dsh.commerce_carts
+			WHERE id=$1 FOR SHARE`, strings.TrimSpace(child.CartID)).Scan(&cartOwner, &cartStore)
+		if errors.Is(err, sql.ErrNoRows) || err == nil && (cartOwner != strings.TrimSpace(input.ClientActorID) || cartStore != strings.TrimSpace(child.StoreID)) {
+			return MultiStoreCheckoutRecord{}, false, ErrMultiStoreCheckoutInvalid
+		}
+		if err != nil {
+			return MultiStoreCheckoutRecord{}, false, err
+		}
 		childID, idErr := newID("multi-store-child")
 		if idErr != nil {
 			return MultiStoreCheckoutRecord{}, false, idErr
@@ -254,8 +265,8 @@ func updateMultiStoreCheckoutChild(ctx context.Context, db *sql.DB, checkoutID, 
 	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:multi-store-checkout:"+strings.TrimSpace(checkoutID)); err != nil {
 		return MultiStoreCheckoutRecord{}, err
 	}
-	var currentState, currentOrderID string
-	err = tx.QueryRowContext(ctx, "SELECT state,COALESCE(order_id,'') FROM dsh.commerce_multi_store_checkout_children WHERE id=$1 AND checkout_id=$2 FOR UPDATE", childID, checkoutID).Scan(&currentState, &currentOrderID)
+	var currentState, currentOrderID, cartID, storeID string
+	err = tx.QueryRowContext(ctx, "SELECT state,COALESCE(order_id,''),cart_id,store_id FROM dsh.commerce_multi_store_checkout_children WHERE id=$1 AND checkout_id=$2 FOR UPDATE", childID, checkoutID).Scan(&currentState, &currentOrderID, &cartID, &storeID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return MultiStoreCheckoutRecord{}, ErrMultiStoreCheckoutNotFound
 	}
@@ -275,8 +286,25 @@ func updateMultiStoreCheckoutChild(ctx context.Context, db *sql.DB, checkoutID, 
 	if orderID == "__KEEP_ORDER__" {
 		orderID = currentOrderID
 	}
-	if state == "SUCCEEDED" && strings.TrimSpace(orderID) == "" {
-		return MultiStoreCheckoutRecord{}, ErrMultiStoreCheckoutChildConflict
+	if state == "SUCCEEDED" {
+		if strings.TrimSpace(orderID) == "" || (currentState == "SUCCEEDED" && currentOrderID != orderID) {
+			return MultiStoreCheckoutRecord{}, ErrMultiStoreCheckoutChildConflict
+		}
+		// Verify Order lineage and actor against the owning parent before
+		// mutating the child. Composite SQL FKs independently protect the
+		// Store/Cart/Order relationship at the persistence boundary.
+		var matching bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
+			SELECT 1 FROM dsh.commerce_orders o
+			JOIN dsh.commerce_multi_store_checkouts parent ON parent.id=$2
+			WHERE o.id=$1 AND o.cart_id=$3 AND o.store_id=$4
+			  AND o.client_actor_id=parent.client_actor_id
+		)`, orderID, checkoutID, cartID, storeID).Scan(&matching); err != nil {
+			return MultiStoreCheckoutRecord{}, err
+		}
+		if !matching {
+			return MultiStoreCheckoutRecord{}, ErrMultiStoreCheckoutChildConflict
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_multi_store_checkout_children SET state=$3,order_id=NULLIF($4,''),failure_code=NULLIF($5,''),failure_message=NULLIF($6,''),version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND checkout_id=$2`, childID, checkoutID, state, orderID, failureCode, failureMessage); err != nil {
 		return MultiStoreCheckoutRecord{}, err

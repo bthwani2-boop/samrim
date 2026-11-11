@@ -172,6 +172,19 @@ func TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay(t *testing.T) 
 				{CartID: "multi-checkout-other-cart-two", StoreID: secondStoreID, AddressID: "other-address-two", CartVersion: 1, ExpectedTotalAmountMinor: 1900, FulfillmentMode: "BTHWANI_CAPTAIN"},
 			},
 		}
+		// A second Client must not import the first Client's cart into their
+		// own parent, even when both Stores themselves are public.
+		crossOwner := otherInput
+		crossOwner.ID = "multi-checkout-cross-owner-parent"
+		crossOwner.Children = append([]postgres.MultiStoreCheckoutChildInput(nil), otherInput.Children...)
+		crossOwner.Children[0].CartID = firstCartID
+		if _, _, err := postgres.CreateMultiStoreCheckout(ctx, db, crossOwner, "cross-owner-cart-key", postgres.HashMultiStoreCheckoutRequest(crossOwner)); !errors.Is(err, postgres.ErrMultiStoreCheckoutInvalid) {
+			t.Fatalf("cross-Client cart was admitted into parent: %v", err)
+		}
+		var crossOwnerParents int
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.commerce_multi_store_checkouts WHERE id=$1", crossOwner.ID).Scan(&crossOwnerParents); err != nil || crossOwnerParents != 0 {
+			t.Fatalf("cross-Client parent persisted: count=%d err=%v", crossOwnerParents, err)
+		}
 		otherParent, otherReplay, err := postgres.CreateMultiStoreCheckout(ctx, db, otherInput, "other-client-create-key", postgres.HashMultiStoreCheckoutRequest(otherInput))
 		if err != nil || otherReplay || otherParent.ClientActorID != otherClientID || len(otherParent.Children) != 2 {
 			t.Fatalf("second Client two-cart parent = %+v replay=%t err=%v", otherParent, otherReplay, err)
@@ -196,6 +209,26 @@ func TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay(t *testing.T) 
 			VALUES($1,$2,$3,$4,$5,1,$6,15.3694457,44.1910064,$7,'CITY_SCOPE_V1','SERVICEABLE',1,1,'CREATED',1800,'YER',1,$8,'CASH_ON_DELIVERY','REQUIRES_COLLECTION','BTHWANI_CAPTAIN',1800)`, orderID, clientID, firstStoreID, firstCartID, "address-one", "عنوان الطلب الأول", cityID, "multi-checkout-payment-one"); err != nil {
 			t.Fatalf("insert canonical child order: %v", err)
 		}
+		// A real Order cannot be attached to another Store's child, even when
+		// the Order ID itself exists and the parent belongs to the same Client.
+		if _, err := postgres.MarkMultiStoreCheckoutChildSucceeded(ctx, db, checkoutID, checkout.Children[1].ID, orderID); !errors.Is(err, postgres.ErrMultiStoreCheckoutChildConflict) {
+			t.Fatalf("cross-Store Order attributed to wrong child: %v", err)
+		}
+		var wrongChildOrder sql.NullString
+		if err := db.QueryRowContext(ctx, "SELECT order_id FROM dsh.commerce_multi_store_checkout_children WHERE id=$1", checkout.Children[1].ID).Scan(&wrongChildOrder); err != nil || wrongChildOrder.Valid {
+			t.Fatalf("cross-Store child mutated despite rejection: order=%+v err=%v", wrongChildOrder, err)
+		}
+		// The SQL owner must reject bypassing the Go mutation as well.
+		if _, err := db.ExecContext(ctx, `UPDATE dsh.commerce_multi_store_checkout_children
+			SET order_id=$1,state='SUCCEEDED' WHERE id=$2`, orderID, checkout.Children[1].ID); err == nil {
+			t.Fatal("PostgreSQL allowed cross-Store/cross-Cart Order link")
+		} else {
+			var pgErr *pq.Error
+			if !errors.As(err, &pgErr) || pgErr.Code != "23503" || pgErr.Constraint != "commerce_multi_store_child_order_cart_store_fk" {
+				t.Fatalf("cross-Store Order SQL rejection = %v; want composite FK", err)
+			}
+		}
+
 		partial, err := postgres.MarkMultiStoreCheckoutChildSucceeded(ctx, db, checkoutID, checkout.Children[0].ID, orderID)
 		if err != nil || partial.State != "PROCESSING" || partial.SuccessfulChildCount != 1 || partial.FailedChildCount != 0 {
 			t.Fatalf("first child success = %+v err=%v", partial, err)
@@ -340,8 +373,62 @@ func TestMultiStoreCheckoutMigrationUpgradesV177WithPersistedChildren(t *testing
 		if _, err := db.ExecContext(ctx, "DELETE FROM dsh.commerce_multi_store_checkouts WHERE id=$1", otherID); err != nil {
 			t.Fatalf("remove exclusively test-owned invalid fixture: %v", err)
 		}
+		// Advance to the prior accepted schema without replaying historical
+		// migrations on the real database. This tests v180 against persisted
+		// v179 child rows, including a previously permitted Store/Cart mismatch.
+		if len(records) < 180 || records[179].Name != "180_multi_store_checkout_child_lineage.sql" {
+			t.Fatalf("missing canonical v180 lineage migration: %d records", len(records))
+		}
+		upgradeTx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = upgradeTx.Rollback() }()
+		for index := previousVersion; index < 179; index++ {
+			if _, err := upgradeTx.ExecContext(ctx, migrationSQL[index]); err != nil {
+				t.Fatalf("apply prior DSH v%d: %v", index+1, err)
+			}
+			record := records[index]
+			if _, err := upgradeTx.ExecContext(ctx, "INSERT INTO dsh.schema_migrations(version,name,sha256) VALUES($1,$2,$3)", record.Version, record.Name, record.SHA256); err != nil {
+				t.Fatalf("record prior DSH v%d: %v", record.Version, err)
+			}
+		}
+		if err := upgradeTx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_multi_store_checkouts(id,client_actor_id,child_count)
+			VALUES($1,$2,2)`, otherID, clientID); err != nil {
+			t.Fatal(err)
+		}
+		const invalidChildID = "checkout-upgrade-cross-store-child"
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_multi_store_checkout_children
+			(id,checkout_id,child_index,cart_id,store_id,address_id,cart_version,fulfillment_mode)
+			VALUES($1,$2,0,'checkout-upgrade-cart-checkout-upgrade-store-a',
+			'checkout-upgrade-store-b','checkout-upgrade-address-invalid',1,'BTHWANI_CAPTAIN')`,
+			invalidChildID, otherID); err != nil {
+			t.Fatalf("prepare v179-invalid cross-Store child: %v", err)
+		}
+		err = postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t))
+		var lineageErr *pq.Error
+		if !errors.As(err, &lineageErr) || lineageErr.Code != "23503" ||
+			lineageErr.Constraint != "commerce_multi_store_child_cart_store_fk" {
+			t.Fatalf("unsafe legacy child upgrade = %v; want named 23503 FK rejection", err)
+		}
+		if err := db.QueryRowContext(ctx, "SELECT max(version) FROM dsh.schema_migrations").Scan(&currentVersion); err != nil || currentVersion != 179 {
+			t.Fatalf("failed v180 upgrade changed migration history: version=%d err=%v", currentVersion, err)
+		}
+		var invalidStillStored int
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.commerce_multi_store_checkout_children WHERE id=$1", invalidChildID).Scan(&invalidStillStored); err != nil || invalidStillStored != 1 {
+			t.Fatalf("failed v180 upgrade lost retained child: count=%d err=%v", invalidStillStored, err)
+		}
+		if _, err := db.ExecContext(ctx, "DELETE FROM dsh.commerce_multi_store_checkout_children WHERE id=$1", invalidChildID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, "DELETE FROM dsh.commerce_multi_store_checkouts WHERE id=$1", otherID); err != nil {
+			t.Fatal(err)
+		}
 		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
-			t.Fatalf("upgrade retained v177 DSH data: %v", err)
+			t.Fatalf("upgrade retained v179 DSH data: %v", err)
 		}
 		if err := postgres.VerifySchema(ctx, db, records); err != nil {
 			t.Fatalf("verify fully upgraded DSH schema: %v", err)
