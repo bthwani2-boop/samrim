@@ -241,6 +241,10 @@ jobs:
         if: steps.changed.outputs.node == 'true'
         run: pnpm install --frozen-lockfile
 
+      - name: Reject orphaned JavaScript and TypeScript files
+        if: steps.changed.outputs.node == 'true'
+        run: pnpm exec knip --files
+
       - name: Enforce cross-service import boundaries
         if: steps.changed.outputs.node == 'true'
         run: |

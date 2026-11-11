@@ -37,6 +37,17 @@ test("SQL and Go changes activate owner and boundary checks", () => {
   requireGates(".github/workflows/fast-guard.yml", ["finance", "node"]);
 });
 
+test("Knip rejects orphan source files after installing dependencies, without deleting files", () => {
+  const install = workflow.indexOf("      - name: Install workspace only for affected JS or TS code");
+  const knip = workflow.indexOf("      - name: Reject orphaned JavaScript and TypeScript files");
+  const boundary = workflow.indexOf("      - name: Enforce cross-service import boundaries");
+  assert.ok(install >= 0 && knip > install && boundary > knip);
+  const step = workflow.slice(knip, boundary);
+  assert.match(step, /^        if: steps\.changed\.outputs\.node == 'true'$/m);
+  assert.match(step, /^        run: pnpm exec knip --files$/m);
+  assert.doesNotMatch(step, /continue-on-error:\s*true|knip.*--fix/);
+});
+
 test("cross-service import scanner is a blocking CI step", () => {
   const install = workflow.indexOf("      - name: Install workspace only for affected JS or TS code");
   const guard = workflow.indexOf("      - name: Enforce cross-service import boundaries");
