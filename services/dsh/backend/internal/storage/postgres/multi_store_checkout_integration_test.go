@@ -231,3 +231,137 @@ func TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay(t *testing.T) 
 		}
 	})
 }
+
+func TestMultiStoreCheckoutMigrationUpgradesV177WithPersistedChildren(t *testing.T) {
+	databaseURL := strings.TrimSpace(os.Getenv("DSH_DATABASE_URL"))
+	if databaseURL == "" {
+		t.Skip("isolated DSH_DATABASE_URL required for retained-data migration proof")
+	}
+	rootDB, err := sql.Open("postgres", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = rootDB.Close() })
+	checkCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := rootDB.PingContext(checkCtx); err != nil {
+		t.Fatalf("configured isolated PostgreSQL is not reachable: %v", err)
+	}
+
+	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
+		const previousVersion = 177
+		if len(records) < 178 || records[previousVersion].Name != "178_multi_store_checkout_count_and_index.sql" {
+			t.Fatalf("expected canonical v178 checkout migration after v177, got %d records", len(records))
+		}
+		// Reconstruct the last accepted DSH baseline inside this disposable
+		// database only. The owning migrator performs the subsequent upgrade.
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		if _, err := tx.ExecContext(ctx, "CREATE SCHEMA dsh"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.ExecContext(ctx, `CREATE TABLE dsh.schema_migrations (
+			version integer PRIMARY KEY, name text NOT NULL, sha256 text NOT NULL,
+			applied_at timestamptz NOT NULL DEFAULT clock_timestamp())`); err != nil {
+			t.Fatal(err)
+		}
+		for index := 0; index < previousVersion; index++ {
+			if _, err := tx.ExecContext(ctx, migrationSQL[index]); err != nil {
+				t.Fatalf("bootstrap historical DSH v%d: %v", index+1, err)
+			}
+			record := records[index]
+			if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.schema_migrations(version,name,sha256) VALUES($1,$2,$3)", record.Version, record.Name, record.SHA256); err != nil {
+				t.Fatalf("record historical DSH v%d: %v", record.Version, err)
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatalf("commit historical DSH baseline: %v", err)
+		}
+
+		const (
+			parentID = "checkout-upgrade-retained-parent"
+			otherID  = "checkout-upgrade-reject-invalid-parent"
+			clientID = "checkout-upgrade-client"
+		)
+		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.service_cities(id,display_name_ar,active) VALUES($1,$2,true)", "checkout-upgrade-city", "مدينة بيانات محفوظة"); err != nil {
+			t.Fatal(err)
+		}
+		for _, storeID := range []string{"checkout-upgrade-store-a", "checkout-upgrade-store-b"} {
+			insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{
+				ID: storeID, PartnerActorID: "checkout-upgrade-partner-" + storeID,
+				Name: "متجر محفوظ " + storeID,
+			})
+			cartID := "checkout-upgrade-cart-" + storeID
+			if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_carts(
+				id,client_actor_id,store_id,state,version) VALUES($1,$2,$3,'checked_out',1)`,
+				cartID, clientID, storeID); err != nil {
+				t.Fatalf("insert persisted v177 cart: %v", err)
+			}
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_multi_store_checkouts(
+			id,client_actor_id,state,version,child_count,successful_child_count,failed_child_count)
+			VALUES($1,$2,'PROCESSING',4,2,0,1)`, parentID, clientID); err != nil {
+			t.Fatal(err)
+		}
+		for index, storeID := range []string{"checkout-upgrade-store-a", "checkout-upgrade-store-b"} {
+			state := "PENDING"
+			failureCode := ""
+			if index == 0 {
+				state, failureCode = "FAILED", "STALE_QUOTE"
+			}
+			if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_multi_store_checkout_children(
+				id,checkout_id,child_index,cart_id,store_id,address_id,cart_version,fulfillment_mode,state,failure_code)
+				VALUES($1,$2,$3,$4,$5,$6,1,'BTHWANI_CAPTAIN',$7,NULLIF($8,''))`,
+				"checkout-upgrade-child-"+storeID, parentID, index, "checkout-upgrade-cart-"+storeID, storeID,
+				"checkout-upgrade-address-"+storeID, state, failureCode); err != nil {
+				t.Fatalf("insert persisted v177 child %d: %v", index, err)
+			}
+		}
+		// v177 permits this logically impossible sum; the forward migration
+		// must fail closed rather than silently modifying retained rows.
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_multi_store_checkouts(
+			id,client_actor_id,state,child_count,successful_child_count,failed_child_count)
+			VALUES($1,$2,'PARTIAL_FAILURE',2,2,1)`, otherID, clientID); err != nil {
+			t.Fatalf("prepare v177 overcounted parent: %v", err)
+		}
+		err = postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t))
+		var constraintErr *pq.Error
+		if !errors.As(err, &constraintErr) || constraintErr.Code != "23514" ||
+			constraintErr.Constraint != "commerce_multi_store_checkouts_total_count_chk" {
+			t.Fatalf("incompatible legacy data migration = %v; want named 23514 CHECK rejection", err)
+		}
+		var currentVersion int
+		if err := db.QueryRowContext(ctx, "SELECT max(version) FROM dsh.schema_migrations").Scan(&currentVersion); err != nil || currentVersion != previousVersion {
+			t.Fatalf("failed migration must not advance history: current=%d err=%v", currentVersion, err)
+		}
+		if _, err := db.ExecContext(ctx, "DELETE FROM dsh.commerce_multi_store_checkouts WHERE id=$1", otherID); err != nil {
+			t.Fatalf("remove exclusively test-owned invalid fixture: %v", err)
+		}
+		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
+			t.Fatalf("upgrade retained v177 DSH data: %v", err)
+		}
+		if err := postgres.VerifySchema(ctx, db, records); err != nil {
+			t.Fatalf("verify fully upgraded DSH schema: %v", err)
+		}
+		retained, err := postgres.ReadMultiStoreCheckoutForClient(ctx, db, parentID, clientID)
+		if err != nil || retained.Version != 4 || retained.State != "PROCESSING" ||
+			retained.ChildCount != 2 || retained.SuccessfulChildCount != 0 ||
+			retained.FailedChildCount != 1 || len(retained.Children) != 2 ||
+			retained.Children[0].State != "FAILED" || retained.Children[0].FailureCode != "STALE_QUOTE" ||
+			retained.Children[1].State != "PENDING" {
+			t.Fatalf("v177 persisted parent/children changed after schema upgrade: %+v err=%v", retained, err)
+		}
+		var uniqueIndex, redundantIndex bool
+		if err := db.QueryRowContext(ctx, `SELECT
+			to_regclass('dsh.commerce_multi_store_checkout_children_index_uq') IS NOT NULL,
+			to_regclass('dsh.commerce_multi_store_checkout_children_checkout_idx') IS NOT NULL`).Scan(&uniqueIndex, &redundantIndex); err != nil || !uniqueIndex || redundantIndex {
+			t.Fatalf("upgraded multi-Store checkout indexes: unique=%t duplicate=%t err=%v", uniqueIndex, redundantIndex, err)
+		}
+		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
+			t.Fatalf("repeat migration must preserve canonical history: %v", err)
+		}
+	}, 4*time.Minute)
+}
