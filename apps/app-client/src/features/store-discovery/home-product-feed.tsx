@@ -1,16 +1,17 @@
-import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
+import { borders, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type CatalogStoreOffer, formatMoney } from "@bthwani/dsh";
 import * as Haptics from "expo-haptics";
 import { Image as ExpoImage } from "expo-image";
 import { type Href, useRouter } from "expo-router";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import Reanimated, { FadeInDown, ReduceMotion } from "react-native-reanimated";
 import { currentIdentityState, subscribeIdentitySession } from "../../bootstrap/identity";
 import { adjustSimpleOfferQuantity, listOwnOpenCarts, readOwnStoreCart } from "../cart-checkout/cart-client";
 import { subscribeClientCartActorChanges } from "../cart-checkout/cart-session-scope";
 import { searchPublicCatalog } from "./store-discovery-client";
+import { createStyles as createDiscoveryStyles } from "./store-discovery-styles";
 
 type FeedState =
   | { kind: "loading" }
@@ -360,4 +361,100 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: "center" },
     cartMessage: { ...typography.bodySm, color: theme.successText, textAlign: "right" },
   });
+}
+
+export function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selectedVerticalID, selectedShortcutID, isAuthenticated, onRequireAuthentication, onSearchQueryChange, onClearCategory }: {
+  query: string;
+  selectedCategoryID: string;
+  selectedCityID: string | null;
+  selectedVerticalID: string;
+  selectedShortcutID: string;
+  isAuthenticated: boolean;
+  onRequireAuthentication?: (() => void) | undefined;
+  onSearchQueryChange?: ((value: string) => void) | undefined;
+  onClearCategory: () => void;
+}) {
+  const theme = useAppearanceTheme();
+  const router = useRouter();
+  const styles = useMemo(() => createDiscoveryStyles(theme), [theme]);
+  const normalizedQuery = query.trim();
+  const [suggestionRetry, retrySuggestions] = useState(0);
+  const [suggestions, setSuggestions] = useState<{ kind: "loading" | "ready" | "error"; names: string[] }>({ kind: "loading", names: [] });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: suggestionRetry intentionally triggers a new request after a failed suggestion load.
+  useEffect(() => {
+    if (normalizedQuery || !selectedCityID) return;
+    let active = true;
+    setSuggestions({ kind: "loading", names: [] });
+    void (async () => {
+      const names: string[] = [];
+      const seen = new Set<string>();
+      const visitedCursors = new Set<string>();
+      let cursor = "";
+      // Each offer is Store-specific, so one page may repeat a single product.
+      // Page within a bounded budget until six distinct names are found.
+      for (let index = 0; index < 4 && names.length < 6; index++) {
+        let page: Awaited<ReturnType<typeof searchPublicCatalog>>;
+        try {
+          page = await searchPublicCatalog(selectedCityID, "", selectedCategoryID, 24, cursor, selectedVerticalID, selectedShortcutID);
+        } catch (error) {
+          if (index === 0 || names.length === 0) throw error;
+          break; // Keep valid suggestions from earlier pages after a later failure.
+        }
+        if (!active) return;
+        for (const offer of page.offers) {
+          const name = offer.productName.trim();
+          if (name && !seen.has(name)) { seen.add(name); names.push(name); }
+          if (names.length >= 6) break;
+        }
+        if (!page.nextCursor || visitedCursors.has(page.nextCursor)) break;
+        visitedCursors.add(page.nextCursor);
+        cursor = page.nextCursor;
+      }
+      if (active) setSuggestions({ kind: "ready", names });
+    })()
+      .catch(() => {
+        if (active) setSuggestions({ kind: "error", names: [] });
+      });
+    return () => { active = false; };
+  }, [normalizedQuery, selectedCityID, selectedCategoryID, selectedVerticalID, selectedShortcutID, suggestionRetry]);
+  if (!normalizedQuery) {
+    return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}>
+      <BthwaniSurface tone="inset" style={styles.noResults}>
+        <BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} />
+        <Text style={styles.cardTitle}>ابحث عن منتج في متاجر مدينتك</Text>
+        <Text style={styles.muted}>اكتب الاسم أو جزءًا منه لتظهر المنتجات المنشورة.</Text>
+      </BthwaniSurface>
+      {selectedCityID && suggestions.kind === "loading" ? <View accessibilityLabel="جارٍ تجهيز اقتراحات المنتجات"><BthwaniSkeleton height={42} /></View> : null}
+      {selectedCityID && suggestions.kind === "ready" && suggestions.names.length > 0 ? <View style={styles.categoryShortcutBlock} accessibilityLabel="اقتراحات من كتالوج المتاجر">
+        <BthwaniSectionHeader title="جرّب البحث عن" subtitle="أسماء منتجات منشورة في مدينتك" />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryShortcutContent}>
+          {suggestions.names.map((name) => <BthwaniChip key={name} icon="search" label={name}
+            accessibilityLabel={`اقتراح البحث عن ${name}`}
+            onPress={() => { if (onSearchQueryChange) onSearchQueryChange(name); else router.setParams({ q: name }); }} />)}
+        </ScrollView>
+      </View> : null}
+      {selectedCityID && suggestions.kind === "error" ? <BthwaniButton label="إعادة تحميل الاقتراحات" variant="secondary" onPress={() => retrySuggestions((value) => value + 1)} /> : null}
+    </View>;
+  }
+  if (!selectedCityID) {
+    return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}>
+      <BthwaniSurface tone="inset" style={styles.noResults}>
+        <BthwaniIcon name="location" color={theme.colorMuted} size={sizing.iconXl} />
+        <Text style={styles.cardTitle}>اختر مدينة الخدمة للبحث</Text>
+        <Text style={styles.muted}>أغلق البحث واختر المدينة أولًا.</Text>
+      </BthwaniSurface>
+    </View>;
+  }
+  return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}>
+    <HomeProductFeed
+      cityID={selectedCityID}
+      verticalID={selectedVerticalID}
+      categoryID={selectedCategoryID}
+      shortcutID={selectedShortcutID}
+      query={query}
+      isAuthenticated={isAuthenticated}
+      onRequireAuthentication={onRequireAuthentication}
+      onClearCategory={onClearCategory}
+    />
+  </View>;
 }

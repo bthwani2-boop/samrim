@@ -31,7 +31,9 @@ test("product actions are siblings of the product navigation button", () => {
 const discovery = readFileSync(path.resolve(import.meta.dirname, "../src/features/store-discovery/store-discovery.tsx"), "utf8");
 
 test("typed product search reuses the DSH-backed grid, cart actions, and server cursor", () => {
-  assert.match(discovery, /function ProductSearchResults[\s\S]*?<HomeProductFeed/);
+  assert.match(feed, /export function ProductSearchResults[\s\S]*?<HomeProductFeed/);
+  assert.match(discovery, /<ProductSearchResults/);
+  assert.doesNotMatch(discovery, /function ProductSearchResults/);
   assert.match(discovery, /query=\{query\}/);
   assert.doesNotMatch(discovery, /setProductSearch\(/);
   assert.match(feed, /const normalizedQuery = query\.trim\(\)/);
@@ -42,13 +44,13 @@ test("typed product search reuses the DSH-backed grid, cart actions, and server 
 });
 
 test("empty product search offers real catalog-based suggestions with an explicit retry", () => {
-  assert.match(discovery, /searchPublicCatalog\(selectedCityID, "", selectedCategoryID, 24, cursor/);
-  assert.match(discovery, /const seen = new Set<string>\(\)/);
-  assert.match(discovery, /if \(name && !seen\.has\(name\)\)/);
-  assert.match(discovery, /if \(index === 0 \|\| names\.length === 0\) throw error/, "failed pages without usable suggestions must expose retry while earlier valid names remain");
-  assert.match(discovery, /اقتراح البحث عن/);
-  assert.match(discovery, /onSearchQueryChange\(name\)/);
-  assert.match(discovery, /إعادة تحميل الاقتراحات/);
+  assert.match(feed, /searchPublicCatalog\(selectedCityID, "", selectedCategoryID, 24, cursor/);
+  assert.match(feed, /const seen = new Set<string>\(\)/);
+  assert.match(feed, /if \(name && !seen\.has\(name\)\)/);
+  assert.match(feed, /if \(index === 0 \|\| names\.length === 0\) throw error/, "failed pages without usable suggestions must expose retry while earlier valid names remain");
+  assert.match(feed, /اقتراح البحث عن/);
+  assert.match(feed, /onSearchQueryChange\(name\)/);
+  assert.match(feed, /إعادة تحميل الاقتراحات/);
 });
 
 test("read-only browser price-sort test validates empty and invalid prices before single-offer skip", () => {

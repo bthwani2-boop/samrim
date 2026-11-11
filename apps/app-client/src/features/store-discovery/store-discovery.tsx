@@ -1,6 +1,6 @@
-import { opacity, radius, type resolveTheme, sizing, spacing } from "@bthwani/design-system";
+import { radius, type resolveTheme, sizing, spacing } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { availableCustomerFulfillmentModes, type CatalogCategory, type DeliveryAddress, fulfillmentModeLabel, type PublicCommerceVertical, type PublicDiscoveryContentView, type PublicPromotionView, type PublicShoppingShortcut, type PublicStoreView, parseStudioLayoutPublication, type StudioDraftSection, type StudioLayoutPublication } from "@bthwani/dsh";
+import { type CatalogCategory, type DeliveryAddress, type PublicCommerceVertical, type PublicDiscoveryContentView, type PublicPromotionView, type PublicShoppingShortcut, type PublicStoreView, parseStudioLayoutPublication, type StudioDraftSection, type StudioLayoutPublication } from "@bthwani/dsh";
 import { Image as ExpoImage } from "expo-image";
 import * as ExpoLinking from "expo-linking";
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -15,11 +15,11 @@ import { ClientShareSheet, type ClientShareTarget } from "../sharing/client-shar
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
 import { DiscoveryReelsViewer } from "./discovery-reels-viewer";
 import { normalizeDiscoveryTaxonomy } from "./discovery-taxonomy";
-import { HomeProductFeed } from "./home-product-feed";
+import { HomeProductFeed, ProductSearchResults } from "./home-product-feed";
 import { LoopingHeroBanner } from "./looping-hero-banner";
 import { PromotionCard } from "./promotion-card";
 import { StoreDirectoryCard } from "./store-directory-card";
-import { type BannerPresentation, listFavoriteStoreIDs, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, readPublicBannerPresentation, readPublicStudioLayout, searchPublicCatalog, setFavoriteStore } from "./store-discovery-client";
+import { type BannerPresentation, listFavoriteStoreIDs, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, readPublicBannerPresentation, readPublicStudioLayout, setFavoriteStore } from "./store-discovery-client";
 import { createStyles } from "./store-discovery-styles";
 
 function activityIcon(nameAr: string, nameEn: string): ComponentProps<typeof BthwaniIcon>["name"] {
@@ -938,102 +938,6 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   );
 }
 
-function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selectedVerticalID, selectedShortcutID, isAuthenticated, onRequireAuthentication, onSearchQueryChange, onClearCategory }: {
-  query: string;
-  selectedCategoryID: string;
-  selectedCityID: string | null;
-  selectedVerticalID: string;
-  selectedShortcutID: string;
-  isAuthenticated: boolean;
-  onRequireAuthentication?: (() => void) | undefined;
-  onSearchQueryChange?: ((value: string) => void) | undefined;
-  onClearCategory: () => void;
-}) {
-  const theme = useAppearanceTheme();
-  const router = useRouter();
-  const styles = useMemo(() => createStyles(theme), [theme]);
-  const normalizedQuery = query.trim();
-  const [suggestionRetry, retrySuggestions] = useState(0);
-  const [suggestions, setSuggestions] = useState<{ kind: "loading" | "ready" | "error"; names: string[] }>({ kind: "loading", names: [] });
-  // biome-ignore lint/correctness/useExhaustiveDependencies: suggestionRetry intentionally triggers a new request after a failed suggestion load.
-  useEffect(() => {
-    if (normalizedQuery || !selectedCityID) return;
-    let active = true;
-    setSuggestions({ kind: "loading", names: [] });
-    void (async () => {
-      const names: string[] = [];
-      const seen = new Set<string>();
-      const visitedCursors = new Set<string>();
-      let cursor = "";
-      // Each offer is Store-specific, so one page may repeat a single product.
-      // Page within a bounded budget until six distinct names are found.
-      for (let index = 0; index < 4 && names.length < 6; index++) {
-        let page: Awaited<ReturnType<typeof searchPublicCatalog>>;
-        try {
-          page = await searchPublicCatalog(selectedCityID, "", selectedCategoryID, 24, cursor, selectedVerticalID, selectedShortcutID);
-        } catch (error) {
-          if (index === 0 || names.length === 0) throw error;
-          break; // Keep valid suggestions from earlier pages after a later failure.
-        }
-        if (!active) return;
-        for (const offer of page.offers) {
-          const name = offer.productName.trim();
-          if (name && !seen.has(name)) { seen.add(name); names.push(name); }
-          if (names.length >= 6) break;
-        }
-        if (!page.nextCursor || visitedCursors.has(page.nextCursor)) break;
-        visitedCursors.add(page.nextCursor);
-        cursor = page.nextCursor;
-      }
-      if (active) setSuggestions({ kind: "ready", names });
-    })()
-      .catch(() => {
-        if (active) setSuggestions({ kind: "error", names: [] });
-      });
-    return () => { active = false; };
-  }, [normalizedQuery, selectedCityID, selectedCategoryID, selectedVerticalID, selectedShortcutID, suggestionRetry]);
-  if (!normalizedQuery) {
-    return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}>
-      <BthwaniSurface tone="inset" style={styles.noResults}>
-        <BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} />
-        <Text style={styles.cardTitle}>ابحث عن منتج في متاجر مدينتك</Text>
-        <Text style={styles.muted}>اكتب الاسم أو جزءًا منه لتظهر المنتجات المنشورة.</Text>
-      </BthwaniSurface>
-      {selectedCityID && suggestions.kind === "loading" ? <View accessibilityLabel="جارٍ تجهيز اقتراحات المنتجات"><BthwaniSkeleton height={42} /></View> : null}
-      {selectedCityID && suggestions.kind === "ready" && suggestions.names.length > 0 ? <View style={styles.categoryShortcutBlock} accessibilityLabel="اقتراحات من كتالوج المتاجر">
-        <BthwaniSectionHeader title="جرّب البحث عن" subtitle="أسماء منتجات منشورة في مدينتك" />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryShortcutContent}>
-          {suggestions.names.map((name) => <BthwaniChip key={name} icon="search" label={name}
-            accessibilityLabel={`اقتراح البحث عن ${name}`}
-            onPress={() => { if (onSearchQueryChange) onSearchQueryChange(name); else router.setParams({ q: name }); }} />)}
-        </ScrollView>
-      </View> : null}
-      {selectedCityID && suggestions.kind === "error" ? <BthwaniButton label="إعادة تحميل الاقتراحات" variant="secondary" onPress={() => retrySuggestions((value) => value + 1)} /> : null}
-    </View>;
-  }
-  if (!selectedCityID) {
-    return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}>
-      <BthwaniSurface tone="inset" style={styles.noResults}>
-        <BthwaniIcon name="location" color={theme.colorMuted} size={sizing.iconXl} />
-        <Text style={styles.cardTitle}>اختر مدينة الخدمة للبحث</Text>
-        <Text style={styles.muted}>أغلق البحث واختر المدينة أولًا.</Text>
-      </BthwaniSurface>
-    </View>;
-  }
-  return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}>
-    <HomeProductFeed
-      cityID={selectedCityID}
-      verticalID={selectedVerticalID}
-      categoryID={selectedCategoryID}
-      shortcutID={selectedShortcutID}
-      query={query}
-      isAuthenticated={isAuthenticated}
-      onRequireAuthentication={onRequireAuthentication}
-      onClearCategory={onClearCategory}
-    />
-  </View>;
-}
-
 function StoreDirectoryStatus({ hasServiceCity, kind, query, selectedCategory, favoritesOnly, onRetry, onClearSearch, onClearCategory, onClearFilters }: { hasServiceCity: boolean; kind: "loading" | "error" | "empty" | "filtered"; query: string; selectedCategory: boolean; favoritesOnly: boolean; onRetry: () => void; onClearSearch: () => void; onClearCategory: () => void; onClearFilters: () => void }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -1057,134 +961,65 @@ function StoreDirectoryStatus({ hasServiceCity, kind, query, selectedCategory, f
 
 
 
-function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label, hero = false, screenActive = true, presentation = { placement: "HOME", mode: "CINEMATIC", intervalSeconds: 5, version: 1 } as BannerPresentation }: { cardWidth: number; items: ReadonlyArray<PublicDiscoveryContentView>; styles: ReturnType<typeof createStyles>; theme: ReturnType<typeof resolveTheme>; onOpen: (item: PublicDiscoveryContentView) => void; label: string; hero?: boolean; screenActive?: boolean; presentation?: BannerPresentation }) {
+function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen, label }: {
+  cardWidth: number; items: ReadonlyArray<PublicDiscoveryContentView>;
+  styles: ReturnType<typeof createStyles>; theme: ReturnType<typeof resolveTheme>;
+  onOpen: (item: PublicDiscoveryContentView) => void; label: string;
+}) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [failedMedia, setFailedMedia] = useState<ReadonlySet<string>>(() => new Set());
-  const [foreground, setForeground] = useState(AppState.currentState === "active");
-  const [reducedMotion, setReducedMotion] = useState(false);
-  const [interacting, setInteracting] = useState(false);
-  const [fadeFromUri, setFadeFromUri] = useState<string | null>(null);
-  const fadeOpacity = useRef(new Animated.Value(0)).current;
   const scrollRef = useRef<ScrollViewInstance>(null);
-  const scrollX = useRef(new Animated.Value(0)).current;
-  const offset = useRef(Animated.multiply(scrollX, I18nManager.isRTL ? -1 : 1)).current;
-  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const physicalIndex = useRef(hero && items.length > 1 ? 1 : 0);
   const impressions = useRef<Set<string>>(new Set());
   const step = cardWidth + spacing[2];
-  const loop = hero && items.length > 1;
-  const slides = loop ? [items[items.length - 1]!, ...items, items[0]!] : items;
-  const slideEntries = slides.map((item, position) => ({ item, instanceKey: loop && position === 0 ? "tail:" + item.id : loop && position === slides.length - 1 ? "head:" + item.id : "item:" + item.id }));
   const direction = I18nManager.isRTL ? -1 : 1;
   const activeItem = items[activeIndex];
-
-  useEffect(() => {
-    if (!hero) return;
-    let mounted = true;
-    void AccessibilityInfo.isReduceMotionEnabled().then((value) => { if (mounted) setReducedMotion(value); }).catch(() => {});
-    const motion = AccessibilityInfo.addEventListener("reduceMotionChanged", setReducedMotion);
-    const app = AppState.addEventListener("change", (value) => setForeground(value === "active"));
-    return () => { mounted = false; motion.remove(); app.remove(); };
-  }, [hero]);
 
   useEffect(() => {
     if (!activeItem || impressions.current.has(activeItem.id)) return;
     impressions.current.add(activeItem.id);
     void recordDiscoveryImpression(activeItem.id);
   }, [activeItem]);
-  useEffect(() => { setActiveIndex((value) => Math.min(value, Math.max(0, items.length - 1))); }, [items.length]);
-  useEffect(() => () => { if (resetTimer.current) clearTimeout(resetTimer.current); }, []);
+  useEffect(() => {
+    setActiveIndex((value) => Math.min(value, Math.max(0, items.length - 1)));
+  }, [items.length]);
 
-  function move(position: number, animate: boolean) {
-    physicalIndex.current = position;
-    scrollRef.current?.scrollTo({ x: direction * step * position, animated: animate });
-  }
   function choose(index: number) {
     if (items.length < 2) return;
-    if (resetTimer.current) clearTimeout(resetTimer.current);
-    let position = loop ? index + 1 : index;
-    const fading = hero && presentation.mode === "CROSSFADE" && !reducedMotion && activeItem && activeIndex !== index;
-    if (fading) {
-      fadeOpacity.stopAnimation();
-      fadeOpacity.setValue(1);
-      setFadeFromUri(activeItem.mediaUri);
-    }
-    if (!fading && loop && activeIndex === items.length - 1 && index === 0) position = items.length + 1;
-    if (!fading && loop && activeIndex === 0 && index === items.length - 1) position = 0;
     setActiveIndex(index);
-    move(position, !reducedMotion && !fading);
-    if (fading) Animated.timing(fadeOpacity, { toValue: 0, duration: 550, useNativeDriver: true }).start(({ finished }) => { if (finished) setFadeFromUri(null); });
-    if (loop && (position === 0 || position === items.length + 1)) {
-      const expected = position;
-      resetTimer.current = setTimeout(() => {
-        if (physicalIndex.current === expected) move(position === 0 ? items.length : 1, false);
-      }, 700);
-    }
+    scrollRef.current?.scrollTo({ x: direction * step * index, animated: true });
   }
-  const chooseRef = useRef(choose);
-  chooseRef.current = choose;
-
   function settle(x: number) {
     if (!items.length) return;
-    const position = Math.min(slides.length - 1, Math.max(0, Math.round(Math.abs(x) / step)));
-    physicalIndex.current = position;
-    setActiveIndex(loop ? (position + items.length - 1) % items.length : position);
-    if (loop && (position === 0 || position === items.length + 1)) {
-      if (resetTimer.current) clearTimeout(resetTimer.current);
-      resetTimer.current = setTimeout(() => move(position === 0 ? items.length : 1, false), 0);
-    }
+    setActiveIndex(Math.min(items.length - 1, Math.max(0, Math.round(Math.abs(x) / step))));
   }
 
-  useEffect(() => {
-    if (!hero || !screenActive || !foreground || reducedMotion || interacting || presentation.mode === "STATIC" || items.length < 2) return;
-    // Autoplay uses the newest carousel state without resetting on each render.
-    void step; // A card-width change requires a new timer.
-    const timer = setTimeout(() => chooseRef.current((activeIndex + 1) % items.length), presentation.intervalSeconds * 1000);
-    return () => clearTimeout(timer);
-  }, [hero, screenActive, activeIndex, items.length, foreground, reducedMotion, interacting, presentation.mode, presentation.intervalSeconds, step]);
-
   return <View accessibilityLabel={activeItem ? label + "، " + activeItem.titleAr + "، " + (activeIndex + 1) + " من " + items.length : label} style={styles.mediaCarousel}>
-    <Animated.ScrollView
+    <ScrollView
       ref={scrollRef}
       accessibilityLabel={label}
       contentContainerStyle={styles.mediaScrollContent}
-      contentOffset={{ x: loop ? direction * step : 0, y: 0 }}
-      onContentSizeChange={() => { if (loop) move(activeIndex + 1, false); }}
+      contentOffset={{ x: 0, y: 0 }}
       horizontal
-      onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], { useNativeDriver: Platform.OS !== "web" })}
       scrollEventThrottle={16}
-      onScrollBeginDrag={() => setInteracting(true)}
-      onScrollEndDrag={(event) => {
-        if (Math.abs(event.nativeEvent.velocity?.x ?? 0) < 0.1) settle(event.nativeEvent.contentOffset.x);
-        setInteracting(false);
-      }}
-      onMomentumScrollEnd={(event) => { settle(event.nativeEvent.contentOffset.x); setInteracting(false); }}
-      onTouchStart={() => setInteracting(true)}
-      onTouchEnd={() => setInteracting(false)}
+      onScrollEndDrag={(event) => { if (Math.abs(event.nativeEvent.velocity?.x ?? 0) < 0.1) settle(event.nativeEvent.contentOffset.x); }}
+      onMomentumScrollEnd={(event) => settle(event.nativeEvent.contentOffset.x)}
       decelerationRate="fast"
       showsHorizontalScrollIndicator={false}
       snapToAlignment="start"
       snapToInterval={step}
       style={styles.mediaScroll}
     >
-      {slideEntries.map(({ item, instanceKey }, position) => {
-        const inputRange = [(position - 1) * step, position * step, (position + 1) * step];
-        const imageMotion = hero && !reducedMotion && presentation.mode === "CINEMATIC" ? { transform: [
-          { scale: offset.interpolate({ inputRange, outputRange: [1.045, 1, 1.045], extrapolate: "clamp" }) },
-          { translateX: offset.interpolate({ inputRange, outputRange: [6, 0, -6], extrapolate: "clamp" }) },
-        ] } : undefined;
-        return <Pressable accessibilityRole="button" accessibilityLabel={"عرض " + item.titleAr} accessibilityHint={item.mediaKind === "video" ? "تشغيل الريل" : "يفتح وجهة المحتوى"} key={instanceKey} onPress={() => onOpen(item)}>
-          <View style={[styles.mediaCard, hero && styles.heroMediaCard, { width: cardWidth }, hero && { height: Math.round(cardWidth / 1.75) }]}>
+      {items.map((item) => <Pressable accessibilityRole="button" accessibilityLabel={"عرض " + item.titleAr} accessibilityHint={item.mediaKind === "video" ? "تشغيل الريل" : "يفتح وجهة المحتوى"} key={item.id} onPress={() => onOpen(item)}>
+          <View style={[styles.mediaCard, { width: cardWidth }]}>
             {item.mediaKind === "video" ? <View style={[styles.mediaFallback, { backgroundColor: "#171821", justifyContent: "center" }]}>{item.posterUri ? <ExpoImage source={{ uri: item.posterUri }} style={styles.mediaImage} contentFit="cover" cachePolicy="memory-disk" /> : null}<View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: "center", justifyContent: "center", backgroundColor: "#0004" }]}><Text style={{ fontSize: 32, color: "#fff" }}>▶</Text><Text style={{ color: "#fff", textAlign: "center", padding: 8 }} numberOfLines={2}>{item.titleAr}</Text></View></View> : failedMedia.has(item.id) ? <View style={styles.mediaFallback}><BthwaniIcon name="warning" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.cardTitle}>{item.titleAr}</Text><Text style={styles.mediaFallbackHint}>تعذر تحميل الصورة. اضغط لعرض التفاصيل.</Text></View> : <>
-              <Animated.Image accessibilityLabel={"صورة " + item.titleAr} onError={() => setFailedMedia((current) => new Set(current).add(item.id))} source={{ uri: item.mediaUri }} style={[styles.mediaImage, imageMotion]} resizeMode="cover" />
-              {!hero ? <View pointerEvents="none" style={styles.mediaCaption}><Text numberOfLines={1} style={styles.mediaCaptionTitle}>{item.titleAr}</Text>{item.bodyAr ? <Text numberOfLines={1} style={styles.mediaCaptionBody}>{item.bodyAr}</Text> : null}</View> : null}
+              <Animated.Image accessibilityLabel={"صورة " + item.titleAr} onError={() => setFailedMedia((current) => new Set(current).add(item.id))} source={{ uri: item.mediaUri }} style={styles.mediaImage} resizeMode="cover" />
+              <View pointerEvents="none" style={styles.mediaCaption}><Text numberOfLines={1} style={styles.mediaCaptionTitle}>{item.titleAr}</Text>{item.bodyAr ? <Text numberOfLines={1} style={styles.mediaCaptionBody}>{item.bodyAr}</Text> : null}</View>
             </>}
           </View>
-        </Pressable>;
-      })}
-    </Animated.ScrollView>
-    {hero && presentation.mode === "CROSSFADE" && fadeFromUri ? <View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ position: "absolute", top: 0, left: 0, width: cardWidth, height: Math.round(cardWidth / 1.75), borderRadius: radius.lg, overflow: "hidden" }}><Animated.Image source={{ uri: fadeFromUri }} resizeMode="cover" style={{ width: "100%", height: "100%", opacity: fadeOpacity }} /></View> : null}
-    {!hero && items.length > 1 ? <View accessibilityLabel={"اختيار الشريحة، " + (activeIndex + 1) + " من " + items.length} style={styles.carouselDots}>
+        </Pressable>
+      )}
+    </ScrollView>
+    {items.length > 1 ? <View accessibilityLabel={"اختيار الشريحة، " + (activeIndex + 1) + " من " + items.length} style={styles.carouselDots}>
       {items.map((item, index) => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={"عرض الشريحة " + (index + 1) + ": " + item.titleAr} accessibilityState={{ selected: index === activeIndex }} hitSlop={12} onPress={() => choose(index)}>
         <View style={[styles.carouselDot, index === activeIndex && styles.carouselDotActive]} />
       </Pressable>)}
