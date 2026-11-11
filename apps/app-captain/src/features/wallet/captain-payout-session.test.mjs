@@ -43,10 +43,12 @@ test("intake keeps durable retry and prevents stale post-mutation readback", () 
   const guardAfterMutation = intake.indexOf("if (!hasCurrentPayoutSession(requestSession))", mutation);
   const readback = intake.indexOf("await captainClient().listOwnSettlementIntakes(token)");
   const guardAfterReadback = intake.indexOf("if (!hasCurrentPayoutSession(requestSession))", readback);
-  const publish = intake.indexOf("setIntake(readback);");
-  const clearDurable = intake.indexOf("await SecureStore.deleteItemAsync(key);", publish);
+  const beforeClear = intake.indexOf("const beforeClear = parsePayoutAttempt(await SecureStore.getItemAsync(key));", readback);
+  const clearDurable = intake.indexOf("await SecureStore.deleteItemAsync(key);", beforeClear);
+  const publish = intake.indexOf("setIntake(readback);", clearDurable);
   assert.ok(mutation >= 0 && guardAfterMutation > mutation && readback > guardAfterMutation);
-  assert.ok(guardAfterReadback > readback && publish > guardAfterReadback && clearDurable > publish);
+  assert.ok(guardAfterReadback > readback && beforeClear > guardAfterReadback && clearDurable > beforeClear && publish > clearDurable);
+  assert.match(intake.slice(beforeClear, clearDurable), /!samePayoutAttempt\(beforeClear, saved\)/);
   assert.match(intake.slice(mutation, publish), /CAPTAIN_INTAKE_SESSION_CHANGED/);
   assert.match(intake, /bthwani\.captain\.settlement-intake\.pending\.v1\.\$\{encodeURIComponent\(actor\.identity\.subject\)\}/);
 });
@@ -61,10 +63,21 @@ test("saved settlement intake resumes with its old idempotency key, not a new qu
   assert.match(source, /pendingIntakeAttempt \? <>[\s\S]*?label="التحقق من طلب التسوية المحفوظ"[\s\S]*?requestIntake\(pendingIntakeAttempt\.mode\)/);
 });
 
+test("payout cannot overwrite a saved attempt or retire a changed reference", () => {
+  const write = request.indexOf("await SecureStore.setItemAsync(storageKey, JSON.stringify(attempt));");
+  const firstRead = request.indexOf("const existing = parsePayoutAttempt(await SecureStore.getItemAsync(storageKey));");
+  const reject = request.indexOf("CAPTAIN_PAYOUT_STORED_ATTEMPT_CHANGED", firstRead);
+  const lastRead = request.indexOf("const beforeClear = parsePayoutAttempt(await SecureStore.getItemAsync(storageKey));", write);
+  const deleteAttempt = request.indexOf("await SecureStore.deleteItemAsync(storageKey);", lastRead);
+  assert.ok(firstRead >= 0 && reject > firstRead && write > reject);
+  assert.ok(lastRead > write && deleteAttempt > lastRead);
+  assert.match(request.slice(lastRead, deleteAttempt), /!samePayoutAttempt\(beforeClear, attempt\)/);
+});
+
 test("intake rejects changed actor-scoped stored attempt before financial mutation", () => {
   assert.match(intake, /const raw = await SecureStore\.getItemAsync\(key\)/);
-  assert.match(intake, /stored\.idempotencyKey !== pendingIntakeAttempt\.idempotencyKey/);
-  assert.match(intake, /stored\.mode !== pendingIntakeAttempt\.mode/);
+  assert.match(intake, /const stored = parsePayoutAttempt\(raw\)/);
+  assert.match(intake, /!samePayoutAttempt\(stored, pendingIntakeAttempt\)/);
   assert.match(intake, /CAPTAIN_INTAKE_STORED_ATTEMPT_CHANGED/);
   assert.ok(intake.indexOf("CAPTAIN_INTAKE_STORED_ATTEMPT_CHANGED") < intake.indexOf("createOwnSettlementIntake("));
 });

@@ -93,8 +93,8 @@ function makeCashHarness(tokenGate = deferred(), onCreate) {
   return { state, runtime, enteredToken, tokenGate, create: production(cashSource, "createIntent", runtime) };
 }
 
-function makePayoutHarness({ tokenGate = deferred(), mutationGate = null } = {}) {
-  const state = { current: actor("captain-a", "login-1"), saved: [], deleted: [], requests: 0, reads: 0, errors: [], notices: [] };
+function makePayoutHarness({ tokenGate = deferred(), mutationGate = null, onReadPayout, onReadIntake } = {}) {
+  const state = { current: actor("captain-a", "login-1"), saved: [], stored: {}, deleted: [], requests: 0, reads: 0, errors: [], notices: [] };
   const enteredToken = deferred();
   const enteredMutation = deferred();
   const lock = { current: false };
@@ -111,9 +111,9 @@ function makePayoutHarness({ tokenGate = deferred(), mutationGate = null } = {})
     toAsciiDigits: value => value,
     Crypto: { randomUUID: () => "test-correlation" },
     SecureStore: {
-      setItemAsync: async (key, value) => { state.saved.push({ key, value }); },
-      getItemAsync: async () => null,
-      deleteItemAsync: async key => { state.deleted.push(key); },
+      setItemAsync: async (key, value) => { state.stored[key] = value; state.saved.push({ key, value }); },
+      getItemAsync: async key => state.stored[key] ?? null,
+      deleteItemAsync: async key => { delete state.stored[key]; state.deleted.push(key); },
     },
     getUsableIdentityAccessToken: async () => {
       enteredToken.resolve();
@@ -129,6 +129,7 @@ function makePayoutHarness({ tokenGate = deferred(), mutationGate = null } = {})
       },
       readOwnPayoutState: async () => {
         state.reads++;
+        if (onReadPayout) onReadPayout(state);
         return { state: { actorType: "captain", actorId: "captain-a", latestPayout: { id: "payout-1" } } };
       },
       createOwnSettlementIntake: async () => {
@@ -138,6 +139,7 @@ function makePayoutHarness({ tokenGate = deferred(), mutationGate = null } = {})
       },
       listOwnSettlementIntakes: async () => {
         state.reads++;
+        if (onReadIntake) onReadIntake(state);
         return { intakes: [{ id: "intake-1", resolvedAmountMinor: 5000, status: "REQUESTED" }] };
       },
     }),
@@ -153,6 +155,8 @@ function makePayoutHarness({ tokenGate = deferred(), mutationGate = null } = {})
     console: { error: () => {} },
   };
   runtime.hasCurrentPayoutSession = production(payoutSource, "hasCurrentPayoutSession", runtime);
+  runtime.parsePayoutAttempt = production(payoutSource, "parsePayoutAttempt", runtime);
+  runtime.samePayoutAttempt = production(payoutSource, "samePayoutAttempt", runtime);
   runtime.claimFinancialRequest = production(payoutSource, "claimFinancialRequest", runtime);
   return {
     state, runtime, enteredToken, tokenGate, enteredMutation, mutationGate,
@@ -160,6 +164,96 @@ function makePayoutHarness({ tokenGate = deferred(), mutationGate = null } = {})
     requestIntake: production(payoutSource, "requestIntake", runtime),
   };
 }
+
+test("Payout and Intake reject malformed durable retry states before WLT mutation", () => {
+  const h = makePayoutHarness();
+  const valid = { mode: "SPECIFIED", amountMinor: 2000,
+    idempotencyKey: "captain_payout_existing", correlationID: "captain_payout_corr_existing" };
+  assert.equal(h.runtime.parsePayoutAttempt(null), null);
+  assert.equal(h.runtime.parsePayoutAttempt(JSON.stringify(valid)).idempotencyKey, valid.idempotencyKey);
+  assert.equal(h.runtime.samePayoutAttempt(valid, { ...valid }), true);
+  for (const input of [
+    "null", "[]", "{",
+    JSON.stringify({ ...valid, mode: "INVALID" }),
+    JSON.stringify({ ...valid, amountMinor: undefined }),
+    JSON.stringify({ ...valid, amountMinor: 0 }),
+    JSON.stringify({ ...valid, amountMinor: 1.5 }),
+    JSON.stringify({ ...valid, idempotencyKey: "short" }),
+    JSON.stringify({ ...valid, correlationID: "" }),
+    JSON.stringify({ ...valid, mode: "FULL_AVAILABLE", amountMinor: 2000 }),
+  ]) {
+    assert.throws(() => h.runtime.parsePayoutAttempt(input));
+  }
+  assert.equal(h.runtime.parsePayoutAttempt(JSON.stringify({
+    mode: "FULL_AVAILABLE", idempotencyKey: valid.idempotencyKey,
+    correlationID: valid.correlationID,
+  })).mode, "FULL_AVAILABLE");
+});
+
+test("Payout refuses to overwrite an undisplayed durable attempt", async () => {
+  const token = deferred(); token.resolve("token");
+  const h = makePayoutHarness({ tokenGate: token });
+  const key = "bthwani.captain.payout.pending.v1.captain-a";
+  const oldAttempt = {
+    mode: "SPECIFIED", amountMinor: 2000,
+    idempotencyKey: "captain_payout_older", correlationID: "captain_payout_corr_older",
+  };
+  h.state.stored[key] = JSON.stringify(oldAttempt);
+  await h.request("SPECIFIED");
+  assert.equal(h.state.stored[key], JSON.stringify(oldAttempt));
+  assert.equal(h.state.requests, 0);
+  assert.equal(h.state.saved.length, 0);
+  assert.equal(h.state.deleted.length, 0);
+});
+
+test("Intake refuses to overwrite an undisplayed durable attempt", async () => {
+  const h = makePayoutHarness();
+  const key = "bthwani.captain.settlement-intake.pending.v1.captain-a";
+  const oldAttempt = {
+    mode: "FULL_AVAILABLE",
+    idempotencyKey: "captain_intake_older", correlationID: "captain_intake_corr_older",
+  };
+  h.state.stored[key] = JSON.stringify(oldAttempt);
+  await h.requestIntake("FULL_AVAILABLE");
+  assert.equal(h.state.stored[key], JSON.stringify(oldAttempt));
+  assert.equal(h.state.requests, 0);
+  assert.equal(h.state.saved.length, 0);
+  assert.equal(h.state.deleted.length, 0);
+});
+
+test("Payout acknowledges WLT but cannot erase a changed retry reference", async () => {
+  const token = deferred(); token.resolve("token");
+  const key = "bthwani.captain.payout.pending.v1.captain-a";
+  const h = makePayoutHarness({
+    tokenGate: token,
+    onReadPayout: s => { s.stored[key] = JSON.stringify({
+      mode: "SPECIFIED", amountMinor: 2000,
+      idempotencyKey: "captain_payout_newer", correlationID: "captain_payout_corr_newer",
+    }); },
+  });
+  await h.request("SPECIFIED");
+  assert.equal(h.state.requests, 1);
+  assert.equal(h.state.reads, 1);
+  assert.equal(h.state.deleted.length, 0);
+  assert.match(h.state.stored[key], /captain_payout_newer/);
+});
+
+test("Intake acknowledges WLT but cannot erase a changed retry reference", async () => {
+  const token = deferred(); token.resolve("token");
+  const key = "bthwani.captain.settlement-intake.pending.v1.captain-a";
+  const h = makePayoutHarness({
+    tokenGate: token,
+    onReadIntake: s => { s.stored[key] = JSON.stringify({
+      mode: "FULL_AVAILABLE",
+      idempotencyKey: "captain_intake_newer", correlationID: "captain_intake_corr_newer",
+    }); },
+  });
+  await h.requestIntake("FULL_AVAILABLE");
+  assert.equal(h.state.requests, 1);
+  assert.equal(h.state.reads, 1);
+  assert.equal(h.state.deleted.length, 0);
+  assert.match(h.state.stored[key], /captain_intake_newer/);
+});
 
 test("Cash-In refuses to overwrite another saved attempt after a stale wallet snapshot", async () => {
   const h = makeCashHarness();

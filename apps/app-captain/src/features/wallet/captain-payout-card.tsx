@@ -12,6 +12,30 @@ import { captainClient } from "../captain-operations/captain-client";
 
 type PayoutAttempt = Readonly<{ mode: "FULL_AVAILABLE" | "SPECIFIED"; amountMinor?: number; idempotencyKey: string; correlationID: string }>;
 
+// Saved financial attempts are retry references, never client-owned financial truth.
+// Reject malformed or incomplete references before any WLT mutation.
+function parsePayoutAttempt(raw: string | null): PayoutAttempt | null {
+  if (!raw) return null;
+  const parsed = JSON.parse(raw) as Partial<PayoutAttempt> | null;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) ||
+      (parsed.mode !== "FULL_AVAILABLE" && parsed.mode !== "SPECIFIED") ||
+      (parsed.mode === "SPECIFIED"
+        ? !Number.isSafeInteger(parsed.amountMinor) || Number(parsed.amountMinor) <= 0
+        : parsed.amountMinor !== undefined) ||
+      typeof parsed.idempotencyKey !== "string" || parsed.idempotencyKey.length < 8 || parsed.idempotencyKey.length > 128 ||
+      typeof parsed.correlationID !== "string" || parsed.correlationID.length < 8 || parsed.correlationID.length > 128) {
+    throw new Error("CAPTAIN_FINANCIAL_RETRY_STATE_INVALID");
+  }
+  return parsed as PayoutAttempt;
+}
+
+function samePayoutAttempt(stored: PayoutAttempt | null, expected: PayoutAttempt): boolean {
+  return Boolean(stored && stored.mode === expected.mode &&
+    stored.amountMinor === expected.amountMinor &&
+    stored.idempotencyKey === expected.idempotencyKey &&
+    stored.correlationID === expected.correlationID);
+}
+
 function hasCurrentPayoutSession(sessionKey: string): boolean {
   return Boolean(sessionKey) && captainSessionKey(currentIdentityState()) === sessionKey;
 }
@@ -74,8 +98,8 @@ export function CaptainPayoutCard() {
       }
       const intakes = (await captainClient().listOwnSettlementIntakes(token)).intakes;
       if (!stillCurrent()) return;
-      setPendingAttempt(raw ? JSON.parse(raw) as PayoutAttempt : null);
-      setPendingIntakeAttempt(savedIntake ? JSON.parse(savedIntake) as PayoutAttempt : null);
+      setPendingAttempt(parsePayoutAttempt(raw));
+      setPendingIntakeAttempt(parsePayoutAttempt(savedIntake));
       setState(payoutState);
       setIntake(intakes[0] ?? null);
     } catch (cause) {
@@ -111,6 +135,11 @@ export function CaptainPayoutCard() {
       }
       const storageKey = `bthwani.captain.payout.pending.v1.${encodeURIComponent(actor.identity.subject)}`;
       const attempt = pendingAttempt ?? { mode, ...(parsed === undefined ? {} : { amountMinor: parsed }), idempotencyKey: `captain_payout_${Crypto.randomUUID()}`, correlationID: `captain_payout_corr_${Crypto.randomUUID()}` };
+      const existing = parsePayoutAttempt(await SecureStore.getItemAsync(storageKey));
+      if (!hasCurrentPayoutSession(requestSession)) throw new Error("CAPTAIN_PAYOUT_SESSION_CHANGED");
+      if (pendingAttempt ? !samePayoutAttempt(existing, pendingAttempt) : Boolean(existing)) {
+        throw new Error("CAPTAIN_PAYOUT_STORED_ATTEMPT_CHANGED");
+      }
       await SecureStore.setItemAsync(storageKey, JSON.stringify(attempt));
       if (!hasCurrentPayoutSession(requestSession)) {
         throw new Error("CAPTAIN_PAYOUT_SESSION_CHANGED");
@@ -130,6 +159,9 @@ export function CaptainPayoutCard() {
           readback.latestPayout?.id !== result.payout.id) {
         throw new Error("CAPTAIN_PAYOUT_READBACK_MISMATCH");
       }
+      const beforeClear = parsePayoutAttempt(await SecureStore.getItemAsync(storageKey));
+      if (!hasCurrentPayoutSession(requestSession)) throw new Error("CAPTAIN_PAYOUT_SESSION_CHANGED");
+      if (!samePayoutAttempt(beforeClear, attempt)) throw new Error("CAPTAIN_PAYOUT_STORED_ATTEMPT_CHANGED");
       await SecureStore.deleteItemAsync(storageKey);
       if (!hasCurrentPayoutSession(requestSession)) throw new Error("CAPTAIN_PAYOUT_SESSION_CHANGED");
       setPendingAttempt(null);
@@ -163,9 +195,9 @@ export function CaptainPayoutCard() {
     try {
       const raw = await SecureStore.getItemAsync(key);
       if (!hasCurrentPayoutSession(requestSession)) throw new Error("CAPTAIN_INTAKE_SESSION_CHANGED");
-      const stored = raw ? JSON.parse(raw) as PayoutAttempt : null;
+      const stored = parsePayoutAttempt(raw);
       if (pendingIntakeAttempt
-        ? !stored || stored.idempotencyKey !== pendingIntakeAttempt.idempotencyKey || stored.correlationID !== pendingIntakeAttempt.correlationID || stored.mode !== pendingIntakeAttempt.mode || stored.amountMinor !== pendingIntakeAttempt.amountMinor
+        ? !samePayoutAttempt(stored, pendingIntakeAttempt)
         : Boolean(stored)) throw new Error("CAPTAIN_INTAKE_STORED_ATTEMPT_CHANGED");
       const saved = pendingIntakeAttempt ?? { mode: effectiveMode, ...(parsed === undefined ? {} : { amountMinor: parsed }), idempotencyKey: `captain_intake_${Crypto.randomUUID()}`, correlationID: `captain_intake_corr_${Crypto.randomUUID()}` };
       if (!hasCurrentPayoutSession(requestSession)) throw new Error("CAPTAIN_INTAKE_SESSION_CHANGED");
@@ -185,9 +217,12 @@ export function CaptainPayoutCard() {
         throw new Error("CAPTAIN_INTAKE_SESSION_CHANGED");
       }
       if (readback?.status !== "REQUESTED" || readback.resolvedAmountMinor !== created.intake.resolvedAmountMinor) throw new Error("SETTLEMENT_INTAKE_READBACK_MISMATCH");
-      setIntake(readback);
+      const beforeClear = parsePayoutAttempt(await SecureStore.getItemAsync(key));
+      if (!hasCurrentPayoutSession(requestSession)) throw new Error("CAPTAIN_INTAKE_SESSION_CHANGED");
+      if (!samePayoutAttempt(beforeClear, saved)) throw new Error("CAPTAIN_INTAKE_STORED_ATTEMPT_CHANGED");
       await SecureStore.deleteItemAsync(key);
       if (!hasCurrentPayoutSession(requestSession)) throw new Error("CAPTAIN_INTAKE_SESSION_CHANGED");
+      setIntake(readback);
       setPendingIntakeAttempt(null);
       setNotice("وصل طلب سحب الأرباح إلى المالية.");
       setAmount("");
