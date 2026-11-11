@@ -81,8 +81,12 @@ async function main() {
     assert.equal(destination.searchParams.get("productId"), selectedOffer.productId, "OPENED_WRONG_PRODUCT");
     await page.locator('[aria-label^="كتالوج "]').first()
       .waitFor({ state: "visible", timeout: 16000 });
-    await page.getByRole("button", { name: "عرض تفاصيل " + productName, exact: true }).first()
-      .waitFor({ state: "visible", timeout: 16000 });
+    // The web Store defaults to grid cards ("تكبير صورة"), while the
+    // accessible list layout exposes "عرض تفاصيل". Both are valid product
+    // entrypoints; never require one presentation mode as a data gate.
+    await page.getByRole("button", { name: "تكبير صورة " + productName, exact: true })
+      .or(page.getByRole("button", { name: "عرض تفاصيل " + productName, exact: true }))
+      .first().waitFor({ state: "visible", timeout: 16000 });
     for (const width of [390, 1366]) {
       await page.setViewportSize({ width, height: 844 });
       assert.equal(await page.evaluate(() =>
