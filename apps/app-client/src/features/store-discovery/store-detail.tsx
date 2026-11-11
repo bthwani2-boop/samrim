@@ -6,7 +6,7 @@ import * as ExpoLinking from "expo-linking";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Alert, FlatList, Platform, Pressable, ScrollView, type ScrollViewInstance, Text, useWindowDimensions, View, type ViewInstance } from "react-native";
+import { Alert, FlatList, Platform, Pressable, ScrollView, Text, useWindowDimensions, View, type ViewInstance } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -16,9 +16,9 @@ import { subscribeClientCartActorChanges } from "../cart-checkout/cart-session-s
 import { readSavedFulfillmentMode, saveFulfillmentMode } from "../cart-checkout/fulfillment-choice";
 import { useServiceCityScope } from "../service-city/service-city-scope";
 import { ClientShareSheet, type ClientShareTarget } from "../sharing/client-share-sheet";
-import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
 import { PromotionCard } from "./promotion-card";
 import { summarizeStoreAvailability } from "./store-availability-summary";
+import { StoreBannerCarousel } from "./store-banner-carousel";
 import type { StoreCatalogRow } from "./store-catalog-model";
 import { buildCatalogRows, buildDisplayCatalogRows, categoryTrail, dshMutationErrorMessage, filterCatalogToProduct, formatQuantity, isQuantityAllowed, mergeCatalog, validateModifierSelection } from "./store-catalog-model";
 import { createStyles } from "./store-detail-styles";
@@ -34,8 +34,6 @@ type DetailState =
   | { kind: "ready"; store: PublicStoreView; catalog: PublicCatalogResponse }
   | { kind: "error" }
   | { kind: "unavailable" };
-
-type StoreBannerItem = Readonly<{ key: string; content: PublicDiscoveryContentView }>;
 
 type CatalogSnapshot = { catalog: PublicCatalogResponse; categoryID: string | null; sectionID: string | null; query: string; productID: string };
 
@@ -108,10 +106,6 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   // A later failed revalidation must not suppress an older successful retry.
   // Only an already-applied newer success may supersede an earlier response.
   const bannerAppliedRequestID = useRef(0);
-  const [bannerIndex, setBannerIndex] = useState(0);
-  const [bannerPaused, setBannerPaused] = useState(false);
-  const [reduceMotion, setReduceMotion] = useState(false);
-  const bannerRef = useRef<ScrollViewInstance | null>(null);
   const { width: windowWidth } = useWindowDimensions();
   const desktopStorefront = Platform.OS === "web" && windowWidth >= 1024;
   const storeHeroHeight = desktopStorefront ? 196 : Platform.OS === "web" ? 214 : 244;
@@ -180,9 +174,6 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const fulfillmentModes = useMemo(() => state.kind === "ready" ? availableCustomerFulfillmentModes(state.store.fulfillmentModes) : [], [state]);
   const mutationBusy = Boolean(busyOfferId);
   // This surface displays only Partner-authored Store banners approved by DSH.
-  const bannerItems: StoreBannerItem[] = marketingContents.filter((content) => content.kind === "BANNER" && content.mediaKind === "image" && !!content.mediaUri).map((content) => ({ key: content.id, content }));
-  const bannerWidth = Math.max(1, windowWidth - spacing[3] * 2);
-  const bannerStep = bannerWidth;
 
 
   const load = useCallback(async () => {
@@ -216,9 +207,6 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     ++bannerRequestID.current;
     setMarketingContents([]);
     setBannerError(false);
-    setBannerIndex(0);
-    setBannerPaused(false);
-    bannerRef.current?.scrollTo({ x: 0, animated: false });
     setPromotionLoading(true);
     setPromotionError(false);
     setSelectedFulfillmentMode(null);
@@ -464,31 +452,6 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     });
     return () => { active = false; };
   }, [storeId, selectedCityID, fulfillmentModes, state.kind]);
-
-  useEffect(() => {
-    if (bannerPaused || reduceMotion || bannerItems.length < 2) return;
-    const timer = setInterval(() => {
-      setBannerIndex((current) => {
-        const next = (current + 1) % bannerItems.length;
-        bannerRef.current?.scrollTo({ x: (Platform.OS === "web" ? -1 : 1) * next * bannerStep, animated: true });
-        return next;
-      });
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [bannerItems.length, bannerPaused, reduceMotion, bannerStep]);
-
-  const visibleContentID = bannerItems[bannerIndex]?.content.id ?? "";
-  useEffect(() => {
-    if (bannerIndex >= bannerItems.length) setBannerIndex(0);
-    if (visibleContentID) void recordDiscoveryImpression(visibleContentID);
-  }, [bannerIndex, bannerItems.length, visibleContentID]);
-
-  useEffect(() => {
-    let active = true;
-    void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => { if (active) setReduceMotion(enabled); });
-    const subscription = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
-    return () => { active = false; subscription.remove(); };
-  }, []);
 
   if (state.kind === "loading") {
     return <View style={styles.state} accessibilityLabel="جارٍ تجهيز المتجر"><BthwaniSkeleton width="30%" height={28} /><BthwaniSkeleton height={92} /><BthwaniSkeleton height={160} /><BthwaniSkeleton height={160} /></View>;
@@ -991,35 +954,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       ) : null}
 
           {bannerError ? <View style={styles.promotionNotice}><Text accessibilityRole="alert" style={styles.validationError}>تعذر تحديث بنرات هذا المتجر، ويمكنك متابعة التسوق.</Text><BthwaniButton label="إعادة قراءة البنرات" onPress={() => void retryBanners()} variant="secondary" /></View> : null}
-          {bannerItems.length > 0 ? <View accessibilityLabel="بنرات المتجر" style={styles.bannerBlock}>
-            <ScrollView
-              ref={bannerRef}
-              horizontal
-              snapToInterval={bannerStep}
-              decelerationRate="fast"
-              onTouchStart={() => setBannerPaused(true)}
-              onTouchEnd={() => setBannerPaused(false)}
-              onMomentumScrollEnd={(event) => { setBannerIndex(Math.max(0, Math.min(bannerItems.length - 1, Math.round(Math.abs(event.nativeEvent.contentOffset.x) / bannerStep)))); setBannerPaused(false); }}
-              showsHorizontalScrollIndicator={false}
-            >
-              {bannerItems.map(({ content }) => <Pressable
-                key={content.id}
-                accessibilityRole="button"
-                accessibilityLabel={"عرض بنر المتجر: " + content.titleAr}
-                onPress={() => { void recordDiscoveryClick(content.id); router.push(("/discovery-content/" + encodeURIComponent(content.id)) as Href); }}
-                style={[styles.storeBannerSlide, { width: bannerWidth }]}
-              >
-                <ExpoImage cachePolicy="disk" accessibilityLabel={"صورة بنر " + content.titleAr} source={{ uri: content.mediaUri }} contentFit="cover" style={styles.storeBannerImage} />
-                <View style={styles.storeBannerCaption}>
-                  <Text style={styles.storeBannerTitle} numberOfLines={2}>{content.titleAr}</Text>
-                  {content.bodyAr ? <Text style={styles.storeBannerSubtitle} numberOfLines={1}>{content.bodyAr}</Text> : null}
-                </View>
-              </Pressable>)}
-            </ScrollView>
-            {bannerItems.length > 1 ? <View style={styles.storeBannerPagination} accessibilityLabel="مؤشر بنرات المتجر">
-              {bannerItems.map((item, index) => <View key={item.key} style={[styles.storeBannerDot, index === bannerIndex && styles.storeBannerDotActive]} />)}
-            </View> : null}
-          </View> : null}
+          <StoreBannerCarousel key={`${storeId}:${selectedCityID}`} contents={marketingContents} />
 
           {promotionError ? <View style={styles.promotionNotice}><Text accessibilityRole="alert" style={styles.validationError}>تعذر قراءة عروض هذا المتجر؛ يمكنك متابعة الطلب من دونها.</Text><BthwaniButton label="إعادة قراءة العروض" onPress={() => void retryPromotions()} variant="secondary" /></View> : null}
           {!promotionLoading && !promotionError && remainingPromotions.length > 0 ? <>
