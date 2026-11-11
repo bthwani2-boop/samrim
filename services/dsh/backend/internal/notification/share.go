@@ -58,19 +58,9 @@ func (s *Service) SendClientShare(ctx context.Context, token string, request Cli
 	if err != nil {
 		return postgres.ErrClientShareInvalid
 	}
-	exists, err := postgres.ClientShareExists(ctx, s.db, request.ContentKind, request.ContentID)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		return postgres.ErrClientShareInvalid
-	}
 	recipientID, err := s.identity.ResolveClientShareRecipient(ctx, phone)
 	if err != nil {
 		return err
-	}
-	if recipientID == "" || recipientID == actorID {
-		return nil
 	}
 	return postgres.SendClientShare(ctx, s.db, actorID, recipientID, phone, request.ContentKind, request.ContentID, request.MessageCode, idem)
 }

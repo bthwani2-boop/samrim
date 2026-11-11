@@ -40,51 +40,55 @@ func clientShareHash(kind, id, messageCode, recipientPhone string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func ClientShareExists(ctx context.Context, db *sql.DB, kind, resourceID string) (bool, error) {
-	var q string
-	switch kind {
-	case "STORE":
-		q = `SELECT EXISTS(SELECT 1 FROM dsh.stores WHERE id=$1 AND relation_model='BTHWANI_PARTNER' AND publication_state='published' AND deleted_at IS NULL)`
-	case "OFFER":
-		q = `SELECT EXISTS(SELECT 1 FROM dsh.catalog_store_offers o JOIN dsh.stores s ON s.id=o.store_id WHERE o.id=$1 AND o.publication_state='published' AND o.availability=true AND s.publication_state='published' AND s.relation_model='BTHWANI_PARTNER' AND s.deleted_at IS NULL)`
-	case "PROMOTION":
-		q = `SELECT EXISTS(
-			SELECT 1 FROM dsh.commerce_promotions p
-			WHERE p.id=$1 AND p.state='PUBLISHED'
-			  AND p.starts_at<=clock_timestamp()
-			  AND (p.ends_at IS NULL OR p.ends_at>clock_timestamp())
+// A share receipt outlives the publication of its target. Resolve current
+// eligibility and display fields together when delivering or reading a share.
+const clientSharePublishedTargetSQL = `
+		WITH marketplace_stores AS NOT MATERIALIZED (
+			SELECT id,name FROM dsh.stores
+			WHERE relation_model='BTHWANI_PARTNER' AND publication_state='published' AND deleted_at IS NULL
+		)
+		SELECT store.name AS title,store.id AS store_id,''::text AS product_id
+		FROM marketplace_stores store
+		WHERE resource.kind='STORE' AND store.id=resource.id
+		UNION ALL
+		SELECT product.canonical_name,offer.store_id,product.id
+		FROM dsh.catalog_store_offers offer
+		JOIN dsh.catalog_customer_visible_offers visible ON visible.offer_id=offer.id
+		JOIN dsh.catalog_product_variants variant ON variant.id=offer.variant_id
+		JOIN dsh.catalog_products product ON product.id=variant.product_id
+		JOIN marketplace_stores store ON store.id=offer.store_id
+		WHERE resource.kind='OFFER' AND offer.id=resource.id
+		UNION ALL
+		SELECT p.name_ar,p.store_id,''
+		FROM dsh.commerce_promotions p
+		WHERE resource.kind='PROMOTION' AND p.id=resource.id AND p.state='PUBLISHED'
+			  AND p.starts_at<=statement_timestamp()
+			  AND (p.ends_at IS NULL OR p.ends_at>statement_timestamp())
 			  AND NOT EXISTS (
 			    SELECT 1 FROM dsh.marketing_campaign_promotion_links link
 			    JOIN dsh.marketing_campaigns campaign ON campaign.id=link.campaign_id
 			    WHERE link.promotion_id=p.id AND campaign.state<>'PUBLISHED'
 			  )
 			  AND (NULLIF(p.store_id,'') IS NULL OR EXISTS (
-			    SELECT 1 FROM dsh.stores store WHERE store.id=p.store_id
-			      AND store.relation_model='BTHWANI_PARTNER'
-			      AND store.publication_state='published' AND store.deleted_at IS NULL
+			    SELECT 1 FROM marketplace_stores store WHERE store.id=p.store_id
 			  ))
-		)`
-	case "CONTENT":
-		q = `SELECT EXISTS(
-			SELECT 1 FROM dsh.discovery_content c
-			WHERE c.id=$1 AND c.state='PUBLISHED'
-			  AND c.starts_at<=clock_timestamp()
-			  AND (c.ends_at IS NULL OR c.ends_at>clock_timestamp())
+		UNION ALL
+		SELECT c.title_ar,'',''
+		FROM dsh.discovery_content c
+		WHERE resource.kind='CONTENT' AND c.id=resource.id AND c.state='PUBLISHED'
+			  AND c.starts_at<=statement_timestamp()
+			  AND (c.ends_at IS NULL OR c.ends_at>statement_timestamp())
 			  AND NOT EXISTS (
 			    SELECT 1 FROM dsh.marketing_campaign_content_links link
 			    JOIN dsh.marketing_campaigns campaign ON campaign.id=link.campaign_id
 			    WHERE link.content_id=c.id AND campaign.state<>'PUBLISHED'
 			  )
 			  AND (NULLIF(c.source_store_id,'') IS NULL OR EXISTS (
-			    SELECT 1 FROM dsh.stores source_store
+			    SELECT 1 FROM marketplace_stores source_store
 			    WHERE source_store.id=c.source_store_id
-			      AND source_store.relation_model='BTHWANI_PARTNER'
-			      AND source_store.publication_state='published' AND source_store.deleted_at IS NULL
 			  ))
 			  AND (c.target_type<>'STORE' OR EXISTS (
-			    SELECT 1 FROM dsh.stores target_store WHERE target_store.id=c.target_id
-			      AND target_store.relation_model='BTHWANI_PARTNER'
-			      AND target_store.publication_state='published' AND target_store.deleted_at IS NULL
+			    SELECT 1 FROM marketplace_stores target_store WHERE target_store.id=c.target_id
 			      AND (c.source_store_id IS NULL OR target_store.id=c.source_store_id)
 			  ))
 			  AND (c.target_type<>'PROMOTION' OR EXISTS (
@@ -92,45 +96,44 @@ func ClientShareExists(ctx context.Context, db *sql.DB, kind, resourceID string)
 			    WHERE promotion.id=c.target_id AND promotion.state='PUBLISHED'
 			      AND (c.source_store_id IS NULL OR promotion.store_id=c.source_store_id)
 			      AND (NULLIF(promotion.store_id,'') IS NULL OR EXISTS (
-			        SELECT 1 FROM dsh.stores target_store WHERE target_store.id=promotion.store_id
-			          AND target_store.relation_model='BTHWANI_PARTNER'
-			          AND target_store.publication_state='published' AND target_store.deleted_at IS NULL
+			        SELECT 1 FROM marketplace_stores target_store WHERE target_store.id=promotion.store_id
 			      ))
 			  ))
 			  AND (c.target_type<>'PRODUCT' OR EXISTS (
 			    SELECT 1 FROM dsh.catalog_product_variants variant
 			    JOIN dsh.catalog_store_offers offer ON offer.variant_id=variant.id
-			    JOIN dsh.stores store ON store.id=offer.store_id
+			    JOIN marketplace_stores store ON store.id=offer.store_id
 			    JOIN dsh.catalog_customer_visible_offers visible ON visible.offer_id=offer.id
 			    WHERE variant.product_id=c.target_id
-			      AND store.relation_model='BTHWANI_PARTNER'
-			      AND store.publication_state='published' AND store.deleted_at IS NULL
 			      AND (c.source_store_id IS NULL OR store.id=c.source_store_id)
 			  ))
 			  AND (c.target_type<>'CATEGORY' OR EXISTS (
 			    SELECT 1 FROM dsh.catalog_product_categories category
 			    JOIN dsh.catalog_product_variants variant ON variant.product_id=category.product_id
 			    JOIN dsh.catalog_store_offers offer ON offer.variant_id=variant.id
-			    JOIN dsh.stores store ON store.id=offer.store_id
+			    JOIN marketplace_stores store ON store.id=offer.store_id
 			    JOIN dsh.catalog_customer_visible_offers visible ON visible.offer_id=offer.id
 			    WHERE category.category_id=c.target_id
-			      AND store.relation_model='BTHWANI_PARTNER'
-			      AND store.publication_state='published' AND store.deleted_at IS NULL
 			      AND (c.source_store_id IS NULL OR store.id=c.source_store_id)
 			  ))
-		)`
-	default:
-		return false, ErrClientShareInvalid
-	}
-	var exists bool
-	err := db.QueryRowContext(ctx, q, resourceID).Scan(&exists)
-	return exists, err
-}
+		`
+
+const saveClientShareSQL = `
+		WITH eligible AS (
+			SELECT resource.kind,resource.id
+			FROM (VALUES ($3::text,$4::text)) AS resource(kind,id)
+			WHERE EXISTS (` + clientSharePublishedTargetSQL + `)
+		), delivered AS (
+			INSERT INTO dsh.client_content_shares(sender_actor_id,recipient_actor_id,content_kind,content_id,message_code,idempotency_key,request_hash)
+			SELECT $1,$2,kind,id,$5,$6,$7 FROM eligible WHERE $8::boolean
+			RETURNING id
+		)
+		SELECT EXISTS(SELECT 1 FROM eligible), EXISTS(SELECT 1 FROM delivered)`
 
 // SendClientShare is sender-serialized and idempotent. The actor ID, content
 // existence and rate limits are server-enforced; the UI never writes share rows.
 func SendClientShare(ctx context.Context, db *sql.DB, senderID, recipientID, recipientPhone, kind, contentID, messageCode, idem string) error {
-	if db == nil || strings.TrimSpace(senderID) == "" || strings.TrimSpace(recipientID) == "" || senderID == recipientID || len(idem) < 8 || len(idem) > 128 || strings.TrimSpace(contentID) == "" || len(contentID) > 128 {
+	if db == nil || strings.TrimSpace(senderID) == "" || len(idem) < 8 || len(idem) > 128 || strings.TrimSpace(contentID) == "" || len(contentID) > 128 {
 		return ErrClientShareInvalid
 	}
 	hash := clientShareHash(kind, contentID, messageCode, recipientPhone)
@@ -153,44 +156,56 @@ func SendClientShare(ctx context.Context, db *sql.DB, senderID, recipientID, rec
 	if !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	var tooMany bool
-	err = tx.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM dsh.client_content_shares WHERE sender_actor_id=$1 AND created_at>clock_timestamp()-interval '1 hour') >= 20 OR (SELECT count(*) FROM dsh.client_content_shares WHERE sender_actor_id=$1 AND recipient_actor_id=$2 AND created_at>clock_timestamp()-interval '1 hour') >= 5`, senderID, recipientID).Scan(&tooMany)
-	if err != nil {
-		return err
+	knownRecipient := strings.TrimSpace(recipientID) != "" && senderID != recipientID
+	var tooMany, blocked bool
+	if knownRecipient {
+		err = tx.QueryRowContext(ctx, `SELECT
+			(SELECT count(*) FROM dsh.client_content_shares WHERE sender_actor_id=$1 AND created_at>clock_timestamp()-interval '1 hour') >= 20
+			OR (SELECT count(*) FROM dsh.client_content_shares WHERE sender_actor_id=$1 AND recipient_actor_id=$2 AND created_at>clock_timestamp()-interval '1 hour') >= 5,
+			EXISTS(SELECT 1 FROM dsh.client_share_blocks WHERE recipient_actor_id=$2 AND sender_actor_id=$1)`,
+			senderID, recipientID).Scan(&tooMany, &blocked)
+		if err != nil {
+			return err
+		}
+	}
+	// A missing, self or blocked recipient receives no row. The caller still
+	// observes the same target eligibility and generic success response.
+	deliver := knownRecipient && !blocked && !tooMany
+	var eligible, delivered bool
+	if err = tx.QueryRowContext(ctx, saveClientShareSQL, senderID, recipientID, kind, contentID, messageCode, idem, hash, deliver).Scan(&eligible, &delivered); err != nil {
+		return fmt.Errorf("save client share: %w", err)
+	}
+	if !eligible {
+		return ErrClientShareInvalid
 	}
 	if tooMany {
 		return ErrClientShareRateLimited
 	}
-	var blocked bool
-	if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM dsh.client_share_blocks WHERE recipient_actor_id=$1 AND sender_actor_id=$2)`, recipientID, senderID).Scan(&blocked); err != nil {
-		return err
-	}
-	if blocked {
-		return tx.Commit()
-	} // deliberately indistinguishable from accepted send
-	if _, err = tx.ExecContext(ctx, `INSERT INTO dsh.client_content_shares(sender_actor_id,recipient_actor_id,content_kind,content_id,message_code,idempotency_key,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7)`, senderID, recipientID, kind, contentID, messageCode, idem, hash); err != nil {
-		return fmt.Errorf("save client share: %w", err)
+	if delivered != deliver {
+		return errors.New("client share delivery did not match the eligible attempt")
 	}
 	return tx.Commit()
 }
+
+const listClientSharesSQL = `
+		SELECT resource.share_id,resource.sender_actor_id,resource.kind,resource.id,
+		       COALESCE(target.title,''),COALESCE(target.store_id,''),COALESCE(target.product_id,''),
+		       resource.message_code,resource.created_at,resource.read_at
+		FROM (
+			SELECT share.id AS share_id,share.sender_actor_id,share.content_kind AS kind,share.content_id AS id,
+			       share.message_code,share.created_at,share.read_at
+			FROM dsh.client_content_shares share
+			WHERE share.recipient_actor_id=$1 AND ($2::bigint=0 OR share.id<$2)
+			ORDER BY share.id DESC LIMIT $3
+		) resource
+		LEFT JOIN LATERAL (` + clientSharePublishedTargetSQL + `) target ON true
+		ORDER BY resource.share_id DESC`
 
 func ListClientShares(ctx context.Context, db *sql.DB, actorID string, before int64, limit int) (ClientSharePage, error) {
 	if db == nil || actorID == "" || before < 0 || limit < 1 || limit > 50 {
 		return ClientSharePage{}, ErrClientShareInvalid
 	}
-	rows, err := db.QueryContext(ctx, `SELECT share.id,share.sender_actor_id,share.content_kind,share.content_id,
-      COALESCE(store.name,product.canonical_name,promotion.name_ar,content.title_ar,''),
-      COALESCE(offer.store_id,promotion.store_id,CASE WHEN share.content_kind='STORE' THEN share.content_id END,''),
-      COALESCE(variant.product_id,''),share.message_code,share.created_at,share.read_at
-      FROM dsh.client_content_shares share
-      LEFT JOIN dsh.stores store ON share.content_kind='STORE' AND store.id=share.content_id
-      LEFT JOIN dsh.catalog_store_offers offer ON share.content_kind='OFFER' AND offer.id=share.content_id
-      LEFT JOIN dsh.catalog_product_variants variant ON variant.id=offer.variant_id
-      LEFT JOIN dsh.catalog_products product ON product.id=variant.product_id
-      LEFT JOIN dsh.commerce_promotions promotion ON share.content_kind='PROMOTION' AND promotion.id=share.content_id
-      LEFT JOIN dsh.discovery_content content ON share.content_kind='CONTENT' AND content.id=share.content_id
-      WHERE share.recipient_actor_id=$1 AND ($2::bigint=0 OR share.id<$2)
-      ORDER BY share.id DESC LIMIT $3`, actorID, before, limit+1)
+	rows, err := db.QueryContext(ctx, listClientSharesSQL, actorID, before, limit+1)
 	if err != nil {
 		return ClientSharePage{}, err
 	}

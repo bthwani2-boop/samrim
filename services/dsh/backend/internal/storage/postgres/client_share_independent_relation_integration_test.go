@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -108,11 +109,72 @@ func TestClientShareRejectsIndependentStorePromotionsAndContent(t *testing.T) {
 			{"CONTENT", "share-platform-info-content", true},
 		} {
 			t.Run(tc.kind+"-"+tc.id, func(t *testing.T) {
-				exists, err := postgres.ClientShareExists(ctx, db, tc.kind, tc.id)
-				if err != nil || exists != tc.allowed {
-					t.Fatalf("share eligibility kind=%s resource=%s got=%v want=%v err=%v", tc.kind, tc.id, exists, tc.allowed, err)
+				// No recipient means a generic acknowledgment with no delivery,
+				// but it still takes the same canonical target eligibility gate.
+				err := postgres.SendClientShare(ctx, db, "share-fixture-unregistered", "", "+967771234567", tc.kind, tc.id, "LOOK", "eligibility-check")
+				if (tc.allowed && err != nil) || (!tc.allowed && !errors.Is(err, postgres.ErrClientShareInvalid)) {
+					t.Fatalf("share eligibility kind=%s resource=%s allowed=%v err=%v", tc.kind, tc.id, tc.allowed, err)
 				}
 			})
+		}
+
+		const sender = "share-fixture-sender"
+		const recipient = "share-fixture-recipient"
+		const phone = "+967771234567"
+		const offerID = "share-market-store-offer"
+		const idempotencyKey = "visible-offer-share"
+		for _, target := range []string{"", sender} {
+			if err := postgres.SendClientShare(ctx, db, sender, target, phone, "OFFER", offerID, "LOOK", "unresolved-recipient"); err != nil {
+				t.Fatalf("non-delivering recipient must receive generic acknowledgment: %v", err)
+			}
+		}
+		if err := postgres.SendClientShare(ctx, db, sender, recipient, phone, "OFFER", offerID, "LOOK", idempotencyKey); err != nil {
+			t.Fatal(err)
+		}
+		visible, err := postgres.ListClientShares(ctx, db, recipient, 0, 50)
+		if err != nil || visible.UnreadCount != 1 || len(visible.Items) != 1 ||
+			visible.Items[0].ContentTitle != "منتج مشاركة" || visible.Items[0].StoreID != "share-market-store" ||
+			visible.Items[0].ProductID != "share-market-store-product" {
+			t.Fatalf("canonical visible offer was not readable in the recipient inbox: %+v, %v", visible, err)
+		}
+		if _, err := db.ExecContext(ctx, `UPDATE dsh.catalog_products SET active=false,canonical_name='Private replacement title'
+			WHERE id='share-market-store-product'`); err != nil {
+			t.Fatal(err)
+		}
+		withdrawn, err := postgres.ListClientShares(ctx, db, recipient, 0, 50)
+		if err != nil || withdrawn.UnreadCount != 1 || len(withdrawn.Items) != 1 ||
+			withdrawn.Items[0].ID != visible.Items[0].ID || withdrawn.Items[0].ContentID != offerID ||
+			withdrawn.Items[0].ContentTitle != "" || withdrawn.Items[0].StoreID != "" || withdrawn.Items[0].ProductID != "" {
+			t.Errorf("withdrawn offer must retain the receipt without private metadata: %+v, %v", withdrawn, err)
+		}
+		if err := postgres.SendClientShare(ctx, db, sender, recipient, phone, "OFFER", offerID, "LOOK", idempotencyKey); err != nil {
+			t.Errorf("exact receipt replay must survive withdrawal: %v", err)
+		}
+		if err := postgres.SendClientShare(ctx, db, sender, recipient, phone, "OFFER", offerID, "TRY", idempotencyKey); !errors.Is(err, postgres.ErrClientShareConflict) {
+			t.Errorf("reusing the receipt key with a different request must conflict: %v", err)
+		}
+		if err := postgres.SendClientShare(ctx, db, sender, recipient, phone, "OFFER", offerID, "LOOK", "new-withdrawn-share"); !errors.Is(err, postgres.ErrClientShareInvalid) {
+			t.Errorf("writer must refuse a fresh share for the withdrawn offer: %v", err)
+		}
+		if err := postgres.MarkClientShareRead(ctx, db, sender, visible.Items[0].ID); !errors.Is(err, postgres.ErrClientShareNotFound) {
+			t.Errorf("sender must not change recipient receipt: %v", err)
+		}
+		if err := postgres.MarkClientShareRead(ctx, db, recipient, visible.Items[0].ID); err != nil {
+			t.Errorf("recipient could not read their historical receipt: %v", err)
+		}
+		if err := postgres.BlockClientShareSender(ctx, db, recipient, sender, true); err != nil {
+			t.Fatal(err)
+		}
+		if err := postgres.SendClientShare(ctx, db, sender, recipient, phone, "STORE", "share-market-store", "LOOK", "blocked-share"); err != nil {
+			t.Errorf("blocked recipient must receive generic acknowledgment: %v", err)
+		}
+		other, err := postgres.ListClientShares(ctx, db, sender, 0, 50)
+		if err != nil || other.UnreadCount != 0 || len(other.Items) != 0 {
+			t.Errorf("sender must not read recipient inbox or receive self shares: %+v, %v", other, err)
+		}
+		final, err := postgres.ListClientShares(ctx, db, recipient, 0, 50)
+		if err != nil || final.UnreadCount != 0 || len(final.Items) != 1 || final.Items[0].ReadAt == nil {
+			t.Errorf("receipt readback must show exactly one read share: %+v, %v", final, err)
 		}
 	})
 }
