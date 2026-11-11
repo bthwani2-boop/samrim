@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { isClientOrderScopeCurrent } from "./order-session-scope.ts";
+import { isClientOrderScopeCurrent } from "../access/client-session-scope.ts";
 
 const source = readFileSync(new URL("./order-detail.tsx", import.meta.url), "utf8");
 

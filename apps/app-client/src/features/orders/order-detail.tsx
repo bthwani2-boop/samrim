@@ -9,10 +9,11 @@ import { Alert, AppState, Linking, Pressable, StyleSheet, Text, TextInput, View 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { createClientDsh } from "../../bootstrap/dsh";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
+import { clientOrderAuthenticationReturnPath } from "../access/client-auth-return-path";
+import { isClientOrderScopeCurrent } from "../access/client-session-scope";
 import { PremiumOrderProgress, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
 import { OrderConversation } from "./order-conversation";
 import { orderJourneyPresentation } from "./order-journey";
-import { clientOrderAuthenticationReturnPath, isClientOrderScopeCurrent } from "./order-session-scope";
 
 function hasCurrentClientActor(actorID: string): boolean {
   const session = currentIdentityState();

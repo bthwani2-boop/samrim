@@ -7,3 +7,20 @@ export function clientSessionKey(
   const sessionId = state.identity.sessionId?.trim();
   return subject && sessionId ? JSON.stringify([subject, sessionId]) : "";
 }
+
+/** A cached list belongs only to the actor who loaded it (not authorization to mutate). */
+export function isClientActorScopeCurrent(loadedActorID: string, activeActorID: string): boolean {
+  return loadedActorID.trim().length > 0 && loadedActorID === activeActorID;
+}
+
+/** Reject an old Order response after the actor or selected Order changes. */
+export function isClientOrderScopeCurrent(
+  loadedActorID: string,
+  loadedOrderID: string,
+  activeActorID: string,
+  requestedOrderID: string,
+): boolean {
+  return isClientActorScopeCurrent(loadedActorID, activeActorID)
+    && loadedOrderID.length > 0
+    && loadedOrderID === requestedOrderID;
+}

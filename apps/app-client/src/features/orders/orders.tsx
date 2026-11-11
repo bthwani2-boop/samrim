@@ -1,16 +1,15 @@
 import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme, useConversationUnreadCounts } from "@bthwani/design-system/native";
-import { type Cart, type ClientOrderHistoryStatus, formatMoney, formatOrderDate, fulfillmentModeLabel, type FulfillmentMode, type Order, type PublicStoreView } from "@bthwani/dsh";
+import { type Cart, type ClientOrderHistoryStatus, type FulfillmentMode, formatMoney, formatOrderDate, fulfillmentModeLabel, type Order, type PublicStoreView } from "@bthwani/dsh";
 import { type Href, useFocusEffect, useIsFocused, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Keyboard, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { createClientDsh } from "../../bootstrap/dsh";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
-import { clientSessionKey } from "../access/client-session-scope";
+import { clientSessionKey, isClientActorScopeCurrent } from "../access/client-session-scope";
 import { PremiumOrderProgress, PremiumStoreIdentity, premiumColors } from "../order-experience/premium-order-ui";
 import { orderJourneyPresentation } from "./order-journey";
-import { isClientActorScopeCurrent } from "./order-session-scope";
 import { acquireRepeatOrder, createRepeatOrderGate, invalidateRepeatOrderForSessionChange, ownsRepeatOrder, releaseRepeatOrder } from "./repeat-order-gate";
 
 const statusOptions = [

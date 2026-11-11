@@ -40,3 +40,9 @@ export function clientWalletCashInAuthReturnPath(
   const query = [amount ? `amountMinor=${amount}` : "", rawOrigin === "1" ? "fromCheckout=1" : ""].filter(Boolean).join("&");
   return `/wallet-cash-in${query ? "?" + query : ""}`;
 }
+
+/** Return to the requested Order after sign-in without trusting a raw route. */
+export function clientOrderAuthenticationReturnPath(orderID: string): string {
+  const normalizedOrderID = orderID.trim();
+  return normalizedOrderID ? `/orders/${encodeURIComponent(normalizedOrderID)}` : "/orders";
+}
