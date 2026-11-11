@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 )
 
 func TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay(t *testing.T) {
@@ -128,6 +128,24 @@ func TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay(t *testing.T) 
 			if err := db.QueryRowContext(ctx, countQuery.query, checkoutID).Scan(&count); err != nil || count != countQuery.expected {
 				t.Fatalf("duplicate checkout persisted count=%d want=%d err=%v", count, countQuery.expected, err)
 			}
+		}
+		// Each count separately fits in child_count, but both together cannot exceed it.
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.commerce_multi_store_checkouts SET successful_child_count=child_count, failed_child_count=1 WHERE id=$1", checkoutID); err == nil {
+			t.Fatal("overcounted multi-Store checkout was accepted by PostgreSQL")
+		} else {
+			var pgErr *pq.Error
+			if !errors.As(err, &pgErr) || pgErr.Code != "23514" || pgErr.Constraint != "commerce_multi_store_checkouts_total_count_chk" {
+				t.Fatalf("overcounted checkout rejection = %v; want named SQL CHECK violation", err)
+			}
+		}
+		var successfulCount, failedCount int
+		if err := db.QueryRowContext(ctx, "SELECT successful_child_count,failed_child_count FROM dsh.commerce_multi_store_checkouts WHERE id=$1", checkoutID).Scan(&successfulCount, &failedCount); err != nil || successfulCount != 0 || failedCount != 0 {
+			t.Fatalf("invalid count update changed persistent parent: success=%d failed=%d err=%v", successfulCount, failedCount, err)
+		}
+		var canonicalIndexExists, duplicateIndexExists bool
+		if err := db.QueryRowContext(ctx, `SELECT to_regclass('dsh.commerce_multi_store_checkout_children_index_uq') IS NOT NULL,
+			to_regclass('dsh.commerce_multi_store_checkout_children_checkout_idx') IS NOT NULL`).Scan(&canonicalIndexExists, &duplicateIndexExists); err != nil || !canonicalIndexExists || duplicateIndexExists {
+			t.Fatalf("checkout child indexes: unique=%t redundant=%t err=%v", canonicalIndexExists, duplicateIndexExists, err)
 		}
 		replay, replayed, err := postgres.CreateMultiStoreCheckout(ctx, db, input, createKey, requestHash)
 		if err != nil || !replayed || replay.ID != checkoutID || len(replay.Children) != 2 {
