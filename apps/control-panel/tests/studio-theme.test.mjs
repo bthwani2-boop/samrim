@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { register } from "node:module";
-import { test } from "node:test";
 import path from "node:path";
+import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 
 register(pathToFileURL(path.resolve(import.meta.dirname, "../../../packages/design-system/tools/ts-resolver.mjs")).href, import.meta.url);
@@ -58,10 +58,14 @@ test("theme publisher is operator-only and cannot use arbitrary CSS as a publica
   const root = path.resolve(import.meta.dirname, "..");
   const route = readFileSync(path.join(root, "app/api/marketing/studio-theme/route.ts"), "utf8");
   const ui = readFileSync(path.join(root, "src/features/studio/published-theme-settings.tsx"), "utf8");
-  assert.match(route, /verifySameOrigin\(request\)/);
-  assert.match(route, /operatorWorkspacePermissionDenied\(identity, "marketing"\)/);
-  assert.match(route, /idempotencyKey/);
-  assert.match(route, /expectedVersion/);
+  assert.match(route, /readStudioPublication\("studio-theme", request\)/);
+  assert.match(route, /writeStudioPublication\("studio-theme", request\)/);
+  assert.doesNotMatch(route, /readOperatorSession|readBoundedJson|verifySameOrigin/, "route must not clone publication authority");
+  const owner = readFileSync(path.join(root, "src/server/studio-publication-route.ts"), "utf8");
+  assert.match(owner, /verifySameOrigin\(request\)/);
+  assert.match(owner, /operatorWorkspacePermissionDenied\(identity, "marketing"\)/);
+  assert.match(owner, /idempotencyKey/);
+  assert.match(owner, /expectedVersion/);
   assert.match(ui, /parseStudioPalette\(shared\.document\.palette\)/);
   assert.match(ui, /ACTIVATE_DRAFT/);
   assert.match(ui, /RESTORE_DEFAULTS/);

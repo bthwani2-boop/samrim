@@ -13,13 +13,18 @@ const goPublic = readFileSync(path.join(repo, "services/dsh/backend/internal/tra
 const goDB = readFileSync(path.join(repo, "services/dsh/backend/internal/storage/postgres/marketing_studio_layout.go"), "utf8");
 
 test("operator layout mutations require identity marketing authorization and CSRF", () => {
-  assert.match(route, /readOperatorSession\(/);
-  assert.match(route, /operatorWorkspacePermissionDenied\(identity, "marketing"\)/);
-  assert.match(route, /verifySameOrigin\(request\)/);
-  assert.match(route, /X-Expected-Version/);
-  assert.match(route, /Idempotency-Key/);
-  assert.match(route, /expectedDraftVersion/);
-  assert.match(route, /targetPublicationVersion/);
+  assert.match(route, /readStudioPublication\("studio-layout", request\)/);
+  assert.match(route, /writeStudioPublication\("studio-layout", request\)/);
+  assert.doesNotMatch(route, /readOperatorSession|readBoundedJson|verifySameOrigin/, "route must not clone publication authority");
+  const owner = readFileSync(path.join(root, "src/server/studio-publication-route.ts"), "utf8");
+  assert.match(owner, /readOperatorSession\(/);
+  assert.match(owner, /operatorWorkspacePermissionDenied\(identity, "marketing"\)/);
+  assert.match(owner, /verifySameOrigin\(request\)/);
+  assert.match(owner, /readBoundedJson\(request, 4096\)/);
+  assert.match(owner, /X-Expected-Version/);
+  assert.match(owner, /Idempotency-Key/);
+  assert.match(owner, /expectedDraftVersion/);
+  assert.match(owner, /targetPublicationVersion/);
   assert.match(goPublic, /s\.operatorAuthorized\(w, r\)/);
   assert.match(goDB, /FOR UPDATE/);
   assert.match(goDB, /marketing_studio_layout_events/);
