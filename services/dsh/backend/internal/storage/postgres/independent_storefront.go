@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 )
 
 // Independent Store public readers are served only after DSH publication,
@@ -207,6 +209,9 @@ func readPublishedIndependentStoreWithQueryer(ctx context.Context, db independen
 	if err != nil {
 		return IndependentPublishedStore{}, fmt.Errorf("read independent public Store: %w", err)
 	}
+	if !media.IsPublicHTTPSURI(result.ProfileImageURI) || !media.IsPublicHTTPSURI(result.CoverImageURI) {
+		return IndependentPublishedStore{}, ErrIndependentStorefrontNotPublished
+	}
 	// Both rights-attested media records and publication/policy facts were
 	// projected by the same SQL statement under one MVCC read snapshot.
 	if !whatsappEnabled {
@@ -233,7 +238,10 @@ func independentCatalogCursorScope(storeID, termsVersion, cityID, categoryID, pr
 func listPublishedIndependentOffersInternal(ctx context.Context, db *sql.DB, storeID, approvedLegalTermsVersion, expectedCityID, categoryID, productID, search string, limit int, rawCursor string) (CatalogStoreOfferPage, error) {
 	storeID = strings.TrimSpace(storeID)
 	categoryID, productID, search = strings.TrimSpace(categoryID), strings.TrimSpace(productID), strings.TrimSpace(search)
-	if db == nil || storeID == "" || len(storeID) > 128 || len(categoryID) > 128 || len(productID) > 128 ||
+	if db == nil {
+		return CatalogStoreOfferPage{}, ErrIndependentStorefrontNotPublished
+	}
+	if storeID == "" || len(storeID) > 128 || len(categoryID) > 128 || len(productID) > 128 ||
 		!utf8.ValidString(search) || utf8.RuneCountInString(search) > 160 || limit < 1 || limit > 100 || len(rawCursor) > 2048 {
 		return CatalogStoreOfferPage{}, ErrCatalogOfferInvalidCursor
 	}

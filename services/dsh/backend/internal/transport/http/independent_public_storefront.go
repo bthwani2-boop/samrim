@@ -3,14 +3,14 @@ package transporthttp
 import (
 	"database/sql"
 	"errors"
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
 
@@ -82,63 +82,21 @@ func (s *IndependentPublicStorefrontServer) publicScope(w http.ResponseWriter, r
 	return storeID, cityID, true
 }
 
-// Only rights-attested media with a publicly retrievable HTTPS URL can be
-// projected. Storage object keys and local/internal URLs never go public.
-func safeIndependentPublicMediaURI(raw string) bool {
-	if strings.TrimSpace(raw) != raw || raw == "" {
-		return false
-	}
-	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Scheme != "https" || parsed.Hostname() == "" ||
-		parsed.User != nil || parsed.Fragment != "" {
-		return false
-	}
-	host := strings.ToLower(parsed.Hostname())
-	if host == "localhost" || strings.HasSuffix(host, ".localhost") || strings.HasSuffix(host, ".local") ||
-		strings.HasSuffix(host, ".internal") || strings.HasSuffix(host, ".") ||
-		strings.Contains(host, "..") {
-		return false
-	}
-	// URL hostnames such as 127.1, 2130706433 or printer may be resolved
-	// by browsers as local addresses even though net.ParseIP rejects them.
-	ip := net.ParseIP(host)
-	if ip == nil {
-		lastLabel := host[strings.LastIndexByte(host, '.')+1:]
-		if !strings.Contains(host, ".") || strings.Trim(lastLabel, "0123456789") == "" {
-			return false
-		}
-	}
-	// A public image must not induce a browser to fetch a private-network
-	// address, even if its URI uses an HTTPS scheme.
-	if ip != nil && (!ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback()) {
-		return false
-	}
-	return true
-}
-
-func (s *IndependentPublicStorefrontServer) publishedStore(w http.ResponseWriter, r *http.Request, storeID, cityID string) (postgres.IndependentPublishedStore, bool) {
-	store, err := postgres.ReadPublishedIndependentStore(r.Context(), s.db, storeID, s.approvedTermsVersion)
-	switch {
-	case errors.Is(err, postgres.ErrIndependentStorefrontNotPublished):
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "storefront was not found")
-		return postgres.IndependentPublishedStore{}, false
-	case err != nil:
-		writeError(w, http.StatusServiceUnavailable, "DSH_STORAGE_UNAVAILABLE", "storefront is temporarily unavailable")
-		return postgres.IndependentPublishedStore{}, false
-	case store.ServiceCityID != cityID || !safeIndependentPublicMediaURI(store.ProfileImageURI) || !safeIndependentPublicMediaURI(store.CoverImageURI):
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "storefront was not found")
-		return postgres.IndependentPublishedStore{}, false
-	}
-	return store, true
-}
-
 func (s *IndependentPublicStorefrontServer) readStore(w http.ResponseWriter, r *http.Request) {
 	storeID, cityID, ok := s.publicScope(w, r)
 	if !ok {
 		return
 	}
-	store, ok := s.publishedStore(w, r, storeID, cityID)
-	if !ok {
+	store, err := postgres.ReadPublishedIndependentStore(r.Context(), s.db, storeID, s.approvedTermsVersion)
+	switch {
+	case errors.Is(err, postgres.ErrIndependentStorefrontNotPublished):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "storefront was not found")
+		return
+	case err != nil:
+		writeError(w, http.StatusServiceUnavailable, "DSH_STORAGE_UNAVAILABLE", "storefront is temporarily unavailable")
+		return
+	case store.ServiceCityID != cityID:
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "storefront was not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -171,9 +129,6 @@ func (s *IndependentPublicStorefrontServer) readCatalog(w http.ResponseWriter, r
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog pagination is invalid")
 		return
 	}
-	if _, ok := s.publishedStore(w, r, storeID, cityID); !ok {
-		return
-	}
 	page, err := postgres.ListPublishedIndependentOffersForCityFiltered(r.Context(), s.db, storeID, s.approvedTermsVersion, cityID, categoryID, productID, search, limit, cursor)
 	switch {
 	case errors.Is(err, postgres.ErrIndependentStorefrontNotPublished):
@@ -187,8 +142,8 @@ func (s *IndependentPublicStorefrontServer) readCatalog(w http.ResponseWriter, r
 		return
 	}
 	for _, offer := range page.Offers {
-		for _, media := range offer.Media {
-			if !safeIndependentPublicMediaURI(media.URI) {
+		for _, asset := range offer.Media {
+			if !media.IsPublicHTTPSURI(asset.URI) {
 				writeError(w, http.StatusNotFound, "NOT_FOUND", "catalog was not found")
 				return
 			}
@@ -204,9 +159,6 @@ func (s *IndependentPublicStorefrontServer) readBanners(w http.ResponseWriter, r
 	if !ok {
 		return
 	}
-	if _, ok = s.publishedStore(w, r, storeID, cityID); !ok {
-		return
-	}
 	items, err := postgres.ListPublishedIndependentStoreBanners(r.Context(), s.db, storeID, cityID, s.approvedTermsVersion)
 	switch {
 	case errors.Is(err, postgres.ErrIndependentStorefrontNotPublished):
@@ -218,7 +170,7 @@ func (s *IndependentPublicStorefrontServer) readBanners(w http.ResponseWriter, r
 	}
 	values := make([]contract.PublicDiscoveryContentView, 0, len(items))
 	for _, item := range items {
-		if !safeIndependentPublicMediaURI(item.MediaURI) ||
+		if !media.IsPublicHTTPSURI(item.MediaURI) ||
 			item.TargetType != "STORE" || item.TargetID != storeID {
 			writeError(w, http.StatusNotFound, "NOT_FOUND", "banners were not found")
 			return

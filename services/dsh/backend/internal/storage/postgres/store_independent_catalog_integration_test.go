@@ -3,13 +3,18 @@ package postgres_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
+	transporthttp "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/transport/http"
 	_ "github.com/lib/pq"
 )
 
@@ -121,6 +126,86 @@ func TestIndependentStoreCanonicalCatalogAndOwnerScope(t *testing.T) {
 				t.Fatalf("foreign Store leaked through canonical owned Store read: %+v err=%v", input, err)
 			}
 		}
+		t.Run("public reads share the current Store media gate", func(t *testing.T) {
+			// This disposable fixture represents reviewed publication. It does not
+			// exercise the separate legal approval or publishing workflow.
+			for _, statement := range []string{
+				`INSERT INTO dsh.service_cities(id,display_name_ar) VALUES('catalog-test-city','Catalog test city')`,
+				`UPDATE dsh.stores SET service_city_id='catalog-test-city' WHERE id='independent-catalog-store'`,
+				`INSERT INTO dsh.independent_store_publications(store_id,state,review_state,terms_version,terms_accepted_by_actor_id,
+					terms_accepted_at,published_at) VALUES('independent-catalog-store','PUBLISHED_INDEPENDENT','PASSED',
+					'test-terms','independent-owner',now(),now())`,
+				`INSERT INTO dsh.independent_store_customer_policies(store_id,policy_version,cancellation_terms,returns_terms,
+					fulfillment_terms,collection_terms,authored_by_actor_id,review_state,reviewed_by_actor_id,published_at)
+					VALUES('independent-catalog-store','test-policy','Cancellation','Returns','Fulfillment','Collection',
+					'independent-owner','PASSED','test-reviewer',now())`,
+				`INSERT INTO dsh.store_public_contacts(store_id,email,updated_by_actor_id)
+					VALUES('independent-catalog-store','merchant@example.test','independent-owner')`,
+				`INSERT INTO dsh.store_profile_media_assets(id,store_id,idempotency_key,request_hash,expected_case_version,
+					object_key,uri,content_sha256,content_type,byte_size,media_role,state,attached_at,
+					creator,source_description,rights_statement,rights_attested_by_actor_id,rights_attested_at)
+					SELECT role,'independent-catalog-store',role,repeat('a',64),1,role,'https://cdn.example.test/'||role||'.jpg',
+					repeat('a',64),'image/jpeg',1,role,'active',now(),'Test Creator','Test image','Test rights','independent-owner',now()
+					FROM (VALUES ('primary'),('cover')) AS media(role)`,
+			} {
+				if _, err := db.ExecContext(ctx, statement); err != nil {
+					t.Fatal(err)
+				}
+			}
+			update := postgres.CatalogOfferUpdateInput{
+				PriceMinor: 750, Availability: true, PublicationState: "published",
+				QuantityPolicy: "DISCRETE", QuantityMinBaseUnits: 1, QuantityMaxBaseUnits: 5, QuantityStepBaseUnits: 1,
+				PricingBasis: "PER_UNIT", PricingUnitBaseUnits: 1, InventoryPolicy: "AVAILABILITY_ONLY",
+			}
+			if _, err := postgres.UpdateCatalogOffer(ctx, db, offer.Offer.ID, update, offer.Offer.Version,
+				"catalog-offer-publish", postgres.HashCatalogOfferUpdateRequest(offer.Offer.ID, update, offer.Offer.Version),
+				"catalog-operator", "catalog-publish-correlation"); err != nil {
+				t.Fatal(err)
+			}
+
+			mux := http.NewServeMux()
+			transporthttp.NewIndependentPublicStorefront(db, true, "test-terms", "shop.example.test").Register(mux)
+			storeURL := "https://shop.example.test/dsh/public/independent-stores/" + store.ID
+			assertPublicStatus := func(cityID string, want int) {
+				t.Helper()
+				for _, suffix := range []string{"", "/catalog", "/banners"} {
+					requestURL := storeURL + suffix + "?serviceCityId=" + cityID
+					response := httptest.NewRecorder()
+					mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, requestURL, nil))
+					if response.Code != want {
+						t.Errorf("%s returned %d, want %d: %s", requestURL, response.Code, want, response.Body)
+					}
+				}
+			}
+			assertPublicStatus("catalog-test-city", http.StatusOK)
+			assertPublicStatus("another-city", http.StatusNotFound)
+			for _, search := range []struct {
+				text string
+				want int
+			}{{"Default", 1}, {"' OR 1=1 --", 0}} {
+				response := httptest.NewRecorder()
+				requestURL := storeURL + "/catalog?serviceCityId=catalog-test-city&q=" + url.QueryEscape(search.text)
+				mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, requestURL, nil))
+				var page postgres.IndependentPublicOfferPage
+				if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil || response.Code != http.StatusOK {
+					t.Fatalf("catalog search %q returned %d: %s (decode: %v)", search.text, response.Code, response.Body, err)
+				}
+				if len(page.Offers) != search.want || (search.want == 1 && (page.Offers[0].OfferID != offer.Offer.ID || page.Offers[0].PriceMinor != 750)) {
+					t.Errorf("catalog search %q returned unexpected offers: %+v", search.text, page.Offers)
+				}
+				if len(page.Categories) != 1 || page.Categories[0].ID != "independent-catalog-category" {
+					t.Errorf("catalog search %q lost the published category: %+v", search.text, page.Categories)
+				}
+			}
+			if _, err := db.ExecContext(ctx, `UPDATE dsh.store_profile_media_assets SET uri='https://0x7f.0x0.0x0.0x1/private.jpg'
+				WHERE store_id=$1 AND media_role='cover'`, store.ID); err != nil {
+				t.Fatal(err)
+			}
+			assertPublicStatus("catalog-test-city", http.StatusNotFound)
+			if _, err := postgres.ReadPublishedIndependentStore(ctx, db, store.ID, "test-terms"); !errors.Is(err, postgres.ErrIndependentStorefrontNotPublished) {
+				t.Errorf("canonical Store reader admitted an unsafe cover: %v", err)
+			}
+		})
 		if _, _, err := postgres.SetStoreTrashed(ctx, db, store.ID, "catalog-operator", "archived fixture store", "trash", "catalog-archive-key", store.Version); err != nil {
 			t.Fatal(err)
 		}

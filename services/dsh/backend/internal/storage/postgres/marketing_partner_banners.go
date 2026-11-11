@@ -215,7 +215,7 @@ func ListPublishedStoreBanners(ctx context.Context, db *sql.DB, storeID, service
 }
 
 func ListPublishedIndependentStoreBanners(ctx context.Context, db *sql.DB, storeID, serviceCityID, approvedTermsVersion string) ([]DiscoveryContentRecord, error) {
-	if strings.TrimSpace(approvedTermsVersion) == "" {
+	if db == nil || strings.TrimSpace(approvedTermsVersion) == "" {
 		return nil, ErrIndependentStorefrontNotPublished
 	}
 	return listPublishedStoreBannersForChannel(ctx, db, storeID, serviceCityID, approvedTermsVersion)
