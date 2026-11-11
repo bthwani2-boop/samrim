@@ -38,7 +38,16 @@ const nextConfig = {
       destination: "/finance/partner-commission-receivables",
       permanent: false,
     };
-    const legacyRoutes = [legacyStoreRegistry, legacyPartnerEarnings];
+    // These are navigation aliases, not independent workspace owners.
+    // Next preserves incoming query parameters (including store inspection
+    // and finance batch selection) while the destination enforces access.
+    const legacyRoutes = [
+      legacyStoreRegistry,
+      legacyPartnerEarnings,
+      { source: "/catalog-activity", destination: "/catalog?catalogView=activity", permanent: false },
+      { source: "/partners/stores", destination: "/partners?tab=directory", permanent: false },
+      { source: "/finance/beneficiary-settlement", destination: "/finance/beneficiary-settlement/partners", permanent: false },
+    ];
     // Canonicalize browser navigation in local development only.
     const canonicalOrigin = process.env.CONTROL_PANEL_PUBLIC_ORIGIN?.trim();
     if (process.env.NODE_ENV !== "development" || !/^http:\/\/localhost:\d+$/.test(canonicalOrigin ?? "")) return legacyRoutes;
