@@ -2,7 +2,7 @@ import * as Crypto from "expo-crypto";
 
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { partnerSetupSessionKey } from "./partner-setup-session-scope";
-import { normalizeHistoricalCommissionReadback } from "./store-commercial-agreement-legacy";
+import { normalizeHistoricalCommissionReadback } from "./store-agreement-readiness";
 
 type StoreCommercialAgreementRate = Readonly<{
   fulfillmentMode: string;
