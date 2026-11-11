@@ -1,4 +1,4 @@
-import type { CatalogStoreOffer, PublicCatalogResponse } from "@bthwani/dsh";
+import type { CatalogMedia, CatalogStoreOffer, PublicCatalogResponse } from "@bthwani/dsh";
 
 /** Only screen modes needing a canonical Store-wide query use DSH's existing filtered offer registry. */
 export type StoreOfferListFilter = "all" | "popular" | "offers" | "published" | "unavailable" | "hidden" | "stockout";
@@ -53,4 +53,29 @@ export function scopedPartnerPopularOffers(
     ids.add(offer.offerId);
   }
   return result.offers;
+}
+
+export function isOfferListFilter(value: string | undefined): value is StoreOfferListFilter {
+  return value === "all" || value === "popular" || value === "offers" || value === "published"
+    || value === "unavailable" || value === "hidden" || value === "stockout";
+}
+
+export function sortStoreOffersByCreation(offers: ReadonlyArray<CatalogStoreOffer>): CatalogStoreOffer[] {
+  return [...offers].sort((left, right) => {
+    const leftMillis = Date.parse(left.createdAt);
+    const rightMillis = Date.parse(right.createdAt);
+    if (Number.isFinite(leftMillis) && Number.isFinite(rightMillis) && leftMillis !== rightMillis) return leftMillis - rightMillis;
+    const fraction = (value: string) => value.match(/\.(\d+)(?:Z|[+-]\d{2}:\d{2})$/)?.[1]?.padEnd(9, "0").slice(0, 9) ?? "000000000";
+    const leftFraction = fraction(left.createdAt);
+    const rightFraction = fraction(right.createdAt);
+    if (leftFraction !== rightFraction) return leftFraction < rightFraction ? -1 : 1;
+    if (left.offerId < right.offerId) return -1;
+    if (left.offerId > right.offerId) return 1;
+    return 0;
+  });
+}
+
+export function getPrimaryMedia(media: ReadonlyArray<CatalogMedia>): CatalogMedia | null {
+  const candidate = media.find((item) => item.role === "primary") ?? media[0];
+  return candidate?.uri.trim() ? candidate : null;
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { catalogPublishedAvailability, isOfferStockout, scopedPartnerPopularOffers, storeOfferServerQuery } from "./catalog-offer-read-model.ts";
+import { catalogPublishedAvailability, getPrimaryMedia, isOfferListFilter, isOfferStockout, scopedPartnerPopularOffers, sortStoreOffersByCreation, storeOfferServerQuery } from "./catalog-offer-read-model.ts";
 
 test("unfiltered catalog keeps its stable Store-owned page; promotions and popular are separate sources", () => {
   for (const filter of ["all", "offers", "popular"]) {
@@ -85,4 +85,35 @@ test("partner home never shows foreign or invalid offers as popular", () => {
     { storeId: "store-1", offers: Array.from({ length: 5 }, (_, index) => ({ ...popularOffer, offerId: "offer-" + index })) },
   ];
   for (const failure of failures) assert.equal(scopedPartnerPopularOffers("store-1", failure), null);
+});
+
+
+test("catalog filter routing accepts only known server modes", () => {
+  for (const value of ["all", "popular", "offers", "published", "unavailable", "hidden", "stockout"]) {
+    assert.equal(isOfferListFilter(value), true);
+  }
+  for (const value of [undefined, "", "other", "PUBLISHED", "draft", "__proto__"]) {
+    assert.equal(isOfferListFilter(value), false);
+  }
+});
+
+test("Store offer ordering remains deterministic across timestamps and offer IDs", () => {
+  const records = [
+    { offerId: "late", createdAt: "2026-11-11T12:00:01.000Z" },
+    { offerId: "z", createdAt: "2026-11-11T12:00:00.123456789Z" },
+    { offerId: "a", createdAt: "2026-11-11T12:00:00.123456789Z" },
+    { offerId: "earlier-fraction", createdAt: "2026-11-11T12:00:00.123456788Z" },
+  ];
+  assert.deepEqual(sortStoreOffersByCreation(records).map((offer) => offer.offerId),
+    ["earlier-fraction", "a", "z", "late"]);
+  assert.equal(records[0].offerId, "late");
+});
+
+test("primary product media keeps explicit source selection and fails closed on empty URI", () => {
+  const secondary = { role: "gallery", uri: "https://example.invalid/fallback.webp" };
+  const primary = { role: "primary", uri: "https://example.invalid/main.webp" };
+  assert.deepEqual(getPrimaryMedia([secondary, primary]), primary);
+  assert.deepEqual(getPrimaryMedia([secondary]), secondary);
+  assert.equal(getPrimaryMedia([]), null);
+  assert.equal(getPrimaryMedia([{ ...primary, uri: "  " }, secondary]), null);
 });
