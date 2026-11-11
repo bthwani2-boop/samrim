@@ -136,6 +136,7 @@ func UpdateStoreRelationCommercialModelDefault(ctx context.Context, db *sql.DB, 
 	current, readErr := readStoreRelationCommercialModelDefault(ctx, tx, input.RelationModel)
 	var oldModel any
 	var oldVersion any
+	var updatedAt time.Time
 	version := 1
 	if readErr == nil {
 		if current.PolicyVersion != input.ExpectedVersion {
@@ -145,17 +146,19 @@ func UpdateStoreRelationCommercialModelDefault(ctx context.Context, db *sql.DB, 
 			return StoreRelationCommercialModelDefault{}, false, ErrStoreRelationCommercialDefaultUnchanged
 		}
 		oldModel, oldVersion, version = current.CommercialModel, current.PolicyVersion, current.PolicyVersion+1
-		_, err = tx.ExecContext(ctx, `UPDATE wlt.store_relation_commercial_model_defaults
+		err = tx.QueryRowContext(ctx, `UPDATE wlt.store_relation_commercial_model_defaults
 			SET commercial_model=$2,policy_version=$3,updated_at=clock_timestamp(),
-				last_changed_by_actor_id=$4,last_change_reason=$5 WHERE relation_model=$1`,
-			input.RelationModel, input.CommercialModel, version, input.ActingActorID, input.Reason)
+				last_changed_by_actor_id=$4,last_change_reason=$5 WHERE relation_model=$1
+			RETURNING updated_at`,
+			input.RelationModel, input.CommercialModel, version, input.ActingActorID, input.Reason).Scan(&updatedAt)
 	} else if errors.Is(readErr, sql.ErrNoRows) {
 		if input.ExpectedVersion != 0 {
 			return StoreRelationCommercialModelDefault{}, false, ErrStoreRelationCommercialDefaultVersion
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO wlt.store_relation_commercial_model_defaults
+		err = tx.QueryRowContext(ctx, `INSERT INTO wlt.store_relation_commercial_model_defaults
 			(relation_model,commercial_model,policy_version,last_changed_by_actor_id,last_change_reason)
-			VALUES($1,$2,1,$3,$4)`, input.RelationModel, input.CommercialModel, input.ActingActorID, input.Reason)
+			VALUES($1,$2,1,$3,$4) RETURNING updated_at`,
+			input.RelationModel, input.CommercialModel, input.ActingActorID, input.Reason).Scan(&updatedAt)
 	} else {
 		return StoreRelationCommercialModelDefault{}, false, readErr
 	}
@@ -164,9 +167,9 @@ func UpdateStoreRelationCommercialModelDefault(ctx context.Context, db *sql.DB, 
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO wlt.store_relation_commercial_model_default_events
 		(idempotency_key,request_hash,relation_model,previous_model,new_model,previous_policy_version,
-			new_policy_version,changed_by_actor_id,reason,correlation_id)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, input.IdempotencyKey, hash, input.RelationModel,
-		oldModel, input.CommercialModel, oldVersion, version, input.ActingActorID, input.Reason, input.CorrelationID); err != nil {
+			new_policy_version,changed_by_actor_id,reason,correlation_id,changed_at)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, input.IdempotencyKey, hash, input.RelationModel,
+		oldModel, input.CommercialModel, oldVersion, version, input.ActingActorID, input.Reason, input.CorrelationID, updatedAt); err != nil {
 		return StoreRelationCommercialModelDefault{}, false, err
 	}
 	result, err := readStoreRelationCommercialModelDefault(ctx, tx, input.RelationModel)

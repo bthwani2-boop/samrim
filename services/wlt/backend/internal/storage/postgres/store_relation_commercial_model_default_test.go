@@ -99,6 +99,10 @@ func TestStoreRelationCommercialModelDefaultPersistedIsolation(t *testing.T) {
 	if err != nil || replayed || changed.PolicyVersion != 2 || changed.CommercialModel != "COMMISSION" {
 		t.Fatalf("independent v2 not persisted: %+v replayed=%t err=%v", changed, replayed, err)
 	}
+	updatedReplay, replayed, err := UpdateStoreRelationCommercialModelDefault(s.ctx, s.db, change)
+	if err != nil || !replayed || !updatedReplay.UpdatedAt.Equal(changed.UpdatedAt) || updatedReplay.PolicyVersion != changed.PolicyVersion {
+		t.Fatalf("updated policy replay must preserve the exact original receipt: first=%+v replay=%+v replayed=%t err=%v", changed, updatedReplay, replayed, err)
+	}
 	if _, _, err := UpdateStoreRelationCommercialModelDefault(s.ctx, s.db, StoreRelationCommercialModelDefaultUpdate{
 		RelationModel: "INDEPENDENT_STORE", CommercialModel: "SUBSCRIPTION", ExpectedVersion: 1,
 		ActingActorID: operator, Reason: "Stale expected-version must be refused",
@@ -107,8 +111,8 @@ func TestStoreRelationCommercialModelDefaultPersistedIsolation(t *testing.T) {
 		t.Fatalf("stale version not refused: %v", err)
 	}
 	originalReceipt, replayed, err := UpdateStoreRelationCommercialModelDefault(s.ctx, s.db, independent)
-	if err != nil || !replayed || originalReceipt.PolicyVersion != 1 || originalReceipt.CommercialModel != "SUBSCRIPTION" {
-		t.Fatalf("replay must preserve historic receipt, not claim current approval: %+v replayed=%t err=%v", originalReceipt, replayed, err)
+	if err != nil || !replayed || originalReceipt.PolicyVersion != 1 || originalReceipt.CommercialModel != "SUBSCRIPTION" || !originalReceipt.UpdatedAt.Equal(first.UpdatedAt) {
+		t.Fatalf("replay must preserve the entire original versioned receipt (including updatedAt): first=%+v replay=%+v replayed=%t err=%v", first, originalReceipt, replayed, err)
 	}
 	// Two operators racing the same expected version cannot create two effective defaults.
 	var group sync.WaitGroup
