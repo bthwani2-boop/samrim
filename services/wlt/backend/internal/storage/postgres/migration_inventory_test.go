@@ -1,6 +1,8 @@
 package postgres
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -28,5 +30,33 @@ func TestMigrationInventoryMatchesCanonicalDirectory(t *testing.T) {
 		if records[i].Version != i+1 || records[i].Name != filepath.Base(file) {
 			t.Fatalf("unexpected migration %d: file=%q record=%+v", i+1, filepath.Base(file), records[i])
 		}
+	}
+}
+
+func TestLoadMigrationsRejectsGapsAndExtraSQL(t *testing.T) {
+	directory := t.TempDir()
+	for version := 1; version <= SchemaVersion; version++ {
+		name := fmt.Sprintf("%03d_sample.sql", version)
+		if err := os.WriteFile(filepath.Join(directory, name), []byte("SELECT 1;\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := LoadMigrations(directory); err != nil {
+		t.Fatalf("complete migration sequence was rejected: %v", err)
+	}
+	if err := os.Rename(filepath.Join(directory, "003_sample.sql"), filepath.Join(directory, "002_duplicate.sql")); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := LoadMigrations(directory); err == nil {
+		t.Fatal("migration loader accepted a duplicate v002 and missing v003")
+	}
+	if err := os.Rename(filepath.Join(directory, "002_duplicate.sql"), filepath.Join(directory, "003_sample.sql")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "064_extra.sql"), []byte("SELECT 1;\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := LoadMigrations(directory); err == nil {
+		t.Fatal("migration loader accepted an unregistered extra SQL migration")
 	}
 }
