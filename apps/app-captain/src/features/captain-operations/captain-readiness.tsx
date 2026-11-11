@@ -36,6 +36,23 @@ async function openPhoneLocationSettings() {
   await Linking.openSettings();
 }
 
+// One OS services activation path serves availability and mission GPS recovery.
+// This never changes DSH availability or bypasses the current Identity session.
+async function enablePhoneLocationServices(isCurrent: () => boolean): Promise<boolean> {
+  const services = await Location.hasServicesEnabledAsync();
+  if (!isCurrent()) return false;
+  if (services) return true;
+  try {
+    if (Platform.OS === "android") await Location.enableNetworkProviderAsync();
+    else await openPhoneLocationSettings();
+  } catch {
+    if (isCurrent()) await openPhoneLocationSettings().catch(() => {});
+  }
+  if (!isCurrent()) return false;
+  const enabled = await Location.hasServicesEnabledAsync();
+  return isCurrent() && enabled;
+}
+
 export function CaptainReadiness({ overlay = false, missionActive = false, missionAssignmentId = "", onAvailabilityConfirmed }: { overlay?: boolean; missionActive?: boolean; missionAssignmentId?: string; onAvailabilityConfirmed?: () => void } = {}) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createCaptainOperationStyles(theme), [theme]);
@@ -213,23 +230,12 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
           return;
         }
         setLocationSettingsNeeded(false);
-        const services = await Location.hasServicesEnabledAsync();
+        const enabled = await enablePhoneLocationServices(isCurrent);
         if (!isCurrent()) return;
-        if (!services) {
-          try {
-            if (Platform.OS === "android") await Location.enableNetworkProviderAsync();
-            else await openPhoneLocationSettings();
-          } catch {
-            if (isCurrent()) await openPhoneLocationSettings().catch(() => {});
-          }
-          if (!isCurrent()) return;
-          const enabled = await Location.hasServicesEnabledAsync();
-          if (!isCurrent()) return;
-          if (!enabled) {
-            setGpsReady(false);
-            setError("فعّل موقع الهاتف ثم اضغط التوفر مجددًا لإكمال التشغيل.");
-            return;
-          }
+        if (!enabled) {
+          setGpsReady(false);
+          setError("فعّل موقع الهاتف ثم اضغط التوفر مجددًا لإكمال التشغيل.");
+          return;
         }
         setGpsReady(true);
       }
@@ -296,16 +302,7 @@ export function CaptainReadiness({ overlay = false, missionActive = false, missi
         return;
       }
       setLocationSettingsNeeded(false);
-      const services = await Location.hasServicesEnabledAsync();
-      if (!isCurrent()) return;
-      if (!services) {
-        try {
-          if (Platform.OS === "android") await Location.enableNetworkProviderAsync();
-          else await openPhoneLocationSettings();
-        } catch {
-          if (isCurrent()) await openPhoneLocationSettings().catch(() => {});
-        }
-      }
+      await enablePhoneLocationServices(isCurrent);
       if (!isCurrent()) return;
       const ready = await refreshGps();
       if (!isCurrent()) return;

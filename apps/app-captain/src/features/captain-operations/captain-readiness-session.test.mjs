@@ -195,6 +195,7 @@ function actions() {
   h.runtime.available = true;
   h.runtime.current.availabilityState = "available";
   h.runtime.load = async () => { h.state.notifications.push("readback"); return true; };
+  h.runtime.enablePhoneLocationServices = production("enablePhoneLocationServices", h.runtime);
   return {
     ...h,
     toggleAvailability: production("toggleAvailability", h.runtime),
@@ -204,6 +205,73 @@ function actions() {
     refreshConsent: production("refreshConsent", h.runtime),
   };
 }
+
+test("GPS readiness and mission recovery share the same Android service activation", async () => {
+  const availability = actions();
+  availability.runtime.available = false;
+  availability.runtime.current.availabilityState = "unavailable";
+  let availabilityChecks = 0;
+  let availabilityActivations = 0;
+  availability.runtime.Location.hasServicesEnabledAsync = async () => ++availabilityChecks >= 2;
+  availability.runtime.Location.enableNetworkProviderAsync = async () => { availabilityActivations++; };
+  await availability.toggleAvailability(true);
+  assert.equal(availabilityActivations, 1);
+  assert.equal(availabilityChecks, 2);
+  assert.equal(availability.state.mutations.length, 1);
+  assert.equal(availability.state.mutations[0][1], true);
+  assert.deepEqual(availability.state.notifications, ["readback", "confirmed", "presence"]);
+
+  const mission = actions();
+  mission.runtime.missionActive = true;
+  let missionChecks = 0;
+  let missionActivations = 0;
+  mission.runtime.Location.hasServicesEnabledAsync = async () => ++missionChecks >= 2;
+  mission.runtime.Location.enableNetworkProviderAsync = async () => { missionActivations++; };
+  await mission.recoverPhoneLocation();
+  assert.equal(missionActivations, 1);
+  assert.equal(missionChecks, 2);
+  assert.equal(mission.state.mutations.length, 0, "mission GPS must never grant DSH public availability");
+  assert.equal(mission.state.locations, 1);
+  assert.equal(mission.state.notifications.length, 0, "mission recovery must not publish public dispatch presence");
+});
+
+test("GPS services still disabled after recovery block public availability", async () => {
+  const h = actions();
+  h.runtime.available = false;
+  h.runtime.current.availabilityState = "unavailable";
+  let requestedEnable = 0;
+  h.runtime.Location.hasServicesEnabledAsync = async () => false;
+  h.runtime.Location.enableNetworkProviderAsync = async () => { requestedEnable++; };
+  await h.toggleAvailability(true);
+  assert.equal(requestedEnable, 1);
+  assert.equal(h.state.mutations.length, 0);
+  assert.equal(h.state.notifications.length, 0);
+  assert.match(values(h.state, "error").at(-1), /فعّل موقع الهاتف/);
+  assert.equal(values(h.state, "gpsReady").at(-1), false);
+});
+
+test("renewed Identity session while Android location enabling cannot mutate DSH", async () => {
+  const h = actions();
+  h.runtime.available = false;
+  h.runtime.current.availabilityState = "unavailable";
+  let release;
+  let started = false;
+  const pendingEnable = new Promise(resolve => { release = resolve; });
+  h.runtime.Location.hasServicesEnabledAsync = async () => false;
+  h.runtime.Location.enableNetworkProviderAsync = async () => {
+    started = true;
+    return pendingEnable;
+  };
+  const pending = h.toggleAvailability(true);
+  for (let i = 0; i < 10 && !started; i++) await flush();
+  assert.equal(started, true);
+  h.state.current = identity("session-2");
+  release();
+  await pending;
+  assert.equal(h.state.mutations.length, 0);
+  assert.equal(h.state.notifications.length, 0);
+  assert.equal(h.runtime.availabilityInFlight.current, false);
+});
 
 test("availability off writes once with the canonical DSH expected version and verifies readback", async () => {
   const h = actions();

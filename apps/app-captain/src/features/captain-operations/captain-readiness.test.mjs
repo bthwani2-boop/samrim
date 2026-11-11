@@ -81,8 +81,12 @@ test("available Captain recovers GPS without changing canonical availability", (
   const recovery = readiness.slice(start, end);
   assert.match(recovery, /!onlyGps && \(missionActive \? !missionAssignmentId : !available\)/);
   assert.match(recovery, /Location\.requestForegroundPermissionsAsync\(\)/);
-  assert.match(recovery, /Location\.enableNetworkProviderAsync\(\)/);
-  assert.match(recovery, /Linking\.openSettings\(\)/);
+  assert.match(recovery, /await enablePhoneLocationServices\(isCurrent\)/);
+  assert.match(readiness, /async function enablePhoneLocationServices\(isCurrent: \(\) => boolean\)/);
+  assert.match(readiness, /Location\.enableNetworkProviderAsync\(\)/);
+  assert.match(readiness, /Linking\.openSettings\(\)/);
+  assert.equal((readiness.match(/await enablePhoneLocationServices\(isCurrent\)/g) ?? []).length, 2,
+    "both availability and mission GPS recovery must reuse the same OS owner");
   assert.doesNotMatch(recovery, /setCaptainAvailability\(/);
   assert.match(recovery, /onAvailabilityConfirmed\?\.\(\)/);
   assert.match(recovery, /publishCaptainPresence\(true\)/);
