@@ -1,10 +1,80 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
+import ts from "typescript-ast";
 import { captainSessionKey } from "../../bootstrap/captain-session-scope.ts";
 
 const source = readFileSync(new URL("./cash-in-panel.tsx", import.meta.url), "utf8");
 const request = source.slice(source.indexOf("  const createIntent = async () => {"), source.indexOf("  const visibleWallet ="));
+
+// Execute the Cash-In screen's actual recovery validators rather than a copy.
+const cashAst = ts.createSourceFile("cash-in-panel.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const recoveryNames = ["parseCaptainFundingAttempt", "matchesCaptainFundingRequest", "matchesCaptainFundingAttempt"];
+const recoverySources = recoveryNames.map((name) => {
+  const declaration = cashAst.statements.find((node) =>
+    ts.isFunctionDeclaration(node) && node.name?.text === name);
+  assert.ok(declaration, `Cash-In owner is missing ${name}`);
+  return declaration.getText(cashAst);
+});
+const recoveryJs = ts.transpileModule(
+  `${recoverySources.join("\n")}\n({parseCaptainFundingAttempt, matchesCaptainFundingRequest, matchesCaptainFundingAttempt})`,
+  { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } },
+).outputText;
+const { parseCaptainFundingAttempt, matchesCaptainFundingRequest, matchesCaptainFundingAttempt } = runInNewContext(recoveryJs);
+const validAttempt = Object.freeze({
+  version: 1, actorID: "captain-a", amountMinor: 1000,
+  idempotencyKey: "captain_retry_key", correlationID: "captain_corr_key",
+  fundingIntentID: "intent-a", providerKey: "provider-a",
+});
+const validIntent = Object.freeze({
+  id: "intent-a", actorType: "captain", actorId: "captain-a",
+  fundingPurpose: "CAPTAIN_TOPUP", amountMinor: 1000, currency: "YER",
+  providerKey: "PROVIDER-A",
+});
+
+test("Cash-In production recovery accepts only a complete actor-owned durable attempt", () => {
+  assert.equal(parseCaptainFundingAttempt(null, "captain-a"), null);
+  const restored = parseCaptainFundingAttempt(JSON.stringify(validAttempt), "captain-a");
+  assert.equal(restored.idempotencyKey, validAttempt.idempotencyKey);
+  assert.equal(restored.correlationID, validAttempt.correlationID);
+  assert.equal(matchesCaptainFundingAttempt(validIntent, restored), true);
+  assert.equal(matchesCaptainFundingRequest(validIntent, "captain-a", 1000), true);
+});
+
+test("Cash-In invalid and foreign persisted attempts fail closed", () => {
+  for (const raw of [
+    "null", "[]", "{",
+    JSON.stringify({ ...validAttempt, actorID: "captain-b" }),
+    JSON.stringify({ ...validAttempt, version: 2 }),
+    JSON.stringify({ ...validAttempt, amountMinor: 0 }),
+    JSON.stringify({ ...validAttempt, amountMinor: 1.5 }),
+    JSON.stringify({ ...validAttempt, fundingIntentID: "" }),
+    JSON.stringify({ ...validAttempt, idempotencyKey: "short" }),
+    JSON.stringify({ ...validAttempt, correlationID: "short" }),
+    JSON.stringify({ ...validAttempt, providerKey: 42 }),
+    JSON.stringify({ ...validAttempt, providerKey: "" }),
+  ]) {
+    assert.throws(() => parseCaptainFundingAttempt(raw, "captain-a"));
+  }
+  assert.throws(() => parseCaptainFundingAttempt(JSON.stringify(validAttempt), "captain-b"));
+});
+
+test("Cash-In canonical funding intent must match Captain, purpose, amount, currency and provider", () => {
+  assert.equal(matchesCaptainFundingAttempt(validIntent, { ...validAttempt, fundingIntentID: undefined }), false);
+  for (const intent of [
+    { ...validIntent, id: "intent-b" },
+    { ...validIntent, id: undefined },
+    { ...validIntent, actorType: "merchant" },
+    { ...validIntent, actorId: "captain-b" },
+    { ...validIntent, fundingPurpose: "CUSTOMER_TOPUP" },
+    { ...validIntent, amountMinor: 2000 },
+    { ...validIntent, currency: "USD" },
+    { ...validIntent, providerKey: "OTHER" },
+  ]) {
+    assert.equal(matchesCaptainFundingAttempt(intent, validAttempt), false);
+  }
+});
 
 test("cash-in rejects the same actor after Identity session renewal", () => {
   const identity = (actor, sessionId) => ({

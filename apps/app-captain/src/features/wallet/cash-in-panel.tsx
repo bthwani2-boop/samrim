@@ -9,9 +9,51 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 
 import { captainSessionKey } from "../../bootstrap/captain-session-scope";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 import { captainClient } from "../captain-operations/captain-client";
-import { type CaptainFundingAttempt, matchesCaptainFundingAttempt, matchesCaptainFundingRequest, parseCaptainFundingAttempt } from "./cash-in-recovery";
 
-type FundingAttempt = CaptainFundingAttempt;
+type FundingAttempt = Readonly<{
+  version: 1;
+  actorID: string;
+  amountMinor: number;
+  idempotencyKey: string;
+  correlationID: string;
+  fundingIntentID?: string;
+  providerKey?: string;
+}>;
+
+// Persisted retry data is actor-scoped, but WLT is the only authority for its
+// financial outcome. Invalid or foreign attempts must fail closed.
+function parseCaptainFundingAttempt(raw: string | null, actorID: string): FundingAttempt | null {
+  if (!raw) return null;
+  const parsed = JSON.parse(raw) as Partial<FundingAttempt> | null;
+  const validFundingIntentID = parsed?.fundingIntentID === undefined || (
+    typeof parsed.fundingIntentID === "string" && parsed.fundingIntentID.length > 0 && parsed.fundingIntentID.length <= 128
+  );
+  if (parsed?.version !== 1 ||
+    parsed.actorID !== actorID ||
+    !Number.isSafeInteger(parsed.amountMinor) ||
+    Number(parsed.amountMinor) <= 0 ||
+    typeof parsed.idempotencyKey !== "string" ||
+    parsed.idempotencyKey.length < 8 ||
+    parsed.idempotencyKey.length > 128 ||
+    typeof parsed.correlationID !== "string" ||
+    parsed.correlationID.length < 8 ||
+    parsed.correlationID.length > 128 ||
+    !validFundingIntentID || (parsed.providerKey !== undefined && (typeof parsed.providerKey !== "string" || parsed.providerKey.length === 0 || parsed.providerKey.length > 64))
+  ) throw new Error("CASH_IN_RETRY_STATE_INVALID");
+  return parsed as FundingAttempt;
+}
+
+function matchesCaptainFundingRequest(intent: CashInFundingIntent, actorID: string, amountMinor: number): boolean {
+  return intent.actorType === "captain" &&
+    intent.actorId === actorID &&
+    intent.fundingPurpose === "CAPTAIN_TOPUP" &&
+    intent.amountMinor === amountMinor &&
+    intent.currency === "YER";
+}
+
+function matchesCaptainFundingAttempt(intent: CashInFundingIntent, attempt: FundingAttempt): boolean {
+  return Boolean(attempt.fundingIntentID && intent.id === attempt.fundingIntentID) && matchesCaptainFundingRequest(intent, attempt.actorID, attempt.amountMinor) && (!attempt.providerKey || intent.providerKey === attempt.providerKey.toUpperCase());
+}
 
 const attemptKey = (actorID: string) => `bthwani.captain.cash-in.pending.v1.${encodeURIComponent(actorID)}`;
 
