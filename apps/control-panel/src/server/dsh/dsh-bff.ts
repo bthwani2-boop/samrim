@@ -1,84 +1,17 @@
-import { appendMediaProvenance } from "./dsh-transport";
-
-import type { StoreOrderRatingListResponse, PartnerStoreOrderSummaryResponse } from "@bthwani/dsh";
-
-export async function readOperatorStoreOrderSummary(storeId: string, period: "7d" | "30d" | "all", context: DshOperatorReadContext): Promise<PartnerStoreOrderSummaryResponse> {
-  const scope = storeId.trim();
-  if (!scope || scope.length > 128 || !["7d", "30d", "all"].includes(period)) throw new Error("DSH_OPERATOR_STORE_SUMMARY_INPUT_INVALID");
-  const path = dshOperationPaths.readOperatorStoreOrderSummary.path.replace("{storeId}", encodeURIComponent(scope)) + "?period=" + encodeURIComponent(period);
-  return (await requestDshJson<PartnerStoreOrderSummaryResponse>(dshOperationPaths.readOperatorStoreOrderSummary.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
-}
-
-export async function listOperatorStoreOrderRatings(storeId: string, cursor: string, context: DshOperatorReadContext, limit = 20): Promise<StoreOrderRatingListResponse> {
-  const scope = storeId.trim();
-  if (!scope || scope.length > 128 || cursor.length > 1024 || !Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error("DSH_OPERATOR_STORE_RATINGS_INPUT_INVALID");
-  const params = new URLSearchParams({ limit: String(limit) });
-  if (cursor) params.set("cursor", cursor);
-  const path = dshOperationPaths.listOperatorStoreOrderRatings.path.replace("{storeId}", encodeURIComponent(scope)) + "?" + params;
-  return (await requestDshJson<StoreOrderRatingListResponse>(dshOperationPaths.listOperatorStoreOrderRatings.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
-}
-
-
-
-export function readOperatorStoreProduct(storeId: string, productId: string, context: DshOperatorReadContext): Promise<CatalogProduct> {
-  const path=dshOperationPaths.readOperatorStoreProduct.path.replace("{storeId}",encodeURIComponent(storeId)).replace("{productId}",encodeURIComponent(productId));
-  return requestDshJson<CatalogProduct>("GET",path,undefined,{"X-Acting-Actor-ID":context.operatorActorId}).then(r=>r.payload);
-}
-export function updateOperatorStoreProduct(storeId:string,productId:string,input:UpdateCatalogProductRequest,context:StorePublicationMutationContext){
-  validateVersionedMutationContext(context);
-  const path=dshOperationPaths.updateOperatorStoreProduct.path.replace("{storeId}",encodeURIComponent(storeId)).replace("{productId}",encodeURIComponent(productId));
-  return requestDshJson<CatalogProductResponse>("PATCH",path,input,{"X-Acting-Actor-ID":context.operatorActorId,"X-Correlation-ID":context.correlationId,"Idempotency-Key":context.idempotencyKey,"X-Expected-Version":String(context.expectedVersion)});
-}
-export function uploadOperatorStoreProductMedia(storeId:string,productId:string,file:File,provenance:MediaProvenanceInput,context:StorePublicationMutationContext){
-  validateVersionedMutationContext(context);
-  if(!isMediaProvenanceInputValid(provenance))throw new Error("PRODUCT_MEDIA_PROVENANCE_REQUIRED");
-  const path=dshOperationPaths.uploadOperatorStoreProductMedia.path.replace("{storeId}",encodeURIComponent(storeId)).replace("{productId}",encodeURIComponent(productId));
-  const body=new FormData();body.set("role","primary");body.set("file",file,file.name);appendMediaProvenance(body,provenance);
-  return requestDshMultipart<CatalogProductResponse>("POST",path,body,{"X-Acting-Actor-ID":context.operatorActorId,"X-Correlation-ID":context.correlationId,"Idempotency-Key":context.idempotencyKey,"X-Expected-Version":String(context.expectedVersion)});
-}
-
-import type { CatalogStoreOfferResponse, CreateStoreOfferRequest, UpdateStoreOfferRequest } from "@bthwani/dsh";
-
-export function listOperatorStoreCatalogProducts(storeId: string, q: string, cursor: string, context: DshOperatorReadContext): Promise<CatalogProductListResponse> {
-  const query = new URLSearchParams({ q, cursor, limit: "30" });
-  return requestDshJson<CatalogProductListResponse>("GET", `/dsh/operator/stores/${encodeURIComponent(storeId)}/products?${query}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId }).then((r) => r.payload);
-}
-export function createOperatorStoreCatalogProduct(storeId: string, input: CreateCatalogProductRequest, context: JoiningCaseMutationContext) {
-  validateAttributedMutationContext(context);
-  return requestDshJson<CatalogProductResponse>("POST", `/dsh/operator/stores/${encodeURIComponent(storeId)}/products`, input, { "X-Acting-Actor-ID": context.operatorActorId, "X-Correlation-ID": context.correlationId, "Idempotency-Key": context.idempotencyKey });
-}
-export function createOperatorStoreCatalogOffer(storeId: string, input: CreateStoreOfferRequest, context: JoiningCaseMutationContext) {
-  validateAttributedMutationContext(context);
-  return requestDshJson<CatalogStoreOfferResponse>("POST", `/dsh/operator/stores/${encodeURIComponent(storeId)}/offers`, input, { "X-Acting-Actor-ID": context.operatorActorId, "X-Correlation-ID": context.correlationId, "Idempotency-Key": context.idempotencyKey });
-}
-export function updateOperatorStoreCatalogOffer(storeId: string, offerId: string, input: UpdateStoreOfferRequest, context: StorePublicationMutationContext) {
-  validateVersionedMutationContext(context);
-  return requestDshJson<CatalogStoreOfferResponse>("PATCH", `/dsh/operator/stores/${encodeURIComponent(storeId)}/offers/${encodeURIComponent(offerId)}`, input, { "X-Acting-Actor-ID": context.operatorActorId, "X-Correlation-ID": context.correlationId, "Idempotency-Key": context.idempotencyKey, "X-Expected-Version": String(context.expectedVersion) });
-}
-
-import { normalizeYemenPhoneE164 } from "@bthwani/identity/phone";
-import type { OperatorMarketingSummary, PromotionSettlementSummary } from "@bthwani/dsh";
-import type { CatalogStoreOfferListResponse, HRAccessRequest as DshHRAccessRequest, HRAccessRequestInput as DshHRAccessRequestInput, HRAccessRequestMutationResponse as DshHRAccessRequestMutationResponse, HRAccessRequestPage as DshHRAccessRequestPage, HRAccessRequestReadResponse as DshHRAccessRequestReadResponse, HREmployee as DshHREmployee, HREmployeePage as DshHREmployeePage, HRUpdateEmployeeRequest as DshHRUpdateEmployeeRequest, HRUpdateEmployeeResponse as DshHRUpdateEmployeeResponse, StoreTypeCommissionDefaultsResponse as DshStoreTypeCommissionDefaultsResponse, FinanceStoreCommercialAgreementQueueResponse, HRCreateEmployeeRequest, JoiningCaseProofDetailsResponse, StoreAccessGrantListResponse, StoreAccessGrantMutationResponse, StoreCommercialAgreementListResponse, StoreCommercialAgreementMutationResponse, StoreImagesResponse, StorePayoutRecipientListResponse, UpdateCatalogAttributeDefinitionRequest, UpdateCatalogAttributeEnumOptionRequest } from "@bthwani/dsh";
+import type { HRAccessRequest as DshHRAccessRequest, HRAccessRequestInput as DshHRAccessRequestInput, HRAccessRequestMutationResponse as DshHRAccessRequestMutationResponse, HRAccessRequestPage as DshHRAccessRequestPage, HRAccessRequestReadResponse as DshHRAccessRequestReadResponse, HREmployee as DshHREmployee, HREmployeePage as DshHREmployeePage, HRUpdateEmployeeRequest as DshHRUpdateEmployeeRequest, HRUpdateEmployeeResponse as DshHRUpdateEmployeeResponse, StoreTypeCommissionDefaultsResponse as DshStoreTypeCommissionDefaultsResponse, FinanceStoreCommercialAgreementQueueResponse, HRCreateEmployeeRequest, JoiningCaseProofDetailsResponse, OperatorMarketingSummary, PromotionSettlementSummary, StoreAccessGrantListResponse, StoreAccessGrantMutationResponse, StoreCommercialAgreementListResponse, StoreCommercialAgreementMutationResponse, StoreImagesResponse, StorePayoutRecipientListResponse, UpdateCatalogAttributeDefinitionRequest, UpdateCatalogAttributeEnumOptionRequest } from "@bthwani/dsh";
 import { type ActorLegalName, type BeneficiaryPayoutState, type BeneficiaryPayoutStateResponse, type CaptainAdmissionListResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CashCustodyRegistryResponse, type CatalogAttributeDefinitionListResponse, type CatalogAttributeDefinitionResponse, type CatalogAttributeEnumOptionListResponse, type CatalogAttributeEnumOptionResponse, type CatalogAttributeRuleListResponse, type CatalogCategoryDetailResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProduct, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductRegistryResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CommercialStoreTypeListResponse, type CommercialStoreTypeResponse, type CreateCatalogAttributeDefinitionRequest, type CreateCatalogAttributeEnumOptionRequest, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateCommercialStoreTypeRequest, type CreateCustomerWithdrawalIntakeRequest, type CreateDeliveryFeePolicyRequest, type CreateJoiningCaseRequest, type CreatePartnerFinancialTermsPolicyRequest, type CreatePromotionRequest, type CreateServiceCityRequest, type CustomerWithdrawalDecisionRequest, type CustomerWithdrawalIntakeListResponse, type CustomerWithdrawalIntakeResponse, type DeliveryFeePolicyResponse, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentResponse, dshOperationPaths, type FinanceEvidenceDocument, isMediaProvenanceInputValid, type JoiningCaseListResponse, type JoiningCaseResponse, type ManagedCaptainAvailabilityRequest, type ManagedRoleMutationRequest, type ManagedRoleReenrollmentRequest, type MarketingPublicationRequest, type MediaProvenanceInput, type NotificationListResponse, type NotificationReadResponse, type OfficialWalletDestination, type OperatorDiscoveryContentRegistryResponse, type OperatorFieldFinanceRosterResponse, type OperatorOperationResponse, type OperatorOperationsResponse, type OperatorPromotionRegistryResponse, type OperatorStoreListResponse, type PartnerCommissionReceivableRegistryResponse, type PartnerCommissionRemittanceRequest, type PartnerCommissionRemittanceResponse, type PartnerFinancialSummaryResponse, type PartnerFinancialTermsPolicyResponse, type PartnerStoreListResponse, type PayoutRequest, type PromotionResponse, type PublicationAction, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type ReviewJoiningCaseRequest, type ServiceCityListResponse, type ServiceCityResponse, type SetStoreCommercialTypeRequest, type SetStoreCommercialTypeResponse, type SetStoreFulfillmentModesRequest, type SettlementBatch, type SettlementBatchExport, type StoreFulfillmentModesResponse, type StorePublicationRequest, type StorePublicationResponse, type StoreTypeCommissionDefaultsResponse, type StoreTypeCommissionDefaultUpdateResponse, type SubmitActorLegalNameRequest, type UpdateCatalogCategoryRequest, type UpdateCatalogProductRequest, type UpdateCommerceVerticalRequest, type UpdateCommercialStoreTypeRequest, type UpdateServiceCityRequest, type UpdateStoreTypeCommissionDefaultRequest, type UpsertCatalogAttributeRuleRequest, type VerifyActorLegalNameRequest } from "@bthwani/dsh";
-
-import { dshBaseUrl, dshToken, parseErrorPayload, requestDshJson, requestDshMultipart, requestDshFile, validateAttributedMutationContext, validateVersionedMutationContext } from "./dsh-transport";
+import { normalizeYemenPhoneE164 } from "@bthwani/identity/phone";
 import type { DshAttributedMutationContext, DshClientError, DshOperatorReadContext, DshVersionedMutationContext, JoiningCaseMutationContext, StorePublicationMutationContext } from "./dsh-transport";
-export { requestDshJson, isDshClientError, dshErrorPayload, dshHttpStatus } from "./dsh-transport";
+import { appendMediaProvenance, dshBaseUrl, dshToken, parseErrorPayload, requestDshFile, requestDshJson, requestDshMultipart, validateAttributedMutationContext, validateVersionedMutationContext } from "./dsh-transport";
+
 export type { DshOperatorReadContext, DshVersionedMutationContext, JoiningCaseMutationContext, StorePublicationMutationContext } from "./dsh-transport";
+export { dshErrorPayload, dshHttpStatus, isDshClientError, requestDshJson } from "./dsh-transport";
 
 const phoneE164Pattern = /^\+[1-9][0-9]{7,14}$/;
 
 export type WalletProvider = Readonly<{ key: string; displayNameAr: string; active: boolean; version: number; logoUri: string }>;
 export type WalletProviderListResponse = Readonly<{ walletProviders: ReadonlyArray<WalletProvider> }>;
 type WalletProviderResponse = Readonly<{ walletProvider: WalletProvider }>;
-
-/** Store-scoped list, authorized by Identity partners in DSH as well as the Control Panel route. */
-export async function listOperatorStoreOffers(storeId: string, cursor: string, context: DshOperatorReadContext, limit = 8): Promise<CatalogStoreOfferListResponse> {
-  if (!storeId.trim() || storeId.length > 128 || cursor.length > 2048 || limit < 1 || limit > 100) throw new Error("DSH_OPERATOR_STORE_OFFERS_INPUT_INVALID");
-  const query = new URLSearchParams({ limit: String(limit) });
-  if (cursor) query.set("cursor", cursor);
-  return (await requestDshJson<CatalogStoreOfferListResponse>("GET", `/dsh/operator/stores/${encodeURIComponent(storeId.trim())}/offers?${query}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
-}
 
 export async function listOperatorWalletProviders(includeInactive: boolean, context: DshOperatorReadContext): Promise<WalletProviderListResponse> {
   const query = includeInactive ? "?includeInactive=true" : "";
@@ -388,18 +321,12 @@ export async function downloadOperatorStoreInternalPhoto(storeId: string, photoI
   return requestDshFile(path, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": `cp_store_photo_${crypto.randomUUID()}` });
 }
 
-export * from "./catalog-bff";
-
-export * from "./joining-bff";
 
 export * from "./captain-bff";
+export * from "./catalog-bff";
+export * from "./joining-bff";
 
 export * from "./marketing-bff";
-
-export async function readOperatorStoreImages(storeId: string,context: DshOperatorReadContext): Promise<StoreImagesResponse> {
- const result=await requestDshJson<StoreImagesResponse>("GET",dshOperationPaths.readOperatorStoreImages.path.replace("{storeId}",encodeURIComponent(storeId.trim())),undefined,{"X-Acting-Actor-ID":context.operatorActorId.trim()});
- return result.payload;
-}
 
 export * from "./policy-bff";
 

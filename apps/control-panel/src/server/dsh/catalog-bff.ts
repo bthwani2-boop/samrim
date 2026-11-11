@@ -1,6 +1,7 @@
-import { appendMediaProvenance } from "./dsh-transport";
-import { type UpdateCatalogAttributeDefinitionRequest, type UpdateCatalogAttributeEnumOptionRequest, type CatalogAttributeDefinitionListResponse, type CatalogAttributeDefinitionResponse, type CatalogAttributeEnumOptionListResponse, type CatalogAttributeEnumOptionResponse, type CatalogAttributeRuleListResponse, type CatalogCategoryDetailResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProduct, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductRegistryResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CommercialStoreTypeListResponse, type CommercialStoreTypeResponse, type CreateCatalogAttributeDefinitionRequest, type CreateCatalogAttributeEnumOptionRequest, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateCommercialStoreTypeRequest, dshOperationPaths, isMediaProvenanceInputValid, type MediaProvenanceInput, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type UpdateCatalogCategoryRequest, type UpdateCatalogProductRequest, type UpdateCommerceVerticalRequest, type UpdateCommercialStoreTypeRequest, type UpsertCatalogAttributeRuleRequest } from "@bthwani/dsh";
-import { requestDshJson, requestDshMultipart, validateAttributedMutationContext, validateVersionedMutationContext, type DshOperatorReadContext, type DshVersionedMutationContext, type JoiningCaseMutationContext } from "./dsh-transport";
+import type { CatalogActivityPage, CatalogInventorySummaryResponse, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CreateStoreOfferRequest, ShoppingShortcutListResponse, ShoppingShortcutMutationRequest, ShoppingShortcutMutationResponse, UpdateStoreOfferRequest } from "@bthwani/dsh";
+import { type CatalogAttributeDefinitionListResponse, type CatalogAttributeDefinitionResponse, type CatalogAttributeEnumOptionListResponse, type CatalogAttributeEnumOptionResponse, type CatalogAttributeRuleListResponse, type CatalogCategoryDetailResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProduct, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductRegistryResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CommercialStoreTypeListResponse, type CommercialStoreTypeResponse, type CreateCatalogAttributeDefinitionRequest, type CreateCatalogAttributeEnumOptionRequest, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateCommercialStoreTypeRequest, dshOperationPaths, isMediaProvenanceInputValid, type MediaProvenanceInput, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type UpdateCatalogAttributeDefinitionRequest, type UpdateCatalogAttributeEnumOptionRequest, type UpdateCatalogCategoryRequest, type UpdateCatalogProductRequest, type UpdateCommerceVerticalRequest, type UpdateCommercialStoreTypeRequest, type UpsertCatalogAttributeRuleRequest } from "@bthwani/dsh";
+import type { StorePublicationMutationContext } from "./dsh-transport";
+import { appendMediaProvenance, type DshOperatorReadContext, type DshVersionedMutationContext, type JoiningCaseMutationContext, requestDshJson, requestDshMultipart, validateAttributedMutationContext, validateVersionedMutationContext } from "./dsh-transport";
 
 export async function listCatalogVerticals(context: DshOperatorReadContext, includeInactive = false): Promise<CommerceVerticalListResponse> {
   if (!context.operatorActorId.trim()) throw new Error("DSH_CATALOG_VERTICAL_READ_INPUT_INVALID");
@@ -350,4 +351,92 @@ export async function uploadCommerceVerticalMedia(verticalId: string, file: File
   body.set("reason", normalizedReason);
   appendMediaProvenance(body, provenance);
   return requestDshMultipart<CommerceVerticalResponse>(dshOperationPaths.uploadCommerceVerticalMedia.method, path, body, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export function readOperatorStoreProduct(storeId: string, productId: string, context: DshOperatorReadContext): Promise<CatalogProduct> {
+  const path=dshOperationPaths.readOperatorStoreProduct.path.replace("{storeId}",encodeURIComponent(storeId)).replace("{productId}",encodeURIComponent(productId));
+  return requestDshJson<CatalogProduct>("GET",path,undefined,{"X-Acting-Actor-ID":context.operatorActorId}).then(r=>r.payload);
+}
+export function updateOperatorStoreProduct(storeId:string,productId:string,input:UpdateCatalogProductRequest,context:StorePublicationMutationContext){
+  validateVersionedMutationContext(context);
+  const path=dshOperationPaths.updateOperatorStoreProduct.path.replace("{storeId}",encodeURIComponent(storeId)).replace("{productId}",encodeURIComponent(productId));
+  return requestDshJson<CatalogProductResponse>("PATCH",path,input,{"X-Acting-Actor-ID":context.operatorActorId,"X-Correlation-ID":context.correlationId,"Idempotency-Key":context.idempotencyKey,"X-Expected-Version":String(context.expectedVersion)});
+}
+export function uploadOperatorStoreProductMedia(storeId:string,productId:string,file:File,provenance:MediaProvenanceInput,context:StorePublicationMutationContext){
+  validateVersionedMutationContext(context);
+  if(!isMediaProvenanceInputValid(provenance))throw new Error("PRODUCT_MEDIA_PROVENANCE_REQUIRED");
+  const path=dshOperationPaths.uploadOperatorStoreProductMedia.path.replace("{storeId}",encodeURIComponent(storeId)).replace("{productId}",encodeURIComponent(productId));
+  const body=new FormData();body.set("role","primary");body.set("file",file,file.name);appendMediaProvenance(body,provenance);
+  return requestDshMultipart<CatalogProductResponse>("POST",path,body,{"X-Acting-Actor-ID":context.operatorActorId,"X-Correlation-ID":context.correlationId,"Idempotency-Key":context.idempotencyKey,"X-Expected-Version":String(context.expectedVersion)});
+}
+
+export function listOperatorStoreCatalogProducts(storeId: string, q: string, cursor: string, context: DshOperatorReadContext): Promise<CatalogProductListResponse> {
+  const query = new URLSearchParams({ q, cursor, limit: "30" });
+  return requestDshJson<CatalogProductListResponse>("GET", `/dsh/operator/stores/${encodeURIComponent(storeId)}/products?${query}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId }).then((r) => r.payload);
+}
+export function createOperatorStoreCatalogProduct(storeId: string, input: CreateCatalogProductRequest, context: JoiningCaseMutationContext) {
+  validateAttributedMutationContext(context);
+  return requestDshJson<CatalogProductResponse>("POST", `/dsh/operator/stores/${encodeURIComponent(storeId)}/products`, input, { "X-Acting-Actor-ID": context.operatorActorId, "X-Correlation-ID": context.correlationId, "Idempotency-Key": context.idempotencyKey });
+}
+export function createOperatorStoreCatalogOffer(storeId: string, input: CreateStoreOfferRequest, context: JoiningCaseMutationContext) {
+  validateAttributedMutationContext(context);
+  return requestDshJson<CatalogStoreOfferResponse>("POST", `/dsh/operator/stores/${encodeURIComponent(storeId)}/offers`, input, { "X-Acting-Actor-ID": context.operatorActorId, "X-Correlation-ID": context.correlationId, "Idempotency-Key": context.idempotencyKey });
+}
+export function updateOperatorStoreCatalogOffer(storeId: string, offerId: string, input: UpdateStoreOfferRequest, context: StorePublicationMutationContext) {
+  validateVersionedMutationContext(context);
+  return requestDshJson<CatalogStoreOfferResponse>("PATCH", `/dsh/operator/stores/${encodeURIComponent(storeId)}/offers/${encodeURIComponent(offerId)}`, input, { "X-Acting-Actor-ID": context.operatorActorId, "X-Correlation-ID": context.correlationId, "Idempotency-Key": context.idempotencyKey, "X-Expected-Version": String(context.expectedVersion) });
+}
+
+/** Store-scoped list, authorized by Identity partners in DSH as well as the Control Panel route. */
+export async function listOperatorStoreOffers(storeId: string, cursor: string, context: DshOperatorReadContext, limit = 8): Promise<CatalogStoreOfferListResponse> {
+  if (!storeId.trim() || storeId.length > 128 || cursor.length > 2048 || limit < 1 || limit > 100) throw new Error("DSH_OPERATOR_STORE_OFFERS_INPUT_INVALID");
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (cursor) query.set("cursor", cursor);
+  return (await requestDshJson<CatalogStoreOfferListResponse>("GET", `/dsh/operator/stores/${encodeURIComponent(storeId.trim())}/offers?${query}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function readOperatorStoreInventorySummary(storeId: string, context: DshOperatorReadContext): Promise<CatalogInventorySummaryResponse> {
+ const id=storeId.trim();
+ const actor=context.operatorActorId.trim();
+ if (!id || id.length>128 || !actor) throw new Error("DSH_STORE_INVENTORY_SCOPE_INVALID");
+ return (await requestDshJson<CatalogInventorySummaryResponse>("GET", "/dsh/operator/stores/"+encodeURIComponent(id)+"/inventory-summary", undefined, {"X-Acting-Actor-ID":actor})).payload;
+}
+
+export type CatalogActivityQuery = Readonly<{
+  q?: string; kind?: string; action?: string; storeId?: string;
+  from?: string; to?: string; cursor?: string; limit?: string;
+}>;
+
+export async function listOperatorCatalogActivity(filters: CatalogActivityQuery, context: DshOperatorReadContext): Promise<CatalogActivityPage> {
+  if (!context.operatorActorId.trim()) throw new Error("CATALOG_ACTIVITY_ACTOR_REQUIRED");
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value?.trim()) params.set(key, value.trim());
+  }
+  return (await requestDshJson<CatalogActivityPage>(
+    "GET", `/dsh/operator/catalog-activity?${params}`, undefined,
+    { "X-Acting-Actor-ID": context.operatorActorId.trim() },
+  )).payload;
+}
+
+// Shopping shortcuts are catalog-owned presentation definitions, not commercial types.
+
+
+
+export async function listShoppingShortcuts(context: DshOperatorReadContext, verticalId: string): Promise<ShoppingShortcutListResponse> {
+  if (!context.operatorActorId.trim() || !verticalId.trim()) throw new Error("DSH_SHOPPING_SHORTCUT_READ_INVALID");
+  const q = new URLSearchParams({ verticalId: verticalId.trim() });
+  return (await requestDshJson<ShoppingShortcutListResponse>(dshOperationPaths.listShoppingShortcuts.method,
+    `${dshOperationPaths.listShoppingShortcuts.path}?${q}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function mutateShoppingShortcut(input: ShoppingShortcutMutationRequest, context: JoiningCaseMutationContext, id = ""): Promise<Readonly<{ status: number; payload: ShoppingShortcutMutationResponse }>> {
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_SHOPPING_SHORTCUT_IDEMPOTENCY_INVALID");
+  const update = Boolean(id);
+  const operation = update ? dshOperationPaths.updateShoppingShortcut : dshOperationPaths.createShoppingShortcut;
+  const path = update ? operation.path.replace("{shortcutId}", encodeURIComponent(id.trim())) : operation.path;
+  return requestDshJson<ShoppingShortcutMutationResponse>(operation.method, path, input, {
+    "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim(),
+  });
 }
