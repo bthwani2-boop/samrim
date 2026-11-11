@@ -9,7 +9,7 @@ type Group = Readonly<{ key: string; label: string; status: "ready" | "error"; i
 
 function isSearchResponse(value: unknown): value is { groups: Group[] } {
   if (!value || typeof value !== "object" || !("groups" in value) || !Array.isArray(value.groups) || value.groups.length > 4) return false;
-  return value.groups.every((group: Group) => group && typeof group.key === "string" && typeof group.label === "string" && ["ready", "error"].includes(group.status) && Array.isArray(group.items) && group.items.length <= 5 && group.items.every((item) => item && typeof item.label === "string" && typeof item.href === "string" && /^\/(operations\/|partners\/(stores|actors)\/|independent-stores$|catalog\?mode=edit&productId=)/.test(item.href)));
+  return value.groups.every((group: Group) => group && typeof group.key === "string" && typeof group.label === "string" && ["ready", "error"].includes(group.status) && Array.isArray(group.items) && group.items.length <= 5 && group.items.every((item) => item && typeof item.label === "string" && typeof item.href === "string" && /^\/(operations\/|partners\/(stores|actors)\/|catalog\?mode=edit&productId=)/.test(item.href)));
 }
 
 export function WorkspaceRecordSearch({ query, identity, onNavigate }: Readonly<{ query: string; identity: ActorIdentity; onNavigate: () => void }>) {

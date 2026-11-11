@@ -13,12 +13,12 @@ import { TamaguiProvider } from "tamagui";
 import { appearance } from "../src/bootstrap/appearance";
 import { createClientDsh } from "../src/bootstrap/dsh";
 import { currentIdentityState, restoreIdentitySession, subscribeIdentitySession } from "../src/bootstrap/identity";
+import { clientSessionKey } from "../src/features/access/client-session-scope";
 import { OrderAlertMonitor } from "../src/features/notifications/order-alert-monitor";
 import ServiceCityScope from "../src/features/service-city/service-city-scope";
 
-function currentMobileActorID(): string {
-  const session = currentIdentityState();
-  return session.kind === "authenticated" ? session.identity.subject.trim() : "";
+function currentClientNavigationSessionKey(): string {
+  return clientSessionKey(currentIdentityState());
 }
 
 export default function RootLayout() {
@@ -71,9 +71,9 @@ export default function RootLayout() {
 
 function RootNavigation() {
   const { themeName, theme } = useMobileAppearance();
-  // A new session actor must not inherit React screen state or previous responses.
-  const actorID = useSyncExternalStore(subscribeIdentitySession, currentMobileActorID, () => "");
-  return <TamaguiProvider config={tamaguiConfig} defaultTheme={themeName}><StatusBar style={themeName === "dark" ? "light" : "dark"} /><Stack key={actorID || "signed-out"} screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }}><Stack.Screen name="notifications" options={{ headerShown: false }} /></Stack></TamaguiProvider>;
+  // No private screen state survives an actor switch or renewed same-actor session.
+  const sessionKey = useSyncExternalStore(subscribeIdentitySession, currentClientNavigationSessionKey, () => "");
+  return <TamaguiProvider config={tamaguiConfig} defaultTheme={themeName}><StatusBar style={themeName === "dark" ? "light" : "dark"} /><Stack key={sessionKey || "signed-out"} screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }}><Stack.Screen name="notifications" options={{ headerShown: false }} /></Stack></TamaguiProvider>;
 }
 
 function RootNetworkNotice() {

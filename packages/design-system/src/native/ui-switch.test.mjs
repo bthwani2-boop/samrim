@@ -13,7 +13,7 @@ test("Expo UI switch is used directly with the shared night/day appearance", () 
   assert.match(consent, /useMobileAppearance\(\)/);
   assert.match(consent, /colorScheme=\{themeName\}/);
   assert.match(consent, /seedColor=\{theme\.brandAction\}/);
-  assert.match(consent, /const currentConsent = active && sessionKey\.length > 0 && clientOrderSessionKey\(currentIdentityState\(\)\) === sessionKey \? consent : null/);
+  assert.match(consent, /const currentConsent = active && sessionKey\.length > 0 && clientSessionKey\(currentIdentityState\(\)\) === sessionKey \? consent : null/);
   assert.match(consent, /value=\{currentConsent\?\.decision === "OPTED_IN"\}/);
   assert.match(consent, /disabled=\{!currentConsent \|\| pending\}/);
   assert.match(consent, /onValueChange=\{\(next\) => void update\(next\)\}/);

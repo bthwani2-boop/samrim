@@ -26,10 +26,17 @@ const nextConfig = {
   // Keep Next dev from scaffolding agent instruction files inside this app.
   agentRules: false,
   async redirects() {
+    // The independent Store has no second operator registry. Keep historic
+    // bookmarks through the native router, not a duplicate workspace page.
+    const legacyStoreRegistry = {
+      source: "/independent-stores",
+      destination: "/partners?tab=directory&relationModel=INDEPENDENT_STORE",
+      permanent: false,
+    };
     // Canonicalize browser navigation in local development only.
     const canonicalOrigin = process.env.CONTROL_PANEL_PUBLIC_ORIGIN?.trim();
-    if (process.env.NODE_ENV !== "development" || !/^http:\/\/localhost:\d+$/.test(canonicalOrigin ?? "")) return [];
-    return [{
+    if (process.env.NODE_ENV !== "development" || !/^http:\/\/localhost:\d+$/.test(canonicalOrigin ?? "")) return [legacyStoreRegistry];
+    return [legacyStoreRegistry, {
       source: "/:path*",
       has: [
         { type: "host", value: "127\\.0\\.0\\.1" },

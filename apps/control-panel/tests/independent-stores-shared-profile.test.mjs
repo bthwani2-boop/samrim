@@ -1,20 +1,26 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import nextConfig from "../next.config.mjs";
 import test from "node:test";
 
 const read = (name) => readFileSync(new URL(name, import.meta.url), "utf8");
-const legacyRoute = read("../app/(workspace)/independent-stores/page.tsx");
 const partners = read("../src/features/partner-onboarding/partners-workbench.tsx");
 const inspector = read("../src/features/stores/store-inspector.tsx");
 const storeRoute = read("../app/(workspace)/partners/stores/[storeId]/page.tsx");
 const workspaceSearch = read("../app/api/workspace/search/route.ts");
 const navigation = read("../src/navigation/workspace-registry.ts");
 
-test("the independent bookmark and Store search use the one registry and Store file", () => {
+test("the independent bookmark and Store search use the one registry and Store file", async () => {
   assert.ok(partners.includes("<StoreInspector key={openStore} storeId={openStore}"));
   assert.ok(partners.includes('preferenceKey="partners-unified"'));
   assert.ok(partners.includes("data-adaptive-record-trigger="));
-  assert.ok(legacyRoute.includes('redirect("/partners?tab=directory&relationModel=INDEPENDENT_STORE")'));
+  const aliases = (await nextConfig.redirects()).filter((rule) => rule.source === "/independent-stores");
+  assert.deepEqual(aliases, [{
+    source: "/independent-stores",
+    destination: "/partners?tab=directory&relationModel=INDEPENDENT_STORE",
+    permanent: false,
+  }]);
+  assert.equal(existsSync(new URL("../app/(workspace)/independent-stores/page.tsx", import.meta.url)), false);
   assert.doesNotMatch(navigation, /href: "\/independent-stores"/);
   assert.ok(storeRoute.includes("<StoreWorkspace key={storeId} storeId={storeId}"));
   assert.ok(inspector.includes("/partners/stores/${encodeURIComponent(currentStore.id)}"));
