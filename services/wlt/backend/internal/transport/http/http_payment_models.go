@@ -72,24 +72,6 @@ type preparePartnerFinancialProfileRequest struct {
 	TermsPolicyVersion string `json:"termsPolicyVersion"`
 }
 
-type createFieldAcquisitionRewardPolicyRequest struct {
-	ScopeType         string `json:"scopeType"`
-	ScopeID           string `json:"scopeId"`
-	RewardMinor       int64  `json:"rewardMinor"`
-	RoundingUnitMinor int64  `json:"roundingUnitMinor"`
-	ExpectedVersion   int    `json:"expectedVersion"`
-	Reason            string `json:"reason"`
-}
-
-type finalizeFieldAcquisitionEntitlementRequest struct {
-	JoiningCaseID         string `json:"joiningCaseId"`
-	StoreID               string `json:"storeId"`
-	PartnerActorID        string `json:"partnerActorId"`
-	FieldActorID          string `json:"fieldActorId"`
-	VerticalID            string `json:"verticalId"`
-	CommercialStoreTypeID string `json:"commercialStoreTypeId"`
-}
-
 type activatePartnerFinancialProfileRequest struct{}
 
 type finalizePartnerOrderEarningRequest struct {
