@@ -6,7 +6,7 @@ STATUS: DRAFT_PENDING_FULL_GOVERNANCE_CUTOVER
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 ## Staged work and authority
-**Current program sequence is mandatory:** (1) finish and reconcile root `governance/`, `AGENTS.md`, `REPOSITORY-STRUCTURE.md`, temporary `docs/REFOUNDATION-PLAN.md`, and stage-appropriate `.github/` guards; (2) review and approve a coherent **governance cutover**; (3) only then create the agreed new technical baseline, SQL, apps and services, then (4) accept end-to-end evidence.
+**Current program sequence is mandatory:** (1) finish and reconcile root `governance/`, `AGENTS.md`, `REPOSITORY-STRUCTURE.md`, temporary `docs/REFOUNDATION-PLAN.md`, and stage-appropriate `.github/` guards; (2) review and approve a coherent **governance cutover**; (3) only then create the agreed new **Product implementation** baseline, SQL, apps and services, then (4) accept end-to-end evidence. The separately authorized, **tool-only and exact-version-preserving** pnpm/TypeScript/Biome workspace foundation may be prepared before cutover: it cannot implement Product rules, add apps/services, modify SQL, or establish financial, security or migration readiness.
 
 An in-scope governance phase does **not** authorize touching protected DBs, Docker, branch 41, source production deployments, signing, remote pushes or deleting applied migrations. No PASS for code correctness follows from passing a governance syntax check. Plans and archived ZIP prompts are evidence, not policy sources.
 

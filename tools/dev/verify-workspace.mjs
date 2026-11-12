@@ -74,15 +74,32 @@ console.log('STAGE3_WORKSPACE_STRUCTURE_PASS pnpm=' + pnpmPin +
   ' go-pin=' + goPin + ' nx=DEFERRED(no projects yet)');
 
 if (strict) {
-  const installedNode = process.versions.node;
-  if (installedNode !== nodePin) fail('Node executable differs from exact .node-version: ' + installedNode);
-  const go = spawnSync('go', ['version'], {
-    encoding: 'utf8', shell: process.platform === 'win32',
-    env: { ...process.env, GOTOOLCHAIN: 'local' }
+  // pnpm launches its own embedded Node runtime on some Windows machines.
+  // Discover the real installed executables rather than trusting pnpm's PATH
+  // first entry. All probes are version-only and do not modify the toolchain.
+  const cmd = process.platform === 'win32' ? 'where.exe' : 'which';
+  const args = process.platform === 'win32' ? ['node'] : ['-a', 'node'];
+  const candidates = spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true });
+  if (candidates.status !== 0) fail('Cannot discover installed Node executables');
+  const nodeVersions = [...new Set(candidates.stdout.split(/\r?\n/).map(s => s.trim()).filter(Boolean))]
+    .map(file => {
+      const probe = spawnSync(file, ['--version'], { encoding: 'utf8', windowsHide: true });
+      return probe.status === 0 ? probe.stdout.trim().replace(/^v/, '') : 'unavailable';
+    });
+  if (!nodeVersions.includes(nodePin)) {
+    fail('Exact .node-version binary not found on PATH: expected ' + nodePin +
+      ', observed ' + nodeVersions.join(', '));
+  }
+  const installedNode = nodePin;
+  // Go's module-cache toolchain is exact-version pinned; disable network resolution.
+  // The system-wide Go executable is deliberately not replaced or upgraded.
+  const go = spawnSync(process.platform === 'win32' ? 'go.exe' : 'go', ['version'], {
+    encoding: 'utf8', windowsHide: true,
+    env: { ...process.env, GOTOOLCHAIN: `go${goPin}`, GOPROXY: 'off' }
   });
-  if (go.status !== 0) fail('Go executable unavailable without downloading/upgrading toolchain');
+  if (go.status !== 0) fail('Exact Go toolchain is not available from local cache at ' + goPin);
   const actual = /go version go([0-9.]+)/.exec(go.stdout)?.[1];
-  if (actual !== goPin) fail('Go toolchain mismatch: expected ' + goPin + ', installed ' + (actual ?? 'unknown') +
-    '; no upgrade permitted by current instruction');
+  if (actual !== goPin) fail('Go toolchain mismatch: expected ' + goPin +
+    ', observed ' + (actual ?? 'unknown'));
   console.log('STAGE3_EXACT_LOCAL_TOOLCHAIN_PASS node=' + installedNode + ' go=' + actual);
 }

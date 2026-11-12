@@ -17,6 +17,6 @@ pnpm exec biome --version
 
 On a clean machine without a populated package cache, use `pnpm install --frozen-lockfile --ignore-scripts` after installing the **same pinned pnpm 12.15.0**: it may fetch the **exact integrity-locked artifacts**, but must not recalculate or upgrade their versions. The offline command above is the locally verified path.
 
-`pnpm run check:toolchain` additionally enforces exact local Node/Go toolchain versions. It is expected to **fail** while this machine has Go `1.27.1` and the original source requires Go `1.27.3`. Do not hide the mismatch or upgrade Go without authorization.
+`pnpm run check:toolchain` verifies the original Node `24.22.1` and Go `1.27.3` binaries. Both now **PASS**. Go `1.27.3` is available in the user toolchain cache and runs without network resolution (`GOTOOLCHAIN=go1.27.3`, `GOPROXY=off`); the system-wide Go command remains `1.27.1`. The checker distinguishes pnpm's embedded Node `24.19.0` from the exact project-installed Node `24.22.1`. No global runtime or project dependency was upgraded.
 
 No `tsc` project compile, Nx graph, Go service build, Expo start, UI theme/RTL, database migration, OpenAPI contract, GitHub remote CI or app-runtime validation is possible yet. Source version evidence: [`docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md`](docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md). The single temporary stage evidence tracker is `docs/REFOUNDATION-PLAN.md`, not this README.

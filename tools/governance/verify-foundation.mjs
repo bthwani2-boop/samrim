@@ -78,6 +78,28 @@ for(const folder of ['contracts','infra','packages','nx.json','go.work']){
  if(exists(folder))fail('stage 4+ projects/migration/infra introduced prematurely: '+folder);
 }
 
+
+// Validate real in-repository Markdown links instead of accepting a green
+// capability census with broken local onboarding and governance references.
+for (const sourcePath of required.filter(p => p.endsWith('.md'))) {
+  const doc = contents[sourcePath];
+  for (const match of doc.matchAll(/(?<!!)\[[^\]\n]+\]\(([^)\n]+)\)/g)) {
+    const raw = match[1].trim().split(/\s+["']/)[0];
+    if (/^(?:https?:\/\/|mailto:|#)/i.test(raw)) continue;
+    const pathname = raw.split(/[?#]/, 1)[0];
+    if (!pathname) continue;
+    let decoded;
+    try { decoded = decodeURIComponent(pathname); } catch { fail('invalid local Markdown link in ' + sourcePath); }
+    const resolved = path.resolve(root, path.dirname(sourcePath), decoded);
+    if (!resolved.startsWith(root + path.sep) && resolved !== root) {
+      fail('local Markdown link escapes workspace: ' + sourcePath + ' -> ' + pathname);
+    }
+    if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
+      fail('broken local Markdown link: ' + sourcePath + ' -> ' + pathname);
+    }
+  }
+}
+
 const agent=contents['AGENTS.md'],repo=contents['REPOSITORY-STRUCTURE.md'];
 // The official Spec Kit installer owns CLI scaffolding. This compatibility router is not another constitution.
 const init = JSON.parse(contents['.specify/init-options.json']);

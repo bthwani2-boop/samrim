@@ -15,7 +15,7 @@ This inventory is extracted from the **actual root manifests and package manifes
 | Node (project .node-version / .nvmrc) | `24.22.1` | Pinned in new root; installed Node matches |
 | Node package engine range | `>=24.17.0 <25` | Same original range; pnpm's bundled runtime may differ from command-line Node |
 | pnpm | `12.15.0` | Exact executable matched and used for a new minimal frozen lockfile |
-| Go (.go-version / go.work / service modules) | `1.27.3` | Pinned; installed machine has **1.27.1**, so exact Go build/reproduce remains BLOCKED; do not silently use a different Go version |
+| Go (.go-version / go.work / service modules) | `1.27.3` | Exact toolchain **PASS** from user-managed cache, verified offline with `GOTOOLCHAIN=go1.27.3 GOPROXY=off`. Global Go remains `1.27.1`; no global replacement. Go services NOT_RUN. |
 | Git command observed | `2.55.0.windows.3` | Available; no source-required pin for Git |
 | TypeScript | `7.0.2` | Exact isolated dev dependency in stage-3 root |
 | Biome | `2.5.12` | Exact dev dependency; pre-existing lint/formatter choice, no redundant ESLint installed |
@@ -35,4 +35,4 @@ This inventory is extracted from the **actual root manifests and package manifes
 
 The old `pnpm-lock.yaml` includes unrelated apps, packages, development patches and provider dependencies. It **must not be copied** into a source-sparse Workspace: Stage 3 generates its own lock for only the exact selected tools using `pnpm 12.15.0` offline. Later projects must reintroduce only real source-approved dependencies with the **same exact published versions** and no automatic latest or version-range upgrade.
 
-**Safety gate:** The Go mismatch does not justify changing `.go-version` from `1.27.3` to `1.27.1`, or installing/upgrading a machine-wide Go runtime without separate review of its effect. Mark full exact Go toolchain readiness `BLOCKED` until the correct source-matching toolchain is available without violating user constraints. Stage 3 can still validate pnpm, TypeScript and Biome now.
+**Safety gate:** Keep `.go-version` exactly `1.27.3`. The original exact Go toolchain has been fetched into the ordinary Go user module cache and verified again with `GOTOOLCHAIN=go1.27.3` and `GOPROXY=off`. The installed global Go remains `1.27.1`; without the explicit pinned toolchain selection it must not be used to claim an exact project build. This resolves **only the local CLI mismatch**, not any Go module, backend contract, SQL or runtime proof, all NOT_RUN until their later authorized stages.
