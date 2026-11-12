@@ -95,6 +95,21 @@ function px(value: number): string {
   return `${value}px`;
 }
 
+function ms(value: number): string {
+  return `${value}ms`;
+}
+
+// Browser shadows encode alpha in the color, not as a separate RN-only property.
+function cssShadowColor(hex: string, alpha: number): string {
+  const match = /^#([0-9a-f]{6})$/i.exec(hex);
+  if (!match || !Number.isFinite(alpha) || alpha < 0 || alpha > 1) {
+    throw new Error("Invalid shadow color or opacity");
+  }
+  const digits = match[1]!;
+  const rgb = [0, 2, 4].map(offset => Number.parseInt(digits.slice(offset, offset + 2), 16));
+  return `rgba(${rgb.join(", ")}, ${alpha})`;
+}
+
 function cssTokenEntries<T extends Record<string, number>>(prefix: string, values: T, unit = "px") {
   return Object.fromEntries(Object.entries(values).map(([name, value]) => [`--${prefix}-${name}`, `${value}${unit}`]));
 }
@@ -113,11 +128,11 @@ export function webFoundationToCssVariables(): Record<string, string> {
     ...cssTokenEntries("border", borders),
     ...cssTokenEntries("opacity", opacity, ""),
     ...cssTokenEntries("z", zIndex, ""),
-    "--duration-reduced": px(motion.reducedMotionDuration),
+    "--duration-reduced": ms(motion.reducedMotionDuration),
   };
 
   for (const [name, value] of Object.entries(motion.duration)) {
-    variables[`--duration-${name}`] = px(value);
+    variables[`--duration-${name}`] = ms(value);
   }
   for (const [name, value] of Object.entries(motion.easing)) {
     variables[`--easing-${name}`] = value;
@@ -135,7 +150,7 @@ export function webFoundationToCssVariables(): Record<string, string> {
     variables[`--letter-spacing-${name}`] = px(value.letterSpacing);
   }
   for (const [name, value] of Object.entries(elevation)) {
-    variables[`--elevation-${name}`] = `${px(value.shadowOffset.width)} ${px(value.shadowOffset.height)} ${px(value.shadowRadius)} ${value.shadowColor}`;
+    variables[`--elevation-${name}`] = `${px(value.shadowOffset.width)} ${px(value.shadowOffset.height)} ${px(value.shadowRadius)} ${cssShadowColor(value.shadowColor, value.shadowOpacity)}`;
   }
 
   return variables;

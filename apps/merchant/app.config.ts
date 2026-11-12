@@ -1,3 +1,6 @@
 import { defineBthwaniExpoApp } from "../../tools/mobile/define-bthwani-expo-app.cjs";
 
-export default defineBthwaniExpoApp("app-partner", { cameraMode: "barcode", maps: true, web: true });
+export default {
+  ...defineBthwaniExpoApp("app-partner", { cameraMode: "barcode", maps: true, web: true }),
+  web: { bundler: "metro" as const, output: "server" as const },
+};

@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Appearance } from "react-native";
+import { Appearance, Platform } from "react-native";
 import { isThemePreference, resolveTheme, resolveThemeName, type ThemeName, type ThemePreference } from "../theme/index";
 import type { ThemeColors } from "../tokens/index";
 
@@ -31,10 +31,14 @@ export function createMobileAppearanceController({ storage, key }: { storage: Ap
     snapshot = snapshotFor(preference, ready);
     notify();
   };
-  const appearanceSubscription = Appearance.addChangeListener(({ colorScheme }) => {
-    systemScheme = colorScheme;
-    if (snapshot.preference === "system") update("system");
-  });
+  // React SSR creates request-local controllers; do not retain process-wide
+  // Appearance subscriptions for a server render that never mounts an effect.
+  const appearanceSubscription = Platform.OS === "web" && typeof window === "undefined"
+    ? null
+    : Appearance.addChangeListener(({ colorScheme }) => {
+        systemScheme = colorScheme;
+        if (snapshot.preference === "system") update("system");
+      });
   const applyNative = (preference: ThemePreference) => {
     Appearance.setColorScheme?.(preference === "system" ? "unspecified" : preference);
   };
@@ -70,28 +74,35 @@ export function createMobileAppearanceController({ storage, key }: { storage: Ap
       }
     },
     dispose() {
-      appearanceSubscription.remove();
+      appearanceSubscription?.remove();
       listeners.clear();
     },
   };
 }
 
 const AppearanceContext = React.createContext<MobileAppearanceController | null>(null);
+
+// Stable, request-independent snapshot: SSR and the initial hydration render agree.
+// The stored/system preference is restored after hydration without hiding page content.
+const serverAppearance: MobileAppearanceSnapshot = {
+  preference: "system",
+  themeName: "light",
+  theme: resolveTheme("light"),
+  ready: false,
+};
+const getServerAppearance = () => serverAppearance;
+
 export function AppearanceProvider({ controller, children }: { controller: MobileAppearanceController; children: React.ReactNode }) {
-  const [ready, setReady] = React.useState(controller.getSnapshot().ready);
   React.useEffect(() => {
-    let mounted = true;
-    void controller.restore().finally(() => { if (mounted) setReady(true); });
-    return () => { mounted = false; };
+    void controller.restore();
   }, [controller]);
-  if (!ready) return null;
   return <AppearanceContext.Provider value={controller}>{children}</AppearanceContext.Provider>;
 }
 export function useMobileAppearance(): MobileAppearanceSnapshot & { setPreference(preference: ThemePreference): Promise<void> } {
   const controller = React.useContext(AppearanceContext);
   if (!controller) throw new Error("AppearanceProvider required");
   return {
-    ...React.useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot),
+    ...React.useSyncExternalStore(controller.subscribe, controller.getSnapshot, getServerAppearance),
     setPreference: controller.setPreference,
   };
 }

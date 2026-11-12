@@ -38,6 +38,12 @@ for (const [name, [slug, packageId, scheme, projectId]] of Object.entries(expect
   assert.equal(manifest.owner,"bthwani1");
   const cfg = read(`${rel}/app.config.ts`);
   assert.ok(cfg.includes(`defineBthwaniExpoApp("${slug}"`), name + " original native config lost");
+  if (name === "customer" || name === "merchant") {
+    // SDK 58 currently exports a CommonJS SSR renderer. In a type:module
+    // package, `expo serve` returns HTTP 500: module is not defined.
+    assert.notEqual(current.type, "module", name + " Expo SSR renderer cannot run as ESM");
+    assert.ok(cfg.includes('output: "server"'), name + " lost actual Expo Web SSR");
+  }
   assert.ok(read(`${rel}/metro.config.cjs`).includes("getDefaultConfig(__dirname)"));
   assert.ok(read(`${rel}/index.js`).includes("expo-router/entry"));
   for (const path of ["app/_layout.tsx","app/index.tsx","app/health.tsx","assets/icon.png",

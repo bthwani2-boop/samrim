@@ -34,8 +34,10 @@ function makeTheme(mode: "light" | "dark") {
 }
 export const tamaguiConfig = createTamagui({
   ...defaultConfig,
+  // Expose only BThwani-approved roots. The 200+ generic example themes
+  // from defaultConfig are not an additional mutable visual palette.
+  // Add specialized subthemes only when an actual consumer needs them.
   themes: {
-    ...defaultConfig.themes,
     light: makeTheme("light"),
     dark: makeTheme("dark"),
   },

@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
-import { Stack } from "expo-router";
+import { LocaleProvider, Stack } from "expo-router";
 import { TamaguiProvider, Theme } from "tamagui";
 import { AppearanceProvider, createMobileAppearanceController, useMobileAppearance } from "@bthwani/design-system/native/appearance";
 import { tamaguiConfig } from "@bthwani/tamagui-config";
@@ -11,7 +11,9 @@ function AppRoutes() {
   return (
     <TamaguiProvider config={tamaguiConfig} defaultTheme={themeName}>
       <Theme name={themeName}>
-        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }} />
+        <LocaleProvider direction="rtl">
+          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }} />
+        </LocaleProvider>
       </Theme>
     </TamaguiProvider>
   );
@@ -21,9 +23,11 @@ function AppRoutes() {
 // Account-scoped preference keys will be introduced with the real Identity owner.
 export default function RootLayout() {
   const storage = React.useMemo(() => {
-    let webPreference: string | null = null;
     return Platform.OS === "web"
-      ? { getItem: async (_key: string) => webPreference, setItem: async (_key: string, value: string) => { webPreference = value; } }
+      ? {
+          getItem: async (key: string) => window.localStorage.getItem(key),
+          setItem: async (key: string, value: string) => { window.localStorage.setItem(key, value); },
+        }
       : { getItem: SecureStore.getItemAsync, setItem: SecureStore.setItemAsync };
   }, []);
   const controller = React.useMemo(() => createMobileAppearanceController({

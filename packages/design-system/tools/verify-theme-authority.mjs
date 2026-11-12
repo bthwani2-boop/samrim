@@ -188,11 +188,11 @@ if (fs.existsSync(path.join(repoRoot, "apps/control-panel/app/theme.css"))) {
   failures.push("apps/control-panel/app/theme.css exists as duplicate artifact; control panel must import @bthwani/design-system/theme.css");
 }
 
-// 5. Check Control Panel globals.css
-const globalsCss = read("apps/control-panel/app/globals.css");
+// 5. Check the current Control Panel root theme authority
+const globalsCss = read("apps/control-panel/app/layout.tsx");
 
-if (!globalsCss.includes('@import "@bthwani/design-system/theme.css";')) {
-  failures.push('apps/control-panel/app/globals.css must import "@bthwani/design-system/theme.css"');
+if (!globalsCss.includes('import "@bthwani/design-system/theme.css";')) {
+  failures.push('apps/control-panel/app/layout.tsx must import "@bthwani/design-system/theme.css"');
 }
 if (globalsCss.includes("color-scheme: light;")) {
   failures.push("apps/control-panel/app/globals.css contains unjustified hardcoded color-scheme: light;");
@@ -221,7 +221,7 @@ if (controlPanelPage.includes("visualTokens") || controlPanelPage.includes("styl
 }
 
 // 6. Check Mobile apps for dynamic adaptive StatusBar
-const mobileApps = ["app-client", "app-partner", "app-captain"];
+const mobileApps = ["customer", "merchant", "captain"];
 for (const app of mobileApps) {
   const layout = read(`apps/${app}/app/_layout.tsx`);
   if (/style=["'](?:dark|light)["']/.test(layout)) {
@@ -232,32 +232,53 @@ for (const app of mobileApps) {
   }
 }
 
-// 7. Check app-client identity-gate and ManagedIdentityFlow for local color authorities
-const clientGate = read("apps/app-client/src/features/access/identity-gate.tsx");
-if (clientGate.includes("colorRoles.") || clientGate.includes("statusScale.")) {
-  failures.push("apps/app-client/src/features/access/identity-gate.tsx retains obsolete static colorRoles or statusScale");
+// 7. Stage-4 presentation guard: verify only admitted, existing owners.
+const panelProvider = read("apps/control-panel/app/providers.tsx");
+if (!panelProvider.includes('direction="rtl"') || !panelProvider.includes('locale={arEG}')) {
+  failures.push("Operator must configure Ant Design RTL and Arabic locale");
 }
-
-const managedFlow = read("services/identity/clients/presentation/ManagedIdentityFlow.tsx");
-if (managedFlow.includes("colorRoles.") || managedFlow.includes("statusScale.")) {
-  failures.push("ManagedIdentityFlow retains obsolete static colorRoles or statusScale");
+const customerHtml = read("apps/customer/app/+html.tsx");
+const merchantHtml = read("apps/merchant/app/+html.tsx");
+for (const [name, html] of [["customer", customerHtml], ["merchant", merchantHtml]]) {
+  for (const required of ["useServerDocumentContext", "headNodes", "bodyNodes", 'lang="ar"', 'dir="rtl"']) {
+    if (!html.includes(required)) failures.push(`apps/${name} Expo Web HTML missing ${required}`);
+  }
 }
-
-const clientIdentityPresentation = read("apps/app-client/src/features/access/identity-presentation.ts");
-if (clientIdentityPresentation.includes("direction:")) {
-  failures.push("app-client identity presentation retains a local direction authority");
+const mobileAppearance = read("packages/design-system/src/native/appearance.tsx");
+if (mobileAppearance.includes("if (!ready) return null")) {
+  failures.push("Expo SSR must not be blocked by appearance restoration");
 }
-
+for (const app of mobileApps) {
+  const layout = read(`apps/${app}/app/_layout.tsx`);
+  if (!layout.includes('LocaleProvider direction="rtl"')) {
+    failures.push(`apps/${app} navigator missing central RTL locale`);
+  }
+}
+const merchantConfig = read("apps/merchant/app.config.ts");
+if (!merchantConfig.includes('output: "server"')) {
+  failures.push("Merchant Expo Web must use server rendering for the RTL document contract");
+}
+const tamaguiConfig = read("packages/tamagui-config/src/index.ts");
+if (tamaguiConfig.includes("...defaultConfig.themes,")) {
+  failures.push("Unused generic Tamagui themes compete with BThwani semantic roots");
+}
+const nativeConfig = read("tools/mobile/define-bthwani-expo-app.cjs");
+if (!nativeConfig.includes("forcesRTL: true")) failures.push("Expo native localization must force Arabic RTL");
 for (const [name, body] of [
-  ["app-client identity gate", clientGate],
-  ["ManagedIdentityFlow", managedFlow],
   ["theme tokens", colorsTs],
   ["theme CSS generator", themeIndexTs],
-  ["control-panel globals", globalsCss],
+  ["control-panel root", globalsCss],
 ]) {
   if (/\btheme\.(action|focusColor)\b/.test(body) || /\b(action|focusColor):\s*brandScale/.test(body) || body.includes("--focus-color") || body.includes("var(--focus-color)")) {
     failures.push(`${name} retains retired action/focus semantic aliases`);
   }
+}
+if (webFoundationToCssVariables()["--duration-standard"] !== "180ms" ||
+    !/^\d+ms$/.test(webFoundationToCssVariables()["--duration-reduced"])) {
+  failures.push("Motion CSS units must use milliseconds");
+}
+if (!/rgba\(\d+, \d+, \d+, 0\.06\)/.test(webFoundationToCssVariables()["--elevation-raised"] ?? "")) {
+  failures.push("Web shadows must project canonical opacity");
 }
 
 if (failures.length > 0) {
@@ -269,12 +290,12 @@ if (failures.length > 0) {
 }
 
 console.log("DESIGN_SYSTEM_SINGLE_THEME_AUTHORITY=PASS");
-console.log("SCOPED_LOCAL_SEMANTIC_COLOR_AUTHORITY=0");
-console.log("SCOPED_DUPLICATE_LIGHT_DARK_TRUTH=0");
-console.log("DEAD_THEME_TOKEN=0");
-console.log("STATUS_BAR_THEME_SYNC=PASS");
-console.log("CONTROL_PANEL_RAW_SEMANTIC_COLORS=0");
+console.log("STAGE4_CHECKED_THEME_SOURCES=PASS");
+console.log("CANONICAL_LIGHT_DARK_THEME_PARITY=PASS");
+console.log("RETIRED_THEME_COLOR_ALIASES_CHECK=PASS");
+console.log("STAGE4_MOBILE_APPEARANCE_CONTEXT_AND_RTL=PASS");
+console.log("CONTROL_PANEL_ROOT_RAW_COLOR_CHECK=PASS");
 console.log("THEME_KEYS_PARITY=PASS");
-console.log("STATIC_THEME_TOKEN_CONTRAST_MATRIX=PASS");
+console.log("CHECKED_THEME_CONTRAST_PAIRS=PASS");
 console.log("UNJUSTIFIED_DUPLICATE_THEME_CSS=0");
 console.log("DEAD_MANUAL_THEME_BRANCH=0");

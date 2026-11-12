@@ -17,7 +17,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "theme:check": "node --loader ./tools/ts-resolver.mjs tools/generate-theme-css.mjs --check"
+    "theme:check": "node --loader ./tools/ts-resolver.mjs tools/generate-theme-css.mjs --check",
+    "theme:verify": "node --loader ./tools/ts-resolver.mjs tools/verify-theme-authority.mjs"
   },
   "peerDependencies": {
     "react": "19.3.0",

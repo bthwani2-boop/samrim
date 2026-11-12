@@ -1,4 +1,9 @@
 import { Link } from "expo-router";
+import type { Metadata } from "expo-router/server";
+
+export function generateMetadata(): Metadata {
+  return { title: "بثواني — التاجر", description: "واجهة التاجر الخاصة بمنصة بثواني." };
+}
 import { SafeAreaView, ScrollView } from "react-native";
 import { Button, Input, Text, XStack, YStack } from "tamagui";
 import { useMobileAppearance } from "@bthwani/design-system/native/appearance";
@@ -6,7 +11,7 @@ import { useMobileAppearance } from "@bthwani/design-system/native/appearance";
 export default function FoundationHome() {
   const { theme, preference, setPreference } = useMobileAppearance();
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
+    <SafeAreaView style={{ flex: 1, direction: "rtl", backgroundColor: theme.background }}>
       <ScrollView contentContainerStyle={{ padding: 24, flexGrow: 1 }} keyboardShouldPersistTaps="handled">
         <YStack style={{ gap: 16, alignItems: "stretch" }} aria-label="فحص البنية الأساسية">
           <Text style={{ color: theme.color, fontSize: 28, fontWeight: "700", textAlign: "right" }}>بثواني — التاجر</Text>
