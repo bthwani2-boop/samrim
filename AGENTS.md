@@ -7,7 +7,7 @@ GOVERNANCE_CUTOVER: PENDING
 ## 1. Scope and governing truth
 - The human's latest explicit instruction defines authorized scope. Do not infer authority to publish, push, merge, delete protected data, or change permissions from access to a tool.
 - Inspect the current repository/worktree, branch, HEAD, Git status, concurrent owners, and relevant instructions before writing. Never treat an older audit, ZIP, chat snapshot, or command for another worktree as current runtime truth.
-- During foundation reconstruction, `governance/README.md` is the **single new target index**, but remains explicitly NOT_READY. The old `docs/governance/` documents are historical donor evidence and do not become a second editable authority. Do not begin domain implementation or claim a policy adopted until the governed, reviewed cutover is completed.
+- During foundation reconstruction, `governance/README.md` is the **single new target index**, but remains explicitly NOT_READY. Historical governance is retained only in branch `41` and other external archived evidence; its former directory must not exist in this candidate. Do not begin domain implementation or claim a policy adopted until the governed, reviewed cutover is completed.
 - For the deployed result, code, executable contracts, migrations, authorized persistent owner readback, configuration and runtime revision prove **implementation state**. Governance prescribes approved meaning; it does not prove implementation.
 
 ## 2. One owner and minimum machinery
@@ -42,4 +42,4 @@ GOVERNANCE_CUTOVER: PENDING
 ## 7. Controlled governance cutover
 - New normative Product/Architecture/Safety/Engineering documents belong **only** in root `governance/`, with one semantic owner per decision. Keep older source snapshots outside normative authority and preserve external research references.
 - The foundation gate may pass its **limited structural scope** while `GOVERNANCE_CUTOVER= PENDING`; that is not approval for implementation, full CI, SQL, security, finance or product release.
-- Change `GOVERNANCE_CUTOVER` only after every adopted domain decision is semantically reconciled, all 26 admitted capability IDs are accounted for with one owner, all internal references resolve, the old active path is removed and positive/negative guard tests pass. An unreviewed conflict remains recorded, not guessed away.
+- Change `GOVERNANCE_CUTOVER` only after every adopted domain decision is semantically reconciled, all 26 admitted capability IDs are accounted for with one owner, all internal references resolve, no obsolete governance directory exists in the candidate, and positive/negative guard tests pass. An unreviewed conflict remains recorded, not guessed away.

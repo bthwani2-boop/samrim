@@ -21,9 +21,9 @@ SEMANTIC_SCOPE: file placement and migration rules; not Product, agent authoriza
 | `tests/` | integration proof spanning genuine owners; not duplicate unit tests |
 
 ## Transitional rule for this worktree
-- `docs/governance/` currently contains the **inherited donor snapshot** from branch 41. It is deliberately not the target. Do not update it or wire a new checker to bless it.
-- `governance/` is the one **target** path. Its README advertises NOT_READY until a single coordinated migration/rewrite of all applicable decisions and 26 capability IDs, rather than an unsafe partial authority switch.
-- At cutover, remove `docs/governance/` from the candidate tree; preserve historical text through Git/source provenance, not an active duplicate policy tree. Translate references and any tests to the new owner in the same slice. A guard must fail full-governance acceptance if both remain as active owners.
+- The former `docs/governance/` directory is **absent from this candidate by explicit user decision**. Its content remains inspectable in original branch `41` and archived inputs; do not restore it to this worktree.
+- `governance/` is the only **target** policy path. Its README advertises NOT_READY until all applicable decisions and 26 capability IDs are reconciled, rather than an unsafe partial authority switch.
+- The foundation guard rejects reintroduction of `docs/governance/`. Translate surviving references directly to the owning new files as each decision is adopted. Keep historical provenance external to the candidate, not another active governance directory.
 - No domain code or SQL is introduced in the foundation-only stage.
 
 ## Placement and simplification law

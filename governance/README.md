@@ -9,7 +9,7 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 ## Intent and authority boundary
 This is the sole **target** root for future durable BThwani governance. It does not yet declare a complete Product policy; in particular, the 26 admitted capabilities and all domain decisions have **not** been independently reconciled or rewritten here.
 
-The inherited `docs/governance/` tree in this sparse worktree is historical donor evidence from branch 41 and may not be modified as a competing policy root. Its contents, the dated plans, the November 11 command, and ZIP packages must be semantically compared to the latest approved user decisions and verified implementation before cutover. The user owns approvals; current source/runtime proves implementations, not product approvals.
+The former `docs/governance/` directory was removed from this candidate at the user's request. Its content remains available for selective inspection in source branch `41` and archived evidence. Never restore or copy its tree into the new candidate. Its contents, the dated plans, the November 11 command, and ZIP packages must be semantically compared to approved decisions and verified implementation before cutover. The user owns approvals; current source/runtime proves implementations, not product approvals.
 
 ## Required final owners (planned; not yet admitted)
 - `product.md`: admitted scope and CAPABILITY_ID census
@@ -20,7 +20,7 @@ The inherited `docs/governance/` tree in this sparse worktree is historical dono
 - `catalog.md`: one DSH registry, shared suggestions and Store-owned products, one StoreOffer writer
 - `commerce.md`: cart, checkout, orders, adjustments, promotions, communications
 - `fulfillment.md`: dispatch, Store Captain, pickup, handoff, delivery
-- `finance.md`: WLT commission/subscription, collection, wallet, ledger and settlements
+- `finance.md`: **draft created**, pending full semantic cutover and independent review; WLT commission/subscription, collection, wallet, ledger and settlements
 - `hr.md`: internal personnel relationships
 - `experience.md`: design, accessibility, RTL, Design System and multi-platform behavior
 - `safety.md`: security, data, concurrency, migrations, recovery
@@ -36,4 +36,4 @@ The inherited `docs/governance/` tree in this sparse worktree is historical dono
 - **Links and benchmarks:** preserve original OSS and competitor citations and historical provenance outside binding governance, never adopt an old screenshot or archived ZIP as product truth.
 
 ## Adoption gate
-Until every owner has a semantic rewrite, a single Product admission set with exactly one domain-owner section per capability, resolved references, reviewed conflict disposition and tested CI guards, `GOVERNANCE_CUTOVER` must stay NOT_READY. **Do not treat this index or a Foundation Guard PASS as completed BThwani governance.**
+Until every owner has a semantic rewrite, a single Product admission set with exactly one domain-owner section per capability, resolved references, reviewed conflict disposition and tested CI guards, `GOVERNANCE_CUTOVER` must stay NOT_READY. Draft files (including `finance.md`) are review candidates and cannot activate business features by themselves. **Do not treat this index or a Foundation Guard PASS as completed BThwani governance.**

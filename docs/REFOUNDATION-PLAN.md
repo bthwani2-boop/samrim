@@ -45,14 +45,14 @@ A source being inventoried does **not** mean every line or external URL has pass
 **Owns:** root `AGENTS.md`, root `REPOSITORY-STRUCTURE.md`, `governance/README.md` (staging index), this plan, `tools/governance/`, `.github/workflows/foundation-guard.yml`.
 
 - Reauthor agent execution safety, smallest coherent refoundation slice, owner/writer law, tested evidence, protected data and Git authorization. Do not transplant the oversized donor law verbatim.
-- Reauthor repository placement for a root `governance/`, while making the donor `docs/governance/` **explicitly non-authoritative** and frozen until one coordinated cutover.
+- Reauthor repository placement for a root `governance/`. User-approved early deletion of the old donor folder from **this candidate** is now in scope; reference historical source branch `41` without rebuilding a duplicate directory.
 - Build a Foundation-only CI guard with positive and adversarial tests; it must not assume Go, SQL, Expo, pnpm or complete Product docs exist. No dummy success for product acceptance.
 - Remove obsolete inherited executable CI workflows from the sparse candidate when replaced by the Foundation Guard, while retaining original tests and workflows in branch 41 for later feature-level recovery.
 - Prepare one PR template that states affected Product law, same SHA evidence, residual risk and that the branch is NOT MERGEABLE while deliberately sparse.
 - **Gate:** stage-aware rules validated locally including negative fixtures; correct paths; exact Git diff reviewed. Foundation checks may PASS while `GOVERNANCE_CUTOVER=NOT_READY`.
 
-## Phase 2 — Semantic governance reconstruction and single-root cutover (NOT_STARTED)
-**Owns:** `governance/{product,platform,architecture,identity,stores,catalog,commerce,fulfillment,finance,hr,experience,safety,engineering,journeys}.md`.
+## Phase 2 — Semantic governance reconstruction and single-root cutover (PARTIAL: financial draft only)
+**Owns:** `governance/{product,platform,architecture,identity,stores,catalog,commerce,fulfillment,finance,hr,experience,safety,engineering,journeys}.md`. Financial collection has an initial `governance/finance.md` draft; the rest are still NOT_RUN.
 
 - Make a complete line/decision concordance against the current 15 donor semantic-owner documents, all six approved discussion sequences and meaningful ZIP requirements. Record each rule: retained/reworded/merged/superseded/retired/unresolved, owner and rationale.
 - Preserve the 26 admitted capability IDs plus all material subfeatures in exactly one appropriate domain-owner section each. No additional Product breadth from donor claims without approval.
@@ -60,13 +60,13 @@ A source being inventoried does **not** mean every line or external URL has pass
 - Translate approved Current UX: Tamagui for Expo and Ant Design for Operator with one legitimate semantic brand/token source, Arabic RTL, dark/light, low friction, accessible recovery. No independent design authority from archived UX snapshots.
 - Review all historic legal/media/OSS/competitor links; preserve original and source date in `docs/reference/` without rewriting citations into purported product laws.
 - Classify all unapproved or conflicting contract choices as unresolved. Never invent product values, partner percentages, pricing, subscription charges or service permissions.
-- Delete the old `docs/governance/` tree **from this candidate only** in the same coherent cutover after owners, incoming links and guard tests are migrated. Preserve its git history/provenance from original.
+- The old governance folder was deleted from this candidate in Phase 1 by explicit instruction. Its original contents remain readable from branch `41`. Do not reintroduce it; migrate references directly into new `governance/` owners as applicable. This structural deletion does **not** certify that semantic governance reconstruction has completed.
 - **Gate:** no old active root, one semantic owner per rule, 26/26 capability IDs with exactly one section each, zero broken intra-repo references, negative semantic regression guards. Financial, security, deletion and migration decisions must receive required independent review. Otherwise REVIEW_BLOCKED.
 
 ## Phase 3 — GitHub and policy enforcement reconstruction (PARTIAL: foundation only)
 - Keep a **single** CI architecture: selective Fast Guard for affected code after sources exist, Sonar/CodeQL analysis where applicable, one final Refoundation Acceptance Gate. Avoid a parallel CI/review platform.
 - Correct historic branch routing (36/37/38), ensure SQL changes activate the owning service tests, enforce import/contract/canonical-writer rules and review documented failures; test the routing itself with changed-file fixtures.
-- Integrate CodeRabbit configuration only after validating current repo settings; create CODEOWNERS using actual GitHub accounts/teams, never fictitious reviewers. Protect merge rules at the actual repository; local YAML alone does not prove GitHub rulesets.
+- Integrate CodeRabbit configuration only after validating current repo settings. The user is the sole project contributor; **do not create CODEOWNERS** or invent reviewers. Required independent finance/security/migration review remains a separate acceptance condition where mandated. Protect merge rules at the actual repository; local YAML alone does not prove GitHub rulesets.
 - Negative guard tests must fail on removed protected policies, duplicate capabilities, outdated paths, authority bypass, missing tests, and unsafe fork-secret exposure.
 - **Gate:** reproducible local test + exact candidate action checks, human review of rule weakening, required GitHub branch protection verified externally when submission is authorized. No push/PR/merge without separate explicit approval.
 
@@ -98,15 +98,16 @@ A source being inventoried does **not** mean every line or external URL has pass
 | D03 | 26 inherited Product IDs include historical `PARTNER_*` wording | Keep stable governance capability IDs for traceability until a one-time owner-reviewed rename map proves all consumers updated; do not create duplicate synonyms. |
 | D04 | Retired enrollment/Field workflows and old audit tests | No active new path or role. Investigate only binding retained financial/legal evidence at original owner; never re-enable a retired workflow just to keep a legacy test. |
 | D05 | Exact relation defaults and available fulfillment selections | Policy chooses eligible subset through DSH; the UI must not imply unavailable fulfillment or checkout. Do not set commercial defaults by guess. |
-| D06 | Fees and actual collection | Both Store relations may use either fee model via WLT accepted/versioned Store agreement. Collector (merchant/platform), custody and fulfillment are separately authorized and need real finance gates. |
+| D06 | Fees and actual collection | DECISION DRAFT in `governance/finance.md`: independent Store relation, WLT fee agreement, financial responsibility and DSH fulfillment. Proposed defaults: MARKETPLACE=PLATFORM_MANAGED, DIRECT=STORE_MANAGED. Either relation may use COMMISSION or SUBSCRIPTION. Final activation requires real WLT, consent and independent review; no customer-wallet/mixed/COD inheritance for DIRECT. |
 | D07 | WLT baseline and history | New canonical SQL for each owner. Deletion of original migrations requires comparing applied state and protected data; no unconditional squash/reset. |
 | D08 | Control Panel historic master pack versus modern live Owner UI | Extract unique accepted UX and functional invariants, not archived page names, Field navigation, branches or screenshots. No arbitrary feature addition without Product approval. |
-| D09 | Explicit CodeRabbit/CODEOWNERS reviewer names and branch protection | Cannot infer from archived configs. Verify actual GitHub users/rulesets after selecting live credentials; no fabricated team or rules. |
+| D09 | Solo contributor and GitHub review protections | RESOLVED: do not create CODEOWNERS; user is sole contributor. Inspect actual CodeRabbit/GitHub protection settings only when authorized. Independent critical-risk review remains separately required and cannot be simulated by CODEOWNERS. |
 | D10 | Source research/OSS/competitor URLs | Preserve complete original inventories and provenance. External link checks are separate and NOT_RUN until performed. |
 | D11 | GitHub Fast Guard/Sonar in a source-sparse tree | Existing code-dependent CI is invalid for current foundation state; don't mark as PASS or silently skip tests. Re-introduce only when their required sources exist. |
 | D12 | Fully destructive reset because local dev is experimental | Only exact confirmed synthetic state after ownership/isolation/backup verification; real user/session/financial/media data and concurrent sessions remain protected. |
 
 ## Stage completion record
 - Phase 0: established and revalidated against local branch 41 and target worktree; no deployable-runtime claims.
-- Phase 1: status to be updated from direct file/readback and tests. The staged index and structural guard never close Phase 2.
-- Phases 2–6: NOT_RUN, until evidence is produced.
+- Phase 1: local staging, path cleanup and structural guard are subject to readback/tests; even a PASS here never closes Phase 2.
+- Phase 2: PARTIAL — only `finance.md` has a narrowly scoped draft; comprehensive owner/capability reconciliation remains NOT_RUN and critical-risk approval REVIEW_BLOCKED.
+- Phases 3–6: not complete; implementation and full integration proofs NOT_RUN.
