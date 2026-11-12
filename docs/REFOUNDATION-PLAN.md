@@ -225,3 +225,81 @@ Any implementation slice containing business-number literals must show which cla
 2. Finance/security/migration independent critical-risk review remains **REVIEW_BLOCKED**.
 3. Actual GitHub CI on the candidate, applicable provider review and repo protection confirmation remain **NOT_RUN** or unavailable without separately authorized remote submission.
 4. No declaration that the governance policy root is READY until the above are resolved. No SQL/app/backend/Docker implementation was carried out.
+
+
+## 2026-11-12 — Historical-source reconciliation wave 3: named journeys, policies and control-panel criteria
+
+### Exact source basis (read-only, not governing)
+- Original repository `D:\samrim`, branch `41`, `426d67b47beb8c66b09acd8c7394086b53ac5aae` and its 14 domain-governance documents, including `docs/governance/journeys.md`, `catalog.md`, `commerce.md`, `finance.md`, `experience.md`.
+- **Relocated consolidated archive**: `%USERPROFILE%\Desktop\BTHWANI-REFOUNDATION-COMPLETE-PACKAGE-20261112.zip`. It contains 11 ZIP entries, of which 9 payload entries match its internal `MANIFEST-SHA256.txt` (**9/9 PASS**). This replaces the obsolete Downloads reference; the archive is source evidence, **not** another Product or agent authority.
+- The embedded Control Panel master pack has **63 entries**; its manifest hashes **62/62 PASS**. It contains a nested V1 (30 files) and V2 (36 files): **23 identical, 7 changed, 6 added** in V2. Extracted V2 content repeated in the outer pack is **36/36 byte-identical**. These are duplicated/superseded historic versions, **not** multiple sets of current requirements.
+- The master pack's original `03_REQUIREMENTS_AND_PROOFS/REQUIREMENTS.csv` has **112 entries**: **72** historical base items and **40** added criteria, with **112/112 `UNVERIFIED_ON_HEAD_16`** and no filled `proof_pointer`. They are **historical review inputs**, not 112 approved new features or verified defects. Its 10 closure gates are all `UNPROVEN` in that historic snapshot. In particular, legacy Gallery/Inspector/HR additions and PR #90/#91 observations cannot be blindly rebuilt without live consumer/source verification.
+- The embedded Audit Trigger bundle contains **3 text inputs**, notably an 81,811-byte instruction set proposing a highly elaborate evidence council; it is a *historic audit method*, not permission to install a second supervision system, exhaustive standing process or Codex CLI. Its useful invariant is evidence traceability/independent challenge and no blanket 100% claim, which are already governed by AGENTS/engineering.
+- Historic refoundation execution command and plan documents are scope/risks evidence for **later** code/SQL migration; older branch/worktree/Codex instructions are not executable now. Archives that were not opened, external links not verified and actual runtime/financial states remain `NOT_RUN`.
+
+### Owner-by-owner semantic decisions reconciled this wave
+
+| New canonical owner | Historical decisions preserved or correctly bounded | Outcome |
+| --- | --- | --- |
+| `governance/journeys.md` | Rebuilt **16 historical named Journey IDs** with current Merchant/Customer vocabulary, actor surfaces, owner boundaries, entry/exit/readback and failure/recovery; no parallel Product capability census | DRAFT_REAUTHORED; structural guard required; live behavior NOT_RUN |
+| `governance/commerce.md` | Contact on initial three completed Orders, honest attempts and nonblocking preparation; bounded Order-scoped exception owner, proof-gated financial/custody resolutions, stage-attention vs contractual SLA, exactly-once events | DRAFT_REAUTHORED; DSH/WLT actual data proofs NOT_RUN |
+| `governance/finance.md` | Separate Store-collected customer money, platform commission receivable, lawful offset/remittance and WLT beneficiary payout; no duplicate Merchant earnings or automatic COD remittance mapping | DRAFT_REAUTHORED; independent finance review REVIEW_BLOCKED |
+| `governance/catalog.md` | Canonical `الأكثر رواجًا` from distinct actually completed Store Orders, Store Offer visibility, deterministic tie-breaks; favorites separate; effective ranking window managed by DSH | DRAFT_REAUTHORED; real counting/query/performance proof NOT_RUN |
+| `governance/experience.md` | Explicit WCAG 2.2 AA, current scoped server-owned registries, optional and conditional Saved Views/Gallery/global search, focus/URL privacy, State/RTL and cross-device evidence, restrained branding | DRAFT_REAUTHORED; actual Web/Android/iOS proof NOT_RUN |
+| `governance/engineering.md` / `AGENTS.md` | Historic scope, no blind migration, Owner and policy-driven controls, conditional provider/AI/tool admission and protected persistent state | EXISTING_GOVERNED; whole-repo code/SQL implementation NOT_RUN |
+
+The **historical initial business values** (e.g. three first Orders, ten-minute contact claim, 5/30-minute attention, 30-day popularity, three Captain offers, 30-km radius) are **eligible versioned owner policy candidates**, not immutable scattered constants. The first-contact flow is **nonblocking** under the donor's accepted initial semantics; an unimplemented permission to block preparation cannot be enabled just by changing a policy.
+
+### Deliberately not elevated from historical requirements
+- Saved views/command palette/general search/AI insights/new WebSocket subscriptions, a new support CRM, predictive logistics or new billing/payment rail: **CANDIDATE/DEFER** until explicit Product need, legal authority and tested Owner implementation. A historical reference or screenshot is not approval.
+- Historic `PARTNER`, `CLIENT` and `INDEPENDENT_STORE` API/SQL strings: **compatibility evidence** for later migration, not permission for multiple Store relation types or new engines. Retired acquisition workflows are not revived; surviving legally binding liabilities remain with WLT/Identity as appropriate.
+- Branch 16 route counts, CI outcomes, PR merge claims and screenshot snapshots: **point-in-time evidence**, not implementation proof at current branch `41` or the new sparse candidate.
+
+### Still unresolved before governance cutover
+1. **Archive/detail equivalence**: original text of all 112 Control Panel requirements and older operational/financial/design manuals needs a documented case-by-case `KEEP/REFRAME/CONDITIONAL/RETIRED/UNRESOLVED` disposition backed by the latest approved decision. Counting and preserving the archive does **not** establish semantic parity. Material copyright/legal/license or live external-link verification remains NOT_RUN.
+2. **Source-code/SQL ownership**: verify which historical operating defaults, identifiers, and old SQL migrations actually became persistent/contractual facts; none of the current draft descriptions means they are already safe in running DSH/WLT.
+3. **Independent review**: financial formulas, settled liabilities, Identity privilege and database migration/destructive rules remain REVIEW_BLOCKED until qualified independent review. Do not accept a single LLM assertion or CI structural test as the mandatory second review.
+4. **External GitHub/CI and change delivery**: real actions/CodeRabbit/Sonar on candidate branch remain NOT_RUN until separately authorized push; protected `main` must not be merged from this source-sparse branch.
+
+**Acceptance of this bounded wave:** source ZIP integrity can be PASS; 16 Journey structural preservation and precise policy wording can be PASS as **draft-document checks**; exhaustive semantic reconciliation and `GOVERNANCE_CUTOVER` stay NOT_READY. No new Product source/SQL/Docker/worktree/branch was added.
+
+
+### Control Panel 112/112 historical-ID trace — reviewed subset and remaining admission work
+
+The **complete ID+wording census** has been preserved only in non-governing `docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md` and guarded against missing/duplicate IDs. The archived source itself reports **all 112 unverified on historic branch 16**. That means **source inventory PASS**, not 112/112 semantic admission. The original full requirements CSV, original 10 closure criteria, master technical appendices, nested V1/V2 and current code are separate evidence sources.
+
+The following high-risk/structural **source ID dispositions are grounded in the reauthored canonical owner text**, without claiming live implementation:
+
+| Historic source IDs | Source meaning / decision | Canonical disposition and owner |
+| --- | --- | --- |
+| `R001,R004,R005,R010,R056` | Correct role-aware navigation and avoid duplicate resource routes | **REFRAMED** in `experience.md` and `architecture.md`; a URL is not another writer |
+| `R009,R051,R067,R092,R106,R107,R112` | Actual accessible/RTL/efficient UI and failure/recovery | **ADMITTED_ACCEPTANCE** in `experience.md`; genuine Web/device proof NOT_RUN |
+| `R013,R015,R016,R017,R021,R035,R036,R037,R062,R063,R069,R080,R100,R109` | Query/action/workspace continuity, accurate counts and safe bulk/inspector behavior | **REVIEWED PRINCIPLE** in `experience.md`, `architecture.md` and Owner boundaries; exact optional widget/feature needs source/user-need proof |
+| `R022,R023,R024,R025,R061,R066` | Store Offer media, table/gallery, thumbnails, evidence/provenance | **REFRAMED** as one DSH StoreOffer/read query; Gallery and image comparison are presentation choices, not a second owner |
+| `R026,R029,R086,R087` | Merchant onboarding, Store ownership, role, publication/readiness | **ADMITTED** in `stores.md`, `identity.md` and Store journey; no parallel onboarding engine |
+| `R027,R077,R088` | HR access request vs Identity admission, employee isolation | **ADMITTED** in `hr.md` and `identity.md`; archived PR-specific status is not present-run proof |
+| `R028,R082,R083,R099` | WLT-only settlement, beneficiary vs receivable/custody, accepted agreement, replay/timeout | **ADMITTED** in `finance.md` and settlement journeys; mandatory risk review REVIEW_BLOCKED |
+| `R030,R054,R087` | Order operations, exception/remedy, published versus orderable | **ADMITTED WITH BOUNDS** in `commerce.md`/`journeys.md`; no generic CRM, case is not Order writer |
+| `R032,R047,R098` | Policy scope and Product admission | **ADMITTED BOUNDARY** in `architecture.md`/`product.md`; only supported business variables are editable and security/ledger invariants remain fixed |
+| `R034,R040,R095,R096,R097` | Global search, optional saved views, AI, streaming updates | **CONDITIONAL_CANDIDATE**; no automatic Product adoption or new service |
+| `R038,R039,R079,R111` | Truthful analytics, cohorts and exact time/denominator/currency | **ADMITTED READ-MODEL PRINCIPLE** in `architecture.md`; real Owner metric definitions/data NOT_RUN |
+| `R041,R042,R053,R081,R084,R085` | Preserve protected data and private URLs/media/role isolation | **ADMITTED SECURITY INVARIANTS** in `safety.md`/`experience.md`; independent security review REVIEW_BLOCKED |
+| `R044,R045,R046,R052,R060,R075,R076,R089,R090,R091,R093,R094,R102,R103,R104,R105,R108` | Traceable source and exact candidate proof, safe cleanup, migrations, load tests, ZIP integrity | **ADMITTED ENGINEERING/EVIDENCE PRINCIPLES** in `engineering.md`/`AGENTS.md`; exact code/SQL/PR proof NOT_RUN |
+| `R055,R101` | Owner-backed notifications, unread count and paginated inbox | **ADMITTED PROJECTION** in `journeys.md` and `architecture.md`; no duplicate message/event authority |
+| `R073,R074,R071` | Branch-specific historic snapshots and merged PRs | **HISTORICAL_SUPERSEDED AS EXECUTION TARGET**; verify new branch/HEAD and current actual code instead |
+| `R031,R058` | Historical Captain/operator/multiple-surface next actions | **PARTIAL REFRAME**: retain Captain and authorized current actor handoffs, never recreate retired processes merely to satisfy archived text |
+
+Items not named above remain **UNRESOLVED for individual semantic disposition** even though their IDs and text are inventoried. Several grouped source IDs include mixed UI and technical detail: a mapping to an owning rule does not mean the optional UI/feature is automatically admitted, nor that a local test proved it.
+
+### Additional historical Identity recovery input
+
+The consolidated archive's `نتيجة الفحص الأولي.txt` describes a 2026-10-29 **historical Operator backup** where the original Operator reportedly had no registered Passkey or recovery credential and local development access was previously possible. This is not a check of current credentials or secure recovery. `governance/identity.md` now requires original-actor continuity, verified Passkey/recovery setup, session-family protection and no permanent password bypass or second Root Owner. Current Identity database inspection, login test, privileged recovery and production proof remain **NOT_RUN**; do not put any environment password or secret into governance/ZIP outputs.
+
+### Scope completion rule
+
+- **PASS**: consolidated archive 9/9 manifest, historical Control Panel pack 62/62 manifest, read-only V2 duplicate comparison, 112/112 source-ID inventory, 16/16 named Journey document structural coverage and the relevant foundation tests on the candidate SHA.
+- **PARTIAL**: meaning-level final signoff of *all* historical archival decisions, exact business-policy defaults, untouched older source/candidate feature evidence and per-requirement current app behavior.
+- **REVIEW_BLOCKED**: independent finance/security/migration policy risk review.
+- **NOT_RUN**: current code/SQL/runtime integration, complete attached-content-by-line proof, external URL/license revalidation, and remote GitHub Actions/CodeRabbit tests for the unpushed candidate.
+
+Do not set `GOVERNANCE_CUTOVER: READY` based on a manifest, a 112-row index, 16 named Journey sections or all-green structural assertions. Review semantic conflicts and mandate an independent qualified review before any final adoption.

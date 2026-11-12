@@ -39,3 +39,12 @@ The admitted bounded Operator permission scopes are **`operations`, `partners`, 
 A single Human Actor may have multiple roles, but role credentials/sessions and suspension follow the actual admitted Identity lifecycle. Disable for one role must not automatically destroy unrelated roles unless an Identity-wide security action is justified. Refresh tokens rotate atomically; a confirmed refresh replay compromises/revokes that session family, not an unlimited impersonation fallback. Verification challenges are single-purpose, attempt/expiry/replay bounded, and public authentication should not enumerate eligibility or identity records.
 
 An Order recipient may be **different from the purchasing Customer**. Recipient contact is an Order delivery snapshot and never becomes a new Identity account, purchasing/payment principal or authority to access the customer's wallet/history.
+
+
+## Root Operator continuity and credentialless historical recovery
+
+The archived 2026-10-29 recovery report records an **original Operator who lacked a registered Passkey and registered recovery credential**, while an isolated old local development login could still be exercised. This report is **historical evidence only**, not proof of today's production credentials or access readiness. Do not solve this by creating a second Root Owner, silently inserting WebAuthn data, copying credentials between databases, disabling protected login checks or treating an HTTP 200 as actual authenticated recovery.
+
+During the later Identity refoundation, establish one protected original-actor continuity and break-glass recovery protocol: confirm exact Identity subject and current registered credentials from its authoritative source; use a strictly local/isolated existing development authentication mode **only where explicitly configured and authorized**; require actual user-verified Passkey enrollment and durable credential readback, backup/recovery planning, session-family revocation and independent security review before claiming secure recovery or retiring a legacy local route. Local development passwords must never become a remotely accepted Operator login or appear in documentation, test output, CI artifacts, web URLs or chat. A supported user-facing recovery must keep previously lawful actor ownership and Store/Finance attribution intact across any migration.
+
+Status for actual recovery, present Operator privileges, enrolled credentials and protected database upgrade: **NOT_RUN** in this governance-only candidate.

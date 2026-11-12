@@ -12,6 +12,10 @@ This is **not** a second Product roadmap, governance directory, design system, C
 
 The extracted source-by-source list is in [`HISTORICAL-SOURCE-INVENTORY.md`](HISTORICAL-SOURCE-INVENTORY.md): 37 distinct non-loopback URLs and 5 historical localhost endpoints across six old research files. Extraction is **not** an HTTP/license/current-content verification. No external link or research example becomes a product capability by being indexed.
 
+## Archived Control Panel requirement IDs
+
+[`HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md`](HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md) retains all **112 original ID-to-wording traces** and original owner hints from the October 2026 Master Pack. Each source row was marked `UNVERIFIED_ON_HEAD_16`; its current Product admission and actual implementation remain independent matters. This is a **non-governing source index**, not a new Product or policy register. The approved technical and business meaning lives in the domain owner at root `governance/`, and the temporary closure ledger lives in `docs/REFOUNDATION-PLAN.md`.
+
 ## Source provenance, retained without copying historical policy trees
 
 The original source tree remains at `D:\samrim`, branch `41`, SHA `426d67b47beb8c66b09acd8c7394086b53ac5aae`. The historical `docs/reference/` donor includes an OSS candidate catalog, Yemen-market black-box competitor observations, and dated Elleen operator/report/design studies from October–November 2026. Some screenshot evidence is **locally ignored and not committed**; never claim it exists in the clean Git tree. Audit archives exist in the consolidated ZIP at `%USERPROFILE%\Downloads\BTHWANI-REFOUNDATION-COMPLETE-PACKAGE-20261112.zip`.

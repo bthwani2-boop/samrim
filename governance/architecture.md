@@ -49,3 +49,12 @@ No new database, service, package or event bus is approved merely by this charte
 
 ## Acceptance boundary
 This charter prescribes the **target** architecture; it does not claim current SQL, APIs, subscriptions, Direct checkout or routing support it yet. Implementation readiness requires evidence for affected consumers, single writer, permissions, persisted state, negative tests and independent risk review. See `engineering.md` for gates and `docs/REFOUNDATION-PLAN.md` for temporary sequencing.
+
+
+## Search, reporting and analytics are authorized projections, not competing writers
+
+Operator counts, notifications, dashboards, reports, filtered search and cohort/funnel views are **read-only derived projections** of the legal Identity, DSH or WLT owner facts. An aggregation must identify its canonical owner/sources, event/status semantics, time basis and timezone, authorized city/Store/actor scope, exact currency/amount units, qualifying numerator/denominator, filter completeness and freshness/error state. A total from an entire dataset cannot be silently compared with a count computed from one loaded page. Sorting/filtering/pagination of growing collections is evaluated by the proper owner or an explicitly admitted scoped read projection, **never** by inventing parallel financial or Order authority.
+
+One cross-owner report may compose lawful, versioned owner readbacks when a real user need justifies it, but must display uncertainty or lag instead of inventing consistent-at-one-instant money/Order totals. Financial period closure and settlement remain WLT facts. No analytics SDK, AI interpretation, new data warehouse, global-search service, always-on WebSocket or custom cache is automatically admitted by an old Control Panel requirements pack; evaluate necessity, privacy, latency and evidence during the affected implementation slice.
+
+The Operator UI owns metric **presentation**, not underlying commercial definitions. A valid dashboard can expose actionable exceptions and deep links only to currently authorized exact records. Exports, cached thumbnails, contact search and activity feeds cannot broaden source permissions, log private PII in URLs or backfill data as though historical real events occurred.

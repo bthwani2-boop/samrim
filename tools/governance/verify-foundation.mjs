@@ -13,7 +13,7 @@ const root=path.resolve(args.length?args[1]:scriptRoot);
 const owners=['product','platform','architecture','identity','stores','catalog','commerce','fulfillment','finance','hr','experience','safety','engineering','journeys'];
 const domainFiles=owners.map(name=>'governance/'+name+'.md');
 const required=[
- 'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',...domainFiles,'docs/REFOUNDATION-PLAN.md','docs/reference/README.md','docs/reference/HISTORICAL-SOURCE-INVENTORY.md',
+ 'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',...domainFiles,'docs/REFOUNDATION-PLAN.md','docs/reference/README.md','docs/reference/HISTORICAL-SOURCE-INVENTORY.md','docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md',
  '.specify/init-options.json','.specify/integration.json','.specify/integrations/speckit.manifest.json','.specify/memory/constitution.md',
  '.github/workflows/foundation-guard.yml','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs'
 ];
@@ -63,6 +63,16 @@ if(!/^inheritance: true$/m.test(rabbit)||!/^\s*auto_review:\s*$/m.test(rabbit)||
 const gov=contents['governance/README.md'],plan=contents['docs/REFOUNDATION-PLAN.md'];
 if(!/^BUSINESS_POLICY_AUTHORITY: NONE$/m.test(contents['docs/reference/README.md']))fail('external research index cannot become policy authority');
 if(!/^BUSINESS_POLICY_AUTHORITY: NONE$/m.test(contents['docs/reference/HISTORICAL-SOURCE-INVENTORY.md']) || !/^VERIFICATION: URL extraction only; live link, license and content checks NOT_RUN$/m.test(contents['docs/reference/HISTORICAL-SOURCE-INVENTORY.md']))fail('historical link extraction cannot claim live verification or policy authority');
+
+const controlIndex=contents['docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md'];
+if(!/^ARTIFACT_CLASS: NON_AUTHORITATIVE_SOURCE_INVENTORY$/m.test(controlIndex) || !/^BUSINESS_POLICY_AUTHORITY: NONE$/m.test(controlIndex)
+ || !/^SOURCE_EXECUTION_STATE: UNVERIFIED_ON_HEAD_16$/m.test(controlIndex))
+ fail('historical Control Panel trace cannot become Product policy or current execution proof');
+const controlIDs=[...controlIndex.matchAll(/^\| (R\d{3}) \|/gm)].map(m=>m[1]);
+const controlSet=new Set(controlIDs);
+if(controlIDs.length!==112||controlSet.size!==112||Array.from({length:112},(_,i)=>'R'+String(i+1).padStart(3,'0')).some(x=>!controlSet.has(x)))
+ fail('historical Control Panel source ID inventory must retain 112 unique IDs');
+
 if(!/^STATUS: ACTIVE_FOR_FOUNDATION_ONLY$/m.test(agent))fail('agent must declare foundation-only state');
 if(!/^STATUS: ACTIVE_FOR_FOUNDATION_ONLY$/m.test(repo))fail('placement law must declare foundation-only state');
 if(!/^GOVERNANCE_CUTOVER: NOT_READY$/m.test(gov))fail('do not mark governance ready without independent semantic/risk acceptance');
@@ -114,6 +124,32 @@ for(const file of domainFiles){
  }
 }
 if(seen.size!==expected.size)fail('unmapped capabilities: '+[...expected.keys()].filter(k=>!seen.has(k)).join(','));
+
+const journeys=contents['governance/journeys.md'];
+const sections=[...journeys.matchAll(/^## ([A-Z][A-Z_]+) —[^\r\n]*$/gm)];
+const journeyIds=new Set();
+for(let i=0;i<sections.length;i++){
+ const [heading,id]=[sections[i][0],sections[i][1]];
+ const section=journeys.slice(sections[i].index,sections[i+1]?.index??journeys.length);
+ const matches=[...section.matchAll(/^JOURNEY_ID:\s*([A-Z_]+)$/gm)];
+ if(matches.length!==1||matches[0][1]!==id)fail('journey heading/id mismatch: '+id);
+ if(journeyIds.has(id))fail('duplicate Journey ID: '+id);
+ journeyIds.add(id);
+ if(!/^SURFACES:\s*\S+/m.test(section)||!/^OWNERS:\s*\S+/m.test(section)||!/^ENTRY:\s*\S+/m.test(section)
+  ||!/^EXIT:\s*\S+/m.test(section)||!/^READBACK:\s*\S+/m.test(section)||section.length<450)
+  fail('missing material journey evidence boundary: '+id);
+}
+if(journeyIds.size!==16)fail('expected 16 named source-reconciled journeys: observed '+journeyIds.size);
+for(const id of ['FIRST_THREE_ORDER_CONTACT','ORDER_SCOPED_OPERATIONS_EXCEPTION','PARTNER_COMMISSION_REMITTANCE','BENEFICIARY_SETTLEMENT']){
+ if(!journeyIds.has(id))fail('material historical journey lost: '+id);
+}
+const experience=contents['governance/experience.md'];
+if(!experience.includes('WCAG 2.2 AA')||!/saved views/i.test(experience)||!experience.includes('owner-side search/filter/sort'))
+ fail('operator experience missing accessible/at-scale acceptance boundaries');
+const catalog=contents['governance/catalog.md'];
+if(!catalog.includes('الأكثر رواجًا')||!catalog.includes('distinct canonically completed Store Orders')||!catalog.includes('Operator Policies'))
+ fail('canonical popularity read model or Operator-managed ranking window lost');
+
 
 const arch=contents['governance/architecture.md'];
 const finance=contents['governance/finance.md'];

@@ -12,7 +12,7 @@ const owners=['product','platform','architecture','identity','stores','catalog',
 const assetManifest=JSON.parse(fs.readFileSync(path.join(root,'.specify/integrations/speckit.manifest.json'),'utf8'));
 const files=[...new Set([
  'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',
- ...owners.map(owner=>'governance/'+owner+'.md'),'docs/REFOUNDATION-PLAN.md','docs/reference/README.md','docs/reference/HISTORICAL-SOURCE-INVENTORY.md',
+ ...owners.map(owner=>'governance/'+owner+'.md'),'docs/REFOUNDATION-PLAN.md','docs/reference/README.md','docs/reference/HISTORICAL-SOURCE-INVENTORY.md','docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md',
  '.github/workflows/foundation-guard.yml','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs',
  '.specify/init-options.json','.specify/integration.json','.specify/integrations/speckit.manifest.json',
  '.specify/memory/constitution.md',...Object.keys(assetManifest.files)
@@ -83,3 +83,14 @@ rejects('rejects a falsely verified external URL inventory',{edit:{'docs/referen
 
 rejects('rejects loss of Owner-managed serviceability policy',{edit:{'governance/commerce.md':s=>s.replace('## Operator-managed commercial thresholds — explicit policy, not compiled law','## Removed business parameter controls')}},/owner-backed configurable-values section missing/);
 rejects('rejects loss of Owner-managed financial policy parameters',{edit:{'governance/finance.md':s=>s.replace('## Operator-managed financial values versus immutable accounting rules','## Removed financial parameter controls')}},/owner-backed configurable-values section missing/);
+
+rejects('rejects dropping a material historic Journey ID',{edit:{'governance/journeys.md':s=>s.replace('JOURNEY_ID: FIRST_THREE_ORDER_CONTACT','JOURNEY_UNTRACKED: FIRST_THREE_ORDER_CONTACT')}},/journey heading\/id mismatch/);
+rejects('rejects duplicate Journey identifier',{edit:{'governance/journeys.md':s=>s.replace('JOURNEY_ID: BENEFICIARY_SETTLEMENT','JOURNEY_ID: BENEFICIARY_SETTLEMENT\nJOURNEY_ID: BENEFICIARY_SETTLEMENT')}},/journey heading\/id mismatch/);
+rejects('rejects missing Journey canonical readback',{edit:{'governance/journeys.md':s=>s.replace('READBACK: WLT Store-specific original receivable','OBSERVED: WLT Store-specific original receivable')}},/missing material journey evidence boundary/);
+rejects('rejects lost accessibility standard',{edit:{'governance/experience.md':s=>s.replace('WCAG 2.2 AA','generic accessibility')}},/operator experience missing accessible/);
+rejects('rejects missing owner-backed popularity ranking',{edit:{'governance/catalog.md':s=>s.replace('distinct canonically completed Store Orders','uninformed frontend clicks')}},/canonical popularity read model/);
+
+rejects('rejects missing historical Control Panel source inventory',{del:['docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md']},/required docs\/reference\/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md/);
+rejects('rejects missing R112 archive requirement ID',{edit:{'docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md':s=>s.replace('| R112 |','| MISSING |')}},/retain 112 unique IDs/);
+rejects('rejects a duplicated historical source requirement',{edit:{'docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md':s=>s.replace(/^(\| R008 \|[^\n]+)$/m,'$1\n$1')}},/retain 112 unique IDs/);
+rejects('rejects historical Control Panel source as authoritative policy',{edit:{'docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md':s=>s.replace('BUSINESS_POLICY_AUTHORITY: NONE','BUSINESS_POLICY_AUTHORITY: ACTIVE')}},/cannot become Product policy/);
