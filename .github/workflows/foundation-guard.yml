@@ -1,0 +1,41 @@
+name: BThwani Foundation Guard (structural only)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'refoundation/clean-house-20261112'
+  pull_request:
+    branches:
+      - 'refoundation/clean-house-20261112'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foundation-guard-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  foundation:
+    name: Foundation structure only (NOT product acceptance)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - name: Checkout candidate commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Check required Node and working tree
+        run: |
+          node --version
+          git status --short
+      - name: Test guard sensitivity
+        run: node --test tools/governance/verify-foundation.test.mjs
+      - name: Verify foundation without asserting business readiness
+        run: node tools/governance/verify-foundation.mjs
+      - name: Record limits explicitly
+        run: |
+          echo 'FOUNDATION_ONLY: governance cutover is NOT_READY'
+          echo 'NOT_RUN: SQL, source services, runtime, security, finance, full Product acceptance'

@@ -1,0 +1,45 @@
+# BThwani — Agent Execution Law (Refoundation)
+
+STATUS: ACTIVE_FOR_FOUNDATION_ONLY
+AUTHORITY: execution conduct, authorization boundaries and proof; not Product meaning.
+GOVERNANCE_CUTOVER: PENDING
+
+## 1. Scope and governing truth
+- The human's latest explicit instruction defines authorized scope. Do not infer authority to publish, push, merge, delete protected data, or change permissions from access to a tool.
+- Inspect the current repository/worktree, branch, HEAD, Git status, concurrent owners, and relevant instructions before writing. Never treat an older audit, ZIP, chat snapshot, or command for another worktree as current runtime truth.
+- During foundation reconstruction, `governance/README.md` is the **single new target index**, but remains explicitly NOT_READY. The old `docs/governance/` documents are historical donor evidence and do not become a second editable authority. Do not begin domain implementation or claim a policy adopted until the governed, reviewed cutover is completed.
+- For the deployed result, code, executable contracts, migrations, authorized persistent owner readback, configuration and runtime revision prove **implementation state**. Governance prescribes approved meaning; it does not prove implementation.
+
+## 2. One owner and minimum machinery
+- Every mutable business fact has one canonical owner and writer; every essential workflow has one canonical engine. Other components read or invoke the owner's contract; a projection or cache must not become another legal writer.
+- Identity owns actor identity, authentication, sessions and platform permissions; DSH owns Store, catalog, offers, orders, pricing, publication and fulfillment; WLT owns money, wallet, ledger, commercial agreements, collection and settlements. HR is a bounded logical responsibility, not automatically another deployable service.
+- Distinguish Merchant (authenticated actor with possible Store-scoped authority) from Store (DSH business resource); one Merchant may manage multiple Stores. `MARKETPLACE` and `DIRECT` are Store relation/channel policies, not additional Store, catalog or Order engines. `COMMISSION` and `SUBSCRIPTION` are separate WLT agreement models for either relation.
+- Use DELETE → DIRECT USE → STANDARD TOOL → EXISTING OWNER → MERGE/REFACTOR → NEW MECHANISM only after demonstrating necessity. No speculative service, wrapper, cache writer, alternate state store, duplicate policy engine or arbitrary architecture-layer quotas.
+
+## 3. Start and structural decision
+- Locate the actual producer, owner, writer, readers, API consumers, dynamic usage, SQL/configuration and generated clients within the affected cone. Consult `REPOSITORY-STRUCTURE.md`.
+- For full refoundation, census all admitted capabilities and material subfeatures **before** choosing KEEP/MOVE/MERGE/REFOUND/REPLACE/APPROVED_RETIRE. Keep the census derived from source and Product, not another permanent truth store.
+- Rebuild deliberately, not by renaming or copying donor directories. Transfer correct behavior and explicit obligations; remove the losing route only after consumer migration, real proof and review of safe deletion. No unsupported claim that fewer files automatically means better architecture.
+- During foundation-only work, do not restore apps, service sources, SQL, Docker or policies until their proper stage and readiness conditions in `docs/REFOUNDATION-PLAN.md`.
+
+## 4. Data, security and operational safety
+- Preserve unrelated work, secrets, real user state, Root Owner, authorization boundaries, funds, financial ledger, orders, session state and media. Local development does not imply all persistent state is disposable.
+- Do not use SQL inserts, hidden fixtures, mocks, HTTP 200 or screenshot-only claims to manufacture an integration PASS. Use isolated owner-backed synthetic scenarios and verified durable readback.
+- For SQL replacement, separately prove fresh bootstrap, applicable protected upgrade, schema/permission equivalence, financial invariants and restore from isolated backup before any destructive cutover. Never blindly rewrite applied migration history.
+- No forced or unattended Git push, PR, merge, protected-branch bypass, force push, service restart, production deployment or delete of volumes/shared state. Require explicit permission for each consequential action type and respect tool DENIED results.
+
+## 5. Execution and concurrency
+- Prefer a directly capable, connected, authorized tool. Do not require any particular computer channel. Use specialist tools when the affected behavior requires them. Do not run Codex CLI unless explicitly requested and direct execution is inadequate.
+- One writer per shared file, migration, database or Git index. Before retrying interrupted writes, read their actual durable effect. Never overwrite a concurrent edit silently.
+- At each bounded slice: define accepted outcome, canonical owner, dependencies, blast radius, risks, tests, mutation rights, rollback boundary and proof. Execute the smallest **coherent** cross-surface slice, not isolated cosmetic patches.
+
+## 6. Verification and delivery
+- Run the smallest meaningful checks and tests of actual affected behavior. Where impacted, test unauthorized actor/Store access, account switching, money/COD/Mixed, idempotency/concurrency, fulfillment races and failures, real Android/Web UX and SQL durable state. iOS is NOT_RUN unless actually tested.
+- Critical finance/security/migration/destructive changes need the mandated independent review; otherwise status is REVIEW_BLOCKED, not PASS.
+- Verify the diff, UTF-8, references, changed consumers and Git status. Make a local commit for a coherent tested batch within authorized development scope. A local commit does not authorize push, PR or merge. Never create a branch or worktree without an explicit instruction.
+- Statuses: PASS (proven), FAIL (failed), BLOCKED (unable), NOT_RUN (unexecuted), INVALIDATED (proof no longer applies), REVIEW_BLOCKED (mandatory review outstanding). Attach the tested branch/SHA and source/runtime context where relevant. Do not claim absence of all bugs or 100% empirical correctness.
+
+## 7. Controlled governance cutover
+- New normative Product/Architecture/Safety/Engineering documents belong **only** in root `governance/`, with one semantic owner per decision. Keep older source snapshots outside normative authority and preserve external research references.
+- The foundation gate may pass its **limited structural scope** while `GOVERNANCE_CUTOVER= PENDING`; that is not approval for implementation, full CI, SQL, security, finance or product release.
+- Change `GOVERNANCE_CUTOVER` only after every adopted domain decision is semantically reconciled, all 26 admitted capability IDs are accounted for with one owner, all internal references resolve, the old active path is removed and positive/negative guard tests pass. An unreviewed conflict remains recorded, not guessed away.
