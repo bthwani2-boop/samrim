@@ -29,3 +29,19 @@ A search/filter result, video card or deep link is a **projection**, not proof t
 
 ## Design boundaries
 Use real retained catalogue features, not blind copy of old folders. No `independentCatalog` or `marketplaceCatalog` with its own writer; relation differences are eligible views/policies. A shared technical package requires proven multiple consumers and never contains mutable catalog truth.
+
+## Typed taxonomy and sellable-identity preservation
+
+A `ServiceCity` is geography, a `CommerceVertical` is the Store's business activity, a `CommercialStoreType` is its compatible operating business model, a `CatalogCategory` is a shared Product taxonomy node and a `StorefrontSection` is Store-local merchandising. These are **five different facts**, not a hierarchy of derived display strings, foreign-key shortcuts or fee selectors. A Store has exactly one admitted primary vertical in the initial model. No legacy Store is assigned a guessed vertical merely because it lacks a current one.
+
+Categories are a same-vertical acyclic tree with flexible depth, not mandatory L1–L4 columns. Required/filterable/variant attribute rules belong to categories and have **typed values** (text, number, boolean, enum, measured value, date); no opaque options object becomes a second source. A Store-scoped Product is allowed to remain uncategorized without hiding an otherwise eligible StoreOffer. A compatible category assignment does not convert it to Shared ownership.
+
+`Product` represents a common identity and `ProductVariant` a concrete sellable/package identity. Every Product has at least one Variant, including a default one for simple items; every CartLine/StoreOffer/OrderLine references the **sellable Variant ID**. `SHARED` and `STORE_SCOPED` are one model with two owner scopes. Only authorized Operators may create or edit SHARED; a Merchant may use Shared Variants through an Offer, submit a non-sellable proposal, or directly create a Store-scoped Product without central proposal. Store SKU belongs to one Store; GTIN/EAN/UPC are global Variant identifier types, and unknown barcode types must not be fabricated.
+
+StoreOffer owns Store-specific integer YER price, pricing basis, exact unit/quantity min/max/step, inventory/availability/publication and version. Discrete, measured and variable-measure quantities are distinct; no binary floating-point quantity or fictitious `half` unit becomes authoritative. Availability-only is not fake numeric inventory; admitted finite inventory requires real atomic reserve/release/replay handling. Restaurant modifier groups/options carry bounded selections, price deltas and availability without becoming additional ProductVariants.
+
+## Import/quick prices as interfaces, not writers
+
+One Merchant quick-entry path uses name/barcode lookup, Shared Variant selection or Store-scoped Product creation, Store price/availability and one canonical save. Do not require a category tree wizard or manual internal IDs for every offer. Import accepts actual CSV/XLSX Store-scoped inputs with preview/conflict review before an authorized commit. Unknown barcode, collision, missing price or ambiguous Shared name is **held for review**, not guessed into a current identity or automatically deleted. A run may include **5,000 rows** and process internally in chunks without becoming separate user-visible imports, losing valid rows because a minority fail, or imposing a false 1,000-row ceiling. Quick Prices, Store record bulk editing and barcode scanning invoke the same DSH StoreOffer writer and per-row audit, never an alternate price table.
+
+A Store-local Product may later be promoted to an approved Shared identity **only** with explicit authorized DSH identity mapping, rebinding Offers and historical audit, not a cosmetic classification or silent ID replacement. Media, category, variant, Store SKU, requested quantities and invoice snapshots must survive a lawful migration without cross-Store disclosure.

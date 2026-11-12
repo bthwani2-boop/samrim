@@ -44,3 +44,9 @@ WLT accepts verified funding from eligible customer wallet/external provider rai
 
 ## Common proof rule
 For each materially changed journey record a concrete exact SHA, service/DB revision, authenticated actors and Store scopes, contract/migration versions and observed owner readbacks. Include legitimate, unauthorized, concurrent, offline/retry, privacy and financial negative flows. Browser and Android real behavior matter when affected; iOS is NOT_RUN without an actual device/simulator test. Distinguish source-only, mocked, partial and live-proven capability states without inventing success.
+
+## Bounded Operations contact and exception handling
+
+For the initially admitted new-order confirmation process, any bounded Operations follow-up (including the prior first-three-order contact objective) is an Operations **consumer of the canonical DSH Order**, never a second Order state, new customer profile authority or broad CRM product. It may record attributable contact evidence only when the Order/Customer scope and current consent authorize it; exceptions return to DSH/WLT owners with auditable status and actual persisted readback. No call-center UI may create an order acceptance, settlement or refund directly in a parallel state engine.
+
+A Merchant-commission remittance or receivable reconciliation is a WLT-owned financial journey and must not be conflated with platform-Captain physical COD collections. Historic remittance terminology remains governed by binding transaction evidence, while new COD collection follows the accepted WLT hold/debit path. A failed/unverified reconciliation is not a completed remittance, payout or Customer balance credit.

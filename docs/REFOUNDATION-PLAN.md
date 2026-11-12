@@ -109,7 +109,7 @@ A source being inventoried does **not** mean every line or external URL has pass
 
 ## Evidence inventory and open contradictions after governance drafting (2026-11-12)
 
-The **current request authorizes only governance, agent law, temporary plan and GitHub scaffolding**. No application/backend/SQL/Docker implementation is authorized yet. This audit is based on branch 41 at `426d67b47beb8c66b09acd8c7394086b53ac5aae`, the consolidated archive in `C:\Users\bassa\Downloads\BTHWANI-REFOUNDATION-COMPLETE-PACKAGE-20261112.zip` (outer 11 entries, 9/9 SHA-256 manifest matches from the earlier read-only validation) and selected donor semantic owner documents. Archive existence or checksum validity does not validate archived decisions, old URLs, live DBs or current product readiness.
+The **current request authorizes only governance, agent law, temporary plan and GitHub scaffolding**. No application/backend/SQL/Docker implementation is authorized yet. This audit is based on branch 41 at `426d67b47beb8c66b09acd8c7394086b53ac5aae`, the consolidated archive in `%USERPROFILE%\Downloads\BTHWANI-REFOUNDATION-COMPLETE-PACKAGE-20261112.zip` (outer 11 entries, 9/9 SHA-256 manifest matches from the earlier read-only validation) and selected donor semantic owner documents. Archive existence or checksum validity does not validate archived decisions, old URLs, live DBs or current product readiness.
 
 **Structured first pass done:** full 14-file owner draft and all 26 existing admission IDs mapped to one section each. **Still required before READY:** semantic line-by-line reconciliation of significant branches of each older owner doc, review of original contracts and all material subfeature coverage, actual references, independent critical-risk review and GitHub provider/branch protection verification. There is no valid basis yet to claim 100% correctness or completed refoundation.
 
@@ -138,3 +138,52 @@ The **current request authorizes only governance, agent law, temporary plan and 
 - Phase 1: local staging, path cleanup and structural guard are subject to readback/tests; even a PASS here never closes Phase 2.
 - Phase 2: DRAFT_COMPLETE for 14 owner documents, 26/26 structurally assigned capability IDs, with **full donor-line semantic reconciliation NOT_RUN** and independent finance/security/migration approval REVIEW_BLOCKED. Do not declare governance READY until those evidence gates are satisfied.
 - Phases 3–6: not complete; implementation and full integration proofs NOT_RUN.
+
+
+## 2026-11-12 — Governance donor-reconciliation pass 2 (source-grounded; not final adoption)
+
+**Exact donor:** `D:\samrim`, branch `41`, SHA `426d67b47beb8c66b09acd8c7394086b53ac5aae`; original `docs/governance/` read only. **Candidate:** existing clean worktree/branch at the exact SHA in this batch's local commit record. Do not conflate current approved governance semantics and untested current backend behavior.
+
+### Material decisions recovered and reauthored into their canonical owner
+| New owner | Donor-specific invariant recovered | Proof scope / outstanding |
+| --- | --- | --- |
+| `identity.md` | Normal Operator WebAuthn/user verification, protected one-time admin/bootstrap, finite `operations/partners/catalog/marketing/finance/hr/platform_policies` grants, role/session isolation, identity phone/name authority and browser-host session boundaries. | Semantic source-to-draft comparison; live Identity tests NOT_RUN. |
+| `stores.md` | Verified Merchant account versus DSH Store owner, first/subsequent Store idempotence, unpublished/closed fresh Store, separate vertical/type/city, business-only public contacts, store-member acceptance and one DSH create writer. | Actual DSH/API/SQL cutover NOT_RUN. |
+| `catalog.md` | Five distinct classification concepts; typed category tree; Product→Variant→StoreOffer; Shared versus Store-scoped within one registry; variable measures/modifiers; controlled 5,000-row preview/commit and Quick Prices. | Data model, import large-run and UI proof NOT_RUN. |
+| `commerce.md` | Effective donor `CITY_SCOPE_V2_RADIUS_30KM`, Order recipient independent from purchaser, cancellation snapshot/compensation, governed promo forms and Partner/Platform/Shared funding, short-form media limits, direct/marketplace same DSH Order. | DSH and WLT serviceability/money agreement conflict not yet runtime-tested. |
+| `fulfillment.md` | Store-Captain invitation proof, up to 3 offers/one winner, Captain latest-location/privacy/expiry, platform versus Store Captain cash distinctions, customer address after assignment. | Operator/Captain Android mission and private-location proof NOT_RUN. |
+| `finance.md` | Exact integer YER, Captain COD gross exposure versus cash-only hold/debit, old physical remittance issue, approved-beneficiary identity/destination, manual transfer receipt+statement, separated approval/reconciliation, cancellation refund safeguards. | Financial independent review REVIEW_BLOCKED; live WLT/DB NOT_RUN. |
+| `experience.md` | Five approved brand anchors, Tamagui Expo/Ant Design Operator, eight actual navigation groups, one Studio, Arabic RTL/AA contrast, proper Owner readback and no UI engine. | Rendered Web/Android/iOS and theme publication NOT_RUN. |
+| `hr.md` | One employee/optional Operator actor, HR-requested but Identity-approved permissions, unknown ≠ absent attendance, event-based corrections and safe offboarding, money stays WLT. | HR/Identity integration proof NOT_RUN. |
+| `safety.md` | Least-privilege DB runtime identities versus migration admin, durable constraints, UTF-8 repair discipline, cursor bounds, explicit failure codes and replay-safe cross-owner operations. | Actual grants, database, backups, E2E NOT_RUN. |
+| `product.md` / `journeys.md` | One admission set of 26 capability IDs, recipient versus purchasing Customer, constrained subscription entitlements, bounded Operations contact/exception journeys and financial handoffs. | Headline IDs are mapped once; exhaustive subfeature producer/consumer review NOT_RUN. |
+
+This pass addressed prominent **known omissions** from the first 14-owner drafts; it does **not** declare each line of 14 donor files fully concordant or prove that all dated ZIP decisions are still approved. The full-file and independent-risk review remains a separate cutover gate. Historical media provider/reference URLs and legal agreements must retain provenance; do not invent verification of remote links.
+
+### GitHub and tooling decisions
+- One contributor: no `CODEOWNERS` file, no fictitious reviewers or automatic PR/Push. Independent competent review for high-risk finance/security/migration is a **separate acceptance gate**, not a made-up GitHub team.
+- `.coderabbit.yaml` is included as a minimal inherited-provider review configuration matching the established local intention (draft reviews enabled); provider-side review behavior and GitHub rulesets are **not** proven by committing YAML.
+- Live GitHub repository metadata was read-only checked for `bthwani2-boop/samrim`: default branch `main`, **public** visibility at check time, connected account admin permissions. Do **not** publish credentials or presume branch protections. Repository visibility or protection changes require separate human authorization.
+- The old `.specify/memory/constitution.md` is only a derived Spec Kit router, but its text points to **deleted** `docs/governance/`. Do not copy it blindly. Before enabling Spec Kit during implementation, adapt router to root `governance/README.md` and AGENTS/REPOSITORY-STRUCTURE, verify workflow/script dependencies, and treat its constitution as non-authoritative.
+- Source branch's Sonar workflow still references branches `36/37/38`; old Fast Guard assumes full applications/services. They remain **not admitted** to the sparse candidate; routing must be updated and proven when source code returns. Foundation Guard local static checks are not a substitute for successful GitHub Actions runs.
+- Branch-41 external benchmarking/research links need read-only URL and license checks before any source-derived rule or media reuse. NOT_RUN; no silent product adoption from competitor/archival packs.
+
+### Named remaining cutover blockers
+1. **R1 — DONOR_LINE_RECONCILIATION:** compare every remaining material domain section, older archive requirement and explicit user decision, with an evidence-backed KEEP / MODIFY / SUPERSEDE / EXPLICIT_RETIRE / UNRESOLVED disposition. Draft summary parity alone is not enough.
+2. **R2 — HIGH_RISK_REVIEW:** separate competent review of finance, privilege, retained historical money, schema migration/destructive cutover rules. Without review: REVIEW_BLOCKED, including for documentary policies that materially alter critical operations.
+3. **R3 — GH_PROTECTION_AND_ACTIONS:** validate GitHub workflow syntax/routing locally where supported, then exact candidate GitHub Actions/CodeRabbit/Sonar checks and live main-branch rulesets after authorized remote submission. No authorized push, PR, branch protection change or merge yet.
+4. **R4 — SOURCES_AND_LINKS:** record source/quote provenance and preserve non-governing OSS/competitor/media/legal references; external live-link/license verification NOT_RUN.
+5. **R5 — CUTOVER_APPROVAL:** only after R1-R4 applicable gates are proven and reviewed may `GOVERNANCE_CUTOVER: READY` and related guards/AGENTS be updated in a separate coherent batch. This is governance readiness for *later* code and SQL work, not implementation success.
+
+No restoration of services, apps, old SQL, Docker or external data was performed by this pass.
+
+
+### Provenance and CI verification status — same foundation batch
+
+- Created **one non-governing** `docs/reference/README.md` summarizing selected OSS/competitor research sources, their original branch/SHA and evidence limitations without bringing old benchmark dossiers or screenshots into current policy. The index is **curated, not exhaustive**; external URLs, licenses, media rights and missing untracked captures are `NOT_RUN` until deliberately checked.
+- GitHub repo `bthwani2-boop/samrim` is reported **public** by read-only live GitHub metadata at this audit. This is not an authorization to alter visibility or push drafts; secrets and untracked local material remain protected.
+- Source `.coderabbit.yaml` had inheritance plus draft auto-review enabled. Candidate includes a small single configuration using only those established settings and a negative test that detects deliberate disabling. Whether the provider actually reviews a PR, global inherited settings and review quality remain `NOT_RUN` until authorized GitHub delivery.
+- A locally installed `actionlint` executable was detected, but the connected device channel **explicitly denied** executing it. That specific executable validation is `BLOCKED`; no alternate channel will be used to bypass the denial. Foundation test/guard results do **not** substitute for actionlint or an actual GitHub Actions run.
+- Existing original Spec Kit constitution is a **derived router** and points at the removed `docs/governance` path. Do not copy or activate it unchanged. Its installation/adapter check belongs before adopting a substantive Spec Kit workflow; root `AGENTS.md` and `governance/` remain the sole authorities. If no substantive workflow currently needs Spec Kit, do not create a misleading partial tool tree.
+
+**Current program decision:** finish semantic and independent-risk review before changing the governance cutover flag. The project architecture can be designed now, but SQL, apps, source-service refoundation and live financial operations remain expressly unstarted.

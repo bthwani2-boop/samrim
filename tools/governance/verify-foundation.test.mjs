@@ -10,8 +10,8 @@ const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const checker=path.join(root,'tools/governance/verify-foundation.mjs');
 const owners=['product','platform','architecture','identity','stores','catalog','commerce','fulfillment','finance','hr','experience','safety','engineering','journeys'];
 const files=[
- 'AGENTS.md','REPOSITORY-STRUCTURE.md','governance/README.md',
- ...owners.map(owner=>'governance/'+owner+'.md'),'docs/REFOUNDATION-PLAN.md',
+ 'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',
+ ...owners.map(owner=>'governance/'+owner+'.md'),'docs/REFOUNDATION-PLAN.md','docs/reference/README.md',
  '.github/workflows/foundation-guard.yml','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs'
 ];
 function run({edit={},add={},del=[]}={}){
@@ -61,3 +61,9 @@ rejects('rejects extra unadmitted capability',{edit:{'governance/hr.md':s=>s+'\n
 rejects('rejects deleted owner-backed policy law',{edit:{'AGENTS.md':s=>s.replace(/- \*\*Policy-first for legitimate business choices:\*\*[^\n]+\n/,'')}},/owner-backed configurable business rules/);
 rejects('rejects finance policy fee dimensional collapse',{edit:{'governance/finance.md':s=>s.replaceAll('STORE_MANAGED','NOT_SUPPORTED')}},/distinguish collection responsibility/);
 rejects('rejects UTF-8 BOM',{edit:{'governance/hr.md':s=>'\uFEFF'+s}},/empty or BOM/);
+
+rejects('rejects CodeRabbit review disabled',{edit:{'.coderabbit.yaml':s=>s.replace('enabled: true','enabled: false')}},/CodeRabbit local review/);
+rejects('rejects missing CodeRabbit config',{del:['.coderabbit.yaml']},/required \.coderabbit\.yaml/);
+
+rejects('rejects missing research provenance index',{del:['docs/reference/README.md']},/required docs\/reference\/README.md/);
+rejects('rejects research masquerading as Product policy',{edit:{'docs/reference/README.md':s=>s.replace('BUSINESS_POLICY_AUTHORITY: NONE','BUSINESS_POLICY_AUTHORITY: ACTIVE')}},/research index cannot become policy authority/);

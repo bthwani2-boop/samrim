@@ -31,3 +31,19 @@ All financial, Store, Order, media and Customer/recipient data must respect leas
 For affected risk surfaces: forged actor/Store IDOR, account switch with pending reads, stale permissions, policy race, price/cart change, COD/Mixed partial funding, double debit, settlement timeout, refunds, lost/late dispatch acceptance, publication rollback and media privacy. Verify persisted owner facts and explicitly report NOT_RUN where needed.
 
 Changes to real finance, authentication/security, migration/deletion or sensitive data require an independent competent review per approved process; otherwise REVIEW_BLOCKED even with passing local checks. Security/financial acceptance is never inferred from a document, green pipeline or HTTP 200 alone.
+
+## Database roles, enforceable constraints and bounded reads
+
+Even where physical PostgreSQL infrastructure is shared, each service runtime identity may operate **only on its own schema/facts with the minimum needed privileges**; database schema administration and migration authority require distinct controlled credentials. A legitimate cross-owner read goes through a stated reviewed contract or bounded approved projection, not indiscriminate SQL access. Prove both permitted same-owner writes and denied unrelated-owner reads/writes.
+
+Durable uniqueness, foreign-key relationships, `NOT NULL`, range/check constraints, transaction atomicity, concurrency idempotency and required authorization/scoping constraints must be enforced at the strongest practical persistence boundary whenever expressible. Client and service pre-validation are complementary, not replacements. Source text and domain records use verified UTF-8 without BOM; never use guessed bulk transformations to repair Arabic or rewrite already applied SQL.
+
+Large collection reads must use owner-side bounded pagination/filter/sort, stable deterministic tie-breaking and permission-scoped cursors where necessary. A rejected/stale cursor must not leak another Store's data or silently return a different scope. Do not impose one universal paging method where the owner can justify a simpler correct approach.
+
+## Failure contract, cross-owner degraded state and evidence
+
+Material Owner APIs should expose stable **machine-classifiable error categories** and canonical operation/reconciliation identities. Human-readable Arabic messages are for users, not a parser for business decisions. Multi-record commands may complete partially only when their finite affected scope and per-item result are durably reconstructable; never present partial progress as an atomic batch success.
+
+A missing second-owner acknowledgment in an authorization/money handoff leaves a clearly incomplete/degraded transaction; a successful local write or immutable historical snapshot cannot alone authorize an irreversible transfer. Unknown provider outcomes are reconciled before retries that might double move funds. Restart/resume reconstructs from current Owner facts rather than a stale in-memory replica or a client's cached success.
+
+Material media has one lawful upload/reference/retention path; Store/Order attachments never become public via derived preview. Orphan cleanup requires an ownership/retention check, not blanket filesystem deletion.

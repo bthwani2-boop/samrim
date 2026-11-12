@@ -12,7 +12,7 @@ const root=path.resolve(args.length?args[1]:scriptRoot);
 const owners=['product','platform','architecture','identity','stores','catalog','commerce','fulfillment','finance','hr','experience','safety','engineering','journeys'];
 const domainFiles=owners.map(name=>'governance/'+name+'.md');
 const required=[
- 'AGENTS.md','REPOSITORY-STRUCTURE.md','governance/README.md',...domainFiles,'docs/REFOUNDATION-PLAN.md',
+ 'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',...domainFiles,'docs/REFOUNDATION-PLAN.md','docs/reference/README.md',
  '.github/workflows/foundation-guard.yml','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs'
 ];
 const fail=(reason)=>{ throw Error('FOUNDATION_GATE_FAIL: '+reason); };
@@ -32,7 +32,10 @@ for(const p of required){
  try {contents[p]=get(p);}catch(error){fail('required '+p+': '+error.message);}
 }
 const agent=contents['AGENTS.md'],repo=contents['REPOSITORY-STRUCTURE.md'];
+const rabbit=contents['.coderabbit.yaml'];
+if(!/^inheritance: true$/m.test(rabbit)||!/^\s*auto_review:\s*$/m.test(rabbit)||!/\s*enabled: true\s*$/m.test(rabbit))fail('CodeRabbit local review configuration must not be silently disabled');
 const gov=contents['governance/README.md'],plan=contents['docs/REFOUNDATION-PLAN.md'];
+if(!/^BUSINESS_POLICY_AUTHORITY: NONE$/m.test(contents['docs/reference/README.md']))fail('external research index cannot become policy authority');
 if(!/^STATUS: ACTIVE_FOR_FOUNDATION_ONLY$/m.test(agent))fail('agent must declare foundation-only state');
 if(!/^STATUS: ACTIVE_FOR_FOUNDATION_ONLY$/m.test(repo))fail('placement law must declare foundation-only state');
 if(!/^GOVERNANCE_CUTOVER: NOT_READY$/m.test(gov))fail('do not mark governance ready without independent semantic/risk acceptance');

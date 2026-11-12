@@ -40,3 +40,9 @@ Do not use donor archives or competitor benchmarks to admit a second marketplace
 Obsolete onboarding paths from historical sources cannot be reinstated as new products, roles, screens or reward writers. Preserve only independently verified legally or financially binding historical liabilities with their true owners. Existing capability IDs containing `PARTNER` preserve traceability without creating a second Merchant actor or workflow.
 
 Adding a capability requires current human approval and a bounded owner, contract, permissions, privacy, failure/recovery semantics and acceptance evidence. Changing operator-editable defaults for an *already supported* capability is not a new Product capability.
+
+## Remaining Product-boundary details retained for implementation planning
+
+An accepted **subscription tier** may regulate clearly agreed and actually implemented optional capacity/service entitlements through the correct owner after WLT approval. It does **not** grant Identity roles, Store ownership, public listing, checkout or a guaranteed payment rail. Policy defaults, subscribed agreement and actual Store entitlement/readiness must remain distinct even when shown in one Operator workspace.
+
+A delivery recipient can differ from the purchasing Customer but does not acquire Order/payment authority or a new required platform account. A Customer may receive basic Order-scoped feedback and post-order incident/refund remedy without establishing a social-review network or generic returns/warranty platform. Transaction notifications, current map opportunities and media projections are bounded dependents of DSH/WLT/Identity, not standalone business authorities.
