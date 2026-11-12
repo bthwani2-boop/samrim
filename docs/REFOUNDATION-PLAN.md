@@ -551,3 +551,71 @@ The installed pnpm program has its own Node runtime that differs from `node --ve
 - The former reported **missing Go 1.27.3** is resolved for **local CLI availability**: normal Go user toolchain cache contains the original required `go1.27.3`; explicit `GOTOOLCHAIN=go1.27.3`, `GOPROXY=off` gives `go version go1.27.3 windows/amd64`. Global `go version` still says `1.27.1` by design.
 - `tools/dev/verify-workspace.mjs --require-exact-toolchain` finds an installed exact `node.exe v24.22.1` despite pnpm's embedded Node `24.19.0`, then executes the user-cache Go `1.27.3` offline. `pnpm run check:toolchain` is therefore **PASS** without any global runtime replacement, version upgrades, app install or new backend code.
 - Stage 2 is **PASS for exact CLI readiness**; Stage 3 remains **PASS for the minimal reproducible package foundation**. No `go test`, `go work sync`, RN/Expo/Next boot, contract API integration, Android, Docker or SQL was executed. Their readiness remains `NOT_RUN`, not implied by toolchain presence.
+
+
+## 2026-11-12 — Design refoundation plan: 24-section decision concordance (this candidate)
+
+**Reviewed source:** `D:\samrim-implementation\BTHWANI-DESIGN-REFOUNDATION-AUDIT-AND-EXECUTION-PLAN-20261112.md`, 688 textual lines (24 numbered sections, dated 2026-11-12), plus original donor branch `41` at `426d67b47beb8c66b09acd8c7394086b53ac5aae`. The design plan is **PLAN_ONLY** except for the later user-approved decisions explicitly identified by source section. An entry below denotes *governance documentary reconciliation*, not migrated source code, API compatibility, runtime implementation or independent critical-risk approval. No companion policy root is created.
+
+| Original section | Determination for current governance | Canonical owner | Rationale / unresolved gate |
+| --- | --- | --- | --- |
+| 01 Goal and success | ADOPT_BOUNDED | `engineering.md` | True acceptance by end-to-end owner readback; never claim source-file count or "100%" correctness as empirical proof |
+| 02 Source-vs-unverified inventory | ADOPT_BOUNDED | `engineering.md` | Old snapshot test counters are not present SHA/runtime results |
+| 03 Proposed design decisions | REFRAME_APPROVED | `experience.md` | Tamagui/Ant and single brand owner approved; only supported Studio operations are admitted |
+| 04 Initial tree (`partner`) | SUPERSEDE_INTERNAL_NAME | `platform.md`, `REPOSITORY-STRUCTURE.md` | Later section 23 uses `merchant`; internal path decision follows Merchant actor vocabulary; external IDs unchanged |
+| 05 Expo/dependency stages | IMPLEMENTATION_DEFERRED | `engineering.md`, `platform.md` | Existing Expo 58.0.19/RN 0.88.0 and pinned donor tools; no Stage-4 app build permitted here |
+| 06 Donor design system replacement | REFRAME_APPROVED | `experience.md` | Preserve semantic brand/provider/native unique capabilities, migrate generic primitives only after consumer proof |
+| 07 Operator UX | REFRAME_APPROVED | `experience.md` | One Ant shell, SSR/CSP/ACL, owner-filtered server pagination; do not treat every Next route as a business engine |
+| 08 Studio publication | REFRAME_APPROVED_WITH_CAPABILITY_GATE | `experience.md` + DSH ownership in `architecture.md` | Verified donor `CLIENT_HOME`; Store customization remains future until canonical contract/authorization actually supports it |
+| 09 Design refoundation stages | IMPLEMENTATION_DEFERRED | `engineering.md` | D0–D6 apply later; current governance stage cannot prove platform UX |
+| 10 UX acceptance scenarios | ADOPT_BOUNDED | `experience.md`, `safety.md` | Positive/negative, actor/store switch, real browser/Android and future iOS proofs |
+| 11 Open issues | PARTIAL_DECISION | `experience.md`, `platform.md`, `safety.md` | Brand/token owner and folder names resolved as policy; exact Studio Store publishing and legal/financial rights remain conditional |
+| 12 Delivery and report style | ADOPT_BOUNDED | `AGENTS.md` | Versioned source evidence, local commit only, no automatic Push/PR/Merge |
+| 13 First authorized migration slice | IMPLEMENTATION_DEFERRED | `engineering.md` | No Expo/Next or backend code in governance-only stage |
+| 14 Max Tamagui/Ant re-use and exclusivity | ADOPT_APPROVED | `experience.md` | Derived adapters from one brand source; platform-specific modules remain valid |
+| 15 Proposed folder partition | REFRAME_APPROVED | `platform.md`, `REPOSITORY-STRUCTURE.md` | No new generic brand package or blank directories; Merchant internal folder wins over interim Partner proposal |
+| 16 Design task ownership | IMPLEMENTATION_DEFERRED | `engineering.md`, `experience.md` | DS-01–13 tests and consumer inventory are implementation acceptance criteria |
+| 17 Anti-duplicate design checks | ADOPT_BOUNDED | `experience.md`, `engineering.md` | Owner and negative checks first; no second audit framework or fake dynamic scan |
+| 18 Platform/security scenarios | ADOPT_BOUNDED | `experience.md`, `safety.md` | Real Web/Android, iOS only when tested; financial IDOR tests deferred to actual code stage |
+| 19 UI closure prohibitions | ADOPT_BOUNDED | `engineering.md` | Never label a Design System "migrated" by its documentation alone |
+| 20 Explicit approved OpenAPI simplification | ADOPT_APPROVED | `engineering.md` | One OpenAPI 3.1 owner entry and flat cohesion-based paths; no silent contract break, no code edits |
+| 21 Explicit approved SQL fresh baseline | ADOPT_WITH_INDEPENDENT_RISK_GATE | `engineering.md`, `safety.md` | One **derived** fresh baseline per owner, protected original 275 upgrade files; implementation/deletion review blocked |
+| 22 SQL/OpenAPI/service coordination | ADOPT_BOUNDED | `architecture.md`, `engineering.md` | Formal source→contract→writer→consumer→DB evidence; no phase leap |
+| 23 Latest four app structure | ADOPT_APPROVED_INTERNAL_NAME | `platform.md` | `customer/merchant/captain/control-panel`; preserve donor Expo slug/package/scheme/EAS project IDs and all consumers |
+| 24 UI/contract/SQL integration order | ADOPT_BOUNDED | `engineering.md`, `architecture.md` | This is a later implementation sequence, not proof or permission for Stage 4+ |
+
+**Specific resolved apparent contradictions:** `partner` as a *proposed new internal folder* is superseded by `merchant` but `com.bthwani.partner` as a *published technical app ID* stays unchanged. The historical `design-system` authored colors are preserved pending a proven consumer migration; `tamagui-config` and Ant are two **derived renderer adapters**, not two brand authors. `Studio CLIENT_HOME` currently exists as source observation; Store-scoped customization is **future/not automatically enabled**. The **3** SQL baseline targets are **new empty DB install entrypoints** rather than permission to discard the **275** original applied-upgrade migration files. The OpenAPI refactor rearranges file ownership but must not change actual business/API semantics. This concordance is **24/24 documentary sections handled**, not a complete line-by-line approval of all external archives and not an independent legal review.
+
+### Internal app identity source observations preserved (do not execute rename)
+
+- Donor `apps/app-client/mobile.config.json`: `slug=app-client`, `scheme=client`, Android/iOS `com.bthwani.client`, EAS `4adf3184-fc07-4186-b49e-0dc821a5ab73`.
+- Donor `apps/app-partner/mobile.config.json`: `slug=app-partner`, `scheme=partner`, Android/iOS `com.bthwani.partner`, EAS `bcd22a76-d4b2-4de0-93b3-f6d13074a802`.
+- Donor `apps/app-captain/mobile.config.json`: `slug=app-captain`, `scheme=captain`, Android/iOS `com.bthwani.captain`, EAS `7efa39e1-895f-44d7-a597-d613c79297b6`.
+- All three source files specify owner `bthwani1`, version `0.3.1`. **These are donor-revision files, not a confirmed App Store/EAS runtime identity proof**. The actual native config and signing identity remain protected, and no Expo folder/runtime was modified.
+
+### Operator Policies decision readiness (representative, not a second legal policy inventory)
+
+| Known commercial/operational policy candidate | Legal setting owner | Historical source value where justified | Governance treatment / production state |
+| --- | --- | --- | --- |
+| Approved service-city reach/radius | DSH | Historical 30 km | CONFIGURABLE once admitted; city/Store and coordinates validated, no non-approved city enabled; runtime NOT_RUN |
+| Delivery distance bands, base and excess-distance fee | DSH quote with WLT commercial agreement/collection boundary | Donor distance/fee table | CONFIGURABLE only with version/consent/quote readback; no retroactive charge |
+| Captain offer count, location freshness, timeout/escalation | DSH | Three offers, 15-minute freshness, relevant 5/30-minute attention examples | CONFIGURABLE bounded; **one winning assignment** and address privacy SAFETY_INVARIANT |
+| First-order contact count/claim expiry | DSH | Three qualifying Orders, 10-minute claim | CONFIGURABLE; actual spoken contact and proven completion SAFETY_INVARIANT; no automatic pre-preparation block |
+| Order cancellation/compensation eligibility/window/ceiling | DSH policy, financial posting WLT | No universal value approved by archive | CONFIGURABLE candidate; must preserve frozen Orders and independent financial review |
+| Store admission/relation/method readiness/publication | DSH; WLT contract acceptance for financial terms | Two relation modes, three method types | Configurable only for implemented permissions/contracts; Store publication not Studio content publication |
+| Commission/subscription/collection responsibility/settlement period | WLT | No universally binding rate or period from archive | CONFIGURABLE only with accepted agreement, legal signoff and versioned financial safeguards; REVIEW_BLOCKED |
+| WLT COD coverage/cash reserve/refund/beneficiary limits | WLT | Historical cash-only reserve and gross Order eligibility distinction | Conditional financial values; BALANCED_LEDGER, once-only posting, verified beneficiary SAFETY_INVARIANT, review BLOCKED |
+| Catalog popularity window/bulk import/media limits | DSH | 30-day ranking; 5000-row import; 10 MiB/30-second media donor values | CONFIGURABLE when safely supported; no unapproved media/publishing |
+| Published design/theme choices | DSH public content version with design renderer consumer | Only CLIENT_HOME evidence confirmed | **Design Studio**, NOT Operator Policies; no arbitrary CSS/JS or unproved Store theme activation |
+
+Each later Owner implementation must specify in its **single canonical contract** the setting name, type/unit, global/city/relation/Store precedence, bounded validation, authorized Operator right, legal readiness, initial effective default or `UNDECIDED`, version/effective date/reason, historical Order/agreement impact, readback/concurrency/rollback and actual support state. The table is **temporary donor evidence**, not a new configuration database or reusable generic rules engine.
+
+### Independent review and GitHub status on the local pre-change candidate
+
+- FIN-01/02/03, SEC-01/02, MIG-01 and LEGAL-01 from the existing `Stage-1 policy cutover decision packet` remain **REVIEW_BLOCKED**; professional independent review and applicable legally accepted source agreements have **not** been provided or performed by a separate qualified reviewer. A self-judged "100%" score is not approval; keep money/authorization/migration gates **nonactivated**.
+- The currently pushed local *previous* SHA `65738d6c3ecc94e486ee4f7df62d7f38e3ba0b0b` has **zero legacy combined statuses** and **zero PR-filtered workflow runs** returned by the GitHub connector. This is **not proof of zero CI at all trigger types**, nor PASS for CodeRabbit. The next locally authored SHA will **not** be pushed without separate authorization; real Actions/CodeRabbit for that exact new candidate remain NOT_RUN.
+- The supplied shared ChatGPT URL `https://chatgpt.com/share/6af5ea0a-2c6c-83eb-aeeb-f37059c1bbe2` could not be extracted from the available sources, so its text/decisions are **not** represented as independently checked. User's explicit approval in the present turn authorizes implementing the stated plan *within existing safety/independent-review gates*; it does not authorize inventing its contents or manufacturing qualified review.
+
+### Cutover decision, pending independent signoff
+
+**Domain governance decisions have been materially clarified in this batch**, with design, policy, internal app identity, contract and migration placement at their right semantic owners. However, **GOVERNANCE_CUTOVER stays NOT_READY** because mandatory independent critical-risk reviews and full material-source acceptance are not evidenced. This is a **review-blocked adoption boundary**, not a request to build all apps/SQL or a denial of the valid low-risk engineering foundation. The exact evidence necessary for READY remains the existing review packet in this one plan. After a qualified independent decision, review the final changed policy text, rerun guards, and adopt via a separately approved governance cutover revision. No Product apps, service modules, API contracts, SQL, Docker or credentials were changed during this governance-only batch.

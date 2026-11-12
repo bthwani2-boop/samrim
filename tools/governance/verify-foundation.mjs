@@ -143,6 +143,7 @@ if(controlIDs.length!==112||controlSet.size!==112||Array.from({length:112},(_,i)
 if(!/^STATUS: ACTIVE_FOR_FOUNDATION_ONLY$/m.test(agent))fail('agent must declare foundation-only state');
 if(!/^STATUS: ACTIVE_FOR_FOUNDATION_ONLY$/m.test(repo))fail('placement law must declare foundation-only state');
 if(!/^GOVERNANCE_CUTOVER: NOT_READY$/m.test(gov))fail('do not mark governance ready without independent semantic/risk acceptance');
+if(!gov.includes('## Cutover readiness is a policy decision, not a claim of implemented software'))fail('governance policy readiness must stay separate from later runtime implementation tests');
 if(!/^BUSINESS_DECISION_AUTHORITY: NONE_WHILE_NOT_READY$/m.test(gov))fail('no competing policy authority during reconstruction');
 if(!/^STATUS: IN_PROGRESS_FOUNDATION$/m.test(plan))fail('temporary plan must remain in progress');
 if(!agent.includes('governance/README.md')||!agent.includes('REPOSITORY-STRUCTURE.md')||!agent.includes('NOT_READY'))fail('agent must know the unfinished governance target');
@@ -253,6 +254,45 @@ if(!arch.includes('policy')||!arch.includes('Operator Policies')||!arch.includes
 if(!finance.includes('PLATFORM_MANAGED')||!finance.includes('STORE_MANAGED')||!finance.includes('COMMISSION')||!finance.includes('SUBSCRIPTION'))fail('finance must distinguish collection responsibility and fees');
 if(!delivery.includes('DIRECT')||!delivery.includes('BTHWANI_CAPTAIN')||!delivery.includes('WLT'))fail('fulfillment must address relation-independent safety gates');
 if(!engineering.includes('ADD NOW')||!engineering.includes('DEFER')||!engineering.includes('DO NOT ADD'))fail('engineering must distinguish mutable rules from invariants');
+
+const currentDesign=contents['governance/experience.md'];
+for(const anchor of ['## DESIGN-01 — Exclusive rendering, token and theme authority',
+ '## DESIGN-02 — Studio is a bounded editor, not an additional publication engine',
+ '## DESIGN-03 — Exclusive Operator navigation and Policies/Studio split']){
+ if(!currentDesign.includes(anchor))fail('reconciled design owner decision missing: '+anchor);
+}
+for(const invariant of ['packages/design-system/src/tokens/colors.ts','packages/tamagui-config',
+ 'AntDesignProvider','createTamagui(defaultConfig)','CLIENT_HOME','no arbitrary JS/CSS']){
+ if(!currentDesign.includes(invariant))fail('design-source/Studio boundary erased: '+invariant);
+}
+const surfaces=contents['governance/platform.md'];
+if(!surfaces.includes('## SURFACE-01 — Canonical internal app names versus immutable external identity'))
+ fail('four app identity mapping is missing');
+for(const atom of ['apps/customer','apps/merchant','apps/captain','apps/control-panel',
+ 'com.bthwani.client','com.bthwani.partner','com.bthwani.captain',
+ '4adf3184-fc07-4186-b49e-0dc821a5ab73',
+ 'bcd22a76-d4b2-4de0-93b3-f6d13074a802',
+ '7efa39e1-895f-44d7-a597-d613c79297b6']){
+ if(!surfaces.includes(atom))fail('original external identity/internal naming missing: '+atom);
+}
+for(const clause of ['## API-01 — OpenAPI organization and semantic-equivalence gate',
+ '## SQL-01 — Safe one-baseline-per-owner fresh bootstrap, protected upgrades',
+ '## POLICY-IMPLEMENTATION — Changeable parameter discovery and validation boundary']){
+ if(!engineering.includes(clause))fail('approved API/SQL/policy governance decision missing: '+clause);
+}
+for(const preservation of ['182 DSH + 30 Identity + 63 WLT = 275','go:embed migrations/*.sql',
+ 'one derived Fresh Baseline','no code deployment']){
+ if(!engineering.includes(preservation) && !contents['governance/architecture.md'].includes(preservation))
+ fail('migration/configurable policy preservation constraint missing: '+preservation);
+}
+const concordance=plan.slice(plan.indexOf('## 2026-11-12 — Design refoundation plan: 24-section decision concordance'));
+const sourceSections=[...concordance.matchAll(/^\| (0[1-9]|1[0-9]|2[0-4]) [^|\r\n]+ \| (ADOPT_BOUNDED|REFRAME_APPROVED|REFRAME_APPROVED_WITH_CAPABILITY_GATE|SUPERSEDE_INTERNAL_NAME|IMPLEMENTATION_DEFERRED|PARTIAL_DECISION|ADOPT_APPROVED|ADOPT_WITH_INDEPENDENT_RISK_GATE|ADOPT_APPROVED_INTERNAL_NAME) \|/gm)].map(m=>m[1]);
+if(sourceSections.length!==24||new Set(sourceSections).size!==24 ||
+ Array.from({length:24},(_,i)=>String(i+1).padStart(2,'0')).some(x=>!sourceSections.includes(x)))
+ fail('design source 24-section decision concordance incomplete or duplicated');
+if(!concordance.includes('REVIEW_BLOCKED')||!concordance.includes('GOVERNANCE_CUTOVER stays NOT_READY'))
+ fail('design-plan concordance cannot claim unreviewed cutover success');
+
 const policySections=[
  ['governance/commerce.md','## Operator-managed commercial thresholds — explicit policy, not compiled law'],
  ['governance/fulfillment.md','## Operator-managed dispatch and location thresholds'],
@@ -279,4 +319,4 @@ if(!ci.includes('node --test tools/governance/verify-foundation.test.mjs')||!ci.
 if(/continue-on-error:\s*true|\bsecrets\./.test(ci))fail('CI cannot silently skip proof or read secrets in foundation stage');
 
 console.log('FOUNDATION_STRUCTURE_PASS domain_owners='+domainFiles.length+' capability_ids='+seen.size+' one_census=true');
-console.log('GOVERNANCE_CUTOVER_NOT_READY: semantic donor reconciliation, risk review and product runtime gates not proven');
+console.log('GOVERNANCE_CUTOVER_NOT_READY: independent risk-policy approvals and material donor reconciliation not proven; software runtime gates are separate');

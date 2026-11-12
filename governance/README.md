@@ -46,3 +46,11 @@ Root `AGENTS.md` governs **agent execution/authority**, root `REPOSITORY-STRUCTU
 - Foundation/GitHub guard positive and adversarial tests pass on the exact revision; the temporary plan records unresolved evidence and stage boundary.
 
 When all conditions pass with approval, a separate governed change may set `GOVERNANCE_CUTOVER: READY` and update agent/guard phase. **This only certifies policy readiness for subsequent refoundation**, not SQL/application production readiness. Until then keep `NOT_READY`; do not disguise a draft as a final acceptance.
+
+## Cutover readiness is a policy decision, not a claim of implemented software
+
+`GOVERNANCE_CUTOVER: READY` would mean **the approved target Product/Design/API/SQL/Operational rules are reviewed, internally consistent and safe enough to direct later implementation**, with required independent expert review of financial/security/migration/legal-sensitive **policy decisions**. It does **not** require an already-built Expo app, an OpenAPI refactor, three generated SQL baselines, E2E customer checkout or a published software release. Those implementations have their **own later gates and actual runtime proof**; they remain `NOT_RUN` until authorized.
+
+Do not weaken the **independent policy review** because there is not yet runnable code: reviewers can sign off the normative guarantees, threat models, payout/ledger formula and safe migration *strategy*, explicitly reserving implementation tests for their eventual code revision. Equally, do not label a proposed policy reviewed merely because it names the tests to be run. Any unresolved material legal, financial, account-recovery or data migration choice remains *unactivated*, with exact owner and review evidence requested in the temporary plan.
+
+A final cutover records **which reviewed policy revision and accepted human authorization** it refers to. Approval to author/read/edit draft text and a historical Push are **not** automatic authority to invent reviewer signoffs or to merge/ship/deploy. If one required gate lacks actual reviewer evidence, remain `NOT_READY`, even when all structural/CI checks are green.

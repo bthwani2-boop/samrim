@@ -116,3 +116,14 @@ rejects('rejects a missing exact source baseline file',{del:['docs/reference/TOO
 
 rejects('rejects broken local governance reference',{edit:{'README.md':s=>s.replace('](governance/README.md)','](governance/missing.md)')}},/broken local Markdown link/);
 rejects('rejects Markdown links that escape repo root',{edit:{'README.md':s=>s.replace('](governance/README.md)','](../untrusted.md)')}},/local Markdown link escapes workspace/);
+
+rejects('rejects lost primary Tamagui/Ant design owner decision',{edit:{'governance/experience.md':s=>s.replace('## DESIGN-01 — Exclusive rendering, token and theme authority','## Uncontrolled design')}},/reconciled design owner decision missing/);
+rejects('rejects removal of Studio boundary',{edit:{'governance/experience.md':s=>s.replace('## DESIGN-02 — Studio is a bounded editor, not an additional publication engine','## Duplicate publishers')}},/reconciled design owner decision missing/);
+rejects('rejects removal of old Merchant published app identifier',{edit:{'governance/platform.md':s=>s.replace('com.bthwani.partner','com.bthwani.merchant')}},/original external identity\/internal naming missing/);
+rejects('rejects a lost source-of-truth OpenAPI decision',{edit:{'governance/engineering.md':s=>s.replace('## API-01 — OpenAPI organization and semantic-equivalence gate','## Two incompatible OpenAPI generators')}},/approved API\/SQL\/policy governance decision missing/);
+rejects('rejects unprotected historic migrations',{edit:{'governance/engineering.md':s=>s.replace('182 DSH + 30 Identity + 63 WLT = 275','migrations discarded')}},/migration\/configurable policy preservation constraint missing/);
+rejects('rejects missing historical design section 24',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^\| 24 [^\n]+\n/m,'')}},/design source 24-section decision concordance incomplete/);
+rejects('rejects duplicated historical design decision',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^(\| 07 [^\n]+)$/m,'$1\n$1')}},/design source 24-section decision concordance incomplete/);
+rejects('rejects fabricated approval of critical-risk review',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace('GOVERNANCE_CUTOVER stays NOT_READY','GOVERNANCE_CUTOVER declared READY')}},/design-plan concordance cannot claim unreviewed cutover success/);
+
+rejects('rejects governance cutover claiming real app/SQL implementation without evidence',{edit:{'governance/README.md':s=>s.replace('## Cutover readiness is a policy decision, not a claim of implemented software','## False software production readiness')}},/governance policy readiness must stay separate from later runtime implementation tests/);
