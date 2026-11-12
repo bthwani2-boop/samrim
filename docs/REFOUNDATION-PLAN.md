@@ -187,3 +187,41 @@ No restoration of services, apps, old SQL, Docker or external data was performed
 - Existing original Spec Kit constitution is a **derived router** and points at the removed `docs/governance` path. Do not copy or activate it unchanged. Its installation/adapter check belongs before adopting a substantive Spec Kit workflow; root `AGENTS.md` and `governance/` remain the sole authorities. If no substantive workflow currently needs Spec Kit, do not create a misleading partial tool tree.
 
 **Current program decision:** finish semantic and independent-risk review before changing the governance cutover flag. The project architecture can be designed now, but SQL, apps, source-service refoundation and live financial operations remain expressly unstarted.
+
+
+## 2026-11-12 — Operator-policy variable audit and official Spec Kit integration
+
+### Policy-first refinement accepted by the user
+Every supported **legitimately operator-adjustable** business or operational threshold must be maintained through the correct canonical DSH/WLT owner, editable in the **single Operator Policies experience**, validated and versioned without a new application deployment. This includes initial donor values such as the 30 km service radius, three dispatch offers, 15-minute Captain location freshness, 30-minute opportunity-map demand window, 5,000-row bulk imports, 10 MiB/30-second short video, delivery bands, Store availability and cancellation/refund/compensation ceilings, Captain COD eligibility, commission/subscription and settlement timing. These are policy **candidates/defaults**, not proof that all controls are implemented today. Each is admitted at its owner only with a validated safe range, real runtime/financial capability and tested permission/effectivity. The immutable invariants are exactly-once ledger, balance conservation, valid actor and Store rights, single winning Captain assignment and protected customer address.
+
+**Temporary classification at implementation, not a second policy catalog:**
+- CONFIGURABLE_APPROVED → one owner-backed editable current setting and one Operator Policies control
+- SAFETY_INVARIANT → enforced and never relaxable via a setting
+- FUTURE_UNIMPLEMENTED → unavailable until independently accepted backend/contract/finance capability exists
+
+Any implementation slice containing business-number literals must show which classification is intended and ensure the default is defined once at the owner. A policy update cannot rewrite accepted Orders/Store agreements and must be replay/concurrency/audit safe.
+
+### Spec Kit official source and local runtime
+- Authoritative upstream: `https://github.com/github/spec-kit`, official instructions `https://github.com/github/spec-kit/blob/main/docs/installation.md`. As of **2026-11-12** official GitHub releases list `v1.4.0` (published 2026-11-10).
+- Installed Windows CLI: `specify-cli 1.3.0` from existing `uv tool`; `specify version` and `specify check` **PASS**. `specify self check` reports `1.3.0 → v1.4.0`; this is an **available upgrade**, not a current CLI failure.
+- Initialized this existing worktree using **installed pinned package assets**, `specify init --here --force --non-interactive --integration none --script ps --ignore-agent-tools`. No Codex CLI or other coding agent was launched; the existing user-installed CLI was reused. `none` deliberately installs agent-neutral Spec Kit scripts and templates, **not agent Slash commands**.
+- The default generated `.specify/memory/constitution.md` was rewritten as a **DERIVED_SPEC_KIT_ROUTER** pointing only at root `AGENTS.md`, `REPOSITORY-STRUCTURE.md` and `governance/README.md`, with no independent Product, Git or financial authority. Old deleted `docs/governance/README.md` is not used.
+- Local `check-prerequisites.ps1 -Help` **PASS**; `create-new-feature.ps1 -DryRun -ShortName sample-governance-policy` **PASS** without creating a branch. `check-prerequisites.ps1 -PathsOnly -Json` requires an explicit feature context and **correctly fails** without one; with `SPECIFY_FEATURE_DIRECTORY=governance` and `SPECIFY_FEATURE_NO_PERSIST=1`, path resolution **PASS** without writing `.specify/feature.json`.
+- The Foundation Guard now cross-checks CLI-generated integration version, owner router, manifest hashes and approved PowerShell scripts. The installed-vendor `.specify` files are not copies of the old donor tree; preserving generated assets at CLI 1.3.0 is deliberate. Upgrading the **global** CLI to 1.4.0 without impact review could alter other worktrees; no upgrade was performed. If a reviewed upgrade becomes necessary, regenerate/verify the bundle, hashes, commands and scripts on one coherent candidate.
+- Spec Kit CLI **operational PASS** is separate from **agent Slash command integration NOT_RUN** and from fully tested feature-spec cycle NOT_RUN. The workflow's implementation step must never create a Branch/Worktree or invoke Codex without separate authorization.
+
+### GitHub read-only verification
+- GitHub connector confirms `bthwani2-boop/samrim` has default `main`, visibility `public`, account-level repository admin permission; the local `refoundation/clean-house-20261112` branch **does not exist on the remote**.
+- Therefore real GitHub Actions and CodeRabbit checks on this candidate remain **NOT_RUN**. Neither Push/PR nor GitHub protection/ruleset modifications are authorized by this general development instruction.
+- Locally prohibited `actionlint` execution remains **BLOCKED by the previously returned tool-policy denial**; do not switch channels to bypass the denial. Local Foundation Guard tests are evidence of only the subset they test, not the full GitHub workflow execution.
+- CodeRabbit provider global/inherited review and actual branch protections need separate readback at a delivery stage; the sole human contributor does not require CODEOWNERS.
+
+### Historical URL inventory status
+- Extracted `37` distinct non-loopback URL strings and `5` distinct localhost/dev endpoints, across `48` occurrences in six historical branch-41 `docs/reference` documents. Traceable extract: `docs/reference/HISTORICAL-SOURCE-INVENTORY.md`, non-normative and never a Product approval.
+- Fresh external HTTP response, changed contents, current license, privacy, media rights and archived ZIP embedded research links: **NOT_RUN** in this extraction; check the exact selected integration or reference before actual adoption.
+
+### Open release gates unchanged
+1. **Semantic line/decision concordance** beyond the high-priority donor sample and complete archive review is NOT_RUN.
+2. Finance/security/migration independent critical-risk review remains **REVIEW_BLOCKED**.
+3. Actual GitHub CI on the candidate, applicable provider review and repo protection confirmation remain **NOT_RUN** or unavailable without separately authorized remote submission.
+4. No declaration that the governance policy root is READY until the above are resolved. No SQL/app/backend/Docker implementation was carried out.

@@ -9,11 +9,14 @@ import { fileURLToPath } from 'node:url';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const checker=path.join(root,'tools/governance/verify-foundation.mjs');
 const owners=['product','platform','architecture','identity','stores','catalog','commerce','fulfillment','finance','hr','experience','safety','engineering','journeys'];
-const files=[
+const assetManifest=JSON.parse(fs.readFileSync(path.join(root,'.specify/integrations/speckit.manifest.json'),'utf8'));
+const files=[...new Set([
  'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',
- ...owners.map(owner=>'governance/'+owner+'.md'),'docs/REFOUNDATION-PLAN.md','docs/reference/README.md',
- '.github/workflows/foundation-guard.yml','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs'
-];
+ ...owners.map(owner=>'governance/'+owner+'.md'),'docs/REFOUNDATION-PLAN.md','docs/reference/README.md','docs/reference/HISTORICAL-SOURCE-INVENTORY.md',
+ '.github/workflows/foundation-guard.yml','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs',
+ '.specify/init-options.json','.specify/integration.json','.specify/integrations/speckit.manifest.json',
+ '.specify/memory/constitution.md',...Object.keys(assetManifest.files)
+])];
 function run({edit={},add={},del=[]}={}){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'bthwani-policy-guard-'));
  try{
@@ -67,3 +70,16 @@ rejects('rejects missing CodeRabbit config',{del:['.coderabbit.yaml']},/required
 
 rejects('rejects missing research provenance index',{del:['docs/reference/README.md']},/required docs\/reference\/README.md/);
 rejects('rejects research masquerading as Product policy',{edit:{'docs/reference/README.md':s=>s.replace('BUSINESS_POLICY_AUTHORITY: NONE','BUSINESS_POLICY_AUTHORITY: ACTIVE')}},/research index cannot become policy authority/);
+
+rejects('rejects missing Spec Kit constitution router',{del:['.specify/memory/constitution.md']},/required \.specify\/memory\/constitution.md/);
+rejects('rejects generic Spec Kit placeholder constitution',{edit:{'.specify/memory/constitution.md':s=>s.replace('ARTIFACT_CLASS: DERIVED_SPEC_KIT_ROUTER','ARTIFACT_CLASS: INDEPENDENT_POLICY')}},/nonauthoritative router/);
+rejects('rejects Spec Kit routing to the deleted governance root',{edit:{'.specify/memory/constitution.md':s=>s+'\nsee docs/governance/README.md\n'}},/nonauthoritative router/);
+rejects('rejects wrong Spec Kit installation mode',{edit:{'.specify/init-options.json':s=>s.replace('"integration": "none"','"integration": "codex"')}},/agent-neutral PowerShell integration/);
+rejects('rejects Spec Kit vendor script modification',{edit:{'.specify/scripts/powershell/common.ps1':s=>s+'\n# unwanted drift\n'}},/vendor asset modified/);
+rejects('rejects Spec Kit version mismatch',{edit:{'.specify/integration.json':s=>s.replace('1.3.0','0.9.0')}},/version mismatch/);
+
+rejects('rejects a missing source URL inventory',{del:['docs/reference/HISTORICAL-SOURCE-INVENTORY.md']},/required docs\/reference\/HISTORICAL-SOURCE-INVENTORY.md/);
+rejects('rejects a falsely verified external URL inventory',{edit:{'docs/reference/HISTORICAL-SOURCE-INVENTORY.md':s=>s.replace('live link, license and content checks NOT_RUN','live link, license and content checks PASS')}},/historical link extraction cannot claim live verification/);
+
+rejects('rejects loss of Owner-managed serviceability policy',{edit:{'governance/commerce.md':s=>s.replace('## Operator-managed commercial thresholds — explicit policy, not compiled law','## Removed business parameter controls')}},/owner-backed configurable-values section missing/);
+rejects('rejects loss of Owner-managed financial policy parameters',{edit:{'governance/finance.md':s=>s.replace('## Operator-managed financial values versus immutable accounting rules','## Removed financial parameter controls')}},/owner-backed configurable-values section missing/);

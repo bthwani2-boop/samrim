@@ -67,3 +67,11 @@ All request-facing replicas remain stateless for **canonical** business state, s
 ## Evidence provenance and reference adoption
 
 Use current source/contracts/runtime for implemented facts and relevant official primary technology sources for mutable versions. Donor archives, competitor observations and OSS links can reveal patterns, but are neither Product decisions nor permission to copy proprietary design/code. Choose ADOPT, DEFER or REJECT for a **concrete** opportunity after evaluating maturity, security/license, compatibility, operational cost, rollback and BThwani-specific proof. No permanent technology radar, vendor catalog or research backlog is required by governance.
+
+## Mandatory operator-policy inventory at implementation time
+
+For every changeable domain parameter discovered in branch-41 code, SQL, configuration, UI or historic operational manual, the legal owner must classify it as (a) **CONFIGURABLE_APPROVED** with a single owner-backed policy and one Operator Policies control, (b) **SAFETY_INVARIANT** with an unchangeable verified enforcement rule, or (c) **FUTURE_UNIMPLEMENTED** which remains unavailable until admission. A temporary plan may inventory each parameter; no second policy catalog or shadow writer is created.
+
+Representative CONFIGURABLE_APPROVED candidates: service radius (historical 30 km), distance/price bands, dispatch radius and offer count, timeout/ETA escalation, Store admission and publication eligibility, registration relation options, fulfillment-mode eligibility, Order/cancellation limits and compensation ceilings, commission/subscription values, COD activation/coverage parameters, transfer/settlement limits, catalog import/video thresholds and promotion boundaries. The exact list and admissible ranges must be proven during each affected Owner implementation slice, not guessed from constant names.
+
+An Operator Policies edit must be followed by an owner readback and an eligible real business path confirming the version. Missing/unsupported values reject safely. Immutable security/financial/consent guarantees may not be configured off. No speculative generic policy VM, additional service, duplicated rules table or client-side truth is justified by this inventory.

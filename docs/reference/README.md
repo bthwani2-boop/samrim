@@ -8,6 +8,10 @@ STATUS: CURATION_IN_PROGRESS
 
 This is **not** a second Product roadmap, governance directory, design system, CI authority, or record that an external product is safe or suitable. New durable decisions belong only in `governance/`, execution behavior belongs in `AGENTS.md`, and the temporary program audit belongs in `docs/REFOUNDATION-PLAN.md`.
 
+## Historical URL index
+
+The extracted source-by-source list is in [`HISTORICAL-SOURCE-INVENTORY.md`](HISTORICAL-SOURCE-INVENTORY.md): 37 distinct non-loopback URLs and 5 historical localhost endpoints across six old research files. Extraction is **not** an HTTP/license/current-content verification. No external link or research example becomes a product capability by being indexed.
+
 ## Source provenance, retained without copying historical policy trees
 
 The original source tree remains at `D:\samrim`, branch `41`, SHA `426d67b47beb8c66b09acd8c7394086b53ac5aae`. The historical `docs/reference/` donor includes an OSS candidate catalog, Yemen-market black-box competitor observations, and dated Elleen operator/report/design studies from October–November 2026. Some screenshot evidence is **locally ignored and not committed**; never claim it exists in the clean Git tree. Audit archives exist in the consolidated ZIP at `%USERPROFILE%\Downloads\BTHWANI-REFOUNDATION-COMPLETE-PACKAGE-20261112.zip`.

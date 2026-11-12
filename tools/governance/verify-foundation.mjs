@@ -2,6 +2,7 @@
 // Structural, adversarially tested refoundation policy guard.
 // IMPORTANT: a passing check is NOT semantic, legal, financial or runtime approval.
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -12,7 +13,8 @@ const root=path.resolve(args.length?args[1]:scriptRoot);
 const owners=['product','platform','architecture','identity','stores','catalog','commerce','fulfillment','finance','hr','experience','safety','engineering','journeys'];
 const domainFiles=owners.map(name=>'governance/'+name+'.md');
 const required=[
- 'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',...domainFiles,'docs/REFOUNDATION-PLAN.md','docs/reference/README.md',
+ 'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',...domainFiles,'docs/REFOUNDATION-PLAN.md','docs/reference/README.md','docs/reference/HISTORICAL-SOURCE-INVENTORY.md',
+ '.specify/init-options.json','.specify/integration.json','.specify/integrations/speckit.manifest.json','.specify/memory/constitution.md',
  '.github/workflows/foundation-guard.yml','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs'
 ];
 const fail=(reason)=>{ throw Error('FOUNDATION_GATE_FAIL: '+reason); };
@@ -32,10 +34,35 @@ for(const p of required){
  try {contents[p]=get(p);}catch(error){fail('required '+p+': '+error.message);}
 }
 const agent=contents['AGENTS.md'],repo=contents['REPOSITORY-STRUCTURE.md'];
+// The official Spec Kit installer owns CLI scaffolding. This compatibility router is not another constitution.
+const init = JSON.parse(contents['.specify/init-options.json']);
+const integration = JSON.parse(contents['.specify/integration.json']);
+const manifest = JSON.parse(contents['.specify/integrations/speckit.manifest.json']);
+const adapter = contents['.specify/memory/constitution.md'];
+if(init.integration!=='none'||init.script!=='ps'||integration.default_integration!=='none'||integration.integration!=='none')
+ fail('Spec Kit foundation must use agent-neutral PowerShell integration');
+if(!/^\d+\.\d+\.\d+$/.test(init.speckit_version)||init.speckit_version!==integration.version||init.speckit_version!==manifest.version)
+ fail('Spec Kit generated assets/integration version mismatch');
+if(!/^ARTIFACT_CLASS: DERIVED_SPEC_KIT_ROUTER$/m.test(adapter)||!/^SEMANTIC_AUTHORITY: NONE$/m.test(adapter)
+ || !adapter.includes('governance/README.md') || !adapter.includes('AGENTS.md')
+ || !adapter.includes('REPOSITORY-STRUCTURE.md') || adapter.includes('[PRINCIPLE_1_NAME]')
+ || adapter.includes('docs/governance/README.md'))
+ fail('Spec Kit constitution is not a nonauthoritative router to canonical owners');
+if(!manifest.files||typeof manifest.files!=='object'||Object.keys(manifest.files).length<8)
+ fail('Spec Kit bundled asset provenance manifest missing');
+for(const [asset,expectedHash] of Object.entries(manifest.files)){
+ if(!asset.startsWith('.specify/')||asset.includes('..')||!/^[a-f0-9]{64}$/.test(expectedHash))fail('unsafe Spec Kit manifest entry: '+asset);
+ const absolute=path.join(root,...asset.split('/'));
+ if(!fs.existsSync(absolute)||!fs.statSync(absolute).isFile())fail('Spec Kit asset missing: '+asset);
+ const actualHash=createHash('sha256').update(fs.readFileSync(absolute)).digest('hex');
+ if(actualHash!==expectedHash)fail('Spec Kit vendor asset modified/mismatched: '+asset);
+}
+
 const rabbit=contents['.coderabbit.yaml'];
 if(!/^inheritance: true$/m.test(rabbit)||!/^\s*auto_review:\s*$/m.test(rabbit)||!/\s*enabled: true\s*$/m.test(rabbit))fail('CodeRabbit local review configuration must not be silently disabled');
 const gov=contents['governance/README.md'],plan=contents['docs/REFOUNDATION-PLAN.md'];
 if(!/^BUSINESS_POLICY_AUTHORITY: NONE$/m.test(contents['docs/reference/README.md']))fail('external research index cannot become policy authority');
+if(!/^BUSINESS_POLICY_AUTHORITY: NONE$/m.test(contents['docs/reference/HISTORICAL-SOURCE-INVENTORY.md']) || !/^VERIFICATION: URL extraction only; live link, license and content checks NOT_RUN$/m.test(contents['docs/reference/HISTORICAL-SOURCE-INVENTORY.md']))fail('historical link extraction cannot claim live verification or policy authority');
 if(!/^STATUS: ACTIVE_FOR_FOUNDATION_ONLY$/m.test(agent))fail('agent must declare foundation-only state');
 if(!/^STATUS: ACTIVE_FOR_FOUNDATION_ONLY$/m.test(repo))fail('placement law must declare foundation-only state');
 if(!/^GOVERNANCE_CUTOVER: NOT_READY$/m.test(gov))fail('do not mark governance ready without independent semantic/risk acceptance');
@@ -96,6 +123,17 @@ if(!arch.includes('policy')||!arch.includes('Operator Policies')||!arch.includes
 if(!finance.includes('PLATFORM_MANAGED')||!finance.includes('STORE_MANAGED')||!finance.includes('COMMISSION')||!finance.includes('SUBSCRIPTION'))fail('finance must distinguish collection responsibility and fees');
 if(!delivery.includes('DIRECT')||!delivery.includes('BTHWANI_CAPTAIN')||!delivery.includes('WLT'))fail('fulfillment must address relation-independent safety gates');
 if(!engineering.includes('ADD NOW')||!engineering.includes('DEFER')||!engineering.includes('DO NOT ADD'))fail('engineering must distinguish mutable rules from invariants');
+const policySections=[
+ ['governance/commerce.md','## Operator-managed commercial thresholds — explicit policy, not compiled law'],
+ ['governance/fulfillment.md','## Operator-managed dispatch and location thresholds'],
+ ['governance/catalog.md','## Owner-backed merchandising and media limits'],
+ ['governance/finance.md','## Operator-managed financial values versus immutable accounting rules'],
+ ['governance/engineering.md','## Mandatory operator-policy inventory at implementation time']
+];
+for(const [owner,heading] of policySections){
+ if(!contents[owner].includes(heading))fail('owner-backed configurable-values section missing: '+owner);
+}
+
 
 for(const p of ['docs/governance','CODEOWNERS','.github/CODEOWNERS','docs/CODEOWNERS']){
  if(exists(p))fail('forbidden duplicate governance or unneeded CODEOWNERS: '+p);
