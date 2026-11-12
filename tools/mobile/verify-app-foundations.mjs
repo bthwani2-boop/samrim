@@ -53,6 +53,17 @@ for (const [name, [slug, packageId, scheme, projectId]] of Object.entries(expect
   assert.ok(!existsSync(join(root,rel,"src/features")), name + " old business features should not migrate");
   const home=read(`${rel}/app/index.tsx`);
   assert.ok(home.includes('from "tamagui"'), name + " not rendering Tamagui");
+  // Stage-4 preview only: screen-level direction overrides broke Arabic layout on Android.
+  // Expo localization owns native RTL; Expo Router's root LocaleProvider owns navigation.
+  const preview = home + read(`${rel}/app/health.tsx`);
+  for (const override of [
+    'direction: "rtl"', 'direction: "ltr"',
+    'textAlign: "right"', 'textAlign: "left"',
+    'textAlign="right"', 'textAlign="left"',
+    'justifyContent: "flex-end"',
+  ]) {
+    assert.ok(!preview.includes(override), `${name} preview has manual direction override: ${override}`);
+  }
 }
 const oldPanel=donor.apps["control-panel"]?.manifest;
 const newPanel=json("apps/control-panel/package.json");
