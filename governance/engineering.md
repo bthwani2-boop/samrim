@@ -47,3 +47,23 @@ Do not let a configurable setting override security, customer consent, immutable
 A complete canonical `governance/` requires: (a) all 14 owner documents with substantive, reviewed decisions; (b) 26 distinct capability IDs exactly once in their legal owning documents; (c) all approved cross-owner policies and critical finance/identity/privacy invariants covered; (d) no competing active `docs/governance/` root, broken references or hidden contradictions; (e) a traceable disposition for material historical donor decisions and preserved external sources; (f) tested positive and negative stage-specific GitHub guards; and (g) independent review where the governance affects finance, security or protected migration.
 
 Until those gates are met, keep `GOVERNANCE_CUTOVER: NOT_READY`. Even when ready, that means **policy-ready to begin code refoundation**, not delivered/production-ready. Avoid false claims of mathematical 100% defect-free correctness.
+
+## Capacity, efficiency and non-speculative infrastructure
+
+Start from the simplest correct **owner-preserving** runtime and locally isolated database/media environment. New shared cache, replica, stream/broker, schema partition, external search, pooler, orchestrator, service mesh or region is **not** a mandatory refoundation component. Require a measured material workload/recovery need, representative baseline (throughput, concurrency, P50/P95/P99, saturation, lock/query costs, error/retry rate, storage/bandwidth), evidence simpler fixes are inadequate, a unique owner and failure/rollback proof. Prefer correct indexes/queries, bounded server reads, payload reduction, limited fan-out, timeouts and transaction correctness before added machinery.
+
+Any cache/projection/replica is **read-only derived state**, scoped to current Identity authorization, with freshness/invalidation and a rebuild path. Stale replicas/caches never authorize funds, permissions, Order acceptance or transaction completion. Background work uses owner-side durable task identity, bounded retries, idempotency and reconciliation; a queue or global lock service is not automatically needed because asynchronous work exists.
+
+All request-facing replicas remain stateless for **canonical** business state, sessions, media, locks and schedules. A second instance must not split Order assignments, financial credits or user authorization. Add replicas, zones, regions or serverless only after current workload and recovery needs justify them. Recovery needs a real restore drill with recorded RPO/RTO, not the mere existence of a backup or green container health.
+
+## External financial rails by environment
+
+**Local:** WLT may use an explicitly isolated development-only Cash-In simulator to prove internal Customer/Captain funding, payment splits and failure/retry behavior against a real **synthetic owner-backed ledger**. This proves internal WLT code, not live external transfers.
+
+**Stage:** External rails remain disabled until an approved provider contract/sandbox, authenticated callbacks, correlation, unknown-outcome handling and reconciliation are actually verified. Never point Stage at the local simulator or turn on real credits from mock callbacks.
+
+**Production:** Provider funding, refunds, transfers or payout APIs are **not** enabled by a policy toggle, brand label or successful UI test. They require explicit provider permission, signed contract and real end-to-end financial/security acceptance. A separately authorized COD-only release may leave Cash-In disabled. Live electronic Cash-In must never be credited by a dev-only mock. Providers supply technical rails only; WLT remains authoritative for every internal balance and ledger entry.
+
+## Evidence provenance and reference adoption
+
+Use current source/contracts/runtime for implemented facts and relevant official primary technology sources for mutable versions. Donor archives, competitor observations and OSS links can reveal patterns, but are neither Product decisions nor permission to copy proprietary design/code. Choose ADOPT, DEFER or REJECT for a **concrete** opportunity after evaluating maturity, security/license, compatibility, operational cost, rollback and BThwani-specific proof. No permanent technology radar, vendor catalog or research backlog is required by governance.
