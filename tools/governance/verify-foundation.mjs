@@ -19,7 +19,7 @@ const required=[
  'tools/governance/review-examples.test.mjs',
  '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
  'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','tsconfig.base.json','biome.json',
- 'README.md','docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md','tools/dev/verify-workspace.mjs'
+ 'README.md','docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md','docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json','tools/dev/verify-workspace.mjs','tools/mobile/verify-app-foundations.mjs'
 ];
 const fail=(reason)=>{ throw Error('FOUNDATION_GATE_FAIL: '+reason); };
 const exists=(p)=>fs.existsSync(path.join(root,...p.split('/')));
@@ -56,7 +56,9 @@ for(const key of ['"apps/*"','"packages/*"','"services/*"','autoInstallPeers: fa
  'saveExact: true','nodeLinker: isolated','strictPeerDependencies: true']){
  if(!wsyaml.includes(key))fail('stage3 pnpm workspace changed expected setting: '+key);
 }
-if(/patchedDependencies:|nxCloudId:/.test(wsyaml))fail('old patches and Nx Cloud must not be blindly imported');
+if(/nxCloudId:/.test(wsyaml))fail('Nx Cloud must not be adopted');
+if(!wsyaml.includes("'@rc-component/util@1.14.0': patches/@rc-component__util@1.14.0.patch"))
+ fail('Donor Ant Design CSP patch must remain exact and documented');
 const lock=contents['pnpm-lock.yaml'];
 for(const key of ["lockfileVersion: '9.0'","specifier: 12.15.0",
  "specifier: 7.0.2","specifier: 2.5.12",
@@ -73,10 +75,10 @@ const ref=contents['docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md'];
 if(!/^BUSINESS_POLICY_AUTHORITY: NONE$/m.test(ref)||!ref.includes('1.27.1')||!ref.includes('1.27.3')||
  !ref.includes('24.0.1')||!ref.includes('58.0.19'))
  fail('non-governing donor toolchain provenance or mismatch disclosure missing');
-if(!contents['README.md'].includes('Stage 3')||!contents['tools/dev/verify-workspace.mjs'].includes('STAGE3_WORKSPACE_STRUCTURE_PASS'))
- fail('stage3 developer onboarding or smoke verifier missing');
-for(const folder of ['contracts','infra','packages','nx.json','go.work']){
- if(exists(folder))fail('stage 4+ projects/migration/infra introduced prematurely: '+folder);
+if(!contents['README.md'].includes('Stage 4')||!contents['tools/dev/verify-workspace.mjs'].includes('STAGE4_WORKSPACE_STRUCTURE_PASS'))
+ fail('stage4 developer onboarding or workspace smoke verifier missing');
+for(const folder of ['contracts','infra','services','nx.json','go.work']){
+ if(exists(folder))fail('stage 5+ service/DB/infra introduced prematurely: '+folder);
 }
 
 
@@ -142,7 +144,7 @@ if(controlIDs.length!==112||controlSet.size!==112||Array.from({length:112},(_,i)
  fail('historical Control Panel source ID inventory must retain 112 unique IDs');
 
 if(!/^STATUS: ACTIVE_FOR_FOUNDATION_ONLY$/m.test(agent))fail('agent must declare foundation-only state');
-if(!/^STATUS: ACTIVE_FOR_FOUNDATION_ONLY$/m.test(repo))fail('placement law must declare foundation-only state');
+if(!/^STATUS: ACTIVE_FOR_FOUNDATION_AND_PRESENTATION_SHELLS$/m.test(repo))fail('placement law must declare Stage-4 foundation shell scope');
 if(!/^GOVERNANCE_CUTOVER: NOT_READY$/m.test(gov))fail('do not mark governance ready without independent semantic/risk acceptance');
 if(!gov.includes('## Cutover readiness is a policy decision, not a claim of implemented software'))fail('governance policy readiness must stay separate from later runtime implementation tests');
 if(!/^BUSINESS_DECISION_AUTHORITY: NONE_WHILE_NOT_READY$/m.test(gov))fail('no competing policy authority during reconstruction');
@@ -369,7 +371,7 @@ for(const p of ['docs/governance','CODEOWNERS','.github/CODEOWNERS','docs/CODEOW
 for(const p of ['.github/workflows/fast-guard.yml','.github/workflows/sonar-observe.yml','.github/workflows/fast-guard-routing.test.mjs']){
  if(exists(p))fail('source-dependent inherited CI remains executable in foundation-only tree: '+p);
 }
-if(exists('services')||exists('apps'))fail('foundation guard cannot be reused as full-app proof');
+if(exists('services')||exists('infra')||exists('contracts'))fail('foundation guard cannot be reused as service/SQL proof');
 
 const ci=contents['.github/workflows/foundation-guard.yml'];
 if(!/permissions:\s*\n\s*contents: read/.test(ci))fail('CI must run with least privilege');

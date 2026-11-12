@@ -1,6 +1,6 @@
 # BThwani — Repository Placement and Ownership
 
-STATUS: ACTIVE_FOR_FOUNDATION_ONLY
+STATUS: ACTIVE_FOR_FOUNDATION_AND_PRESENTATION_SHELLS
 SEMANTIC_SCOPE: file placement and migration rules; not Product, agent authorization or runtime readiness.
 
 ## Canonical paths
@@ -16,20 +16,24 @@ SEMANTIC_SCOPE: file placement and migration rules; not Product, agent authoriza
 | `tools/governance/` | deterministic foundation/architecture checks and their tests, not another decision catalog |
 | `tools/security/` | shared security scanners when actually needed |
 | `tools/dev/` | genuinely repository-wide developer tooling |
-| `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml` | exact source-compatible pnpm stage-3 workspace and single reproducible dependency lock; not product code |
+| `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml` | exact donor-compatible pnpm Stage-4 presentation workspace with one reproducible lock; not service/financial code |
 | `.node-version`, `.nvmrc`, `.go-version` | original branch-41 toolchain version pins, never upgraded without separate authorization |
 | `tsconfig.base.json`, `biome.json`, `.editorconfig`, `.gitattributes`, `.gitignore` | shared foundational TypeScript, lint, UTF-8/LF and secret-exclusion rules; without copied legacy migrations |
 | `README.md` | stage-bounded local onboarding, not an additional policy authority |
 | `services/<owner>/` | each backend owner's implementation, contracts, SQL/migrations, service-specific tests and utilities when authorized to rebuild |
 | `apps/<surface>/` | actual presentation hosts for Customer, Merchant, Captain, Operator |
-| `packages/<purpose>/` | proven multi-consumer domain-neutral packages only |
+| `packages/design-system/` | single authored brand/semantic token source, CSS projection, minimal RN appearance preference |
+| `packages/tamagui-config/` | Expo renderer consuming the design token source; not a second palette |
+| `tools/mobile/` | native Expo configuration and original-identity/version verifier; Metro itself uses Expo defaults |
+| `patches/` | only source-approved Ant Design CSP patch, held at unchanged exact dependency version |
+| `packages/<purpose>/` | any further justified multi-consumer domain-neutral packages only |
 | `tests/` | integration proof spanning genuine owners; not duplicate unit tests |
 
 ## Transitional rule for this worktree
 - The former `docs/governance/` directory is **absent from this candidate by explicit user decision**. Its content remains inspectable in original branch `41` and archived inputs; do not restore it to this worktree.
 - `governance/` is the only **target** policy path. Its README advertises NOT_READY until all applicable decisions and 26 capability IDs are reconciled, rather than an unsafe partial authority switch.
 - The foundation guard rejects reintroduction of `docs/governance/`. Translate surviving references directly to the owning new files as each decision is adopted. Keep historical provenance external to the candidate, not another active governance directory.
-- No domain code or SQL is introduced in the foundation-only stage.
+- Stage 4 introduces only empty presentation shells, uniquely justified design packages and native-config tooling; no domain logic, service API, SQL or Docker is introduced.
 
 ## Placement and simplification law
 1. Put authored logic with the owner of **its changing responsibility**, not a historical screen, team, refoundation batch name or convenience folder.

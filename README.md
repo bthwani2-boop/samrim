@@ -1,22 +1,29 @@
-# BThwani — Refoundation workspace, foundation stages 1–3
+# بثواني — Stage 4 foundation (source-sparse, no commercial screens)
 
-This is the **clean refoundation candidate**, not a replacement for the original source/runtime. Current canonical **draft** Product/architecture governance is in [`governance/README.md`](governance/README.md) and is deliberately `NOT_READY` until independent finance/security/migration review and remaining semantic reconciliation.
+This worktree contains the *foundation shells* for Expo Customer, Merchant and Captain (Expo Router + Tamagui 3.3.1) and Next.js Operator (Next 16.4.3 + Ant Design 6.6.7). **No commercial business feature or service client** is activated. The original exact Expo/RN/React/Node/pnpm dependencies and app IDs are preserved. Original manifests are recorded in [the donor version snapshot](docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json).
 
-Stage 1 records the governance blockers and source provenance. Stage 2 inventories and pins the **original branch-41 versions** without upgrading any system-wide software. Stage 3 contains only a minimal source-sparse `pnpm workspace` with TypeScript and Biome pinned at the donor versions. No Expo apps, Go services, contracts, SQL, database, Docker environment or Nx configuration has been created.
+All brand semantics come from `packages/design-system/src/tokens`; Expo renders with `packages/tamagui-config` and Operator consumes the same tokens. A minimal React Native appearance controller is retained for SYSTEM/LIGHT/DARK preference, **not** the donor `@expo/ui` picker or Studio business publisher.
 
-## Local checks
-
-Use the already installed **pnpm 12.15.0**:
+## Validations
 
 ```powershell
 pnpm install --offline --frozen-lockfile --ignore-scripts
 pnpm run check
-pnpm exec tsc --version
-pnpm exec biome --version
+pnpm run check:toolchain
+pnpm run check:apps
+pnpm --dir packages/design-system theme:check
 ```
 
-On a clean machine without a populated package cache, use `pnpm install --frozen-lockfile --ignore-scripts` after installing the **same pinned pnpm 12.15.0**: it may fetch the **exact integrity-locked artifacts**, but must not recalculate or upgrade their versions. The offline command above is the locally verified path.
+App configuration is built locally by `tools/mobile/define-bthwani-expo-app.cjs` and `apps/*/mobile.config.json`. The new Stage-4 secret root is `C:\BTHWANI-Secrets\samrim-refoundation-clean-20261112\env\mobile.env` (or an explicit `BTHWANI_SECRETS_ROOT`), **not the donor root**. A shell preview does not require Google Maps credentials. Set `BTHWANI_ENFORCE_NATIVE_KEYS=1` before any separately authorized Native Build; it will **fail closed** without the required keys. No credentials are checked into this repository.
 
-`pnpm run check:toolchain` verifies the original Node `24.22.1` and Go `1.27.3` binaries. Both now **PASS**. Go `1.27.3` is available in the user toolchain cache and runs without network resolution (`GOTOOLCHAIN=go1.27.3`, `GOPROXY=off`); the system-wide Go command remains `1.27.1`. The checker distinguishes pnpm's embedded Node `24.19.0` from the exact project-installed Node `24.22.1`. No global runtime or project dependency was upgraded.
+For isolation from the existing Surface SSH tunnels `18101/18102/18103/13000`, independent *local Surface preview ports* are `28111` (Customer Web + Metro), `28112` (Merchant Web + Metro), `28113` (Captain Metro only), and `23010` (Operator). These are not claims that the prior Lenovo runtime ports `18111/18112/18113/13010` already serve this Worktree.
 
-No `tsc` project compile, Nx graph, Go service build, Expo start, UI theme/RTL, database migration, OpenAPI contract, GitHub remote CI or app-runtime validation is possible yet. Source version evidence: [`docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md`](docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md). The single temporary stage evidence tracker is `docs/REFOUNDATION-PLAN.md`, not this README.
+On Windows with Node 24, `localhost` may resolve to IPv6 `::1` while USB `adb reverse` needs an IPv4 listener. In the **Expo launch PowerShell session only**, set `$env:NODE_OPTIONS = '--dns-result-order=ipv4first'` before starting Metro with `--localhost`. Verify `127.0.0.1:28111/28112/28113` is listening, then run `adb reverse tcp:28111 tcp:28111` (and likewise for `28112` and `28113`). The locally installed development builds were smoke-tested with the three new Expo shells on Samsung; an unmatched-route deep link is not successful until the app reaches its actual `/` route. Do not change system-wide Node settings, bind Expo publicly, or infer that an Android smoke test approves a new native build.
+
+Native identifiers, owner, EAS project IDs, app slugs, schemes and package permissions are preserved. `eas.json` contains **legacy `image: latest`** in preview/iOS profiles; reproducible remote builders are **BLOCKED/NOT_RUN** until images are reviewed without changing original dependencies. Reusing old installed Android development builds is **NOT proven** until a real device launch and same-binary compatibility check.
+
+## Boundaries
+
+`GOVERNANCE_CUTOVER: NOT_READY`; mandatory independent finance/security/migration/legal review remains pending. The worktree does not introduce Go services, financial logic, SQL, Docker or live Product screens. The user explicitly requires any *later* Docker infrastructure to be **new and isolated to this Worktree**, not the donor's old containers, volumes or database.
+
+Use [the active governance readiness index](governance/README.md) and [the single execution plan](docs/REFOUNDATION-PLAN.md) for scope and evidence. Pass of static CI or typecheck alone does not demonstrate Android/iOS/browser runtime success.

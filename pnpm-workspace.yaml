@@ -1,11 +1,36 @@
 packages:
   - "apps/*"
-  - "packages/*"
   - "services/*"
+  - "packages/*"
 
-# Matches the existing branch-41 package manager behavior.
-# No inherited override, patch, provider, or legacy package is adopted
-# until the real consumer and its exact existing version are admitted.
+catalog:
+  "@tanstack/react-query": "5.104.5"
+  "react-hook-form": "7.91.0"
+  "zod": "4.6.7"
+  "@hookform/resolvers": "6.0.0"
+  "date-fns": "4.4.0"
+  "@date-fns/tz": "1.5.0"
+
+overrides:
+  "uuid": "11.1.1"
+  "decode-uri-component": "0.5.0"
+  "nx>smol-toml": "1.9.0"
+  "shell-quote": "1.11.0"
+  "axios": "1.20.0"
+  "follow-redirects": "1.16.1"
+  "sharp": "0.35.5"
+  "source-map-js": "1.2.2"
+  "compression": "1.8.2"
+  "smol-toml": "1.9.0"
+  "brace-expansion": "5.0.12"
+  "node-forge": "1.4.1"
+  "undici": "7.30.1"
+  "@expo/cli>zod": "4.6.7"
+
+allowBuilds:
+  nx: true
+  sharp: true
+
 autoInstallPeers: false
 engineStrict: true
 frozenLockfile: true
@@ -13,3 +38,5 @@ nodeLinker: isolated
 saveExact: true
 sharedWorkspaceLockfile: true
 strictPeerDependencies: true
+patchedDependencies:
+  '@rc-component/util@1.14.0': patches/@rc-component__util@1.14.0.patch

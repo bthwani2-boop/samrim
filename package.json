@@ -12,7 +12,8 @@
     "check:workspace": "node tools/dev/verify-workspace.mjs",
     "check:toolchain": "node tools/dev/verify-workspace.mjs --require-exact-toolchain",
     "check:foundation": "node tools/governance/verify-foundation.mjs && node --test tools/governance/verify-foundation.test.mjs tools/governance/review-examples.test.mjs",
-    "check": "pnpm run check:workspace && pnpm run check:foundation"
+    "check": "pnpm run check:workspace && pnpm run check:foundation && pnpm run check:apps",
+    "check:apps": "node tools/mobile/verify-app-foundations.mjs && pnpm -r --if-present run typecheck"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.12",

@@ -1,0 +1,240 @@
+"use strict";
+
+const fs = require("fs");
+const path = require("path");
+
+const repositoryRoot = path.resolve(__dirname, "../..");
+
+const PERMISSION_TEXT = {
+  locationWhenInUse: "نحتاج الوصول إلى موقعك عند طلب التقاط موقع العنوان أو أصل المتجر.",
+  captainForeground: "يستخدم بثواني موقعك أثناء مهمة توصيل نشطة فقط لإتاحته لفريق العمليات.",
+  captainBackground: "يستخدم بثواني موقعك أثناء مهمة التوصيل النشطة في الخلفية فقط بموافقتك مع إشعار دائم.",
+};
+
+const MAP_KEY_NAMES = {
+  "app-client": { android: "GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT", ios: "GOOGLE_MAPS_IOS_API_KEY" },
+  "app-captain": { android: "GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN", ios: "GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN" },
+  "app-partner": { android: "GOOGLE_MAPS_ANDROID_API_KEY_APP_PARTNER", ios: "GOOGLE_MAPS_IOS_API_KEY" },
+};
+
+function mobileMapsApiKey(appKey, platform) {
+  const envNames = MAP_KEY_NAMES[appKey];
+  if (!envNames) return undefined;
+  const specificEnvName = envNames[platform];
+  const baseEnvName = `GOOGLE_MAPS_${platform.toUpperCase()}_API_KEY`;
+  let value = process.env[specificEnvName]?.trim() || process.env[baseEnvName]?.trim() || "";
+  if (!value) {
+    const secretsRoot = process.env.BTHWANI_SECRETS_ROOT || "C:\\BTHWANI-Secrets\\samrim-refoundation-clean-20261112";
+    const envPath = path.join(secretsRoot, "env", "mobile.env");
+    if (fs.existsSync(envPath)) {
+      for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
+        const separator = line.indexOf("=");
+        if (separator > 0) {
+          const name = line.slice(0, separator).trim();
+          if (name === specificEnvName || name === baseEnvName) {
+            const candidate = line.slice(separator + 1).trim().replace(/^(['"])(.*)\1$/, "$2");
+            if (candidate) value = candidate;
+            if (name === specificEnvName && value) break;
+          }
+        }
+      }
+    }
+  }
+  return value || undefined;
+}
+
+function appRoot(appKey) {
+  const surfaces = { "app-client": "customer", "app-partner": "merchant", "app-captain": "captain" };
+  const folder = surfaces[appKey];
+  if (!folder) throw new Error("UNKNOWN_EXPO_SURFACE " + appKey);
+  return path.resolve(__dirname, "../..", "apps", folder);
+}
+
+function readMobileConfig(appKey) {
+  const configPath = path.join(appRoot(appKey), "mobile.config.json");
+  if (!fs.existsSync(configPath)) {
+    throw new Error("Missing app-owned mobile config: " + configPath);
+  }
+  return JSON.parse(fs.readFileSync(configPath, "utf8"));
+}
+
+function appAsset(appKey, fileName) {
+  const absolute = path.join(appRoot(appKey), "assets", fileName);
+  return fs.existsSync(absolute) ? "./assets/" + fileName : undefined;
+}
+
+function readDesignSystemSurfaceColors() {
+  const cssPath = path.join(repositoryRoot, "packages", "design-system", "theme.css");
+  const source = fs.readFileSync(cssPath, "utf8");
+  const lightBlock = source.match(/^:root\s*\{([\s\S]*?)^\}/m)?.[1];
+  const darkBlock = source.match(/@media \(prefers-color-scheme: dark\)\s*\{\s*:root\s*\{([\s\S]*?)^\s*\}\s*\}/m)?.[1];
+
+  function readSurface(block, mode) {
+    const value = block?.match(/^\s*--surface-warm:\s*([^;]+);$/m)?.[1]?.trim();
+    if (!value) throw new Error("Missing --surface-warm in " + mode + " design-system theme projection");
+    return value;
+  }
+
+  return { light: readSurface(lightBlock, "light"), dark: readSurface(darkBlock, "dark") };
+}
+
+const designSystemSurfaceColors = readDesignSystemSurfaceColors();
+
+function buildPlugins(appKey, { cameraMode, locationMode }) {
+  const plugins = ["expo-router", "expo-updates", "expo-system-ui"];
+
+  const splashIcon = appAsset(appKey, "splash-icon.png");
+  plugins.push(
+    splashIcon
+      ? [
+          "expo-splash-screen",
+          {
+            image: splashIcon,
+            imageWidth: 220,
+            resizeMode: "contain",
+            backgroundColor: designSystemSurfaceColors.light,
+            dark: { image: splashIcon, backgroundColor: designSystemSurfaceColors.dark },
+          },
+        ]
+      : "expo-splash-screen",
+  );
+
+  if (locationMode === "foreground" || locationMode === "background") {
+    const locationOptions = {
+      locationWhenInUsePermission: locationMode === "background" ? PERMISSION_TEXT.captainForeground : PERMISSION_TEXT.locationWhenInUse,
+      ...(locationMode === "background" ? {
+        locationAlwaysAndWhenInUsePermission: PERMISSION_TEXT.captainBackground,
+        isAndroidBackgroundLocationEnabled: true,
+        isAndroidForegroundServiceEnabled: true,
+        isIosBackgroundLocationEnabled: true,
+      } : {}),
+    };
+    plugins.push(["expo-location", locationOptions]);
+  }
+
+  if (cameraMode === "barcode") {
+    plugins.push(["expo-camera", {
+      cameraPermission: "نحتاج الوصول إلى الكاميرا لمسح باركود المنتجات أو التقاط صورة أو فيديو عند اختيارك.",
+      microphonePermission: undefined,
+      recordAudioAndroid: false,
+      barcodeScannerEnabled: true,
+    }]);
+  }
+
+  if (["app-client", "app-partner", "app-captain"].includes(appKey)) {
+    plugins.push(["expo-image-picker", {
+      photosPermission: "نحتاج الوصول إلى الصور التي تختارها لمنتجاتك أو مرفقات طلباتك.",
+      cameraPermission: "نحتاج الوصول إلى الكاميرا فقط عندما تختار التقاط صورة أو فيديو.",
+      microphonePermission: "نحتاج الوصول إلى الميكروفون فقط عند تسجيل رسالة صوتية أو فيديو.",
+    }]);
+  }
+
+  if (["app-client", "app-partner", "app-captain"].includes(appKey)) {
+    plugins.push(["expo-audio", {
+      microphonePermission: "نحتاج الوصول إلى الميكروفون فقط عند تسجيل رسالة صوتية.",
+      recordAudioAndroid: true,
+      enableBackgroundRecording: false,
+      enableBackgroundPlayback: false,
+    }]);
+  }
+
+  if (["app-client", "app-partner", "app-captain"].includes(appKey)) {
+    plugins.push(["expo-notifications", {
+      defaultChannel: "order-classic-v1",
+      sounds: ["./assets/sounds/order_classic.wav", "./assets/sounds/order_soft.wav", "./assets/sounds/order_urgent.wav"],
+    }]);
+  }
+  // Calendar is add-only on iOS: never request to read the user's schedule.
+  plugins.push(["expo-calendar", {
+    calendarPermission: "تسمح هذه الميزة بإضافة الموعد الذي تختاره إلى تقويمك.",
+    writeOnlyCalendarPermission: "إضافة موعد تختاره إلى التقويم دون قراءة مواعيدك.",
+    writeOnlyAccess: true,
+  }]);
+  if (appKey === "app-client" || appKey === "app-partner") {
+    // Contact selection must be initiated by the user; never enumerate contacts.
+    plugins.push(["expo-contacts", {
+      contactsPermission: "اختيار رقم صديق أو موظف لمشاركته أو دعوته بناءً على طلبك فقط.",
+    }]);
+  }
+  plugins.push("expo-secure-store");
+  plugins.push([
+    "expo-localization",
+    {
+      supportedLocales: { ios: ["ar"], android: ["ar"] },
+      forcesRTL: true,
+      allowDynamicLocaleChangesAndroid: false,
+    },
+  ]);
+
+  return plugins;
+}
+
+/**
+ * @param {string} appKey
+ * @param {{ cameraMode?: "barcode", locationMode?: "foreground" | "background", maps?: boolean, web?: boolean }} options
+ */
+function defineBthwaniExpoApp(appKey, options = {}) {
+  const app = readMobileConfig(appKey);
+  const locationMode = options.locationMode;
+  const cameraMode = options.cameraMode;
+  if (locationMode !== undefined && locationMode !== "foreground" && locationMode !== "background") {
+    throw new Error("Invalid locationMode for " + appKey + ": " + locationMode);
+  }
+  if (cameraMode !== undefined && cameraMode !== "barcode") {
+    throw new Error("Invalid cameraMode for " + appKey + ": " + cameraMode);
+  }
+  const adaptiveIcon = appAsset(appKey, "adaptive-icon.png");
+  const androidMapsApiKey = options.maps ? mobileMapsApiKey(appKey, "android") : undefined;
+  const iosMapsApiKey = options.maps ? mobileMapsApiKey(appKey, "ios") : undefined;
+  // Foundation previews do not use maps. Preserve the native map integration
+  // when keys are supplied; demand both keys for any authorized native rebuild.
+  if (options.maps && (!androidMapsApiKey || !iosMapsApiKey) && process.env.BTHWANI_ENFORCE_NATIVE_KEYS === "1") {
+    throw new Error("Missing approved Google Maps API keys for " + appKey + " in the new Worktree secrets environment.");
+  }
+  const firebaseClientApps = ["app-client", "app-partner", "app-captain"];
+  const easFirebaseFile = process.env.GOOGLE_SERVICES_JSON?.trim();
+  const localFirebaseFile = fs.existsSync(path.join(appRoot(appKey), "google-services.json"))
+    ? "./google-services.json" : undefined;
+  const android = {
+    package: app.androidPackage,
+    // Contact selection never writes back to the phone's address book.
+    ...(["app-client", "app-partner"].includes(appKey)
+      ? { blockedPermissions: ["android.permission.WRITE_CONTACTS"] } : {}),
+    ...(firebaseClientApps.includes(appKey) && (easFirebaseFile || localFirebaseFile)
+      ? { googleServicesFile: easFirebaseFile || localFirebaseFile } : {}),
+    ...(adaptiveIcon ? { adaptiveIcon: { foregroundImage: adaptiveIcon, backgroundColor: "#FFFFFF" } } : {}),
+  };
+
+  return {
+    name: app.name,
+    slug: app.slug,
+    entryPoint: "./index.js",
+    owner: app.owner,
+    platforms: options.web ? ["ios", "android", "web"] : ["ios", "android"],
+    scheme: app.scheme,
+    version: app.version,
+    icon: appAsset(appKey, "icon.png"),
+    runtimeVersion: { policy: "appVersion" },
+    updates: {
+      url: "https://u.expo.dev/" + app.projectId,
+      checkAutomatically: "ON_LOAD",
+      fallbackToCacheTimeout: 0,
+    },
+    orientation: "portrait",
+    userInterfaceStyle: "automatic",
+    android,
+    ios: { bundleIdentifier: app.iosBundleIdentifier, supportsTablet: false },
+    plugins: [
+      ...buildPlugins(appKey, { cameraMode, locationMode }),
+      ...(options.maps && androidMapsApiKey && iosMapsApiKey ? [["react-native-maps", { androidGoogleMapsApiKey: androidMapsApiKey, iosGoogleMapsApiKey: iosMapsApiKey }]] : []),
+    ],
+    experiments: { typedRoutes: true },
+    extra: {
+      appKey,
+      sourceRepo: "samrim-refoundation-clean-20261112",
+      eas: { projectId: app.projectId },
+    },
+  };
+}
+
+module.exports = { defineBthwaniExpoApp };

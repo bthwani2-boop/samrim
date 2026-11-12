@@ -1,0 +1,31 @@
+{
+  "name": "@bthwani/control-panel",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.17.0 <25"
+  },
+  "scripts": {
+    "dev": "next dev -H 127.0.0.1 -p 3300",
+    "build": "next build",
+    "typecheck": "next typegen && tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ant-design/cssinjs": "2.1.2",
+    "@bthwani/design-system": "workspace:*",
+    "@date-fns/tz": "catalog:",
+    "antd": "6.6.7",
+    "date-fns": "catalog:",
+    "next": "16.4.3",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "7.0.2"
+  }
+}

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Stage-3 workspace smoke: local toolchain pins and a source-sparse pnpm workspace.
-// This does not verify any Expo/Go service, contracts, SQL, deployment or Product readiness.
+// Stage-4 workspace smoke: original source toolchain and minimal working app hosts.
+// Static verification only, not Android/iOS/live device or financial Product proof.
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -41,7 +41,10 @@ for (const setting of ['autoInstallPeers: false','engineStrict: true',
   'nodeLinker: isolated','saveExact: true','strictPeerDependencies: true']) {
   if (!ws.includes(setting)) fail('Missing original pnpm behavior: ' + setting);
 }
-if (/patchedDependencies:|nxCloudId:/.test(ws)) fail('Inherited old patches or Nx Cloud are not admitted in stage 3');
+if (/nxCloudId:/.test(ws)) fail('Nx Cloud is not admitted');
+if (!ws.includes("'@rc-component/util@1.14.0': patches/@rc-component__util@1.14.0.patch")) {
+  fail('Pinned donor Ant Design CSP patch is missing');
+}
 
 const lock = read('pnpm-lock.yaml');
 for (const entry of ["lockfileVersion: '9.0'",
@@ -60,18 +63,24 @@ const biome = JSON.parse(read('biome.json'));
 if (biome.linter.enabled !== true || biome.formatter.enabled !== false) {
   fail('Use original Biome lint policy without introducing redundant ESLint toolchain');
 }
-for (const forbidden of ['apps','services','packages','contracts','infra','nx.json','go.work']) {
-  if (existsSync(path.join(projectRoot, forbidden))) {
-    fail('Stage 4+ business/app/service/infra scaffolding is premature: ' + forbidden);
-  }
+for (const required of ['apps/customer','apps/merchant','apps/captain','apps/control-panel',
+  'packages/design-system','packages/tamagui-config',
+  'tools/mobile/define-bthwani-expo-app.cjs',
+  'tools/mobile/verify-app-foundations.mjs','patches/@rc-component__util@1.14.0.patch']) {
+  if (!existsSync(path.join(projectRoot, required))) fail('Stage-4 required source absent: ' + required);
+}
+for (const forbidden of ['services','contracts','infra','nx.json','go.work',
+  'apps/app-client','apps/app-partner','apps/app-captain',
+  'tools/mobile/create-bthwani-metro-config.cjs']) {
+  if (existsSync(path.join(projectRoot, forbidden))) fail('Duplicated/deferred legacy source: ' + forbidden);
 }
 for (const entry of ['node_modules/','.env','secrets.local.']) {
   if (!read('.gitignore').includes(entry)) fail('Local dependencies or secret ignores missing: ' + entry);
 }
 
-console.log('STAGE3_WORKSPACE_STRUCTURE_PASS pnpm=' + pnpmPin +
+console.log('STAGE4_WORKSPACE_STRUCTURE_PASS pnpm=' + pnpmPin +
   ' typescript=' + tsPin + ' biome=' + biomePin + ' node-pin=' + nodePin +
-  ' go-pin=' + goPin + ' nx=DEFERRED(no projects yet)');
+  ' go-pin=' + goPin + ' nx=DEFERRED(no graph needed)');
 
 if (strict) {
   // pnpm launches its own embedded Node runtime on some Windows machines.

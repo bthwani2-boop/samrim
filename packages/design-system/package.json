@@ -1,0 +1,37 @@
+{
+  "name": "@bthwani/design-system",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./tokens": "./src/tokens/index.ts",
+    "./theme": "./src/theme/index.ts",
+    "./theme.css": "./theme.css",
+    "./native/appearance": "./src/native/appearance.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "theme:check": "node --loader ./tools/ts-resolver.mjs tools/generate-theme-css.mjs --check"
+  },
+  "peerDependencies": {
+    "react": "19.3.0",
+    "react-native": "0.88.0"
+  },
+  "peerDependenciesMeta": {
+    "react-native": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "typescript": "7.0.2",
+    "react": "19.3.0",
+    "react-native": "0.88.0"
+  }
+}

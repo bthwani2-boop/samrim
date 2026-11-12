@@ -17,7 +17,7 @@ const files=[...new Set([
  'tools/governance/review-examples.test.mjs',
  '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
  'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','tsconfig.base.json','biome.json',
- 'README.md','docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md','tools/dev/verify-workspace.mjs',
+ 'README.md','docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md','docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json','tools/dev/verify-workspace.mjs','tools/mobile/verify-app-foundations.mjs',
  '.specify/init-options.json','.specify/integration.json','.specify/integrations/speckit.manifest.json',
  '.specify/memory/constitution.md',...Object.keys(assetManifest.files)
 ])];
@@ -112,7 +112,7 @@ rejects('rejects Go downgrade to installed 1.27.1',{edit:{'.go-version':s=>s.rep
 rejects('rejects TypeScript version upgrade',{edit:{'package.json':s=>s.replace('"typescript": "7.0.2"','"typescript": "7.1.0"')}},/root dependencies must match original/);
 rejects('rejects an unsupported Nx early install',{edit:{'package.json':s=>s.replace('"typescript": "7.0.2"','"typescript": "7.0.2", "nx": "24.0.1"')}},/root dependencies must match original/);
 rejects('rejects a pnpm lockfile missing pinned TypeScript',{edit:{'pnpm-lock.yaml':s=>s.replaceAll('specifier: 7.0.2','specifier: 7.1.0')}},/lockfile incomplete or version drift/);
-rejects('rejects premature Nx configuration',{add:{'nx.json':'{}'}},/stage 4\+ projects/);
+rejects('rejects premature Nx configuration',{add:{'nx.json':'{}'}},/stage 5\+ service\/DB\/infra introduced prematurely/);
 rejects('rejects a missing exact source baseline file',{del:['docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md']},/required docs\/reference\/TOOLCHAIN-SOURCE-VERSIONS.md/);
 
 rejects('rejects broken local governance reference',{edit:{'README.md':s=>s.replace('](governance/README.md)','](governance/missing.md)')}},/broken local Markdown link/);
