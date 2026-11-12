@@ -69,3 +69,54 @@ These are **proposed defaults**, not immutable restrictions or a claim that they
 - Do not invent commission percentages, subscription prices, tax amounts, external provider fees, default payment guarantees or legal custody arrangements. Their **values** belong to current versioned owner-backed policy and accepted terms.
 - The exact API/SQL field names, migrations, availability of Store-managed payment rails and production financial capability readiness must be determined by the implementation-stage audit. They are NOT_RUN for this clean worktree.
 - These rules cannot silently override existing binding obligations. The historical source and archived contracts remain provenance outside this clean branch; preserve lawfully protected transaction records when rebuilding SQL.
+
+
+## 9. Financial integrity inherited from approved current policy
+
+**Money:** For current YER Product, every authoritative amount is an **exact integer** with `currency=YER`; one `amount_minor` corresponds to one YER. No binary floating-point arithmetic at authorization, billing, balances, commission or settlement. Basis-point rounding belongs to WLT's **versioned** applicable fee policy, and every journal/transfer conserves its posting balance.
+
+**Captain physical COD:** Under an admitted BThwani Captain cash-on-delivery Order, the Captain may keep physical cash received from the Customer. Do not claim BThwani has a physical cash cashier/remittance requirement for new Orders simply because older contracts or reports mention remittance. Cash deposited with an outside agent/provider is an external balance, **not** a WLT wallet credit until separate verified Cash-In. Historical COD remittance liabilities need evidence-based reconciliation at WLT and cannot be forgiven or charged a second time.
+
+**Gross exposure and cash portion are distinct:** at atomic Captain acceptance with positive COD, WLT verifies available unheld coverage is **strictly greater than the total confirmed payable Order**; only the actual positive **cash portion** is reserved, later debited once upon the admitted collection/delivery event. Customer-prepaid wallet funding is not deducted from the Captain balance again. Previously activated Captains can receive wholly prepaid Orders subject to goods-in-custody and role risk. Initial activation funding threshold is a separately configurable WLT policy, not a midnight reset or per-order debit. Holds and terminal cash state must be replay/concurrency safe.
+
+**Refunds and payouts:** WLT preserves customer funding liability, Store platform receivables, commission, Captain earned entitlements, merchant beneficiaries and settlement state as different records with appropriate immutable origins. An accepted Order's monetary snapshot cannot be reinterpreted by later Operator policy changes. A direct Store-collected cash sale must not be silently posted as BThwani Captain physical custody.
+
+## STORE_COMMERCIAL_AGREEMENT — Accepted effective fees per Store
+CAPABILITY_ID: STORE_COMMERCIAL_AGREEMENT
+
+WLT owns the canonical Store agreement and all transitions: proposed terms and current version, Merchant informed acceptance, Finance authorization, effective model/period, supersession, cancellation and legally relevant historical evidence. Every Store relation may use `COMMISSION` or `SUBSCRIPTION` if the exact model's billing/invoice, financial and permission flow is implemented and approved.
+
+A mutable policy default **suggests** terms for new or renegotiated Stores; it does not by itself accept an agreement, activate subscription billing, overwrite an effective Store contract, change settled Orders or grant new checkout rights. Signed rates are captured in exact basis points and/or exact recurring YER amounts with term/version, allowed fulfillment methods and effective date. WLT rejects subscription activation until recurring invoices, issuance/renewal, due handling, retries, cancellation and ledger consequences are actually proven. No `HYBRID` model is automatically admitted from historical rows.
+
+## ORDER_PAYMENT_COLLECTION — Customer funding, cash custody and collector obligation
+CAPABILITY_ID: ORDER_PAYMENT_COLLECTION
+
+Payment method (`WALLET`, `COD`, `MIXED` where admitted), collector responsibility (`PLATFORM_MANAGED` / `STORE_MANAGED` as future owner-backed policy), funding source, physical cash custody and beneficiaries are **different facts**. WLT owns admissible payment intents, allocation, holds, refund and settlement. DSH provides the authoritative Order amount, Store relation and selected fulfillment, not a second ledger.
+
+An Operator-approved collector selection is effective only for a Store-specific legal agreement and real checkout/fulfillment combinations that have been independently proven. The same mode under Direct and Marketplace can have different cash responsibility without acquiring a second Order engine. Unknown provider response, network timeout, race, cancellation and refund must converge on one state and once-only journal effects. Customer payments cannot be confirmed merely from local UI state.
+
+## CUSTOMER_BALANCE_FUNDING — Verified external-to-internal credit
+CAPABILITY_ID: CUSTOMER_BALANCE_FUNDING
+
+Customer Wallet is WLT-owned. An external payment provider is a verifiable cash-in rail and never a substitute internal account. WLT credits customer balance only after valid uniquely correlated provider evidence and once-only funding posting; duplicate callbacks, replays, wrong actor/currency/amount or unresolved provider status must not create balance. The customer can read only their own funds and transactions. Never interpret Store externally collected money as customer Wallet funding.
+
+## CAPTAIN_BALANCE_FUNDING — Initial funding and subsequent internal credit
+CAPABILITY_ID: CAPTAIN_BALANCE_FUNDING
+
+BThwani Captain WLT balance uses separately verified external funding and posted ledger facts. An initial activation threshold may be set from Operator Policies but applies only at its proper initial eligibility boundary; no daily automatic top-up, hidden negative balance, or fabricated funding after a failed provider read. Distinguish actual earned delivery entitlements, personal funded balance, COD cash liability, gross Order exposure and goods-custody protections. Store-affiliated Captains do not automatically hold platform Captain wallet/cash powers.
+
+## PARTNER_CAPTAIN_EARNINGS_SETTLEMENT — Beneficiary and external payout
+CAPABILITY_ID: PARTNER_CAPTAIN_EARNINGS_SETTLEMENT
+
+WLT owns per-Store earnings/fee attribution and Captain earnings, the Merchant/Store beneficiary assignment, official verified payout destination, payout holds, external transfer and independent reconciliation. The default Store beneficiary is the authorized owner; an eligible Store-scoped delegate may be named only through the approved owner change protocol, independently from the wallet-number/provider selection.
+
+A beneficiary may submit a **settlement intake** request without a verified destination; this is only a Finance work item, not a payout, ledger mutation, reservation or claim of transfer. When Finance verifies all rights/amounts/destination it creates the canonical payout intention and reservation. Separate transfer evidence and statement reconciliation complete the liability once. A bulk multi-Store payout cannot collapse distinct beneficiary/destination scopes into one unsafe transfer.
+
+## CUSTOMER_BALANCE_MANUAL_WITHDRAWAL — Exception-only withdrawal
+CAPABILITY_ID: CUSTOMER_BALANCE_MANUAL_WITHDRAWAL
+
+This is **not** a customer self-service payout product. A documented exceptional case begins through authorized Operations intake with reason/evidence, then WLT verifies available balance and holds the approved amount. Authorized Finance executes and documents an external transfer to a verified destination; independent reconciliation links the receipt and statement item before WLT releases the internal liability. Unknown or mismatched results remain held/open for investigation, not silently completed or reattempted as a fresh transfer. Operator policy cannot turn this bounded exception into a general payout button.
+
+## Source conflicts to reconcile before policy adoption
+
+Legacy operational documents may refer to daily physical COD remittance or a relationship-specific commission/subscription split. These are **not silently adopted** here: the effective current WLT implementation/protected legal obligations and latest approved Product decisions must be reconciled for each historical vs new operation. Historical external repayment, reconciliation evidence and any binding contract remain protected. Exact fee percentages, subscription prices and Store-managed collection law are unresolved owner-backed values, not hardcoded defaults.

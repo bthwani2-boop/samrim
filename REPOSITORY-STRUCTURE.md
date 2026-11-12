@@ -12,6 +12,7 @@ SEMANTIC_SCOPE: file placement and migration rules; not Product, agent authoriza
 | `docs/REFOUNDATION-PLAN.md` | one temporary execution plan, conflicts, evidence and stage gates; never business policy |
 | `docs/reference/` | preserved, explicitly nonbinding research, OSS, competitors, donor evidence and links when migrated |
 | `.github/` | CI workflow wiring, PR and ownership routing, review-provider config |
+| `.specify/` | existing Spec Kit constitution/templates/scripts and workflow integration when verified and admitted; does not become another policy root |
 | `tools/governance/` | deterministic foundation/architecture checks and their tests, not another decision catalog |
 | `tools/security/` | shared security scanners when actually needed |
 | `tools/dev/` | genuinely repository-wide developer tooling |

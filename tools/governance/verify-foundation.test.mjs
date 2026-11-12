@@ -6,39 +6,58 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const script=path.join(path.dirname(fileURLToPath(import.meta.url)),'verify-foundation.mjs');
-const fixtures={
- 'AGENTS.md':'STATUS: ACTIVE_FOR_FOUNDATION_ONLY\nREPOSITORY-STRUCTURE.md governance/README.md NOT_READY\n',
- 'REPOSITORY-STRUCTURE.md':'STATUS: ACTIVE_FOR_FOUNDATION_ONLY\ndocs/governance/ governance/\n',
- 'governance/README.md':'GOVERNANCE_CUTOVER: NOT_READY\nBUSINESS_DECISION_AUTHORITY: NONE_WHILE_NOT_READY\n',
- 'governance/finance.md':'STATUS: DRAFT_PENDING_FULL_GOVERNANCE_CUTOVER\nIMPLEMENTATION_STATE_AUTHORITY: NONE\nPLATFORM_MANAGED STORE_MANAGED COMMISSION SUBSCRIPTION\n',
- 'docs/REFOUNDATION-PLAN.md':'STATUS: IN_PROGRESS_FOUNDATION\nD01 Phase 2 NOT_RUN\n',
- '.github/workflows/foundation-guard.yml':'permissions:\n  contents: read\nnode --test tools/governance/verify-foundation.test.mjs\nnode tools/governance/verify-foundation.mjs\n',
- 'tools/governance/verify-foundation.mjs':'// exists',
- 'tools/governance/verify-foundation.test.mjs':'// exists'
-};
-function run(changes={},deleted=[]){
- const dir=fs.mkdtempSync(path.join(os.tmpdir(),'bthwani-foundation-'));
- try {
-  for(const [p,s] of Object.entries({...fixtures,...changes})){
-   const f=path.join(dir,...p.split('/'));
-   fs.mkdirSync(path.dirname(f),{recursive:true});
-   fs.writeFileSync(f,s,'utf8');
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
+const checker=path.join(root,'tools/governance/verify-foundation.mjs');
+const owners=['product','platform','architecture','identity','stores','catalog','commerce','fulfillment','finance','hr','experience','safety','engineering','journeys'];
+const files=[
+ 'AGENTS.md','REPOSITORY-STRUCTURE.md','governance/README.md',
+ ...owners.map(owner=>'governance/'+owner+'.md'),'docs/REFOUNDATION-PLAN.md',
+ '.github/workflows/foundation-guard.yml','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs'
+];
+function run({edit={},add={},del=[]}={}){
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'bthwani-policy-guard-'));
+ try{
+  for(const f of files){
+   const output=path.join(dir,...f.split('/'));
+   fs.mkdirSync(path.dirname(output),{recursive:true});
+   const original=fs.readFileSync(path.join(root,...f.split('/')),'utf8');
+   fs.writeFileSync(output,Object.hasOwn(edit,f)?edit[f](original):original,'utf8');
   }
-  for(const p of deleted)fs.rmSync(path.join(dir,...p.split('/')),{force:true,recursive:true});
-  const result=spawnSync(process.execPath,[script,'--root',dir],{encoding:'utf8'});
-  return {code:result.status,combined:result.stdout+result.stderr};
- } finally { fs.rmSync(dir,{force:true,recursive:true}); }
+  for(const [f,c] of Object.entries(add)){
+   const output=path.join(dir,...f.split('/'));
+   fs.mkdirSync(path.dirname(output),{recursive:true});
+   fs.writeFileSync(output,c,'utf8');
+  }
+  for(const f of del)fs.rmSync(path.join(dir,...f.split('/')),{force:true,recursive:true});
+  const result=spawnSync(process.execPath,[checker,'--root',dir],{encoding:'utf8'});
+  return {code:result.status,text:result.stdout+'\n'+result.stderr};
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
 }
-test('foundation fixture succeeds without pretending full governance is ready',()=>{
- const result=run();
- assert.equal(result.code,0,result.combined);
- assert.match(result.combined,/GOVERNANCE_CUTOVER_NOT_READY/);
+function rejects(name,mutation,pattern){
+ test(name,()=>{
+  const r=run(mutation);
+  assert.notEqual(r.code,0,r.text);
+  assert.match(r.text,pattern);
+ });
+}
+test('live foundation draft is structurally coherent but NOT_READY',()=>{
+ const r=run();
+ assert.equal(r.code,0,r.text);
+ assert.match(r.text,/capability_ids=26/);
+ assert.match(r.text,/GOVERNANCE_CUTOVER_NOT_READY/);
 });
-test('rejects missing agent',()=>{const result=run({},['AGENTS.md']);assert.notEqual(result.code,0);assert.match(result.combined,/AGENTS\.md/);});
-test('rejects premature governance acceptance',()=>{const result=run({'governance/README.md':'GOVERNANCE_CUTOVER: READY\nBUSINESS_DECISION_AUTHORITY: ACTIVE\n'});assert.notEqual(result.code,0);assert.match(result.combined,/do not mark governance ready/);});
-test('rejects inherited code-dependent CI in sparse tree',()=>{const result=run({'.github/workflows/fast-guard.yml':'name: Fast Guard\n'});assert.notEqual(result.code,0);assert.match(result.combined,/inherited workflow/);});
-test('rejects reintroducing obsolete governance root',()=>{const result=run({'docs/governance/README.md':'# obsolete duplicate'});assert.notEqual(result.code,0);assert.match(result.combined,/obsolete governance directory/);});
-test('rejects unnecessary CODEOWNERS for solo project',()=>{const result=run({'.github/CODEOWNERS':'* @invented-reviewer'});assert.notEqual(result.code,0);assert.match(result.combined,/does not require CODEOWNERS/);});
-test('rejects finance draft masquerading as accepted or implemented',()=>{const result=run({'governance/finance.md':'STATUS: ACTIVE\nIMPLEMENTATION_STATE_AUTHORITY: ACTIVE\nPLATFORM_MANAGED STORE_MANAGED COMMISSION SUBSCRIPTION'});assert.notEqual(result.code,0);assert.match(result.combined,/finance draft cannot claim/);});
-test('rejects fake passing via continue-on-error',()=>{const result=run({'.github/workflows/foundation-guard.yml':fixtures['.github/workflows/foundation-guard.yml']+'\ncontinue-on-error: true'});assert.notEqual(result.code,0);assert.match(result.combined,/quietly skip/);});
+rejects('rejects absent AGENTS law',{del:['AGENTS.md']},/required AGENTS\.md/);
+rejects('rejects premature READY',{edit:{'governance/README.md':s=>s.replace('GOVERNANCE_CUTOVER: NOT_READY','GOVERNANCE_CUTOVER: READY')}},/do not mark governance ready/);
+rejects('rejects duplicate old policy directory',{add:{'docs/governance/README.md':'legacy duplicate'}},/forbidden duplicate governance/);
+rejects('rejects unnecessary CODEOWNERS',{add:{'.github/CODEOWNERS':'* @fake'}},/unneeded CODEOWNERS/);
+rejects('rejects code-dependent Fast Guard inherited prematurely',{add:{'.github/workflows/fast-guard.yml':'name: Fast Guard'}},/source-dependent inherited CI/);
+rejects('rejects CI bypass',{edit:{'.github/workflows/foundation-guard.yml':s=>s+'\ncontinue-on-error: true\n'}},/silently skip proof/);
+rejects('rejects claimed financial production truth',{edit:{'governance/finance.md':s=>s.replace('IMPLEMENTATION_STATE_AUTHORITY: NONE','IMPLEMENTATION_STATE_AUTHORITY: ACTIVE')}},/implementation authority/);
+rejects('rejects missing domain document',{del:['governance/identity.md']},/required governance\/identity.md/);
+rejects('rejects missing capability',{edit:{'governance/finance.md':s=>s.replace('CAPABILITY_ID: ORDER_PAYMENT_COLLECTION','CAPABILITY_REMOVED: ORDER_PAYMENT_COLLECTION')}},/unmapped capabilities/);
+rejects('rejects duplicated capability',{edit:{'governance/commerce.md':s=>s+'\n## STORE_RELATION_MODEL\nCAPABILITY_ID: STORE_RELATION_MODEL\nA duplicated Store model authority must not be added to Commerce.\n'}},/duplicate capability owner/);
+rejects('rejects capability wrong owner in Product census',{edit:{'governance/product.md':s=>s.replace('| `finance.md` |','| `commerce.md` |')}},/wrong capability owner/);
+rejects('rejects extra unadmitted capability',{edit:{'governance/hr.md':s=>s+'\n## UNSANCTIONED_ENGINE\nCAPABILITY_ID: UNSANCTIONED_ENGINE\nA new engine not in Product census must be rejected.\n'}},/not present in Product/);
+rejects('rejects deleted owner-backed policy law',{edit:{'AGENTS.md':s=>s.replace(/- \*\*Policy-first for legitimate business choices:\*\*[^\n]+\n/,'')}},/owner-backed configurable business rules/);
+rejects('rejects finance policy fee dimensional collapse',{edit:{'governance/finance.md':s=>s.replaceAll('STORE_MANAGED','NOT_SUPPORTED')}},/distinguish collection responsibility/);
+rejects('rejects UTF-8 BOM',{edit:{'governance/hr.md':s=>'\uFEFF'+s}},/empty or BOM/);
