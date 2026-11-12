@@ -14,6 +14,9 @@ const files=[...new Set([
  'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',
  ...owners.map(owner=>'governance/'+owner+'.md'),'docs/REFOUNDATION-PLAN.md','docs/reference/README.md','docs/reference/HISTORICAL-SOURCE-INVENTORY.md','docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md',
  '.github/workflows/foundation-guard.yml','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs',
+ '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
+ 'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','tsconfig.base.json','biome.json',
+ 'README.md','docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md','tools/dev/verify-workspace.mjs',
  '.specify/init-options.json','.specify/integration.json','.specify/integrations/speckit.manifest.json',
  '.specify/memory/constitution.md',...Object.keys(assetManifest.files)
 ])];
@@ -102,3 +105,11 @@ rejects('rejects fabricated historical code PASS',{edit:{'docs/REFOUNDATION-PLAN
 rejects('rejects loss of closed-by-schedule Store meaning',{edit:{'governance/stores.md':s=>s.replace('CLOSED_BY_SCHEDULE','STORE_UNKNOWN')}},/DSH Store orderability distinction missing/);
 rejects('rejects lost historic payout-recipient state',{edit:{'governance/finance.md':s=>s.replaceAll('RECIPIENT_REVIEW_REQUIRED','REVIEW_OPTIONAL')}},/historic WLT money\/recipient preservation missing/);
 rejects('rejects lost protected legacy COD state',{edit:{'governance/finance.md':s=>s.replaceAll('REMITTED','NEW_MONEY')}},/historic WLT money\/recipient preservation missing/);
+
+rejects('rejects a changed Node baseline version',{edit:{'.node-version':s=>s.replace('24.22.1','25.0.0')}},/source-matching Node\/Go pins/);
+rejects('rejects Go downgrade to installed 1.27.1',{edit:{'.go-version':s=>s.replace('1.27.3','1.27.1')}},/source-matching Node\/Go pins/);
+rejects('rejects TypeScript version upgrade',{edit:{'package.json':s=>s.replace('"typescript": "7.0.2"','"typescript": "7.1.0"')}},/root dependencies must match original/);
+rejects('rejects an unsupported Nx early install',{edit:{'package.json':s=>s.replace('"typescript": "7.0.2"','"typescript": "7.0.2", "nx": "24.0.1"')}},/root dependencies must match original/);
+rejects('rejects a pnpm lockfile missing pinned TypeScript',{edit:{'pnpm-lock.yaml':s=>s.replaceAll('specifier: 7.0.2','specifier: 7.1.0')}},/lockfile incomplete or version drift/);
+rejects('rejects premature Nx configuration',{add:{'nx.json':'{}'}},/stage 4\+ projects/);
+rejects('rejects a missing exact source baseline file',{del:['docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md']},/required docs\/reference\/TOOLCHAIN-SOURCE-VERSIONS.md/);

@@ -1,0 +1,15 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "services/*"
+
+# Matches the existing branch-41 package manager behavior.
+# No inherited override, patch, provider, or legacy package is adopted
+# until the real consumer and its exact existing version are admitted.
+autoInstallPeers: false
+engineStrict: true
+frozenLockfile: true
+nodeLinker: isolated
+saveExact: true
+sharedWorkspaceLockfile: true
+strictPeerDependencies: true

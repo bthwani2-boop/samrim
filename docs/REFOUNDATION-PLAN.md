@@ -475,3 +475,41 @@ A read-only pass compared the **14 domain-owner files** in source branch `41` wi
 - `R049/R064/R071/R073/R074/R090/R105` were old branch/PR-specific instructions, superseded by read-only current revision inspection and source-specific later migration; do not run them now.
 - Full per-paragraph review of the large chronological pasted conversations, nested archival documents, all project code/SQL/contracts and the protected production-state truth remains **NOT_RUN/IN_PROGRESS**. A completed 112-ID **source catalog** is not an exhaustive historical Product signoff. Latest explicit user choices override earlier incompatible observations; ambiguous legal/financial choices remain safely unavailable.
 - The current foundation stage needs its own reviewed governance cutover decision; `GOVERNANCE_CUTOVER` stays `NOT_READY`, with no remote Push, PR, Merge, full system CI, app/service/SQL edits or production modifications.
+
+
+## 2026-11-12 — Engineering house setup, stages 1–3 ONLY (user-authorized; NO version upgrades)
+
+**Scope and stop condition:** prepare the already authorized clean Worktree through (1) governance/reference assessment, (2) inspection/pinning of original existing tools, and (3) minimal pnpm workspace. Explicitly stop before Stage 4 Expo/mobile/Web, Stage 5 Go services/OpenAPI contracts, Stage 6 Docker/PostgreSQL/SQL and Stage 7 production/global CI. No new Branch/Worktree, remote Push, PR, Merge or global tool upgrade.
+
+**Donor evidence:** `D:\samrim` branch `41` at `426d67b47beb8c66b09acd8c7394086b53ac5aae`, especially root `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `.node-version`, `.go-version`, `.nvmrc`, `tsconfig.base.json`, `biome.json`, 3 surface package manifests, Control Panel and Tamagui design package manifests, and four `go.mod` owners. Exact values and later Stage-4 versions recorded in **non-governing** `docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md`. Historical reference manifest and consolidated archive remain read-only, not executable policy.
+
+### Stage 1 — governance and references: PARTIAL / REVIEW_BLOCKED
+
+- **PASS scoped:** existing 14 draft domain owners, 26 capability IDs, 16 named journeys, Control Panel 112-ID historical source inventory/crosswalk, one normative target `governance/`, non-normative `docs/reference/`, protected agent/placement boundaries. These existed before this tooling batch and are retained.
+- **REVIEW_BLOCKED:** independent competent finance/Identity/security/protected database migration review, legal agreements and final acceptance; **NOT_RUN** exhaustive source-to-final-product legal validation, current production data and GitHub remote checks. Remain `GOVERNANCE_CUTOVER: NOT_READY`. Do not call Stage 1 fully finished or commence real business implementation on the strength of structural passes.
+- **Stage-gate decision:** low-risk, reversible *toolchain/workspace scaffolding only* may proceed while those documentary reviews are pending. It is not Product/financial/SQL code and grants no permission to alter protected data.
+
+### Stage 2 — exact donor versions, no upgrade: PARTIAL
+
+| Source owner/version | Installed observation / action | Status |
+| --- | --- | --- |
+| Node `24.22.1` in `.node-version` and `.nvmrc` | Local `node --version=v24.22.1`; new root pins unchanged; source engine range `>=24.17.0 <25` preserved because pnpm standalone bundles a separate Node `24.19.0` | PASS |
+| pnpm `12.15.0` | Installed exactly `12.15.0`, created slim frozen lock and installed **offline**, 0 registry downloads, 0 version upgrades | PASS |
+| TypeScript `7.0.2`; Biome `2.5.12` | Exact `pnpm exec tsc --version` / `pnpm exec biome --version` readbacks; separate isolated local node_modules | PASS |
+| Go `1.27.3` source `.go-version` and go.mod | Machine `go version go1.27.1 windows/amd64`. Exact `1.27.3` binary not confirmed present. New root retains **1.27.3**; no global install or changed Go pin | **BLOCKED for exact Go builds** |
+| Git `2.55.0.windows.3` / Docker CLI `29.9.2` / Compose `5.6.1` / Java `21.0.12.1` / adb `37.0.1` | Presence/version read only; Java/ADB app builds, Android SDK completeness and running containers **NOT_RUN** | inventory PASS; runtime checks NOT_RUN |
+| Nx `24.0.1`, Expo `58.0.19`, RN `0.88.0`, Tamagui `3.3.1`, Next `16.4.3`, Ant Design `6.6.7` | Exact donor versions recorded; **not installed in new Worktree** because no affected runnable projects yet | DEFERRED, no upgrades |
+
+The installed pnpm program has its own Node runtime that differs from `node --version`; copying a narrower `engines.node: 24.22.1` was rejected as incompatible. The correct source-compatible `engines.node: >=24.17.0 <25` was retained without any version upgrade. No change to the existing system's runtime, source branch or globally managed tooling was performed.
+
+### Stage 3 — minimal reproducible pnpm workspace: PASS structurally
+
+- `package.json` is private, `pnpm@12.15.0`, exact `typescript@7.0.2` and `@biomejs/biome@2.5.12`; no legacy source apps/dependencies/overrides/patches copied. `pnpm-workspace.yaml` reserves future `apps/*`, `packages/*`, `services/*` **as globs only**; no directories or business source created.
+- `pnpm-lock.yaml` freshly generated using existing pnpm offline, then `pnpm install --offline --frozen-lockfile --ignore-scripts` **PASS**. No new registry fetches, dependencies selected only from the local content-addressable store, and no package scripts executed. `node_modules` is Git-ignored.
+- `tsconfig.base.json` keeps source strict TypeScript/noEmit; `biome.json` reuses Biome `2.5.12` for lint rather than installing a second ESLint/formatter stack without proof. `.editorconfig`/`.gitattributes` enforce clean UTF-8/LF; `.gitignore` protects credentials and builds. Old SQL checksum-specific `.gitattributes` exceptions are **not copied** because no migrations are present.
+- `tools/dev/verify-workspace.mjs` verifies source-matching version pins, root private package, expected workspace globs/config, unchanged versioned lock and absence of premature apps/services/contracts/infra/Nx configuration. Optional `--require-exact-toolchain` returns **FAIL/BLOCKED** on actual Go `1.27.1` mismatch instead of hiding it.
+- **Nx decision:** defer local Nx `24.0.1` install/`nx.json` until one or more real Project targets exist, then confirm affected graph/caching benefit at the **same exact source version**. No Nx Cloud and no empty placeholder projects/packages. **ESLint decision:** do not install redundant ESLint; exact donor Biome is the existing lint solution.
+- **Scope of PASS:** workspace syntax, pinned tool binaries and clean offline lock reinstallation. There is **no** TypeScript application project or Go module to compile yet; no Expo/Metro Web/RTL, Nx affected graph, OpenAPI generator, Go build/test, SQL migration, browser/Android/iOS or Docker service acceptance. These remain **NOT_RUN** by deliberate user stop at Stage 3.
+- GitHub remote Actions/CodeRabbit are not proven for the local unpushed candidate. Foundation guard's structural checks and adversarial tests are local evidence only.
+
+**Forward boundary:** Do not enter Stage 4 or higher without a separate user directive. No need to "upgrade everything" when later creating consumer packages: use the exact donor package versions above, and re-evaluate any required upgrade **only after an explicit independent decision and separate permission**.

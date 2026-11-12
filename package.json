@@ -1,0 +1,21 @@
+{
+  "name": "bthwani-refoundation",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.15.0",
+  "engines": {
+    "node": ">=24.17.0 <25",
+    "pnpm": "12.15.0"
+  },
+  "scripts": {
+    "check:workspace": "node tools/dev/verify-workspace.mjs",
+    "check:toolchain": "node tools/dev/verify-workspace.mjs --require-exact-toolchain",
+    "check:foundation": "node tools/governance/verify-foundation.mjs && node --test tools/governance/verify-foundation.test.mjs",
+    "check": "pnpm run check:workspace && pnpm run check:foundation"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.12",
+    "typescript": "7.0.2"
+  }
+}

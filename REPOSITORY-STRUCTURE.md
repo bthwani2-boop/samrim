@@ -16,6 +16,10 @@ SEMANTIC_SCOPE: file placement and migration rules; not Product, agent authoriza
 | `tools/governance/` | deterministic foundation/architecture checks and their tests, not another decision catalog |
 | `tools/security/` | shared security scanners when actually needed |
 | `tools/dev/` | genuinely repository-wide developer tooling |
+| `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml` | exact source-compatible pnpm stage-3 workspace and single reproducible dependency lock; not product code |
+| `.node-version`, `.nvmrc`, `.go-version` | original branch-41 toolchain version pins, never upgraded without separate authorization |
+| `tsconfig.base.json`, `biome.json`, `.editorconfig`, `.gitattributes`, `.gitignore` | shared foundational TypeScript, lint, UTF-8/LF and secret-exclusion rules; without copied legacy migrations |
+| `README.md` | stage-bounded local onboarding, not an additional policy authority |
 | `services/<owner>/` | each backend owner's implementation, contracts, SQL/migrations, service-specific tests and utilities when authorized to rebuild |
 | `apps/<surface>/` | actual presentation hosts for Customer, Merchant, Captain, Operator |
 | `packages/<purpose>/` | proven multi-consumer domain-neutral packages only |

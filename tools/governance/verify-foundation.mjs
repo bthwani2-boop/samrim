@@ -15,7 +15,10 @@ const domainFiles=owners.map(name=>'governance/'+name+'.md');
 const required=[
  'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',...domainFiles,'docs/REFOUNDATION-PLAN.md','docs/reference/README.md','docs/reference/HISTORICAL-SOURCE-INVENTORY.md','docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md',
  '.specify/init-options.json','.specify/integration.json','.specify/integrations/speckit.manifest.json','.specify/memory/constitution.md',
- '.github/workflows/foundation-guard.yml','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs'
+ '.github/workflows/foundation-guard.yml','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs',
+ '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
+ 'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','tsconfig.base.json','biome.json',
+ 'README.md','docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md','tools/dev/verify-workspace.mjs'
 ];
 const fail=(reason)=>{ throw Error('FOUNDATION_GATE_FAIL: '+reason); };
 const exists=(p)=>fs.existsSync(path.join(root,...p.split('/')));
@@ -33,6 +36,48 @@ const contents={};
 for(const p of required){
  try {contents[p]=get(p);}catch(error){fail('required '+p+': '+error.message);}
 }
+
+const stage3package=JSON.parse(contents['package.json']);
+const nodepin=contents['.node-version'].trim();
+const gopin=contents['.go-version'].trim();
+if(nodepin!=='24.22.1'||contents['.nvmrc'].trim()!==nodepin||gopin!=='1.27.3')
+ fail('source-matching Node/Go pins missing or upgraded in stage 3');
+if(stage3package.packageManager!=='pnpm@12.15.0'||
+ stage3package.engines.node!=='>=24.17.0 <25'||
+ stage3package.engines.pnpm!=='12.15.0'||
+ stage3package.private!==true)
+ fail('branch-41 pnpm/Node versions changed or workspace made publishable');
+if(JSON.stringify(Object.entries(stage3package.devDependencies??{}).sort())!==
+ JSON.stringify([['@biomejs/biome','2.5.12'],['typescript','7.0.2']]))
+ fail('Stage-3 root dependencies must match original exact TypeScript/Biome versions with no extras');
+const wsyaml=contents['pnpm-workspace.yaml'];
+for(const key of ['"apps/*"','"packages/*"','"services/*"','autoInstallPeers: false','engineStrict: true',
+ 'saveExact: true','nodeLinker: isolated','strictPeerDependencies: true']){
+ if(!wsyaml.includes(key))fail('stage3 pnpm workspace changed expected setting: '+key);
+}
+if(/patchedDependencies:|nxCloudId:/.test(wsyaml))fail('old patches and Nx Cloud must not be blindly imported');
+const lock=contents['pnpm-lock.yaml'];
+for(const key of ["lockfileVersion: '9.0'","specifier: 12.15.0",
+ "specifier: 7.0.2","specifier: 2.5.12",
+ "typescript@7.0.2:","'@biomejs/biome@2.5.12':"]){
+ if(!lock.includes(key))fail('stage3 lockfile incomplete or version drift: '+key);
+}
+const tsconfig=JSON.parse(contents['tsconfig.base.json']);
+if(tsconfig.compilerOptions.strict!==true||tsconfig.compilerOptions.noEmit!==true)
+ fail('stage3 base TypeScript must retain strict/non-emitting policy');
+const biome=JSON.parse(contents['biome.json']);
+if(biome.linter.enabled!==true||biome.formatter.enabled!==false)
+ fail('reuse original Biome instead of duplicating ESLint/formatter');
+const ref=contents['docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md'];
+if(!/^BUSINESS_POLICY_AUTHORITY: NONE$/m.test(ref)||!ref.includes('1.27.1')||!ref.includes('1.27.3')||
+ !ref.includes('24.0.1')||!ref.includes('58.0.19'))
+ fail('non-governing donor toolchain provenance or mismatch disclosure missing');
+if(!contents['README.md'].includes('Stage 3')||!contents['tools/dev/verify-workspace.mjs'].includes('STAGE3_WORKSPACE_STRUCTURE_PASS'))
+ fail('stage3 developer onboarding or smoke verifier missing');
+for(const folder of ['contracts','infra','packages','nx.json','go.work']){
+ if(exists(folder))fail('stage 4+ projects/migration/infra introduced prematurely: '+folder);
+}
+
 const agent=contents['AGENTS.md'],repo=contents['REPOSITORY-STRUCTURE.md'];
 // The official Spec Kit installer owns CLI scaffolding. This compatibility router is not another constitution.
 const init = JSON.parse(contents['.specify/init-options.json']);

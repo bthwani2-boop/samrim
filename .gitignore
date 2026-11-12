@@ -1,0 +1,43 @@
+# Reproducible workspace: keep sources and lockfile, ignore generated dependencies.
+node_modules/
+.pnpm-store/
+.next/
+.next-dev/
+.expo/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+**/test-results/
+.nx/cache/
+.nx/workspace-data/
+.sonar/
+.artifacts/
+.diagnostics/
+.tmp/
+.cache/
+.local/
+*.log
+.DS_Store
+Thumbs.db
+
+# Local secrets and platform signing material.
+.env
+.env.*
+!.env.example
+!**/.env.example
+secrets.local.*
+**/*local*.secret.json
+**/credentials.json
+**/google-services.json
+**/GoogleService-Info.plist
+*.jks
+*.keystore
+*.p12
+*.p8
+*.pem
+*.key
+
+# Generated local tool state, not durable policy.
+.bthwani-local/
+.specify/feature.json
