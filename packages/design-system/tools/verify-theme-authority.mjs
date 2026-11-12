@@ -248,12 +248,6 @@ const mobileAppearance = read("packages/design-system/src/native/appearance.tsx"
 if (mobileAppearance.includes("if (!ready) return null")) {
   failures.push("Expo SSR must not be blocked by appearance restoration");
 }
-for (const app of mobileApps) {
-  const layout = read(`apps/${app}/app/_layout.tsx`);
-  if (!layout.includes('LocaleProvider direction="rtl"')) {
-    failures.push(`apps/${app} navigator missing central RTL locale`);
-  }
-}
 const merchantConfig = read("apps/merchant/app.config.ts");
 if (!merchantConfig.includes('output: "server"')) {
   failures.push("Merchant Expo Web must use server rendering for the RTL document contract");
@@ -262,8 +256,6 @@ const tamaguiConfig = read("packages/tamagui-config/src/index.ts");
 if (tamaguiConfig.includes("...defaultConfig.themes,")) {
   failures.push("Unused generic Tamagui themes compete with BThwani semantic roots");
 }
-const nativeConfig = read("tools/mobile/define-bthwani-expo-app.cjs");
-if (!nativeConfig.includes("forcesRTL: true")) failures.push("Expo native localization must force Arabic RTL");
 for (const [name, body] of [
   ["theme tokens", colorsTs],
   ["theme CSS generator", themeIndexTs],
@@ -293,7 +285,7 @@ console.log("DESIGN_SYSTEM_SINGLE_THEME_AUTHORITY=PASS");
 console.log("STAGE4_CHECKED_THEME_SOURCES=PASS");
 console.log("CANONICAL_LIGHT_DARK_THEME_PARITY=PASS");
 console.log("RETIRED_THEME_COLOR_ALIASES_CHECK=PASS");
-console.log("STAGE4_MOBILE_APPEARANCE_CONTEXT_AND_RTL=PASS");
+console.log("STAGE4_MOBILE_APPEARANCE_CONTEXT=PASS");
 console.log("CONTROL_PANEL_ROOT_RAW_COLOR_CHECK=PASS");
 console.log("THEME_KEYS_PARITY=PASS");
 console.log("CHECKED_THEME_CONTRAST_PAIRS=PASS");

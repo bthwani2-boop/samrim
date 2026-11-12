@@ -37,6 +37,10 @@ jobs:
         run: node tools/governance/verify-foundation.mjs
       - name: Verify Stage-4 source versions and external app identities (static only)
         run: node tools/mobile/verify-app-foundations.mjs
+      - name: Reject manual RTL overrides in Expo screens and confirm native config
+        run: |
+          node --test tools/mobile/verify-rtl.test.mjs
+          node tools/mobile/verify-rtl.mjs
       - name: Record limits explicitly
         run: |
           echo 'FOUNDATION_ONLY: governance cutover is NOT_READY'

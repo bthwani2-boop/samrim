@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
-import { LocaleProvider, Stack } from "expo-router";
+import { Stack } from "expo-router";
 import { TamaguiProvider, Theme } from "tamagui";
 import { AppearanceProvider, createMobileAppearanceController, useMobileAppearance } from "@bthwani/design-system/native/appearance";
 import { tamaguiConfig } from "@bthwani/tamagui-config";
@@ -11,9 +11,7 @@ function AppRoutes() {
   return (
     <TamaguiProvider config={tamaguiConfig} defaultTheme={themeName}>
       <Theme name={themeName}>
-        <LocaleProvider direction="rtl">
-          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }} />
-        </LocaleProvider>
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }} />
       </Theme>
     </TamaguiProvider>
   );
