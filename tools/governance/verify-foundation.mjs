@@ -83,6 +83,23 @@ if(!agent.includes('Policy-first')&&!agent.includes('Policy-first for legitimate
 if(!repo.includes('docs/governance/')||!repo.includes('governance/'))fail('placement must explain clean policy root');
 if(!plan.includes('D01')||!plan.includes('Phase 2')||!plan.includes('NOT_RUN'))fail('plan must expose reconciliation and unexecuted scope');
 
+// This crosswalk is a temporary documentary review ledger in the one execution plan,
+// NOT a second Product-admission source or confirmation of implemented features.
+const startMarker='### 2026-11-12 — Per-ID reconciliation of the 112 historical Control Panel requirements';
+const startAt=plan.indexOf(startMarker);
+if(startAt<0)fail('historical 112-row decision crosswalk missing from temporary plan');
+const reviewChunk=plan.slice(startAt);
+const parsedRows=[...reviewChunk.matchAll(/^\| (R\d{3}) \| `([A-Z_]+)` \| `([^\r\n|]+)` \| ([^\r\n|]{5,}) \|$/gm)];
+const approvedLabels=new Set(['DRAFT_ALIGNED_OWNER','POLICY_REFRAMED','CONDITIONAL_CANDIDATE','HISTORICAL_ONLY','MIXED_REFRAME_RETIRE','INDEPENDENT_RISK_REVIEW']);
+const crosswalkIDs=parsedRows.map(x=>x[1]);
+if(parsedRows.length!==112||new Set(crosswalkIDs).size!==112||controlIDs.some(x=>!crosswalkIDs.includes(x)))
+ fail('temporary plan must classify all 112 historical source IDs exactly once');
+for(const row of parsedRows){
+ if(!approvedLabels.has(row[2]))fail('unrecognized documentary classification for '+row[1]);
+ if(/PASS|PROVEN|IMPLEMENTED/.test(row[2]))fail('historical document disposition must not claim implementation '+row[1]);
+}
+
+
 for(const [filename,content] of domainFiles.map(p=>[p,contents[p]])){
  if(!/^STATUS: DRAFT_PENDING_FULL_GOVERNANCE_CUTOVER$/m.test(content))fail('draft status absent: '+filename);
  if(!/^IMPLEMENTATION_STATE_AUTHORITY: NONE$/m.test(content))fail('domain document claims implementation authority: '+filename);
@@ -146,6 +163,16 @@ for(const id of ['FIRST_THREE_ORDER_CONTACT','ORDER_SCOPED_OPERATIONS_EXCEPTION'
 const experience=contents['governance/experience.md'];
 if(!experience.includes('WCAG 2.2 AA')||!/saved views/i.test(experience)||!experience.includes('owner-side search/filter/sort'))
  fail('operator experience missing accessible/at-scale acceptance boundaries');
+const storeDocs=contents['governance/stores.md'];
+for(const state of ['OPEN_FOR_ORDERS','CLOSED_BY_SCHEDULE','PAUSED','OPERATIONALLY_UNAVAILABLE']){
+ if(!storeDocs.includes(state))fail('DSH Store orderability distinction missing: '+state);
+}
+for(const mode of ['BTHWANI_CAPTAIN','PARTNER_CAPTAIN','CUSTOMER_PICKUP']){
+ if(!contents['governance/commerce.md'].includes(mode))fail('canonical DSH fulfillment-mode meaning lost: '+mode);
+}
+for(const economic of ['PLATFORM_CASH_IN_PROVIDER_FEE_EXPENSE','PLATFORM_DELIVERY_MARGIN_INCOME','RECIPIENT_REVIEW_REQUIRED','FINALIZED','REMITTED']){
+ if(!contents['governance/finance.md'].includes(economic))fail('historic WLT money/recipient preservation missing: '+economic);
+}
 const catalog=contents['governance/catalog.md'];
 if(!catalog.includes('الأكثر رواجًا')||!catalog.includes('distinct canonically completed Store Orders')||!catalog.includes('Operator Policies'))
  fail('canonical popularity read model or Operator-managed ranking window lost');

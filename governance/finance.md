@@ -146,3 +146,35 @@ When the accepted WLT `COMMISSION` agreement and lawful Order collection policy 
 Only WLT applies an authorized actual receipt, lawful offset, reversal/adjustment or period settlement against that receivable. The official settlement period, payment/offset eligibility, due-date attention thresholds, fees and collection responsibility are governed by the **accepted Store agreement and versioned WLT Operator Policies** when implemented; never hardcode them by `MARKETPLACE` or `DIRECT` relation. No policy edit rewrites earlier accepted Order/agreement snapshots or independently recorded cash.
 
 WLT cannot mark the receivable cleared merely because Merchant reports transfer, Operator closes an incident, a receipt image was uploaded or a provider responded ambiguously. Verify exact payer, destination, source evidence, amount, balance and external statement/counterparty; duplicate references, cross-Store offsets, overpayment, timeout, stale account and refund-after-payment remain explicit canonical reconciliation cases. See `PARTNER_COMMISSION_REMITTANCE` in `journeys.md` for the cross-surface handoff; no new commission service or second ledger is admitted.
+
+## Financial-accounting distinctions recovered from branch 41 — review-gated
+
+### Provider-funded gross credit versus provider expense
+
+If and only if an **officially approved Cash-In provider** has supplied authenticated successful funding and trustworthy fee/settlement evidence, WLT must credit the beneficiary's **verified gross** funding amount. A provider fee payable by BThwani is a **separate platform expense** rather than an undisclosed deduction from Customer/Captain funds. The corresponding external settlement proceeds are the **actual provider net**, and the three effects must balance in one atomic, idempotent, evidence-correlated financial event. A zero provider fee has zero expense but does not change the gross-funding invariant. Historic account labels `EXTERNAL_SETTLEMENT_CASH` and `PLATFORM_CASH_IN_PROVIDER_FEE_EXPENSE` identify separate *economic facts*, not SQL table names to copy blindly.
+
+No generic "2%" provider fee or unconditional cash-in credit is admitted. Actual fee schedules and applicability are governed by the official external provider agreement and safe WLT owner policy, **not guessed from a screen**. A local simulator proves only isolated internal ledger behavior, not external settlement rights. Any legal fee changes apply to qualifying **future transactions** with frozen provider evidence, not retroactive edits.
+
+### Store-approved delivery markup versus Captain earnings
+
+The donor-approved initial combination permits a **separate fixed Customer delivery markup** on the standard BThwani Captain distance tariff **only** for an eligible Store with a **zero product commission** under its accepted WLT Store agreement. The Customer sees the full fee at quote/confirmation; the Captain's **entire base distance tariff** remains the Captain's entitlement, while the distinct additional markup is platform delivery-margin income (historical economic label `PLATFORM_DELIVERY_MARGIN_INCOME`). Neither hidden reduction of Captain entitlement nor relabeling the markup as Store product commission is allowed. Store-affiliated Captain delivery or Customer Pickup does not inherit that BThwani-Captain markup.
+
+The **fee amount and mode eligibility** are versioned, auditable WLT Operator policies and Store-specific accepted terms, not hardcoded business numbers. Introducing a markup together with nonzero product commission or another unreviewed fee stacking combination requires independently approved economic/conservation rules, WLT owner implementation and concurrent money/quote tests **before enabling the option**. This historic default does not establish that the production code currently supports it.
+
+### Recipient readiness without silent beneficiary fallback
+
+WLT's per-Store payout-recipient decision has three business meanings:
+
+- `DEFAULT_OWNER`: the Store's verified owner is the beneficiary for eligible **future unpinned payout intents**, with no artificial staff assignment needed.
+- `SELECTED_VERIFIED_STAFF`: the owner has explicitly assigned one eligible, verified Store staff actor under an independently versioned/audited WLT Store-recipient relationship.
+- `RECIPIENT_REVIEW_REQUIRED`: the selected recipient lost current eligibility, verified Identity authority, Store membership or destination readiness; **future payout instruction release is blocked** until the owner explicitly selects/reconfirms a legal recipient and Finance verifies the correct official destination.
+
+These are **recipient readiness semantics**, not a new Person role, three payout engines or permission for Finance to choose the Store beneficiary. Staff suspension/revocation must never trigger a silent fallback or redirect; an already approved/partly executed transfer preserves its immutable beneficiary and enters the correct reconciliation path. Multi-Store payout batching retains Store-level allocations and partitions different beneficiaries/destinations into separate transfers. Recipient rules have one WLT owner, independent Finance approval/reconciliation and future-effective Operator policy as appropriate.
+
+**Adoption boundary:** these recovered monetary semantics are a **candidate reviewed draft from the branch-41 donor**, not final external-provider/legal or ledger migration acceptance. Their independent financial/security/schema review is `REVIEW_BLOCKED`; no actual ledger, payout, production setting or customer balance has been changed.
+
+## Old physical-COD obligations remain audit evidence, not new postings
+
+Historical WLT COD/physical remittance records previously labeled `FINALIZED` or `REMITTED` cannot be relabeled as uncollected, re-debited or re-credited merely to fit the new Captain cash-coverage model. A protected upgrade retains their identity, original counterparty, actual provider/cash custody, legal settlement evidence, already-posted ledger movements and applicable period. Only a separately admitted and Finance-reviewed reconciliation can resolve an **actually outstanding** old liability; a current `CAPTAIN_BALANCE_FUNDING` top-up is a **different** funding operation, not proof that physical cash was remitted or an excuse to mint a new earning.
+
+Unknown or missing historical evidence is explicitly `RECONCILIATION_REQUIRED`, not a permissive replacement with a new policy default. This requirement is binding as a preservation boundary but its specific SQL mapping and protected migration are `REVIEW_BLOCKED` until donor rows and current financial truth are verified.

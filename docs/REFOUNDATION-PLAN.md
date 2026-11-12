@@ -303,3 +303,175 @@ The consolidated archive's `نتيجة الفحص الأولي.txt` describes a 
 - **NOT_RUN**: current code/SQL/runtime integration, complete attached-content-by-line proof, external URL/license revalidation, and remote GitHub Actions/CodeRabbit tests for the unpushed candidate.
 
 Do not set `GOVERNANCE_CUTOVER: READY` based on a manifest, a 112-row index, 16 named Journey sections or all-green structural assertions. Review semantic conflicts and mandate an independent qualified review before any final adoption.
+
+
+### 2026-11-12 — Per-ID reconciliation of the 112 historical Control Panel requirements
+
+**Source basis:** `docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md` contains the unchanged historical ID/wording, with owner/next-review routing. This is the **single temporary decision-disposition record** for those historic 112 IDs; it does not replace or restate the normative domain files. The labels below classify the **documentary meaning** against the **current canonical governance target**, **not** whether an app/SQL/API is implemented. `DRAFT_ALIGNED_OWNER` is not a reviewed/ratified financial or security guarantee. Neither past branch-16 pass nor a ZIP manifest is acceptance of the new source.
+
+**Legend:** `DRAFT_ALIGNED_OWNER`: the core principle is covered by the cited present governing owner, pending governance cutover; `POLICY_REFRAMED`: a historical default/limit is a candidate owner-controlled Operator policy; `CONDITIONAL_CANDIDATE`: a UX/technology feature needs proved need and explicit Product admission; `HISTORICAL_ONLY`: the branch/PR/tool command itself is stale, not a current requirement; `MIXED_REFRAME_RETIRE`: preserve current participant capability but retire obsolete field/acquisition path; `INDEPENDENT_RISK_REVIEW`: financially/security/migration-sensitive principle is present but its adoption as final policy is review-blocked.
+
+| ID | Documentary disposition | Legal owner for decision | Why this disposition (not runtime proof) |
+| --- | --- | --- | --- |
+| R001 | `DRAFT_ALIGNED_OWNER` | `identity.md + experience.md` | صلاحيات المسارات وعناصر التنقل وفق الدور والمالك |
+| R002 | `DRAFT_ALIGNED_OWNER` | `AGENTS.md` | حماية Worktree والبيانات والعمل المتزامن قبل الكتابة |
+| R003 | `DRAFT_ALIGNED_OWNER` | `experience.md` | مصدر واحد لأدوار التصميم الدلالية دون مالك CSS مواز |
+| R004 | `DRAFT_ALIGNED_OWNER` | `experience.md` | تجميع الأعمال حسب المورد والمسؤولية دون صفحات ضخمة |
+| R005 | `DRAFT_ALIGNED_OWNER` | `REPOSITORY-STRUCTURE.md` | حذف الوجهات المكررة فقط بعد نقل مستهلكيها |
+| R006 | `DRAFT_ALIGNED_OWNER` | `REPOSITORY-STRUCTURE.md` | نقل ودمج الملفات حسب مسؤولية المالك |
+| R007 | `DRAFT_ALIGNED_OWNER` | `experience.md` | عرض عناصر الإدخال مناسب للمهمة والحجم |
+| R008 | `DRAFT_ALIGNED_OWNER` | `experience.md` | RTL عربي وتنسيق موحد للوقت والعملة والاتجاه |
+| R009 | `DRAFT_ALIGNED_OWNER` | `experience.md` | ثيمات النهار والليل والوصول والفوكس والحركة |
+| R010 | `DRAFT_ALIGNED_OWNER` | `experience.md` | تنقل سياقي واحد لا يكرر المحتوى |
+| R011 | `CONDITIONAL_CANDIDATE` | `experience.md` | طي القائمة وحفظ العرض عند حاجة مثبتة |
+| R012 | `CONDITIONAL_CANDIDATE` | `experience.md` | المفضلة والحديثة اختيارات تنقل وليست شاشة إلزامية |
+| R013 | `DRAFT_ALIGNED_OWNER` | `experience.md` | استرجاع البحث/الفرز/الصفحة مع حماية الخصوصية |
+| R014 | `DRAFT_ALIGNED_OWNER` | `architecture.md + experience.md` | المالك ينفذ البحث والترقيم للمجموعات الكبيرة |
+| R015 | `DRAFT_ALIGNED_OWNER` | `architecture.md` | لا إظهار إجمالي مبني على صفحة محمّلة فقط |
+| R016 | `DRAFT_ALIGNED_OWNER` | `experience.md` | مؤشر سياقي صحيح مع سبب ووجهة تفاصيل |
+| R017 | `DRAFT_ALIGNED_OWNER` | `experience.md` | الرئيسية تشير لأعمال مسموحة وحالات فعلية |
+| R018 | `DRAFT_ALIGNED_OWNER` | `experience.md` | حالات التحميل والفراغ والفشل وإعادة المحاولة |
+| R019 | `DRAFT_ALIGNED_OWNER` | `identity.md` | الفعل يخضع للحق الحالي وحالة المورد الحقيقية |
+| R020 | `DRAFT_ALIGNED_OWNER` | `experience.md` | عدم فقد مدخلات المستخدم أو الكتابة الصامتة |
+| R021 | `CONDITIONAL_CANDIDATE` | `experience.md` | الفاحص السريع مفيد للمقارنات مع مسار تفصيلي |
+| R022 | `DRAFT_ALIGNED_OWNER` | `catalog.md + experience.md` | الجدول هو عرض افتراضي لعناصر متنامية مع صور |
+| R023 | `CONDITIONAL_CANDIDATE` | `experience.md` | المعرض والتكبير إن أفادا دون كتالوج أو Query ثان |
+| R024 | `CONDITIONAL_CANDIDATE` | `experience.md` | مقارنة الصور عند حاجة تدقيق موثقة |
+| R025 | `DRAFT_ALIGNED_OWNER` | `catalog.md + safety.md` | ملكية الوسائط وحقوقها وسياق عرضها |
+| R026 | `DRAFT_ALIGNED_OWNER` | `stores.md + journeys.md` | تسجيل التاجر المباشر ثم جاهزية النشر المستقلة |
+| R027 | `DRAFT_ALIGNED_OWNER` | `hr.md + identity.md` | طلب صلاحية الموظف غير منحها مباشرة |
+| R028 | `INDEPENDENT_RISK_REVIEW` | `finance.md` | WLT وحده مسؤول عن التسويات لكن القبول المالي المستقل مفتوح |
+| R029 | `DRAFT_ALIGNED_OWNER` | `stores.md + identity.md` | تفويض المتجر منفصل عن صلاحية نشره |
+| R030 | `DRAFT_ALIGNED_OWNER` | `commerce.md + journeys.md` | إدارة الطلب والاستثناء دون دفتر أو حالة موازية |
+| R031 | `MIXED_REFRAME_RETIRE` | `fulfillment.md + product.md` | حفظ وظائف الكابتن؛ الميداني ملغى ولا يُعاد |
+| R032 | `POLICY_REFRAMED` | `architecture.md + experience.md` | نطاق وسريان السياسات لدى المالك لا لوحة التحكم |
+| R033 | `DRAFT_ALIGNED_OWNER` | `experience.md + commerce.md` | معاينة النشر تقرأ حالة المحتوى الحقيقية |
+| R034 | `CONDITIONAL_CANDIDATE` | `product.md` | بحث شامل وCommand Palette اختيار مشروط لا منتج مفروض |
+| R035 | `CONDITIONAL_CANDIDATE` | `experience.md` | Saved Views والشرائح والأعمدة وفق تكرار الاستخدام |
+| R036 | `DRAFT_ALIGNED_OWNER` | `engineering.md` | Bulk فعل أصلي مفوض بحدود ونتائج جزئية |
+| R037 | `POLICY_REFRAMED` | `commerce.md` | SLA قابل للضبط عند وجود أحداث أصلية وموافقة |
+| R038 | `DRAFT_ALIGNED_OWNER` | `architecture.md` | تعريف المقام/الفترة/العملة/المصدر لكل مؤشر |
+| R039 | `CONDITIONAL_CANDIDATE` | `architecture.md` | Cohorts عميقة عند احتياج وأحداث حقيقية |
+| R040 | `CONDITIONAL_CANDIDATE` | `product.md + engineering.md` | AI/Streaming عند حاجة مثبتة لا بمجرد أرشيف |
+| R041 | `DRAFT_ALIGNED_OWNER` | `safety.md + AGENTS.md` | عدم تدمير بيانات فعلية أو تصنيع نجاح بـSeed |
+| R042 | `DRAFT_ALIGNED_OWNER` | `safety.md + experience.md` | حماية الهوية والهاتف من URL والسجلات |
+| R043 | `DRAFT_ALIGNED_OWNER` | `engineering.md + journeys.md` | إيجابي وسلبي وتعافٍ وقراءة دائمة من المالك |
+| R044 | `DRAFT_ALIGNED_OWNER` | `engineering.md` | احتفاظ الاختبارات الصالحة وعدم قبول Snapshot تلقائي |
+| R045 | `DRAFT_ALIGNED_OWNER` | `REPOSITORY-STRUCTURE.md` | إزالة الكاتب/المسار الخاسر بعد تحويل المستهلكين |
+| R046 | `DRAFT_ALIGNED_OWNER` | `REPOSITORY-STRUCTURE.md` | حماية الروابط والهويات والمهاجرات المعتمدة |
+| R047 | `DRAFT_ALIGNED_OWNER` | `product.md` | لا إنشاء منتجات ورسوم وموافقات جديدة من تصور واجهة |
+| R048 | `DRAFT_ALIGNED_OWNER` | `AGENTS.md` | Push وMerge والنشر وأعمال Git بتفويض منفصل |
+| R049 | `HISTORICAL_ONLY` | `docs/REFOUNDATION-PLAN.md` | مقارنة فروع HR القديمة لا تحكم الفرع الحالي |
+| R050 | `CONDITIONAL_CANDIDATE` | `engineering.md` | Graphify أداة مشروطة بثبوت الاستخدام والاتصال |
+| R051 | `DRAFT_ALIGNED_OWNER` | `experience.md` | قياس جهد المستخدم لا اختراع أهداف رقمية |
+| R052 | `DRAFT_ALIGNED_OWNER` | `AGENTS.md` | FAIL وBLOCKED وNOT_RUN بدليل بدل 100% |
+| R053 | `DRAFT_ALIGNED_OWNER` | `safety.md` | خصوصية الصادرات والصور ومعاينات البحث |
+| R054 | `MIXED_REFRAME_RETIRE` | `commerce.md + product.md` | معالجة طلب محددة دون CRM أو منصة إرجاع عامة |
+| R055 | `DRAFT_ALIGNED_OWNER` | `journeys.md` | الإشعارات مشتقات أحداث والعداد ليس حجم الصفحة |
+| R056 | `DRAFT_ALIGNED_OWNER` | `experience.md` | فصل التبويب والتصفية عن مورد حقيقي |
+| R057 | `DRAFT_ALIGNED_OWNER` | `engineering.md` | عدم إضافة Browser shim أو إطار JS بلا حاجة |
+| R058 | `MIXED_REFRAME_RETIRE` | `journeys.md + product.md` | المشاركون عميل/تاجر/كابتن/مشغل؛ استبعاد الميداني |
+| R059 | `DRAFT_ALIGNED_OWNER` | `engineering.md` | اختبارات أداء معزولة بحجم واقعي |
+| R060 | `DRAFT_ALIGNED_OWNER` | `AGENTS.md + safety.md` | إيقاف آمن عند خسارة بيانات أو اختراق صلاحية |
+| R061 | `CONDITIONAL_CANDIDATE` | `experience.md` | معرض اختياري من الاستعلام نفسه مع بقاء الجدول |
+| R062 | `DRAFT_ALIGNED_OWNER` | `architecture.md + experience.md` | إجمالي سياقي حقيقي؛ unknown لا يساوي صفر |
+| R063 | `DRAFT_ALIGNED_OWNER` | `experience.md` | معنى المورد والتبويب والتصفية واضح بلا تشظٍ |
+| R064 | `HISTORICAL_ONLY` | `docs/REFOUNDATION-PLAN.md` | مراجعة الفروع القديمة انتهت صلاحيتها كحالة Git حية |
+| R065 | `DRAFT_ALIGNED_OWNER` | `REPOSITORY-STRUCTURE.md` | لا حذف قبل فحص المستهلكين والمصادر |
+| R066 | `DRAFT_ALIGNED_OWNER` | `catalog.md + safety.md` | صور خاصة وفق ACL وحقوق وLightbox مصرح |
+| R067 | `DRAFT_ALIGNED_OWNER` | `experience.md` | فحص keyboard/focus/sticky وغطاء العناصر |
+| R068 | `DRAFT_ALIGNED_OWNER` | `experience.md + engineering.md` | نطاق الإجراء الجماعي ونتائجه الجزئية صريحة |
+| R069 | `DRAFT_ALIGNED_OWNER` | `safety.md + experience.md` | لا وضع أرقام هواتف أو هويات في URL |
+| R070 | `DRAFT_ALIGNED_OWNER` | `docs/reference/README.md + engineering.md` | التراخيص والإثبات والأحداث قبل الاعتماد |
+| R071 | `HISTORICAL_ONLY` | `AGENTS.md` | كل كتابة وفق HEAD الحي لا branch14 |
+| R072 | `DRAFT_ALIGNED_OWNER` | `engineering.md` | التحقق من SHA256 ومسارات الحزمة قبل استنتاج السلامة |
+| R073 | `HISTORICAL_ONLY` | `docs/REFOUNDATION-PLAN.md` | branch16/main تعليمات مؤرخة لا مرشحًا حاليًا |
+| R074 | `HISTORICAL_ONLY` | `docs/REFOUNDATION-PLAN.md` | PR90/91 أدلة مؤرخة لا إثباتًا على المرشح |
+| R075 | `DRAFT_ALIGNED_OWNER` | `engineering.md` | عدد الملفات أو Routes لا يثبت رحلة مستخدم |
+| R076 | `DRAFT_ALIGNED_OWNER` | `engineering.md` | تصنيف الإثبات/الفشل/الترشيح واضح بالمصدر |
+| R077 | `DRAFT_ALIGNED_OWNER` | `experience.md + hr.md` | HR الحالية لا تُخفى بسبب تخطيط تنقل قديم |
+| R078 | `CONDITIONAL_CANDIDATE` | `experience.md + catalog.md` | معرض فقط عند الحاجة ونفس Paging والبيانات |
+| R079 | `DRAFT_ALIGNED_OWNER` | `architecture.md` | البيان التحليلي مقيد بالمدينة والفترة والحق |
+| R080 | `DRAFT_ALIGNED_OWNER` | `experience.md` | استعادة موضع التصفح والمحدد والفوكس والمسودة |
+| R081 | `INDEPENDENT_RISK_REVIEW` | `identity.md + safety.md` | رفض API والطرق المباشرة بحسب الدور والمالك |
+| R082 | `INDEPENDENT_RISK_REVIEW` | `finance.md` | تمييز مستحقات المستفيد عن التحصيل وعهدة النقد |
+| R083 | `INDEPENDENT_RISK_REVIEW` | `finance.md` | الرسوم المقترحة لا تصبح اتفاقية إلا بعد قبولها |
+| R084 | `INDEPENDENT_RISK_REVIEW` | `safety.md` | الحد من تسريب الهاتف في الروابط والسجلات |
+| R085 | `DRAFT_ALIGNED_OWNER` | `catalog.md + safety.md` | الصورة ذات ACL/ترخيص ولا تعرض عند رفض المصدر |
+| R086 | `INDEPENDENT_RISK_REVIEW` | `identity.md + hr.md` | موظف واحد وهوية واحدة دون تكرار |
+| R087 | `DRAFT_ALIGNED_OWNER` | `stores.md` | الموافقة ليست نشرًا أو إتاحة للطلب |
+| R088 | `DRAFT_ALIGNED_OWNER` | `hr.md` | لا فقد لقواعد حضور وتصحيح الموظف |
+| R089 | `DRAFT_ALIGNED_OWNER` | `engineering.md` | تعداد Routes لا يغني عن إثبات الواجهة الفعلية |
+| R090 | `HISTORICAL_ONLY` | `docs/REFOUNDATION-PLAN.md` | ملاحظات PR87/90/91 لا تُنفذ بلا مراجعة HEAD |
+| R091 | `DRAFT_ALIGNED_OWNER` | `engineering.md` | حمل مع بيانات مؤقتة معزولة لا Seeds يومية |
+| R092 | `DRAFT_ALIGNED_OWNER` | `experience.md` | تحقق من تركيز ظاهر ولمس/تكبير/RTL/contrast |
+| R093 | `DRAFT_ALIGNED_OWNER` | `REPOSITORY-STRUCTURE.md` | حذف مبرر مع قائمة المستهلكين والبديل |
+| R094 | `INDEPENDENT_RISK_REVIEW` | `safety.md + engineering.md` | الهجرات المطبقة لا يعاد كتابتها بلا ترحيل محمي |
+| R095 | `CONDITIONAL_CANDIDATE` | `product.md + experience.md` | Column pinning/Saved Views/Palette بحسب جدوى مثبتة |
+| R096 | `CONDITIONAL_CANDIDATE` | `product.md + safety.md` | AI استشاري مقروء فقط بعد اعتماد منفصل |
+| R097 | `CONDITIONAL_CANDIDATE` | `engineering.md` | SSE/WebSocket فقط بعد حاجة وتحقق |
+| R098 | `DRAFT_ALIGNED_OWNER` | `product.md` | منع اختراع شكاوى وRefunds كمنصة جديدة |
+| R099 | `INDEPENDENT_RISK_REVIEW` | `finance.md` | مجهول نتيجة الدفع لا نجاح؛ Idempotency ومطابقة |
+| R100 | `DRAFT_ALIGNED_OWNER` | `architecture.md` | استعلام وكميات وEmpty/Error دقيقة مع ACL |
+| R101 | `DRAFT_ALIGNED_OWNER` | `journeys.md` | العداد الشامل غير المقروء مستقل عن حجم الصفحة |
+| R102 | `DRAFT_ALIGNED_OWNER` | `engineering.md` | سلامة ZIP لا تثبت CI أو SQL أو تجربة المستخدم |
+| R103 | `DRAFT_ALIGNED_OWNER` | `docs/reference/README.md` | الأصول التاريخية للملفات محفوظة وأصلها معروف |
+| R104 | `DRAFT_ALIGNED_OWNER` | `engineering.md` | Manifest وSHA قابلة للتثبت دون تعميم |
+| R105 | `HISTORICAL_ONLY` | `docs/REFOUNDATION-PLAN.md` | هدف branch16/V1/V2 استبدلته Worktree الحالية |
+| R106 | `DRAFT_ALIGNED_OWNER` | `experience.md` | فصل unknown عن empty وحالات الخطأ |
+| R107 | `DRAFT_ALIGNED_OWNER` | `experience.md` | لا تنقل مستقل لكل حالة ولا صفحة عملاقة |
+| R108 | `DRAFT_ALIGNED_OWNER` | `engineering.md` | اختبارات بيانات اصطناعية تدريجية ومعزولة |
+| R109 | `CONDITIONAL_CANDIDATE` | `experience.md` | Inspector عند حاجة تفاعل مثبتة لا لكل كائن |
+| R110 | `INDEPENDENT_RISK_REVIEW` | `safety.md + stores.md` | الاستعادة والحذف لا يزيلان الحقوق والروابط دون إثبات |
+| R111 | `DRAFT_ALIGNED_OWNER` | `architecture.md` | Cohort بفترة/مدينة/دور دقيق |
+| R112 | `DRAFT_ALIGNED_OWNER` | `experience.md` | تحسين UX بقياس وقت/نقرات/أخطاء |
+
+**Coverage:** 112/112 unique source IDs have a **documentary classification**; of these `DRAFT_ALIGNED_OWNER`: 75; `POLICY_REFRAMED`: 2; `CONDITIONAL_CANDIDATE`: 16; `HISTORICAL_ONLY`: 7; `MIXED_REFRAME_RETIRE`: 3; `INDEPENDENT_RISK_REVIEW`: 9. Source facts and source strings are not rewritten by this crosswalk. True semantic equivalence still needs the exact current contract/SQL/operational/consent review per affected owner and independent review where mandated. Any mixed historical feature omitted from the present Product requires explicit owner-side adoption before a later SQL or UI implementation. A source classification is not authority to publish it or a claim of every archive paragraph being independently validated.
+
+
+### Archived source bundle integrity and authority review
+
+Consolidated archive at `%USERPROFILE%\Desktop\BTHWANI-REFOUNDATION-COMPLETE-PACKAGE-20261112.zip`:
+- Size **527,304 bytes**; whole-container SHA-256 `9a245787302f9f9ee31832b731650b89d19692587033b230938ada7d8648f8f1`.
+- **11 ZIP entries**: `9` payload files listed in `MANIFEST-SHA256.txt` and `README.txt` plus the manifest itself; content hashes and lengths **9/9 PASS** on this audit. No extraction into the candidate source tree, no external code execution.
+- Embedded October Control Panel original CSV **112/112 historical requirement wordings matched** against `docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md` after the table's documented whitespace/escape normalization. This is *source-fidelity*, not implementation or legal verification.
+
+| Consolidated member/source | Role and current authority |
+| --- | --- |
+| `01-Execution-Command/...` | Older full-system implementation scope and risks, **future refoundation input**, not authorization to execute Codex CLI or target an old worktree |
+| `02-Reference-Bundles/BTHWANI_ULTIMATE_...zip` | Historic audit trigger methodology and integrity inputs; avoid new parallel orchestrator/CI or unconditional framework adoption |
+| `02-Reference-Bundles/BTHWANI-Control-Panel-...zip` | Oct 2026 UI requirements and repeated V1/V2 evidence; 112 IDs inventoried, changes filtered by current decisions |
+| `03-Attachments/Pasted text(20261111-214531)(1)(3).txt` | Past governance/reconstruction discussion, not present implementation/branch proof |
+| `03-Attachments/Pasted text (2)(20261111-214538)(1)(3).txt` | Past CI/cleanup suggestions; reuse one current stage guard and future real-code checks instead of duplicating CI |
+| `03-Attachments/Pasted text(20261111-235836)(3).txt` | Past SQL/Docker/code redesign discussion; preserve constraints, defer actual changes to the authorized next phase |
+| `03-Attachments/BTHWANI-REFOUNDATION-DEEP-AUDIT-ACTION-PLAN-20261112(1)(3).md` | Branch-40-era audit and refoundation advice; no old SHA/SQL counts/PR state treated as current |
+| `03-Attachments/Pasted text(20261110-042824)(1)(3).txt` | Chronological decision discourse and code observations of branch 40. Latest explicit user approvals and branch-41 live source take precedence; former Field flows remain retired |
+| `03-Attachments/نتيجة الفحص الأولي.txt` | Historic local Operator login/recovery observation. Original user/credentials are protected; no current access or production recovery conclusion |
+
+**Meaning-level reconciliation limit:** each archived record can contain a historical proposal, assistant inference, source-dated observation, rejected approach and later approval *in one file*. Chronology alone does not elevate a speculative technical mechanism to Product law, and an earlier statement that all local data were disposable does not authorize current protected-data deletion. No old '100%' assertion is proof. Owners are reauthored in `governance/` and execution protections in `AGENTS.md`; current implementation must later be read from its actual current code, contracts, running services and protected data. Specific legal agreements and independently reviewable financial/security/migration obligations are NOT fully ratified from archives.
+
+**High-priority documentary reconciliation completed in this wave:** 16 named Journeys, early-Order factual contact and claim, DSH Order-bound operations exceptions/SLA, WLT remittance/beneficiary distinction, DSH StoreOffer popularity, Operator keyboard/RTL/accessibility/query continuity, identity recovery safety, all 112 historic Control Panel ID decisions classified in the sole temporary plan. **Still outstanding:** full paragraph-level legal/contract interpretation, other source/ZIP narrative items not materially selected into canonical Owner decisions, independent finance/identity/DB risk review and live implementation acceptance. These are NOT_RUN/REVIEW_BLOCKED rather than a fake 100% score.
+
+
+### 2026-11-12 — Original 14-owner section comparison, material corrections and remaining review boundary
+
+A read-only pass compared the **14 domain-owner files** in source branch `41` with their target files under root `governance/`. Heading/uppercase-identifier coverage is a **gap-finding heuristic**, not a semantic-equivalence proof. The comparison surfaced and this batch reauthored missing **business consequences** at their existing owner rather than copying donor paragraphs:
+
+| Source owner/section | Corrected in target | Critical distinction preserved |
+| --- | --- | --- |
+| `stores.md` / `STORE_OPERATIONAL_AVAILABILITY` | `governance/stores.md` | `OPEN_FOR_ORDERS`, `CLOSED_BY_SCHEDULE`, `PAUSED`, `OPERATIONALLY_UNAVAILABLE` are derived DSH orderability results; publication, Offer, Service City and durable delivery-mode admission remain separate |
+| `commerce.md` / `ORDER_LIFECYCLE` | `governance/commerce.md` | Actual Order freezes one supported fulfillment mode; `DELIVERED`, `PICKED_UP`, `REJECTED`, `CANCELLED` cannot be conflated; original Order snapshot and lawful adjustment are separate |
+| `finance.md` / fees and commissions | `governance/finance.md` | Official Cash-In provider **gross** beneficiary credit is distinct from actual external net proceeds and platform provider-fee expense; historical account labels are **economic meanings**, not new SQL schema |
+| `finance.md` / BThwani Captain delivery margin | `governance/finance.md` | Initial zero-product-commission eligible fixed markup is shown separately to Customer; full base delivery fee belongs to Captain, markup to platform, subject to approved future-effective financial policy and independent review |
+| `finance.md` / recipient readiness | `governance/finance.md` | `DEFAULT_OWNER`, `SELECTED_VERIFIED_STAFF`, `RECIPIENT_REVIEW_REQUIRED` preserve explicit Store beneficiary routing and fail-closed staff revocation; no silent fallback or redirection |
+| `finance.md` / historical COD | `governance/finance.md` | Old `FINALIZED`/`REMITTED` obligations retain settlement evidence; new internal Captain wallet top-up never manufactures earlier physical remittance or double debit |
+| `journeys.md` / named scenarios | `governance/journeys.md` (prior batch) | 16 exact historical Journey IDs and owner handoffs with versioned policy values, including contact, Operations evidence, remittance and payout |
+| `catalog.md` / popularity and `experience.md` / operational UX | Prior batch already placed in canonical owners | Genuine completed-Order popularity, server-owned query/filters, WCAG 2.2 AA, RTL/privacy/focus and optional widget admission |
+
+**Reference checks performed**: all 112 Control Panel historic ID+wording entries matched the original October CSV; per-ID documentary classification covers 112/112 and is guarded against missing/duplicate/false `PASS` entries. The consolidated ZIP 9/9 payload hash verification and branch-41 original `HEAD` are recorded above. None is a verified actual Owner API, applied SQL migration, external transfer or legal contract approval.
+
+**Explicit remaining gates**:
+- Legal/payment agreement version, Cash-In actual provider contract/fee, WLT ledger account mapping, gross/COD/markup conservation, owner-vs-Finance authority and paid historical remittance require **qualified independent review**; status `REVIEW_BLOCKED`. This prose cannot activate or post money.
+- `R049/R064/R071/R073/R074/R090/R105` were old branch/PR-specific instructions, superseded by read-only current revision inspection and source-specific later migration; do not run them now.
+- Full per-paragraph review of the large chronological pasted conversations, nested archival documents, all project code/SQL/contracts and the protected production-state truth remains **NOT_RUN/IN_PROGRESS**. A completed 112-ID **source catalog** is not an exhaustive historical Product signoff. Latest explicit user choices override earlier incompatible observations; ambiguous legal/financial choices remain safely unavailable.
+- The current foundation stage needs its own reviewed governance cutover decision; `GOVERNANCE_CUTOVER` stays `NOT_READY`, with no remote Push, PR, Merge, full system CI, app/service/SQL edits or production modifications.

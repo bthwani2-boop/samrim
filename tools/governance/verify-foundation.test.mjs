@@ -94,3 +94,11 @@ rejects('rejects missing historical Control Panel source inventory',{del:['docs/
 rejects('rejects missing R112 archive requirement ID',{edit:{'docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md':s=>s.replace('| R112 |','| MISSING |')}},/retain 112 unique IDs/);
 rejects('rejects a duplicated historical source requirement',{edit:{'docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md':s=>s.replace(/^(\| R008 \|[^\n]+)$/m,'$1\n$1')}},/retain 112 unique IDs/);
 rejects('rejects historical Control Panel source as authoritative policy',{edit:{'docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md':s=>s.replace('BUSINESS_POLICY_AUTHORITY: NONE','BUSINESS_POLICY_AUTHORITY: ACTIVE')}},/cannot become Product policy/);
+
+rejects('rejects incomplete historical per-ID classification',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^\| R112 \| `DRAFT_ALIGNED_OWNER` \|[^\n]+\n/m,'')}},/classify all 112 historical source IDs exactly once/);
+rejects('rejects duplicated historical per-ID classification',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^(\| R042 \| `DRAFT_ALIGNED_OWNER` \|[^\n]+)$/m,'$1\n$1')}},/classify all 112 historical source IDs exactly once/);
+rejects('rejects fabricated historical code PASS',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^(\| R041 \| `)DRAFT_ALIGNED_OWNER/m,'$1PASS_IMPLEMENTED')}},/unrecognized documentary classification/);
+
+rejects('rejects loss of closed-by-schedule Store meaning',{edit:{'governance/stores.md':s=>s.replace('CLOSED_BY_SCHEDULE','STORE_UNKNOWN')}},/DSH Store orderability distinction missing/);
+rejects('rejects lost historic payout-recipient state',{edit:{'governance/finance.md':s=>s.replaceAll('RECIPIENT_REVIEW_REQUIRED','REVIEW_OPTIONAL')}},/historic WLT money\/recipient preservation missing/);
+rejects('rejects lost protected legacy COD state',{edit:{'governance/finance.md':s=>s.replaceAll('REMITTED','NEW_MONEY')}},/historic WLT money\/recipient preservation missing/);
