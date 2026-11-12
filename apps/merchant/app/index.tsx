@@ -6,7 +6,7 @@ export function generateMetadata(): Metadata {
 }
 import { SafeAreaView, ScrollView } from "react-native";
 import { Button, Input, Text, XStack, YStack } from "tamagui";
-import { useMobileAppearance } from "@bthwani/design-system/native/appearance";
+import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 
 export default function FoundationHome() {
   const { theme, preference, setPreference } = useMobileAppearance();

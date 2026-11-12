@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const packageRoot = path.resolve(import.meta.dirname, "..");
-const { generateThemeCss } = await import("../src/theme/index.ts");
+const { generateThemeCss } = await import("../src/web/css-projection.ts");
 const content = "/* Auto-generated from @bthwani/design-system. Do not edit manually. */\n" + generateThemeCss();
 const target = path.join(packageRoot, "theme.css");
 

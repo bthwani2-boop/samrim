@@ -22,8 +22,8 @@ SEMANTIC_SCOPE: file placement and migration rules; not Product, agent authoriza
 | `README.md` | stage-bounded local onboarding, not an additional policy authority |
 | `services/<owner>/` | each backend owner's implementation, contracts, SQL/migrations, service-specific tests and utilities when authorized to rebuild |
 | `apps/<surface>/` | actual presentation hosts for Customer, Merchant, Captain, Operator |
-| `packages/design-system/` | single authored brand/semantic token source, CSS projection, minimal RN appearance preference |
-| `packages/tamagui-config/` | Expo renderer consuming the design token source; not a second palette |
+| `packages/design-system/` | single authored brand and semantic color source plus generated browser semantic CSS; no React Native runtime or component primitives |
+| `packages/tamagui-config/` | Expo renderer consuming the design theme source; also owns the minimal React Native appearance preference runtime, not a second palette |
 | `tools/mobile/` | native Expo configuration and original-identity/version verifier; Metro itself uses Expo defaults |
 | `patches/` | only source-approved Ant Design CSP patch, held at unchanged exact dependency version |
 | `packages/<purpose>/` | any further justified multi-consumer domain-neutral packages only |

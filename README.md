@@ -2,7 +2,7 @@
 
 This worktree contains the *foundation shells* for Expo Customer, Merchant and Captain (Expo Router + Tamagui 3.3.1) and Next.js Operator (Next 16.4.3 + Ant Design 6.6.7). **No commercial business feature or service client** is activated. The original exact Expo/RN/React/Node/pnpm dependencies and app IDs are preserved. Original manifests are recorded in [the donor version snapshot](docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json).
 
-All brand semantics come from `packages/design-system/src/tokens`; Expo renders with `packages/tamagui-config` and Operator consumes the same tokens. A minimal React Native appearance controller is retained for SYSTEM/LIGHT/DARK preference, **not** the donor `@expo/ui` picker or Studio business publisher.
+Compiled brand roots and semantic light/dark roles belong only to `packages/design-system/src/brand/colors.ts` and `src/semantics/themes.ts`. `src/web/css-projection.ts` generates browser semantic variables; numeric layout, font sizing, radius, motion and overlay tokens are owned by Tamagui for Expo and Ant Design for Operator, rather than duplicated in the brand package. The minimal React Native SYSTEM/LIGHT/DARK appearance controller now lives at `packages/tamagui-config/src/appearance.tsx` and consumes the same semantic source. No second UI picker or Studio publisher was introduced.
 
 ## Validations
 

@@ -22,7 +22,6 @@ for (const [name, [slug, packageId, scheme, projectId]] of Object.entries(expect
   assert.ok(source, "Missing original manifest " + name);
   const current = json(`${rel}/package.json`);
   assert.equal(current.private, true);
-  assert.equal(current.dependencies["@bthwani/design-system"], "workspace:*");
   assert.equal(current.dependencies["@bthwani/tamagui-config"], "workspace:*");
   for (const [kind, original] of Object.entries({dependencies: source.dependencies, devDependencies: source.devDependencies})) {
     for (const [dependency, version] of Object.entries(original ?? {})) {
@@ -67,9 +66,19 @@ assert.equal(newPanel.dependencies.antd,"6.6.7");
 assert.equal(newPanel.dependencies.next,"16.4.3");
 assert.equal(json("packages/tamagui-config/package.json").dependencies.tamagui,"3.3.1");
 assert.equal(json("packages/tamagui-config/package.json").dependencies["@tamagui/config"],"3.3.1");
-const ap=read("packages/design-system/src/native/appearance.tsx");
+// Stage-4 renderer-boundary evidence: no second numeric token authority.
+const designPackage = json("packages/design-system/package.json");
+const rendererPackage = json("packages/tamagui-config/package.json");
+assert.equal(designPackage.exports["./theme"], "./src/semantics/themes.ts");
+assert.equal(designPackage.exports["./web/css-projection"], "./src/web/css-projection.ts");
+assert.equal(rendererPackage.exports["./appearance"], "./src/appearance.tsx");
+for (const path of ["packages/design-system/src/tokens", "packages/design-system/src/theme",
+  "packages/design-system/src/native"]) {
+  assert.ok(!existsSync(join(root, path)), "Retired design owner must stay absent: " + path);
+}
+const ap=read("packages/tamagui-config/src/appearance.tsx");
 assert.ok(!ap.includes('from "@expo/ui"'),"Old native Expo UI appearance picker is not canonical");
-assert.ok(!existsSync(join(root,"packages/design-system/src/theme/studio-palette.ts")),
+assert.ok(!existsSync(join(root,"packages/design-system/src/semantics/studio-palette.ts")),
   "Unimplemented Studio engine must not be imported from donor");
 assert.ok(!existsSync(join(root,"tools/mobile/create-bthwani-metro-config.cjs")),
   "Legacy Metro watcher/cache implementation must not be copied");

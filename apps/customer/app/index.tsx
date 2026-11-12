@@ -6,7 +6,7 @@ export function generateMetadata(): Metadata {
 }
 import { SafeAreaView, ScrollView } from "react-native";
 import { Button, Input, Text, XStack, YStack } from "tamagui";
-import { useMobileAppearance } from "@bthwani/design-system/native/appearance";
+import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 
 export default function FoundationHome() {
   const { theme, preference, setPreference } = useMobileAppearance();
@@ -26,6 +26,7 @@ export default function FoundationHome() {
           <Text role="alert" style={{ color: theme.success }}>نجاح: حزم العرض متصلة</Text>
           <Text role="alert" style={{ color: theme.danger }}>مثال خطأ: لا توجد خدمة API في هذه المرحلة</Text>
           <Link href="/health" style={{ color: theme.interactiveText, fontSize: 18 }}>فتح صفحة اختبار الملاحة</Link>
+          <Link href="/lab">فتح مختبر مكونات Tamagui</Link>
         </YStack>
       </ScrollView>
     </SafeAreaView>

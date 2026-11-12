@@ -1,7 +1,7 @@
 import { Link } from "expo-router";
 import { SafeAreaView } from "react-native";
 import { Text, YStack } from "tamagui";
-import { useMobileAppearance } from "@bthwani/design-system/native/appearance";
+import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 
 export default function HealthRoute() {
   const { theme } = useMobileAppearance();

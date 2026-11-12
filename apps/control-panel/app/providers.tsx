@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, type ReactNode } from "react";
-import { ConfigProvider, theme as antTheme } from "antd";
+import { ConfigProvider, Segmented, theme as antTheme } from "antd";
 import arEG from "antd/locale/ar_EG";
 import { themes } from "@bthwani/design-system/theme";
 
@@ -25,11 +25,16 @@ export function Providers({ children }: Readonly<{ children: ReactNode }>) {
   }}>
     <section data-theme-preference={pref} style={{ minHeight: "100vh", background: colors.background, color: colors.color, padding: 24, fontFamily: "system-ui" }}>
       <nav aria-label="خيارات المظهر" style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
-        {(["system", "light", "dark"] as const).map(value =>
-          <button key={value} type="button" aria-pressed={pref === value} onClick={() => setPref(value)}
-            style={{ background: colors.surface, color: colors.color, border: `1px solid ${colors.borderColor}`, padding: 8, borderRadius: 8 }}>
-            {value === "system" ? "النظام" : value === "light" ? "فاتح" : "داكن"}
-          </button>)}
+        <Segmented
+          aria-label="اختيار المظهر"
+          value={pref}
+          onChange={value => setPref(value as AppearancePreference)}
+          options={[
+            { label: "النظام", value: "system" },
+            { label: "فاتح", value: "light" },
+            { label: "داكن", value: "dark" },
+          ]}
+        />
       </nav>
       {children}
     </section>

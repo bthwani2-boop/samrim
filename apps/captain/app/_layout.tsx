@@ -3,7 +3,7 @@ import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { Stack } from "expo-router";
 import { TamaguiProvider, Theme } from "tamagui";
-import { AppearanceProvider, createMobileAppearanceController, useMobileAppearance } from "@bthwani/design-system/native/appearance";
+import { AppearanceProvider, createMobileAppearanceController, useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { tamaguiConfig } from "@bthwani/tamagui-config";
 
 function AppRoutes() {

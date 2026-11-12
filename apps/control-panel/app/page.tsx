@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Alert, Button, Input, Space, Typography } from "antd";
 
 export default function FoundationPage() {
-  return <main style={{ maxWidth: 800, margin: "40px auto", direction: "rtl" }}>
+  return <main style={{ maxWidth: 800, margin: "40px auto" }}>
     <Space orientation="vertical" size="large" style={{ width: "100%" }}>
       <Typography.Title level={2}>بثواني — لوحة المشغّل</Typography.Title>
       <Typography.Paragraph>واجهة اختبار هندسية فقط. لا توجد جلسة مشغّل أو صلاحيات مالية أو متاجر حقيقية.</Typography.Paragraph>
@@ -12,6 +12,7 @@ export default function FoundationPage() {
       <Alert showIcon type="success" title="نجاح إعداد الثيم والمكوّنات" />
       <Alert showIcon type="error" title="الخدمات التجارية غير مفعّلة بعد" />
       <Link href="/health">اختبار التنقل إلى صفحة التحقق</Link>
+      <Link href="/lab">فتح مختبر مكونات Ant Design</Link>
     </Space>
   </main>;
 }

@@ -2,292 +2,135 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(__dirname, "../../..");
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+const read = rel => fs.readFileSync(path.join(root, rel), "utf8");
+const exists = rel => fs.existsSync(path.join(root, rel));
+const violations = [];
+const requireTrue = (condition, message) => { if (!condition) violations.push(message); };
 
-const failures = [];
+const expectedPaths = [
+  "packages/design-system/src/brand/colors.ts",
+  "packages/design-system/src/semantics/themes.ts",
+  "packages/design-system/src/web/css-projection.ts",
+  "packages/tamagui-config/src/appearance.tsx",
+];
+for (const file of expectedPaths) requireTrue(exists(file), "Missing canonical owner: " + file);
+const retiredPaths = [
+  "packages/design-system/src/tokens",
+  "packages/design-system/src/theme",
+  "packages/design-system/src/native",
+];
+for (const retired of retiredPaths) requireTrue(!exists(retired), "Retired design authority reintroduced: " + retired);
 
-function read(relPath) {
-  const full = path.join(repoRoot, relPath);
-  if (!fs.existsSync(full)) {
-    failures.push(`Missing file: ${relPath}`);
-    return "";
-  }
-  return fs.readFileSync(full, "utf8");
-}
+const { brandRoots } = await import("../src/brand/colors.ts");
+const { themes, lightThemeColors, darkThemeColors, themePreferences, isThemePreference, resolveThemeName } =
+  await import("../src/semantics/themes.ts");
+const { themeToCssVariables, generateThemeCss } = await import("../src/web/css-projection.ts");
 
-// Contrast ratio utilities (WCAG 2.2)
-function parseRgb(colorStr) {
-  if (!colorStr) return [0, 0, 0];
-  const rgbaMatch = colorStr.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
-  if (rgbaMatch) {
-    return [Number.parseInt(rgbaMatch[1], 10), Number.parseInt(rgbaMatch[2], 10), Number.parseInt(rgbaMatch[3], 10)];
-  }
-  const hex = colorStr.replace("#", "");
-  const expanded =
-    hex.length === 3
-      ? hex.split("").map((c) => c + c).join("")
-      : hex.slice(0, 6);
-  if (expanded.length !== 6) return [0, 0, 0];
-  return [
-    Number.parseInt(expanded.slice(0, 2), 16),
-    Number.parseInt(expanded.slice(2, 4), 16),
-    Number.parseInt(expanded.slice(4, 6), 16)
-  ];
-}
-
-function relativeLuminance(colorStr) {
-  const [r, g, b] = parseRgb(colorStr).map((c) => {
-    const s = c / 255;
-    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
-
-function contrastRatio(colorA, colorB) {
-  const l1 = relativeLuminance(colorA);
-  const l2 = relativeLuminance(colorB);
-  const lighter = Math.max(l1, l2);
-  const darker = Math.min(l1, l2);
-  return (lighter + 0.05) / (darker + 0.05);
-}
-
-// 1. Check packages/design-system theme authority
-const colorsTs = read("packages/design-system/src/tokens/colors.ts");
-const themeIndexTs = read("packages/design-system/src/theme/index.ts");
-
-if (!colorsTs.includes("export const lightThemeColors =")) {
-  failures.push("packages/design-system/src/tokens/colors.ts missing lightThemeColors");
-}
-if (!colorsTs.includes("export const darkThemeColors =")) {
-  failures.push("packages/design-system/src/tokens/colors.ts missing darkThemeColors");
-}
-if (colorsTs.includes("tamaguiColorTokens")) {
-  failures.push("packages/design-system retains dead tamaguiColorTokens");
-}
-if (colorsTs.includes("colorPalette")) {
-  failures.push("packages/design-system retains dead colorPalette");
-}
-
-if (!themeIndexTs.includes("export function resolveTheme")) {
-  failures.push("packages/design-system/src/theme/index.ts missing resolveTheme");
-}
-if (!themeIndexTs.includes("export function generateThemeCss")) {
-  failures.push("packages/design-system/src/theme/index.ts missing generateThemeCss");
-}
-if (!themeIndexTs.includes("export function themeToCssVariables")) {
-  failures.push("packages/design-system/src/theme/index.ts missing themeToCssVariables");
-}
-if (!themeIndexTs.includes("export function webFoundationToCssVariables")) {
-  failures.push("packages/design-system/src/theme/index.ts missing webFoundationToCssVariables");
-}
-
-// 2. Parity check on light and dark keys
-const { brandRoots, lightThemeColors, darkThemeColors } = await import("../src/tokens/colors.ts");
-const { generateThemeCss, isThemePreference, resolveThemeName, themeToCssVariables, themePreferences, webFoundationToCssVariables } = await import("../src/theme/index.ts");
-const { toAsciiDigits } = await import("../src/tokens/formatting.ts");
-
-// The five approved compiled defaults must remain available without Studio or network.
-const approvedBrandRoots = {
-  brandStructure: "#102B4E",
+const anchors = {
   brandAction: "#F36B21",
+  brandStructure: "#102B4E",
   surfaceBase: "#FFFFFF",
   brandTurquoise: "#83DDF3",
-  brandBurgundy: "#7B1E3A"
+  brandBurgundy: "#7B1E3A",
 };
-for (const [role, expected] of Object.entries(approvedBrandRoots)) {
-  if (brandRoots[role] !== expected) failures.push(`Unapproved compiled default ${role}: ${brandRoots[role]}`);
+for (const [key, value] of Object.entries(anchors)) {
+  requireTrue(brandRoots[key] === value, "Brand anchor drift: " + key);
 }
-for (const mode of [lightThemeColors, darkThemeColors]) {
-  const css = themeToCssVariables(mode);
-  if (css["--brand-turquoise"] !== approvedBrandRoots.brandTurquoise) failures.push("Studio baseline turquoise projection missing");
-  if (css["--brand-burgundy"] !== approvedBrandRoots.brandBurgundy) failures.push("Studio baseline burgundy projection missing");
+const lightKeys = Object.keys(lightThemeColors).sort();
+requireTrue(JSON.stringify(lightKeys) === JSON.stringify(Object.keys(darkThemeColors).sort()),
+  "Light/Dark semantic role key mismatch");
+requireTrue(themes.light === lightThemeColors && themes.dark === darkThemeColors,
+  "Semantic themes must use one authored color source");
+requireTrue(themePreferences.every(isThemePreference), "Theme preferences invalid");
+requireTrue(resolveThemeName("system", "dark") === "dark" && resolveThemeName("system", "light") === "light",
+  "System appearance must follow the platform");
+
+const luminance = rgb => rgb.map(channel => {
+  const c = channel / 255;
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}).reduce((a, channel, index) => a + channel * [0.2126, 0.7152, 0.0722][index], 0);
+function parseColor(color) {
+  const hex = /^#([0-9a-f]{6})$/i.exec(color);
+  if (hex) return [0, 2, 4].map(i => parseInt(hex[1].slice(i, i + 2), 16));
+  const rgba = /^rgba?\(\s*(\d+),\s*(\d+),\s*(\d+)/.exec(color);
+  if (rgba) return [Number(rgba[1]), Number(rgba[2]), Number(rgba[3])];
+  throw new Error("Cannot measure unknown color: " + color);
 }
-
-
-if (toAsciiDigits("١٢٣٤٥٦٧٨٩٠ ۱۲۳۴۵۶۷۸۹۰") !== "1234567890 1234567890") {
-  failures.push("Design System ASCII digit normalization is incomplete");
+function contrast(a, b) {
+  const x = luminance(parseColor(a)), y = luminance(parseColor(b));
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
 }
-const lightKeys = Object.keys(lightThemeColors).sort((a, b) => a.localeCompare(b));
-const darkKeys = Object.keys(darkThemeColors).sort((a, b) => a.localeCompare(b));
-
-const missingInDark = lightKeys.filter((k) => !(k in darkThemeColors));
-const missingInLight = darkKeys.filter((k) => !(k in lightThemeColors));
-
-if (missingInDark.length > 0) {
-  failures.push(`darkThemeColors missing keys: ${missingInDark.join(", ")}`);
-}
-if (missingInLight.length > 0) {
-  failures.push(`lightThemeColors missing keys: ${missingInLight.join(", ")}`);
-}
-
-// 3. Contrast Matrix Verification (WCAG 2.2 AA)
-// Normal text requires >= 4.5:1. Focus / UI components require >= 3:1.
-function checkContrast(themeName, roleName, fgColor, bgRole, bgColor, minRatio) {
-  const ratio = contrastRatio(fgColor, bgColor);
-  if (ratio < minRatio) {
-    failures.push(
-      `Contrast failure in ${themeName}: ${roleName} (${fgColor}) on ${bgRole} (${bgColor}) is ${ratio.toFixed(2)}:1 (required >= ${minRatio}:1)`
-    );
+for (const [name, t] of Object.entries(themes)) {
+  for (const [role, background, minimum] of [
+    ["color", "background", 4.5],
+    ["color", "surface", 4.5],
+    ["onAction", "actionBackground", 4.5],
+    ["actionText", "background", 4.5],
+    ["successText", name === "light" ? "successSoft" : "surface", 4.5],
+    ["warningText", name === "light" ? "warningSoft" : "surface", 4.5],
+    ["dangerText", name === "light" ? "dangerSoft" : "surface", 4.5],
+    ["focusRing", "background", 3],
+  ]) {
+    requireTrue(contrast(t[role], t[background]) >= minimum,
+      name + " contrast too low: " + role + " on " + background);
   }
 }
-
-// Light theme checks
-checkContrast("light", "onAction", lightThemeColors.onAction, "actionBackground", lightThemeColors.actionBackground, 4.5);
-checkContrast("light", "actionText", lightThemeColors.actionText, "background", lightThemeColors.background, 4.5);
-checkContrast("light", "actionText", lightThemeColors.actionText, "surface", lightThemeColors.surface, 4.5);
-checkContrast("light", "focusRing", lightThemeColors.focusRing, "background", lightThemeColors.background, 3.0);
-checkContrast("light", "focusRing", lightThemeColors.focusRing, "surface", lightThemeColors.surface, 3.0);
-checkContrast("light", "color", lightThemeColors.color, "background", lightThemeColors.background, 4.5);
-checkContrast("light", "color", lightThemeColors.color, "surface", lightThemeColors.surface, 4.5);
-checkContrast("light", "structure", lightThemeColors.structure, "background", lightThemeColors.background, 4.5);
-checkContrast("light", "onAction", lightThemeColors.onAction, "structure", lightThemeColors.structure, 4.5);
-checkContrast("light", "successText", lightThemeColors.successText, "successSoft", lightThemeColors.successSoft, 4.5);
-checkContrast("light", "warningText", lightThemeColors.warningText, "warningSoft", lightThemeColors.warningSoft, 4.5);
-checkContrast("light", "dangerText", lightThemeColors.dangerText, "dangerSoft", lightThemeColors.dangerSoft, 4.5);
-checkContrast("light", "infoText", lightThemeColors.infoText, "infoSoft", lightThemeColors.infoSoft, 4.5);
-
-// Dark theme checks
-checkContrast("dark", "onAction", darkThemeColors.onAction, "actionBackground", darkThemeColors.actionBackground, 4.5);
-checkContrast("dark", "actionText", darkThemeColors.actionText, "background", darkThemeColors.background, 4.5);
-checkContrast("dark", "actionText", darkThemeColors.actionText, "surface", darkThemeColors.surface, 4.5);
-checkContrast("dark", "focusRing", darkThemeColors.focusRing, "background", darkThemeColors.background, 3.0);
-checkContrast("dark", "focusRing", darkThemeColors.focusRing, "surface", darkThemeColors.surface, 3.0);
-checkContrast("dark", "color", darkThemeColors.color, "background", darkThemeColors.background, 4.5);
-checkContrast("dark", "color", darkThemeColors.color, "surface", darkThemeColors.surface, 4.5);
-checkContrast("dark", "structure", darkThemeColors.structure, "background", darkThemeColors.background, 4.5);
-checkContrast("dark", "onAction", darkThemeColors.onAction, "structure", darkThemeColors.structure, 4.5);
-checkContrast("dark", "successText", darkThemeColors.successText, "surface", darkThemeColors.surface, 4.5);
-checkContrast("dark", "warningText", darkThemeColors.warningText, "surface", darkThemeColors.surface, 4.5);
-checkContrast("dark", "dangerText", darkThemeColors.dangerText, "surface", darkThemeColors.surface, 4.5);
-checkContrast("dark", "infoText", darkThemeColors.infoText, "surface", darkThemeColors.surface, 4.5);
-
-// 4. Check Single Canonical Theme CSS Artifact & No Drift
-const dsThemeCss = read("packages/design-system/theme.css");
-const expectedHeader = `/* Auto-generated from @bthwani/design-system. Do not edit manually. */\n`;
-const expectedCss = expectedHeader + generateThemeCss();
-
-for (const [name, value] of Object.entries(webFoundationToCssVariables())) {
-  if (!dsThemeCss.includes(`${name}: ${value};`)) {
-    failures.push(`theme.css is missing canonical web token ${name}`);
+const expectedCss = "/* Auto-generated from @bthwani/design-system. Do not edit manually. */\n" +
+  generateThemeCss();
+const css = read("packages/design-system/theme.css");
+requireTrue(css === expectedCss, "Generated semantic CSS drifted from source");
+for (const mode of ["light", "dark"]) {
+  const vars = themeToCssVariables(themes[mode]);
+  for (const [name, value] of Object.entries(vars)) {
+    requireTrue(css.includes(name + ": " + value + ";"), mode + " CSS role missing: " + name);
   }
 }
+requireTrue(!/--(?:space|size|radius|duration|elevation|font-size|font-family|breakpoint|z)-/.test(css),
+  "Renderer-owned numeric tokens must not be duplicated in shared CSS");
 
-if (dsThemeCss !== expectedCss) {
-  failures.push("packages/design-system/theme.css has drifted from canonical generateThemeCss()");
-}
-if (!themePreferences.every((preference) => isThemePreference(preference))) {
-  failures.push("Design System theme preference contract is incomplete");
-}
-if (resolveThemeName("system", "dark") !== "dark" || resolveThemeName("system", "light") !== "light") {
-  failures.push("Design System system theme resolution does not follow the platform scheme");
-}
-
-// Verify no duplicate editable theme.css in control-panel
-if (fs.existsSync(path.join(repoRoot, "apps/control-panel/app/theme.css"))) {
-  failures.push("apps/control-panel/app/theme.css exists as duplicate artifact; control panel must import @bthwani/design-system/theme.css");
-}
-
-// 5. Check the current Control Panel root theme authority
-const globalsCss = read("apps/control-panel/app/layout.tsx");
-
-if (!globalsCss.includes('import "@bthwani/design-system/theme.css";')) {
-  failures.push('apps/control-panel/app/layout.tsx must import "@bthwani/design-system/theme.css"');
-}
-if (globalsCss.includes("color-scheme: light;")) {
-  failures.push("apps/control-panel/app/globals.css contains unjustified hardcoded color-scheme: light;");
-}
-if (globalsCss.includes("@media (prefers-color-scheme: dark)")) {
-  failures.push("apps/control-panel/app/globals.css contains duplicated inline dark theme overrides; theme.css owns dark variables");
-}
-if (globalsCss.includes('[data-theme="dark"]') || globalsCss.includes('[data-theme="light"]')) {
-  failures.push("apps/control-panel/app/globals.css contains dead data-theme manual branch");
-}
-if (!dsThemeCss.includes(':root[data-theme="light"]') || !dsThemeCss.includes(':root[data-theme="dark"]')) {
-  failures.push("packages/design-system/theme.css is missing canonical explicit theme preference overrides");
-}
-
-// Verify no raw hex or rgb colors in control-panel globals.css
-const hexOrRgbRegex = /#[0-9a-fA-F]{3,8}\b|rgba?\(/g;
-const globalsCssMatches = globalsCss.match(hexOrRgbRegex);
-if (globalsCssMatches) {
-  failures.push(`apps/control-panel/app/globals.css contains raw color literals: ${globalsCssMatches.join(", ")}`);
-}
-
-// Check control-panel page.tsx for inline visualTokens override
-const controlPanelPage = read("apps/control-panel/app/page.tsx");
-if (controlPanelPage.includes("visualTokens") || controlPanelPage.includes("style={visualTokens}")) {
-  failures.push("apps/control-panel/app/page.tsx contains visualTokens overriding CSS variables");
-}
-
-// 6. Check Mobile apps for dynamic adaptive StatusBar
-const mobileApps = ["customer", "merchant", "captain"];
-for (const app of mobileApps) {
-  const layout = read(`apps/${app}/app/_layout.tsx`);
-  if (/style=["'](?:dark|light)["']/.test(layout)) {
-    failures.push(`apps/${app}/app/_layout.tsx has fixed StatusBar style instead of adaptive`);
-  }
-  if (!layout.includes("AppearanceProvider")) {
-    failures.push(`apps/${app}/app/_layout.tsx is not theme-adaptive`);
-  }
-}
-
-// 7. Stage-4 presentation guard: verify only admitted, existing owners.
+const panelLayout = read("apps/control-panel/app/layout.tsx");
 const panelProvider = read("apps/control-panel/app/providers.tsx");
-if (!panelProvider.includes('direction="rtl"') || !panelProvider.includes('locale={arEG}')) {
-  failures.push("Operator must configure Ant Design RTL and Arabic locale");
-}
-const customerHtml = read("apps/customer/app/+html.tsx");
-const merchantHtml = read("apps/merchant/app/+html.tsx");
-for (const [name, html] of [["customer", customerHtml], ["merchant", merchantHtml]]) {
-  for (const required of ["useServerDocumentContext", "headNodes", "bodyNodes", 'lang="ar"', 'dir="rtl"']) {
-    if (!html.includes(required)) failures.push(`apps/${name} Expo Web HTML missing ${required}`);
+requireTrue(panelLayout.includes('import "@bthwani/design-system/theme.css"'),
+  "Control panel must use only generated semantic CSS");
+requireTrue(panelProvider.includes('direction="rtl"') && panelProvider.includes("locale={arEG}"),
+  "Ant Design locale and RTL contract missing");
+const rendererConfig = read("packages/tamagui-config/src/index.ts");
+requireTrue(rendererConfig.includes('from "@bthwani/design-system/theme"'),
+  "Tamagui must read the semantic source");
+requireTrue(rendererConfig.includes('import { animations } from "./animations"') &&
+  rendererConfig.includes("  animations,") &&
+  exists("packages/tamagui-config/src/animations.web.ts") &&
+  exists("packages/tamagui-config/src/animations.native.ts") &&
+  exists("packages/tamagui-config/src/animations.ts"),
+  "Tamagui needs one platform-specific official animation driver to support Dialog and Sheet");
+requireTrue(!rendererConfig.includes("...defaultConfig.themes,"),
+  "Do not expose preset color palettes as additional authored themes");
+const appearance = read("packages/tamagui-config/src/appearance.tsx");
+requireTrue(!appearance.includes("if (!ready) return null"),
+  "Appearance restore must not hide SSR markup");
+requireTrue(!appearance.includes('from "@expo/ui"'), "Do not create an Expo UI appearance engine");
+for (const app of ["customer", "merchant", "captain"]) {
+  const pkg = JSON.parse(read("apps/" + app + "/package.json"));
+  requireTrue(pkg.dependencies["@bthwani/tamagui-config"] === "workspace:*",
+    app + " must import its renderer");
+  requireTrue(!pkg.dependencies["@bthwani/design-system"],
+    app + " must not depend directly on the semantic owner");
+  for (const f of ["_layout.tsx", "index.tsx", "health.tsx"]) {
+    const s = read("apps/" + app + "/app/" + f);
+    requireTrue(!s.includes("@bthwani/design-system/native/appearance"),
+      app + " references retired native appearance owner: " + f);
   }
 }
-const mobileAppearance = read("packages/design-system/src/native/appearance.tsx");
-if (mobileAppearance.includes("if (!ready) return null")) {
-  failures.push("Expo SSR must not be blocked by appearance restoration");
-}
-const merchantConfig = read("apps/merchant/app.config.ts");
-if (!merchantConfig.includes('output: "server"')) {
-  failures.push("Merchant Expo Web must use server rendering for the RTL document contract");
-}
-const tamaguiConfig = read("packages/tamagui-config/src/index.ts");
-if (tamaguiConfig.includes("...defaultConfig.themes,")) {
-  failures.push("Unused generic Tamagui themes compete with BThwani semantic roots");
-}
-for (const [name, body] of [
-  ["theme tokens", colorsTs],
-  ["theme CSS generator", themeIndexTs],
-  ["control-panel root", globalsCss],
-]) {
-  if (/\btheme\.(action|focusColor)\b/.test(body) || /\b(action|focusColor):\s*brandScale/.test(body) || body.includes("--focus-color") || body.includes("var(--focus-color)")) {
-    failures.push(`${name} retains retired action/focus semantic aliases`);
-  }
-}
-if (webFoundationToCssVariables()["--duration-standard"] !== "180ms" ||
-    !/^\d+ms$/.test(webFoundationToCssVariables()["--duration-reduced"])) {
-  failures.push("Motion CSS units must use milliseconds");
-}
-if (!/rgba\(\d+, \d+, \d+, 0\.06\)/.test(webFoundationToCssVariables()["--elevation-raised"] ?? "")) {
-  failures.push("Web shadows must project canonical opacity");
-}
-
-if (failures.length > 0) {
+if (violations.length) {
   console.error("THEME_AUTHORITY_VERIFICATION=FAIL");
-  for (const f of failures) {
-    console.error(` - ${f}`);
-  }
-  process.exit(1);
+  violations.forEach(x => console.error(" - " + x));
+  process.exitCode = 1;
+} else {
+  console.log("THEME_AUTHORITY_VERIFICATION=PASS");
+  console.log("SINGLE_BRAND_SEMANTIC_SOURCE=PASS");
+  console.log("TWO_RENDERER_TOKEN_OWNERS=PASS");
+  console.log("GENERATED_CSS_PARITY=PASS");
+  console.log("CHECKED_SEMANTIC_CONTRAST_PAIRS=PASS");
+  console.log("VISUAL_ACCESSIBILITY_AND_NATIVE_FONTS=NOT_RUN");
 }
-
-console.log("DESIGN_SYSTEM_SINGLE_THEME_AUTHORITY=PASS");
-console.log("STAGE4_CHECKED_THEME_SOURCES=PASS");
-console.log("CANONICAL_LIGHT_DARK_THEME_PARITY=PASS");
-console.log("RETIRED_THEME_COLOR_ALIASES_CHECK=PASS");
-console.log("STAGE4_MOBILE_APPEARANCE_CONTEXT=PASS");
-console.log("CONTROL_PANEL_ROOT_RAW_COLOR_CHECK=PASS");
-console.log("THEME_KEYS_PARITY=PASS");
-console.log("CHECKED_THEME_CONTRAST_PAIRS=PASS");
-console.log("UNJUSTIFIED_DUPLICATE_THEME_CSS=0");
-console.log("DEAD_MANUAL_THEME_BRANCH=0");

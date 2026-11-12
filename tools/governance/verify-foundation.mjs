@@ -264,7 +264,7 @@ for(const anchor of ['## DESIGN-01 — Exclusive rendering, token and theme auth
  '## DESIGN-03 — Exclusive Operator navigation and Policies/Studio split']){
  if(!currentDesign.includes(anchor))fail('reconciled design owner decision missing: '+anchor);
 }
-for(const invariant of ['packages/design-system/src/tokens/colors.ts','packages/tamagui-config',
+for(const invariant of ['packages/design-system/src/brand/colors.ts','packages/tamagui-config',
  'AntDesignProvider','createTamagui(defaultConfig)','CLIENT_HOME','no arbitrary JS/CSS']){
  if(!currentDesign.includes(invariant))fail('design-source/Studio boundary erased: '+invariant);
 }

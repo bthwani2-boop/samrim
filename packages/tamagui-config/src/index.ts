@@ -1,5 +1,6 @@
 import { defaultConfig } from "@tamagui/config/v6";
 import { createTamagui } from "tamagui";
+import { animations } from "./animations";
 import { themes as brandThemes } from "@bthwani/design-system/theme";
 
 // Tamagui is the sole UI primitive renderer for Customer/Merchant/Captain.
@@ -34,6 +35,7 @@ function makeTheme(mode: "light" | "dark") {
 }
 export const tamaguiConfig = createTamagui({
   ...defaultConfig,
+  animations,
   // Expose only BThwani-approved roots. The 200+ generic example themes
   // from defaultConfig are not an additional mutable visual palette.
   // Add specialized subthemes only when an actual consumer needs them.

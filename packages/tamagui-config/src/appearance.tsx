@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Appearance, Platform } from "react-native";
-import { isThemePreference, resolveTheme, resolveThemeName, type ThemeName, type ThemePreference } from "../theme/index";
-import type { ThemeColors } from "../tokens/index";
+import { isThemePreference, resolveTheme, resolveThemeName, type ThemeName, type ThemePreference } from "@bthwani/design-system/theme";
+import type { ThemeColors } from "@bthwani/design-system/theme";
 
 // Stage-4 appearance foundation: React Native system preference and the
 // canonical BThwani semantic token source. No native Expo UI picker and no

@@ -10,29 +10,16 @@
   ],
   "exports": {
     ".": "./src/index.ts",
-    "./tokens": "./src/tokens/index.ts",
-    "./theme": "./src/theme/index.ts",
+    "./theme": "./src/semantics/themes.ts",
     "./theme.css": "./theme.css",
-    "./native/appearance": "./src/native/appearance.tsx"
+    "./web/css-projection": "./src/web/css-projection.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "theme:check": "node --loader ./tools/ts-resolver.mjs tools/generate-theme-css.mjs --check",
     "theme:verify": "node --loader ./tools/ts-resolver.mjs tools/verify-theme-authority.mjs"
   },
-  "peerDependencies": {
-    "react": "19.3.0",
-    "react-native": "0.88.0"
-  },
-  "peerDependenciesMeta": {
-    "react-native": {
-      "optional": true
-    }
-  },
   "devDependencies": {
-    "@types/react": "19.3.0",
-    "typescript": "7.0.2",
-    "react": "19.3.0",
-    "react-native": "0.88.0"
+    "typescript": "7.0.2"
   }
 }
