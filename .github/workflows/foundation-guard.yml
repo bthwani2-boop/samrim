@@ -32,7 +32,7 @@ jobs:
           node --version
           git status --short
       - name: Test guard sensitivity
-        run: node --test tools/governance/verify-foundation.test.mjs
+        run: node --test tools/governance/verify-foundation.test.mjs tools/governance/review-examples.test.mjs
       - name: Verify foundation without asserting business readiness
         run: node tools/governance/verify-foundation.mjs
       - name: Record limits explicitly

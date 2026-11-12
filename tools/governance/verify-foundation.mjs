@@ -16,6 +16,7 @@ const required=[
  'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',...domainFiles,'docs/REFOUNDATION-PLAN.md','docs/reference/README.md','docs/reference/HISTORICAL-SOURCE-INVENTORY.md','docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md',
  '.specify/init-options.json','.specify/integration.json','.specify/integrations/speckit.manifest.json','.specify/memory/constitution.md',
  '.github/workflows/foundation-guard.yml','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs',
+ 'tools/governance/review-examples.test.mjs',
  '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
  'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','tsconfig.base.json','biome.json',
  'README.md','docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md','tools/dev/verify-workspace.mjs'
@@ -292,6 +293,63 @@ if(sourceSections.length!==24||new Set(sourceSections).size!==24 ||
  fail('design source 24-section decision concordance incomplete or duplicated');
 if(!concordance.includes('REVIEW_BLOCKED')||!concordance.includes('GOVERNANCE_CUTOVER stays NOT_READY'))
  fail('design-plan concordance cannot claim unreviewed cutover success');
+
+const riskMarker='## 2026-11-12 — Critical-risk review evidence matrix and executable illustrative checks';
+const riskStart=plan.indexOf(riskMarker);
+if(riskStart<0)fail('independent risk review evidence packet missing');
+const reviewStart=plan.indexOf('### Independent review sign-off register — no invented approvals',riskStart);
+const donorMarker='### Two additional historical execution/audit sources — explicit section-level decision reconciliation';
+const donorStart=plan.indexOf(donorMarker,riskStart);
+if(reviewStart<0||donorStart<reviewStart)fail('review packet/sign-off/source order corrupted');
+const reviewText=plan.slice(reviewStart,donorStart);
+const gates=['FIN-01','FIN-02','FIN-03','SEC-01','SEC-02','MIG-01','LEGAL-01'];
+const rows=[...reviewText.matchAll(/^\| (FIN-0[123]|SEC-0[12]|MIG-01|LEGAL-01) \| ([^|\r\n]+) \| ([^|\r\n]+) \| ([^|\r\n]+) \| ([^|\r\n]+) \|$/gm)];
+if(rows.length!==gates.length || new Set(rows.map(m=>m[1])).size!==gates.length ||
+ gates.some(g=>!rows.some(row=>row[1]===g)))
+ fail('seven high-risk independent sign-off gates must appear once each');
+for(const row of rows){
+ const [gate,reviewer,date,evidence,status]=row.slice(1).map(x=>x.trim());
+ if(status==='REVIEW_BLOCKED'){
+  if(reviewer!=='NOT_ASSIGNED'||date!=='NOT_RUN'||evidence!=='NOT_PROVIDED')
+   fail('blocked reviewer row must not claim unverified approval: '+gate);
+ }else if(status==='PASS'){
+  // Syntax/provenance checks only. Real reviewer independence, qualification,
+  // decision and signatures always require human verification.
+  if(reviewer.length<12||/SELF_APPROVED|NOT_ASSIGNED|CHATGPT|AI_REVIEW/i.test(reviewer)||
+   !/^20\d{2}-\d{2}-\d{2}$/.test(date)||
+   !/^(https:\/\/|docs\/|governance\/)/.test(evidence)||
+   /NO_EVIDENCE|NOT_PROVIDED|NOT_RUN/i.test(evidence))
+   fail('do not fabricate independent reviewer approval in candidate risk packet: '+gate);
+ }else fail('unknown independent reviewer status: '+gate);
+}
+const riskBody=plan.slice(riskStart,reviewStart);
+for(const expected of ['FIN-01-WALLET','FIN-01-COD','FIN-01-MIXED','FIN-01-CANCEL',
+ 'FIN-01-UNKNOWN','FIN-02-AGREEMENT','FIN-02-REMIT','FIN-02-BENEFICIARY',
+ 'FIN-03-CASHIN','FIN-03-MARKUP','SEC-01-ROOT','SEC-01-SESSION',
+ 'SEC-02-STORE','SEC-02-SWITCH','SEC-02-CAPTAIN','MIG-01-EMPTY',
+ 'MIG-01-APPLIED','MIG-01-RESTORE','MIG-01-FAIL','LEGAL-01-MERCHANT',
+ 'LEGAL-01-CAPTAIN','LEGAL-01-CLIENT','LEGAL-01-PROVIDER']){
+ const count=[...riskBody.matchAll(new RegExp('^\\| '+expected+' \\|','gm'))].length;
+ if(count!==1)fail('risk review scenario missing/duplicated: '+expected);
+}
+const donorText=plan.slice(donorStart);
+const donorA=donorText.slice(donorText.indexOf('**Donor A:**'),donorText.indexOf('**Donor B:**'));
+const donorB=donorText.slice(donorText.indexOf('**Donor B:**'));
+const donorAIDs=[...donorA.matchAll(/^\| (0[1-9]|1[0-5]) \|/gm)].map(m=>m[1]);
+const donorBIDs=[...donorB.matchAll(/^\| (0[0-9]|1[0-5]|FOLLOWUP) \|/gm)].map(m=>m[1]);
+if(donorAIDs.length!==15||new Set(donorAIDs).size!==15||
+ Array.from({length:15},(_,i)=>String(i+1).padStart(2,'0')).some(id=>!donorAIDs.includes(id)))
+ fail('historic full-system 15-section evidence mapping incomplete');
+if(donorBIDs.length!==17||new Set(donorBIDs).size!==17||
+ Array.from({length:16},(_,i)=>String(i).padStart(2,'0')).some(id=>!donorBIDs.includes(id))||
+ !donorBIDs.includes('FOLLOWUP'))fail('historic design-audit 16+followup mapping incomplete');
+const exampleTests=contents['tools/governance/review-examples.test.mjs'];
+if(!exampleTests.includes('NOT WLT code')||!exampleTests.includes('Illustrative arithmetic ONLY'))
+ fail('risk arithmetic fixtures must never claim WLT implementation evidence');
+if(!stage3package.scripts?.['check:foundation']?.includes('review-examples.test.mjs')||
+ !contents['.github/workflows/foundation-guard.yml'].includes('review-examples.test.mjs'))
+ fail('foundation CI and local commands must include bounded risk-review examples');
+
 
 const policySections=[
  ['governance/commerce.md','## Operator-managed commercial thresholds — explicit policy, not compiled law'],

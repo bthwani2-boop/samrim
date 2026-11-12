@@ -14,6 +14,7 @@ const files=[...new Set([
  'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',
  ...owners.map(owner=>'governance/'+owner+'.md'),'docs/REFOUNDATION-PLAN.md','docs/reference/README.md','docs/reference/HISTORICAL-SOURCE-INVENTORY.md','docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md',
  '.github/workflows/foundation-guard.yml','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs',
+ 'tools/governance/review-examples.test.mjs',
  '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
  'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','tsconfig.base.json','biome.json',
  'README.md','docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md','tools/dev/verify-workspace.mjs',
@@ -127,3 +128,12 @@ rejects('rejects duplicated historical design decision',{edit:{'docs/REFOUNDATIO
 rejects('rejects fabricated approval of critical-risk review',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace('GOVERNANCE_CUTOVER stays NOT_READY','GOVERNANCE_CUTOVER declared READY')}},/design-plan concordance cannot claim unreviewed cutover success/);
 
 rejects('rejects governance cutover claiming real app/SQL implementation without evidence',{edit:{'governance/README.md':s=>s.replace('## Cutover readiness is a policy decision, not a claim of implemented software','## False software production readiness')}},/governance policy readiness must stay separate from later runtime implementation tests/);
+
+rejects('rejects missing illustrative risk-review arithmetic tests',{del:['tools/governance/review-examples.test.mjs']},/required tools\/governance\/review-examples.test.mjs/);
+rejects('rejects dropped COD financial review case',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^\| FIN-01-COD \|[^\n]*\n/m,'')}},/risk review scenario missing\/duplicated: FIN-01-COD/);
+rejects('rejects duplicated Store cash commission review case',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^(\| FIN-02-REMIT \|[^\n]+)$/m,'$1\n$1')}},/risk review scenario missing\/duplicated: FIN-02-REMIT/);
+rejects('rejects fake financial signoff',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace('| FIN-01 | NOT_ASSIGNED | NOT_RUN | NOT_PROVIDED | REVIEW_BLOCKED |','| FIN-01 | SELF_APPROVED | TODAY | NO_EVIDENCE | PASS |')}},/do not fabricate independent reviewer approval/);
+rejects('rejects lost migration restore review gate',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^\| MIG-01-RESTORE \|[^\n]*\n/m,'')}},/risk review scenario missing\/duplicated: MIG-01-RESTORE/);
+rejects('rejects missing full-system historic source section',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^\| 15 \| `SOURCE_BOUND_PROOF` \|[^\n]*\n/m,'')}},/historic full-system 15-section evidence mapping incomplete/);
+rejects('rejects missing historic design audit followup',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^\| FOLLOWUP \|[^\n]*\n/m,'')}},/historic design-audit 16\+followup mapping incomplete/);
+rejects('rejects omitted risk review examples from CI',{edit:{'.github/workflows/foundation-guard.yml':s=>s.replace(' tools/governance/review-examples.test.mjs','')}},/foundation CI and local commands must include bounded risk-review examples/);

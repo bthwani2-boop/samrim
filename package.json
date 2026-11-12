@@ -11,7 +11,7 @@
   "scripts": {
     "check:workspace": "node tools/dev/verify-workspace.mjs",
     "check:toolchain": "node tools/dev/verify-workspace.mjs --require-exact-toolchain",
-    "check:foundation": "node tools/governance/verify-foundation.mjs && node --test tools/governance/verify-foundation.test.mjs",
+    "check:foundation": "node tools/governance/verify-foundation.mjs && node --test tools/governance/verify-foundation.test.mjs tools/governance/review-examples.test.mjs",
     "check": "pnpm run check:workspace && pnpm run check:foundation"
   },
   "devDependencies": {

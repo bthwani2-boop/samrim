@@ -619,3 +619,140 @@ Each later Owner implementation must specify in its **single canonical contract*
 ### Cutover decision, pending independent signoff
 
 **Domain governance decisions have been materially clarified in this batch**, with design, policy, internal app identity, contract and migration placement at their right semantic owners. However, **GOVERNANCE_CUTOVER stays NOT_READY** because mandatory independent critical-risk reviews and full material-source acceptance are not evidenced. This is a **review-blocked adoption boundary**, not a request to build all apps/SQL or a denial of the valid low-risk engineering foundation. The exact evidence necessary for READY remains the existing review packet in this one plan. After a qualified independent decision, review the final changed policy text, rerun guards, and adopt via a separately approved governance cutover revision. No Product apps, service modules, API contracts, SQL, Docker or credentials were changed during this governance-only batch.
+
+
+## 2026-11-12 — Critical-risk review evidence matrix and executable illustrative checks (candidate governance only)
+
+**Scope of verification:** This pass is an **authoring/proof-preparation pass**, not an independent accountant/security/legal/database review, not a migration, and not a live WLT/DSH/Identity acceptance. References below route to existing canonical owners and donor source `D:\samrim\docs\governance\{finance,identity,safety,commerce,stores,journeys}.md` at SHA `426d67b47beb8c66b09acd8c7394086b53ac5aae`. The previously observed 275 SQL donor files and legal agreement *requirements* are **not proof** of current applied database histories, accepted contracts or provider terms. The eight `tools/governance/review-examples.test.mjs` fixtures use deliberately illustrative whole-YER amounts; they prove elementary example arithmetic only. No mock is an accounting assertion or Product readiness certification.
+
+### FIN-01 — Payment source, cash exposure, refund, replay and race
+
+| Review case | Explicitly proposed policy invariant | Adversarial/failure question and required evidence |
+| --- | --- | --- |
+| FIN-01-WALLET | Customer Wallet-only Order: **gross payable = Wallet allocation**, no BThwani-Captain physical cash hold; WLT debit and owner entitlement are posted once | Duplicate confirmation, insufficient Wallet, canceled hold or callback replay must not deduct twice; independently review balanced journal examples and accepted DSH/WLT contract |
+| FIN-01-COD | For admitted BThwani Captain cash collection, available unheld Captain coverage is **strictly greater** than frozen whole Order payable; only actual positive cash portion is held/debited on lawful cash event | At **exactly equal** coverage the proposal fails; race between two Orders, late Captain acceptance, denied Store/Captain role, return/failed handoff must not bypass atomic coverage |
+| FIN-01-MIXED | Example **1000 YER payable = 300 prepaid Wallet + 700 cash**: gross Captain eligibility threshold `>1000`, cash-only hold `700`, Wallet source `300`, not a second Captain debit | Test wallet reversal vs physical cash debt separately and compare real Order/transfer ledger entries; **amounts are illustration, not active tariff** |
+| FIN-01-CANCEL | Cancellation **before collected cash** of above illustrative Mixed example releases **700 hold** (not a cash-debit reversal) and resolves Wallet **300** against applicable frozen refund policy | Cancellation after pickup/delivery/posted cash instead requires provenance-bound adjustment, not blindly the same operation; concurrent cancel/complete must have one terminal state |
+| FIN-01-UNKNOWN | Provider timeout / cross-owner acknowledgment unavailable cannot become success; one idempotency/transfer business identity owns retries | Read back canonical DSH Order state plus WLT operation/journal; same-key replay unchanged; new-key replay cannot multiply funds; reconcile before further external side effect |
+| FIN-01-SOURCE | Donor's gross-coverage threshold and cash-part hold are preserved distinctly in `governance/finance.md`, without inventing a Store-funded, staff-Captain or self-service refund rail | Independent financial/security reviewer must verify whether policy is legally and operationally valid for each admissible fulfillment/collector combination; no live service code exists in new Worktree |
+
+### FIN-02 — WLT commissions, recipient and Store-collected proceeds
+
+| Review case | Explicitly proposed policy invariant | Adversarial/failure question and required evidence |
+| --- | --- | --- |
+| FIN-02-AGREEMENT | `COMMISSION` or `SUBSCRIPTION` is independent of `MARKETPLACE`/`DIRECT`; one accepted WLT Store-specific version, fees and collection responsibility governs its legal period | An Operator default cannot activate recurring billing or silently change old Orders/periods; require **actual consent/terms version** and permitted model/collection matrix |
+| FIN-02-STORE-CASH | Store-managed externally collected proceeds **belong to Store custody**; WLT recognizes only verified commission/platform receivable and admitted offsets | Example Store cash sale **1000 YER**, independently accepted illustrative commission **75 YER**, never credits Store as a second WLT earning. 75 is not an approved percentage |
+| FIN-02-REMIT | Commission platform receivable stays open until WLT verifies lawful official receipt or approved offset; Merchant receipt image alone is no payment | Duplicate reference, disputed amount, mismatched Store/recipient, overpayment and provider timeout remain open for reconciliation |
+| FIN-02-BENEFICIARY | Per-Store beneficiary: `DEFAULT_OWNER`, `SELECTED_VERIFIED_STAFF` or `RECIPIENT_REVIEW_REQUIRED`; only authorized Store owner changes assignment, Finance verifies official Identity-derived destination | Staff suspension/revocation blocks **future** transfer instruction release; no silent fallback/redirection; already executed transfer retains original evidence and reconciliation |
+| FIN-02-PAYOUT | Settlement **intake** is not a reserved balance or an external transfer; verified payout/hold and subsequently posted, statement-matched transfer are separately gated | Read exact entitlement/Store allocation, independently approved counterparty/destination, idempotency, matching provider statement and final WLT release; different beneficiaries require separate transfers |
+
+### FIN-03 — Exact provider fees and separated delivery margin
+
+| Review case | Explicitly proposed policy invariant | Adversarial/failure question and required evidence |
+| --- | --- | --- |
+| FIN-03-CASHIN | Illustrative official provider funding **1000 gross, 980 net, 20 platform fee**: customer receives 1000 verified gross; provider settlement 980 and platform fee expense 20 are distinct conservation facts | Cannot assume provider fee schedule or settlement finality from old notes; compare official provider agreement/receipt, canonical double-entry postings, callback replay and reconciliation |
+| FIN-03-MARKUP | Illustrative BThwani Captain delivery base **500** plus separate **100** optional approved markup gives customer **600**; Captain entitlement remains 500, platform margin 100 | Only eligible zero-product-commission accepted Store agreements; no unapproved fee stacking or WLT double-count. Require independent financial and legal approval |
+| FIN-03-ROUNDING | All source monetary amounts are integer YER; authorized basis-point calculation must use versioned WLT rounding consistently across quote, journal and settlements | No floats, UI-computed authoritative totals, negative leakage, unnoticed boundary rounding change or retroactive accepted-term revision |
+
+### SEC-01/02 — Owner authorization, session and privacy negative matrix
+
+| Review case | Required invariant | Negative/continuity proof to demand from actual future Identity/DSH/WLT consumers |
+| --- | --- | --- |
+| SEC-01-ROOT | Original protected Root Owner remains **one Actor**; approved human-verified Passkey/recovery uses the Identity canonical owner | Wrong user, absent credential, copied old local dev password, second synthetic Root Owner and bypass admission are denied; no live credential inspection in this governance pass |
+| SEC-01-SESSION | Role session family rotates on renewal and revokes on replay/disable; role-specific access not transferable | Reuse old refresh, logout/disable, off-device session, stale async cache and unrelated role tokens cannot restore privileges; records remain attributable to one actor |
+| SEC-01-FINANCE | Finance-read, payout-intake, beneficiary assignment, transfer approval/execution and independent reconciliation are **separate permissions** | No single self-approval, payout destination chosen by Merchant, Provider-secret leak, or unapproved Operator policy bypass |
+| SEC-02-STORE | Store-owner A, Store-owner B and Store-scoped staff each access only their exact currently admitted resources | Forged Store/Offer/Order/Media/cursor ID, unpublished draft, revoked grant, cross-city pricing and expired share link fail at the **canonical owner**, not only the UI |
+| SEC-02-SWITCH | Actor/Store/session switch invalidates cached sensitive reads and **in-flight previous-account responses** across Web/Android | Old response arriving after new login must not render previous Customer address, wallet, messages, photos or store permission even briefly |
+| SEC-02-CAPTAIN | A Captain **candidate** is not yet the assigned delivery actor | Losing offer contender cannot see private Customer address; late acceptance/assignment race cannot create two winners or two cash holds |
+| SEC-02-OPERATOR | Current Operator authority combines role, city/Store scope and action | Request for unapproved financial policy, privileged Root admission, payout destination, CSRF, SSR/session leak or wrong-owner object must fail closed |
+
+### MIG-01 — Fresh-baseline strategy and durable upgrade boundaries
+
+| Review case | Required strategy / precondition | Later implementation evidence, **not available yet** |
+| --- | --- | --- |
+| MIG-01-EMPTY | One **derived** fresh baseline per Identity, DSH and WLT **only for new isolated empty databases**, reviewed against permitted target schema | Same logical tables, constraints, unique/foreign key, permissions, functions, required reference data as correctly upgraded empty donor DB |
+| MIG-01-APPLIED | Existing databases use their actual owner-applied migration/checksum history and a **non-destructive** owner-approved upgrade route | Applied version/epoch before and after; no silently rewritten applied SQL, fabricated success, tombstoned Store/Order, or duplicate identity |
+| MIG-01-RESTORE | Verify restricted exact-target backup, independently rehearsed isolated restore and consumers before any destructive/sensitive migration | Backup hash, restore test, preserved human/Store/Order/wallet/COD/beneficiary/accepted-contract/media identities and reconciled totals |
+| MIG-01-BOOTSTRAP | Do not discard **182 DSH/30 Identity/63 WLT** historical source migration references merely to obtain three entrypoints | DSH's embedded `migrations/*.sql` loader and historical schema version **182** must move together with code/deployment/upgrade consumers or remain in place |
+| MIG-01-FAIL | Transactional failure, interrupted migration, concurrent service writers or partial upgrade cannot be considered success | Stop incompatible writers, record exact first failing step, restore/reconcile in authorized isolated environment, verify owner readback before resumption |
+
+### LEGAL-01 — Accepted agreements and retained entitlements
+
+| Review case | Source-backed concern, **not a newly approved clause** | Independent approval evidence required |
+| --- | --- | --- |
+| LEGAL-01-MERCHANT | Existing Store commission, payout, collection custody, customer refund and direct/marketplace terms may be legally binding | Actual **accepted** Store-specific agreement IDs, effective versions, signatures/consent and lawful termination/amendment terms; not available from archived engineering summaries alone |
+| LEGAL-01-CAPTAIN | Historic physical COD remittance, equipment guarantees, Captain independence, earnings, custody and pending claims may remain valid for earlier activity | Legal/Finance-qualified adjudication of current vs legacy obligations and immutable financial history, no blanket forgiveness or double charge |
+| LEGAL-01-EMPLOYEE | HR/staff grants, employment status, retained personal data and outstanding compensation may survive UI/workflow retirement | Authorized contractual/retention basis, Identity/HR segregation, account deactivation rules, protection against unauthorized exposure/deletion |
+| LEGAL-01-CLIENT | Customer wallet liability, lawful refund, data privacy and commitments survive Store relation or service refoundation | Accepted customer terms, notification/consent changes, retained balance/Order/communications evidence, reviewer/legal owner authorization |
+| LEGAL-01-PROVIDER | Provider fee schedule, official wallet destination, settlement rail, commission/price eligibility and execution authorization require real binding terms | Official contracts/provider terms and Finance/legal approvals, not illustrative fixtures, old rate tables or screenshots |
+
+### Independent review sign-off register — no invented approvals
+
+| Gate | Independent qualified reviewer | Review date | Signed decision/evidence | Current state |
+| --- | --- | --- | --- | --- |
+| FIN-01 | NOT_ASSIGNED | NOT_RUN | NOT_PROVIDED | REVIEW_BLOCKED |
+| FIN-02 | NOT_ASSIGNED | NOT_RUN | NOT_PROVIDED | REVIEW_BLOCKED |
+| FIN-03 | NOT_ASSIGNED | NOT_RUN | NOT_PROVIDED | REVIEW_BLOCKED |
+| SEC-01 | NOT_ASSIGNED | NOT_RUN | NOT_PROVIDED | REVIEW_BLOCKED |
+| SEC-02 | NOT_ASSIGNED | NOT_RUN | NOT_PROVIDED | REVIEW_BLOCKED |
+| MIG-01 | NOT_ASSIGNED | NOT_RUN | NOT_PROVIDED | REVIEW_BLOCKED |
+| LEGAL-01 | NOT_ASSIGNED | NOT_RUN | NOT_PROVIDED | REVIEW_BLOCKED |
+
+This register is inside the **single temporary execution plan**, not a governance owner, authorization list or extra Product policy engine. To change a gate to `PASS`, obtain actual reviewer-independent signoff and source evidence, record scope/version and any conditional reservations, resolve findings in the legal owner, then rerun affected checks on that candidate SHA. A simulated arithmetic case, a ChatGPT suggestion or GitHub structural test is never a qualified signoff.
+
+### GitHub status confirmed by read-only authoritative CLI (not inferred from an empty PR-only connector result)
+
+- Exact previously **pushed** SHA `65738d6c3ecc94e486ee4f7df62d7f38e3ba0b0b`: official `gh run list` and `gh run view` show `BThwani Foundation Guard (structural only)` **completed successfully** on `2026-11-12T16:57:00Z`; <https://github.com/bthwani2-boop/samrim/actions/runs/43264188781>. Each step, including guard sensitivity, passed. The GitHub check-runs API returns **one** github-actions check (success) at this SHA.
+- GitHub `gh pr list --head refoundation/clean-house-20261112 --state all` returned **no PR**. CodeRabbit `.coderabbit.yaml` enables PR auto-review, but none for this branch is evidenced. Do not invent CodeRabbit approval, scan comments or remote review.
+- Local HEAD at the *start* of this batch is `9ef916a29384df2507f1128cdcc2ea52f35ddf86`, ahead of published SHA by one; **new staged/committed candidate must not inherit prior GitHub CI pass**. An external Push and separate PR need specific human authorization; none is silently performed.
+
+
+### Two additional historical execution/audit sources — explicit section-level decision reconciliation
+
+The original donor includes two further **non-authoritative** texts, which were reviewed as source sections during this pass. Both originated on **2026-11-10** and contain dated worktree observations, implementation proposals, and later corrections. Their section-level dispositions are documented below without copying them into a new governance root. This is not a line-by-line ratification of all archived legal or protected runtime details.
+
+**Donor A:** `D:\samrim\docs\governance\BTHWANI-FULL-SYSTEM-REFOUNDATION-PLAN.md` — 15 main sections, 331 lines.
+
+| Source section | Disposition | Canonical owner | Material meaning retained or correctly scoped |
+| --- | --- | --- | --- |
+| 01 | `GREENFIELD_METHOD_BOUND` | `engineering.md` | Rebuild method adopted only inside authorized source, not an unbounded permission to delete applied SQL or accounts |
+| 02 | `HISTORIC_SNAPSHOT` | `engineering.md` | 2026-11-10 source counts are dated observations; not current SHA or E2E proof |
+| 03 | `CONSERVE_CAPABILITIES` | `product.md + engineering.md` | Correct Product functions and historic obligations must survive owner-by-owner migration |
+| 04 | `PROTECTED_TEST_DATA` | `safety.md` | Local development designation does not imply all data/volumes/secrets are disposable |
+| 05 | `IMPLEMENTATION_DEFERRED` | `engineering.md` | Stages and tests are future implementation order, not current migration authority |
+| 06 | `NONBINDING_ADVANTAGES` | `engineering.md` | Claimed simplification is rationale, not guaranteed performance/correctness |
+| 07 | `HISTORIC_WORKTREE_ONLY` | `AGENTS.md` | Prior 2026-11-10 worktree/branch is not the active authorized clean Worktree |
+| 08 | `SEPARATE_PRODUCT_ACCEPTANCE` | `product.md + journeys.md` | Full app/API/DB proof belongs after implementation; governance-readiness is narrower |
+| 09 | `EXECUTION_GATES` | `AGENTS.md` | Old approved methodology does not confer Push/PR/Merge or deployment |
+| 10 | `PREFLIGHT_REQUIRED` | `safety.md + engineering.md` | Recheck live owners, protected runtime and backups before any destructive slice |
+| 11 | `CONSERVE_SUBFEATURES` | `product.md + experience.md` | Full Store Web, Captain opportunity, videos, privacy chat, catalog, finance and Studio survive unless owner retires |
+| 12 | `SUPERSEDE_EARLY_UI_PLANS` | `experience.md + platform.md` | 11 Operator centers are a dated snapshot; later one Stores center/10 target and Customer/Merchant labels govern |
+| 13 | `LIVE_BEHAVIOR_UNPROVEN` | `engineering.md` | Old interface/routing status does not prove new release; preserve negative-path acceptance |
+| 14 | `LATEST_OWNER_DECISIONS` | `finance.md + stores.md + catalog.md` | Commercial defaults require WLT agreement; one Store/Catalog engine; no unimplemented direct checkout |
+| 15 | `SOURCE_BOUND_PROOF` | `engineering.md` | Every accepted refoundation slice needs source/owner/contract/DB and exact SHA evidence |
+
+**Donor B:** `D:\samrim\docs\governance\BTHWANI-DESIGN-UX-EXPO-FIRST-REFOUNDATION-AUDIT-20261110.md` — 15 original numbered sections plus a follow-up numbered "11" with newer semantic corrections, 334 lines.
+
+| Source section | Disposition | Canonical owner | Material meaning retained or correctly scoped |
+| --- | --- | --- | --- |
+| 00 | `AUDIT_SCOPE_ONLY` | `experience.md` | Expo-first UX study informs target, not product release |
+| 01 | `OWNER_PRECEDENCE` | `AGENTS.md + governance/README.md` | Canonical owners outrank screenshots and historic reports |
+| 02 | `DATED_RESEARCH` | `engineering.md` | Donor source observation and E2E tests must not be reported as current |
+| 03 | `DESIGN_TOKENS` | `experience.md` | One navy/orange/semantic source consumed by Tamagui/Ant; font/icons require rendered acceptance |
+| 04 | `EXPO_PLATFORM_BOUNDARY` | `experience.md + platform.md` | Three existing mobile apps one Expo host each; no fourth mobile business engine |
+| 05 | `STUDIO_SCOPECHECK` | `experience.md` | CLIENT_HOME donor exists, Store-scoped authoring is conditional; one DSH content publisher |
+| 06 | `STORES_CENTER_TARGET` | `experience.md` | Early 11-center proposal is superseded by later consolidation to 10; test actual navigation |
+| 07 | `UX_REFOUNDER_LATER` | `experience.md` | Rebuild journeys with source owner, not just component refactor |
+| 08 | `SCREEN_ACCEPTANCE_LATER` | `experience.md` | Loading/empty/denied/recovery/RTL and accessible states need real render |
+| 09 | `GAPS_ROUTED` | `experience.md + safety.md` | UX/DS/AUTH/EXPO/MIG/TYPO IDs preserved as implementation risks, not additional Product admission |
+| 10 | `STAGED_IMPLEMENTATION` | `engineering.md` | A–F UX delivery stages after separate authorization |
+| 11 | `INDEPENDENT_PROOF_PENDING` | `safety.md` | Visual/browser/device/financial negative tests NOT_RUN for target |
+| 12 | `OPEN_DESIGN_CHOICES` | `experience.md` | Scoped Studio and templating limited; actual Store publisher and commercial activation still gated |
+| 13 | `NO_AUTO_TECH_UPGRADE` | `AGENTS.md + engineering.md` | Do not update Expo, install icons/fonts, delete old design-system or modify SQL now |
+| 14 | `HISTORIC_PROVENANCE` | `docs/reference/README.md` | Donor source pointers are evidence, not licensed copied assets |
+| 15 | `AUDIT_NOT_RELEASE` | `experience.md` | Donor 18/18 Studio tests and route observations cannot prove target runtime |
+| FOLLOWUP | `SUPERSEDE_EARLY_INFERENCES` | `experience.md + stores.md` | 10 real Operator centers target, single DSH catalog, merchant relation fee independence and retired field workflows |
+
+**Conflict precedence enforced:** the later approved consolidated one-Store/one-Catalog Engine and **10 job-oriented Operator centers target** overrides the earlier eleven-center design snapshot. The earlier phrase "local development data can be regenerated" **does not authorize** wiping any persistent/non-isolated state. DSH/WLT and Identity contracts decide what is actually supportable; Studio's earlier 18/18 donor tests are only donor-version evidence. Preserving original EAS/native identifiers overrides internal `apps/merchant` renaming. Neither older plan authorizes global Nx/Expo/Go upgrades or Stage 4+ work.
+
+**Remaining historical evidence:** the extracted/repeated Control Panel ZIP versions were byte-hash compared earlier; their 112 CSV requirements have a per-ID disposition, but specific **signed agreements, effective provider fee schedules, accepted terms, full third-party license checks and material chronology decisions not expressible from the available archived files** have not been independently reviewed. The user-provided shared ChatGPT URL is presently unreadable; missing contents must not be assigned fictitious decisions. Thus **historical candidate section reconciliation PASS for these two identified documents**, global historic legal/source reconciliation **PARTIAL**.
