@@ -36,7 +36,8 @@ Every admitted CAPABILITY_ID in product.md has exactly one section in one domain
 
 ## Current refoundation execution plan (non-authoritative)
 
-- `docs/governance/BTHWANI-FULL-SYSTEM-REFOUNDATION-PLAN.md` — owner only of the requested refoundation plan and dated initial audit snapshot. It is not a second Product/System/Policy authority, does not supersede the canonical owners above, and grants no deletion, reset, publication or Git operation permission.
+- `docs/governance/BTHWANI-CLEAN-REFOUNDATION-EXECUTION-PLAN-20261112.md` — current clean-Worktree transition plan, originating from branch `41`; planning/evidence only, not an additional Product/System/Policy authority, and not implementation or release proof.
+- `docs/governance/BTHWANI-FULL-SYSTEM-REFOUNDATION-PLAN.md` — previous dated execution plan and audit snapshot, retained as historical evidence rather than a second active plan.
 
 ## Refoundation working evidence (not additional authority)
 
