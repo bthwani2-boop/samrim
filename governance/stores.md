@@ -52,6 +52,7 @@ CAPABILITY_ID: STORE_SCOPED_ACCESS_DELEGATION
 
 Identity verifies actor authentication and platform role; DSH authorizes the current Store owner/grant for every Store-scoped mutation. Revocation must prevent a stale page, token or pending response from recovering old Store data. Store employee accounts, when admitted, require bounded authorization, safe invitation and auditable revocation; never silently inherit financial agreement authority.
 
+**Grant validity and audit (draft preserved from branch-41 platform law):** Each DSH Store grant remains bound to the one verified grantee actor, the authorizing Store owner, the specific Store resource and an explicit allowlisted action set. Its validity/expiry, acceptance, revocation and accountable audit are Store-scoped facts, not new global Identity roles or reusable bearer authority. Expired or revoked grants fail closed at the DSH operation even when an older session, page or in-flight request still carries the previous Store context; grants must never confer independent WLT beneficiary or settlement control.
 **Proof boundary:** Two owners/two Stores, delegated actor, unrelated Store, revoked grant, account switch while GET/POST are pending, and protected customer/financial readback. A screen showing or hiding a button is not authorization proof.
 
 ## Required Store policy safety and recovery
