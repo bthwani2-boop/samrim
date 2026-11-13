@@ -9,7 +9,7 @@ const previewPreferenceKey = "bthwani.stage4.operator.theme";
 const isPreference = (value: string | null): value is AppearancePreference =>
   value === "system" || value === "light" || value === "dark";
 
-export function Providers({ children }: Readonly<{ children: ReactNode }>) {
+export function Providers({ children, cspNonce }: Readonly<{ children: ReactNode; cspNonce: string }>) {
   const [pref, setPref] = useState<AppearancePreference>("system");
   const [systemDark, setSystemDark] = useState(false);
   useEffect(() => {
@@ -39,7 +39,7 @@ export function Providers({ children }: Readonly<{ children: ReactNode }>) {
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
   }, [dark]);
-  return <ConfigProvider direction="rtl" locale={arEG} theme={{
+  return <ConfigProvider direction="rtl" locale={arEG} csp={{ nonce: cspNonce }} theme={{
     algorithm: dark ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
     token: { colorPrimary: colors.actionBackground, colorText: colors.color, colorBgBase: colors.background, colorBorder: colors.borderColor },
   }}>
