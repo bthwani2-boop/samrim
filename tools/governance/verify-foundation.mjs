@@ -528,7 +528,7 @@ if(exists('infra')||exists('contracts'))fail('foundation guard cannot be reused 
 const ci=contents['.github/workflows/foundation-guard.yml'];
 if(!/permissions:\s*\n\s*contents: read/.test(ci))fail('CI must run with least privilege');
 if(!ci.includes('node --test tools/governance/verify-foundation.test.mjs')||!ci.includes('node tools/governance/verify-foundation.mjs'))fail('CI must run actual guard tests and live verification');
-if(/continue-on-error:\s*true|\bsecrets\./.test(ci))fail('CI cannot silently skip proof or read secrets in foundation stage');
+if(/continue-on-error:\s*true|\$\{\{(?:(?!\}\})[\s\S])*\bsecrets\./.test(ci))fail('CI cannot silently skip proof or read secrets in foundation stage');
 
 console.log('FOUNDATION_STRUCTURE_PASS domain_owners='+domainFiles.length+' capability_ids='+seen.size+' one_census=true service_scaffold_only=true openapi_zero_operations=true openapi_reserved_groups='+openapiReservedGroups);
 console.log('GOVERNANCE_CUTOVER_NOT_READY: independent risk-policy approvals and material donor reconciliation not proven; software runtime gates are separate');

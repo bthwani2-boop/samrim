@@ -7,6 +7,7 @@ on:
       - 'refoundation/clean-house-20261112'
   pull_request:
     branches:
+      - main
       - 'refoundation/clean-house-20261112'
 
 permissions:
@@ -67,7 +68,7 @@ jobs:
           corepack enable pnpm
           pnpm --version
           pnpm install --frozen-lockfile --ignore-scripts
-      - name: Validate design, native config, appearance races and all app types
+      - name: Validate design, native config, source ownership, appearance races and all app types
         run: |
           pnpm check:design
           pnpm check:apps
@@ -85,3 +86,27 @@ jobs:
       - name: Record missing live platform proof
         run: |
           echo 'NOT_RUN: Android/iOS binary, actual browser hydration/CSP, owner APIs, finance and security'
+
+  fast_guard:
+    # Existing main protection requires this exact check context. It depends on
+    # the actual source/build jobs; it never substitutes for old Go/SQL E2E.
+    name: fast-guard
+    needs: [foundation, presentation]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Confirm scoped owner, foundation and tracked-secret guards
+        run: |
+          node tools/mobile/verify-application-boundaries.mjs
+          node tools/governance/verify-foundation.mjs
+          node --test tools/security/verify-secrets.test.mjs
+          node tools/security/verify-secrets.mjs
+      - name: State the scoped check boundary
+        run: |
+          echo 'fast-guard: only currently implemented foundation/presentation sources'
+          echo 'NOT_RUN: missing Go backends, SQL upgrade, financial and security E2E'

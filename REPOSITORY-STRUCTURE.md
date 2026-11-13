@@ -56,5 +56,22 @@ Upon later authorization, each owner's `backend/` will hold the Go implementatio
 9. A new general tool/package requires at least one established cross-owner consumer and a reason owner-local code is inadequate.
 10. Reference/benchmark URLs retain original evidence status, publication date and usage caveats; never become copied product rules.
 
+## Application admission rules before screen migration
+
+- The existing top-level `apps/<surface>/app/` is the **only active route root** for Expo Router or Next App Router. Do not create a competing `src/app/`; a future route-root move is a single reviewed refactor with route/deep-link checks.
+- `apps/customer`, `apps/merchant`, `apps/captain` are Expo **presentation hosts**; `apps/control-panel` is the Ant Design/Next **Operator** host. Internal folder names do not rename externally issued app slugs, Android/iOS IDs, EAS projects or public URL/deep-link contracts. Historical `app-partner` is the preserved Merchant mobile identity, not a fifth application.
+- `src/features/<capability>/` is a **future private presentation unit**, not a business engine, API authority or permission to copy donor folders. No `features`, `bootstrap`, `shell` or `tests` directory is mandatory while empty; create one only when an approved consumer and test need it. Next may colocate small route-specific UI under its existing App Router conventions; avoid a forced four-app folder template.
+- A UI surface may import its own modules and **public** workspace package exports. It must not import the private sources of another app, service client, or package using relative paths, `apps/` aliases or an internal `@bthwani/<owner>/clients|backend|database|contracts|src` path. Service API behavior comes later from approved owner contract exports, not code written inside the app.
+- The foundation guard currently forbids `src/features` because feature migration is not yet admitted. At the first **separately approved** business feature, replace that blanket prohibition with feature-ownership and contract checks in one reviewed change; do not disable tests or fill directories with placeholders to make a tree look complete.
+- Deterministic source import checks live under `tools/mobile/verify-application-boundaries.mjs`; they detect known literal imports and the active dual-route-root mistake, with adversarial regression cases. They are **not** a substitute for runtime authorization, package-level builds, computed-import tracing, full cycle analysis or eventual route/contract E2E proof.
+
+### Names which must not be conflated
+
+- **Actor/Merchant** is an Identity-authenticated person or delegated role; **Store** is a DSH-owned business resource. A Merchant may operate multiple Stores. See `governance/identity.md` and `governance/stores.md` for Product semantics.
+- **MARKETPLACE/DIRECT** is a Store relation; **COMMISSION/SUBSCRIPTION** is a WLT agreement model; **PLATFORM_MANAGED/STORE_MANAGED** is collection responsibility. These are independent dimensions, not parallel Store or Order implementations. Historical `BTHWANI_PARTNER/INDEPENDENT_STORE` values require an approved compatibility decision before mutation.
+- **Clients package** means public, contract-derived callers. An exported empty `clients/index.ts` only prepares the TypeScript workspace; it is neither a usable SDK nor a running Go **backend**. OpenAPI `paths: {}` fragments are reserved labels, not active operations.
+- **Fresh Baseline** installs a new isolated empty database; **migration** is an immutable applied upgrade history. They must not be conflated, renumbered or applied interchangeably. See `governance/safety.md`.
+- **Foundation PASS**, **required GitHub check PASS**, **governance READY**, **native runtime PASS** and **production release approved** are independent gates. Main is the protected branch, 41 is donor history, and the Worktree is a directory; no branch change implicitly migrates databases or authorizes deployment.
+
 ## Structural closure
 A slice is structurally accepted only when the winning path, every affected consumer, generated API, SQL/config reference and test is updated, the losing path is gone, and source/runtime proof is tied to the exact accepted revision. Otherwise report NOT_RUN, BLOCKED or REVIEW_BLOCKED; do not infer correctness from Git status alone.

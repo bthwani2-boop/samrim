@@ -128,6 +128,7 @@ rejects('rejects duplicate old policy directory',{add:{'docs/governance/README.m
 rejects('rejects unnecessary CODEOWNERS',{add:{'.github/CODEOWNERS':'* @fake'}},/unneeded CODEOWNERS/);
 rejects('rejects code-dependent Fast Guard inherited prematurely',{add:{'.github/workflows/fast-guard.yml':'name: Fast Guard'}},/source-dependent inherited CI/);
 rejects('rejects CI bypass',{edit:{'.github/workflows/foundation-guard.yml':s=>s+'\ncontinue-on-error: true\n'}},/silently skip proof/);
+rejects('rejects actual CI secret expressions',{edit:{'.github/workflows/foundation-guard.yml':s=>s+'\nenv:\n  EXPOSE: ${{ secrets.SONAR_TOKEN }}\n'}},/silently skip proof/);
 rejects('rejects claimed financial production truth',{edit:{'governance/finance.md':s=>s.replace('IMPLEMENTATION_STATE_AUTHORITY: NONE','IMPLEMENTATION_STATE_AUTHORITY: ACTIVE')}},/implementation authority/);
 rejects('rejects missing domain document',{del:['governance/identity.md']},/required governance\/identity.md/);
 rejects('rejects missing capability',{edit:{'governance/finance.md':s=>s.replace('CAPABILITY_ID: ORDER_PAYMENT_COLLECTION','CAPABILITY_REMOVED: ORDER_PAYMENT_COLLECTION')}},/unmapped capabilities/);
