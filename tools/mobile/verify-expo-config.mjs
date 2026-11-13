@@ -45,7 +45,8 @@ export function easBuildIssues(name, config) {
   const cli = config.cli ?? {};
   const build = config.build ?? {};
   const expectedNames = ["base", "development", "internal", "ios-simulator"];
-  check(Object.keys(build).sort().join(",") === expectedNames.slice().sort().join(","),
+  check(Object.keys(build).length === expectedNames.length &&
+    expectedNames.every(profileName => Object.hasOwn(build, profileName)),
     "unapproved EAS build profile or missing stage-4 profile");
   check(cli.version === "24.7.0" && cli.appVersionSource === "remote" &&
     cli.requireCommit === true && cli.promptToConfigurePushNotifications === false,

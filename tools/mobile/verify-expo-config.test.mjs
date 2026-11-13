@@ -67,4 +67,10 @@ test("EAS cloud profiles reject missing remote signing, wrong channels and store
   const unapprovedRelease = structuredClone(valid);
   unapprovedRelease.build.production = { distribution: "store" };
   assert.match(easBuildIssues("customer", unapprovedRelease).join(" "), /unapproved EAS build profile/);
+  const missingProfile = structuredClone(valid);
+  delete missingProfile.build["ios-simulator"];
+  assert.match(easBuildIssues("customer", missingProfile).join(" "), /missing stage-4 profile/);
+  const reorderedProfiles = structuredClone(valid);
+  reorderedProfiles.build = Object.fromEntries(Object.entries(valid.build).reverse());
+  assert.deepEqual(easBuildIssues("customer", reorderedProfiles), []);
 });
