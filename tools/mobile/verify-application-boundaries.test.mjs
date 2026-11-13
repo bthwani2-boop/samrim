@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
-import { resolve } from "node:path";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import test from "node:test";
-import { importSpecifiers, sourceBoundaryIssues } from "./verify-application-boundaries.mjs";
+import { importSpecifiers, sourceBoundaryIssues, stage4WorkspaceIssues } from "./verify-application-boundaries.mjs";
 
 const root = resolve("C:/safe/bthwani");
 const customer = resolve(root, "apps/customer/app/index.tsx");
@@ -69,4 +71,74 @@ test("non-app shared packages cannot depend on app package names", () => {
   const problems = sourceBoundaryIssues(shared,
     "export { Router } from '@bthwani/customer';", root);
   assert.match(problems.join(" "), /Cross-app package import/);
+});
+
+test("parses literal template imports, require.resolve and import.meta.resolve", () => {
+  const src = "const a = import(`../../merchant/src/private`);" +
+    "const b = require.resolve('../../captain/src/secret');" +
+    "const c = import.meta.resolve('../../control-panel/app/page');";
+  assert.equal(sourceBoundaryIssues(customer, src, root).filter(x => /Cross-owner/.test(x)).length, 3);
+});
+
+test("rejects uncheckable computed module imports rather than silently allowing them", () => {
+  const cases = [
+    "const x = import('../' + other + '/src/private');",
+    "const x = require(pathFromRuntime);",
+    String.raw`const x = import(\`../../\${target}/src/secret\`);`,
+  ];
+  for (const src of cases) {
+    assert.match(sourceBoundaryIssues(customer, src, root).join(" "), /Computed module specifier/, src);
+  }
+});
+
+test("comments and string literals do not manufacture false import violations", () => {
+  const src = "// import x from '../../merchant/private';\n" +
+    "const help = \"require('../../../services/wlt/clients/secret')\";";
+  assert.deepEqual(sourceBoundaryIssues(customer, src, root), []);
+});
+
+test("keeps Expo and Operator renderers separate", () => {
+  const operator = resolve(root, "apps/control-panel/app/page.tsx");
+  assert.match(sourceBoundaryIssues(operator, 'import { Button } from "tamagui";', root).join(" "), /Operator cannot import/);
+  assert.match(sourceBoundaryIssues(operator, 'import { Text } from "react-native";', root).join(" "), /Operator cannot import/);
+  assert.match(sourceBoundaryIssues(customer, 'import { Form } from "antd";', root).join(" "), /Expo renderer cannot import/);
+  assert.match(sourceBoundaryIssues(customer, 'import Link from "next/link";', root).join(" "), /Expo renderer cannot import/);
+  assert.deepEqual(sourceBoundaryIssues(operator, 'import { Button } from "antd";', root), []);
+  assert.deepEqual(sourceBoundaryIssues(customer, 'import { Button } from "tamagui";', root), []);
+});
+
+test("semantic design source cannot depend on presentation or native renderers", () => {
+  const design = resolve(root, "packages/design-system/src/semantics/themes.ts");
+  for (const spec of ["@bthwani/tamagui-config", "expo-location", "next/navigation", "antd"]) {
+    assert.match(sourceBoundaryIssues(design, 'import X from "' + spec + '";', root).join(" "), /Semantic design source/);
+  }
+  assert.deepEqual(sourceBoundaryIssues(design, 'import { brandRoots } from "../brand/colors";', root), []);
+});
+
+test("Stage 4 rejects unapproved owner directories and any duplicate src/app route tree", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "bthwani-boundary-"));
+  try {
+    for (const group of ["apps", "packages", "services"]) {
+      mkdirSync(join(fixture, group), { recursive: true });
+    }
+    assert.deepEqual(stage4WorkspaceIssues(fixture), []);
+    mkdirSync(join(fixture, "apps", "customer", "src", "app"), { recursive: true });
+    mkdirSync(join(fixture, "apps", "storefront"), { recursive: true });
+    mkdirSync(join(fixture, "packages", "new-theme-engine"), { recursive: true });
+    mkdirSync(join(fixture, "services", "shadow-wallet"), { recursive: true });
+    assert.equal(stage4WorkspaceIssues(fixture).length, 4);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("future admitted feature files remain private to their app without bypassing Stage 4", () => {
+  const feature = resolve(root, "apps/customer/src/features/stores/StoreCard.tsx");
+  assert.deepEqual(sourceBoundaryIssues(feature,
+    'import { Button } from "tamagui"; import { X } from "../../ui/components";', root), []);
+  assert.match(sourceBoundaryIssues(feature,
+    'import { Secret } from "@bthwani/merchant/src/private";', root).join(" "),
+    /Cross-app package import/);
+  // The repository's Stage-4 foundation verifier separately rejects any
+  // real src/features directory until a governed phase transition.
 });
