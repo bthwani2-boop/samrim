@@ -42,6 +42,16 @@ for (const [name, [slug, packageId, scheme, projectId]] of Object.entries(expect
     // package, `expo serve` returns HTTP 500: module is not defined.
     assert.notEqual(current.type, "module", name + " Expo SSR renderer cannot run as ESM");
     assert.ok(cfg.includes('output: "server"'), name + " lost actual Expo Web SSR");
+    const easIgnored = new Set(read(`${rel}/.easignore`).split(/\r?\n/).map(line => line.trim()));
+    for (const protectedPath of [
+      "**/credentials.json", "**/google-services.json", "**/GoogleService-Info.plist",
+      "**/*.jks", "**/*.keystore", "**/*.p12", "**/*.p8", "**/*.pem", "**/*.key",
+      "**/.env", "**/.env.*", "**/mobile.env", "**/secrets.local.*",
+      "**/*local*.secret.json"
+    ]) {
+      assert.ok(easIgnored.has(protectedPath),
+        name + " EAS archive could expose a local secret or signing file: " + protectedPath);
+    }
   }
   assert.ok(read(`${rel}/metro.config.cjs`).includes("getDefaultConfig(__dirname)"));
   assert.ok(read(`${rel}/index.js`).includes("expo-router/entry"));
