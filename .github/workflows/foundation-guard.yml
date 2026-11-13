@@ -28,6 +28,11 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
+      - name: Use repository-pinned Node 24
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
       - name: Check required Node and working tree
         run: |
           node --version
@@ -100,6 +105,11 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
+      - name: Use repository-pinned Node 24
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
       - name: Confirm scoped owner, foundation and tracked-secret guards
         run: |
           node tools/mobile/verify-application-boundaries.mjs

@@ -49,3 +49,24 @@ test("bare internal source aliases are rejected", () => {
     "import { X } from 'apps/merchant/src/index';", root);
   assert.match(problems.join(" "), /private source path/);
 });
+
+test("another app's bare package name cannot bypass cross-app isolation", () => {
+  const problems = sourceBoundaryIssues(customer,
+    "import { MerchantState } from '@bthwani/merchant'; " +
+    "const admin = require('@bthwani/control-panel/ui');", root);
+  assert.equal(problems.length, 2);
+  assert.match(problems.join(" "), /Cross-app package import/);
+});
+
+test("same app aliases and public service-client package exports remain allowed", () => {
+  assert.deepEqual(sourceBoundaryIssues(customer,
+    "import { Local } from '@bthwani/customer'; " +
+    "import { Session } from '@bthwani/identity';", root), []);
+});
+
+test("non-app shared packages cannot depend on app package names", () => {
+  const shared = resolve(root, "packages/design-system/src/index.ts");
+  const problems = sourceBoundaryIssues(shared,
+    "export { Router } from '@bthwani/customer';", root);
+  assert.match(problems.join(" "), /Cross-app package import/);
+});

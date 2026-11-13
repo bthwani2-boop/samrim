@@ -526,6 +526,16 @@ for(const p of ['.github/workflows/fast-guard.yml','.github/workflows/sonar-obse
 if(exists('infra')||exists('contracts'))fail('foundation guard cannot be reused as service/SQL proof');
 
 const ci=contents['.github/workflows/foundation-guard.yml'];
+for (const job of ['foundation', 'presentation', 'fast_guard']) {
+ const start=ci.indexOf('\n  '+job+':\n');
+ if(start<0)fail('CI missing required job '+job);
+ const next=['foundation','presentation','fast_guard']
+  .map(name=>ci.indexOf('\n  '+name+':\n',start+1)).filter(index=>index>=0);
+ const section=ci.slice(start,next.length?Math.min(...next):ci.length);
+ if(!/uses:\s*actions\/setup-node@[0-9a-f]{40}/.test(section) ||
+    !/node-version-file:\s*\.node-version/.test(section))
+  fail('CI job '+job+' must use pinned Node from .node-version');
+}
 if(!/permissions:\s*\n\s*contents: read/.test(ci))fail('CI must run with least privilege');
 if(!ci.includes('node --test tools/governance/verify-foundation.test.mjs')||!ci.includes('node tools/governance/verify-foundation.mjs'))fail('CI must run actual guard tests and live verification');
 if(/continue-on-error:\s*true|\$\{\{(?:(?!\}\})[\s\S])*\bsecrets\./.test(ci))fail('CI cannot silently skip proof or read secrets in foundation stage');

@@ -42,6 +42,11 @@ export function sourceBoundaryIssues(file, source, base = root) {
   const current = ownerOf(file, base);
   if (!current) return issues;
   for (const spec of importSpecifiers(source)) {
+    const appPackage = /^@bthwani\/(customer|merchant|captain|control-panel)(?:\/|$)/.exec(spec);
+    if (appPackage && current !== "apps/" + appPackage[1]) {
+      issues.push("Cross-app package import " + current + " -> apps/" + appPackage[1] + ": " + spec);
+      continue;
+    }
     if (/^(apps|packages|services)\//.test(spec) || spec.startsWith("@apps/")) {
       issues.push("Use an owner package export, not a private source path: " + spec);
       continue;
