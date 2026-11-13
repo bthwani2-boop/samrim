@@ -27,6 +27,12 @@ A search/filter result, video card or deep link is a **projection**, not proof t
 
 **Proof:** Two Store owners, empty/large catalog, unavailable/draft items, stale pagination, identifier collision, category permission, price changed during browsing, variant/modifier/weight mismatch and safe recovery. Rendered Customer Web/Android/affected platform evidence complements owner-backed readback.
 
+## Exact public eligibility and batch acceptance
+
+DSH exposes one server-side `CUSTOMER_VISIBLE_OFFER` decision for public catalogue, offer details, cart and checkout. Its complete admitted inputs include an eligible **published Store** and active CommerceVertical/ServiceCity; an active Product and sellable Variant; validated required taxonomy/typed attributes for `SHARED` identities or valid Store-owned facts for `STORE_SCOPED` without forcing a shared category; a published, available StoreOffer with **positive exact price**, allowed quantity/inventory and valid modifiers. A raw Offer ID or deep link never bypasses this evaluator. The owner composes bounded, Store-scoped catalog pages instead of requiring the Customer to fetch/join unrelated Product/Offer tables or an unbounded full catalogue.
+
+An import run has one explicit **preview → conflict disposition → authorized commit** with per-row durable outcomes for accepted, held and failed rows. Bad minority rows cannot erase valid accepted rows, and unknown/failing network outcomes must be resolved by run identity before retry. Duplicate barcode, shared-name ambiguity, missing price, Store-scoped name collisions and malformed quantities are actionable held/conflict cases, never guessed new Product identities; an XLSX/CSV import and Quick Prices remain alternate interfaces to the single DSH StoreOffer/Store-scoped Product writers. The actor, Store, original source and changed old/new values are preserved in attribution and audit. Owner-authorized pagination, deterministic cursor ties and grant checks apply before any bulk update.
+
 ## Design boundaries
 Use real retained catalogue features, not blind copy of old folders. No `independentCatalog` or `marketplaceCatalog` with its own writer; relation differences are eligible views/policies. A shared technical package requires proven multiple consumers and never contains mutable catalog truth.
 

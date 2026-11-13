@@ -146,7 +146,7 @@ ENTRY: Canonical Store Order and current role-scoped participant permission.
 EXIT: Authorized communication reaches bounded read-only closure after completion and applicable policy.
 READBACK: DSH Order-scoped message, attachment/recorded media, read/unread/closure and role visibility.
 
-A prospective Captain, revoked Merchant employee or unrelated Store cannot read recipient contacts or private media. Notification/deep-link access always rechecks the owner's Order participation; a successful media upload is not a payment, custody or Order mutation. No generic social inbox or alternate Order support engine.
+A prospective Captain, revoked Merchant employee or unrelated Store cannot read recipient contacts or private media. DSH filters each message and receipt to its **author, explicitly selected recipients and currently authorized Operations**, not every current or former Order participant; Operations composition itself needs explicit current `operations` authority. Message-plus-attachment is one idempotent, private write. Terminal `DELIVERED`, `PICKED_UP`, `REJECTED` and `CANCELLED` close new sends while retaining authorized readback of previously committed messages. Notification/deep-link access always rechecks the owner's Order and per-message recipient participation; a successful media upload is not a payment, custody or Order mutation. No generic social inbox or alternate Order support engine.
 
 ## FIRST_THREE_ORDER_CONTACT — Bounded new-Customer confirmation
 

@@ -48,6 +48,12 @@ No new database, service, package or event bus is approved merely by this charte
 - Store identity retains historical meaning; relations and labels may evolve through versioned migration, never silent ID reinterpretation.
 - The simplest correctly owned, tested implementation wins. DDD, Clean/Hexagonal, ports/adapters and SOLID are design tools, not mandates to add layers, wrappers or folders.
 
+## Untrusted input and bounded handoff — retained source law
+
+Every Owner treats UI payloads, generated DTOs, other-service data and authenticated requests as **untrusted for business authority** until it performs `PARSE → VALIDATE → NORMALIZE → AUTHORIZE → DOMAIN TRANSITION` at the actual mutation/read boundary. Schema/type correctness, trusted transport, a caller-authored Actor/Store ID or BFF menu filtering do not establish object-level authorization. Canonical Actor identifiers remain Identity-owned; a recipient contact in an Order is a purpose-limited DSH snapshot, never a second account or cross-service person identifier.
+
+For an effect crossing Identity/DSH/WLT, the originating Owner commits its own lawful transition and a durable, **stable logical handoff identity**; the receiving Owner validates its own authority, applies an idempotent transition and exposes canonical readback. Unknown/partial outcomes reconcile before another attempt that could duplicate Orders, credits, cash liabilities or entitlements. Adapters for media, notification and external payment transport cannot grant business authority. Technical domains, caches and projections may scale reads but never introduce a second canonical writer. A new mechanism is only considered after proving that direct use of the existing Owner cannot express the distinct responsibility; named architectural patterns impose no automatic layer count.
+
 ## Acceptance boundary
 This charter prescribes the **target** architecture; it does not claim current SQL, APIs, subscriptions, Direct checkout or routing support it yet. Implementation readiness requires evidence for affected consumers, single writer, permissions, persisted state, negative tests and independent risk review. See `engineering.md` for gates and `docs/REFOUNDATION-PLAN.md` for temporary sequencing.
 

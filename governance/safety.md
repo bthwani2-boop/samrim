@@ -14,6 +14,10 @@ All financial, Store, Order, media and Customer/recipient data must respect leas
 
 The single DSH employee-record engine must enforce a company-versus-Merchant organization boundary and isolation between Merchants. Any employee-to-Store association or employment lifecycle change is separate from Identity login grants and DSH Store grants; neither grants the other by implication. Deny cross-organization HR records, private attachments, stale sessions and revoked staff scopes with accountable owner-backed readback. WLT remains the only financial writer.
 
+## Location consent and current-mission least privilege
+
+For platform Captain dispatch, DSH may retain only a current bounded **latest availability fix** sufficient to rank eligible candidates, not a historical route trail or a customer-visible Captain directory. Pre-acceptance candidate and aggregate maps must conceal precise Customer destination, Store-independent private address and every individual Captain location. Actual assigned-mission location, if admitted, is latest-only, time/accuracy/sequence bounded and readable exclusively by the specifically authorized Operations role for the active Order. No Customer, Merchant, other Captain, general notification or opportunity map may inherit mission GPS access. Ending the assignment, expiry/revocation, logout and approved retention cleanup remove effective access; stale/offline status is displayed honestly, never fabricated movement. Any Android background mission tracking requires affirmative platform permissions and a valid visible operating notification where required; it may not be inferred from an Expo JavaScript export.
+
 ## Policy mutation protections
 - Every editable policy has one owner, permitted scope and options, authenticated actor/permission, canonical version, effective date, reason, audit log, idempotent mutation and owner-backed readback.
 - Two concurrent changes to the same scope must not both silently succeed with contradictory effective versions. A timed-out POST cannot be retried with a fresh mutation identity until canonical read resolves the outcome.

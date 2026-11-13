@@ -259,3 +259,24 @@ rejects('rejects omitted production Expo Web SSR smoke in CI',
  {edit:{'.github/workflows/ci.yml':s=>s.replace('node tools/mobile/verify-expo-web-http.mjs','echo no real Expo SSR smoke')}},
  /approved Expo Web SSR exports must have production HTTP smoke/);
 rejects('rejects omitted risk review examples from CI',{edit:{'.github/workflows/ci.yml':s=>s.replace(' tools/governance/review-examples.test.mjs','')}},/foundation CI and local commands must include bounded risk-review examples/);
+
+rejects('rejects privacy regression granting customer mission GPS', {edit:{
+ 'governance/fulfillment.md':s=>s.replace(
+  'Customer, Merchant, other Captains and public opportunity maps cannot read that fix',
+  'all journey parties may see the latest Captain fix')
+}},/source-grounded privacy\/commerce\/finance draft boundary missing: governance\/fulfillment\.md/);
+rejects('rejects loss of latest-mission security boundary', {edit:{
+ 'governance/safety.md':s=>s.replace('Actual assigned-mission location','Any public Captain location')
+}},/source-grounded privacy\/commerce\/finance draft boundary missing: governance\/safety\.md/);
+rejects('rejects loss of per-recipient Order message audience', {edit:{
+ 'governance/commerce.md':s=>s.replace('Sender-selected recipient sets constrain visibility','All participants can read all messages')
+}},/source-grounded privacy\/commerce\/finance draft boundary missing: governance\/commerce\.md/);
+rejects('rejects creation-policy bypass for additional Stores', {edit:{
+ 'governance/stores.md':s=>s.replace('A DSH relation-admission policy governs **every** creation','New Store creation may ignore admission policy')
+}},/source-grounded privacy\/commerce\/finance draft boundary missing: governance\/stores\.md/);
+rejects('rejects loss of canonical StoreOffer visibility gate', {edit:{
+ 'governance/catalog.md':s=>s.replace('one server-side `CUSTOMER_VISIBLE_OFFER` decision','client-side StoreOffer visibility gate')
+}},/source-grounded privacy\/commerce\/finance draft boundary missing: governance\/catalog\.md/);
+rejects('rejects unverified payout instruction release', {edit:{
+ 'governance/finance.md':s=>s.replace('Before **every not-yet-executed** manual official-wallet transfer','After the transfer')
+}},/source-grounded privacy\/commerce\/finance draft boundary missing: governance\/finance\.md/);

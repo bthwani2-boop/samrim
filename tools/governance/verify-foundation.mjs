@@ -426,6 +426,17 @@ for(const anchor of ['without requiring an existing DSH Store or an Operator enr
  if(!identity.includes(anchor))fail('source-grounded identity boundary missing: '+anchor);
 }
 
+// Guard only source-retention assertions; this cannot certify FIN/SEC/LEGAL semantics.
+for(const [owner,anchor] of [
+ ['governance/fulfillment.md','Customer, Merchant, other Captains and public opportunity maps cannot read that fix'],
+ ['governance/safety.md','Actual assigned-mission location'],
+ ['governance/commerce.md','Sender-selected recipient sets constrain visibility'],
+ ['governance/stores.md','A DSH relation-admission policy governs **every** creation'],
+ ['governance/catalog.md','one server-side `CUSTOMER_VISIBLE_OFFER` decision'],
+ ['governance/finance.md','Before **every not-yet-executed** manual official-wallet transfer'],
+]){
+ if(!contents[owner].includes(anchor))fail('source-grounded privacy/commerce/finance draft boundary missing: '+owner);
+}
 const arch=contents['governance/architecture.md'];
 const finance=contents['governance/finance.md'];
 const delivery=contents['governance/fulfillment.md'];
