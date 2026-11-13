@@ -11,9 +11,12 @@ These **16** named business journeys are the canonical *cross-surface proof lens
 
 A Journey crosses materially participating surfaces and ends with actual owner-backed readback on each. Every mutable operational quantity below (contact count, claim expiry, stage attention, dispatch timeout, commercial price, promotion limit) is an initial donor policy candidate/default, **editable through the single Operator Policies workspace via its canonical owner** once implemented and authorized. A configurable value never disables permissions, safety, immutable transaction history or ledger conservation. Historic durations are not contractual SLA promises.
 
+The `CAPABILITIES:` references below reproduce the **14 explicit Journey-to-capability mappings in branch `41`** for traceability only; the 26-item admission census remains exclusively in `governance/product.md`. The donor does not declare a `CAPABILITIES:` field for `FIRST_THREE_ORDER_CONTACT` or `ORDER_SCOPED_OPERATIONS_EXCEPTION`, so no mapping is invented for those two pending Product-owner reconciliation. These links are not implementation evidence or independent policy approvals.
+
 ## MANAGED_PARTICIPANT_ADMISSION — Actor role and standing
 
 JOURNEY_ID: MANAGED_PARTICIPANT_ADMISSION
+CAPABILITIES: IDENTITY_ACTIVATION_SESSIONS
 SURFACES: OPERATOR, MERCHANT, CAPTAIN
 OWNERS: Identity, DSH
 ENTRY: Verified eligible human account or authorized managed-role admission.
@@ -27,6 +30,7 @@ A Merchant self-registers directly through Identity after required verification;
 ## PARTNER_TO_VISIBLE_STORE — Merchant registration through publication
 
 JOURNEY_ID: PARTNER_TO_VISIBLE_STORE
+CAPABILITIES: PARTNER_ONBOARDING_STORE_PUBLICATION, IDENTITY_ACTIVATION_SESSIONS, CENTRAL_CATALOG, STORE_COMMERCIAL_AGREEMENT
 SURFACES: MERCHANT, OPERATOR, CUSTOMER
 OWNERS: Identity, DSH, WLT
 ENTRY: Identity-verified Merchant creates a DSH Store, choosing eligible `MARKETPLACE` or `DIRECT`.
@@ -40,6 +44,7 @@ One Store writer serves both relations. DSH validates service city, vertical, ty
 ## STORE_ORDERABILITY — Publication does not imply accepting Orders
 
 JOURNEY_ID: STORE_ORDERABILITY
+CAPABILITIES: STORE_OPERATIONAL_AVAILABILITY
 SURFACES: MERCHANT, CUSTOMER, OPERATOR
 OWNERS: DSH
 ENTRY: Published Store has eligible active service city and an approved operating-hours/mode policy.
@@ -53,6 +58,7 @@ Store status, approved publication, weekly hours, temporary closure, actual Offe
 ## CATALOG_TO_CUSTOMER_OFFER — One sellable catalog, two channels
 
 JOURNEY_ID: CATALOG_TO_CUSTOMER_OFFER
+CAPABILITIES: CENTRAL_CATALOG
 SURFACES: OPERATOR, MERCHANT, CUSTOMER
 OWNERS: DSH
 ENTRY: Authorized shared registry/ProductVariant or Merchant Store-scoped item/Offer and eligible publication.
@@ -66,6 +72,7 @@ One Registry and one StoreOffer writer support shared and Store-scoped Products.
 ## DISCOVERY_TO_COMMERCE_ENTRY — Content, promotion and funded eligibility
 
 JOURNEY_ID: DISCOVERY_TO_COMMERCE_ENTRY
+CAPABILITIES: DISCOVERY_CONTENT, COMMERCE_PROMOTIONS, CENTRAL_CATALOG, STORE_SCOPED_ACCESS_DELEGATION
 SURFACES: OPERATOR, MERCHANT, CUSTOMER
 OWNERS: DSH, WLT
 ENTRY: Eligible author prepares a Store-scoped discovery item, approved banner or promotion.
@@ -79,6 +86,7 @@ Operator editorial and platform-funded campaigns, eligible Merchant opt-in and M
 ## SINGLE_STORE_ORDER_CREATION — Current quote to one Store Order
 
 JOURNEY_ID: SINGLE_STORE_ORDER_CREATION
+CAPABILITIES: SERVICEABILITY_ADDRESSES, CART_CHECKOUT, ORDER_LIFECYCLE, ORDER_PAYMENT_COLLECTION, CUSTOMER_BALANCE_FUNDING, STORE_OPERATIONAL_AVAILABILITY, CENTRAL_CATALOG, COMMERCE_PROMOTIONS
 SURFACES: CUSTOMER, MERCHANT
 OWNERS: Identity, DSH, WLT
 ENTRY: Customer selects one eligible StoreOffer cart, recipient/address, fulfillment and admitted COD/Wallet/Mixed payment.
@@ -92,6 +100,7 @@ DSH quotes current server prices, legal promotion, quantity, Stock, Store public
 ## BTHWANI_CAPTAIN_DELIVERY — One winning assignment and lawful custody
 
 JOURNEY_ID: BTHWANI_CAPTAIN_DELIVERY
+CAPABILITIES: ORDER_LIFECYCLE, CAPTAIN_DISPATCH, STORE_CAPTAIN_HANDOFF, FINAL_MILE_DELIVERY, ORDER_PAYMENT_COLLECTION, CAPTAIN_BALANCE_FUNDING, PARTNER_CAPTAIN_EARNINGS_SETTLEMENT
 SURFACES: MERCHANT, CAPTAIN, CUSTOMER
 OWNERS: DSH, WLT
 ENTRY: Merchant-accepted and prepared `BTHWANI_CAPTAIN` Store Order becomes ready for an eligible platform Captain.
@@ -105,6 +114,7 @@ The **maximum concurrent offer count** and acceptance/dispatch durations are DSH
 ## PARTNER_CAPTAIN_DELIVERY — Store-affiliated Captain, same Order
 
 JOURNEY_ID: PARTNER_CAPTAIN_DELIVERY
+CAPABILITIES: STORE_CAPTAIN_MEMBERSHIP, STORE_CAPTAIN_HANDOFF, FINAL_MILE_DELIVERY, ORDER_LIFECYCLE, ORDER_PAYMENT_COLLECTION
 SURFACES: MERCHANT, CAPTAIN, CUSTOMER
 OWNERS: Identity, DSH, WLT
 ENTRY: An eligible `PARTNER_CAPTAIN` method is selected and that Captain has accepted current Store-specific membership.
@@ -118,6 +128,7 @@ Merchant invites a verified person; Captain accepts the Store-specific relations
 ## CUSTOMER_PICKUP — Verified Store/customer handoff
 
 JOURNEY_ID: CUSTOMER_PICKUP
+CAPABILITIES: CUSTOMER_PICKUP, ORDER_LIFECYCLE, ORDER_PAYMENT_COLLECTION
 SURFACES: CUSTOMER, MERCHANT
 OWNERS: DSH, WLT
 ENTRY: Eligible `CUSTOMER_PICKUP` Store Order is accepted/prepared/ready.
@@ -129,6 +140,7 @@ The Order is the *same* canonical DSH Store Order. Customer arrival, pickup evid
 ## MULTI_STORE_ORCHESTRATION — Parent intent, independent children
 
 JOURNEY_ID: MULTI_STORE_ORCHESTRATION
+CAPABILITIES: MULTI_STORE_CHECKOUT, CART_CHECKOUT, ORDER_LIFECYCLE, ORDER_PAYMENT_COLLECTION, CAPTAIN_DISPATCH, STORE_CAPTAIN_MEMBERSHIP, CUSTOMER_PICKUP
 SURFACES: CUSTOMER, MERCHANT, CAPTAIN
 OWNERS: DSH, WLT
 ENTRY: Customer submits one permitted multi-Store intent with independently valid Store carts.
@@ -140,6 +152,7 @@ Parent is orchestration, **not** a second legal Order writer or blanket Store se
 ## ORDER_COMMUNICATION — Private Order-scoped interaction
 
 JOURNEY_ID: ORDER_COMMUNICATION
+CAPABILITIES: ORDER_CONVERSATION
 SURFACES: CUSTOMER, MERCHANT, CAPTAIN, OPERATOR
 OWNERS: DSH
 ENTRY: Canonical Store Order and current role-scoped participant permission.
@@ -183,6 +196,7 @@ DSH may detect qualified stage stagnation or failure signals through one **owner
 ## ORDER_ADJUSTMENT_EXCEPTION_REFUND — Lawful post-confirmation changes
 
 JOURNEY_ID: ORDER_ADJUSTMENT_EXCEPTION_REFUND
+CAPABILITIES: ORDER_LIFECYCLE, ORDER_PAYMENT_COLLECTION, PARTNER_CAPTAIN_EARNINGS_SETTLEMENT
 SURFACES: CUSTOMER, MERCHANT, CAPTAIN, OPERATOR (only when needed)
 OWNERS: DSH, WLT
 ENTRY: Owner-confirmed missing item, measured-weight difference, eligible substitution, cancellation, failure, dispute or Order-bound financial exception.
@@ -196,6 +210,7 @@ Merchant proposes only valid substitute/removal/actual quantity; Customer accept
 ## PARTNER_COMMISSION_REMITTANCE — Store-collected proceeds, platform receivable
 
 JOURNEY_ID: PARTNER_COMMISSION_REMITTANCE
+CAPABILITIES: ORDER_PAYMENT_COLLECTION, PARTNER_CAPTAIN_EARNINGS_SETTLEMENT
 SURFACES: MERCHANT, OPERATOR
 OWNERS: WLT (DSH provides original Store Order evidence)
 ENTRY: Under an eligible accepted commission agreement, a Store has retained actual Customer proceeds and WLT has an outstanding platform commission receivable.
@@ -209,6 +224,7 @@ Commission on Store-collected Direct/Marketplace is not automatically covered by
 ## BENEFICIARY_SETTLEMENT — Evidence-backed payout to verified beneficiary
 
 JOURNEY_ID: BENEFICIARY_SETTLEMENT
+CAPABILITIES: PARTNER_CAPTAIN_EARNINGS_SETTLEMENT
 SURFACES: MERCHANT, CAPTAIN, OPERATOR
 OWNERS: WLT (Identity verified actor; DSH source entitlement evidence)
 ENTRY: WLT holds eligible Store/Captain earned entitlement, plus any binding historic obligation.
