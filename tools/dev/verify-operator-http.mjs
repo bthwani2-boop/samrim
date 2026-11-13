@@ -104,7 +104,7 @@ try {
     ["/", 200, "بثواني — لوحة المشغّل"],
     ["/health", 200, "الملاحة في لوحة التحكم تعمل"],
     ["/lab", 200, "مختبر مكونات Ant Design"],
-    ["/nonexistent-stage4-operator-smoke", 404, null],
+    ["/nonexistent-stage4-operator-smoke", 404, "الصفحة غير موجودة"],
   ];
   const seenNonces = new Set();
   for (const [route, expectedStatus, visibleText] of routes) {
@@ -130,6 +130,10 @@ try {
         `${route} lost noindex on the nonfunctional foundation`);
       assert.ok(html.includes(visibleText), `${route} did not render expected content in SSR`);
       assert.ok(html.includes(`nonce="${nonce}"`), `${route} Next.js SSR scripts lost their CSP nonce`);
+      if (expectedStatus === 404) {
+        assert.match(html, /<a\b[^>]*href="\/"[^>]*>العودة إلى لوحة المشغّل<\/a>/u,
+          `${route} lost its safe Arabic recovery link`);
+      }
     }
   }
   const retry = await fetch(`${base}/`, { signal: AbortSignal.timeout(7000) });
