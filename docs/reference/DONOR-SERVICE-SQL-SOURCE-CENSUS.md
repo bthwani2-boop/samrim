@@ -342,6 +342,40 @@ This is a **targeted source review of identified high-impact migrations**, not a
 | WLT `database/fresh-baseline.sql` (outside the 63 numbered migrations) | It is a generated clean-install SQL snapshot with a PostgreSQL 18.6 dump header. Its comments state that included migration rows signify **equivalent baseline state**, not actual individual migration executions. | Treat it as source evidence only; do not import its historical-version claims into the new schema ledger without a reviewed schema/constraint/role equivalence proof and an authorized empty-database fresh installation test. |
 | WLT `062_store_relation_commercial_model_defaults.sql` and `063_store_relation_model_default_event_integrity.sql` | Introduce prospective, initially unconfigured fee-model defaults and audit-event integrity, without changing accepted Store agreements or posting charges. | Model relation and commercial agreement separately, preserve effective agreement versions and event immutability, and do not turn a default into money authority. |
 
+### 2026-11-14 — Donor PostgreSQL deployment and narrow cross-owner reconciliation read (topology NOT_DECIDED)
+
+REVIEW_TYPE: PINNED_SOURCE_ONLY_TOPOLOGY_EVIDENCE
+SOURCE_BRANCH_SHA: `41@426d67b47beb8c66b09acd8c7394086b53ac5aae`
+CANDIDATE_RUNTIME: ZERO_GO_ZERO_SQL
+DEPLOYMENT_CHOICE: INVESTIGATE_NOT_ADOPTED
+LIVE_DATABASE_AND_APPLIED_HISTORY: NOT_READ
+SEC_FIN_MIG_RUNTIME_PROOF: NOT_RUN
+
+**What the source actually proves (not a new design decision):**
+
+- `infra/local/compose/compose.yaml` declares one local `postgis/postgis:18-3.6` PostgreSQL service using an environment-selected `SAMRIM_POSTGRES_DB`. Its owner migration one-shots use this database target. This is **donor development deployment configuration**, not evidence of the current remote host, production topology or that a new baseline was restored.
+- `services/identity/backend/internal/storage/postgres/migrate.go` reads `public.identity_schema_migrations`; the DSH/WLT migrators own `dsh.schema_migrations` and `wlt.schema_migrations`. Their histories are distinct despite the shared database. Donor source counts remain Identity 30, DSH 182, WLT 63; **no applied migration table has been inspected**.
+- `infra/local/compose/runtime-roles.sql` defines distinct Identity runtime/maintenance, DSH runtime and WLT runtime roles. The WLT runtime role receives narrow `SELECT` on **only** `dsh.commerce_financial_handoff_outbox` and `dsh.commerce_orders` in the shown DSH grants; source role assertions reject its write authority and other broad DSH reads. This is an intentional historical exception, **not** proof of a generally permissionless WLT API.
+- `services/wlt/backend/cmd/financial-invariants/main.go` and `services/wlt/backend/cmd/financial-invariants/readback.go` perform direct DSH outbox/Order SQL joins for financial-invariant verification. That is the **observed CLI audit consumer** of cross-owner SQL, not evidence that normal WLT HTTP operations use those joins. A different database or separate PostgreSQL instance would require an evidence-equivalent owner-approved reconciliation interface/projection before removing that audit path.
+
+| Candidate physical PostgreSQL placement | What it makes easier | What must be proven before selection |
+| --- | --- | --- |
+| One Postgres instance **and one database, distinct owner schemas** (matches donor local form) | Smaller local operational footprint; one cluster/database lifecycle; the historical CLI cross-schema audit can run with narrow permissions | Separate runtime/migration roles and deny-by-default cross-owner access; audited exceptional read only where a lawful projection/contract is not yet available; qualified SQL/search-path safety; owner restore/readback, no implicit cross-owner writer |
+| One Postgres instance, **separate databases per owner** | Database-scoped connection and access boundary; owner-specific dumps/restores and schema migrations without default cross-schema joins | Explicit DSH-to-WLT handoff and audit readback parity; versioned cross-owner consistency/unknown-result handling; operator administration, backup and recovery across all three databases |
+| **Separate instances** per owner | Independent instance resource/restart and recovery scheduling when justified | Real measured availability/isolation benefit greater than operational cost, multi-instance protected backups/restores, network credentials, durable event/retry semantics and ledger invariants |
+
+These are **evaluation candidates**, not authorization for a new deployment, extra services, PostgreSQL credentials, Docker project, data transfer, migration or production topology. Identity/DSH/WLT **semantic ownership** does not dictate that three Go processes, three databases or three hosts are optimal; compare deployment shape separately from the data boundary. The refoundation governance owner is `governance/architecture.md`; this census records only the observed donor dependency and falsifiable acceptance tests.
+
+**Minimum isolated proof before choosing/changing topology:**
+
+1. With separately admitted synthetic owner-backed rows, prove **positive own-schema access and negative cross-owner SELECT/INSERT/UPDATE/DDL** using each actual runtime role, plus stricter migration-role separation. Do not use Root Owner or production records.
+2. Prove the authorized DSH financial-handoff and Order evidence reaches WLT's reconciliation **without duplicated financial facts**, with stable event identifiers, once-only posting, partial/late delivery and unknown-result recovery; compare against the historical `financial-invariants` outcomes.
+3. Verify secure `search_path` and absence of CREATE rights on untrusted schemas. PostgreSQL documentation notes that a schema in `search_path` effectively trusts its CREATE-capable roles. RLS is supplemental and some privileged/table-owner roles bypass it; **do not substitute RLS for Identity/DSH/WLT authorization**. Primary sources: [PostgreSQL 18 schemas](https://www.postgresql.org/docs/18/ddl-schemas.html), [PostgreSQL 18 row security](https://www.postgresql.org/docs/18/ddl-rowsecurity.html).
+4. Rehearse owner-specific **Fresh**, protected **Upgrade** on a specifically authorized isolated copy, actual **backup-and-restore**, and cross-owner consistent readback after a partial outage. Check preserved history, legal obligations, sessions, COD/Wallet/Mixed/ledger conservation, and recovery. No such test ran in this review.
+5. Measure representative runtime CPU/RAM, query/lock/tail latency, connection pools, storage, backup complexity and failure/recovery for at least the simpler candidate before justifying extra databases/instances or independently deployed services; no invented numbers or architectural winner.
+
+**Disposition:** SOURCE_DEPENDENCY_TRACE_PASS for the cited donor files only; PHYSICAL_DEPLOYMENT_CHOICE=INVESTIGATE; ACTUAL_NEW_DB/SQL/GO/E2E=NOT_RUN; GOVERNANCE_CUTOVER remains NOT_READY. The human-approved 2026-11-13 target policy selections do **not** need fabricated external signatures, but actual money/security/protected-migration effects still require the documented internal negative/restore evidence and consequential authorization.
+
 ### Source-to-implementation acceptance matrix (future, not granted now)
 
 1. **Policy first:** reconcile each surviving fact with `governance/{identity,stores,commerce,finance,safety}.md` and the 26-capability census. A historical branch-41 migration does not itself authorize a new business choice. Missing qualified FIN/SEC/MIG/LEGAL review keeps `GOVERNANCE_CUTOVER: NOT_READY`.
