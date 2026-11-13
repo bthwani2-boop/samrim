@@ -222,6 +222,10 @@ rejects('rejects incomplete historical per-ID classification',{edit:{'docs/REFOU
 rejects('rejects duplicated historical per-ID classification',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^(\| R042 \| `DRAFT_ALIGNED_OWNER` \|[^\n]+)$/m,'$1\n$1')}},/classify all 112 historical source IDs exactly once/);
 rejects('rejects fabricated historical code PASS',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^(\| R041 \| `)DRAFT_ALIGNED_OWNER/m,'$1PASS_IMPLEMENTED')}},/unrecognized documentary classification/);
 
+rejects('rejects collapsing Store relation and business activity', {edit:{'governance/stores.md':s=>s.replace('`commercialStoreTypeId`','`relationModel`')}},/approved Store relation\/business classification distinction missing/);
+rejects('rejects losing business-type label in Store onboarding', {edit:{'governance/experience.md':s=>s.replace('«نوع النشاط»','«طريقة عمل المتجر»')}},/Merchant onboarding must keep channel\/business-type\/vertical labels distinct/);
+rejects('rejects removing an approved human finance policy risk case',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^\| FIN-02 \| Treat Direct[^\n]+\n/m,'')}},/seven approved human policy risk cases missing or duplicated: FIN-02/);
+rejects('rejects unresolved old strategic choice D12',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^\| D12 \| APPROVED:/m,'| D12 | UNDECIDED:')}},/old strategy decision not resolved: D12/);
 rejects('rejects loss of closed-by-schedule Store meaning',{edit:{'governance/stores.md':s=>s.replace('CLOSED_BY_SCHEDULE','STORE_UNKNOWN')}},/DSH Store orderability distinction missing/);
 rejects('rejects lost historic payout-recipient state',{edit:{'governance/finance.md':s=>s.replaceAll('RECIPIENT_REVIEW_REQUIRED','REVIEW_OPTIONAL')}},/historic WLT money\/recipient preservation missing/);
 rejects('rejects lost protected legacy COD state',{edit:{'governance/finance.md':s=>s.replaceAll('REMITTED','NEW_MONEY')}},/historic WLT money\/recipient preservation missing/);

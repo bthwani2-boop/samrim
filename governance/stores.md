@@ -12,6 +12,8 @@ DSH's one bounded `employees` engine may record Merchant employees against their
 
 The two **customer-facing choices** during Store creation are `MARKETPLACE` («داخل سوق بثواني») and `DIRECT` («متجر مباشر»). These names target the new clean contract, not two Store engines. Historic `BTHWANI_PARTNER`/`INDEPENDENT_STORE` refer to the same two old meanings during audited migration; never persist four competing business relation types.
 
+**Distinct Store classification fields retained from branch 41:** The relation/channel choice (historic `relationModel`, Arabic «طريقة عمل المتجر») is not the Store's business type (historic `commercialStoreTypeId`, Arabic «نوع النشاط», such as grocery or pharmacy) and is not the parent commercial vertical (historic `primaryVerticalId`, Arabic «المجال التجاري»). DSH owns and validates these three separate meanings through one Store creation/classification contract; their exact database representation needs compatible migration review, not a second Store engine. A Merchant must never be forced to fill a redundant classification twice merely because the technical hierarchy has three fields. Preserve already accepted Store classification IDs/relationships until audited migration.
+
 ## PARTNER_ONBOARDING_STORE_PUBLICATION — Store admission and publication
 CAPABILITY_ID: PARTNER_ONBOARDING_STORE_PUBLICATION
 

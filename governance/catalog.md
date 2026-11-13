@@ -62,7 +62,7 @@ In one CSV/XLSX Store import, a name-only row with an admissible Store-specific 
 
 An illustrative image attached to a `CommerceVertical` is a separate DSH-governed catalog media reference with provenance, rights and moderation; it is not Product media, category identity or a change to Store classification. A Store's primary vertical is never inferred from a picture, label or legacy record.
 
-These are **draft-preservation conditions from branch 41**, not evidence of a runnable importer, authorized ACL implementation or completed independent security review. Implement and test them only after governance cutover and a real owner contract.
+These are **source-preservation conditions from branch 41** admitted as target rules by the 2026-11-13 human decision, not evidence of a runnable importer, authorized ACL implementation or completed real security tests. The external-reviewer staffing prerequisite is superseded; actual negative authorization and Store-scoping proof remains required before activation. Implement and test them only after governance cutover and a real owner contract.
 
 ## Owner-backed merchandising and media limits
 

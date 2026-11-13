@@ -407,6 +407,11 @@ const experience=contents['governance/experience.md'];
 if(!experience.includes('WCAG 2.2 AA')||!/saved views/i.test(experience)||!experience.includes('owner-side search/filter/sort'))
  fail('operator experience missing accessible/at-scale acceptance boundaries');
 const storeDocs=contents['governance/stores.md'];
+for (const field of ['`relationModel`','`commercialStoreTypeId`','`primaryVerticalId`']) {
+ if (!storeDocs.includes(field)) fail('approved Store relation/business classification distinction missing: '+field);
+}
+if (!experience.includes('«طريقة عمل المتجر»') || !experience.includes('«نوع النشاط»') || !experience.includes('«المجال التجاري»'))
+ fail('Merchant onboarding must keep channel/business-type/vertical labels distinct');
 for(const state of ['OPEN_FOR_ORDERS','CLOSED_BY_SCHEDULE','PAUSED','OPERATIONALLY_UNAVAILABLE']){
  if(!storeDocs.includes(state))fail('DSH Store orderability distinction missing: '+state);
 }
@@ -429,6 +434,22 @@ for (const anchor of [
 }
 
 
+// Latest human target-adoption decisions are separate from actual external signoff and runtime proof.
+const newestRiskStart=plan.indexOf('### 2026-11-13 — Internal policy-risk adjudication on the seven approved target decisions');
+const finalDecisionStart=plan.indexOf('### 2026-11-13 — Final Product/architecture disposition for prior D01–D12 decision questions');
+const phase0Start=plan.indexOf('## Phase 0 — Safe baseline');
+if(newestRiskStart<0||finalDecisionStart<newestRiskStart||phase0Start<finalDecisionStart) fail('latest human risk decision chronology missing');
+const newRisk=plan.slice(newestRiskStart,finalDecisionStart);
+for(const gate of ['FIN-01','FIN-02','FIN-03','SEC-01','SEC-02','MIG-01','LEGAL-01']) {
+ if([...newRisk.matchAll(new RegExp('^\\| '+gate+' \\|','gm'))].length!==1) fail('seven approved human policy risk cases missing or duplicated: '+gate);
+}
+const finalChoices=plan.slice(finalDecisionStart,phase0Start);
+for(let i=1;i<=12;i++) {
+ const id='D'+String(i).padStart(2,'0');
+ if([...finalChoices.matchAll(new RegExp('^\\| '+id+' \\| APPROVED:','gm'))].length!==1) fail('old strategy decision not resolved: '+id);
+}
+if(!plan.includes('CodeQL Go cannot process a deliberately Go-empty tree') || !plan.includes('CodeQL\'s **Go** analysis is **FAIL**'))
+ fail('stage-specific CodeQL source-sparse scan failure must not be mislabeled success');
 // Preserve source-grounded security and data limits in the draft owner without
 // treating lexical guard PASS as a reviewed policy or implemented security.
 const safety=contents['governance/safety.md'];
