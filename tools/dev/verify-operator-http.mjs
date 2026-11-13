@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Operator Stage-4 HTTP/SSR smoke against the existing production Next build.
+// Operator Stage-4 CSP/SSR smoke. Default: production Next build; --dev: isolated Next development host.
 // No provider credentials, external network, user records, or application services.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -9,12 +9,19 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
+const args = process.argv.slice(2);
+assert.ok(args.length === 0 || (args.length === 1 && args[0] === "--dev"),
+  "Use no arguments for the production build or --dev for the development host");
+const development = args[0] === "--dev";
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const app = path.join(root, "apps", "control-panel");
 const nextCli = path.join(app, "node_modules", "next", "dist", "bin", "next");
 assert.ok(existsSync(nextCli), "Install the existing frozen workspace dependencies first");
-assert.ok(existsSync(path.join(app, ".next", "BUILD_ID")),
-  "Run pnpm --dir apps/control-panel build before the production HTTP smoke");
+if (!development) {
+  assert.ok(existsSync(path.join(app, ".next", "BUILD_ID")),
+    "Run pnpm --dir apps/control-panel build before the production HTTP smoke");
+}
 
 async function freePort() {
   const socket = createServer();
@@ -42,8 +49,14 @@ function nonceFromEnforcedCsp(response, route) {
   }
   const scriptDirective = policy.match(/(?:^|;\s*)script-src\s+([^;]+)/)?.[1] ?? "";
   assert.ok(scriptDirective.includes("'strict-dynamic'"), `${route} lost strict script chaining`);
-  assert.ok(!scriptDirective.includes("'unsafe-inline'") && !scriptDirective.includes("'unsafe-eval'"),
-    `${route} permits inline or evaluated production scripts`);
+  assert.ok(!scriptDirective.includes("'unsafe-inline'"),
+    `${route} permits inline scripts`);
+  assert.equal(scriptDirective.includes("'unsafe-eval'"), development,
+    `${route} has the wrong script evaluation policy for ${development ? "development" : "production"}`);
+  assert.equal(policy.includes("connect-src 'self' ws:"), development,
+    `${route} has the wrong Hot Module Reload websocket allowance`);
+  assert.equal(policy.includes("upgrade-insecure-requests"), !development,
+    `${route} has the wrong insecure-request upgrade policy`);
   const nonce = scriptDirective.match(/'nonce-([A-Za-z0-9+/=]+)'/)?.[1];
   assert.ok(nonce && nonce.length >= 20, `${route} missing unpredictable script nonce`);
   const cacheControl = response.headers.get("cache-control") ?? "";
@@ -54,9 +67,9 @@ function nonceFromEnforcedCsp(response, route) {
 
 const port = await freePort();
 const base = `http://127.0.0.1:${port}`;
-const server = spawn(process.execPath, [nextCli, "start", "-H", "127.0.0.1", "-p", String(port)], {
+const server = spawn(process.execPath, [nextCli, development ? "dev" : "start", "-H", "127.0.0.1", "-p", String(port)], {
   cwd: app,
-  env: { ...process.env, NODE_ENV: "production", NEXT_TELEMETRY_DISABLED: "1" },
+  env: { ...process.env, NODE_ENV: development ? "development" : "production", NEXT_TELEMETRY_DISABLED: "1" },
   windowsHide: true,
   stdio: ["ignore", "pipe", "pipe"],
 });
@@ -139,7 +152,7 @@ try {
   const forgedHtml = await forged.text();
   assert.ok(forgedHtml.includes(`nonce="${forgedNonce}"`),
     "the response nonce differs from the trusted server-rendered scripts");
-  console.log("OPERATOR_PRODUCTION_HTTP_SMOKE_PASS routes=4 nonce_unique=6 forged_header_rejected=true script_csp=enforced style_inline_exception=true browser_hydration=NOT_RUN");
+  console.log(`OPERATOR_${development ? "DEVELOPMENT" : "PRODUCTION"}_HTTP_SMOKE_PASS routes=4 nonce_unique=6 forged_header_rejected=true script_csp=enforced unsafe_eval=${development ? "development_only" : "disabled"} style_inline_exception=true browser_hydration=NOT_RUN`);
 } finally {
   if (server.exitCode === null && !server.killed) {
     server.kill("SIGTERM");
