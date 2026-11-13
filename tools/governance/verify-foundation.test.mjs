@@ -10,6 +10,10 @@ const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const checker=path.join(root,'tools/governance/verify-foundation.mjs');
 const owners=['product','platform','architecture','identity','stores','catalog','commerce','fulfillment','finance','hr','experience','safety','engineering','journeys'];
 const assetManifest=JSON.parse(fs.readFileSync(path.join(root,'.specify/integrations/speckit.manifest.json'),'utf8'));
+const contractGroups=['identity','dsh','wlt'].flatMap(owner=>
+ fs.readdirSync(path.join(root,'services',owner,'contracts','openapi','paths'))
+  .filter(name=>name.endsWith('.yaml'))
+  .map(name=>'services/'+owner+'/contracts/openapi/paths/'+name));
 const files=[...new Set([
  'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',
  ...owners.map(owner=>'governance/'+owner+'.md'),'docs/REFOUNDATION-PLAN.md','docs/reference/README.md','docs/reference/HISTORICAL-SOURCE-INVENTORY.md','docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md',
@@ -19,7 +23,7 @@ const files=[...new Set([
  'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','tsconfig.base.json','biome.json',
  'README.md','services/identity/README.md','services/dsh/README.md','services/wlt/README.md',
  ...['identity','dsh','wlt'].flatMap(owner=>['package.json','tsconfig.json','clients/README.md','clients/index.ts','contracts/openapi/README.md','contracts/openapi/'+owner+'.openapi.yaml'].map(file=>'services/'+owner+'/'+file)),
- ...['stores','catalog','offers','cart','orders','fulfillment','employees'].map(name=>'services/dsh/contracts/openapi/paths/'+name+'.yaml'),
+ ...contractGroups,'docs/reference/OPENAPI-DONOR-CONTRACT-INVENTORY.md',
  'docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md','docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json','tools/dev/verify-workspace.mjs','tools/mobile/verify-app-foundations.mjs',
  '.specify/init-options.json','.specify/integration.json','.specify/integrations/speckit.manifest.json',
  '.specify/memory/constitution.md',...Object.keys(assetManifest.files)
@@ -62,6 +66,10 @@ test('live foundation draft is structurally coherent but NOT_READY',()=>{
  assert.match(r.text,/capability_ids=26/);
  assert.match(r.text,/GOVERNANCE_CUTOVER_NOT_READY/);
  assert.match(r.text,/openapi_zero_operations=true/);
+ assert.match(r.text,/openapi_reserved_groups=42/);
+ assert.equal(contractGroups.length,42);
+ assert.deepEqual(['identity','dsh','wlt'].map(owner=>
+  contractGroups.filter(file=>file.startsWith('services/'+owner+'/')).length),[7,21,14]);
 });
 test('accepts only known empty planned service subdirectories',()=>{
  const r=run({dirs:[
@@ -92,12 +100,18 @@ rejects('rejects premature server declaration',{edit:{'services/identity/contrac
 rejects('rejects premature financial operation',{edit:{'services/wlt/contracts/openapi/wlt.openapi.yaml':s=>s.replace('paths: {}','paths:\n  /wlt/wallet: {}')}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
 rejects('rejects unsupported cross-owner ref',{edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace('paths: {}','paths:\n  /dsh/stores:\n    $ref: ../../../../identity/contracts/openapi/identity.openapi.yaml')}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
 rejects('rejects missing DSH path module',{del:['services/dsh/contracts/openapi/paths/stores.yaml']},/required services\/dsh\/contracts\/openapi\/paths\/stores.yaml/);
-rejects('rejects malformed DSH path fragment',{edit:{'services/dsh/contracts/openapi/paths/orders.yaml':s=>s.replace('paths: {}','paths: [')}},/DSH path fragment is not an empty placeholder/);
-rejects('rejects nonempty DSH path fragment',{edit:{'services/dsh/contracts/openapi/paths/employees.yaml':s=>s.replace('paths: {}','paths:\n  /employees: {}')}},/DSH path fragment is not an empty placeholder/);
+rejects('rejects malformed DSH path fragment',{edit:{'services/dsh/contracts/openapi/paths/orders.yaml':s=>s.replace('paths: {}','paths: [')}},/OpenAPI path fragment is not an empty placeholder/);
+rejects('rejects nonempty DSH path fragment',{edit:{'services/dsh/contracts/openapi/paths/employees.yaml':s=>s.replace('paths: {}','paths:\n  /employees: {}')}},/OpenAPI path fragment is not an empty placeholder/);
 rejects('rejects additional speculative DSH path module',{add:{'services/dsh/contracts/openapi/paths/wallet-provider.yaml':'paths: {}\n'}},/premature service source: services\/dsh\/contracts\/openapi\/paths\/wallet-provider.yaml/);
-rejects('rejects unapproved Identity path module',{add:{'services/identity/contracts/openapi/paths/session.yaml':'paths: {}\n'}},/premature service source: services\/identity\/contracts\/openapi\/paths\/session.yaml/);
-rejects('rejects unapproved WLT path module',{add:{'services/wlt/contracts/openapi/paths/ledger.yaml':'paths: {}\n'}},/premature service source: services\/wlt\/contracts\/openapi\/paths\/ledger.yaml/);
+rejects('rejects unapproved Identity path module',{add:{'services/identity/contracts/openapi/paths/shadow-auth.yaml':'paths: {}\n'}},/premature service source: services\/identity\/contracts\/openapi\/paths\/shadow-auth.yaml/);
+rejects('rejects unapproved WLT path module',{add:{'services/wlt/contracts/openapi/paths/alternate-ledger.yaml':'paths: {}\n'}},/premature service source: services\/wlt\/contracts\/openapi\/paths\/alternate-ledger.yaml/);
 rejects('rejects missing OpenAPI ownership notes',{del:['services/identity/contracts/openapi/README.md']},/required services\/identity\/contracts\/openapi\/README.md/);
+rejects('rejects missing source-audited contract inventory',{del:['docs/reference/OPENAPI-DONOR-CONTRACT-INVENTORY.md']},/required docs\/reference\/OPENAPI-DONOR-CONTRACT-INVENTORY.md/);
+rejects('rejects missing Identity session fragment',{del:['services/identity/contracts/openapi/paths/session.yaml']},/required services\/identity\/contracts\/openapi\/paths\/session.yaml/);
+rejects('rejects missing WLT ledger fragment',{del:['services/wlt/contracts/openapi/paths/ledger.yaml']},/required services\/wlt\/contracts\/openapi\/paths\/ledger.yaml/);
+rejects('rejects nonempty WLT ledger fragment',{edit:{'services/wlt/contracts/openapi/paths/ledger.yaml':s=>s.replace('paths: {}','paths:\n  /wlt/credit: {}')}},/OpenAPI path fragment is not an empty placeholder/);
+rejects('rejects nonempty Identity authentication fragment',{edit:{'services/identity/contracts/openapi/paths/client-auth.yaml':s=>s.replace('paths: {}','paths:\n  /auth/override: {}')}},/OpenAPI path fragment is not an empty placeholder/);
+rejects('rejects misplaced financial writer in DSH',{edit:{'services/dsh/contracts/openapi/paths/financial-views.yaml':s=>s.replace('paths: {}','paths:\n  /dsh/ledger/post: {}')}},/OpenAPI path fragment is not an empty placeholder/);
 rejects('rejects early SQL migration',{add:{'services/wlt/database/migrations/001.sql':'select 1;'}},/premature service source: services\/wlt\/database\/migrations\/001.sql/);
 rejects('rejects early fresh baseline',{add:{'services/dsh/database/fresh-baseline.sql':'select 1;'}},/premature service source: services\/dsh\/database\/fresh-baseline.sql/);
 rejects('rejects untracked placeholders',{add:{'services/dsh/backend/.gitkeep':''}},/premature service source: services\/dsh\/backend\/\.gitkeep/);

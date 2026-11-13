@@ -12,6 +12,10 @@ This is **not** a second Product roadmap, governance directory, design system, C
 
 The extracted source-by-source list is in [`HISTORICAL-SOURCE-INVENTORY.md`](HISTORICAL-SOURCE-INVENTORY.md): 37 distinct non-loopback URLs and 5 historical localhost endpoints across six old research files. Extraction is **not** an HTTP/license/current-content verification. No external link or research example becomes a product capability by being indexed.
 
+## Original service OpenAPI source inventory
+
+[The pinned Identity/DSH/WLT OpenAPI census](OPENAPI-DONOR-CONTRACT-INVENTORY.md) records actual donor Path Items, module counts, the proposed reserved domain groupings and owner-boundary risks. It is historical implementation evidence, **not** a replacement contract, permission matrix or approved Product policy. Every new OpenAPI fragment remains zero-operation until implementation approval.
+
 ## Archived Control Panel requirement IDs
 
 [`HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md`](HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md) retains all **112 original ID-to-wording traces** and original owner hints from the October 2026 Master Pack. Each source row was marked `UNVERIFIED_ON_HEAD_16`; its current Product admission and actual implementation remain independent matters. This is a **non-governing source index**, not a new Product or policy register. The approved technical and business meaning lives in the domain owner at root `governance/`, and the temporary closure ledger lives in `docs/REFOUNDATION-PLAN.md`.

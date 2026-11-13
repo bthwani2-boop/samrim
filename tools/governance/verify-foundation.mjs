@@ -12,6 +12,56 @@ if(args.length!==0 && (args.length!==2 || args[0]!=='--root')) throw Error('usag
 const root=path.resolve(args.length?args[1]:scriptRoot);
 const owners=['product','platform','architecture','identity','stores','catalog','commerce','fulfillment','finance','hr','experience','safety','engineering','journeys'];
 const domainFiles=owners.map(name=>'governance/'+name+'.md');
+const contractPathGroups={
+ identity: [
+  'actor-legal-name',
+  'client-auth',
+  'internal-actor-administration',
+  'managed-enrollment-auth',
+  'operator-passkey-access',
+  'runtime',
+  'session'
+ ],
+ dsh: [
+  'stores',
+  'catalog',
+  'offers',
+  'cart',
+  'orders',
+  'fulfillment',
+  'employees',
+  'runtime',
+  'locations',
+  'serviceability',
+  'store-access',
+  'store-publication',
+  'captains',
+  'order-conversations',
+  'promotions',
+  'discovery-content',
+  'notifications',
+  'client-shares',
+  'operational-policies',
+  'financial-views',
+  'customer-discovery'
+ ],
+ wlt: [
+  'runtime',
+  'payment-intents',
+  'wallets',
+  'funding',
+  'ledger',
+  'cash-custody',
+  'fee-policies',
+  'commercial-agreements',
+  'earnings-receivables',
+  'beneficiaries',
+  'payouts',
+  'settlements',
+  'reconciliation',
+  'financial-reporting'
+ ]
+};
 const required=[
  'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',...domainFiles,'docs/REFOUNDATION-PLAN.md','docs/reference/README.md','docs/reference/HISTORICAL-SOURCE-INVENTORY.md','docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md',
  '.specify/init-options.json','.specify/integration.json','.specify/integrations/speckit.manifest.json','.specify/memory/constitution.md',
@@ -21,7 +71,8 @@ const required=[
  'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','tsconfig.base.json','biome.json',
  'README.md','services/identity/README.md','services/dsh/README.md','services/wlt/README.md',
  ...['identity','dsh','wlt'].flatMap(owner=>['package.json','tsconfig.json','clients/README.md','clients/index.ts','contracts/openapi/README.md','contracts/openapi/'+owner+'.openapi.yaml'].map(file=>'services/'+owner+'/'+file)),
- ...['stores','catalog','offers','cart','orders','fulfillment','employees'].map(name=>'services/dsh/contracts/openapi/paths/'+name+'.yaml'),
+ ...Object.entries(contractPathGroups).flatMap(([owner,groups])=>groups.map(name=>'services/'+owner+'/contracts/openapi/paths/'+name+'.yaml')),
+ 'docs/reference/OPENAPI-DONOR-CONTRACT-INVENTORY.md',
  'docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md','docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json','tools/dev/verify-workspace.mjs','tools/mobile/verify-app-foundations.mjs'
 ];
 const fail=(reason)=>{ throw Error('FOUNDATION_GATE_FAIL: '+reason); };
@@ -84,11 +135,11 @@ for(const folder of ['contracts','infra','nx.json','go.work']){
  if(exists(folder))fail('stage 5+ service/DB/infra introduced prematurely: '+folder);
 }
 
-// The structural contract slice permits exact OpenAPI 3.1 empty documents and DSH
-// path fragments only. It never admits actual operations, refs, Go or SQL.
+// The structural contract slice permits exact OpenAPI 3.1 entrypoints and named
+// domain path placeholders across all three owners, never operations, refs, Go or SQL.
 
 const serviceOwners=['identity','dsh','wlt'];
-const dshEmptyPathModules=['stores','catalog','offers','cart','orders','fulfillment','employees'];
+const openapiReservedGroups=Object.values(contractPathGroups).reduce((sum,groups)=>sum+groups.length,0);
 const allowedServiceDirs=new Set();
 const allowedServiceFiles=new Set();
 for(const owner of serviceOwners){
@@ -101,7 +152,7 @@ for(const owner of serviceOwners){
  for(const suffix of ['/README.md','/package.json','/tsconfig.json',
    '/clients/README.md','/clients/index.ts','/contracts/openapi/README.md',
    '/contracts/openapi/'+owner+'.openapi.yaml'])allowedServiceFiles.add(prefix+suffix);
- if(owner==='dsh')for(const moduleName of dshEmptyPathModules)
+ for(const moduleName of contractPathGroups[owner])
   allowedServiceFiles.add(prefix+'/contracts/openapi/paths/'+moduleName+'.yaml');
  const readme=prefix+'/README.md';
  const doc=contents[readme];
@@ -117,10 +168,10 @@ for(const owner of serviceOwners){
     !contractReadme.includes('no server, no security scheme') ||
     !contractReadme.includes('not arbitrary OpenAPI validity'))
   fail('invalid contract scaffold documentation: '+owner);
- if(owner==='dsh')for(const moduleName of dshEmptyPathModules){
+ for(const moduleName of contractPathGroups[owner]){
   const moduleFile=prefix+'/contracts/openapi/paths/'+moduleName+'.yaml';
   if(contents[moduleFile]!=='paths: {}\n')
-   fail('DSH path fragment is not an empty placeholder: '+moduleFile);
+   fail('OpenAPI path fragment is not an empty placeholder: '+moduleFile);
  }
  if(!doc.includes('OWNER: '+(owner==='identity'?'Identity':owner.toUpperCase())) ||
     !/^STATUS: SCAFFOLD_ONLY$/m.test(doc) || !/^EXECUTION: NOT_STARTED$/m.test(doc) ||
@@ -479,5 +530,5 @@ if(!/permissions:\s*\n\s*contents: read/.test(ci))fail('CI must run with least p
 if(!ci.includes('node --test tools/governance/verify-foundation.test.mjs')||!ci.includes('node tools/governance/verify-foundation.mjs'))fail('CI must run actual guard tests and live verification');
 if(/continue-on-error:\s*true|\bsecrets\./.test(ci))fail('CI cannot silently skip proof or read secrets in foundation stage');
 
-console.log('FOUNDATION_STRUCTURE_PASS domain_owners='+domainFiles.length+' capability_ids='+seen.size+' one_census=true service_scaffold_only=true openapi_zero_operations=true');
+console.log('FOUNDATION_STRUCTURE_PASS domain_owners='+domainFiles.length+' capability_ids='+seen.size+' one_census=true service_scaffold_only=true openapi_zero_operations=true openapi_reserved_groups='+openapiReservedGroups);
 console.log('GOVERNANCE_CUTOVER_NOT_READY: independent risk-policy approvals and material donor reconciliation not proven; software runtime gates are separate');
