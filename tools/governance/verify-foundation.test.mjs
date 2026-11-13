@@ -222,6 +222,12 @@ rejects('rejects lost replay-safe recovery challenge policy',
 rejects('rejects erased security-safe failure fallback',
  {edit:{'governance/safety.md':s=>s.replace('no silent fallback may switch','fallback may silently switch')}},
  /source-grounded safety boundary missing: no silent fallback may switch/);
+rejects('rejects unbounded Operator permission administration',
+ {edit:{'governance/identity.md':s=>s.replace('Only that original, one-time bootstrapped Operator may grant or revoke','Any Operator may grant or revoke')}},
+ /source-grounded identity boundary missing: Only that original, one-time bootstrapped Operator may grant or revoke/);
+rejects('rejects exposed cross-origin Customer credential transfer',
+ {edit:{'governance/identity.md':s=>s.replace('never place access/refresh credentials','may share access/refresh credentials')}},
+ /source-grounded identity boundary missing: never place access\/refresh credentials/);
 rejects('rejects lost primary Tamagui/Ant design owner decision',{edit:{'governance/experience.md':s=>s.replace('## DESIGN-01 — Exclusive rendering, token and theme authority','## Uncontrolled design')}},/reconciled design owner decision missing/);
 rejects('rejects removal of Studio boundary',{edit:{'governance/experience.md':s=>s.replace('## DESIGN-02 — Studio is a bounded editor, not an additional publication engine','## Duplicate publishers')}},/reconciled design owner decision missing/);
 rejects('rejects removal of old Merchant published app identifier',{edit:{'governance/platform.md':s=>s.replace('com.bthwani.partner','com.bthwani.merchant')}},/original external identity\/internal naming missing/);

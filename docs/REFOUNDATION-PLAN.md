@@ -848,6 +848,12 @@ The pinned original branch-41 `docs/governance/safety.md` (Git blob `24dd35f1bdd
 
 **Disposition:** DRAFT_RETAIN/REFRAME for the cited safety requirements, **not independently accepted security policy**. No runtime authentication test, protected migration, native platform or WLT ledger was exercised by these prose edits; `SEC-01`, `SEC-02`, `MIG-01` and critical legal/financial review remain **REVIEW_BLOCKED**, and the full cross-domain/archives concordance remains **NOT_RUN**. The Stage-4 guard protects the named security assertions as *source text* only, not E2E compliance.
 
+## 2026-11-13 — Identity admission and authorization source reconciliation (draft only)
+
+Compared the pinned donor `docs/governance/identity.md` at blob `bc68ed1256c3b493b5c4366b1bc47dedb47b668a` (material sections at source lines 16–76) with the existing `governance/identity.md` draft. Restored explicit draft distinctions: verified Client-to-Merchant workspace admission without requiring a Store/Operator enrollment case, DSH-approved Captain standing and Store-grant preconditions, preservation of eligibility after loss of the final accepted Store association, forbidden cross-domain credential transfer, and **only** the originally bootstrapped Operator granting/revoking finite workspace permissions. Existing single-actor, role-isolation, Passkey-only Operator login, Root Owner continuity and finance-grant boundaries were retained.
+
+**Disposition:** DRAFT_RETAIN/REFRAME of the specified source clauses, with compatibility of the donor `partner` identifier and current Merchant name still subject to approved API/storage reconciliation. The added negative source tests prevent silent removal of high-risk clauses but cannot certify live Identity, DSH eligibility, user sessions or cross-origin browser security. Independent `SEC-01`/`SEC-02` review remains **REVIEW_BLOCKED**; no real identity or permission records were read or changed.
+
 ## 2026-11-13 — Verified global Go alignment and development environment source boundaries
 
 **New authorization and target:** Later explicit user instructions authorize Commit and Push of reviewed, tested foundation batches to the existing `refoundation/clean-house-20261112` branch. Branch `41` remains read-only reference. No authorization to create a new branch/Worktree/PR, merge into main, deploy, alter live databases or bypass mandatory independent critical-risk reviews follows.

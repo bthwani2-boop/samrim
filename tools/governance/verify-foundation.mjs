@@ -417,6 +417,15 @@ for(const anchor of ['account or role enumeration','one-time/replay use',
  if(!safety.includes(anchor))fail('source-grounded safety boundary missing: '+anchor);
 }
 
+// Source-grounded Identity admission/session controls are draft-preservation
+// checks only; no authentication, security review or role issuance is claimed.
+const identity=contents['governance/identity.md'];
+for(const anchor of ['without requiring an existing DSH Store or an Operator enrollment case',
+ 'DSH-approved Captain standing precedes','never place access/refresh credentials',
+ 'Only that original, one-time bootstrapped Operator may grant or revoke']){
+ if(!identity.includes(anchor))fail('source-grounded identity boundary missing: '+anchor);
+}
+
 const arch=contents['governance/architecture.md'];
 const finance=contents['governance/finance.md'];
 const delivery=contents['governance/fulfillment.md'];
