@@ -102,7 +102,7 @@ if(stage3package.packageManager!=='pnpm@12.15.0'||
  stage3package.engines.pnpm!=='12.15.0'||
  stage3package.private!==true)
  fail('branch-41 pnpm/Node versions changed or workspace made publishable');
-if(JSON.stringify(Object.entries(stage3package.devDependencies??{}).sort())!==
+if(JSON.stringify(Object.entries(stage3package.devDependencies??{}).sort(([a], [b]) => a.localeCompare(b, "en")))!==
  JSON.stringify([['@biomejs/biome','2.5.12'],['typescript','7.0.2']]))
  fail('Stage-3 root dependencies must match original exact TypeScript/Biome versions with no extras');
 const wsyaml=contents['pnpm-workspace.yaml'];

@@ -37,8 +37,8 @@ const anchors = {
 for (const [key, value] of Object.entries(anchors)) {
   requireTrue(brandRoots[key] === value, "Brand anchor drift: " + key);
 }
-const lightKeys = Object.keys(lightThemeColors).sort();
-requireTrue(JSON.stringify(lightKeys) === JSON.stringify(Object.keys(darkThemeColors).sort()),
+const lightKeys = Object.keys(lightThemeColors).sort((a, b) => a.localeCompare(b, "en"));
+requireTrue(JSON.stringify(lightKeys) === JSON.stringify(Object.keys(darkThemeColors).sort((a, b) => a.localeCompare(b, "en"))),
   "Light/Dark semantic role key mismatch");
 requireTrue(themes.light === lightThemeColors && themes.dark === darkThemeColors,
   "Semantic themes must use one authored color source");
