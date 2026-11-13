@@ -1,0 +1,6 @@
+openapi: 3.1.0
+info:
+  title: BThwani DSH API
+  version: 0.0.0
+  description: Contract scaffold only; no operations are defined or approved.
+paths: {}

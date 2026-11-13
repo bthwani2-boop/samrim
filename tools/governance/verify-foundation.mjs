@@ -20,7 +20,8 @@ const required=[
  '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
  'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','tsconfig.base.json','biome.json',
  'README.md','services/identity/README.md','services/dsh/README.md','services/wlt/README.md',
- ...['identity','dsh','wlt'].flatMap(owner=>['package.json','tsconfig.json','clients/README.md','clients/index.ts'].map(file=>'services/'+owner+'/'+file)),
+ ...['identity','dsh','wlt'].flatMap(owner=>['package.json','tsconfig.json','clients/README.md','clients/index.ts','contracts/openapi/README.md','contracts/openapi/'+owner+'.openapi.yaml'].map(file=>'services/'+owner+'/'+file)),
+ ...['stores','catalog','offers','cart','orders','fulfillment','employees'].map(name=>'services/dsh/contracts/openapi/paths/'+name+'.yaml'),
  'docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md','docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json','tools/dev/verify-workspace.mjs','tools/mobile/verify-app-foundations.mjs'
 ];
 const fail=(reason)=>{ throw Error('FOUNDATION_GATE_FAIL: '+reason); };
@@ -83,9 +84,11 @@ for(const folder of ['contracts','infra','nx.json','go.work']){
  if(exists(folder))fail('stage 5+ service/DB/infra introduced prematurely: '+folder);
 }
 
-// The service tooling slice permits exact owner manifests, TypeScript configs and empty
-// client entrypoints only. It does not admit business behavior, Go, OpenAPI or SQL.
+// The structural contract slice permits exact OpenAPI 3.1 empty documents and DSH
+// path fragments only. It never admits actual operations, refs, Go or SQL.
+
 const serviceOwners=['identity','dsh','wlt'];
+const dshEmptyPathModules=['stores','catalog','offers','cart','orders','fulfillment','employees'];
 const allowedServiceDirs=new Set();
 const allowedServiceFiles=new Set();
 for(const owner of serviceOwners){
@@ -96,9 +99,29 @@ for(const owner of serviceOwners){
   allowedServiceDirs.add(prefix+suffix);
  }
  for(const suffix of ['/README.md','/package.json','/tsconfig.json',
-   '/clients/README.md','/clients/index.ts'])allowedServiceFiles.add(prefix+suffix);
+   '/clients/README.md','/clients/index.ts','/contracts/openapi/README.md',
+   '/contracts/openapi/'+owner+'.openapi.yaml'])allowedServiceFiles.add(prefix+suffix);
+ if(owner==='dsh')for(const moduleName of dshEmptyPathModules)
+  allowedServiceFiles.add(prefix+'/contracts/openapi/paths/'+moduleName+'.yaml');
  const readme=prefix+'/README.md';
  const doc=contents[readme];
+ const contractFile=prefix+'/contracts/openapi/'+owner+'.openapi.yaml';
+ const contractName=owner==='identity'?'Identity':owner.toUpperCase();
+ const expectedContract='openapi: 3.1.0\ninfo:\n  title: BThwani '+contractName+
+   ' API\n  version: 0.0.0\n  description: Contract scaffold only; no operations are defined or approved.\npaths: {}\n';
+ if(contents[contractFile]!==expectedContract)
+  fail('OpenAPI scaffold mutated or contains unapproved operations/refs: '+contractFile);
+ const contractReadme=contents[prefix+'/contracts/openapi/README.md'];
+ if(!/^STATUS: CONTRACT_SCAFFOLD_ONLY$/m.test(contractReadme) ||
+    !/^EXECUTION: NOT_STARTED$/m.test(contractReadme) ||
+    !contractReadme.includes('no server, no security scheme') ||
+    !contractReadme.includes('not arbitrary OpenAPI validity'))
+  fail('invalid contract scaffold documentation: '+owner);
+ if(owner==='dsh')for(const moduleName of dshEmptyPathModules){
+  const moduleFile=prefix+'/contracts/openapi/paths/'+moduleName+'.yaml';
+  if(contents[moduleFile]!=='paths: {}\n')
+   fail('DSH path fragment is not an empty placeholder: '+moduleFile);
+ }
  if(!doc.includes('OWNER: '+(owner==='identity'?'Identity':owner.toUpperCase())) ||
     !/^STATUS: SCAFFOLD_ONLY$/m.test(doc) || !/^EXECUTION: NOT_STARTED$/m.test(doc) ||
     !['backend/','contracts/openapi/','database/'].every(s=>doc.includes(s))){
@@ -456,5 +479,5 @@ if(!/permissions:\s*\n\s*contents: read/.test(ci))fail('CI must run with least p
 if(!ci.includes('node --test tools/governance/verify-foundation.test.mjs')||!ci.includes('node tools/governance/verify-foundation.mjs'))fail('CI must run actual guard tests and live verification');
 if(/continue-on-error:\s*true|\bsecrets\./.test(ci))fail('CI cannot silently skip proof or read secrets in foundation stage');
 
-console.log('FOUNDATION_STRUCTURE_PASS domain_owners='+domainFiles.length+' capability_ids='+seen.size+' one_census=true service_scaffold_only=true');
+console.log('FOUNDATION_STRUCTURE_PASS domain_owners='+domainFiles.length+' capability_ids='+seen.size+' one_census=true service_scaffold_only=true openapi_zero_operations=true');
 console.log('GOVERNANCE_CUTOVER_NOT_READY: independent risk-policy approvals and material donor reconciliation not proven; software runtime gates are separate');

@@ -18,7 +18,8 @@ const files=[...new Set([
  '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
  'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','tsconfig.base.json','biome.json',
  'README.md','services/identity/README.md','services/dsh/README.md','services/wlt/README.md',
- ...['identity','dsh','wlt'].flatMap(owner=>['package.json','tsconfig.json','clients/README.md','clients/index.ts'].map(file=>'services/'+owner+'/'+file)),
+ ...['identity','dsh','wlt'].flatMap(owner=>['package.json','tsconfig.json','clients/README.md','clients/index.ts','contracts/openapi/README.md','contracts/openapi/'+owner+'.openapi.yaml'].map(file=>'services/'+owner+'/'+file)),
+ ...['stores','catalog','offers','cart','orders','fulfillment','employees'].map(name=>'services/dsh/contracts/openapi/paths/'+name+'.yaml'),
  'docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md','docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json','tools/dev/verify-workspace.mjs','tools/mobile/verify-app-foundations.mjs',
  '.specify/init-options.json','.specify/integration.json','.specify/integrations/speckit.manifest.json',
  '.specify/memory/constitution.md',...Object.keys(assetManifest.files)
@@ -60,6 +61,7 @@ test('live foundation draft is structurally coherent but NOT_READY',()=>{
  assert.equal(r.code,0,r.text);
  assert.match(r.text,/capability_ids=26/);
  assert.match(r.text,/GOVERNANCE_CUTOVER_NOT_READY/);
+ assert.match(r.text,/openapi_zero_operations=true/);
 });
 test('accepts only known empty planned service subdirectories',()=>{
  const r=run({dirs:[
@@ -83,7 +85,19 @@ rejects('rejects missing service workspace lock importer',{edit:{'pnpm-lock.yaml
 rejects('rejects old Nx project configuration',{add:{'services/identity/project.json':'{}'}},/premature service source: services\/identity\/project.json/);
 rejects('rejects early Go backend source',{add:{'services/identity/backend/main.go':'package main'}},/premature service source: services\/identity\/backend\/main.go/);
 rejects('rejects early Go module',{add:{'services/identity/backend/go.mod':'module sample'}},/premature service source: services\/identity\/backend\/go.mod/);
-rejects('rejects early DSH OpenAPI contract',{add:{'services/dsh/contracts/openapi/dsh.openapi.yaml':'openapi: 3.1.0'}},/premature service source: services\/dsh\/contracts\/openapi\/dsh.openapi.yaml/);
+rejects('rejects incomplete DSH OpenAPI entrypoint',{edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace('paths: {}','paths:')}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
+rejects('rejects unapproved DSH endpoint',{edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace('paths: {}','paths:\n  /dsh/stores: {}')}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
+rejects('rejects a duplicate OpenAPI key',{edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s+'paths: {}\n'}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
+rejects('rejects premature server declaration',{edit:{'services/identity/contracts/openapi/identity.openapi.yaml':s=>s+"servers:\n  - url: http://localhost:18082\n"}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
+rejects('rejects premature financial operation',{edit:{'services/wlt/contracts/openapi/wlt.openapi.yaml':s=>s.replace('paths: {}','paths:\n  /wlt/wallet: {}')}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
+rejects('rejects unsupported cross-owner ref',{edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace('paths: {}','paths:\n  /dsh/stores:\n    $ref: ../../../../identity/contracts/openapi/identity.openapi.yaml')}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
+rejects('rejects missing DSH path module',{del:['services/dsh/contracts/openapi/paths/stores.yaml']},/required services\/dsh\/contracts\/openapi\/paths\/stores.yaml/);
+rejects('rejects malformed DSH path fragment',{edit:{'services/dsh/contracts/openapi/paths/orders.yaml':s=>s.replace('paths: {}','paths: [')}},/DSH path fragment is not an empty placeholder/);
+rejects('rejects nonempty DSH path fragment',{edit:{'services/dsh/contracts/openapi/paths/employees.yaml':s=>s.replace('paths: {}','paths:\n  /employees: {}')}},/DSH path fragment is not an empty placeholder/);
+rejects('rejects additional speculative DSH path module',{add:{'services/dsh/contracts/openapi/paths/wallet-provider.yaml':'paths: {}\n'}},/premature service source: services\/dsh\/contracts\/openapi\/paths\/wallet-provider.yaml/);
+rejects('rejects unapproved Identity path module',{add:{'services/identity/contracts/openapi/paths/session.yaml':'paths: {}\n'}},/premature service source: services\/identity\/contracts\/openapi\/paths\/session.yaml/);
+rejects('rejects unapproved WLT path module',{add:{'services/wlt/contracts/openapi/paths/ledger.yaml':'paths: {}\n'}},/premature service source: services\/wlt\/contracts\/openapi\/paths\/ledger.yaml/);
+rejects('rejects missing OpenAPI ownership notes',{del:['services/identity/contracts/openapi/README.md']},/required services\/identity\/contracts\/openapi\/README.md/);
 rejects('rejects early SQL migration',{add:{'services/wlt/database/migrations/001.sql':'select 1;'}},/premature service source: services\/wlt\/database\/migrations\/001.sql/);
 rejects('rejects early fresh baseline',{add:{'services/dsh/database/fresh-baseline.sql':'select 1;'}},/premature service source: services\/dsh\/database\/fresh-baseline.sql/);
 rejects('rejects untracked placeholders',{add:{'services/dsh/backend/.gitkeep':''}},/premature service source: services\/dsh\/backend\/\.gitkeep/);
