@@ -8,6 +8,10 @@ STATUS: CURATION_IN_PROGRESS
 
 This is **not** a second Product roadmap, governance directory, design system, CI authority, or record that an external product is safe or suitable. New durable decisions belong only in `governance/`, execution behavior belongs in `AGENTS.md`, and the temporary program audit belongs in `docs/REFOUNDATION-PLAN.md`.
 
+## Donor governance section provenance (not approval)
+
+[The pinned 14-owner donor heading census](DONOR-GOVERNANCE-SECTION-CENSUS.md) records 340 original Markdown section headings with source Git blob IDs and line numbers, paired with 138 headings in the new drafts. Only one source heading matches a draft heading literally; this is **not** a missing-feature count or proof of semantic parity. Every substantive source rule and all later approvals still require decision-by-decision review before governance cutover.
+
 ## Historical URL index
 
 The extracted source-by-source list is in [`HISTORICAL-SOURCE-INVENTORY.md`](HISTORICAL-SOURCE-INVENTORY.md): 37 distinct non-loopback URLs and 5 historical localhost endpoints across six old research files. Extraction is **not** an HTTP/license/current-content verification. No external link or research example becomes a product capability by being indexed.

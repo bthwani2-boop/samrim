@@ -17,7 +17,7 @@ const contractGroups=['identity','dsh','wlt'].flatMap(owner=>
 const files=[...new Set([
  'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',
  ...owners.map(owner=>'governance/'+owner+'.md'),'docs/REFOUNDATION-PLAN.md','docs/reference/README.md','docs/reference/HISTORICAL-SOURCE-INVENTORY.md','docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md',
- 'docs/reference/environment-config-inventory.md',
+ 'docs/reference/environment-config-inventory.md','docs/reference/DONOR-GOVERNANCE-SECTION-CENSUS.md',
  '.github/workflows/ci.yml','.github/workflows/sonar-quality.yml','sonar-project.properties','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs',
  'tools/governance/review-examples.test.mjs',
  '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
@@ -168,6 +168,9 @@ rejects('rejects missing research provenance index',{del:['docs/reference/README
 rejects('rejects missing linked development environment inventory',
  {del:['docs/reference/environment-config-inventory.md']},
  /broken local Markdown link: docs\/reference\/README\.md -> environment-config-inventory\.md/);
+rejects('rejects missing donor governance section provenance',
+ {del:['docs/reference/DONOR-GOVERNANCE-SECTION-CENSUS.md']},
+ /broken local Markdown link: docs\/(?:REFOUNDATION-PLAN\.md -> reference\/|reference\/README\.md -> )DONOR-GOVERNANCE-SECTION-CENSUS\.md/);
 rejects('rejects research masquerading as Product policy',{edit:{'docs/reference/README.md':s=>s.replace('BUSINESS_POLICY_AUTHORITY: NONE','BUSINESS_POLICY_AUTHORITY: ACTIVE')}},/research index cannot become policy authority/);
 
 rejects('rejects missing Spec Kit constitution router',{del:['.specify/memory/constitution.md']},/required \.specify\/memory\/constitution.md/);

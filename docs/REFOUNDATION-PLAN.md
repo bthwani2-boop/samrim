@@ -837,6 +837,11 @@ The original donor includes two further **non-authoritative** texts, which were 
 
 **Execution order from the deep audit:** (1) semantic donor-to-14-owner concordance plus 26 capability/subfeature evidence, with unresolved decisions recorded; (2) independent FIN/SEC/MIG/LEGAL policy reviews and explicit governed cutover; (3) contract + Go/SQL implementation only at admitted service owners with protected fresh/upgrade/restore gates; (4) actual Customer/Merchant/Captain/Operator feature slices backed by those owner contracts and real Web/Android/device/API tests; (5) run final CI and external provider/deploy review on the *final* candidate, then request a separate main transition approval. No bulk donor-code copy or live database migration is implicit.
 
+## 2026-11-13 — Governance source heading census (evidence only)
+
+- Pinned donor branch `41` at `426d67b47beb8c66b09acd8c7394086b53ac5aae` and compared 14 historical semantic owner files to their 14 same-named current draft owners on pre-batch target `d4f542df68533b06d42aa3a1a8b3338fd5a757c9`. The [read-only section provenance census](reference/DONOR-GOVERNANCE-SECTION-CENSUS.md) contains **340** donor Markdown headings, **138** target headings, exact donor blob IDs and original line numbers. Exactly **one** heading is an identical Markdown title; neither literal absence nor presence proves missing or retained semantics.
+- `SOURCE_HEADING_CENSUS: PASS` is **navigation and provenance only**. Comprehensive paragraph/decision reconciliation, archived contracts/discussions, independent FIN/SEC/MIG/LEGAL reviewers and latest policy approval remain **NOT_RUN/REVIEW_BLOCKED**. No normative owner was amended by this inventory, and `GOVERNANCE_CUTOVER: NOT_READY` remains unchanged.
+
 ## 2026-11-13 — Verified global Go alignment and development environment source boundaries
 
 **New authorization and target:** Later explicit user instructions authorize Commit and Push of reviewed, tested foundation batches to the existing `refoundation/clean-house-20261112` branch. Branch `41` remains read-only reference. No authorization to create a new branch/Worktree/PR, merge into main, deploy, alter live databases or bypass mandatory independent critical-risk reviews follows.
