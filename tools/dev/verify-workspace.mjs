@@ -128,15 +128,15 @@ if (strict) {
       ', observed ' + nodeVersions.join(', '));
   }
   const installedNode = nodePin;
-  // Go's module-cache toolchain is exact-version pinned; disable network resolution.
-  // The system-wide Go executable is deliberately not replaced or upgraded.
+  // Verify the installed Go binary, not an automatically downloaded toolchain.
+  // GOTOOLCHAIN=local prevents Go's user cache from masking a global mismatch.
   const go = spawnSync(process.platform === 'win32' ? 'go.exe' : 'go', ['version'], {
     encoding: 'utf8', windowsHide: true,
-    env: { ...process.env, GOTOOLCHAIN: `go${goPin}`, GOPROXY: 'off' }
+    env: { ...process.env, GOTOOLCHAIN: 'local', GOPROXY: 'off' }
   });
-  if (go.status !== 0) fail('Exact Go toolchain is not available from local cache at ' + goPin);
-  const actual = /go version go([0-9.]+)/.exec(go.stdout)?.[1];
-  if (actual !== goPin) fail('Go toolchain mismatch: expected ' + goPin +
+  if (go.status !== 0) fail('Cannot execute locally installed Go binary: ' + (go.error?.message ?? go.stderr?.trim() ?? 'unknown'));
+  const actual = /^go version go([0-9.]+) /m.exec(go.stdout)?.[1];
+  if (actual !== goPin) fail('Global Go toolchain mismatch: expected ' + goPin +
     ', observed ' + (actual ?? 'unknown'));
-  console.log('STAGE3_EXACT_LOCAL_TOOLCHAIN_PASS node=' + installedNode + ' go=' + actual);
+  console.log('STAGE3_EXACT_LOCAL_TOOLCHAIN_PASS node=' + installedNode + ' go=' + actual + ' global_go=true');
 }

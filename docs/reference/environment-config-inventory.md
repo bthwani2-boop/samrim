@@ -14,7 +14,7 @@ This is a **source-derived inventory, not an environment file**, an approved dep
 | Source | Canonical responsibility | Current state |
 | --- | --- | --- |
 | Root `.node-version` and `.nvmrc` | Node 24.22.1 for the repository | Pinned and verified locally |
-| Root `.go-version` | Go 1.27.3 for eventual Go owners | Pinned; exact cached toolchain validated; global installation is a separate machine state |
+| Root `.go-version` | Go 1.27.3 for eventual Go owners | Pinned; on the 13 November Bthwani Windows host the system-installed Go 1.27.3 was verified independently with `GOTOOLCHAIN=local` |
 | Root `package.json` and `pnpm-lock.yaml` | pnpm 12.15.0, TypeScript 7.0.2 and Biome 2.5.12 | Single workspace/lock; no duplicate package manager |
 | `apps/{customer,merchant,captain}/mobile.config.json` | Original Expo public identifiers and native app profiles | Preserved; changing internal directory names must not change issued identities |
 | `tools/mobile/define-bthwani-expo-app.cjs` | Native config inputs, optional maps and Firebase file references | Source/config only, not a native build |
@@ -54,7 +54,7 @@ The `GOOGLE_SERVICES_JSON` path is different from a Google Maps key. Expo config
 ## Verification status (13 November 2026)
 
 - Source pin and Stage-4 app configuration checks: **PASS (source/config only)**.
-- Exact Go toolchain for repository: **PASS via verified cached 1.27.3**, irrespective of the separately managed system Go installation.
+- Exact Go toolchain for repository: **PASS on the audited Windows host** via global `C:\Program Files\Go\bin\go.exe` returning `go version go1.27.3 windows/amd64` with `GOTOOLCHAIN=local`. Other hosts must run `pnpm check:toolchain`; this inventory cannot establish their installed state.
 - Native maps, Firebase project ownership, provider key restrictions, Android/iOS binary and native permission acceptance: **NOT_RUN**.
 - Isolated Compose instance, backup/restore and service credential provisioning: **NOT_RUN**.
 - Critical security, finance, SQL and legal approvals: **REVIEW_BLOCKED**.

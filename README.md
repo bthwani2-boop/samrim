@@ -9,7 +9,7 @@ Compiled brand roots and semantic light/dark roles belong only to `packages/desi
 ```powershell
 pnpm install --offline --frozen-lockfile --ignore-scripts
 pnpm run check
-pnpm run check:toolchain
+pnpm run check:toolchain # also verifies the globally installed Go version with GOTOOLCHAIN=local
 pnpm run check:apps
 pnpm --dir packages/design-system theme:check
 ```
