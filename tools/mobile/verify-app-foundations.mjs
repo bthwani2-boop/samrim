@@ -49,6 +49,20 @@ for (const [name, [slug, packageId, scheme, projectId]] of Object.entries(expect
     "assets/adaptive-icon.png","assets/splash-icon.png","eas.json"]) {
     assert.ok(existsSync(join(root,rel,path)), `Missing ${rel}/${path}`);
   }
+  // Native Expo store assets must remain valid, large, square PNG files.
+  // Existence alone does not prove a usable CNG icon or splash asset.
+  for (const asset of ["icon.png", "adaptive-icon.png", "splash-icon.png"]) {
+    const png = readFileSync(join(root, rel, "assets", asset));
+    assert.ok(png.length > 24, name + " empty native PNG: " + asset);
+    assert.equal(png.subarray(0, 8).toString("hex"), "89504e470d0a1a0a",
+      name + " invalid PNG signature: " + asset);
+    assert.equal(png.subarray(12, 16).toString("ascii"), "IHDR",
+      name + " missing PNG header: " + asset);
+    const width = png.readUInt32BE(16);
+    const height = png.readUInt32BE(20);
+    assert.ok(width === height && width >= 512,
+      name + " native PNG must be square and at least 512 px: " + asset);
+  }
   assert.ok(!existsSync(join(root,rel,"src/features")), name + " old business features should not migrate");
   const home=read(`${rel}/app/index.tsx`);
   assert.ok(home.includes('from "@bthwani/tamagui-config/preview"'), name + " must use the shared Stage-4 Tamagui preview");

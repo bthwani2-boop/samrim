@@ -188,13 +188,31 @@ function defineBthwaniExpoApp(appKey, options = {}) {
   const iosMapsApiKey = options.maps ? mobileMapsApiKey(appKey, "ios") : undefined;
   // Foundation previews do not use maps. Preserve the native map integration
   // when keys are supplied; demand both keys for any authorized native rebuild.
-  if (options.maps && (!androidMapsApiKey || !iosMapsApiKey) && process.env.BTHWANI_ENFORCE_NATIVE_KEYS === "1") {
+  if (options.maps && (!androidMapsApiKey || !iosMapsApiKey) && (process.env.BTHWANI_ENFORCE_NATIVE_KEYS === "1" || process.env.EAS_BUILD === "true")) {
     throw new Error("Missing approved Google Maps API keys for " + appKey + " in the new Worktree secrets environment.");
   }
   const firebaseClientApps = ["app-client", "app-partner", "app-captain"];
   const easFirebaseFile = process.env.GOOGLE_SERVICES_JSON?.trim();
   const localFirebaseFile = fs.existsSync(path.join(appRoot(appKey), "google-services.json"))
     ? "./google-services.json" : undefined;
+  // EAS file secrets are runner-local paths; never embed this file in the git archive.
+  // Do not attempt a native Android build with the wrong Firebase project/app.
+  if (process.env.EAS_BUILD === "true" && process.env.EAS_BUILD_PLATFORM === "android" && ["app-client", "app-partner"].includes(appKey)) {
+    if (!easFirebaseFile || !fs.existsSync(easFirebaseFile) || !fs.statSync(easFirebaseFile).isFile()) {
+      throw new Error("Missing GOOGLE_SERVICES_JSON EAS file secret for " + appKey);
+    }
+    let firebase;
+    try {
+      firebase = JSON.parse(fs.readFileSync(easFirebaseFile, "utf8"));
+    } catch {
+      throw new Error("Invalid GOOGLE_SERVICES_JSON file for " + appKey);
+    }
+    if (!Array.isArray(firebase.client) || !firebase.client.some(
+      client => client?.client_info?.android_client_info?.package_name === app.androidPackage
+    )) {
+      throw new Error("GOOGLE_SERVICES_JSON Android package mismatch for " + appKey);
+    }
+  }
   const android = {
     package: app.androidPackage,
     // Contact selection never writes back to the phone's address book.

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
-import { resolvedConfigIssues, verifyResolvedConfigs } from "./verify-expo-config.mjs";
+import { resolvedConfigIssues, easBuildIssues, verifyResolvedConfigs } from "./verify-expo-config.mjs";
 
 const manifest = {
   slug: "app-client", owner: "bthwani1", scheme: "client",
@@ -41,4 +42,29 @@ test("catches a client/merchant web SSR regression", () => {
 
 test("real Expo config from all three installed hosts retains app ownership", () => {
   assert.equal(verifyResolvedConfigs(), 3);
+});
+
+test("EAS development/internal remote profiles preserve signing ownership and safe preview channels", () => {
+  for (const app of ["customer", "merchant"]) {
+    const file = new URL("../../apps/" + app + "/eas.json", import.meta.url);
+    const eas = JSON.parse(readFileSync(file, "utf8"));
+    assert.deepEqual(easBuildIssues(app, eas), []);
+  }
+});
+
+test("EAS cloud profiles reject missing remote signing, wrong channels and store release", () => {
+  const file = new URL("../../apps/customer/eas.json", import.meta.url);
+  const valid = JSON.parse(readFileSync(file, "utf8"));
+  const withDevLocal = structuredClone(valid);
+  withDevLocal.build.development.credentialsSource = "local";
+  assert.match(easBuildIssues("customer", withDevLocal).join(" "), /missing local credentials/);
+  const withInternalLocal = structuredClone(valid);
+  withInternalLocal.build.internal.credentialsSource = "local";
+  assert.match(easBuildIssues("customer", withInternalLocal).join(" "), /missing local credentials/);
+  const wrongChannel = structuredClone(valid);
+  wrongChannel.build.internal.channel = "production";
+  assert.match(easBuildIssues("customer", wrongChannel).join(" "), /wrong EAS Update channel/);
+  const unapprovedRelease = structuredClone(valid);
+  unapprovedRelease.build.production = { distribution: "store" };
+  assert.match(easBuildIssues("customer", unapprovedRelease).join(" "), /unapproved EAS build profile/);
 });

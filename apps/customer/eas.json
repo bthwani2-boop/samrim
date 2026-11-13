@@ -15,7 +15,7 @@
     },
     "development": {
       "extends": "base",
-      "credentialsSource": "local",
+      "credentialsSource": "remote",
       "environment": "development",
       "channel": "development",
       "developmentClient": true,
@@ -26,6 +26,7 @@
     },
     "internal": {
       "extends": "base",
+      "credentialsSource": "remote",
       "environment": "preview",
       "channel": "preview",
       "distribution": "internal",
