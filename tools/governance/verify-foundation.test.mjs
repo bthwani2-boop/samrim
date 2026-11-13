@@ -216,6 +216,12 @@ rejects('rejects a missing exact source baseline file',{del:['docs/reference/TOO
 rejects('rejects broken local governance reference',{edit:{'README.md':s=>s.replace('](governance/README.md)','](governance/missing.md)')}},/broken local Markdown link/);
 rejects('rejects Markdown links that escape repo root',{edit:{'README.md':s=>s.replace('](governance/README.md)','](../untrusted.md)')}},/local Markdown link escapes workspace/);
 
+rejects('rejects lost replay-safe recovery challenge policy',
+ {edit:{'governance/safety.md':s=>s.replace('one-time/replay use','unbounded token reuse')}},
+ /source-grounded safety boundary missing: one-time\/replay use/);
+rejects('rejects erased security-safe failure fallback',
+ {edit:{'governance/safety.md':s=>s.replace('no silent fallback may switch','fallback may silently switch')}},
+ /source-grounded safety boundary missing: no silent fallback may switch/);
 rejects('rejects lost primary Tamagui/Ant design owner decision',{edit:{'governance/experience.md':s=>s.replace('## DESIGN-01 — Exclusive rendering, token and theme authority','## Uncontrolled design')}},/reconciled design owner decision missing/);
 rejects('rejects removal of Studio boundary',{edit:{'governance/experience.md':s=>s.replace('## DESIGN-02 — Studio is a bounded editor, not an additional publication engine','## Duplicate publishers')}},/reconciled design owner decision missing/);
 rejects('rejects removal of old Merchant published app identifier',{edit:{'governance/platform.md':s=>s.replace('com.bthwani.partner','com.bthwani.merchant')}},/original external identity\/internal naming missing/);

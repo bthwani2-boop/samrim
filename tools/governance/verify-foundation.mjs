@@ -408,6 +408,15 @@ if(!catalog.includes('الأكثر رواجًا')||!catalog.includes('distinct c
  fail('canonical popularity read model or Operator-managed ranking window lost');
 
 
+// Preserve source-grounded security and data limits in the draft owner without
+// treating lexical guard PASS as a reviewed policy or implemented security.
+const safety=contents['governance/safety.md'];
+for(const anchor of ['account or role enumeration','one-time/replay use',
+ 'legacy external encodings','Test or synthetic records are environment evidence',
+ 'no silent fallback may switch','configured, available, degraded and unknown']){
+ if(!safety.includes(anchor))fail('source-grounded safety boundary missing: '+anchor);
+}
+
 const arch=contents['governance/architecture.md'];
 const finance=contents['governance/finance.md'];
 const delivery=contents['governance/fulfillment.md'];
