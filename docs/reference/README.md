@@ -12,6 +12,10 @@ This is **not** a second Product roadmap, governance directory, design system, C
 
 The extracted source-by-source list is in [`HISTORICAL-SOURCE-INVENTORY.md`](HISTORICAL-SOURCE-INVENTORY.md): 37 distinct non-loopback URLs and 5 historical localhost endpoints across six old research files. Extraction is **not** an HTTP/license/current-content verification. No external link or research example becomes a product capability by being indexed.
 
+## Stage-4 development environment and secret boundaries
+
+The [source-derived configuration inventory](environment-config-inventory.md) maps current toolchain pins, Expo native environment key names, deferred service ownership and isolation constraints. It contains no credential values, does not provision environments and cannot authorize a governance or runtime cutover.
+
 ## Original service OpenAPI source inventory
 
 [The pinned Identity/DSH/WLT OpenAPI census](OPENAPI-DONOR-CONTRACT-INVENTORY.md) records actual donor Path Items, module counts, the proposed reserved domain groupings and owner-boundary risks. It is historical implementation evidence, **not** a replacement contract, permission matrix or approved Product policy. Every new OpenAPI fragment remains zero-operation until implementation approval.
