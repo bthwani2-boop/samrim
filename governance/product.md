@@ -32,6 +32,7 @@ The table is the **single admission census**. A capability is considered semanti
 - Marketplace discovery, Store publication, Store operational availability, Offer inventory, city/serviceability and Order checkout are distinct DSH facts. No single toggle substitutes for their evaluation at confirmation.
 - Internal wallet money, cash custody, Store obligations and settlement beneficiaries are distinct WLT facts. No UI or Store policy directly writes an authoritative ledger.
 - Merchant is the actor; Store is the resource. Delegation does not turn Merchant employees into a sixth global platform role.
+- `EMPLOYEE_HR` remains one bounded product capability with one DSH employee-administration engine for BThwani company personnel and Merchant personnel. Different organizational scope does not authorize separate engines, a fourth HR service, automatic accounts/permissions or a general Merchant payroll product; Identity and WLT retain their exclusive authority.
 - Private Order messages and media, transactional notifications, product/catalog import, promotions, media, bounded operations, Captain opportunity displays, financial reports, multi-Store Merchant work and secure links remain material subfeatures to include in the source-derived coverage crosswalk during implementation. No silent capability retirement because this document does not list it separately.
 
 ## Exclusions and scope change

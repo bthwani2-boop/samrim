@@ -17,11 +17,11 @@ const files=[...new Set([
  'tools/governance/review-examples.test.mjs',
  '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
  'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','tsconfig.base.json','biome.json',
- 'README.md','docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md','docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json','tools/dev/verify-workspace.mjs','tools/mobile/verify-app-foundations.mjs',
+ 'README.md','services/identity/README.md','services/dsh/README.md','services/wlt/README.md','docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md','docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json','tools/dev/verify-workspace.mjs','tools/mobile/verify-app-foundations.mjs',
  '.specify/init-options.json','.specify/integration.json','.specify/integrations/speckit.manifest.json',
  '.specify/memory/constitution.md',...Object.keys(assetManifest.files)
 ])];
-function run({edit={},add={},del=[]}={}){
+function run({edit={},add={},del=[],dirs=[],links={}}={}){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'bthwani-policy-guard-'));
  try{
   for(const f of files){
@@ -36,6 +36,12 @@ function run({edit={},add={},del=[]}={}){
    fs.writeFileSync(output,c,'utf8');
   }
   for(const f of del)fs.rmSync(path.join(dir,...f.split('/')),{force:true,recursive:true});
+  for(const f of dirs)fs.mkdirSync(path.join(dir,...f.split('/')),{recursive:true});
+  for(const [link,target] of Object.entries(links)){
+   const destination=path.join(dir,...link.split('/'));
+   fs.mkdirSync(path.dirname(destination),{recursive:true});
+   fs.symlinkSync(path.join(dir,...target.split('/')),destination,'file');
+  }
   const result=spawnSync(process.execPath,[checker,'--root',dir],{encoding:'utf8'});
   return {code:result.status,text:result.stdout+'\n'+result.stderr};
  }finally{fs.rmSync(dir,{recursive:true,force:true});}
@@ -52,6 +58,30 @@ test('live foundation draft is structurally coherent but NOT_READY',()=>{
  assert.equal(r.code,0,r.text);
  assert.match(r.text,/capability_ids=26/);
  assert.match(r.text,/GOVERNANCE_CUTOVER_NOT_READY/);
+});
+test('accepts only known empty planned service subdirectories',()=>{
+ const r=run({dirs:[
+  'services/identity/backend','services/identity/contracts/openapi/paths','services/identity/database/migrations',
+  'services/dsh/backend','services/dsh/contracts/openapi/paths','services/dsh/database/migrations',
+  'services/wlt/backend','services/wlt/contracts/openapi/paths','services/wlt/database/migrations'
+ ]});
+ assert.equal(r.code,0,r.text);
+ assert.match(r.text,/service_scaffold_only=true/);
+});
+rejects('rejects missing DSH owner README',{del:['services/dsh/README.md']},/required services\/dsh\/README.md/);
+rejects('rejects a fourth HR service',{add:{'services/hr/README.md':'not permitted'}},/unadmitted service directory: services\/hr/);
+rejects('rejects early Go backend source',{add:{'services/identity/backend/main.go':'package main'}},/premature service source: services\/identity\/backend\/main.go/);
+rejects('rejects early Go module',{add:{'services/identity/backend/go.mod':'module sample'}},/premature service source: services\/identity\/backend\/go.mod/);
+rejects('rejects early DSH OpenAPI contract',{add:{'services/dsh/contracts/openapi/dsh.openapi.yaml':'openapi: 3.1.0'}},/premature service source: services\/dsh\/contracts\/openapi\/dsh.openapi.yaml/);
+rejects('rejects early SQL migration',{add:{'services/wlt/database/migrations/001.sql':'select 1;'}},/premature service source: services\/wlt\/database\/migrations\/001.sql/);
+rejects('rejects early fresh baseline',{add:{'services/dsh/database/fresh-baseline.sql':'select 1;'}},/premature service source: services\/dsh\/database\/fresh-baseline.sql/);
+rejects('rejects untracked placeholders',{add:{'services/dsh/backend/.gitkeep':''}},/premature service source: services\/dsh\/backend\/\.gitkeep/);
+rejects('rejects unapproved nested service folder',{add:{'services/dsh/shared/unowned.txt':'wrong owner'}},/unadmitted service directory: services\/dsh\/shared/);
+rejects('rejects false service runtime readiness',{edit:{'services/wlt/README.md':s=>s.replace('EXECUTION: NOT_STARTED','EXECUTION: READY')}},/invalid service placement README: services\/wlt\/README.md/);
+test('rejects service symlinks on Unix CI',{skip:process.platform==='win32'},()=>{
+ const r=run({links:{'services/identity/linked.txt':'governance/README.md'}});
+ assert.notEqual(r.code,0,r.text);
+ assert.match(r.text,/unsafe service symlink/);
 });
 rejects('rejects absent AGENTS law',{del:['AGENTS.md']},/required AGENTS\.md/);
 rejects('rejects premature READY',{edit:{'governance/README.md':s=>s.replace('GOVERNANCE_CUTOVER: NOT_READY','GOVERNANCE_CUTOVER: READY')}},/do not mark governance ready/);

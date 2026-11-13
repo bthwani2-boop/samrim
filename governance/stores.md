@@ -8,6 +8,8 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 ## Merchant and Store are different truths
 Identity owns Merchant actor and session. DSH owns Store ID, actual Store owner, service city, Store relation, authorized membership/grants, publication and operational availability. One Merchant may create/manage multiple Stores through one authorized create operation; no separate Partner identity or relation-specific Store table.
 
+DSH's one bounded `employees` engine may record Merchant employees against their actual Merchant organization and, where approved, one or multiple Stores. Employment records, invitations, Store-scoped grants and Identity accounts are separate facts. A Store employee may exist without a login; an employee with a login receives only independently accepted DSH Store grants consistent with their Identity eligibility. No Merchant can inspect company HR or another Merchant's employee records merely through Store membership.
+
 The two **customer-facing choices** during Store creation are `MARKETPLACE` («داخل سوق بثواني») and `DIRECT` («متجر مباشر»). These names target the new clean contract, not two Store engines. Historic `BTHWANI_PARTNER`/`INDEPENDENT_STORE` refer to the same two old meanings during audited migration; never persist four competing business relation types.
 
 ## PARTNER_ONBOARDING_STORE_PUBLICATION — Store admission and publication

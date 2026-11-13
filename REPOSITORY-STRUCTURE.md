@@ -20,7 +20,7 @@ SEMANTIC_SCOPE: file placement and migration rules; not Product, agent authoriza
 | `.node-version`, `.nvmrc`, `.go-version` | original branch-41 toolchain version pins, never upgraded without separate authorization |
 | `tsconfig.base.json`, `biome.json`, `.editorconfig`, `.gitattributes`, `.gitignore` | shared foundational TypeScript, lint, UTF-8/LF and secret-exclusion rules; without copied legacy migrations |
 | `README.md` | stage-bounded local onboarding, not an additional policy authority |
-| `services/<owner>/` | each backend owner's implementation, contracts, SQL/migrations, service-specific tests and utilities when authorized to rebuild |
+| `services/<owner>/` | three canonical owners only: `identity`, `dsh`, `wlt`; README-only placement now, implementation/contracts/SQL/tests later when admitted |
 | `apps/<surface>/` | actual presentation hosts for Customer, Merchant, Captain, Operator |
 | `packages/design-system/` | single authored brand and semantic color source plus generated browser semantic CSS; no React Native runtime or component primitives |
 | `packages/tamagui-config/` | Expo renderer consuming the design theme source; also owns the minimal React Native appearance preference runtime, not a second palette |
@@ -29,11 +29,16 @@ SEMANTIC_SCOPE: file placement and migration rules; not Product, agent authoriza
 | `packages/<purpose>/` | any further justified multi-consumer domain-neutral packages only |
 | `tests/` | integration proof spanning genuine owners; not duplicate unit tests |
 
+## Service placement slice (README-only, not Stage-5 implementation)
+The only permitted service directories are `services/identity/`, `services/dsh/` and `services/wlt/`. Each holds one substantive `README.md` identifying the owner and future boundaries. Git tracks these READMEs, not empty folders. Optional empty `backend/`, `contracts/openapi/paths/` and `database/migrations/` are organizational hints only; do not create artificial `.gitkeep`, YAML, SQL, Go, module manifests, generated clients, Docker or a fourth service.
+
+Upon later authorization, each owner's `backend/` will hold the Go implementation; `contracts/openapi/` one API entrypoint with domain-grouped paths; and `database/` reviewed fresh installation plus protected upgrade migrations. Preserve applied migration history; examine actual embed/load paths before adopting a physical SQL layout. The bounded company/Merchant employee-administration engine belongs within DSH, **not** as a fourth deployable HR service or a separate Merchant employee engine; Identity and WLT retain their exclusive identity/money truths. See [architecture](governance/architecture.md) and [employee governance](governance/hr.md).
+
 ## Transitional rule for this worktree
 - The former `docs/governance/` directory is **absent from this candidate by explicit user decision**. Its content remains inspectable in original branch `41` and archived inputs; do not restore it to this worktree.
 - `governance/` is the only **target** policy path. Its README advertises NOT_READY until all applicable decisions and 26 capability IDs are reconciled, rather than an unsafe partial authority switch.
 - The foundation guard rejects reintroduction of `docs/governance/`. Translate surviving references directly to the owning new files as each decision is adopted. Keep historical provenance external to the candidate, not another active governance directory.
-- Stage 4 introduces only empty presentation shells, uniquely justified design packages and native-config tooling; no domain logic, service API, SQL or Docker is introduced.
+- Stage 4 introduced empty presentation shells, uniquely justified design packages and native-config tooling. The separately authorized service placement slice adds README-only service folders; neither slice introduces domain logic, Go modules, service APIs, SQL or Docker.
 
 ## Placement and simplification law
 1. Put authored logic with the owner of **its changing responsibility**, not a historical screen, team, refoundation batch name or convenience folder.

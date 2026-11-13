@@ -10,6 +10,8 @@ Identity authenticates the actor; the real DSH/WLT owner authorizes each protect
 
 All financial, Store, Order, media and Customer/recipient data must respect least privilege and need-to-know. Draft or unapproved Stores, unrelated actors, candidate Captains and revoked members do not gain access through a public URL, cursor, mobile offline storage or stale session-scoped request. A Captain receives private customer delivery details only when validly assigned for that operation. Store-facing media links and customer contact data need bounded exposure and lawful retention.
 
+The single DSH employee-record engine must enforce a company-versus-Merchant organization boundary and isolation between Merchants. Any employee-to-Store association or employment lifecycle change is separate from Identity login grants and DSH Store grants; neither grants the other by implication. Deny cross-organization HR records, private attachments, stale sessions and revoked staff scopes with accountable owner-backed readback. WLT remains the only financial writer.
+
 ## Policy mutation protections
 - Every editable policy has one owner, permitted scope and options, authenticated actor/permission, canonical version, effective date, reason, audit log, idempotent mutation and owner-backed readback.
 - Two concurrent changes to the same scope must not both silently succeed with contradictory effective versions. A timed-out POST cannot be retried with a fresh mutation identity until canonical read resolves the outcome.

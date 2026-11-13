@@ -69,7 +69,15 @@ for (const required of ['apps/customer','apps/merchant','apps/captain','apps/con
   'tools/mobile/verify-app-foundations.mjs','patches/@rc-component__util@1.14.0.patch']) {
   if (!existsSync(path.join(projectRoot, required))) fail('Stage-4 required source absent: ' + required);
 }
-for (const forbidden of ['services','contracts','infra','nx.json','go.work',
+for (const owner of ['identity','dsh','wlt']) {
+  const placement = path.join(projectRoot, 'services', owner, 'README.md');
+  if (!existsSync(placement)) fail('Missing service placement README for ' + owner);
+  const doc = readFileSync(placement, 'utf8');
+  if (!doc.includes('STATUS: SCAFFOLD_ONLY') || !doc.includes('EXECUTION: NOT_STARTED')) {
+    fail('Service placement is not explicitly non-executable: ' + owner);
+  }
+}
+for (const forbidden of ['contracts','infra','nx.json','go.work',
   'apps/app-client','apps/app-partner','apps/app-captain',
   'tools/mobile/create-bthwani-metro-config.cjs']) {
   if (existsSync(path.join(projectRoot, forbidden))) fail('Duplicated/deferred legacy source: ' + forbidden);

@@ -11,9 +11,10 @@ Each changing business fact has **one semantic owner, one authorized writer and 
 | Owner | Exclusive business truths | Not permitted to delegate to the UI |
 | --- | --- | --- |
 | Identity | actor identifiers, sessions, admission, authentication and platform permissions | authorization assertion / root credential semantics |
-| DSH | Store, relation, publication, catalog, Offer, authoritative quote and price, cart, Order, serviceability, dispatch, fulfillment, operational policy | Order writer, Store ownership, publication or entitlement engine |
+| DSH | Store, relation, publication, catalog, Offer, authoritative quote and price, cart, Order, serviceability, dispatch, fulfillment, operational policy, bounded employee records and assignments | Order writer, Store ownership, publication, employee authorization bypass or entitlement engine |
 | WLT | Store financial agreements, policy-controlled fees, collector liabilities, wallets, immutable ledger, COD exposure, payouts and settlement | money writer, balances and agreement acceptance |
-| HR (bounded logical owner) | employee administration/HR records | independent Identity role or unauthorized new service |
+
+The single bounded `employees` administration engine for BThwani company and Merchant employees is a **logical capability inside DSH**, not a fourth service or a second HR engine. `governance/hr.md` owns its approved employment semantics; DSH owns the implementation and persisted employment facts, Identity owns actor credentials/platform permissions, DSH Store-grant rules own Store access, and WLT owns any actual financial postings. Employment never grants a role automatically. Separate organizational scoping prevents one Merchant from reading another Merchant's or company personnel records.
 
 The Operator Policies area is **one management UX** that composes owner-backed controls. It never owns a business policy store, deploys a generic policy server, evaluates authoritative prices on the client, or creates a synchronizer that rewrites DSH/WLT.
 

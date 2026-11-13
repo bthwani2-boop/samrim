@@ -1,0 +1,14 @@
+# Identity — Service Placement
+
+STATUS: SCAFFOLD_ONLY
+OWNER: Identity
+EXECUTION: NOT_STARTED
+
+Identity is the canonical owner of actors, authentication, sessions, recovery and platform-wide permissions. Store-scoped grants are evaluated by DSH; money is owned by WLT. Do not create a second employee or Merchant identity registry.
+
+Future owner-local paths (create actual content only when separately authorized):
+- `backend/` — Go service source and owner-specific tests.
+- `contracts/openapi/` — one authoritative Identity OpenAPI entrypoint with domain-grouped `paths/`.
+- `database/` — reviewed fresh-bootstrap schema and a protected `migrations/` upgrade path.
+
+The authoritative draft is [Identity governance](../../governance/identity.md); placement rules are in [repository structure](../../REPOSITORY-STRUCTURE.md). This README is **not** an API, schema, migration, or runtime-readiness declaration.

@@ -70,6 +70,13 @@ A source being inventoried does **not** mean every line or external URL has pass
 - Negative guard tests must fail on removed protected policies, duplicate capabilities, outdated paths, authority bypass, missing tests, and unsafe fork-secret exposure.
 - **Gate:** reproducible local test + exact candidate action checks, human review of rule weakening, required GitHub branch protection verified externally when submission is authorized. No push/PR/merge without separate explicit approval.
 
+### 2026-11-13 — Authorized service-directory placement (structural only)
+- **Worktree:** `D:\samrim-refoundation-clean-20261112`, existing branch; no new worktree/branch, and no automatic Push, PR, merge or deployment.
+- **Scope:** three README-only Git-tracked service placements under `services/{identity,dsh,wlt}/`, future backend/OpenAPI/database directory responsibilities, DSH single bounded employee engine for company and Merchant staff, organizational isolation and separation of Identity/DSH/WLT truths.
+- **Structural acceptance:** stage-aware workspace/foundation guards accept only those READMEs and optional empty planned subdirectories, and negative fixtures reject service #4, premature Go/modules, OpenAPI, SQL, generated files, unsafe symlinks and missing service-owner README. Preserve existing governance checks and test their sensitivity.
+- **Explicitly deferred:** implementing any service, Go module, OpenAPI document, SQL/migration, database connection, Docker environment or live business workflow; donor source is read-only evidence. Keep `GOVERNANCE_CUTOVER: NOT_READY` and sensitive FIN/SEC/MIG/LEGAL review pending.
+- **Evidence and status:** inspect branch/HEAD, active unrelated changes, exact Git diff and UTF-8; run targeted guard tests. Recording a PASS for this organizational slice must never imply completed Phase 4, security, financial or product readiness.
+
 ## Phase 4 — Clean technical foundation and SQL (NOT_STARTED)
 - Re-census all tracked files, source/contract/exported routes, dynamic consumers, migration history and current database state by Identity/DSH/WLT. Record KEEP/MOVE/MERGE/REFOUND/REPLACE/APPROVED_RETIRE and the proof for each materially affected responsibility.
 - Re-design schema per owner from first principles using validated business invariants, not copies of old migrations. Preserve protected applied history in source/backup and test a fresh baseline on isolated DB, protected upgrade, schema constraints/index/permission equivalence, restore and financial ledger conservation.

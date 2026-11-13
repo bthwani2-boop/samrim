@@ -10,7 +10,7 @@ CAPABILITY_ID: IDENTITY_ACTIVATION_SESSIONS
 
 **Outcome:** Customer, Merchant, Captain and Operator humans have one canonical actor identity, verified session, bounded high-level role and appropriate recoverable authentication lifecycle. HR employee status, Store ownership, Store-affiliated Captain membership, settlement beneficiary and delegated Store authority are *different* bounded facts, not alternative Identity principals.
 
-**Owner:** Identity alone creates/updates accounts, authentication factors, sessions, global role eligibility and platform permissions. DSH alone owns Store memberships, Store access grants, Captain operational availability and Order eligibility. WLT alone owns financial balances, payment instruments and settlement claims. A role is never granted by navigating to a screen.
+**Owner:** Identity alone creates/updates accounts, authentication factors, sessions, global role eligibility and platform permissions. DSH alone owns Store memberships, Store access grants, bounded employment records for company and Merchant staff, Captain operational availability and Order eligibility. WLT alone owns financial balances, payment instruments and settlement claims. A role is never granted by navigating to a screen, adding an employee record, or assigning a job title. One actor can link to several separately authorized employment/Store assignments; do not mint employee-specific identities.
 
 **Admission and recovery:** Registration/verification, session refresh, suspension, recovery, logout, device change and actor switching have explicit authorized state transitions. A failed or pending authentication step does not silently create a usable role. Never sacrifice Root Owner security or existing users to simulate test success.
 

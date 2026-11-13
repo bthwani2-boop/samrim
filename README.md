@@ -28,6 +28,10 @@ Maps remain **NOT_RUN** as functional experiences: `react-native-maps` and optio
 
 Native identifiers, owner, EAS project IDs, app slugs, schemes and package permissions are preserved. `eas.json` contains **legacy `image: latest`** in preview/iOS profiles; reproducible remote builders are **BLOCKED/NOT_RUN** until images are reviewed without changing original dependencies. Existing Android development builds were used for Stage-4 UI smoke tests on Samsung. This validates rendering of preview shells on those installed binaries only; the current native configuration is **not** certified until a separately authorized native rebuild and device verification.
 
+## Services placement only
+
+`services/identity/`, `services/dsh/` and `services/wlt/` now have Git-tracked owner READMEs for the separately authorized **directory-only** foundation slice. Their future Go/OpenAPI/SQL locations are described but are not implemented. The Foundation Guard explicitly rejects prematurely adding those source files, a fourth HR service or an unrelated engine; the employee-administration capability will live inside DSH under approved organization-scoped access. See [repository placement](REPOSITORY-STRUCTURE.md). Empty nested directories may exist locally but are not portable Git content.
+
 ## Boundaries
 
 `GOVERNANCE_CUTOVER: NOT_READY`; mandatory independent finance/security/migration/legal review remains pending. The worktree does not introduce Go services, financial logic, SQL, Docker or live Product screens. The user explicitly requires any *later* Docker infrastructure to be **new and isolated to this Worktree**, not the donor's old containers, volumes or database.

@@ -19,7 +19,7 @@ const required=[
  'tools/governance/review-examples.test.mjs',
  '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
  'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','tsconfig.base.json','biome.json',
- 'README.md','docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md','docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json','tools/dev/verify-workspace.mjs','tools/mobile/verify-app-foundations.mjs'
+ 'README.md','services/identity/README.md','services/dsh/README.md','services/wlt/README.md','docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md','docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json','tools/dev/verify-workspace.mjs','tools/mobile/verify-app-foundations.mjs'
 ];
 const fail=(reason)=>{ throw Error('FOUNDATION_GATE_FAIL: '+reason); };
 const exists=(p)=>fs.existsSync(path.join(root,...p.split('/')));
@@ -77,9 +77,48 @@ if(!/^BUSINESS_POLICY_AUTHORITY: NONE$/m.test(ref)||!ref.includes('1.27.1')||!re
  fail('non-governing donor toolchain provenance or mismatch disclosure missing');
 if(!contents['README.md'].includes('Stage 4')||!contents['tools/dev/verify-workspace.mjs'].includes('STAGE4_WORKSPACE_STRUCTURE_PASS'))
  fail('stage4 developer onboarding or workspace smoke verifier missing');
-for(const folder of ['contracts','infra','services','nx.json','go.work']){
+for(const folder of ['contracts','infra','nx.json','go.work']){
  if(exists(folder))fail('stage 5+ service/DB/infra introduced prematurely: '+folder);
 }
+
+// This bounded service placement slice permits owner READMEs and empty future directories.
+// No Go module, executable OpenAPI, SQL, Docker source or fourth service is authorized.
+const serviceOwners=['identity','dsh','wlt'];
+const allowedServiceDirs=new Set();
+const allowedServiceFiles=new Set();
+for(const owner of serviceOwners){
+ const prefix='services/'+owner;
+ for(const suffix of ['', '/backend','/contracts','/contracts/openapi',
+   '/contracts/openapi/paths','/database','/database/migrations']){
+  allowedServiceDirs.add(prefix+suffix);
+ }
+ const readme=prefix+'/README.md';
+ allowedServiceFiles.add(readme);
+ const doc=contents[readme];
+ if(!doc.includes('OWNER: '+(owner==='identity'?'Identity':owner.toUpperCase())) ||
+    !/^STATUS: SCAFFOLD_ONLY$/m.test(doc) || !/^EXECUTION: NOT_STARTED$/m.test(doc) ||
+    !['backend/','contracts/openapi/','database/'].every(s=>doc.includes(s))){
+  fail('invalid service placement README: '+readme);
+ }
+}
+const servicesPath=path.join(root,'services');
+if(!fs.existsSync(servicesPath)||!fs.lstatSync(servicesPath).isDirectory())
+ fail('service placement directory missing or unsafe');
+function inspectServiceFolders(dir){
+ for(const entry of fs.readdirSync(dir,{withFileTypes:true})){
+  const absolute=path.join(dir,entry.name);
+  const relative=path.relative(root,absolute).split(path.sep).join('/');
+  const stat=fs.lstatSync(absolute);
+  if(stat.isSymbolicLink())fail('unsafe service symlink: '+relative);
+  if(stat.isDirectory()){
+   if(!allowedServiceDirs.has(relative))fail('unadmitted service directory: '+relative);
+   inspectServiceFolders(absolute);
+  }else if(!stat.isFile()||!allowedServiceFiles.has(relative)){
+   fail('premature service source: '+relative);
+  }
+ }
+}
+inspectServiceFolders(servicesPath);
 
 
 // Validate real in-repository Markdown links instead of accepting a green
@@ -371,12 +410,12 @@ for(const p of ['docs/governance','CODEOWNERS','.github/CODEOWNERS','docs/CODEOW
 for(const p of ['.github/workflows/fast-guard.yml','.github/workflows/sonar-observe.yml','.github/workflows/fast-guard-routing.test.mjs']){
  if(exists(p))fail('source-dependent inherited CI remains executable in foundation-only tree: '+p);
 }
-if(exists('services')||exists('infra')||exists('contracts'))fail('foundation guard cannot be reused as service/SQL proof');
+if(exists('infra')||exists('contracts'))fail('foundation guard cannot be reused as service/SQL proof');
 
 const ci=contents['.github/workflows/foundation-guard.yml'];
 if(!/permissions:\s*\n\s*contents: read/.test(ci))fail('CI must run with least privilege');
 if(!ci.includes('node --test tools/governance/verify-foundation.test.mjs')||!ci.includes('node tools/governance/verify-foundation.mjs'))fail('CI must run actual guard tests and live verification');
 if(/continue-on-error:\s*true|\bsecrets\./.test(ci))fail('CI cannot silently skip proof or read secrets in foundation stage');
 
-console.log('FOUNDATION_STRUCTURE_PASS domain_owners='+domainFiles.length+' capability_ids='+seen.size+' one_census=true');
+console.log('FOUNDATION_STRUCTURE_PASS domain_owners='+domainFiles.length+' capability_ids='+seen.size+' one_census=true service_scaffold_only=true');
 console.log('GOVERNANCE_CUTOVER_NOT_READY: independent risk-policy approvals and material donor reconciliation not proven; software runtime gates are separate');

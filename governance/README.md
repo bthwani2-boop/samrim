@@ -23,7 +23,7 @@ Historic `docs/governance/` was removed from this candidate. Read older content 
 | `commerce.md` | city/location, cart, Order, multi-Store orchestration, adjustments, communication and promotions |
 | `fulfillment.md` | method eligibility, assignment, Captain membership, handoff, delivery, pickup |
 | `finance.md` | WLT fees/agreements, collection/custody, balances, ledger, settlements and beneficiary routing |
-| `hr.md` | limited internal employee HR capability; no parallel Identity role |
+| `hr.md` | bounded employee administration for BThwani and Merchant staff inside DSH; no parallel Identity role or fourth HR service |
 | `experience.md` | Tamagui Expo, Ant Design Operator, brand, Arabic RTL, accessibility, recovery |
 | `safety.md` | security, privacy, financial/data integrity, migrations, incident and independent review |
 | `engineering.md` | acceptance, staged refoundation, policy admission and measurable engineering proof |
