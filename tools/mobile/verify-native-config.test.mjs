@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 const require = createRequire(import.meta.url);
+const fs = require("node:fs");
 const { defineBthwaniExpoApp } = require("./define-bthwani-expo-app.cjs");
 
 const apps = [
@@ -67,6 +68,13 @@ test("remote Android build fails closed for missing maps/Firebase or mismatched 
       () => defineBthwaniExpoApp("app-client", { maps: true, locationMode: "foreground" }),
       /Missing GOOGLE_SERVICES_JSON EAS file secret/
     );
+    const directory = join(folder, "firebase-directory-not-file");
+    mkdirSync(directory);
+    process.env.GOOGLE_SERVICES_JSON = directory;
+    assert.throws(
+      () => defineBthwaniExpoApp("app-client", { maps: true, locationMode: "foreground" }),
+      error => error.message === "Missing GOOGLE_SERVICES_JSON EAS file secret for app-client"
+    );
     const file = join(folder, "synthetic-google-services.json");
     process.env.GOOGLE_SERVICES_JSON = file;
     writeFileSync(file, "{invalid-json", "utf8");
@@ -116,6 +124,63 @@ test("merchant cloud native config rejects Customer Firebase package and accepts
     assert.equal(config.android.package, "com.bthwani.partner");
     assert.ok(config.plugins.some(p => Array.isArray(p) && p[0] === "react-native-maps"));
   } finally {
+    for (const name of names) {
+      if (originals[name] === undefined) delete process.env[name];
+      else process.env[name] = originals[name];
+    }
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+
+test("EAS Firebase validation cannot swap the verified file path before its read", { concurrency: false }, () => {
+  const folder = mkdtempSync(join(tmpdir(), "bthwani-eas-race-synthetic-"));
+  const file = join(folder, "google-services.json");
+  const names = ["EAS_BUILD", "EAS_BUILD_PLATFORM", "GOOGLE_SERVICES_JSON"];
+  const originals = Object.fromEntries(names.map(name => [name, process.env[name]]));
+  const realStatSync = fs.statSync;
+  const realFstatSync = fs.fstatSync;
+  const realReadFileSync = fs.readFileSync;
+  let verifiedFd;
+  let readFd;
+  let swapped = false;
+  try {
+    process.env.EAS_BUILD = "true";
+    process.env.EAS_BUILD_PLATFORM = "android";
+    process.env.GOOGLE_SERVICES_JSON = file;
+    writeFileSync(file, JSON.stringify({ client: [
+      { client_info: { android_client_info: { package_name: "com.bthwani.client" } } },
+    ] }));
+    // An attacker can replace a path between stat(path) and readFile(path).
+    // A correct implementation opens once, validates the open descriptor, then reads it.
+    fs.statSync = (candidate, ...args) => {
+      const stat = realStatSync(candidate, ...args);
+      if (String(candidate) === file && !swapped) {
+        fs.renameSync(file, join(folder, "original.json"));
+        writeFileSync(file, JSON.stringify({ client: [
+          { client_info: { android_client_info: { package_name: "com.other.app" } } },
+        ] }));
+        swapped = true;
+      }
+      return stat;
+    };
+    fs.fstatSync = (fd, ...args) => {
+      verifiedFd = fd;
+      return realFstatSync(fd, ...args);
+    };
+    fs.readFileSync = (source, ...args) => {
+      if (typeof source === "number") readFd = source;
+      return realReadFileSync(source, ...args);
+    };
+    const config = defineBthwaniExpoApp("app-client");
+    assert.equal(config.android.googleServicesFile, file);
+    assert.equal(swapped, false, "the Firebase path must not be stat-checked before opening");
+    assert.equal(typeof verifiedFd, "number");
+    assert.equal(readFd, verifiedFd, "the validated descriptor must also be the descriptor read");
+  } finally {
+    fs.statSync = realStatSync;
+    fs.fstatSync = realFstatSync;
+    fs.readFileSync = realReadFileSync;
     for (const name of names) {
       if (originals[name] === undefined) delete process.env[name];
       else process.env[name] = originals[name];

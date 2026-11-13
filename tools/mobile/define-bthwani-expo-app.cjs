@@ -198,16 +198,31 @@ function defineBthwaniExpoApp(appKey, options = {}) {
   // EAS file secrets are runner-local paths; never embed this file in the git archive.
   // Do not attempt a native Android build with the wrong Firebase project/app.
   if (process.env.EAS_BUILD === "true" && process.env.EAS_BUILD_PLATFORM === "android" && ["app-client", "app-partner"].includes(appKey)) {
-    if (!easFirebaseFile || !fs.existsSync(easFirebaseFile) || !fs.statSync(easFirebaseFile).isFile()) {
+    if (!easFirebaseFile) {
+      throw new Error("Missing GOOGLE_SERVICES_JSON EAS file secret for " + appKey);
+    }
+    // Open once: checking a path then reading that path risks a file-swap race.
+    // fstat and read the same open descriptor; never expose secret contents in errors.
+    let fd;
+    try {
+      fd = fs.openSync(easFirebaseFile, "r");
+    } catch {
       throw new Error("Missing GOOGLE_SERVICES_JSON EAS file secret for " + appKey);
     }
     let firebase;
     try {
-      firebase = JSON.parse(fs.readFileSync(easFirebaseFile, "utf8"));
-    } catch {
-      throw new Error("Invalid GOOGLE_SERVICES_JSON file for " + appKey);
+      if (!fs.fstatSync(fd).isFile()) {
+        throw new Error("Missing GOOGLE_SERVICES_JSON EAS file secret for " + appKey);
+      }
+      try {
+        firebase = JSON.parse(fs.readFileSync(fd, "utf8"));
+      } catch {
+        throw new Error("Invalid GOOGLE_SERVICES_JSON file for " + appKey);
+      }
+    } finally {
+      fs.closeSync(fd);
     }
-    if (!Array.isArray(firebase.client) || !firebase.client.some(
+    if (!Array.isArray(firebase?.client) || !firebase.client.some(
       client => client?.client_info?.android_client_info?.package_name === app.androidPackage
     )) {
       throw new Error("GOOGLE_SERVICES_JSON Android package mismatch for " + appKey);
