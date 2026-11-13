@@ -52,6 +52,18 @@ One Merchant quick-entry path uses name/barcode lookup, Shared Variant selection
 
 A Store-local Product may later be promoted to an approved Shared identity **only** with explicit authorized DSH identity mapping, rebinding Offers and historical audit, not a cosmetic classification or silent ID replacement. Media, category, variant, Store SKU, requested quantities and invoice snapshots must survive a lawful migration without cross-Store disclosure.
 
+## Donor-preserved Store catalog authorization and barcode resolution
+
+A Store-specific Operator import or bulk Offer action is a **bounded DSH Store operation**, not a grant to edit all Shared Products or another Merchant's Store. The donor's existing Operator grants `partners` and `catalog` may each authorize the **specific Store import operation** only after independent trusted Operator/Store/action scope verification. Possessing either grant does not automatically confer the other's domain mutations, financial rights, publication or Store ownership; the exact new API/ACL mapping awaits Identity/DSH contract review. Merchant Store import requires a current Store-specific grant and canonical DSH readback. Failures and revoked scope fail closed, including partial batch retries.
+
+The shared DSH barcode resolver receives the verified Store context and scanned identifier and distinguishes **existing StoreOffer, eligible SHARED Variant match, STORE_SCOPED match, unknown identifier, and variable-measure identifier** before proposing a mutation. A Store-scoped SKU is not a global barcode; an unknown or variable-measure code must not be silently interpreted as GTIN/EAN/UPC or create a new Product. A lookup result alone does not add an Offer or confer authorization.
+
+In one CSV/XLSX Store import, a name-only row with an admissible Store-specific price may create a **draft STORE_SCOPED Product and draft StoreOffer**, never a SHARED Product, after explicit preview/commit. An existing local match, ambiguous Shared match, unknown identifier, stale version or conflicting quantity is held with a per-row reason and does not silently duplicate identity. Missing input is not authorization to delete existing catalog facts, and blind upsert is prohibited. Replayed runs preserve one run identity, Store scope and durable per-row result.
+
+An illustrative image attached to a `CommerceVertical` is a separate DSH-governed catalog media reference with provenance, rights and moderation; it is not Product media, category identity or a change to Store classification. A Store's primary vertical is never inferred from a picture, label or legacy record.
+
+These are **draft-preservation conditions from branch 41**, not evidence of a runnable importer, authorized ACL implementation or completed independent security review. Implement and test them only after governance cutover and a real owner contract.
+
 ## Owner-backed merchandising and media limits
 
 A **5,000-row** Store import run and the earlier **10 MiB / 30-second** short video bounds are *initial accepted donor settings*, not immutable code constants. DSH/content owners may expose validated **per-source bulk-import limits, file/media size, video duration, moderation, listing windows, inventory thresholds and promotion usage limits** as clearly named Operator Policies controls only if the media/storage, validation, user experience and costs are actually supported.

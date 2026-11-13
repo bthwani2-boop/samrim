@@ -183,6 +183,16 @@ rejects('rejects Spec Kit version mismatch',{edit:{'.specify/integration.json':s
 rejects('rejects a missing source URL inventory',{del:['docs/reference/HISTORICAL-SOURCE-INVENTORY.md']},/required docs\/reference\/HISTORICAL-SOURCE-INVENTORY.md/);
 rejects('rejects a falsely verified external URL inventory',{edit:{'docs/reference/HISTORICAL-SOURCE-INVENTORY.md':s=>s.replace('live link, license and content checks NOT_RUN','live link, license and content checks PASS')}},/historical link extraction cannot claim live verification/);
 
+rejects('rejects losing bounded Store-specific Operator import authorization',
+ {edit:{'governance/catalog.md':s=>s.replace('specific Store import operation','unbounded import')}},
+ /source-grounded catalog import\/resolver boundary missing/);
+rejects('rejects treating variable-measure barcode as ordinary Product identity',
+ {edit:{'governance/catalog.md':s=>s.replace('existing StoreOffer, eligible SHARED Variant match, STORE_SCOPED match, unknown identifier, and variable-measure identifier','any scanned barcode')}},
+ /source-grounded catalog import\/resolver boundary missing/);
+rejects('rejects name-only catalog import identity ambiguity',
+ {edit:{'governance/catalog.md':s=>s.replace('draft STORE_SCOPED Product and draft StoreOffer','unreviewed Shared Product')}},
+ /source-grounded catalog import\/resolver boundary missing/);
+
 rejects('rejects loss of Owner-managed serviceability policy',{edit:{'governance/commerce.md':s=>s.replace('## Operator-managed commercial thresholds — explicit policy, not compiled law','## Removed business parameter controls')}},/owner-backed configurable-values section missing/);
 rejects('rejects loss of Owner-managed financial policy parameters',{edit:{'governance/finance.md':s=>s.replace('## Operator-managed financial values versus immutable accounting rules','## Removed financial parameter controls')}},/owner-backed configurable-values section missing/);
 
@@ -228,6 +238,12 @@ rejects('rejects unbounded Operator permission administration',
 rejects('rejects exposed cross-origin Customer credential transfer',
  {edit:{'governance/identity.md':s=>s.replace('never place access/refresh credentials','may share access/refresh credentials')}},
  /source-grounded identity boundary missing: never place access\/refresh credentials/);
+rejects('rejects loss of approved Operator catalog permission boundary',
+ {edit:{'governance/identity.md':s=>s.replace('`catalog`: shared Product identities, category and attribute policy, catalog proposals and imports','`catalog`: unrestricted organization-wide access')}},
+ /source-grounded Operator scope meaning missing: `catalog`: shared Product identities/);
+rejects('rejects turning read-oriented Leadership into a write authority',
+ {edit:{'governance/identity.md':s=>s.replace('Leadership remains a read-oriented center without a separate write scope','Leadership has universal write access')}},
+ /source-grounded Operator scope meaning missing: Leadership remains a read-oriented center/);
 rejects('rejects loss of bounded HR request reconciliation',
  {edit:{'governance/hr.md':s=>s.replace('already claimed for Identity actor creation cannot be rejected','already claimed for Identity actor creation may be rejected immediately')}},
  /source-grounded HR draft boundary missing: already claimed for Identity actor creation cannot be rejected/);

@@ -406,6 +406,14 @@ for(const economic of ['PLATFORM_CASH_IN_PROVIDER_FEE_EXPENSE','PLATFORM_DELIVER
 const catalog=contents['governance/catalog.md'];
 if(!catalog.includes('الأكثر رواجًا')||!catalog.includes('distinct canonically completed Store Orders')||!catalog.includes('Operator Policies'))
  fail('canonical popularity read model or Operator-managed ranking window lost');
+for (const anchor of [
+ 'specific Store import operation',
+ 'existing StoreOffer, eligible SHARED Variant match, STORE_SCOPED match, unknown identifier, and variable-measure identifier',
+ 'draft STORE_SCOPED Product and draft StoreOffer',
+ 'Missing input is not authorization to delete existing catalog facts',
+]) {
+ if (!catalog.includes(anchor)) fail('source-grounded catalog import/resolver boundary missing: '+anchor);
+}
 
 
 // Preserve source-grounded security and data limits in the draft owner without
@@ -424,6 +432,21 @@ for(const anchor of ['without requiring an existing DSH Store or an Operator enr
  'DSH-approved Captain standing precedes','never place access/refresh credentials',
  'Only that original, one-time bootstrapped Operator may grant or revoke']){
  if(!identity.includes(anchor))fail('source-grounded identity boundary missing: '+anchor);
+}
+// Preserve the donor-approved bounded Operator scope meanings while the
+// substantive security/finance reviews remain open. This is a draft text guard.
+for(const anchor of [
+ '`operations`: authorized operational Order handling and Captain administration',
+ '`partners`: Merchant admission, status and directory administration',
+ '`catalog`: shared Product identities, category and attribute policy, catalog proposals and imports',
+ '`marketing`: promotion and discovery-content administration',
+ '`hr`: bounded employee administration and HR audit readback',
+ '`finance`: Finance workspace access, subject to independent WLT authorization',
+ '`platform_policies`: owner-backed policy mutation with the appropriate additional scope',
+ 'Leadership remains a read-oriented center without a separate write scope',
+ 'Access and Permissions administration remains exclusive to the original, one-time bootstrapped Operator',
+]){
+ if(!identity.includes(anchor))fail('source-grounded Operator scope meaning missing: '+anchor);
 }
 
 // Guard only source-retention assertions; this cannot certify FIN/SEC/LEGAL semantics.
