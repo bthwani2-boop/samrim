@@ -12,7 +12,7 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 - Candidate at **initial heading capture**: `D:\samrim-refoundation-clean-20261112`, HEAD `d4f542df68533b06d42aa3a1a8b3338fd5a757c9` (historical evidence, not the current tip).
 - Read-only census of exactly 14 donor domain-owner Markdown files, paired with their 14 same-named draft target owners. Donor README, separate historical plans, source code, ZIPs and six approved discussion sequences have not been reconciled by this artifact.
 - A heading is only a navigation aid. An exact title match does not prove semantic parity; a renamed or missing title does not prove the underlying decision is absent.
-- Rows are individually pinned to source Git blob and 1-based line number. As of 2026-11-14, **30 rows** (11 HR, 6 Platform, 13 Architecture) received bounded **documentary** source-to-target review (`DOC_RETAIN` or `DOC_REFOUND`) with dated, per-clause evidence below; **310 other rows remain `REVIEW_PENDING`**. These dispositions do not prove implemented policies, safe actual identifier/data migration, live access, salary, SQL, provider state or integration readiness.
+- Rows are individually pinned to source Git blob and 1-based line number. As of 2026-11-14, **42 rows** (11 HR, 6 Platform, 13 Architecture, 12 Identity) received bounded **documentary** source-to-target review (`DOC_RETAIN` or `DOC_REFOUND`) with dated, per-clause evidence below; **298 other rows remain `REVIEW_PENDING`**. These dispositions do not prove implemented policies, safe actual identifier/data migration, live access, salary, SQL, provider state or integration readiness.
 - No automatic KEEP/RETIRE/COMPLETE status is derived from wording; unheaded paragraphs and all deeper implementation artifacts require separate review.
 
 ## Navigation-only summary
@@ -92,18 +92,18 @@ Donor `docs/governance/identity.md` (Git blob `bc68ed1256c3b493b5c4366b1bc47dedb
 
 | Donor line | Exact source heading | Literal heading in target? | Semantic review |
 | ---: | --- | --- | --- |
-| 8 | ## IDENTITY_ACTIVATION_SESSIONS — Identity Activation Sessions | NO | REVIEW_PENDING |
-| 12 | ### Outcome | NO | REVIEW_PENDING |
-| 16 | ### Ownership | NO | REVIEW_PENDING |
-| 20 | ### Role-specific lifecycle | NO | REVIEW_PENDING |
-| 30 | ### Client identity across the marketplace and Store websites | NO | REVIEW_PENDING |
-| 39 | ### Invariants | NO | REVIEW_PENDING |
-| 55 | ### Operator invariants | NO | REVIEW_PENDING |
-| 59 | ### Failure and recovery | NO | REVIEW_PENDING |
-| 63 | ### Material participants | NO | REVIEW_PENDING |
-| 67 | ### Operator Finance permission | NO | REVIEW_PENDING |
-| 71 | ### Operator Platform Policies permission | NO | REVIEW_PENDING |
-| 75 | ### Operator workspace permission boundaries | NO | REVIEW_PENDING |
+| 8 | ## IDENTITY_ACTIVATION_SESSIONS — Identity Activation Sessions | NO | DOC_REFOUND |
+| 12 | ### Outcome | NO | DOC_RETAIN |
+| 16 | ### Ownership | NO | DOC_REFOUND |
+| 20 | ### Role-specific lifecycle | NO | DOC_RETAIN |
+| 30 | ### Client identity across the marketplace and Store websites | NO | DOC_REFOUND |
+| 39 | ### Invariants | NO | DOC_RETAIN |
+| 55 | ### Operator invariants | NO | DOC_RETAIN |
+| 59 | ### Failure and recovery | NO | DOC_RETAIN |
+| 63 | ### Material participants | NO | DOC_REFOUND |
+| 67 | ### Operator Finance permission | NO | DOC_RETAIN |
+| 71 | ### Operator Platform Policies permission | NO | DOC_RETAIN |
+| 75 | ### Operator workspace permission boundaries | NO | DOC_RETAIN |
 
 ### stores
 
@@ -648,3 +648,24 @@ SOURCE_SECTION_CENSUS_PASS owners=14 donor_headings=340 target_headings=138 lite
 | Architecture 162 | DOC_RETAIN | `REPOSITORY-STRUCTURE.md` owns file placement and consumer cutover; `architecture.md` alone owns semantic boundaries, no second directory-policy authority. |
 
 **Count and risk statement:** these **19** clause rows follow the prior independently completed **11** HR rows, yielding **30/340** documentary section dispositions (**22 `DOC_RETAIN`, 8 `DOC_REFOUND`**) and **310 `REVIEW_PENDING`**. This is *not* 30 independently approved service contracts or a 30/340 measure of implemented completeness. Historic donor H2 grouping (81 records) remains a separate navigation/cutover-disposition pass; it is not substituted for this clause review. Unheaded material, actual integrations, target legal/finance evidence, donor consumer checks, cross-account data and runtime correctness remain unresolved where not independently inspected. `GOVERNANCE_CUTOVER: NOT_READY`, and no Product capability, financial writer, SQL object, API operation or deployed identity changed in this census.
+
+## 2026-11-14 — Identity activation/access 12-clause documentary concordance (session 02)
+
+**Source evidence and limit:** Full donor `D:/samrim/docs/governance/identity.md` from branch `41@426d67b47beb8c66b09acd8c7394086b53ac5aae`, blob `bc68ed1256c3b493b5c4366b1bc47dedb47b668a`, was compared section by section with the current draft `governance/identity.md` and its explicit `governance/{platform,stores,fulfillment,hr,safety,finance}.md` owners. These 12 historical headings are **one** admitted Product capability `IDENTITY_ACTIVATION_SESSIONS`, not 12 new capabilities. `DOC_RETAIN` indicates a source requirement remains documented in its proper owner; `DOC_REFOUND` indicates a compatible fact was preserved but the current human-approved scope or naming was deliberately changed. This is a source-text comparison, **not** certification of present Root Owner credentials, secure Passkey enrollment, actual sessions, current operator authorizations, live WLT/DSH reads or runtime security.
+
+| Donor Identity line | Documentary disposition | Exact target placement / preserved constraint and source distinction |
+| --- | --- | --- |
+| 8 | DOC_REFOUND | `governance/identity.md` owns `IDENTITY_ACTIVATION_SESSIONS` as one permanent Actor/verified role/session/recovery capability; `platform.md` uses Customer/Merchant vocabulary while retaining existing `client`/`partner` role compatibility. DSH Store and employment are separate facts; no new Identity role is admitted. |
+| 12 | DOC_RETAIN | `identity.md` retains one immutable `actor_id` per human and distinguishes initial proof, role admission, authentication, session and recovery. `architecture.md` enforces canonical ID semantics across future migrations. |
+| 16 | DOC_REFOUND | `identity.md`, `stores.md`, `fulfillment.md` and `hr.md` keep Identity-only role/session writers, direct verified Merchant enrollment without a prerequisite Store, DSH-validated member grant/Captain standing and no HR employment-based role grant. DSH Store authorization never follows merely from the `partner` workspace session. |
+| 20 | DOC_RETAIN | `identity.md` keeps governed Customer self-access, protected Merchant role admission, DSH standing before Captain admission, and Passkey-only normal Operator login with one-time protected bootstrap. Active assignment is not Captain admission and suspended roles do not self-reactivate. |
+| 30 | DOC_REFOUND | `identity.md`, `platform.md`, `stores.md` and `safety.md` preserve one Customer identity for marketplace and approved full Store Web, guest browsing of lawful public Store/Offer pages, and Identity-owned **host-scoped** browser sessions. No shared refresh token in URLs, cross-origin storage or merchant scripts; Direct Web publishing cannot silently activate checkout or marketplace privileges. Historical `BTHWANI_PARTNER`/`INDEPENDENT_STORE` relation codes are mapped only at an approved Store schema/API migration to `MARKETPLACE`/`DIRECT` targets. |
+| 39 | DOC_RETAIN | `identity.md` states phone is not an Actor primary key, official Identity name is authoritative, role-specific sessions must not impersonate another role, and disable/revocation/refresh replay/challenge attempts require bounded trusted handling. Store eligibility is verified by DSH, not UI flags or proposed role input; see `safety.md` for denial/one-use invariants. |
+| 55 | DOC_RETAIN | `identity.md` protected Operator bootstrap and WebAuthn ceremony/user verification; break-glass recovery preserves Actor identity and revokes affected authenticators/sessions. Historical credentialless Operator recovery is separately labeled `NOT_RUN` rather than silently creating a new Root Owner. |
+| 59 | DOC_RETAIN | `identity.md` and `safety.md` reject cross-actor/cross-role credentials, expired/replayed challenges, unauthorized recovery, forged authority and stale cross-Store private state; a Store invitation cannot silently rebind Actor identity. |
+| 63 | DOC_REFOUND | `identity.md`, `platform.md`, `stores.md` and `fulfillment.md` map admitted Customer/Merchant/Captain/Operator participation to present Surfaces; obsolete field-agent enrollment, referral writers and separate acquisition sessions remain non-admitted under `product.md`, while binding historic evidence is preserved with its proper owner. |
+| 67 | DOC_RETAIN | `identity.md` `Finite Operator workspace permissions` retains `finance` as a bounded registered Operator scope with no automatic grant to later Operators, reason/version/audit/session-revocation on grant changes; WLT still independently authorizes each financial mutation. Only original protected first Operator administers scopes. |
+| 71 | DOC_RETAIN | `identity.md` retains `platform_policies` as a bounded Identity Operator scope, default-denied to subsequent Operators and grantable/revocable only by original protected Operator; actual owner checks both active Identity authorization and additional action-specific permissions, without turning security/ledger invariants into switches. |
+| 75 | DOC_RETAIN | `identity.md` explicitly lists all seven Operator scopes `operations`, `partners`, `catalog`, `marketing`, `finance`, `hr`, `platform_policies` and their bounded meanings. Leadership remains a scoped read-only center; access/permission administration stays with first privileged Operator, not every `finance` or `hr` holder. |
+
+**Documentary status:** this Identity review adds **8 `DOC_RETAIN` + 4 `DOC_REFOUND`**, for **42/340** source heading dispositions after prior HR/Platform/Architecture work; **298 `REVIEW_PENDING`** remain. This is not a percent-complete software claim, current Identity runtime security assessment, or permission to execute production auth, recovery, live account migrations or financial transactions. No executable Go/SQL/API/client operation or real account state was touched by this comparison. `GOVERNANCE_CUTOVER: NOT_READY`.
