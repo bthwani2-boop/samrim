@@ -65,7 +65,7 @@ const contractPathGroups={
 const required=[
  'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',...domainFiles,'docs/REFOUNDATION-PLAN.md','docs/reference/README.md','docs/reference/HISTORICAL-SOURCE-INVENTORY.md','docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md',
  '.specify/init-options.json','.specify/integration.json','.specify/integrations/speckit.manifest.json','.specify/memory/constitution.md',
- '.github/workflows/foundation-guard.yml','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs',
+ '.github/workflows/foundation-guard.yml','.github/workflows/sonar-quality.yml','sonar-project.properties','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs',
  'tools/governance/review-examples.test.mjs',
  '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
  'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','tsconfig.base.json','biome.json',
@@ -526,6 +526,42 @@ for(const p of ['.github/workflows/fast-guard.yml','.github/workflows/sonar-obse
 if(exists('infra')||exists('contracts'))fail('foundation guard cannot be reused as service/SQL proof');
 
 const ci=contents['.github/workflows/foundation-guard.yml'];
+const requiredJobStart=ci.indexOf('\n  fast_guard:\n');
+const requiredJob=requiredJobStart>=0 ? ci.slice(requiredJobStart) : '';
+if (!/^ {4}needs: \[foundation, presentation\]$/m.test(requiredJob))
+ fail('required fast-guard must depend on both predecessor jobs');
+if (!/^ {4}if: \$\{\{ !cancelled\(\) \}\}$/m.test(requiredJob))
+ fail('required fast-guard must evaluate failed dependencies');
+const gateLabel='      - name: Reject failed required predecessors';
+const gateStart=requiredJob.indexOf(gateLabel);
+const nextStep=gateStart>=0 ? requiredJob.indexOf('\n      - name:',gateStart+gateLabel.length) : -1;
+const requiredGate=gateStart>=0 ? requiredJob.slice(gateStart,nextStep<0?undefined:nextStep) : '';
+if (!/^ {8}if: \$\{\{ always\(\) \}\}$/m.test(requiredGate) ||
+    !requiredGate.includes('FOUNDATION_RESULT: ${{ needs.foundation.result }}') ||
+    !requiredGate.includes('PRESENTATION_RESULT: ${{ needs.presentation.result }}') ||
+    !/^ {12}exit 1$/m.test(requiredGate))
+ fail('required fast-guard must fail on upstream errors');
+const sonar=contents['.github/workflows/sonar-quality.yml'];
+const sonarJobStart=sonar.indexOf('\n  sonar:\n');
+const sonarJob=sonarJobStart>=0 ? sonar.slice(sonarJobStart) : '';
+const sonarStepsAt=sonarJob.indexOf('\n    steps:\n');
+if(sonarStepsAt<0 || /^ {4}if:/m.test(sonarJob.slice(0,sonarStepsAt)))
+ fail('required Sonar job must not be skipped for untrusted forks');
+const sonarGuardLabel='      - name: Fail closed for untrusted fork pull requests';
+const sonarGuardStart=sonarJob.indexOf(sonarGuardLabel);
+const sonarCheckoutStart=sonarJob.indexOf('\n      - name: Checkout exact candidate',sonarGuardStart);
+const sonarGuard=sonarGuardStart>=0 && sonarCheckoutStart>sonarGuardStart
+ ? sonarJob.slice(sonarGuardStart,sonarCheckoutStart) : '';
+if(!sonarGuard.includes("github.event.pull_request.head.repo.full_name != github.repository") ||
+   !/^ {10}exit 1$/m.test(sonarGuard))
+ fail('required Sonar fork gate must fail closed');
+const sonarScanStart=sonarJob.indexOf('      - name: Analyze using existing Sonar project');
+const sonarScan=sonarScanStart>=0 ? sonarJob.slice(sonarScanStart) : '';
+if(!sonarScan.includes("if: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}") ||
+   !sonarScan.includes('SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}') ||
+   !sonarScan.includes('-Dsonar.qualitygate.wait=true') ||
+   !contents['sonar-project.properties'].includes('sonar.projectKey=bthwani2-boop_samrim'))
+ fail('Sonar scanner must protect its token and enforce existing project quality gate');
 for (const job of ['foundation', 'presentation', 'fast_guard']) {
  const start=ci.indexOf('\n  '+job+':\n');
  if(start<0)fail('CI missing required job '+job);

@@ -17,7 +17,7 @@ const contractGroups=['identity','dsh','wlt'].flatMap(owner=>
 const files=[...new Set([
  'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',
  ...owners.map(owner=>'governance/'+owner+'.md'),'docs/REFOUNDATION-PLAN.md','docs/reference/README.md','docs/reference/HISTORICAL-SOURCE-INVENTORY.md','docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md',
- '.github/workflows/foundation-guard.yml','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs',
+ '.github/workflows/foundation-guard.yml','.github/workflows/sonar-quality.yml','sonar-project.properties','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs',
  'tools/governance/review-examples.test.mjs',
  '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
  'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','tsconfig.base.json','biome.json',
@@ -127,6 +127,13 @@ rejects('rejects premature READY',{edit:{'governance/README.md':s=>s.replace('GO
 rejects('rejects duplicate old policy directory',{add:{'docs/governance/README.md':'legacy duplicate'}},/forbidden duplicate governance/);
 rejects('rejects unnecessary CODEOWNERS',{add:{'.github/CODEOWNERS':'* @fake'}},/unneeded CODEOWNERS/);
 rejects('rejects code-dependent Fast Guard inherited prematurely',{add:{'.github/workflows/fast-guard.yml':'name: Fast Guard'}},/source-dependent inherited CI/);
+rejects('rejects required fast-guard with implicit dependency skip',{edit:{'.github/workflows/foundation-guard.yml':s=>s.replace('    if: ${{ !cancelled() }}\n','')}},/required fast-guard must evaluate failed dependencies/);
+rejects('rejects fast-guard when presentation dependency is removed',{edit:{'.github/workflows/foundation-guard.yml':s=>s.replace('    needs: [foundation, presentation]','    needs: [foundation]')}},/required fast-guard must depend on both/);
+rejects('rejects an upstream-result gate that cannot fail',{edit:{'.github/workflows/foundation-guard.yml':s=>s.replace('          exit 1\n','          exit 0\n')}},/required fast-guard must fail on upstream errors/);
+rejects('rejects a skipped Sonar required check for fork PRs',{edit:{'.github/workflows/sonar-quality.yml':s=>s.replace('    steps:\n','    if: ${{ github.event_name == "push" }}\n    steps:\n')}},/required Sonar job must not be skipped/);
+rejects('rejects Sonar fork gate without failure',{edit:{'.github/workflows/sonar-quality.yml':s=>s.replace('          exit 1\n','          exit 0\n')}},/Sonar fork gate must fail closed/);
+rejects('rejects scanning untrusted forks with the Sonar token',{edit:{'.github/workflows/sonar-quality.yml':s=>s.replace("        if: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}\n        uses: SonarSource/","        if: ${{ always() }}\n        uses: SonarSource/")}},/Sonar scanner must protect its token/);
+rejects('rejects changing the existing Sonar project identity',{edit:{'sonar-project.properties':s=>s.replace('sonar.projectKey=bthwani2-boop_samrim','sonar.projectKey=another_project')}},/existing project quality gate/);
 rejects('rejects an unpinned Node runtime in foundation CI',{edit:{'.github/workflows/foundation-guard.yml':s=>s.replace('node-version-file: .node-version','node-version-file: 20')}},/must use pinned Node/);
 rejects('rejects an unpinned Node runtime in fast-guard',{edit:{'.github/workflows/foundation-guard.yml':s=>{
  const marker='node-version-file: .node-version';

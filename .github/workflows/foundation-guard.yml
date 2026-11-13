@@ -97,9 +97,22 @@ jobs:
     # the actual source/build jobs; it never substitutes for old Go/SQL E2E.
     name: fast-guard
     needs: [foundation, presentation]
+    # A skipped required check may be treated as successful by branch protection.
+    # Evaluate failed prerequisites and explicitly fail this required context.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
+      - name: Reject failed required predecessors
+        if: ${{ always() }}
+        env:
+          FOUNDATION_RESULT: ${{ needs.foundation.result }}
+          PRESENTATION_RESULT: ${{ needs.presentation.result }}
+        run: |
+          if [ "$FOUNDATION_RESULT" != "success" ] || [ "$PRESENTATION_RESULT" != "success" ]; then
+            echo 'A required predecessor job did not succeed'
+            exit 1
+          fi
       - name: Checkout exact candidate
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
