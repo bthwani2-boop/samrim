@@ -232,6 +232,15 @@ rejects('rejects lost replay-safe recovery challenge policy',
 rejects('rejects erased security-safe failure fallback',
  {edit:{'governance/safety.md':s=>s.replace('no silent fallback may switch','fallback may silently switch')}},
  /source-grounded safety boundary missing: no silent fallback may switch/);
+rejects('rejects unverified backup before protected schema migration',
+ {edit:{'governance/safety.md':s=>s.replace('verified, restricted, restorable backup','unverified remote snapshot')}},
+ /source-grounded safety boundary missing: verified, restricted, restorable backup/);
+rejects('rejects protected migration without coordinating active writers',
+ {edit:{'governance/safety.md':s=>s.replace('Coordinate or stop incompatible writers before the owner migration runner','Run migration concurrently with all business writers')}},
+ /source-grounded safety boundary missing: Coordinate or stop incompatible writers before the owner migration runner/);
+rejects('rejects migration precondition bypass',
+ {edit:{'governance/safety.md':s=>s.replace('fail closed if versions, preconditions, ownership or backup integrity do not match','silently ignore migration checksums')}},
+ /source-grounded safety boundary missing: fail closed if versions, preconditions, ownership or backup integrity do not match/);
 rejects('rejects unbounded Operator permission administration',
  {edit:{'governance/identity.md':s=>s.replace('Only that original, one-time bootstrapped Operator may grant or revoke','Any Operator may grant or revoke')}},
  /source-grounded identity boundary missing: Only that original, one-time bootstrapped Operator may grant or revoke/);
@@ -290,6 +299,19 @@ rejects('rejects loss of per-recipient Order message audience', {edit:{
 rejects('rejects creation-policy bypass for additional Stores', {edit:{
  'governance/stores.md':s=>s.replace('A DSH relation-admission policy governs **every** creation','New Store creation may ignore admission policy')
 }},/source-grounded privacy\/commerce\/finance draft boundary missing: governance\/stores\.md/);
+rejects('rejects activating Store Captain membership without invited Captain acceptance',
+ {edit:{'governance/fulfillment.md':s=>s.replace("Only the invited actor's own verified acceptance activates membership", 'An Operator may activate membership without consent')}},
+ /source-grounded fulfillment lifecycle boundary missing/);
+rejects('rejects losing dispatch presence needed for safe retry after offer expiry',
+ {edit:{'governance/fulfillment.md':s=>s.replace('An outstanding offer may reserve candidate capacity but must not erase the fresh dispatch-presence fix','An outstanding offer deletes fresh dispatch presence')}},
+ /source-grounded fulfillment lifecycle boundary missing/);
+rejects('rejects bypassing two-sided Store Captain custody confirmation',
+ {edit:{'governance/fulfillment.md':s=>s.replace('There is one two-sided Store-to-Captain custody handoff','There is one unverified client-side custody handoff')}},
+ /source-grounded fulfillment lifecycle boundary missing/);
+rejects('rejects unverified Customer pickup release',
+ {edit:{'governance/fulfillment.md':s=>s.replace('the Store must confirm readiness before one-time release to the authorized Customer','the Store can release goods without authorized proof')}},
+ /source-grounded fulfillment lifecycle boundary missing/);
+
 rejects('rejects loss of canonical StoreOffer visibility gate', {edit:{
  'governance/catalog.md':s=>s.replace('one server-side `CUSTOMER_VISIBLE_OFFER` decision','client-side StoreOffer visibility gate')
 }},/source-grounded privacy\/commerce\/finance draft boundary missing: governance\/catalog\.md/);

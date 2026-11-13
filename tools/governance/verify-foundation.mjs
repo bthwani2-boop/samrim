@@ -421,7 +421,12 @@ for (const anchor of [
 const safety=contents['governance/safety.md'];
 for(const anchor of ['account or role enumeration','one-time/replay use',
  'legacy external encodings','Test or synthetic records are environment evidence',
- 'no silent fallback may switch','configured, available, degraded and unknown']){
+ 'no silent fallback may switch','configured, available, degraded and unknown',
+ 'exact source and applied schema version, migration checksums',
+ 'verified, restricted, restorable backup',
+ 'Coordinate or stop incompatible writers before the owner migration runner',
+ 'fail closed if versions, preconditions, ownership or backup integrity do not match',
+ 'before resuming writers']){
  if(!safety.includes(anchor))fail('source-grounded safety boundary missing: '+anchor);
 }
 
@@ -459,6 +464,18 @@ for(const [owner,anchor] of [
  ['governance/finance.md','Before **every not-yet-executed** manual official-wallet transfer'],
 ]){
  if(!contents[owner].includes(anchor))fail('source-grounded privacy/commerce/finance draft boundary missing: '+owner);
+}
+// Donor Fulfillment lifecycle obligations: guard draft retention only.
+// No test here constitutes a runtime assignment, custody or privacy PASS.
+const fulfillmentDraft=contents['governance/fulfillment.md'];
+for (const anchor of [
+ "Only the invited actor's own verified acceptance activates membership",
+ 'An outstanding offer may reserve candidate capacity but must not erase the fresh dispatch-presence fix',
+ 'There is one two-sided Store-to-Captain custody handoff',
+ 'the Store must confirm readiness before one-time release to the authorized Customer',
+]) {
+ if (!fulfillmentDraft.includes(anchor))
+  fail('source-grounded fulfillment lifecycle boundary missing: '+anchor);
 }
 const arch=contents['governance/architecture.md'];
 const finance=contents['governance/finance.md'];
