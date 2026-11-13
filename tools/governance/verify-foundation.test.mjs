@@ -122,6 +122,11 @@ test('rejects service symlinks on Unix CI',{skip:process.platform==='win32'},()=
  assert.notEqual(r.code,0,r.text);
  assert.match(r.text,/unsafe service symlink/);
 });
+test('rejects a required governance symlink without opening its target on Unix CI',{skip:process.platform==='win32'},()=>{
+ const r=run({del:['AGENTS.md'],links:{'AGENTS.md':'governance/README.md'}});
+ assert.notEqual(r.code,0,r.text);
+ assert.match(r.text,/required AGENTS\.md/);
+});
 rejects('rejects absent AGENTS law',{del:['AGENTS.md']},/required AGENTS\.md/);
 rejects('rejects premature READY',{edit:{'governance/README.md':s=>s.replace('GOVERNANCE_CUTOVER: NOT_READY','GOVERNANCE_CUTOVER: READY')}},/do not mark governance ready/);
 rejects('rejects duplicate old policy directory',{add:{'docs/governance/README.md':'legacy duplicate'}},/forbidden duplicate governance/);

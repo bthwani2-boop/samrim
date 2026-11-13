@@ -79,13 +79,20 @@ const fail=(reason)=>{ throw Error('FOUNDATION_GATE_FAIL: '+reason); };
 const exists=(p)=>fs.existsSync(path.join(root,...p.split('/')));
 const get=(p)=>{
  const q=path.join(root,...p.split('/'));
- const s=fs.lstatSync(q);
- if(!s.isFile()||s.isSymbolicLink())fail('unsafe/nonfile '+p);
- const b=fs.readFileSync(q);
- if(!b.length||(b[0]===0xef&&b[1]===0xbb&&b[2]===0xbf))fail('empty or BOM '+p);
- const value=new TextDecoder('utf-8',{fatal:true}).decode(b);
- if(/\r(?!\n)/.test(value)||value.includes('\ufffd'))fail('bad text encoding '+p);
- return value;
+ // Open once and validate the opened descriptor, never lstat(path) then read(path):
+ // the latter is vulnerable to a file replacement between the two operations.
+ const fd=fs.openSync(q,fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+ try {
+  const info=fs.fstatSync(fd);
+  if(!info.isFile())fail('unsafe/nonfile '+p);
+  const b=fs.readFileSync(fd);
+  if(!b.length||(b[0]===0xef&&b[1]===0xbb&&b[2]===0xbf))fail('empty or BOM '+p);
+  const value=new TextDecoder('utf-8',{fatal:true}).decode(b);
+  if(/\r(?!\n)/.test(value)||value.includes('\ufffd'))fail('bad text encoding '+p);
+  return value;
+ }finally{
+  fs.closeSync(fd);
+ }
 };
 const contents={};
 for(const p of required){
