@@ -304,9 +304,11 @@ if(controlIDs.length!==112||controlSet.size!==112||Array.from({length:112},(_,i)
 
 if(!/^STATUS: ACTIVE_FOR_FOUNDATION_ONLY$/m.test(agent))fail('agent must declare foundation-only state');
 if(!/^STATUS: ACTIVE_FOR_FOUNDATION_AND_PRESENTATION_SHELLS$/m.test(repo))fail('placement law must declare Stage-4 foundation shell scope');
-if(!/^GOVERNANCE_CUTOVER: NOT_READY$/m.test(gov))fail('do not mark governance ready without independent semantic/risk acceptance');
+if(!/^GOVERNANCE_CUTOVER: NOT_READY$/m.test(gov))fail('do not mark governance ready without verified donor reconciliation, internal risk assurance and stage checks');
 if(!gov.includes('## Cutover readiness is a policy decision, not a claim of implemented software'))fail('governance policy readiness must stay separate from later runtime implementation tests');
 if(!/^BUSINESS_DECISION_AUTHORITY: NONE_WHILE_NOT_READY$/m.test(gov))fail('no competing policy authority during reconstruction');
+if(!/^HUMAN_TARGET_POLICY_DECISION: APPROVED_2026-11-13$/m.test(gov) || !plan.includes('## 2026-11-13 — Explicit human policy decision and no-external-review process'))
+ fail('explicit human-approved target policy and internal assurance record missing');
 if(!/^STATUS: IN_PROGRESS_FOUNDATION$/m.test(plan))fail('temporary plan must remain in progress');
 if(!agent.includes('governance/README.md')||!agent.includes('REPOSITORY-STRUCTURE.md')||!agent.includes('NOT_READY'))fail('agent must know the unfinished governance target');
 if(!agent.includes('Policy-first')&&!agent.includes('Policy-first for legitimate'))fail('agent must require owner-backed configurable business rules');
@@ -692,4 +694,4 @@ if(!ci.includes('node --test tools/governance/verify-foundation.test.mjs')||!ci.
 if(/continue-on-error:\s*true|\$\{\{(?:(?!\}\})[\s\S])*\bsecrets\./.test(ci))fail('CI cannot silently skip proof or read secrets in foundation stage');
 
 console.log('FOUNDATION_STRUCTURE_PASS domain_owners='+domainFiles.length+' capability_ids='+seen.size+' one_census=true service_scaffold_only=true openapi_zero_operations=true openapi_reserved_groups='+openapiReservedGroups);
-console.log('GOVERNANCE_CUTOVER_NOT_READY: independent risk-policy approvals and material donor reconciliation not proven; software runtime gates are separate');
+console.log('GOVERNANCE_CUTOVER_NOT_READY: material donor reconciliation and internal risk-assurance/implementation proof not yet completed; human target policies approved, external reviewer not represented; software runtime gates separate');

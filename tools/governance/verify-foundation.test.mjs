@@ -130,6 +130,8 @@ test('rejects a required governance symlink without opening its target on Unix C
 });
 rejects('rejects absent AGENTS law',{del:['AGENTS.md']},/required AGENTS\.md/);
 rejects('rejects premature READY',{edit:{'governance/README.md':s=>s.replace('GOVERNANCE_CUTOVER: NOT_READY','GOVERNANCE_CUTOVER: READY')}},/do not mark governance ready/);
+rejects('rejects removal of explicit human-approved target policy',{edit:{'governance/README.md':s=>s.replace('HUMAN_TARGET_POLICY_DECISION: APPROVED_2026-11-13','HUMAN_TARGET_POLICY_DECISION: UNDECIDED')}},/explicit human-approved target policy and internal assurance record missing/);
+rejects('rejects removal of later human no-external process decision',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace('## 2026-11-13 — Explicit human policy decision and no-external-review process','## No user approved policy decision')}},/explicit human-approved target policy and internal assurance record missing/);
 rejects('rejects duplicate old policy directory',{add:{'docs/governance/README.md':'legacy duplicate'}},/forbidden duplicate governance/);
 rejects('rejects unnecessary CODEOWNERS',{add:{'.github/CODEOWNERS':'* @fake'}},/unneeded CODEOWNERS/);
 rejects('rejects code-dependent Fast Guard inherited prematurely',{add:{'.github/workflows/fast-guard.yml':'name: Fast Guard'}},/source-dependent inherited CI/);

@@ -34,6 +34,24 @@ The November 11 Codex Desktop command names another worktree and includes tool/p
 
 A source being inventoried does **not** mean every line or external URL has passed deep review. Preserve a verifiable trail; escalate ambiguities.
 
+## 2026-11-13 — Explicit human policy decision and no-external-review process (supersedes prior recommendations)
+
+**Human authority and final scope:** On 2026-11-13 the BThwani Product owner explicitly approved the seven FIN/SEC/MIG/LEGAL target policy directions and clarified that **no external reviewer exists and no outside signoff is a prerequisite to choose these policies**. All seven are HUMAN_TARGET_POLICY: APPROVED. This does not imply a completed external review, tested code, valid contract, permission to change live balances or protected data, or authorization to deploy. Earlier independent-review tables further down record historic missing signoffs, not a current need to hire an external consultant; never overwrite them with invented PASS. The actual normative rule remains with the relevant canonical governance owner, not this temporary plan.
+
+| Gate | Human-approved target policy (2026-11-13) | Canonical owner | Mandatory proof before affected live activation |
+| --- | --- | --- | --- |
+| FIN-01 | WLT-owned COD, WALLET, MIXED; total Order gross exposure separate from cash-only reserve/debit; integer YER, exactly-once ledger; Captain coverage greater than total payable is initial target pending risk adequacy *technical proof*, not assumed live correctness | finance.md, commerce.md | Balanced debit/credit scenarios, concurrent accept/replay, cancel/refund, unknown result, owner-backed financial readback |
+| FIN-02 | One Store engine; MARKETPLACE/DIRECT relation independent from COMMISSION/SUBSCRIPTION and collection/fulfillment; default marketplace PLATFORM_MANAGED, direct STORE_MANAGED, exceptions only under accepted supported Store terms; legal Store owner default payout beneficiary, tightly authorized change and separate Finance settlement | stores.md, finance.md | Effective agreements and customer/cash custody law, Store beneficiary verification, allocation and reconciliation, historical liabilities |
+| FIN-03 | Provider gross receipts, actual provider fees, net external remittance and Captain base entitlement/BThwani delivery margin are separate journal facts; no invented fee schedule or duplicate revenue | finance.md | Actual provider terms/fees, balanced ledger scenarios, original transfer receipts and statement reconciliation |
+| SEC-01 | Original Root Owner continuity; one-time protected Operator bootstrap; user-verified Passkey/WebAuthn normal Operator login; controlled audited recovery and immediate affected session revocation; no duplicate owner or remotely available local password bypass | identity.md, safety.md | Genuine authoritative Identity state readback, auth/recovery negative tests, revocation and scope tests |
+| SEC-02 | Deny by default; Identity actor authentication plus DSH/WLT owner-resource action/current Store/City/grant authorization, fail closed after account switch/revocation; protect unpublished Stores and private Customer addresses from candidate Captains | stores.md, identity.md, safety.md | Route/resource ACL matrix, actual cross-actor/Store/City/role/IDOR and stale response negative tests |
+| MIG-01 | Derived one Fresh Baseline per Identity, DSH, WLT solely for isolated empty installations; keep applied historical migration IDs/checksums, preserve every legally or financially protected record; upgrade/backup/restore are distinct proven paths | engineering.md, safety.md | Applied history and source concordance, isolated fresh/upgrade/restore, privilege and ledger preservation, preflight and owner readback |
+| LEGAL-01 | New fees, collection and settlement agreements are future-effective only after valid acceptance; preserve historic Merchant/Captain/employee/Customer/provider signed obligations and claims until lawful reconciliation | stores.md, finance.md, product.md | Original accepted contracts, signatures/version/date, outstanding rights/claims, valid consent/changes, no invented legal result |
+
+**Approved assurance workflow without outside staffing:** The Product owner decides the model now. For actual money, authentication, privilege, protected migration and consequential legal effects, internal documented adversarial analysis and *real evidence* are required; the same editor or an AI agent must not claim independent external signoff. A missing real provider agreement, applied migration ledger, actual balance, or Root Owner record is an unknown *fact*, not a pending strategic Product preference; it cannot be safely fabricated. Each affected implementation remains NOT_RUN/REVIEW_BLOCKED until its genuine owner-backed negative/concurrency/restore proofs are run and applicable rights verified. Green syntax/CI and this policy decision cannot confer real transaction readiness.
+
+**Cutover:** GOVERNANCE_CUTOVER: NOT_READY remains until the 14 semantic owners, all 26 admitted capabilities, material historical-source reconciliation and stage-appropriate internal risk evidence are verified together on the accepted exact revision. This is a documentary/technical proof boundary, **not** an external-reviewer scheduling gate. Implementation, irreversible protected state, GitHub merge, and production remain separate approval stages.
+
 ## Phase 0 — Safe baseline (read only): DONE, recheck before changes
 - Verify original and target branch/HEAD/status/worktree, files tracked, active workers, and change ownership.
 - Prevent writes to `D:\samrim` and do not reset/copy/restart existing Docker, PostgreSQL, SeaweedFS or credentials for this stage.
@@ -541,7 +559,7 @@ The installed pnpm program has its own Node runtime that differs from `node --ve
 - Internal Markdown link resolution is now checked by the existing `tools/governance/verify-foundation.mjs` with positive and negative fixtures (broken local link and path escape). External OSS/media/source links remain archival, **not** live-verified licensing rights or authorization to import copied assets.
 - Spec Kit derived router and provenance manifest remain under guard; official CLI availability does not establish commercial semantics. GitHub Actions/CodeRabbit/CodeQL/Sonar *remote execution* remains NOT_RUN without authorized Push/PR; `actionlint` previously denied by the device channel remains BLOCKED, not bypassed.
 
-### Independent decision gates: evidence and explicit unresolved approvals
+### Independent decision gates: evidence and explicit unresolved approvals (historical 2026-11-12 snapshot; later human decision above supersedes external-reviewer prerequisite)
 
 | Gate and owning document | Exact high-risk question to resolve **before** READY | Required independent reviewer/evidence | Current status |
 | --- | --- | --- | --- |
@@ -557,7 +575,7 @@ The installed pnpm program has its own Node runtime that differs from `node --ve
 
 **Acceptance evidence format for each gate (not a second governance registry):** reviewer and independence/competence basis; exact `governance/` owner paragraph and donor evidence; affected policy versions/agreements/actors; scenario and negative/rollback/retry evidence; reasoned PASS/FAIL/REVIEW_BLOCKED; approved resolution or documented rejection; reviewed SHA, date and scope. An AI self-review, structural checksum or assertion by the same editor cannot substitute for the mandated independent review. If a gate is unresolved, maintain safe nonactivation and do not mark `GOVERNANCE_CUTOVER: READY`.
 
-**Stage boundary:** Policy wording/structural hygiene can improve now without code or SQL. Later owner API/SQL/Web/Expo implementation may not start solely because the tool-only pnpm workspace is ready. No Product apps, Go modules, contracts, PostgreSQL or Docker resources were created in this batch.
+**Stage boundary (historical before the 2026-11-13 human policy decision above):** Policy wording/structural hygiene can improve now without code or SQL. Later owner API/SQL/Web/Expo implementation may not start solely because the tool-only pnpm workspace is ready. No Product apps, Go modules, contracts, PostgreSQL or Docker resources were created in this batch.
 
 ### Local exact-version toolchain mismatch closure
 
