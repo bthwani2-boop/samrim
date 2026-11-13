@@ -22,6 +22,7 @@
       "tools/dev/**/*.ts",
       "tools/mobile/verify-application-boundaries.mjs",
       "tools/mobile/verify-application-boundaries.test.mjs",
+      "tools/mobile/verify-expo-web-http.mjs",
       "tools/security/**/*.mjs",
       "!!**/node_modules/**",
       "!!**/.expo/**",

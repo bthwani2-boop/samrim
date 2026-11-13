@@ -81,6 +81,8 @@ jobs:
         run: |
           pnpm --dir apps/customer exec expo export --platform web
           pnpm --dir apps/merchant exec expo export --platform web
+      - name: Smoke-test approved Customer/Merchant Expo Web SSR on loopback
+        run: node tools/mobile/verify-expo-web-http.mjs
       - name: Export Expo Android JavaScript (NOT a native binary)
         run: |
           pnpm --dir apps/customer exec expo export --platform android

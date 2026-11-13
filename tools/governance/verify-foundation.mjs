@@ -66,7 +66,7 @@ const required=[
  'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',...domainFiles,'docs/REFOUNDATION-PLAN.md','docs/reference/README.md','docs/reference/HISTORICAL-SOURCE-INVENTORY.md','docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md',
  '.specify/init-options.json','.specify/integration.json','.specify/integrations/speckit.manifest.json','.specify/memory/constitution.md',
  '.github/workflows/ci.yml','.github/workflows/sonar-quality.yml','sonar-project.properties','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs',
- 'tools/governance/review-examples.test.mjs',
+ 'tools/governance/review-examples.test.mjs','tools/mobile/verify-expo-web-http.mjs',
  '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
  'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','tsconfig.base.json','biome.json',
  'README.md','services/identity/README.md','services/dsh/README.md','services/wlt/README.md',
@@ -588,6 +588,10 @@ if(!presentationJob.includes('pnpm install --frozen-lockfile --ignore-scripts') 
    !appChecks.includes('tools/mobile/verify-application-boundaries.test.mjs') ||
    !appChecks.includes('node tools/mobile/verify-application-boundaries.mjs'))
  fail('presentation must install locked TypeScript and run owner guard including negative tests');
+if(!presentationJob.includes('node tools/mobile/verify-expo-web-http.mjs') ||
+   !presentationJob.includes('pnpm --dir apps/customer exec expo export --platform web') ||
+   !presentationJob.includes('pnpm --dir apps/merchant exec expo export --platform web'))
+ fail('approved Expo Web SSR exports must have production HTTP smoke in presentation CI');
 if(requiredJob.includes('node tools/mobile/verify-application-boundaries.mjs'))
  fail('required fast-guard must not invoke TypeScript scanner without dependency installation');
 const sonar=contents['.github/workflows/sonar-quality.yml'];

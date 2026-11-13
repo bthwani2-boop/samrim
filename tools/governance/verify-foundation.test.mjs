@@ -19,7 +19,7 @@ const files=[...new Set([
  ...owners.map(owner=>'governance/'+owner+'.md'),'docs/REFOUNDATION-PLAN.md','docs/reference/README.md','docs/reference/HISTORICAL-SOURCE-INVENTORY.md','docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md',
  'docs/reference/environment-config-inventory.md','docs/reference/DONOR-GOVERNANCE-SECTION-CENSUS.md',
  '.github/workflows/ci.yml','.github/workflows/sonar-quality.yml','sonar-project.properties','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs',
- 'tools/governance/review-examples.test.mjs',
+ 'tools/governance/review-examples.test.mjs','tools/mobile/verify-expo-web-http.mjs',
  '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
  'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','tsconfig.base.json','biome.json',
  'README.md','services/identity/README.md','services/dsh/README.md','services/wlt/README.md',
@@ -255,4 +255,7 @@ rejects('rejects fake financial signoff',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s
 rejects('rejects lost migration restore review gate',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^\| MIG-01-RESTORE \|[^\n]*\n/m,'')}},/risk review scenario missing\/duplicated: MIG-01-RESTORE/);
 rejects('rejects missing full-system historic source section',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^\| 15 \| `SOURCE_BOUND_PROOF` \|[^\n]*\n/m,'')}},/historic full-system 15-section evidence mapping incomplete/);
 rejects('rejects missing historic design audit followup',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^\| FOLLOWUP \|[^\n]*\n/m,'')}},/historic design-audit 16\+followup mapping incomplete/);
+rejects('rejects omitted production Expo Web SSR smoke in CI',
+ {edit:{'.github/workflows/ci.yml':s=>s.replace('node tools/mobile/verify-expo-web-http.mjs','echo no real Expo SSR smoke')}},
+ /approved Expo Web SSR exports must have production HTTP smoke/);
 rejects('rejects omitted risk review examples from CI',{edit:{'.github/workflows/ci.yml':s=>s.replace(' tools/governance/review-examples.test.mjs','')}},/foundation CI and local commands must include bounded risk-review examples/);
