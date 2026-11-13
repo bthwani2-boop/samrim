@@ -228,6 +228,15 @@ rejects('rejects unbounded Operator permission administration',
 rejects('rejects exposed cross-origin Customer credential transfer',
  {edit:{'governance/identity.md':s=>s.replace('never place access/refresh credentials','may share access/refresh credentials')}},
  /source-grounded identity boundary missing: never place access\/refresh credentials/);
+rejects('rejects loss of bounded HR request reconciliation',
+ {edit:{'governance/hr.md':s=>s.replace('already claimed for Identity actor creation cannot be rejected','already claimed for Identity actor creation may be rejected immediately')}},
+ /source-grounded HR draft boundary missing: already claimed for Identity actor creation cannot be rejected/);
+rejects('rejects HR write-through without current Identity permission readback',
+ {edit:{'governance/hr.md':s=>s.replace('current live Identity permission readback','HR proposed permissions alone')}},
+ /source-grounded HR draft boundary missing: current live Identity permission readback/);
+rejects('rejects independent recipient identity from an order snapshot',
+ {edit:{'governance/platform.md':s=>s.replace('Delivery recipient:','New delivery identity:')}},
+ /source-grounded actor\/platform draft boundary missing: Delivery recipient:/);
 rejects('rejects lost primary Tamagui/Ant design owner decision',{edit:{'governance/experience.md':s=>s.replace('## DESIGN-01 — Exclusive rendering, token and theme authority','## Uncontrolled design')}},/reconciled design owner decision missing/);
 rejects('rejects removal of Studio boundary',{edit:{'governance/experience.md':s=>s.replace('## DESIGN-02 — Studio is a bounded editor, not an additional publication engine','## Duplicate publishers')}},/reconciled design owner decision missing/);
 rejects('rejects removal of old Merchant published app identifier',{edit:{'governance/platform.md':s=>s.replace('com.bthwani.partner','com.bthwani.merchant')}},/original external identity\/internal naming missing/);

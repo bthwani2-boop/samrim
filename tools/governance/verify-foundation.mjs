@@ -445,7 +445,20 @@ for(const invariant of ['packages/design-system/src/brand/colors.ts','packages/t
  'AntDesignProvider','createTamagui(defaultConfig)','CLIENT_HOME','no arbitrary JS/CSS']){
  if(!currentDesign.includes(invariant))fail('design-source/Studio boundary erased: '+invariant);
 }
+// Branch-41 actor/persona and bounded HR obligations are draft text guards,
+// not evidence of live identity, private HR security or approved Product cutover.
+const hr=contents['governance/hr.md'];
+for(const clause of ['already claimed for Identity actor creation cannot be rejected',
+ 'current live Identity permission readback','unchanged permissions must not be rewritten',
+ 'append-only, reasoned, attributed and time-stamped']){
+ if(!hr.includes(clause))fail('source-grounded HR draft boundary missing: '+clause);
+}
 const surfaces=contents['governance/platform.md'];
+for(const clause of ['compatible existing technical role values are',
+ 'No retired acquisition-agent role','they do not introduce a generic Merchant organization',
+ 'Delivery recipient:']){
+ if(!surfaces.includes(clause))fail('source-grounded actor/platform draft boundary missing: '+clause);
+}
 if(!surfaces.includes('## SURFACE-01 — Canonical internal app names versus immutable external identity'))
  fail('four app identity mapping is missing');
 for(const atom of ['apps/customer','apps/merchant','apps/captain','apps/control-panel',

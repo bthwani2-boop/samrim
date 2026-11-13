@@ -13,6 +13,8 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 - **Operator:** authorized human managing bounded platform responsibilities with explicit Identity permissions. Root Owner exceptional actions retain independently reviewable attribution and never imply permanent permission bypass.
 - **HR Employee:** internal employee record and bounded access linkage, not an automatic platform superuser.
 
+**One human actor:** Identity keeps one permanent `actor_id` for each natural person. The compatible existing technical role values are `client`, `partner`, `captain`, and `operator`, while the new UI and internal presentation vocabulary uses Customer, Merchant, Captain and Operator. One actor may hold independently admitted roles without duplicate accounts; neither Store ownership nor Store-affiliated Captain membership creates a new high-level role. Role/session authorization remains with Identity, resource delegation with DSH. An employee title or reporting position never grants Operator access. No retired acquisition-agent role, enrollment application, referral-reward engine or independent fifth actor surface is admitted; protect any binding historical records with their original owner.
+
 Use Customer/Merchant/Captain/Operator in **new internal names, route descriptions and UX**. Preserve deployed technical paths, signing identities and public compatibility at an explicit, tested cutover. Existing `partner` names in branch 41 are donor names or historical contract inputs, not a reason to create separate Merchant and Partner actors. No manufactured conversion of existing legal identities.
 
 ## Surface model
@@ -25,7 +27,9 @@ Use Customer/Merchant/Captain/Operator in **new internal names, route descriptio
 ## Distinct semantics
 A Store relation (`MARKETPLACE` / `DIRECT`) is a Store commercial/channel choice, not an Identity role and not a fee model. Fee model (`COMMISSION` / `SUBSCRIPTION`) belongs to WLT agreement policy; collection responsibility is separate; fulfillment modes belong to DSH policy and serviceability.
 
-One account may change Store context without allowing previous Store's data, pending requests or permissions to leak into the next context. Delegated rights are Store-scoped and rechecked by the actual DSH operation, not inferred from local navigation.
+One account may change Store context without allowing previous Store's data, pending requests or permissions to leak into the next context. Delegated rights are Store-scoped and rechecked by the actual DSH operation, not inferred from local navigation. DSH Store grants are expressly allowlisted, audited, expiry/revocation bounded and owned by the authorized Store owner; they do not introduce a generic Merchant organization or impersonation authority. A Store-affiliated Captain uses one canonical Captain actor with DSH-scoped membership, not a separate account or new role.
+
+**Delivery recipient:** the recipient may differ from the purchasing Customer, but Order delivery-contact details form only a bounded DSH snapshot. They do not create a new Identity account, Customer/Store/Operator role, payment principal or support authority. The purchaser remains the authorized Order/funding principal.
 
 The actor terms above are stable product semantics; exact API/SQL string migration remains an implementation-stage decision and must not create duplicate enum values as independent truths.
 
