@@ -52,3 +52,48 @@ Prerequisite acceptance failures (RTL, user-visible duplicate data, inaccessible
 - Final Expo web production export **PASS** after routing through existing `/lab`; final generated `lab` chunk approximately **73 KB** because both renderers are imported in the *same experimental route*. This **cannot** be used as a fair separate-library bundle-size comparison.
 - Local production server `expo serve --port 18281` served three HTTP 200 responses: `/`, `/lab` (Tamagui marker only), and `/lab?renderer=universal` (Expo UI marker only). The owned test server was terminated and verified stopped by a subsequent HTTP connection failure.
 - No Android UI was installed/launched and no iOS/Web interactive browser benchmark was executed. Responsive/keyboard/gesture/contrast/focus/memory/frame-time results remain `NOT_RUN`; current renderer is **not** selected as winner.
+
+## 2026-11-14 — Real Android 16 follow-up (after the source-only spike)
+
+TEST_CLASS: PHYSICAL_ANDROID_DEVELOPMENT_CLIENT_SMOKE
+DEV_CLIENT: com.bthwani.client 0.3.1 (pre-existing debuggable installation dated 2026-11-06)
+DEVICE: Samsung SM-S9280, Android 16, authorized USB ADB device (unique device identifier deliberately excluded)
+SOURCE_START_SHA: 6156ee6ae400acb34c06937d0e2808ce50eae526
+SERVER: local offline Metro port 18312 with test-owned `adb reverse tcp:18312 tcp:18312`, no native rebuild, no APK install, no app data reset
+DEEP_LINKS: `client:///lab?renderer=tamagui`, `client:///lab?renderer=universal`
+EVIDENCE: captured physical-device UIAutomator trees plus test-window screenshots in the out-of-repository session coordination evidence directory
+DECISION: STILL INVESTIGATE
+
+### Observed defect and bounded correction
+
+1. Initial actual Android launch failed with React Native error `Text strings must be rendered within a <Text> component`, originating at `apps/customer/app/index.tsx:17`. A literal separator was a direct View descendant between two `Link` elements. Removing that raw separator fixed the native-only exception; the Customer foundation screen then appeared and both lab links were present in UIAutomator readback. The previous TypeScript/web build **had not detected** this defect.
+2. Tamagui route displayed Arabic mixed-direction text, input, choices, switch, Dialog and Sheet. Android input `tama76` was reflected in the on-screen summary; switch toggled to `مفعّلة`, option changed to `الخيار الثاني`, Dialog displayed, and its close control dismissed the dialog. Tamagui Sheet rendered title/text/close control **in Android UIAutomator**; its close action succeeded **once the keyboard was hidden**.
+3. Expo UI Universal route displayed Arabic mixed-direction text, actual `android.widget.EditText` input, choice, switch, modal and BottomSheet. Android input `native42` appeared in the native field and on-screen state; switch toggled; the second Picker option updated summary; the React Native Modal opened and its close control dismissed it. Android system Back dismissed the original sheet.
+4. **First Expo BottomSheet composition issue:** React Native `View` / `Pressable` inside the installed Universal `BottomSheet` was visibly rendered in a screenshot but its title/text/button **were missing from Android UIAutomator tree**, and two direct taps on the pictured close area did not dismiss it. The absence from this tree is **not proof** of TalkBack failure, but is a material accessibility/interaction risk for that composition.
+5. **Corrected Expo BottomSheet composition:** The same existing `BottomSheet` now renders installed `@expo/ui` Universal `Column`, `Text`, `Button` directly, with canonical token-backed colors. Physical Android UIAutomator then exposed its title, description and close button; tapping the close button dismissed the sheet. No additional renderer, wrapper, dependency, native build or hidden state store was introduced.
+6. Input focus/keyboard: the Samsung keyboard remained open during the Tamagui form sequence and obscured a lower sheet action. Hiding the keyboard allowed the Tamagui Sheet close control to work. Both fixture open actions now request `Keyboard.dismiss()` before showing non-input overlays; this is a narrow usability mitigation, **not** evidence that keyboard overlap/resize is solved on every device. During a later input-key test Android navigation moved outside the app to the phone's Galaxy AI settings. No settings or account data were changed; testing of that branch stopped without dismissing or accepting any external prompt.
+
+### Physical-device evidence verdict
+
+| Case | Tamagui | Expo UI Universal | Caveat |
+| --- | --- | --- | --- |
+| Load on existing Android 16 development client | PASS | PASS | Existing debug binary, not a clean native install |
+| Arabic/mixed text and form visible | PASS | PASS | Only one high-end Samsung; not budget devices |
+| Native input value reflected in on-screen state | PASS | PASS | ASCII text via ADB; Arabic IME typing specifically NOT_RUN |
+| Toggle and two-option select update state | PASS | PASS | Synthetic fixture only |
+| Dialog/Modal visible and dismissible | PASS | PASS | Focus restoration/keyboard overlap NOT_RUN |
+| Sheet visible and system/explicit dismissal | PASS (after hiding keyboard) | PASS (after native-child correction) | Specific composition choices, not full library certification |
+| Sheet content exposed in Android UIAutomator tree | PASS | PASS after correction | TalkBack reading order NOT_RUN |
+| Return-key/keyboard/gesture combinations | PARTIAL | PARTIAL | Phone left the app unexpectedly during later input test; no unsupported PASS |
+| Device FPS, startup latency, RAM, APK delta | NOT_RUN | NOT_RUN | Development server and screenshots cannot establish performance |
+| iOS real render/VoiceOver | NOT_RUN | NOT_RUN | No iOS device was used |
+
+**Comparison constraints:** Existing native device tests establish that both renderers can function on *this one device*. They do not justify choosing a global mobile renderer, replacing the already-admitted Tamagui implementation, adding a second theme authority, claiming accessibility conformance, or marking `GOVERNANCE_CUTOVER: READY`. iOS, low-end Android, keyboard/focus, reduced motion, visual-token parity and repeatable profile-mode benchmarks remain acceptance evidence for the renderer choice. The earlier table marked Android runtime NOT_RUN as of the source-only commit; this dated addendum updates that historical state, without rewriting the earlier evidence.
+
+### Validation after the Android-derived repairs
+
+- `pnpm --dir apps/customer run typecheck`: **PASS**; targeted `pnpm exec biome check` for the three edited Customer files: **PASS**; root `pnpm run check`: **PASS** (exit 0, including foundation and typechecking). The documented Stage-4 foundation guard continues to report **171 PASS / 0 FAIL / 2 Windows-specific SKIP**.
+- `pnpm --dir apps/customer exec expo export --platform android`: **PASS**, current JS-only Android production export yields a **4.3 MB Hermes bundle**. This is **not** an APK rebuild, native binary upgrade or cold-start performance measurement.
+- `pnpm --dir apps/customer exec expo export --platform web`: **PASS**, server-side + client bundles emitted. This is **not** an interactive Chrome/Web accessibility PASS.
+- Metro server at port 18312 was stopped and the port was verified closed; `adb reverse tcp:18312` was removed; only session-owned device temporary UI/screenshot files were cleaned. Existing `com.bthwani.client` installation and application data were preserved. scrcpy/device user settings were not changed.
+- **Important:** a keyboard-close callback on an opener does not solve a button physically obscured by the keyboard. Android keyboard/scroll/IME test remains **PARTIAL**, not a resolved production UX policy. Do not infer a framework winner or automatic keyboard avoidance from this fixture.

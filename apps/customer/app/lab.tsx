@@ -1,7 +1,7 @@
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { Link, useLocalSearchParams } from "expo-router";
 import * as React from "react";
-import { SafeAreaView, ScrollView } from "react-native";
+import { Keyboard, SafeAreaView, ScrollView } from "react-native";
 import { Button, Card, Dialog, H2, Input, Paragraph, Select, Sheet, Switch, Text, XStack, YStack } from "tamagui";
 import UniversalRendererLab from "../renderer-lab";
 
@@ -51,7 +51,7 @@ export default function ComponentLab() {
           <XStack gap="3" flexWrap="wrap">
             <Dialog open={dialog} onOpenChange={setDialog}>
               <Dialog.Trigger asChild>
-                <Button>فتح نافذة</Button>
+                <Button onPress={() => Keyboard.dismiss()}>فتح نافذة</Button>
               </Dialog.Trigger>
               <Dialog.Portal>
                 <Dialog.Overlay backgroundColor="color" opacity={0.24} />
@@ -64,7 +64,7 @@ export default function ComponentLab() {
                 </Dialog.Content>
               </Dialog.Portal>
             </Dialog>
-            <Button onPress={() => setSheet(true)}>فتح لوحة سفلية</Button>
+            <Button onPress={() => { Keyboard.dismiss(); setSheet(true); }}>فتح لوحة سفلية</Button>
           </XStack>
           <Sheet open={sheet} onOpenChange={setSheet} modal snapPoints={[50]} dismissOnSnapToBottom>
             <Sheet.Overlay backgroundColor="color" opacity={0.24} />

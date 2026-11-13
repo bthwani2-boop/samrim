@@ -2,7 +2,7 @@ import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { BottomSheet, Button, Column, Host, Text as NativeText, Picker, Switch, TextInput } from "@expo/ui";
 import { Link } from "expo-router";
 import * as React from "react";
-import { Modal, Pressable, SafeAreaView, ScrollView, Text, View } from "react-native";
+import { Keyboard, Modal, Pressable, SafeAreaView, ScrollView, Text, View } from "react-native";
 
 // Isolated Stage-4 renderer comparison. No API, persistence, business logic, or second theme authority.
 // Compare with /lab (Tamagui) using the same Arabic controls and actual supported devices.
@@ -42,8 +42,8 @@ export default function UniversalRendererLab() {
               <NativeText textStyle={{ color: theme.color, textAlign: "right" }}>
                 {`النص: ${name || "لا يوجد إدخال"} — الاختيار: ${choice === "first" ? "الأول" : "الثاني"} — الحالة: ${enabled ? "مفعّلة" : "غير مفعّلة"}`}
               </NativeText>
-              <Button label="فتح نافذة" onPress={() => setDialogOpen(true)} />
-              <Button label="فتح لوحة سفلية" onPress={() => setSheetOpen(true)} />
+              <Button label="فتح نافذة" onPress={() => { Keyboard.dismiss(); setDialogOpen(true); }} />
+              <Button label="فتح لوحة سفلية" onPress={() => { Keyboard.dismiss(); setSheetOpen(true); }} />
             </Column>
           </Host>
           <Text style={{ color: theme.colorSecondary, textAlign: "right", fontSize: 13 }}>
@@ -70,17 +70,23 @@ export default function UniversalRendererLab() {
           </View>
         </View>
       </Modal>
-      <BottomSheet isPresented={sheetOpen} onDismiss={() => setSheetOpen(false)} snapPoints={["half"]}>
-        <View style={{ padding: 20, gap: 16, backgroundColor: theme.surface }}>
-          <Text style={{ color: theme.color, fontSize: 19, fontWeight: "700",
-            textAlign: "right" }}>لوحة اختبار</Text>
-          <Text style={{ color: theme.color, textAlign: "right" }}>عرض المحتوى عبر Expo UI BottomSheet.</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel="إغلاق اللوحة السفلية"
-            onPress={() => setSheetOpen(false)}
-            style={{ padding: 14, backgroundColor: theme.actionBackground, borderRadius: 10 }}>
-            <Text style={{ color: theme.onAction, textAlign: "center" }}>إغلاق اللوحة</Text>
-          </Pressable>
-        </View>
+      <BottomSheet
+        isPresented={sheetOpen}
+        onDismiss={() => setSheetOpen(false)}
+        snapPoints={["half"]}
+        contentPadding={{ top: 20, bottom: 24, left: 20, right: 20 }}
+        containerColor={theme.surface}
+        contentColor={theme.color}
+      >
+        <Column spacing={16}>
+          <NativeText textStyle={{ color: theme.color, fontSize: 19, fontWeight: "700", textAlign: "right" }}>
+            لوحة اختبار
+          </NativeText>
+          <NativeText textStyle={{ color: theme.color, textAlign: "right" }}>
+            عرض المحتوى عبر Expo UI BottomSheet.
+          </NativeText>
+          <Button label="إغلاق اللوحة" testID="expo-sheet-close" onPress={() => setSheetOpen(false)} />
+        </Column>
       </BottomSheet>
     </SafeAreaView>
   );
