@@ -10,7 +10,7 @@ Current scaffold and future owner-local paths (real implementation only after se
 - `clients/` — private TypeScript workspace package with a nonfunctional `index.ts` entrypoint; future TypeScript/Go clients come only from validated contracts and real consumer needs.
 - `package.json` and `tsconfig.json` — exact-pinned TypeScript client tooling using the existing pnpm workspace; no runtime dependencies or implemented exports yet.
 - `backend/` — Go service source and owner-specific tests.
-- `contracts/openapi/` — one zero-operation OpenAPI 3.1 DSH entrypoint and seven reserved empty `paths/*.yaml` domain modules (`paths: {}` only). No actual paths, refs, servers, schemas or permissions yet.
+- `contracts/openapi/` — one zero-operation OpenAPI 3.1 DSH entrypoint and **21 reserved, nonfunctional `paths/*.yaml` domain groups** (`paths: {}` only), with no entrypoint references. The seven initial groups were expanded after the donor route census; none is an actual API, owner permission or extra engine. See the [source-pinned contract census](../../docs/reference/OPENAPI-DONOR-CONTRACT-INVENTORY.md).
 - `database/` — reviewed fresh-bootstrap schema and a protected `migrations/` upgrade path.
 
 See [architecture](../../governance/architecture.md), [Store governance](../../governance/stores.md) and [employee governance](../../governance/hr.md). This README is **not** a deployed engine, contract, schema or HR authorization.

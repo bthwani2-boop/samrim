@@ -81,3 +81,20 @@ All three new OpenAPI 3.1 root documents remain exactly `paths: {}`, with no ser
 Before real Path Items: complete per-owner route/handler/consumer/SQL inventory (including dynamic usages), reconcile Product and protected governance, compare Path/Method/operationId/security/request/errors/nullable/constraints, use a standard OpenAPI 3.1 YAML parser + strict $ref resolver, verify duplicate paths/IDs, generate TypeScript/Go clients as derived output, and test real actor/Store isolation, no duplicated financial effects and owner durable readbacks. Old paths are evidence, not a required one-to-one migration. Record KEEP/MERGE/REFOUND/REPLACE/APPROVED_RETIRE decisions then, and perform mandated independent finance/security/migration review before activation.
 
 No Push, PR, Merge, running service, DB migration, invoice or payment effect is authorized by this source inventory.
+
+## 2026-11-13 — Verified first Identity contract candidate (read-only admission precheck)
+
+This section is an **implementation-source trace**, not an adopted Product rule, executable API, approved migration or permission to begin the domain phase. Source remains donor branch `41` at `426d67b47beb8c66b09acd8c7394086b53ac5aae`; candidate `GOVERNANCE_CUTOVER: NOT_READY`.
+
+| Evidence boundary | Exact donor source and observed behavior | Candidate treatment |
+| --- | --- | --- |
+| Contract | `services/identity/contracts/openapi/paths/session.yaml`: `GET /auth/session`, `operationId: readCurrentSession`, `security: [{ accessToken: [] }]`; response `200` refers to `ActorIdentity`, `401` to `Unauthenticated`. | **REFOUND_CANDIDATE / NOT_ADMITTED**: evaluate as a first read-only Identity contract after policy approval and an isolated service runtime. |
+| HTTP owner | `services/identity/backend/internal/transport/http/server.go`: registers `GET /auth/session` with `s.currentSession`; handler requires a bearer token, resolves it via `s.sessions.ResolveAccessToken`, returns `ErrUnauthenticated` when absent/invalid and serializes the resulting identity on success. | Reuse the approved Owner semantics, not an unreviewed copy of the donor router or session issuance. |
+| Historical test | `services/identity/backend/internal/storage/postgres/migrate_test.go` contains a test helper that calls `GET /auth/session` and asserts role/actor identity for successful sessions. | Reassess proof coverage on the **new** service/schema/runtime; donor test presence is not a candidate PASS. |
+| Target | `services/identity/contracts/openapi/identity.openapi.yaml` retains `paths: {}`; `paths/session.yaml` is only an empty reservation; `clients/index.ts` exports nothing. | Do not add a route, Go service, client export or database schema until a separate domain-implementation authorization and applicable FIN/SEC/MIG/LEGAL gates. |
+
+**Minimum future admission checks:** approve the session's authorized actor/role response shape and token/cookie boundary; explicitly test missing/invalid/expired/revoked credentials, role and account switching, cross-actor confusion, logout invalidation, browser origin/session isolation, safe errors without credential leakage and canonical Identity persistent readback. Record required SQL baseline/upgrade and generated-client compatibility against one tested candidate SHA. Operator recovery/Root Owner is a separate protected journey; `GET /auth/session` alone does not validate it.
+
+**First commerce follow-on, not yet selected:** a DSH-publication-scoped, privacy-safe published-Store read for Customer can follow Identity admission; its exact donor route, Store publication invariants, authorized projection and consumer proof must be verified before any operation is added. No WLT wallet, COD, settlement or ledger mutation is admitted by these read-only suggestions.
+
+**Documentation correction recorded:** the three service owner READMEs now describe the actually reserved **7 Identity / 21 DSH / 14 WLT** nonfunctional path groups. Earlier README statements that Identity/WLT had no modules and DSH had only seven were stale. The structural directories remain unchanged.
