@@ -2,7 +2,7 @@
 
 ARTIFACT_CLASS: NON_AUTHORITATIVE_SOURCE_INVENTORY
 SEMANTIC_OWNER: docs/reference/DONOR-GOVERNANCE-SECTION-CENSUS.md
-STATUS: SOURCE_HEADING_CENSUS_WITH_BOUNDED_HR_DOCUMENTARY_REVIEW
+STATUS: SOURCE_HEADING_CENSUS_WITH_BOUNDED_CLAUSE_DOCUMENTARY_REVIEW
 GOVERNANCE_CUTOVER: NOT_READY
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 
@@ -12,7 +12,7 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 - Candidate at **initial heading capture**: `D:\samrim-refoundation-clean-20261112`, HEAD `d4f542df68533b06d42aa3a1a8b3338fd5a757c9` (historical evidence, not the current tip).
 - Read-only census of exactly 14 donor domain-owner Markdown files, paired with their 14 same-named draft target owners. Donor README, separate historical plans, source code, ZIPs and six approved discussion sequences have not been reconciled by this artifact.
 - A heading is only a navigation aid. An exact title match does not prove semantic parity; a renamed or missing title does not prove the underlying decision is absent.
-- Rows are individually pinned to source Git blob and 1-based line number. As of 2026-11-14, **11 HR rows** received a bounded **documentary** source-to-target review (`DOC_RETAIN` or `DOC_REFOUND`) with evidence below; **329 other rows remain `REVIEW_PENDING`**. Documentary dispositions do not prove executable policy, live access, salary, SQL, provider state or integration readiness.
+- Rows are individually pinned to source Git blob and 1-based line number. As of 2026-11-14, **30 rows** (11 HR, 6 Platform, 13 Architecture) received bounded **documentary** source-to-target review (`DOC_RETAIN` or `DOC_REFOUND`) with dated, per-clause evidence below; **310 other rows remain `REVIEW_PENDING`**. These dispositions do not prove implemented policies, safe actual identifier/data migration, live access, salary, SQL, provider state or integration readiness.
 - No automatic KEEP/RETIRE/COMPLETE status is derived from wording; unheaded paragraphs and all deeper implementation artifacts require separate review.
 
 ## Navigation-only summary
@@ -59,12 +59,12 @@ Donor `docs/governance/platform.md` (Git blob `94050e7f56d957c411331407615b20ec0
 
 | Donor line | Exact source heading | Literal heading in target? | Semantic review |
 | ---: | --- | --- | --- |
-| 8 | ## Platform definition | NO | REVIEW_PENDING |
-| 14 | ## Human Actor model | NO | REVIEW_PENDING |
-| 43 | ### User terminology versus deployed identifiers | NO | REVIEW_PENDING |
-| 49 | ### Refoundation naming cutover | NO | REVIEW_PENDING |
-| 53 | ## Surface model | YES | REVIEW_PENDING |
-| 61 | ## Canonical terms | NO | REVIEW_PENDING |
+| 8 | ## Platform definition | NO | DOC_RETAIN |
+| 14 | ## Human Actor model | NO | DOC_REFOUND |
+| 43 | ### User terminology versus deployed identifiers | NO | DOC_REFOUND |
+| 49 | ### Refoundation naming cutover | NO | DOC_REFOUND |
+| 53 | ## Surface model | YES | DOC_REFOUND |
+| 61 | ## Canonical terms | NO | DOC_REFOUND |
 
 ### architecture
 
@@ -72,19 +72,19 @@ Donor `docs/governance/architecture.md` (Git blob `650fa58a0a9e0ee50a322266fcd2d
 
 | Donor line | Exact source heading | Literal heading in target? | Semantic review |
 | ---: | --- | --- | --- |
-| 8 | ## Bounded owners | NO | REVIEW_PENDING |
-| 53 | ## Architecture selection | NO | REVIEW_PENDING |
-| 57 | ## Mandatory single-owner and single-engine law | NO | REVIEW_PENDING |
-| 69 | ## Adapter boundary | NO | REVIEW_PENDING |
-| 77 | ## Surface boundary | NO | REVIEW_PENDING |
-| 83 | ## Canonical writer/readback law | NO | REVIEW_PENDING |
-| 98 | ## Canonical identity evolution law | NO | REVIEW_PENDING |
-| 104 | ## Cross-boundary contracts | NO | REVIEW_PENDING |
-| 122 | ## Trust-boundary validation | NO | REVIEW_PENDING |
-| 139 | ## Data ownership | NO | REVIEW_PENDING |
-| 145 | ## Runtime/configuration | NO | REVIEW_PENDING |
-| 156 | ## Responsibility-shaped implementation boundaries | NO | REVIEW_PENDING |
-| 162 | ## Repository boundary | NO | REVIEW_PENDING |
+| 8 | ## Bounded owners | NO | DOC_REFOUND |
+| 53 | ## Architecture selection | NO | DOC_RETAIN |
+| 57 | ## Mandatory single-owner and single-engine law | NO | DOC_RETAIN |
+| 69 | ## Adapter boundary | NO | DOC_RETAIN |
+| 77 | ## Surface boundary | NO | DOC_RETAIN |
+| 83 | ## Canonical writer/readback law | NO | DOC_RETAIN |
+| 98 | ## Canonical identity evolution law | NO | DOC_REFOUND |
+| 104 | ## Cross-boundary contracts | NO | DOC_RETAIN |
+| 122 | ## Trust-boundary validation | NO | DOC_RETAIN |
+| 139 | ## Data ownership | NO | DOC_RETAIN |
+| 145 | ## Runtime/configuration | NO | DOC_RETAIN |
+| 156 | ## Responsibility-shaped implementation boundaries | NO | DOC_RETAIN |
+| 162 | ## Repository boundary | NO | DOC_RETAIN |
 
 ### identity
 
@@ -620,3 +620,31 @@ SOURCE_SECTION_CENSUS_PASS owners=14 donor_headings=340 target_headings=138 lite
 | journeys 537 | End-to-end integration proof boundary | RETAIN | journeys.md: implemented E2E proof separately required |
 
 **Compatibility and history:** The old source file, all deeper heading rows with exact donor blob/line references and legally binding state remain untouched. Old field-acquisition, alternate Direct engines and redundant presentation/writers are not revived; they are explicitly excluded by current `product.md` and `architecture.md`. This group crosswalk supports current source-to-target inspection; it does not assert that original subscriptions, official payment terms, applied SQL versions, Root Owner records or 340 separate paragraph-level runtime invariants have been proven.
+
+## 2026-11-14 — Platform and Architecture clause-level documentary concordance (session 02)
+
+**Scope:** Read both complete donor source files at `41@426d67b47beb8c66b09acd8c7394086b53ac5aae` and the current target owner texts, then trace the meanings of **six Platform** and **thirteen Architecture** source sections (including their nested paragraphs) to the accountable target owner. Source blobs are already pinned above (`94050e7f56d957c411331407615b20ec0c9fb86b`, `650fa58a0a9e0ee50a322266fcd2de028f15a0db`). The literal heading match column remains unchanged. `DOC_RETAIN` means material source meaning has a traced draft owner; `DOC_REFOUND` means the meaning survives through a documented human-approved refoundation/naming/non-admission boundary. Neither means SQL/Go/app implementation is present or that historical data, applied migrations and external contracts have been safely moved.
+
+| Donor owner / line | Documentary decision | Exact draft owner mapping and preserved/reframed source obligation |
+| --- | --- | --- |
+| Platform 8 | DOC_RETAIN | `governance/product.md` defines **one** delivery-commerce Product; `governance/platform.md` has four actor-facing Surfaces; `governance/architecture.md` keeps UI hosts out of business truth. Actual package/runtime facts are not governed here. |
+| Platform 14 | DOC_REFOUND | `platform.md` and `identity.md` retain one permanent `actor_id`, four compatible role values and independent role admission. `stores.md`, `fulfillment.md`, `hr.md` preserve separate Store grants, Store-Captain membership and company/Merchant employment; `platform.md` preserves recipient contact as a DSH Order snapshot, not a fifth human role. Historical field acquisition remains explicitly non-admitted in `product.md`. |
+| Platform 43 | DOC_REFOUND | `platform.md` establishes Customer/Merchant/Captain/Operator vocabulary and existing `client`/`partner` compatibility; `stores.md` makes `MARKETPLACE`/`DIRECT` relation options on one Store, not two Merchant roles. External application identifiers cannot be renamed implicitly. |
+| Platform 49 | DOC_REFOUND | `platform.md` `SURFACE-01` and `REPOSITORY-STRUCTURE.md` select `apps/customer`, `apps/merchant`, `apps/captain`, `apps/control-panel` while preserving original Expo IDs, scheme, URLs and consumer-cutover duties. No old and new business roles/writers may become parallel active admissions. |
+| Platform 53 | DOC_REFOUND | Four new Stage-4 hosts are documented in `platform.md` as **structural** reality, not business runtime. `stores.md` gives the Merchant and authorized Operator one unpublished DSH Store-create owner with distinct legal publication, and `experience.md` preserves role-specific Ant/Tamagui presentation rather than identical shells. |
+| Platform 61 | DOC_REFOUND | `platform.md` distinguishes Actor, Role, Merchant, Store, membership, delegated grant and bounded recipient; `architecture.md` defines canonical owner, readback and derived projection. Names changed intentionally but legal fact ownership and external identifiers stay stable. |
+| Architecture 8 | DOC_REFOUND | `architecture.md` explicitly assigns Identity, DSH and WLT sole writers; `hr.md` admits one bounded DSH employee engine with company/Merchant isolation. Historic HR salary/payroll/equipment language is **conditional source context**, not automatic admission of a fourth service, generic payroll or payment writer; `product.md` admission and WLT rules control scope. |
+| Architecture 53 | DOC_RETAIN | `architecture.md` requires the smallest correctly owned implementation and explicitly rejects mandatory DDD/Clean/Hexagonal layer counts; no pattern demands a new shared engine. |
+| Architecture 57 | DOC_RETAIN | `architecture.md` one owner/writer/engine, Store relation variants through one DSH Order/Catalog, one WLT ledger and no parallel legacy engine; consumers and data must migrate safely before retirement. |
+| Architecture 69 | DOC_RETAIN | `architecture.md` and `safety.md` treat media, notification and funding providers as bounded transport adapters; DSH owns intent/permission/publication, WLT owns ledger/collector truth. |
+| Architecture 77 | DOC_RETAIN | `architecture.md` and `platform.md` keep four Surfaces as presenters. Identity role login alone never grants Store operations or Store-Captain dispatch; DSH checks actual scoped relationships and actor eligibility. |
+| Architecture 83 | DOC_RETAIN | `architecture.md`, `stores.md`, `catalog.md` and `commerce.md` keep one canonical mutation/readback per owner, distinguish Store publication/orderability/Offer availability/serviceability, and preserve immutable confirmed Order facts with separate attributable adjustments. |
+| Architecture 98 | DOC_REFOUND | The target `architecture.md` canonical-ID evolution paragraph was corrected in the **same reviewed session-02 change set**: stable Identity Actor, DSH Store/Order and WLT financial identifiers retain historical meaning; changing meaning requires reviewed data/contract/consumer migration and readback, not aliases or another writer. Two targeted negative foundation tests protect this textual boundary. |
+| Architecture 104 | DOC_RETAIN | `architecture.md` and `safety.md` enforce canonical cross-owner IDs, durable single logical handoff, receiving Owner idempotency and reconciliation of timeout/partial outcome. Generated clients derive only from owner contract, never a second DTO authority. |
+| Architecture 122 | DOC_RETAIN | `architecture.md` retains explicit `PARSE → VALIDATE → NORMALIZE → AUTHORIZE → DOMAIN TRANSITION`; authenticated transport, TypeScript DTOs and caller-supplied IDs are not object-level authorization. |
+| Architecture 139 | DOC_RETAIN | `architecture.md` and `safety.md` preserve separate owner DB facts and forbid cross-owner write-through. Customer/recipient contact is a bounded DSH Order snapshot and never a second Identity account or money principal. |
+| Architecture 145 | DOC_RETAIN | `architecture.md`, `safety.md`, `engineering.md` separate owner-backed readiness/recovery and secrets from executable port, container, Go and SQL configuration; configured or HTTP-200-only does not mean functioning. |
+| Architecture 156 | DOC_RETAIN | `architecture.md` requires responsibility-shaped modules without duplicate owner engines, and `REPOSITORY-STRUCTURE.md` owns placement. A directory rename, wrapper or layer count alone is not accepted refoundation. |
+| Architecture 162 | DOC_RETAIN | `REPOSITORY-STRUCTURE.md` owns file placement and consumer cutover; `architecture.md` alone owns semantic boundaries, no second directory-policy authority. |
+
+**Count and risk statement:** these **19** clause rows follow the prior independently completed **11** HR rows, yielding **30/340** documentary section dispositions (**22 `DOC_RETAIN`, 8 `DOC_REFOUND`**) and **310 `REVIEW_PENDING`**. This is *not* 30 independently approved service contracts or a 30/340 measure of implemented completeness. Historic donor H2 grouping (81 records) remains a separate navigation/cutover-disposition pass; it is not substituted for this clause review. Unheaded material, actual integrations, target legal/finance evidence, donor consumer checks, cross-account data and runtime correctness remain unresolved where not independently inspected. `GOVERNANCE_CUTOVER: NOT_READY`, and no Product capability, financial writer, SQL object, API operation or deployed identity changed in this census.

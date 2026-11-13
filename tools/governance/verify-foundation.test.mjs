@@ -279,6 +279,12 @@ rejects('rejects loss of bounded HR request reconciliation',
 rejects('rejects HR write-through without current Identity permission readback',
  {edit:{'governance/hr.md':s=>s.replace('current live Identity permission readback','HR proposed permissions alone')}},
  /source-grounded HR draft boundary missing: current live Identity permission readback/);
+rejects('rejects canonical ID reinterpretation as a new business identity',
+ {edit:{'governance/architecture.md':s=>s.replace('each retain one stable fact type','may be silently reused across unrelated facts')}},
+ /canonical identifier evolution boundary missing/);
+rejects('rejects canonical ID remapping without coordinated data and client migration',
+ {edit:{'governance/architecture.md':s=>s.replace('one explicit, versioned, reviewed migration of affected data, contracts and consumers','an unreviewed alias without contract or data migration')}},
+ /canonical identifier evolution boundary missing/);
 rejects('rejects independent recipient identity from an order snapshot',
  {edit:{'governance/platform.md':s=>s.replace('Delivery recipient:','New delivery identity:')}},
  /source-grounded actor\/platform draft boundary missing: Delivery recipient:/);

@@ -542,6 +542,15 @@ const finance=contents['governance/finance.md'];
 const delivery=contents['governance/fulfillment.md'];
 const engineering=contents['governance/engineering.md'];
 if(!arch.includes('policy')||!arch.includes('Operator Policies')||!arch.includes('one canonical engine'))fail('architecture policy/single-engine boundary missing');
+// The donor's canonical-ID evolution law applies to every owner, not only Store IDs.
+// This is a draft-text safeguard, not proof of safe deployed migrations.
+for(const anchor of [
+ 'an Identity `actor_id`, DSH Store or Order ID, and WLT financial record identifier each retain one stable fact type',
+ 'one explicit, versioned, reviewed migration of affected data, contracts and consumers',
+ 'old and new aliases cannot become independently active truths',
+]){
+ if(!arch.includes(anchor))fail('canonical identifier evolution boundary missing: '+anchor);
+}
 if(!finance.includes('PLATFORM_MANAGED')||!finance.includes('STORE_MANAGED')||!finance.includes('COMMISSION')||!finance.includes('SUBSCRIPTION'))fail('finance must distinguish collection responsibility and fees');
 if(!delivery.includes('DIRECT')||!delivery.includes('BTHWANI_CAPTAIN')||!delivery.includes('WLT'))fail('fulfillment must address relation-independent safety gates');
 if(!engineering.includes('ADD NOW')||!engineering.includes('DEFER')||!engineering.includes('DO NOT ADD'))fail('engineering must distinguish mutable rules from invariants');
