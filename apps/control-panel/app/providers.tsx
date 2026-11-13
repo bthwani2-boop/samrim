@@ -1,13 +1,33 @@
 "use client";
-import { useEffect, useState, type ReactNode } from "react";
-import { ConfigProvider, Segmented, theme as antTheme } from "antd";
-import arEG from "antd/locale/ar_EG";
 import { themes } from "@bthwani/design-system/theme";
+import { theme as antTheme, ConfigProvider, Segmented } from "antd";
+import arEG from "antd/locale/ar_EG";
+import { type ReactNode, useEffect, useState } from "react";
 
 export type AppearancePreference = "system" | "light" | "dark";
+const previewPreferenceKey = "bthwani.stage4.operator.theme";
+const isPreference = (value: string | null): value is AppearancePreference =>
+  value === "system" || value === "light" || value === "dark";
+
 export function Providers({ children }: Readonly<{ children: ReactNode }>) {
   const [pref, setPref] = useState<AppearancePreference>("system");
   const [systemDark, setSystemDark] = useState(false);
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(previewPreferenceKey);
+      if (isPreference(stored)) setPref(stored);
+    } catch {
+      // Keep the system default when browser storage is unavailable.
+    }
+  }, []);
+  const selectPreference = (value: AppearancePreference) => {
+    setPref(value);
+    try {
+      window.localStorage.setItem(previewPreferenceKey, value);
+    } catch {
+      // Persisting a visual preference must never block Operator rendering.
+    }
+  };
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const update = () => setSystemDark(media.matches);
@@ -28,7 +48,7 @@ export function Providers({ children }: Readonly<{ children: ReactNode }>) {
         <Segmented
           aria-label="اختيار المظهر"
           value={pref}
-          onChange={value => setPref(value as AppearancePreference)}
+          onChange={value => selectPreference(value as AppearancePreference)}
           options={[
             { label: "النظام", value: "system" },
             { label: "فاتح", value: "light" },

@@ -14,7 +14,7 @@
     "check:foundation": "node tools/governance/verify-foundation.mjs && node --test tools/governance/verify-foundation.test.mjs tools/governance/review-examples.test.mjs",
     "check": "pnpm run check:workspace && pnpm run check:foundation && pnpm run check:design && pnpm run check:apps",
     "check:design": "pnpm --dir packages/design-system theme:check && pnpm --dir packages/design-system theme:verify",
-    "check:apps": "node tools/mobile/verify-app-foundations.mjs && node --test tools/mobile/verify-rtl.test.mjs && node tools/mobile/verify-rtl.mjs && pnpm -r --if-present run typecheck"
+    "check:apps": "node tools/mobile/verify-app-foundations.mjs && node --test tools/mobile/verify-rtl.test.mjs tools/mobile/verify-expo-config.test.mjs packages/tamagui-config/tools/appearance.test.mjs && node tools/mobile/verify-rtl.mjs && node tools/mobile/verify-expo-config.mjs && pnpm -r --if-present run typecheck"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.12",

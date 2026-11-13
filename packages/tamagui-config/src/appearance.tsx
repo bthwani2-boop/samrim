@@ -1,7 +1,7 @@
+import type { ThemeColors } from "@bthwani/design-system/theme";
+import { isThemePreference, resolveTheme, resolveThemeName, type ThemeName, type ThemePreference } from "@bthwani/design-system/theme";
 import * as React from "react";
 import { Appearance, Platform } from "react-native";
-import { isThemePreference, resolveTheme, resolveThemeName, type ThemeName, type ThemePreference } from "@bthwani/design-system/theme";
-import type { ThemeColors } from "@bthwani/design-system/theme";
 
 // Stage-4 appearance foundation: React Native system preference and the
 // canonical BThwani semantic token source. No native Expo UI picker and no
@@ -26,7 +26,13 @@ export function createMobileAppearanceController({ storage, key }: { storage: Ap
     return { preference, themeName, theme: resolveTheme(themeName), ready };
   };
   let snapshot = snapshotFor("system", false);
-  const notify = () => listeners.forEach(listener => listener());
+  let confirmedPreference: ThemePreference = "system";
+  let intentRevision = 0;
+  let restoreRevision = 0;
+  let disposed = false;
+  // Serialize storage writes: the last user choice must also win on disk.
+  let writeQueue: Promise<void> = Promise.resolve();
+  const notify = () => listeners.forEach(listener => { listener(); });
   const update = (preference: ThemePreference, ready = snapshot.ready) => {
     snapshot = snapshotFor(preference, ready);
     notify();
@@ -49,31 +55,48 @@ export function createMobileAppearanceController({ storage, key }: { storage: Ap
       return () => listeners.delete(listener);
     },
     async restore() {
+      const intentAtStart = intentRevision;
+      const restoreAtStart = ++restoreRevision;
       let preference: ThemePreference = "system";
       try {
         const stored = await storage.getItem(key);
         if (isThemePreference(stored)) preference = stored;
       } catch {
-        // An unavailable storage service must not block the preview app.
+        // Storage failure must not prevent initial app rendering.
       }
+      // A delayed restore cannot undo a newer choice or revive a disposed app.
+      if (disposed || intentAtStart !== intentRevision || restoreAtStart !== restoreRevision) return;
+      confirmedPreference = preference;
       applyNative(preference);
       update(preference, true);
     },
     async setPreference(preference: ThemePreference) {
+      if (disposed) throw new Error("Appearance controller disposed");
       if (!isThemePreference(preference)) throw new Error("Invalid theme preference");
-      const prior = snapshot.preference;
-      if (prior === preference) return;
+      // An explicit tap during initial restore still supersedes the stored value.
+      if (snapshot.preference === preference && snapshot.ready) return;
+      const revision = ++intentRevision;
       applyNative(preference);
-      update(preference);
+      update(preference, true);
+      // Do not allow an earlier slow write to overwrite a later preference.
+      const write = writeQueue.then(() => storage.setItem(key, preference));
+      writeQueue = write.then(() => undefined, () => undefined);
       try {
-        await storage.setItem(key, preference);
+        await write;
+        confirmedPreference = preference;
       } catch (error) {
-        applyNative(prior);
-        update(prior);
+        // Failure of an older request must never roll back a newer choice.
+        if (!disposed && revision === intentRevision) {
+          applyNative(confirmedPreference);
+          update(confirmedPreference, true);
+        }
         throw error;
       }
     },
     dispose() {
+      disposed = true;
+      intentRevision++;
+      restoreRevision++;
       appearanceSubscription?.remove();
       listeners.clear();
     },

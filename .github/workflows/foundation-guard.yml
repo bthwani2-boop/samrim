@@ -45,3 +45,43 @@ jobs:
         run: |
           echo 'FOUNDATION_ONLY: governance cutover is NOT_READY'
           echo 'NOT_RUN: SQL, source services, runtime, security, finance, full Product acceptance'
+
+  presentation:
+    name: Presentation config, design and TypeScript (NOT runtime)
+    needs: foundation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Use repository-pinned Node 24
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install exact locked dependencies (no lifecycle scripts)
+        run: |
+          corepack enable pnpm
+          pnpm --version
+          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Validate design, native config, appearance races and all app types
+        run: |
+          pnpm check:design
+          pnpm check:apps
+      - name: Export Expo Web presentation hosts (SSR artifacts only)
+        run: |
+          pnpm --dir apps/customer exec expo export --platform web
+          pnpm --dir apps/merchant exec expo export --platform web
+      - name: Export Expo Android JavaScript (NOT a native binary)
+        run: |
+          pnpm --dir apps/customer exec expo export --platform android
+          pnpm --dir apps/merchant exec expo export --platform android
+          pnpm --dir apps/captain exec expo export --platform android
+      - name: Build the pinned Next.js Operator presentation host
+        run: pnpm --dir apps/control-panel build
+      - name: Record missing live platform proof
+        run: |
+          echo 'NOT_RUN: Android/iOS binary, actual browser hydration/CSP, owner APIs, finance and security'
