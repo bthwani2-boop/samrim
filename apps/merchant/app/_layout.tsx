@@ -1,37 +1,11 @@
-import * as React from "react";
-import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { Stack } from "expo-router";
-import { TamaguiProvider, Theme } from "tamagui";
-import { AppearanceProvider, createMobileAppearanceController, useMobileAppearance } from "@bthwani/tamagui-config/appearance";
-import { tamaguiConfig } from "@bthwani/tamagui-config";
+import { createStage4Root } from "@bthwani/tamagui-config/preview";
 
-function AppRoutes() {
-  const { themeName, theme } = useMobileAppearance();
-  return (
-    <TamaguiProvider config={tamaguiConfig} defaultTheme={themeName}>
-      <Theme name={themeName}>
-        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }} />
-      </Theme>
-    </TamaguiProvider>
-  );
-}
-
-// A standalone stage-4 preview: no authentication or commercial data is used.
-// Account-scoped preference keys will be introduced with the real Identity owner.
-export default function RootLayout() {
-  const storage = React.useMemo(() => {
-    return Platform.OS === "web"
-      ? {
-          getItem: async (key: string) => window.localStorage.getItem(key),
-          setItem: async (key: string, value: string) => { window.localStorage.setItem(key, value); },
-        }
-      : { getItem: SecureStore.getItemAsync, setItem: SecureStore.setItemAsync };
-  }, []);
-  const controller = React.useMemo(() => createMobileAppearanceController({
-    storage,
-    key: "bthwani.stage4.merchant.theme",
-  }), [storage]);
-  React.useEffect(() => () => controller.dispose(), [controller]);
-  return <AppearanceProvider controller={controller}><AppRoutes /></AppearanceProvider>;
-}
+// Original native identity and app-scoped preference key stay app-owned.
+export default createStage4Root(
+  "bthwani.stage4.merchant.theme",
+  SecureStore.getItemAsync,
+  SecureStore.setItemAsync,
+  backgroundColor => <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor } }} />,
+);

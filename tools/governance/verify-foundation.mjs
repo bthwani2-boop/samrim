@@ -65,7 +65,7 @@ const contractPathGroups={
 const required=[
  'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',...domainFiles,'docs/REFOUNDATION-PLAN.md','docs/reference/README.md','docs/reference/HISTORICAL-SOURCE-INVENTORY.md','docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md',
  '.specify/init-options.json','.specify/integration.json','.specify/integrations/speckit.manifest.json','.specify/memory/constitution.md',
- '.github/workflows/foundation-guard.yml','.github/workflows/sonar-quality.yml','sonar-project.properties','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs',
+ '.github/workflows/ci.yml','.github/workflows/sonar-quality.yml','sonar-project.properties','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs',
  'tools/governance/review-examples.test.mjs',
  '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
  'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','tsconfig.base.json','biome.json',
@@ -501,7 +501,7 @@ const exampleTests=contents['tools/governance/review-examples.test.mjs'];
 if(!exampleTests.includes('NOT WLT code')||!exampleTests.includes('Illustrative arithmetic ONLY'))
  fail('risk arithmetic fixtures must never claim WLT implementation evidence');
 if(!stage3package.scripts?.['check:foundation']?.includes('review-examples.test.mjs')||
- !contents['.github/workflows/foundation-guard.yml'].includes('review-examples.test.mjs'))
+ !contents['.github/workflows/ci.yml'].includes('review-examples.test.mjs'))
  fail('foundation CI and local commands must include bounded risk-review examples');
 
 
@@ -525,7 +525,7 @@ for(const p of ['.github/workflows/fast-guard.yml','.github/workflows/sonar-obse
 }
 if(exists('infra')||exists('contracts'))fail('foundation guard cannot be reused as service/SQL proof');
 
-const ci=contents['.github/workflows/foundation-guard.yml'];
+const ci=contents['.github/workflows/ci.yml'];
 const requiredJobStart=ci.indexOf('\n  fast_guard:\n');
 const requiredJob=requiredJobStart>=0 ? ci.slice(requiredJobStart) : '';
 if (!/^ {4}needs: \[foundation, presentation\]$/m.test(requiredJob))

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { nativeConfigViolations, sourceViolations } from "./verify-rtl.mjs";
+import { nativeConfigViolations, sourceViolations, verifyRtl } from "./verify-rtl.mjs";
 
 test("does not forbid logical layout properties or native-default navigation", () => {
   const source = "import { Stack } from 'expo-router';\nconst view = <Stack />;\nconst style = { justifyContent: 'flex-end', alignItems: 'stretch' };";
@@ -37,4 +37,10 @@ test("fails when canonical native RTL locale is missing or disabled", () => {
   const valid = 'plugins.push(["expo-localization", { supportedLocales: { ios: ["ar"], android: ["ar"] }, forcesRTL: true }]);';
   assert.deepEqual(nativeConfigViolations(valid), []);
   assert.ok(nativeConfigViolations(valid.replace("forcesRTL: true", "forcesRTL: false")).length);
+});
+
+test("live Stage-4 Expo route trees have no screen-local RTL overrides", () => {
+  const { filesChecked, issues } = verifyRtl();
+  assert.ok(filesChecked >= 9, "every Expo host must have its source routes inspected");
+  assert.deepEqual(issues, []);
 });

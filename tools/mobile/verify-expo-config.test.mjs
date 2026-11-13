@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolvedConfigIssues } from "./verify-expo-config.mjs";
+import { resolvedConfigIssues, verifyResolvedConfigs } from "./verify-expo-config.mjs";
 
 const manifest = {
   slug: "app-client", owner: "bthwani1", scheme: "client",
@@ -37,4 +37,8 @@ test("catches duplicate localization and disabled RTL", () => {
 test("catches a client/merchant web SSR regression", () => {
   const broken = { ...config, web: { output: "static", bundler: "metro" } };
   assert.match(resolvedConfigIssues("customer", manifest, broken).join(" "), /server renderer/);
+});
+
+test("real Expo config from all three installed hosts retains app ownership", () => {
+  assert.equal(verifyResolvedConfigs(), 3);
 });

@@ -7,7 +7,8 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./appearance": "./src/appearance.tsx"
+    "./appearance": "./src/appearance.tsx",
+    "./preview": "./src/preview.tsx"
   },
   "dependencies": {
     "@bthwani/design-system": "workspace:*",

@@ -51,7 +51,10 @@ for (const [name, [slug, packageId, scheme, projectId]] of Object.entries(expect
   }
   assert.ok(!existsSync(join(root,rel,"src/features")), name + " old business features should not migrate");
   const home=read(`${rel}/app/index.tsx`);
-  assert.ok(home.includes('from "tamagui"'), name + " not rendering Tamagui");
+  assert.ok(home.includes('from "@bthwani/tamagui-config/preview"'), name + " must use the shared Stage-4 Tamagui preview");
+  const layout = read(`${rel}/app/_layout.tsx`);
+  assert.ok(layout.includes('from "@bthwani/tamagui-config/preview"'), name + " must use the shared Stage-4 appearance host");
+  assert.ok(layout.includes(`"bthwani.stage4.${name}.theme"`), name + " appearance persistence must remain app-scoped");
 }
 const oldPanel=donor.apps["control-panel"]?.manifest;
 const newPanel=json("apps/control-panel/package.json");

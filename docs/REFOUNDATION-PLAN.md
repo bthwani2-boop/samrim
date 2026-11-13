@@ -42,7 +42,7 @@ A source being inventoried does **not** mean every line or external URL has pass
 - Proof: git worktree status and exact SHA. Re-run after intervening work.
 
 ## Phase 1 — Foundation law and stage-aware CI (CURRENT)
-**Owns:** root `AGENTS.md`, root `REPOSITORY-STRUCTURE.md`, `governance/README.md` (staging index), this plan, `tools/governance/`, `.github/workflows/foundation-guard.yml`.
+**Owns:** root `AGENTS.md`, root `REPOSITORY-STRUCTURE.md`, `governance/README.md` (staging index), this plan, `tools/governance/`, `.github/workflows/ci.yml`.
 
 - Reauthor agent execution safety, smallest coherent refoundation slice, owner/writer law, tested evidence, protected data and Git authorization. Do not transplant the oversized donor law verbatim.
 - Reauthor repository placement for a root `governance/`. User-approved early deletion of the old donor folder from **this candidate** is now in scope; reference historical source branch `41` without rebuilding a duplicate directory.

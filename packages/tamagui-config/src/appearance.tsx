@@ -2,6 +2,8 @@ import type { ThemeColors } from "@bthwani/design-system/theme";
 import { isThemePreference, resolveTheme, resolveThemeName, type ThemeName, type ThemePreference } from "@bthwani/design-system/theme";
 import * as React from "react";
 import { Appearance, Platform } from "react-native";
+import { TamaguiProvider, Theme } from "tamagui";
+import { tamaguiConfig } from "./index";
 
 // Stage-4 appearance foundation: React Native system preference and the
 // canonical BThwani semantic token source. No native Expo UI picker and no
@@ -103,6 +105,23 @@ export function createMobileAppearanceController({ storage, key }: { storage: Ap
   };
 }
 
+export function useStage4AppearanceController(
+  key: string,
+  nativeGetItem: AppearanceStorage["getItem"],
+  nativeSetItem: AppearanceStorage["setItem"],
+): MobileAppearanceController {
+  const storage = React.useMemo<AppearanceStorage>(() =>
+    Platform.OS === "web"
+      ? {
+          getItem: async (storageKey) => window.localStorage.getItem(storageKey),
+          setItem: async (storageKey, value) => { window.localStorage.setItem(storageKey, value); },
+        }
+      : { getItem: nativeGetItem, setItem: nativeSetItem }, [nativeGetItem, nativeSetItem]);
+  const controller = React.useMemo(() => createMobileAppearanceController({ storage, key }), [key, storage]);
+  React.useEffect(() => () => controller.dispose(), [controller]);
+  return controller;
+}
+
 const AppearanceContext = React.createContext<MobileAppearanceController | null>(null);
 
 // Stable, request-independent snapshot: SSR and the initial hydration render agree.
@@ -128,4 +147,12 @@ export function useMobileAppearance(): MobileAppearanceSnapshot & { setPreferenc
     ...React.useSyncExternalStore(controller.subscribe, controller.getSnapshot, getServerAppearance),
     setPreference: controller.setPreference,
   };
+}
+export function MobileThemeProvider({ children }: { children: React.ReactNode }) {
+  const { themeName } = useMobileAppearance();
+  return (
+    <TamaguiProvider config={tamaguiConfig} defaultTheme={themeName}>
+      <Theme name={themeName}>{children}</Theme>
+    </TamaguiProvider>
+  );
 }

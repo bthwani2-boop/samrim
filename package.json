@@ -10,6 +10,7 @@
   },
   "scripts": {
     "check:workspace": "node tools/dev/verify-workspace.mjs",
+    "check:coverage": "node tools/dev/run-coverage.mjs",
     "check:toolchain": "node tools/dev/verify-workspace.mjs --require-exact-toolchain",
     "check:security": "node --test tools/security/verify-secrets.test.mjs && node tools/security/verify-secrets.mjs",
     "check:foundation": "node tools/governance/verify-foundation.mjs && node --test tools/governance/verify-foundation.test.mjs tools/governance/review-examples.test.mjs",
