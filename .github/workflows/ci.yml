@@ -88,6 +88,8 @@ jobs:
           pnpm --dir apps/captain exec expo export --platform android
       - name: Build the pinned Next.js Operator presentation host
         run: pnpm --dir apps/control-panel build
+      - name: Smoke-test production Operator SSR, RTL and headers on loopback
+        run: node tools/dev/verify-operator-http.mjs
       - name: Record missing live platform proof
         run: |
           echo 'NOT_RUN: Android/iOS binary, actual browser hydration/CSP, owner APIs, finance and security'
