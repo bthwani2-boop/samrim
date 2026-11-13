@@ -63,7 +63,7 @@ const contractPathGroups={
  ]
 };
 const required=[
- 'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',...domainFiles,'docs/REFOUNDATION-PLAN.md','docs/reference/README.md','docs/reference/HISTORICAL-SOURCE-INVENTORY.md','docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md',
+ 'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',...domainFiles,'docs/REFOUNDATION-PLAN.md','docs/reference/README.md','docs/reference/HISTORICAL-SOURCE-INVENTORY.md','docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md','docs/reference/DONOR-GOVERNANCE-SECTION-CENSUS.md',
  '.specify/init-options.json','.specify/integration.json','.specify/integrations/speckit.manifest.json','.specify/memory/constitution.md',
  '.github/workflows/ci.yml','.github/workflows/sonar-quality.yml','sonar-project.properties','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs',
  'tools/governance/review-examples.test.mjs','tools/mobile/verify-expo-web-http.mjs',
@@ -395,6 +395,17 @@ for(let i=0;i<sections.length;i++){
  if(matches.length!==1||matches[0][1]!==id)fail('journey heading/id mismatch: '+id);
  if(journeyIds.has(id))fail('duplicate Journey ID: '+id);
  journeyIds.add(id);
+  const capabilityLines=[...section.matchAll(/^CAPABILITIES:\s*(.*)$/gm)];
+  if(capabilityLines.length!==1)fail('journey needs exactly one admitted capability map: '+id);
+  const mapped=capabilityLines[0][1].split(',').map(x=>x.trim());
+  if(!mapped.length||mapped.some(x=>!expected.has(x))||new Set(mapped).size!==mapped.length)
+    fail('journey references unadmitted/duplicated capability: '+id);
+  const newlyResolved={
+    FIRST_THREE_ORDER_CONTACT:['ORDER_LIFECYCLE'],
+    ORDER_SCOPED_OPERATIONS_EXCEPTION:['ORDER_LIFECYCLE','ORDER_PAYMENT_COLLECTION'],
+  }[id];
+  if(newlyResolved && mapped.join(',')!==newlyResolved.join(','))
+    fail('approved new journey-to-capability mapping lost: '+id);
  if(!/^SURFACES:\s*\S+/m.test(section)||!/^OWNERS:\s*\S+/m.test(section)||!/^ENTRY:\s*\S+/m.test(section)
   ||!/^EXIT:\s*\S+/m.test(section)||!/^READBACK:\s*\S+/m.test(section)||section.length<450)
   fail('missing material journey evidence boundary: '+id);
@@ -450,6 +461,21 @@ for(let i=1;i<=12;i++) {
 }
 if(!plan.includes('CodeQL Go cannot process a deliberately Go-empty tree') || !plan.includes('CodeQL\'s **Go** analysis is **FAIL**'))
  fail('stage-specific CodeQL source-sparse scan failure must not be mislabeled success');
+const census=contents['docs/reference/DONOR-GOVERNANCE-SECTION-CENSUS.md'];
+const dispositionStart=census.indexOf('## 2026-11-14 — Source H2-group dispositions');
+if(dispositionStart<0) fail('historical source H2 disposition ledger is missing');
+const dispositions=census.slice(dispositionStart);
+const coverageByOwner={product:7,platform:4,architecture:13,identity:1,stores:4,catalog:2,commerce:7,fulfillment:5,finance:7,hr:1,experience:2,safety:3,engineering:5,journeys:20};
+const dispositionRows=[...dispositions.matchAll(/^\| ([a-z]+) (\d+) \| ([^|]+) \| (RETAIN|REFOUND|MERGE|REPLACE|HISTORICAL) \| ([^|]+) \|$/gm)];
+const uniqueDisposition=new Set(dispositionRows.map(m=>m[1]+':'+m[2]));
+if(dispositionRows.length!==81 || uniqueDisposition.size!==81)
+ fail('historical source H2 group disposition must uniquely cover 81 donor sections');
+for(const [owner,count] of Object.entries(coverageByOwner)){
+ const ownerRows=dispositionRows.filter(m=>m[1]===owner);
+ if(ownerRows.length!==count || ownerRows.some(m=>!m[5].includes(owner+'.md') && !(owner==='journeys' && m[5].includes('journeys.md'))))
+  fail('historical source H2 group ownership coverage mismatch: '+owner);
+}
+// This asserts documentary coverage/owner routing, NOT paragraph-level semantic or financial verification.
 // Preserve source-grounded security and data limits in the draft owner without
 // treating lexical guard PASS as a reviewed policy or implemented security.
 const safety=contents['governance/safety.md'];

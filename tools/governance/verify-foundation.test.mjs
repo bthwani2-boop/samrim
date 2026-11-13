@@ -181,7 +181,7 @@ rejects('rejects missing linked development environment inventory',
  /broken local Markdown link: docs\/reference\/README\.md -> environment-config-inventory\.md/);
 rejects('rejects missing donor governance section provenance',
  {del:['docs/reference/DONOR-GOVERNANCE-SECTION-CENSUS.md']},
- /broken local Markdown link: docs\/(?:REFOUNDATION-PLAN\.md -> reference\/|reference\/README\.md -> )DONOR-GOVERNANCE-SECTION-CENSUS\.md/);
+ /required docs\/reference\/DONOR-GOVERNANCE-SECTION-CENSUS\.md/);
 rejects('rejects research masquerading as Product policy',{edit:{'docs/reference/README.md':s=>s.replace('BUSINESS_POLICY_AUTHORITY: NONE','BUSINESS_POLICY_AUTHORITY: ACTIVE')}},/research index cannot become policy authority/);
 
 rejects('rejects missing Spec Kit constitution router',{del:['.specify/memory/constitution.md']},/required \.specify\/memory\/constitution.md/);
@@ -207,6 +207,11 @@ rejects('rejects name-only catalog import identity ambiguity',
 rejects('rejects loss of Owner-managed serviceability policy',{edit:{'governance/commerce.md':s=>s.replace('## Operator-managed commercial thresholds — explicit policy, not compiled law','## Removed business parameter controls')}},/owner-backed configurable-values section missing/);
 rejects('rejects loss of Owner-managed financial policy parameters',{edit:{'governance/finance.md':s=>s.replace('## Operator-managed financial values versus immutable accounting rules','## Removed financial parameter controls')}},/owner-backed configurable-values section missing/);
 
+rejects('rejects dropped historic H2 disposition row',{edit:{'docs/reference/DONOR-GOVERNANCE-SECTION-CENSUS.md':s=>s.replace(/^\| journeys 368 \|[^\n]*\n/m,'')}},/historical source H2 group disposition must uniquely cover 81 donor sections/);
+rejects('rejects wrong canonical owner in historic H2 disposition',{edit:{'docs/reference/DONOR-GOVERNANCE-SECTION-CENSUS.md':s=>s.replace('| commerce 143 | ORDER_LIFECYCLE | RETAIN | commerce.md:', '| commerce 143 | ORDER_LIFECYCLE | RETAIN | finance.md:')}},/historical source H2 group ownership coverage mismatch: commerce/);
+rejects('rejects dropping source-reconciled Order-contact capability ownership',{edit:{'governance/journeys.md':s=>s.replace('JOURNEY_ID: FIRST_THREE_ORDER_CONTACT\nCAPABILITIES: ORDER_LIFECYCLE','JOURNEY_ID: FIRST_THREE_ORDER_CONTACT\nCAPABILITIES: CUSTOMER_BALANCE_FUNDING')}},/approved new journey-to-capability mapping lost: FIRST_THREE_ORDER_CONTACT/);
+rejects('rejects changing Operations case into a second support ownership',{edit:{'governance/journeys.md':s=>s.replace('JOURNEY_ID: ORDER_SCOPED_OPERATIONS_EXCEPTION\nCAPABILITIES: ORDER_LIFECYCLE, ORDER_PAYMENT_COLLECTION','JOURNEY_ID: ORDER_SCOPED_OPERATIONS_EXCEPTION\nCAPABILITIES: ORDER_CONVERSATION')}},/approved new journey-to-capability mapping lost: ORDER_SCOPED_OPERATIONS_EXCEPTION/);
+rejects('rejects missing capability links on an existing journey',{edit:{'governance/journeys.md':s=>s.replace('JOURNEY_ID: FIRST_THREE_ORDER_CONTACT\nCAPABILITIES: ORDER_LIFECYCLE','JOURNEY_ID: FIRST_THREE_ORDER_CONTACT\n')}},/journey needs exactly one admitted capability map: FIRST_THREE_ORDER_CONTACT/);
 rejects('rejects dropping a material historic Journey ID',{edit:{'governance/journeys.md':s=>s.replace('JOURNEY_ID: FIRST_THREE_ORDER_CONTACT','JOURNEY_UNTRACKED: FIRST_THREE_ORDER_CONTACT')}},/journey heading\/id mismatch/);
 rejects('rejects duplicate Journey identifier',{edit:{'governance/journeys.md':s=>s.replace('JOURNEY_ID: BENEFICIARY_SETTLEMENT','JOURNEY_ID: BENEFICIARY_SETTLEMENT\nJOURNEY_ID: BENEFICIARY_SETTLEMENT')}},/journey heading\/id mismatch/);
 rejects('rejects missing Journey canonical readback',{edit:{'governance/journeys.md':s=>s.replace('READBACK: WLT Store-specific original receivable','OBSERVED: WLT Store-specific original receivable')}},/missing material journey evidence boundary/);

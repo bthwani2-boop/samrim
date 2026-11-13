@@ -510,3 +510,93 @@ SOURCE_SECTION_CENSUS_PASS owners=14 donor_headings=340 target_headings=138 lite
 **New concrete gap repaired in this pass:** The original Store onboarding distinct `relationModel`, `commercialStoreTypeId` and `primaryVerticalId` meanings were not all explicitly named in the current target Store/UX owner. They are now recorded independently in `governance/stores.md` and `governance/experience.md` with source-preservation tests; this was a real semantic correction, not a mass renaming.
 
 **Remaining semantic acceptance:** An owner/capability-level trace is *partial documentary evidence*, not full section-by-section concordance. Before calling `GOVERNANCE_CUTOVER: READY`, resolve the remaining historical nested-heading clauses and conflicting accepted-agreement details, with explicit rationale for anything intentionally retired. Do not convert `REVIEW_PENDING` into a numerical `PASS` by copying names. This prevents the source census from becoming a second policy authority.
+
+## 2026-11-14 — Source H2-group dispositions (human-approved target, documentary concordance)
+
+**Decision rule.** The exact source-heading census above remains historical evidence, not a second rule book. Each of the **81 donor level-2 sections** and its nested headings is grouped below with a source line, selected disposition and *one authoritative target owner*; this does not imply 81 new Product capabilities. RETAIN preserves valid meaning, REFOUND means retained meaning rebuilt around one new legal owner/engine, MERGE combines duplicates within an existing owner, REPLACE follows an explicit newer human target rule, HISTORICAL preserves binding existing records while retiring the source workflow. A group decision is not literal line-by-line proof of every nested paragraph; particularly material exception facts still require authoritative owner contract or protected real-record verification.
+
+| Donor owner and H2 line | Source H2 section | Decision | Canonical destination / critical resolution |
+| --- | --- | --- | --- |
+| product 8 | Purpose | RETAIN | product.md: one Product admission owner, not source implementation inventory |
+| product 14 | Current approved Product target | REFOUND | product.md: one Store, relation MARKETPLACE/DIRECT, no separate Direct checkout engine |
+| product 47 | Minimum complete and evolvable model | RETAIN | product.md: complete admissible meaning without speculative prebuilding |
+| product 57 | Admitted capabilities | RETAIN | product.md: exactly 26 stable ID assignments |
+| product 88 | Product-wide invariants | REFOUND | product.md: immutable Order snapshot, distinct relation/fee/collector/fulfillment, money owner |
+| product 119 | Explicit current non-goals | RETAIN | product.md: deliberate non-admissions with exception-only lawful historic liabilities |
+| product 127 | Capability admission law | RETAIN | product.md: latest human admission, owner/readback/failure gate |
+| platform 8 | Platform definition | RETAIN | platform.md: actors/resources/surfaces are separate |
+| platform 14 | Human Actor model | REFOUND | platform.md: canonical Customer/Merchant/Captain/Operator and bounded delivery recipient |
+| platform 53 | Surface model | REFOUND | platform.md: current Customer/Merchant/Captain/Operator hosts and original external app IDs |
+| platform 61 | Canonical terms | REPLACE | platform.md: Merchant vs Store; old partner role codes remain compatible but not new actor |
+| architecture 8 | Bounded owners | RETAIN | architecture.md: Identity DSH WLT authoritative writers and DSH bounded employee role |
+| architecture 53 | Architecture selection | RETAIN | architecture.md: smallest accurate solution, no mandatory layers |
+| architecture 57 | Mandatory single-owner and single-engine law | RETAIN | architecture.md: one Store, Catalog, Order, pricing, ledger engine each |
+| architecture 69 | Adapter boundary | RETAIN | architecture.md: provider transport is never owner truth |
+| architecture 77 | Surface boundary | RETAIN | architecture.md: UI is composition only |
+| architecture 83 | Canonical writer/readback law | RETAIN | architecture.md: owner mutation and committed readback |
+| architecture 98 | Canonical identity evolution law | RETAIN | architecture.md: historic IDs cannot silently change business meaning |
+| architecture 104 | Cross-boundary contracts | RETAIN | architecture.md: durable idempotent handoff, partial-outcome recovery |
+| architecture 122 | Trust-boundary validation | RETAIN | architecture.md: parse, validate, normalize, authorize at canonical owner |
+| architecture 139 | Data ownership | RETAIN | architecture.md: separate persisted truth and bounded references |
+| architecture 145 | Runtime/configuration | RETAIN | architecture.md: no shadow runtime and real readiness evidence |
+| architecture 156 | Responsibility-shaped implementation boundaries | RETAIN | architecture.md: cohesion without duplicate engine |
+| architecture 162 | Repository boundary | RETAIN | architecture.md: path placement remains REPOSITORY-STRUCTURE responsibility |
+| identity 8 | IDENTITY_ACTIVATION_SESSIONS | REFOUND | identity.md: one permanent Actor, verifiable role/session, original protected Root Owner, Passkey and finite permissions |
+| stores 8 | PARTNER_ONBOARDING_STORE_PUBLICATION | REFOUND | stores.md: directly verified Merchant, one Store-create command, minimum City/type/vertical, separate approval/publication |
+| stores 77 | STORE_RELATION_MODEL | REPLACE | stores.md: MARKETPLACE/DIRECT replaces old relation-code presentation without erasing historical meaning |
+| stores 139 | STORE_OPERATIONAL_AVAILABILITY | RETAIN | stores.md: publication distinct from actual opening, schedule, pause and per-mode eligibility |
+| stores 193 | STORE_SCOPED_ACCESS_DELEGATION | REFOUND | stores.md: one current Identity Actor with individually accepted DSH Store grants, never a fifth role |
+| catalog 8 | CENTRAL_CATALOG | RETAIN | catalog.md: single DSH Product/Variant/Offer registry; ServiceCity, vertical, Store type and category separate |
+| catalog 270 | CUSTOMER_STORE_CATALOG | RETAIN | catalog.md: same customer-safe eligible Offer read, distinct completed-Order popularity and favorites |
+| commerce 8 | SERVICEABILITY_ADDRESSES | RETAIN | commerce.md: owned addresses and same active city with donor 30-km inclusive initial policy, DSH validates |
+| commerce 76 | CART_CHECKOUT | RETAIN | commerce.md: current quote and immutable Store-scoped confirmation; financial allocation WLT |
+| commerce 116 | MULTI_STORE_CHECKOUT | RETAIN | commerce.md: parent composition but independent child Orders/payment/cancellations |
+| commerce 143 | ORDER_LIFECYCLE | RETAIN | commerce.md: one Store Order, attributable immutable adjustment, cancellation and recovery |
+| commerce 202 | ORDER_CONVERSATION | RETAIN | commerce.md: private per-recipient Order messages/media, no generic chat writer |
+| commerce 235 | COMMERCE_PROMOTIONS | RETAIN | commerce.md: DSH eligibility, WLT funding, no duplicated price engine |
+| commerce 292 | DISCOVERY_CONTENT | RETAIN | commerce.md: DSH approved versioned content targets and bounded media |
+| fulfillment 8 | STORE_CAPTAIN_MEMBERSHIP | RETAIN | fulfillment.md: consent-based one Store/Captain relation, no auto Captain role |
+| fulfillment 56 | CAPTAIN_DISPATCH | REFOUND | fulfillment.md: single winner, actual WLT COD eligibility, operator-controlled timeouts/offer limits |
+| fulfillment 105 | STORE_CAPTAIN_HANDOFF | RETAIN | fulfillment.md: two-sided exactly-once custody |
+| fulfillment 133 | FINAL_MILE_DELIVERY | RETAIN | fulfillment.md: authorized assigned Captain proof, privacy-safe tracking and financial reconciliation |
+| fulfillment 166 | CUSTOMER_PICKUP | RETAIN | fulfillment.md: Store readiness and one-time customer release, no fictitious Captain custody |
+| finance 10 | Financial Integrity Policy | REFOUND | finance.md: integer YER and WLT-only balance/ledger; original COD liabilities preserved |
+| finance 171 | STORE_COMMERCIAL_AGREEMENT | REFOUND | finance.md: either relation may have COMMISSION or SUBSCRIPTION; accepted effective terms |
+| finance 230 | ORDER_PAYMENT_COLLECTION | REFOUND | finance.md: COD/Wallet/Mixed, distinct source/collector/beneficiary, idempotent cash-only reserve |
+| finance 281 | CUSTOMER_BALANCE_FUNDING | RETAIN | finance.md: external funding rail proof, gross credit, net provider settlement and expense |
+| finance 307 | CAPTAIN_BALANCE_FUNDING | RETAIN | finance.md: one platform-Captain wallet, no phantom Store Captain account |
+| finance 336 | PARTNER_CAPTAIN_EARNINGS_SETTLEMENT | RETAIN | finance.md: correct recipient, one intake, no duplicate payout, actual statement reconciliation |
+| finance 394 | CUSTOMER_BALANCE_MANUAL_WITHDRAWAL | RETAIN | finance.md: bounded Operations intake, independently authorized Finance release and reconciliation, no self-service |
+| hr 8 | EMPLOYEE_HR | REFOUND | hr.md: one bounded DSH employee engine for company and Merchant staff with Identity-only access granting and no automatic payroll |
+| experience 8 | Experience and Interaction Policy | REFOUND | experience.md: one Expo/Tamagui client renderer, Operator Ant, Arabic RTL, privacy, minimal fields and real recovery |
+| experience 202 | Design and Visual Identity Policy | REFOUND | experience.md: one brand root, semantic themes, bounded Studio, WCAG and renderer-specific consumers |
+| safety 8 | Security Policy | RETAIN | safety.md: least privilege, default deny, session and resource isolation |
+| safety 22 | Data Policy | RETAIN | safety.md: protected identities, money, media, contracts, retention and owner-controlled backup |
+| safety 42 | Reliability Policy | RETAIN | safety.md: verified idempotent recovery, no fabricated ready/success |
+| engineering 8 | Change and Delivery Policy | REFOUND | engineering.md: latest stage-aware authorized work, source/consumer census and safe cutover |
+| engineering 72 | Quality Policy | RETAIN | engineering.md: negative and owner-backed tests, evidence classes separate |
+| engineering 87 | Performance, Capacity and Scalability | RETAIN | engineering.md: measured load first; conditional indexes, cache, search, queue and replica |
+| engineering 147 | Providers and Integrations Policy | RETAIN | engineering.md: local synthetic rails separate from officially accepted real providers |
+| engineering 170 | Knowledge Policy | RETAIN | engineering.md: durable canonical policy owner and dated external references |
+| journeys 8 | End-to-end scenario boundary | RETAIN | journeys.md: cross-owner proof lens, never new capability catalog |
+| journeys 28 | MANAGED_PARTICIPANT_ADMISSION | RETAIN | journeys.md: one canonical verified role and lawful session |
+| journeys 60 | PARTNER_TO_VISIBLE_STORE | REFOUND | journeys.md: direct Merchant, unpublished Store, then WLT agreement and DSH publication |
+| journeys 96 | STORE_ORDERABILITY | RETAIN | journeys.md: publication and actual orderability separate |
+| journeys 125 | CATALOG_TO_CUSTOMER_OFFER | RETAIN | journeys.md: current canonical StoreOffer and Store visibility |
+| journeys 156 | DISCOVERY_TO_COMMERCE_ENTRY | RETAIN | journeys.md: authorized promotion/content destination |
+| journeys 185 | SINGLE_STORE_ORDER_CREATION | RETAIN | journeys.md: one DSH Order and WLT allocation |
+| journeys 220 | BTHWANI_CAPTAIN_DELIVERY | RETAIN | journeys.md: assignment, WLT COD, custody and completion |
+| journeys 256 | PARTNER_CAPTAIN_DELIVERY | RETAIN | journeys.md: separately accepted affiliation and fulfillment, same DSH engine |
+| journeys 285 | CUSTOMER_PICKUP | RETAIN | journeys.md: distinct customer release proof |
+| journeys 314 | MULTI_STORE_ORCHESTRATION | RETAIN | journeys.md: independent child Orders and financial effects |
+| journeys 345 | ORDER_COMMUNICATION | RETAIN | journeys.md: per-recipient private media/read scopes |
+| journeys 368 | FIRST_THREE_ORDER_CONTACT | REFOUND | journeys.md: 2026-11-14 new mapping to ORDER_LIFECYCLE, unlike unmapped donor |
+| journeys 386 | ORDER_SCOPED_OPERATIONS_EXCEPTION | REFOUND | journeys.md: 2026-11-14 new mapping to ORDER_LIFECYCLE and ORDER_PAYMENT_COLLECTION |
+| journeys 405 | ORDER_ADJUSTMENT_EXCEPTION_REFUND | RETAIN | journeys.md: adjustment/resolution through DSH and WLT |
+| journeys 442 | PARTNER_COMMISSION_REMITTANCE | RETAIN | journeys.md: Store-collected commission receivable closure belongs to WLT |
+| journeys 461 | BENEFICIARY_SETTLEMENT | RETAIN | journeys.md: beneficiary verification and reconciled transfer |
+| journeys 495 | Supporting subflows and cross-cutting lanes | MERGE | journeys.md: bounded concurrent subflows under existing Order/Finance ownership |
+| journeys 533 | Scenario routing without duplicate census | RETAIN | journeys.md: no 27th Product capability |
+| journeys 537 | End-to-end integration proof boundary | RETAIN | journeys.md: implemented E2E proof separately required |
+
+**Compatibility and history:** The old source file, all deeper heading rows with exact donor blob/line references and legally binding state remain untouched. Old field-acquisition, alternate Direct engines and redundant presentation/writers are not revived; they are explicitly excluded by current `product.md` and `architecture.md`. This group crosswalk supports current source-to-target inspection; it does not assert that original subscriptions, official payment terms, applied SQL versions, Root Owner records or 340 separate paragraph-level runtime invariants have been proven.

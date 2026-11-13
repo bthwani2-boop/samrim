@@ -11,7 +11,7 @@ These **16** named business journeys are the canonical *cross-surface proof lens
 
 A Journey crosses materially participating surfaces and ends with actual owner-backed readback on each. Every mutable operational quantity below (contact count, claim expiry, stage attention, dispatch timeout, commercial price, promotion limit) is an initial donor policy candidate/default, **editable through the single Operator Policies workspace via its canonical owner** once implemented and authorized. A configurable value never disables permissions, safety, immutable transaction history or ledger conservation. Historic durations are not contractual SLA promises.
 
-The `CAPABILITIES:` references below reproduce the **14 explicit Journey-to-capability mappings in branch `41`** for traceability only; the 26-item admission census remains exclusively in `governance/product.md`. The donor does not declare a `CAPABILITIES:` field for `FIRST_THREE_ORDER_CONTACT` or `ORDER_SCOPED_OPERATIONS_EXCEPTION`, so no mapping is invented for those two pending Product-owner reconciliation. These links are not implementation evidence or independent policy approvals.
+The `CAPABILITIES:` references for **14 journeys** reproduce the explicit mappings from branch `41` for traceability. The donor did **not** declare `CAPABILITIES:` for `FIRST_THREE_ORDER_CONTACT` or `ORDER_SCOPED_OPERATIONS_EXCEPTION`. By the **2026-11-14 human authorization to close the remaining Product decisions**, their current-architecture mappings are now decided explicitly: the contact subflow belongs to the existing DSH `ORDER_LIFECYCLE`; an Order-scoped Operations case belongs to the same DSH Order capability and references WLT `ORDER_PAYMENT_COLLECTION` only for lawful financial effects. These two decisions are *new target reconciliation*, not falsely attributed donor fields, and do not admit a seventeenth journey, a twenty-seventh Product capability, a new support/CRM platform or a second financial writer. The **single** 26-item admission census remains exclusively in `governance/product.md`; these links do not claim implementation readiness.
 
 ## MANAGED_PARTICIPANT_ADMISSION — Actor role and standing
 
@@ -164,6 +164,7 @@ A prospective Captain, revoked Merchant employee or unrelated Store cannot read 
 ## FIRST_THREE_ORDER_CONTACT — Bounded new-Customer confirmation
 
 JOURNEY_ID: FIRST_THREE_ORDER_CONTACT
+CAPABILITIES: ORDER_LIFECYCLE
 SURFACES: OPERATOR, CUSTOMER
 OWNERS: DSH (Identity authorization)
 ENTRY: Authorized Operations employee opens a current Order needing actual customer-contact verification.
@@ -179,6 +180,7 @@ The initial contact mode **does not block Merchant preparation or require Custom
 ## ORDER_SCOPED_OPERATIONS_EXCEPTION — Evidence-based exception resolution
 
 JOURNEY_ID: ORDER_SCOPED_OPERATIONS_EXCEPTION
+CAPABILITIES: ORDER_LIFECYCLE, ORDER_PAYMENT_COLLECTION
 SURFACES: OPERATOR (material participants read only their lawful Order facts)
 OWNERS: DSH; WLT for financial evidence
 ENTRY: Actual Order-bound signal or authorized human Operations attention.
