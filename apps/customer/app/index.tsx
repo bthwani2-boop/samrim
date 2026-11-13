@@ -14,7 +14,7 @@ export default function FoundationHome() {
     <Stage4Preview
       title="بثواني — العميل"
       healthLink={<Link href="/health" style={{ color: theme.interactiveText, fontSize: 18 }}>فتح صفحة اختبار الملاحة</Link>}
-      labLink={<Link href="/lab">فتح مختبر مكونات Tamagui</Link>}
+      labLink={<><Link href="/lab">فتح مختبر مكونات Tamagui</Link>{"  |  "}<Link href={{ pathname: "/lab", params: { renderer: "universal" } }}>مقارنة Expo UI Universal</Link></>}
     />
   );
 }
