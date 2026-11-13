@@ -102,7 +102,7 @@ for (const forbidden of ['contracts','infra','nx.json','go.work',
   'tools/mobile/create-bthwani-metro-config.cjs']) {
   if (existsSync(path.join(projectRoot, forbidden))) fail('Duplicated/deferred legacy source: ' + forbidden);
 }
-for (const entry of ['node_modules/','.env','secrets.local.']) {
+for (const entry of ['node_modules/','.env','secrets.local.','apps/control-panel/next-env.d.ts']) {
   if (!read('.gitignore').includes(entry)) fail('Local dependencies or secret ignores missing: ' + entry);
 }
 

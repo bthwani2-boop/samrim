@@ -3,6 +3,8 @@ node_modules/
 .pnpm-store/
 .next/
 .next-dev/
+# Next.js regenerates this file differently under dev and build/typegen.
+apps/control-panel/next-env.d.ts
 .expo/
 dist/
 build/
