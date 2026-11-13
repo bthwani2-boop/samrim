@@ -7,6 +7,8 @@ EXECUTION: NOT_STARTED
 WLT is the sole owner and writer of money: wallets, immutable ledger entries, fees, financial agreements, cash custody, payouts and settlements. DSH Order facts and Identity actor facts remain with their own owners. Never duplicate the ledger or infer payment success from an HTTP response.
 
 Future owner-local paths (create actual content only when separately authorized):
+- `clients/` — private TypeScript workspace package with a nonfunctional `index.ts` entrypoint; future TypeScript/Go clients come only from validated contracts and real consumer needs.
+- `package.json` and `tsconfig.json` — exact-pinned TypeScript client tooling using the existing pnpm workspace; no runtime dependencies or implemented exports yet.
 - `backend/` — Go service source and owner-specific tests.
 - `contracts/openapi/` — one authoritative WLT OpenAPI entrypoint with domain-grouped `paths/`.
 - `database/` — reviewed fresh-bootstrap schema and a protected `migrations/` upgrade path.

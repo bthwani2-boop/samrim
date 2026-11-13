@@ -1,0 +1,19 @@
+{
+  "name": "@bthwani/identity",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "types": "./clients/index.ts",
+  "exports": {
+    ".": {
+      "types": "./clients/index.ts",
+      "default": "./clients/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}

@@ -30,7 +30,7 @@ Native identifiers, owner, EAS project IDs, app slugs, schemes and package permi
 
 ## Services placement only
 
-`services/identity/`, `services/dsh/` and `services/wlt/` now have Git-tracked owner READMEs for the separately authorized **directory-only** foundation slice. Their future Go/OpenAPI/SQL locations are described but are not implemented. The Foundation Guard explicitly rejects prematurely adding those source files, a fourth HR service or an unrelated engine; the employee-administration capability will live inside DSH under approved organization-scoped access. See [repository placement](REPOSITORY-STRUCTURE.md). Empty nested directories may exist locally but are not portable Git content.
+`services/identity/`, `services/dsh/` and `services/wlt/` have Git-tracked owner READMEs and **private, pinned TypeScript client-package scaffolds**: `package.json`, `tsconfig.json`, `clients/README.md` and intentionally empty `clients/index.ts`. Run each package's `typecheck` once its pinned dependencies are available, or use the already-installed root TypeScript binary. There are no real API operations, Go clients, service Go modules or SQL; generated clients and additional dependencies require actual reviewed contracts. `node_modules/` is installed by pnpm only, never copied from the donor. Nx `project.json` is intentionally deferred. The Foundation Guard rejects prematurely adding Go/SQL/OpenAPI, a fourth HR service or unauthorized client behavior; the employee capability belongs inside DSH. See [repository placement](REPOSITORY-STRUCTURE.md). Untracked empty directories are not portable Git content.
 
 ## Boundaries
 

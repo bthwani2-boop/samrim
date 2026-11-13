@@ -19,7 +19,9 @@ const required=[
  'tools/governance/review-examples.test.mjs',
  '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
  'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','tsconfig.base.json','biome.json',
- 'README.md','services/identity/README.md','services/dsh/README.md','services/wlt/README.md','docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md','docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json','tools/dev/verify-workspace.mjs','tools/mobile/verify-app-foundations.mjs'
+ 'README.md','services/identity/README.md','services/dsh/README.md','services/wlt/README.md',
+ ...['identity','dsh','wlt'].flatMap(owner=>['package.json','tsconfig.json','clients/README.md','clients/index.ts'].map(file=>'services/'+owner+'/'+file)),
+ 'docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md','docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json','tools/dev/verify-workspace.mjs','tools/mobile/verify-app-foundations.mjs'
 ];
 const fail=(reason)=>{ throw Error('FOUNDATION_GATE_FAIL: '+reason); };
 const exists=(p)=>fs.existsSync(path.join(root,...p.split('/')));
@@ -81,24 +83,56 @@ for(const folder of ['contracts','infra','nx.json','go.work']){
  if(exists(folder))fail('stage 5+ service/DB/infra introduced prematurely: '+folder);
 }
 
-// This bounded service placement slice permits owner READMEs and empty future directories.
-// No Go module, executable OpenAPI, SQL, Docker source or fourth service is authorized.
+// The service tooling slice permits exact owner manifests, TypeScript configs and empty
+// client entrypoints only. It does not admit business behavior, Go, OpenAPI or SQL.
 const serviceOwners=['identity','dsh','wlt'];
 const allowedServiceDirs=new Set();
 const allowedServiceFiles=new Set();
 for(const owner of serviceOwners){
  const prefix='services/'+owner;
- for(const suffix of ['', '/backend','/contracts','/contracts/openapi',
-   '/contracts/openapi/paths','/database','/database/migrations']){
+ for(const suffix of ['', '/backend','/clients','/clients/go','/clients/generated',
+   '/contracts','/contracts/openapi','/contracts/openapi/paths',
+   '/database','/database/migrations']){
   allowedServiceDirs.add(prefix+suffix);
  }
+ for(const suffix of ['/README.md','/package.json','/tsconfig.json',
+   '/clients/README.md','/clients/index.ts'])allowedServiceFiles.add(prefix+suffix);
  const readme=prefix+'/README.md';
- allowedServiceFiles.add(readme);
  const doc=contents[readme];
  if(!doc.includes('OWNER: '+(owner==='identity'?'Identity':owner.toUpperCase())) ||
     !/^STATUS: SCAFFOLD_ONLY$/m.test(doc) || !/^EXECUTION: NOT_STARTED$/m.test(doc) ||
     !['backend/','contracts/openapi/','database/'].every(s=>doc.includes(s))){
   fail('invalid service placement README: '+readme);
+ }
+ const pkgPath=prefix+'/package.json';
+ const packageConfig=JSON.parse(contents[pkgPath]);
+ if(packageConfig.name!=='@bthwani/'+owner ||
+   packageConfig.version!=='0.0.0' || packageConfig.private!==true ||
+   packageConfig.type!=='module' || packageConfig.types!=='./clients/index.ts' ||
+   JSON.stringify(packageConfig.exports)!==JSON.stringify({'.':{types:'./clients/index.ts',default:'./clients/index.ts'}}) ||
+   JSON.stringify(packageConfig.scripts)!==JSON.stringify({typecheck:'tsc --noEmit -p tsconfig.json'}) ||
+   JSON.stringify(packageConfig.devDependencies)!==JSON.stringify({typescript:'7.0.2'}) ||
+   ['dependencies','peerDependencies','optionalDependencies','bin','main'].some(key=>key in packageConfig)){
+  fail('service package drift or premature runtime dependency: '+pkgPath);
+ }
+ const configPath=prefix+'/tsconfig.json';
+ const ts=JSON.parse(contents[configPath]);
+ if(ts.extends!=='../../tsconfig.base.json' ||
+   JSON.stringify(ts.compilerOptions)!==JSON.stringify({noEmit:true}) ||
+   JSON.stringify(ts.include)!==JSON.stringify(['clients/**/*.ts','clients/**/*.tsx']) ||
+   JSON.stringify(ts.exclude)!==JSON.stringify(['node_modules'])){
+  fail('service TypeScript configuration drift: '+configPath);
+ }
+ const markerPath=prefix+'/clients/index.ts';
+ if(contents[markerPath]!=='// Empty contract-bound entrypoint. Add exports only with an approved client implementation.\nexport {};\n'){
+  fail('premature client behavior or export: '+markerPath);
+ }
+ const clientDoc=contents[prefix+'/clients/README.md'];
+ if(!/^STATUS: SCAFFOLD_ONLY$/m.test(clientDoc) || !clientDoc.includes('no usable operations')){
+  fail('client library falsely claims implementation: '+prefix+'/clients/README.md');
+ }
+ if(!new RegExp('^  services/'+owner+':\\n    devDependencies:\\n      typescript:\\n        specifier: 7\\.0\\.2\\n        version: 7\\.0\\.2$', 'm').test(lock)){
+  fail('service missing exact frozen-lockfile importer: '+owner);
  }
 }
 const servicesPath=path.join(root,'services');
@@ -110,6 +144,11 @@ function inspectServiceFolders(dir){
   const relative=path.relative(root,absolute).split(path.sep).join('/');
   const stat=fs.lstatSync(absolute);
   if(stat.isSymbolicLink())fail('unsafe service symlink: '+relative);
+  // pnpm-managed local dependency links are generated, ignored and never business source.
+  if(serviceOwners.some(owner=>relative==='services/'+owner+'/node_modules')){
+   if(!stat.isDirectory())fail('unsafe service dependency directory: '+relative);
+   continue;
+  }
   if(stat.isDirectory()){
    if(!allowedServiceDirs.has(relative))fail('unadmitted service directory: '+relative);
    inspectServiceFolders(absolute);

@@ -17,7 +17,9 @@ const files=[...new Set([
  'tools/governance/review-examples.test.mjs',
  '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
  'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','tsconfig.base.json','biome.json',
- 'README.md','services/identity/README.md','services/dsh/README.md','services/wlt/README.md','docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md','docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json','tools/dev/verify-workspace.mjs','tools/mobile/verify-app-foundations.mjs',
+ 'README.md','services/identity/README.md','services/dsh/README.md','services/wlt/README.md',
+ ...['identity','dsh','wlt'].flatMap(owner=>['package.json','tsconfig.json','clients/README.md','clients/index.ts'].map(file=>'services/'+owner+'/'+file)),
+ 'docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md','docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json','tools/dev/verify-workspace.mjs','tools/mobile/verify-app-foundations.mjs',
  '.specify/init-options.json','.specify/integration.json','.specify/integrations/speckit.manifest.json',
  '.specify/memory/constitution.md',...Object.keys(assetManifest.files)
 ])];
@@ -63,13 +65,22 @@ test('accepts only known empty planned service subdirectories',()=>{
  const r=run({dirs:[
   'services/identity/backend','services/identity/contracts/openapi/paths','services/identity/database/migrations',
   'services/dsh/backend','services/dsh/contracts/openapi/paths','services/dsh/database/migrations',
-  'services/wlt/backend','services/wlt/contracts/openapi/paths','services/wlt/database/migrations'
+  'services/wlt/backend','services/wlt/contracts/openapi/paths','services/wlt/database/migrations',
+  'services/identity/clients/go','services/dsh/clients/generated','services/wlt/clients/go'
  ]});
  assert.equal(r.code,0,r.text);
  assert.match(r.text,/service_scaffold_only=true/);
 });
 rejects('rejects missing DSH owner README',{del:['services/dsh/README.md']},/required services\/dsh\/README.md/);
 rejects('rejects a fourth HR service',{add:{'services/hr/README.md':'not permitted'}},/unadmitted service directory: services\/hr/);
+rejects('rejects missing Identity package manifest',{del:['services/identity/package.json']},/required services\/identity\/package.json/);
+rejects('rejects wrong DSH package name',{edit:{'services/dsh/package.json':s=>s.replace('@bthwani/dsh','@bthwani/direct-dsh')}},/service package drift or premature runtime dependency/);
+rejects('rejects premature runtime dependencies',{edit:{'services/wlt/package.json':s=>s.replace('"devDependencies":', '"dependencies": {"some-financial-package":"1.0.0"}, "devDependencies":')}},/service package drift or premature runtime dependency/);
+rejects('rejects unapproved client export',{edit:{'services/identity/clients/index.ts':s=>s+'export const simulatedLogin = true;\n'}},/premature client behavior or export/);
+rejects('rejects wrong TypeScript base',{edit:{'services/dsh/tsconfig.json':s=>s.replace('../../tsconfig.base.json','../old-tsconfig.json')}},/service TypeScript configuration drift/);
+rejects('rejects missing client documentation',{del:['services/wlt/clients/README.md']},/required services\/wlt\/clients\/README.md/);
+rejects('rejects missing service workspace lock importer',{edit:{'pnpm-lock.yaml':s=>s.replace('  services/identity:', '  services/other:')}},/service missing exact frozen-lockfile importer/);
+rejects('rejects old Nx project configuration',{add:{'services/identity/project.json':'{}'}},/premature service source: services\/identity\/project.json/);
 rejects('rejects early Go backend source',{add:{'services/identity/backend/main.go':'package main'}},/premature service source: services\/identity\/backend\/main.go/);
 rejects('rejects early Go module',{add:{'services/identity/backend/go.mod':'module sample'}},/premature service source: services\/identity\/backend\/go.mod/);
 rejects('rejects early DSH OpenAPI contract',{add:{'services/dsh/contracts/openapi/dsh.openapi.yaml':'openapi: 3.1.0'}},/premature service source: services\/dsh\/contracts\/openapi\/dsh.openapi.yaml/);

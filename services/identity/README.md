@@ -7,6 +7,8 @@ EXECUTION: NOT_STARTED
 Identity is the canonical owner of actors, authentication, sessions, recovery and platform-wide permissions. Store-scoped grants are evaluated by DSH; money is owned by WLT. Do not create a second employee or Merchant identity registry.
 
 Future owner-local paths (create actual content only when separately authorized):
+- `clients/` — private TypeScript workspace package with a nonfunctional `index.ts` entrypoint; future TypeScript/Go clients come only from validated contracts and real consumer needs.
+- `package.json` and `tsconfig.json` — exact-pinned TypeScript client tooling using the existing pnpm workspace; no runtime dependencies or implemented exports yet.
 - `backend/` — Go service source and owner-specific tests.
 - `contracts/openapi/` — one authoritative Identity OpenAPI entrypoint with domain-grouped `paths/`.
 - `database/` — reviewed fresh-bootstrap schema and a protected `migrations/` upgrade path.

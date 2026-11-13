@@ -76,6 +76,26 @@ for (const owner of ['identity','dsh','wlt']) {
   if (!doc.includes('STATUS: SCAFFOLD_ONLY') || !doc.includes('EXECUTION: NOT_STARTED')) {
     fail('Service placement is not explicitly non-executable: ' + owner);
   }
+  const dir = path.join(projectRoot, 'services', owner);
+  const service = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'));
+  if (service.name !== '@bthwani/' + owner || service.private !== true ||
+      service.type !== 'module' || service.types !== './clients/index.ts' ||
+      service.scripts?.typecheck !== 'tsc --noEmit -p tsconfig.json' ||
+      service.devDependencies?.typescript !== tsPin) {
+    fail('Service client workspace is not ready: ' + owner);
+  }
+  const config = JSON.parse(readFileSync(path.join(dir, 'tsconfig.json'), 'utf8'));
+  if (config.extends !== '../../tsconfig.base.json' ||
+      !config.include?.includes('clients/**/*.ts') ||
+      !config.include?.includes('clients/**/*.tsx') ||
+      config.compilerOptions?.noEmit !== true) {
+    fail('Service TypeScript configuration is not ready: ' + owner);
+  }
+  if (!existsSync(path.join(dir, 'clients', 'index.ts')) ||
+      !existsSync(path.join(dir, 'clients', 'README.md')) ||
+      !lock.includes('  services/' + owner + ':')) {
+    fail('Missing client entrypoint, documentation or frozen lock importer: ' + owner);
+  }
 }
 for (const forbidden of ['contracts','infra','nx.json','go.work',
   'apps/app-client','apps/app-partner','apps/app-captain',

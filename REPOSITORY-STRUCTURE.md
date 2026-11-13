@@ -20,7 +20,7 @@ SEMANTIC_SCOPE: file placement and migration rules; not Product, agent authoriza
 | `.node-version`, `.nvmrc`, `.go-version` | original branch-41 toolchain version pins, never upgraded without separate authorization |
 | `tsconfig.base.json`, `biome.json`, `.editorconfig`, `.gitattributes`, `.gitignore` | shared foundational TypeScript, lint, UTF-8/LF and secret-exclusion rules; without copied legacy migrations |
 | `README.md` | stage-bounded local onboarding, not an additional policy authority |
-| `services/<owner>/` | three canonical owners only: `identity`, `dsh`, `wlt`; README-only placement now, implementation/contracts/SQL/tests later when admitted |
+| `services/<owner>/` | only `identity`, `dsh`, `wlt`; minimal private TypeScript client-package tooling now, Go implementations/contracts/SQL later when admitted |
 | `apps/<surface>/` | actual presentation hosts for Customer, Merchant, Captain, Operator |
 | `packages/design-system/` | single authored brand and semantic color source plus generated browser semantic CSS; no React Native runtime or component primitives |
 | `packages/tamagui-config/` | Expo renderer consuming the design theme source; also owns the minimal React Native appearance preference runtime, not a second palette |
@@ -29,8 +29,10 @@ SEMANTIC_SCOPE: file placement and migration rules; not Product, agent authoriza
 | `packages/<purpose>/` | any further justified multi-consumer domain-neutral packages only |
 | `tests/` | integration proof spanning genuine owners; not duplicate unit tests |
 
-## Service placement slice (README-only, not Stage-5 implementation)
-The only permitted service directories are `services/identity/`, `services/dsh/` and `services/wlt/`. Each holds one substantive `README.md` identifying the owner and future boundaries. Git tracks these READMEs, not empty folders. Optional empty `backend/`, `contracts/openapi/paths/` and `database/migrations/` are organizational hints only; do not create artificial `.gitkeep`, YAML, SQL, Go, module manifests, generated clients, Docker or a fourth service.
+## Service placement and client tooling slice (not domain implementation)
+Only `services/identity/`, `services/dsh/` and `services/wlt/` are approved. Each has one owner README, a **private pinned pnpm package** (`package.json`) named `@bthwani/<owner>`, a `tsconfig.json` extending the root strict settings, and `clients/README.md` plus an intentionally empty `clients/index.ts` export marker. One root frozen `pnpm-lock.yaml` tracks all three importers. TypeScript typechecking verifies the scaffold; it does not prove usable API clients. Do not copy the donor runtime dependencies, export actual operations, add Nx `project.json` or a service-local cache/config engine before needed. Local `node_modules/` are pnpm-generated and ignored, never copied or versioned. Optional empty `clients/generated/`, `clients/go/`, `backend/`, `contracts/openapi/paths/` and `database/migrations/` remain untracked until real admitted content exists.
+
+A future client implementation is sourced from the service owner's contract, not another maintained DTO catalog. Add only evidenced exports, service-specific dependencies, and generators once source/consumers have been reviewed; generated artifacts are derived. Keep Go modules, executable contracts, migrations, Docker and domain logic deferred.
 
 Upon later authorization, each owner's `backend/` will hold the Go implementation; `contracts/openapi/` one API entrypoint with domain-grouped paths; and `database/` reviewed fresh installation plus protected upgrade migrations. Preserve applied migration history; examine actual embed/load paths before adopting a physical SQL layout. The bounded company/Merchant employee-administration engine belongs within DSH, **not** as a fourth deployable HR service or a separate Merchant employee engine; Identity and WLT retain their exclusive identity/money truths. See [architecture](governance/architecture.md) and [employee governance](governance/hr.md).
 
@@ -38,7 +40,7 @@ Upon later authorization, each owner's `backend/` will hold the Go implementatio
 - The former `docs/governance/` directory is **absent from this candidate by explicit user decision**. Its content remains inspectable in original branch `41` and archived inputs; do not restore it to this worktree.
 - `governance/` is the only **target** policy path. Its README advertises NOT_READY until all applicable decisions and 26 capability IDs are reconciled, rather than an unsafe partial authority switch.
 - The foundation guard rejects reintroduction of `docs/governance/`. Translate surviving references directly to the owning new files as each decision is adopted. Keep historical provenance external to the candidate, not another active governance directory.
-- Stage 4 introduced empty presentation shells, uniquely justified design packages and native-config tooling. The separately authorized service placement slice adds README-only service folders; neither slice introduces domain logic, Go modules, service APIs, SQL or Docker.
+- Stage 4 introduced presentation shells and design packages. Later authorized service scaffolding adds private pinned client package manifests and empty typed entrypoints. Neither creates service behavior, live API clients, Go modules, SQL or Docker.
 
 ## Placement and simplification law
 1. Put authored logic with the owner of **its changing responsibility**, not a historical screen, team, refoundation batch name or convenience folder.
