@@ -38,6 +38,18 @@ New actor provisioning must not create duplicate identities when a verified phon
 
 The admitted bounded Operator permission scopes are **`operations`, `partners`, `catalog`, `marketing`, `finance`, `hr`, `platform_policies`**. The initial bootstrapped Operator is the access administrator and receives registered scopes; subsequent Operators receive none automatically. Only that original, one-time bootstrapped Operator may grant or revoke one of the finite registered scopes to another currently enabled Operator, with reason, expected version, audit and invalidation of the target Operator's affected sessions. The grant of `finance` or `platform_policies` is not itself delegation of that administrative power. The `operator` role alone never confers blanket access. `operations` does not grant financial execution, `hr` does not grant Operator admission, and `finance` does not allow beneficiary redirection without an independent authorized Store owner decision.
 
+**Bounded meanings of the seven Operator scopes (retained from branch 41):**
+
+- `operations`: authorized operational Order handling and Captain administration; it does not grant WLT financial execution.
+- `partners`: Merchant admission, status and directory administration; it does not itself grant ownership of a DSH Store or a Store-scoped resource.
+- `catalog`: shared Product identities, category and attribute policy, catalog proposals and imports; actual catalog mutations remain subject to DSH ownership and resource authorization.
+- `marketing`: promotion and discovery-content administration; it does not grant Identity or financial powers.
+- `hr`: bounded employee administration and HR audit readback; it does not grant Operator admission or permission administration.
+- `finance`: Finance workspace access, subject to independent WLT authorization for actual financial operations; it cannot redirect a beneficiary or administer Operator permissions.
+- `platform_policies`: owner-backed policy mutation with the appropriate additional scope and owner verification; it cannot change immutable financial, security or legal invariants.
+
+Leadership remains a read-oriented center without a separate write scope; its sensitive reads still require the actual domain owner's permissions. Access and Permissions administration remains exclusive to the original, one-time bootstrapped Operator and is not delegated by `finance`, `platform_policies` or any other workspace scope. These are permission meanings, not evidence of implemented endpoints, reviewed security, or a new role or permission engine.
+
 A single Human Actor may have multiple roles, but role credentials/sessions and suspension follow the actual admitted Identity lifecycle. Disable for one role must not automatically destroy unrelated roles unless an Identity-wide security action is justified. Refresh tokens rotate atomically; a confirmed refresh replay compromises/revokes that session family, not an unlimited impersonation fallback. Verification challenges are single-purpose, attempt/expiry/replay bounded, and public authentication should not enumerate eligibility or identity records.
 
 An Order recipient may be **different from the purchasing Customer**. Recipient contact is an Order delivery snapshot and never becomes a new Identity account, purchasing/payment principal or authority to access the customer's wallet/history.
