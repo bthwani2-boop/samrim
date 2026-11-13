@@ -157,6 +157,15 @@ rejects('rejects missing capability',{edit:{'governance/finance.md':s=>s.replace
 rejects('rejects duplicated capability',{edit:{'governance/commerce.md':s=>s+'\n## STORE_RELATION_MODEL\nCAPABILITY_ID: STORE_RELATION_MODEL\nA duplicated Store model authority must not be added to Commerce.\n'}},/duplicate capability owner/);
 rejects('rejects capability wrong owner in Product census',{edit:{'governance/product.md':s=>s.replace('| `finance.md` |','| `commerce.md` |')}},/wrong capability owner/);
 rejects('rejects extra unadmitted capability',{edit:{'governance/hr.md':s=>s+'\n## UNSANCTIONED_ENGINE\nCAPABILITY_ID: UNSANCTIONED_ENGINE\nA new engine not in Product census must be rejected.\n'}},/not present in Product/);
+rejects('rejects losing scheduled-Order exclusion',
+ {edit:{'governance/product.md':s=>s.replace('scheduled Customer Orders','unrestricted future booking')}},
+ /donor Product non-goal boundary missing: scheduled Customer Orders/);
+rejects('rejects losing regulated-pharmacy exclusion',
+ {edit:{'governance/product.md':s=>s.replace('Prescription-required and specially regulated pharmacy fulfillment remains excluded','regulated pharmacy default fulfillment enabled')}},
+ /donor Product non-goal boundary missing: Prescription-required and specially regulated pharmacy fulfillment remains excluded/);
+rejects('rejects losing paid Customer membership exclusion',
+ {edit:{'governance/product.md':s=>s.replace('paid Customer membership','unapproved customer subscription')}},
+ /donor Product non-goal boundary missing: paid Customer membership/);
 rejects('rejects deleted owner-backed policy law',{edit:{'AGENTS.md':s=>s.replace(/- \*\*Policy-first for legitimate business choices:\*\*[^\n]+\n/,'')}},/owner-backed configurable business rules/);
 rejects('rejects finance policy fee dimensional collapse',{edit:{'governance/finance.md':s=>s.replaceAll('STORE_MANAGED','NOT_SUPPORTED')}},/distinguish collection responsibility/);
 rejects('rejects UTF-8 BOM',{edit:{'governance/hr.md':s=>'\uFEFF'+s}},/empty or BOM/);

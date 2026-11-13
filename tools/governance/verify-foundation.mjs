@@ -340,6 +340,17 @@ for(const [filename,content] of domainFiles.map(p=>[p,contents[p]])){
 // This is a cross-check against the ONE Product admission table, not another capability catalog.
 // The Product table is source; domain owner sections must account for it exactly once.
 const product=contents['governance/product.md'];
+// Preserve source-approved Product exclusions without treating a lexical guard
+// as business/legal approval or as evidence that any runtime capability ships.
+for(const anchor of [
+ 'scheduled Customer Orders',
+ 'generic point-to-point courier requests',
+ 'paid Customer membership',
+ 'generic returns/exchanges',
+ 'Prescription-required and specially regulated pharmacy fulfillment remains excluded',
+]){
+ if(!product.includes(anchor))fail('donor Product non-goal boundary missing: '+anchor);
+}
 const expected=new Map();
 for(const line of product.split(/\r?\n/)){
  const row=line.match(/^\|\s*`([a-z]+\.md)`\s*\|\s*(.*?)\s*\|\s*$/);
