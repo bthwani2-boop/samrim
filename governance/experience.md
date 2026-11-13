@@ -16,6 +16,14 @@ The Operator Control Panel currently uses Next.js with Ant Design and its approv
 - Minimize taps and mandatory fields for first Store registration, catalogue entry, checkout, Captain assignment and support recovery. Progressive disclosure is preferable to forcing Operators/Merchants through every possible financial option at once.
 - Correctly scope mobile safe areas, keyboard behavior, gestures and deep links across Web/Android; iOS behavior needs actual iOS proof before a PASS.
 
+## Source-retained interaction, state and image-review boundaries
+
+A routine action is correct only when the surface exposes its applicable **loading, empty, no-results, forbidden, conflict, offline, error, unknown-outcome, busy, disabled, selected, validation and recovery** states. These are distinct when the owner can produce them; a convenient happy-path render cannot substitute for their treatment. A material mutation keeps the current input/context where safe, prevents duplicate submission, explains the next permitted action and reports **success only after canonical owner-backed readback**. UI text must not leak transport tokens, raw internal identifiers, backend enum names or concurrency versions as user-facing instructions.
+
+When an authorized task requires inspecting an image or document represented by a small thumbnail/logo, provide a **full-image review on demand** with contain-fit, accessible keyboard/pointer dismissal, returned focus, load/error recovery and the same actual per-actor/per-Store media permission checks. Reusing one viewer must never make case-only evidence, private Order attachments or otherwise restricted media public. This is an interaction requirement, **not** authorization to create another media store or publication writer.
+
+Merchant and Captain mobile presentation currently retain the **Arabic-only RTL baseline** and the Operator workspace remains Arabic/RTL-first, unless a later explicit Product decision admits language switching. Right-aligned text alone does not satisfy this: verify reading/tab order, direction-sensitive back/forward icons and transitions, list/carousel scrolling, gestures, forms/keyboard, focus and mixed-direction telephone numbers, YER amounts, quantities and codes. Do not add an independent language/RTL state manager to each screen.
+
 ## Operator Policies experience
 The single Operator Policies workspace is a coherent management surface for DSH and WLT **owner-backed** settings. For each editable policy show in understandable Arabic:
 1. Exact scope (global, Store relation, service city, Store exception when authorized), current effective value and source.
