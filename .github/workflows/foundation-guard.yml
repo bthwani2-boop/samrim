@@ -123,9 +123,10 @@ jobs:
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      - name: Confirm scoped owner, foundation and tracked-secret guards
+      - name: Confirm foundation and tracked-secret guards after presentation admission
+        # The TypeScript-backed app source guard and negative tests run in
+        # presentation after its frozen pnpm install. GitHub jobs are isolated.
         run: |
-          node tools/mobile/verify-application-boundaries.mjs
           node tools/governance/verify-foundation.mjs
           node --test tools/security/verify-secrets.test.mjs
           node tools/security/verify-secrets.mjs

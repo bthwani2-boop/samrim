@@ -541,6 +541,17 @@ if (!/^ {8}if: \$\{\{ always\(\) \}\}$/m.test(requiredGate) ||
     !requiredGate.includes('PRESENTATION_RESULT: ${{ needs.presentation.result }}') ||
     !/^ {12}exit 1$/m.test(requiredGate))
  fail('required fast-guard must fail on upstream errors');
+const presentationJobStart=ci.indexOf('\n  presentation:\n');
+const presentationJob=presentationJobStart>=0 && requiredJobStart>presentationJobStart
+ ? ci.slice(presentationJobStart,requiredJobStart) : '';
+const appChecks=JSON.parse(contents['package.json']).scripts?.['check:apps']??'';
+if(!presentationJob.includes('pnpm install --frozen-lockfile --ignore-scripts') ||
+   !presentationJob.includes('pnpm check:apps') ||
+   !appChecks.includes('tools/mobile/verify-application-boundaries.test.mjs') ||
+   !appChecks.includes('node tools/mobile/verify-application-boundaries.mjs'))
+ fail('presentation must install locked TypeScript and run owner guard including negative tests');
+if(requiredJob.includes('node tools/mobile/verify-application-boundaries.mjs'))
+ fail('required fast-guard must not invoke TypeScript scanner without dependency installation');
 const sonar=contents['.github/workflows/sonar-quality.yml'];
 const sonarJobStart=sonar.indexOf('\n  sonar:\n');
 const sonarJob=sonarJobStart>=0 ? sonar.slice(sonarJobStart) : '';
