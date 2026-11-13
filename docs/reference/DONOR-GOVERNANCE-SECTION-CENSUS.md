@@ -2,17 +2,17 @@
 
 ARTIFACT_CLASS: NON_AUTHORITATIVE_SOURCE_INVENTORY
 SEMANTIC_OWNER: docs/reference/DONOR-GOVERNANCE-SECTION-CENSUS.md
-STATUS: SOURCE_HEADING_CENSUS_ONLY
+STATUS: SOURCE_HEADING_CENSUS_WITH_BOUNDED_HR_DOCUMENTARY_REVIEW
 GOVERNANCE_CUTOVER: NOT_READY
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 ## Provenance and strict limitations
 
 - Donor: `D:\samrim`, branch `41`, HEAD `426d67b47beb8c66b09acd8c7394086b53ac5aae`.
-- Candidate: `D:\samrim-refoundation-clean-20261112`, HEAD `d4f542df68533b06d42aa3a1a8b3338fd5a757c9`.
+- Candidate at **initial heading capture**: `D:\samrim-refoundation-clean-20261112`, HEAD `d4f542df68533b06d42aa3a1a8b3338fd5a757c9` (historical evidence, not the current tip).
 - Read-only census of exactly 14 donor domain-owner Markdown files, paired with their 14 same-named draft target owners. Donor README, separate historical plans, source code, ZIPs and six approved discussion sequences have not been reconciled by this artifact.
 - A heading is only a navigation aid. An exact title match does not prove semantic parity; a renamed or missing title does not prove the underlying decision is absent.
-- Rows are individually pinned to source Git blob and 1-based line number. **All semantic dispositions remain REVIEW_PENDING** until the material text below each heading, approved decisions and owner contract are compared.
+- Rows are individually pinned to source Git blob and 1-based line number. As of 2026-11-14, **11 HR rows** received a bounded **documentary** source-to-target review (`DOC_RETAIN` or `DOC_REFOUND`) with evidence below; **329 other rows remain `REVIEW_PENDING`**. Documentary dispositions do not prove executable policy, live access, salary, SQL, provider state or integration readiness.
 - No automatic KEEP/RETIRE/COMPLETE status is derived from wording; unheaded paragraphs and all deeper implementation artifacts require separate review.
 
 ## Navigation-only summary
@@ -320,17 +320,37 @@ Donor `docs/governance/hr.md` (Git blob `decf9fe861166552db27c72ed02d595d824204e
 
 | Donor line | Exact source heading | Literal heading in target? | Semantic review |
 | ---: | --- | --- | --- |
-| 8 | ## EMPLOYEE_HR — BThwani Employee HR (EMPLOYEE_HR) | NO | REVIEW_PENDING |
-| 12 | ### Actors and identity | NO | REVIEW_PENDING |
-| 16 | ### Admission and operator privileges | NO | REVIEW_PENDING |
-| 20 | ### Employment data and privacy | NO | REVIEW_PENDING |
-| 24 | #### Manual attendance initial implementation | NO | REVIEW_PENDING |
-| 36 | ### Attendance, compensation and custody | NO | REVIEW_PENDING |
-| 42 | ### Experience and safe evolution | NO | REVIEW_PENDING |
-| 46 | #### HR-requested versus Identity-granted permissions | NO | REVIEW_PENDING |
-| 65 | #### Single employee; conditional operator access | NO | REVIEW_PENDING |
-| 80 | #### Employment lifecycle and safe operator offboarding | NO | REVIEW_PENDING |
-| 95 | #### HR employee audit readback | NO | REVIEW_PENDING |
+| 8 | ## EMPLOYEE_HR — BThwani Employee HR (EMPLOYEE_HR) | NO | DOC_REFOUND |
+| 12 | ### Actors and identity | NO | DOC_RETAIN |
+| 16 | ### Admission and operator privileges | NO | DOC_RETAIN |
+| 20 | ### Employment data and privacy | NO | DOC_RETAIN |
+| 24 | #### Manual attendance initial implementation | NO | DOC_RETAIN |
+| 36 | ### Attendance, compensation and custody | NO | DOC_RETAIN |
+| 42 | ### Experience and safe evolution | NO | DOC_RETAIN |
+| 46 | #### HR-requested versus Identity-granted permissions | NO | DOC_RETAIN |
+| 65 | #### Single employee; conditional operator access | NO | DOC_RETAIN |
+| 80 | #### Employment lifecycle and safe operator offboarding | NO | DOC_RETAIN |
+| 95 | #### HR employee audit readback | NO | DOC_RETAIN |
+
+#### HR 11-heading documentary review — 2026-11-14, session 04
+
+**Evidence inspected:** donor branch `41`, SHA `426d67b47beb8c66b09acd8c7394086b53ac5aae`, `docs/governance/hr.md` (blob `decf9fe861166552db27c72ed02d595d824204ef`), against the current **draft** `governance/hr.md`. The source was read as complete text, not matched by headings alone. `DOC_RETAIN` means a material donor requirement is represented by the target documentary owner; `DOC_REFOUND` means the latest human Product/owner decision deliberately changes source scope without dropping compatible obligations. Neither means implemented, legally approved HR records migrated, tested security isolation or operational acceptance.
+
+| Donor heading line | Decision | Current target source evidence and material distinction |
+| ---: | --- | --- |
+| 8 | DOC_REFOUND | `EMPLOYEE_HR` remains one admitted bounded DSH engine. Donor company-only employment is retained as a separate organizational scope while the newer accepted target also permits Merchant employee records; this does **not** make a Merchant employee a BThwani staff member or create a fourth service. |
+| 12 | DOC_RETAIN | Each employment record has a stable organization-scoped identifier, at most one canonical linked Identity actor, and a separate employer relationship; neither employment nor Store membership creates an Identity role. |
+| 16 | DOC_RETAIN | HR submits a proposed Operator-access request; the protected original Operator alone admits/rejects and grants permissions through Identity. Rejected requests, durable actor link, writeback retries and legacy account history remain explicit. |
+| 20 | DOC_RETAIN | The DSH employee record retains job history, reporting line, start/end facts and privacy-scoped historical status; compensation destinations and confidential documents are excluded from ordinary directory visibility. |
+| 24 | DOC_RETAIN | Initial attendance explicitly distinguishes presence, absence, lateness, leave annotations and unknown/unrecorded days, with versioned reasoned append-only corrections; an overnight interval, leave note or device event is not automatic salary deduction or permission to pay. |
+| 36 | DOC_RETAIN | HR/DSH owns employment entitlement and equipment issuance; WLT alone owns money, salary posting and cash advances. Salary does not inherit Captain/Merchant earnings, missing biometric evidence is not absence, and prior payroll/ledger records cannot be erased. |
+| 42 | DOC_RETAIN | The Operator HR directory uses one DSH employee creation/readback path separate from protected Identity access administration. Attendance, payroll, biometrics and inventory remain separately admitted bounded work, not implied runnable capabilities. |
+| 46 | DOC_RETAIN | Requested privileges are only proposals; Root Owner/initial protected Operator grants a bounded subset after *live Identity readback*, preserves unrelated permissions and revokes affected sessions. HR correlation records do not become a second permission writer. Development password accommodation remains subject to Identity's production enrollment rules. |
+| 65 | DOC_RETAIN | Disabling Operator access leaves employment active, and reactivation requires current active employment plus fresh Identity authorization. A stored actor link is not proof of live Control Panel rights; no duplicate employee record is created. |
+| 80 | DOC_RETAIN | An authorized initial Operator/Root Owner disables the Identity role and sessions **before** linked employment separation; failure after Identity disable reconciles idempotently. Manager reports are reassigned, re-employment never silently restores access, and records remain historical. |
+| 95 | DOC_RETAIN | The canonical DSH append-only employee audit retains who/why/when and before/after employment-state facts, with paginated reads under current HR-read permission; no second audit writer is added. |
+
+**Limit:** This resolves **11 of 340 heading-level documentary inspections**, not 11 execution proofs or signoffs. The other **329 heading rows** retain `REVIEW_PENDING`. Protected historical employee/Operator records, real actor grants, attendance persistence, payroll, Root Owner recovery, two-employer isolation and cross-owner retries still require their actual contracts, authorized databases and negative/end-to-end tests in the correct implementation stage. This reference does not grant authority to start Go/SQL or change permissions.
 
 ### experience
 
