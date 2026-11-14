@@ -1,6 +1,181 @@
 openapi: 3.1.0
 info:
   title: BThwani DSH API
-  version: 0.0.0
-  description: Contract scaffold only; no operations are defined or approved.
-paths: {}
+  version: 0.1.0
+  description: DSH-owned public Store and eligible Offer discovery, read-only. No checkout authority.
+paths:
+  /health:
+    get:
+      operationId: dshHealth
+      summary: Check the owner database is reachable
+      security: []
+      responses:
+        '200':
+          description: DSH available
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [service, status]
+                properties:
+                  service: { type: string, const: dsh }
+                  status: { type: string, const: ok }
+        '503':
+          $ref: '#/components/responses/OwnerUnavailable'
+  /v1/public/stores:
+    get:
+      operationId: listPublicStores
+      summary: Discover published MARKETPLACE Stores in an active service city
+      description: DIRECT or unpublished Stores never appear. Visibility never indicates checkout readiness.
+      security: []
+      parameters:
+        - name: city_id
+          in: query
+          required: true
+          schema: { $ref: '#/components/schemas/PublicId' }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 512 }
+      responses:
+        '200':
+          description: Bounded server-filtered Store page, with durable DSH read revision
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StorePage' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/StaleCursor'
+        '503':
+          $ref: '#/components/responses/OwnerUnavailable'
+  /v1/public/stores/{id}:
+    get:
+      operationId: getPublicStore
+      summary: Read one published Store via public link, including DIRECT Stores
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/StoreId'
+      responses:
+        '200':
+          description: Only public Store projection fields; neither private Merchant nor Customer data
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicStore' }
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/OwnerUnavailable'
+  /v1/public/stores/{id}/offers:
+    get:
+      operationId: listPublicOffers
+      summary: Read visible sellable Variant Offers in a published Store
+      description: Store, city, vertical, Product, Variant, Offer, availability, inventory and positive YER price are rechecked.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/StoreId'
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 512 }
+      responses:
+        '200':
+          description: Current DSH approved Offer page; not a quote or checkout authorization
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OfferPage' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/StaleCursor'
+        '503':
+          $ref: '#/components/responses/OwnerUnavailable'
+components:
+  parameters:
+    StoreId:
+      name: id
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/PublicId' }
+  schemas:
+    PublicId:
+      type: string
+      pattern: '^[a-z0-9-]{1,64}$'
+      minLength: 1
+      maxLength: 64
+    PublicStore:
+      type: object
+      additionalProperties: false
+      required: [id, name, cityId, verticalId, orderabilityStatus, orderingAvailable]
+      properties:
+        id: { $ref: '#/components/schemas/PublicId' }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        cityId: { $ref: '#/components/schemas/PublicId' }
+        verticalId: { $ref: '#/components/schemas/PublicId' }
+        orderabilityStatus: { type: string, enum: [OPEN_FOR_ORDERS, CLOSED_BY_SCHEDULE, PAUSED, OPERATIONALLY_UNAVAILABLE] }
+        orderingAvailable: { type: boolean, const: false, description: "The checkout/fulfillment journey is not activated" }
+    PublicOffer:
+      type: object
+      additionalProperties: false
+      required: [id, storeId, name, variantId, priceYer, available]
+      properties:
+        id: { $ref: '#/components/schemas/PublicId' }
+        storeId: { $ref: '#/components/schemas/PublicId' }
+        name: { type: string, minLength: 1, maxLength: 160 }
+        variantId: { $ref: '#/components/schemas/PublicId' }
+        priceYer: { type: integer, minimum: 1, description: Exact positive integer YER value from DSH }
+        available: { type: boolean, const: true }
+    StorePage:
+      type: object
+      additionalProperties: false
+      required: [items, revision]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PublicStore' }
+        revision: { type: integer, minimum: 0 }
+        nextCursor: { type: string, maxLength: 512 }
+    OfferPage:
+      type: object
+      additionalProperties: false
+      required: [items, revision]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PublicOffer' }
+        revision: { type: integer, minimum: 0 }
+        nextCursor: { type: string, maxLength: 512 }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+  responses:
+    BadRequest:
+      description: Invalid city, page, path or cursor
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Store is not publicly visible, or does not exist
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    StaleCursor:
+      description: Owner revision changed since the previous page; refresh from first page
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    OwnerUnavailable:
+      description: DSH cannot confirm durable eligibility
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }

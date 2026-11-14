@@ -418,6 +418,9 @@ importers:
 
   apps/customer:
     dependencies:
+      '@bthwani/dsh':
+        specifier: workspace:*
+        version: link:../../services/dsh
       '@bthwani/tamagui-config':
         specifier: workspace:*
         version: link:../../packages/tamagui-config
