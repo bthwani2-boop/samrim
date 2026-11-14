@@ -112,6 +112,8 @@ func writeFailure(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrUnauthorized):
 		code, category = http.StatusUnauthorized, "UNAUTHENTICATED"
+	case errors.Is(err, ErrIdentityUnavailable):
+		code, category = http.StatusServiceUnavailable, "IDENTITY_OWNER_UNAVAILABLE"
 	case errors.Is(err, ErrForbidden):
 		code, category = http.StatusForbidden, "STORE_OPERATION_FORBIDDEN"
 	case errors.Is(err, ErrStoreMissing):

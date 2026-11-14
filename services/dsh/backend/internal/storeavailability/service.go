@@ -10,6 +10,7 @@ import (
 
 var (
 	ErrUnauthorized          = errors.New("UNAUTHENTICATED")
+	ErrIdentityUnavailable   = errors.New("IDENTITY_OWNER_UNAVAILABLE")
 	ErrForbidden             = errors.New("STORE_OPERATION_FORBIDDEN")
 	ErrInvalidChange         = errors.New("INVALID_OPERATIONAL_CHANGE")
 	ErrPolicyUnavailable     = errors.New("OPERATIONAL_POLICY_UNAVAILABLE")
@@ -104,6 +105,9 @@ func (s *Service) authorize(ctx context.Context, token, storeID string) (Verifie
 		return VerifiedActor{}, "", ErrUnauthorized
 	}
 	actor, err := s.identity.ResolveCurrentSession(ctx, token)
+	if errors.Is(err, ErrIdentityUnavailable) {
+		return VerifiedActor{}, "", ErrIdentityUnavailable
+	}
 	if err != nil || strings.TrimSpace(actor.Subject) == "" {
 		return VerifiedActor{}, "", ErrUnauthorized
 	}
