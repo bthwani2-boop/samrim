@@ -31,7 +31,7 @@ export default function PublicStoreDetail() {
       });
     return () => { abort.abort(); revision.current++; };
   }, [id, retry]);
-  const visible = state.scope === id ? state : { scope: id, loading: true, offers: [] };
+  const visible: StoreResult = state.scope === id ? state : { scope: id, loading: true, offers: [] };
   const textStyle = { color: theme.color };
   const more = async () => {
     if (!visible.cursor || visible.more) return;

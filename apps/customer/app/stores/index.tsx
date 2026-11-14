@@ -38,7 +38,7 @@ export default function PublicStoresScreen() {
       });
     return () => { abort.abort(); generation.current++; };
   }, [cityId, retry]);
-  const visible = state.scope === cityId ? state : { scope: cityId, loading: true, loadingMore: false, items: [] };
+  const visible: PageState = state.scope === cityId ? state : { scope: cityId, loading: true, loadingMore: false, items: [] };
   const loadMore = async () => {
     if (!visible.cursor || visible.loadingMore || visible.loading) return;
     const scopedCity = cityId;
