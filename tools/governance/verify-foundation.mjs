@@ -269,6 +269,9 @@ function progressiveOpenApiPaths(candidate,owner,reject){
   if(rootKeys.has(key))reject();
   rootKeys.add(key);
  }
+ // An admitted development operation must not publish an arbitrary host.
+ // Service binding is a separately authorized runtime/production decision.
+ if(rootKeys.has('servers'))reject();
  const start=lines.indexOf('paths:');
  if(start<0)reject();
  const stop=lines.findIndex((line,i)=>i>start&&/^[a-zA-Z][a-zA-Z0-9-]*:/.test(line));

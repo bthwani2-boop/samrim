@@ -1,13 +1,14 @@
-# Identity OpenAPI contract scaffold
+# Identity OpenAPI — Progressive Session Verification
 
-STATUS: CONTRACT_SCAFFOLD_ONLY
+STATUS: CONTRACT_IN_PROGRESS
+EXECUTION: IN_PROGRESS
 SEMANTIC_OWNER: Identity
-EXECUTION: NOT_STARTED
+PRODUCTION_ACTIVATION: BLOCKED
 
-The sole entrypoint is `identity.openapi.yaml` (OpenAPI 3.1.0). It deliberately declares `paths: {}`, no server, no security scheme and no production implementation. Its `info.version: 0.0.0` denotes a **placeholder**, not a published API version.
+The canonical Identity entrypoint is `identity.openapi.yaml` (OpenAPI 3.1.0). Version 0.1.0 now declares **only** the development-scoped `GET /v1/sessions/current` operation and its mandatory HTTP bearer security scheme. There is **no server declaration**, no live token issuer, no Operator Passkey authentication, no onboarding role mutation, and no authorized production session integration.
 
-The seven domain-grouped, zero-operation `paths/*.yaml` reservations are `runtime`, `client-auth`, `managed-enrollment-auth`, `operator-passkey-access`, `session`, `internal-actor-administration`, and `actor-legal-name`. They preserve the useful donor separation between health, consumer credentials, managed login/recovery, operator passkeys, session lifecycle, actor/role administration and verified legal names. Every file contains only `paths: {}` and none is referenced by the root entrypoint. Names do not approve old development-session or privileged-access endpoints. See [the pinned donor inventory](../../../../docs/reference/OPENAPI-DONOR-CONTRACT-INVENTORY.md).
+The previous zero-operation scaffold was described by the phrase `no server, no security scheme`; that historical statement is **no longer the current Identity contract**. The current contract explicitly has a bearer security scheme but deliberately no `servers` root. Reserved seven `paths/*.yaml` groups remain empty and unreferenced. No generated client or real credential integration is implied.
 
-A future **approved** implementation slice must first reconcile Product meaning, consumers and owner permissions, then introduce real Path Items, validation and refs without a second contract truth. At that point replace the exact scaffold-only gate with a standard strict OpenAPI/YAML parser, full local ref resolution, duplicate path/operationId tests, security/error/schema tests and generated client parity. The existing source-only guard enforces only the exact **zero-operation scaffold**, not arbitrary OpenAPI validity.
+The stage-aware structural guard provides operation-ID/security/error boundary checks, **not arbitrary OpenAPI validity**, full YAML parsing, generated-client parity, real security or a protected Identity runtime attestation. Real SQL readback and adversarial session tests are the admission proof for this limited owner slice, distinct from HTTP 200 and documentation.
 
-No historical donor endpoints, localhost servers, authentication schemes, schemas, SQL, mocks or generated clients are transferred by this change. Actual APIs, runtime, database and independent critical-risk review remain NOT_RUN.
+Canonical authorization and actor/role decision owner: [Identity governance](../../../../governance/identity.md). Single writer: Identity. Production release, protected accounts, passkey factor enrollment, recovery and WLT/DSH cross-owner authorization are not admitted by this development contract.

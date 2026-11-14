@@ -1,6 +1,57 @@
 openapi: 3.1.0
 info:
   title: BThwani Identity API
-  version: 0.0.0
-  description: Contract scaffold only; no operations are defined or approved.
-paths: {}
+  version: 0.1.0
+  description: Internal Identity session verification (isolated development only). No token issuance, operator bootstrap, or production admission.
+paths:
+  /v1/sessions/current:
+    get:
+      operationId: getVerifiedIdentitySession
+      summary: Read verified current Identity actor and exact active role
+      description: Opaque 256-bit bearer digest must match an unrevoked, unexpired canonical Identity session, active actor and role with matching authorization versions. No Store grants are implied.
+      security:
+        - OpaqueSession: []
+      responses:
+        '200':
+          description: Verified Identity principal, never a Store grant
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [actorId, role, sessionExpiresAt]
+                properties:
+                  actorId: { type: string, minLength: 1, maxLength: 128 }
+                  role: { type: string, enum: [customer, merchant, captain, operator] }
+                  sessionExpiresAt: { type: string, format: date-time }
+        '400':
+          description: A body or query was supplied to a session-only read
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          description: No valid current Identity session; no actor existence details
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Identity owner cannot verify canonical session state; fail closed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+components:
+  securitySchemes:
+    OpaqueSession:
+      type: http
+      scheme: bearer
+      description: Identity-issued opaque high-entropy session secret; never a client-asserted actor/role header
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error: { type: string, enum: [INVALID_REQUEST, UNAUTHORIZED, OWNER_UNAVAILABLE] }
