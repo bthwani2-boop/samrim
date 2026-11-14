@@ -27,7 +27,7 @@ const files=[...new Set([
  'tools/governance/review-examples.test.mjs','tools/mobile/verify-expo-web-http.mjs',
  '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
  'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','tsconfig.base.json','biome.json',
- 'README.md','services/identity/README.md','services/dsh/README.md','services/wlt/README.md',
+ 'README.md','infra/README.md','infra/compose.yaml','infra/compose.apps.yaml','infra/setup-env.mjs','services/identity/README.md','services/dsh/README.md','services/wlt/README.md',
  ...['identity','dsh','wlt'].flatMap(owner=>['package.json','tsconfig.json','clients/README.md','clients/index.ts','contracts/openapi/README.md','contracts/openapi/'+owner+'.openapi.yaml'].map(file=>'services/'+owner+'/'+file)),
  ...contractGroups,'docs/reference/OPENAPI-DONOR-CONTRACT-INVENTORY.md',
  'docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md','docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json','tools/dev/verify-workspace.mjs','tools/mobile/verify-app-foundations.mjs',
@@ -91,6 +91,15 @@ test('live foundation draft is structurally coherent but NOT_READY',()=>{
  assert.deepEqual(['identity','dsh','wlt'].map(owner=>
   contractGroups.filter(file=>file.startsWith('services/'+owner+'/')).length),[7,21,14]);
 });
+rejects('rejects shared donor Docker Compose project',{edit:{
+ 'infra/compose.yaml':s=>s.replace('name: bthwani-refoundation','name: samrim-local'),
+}},/refoundation Docker project/);
+rejects('rejects exposed PostgreSQL host port',{edit:{
+ 'infra/compose.yaml':s=>s.replace('    networks: [isolated]\n    healthcheck:', '    ports:\n      - "0.0.0.0:5432:5432"\n    networks: [isolated]\n    healthcheck:'),
+}},/infra exposes ports|PostgreSQL protection/);
+rejects('rejects activating unbuilt owner services',{edit:{
+ 'infra/compose.apps.yaml':s=>s.replace('profiles: [implementation]','profiles: []'),
+}},/infra owner services unexpectedly enabled/);
 test('accepts a new proposed Product capability when recorded with its one existing owner',()=>{
  const proposed='NEW_JOURNEY_SCOPE';
  const section='\n## '+proposed+' — Bounded incremental proposal\nCAPABILITY_ID: '+proposed+'\n' +

@@ -138,8 +138,58 @@ if(!/^BUSINESS_POLICY_AUTHORITY: NONE$/m.test(ref)||!ref.includes('1.27.1')||!re
  fail('non-governing donor toolchain provenance or mismatch disclosure missing');
 if(!contents['README.md'].includes('Stage 4')||!contents['tools/dev/verify-workspace.mjs'].includes('STAGE4_WORKSPACE_STRUCTURE_PASS'))
  fail('stage4 developer onboarding or workspace smoke verifier missing');
-for(const folder of ['contracts','infra','nx.json','go.work']){
+for(const folder of ['contracts','nx.json','go.work']){
  if(exists(folder))fail('stage 5+ service/DB/infra introduced prematurely: '+folder);
+}
+
+// Worktree-scoped Docker dependencies are admitted without claiming live services.
+// This is structural isolation only; Docker Compose and real owner data need runtime proof.
+if(exists('infra')){
+ const assets=['infra/compose.yaml','infra/compose.apps.yaml','infra/README.md','infra/setup-env.mjs'];
+ for(const f of assets)if(!exists(f))fail('incomplete isolated refoundation infra: '+f);
+ const compose=get('infra/compose.yaml');
+ const planned=get('infra/compose.apps.yaml');
+ const setup=get('infra/setup-env.mjs');
+ const docs=get('infra/README.md');
+ const services=(source)=>{
+  const m=/^services:\s*\n([\s\S]*)/m.exec(source);
+  if(!m)fail('infra Compose services missing');
+  const body=m[1].split(/\n(?:networks|volumes):\s*\n/)[0];
+  return [...body.matchAll(/^  ([a-z][a-z0-9-]*):\s*$/gm)].map(x=>x[1]).sort();
+ };
+ const active=['postgres','media','mailpit','payment-mock'].sort();
+ const future=['postgres-access','identity-migrate','identity-bootstrap','identity','dsh-migrate','dsh','wlt-migrate','wlt'].sort();
+ if(services(compose).join()!==active.join()||services(planned).join()!==future.join())
+  fail('infra must contain exactly four independent dependencies and eight inactive owner roles');
+ if(!/^name: bthwani-refoundation$/m.test(compose)||
+    !/^\s*internal: true$/m.test(compose)||
+    !/^  loopback:\n    driver: bridge$/m.test(compose)||
+    !compose.includes('networks: [isolated, loopback]')||
+    !/^volumes:\n  refoundation-postgres-data:\n  refoundation-media-data:\s*$/m.test(compose)||
+    !compose.includes('refoundation-postgres-data:/var/lib/postgresql')||
+    !compose.includes('refoundation-media-data:/data'))
+  fail('refoundation Docker project, private network or own volumes missing');
+ const yaml=[compose,planned].map(s=>s.split(/\r?\n/).filter(line=>!line.trimStart().startsWith('#')).join('\n')).join('\n');
+ if(/(?:samrim-local|samrim-remote-stage|external:\s*true|network_mode:\s*host|container_name:|privileged:\s*true|volumes_from:|docker\.sock)/i.test(yaml))
+  fail('unsafe donor/shared Docker state or privileged host link');
+ const exposed=[...yaml.matchAll(/^\s*-\s*"(.*?)"$/gm)]
+  .map(m=>m[1]).filter(s=>/:\d+$/.test(s));
+ if(exposed.length!==6||exposed.some(s=>!s.startsWith('127.0.0.1:')))
+  fail('infra exposes ports outside the remote host loopback or loses a scoped port');
+ const postgres=compose.split(/^  postgres:\s*$/m)[1]?.split(/^  [a-z][a-z0-9-]*:\s*$/m)[0]??'';
+ if(!postgres||/^\s*ports:/m.test(postgres)||
+    !compose.includes('REF_POSTGRES_PASSWORD:?')||
+    !compose.includes('REF_MEDIA_SECRET_KEY:?')||
+    !compose.includes('REF_MEDIA_ACCESS_KEY:?'))
+  fail('infra secret isolation or internal PostgreSQL protection missing');
+ if((planned.match(/^\s*profiles: \[implementation\]$/gm)||[]).length!==8||
+    !planned.includes('bthwani-refoundation-identity:dev')||
+    !planned.includes('bthwani-refoundation-dsh:dev')||
+    !planned.includes('bthwani-refoundation-wlt:dev')||
+    !setup.includes('randomBytes(32)')||
+    !setup.includes("flag:'wx'")||
+    !docs.includes('NOT_RUN'))
+  fail('infra owner services unexpectedly enabled or local secret creation unsafe');
 }
 
 // The structural contract slice permits exact OpenAPI 3.1 entrypoints and named
@@ -780,7 +830,7 @@ for(const p of ['docs/governance','CODEOWNERS','.github/CODEOWNERS','docs/CODEOW
 for(const p of ['.github/workflows/fast-guard.yml','.github/workflows/sonar-observe.yml','.github/workflows/fast-guard-routing.test.mjs']){
  if(exists(p))fail('source-dependent inherited CI remains executable in foundation-only tree: '+p);
 }
-if(exists('infra')||exists('contracts'))fail('foundation guard cannot be reused as service/SQL proof');
+if(exists('contracts'))fail('foundation guard cannot be reused as service/SQL proof');
 
 const ci=contents['.github/workflows/ci.yml'];
 const requiredJobStart=ci.indexOf('\n  fast_guard:\n');

@@ -97,7 +97,7 @@ for (const owner of ['identity','dsh','wlt']) {
     fail('Missing client entrypoint, documentation or frozen lock importer: ' + owner);
   }
 }
-for (const forbidden of ['contracts','infra','nx.json','go.work',
+for (const forbidden of ['contracts','nx.json','go.work',
   'apps/app-client','apps/app-partner','apps/app-captain',
   'tools/mobile/create-bthwani-metro-config.cjs']) {
   if (existsSync(path.join(projectRoot, forbidden))) fail('Duplicated/deferred legacy source: ' + forbidden);

@@ -20,6 +20,7 @@ SEMANTIC_SCOPE: file placement and migration rules; not Product, agent authoriza
 | `tools/governance/` | deterministic foundation/architecture checks and their tests, not another decision catalog |
 | `tools/security/` | shared security scanners when actually needed |
 | `tools/dev/` | genuinely repository-wide developer tooling |
+| `infra/` | Worktree-only Docker Compose definitions, synthetic test state, local ports and isolated developer runtime; never donor volumes or production deployment |
 | `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml` | exact donor-compatible pnpm Stage-4 presentation workspace with one reproducible lock; not service/financial code |
 | `.node-version`, `.nvmrc`, `.go-version` | original branch-41 toolchain version pins, never upgraded without separate authorization |
 | `tsconfig.base.json`, `biome.json`, `.editorconfig`, `.gitattributes`, `.gitignore` | shared foundational TypeScript, lint, UTF-8/LF and secret-exclusion rules; without copied legacy migrations |
