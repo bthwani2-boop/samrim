@@ -15,6 +15,8 @@ From `D:\samrim-refoundation-clean-20261112`, declare the expected write boundar
 
 ```powershell
 $env:BTHWANI_SPECKIT_WRITE_SCOPE = '.bthwani-local/speckit-my-unique-test'
+$env:SPECIFY_FEATURE_DIRECTORY = $env:BTHWANI_SPECKIT_WRITE_SCOPE
+$env:SPECIFY_FEATURE_NO_PERSIST = '1'
 specify check
 specify integration status
 specify workflow resolve speckit
@@ -28,7 +30,7 @@ The existing constitution is validated, **not regenerated automatically**. Workf
 
 ## Fail-closed policy
 
-The local preflight `.specify/scripts/powershell/verify-bthwani-codex.ps1` rejects unsupported integration, missing official skills, wrong project/branch, mismatched model/effort/fast request, missing constitution, unauthenticated Codex and disabled workflow overlay. **It does not require a clean Git worktree.** It requires `BTHWANI_SPECKIT_WRITE_SCOPE`: one to eight semicolon-separated, relative, bounded paths. A unique `.bthwani-local/<run-id>` scope supports isolated tests without a source claim. Paths under protected tooling such as `.git`, `.specify`, `.codex` and `.agents`, broad roots, globs, traversal and symlink/junction paths are rejected.
+The local preflight `.specify/scripts/powershell/verify-bthwani-codex.ps1` rejects unsupported integration, missing official skills, wrong project/branch, mismatched model/effort/fast request, missing constitution, unauthenticated Codex and disabled workflow overlay. **It does not require a clean Git worktree.** It requires `BTHWANI_SPECKIT_WRITE_SCOPE`: one to eight semicolon-separated, relative, bounded paths. A unique `.bthwani-local/<run-id>` scope supports isolated tests without a source claim. The CLI must also receive `SPECIFY_FEATURE_DIRECTORY` inside the declared scope and `SPECIFY_FEATURE_NO_PERSIST=1` so it never mutates the shared `.specify/feature.json` pointer. Paths under protected tooling such as `.git`, `.specify`, `.codex` and `.agents`, broad roots, globs, traversal and symlink/junction paths are rejected.
 
 For any **tracked-source** scope, also set `BTHWANI_SPECKIT_CLAIMS_DIR` to the existing coordination room's `claims` directory and `BTHWANI_SPECKIT_CLAIM_NAME` to the current ACTIVE feature claim folder. Preflight verifies that the named claim covers the proposed scope and that no other active claim overlaps it. For example, an existing `STORE_ORDERABILITY-02` claim can admit its `services/dsh/backend/internal/storeavailability` path even while unrelated Identity files are modified; it may not use the Identity claim's paths.
 

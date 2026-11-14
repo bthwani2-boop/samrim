@@ -104,6 +104,24 @@ try {
     }
     if ($scopes.Count -gt 8) { Fail 'At most eight distinct write scopes may be declared' }
 
+    # Spec Kit's feature resolver must use the same bounded write scope, not
+    # an unrelated, mutable .specify/feature.json shared across sessions.
+    $feature = $env:SPECIFY_FEATURE_DIRECTORY
+    if ([string]::IsNullOrWhiteSpace($feature)) {
+        Fail 'Set SPECIFY_FEATURE_DIRECTORY to a feature directory inside the declared write scope'
+    }
+    $feature = $feature.Trim().Replace('\','/').TrimEnd('/').ToLowerInvariant()
+    if ($feature.StartsWith('/') -or $feature -match '^[A-Za-z]:' -or $feature.Contains('//') -or
+        @($feature.Split('/') | Where-Object { $_ -eq '.' -or $_ -eq '..' -or $_ -notmatch '\A[\p{L}\p{N}._-]+\z' }).Count -gt 0) {
+        Fail 'SPECIFY_FEATURE_DIRECTORY must be a safe repository-relative path'
+    }
+    if (@($scopes | Where-Object { $feature -eq $_ -or $feature.StartsWith($_ + '/') }).Count -eq 0) {
+        Fail "SPECIFY_FEATURE_DIRECTORY is outside the declared write scope: $feature"
+    }
+    if ($env:SPECIFY_FEATURE_NO_PERSIST -notin @('1','true')) {
+        Fail 'SPECIFY_FEATURE_NO_PERSIST=1 is required to avoid writing shared .specify/feature.json'
+    }
+
     $trackedScopes = @($scopes | Where-Object { -not $_.StartsWith('.bthwani-local/') })
     if ($trackedScopes.Count -gt 0) {
         $claimsDir = $env:BTHWANI_SPECKIT_CLAIMS_DIR
