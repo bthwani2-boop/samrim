@@ -71,6 +71,20 @@ test("read-only status creates no Git turn or feature state", (t) => {
   assert.equal(existsSync(path.join(repo, ".specify")), false);
 });
 
+test("executes the system-owned Git when PATH contains no Git", (t) => {
+  const { repo, room } = workspace(t);
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (key.toLowerCase() === "path") delete env[key];
+  }
+  env.PATH = path.join(repo, "untrusted-no-git");
+  const result = spawnSync(process.execPath, [cli, "acquire", room, "session-06"], {
+    cwd: repo, encoding: "utf8", windowsHide: true, env,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).status, "ACQUIRED");
+});
+
 test("refuses the donor branch and creates no claim", (t) => {
   const { repo, room, lock } = workspace(t, "41");
   const result = run(repo, "acquire", room, "session-03");

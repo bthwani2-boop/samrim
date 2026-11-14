@@ -3,12 +3,22 @@
 ARTIFACT_CLASS: DOMAIN_GOVERNANCE_DRAFT
 SEMANTIC_OWNER: governance/engineering.md
 STATUS: DRAFT_PENDING_FULL_GOVERNANCE_CUTOVER
+IMPLEMENTATION_ADMISSION: PROGRESSIVE
+ALL_CAPABILITIES_DEVELOPMENT: ENABLED
+NEW_CAPABILITIES: ANALYZE_AND_IMPLEMENT_PROGRESSIVELY
+PRODUCTION_ACTIVATION: BLOCKED
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 ## Staged work and authority
-**Current program sequence is mandatory:** (1) source-reconcile root `governance/`, `AGENTS.md`, `REPOSITORY-STRUCTURE.md`, temporary `docs/REFOUNDATION-PLAN.md` and stage-appropriate `.github/` guards, while retaining stage-specific technical risk-evidence blockers but not any external-reviewer staffing prerequisite for human target decisions; (2) preserve **only separately authorized structural preparation before cutover**, including exact-version pnpm/TypeScript/Biome tooling, the three Identity/DSH/WLT owner directories with zero-operation OpenAPI/client scaffolds, and the four already-created Stage-4 Expo/Next presentation hosts and design adapters; (3) review and explicitly approve the coherent **governance cutover** using the explicit 2026-11-13 human-approved FIN/SEC/MIG/LEGAL policy targets and documented internal technical assurance; (4) only then admit actual **Product implementation** — executable service/SQL contracts, reviewed fresh/upgrade database paths, real business features/screens and integrations — and accept end-to-end evidence separately. Existence of app/service directories, manifests, empty clients or `paths: {}` proves structure **only**; it does not authorize executable Go, SQL, commercial behaviors, database access, remote native builds or delivery, and cannot establish financial, security or migration readiness.
+**Current program sequence — Close as We Go:** Select an existing or proposed new journey; deeply analyze its affected actors, surfaces, canonical owners, data, contracts, permissions, dependencies, negative cases and recovery; settle its material Product/domain decisions in the single canonical owner; implement connected vertical slices in isolated development; test and verify each affected surface and owner-backed readback; close only after every applicable criterion has evidence; then continue to the next journey while reconciling remaining historical governance independently. The previous Stage-4 scaffolding and global cutover sequencing is history, not a pre-development prohibition. Foundation/app placeholders and `paths: {}` still prove structure only, never service operation, security, financial or production readiness.
 
 An in-scope governance phase does **not** authorize touching protected DBs, Docker, branch 41, source production deployments, signing, remote pushes or deleting applied migrations. No PASS for code correctness follows from passing a governance syntax check. Plans and archived ZIP prompts are evidence, not policy sources.
+
+## Capability-scoped implementation acceptance before global cutover
+
+The latest human decision authorizes progressive development of **all existing and proposed new capabilities** through Close as We Go, not only the initial 26 baseline IDs. GOVERNANCE_CUTOVER remains NOT_READY without blocking implementation, and no pre-development per-capability vote is needed. Assess proposals and resolve Product scope during each journey with its owner, analyze every affected surface, implement the coherent vertical slice, and close it only after all applicable positive, negative, security, persistence, cross-owner, concurrency and recovery criteria pass with attributable evidence. **Only production activation has a standing BLOCKED gate**; applicable security/data permissions and explicit Git/external-action authorizations continue to apply.
+
+The current Stage-4 structural guard must be adapted to accept Go/SQL/OpenAPI during progressive development and verify actual invariants with fail-closed negative tests; its outdated source ban is not a Product admission rule. This is a finite tooling task, not a requirement to complete the entire 14-owner governance corpus first. Code runs only against isolated synthetic state and must be proven across impacted UI/API/owner/DB readbacks and failure paths. Finance, identity, legal, migration, privacy and production release have additional distinct technical risk and authority gates. No 100% absence-of-defects claim follows from these checks.
 
 ## Policy admission rule: configure the real choice, not every constant
 For each recurring, legitimately Operator-editable Product rule at its actual owner, classify:
@@ -56,7 +66,7 @@ Acceptance for a **specific** native binary requires the actual uploaded source 
 ## Governance readiness acceptance
 A complete canonical `governance/` requires: (a) all 14 owner documents with substantive, reviewed decisions; (b) 26 distinct capability IDs exactly once in their legal owning documents; (c) all approved cross-owner policies and critical finance/identity/privacy invariants covered; (d) no competing active `docs/governance/` root, broken references or hidden contradictions; (e) a traceable disposition for material historical donor decisions and preserved external sources; (f) tested positive and negative stage-specific GitHub guards; and (g) documented internal adversarial risk analysis of finance/security/protected-migration target policies with implementation testing explicitly reserved for executable code; no external reviewer is claimed or required for target-policy choice under the 2026-11-13 human decision.
 
-Until those gates are met, keep `GOVERNANCE_CUTOVER: NOT_READY`. Even when ready, that means **policy-ready to begin code refoundation**, not delivered/production-ready. Avoid false claims of mathematical 100% defect-free correctness.
+Until full-corpus governance reconciliation is evidenced, keep `GOVERNANCE_CUTOVER: NOT_READY`. Even when ready, that means **complete policy reconciliation**, not new permission to start development and not delivered/production-ready. Avoid false claims of mathematical 100% defect-free correctness.
 
 ## Capacity, efficiency and non-speculative infrastructure
 

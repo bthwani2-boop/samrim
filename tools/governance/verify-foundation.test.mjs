@@ -14,9 +14,14 @@ const contractGroups=['identity','dsh','wlt'].flatMap(owner=>
  fs.readdirSync(path.join(root,'services',owner,'contracts','openapi','paths'))
   .filter(name=>name.endsWith('.yaml'))
   .map(name=>'services/'+owner+'/contracts/openapi/paths/'+name));
+// Copy local historical-reference Markdown/CSV alongside its index in test fixtures.
+// Derive paths from the checkout instead of maintaining a second reference catalog.
+const historicalReferenceFiles=fs.readdirSync(path.join(root,'docs/reference'),{recursive:true})
+ .filter(file=>/\.(?:md|csv)$/.test(file))
+ .map(file=>'docs/reference/'+file.replaceAll('\\','/'));
 const files=[...new Set([
  'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',
- ...owners.map(owner=>'governance/'+owner+'.md'),'docs/REFOUNDATION-PLAN.md','docs/reference/README.md','docs/reference/HISTORICAL-SOURCE-INVENTORY.md','docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md',
+ ...owners.map(owner=>'governance/'+owner+'.md'),'docs/REFOUNDATION-PLAN.md','docs/reference/README.md',...historicalReferenceFiles,'docs/reference/HISTORICAL-SOURCE-INVENTORY.md','docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md',
  'docs/reference/environment-config-inventory.md','docs/reference/DONOR-GOVERNANCE-SECTION-CENSUS.md',
  '.github/workflows/ci.yml','.github/workflows/sonar-quality.yml','sonar-project.properties','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs',
  'tools/governance/review-examples.test.mjs','tools/mobile/verify-expo-web-http.mjs',
@@ -32,7 +37,13 @@ const files=[...new Set([
 function run({edit={},add={},del=[],dirs=[],links={}}={}){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'bthwani-policy-guard-'));
  try{
+  // A single fixture path may occur with different casing (README.md/readme.md).
+  // Windows aliases these names; never overwrite an intentionally edited source.
+  const copiedPaths=new Set();
   for(const f of files){
+   const normalized=f.toLowerCase();
+   if(copiedPaths.has(normalized))continue;
+   copiedPaths.add(normalized);
    const output=path.join(dir,...f.split('/'));
    fs.mkdirSync(path.dirname(output),{recursive:true});
    const original=fs.readFileSync(path.join(root,...f.split('/')),'utf8');
@@ -61,6 +72,14 @@ function rejects(name,mutation,pattern){
   assert.match(r.text,pattern);
  });
 }
+function accepts(name,fixture,pattern){
+ test(name,()=>{
+  const r=run(fixture);
+  assert.equal(r.code,0,r.text);
+  assert.match(r.text,pattern);
+ });
+}
+
 test('live foundation draft is structurally coherent but NOT_READY',()=>{
  const r=run();
  assert.equal(r.code,0,r.text);
@@ -72,6 +91,45 @@ test('live foundation draft is structurally coherent but NOT_READY',()=>{
  assert.deepEqual(['identity','dsh','wlt'].map(owner=>
   contractGroups.filter(file=>file.startsWith('services/'+owner+'/')).length),[7,21,14]);
 });
+test('accepts a new proposed Product capability when recorded with its one existing owner',()=>{
+ const proposed='NEW_JOURNEY_SCOPE';
+ const section='\n## '+proposed+' — Bounded incremental proposal\nCAPABILITY_ID: '+proposed+'\n' +
+  'This proposed capability is assessed inside its journey. The Identity owner owns only actor and session facts. ' +
+  'Its permissions, errors, recovery, consumers and persistence are reconciled and tested before closure.\n';
+ const r=run({edit:{
+  'governance/product.md':s=>s.replace('`IDENTITY_ACTIVATION_SESSIONS` |','`IDENTITY_ACTIVATION_SESSIONS`, `'+proposed+'` |'),
+  'governance/identity.md':s=>s+section,
+ }});
+ assert.equal(r.code,0,r.text);
+ assert.match(r.text,/capability_ids=27/);
+});
+test('accepts a new cross-surface journey when its owner and proof boundaries are recorded',()=>{
+ const journey=[
+  '',
+  '## NEW_EXPERIMENT_JOURNEY — Progressive Customer operation',
+  'JOURNEY_ID: NEW_EXPERIMENT_JOURNEY',
+  'CAPABILITIES: ORDER_LIFECYCLE',
+  'SURFACES: CUSTOMER, OPERATOR',
+  'OWNERS: DSH',
+  'ENTRY: An authenticated Customer selects a bounded new operation under a legal DSH scope.',
+  'EXIT: The DSH owner records the operation or an explicit denied/conflict outcome.',
+  'READBACK: The DSH owner supplies the persistent actor-scoped operation result and audit identity.',
+  '',
+  'This proposed journey can be designed and implemented in isolated development while its requirements are resolved.',
+  'An Operator cannot bypass the Customer role or write another Store Order. Authorization is checked with real identity.',
+  'A failed response, replay, account switch and unknown outcome must be reconciled through the owner before closure.',
+  ''
+ ].join('\n');
+ const r=run({edit:{'governance/journeys.md':s=>s+journey}});
+ assert.equal(r.code,0,r.text);
+ assert.match(r.text,/capability_ids=26/);
+});
+rejects('rejects a reintroduced blanket development block',
+ {edit:{'governance/README.md':s=>s.replace('NEW_CAPABILITIES: ANALYZE_AND_IMPLEMENT_PROGRESSIVELY','NEW_CAPABILITIES: BLOCKED')}},
+ /progressive capability development must cover existing and new scope: governance\/README\.md/);
+rejects('rejects accidental production activation',
+ {edit:{'AGENTS.md':s=>s.replace('PRODUCTION_ACTIVATION: BLOCKED','PRODUCTION_ACTIVATION: ENABLED')}},
+ /production activation must remain blocked: AGENTS\.md/);
 test('accepts only known empty planned service subdirectories',()=>{
  const r=run({dirs:[
   'services/identity/backend','services/identity/contracts/openapi/paths','services/identity/database/migrations',
@@ -87,13 +145,46 @@ rejects('rejects a fourth HR service',{add:{'services/hr/README.md':'not permitt
 rejects('rejects missing Identity package manifest',{del:['services/identity/package.json']},/required services\/identity\/package.json/);
 rejects('rejects wrong DSH package name',{edit:{'services/dsh/package.json':s=>s.replace('@bthwani/dsh','@bthwani/direct-dsh')}},/service package drift or premature runtime dependency/);
 rejects('rejects premature runtime dependencies',{edit:{'services/wlt/package.json':s=>s.replace('"devDependencies":', '"dependencies": {"some-financial-package":"1.0.0"}, "devDependencies":')}},/service package drift or premature runtime dependency/);
-rejects('rejects unapproved client export',{edit:{'services/identity/clients/index.ts':s=>s+'export const simulatedLogin = true;\n'}},/premature client behavior or export/);
+rejects('rejects stale scaffold documentation for newly exported client',{edit:{'services/identity/clients/index.ts':s=>s+'export const simulatedLogin = true;\n'}},/client library falsely claims implementation/);
+accepts('permits TypeScript client development with honest in-progress documentation',{
+ edit:{
+  'services/identity/clients/index.ts':s=>s+'export type { Session } from "./generated/session";\n',
+  'services/identity/clients/README.md':s=>s.replace('STATUS: SCAFFOLD_ONLY','STATUS: IMPLEMENTATION_IN_PROGRESS'),
+ },
+ add:{'services/identity/clients/generated/session.ts':'export type Session = { id: string };\n'}
+},/PROGRESSIVE_SOURCE_PRESENT/);
 rejects('rejects wrong TypeScript base',{edit:{'services/dsh/tsconfig.json':s=>s.replace('../../tsconfig.base.json','../old-tsconfig.json')}},/service TypeScript configuration drift/);
 rejects('rejects missing client documentation',{del:['services/wlt/clients/README.md']},/required services\/wlt\/clients\/README.md/);
 rejects('rejects missing service workspace lock importer',{edit:{'pnpm-lock.yaml':s=>s.replace('  services/identity:', '  services/other:')}},/service missing exact frozen-lockfile importer/);
 rejects('rejects old Nx project configuration',{add:{'services/identity/project.json':'{}'}},/premature service source: services\/identity\/project.json/);
-rejects('rejects early Go backend source',{add:{'services/identity/backend/main.go':'package main'}},/premature service source: services\/identity\/backend\/main.go/);
-rejects('rejects early Go module',{add:{'services/identity/backend/go.mod':'module sample'}},/premature service source: services\/identity\/backend\/go.mod/);
+accepts('permits Identity Go source in isolated development',{add:{'services/identity/backend/main.go':'package main'}},/PROGRESSIVE_SOURCE_PRESENT/);
+accepts('permits owner Go module development',{add:{'services/identity/backend/go.mod':'module sample'}},/service_scaffold_only=false/);
+accepts('permits a scoped DSH OpenAPI operation during development',{
+ edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace('paths: {}',[
+  'paths:',
+  '  /stores:',
+  '    get:',
+  '      operationId: listStores',
+  '      security:',
+  '        - actorAuth: []',
+  '      responses:',
+  '        "200":',
+  '          description: Current eligible stores',
+  ''
+ ].join('\n'))}
+},/PROGRESSIVE_SOURCE_PRESENT/);
+rejects('rejects operation missing a security declaration',{
+ edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace('paths: {}',[
+  'paths:',
+  '  /stores:',
+  '    get:',
+  '      operationId: listStores',
+  '      responses:',
+  '        "200":',
+  '          description: Current eligible stores',
+  ''
+ ].join('\n'))}
+},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
 rejects('rejects incomplete DSH OpenAPI entrypoint',{edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace('paths: {}','paths:')}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
 rejects('rejects unapproved DSH endpoint',{edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace('paths: {}','paths:\n  /dsh/stores: {}')}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
 rejects('rejects a duplicate OpenAPI key',{edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s+'paths: {}\n'}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
@@ -103,9 +194,9 @@ rejects('rejects unsupported cross-owner ref',{edit:{'services/dsh/contracts/ope
 rejects('rejects missing DSH path module',{del:['services/dsh/contracts/openapi/paths/stores.yaml']},/required services\/dsh\/contracts\/openapi\/paths\/stores.yaml/);
 rejects('rejects malformed DSH path fragment',{edit:{'services/dsh/contracts/openapi/paths/orders.yaml':s=>s.replace('paths: {}','paths: [')}},/OpenAPI path fragment is not an empty placeholder/);
 rejects('rejects nonempty DSH path fragment',{edit:{'services/dsh/contracts/openapi/paths/employees.yaml':s=>s.replace('paths: {}','paths:\n  /employees: {}')}},/OpenAPI path fragment is not an empty placeholder/);
-rejects('rejects additional speculative DSH path module',{add:{'services/dsh/contracts/openapi/paths/wallet-provider.yaml':'paths: {}\n'}},/premature service source: services\/dsh\/contracts\/openapi\/paths\/wallet-provider.yaml/);
-rejects('rejects unapproved Identity path module',{add:{'services/identity/contracts/openapi/paths/shadow-auth.yaml':'paths: {}\n'}},/premature service source: services\/identity\/contracts\/openapi\/paths\/shadow-auth.yaml/);
-rejects('rejects unapproved WLT path module',{add:{'services/wlt/contracts/openapi/paths/alternate-ledger.yaml':'paths: {}\n'}},/premature service source: services\/wlt\/contracts\/openapi\/paths\/alternate-ledger.yaml/);
+accepts('permits a new DSH contract group for incremental investigation',{add:{'services/dsh/contracts/openapi/paths/wallet-provider.yaml':'paths: {}\n'}},/PROGRESSIVE_SOURCE_PRESENT/);
+accepts('permits Identity development contract group',{add:{'services/identity/contracts/openapi/paths/shadow-auth.yaml':'paths: {}\n'}},/PROGRESSIVE_SOURCE_PRESENT/);
+accepts('permits WLT development contract group',{add:{'services/wlt/contracts/openapi/paths/alternate-ledger.yaml':'paths: {}\n'}},/PROGRESSIVE_SOURCE_PRESENT/);
 rejects('rejects missing OpenAPI ownership notes',{del:['services/identity/contracts/openapi/README.md']},/required services\/identity\/contracts\/openapi\/README.md/);
 rejects('rejects missing source-audited contract inventory',{del:['docs/reference/OPENAPI-DONOR-CONTRACT-INVENTORY.md']},/required docs\/reference\/OPENAPI-DONOR-CONTRACT-INVENTORY.md/);
 rejects('rejects missing Identity session fragment',{del:['services/identity/contracts/openapi/paths/session.yaml']},/required services\/identity\/contracts\/openapi\/paths\/session.yaml/);
@@ -113,8 +204,8 @@ rejects('rejects missing WLT ledger fragment',{del:['services/wlt/contracts/open
 rejects('rejects nonempty WLT ledger fragment',{edit:{'services/wlt/contracts/openapi/paths/ledger.yaml':s=>s.replace('paths: {}','paths:\n  /wlt/credit: {}')}},/OpenAPI path fragment is not an empty placeholder/);
 rejects('rejects nonempty Identity authentication fragment',{edit:{'services/identity/contracts/openapi/paths/client-auth.yaml':s=>s.replace('paths: {}','paths:\n  /auth/override: {}')}},/OpenAPI path fragment is not an empty placeholder/);
 rejects('rejects misplaced financial writer in DSH',{edit:{'services/dsh/contracts/openapi/paths/financial-views.yaml':s=>s.replace('paths: {}','paths:\n  /dsh/ledger/post: {}')}},/OpenAPI path fragment is not an empty placeholder/);
-rejects('rejects early SQL migration',{add:{'services/wlt/database/migrations/001.sql':'select 1;'}},/premature service source: services\/wlt\/database\/migrations\/001.sql/);
-rejects('rejects early fresh baseline',{add:{'services/dsh/database/fresh-baseline.sql':'select 1;'}},/premature service source: services\/dsh\/database\/fresh-baseline.sql/);
+accepts('permits WLT SQL migration development',{add:{'services/wlt/database/migrations/001.sql':'select 1;'}},/PROGRESSIVE_SOURCE_PRESENT/);
+accepts('permits owner fresh SQL baseline development',{add:{'services/dsh/database/fresh-baseline.sql':'select 1;'}},/PROGRESSIVE_SOURCE_PRESENT/);
 rejects('rejects untracked placeholders',{add:{'services/dsh/backend/.gitkeep':''}},/premature service source: services\/dsh\/backend\/\.gitkeep/);
 rejects('rejects unapproved nested service folder',{add:{'services/dsh/shared/unowned.txt':'wrong owner'}},/unadmitted service directory: services\/dsh\/shared/);
 rejects('rejects false service runtime readiness',{edit:{'services/wlt/README.md':s=>s.replace('EXECUTION: NOT_STARTED','EXECUTION: READY')}},/invalid service placement README: services\/wlt\/README.md/);
@@ -208,6 +299,18 @@ rejects('rejects loss of Owner-managed serviceability policy',{edit:{'governance
 rejects('rejects loss of Owner-managed financial policy parameters',{edit:{'governance/finance.md':s=>s.replace('## Operator-managed financial values versus immutable accounting rules','## Removed financial parameter controls')}},/owner-backed configurable-values section missing/);
 
 rejects('rejects dropped historic H2 disposition row',{edit:{'docs/reference/DONOR-GOVERNANCE-SECTION-CENSUS.md':s=>s.replace(/^\| journeys 368 \|[^\n]*\n/m,'')}},/historical source H2 group disposition must uniquely cover 81 donor sections/);
+rejects('rejects dropped source-heading row from pinned 340-row census',
+ {edit:{'docs/reference/DONOR-GOVERNANCE-SECTION-CENSUS.md':s=>s.replace('| 8 | ## Purpose | NO | DOC_RETAIN |\n','')}},
+ /historical donor heading census must retain 340 owner-scoped source rows: product/);
+rejects('rejects duplicated donor source-to-owner annotation key',
+ {edit:{'docs/reference/DONOR-GOVERNANCE-SECTION-CENSUS.md':s=>{
+  const line=s.split('\n').find(x=>x.startsWith('| `docs/governance/catalog.md:L8-'));
+  return line?s.replace(line+'\n',line+'\n'+line+'\n'):s;
+ }}},
+ /historical donor annotation keys must uniquely cover the 298 remaining source rows/);
+rejects('rejects falsifying a donor heading review status as implementation PASS',
+ {edit:{'docs/reference/DONOR-GOVERNANCE-SECTION-CENSUS.md':s=>s.replace('| 8 | ## Purpose | NO | DOC_RETAIN |','| 8 | ## Purpose | NO | PASS |')}},
+ /unrecognized donor source review status: product:8/);
 rejects('rejects wrong canonical owner in historic H2 disposition',{edit:{'docs/reference/DONOR-GOVERNANCE-SECTION-CENSUS.md':s=>s.replace('| commerce 143 | ORDER_LIFECYCLE | RETAIN | commerce.md:', '| commerce 143 | ORDER_LIFECYCLE | RETAIN | finance.md:')}},/historical source H2 group ownership coverage mismatch: commerce/);
 rejects('rejects dropping source-reconciled Order-contact capability ownership',{edit:{'governance/journeys.md':s=>s.replace('JOURNEY_ID: FIRST_THREE_ORDER_CONTACT\nCAPABILITIES: ORDER_LIFECYCLE','JOURNEY_ID: FIRST_THREE_ORDER_CONTACT\nCAPABILITIES: CUSTOMER_BALANCE_FUNDING')}},/approved new journey-to-capability mapping lost: FIRST_THREE_ORDER_CONTACT/);
 rejects('rejects changing Operations case into a second support ownership',{edit:{'governance/journeys.md':s=>s.replace('JOURNEY_ID: ORDER_SCOPED_OPERATIONS_EXCEPTION\nCAPABILITIES: ORDER_LIFECYCLE, ORDER_PAYMENT_COLLECTION','JOURNEY_ID: ORDER_SCOPED_OPERATIONS_EXCEPTION\nCAPABILITIES: ORDER_CONVERSATION')}},/approved new journey-to-capability mapping lost: ORDER_SCOPED_OPERATIONS_EXCEPTION/);
@@ -244,6 +347,9 @@ rejects('rejects premature Nx configuration',{add:{'nx.json':'{}'}},/stage 5\+ s
 rejects('rejects a missing exact source baseline file',{del:['docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md']},/required docs\/reference\/TOOLCHAIN-SOURCE-VERSIONS.md/);
 
 rejects('rejects broken local governance reference',{edit:{'README.md':s=>s.replace('](governance/README.md)','](governance/missing.md)')}},/broken local Markdown link/);
+rejects('rejects a missing linked historical reference inside the test fixture',
+ {del:['docs/reference/competitors/README.md']},
+ /broken local Markdown link: docs\/reference\/README\.md -> competitors\/README\.md/);
 rejects('rejects Markdown links that escape repo root',{edit:{'README.md':s=>s.replace('](governance/README.md)','](../untrusted.md)')}},/local Markdown link escapes workspace/);
 
 rejects('rejects lost replay-safe recovery challenge policy',
@@ -295,7 +401,7 @@ rejects('rejects a lost source-of-truth OpenAPI decision',{edit:{'governance/eng
 rejects('rejects unprotected historic migrations',{edit:{'governance/engineering.md':s=>s.replace('182 DSH + 30 Identity + 63 WLT = 275','migrations discarded')}},/migration\/configurable policy preservation constraint missing/);
 rejects('rejects missing historical design section 24',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^\| 24 [^\n]+\n/m,'')}},/design source 24-section decision concordance incomplete/);
 rejects('rejects duplicated historical design decision',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^(\| 07 [^\n]+)$/m,'$1\n$1')}},/design source 24-section decision concordance incomplete/);
-rejects('rejects fabricated approval of critical-risk review',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace('GOVERNANCE_CUTOVER stays NOT_READY','GOVERNANCE_CUTOVER declared READY')}},/design-plan concordance cannot claim unreviewed cutover success/);
+rejects('rejects fabricated approval of critical-risk review',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replaceAll('GOVERNANCE_CUTOVER stays NOT_READY','GOVERNANCE_CUTOVER declared READY')}},/design-plan concordance cannot claim unreviewed cutover success/);
 
 rejects('rejects governance cutover claiming real app/SQL implementation without evidence',{edit:{'governance/README.md':s=>s.replace('## Cutover readiness is a policy decision, not a claim of implemented software','## False software production readiness')}},/governance policy readiness must stay separate from later runtime implementation tests/);
 

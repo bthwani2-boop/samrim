@@ -8,6 +8,10 @@ import path from "node:path";
 const targetBranch = "refoundation/clean-house-20261112";
 const [action, roomArg, owner, token] = process.argv.slice(2);
 const claimName = "GIT-TURN";
+// Use a system-owned Git executable, never an attacker-controlled PATH entry.
+const gitExecutable = process.platform === "win32"
+  ? "C:\\Program Files\\Git\\cmd\\git.exe"
+  : "/usr/bin/git";
 
 function output(status, details = {}) {
   console.log(JSON.stringify({ status, ...details }));
@@ -24,7 +28,7 @@ function usage() {
 }
 
 function git(...args) {
-  return execFileSync("git", args, {
+  return execFileSync(gitExecutable, args, {
     cwd: process.cwd(), encoding: "utf8", windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
   }).trim();

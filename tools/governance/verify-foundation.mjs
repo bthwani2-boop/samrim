@@ -149,6 +149,38 @@ const serviceOwners=['identity','dsh','wlt'];
 const openapiReservedGroups=Object.values(contractPathGroups).reduce((sum,groups)=>sum+groups.length,0);
 const allowedServiceDirs=new Set();
 const allowedServiceFiles=new Set();
+// Path admission is no longer a ban on implementation. This guard checks owner
+// placement and the Stage-4 baseline; runtime, SQL and OpenAPI semantics require
+// their own real source/contract/owner-backed tests before journey closure.
+let developmentSourceFiles=0;
+let progressiveOpenApiFiles=0;
+const legalDevelopmentFile=(relative)=>{
+ const m=relative.match(/^services\/(identity|dsh|wlt)\/(backend|database|clients|contracts\/openapi\/paths)\/(.+)$/);
+ if(!m)return false;
+ const [,owner,area,name]=m;
+ if(!owner||name.split('/').some(part=>!part||part==='.'||part==='..'||part.startsWith('.')))return false;
+ if(/(?:secret|credential|private.key|\.env|dump|backup)/i.test(name))return false;
+ if(area==='backend')return /(?:\.go|\.sql|\/go\.mod|\/go\.sum|^go\.mod$|^go\.sum$)$/i.test(name);
+ if(area==='database')return /\.sql$/i.test(name);
+ if(area==='clients')return /\.(?:ts|tsx)$/i.test(name);
+ if(area==='contracts/openapi/paths')return /^[a-z0-9-]+\.yaml$/i.test(name);
+ return false;
+};
+function checkProgressivePathFragment(content,filename){
+ if(content==='paths: {}\n')return false;
+ // A minimal source-boundary check, not full OpenAPI validation or runtime proof.
+ if(!content.startsWith('paths:\n')||
+    !content.includes('\n  /')||
+    !['get','post','put','patch','delete'].some(verb=>content.includes('\n    '+verb+':'))||
+    !content.includes('operationId:')||
+    !content.includes('responses:')||
+    !content.includes('security:')||
+    content.includes('$ref: ../')||
+    content.includes('$ref: http://')||
+    content.includes('$ref: https://'))
+  fail('OpenAPI path fragment is not an empty placeholder or a scoped development operation: '+filename);
+ return true;
+}
 for(const owner of serviceOwners){
  const prefix='services/'+owner;
  for(const suffix of ['', '/backend','/clients','/clients/go','/clients/generated',
@@ -167,21 +199,39 @@ for(const owner of serviceOwners){
  const contractName=owner==='identity'?'Identity':owner.toUpperCase();
  const expectedContract='openapi: 3.1.0\ninfo:\n  title: BThwani '+contractName+
    ' API\n  version: 0.0.0\n  description: Contract scaffold only; no operations are defined or approved.\npaths: {}\n';
- if(contents[contractFile]!==expectedContract)
-  fail('OpenAPI scaffold mutated or contains unapproved operations/refs: '+contractFile);
+ if(contents[contractFile]!==expectedContract){
+  const candidate=contents[contractFile];
+  // This is a bounded source-placement check, not a replacement for an OpenAPI
+  // parser, generated-client parity or runtime authorization tests.
+  if(!candidate.startsWith('openapi: 3.1.0\ninfo:\n')||
+     !candidate.includes('  title: BThwani '+contractName+' API\n')||
+     !candidate.includes('\npaths:\n')||
+     !candidate.includes('\n  /')||
+     !candidate.includes('operationId:')||
+     !candidate.includes('responses:')||
+     !candidate.includes('security:')||
+     candidate.includes('$ref: ../')||
+     candidate.includes('$ref: http://')||
+     candidate.includes('$ref: https://'))
+   fail('OpenAPI scaffold mutated or contains unapproved operations/refs: '+contractFile);
+  developmentSourceFiles++;
+  progressiveOpenApiFiles++;
+ }
  const contractReadme=contents[prefix+'/contracts/openapi/README.md'];
- if(!/^STATUS: CONTRACT_SCAFFOLD_ONLY$/m.test(contractReadme) ||
-    !/^EXECUTION: NOT_STARTED$/m.test(contractReadme) ||
+ if(!/^STATUS: (?:CONTRACT_SCAFFOLD_ONLY|CONTRACT_IN_PROGRESS)$/m.test(contractReadme) ||
+    !/^EXECUTION: (?:NOT_STARTED|IN_PROGRESS)$/m.test(contractReadme) ||
     !contractReadme.includes('no server, no security scheme') ||
     !contractReadme.includes('not arbitrary OpenAPI validity'))
   fail('invalid contract scaffold documentation: '+owner);
  for(const moduleName of contractPathGroups[owner]){
   const moduleFile=prefix+'/contracts/openapi/paths/'+moduleName+'.yaml';
-  if(contents[moduleFile]!=='paths: {}\n')
-   fail('OpenAPI path fragment is not an empty placeholder: '+moduleFile);
+  if(checkProgressivePathFragment(contents[moduleFile],moduleFile)){
+   developmentSourceFiles++;
+   progressiveOpenApiFiles++;
+  }
  }
  if(!doc.includes('OWNER: '+(owner==='identity'?'Identity':owner.toUpperCase())) ||
-    !/^STATUS: SCAFFOLD_ONLY$/m.test(doc) || !/^EXECUTION: NOT_STARTED$/m.test(doc) ||
+    !/^STATUS: (?:SCAFFOLD_ONLY|IMPLEMENTATION_IN_PROGRESS)$/m.test(doc) || !/^EXECUTION: (?:NOT_STARTED|IN_PROGRESS)$/m.test(doc) ||
     !['backend/','contracts/openapi/','database/'].every(s=>doc.includes(s))){
   fail('invalid service placement README: '+readme);
  }
@@ -205,11 +255,12 @@ for(const owner of serviceOwners){
   fail('service TypeScript configuration drift: '+configPath);
  }
  const markerPath=prefix+'/clients/index.ts';
- if(contents[markerPath]!=='// Empty contract-bound entrypoint. Add exports only with an approved client implementation.\nexport {};\n'){
-  fail('premature client behavior or export: '+markerPath);
- }
+ const clientMarkerIsScaffold=contents[markerPath]==='// Empty contract-bound entrypoint. Add exports only with an approved client implementation.\nexport {};\n';
+ if(!clientMarkerIsScaffold)developmentSourceFiles++;
  const clientDoc=contents[prefix+'/clients/README.md'];
- if(!/^STATUS: SCAFFOLD_ONLY$/m.test(clientDoc) || !clientDoc.includes('no usable operations')){
+ if(!/^STATUS: (?:SCAFFOLD_ONLY|IMPLEMENTATION_IN_PROGRESS)$/m.test(clientDoc) ||
+    (clientMarkerIsScaffold&&!clientDoc.includes('no usable operations')) ||
+    (!clientMarkerIsScaffold&&!/^STATUS: IMPLEMENTATION_IN_PROGRESS$/m.test(clientDoc))){
   fail('client library falsely claims implementation: '+prefix+'/clients/README.md');
  }
  if(!new RegExp('^  services/'+owner+':\\n    devDependencies:\\n      typescript:\\n        specifier: 7\\.0\\.2\\n        version: 7\\.0\\.2$', 'm').test(lock)){
@@ -231,10 +282,15 @@ function inspectServiceFolders(dir){
    continue;
   }
   if(stat.isDirectory()){
-   if(!allowedServiceDirs.has(relative))fail('unadmitted service directory: '+relative);
+   const ownerSourceFolder=/^services\/(identity|dsh|wlt)\/(backend|database|clients)\/[A-Za-z0-9_.\/-]+$/.test(relative);
+   if(!allowedServiceDirs.has(relative)&&!ownerSourceFolder)fail('unadmitted service directory: '+relative);
    inspectServiceFolders(absolute);
-  }else if(!stat.isFile()||!allowedServiceFiles.has(relative)){
+  }else if(!stat.isFile()||(!allowedServiceFiles.has(relative)&&!legalDevelopmentFile(relative))){
    fail('premature service source: '+relative);
+  }else if(!allowedServiceFiles.has(relative)){
+   if(relative.includes('/contracts/openapi/paths/')&&checkProgressivePathFragment(get(relative),relative))
+    progressiveOpenApiFiles++;
+   developmentSourceFiles++;
   }
  }
 }
@@ -302,11 +358,20 @@ const controlSet=new Set(controlIDs);
 if(controlIDs.length!==112||controlSet.size!==112||Array.from({length:112},(_,i)=>'R'+String(i+1).padStart(3,'0')).some(x=>!controlSet.has(x)))
  fail('historical Control Panel source ID inventory must retain 112 unique IDs');
 
-if(!/^STATUS: ACTIVE_FOR_FOUNDATION_ONLY$/m.test(agent))fail('agent must declare foundation-only state');
-if(!/^STATUS: ACTIVE_FOR_FOUNDATION_AND_PRESENTATION_SHELLS$/m.test(repo))fail('placement law must declare Stage-4 foundation shell scope');
+if(!/^STATUS: ACTIVE_FOR_PROGRESSIVE_DEVELOPMENT$/m.test(agent))fail('agent must declare progressive development authority');
+if(!/^STATUS: ACTIVE_FOR_PROGRESSIVE_DEVELOPMENT$/m.test(repo))fail('placement law must declare progressive development scope');
 if(!/^GOVERNANCE_CUTOVER: NOT_READY$/m.test(gov))fail('do not mark governance ready without verified donor reconciliation, internal risk assurance and stage checks');
 if(!gov.includes('## Cutover readiness is a policy decision, not a claim of implemented software'))fail('governance policy readiness must stay separate from later runtime implementation tests');
-if(!/^BUSINESS_DECISION_AUTHORITY: NONE_WHILE_NOT_READY$/m.test(gov))fail('no competing policy authority during reconstruction');
+if(!/^BUSINESS_DECISION_AUTHORITY: JOURNEY_SCOPED_CANONICAL_OWNERS$/m.test(gov))fail('incremental decisions must remain with the canonical governance owner');
+// Development includes newly proposed capabilities. Production remains separately gated.
+for(const [filename,source] of [['AGENTS.md',agent],['REPOSITORY-STRUCTURE.md',repo],['governance/README.md',gov],['governance/engineering.md',contents['governance/engineering.md']]]){
+ if(!/^ALL_CAPABILITIES_DEVELOPMENT: ENABLED$/m.test(source)||
+    !/^NEW_CAPABILITIES: ANALYZE_AND_IMPLEMENT_PROGRESSIVELY$/m.test(source))
+  fail('progressive capability development must cover existing and new scope: '+filename);
+ if(!/^PRODUCTION_ACTIVATION: BLOCKED$/m.test(source))
+  fail('production activation must remain blocked: '+filename);
+}
+
 if(!/^HUMAN_TARGET_POLICY_DECISION: APPROVED_2026-11-13$/m.test(gov) || !plan.includes('## 2026-11-13 — Explicit human policy decision and no-external-review process'))
  fail('explicit human-approved target policy and internal assurance record missing');
 if(!/^STATUS: IN_PROGRESS_FOUNDATION$/m.test(plan))fail('temporary plan must remain in progress');
@@ -365,7 +430,7 @@ for(const line of product.split(/\r?\n/)){
   expected.set(id,owner);
  }
 }
-if(expected.size!==26)fail('Product admission set must enumerate 26 unique capabilities; observed '+expected.size);
+if(expected.size<26)fail('Product baseline must retain at least 26 mapped capabilities; observed '+expected.size);
 const seen=new Map();
 for(const file of domainFiles){
  const source=contents[file];
@@ -410,7 +475,7 @@ for(let i=0;i<sections.length;i++){
   ||!/^EXIT:\s*\S+/m.test(section)||!/^READBACK:\s*\S+/m.test(section)||section.length<450)
   fail('missing material journey evidence boundary: '+id);
 }
-if(journeyIds.size!==16)fail('expected 16 named source-reconciled journeys: observed '+journeyIds.size);
+if(journeyIds.size<16)fail('original 16 source-reconciled journeys must remain mapped; observed '+journeyIds.size);
 for(const id of ['FIRST_THREE_ORDER_CONTACT','ORDER_SCOPED_OPERATIONS_EXCEPTION','PARTNER_COMMISSION_REMITTANCE','BENEFICIARY_SETTLEMENT']){
  if(!journeyIds.has(id))fail('material historical journey lost: '+id);
 }
@@ -475,6 +540,40 @@ for(const [owner,count] of Object.entries(coverageByOwner)){
  if(ownerRows.length!==count || ownerRows.some(m=>!m[5].includes(owner+'.md') && !(owner==='journeys' && m[5].includes('journeys.md'))))
   fail('historical source H2 group ownership coverage mismatch: '+owner);
 }
+// The 340 pinned source-heading records and 298 new per-clause routing entries are
+// provenance, not evidence that unresolved policy meaning or runtime has been approved.
+const sourceHeadingStart=census.indexOf('## Source-heading evidence by owner');
+const sourceHeadingEnd=census.indexOf('## 2026-11-13 — Manual owner-level semantic triage',sourceHeadingStart);
+if(sourceHeadingStart<0||sourceHeadingEnd<=sourceHeadingStart)fail('historical donor heading census missing its source table');
+const donorTable=census.slice(sourceHeadingStart,sourceHeadingEnd);
+const donorCounts={product:7,platform:6,architecture:13,identity:12,stores:37,catalog:19,commerce:46,fulfillment:28,finance:44,hr:11,experience:27,safety:3,engineering:23,journeys:64};
+const donorKeys=new Set(),donorStatuses={DOC_RETAIN:0,DOC_REFOUND:0,REVIEW_PENDING:0};
+for(const [owner,requiredCount] of Object.entries(donorCounts)){
+ const start=donorTable.indexOf('\n### '+owner+'\n');
+ const end=start<0?-1:donorTable.indexOf('\n### ',start+5);
+ const section=start<0?'':donorTable.slice(start,end<0?donorTable.length:end);
+ const rows=[...section.matchAll(/^\| (\d+) \| (#{2,4} [^|\n]+) \| (YES|NO) \| ([A-Z_]+) \|$/gm)];
+ if(rows.length!==requiredCount)fail('historical donor heading census must retain 340 owner-scoped source rows: '+owner);
+ for(const row of rows){
+  const key=owner+':'+row[1];
+  if(donorKeys.has(key))fail('duplicate historical donor heading source row: '+key);
+  donorKeys.add(key);
+  if(!(row[4] in donorStatuses))fail('unrecognized donor source review status: '+key);
+  donorStatuses[row[4]]++;
+ }
+}
+if(donorKeys.size!==340)fail('historical donor heading census must retain 340 unique source rows');
+const annotationKeys=[...census.matchAll(/^\| `docs\/governance\/([a-z]+)\.md:L(\d+)-L(\d+)` · [^|\n]+ \|/gm)].map(m=>m[1]+':'+m[2]);
+const uniqueAnnotation=new Set(annotationKeys);
+const baselineOwners=new Set(['hr','platform','architecture','identity']);
+if(annotationKeys.length!==298||uniqueAnnotation.size!==298||
+ annotationKeys.some(key=>!donorKeys.has(key)||baselineOwners.has(key.split(':')[0]))||
+ [...donorKeys].filter(key=>!baselineOwners.has(key.split(':')[0])&&!uniqueAnnotation.has(key)).length)
+ fail('historical donor annotation keys must uniquely cover the 298 remaining source rows');
+const donorHeader=census.slice(0,sourceHeadingStart);
+if(!donorHeader.includes('**'+(donorStatuses.DOC_RETAIN+donorStatuses.DOC_REFOUND)+' bounded documentary dispositions**')||
+ !donorHeader.includes('**'+donorStatuses.REVIEW_PENDING+' `REVIEW_PENDING`**'))
+ fail('historical donor review summary must agree with source row dispositions');
 // This asserts documentary coverage/owner routing, NOT paragraph-level semantic or financial verification.
 // Preserve source-grounded security and data limits in the draft owner without
 // treating lexical guard PASS as a reviewed policy or implemented security.
@@ -749,5 +848,6 @@ if(!/permissions:\s*\n\s*contents: read/.test(ci))fail('CI must run with least p
 if(!ci.includes('node --test tools/governance/verify-foundation.test.mjs')||!ci.includes('node tools/governance/verify-foundation.mjs'))fail('CI must run actual guard tests and live verification');
 if(/continue-on-error:\s*true|\$\{\{(?:(?!\}\})[\s\S])*\bsecrets\./.test(ci))fail('CI cannot silently skip proof or read secrets in foundation stage');
 
-console.log('FOUNDATION_STRUCTURE_PASS domain_owners='+domainFiles.length+' capability_ids='+seen.size+' one_census=true service_scaffold_only=true openapi_zero_operations=true openapi_reserved_groups='+openapiReservedGroups);
+console.log('FOUNDATION_STRUCTURE_PASS domain_owners='+domainFiles.length+' capability_ids='+seen.size+' one_census=true service_scaffold_only='+(developmentSourceFiles===0)+' openapi_zero_operations='+(progressiveOpenApiFiles===0)+' openapi_reserved_groups='+openapiReservedGroups+' progressive_source_files='+developmentSourceFiles);
+if(developmentSourceFiles>0)console.log('PROGRESSIVE_SOURCE_PRESENT: scope/ownership structure checked; complete OpenAPI parsing, Go/SQL integration, owner-backed authorization and real journey acceptance NOT_RUN by this structural guard');
 console.log('GOVERNANCE_CUTOVER_NOT_READY: material donor reconciliation and internal risk-assurance/implementation proof not yet completed; human target policies approved, external reviewer not represented; software runtime gates separate');

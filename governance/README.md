@@ -3,12 +3,17 @@
 ARTIFACT_CLASS: GOVERNANCE_INDEX
 SEMANTIC_OWNER: governance/README.md
 GOVERNANCE_CUTOVER: NOT_READY
-BUSINESS_DECISION_AUTHORITY: NONE_WHILE_NOT_READY
+IMPLEMENTATION_ADMISSION: PROGRESSIVE
+ALL_CAPABILITIES_DEVELOPMENT: ENABLED
+NEW_CAPABILITIES: ANALYZE_AND_IMPLEMENT_PROGRESSIVELY
+DEVELOPMENT_ISOLATION: REQUIRED_NOT_YET_VERIFIED
+PRODUCTION_ACTIVATION: BLOCKED
+BUSINESS_DECISION_AUTHORITY: JOURNEY_SCOPED_CANONICAL_OWNERS
 HUMAN_TARGET_POLICY_DECISION: APPROVED_2026-11-13
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 ## What this directory means
-This is the **only intended durable governance home** for BThwani. Each subject has exactly one semantic owner; overlapping documents link to the owner rather than restating independently changeable law. All current domain documents are **drafts**, still subject to source-to-decision reconciliation and risk review. Their existence alone is **not** acceptance for building SQL/services or releasing policy switches.
+This is the **only intended durable governance home** for BThwani. Each subject has exactly one semantic owner; overlapping documents link to the owner rather than restating independently changeable law. Current domain documents remain subject to complete historical reconciliation, while journey-scoped Product/domain decisions may be resolved incrementally in their canonical owner and used to guide isolated SQL/service development. Their existence alone never proves runtime acceptance or authorizes production activation.
 
 Historic `docs/governance/` was removed from this candidate. Read older content and verified code from original branch `41`, ZIP archives, dated reports and external sources as **donor evidence only**, not another editable authority. Preserve any materially binding historical legal/financial records and original research links in a non-normative `docs/reference/` when later admitted; never reintroduce another governance root.
 
@@ -39,6 +44,19 @@ Root `AGENTS.md` governs **agent execution/authority**, root `REPOSITORY-STRUCTU
 4. Implementation state is proven independently by code, contracts, applied migrations and runtime owner readback. A document or passing mocked test cannot assert the service is live or that financial operations are safe.
 5. Unknown or disputed material choice is recorded with an owner and a safe default **of no unauthorized activation**, not guessed away. A policy choice is only enabled when service implementation/legal acceptance makes it operable.
 
+## Progressive capability admission — 2026-11-14 human approval
+
+The global GOVERNANCE_CUTOVER remains NOT_READY solely as a whole-policy reconciliation marker, not a stop sign. The latest human approval enables **Close as We Go analysis, design and implementation of all existing and newly proposed Product capabilities**, without preliminary admission voting or full-platform cutover. For each journey, evaluate all affected actors, surfaces, contracts, owners, persistence, permissions, dependencies, errors, races and recovery; record newly resolved capabilities in the single canonical Product/owner documents as part of that journey. Proposed capabilities are not automatically certified as legally effective, fully tested or production-ready merely because development is open.
+
+**Before each journey is declared complete, its affected implementation and acceptance must satisfy the following evidence requirements; these are not development admission votes:**
+1. Map the journey to existing or newly proposed Product capability IDs in the single canonical Product owner, with one semantic owner and one Identity/DSH/WLT writer per mutable fact; record the affected scope and consumers. Adding a new ID during its journey does not require a prior project-wide governance cutover.
+2. Material original-source rights, obligations and unsafe choices for this capability are reconciled against the accepted owner policy. Unresolved material decisions fail closed **for the affected action**, without blocking unrelated accepted capabilities.
+3. Track each journey's affected owners, surfaces, dependencies, positive and negative cases and recovery through the existing Product/Journey/domain owners and executable acceptance tests. Spec Kit may help organize a complex journey, but its spec.md/plan.md/tasks.md are optional derived artifacts, never mandatory approval gates or parallel business policy. Do not duplicate a specification or require additional ceremony for a small change.
+4. The current stage-aware verifier is extended to allow genuine implementations in the legal owners, while rejecting unknown business scope, unauthorized permissions/operations, unsafe migrations and duplicate writers. **Adapting this technical guard is the initial enablement task, not permission to delay all commercial code until the global governance cutover.** Its positive and negative tests must pass before relying on it as implementation acceptance evidence.
+5. Development runtime must use a separate, verified synthetic database/media namespace before a journey needs it; do not reuse donor Docker volumes, live sessions, money or provider credentials. Prove the affected security, finance, migration, privacy and legal invariants proportionately to actual risk before closing that behavior, not as a platform-wide prerequisite to unrelated development.
+
+IMPLEMENTATION_ADMISSION: PROGRESSIVE authorizes **development of existing and new capabilities**, which are analyzed and reconciled within their journeys rather than held behind pre-development approvals. GOVERNANCE_CUTOVER: NOT_READY records unfinished whole-platform semantic review and never blocks development. **Only PRODUCTION_ACTIVATION: BLOCKED is the standing deployment/release gate**; separate authority is still required for destructive changes, real financial effects, credential access, Push/PR/merge and protected-state operations. This is not permission to bypass security boundaries during development. A journey becomes CLOSED only with 100% of its defined applicable criteria proven by owner-backed evidence; failed/untested checks stay FAIL/NOT_RUN and are repaired while development proceeds.
+
 ## What must be true before governance cutover
 - All 14 owner documents have been semantically reconciled against accepted decisions, relevant original source/migrations and major archived requirements, not just rewritten or filled with headings.
 - All **26** Product capability IDs occur exactly once as substantive owner sections, and no required material subfeature silently disappears. The single Product census routes each ID to one owner; no second catalog.
@@ -46,7 +64,7 @@ Root `AGENTS.md` governs **agent execution/authority**, root `REPOSITORY-STRUCTU
 - **Approved 2026-11-13 review process:** the sole human Product owner has approved the target commercial/architecture/security/migration/legal *policy choices*. No external consultant or independent sign-off is required merely to settle those choices. A material unsafe or unverified *technical implementation* remains unactivated until documented internal critical-risk assessment, negative/adversarial tests, protected historical-record reconciliation and applicable real-world legal/contract evidence are sufficient for that specific action. Missing proof is `NOT_RUN`/`REVIEW_BLOCKED` for the affected verification, never fictional `PASS`. External certification is not claimed.
 - Foundation/GitHub guard positive and adversarial tests pass on the exact revision; the temporary plan records unresolved evidence and stage boundary.
 
-When all conditions pass with approval, a separate governed change may set `GOVERNANCE_CUTOVER: READY` and update agent/guard phase. **This only certifies policy readiness for subsequent refoundation**, not SQL/application production readiness. Until then keep `NOT_READY`; do not disguise a draft as a final acceptance.
+When all conditions pass with approval, a separate governed change may set `GOVERNANCE_CUTOVER: READY` and update agent/guard phase. **This certifies complete policy reconciliation**, not permission to start development (already progressively authorized) and not SQL/application production readiness. Until then keep `NOT_READY`; do not disguise a draft as a final acceptance.
 
 ## Cutover readiness is a policy decision, not a claim of implemented software
 

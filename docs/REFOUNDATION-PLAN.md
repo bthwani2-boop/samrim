@@ -3,6 +3,10 @@
 DOCUMENT_CLASS: EXECUTION_PLAN
 OWNER: docs/REFOUNDATION-PLAN.md
 STATUS: IN_PROGRESS_FOUNDATION
+IMPLEMENTATION_ADMISSION: PROGRESSIVE
+ALL_CAPABILITIES_DEVELOPMENT: ENABLED
+NEW_CAPABILITIES: ANALYZE_AND_IMPLEMENT_PROGRESSIVELY
+PRODUCTION_ACTIVATION: BLOCKED
 TARGET_WORKTREE: D:\samrim-refoundation-clean-20261112
 SOURCE_BRANCH_AT_START: 41
 SOURCE_SHA_AT_START: 426d67b47beb8c66b09acd8c7394086b53ac5aae
@@ -104,6 +108,14 @@ These are decisions on the *target behavior*, not a second normative owner or a 
 **Last two open Journey-to-capability ownership choices closed now:** donor 41 never assigned `CAPABILITIES:` to `FIRST_THREE_ORDER_CONTACT` or `ORDER_SCOPED_OPERATIONS_EXCEPTION`. The current human-authorized target explicitly assigns the former as a bounded DSH `ORDER_LIFECYCLE` subflow and the latter to DSH `ORDER_LIFECYCLE` with WLT `ORDER_PAYMENT_COLLECTION` only for financial consequences. The remaining fourteen mappings retain actual donor source provenance. All sixteen journey sections now have exactly one validated mapping, against only the twenty-six Product-admitted IDs; three new negative guards reject absent or substituted mappings. This is a target decision, **not** a claim that the two missing donor fields existed historically or that an Operations service/CRM was added.
 
 **Remaining cutover admission check:** compare material paragraphs under all 340 headings and high-risk original rights/obligations to current legal owner meaning; explicitly record any truly retired functionality, scope conflicts and preserved historical liabilities. Real original signed agreements, previously applied DB versions, financial balances and original Root Owner state require separate later owner readback and cannot be made `PASS` from a textual census. GitHub CodeQL Go source-empty default scan on the prior remote commit remains failed until stage applicability is rectified without weakening genuine Go scanning. No claim of `GOVERNANCE_CUTOVER: READY` until the documented acceptance conditions themselves have evidence on the exact candidate revision.
+## 2026-11-14 — New human-approved progressive capability execution rule
+
+The latest user decision sets IMPLEMENTATION_ADMISSION: PROGRESSIVE and authorizes analysis and implementation of **existing and newly proposed capabilities** through Close as We Go while whole-platform GOVERNANCE_CUTOVER stays NOT_READY. Earlier passages imposing full cutover or a per-capability vote before development are superseded. New Product choices are analyzed and documented in their journeys, not blocked up front. **Only production activation remains the standing blocked stage**, while safety, protected-state actions and Git/external-authority boundaries continue to apply; journey closure needs verified evidence.
+
+For each journey, identify its existing or proposed Product capability and canonical domain/service owners. Reconcile only the decisions affecting its actors, surfaces, contracts, permissions, data, failure/recovery and dependencies; use the existing owner documents and executable tests as the source of acceptance. Spec Kit is optional for a sufficiently complex journey, not a separate approval gate or mandatory set of files. Implement the smallest coherent cross-surface slice, then test, verify and close all applicable acceptance criteria before claiming PASS; keep unrelated development moving. The progressive Foundation guard already admits owner-local Go, SQL and API source paths at a structural level, but this does not prove OpenAPI validity, service behavior, access control or integration; those require affected contract, runtime and negative tests. Use isolated synthetic state when the journey needs persistence, never donor/protected records. A local Commit requires the exclusive Git turn and a reviewed diff; Push requires separate explicit human authorization and remote SHA readback.
+
+The full 14-owner semantic reconciliation continues independently toward GOVERNANCE_CUTOVER: READY; finance, security, migration, legal, native device, authenticated end-to-end and production activation are not automatically green from documentation or structural tests.
+
 ## Phase 0 — Safe baseline (read only): DONE, recheck before changes
 - Verify original and target branch/HEAD/status/worktree, files tracked, active workers, and change ownership.
 - Prevent writes to `D:\samrim` and do not reset/copy/restart existing Docker, PostgreSQL, SeaweedFS or credentials for this stage.
@@ -214,7 +226,7 @@ The **current request authorizes only governance, agent law, temporary plan and 
 2. Historical conflicting instruction is superseded only with an explicit newer approved decision; ambiguous financial or legal meaning remains OPEN rather than silently chosen.
 3. No unwanted new Store/Pricing/Payment/Policy engine, protected state reset, or silent deletion of live rights. All checks runnable against the sparse Worktree alone where applicable.
 4. Record reviewed reference paths, finite unresolved risks and precise stage evidence in this **temporary plan**; after a governance cutover, avoid indefinite second decision catalogs.
-5. Only after approval and guard sensitivity proof change `GOVERNANCE_CUTOVER` to READY on a coherent reviewed candidate, **before** restoring application source or beginning SQL refoundation.
+5. Only after full policy reconciliation and sensitivity proof change `GOVERNANCE_CUTOVER` to READY on a coherent reviewed candidate. This is a **full-governance completion gate**, not a prerequisite for progressively developing source, contracts or isolated SQL in individually verified journeys.
 
 ## Stage completion record
 - Phase 0: established and revalidated against local branch 41 and target worktree; no deployable-runtime claims.
@@ -256,7 +268,7 @@ This pass addressed prominent **known omissions** from the first 14-owner drafts
 2. **R2 — HIGH_RISK_REVIEW:** separate competent review of finance, privilege, retained historical money, schema migration/destructive cutover rules. Without review: REVIEW_BLOCKED, including for documentary policies that materially alter critical operations.
 3. **R3 — GH_PROTECTION_AND_ACTIONS:** validate GitHub workflow syntax/routing locally where supported, then exact candidate GitHub Actions/CodeRabbit/Sonar checks and live main-branch rulesets after authorized remote submission. No authorized push, PR, branch protection change or merge yet.
 4. **R4 — SOURCES_AND_LINKS:** record source/quote provenance and preserve non-governing OSS/competitor/media/legal references; external live-link/license verification NOT_RUN.
-5. **R5 — CUTOVER_APPROVAL:** only after R1-R4 applicable gates are proven and reviewed may `GOVERNANCE_CUTOVER: READY` and related guards/AGENTS be updated in a separate coherent batch. This is governance readiness for *later* code and SQL work, not implementation success.
+5. **R5 — CUTOVER_APPROVAL:** only after R1-R4 applicable full-policy checks are proven and reviewed may `GOVERNANCE_CUTOVER: READY` and related guards/AGENTS be updated in a separate coherent batch. This is completion of overall governance reconciliation, **not a gate on progressively authorized code/SQL development** and not implementation success.
 
 No restoration of services, apps, old SQL, Docker or external data was performed by this pass.
 
@@ -1065,7 +1077,7 @@ This is a temporary execution checklist derived from the single Product capabili
 
 **Cross-owner execution gates (not automatically authorized work):**
 
-1. Before any business operation is activated, finish the target-policy reconciliation and separate governed cutover. Specify one DSH Store/Product/Offer/Order/fulfillment/HR contract family from approved owners; zero-operation OpenAPI scaffolds and empty TypeScript client packages are not usable APIs. Preserve the external identities and existing contracts until a lawful consumer migration is proven.
+1. For each business operation under development, settle its **relevant** owner policies and permissions, then implement and test the scoped contract and journey without waiting for global governance cutover. Before real-world or production activation, require the affected security, finance, legal and operational proofs and distinct release authorization. Zero-operation OpenAPI scaffolds and empty TypeScript client packages are not usable APIs; preserve external identities and existing contracts until lawful consumer migration is proven.
 2. DSH first proves canonical Store/employee/address identity and two-actor/two-Store authorization through its own persistent owner readback. Identity owns actor, verified credentials, session, global role and Operator admission. A Merchant Store grant does not authorize HR Operator, Captain role or WLT write. MARKETPLACE and DIRECT are Store relation modes, not parallel engines.
 3. After isolated Fresh-vs-protected-Upgrade analysis and correct independent owner contracts, admit real checkout, merchant acceptance, Store-Captain and Customer Pickup journeys incrementally. Test unsupported modes, stale inventories, racing accepts, retry after network loss, lost callback, unauthorized recipient/location, unknown payment outcome and one canonical persisted result.
 4. WLT alone verifies COMMISSION/SUBSCRIPTION agreements, COD/wallet/mixed funding, one authorized balance/custody/fee effect, ledger conservation, receipt/settlement/refund and no duplicate event in replay/race. DSH pricing and accepted Order snapshots never mutate WLT ledger directly. Preserve historical financial/legal records and user state; no hidden fixture or donor volume copy is acceptance evidence.
