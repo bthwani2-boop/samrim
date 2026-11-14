@@ -43,8 +43,8 @@ try {
     $raw = & python -c $python $cfgFile
     Require-ExitZero 'TOML configuration parse'
     $cfg = $raw | ConvertFrom-Json
-    if ($cfg.model -ne 'gpt-6-luna' -or $cfg.effort -ne 'high' -or $cfg.tier -ne 'fast' -or $cfg.fast -ne $true -or $cfg.sandbox -ne 'workspace-write') {
-        Fail 'Codex model/high/fast/workspace sandbox settings do not match approved configuration'
+    if ($cfg.model -ne 'gpt-6-luna' -or $cfg.effort -ne 'medium' -or $cfg.tier -ne 'fast' -or $cfg.fast -ne $true -or $cfg.sandbox -ne 'workspace-write') {
+        Fail 'Codex model/medium/fast/workspace sandbox settings do not match approved configuration'
     }
     $status = & specify integration status
     Require-ExitZero 'specify integration status'
@@ -70,7 +70,7 @@ try {
     if ($unowned.Count -gt 0) {
         Fail "Shared worktree has $($unowned.Count) changed path(s). Coordinate the Git writer and preserve other sessions before executing the automated workflow"
     }
-    Write-Output ("SPECKIT_PRECHECK_PASS: branch=$branch; integration=codex; model=gpt-6-luna; effort=high; requested_tier=fast; worktree=clean")
+    Write-Output ("SPECKIT_PRECHECK_PASS: branch=$branch; integration=codex; model=gpt-6-luna; effort=medium; requested_tier=fast; worktree=clean")
     exit 0
 }
 catch {

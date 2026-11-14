@@ -15,7 +15,6 @@ edits:
       command: speckit.specify
       integration: codex
       model: gpt-6-luna
-      reasoning_effort: high
       input:
         args: "{{ inputs.spec }}"
   - insert_before: review-spec
@@ -24,7 +23,6 @@ edits:
       command: speckit.clarify
       integration: codex
       model: gpt-6-luna
-      reasoning_effort: high
       input:
         args: "{{ inputs.spec }}"
   - replace: plan
@@ -33,7 +31,6 @@ edits:
       command: speckit.plan
       integration: codex
       model: gpt-6-luna
-      reasoning_effort: high
       input:
         args: "{{ inputs.spec }}"
   - insert_after: review-plan
@@ -42,7 +39,6 @@ edits:
       command: speckit.checklist
       integration: codex
       model: gpt-6-luna
-      reasoning_effort: high
       input:
         args: "{{ inputs.spec }}"
   - replace: tasks
@@ -51,7 +47,6 @@ edits:
       command: speckit.tasks
       integration: codex
       model: gpt-6-luna
-      reasoning_effort: high
       input:
         args: "{{ inputs.spec }}"
   - insert_after: tasks
@@ -60,7 +55,6 @@ edits:
       command: speckit.analyze
       integration: codex
       model: gpt-6-luna
-      reasoning_effort: high
       input:
         args: "{{ inputs.spec }}"
   - insert_before: implement
@@ -76,7 +70,6 @@ edits:
       command: speckit.implement
       integration: codex
       model: gpt-6-luna
-      reasoning_effort: high
       input:
         args: "{{ inputs.spec }}"
   - insert_after: implement
@@ -85,7 +78,6 @@ edits:
       command: speckit.converge
       integration: codex
       model: gpt-6-luna
-      reasoning_effort: high
       input:
         args: "{{ inputs.spec }}"
   - insert_after: implement
