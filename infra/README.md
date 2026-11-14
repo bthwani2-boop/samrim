@@ -12,23 +12,78 @@ This environment is synthetic development only, not production deployment.
 | `media` | Fresh SeaweedFS mini, own media volume/credentials | 3233 |
 | `mailpit` | Local inbound test email capture | 3226 |
 | `payment-mock` | Empty WireMock, no provider mappings | 3290 |
+| `dsh` (with optional Compose file) | Public discovery only; proven read-only Store/Offer API | 3202 |
 
-`compose.yaml` defines exactly these four. The project-scoped `isolated` bridge
+`compose.yaml` defines exactly these four foundational dependencies. The project-scoped `isolated` bridge
 is internal and keeps PostgreSQL inaccessible from the host. A second private
 `loopback` bridge is used only by the services publishing 127.0.0.1 ports.
 The two named volumes are project-scoped, and there are no host bind mounts.
 Existing `samrim-local` containers, historical customers/Root Owner, balances, orders,
 secrets, applied migrations and media are never copied or changed.
 
-## The eight additional historical container roles
+## Optional owner service roles and DSH public discovery
 
-`compose.apps.yaml` defines `postgres-access`, `identity-migrate`,
-`identity-bootstrap`, `identity`, `dsh-migrate`, `dsh`, `wlt-migrate`, and `wlt`
-under the opt-in `implementation` profile. They are intentionally NOT_RUN
-because this Worktree does not yet contain their Go Dockerfiles, real owner
-contracts, migrations, safe owner-scoped DB roles or verified acceptance.
-Never use the previous `samrim-local-identity:dev`, `samrim-local-dsh:dev`,
-or `samrim-local-wlt:dev` images as fake refoundation implementations.
+`compose.apps.yaml` contains eight opt-in `implementation` roles. Only `dsh`
+and `dsh-migrate` currently have a genuine Go entrypoint, and **`dsh` only
+serves public Store/Offer discovery**. Its protected mutation, Identity session
+verification and WLT/Order integrations are NOT_RUN. Identity and WLT are **not
+ready**: their backend code, Dockerfiles, migrations and accepted security/ledger
+journeys do not exist yet in this Worktree. Other opt-in roles remain NOT_RUN.
+Never activate the entire `implementation` profile or substitute donor images.
+Do not use `samrim-local` volumes or old Identity/WLT binaries.
+
+### Build and run real public DSH inside the same Compose project
+
+Use the exact Go version in root `.go-version`, installed on the Windows build
+host. `infra/build-dsh-image.ps1` cross-compiles the DSH owner directly to Linux
+and builds the image from the digest-pinned isolated Alpine runtime base; no old binaries
+or secrets enter its build context; it packages the reviewed DSH SQL files
+without running any migration. Add the **verified existing isolated** schema
+and exact permitted browser origins only to the ignored `infra/.env`:
+
+```dotenv
+REF_DSH_DISCOVERY_SCHEMA=dsh_test_REPLACE_WITH_VERIFIED_SCHEMA
+REF_DSH_PUBLIC_CORS_ORIGINS=http://127.0.0.1:3101,http://localhost:3101
+```
+
+Run from the Worktree root (never plain `--profile implementation up`):
+
+```powershell
+powershell -NoProfile -File infra/build-dsh-image.ps1
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.apps.yaml config --quiet
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.apps.yaml --profile implementation up -d --no-deps dsh
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.apps.yaml --profile implementation ps dsh
+```
+
+The public DSH image uses only the real `/health` and `/v1/public/stores`
+routes; the Compose healthcheck confirms database reachability. The database
+schema must have the reviewed DSH SQL migrations applied separately in the
+isolated namespace before serving. The `dsh-migrate` service can explicitly run
+migration 001 only after reviewing the target schema; it does not silently
+seed or upgrade 002/003. Do not treat HTTP health as evidence of checkout,
+merchant permissions, identity authentication or finance correctness.
+
+
+## Deployment boundary and security review
+
+The DSH container is a **local public-read-only** service: non-root runtime,
+read-only container root filesystem, all Linux capabilities dropped, no new
+privileges and loopback-only published port. It has no application volume mounts,
+and its PostgreSQL dependency is on the project's internal bridge network.
+
+**Known limitation:** The current DSH discovery owner uses the private
+development database administrator credentials via `REF_POSTGRES_*`. This is
+only acceptable for tightly isolated synthetic development, **not** release.
+Before any protected endpoint or non-synthetic deployment, create and verify
+owner-scoped DSH runtime database grants (separate migration credentials),
+real Identity authorization, WLT integration and negative/recovery tests.
+Do not change DB grants or handle real money through this setup.
+
+The build script rejects uncommitted Go/SQL source so that its source-SHA image
+label cannot silently certify a different working-tree revision. The image
+build itself does not certify merchant scope, login, checkout or finance.
+Identity and WLT require their genuine owner implementations and signed-off
+security/ledger evidence; no placeholder service counts as readiness.
 
 ## Credentials and startup
 
@@ -48,11 +103,12 @@ docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.y
 docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml ps
 ```
 
-Do not invoke `compose.apps.yaml` with the `implementation` profile until
-its real owner code, safe per-owner DB credentials and runtime proof exist.
+Do not start the whole `implementation` profile. Launch only the proven DSH
+public service explicitly; the remaining future owner roles must first pass
+owner-backed persistence, security and financial acceptance.
 Do not run `down -v`, `prune`, copy donor volume data or touch donor tasks.
 
-## Approved port map (reservations, not live app listeners)
+## Approved port map (only DSH and the listed dependencies are currently live)
 
 | Future native app | Port | Future service | Port |
 | --- | ---: | --- | ---: |
