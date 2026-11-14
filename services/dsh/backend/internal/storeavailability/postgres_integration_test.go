@@ -51,7 +51,7 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 		t.Fatal(err)
 	}
 	schema := "dsh_orderability_agent02"
-	for _, file := range []string{"001_public_discovery.sql", "002_store_orderability.sql", "003_service_city_timezone.sql"} {
+	for _, file := range []string{"001_public_discovery.sql", "002_store_orderability.sql", "003_service_city_timezone.sql", "004_store_availability_city_limits.sql"} {
 		path := filepath.Join("..", "..", "..", "database", "migrations", file)
 		contents, err := os.ReadFile(path)
 		if err != nil {
@@ -63,18 +63,56 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 		}
 	}
 	id := fmt.Sprintf("synthetic-a02-%d", time.Now().UnixNano())
-	_, err = db.ExecContext(ctx, fmt.Sprintf(`
-		INSERT INTO %s.service_cities(id,active,timezone_name) VALUES('sanaa',true,'Asia/Aden')
-			ON CONFLICT(id) DO UPDATE SET timezone_name=EXCLUDED.timezone_name;
-		INSERT INTO %s.verticals(id,active) VALUES('grocery',true) ON CONFLICT(id) DO NOTHING;`, schema, schema))
+	cityID := fmt.Sprintf("sanaa-a02-%d", time.Now().UnixNano())
+	_, err = db.ExecContext(ctx, fmt.Sprintf(`INSERT INTO %s.service_cities(id,active,timezone_name)
+		VALUES ($1,true,'Asia/Aden')`, schema), cityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.ExecContext(ctx, fmt.Sprintf(`INSERT INTO %s.verticals(id,active)
+		VALUES ('grocery',true) ON CONFLICT(id) DO NOTHING`, schema))
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = db.ExecContext(ctx, fmt.Sprintf(`INSERT INTO %s.stores
 		(id,owner_actor_id,city_id,vertical_id,relation,name,published)
-		VALUES ($1,'synthetic-merchant-01','sanaa','grocery','MARKETPLACE','متجر اختبار آمن',false)`, schema), id)
+		VALUES ($1,'synthetic-merchant-01',$2,'grocery','MARKETPLACE','متجر اختبار آمن',false)`, schema), id, cityID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	_, err = db.ExecContext(ctx, fmt.Sprintf(`INSERT INTO %s.store_operational_limits
+		(city_id,max_pause_seconds,max_preparation_minutes,version,changed_by_actor,change_reason)
+		VALUES ($1,3600,90,1,'synthetic-operator','Isolated scoped policy')`, schema), cityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy, err := NewPostgresPolicySource(db, schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	limits, err := policy.CurrentLimits(ctx, id)
+	if err != nil || limits.Version != 1 || limits.MaxPause != time.Hour || limits.MaxPreparationMinutes != 90 {
+		t.Fatalf("DSH city policy readback %+v %v", limits, err)
+	}
+	if _, err = policy.CurrentLimits(ctx, "no-such-store"); !errors.Is(err, ErrPolicyUnavailable) {
+		t.Fatalf("missing Store policy allowed: %v", err)
+	}
+	// A real Store in a different city without an effective DSH policy
+	// must remain unmodifiable; absence is not a permissive zero/default.
+	noPolicyID := id + "-no-policy"
+	_, err = db.ExecContext(ctx, fmt.Sprintf(`INSERT INTO %s.service_cities(id,active,timezone_name)
+		VALUES ('sanaa-no-policy',true,'Asia/Aden') ON CONFLICT(id) DO NOTHING`, schema))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.ExecContext(ctx, fmt.Sprintf(`INSERT INTO %s.stores(id,owner_actor_id,city_id,vertical_id,relation,name,published)
+		VALUES ($1,'synthetic-merchant-01','sanaa-no-policy','grocery','MARKETPLACE','No policy Store',false)
+		ON CONFLICT(id) DO NOTHING`, schema), noPolicyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = policy.CurrentLimits(ctx, noPolicyID); !errors.Is(err, ErrPolicyUnavailable) {
+		t.Fatalf("existing Store without city policy was admitted: %v", err)
 	}
 	repo, err := NewPostgresRepository(db, schema)
 	if err != nil {
@@ -154,7 +192,7 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 		Change: Change{StoreID: id, OperationID: "agent02-op-0001", ExpectedVersion: 1,
 			Timezone: "Asia/Aden", Weekly: []WeeklyWindow{{Weekday: time.Monday, Opens: 9 * 60, Closes: 17 * 60}},
 			PreparationMinutes: 15, Reason: "Scheduled opening"},
-		ActorID: "synthetic-merchant-01", AuthoritySource: "MERCHANT_STORE_GRANT",
+		ActorID: "synthetic-merchant-01", AuthoritySource: "MERCHANT_STORE_GRANT", PolicyVersion: limits.Version,
 	}
 	forgedTimezone := command
 	forgedTimezone.Timezone = "Pacific/Honolulu"
@@ -261,7 +299,7 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 	// real PostgreSQL mutation/readback. Identity verifier is fake here:
 	// full multi-service authentication E2E is explicitly NOT proven.
 	identity := fakeIdentity{actor: VerifiedActor{Subject: "synthetic-merchant-01", Role: MerchantRole}}
-	service, err := NewService(identity, grants, fakePolicy{}, repo)
+	service, err := NewService(identity, grants, policy, repo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +331,7 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 	if err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT count(*) FROM %s.store_operational_audit WHERE store_id=$1`, schema), id).Scan(&afterAudits); err != nil || afterAudits != 3 {
 		t.Fatalf("HTTP mutation audit must be once only: %d %v", afterAudits, err)
 	}
-	noGrantService, _ := NewService(fakeIdentity{actor: VerifiedActor{Subject: "synthetic-merchant-02", Role: MerchantRole}}, grants, fakePolicy{}, repo)
+	noGrantService, _ := NewService(fakeIdentity{actor: VerifiedActor{Subject: "synthetic-merchant-02", Role: MerchantRole}}, grants, policy, repo)
 	noGrantHandler, _ := NewHandler(noGrantService)
 	deniedRequest := httptest.NewRequest(http.MethodGet, "/v1/stores/"+id+"/availability", nil)
 	deniedRequest.Header.Set("Authorization", "Bearer wrong-store-session")
@@ -302,7 +340,7 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 	if deniedResponse.Code != http.StatusForbidden {
 		t.Fatalf("wrong-Store GET returned %d", deniedResponse.Code)
 	}
-	revokedService, _ := NewService(fakeIdentity{denied: true}, grants, fakePolicy{}, repo)
+	revokedService, _ := NewService(fakeIdentity{denied: true}, grants, policy, repo)
 	revokedHandler, _ := NewHandler(revokedService)
 	revokedRequest := httptest.NewRequest(http.MethodPatch, "/v1/stores/"+id+"/availability", strings.NewReader(patchBody))
 	revokedRequest.Header.Set("Authorization", "Bearer revoked-identity")
@@ -378,12 +416,85 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 	if totalAudits != 6 || totalCommands != 6 {
 		t.Fatalf("concurrent identical requests duplicated owner audit/commands: audits=%d commands=%d", totalAudits, totalCommands)
 	}
+	// Operator policy changes are versioned DSH facts: an in-flight Store
+	// update cannot persist using a stale authorization snapshot. A committed
+	// operation may still be replayed after the effective policy changes.
+	_, err = db.ExecContext(ctx, fmt.Sprintf(`UPDATE %s.store_operational_limits
+		SET max_preparation_minutes=10, version=2, changed_by_actor='synthetic-operator',
+		change_reason='Lower the preparation maximum' WHERE city_id=$1`, schema), cityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newLimits, err := policy.CurrentLimits(ctx, id)
+	if err != nil || newLimits.Version != 2 || newLimits.MaxPreparationMinutes != 10 {
+		t.Fatalf("changed DSH policy not visible %+v %v", newLimits, err)
+	}
+	// A future Operator writer must not be able to rewrite the effective
+	// bounds without advancing the version; the database enforces this.
+	if _, err = db.ExecContext(ctx, fmt.Sprintf(`UPDATE %s.store_operational_limits
+		SET max_preparation_minutes=7 WHERE city_id=$1`, schema), cityID); err == nil {
+		t.Fatal("Store policy changed without incrementing its version")
+	}
+	stalePolicy := command
+	stalePolicy.OperationID = "agent02-stale-policy-0001"
+	stalePolicy.ExpectedVersion = nextVersion
+	stalePolicy.PreparationMinutes = 9
+	if _, _, err = repo.Apply(ctx, stalePolicy); !errors.Is(err, ErrPolicyVersionConflict) {
+		t.Fatalf("stale DSH policy allowed a Store change: %v", err)
+	}
+	if replayed, replay, replayErr := repo.Apply(ctx, command); replayErr != nil || !replay || replayed.Version != 2 {
+		t.Fatalf("durably committed operation lost after policy update %+v %v %v", replayed, replay, replayErr)
+	}
+	stalePolicy.PolicyVersion = newLimits.Version
+	stalePolicy.PreparationMinutes = 20
+	if _, _, err = repo.Apply(ctx, stalePolicy); !errors.Is(err, ErrInvalidChange) {
+		t.Fatalf("new preparation maximum bypassed: %v", err)
+	}
+	stalePolicy.PreparationMinutes = 9
+	futurePause := time.Now().Add(2 * time.Hour)
+	stalePolicy.PausedUntil = &futurePause
+	if _, _, err = repo.Apply(ctx, stalePolicy); !errors.Is(err, ErrInvalidChange) {
+		t.Fatalf("live city pause maximum bypassed: %v", err)
+	}
+	stalePolicy.PausedUntil = nil
+	updated, wasReplay, err := repo.Apply(ctx, stalePolicy)
+	if err != nil || wasReplay || updated.Version != nextVersion+1 {
+		t.Fatalf("authorized new-policy Store mutation failed %+v replay=%v err=%v", updated, wasReplay, err)
+	}
+	var updatedAudits int
+	if err = db.QueryRowContext(ctx, fmt.Sprintf("SELECT count(*) FROM %s.store_operational_audit WHERE store_id=$1", schema), id).Scan(&updatedAudits); err != nil || updatedAudits != 7 {
+		t.Fatalf("rejected policy requests changed audit: count=%d err=%v", updatedAudits, err)
+	}
+	var firstPolicyVersion, acceptedPolicyVersion int64
+	err = db.QueryRowContext(ctx, fmt.Sprintf(`SELECT policy_version FROM %s.store_operational_audit
+		WHERE store_id=$1 AND operation_id=$2`, schema), id, command.OperationID).Scan(&firstPolicyVersion)
+	if err != nil || firstPolicyVersion != 1 {
+		t.Fatalf("initial Store audit did not freeze city policy version=%d err=%v", firstPolicyVersion, err)
+	}
+	err = db.QueryRowContext(ctx, fmt.Sprintf(`SELECT policy_version FROM %s.store_operational_audit
+		WHERE store_id=$1 AND operation_id=$2`, schema), id, stalePolicy.OperationID).Scan(&acceptedPolicyVersion)
+	if err != nil || acceptedPolicyVersion != 2 {
+		t.Fatalf("updated Store audit did not freeze city policy version=%d err=%v", acceptedPolicyVersion, err)
+	}
+	var cityPolicyAudits int
+	if err = db.QueryRowContext(ctx, fmt.Sprintf(`SELECT count(*) FROM %s.store_operational_limits_audit
+		WHERE city_id=$1`, schema), cityID).Scan(&cityPolicyAudits); err != nil || cityPolicyAudits != 2 {
+		t.Fatalf("policy revision history incomplete: count=%d err=%v", cityPolicyAudits, err)
+	}
+	if _, err = db.ExecContext(ctx, fmt.Sprintf(`UPDATE %s.store_operational_limits_audit
+		SET reason='tampered' WHERE city_id=$1`, schema), cityID); err == nil {
+		t.Fatal("policy history could be rewritten")
+	}
+	if _, err = db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s.store_operational_limits
+		WHERE city_id=$1`, schema), cityID); err == nil {
+		t.Fatal("active policy could be erased without a versioned change")
+	}
 	// A missing or invalid canonical DSH city timezone never falls back to a client value.
-	if _, err := db.ExecContext(ctx, fmt.Sprintf("UPDATE %s.service_cities SET timezone_name='Not/AZone' WHERE id='sanaa'", schema)); err != nil {
+	if _, err := db.ExecContext(ctx, fmt.Sprintf("UPDATE %s.service_cities SET timezone_name='Not/AZone' WHERE id=$1", schema), cityID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := grants.StoreTimezone(ctx, id); !errors.Is(err, ErrInvalidTimezone) {
 		t.Fatalf("invalid canonical timezone accepted: %v", err)
 	}
-	t.Logf("PASS real DSH PostgreSQL: store=%s finalVersion=%d audits=%d commands=%d, concurrent identical key exactly once, denied calls preserved state", id, afterSame.Version, totalAudits, totalCommands)
+	t.Logf("PASS real DSH PostgreSQL: store=%s finalVersion=%d audits=%d, policy versions 1->2 frozen; concurrent identical key exactly once, denied calls preserved state", id, updated.Version, updatedAudits)
 }

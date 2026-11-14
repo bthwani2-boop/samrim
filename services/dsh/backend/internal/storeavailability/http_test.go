@@ -113,3 +113,17 @@ func TestHTTPAcceptsOneScopedValidatedUpdate(t *testing.T) {
 		t.Fatalf("expected two validated changes, count %d", count)
 	}
 }
+
+func TestHTTPPolicyVersionConflictHasStableNonSecretCode(t *testing.T) {
+	w := httptest.NewRecorder()
+	writeFailure(w, ErrPolicyVersionConflict)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("policy version conflict returned HTTP %d", w.Code)
+	}
+	var response struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || response.Code != "OPERATIONAL_POLICY_VERSION_CONFLICT" {
+		t.Fatalf("unexpected policy conflict response: %+v err=%v", response, err)
+	}
+}

@@ -9,14 +9,15 @@ import (
 )
 
 var (
-	ErrUnauthorized      = errors.New("UNAUTHENTICATED")
-	ErrForbidden         = errors.New("STORE_OPERATION_FORBIDDEN")
-	ErrInvalidChange     = errors.New("INVALID_OPERATIONAL_CHANGE")
-	ErrPolicyUnavailable = errors.New("OPERATIONAL_POLICY_UNAVAILABLE")
-	ErrVersionConflict   = errors.New("STORE_AVAILABILITY_VERSION_CONFLICT")
-	ErrOperationConflict = errors.New("IDEMPOTENCY_KEY_REUSED")
-	ErrStoreMissing      = errors.New("STORE_NOT_FOUND")
-	ErrUnknownResult     = errors.New("OPERATION_RESULT_UNKNOWN")
+	ErrUnauthorized          = errors.New("UNAUTHENTICATED")
+	ErrForbidden             = errors.New("STORE_OPERATION_FORBIDDEN")
+	ErrInvalidChange         = errors.New("INVALID_OPERATIONAL_CHANGE")
+	ErrPolicyUnavailable     = errors.New("OPERATIONAL_POLICY_UNAVAILABLE")
+	ErrPolicyVersionConflict = errors.New("OPERATIONAL_POLICY_VERSION_CONFLICT")
+	ErrVersionConflict       = errors.New("STORE_AVAILABILITY_VERSION_CONFLICT")
+	ErrOperationConflict     = errors.New("IDEMPOTENCY_KEY_REUSED")
+	ErrStoreMissing          = errors.New("STORE_NOT_FOUND")
+	ErrUnknownResult         = errors.New("OPERATION_RESULT_UNKNOWN")
 )
 
 type ActorRole string
@@ -45,6 +46,7 @@ type StoreGrants interface {
 type Limits struct {
 	MaxPause              time.Duration
 	MaxPreparationMinutes int
+	Version               int64
 }
 type PolicySource interface {
 	// Read only from current DSH Operator Policies, never from a UI default.
@@ -74,6 +76,7 @@ type AuthorizedChange struct {
 	Change
 	ActorID         string
 	AuthoritySource string
+	PolicyVersion   int64
 }
 type Repository interface {
 	Read(context.Context, string) (Snapshot, error)
@@ -156,9 +159,11 @@ func (s *Service) Change(ctx context.Context, token string, change Change) (Snap
 	if err != nil {
 		return Snapshot{}, false, ErrPolicyUnavailable
 	}
-	if limits.MaxPreparationMinutes < 0 || limits.MaxPause < 0 ||
-		change.PreparationMinutes > limits.MaxPreparationMinutes {
+	if limits.Version < 1 || limits.MaxPreparationMinutes < 0 || limits.MaxPause < 0 {
 		return Snapshot{}, false, ErrPolicyUnavailable
+	}
+	if change.PreparationMinutes > limits.MaxPreparationMinutes {
+		return Snapshot{}, false, ErrInvalidChange
 	}
 	if change.PausedUntil != nil {
 		remaining := change.PausedUntil.Sub(s.now())
@@ -168,6 +173,6 @@ func (s *Service) Change(ctx context.Context, token string, change Change) (Snap
 	}
 	change.Reason = strings.TrimSpace(change.Reason)
 	return s.repo.Apply(ctx, AuthorizedChange{
-		Change: change, ActorID: actor.Subject, AuthoritySource: authority,
+		Change: change, ActorID: actor.Subject, AuthoritySource: authority, PolicyVersion: limits.Version,
 	})
 }

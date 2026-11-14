@@ -118,6 +118,8 @@ func writeFailure(w http.ResponseWriter, err error) {
 		code, category = http.StatusNotFound, "STORE_NOT_FOUND"
 	case errors.Is(err, ErrVersionConflict):
 		code, category = http.StatusConflict, "STORE_AVAILABILITY_VERSION_CONFLICT"
+	case errors.Is(err, ErrPolicyVersionConflict):
+		code, category = http.StatusConflict, "OPERATIONAL_POLICY_VERSION_CONFLICT"
 	case errors.Is(err, ErrOperationConflict):
 		code, category = http.StatusConflict, "IDEMPOTENCY_KEY_REUSED"
 	case errors.Is(err, ErrInvalidChange), errors.Is(err, ErrInvalidSchedule), errors.Is(err, ErrInvalidTimezone):

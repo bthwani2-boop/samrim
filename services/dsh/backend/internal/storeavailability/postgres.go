@@ -282,6 +282,41 @@ func (r *PostgresRepository) applyOnce(ctx context.Context, c AuthorizedChange, 
 	if before.Version != c.ExpectedVersion {
 		return Snapshot{}, false, ErrVersionConflict
 	}
+	// A Store edit must use the DSH policy version read at authorization.
+	// Hold a shared lock until the Store transaction commits, so a later
+	// Operator policy edit cannot retroactively invalidate this check.
+	// Unknown, inactive or stale policy never permits a Store write.
+	var livePolicyVersion int64
+	var maxPauseSeconds, maxPreparationMinutes int
+	var databaseNow time.Time
+	err = tx.QueryRowContext(ctx, `SELECT p.version, p.max_pause_seconds, p.max_preparation_minutes, clock_timestamp()
+		FROM stores s
+		JOIN service_cities city ON city.id=s.city_id
+		JOIN store_operational_limits p ON p.city_id=city.id
+		WHERE s.id=$1 AND city.active FOR SHARE OF p`, c.StoreID).
+		Scan(&livePolicyVersion, &maxPauseSeconds, &maxPreparationMinutes, &databaseNow)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Snapshot{}, false, ErrPolicyUnavailable
+	}
+	if err != nil {
+		return Snapshot{}, false, normalizePgError(err)
+	}
+	if c.PolicyVersion < 1 || livePolicyVersion < 1 || maxPauseSeconds < 0 ||
+		maxPauseSeconds > 31536000 || maxPreparationMinutes < 0 || maxPreparationMinutes > 1440 {
+		return Snapshot{}, false, ErrPolicyUnavailable
+	}
+	if livePolicyVersion != c.PolicyVersion {
+		return Snapshot{}, false, ErrPolicyVersionConflict
+	}
+	if c.PreparationMinutes < 0 || c.PreparationMinutes > maxPreparationMinutes {
+		return Snapshot{}, false, ErrInvalidChange
+	}
+	if c.PausedUntil != nil {
+		pauseFor := c.PausedUntil.Sub(databaseNow)
+		if maxPauseSeconds == 0 || pauseFor <= 0 || pauseFor > time.Duration(maxPauseSeconds)*time.Second {
+			return Snapshot{}, false, ErrInvalidChange
+		}
+	}
 	after := Snapshot{
 		StoreID: c.StoreID, Timezone: c.Timezone, Weekly: append([]WeeklyWindow{}, c.Weekly...),
 		PausedUntil: c.PausedUntil, PreparationMinutes: c.PreparationMinutes,
@@ -323,9 +358,9 @@ func (r *PostgresRepository) applyOnce(ctx context.Context, c AuthorizedChange, 
 		return Snapshot{}, false, normalizePgError(err)
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO store_operational_audit
-		(store_id,operation_id,acting_actor_id,authority_source,reason,before_snapshot,after_snapshot)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		c.StoreID, c.OperationID, c.ActorID, c.AuthoritySource, c.Reason, beforeJSON, afterJSON)
+		(store_id,operation_id,acting_actor_id,authority_source,reason,before_snapshot,after_snapshot,policy_version)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+		c.StoreID, c.OperationID, c.ActorID, c.AuthoritySource, c.Reason, beforeJSON, afterJSON, c.PolicyVersion)
 	if err != nil {
 		return Snapshot{}, false, normalizePgError(err)
 	}

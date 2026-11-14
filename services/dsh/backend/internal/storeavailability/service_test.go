@@ -48,13 +48,19 @@ func (x fakeGrant) RequireStoreAction(context.Context, string, string, string) e
 	return nil
 }
 
-type fakePolicy struct{ unavailable bool }
+type fakePolicy struct {
+	unavailable bool
+	versionZero bool
+}
 
 func (x fakePolicy) CurrentLimits(context.Context, string) (Limits, error) {
 	if x.unavailable {
 		return Limits{}, errors.New("unavailable")
 	}
-	return Limits{MaxPause: time.Hour, MaxPreparationMinutes: 90}, nil
+	if x.versionZero {
+		return Limits{MaxPause: time.Hour, MaxPreparationMinutes: 90}, nil
+	}
+	return Limits{MaxPause: time.Hour, MaxPreparationMinutes: 90, Version: 1}, nil
 }
 
 type fakeRepo struct{ applies *int }
@@ -122,7 +128,7 @@ func TestServiceOnlyForwardsValidPolicyBoundChanges(t *testing.T) {
 	bad = change
 	bad.PreparationMinutes = 100
 	_, _, err = s.Change(context.Background(), "verified-token", bad)
-	if !errors.Is(err, ErrPolicyUnavailable) || count != 1 {
+	if !errors.Is(err, ErrInvalidChange) || count != 1 {
 		t.Fatalf("bad prep: %v", err)
 	}
 }
