@@ -19,9 +19,11 @@ const testFiles = [
   "tools/mobile/verify-application-boundaries.test.mjs",
   "packages/tamagui-config/tools/appearance.test.mjs",
   "tools/dev/verify-source-execution.test.mjs",
+  "tools/dev/dsh-public-client.test.mjs",
   "tools/mobile/verify-native-config.test.mjs",
 ];
 const command = [
+  "--experimental-transform-types",
   "--loader", "./packages/design-system/tools/ts-resolver.mjs",
   "--experimental-test-coverage",
   "--test-reporter=lcov",
