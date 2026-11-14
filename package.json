@@ -9,7 +9,7 @@
     "pnpm": "12.15.0"
   },
   "scripts": {
-    "check:workspace": "node tools/dev/verify-workspace.mjs",
+    "check:workspace": "node tools/dev/verify-workspace.mjs && node --test tools/dev/git-turn.test.mjs",
     "check:coverage": "node tools/dev/run-coverage.mjs",
     "check:toolchain": "node tools/dev/verify-workspace.mjs --require-exact-toolchain",
     "check:security": "node --test tools/security/verify-secrets.test.mjs && node tools/security/verify-secrets.mjs",

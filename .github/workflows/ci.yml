@@ -39,6 +39,8 @@ jobs:
           git status --short
       - name: Test guard sensitivity
         run: node --test tools/governance/verify-foundation.test.mjs tools/governance/review-examples.test.mjs
+      - name: Verify exclusive shared Git-turn handoff
+        run: node --test tools/dev/git-turn.test.mjs
       - name: Verify foundation without asserting business readiness
         run: node tools/governance/verify-foundation.mjs
       - name: Verify Stage-4 source versions and external app identities (static only)
