@@ -62,15 +62,104 @@ try {
     Require-ExitZero 'codex login status'
     if (($login -join ' ') -notmatch 'Logged in') { Fail 'Codex is not authenticated' }
 
-    # Strict shared-worktree protection: other agents' changes must not be
-    # included in an autonomous workflow. Run-state metadata is excluded.
+    # Scope admission, not a global clean-tree lock. Every workflow must declare
+    # the exact paths it may change. Ownership claims are checked for tracked
+    # source; ignored local test runs have an exclusive named subdirectory.
+    $scopeRaw = $env:BTHWANI_SPECKIT_WRITE_SCOPE
+    if ([string]::IsNullOrWhiteSpace($scopeRaw)) {
+        Fail 'Set BTHWANI_SPECKIT_WRITE_SCOPE to a bounded relative directory before running Spec Kit'
+    }
+    $scopes = @()
+    foreach ($candidate in @($scopeRaw -split ';')) {
+        $scope = $candidate.Trim().Replace('\', '/').TrimEnd('/')
+        if ($scope -eq '' -or $scope.StartsWith('/') -or $scope -match '^[A-Za-z]:' -or $scope.Contains('//')) {
+            Fail "Invalid relative write scope: $candidate"
+        }
+        $parts = @($scope -split '/')
+        if ($parts.Count -lt 2) { Fail "Write scope is too broad: $candidate" }
+        foreach ($part in $parts) {
+            if ($part -eq '.' -or $part -eq '..' -or $part -notmatch '\A[\p{L}\p{N}._-]+\z') {
+                Fail "Write scope contains traversal or unsupported characters: $candidate"
+            }
+        }
+        if ($parts[0] -in @('.git','.specify','.agents','.codex','node_modules')) {
+            Fail "Autonomous workflow cannot rewrite protected tooling: $candidate"
+        }
+        if ($parts[0] -in @('services','apps','packages','tools','infra') -and $parts.Count -lt 3) {
+            Fail "Write scope is too broad for shared source: $candidate"
+        }
+        $probe = $project
+        foreach ($part in $parts) {
+            $probe = Join-Path $probe $part
+            if (Test-Path -LiteralPath $probe) {
+                $item = Get-Item -LiteralPath $probe -Force
+                if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                    Fail "Write scope crosses a symlink or junction: $candidate"
+                }
+            }
+        }
+        $scope = $scope.ToLowerInvariant()
+        if ($scopes -contains $scope) { Fail "Duplicate write scope: $candidate" }
+        $scopes += $scope
+    }
+    if ($scopes.Count -gt 8) { Fail 'At most eight distinct write scopes may be declared' }
+
+    $trackedScopes = @($scopes | Where-Object { -not $_.StartsWith('.bthwani-local/') })
+    if ($trackedScopes.Count -gt 0) {
+        $claimsDir = $env:BTHWANI_SPECKIT_CLAIMS_DIR
+        $claimName = $env:BTHWANI_SPECKIT_CLAIM_NAME
+        if ([string]::IsNullOrWhiteSpace($claimsDir) -or [string]::IsNullOrWhiteSpace($claimName) -or
+            $claimName -notmatch '\A[A-Za-z0-9_-]+\z' -or $claimName -like 'GIT-TURN*') {
+            Fail 'Tracked source requires an existing feature owner claim: BTHWANI_SPECKIT_CLAIMS_DIR and BTHWANI_SPECKIT_CLAIM_NAME'
+        }
+        if (-not (Test-Path -LiteralPath $claimsDir -PathType Container)) { Fail 'Feature claims directory is unavailable' }
+        $ownsScope = @()
+        $ownerPresent = $false
+        foreach ($claim in @(Get-ChildItem -LiteralPath $claimsDir -Directory)) {
+            if ($claim.Name -like 'GIT-TURN*') { continue }
+            $claimFile = Join-Path $claim.FullName 'owner.md'
+            if (-not (Test-Path -LiteralPath $claimFile -PathType Leaf)) { Fail "Claim has no owner.md: $($claim.Name)" }
+            $content = Get-Content -LiteralPath $claimFile -Raw
+            $statusValue = [regex]::Match($content, '(?im)^STATUS:\s*([^\r\n]+)').Groups[1].Value.Trim()
+            if ($statusValue -match '\A(RELEASED|CLOSED|COMPLETE|CANCELLED)') { continue }
+            $worktreeValue = [regex]::Match($content, '(?im)^WORKTREE:\s*([^\r\n]+)').Groups[1].Value.Trim()
+            if ($worktreeValue -and ([IO.Path]::GetFullPath($worktreeValue).TrimEnd('\') -ine [IO.Path]::GetFullPath($project).TrimEnd('\'))) { continue }
+            $declaredScope = [regex]::Match($content, '(?im)^SCOPE:\s*([^\r\n]+)').Groups[1].Value
+            if ([string]::IsNullOrWhiteSpace($declaredScope)) { Fail "Active claim has no scope: $($claim.Name)" }
+            $claimPaths = @()
+            foreach ($match in [regex]::Matches($declaredScope.Replace('\','/'), '[A-Za-z0-9._-]+(?:/[A-Za-z0-9._{}*,\-]+)+')) {
+                $claimPath = $match.Value.ToLowerInvariant()
+                $claimPath = ($claimPath -split '[{*]')[0].TrimEnd('/')
+                if ($claimPath -and $claimPaths -notcontains $claimPath) { $claimPaths += $claimPath }
+            }
+            if ($claimPaths.Count -eq 0) { Fail "Cannot read claim scope: $($claim.Name)" }
+            if ($claim.Name -ieq $claimName) {
+                $ownerPresent = $true
+                $ownsScope = $claimPaths
+            } else {
+                foreach ($scope in $trackedScopes) {
+                    foreach ($claimPath in $claimPaths) {
+                        if ($scope -eq $claimPath -or $scope.StartsWith($claimPath + '/') -or $claimPath.StartsWith($scope + '/')) {
+                            Fail "Scope '$scope' conflicts with active claim $($claim.Name): $claimPath"
+                        }
+                    }
+                }
+            }
+        }
+        if (-not $ownerPresent) { Fail "Named active feature claim does not exist: $claimName" }
+        foreach ($scope in $trackedScopes) {
+            if (@($ownsScope | Where-Object { $scope -eq $_ -or $scope.StartsWith($_ + '/') }).Count -eq 0) {
+                Fail "Scope '$scope' is not covered by claim $claimName"
+            }
+        }
+    }
+
+    # Read Git status for diagnostics, but preserve all peer edits. Scope
+    # ownership does not grant index writes, commits, push or protected actions.
     $changes = @(& git status --porcelain=v1 --untracked-files=normal)
     Require-ExitZero 'git status'
-    $unowned = @($changes | Where-Object { $_ -and ($_ -notmatch '^\?\? \.specify/workflows/runs/') })
-    if ($unowned.Count -gt 0) {
-        Fail "Shared worktree has $($unowned.Count) changed path(s). Coordinate the Git writer and preserve other sessions before executing the automated workflow"
-    }
-    Write-Output ("SPECKIT_PRECHECK_PASS: branch=$branch; integration=codex; model=gpt-6-luna; effort=medium; requested_tier=fast; worktree=clean")
+    $dirtyCount = @($changes | Where-Object { $_ }).Count
+    Write-Output ("SPECKIT_PRECHECK_PASS: branch=$branch; integration=codex; model=gpt-6-luna; effort=medium; requested_tier=fast; scope=$($scopes -join ';'); worktree_dirty_paths=$dirtyCount; other_work_preserved=true")
     exit 0
 }
 catch {

@@ -11,9 +11,10 @@ This document explains the repository-local Spec Kit integration; authoritative 
 
 ## Entry point
 
-From `D:\samrim-refoundation-clean-20261112`:
+From `D:\samrim-refoundation-clean-20261112`, declare the expected write boundary before starting. This ignored, unique test directory needs no source claim:
 
 ```powershell
+$env:BTHWANI_SPECKIT_WRITE_SCOPE = '.bthwani-local/speckit-my-unique-test'
 specify check
 specify integration status
 specify workflow resolve speckit
@@ -27,9 +28,11 @@ The existing constitution is validated, **not regenerated automatically**. Workf
 
 ## Fail-closed policy
 
-The local preflight `.specify/scripts/powershell/verify-bthwani-codex.ps1` rejects an unsupported integration, missing official skills, wrong project/branch, mismatched model/effort/fast request, missing constitution, unauthenticated Codex, disabled workflow overlay, and a working tree containing changes from concurrent owners. The local Spec Kit workflow run-state directory is exempt from the clean-tree check. Do not bypass this check or run the agent on a shared dirty worktree.
+The local preflight `.specify/scripts/powershell/verify-bthwani-codex.ps1` rejects unsupported integration, missing official skills, wrong project/branch, mismatched model/effort/fast request, missing constitution, unauthenticated Codex and disabled workflow overlay. **It does not require a clean Git worktree.** It requires `BTHWANI_SPECKIT_WRITE_SCOPE`: one to eight semicolon-separated, relative, bounded paths. A unique `.bthwani-local/<run-id>` scope supports isolated tests without a source claim. Paths under protected tooling such as `.git`, `.specify`, `.codex` and `.agents`, broad roots, globs, traversal and symlink/junction paths are rejected.
 
-The preflight blocks code execution when other sessions have uncommitted work. Resume only after coordination and clean, approved ownership. A pending/failed workflow is **not** a successful implementation.
+For any **tracked-source** scope, also set `BTHWANI_SPECKIT_CLAIMS_DIR` to the existing coordination room's `claims` directory and `BTHWANI_SPECKIT_CLAIM_NAME` to the current ACTIVE feature claim folder. Preflight verifies that the named claim covers the proposed scope and that no other active claim overlaps it. For example, an existing `STORE_ORDERABILITY-02` claim can admit its `services/dsh/backend/internal/storeavailability` path even while unrelated Identity files are modified; it may not use the Identity claim's paths.
+
+These checks are **admission and collision checks, not an operating-system write sandbox**: Codex still runs with the project's workspace-write permissions. The coordinating agent must enforce the declared path boundary, review actual file changes, and stop on unclaimed writes or conflicting ownership. A claim does not grant Git index/Commit/Push rights, protected data changes, PR/Merge or deployment. One Git writer at a time remains mandatory. A pending, failed, or rejected workflow is **not** successful implementation.
 
 ## Evidence and closure
 
