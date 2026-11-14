@@ -51,7 +51,7 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 		t.Fatal(err)
 	}
 	schema := "dsh_orderability_agent02"
-	for _, file := range []string{"001_public_discovery.sql", "002_store_orderability.sql"} {
+	for _, file := range []string{"001_public_discovery.sql", "002_store_orderability.sql", "003_service_city_timezone.sql"} {
 		path := filepath.Join("..", "..", "..", "database", "migrations", file)
 		contents, err := os.ReadFile(path)
 		if err != nil {
@@ -64,7 +64,8 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 	}
 	id := fmt.Sprintf("synthetic-a02-%d", time.Now().UnixNano())
 	_, err = db.ExecContext(ctx, fmt.Sprintf(`
-		INSERT INTO %s.service_cities(id,active) VALUES('sanaa',true) ON CONFLICT(id) DO NOTHING;
+		INSERT INTO %s.service_cities(id,active,timezone_name) VALUES('sanaa',true,'Asia/Aden')
+			ON CONFLICT(id) DO UPDATE SET timezone_name=EXCLUDED.timezone_name;
 		INSERT INTO %s.verticals(id,active) VALUES('grocery',true) ON CONFLICT(id) DO NOTHING;`, schema, schema))
 	if err != nil {
 		t.Fatal(err)
@@ -79,6 +80,23 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	grants, err := NewPostgresStoreGrants(db, schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := grants.RequireStoreAction(ctx, "synthetic-merchant-01", id, "store_operations"); err != nil {
+		t.Fatalf("real DSH owner cannot operate Store: %v", err)
+	}
+	if err := grants.RequireStoreAction(ctx, "synthetic-merchant-02", id, "store_operations"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("cross-Store actor authorized: %v", err)
+	}
+	if err := grants.RequireStoreAction(ctx, "synthetic-merchant-01", id, "finance_approve"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("unapproved action authorized: %v", err)
+	}
+	zone, err := grants.StoreTimezone(ctx, id)
+	if err != nil || zone != "Asia/Aden" {
+		t.Fatalf("canonical city timezone %q: %v", zone, err)
+	}
 	first, err := repo.Read(ctx, id)
 	if err != nil || first.Version != 1 || first.Timezone != "" {
 		t.Fatalf("unexpected empty Store availability %+v %v", first, err)
@@ -88,6 +106,16 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 			Timezone: "Asia/Aden", Weekly: []WeeklyWindow{{Weekday: time.Monday, Opens: 9 * 60, Closes: 17 * 60}},
 			PreparationMinutes: 15, Reason: "Scheduled opening"},
 		ActorID: "synthetic-merchant-01", AuthoritySource: "MERCHANT_STORE_GRANT",
+	}
+	forgedTimezone := command
+	forgedTimezone.Timezone = "Pacific/Honolulu"
+	if _, _, err := repo.Apply(ctx, forgedTimezone); !errors.Is(err, ErrInvalidTimezone) {
+		t.Fatalf("non-canonical Store timezone accepted by PostgreSQL writer: %v", err)
+	}
+	forgedOwner := command
+	forgedOwner.ActorID = "synthetic-merchant-02"
+	if _, _, err := repo.Apply(ctx, forgedOwner); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("owner changed before SQL commit was not denied: %v", err)
 	}
 	committed, replay, err := repo.Apply(ctx, command)
 	if err != nil || replay || committed.Version != 2 {
@@ -184,7 +212,7 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 	// real PostgreSQL mutation/readback. Identity verifier is fake here:
 	// full multi-service authentication E2E is explicitly NOT proven.
 	identity := fakeIdentity{actor: VerifiedActor{Subject: "synthetic-merchant-01", Role: MerchantRole}}
-	service, err := NewService(identity, fakeGrant{timezone: "Asia/Aden"}, fakePolicy{}, repo)
+	service, err := NewService(identity, grants, fakePolicy{}, repo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +244,7 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 	if err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT count(*) FROM %s.store_operational_audit WHERE store_id=$1`, schema), id).Scan(&afterAudits); err != nil || afterAudits != 3 {
 		t.Fatalf("HTTP mutation audit must be once only: %d %v", afterAudits, err)
 	}
-	noGrantService, _ := NewService(identity, fakeGrant{denied: true}, fakePolicy{}, repo)
+	noGrantService, _ := NewService(fakeIdentity{actor: VerifiedActor{Subject: "synthetic-merchant-02", Role: MerchantRole}}, grants, fakePolicy{}, repo)
 	noGrantHandler, _ := NewHandler(noGrantService)
 	deniedRequest := httptest.NewRequest(http.MethodGet, "/v1/stores/"+id+"/availability", nil)
 	deniedRequest.Header.Set("Authorization", "Bearer wrong-store-session")
@@ -225,7 +253,7 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 	if deniedResponse.Code != http.StatusForbidden {
 		t.Fatalf("wrong-Store GET returned %d", deniedResponse.Code)
 	}
-	revokedService, _ := NewService(fakeIdentity{denied: true}, fakeGrant{}, fakePolicy{}, repo)
+	revokedService, _ := NewService(fakeIdentity{denied: true}, grants, fakePolicy{}, repo)
 	revokedHandler, _ := NewHandler(revokedService)
 	revokedRequest := httptest.NewRequest(http.MethodPatch, "/v1/stores/"+id+"/availability", strings.NewReader(patchBody))
 	revokedRequest.Header.Set("Authorization", "Bearer revoked-identity")
@@ -238,6 +266,13 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 	finalReadback, err := secondRepo.Read(ctx, id)
 	if err != nil || finalReadback.Version != 4 {
 		t.Fatalf("denied requests changed state %+v %v", finalReadback, err)
+	}
+	// A missing or invalid DSH city timezone never falls back to a client value.
+	if _, err := db.ExecContext(ctx, fmt.Sprintf("UPDATE %s.service_cities SET timezone_name='Not/AZone' WHERE id='sanaa'", schema)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := grants.StoreTimezone(ctx, id); !errors.Is(err, ErrInvalidTimezone) {
+		t.Fatalf("invalid canonical timezone accepted: %v", err)
 	}
 	t.Logf("PASS dedicated PostgreSQL/HTTP state: store=%s finalVersion=%d audits=%d idempotent replay, one race winner, denied calls preserved state", id, finalReadback.Version, afterAudits)
 }

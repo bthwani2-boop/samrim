@@ -138,9 +138,32 @@ func (r *PostgresRepository) Apply(ctx context.Context, c AuthorizedChange) (Sna
 		return Snapshot{}, false, err
 	}
 	defer tx.Rollback()
-	// Check the canonical DSH Store, never create a parallel Store identity.
-	if err = r.ensureStore(ctx, tx, c.StoreID); err != nil {
-		return Snapshot{}, false, err
+	// Lock the canonical Store/City authority while applying this change. An
+	// ownership transfer or timezone update racing this transaction must not
+	// authorize a stale mutation.
+	if c.AuthoritySource != "MERCHANT_STORE_GRANT" && c.AuthoritySource != "OPERATOR_OPERATIONS" {
+		return Snapshot{}, false, ErrForbidden
+	}
+	var currentOwner string
+	var authoritativeTimezone sql.NullString
+	err = tx.QueryRowContext(ctx, fmt.Sprintf(`SELECT s.owner_actor_id, city.timezone_name
+		FROM %s.stores s JOIN %s.service_cities city ON city.id=s.city_id
+		WHERE s.id=$1 FOR SHARE OF s,city`, r.schema, r.schema), c.StoreID).
+		Scan(&currentOwner, &authoritativeTimezone)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Snapshot{}, false, ErrStoreMissing
+	}
+	if err != nil {
+		return Snapshot{}, false, normalizePgError(err)
+	}
+	if c.AuthoritySource == "MERCHANT_STORE_GRANT" && currentOwner != c.ActorID {
+		return Snapshot{}, false, ErrForbidden
+	}
+	if !authoritativeTimezone.Valid || authoritativeTimezone.String != c.Timezone {
+		return Snapshot{}, false, ErrInvalidTimezone
+	}
+	if _, err = time.LoadLocation(c.Timezone); err != nil {
+		return Snapshot{}, false, ErrInvalidTimezone
 	}
 	// A first Store update creates an explicitly closed schedule record,
 	// inside the same transaction as the first authorized operation.

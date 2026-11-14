@@ -77,7 +77,7 @@ func (o *Owner) ImportSynthetic(ctx context.Context) error {
 	}
 	defer tx.Rollback()
 	queries := []string{
-		"INSERT INTO " + o.Schema + ".service_cities VALUES ('sanaa',true),('aden',true) ON CONFLICT (id) DO UPDATE SET active=excluded.active",
+		"INSERT INTO " + o.Schema + ".service_cities(id,active) VALUES ('sanaa',true),('aden',true) ON CONFLICT (id) DO UPDATE SET active=excluded.active",
 		"INSERT INTO " + o.Schema + ".verticals VALUES ('grocery',true),('disabled-vertical',false) ON CONFLICT (id) DO UPDATE SET active=excluded.active",
 	}
 	for _, q := range queries {
