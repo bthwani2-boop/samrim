@@ -47,6 +47,19 @@ Original source-reference candidates, **not adopted dependencies**:
 - [ERPNext](https://github.com/frappe/erpnext), [Odoo](https://github.com/odoo/odoo), [Medusa](https://github.com/medusajs/medusa), [Saleor](https://github.com/saleor/saleor) — patterns only; not permission to replace DSH/WLT with an ERP or second commerce engine.
 - [FreeScout](https://github.com/freescout-help-desk/freescout) — support workflow reference, not acceptance of a generic ticketing Product.
 
+## Preserved donor research documents (non-authoritative)
+
+The following eleven Git-tracked research files were preserved from donor branch `41` (reviewed at SHA `8d0063eea4253931d82261d2a457e70dd7ca606f`). They are historical observations and candidate references, **not** adopted BThwani requirements, verified current external features, approved dependency licenses or runtime evidence:
+
+- [Yemen-market competitor research index](competitors/README.md) — Tawseel One, Tasaheel, Etlobni, Nass and HungerStation, with five preserved individual Markdown reports.
+- [Elleen UI/feature benchmark](elleen-benchmark-20261031.md).
+- [Elleen feature comparison CSV](elleen-p00-replica-features.csv).
+- [Elleen reporting observations](elleen-reports-observations-2026-11-01.md).
+- [Elleen theme/studio observations](elleen-theme-studio-observations-2026-11-01.md).
+- [Logistics and commerce OSS reference catalog](oss-logistics.md).
+
+The competitor `local-photos/` screenshots (~50 MB in the donor machine) remain **local-only and ignored by Git**, exactly as declared by the donor competitor index. Missing captures in another clone are not evidence of missing Markdown; consult the donor workstation if visual screenshots are needed. No screenshot or proprietary asset is adopted or published by this migration.
+
 ## Competitor observations, not policy
 
 The earlier black-box research identified [Elleen dashboard](https://elleen.ye/admin/dashboard) and [RRDA Store Web](https://rrda.elleen.ye/), and studies of five other apps by their observed names. Dated DOM or screenshot observations are **not** verification of backend architecture, financial provider readiness, Product admission, authorization, subscription entitlement or legal terms. Never copy source, assets or proprietary designs. Recheck at the time a concrete feature comparison materially improves a licensed BThwani implementation.
@@ -54,5 +67,5 @@ The earlier black-box research identified [Elleen dashboard](https://elleen.ye/a
 ## Verification status
 - Historical source paths and selected source URLs retained with original branch/SHA attribution: **documented**.
 - Live external URL, license, current implementation and historical screenshot presence checks: **NOT_RUN**.
-- Exhaustive migration of every archived report, inline link and screenshot into this sparse candidate: **NOT_RUN**.
+- The eleven original Git-tracked benchmark/competitor/OSS research files: **PRESERVED in this candidate** (10/11 byte-identical to donor; one competitor index has only its trailing blank lines normalized). Local screenshot captures and exhaustive archival import: **NOT_RUN**.
 - No new Product feature or required integration is admitted by this file.

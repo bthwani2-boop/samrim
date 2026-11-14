@@ -43,3 +43,6 @@ secrets.local.*
 # Generated local tool state, not durable policy.
 .bthwani-local/
 .specify/feature.json
+
+# Locally captured competitor screenshots are not source or distributable assets.
+docs/reference/competitors/local-photos/
