@@ -182,6 +182,36 @@ accepts('permits a scoped DSH OpenAPI operation during development',{
   ''
  ].join('\n'))}
 },/PROGRESSIVE_SOURCE_PRESENT/);
+rejects('rejects a second DSH operation without its own security declaration',{
+ edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace('\ncomponents:\n',[
+  '',
+  '  /v1/public/unguarded:',
+  '    get:',
+  '      operationId: unguardedRead',
+  '      responses:',
+  "        '200':",
+  '          description: Missing authorization declaration',
+  'components:',
+  ''
+ ].join('\n'))}
+},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
+rejects('rejects duplicate OpenAPI operation IDs across paths',{
+ edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>{
+  const id=/operationId: ([a-zA-Z]\w*)/.exec(s)?.[1];
+  return s.replace('\ncomponents:\n',[
+   '',
+   '  /v1/public/duplicate:',
+   '    get:',
+   '      operationId: '+id,
+   '      security: []',
+   '      responses:',
+   "        '200':",
+   '          description: Duplicate operation identifier',
+   'components:',
+   ''
+  ].join('\n'));
+ }}
+},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
 rejects('rejects operation missing a security declaration',{
  edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace('      security: []', '      # security declaration removed')}
 },/OpenAPI scaffold mutated or contains unapproved operations\/refs/);

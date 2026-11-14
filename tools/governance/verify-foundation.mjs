@@ -231,55 +231,72 @@ function checkProgressivePathFragment(content,filename){
   fail('OpenAPI path fragment is not an empty placeholder or a scoped development operation: '+filename);
  return true;
 }
-function validateProgressiveEntrypoint(candidate,filename,owner){
- const reject=()=>fail('OpenAPI scaffold mutated or contains unapproved operations/refs: '+filename);
- if(!candidate.startsWith('openapi: 3.1.0\ninfo:\n')||
-    !candidate.includes('  title: BThwani '+(owner==='identity'?'Identity':owner.toUpperCase())+' API\n')||
-    /\$ref:\s*['"]?(?:https?:\/\/|\.\.\/)/.test(candidate))reject();
+function validateOpenApiOperation(lines,ids,reject){
+ const identifiers=lines
+  .filter(line=>line.startsWith('      operationId:'))
+  .map(line=>line.slice('      operationId:'.length).trim());
+ if(identifiers.length!==1||!/^[a-zA-Z]\w*$/.test(identifiers[0])||ids.has(identifiers[0]))reject();
+ if(!lines.some(line=>/^ {6}security:\s*(?:\[\])?\s*$/.test(line)))reject();
+ if(!lines.includes('      responses:'))reject();
+ if(!lines.some(line=>/^ {8}['"]?(?:[1-5]\d{2}|default)['"]?:\s*$/.test(line)))reject();
+ ids.add(identifiers[0]);
+}
+function validateOpenApiPath(body,begin,end,ids,reject){
+ const lines=body.slice(begin,end);
+ const operations=[];
+ const allowedMethods=new Set(['get','post','put','patch','delete','options','head']);
+ for(let i=0;i<lines.length;i++){
+  const line=lines[i];
+  if(!line.startsWith('    '))continue;
+  const header=line.slice(4);
+  const method=header.split(':',1)[0];
+  if(allowedMethods.has(method)&&header.slice(method.length).trim()===':'){
+   operations.push(i);
+  }else if(/^[a-zA-Z]/.test(header)){
+   reject();
+  }
+ }
+ if(operations.length===0)reject();
+ for(let i=0;i<operations.length;i++)
+  validateOpenApiOperation(lines.slice(operations[i]+1,operations[i+1]),ids,reject);
+}
+function progressiveOpenApiPaths(candidate,owner,reject){
  const lines=candidate.split('\n');
  const rootKeys=new Set();
  for(const line of lines){
   const key=/^([a-zA-Z][a-zA-Z0-9-]*):(?:\s|$)/.exec(line)?.[1];
-  if(key){
-   if(rootKeys.has(key))reject();
-   rootKeys.add(key);
-  }
+  if(!key)continue;
+  if(rootKeys.has(key))reject();
+  rootKeys.add(key);
  }
- if(!rootKeys.has('paths'))reject();
  const start=lines.indexOf('paths:');
+ if(start<0)reject();
  const stop=lines.findIndex((line,i)=>i>start&&/^[a-zA-Z][a-zA-Z0-9-]*:/.test(line));
  const body=lines.slice(start+1,stop<0?undefined:stop);
  const paths=[];
+ const seenPaths=new Set();
  for(let i=0;i<body.length;i++){
-  if(/^  \//.test(body[i])){
-   const match=/^  (\/[^\s:]+):\s*$/.exec(body[i]);
-   if(!match)reject();
-   if(owner==='dsh'&&!/^\/(?:health$|v1\/)/.test(match[1]))reject();
-   if(paths.some(p=>p.name===match[1]))reject();
-   paths.push({name:match[1],start:i});
-  }
+  if(!body[i].startsWith('  /'))continue;
+  const match=/^ {2}(\/[^\s:]+):\s*$/.exec(body[i]);
+  if(!match)reject();
+  const name=match[1];
+  if(owner==='dsh'&&name!=='/health'&&!name.startsWith('/v1/'))reject();
+  if(seenPaths.has(name))reject();
+  seenPaths.add(name);
+  paths.push(i);
  }
  if(paths.length===0)reject();
  const ids=new Set();
- for(let p=0;p<paths.length;p++){
-  const block=body.slice(paths[p].start+1,paths[p+1]?.start);
-  const operations=[];
-  for(let i=0;i<block.length;i++){
-   const match=/^    (get|post|put|patch|delete|options|head):\s*$/.exec(block[i]);
-   if(match)operations.push(i);
-   else if(/^    [a-zA-Z]/.test(block[i]))reject();
-  }
-  if(operations.length===0)reject();
-  for(let i=0;i<operations.length;i++){
-   const op=block.slice(operations[i]+1,operations[i+1]);
-   const idsHere=op.flatMap(l=>[...l.matchAll(/^      operationId:\s*([a-zA-Z][a-zA-Z0-9_]*)\s*$/g)].map(m=>m[1]));
-   if(idsHere.length!==1||ids.has(idsHere[0])||
-      !op.some(l=>/^      security:\s*(?:\[\])?\s*$/.test(l))||
-      !op.some(l=>/^      responses:\s*$/.test(l))||
-      !op.some(l=>/^        ['"]?(?:[1-5][0-9]{2}|default)['"]?:\s*$/.test(l)))reject();
-   ids.add(idsHere[0]);
-  }
- }
+ for(let i=0;i<paths.length;i++)
+  validateOpenApiPath(body,paths[i]+1,paths[i+1],ids,reject);
+}
+function validateProgressiveEntrypoint(candidate,filename,owner){
+ const reject=()=>fail('OpenAPI scaffold mutated or contains unapproved operations/refs: '+filename);
+ const title=owner==='identity'?'Identity':owner.toUpperCase();
+ if(!candidate.startsWith('openapi: 3.1.0\ninfo:\n')||
+    !candidate.includes('  title: BThwani '+title+' API\n')||
+    /\$ref:\s*['"]?(?:https?:\/\/|\.\.\/)/.test(candidate))reject();
+ progressiveOpenApiPaths(candidate,owner,reject);
 }
 for(const owner of serviceOwners){
  const prefix='services/'+owner;
