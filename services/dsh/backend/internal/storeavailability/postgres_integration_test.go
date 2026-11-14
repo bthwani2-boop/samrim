@@ -84,6 +84,55 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The same DB connection must never retain Store schema authority after a
+	// request, including a rejected query in another schema. An implicit global
+	// search_path could expose a different Store on the next pooled request.
+	singleConnDB, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer singleConnDB.Close()
+	singleConnDB.SetMaxOpenConns(1)
+	// A temporary relation named like a DSH Store must not shadow the
+	// owner schema even when pooled onto the same PostgreSQL session.
+	if _, err = singleConnDB.ExecContext(ctx, "CREATE TEMP TABLE stores (id text PRIMARY KEY)"); err != nil {
+		t.Fatal(err)
+	}
+	var beforeSearchPath, afterSearchPath string
+	if err = singleConnDB.QueryRowContext(ctx, "SELECT current_setting('search_path')").Scan(&beforeSearchPath); err != nil {
+		t.Fatal(err)
+	}
+	isolatedRepo, err := NewPostgresRepository(singleConnDB, schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	isolatedGrants, err := NewPostgresStoreGrants(singleConnDB, schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = isolatedRepo.Read(ctx, id); err != nil {
+		t.Fatalf("Store read on one pooled connection: %v", err)
+	}
+	if err = isolatedGrants.RequireStoreAction(ctx, "synthetic-merchant-01", id, "store_operations"); err != nil {
+		t.Fatalf("Store owner on same connection: %v", err)
+	}
+	wrongSchemaRepo, err := NewPostgresRepository(singleConnDB, "public")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = wrongSchemaRepo.Read(ctx, id); err == nil {
+		t.Fatal("another schema incorrectly exposed the Store")
+	}
+	if _, err = isolatedRepo.Read(ctx, id); err != nil {
+		t.Fatalf("schema was not restored after failed read: %v", err)
+	}
+	if err = singleConnDB.QueryRowContext(ctx, "SELECT current_setting('search_path')").Scan(&afterSearchPath); err != nil {
+		t.Fatal(err)
+	}
+	if afterSearchPath != beforeSearchPath {
+		t.Fatalf("transaction schema escaped into pooled connection: %q -> %q", beforeSearchPath, afterSearchPath)
+	}
+
 	if err := grants.RequireStoreAction(ctx, "synthetic-merchant-01", id, "store_operations"); err != nil {
 		t.Fatalf("real DSH owner cannot operate Store: %v", err)
 	}

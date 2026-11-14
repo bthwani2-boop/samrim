@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 )
@@ -28,9 +27,13 @@ func (g *PostgresStoreGrants) RequireStoreAction(ctx context.Context, actorID, s
 	if strings.TrimSpace(actorID) == "" || strings.TrimSpace(storeID) == "" || action != "store_operations" {
 		return ErrForbidden
 	}
+	tx, err := beginScopedStoreTx(ctx, g.db, g.schema, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
 	var ownerID string
-	err := g.db.QueryRowContext(ctx, fmt.Sprintf(
-		"SELECT owner_actor_id FROM %s.stores WHERE id=$1", g.schema), storeID).Scan(&ownerID)
+	err = tx.QueryRowContext(ctx, "SELECT owner_actor_id FROM stores WHERE id=$1", storeID).Scan(&ownerID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrForbidden
 	}
@@ -40,7 +43,7 @@ func (g *PostgresStoreGrants) RequireStoreAction(ctx context.Context, actorID, s
 	if ownerID != actorID {
 		return ErrForbidden
 	}
-	return nil
+	return tx.Commit()
 }
 
 // StoreTimezone is DSH's current canonical service-city timezone, not a
@@ -49,11 +52,16 @@ func (g *PostgresStoreGrants) StoreTimezone(ctx context.Context, storeID string)
 	if strings.TrimSpace(storeID) == "" {
 		return "", ErrStoreMissing
 	}
+	tx, err := beginScopedStoreTx(ctx, g.db, g.schema, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
 	var timezone sql.NullString
-	query := fmt.Sprintf(`SELECT c.timezone_name
-		FROM %s.stores AS s JOIN %s.service_cities AS c ON c.id=s.city_id
-		WHERE s.id=$1`, g.schema, g.schema)
-	err := g.db.QueryRowContext(ctx, query, storeID).Scan(&timezone)
+	query := `SELECT c.timezone_name
+		FROM stores AS s JOIN service_cities AS c ON c.id=s.city_id
+		WHERE s.id=$1`
+	err = tx.QueryRowContext(ctx, query, storeID).Scan(&timezone)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", ErrStoreMissing
 	}
@@ -65,6 +73,9 @@ func (g *PostgresStoreGrants) StoreTimezone(ctx context.Context, storeID string)
 	}
 	if _, err = time.LoadLocation(timezone.String); err != nil {
 		return "", ErrInvalidTimezone
+	}
+	if err = tx.Commit(); err != nil {
+		return "", err
 	}
 	return timezone.String, nil
 }

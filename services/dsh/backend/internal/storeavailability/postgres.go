@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -24,6 +23,28 @@ type PostgresRepository struct {
 
 var postgresSchemaRule = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 
+// beginScopedStoreTx binds every Store query to a single validated DSH schema,
+// without constructing executable SQL from a schema identifier. SET LOCAL is
+// transaction-scoped, so a pooled connection never retains Store access to a
+// previous caller's schema. Explicit pg_catalog and pg_temp order also blocks
+// temporary-table shadowing of canonical Store relations.
+func beginScopedStoreTx(ctx context.Context, db *sql.DB, schema string, options *sql.TxOptions) (*sql.Tx, error) {
+	if db == nil || !postgresSchemaRule.MatchString(schema) {
+		return nil, ErrInvalidChange
+	}
+	tx, err := db.BeginTx(ctx, options)
+	if err != nil {
+		return nil, err
+	}
+	_, err = tx.ExecContext(ctx,
+		"SELECT pg_catalog.set_config('search_path', 'pg_catalog,' || pg_catalog.quote_ident($1) || ',pg_temp', true)", schema)
+	if err != nil {
+		_ = tx.Rollback()
+		return nil, err
+	}
+	return tx, nil
+}
+
 func NewPostgresRepository(db *sql.DB, schema string) (*PostgresRepository, error) {
 	if db == nil || !postgresSchemaRule.MatchString(schema) {
 		return nil, ErrInvalidChange
@@ -35,7 +56,7 @@ func (r *PostgresRepository) Read(ctx context.Context, storeID string) (Snapshot
 	if strings.TrimSpace(storeID) == "" {
 		return Snapshot{}, ErrStoreMissing
 	}
-	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	tx, err := beginScopedStoreTx(ctx, r.db, r.schema, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -54,7 +75,7 @@ func (r *PostgresRepository) Read(ctx context.Context, storeID string) (Snapshot
 }
 
 func (r *PostgresRepository) ensureStore(ctx context.Context, tx *sql.Tx, storeID string) error {
-	query := fmt.Sprintf("SELECT id FROM %s.stores WHERE id=$1", r.schema)
+	query := "SELECT id FROM stores WHERE id=$1"
 	var id string
 	if err := tx.QueryRowContext(ctx, query, storeID).Scan(&id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -66,8 +87,8 @@ func (r *PostgresRepository) ensureStore(ctx context.Context, tx *sql.Tx, storeI
 }
 
 func (r *PostgresRepository) readSnapshot(ctx context.Context, tx *sql.Tx, id string, lock bool) (Snapshot, error) {
-	q := fmt.Sprintf(`SELECT store_timezone,paused_until,preparation_minutes,version,changed_by_actor,change_reason
-		FROM %s.store_operational_availability WHERE store_id=$1`, r.schema)
+	q := `SELECT store_timezone,paused_until,preparation_minutes,version,changed_by_actor,change_reason
+		FROM store_operational_availability WHERE store_id=$1`
 	if lock {
 		q += " FOR UPDATE"
 	}
@@ -94,8 +115,8 @@ func (r *PostgresRepository) readSnapshot(ctx context.Context, tx *sql.Tx, id st
 	if prep.Valid {
 		snapshot.PreparationMinutes = int(prep.Int64)
 	}
-	rows, err := tx.QueryContext(ctx, fmt.Sprintf(`SELECT weekday,opens_minute,closes_minute
-		FROM %s.store_operational_weekly_hours WHERE store_id=$1 ORDER BY weekday,opens_minute`, r.schema), id)
+	rows, err := tx.QueryContext(ctx, `SELECT weekday,opens_minute,closes_minute
+		FROM store_operational_weekly_hours WHERE store_id=$1 ORDER BY weekday,opens_minute`, id)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -154,10 +175,15 @@ func (r *PostgresRepository) Apply(ctx context.Context, c AuthorizedChange) (Sna
 // committedOperation is a fresh durable read, after the failed transaction
 // rolled back. It verifies both operation key and immutable payload/actor hash.
 func (r *PostgresRepository) committedOperation(ctx context.Context, storeID, operationID, hash string) (Snapshot, bool, error) {
+	tx, err := beginScopedStoreTx(ctx, r.db, r.schema, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return Snapshot{}, false, err
+	}
+	defer tx.Rollback()
 	var storedHash string
 	var encoded []byte
-	err := r.db.QueryRowContext(ctx, fmt.Sprintf(`SELECT request_hash,result_snapshot
-		FROM %s.store_operational_commands WHERE store_id=$1 AND operation_id=$2`, r.schema),
+	err = tx.QueryRowContext(ctx, `SELECT request_hash,result_snapshot
+		FROM store_operational_commands WHERE store_id=$1 AND operation_id=$2`,
 		storeID, operationID).Scan(&storedHash, &encoded)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Snapshot{}, false, nil
@@ -172,6 +198,9 @@ func (r *PostgresRepository) committedOperation(ctx context.Context, storeID, op
 	if err = json.Unmarshal(encoded, &snapshot); err != nil {
 		return Snapshot{}, false, err
 	}
+	if err = tx.Commit(); err != nil {
+		return Snapshot{}, false, err
+	}
 	return snapshot, true, nil
 }
 
@@ -182,7 +211,7 @@ func (r *PostgresRepository) applyOnce(ctx context.Context, c AuthorizedChange, 
 	if err := ValidateSchedule(c.Weekly); err != nil {
 		return Snapshot{}, false, err
 	}
-	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	tx, err := beginScopedStoreTx(ctx, r.db, r.schema, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return Snapshot{}, false, err
 	}
@@ -195,9 +224,9 @@ func (r *PostgresRepository) applyOnce(ctx context.Context, c AuthorizedChange, 
 	}
 	var currentOwner string
 	var authoritativeTimezone sql.NullString
-	err = tx.QueryRowContext(ctx, fmt.Sprintf(`SELECT s.owner_actor_id, city.timezone_name
-		FROM %s.stores s JOIN %s.service_cities city ON city.id=s.city_id
-		WHERE s.id=$1 FOR SHARE OF s,city`, r.schema, r.schema), c.StoreID).
+	err = tx.QueryRowContext(ctx, `SELECT s.owner_actor_id, city.timezone_name
+		FROM stores s JOIN service_cities city ON city.id=s.city_id
+		WHERE s.id=$1 FOR SHARE OF s,city`, c.StoreID).
 		Scan(&currentOwner, &authoritativeTimezone)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Snapshot{}, false, ErrStoreMissing
@@ -216,9 +245,9 @@ func (r *PostgresRepository) applyOnce(ctx context.Context, c AuthorizedChange, 
 	}
 	// A first Store update creates an explicitly closed schedule record,
 	// inside the same transaction as the first authorized operation.
-	_, err = tx.ExecContext(ctx, fmt.Sprintf(`INSERT INTO %s.store_operational_availability
+	_, err = tx.ExecContext(ctx, `INSERT INTO store_operational_availability
 		(store_id,store_timezone,changed_by_actor,change_reason)
-		VALUES ($1,$2,$3,$4) ON CONFLICT (store_id) DO NOTHING`, r.schema),
+		VALUES ($1,$2,$3,$4) ON CONFLICT (store_id) DO NOTHING`,
 		c.StoreID, c.Timezone, c.ActorID, "Initial Store availability configuration")
 	if err != nil {
 		return Snapshot{}, false, normalizePgError(err)
@@ -227,8 +256,8 @@ func (r *PostgresRepository) applyOnce(ctx context.Context, c AuthorizedChange, 
 	// an ambiguous commit can safely be reconciled as an idempotent replay.
 	var storedHash string
 	var storedJSON []byte
-	err = tx.QueryRowContext(ctx, fmt.Sprintf(`SELECT request_hash,result_snapshot
-		FROM %s.store_operational_commands WHERE store_id=$1 AND operation_id=$2`, r.schema),
+	err = tx.QueryRowContext(ctx, `SELECT request_hash,result_snapshot
+		FROM store_operational_commands WHERE store_id=$1 AND operation_id=$2`,
 		c.StoreID, c.OperationID).Scan(&storedHash, &storedJSON)
 	if err == nil {
 		if storedHash != hash {
@@ -258,21 +287,21 @@ func (r *PostgresRepository) applyOnce(ctx context.Context, c AuthorizedChange, 
 		PausedUntil: c.PausedUntil, PreparationMinutes: c.PreparationMinutes,
 		Version: before.Version + 1, ActingActorID: c.ActorID, Reason: c.Reason,
 	}
-	_, err = tx.ExecContext(ctx, fmt.Sprintf(`UPDATE %s.store_operational_availability SET
+	_, err = tx.ExecContext(ctx, `UPDATE store_operational_availability SET
 		store_timezone=$2,paused_until=$3,preparation_minutes=$4,version=$5,
 		changed_by_actor=$6,change_reason=$7,updated_at=now()
-		WHERE store_id=$1`, r.schema), c.StoreID, c.Timezone, c.PausedUntil,
+		WHERE store_id=$1`, c.StoreID, c.Timezone, c.PausedUntil,
 		c.PreparationMinutes, after.Version, c.ActorID, c.Reason)
 	if err != nil {
 		return Snapshot{}, false, normalizePgError(err)
 	}
-	_, err = tx.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s.store_operational_weekly_hours WHERE store_id=$1", r.schema), c.StoreID)
+	_, err = tx.ExecContext(ctx, "DELETE FROM store_operational_weekly_hours WHERE store_id=$1", c.StoreID)
 	if err != nil {
 		return Snapshot{}, false, normalizePgError(err)
 	}
 	for _, window := range after.Weekly {
-		_, err = tx.ExecContext(ctx, fmt.Sprintf(`INSERT INTO %s.store_operational_weekly_hours
-			(store_id,weekday,opens_minute,closes_minute) VALUES($1,$2,$3,$4)`, r.schema),
+		_, err = tx.ExecContext(ctx, `INSERT INTO store_operational_weekly_hours
+			(store_id,weekday,opens_minute,closes_minute) VALUES($1,$2,$3,$4)`,
 			c.StoreID, int(window.Weekday), window.Opens, window.Closes)
 		if err != nil {
 			return Snapshot{}, false, normalizePgError(err)
@@ -286,16 +315,16 @@ func (r *PostgresRepository) applyOnce(ctx context.Context, c AuthorizedChange, 
 	if err != nil {
 		return Snapshot{}, false, err
 	}
-	_, err = tx.ExecContext(ctx, fmt.Sprintf(`INSERT INTO %s.store_operational_commands
+	_, err = tx.ExecContext(ctx, `INSERT INTO store_operational_commands
 		(store_id,operation_id,request_hash,resulting_version,result_snapshot)
-		VALUES ($1,$2,$3,$4,$5)`, r.schema),
+		VALUES ($1,$2,$3,$4,$5)`,
 		c.StoreID, c.OperationID, hash, after.Version, afterJSON)
 	if err != nil {
 		return Snapshot{}, false, normalizePgError(err)
 	}
-	_, err = tx.ExecContext(ctx, fmt.Sprintf(`INSERT INTO %s.store_operational_audit
+	_, err = tx.ExecContext(ctx, `INSERT INTO store_operational_audit
 		(store_id,operation_id,acting_actor_id,authority_source,reason,before_snapshot,after_snapshot)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)`, r.schema),
+		VALUES ($1,$2,$3,$4,$5,$6,$7)`,
 		c.StoreID, c.OperationID, c.ActorID, c.AuthoritySource, c.Reason, beforeJSON, afterJSON)
 	if err != nil {
 		return Snapshot{}, false, normalizePgError(err)
