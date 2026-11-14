@@ -159,7 +159,7 @@ func parseCursor(raw, kind, scope string, rev int64) (string, error) {
 	return c.After, nil
 }
 func (o *Owner) viewTx(ctx context.Context) (*sql.Tx, error) {
-	return o.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+	return o.beginScopedTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
 }
 func cursorError(w http.ResponseWriter, err error) {
 	if errors.Is(err, errStale) {
@@ -195,10 +195,11 @@ func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.
 		cursorError(w, err)
 		return
 	}
-	q := "SELECT s.id,s.name,s.city_id,s.vertical_id FROM " + s.Owner.Schema +
-		".stores s JOIN " + s.Owner.Schema + ".service_cities c ON c.id=s.city_id JOIN " +
-		s.Owner.Schema + ".verticals v ON v.id=s.vertical_id " +
-		"WHERE c.active AND v.active AND s.published AND s.relation='MARKETPLACE' AND s.city_id=$1 AND s.id>$2 ORDER BY s.id LIMIT $3"
+	q := `SELECT s.id,s.name,s.city_id,s.vertical_id FROM stores s
+		JOIN service_cities c ON c.id=s.city_id
+		JOIN verticals v ON v.id=s.vertical_id
+		WHERE c.active AND v.active AND s.published AND s.relation='MARKETPLACE'
+			AND s.city_id=$1 AND s.id>$2 ORDER BY s.id LIMIT $3`
 	rows, err := tx.QueryContext(ctx, q, city, after, limit+1)
 	if err != nil {
 		errorJSON(w, 503, "OWNER_UNAVAILABLE")
@@ -237,9 +238,10 @@ func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.
 }
 func (s *Server) visibleStore(ctx context.Context, tx *sql.Tx, id string) (publicStore, error) {
 	var st publicStore
-	q := "SELECT s.id,s.name,s.city_id,s.vertical_id FROM " + s.Owner.Schema +
-		".stores s JOIN " + s.Owner.Schema + ".service_cities c ON c.id=s.city_id JOIN " +
-		s.Owner.Schema + ".verticals v ON v.id=s.vertical_id WHERE s.id=$1 AND s.published AND c.active AND v.active"
+	q := `SELECT s.id,s.name,s.city_id,s.vertical_id FROM stores s
+		JOIN service_cities c ON c.id=s.city_id
+		JOIN verticals v ON v.id=s.vertical_id
+		WHERE s.id=$1 AND s.published AND c.active AND v.active`
 	e := tx.QueryRowContext(ctx, q, id).Scan(&st.ID, &st.Name, &st.CityID, &st.VerticalID)
 	st.OrderabilityStatus = string(storeavailability.OperationallyUnavail)
 	st.OrderingAvailable = false
@@ -298,11 +300,12 @@ func (s *Server) listOffers(ctx context.Context, w http.ResponseWriter, r *http.
 		cursorError(w, err)
 		return
 	}
-	q := "SELECT o.id,o.store_id,p.name,o.variant_id,o.price_yer FROM " + s.Owner.Schema +
-		".offers o JOIN " + s.Owner.Schema + ".products p ON p.id=o.product_id AND p.store_id=o.store_id JOIN " +
-		s.Owner.Schema + ".variants v ON v.id=o.variant_id AND v.product_id=o.product_id " +
-		"WHERE o.store_id=$1 AND o.id>$2 AND p.active AND v.sellable AND v.required_attributes_valid AND " +
-		"o.published AND o.available AND o.price_yer>0 AND o.stock_units>0 ORDER BY o.id LIMIT $3"
+	q := `SELECT o.id,o.store_id,p.name,o.variant_id,o.price_yer FROM offers o
+		JOIN products p ON p.id=o.product_id AND p.store_id=o.store_id
+		JOIN variants v ON v.id=o.variant_id AND v.product_id=o.product_id
+		WHERE o.store_id=$1 AND o.id>$2 AND p.active AND v.sellable
+			AND v.required_attributes_valid AND o.published AND o.available
+			AND o.price_yer>0 AND o.stock_units>0 ORDER BY o.id LIMIT $3`
 	rows, err := tx.QueryContext(ctx, q, id, after, limit+1)
 	if err != nil {
 		errorJSON(w, 503, "OWNER_UNAVAILABLE")

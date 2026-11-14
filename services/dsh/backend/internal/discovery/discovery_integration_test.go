@@ -210,3 +210,50 @@ func TestOwnerBackedConcurrentReadsAndSafeFailures(t *testing.T) {
 	}
 }
 func resultsSafe(b map[string]any) []any { v, _ := b["items"].([]any); return v }
+
+func TestOwnerScopedTransactionSearchPathResetsOnPooledConnection(t *testing.T) {
+	owner, _ := setupIntegratedOwner(t)
+	// Force reuse of one physical PostgreSQL connection to detect scope leakage.
+	owner.DB.SetMaxOpenConns(1)
+	ctx := context.Background()
+	tx, err := owner.viewTx(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var scoped string
+	if err = tx.QueryRowContext(ctx, "SELECT current_setting('search_path')").Scan(&scoped); err != nil {
+		_ = tx.Rollback()
+		t.Fatal(err)
+	}
+	if !strings.Contains(scoped, owner.Schema) {
+		_ = tx.Rollback()
+		t.Fatalf("transaction did not select its DSH schema: %q", scoped)
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var after string
+	if err = owner.DB.QueryRowContext(ctx, "SELECT current_setting('search_path')").Scan(&after); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(after, owner.Schema) {
+		t.Fatalf("DSH schema leaked across pooled transactions: %q", after)
+	}
+
+	other, err := New(owner.DB, "dsh_test_uncreated_isolation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherTx, err := other.viewTx(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer otherTx.Rollback()
+	var otherPath string
+	if err = otherTx.QueryRowContext(ctx, "SELECT current_setting('search_path')").Scan(&otherPath); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(otherPath, other.Schema) || strings.Contains(otherPath, owner.Schema) {
+		t.Fatalf("cross-scope DSH schema contamination: %q", otherPath)
+	}
+}
