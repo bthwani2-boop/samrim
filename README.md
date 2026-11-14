@@ -28,9 +28,38 @@ Customer and Merchant deliberately omit the donor `package.json` `type: module`:
 
 Customer and Merchant Expo Web now use SDK 58 server rendering with `useServerDocumentContext()` (`headNodes` and `bodyNodes`), Arabic `lang`/`dir`, and a rendered appearance fallback before hydration; the actual dev-server HTML was checked for Arabic content, metadata, scripts, and RTL, and browser interaction was checked. The canonical `expo-localization` plugin owns native RTL (`forcesRTL: true` with Arabic supported locales). Expo Router navigation uses the native locale direction without a hand-set `LocaleProvider`; screen-level `direction`, fixed `textAlign=left/right`, or runtime `forceRTL` calls are prohibited. The `tools/mobile/verify-rtl.mjs` guard and its negative tests run in `pnpm check` and the existing source-only CI. The Expo Web document boundary retains `lang="ar" dir="rtl"`. This static guard does not certify native back-swipe/transition direction, iOS, or future visual components; these still need live verification on an actual build. The foundation check also invokes canonical CSS-generation and source-authority guards.
 
-Maps remain **NOT_RUN** as functional experiences: `react-native-maps` and optional Google Maps configuration are present, but no map screen, location permission journey, route, or tracking integration has been accepted. Next.js Ant Design uses the official SSR style registry, but an enforced real CSP/nonce integration remains **NOT_RUN**; preserving a donor CSP patch is not proof of production compatibility. iOS and business integration are **NOT_RUN**.
+Maps remain **NOT_RUN** as functional experiences: `react-native-maps` and optional Google Maps configuration are present, but no map screen, location permission journey, route, or tracking integration has been accepted. Next.js Ant Design uses the official SSR style registry and an enforced per-request CSP/nonce in its Next Proxy. The **production loopback HTTP/SSR smoke** passed on candidate `a0a4c79b` (GitHub CI job `132252778475`, step 10): four routes, Arabic SSR/RTL, actual enforced CSP header, unique script nonces, and rejection of attacker-supplied nonce headers. This proves the tested local HTTP boundary only; its current CSP intentionally still permits inline styles for Ant Design. Real interactive browser hydration under CSP, authenticated Operator flows and production security certification remain **NOT_RUN**. iOS and business integration are **NOT_RUN**.
 
 Native identifiers, owner, EAS project IDs, app slugs, schemes and package permissions are preserved. `eas.json` contains **legacy `image: latest`** in preview/iOS profiles; reproducible remote builders are **BLOCKED/NOT_RUN** until images are reviewed without changing original dependencies. Existing Android development builds were used for Stage-4 UI smoke tests on Samsung. This validates rendering of preview shells on those installed binaries only; the current native configuration is **not** certified until a separately authorized native rebuild and device verification.
+
+## Spec Kit CLI — current development workflow
+
+Spec Kit is installed as the **agent-neutral** `none` integration, with pinned PowerShell scripts and a **derived** constitution router in `.specify/memory/constitution.md`. It is not a second policy root, does not register agent-specific slash commands, and does not authorize implementation. The local CLI version is `1.3.0`; the foundation verifier checks the tracked integration, version alignment and SHA-256 hashes of the official vendor scripts. A newer CLI release is **not** a reason to upgrade project tools or regenerate these vendor-managed files without a separate reviewed version change.
+
+From the root of **this worktree** on Windows, the following commands are read-only and were checked on this machine:
+
+```powershell
+specify version
+specify check
+specify artifact list --json
+specify workflow list
+```
+
+To resolve a proposed, **already authorized** change's paths without choosing a Git branch, changing the global active feature or creating files:
+
+```powershell
+$env:SPECIFY_INIT_DIR = (Get-Location).Path
+$env:SPECIFY_FEATURE_DIRECTORY = 'specs/000-example-change'
+$env:SPECIFY_FEATURE_NO_PERSIST = '1'
+& .\.specify\scripts\powershell\check-prerequisites.ps1 -PathsOnly -Json
+Remove-Item Env:\SPECIFY_FEATURE_DIRECTORY, Env:\SPECIFY_FEATURE_NO_PERSIST, Env:\SPECIFY_INIT_DIR -ErrorAction SilentlyContinue
+```
+
+`-PathsOnly` checks **path resolution only**; its JSON `BRANCH` field is the logical feature directory name, **not** a Git branch creation or switch. It neither creates a feature directory nor validates `spec.md`, `plan.md` or `tasks.md`. Use a real approved feature ID in place of the example, keep related specifications scoped to that change and derive their business meaning from the single owner in `governance/`. For later feature work, reconcile `spec.md` → `plan.md` → `tasks.md` against `AGENTS.md`, `REPOSITORY-STRUCTURE.md` and the owning API/UX policy before implementation. An installed `speckit` workflow definition is **not executable as an agent-driven feature pipeline** under the present `none` integration. Do not run `create-new-feature.ps1`, `specify init --here --force` or a workflow that may open a feature branch, overwrite managed files or execute an agent without explicit authorization and an inspected diff. The original branch `41` is a read-only donor.
+
+The **Postman CLI** is also installed globally on Windows (`postman.cmd --version` → `1.83.0`). `postman.cmd status` confirms **no local workspace/resources binding or authenticated CLI session** in this worktree; this is distinct from a connected Postman ChatGPT app. The read-only `postman.cmd init --dry-run --json` would update the root `AGENTS.md` and add empty API folders plus another local copy of 18 Postman skills. Do not run that initialization blindly during the zero-operation scaffold stage: preserve the canonical agent law and initialize/associate owner-scoped API work only after real reviewed contracts and a conflict-free change are admitted. Do not run the old loopback DSH readiness collection against an unidentified process as a substitute for target runtime tests.
+
+This validates *developer setup*, not governance cutover or customer/merchant/driver features. Missing API operations, persistence, risk proof, service integration and native/browser E2E tests remain `NOT_RUN`/blocked until their respective stages and owner approvals.
 
 ## Services placement only
 
@@ -38,6 +67,6 @@ Native identifiers, owner, EAS project IDs, app slugs, schemes and package permi
 
 ## Boundaries
 
-`GOVERNANCE_CUTOVER: NOT_READY`; mandatory independent finance/security/migration/legal review remains pending. The worktree does not introduce Go services, financial logic, SQL, Docker or live Product screens. The user explicitly requires any *later* Docker infrastructure to be **new and isolated to this Worktree**, not the donor's old containers, volumes or database.
+`GOVERNANCE_CUTOVER: NOT_READY`; the human-approved target policy choices of 2026-11-13 still require semantic reconciliation and documented internal finance/security/migration/legal risk assurance before affected implementation is activated. An external consultant signature is not a prerequisite for recording those choices; missing technical and runtime proof remains `NOT_RUN` or `REVIEW_BLOCKED`. The worktree does not introduce Go services, financial logic, SQL, Docker or live Product screens. The user explicitly requires any *later* Docker infrastructure to be **new and isolated to this Worktree**, not the donor's old containers, volumes or database.
 
 Use [the active governance readiness index](governance/README.md) and [the single execution plan](docs/REFOUNDATION-PLAN.md) for scope and evidence. Pass of static CI or typecheck alone does not demonstrate Android/iOS/browser runtime success.
