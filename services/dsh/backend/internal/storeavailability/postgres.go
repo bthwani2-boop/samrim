@@ -122,15 +122,64 @@ func commandHash(c AuthorizedChange) (string, error) {
 	hash := sha256.Sum256(encoded)
 	return hex.EncodeToString(hash[:]), nil
 }
+
+// Apply reconciles a PostgreSQL serialization race or uncertain commit without
+// reapplying effects. Only an identically-bound durable operation is replayed;
+// a truly stale expected version remains a conflict.
 func (r *PostgresRepository) Apply(ctx context.Context, c AuthorizedChange) (Snapshot, bool, error) {
+	hash, err := commandHash(c)
+	if err != nil {
+		return Snapshot{}, false, err
+	}
+	out, replay, err := r.applyOnce(ctx, c, hash)
+	if err == nil {
+		return out, replay, nil
+	}
+	if !errors.Is(err, ErrVersionConflict) && !errors.Is(err, ErrUnknownResult) {
+		return Snapshot{}, false, err
+	}
+	committed, found, lookupErr := r.committedOperation(ctx, c.StoreID, c.OperationID, hash)
+	if errors.Is(lookupErr, ErrOperationConflict) {
+		return Snapshot{}, false, ErrOperationConflict
+	}
+	if lookupErr != nil {
+		return Snapshot{}, false, ErrUnknownResult
+	}
+	if found {
+		return committed, true, nil
+	}
+	return Snapshot{}, false, err
+}
+
+// committedOperation is a fresh durable read, after the failed transaction
+// rolled back. It verifies both operation key and immutable payload/actor hash.
+func (r *PostgresRepository) committedOperation(ctx context.Context, storeID, operationID, hash string) (Snapshot, bool, error) {
+	var storedHash string
+	var encoded []byte
+	err := r.db.QueryRowContext(ctx, fmt.Sprintf(`SELECT request_hash,result_snapshot
+		FROM %s.store_operational_commands WHERE store_id=$1 AND operation_id=$2`, r.schema),
+		storeID, operationID).Scan(&storedHash, &encoded)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Snapshot{}, false, nil
+	}
+	if err != nil {
+		return Snapshot{}, false, err
+	}
+	if storedHash != hash {
+		return Snapshot{}, false, ErrOperationConflict
+	}
+	var snapshot Snapshot
+	if err = json.Unmarshal(encoded, &snapshot); err != nil {
+		return Snapshot{}, false, err
+	}
+	return snapshot, true, nil
+}
+
+func (r *PostgresRepository) applyOnce(ctx context.Context, c AuthorizedChange, hash string) (Snapshot, bool, error) {
 	if c.StoreID == "" || c.ActorID == "" || !operationIDRule.MatchString(c.OperationID) {
 		return Snapshot{}, false, ErrInvalidChange
 	}
 	if err := ValidateSchedule(c.Weekly); err != nil {
-		return Snapshot{}, false, err
-	}
-	hash, err := commandHash(c)
-	if err != nil {
 		return Snapshot{}, false, err
 	}
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})

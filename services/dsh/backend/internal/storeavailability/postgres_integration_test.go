@@ -267,12 +267,74 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 	if err != nil || finalReadback.Version != 4 {
 		t.Fatalf("denied requests changed state %+v %v", finalReadback, err)
 	}
-	// A missing or invalid DSH city timezone never falls back to a client value.
+	// Identical concurrent operation IDs must never create a second mutation,
+	// lose the committed result, or be misreported as an ordinary stale write.
+	nextVersion := int64(4)
+	for round := 0; round < 3; round++ {
+		duplicate := command
+		duplicate.OperationID = fmt.Sprintf("agent02-same-retry-%04d", round)
+		duplicate.ExpectedVersion = nextVersion
+		duplicate.Reason = fmt.Sprintf("Concurrent identical retry round %d", round)
+		duplicate.PreparationMinutes = 25 + round
+		startSame := make(chan struct{})
+		var sameWG sync.WaitGroup
+		type sameOutcome struct {
+			version int64
+			replay  bool
+			err     error
+		}
+		sameResults := make(chan sameOutcome, 2)
+		for j := 0; j < 2; j++ {
+			sameWG.Add(1)
+			go func() {
+				defer sameWG.Done()
+				<-startSame
+				got, wasReplay, applyErr := repo.Apply(context.Background(), duplicate)
+				sameResults <- sameOutcome{version: got.Version, replay: wasReplay, err: applyErr}
+			}()
+		}
+		close(startSame)
+		sameWG.Wait()
+		close(sameResults)
+		writes, replays := 0, 0
+		for outcome := range sameResults {
+			if outcome.err != nil {
+				t.Fatalf("identical concurrent retry failed round %d: %v", round, outcome.err)
+			}
+			if outcome.version != nextVersion+1 {
+				t.Fatalf("identical operation produced version %d instead of %d", outcome.version, nextVersion+1)
+			}
+			if outcome.replay {
+				replays++
+			} else {
+				writes++
+			}
+		}
+		if writes != 1 || replays != 1 {
+			t.Fatalf("duplicate operation round %d: writes=%d replays=%d", round, writes, replays)
+		}
+		nextVersion++
+	}
+	afterSame, err := secondRepo.Read(ctx, id)
+	if err != nil || afterSame.Version != nextVersion {
+		t.Fatalf("concurrent duplicate not durable %+v %v", afterSame, err)
+	}
+	var totalAudits, totalCommands int
+	if err := db.QueryRowContext(ctx, fmt.Sprintf("SELECT count(*) FROM %s.store_operational_audit WHERE store_id=$1", schema), id).Scan(&totalAudits); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, fmt.Sprintf("SELECT count(*) FROM %s.store_operational_commands WHERE store_id=$1", schema), id).Scan(&totalCommands); err != nil {
+		t.Fatal(err)
+	}
+	if totalAudits != 6 || totalCommands != 6 {
+		t.Fatalf("concurrent identical requests duplicated owner audit/commands: audits=%d commands=%d", totalAudits, totalCommands)
+	}
+	// A missing or invalid canonical DSH city timezone never falls back to a client value.
 	if _, err := db.ExecContext(ctx, fmt.Sprintf("UPDATE %s.service_cities SET timezone_name='Not/AZone' WHERE id='sanaa'", schema)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := grants.StoreTimezone(ctx, id); !errors.Is(err, ErrInvalidTimezone) {
 		t.Fatalf("invalid canonical timezone accepted: %v", err)
 	}
-	t.Logf("PASS dedicated PostgreSQL/HTTP state: store=%s finalVersion=%d audits=%d idempotent replay, one race winner, denied calls preserved state", id, finalReadback.Version, afterAudits)
+	t.Logf("PASS real DSH PostgreSQL: store=%s finalVersion=%d audits=%d commands=%d, concurrent identical key exactly once, denied calls preserved state", id, afterSame.Version, totalAudits, totalCommands)
 }
