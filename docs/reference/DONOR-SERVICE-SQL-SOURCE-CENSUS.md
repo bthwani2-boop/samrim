@@ -433,3 +433,48 @@ The seven exact SQL Git blob IDs already appear in the numbered file census abov
 | Attempt to pay salary or settle cash advance from HR record without WLT authority | No financial posting until separate lawful agreement, WLT authorization and conserved ledger readback |
 
 **Future admission sequence:** approve the organization/actor boundary in the canonical DSH/Identity contract; inspect applicable real migration ledger and protected historical records only with permission; prepare separate Fresh and protected Upgrade schemas; test authorization, replay, uniqueness, rollback/restoration and WLT exclusion on isolated owner-backed state before any migration. No Go, SQL, database, role, money, production or protected Identity change was authorized or performed by this reference review.
+
+## 2026-11-14 — WLT COD financial history chain: source-backed migration and contract blockers
+
+REVIEW_TYPE: PINNED_WLT_COD_SOURCE_RECONCILIATION
+SOURCE_BRANCH_SHA: 41@426d67b47beb8c66b09acd8c7394086b53ac5aae
+SOURCE_SCOPE: WLT migrations 010, 011, 013, 035, 052, 061 plus Go storage, OpenAPI and historical migration-test sources
+TARGET_GO_SQL_AND_DB: NOT_STARTED
+APPLIED_DONOR_MIGRATION_HISTORY: NOT_READ
+TARGET_FIN_SEC_MIG_RUNTIME_NEGATIVE_AND_RESTORE: NOT_RUN
+
+The verified donor sequence is **not** an instruction to copy or replay old SQL. It is selected high-risk migration provenance, not a semantic audit of all 63 WLT migrations or a financial ledger test.
+
+| Pinned migration (all under `services/wlt/database/migrations/`) | Source-established behavior | Fresh/Upgrade acceptance obligation |
+| --- | --- | --- |
+| `010_captain_wallet_cod_reservations.sql` | Creates positive-YER Captain COD holds and idempotent events with initial global UNIQUE order/payment intent constraints. | Retain lawful terminal-history semantics; do not assume v010 is the final uniqueness or state model. |
+| `011_captain_cod_collateral_settlement.sql` | Adds `remitted_at`, adjusts historical funding codes, **deletes/recreates some earlier ledger entries/transactions**, backfills remittance ledger facts and changes matching FINALIZED holds to REMITTED. | Financially protected migration: reconcile exact pre/post owner journal, applied version and historical remittance evidence on a specifically authorized isolated copy; never blindly rerun or import this data rewrite. |
+| `013_captain_cod_reassignment_reservations.sql` | Drops initial global order/payment uniqueness and replaces it with **partial unique indexes where `state='ACTIVE'`**. | Permit terminal reservation history, but only one ACTIVE covering Captain per payment/order even under concurrent offers; map unique violations to a stable business conflict. |
+| `035_captain_cod_remittance_reconciliation.sql` | Reopens self-attested REMITTED cash as SUBMITTED, requires independent Finance receipt reconciliation, posts balanced reversal journal entries and reopens matching COD holds to FINALIZED. | Preserve both original and compensating journal entries and submitted receipts; no claimed transfer is settled merely from Captain text or an HTTP response. |
+| `052_captain_cod_wallet_debit.sql` | Adds DEBITED terminal state and `CAPTAIN_COD_DEBITED` event while preserving FINALIZED/REMITTED legacy states. | New collected COD wallet debit must use only real cash exposure, preserve already-remitted records and have one balanced WLT posting with no release-after-collection. |
+| `061_legacy_cod_recovery_reviews.sql` | Adds one review per historical payment/order, unique evidence, distinct submitter/approver and associated reserve only after documented approval. | Never auto-debit legacy COD lacking a hold; maintain two-person review, evidence provenance, exact request replay and actual available Captain funding. |
+
+**Actual consumer and contract evidence:** `services/wlt/backend/internal/storage/postgres/captain_wallet.go` uses `cash_amount_minor`, locks payment and wallet, enforces active-uniqueness conflict, and requires collected payment, same Captain, posted earning/receivable and no legacy cash remittance before a balanced wallet debit. `services/wlt/backend/internal/storage/postgres/legacy_cod_recovery.go` verifies evidence purpose/uploader, unsettled payment, different approver, balance and idempotency before recording an approved hold. The donor `services/wlt/contracts/openapi/wlt.openapi.yaml` exposes `reserveCaptainCOD`, `releaseCaptainCOD`, `finalizeCaptainCOD`, `submitLegacyCODRecovery`, `readLegacyCODRecoveryByPayment`, `readLegacyCODRecovery`, `approveLegacyCODRecovery`, each under a service-token boundary. A spec service token is not proof of current actor authorization or protected persisted outcomes.
+
+**FIN-01 source-to-target gap:** The donor-local `ReserveCaptainCOD` eligibility check in `captain_wallet.go` compares available Captain balance with `cash_amount_minor` for the hold. The human-approved target `governance/finance.md` additionally requires, for positive COD, unheld available cover **strictly greater than the total confirmed Order payable**, while the actual hold/debit is only the cash portion. This local donor check alone does not prove gross-risk eligibility; a separate upstream donor gate may exist and must be source-traced rather than assumed absent. The new WLT/DSH contract must test the case where cash is covered but total Order exposure is not, including concurrent accepts.
+
+The donor `services/wlt/backend/internal/storage/postgres/legacy_cod_v61_upgrade_integration_test.go` **exists** and gates its v60→v61 test on `WLT_MIGRATION_TEST_DATABASE_URL`, ordinary environment, dedicated/pristine DB, then checks historical payment, evidence, journal and Captain wallet preservation plus self-approval rejection. That test was **not run** against either donor or target by this review; its test-only synthetic SQL state is not production migration permission.
+
+### Required isolated acceptance matrix — all NOT_RUN
+
+| Failure case | Owner-backed result required before implementation activation |
+| --- | --- |
+| Two simultaneous Captain accepts for one order/payment | WLT allows at most one ACTIVE reservation and DSH accepts one dispatch winner, never duplicate coverage |
+| Same idempotency key with changed payload or a retry after unknown network result | Exact same intent returns prior result; changed hash conflicts; only one journal event |
+| Full wallet payment or Mixed wallet+cash checkout | Zero-cash order creates no physical COD hold; positive hold/debit equals `cash_amount_minor`, never total gross |
+| Positive COD with enough Captain balance for the cash portion but not unheld cover strictly greater than the whole confirmed Order | Reject as initially ineligible under approved WLT gross-risk rule, even though the cash-only hold would fit; verify exact DSH Order gross, WLT covered/unheld state, simultaneous holds and no financial posting |
+| Release races collection, or finalize lacks same Captain/earning/receivable | Collected cash cannot be uncovered; no unsupported debit and no ledger mutation |
+| Concurrent finalize/duplicate debit and historic REMITTED record | One conserved balanced posting only for eligible new COD; never charge remitted legacy cash again |
+| Historical v011/v035 upgrade with paid remittance and old journal | Before/after trial balance, receipt provenance and both original/compensating entries match approved reconciliation |
+| Legacy v60 collected payment without initial hold | Review submission changes no money; approved review requires unrelated Finance approver, correct receipt, available cover |
+| Self-approval, wrong Finance role, stale session, cross-review read/approve IDOR | Deny with no mutation; legitimate role and current owner permission verified by Identity/WLT |
+| Two recovery approvals with different keys or lost response | Single approved review/reservation/event; replay is stable and competing key cannot double-cover |
+| Fresh schema differs from historical v013/v052 constraints, or upgrade order/version/checksum mismatch | Dedicated preflight blocks unsafe replay; historical applied ledger unchanged, final target constraints explicitly tested |
+| Partial migration, backup interruption or missing original evidence on restore | Isolated real restore reconstructs payment, wallet, ledger, evidence and role state with measured recovery; unsafe resumption blocked |
+
+**Disposition:** SOURCE_PATH_AND_SELECTED_SEMANTICS=PASS for listed donor blobs only; full WLT 63-file semantics, applied migrations, new WLT SQL/Go, current ACL/RLS, ledger conservation tests, isolated Fresh/Upgrade and actual backup/restore remain NOT_RUN/REVIEW_BLOCKED. `GOVERNANCE_CUTOVER: NOT_READY`. No new financial operation or production mutation was performed.
