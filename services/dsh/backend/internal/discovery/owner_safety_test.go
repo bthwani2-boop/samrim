@@ -1,0 +1,68 @@
+package discovery
+
+import (
+	"errors"
+	"strings"
+	"testing"
+)
+
+func TestSchemaIdentifierRejectsSQLInjectionAndCrossSchemaLookup(t *testing.T) {
+	valid := []string{"dsh_test_agent01", "a", "dsh_test_20261114"}
+	for _, schema := range valid {
+		owner, err := New(nil, schema)
+		if err != nil || owner.Schema != schema {
+			t.Errorf("valid schema %q rejected: %v", schema, err)
+		}
+	}
+	invalid := []string{
+		"", "0schema", "_schema", "public.stores", "a-b", "a b",
+		"public; DROP TABLE stores", "foo'bar", "foo\"bar", "foo\nSET ROLE other",
+		"FOO", strings.Repeat("a", 64),
+	}
+	for _, schema := range invalid {
+		if _, err := New(nil, schema); err == nil {
+			t.Errorf("unsafe schema %q accepted", schema)
+		}
+	}
+}
+
+func TestPublicStoreIdentifierRejectsRouteInjection(t *testing.T) {
+	for _, id := range []string{"market-sanaa", "a1", "store-27"} {
+		if !validID(id) {
+			t.Errorf("safe public Store identifier %q rejected", id)
+		}
+	}
+	for _, id := range []string{
+		"", "owner/secret", "../private", "s?admin=1", "a&b", "a b",
+		"UPPERCASE", strings.Repeat("a", 65), "s%2Fadmin",
+	} {
+		if validID(id) {
+			t.Errorf("unsafe public Store identifier %q accepted", id)
+		}
+	}
+}
+
+func TestPublicCursorPreventsCrossStoreReuseAndStalePages(t *testing.T) {
+	safe := makeCursor(pageCursor{Kind: "offers", Scope: "market-sanaa", After: "of-flour", Revision: 14})
+	after, err := parseCursor(safe, "offers", "market-sanaa", 14)
+	if err != nil || after != "of-flour" {
+		t.Fatalf("safe cursor failed: %q, %v", after, err)
+	}
+	if _, err = parseCursor(safe, "offers", "market-aden", 14); !errors.Is(err, errInvalid) {
+		t.Fatalf("cross-Store cursor must be invalid, got %v", err)
+	}
+	if _, err = parseCursor(safe, "stores", "market-sanaa", 14); !errors.Is(err, errInvalid) {
+		t.Fatalf("cross-resource cursor must be invalid, got %v", err)
+	}
+	if _, err = parseCursor(safe, "offers", "market-sanaa", 15); !errors.Is(err, errStale) {
+		t.Fatalf("stale cursor must conflict, got %v", err)
+	}
+	for _, cursor := range []string{"!", strings.Repeat("a", 513),
+		makeCursor(pageCursor{Kind: "offers", Scope: "market-sanaa", After: "../private", Revision: 14}),
+		makeCursor(pageCursor{Kind: "offers", Scope: "market-sanaa", After: "of-flour", Revision: -1}),
+	} {
+		if _, err := parseCursor(cursor, "offers", "market-sanaa", 14); !errors.Is(err, errInvalid) {
+			t.Errorf("malformed cursor must be rejected: %v", err)
+		}
+	}
+}
