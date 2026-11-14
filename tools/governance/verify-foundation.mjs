@@ -155,10 +155,10 @@ if(exists('infra')){
   const m=/^services:\s*\n([\s\S]*)/m.exec(source);
   if(!m)fail('infra Compose services missing');
   const body=m[1].split(/\n(?:networks|volumes):\s*\n/)[0];
-  return [...body.matchAll(/^  ([a-z][a-z0-9-]*):\s*$/gm)].map(x=>x[1]).sort();
+  return [...body.matchAll(/^  ([a-z][a-z0-9-]*):\s*$/gm)].map(x=>x[1]).sort((a,b)=>a.localeCompare(b,'en'));
  };
- const active=['postgres','media','mailpit','payment-mock'].sort();
- const future=['postgres-access','identity-migrate','identity-bootstrap','identity','dsh-migrate','dsh','wlt-migrate','wlt'].sort();
+ const active=['postgres','media','mailpit','payment-mock'].sort((a,b)=>a.localeCompare(b,'en'));
+ const future=['postgres-access','identity-migrate','identity-bootstrap','identity','dsh-migrate','dsh','wlt-migrate','wlt'].sort((a,b)=>a.localeCompare(b,'en'));
  if(services(compose).join()!==active.join()||services(planned).join()!==future.join())
   fail('infra must contain exactly four independent dependencies and eight inactive owner roles');
  if(!/^name: bthwani-refoundation$/m.test(compose)||
