@@ -1,206 +1,63 @@
-# Samrim agent law
-
-## 1. Authority and exact state
-
-Current user/task authority controls the work within repository, Product, security and data-safety constraints.
-
-Before consequential work, confirm the exact repository, branch, HEAD and relevant working state. Re-read HEAD immediately before a material write when the branch may have moved.
-
-`CAPABILITY != AUTHORITY`. Tool access does not authorize a mutation.
-
-Commit or push authority does not imply merge, promotion, release, destructive-operation or external-system authority.
-
-Preserve unrelated changes, secrets, durable data and active user state.
-
-`MATERIAL` means capable of changing behavior, meaning, authority, safety, durable data, contracts, runtime/configuration, user experience, external/deployable identity, evidence validity or operational outcome.
-
-## 2. Approved outcomes, decisions and canonical owners
-
-Local docs/governance/README.md routes challengeable approved Product/platform/architecture/policy decisions. Actual source, schemas, API contracts, tests, configuration and runtime readback own current implementation truth. Historical external governance and competitor research are read-only evidence, not operational dependencies.
-
-Classify each material durable impact as NONE, REVALIDATE_ONLY, UPDATE_REQUIRED or DEFECT_FOUND. Correct the one applicable local durable owner for approved changed meaning in the same coherent samrim PR as materially affected implementation/tests. Never invent commercial features, promote speculative instructions, duplicate executable facts or require routine donor reads. AGENTS.md alone owns agent execution law; REPOSITORY-STRUCTURE.md owns placement.
-
-## 3. Discovery, ownership and simplification
-
-Do one bounded discovery sufficient to identify the affected cone, current truth, canonical owner, causal root, risk and required proof. Then execute. Widen only when new evidence can materially change the repair.
-
-The implementation and closure unit is a bounded cross-surface vertical slice, including every materially affected app, operator surface, service, contract, state owner and applicable local approved decision. Search material connections across affected local owners and evidenced external interfaces, read deeply only inside the proven cone, and close required behavior plus obsolete/duplicate paths; do not split by screen or manufacture platform-wide audits. End-to-end Journeys remain integration proof scenarios, not a parallel execution queue.
-
-Use native/current evidence before adding diagnostic abstractions. Repair the highest proven causal root, not downstream symptoms.
-
-Prefer the simplest complete correct solution. A small change must remain small.
-
-Default preference:
-
-`DELETE -> DIRECT USE -> STANDARD TOOL -> EXISTING OWNER -> MERGE -> SIMPLIFY/REFACTOR -> NEW MECHANISM ONLY WHEN REQUIRED`
-
-Keep complexity only for a proven current need. Existing wrappers, verifiers, compatibility paths, diagnostics, caches, state machines, registries, workflows or abstractions do not justify themselves by existing.
-
-`SIMPLIFICATION MUST REDUCE MACHINERY, NOT REQUIRED MEANING.` A deletion or refoundation is valid only when each unique current responsibility is unnecessary, retained in compact form, moved to its canonical owner, proven duplicate, proven obsolete, or replaced by a stronger existing truth.
-
-Do not solve complexity by adding another layer around it.
-
-Give each mutable fact one canonical owner/writer. During replacement, migrate callers, configuration, contracts, tests and required documentation; cut over; then delete the losing path and stale references.
-
-When replacing or refounding a canonical path, migrate every materially affected producer, consumer, contract, durable state/persistence path, runtime/configuration dependency and required proof before deleting the losing path. A cutover is incomplete while any material writer, reader, state owner, runtime dependency or contract still relies on the losing path.
-
-Preserve required Product behavior, security, authorization, privacy, data integrity, contract integrity and operational safety throughout simplification.
-
-For every materially affected workflow, enforce the effort-minimal, high-volume actor experience in `docs/governance/policies/experience.md`: require only necessary facts at the current stage, reuse canonical data, make optional inputs non-blocking, minimize repeated user actions and expose clear completion/recovery. Reject unjustified UX or technical machinery; retain essential safety in its existing owner and prove the simpler real task, not just fewer screens.
-
-## 4. Local development state
-
-The current project phase is local development, before Stage/Production adoption. Entry into shared Stage/Production requires an explicit governed transition. Local phase alone does not make existing state disposable.
-
-Reuse valid warm local state. Do not restart services, Metro, Next.js, backends, containers, sessions or devices merely as ritual when the current state can prove the claim.
-
-
-### Local runtime ownership and remote development
-
-Before starting, stopping, testing or relocating an application or backend, inspect the executable runtime-owner configuration and verify the actual host, listener/process, active connection and source revision. Repository location, a CLI command name or historical conversation must never be treated as proof that the process runs on that machine. For the current local workflow, see `infra/local/README.md`; that runbook is explanatory and the executable configuration/runtime readback remains authoritative.
-
-One active owner per application/service: reuse healthy processes; never create a competing local Metro/Next.js instance, duplicate Docker engine, second database writer or silent fallback to the source machine when an assigned remote host is unreachable. A runtime cutover requires an independently verified replacement before stopping the old process, preserved stable entrypoints, scoped stop/rollback and fresh health/readback on the final host. A failure to reach the owner is BLOCKED/DEGRADED, not permission to change owners.
-
-Remote source mirrors are one-way derived workspaces, never canonical Git repositories or authority to modify source. Before claiming that an edit, Fast Refresh, browser/device test or build reflects current code, verify the affected source bytes/revision reached the running host; a successful local typecheck or HTTP status alone does not prove remote freshness. Do not synchronize `.git`, credentials, databases, generated caches, or dependency trees into source mirrors; configure secrets separately with least-privilege access. Do not edit shared host tasks, ports, services, volumes or credentials without checking other active consumers and preserving durable state.
-
-
-Reuse established authentication sessions, actors and representative business state when valid. Do not require generic logout/login, re-enrollment or credential reset for unrelated proof.
-
-For authenticated website inspection and reverse engineering, use the **single existing authorized Chrome automation profile** through `tools/dev/Start-BrowserAutomation.ps1` and its CDP connection. Before inspecting a protected page, invoke the launcher with `-Url`, `-VerifyAuthenticated` and a `-RequireSelector` that proves the intended signed-in page; the gate must confirm the real page, not just HTTP 200, an account-index match or an open CDP port. Playwright attaches via `connectOverCDP` to the same profile; REA observes its CDP targets. Multiple tabs in that existing context are allowed when independently owned, but never start an independent browser/profile/context to compensate for missing site authentication, request a second login merely for an analysis tool, or copy cookies/credentials between profiles. BrowserAct is optional: use it for unauthenticated flows or only when the same authorized session can actually be verified; otherwise use Playwright/REA directly. If the original site session expires, report `BLOCKED_AUTH` and require legitimate reauthentication in the **original profile**; never bypass the site's own authentication or authorization.
-
-Never reset credentials, revoke unrelated sessions, grant permissions, mutate actor identity, fabricate business state, or destroy reusable persistent state merely to make a check pass.
-
-Do not use direct SQL, ad-hoc seed data or hidden state mutation to manufacture success. Test-fixture setup is acceptable only when the task explicitly owns it and the resulting proof remains representative of the real path.
-
-Progressive Lean Synthetic Data: during local development, create realistic, coherent synthetic records incrementally only when needed; reuse minimal, idempotent, owner-backed fixtures instead of bulk or startup reseeding. Preserve useful persistent fixtures and manually created data; isolate and clean disposable test fixtures. Keep the protected Root Owner outside synthetic seeding/cleanup, and never expose synthetic data to production or trigger real external transactions. Do not create a persistent synthetic world or global fixture registry. System/reference records and role/permission definitions remain governed by their owning contracts.
-
-An authorized local cleanup may delete or recreate proven synthetic, unshared data that is no longer needed or is reproducible. Before mutation, identify the exact local target, creating owner, dependent records and effect on active sessions/business state; preserve useful state and read back through the canonical owner. This applies equally to accounts, memberships, categories, products, media and transactions. A test/demo name is not proof of disposability. Real, shared, durable or unknown-origin state remains protected until its ownership and disposition are established.
-
-Do not assume source or fixture edits update existing database rows. When a task requires a persisted-data change, use the owning migration, authorized service operation or isolated fixture setup as appropriate. Preserve record identities and relationships when only display labels change; do not overwrite user-created local state as part of ordinary startup.
-
-Secrets stay outside the repository. Never print, commit or route them through evidence artifacts.
-
-Executable configuration is the authority for mutable runtime details. Do not duplicate ports, versions, container inventories or other discoverable runtime state in this constitution.
-
-Sonar is Cloud-only for this repository. Do not introduce a local Sonar server or parallel local Sonar truth unless the task explicitly changes that policy.
-
-Database migrations: while a local feature is still unadopted, migrations not merged to `main` and not applied to any durable database state that must be preserved may be rewritten, merged or deleted to keep a clean canonical baseline. Once a migration is merged to `main` or applied to a database whose state must be preserved or shared, treat it as immutable; every later schema change requires a new migration. Rebaseline/squash only at an explicit safe boundary where affected databases can be recreated or reconciled, preferably after a domain stabilizes and before Stage/Production. Before accepting migration changes, prove both fresh bootstrap and upgrade from the prior baseline with required data preserved.
-
-## 5. Development and proof
-
-### Outcome-first autonomous engineering — default for authorized work
-
-Own the complete usable outcome of each authorized feature, defect, catalog operation or vertical slice, not just code, a passing isolated test or a test report. Infer the required implementation, UX, data, roles and proof from the user objective and canonical Product contracts. Within the proven affected cone, discover and repair material gaps without requiring the user to repeatedly request browsing, interaction, testing or fixes.
-
-Choose the simplest capable existing path for each claim: native Go/API and owner readback for services and data; Maestro/ADB for affected Android interaction; Playwright/current browser tools for web; actual rendered states and the Design System for affected UX. Use native batch/import APIs for large data operations and real browser/device interaction for representative end-user proof. Do not run every tool ritualistically or add a dependency, agent framework, MCP server or abstraction without demonstrated need.
-
-Where a workflow crosses actors or surfaces, exercise distinct authorized roles and materially affected handoffs using isolated, task-owned fixtures and canonical persisted readback. Mocks and successful screens do not prove the real journey. For visual work, inspect the materially relevant rendered states, responsiveness, Arabic/RTL, usability and recovery. If a check fails, repair the causal owner and repeat only the invalidated affected proof.
-
-Proceed autonomously through routine authorized edits, application interaction, diagnosis and verification until the objective is demonstrably usable or a real blocker is established. Preserve valid sessions and user data, maintain useful regression proof, and finish with an exact-HEAD closure claim and concise results rather than a test-only handoff. Existing authorization, financial, destructive-change, external-publication, deployment and merge boundaries remain in force; this default grants no new authority. Never claim unproven or perpetual 100% correctness.
-
-Default fast local closure loop:
-
-`BOUNDED ROOT CAUSE -> COHERENT IMPLEMENTATION BATCH -> SMALLEST SUFFICIENT AFFECTED CHECK -> DIRECT PROOF WHEN NEEDED -> DONE`
-
-Complete related edits before running TypeScript, tests, device checks or other verification; do not repeat a check after every minor edit. Batch related terminal/remote/device inspection and reuse still-valid proof. If a check fails, repair the relevant owner and rerun only the invalidated proof. Preserve earlier proof for unaffected code. This optimization never removes material security, financial, data-integrity or end-user evidence.
-
-Use Git to identify changes and Nx to select affected project work when applicable. `pnpm check` is the normal local feedback command for uncommitted work; use narrower direct commands when they are sufficient. `pnpm verify` is explicit candidate-wide local proof, not a default step and not an implicit prerequisite to push.
-
-**MANDATORY — ZERO MOJIBAKE:** All new/modified text MUST be valid UTF-8 without BOM or confirmed encoding corruption. Run `node tools/dev/check-encoding.mjs`; any confirmed violation BLOCKS closure until its root cause is fixed—never blindly replace characters. Details: `docs/governance/policies/quality.md`.
-
-Default integration flow (external steps require their own authorization):
-
-`DISCOVER -> TASK BRANCH -> CHANGE -> AFFECTED PROOF -> LOCAL COMMIT -> [AUTHORIZED SAFE PUSH] -> [AUTHORIZED DRAFT PR] -> REVIEW / CI -> READY FOR REVIEW`
-
-For each authorized independent coding task, use a task branch, or the existing branch explicitly designated by the user. When push authority is explicit, safely push the first coherent, affected-tested commit. When Draft PR creation is explicitly authorized and a PR is the approved promotion mechanism, open a Draft PR against the intended base. After each subsequent complete logical change, review its diff, rerun invalidated affected checks, and commit locally; only when push authority is explicit, safely push and verify the remote SHA matches. Track applicable CI, CodeRabbit and SonarQube findings without skipping mandatory review. Mark the PR Ready for Review only after applicable gates and required independent reviews pass; never merge or deploy without separate explicit authorization.
-
-`pnpm safe:push` is a Git transport/safety interlock only. It must not duplicate candidate-wide proof already owned by explicit `pnpm verify` or final CI.
-
-Proof is claim-driven and static-first. Use runtime, browser or real-device proof only when the claim cannot be falsified adequately by static evidence.
-
-For a material cross-surface slice, a passing screen, API, typecheck, unit test or isolated service proof is not closure. Prove every materially participating handoff through its canonical owners until the required canonical readback is reached. Claim completion of a connected end-to-end scenario only after its constituent slices and material cross-slice handoffs are verified.
-
-Proof must exercise the material failure modes of the affected claim, not only its happy path. Add negative, authorization, isolation, validation, recovery, idempotency or concurrency proof only when that risk is materially present in the affected cone.
-
-Where available, derive expected results from a contract, invariant or canonical readback independent of the implementation decision being tested. Reusing the same decision logic as both implementation and oracle can reproduce the same defect and a false pass.
-
-Use the native failing command and native failure output first. Broaden diagnostics only when broader evidence can change the repair decision.
-
-A valid PASS remains reusable until an affected change, relevant state change or environment change invalidates it. Rerun invalidated proof, not everything for reassurance.
-
-Duplicate proof without distinct falsification value is unjustified complexity.
-
-Do not hide failures, weaken assertions, skip material checks, relabel red evidence as green, or blindly retry until a transient pass appears.
-
-Repair a proven failure at its causal owner. Do not add exception paths solely to satisfy the verifier.
-
-CI and GitHub rulesets provide final integration/merge assurance. They do not replace direct local proof for a claim that can and should be checked before push.
-
-Model context is a scarce working set, not an archive. Reduce context without reducing correctness, material scope, safety or required proof.
-
-- Search or navigate to the owning symbol/path before broad reading. Prefer the smallest relevant range; read an entire large file only when the claim materially requires it.
-- Do not carry raw logs, unchanged source, giant diffs or already-proven evidence across material closure cells. Retain only evidence that can still change the repair decision.
-- At a material cell boundary retain a compact checkpoint: exact HEAD, material decisions, affected owners/paths, still-valid proof, remaining dependencies and blockers. Discard superseded execution noise.
-- Keep the objective dependency map, but use a fresh bounded execution context for the next material cell instead of accumulating prior cell transcripts.
-- Each completed logical development batch is a reviewable checkpoint: inspect diff and affected proof and commit locally. When push authority is explicit, safely push the authorized task branch and verify its remote SHA. When Draft PR creation is explicitly authorized and a PR is the approved promotion mechanism, open it after the first valid push and keep review/CI state visible. Without either authority, stop at the local checkpoint and report that step as blocked; avoid redundant full-suite runs. A failed or blocked gate leaves the PR in Draft; no premature Ready for Review.
-- Candidate-wide proof should normally run once after feature freeze. Rerun only proof invalidated by a later affected change.
-
-When asked to plan, emit one bounded objective command anchored to current HEAD, approved outcome, affected owners, necessary proof and safe stop point; do not add another permanent planning contract.
-
-### Professional product closure — applicable affected scope
-
-Before implementation, verify the approved outcome, what already works, acceptance criteria and real actors. Distinguish implemented, partial, authorized future and obsolete behavior. Find the highest evidenced causal root and the full materially affected writers, readers, state owners, services, consumers and handoffs. Choose the simplest complete maintainable repair. Remove losing paths only after verified consumer cutover and regression; retain adopted migrations, real history and supported published APIs.
-
-For materially affected UI, deliver real professional fit-and-finish using the Design System: useful hierarchy/navigation, coherent layout, complete forms, validation, messages and recovery; correct Arabic/RTL where required; responsive layouts, touch/keyboard/focus/screen-reader support, WCAG 2.2 AA where applicable, and supported themes/reduced motion. Render representative browser/device states and verify materially relevant loading, populated, empty, no-results, forbidden, invalid, network error/retry, busy/success/failure, concurrency and destructive confirmation/undo behavior. State applicability is justified, not a ceremonial full matrix. Backend-only or trivial text work has no fictitious visual gate.
-
-Before extending an app UI, read its maintained design/UX contract and reuse or extend the canonical tokens, controls and composition owners; reject a competing page-local foundation. Follow `docs/governance/policies/quality.md` for structural and visual regression proof. Review intentional visual baseline changes on the exact candidate; never auto-accept a changed image merely to pass CI.
-
-For affected functionality, verify the authorized actor finishes the task and the next authorized actor reads canonical persistent state. Include real negative/security/tenant/role boundaries, retry/idempotency, concurrency, settlement/financial conservation and failure recovery where materially applicable. No mocked screen, isolated HTTP 200 or green CI alone proves full journey closure. Use bounded disposable owned fixtures and actual state owners; do not change user data, invent features or rebuild healthy code.
-
-Use narrow symbol/owner searches, existing Nx affected/static-first proof and still-valid evidence; rerun only invalidated checks. Final exact-HEAD review must account for approved outcome, materially affected UX/data/security/actors, canonical readback, safe legacy removal and honest residual limits. Mark the objective blocked for any unproven material gate; never claim perpetual or unverified 100% correctness.
-
-## 6. Consequential action safety
-
-Do not force-push or rewrite shared history unless the user explicitly authorizes that exact destructive action.
-
-Do not blindly merge, cherry-pick, reset, revert or retry a mutating operation after an ambiguous result. Inspect the exact live state first.
-
-Before a destructive or externally visible mutation, make the target and scope explicit and use canonical readback afterward.
-
-Push only authorized branch work. Merge, release, deployment, promotion, external-system mutation and governance repinning require their own authority and prerequisites.
-
-If concurrent work moves a branch, preserve it by default. Re-read the new HEAD, reconcile affected files and continue from the new truth instead of overwriting it.
-
-## 7. Delegation
-
-Delegate only bounded work with explicit scope and evidence expectations.
-
-Avoid overlapping writers. Parallel work should have disjoint write ownership or remain read-only.
-
-A subagent must not push, merge, repin governance, reset persistent state, expose secrets, perform unauthorized external mutations, or declare final closure.
-
-The lead agent owns integration, conflict resolution, final diff review, final proof and closure claims.
-
-## 8. Closure
-
-Review the complete final diff on the exact final HEAD.
-
-Run the smallest fresh proof that can falsify the affected claims. Reuse still-valid PASS evidence instead of repeating unrelated checks.
-
-Check for stale references, dead paths, duplicate owners, shadow truth, partial cutovers and obsolete compatibility residue.
-
-If approved durable meaning changed, verify its one local owner and materially affected consumers on the exact final candidate.
-
-Closure requires all of the following:
-
-- the authorized objective is proven;
-- the material affected cone is accounted for;
-- canonical owner/writer/readback is clear where relevant;
-- material Product, contract, data, runtime and user-facing claims are proven to the degree they are affected;
-- no known material defect, gap, partial cutover, stale owner, unjustified complexity or unproven material claim remains.
-
-Report the exact final HEAD and any material unproven claim. Do not claim closure when evidence is stale or incomplete.
-
-Fixed-point closure is bounded to the authorized objective and its proven affected cone. It does not authorize a platform-wide census of unrelated capabilities, surfaces, history or debt.
-
-When the assigned objective is complete, stop. Do not invent additional scope or ask for another task as a condition of closure.
+# BThwani — Agent Execution Law (Refoundation)
+
+STATUS: ACTIVE_FOR_PROGRESSIVE_DEVELOPMENT
+AUTHORITY: execution conduct, authorization boundaries and proof; not Product meaning.
+GOVERNANCE_CUTOVER: PENDING
+IMPLEMENTATION_ADMISSION: PROGRESSIVE
+ALL_CAPABILITIES_DEVELOPMENT: ENABLED
+NEW_CAPABILITIES: ANALYZE_AND_IMPLEMENT_PROGRESSIVELY
+PRODUCTION_ACTIVATION: BLOCKED
+
+## 1. Scope and governing truth
+- The human's latest explicit instruction defines authorized scope. Do not infer authority to publish, push, merge, delete protected data, or change permissions from access to a tool.
+- Inspect the current repository/worktree, branch, HEAD, Git status, concurrent owners, and relevant instructions before writing. Never treat an older audit, ZIP, chat snapshot, or command for another worktree as current runtime truth.
+- During foundation reconstruction, `governance/README.md` is the **single new target index**, but remains explicitly NOT_READY. Historical governance is retained only in branch `41` and other external archived evidence; its former directory must not exist in this candidate. Do not claim the entire draft root adopted until the governed, reviewed cutover is complete. The latest 2026-11-14 human decision allows development of existing and proposed new capabilities before global cutover; each journey supplies its own analysis and closure evidence.
+- For the deployed result, code, executable contracts, migrations, authorized persistent owner readback, configuration and runtime revision prove **implementation state**. Governance prescribes approved meaning; it does not prove implementation.
+
+## 2. One owner and minimum machinery
+- Every mutable business fact has one canonical owner and writer; every essential workflow has one canonical engine. Other components read or invoke the owner's contract; a projection or cache must not become another legal writer.
+- Identity owns actor identity, authentication, sessions and platform permissions; DSH owns Store, catalog, offers, orders, pricing, publication and fulfillment; WLT owns money, wallet, ledger, commercial agreements, collection and settlements. HR is a bounded logical responsibility, not automatically another deployable service.
+- Distinguish Merchant (authenticated actor with possible Store-scoped authority) from Store (DSH business resource); one Merchant may manage multiple Stores. `MARKETPLACE` and `DIRECT` are Store relation/channel policies, not additional Store, catalog or Order engines. `COMMISSION` and `SUBSCRIPTION` are separate WLT agreement models for either relation.
+- Use DELETE → DIRECT USE → STANDARD TOOL → EXISTING OWNER → MERGE/REFACTOR → NEW MECHANISM only after demonstrating necessity. No speculative service, wrapper, cache writer, alternate state store, duplicate policy engine or arbitrary architecture-layer quotas.
+- **Policy-first for legitimate business choices:** operator-changeable Store relation admission, fee models, collection responsibility, delivery modes and supported scoped defaults belong to their canonical service owner and are managed from the single Operator Policies UX. Never hardcode a changeable commercial value or eligibility branch in a UI/client/service when a safe owner-backed policy already exists or is required by the admitted Product; do not turn non-negotiable security, ledger or legal invariants into switches. A setting cannot activate unimplemented capability, overwrite an accepted contract or retroactively change an Order.
+
+## 3. Start and structural decision
+- Locate the actual producer, owner, writer, readers, API consumers, dynamic usage, SQL/configuration and generated clients within the affected cone. Consult `REPOSITORY-STRUCTURE.md`.
+- For full refoundation, census all admitted capabilities and material subfeatures **before** choosing KEEP/MOVE/MERGE/REFOUND/REPLACE/APPROVED_RETIRE. Keep the census derived from source and Product, not another permanent truth store.
+- Rebuild deliberately, not by renaming or copying donor directories. Transfer correct behavior and explicit obligations; remove the losing route only after consumer migration, real proof and review of safe deletion. No unsupported claim that fewer files automatically means better architecture.
+- Historic Stage-4-only instructions describe what was prepared previously, not a current development stop. New business screens, lawful owner services, SQL and OpenAPI may now be built incrementally; do not copy donor systems blindly or touch shared/protected runtime state.
+- A prior instruction authorized **service-directory placement only**: exactly `services/{identity,dsh,wlt}/README.md` with optional empty future subdirectories, updated placement/governance drafts and stage-specific structural guards.
+- A subsequent explicit authorization extended that narrow slice to **development tooling for all three service-owned client packages**: pinned private `package.json`, `tsconfig.json`, an intentionally empty `clients/index.ts`, client README, pnpm-lock importers, and stage-aware checks.
+- A prior instruction admitted **OpenAPI scaffolds only**: one zero-operation OpenAPI 3.1 entrypoint per Identity/DSH/WLT, originally with seven DSH path placeholders.
+- The newest instruction authorizes a **source-audited, domain-complete reserved path layout across all three services**, still with exactly `paths: {}` in every module, no API operation, server, `$ref`, schema or granted permission. The donor SHA-pinned census in `docs/reference/OPENAPI-DONOR-CONTRACT-INVENTORY.md` and owner READMEs distinguish admitted domain grouping from old/non-admitted operations. The stage guard accepts exactly seven Identity, twenty-one DSH and fourteen WLT reserved groups, and rejects unknown/nonempty modules. No actual service, financial/security operation, Go, SQL, runtime, policy cutover, deployment or risk approval follows from this organizational slice.
+- **No toolchain or dependency upgrades in the new Worktree:** for Stage 1–3 and all later authorized implementation, use the **exact versions already declared in the original branch-41 manifests and locks** unless the human separately authorizes a specific version change. Root `.node-version`/`.go-version` and the pinned pnpm/TypeScript/Biome dependency lock are the present executable evidence; `docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md` preserves the donor version inventory. Never substitute a lower/higher installed runtime for the source-required version, automatically install a newer global CLI, or pull `latest` to hide a compatibility issue. Report unresolved mismatches as BLOCKED. After the explicitly authorized global Go alignment, the local exact-toolchain guard checks the installed Go binary with `GOTOOLCHAIN=local` against `.go-version`, not a downloaded fallback; do not infer that a separately managed host has the same installed version. The previous Stage-4 authorization produced presentation foundations. It is superseded **for development** by Close as We Go, including new business features, Go, SQL and API code as needed. Remote provider changes, EAS remote builds, deployment, credentials and protected data remain independently authorized external actions. Any later Docker environment must be independently namespaced and isolated for the current Worktree; do not reuse donor containers or persistent volumes.
+
+## 3A. Latest human decision — progressive implementation admission (2026-11-14)
+
+The latest human decision authorizes **analysis, specification and implementation of existing and newly proposed capabilities** through Close as We Go, without separate preliminary admission votes or whole-platform governance cutover. The existing 26 Product IDs remain the traceable baseline, not a ceiling. New scope is evaluated and documented with its correct Product/domain owner during its journey; no idea becomes a shipped or legally effective policy merely by being proposed. The Stage-4-only restriction is historical and superseded for development. GOVERNANCE_CUTOVER remains NOT_READY only for unfinished complete-policy reconciliation, not as a development gate.
+
+For each journey, identify existing and any proposed new capability, the legal owner of each business fact, affected surfaces and consumers. Deeply analyze the affected cone against canonical Product/Journey/domain decisions, implementation contracts and consumers; use Spec Kit artifacts only where helpful. Implement a coherent cross-surface slice, run the smallest real positive, negative, authorization, concurrency and recovery tests that cover its risks, and close only after 100% of applicable criteria have supporting evidence. Reuse proven work and tests; do not add a gate, document, engine or repeated full-suite check without a specific need. Resolve gaps and Product/policy choices **during that journey** without freezing unrelated development. Adapt the old Stage-4 guard to test real source, OpenAPI, SQL and boundaries rather than using scaffolding as a development prohibition. A failing check is an actionable defect to fix in the affected scope, not blanket permission to claim PASS nor a global development freeze. Identity, DSH and WLT remain sole writers of their facts; applications never write financial or permission truth.
+
+Production stays BLOCKED; authenticated real users, historic money, session state, secrets, migrations, external provider rails, PR/merge and deployment are not authorized by progressive development approval, a stage label or a scaffold. Require real owner-backed negative and recovery/concurrency evidence appropriate to each activated high-risk path.
+
+## 4. Data, security and operational safety
+- Preserve unrelated work, secrets, real user state, Root Owner, authorization boundaries, funds, financial ledger, orders, session state and media. Local development does not imply all persistent state is disposable.
+- Do not use SQL inserts, hidden fixtures, mocks, HTTP 200 or screenshot-only claims to manufacture an integration PASS. Use isolated owner-backed synthetic scenarios and verified durable readback.
+- For SQL replacement, separately prove fresh bootstrap, applicable protected upgrade, schema/permission equivalence, financial invariants and restore from isolated backup before any destructive cutover. Never blindly rewrite applied migration history.
+- No forced or unattended Git push, PR, merge, protected-branch bypass, force push, service restart, production deployment or delete of volumes/shared state. Require explicit permission for each consequential action type and respect tool DENIED results.
+
+## 5. Execution and concurrency
+- Prefer a directly capable, connected, authorized tool. Do not require any particular computer channel. Use specialist tools when the affected behavior requires them. Do not run Codex CLI unless explicitly requested and direct execution is inadequate.
+- One writer per shared file, migration, database or Git index. Before retrying interrupted writes, read their actual durable effect. Never overwrite a concurrent edit silently.
+- At each bounded slice: define accepted outcome, canonical owner, dependencies, blast radius, risks, tests, mutation rights, rollback boundary and proof. Execute the smallest **coherent** cross-surface slice, not isolated cosmetic patches.
+
+## 6. Verification and delivery
+- Run the smallest meaningful checks and tests of actual affected behavior. Where impacted, test unauthorized actor/Store access, account switching, money/COD/Mixed, idempotency/concurrency, fulfillment races and failures, real Android/Web UX and SQL durable state. iOS is NOT_RUN unless actually tested.
+- **Human decision of 2026-11-13:** external reviewer appointment is not a prerequisite for selecting or recording BThwani's approved target policies. For finance, security, migration, destructive and legal-sensitive implementation, require a documented internal technical risk assessment, adverse/negative tests and owner-backed evidence appropriate to actual impact before activation. The same editor or AI cannot claim an external independent signoff; when evidence is absent report `NOT_RUN`, `BLOCKED` or `REVIEW_BLOCKED` for the unproven *technical property*, never `PASS`. Human policy approval alone does not authorize protected data modification, release or bypass of applicable law.
+- Verify the diff, UTF-8, references, changed consumers and Git status. Make a local commit for a coherent tested batch within authorized development scope. A local commit does not authorize push, PR or merge. Never create a branch or worktree without an explicit instruction.
+- Statuses: PASS (proven), FAIL (failed), BLOCKED (unable), NOT_RUN (unexecuted), INVALIDATED (proof no longer applies), REVIEW_BLOCKED (mandatory review outstanding). Attach the tested branch/SHA and source/runtime context where relevant. Do not claim absence of all bugs or 100% empirical correctness.
+
+## 7. Controlled governance cutover
+- New normative Product/Architecture/Safety/Engineering documents belong **only** in root `governance/`, with one semantic owner per decision. Keep older source snapshots outside normative authority and preserve external research references.
+- The foundation gate may pass its **limited structural scope** while `GOVERNANCE_CUTOVER= PENDING`; that is not approval for implementation, full CI, SQL, security, finance or product release.
+- Change `GOVERNANCE_CUTOVER` only after every adopted domain decision is semantically reconciled, all 26 admitted capability IDs are accounted for with one owner, all internal references resolve, no obsolete governance directory exists in the candidate, and positive/negative guard tests pass. An unreviewed conflict remains recorded, not guessed away.

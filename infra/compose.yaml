@@ -1,0 +1,86 @@
+# This Compose project belongs exclusively to D:/samrim-refoundation-clean-20261112.
+# No bind mounts, no external networks/volumes, no reuse of samrim-local state.
+name: bthwani-refoundation
+
+x-logging: &logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-labels: &labels
+  com.bthwani.environment: refoundation
+  com.bthwani.worktree: samrim-refoundation-clean-20261112
+
+services:
+  postgres:
+    image: postgis/postgis:18-3.6@sha256:e84455a058f60f06dd8c40e66a2c628b8fc113d9fca0896e1f308b25b897207f
+    restart: unless-stopped
+    logging: *logging
+    labels: *labels
+    environment:
+      POSTGRES_USER: "${REF_POSTGRES_USER:?missing refoundation postgres user}"
+      POSTGRES_PASSWORD: "${REF_POSTGRES_PASSWORD:?generate the isolated infra/.env}"
+      POSTGRES_DB: "${REF_POSTGRES_DB:?missing refoundation postgres database}"
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    volumes:
+      - refoundation-postgres-data:/var/lib/postgresql
+    networks: [isolated]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+
+  mailpit:
+    image: axllent/mailpit:v1.27.8@sha256:6abc8e633df15eaf785cfcf38bae48e66f64beecdc03121e249d0f9ec15f0707
+    restart: unless-stopped
+    logging: *logging
+    labels: *labels
+    ports:
+      - "127.0.0.1:${REF_MAILPIT_PORT:-3226}:8025"
+    networks: [isolated, loopback]
+
+  media:
+    image: chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
+    restart: unless-stopped
+    logging: *logging
+    labels: *labels
+    command: ["mini", "-dir=/data"]
+    environment:
+      AWS_ACCESS_KEY_ID: "${REF_MEDIA_ACCESS_KEY:?generate refoundation media credentials}"
+      AWS_SECRET_ACCESS_KEY: "${REF_MEDIA_SECRET_KEY:?generate refoundation media credentials}"
+      S3_BUCKET: "${REF_MEDIA_BUCKET:-bthwani-refoundation-media}"
+    ports:
+      - "127.0.0.1:${REF_MEDIA_PORT:-3233}:8333"
+    volumes:
+      - refoundation-media-data:/data
+    networks: [isolated, loopback]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8333/status || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+  payment-mock:
+    image: wiremock/wiremock:3.13.2-2
+    restart: unless-stopped
+    logging: *logging
+    labels: *labels
+    # No mappings or old provider secrets; unknown payment calls return 404.
+    ports:
+      - "127.0.0.1:${REF_PAYMENT_MOCK_PORT:-3290}:8080"
+    networks: [isolated, loopback]
+
+networks:
+  isolated:
+    driver: bridge
+    internal: true
+  loopback:
+    driver: bridge
+
+volumes:
+  refoundation-postgres-data:
+  refoundation-media-data:

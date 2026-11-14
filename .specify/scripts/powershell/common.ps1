@@ -152,40 +152,10 @@ function Save-FeatureJson {
         New-Item -ItemType Directory -Path $specifyDir -Force | Out-Null
     }
 
-    # Write a complete file on the same volume and replace it atomically.
-    # Readers must never observe a partial feature selection.
+    # Write feature.json
     $json = @{ feature_directory = $FeatureDirectory } | ConvertTo-Json -Compress
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-    $temporaryFile = Join-Path $specifyDir ("feature." + [guid]::NewGuid().ToString('N') + ".tmp")
-    # A second writer may create the destination between the existence
-    # check and File.Move. In that case retry with atomic File.Replace.
-    $backupFile = Join-Path $specifyDir ("feature." + [guid]::NewGuid().ToString('N') + ".bak")
-    try {
-        [System.IO.File]::WriteAllText($temporaryFile, $json, $utf8NoBom)
-        if (Test-Path -LiteralPath $fjPath -PathType Leaf) {
-            [System.IO.File]::Replace($temporaryFile, $fjPath, $backupFile)
-        } else {
-            try {
-                [System.IO.File]::Move($temporaryFile, $fjPath)
-            } catch [System.IO.IOException] {
-                if (-not (Test-Path -LiteralPath $fjPath -PathType Leaf)) { throw }
-                [System.IO.File]::Replace($temporaryFile, $fjPath, $backupFile)
-            }
-        }
-    } finally {
-        if (Test-Path -LiteralPath $temporaryFile) {
-            Remove-Item -LiteralPath $temporaryFile -Force
-        }
-        if (Test-Path -LiteralPath $backupFile) {
-            try {
-                Remove-Item -LiteralPath $backupFile -Force -ErrorAction Stop
-            } catch {
-                # The selection is already committed: cleanup failure is
-                # not a failed write, and the locked backup is left intact.
-                Write-Warning "feature.json was written; its temporary backup is locked."
-            }
-        }
-    }
+    [System.IO.File]::WriteAllText($fjPath, $json, $utf8NoBom)
 }
 
 function Get-FeaturePathsEnv {
@@ -361,35 +331,20 @@ function Get-Python3Command {
     # kept as a deprecated fallback (still used by update-agent-context.sh).
     $override = if ($env:SPECKIT_PYTHON_EXECUTABLE) { $env:SPECKIT_PYTHON_EXECUTABLE } else { $env:SPECKIT_PYTHON }
     if ($override -and (Get-Command $override -ErrorAction SilentlyContinue)) {
-        try {
-            $ver = & $override --version 2>&1
-            if ($LASTEXITCODE -eq 0 -and $ver -match 'Python 3') {
-                & $override -c 'import yaml' *> $null
-                if ($LASTEXITCODE -eq 0) { return @($override) }
-            }
-        } catch { # Inoperable configured interpreter; try usable fallbacks.
+        $ver = & $override --version 2>&1
+        if ($ver -match 'Python 3') {
+            & $override -c 'import yaml' *> $null
+            if ($LASTEXITCODE -eq 0) { return @($override) }
         }
     }
-    foreach ($candidate in @('python3', 'python')) {
-        if (-not (Get-Command $candidate -ErrorAction SilentlyContinue)) { continue }
-        try {
-            $ver = & $candidate --version 2>&1
-            if ($LASTEXITCODE -ne 0 -or $ver -notmatch 'Python 3') { continue }
-            & $candidate -c 'import yaml' *> $null
-            if ($LASTEXITCODE -eq 0) { return @($candidate) }
-        } catch { # Windows Store execution aliases can exist but not be usable.
-            continue
-        }
+    if (Get-Command python3 -ErrorAction SilentlyContinue) { return @('python3') }
+    if (Get-Command python -ErrorAction SilentlyContinue) {
+        $ver = & python --version 2>&1
+        if ($ver -match 'Python 3') { return @('python') }
     }
     if (Get-Command py -ErrorAction SilentlyContinue) {
-        try {
-            $ver = & py -3 --version 2>&1
-            if ($LASTEXITCODE -eq 0 -and $ver -match 'Python 3') {
-                & py -3 -c 'import yaml' *> $null
-                if ($LASTEXITCODE -eq 0) { return @('py', '-3') }
-            }
-        } catch { # Invalid launcher should not hide other resolved candidates.
-        }
+        $ver = & py -3 --version 2>&1
+        if ($ver -match 'Python 3') { return @('py', '-3') }
     }
     return $null
 }
@@ -604,14 +559,12 @@ function Resolve-TemplateContent {
     # Priority 2: Installed presets (sorted by priority from .registry)
     $presetsDir = Join-Path $RepoRoot '.specify/presets'
     if (Test-Path $presetsDir) {
-        $registryEntry = Get-ChildItem -LiteralPath $presetsDir -Force -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -ieq '.registry' } | Select-Object -First 1
-        $registryPresent = $null -ne $registryEntry
+        $registryFile = Join-Path $presetsDir '.registry'
         $sortedPresets = @()
         $registryParsed = $false
-        if ($registryPresent) {
+        if (Test-Path $registryFile) {
             try {
-                $registryData = [System.IO.File]::ReadAllText($registryEntry.FullName, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+                $registryData = [System.IO.File]::ReadAllText($registryFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
                 if ($null -eq $registryData -or $registryData -isnot [PSCustomObject]) {
                     throw 'Registry root must be an object'
                 }
@@ -649,10 +602,7 @@ function Resolve-TemplateContent {
         }
 
         if (-not $registryParsed) {
-            if ($registryPresent) {
-                throw 'Installed preset registry is unreadable; disabled presets cannot become active'
-            }
-            $sortedPresets = Get-ChildItem -LiteralPath $presetsDir -Directory -ErrorAction SilentlyContinue |
+            $sortedPresets = Get-ChildItem -Path $presetsDir -Directory -ErrorAction SilentlyContinue |
                 Where-Object { $_.Name -cmatch '^[a-z0-9-]+$' } |
                 Sort-Object Name |
                 ForEach-Object { $_.Name }
@@ -860,18 +810,4 @@ except Exception as exc:
     }
 
     return $content
-}
-
-# Produce portable ASCII-only JSON without requiring PowerShell 7's -EscapeHandling.
-# ConvertTo-Json escapes JSON syntax; encode remaining Unicode UTF-16 units as \uXXXX.
-function ConvertTo-SpecKitAsciiJson {
-    [CmdletBinding()]
-    param([Parameter(Mandatory = $true, ValueFromPipeline = $true)]$InputObject)
-    process {
-        $json = ConvertTo-Json -InputObject $InputObject -Compress
-        [regex]::Replace($json, '[^\x00-\x7F]', {
-            param($match)
-            '\u{0:x4}' -f [int][char]$match.Value[0]
-        })
-    }
 }

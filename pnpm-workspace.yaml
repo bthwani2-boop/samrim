@@ -1,6 +1,5 @@
 packages:
   - "apps/*"
-  - "!apps/control-panel-runtime-proof-20261004"
   - "services/*"
   - "packages/*"
 

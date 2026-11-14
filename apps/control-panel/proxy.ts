@@ -1,83 +1,37 @@
-import { type NextRequest, NextResponse } from "next/server";
-import { verifySameOrigin } from "./src/server/security/csrf";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 
-const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
-
-function catalogMediaSource(isDevelopment: boolean): string {
-  const configuredBase = process.env.DSH_API_BASE_URL?.trim();
-  if (!configuredBase) return "";
-
-  try {
-    const serviceUrl = new URL(configuredBase);
-    const localHttp = isDevelopment && serviceUrl.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(serviceUrl.hostname);
-    if (serviceUrl.protocol !== "https:" && !localHttp) return "";
-    if (serviceUrl.username || serviceUrl.password || serviceUrl.search || serviceUrl.hash) return "";
-    return `${serviceUrl.origin}/dsh/catalog/media/`;
-  } catch {
-    return "";
-  }
-}
-
-function createContentSecurityPolicy(): Readonly<{ nonce: string; value: string }> {
+// The Operator host is request-rendered: its CSP nonce must never be reused in cached HTML.
+// Authorization is enforced by Identity/owner APIs, not by this presentation-layer Proxy.
+export function proxy(request: NextRequest) {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
-  const isDevelopment = process.env.NODE_ENV === "development";
-  const mediaSource = catalogMediaSource(isDevelopment);
-  const value = [
+  const development = process.env.NODE_ENV === "development";
+  const policy = [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDevelopment ? " 'unsafe-eval'" : ""}`,
-    isDevelopment ? "style-src 'self' 'unsafe-inline'" : `style-src 'self' 'nonce-${nonce}'`,
-    `img-src 'self' data: blob:${mediaSource ? ` ${mediaSource}` : ""}`,
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${development ? " 'unsafe-eval'" : ""}`,
+    // Ant Design's SSR registry and current Stage-4 JSX style attributes still need inline CSS.
+    // Do not relax script-src for this compatibility boundary.
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
     "font-src 'self' data:",
-    "frame-src 'self' https://www.google.com",
-    "connect-src 'self'",
+    `connect-src 'self'${development ? " ws:" : ""}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
-  ];
-  return { nonce, value: `${value.join("; ")};` };
-}
+    "frame-src 'none'",
+    ...(development ? [] : ["upgrade-insecure-requests"]),
+  ].join("; ");
 
-export function proxy(request: NextRequest) {
-  const { nonce, value: csp } = createContentSecurityPolicy();
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);
-  requestHeaders.set("Content-Security-Policy", csp);
-
-  if (
-    request.nextUrl.pathname.startsWith("/api/") &&
-    UNSAFE_METHODS.has(request.method.toUpperCase()) &&
-    !verifySameOrigin(request)
-  ) {
-    const response = NextResponse.json(
-      {
-        error: {
-          code: "FORBIDDEN_CROSS_ORIGIN",
-          message: "Cross-origin requests are forbidden for control-panel mutations",
-        },
-      },
-      { status: 403 },
-    );
-    response.headers.set("Content-Security-Policy", csp);
-    return response;
-  }
-
+  requestHeaders.set("Content-Security-Policy", policy);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
-  response.headers.set("Content-Security-Policy", csp);
+  response.headers.set("Content-Security-Policy", policy);
+  response.headers.set("Cache-Control", "private, no-store");
   return response;
 }
 
 export const config = {
-  matcher: [
-    // Always inspect API requests, even when clients send prefetch headers.
-    // The navigation-only prefetch optimization below must never bypass CSRF checks.
-    { source: "/api/:path*" },
-    {
-      source: "/((?!_next/static|_next/image|favicon.ico).*)",
-      missing: [
-        { type: "header", key: "next-router-prefetch" },
-        { type: "header", key: "purpose", value: "prefetch" },
-      ],
-    },
-  ],
+  matcher: "/((?!_next/static|_next/image|favicon.ico).*)",
 };

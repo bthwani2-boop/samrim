@@ -1,31 +1,16 @@
-# WLT
+# WLT — Service Placement
 
-WLT is Samrim's canonical owner for payment intent and collection state.
+STATUS: SCAFFOLD_ONLY
+OWNER: WLT
+EXECUTION: NOT_STARTED
 
-WLT owns cash-on-delivery and cash-at-store payment collection. It provides an
-internal, service-token protected API, append-only payment intent events,
-idempotent mutations, optimistic version checks, schema readback, and separate
-financial treatment for Captain COD custody and Partner store-collected cash commission
-receivables. Store proceeds remain with the Partner; the platform commission is
-offset against later eligible Partner earnings or settled by a verified direct
-Partner remittance.
+WLT is the sole owner and writer of money: wallets, immutable ledger entries, fees, financial agreements, cash custody, payouts and settlements. DSH Order facts and Identity actor facts remain with their own owners. Never duplicate the ledger or infer payment success from an HTTP response.
 
-This service does not integrate an external card/mobile-money provider.
-Collection, Partner commission receivables, earning offsets, and verified
-remittance readback remain canonical here; they must not be duplicated in DSH
-or in a mobile application. Captain cash remittance is a custody closure, not a
-merchant payout or a platform settlement.
+Current scaffold and future owner-local paths (real implementation only after separate approval):
+- `clients/` — private TypeScript workspace package with a nonfunctional `index.ts` entrypoint; future TypeScript/Go clients come only from validated contracts and real consumer needs.
+- `package.json` and `tsconfig.json` — exact-pinned TypeScript client tooling using the existing pnpm workspace; no runtime dependencies or implemented exports yet.
+- `backend/` — Go service source and owner-specific tests.
+- `contracts/openapi/` — one zero-operation OpenAPI 3.1 WLT entrypoint plus **14 reserved, nonfunctional `paths/*.yaml` domain groups**, each containing only `paths: {}` and unreferenced by the entrypoint. No financial endpoint, ledger authority, schema or permission is active. See the [source-pinned contract census](../../docs/reference/OPENAPI-DONOR-CONTRACT-INVENTORY.md).
+- `database/` — reviewed fresh-bootstrap schema and a protected `migrations/` upgrade path.
 
-Endpoints:
-
-- `POST /wlt/v1/payment-intents`
-- `GET /wlt/v1/payment-intents/{intentId}`
-- `POST /wlt/v1/payment-intents/{intentId}/collect`
-- `POST /wlt/v1/payment-intents/{intentId}/cancel`
-- `GET /wlt/v1/captains/{captainActorId}/cash-liability`
-- `GET /wlt/v1/operator/cash-liability` (server-side search, sort, and cursor pagination)
-- `POST /wlt/v1/payment-intents/{intentId}/remit`
-- `POST /wlt/v1/partner-store-cash-commissions/finalize`
-- `POST /wlt/v1/operator/partners/{partnerActorId}/commission-remittances`
-
-Health and readiness are available under `/wlt/health` and `/wlt/readiness`.
+See [finance governance](../../governance/finance.md) and [safety governance](../../governance/safety.md). Fresh baselines must not replace protected applied history; this README is **not** an executable service, financial schema or accounting proof.

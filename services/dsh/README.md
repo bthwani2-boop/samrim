@@ -1,19 +1,16 @@
-# DSH Service
+# DSH — Service Placement
 
-Purpose: canonical bounded-context owner for delivery, shopping, and commerce
-operational responsibilities assigned to DSH.
+STATUS: SCAFFOLD_ONLY
+OWNER: DSH
+EXECUTION: NOT_STARTED
 
-Boundary: DSH owns operational decisions, trusted service boundaries, and
-their readback. Apps own routing, navigation, composition, and presentation.
-Identity owns human identity and role trust; WLT owns financial truth.
+DSH owns Stores, catalog, Offers, authoritative prices, carts, Orders, serviceability and fulfillment. One Store/catalog/Order engine serves MARKETPLACE and DIRECT; no relation-specific duplicate writer. The single bounded employee-administration engine for BThwani staff and Merchant staff belongs here, with organizational isolation; Identity still owns accounts and platform permissions, WLT still owns money. The future Go location for that employee engine is `backend/internal/employees/` (not created by this scaffold).
 
-The backend source and project manifest are authoritative for the executable
-surface. Add a service-owned contract, durable data lane, or verification
-suite only when a live DSH responsibility requires it; a README is not a
-substitute for that responsibility.
+Current scaffold and future owner-local paths (real implementation only after separate approval):
+- `clients/` — private TypeScript workspace package with a nonfunctional `index.ts` entrypoint; future TypeScript/Go clients come only from validated contracts and real consumer needs.
+- `package.json` and `tsconfig.json` — exact-pinned TypeScript client tooling using the existing pnpm workspace; no runtime dependencies or implemented exports yet.
+- `backend/` — Go service source and owner-specific tests.
+- `contracts/openapi/` — one zero-operation OpenAPI 3.1 DSH entrypoint and **21 reserved, nonfunctional `paths/*.yaml` domain groups** (`paths: {}` only), with no entrypoint references. The seven initial groups were expanded after the donor route census; none is an actual API, owner permission or extra engine. See the [source-pinned contract census](../../docs/reference/OPENAPI-DONOR-CONTRACT-INVENTORY.md).
+- `database/` — reviewed fresh-bootstrap schema and a protected `migrations/` upgrade path.
 
-The DSH-to-Identity base URL is deployment configuration, not request data.
-Local development and test environments allow only the canonical local Identity
-hosts (`identity`, loopback, and `localhost`). Staging and production must set
-`DSH_IDENTITY_API_ALLOWED_HOSTS` to a comma-separated list of exact authorized
-Identity hostnames; wildcards and arbitrary destinations are rejected.
+See [architecture](../../governance/architecture.md), [Store governance](../../governance/stores.md) and [employee governance](../../governance/hr.md). This README is **not** a deployed engine, contract, schema or HR authorization.

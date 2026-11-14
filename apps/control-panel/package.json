@@ -7,22 +7,20 @@
     "node": ">=24.17.0 <25"
   },
   "scripts": {
-    "dev": "node ../../tools/dev/start-surface.mjs",
+    "dev": "next dev -H 127.0.0.1 -p 3300",
     "build": "next build",
     "typecheck": "next typegen && tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@ant-design/cssinjs": "2.1.2",
+    "@ant-design/nextjs-registry": "1.3.0",
     "@bthwani/design-system": "workspace:*",
-    "@bthwani/dsh": "workspace:*",
-    "@bthwani/identity": "workspace:*",
     "@date-fns/tz": "catalog:",
     "antd": "6.6.7",
     "date-fns": "catalog:",
     "next": "16.4.3",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zod": "catalog:"
   },
   "devDependencies": {

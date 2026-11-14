@@ -1,13 +1,13 @@
-# Identity Clients
+# IDENTITY client boundaries
 
-Canonical Identity-owned client bindings live here.
+STATUS: SCAFFOLD_ONLY
 
-Rules:
-- DTO lineage originates from `contracts/openapi/identity.openapi.yaml` and its declared modules;
-- customer registration/login/recovery and managed password enrollment/login/recovery are distinct typed operations;
-- managed recovery clears the current app's saved session only after successful role-scoped recovery, then returns to normal login;
-- Operator Passkey options/finish, governed enrollment and break-glass re-enrollment are distinct typed operations;
-- app sessions consume one role only;
-- mobile SecureStore/keychain and control-panel HttpOnly cookies remain host adapters;
-- internal service identity comes from its configured bearer credential, not `X-Service-Caller`;
-- no direct internal-route client, legacy universal OTP flow, generic context object or compatibility re-export may become a second authority.
+The package `@bthwani/identity` is available to the pnpm workspace but exports **no usable operations** at this stage. `index.ts` is deliberately an empty TypeScript module to exercise the existing typecheck toolchain, not a mock client.
+
+After the owner's real OpenAPI contract is approved and tested:
+- Put reviewed TypeScript transports and session/storage adapters in `clients/` only when they have actual consumers.
+- Generate OpenAPI-derived types and operations into `clients/generated/`; never maintain generated types as an independent authority.
+- Add a Go caller under `clients/go/` only for an evidenced cross-service consumer, with its Go module/build boundaries reviewed then.
+- Update `index.ts` exports and package dependencies only after their source and consumers exist. Avoid inventing global session state, endpoint URLs, credentials or a second business writer.
+
+Service ownership and future backend/contracts/database locations are documented in [the service README](../README.md). No running service, HTTP API or financial state is implied.

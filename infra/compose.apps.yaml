@@ -1,0 +1,180 @@
+# Future service definitions, intentionally NOT activated without real
+# owner Go source, migrations, scoped DB credentials and acceptance tests.
+# Load only together with infra/compose.yaml and --profile implementation.
+services:
+  identity-migrate:
+    profiles: [implementation]
+    build:
+      context: ..
+      dockerfile: services/identity/backend/Dockerfile
+    image: bthwani-refoundation-identity:dev
+    restart: "no"
+    entrypoint: ["/migrate"]
+    environment:
+      BTHWANI_ENV: development
+      IDENTITY_MIGRATION_DATABASE_URL: "${REF_IDENTITY_MIGRATION_DATABASE_URL:-}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [isolated]
+
+  identity-bootstrap:
+    profiles: [implementation]
+    build:
+      context: ..
+      dockerfile: services/identity/backend/Dockerfile
+    image: bthwani-refoundation-identity:dev
+    restart: "no"
+    entrypoint: ["/bootstrap-operator"]
+    environment:
+      BTHWANI_ENV: development
+      IDENTITY_BOOTSTRAP_DOCKER_LOCAL_ONLY: "1"
+      IDENTITY_DATABASE_URL: "${REF_IDENTITY_MIGRATION_DATABASE_URL:-}"
+    depends_on:
+      identity-migrate:
+        condition: service_completed_successfully
+    networks: [isolated]
+
+  dsh-migrate:
+    profiles: [implementation]
+    build:
+      context: ..
+      dockerfile: services/dsh/backend/Dockerfile
+    image: bthwani-refoundation-dsh:dev
+    restart: "no"
+    entrypoint: ["/migrate"]
+    environment:
+      BTHWANI_ENV: development
+      DSH_MIGRATION_DATABASE_URL: "${REF_DSH_MIGRATION_DATABASE_URL:-}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [isolated]
+
+  wlt-migrate:
+    profiles: [implementation]
+    build:
+      context: ..
+      dockerfile: services/wlt/backend/Dockerfile
+    image: bthwani-refoundation-wlt:dev
+    restart: "no"
+    entrypoint: ["/migrate"]
+    environment:
+      BTHWANI_ENV: development
+      WLT_MIGRATION_DATABASE_URL: "${REF_WLT_MIGRATION_DATABASE_URL:-}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [isolated]
+
+  postgres-access:
+    profiles: [implementation]
+    build:
+      context: ..
+      dockerfile: infra/docker/postgres-access.Dockerfile
+    image: bthwani-refoundation-postgres-access:dev
+    restart: "no"
+    depends_on:
+      identity-bootstrap:
+        condition: service_completed_successfully
+      dsh-migrate:
+        condition: service_completed_successfully
+      wlt-migrate:
+        condition: service_completed_successfully
+    environment:
+      REF_POSTGRES_DB: "${REF_POSTGRES_DB:-bthwani_refoundation}"
+    networks: [isolated]
+
+  identity:
+    profiles: [implementation]
+    build:
+      context: ..
+      dockerfile: services/identity/backend/Dockerfile
+    image: bthwani-refoundation-identity:dev
+    restart: unless-stopped
+    environment:
+      BTHWANI_ENV: development
+      BTHWANI_LISTEN_HOST: "0.0.0.0"
+      PORT: "8082"
+      IDENTITY_DATABASE_URL: "${REF_IDENTITY_DATABASE_URL:-}"
+      IDENTITY_CHALLENGE_DELIVERY_MODE: mailpit
+      IDENTITY_MAILPIT_SMTP_ADDR: mailpit:1025
+    ports:
+      - "127.0.0.1:${REF_IDENTITY_PORT:-3201}:8082"
+    depends_on:
+      postgres-access:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_started
+    networks: [isolated, loopback]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8082/identity/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+
+  wlt:
+    profiles: [implementation]
+    build:
+      context: ..
+      dockerfile: services/wlt/backend/Dockerfile
+    image: bthwani-refoundation-wlt:dev
+    restart: unless-stopped
+    environment:
+      BTHWANI_ENV: development
+      BTHWANI_LISTEN_HOST: "0.0.0.0"
+      PORT: "8083"
+      WLT_DATABASE_URL: "${REF_WLT_DATABASE_URL:-}"
+      WLT_IDENTITY_API_BASE_URL: http://identity:8082
+    ports:
+      - "127.0.0.1:${REF_WLT_PORT:-3203}:8083"
+    depends_on:
+      postgres-access:
+        condition: service_completed_successfully
+      identity:
+        condition: service_healthy
+    networks: [isolated, loopback]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8083/wlt/readiness"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+
+  dsh:
+    profiles: [implementation]
+    build:
+      context: ..
+      dockerfile: services/dsh/backend/Dockerfile
+    image: bthwani-refoundation-dsh:dev
+    restart: unless-stopped
+    environment:
+      BTHWANI_ENV: development
+      BTHWANI_LISTEN_HOST: "0.0.0.0"
+      PORT: "8080"
+      DSH_DATABASE_URL: "${REF_DSH_DATABASE_URL:-}"
+      DSH_IDENTITY_API_BASE_URL: http://identity:8082
+      DSH_WLT_API_BASE_URL: http://wlt:8083
+      DSH_MEDIA_S3_ENDPOINT: http://media:8333
+      DSH_MEDIA_ACCESS_KEY: "${REF_MEDIA_ACCESS_KEY:-}"
+      DSH_MEDIA_SECRET_KEY: "${REF_MEDIA_SECRET_KEY:-}"
+      DSH_MEDIA_BUCKET: "${REF_MEDIA_BUCKET:-bthwani-refoundation-media}"
+    ports:
+      - "127.0.0.1:${REF_DSH_PORT:-3202}:8080"
+    depends_on:
+      postgres-access:
+        condition: service_completed_successfully
+      identity:
+        condition: service_healthy
+      wlt:
+        condition: service_healthy
+      media:
+        condition: service_healthy
+    networks: [isolated, loopback]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/dsh/readiness"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s

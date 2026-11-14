@@ -1,34 +1,14 @@
+import "antd/dist/reset.css";
+import "@bthwani/design-system/theme.css";
+import { AntdRegistry } from "@ant-design/nextjs-registry";
 import { headers } from "next/headers";
-import Script from "next/script";
-import { connection } from "next/server";
-import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import "./globals.css";
-import { SessionProvider } from "../src/session/session-provider";
-import { AntDesignProvider } from "../src/shell/ant-design-provider";
-import { AntDesignStyleRegistry } from "../src/shell/ant-design-style-registry";
+import { Providers } from "./providers";
 
-export const metadata: Metadata = {
-  title: { default: "بوابة المشغّل", template: "%s | بثواني" },
-  description: "مساحة تشغيل بثواني لإدارة الشركاء والكتالوج والعمليات والصلاحيات.",
-};
+export const metadata = { title: "بثواني — تهيئة لوحة التحكم", robots: { index: false, follow: false } };
 
 export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
-  await connection();
-  const nonce = (await headers()).get("x-nonce") ?? undefined;
-  return (
-    <html lang="ar" dir="rtl" suppressHydrationWarning>
-      <head>
-        <Script id="appearance-init" nonce={nonce} strategy="beforeInteractive">{`(() => { try { const value = window.localStorage.getItem("bthwani.control-panel.appearance"); if (value === "light" || value === "dark") document.documentElement.dataset.theme = value; } catch {} })();`}</Script>
-      </head>
-      <body>
-        <AntDesignStyleRegistry nonce={nonce}>
-          <AntDesignProvider nonce={nonce}>
-            <SessionProvider>{children}</SessionProvider>
-          </AntDesignProvider>
-        </AntDesignStyleRegistry>
-        <div id="control-panel-overlay-root" />
-      </body>
-    </html>
-  );
+  // Header access keeps the Operator HTML request-rendered, so the CSP nonce is never cached.
+  const nonce = (await headers()).get("x-nonce") ?? "";
+  return <html lang="ar" dir="rtl"><body style={{ margin: 0 }}><AntdRegistry><Providers cspNonce={nonce}>{children}</Providers></AntdRegistry></body></html>;
 }

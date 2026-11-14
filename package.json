@@ -1,44 +1,25 @@
 {
-  "name": "samrim",
+  "name": "bthwani-refoundation",
   "version": "0.0.0",
   "private": true,
+  "type": "module",
   "packageManager": "pnpm@12.15.0",
   "engines": {
     "node": ">=24.17.0 <25",
     "pnpm": "12.15.0"
   },
   "scripts": {
-    "mobile:verify-config": "node tools/mobile/verify-mobile-config.mjs && node --test tools/mobile/expo-package-policy.test.mjs tools/mobile/package-engine-policy.test.mjs",
-    "mobile:build": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/build-development.ps1",
-    "brand:check": "node tools/mobile/verify-brand-assets.mjs",
-    "identity:blocklist:generate": "node services/identity/tools/generate-password-blocklist.mjs",
-    "identity:blocklist:check": "node services/identity/tools/generate-password-blocklist.mjs --check",
-    "dsh:import-catalog-products": "node services/dsh/tools/import-catalog-products.mjs",
-    "bootstrap": "pnpm install --frozen-lockfile && go work sync",
-    "check": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/check-local.ps1",
-    "theme:generate": "pnpm --dir packages/design-system theme:generate",
-    "theme:check": "pnpm --dir packages/design-system theme:check",
-    "theme:verify": "pnpm theme:check",
-    "verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/check-local.ps1 -Candidate",
-    "safe:push": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/safe-push.ps1",
-    "mobile:prepare": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/prepare-local-development.ps1",
-    "dev": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1",
-    "client": "pnpm --dir apps/app-client dev",
-    "partner": "pnpm --dir apps/app-partner dev",
-    "captain": "pnpm --dir apps/app-captain dev",
-    "control": "pnpm --dir apps/control-panel dev",
-    "scr": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/scr.ps1"
+    "check:workspace": "node tools/dev/verify-workspace.mjs && node --test tools/dev/git-turn.test.mjs",
+    "check:coverage": "node tools/dev/run-coverage.mjs",
+    "check:toolchain": "node tools/dev/verify-workspace.mjs --require-exact-toolchain",
+    "check:security": "node --test tools/security/verify-secrets.test.mjs && node tools/security/verify-secrets.mjs",
+    "check:foundation": "node tools/governance/verify-foundation.mjs && node --test tools/governance/verify-foundation.test.mjs tools/governance/review-examples.test.mjs",
+    "check": "pnpm run check:workspace && pnpm run check:security && pnpm run check:foundation && pnpm run check:design && pnpm run check:apps",
+    "check:design": "pnpm --dir packages/design-system theme:check && pnpm --dir packages/design-system theme:verify",
+    "check:apps": "node tools/mobile/verify-app-foundations.mjs && node --test tools/mobile/verify-rtl.test.mjs tools/mobile/verify-expo-config.test.mjs tools/mobile/verify-native-config.test.mjs tools/mobile/verify-application-boundaries.test.mjs packages/tamagui-config/tools/appearance.test.mjs && node tools/mobile/verify-rtl.mjs && node tools/mobile/verify-expo-config.mjs && node tools/mobile/verify-application-boundaries.mjs && pnpm exec biome check tools/mobile/verify-application-boundaries.mjs tools/mobile/verify-application-boundaries.test.mjs tools/mobile/verify-expo-web-http.mjs tools/security/verify-secrets.mjs tools/security/verify-secrets.test.mjs && pnpm -r --if-present run typecheck"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.12",
-    "@expo/metro-config": "58.0.17",
-    "@playwright/test": "1.63.0",
-    "expo": "58.0.19",
-    "knip": "6.34.0",
-    "next": "16.4.3",
-    "nx": "24.0.1",
-    "typescript": "7.0.2",
-    "typescript-ast": "npm:typescript@6.0.2",
-    "yaml": "2.9.0"
+    "typescript": "7.0.2"
   }
 }

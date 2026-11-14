@@ -1,2 +1,2 @@
-export * from "./tokens/index";
-export * from "./theme/index";
+export * from "./brand/colors";
+export * from "./semantics/themes";
