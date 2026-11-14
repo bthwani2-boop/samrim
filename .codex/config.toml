@@ -1,0 +1,9 @@
+# Project-local Codex defaults for Spec Kit command dispatch.
+# Do not copy this configuration into user-global settings.
+model = "gpt-6-luna"
+model_reasoning_effort = "high"
+service_tier = "fast"
+sandbox_mode = "workspace-write"
+
+[features]
+fast_mode = true

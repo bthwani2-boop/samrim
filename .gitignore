@@ -43,6 +43,8 @@ secrets.local.*
 # Generated local tool state, not durable policy.
 .bthwani-local/
 .specify/feature.json
+# Per-worktree Spec Kit workflow state and transcripts are not shareable source.
+.specify/workflows/runs/
 
 # Locally captured competitor screenshots are not source or distributable assets.
 docs/reference/competitors/local-photos/
