@@ -1,6 +1,6 @@
-import { listPublicStores, type PublicStore, type PublicPage } from "@bthwani/dsh";
+import { listPublicStores, type PublicPage, type PublicStore } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
-import { Link, router, type Href } from "expo-router";
+import { type Href, Link, router } from "expo-router";
 import * as React from "react";
 import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, Text, TextInput, View } from "react-native";
 
@@ -20,6 +20,7 @@ export default function PublicStoresScreen() {
   const [state, setState] = React.useState<PageState>({ scope: "", loading: true, loadingMore: false, items: [] });
   const generation = React.useRef(0);
   const pageAbort = React.useRef<AbortController | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: A retry intentionally reloads the same city from DSH.
   React.useEffect(() => {
     const current = ++generation.current;
     const abort = new AbortController();
@@ -57,12 +58,12 @@ export default function PublicStoresScreen() {
         setState((old) => old.scope !== scopedCity ? old : { ...old, loadingMore: false, error: error instanceof Error ? error.message : "UNKNOWN" });
     }
   };
-  const textStyle = { color: theme.color, textAlign: "right" as const, writingDirection: "rtl" as const };
+  const textStyle = { color: theme.color };
   const buttonStyle = { padding: 14, borderRadius: 12, borderWidth: 1, borderColor: theme.borderColor };
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
       <ScrollView contentContainerStyle={{ padding: 18, gap: 14, maxWidth: 800, width: "100%", alignSelf: "center" }}>
-        <Link href="/" style={{ color: theme.interactiveText, textAlign: "right" }}>الرئيسية</Link>
+        <Link href="/" style={{ color: theme.interactiveText }}>الرئيسية</Link>
         <Text accessibilityRole="header" style={{ ...textStyle, fontSize: 26, fontWeight: "700" }}>متاجر بثواني</Text>
         <Text style={{ ...textStyle, color: theme.colorSecondary }}>البيانات المنشورة فقط من خدمة المتاجر. عرض المتجر لا يعني إمكانية إتمام الطلب.</Text>
         <Text accessibilityRole="text" style={textStyle}>رمز مدينة الخدمة</Text>
@@ -80,7 +81,7 @@ export default function PublicStoresScreen() {
           ? <Text testID="stores-empty" style={textStyle}>لا توجد متاجر منشورة لهذه المدينة حاليًا.</Text> : null}
         {visible.items.map((store) => (
           <Pressable key={store.id} testID={`store-${store.id}`} accessibilityRole="button"
-            accessibilityLabel={`عرض المتجر ${store.name}`} onPress={() => router.push(("/store/" + encodeURIComponent(store.id)) as Href)}
+            accessibilityLabel={`عرض المتجر ${store.name}`} onPress={() => router.push((`/store/${encodeURIComponent(store.id)}`) as Href)}
             style={{ backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: 1, borderRadius: 12, padding: 18, gap: 6 }}>
             <Text style={{ ...textStyle, fontSize: 19, fontWeight: "600" }}>{store.name}</Text>
             <Text style={{ ...textStyle, color: theme.colorSecondary }}>{store.orderabilityStatus === "PAUSED" ? "متوقف مؤقتًا" : store.orderabilityStatus === "CLOSED_BY_SCHEDULE" ? "مغلق" : "متجر منشور"}</Text>

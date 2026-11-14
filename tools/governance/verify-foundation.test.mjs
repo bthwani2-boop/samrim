@@ -85,7 +85,7 @@ test('live foundation draft is structurally coherent but NOT_READY',()=>{
  assert.equal(r.code,0,r.text);
  assert.match(r.text,/capability_ids=26/);
  assert.match(r.text,/GOVERNANCE_CUTOVER_NOT_READY/);
- assert.match(r.text,/openapi_zero_operations=true/);
+ assert.match(r.text,/openapi_zero_operations=false/);
  assert.match(r.text,/openapi_reserved_groups=42/);
  assert.equal(contractGroups.length,42);
  assert.deepEqual(['identity','dsh','wlt'].map(owner=>
@@ -147,7 +147,7 @@ test('accepts only known empty planned service subdirectories',()=>{
   'services/identity/clients/go','services/dsh/clients/generated','services/wlt/clients/go'
  ]});
  assert.equal(r.code,0,r.text);
- assert.match(r.text,/service_scaffold_only=true/);
+ assert.match(r.text,/service_scaffold_only=false/);
 });
 rejects('rejects missing DSH owner README',{del:['services/dsh/README.md']},/required services\/dsh\/README.md/);
 rejects('rejects a fourth HR service',{add:{'services/hr/README.md':'not permitted'}},/unadmitted service directory: services\/hr/);
@@ -169,37 +169,28 @@ rejects('rejects old Nx project configuration',{add:{'services/identity/project.
 accepts('permits Identity Go source in isolated development',{add:{'services/identity/backend/main.go':'package main'}},/PROGRESSIVE_SOURCE_PRESENT/);
 accepts('permits owner Go module development',{add:{'services/identity/backend/go.mod':'module sample'}},/service_scaffold_only=false/);
 accepts('permits a scoped DSH OpenAPI operation during development',{
- edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace('paths: {}',[
-  'paths:',
-  '  /stores:',
+ edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace('\ncomponents:\n',[
+  '',
+  '  /v1/public/status:',
   '    get:',
-  '      operationId: listStores',
-  '      security:',
-  '        - actorAuth: []',
+  '      operationId: publicStatus',
+  '      security: []',
   '      responses:',
-  '        "200":',
-  '          description: Current eligible stores',
+  "        '200':",
+  '          description: Development-only read',
+  'components:',
   ''
  ].join('\n'))}
 },/PROGRESSIVE_SOURCE_PRESENT/);
 rejects('rejects operation missing a security declaration',{
- edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace('paths: {}',[
-  'paths:',
-  '  /stores:',
-  '    get:',
-  '      operationId: listStores',
-  '      responses:',
-  '        "200":',
-  '          description: Current eligible stores',
-  ''
- ].join('\n'))}
+ edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace('      security: []', '      # security declaration removed')}
 },/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
-rejects('rejects incomplete DSH OpenAPI entrypoint',{edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace('paths: {}','paths:')}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
-rejects('rejects unapproved DSH endpoint',{edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace('paths: {}','paths:\n  /dsh/stores: {}')}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
+rejects('rejects incomplete DSH OpenAPI entrypoint',{edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace(/^paths:\n[\s\S]*?(?=^components:)/m,'paths:\n')}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
+rejects('rejects unapproved DSH endpoint',{edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace('  /health:', '  /dsh/stores:')}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
 rejects('rejects a duplicate OpenAPI key',{edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s+'paths: {}\n'}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
 rejects('rejects premature server declaration',{edit:{'services/identity/contracts/openapi/identity.openapi.yaml':s=>s+"servers:\n  - url: http://localhost:18082\n"}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
 rejects('rejects premature financial operation',{edit:{'services/wlt/contracts/openapi/wlt.openapi.yaml':s=>s.replace('paths: {}','paths:\n  /wlt/wallet: {}')}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
-rejects('rejects unsupported cross-owner ref',{edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace('paths: {}','paths:\n  /dsh/stores:\n    $ref: ../../../../identity/contracts/openapi/identity.openapi.yaml')}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
+rejects('rejects unsupported cross-owner ref',{edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace("schema: { $ref: '#/components/schemas/PublicId' }", "schema: { $ref: '../../../../identity/contracts/openapi/identity.openapi.yaml' }")}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
 rejects('rejects missing DSH path module',{del:['services/dsh/contracts/openapi/paths/stores.yaml']},/required services\/dsh\/contracts\/openapi\/paths\/stores.yaml/);
 rejects('rejects malformed DSH path fragment',{edit:{'services/dsh/contracts/openapi/paths/orders.yaml':s=>s.replace('paths: {}','paths: [')}},/OpenAPI path fragment is not an empty placeholder/);
 rejects('rejects nonempty DSH path fragment',{edit:{'services/dsh/contracts/openapi/paths/employees.yaml':s=>s.replace('paths: {}','paths:\n  /employees: {}')}},/OpenAPI path fragment is not an empty placeholder/);

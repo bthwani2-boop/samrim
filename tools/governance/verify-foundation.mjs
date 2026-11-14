@@ -231,6 +231,56 @@ function checkProgressivePathFragment(content,filename){
   fail('OpenAPI path fragment is not an empty placeholder or a scoped development operation: '+filename);
  return true;
 }
+function validateProgressiveEntrypoint(candidate,filename,owner){
+ const reject=()=>fail('OpenAPI scaffold mutated or contains unapproved operations/refs: '+filename);
+ if(!candidate.startsWith('openapi: 3.1.0\ninfo:\n')||
+    !candidate.includes('  title: BThwani '+(owner==='identity'?'Identity':owner.toUpperCase())+' API\n')||
+    /\$ref:\s*['"]?(?:https?:\/\/|\.\.\/)/.test(candidate))reject();
+ const lines=candidate.split('\n');
+ const rootKeys=new Set();
+ for(const line of lines){
+  const key=/^([a-zA-Z][a-zA-Z0-9-]*):(?:\s|$)/.exec(line)?.[1];
+  if(key){
+   if(rootKeys.has(key))reject();
+   rootKeys.add(key);
+  }
+ }
+ if(!rootKeys.has('paths'))reject();
+ const start=lines.indexOf('paths:');
+ const stop=lines.findIndex((line,i)=>i>start&&/^[a-zA-Z][a-zA-Z0-9-]*:/.test(line));
+ const body=lines.slice(start+1,stop<0?undefined:stop);
+ const paths=[];
+ for(let i=0;i<body.length;i++){
+  if(/^  \//.test(body[i])){
+   const match=/^  (\/[^\s:]+):\s*$/.exec(body[i]);
+   if(!match)reject();
+   if(owner==='dsh'&&!/^\/(?:health$|v1\/)/.test(match[1]))reject();
+   if(paths.some(p=>p.name===match[1]))reject();
+   paths.push({name:match[1],start:i});
+  }
+ }
+ if(paths.length===0)reject();
+ const ids=new Set();
+ for(let p=0;p<paths.length;p++){
+  const block=body.slice(paths[p].start+1,paths[p+1]?.start);
+  const operations=[];
+  for(let i=0;i<block.length;i++){
+   const match=/^    (get|post|put|patch|delete|options|head):\s*$/.exec(block[i]);
+   if(match)operations.push(i);
+   else if(/^    [a-zA-Z]/.test(block[i]))reject();
+  }
+  if(operations.length===0)reject();
+  for(let i=0;i<operations.length;i++){
+   const op=block.slice(operations[i]+1,operations[i+1]);
+   const idsHere=op.flatMap(l=>[...l.matchAll(/^      operationId:\s*([a-zA-Z][a-zA-Z0-9_]*)\s*$/g)].map(m=>m[1]));
+   if(idsHere.length!==1||ids.has(idsHere[0])||
+      !op.some(l=>/^      security:\s*(?:\[\])?\s*$/.test(l))||
+      !op.some(l=>/^      responses:\s*$/.test(l))||
+      !op.some(l=>/^        ['"]?(?:[1-5][0-9]{2}|default)['"]?:\s*$/.test(l)))reject();
+   ids.add(idsHere[0]);
+  }
+ }
+}
 for(const owner of serviceOwners){
  const prefix='services/'+owner;
  for(const suffix of ['', '/backend','/clients','/clients/go','/clients/generated',
@@ -251,19 +301,9 @@ for(const owner of serviceOwners){
    ' API\n  version: 0.0.0\n  description: Contract scaffold only; no operations are defined or approved.\npaths: {}\n';
  if(contents[contractFile]!==expectedContract){
   const candidate=contents[contractFile];
-  // This is a bounded source-placement check, not a replacement for an OpenAPI
-  // parser, generated-client parity or runtime authorization tests.
-  if(!candidate.startsWith('openapi: 3.1.0\ninfo:\n')||
-     !candidate.includes('  title: BThwani '+contractName+' API\n')||
-     !candidate.includes('\npaths:\n')||
-     !candidate.includes('\n  /')||
-     !candidate.includes('operationId:')||
-     !candidate.includes('responses:')||
-     !candidate.includes('security:')||
-     candidate.includes('$ref: ../')||
-     candidate.includes('$ref: http://')||
-     candidate.includes('$ref: https://'))
-   fail('OpenAPI scaffold mutated or contains unapproved operations/refs: '+contractFile);
+  // Validate each admitted operation boundary independently rather than relying
+  // on one operationId/security marker anywhere in the document.
+  validateProgressiveEntrypoint(candidate,contractFile,owner);
   developmentSourceFiles++;
   progressiveOpenApiFiles++;
  }

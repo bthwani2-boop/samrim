@@ -1,4 +1,4 @@
-import { Link } from "expo-router";
+import { type Href, Link } from "expo-router";
 import type { Metadata } from "expo-router/server";
 
 export function generateMetadata(): Metadata {
@@ -13,7 +13,7 @@ export default function FoundationHome() {
   return (
     <Stage4Preview
       title="بثواني — العميل"
-      healthLink={<Link href="/health" style={{ color: theme.interactiveText, fontSize: 18 }}>فتح صفحة اختبار الملاحة</Link>}
+      healthLink={<><Link href={"/stores" as Href} style={{ color: theme.interactiveText, fontSize: 18 }}>استعراض متاجر بثواني</Link><Link href="/health" style={{ color: theme.interactiveText, fontSize: 18 }}>فتح صفحة اختبار الملاحة</Link></>}
       labLink={<><Link href="/lab" style={{ color: theme.interactiveText, fontSize: 18 }}>فتح مختبر مكونات Tamagui</Link><Link href={{ pathname: "/lab", params: { renderer: "universal" } }} style={{ color: theme.interactiveText, fontSize: 18 }}>مقارنة Expo UI Universal</Link></>}
     />
   );

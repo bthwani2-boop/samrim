@@ -14,14 +14,18 @@ import (
 func setupIntegratedOwner(t *testing.T) (*Owner, *Server) {
 	t.Helper()
 	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" {
-		t.Fatal("BTHWANI_ISOLATED_TEST_MODE must be enabled against the isolated DB to run owner-backed acceptance")
+		t.Skip("Owner-backed PostgreSQL integration requires explicit BTHWANI_ISOLATED_TEST_MODE; not counted as PASS here")
 	}
 	db, err := OpenFromEnvironment()
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	owner, err := New(db, "dsh_test_agent01_final")
+	schema := os.Getenv("DSH_DB_SCHEMA")
+	if !strings.HasPrefix(schema, "dsh_test_") {
+		t.Fatal("owner-backed integration requires an explicitly isolated dsh_test_* schema")
+	}
+	owner, err := New(db, schema)
 	if err != nil {
 		t.Fatal(err)
 	}

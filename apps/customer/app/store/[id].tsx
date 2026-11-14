@@ -1,6 +1,6 @@
-import { getPublicStore, listPublicOffers, type PublicStore, type PublicOffer } from "@bthwani/dsh";
+import { getPublicStore, listPublicOffers, type PublicOffer, type PublicStore } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
-import { Link, useLocalSearchParams, type Href } from "expo-router";
+import { type Href, Link, useLocalSearchParams } from "expo-router";
 import * as React from "react";
 import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, Text, View } from "react-native";
 
@@ -14,6 +14,7 @@ export default function PublicStoreDetail() {
   const [state, setState] = React.useState<StoreResult>({ scope: "", loading: true, offers: [] });
   const revision = React.useRef(0);
   const pending = React.useRef<AbortController | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: A retry intentionally reloads this Store from DSH.
   React.useEffect(() => {
     const current = ++revision.current;
     const abort = new AbortController();
@@ -31,7 +32,7 @@ export default function PublicStoreDetail() {
     return () => { abort.abort(); revision.current++; };
   }, [id, retry]);
   const visible = state.scope === id ? state : { scope: id, loading: true, offers: [] };
-  const textStyle = { color: theme.color, textAlign: "right" as const, writingDirection: "rtl" as const };
+  const textStyle = { color: theme.color };
   const more = async () => {
     if (!visible.cursor || visible.more) return;
     const current = revision.current;
@@ -51,7 +52,7 @@ export default function PublicStoreDetail() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
       <ScrollView contentContainerStyle={{ padding: 18, maxWidth: 800, width: "100%", alignSelf: "center", gap: 14 }}>
-        <Link href={"/stores" as Href} style={{ color: theme.interactiveText, textAlign: "right" }}>العودة للمتاجر</Link>
+        <Link href={"/stores" as Href} style={{ color: theme.interactiveText }}>العودة للمتاجر</Link>
         {visible.loading ? <ActivityIndicator accessibilityLabel="جارٍ تحميل المتجر" color={theme.actionBackground} /> : null}
         {visible.store ? <>
           <Text accessibilityRole="header" testID="store-title" style={{ ...textStyle, fontSize: 26, fontWeight: "700" }}>{visible.store.name}</Text>
