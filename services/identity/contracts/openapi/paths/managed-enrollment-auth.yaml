@@ -1,1 +1,42 @@
-paths: {}
+paths:
+  /v1/actors/me/merchant-role:
+    post:
+      operationId: admitVerifiedCurrentCustomerAsMerchant
+      summary: Admit a currently verified Customer as a Merchant without assigning a Store
+      description: Requires an active Identity Customer bearer and verified_at from the canonical Identity actor. Serializes actor and role creation in PostgreSQL and returns exactly one new short-lived Merchant bearer on first admission. Already-provisioned, disabled or suspended Merchant roles may not self-reactivate. This is not an initial authentication factor, a Store grant, or Operator admission. Development-only synthetic namespaces.
+      security:
+        - OpaqueSession: []
+      responses:
+        '201':
+          description: One new Merchant role and role-scoped Identity session, with no Store rights
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/MerchantAdmission' }
+        '400':
+          description: Query parameters, request body or streaming payload rejected
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '401':
+          description: Missing, invalid, revoked, expired, wrong-role or stale Customer bearer
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '403':
+          description: Current Customer lacks a recorded Identity verification event
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '409':
+          description: Merchant role already provisioned, including disabled or suspended; never reactivated
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '503':
+          description: Identity canonical owner unavailable or verification migration not admitted
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }

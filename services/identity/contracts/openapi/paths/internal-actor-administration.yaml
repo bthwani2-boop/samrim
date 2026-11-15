@@ -1,1 +1,57 @@
-paths: {}
+paths:
+  /v1/operators/me/permissions/{permission}:
+    get:
+      operationId: getEffectiveOperatorPermission
+      summary: Read an explicit currently active Operator permission
+      description: Never grant from role=operator alone. Verify the bearer session, current actor/role standing and matching security versions, and an explicit active Identity-owned Operator permission in one repeatable-read database transaction. A finance workspace grant is not authorization to mutate the WLT ledger or reroute a beneficiary. No permission administration endpoint is exposed.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: permission
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [operations, partners, catalog, marketing, finance, hr, platform_policies]
+      responses:
+        '200':
+          description: The verified Operator currently holds this explicit permission
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [actorId, permission]
+                properties:
+                  actorId: { type: string, minLength: 1, maxLength: 128 }
+                  permission:
+                    type: string
+                    enum: [operations, partners, catalog, marketing, finance, hr, platform_policies]
+        '400':
+          description: Invalid query or body
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '401':
+          description: Missing, invalid, revoked, expired or stale session
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '403':
+          description: Active actor lacks this effective Operator permission
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '404':
+          description: Unknown or unapproved permission scope
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '503':
+          description: Identity cannot verify its current owner state
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }

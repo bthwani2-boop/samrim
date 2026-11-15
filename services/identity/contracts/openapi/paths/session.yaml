@@ -1,1 +1,59 @@
-paths: {}
+paths:
+  /v1/sessions/current:
+    get:
+      operationId: getVerifiedIdentitySession
+      summary: Read current verified Identity actor and active role
+      description: Verify opaque 256-bit bearer session against canonical active actor/role, issue time, expiry, revocation and authorization versions; role never implies a DSH Store grant or Operator permission.
+      security:
+        - OpaqueSession: []
+      responses:
+        '200':
+          description: Verified Identity principal only, never a Store grant
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Principal' }
+        '400':
+          description: Invalid body or query
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '401':
+          description: No current valid Identity session
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '503':
+          description: Canonical Identity owner unavailable; fail closed
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+    delete:
+      operationId: revokeCurrentIdentitySession
+      summary: Revoke the current authenticated Identity session
+      description: Atomically revoke only the presented active bearer digest through the canonical Identity owner. A stale, suspended, revoked, future-issued or expired session cannot log out another actor or change a different session. This does not revoke the entire session family or authorize admission.
+      security:
+        - OpaqueSession: []
+      responses:
+        '204':
+          description: The current bearer was durably revoked, with no response body
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+        '400':
+          description: Invalid body or query
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '401':
+          description: The bearer is absent, malformed or no longer current; no mutation
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '503':
+          description: Canonical Identity writer unavailable; no success is claimed
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
