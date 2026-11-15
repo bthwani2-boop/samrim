@@ -34,7 +34,7 @@ const files=[...new Set([
  '.specify/init-options.json','.specify/integration.json','.specify/integrations/speckit.manifest.json',
  '.specify/memory/constitution.md',...Object.keys(assetManifest.files)
 ])];
-function run({edit={},add={},del=[],dirs=[],links={}}={}){
+function run({edit={},add={},del=[],dirs=[],links={},rename={}}={}){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'bthwani-policy-guard-'));
  try{
   // A single fixture path may occur with different casing (README.md/readme.md).
@@ -48,6 +48,9 @@ function run({edit={},add={},del=[],dirs=[],links={}}={}){
    fs.mkdirSync(path.dirname(output),{recursive:true});
    const original=fs.readFileSync(path.join(root,...f.split('/')),'utf8');
    fs.writeFileSync(output,Object.hasOwn(edit,f)?edit[f](original):original,'utf8');
+  }
+  for(const [from,to] of Object.entries(rename)){
+   fs.renameSync(path.join(dir,...from.split('/')),path.join(dir,...to.split('/')));
   }
   for(const [f,c] of Object.entries(add)){
    const output=path.join(dir,...f.split('/'));
@@ -79,6 +82,18 @@ function accepts(name,fixture,pattern){
   assert.match(r.text,pattern);
  });
 }
+
+test('Git-tracked README case-only NTFS aliases do not block legal development',()=>{
+ const r=run({rename:{
+  'services/dsh/clients/README.md':'services/dsh/clients/readme.md',
+  'services/dsh/contracts/openapi/README.md':'services/dsh/contracts/openapi/readme.md',
+ }});
+ if(process.platform==='win32')assert.equal(r.code,0,r.text);
+ else assert.notEqual(r.code,0,'Unix checkouts must retain exact Git README casing');
+});
+rejects('rejects an unadmitted nested lowercase readme even on Windows',{
+ add:{'services/dsh/clients/ghost/readme.md':'unexpected file'},
+},/premature service source/);
 
 test('live foundation draft is structurally coherent but NOT_READY',()=>{
  const r=run();

@@ -469,12 +469,21 @@ function inspectServiceFolders(dir){
    const ownerSourceFolder=/^services\/(identity|dsh|wlt)\/(backend|database|clients)\/[A-Za-z0-9_.\/-]+$/.test(relative);
    if(!allowedServiceDirs.has(relative)&&!ownerSourceFolder)fail('unadmitted service directory: '+relative);
    inspectServiceFolders(absolute);
-  }else if(!stat.isFile()||(!allowedServiceFiles.has(relative)&&!legalDevelopmentFile(relative))){
-   fail('premature service source: '+relative);
-  }else if(!allowedServiceFiles.has(relative)){
-   if(relative.includes('/contracts/openapi/paths/')&&checkProgressivePathFragment(get(relative),relative))
-    progressiveOpenApiFiles++;
-   developmentSourceFiles++;
+  }else{
+   // Git tracks README.md with canonical casing, while a case-only edit on
+   // Windows NTFS may enumerate it as readme.md. Accept that alias ONLY for
+   // a previously admitted canonical README path; Unix remains case-strict.
+   const canonicalReadme=process.platform==='win32'&&/\/readme\.md$/i.test(relative)
+    ?relative.replace(/\/readme\.md$/i,'/README.md'):relative;
+   const admitted=allowedServiceFiles.has(relative)||
+    (canonicalReadme!==relative&&allowedServiceFiles.has(canonicalReadme));
+   if(!stat.isFile()||(!admitted&&!legalDevelopmentFile(relative)))
+    fail('premature service source: '+relative);
+   if(!admitted){
+    if(relative.includes('/contracts/openapi/paths/')&&checkProgressivePathFragment(get(relative),relative))
+     progressiveOpenApiFiles++;
+    developmentSourceFiles++;
+   }
   }
  }
 }
