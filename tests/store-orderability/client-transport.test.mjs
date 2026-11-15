@@ -132,3 +132,71 @@ test("network failure becomes a stable owner error without leaking internal exce
       err.code === "OWNER_NETWORK_UNAVAILABLE" && !String(err).includes("private network detail"),
   );
 });
+
+test("ambiguous PATCH transport failure never claims that no Store write committed", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("network dropped after request reached Store owner");
+  });
+  await assert.rejects(
+    updateStoreOperationalAvailability(base, storeId, "token-a", change),
+    (err) => err instanceof DshPublicError && err.status === 0 &&
+      err.code === "OPERATION_RESULT_UNKNOWN" &&
+      !String(err).includes("network dropped"),
+  );
+});
+
+test("PATCH with a successful but unverifiable server response is an unknown write result", async (t) => {
+  for (const response of [
+    jsonResponse("invalid JSON"),
+    jsonResponse("OK", 200, "text/plain"),
+    jsonResponse({ availability: { ...snapshot, storeId: "different-store" }, replay: false }),
+    jsonResponse({ availability: snapshot, replay: "not a boolean" }),
+  ]) {
+    t.mock.method(globalThis, "fetch", async () => response);
+    await assert.rejects(
+      updateStoreOperationalAvailability(base, storeId, "token-a", change),
+      (err) => err instanceof DshPublicError && err.code === "OPERATION_RESULT_UNKNOWN",
+    );
+    t.mock.restoreAll();
+  }
+});
+
+test("aborted PATCH is conservatively unknown, whereas a cancelled GET stays cancellable", async (t) => {
+  const controller = new AbortController();
+  t.mock.method(globalThis, "fetch", async () => {
+    controller.abort();
+    throw new Error("cancelled while request might have committed");
+  });
+  await assert.rejects(
+    updateStoreOperationalAvailability(base, storeId, "token-a", change, controller.signal),
+    (err) => err instanceof DshPublicError && err.code === "OPERATION_RESULT_UNKNOWN",
+  );
+});
+
+test("unverifiable server-side PATCH failure is unknown, but an explicit 409 conflict is preserved", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => jsonResponse("gateway unavailable", 503, "text/plain"));
+  await assert.rejects(
+    updateStoreOperationalAvailability(base, storeId, "token-a", change),
+    (err) => err instanceof DshPublicError && err.status === 503 && err.code === "OPERATION_RESULT_UNKNOWN",
+  );
+  t.mock.restoreAll();
+  t.mock.method(globalThis, "fetch", async () =>
+    jsonResponse({ code: "STORE_AVAILABILITY_VERSION_CONFLICT" }, 409));
+  await assert.rejects(
+    updateStoreOperationalAvailability(base, storeId, "token-a", change),
+    (err) => err instanceof DshPublicError &&
+      err.status === 409 && err.code === "STORE_AVAILABILITY_VERSION_CONFLICT",
+  );
+});
+
+test("non-JSON content type prefix is not trusted as an owner response", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => jsonResponse(snapshot, 200, "application/jsonp"));
+  await assert.rejects(
+    getStoreOperationalAvailability(base, storeId, "token-a"),
+    (err) => err instanceof DshPublicError && err.code === "OWNER_RESPONSE_INVALID",
+  );
+  await assert.rejects(
+    updateStoreOperationalAvailability(base, storeId, "token-a", change),
+    (err) => err instanceof DshPublicError && err.code === "OPERATION_RESULT_UNKNOWN",
+  );
+});

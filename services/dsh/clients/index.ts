@@ -189,6 +189,9 @@ async function storeOwnerRequest(
       ...(method === "PATCH" ? { body: JSON.stringify(change) } : {}),
     });
   } catch (error) {
+    // A PATCH may have committed before the transport failed. Never report
+    // an ordinary read outage or imply that retrying with a NEW key is safe.
+    if (method === "PATCH") throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN");
     if (signal?.aborted) throw error;
     throw new DshPublicError(0, "OWNER_NETWORK_UNAVAILABLE");
   }
@@ -198,10 +201,13 @@ async function storeOwnerRequest(
       const err: unknown = await response.json();
       if (err && typeof err === "object" && "code" in err && typeof err.code === "string") code = err.code;
     } catch { /* fail closed with a stable generic error */ }
-    throw new DshPublicError(response.status, code);
+    // A server-side failure after a PATCH does not prove that the Store
+    // transaction was rolled back. Reconcile using the original operationId.
+    throw new DshPublicError(response.status,
+      method === "PATCH" && response.status >= 500 ? "OPERATION_RESULT_UNKNOWN" : code);
   }
-  if (!response.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) {
-    throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  if (response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json") {
+    throw new DshPublicError(502, method === "PATCH" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
   }
   let body: unknown;
   try {
@@ -209,7 +215,7 @@ async function storeOwnerRequest(
     if (text.length > 32768) throw new Error("oversized");
     body = JSON.parse(text) as unknown;
   } catch {
-    throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+    throw new DshPublicError(502, method === "PATCH" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
   }
   return body;
 }
@@ -231,10 +237,10 @@ export async function updateStoreOperationalAvailability(
     throw new DshPublicError(400, "INVALID_OPERATIONAL_CHANGE");
   }
   const body = await storeOwnerRequest(baseUrl, storeId, bearer, "PATCH", change, signal);
-  if (!body || typeof body !== "object") throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  if (!body || typeof body !== "object") throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
   const result = body as Record<string, unknown>;
   if (typeof result.replay !== "boolean" || !isStoreAvailability(result.availability, storeId)) {
-    throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+    throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
   }
   return result as unknown as StoreOperationalResult;
 }
