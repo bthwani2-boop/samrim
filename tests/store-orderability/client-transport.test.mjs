@@ -200,3 +200,27 @@ test("non-JSON content type prefix is not trusted as an owner response", async (
     (err) => err instanceof DshPublicError && err.code === "OPERATION_RESULT_UNKNOWN",
   );
 });
+
+test("cancelled private GET never returns a stale Store response after account switch", async (t) => {
+  const controller = new AbortController();
+  t.mock.method(globalThis, "fetch", async () => {
+    controller.abort();
+    return jsonResponse(snapshot);
+  });
+  await assert.rejects(
+    getStoreOperationalAvailability(base, storeId, "old-account-bearer", controller.signal),
+    (err) => err instanceof DshPublicError && err.code === "OWNER_RESPONSE_STALE",
+  );
+});
+
+test("cancelled private PATCH never presents a late success as an accepted current-account write", async (t) => {
+  const controller = new AbortController();
+  t.mock.method(globalThis, "fetch", async () => {
+    controller.abort();
+    return jsonResponse({ availability: snapshot, replay: false });
+  });
+  await assert.rejects(
+    updateStoreOperationalAvailability(base, storeId, "old-account-bearer", change, controller.signal),
+    (err) => err instanceof DshPublicError && err.code === "OPERATION_RESULT_UNKNOWN",
+  );
+});

@@ -224,6 +224,9 @@ export async function getStoreOperationalAvailability(
 ): Promise<StoreOperationalAvailability> {
   const body = await storeOwnerRequest(baseUrl, storeId, bearer, "GET", undefined, signal);
   if (!isStoreAvailability(body, storeId)) throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  // A completed HTTP response must not revive an earlier Store/account view
+  // after the caller has invalidated that view's AbortSignal.
+  if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
   return body;
 }
 export async function updateStoreOperationalAvailability(
@@ -242,5 +245,8 @@ export async function updateStoreOperationalAvailability(
   if (typeof result.replay !== "boolean" || !isStoreAvailability(result.availability, storeId)) {
     throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
   }
+  // A caller switching Store/account must not display this in-flight write as
+  // a current-context success. It may have committed, so keep its stable key.
+  if (signal?.aborted) throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN");
   return result as unknown as StoreOperationalResult;
 }
