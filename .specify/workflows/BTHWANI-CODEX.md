@@ -20,8 +20,13 @@ $env:SPECIFY_FEATURE_NO_PERSIST = '1'
 specify check
 specify integration status
 specify workflow resolve speckit
-specify workflow run speckit --input 'spec=Describe a single authorized capability with acceptance cases' --json
-specify workflow status <run_id> --json
+$specKitPython = Join-Path $env:APPDATA 'uv\tools\specify-cli\Scripts\python.exe'
+& $specKitPython .specify/scripts/prepare-bthwani-speckit.py .bthwani-local/speckit-my-unique-test/reviewed.yml
+& $specKitPython .specify/scripts/invoke-bthwani-speckit.py workflow run .bthwani-local/speckit-my-unique-test/reviewed.yml --input 'spec=Describe a single authorized capability with acceptance cases' --json
+& $specKitPython .specify/scripts/invoke-bthwani-speckit.py workflow status <run_id> --json
+# Only after human review of the actual completed specification:
+& $specKitPython .specify/scripts/invoke-bthwani-speckit.py workflow resume <run_id> --input spec_approval=approve --json
+# Later approvals are independent: plan_approval, implementation_approval, final_approval.
 ```
 
 The overlay adds **preflight → specify → clarify → human specification review → plan → human plan review → checklist → tasks → analyze → human implementation review → implement → converge → human final review**.
@@ -46,5 +51,15 @@ No Push, PR, merge, production release, or destructive action is implicitly auth
 
 - Keep the source of truth in approved repository owners. Use `medium` as the default Codex effort for bounded, routine SDD steps; selectively request higher effort for complicated architecture, security, financial or migration decisions, then independently verify the affected behavior. Do not claim the YAML `reasoning_effort` field changes Codex CLI behavior in Specify CLI 1.3.0.
 - Dispatch each phase once, use one run-status read at the transition, and reuse completed artifacts. Do not restart an active command or replay an unknown write after a timeout; inspect processes, checkpoints and actual files first.
-- **Review gates are not unattended approvals.** The installed base `speckit` workflow uses an interactive gate. Under a closed stdin, Spec Kit may record a rejection on EOF. For automation, run a short, separately reviewed stage-scoped YAML with a declared `<stage>_approval` input and a matching gate `verdict_input`, supplying `approve` only after the reviewer has examined that stage. Do not pass approvals for future outputs, auto-approve, alter a failed checkpoint to completed, or count a rejected/aborted run as success.
+- **Review gates are not unattended approvals.** The installed base `speckit` workflow uses an interactive gate. Under a closed stdin, Spec Kit may record a rejection on EOF. For automation, use `prepare-bthwani-speckit.py` to derive the **current resolved speckit workflow and BThwani overlay**. It adds four `verdict_input` bindings with conservative `reject` defaults and `on_reject: retry`, so missing input PAUSES even when Windows terminal EOF is misread as rejection. Resume one gate at a time only after review of that stage, using its `<stage>_approval=approve` input. Do not pass approvals for future outputs, auto-approve, alter a failed checkpoint to completed, or count a rejected/aborted run as success.
 - The documented synthetic test on 2026-11-15 used the official Codex Spec Kit commands in separate bounded runs and independently confirmed 9/9 Node tests; this validates the isolated test only. It is not proof of a single uninterrupted full-cycle run, production readiness, a faster service tier, or improved latency under a production workload.
+
+## Recovery and regression tests
+
+- Invoke Spec Kit through `invoke-bthwani-speckit.py`: it calls the installed official CLI with `stdin=DEVNULL` so an open remote console cannot hold Codex's extra input. It does not implement another workflow engine.
+- Use a managed process session for long-running Spec Kit commands. After a tool timeout, inspect the same session, run checkpoint and actual process before any retry. Never run a duplicate workflow in parallel.
+- If a run remains `running` after its executor has ended, use the official engine-state API via `& $specKitPython .specify/scripts/recover-bthwani-speckit.py <run_id>`. The script checks that the checkpoint is older than two minutes, no relevant executor is active, and the unfinished step has no result; it backs up the state and sets `paused`, preserving completed steps.
+- Test the exact review bindings and resume behavior with `& $specKitPython .specify/scripts/test-bthwani-speckit.py`. These tests do not invoke Codex agents or modify tracked product source.
+- The generated YAML is derivative runtime state, not another canonical workflow. A change to the installed 13-step graph or review-gate semantics blocks regeneration until inspected.
+- A human rejection or an absent decision blocks further stages. A synthetic gate test approval does not authorize the final review of a real capability, a Push, a PR, a merge, a release or a deployment.
+- Use measured execution times and stage results to evaluate speed; merely requesting Fast or lowering reasoning effort does not prove latency improvement.
