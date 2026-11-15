@@ -46,7 +46,8 @@ export function listGoFiles(directory) {
     }
   }
   walk(directory);
-  return files.sort();
+  // Preserve Array#sort's code-unit ordering for file paths explicitly.
+  return files.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 }
 
 function run(executable, args, cwd, env, timeout = 300000) {

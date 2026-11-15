@@ -33,3 +33,21 @@ test("Discover only real owner modules; include newly added WLT without placehol
     assert.deepEqual(listGoFiles(backend), [join(backend, "main.go")]);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test("Go file listing preserves JS default code-unit path ordering", () => {
+  const root = mkdtempSync(join(tmpdir(), "bthwani-go-sort-"));
+  try {
+    for (const name of ["file2.go", "a.go", "file10.go", "Z.go"]) {
+      writeFileSync(join(root, name), "package example\\n");
+    }
+    writeFileSync(join(root, "ignore.ts"), "ignored");
+    assert.deepEqual(listGoFiles(root), [
+      join(root, "Z.go"),
+      join(root, "a.go"),
+      join(root, "file10.go"),
+      join(root, "file2.go"),
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
