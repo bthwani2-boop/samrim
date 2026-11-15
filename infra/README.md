@@ -84,16 +84,18 @@ packaged for review; **the build never applies a migration**. The container
 uses non-root UID, read-only filesystem, dropped Linux capabilities and
 no-new-privileges.
 
-**Do not start it yet.** The current Identity owner `cmd/identity/main.go`
-requires `127.0.0.1` bind, which is inaccessible to other Compose containers
-and refuses the `0.0.0.0:3302` binding required for this opt-in internal
-network service. The Identity owner must review and test a strict
-*container-only, synthetic-mode* bind exception without weakening the
-non-container loopback default. Also required: a verified dedicated
-`identity_test_*` schema with a least-privilege runtime role, independently
-reviewed SQL, durable current-session/permission positive and negative tests,
-and committed owner source. Uncommitted Identity source deliberately causes
-the image build to fail.
+**Do not start it based on a passing Compose config alone.** The committed
+Identity owner now permits `0.0.0.0:3302` only with both
+`BTHWANI_ISOLATED_TEST_MODE=true` and `BTHWANI_ISOLATED_CONTAINER_MODE=true`,
+a valid `identity_test_*` schema, and the exact container listener port.
+This overlay sets both explicit flags. The normal host default remains
+`127.0.0.1:3302`. Owner Go negative tests cover the listener restriction,
+but an actual networked verifier and its database permissions are separate
+runtime gates. Before starting, verify an independently isolated synthetic
+schema, least-privilege database role, reviewed applied SQL and protected
+Identity session/permission denial and revocation readback. The build script
+continues to reject uncommitted Identity Go/SQL source; no issuer, real user
+or production authentication is enabled by these settings.
 
 After those independent prerequisites are **proved**, load only the ignored
 `infra/.env` values `REF_IDENTITY_TEST_SCHEMA`,

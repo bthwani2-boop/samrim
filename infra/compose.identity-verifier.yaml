@@ -20,6 +20,7 @@ services:
       com.bthwani.capability: identity-synthetic-session-verifier
     environment:
       BTHWANI_ISOLATED_TEST_MODE: "true"
+      BTHWANI_ISOLATED_CONTAINER_MODE: "true"
       IDENTITY_DB_SCHEMA: "${REF_IDENTITY_TEST_SCHEMA:?verified identity_test_* schema required}"
       IDENTITY_TEST_DATABASE_URL: "${REF_IDENTITY_TEST_DATABASE_URL:?isolated identity owner-scoped database URL required}"
       IDENTITY_DEV_LISTEN_ADDR: "0.0.0.0:3302"
