@@ -261,6 +261,7 @@ function validateOpenApiOperation(lines,ids,reject){
 const identityOwnedPathGroups=new Map([
  ['/v1/sessions/current','session'],
  ['/v1/actors/me/merchant-role','managed-enrollment-auth'],
+ ['/v1/actors/me/merchant-session','managed-enrollment-auth'],
  ['/v1/operators/me/permissions/{permission}','internal-actor-administration']
 ]);
 function validateOpenApiPath(body,begin,end,ids,reject,owner,apiPath,fromFragment=false){
@@ -274,6 +275,9 @@ function validateOpenApiPath(body,begin,end,ids,reject,owner,apiPath,fromFragmen
    const expected="    $ref: './paths/"+group+".yaml#/paths/"+pointer+"'";
    if(lines.filter(line=>line.trim()!=='').length!==1||lines[0]!==expected)
     fail('Identity canonical Path Item group: '+apiPath+' must use '+group);
+  }else if(lines.filter(line=>line.trim()!=='').length!==1||
+   !lines[0].startsWith("    $ref: './paths/")){
+   fail('Identity Path Item must use its canonical owner fragment: '+apiPath);
   }
  }
  const external=lines.filter(line=>line.startsWith('    $ref:'));

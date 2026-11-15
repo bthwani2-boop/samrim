@@ -269,6 +269,40 @@ test('accepts Identity progressive operations in their canonical owned path grou
  assert.equal(r.code,0,r.text);
  assert.match(r.text,/PROGRESSIVE_SOURCE_PRESENT/);
 });
+// A new admitted route must be linked through its sole owner fragment as
+// soon as Identity has migrated from its all-inline historical scaffold.
+function identityExtraPathFixture(linked=false){
+ const base=linkedIdentityFixture();
+ const route='/v1/identity-guard-probe';
+ const block=[
+  '  '+route+':',
+  '    get:',
+  '      operationId: getIdentityGuardProbe',
+  '      security:',
+  '        - OpaqueSession: []',
+  '      responses:',
+  "        '204':",
+  '          description: Synthetic policy-test operation only'
+ ].join('\n');
+ const pointer=route.replaceAll('/','~1');
+ const ref="  "+route+":\n    $ref: './paths/runtime.yaml#/paths/"+pointer+"'";
+ const canonical=base.canonical.replace('components:',(linked?ref:block)+'\ncomponents:');
+ assert.notEqual(canonical,base.canonical);
+ return {edit:{
+  ...base.edit,
+  [base.rootFile]:()=>canonical,
+  ...(linked?{[base.prefix+'paths/runtime.yaml']:()=> 'paths:\n'+block+'\n'}:{})
+ }};
+}
+test('accepts a new Identity Path Item when linked to its owner fragment',()=>{
+ const r=run(identityExtraPathFixture(true));
+ assert.equal(r.code,0,r.text);
+});
+test('rejects a new inline Identity operation after fragment migration',()=>{
+ const r=run(identityExtraPathFixture(false));
+ assert.notEqual(r.code,0,r.text);
+ assert.match(r.text,/Identity Path Item must use its canonical owner fragment/);
+});
 test('rejects root-local component refs copied unmodified into Identity fragments',()=>{
  const linked=linkedIdentityFixture();
  const name=linked.prefix+'paths/session.yaml';
