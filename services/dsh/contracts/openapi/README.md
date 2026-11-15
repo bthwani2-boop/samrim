@@ -1,4 +1,4 @@
-# DSH OpenAPI — source-linked public discovery paths
+# DSH OpenAPI — source-linked public discovery and isolated Store availability
 
 STATUS: CONTRACT_IN_PROGRESS
 SEMANTIC_OWNER: DSH
@@ -6,17 +6,29 @@ EXECUTION: IN_PROGRESS
 PRODUCTION_ACTIVATION: BLOCKED
 
 The **sole canonical entrypoint** is `dsh.openapi.yaml` (OpenAPI 3.1.0).
-Its four existing read-only operations are defined exactly once in three
+Its four public read-only operations are defined exactly once in three
 domain files and referenced with standard local Path Item references:
 
 - `paths/runtime.yaml` — `GET /health`
 - `paths/stores.yaml` — `GET /v1/public/stores` and `GET /v1/public/stores/{id}`
 - `paths/offers.yaml` — `GET /v1/public/stores/{id}/offers`
 
+A fourth populated path module, `paths/store-access.yaml`, contains protected
+`GET` and `PATCH /v1/stores/{storeID}/availability` for the canonical DSH
+Store operational facts. The Go service mounts these handlers only when
+`DSH_ENABLE_ISOLATED_STORE_AVAILABILITY=true` and synthetic development
+mode with a `dsh_test_*` schema and a loopback-only
+`DSH_LISTEN_ADDR=127.0.0.1:<port>` are explicitly selected.
+Cross-origin private requests only allow exact configured
+`DSH_PUBLIC_CORS_ORIGINS`; preflight never skips Identity checks.
+A real current Identity verifier, DSH Store owner check, and active DSH policy must succeed;
+no production authenticated service, checkout, WLT, or user permission issuer
+is activated by this incremental contract.
+
 The fragments point back only to the **same DSH owner's** canonical
 `components` in `dsh.openapi.yaml`. No schemas, response contracts or
 parameter definitions are duplicated; no new endpoints, authentication
-grants or checkout permissions are introduced. The other 18
+grants or checkout permissions are introduced for public reads. The other 17
 `paths/*.yaml` groups remain empty until their real owner-backed operations
 are implemented.
 

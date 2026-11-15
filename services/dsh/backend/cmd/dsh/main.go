@@ -2,16 +2,106 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/discovery"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
 )
+
+// isolatedStoreAvailabilityHandler keeps public discovery unchanged unless
+// the dedicated synthetic development service is explicitly enabled.
+// It never activates authenticated Store mutation on an unverified schema.
+func isolatedStoreAvailabilityHandler(db *sql.DB, schema string, public http.Handler, allowedOrigins map[string]bool) (http.Handler, error) {
+	if os.Getenv("DSH_ENABLE_ISOLATED_STORE_AVAILABILITY") != "true" {
+		return public, nil
+	}
+	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" ||
+		!strings.HasPrefix(schema, "dsh_test_") || len(schema) <= len("dsh_test_") {
+		return nil, fmt.Errorf("protected Store operations require a dedicated dsh_test_* database schema")
+	}
+	// A protected development endpoint must not inherit the public :8080
+	// wildcard bind. This opt-in is loopback-only until a separately reviewed
+	// container deployment with explicit network isolation exists.
+	listenHost, _, parseErr := net.SplitHostPort(os.Getenv("DSH_LISTEN_ADDR"))
+	if parseErr != nil || (listenHost != "127.0.0.1" && listenHost != "::1") {
+		return nil, fmt.Errorf("isolated Store availability requires explicit loopback DSH_LISTEN_ADDR")
+	}
+	identity, err := storeavailability.NewIdentitySessionHTTP(os.Getenv("DSH_IDENTITY_VERIFIER_URL"))
+	if err != nil {
+		return nil, fmt.Errorf("current Identity verifier is required: %w", err)
+	}
+	grants, err := storeavailability.NewPostgresStoreGrants(db, schema)
+	if err != nil {
+		return nil, err
+	}
+	policies, err := storeavailability.NewPostgresPolicySource(db, schema)
+	if err != nil {
+		return nil, err
+	}
+	repository, err := storeavailability.NewPostgresRepository(db, schema)
+	if err != nil {
+		return nil, err
+	}
+	service, err := storeavailability.NewService(identity, grants, policies, repository)
+	if err != nil {
+		return nil, err
+	}
+	private, err := storeavailability.NewHandler(service)
+	if err != nil {
+		return nil, err
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/v1/stores/", storeAvailabilityCORS(private, allowedOrigins))
+	mux.Handle("/", public)
+	return mux, nil
+}
+
+// Store mutation is cross-origin only for exact configured development origins.
+// Preflight never grants access to the Store; every real request still verifies
+// Identity and DSH authority. No wildcard or credentialed-cookie CORS.
+func storeAvailabilityCORS(next http.Handler, origins map[string]bool) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers")
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if origin == "null" || !origins[origin] {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		if r.Method != http.MethodOptions {
+			next.ServeHTTP(w, r)
+			return
+		}
+		method := r.Header.Get("Access-Control-Request-Method")
+		if method != http.MethodGet && method != http.MethodPatch {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		for _, requested := range strings.Split(r.Header.Get("Access-Control-Request-Headers"), ",") {
+			key := strings.ToLower(strings.TrimSpace(requested))
+			if key != "" && key != "authorization" && key != "content-type" {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+		}
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, PATCH")
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
 
 func main() {
 	mode := flag.String("mode", "serve", "serve, migrate, or isolated-seed")
@@ -66,9 +156,14 @@ func main() {
 		if addr == "" {
 			addr = ":8080"
 		}
+		public := &discovery.Server{Owner: owner, AllowedOrigins: origins}
+		handler, err := isolatedStoreAvailabilityHandler(db, schema, public, origins)
+		if err != nil {
+			log.Fatal("DSH protected Store availability cannot start: ", err)
+		}
 		server := &http.Server{
 			Addr:              addr,
-			Handler:           &discovery.Server{Owner: owner, AllowedOrigins: origins},
+			Handler:           handler,
 			ReadHeaderTimeout: 5 * time.Second,
 			IdleTimeout:       30 * time.Second,
 		}

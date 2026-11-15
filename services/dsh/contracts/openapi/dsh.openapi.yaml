@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: BThwani DSH API
   version: 0.1.0
-  description: DSH-owned public Store and eligible Offer discovery, read-only. No checkout authority.
+  description: DSH public discovery plus opt-in isolated-development authenticated Store operational availability. No checkout or financial activation.
 paths:
   /health:
     $ref: './paths/runtime.yaml#/paths/~1health'
@@ -12,7 +12,14 @@ paths:
     $ref: './paths/stores.yaml#/paths/~1v1~1public~1stores~1{id}'
   /v1/public/stores/{id}/offers:
     $ref: './paths/offers.yaml#/paths/~1v1~1public~1stores~1{id}~1offers'
+  /v1/stores/{storeID}/availability:
+    $ref: './paths/store-access.yaml#/paths/~1v1~1stores~1{storeID}~1availability'
 components:
+  securitySchemes:
+    OpaqueSession:
+      type: http
+      scheme: bearer
+      description: Identity-authenticated current opaque bearer; DSH independently checks Store action and owner policy
   parameters:
     StoreId:
       name: id
@@ -47,6 +54,57 @@ components:
         variantId: { $ref: '#/components/schemas/PublicId' }
         priceYer: { type: integer, minimum: 1, description: Exact positive integer YER value from DSH }
         available: { type: boolean, const: true }
+    OperationalWeeklyWindow:
+      type: object
+      additionalProperties: false
+      required: [weekday, opens, closes]
+      properties:
+        weekday: { type: integer, minimum: 0, maximum: 6, description: 0=Sunday, 6=Saturday in DSH city timezone }
+        opens: { type: integer, minimum: 0, maximum: 1439 }
+        closes: { type: integer, minimum: 0, maximum: 1440 }
+    OperationalAvailability:
+      type: object
+      additionalProperties: false
+      required: [storeId, timezone, weekly, preparationMinutes, version, actingActorId, reason]
+      properties:
+        storeId: { $ref: '#/components/schemas/PublicId' }
+        timezone: { type: string, minLength: 3, maxLength: 64, description: Canonical DSH city IANA timezone; never client-chosen }
+        weekly:
+          type: [array, 'null']
+          items: { $ref: '#/components/schemas/OperationalWeeklyWindow' }
+        pausedUntil: { type: string, format: date-time, description: Omitted when the Store has no explicit pause }
+        preparationMinutes: { type: integer, minimum: 0 }
+        version: { type: integer, minimum: 1 }
+        actingActorId: { type: string, maxLength: 128 }
+        reason: { type: string, maxLength: 300 }
+    OperationalAvailabilityChange:
+      type: object
+      additionalProperties: false
+      required: [operationId, expectedVersion, weekly, preparationMinutes, reason]
+      properties:
+        operationId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+        expectedVersion: { type: integer, minimum: 1 }
+        weekly:
+          type: array
+          items: { $ref: '#/components/schemas/OperationalWeeklyWindow' }
+        pausedUntil: { type: [string, 'null'], format: date-time }
+        preparationMinutes: { type: integer, minimum: 0 }
+        reason: { type: string, minLength: 1, maxLength: 300 }
+    OperationalAvailabilityResult:
+      type: object
+      additionalProperties: false
+      required: [availability, replay]
+      properties:
+        availability: { $ref: '#/components/schemas/OperationalAvailability' }
+        replay: { type: boolean }
+    StoreOperationalError:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
+          type: string
+          enum: [UNAUTHENTICATED, IDENTITY_OWNER_UNAVAILABLE, STORE_OPERATION_FORBIDDEN, STORE_NOT_FOUND, STORE_AVAILABILITY_VERSION_CONFLICT, OPERATIONAL_POLICY_VERSION_CONFLICT, IDEMPOTENCY_KEY_REUSED, INVALID_OPERATIONAL_CHANGE, OPERATION_RESULT_UNKNOWN, OPERATIONAL_POLICY_UNAVAILABLE, OWNER_UNAVAILABLE]
     StorePage:
       type: object
       additionalProperties: false
@@ -93,3 +151,34 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
+
+    StoreUnauthorized:
+      description: Missing, invalid, expired or revoked Identity bearer
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/StoreOperationalError' }
+    StoreForbidden:
+      description: No current Store-specific action grant or effective operations permission
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/StoreOperationalError' }
+    StoreMissing:
+      description: Canonical Store record does not exist
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/StoreOperationalError' }
+    StoreInvalidChange:
+      description: Invalid or unsupported Store operational command
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/StoreOperationalError' }
+    StoreConflict:
+      description: Expected version or owner policy changed; stable operation key was reused
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/StoreOperationalError' }
+    StoreOperationalUnavailable:
+      description: Identity, Store owner, active DSH policy or mutation result cannot be verified; fail closed
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/StoreOperationalError' }

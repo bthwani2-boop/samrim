@@ -2,7 +2,7 @@
 
 STATUS: IMPLEMENTATION_IN_PROGRESS
 
-The private `@bthwani/dsh` workspace package exports read-only public Store and Offer projections for Customer Expo. The source contract is `services/dsh/contracts/openapi/dsh.openapi.yaml` and its four publicly documented GET operations. The strict TypeScript transport checks URL policy, response shape, server error code and abortable requests; it does not store or write any DSH business fact, and never treats discovery as checkout authorization.
+The private `@bthwani/dsh` workspace package exports read-only public Store/Offer projections and opt-in private Store operational GET/PATCH clients. Their sole source contract is `services/dsh/contracts/openapi/dsh.openapi.yaml`, including `paths/store-access.yaml`. The private client requires a current Identity bearer per invocation; it never stores credentials, grants Store rights, writes business facts itself, or treats discovery as checkout authorization. Server-side DSH remains the only Store writer. TypeScript validation and an exported client are not evidence of active Merchant/Operator Web/Android UX.
 
 Local isolated tests exercise the running Go DSH owner against PostgreSQL. Android, production, historical Store migration, checkout, full generated OpenAPI client parity and real operator authorization have **not** been established by package typecheck. Only supported scopes may be shown as operational.
 

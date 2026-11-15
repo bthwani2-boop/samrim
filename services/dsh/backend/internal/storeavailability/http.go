@@ -49,18 +49,22 @@ func NewHandler(service *Service) (http.Handler, error) {
 		decoder := json.NewDecoder(r.Body)
 		decoder.DisallowUnknownFields()
 		var input struct {
-			OperationID        string         `json:"operationId"`
-			ExpectedVersion    int64          `json:"expectedVersion"`
-			Weekly             []WeeklyWindow `json:"weekly"`
-			PausedUntil        *time.Time     `json:"pausedUntil"`
-			PreparationMinutes int            `json:"preparationMinutes"`
-			Reason             string         `json:"reason"`
+			OperationID        string          `json:"operationId"`
+			ExpectedVersion    int64           `json:"expectedVersion"`
+			Weekly             *[]WeeklyWindow `json:"weekly"`
+			PausedUntil        *time.Time      `json:"pausedUntil"`
+			PreparationMinutes *int            `json:"preparationMinutes"`
+			Reason             string          `json:"reason"`
 		}
 		if err := decoder.Decode(&input); err != nil {
 			writeFailure(w, ErrInvalidChange)
 			return
 		}
 		if err := decoder.Decode(new(any)); err != io.EOF {
+			writeFailure(w, ErrInvalidChange)
+			return
+		}
+		if input.Weekly == nil || input.PreparationMinutes == nil {
 			writeFailure(w, ErrInvalidChange)
 			return
 		}
@@ -72,8 +76,8 @@ func NewHandler(service *Service) (http.Handler, error) {
 		snapshot, replay, err := service.Change(r.Context(), token, Change{
 			StoreID: r.PathValue("storeID"), OperationID: input.OperationID,
 			ExpectedVersion: input.ExpectedVersion,
-			Weekly:          input.Weekly, PausedUntil: pausedUntil,
-			PreparationMinutes: input.PreparationMinutes, Reason: input.Reason,
+			Weekly:          *input.Weekly, PausedUntil: pausedUntil,
+			PreparationMinutes: *input.PreparationMinutes, Reason: input.Reason,
 		})
 		if err != nil {
 			writeFailure(w, err)

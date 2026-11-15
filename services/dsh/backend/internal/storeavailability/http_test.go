@@ -127,3 +127,38 @@ func TestHTTPPolicyVersionConflictHasStableNonSecretCode(t *testing.T) {
 		t.Fatalf("unexpected policy conflict response: %+v err=%v", response, err)
 	}
 }
+
+// A PATCH is a full replacement of operational fields. Missing schedule or
+// preparation must never silently clear a published Store's hours or ETA.
+func TestHTTPRejectsImplicitReplacementDefaults(t *testing.T) {
+	count := 0
+	s, err := NewService(fakeIdentity{actor: VerifiedActor{Subject: "merchant-a", Role: MerchantRole}}, fakeGrant{}, fakePolicy{}, fakeRepo{&count})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := NewHandler(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct{ name, body string }{
+		{"missing weekly", `{"operationId":"merchant-0001","expectedVersion":1,"preparationMinutes":25,"reason":"Pause only"}`},
+		{"null weekly", `{"operationId":"merchant-0001","expectedVersion":1,"weekly":null,"preparationMinutes":25,"reason":"Pause only"}`},
+		{"missing preparation", `{"operationId":"merchant-0001","expectedVersion":1,"weekly":[{"weekday":1,"opens":600,"closes":1200}],"reason":"Schedule only"}`},
+		{"null preparation", `{"operationId":"merchant-0001","expectedVersion":1,"weekly":[],"preparationMinutes":null,"reason":"Pause only"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPatch, "/v1/stores/store-one/availability", strings.NewReader(tc.body))
+			req.Header.Set("Authorization", "Bearer valid-token")
+			req.Header.Set("Content-Type", "application/json")
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("implicit replacement allowed HTTP %d: %s", recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+	if count != 0 {
+		t.Fatalf("implicit replacement mutated the Store %d times", count)
+	}
+}

@@ -74,7 +74,9 @@ func TestIsolatedRealIdentityAndDshAvailability(t *testing.T) {
 			t.Fatalf("Identity migration %s: %v", f, e)
 		}
 	}
-	dshSchema := "dsh_orderability_agent02"
+	// Each proof gets a fresh synthetic DSH schema. The actual DSH process
+	// intentionally accepts only explicitly opted-in dsh_test_* namespaces.
+	dshSchema := "dsh_test_a02_" + suffix
 	for _, f := range []string{"001_public_discovery.sql", "002_store_orderability.sql", "003_service_city_timezone.sql", "004_store_availability_city_limits.sql"} {
 		source, e := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", f))
 		if e != nil {

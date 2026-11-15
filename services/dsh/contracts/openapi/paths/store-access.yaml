@@ -1,1 +1,67 @@
-paths: {}
+paths:
+  /v1/stores/{storeID}/availability:
+    get:
+      operationId: getStoreOperationalAvailability
+      summary: Read the canonical Store's private operational hours and pause state
+      description: Requires a current Identity session and DSH Store ownership or an active Identity operations permission. This is private; it is not a Customer checkout quote.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: storeID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      responses:
+        '200':
+          description: Current Store operational snapshot from a DSH-authorized owner read
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/OperationalAvailability' }
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '404':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreMissing'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
+    patch:
+      operationId: updateStoreOperationalAvailability
+      summary: Update current Store operational hours and pause with versioned idempotency
+      description: Full replacement of the Store schedule, preparation and optional pause. weekly is required (send [] to close intentionally); omitted or null weekly/preparation is rejected to prevent accidental schedule/ETA resets. Requires live Identity/DSH authorization; DSH enforces city-owned timezone and versioned Operator policy in the transaction. No derived orderability write.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: storeID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../dsh.openapi.yaml#/components/schemas/OperationalAvailabilityChange' }
+      responses:
+        '200':
+          description: Committed DSH availability or replay of the same stable operation
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/OperationalAvailabilityResult' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange'
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '404':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreMissing'
+        '409':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreConflict'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
