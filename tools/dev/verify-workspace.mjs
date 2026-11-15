@@ -85,8 +85,13 @@ for (const owner of ['identity','dsh','wlt']) {
   const placement = path.join(projectRoot, 'services', owner, 'README.md');
   if (!existsSync(placement)) fail('Missing service placement README for ' + owner);
   const doc = readFileSync(placement, 'utf8');
-  if (!doc.includes('STATUS: SCAFFOLD_ONLY') || !doc.includes('EXECUTION: NOT_STARTED')) {
-    fail('Service placement is not explicitly non-executable: ' + owner);
+  // A service may progress from a placement-only scaffold to isolated owner code
+  // without a global governance cutover or separate development admission vote.
+  const state = /^STATUS: (SCAFFOLD_ONLY|IMPLEMENTATION_IN_PROGRESS)$/m.exec(doc)?.[1];
+  const execution = /^EXECUTION: (NOT_STARTED|IN_PROGRESS)$/m.exec(doc)?.[1];
+  if (!((state === 'SCAFFOLD_ONLY' && execution === 'NOT_STARTED') ||
+        (state === 'IMPLEMENTATION_IN_PROGRESS' && execution === 'IN_PROGRESS'))) {
+    fail('Service README must declare a consistent scaffold or progressive execution state: ' + owner);
   }
   const dir = path.join(projectRoot, 'services', owner);
   const service = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'));
