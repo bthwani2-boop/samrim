@@ -1,0 +1,23 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
+  "workspaces": {
+    ".": {
+      "entry": [
+        "infra/setup-env.mjs"
+      ]
+    }
+  },
+  "ignore": [
+    // Expo reads these fingerprint files by convention, not a static import.
+    "apps/{captain,customer,merchant}/fingerprint.config.js",
+    // Type declaration for the CJS Expo config helper.
+    "tools/mobile/define-bthwani-expo-app.d.cts",
+    // Metro/Web resolve these platform variants from "./animations".
+    "packages/tamagui-config/src/animations.{native,web}.ts"
+  ],
+  "ignoreBinaries": [
+    // Expo and the npm "build" script are invoked by GitHub Actions.
+    "expo",
+    "build"
+  ]
+}

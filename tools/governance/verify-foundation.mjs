@@ -68,7 +68,7 @@ const required=[
  '.github/workflows/ci.yml','.github/workflows/sonar-quality.yml','sonar-project.properties','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs',
  'tools/governance/review-examples.test.mjs','tools/mobile/verify-expo-web-http.mjs',
  '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
- 'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','tsconfig.base.json','biome.json',
+ 'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','nx.json','tsconfig.base.json','biome.json',
  'README.md','services/identity/README.md','services/dsh/README.md','services/wlt/README.md',
  ...['identity','dsh','wlt'].flatMap(owner=>['package.json','tsconfig.json','clients/README.md','clients/index.ts','contracts/openapi/README.md','contracts/openapi/'+owner+'.openapi.yaml'].map(file=>'services/'+owner+'/'+file)),
  ...Object.entries(contractPathGroups).flatMap(([owner,groups])=>groups.map(name=>'services/'+owner+'/contracts/openapi/paths/'+name+'.yaml')),
@@ -110,8 +110,15 @@ if(stage3package.packageManager!=='pnpm@12.15.0'||
  stage3package.private!==true)
  fail('branch-41 pnpm/Node versions changed or workspace made publishable');
 if(JSON.stringify(Object.entries(stage3package.devDependencies??{}).sort(([a], [b]) => a.localeCompare(b, "en")))!==
- JSON.stringify([['@biomejs/biome','2.5.12'],['typescript','7.0.2']]))
- fail('Stage-3 root dependencies must match original exact TypeScript/Biome versions with no extras');
+ JSON.stringify([['@biomejs/biome','2.5.12'],['knip','6.34.0'],['nx','24.0.1'],['typescript','7.0.2']]))
+ fail('root dependencies must match original exact Biome/Knip/Nx/TypeScript versions');
+const nx=JSON.parse(contents['nx.json']);
+if(nx.defaultBase!=='main'||nx.targetDefaults?.typecheck?.cache!==true||
+ !Array.isArray(nx.namedInputs?.nodeToolchain))
+ fail('local Nx project configuration missing required settings');
+if(!/^[a-f0-9]{24}$/.test(nx.nxCloudId??'')||
+ nx.nxCloudId==='6aa9eedc45c07f39423ffa9f'||nx.nxCloudAccessToken||nx.nxCloudUrl)
+ fail('Nx Cloud requires a dedicated refoundation ID and no embedded credentials');
 const wsyaml=contents['pnpm-workspace.yaml'];
 for(const key of ['"apps/*"','"packages/*"','"services/*"','autoInstallPeers: false','engineStrict: true',
  'saveExact: true','nodeLinker: isolated','strictPeerDependencies: true']){
@@ -123,7 +130,7 @@ if(!wsyaml.includes("'@rc-component/util@1.14.0': patches/@rc-component__util@1.
 const lock=contents['pnpm-lock.yaml'];
 for(const key of ["lockfileVersion: '9.0'","specifier: 12.15.0",
  "specifier: 7.0.2","specifier: 2.5.12",
- "typescript@7.0.2:","'@biomejs/biome@2.5.12':"]){
+ "typescript@7.0.2:","'@biomejs/biome@2.5.12':",'nx@24.0.1:']){
  if(!lock.includes(key))fail('stage3 lockfile incomplete or version drift: '+key);
 }
 const tsconfig=JSON.parse(contents['tsconfig.base.json']);
@@ -138,7 +145,7 @@ if(!/^BUSINESS_POLICY_AUTHORITY: NONE$/m.test(ref)||!ref.includes('1.27.1')||!re
  fail('non-governing donor toolchain provenance or mismatch disclosure missing');
 if(!contents['README.md'].includes('Stage 4')||!contents['tools/dev/verify-workspace.mjs'].includes('STAGE4_WORKSPACE_STRUCTURE_PASS'))
  fail('stage4 developer onboarding or workspace smoke verifier missing');
-for(const folder of ['contracts','nx.json','go.work']){
+for(const folder of ['contracts','go.work']){
  if(exists(folder))fail('stage 5+ service/DB/infra introduced prematurely: '+folder);
 }
 

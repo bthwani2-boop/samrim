@@ -70,3 +70,15 @@ This validates *developer setup*, not governance cutover or customer/merchant/dr
 `GOVERNANCE_CUTOVER: NOT_READY`; the human-approved target policy choices of 2026-11-13 still require semantic reconciliation and documented internal finance/security/migration/legal risk assurance before affected implementation is activated. An external consultant signature is not a prerequisite for recording those choices; missing technical and runtime proof remains `NOT_RUN` or `REVIEW_BLOCKED`. The worktree has no working Go services, financial logic, SQL or live Product journeys. Its new [isolated Docker development configuration](infra/README.md) defines fresh, independently namespaced dependencies and reserves the future service roles; this is not runtime or production acceptance. The old containers, volumes and database are preserved.
 
 Use [the active governance readiness index](governance/README.md) and [the single execution plan](docs/REFOUNDATION-PLAN.md) for scope and evidence. Pass of static CI or typecheck alone does not demonstrate Android/iOS/browser runtime success.
+
+## Nx local task orchestration
+
+Nx `24.0.1` (the exact original-repository version) is installed as a development dependency in this Worktree. Its project graph reads the existing pnpm package manifests; no `project.json` files or parallel task registry are needed. Local Nx task caching is enabled for `typecheck`, `theme:check` and `theme:verify`, with the pinned toolchain and pnpm lock contributing to task inputs. Existing `pnpm check` remains the canonical acceptance entrypoint; Nx does not bypass governance, security, runtime, or integration checks.
+
+```powershell
+pnpm run nx:projects
+pnpm exec nx show project @bthwani/customer
+pnpm exec nx affected -t typecheck --base=main --head=HEAD
+```
+
+Nx Cloud is connected to the **separate** `bthwani-refoundation` workspace in the `bthwani` Hobby organization with `nxCloudId` recorded in `nx.json` (not a secret). The original `samrim` Cloud workspace remains separate. No Cloud access token is tracked in Git, and no Nx Agents, paid plan, or billing change was enabled. The separate dependency-safety GitHub Actions workflow uses NX_NO_CLOUD=true and does not consume Nx Cloud credits. Cached outputs and terminal logs must not contain secrets; remote cache applies only to deliberately cacheable tasks such as `typecheck` and design theme checks. The existing `pnpm check` remains authoritative. To run with **local-only** Nx, set `$env:NX_NO_CLOUD = 'true'` for the shell before invoking Nx; this is the fallback when free Hobby credits are exhausted.

@@ -26,7 +26,7 @@ const files=[...new Set([
  '.github/workflows/ci.yml','.github/workflows/sonar-quality.yml','sonar-project.properties','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs',
  'tools/governance/review-examples.test.mjs','tools/mobile/verify-expo-web-http.mjs',
  '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
- 'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','tsconfig.base.json','biome.json',
+ 'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','nx.json','tsconfig.base.json','biome.json',
  'README.md','infra/README.md','infra/compose.yaml','infra/compose.apps.yaml','infra/setup-env.mjs','services/identity/README.md','services/dsh/README.md','services/wlt/README.md',
  ...['identity','dsh','wlt'].flatMap(owner=>['package.json','tsconfig.json','clients/README.md','clients/index.ts','contracts/openapi/README.md','contracts/openapi/'+owner+'.openapi.yaml'].map(file=>'services/'+owner+'/'+file)),
  ...contractGroups,'docs/reference/OPENAPI-DONOR-CONTRACT-INVENTORY.md',
@@ -371,9 +371,11 @@ rejects('rejects lost protected legacy COD state',{edit:{'governance/finance.md'
 rejects('rejects a changed Node baseline version',{edit:{'.node-version':s=>s.replace('24.22.1','25.0.0')}},/source-matching Node\/Go pins/);
 rejects('rejects Go downgrade to installed 1.27.1',{edit:{'.go-version':s=>s.replace('1.27.3','1.27.1')}},/source-matching Node\/Go pins/);
 rejects('rejects TypeScript version upgrade',{edit:{'package.json':s=>s.replace('"typescript": "7.0.2"','"typescript": "7.1.0"')}},/root dependencies must match original/);
-rejects('rejects an unsupported Nx early install',{edit:{'package.json':s=>s.replace('"typescript": "7.0.2"','"typescript": "7.0.2", "nx": "24.0.1"')}},/root dependencies must match original/);
+rejects('rejects an unapproved Nx version change',{edit:{'package.json':s=>s.replace('"nx": "24.0.1"','"nx": "25.0.0"')}},/root dependencies must match original/);
 rejects('rejects a pnpm lockfile missing pinned TypeScript',{edit:{'pnpm-lock.yaml':s=>s.replaceAll('specifier: 7.0.2','specifier: 7.1.0')}},/lockfile incomplete or version drift/);
-rejects('rejects premature Nx configuration',{add:{'nx.json':'{}'}},/stage 5\+ service\/DB\/infra introduced prematurely/);
+rejects('rejects reusing the donor Nx Cloud workspace',{edit:{'nx.json':s=>s.replace('"nxCloudId": "6af8f845af7ceb84ecbf6673"','"nxCloudId": "6aa9eedc45c07f39423ffa9f"')}},/Nx Cloud requires a dedicated refoundation ID/);
+rejects('rejects embedded Nx Cloud tokens',{edit:{'nx.json':s=>s.replace('"analytics": true,','"analytics": true, "nxCloudAccessToken": "not-a-real-token",')}},/no embedded credentials/);
+rejects('rejects a missing Nx configuration',{del:['nx.json']},/required nx\.json/);
 rejects('rejects a missing exact source baseline file',{del:['docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md']},/required docs\/reference\/TOOLCHAIN-SOURCE-VERSIONS.md/);
 
 rejects('rejects broken local governance reference',{edit:{'README.md':s=>s.replace('](governance/README.md)','](governance/missing.md)')}},/broken local Markdown link/);

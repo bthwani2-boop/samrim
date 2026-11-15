@@ -30,8 +30,9 @@ assert.equal(pkg.packageManager, 'pnpm@' + pnpmPin);
 assert.equal(pkg.private, true);
 assert.equal(pkg.engines.node, '>=24.17.0 <25');
 assert.equal(pkg.engines.pnpm, pnpmPin);
-assert.deepEqual(pkg.devDependencies, { '@biomejs/biome': biomePin, typescript: tsPin },
-  'No new packages or version drift before application implementation is authorized');
+assert.deepEqual(pkg.devDependencies, { '@biomejs/biome': biomePin, knip: '6.34.0', nx: '24.0.1', typescript: tsPin },
+  'Workspace tooling must use exact donor-compatible package versions');
+if (pkg.dependencies?.nx) fail('Nx is development tooling, not a production dependency');
 
 const ws = read('pnpm-workspace.yaml');
 for (const glob of ['"apps/*"', '"packages/*"', '"services/*"']) {
@@ -46,13 +47,24 @@ if (!ws.includes("'@rc-component/util@1.14.0': patches/@rc-component__util@1.14.
   fail('Pinned donor Ant Design CSP patch is missing');
 }
 
+const nx = JSON.parse(read('nx.json'));
+if (nx.defaultBase !== 'main' || nx.targetDefaults?.typecheck?.cache !== true ||
+    !Array.isArray(nx.namedInputs?.nodeToolchain)) {
+  fail('Nx local project graph and typecheck cache configuration is incomplete');
+}
+if (!/^[a-f0-9]{24}$/.test(nx.nxCloudId ?? '') ||
+    nx.nxCloudId === '6aa9eedc45c07f39423ffa9f' ||
+    nx.nxCloudAccessToken || nx.nxCloudUrl) {
+  fail('Nx Cloud requires a dedicated refoundation ID and no embedded credentials');
+}
 const lock = read('pnpm-lock.yaml');
 for (const entry of ["lockfileVersion: '9.0'",
   "specifier: 12.15.0", "specifier: " + tsPin, "specifier: " + biomePin,
+  "specifier: 6.34.0", "knip@6.34.0:",
   'typescript@' + tsPin + ':', "'@biomejs/biome@" + biomePin + "':"]) {
   if (!lock.includes(entry)) fail('Incomplete exact pnpm frozen lock: ' + entry);
 }
-for (const p of ['tsconfig.base.json','biome.json','.editorconfig','.gitattributes','.gitignore']) {
+for (const p of ['knip.jsonc','nx.json','tsconfig.base.json','biome.json','.editorconfig','.gitattributes','.gitignore']) {
   if (!existsSync(path.join(projectRoot, p))) fail('Missing tooling configuration: ' + p);
 }
 const tsconfig = JSON.parse(read('tsconfig.base.json'));
@@ -97,7 +109,7 @@ for (const owner of ['identity','dsh','wlt']) {
     fail('Missing client entrypoint, documentation or frozen lock importer: ' + owner);
   }
 }
-for (const forbidden of ['contracts','nx.json','go.work',
+for (const forbidden of ['contracts','go.work',
   'apps/app-client','apps/app-partner','apps/app-captain',
   'tools/mobile/create-bthwani-metro-config.cjs']) {
   if (existsSync(path.join(projectRoot, forbidden))) fail('Duplicated/deferred legacy source: ' + forbidden);
@@ -108,7 +120,7 @@ for (const entry of ['node_modules/','.env','secrets.local.','apps/control-panel
 
 console.log('STAGE4_WORKSPACE_STRUCTURE_PASS pnpm=' + pnpmPin +
   ' typescript=' + tsPin + ' biome=' + biomePin + ' node-pin=' + nodePin +
-  ' go-pin=' + goPin + ' nx=DEFERRED(no graph needed)');
+  ' go-pin=' + goPin + ' nx=LOCAL_ONLY');
 
 if (strict) {
   // pnpm launches its own embedded Node runtime on some Windows machines.

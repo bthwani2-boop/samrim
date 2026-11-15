@@ -1,0 +1,60 @@
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "defaultBase": "main",
+  "workspaceLayout": {
+    "appsDir": "apps",
+    "libsDir": "packages"
+  },
+  "namedInputs": {
+    "default": [
+      "{projectRoot}/**/*",
+      "!{projectRoot}/.next/**",
+      "!{projectRoot}/.expo/**",
+      "!{projectRoot}/node_modules/**",
+      "!{projectRoot}/coverage/**"
+    ],
+    "nodeToolchain": [
+      "{workspaceRoot}/pnpm-lock.yaml",
+      "{workspaceRoot}/pnpm-workspace.yaml",
+      "{workspaceRoot}/tsconfig.base.json",
+      "{workspaceRoot}/.node-version",
+      {
+        "runtime": "node --version"
+      },
+      {
+        "runtime": "pnpm --version"
+      }
+    ]
+  },
+  "targetDefaults": {
+    "typecheck": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^default",
+        "nodeToolchain"
+      ],
+      "outputs": [
+        "{projectRoot}/.next/types"
+      ]
+    },
+    "theme:check": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^default",
+        "nodeToolchain"
+      ]
+    },
+    "theme:verify": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^default",
+        "nodeToolchain"
+      ]
+    }
+  },
+  "analytics": true,
+  "nxCloudId": "6af8f845af7ceb84ecbf6673"
+}
