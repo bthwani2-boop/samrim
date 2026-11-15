@@ -228,7 +228,12 @@ function checkProgressivePathFragment(content,filename){
  // Only components from the same canonical owner may be referenced externally.
  const owner=/^services\/(identity|dsh|wlt)\/contracts\/openapi\/paths\//.exec(filename)?.[1];
  const externalRefs=[...content.matchAll(/\$ref:\s*['"]?(\.\.\/[^'"\s}]+)/g)].map(m=>m[1]);
- if(!owner||externalRefs.some(ref=>!ref.startsWith('../'+owner+'.openapi.yaml#/components/'))||
+ // In a separate paths/*.yaml document, '#/components' points to that
+ // fragment (which declares no components), not to the canonical owner root.
+ // Rebase each component reference when migrating a Path Item from root.
+ const unresolvedLocalRefs=/\$ref:\s*['"]?#\/components\//.test(content);
+ if(!owner||unresolvedLocalRefs||
+    externalRefs.some(ref=>!ref.startsWith('../'+owner+'.openapi.yaml#/components/'))||
     !content.startsWith('paths:\n')||
     !content.includes('\n  /')||
     !['get','post','put','patch','delete'].some(verb=>content.includes('\n    '+verb+':'))||
@@ -250,8 +255,27 @@ function validateOpenApiOperation(lines,ids,reject){
  if(!lines.some(line=>/^ {8}['"]?(?:[1-5]\d{2}|default)['"]?:\s*$/.test(line)))reject();
  ids.add(identifiers[0]);
 }
+// Identity reserved path groups become binding as soon as any admitted group
+// is populated. The pre-migration all-empty scaffold remains readable until
+// its sole Identity owner transfers the current approved operations atomically.
+const identityOwnedPathGroups=new Map([
+ ['/v1/sessions/current','session'],
+ ['/v1/actors/me/merchant-role','managed-enrollment-auth'],
+ ['/v1/operators/me/permissions/{permission}','internal-actor-administration']
+]);
 function validateOpenApiPath(body,begin,end,ids,reject,owner,apiPath,fromFragment=false){
  const lines=body.slice(begin,end);
+ if(owner==='identity'&&!fromFragment&&
+   [...new Set(identityOwnedPathGroups.values())].some(group=>
+    contents['services/identity/contracts/openapi/paths/'+group+'.yaml']!=='paths: {}\n')){
+  const group=identityOwnedPathGroups.get(apiPath);
+  if(group){
+   const pointer=apiPath.replace(/~/g,'~0').replace(/\//g,'~1');
+   const expected="    $ref: './paths/"+group+".yaml#/paths/"+pointer+"'";
+   if(lines.filter(line=>line.trim()!=='').length!==1||lines[0]!==expected)
+    fail('Identity canonical Path Item group: '+apiPath+' must use '+group);
+  }
+ }
  const external=lines.filter(line=>line.startsWith('    $ref:'));
  if(external.length){
   if(fromFragment||lines.filter(line=>line.trim()!=='').length!==1)reject();

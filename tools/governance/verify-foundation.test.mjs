@@ -222,6 +222,95 @@ rejects('rejects premature server declaration',{edit:{'services/identity/contrac
 rejects('rejects premature financial operation',{edit:{'services/wlt/contracts/openapi/wlt.openapi.yaml':s=>s.replace('paths: {}','paths:\n  /wlt/wallet: {}')}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
 rejects('rejects unsupported cross-owner ref',{edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace("schema: { $ref: '#/components/schemas/PublicId' }", "schema: { $ref: '../../../../identity/contracts/openapi/identity.openapi.yaml' }")}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
 
+// Contract-group fixtures are derived from the current canonical Identity
+// operations, never a second, hand-maintained definition of their behavior.
+function linkedIdentityFixture(){
+ const prefix='services/identity/contracts/openapi/';
+ const rootFile=prefix+'identity.openapi.yaml';
+ const raw=fs.readFileSync(path.join(root,...rootFile.split('/')),'utf8');
+ const routes=[
+  ['/v1/sessions/current','session'],
+  ['/v1/actors/me/merchant-role','managed-enrollment-auth'],
+  ['/v1/operators/me/permissions/{permission}','internal-actor-administration']
+ ];
+ let canonical=raw;
+ const edit={};
+ const originalBlocks={};
+ for(const [apiPath,group] of routes){
+  const start=canonical.indexOf('  '+apiPath+':\n');
+  assert.notEqual(start,-1,'missing canonical Identity Path Item '+apiPath);
+  const next=canonical.indexOf('\n  /v1/',start+3);
+  const components=canonical.indexOf('\ncomponents:',start+3);
+  const end=next===-1?components:next;
+  assert.ok(end>start,'missing end of Identity Path Item '+apiPath);
+  const current=canonical.slice(start,end);
+  const fragmentFile=prefix+'paths/'+group+'.yaml';
+  let block=current.trimEnd();
+  if(current.includes('    $ref:')){
+   const fragment=fs.readFileSync(path.join(root,...fragmentFile.split('/')),'utf8');
+   const itemStart=fragment.indexOf('  '+apiPath+':\n');
+   assert.notEqual(itemStart,-1,'missing linked Identity Path Item '+apiPath);
+   block=fragment.slice(itemStart).trimEnd();
+  }
+  // #/components was valid in root but not inside a separate YAML document.
+  block=block.replaceAll("$ref: '#/components/","$ref: '../identity.openapi.yaml#/components/");
+  originalBlocks[apiPath]=block;
+  edit[fragmentFile]=()=> 'paths:\n'+block+'\n';
+  const pointer=apiPath.replace(/~/g,'~0').replace(/\//g,'~1');
+  const ref='  '+apiPath+':\n    $ref: \'./paths/'+group+'.yaml#/paths/'+pointer+'\'';
+  canonical=canonical.slice(0,start)+ref+canonical.slice(end);
+ }
+ edit[rootFile]=()=>canonical;
+ return {edit,originalBlocks,rootFile,prefix,canonical};
+}
+test('accepts Identity progressive operations in their canonical owned path groups',()=>{
+ const linked=linkedIdentityFixture();
+ const r=run({edit:linked.edit});
+ assert.equal(r.code,0,r.text);
+ assert.match(r.text,/PROGRESSIVE_SOURCE_PRESENT/);
+});
+test('rejects root-local component refs copied unmodified into Identity fragments',()=>{
+ const linked=linkedIdentityFixture();
+ const name=linked.prefix+'paths/session.yaml';
+ const correct=linked.originalBlocks['/v1/sessions/current'];
+ const invalid=correct.replaceAll('../identity.openapi.yaml#/components/','#/components/');
+ assert.notEqual(invalid,correct);
+ const r=run({edit:{...linked.edit,[name]:()=> 'paths:\n'+invalid+'\n'}});
+ assert.notEqual(r.code,0,r.text);
+ assert.match(r.text,/OpenAPI path fragment is not an empty placeholder/);
+});
+test('rejects mixed inline and fragmented admitted Identity routes',()=>{
+ const linked=linkedIdentityFixture();
+ const route='/v1/sessions/current';
+ const pointer=route.replace(/\//g,'~1');
+ const ref='  '+route+':\n    $ref: \'./paths/session.yaml#/paths/'+pointer+'\'';
+ const inline=linked.originalBlocks[route].replaceAll('../identity.openapi.yaml#/components/','#/components/');
+ const rootText=linked.canonical.replace(ref,inline);
+ assert.notEqual(rootText,linked.canonical);
+ const edit={...linked.edit,
+  [linked.rootFile]:()=>rootText,
+  [linked.prefix+'paths/session.yaml']:()=> 'paths: {}\n'
+ };
+ const r=run({edit});
+ assert.notEqual(r.code,0,r.text);
+ assert.match(r.text,/Identity canonical Path Item group/);
+});
+test('rejects valid but semantically misplaced Identity session Path Item',()=>{
+ const linked=linkedIdentityFixture();
+ const route='/v1/sessions/current';
+ const oldRef='./paths/session.yaml#/paths/~1v1~1sessions~1current';
+ const newRef='./paths/runtime.yaml#/paths/~1v1~1sessions~1current';
+ const rootText=linked.canonical.replace(oldRef,newRef);
+ assert.notEqual(rootText,linked.canonical);
+ const edit={...linked.edit,
+  [linked.rootFile]:()=>rootText,
+  [linked.prefix+'paths/session.yaml']:()=> 'paths: {}\n',
+  [linked.prefix+'paths/runtime.yaml']:()=> 'paths:\n'+linked.originalBlocks[route]+'\n'
+ };
+ const r=run({edit});
+ assert.notEqual(r.code,0,r.text);
+ assert.match(r.text,/Identity canonical Path Item group/);
+});
 rejects('rejects a Path Item ref with an incorrect JSON pointer',{
  edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace('./paths/runtime.yaml#/paths/~1health','./paths/runtime.yaml#/paths/~1wrong')}
 },/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
