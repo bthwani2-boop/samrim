@@ -21,6 +21,19 @@ var (
 	ErrInvalidTimezone = errors.New("INVALID_STORE_TIMEZONE")
 )
 
+// loadStoreTimezone rejects Go's process-dependent "Local" alias. Store hours
+// require a stable, explicit IANA zone from DSH's canonical service city.
+func loadStoreTimezone(name string) (*time.Location, error) {
+	if name == "" || name == "Local" {
+		return nil, ErrInvalidTimezone
+	}
+	location, err := time.LoadLocation(name)
+	if err != nil {
+		return nil, ErrInvalidTimezone
+	}
+	return location, nil
+}
+
 // WeeklyWindow is [Opens, Closes) in local wall-clock minutes. If Closes < Opens,
 // it continues after midnight into the next weekday. Closes=1440 means midnight.
 type WeeklyWindow struct {
@@ -80,12 +93,9 @@ func EvaluatedAt(now time.Time, in Inputs) (Result, error) {
 	if err := ValidateSchedule(in.Weekly); err != nil {
 		return fail, err
 	}
-	if in.Timezone == "" {
-		return fail, ErrInvalidTimezone
-	}
-	loc, err := time.LoadLocation(in.Timezone)
+	loc, err := loadStoreTimezone(in.Timezone)
 	if err != nil {
-		return fail, ErrInvalidTimezone
+		return fail, err
 	}
 	if !in.Published || !in.CityActive || !in.VerticalActive ||
 		!in.OfferSellable || !in.MethodAdmitted || !in.MethodOperational || !in.RecipientServiceable {

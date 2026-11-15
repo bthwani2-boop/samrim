@@ -89,6 +89,15 @@ func TestSaturdayWrapAndScheduleOverlap(t *testing.T) {
 		t.Fatalf("overlap: %v", err)
 	}
 }
+func TestLocalTimezoneCannotDetermineStoreOrderability(t *testing.T) {
+	in := baseInputs()
+	in.Timezone = "Local" // OS-dependent location, not an explicit IANA Store zone.
+	got, err := EvaluatedAt(moment(t, "2026-11-16T10:00:00+03:00"), in)
+	if !errors.Is(err, ErrInvalidTimezone) || got.Orderable || got.Status != OperationallyUnavail {
+		t.Fatalf("host-local timezone was accepted: %+v err=%v", got, err)
+	}
+}
+
 func TestInvalidScheduleAndTimezoneFailClosed(t *testing.T) {
 	for _, tc := range [][]WeeklyWindow{
 		{{Weekday: 7, Opens: 60, Closes: 100}},

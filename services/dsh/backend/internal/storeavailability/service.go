@@ -160,7 +160,7 @@ func (s *Service) Change(ctx context.Context, token string, change Change) (Snap
 	if change.Timezone != "" && change.Timezone != approvedTimezone {
 		return Snapshot{}, false, ErrInvalidChange
 	}
-	if _, err = time.LoadLocation(approvedTimezone); err != nil {
+	if _, err = loadStoreTimezone(approvedTimezone); err != nil {
 		return Snapshot{}, false, ErrInvalidTimezone
 	}
 	change.Timezone = approvedTimezone

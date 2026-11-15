@@ -138,6 +138,21 @@ func TestServiceOnlyForwardsValidPolicyBoundChanges(t *testing.T) {
 		t.Fatalf("bad prep: %v", err)
 	}
 }
+func TestHostLocalStoreTimezoneCannotReachPersistence(t *testing.T) {
+	count := 0
+	s, err := NewService(fakeIdentity{actor: VerifiedActor{Subject: "merchant-a", Role: MerchantRole}},
+		fakeGrant{timezone: "Local"}, fakePolicy{}, fakeRepo{&count})
+	if err != nil {
+		t.Fatal(err)
+	}
+	change := validChange()
+	change.Timezone = "" // Client cannot override the DSH canonical time zone.
+	_, _, err = s.Change(context.Background(), "verified-token", change)
+	if !errors.Is(err, ErrInvalidTimezone) || count != 0 {
+		t.Fatalf("OS-dependent Store timezone caused a mutation: err=%v count=%d", err, count)
+	}
+}
+
 func TestNewServiceFailsClosedWithoutOwnerAdapters(t *testing.T) {
 	if _, err := NewService(nil, fakeGrant{}, fakePolicy{}, fakeRepo{new(int)}); !errors.Is(err, ErrUnauthorized) {
 		t.Fatal(err)

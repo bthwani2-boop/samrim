@@ -293,7 +293,7 @@ func (r *PostgresRepository) applyOnce(ctx context.Context, c AuthorizedChange, 
 	if !authoritativeTimezone.Valid || authoritativeTimezone.String != c.Timezone {
 		return Snapshot{}, false, ErrInvalidTimezone
 	}
-	if _, err = time.LoadLocation(c.Timezone); err != nil {
+	if _, err = loadStoreTimezone(c.Timezone); err != nil {
 		return Snapshot{}, false, ErrInvalidTimezone
 	}
 	// A first Store update creates an explicitly closed schedule record,

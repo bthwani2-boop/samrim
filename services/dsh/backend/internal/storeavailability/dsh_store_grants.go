@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
-	"time"
 )
 
 // PostgresStoreGrants reads the existing DSH Store and service-city authority.
@@ -71,7 +70,7 @@ func (g *PostgresStoreGrants) StoreTimezone(ctx context.Context, storeID string)
 	if !timezone.Valid || strings.TrimSpace(timezone.String) == "" {
 		return "", ErrInvalidTimezone
 	}
-	if _, err = time.LoadLocation(timezone.String); err != nil {
+	if _, err = loadStoreTimezone(timezone.String); err != nil {
 		return "", ErrInvalidTimezone
 	}
 	if err = tx.Commit(); err != nil {

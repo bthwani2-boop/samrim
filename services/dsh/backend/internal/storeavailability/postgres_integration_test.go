@@ -539,12 +539,27 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 		WHERE city_id=$1`, schema), cityID); err == nil {
 		t.Fatal("active policy could be erased without a versioned change")
 	}
-	// A missing or invalid canonical DSH city timezone never falls back to a client value.
-	if _, err := db.ExecContext(ctx, fmt.Sprintf("UPDATE %s.service_cities SET timezone_name='Not/AZone' WHERE id=$1", schema), cityID); err != nil {
-		t.Fatal(err)
+	// Host-local time is not a Store IANA timezone: a different host's TZ
+	// must never make opening hours or a Store mutation permissive.
+	for caseIndex, invalidZone := range []string{"Local", "Not/AZone"} {
+		if _, err := db.ExecContext(ctx, fmt.Sprintf("UPDATE %s.service_cities SET timezone_name=$2 WHERE id=$1", schema), cityID, invalidZone); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := grants.StoreTimezone(ctx, id); !errors.Is(err, ErrInvalidTimezone) {
+			t.Fatalf("invalid canonical timezone %q accepted: %v", invalidZone, err)
+		}
+		invalidChange := stalePolicy
+		invalidChange.OperationID = fmt.Sprintf("timezone-reject-%d", caseIndex)
+		invalidChange.ExpectedVersion = updated.Version
+		invalidChange.Timezone = invalidZone
+		if _, _, err := repo.Apply(ctx, invalidChange); !errors.Is(err, ErrInvalidTimezone) {
+			t.Fatalf("invalid timezone %q reached Store mutation: %v", invalidZone, err)
+		}
 	}
-	if _, err := grants.StoreTimezone(ctx, id); !errors.Is(err, ErrInvalidTimezone) {
-		t.Fatalf("invalid canonical timezone accepted: %v", err)
+	if err := db.QueryRowContext(ctx,
+		fmt.Sprintf("SELECT count(*) FROM %s.store_operational_audit WHERE store_id=$1", schema), id).
+		Scan(&updatedAudits); err != nil || updatedAudits != 7 {
+		t.Fatalf("invalid timezone changed durable Store audit: count=%d err=%v", updatedAudits, err)
 	}
 	t.Logf("PASS real DSH PostgreSQL: store=%s finalVersion=%d audits=%d, policy versions 1->2 frozen; concurrent identical key exactly once, denied calls preserved state", id, updated.Version, updatedAudits)
 }
