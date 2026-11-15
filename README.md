@@ -57,6 +57,27 @@ Remove-Item Env:\SPECIFY_FEATURE_DIRECTORY, Env:\SPECIFY_FEATURE_NO_PERSIST, Env
 
 `-PathsOnly` checks **path resolution only**; its JSON `BRANCH` field is the logical feature directory name, **not** a Git branch creation or switch. It neither creates a feature directory nor validates `spec.md`, `plan.md` or `tasks.md`. Use a real approved feature ID in place of the example, keep related specifications scoped to that change and derive their business meaning from the single owner in `governance/`. For later feature work, reconcile `spec.md` → `plan.md` → `tasks.md` against `AGENTS.md`, `REPOSITORY-STRUCTURE.md` and the owning API/UX policy before implementation. An installed `speckit` workflow definition is **not executable as an agent-driven feature pipeline** under the present `none` integration. Do not run `create-new-feature.ps1`, `specify init --here --force` or a workflow that may open a feature branch, overwrite managed files or execute an agent without explicit authorization and an inspected diff. The original branch `41` is a read-only donor.
 
+### GPT-6-led Spec Kit execution through remote-control tools
+
+**Execution contract (2026-11-15):** GPT-6 leads the authorized development cycle, BThwani Remote Coordinator selects a connected/authorized computer channel, and that channel runs the original Spec Kit scripts and the affected code/tests. The installed Spec Kit `none` integration is **agent-neutral scaffolding**, not an unattended agent dispatcher. Therefore `specify workflow run speckit` is **not the entry point** for this mode: its command-dispatch steps require an actual agent integration and fail under `none`. This does **not** prevent GPT-6 from completing the spec-to-implementation cycle directly with remote tools.
+
+For an existing approved feature directory (create only in an authorized owner-scoped location; use a unique ignored directory for isolated smoke tests), the controller executes the following native stages. GPT-6 writes/reviews `spec.md`, fills the generated `plan.md`, writes `tasks.md`, executes test-first implementation and verifies actual results between these commands:
+
+```powershell
+$env:SPECIFY_FEATURE_DIRECTORY = '.bthwani-local/spec-kit-direct-cycle-20261115'
+$env:SPECIFY_FEATURE_NO_PERSIST = '1'
+& powershell.exe -NoProfile -NonInteractive -File .specify/scripts/powershell/check-prerequisites.ps1 -PathsOnly -Json
+# GPT-6 uses the authorized remote-control file tools to write and review spec.md.
+& powershell.exe -NoProfile -NonInteractive -File .specify/scripts/powershell/setup-plan.ps1 -Json
+# GPT-6 completes plan.md; the native tasks script resolves the current template.
+& powershell.exe -NoProfile -NonInteractive -File .specify/scripts/powershell/setup-tasks.ps1 -Json
+# GPT-6 writes tasks.md and the tests, proves RED, implements the feature, then proves GREEN.
+& powershell.exe -NoProfile -NonInteractive -File .specify/scripts/powershell/check-prerequisites.ps1 -Json -RequireSpec -RequireTasks -IncludeTasks
+& 'C:\Program Files\nodejs\node.exe' --test .bthwani-local/spec-kit-direct-cycle-20261115/page-size.test.mjs
+```
+
+The shown directory and test are a **synthetic isolated example**, not a production feature, shared standard or new workflow engine. On 2026-11-15 GPT-6 exercised this exact direct-tool approach: created specification/plan/tasks, verified an expected failing import before implementation (RED), added a pure module, and passed **16/16** Node tests (GREEN), including negative and boundary cases. Confirm `SPECIFY_FEATURE_NO_PERSIST=1` leaves the shared `.specify/feature.json` unchanged. Respect Git ownership, feature scope, required human approvals, independent high-risk evidence and final review; no test here permits Push, PR, Merge or deployment. A working coordinator-led feature cycle must not be confused with automatic CLI agent dispatch under `none`.
+
 The **Postman CLI** is also installed globally on Windows (`postman.cmd --version` → `1.83.0`). `postman.cmd status` confirms **no local workspace/resources binding or authenticated CLI session** in this worktree; this is distinct from a connected Postman ChatGPT app. The read-only `postman.cmd init --dry-run --json` would update the root `AGENTS.md` and add empty API folders plus another local copy of 18 Postman skills. Do not run that initialization blindly during the zero-operation scaffold stage: preserve the canonical agent law and initialize/associate owner-scoped API work only after real reviewed contracts and a conflict-free change are admitted. Do not run the old loopback DSH readiness collection against an unidentified process as a substitute for target runtime tests.
 
 This validates *developer setup*, not governance cutover or customer/merchant/driver features. Missing API operations, persistence, risk proof, service integration and native/browser E2E tests remain `NOT_RUN`/blocked until their respective stages and owner approvals.
