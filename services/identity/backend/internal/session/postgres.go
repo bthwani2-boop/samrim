@@ -72,11 +72,24 @@ func (r *PostgresReader) Revoke(ctx context.Context, digest [32]byte) error {
 		return err
 	}
 	defer tx.Rollback()
+	// Lock the presented session before checking expiry. A concurrent writer
+	// may hold this row past the credential deadline: CURRENT_TIMESTAMP
+	// would still represent this transaction's earlier start time.
+	var lockedDigest []byte
+	err = tx.QueryRowContext(ctx,
+		"SELECT token_digest FROM auth_sessions WHERE token_digest=$1 FOR UPDATE", digest[:],
+	).Scan(&lockedDigest)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrUnauthorized
+	}
+	if err != nil {
+		return err
+	}
 	result, err := tx.ExecContext(ctx, `UPDATE auth_sessions AS s
-        SET revoked_at=CURRENT_TIMESTAMP
+        SET revoked_at=clock_timestamp()
         FROM actors AS a, actor_roles AS ar
         WHERE s.token_digest=$1 AND s.revoked_at IS NULL
-          AND s.issued_at<=CURRENT_TIMESTAMP AND s.expires_at>CURRENT_TIMESTAMP
+          AND s.issued_at<=clock_timestamp() AND s.expires_at>clock_timestamp()
           AND s.actor_id=a.id AND a.status='ACTIVE' AND s.actor_version=a.auth_version
           AND ar.actor_id=s.actor_id AND ar.role=s.role
           AND ar.status='ACTIVE' AND s.role_version=ar.version`, digest[:])
