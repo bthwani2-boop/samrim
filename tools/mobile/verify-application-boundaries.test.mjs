@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import test from "node:test";
-import { importSpecifiers, sourceBoundaryIssues, stage4WorkspaceIssues } from "./verify-application-boundaries.mjs";
+import { importSpecifiers, scanPresentationBoundaries, sourceBoundaryIssues, stage4WorkspaceIssues } from "./verify-application-boundaries.mjs";
 
 const root = resolve("C:/safe/bthwani");
 const customer = resolve(root, "apps/customer/app/index.tsx");
@@ -132,13 +132,32 @@ test("Stage 4 rejects unapproved owner directories and any duplicate src/app rou
   }
 });
 
-test("future admitted feature files remain private to their app without bypassing Stage 4", () => {
+test("progressively admitted feature files remain private to their app", () => {
   const feature = resolve(root, "apps/customer/src/features/stores/StoreCard.tsx");
   assert.deepEqual(sourceBoundaryIssues(feature,
     'import { Button } from "tamagui"; import { X } from "../../ui/components";', root), []);
   assert.match(sourceBoundaryIssues(feature,
     'import { Secret } from "@bthwani/merchant/src/private";', root).join(" "),
     /Cross-app package import/);
-  // The repository's Stage-4 foundation verifier separately rejects any
-  // real src/features directory until a governed phase transition.
+});
+
+test("actual new feature folders pass owner boundaries and cross-owner imports fail", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "bthwani-feature-boundary-"));
+  try {
+    for (const group of ["apps", "packages", "services"]) {
+      mkdirSync(join(fixture, group), { recursive: true });
+    }
+    const feature = join(fixture, "apps", "customer", "src", "features", "stores", "StoreCard.tsx");
+    mkdirSync(dirname(feature), { recursive: true });
+    writeFileSync(feature, 'import { View } from "tamagui"; export const StoreCard = View;\n');
+    const allowed = scanPresentationBoundaries(fixture);
+    assert.equal(allowed.scanned, 1, "new feature must be scanned, not merely permitted");
+    assert.deepEqual(allowed.issues, []);
+    writeFileSync(feature, 'import { Secret } from "@bthwani/merchant/src/private";\n');
+    const forbidden = scanPresentationBoundaries(fixture);
+    assert.equal(forbidden.scanned, 1);
+    assert.match(forbidden.issues.join(" "), /Cross-app package import/);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
 });

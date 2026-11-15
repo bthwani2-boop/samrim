@@ -134,18 +134,20 @@ function filesIn(folder) {
   }
   return result;
 }
-const candidates = [
-  ...appNames.flatMap(name => {
-    const app = join(root, "apps", name);
-    return [
-      ...filesIn(join(app, "app")),
-      ...filesIn(join(app, "src")),
-      ...readdirSync(app).filter(name => extensions.has(extname(name))).map(name => join(app, name)),
-    ];
-  }),
-  ...["design-system", "tamagui-config"].flatMap(name => filesIn(join(root, "packages", name, "src"))),
-  ...["identity", "dsh", "wlt"].flatMap(name => filesIn(join(root, "services", name, "clients"))),
-];
+function presentationCandidates(base) {
+  return [
+    ...appNames.flatMap(name => {
+      const app = join(base, "apps", name);
+      return [
+        ...filesIn(join(app, "app")),
+        ...filesIn(join(app, "src")),
+        ...(existsSync(app) ? readdirSync(app).filter(name => extensions.has(extname(name))).map(name => join(app, name)) : []),
+      ];
+    }),
+    ...["design-system", "tamagui-config"].flatMap(name => filesIn(join(base, "packages", name, "src"))),
+    ...["identity", "dsh", "wlt"].flatMap(name => filesIn(join(base, "services", name, "clients"))),
+  ];
+}
 // The Stage-4 workspace admits exactly four app hosts, two presentation
 // packages and three service client scaffolds. Unknown directories must not
 // silently avoid the scanner when the root workspace globs include them.
@@ -168,11 +170,17 @@ export function stage4WorkspaceIssues(base = root) {
   }
   return issues;
 }
-const violations = stage4WorkspaceIssues();
-for (const file of candidates) {
-  for (const issue of sourceBoundaryIssues(file, readFileSync(file, "utf8"))) {
-    violations.push(relative(root, file) + ": " + issue);
+// Test the same on-disk feature scanning in fixtures and in CI.
+export function scanPresentationBoundaries(base = root) {
+  const issues = stage4WorkspaceIssues(base);
+  const candidates = presentationCandidates(base);
+  for (const file of candidates) {
+    for (const issue of sourceBoundaryIssues(file, readFileSync(file, "utf8"), base)) {
+      issues.push(relative(base, file) + ": " + issue);
+    }
   }
+  return { issues, scanned: candidates.length };
 }
+const { issues: violations, scanned } = scanPresentationBoundaries();
 assert.deepEqual(violations, [], "Presentation owner boundary failure:\n" + violations.join("\n"));
-console.log("APP_OWNER_BOUNDARIES_PASS files=" + candidates.length + " apps=" + appNames.length + " shared_packages=2");
+console.log("APP_OWNER_BOUNDARIES_PASS files=" + scanned + " apps=" + appNames.length + " shared_packages=2");
