@@ -21,6 +21,12 @@ type Owner struct {
 
 var identifier = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 
+// Migration is an isolated developer-only operation. Do not accept a similarly
+// named production/donor database even when it contains a dsh_test_* schema.
+func isRefoundationMigrationDatabase(name string) bool {
+	return name == "bthwani_refoundation"
+}
+
 func New(db *sql.DB, schema string) (*Owner, error) {
 	if !identifier.MatchString(schema) {
 		return nil, errors.New("invalid DSH schema identifier")
@@ -48,6 +54,12 @@ func (o *Owner) Migrate(ctx context.Context, source []byte) error {
 		os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" || !strings.HasPrefix(o.Schema, "dsh_test_") {
 		return errors.New("isolated DSH migration required")
 	}
+	// Every reviewed owner migration must explicitly identify its own test schema.
+	// Without the marker, a mistakenly supplied SQL file could run in public
+	// or another service's search_path even in the isolated development DB.
+	if !strings.Contains(string(source), "__SCHEMA__") {
+		return errors.New("DSH migration is missing its scoped schema marker")
+	}
 	sqlText := strings.ReplaceAll(string(source), "__SCHEMA__", o.Schema)
 	if strings.Contains(sqlText, "__SCHEMA__") {
 		return errors.New("unresolved schema marker")
@@ -57,6 +69,15 @@ func (o *Owner) Migrate(ctx context.Context, source []byte) error {
 		return err
 	}
 	defer tx.Rollback()
+	// An environment toggle and dsh_test_* identifier alone do not prove the
+	// target database is this Worktree's isolated PostgreSQL instance.
+	var databaseName string
+	if err = tx.QueryRowContext(ctx, "SELECT current_database()").Scan(&databaseName); err != nil {
+		return fmt.Errorf("DSH migration database identity unavailable: %w", err)
+	}
+	if !isRefoundationMigrationDatabase(databaseName) {
+		return errors.New("DSH migration denied outside the isolated refoundation database")
+	}
 	if _, err = tx.ExecContext(ctx, sqlText); err != nil {
 		return fmt.Errorf("dsh public migration: %w", err)
 	}

@@ -96,3 +96,42 @@ func TestPublicCursorPreventsCrossStoreReuseAndStalePages(t *testing.T) {
 		}
 	}
 }
+
+func TestMigrationDatabaseNameRequiresExactIsolatedRefoundation(t *testing.T) {
+	for _, name := range []string{
+		"", "postgres", "bthwani", "samrim", "production", "bthwani_production",
+		"refoundation", "bthwani_refoundation_backup", "bthwani_refoundation_prod",
+		"bthwani_refoundation;DROP SCHEMA public", "BTHWANI_REFOUNDATION",
+	} {
+		if isRefoundationMigrationDatabase(name) {
+			t.Errorf("unsafe migration database %q accepted", name)
+		}
+	}
+	if !isRefoundationMigrationDatabase("bthwani_refoundation") {
+		t.Fatal("dedicated isolated refoundation database should be accepted")
+	}
+}
+
+func TestMigrationRejectsUnscopedSQLBeforeOpeningConnection(t *testing.T) {
+	t.Setenv("BTHWANI_ISOLATED_TEST_MODE", "true")
+	db, err := sql.Open("postgres", "host=127.0.0.1 port=1 user=unused dbname=unused sslmode=disable connect_timeout=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	owner, err := New(db, "dsh_test_reject_unscoped")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, source := range []string{
+		"CREATE TABLE public.accidental(id int)",
+		"DROP SCHEMA identity_test_runtime CASCADE",
+		"SELECT 1",
+		"",
+	} {
+		err := owner.Migrate(context.Background(), []byte(source))
+		if err == nil || !strings.Contains(err.Error(), "missing its scoped schema marker") {
+			t.Errorf("unscoped migration must fail before a DB connection, got %v", err)
+		}
+	}
+}
