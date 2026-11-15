@@ -3,6 +3,7 @@ import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { type Href, Link, useLocalSearchParams } from "expo-router";
 import * as React from "react";
 import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, Text, View } from "react-native";
+import { describeStoreOrderability } from "../../ui/orderability";
 
 const API = process.env.EXPO_PUBLIC_DSH_API_URL ?? "";
 type StoreResult = { scope: string; loading: boolean; store?: PublicStore; offers: PublicOffer[]; cursor?: string | undefined; more?: boolean; error?: string | undefined };
@@ -33,6 +34,7 @@ export default function PublicStoreDetail() {
   }, [id, retry]);
   const visible: StoreResult = state.scope === id ? state : { scope: id, loading: true, offers: [] };
   const textStyle = { color: theme.color };
+  const availability = visible.store ? describeStoreOrderability(visible.store) : undefined;
   const more = async () => {
     if (!visible.cursor || visible.more) return;
     const current = revision.current;
@@ -57,7 +59,8 @@ export default function PublicStoreDetail() {
         {visible.store ? <>
           <Text accessibilityRole="header" testID="store-title" style={{ ...textStyle, fontSize: 26, fontWeight: "700" }}>{visible.store.name}</Text>
           <Text style={{ ...textStyle, color: theme.colorSecondary }}>المدينة: {visible.store.cityId}</Text>
-          <Text style={{ ...textStyle, color: theme.warningText }}>{visible.store.orderabilityStatus === "PAUSED" ? "المتجر متوقف مؤقتًا" : "الطلبات غير متاحة حاليًا"}</Text>
+          <Text testID="store-orderability-status" style={{ ...textStyle, color: theme.warningText }}>{availability?.headline}</Text>
+          <Text style={{ ...textStyle, color: theme.colorSecondary }}>{availability?.detail}</Text>
           <Text accessibilityRole="header" style={{ ...textStyle, fontSize: 21, fontWeight: "600" }}>العروض المتاحة</Text>
           {visible.offers.length === 0 && !visible.error
             ? <Text testID="offers-empty" style={textStyle}>لا توجد عروض متاحة الآن.</Text> : null}

@@ -3,6 +3,7 @@ import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { type Href, Link, router } from "expo-router";
 import * as React from "react";
 import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, Text, TextInput, View } from "react-native";
+import { describeStoreOrderability } from "../../ui/orderability";
 
 const API = process.env.EXPO_PUBLIC_DSH_API_URL ?? "";
 const INITIAL_CITY = process.env.EXPO_PUBLIC_DSH_CITY_ID ?? "sanaa";
@@ -79,15 +80,18 @@ export default function PublicStoresScreen() {
         {visible.loading ? <ActivityIndicator accessibilityLabel="جارٍ تحميل المتاجر" color={theme.actionBackground} /> : null}
         {!visible.loading && visible.items.length === 0 && !visible.error
           ? <Text testID="stores-empty" style={textStyle}>لا توجد متاجر منشورة لهذه المدينة حاليًا.</Text> : null}
-        {visible.items.map((store) => (
-          <Pressable key={store.id} testID={`store-${store.id}`} accessibilityRole="button"
-            accessibilityLabel={`عرض المتجر ${store.name}`} onPress={() => router.push((`/store/${encodeURIComponent(store.id)}`) as Href)}
-            style={{ backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: 1, borderRadius: 12, padding: 18, gap: 6 }}>
-            <Text style={{ ...textStyle, fontSize: 19, fontWeight: "600" }}>{store.name}</Text>
-            <Text style={{ ...textStyle, color: theme.colorSecondary }}>{store.orderabilityStatus === "PAUSED" ? "متوقف مؤقتًا" : store.orderabilityStatus === "CLOSED_BY_SCHEDULE" ? "مغلق" : "متجر منشور"}</Text>
-            <Text style={{ ...textStyle, color: theme.warningText }}>الطلب غير متاح حتى تأكيد الجاهزية</Text>
-          </Pressable>
-        ))}
+        {visible.items.map((store) => {
+          const availability = describeStoreOrderability(store);
+          return (
+            <Pressable key={store.id} testID={`store-${store.id}`} accessibilityRole="button"
+              accessibilityLabel={`عرض المتجر ${store.name}`} onPress={() => router.push((`/store/${encodeURIComponent(store.id)}`) as Href)}
+              style={{ backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: 1, borderRadius: 12, padding: 18, gap: 6 }}>
+              <Text style={{ ...textStyle, fontSize: 19, fontWeight: "600" }}>{store.name}</Text>
+              <Text testID={`availability-status-${store.id}`} style={{ ...textStyle, color: theme.colorSecondary }}>{availability.headline}</Text>
+              <Text style={{ ...textStyle, color: theme.warningText }}>{availability.detail}</Text>
+            </Pressable>
+          );
+        })}
         {visible.error ? <View style={{ gap: 8 }}>
           <Text testID="stores-error" accessibilityRole="alert" style={{ ...textStyle, color: theme.dangerText }}>{message(visible.error)}</Text>
           <Pressable accessibilityRole="button" onPress={() => setRetry((v) => v + 1)} style={buttonStyle}>
