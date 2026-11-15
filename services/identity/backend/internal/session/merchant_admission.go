@@ -77,29 +77,10 @@ func (r *PostgresReader) AdmitMerchant(ctx context.Context, sourceDigest [32]byt
 	}
 	defer tx.Rollback()
 
-	var actorID string
-	var actorVersion int64
-	var verified bool
-	err = tx.QueryRowContext(ctx, `SELECT a.id,a.auth_version,a.verified_at IS NOT NULL AND a.verified_at<=CURRENT_TIMESTAMP
-        FROM auth_sessions AS s
-        JOIN actors AS a ON a.id=s.actor_id
-        JOIN actor_roles AS ar ON ar.actor_id=s.actor_id AND ar.role=s.role
-        WHERE s.token_digest=$1 AND s.role='customer'
-          AND s.revoked_at IS NULL
-          AND s.issued_at<=CURRENT_TIMESTAMP AND s.expires_at>CURRENT_TIMESTAMP
-          AND a.status='ACTIVE' AND ar.status='ACTIVE'
-          AND s.actor_version=a.auth_version AND s.role_version=ar.version
-        FOR UPDATE OF a, ar, s`, sourceDigest[:]).Scan(&actorID, &actorVersion, &verified)
-	if errors.Is(err, sql.ErrNoRows) {
-		return MerchantAdmission{}, ErrUnauthorized
-	}
+	actorID, actorVersion, err := lockVerifiedCustomer(ctx, tx, sourceDigest)
 	if err != nil {
 		return MerchantAdmission{}, err
 	}
-	if !verified {
-		return MerchantAdmission{}, ErrVerificationRequired
-	}
-
 	var merchantRoleVersion int64
 	err = tx.QueryRowContext(ctx, `INSERT INTO actor_roles(actor_id,role,status)
         VALUES ($1,'merchant','ACTIVE')
@@ -127,28 +108,9 @@ func (r *PostgresReader) ResumeMerchant(ctx context.Context, sourceDigest [32]by
 		return MerchantAdmission{}, err
 	}
 	defer tx.Rollback()
-	var actorID string
-	var actorVersion int64
-	var verified bool
-	err = tx.QueryRowContext(ctx, `SELECT a.id,a.auth_version,
-        a.verified_at IS NOT NULL AND a.verified_at<=CURRENT_TIMESTAMP
-        FROM auth_sessions AS s
-        JOIN actors AS a ON a.id=s.actor_id
-        JOIN actor_roles AS ar ON ar.actor_id=s.actor_id AND ar.role=s.role
-        WHERE s.token_digest=$1 AND s.role='customer'
-          AND s.revoked_at IS NULL
-          AND s.issued_at<=CURRENT_TIMESTAMP AND s.expires_at>CURRENT_TIMESTAMP
-          AND a.status='ACTIVE' AND ar.status='ACTIVE'
-          AND s.actor_version=a.auth_version AND s.role_version=ar.version
-        FOR UPDATE OF a, ar, s`, sourceDigest[:]).Scan(&actorID, &actorVersion, &verified)
-	if errors.Is(err, sql.ErrNoRows) {
-		return MerchantAdmission{}, ErrUnauthorized
-	}
+	actorID, actorVersion, err := lockVerifiedCustomer(ctx, tx, sourceDigest)
 	if err != nil {
 		return MerchantAdmission{}, err
-	}
-	if !verified {
-		return MerchantAdmission{}, ErrVerificationRequired
 	}
 	var merchantRoleVersion int64
 	err = tx.QueryRowContext(ctx, `SELECT version FROM actor_roles
@@ -167,6 +129,53 @@ func (r *PostgresReader) ResumeMerchant(ctx context.Context, sourceDigest [32]by
 		return MerchantAdmission{}, err
 	}
 	return issueMerchantSessionTx(ctx, tx, actorID, actorVersion, merchantRoleVersion)
+}
+
+// lockVerifiedCustomer validates the source credential after the database
+// actor, role and session locks are held. Transaction-start CURRENT_TIMESTAMP
+// is not sufficient: a token can expire while a writer waits on a lock.
+// Use the canonical PostgreSQL clock AFTER the wait, not the application clock.
+func lockVerifiedCustomer(ctx context.Context, tx *sql.Tx, sourceDigest [32]byte) (string, int64, error) {
+	var actorID string
+	var actorVersion int64
+	var verification sql.NullTime
+	var issuedAt, expiresAt, currentDBTime time.Time
+	err := tx.QueryRowContext(ctx, `SELECT a.id,a.auth_version,a.verified_at,s.issued_at,s.expires_at
+        FROM auth_sessions AS s
+        JOIN actors AS a ON a.id=s.actor_id
+        JOIN actor_roles AS ar ON ar.actor_id=s.actor_id AND ar.role=s.role
+        WHERE s.token_digest=$1 AND s.role='customer'
+          AND s.revoked_at IS NULL
+          AND a.status='ACTIVE' AND ar.status='ACTIVE'
+          AND s.actor_version=a.auth_version AND s.role_version=ar.version
+        FOR UPDATE OF a, ar, s`, sourceDigest[:]).
+		Scan(&actorID, &actorVersion, &verification, &issuedAt, &expiresAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", 0, ErrUnauthorized
+	}
+	if err != nil {
+		return "", 0, err
+	}
+	if err = tx.QueryRowContext(ctx, "SELECT clock_timestamp()").Scan(&currentDBTime); err != nil {
+		return "", 0, err
+	}
+	if err := validateVerifiedCustomerAt(verification, issuedAt, expiresAt, currentDBTime); err != nil {
+		return "", 0, err
+	}
+	return actorID, actorVersion, nil
+}
+
+// validateVerifiedCustomerAt compares trusted timestamps, never a caller's
+// clock. An expired or not-yet-issued source credential cannot mint a role
+// session, even if the SQL transaction began before a row-lock wait.
+func validateVerifiedCustomerAt(verification sql.NullTime, issuedAt, expiresAt, dbNow time.Time) error {
+	if dbNow.Before(issuedAt) || !dbNow.Before(expiresAt) {
+		return ErrUnauthorized
+	}
+	if !verification.Valid || verification.Time.After(dbNow) {
+		return ErrVerificationRequired
+	}
+	return nil
 }
 
 // One writer shared by initial direct admission and existing role re-entry.

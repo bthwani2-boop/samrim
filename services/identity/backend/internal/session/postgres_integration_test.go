@@ -421,6 +421,7 @@ func TestPostgresIdentitySessionReadback(t *testing.T) {
 	}
 	checkPermission(opB, "marketing", "identity-operator-b", nil)
 	verifyMerchantAdmissionIntegration(t, ctx, db, independent, reader, schema, exec, issue)
+	verifyMerchantExpiredCustomerLockWait(t, ctx, db, independent, reader, schema, exec, issue)
 	fmt.Println("IDENTITY_SESSION_HTTP_LOGOUT_DURABLE_AND_RACE_PASS")
 	fmt.Println("IDENTITY_OPERATOR_PERMISSION_POSTGRES_DURABLE_READBACK_PASS")
 	fmt.Println("IDENTITY_SESSION_POSTGRES_DURABLE_READBACK_PASS")
