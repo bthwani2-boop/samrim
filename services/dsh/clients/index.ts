@@ -97,12 +97,16 @@ export async function listPublicStores(
   url.searchParams.set("city_id", cityId);
   if (options.cursor) url.searchParams.set("cursor", options.cursor);
   if (options.limit) url.searchParams.set("limit", String(options.limit));
-  return readPage(await ownerRead(url, options.signal), isStore);
+  const page = readPage(await ownerRead(url, options.signal), isStore);
+  if (page.items.some((store) => store.cityId !== cityId)) {
+    throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  }
+  return page;
 }
 export async function getPublicStore(baseUrl: string, storeId: string, signal?: AbortSignal): Promise<PublicStore> {
   const url = endpoint(baseUrl, "/v1/public/stores/" + encodeURIComponent(storeId));
   const value = await ownerRead(url, signal);
-  if (!isStore(value)) throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  if (!isStore(value) || value.id !== storeId) throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   return value;
 }
 export async function listPublicOffers(
@@ -111,5 +115,9 @@ export async function listPublicOffers(
   const url = endpoint(baseUrl, "/v1/public/stores/" + encodeURIComponent(storeId) + "/offers");
   if (options.cursor) url.searchParams.set("cursor", options.cursor);
   if (options.limit) url.searchParams.set("limit", String(options.limit));
-  return readPage(await ownerRead(url, options.signal), isOffer);
+  const page = readPage(await ownerRead(url, options.signal), isOffer);
+  if (page.items.some((offer) => offer.storeId !== storeId)) {
+    throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  }
+  return page;
 }

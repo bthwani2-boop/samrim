@@ -110,6 +110,18 @@ test("Offer reads preserve integer YER prices and reject drafts or forged availa
   }
 });
 
+test("a public Store response cannot cross the requested Store or city scope", async () => {
+  await withFetch(async () => json({ ...store, id: "market-aden" }),
+    () => rejectsAs(() => getPublicStore(base, store.id), 502, "OWNER_RESPONSE_INVALID"));
+  await withFetch(async () => json({ items: [{ ...store, cityId: "aden" }], revision: 1 }),
+    () => rejectsAs(() => listPublicStores(base, "sanaa"), 502, "OWNER_RESPONSE_INVALID"));
+});
+
+test("an Offer page cannot inject another Store's Offers into the selected Store", async () => {
+  await withFetch(async () => json({ items: [offer, { ...offer, id: "other-offer", storeId: "market-aden" }], revision: 1 }),
+    () => rejectsAs(() => listPublicOffers(base, store.id), 502, "OWNER_RESPONSE_INVALID"));
+});
+
 test("owner request carries the caller AbortSignal instead of starting an unrelated session", async () => {
   const controller = new AbortController();
   await withFetch(async (_url, options) => {
