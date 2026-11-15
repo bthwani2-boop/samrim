@@ -357,6 +357,56 @@ func TestIsolatedRealIdentityAndDshAvailability(t *testing.T) {
 	if code, _ := request(http.MethodGet, admission.AccessToken, nil); code != http.StatusUnauthorized {
 		t.Fatalf("revoked newly-issued Merchant bearer retained DSH Store authority: %d", code)
 	}
+
+	// Re-enter using the same verified Customer identity. Identity must rotate
+	// Merchant credentials, not reuse a logged-out bearer or grant Store rights
+	// to the Customer session. DSH must re-check the current role and owner.
+	rotateMerchant := func() string {
+		t.Helper()
+		reentry, e := http.NewRequestWithContext(ctx, http.MethodPost, identityURL+"/v1/actors/me/merchant-session", nil)
+		if e != nil {
+			t.Fatal(e)
+		}
+		reentry.Header.Set("Authorization", "Bearer "+tokenCustomer)
+		response, e := (&http.Client{Timeout: time.Second}).Do(reentry)
+		if e != nil {
+			t.Fatal(e)
+		}
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("verified Customer Merchant re-entry denied: %d", response.StatusCode)
+		}
+		var next struct {
+			AccessToken string `json:"accessToken"`
+		}
+		if e = json.NewDecoder(response.Body).Decode(&next); e != nil || len(next.AccessToken) != 43 {
+			t.Fatalf("Merchant re-entry returned invalid bearer: %v", e)
+		}
+		return next.AccessToken
+	}
+	firstReentry := rotateMerchant()
+	if firstReentry == admission.AccessToken {
+		t.Fatal("Identity reused a revoked Merchant credential")
+	}
+	if code, _ := request(http.MethodGet, firstReentry, nil); code != http.StatusOK {
+		t.Fatalf("rotated Merchant bearer did not regain independently owned Store: %d", code)
+	}
+	secondReentry := rotateMerchant()
+	if secondReentry == firstReentry {
+		t.Fatal("Merchant session re-entry did not rotate credential")
+	}
+	if code, _ := request(http.MethodGet, firstReentry, nil); code != http.StatusUnauthorized {
+		t.Fatalf("previous Merchant bearer remained valid after rotation: %d", code)
+	}
+	if code, _ := request(http.MethodGet, secondReentry, nil); code != http.StatusOK {
+		t.Fatalf("latest Merchant bearer lost current Store ownership: %d", code)
+	}
+	if code, _ := request(http.MethodGet, tokenCustomer, nil); code != http.StatusForbidden {
+		t.Fatalf("Customer bearer gained Store authority after Merchant session rotation: %d", code)
+	}
+	if code, _ := request(http.MethodGet, tokenB, nil); code != http.StatusForbidden {
+		t.Fatalf("unrelated Merchant gained Store authority during re-entry: %d", code)
+	}
 	var currentOwner, issuedRole string
 	if err = independent.QueryRowContext(ctx, "SELECT owner_actor_id FROM "+dshSchema+".stores WHERE id=$1", store).Scan(&currentOwner); err != nil {
 		t.Fatal(err)
