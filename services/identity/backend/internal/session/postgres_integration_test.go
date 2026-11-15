@@ -7,13 +7,16 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -78,6 +81,17 @@ func TestPostgresIdentitySessionReadback(t *testing.T) {
 	}
 	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(source), "__SCHEMA__", schema)); err != nil {
 		t.Fatal("synthetic Identity namespace bootstrap failed:", err)
+	}
+	permissionMigrationPath := os.Getenv("IDENTITY_OPERATOR_PERMISSION_MIGRATION_SQL_PATH")
+	if permissionMigrationPath == "" {
+		permissionMigrationPath = filepath.Join("..", "..", "..", "database", "migrations", "002_operator_permission_read.sql")
+	}
+	permissionMigration, err := os.ReadFile(permissionMigrationPath)
+	if err != nil {
+		t.Fatal("Identity effective permissions migration unavailable")
+	}
+	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(permissionMigration), "__SCHEMA__", schema)); err != nil {
+		t.Fatal("synthetic effective Operator permission bootstrap failed:", err)
 	}
 	// Keep test scope explicit. Only SQL identifiers derived from local random
 	// bytes are interpolated; all actor IDs, digests and values use binds.
@@ -173,5 +187,122 @@ func TestPostgresIdentitySessionReadback(t *testing.T) {
 	if _, err = independentlyScoped.Lookup(ctx, digestA); !errors.Is(err, ErrUnauthorized) {
 		t.Fatal("revoked session was visible from independent owner read")
 	}
+
+	// Confirm effective Operator permissions from the same persistent Identity
+	// owner. Role alone never grants operations, even for an active Operator.
+	exec("INSERT INTO "+actors+"(id,status) VALUES($1,'ACTIVE'),($2,'ACTIVE')", "identity-operator-a", "identity-operator-b")
+	exec("INSERT INTO "+roles+"(actor_id,role,status) VALUES($1,'operator','ACTIVE'),($2,'operator','ACTIVE')", "identity-operator-a", "identity-operator-b")
+	opA, digestOpA := issue("identity-operator-a", "operator")
+	opB, _ := issue("identity-operator-b", "operator")
+	permissions := qualify("operator_permissions")
+	exec("INSERT INTO "+permissions+"(actor_id,permission) VALUES($1,'operations'),($2,'marketing')",
+		"identity-operator-a", "identity-operator-b")
+	// Schema itself forbids silently treating a Customer as an Operator and
+	// rejects a scope outside the approved seven, even for a test fixture.
+	if _, e := db.ExecContext(ctx, "INSERT INTO "+permissions+"(actor_id,permission) VALUES($1,'operations')", "identity-testb"); e == nil {
+		t.Fatal("Identity SQL accepted an Operator permission on a Customer role")
+	}
+	if _, e := db.ExecContext(ctx, "INSERT INTO "+permissions+"(actor_id,permission) VALUES($1,'superuser')", "identity-operator-b"); e == nil {
+		t.Fatal("Identity SQL accepted an unapproved permission scope")
+	}
+	checkPermission := func(token, scope, actor string, wanted error) {
+		t.Helper()
+		principal, e := NewVerifier(reader).VerifyPermission(ctx, "Bearer "+token, scope)
+		if wanted != nil {
+			if !errors.Is(e, wanted) {
+				t.Fatalf("expected permission %s denial %v, got %#v %v", scope, wanted, principal, e)
+			}
+			return
+		}
+		if e != nil || principal.ActorID != actor || principal.Role != "operator" || !principal.ExpiresAt.After(time.Now()) {
+			t.Fatalf("expected canonical Operator %s permission %s, got %#v %v", actor, scope, principal, e)
+		}
+	}
+	checkPermission(opA, "operations", "identity-operator-a", nil)
+	checkPermission(opA, "finance", "", ErrForbidden)
+	checkPermission(opB, "operations", "", ErrForbidden)
+	checkPermission(opB, "marketing", "identity-operator-b", nil)
+	checkPermission(tokenB, "operations", "", ErrUnauthorized) // expired Customer session
+	// Real handler -> network socket -> canonical PostgreSQL on the isolated
+	// network, never an HTTP mock of the Identity service/owner.
+	server := httptest.NewServer(NewHandler(NewVerifier(reader)))
+	requestOp, err := http.NewRequestWithContext(ctx, "GET", server.URL+"/v1/operators/me/permissions/operations", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestOp.Header.Set("Authorization", "Bearer "+opA)
+	requestOp.Header.Set("X-Actor-ID", "identity-operator-b")
+	responseOp, err := server.Client().Do(requestOp)
+	if err != nil {
+		t.Fatal("isolated Identity HTTP read failed:", err)
+	}
+	if responseOp.StatusCode != 200 || responseOp.Header.Get("Cache-Control") != "no-store" {
+		_ = responseOp.Body.Close()
+		t.Fatal("Identity permission HTTP owner response not accepted")
+	}
+	var approved struct {
+		ActorID    string `json:"actorId"`
+		Permission string `json:"permission"`
+	}
+	if err = json.NewDecoder(responseOp.Body).Decode(&approved); err != nil {
+		_ = responseOp.Body.Close()
+		t.Fatal("Identity permission HTTP response decode failed:", err)
+	}
+	_ = responseOp.Body.Close()
+	server.Close()
+	if approved.ActorID != "identity-operator-a" || approved.Permission != "operations" {
+		t.Fatal("forged HTTP actor header influenced Identity permission result")
+	}
+	// Revocation is immediately visible even without role-version changes.
+	exec("UPDATE "+permissions+" SET state='REVOKED',updated_at=now() WHERE actor_id=$1 AND permission='operations'", "identity-operator-a")
+	checkPermission(opA, "operations", "", ErrForbidden)
+	checkPermission(opB, "marketing", "identity-operator-b", nil)
+	// Concurrent requests after a committed revocation must never leak A's
+	// earlier permission to B or return a stale cached approval to A.
+	var concurrency sync.WaitGroup
+	concurrentErrors := make(chan error, 20)
+	for i := 0; i < 20; i++ {
+		concurrency.Add(1)
+		go func(index int) {
+			defer concurrency.Done()
+			requestToken, scope, wantActor := opA, "operations", ""
+			var expectedErr error = ErrForbidden
+			if index%2 == 1 {
+				requestToken, scope, wantActor, expectedErr = opB, "marketing", "identity-operator-b", nil
+			}
+			got, e := NewVerifier(reader).VerifyPermission(ctx, "Bearer "+requestToken, scope)
+			if expectedErr != nil {
+				if !errors.Is(e, expectedErr) {
+					concurrentErrors <- fmt.Errorf("revoked permission visible on concurrent request: %v", e)
+				}
+			} else if e != nil || got.ActorID != wantActor {
+				concurrentErrors <- fmt.Errorf("cross-operator permission leak: %#v %v", got, e)
+			}
+		}(i)
+	}
+	concurrency.Wait()
+	close(concurrentErrors)
+	for e := range concurrentErrors {
+		t.Fatal(e)
+	}
+	if _, err = independentlyScoped.LookupPermission(ctx, digestOpA, "operations"); !errors.Is(err, ErrForbidden) {
+		t.Fatal("revoked permission not visible to independent Identity owner connection")
+	}
+	exec("UPDATE "+permissions+" SET state='ACTIVE',updated_at=now() WHERE actor_id=$1 AND permission='operations'", "identity-operator-a")
+	checkPermission(opA, "operations", "identity-operator-a", nil)
+	// A stale Operator role grant or actor security version fails closed.
+	exec("UPDATE "+roles+" SET version=version+1 WHERE actor_id=$1", "identity-operator-a")
+	checkPermission(opA, "operations", "", ErrUnauthorized)
+	exec("UPDATE "+roles+" SET version=1 WHERE actor_id=$1", "identity-operator-a")
+	exec("UPDATE "+actors+" SET auth_version=auth_version+1 WHERE id=$1", "identity-operator-a")
+	checkPermission(opA, "operations", "", ErrUnauthorized)
+	exec("UPDATE "+actors+" SET auth_version=1,status='SUSPENDED' WHERE id=$1", "identity-operator-a")
+	checkPermission(opA, "operations", "", ErrUnauthorized)
+	exec("UPDATE "+actors+" SET status='ACTIVE' WHERE id=$1", "identity-operator-a")
+	checkPermission(opA, "operations", "identity-operator-a", nil)
+	exec("UPDATE "+sessions+" SET revoked_at=now() WHERE token_digest=$1", digestOpA[:])
+	checkPermission(opA, "operations", "", ErrUnauthorized)
+	checkPermission(opB, "marketing", "identity-operator-b", nil)
+	fmt.Println("IDENTITY_OPERATOR_PERMISSION_POSTGRES_DURABLE_READBACK_PASS")
 	fmt.Println("IDENTITY_SESSION_POSTGRES_DURABLE_READBACK_PASS")
 }

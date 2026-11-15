@@ -1,19 +1,57 @@
 openapi: 3.1.0
 info:
   title: BThwani Identity API
-  version: 0.1.0
-  description: Internal Identity session verification (isolated development only). No token issuance, operator bootstrap, or production admission.
+  version: 0.2.0
+  description: Internal read-only Identity session and effective Operator permission verification for isolated development. No token issuance, administrative grant mutation, or production admission.
 paths:
   /v1/sessions/current:
     get:
       operationId: getVerifiedIdentitySession
-      summary: Read verified current Identity actor and exact active role
-      description: Opaque 256-bit bearer digest must match an unrevoked, unexpired canonical Identity session, active actor and role with matching authorization versions. No Store grants are implied.
+      summary: Read current verified Identity actor and active role
+      description: Verify opaque 256-bit bearer session against canonical active actor/role, issue time, expiry, revocation and authorization versions; role never implies a DSH Store grant or Operator permission.
       security:
         - OpaqueSession: []
       responses:
         '200':
-          description: Verified Identity principal, never a Store grant
+          description: Verified Identity principal only, never a Store grant
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Principal' }
+        '400':
+          description: Invalid body or query
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          description: No current valid Identity session
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Canonical Identity owner unavailable; fail closed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/operators/me/permissions/{permission}:
+    get:
+      operationId: getEffectiveOperatorPermission
+      summary: Read an explicit currently active Operator permission
+      description: Never grant from role=operator alone. Verify the bearer session, current actor/role standing and matching security versions, and an explicit active Identity-owned Operator permission in one repeatable-read database transaction. A finance workspace grant is not authorization to mutate the WLT ledger or reroute a beneficiary. No permission administration endpoint is exposed.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: permission
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [operations, partners, catalog, marketing, finance, hr, platform_policies]
+      responses:
+        '200':
+          description: The verified Operator currently holds this explicit permission
           headers:
             Cache-Control:
               schema: { type: string, const: no-store }
@@ -22,23 +60,34 @@ paths:
               schema:
                 type: object
                 additionalProperties: false
-                required: [actorId, role, sessionExpiresAt]
+                required: [actorId, permission]
                 properties:
                   actorId: { type: string, minLength: 1, maxLength: 128 }
-                  role: { type: string, enum: [customer, merchant, captain, operator] }
-                  sessionExpiresAt: { type: string, format: date-time }
+                  permission:
+                    type: string
+                    enum: [operations, partners, catalog, marketing, finance, hr, platform_policies]
         '400':
-          description: A body or query was supplied to a session-only read
+          description: Invalid query or body
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '401':
-          description: No valid current Identity session; no actor existence details
+          description: Missing, invalid, revoked, expired or stale session
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Active actor lacks this effective Operator permission
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Unknown or unapproved permission scope
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '503':
-          description: Identity owner cannot verify canonical session state; fail closed
+          description: Identity cannot verify its current owner state
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -47,11 +96,19 @@ components:
     OpaqueSession:
       type: http
       scheme: bearer
-      description: Identity-issued opaque high-entropy session secret; never a client-asserted actor/role header
+      description: Identity-issued opaque high-entropy session secret, never a client-asserted actor or role header
   schemas:
+    Principal:
+      type: object
+      additionalProperties: false
+      required: [actorId, role, sessionExpiresAt]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        role: { type: string, enum: [customer, merchant, captain, operator] }
+        sessionExpiresAt: { type: string, format: date-time }
     Error:
       type: object
       additionalProperties: false
       required: [error]
       properties:
-        error: { type: string, enum: [INVALID_REQUEST, UNAUTHORIZED, OWNER_UNAVAILABLE] }
+        error: { type: string, enum: [INVALID_REQUEST, UNAUTHORIZED, FORBIDDEN, OWNER_UNAVAILABLE, NOT_FOUND, METHOD_NOT_ALLOWED] }

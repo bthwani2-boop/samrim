@@ -13,7 +13,7 @@ func TestRepositoryRefusesUnsafeOwnerScopes(t *testing.T) {
 	if _, err := NewPostgresReader(nil, "identity_test_valid"); err == nil {
 		t.Fatal("nil canonical owner database accepted")
 	}
-	for _, schema := range []string{"", "identity_test_.evil", "identity_test_a;drop schema dsh", "Identity_TEST_A", "identity_test_a--", "identity_test_a\"", "identity_test_a\n", "identity_test_" + strings.Repeat("x", 65)} {
+	for _, schema := range []string{"", "identity_test_.evil", "identity_test_a;drop schema dsh", "Identity_TEST_A", "identity_test_a--", "identity_test_a\"", "identity_test_a\n", "identity_test_" + strings.Repeat("x", 65), "public", "dsh_test_agent02_valid", "identity_protected"} {
 		if _, err := NewPostgresReader(&sql.DB{}, schema); err == nil {
 			t.Errorf("unsafe schema identifier accepted: %q", schema)
 		}

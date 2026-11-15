@@ -60,10 +60,10 @@ func TestVerifierNoCrossActorCache(t *testing.T) {
 	second, b := testToken(12)
 	v := NewVerifier(readerFunc(func(_ context.Context, d [32]byte) (Principal, error) {
 		if d == a {
-			return Principal{ActorID: "actor-a", Role: "customer"}, nil
+			return Principal{ActorID: "actor-a", Role: "customer", ExpiresAt: time.Now().UTC().Add(time.Hour)}, nil
 		}
 		if d == b {
-			return Principal{ActorID: "actor-b", Role: "merchant"}, nil
+			return Principal{ActorID: "actor-b", Role: "merchant", ExpiresAt: time.Now().UTC().Add(time.Hour)}, nil
 		}
 		return Principal{}, ErrUnauthorized
 	}))
@@ -95,7 +95,7 @@ func TestCurrentSessionHTTPFailClosed(t *testing.T) {
 				if tt.readErr != nil {
 					return Principal{}, tt.readErr
 				}
-				return Principal{ActorID: "synthetic-a", Role: "customer", ExpiresAt: time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)}, nil
+				return Principal{ActorID: "synthetic-a", Role: "customer", ExpiresAt: time.Now().UTC().Add(time.Hour)}, nil
 			}))
 			request := httptest.NewRequest(tt.method, tt.path, nil)
 			if tt.authorization != "" {
@@ -120,6 +120,34 @@ func TestCurrentSessionHTTPFailClosed(t *testing.T) {
 			}
 			if recorder.Header().Get("Access-Control-Allow-Origin") != "" {
 				t.Fatal("internal token check must not permit browser CORS")
+			}
+		})
+	}
+}
+
+func TestSessionReaderCannotApproveExpiredOrMalformedPrincipal(t *testing.T) {
+	token, _ := testToken(79)
+	cases := []struct {
+		name   string
+		actor  string
+		role   string
+		expiry time.Time
+	}{
+		{"expired", "actor-a", "merchant", time.Now().UTC().Add(-time.Minute)},
+		{"missing expiry", "actor-a", "merchant", time.Time{}},
+		{"unknown role", "actor-a", "superuser", time.Now().UTC().Add(time.Hour)},
+		{"missing actor", "", "merchant", time.Now().UTC().Add(time.Hour)},
+		{"control character in actor", "actor-a\nother", "merchant", time.Now().UTC().Add(time.Hour)},
+		{"oversized actor", strings.Repeat("a", 129), "merchant", time.Now().UTC().Add(time.Hour)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			reader := readerFunc(func(context.Context, [32]byte) (Principal, error) {
+				return Principal{ActorID: tc.actor, Role: tc.role, ExpiresAt: tc.expiry}, nil
+			})
+			_, err := NewVerifier(reader).Verify(context.Background(), "Bearer "+token)
+			if !errors.Is(err, ErrUnauthorized) {
+				t.Fatalf("unsafe source principal accepted: %v", err)
 			}
 		})
 	}
