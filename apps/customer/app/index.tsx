@@ -1,20 +1,10 @@
-import { type Href, Link } from "expo-router";
+import { Redirect } from "expo-router";
 import type { Metadata } from "expo-router/server";
 
 export function generateMetadata(): Metadata {
-  return { title: "بثواني — العميل", description: "بثواني، تجربة العميل على الويب والأجهزة." };
+  return { title: "متاجر بثواني — العميل", description: "استعراض المتاجر والعروض المنشورة في بثواني." };
 }
 
-import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
-import { Stage4Preview } from "@bthwani/tamagui-config/preview";
-
-export default function FoundationHome() {
-  const { theme } = useMobileAppearance();
-  return (
-    <Stage4Preview
-      title="بثواني — العميل"
-      healthLink={<><Link href={"/stores" as Href} style={{ color: theme.interactiveText, fontSize: 18 }}>استعراض متاجر بثواني</Link><Link href="/health" style={{ color: theme.interactiveText, fontSize: 18 }}>فتح صفحة اختبار الملاحة</Link></>}
-      labLink={<><Link href="/lab" style={{ color: theme.interactiveText, fontSize: 18 }}>فتح مختبر مكونات Tamagui</Link><Link href={{ pathname: "/lab", params: { renderer: "universal" } }} style={{ color: theme.interactiveText, fontSize: 18 }}>مقارنة Expo UI Universal</Link></>}
-    />
-  );
+export default function CustomerHome() {
+  return <Redirect href="/stores" />;
 }

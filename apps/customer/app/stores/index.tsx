@@ -63,7 +63,7 @@ export default function PublicStoresScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
       <ScrollView contentContainerStyle={{ padding: 18, gap: 14, maxWidth: 800, width: "100%", alignSelf: "center" }}>
-        <Link href="/" style={{ color: theme.interactiveText }}>الرئيسية</Link>
+        {__DEV__ ? <Link href={"/foundation" as Href} style={{ color: theme.interactiveText }}>مختبر الواجهة</Link> : null}
         <Text accessibilityRole="header" style={{ ...textStyle, fontSize: 26, fontWeight: "700" }}>متاجر بثواني</Text>
         <Text style={{ ...textStyle, color: theme.colorSecondary }}>البيانات المنشورة فقط من خدمة المتاجر. عرض المتجر لا يعني إمكانية إتمام الطلب.</Text>
         <Text accessibilityRole="text" style={textStyle}>رمز مدينة الخدمة</Text>
