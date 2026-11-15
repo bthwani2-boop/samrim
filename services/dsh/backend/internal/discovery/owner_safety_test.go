@@ -1,6 +1,8 @@
 package discovery
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"strings"
 	"testing"
@@ -23,6 +25,34 @@ func TestSchemaIdentifierRejectsSQLInjectionAndCrossSchemaLookup(t *testing.T) {
 		if _, err := New(nil, schema); err == nil {
 			t.Errorf("unsafe schema %q accepted", schema)
 		}
+	}
+}
+
+func TestMigrationDeniedOutsideIsolatedDSHOwner(t *testing.T) {
+	// A public Go entrypoint must not rely solely on cmd/dsh flags for isolation.
+	db, err := sql.Open("postgres", "host=127.0.0.1 port=1 user=unused dbname=unused sslmode=disable connect_timeout=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, tc := range []struct {
+		schema, enabled string
+	}{
+		{"public", "true"},
+		{"dsh", "true"},
+		{"identity_test_fixture", "true"},
+		{"dsh_test_fixture", "false"},
+	} {
+		t.Run(tc.schema+"_"+tc.enabled, func(t *testing.T) {
+			t.Setenv("BTHWANI_ISOLATED_TEST_MODE", tc.enabled)
+			owner, err := New(db, tc.schema)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := owner.Migrate(context.Background(), []byte("CREATE TABLE __SCHEMA__.synthetic(id int)")); err == nil || !strings.Contains(err.Error(), "isolated DSH migration") {
+				t.Fatalf("unauthorized migration must fail before SQL execution, got %v", err)
+			}
+		})
 	}
 }
 

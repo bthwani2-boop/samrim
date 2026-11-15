@@ -44,6 +44,10 @@ func OpenFromEnvironment() (*sql.DB, error) {
 	return sql.Open("postgres", u.String())
 }
 func (o *Owner) Migrate(ctx context.Context, source []byte) error {
+	if o == nil || o.DB == nil || !identifier.MatchString(o.Schema) ||
+		os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" || !strings.HasPrefix(o.Schema, "dsh_test_") {
+		return errors.New("isolated DSH migration required")
+	}
 	sqlText := strings.ReplaceAll(string(source), "__SCHEMA__", o.Schema)
 	if strings.Contains(sqlText, "__SCHEMA__") {
 		return errors.New("unresolved schema marker")
