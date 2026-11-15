@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: BThwani Identity API
   version: 0.2.0
-  description: Internal Identity session verification, authenticated revocation, and effective Operator permission reads for isolated development. No token issuance, administrative grant mutation, or production admission.
+  description: Isolated Identity session verification and logout, explicit Operator permission reads, and verified Customer-to-Merchant role admission with one new role-scoped bearer. No first-factor verification provider, Operator bootstrap, protected grant mutation, or production admission.
 paths:
   /v1/sessions/current:
     get:
@@ -59,6 +59,47 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '503':
           description: Canonical Identity writer unavailable; no success is claimed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/actors/me/merchant-role:
+    post:
+      operationId: admitVerifiedCurrentCustomerAsMerchant
+      summary: Admit a currently verified Customer as a Merchant without assigning a Store
+      description: Requires an active Identity Customer bearer and verified_at from the canonical Identity actor. Serializes actor and role creation in PostgreSQL and returns exactly one new short-lived Merchant bearer on first admission. Already-provisioned, disabled or suspended Merchant roles may not self-reactivate. This is not an initial authentication factor, a Store grant, or Operator admission. Development-only synthetic namespaces.
+      security:
+        - OpaqueSession: []
+      responses:
+        '201':
+          description: One new Merchant role and role-scoped Identity session, with no Store rights
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MerchantAdmission' }
+        '400':
+          description: Query parameters, request body or streaming payload rejected
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          description: Missing, invalid, revoked, expired, wrong-role or stale Customer bearer
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Current Customer lacks a recorded Identity verification event
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Merchant role already provisioned, including disabled or suspended; never reactivated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Identity canonical owner unavailable or verification migration not admitted
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -133,9 +174,16 @@ components:
         actorId: { type: string, minLength: 1, maxLength: 128 }
         role: { type: string, enum: [customer, merchant, captain, operator] }
         sessionExpiresAt: { type: string, format: date-time }
+    MerchantAdmission:
+      type: object
+      additionalProperties: false
+      required: [accessToken, sessionExpiresAt]
+      properties:
+        accessToken: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+        sessionExpiresAt: { type: string, format: date-time }
     Error:
       type: object
       additionalProperties: false
       required: [error]
       properties:
-        error: { type: string, enum: [INVALID_REQUEST, UNAUTHORIZED, FORBIDDEN, OWNER_UNAVAILABLE, NOT_FOUND, METHOD_NOT_ALLOWED] }
+        error: { type: string, enum: [INVALID_REQUEST, UNAUTHORIZED, FORBIDDEN, VERIFICATION_REQUIRED, ALREADY_PROVISIONED, OWNER_UNAVAILABLE, NOT_FOUND, METHOD_NOT_ALLOWED] }

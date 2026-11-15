@@ -28,8 +28,9 @@ func allowedDevelopmentListen(address, isolatedMode, containerMode, schema strin
 }
 
 func main() {
-	// This initial verifier is isolated development only; there is no live
-	// issuer, WebAuthn admission or authenticated DSH gateway yet.
+	// Isolated development only. Direct role-scoped Merchant issuance requires
+	// an already verified Customer session; there is no first-factor login,
+	// WebAuthn Operator admission or authenticated DSH gateway yet.
 	schema := os.Getenv("IDENTITY_DB_SCHEMA")
 	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" ||
 		!session.IsIsolatedTestSchema(schema) {

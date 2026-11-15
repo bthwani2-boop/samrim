@@ -24,21 +24,26 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	const permissionPath = "/v1/operators/me/permissions/"
 	isSession := r.URL.Path == "/v1/sessions/current"
+	isMerchantAdmission := r.URL.Path == "/v1/actors/me/merchant-role"
 	permission := ""
 	if strings.HasPrefix(r.URL.Path, permissionPath) {
 		permission = strings.TrimPrefix(r.URL.Path, permissionPath)
 	}
-	if !isSession && !isOperatorPermission(permission) {
+	if !isSession && !isMerchantAdmission && !isOperatorPermission(permission) {
 		respond(w, http.StatusNotFound, map[string]string{"error": "NOT_FOUND"})
 		return
 	}
 	logout := isSession && r.Method == http.MethodDelete
-	if isSession {
+	switch {
+	case isSession:
 		w.Header().Set("Allow", "GET, DELETE")
-	} else {
+	case isMerchantAdmission:
+		w.Header().Set("Allow", "POST")
+	default:
 		w.Header().Set("Allow", "GET")
 	}
-	if r.Method != http.MethodGet && !logout {
+	if (isMerchantAdmission && r.Method != http.MethodPost) ||
+		(!isMerchantAdmission && r.Method != http.MethodGet && !logout) {
 		respond(w, http.StatusMethodNotAllowed, map[string]string{"error": "METHOD_NOT_ALLOWED"})
 		return
 	}
@@ -61,8 +66,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var principal Principal
+	var admission MerchantAdmission
 	var err error
-	if logout {
+	if isMerchantAdmission {
+		admission, err = h.verifier.AdmitMerchant(ctx, authorizations[0])
+	} else if logout {
 		err = h.verifier.Revoke(ctx, authorizations[0])
 	} else if isSession {
 		principal, err = h.verifier.Verify(ctx, authorizations[0])
@@ -74,6 +82,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusUnauthorized, map[string]string{"error": "UNAUTHORIZED"})
 		return
 	}
+	if errors.Is(err, ErrMerchantAlreadyProvisioned) {
+		respond(w, http.StatusConflict, map[string]string{"error": "ALREADY_PROVISIONED"})
+		return
+	}
+	if errors.Is(err, ErrVerificationRequired) {
+		respond(w, http.StatusForbidden, map[string]string{"error": "VERIFICATION_REQUIRED"})
+		return
+	}
 	if errors.Is(err, ErrForbidden) {
 		respond(w, http.StatusForbidden, map[string]string{"error": "FORBIDDEN"})
 		return
@@ -82,7 +98,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusServiceUnavailable, map[string]string{"error": "OWNER_UNAVAILABLE"})
 		return
 	}
-	if logout {
+	if isMerchantAdmission {
+		respond(w, http.StatusCreated, admission)
+	} else if logout {
 		w.WriteHeader(http.StatusNoContent)
 	} else if isSession {
 		respond(w, http.StatusOK, principal)
