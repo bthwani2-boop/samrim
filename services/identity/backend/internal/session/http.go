@@ -47,12 +47,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusServiceUnavailable, map[string]string{"error": "OWNER_UNAVAILABLE"})
 		return
 	}
+	// Header.Get silently selects one value when multiple Authorization headers
+	// arrive. Refuse ambiguous credentials before making any owner read.
+	authorizations := r.Header.Values("Authorization")
+	if len(authorizations) != 1 {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="identity"`)
+		respond(w, http.StatusUnauthorized, map[string]string{"error": "UNAUTHORIZED"})
+		return
+	}
 	var principal Principal
 	var err error
 	if isSession {
-		principal, err = h.verifier.Verify(ctx, r.Header.Get("Authorization"))
+		principal, err = h.verifier.Verify(ctx, authorizations[0])
 	} else {
-		principal, err = h.verifier.VerifyPermission(ctx, r.Header.Get("Authorization"), permission)
+		principal, err = h.verifier.VerifyPermission(ctx, authorizations[0], permission)
 	}
 	if errors.Is(err, ErrUnauthorized) {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="identity"`)

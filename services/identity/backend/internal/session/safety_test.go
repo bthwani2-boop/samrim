@@ -54,3 +54,32 @@ func TestSessionEndpointRejectsBodyAndQuery(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionAndPermissionRejectDuplicateAuthorization(t *testing.T) {
+	token, _ := testToken(62)
+	reader := permissionReaderFunc{
+		lookup: func(context.Context, [32]byte) (Principal, error) {
+			t.Fatal("ambiguous Authorization reached session owner")
+			return Principal{}, nil
+		},
+		permission: func(context.Context, [32]byte, string) (Principal, error) {
+			t.Fatal("ambiguous Authorization reached permission owner")
+			return Principal{}, nil
+		},
+	}
+	for _, path := range []string{
+		"/v1/sessions/current",
+		"/v1/operators/me/permissions/operations",
+	} {
+		t.Run(path, func(t *testing.T) {
+			request := httptest.NewRequest("GET", path, nil)
+			request.Header.Add("Authorization", "Bearer "+token)
+			request.Header.Add("Authorization", "Bearer "+token)
+			response := httptest.NewRecorder()
+			NewHandler(NewVerifier(reader)).ServeHTTP(response, request)
+			if response.Code != 401 || response.Header().Get("WWW-Authenticate") == "" {
+				t.Fatalf("duplicate bearer must fail 401: %d %s", response.Code, response.Body.String())
+			}
+		})
+	}
+}

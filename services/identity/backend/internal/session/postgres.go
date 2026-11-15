@@ -15,8 +15,15 @@ type PostgresReader struct {
 	schema string
 }
 
+// IsIsolatedTestSchema is the single canonical validation shared by the
+// development listener and the PostgreSQL owner. No protected namespace is valid.
+func IsIsolatedTestSchema(schema string) bool {
+	return schemaRule.MatchString(schema) && strings.HasPrefix(schema, "identity_test_") &&
+		len(schema) > len("identity_test_")
+}
+
 func NewPostgresReader(db *sql.DB, schema string) (*PostgresReader, error) {
-	if db == nil || !schemaRule.MatchString(schema) || !strings.HasPrefix(schema, "identity_test_") || len(schema) <= len("identity_test_") {
+	if db == nil || !IsIsolatedTestSchema(schema) {
 		return nil, errors.New("invalid Identity owner data source")
 	}
 	return &PostgresReader{db: db, schema: schema}, nil

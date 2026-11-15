@@ -7,19 +7,32 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/session"
 	_ "github.com/lib/pq"
 )
 
+// An exposed container listener is only valid for the synthetic namespace
+// and an explicit Docker-mode opt-in. Local development remains loopback-only.
+func allowedDevelopmentListen(address, isolatedMode, containerMode, schema string) bool {
+	if isolatedMode != "true" || !session.IsIsolatedTestSchema(schema) {
+		return false
+	}
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return false
+	}
+	return host == "127.0.0.1" ||
+		(host == "0.0.0.0" && port == "3302" && containerMode == "true")
+}
+
 func main() {
 	// This initial verifier is isolated development only; there is no live
 	// issuer, WebAuthn admission or authenticated DSH gateway yet.
 	schema := os.Getenv("IDENTITY_DB_SCHEMA")
 	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" ||
-		!strings.HasPrefix(schema, "identity_test_") {
+		!session.IsIsolatedTestSchema(schema) {
 		log.Fatal("Identity verifier denied outside isolated synthetic development")
 	}
 	databaseURL := os.Getenv("IDENTITY_TEST_DATABASE_URL")
@@ -30,9 +43,10 @@ func main() {
 	if address == "" {
 		address = "127.0.0.1:3302"
 	}
-	host, _, err := net.SplitHostPort(address)
-	if err != nil || host != "127.0.0.1" {
-		log.Fatal("Identity development listener must bind IPv4 loopback only")
+	if !allowedDevelopmentListen(address,
+		os.Getenv("BTHWANI_ISOLATED_TEST_MODE"),
+		os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE"), schema) {
+		log.Fatal("Identity development listener requires loopback or explicitly isolated Docker")
 	}
 
 	db, err := sql.Open("postgres", databaseURL)
