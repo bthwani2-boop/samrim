@@ -40,3 +40,39 @@ paths:
           content:
             application/json:
               schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+  /v1/actors/me/merchant-session:
+    post:
+      operationId: resumeVerifiedCurrentCustomerMerchantSession
+      summary: Rotate an already-active Merchant session using the same verified Customer principal
+      description: A verified current Customer bearer for an actor with existing ACTIVE Merchant role may rotate into a new role-scoped Merchant session. All earlier Merchant sessions for the actor are revoked atomically with the new digest-only 256-bit bearer. Does not create, reactivate or grant a role or Store. The first factor and verified Customer proof must pre-exist in canonical Identity.
+      security:
+        - OpaqueSession: []
+      responses:
+        '200':
+          description: New Merchant bearer for the same already-active role; all prior Merchant credentials revoked
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/MerchantAdmission' }
+        '400':
+          description: Request body or query rejected
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '401':
+          description: Customer bearer invalid, revoked, wrong-role or stale
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '403':
+          description: Customer verification missing/future or Merchant role missing/suspended/disabled
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '503':
+          description: Canonical Identity owner unavailable; no credential returned
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }

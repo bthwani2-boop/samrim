@@ -25,11 +25,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	const permissionPath = "/v1/operators/me/permissions/"
 	isSession := r.URL.Path == "/v1/sessions/current"
 	isMerchantAdmission := r.URL.Path == "/v1/actors/me/merchant-role"
+	isMerchantReentry := r.URL.Path == "/v1/actors/me/merchant-session"
 	permission := ""
 	if strings.HasPrefix(r.URL.Path, permissionPath) {
 		permission = strings.TrimPrefix(r.URL.Path, permissionPath)
 	}
-	if !isSession && !isMerchantAdmission && !isOperatorPermission(permission) {
+	if !isSession && !isMerchantAdmission && !isMerchantReentry && !isOperatorPermission(permission) {
 		respond(w, http.StatusNotFound, map[string]string{"error": "NOT_FOUND"})
 		return
 	}
@@ -37,13 +38,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case isSession:
 		w.Header().Set("Allow", "GET, DELETE")
-	case isMerchantAdmission:
+	case isMerchantAdmission || isMerchantReentry:
 		w.Header().Set("Allow", "POST")
 	default:
 		w.Header().Set("Allow", "GET")
 	}
-	if (isMerchantAdmission && r.Method != http.MethodPost) ||
-		(!isMerchantAdmission && r.Method != http.MethodGet && !logout) {
+	if ((isMerchantAdmission || isMerchantReentry) && r.Method != http.MethodPost) ||
+		(!isMerchantAdmission && !isMerchantReentry && r.Method != http.MethodGet && !logout) {
 		respond(w, http.StatusMethodNotAllowed, map[string]string{"error": "METHOD_NOT_ALLOWED"})
 		return
 	}
@@ -70,6 +71,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 	if isMerchantAdmission {
 		admission, err = h.verifier.AdmitMerchant(ctx, authorizations[0])
+	} else if isMerchantReentry {
+		admission, err = h.verifier.ResumeMerchant(ctx, authorizations[0])
 	} else if logout {
 		err = h.verifier.Revoke(ctx, authorizations[0])
 	} else if isSession {
@@ -80,6 +83,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, ErrUnauthorized) {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="identity"`)
 		respond(w, http.StatusUnauthorized, map[string]string{"error": "UNAUTHORIZED"})
+		return
+	}
+	if errors.Is(err, ErrMerchantNotActive) {
+		respond(w, http.StatusForbidden, map[string]string{"error": "MERCHANT_NOT_ACTIVE"})
 		return
 	}
 	if errors.Is(err, ErrMerchantAlreadyProvisioned) {
@@ -100,6 +107,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if isMerchantAdmission {
 		respond(w, http.StatusCreated, admission)
+	} else if isMerchantReentry {
+		respond(w, http.StatusOK, admission)
 	} else if logout {
 		w.WriteHeader(http.StatusNoContent)
 	} else if isSession {

@@ -28,6 +28,29 @@ type MerchantAdmitter interface {
 	AdmitMerchant(context.Context, [32]byte) (MerchantAdmission, error)
 }
 
+// MerchantSessionResumer lets an already verified Customer obtain a fresh
+// Merchant credential only when the same actor already has ACTIVE standing.
+type MerchantSessionResumer interface {
+	ResumeMerchant(context.Context, [32]byte) (MerchantAdmission, error)
+}
+
+var ErrMerchantNotActive = errors.New("active merchant role unavailable")
+
+func (v *Verifier) ResumeMerchant(ctx context.Context, authorization string) (MerchantAdmission, error) {
+	digest, err := bearerDigest(authorization)
+	if err != nil {
+		return MerchantAdmission{}, err
+	}
+	if v == nil || v.reader == nil {
+		return MerchantAdmission{}, errors.New("identity merchant session owner unavailable")
+	}
+	owner, ok := v.reader.(MerchantSessionResumer)
+	if !ok {
+		return MerchantAdmission{}, errors.New("identity merchant session writer unavailable")
+	}
+	return owner.ResumeMerchant(ctx, digest)
+}
+
 func (v *Verifier) AdmitMerchant(ctx context.Context, authorization string) (MerchantAdmission, error) {
 	digest, err := bearerDigest(authorization)
 	if err != nil {
@@ -91,15 +114,74 @@ func (r *PostgresReader) AdmitMerchant(ctx context.Context, sourceDigest [32]byt
 		return MerchantAdmission{}, err
 	}
 
+	return issueMerchantSessionTx(ctx, tx, actorID, actorVersion, merchantRoleVersion)
+}
+
+// ResumeMerchant serializes all session rotation for one verified actor.
+// A disabled/suspended/absent role cannot self-reactivate; the previous
+// Merchant bearer is revoked atomically with issuance of its replacement.
+// The original Customer credential and all non-Merchant roles stay untouched.
+func (r *PostgresReader) ResumeMerchant(ctx context.Context, sourceDigest [32]byte) (MerchantAdmission, error) {
+	tx, err := r.begin(ctx, false)
+	if err != nil {
+		return MerchantAdmission{}, err
+	}
+	defer tx.Rollback()
+	var actorID string
+	var actorVersion int64
+	var verified bool
+	err = tx.QueryRowContext(ctx, `SELECT a.id,a.auth_version,
+        a.verified_at IS NOT NULL AND a.verified_at<=CURRENT_TIMESTAMP
+        FROM auth_sessions AS s
+        JOIN actors AS a ON a.id=s.actor_id
+        JOIN actor_roles AS ar ON ar.actor_id=s.actor_id AND ar.role=s.role
+        WHERE s.token_digest=$1 AND s.role='customer'
+          AND s.revoked_at IS NULL
+          AND s.issued_at<=CURRENT_TIMESTAMP AND s.expires_at>CURRENT_TIMESTAMP
+          AND a.status='ACTIVE' AND ar.status='ACTIVE'
+          AND s.actor_version=a.auth_version AND s.role_version=ar.version
+        FOR UPDATE OF a, ar, s`, sourceDigest[:]).Scan(&actorID, &actorVersion, &verified)
+	if errors.Is(err, sql.ErrNoRows) {
+		return MerchantAdmission{}, ErrUnauthorized
+	}
+	if err != nil {
+		return MerchantAdmission{}, err
+	}
+	if !verified {
+		return MerchantAdmission{}, ErrVerificationRequired
+	}
+	var merchantRoleVersion int64
+	err = tx.QueryRowContext(ctx, `SELECT version FROM actor_roles
+        WHERE actor_id=$1 AND role='merchant' AND status='ACTIVE'
+        FOR UPDATE`, actorID).Scan(&merchantRoleVersion)
+	if errors.Is(err, sql.ErrNoRows) {
+		return MerchantAdmission{}, ErrMerchantNotActive
+	}
+	if err != nil {
+		return MerchantAdmission{}, err
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE auth_sessions
+        SET revoked_at=clock_timestamp()
+        WHERE actor_id=$1 AND role='merchant' AND revoked_at IS NULL`, actorID)
+	if err != nil {
+		return MerchantAdmission{}, err
+	}
+	return issueMerchantSessionTx(ctx, tx, actorID, actorVersion, merchantRoleVersion)
+}
+
+// One writer shared by initial direct admission and existing role re-entry.
+// The caller owns the transaction and actor/role locks. This routine commits
+// only after the digest is persisted, and returns raw credentials only once.
+func issueMerchantSessionTx(ctx context.Context, tx *sql.Tx, actorID string, actorVersion, merchantRoleVersion int64) (MerchantAdmission, error) {
 	var secret [32]byte
-	if _, err = rand.Read(secret[:]); err != nil {
+	if _, err := rand.Read(secret[:]); err != nil {
 		return MerchantAdmission{}, err
 	}
 	digest := sha256.Sum256(secret[:])
 	var expiry time.Time
-	err = tx.QueryRowContext(ctx, `INSERT INTO auth_sessions
+	err := tx.QueryRowContext(ctx, `INSERT INTO auth_sessions
         (token_digest,actor_id,role,actor_version,role_version,issued_at,expires_at)
-        VALUES ($1,$2,'merchant',$3,$4,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP+interval '30 minutes')
+        VALUES ($1,$2,'merchant',$3,$4,clock_timestamp(),clock_timestamp()+interval '30 minutes')
         RETURNING expires_at`, digest[:], actorID, actorVersion, merchantRoleVersion).
 		Scan(&expiry)
 	if err != nil {

@@ -67,6 +67,30 @@ func verifyMerchantAdmissionIntegration(
 		}
 		return result{status: response.StatusCode, body: admission}
 	}
+	resume := func(token string) result {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+"/v1/actors/me/merchant-session", nil)
+		if err != nil {
+			return result{err: err}
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("X-Actor-ID", "unrelated-actor")
+		response, err := server.Client().Do(req)
+		if err != nil {
+			return result{err: err}
+		}
+		defer response.Body.Close()
+		if response.Header.Get("Cache-Control") != "no-store" ||
+			response.Header.Get("Access-Control-Allow-Origin") != "" {
+			return result{err: errors.New("reentry exposed cache or cross-origin credentials")}
+		}
+		var admission MerchantAdmission
+		if response.StatusCode == http.StatusOK {
+			if err = json.NewDecoder(response.Body).Decode(&admission); err != nil {
+				return result{err: err}
+			}
+		}
+		return result{status: response.StatusCode, body: admission}
+	}
 	readSession := func(token string) (Principal, int, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/v1/sessions/current", nil)
 		if err != nil {
@@ -86,6 +110,18 @@ func verifyMerchantAdmissionIntegration(
 		return p, response.StatusCode, err
 	}
 
+	if got := resume(unverifiedToken); got.err != nil || got.status != http.StatusForbidden {
+		t.Fatalf("unverified Customer resumed Merchant: status=%d err=%v", got.status, got.err)
+	}
+	if got := resume(priorToken); got.err != nil || got.status != http.StatusForbidden {
+		t.Fatalf("suspended Merchant role resumed: status=%d err=%v", got.status, got.err)
+	}
+	if got := resume(futureToken); got.err != nil || got.status != http.StatusForbidden {
+		t.Fatalf("future-dated verification resumed Merchant: status=%d err=%v", got.status, got.err)
+	}
+	if got := resume(selfToken); got.err != nil || got.status != http.StatusForbidden {
+		t.Fatalf("absent Merchant role resumed: status=%d err=%v", got.status, got.err)
+	}
 	if got := post(unverifiedToken); got.err != nil || got.status != http.StatusForbidden {
 		t.Fatalf("unverified Customer was admitted: status=%d err=%v", got.status, got.err)
 	}
@@ -111,6 +147,9 @@ func verifyMerchantAdmissionIntegration(
 	if got := post(admitted.body.AccessToken); got.err != nil || got.status != http.StatusUnauthorized {
 		t.Fatalf("Merchant role token registered a second Merchant role: status=%d err=%v", got.status, got.err)
 	}
+	if got := resume(admitted.body.AccessToken); got.err != nil || got.status != http.StatusUnauthorized {
+		t.Fatalf("Merchant bearer bypassed Customer re-entry proof: status=%d err=%v", got.status, got.err)
+	}
 	merchant, status, err := readSession(admitted.body.AccessToken)
 	if err != nil || status != http.StatusOK || merchant.ActorID != "customer-self" || merchant.Role != "merchant" {
 		t.Fatalf("new Merchant token does not identify same canonical actor: %#v %d %v", merchant, status, err)
@@ -132,13 +171,41 @@ func verifyMerchantAdmissionIntegration(
 	if err != nil || real.ActorID != "customer-self" || real.Role != "merchant" {
 		t.Fatalf("new role-bound session not durable from independent DB: %#v %v", real, err)
 	}
+	// Re-enter an already ACTIVE Merchant using only a fresh verified Customer
+	// credential. Previous Merchant secrets must become invalid in the SAME
+	// PostgreSQL commit as their successor, even after a lost first response.
+	reentered := resume(selfToken)
+	if reentered.err != nil || reentered.status != http.StatusOK || reentered.body.AccessToken == admitted.body.AccessToken {
+		t.Fatalf("verified Merchant re-entry failed: status=%d err=%v", reentered.status, reentered.err)
+	}
+	if _, status, err := readSession(admitted.body.AccessToken); err != nil || status != http.StatusUnauthorized {
+		t.Fatalf("old Merchant token survived rotation: status=%d err=%v", status, err)
+	}
+	reenteredPrincipal, status, err := readSession(reentered.body.AccessToken)
+	if err != nil || status != http.StatusOK || reenteredPrincipal.ActorID != "customer-self" || reenteredPrincipal.Role != "merchant" {
+		t.Fatalf("reentry credential was not the same Identity actor: %#v %d %v", reenteredPrincipal, status, err)
+	}
+	reentryRaw, err := base64.RawURLEncoding.DecodeString(reentered.body.AccessToken)
+	if err != nil || len(reentryRaw) != 32 {
+		t.Fatal("new Merchant re-entry session secret is malformed")
+	}
+	reentryDigest := sha256.Sum256(reentryRaw)
+	if p, err := scopedIndependent.Lookup(ctx, reentryDigest); err != nil || p.ActorID != "customer-self" || p.Role != "merchant" {
+		t.Fatalf("Merchant re-entry not durable at independent Identity reader: %#v %v", p, err)
+	}
+	var activeSessions int
+	if err := independent.QueryRowContext(ctx,
+		"SELECT count(*) FROM "+sessions+" WHERE actor_id=$1 AND role='merchant' AND revoked_at IS NULL", "customer-self").
+		Scan(&activeSessions); err != nil || activeSessions != 1 {
+		t.Fatalf("Merchant re-entry did not rotate credentials atomically: active=%d err=%v", activeSessions, err)
+	}
 	if retry := post(selfToken); retry.err != nil || retry.status != http.StatusConflict {
 		t.Fatalf("direct registration replay created duplicate role: %d %v", retry.status, retry.err)
 	}
 	// A current authenticated logout invalidates only the newly issued
 	// Merchant token, not the original Customer credential.
 	logoutRequest, _ := http.NewRequestWithContext(ctx, http.MethodDelete, server.URL+"/v1/sessions/current", nil)
-	logoutRequest.Header.Set("Authorization", "Bearer "+admitted.body.AccessToken)
+	logoutRequest.Header.Set("Authorization", "Bearer "+reentered.body.AccessToken)
 	logoutResponse, err := server.Client().Do(logoutRequest)
 	if err != nil {
 		t.Fatal(err)
@@ -147,12 +214,55 @@ func verifyMerchantAdmissionIntegration(
 	if logoutResponse.StatusCode != http.StatusNoContent {
 		t.Fatalf("new Merchant token could not be logged out: %d", logoutResponse.StatusCode)
 	}
-	if _, status, err = readSession(admitted.body.AccessToken); err != nil || status != http.StatusUnauthorized {
-		t.Fatalf("Merchant token still valid after logout: %d %v", status, err)
+	if _, status, err = readSession(reentered.body.AccessToken); err != nil || status != http.StatusUnauthorized {
+		t.Fatalf("Merchant re-entry token still valid after logout: %d %v", status, err)
 	}
 	if _, status, err = readSession(selfToken); err != nil || status != http.StatusOK {
 		t.Fatalf("Customer session was invalidated by Merchant logout: %d %v", status, err)
 	}
+
+	// Concurrent re-entry must serialize all role credential rotations.
+	// Multiple callers may receive a token, but only ONE Merchant token can
+	// remain current after every transaction commits.
+	races := make(chan result, 12)
+	var rotationGroup sync.WaitGroup
+	for i := 0; i < 12; i++ {
+		rotationGroup.Add(1)
+		go func() {
+			defer rotationGroup.Done()
+			races <- resume(selfToken)
+		}()
+	}
+	rotationGroup.Wait()
+	close(races)
+	lastCandidates := make([]string, 0, 12)
+	for candidate := range races {
+		if candidate.err != nil || candidate.status != http.StatusOK {
+			t.Fatalf("concurrent Merchant re-entry failed closed: status=%d err=%v", candidate.status, candidate.err)
+		}
+		lastCandidates = append(lastCandidates, candidate.body.AccessToken)
+	}
+	if err := independent.QueryRowContext(ctx,
+		"SELECT count(*) FROM "+sessions+" WHERE actor_id=$1 AND role='merchant' AND revoked_at IS NULL", "customer-self").
+		Scan(&activeSessions); err != nil || activeSessions != 1 {
+		t.Fatalf("concurrent Merchant re-entry left %d active credentials: %v", activeSessions, err)
+	}
+	currentCredentials := 0
+	for _, token := range lastCandidates {
+		identity, status, err := readSession(token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status == http.StatusOK && identity.ActorID == "customer-self" && identity.Role == "merchant" {
+			currentCredentials++
+		} else if status != http.StatusUnauthorized {
+			t.Fatalf("concurrent re-entry returned unrelated/invalid status=%d actor=%s", status, identity.ActorID)
+		}
+	}
+	if currentCredentials != 1 {
+		t.Fatalf("concurrent Merchant re-entry left %d accepted credentials, want one", currentCredentials)
+	}
+	fmt.Println("IDENTITY_MERCHANT_SESSION_ROTATION_DURABLE_RACE_PASS")
 
 	exec("UPDATE "+actors+" SET auth_version=auth_version+1 WHERE id=$1", "customer-stale")
 	if got := post(staleToken); got.err != nil || got.status != http.StatusUnauthorized {

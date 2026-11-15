@@ -8,6 +8,8 @@ paths:
     $ref: './paths/session.yaml#/paths/~1v1~1sessions~1current'
   /v1/actors/me/merchant-role:
     $ref: './paths/managed-enrollment-auth.yaml#/paths/~1v1~1actors~1me~1merchant-role'
+  /v1/actors/me/merchant-session:
+    $ref: './paths/managed-enrollment-auth.yaml#/paths/~1v1~1actors~1me~1merchant-session'
   /v1/operators/me/permissions/{permission}:
     $ref: './paths/internal-actor-administration.yaml#/paths/~1v1~1operators~1me~1permissions~1{permission}'
 components:
@@ -37,4 +39,4 @@ components:
       additionalProperties: false
       required: [error]
       properties:
-        error: { type: string, enum: [INVALID_REQUEST, UNAUTHORIZED, FORBIDDEN, VERIFICATION_REQUIRED, ALREADY_PROVISIONED, OWNER_UNAVAILABLE, NOT_FOUND, METHOD_NOT_ALLOWED] }
+        error: { type: string, enum: [INVALID_REQUEST, UNAUTHORIZED, FORBIDDEN, VERIFICATION_REQUIRED, ALREADY_PROVISIONED, MERCHANT_NOT_ACTIVE, OWNER_UNAVAILABLE, NOT_FOUND, METHOD_NOT_ALLOWED] }
