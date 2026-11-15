@@ -32,8 +32,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusNotFound, map[string]string{"error": "NOT_FOUND"})
 		return
 	}
-	w.Header().Set("Allow", "GET")
-	if r.Method != http.MethodGet {
+	logout := isSession && r.Method == http.MethodDelete
+	if isSession {
+		w.Header().Set("Allow", "GET, DELETE")
+	} else {
+		w.Header().Set("Allow", "GET")
+	}
+	if r.Method != http.MethodGet && !logout {
 		respond(w, http.StatusMethodNotAllowed, map[string]string{"error": "METHOD_NOT_ALLOWED"})
 		return
 	}
@@ -57,7 +62,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	var principal Principal
 	var err error
-	if isSession {
+	if logout {
+		err = h.verifier.Revoke(ctx, authorizations[0])
+	} else if isSession {
 		principal, err = h.verifier.Verify(ctx, authorizations[0])
 	} else {
 		principal, err = h.verifier.VerifyPermission(ctx, authorizations[0], permission)
@@ -75,7 +82,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusServiceUnavailable, map[string]string{"error": "OWNER_UNAVAILABLE"})
 		return
 	}
-	if isSession {
+	if logout {
+		w.WriteHeader(http.StatusNoContent)
+	} else if isSession {
 		respond(w, http.StatusOK, principal)
 	} else {
 		respond(w, http.StatusOK, struct {

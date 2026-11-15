@@ -70,6 +70,6 @@ func main() {
 		ReadHeaderTimeout: 4 * time.Second, WriteTimeout: 6 * time.Second,
 		IdleTimeout: 20 * time.Second, MaxHeaderBytes: 8192,
 	}
-	log.Printf("Identity isolated verifier listening on loopback (no production admission)")
+	log.Printf("Identity isolated session verifier listening (no production admission)")
 	log.Fatal(server.ListenAndServe())
 }

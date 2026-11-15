@@ -33,6 +33,13 @@ type PermissionReader interface {
 	LookupPermission(context.Context, [32]byte, string) (Principal, error)
 }
 
+// SessionRevoker is the canonical Identity writer for authenticated logout.
+// It must atomically check current actor, role, security versions and the
+// active credential before making a durable revocation.
+type SessionRevoker interface {
+	Revoke(context.Context, [32]byte) error
+}
+
 type Verifier struct{ reader Reader }
 
 func NewVerifier(reader Reader) *Verifier { return &Verifier{reader: reader} }
@@ -85,6 +92,23 @@ func validPrincipal(p Principal) bool {
 	default:
 		return false
 	}
+}
+
+// Revoke never trusts a caller's actor or role, nor performs a separate
+// read-then-write authorization check that could race a role revocation.
+func (v *Verifier) Revoke(ctx context.Context, authorization string) error {
+	digest, err := bearerDigest(authorization)
+	if err != nil {
+		return err
+	}
+	if v == nil || v.reader == nil {
+		return errors.New("identity session owner unavailable")
+	}
+	owner, ok := v.reader.(SessionRevoker)
+	if !ok {
+		return errors.New("identity session revocation owner unavailable")
+	}
+	return owner.Revoke(ctx, digest)
 }
 
 func isOperatorPermission(permission string) bool {

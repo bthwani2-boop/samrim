@@ -29,13 +29,25 @@ func NewPostgresReader(db *sql.DB, schema string) (*PostgresReader, error) {
 	return &PostgresReader{db: db, schema: schema}, nil
 }
 
-// One read-only Repeatable Read transaction owns the session and effective
-// permission decision, so role/grant state cannot be mixed across snapshots.
+// Read-only Repeatable Read owns session and effective permission decisions;
+// credential revocation uses an atomic conditional write without an older
+// read snapshot, so concurrent logout retries cannot succeed twice.
 func (r *PostgresReader) beginRead(ctx context.Context) (*sql.Tx, error) {
+	return r.begin(ctx, true)
+}
+
+func (r *PostgresReader) begin(ctx context.Context, readOnly bool) (*sql.Tx, error) {
 	if r == nil || r.db == nil {
 		return nil, errors.New("identity database not connected")
 	}
-	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+	isolation := sql.LevelRepeatableRead
+	if !readOnly {
+		// SQL UPDATE is the single atomic authorization/write boundary.
+		// ReadCommitted permits concurrent losers to observe the committed
+		// revoked_at value instead of emitting a serialization error.
+		isolation = sql.LevelReadCommitted
+	}
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: readOnly, Isolation: isolation})
 	if err != nil {
 		return nil, err
 	}
@@ -50,6 +62,37 @@ func (r *PostgresReader) beginRead(ctx context.Context) (*sql.Tx, error) {
 	}
 	return tx, nil
 }
+
+// Revoke is the sole Identity owner write for this bounded logout endpoint.
+// One conditional SQL update guarantees that a suspended/stale/revoked bearer
+// cannot act, and it cannot revoke another actor's credential.
+func (r *PostgresReader) Revoke(ctx context.Context, digest [32]byte) error {
+	tx, err := r.begin(ctx, false)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE auth_sessions AS s
+        SET revoked_at=CURRENT_TIMESTAMP
+        FROM actors AS a, actor_roles AS ar
+        WHERE s.token_digest=$1 AND s.revoked_at IS NULL
+          AND s.issued_at<=CURRENT_TIMESTAMP AND s.expires_at>CURRENT_TIMESTAMP
+          AND s.actor_id=a.id AND a.status='ACTIVE' AND s.actor_version=a.auth_version
+          AND ar.actor_id=s.actor_id AND ar.role=s.role
+          AND ar.status='ACTIVE' AND s.role_version=ar.version`, digest[:])
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return ErrUnauthorized
+	}
+	return tx.Commit()
+}
+
 func lookupPrincipal(ctx context.Context, tx *sql.Tx, digest [32]byte) (Principal, error) {
 	const query = `SELECT a.id,s.role,s.expires_at
         FROM auth_sessions s

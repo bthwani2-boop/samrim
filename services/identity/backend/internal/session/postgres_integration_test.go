@@ -303,6 +303,113 @@ func TestPostgresIdentitySessionReadback(t *testing.T) {
 	exec("UPDATE "+sessions+" SET revoked_at=now() WHERE token_digest=$1", digestOpA[:])
 	checkPermission(opA, "operations", "", ErrUnauthorized)
 	checkPermission(opB, "marketing", "identity-operator-b", nil)
+
+	// The authenticated HTTP logout must persist a token-digest-only revoke.
+	// The account used is synthetic; no password, root account or real token
+	// is created. Check the result through a separate canonical DB connection.
+	logoutToken, logoutDigest := issue("identity-testa", "merchant")
+	logoutServer := httptest.NewServer(NewHandler(NewVerifier(reader)))
+	defer logoutServer.Close()
+	doLogout := func(token string) (int, error) {
+		request, e := http.NewRequestWithContext(ctx, http.MethodDelete, logoutServer.URL+"/v1/sessions/current", nil)
+		if e != nil {
+			return 0, e
+		}
+		request.Header.Set("Authorization", "Bearer "+token)
+		request.Header.Set("X-Actor-ID", "identity-operator-a")
+		response, e := logoutServer.Client().Do(request)
+		if e != nil {
+			return 0, e
+		}
+		defer response.Body.Close()
+		if response.Header.Get("Cache-Control") != "no-store" {
+			return response.StatusCode, errors.New("logout is cacheable")
+		}
+		return response.StatusCode, nil
+	}
+	code, e := doLogout(logoutToken)
+	if e != nil || code != http.StatusNoContent {
+		t.Fatalf("canonical HTTP logout status %d: %v", code, e)
+	}
+	if _, e = independentlyScoped.Lookup(ctx, logoutDigest); !errors.Is(e, ErrUnauthorized) {
+		t.Fatalf("revoked session still visible from independent Identity owner: %v", e)
+	}
+	var durablyRevoked bool
+	if e = independent.QueryRowContext(ctx,
+		"SELECT revoked_at IS NOT NULL FROM "+sessions+" WHERE token_digest=$1", logoutDigest[:]).
+		Scan(&durablyRevoked); e != nil || !durablyRevoked {
+		t.Fatalf("Identity logout mutation not durable: revoked=%t err=%v", durablyRevoked, e)
+	}
+	if code, e = doLogout(logoutToken); e != nil || code != http.StatusUnauthorized {
+		t.Fatalf("revoked bearer replay was accepted: %d %v", code, e)
+	}
+	// A suspended or reactivated actor cannot use a stale credential to
+	// perform a logout mutation. The rejected request must not change storage.
+	staleToken, staleDigest := issue("identity-testa", "merchant")
+	exec("UPDATE "+actors+" SET status='SUSPENDED',auth_version=auth_version+1 WHERE id=$1", "identity-testa")
+	if code, e = doLogout(staleToken); e != nil || code != http.StatusUnauthorized {
+		t.Fatalf("suspended actor modified Identity session: %d %v", code, e)
+	}
+	var wasUnrevoked bool
+	if e = independent.QueryRowContext(ctx,
+		"SELECT revoked_at IS NULL FROM "+sessions+" WHERE token_digest=$1", staleDigest[:]).
+		Scan(&wasUnrevoked); e != nil || !wasUnrevoked {
+		t.Fatalf("rejected logout wrote owner state: unchanged=%t err=%v", wasUnrevoked, e)
+	}
+	exec("UPDATE "+actors+" SET status='ACTIVE' WHERE id=$1", "identity-testa")
+	if code, e = doLogout(staleToken); e != nil || code != http.StatusUnauthorized {
+		t.Fatalf("reactivated actor reused stale security version: %d %v", code, e)
+	}
+	// New synthetic role/session versions are not fabricated to bypass this
+	// denial; another active Operator must remain unaffected.
+	checkPermission(opB, "marketing", "identity-operator-b", nil)
+	// Use a separate synthetic actor for the race: never reset a suspended
+	// actor's security version merely to make a test pass.
+	exec("INSERT INTO "+actors+"(id,status) VALUES($1,'ACTIVE')", "identity-test-race")
+	exec("INSERT INTO "+roles+"(actor_id,role,status) VALUES($1,'merchant','ACTIVE')", "identity-test-race")
+	// Race 12 logout requests for one credential. Exactly one may commit;
+	// every later retry must fail closed without touching another actor.
+	raceToken, raceDigest := issue("identity-test-race", "merchant")
+	raceStatuses := make(chan int, 12)
+	raceErrors := make(chan error, 12)
+	var raceGroup sync.WaitGroup
+	for i := 0; i < 12; i++ {
+		raceGroup.Add(1)
+		go func() {
+			defer raceGroup.Done()
+			status, callErr := doLogout(raceToken)
+			if callErr != nil {
+				raceErrors <- callErr
+			} else {
+				raceStatuses <- status
+			}
+		}()
+	}
+	raceGroup.Wait()
+	close(raceStatuses)
+	close(raceErrors)
+	for raceErr := range raceErrors {
+		t.Fatal("concurrent owner logout HTTP error:", raceErr)
+	}
+	committed := 0
+	for status := range raceStatuses {
+		switch status {
+		case http.StatusNoContent:
+			committed++
+		case http.StatusUnauthorized:
+			// Expected: loser of one owner-atomic credential revocation.
+		default:
+			t.Fatalf("unexpected concurrent logout status: %d", status)
+		}
+	}
+	if committed != 1 {
+		t.Fatalf("concurrent logouts committed %d times; expected exactly 1", committed)
+	}
+	if _, e = independentlyScoped.Lookup(ctx, raceDigest); !errors.Is(e, ErrUnauthorized) {
+		t.Fatalf("concurrently revoked token still usable: %v", e)
+	}
+	checkPermission(opB, "marketing", "identity-operator-b", nil)
+	fmt.Println("IDENTITY_SESSION_HTTP_LOGOUT_DURABLE_AND_RACE_PASS")
 	fmt.Println("IDENTITY_OPERATOR_PERMISSION_POSTGRES_DURABLE_READBACK_PASS")
 	fmt.Println("IDENTITY_SESSION_POSTGRES_DURABLE_READBACK_PASS")
 }

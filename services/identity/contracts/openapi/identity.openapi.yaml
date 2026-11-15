@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: BThwani Identity API
   version: 0.2.0
-  description: Internal read-only Identity session and effective Operator permission verification for isolated development. No token issuance, administrative grant mutation, or production admission.
+  description: Internal Identity session verification, authenticated revocation, and effective Operator permission reads for isolated development. No token issuance, administrative grant mutation, or production admission.
 paths:
   /v1/sessions/current:
     get:
@@ -32,6 +32,33 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '503':
           description: Canonical Identity owner unavailable; fail closed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    delete:
+      operationId: revokeCurrentIdentitySession
+      summary: Revoke the current authenticated Identity session
+      description: Atomically revoke only the presented active bearer digest through the canonical Identity owner. A stale, suspended, revoked, future-issued or expired session cannot log out another actor or change a different session. This does not revoke the entire session family or authorize admission.
+      security:
+        - OpaqueSession: []
+      responses:
+        '204':
+          description: The current bearer was durably revoked, with no response body
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+        '400':
+          description: Invalid body or query
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          description: The bearer is absent, malformed or no longer current; no mutation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Canonical Identity writer unavailable; no success is claimed
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
