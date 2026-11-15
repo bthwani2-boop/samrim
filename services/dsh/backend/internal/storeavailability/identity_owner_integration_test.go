@@ -78,7 +78,7 @@ func TestIsolatedRealIdentityAndDshAvailability(t *testing.T) {
 	// Each proof gets a fresh synthetic DSH schema. The actual DSH process
 	// intentionally accepts only explicitly opted-in dsh_test_* namespaces.
 	dshSchema := "dsh_test_a02_" + suffix
-	for _, f := range []string{"001_public_discovery.sql", "002_store_orderability.sql", "003_service_city_timezone.sql", "004_store_availability_city_limits.sql"} {
+	for _, f := range []string{"001_public_discovery.sql", "002_store_orderability.sql", "003_service_city_timezone.sql", "004_store_availability_city_limits.sql", "005_store_operational_policy_commands.sql"} {
 		source, e := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", f))
 		if e != nil {
 			t.Fatal(e)
@@ -194,7 +194,7 @@ func TestIsolatedRealIdentityAndDshAvailability(t *testing.T) {
 	}
 	dshServer := httptest.NewServer(mux)
 	defer dshServer.Close()
-	cityPolicyHandler, err := NewCityPolicyHandler(identity, policies)
+	cityPolicyHandler, err := NewCityPolicyHandler(identity, policies, policies)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,6 +220,36 @@ func TestIsolatedRealIdentityAndDshAvailability(t *testing.T) {
 			t.Fatal(e)
 		}
 		return response.StatusCode, encoded.Bytes()
+	}
+	writeCityPolicy := func(token, cityID, opID string, expectedVersion int64, pause, prep int) (int, []byte) {
+		t.Helper()
+		payload, e := json.Marshal(map[string]any{
+			"operationId": opID, "expectedVersion": expectedVersion,
+			"maxPauseSeconds": pause, "maxPreparationMinutes": prep,
+			"reason": "Isolated policy via real Identity",
+		})
+		if e != nil {
+			t.Fatal(e)
+		}
+		req, e := http.NewRequestWithContext(ctx, http.MethodPatch,
+			cityPolicyServer.URL+"/v1/operators/cities/"+cityID+"/store-availability-policy", bytes.NewReader(payload))
+		if e != nil {
+			t.Fatal(e)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		response, e := cityPolicyServer.Client().Do(req)
+		if e != nil {
+			t.Fatal(e)
+		}
+		defer response.Body.Close()
+		var result bytes.Buffer
+		if _, e = result.ReadFrom(response.Body); e != nil {
+			t.Fatal(e)
+		}
+		return response.StatusCode, result.Bytes()
 	}
 	path := "/v1/stores/" + store + "/availability"
 	request := func(method, token string, payload []byte) (int, []byte) {
@@ -322,6 +352,39 @@ func TestIsolatedRealIdentityAndDshAvailability(t *testing.T) {
 			t.Fatalf("%s exposed unauthorized city policy: %d instead of %d", denied.name, code, denied.want)
 		}
 	}
+	// Only the real current Identity platform_policies grant may authorize
+	// the canonical DSH versioned policy writer, not Merchant or Customer.
+	policyOperationID := "a02-city-policy-" + suffix
+	for _, denied := range []struct {
+		name, token string
+		want        int
+	}{
+		{"Merchant", tokenA, http.StatusForbidden},
+		{"Customer", tokenCustomer, http.StatusForbidden},
+		{"no bearer", "", http.StatusUnauthorized},
+	} {
+		if code, _ := writeCityPolicy(denied.token, city, policyOperationID, 1, 2700, 60); code != denied.want {
+			t.Fatalf("%s wrote a DSH Operator policy: %d expected %d", denied.name, code, denied.want)
+		}
+	}
+	if code, result := writeCityPolicy(tokenOperator, city, policyOperationID, 1, 2700, 60); code != http.StatusOK || !bytes.Contains(result, []byte(`"replay":false`)) ||
+		!bytes.Contains(result, []byte(`"version":2`)) {
+		t.Fatalf("real Operator city policy writer denied: %d %s", code, result)
+	}
+	if code, result := writeCityPolicy(tokenOperator, city, policyOperationID, 1, 2700, 60); code != http.StatusOK || !bytes.Contains(result, []byte(`"replay":true`)) {
+		t.Fatalf("city policy replay was not idempotent: %d %s", code, result)
+	}
+	if code, _ := writeCityPolicy(tokenOperator, city, policyOperationID, 1, 2701, 60); code != http.StatusConflict {
+		t.Fatalf("reused city policy key accepted altered request: %d", code)
+	}
+	if code, _ := writeCityPolicy(tokenOperator, city, "a02-stale-policy-"+suffix, 1, 2700, 60); code != http.StatusConflict {
+		t.Fatalf("stale policy version silently overwrote current DSH policy: %d", code)
+	}
+	if code, result := readCityPolicy(tokenOperator, city); code != http.StatusOK ||
+		!bytes.Contains(result, []byte(`"version":2`)) ||
+		!bytes.Contains(result, []byte(`"maxPauseSeconds":2700`)) {
+		t.Fatalf("real DSH policy readback after write failed: %d %s", code, result)
+	}
 	if status, _ := request(http.MethodGet, tokenOperator, nil); status != http.StatusForbidden {
 		t.Fatalf("platform_policies grant revived revoked operations scope: %d", status)
 	}
@@ -333,6 +396,9 @@ func TestIsolatedRealIdentityAndDshAvailability(t *testing.T) {
 	}
 	if code, _ := readCityPolicy(tokenOperator, city); code != http.StatusForbidden {
 		t.Fatalf("revoked platform_policies grant still read DSH city policy: %d", code)
+	}
+	if code, _ := writeCityPolicy(tokenOperator, city, "a02-policy-denied-"+suffix, 2, 2700, 60); code != http.StatusForbidden {
+		t.Fatalf("revoked platform_policies grant still changed DSH city policy: %d", code)
 	}
 	if _, err = db.ExecContext(ctx, "UPDATE "+identitySchema+".auth_sessions SET revoked_at=now() WHERE token_digest=$1", digestA); err != nil {
 		t.Fatal(err)
@@ -378,6 +444,23 @@ func TestIsolatedRealIdentityAndDshAvailability(t *testing.T) {
 	if independentVersion != 2 || independentAudits != 1 || revokedPermissions != 1 || revokedPolicyPermissions != 1 || revokedSessions != 1 {
 		t.Fatalf("independent durable readback mismatch: version=%d audits=%d revokedGrants=%d revokedSessions=%d",
 			independentVersion, independentAudits, revokedPermissions, revokedSessions)
+	}
+	var policyVersion, policyAudits, policyCommands int
+	if err = independent.QueryRowContext(ctx,
+		"SELECT version FROM "+dshSchema+".store_operational_limits WHERE city_id=$1", city).Scan(&policyVersion); err != nil {
+		t.Fatal(err)
+	}
+	if err = independent.QueryRowContext(ctx,
+		"SELECT count(*) FROM "+dshSchema+".store_operational_limits_audit WHERE city_id=$1", city).Scan(&policyAudits); err != nil {
+		t.Fatal(err)
+	}
+	if err = independent.QueryRowContext(ctx,
+		"SELECT count(*) FROM "+dshSchema+".store_operational_policy_commands WHERE city_id=$1", city).Scan(&policyCommands); err != nil {
+		t.Fatal(err)
+	}
+	if policyVersion != 2 || policyAudits != 2 || policyCommands != 1 {
+		t.Fatalf("real Operator policy mutation duplicated durable rows: version=%d audits=%d commands=%d",
+			policyVersion, policyAudits, policyCommands)
 	}
 	// Use Identity's actual one-time Customer-to-Merchant issuer, not a
 	// test-manufactured Merchant token. Role admission must not mint DSH

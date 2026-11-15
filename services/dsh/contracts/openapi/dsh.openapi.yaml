@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: BThwani DSH API
   version: 0.1.0
-  description: DSH public discovery plus isolated-development authenticated Store operational availability and read-only Operator city policy. No policy writer, checkout or financial activation.
+  description: DSH public discovery plus isolated-development authenticated Store availability and versioned Operator city policy writer. No checkout or financial activation.
 paths:
   /health:
     $ref: './paths/runtime.yaml#/paths/~1health'
@@ -68,6 +68,23 @@ components:
         changedByActor: { type: string, minLength: 1, maxLength: 128 }
         changeReason: { type: string, minLength: 1, maxLength: 300 }
         updatedAt: { type: string, format: date-time }
+    CityStoreOperationalPolicyChange:
+      type: object
+      additionalProperties: false
+      required: [operationId, expectedVersion, maxPauseSeconds, maxPreparationMinutes, reason]
+      properties:
+        operationId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+        expectedVersion: { type: integer, minimum: 0, description: 0 only for deliberate first provisioning }
+        maxPauseSeconds: { type: integer, minimum: 0, maximum: 31536000 }
+        maxPreparationMinutes: { type: integer, minimum: 0, maximum: 1440 }
+        reason: { type: string, minLength: 1, maxLength: 300 }
+    CityStoreOperationalPolicyResult:
+      type: object
+      additionalProperties: false
+      required: [policy, replay]
+      properties:
+        policy: { $ref: '#/components/schemas/CityStoreOperationalPolicy' }
+        replay: { type: boolean }
     OperationalWeeklyWindow:
       type: object
       additionalProperties: false

@@ -58,7 +58,7 @@ func isolatedStoreAvailabilityHandler(db *sql.DB, schema string, public http.Han
 	if err != nil {
 		return nil, err
 	}
-	policyRead, err := storeavailability.NewCityPolicyHandler(identity, policies)
+	policyRead, err := storeavailability.NewCityPolicyHandler(identity, policies, policies)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +77,7 @@ func storeAvailabilityCORS(next http.Handler, origins map[string]bool) http.Hand
 }
 
 func storePolicyCORS(next http.Handler, origins map[string]bool) http.Handler {
-	return storeOperationalCORS(next, origins, false)
+	return storeOperationalCORS(next, origins, true)
 }
 
 func storeOperationalCORS(next http.Handler, origins map[string]bool, allowPatch bool) http.Handler {

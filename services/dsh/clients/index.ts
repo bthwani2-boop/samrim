@@ -172,7 +172,7 @@ function isStoreAvailability(value: unknown, storeId: string): value is StoreOpe
     typeof item.actingActorId === "string" && typeof item.reason === "string";
 }
 async function privateOwnerRequest(
-  baseUrl: string, path: string, bearer: string, method: "GET" | "PATCH", change?: StoreOperationalChange, signal?: AbortSignal,
+  baseUrl: string, path: string, bearer: string, method: "GET" | "PATCH", change?: StoreOperationalChange | CityStoreOperationalPolicyChange, signal?: AbortSignal,
 ): Promise<unknown> {
   // Only fixed owner-authored paths assembled by the public functions below
   // reach this uncached transport. A user cannot supply an arbitrary URL.
@@ -296,4 +296,48 @@ export async function getCityStoreOperationalPolicy(
   if (!isCityStoreOperationalPolicy(body, cityID)) throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
   return body;
+}
+
+export interface CityStoreOperationalPolicyChange {
+  operationId: string;
+  expectedVersion: number;
+  maxPauseSeconds: number;
+  maxPreparationMinutes: number;
+  reason: string;
+}
+export interface CityStoreOperationalPolicyResult {
+  policy: CityStoreOperationalPolicy;
+  replay: boolean;
+}
+/** A write can commit even when its transport response is lost. Keep the SAME
+ * operationId for canonical readback/replay, never blindly create a new key. */
+export async function replaceCityStoreOperationalPolicy(
+  baseUrl: string, cityID: string, bearer: string,
+  change: CityStoreOperationalPolicyChange, signal?: AbortSignal,
+): Promise<CityStoreOperationalPolicyResult> {
+  if (!/^[a-z0-9-]{1,64}$/.test(cityID)) throw new DshPublicError(0, "CITY_ID_INVALID");
+  if (!/^[A-Za-z0-9._-]{8,128}$/.test(change.operationId) ||
+    !Number.isSafeInteger(change.expectedVersion) || change.expectedVersion < 0 ||
+    !Number.isSafeInteger(change.maxPauseSeconds) || change.maxPauseSeconds < 0 ||
+    change.maxPauseSeconds > 31536000 ||
+    !Number.isSafeInteger(change.maxPreparationMinutes) || change.maxPreparationMinutes < 0 ||
+    change.maxPreparationMinutes > 1440 ||
+    typeof change.reason !== "string" || change.reason.trim().length < 1 ||
+    Array.from(change.reason).length > 300) {
+    throw new DshPublicError(400, "INVALID_OPERATIONAL_CHANGE");
+  }
+  const body = await privateOwnerRequest(baseUrl,
+    "/v1/operators/cities/" + encodeURIComponent(cityID) + "/store-availability-policy",
+    bearer, "PATCH", change, signal);
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
+  }
+  const result = body as Record<string, unknown>;
+  if (Object.keys(result).length !== 2 || !Object.hasOwn(result, "policy") ||
+    !Object.hasOwn(result, "replay") ||
+    typeof result.replay !== "boolean" || !isCityStoreOperationalPolicy(result.policy, cityID)) {
+    throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
+  }
+  if (signal?.aborted) throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN");
+  return result as unknown as CityStoreOperationalPolicyResult;
 }

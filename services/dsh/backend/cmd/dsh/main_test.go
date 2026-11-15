@@ -86,7 +86,7 @@ func TestOptInHandlerForwardsPublicReadsAndProtectsStoreMutation(t *testing.T) {
 		{"GET", "/v1/stores/store-1/availability", 401},
 		{"PATCH", "/v1/stores/store-1/availability", 401},
 		{"GET", "/v1/operators/cities/city-a/store-availability-policy", 401},
-		{"PATCH", "/v1/operators/cities/city-a/store-availability-policy", 405},
+		{"PATCH", "/v1/operators/cities/city-a/store-availability-policy", 401},
 	} {
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, nil))
@@ -167,7 +167,8 @@ func TestPrivatePolicyPreflightCannotAuthorizePolicyMutation(t *testing.T) {
 		want                 int
 	}{
 		{"approved read preflight", origin, "GET", http.StatusNoContent},
-		{"unapproved policy write preflight", origin, "PATCH", http.StatusForbidden},
+		{"approved scoped policy write preflight", origin, "PATCH", http.StatusNoContent},
+		{"unapproved policy delete preflight", origin, "DELETE", http.StatusForbidden},
 		{"unrelated origin", "http://evil.invalid", "GET", http.StatusForbidden},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -180,8 +181,8 @@ func TestPrivatePolicyPreflightCannotAuthorizePolicyMutation(t *testing.T) {
 			if rec.Code != tc.want {
 				t.Fatalf("%s returned %d expected %d", tc.name, rec.Code, tc.want)
 			}
-			if tc.want == http.StatusNoContent && rec.Header().Get("Access-Control-Allow-Methods") != "GET" {
-				t.Fatal("read-only policy preflight advertised a write method")
+			if tc.want == http.StatusNoContent && rec.Header().Get("Access-Control-Allow-Methods") != "GET, PATCH" {
+				t.Fatal("Operator policy preflight advertised unexpected methods")
 			}
 		})
 	}

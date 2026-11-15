@@ -1,4 +1,4 @@
-# DSH OpenAPI — public discovery and isolated Store/policy readback
+# DSH OpenAPI — public discovery and isolated Store/policy commands
 
 STATUS: CONTRACT_IN_PROGRESS
 SEMANTIC_OWNER: DSH
@@ -21,13 +21,17 @@ mode with a `dsh_test_*` schema and a loopback-only
 `DSH_LISTEN_ADDR=127.0.0.1:<port>` are explicitly selected.
 Cross-origin private requests only allow exact configured
 `DSH_PUBLIC_CORS_ORIGINS`; preflight never skips Identity checks.
-The fifth populated fragment, `paths/operational-policies.yaml`, exposes a
-**read-only** `GET /v1/operators/cities/{cityID}/store-availability-policy`.
-It requires an active Identity Operator session and the distinct
-`platform_policies` permission. The DSH policy reader returns only an
-explicitly stored, active city's versioned limits and accountable metadata;
-no default, Operator mutation, or production UI is activated. Its CORS
-preflight allows GET only. The documented policy writer remains unimplemented.
+The fifth populated fragment, `paths/operational-policies.yaml`, exposes
+`GET/PATCH /v1/operators/cities/{cityID}/store-availability-policy` only in the
+explicitly isolated synthetic DSH host. Both methods require the current
+Identity Operator session with the distinct `platform_policies` permission;
+`operations` is not interchangeable. Readback uses DSH's one versioned city
+policy source. A complete PATCH uses `expectedVersion` (0 only when
+deliberately provisioning), a stable `operationId`, immutable audit and the
+additive `005_store_operational_policy_commands.sql` idempotency ledger.
+An ambiguous outcome requires canonical readback and same-key replay.
+Missing policy never implies a default. This is not a production Operator UI,
+WLT writer, payment permission or production policy activation.
 
 A real current Identity verifier, DSH Store owner check, and active DSH policy must succeed;
 no production authenticated service, checkout, WLT, or user permission issuer

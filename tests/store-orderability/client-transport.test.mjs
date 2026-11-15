@@ -4,6 +4,7 @@ import {
   DshPublicError,
   getStoreOperationalAvailability,
   getCityStoreOperationalPolicy,
+  replaceCityStoreOperationalPolicy,
   updateStoreOperationalAvailability,
 } from "../../services/dsh/clients/index.ts";
 
@@ -292,4 +293,67 @@ test("private city policy read cannot display stale data after Operator account 
     getCityStoreOperationalPolicy(base, "city-a", "old-operator", controller.signal),
     (err) => err instanceof DshPublicError && err.code === "OWNER_RESPONSE_STALE",
   );
+});
+
+test("private city policy PATCH sends a complete versioned operation without cookies", async (t) => {
+  const policy = {
+    cityId: "city-a", version: 1, maxPauseSeconds: 0, maxPreparationMinutes: 0,
+    changedByActor: "operator-a", changeReason: "Set reviewed limits",
+    updatedAt: "2026-11-15T13:00:00Z",
+  };
+  const change = {
+    operationId: "policy-create-001", expectedVersion: 0,
+    maxPauseSeconds: 0, maxPreparationMinutes: 0, reason: "Set reviewed limits",
+  };
+  let count=0;
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    count++;
+    assert.equal(url, base + "/v1/operators/cities/city-a/store-availability-policy");
+    assert.equal(options.method, "PATCH");
+    assert.equal(options.headers.Authorization, "Bearer operator-a");
+    assert.equal(options.credentials, "omit");
+    assert.equal(options.cache, "no-store");
+    assert.equal(options.redirect, "error");
+    assert.deepEqual(JSON.parse(options.body), change);
+    return jsonResponse({ policy, replay: false });
+  });
+  assert.deepEqual(await replaceCityStoreOperationalPolicy(base, "city-a", "operator-a", change), {policy,replay:false});
+  assert.equal(count,1);
+});
+
+test("city policy PATCH transport ambiguity never claims the write was rolled back", async (t) => {
+  const change={operationId:"policy-create-001",expectedVersion:0,maxPauseSeconds:5,maxPreparationMinutes:0,reason:"Reviewed"};
+  t.mock.method(globalThis,"fetch",async()=>{ throw new Error("socket lost after commit"); });
+  await assert.rejects(
+    replaceCityStoreOperationalPolicy(base,"city-a","operator-a",change),
+    (e)=>e instanceof DshPublicError && e.code==="OPERATION_RESULT_UNKNOWN",
+  );
+});
+
+test("city policy PATCH rejects incomplete and oversized policies before network", async (t) => {
+  let calls=0;
+  t.mock.method(globalThis,"fetch",async()=>{ calls++; return jsonResponse({}); });
+  for(const change of [
+    {operationId:"policy-create-001",expectedVersion:0,maxPreparationMinutes:0,reason:"Reviewed"},
+    {operationId:"policy-create-001",expectedVersion:0,maxPauseSeconds:0,reason:"Reviewed"},
+    {operationId:"policy-create-001",maxPauseSeconds:0,maxPreparationMinutes:0,reason:"Reviewed"},
+    {operationId:"policy-create-001",expectedVersion:0,maxPauseSeconds:31536001,maxPreparationMinutes:0,reason:"Reviewed"},
+    {operationId:"policy-create-001",expectedVersion:0,maxPauseSeconds:0,maxPreparationMinutes:1441,reason:"Reviewed"},
+  ]){
+    await assert.rejects(replaceCityStoreOperationalPolicy(base,"city-a","operator-a",change),
+      (e)=>e instanceof DshPublicError && e.code==="INVALID_OPERATIONAL_CHANGE");
+  }
+  assert.equal(calls,0);
+});
+
+test("city policy PATCH late success is unknown after account switch", async (t) => {
+  const ctrl=new AbortController();
+  const change={operationId:"policy-create-001",expectedVersion:0,maxPauseSeconds:0,maxPreparationMinutes:0,reason:"Reviewed"};
+  t.mock.method(globalThis,"fetch",async()=>{
+    ctrl.abort();
+    return jsonResponse({policy:{cityId:"city-a",version:1,maxPauseSeconds:0,maxPreparationMinutes:0,
+      changedByActor:"operator-a",changeReason:"Reviewed",updatedAt:"2026-11-15T13:00:00Z"},replay:false});
+  });
+  await assert.rejects(replaceCityStoreOperationalPolicy(base,"city-a","operator-a",change,ctrl.signal),
+    (e)=>e instanceof DshPublicError && e.code==="OPERATION_RESULT_UNKNOWN");
 });
