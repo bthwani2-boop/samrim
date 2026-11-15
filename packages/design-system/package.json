@@ -3,87 +3,23 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "sideEffects": [
     "**/*.css"
   ],
-  "main": "src/index.ts",
-  "types": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./tokens": "./src/tokens/index.ts",
-    "./theme": "./src/theme/index.ts",
-    "./native": "./src/native/index.tsx",
+    "./theme": "./src/semantics/themes.ts",
     "./theme.css": "./theme.css",
-    "./web": "./src/web/index.ts",
-    "./web.css": "./web.css",
-    "./native/map": {
-      "types": "./src/native/map.tsx",
-      "node": "./src/native/map.web.tsx",
-      "react-native": "./src/native/map.tsx",
-      "browser": "./src/native/map.web.tsx",
-      "default": "./src/native/map.tsx"
-    },
-    "./native/conversation-voice-recorder": {
-      "types": "./src/native/conversation-voice-recorder.tsx",
-      "react-native": "./src/native/conversation-voice-recorder.tsx",
-      "default": "./src/native/conversation-voice-recorder.tsx"
-    },
-    "./native/conversation-private-media": {
-      "types": "./src/native/conversation-private-media.tsx",
-      "react-native": "./src/native/conversation-private-media.tsx",
-      "default": "./src/native/conversation-private-media.tsx"
-    }
+    "./web/css-projection": "./src/web/css-projection.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "theme:generate": "node --loader ./tools/ts-resolver.mjs tools/generate-theme-css.mjs",
-    "theme:check": "node --loader ./tools/ts-resolver.mjs tools/verify-theme-authority.mjs"
-  },
-  "dependencies": {
-    "@expo/material-symbols": "0.1.1",
-    "leaflet": "1.9.4"
-  },
-  "peerDependencies": {
-    "@expo/ui": "58.0.23",
-    "react": "19.3.0",
-    "react-native": "0.88.0",
-    "react-native-maps": "1.29.11",
-    "expo-audio": "58.0.10",
-    "expo-crypto": "58.0.7",
-    "expo-file-system": "58.0.11",
-    "expo-video": "58.0.12"
+    "theme:check": "node --loader ./tools/ts-resolver.mjs tools/generate-theme-css.mjs --check",
+    "theme:verify": "node --loader ./tools/ts-resolver.mjs tools/verify-theme-authority.mjs"
   },
   "devDependencies": {
-    "@expo/ui": "58.0.23",
-    "@types/leaflet": "1.9.21",
-    "@types/react": "19.3.0",
-    "react": "19.3.0",
-    "react-native": "0.88.0",
-    "react-native-maps": "1.29.11",
-    "typescript": "7.0.2",
-    "expo-audio": "58.0.10",
-    "expo-crypto": "58.0.7",
-    "expo-file-system": "58.0.11",
-    "expo-video": "58.0.12"
-  },
-  "peerDependenciesMeta": {
-    "@expo/ui": {
-      "optional": true
-    },
-    "react-native-maps": {
-      "optional": true
-    },
-    "expo-audio": {
-      "optional": true
-    },
-    "expo-crypto": {
-      "optional": true
-    },
-    "expo-file-system": {
-      "optional": true
-    },
-    "expo-video": {
-      "optional": true
-    }
+    "typescript": "7.0.2"
   }
 }

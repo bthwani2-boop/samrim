@@ -1,19 +1,16 @@
-# DSH Service
+# DSH — progressive development
 
-Purpose: canonical bounded-context owner for delivery, shopping, and commerce
-operational responsibilities assigned to DSH.
+STATUS: IMPLEMENTATION_IN_PROGRESS
+OWNER: DSH
+EXECUTION: IN_PROGRESS
 
-Boundary: DSH owns operational decisions, trusted service boundaries, and
-their readback. Apps own routing, navigation, composition, and presentation.
-Identity owns human identity and role trust; WLT owns financial truth.
+DSH owns Stores, catalog, Offers, authoritative prices, carts, Orders, serviceability and fulfillment. One Store/catalog/Order engine serves MARKETPLACE and DIRECT; no relation-specific duplicate writer. The single bounded employee-administration engine for BThwani staff and Merchant staff belongs here, with organizational isolation; Identity still owns accounts and platform permissions, WLT still owns money. The future Go location for that employee engine is `backend/internal/employees/` (not created by this scaffold).
 
-The backend source and project manifest are authoritative for the executable
-surface. Add a service-owned contract, durable data lane, or verification
-suite only when a live DSH responsibility requires it; a README is not a
-substitute for that responsibility.
+Current owner-local implementation (progressive development only; production remains blocked):
+- `clients/` — contract-bound public discovery reads and protected Store availability plus Operator city-policy GET/PATCH transport; no client is a canonical Store, policy, Order, price or financial writer.
+- `package.json` and `tsconfig.json` — exact-pinned TypeScript workspace tooling; exported discovery reads must match the current DSH owner contract.
+- `backend/` — current Go public Store/Offer discovery and Store availability logic with scoped tests; source presence alone does not certify every Identity, DSH or WLT integration scenario.
+- `contracts/openapi/` — one OpenAPI 3.1 DSH entrypoint containing bounded public Store/Offer discovery and isolated-test-only authenticated Store availability and city-policy GET/PATCH, mapped to `paths/store-access.yaml` and `paths/operational-policies.yaml`. Other groups are reserved, not implemented APIs. See the [source-pinned contract census](../../docs/reference/OPENAPI-DONOR-CONTRACT-INVENTORY.md).
+- `database/` — isolated synthetic development migrations, including additive DSH city-policy operation history in `005_store_operational_policy_commands.sql`. Protected historic schema upgrades, restore and real-user state require distinct authority and proof.
 
-The DSH-to-Identity base URL is deployment configuration, not request data.
-Local development and test environments allow only the canonical local Identity
-hosts (`identity`, loopback, and `localhost`). Staging and production must set
-`DSH_IDENTITY_API_ALLOWED_HOSTS` to a comma-separated list of exact authorized
-Identity hostnames; wildcards and arbitrary destinations are rejected.
+See [architecture](../../governance/architecture.md), [Store governance](../../governance/stores.md) and [employee governance](../../governance/hr.md). This README describes in-progress source, not production activation, complete journey acceptance, ledger authority or HR admission.

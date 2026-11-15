@@ -2,125 +2,193 @@ package storeavailability
 
 import (
 	"context"
-	"database/sql"
 	"errors"
+	"regexp"
 	"strings"
-
-	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
-	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
+	"time"
 )
 
 var (
-	ErrInvalidInput            = errors.New("Store operational availability input is invalid")
-	ErrPartnerSessionForbidden = errors.New("an active app-partner session is required")
-	ErrStoreAccessForbidden    = errors.New("Partner is not authorized to manage Store operations")
-	ErrOperatorNotActive       = errors.New("operator is not active")
+	ErrUnauthorized          = errors.New("UNAUTHENTICATED")
+	ErrIdentityUnavailable   = errors.New("IDENTITY_OWNER_UNAVAILABLE")
+	ErrForbidden             = errors.New("STORE_OPERATION_FORBIDDEN")
+	ErrStoreOwnerUnavailable = errors.New("STORE_OWNER_UNAVAILABLE")
+	ErrInvalidChange         = errors.New("INVALID_OPERATIONAL_CHANGE")
+	ErrPolicyUnavailable     = errors.New("OPERATIONAL_POLICY_UNAVAILABLE")
+	ErrPolicyVersionConflict = errors.New("OPERATIONAL_POLICY_VERSION_CONFLICT")
+	ErrVersionConflict       = errors.New("STORE_AVAILABILITY_VERSION_CONFLICT")
+	ErrOperationConflict     = errors.New("IDEMPOTENCY_KEY_REUSED")
+	ErrStoreMissing          = errors.New("STORE_NOT_FOUND")
+	ErrUnknownResult         = errors.New("OPERATION_RESULT_UNKNOWN")
 )
 
+type ActorRole string
+
+const (
+	MerchantRole ActorRole = "MERCHANT"
+	OperatorRole ActorRole = "OPERATOR"
+)
+
+type VerifiedActor struct {
+	Subject string
+	Role    ActorRole
+}
+type IdentitySessions interface {
+	// ResolveCurrentSession must contact Identity's current authoritative session
+	// state, never decode an unverified client-supplied actor header.
+	ResolveCurrentSession(context.Context, string) (VerifiedActor, error)
+	RequireOperatorPermission(context.Context, string, string, string) error
+}
+type StoreGrants interface {
+	// DSH checks current Store ownership or an accepted, nonrevoked store_operations grant.
+	RequireStoreAction(context.Context, string, string, string) error
+	// StoreTimezone is the approved DSH Store/City IANA zone; client must not choose it.
+	StoreTimezone(context.Context, string) (string, error)
+}
+type Limits struct {
+	MaxPause              time.Duration
+	MaxPreparationMinutes int
+	Version               int64
+}
+type PolicySource interface {
+	// Read only from current DSH Operator Policies, never from a UI default.
+	CurrentLimits(context.Context, string) (Limits, error)
+}
+type Snapshot struct {
+	StoreID            string         `json:"storeId"`
+	Timezone           string         `json:"timezone"`
+	Weekly             []WeeklyWindow `json:"weekly"`
+	PausedUntil        *time.Time     `json:"pausedUntil,omitempty"`
+	PreparationMinutes int            `json:"preparationMinutes"`
+	Version            int64          `json:"version"`
+	ActingActorID      string         `json:"actingActorId"`
+	Reason             string         `json:"reason"`
+}
+type Change struct {
+	StoreID            string
+	OperationID        string
+	ExpectedVersion    int64
+	Timezone           string
+	Weekly             []WeeklyWindow
+	PausedUntil        *time.Time
+	PreparationMinutes int
+	Reason             string
+}
+type AuthorizedChange struct {
+	Change
+	ActorID         string
+	AuthoritySource string
+	PolicyVersion   int64
+}
+type Repository interface {
+	Read(context.Context, string) (Snapshot, error)
+	ReadAuthorized(context.Context, string, string, string) (Snapshot, error)
+	Apply(context.Context, AuthorizedChange) (Snapshot, bool, error)
+}
+
 type Service struct {
-	identity *identityintegration.Client
-	db       *sql.DB
+	identity IdentitySessions
+	grants   StoreGrants
+	policies PolicySource
+	repo     Repository
+	now      func() time.Time
 }
 
-func New(identity *identityintegration.Client, db *sql.DB) (*Service, error) {
-	if identity == nil || db == nil {
-		return nil, errors.New("Store operational availability configuration is invalid")
-	}
-	return &Service{identity: identity, db: db}, nil
-}
+var operationIDRule = regexp.MustCompile(`^[A-Za-z0-9._-]{8,128}$`)
 
-func (s *Service) Read(ctx context.Context, storeID string) (postgres.StoreOperationalAvailability, error) {
-	storeID = strings.TrimSpace(storeID)
-	if storeID == "" {
-		return postgres.StoreOperationalAvailability{}, ErrInvalidInput
+func NewService(identity IdentitySessions, grants StoreGrants, policies PolicySource, repo Repository) (*Service, error) {
+	if identity == nil || grants == nil || policies == nil || repo == nil {
+		return nil, ErrUnauthorized
 	}
-	return postgres.ReadStoreOperationalAvailability(ctx, s.db, storeID)
+	return &Service{identity: identity, grants: grants, policies: policies, repo: repo, now: time.Now}, nil
 }
-
-func (s *Service) ReadForPartner(ctx context.Context, accessToken, storeID string) (postgres.StoreOperationalAvailability, error) {
-	identity, err := s.requirePartner(ctx, accessToken)
-	if err != nil {
-		return postgres.StoreOperationalAvailability{}, err
+func (s *Service) authorize(ctx context.Context, token, storeID string) (VerifiedActor, string, error) {
+	if strings.TrimSpace(token) == "" || strings.TrimSpace(storeID) == "" {
+		return VerifiedActor{}, "", ErrUnauthorized
 	}
-	storeID = strings.TrimSpace(storeID)
-	if storeID == "" {
-		return postgres.StoreOperationalAvailability{}, ErrInvalidInput
+	actor, err := s.identity.ResolveCurrentSession(ctx, token)
+	if errors.Is(err, ErrIdentityUnavailable) {
+		return VerifiedActor{}, "", ErrIdentityUnavailable
 	}
-	if _, _, err := postgres.AuthorizePartnerStoreAction(ctx, s.db, storeID, identity.Subject, "store_operations"); err != nil {
-		if errors.Is(err, postgres.ErrStoreAccessForbidden) || errors.Is(err, postgres.ErrStoreNotFound) {
-			return postgres.StoreOperationalAvailability{}, ErrStoreAccessForbidden
+	if err != nil || strings.TrimSpace(actor.Subject) == "" {
+		return VerifiedActor{}, "", ErrUnauthorized
+	}
+	switch actor.Role {
+	case MerchantRole:
+		if err = s.grants.RequireStoreAction(ctx, actor.Subject, storeID, "store_operations"); err != nil {
+			if errors.Is(err, ErrForbidden) || errors.Is(err, ErrStoreMissing) {
+				return VerifiedActor{}, "", ErrForbidden
+			}
+			return VerifiedActor{}, "", ErrStoreOwnerUnavailable
 		}
-		return postgres.StoreOperationalAvailability{}, err
-	}
-	return postgres.ReadStoreOperationalAvailability(ctx, s.db, storeID)
-}
-
-func (s *Service) ReadForOperator(ctx context.Context, actingActorID, storeID string) (postgres.StoreOperationalAvailability, error) {
-	actingActorID, storeID = strings.TrimSpace(actingActorID), strings.TrimSpace(storeID)
-	if actingActorID == "" || storeID == "" {
-		return postgres.StoreOperationalAvailability{}, ErrInvalidInput
-	}
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
-		return postgres.StoreOperationalAvailability{}, err
-	}
-	return postgres.ReadStoreOperationalAvailability(ctx, s.db, storeID)
-}
-func (s *Service) UpdateForPartner(ctx context.Context, accessToken string, input postgres.UpdateStoreOperationalAvailabilityInput) (postgres.StoreOperationalAvailability, bool, error) {
-	identity, err := s.requirePartner(ctx, accessToken)
-	if err != nil {
-		return postgres.StoreOperationalAvailability{}, false, err
-	}
-	input.StoreID = strings.TrimSpace(input.StoreID)
-	if input.StoreID == "" {
-		return postgres.StoreOperationalAvailability{}, false, ErrInvalidInput
-	}
-	_, authority, err := postgres.AuthorizePartnerStoreAction(ctx, s.db, input.StoreID, identity.Subject, "store_operations")
-	if err != nil {
-		if errors.Is(err, postgres.ErrStoreAccessForbidden) || errors.Is(err, postgres.ErrStoreNotFound) {
-			return postgres.StoreOperationalAvailability{}, false, ErrStoreAccessForbidden
+		return actor, "MERCHANT_STORE_GRANT", nil
+	case OperatorRole:
+		if err = s.identity.RequireOperatorPermission(ctx, token, actor.Subject, "operations"); err != nil {
+			if errors.Is(err, ErrIdentityUnavailable) {
+				return VerifiedActor{}, "", ErrIdentityUnavailable
+			}
+			if errors.Is(err, ErrUnauthorized) {
+				return VerifiedActor{}, "", ErrUnauthorized
+			}
+			return VerifiedActor{}, "", ErrForbidden
 		}
-		return postgres.StoreOperationalAvailability{}, false, err
+		return actor, "OPERATOR_OPERATIONS", nil
+	default:
+		return VerifiedActor{}, "", ErrForbidden
 	}
-	input.ActingActorID = identity.Subject
-	input.AuthoritySource = authority
-	return postgres.UpdateStoreOperationalAvailability(ctx, s.db, input)
 }
-
-func (s *Service) UpdateForOperator(ctx context.Context, actingActorID string, input postgres.UpdateStoreOperationalAvailabilityInput) (postgres.StoreOperationalAvailability, bool, error) {
-	actingActorID = strings.TrimSpace(actingActorID)
-	if actingActorID == "" || strings.TrimSpace(input.StoreID) == "" {
-		return postgres.StoreOperationalAvailability{}, false, ErrInvalidInput
-	}
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
-		return postgres.StoreOperationalAvailability{}, false, err
-	}
-	if _, err := postgres.ReadStore(ctx, s.db, strings.TrimSpace(input.StoreID)); err != nil {
-		return postgres.StoreOperationalAvailability{}, false, err
-	}
-	input.ActingActorID = actingActorID
-	input.AuthoritySource = "OPERATOR"
-	return postgres.UpdateStoreOperationalAvailability(ctx, s.db, input)
-}
-
-func (s *Service) requirePartner(ctx context.Context, accessToken string) (identityclient.ActorIdentity, error) {
-	identity, err := s.identity.ReadSession(ctx, strings.TrimSpace(accessToken))
+func (s *Service) ReadForActor(ctx context.Context, token, storeID string) (Snapshot, error) {
+	actor, authority, err := s.authorize(ctx, token, storeID)
 	if err != nil {
-		return identityclient.ActorIdentity{}, err
+		return Snapshot{}, err
 	}
-	if identity.Role != "partner" || identity.Surface != "app-partner" || strings.TrimSpace(identity.Subject) == "" {
-		return identityclient.ActorIdentity{}, ErrPartnerSessionForbidden
-	}
-	return identity, nil
+	return s.repo.ReadAuthorized(ctx, storeID, actor.Subject, authority)
 }
-
-func (s *Service) requireOperator(ctx context.Context, actorID string) error {
-	operator, err := s.identity.ReadActorRole(ctx, strings.TrimSpace(actorID), "operator")
+func (s *Service) Change(ctx context.Context, token string, change Change) (Snapshot, bool, error) {
+	actor, authority, err := s.authorize(ctx, token, change.StoreID)
 	if err != nil {
-		return err
+		return Snapshot{}, false, err
 	}
-	if operator.Role != "operator" || !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
-		return ErrOperatorNotActive
+	if !operationIDRule.MatchString(change.OperationID) || change.ExpectedVersion < 1 ||
+		len([]rune(strings.TrimSpace(change.Reason))) < 1 ||
+		len([]rune(change.Reason)) > 300 || change.PreparationMinutes < 0 {
+		return Snapshot{}, false, ErrInvalidChange
 	}
-	return s.identity.RequireOperatorPermission(ctx, strings.TrimSpace(actorID), "operations")
+	approvedTimezone, lookupErr := s.grants.StoreTimezone(ctx, change.StoreID)
+	if lookupErr != nil {
+		return Snapshot{}, false, ErrPolicyUnavailable
+	}
+	if approvedTimezone == "" {
+		return Snapshot{}, false, ErrInvalidTimezone
+	}
+	if change.Timezone != "" && change.Timezone != approvedTimezone {
+		return Snapshot{}, false, ErrInvalidChange
+	}
+	if _, err = loadStoreTimezone(approvedTimezone); err != nil {
+		return Snapshot{}, false, ErrInvalidTimezone
+	}
+	change.Timezone = approvedTimezone
+	if err = ValidateSchedule(change.Weekly); err != nil {
+		return Snapshot{}, false, err
+	}
+	limits, err := s.policies.CurrentLimits(ctx, change.StoreID)
+	if err != nil {
+		return Snapshot{}, false, ErrPolicyUnavailable
+	}
+	if limits.Version < 1 || limits.MaxPreparationMinutes < 0 || limits.MaxPause < 0 {
+		return Snapshot{}, false, ErrPolicyUnavailable
+	}
+	if change.PreparationMinutes > limits.MaxPreparationMinutes {
+		return Snapshot{}, false, ErrInvalidChange
+	}
+	if change.PausedUntil != nil {
+		remaining := change.PausedUntil.Sub(s.now())
+		if limits.MaxPause <= 0 || remaining <= 0 || remaining > limits.MaxPause {
+			return Snapshot{}, false, ErrInvalidChange
+		}
+	}
+	change.Reason = strings.TrimSpace(change.Reason)
+	return s.repo.Apply(ctx, AuthorizedChange{
+		Change: change, ActorID: actor.Subject, AuthoritySource: authority, PolicyVersion: limits.Version,
+	})
 }

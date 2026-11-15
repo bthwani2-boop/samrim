@@ -1,16 +1,25 @@
-## Approved outcome and material scope
+## Foundation/refoundation change scope
+- Exact target branch and HEAD:
+- Approved human outcome and authorized mutation boundaries:
+- One affected canonical owner (governance domain, agent, CI, or implementation):
+- Why changing the existing owner is insufficient / why a new mechanism is necessary:
 
-<!-- Existing behavior, causal owner, accepted outcome, affected actors/surfaces/handoffs and intentional exclusions. -->
+## Semantics and provenance
+- Approved decision, specific owner section and link (if cutover READY):
+- Historical source material consulted and its limitations:
+- New governance-cutover status: NOT_READY until accepted Phase 2.
+- Function/subfeature or external ID/URL intentionally changed:
+- Decision conflicts: resolved with explicit evidence, or UNRESOLVED:
 
-## Durable decision impact
+## Change and safety
+- Producer, consumers, SQL/contracts/config, generated client impact:
+- Migrations/deletion: exact targets and protected state checks:
+- Permission/financial/PII/concurrency risk, independent reviewer required?:
+- Removal of old path after proven cutover:
 
-<!-- NONE | REVALIDATE_ONLY | UPDATE_REQUIRED | DEFECT_FOUND. For changed decisions, identify the one local docs/governance owner updated in this same PR. -->
-
-## Material quality, UX, data and security risks
-
-<!-- Applicable rendered states/RTL/accessibility/recovery, authz/data/finance/migration concerns, or justified N/A. -->
-
-## Exact candidate proof and remaining limits
-
-<!-- Direct proof and required CI on final HEAD. State any actual review, environment or behavior gaps honestly. -->
-<!-- If guard or CI enforcement changes, state its before/after behavior and how independent review of its sensitivity was handled. -->
+## Evidence on exact candidate
+- Tested commit SHA and environment:
+- Positive / negative checks and what they prove:
+- NOT_RUN / BLOCKED / INVALIDATED / REVIEW_BLOCKED:
+- Actual remaining assumptions and safe rollback:
+- **This sparse foundation branch is not a deployable/merge-ready application.**

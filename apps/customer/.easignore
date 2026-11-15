@@ -1,0 +1,25 @@
+# Governed EAS archive rules for one mobile runtime.
+node_modules/
+.expo/
+dist/
+build/
+coverage/
+.tmp/
+*.log
+# EAS app archive rules do not inherit every root .gitignore entry.
+# Keep all native signing, Firebase and local secret files out of remote source archives.
+**/credentials.json
+**/google-services.json
+**/GoogleService-Info.plist
+**/*.jks
+**/*.keystore
+**/*.p12
+**/*.p8
+**/*.pem
+**/*.key
+**/.env
+**/.env.*
+**/mobile.env
+**/secrets.local.*
+**/*local*.secret.json
+# Firebase is supplied to EAS from the GOOGLE_SERVICES_JSON file secret, never from the Git archive.

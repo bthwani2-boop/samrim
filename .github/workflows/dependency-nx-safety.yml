@@ -1,0 +1,79 @@
+name: Dependency and Nx Safety
+
+# Free standard runner: no Nx Cloud credits, agents, or paid services.
+# Scheduled checks begin only when this workflow exists on the default branch.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'refoundation/clean-house-20261112'
+    paths:
+      - '**/package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'nx.json'
+      - 'tools/mobile/verify-application-boundaries.mjs'
+      - 'tools/mobile/verify-application-boundaries.test.mjs'
+      - '.github/workflows/dependency-nx-safety.yml'
+  schedule:
+    - cron: '17 3 * * 1'
+  pull_request:
+    branches:
+      - main
+      - 'refoundation/clean-house-20261112'
+    paths:
+      - '**/package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'nx.json'
+      - 'tools/mobile/verify-application-boundaries.mjs'
+      - 'tools/mobile/verify-application-boundaries.test.mjs'
+      - '.github/workflows/dependency-nx-safety.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-nx-safety-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency_and_boundaries:
+    name: Dependency audit and Nx graph (high+)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      NX_DAEMON: 'false'
+      NX_NO_CLOUD: 'true'
+      CI: 'true'
+    steps:
+      - name: Checkout exact candidate and comparison history
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Use repository-pinned Node 24
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install pinned workspace without lifecycle scripts
+        run: |
+          corepack enable pnpm
+          pnpm --version
+          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Audit all JavaScript dependencies (high and critical fail)
+        run: pnpm audit --audit-level high
+      - name: Verify Nx dependency graph builds
+        run: |
+          pnpm exec nx show projects
+          pnpm exec nx graph --print > "$RUNNER_TEMP/nx-project-graph.json"
+      - name: Enforce existing application and service import boundaries
+        run: |
+          node --test tools/mobile/verify-application-boundaries.test.mjs
+          node tools/mobile/verify-application-boundaries.mjs
+      - name: Report affected projects for pull requests
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          NX_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: pnpm exec nx show projects --affected --base="$NX_BASE_SHA" --head=HEAD

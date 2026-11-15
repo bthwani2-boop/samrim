@@ -1,0 +1,308 @@
+{
+  "artifactClass": "NON_AUTHORITATIVE_DONOR_DEPENDENCY_EVIDENCE",
+  "donorRepo": "D:\\samrim",
+  "donorBranch": "41",
+  "donorSHA": "426d67b47beb8c66b09acd8c7394086b53ac5aae",
+  "purpose": "Preserve exactly all donor mobile/Operator direct package versions, including deferred service workspace dependencies",
+  "apps": {
+    "customer": {
+      "oldFolder": "app-client",
+      "manifest": {
+        "name": "@bthwani/app-client",
+        "version": "0.0.0",
+        "private": true,
+        "type": "module",
+        "main": "index.js",
+        "scripts": {
+          "dev": "node ../../tools/dev/start-surface.mjs",
+          "typecheck": "tsc --noEmit -p tsconfig.json",
+          "eas-build-post-install": "node ../../tools/mobile/verify-mobile-config.mjs --app app-client"
+        },
+        "devDependencies": {
+          "@react-native/metro-config": "0.88.0",
+          "@types/react": "19.3.0",
+          "typescript": "7.0.2"
+        },
+        "dependencies": {
+          "@bthwani/design-system": "workspace:*",
+          "@bthwani/dsh": "workspace:*",
+          "@bthwani/identity": "workspace:*",
+          "@bthwani/push-device": "workspace:*",
+          "@bthwani/tamagui-config": "workspace:*",
+          "@date-fns/tz": "catalog:",
+          "@expo/metro-runtime": "58.0.15",
+          "@expo/ui": "58.0.23",
+          "@shopify/flash-list": "2.3.2",
+          "date-fns": "catalog:",
+          "expo": "58.0.19",
+          "expo-application": "58.1.2",
+          "expo-asset": "58.0.18",
+          "expo-audio": "58.0.10",
+          "expo-blur": "58.0.5",
+          "expo-calendar": "58.0.6",
+          "expo-clipboard": "58.0.4",
+          "expo-constants": "58.0.13",
+          "expo-contacts": "58.0.9",
+          "expo-crypto": "58.0.7",
+          "expo-dev-client": "58.0.15",
+          "expo-device": "58.0.5",
+          "expo-document-picker": "58.0.4",
+          "expo-file-system": "58.0.11",
+          "expo-font": "58.0.10",
+          "expo-haptics": "58.0.7",
+          "expo-image": "58.0.17",
+          "expo-image-manipulator": "58.0.15",
+          "expo-image-picker": "58.0.10",
+          "expo-linear-gradient": "58.0.3",
+          "expo-linking": "58.0.14",
+          "expo-localization": "58.0.5",
+          "expo-location": "58.0.19",
+          "expo-network": "58.0.4",
+          "expo-notifications": "58.1.6",
+          "expo-router": "58.0.26",
+          "expo-secure-store": "58.0.2",
+          "expo-sharing": "58.0.20",
+          "expo-splash-screen": "58.0.11",
+          "expo-status-bar": "58.0.4",
+          "expo-store-review": "58.0.2",
+          "expo-system-ui": "58.0.6",
+          "expo-updates": "58.0.18",
+          "expo-video": "58.0.12",
+          "expo-web-browser": "58.0.6",
+          "react": "19.3.0",
+          "react-dom": "19.3.0",
+          "react-native": "0.88.0",
+          "react-native-gesture-handler": "3.3.0",
+          "react-native-keyboard-controller": "1.22.7",
+          "react-native-maps": "1.29.11",
+          "react-native-reanimated": "4.7.1",
+          "react-native-safe-area-context": "5.10.1",
+          "react-native-screens": "4.30.0",
+          "react-native-web": "0.21.4",
+          "react-native-worklets": "0.13.0",
+          "tamagui": "3.3.1",
+          "zod": "catalog:",
+          "zustand": "5.0.16"
+        },
+        "expo": {
+          "install": {
+            "exclude": [
+              "typescript"
+            ]
+          }
+        }
+      }
+    },
+    "merchant": {
+      "oldFolder": "app-partner",
+      "manifest": {
+        "name": "@bthwani/app-partner",
+        "version": "0.0.0",
+        "private": true,
+        "type": "module",
+        "main": "index.js",
+        "scripts": {
+          "dev": "node ../../tools/dev/start-surface.mjs",
+          "typecheck": "tsc --noEmit -p tsconfig.json",
+          "eas-build-post-install": "node ../../tools/mobile/verify-mobile-config.mjs --app app-partner"
+        },
+        "devDependencies": {
+          "@react-native/metro-config": "0.88.0",
+          "@types/react": "19.3.0",
+          "typescript": "7.0.2"
+        },
+        "dependencies": {
+          "@bthwani/design-system": "workspace:*",
+          "@bthwani/dsh": "workspace:*",
+          "@bthwani/identity": "workspace:*",
+          "@bthwani/push-device": "workspace:*",
+          "@bthwani/tamagui-config": "workspace:*",
+          "@date-fns/tz": "catalog:",
+          "@expo/metro-runtime": "58.0.15",
+          "@expo/ui": "58.0.23",
+          "@hookform/resolvers": "catalog:",
+          "@shopify/flash-list": "2.3.2",
+          "@tanstack/react-query": "catalog:",
+          "date-fns": "catalog:",
+          "expo": "58.0.19",
+          "expo-application": "58.1.2",
+          "expo-asset": "58.0.18",
+          "expo-audio": "58.0.10",
+          "expo-blur": "58.0.5",
+          "expo-calendar": "58.0.6",
+          "expo-camera": "58.0.12",
+          "expo-clipboard": "58.0.4",
+          "expo-constants": "58.0.13",
+          "expo-contacts": "58.0.9",
+          "expo-crypto": "58.0.7",
+          "expo-dev-client": "58.0.15",
+          "expo-device": "58.0.5",
+          "expo-document-picker": "58.0.4",
+          "expo-file-system": "58.0.11",
+          "expo-font": "58.0.10",
+          "expo-haptics": "58.0.7",
+          "expo-image": "58.0.17",
+          "expo-image-manipulator": "58.0.15",
+          "expo-image-picker": "58.0.10",
+          "expo-keep-awake": "58.0.3",
+          "expo-linear-gradient": "58.0.3",
+          "expo-linking": "58.0.14",
+          "expo-localization": "58.0.5",
+          "expo-network": "58.0.4",
+          "expo-notifications": "58.1.6",
+          "expo-print": "58.0.7",
+          "expo-router": "58.0.26",
+          "expo-secure-store": "58.0.2",
+          "expo-sharing": "58.0.20",
+          "expo-splash-screen": "58.0.11",
+          "expo-status-bar": "58.0.4",
+          "expo-store-review": "58.0.2",
+          "expo-system-ui": "58.0.6",
+          "expo-updates": "58.0.18",
+          "expo-video": "58.0.12",
+          "react": "19.3.0",
+          "react-dom": "19.3.0",
+          "react-hook-form": "catalog:",
+          "react-native": "0.88.0",
+          "react-native-gesture-handler": "3.3.0",
+          "react-native-keyboard-controller": "1.22.7",
+          "react-native-maps": "1.29.11",
+          "react-native-reanimated": "4.7.1",
+          "react-native-safe-area-context": "5.10.1",
+          "react-native-screens": "4.30.0",
+          "react-native-web": "0.21.4",
+          "react-native-worklets": "0.13.0",
+          "tamagui": "3.3.1",
+          "zod": "catalog:",
+          "zustand": "5.0.16"
+        },
+        "expo": {
+          "install": {
+            "exclude": [
+              "typescript"
+            ]
+          }
+        }
+      }
+    },
+    "captain": {
+      "oldFolder": "app-captain",
+      "manifest": {
+        "name": "@bthwani/app-captain",
+        "version": "0.0.0",
+        "private": true,
+        "type": "module",
+        "main": "index.js",
+        "scripts": {
+          "dev": "node ../../tools/dev/start-surface.mjs",
+          "typecheck": "tsc --noEmit -p tsconfig.json",
+          "eas-build-post-install": "node ../../tools/mobile/verify-mobile-config.mjs --app app-captain"
+        },
+        "devDependencies": {
+          "@react-native/metro-config": "0.88.0",
+          "@types/react": "19.3.0",
+          "typescript": "7.0.2"
+        },
+        "dependencies": {
+          "@bthwani/design-system": "workspace:*",
+          "@bthwani/dsh": "workspace:*",
+          "@bthwani/identity": "workspace:*",
+          "@bthwani/push-device": "workspace:*",
+          "@bthwani/tamagui-config": "workspace:*",
+          "@date-fns/tz": "catalog:",
+          "@expo/ui": "58.0.23",
+          "@shopify/flash-list": "2.3.2",
+          "date-fns": "catalog:",
+          "expo": "58.0.19",
+          "expo-application": "58.1.2",
+          "expo-asset": "58.0.18",
+          "expo-audio": "58.0.10",
+          "expo-calendar": "58.0.6",
+          "expo-clipboard": "58.0.4",
+          "expo-constants": "58.0.13",
+          "expo-crypto": "58.0.7",
+          "expo-dev-client": "58.0.15",
+          "expo-device": "58.0.5",
+          "expo-document-picker": "58.0.4",
+          "expo-file-system": "58.0.11",
+          "expo-font": "58.0.10",
+          "expo-haptics": "58.0.7",
+          "expo-image": "58.0.17",
+          "expo-image-picker": "58.0.10",
+          "expo-keep-awake": "58.0.3",
+          "expo-linear-gradient": "58.0.3",
+          "expo-linking": "58.0.14",
+          "expo-localization": "58.0.5",
+          "expo-location": "58.0.19",
+          "expo-network": "58.0.4",
+          "expo-notifications": "58.1.6",
+          "expo-router": "58.0.26",
+          "expo-secure-store": "58.0.2",
+          "expo-splash-screen": "58.0.11",
+          "expo-status-bar": "58.0.4",
+          "expo-system-ui": "58.0.6",
+          "expo-task-manager": "58.0.12",
+          "expo-updates": "58.0.18",
+          "expo-video": "58.0.12",
+          "expo-web-browser": "58.0.6",
+          "react": "19.3.0",
+          "react-native": "0.88.0",
+          "react-native-gesture-handler": "3.3.0",
+          "react-native-maps": "1.29.11",
+          "react-native-reanimated": "4.7.1",
+          "react-native-safe-area-context": "5.10.1",
+          "react-native-screens": "4.30.0",
+          "react-native-worklets": "0.13.0",
+          "tamagui": "3.3.1",
+          "zod": "catalog:",
+          "zustand": "5.0.16"
+        },
+        "expo": {
+          "install": {
+            "exclude": [
+              "typescript"
+            ]
+          }
+        }
+      }
+    },
+    "control-panel": {
+      "oldFolder": "control-panel",
+      "manifest": {
+        "name": "@bthwani/control-panel",
+        "version": "0.0.0",
+        "private": true,
+        "type": "module",
+        "engines": {
+          "node": ">=24.17.0 <25"
+        },
+        "scripts": {
+          "dev": "node ../../tools/dev/start-surface.mjs",
+          "build": "next build",
+          "typecheck": "next typegen && tsc --noEmit -p tsconfig.json",
+          "verify:csp": "node tests/verify-live-csp.mjs"
+        },
+        "dependencies": {
+          "@ant-design/cssinjs": "2.1.2",
+          "@bthwani/design-system": "workspace:*",
+          "@bthwani/dsh": "workspace:*",
+          "@bthwani/identity": "workspace:*",
+          "@date-fns/tz": "catalog:",
+          "antd": "6.6.7",
+          "date-fns": "catalog:",
+          "next": "16.4.3",
+          "react": "19.3.0",
+          "react-dom": "19.3.0",
+          "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+          "zod": "catalog:"
+        },
+        "devDependencies": {
+          "@types/node": "24.10.1",
+          "@types/react": "19.3.0",
+          "@types/react-dom": "19.3.0",
+          "typescript": "7.0.2"
+        }
+      }
+    }
+  }
+}

@@ -4,6 +4,10 @@
     "noEmit": true
   },
   "include": [
-    "clients/**/*.ts"
+    "clients/**/*.ts",
+    "clients/**/*.tsx"
+  ],
+  "exclude": [
+    "node_modules"
   ]
 }

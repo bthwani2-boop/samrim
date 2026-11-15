@@ -10,7 +10,10 @@
       "default": "./clients/index.ts"
     }
   },
-  "dependencies": {
-    "@bthwani/identity": "workspace:*"
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
   }
 }
