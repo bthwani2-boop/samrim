@@ -58,8 +58,13 @@ func isolatedStoreAvailabilityHandler(db *sql.DB, schema string, public http.Han
 	if err != nil {
 		return nil, err
 	}
+	policyRead, err := storeavailability.NewCityPolicyHandler(identity, policies)
+	if err != nil {
+		return nil, err
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/v1/stores/", storeAvailabilityCORS(private, allowedOrigins))
+	mux.Handle("/v1/operators/cities/", storePolicyCORS(policyRead, allowedOrigins))
 	mux.Handle("/", public)
 	return mux, nil
 }
@@ -68,6 +73,14 @@ func isolatedStoreAvailabilityHandler(db *sql.DB, schema string, public http.Han
 // Preflight never grants access to the Store; every real request still verifies
 // Identity and DSH authority. No wildcard or credentialed-cookie CORS.
 func storeAvailabilityCORS(next http.Handler, origins map[string]bool) http.Handler {
+	return storeOperationalCORS(next, origins, true)
+}
+
+func storePolicyCORS(next http.Handler, origins map[string]bool) http.Handler {
+	return storeOperationalCORS(next, origins, false)
+}
+
+func storeOperationalCORS(next http.Handler, origins map[string]bool, allowPatch bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers")
@@ -86,7 +99,7 @@ func storeAvailabilityCORS(next http.Handler, origins map[string]bool) http.Hand
 			return
 		}
 		method := r.Header.Get("Access-Control-Request-Method")
-		if method != http.MethodGet && method != http.MethodPatch {
+		if method != http.MethodGet && !(allowPatch && method == http.MethodPatch) {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
@@ -98,7 +111,11 @@ func storeAvailabilityCORS(next http.Handler, origins map[string]bool) http.Hand
 			}
 		}
 		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, PATCH")
+		if allowPatch {
+			w.Header().Set("Access-Control-Allow-Methods", "GET, PATCH")
+		} else {
+			w.Header().Set("Access-Control-Allow-Methods", "GET")
+		}
 		w.WriteHeader(http.StatusNoContent)
 	})
 }

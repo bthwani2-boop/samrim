@@ -171,12 +171,13 @@ function isStoreAvailability(value: unknown, storeId: string): value is StoreOpe
     Number.isSafeInteger(item.version) && Number(item.version) >= 1 &&
     typeof item.actingActorId === "string" && typeof item.reason === "string";
 }
-async function storeOwnerRequest(
-  baseUrl: string, storeId: string, bearer: string, method: "GET" | "PATCH", change?: StoreOperationalChange, signal?: AbortSignal,
+async function privateOwnerRequest(
+  baseUrl: string, path: string, bearer: string, method: "GET" | "PATCH", change?: StoreOperationalChange, signal?: AbortSignal,
 ): Promise<unknown> {
-  if (!/^[a-z0-9-]{1,64}$/.test(storeId)) throw new DshPublicError(0, "STORE_ID_INVALID");
+  // Only fixed owner-authored paths assembled by the public functions below
+  // reach this uncached transport. A user cannot supply an arbitrary URL.
   if (!bearer || bearer.trim() !== bearer || /\s/.test(bearer)) throw new DshPublicError(401, "UNAUTHENTICATED");
-  const url = endpoint(baseUrl, "/v1/stores/" + encodeURIComponent(storeId) + "/availability");
+  const url = endpoint(baseUrl, path);
   let response: Response;
   try {
     response = await fetch(url.toString(), {
@@ -222,7 +223,8 @@ async function storeOwnerRequest(
 export async function getStoreOperationalAvailability(
   baseUrl: string, storeId: string, bearer: string, signal?: AbortSignal,
 ): Promise<StoreOperationalAvailability> {
-  const body = await storeOwnerRequest(baseUrl, storeId, bearer, "GET", undefined, signal);
+  if (!/^[a-z0-9-]{1,64}$/.test(storeId)) throw new DshPublicError(0, "STORE_ID_INVALID");
+  const body = await privateOwnerRequest(baseUrl, "/v1/stores/" + encodeURIComponent(storeId) + "/availability", bearer, "GET", undefined, signal);
   if (!isStoreAvailability(body, storeId)) throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   // A completed HTTP response must not revive an earlier Store/account view
   // after the caller has invalidated that view's AbortSignal.
@@ -239,7 +241,8 @@ export async function updateStoreOperationalAvailability(
     (!Array.isArray(change.weekly) || !change.weekly.every(isStoreWeeklyWindow))) {
     throw new DshPublicError(400, "INVALID_OPERATIONAL_CHANGE");
   }
-  const body = await storeOwnerRequest(baseUrl, storeId, bearer, "PATCH", change, signal);
+  if (!/^[a-z0-9-]{1,64}$/.test(storeId)) throw new DshPublicError(0, "STORE_ID_INVALID");
+  const body = await privateOwnerRequest(baseUrl, "/v1/stores/" + encodeURIComponent(storeId) + "/availability", bearer, "PATCH", change, signal);
   if (!body || typeof body !== "object") throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
   const result = body as Record<string, unknown>;
   if (typeof result.replay !== "boolean" || !isStoreAvailability(result.availability, storeId)) {
@@ -249,4 +252,48 @@ export async function updateStoreOperationalAvailability(
   // a current-context success. It may have committed, so keep its stable key.
   if (signal?.aborted) throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN");
   return result as unknown as StoreOperationalResult;
+}
+
+
+/** DSH-owned read-only city Store availability policy; this is not an
+ * Operator policy writer and never grants Store, Order or WLT actions.
+ */
+export interface CityStoreOperationalPolicy {
+  cityId: string;
+  version: number;
+  maxPauseSeconds: number;
+  maxPreparationMinutes: number;
+  changedByActor: string;
+  changeReason: string;
+  updatedAt: string;
+}
+function isCityStoreOperationalPolicy(value: unknown, cityID: string): value is CityStoreOperationalPolicy {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  const fields = ["cityId", "version", "maxPauseSeconds", "maxPreparationMinutes",
+    "changedByActor", "changeReason", "updatedAt"];
+  return Object.keys(v).length === fields.length &&
+    Object.keys(v).every((key) => fields.includes(key)) &&
+    v.cityId === cityID &&
+    Number.isSafeInteger(v.version) && Number(v.version) >= 1 &&
+    Number.isSafeInteger(v.maxPauseSeconds) && Number(v.maxPauseSeconds) >= 0 &&
+    Number(v.maxPauseSeconds) <= 31536000 &&
+    Number.isSafeInteger(v.maxPreparationMinutes) && Number(v.maxPreparationMinutes) >= 0 &&
+    Number(v.maxPreparationMinutes) <= 1440 &&
+    typeof v.changedByActor === "string" && v.changedByActor.trim().length > 0 &&
+    v.changedByActor.length <= 128 &&
+    typeof v.changeReason === "string" && v.changeReason.trim().length > 0 &&
+    v.changeReason.length <= 300 &&
+    typeof v.updatedAt === "string" && Number.isFinite(Date.parse(v.updatedAt));
+}
+export async function getCityStoreOperationalPolicy(
+  baseUrl: string, cityID: string, bearer: string, signal?: AbortSignal,
+): Promise<CityStoreOperationalPolicy> {
+  if (!/^[a-z0-9-]{1,64}$/.test(cityID)) throw new DshPublicError(0, "CITY_ID_INVALID");
+  const body = await privateOwnerRequest(baseUrl,
+    "/v1/operators/cities/" + encodeURIComponent(cityID) + "/store-availability-policy",
+    bearer, "GET", undefined, signal);
+  if (!isCityStoreOperationalPolicy(body, cityID)) throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
+  return body;
 }

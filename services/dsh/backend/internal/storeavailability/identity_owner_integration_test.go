@@ -194,6 +194,33 @@ func TestIsolatedRealIdentityAndDshAvailability(t *testing.T) {
 	}
 	dshServer := httptest.NewServer(mux)
 	defer dshServer.Close()
+	cityPolicyHandler, err := NewCityPolicyHandler(identity, policies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cityPolicyServer := httptest.NewServer(cityPolicyHandler)
+	defer cityPolicyServer.Close()
+	readCityPolicy := func(bearer, cityID string) (int, []byte) {
+		t.Helper()
+		req, e := http.NewRequestWithContext(ctx, http.MethodGet,
+			cityPolicyServer.URL+"/v1/operators/cities/"+cityID+"/store-availability-policy", nil)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		response, e := cityPolicyServer.Client().Do(req)
+		if e != nil {
+			t.Fatal(e)
+		}
+		defer response.Body.Close()
+		var encoded bytes.Buffer
+		if _, e = encoded.ReadFrom(response.Body); e != nil {
+			t.Fatal(e)
+		}
+		return response.StatusCode, encoded.Bytes()
+	}
 	path := "/v1/stores/" + store + "/availability"
 	request := func(method, token string, payload []byte) (int, []byte) {
 		t.Helper()
@@ -264,11 +291,36 @@ func TestIsolatedRealIdentityAndDshAvailability(t *testing.T) {
 	if check := identity.RequireOperatorPermission(ctx, tokenOperator, operator, "platform_policies"); !errors.Is(check, ErrForbidden) {
 		t.Fatalf("operations grant was accepted as platform policy authority: %v", check)
 	}
+	if code, _ := readCityPolicy(tokenOperator, city); code != http.StatusForbidden {
+		t.Fatalf("revoked operations role was substituted for Operator policy permission: %d", code)
+	}
 	if _, err = db.ExecContext(ctx, "INSERT INTO "+identitySchema+".operator_permissions(actor_id,permission) VALUES($1,'platform_policies')", operator); err != nil {
 		t.Fatal(err)
 	}
 	if check := identity.RequireOperatorPermission(ctx, tokenOperator, operator, "platform_policies"); check != nil {
 		t.Fatalf("current platform_policies grant was denied by real Identity: %v", check)
+	}
+	if code, data := readCityPolicy(tokenOperator, city); code != http.StatusOK {
+		t.Fatalf("authorized city policy read denied: code=%d body=%s", code, data)
+	} else {
+		var actual CityPolicy
+		if err = json.Unmarshal(data, &actual); err != nil || actual.CityID != city || actual.Version != 1 ||
+			actual.MaxPauseSeconds != 3600 || actual.MaxPreparationMinutes != 90 || actual.ChangedByActor != operator {
+			t.Fatalf("DSH canonical policy readback mismatched: %+v err=%v", actual, err)
+		}
+	}
+	for _, denied := range []struct {
+		name, bearer, cityID string
+		want                 int
+	}{
+		{"merchant", tokenA, city, http.StatusForbidden},
+		{"customer", tokenCustomer, city, http.StatusForbidden},
+		{"missing session", "", city, http.StatusUnauthorized},
+		{"unprovisioned city", tokenOperator, "missing-city", http.StatusServiceUnavailable},
+	} {
+		if code, _ := readCityPolicy(denied.bearer, denied.cityID); code != denied.want {
+			t.Fatalf("%s exposed unauthorized city policy: %d instead of %d", denied.name, code, denied.want)
+		}
 	}
 	if status, _ := request(http.MethodGet, tokenOperator, nil); status != http.StatusForbidden {
 		t.Fatalf("platform_policies grant revived revoked operations scope: %d", status)
@@ -278,6 +330,9 @@ func TestIsolatedRealIdentityAndDshAvailability(t *testing.T) {
 	}
 	if check := identity.RequireOperatorPermission(ctx, tokenOperator, operator, "platform_policies"); !errors.Is(check, ErrForbidden) {
 		t.Fatalf("revoked platform_policies grant remained effective: %v", check)
+	}
+	if code, _ := readCityPolicy(tokenOperator, city); code != http.StatusForbidden {
+		t.Fatalf("revoked platform_policies grant still read DSH city policy: %d", code)
 	}
 	if _, err = db.ExecContext(ctx, "UPDATE "+identitySchema+".auth_sessions SET revoked_at=now() WHERE token_digest=$1", digestA); err != nil {
 		t.Fatal(err)

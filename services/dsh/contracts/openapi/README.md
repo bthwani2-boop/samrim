@@ -1,4 +1,4 @@
-# DSH OpenAPI — source-linked public discovery and isolated Store availability
+# DSH OpenAPI — public discovery and isolated Store/policy readback
 
 STATUS: CONTRACT_IN_PROGRESS
 SEMANTIC_OWNER: DSH
@@ -21,6 +21,14 @@ mode with a `dsh_test_*` schema and a loopback-only
 `DSH_LISTEN_ADDR=127.0.0.1:<port>` are explicitly selected.
 Cross-origin private requests only allow exact configured
 `DSH_PUBLIC_CORS_ORIGINS`; preflight never skips Identity checks.
+The fifth populated fragment, `paths/operational-policies.yaml`, exposes a
+**read-only** `GET /v1/operators/cities/{cityID}/store-availability-policy`.
+It requires an active Identity Operator session and the distinct
+`platform_policies` permission. The DSH policy reader returns only an
+explicitly stored, active city's versioned limits and accountable metadata;
+no default, Operator mutation, or production UI is activated. Its CORS
+preflight allows GET only. The documented policy writer remains unimplemented.
+
 A real current Identity verifier, DSH Store owner check, and active DSH policy must succeed;
 no production authenticated service, checkout, WLT, or user permission issuer
 is activated by this incremental contract.
@@ -28,7 +36,7 @@ is activated by this incremental contract.
 The fragments point back only to the **same DSH owner's** canonical
 `components` in `dsh.openapi.yaml`. No schemas, response contracts or
 parameter definitions are duplicated; no new endpoints, authentication
-grants or checkout permissions are introduced for public reads. The other 17
+grants or checkout permissions are introduced for public reads. The other 16
 `paths/*.yaml` groups remain empty until their real owner-backed operations
 are implemented.
 

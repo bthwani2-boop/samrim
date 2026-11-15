@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: BThwani DSH API
   version: 0.1.0
-  description: DSH public discovery plus opt-in isolated-development authenticated Store operational availability. No checkout or financial activation.
+  description: DSH public discovery plus isolated-development authenticated Store operational availability and read-only Operator city policy. No policy writer, checkout or financial activation.
 paths:
   /health:
     $ref: './paths/runtime.yaml#/paths/~1health'
@@ -14,6 +14,8 @@ paths:
     $ref: './paths/offers.yaml#/paths/~1v1~1public~1stores~1{id}~1offers'
   /v1/stores/{storeID}/availability:
     $ref: './paths/store-access.yaml#/paths/~1v1~1stores~1{storeID}~1availability'
+  /v1/operators/cities/{cityID}/store-availability-policy:
+    $ref: './paths/operational-policies.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-availability-policy'
 components:
   securitySchemes:
     OpaqueSession:
@@ -54,6 +56,18 @@ components:
         variantId: { $ref: '#/components/schemas/PublicId' }
         priceYer: { type: integer, minimum: 1, description: Exact positive integer YER value from DSH }
         available: { type: boolean, const: true }
+    CityStoreOperationalPolicy:
+      type: object
+      additionalProperties: false
+      required: [cityId, version, maxPauseSeconds, maxPreparationMinutes, changedByActor, changeReason, updatedAt]
+      properties:
+        cityId: { $ref: '#/components/schemas/PublicId' }
+        version: { type: integer, minimum: 1 }
+        maxPauseSeconds: { type: integer, minimum: 0, maximum: 31536000 }
+        maxPreparationMinutes: { type: integer, minimum: 0, maximum: 1440 }
+        changedByActor: { type: string, minLength: 1, maxLength: 128 }
+        changeReason: { type: string, minLength: 1, maxLength: 300 }
+        updatedAt: { type: string, format: date-time }
     OperationalWeeklyWindow:
       type: object
       additionalProperties: false
@@ -152,6 +166,11 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
 
+    PolicyPermissionDenied:
+      description: The current Identity actor is not an Operator holding explicit platform_policies permission
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/StoreOperationalError' }
     StoreUnauthorized:
       description: Missing, invalid, expired or revoked Identity bearer
       content:

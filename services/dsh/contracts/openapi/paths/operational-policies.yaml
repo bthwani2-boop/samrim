@@ -1,1 +1,30 @@
-paths: {}
+paths:
+  /v1/operators/cities/{cityID}/store-availability-policy:
+    get:
+      operationId: getCityStoreOperationalPolicy
+      summary: Read the DSH-owned effective Store availability limits for one active city
+      description: Identity must verify the current Operator session and the separate platform_policies permission; operations alone grants no policy access. This route is read-only, mounted only in the synthetic isolated DSH development host. Missing or inactive city policy fails closed; no defaults or policy write endpoint.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: cityID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      responses:
+        '200':
+          description: Canonical, versioned, accountable current DSH city policy
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CityStoreOperationalPolicy' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange'
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/PolicyPermissionDenied'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'

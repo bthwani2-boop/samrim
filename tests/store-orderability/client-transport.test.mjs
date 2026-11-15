@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   DshPublicError,
   getStoreOperationalAvailability,
+  getCityStoreOperationalPolicy,
   updateStoreOperationalAvailability,
 } from "../../services/dsh/clients/index.ts";
 
@@ -222,5 +223,73 @@ test("cancelled private PATCH never presents a late success as an accepted curre
   await assert.rejects(
     updateStoreOperationalAvailability(base, storeId, "old-account-bearer", change, controller.signal),
     (err) => err instanceof DshPublicError && err.code === "OPERATION_RESULT_UNKNOWN",
+  );
+});
+
+test("private city policy GET requires an explicit bearer and never sends a mutation", async (t) => {
+  const policy = {
+    cityId: "city-a", version: 1, maxPauseSeconds: 3600,
+    maxPreparationMinutes: 90, changedByActor: "operator-a",
+    changeReason: "Reviewed policy", updatedAt: "2026-11-15T13:00:00Z",
+  };
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    calls++;
+    assert.equal(url, base + "/v1/operators/cities/city-a/store-availability-policy");
+    assert.equal(options.method, "GET");
+    assert.equal(options.headers.Authorization, "Bearer operator-bearer");
+    assert.equal(options.credentials, "omit");
+    assert.equal(options.cache, "no-store");
+    assert.equal(options.redirect, "error");
+    assert.equal(options.body, undefined);
+    return jsonResponse(policy);
+  });
+  assert.deepEqual(
+    await getCityStoreOperationalPolicy(base, "city-a", "operator-bearer"),
+    policy,
+  );
+  assert.equal(calls, 1);
+});
+
+test("private city policy GET rejects wrong city, invalid bounds and a revoked permission", async (t) => {
+  const policy = {
+    cityId: "city-a", version: 1, maxPauseSeconds: 3600,
+    maxPreparationMinutes: 90, changedByActor: "operator-a",
+    changeReason: "Reviewed policy", updatedAt: "2026-11-15T13:00:00Z",
+  };
+  for (const body of [
+    { ...policy, cityId: "other-city" },
+    { ...policy, version: 0 },
+    { ...policy, maxPauseSeconds: 31536001 },
+    { ...policy, maxPreparationMinutes: -1 },
+  ]) {
+    t.mock.method(globalThis, "fetch", async () => jsonResponse(body));
+    await assert.rejects(
+      getCityStoreOperationalPolicy(base, "city-a", "operator-bearer"),
+      (err) => err instanceof DshPublicError && err.code === "OWNER_RESPONSE_INVALID",
+    );
+    t.mock.restoreAll();
+  }
+  t.mock.method(globalThis, "fetch", async () =>
+    jsonResponse({ code: "STORE_OPERATION_FORBIDDEN" }, 403));
+  await assert.rejects(
+    getCityStoreOperationalPolicy(base, "city-a", "operator-bearer"),
+    (err) => err instanceof DshPublicError && err.status === 403,
+  );
+});
+
+test("private city policy read cannot display stale data after Operator account switching", async (t) => {
+  const controller = new AbortController();
+  t.mock.method(globalThis, "fetch", async () => {
+    controller.abort();
+    return jsonResponse({
+      cityId: "city-a", version: 1, maxPauseSeconds: 10,
+      maxPreparationMinutes: 20, changedByActor: "operator-a",
+      changeReason: "Old session", updatedAt: "2026-11-15T13:00:00Z",
+    });
+  });
+  await assert.rejects(
+    getCityStoreOperationalPolicy(base, "city-a", "old-operator", controller.signal),
+    (err) => err instanceof DshPublicError && err.code === "OWNER_RESPONSE_STALE",
   );
 });

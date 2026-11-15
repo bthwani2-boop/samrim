@@ -94,6 +94,16 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 	if err != nil || limits.Version != 1 || limits.MaxPause != time.Hour || limits.MaxPreparationMinutes != 90 {
 		t.Fatalf("DSH city policy readback %+v %v", limits, err)
 	}
+	currentCity, err := policy.ReadCityPolicy(ctx, cityID)
+	if err != nil || currentCity.CityID != cityID || currentCity.Version != 1 ||
+		currentCity.MaxPauseSeconds != 3600 || currentCity.MaxPreparationMinutes != 90 ||
+		currentCity.ChangedByActor != "synthetic-operator" || currentCity.ChangeReason != "Isolated scoped policy" ||
+		currentCity.UpdatedAt.IsZero() {
+		t.Fatalf("canonical DSH city policy was not read back: %+v %v", currentCity, err)
+	}
+	if _, err = policy.ReadCityPolicy(ctx, "missing-city"); !errors.Is(err, ErrPolicyUnavailable) {
+		t.Fatalf("missing city got a permissive policy: %v", err)
+	}
 	if _, err = policy.CurrentLimits(ctx, "no-such-store"); !errors.Is(err, ErrPolicyUnavailable) {
 		t.Fatalf("missing Store policy allowed: %v", err)
 	}
@@ -113,6 +123,9 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 	}
 	if _, err = policy.CurrentLimits(ctx, noPolicyID); !errors.Is(err, ErrPolicyUnavailable) {
 		t.Fatalf("existing Store without city policy was admitted: %v", err)
+	}
+	if _, err = policy.ReadCityPolicy(ctx, "sanaa-no-policy"); !errors.Is(err, ErrPolicyUnavailable) {
+		t.Fatalf("active city without an authorized policy returned a default: %v", err)
 	}
 	repo, err := NewPostgresRepository(db, schema)
 	if err != nil {
