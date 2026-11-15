@@ -23,14 +23,18 @@ secrets, applied migrations and media are never copied or changed.
 
 ## Optional owner service roles and DSH public discovery
 
-`compose.apps.yaml` contains eight opt-in `implementation` roles. Only `dsh`
-and `dsh-migrate` currently have a genuine Go entrypoint, and **`dsh` only
-serves public Store/Offer discovery**. Its protected mutation, Identity session
-verification and WLT/Order integrations are NOT_RUN. Identity and WLT are **not
-ready**: their backend code, Dockerfiles, migrations and accepted security/ledger
-journeys do not exist yet in this Worktree. Other opt-in roles remain NOT_RUN.
-Never activate the entire `implementation` profile or substitute donor images.
-Do not use `samrim-local` volumes or old Identity/WLT binaries.
+`compose.apps.yaml` contains eight historical opt-in `implementation` roles.
+Only `dsh` and `dsh-migrate` there have a runnable Go entrypoint, and **`dsh`
+serves public Store/Offer discovery only**. Its protected mutation and WLT/Order
+integrations are NOT_RUN. Do not activate that entire profile.
+
+**NEW Identity source exists** at `services/identity/backend`: it is a
+synthetic, read-only PostgreSQL session/Operator-permission verifier. This is
+not the old donor Identity and not a full login/session issuer. The old
+`compose.apps.yaml` Identity entries still refer to nonexistent Dockerfiles,
+bootstrap commands and endpoints. They are not valid for the new verifier.
+WLT's genuine backend remains incomplete. Never substitute donor images,
+reuse `samrim-local` volumes or claim production authentication.
 
 ### Build and run real public DSH inside the same Compose project
 
@@ -63,6 +67,53 @@ migration 001 only after reviewing the target schema; it does not silently
 seed or upgrade 002/003. Do not treat HTTP health as evidence of checkout,
 merchant permissions, identity authentication or finance correctness.
 
+
+### NEW Identity verifier in the SAME Compose project (prepared, NOT_STARTED)
+
+`compose.identity-verifier.yaml` is an opt-in overlay for the **new
+refoundation Go Identity source**, not `compose.apps.yaml`'s obsolete service.
+Pair it **only** with `compose.yaml`; the existing project name remains
+`bthwani-refoundation`, and its published host port is loopback-only 3201.
+The service is `identity`, profile `identity-verifier`. It has no
+automatic bootstrap, issuer, migrations, donor volumes or other service restarts.
+
+`build-identity-verifier-image.ps1` uses the exact pinned host Go version,
+rejects uncommitted Identity Go/SQL source, cross-compiles the real Linux binary
+and labels the digest-pinned Alpine image with the source commit. SQL is only
+packaged for review; **the build never applies a migration**. The container
+uses non-root UID, read-only filesystem, dropped Linux capabilities and
+no-new-privileges.
+
+**Do not start it yet.** The current Identity owner `cmd/identity/main.go`
+requires `127.0.0.1` bind, which is inaccessible to other Compose containers
+and refuses the `0.0.0.0:3302` binding required for this opt-in internal
+network service. The Identity owner must review and test a strict
+*container-only, synthetic-mode* bind exception without weakening the
+non-container loopback default. Also required: a verified dedicated
+`identity_test_*` schema with a least-privilege runtime role, independently
+reviewed SQL, durable current-session/permission positive and negative tests,
+and committed owner source. Uncommitted Identity source deliberately causes
+the image build to fail.
+
+After those independent prerequisites are **proved**, load only the ignored
+`infra/.env` values `REF_IDENTITY_TEST_SCHEMA`,
+`REF_IDENTITY_TEST_DATABASE_URL` (pointing to isolated `postgres:5432`,
+never donor/production), and optionally `REF_IDENTITY_VERIFIER_PORT`.
+The explicit deployment sequence is:
+
+```powershell
+powershell -NoProfile -File infra/build-identity-verifier-image.ps1
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier config --quiet
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier up -d --no-deps identity
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier ps identity
+```
+
+The service will not be declared healthy on a TCP listener, unauthenticated
+HTTP response or container exit code. Require an actual **Identity-owned**
+PostgreSQL session read and permission denial/revocation proof, and compare
+the running image ID and source SHA before changing DSH consumers. No
+real login, WebAuthn, Operator permission administration or production release
+is authorized by this isolated verifier.
 
 ## Deployment boundary and security review
 

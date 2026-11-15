@@ -1,1 +1,19 @@
-paths: {}
+paths:
+  /health:
+    get:
+      operationId: dshHealth
+      summary: Check the owner database is reachable
+      security: []
+      responses:
+        '200':
+          description: DSH available
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [service, status]
+                properties:
+                  service: { type: string, const: dsh }
+                  status: { type: string, const: ok }
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/OwnerUnavailable'

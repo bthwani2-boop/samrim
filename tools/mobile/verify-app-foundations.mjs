@@ -55,7 +55,7 @@ for (const [name, [slug, packageId, scheme, projectId]] of Object.entries(expect
   }
   assert.ok(read(`${rel}/metro.config.cjs`).includes("getDefaultConfig(__dirname)"));
   assert.ok(read(`${rel}/index.js`).includes("expo-router/entry"));
-  for (const path of ["app/_layout.tsx","app/index.tsx","app/health.tsx","assets/icon.png",
+  for (const path of ["app/_layout.tsx","app/index.tsx","assets/icon.png",
     "assets/adaptive-icon.png","assets/splash-icon.png","eas.json"]) {
     assert.ok(existsSync(join(root,rel,path)), `Missing ${rel}/${path}`);
   }
@@ -73,9 +73,11 @@ for (const [name, [slug, packageId, scheme, projectId]] of Object.entries(expect
     assert.ok(width === height && width >= 512,
       name + " native PNG must be square and at least 512 px: " + asset);
   }
-  assert.ok(!existsSync(join(root,rel,"src/features")), name + " old business features should not migrate");
-  const home=read(`${rel}/app/index.tsx`);
-  assert.ok(home.includes('from "@bthwani/tamagui-config/preview"'), name + " must use the shared Stage-4 Tamagui preview");
+  // Progressive feature modules are allowed under src/features. Cross-owner imports,
+  // private package internals and duplicate route roots remain checked by
+  // verify-application-boundaries.mjs; a folder name is not an admission gate.
+  // Real progressive Home screens may replace the Stage-4 preview. The shared
+  // theme/runtime boundary remains enforced by the app layout and import scanner.
   const layout = read(`${rel}/app/_layout.tsx`);
   assert.ok(layout.includes('from "@bthwani/tamagui-config/preview"'), name + " must use the shared Stage-4 appearance host");
   assert.ok(layout.includes(`"bthwani.stage4.${name}.theme"`), name + " appearance persistence must remain app-scoped");

@@ -78,6 +78,25 @@ def prepare(relative_output: str) -> Path:
     data = deepcopy(original.data)
     data["workflow"]["id"] = "bthwani-speckit-reviewed"
     data["workflow"]["name"] = "BThwani full Spec Kit cycle with explicit review"
+
+    # The user input describes the feature, not the whole orchestration task.
+    # Keep the original requirements but explicitly limit each Codex dispatch
+    # to its one official skill, avoiding repeat exploration of old run state.
+    for step in data["steps"]:
+        if step["id"] in expected_commands:
+            step["input"]["args"] = (
+                "{{ inputs.spec }}\n\n"
+                "[Orchestrated Spec Kit phase: " + step["id"] + "] "
+                "Execute only this official skill phase; the workflow engine runs "
+                "all other phases and human review gates. Follow mandatory "
+                "prerequisites, hooks, governance and acceptance checks. "
+                "Prefer the active feature files and canonical owners; do not "
+                "enumerate historic run directories or Codex memories unless "
+                "a specific requirement needs them. If required work cannot "
+                "run under current permissions, report BLOCKED; never claim "
+                "a skipped artifact was generated."
+            )
+
     for step in data["steps"]:
         input_name = REVIEW_INPUTS.get(step["id"])
         if not input_name:

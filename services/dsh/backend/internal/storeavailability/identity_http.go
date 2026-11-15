@@ -16,8 +16,9 @@ import (
 // canonical active-session read. It never verifies client-asserted actor data,
 // generates credentials, or grants Operator permissions on role alone.
 type IdentitySessionHTTP struct {
-	endpoint string
-	client   *http.Client
+	endpoint           string
+	permissionEndpoint string
+	client             *http.Client
 }
 
 func NewIdentitySessionHTTP(baseURL string) (*IdentitySessionHTTP, error) {
@@ -31,9 +32,12 @@ func NewIdentitySessionHTTP(baseURL string) (*IdentitySessionHTTP, error) {
 		!(root.Scheme == "http" && (root.Hostname() == "127.0.0.1" || root.Hostname() == "localhost")) {
 		return nil, ErrInvalidChange
 	}
+	root.Path = "/v1/operators/me/permissions/operations"
+	permissionEndpoint := root.String()
 	root.Path = "/v1/sessions/current"
 	return &IdentitySessionHTTP{
-		endpoint: root.String(),
+		endpoint:           root.String(),
+		permissionEndpoint: permissionEndpoint,
 		client: &http.Client{
 			Timeout: 3 * time.Second,
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
@@ -111,8 +115,65 @@ func (identity *IdentitySessionHTTP) ResolveCurrentSession(ctx context.Context, 
 	return VerifiedActor{Subject: verified.ActorID, Role: role}, nil
 }
 
-func (identity *IdentitySessionHTTP) RequireOperatorPermission(context.Context, string, string) error {
-	// Identity currently exposes active roles, NOT the approved effective
-	// 'operations' grant or its revocation. Operator mode must fail closed.
-	return ErrForbidden
+// RequireOperatorPermission checks the current effective Identity grant for
+// the SAME actor already verified via /v1/sessions/current by Service.authorize.
+// No role-to-permission inference, cache, redirect, or client-supplied actor ID.
+func (identity *IdentitySessionHTTP) RequireOperatorPermission(ctx context.Context, token, verifiedActorID, permission string) error {
+	if identity == nil || identity.client == nil {
+		return ErrIdentityUnavailable
+	}
+	if permission != "operations" || verifiedActorID == "" ||
+		len(verifiedActorID) > 128 || strings.TrimSpace(verifiedActorID) != verifiedActorID ||
+		strings.ContainsAny(verifiedActorID, "\r\n\t") {
+		return ErrForbidden
+	}
+	if token == "" || strings.TrimSpace(token) != token ||
+		strings.ContainsAny(token, " \t\r\n") {
+		return ErrUnauthorized
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, identity.permissionEndpoint, nil)
+	if err != nil {
+		return ErrIdentityUnavailable
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Cache-Control", "no-store")
+	response, err := identity.client.Do(request)
+	if err != nil {
+		return ErrIdentityUnavailable
+	}
+	defer response.Body.Close()
+	switch response.StatusCode {
+	case http.StatusUnauthorized:
+		return ErrUnauthorized
+	case http.StatusForbidden:
+		return ErrForbidden
+	case http.StatusOK:
+	default:
+		return ErrIdentityUnavailable
+	}
+	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		return ErrIdentityUnavailable
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, 4097))
+	if err != nil || len(body) > 4096 {
+		return ErrIdentityUnavailable
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	var grant struct {
+		ActorID    string `json:"actorId"`
+		Permission string `json:"permission"`
+	}
+	if err := decoder.Decode(&grant); err != nil {
+		return ErrIdentityUnavailable
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return ErrIdentityUnavailable
+	}
+	if grant.ActorID != verifiedActorID || grant.Permission != permission {
+		return ErrForbidden
+	}
+	return nil
 }

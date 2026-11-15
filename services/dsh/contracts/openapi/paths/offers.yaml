@@ -1,1 +1,29 @@
-paths: {}
+paths:
+  /v1/public/stores/{id}/offers:
+    get:
+      operationId: listPublicOffers
+      summary: Read visible sellable Variant Offers in a published Store
+      description: Store, city, vertical, Product, Variant, Offer, availability, inventory and positive YER price are rechecked.
+      security: []
+      parameters:
+        - $ref: '../dsh.openapi.yaml#/components/parameters/StoreId'
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 512 }
+      responses:
+        '200':
+          description: Current DSH approved Offer page; not a quote or checkout authorization
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/OfferPage' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/BadRequest'
+        '404':
+          $ref: '../dsh.openapi.yaml#/components/responses/NotFound'
+        '409':
+          $ref: '../dsh.openapi.yaml#/components/responses/StaleCursor'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/OwnerUnavailable'

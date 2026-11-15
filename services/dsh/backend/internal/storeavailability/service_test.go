@@ -19,7 +19,7 @@ func (x fakeIdentity) ResolveCurrentSession(_ context.Context, _ string) (Verifi
 	}
 	return x.actor, nil
 }
-func (x fakeIdentity) RequireOperatorPermission(context.Context, string, string) error {
+func (x fakeIdentity) RequireOperatorPermission(context.Context, string, string, string) error {
 	if x.permissionDenied {
 		return errors.New("denied")
 	}
@@ -66,6 +66,12 @@ func (x fakePolicy) CurrentLimits(context.Context, string) (Limits, error) {
 type fakeRepo struct{ applies *int }
 
 func (x fakeRepo) Read(context.Context, string) (Snapshot, error) { return Snapshot{Version: 1}, nil }
+func (x fakeRepo) ReadAuthorized(_ context.Context, storeID, actorID, authority string) (Snapshot, error) {
+	if storeID == "" || actorID == "" || authority == "" {
+		return Snapshot{}, ErrForbidden
+	}
+	return Snapshot{StoreID: storeID, Version: 1}, nil
+}
 func (x fakeRepo) Apply(_ context.Context, c AuthorizedChange) (Snapshot, bool, error) {
 	*x.applies++
 	return Snapshot{StoreID: c.StoreID, Version: c.ExpectedVersion + 1, ActingActorID: c.ActorID}, false, nil
@@ -135,5 +141,40 @@ func TestServiceOnlyForwardsValidPolicyBoundChanges(t *testing.T) {
 func TestNewServiceFailsClosedWithoutOwnerAdapters(t *testing.T) {
 	if _, err := NewService(nil, fakeGrant{}, fakePolicy{}, fakeRepo{new(int)}); !errors.Is(err, ErrUnauthorized) {
 		t.Fatal(err)
+	}
+}
+
+type readAuthorizationRecorder struct {
+	calls     int
+	actor     string
+	authority string
+}
+
+func (r *readAuthorizationRecorder) Read(context.Context, string) (Snapshot, error) {
+	panic("unscoped Store availability read reached from authenticated handler")
+}
+func (r *readAuthorizationRecorder) ReadAuthorized(_ context.Context, storeID, actorID, authority string) (Snapshot, error) {
+	r.calls++
+	r.actor, r.authority = actorID, authority
+	return Snapshot{StoreID: storeID, Version: 1}, nil
+}
+func (r *readAuthorizationRecorder) Apply(context.Context, AuthorizedChange) (Snapshot, bool, error) {
+	panic("read test must not write")
+}
+
+func TestReadForActorPassesVerifiedIdentityIntoOwnerLockedRead(t *testing.T) {
+	repo := &readAuthorizationRecorder{}
+	svc, err := NewService(fakeIdentity{actor: VerifiedActor{Subject: "merchant-a", Role: MerchantRole}}, fakeGrant{}, fakePolicy{}, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := svc.ReadForActor(context.Background(), "current-session", "store-one")
+	if err != nil || got.StoreID != "store-one" || repo.calls != 1 ||
+		repo.actor != "merchant-a" || repo.authority != "MERCHANT_STORE_GRANT" {
+		t.Fatalf("read did not use verified actor/Store transaction: %+v err=%v repo=%+v", got, err, repo)
+	}
+	svc.identity = fakeIdentity{denied: true}
+	if _, err := svc.ReadForActor(context.Background(), "revoked-session", "store-one"); !errors.Is(err, ErrUnauthorized) || repo.calls != 1 {
+		t.Fatalf("revoked Identity read reached Store database: %v calls=%d", err, repo.calls)
 	}
 }

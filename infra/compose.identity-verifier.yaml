@@ -1,0 +1,31 @@
+# Optional NEW Identity session-verifier development slice only.
+# Pair with infra/compose.yaml (NOT compose.apps.yaml); all services keep
+# the original bthwani-refoundation project name.
+#
+# Do NOT start until the Identity owner has verified safe Docker-network
+# listening in explicit isolated mode and the identity_test_* PostgreSQL
+# schema, scoped database role and real negative tests are independently proven.
+# No real issuer, operator bootstrap, Passkey flow or production credentials.
+services:
+  identity:
+    profiles: [identity-verifier]
+    image: bthwani-refoundation-identity-verifier:dev
+    restart: "no"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    labels:
+      com.bthwani.environment: refoundation
+      com.bthwani.worktree: samrim-refoundation-clean-20261112
+      com.bthwani.capability: identity-synthetic-session-verifier
+    environment:
+      BTHWANI_ISOLATED_TEST_MODE: "true"
+      IDENTITY_DB_SCHEMA: "${REF_IDENTITY_TEST_SCHEMA:?verified identity_test_* schema required}"
+      IDENTITY_TEST_DATABASE_URL: "${REF_IDENTITY_TEST_DATABASE_URL:?isolated identity owner-scoped database URL required}"
+      IDENTITY_DEV_LISTEN_ADDR: "0.0.0.0:3302"
+    ports:
+      - "127.0.0.1:${REF_IDENTITY_VERIFIER_PORT:-3201}:3302"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [isolated, loopback]

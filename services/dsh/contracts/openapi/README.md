@@ -1,15 +1,40 @@
-# DSH OpenAPI contract scaffold
+# DSH OpenAPI — source-linked public discovery paths
 
-STATUS: CONTRACT_SCAFFOLD_ONLY
+STATUS: CONTRACT_IN_PROGRESS
 SEMANTIC_OWNER: DSH
-EXECUTION: NOT_STARTED
+EXECUTION: IN_PROGRESS
+PRODUCTION_ACTIVATION: BLOCKED
 
-The sole entrypoint is `dsh.openapi.yaml` (OpenAPI 3.1.0). It deliberately declares `paths: {}`, no server, no security scheme and no production implementation. Its `info.version: 0.0.0` denotes a **placeholder**, not a published API version.
+The **sole canonical entrypoint** is `dsh.openapi.yaml` (OpenAPI 3.1.0).
+Its four existing read-only operations are defined exactly once in three
+domain files and referenced with standard local Path Item references:
 
-The donor audit showed that **seven** domain files were insufficient. The 21 flat, zero-operation `paths/*.yaml` reservations now cover `stores`, `store-access`, `store-publication`, `catalog`, `offers`, `cart`, `orders`, `order-conversations`, `fulfillment`, `captains`, `locations`, `serviceability`, `employees`, `promotions`, `discovery-content`, `customer-discovery`, `notifications`, `client-shares`, `operational-policies`, `financial-views` and `runtime`. Each contains only `paths: {}`, and none is referenced from the main entrypoint until real operations are separately admitted.
+- `paths/runtime.yaml` — `GET /health`
+- `paths/stores.yaml` — `GET /v1/public/stores` and `GET /v1/public/stores/{id}`
+- `paths/offers.yaml` — `GET /v1/public/stores/{id}/offers`
 
-These are **document grouping labels, not 21 engines, 21 permission domains or approved endpoints**. `cart` includes single-/multi-Store quote and checkout; `stores` is shared by Marketplace and Direct; `employees` is one bounded company/Merchant engine with organizational isolation. `financial-views` is WLT-backed read projection only: WLT owns all money/ledger/financial terms; Identity owns actor identity and platform grants. Old onboarding/financial/marketing paths must be reconciled before transfer rather than blindly restored. The [source- and SHA-pinned inventory](../../../../docs/reference/OPENAPI-DONOR-CONTRACT-INVENTORY.md) records all 23 donor DSH modules, 10 inline Path Items and the intended target classification.
+The fragments point back only to the **same DSH owner's** canonical
+`components` in `dsh.openapi.yaml`. No schemas, response contracts or
+parameter definitions are duplicated; no new endpoints, authentication
+grants or checkout permissions are introduced. The other 18
+`paths/*.yaml` groups remain empty until their real owner-backed operations
+are implemented.
 
-A future **approved** implementation slice must first reconcile Product meaning, consumers and owner permissions, then introduce real Path Items, validation and refs without a second contract truth. At that point replace the exact scaffold-only gate with a standard strict OpenAPI/YAML parser, full local ref resolution, duplicate path/operationId tests, security/error/schema tests and generated client parity. The existing source-only guard enforces only the exact **zero-operation scaffold**, not arbitrary OpenAPI validity.
+The original scaffold note `no server, no security scheme` described the
+**historical empty contract**, not the admitted public discovery API.
+The current contract has no `servers` field and every public read explicitly
+declares `security: []`. It confers no private Merchant, Order, Identity
+or WLT permissions.
 
-No historical donor endpoints, localhost servers, authentication schemes, schemas, SQL, mocks or generated clients are transferred by this change. Actual APIs, runtime, database and independent critical-risk review remain NOT_RUN.
+The 21 reserved domain groups are organizational, not 21 services or
+permission engines. The [source- and SHA-pinned inventory](../../../../docs/reference/OPENAPI-DONOR-CONTRACT-INVENTORY.md)
+is historical evidence, not a live API. `cart` will cover quote/checkout
+without duplicating the DSH Order owner. `financial-views` is a WLT-backed
+read projection only. Historical donor endpoints require source and Product
+reconciliation before any transfer.
+
+The Foundation source-boundary guard is **not arbitrary OpenAPI validity**.
+For each populated Path Item, run strict YAML parsing, local reference
+resolution and operation-ID/security/response checks, then verify compatibility
+with the real Go owner routes and TypeScript clients. Structural approval
+is not real owner-backed integration or production authorization.

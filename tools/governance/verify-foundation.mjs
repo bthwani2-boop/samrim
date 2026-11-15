@@ -225,19 +225,21 @@ const legalDevelopmentFile=(relative)=>{
 };
 function checkProgressivePathFragment(content,filename){
  if(content==='paths: {}\n')return false;
- // A minimal source-boundary check, not full OpenAPI validation or runtime proof.
- if(!content.startsWith('paths:\n')||
+ // Only components from the same canonical owner may be referenced externally.
+ const owner=/^services\/(identity|dsh|wlt)\/contracts\/openapi\/paths\//.exec(filename)?.[1];
+ const externalRefs=[...content.matchAll(/\$ref:\s*['"]?(\.\.\/[^'"\s}]+)/g)].map(m=>m[1]);
+ if(!owner||externalRefs.some(ref=>!ref.startsWith('../'+owner+'.openapi.yaml#/components/'))||
+    !content.startsWith('paths:\n')||
     !content.includes('\n  /')||
     !['get','post','put','patch','delete'].some(verb=>content.includes('\n    '+verb+':'))||
     !content.includes('operationId:')||
     !content.includes('responses:')||
     !content.includes('security:')||
-    content.includes('$ref: ../')||
-    content.includes('$ref: http://')||
-    content.includes('$ref: https://'))
-  fail('OpenAPI path fragment is not an empty placeholder or a scoped development operation: '+filename);
+    /\$ref:\s*['"]?https?:\/\//.test(content))
+   fail('OpenAPI path fragment is not an empty placeholder or a scoped development operation: '+filename);
  return true;
 }
+
 function validateOpenApiOperation(lines,ids,reject){
  const identifiers=lines
   .filter(line=>line.startsWith('      operationId:'))
@@ -248,8 +250,27 @@ function validateOpenApiOperation(lines,ids,reject){
  if(!lines.some(line=>/^ {8}['"]?(?:[1-5]\d{2}|default)['"]?:\s*$/.test(line)))reject();
  ids.add(identifiers[0]);
 }
-function validateOpenApiPath(body,begin,end,ids,reject){
+function validateOpenApiPath(body,begin,end,ids,reject,owner,apiPath,fromFragment=false){
  const lines=body.slice(begin,end);
+ const external=lines.filter(line=>line.startsWith('    $ref:'));
+ if(external.length){
+  if(fromFragment||lines.filter(line=>line.trim()!=='').length!==1)reject();
+  const match=/^ {4}\$ref: ['"]\.\/paths\/([a-z0-9-]+)\.yaml#\/paths\/(.+)['"]$/.exec(external[0]);
+  if(!match)reject();
+  const [,group,pointer]=match;
+  const expected=apiPath.replace(/~/g,'~0').replace(/\//g,'~1');
+  if(pointer!==expected||!contractPathGroups[owner].includes(group))reject();
+  const filename='services/'+owner+'/contracts/openapi/paths/'+group+'.yaml';
+  const content=get(filename);
+  checkProgressivePathFragment(content,filename);
+  const moduleLines=content.split('\n');
+  const item='  '+apiPath+':';
+  if(moduleLines.filter(line=>line===item).length!==1)reject();
+  const itemStart=moduleLines.indexOf(item);
+  const next=moduleLines.findIndex((line,i)=>i>itemStart&&line.startsWith('  /'));
+  validateOpenApiPath(moduleLines,itemStart+1,next<0?undefined:next,ids,reject,owner,apiPath,true);
+  return;
+ }
  const operations=[];
  const allowedMethods=new Set(['get','post','put','patch','delete','options','head']);
  for(let i=0;i<lines.length;i++){
@@ -267,6 +288,7 @@ function validateOpenApiPath(body,begin,end,ids,reject){
  for(let i=0;i<operations.length;i++)
   validateOpenApiOperation(lines.slice(operations[i]+1,operations[i+1]),ids,reject);
 }
+
 function progressiveOpenApiPaths(candidate,owner,reject){
  const lines=candidate.split('\n');
  const rootKeys=new Set();
@@ -298,7 +320,7 @@ function progressiveOpenApiPaths(candidate,owner,reject){
  if(paths.length===0)reject();
  const ids=new Set();
  for(let i=0;i<paths.length;i++)
-  validateOpenApiPath(body,paths[i]+1,paths[i+1],ids,reject);
+  validateOpenApiPath(body,paths[i]+1,paths[i+1],ids,reject,owner,body[paths[i]].slice(2,-1));
 }
 function validateProgressiveEntrypoint(candidate,filename,owner){
  const reject=()=>fail('OpenAPI scaffold mutated or contains unapproved operations/refs: '+filename);
@@ -342,7 +364,24 @@ for(const owner of serviceOwners){
   fail('invalid contract scaffold documentation: '+owner);
  for(const moduleName of contractPathGroups[owner]){
   const moduleFile=prefix+'/contracts/openapi/paths/'+moduleName+'.yaml';
-  if(checkProgressivePathFragment(contents[moduleFile],moduleFile)){
+  const moduleContent=contents[moduleFile];
+  if(checkProgressivePathFragment(moduleContent,moduleFile)){
+   // Populated fragments must be reachable through the sole canonical root.
+   // A hidden, otherwise valid operation in an unreferenced fragment is not
+   // an approved API and must not become a second contract source.
+   const seenFragmentPaths=new Set();
+   for(const match of moduleContent.matchAll(/^  (\/[^\s:]+):\s*$/gm)){
+    const fragmentPath=match[1];
+    if(seenFragmentPaths.has(fragmentPath))
+     fail('duplicate OpenAPI Path Item in fragment: '+moduleFile+'#'+fragmentPath);
+    seenFragmentPaths.add(fragmentPath);
+    const pointer=fragmentPath.replace(/~/g,'~0').replace(/\//g,'~1');
+    const canonical='  '+fragmentPath+':\n    $ref: \'./paths/'+moduleName+'.yaml#/paths/'+pointer+'\'';
+    if(!contents[contractFile].includes(canonical))
+     fail('unreferenced OpenAPI Path Item: '+moduleFile+'#'+fragmentPath);
+   }
+   if(seenFragmentPaths.size===0)
+    fail('OpenAPI fragment contains no valid Path Items: '+moduleFile);
    developmentSourceFiles++;
    progressiveOpenApiFiles++;
   }

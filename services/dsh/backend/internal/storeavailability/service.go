@@ -36,7 +36,7 @@ type IdentitySessions interface {
 	// ResolveCurrentSession must contact Identity's current authoritative session
 	// state, never decode an unverified client-supplied actor header.
 	ResolveCurrentSession(context.Context, string) (VerifiedActor, error)
-	RequireOperatorPermission(context.Context, string, string) error
+	RequireOperatorPermission(context.Context, string, string, string) error
 }
 type StoreGrants interface {
 	// DSH checks current Store ownership or an accepted, nonrevoked store_operations grant.
@@ -81,6 +81,7 @@ type AuthorizedChange struct {
 }
 type Repository interface {
 	Read(context.Context, string) (Snapshot, error)
+	ReadAuthorized(context.Context, string, string, string) (Snapshot, error)
 	Apply(context.Context, AuthorizedChange) (Snapshot, bool, error)
 }
 
@@ -118,7 +119,13 @@ func (s *Service) authorize(ctx context.Context, token, storeID string) (Verifie
 		}
 		return actor, "MERCHANT_STORE_GRANT", nil
 	case OperatorRole:
-		if err = s.identity.RequireOperatorPermission(ctx, token, "operations"); err != nil {
+		if err = s.identity.RequireOperatorPermission(ctx, token, actor.Subject, "operations"); err != nil {
+			if errors.Is(err, ErrIdentityUnavailable) {
+				return VerifiedActor{}, "", ErrIdentityUnavailable
+			}
+			if errors.Is(err, ErrUnauthorized) {
+				return VerifiedActor{}, "", ErrUnauthorized
+			}
 			return VerifiedActor{}, "", ErrForbidden
 		}
 		return actor, "OPERATOR_OPERATIONS", nil
@@ -127,10 +134,11 @@ func (s *Service) authorize(ctx context.Context, token, storeID string) (Verifie
 	}
 }
 func (s *Service) ReadForActor(ctx context.Context, token, storeID string) (Snapshot, error) {
-	if _, _, err := s.authorize(ctx, token, storeID); err != nil {
+	actor, authority, err := s.authorize(ctx, token, storeID)
+	if err != nil {
 		return Snapshot{}, err
 	}
-	return s.repo.Read(ctx, storeID)
+	return s.repo.ReadAuthorized(ctx, storeID, actor.Subject, authority)
 }
 func (s *Service) Change(ctx context.Context, token string, change Change) (Snapshot, bool, error) {
 	actor, authority, err := s.authorize(ctx, token, change.StoreID)

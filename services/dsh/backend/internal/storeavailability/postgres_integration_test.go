@@ -118,6 +118,56 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Read authorization must be checked in the same database transaction as
+	// the Store availability snapshot, not merely before an ownership transfer.
+	transferID := id + "-read-owner-transfer"
+	_, err = db.ExecContext(ctx, fmt.Sprintf(`INSERT INTO %s.stores
+		(id,owner_actor_id,city_id,vertical_id,relation,name,published)
+		VALUES ($1,'synthetic-merchant-01',$2,'grocery','MARKETPLACE','Transfer test',false)`, schema), transferID, cityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = repo.ReadAuthorized(ctx, transferID, "synthetic-merchant-01", "MERCHANT_STORE_GRANT"); err != nil {
+		t.Fatalf("current owner denied authenticated read: %v", err)
+	}
+	if _, err = repo.ReadAuthorized(ctx, transferID, "different-merchant", "MERCHANT_STORE_GRANT"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("cross-store read was not denied: %v", err)
+	}
+	// Simulate a transfer that has locked the canonical Store but not yet
+	// committed. The former owner must never read around the pending change.
+	transferTx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer transferTx.Rollback()
+	_, err = transferTx.ExecContext(ctx, fmt.Sprintf(`UPDATE %s.stores SET owner_actor_id=$2 WHERE id=$1`, schema), transferID, "new-merchant")
+	if err != nil {
+		t.Fatal(err)
+	}
+	readResult := make(chan error, 1)
+	go func() {
+		_, readErr := repo.ReadAuthorized(ctx, transferID, "synthetic-merchant-01", "MERCHANT_STORE_GRANT")
+		readResult <- readErr
+	}()
+	select {
+	case readErr := <-readResult:
+		t.Fatalf("read bypassed an uncommitted Store ownership transfer: %v", readErr)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err := transferTx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case readErr := <-readResult:
+		if !errors.Is(readErr, ErrForbidden) {
+			t.Fatalf("former owner read after committed transfer: %v", readErr)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("authorized read did not recover after ownership transfer committed")
+	}
+	if _, err = repo.ReadAuthorized(ctx, transferID, "new-merchant", "MERCHANT_STORE_GRANT"); err != nil {
+		t.Fatalf("new owner denied availability after transfer: %v", err)
+	}
 	grants, err := NewPostgresStoreGrants(db, schema)
 	if err != nil {
 		t.Fatal(err)

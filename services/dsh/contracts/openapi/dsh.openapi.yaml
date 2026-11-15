@@ -5,99 +5,13 @@ info:
   description: DSH-owned public Store and eligible Offer discovery, read-only. No checkout authority.
 paths:
   /health:
-    get:
-      operationId: dshHealth
-      summary: Check the owner database is reachable
-      security: []
-      responses:
-        '200':
-          description: DSH available
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [service, status]
-                properties:
-                  service: { type: string, const: dsh }
-                  status: { type: string, const: ok }
-        '503':
-          $ref: '#/components/responses/OwnerUnavailable'
+    $ref: './paths/runtime.yaml#/paths/~1health'
   /v1/public/stores:
-    get:
-      operationId: listPublicStores
-      summary: Discover published MARKETPLACE Stores in an active service city
-      description: DIRECT or unpublished Stores never appear. Visibility never indicates checkout readiness.
-      security: []
-      parameters:
-        - name: city_id
-          in: query
-          required: true
-          schema: { $ref: '#/components/schemas/PublicId' }
-        - name: limit
-          in: query
-          required: false
-          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
-        - name: cursor
-          in: query
-          required: false
-          schema: { type: string, maxLength: 512 }
-      responses:
-        '200':
-          description: Bounded server-filtered Store page, with durable DSH read revision
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/StorePage' }
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '409':
-          $ref: '#/components/responses/StaleCursor'
-        '503':
-          $ref: '#/components/responses/OwnerUnavailable'
+    $ref: './paths/stores.yaml#/paths/~1v1~1public~1stores'
   /v1/public/stores/{id}:
-    get:
-      operationId: getPublicStore
-      summary: Read one published Store via public link, including DIRECT Stores
-      security: []
-      parameters:
-        - $ref: '#/components/parameters/StoreId'
-      responses:
-        '200':
-          description: Only public Store projection fields; neither private Merchant nor Customer data
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/PublicStore' }
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '503':
-          $ref: '#/components/responses/OwnerUnavailable'
+    $ref: './paths/stores.yaml#/paths/~1v1~1public~1stores~1{id}'
   /v1/public/stores/{id}/offers:
-    get:
-      operationId: listPublicOffers
-      summary: Read visible sellable Variant Offers in a published Store
-      description: Store, city, vertical, Product, Variant, Offer, availability, inventory and positive YER price are rechecked.
-      security: []
-      parameters:
-        - $ref: '#/components/parameters/StoreId'
-        - name: limit
-          in: query
-          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
-        - name: cursor
-          in: query
-          schema: { type: string, maxLength: 512 }
-      responses:
-        '200':
-          description: Current DSH approved Offer page; not a quote or checkout authorization
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/OfferPage' }
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          $ref: '#/components/responses/StaleCursor'
-        '503':
-          $ref: '#/components/responses/OwnerUnavailable'
+    $ref: './paths/offers.yaml#/paths/~1v1~1public~1stores~1{id}~1offers'
 components:
   parameters:
     StoreId:

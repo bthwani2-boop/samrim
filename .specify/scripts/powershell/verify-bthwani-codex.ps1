@@ -127,14 +127,13 @@ try {
         $claimsDir = $env:BTHWANI_SPECKIT_CLAIMS_DIR
         $claimName = $env:BTHWANI_SPECKIT_CLAIM_NAME
         if ([string]::IsNullOrWhiteSpace($claimsDir) -or [string]::IsNullOrWhiteSpace($claimName) -or
-            $claimName -notmatch '\A[A-Za-z0-9_-]+\z' -or $claimName -like 'GIT-TURN*') {
+            $claimName -notmatch '\A[A-Za-z0-9_-]+\z') {
             Fail 'Tracked source requires an existing feature owner claim: BTHWANI_SPECKIT_CLAIMS_DIR and BTHWANI_SPECKIT_CLAIM_NAME'
         }
         if (-not (Test-Path -LiteralPath $claimsDir -PathType Container)) { Fail 'Feature claims directory is unavailable' }
         $ownsScope = @()
         $ownerPresent = $false
         foreach ($claim in @(Get-ChildItem -LiteralPath $claimsDir -Directory)) {
-            if ($claim.Name -like 'GIT-TURN*') { continue }
             $claimFile = Join-Path $claim.FullName 'owner.md'
             if (-not (Test-Path -LiteralPath $claimFile -PathType Leaf)) { Fail "Claim has no owner.md: $($claim.Name)" }
             $content = Get-Content -LiteralPath $claimFile -Raw

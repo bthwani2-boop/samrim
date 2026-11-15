@@ -197,7 +197,7 @@ rejects('rejects a second DSH operation without its own security declaration',{
 },/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
 rejects('rejects duplicate OpenAPI operation IDs across paths',{
  edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>{
-  const id=/operationId: ([a-zA-Z]\w*)/.exec(s)?.[1];
+  const id='listPublicStores';
   return s.replace('\ncomponents:\n',[
    '',
    '  /v1/public/duplicate:',
@@ -213,14 +213,36 @@ rejects('rejects duplicate OpenAPI operation IDs across paths',{
  }}
 },/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
 rejects('rejects operation missing a security declaration',{
- edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace('      security: []', '      # security declaration removed')}
-},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
+ edit:{'services/dsh/contracts/openapi/paths/runtime.yaml':s=>s.replace('      security: []', '      # security declaration removed')}
+},/OpenAPI path fragment is not an empty placeholder|OpenAPI scaffold mutated or contains unapproved operations\/refs/);
 rejects('rejects incomplete DSH OpenAPI entrypoint',{edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace(/^paths:\n[\s\S]*?(?=^components:)/m,'paths:\n')}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
 rejects('rejects unapproved DSH endpoint',{edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace('  /health:', '  /dsh/stores:')}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
 rejects('rejects a duplicate OpenAPI key',{edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s+'paths: {}\n'}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
 rejects('rejects premature server declaration',{edit:{'services/identity/contracts/openapi/identity.openapi.yaml':s=>s+"servers:\n  - url: http://localhost:18082\n"}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
 rejects('rejects premature financial operation',{edit:{'services/wlt/contracts/openapi/wlt.openapi.yaml':s=>s.replace('paths: {}','paths:\n  /wlt/wallet: {}')}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
 rejects('rejects unsupported cross-owner ref',{edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace("schema: { $ref: '#/components/schemas/PublicId' }", "schema: { $ref: '../../../../identity/contracts/openapi/identity.openapi.yaml' }")}},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
+
+rejects('rejects a Path Item ref with an incorrect JSON pointer',{
+ edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace('./paths/runtime.yaml#/paths/~1health','./paths/runtime.yaml#/paths/~1wrong')}
+},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
+rejects('rejects a missing security declaration inside a linked Store path',{
+ edit:{'services/dsh/contracts/openapi/paths/stores.yaml':s=>s.replace('      security: []','      # security declaration removed')}
+},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
+rejects('rejects cross-owner component ref in a DSH fragment',{
+ edit:{'services/dsh/contracts/openapi/paths/offers.yaml':s=>s.replace('../dsh.openapi.yaml#/components/','../identity.openapi.yaml#/components/')}
+},/OpenAPI path fragment is not an empty placeholder/);
+rejects('rejects an unreferenced operation hidden in a DSH fragment',{
+ edit:{'services/dsh/contracts/openapi/paths/runtime.yaml':s=>s+[
+   '  /v1/public/unreferenced:',
+   '    get:',
+   '      operationId: hiddenUnreferencedOperation',
+   '      security: []',
+   '      responses:',
+   "        '200':",
+   '          description: Orphan Path Item is not a published canonical operation',
+   ''
+ ].join('\n')}
+},/unreferenced OpenAPI Path Item/);
 rejects('rejects missing DSH path module',{del:['services/dsh/contracts/openapi/paths/stores.yaml']},/required services\/dsh\/contracts\/openapi\/paths\/stores.yaml/);
 rejects('rejects malformed DSH path fragment',{edit:{'services/dsh/contracts/openapi/paths/orders.yaml':s=>s.replace('paths: {}','paths: [')}},/OpenAPI path fragment is not an empty placeholder/);
 rejects('rejects nonempty DSH path fragment',{edit:{'services/dsh/contracts/openapi/paths/employees.yaml':s=>s.replace('paths: {}','paths:\n  /employees: {}')}},/OpenAPI path fragment is not an empty placeholder/);

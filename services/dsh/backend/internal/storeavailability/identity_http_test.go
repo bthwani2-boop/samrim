@@ -22,13 +22,23 @@ func TestIdentityHTTPVerifiesCurrentSessionOnEveryUse(t *testing.T) {
 	token := testOpaqueIdentityToken()
 	var reads atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reads.Add(1)
-		if r.URL.Path != "/v1/sessions/current" || r.Method != "GET" ||
-			r.Header.Get("Authorization") != "Bearer "+token || r.Header.Get("Accept") != "application/json" {
+		if r.Method != "GET" || r.Header.Get("Authorization") != "Bearer "+token ||
+			r.Header.Get("Accept") != "application/json" {
 			t.Errorf("unexpected Identity verification request")
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		if r.URL.Path == "/v1/operators/me/permissions/operations" {
+			// This test only provisions current sessions, not an effective grant.
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		if r.URL.Path != "/v1/sessions/current" {
+			t.Errorf("unexpected Identity path: %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		reads.Add(1)
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"actorId":          "merchant-one",
@@ -50,8 +60,8 @@ func TestIdentityHTTPVerifiesCurrentSessionOnEveryUse(t *testing.T) {
 	if reads.Load() != 2 {
 		t.Fatalf("cached Identity session despite revocation risk: calls=%d", reads.Load())
 	}
-	if err := client.RequireOperatorPermission(context.Background(), token, "operations"); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("operator permission fabricated without owner endpoint: %v", err)
+	if err := client.RequireOperatorPermission(context.Background(), token, "merchant-one", "operations"); !errors.Is(err, ErrIdentityUnavailable) {
+		t.Fatalf("unavailable effective grant accepted: %v", err)
 	}
 }
 
@@ -166,7 +176,7 @@ type unavailableIdentitySession struct{}
 func (unavailableIdentitySession) ResolveCurrentSession(context.Context, string) (VerifiedActor, error) {
 	return VerifiedActor{}, ErrIdentityUnavailable
 }
-func (unavailableIdentitySession) RequireOperatorPermission(context.Context, string, string) error {
+func (unavailableIdentitySession) RequireOperatorPermission(context.Context, string, string, string) error {
 	return ErrIdentityUnavailable
 }
 

@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import tomllib
 import unittest
 
 import yaml
@@ -41,6 +43,31 @@ class ReviewedGatesTests(unittest.TestCase):
         spec.loader.exec_module(module)
         cls.prepare = staticmethod(module.prepare)
 
+    def test_codex_project_config_disables_login_shell(self) -> None:
+        with (ROOT / ".codex" / "config.toml").open("rb") as cfg:
+            data = tomllib.load(cfg)
+        self.assertIs(data.get("allow_login_shell"), False)
+        self.assertIn("$speckit-", data.get("developer_instructions", ""))
+
+    @unittest.skipUnless(os.name == "nt", "Windows-only shell alias test")
+    def test_launcher_excludes_windowsapps_alias_from_child_only(self) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "bthwani_invoke", SCRIPTS / "invoke-bthwani-speckit.py"
+        )
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        root = r"C:\Test\AppData\Local"
+        original_path = (
+            r"C:\Tools;C:\Test\AppData\Local\Microsoft\WindowsApps;"
+            r"C:\Windows\System32"
+        )
+        parent = {"LOCALAPPDATA": root, "PATH": original_path, "SAFE_VAR": "preserve"}
+        child = module._scoped_child_environment(parent)
+        self.assertEqual(parent["PATH"], original_path)
+        self.assertEqual(child["PATH"], r"C:\Tools;C:\Windows\System32")
+        self.assertEqual(child["SAFE_VAR"], "preserve")
+
     def test_actual_workflow_graph_and_gates(self) -> None:
         with tempfile.TemporaryDirectory(prefix="speckit-review-", dir=ROOT / ".bthwani-local") as d:
             path = Path(d) / "reviewed.yml"
@@ -49,6 +76,13 @@ class ReviewedGatesTests(unittest.TestCase):
             source = path.read_text(encoding="utf-8")
             data = yaml.safe_load(source)
             self.assertEqual(len(data["steps"]), 13)
+            command_steps = [s for s in data["steps"] if s.get("type", "command") == "command"]
+            self.assertEqual(len(command_steps), 8)
+            for step in command_steps:
+                prompt = step["input"]["args"]
+                self.assertTrue(prompt.startswith("{{ inputs.spec }}"))
+                self.assertIn("Orchestrated Spec Kit phase: " + step["id"], prompt)
+                self.assertIn("report BLOCKED", prompt)
             gates = [s for s in data["steps"] if s.get("type") == "gate"]
             self.assertEqual(len(gates), 4)
             for gate in gates:
