@@ -12,6 +12,7 @@ var (
 	ErrUnauthorized          = errors.New("UNAUTHENTICATED")
 	ErrIdentityUnavailable   = errors.New("IDENTITY_OWNER_UNAVAILABLE")
 	ErrForbidden             = errors.New("STORE_OPERATION_FORBIDDEN")
+	ErrStoreOwnerUnavailable = errors.New("STORE_OWNER_UNAVAILABLE")
 	ErrInvalidChange         = errors.New("INVALID_OPERATIONAL_CHANGE")
 	ErrPolicyUnavailable     = errors.New("OPERATIONAL_POLICY_UNAVAILABLE")
 	ErrPolicyVersionConflict = errors.New("OPERATIONAL_POLICY_VERSION_CONFLICT")
@@ -115,7 +116,10 @@ func (s *Service) authorize(ctx context.Context, token, storeID string) (Verifie
 	switch actor.Role {
 	case MerchantRole:
 		if err = s.grants.RequireStoreAction(ctx, actor.Subject, storeID, "store_operations"); err != nil {
-			return VerifiedActor{}, "", ErrForbidden
+			if errors.Is(err, ErrForbidden) || errors.Is(err, ErrStoreMissing) {
+				return VerifiedActor{}, "", ErrForbidden
+			}
+			return VerifiedActor{}, "", ErrStoreOwnerUnavailable
 		}
 		return actor, "MERCHANT_STORE_GRANT", nil
 	case OperatorRole:

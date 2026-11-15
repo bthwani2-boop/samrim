@@ -87,6 +87,36 @@ func TestHTTPResponseUsesStableNoSecretErrorCodes(t *testing.T) {
 	}
 }
 
+func TestHTTPStoreOwnerOutageIsRecoverableWithoutDisclosure(t *testing.T) {
+	count := 0
+	s, err := NewService(fakeIdentity{actor: VerifiedActor{Subject: "merchant-a", Role: MerchantRole}},
+		fakeGrant{unavailable: true}, fakePolicy{}, fakeRepo{&count})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := NewHandler(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := `{"operationId":"merchant-0001","expectedVersion":1,"weekly":[{"weekday":1,"opens":600,"closes":1200}],"preparationMinutes":25,"reason":"Schedule update"}`
+	for _, method := range []string{http.MethodGet, http.MethodPatch} {
+		req := httptest.NewRequest(method, "/v1/stores/store-one/availability", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer valid-token")
+		req.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		if response.Code != http.StatusServiceUnavailable || !bytes.Contains(response.Body.Bytes(), []byte(`"code":"STORE_OWNER_UNAVAILABLE"`)) {
+			t.Fatalf("%s Store owner outage returned %d: %s", method, response.Code, response.Body.String())
+		}
+		if bytes.Contains(response.Body.Bytes(), []byte("database unavailable")) || response.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("%s leaked or cached Store owner outage", method)
+		}
+	}
+	if count != 0 {
+		t.Fatalf("Store owner outage reached persistence %d times", count)
+	}
+}
+
 func TestHTTPAcceptsOneScopedValidatedUpdate(t *testing.T) {
 	count := 0
 	s, _ := NewService(fakeIdentity{actor: VerifiedActor{Subject: "merchant-a", Role: MerchantRole}}, fakeGrant{}, fakePolicy{}, fakeRepo{&count})

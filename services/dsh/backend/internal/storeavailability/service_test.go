@@ -28,6 +28,7 @@ func (x fakeIdentity) RequireOperatorPermission(context.Context, string, string,
 
 type fakeGrant struct {
 	denied              bool
+	unavailable         bool
 	timezone            string
 	timezoneUnavailable bool
 }
@@ -42,8 +43,11 @@ func (x fakeGrant) StoreTimezone(context.Context, string) (string, error) {
 	return "Asia/Aden", nil
 }
 func (x fakeGrant) RequireStoreAction(context.Context, string, string, string) error {
+	if x.unavailable {
+		return errors.New("Store owner database unavailable")
+	}
 	if x.denied {
-		return errors.New("other store")
+		return ErrForbidden
 	}
 	return nil
 }

@@ -132,6 +132,8 @@ func writeFailure(w http.ResponseWriter, err error) {
 		code, category = http.StatusBadRequest, "INVALID_OPERATIONAL_CHANGE"
 	case errors.Is(err, ErrUnknownResult):
 		code, category = http.StatusServiceUnavailable, "OPERATION_RESULT_UNKNOWN"
+	case errors.Is(err, ErrStoreOwnerUnavailable):
+		code, category = http.StatusServiceUnavailable, "STORE_OWNER_UNAVAILABLE"
 	case errors.Is(err, ErrPolicyUnavailable):
 		code, category = http.StatusServiceUnavailable, "OPERATIONAL_POLICY_UNAVAILABLE"
 	}
