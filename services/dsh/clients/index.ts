@@ -24,12 +24,14 @@ export interface PublicPage<T> {
   revision: number;
 }
 export class DshPublicError extends Error {
-  constructor(
-    public readonly status: number,
-    public readonly code: string,
-  ) {
+  readonly status: number;
+  readonly code: string;
+
+  constructor(status: number, code: string) {
     super(code);
     this.name = "DshPublicError";
+    this.status = status;
+    this.code = code;
   }
 }
 function endpoint(baseUrl: string, path: string): URL {
