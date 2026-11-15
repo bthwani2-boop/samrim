@@ -18,9 +18,9 @@ const identityJSONMediaType = "application/json"
 // canonical active-session read. It never verifies client-asserted actor data,
 // generates credentials, or grants Operator permissions on role alone.
 type IdentitySessionHTTP struct {
-	endpoint           string
-	permissionEndpoint string
-	client             *http.Client
+	endpoint       string
+	permissionBase string
+	client         *http.Client
 }
 
 func NewIdentitySessionHTTP(baseURL string) (*IdentitySessionHTTP, error) {
@@ -34,12 +34,12 @@ func NewIdentitySessionHTTP(baseURL string) (*IdentitySessionHTTP, error) {
 		!(root.Scheme == "http" && (root.Hostname() == "127.0.0.1" || root.Hostname() == "localhost")) {
 		return nil, ErrInvalidChange
 	}
-	root.Path = "/v1/operators/me/permissions/operations"
-	permissionEndpoint := root.String()
+	root.Path = "/v1/operators/me/permissions/"
+	permissionBase := root.String()
 	root.Path = "/v1/sessions/current"
 	return &IdentitySessionHTTP{
-		endpoint:           root.String(),
-		permissionEndpoint: permissionEndpoint,
+		endpoint:       root.String(),
+		permissionBase: permissionBase,
 		client: &http.Client{
 			Timeout: 3 * time.Second,
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
@@ -124,7 +124,7 @@ func (identity *IdentitySessionHTTP) RequireOperatorPermission(ctx context.Conte
 	if identity == nil || identity.client == nil {
 		return ErrIdentityUnavailable
 	}
-	if permission != "operations" || verifiedActorID == "" ||
+	if (permission != "operations" && permission != "platform_policies") || verifiedActorID == "" ||
 		len(verifiedActorID) > 128 || strings.TrimSpace(verifiedActorID) != verifiedActorID ||
 		strings.ContainsAny(verifiedActorID, "\r\n\t") {
 		return ErrForbidden
@@ -133,7 +133,7 @@ func (identity *IdentitySessionHTTP) RequireOperatorPermission(ctx context.Conte
 		strings.ContainsAny(token, " \t\r\n") {
 		return ErrUnauthorized
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, identity.permissionEndpoint, nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, identity.permissionBase+permission, nil)
 	if err != nil {
 		return ErrIdentityUnavailable
 	}

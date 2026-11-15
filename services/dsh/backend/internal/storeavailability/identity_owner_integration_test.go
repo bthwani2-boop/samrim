@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -257,6 +258,27 @@ func TestIsolatedRealIdentityAndDshAvailability(t *testing.T) {
 	if status != 403 {
 		t.Fatalf("revoked Operator grant still allowed: %d", status)
 	}
+	// The current Identity Owner must require an independent platform_policies
+	// permission. An operations grant cannot be treated as policy authority,
+	// and a platform_policies grant must not resurrect revoked operations.
+	if check := identity.RequireOperatorPermission(ctx, tokenOperator, operator, "platform_policies"); !errors.Is(check, ErrForbidden) {
+		t.Fatalf("operations grant was accepted as platform policy authority: %v", check)
+	}
+	if _, err = db.ExecContext(ctx, "INSERT INTO "+identitySchema+".operator_permissions(actor_id,permission) VALUES($1,'platform_policies')", operator); err != nil {
+		t.Fatal(err)
+	}
+	if check := identity.RequireOperatorPermission(ctx, tokenOperator, operator, "platform_policies"); check != nil {
+		t.Fatalf("current platform_policies grant was denied by real Identity: %v", check)
+	}
+	if status, _ := request(http.MethodGet, tokenOperator, nil); status != http.StatusForbidden {
+		t.Fatalf("platform_policies grant revived revoked operations scope: %d", status)
+	}
+	if _, err = db.ExecContext(ctx, "UPDATE "+identitySchema+".operator_permissions SET state='REVOKED' WHERE actor_id=$1 AND permission='platform_policies'", operator); err != nil {
+		t.Fatal(err)
+	}
+	if check := identity.RequireOperatorPermission(ctx, tokenOperator, operator, "platform_policies"); !errors.Is(check, ErrForbidden) {
+		t.Fatalf("revoked platform_policies grant remained effective: %v", check)
+	}
 	if _, err = db.ExecContext(ctx, "UPDATE "+identitySchema+".auth_sessions SET revoked_at=now() WHERE token_digest=$1", digestA); err != nil {
 		t.Fatal(err)
 	}
@@ -282,20 +304,23 @@ func TestIsolatedRealIdentityAndDshAvailability(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer independent.Close()
-	var independentVersion, independentAudits, revokedPermissions, revokedSessions int
+	var independentVersion, independentAudits, revokedPermissions, revokedPolicyPermissions, revokedSessions int
 	if err = independent.QueryRowContext(ctx, "SELECT version FROM "+dshSchema+".store_operational_availability WHERE store_id=$1", store).Scan(&independentVersion); err != nil {
 		t.Fatal(err)
 	}
 	if err = independent.QueryRowContext(ctx, "SELECT count(*) FROM "+dshSchema+".store_operational_audit WHERE store_id=$1", store).Scan(&independentAudits); err != nil {
 		t.Fatal(err)
 	}
-	if err = independent.QueryRowContext(ctx, "SELECT count(*) FROM "+identitySchema+".operator_permissions WHERE actor_id=$1 AND state='REVOKED'", operator).Scan(&revokedPermissions); err != nil {
+	if err = independent.QueryRowContext(ctx, "SELECT count(*) FROM "+identitySchema+".operator_permissions WHERE actor_id=$1 AND permission='operations' AND state='REVOKED'", operator).Scan(&revokedPermissions); err != nil {
+		t.Fatal(err)
+	}
+	if err = independent.QueryRowContext(ctx, "SELECT count(*) FROM "+identitySchema+".operator_permissions WHERE actor_id=$1 AND permission='platform_policies' AND state='REVOKED'", operator).Scan(&revokedPolicyPermissions); err != nil {
 		t.Fatal(err)
 	}
 	if err = independent.QueryRowContext(ctx, "SELECT count(*) FROM "+identitySchema+".auth_sessions WHERE token_digest=$1 AND revoked_at IS NOT NULL", digestA).Scan(&revokedSessions); err != nil {
 		t.Fatal(err)
 	}
-	if independentVersion != 2 || independentAudits != 1 || revokedPermissions != 1 || revokedSessions != 1 {
+	if independentVersion != 2 || independentAudits != 1 || revokedPermissions != 1 || revokedPolicyPermissions != 1 || revokedSessions != 1 {
 		t.Fatalf("independent durable readback mismatch: version=%d audits=%d revokedGrants=%d revokedSessions=%d",
 			independentVersion, independentAudits, revokedPermissions, revokedSessions)
 	}
