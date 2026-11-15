@@ -65,7 +65,7 @@ func TestIsolatedRealIdentityAndDshAvailability(t *testing.T) {
 	if err = db.QueryRowContext(ctx, "SELECT count(*) FROM pg_namespace WHERE nspname=$1", identitySchema).Scan(&preexisting); err != nil || preexisting != 0 {
 		t.Fatal("Identity synthetic schema must be new")
 	}
-	for _, f := range []string{"001_session_verification.sql", "002_operator_permission_read.sql"} {
+	for _, f := range []string{"001_session_verification.sql", "002_operator_permission_read.sql", "003_verified_customer_merchant_admission.sql"} {
 		source, e := os.ReadFile(filepath.Join(sqlDir, f))
 		if e != nil {
 			t.Fatal(e)
@@ -96,6 +96,11 @@ func TestIsolatedRealIdentityAndDshAvailability(t *testing.T) {
 		if _, err = db.ExecContext(ctx, "INSERT INTO "+identitySchema+".actor_roles(actor_id,role,status) VALUES($1,$2,'ACTIVE')", actor.id, actor.role); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// Only the synthetic Identity verifier marks this test Customer verified.
+	// Merchant admission must still convey no DSH Store rights by itself.
+	if _, err = db.ExecContext(ctx, "UPDATE "+identitySchema+".actors SET verified_at=now() WHERE id=$1", customer); err != nil {
+		t.Fatal(err)
 	}
 	issue := func(actor, role string) (string, []byte) {
 		t.Helper()
@@ -294,6 +299,74 @@ func TestIsolatedRealIdentityAndDshAvailability(t *testing.T) {
 		t.Fatalf("independent durable readback mismatch: version=%d audits=%d revokedGrants=%d revokedSessions=%d",
 			independentVersion, independentAudits, revokedPermissions, revokedSessions)
 	}
-	t.Log(fmt.Sprintf("REAL_IDENTITY_DSH_POSTGRES_ISOLATED_PASS store_version=%d audits=%d commands=%d revokedGrants=%d revokedSessions=%d identity_schema=%s",
+	// Use Identity's actual one-time Customer-to-Merchant issuer, not a
+	// test-manufactured Merchant token. Role admission must not mint DSH
+	// Store authority; only a subsequent current DSH ownership fact may do so.
+	admitRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, identityURL+"/v1/actors/me/merchant-role", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admitRequest.Header.Set("Authorization", "Bearer "+tokenCustomer)
+	admitResponse, err := (&http.Client{Timeout: time.Second}).Do(admitRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var admission struct {
+		AccessToken string `json:"accessToken"`
+	}
+	if admitResponse.StatusCode != http.StatusCreated {
+		_ = admitResponse.Body.Close()
+		t.Fatalf("real verified Customer Merchant admission denied: %d", admitResponse.StatusCode)
+	}
+	if err = json.NewDecoder(admitResponse.Body).Decode(&admission); err != nil {
+		_ = admitResponse.Body.Close()
+		t.Fatal(err)
+	}
+	_ = admitResponse.Body.Close()
+	if len(admission.AccessToken) != 43 {
+		t.Fatal("Identity merchant admission did not issue a 256-bit bearer")
+	}
+	if code, _ := request(http.MethodGet, admission.AccessToken, nil); code != http.StatusForbidden {
+		t.Fatalf("new Merchant role implied DSH Store ownership: %d", code)
+	}
+	if code, _ := request(http.MethodGet, tokenCustomer, nil); code != http.StatusForbidden {
+		t.Fatalf("original Customer session acquired Merchant Store authority: %d", code)
+	}
+	if _, err = independent.ExecContext(ctx, "UPDATE "+dshSchema+".stores SET owner_actor_id=$2 WHERE id=$1", store, customer); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := request(http.MethodGet, admission.AccessToken, nil); code != http.StatusOK {
+		t.Fatalf("current DSH ownership failed to authorize verified Merchant role: %d", code)
+	}
+	if code, _ := request(http.MethodGet, tokenCustomer, nil); code != http.StatusForbidden {
+		t.Fatalf("Customer bearer switched to Merchant privileges after Store ownership change: %d", code)
+	}
+	logoutRequest, err := http.NewRequestWithContext(ctx, http.MethodDelete, identityURL+"/v1/sessions/current", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logoutRequest.Header.Set("Authorization", "Bearer "+admission.AccessToken)
+	logoutResponse, err := (&http.Client{Timeout: time.Second}).Do(logoutRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = logoutResponse.Body.Close()
+	if logoutResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf("Identity refused admitted Merchant bearer revocation: %d", logoutResponse.StatusCode)
+	}
+	if code, _ := request(http.MethodGet, admission.AccessToken, nil); code != http.StatusUnauthorized {
+		t.Fatalf("revoked newly-issued Merchant bearer retained DSH Store authority: %d", code)
+	}
+	var currentOwner, issuedRole string
+	if err = independent.QueryRowContext(ctx, "SELECT owner_actor_id FROM "+dshSchema+".stores WHERE id=$1", store).Scan(&currentOwner); err != nil {
+		t.Fatal(err)
+	}
+	if err = independent.QueryRowContext(ctx, "SELECT role FROM "+identitySchema+".actor_roles WHERE actor_id=$1 AND role='merchant'", customer).Scan(&issuedRole); err != nil {
+		t.Fatal(err)
+	}
+	if currentOwner != customer || issuedRole != "merchant" {
+		t.Fatalf("cross-owner persisted grants are not independent: Store owner=%q role=%q", currentOwner, issuedRole)
+	}
+	t.Log(fmt.Sprintf("REAL_IDENTITY_DSH_POSTGRES_ISOLATED_PASS store_version=%d audits=%d commands=%d revokedGrants=%d revokedSessions=%d merchantAdmission=ONE_TIME_NO_IMPLICIT_STORE_GRANT identity_schema=%s",
 		independentVersion, independentAudits, commands, revokedPermissions, revokedSessions, identitySchema))
 }
