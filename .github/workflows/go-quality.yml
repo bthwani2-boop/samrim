@@ -1,0 +1,61 @@
+name: Go Quality (source checks only)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'refoundation/clean-house-20261112'
+    paths:
+      - '.go-version'
+      - '.github/workflows/go-quality.yml'
+      - 'tools/dev/check-go.mjs'
+      - 'tools/dev/check-go.test.mjs'
+      - 'services/**/backend/**'
+  pull_request:
+    branches:
+      - main
+      - 'refoundation/clean-house-20261112'
+    paths:
+      - '.go-version'
+      - '.github/workflows/go-quality.yml'
+      - 'tools/dev/check-go.mjs'
+      - 'tools/dev/check-go.test.mjs'
+      - 'services/**/backend/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: go-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go-quality:
+    name: Go format, modules, vet, race and coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GOTOOLCHAIN: local
+      GOWORK: 'off'
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Use pinned Node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Use pinned Go (source-compatible action)
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: .go-version
+          check-latest: false
+          cache: false
+      - name: Test Go runner argument, pin and module safety
+        run: node --test tools/dev/check-go.test.mjs
+      - name: Verify real Go modules with race detector and measured coverage
+        run: node tools/dev/check-go.mjs --ci
+      - name: State validation limits
+        run: echo 'NOT_RUN - isolated PostgreSQL integration, govulncheck, golangci-lint, gosec and fuzz campaigns'
