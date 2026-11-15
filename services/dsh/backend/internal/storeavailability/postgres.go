@@ -257,6 +257,73 @@ func (r *PostgresRepository) committedOperation(ctx context.Context, storeID, op
 	return snapshot, true, nil
 }
 
+// requireCurrentStoreAuthority locks both Store and City in the mutation
+// transaction. A previously read grant is never sufficient at commit time.
+func requireCurrentStoreAuthority(ctx context.Context, tx *sql.Tx, c AuthorizedChange) error {
+	if c.AuthoritySource != "MERCHANT_STORE_GRANT" && c.AuthoritySource != "OPERATOR_OPERATIONS" {
+		return ErrForbidden
+	}
+	var currentOwner string
+	var authoritativeTimezone sql.NullString
+	err := tx.QueryRowContext(ctx, `SELECT s.owner_actor_id, city.timezone_name
+		FROM stores s JOIN service_cities city ON city.id=s.city_id
+		WHERE s.id=$1 FOR SHARE OF s,city`, c.StoreID).
+		Scan(&currentOwner, &authoritativeTimezone)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrStoreMissing
+	}
+	if err != nil {
+		return normalizePgError(err)
+	}
+	if c.AuthoritySource == "MERCHANT_STORE_GRANT" && currentOwner != c.ActorID {
+		return ErrForbidden
+	}
+	if !authoritativeTimezone.Valid || authoritativeTimezone.String != c.Timezone {
+		return ErrInvalidTimezone
+	}
+	if _, err = loadStoreTimezone(c.Timezone); err != nil {
+		return ErrInvalidTimezone
+	}
+	return nil
+}
+
+// requireCurrentStorePolicy validates the locked, owner-authored policy
+// without trusting caller-provided pause or preparation bounds.
+func requireCurrentStorePolicy(ctx context.Context, tx *sql.Tx, c AuthorizedChange) error {
+	var livePolicyVersion int64
+	var maxPauseSeconds, maxPreparationMinutes int
+	var databaseNow time.Time
+	err := tx.QueryRowContext(ctx, `SELECT p.version, p.max_pause_seconds, p.max_preparation_minutes, clock_timestamp()
+		FROM stores s
+		JOIN service_cities city ON city.id=s.city_id
+		JOIN store_operational_limits p ON p.city_id=city.id
+		WHERE s.id=$1 AND city.active FOR SHARE OF p`, c.StoreID).
+		Scan(&livePolicyVersion, &maxPauseSeconds, &maxPreparationMinutes, &databaseNow)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrPolicyUnavailable
+	}
+	if err != nil {
+		return normalizePgError(err)
+	}
+	if c.PolicyVersion < 1 || livePolicyVersion < 1 || maxPauseSeconds < 0 ||
+		maxPauseSeconds > 31536000 || maxPreparationMinutes < 0 || maxPreparationMinutes > 1440 {
+		return ErrPolicyUnavailable
+	}
+	if livePolicyVersion != c.PolicyVersion {
+		return ErrPolicyVersionConflict
+	}
+	if c.PreparationMinutes < 0 || c.PreparationMinutes > maxPreparationMinutes {
+		return ErrInvalidChange
+	}
+	if c.PausedUntil != nil {
+		pauseFor := c.PausedUntil.Sub(databaseNow)
+		if maxPauseSeconds == 0 || pauseFor <= 0 || pauseFor > time.Duration(maxPauseSeconds)*time.Second {
+			return ErrInvalidChange
+		}
+	}
+	return nil
+}
+
 func (r *PostgresRepository) applyOnce(ctx context.Context, c AuthorizedChange, hash string) (Snapshot, bool, error) {
 	if c.StoreID == "" || c.ActorID == "" || !operationIDRule.MatchString(c.OperationID) {
 		return Snapshot{}, false, ErrInvalidChange
@@ -269,32 +336,10 @@ func (r *PostgresRepository) applyOnce(ctx context.Context, c AuthorizedChange, 
 		return Snapshot{}, false, err
 	}
 	defer tx.Rollback()
-	// Lock the canonical Store/City authority while applying this change. An
-	// ownership transfer or timezone update racing this transaction must not
-	// authorize a stale mutation.
-	if c.AuthoritySource != "MERCHANT_STORE_GRANT" && c.AuthoritySource != "OPERATOR_OPERATIONS" {
-		return Snapshot{}, false, ErrForbidden
-	}
-	var currentOwner string
-	var authoritativeTimezone sql.NullString
-	err = tx.QueryRowContext(ctx, `SELECT s.owner_actor_id, city.timezone_name
-		FROM stores s JOIN service_cities city ON city.id=s.city_id
-		WHERE s.id=$1 FOR SHARE OF s,city`, c.StoreID).
-		Scan(&currentOwner, &authoritativeTimezone)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Snapshot{}, false, ErrStoreMissing
-	}
-	if err != nil {
-		return Snapshot{}, false, normalizePgError(err)
-	}
-	if c.AuthoritySource == "MERCHANT_STORE_GRANT" && currentOwner != c.ActorID {
-		return Snapshot{}, false, ErrForbidden
-	}
-	if !authoritativeTimezone.Valid || authoritativeTimezone.String != c.Timezone {
-		return Snapshot{}, false, ErrInvalidTimezone
-	}
-	if _, err = loadStoreTimezone(c.Timezone); err != nil {
-		return Snapshot{}, false, ErrInvalidTimezone
+	// Lock canonical Store/City authority in the same serializable transaction;
+	// a concurrent ownership transfer or timezone change must fail closed.
+	if err = requireCurrentStoreAuthority(ctx, tx, c); err != nil {
+		return Snapshot{}, false, err
 	}
 	// A first Store update creates an explicitly closed schedule record,
 	// inside the same transaction as the first authorized operation.
@@ -335,40 +380,10 @@ func (r *PostgresRepository) applyOnce(ctx context.Context, c AuthorizedChange, 
 	if before.Version != c.ExpectedVersion {
 		return Snapshot{}, false, ErrVersionConflict
 	}
-	// A Store edit must use the DSH policy version read at authorization.
-	// Hold a shared lock until the Store transaction commits, so a later
-	// Operator policy edit cannot retroactively invalidate this check.
-	// Unknown, inactive or stale policy never permits a Store write.
-	var livePolicyVersion int64
-	var maxPauseSeconds, maxPreparationMinutes int
-	var databaseNow time.Time
-	err = tx.QueryRowContext(ctx, `SELECT p.version, p.max_pause_seconds, p.max_preparation_minutes, clock_timestamp()
-		FROM stores s
-		JOIN service_cities city ON city.id=s.city_id
-		JOIN store_operational_limits p ON p.city_id=city.id
-		WHERE s.id=$1 AND city.active FOR SHARE OF p`, c.StoreID).
-		Scan(&livePolicyVersion, &maxPauseSeconds, &maxPreparationMinutes, &databaseNow)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Snapshot{}, false, ErrPolicyUnavailable
-	}
-	if err != nil {
-		return Snapshot{}, false, normalizePgError(err)
-	}
-	if c.PolicyVersion < 1 || livePolicyVersion < 1 || maxPauseSeconds < 0 ||
-		maxPauseSeconds > 31536000 || maxPreparationMinutes < 0 || maxPreparationMinutes > 1440 {
-		return Snapshot{}, false, ErrPolicyUnavailable
-	}
-	if livePolicyVersion != c.PolicyVersion {
-		return Snapshot{}, false, ErrPolicyVersionConflict
-	}
-	if c.PreparationMinutes < 0 || c.PreparationMinutes > maxPreparationMinutes {
-		return Snapshot{}, false, ErrInvalidChange
-	}
-	if c.PausedUntil != nil {
-		pauseFor := c.PausedUntil.Sub(databaseNow)
-		if maxPauseSeconds == 0 || pauseFor <= 0 || pauseFor > time.Duration(maxPauseSeconds)*time.Second {
-			return Snapshot{}, false, ErrInvalidChange
-		}
+	// Hold the DSH policy lock through commit, so policy edits cannot make
+	// an authorized Store change retroactively valid or invalid.
+	if err = requireCurrentStorePolicy(ctx, tx, c); err != nil {
+		return Snapshot{}, false, err
 	}
 	after := Snapshot{
 		StoreID: c.StoreID, Timezone: c.Timezone, Weekly: append([]WeeklyWindow{}, c.Weekly...),

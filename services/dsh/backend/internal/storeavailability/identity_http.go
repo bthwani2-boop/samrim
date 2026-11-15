@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+const identityJSONMediaType = "application/json"
+
 // IdentitySessionHTTP is an owner-bound, uncached consumer of Identity's
 // canonical active-session read. It never verifies client-asserted actor data,
 // generates credentials, or grants Operator permissions on role alone.
@@ -58,7 +60,7 @@ func (identity *IdentitySessionHTTP) ResolveCurrentSession(ctx context.Context, 
 		return VerifiedActor{}, ErrIdentityUnavailable
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
-	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Accept", identityJSONMediaType)
 	request.Header.Set("Cache-Control", "no-store")
 	response, err := identity.client.Do(request)
 	if err != nil {
@@ -73,7 +75,7 @@ func (identity *IdentitySessionHTTP) ResolveCurrentSession(ctx context.Context, 
 		return VerifiedActor{}, ErrIdentityUnavailable
 	}
 	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
-	if err != nil || mediaType != "application/json" {
+	if err != nil || mediaType != identityJSONMediaType {
 		return VerifiedActor{}, ErrIdentityUnavailable
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, 4097))
@@ -136,7 +138,7 @@ func (identity *IdentitySessionHTTP) RequireOperatorPermission(ctx context.Conte
 		return ErrIdentityUnavailable
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
-	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Accept", identityJSONMediaType)
 	request.Header.Set("Cache-Control", "no-store")
 	response, err := identity.client.Do(request)
 	if err != nil {
@@ -153,7 +155,7 @@ func (identity *IdentitySessionHTTP) RequireOperatorPermission(ctx context.Conte
 		return ErrIdentityUnavailable
 	}
 	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
-	if err != nil || mediaType != "application/json" {
+	if err != nil || mediaType != identityJSONMediaType {
 		return ErrIdentityUnavailable
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, 4097))
