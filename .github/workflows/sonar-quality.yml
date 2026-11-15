@@ -76,9 +76,9 @@ jobs:
             (
               cd "services/$service/backend"
               go test -count=1 -covermode=atomic -coverpkg=./... -coverprofile="$GITHUB_WORKSPACE/coverage/$service-go.out" ./...
+              test -s "$GITHUB_WORKSPACE/coverage/$service-go.out"
+              go tool cover -func="$GITHUB_WORKSPACE/coverage/$service-go.out" | tail -n 1
             )
-            test -s "coverage/$service-go.out"
-            go tool cover -func="coverage/$service-go.out" | tail -n 1
           done
       - name: Analyze using existing Sonar project and enforce its Quality Gate
         if: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
