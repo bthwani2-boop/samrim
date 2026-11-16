@@ -159,6 +159,11 @@ export function stage4WorkspaceIssues(base = root) {
   ]) {
     for (const entry of readdirSync(join(base, group), { withFileTypes: true })) {
       if (entry.isDirectory() && !ignored.has(entry.name) && !allowed.includes(entry.name)) {
+        // Removed packages can leave an ignored node_modules directory behind.
+        // It is not authored source or a workspace owner. Still reject empty
+        // or source-bearing unknown owners, including ones with node_modules.
+        const contents = readdirSync(join(base, group, entry.name));
+        if (contents.length > 0 && contents.every(name => ignored.has(name))) continue;
         issues.push(group + "/" + entry.name + ": unapproved Stage-4 owner");
       }
     }

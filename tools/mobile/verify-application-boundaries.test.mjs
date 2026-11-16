@@ -122,6 +122,12 @@ test("Stage 4 rejects unapproved owner directories and any duplicate src/app rou
       mkdirSync(join(fixture, group), { recursive: true });
     }
     assert.deepEqual(stage4WorkspaceIssues(fixture), []);
+    const leftBehind = join(fixture, "packages", "retired-package");
+    mkdirSync(join(leftBehind, "node_modules"), { recursive: true });
+    assert.deepEqual(stage4WorkspaceIssues(fixture), [], "generated-only package directory is not source");
+    mkdirSync(join(leftBehind, "src"), { recursive: true });
+    assert.match(stage4WorkspaceIssues(fixture).join(" "), /retired-package: unapproved/);
+    rmSync(join(leftBehind, "src"), { recursive: true });
     mkdirSync(join(fixture, "apps", "customer", "src", "app"), { recursive: true });
     mkdirSync(join(fixture, "apps", "storefront"), { recursive: true });
     mkdirSync(join(fixture, "packages", "new-theme-engine"), { recursive: true });

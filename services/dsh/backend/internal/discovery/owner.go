@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -49,6 +50,24 @@ func OpenFromEnvironment() (*sql.DB, error) {
 	u.RawQuery = q.Encode()
 	return sql.Open("postgres", u.String())
 }
+
+// A schema marker is not a SQL sandbox: arbitrary input could still alter
+// other schemas or execute privileged statements. Only these exact, reviewed,
+// immutable DSH migration files may reach the SQL executor. Updating a file
+// requires a separate review of its statements and an explicit new digest.
+func isReviewedMigrationSource(source []byte) bool {
+	switch fmt.Sprintf("%x", sha256.Sum256(source)) {
+	case "0faa485857413951eba34f4ff278a723bb968a84be7fa01de19249ece7ad3895", // 001_public_discovery.sql
+		"f4ef4ed3b9b45bf7389c8588d69fb333e1ce3ac92b334f1f003cc17313501e90", // 002_store_orderability.sql
+		"2ae3dcccc682c1e8f7917b7355f85b12311c381718fcf9afff91524e30bee773", // 003_service_city_timezone.sql
+		"8e48b3cdcdc103fe698b1a9d1768be7006395e99e930f81ce37084de8e5f778e", // 004_store_availability_city_limits.sql
+		"05f8566c1e8de1ee4f5922964c449652e0a005bd7e4840c651a464cdbca481fb": // 005_store_operational_policy_commands.sql
+		return true
+	default:
+		return false
+	}
+}
+
 func (o *Owner) Migrate(ctx context.Context, source []byte) error {
 	if o == nil || o.DB == nil || !identifier.MatchString(o.Schema) ||
 		os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" || !strings.HasPrefix(o.Schema, "dsh_test_") {
@@ -59,6 +78,9 @@ func (o *Owner) Migrate(ctx context.Context, source []byte) error {
 	// or another service's search_path even in the isolated development DB.
 	if !strings.Contains(string(source), "__SCHEMA__") {
 		return errors.New("DSH migration is missing its scoped schema marker")
+	}
+	if !isReviewedMigrationSource(source) {
+		return errors.New("DSH migration content does not match a reviewed source")
 	}
 	sqlText := strings.ReplaceAll(string(source), "__SCHEMA__", o.Schema)
 	if strings.Contains(sqlText, "__SCHEMA__") {
