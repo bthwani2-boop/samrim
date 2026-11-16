@@ -75,6 +75,56 @@ test("reject a PathItem fragment that is not linked from the owner entrypoint", 
 });
 
 
+test("reject an unknown PathItem field even alongside a valid operation", () => {
+  const result = mutate("dsh", "paths/stores.yaml", (s) =>
+    s.replace("    get:\n      operationId: listPublicStores",
+      "    fetch: {}\n    get:\n      operationId: listPublicStores"));
+  hasError(result, "Unknown PathItem field");
+});
+
+test("reject non-HTTP response status names", () => {
+  const result = mutate("dsh", "paths/stores.yaml", (s) =>
+    s.replace("        '200':", "        success:"));
+  hasError(result, "Invalid HTTP response status");
+});
+
+test("reject JSON pointers that resolve only through the JavaScript prototype chain", () => {
+  const result = mutate("dsh", "paths/stores.yaml", (s) =>
+    s.replace("../dsh.openapi.yaml#/components/schemas/StorePage",
+      "../dsh.openapi.yaml#/__proto__"));
+  hasError(result, "unresolved $ref");
+});
+
+test("reject a PathItem reference to a different path in the same YAML module", () => {
+  const result = mutate("dsh", "dsh.openapi.yaml", (s) =>
+    s.replace(
+      "'./paths/stores.yaml#/paths/~1v1~1public~1stores'",
+      "'./paths/stores.yaml#/paths/~1v1~1public~1stores~1{id}'",
+    ));
+  hasError(result, "PathItem reference does not match declared path");
+});
+
+test("reject operation with missing explicit security declaration", () => {
+  const result = mutate("identity", "paths/session.yaml", (s) =>
+    s.replace("security:", "security_removed:"));
+  hasError(result, "Missing explicit operation security");
+});
+
+test("reject non-array operation security without throwing", () => {
+  const result = mutate("identity", "paths/session.yaml", (s) =>
+    s.replace("- OpaqueSession: []", "NotRegistered"));
+  hasError(result, "Invalid operation security");
+});
+
+test("reject malformed PathItem reference without throwing", () => {
+  const result = mutate("dsh", "dsh.openapi.yaml", (s) =>
+    s.replace(
+      "    $ref: './paths/stores.yaml#/paths/~1v1~1public~1stores'",
+      "    $ref: { unexpected: path }",
+    ));
+  hasError(result, "Invalid PathItem $ref");
+});
+
 // These tests exercise the hand-written public client against the *owner's*
 // OpenAPI 3.1 contract, not a generated-client file that does not exist.
 test("DSH public Store/Offer client requests match owner OpenAPI operation paths and methods", async () => {

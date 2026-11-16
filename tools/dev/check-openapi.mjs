@@ -58,7 +58,7 @@ export function validate(owner, base = root) {
       }
       for (const part of fragment.slice(1).split("/")) {
         const segment = part.replaceAll("~1", "/").replaceAll("~0", "~");
-        if (object === null || typeof object !== "object" || !(segment in object)) {
+        if (object === null || typeof object !== "object" || !Object.hasOwn(object, segment)) {
           errors.push(path.relative(base, file) + ": unresolved $ref " + reference);
           return undefined;
         }
@@ -107,6 +107,7 @@ export function validate(owner, base = root) {
   }
 
   const supportedMethods = new Set(["get", "post", "put", "patch", "delete", "head", "options", "trace"]);
+  const allowedPathItemKeys = new Set([...supportedMethods, "$ref", "summary", "description", "servers", "parameters"]);
   const schemeNames = new Set(Object.keys(entrypoint.components?.securitySchemes ?? {}));
   const operations = new Map();
   const usedModules = new Set();
@@ -117,14 +118,27 @@ export function validate(owner, base = root) {
     if (!urlPath.startsWith("/")) errors.push("Invalid path: " + urlPath);
     let item = rawItem;
     let sourceFile = mainFile;
-    if (rawItem?.$ref) {
+    if (rawItem?.$ref !== undefined) {
+      if (typeof rawItem.$ref !== "string" || rawItem.$ref.length === 0) {
+        errors.push("Invalid PathItem $ref on " + urlPath);
+        continue;
+      }
       item = resolveRef(mainFile, rawItem.$ref);
       sourceFile = path.resolve(path.dirname(mainFile), rawItem.$ref.split("#")[0]);
       usedModules.add(sourceFile);
+      const pathPointer = "/paths/" + urlPath.replaceAll("~", "~0").replaceAll("/", "~1");
+      if (rawItem.$ref.split("#")[1] !== pathPointer) {
+        errors.push("PathItem reference does not match declared path: " + urlPath);
+      }
     }
-    if (!item || typeof item !== "object") {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
       errors.push("Missing PathItem: " + urlPath);
       continue;
+    }
+    for (const key of Object.keys(item)) {
+      if (!allowedPathItemKeys.has(key) && !key.startsWith("x-")) {
+        errors.push("Unknown PathItem field " + key + " on " + urlPath);
+      }
     }
     let methods = 0;
     for (const [method, operation] of Object.entries(item)) {
@@ -146,6 +160,9 @@ export function validate(owner, base = root) {
         errors.push("Missing responses: " + method + " " + urlPath);
       }
       for (const [status, response] of Object.entries(operation.responses ?? {})) {
+        if (!/^(?:default|[1-5][0-9]{2}|[1-5]XX)$/.test(status)) {
+          errors.push("Invalid HTTP response status " + status + " on " + method + " " + urlPath);
+        }
         validateObjectKeys(response, allowedResponseKeys, method + " " + urlPath + " responses." + status);
       }
       for (const [index, parameter] of (item.parameters ?? []).entries()) {
@@ -165,9 +182,22 @@ export function validate(owner, base = root) {
           errors.push("Missing required path parameter {" + name + "} in " + method + " " + urlPath);
         }
       }
-      for (const security of operation.security ?? entrypoint.security ?? []) {
-        for (const name of Object.keys(security)) {
-          if (!schemeNames.has(name)) errors.push("Unknown security scheme " + name + " on " + method + " " + urlPath);
+      if (!Object.hasOwn(operation, "security")) {
+        errors.push("Missing explicit operation security: " + method + " " + urlPath);
+      } else if (!Array.isArray(operation.security)) {
+        errors.push("Invalid operation security: " + method + " " + urlPath);
+      } else {
+        for (const security of operation.security) {
+          if (!security || typeof security !== "object" || Array.isArray(security) || Object.keys(security).length === 0) {
+            errors.push("Invalid operation security: " + method + " " + urlPath);
+            continue;
+          }
+          for (const [name, scopes] of Object.entries(security)) {
+            if (!schemeNames.has(name)) errors.push("Unknown security scheme " + name + " on " + method + " " + urlPath);
+            if (!Array.isArray(scopes) || scopes.some((scope) => typeof scope !== "string")) {
+              errors.push("Invalid security scheme scopes " + name + " on " + method + " " + urlPath);
+            }
+          }
         }
       }
       if (operation.deprecated && method !== "get" && !Object.keys(operation.responses ?? {}).some((code) => /^4\d\d$/.test(code))) {
