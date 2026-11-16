@@ -40,7 +40,10 @@ jobs:
       - name: Check required Node and working tree
         run: |
           node --version
+          node tools/dev/verify-workspace.mjs
           git status --short
+      - name: Test active Node runtime enforcement
+        run: node --test tools/dev/verify-workspace.test.mjs
       - name: Test guard sensitivity
         run: node --test tools/governance/verify-foundation.test.mjs tools/governance/review-examples.test.mjs
       - name: Guard branch-agnostic CI routing

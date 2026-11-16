@@ -2,8 +2,8 @@
 // Stage-4 workspace smoke: original source toolchain and minimal working app hosts.
 // Static verification only, not Android/iOS/live device or financial Product proof.
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -19,6 +19,11 @@ const pkg = JSON.parse(read('package.json'));
 const nodePin = read('.node-version').trim();
 const goPin = read('.go-version').trim();
 const nvmPin = read('.nvmrc').trim();
+const runningNode = process.version.replace(/^v/, '');
+if (runningNode !== nodePin) {
+  fail('Active Node runtime mismatch: expected ' + nodePin +
+    ', observed ' + runningNode + ' at ' + process.execPath);
+}
 const pnpmPin = '12.15.0';
 const tsPin = '7.0.2';
 const biomePin = '2.5.12';
