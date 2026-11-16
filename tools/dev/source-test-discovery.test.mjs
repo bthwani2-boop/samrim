@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { discoverNodeSourceTests } from "./source-test-discovery.mjs";
+import { discoverNodeSourceTests, discoverWorkspaceNodeTests } from "./source-test-discovery.mjs";
 
 function fixture(callback) {
   const root = mkdtempSync(join(tmpdir(), "bthwani-test-inclusion-"));
@@ -65,4 +65,41 @@ test("the real source test discovery check runs independently of full coverage",
   });
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /SOURCE_TEST_DISCOVERY_PASS/);
+});
+
+test("new untracked infrastructure, tooling and package tests enter the actual workspace input set", () => {
+  const root = mkdtempSync(join(tmpdir(), "bthwani-workspace-inclusion-"));
+  try {
+    const add = (relativePath) => {
+      const full = join(root, relativePath);
+      mkdirSync(dirname(full), { recursive: true });
+      writeFileSync(full, "");
+    };
+    add("infra/new-safety.test.mjs");
+    add("tools/dev/future-guard.test.mjs");
+    add("packages/new-package/src/new-lib.test.mjs");
+    add("apps/merchant/src/features/orders/missing-owner.test.mjs");
+    add("apps/customer/node_modules/hidden.test.mjs");
+    add("apps/captain/.expo/generated.test.mjs");
+    assert.deepEqual(discoverWorkspaceNodeTests(root), [
+      "apps/merchant/src/features/orders/missing-owner.test.mjs",
+      "infra/new-safety.test.mjs",
+      "packages/new-package/src/new-lib.test.mjs",
+      "tools/dev/future-guard.test.mjs",
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("unsupported new tooling tests fail closed rather than disappear from CI", () => {
+  const root = mkdtempSync(join(tmpdir(), "bthwani-tools-inclusion-"));
+  try {
+    const file = join(root, "tools", "dev", "new-tool.test.tsx");
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, "");
+    assert.throws(() => discoverWorkspaceNodeTests(root), /UNSUPPORTED_SOURCE_TEST_FORMAT tools\/dev\/new-tool\.test\.tsx/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

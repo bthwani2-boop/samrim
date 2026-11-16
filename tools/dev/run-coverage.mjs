@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { discoverNodeSourceTests } from "./source-test-discovery.mjs";
+import { discoverWorkspaceNodeTests } from "./source-test-discovery.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const report = resolve(root, "coverage/lcov.info");
@@ -29,11 +29,7 @@ const baselineTests = [
 // Every test candidate in supported feature/journey paths is either run or rejected.
 const testFiles = [...new Set([
   ...baselineTests,
-  ...discoverNodeSourceTests(root, join(root, "tests")),
-  ...["customer", "merchant", "captain", "control-panel"].flatMap((app) => [
-    ...discoverNodeSourceTests(root, join(root, "apps", app, "src", "features")),
-    ...discoverNodeSourceTests(root, join(root, "apps", app, "tests")),
-  ]),
+  ...discoverWorkspaceNodeTests(root),
 ])].sort();
 for (const file of baselineTests) {
   assert.ok(existsSync(join(root, file)), `Missing baseline test ${file}`);
@@ -50,6 +46,10 @@ const command = [
   "--experimental-transform-types",
   "--loader", "./packages/design-system/tools/ts-resolver.mjs",
   "--experimental-test-coverage",
+  "--test-concurrency=4",
+  // Keep failures visible in CI while writing machine-readable LCOV.
+  "--test-reporter=spec",
+  "--test-reporter-destination=stdout",
   "--test-reporter=lcov",
   "--test-reporter-destination=coverage/lcov.info",
   "--test", ...testFiles,
