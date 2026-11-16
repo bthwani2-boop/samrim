@@ -8,7 +8,7 @@ $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 
 $runner='C:\Users\bthwa\BThwaniAppRunner'
-$source=Join-Path $runner 'refoundation-runtime-3b2f744'
+$source=Join-Path $runner 'source-runtime'
 $nodeDir=Join-Path $runner 'tools\node-v24.22.1-refoundation'
 $node=Join-Path $nodeDir 'node.exe'
 $logs=Join-Path $runner 'logs'
