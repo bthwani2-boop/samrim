@@ -12,8 +12,21 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const hosts = [
-  { name: "customer", title: "بثواني — العميل", extraRoute: "/lab" },
-  { name: "merchant", title: "بثواني — التاجر" },
+  {
+    name: "customer",
+    routes: [
+      ["/", 200, "جميع المتاجر"],
+      ["/stores", 200, "متاجر بثواني"],
+      ["/lab", 200, "مختبر مكونات Tamagui"],
+    ],
+  },
+  {
+    name: "merchant",
+    routes: [
+      ["/", 200, "لم يتم تفعيل تسجيل الدخول للتاجر بعد"],
+      ["/orders", 200, "لم يتم تفعيل تسجيل الدخول للتاجر بعد"],
+    ],
+  },
 ];
 
 async function unusedPort() {
@@ -28,7 +41,7 @@ async function unusedPort() {
   return address.port;
 }
 
-async function verifyHost({ name, title, extraRoute }) {
+async function verifyHost({ name, routes }) {
   const app = path.join(root, "apps", name);
   const expoCli = path.join(app, "node_modules", "expo", "bin", "cli");
   assert.ok(existsSync(expoCli), "Install the exact frozen Expo dependencies: " + name);
@@ -80,11 +93,10 @@ async function verifyHost({ name, title, extraRoute }) {
     assert.ok(ready, name + " did not become ready: " + log);
 
     const checks = [
-      ["/", 200, title],
+      ...routes,
       ["/health", 200, "الملاحة التجريبية تعمل"],
       ["/not-a-real-stage4-route", 404, null],
     ];
-    if (extraRoute) checks.push([extraRoute, 200, "مختبر مكونات Tamagui"]);
 
     for (const [route, status, text] of checks) {
       const response = await fetch(origin + route, {

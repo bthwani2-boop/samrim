@@ -6,13 +6,17 @@ Compiled brand roots and semantic light/dark roles belong only to `packages/desi
 
 ## Validations
 
+Run these commands from the repository root. Use the Node and Go versions in `.node-version` and `.go-version` and the pnpm version in `package.json`. On Windows, run `Get-Command node, go -All` in the shell that launches your checks if an older installation is selected. Apply the same toolchain selection in the IDE terminal or task runner.
+
 ```powershell
-pnpm install --offline --frozen-lockfile --ignore-scripts
+node tools/dev/verify-workspace.mjs --require-exact-toolchain
+pnpm install --frozen-lockfile --ignore-scripts
 pnpm run check
-pnpm run check:toolchain # also verifies the globally installed Go version with GOTOOLCHAIN=local
 pnpm run check:apps
 pnpm --dir packages/design-system theme:check
 ```
+
+Add `--offline` to the install command when the exact locked packages are already in the pnpm store.
 
 After an Operator production build (`pnpm --dir apps/control-panel build`), run `node tools/dev/verify-operator-http.mjs` for a bounded loopback-only HTTP smoke of `/`, `/health`, `/lab` and 404: Arabic document RTL, non-indexing and the currently configured security headers. The CI presentation job runs the same smoke after building. This does **not** certify browser hydration, CSP nonce enforcement, authentication, service integration, or real operator data.
 
