@@ -4,9 +4,10 @@ import { type Href, Link, useLocalSearchParams } from "expo-router";
 import * as React from "react";
 import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, Text, View } from "react-native";
 import { describeStoreOrderability } from "./orderability";
+import { resolvePublicStoreDetail } from "./store-detail-loader";
 
 const API = process.env.EXPO_PUBLIC_DSH_API_URL ?? "";
-type StoreResult = { scope: string; loading: boolean; store?: PublicStore; offers: PublicOffer[]; cursor?: string | undefined; more?: boolean; error?: string | undefined };
+type StoreResult = { scope: string; loading: boolean; store?: PublicStore; offers: PublicOffer[]; cursor?: string | undefined; more?: boolean; error?: string | undefined; offersError?: string | undefined };
 export default function PublicStoreDetail() {
   const { id: idParam } = useLocalSearchParams<{ id: string }>();
   const id = typeof idParam === "string" ? idParam : "";
@@ -22,11 +23,13 @@ export default function PublicStoreDetail() {
     pending.current?.abort();
     pending.current = abort;
     setState({ scope: id, loading: true, offers: [] });
-    Promise.all([getPublicStore(API, id, abort.signal), listPublicOffers(API, id, { signal: abort.signal, limit: 20 })])
-      .then(([store, offers]) => {
-        if (!abort.signal.aborted && revision.current === current)
-          setState({ scope: id, loading: false, store, offers: offers.items, cursor: offers.nextCursor });
-      }).catch((error: unknown) => {
+    resolvePublicStoreDetail(
+      getPublicStore(API, id, abort.signal),
+      listPublicOffers(API, id, { signal: abort.signal, limit: 20 }),
+    ).then(({ store, offers, nextCursor, offersError }) => {
+      if (!abort.signal.aborted && revision.current === current)
+        setState({ scope: id, loading: false, store, offers, cursor: nextCursor, offersError });
+    }).catch((error: unknown) => {
         if (!abort.signal.aborted && revision.current === current)
           setState({ scope: id, loading: false, offers: [], error: error instanceof Error ? error.message : "UNKNOWN" });
       });
@@ -41,14 +44,14 @@ export default function PublicStoreDetail() {
     const abort = new AbortController();
     pending.current?.abort();
     pending.current = abort;
-    setState((v) => ({ ...v, more: true }));
+    setState((v) => ({ ...v, more: true, offersError: undefined }));
     try {
       const page = await listPublicOffers(API, id, { cursor: visible.cursor, limit: 20, signal: abort.signal });
       if (!abort.signal.aborted && revision.current === current)
-        setState((v) => v.scope !== id ? v : { ...v, more: false, offers: [...v.offers, ...page.items], cursor: page.nextCursor });
+        setState((v) => v.scope !== id ? v : { ...v, more: false, offers: [...v.offers, ...page.items], cursor: page.nextCursor, offersError: undefined });
     } catch (error) {
       if (!abort.signal.aborted && revision.current === current)
-        setState((v) => v.scope !== id ? v : { ...v, more: false, error: error instanceof Error ? error.message : "UNKNOWN" });
+        setState((v) => v.scope !== id ? v : { ...v, more: false, offersError: error instanceof Error ? error.message : "UNKNOWN" });
     }
   };
   return (
@@ -62,14 +65,26 @@ export default function PublicStoreDetail() {
           <Text testID="store-orderability-status" style={{ ...textStyle, color: theme.warningText }}>{availability?.headline}</Text>
           <Text style={{ ...textStyle, color: theme.colorSecondary }}>{availability?.detail}</Text>
           <Text accessibilityRole="header" style={{ ...textStyle, fontSize: 21, fontWeight: "600" }}>العروض المتاحة</Text>
-          {visible.offers.length === 0 && !visible.error
+          {visible.offers.length === 0 && !visible.offersError
             ? <Text testID="offers-empty" style={textStyle}>لا توجد عروض متاحة الآن.</Text> : null}
+          {visible.offersError ? <View style={{ gap: 8 }}>
+            <Text testID="offers-error" accessibilityRole="alert" style={{ ...textStyle, color: theme.dangerText }}>
+              {visible.offersError === "STALE_CURSOR"
+                ? "تغيّرت عروض المتجر. أعد تحميلها لعرض الأسعار الحالية."
+                : "تعذّر تحميل بعض العروض. بيانات المتجر لا تزال متاحة."}
+            </Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="إعادة تحميل عروض المتجر"
+              onPress={() => visible.cursor && visible.offersError !== "STALE_CURSOR" ? void more() : setRetry((v) => v + 1)}
+              style={{ padding: 14, borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10 }}>
+              <Text style={{ color: theme.interactiveText, textAlign: "center" }}>إعادة تحميل العروض</Text>
+            </Pressable>
+          </View> : null}
           {visible.offers.map((offer) => <View key={offer.id} testID={`offer-${offer.id}`}
             style={{ backgroundColor: theme.surface, padding: 16, borderWidth: 1, borderColor: theme.borderColor, borderRadius: 12, gap: 6 }}>
             <Text style={{ ...textStyle, fontWeight: "600", fontSize: 17 }}>{offer.name}</Text>
             <Text style={{ ...textStyle, color: theme.colorSecondary }}>{offer.priceYer.toLocaleString("ar-YE")} ريال يمني</Text>
           </View>)}
-          {visible.cursor && !visible.error ? <Pressable accessibilityRole="button" onPress={more} disabled={visible.more}
+          {visible.cursor && !visible.offersError ? <Pressable accessibilityRole="button" onPress={more} disabled={visible.more}
             style={{ padding: 14, borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10 }}>
             <Text style={{ color: theme.interactiveText, textAlign: "center" }}>{visible.more ? "جارٍ التحميل" : "عرض المزيد"}</Text>
           </Pressable> : null}
