@@ -142,6 +142,40 @@ separately tested before the new healthcheck can be claimed live. No
 real login, WebAuthn, Operator permission administration or production release
 is authorized by this isolated verifier.
 
+## Non-invasive runtime attestation and disposable PostgreSQL proof
+
+Before trusting a previously running Docker service after a source change, use:
+
+```powershell
+node infra/verify-runtime-provenance.mjs --context bthwani-docker
+pwsh -NoProfile -File infra/verify-isolated-postgres.ps1 -DockerContext bthwani-docker
+```
+
+The runtime check reads the actual Compose container image ID, non-secret source
+SHA labels, owner Git history/diff, health and owner worktree state. It fails on
+missing labels, changed owner source or an unproven container. It **does not**
+rebuild/restart a service, examine secrets, run SQL or prove login, session
+revocation, WLT, published client UX or production suitability. Building a
+new `sha-<commit>` image is a separate operation and does **not** update the
+container already running. Readiness always attaches to the *running* image ID.
+
+The SQL proof intentionally creates a **new disposable container** with a
+unique `bthwani-agent01-pgproof-*` name and the same pinned PostGIS image as
+the existing Compose stack. It has `--network none`, no published ports, no
+external volumes and tmpfs-only PostgreSQL storage. The script runs all five
+current DSH migrations in order, establishes a synthetic read-only role and
+asserts that its writes fail (SQLSTATE 42501), then makes a PostgreSQL backup,
+restores it into a second disposable database and compares schema/data counts.
+It stops only its own identity-verified scratch container at the end.
+
+**Scope boundary:** This proves an *empty isolated fresh installation*,
+synthetic least-privilege example and local restore, not migration of existing
+protected DSH data, privileges of the shared refoundation database, an
+already-running service version, service-to-service authentication, or any
+financial ledger. Do not take the successful scratch proof as authority to
+change shared database roles, alter protected volumes, restart active services
+or run real schema upgrades.
+
 ## Deployment boundary and security review
 
 The DSH container is a **local public-read-only** service: non-root runtime,
