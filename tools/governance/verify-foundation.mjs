@@ -1049,4 +1049,5 @@ if(/continue-on-error:\s*true|\$\{\{(?:(?!\}\})[\s\S])*\bsecrets\./.test(ci))fai
 
 console.log('FOUNDATION_STRUCTURE_PASS domain_owners='+domainFiles.length+' capability_ids='+seen.size+' one_census=true service_scaffold_only='+(developmentSourceFiles===0)+' openapi_zero_operations='+(progressiveOpenApiFiles===0)+' openapi_reserved_groups='+openapiReservedGroups+' progressive_source_files='+developmentSourceFiles);
 if(developmentSourceFiles>0)console.log('PROGRESSIVE_SOURCE_PRESENT: scope/ownership structure checked; complete OpenAPI parsing, Go/SQL integration, owner-backed authorization and real journey acceptance NOT_RUN by this structural guard');
-console.log('GOVERNANCE_CUTOVER_NOT_READY: material donor reconciliation and internal risk-assurance/implementation proof not yet completed; human target policies approved, external reviewer not represented; software runtime gates separate');
+console.log('PROGRESSIVE_GOVERNANCE_READY: Close as You Go development and independently proven journey closure are authorized without whole-platform governance cutover; owner-backed acceptance is still required');
+console.log('GOVERNANCE_CUTOVER_NOT_READY: only whole-platform historical reconciliation remains pending; this does not block progressive development or individually accepted journey closure; production gates are separate');

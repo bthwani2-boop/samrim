@@ -95,10 +95,11 @@ rejects('rejects an unadmitted nested lowercase readme even on Windows',{
  add:{'services/dsh/clients/ghost/readme.md':'unexpected file'},
 },/premature service source/);
 
-test('live foundation draft is structurally coherent but NOT_READY',()=>{
+test('progressive journey governance is ready while historical cutover remains pending',()=>{
  const r=run();
  assert.equal(r.code,0,r.text);
  assert.match(r.text,/capability_ids=26/);
+ assert.match(r.text,/PROGRESSIVE_GOVERNANCE_READY/);
  assert.match(r.text,/GOVERNANCE_CUTOVER_NOT_READY/);
  assert.match(r.text,/openapi_zero_operations=false/);
  assert.match(r.text,/openapi_reserved_groups=42/);

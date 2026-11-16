@@ -12,6 +12,8 @@ BUSINESS_DECISION_AUTHORITY: JOURNEY_SCOPED_CANONICAL_OWNERS
 HUMAN_TARGET_POLICY_DECISION: APPROVED_2026-11-13
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 
+**Current development governance: READY for Close as You Go.** The approved canonical Product/domain owners govern progressive implementation and **journey-scoped acceptance now**; each affected journey may be implemented and closed when its own applicable requirements, contracts, risk checks and owner-backed evidence pass. The separate `GOVERNANCE_CUTOVER: NOT_READY` marker refers **only** to unfinished whole-platform historical semantic reconciliation. It is not a development-admission veto, a prerequisite to closing an otherwise accepted journey, or a reason to stop unrelated safe work. Production, protected-state changes and external delivery retain their independent authorization and evidence gates.
+
 ## What this directory means
 This is the **only intended durable governance home** for BThwani. Each subject has exactly one semantic owner; overlapping documents link to the owner rather than restating independently changeable law. Current domain documents remain subject to complete historical reconciliation, while journey-scoped Product/domain decisions may be resolved incrementally in their canonical owner and used to guide isolated SQL/service development. Their existence alone never proves runtime acceptance or authorizes production activation.
 
