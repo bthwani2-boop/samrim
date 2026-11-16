@@ -67,9 +67,24 @@ async function ownerRead(url: URL, signal?: AbortSignal): Promise<unknown> {
     } catch { /* keep the safe generic error */ }
     throw new DshPublicError(response.status, code);
   }
-  try { return await response.json(); } catch {
+  // A successful public owner read must obey the DSH JSON wire contract.
+  // Bound the decoded payload before interpreting it as a Store or Offer.
+  const mediaType = response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase();
+  const contentLength = response.headers.get("Content-Length");
+  if (mediaType !== "application/json" ||
+    (contentLength !== null && Number(contentLength) > 65536)) {
     throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   }
+  let body: unknown;
+  try {
+    const raw = await response.text();
+    if (raw.length > 65536) throw new Error("public response exceeds safe bound");
+    body = JSON.parse(raw) as unknown;
+  } catch {
+    throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  }
+  if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
+  return body;
 }
 // Enforce the actual public OpenAPI schema at the client trust boundary.
 // A TypeScript interface does not remove extra JSON keys or validate wire data.

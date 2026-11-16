@@ -29,6 +29,12 @@ function hasError(result, fragment) {
     `Expected ${JSON.stringify(fragment)} in ${JSON.stringify(result.errors)}`);
 }
 
+function jsonResponse(value) {
+  return new Response(JSON.stringify(value), {
+    status: 200, headers: { "Content-Type": "application/json" },
+  });
+}
+
 test("all current owner OpenAPI 3.1 documents parse; unimplemented WLT stays explicitly empty", () => {
   for (const owner of ["identity", "dsh", "wlt"]) {
     const result = validate(owner);
@@ -166,7 +172,7 @@ test("DSH public Store/Offer client requests match owner OpenAPI operation paths
       let captured;
       globalThis.fetch = async (request, options) => {
         captured = { url: new URL(request), options };
-        return new Response(JSON.stringify(payload), { status: 200 });
+        return jsonResponse(payload);
       };
       await call();
       assert.equal(captured.url.pathname, publicPath.replace("{id}", "market-sanaa"));
@@ -204,7 +210,7 @@ test("DSH public client rejects Store, Offer and page shapes forbidden by OpenAP
   ];
   const originalFetch = globalThis.fetch;
   const expectRejected = async (call, body) => {
-    globalThis.fetch = async () => new Response(JSON.stringify(body), { status: 200 });
+    globalThis.fetch = async () => jsonResponse(body);
     await assert.rejects(call, error => error instanceof DshPublicError &&
       error.status === 502 && error.code === "OWNER_RESPONSE_INVALID");
   };
@@ -237,10 +243,10 @@ test("public DSH discovery uses an uncredentialed no-redirect GET at the owner b
   try {
     globalThis.fetch = async (_url, options) => {
       captured = options;
-      return new Response(JSON.stringify({
+      return jsonResponse({
         id: "market-sanaa", name: "متجر", cityId: "sanaa", verticalId: "grocery",
         orderabilityStatus: "OPERATIONALLY_UNAVAILABLE", orderingAvailable: false,
-      }), { status: 200 });
+      });
     };
     await getPublicStore("http://127.0.0.1:3202", "market-sanaa");
     assert.equal(captured.method ?? "GET", "GET");
@@ -283,13 +289,13 @@ test("public DSH Store and Offer client validators track declared OpenAPI field 
         () => listPublicOffers(base, "market-sanaa")],
     ]) {
       const page = (value) => ({ items: [value], revision: 0 });
-      globalThis.fetch = async () => new Response(JSON.stringify(page({
+      globalThis.fetch = async () => jsonResponse(page({
         ...validObject, name: "x".repeat(length),
-      })));
+      }));
       assert.equal((await call()).items.length, 1, source + " accepts maximum name");
-      globalThis.fetch = async () => new Response(JSON.stringify(page({
+      globalThis.fetch = async () => jsonResponse(page({
         ...validObject, name: "x".repeat(length + 1),
-      })));
+      }));
       await assert.rejects(call, error => error instanceof DshPublicError &&
         error.status === 502 && error.code === "OWNER_RESPONSE_INVALID", source + " rejects excessive name");
     }
