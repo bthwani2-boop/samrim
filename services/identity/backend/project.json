@@ -2,6 +2,9 @@
   "name": "identity-backend",
   "root": "services/identity/backend",
   "projectType": "application",
+  "implicitDependencies": [
+    "@bthwani/identity"
+  ],
   "targets": {
     "build": {
       "executor": "nx:run-commands",

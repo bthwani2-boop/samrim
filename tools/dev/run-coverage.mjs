@@ -3,14 +3,14 @@
 // Sonar owns the acceptance threshold; missing reports or failed tests fail closed.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const report = resolve(root, "coverage/lcov.info");
 mkdirSync(dirname(report), { recursive: true });
-const testFiles = [
+const baselineTests = [
   "tools/governance/verify-foundation.test.mjs",
   "tools/governance/review-examples.test.mjs",
   "tools/security/verify-secrets.test.mjs",
@@ -22,6 +22,31 @@ const testFiles = [
   "tools/dev/dsh-public-client.test.mjs",
   "tools/mobile/verify-native-config.test.mjs",
 ];
+
+// Feature and journey tests must enter coverage with the source they protect.
+// Discover only established Node test locations; do not run E2E/manual or
+// generated browser tests as a side effect of source-coverage collection.
+function discoverTests(folder) {
+  if (!existsSync(folder)) return [];
+  return readdirSync(folder, { withFileTypes: true })
+    .flatMap((entry) => {
+      const full = join(folder, entry.name);
+      if (entry.isDirectory()) return discoverTests(full);
+      if (entry.isFile() && entry.name.endsWith(".test.mjs")) {
+        return [relative(root, full).replaceAll("\\", "/")];
+      }
+      return [];
+    });
+}
+const testFiles = [...new Set([
+  ...baselineTests,
+  ...discoverTests(join(root, "tests")),
+  ...["customer", "merchant", "captain", "control-panel"].flatMap((app) => [
+    ...discoverTests(join(root, "apps", app, "src", "features")),
+    ...discoverTests(join(root, "apps", app, "tests")),
+  ]),
+])].sort();
+
 const command = [
   "--experimental-transform-types",
   "--loader", "./packages/design-system/tools/ts-resolver.mjs",

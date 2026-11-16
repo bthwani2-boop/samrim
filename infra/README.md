@@ -34,6 +34,15 @@ Identity is a separate, synthetic Go session/Operator-permission verifier
 in `compose.identity-verifier.yaml`, not a first-factor login issuer.
 The two overlays may be combined with the same `compose.yaml` without
 competing service definitions. WLT has no runnable Go backend yet.
+
+The DSH migration command now uses its own `migration` Compose profile,
+separate from `implementation`. Normal `implementation` startup cannot start
+`dsh-migrate`; migration remains an explicit, separately reviewed operation.
+Validate this invariant with `node --test infra/compose-policy.test.mjs` and
+`docker compose ... --profile implementation config --services`. Never use
+`--profile '*'`, `--profile migration up` or automatic migrations in the normal
+service-start path. Existing running containers and persisted volumes are not
+recreated by this file change.
 Never reuse donor images, production data or `samrim-local` volumes.
 
 ### Build and run real public DSH inside the same Compose project
@@ -69,7 +78,9 @@ routes; the Compose healthcheck confirms database reachability. The database
 schema must have the reviewed DSH SQL migrations applied separately in the
 isolated namespace before serving. The `dsh-migrate` service can explicitly run
 migration 001 only after reviewing the target schema; it does not silently
-seed or upgrade 002/003. Do not treat HTTP health as evidence of checkout,
+seed or upgrade 002/003/004/005. It is isolated under the `migration` profile,
+not included in routine `implementation` startup. Inspect the exact applied
+migration versions and target role before any separately authorized migration. Do not treat HTTP health as evidence of checkout,
 merchant permissions, identity authentication or finance correctness.
 
 
@@ -120,10 +131,14 @@ docker --context bthwani-docker compose --env-file infra/.env --env-file infra/.
 docker --context bthwani-docker compose --env-file infra/.env --env-file infra/.env.identity-verifier.local -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier ps identity
 ```
 
-The service will not be declared healthy on a TCP listener, unauthenticated
-HTTP response or container exit code. Require an actual **Identity-owned**
-PostgreSQL session read and permission denial/revocation proof, and compare
-the running image ID and source SHA before changing DSH consumers. No
+The committed Identity verifier now exposes `GET /health` for isolated
+development only. It checks a bounded PostgreSQL Ping without exposing actor,
+session or credential details; its Docker healthcheck is **readiness only**.
+A successful health response does not prove login, permissions or session
+revocation. Require actual **Identity-owned** PostgreSQL session read,
+permission denial/revocation proof and running image ID/source SHA matching
+before changing DSH consumers. Existing containers must be rebuilt and
+separately tested before the new healthcheck can be claimed live. No
 real login, WebAuthn, Operator permission administration or production release
 is authorized by this isolated verifier.
 
@@ -171,7 +186,7 @@ source, isolated database permissions and authorization acceptance. WLT
 remains unbuilt and must not be represented by a placeholder container.
 Do not run `down -v`, `prune`, copy donor volume data or touch donor tasks.
 
-## Approved port map (only DSH and the listed dependencies are currently live)
+## Approved development port map (configured ports are not proof of current source or readiness)
 
 | Future native app | Port | Future service | Port |
 | --- | ---: | --- | ---: |

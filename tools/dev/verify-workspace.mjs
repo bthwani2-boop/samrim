@@ -35,7 +35,7 @@ assert.equal(pkg.packageManager, 'pnpm@' + pnpmPin);
 assert.equal(pkg.private, true);
 assert.equal(pkg.engines.node, '>=24.17.0 <25');
 assert.equal(pkg.engines.pnpm, pnpmPin);
-assert.deepEqual(pkg.devDependencies, { '@biomejs/biome': biomePin, knip: '6.34.0', nx: '24.0.1', typescript: tsPin },
+assert.deepEqual(pkg.devDependencies, { '@biomejs/biome': biomePin, knip: '6.34.0', nx: '24.0.1', typescript: tsPin, yaml: '2.9.0' },
   'Workspace tooling must use exact donor-compatible package versions');
 if (pkg.dependencies?.nx) fail('Nx is development tooling, not a production dependency');
 

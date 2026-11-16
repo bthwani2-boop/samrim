@@ -4,6 +4,8 @@ info:
   version: 0.2.0
   description: Isolated Identity session verification and logout, explicit Operator permission reads, and verified Customer-to-Merchant role admission with one new role-scoped bearer. No first-factor verification provider, Operator bootstrap, protected grant mutation, or production admission.
 paths:
+  /health:
+    $ref: './paths/runtime.yaml#/paths/~1health'
   /v1/sessions/current:
     $ref: './paths/session.yaml#/paths/~1v1~1sessions~1current'
   /v1/actors/me/merchant-role:

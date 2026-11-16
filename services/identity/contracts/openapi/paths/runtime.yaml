@@ -1,1 +1,12 @@
-paths: {}
+paths:
+  /health:
+    get:
+      operationId: getIdentityDevelopmentHealth
+      summary: Synthetic development verifier database readiness only
+      description: Does not attest session correctness, permissions, or production availability.
+      security: []
+      responses:
+        '200':
+          description: Isolated PostgreSQL connection responds
+        '503':
+          description: Isolated PostgreSQL dependency is unavailable

@@ -31,3 +31,10 @@ services:
       postgres:
         condition: service_healthy
     networks: [isolated, loopback]
+    # Readiness is scoped to the synthetic database, not Identity authorization.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3302/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s

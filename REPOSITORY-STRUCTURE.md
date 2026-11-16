@@ -49,6 +49,10 @@ Each progressively developed client implementation is sourced from the service o
 
 During progressively authorized development, each owner's `backend/` holds the Go implementation when needed for the current journey; `contracts/openapi/` one API entrypoint with domain-grouped paths; and `database/` reviewed fresh installation plus protected upgrade migrations. Preserve applied migration history; examine actual embed/load paths before adopting a physical SQL layout. The bounded company/Merchant employee-administration engine belongs within DSH, **not** as a fourth deployable HR service or a separate Merchant employee engine; Identity and WLT retain their exclusive identity/money truths. See [architecture](governance/architecture.md) and [employee governance](governance/hr.md).
 
+## Workspace execution edges
+
+Nx and pnpm remain the one existing project/task graph. Source-owned `services/<owner>/contracts/openapi/` changes must invalidate the corresponding backend project (`identity-backend` or `dsh-backend` when executable), plus actual public client consumers, through declared project dependencies tested against representative changed files. Keep Next.js `.next/types` output local to the Operator typecheck; Expo typecheck must not claim Next output. An absent WLT backend is intentionally `NOT_RUN`, not a fictional Nx project. Contract checks belong to each existing owner package; no global contract registry or duplicate generator is permitted.
+
 ## Transitional rule for this worktree
 - The former `docs/governance/` directory is **absent from this candidate by explicit user decision**. Its content remains inspectable in archived branch `archive/legacy-pre-refoundation-20261114` and archived inputs; do not restore it to this worktree.
 - `governance/` is the only **target** policy path. Its README advertises NOT_READY until all applicable decisions and 26 capability IDs are reconciled, rather than an unsafe partial authority switch.

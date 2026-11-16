@@ -314,7 +314,7 @@ function identityExtraPathFixture(linked=false){
  return {edit:{
   ...base.edit,
   [base.rootFile]:()=>canonical,
-  ...(linked?{[base.prefix+'paths/runtime.yaml']:()=> 'paths:\n'+block+'\n'}:{})
+  ...(linked?{[base.prefix+'paths/runtime.yaml']:s=> s.trimEnd()+'\n'+block+'\n'}:{})
  }};
 }
 test('accepts a new Identity Path Item when linked to its owner fragment',()=>{
@@ -362,7 +362,7 @@ test('rejects valid but semantically misplaced Identity session Path Item',()=>{
  const edit={...linked.edit,
   [linked.rootFile]:()=>rootText,
   [linked.prefix+'paths/session.yaml']:()=> 'paths: {}\n',
-  [linked.prefix+'paths/runtime.yaml']:()=> 'paths:\n'+linked.originalBlocks[route]+'\n'
+  [linked.prefix+'paths/runtime.yaml']:s=> s.trimEnd()+'\n'+linked.originalBlocks[route]+'\n'
  };
  const r=run({edit});
  assert.notEqual(r.code,0,r.text);

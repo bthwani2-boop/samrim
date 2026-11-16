@@ -3,7 +3,8 @@
 # Never start every profile: migration is an explicit operator-controlled action.
 services:
   dsh-migrate:
-    profiles: [implementation]
+    # Deliberately separate from the normal implementation service profile.
+    profiles: [migration]
     image: "bthwani-refoundation-dsh:${REF_DSH_IMAGE_TAG:-dev}"
     restart: "no"
     entrypoint: ["/usr/local/bin/dsh", "-mode=migrate"]

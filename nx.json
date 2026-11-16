@@ -39,9 +39,6 @@
         "default",
         "^default",
         "nodeToolchain"
-      ],
-      "outputs": [
-        "{projectRoot}/.next/types"
       ]
     },
     "theme:check": {

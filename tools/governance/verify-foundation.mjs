@@ -110,8 +110,8 @@ if(stage3package.packageManager!=='pnpm@12.15.0'||
  stage3package.private!==true)
  fail('branch-41 pnpm/Node versions changed or workspace made publishable');
 if(JSON.stringify(Object.entries(stage3package.devDependencies??{}).sort(([a], [b]) => a.localeCompare(b, "en")))!==
- JSON.stringify([['@biomejs/biome','2.5.12'],['knip','6.34.0'],['nx','24.0.1'],['typescript','7.0.2']]))
- fail('root dependencies must match original exact Biome/Knip/Nx/TypeScript versions');
+ JSON.stringify([['@biomejs/biome','2.5.12'],['knip','6.34.0'],['nx','24.0.1'],['typescript','7.0.2'],['yaml','2.9.0']]))
+ fail('root dependencies must match original exact Biome/Knip/Nx/TypeScript/YAML versions');
 const nx=JSON.parse(contents['nx.json']);
 if(nx.defaultBase!=='main'||nx.targetDefaults?.typecheck?.cache!==true||
  !Array.isArray(nx.namedInputs?.nodeToolchain))
@@ -190,7 +190,8 @@ if(exists('infra')){
     !compose.includes('REF_MEDIA_SECRET_KEY:?')||
     !compose.includes('REF_MEDIA_ACCESS_KEY:?'))
   fail('infra secret isolation or internal PostgreSQL protection missing');
- if((planned.match(/^\s*profiles: \[implementation\]$/gm)||[]).length!==2||
+ if((planned.match(/^\s*profiles: \[implementation\]$/gm)||[]).length!==1||
+    (planned.match(/^\s*profiles: \[migration\]$/gm)||[]).length!==1||
     (verifier.match(/^\s*profiles: \[identity-verifier\]$/gm)||[]).length!==1||
     !planned.includes('bthwani-refoundation-dsh:')||
     !verifier.includes('bthwani-refoundation-identity-verifier:')||
@@ -431,7 +432,7 @@ for(const owner of serviceOwners){
    packageConfig.version!=='0.0.0' || packageConfig.private!==true ||
    packageConfig.type!=='module' || packageConfig.types!=='./clients/index.ts' ||
    JSON.stringify(packageConfig.exports)!==JSON.stringify({'.':{types:'./clients/index.ts',default:'./clients/index.ts'}}) ||
-   JSON.stringify(packageConfig.scripts)!==JSON.stringify({typecheck:'tsc --noEmit -p tsconfig.json'}) ||
+   JSON.stringify(packageConfig.scripts)!==JSON.stringify({typecheck:'tsc --noEmit -p tsconfig.json',contract:'node ../../tools/dev/check-openapi.mjs '+owner}) ||
    JSON.stringify(packageConfig.devDependencies)!==JSON.stringify({typescript:'7.0.2'}) ||
    ['dependencies','peerDependencies','optionalDependencies','bin','main'].some(key=>key in packageConfig)){
   fail('service package drift or premature runtime dependency: '+pkgPath);

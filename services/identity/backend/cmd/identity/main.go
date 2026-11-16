@@ -66,8 +66,11 @@ func main() {
 	if err != nil {
 		log.Fatal("Identity scope invalid")
 	}
+	routes := http.NewServeMux()
+	routes.Handle("/health", isolatedHealthHandler(db))
+	routes.Handle("/", session.NewHandler(session.NewVerifier(reader)))
 	server := &http.Server{
-		Addr: address, Handler: session.NewHandler(session.NewVerifier(reader)),
+		Addr: address, Handler: routes,
 		ReadHeaderTimeout: 4 * time.Second, WriteTimeout: 6 * time.Second,
 		IdleTimeout: 20 * time.Second, MaxHeaderBytes: 8192,
 	}

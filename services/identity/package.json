@@ -11,7 +11,8 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "contract": "node ../../tools/dev/check-openapi.mjs identity"
   },
   "devDependencies": {
     "typescript": "7.0.2"
