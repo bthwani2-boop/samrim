@@ -8,9 +8,11 @@ import { resolvePublicStoreDetail } from "./store-detail-loader";
 
 const API = process.env.EXPO_PUBLIC_DSH_API_URL ?? "";
 type StoreResult = { scope: string; loading: boolean; store?: PublicStore; offers: PublicOffer[]; cursor?: string | undefined; more?: boolean; error?: string | undefined; offersError?: string | undefined };
-export default function PublicStoreDetail() {
-  const { id: idParam } = useLocalSearchParams<{ id: string }>();
-  const id = typeof idParam === "string" ? idParam : "";
+type Props = Readonly<{ storeID?: string; fullPage?: boolean }>;
+
+export default function PublicStoreDetail({ storeID, fullPage = false }: Props) {
+  const { id: idParam } = useLocalSearchParams<{ id?: string | string[] }>();
+  const id = storeID ?? (typeof idParam === "string" ? idParam : "");
   const { theme } = useMobileAppearance();
   const [retry, setRetry] = React.useState(0);
   const [state, setState] = React.useState<StoreResult>({ scope: "", loading: true, offers: [] });
@@ -56,11 +58,18 @@ export default function PublicStoreDetail() {
   };
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
-      <ScrollView contentContainerStyle={{ padding: 18, maxWidth: 800, width: "100%", alignSelf: "center", gap: 14 }}>
+      <ScrollView contentContainerStyle={{ padding: 18, maxWidth: fullPage ? 1200 : 800, width: "100%", alignSelf: "center", gap: 14 }}>
         <Link href={"/stores" as Href} style={{ color: theme.interactiveText }}>العودة للمتاجر</Link>
         {visible.loading ? <ActivityIndicator accessibilityLabel="جارٍ تحميل المتجر" color={theme.actionBackground} /> : null}
         {visible.store ? <>
           <Text accessibilityRole="header" testID="store-title" style={{ ...textStyle, fontSize: 26, fontWeight: "700" }}>{visible.store.name}</Text>
+          {fullPage ? (
+            <Text style={{ ...textStyle, color: theme.colorSecondary }}>موقع المتجر الكامل — العرض للقراءة فقط حتى اكتمال تفعيل الشراء.</Text>
+          ) : (
+            <Link href={(`/storefront/${encodeURIComponent(id)}`) as Href} style={{ color: theme.interactiveText }}>
+              عرض موقع المتجر الكامل
+            </Link>
+          )}
           <Text style={{ ...textStyle, color: theme.colorSecondary }}>المدينة: {visible.store.cityId}</Text>
           <Text testID="store-orderability-status" style={{ ...textStyle, color: theme.warningText }}>{availability?.headline}</Text>
           <Text style={{ ...textStyle, color: theme.colorSecondary }}>{availability?.detail}</Text>

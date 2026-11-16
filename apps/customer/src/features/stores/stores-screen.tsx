@@ -13,7 +13,9 @@ function message(code?: string) {
   if (code === "DSH_ENDPOINT_NOT_CONFIGURED") return "لم يُضبط عنوان خدمة المتاجر.";
   return "تعذّر تحميل المتاجر. تحقّق من الاتصال وحاول مجددًا.";
 }
-export default function PublicStoresScreen() {
+type Props = Readonly<{ variant?: "home" | "directory" }>;
+
+export default function PublicStoresScreen({ variant = "directory" }: Props) {
   const { theme } = useMobileAppearance();
   const [draftCity, setDraftCity] = React.useState(INITIAL_CITY);
   const [cityId, setCityId] = React.useState(INITIAL_CITY);
@@ -65,7 +67,14 @@ export default function PublicStoresScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
       <ScrollView contentContainerStyle={{ padding: 18, gap: 14, maxWidth: 800, width: "100%", alignSelf: "center" }}>
         {__DEV__ ? <Link href={"/foundation" as Href} style={{ color: theme.interactiveText }}>مختبر الواجهة</Link> : null}
-        <Text accessibilityRole="header" style={{ ...textStyle, fontSize: 26, fontWeight: "700" }}>متاجر بثواني</Text>
+        <Text accessibilityRole="header" style={{ ...textStyle, fontSize: 26, fontWeight: "700" }}>{variant === "home" ? "بثواني — الرئيسية" : "متاجر بثواني"}</Text>
+        {variant === "home" ? (
+          <View style={{ flexDirection: "row", gap: 18, flexWrap: "wrap" }}>
+            <Link href="/stores" style={{ color: theme.interactiveText }}>جميع المتاجر</Link>
+            <Link href="/orders" style={{ color: theme.interactiveText }}>طلباتي</Link>
+            <Link href="/account" style={{ color: theme.interactiveText }}>حسابي</Link>
+          </View>
+        ) : <Link href="/" style={{ color: theme.interactiveText }}>الرئيسية</Link>}
         <Text style={{ ...textStyle, color: theme.colorSecondary }}>البيانات المنشورة فقط من خدمة المتاجر. عرض المتجر لا يعني إمكانية إتمام الطلب.</Text>
         <Text accessibilityRole="text" style={textStyle}>رمز مدينة الخدمة</Text>
         <View style={{ flexDirection: "row", gap: 8 }}>

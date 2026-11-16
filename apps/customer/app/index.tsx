@@ -1,10 +1,10 @@
-import { Redirect } from "expo-router";
 import type { Metadata } from "expo-router/server";
+import PublicStoresScreen from "../src/features/stores/stores-screen";
 
 export function generateMetadata(): Metadata {
-  return { title: "متاجر بثواني — العميل", description: "استعراض المتاجر والعروض المنشورة في بثواني." };
+  return { title: "بثواني — الرئيسية", description: "استعرض المتاجر والعروض المنشورة عبر بثواني." };
 }
 
 export default function CustomerHome() {
-  return <Redirect href="/stores" />;
+  return <PublicStoresScreen variant="home" />;
 }
