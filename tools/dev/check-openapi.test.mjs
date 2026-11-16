@@ -73,3 +73,177 @@ test("reject a PathItem fragment that is not linked from the owner entrypoint", 
     s.replace("  /v1/public/stores:\n", "  /v1/test/unlinked:\n"));
   assert.ok(result.errors.length > 0);
 });
+
+
+// These tests exercise the hand-written public client against the *owner's*
+// OpenAPI 3.1 contract, not a generated-client file that does not exist.
+test("DSH public Store/Offer client requests match owner OpenAPI operation paths and methods", async () => {
+  const contractDir = path.join(root, "services", "dsh", "contracts", "openapi");
+  const entrypoint = (await import("yaml")).default.parse(
+    readFileSync(path.join(contractDir, "dsh.openapi.yaml"), "utf8"),
+  );
+  const { listPublicStores, getPublicStore, listPublicOffers } =
+    await import("../../services/dsh/clients/index.ts");
+  const responseStore = {
+    id: "market-sanaa", name: "سوق", cityId: "sanaa", verticalId: "grocery",
+    orderabilityStatus: "OPERATIONALLY_UNAVAILABLE", orderingAvailable: false,
+  };
+  const responseOffer = {
+    id: "offer-one", storeId: "market-sanaa", name: "دقيق",
+    variantId: "variant-one", priceYer: 1200, available: true,
+  };
+  const cases = [
+    ["listPublicStores", "/v1/public/stores", () => listPublicStores("http://127.0.0.1:3202", "sanaa"),
+      { items: [responseStore], revision: 1 }],
+    ["getPublicStore", "/v1/public/stores/{id}", () => getPublicStore("http://127.0.0.1:3202", "market-sanaa"),
+      responseStore],
+    ["listPublicOffers", "/v1/public/stores/{id}/offers", () => listPublicOffers("http://127.0.0.1:3202", "market-sanaa"),
+      { items: [responseOffer], revision: 1 }],
+  ];
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const [operationId, publicPath, call, payload] of cases) {
+      const [fragmentFile, pointer] = entrypoint.paths[publicPath].$ref.split("#");
+      const fragment = (await import("yaml")).default.parse(
+        readFileSync(path.resolve(contractDir, fragmentFile), "utf8"),
+      );
+      const pathItem = pointer.slice(1).split("/").filter(Boolean).reduce(
+        (node, key) => node[key.replaceAll("~1", "/").replaceAll("~0", "~")], fragment,
+      );
+      assert.equal(pathItem.get.operationId, operationId);
+      assert.deepEqual(pathItem.get.security, [], "Public reads must stay unauthenticated");
+      assert.deepEqual(Object.keys(pathItem), ["get"], "Unexpected public mutation");
+      let captured;
+      globalThis.fetch = async (request, options) => {
+        captured = { url: new URL(request), options };
+        return new Response(JSON.stringify(payload), { status: 200 });
+      };
+      await call();
+      assert.equal(captured.url.pathname, publicPath.replace("{id}", "market-sanaa"));
+      assert.equal(captured.options.method ?? "GET", "GET");
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("DSH public client rejects Store, Offer and page shapes forbidden by OpenAPI", async () => {
+  const { listPublicStores, listPublicOffers, DshPublicError } =
+    await import("../../services/dsh/clients/index.ts");
+  const sourceStore = {
+    id: "market-sanaa", name: "متجر", cityId: "sanaa", verticalId: "grocery",
+    orderabilityStatus: "OPERATIONALLY_UNAVAILABLE", orderingAvailable: false,
+  };
+  const sourceOffer = {
+    id: "offer-one", storeId: sourceStore.id, name: "دقيق",
+    variantId: "variant-one", priceYer: 1200, available: true,
+  };
+  const badStores = [
+    { ...sourceStore, id: "../operator" },
+    { ...sourceStore, name: "" },
+    { ...sourceStore, name: "x".repeat(121) },
+    { ...sourceStore, verticalId: "private store" },
+    { ...sourceStore, privateMerchantEmail: "do-not-expose@example.invalid" },
+  ];
+  const badOffers = [
+    { ...sourceOffer, id: "BAD_UPPERCASE" },
+    { ...sourceOffer, variantId: "" },
+    { ...sourceOffer, name: "" },
+    { ...sourceOffer, name: "x".repeat(161) },
+    { ...sourceOffer, internalCostYer: 100 },
+  ];
+  const originalFetch = globalThis.fetch;
+  const expectRejected = async (call, body) => {
+    globalThis.fetch = async () => new Response(JSON.stringify(body), { status: 200 });
+    await assert.rejects(call, error => error instanceof DshPublicError &&
+      error.status === 502 && error.code === "OWNER_RESPONSE_INVALID");
+  };
+  try {
+    for (const store of badStores) {
+      await expectRejected(() => listPublicStores("http://127.0.0.1:3202", "sanaa"),
+        { items: [store], revision: 1 });
+    }
+    for (const offer of badOffers) {
+      await expectRejected(() => listPublicOffers("http://127.0.0.1:3202", "market-sanaa"),
+        { items: [offer], revision: 1 });
+    }
+    for (const page of [
+      { items: [sourceStore], revision: -1 },
+      { items: [sourceStore], revision: 1, nextCursor: "x".repeat(513) },
+      { items: [sourceStore], revision: 1, internalAudit: "not-public" },
+    ]) {
+      await expectRejected(() => listPublicStores("http://127.0.0.1:3202", "sanaa"), page);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("public DSH discovery uses an uncredentialed no-redirect GET at the owner boundary", async () => {
+  const { getPublicStore } = await import("../../services/dsh/clients/index.ts");
+  const originalFetch = globalThis.fetch;
+  let captured;
+  try {
+    globalThis.fetch = async (_url, options) => {
+      captured = options;
+      return new Response(JSON.stringify({
+        id: "market-sanaa", name: "متجر", cityId: "sanaa", verticalId: "grocery",
+        orderabilityStatus: "OPERATIONALLY_UNAVAILABLE", orderingAvailable: false,
+      }), { status: 200 });
+    };
+    await getPublicStore("http://127.0.0.1:3202", "market-sanaa");
+    assert.equal(captured.method ?? "GET", "GET");
+    assert.equal(captured.credentials, "omit", "discovery must not attach caller cookies");
+    assert.equal(captured.redirect, "error", "owner reads cannot follow a cross-origin redirect");
+    assert.equal(captured.cache, "no-store", "readback must not inherit another account's cached response");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("public DSH Store and Offer client validators track declared OpenAPI field bounds", async () => {
+  const contractDir = path.join(root, "services", "dsh", "contracts", "openapi");
+  const YAML = (await import("yaml")).default;
+  const schema = YAML.parse(readFileSync(path.join(contractDir, "dsh.openapi.yaml"), "utf8")).components.schemas;
+  const { listPublicStores, listPublicOffers, DshPublicError } =
+    await import("../../services/dsh/clients/index.ts");
+  assert.equal(schema.PublicStore.additionalProperties, false);
+  assert.equal(schema.PublicOffer.additionalProperties, false);
+  assert.equal(schema.PublicId.pattern, "^[a-z0-9-]{1,64}$");
+  assert.equal(schema.PublicStore.properties.name.maxLength, 120);
+  assert.equal(schema.PublicOffer.properties.name.maxLength, 160);
+  assert.equal(schema.PublicStore.properties.orderingAvailable.const, false);
+  assert.equal(schema.PublicOffer.properties.available.const, true);
+  const base = "http://127.0.0.1:3202";
+  const store = {
+    id: "market-sanaa", name: "x", cityId: "sanaa", verticalId: "grocery",
+    orderabilityStatus: "OPERATIONALLY_UNAVAILABLE", orderingAvailable: false,
+  };
+  const offer = {
+    id: "offer-one", storeId: "market-sanaa", name: "x", variantId: "variant-one",
+    priceYer: 1, available: true,
+  };
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const [validObject, source, length, call] of [
+      [store, "PublicStore", schema.PublicStore.properties.name.maxLength,
+        () => listPublicStores(base, "sanaa")],
+      [offer, "PublicOffer", schema.PublicOffer.properties.name.maxLength,
+        () => listPublicOffers(base, "market-sanaa")],
+    ]) {
+      const page = (value) => ({ items: [value], revision: 0 });
+      globalThis.fetch = async () => new Response(JSON.stringify(page({
+        ...validObject, name: "x".repeat(length),
+      })));
+      assert.equal((await call()).items.length, 1, source + " accepts maximum name");
+      globalThis.fetch = async () => new Response(JSON.stringify(page({
+        ...validObject, name: "x".repeat(length + 1),
+      })));
+      await assert.rejects(call, error => error instanceof DshPublicError &&
+        error.status === 502 && error.code === "OWNER_RESPONSE_INVALID", source + " rejects excessive name");
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

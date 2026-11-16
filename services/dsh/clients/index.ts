@@ -51,7 +51,10 @@ function endpoint(baseUrl: string, path: string): URL {
 async function ownerRead(url: URL, signal?: AbortSignal): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetch(url.toString(), { signal: signal ?? null, headers: { Accept: "application/json" } });
+    response = await fetch(url.toString(), {
+      method: "GET", signal: signal ?? null, redirect: "error", credentials: "omit", cache: "no-store",
+      headers: { Accept: "application/json" },
+    });
   } catch (error) {
     if (signal?.aborted) throw error;
     throw new DshPublicError(0, "OWNER_NETWORK_UNAVAILABLE");
@@ -68,26 +71,46 @@ async function ownerRead(url: URL, signal?: AbortSignal): Promise<unknown> {
     throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   }
 }
+// Enforce the actual public OpenAPI schema at the client trust boundary.
+// A TypeScript interface does not remove extra JSON keys or validate wire data.
+const publicId = /^[a-z0-9-]{1,64}$/;
+function isPublicId(value: unknown): value is string {
+  return typeof value === "string" && publicId.test(value);
+}
+function boundedName(value: unknown, maxCodePoints: number): value is string {
+  return typeof value === "string" && Array.from(value).length >= 1 &&
+    Array.from(value).length <= maxCodePoints;
+}
+function onlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
+  return Object.keys(value).every((key) => allowed.includes(key));
+}
 function isStore(value: unknown): value is PublicStore {
-  if (!value || typeof value !== "object") return false;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const v = value as Record<string, unknown>;
-  return typeof v.id === "string" && typeof v.name === "string" &&
-    typeof v.cityId === "string" && typeof v.verticalId === "string" &&
+  return onlyKeys(v, ["id", "name", "cityId", "verticalId", "orderabilityStatus", "orderingAvailable"]) &&
+    isPublicId(v.id) && boundedName(v.name, 120) &&
+    isPublicId(v.cityId) && isPublicId(v.verticalId) &&
     ["OPEN_FOR_ORDERS", "CLOSED_BY_SCHEDULE", "PAUSED", "OPERATIONALLY_UNAVAILABLE"].includes(String(v.orderabilityStatus)) &&
     v.orderingAvailable === false;
 }
 function isOffer(value: unknown): value is PublicOffer {
-  if (!value || typeof value !== "object") return false;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const v = value as Record<string, unknown>;
-  return typeof v.id === "string" && typeof v.storeId === "string" &&
-    typeof v.name === "string" && typeof v.variantId === "string" &&
+  return onlyKeys(v, ["id", "storeId", "name", "variantId", "priceYer", "available"]) &&
+    isPublicId(v.id) && isPublicId(v.storeId) && boundedName(v.name, 160) &&
+    isPublicId(v.variantId) &&
     Number.isSafeInteger(v.priceYer) && (v.priceYer as number) > 0 && v.available === true;
 }
 function readPage<T>(value: unknown, validate: (v: unknown) => v is T): PublicPage<T> {
-  if (!value || typeof value !== "object") throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  }
   const v = value as Record<string, unknown>;
-  if (!Array.isArray(v.items) || !v.items.every(validate) ||
-    !Number.isSafeInteger(v.revision) || (v.nextCursor != null && typeof v.nextCursor !== "string")) {
+  if (!onlyKeys(v, ["items", "revision", "nextCursor"]) ||
+    !Array.isArray(v.items) || !v.items.every(validate) ||
+    !Number.isSafeInteger(v.revision) || Number(v.revision) < 0 ||
+    (v.nextCursor !== undefined &&
+      (typeof v.nextCursor !== "string" || v.nextCursor.length > 512))) {
     throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   }
   return { items: v.items, revision: v.revision as number, ...(typeof v.nextCursor === "string" ? { nextCursor: v.nextCursor } : {}) };
