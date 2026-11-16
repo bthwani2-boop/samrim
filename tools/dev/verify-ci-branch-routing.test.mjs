@@ -63,6 +63,17 @@ test("every supported development branch executes discovered Feature regression 
   assert.match(content, /^      - name: Run discovered Feature tests and collect measured coverage\n        run: pnpm check:coverage$/m);
 });
 
+test("CI must reject unadmitted new tests before coverage and fast-guard", () => {
+  const { content } = events(workflows[0]);
+  const install = content.indexOf("pnpm install --frozen-lockfile --ignore-scripts");
+  const admission = content.indexOf("run: pnpm check:test-inclusion");
+  const coverage = content.indexOf("run: pnpm check:coverage");
+  const fastGuard = content.indexOf("  fast_guard:");
+  assert.ok(install >= 0 && admission > install && coverage > admission && fastGuard > coverage,
+    "CI must prove new test inclusion after install and before coverage/fast-guard");
+  assert.match(content, /^      - name: Reject unadmitted new Feature tests\n        run: pnpm check:test-inclusion$/m);
+});
+
 test("SQL migration changes trigger the existing Go quality and Nx dependency workflows", () => {
   for (const file of [workflows[1], workflows[2]]) {
     const { push, pr } = events(file);

@@ -88,6 +88,8 @@ jobs:
           pnpm --dir services/identity contract
           pnpm --dir services/dsh contract
           pnpm --dir services/wlt contract
+      - name: Reject unadmitted new Feature tests
+        run: pnpm check:test-inclusion
       - name: Run discovered Feature tests and collect measured coverage
         run: pnpm check:coverage
       - name: Reject orphaned JavaScript and TypeScript files
