@@ -1,0 +1,13 @@
+# Only reviewed owner Go sources and SQL enter the Docker build context.
+**
+!backend/
+!backend/go.mod
+!backend/go.sum
+!backend/cmd/
+!backend/cmd/**
+!backend/internal/
+!backend/internal/**
+!database/
+!database/migrations/
+!database/migrations/*.sql
+**/*_test.go

@@ -23,26 +23,28 @@ secrets, applied migrations and media are never copied or changed.
 
 ## Optional owner service roles and DSH public discovery
 
-`compose.apps.yaml` contains eight historical opt-in `implementation` roles.
-Only `dsh` and `dsh-migrate` there have a runnable Go entrypoint, and **`dsh`
-serves public Store/Offer discovery only**. Its protected mutation and WLT/Order
-integrations are NOT_RUN. Do not activate that entire profile.
+`compose.apps.yaml` now contains **only** the two real DSH owner roles:
+`dsh` and opt-in `dsh-migrate`. Placeholder Identity/WLT services,
+nonexistent bootstrap commands and invalid old Dockerfiles are no longer
+advertised as runnable. Do not start the whole `implementation` profile.
+DSH public Store/Offer discovery is real; protected mutation and WLT/Order
+integration remain NOT_RUN.
 
-**NEW Identity source exists** at `services/identity/backend`: it is a
-synthetic, read-only PostgreSQL session/Operator-permission verifier. This is
-not the old donor Identity and not a full login/session issuer. The old
-`compose.apps.yaml` Identity entries still refer to nonexistent Dockerfiles,
-bootstrap commands and endpoints. They are not valid for the new verifier.
-WLT's genuine backend remains incomplete. Never substitute donor images,
-reuse `samrim-local` volumes or claim production authentication.
+Identity is a separate, synthetic Go session/Operator-permission verifier
+in `compose.identity-verifier.yaml`, not a first-factor login issuer.
+The two overlays may be combined with the same `compose.yaml` without
+competing service definitions. WLT has no runnable Go backend yet.
+Never reuse donor images, production data or `samrim-local` volumes.
 
 ### Build and run real public DSH inside the same Compose project
 
-Use the exact Go version in root `.go-version`, installed on the Windows build
-host. `infra/build-dsh-image.ps1` cross-compiles the DSH owner directly to Linux
-and builds the image from the digest-pinned isolated Alpine runtime base; no old binaries
-or secrets enter its build context; it packages the reviewed DSH SQL files
-without running any migration. Add the **verified existing isolated** schema
+`services/dsh/backend/Dockerfile` is the canonical multi-stage Go build. Its
+builder is pinned to the approved root `.go-version` and an immutable digest,
+and the runtime Alpine image is also digest-pinned. The context is only
+`services/dsh/` with an allowlisted `.dockerignore`; no local Go compiler or
+Windows cross-compilation is required. `infra/build-dsh-image.ps1` keeps
+committed-source SHA checks and creates a tagged image without starting it,
+modifying secrets, or executing SQL migrations. Add the **verified existing isolated** schema
 and exact permitted browser origins only to the ignored `infra/.env`:
 
 ```dotenv
@@ -50,7 +52,10 @@ REF_DSH_DISCOVERY_SCHEMA=dsh_test_REPLACE_WITH_VERIFIED_SCHEMA
 REF_DSH_PUBLIC_CORS_ORIGINS=http://127.0.0.1:3101,http://localhost:3101
 ```
 
-Run from the Worktree root (never plain `--profile implementation up`):
+Run from the checkout root (never start an entire profile). The default
+`:dev` image tag preserves the existing running service; set
+`REF_DSH_IMAGE_TAG` to an independently tested revision tag for controlled
+rollout. An image build by itself does not recreate an existing container:
 
 ```powershell
 powershell -NoProfile -File infra/build-dsh-image.ps1
@@ -68,19 +73,21 @@ seed or upgrade 002/003. Do not treat HTTP health as evidence of checkout,
 merchant permissions, identity authentication or finance correctness.
 
 
-### NEW Identity verifier in the SAME Compose project (prepared, NOT_STARTED)
+### Isolated Identity verifier in the SAME Compose project
 
 `compose.identity-verifier.yaml` is an opt-in overlay for the **new
-refoundation Go Identity source**, not `compose.apps.yaml`'s obsolete service.
-Pair it **only** with `compose.yaml`; the existing project name remains
+refoundation Go Identity source**. Pair it with `compose.yaml` and optionally
+`compose.apps.yaml` for the real DSH service; the existing project name remains
 `bthwani-refoundation`, and its published host port is loopback-only 3201.
 The service is `identity`, profile `identity-verifier`. It has no
 automatic bootstrap, issuer, migrations, donor volumes or other service restarts.
 
-`build-identity-verifier-image.ps1` uses the exact pinned host Go version,
-rejects uncommitted Identity Go/SQL source, cross-compiles the real Linux binary
-and labels the digest-pinned Alpine image with the source commit. SQL is only
-packaged for review; **the build never applies a migration**. The container
+`services/identity/backend/Dockerfile` now builds the real Go binary in a
+pinned multi-stage Linux builder. `build-identity-verifier-image.ps1` checks
+that the Docker builder matches `.go-version`, rejects uncommitted owner
+source, and records the exact source SHA on the resulting image. The Docker
+context is limited to `services/identity/`; SQL is packaged for review and
+**never executed by the image build**. The container
 uses non-root UID, read-only filesystem, dropped Linux capabilities and
 no-new-privileges.
 
@@ -97,17 +104,20 @@ Identity session/permission denial and revocation readback. The build script
 continues to reject uncommitted Identity Go/SQL source; no issuer, real user
 or production authentication is enabled by these settings.
 
-After those independent prerequisites are **proved**, load only the ignored
-`infra/.env` values `REF_IDENTITY_TEST_SCHEMA`,
-`REF_IDENTITY_TEST_DATABASE_URL` (pointing to isolated `postgres:5432`,
-never donor/production), and optionally `REF_IDENTITY_VERIFIER_PORT`.
-The explicit deployment sequence is:
+After those independent prerequisites are **proved**, set the Identity-only
+values `REF_IDENTITY_TEST_SCHEMA`, `REF_IDENTITY_TEST_DATABASE_URL` (pointing
+to isolated `postgres:5432` with a separately authorized limited database
+role, never admin/donor/production), and optionally `REF_IDENTITY_VERIFIER_PORT`
+in the ignored `infra/.env.identity-verifier.local`. Keep the shared
+`infra/.env` untouched. `REF_IDENTITY_IMAGE_TAG` may select a tested revision
+image; default `:dev` remains compatible with existing development commands.
+The opt-in deployment sequence is:
 
 ```powershell
 powershell -NoProfile -File infra/build-identity-verifier-image.ps1
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier config --quiet
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier up -d --no-deps identity
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier ps identity
+docker --context bthwani-docker compose --env-file infra/.env --env-file infra/.env.identity-verifier.local -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier config --quiet
+docker --context bthwani-docker compose --env-file infra/.env --env-file infra/.env.identity-verifier.local -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier up -d --no-deps identity
+docker --context bthwani-docker compose --env-file infra/.env --env-file infra/.env.identity-verifier.local -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier ps identity
 ```
 
 The service will not be declared healthy on a TCP listener, unauthenticated
@@ -156,9 +166,9 @@ docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.y
 docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml ps
 ```
 
-Do not start the whole `implementation` profile. Launch only the proven DSH
-public service explicitly; the remaining future owner roles must first pass
-owner-backed persistence, security and financial acceptance.
+Do not start an entire Compose profile. Launch only services with proven
+source, isolated database permissions and authorization acceptance. WLT
+remains unbuilt and must not be represented by a placeholder container.
 Do not run `down -v`, `prune`, copy donor volume data or touch donor tasks.
 
 ## Approved port map (only DSH and the listed dependencies are currently live)

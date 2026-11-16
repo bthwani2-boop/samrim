@@ -152,10 +152,11 @@ for(const folder of ['contracts','go.work']){
 // Worktree-scoped Docker dependencies are admitted without claiming live services.
 // This is structural isolation only; Docker Compose and real owner data need runtime proof.
 if(exists('infra')){
- const assets=['infra/compose.yaml','infra/compose.apps.yaml','infra/README.md','infra/setup-env.mjs'];
+ const assets=['infra/compose.yaml','infra/compose.apps.yaml','infra/compose.identity-verifier.yaml','infra/README.md','infra/setup-env.mjs'];
  for(const f of assets)if(!exists(f))fail('incomplete isolated refoundation infra: '+f);
  const compose=get('infra/compose.yaml');
  const planned=get('infra/compose.apps.yaml');
+ const verifier=get('infra/compose.identity-verifier.yaml');
  const setup=get('infra/setup-env.mjs');
  const docs=get('infra/README.md');
  const services=(source)=>{
@@ -165,9 +166,9 @@ if(exists('infra')){
   return [...body.matchAll(/^  ([a-z][a-z0-9-]*):\s*$/gm)].map(x=>x[1]).sort((a,b)=>a.localeCompare(b,'en'));
  };
  const active=['postgres','media','mailpit','payment-mock'].sort((a,b)=>a.localeCompare(b,'en'));
- const future=['postgres-access','identity-migrate','identity-bootstrap','identity','dsh-migrate','dsh','wlt-migrate','wlt'].sort((a,b)=>a.localeCompare(b,'en'));
- if(services(compose).join()!==active.join()||services(planned).join()!==future.join())
-  fail('infra must contain exactly four independent dependencies and eight inactive owner roles');
+ const future=['dsh-migrate','dsh'].sort((a,b)=>a.localeCompare(b,'en'));
+ if(services(compose).join()!==active.join()||services(planned).join()!==future.join()||services(verifier).join()!=='identity')
+  fail('infra must contain exactly four dependencies, two runnable DSH roles and one isolated Identity verifier');
  if(!/^name: bthwani-refoundation$/m.test(compose)||
     !/^\s*internal: true$/m.test(compose)||
     !/^  loopback:\n    driver: bridge$/m.test(compose)||
@@ -176,12 +177,12 @@ if(exists('infra')){
     !compose.includes('refoundation-postgres-data:/var/lib/postgresql')||
     !compose.includes('refoundation-media-data:/data'))
   fail('refoundation Docker project, private network or own volumes missing');
- const yaml=[compose,planned].map(s=>s.split(/\r?\n/).filter(line=>!line.trimStart().startsWith('#')).join('\n')).join('\n');
+ const yaml=[compose,planned,verifier].map(s=>s.split(/\r?\n/).filter(line=>!line.trimStart().startsWith('#')).join('\n')).join('\n');
  if(/(?:samrim-local|samrim-remote-stage|external:\s*true|network_mode:\s*host|container_name:|privileged:\s*true|volumes_from:|docker\.sock)/i.test(yaml))
   fail('unsafe donor/shared Docker state or privileged host link');
  const exposed=[...yaml.matchAll(/^\s*-\s*"(.*?)"$/gm)]
   .map(m=>m[1]).filter(s=>/:\d+$/.test(s));
- if(exposed.length!==6||exposed.some(s=>!s.startsWith('127.0.0.1:')))
+ if(exposed.length!==5||exposed.some(s=>!s.startsWith('127.0.0.1:')))
   fail('infra exposes ports outside the remote host loopback or loses a scoped port');
  const postgres=compose.split(/^  postgres:\s*$/m)[1]?.split(/^  [a-z][a-z0-9-]*:\s*$/m)[0]??'';
  if(!postgres||/^\s*ports:/m.test(postgres)||
@@ -189,10 +190,10 @@ if(exists('infra')){
     !compose.includes('REF_MEDIA_SECRET_KEY:?')||
     !compose.includes('REF_MEDIA_ACCESS_KEY:?'))
   fail('infra secret isolation or internal PostgreSQL protection missing');
- if((planned.match(/^\s*profiles: \[implementation\]$/gm)||[]).length!==8||
-    !planned.includes('bthwani-refoundation-identity:dev')||
-    !planned.includes('bthwani-refoundation-dsh:dev')||
-    !planned.includes('bthwani-refoundation-wlt:dev')||
+ if((planned.match(/^\s*profiles: \[implementation\]$/gm)||[]).length!==2||
+    (verifier.match(/^\s*profiles: \[identity-verifier\]$/gm)||[]).length!==1||
+    !planned.includes('bthwani-refoundation-dsh:')||
+    !verifier.includes('bthwani-refoundation-identity-verifier:')||
     !setup.includes('randomBytes(32)')||
     !setup.includes("flag:'wx'")||
     !docs.includes('NOT_RUN'))
@@ -212,12 +213,17 @@ const allowedServiceFiles=new Set();
 let developmentSourceFiles=0;
 let progressiveOpenApiFiles=0;
 const legalDevelopmentFile=(relative)=>{
+ // Service-scoped Docker contexts are allowlisted, not arbitrary hidden files.
+ if(/^services\/(identity|dsh)\/\.dockerignore$/.test(relative))return true;
  const m=relative.match(/^services\/(identity|dsh|wlt)\/(backend|database|clients|contracts\/openapi\/paths)\/(.+)$/);
  if(!m)return false;
  const [,owner,area,name]=m;
  if(!owner||name.split('/').some(part=>!part||part==='.'||part==='..'||part.startsWith('.')))return false;
  if(/(?:secret|credential|private.key|\.env|dump|backup)/i.test(name))return false;
- if(area==='backend')return /(?:\.go|\.sql|\/go\.mod|\/go\.sum|^go\.mod$|^go\.sum$)$/i.test(name);
+ if(area==='backend'){
+  if(owner!=='wlt'&&(name==='Dockerfile'||name==='project.json'))return true;
+  return /(?:\.go|\.sql|\/go\.mod|\/go\.sum|^go\.mod$|^go\.sum$)$/i.test(name);
+ }
  if(area==='database')return /\.sql$/i.test(name);
  if(area==='clients')return /\.(?:ts|tsx)$/i.test(name);
  if(area==='contracts/openapi/paths')return /^[a-z0-9-]+\.yaml$/i.test(name);

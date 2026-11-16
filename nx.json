@@ -24,6 +24,12 @@
       {
         "runtime": "pnpm --version"
       }
+    ],
+    "goToolchain": [
+      "{workspaceRoot}/.go-version",
+      {
+        "runtime": "go version"
+      }
     ]
   },
   "targetDefaults": {

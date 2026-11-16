@@ -27,7 +27,7 @@ const files=[...new Set([
  'tools/governance/review-examples.test.mjs','tools/mobile/verify-expo-web-http.mjs',
  '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
  'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','nx.json','tsconfig.base.json','biome.json',
- 'README.md','infra/README.md','infra/compose.yaml','infra/compose.apps.yaml','infra/setup-env.mjs','services/identity/README.md','services/dsh/README.md','services/wlt/README.md',
+ 'README.md','infra/README.md','infra/compose.yaml','infra/compose.apps.yaml','infra/compose.identity-verifier.yaml','infra/setup-env.mjs','services/identity/README.md','services/dsh/README.md','services/wlt/README.md',
  ...['identity','dsh','wlt'].flatMap(owner=>['package.json','tsconfig.json','clients/README.md','clients/index.ts','contracts/openapi/README.md','contracts/openapi/'+owner+'.openapi.yaml'].map(file=>'services/'+owner+'/'+file)),
  ...contractGroups,'docs/reference/OPENAPI-DONOR-CONTRACT-INVENTORY.md',
  'docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md','docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json','tools/dev/verify-workspace.mjs','tools/mobile/verify-app-foundations.mjs',
@@ -115,6 +115,13 @@ rejects('rejects exposed PostgreSQL host port',{edit:{
 rejects('rejects activating unbuilt owner services',{edit:{
  'infra/compose.apps.yaml':s=>s.replace('profiles: [implementation]','profiles: []'),
 }},/infra owner services unexpectedly enabled/);
+rejects('rejects removing the isolated Identity verifier overlay',{
+ del:['infra/compose.identity-verifier.yaml'],
+},/incomplete isolated refoundation infra/);
+rejects('rejects adding an obsolete duplicate Identity service to DSH Compose',{edit:{
+ 'infra/compose.apps.yaml':s=>s.replace('services:\n','services:\n  identity:\n    profiles: [implementation]\n'),
+}},/four dependencies, two runnable DSH roles/);
+
 test('accepts a new proposed Product capability when recorded with its one existing owner',()=>{
  const proposed='NEW_JOURNEY_SCOPE';
  const section='\n## '+proposed+' — Bounded incremental proposal\nCAPABILITY_ID: '+proposed+'\n' +

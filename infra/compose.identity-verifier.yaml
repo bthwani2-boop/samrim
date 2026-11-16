@@ -1,6 +1,6 @@
 # Optional NEW Identity session-verifier development slice only.
-# Pair with infra/compose.yaml (NOT compose.apps.yaml); all services keep
-# the original bthwani-refoundation project name.
+# Pair with infra/compose.yaml; optionally include compose.apps.yaml for DSH.
+# The single project identity remains bthwani-refoundation.
 #
 # Do NOT start until the Identity owner has verified safe Docker-network
 # listening in explicit isolated mode and the identity_test_* PostgreSQL
@@ -9,7 +9,7 @@
 services:
   identity:
     profiles: [identity-verifier]
-    image: bthwani-refoundation-identity-verifier:dev
+    image: "bthwani-refoundation-identity-verifier:${REF_IDENTITY_IMAGE_TAG:-dev}"
     restart: "no"
     read_only: true
     cap_drop: [ALL]
