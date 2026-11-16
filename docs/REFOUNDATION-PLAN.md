@@ -19,6 +19,8 @@ Refound the **architecture itself**, not a succession of local patches. Move cor
 
 This plan is a dated execution index, not a governance constitution, second requirements database, or substitute for canonical Product decisions. Re-evaluate against fresh HEAD at each batch. A plan item is not proof it has executed.
 
+**Current-state interpretation (2026-11-16):** All stage labels (`CURRENT`, `NOT_STARTED`), branch/worktree paths, claims about absent Go/SQL/runtime, CI results and acceptance/signoff statements in dated entries below are **historical snapshots**, not standing execution instructions or current proof. In particular, the source-empty DSH and unstarted Phase 4/5 descriptions predate subsequent progressive implementation. Reinspect the authorized checkout, branch, HEAD, dirty state, source, applied migrations, running services and owner-backed tests before drawing a present-tense conclusion. The comparison donor is the read-only `archive/legacy-pre-refoundation-20261114` branch, never a writable execution target. Earlier external-signoff requirements for *target-policy selection* were superseded by the 2026-11-13 human decision; technical risk and implementation proof remain mandatory when applicable. This temporary plan cannot grant Push, branch changes, production activation or protected-data access.
+
 ### Source precedence
 1. Latest explicit approved user instruction for the same meaning; later approval supersedes the incompatible older decision and retains compatible earlier decisions.
 2. Canonical reconciled `governance/` domain-owner documents **after** an accepted cutover.
@@ -26,7 +28,7 @@ This plan is a dated execution index, not a governance constitution, second requ
 4. Branch-41 source and historic `docs/governance/` as provenance and protection of useful behavior.
 5. Dated commands, audit archives, Control Panel packs, prior conversations, benchmarks and OSS research as **nonbinding evidence**, never automatically current permissions or product features.
 
-The November 11 Codex Desktop command names another worktree and includes tool/push instructions tied to that context. **Do not execute those as current authority**. The user explicitly selected the existing clean worktree and authorized staged local development; no push, PR, merge, deployment or actual destructive database/data action is authorized by this plan.
+The November 11 Codex Desktop command named a worktree that has since been retired and included tool/Push instructions scoped to that earlier context. **Do not execute those instructions as current authority.** The corresponding checkout selection and development permission were historical, not standing authority over today's branch, files, Push, PR, Merge, deployment or protected data. Resolve the current checkout and task-specific authorizations from the user's present instruction and `AGENTS.md`.
 
 ### Sources inspected or carried as review inputs
 - Original `D:\samrim`, branch `41`, start SHA as above: `AGENTS.md`, `REPOSITORY-STRUCTURE.md`, `.coderabbit.yaml`, `.github/`, `docs/governance/`, `docs/reference/`, `tools/governance/`, `services/`, `apps/`.
