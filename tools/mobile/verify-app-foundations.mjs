@@ -55,9 +55,15 @@ for (const [name, [slug, packageId, scheme, projectId]] of Object.entries(expect
   }
   assert.ok(read(`${rel}/metro.config.cjs`).includes("getDefaultConfig(__dirname)"));
   assert.ok(read(`${rel}/index.js`).includes("expo-router/entry"));
-  for (const path of ["app/_layout.tsx","app/index.tsx","assets/icon.png",
+  // Customer / lives under URL-invisible Tabs; Merchant/Captain keep public entry gates.
+  const routeEntry = name === "customer" ? "app/(tabs)/index.tsx" : "app/index.tsx";
+  for (const path of ["app/_layout.tsx",routeEntry,"assets/icon.png",
     "assets/adaptive-icon.png","assets/splash-icon.png","eas.json"]) {
-    assert.ok(existsSync(join(root,rel,path)), `Missing ${rel}/${path}`);
+    assert.ok(existsSync(join(root,rel,path)), "Missing " + rel + "/" + path);
+  }
+  if (name === "customer") {
+    assert.ok(!existsSync(join(root,rel,"app/index.tsx")), "Duplicated Customer / route");
+    assert.ok(existsSync(join(root,rel,"app/(tabs)/_layout.tsx")), "Customer Tabs missing");
   }
   // Native Expo store assets must remain valid, large, square PNG files.
   // Existence alone does not prove a usable CNG icon or splash asset.

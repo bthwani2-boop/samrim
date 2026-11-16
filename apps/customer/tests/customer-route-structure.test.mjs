@@ -8,12 +8,12 @@ const app = resolve(customer, "app");
 const read = (path) => readFileSync(resolve(app, path), "utf8");
 
 const admitted = [
-  "_layout.tsx", "+html.tsx", "index.tsx", "home.tsx",
+  "_layout.tsx", "+html.tsx", "(tabs)/_layout.tsx", "(tabs)/index.tsx", "home.tsx",
   "stores/index.tsx", "store/[id].tsx", "storefront/[storeId].tsx",
-  "login.tsx", "verification.tsx", "account/index.tsx",
+  "login.tsx", "verification.tsx", "(tabs)/account/index.tsx",
   "addresses/index.tsx", "addresses/[id].tsx", "cart/[storeId].tsx",
   "checkout/index.tsx", "multi-store-checkout.tsx",
-  "orders/index.tsx", "orders/[id].tsx", "notifications/index.tsx",
+  "(tabs)/orders/index.tsx", "orders/[id].tsx", "notifications/index.tsx",
   "wallet/index.tsx", "wallet-cash-in.tsx",
   "discovery-content/[contentId].tsx",
 ];
@@ -25,8 +25,8 @@ test("all human-approved Customer routes exist in the one Expo app root", () => 
 });
 
 test("Customer home uses the DSH-backed store listing and preserves old /home", () => {
-  assert.match(read("index.tsx"), /PublicStoresScreen variant="home"/);
-  assert.ok(!read("index.tsx").includes('Redirect href="/stores"'));
+  assert.match(read("(tabs)/index.tsx"), /PublicStoresScreen variant="home"/);
+  assert.ok(!read("(tabs)/index.tsx").includes('Redirect href="/stores"'));
   assert.ok(read("home.tsx").includes('Redirect href="/"'));
   const listing = readFileSync(resolve(customer, "src/features/stores/stores-screen.tsx"), "utf8");
   assert.match(listing, /listPublicStores\(/);
@@ -47,9 +47,9 @@ test("full Web Store reuses one public DSH reader and preserves native Store lin
 
 test("future protected and financial routes never offer fake success", () => {
   const pending = admitted.filter((p) => [
-    "login.tsx", "verification.tsx", "account/index.tsx",
+    "login.tsx", "verification.tsx", "(tabs)/account/index.tsx",
     "addresses/index.tsx", "addresses/[id].tsx", "cart/[storeId].tsx",
-    "checkout/index.tsx", "multi-store-checkout.tsx", "orders/index.tsx",
+    "checkout/index.tsx", "multi-store-checkout.tsx", "(tabs)/orders/index.tsx",
     "orders/[id].tsx", "notifications/index.tsx", "wallet/index.tsx",
     "wallet-cash-in.tsx", "discovery-content/[contentId].tsx",
   ].includes(p));
@@ -60,4 +60,13 @@ test("future protected and financial routes never offer fake success", () => {
   const unavailable = readFileSync(resolve(customer, "src/components/capability-unavailable-screen.tsx"), "utf8");
   assert.match(unavailable, /هذه الخدمة غير مفعّلة حاليًا/);
   assert.match(unavailable, /لن يُرسل هذا القسم طلبًا/);
+});
+
+test("Customer tabs are a real navigator and no route duplicates its root URL", () => {
+  const tabs = read("(tabs)/_layout.tsx");
+  assert.match(tabs, /<Tabs/);
+  for (const name of ["index", "orders", "account"]) assert.ok(tabs.includes('name="' + name + '"'));
+  for (const old of ["index.tsx", "orders/index.tsx", "account/index.tsx"]) {
+    assert.equal(existsSync(resolve(app, old)), false, "duplicate route: " + old);
+  }
 });
