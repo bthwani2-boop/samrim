@@ -223,10 +223,16 @@ const legalDevelopmentFile=(relative)=>{
  if(!owner||name.split('/').some(part=>!part||part==='.'||part==='..'||part.startsWith('.')))return false;
  if(/(?:secret|credential|private.key|\.env|dump|backup)/i.test(name))return false;
  if(area==='backend'){
-  if(owner!=='wlt'&&(name==='Dockerfile'||name==='project.json'))return true;
-  return /(?:\.go|\.sql|\/go\.mod|\/go\.sum|^go\.mod$|^go\.sum$)$/i.test(name);
+  if(name==='Dockerfile'||name==='project.json'){
+   // WLT configuration is executable only beside a real Go entrypoint.
+   return owner!=='wlt'||(exists('services/wlt/backend/go.mod')&&
+     exists('services/wlt/backend/cmd/wlt/main.go'));
+  }
+  if(name==='go.mod'||name==='go.sum')return true;
+  const command=new RegExp('^cmd/'+owner+'/[a-z][a-z0-9_]*\\.go$');
+  return command.test(name)||/^internal\/(?:[a-z][a-z0-9]*\/)+[a-z][a-z0-9_]*\.go$/.test(name);
  }
- if(area==='database')return /\.sql$/i.test(name);
+ if(area==='database')return /^migrations\/\d{3,}_[a-z][a-z0-9_]*\.sql$/.test(name);
  if(area==='clients')return /\.(?:ts|tsx)$/i.test(name);
  if(area==='contracts/openapi/paths')return /^[a-z0-9-]+\.yaml$/i.test(name);
  return false;
@@ -485,7 +491,22 @@ function inspectServiceFolders(dir){
    continue;
   }
   if(stat.isDirectory()){
-   const ownerSourceFolder=/^services\/(identity|dsh|wlt)\/(backend|database|clients)\/[A-Za-z0-9_.\/-]+$/.test(relative);
+    const sourceDir=relative.match(/^services\/(identity|dsh|wlt)\/(backend|database|clients)\/(.+)$/);
+    let ownerSourceFolder=false;
+    if(sourceDir){
+     const [,owner,area,name]=sourceDir;
+     if(area==='backend'){
+      const domain=/^internal\/[a-z][a-z0-9]*(?:\/[a-z][a-z0-9]*)*$/.test(name);
+      const forbidden=new Set(['common','shared','misc','legacy','new','v2','partners','partner','partneronboarding']);
+      ownerSourceFolder=name==='cmd'||name==='internal'||name==='cmd/'+owner||
+       (domain&&!name.slice('internal/'.length).split('/').some(part=>forbidden.has(part)));
+     }else if(area==='database'){
+      ownerSourceFolder=name==='migrations';
+     }else if(area==='clients'){
+      ownerSourceFolder=name==='generated'||name==='go'||
+       /^generated\/[a-z][a-z0-9]*(?:\/[a-z][a-z0-9]*)*$/.test(name);
+     }
+    }
    if(!allowedServiceDirs.has(relative)&&!ownerSourceFolder)fail('unadmitted service directory: '+relative);
    inspectServiceFolders(absolute);
   }else{

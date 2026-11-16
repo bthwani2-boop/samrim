@@ -94,7 +94,7 @@ test('Git-tracked README case-only NTFS aliases do not block legal development',
 });
 rejects('rejects an unadmitted nested lowercase readme even on Windows',{
  add:{'services/dsh/clients/ghost/readme.md':'unexpected file'},
-},/premature service source/);
+},/unadmitted service directory: services\/dsh\/clients\/ghost/);
 
 test('progressive journey governance is ready while historical cutover remains pending',()=>{
  const r=run();
@@ -195,7 +195,12 @@ rejects('rejects WLT structure guide misrepresenting service as running',{
 rejects('rejects missing client documentation',{del:['services/wlt/clients/README.md']},/required services\/wlt\/clients\/README.md/);
 rejects('rejects missing service workspace lock importer',{edit:{'pnpm-lock.yaml':s=>s.replace('  services/identity:', '  services/other:')}},/service missing exact frozen-lockfile importer/);
 rejects('rejects old Nx project configuration',{add:{'services/identity/project.json':'{}'}},/premature service source: services\/identity\/project.json/);
-accepts('permits Identity Go source in isolated development',{add:{'services/identity/backend/main.go':'package main'}},/PROGRESSIVE_SOURCE_PRESENT/);
+accepts('permits Identity Go source in its command package',{add:{'services/identity/backend/cmd/identity/health_extra.go':'package main'}},/PROGRESSIVE_SOURCE_PRESENT/);
+rejects('rejects Go source at the backend root rather than cmd or internal',{add:{'services/identity/backend/debug.go':'package identity'}},/premature service source: services\/identity\/backend\/debug.go/);
+rejects('rejects an arbitrary Go application directory',{add:{'services/dsh/backend/usecases/logic.go':'package usecases'}},/unadmitted service directory: services\/dsh\/backend\/usecases/);
+accepts('permits domain-specific internal Go packages',{add:{'services/dsh/backend/internal/orders/service.go':'package orders'}},/PROGRESSIVE_SOURCE_PRESENT/);
+rejects('rejects catch-all Go internal packages',{add:{'services/dsh/backend/internal/misc/service.go':'package misc'}},/unadmitted service directory: services\/dsh\/backend\/internal\/misc/);
+rejects('rejects old Partner naming as a new Go package',{add:{'services/dsh/backend/internal/partners/service.go':'package partners'}},/unadmitted service directory: services\/dsh\/backend\/internal\/partners/);
 accepts('permits owner Go module development',{add:{'services/identity/backend/go.mod':'module sample'}},/service_scaffold_only=false/);
 accepts('permits a scoped DSH OpenAPI operation during development',{
  edit:{'services/dsh/contracts/openapi/dsh.openapi.yaml':s=>s.replace('\ncomponents:\n',[
@@ -408,8 +413,18 @@ rejects('rejects missing WLT ledger fragment',{del:['services/wlt/contracts/open
 rejects('rejects nonempty WLT ledger fragment',{edit:{'services/wlt/contracts/openapi/paths/ledger.yaml':s=>s.replace('paths: {}','paths:\n  /wlt/credit: {}')}},/OpenAPI path fragment is not an empty placeholder/);
 rejects('rejects nonempty Identity authentication fragment',{edit:{'services/identity/contracts/openapi/paths/client-auth.yaml':s=>s.replace('paths: {}','paths:\n  /auth/override: {}')}},/OpenAPI path fragment is not an empty placeholder/);
 rejects('rejects misplaced financial writer in DSH',{edit:{'services/dsh/contracts/openapi/paths/financial-views.yaml':s=>s.replace('paths: {}','paths:\n  /dsh/ledger/post: {}')}},/OpenAPI path fragment is not an empty placeholder/);
-accepts('permits WLT SQL migration development',{add:{'services/wlt/database/migrations/001.sql':'select 1;'}},/PROGRESSIVE_SOURCE_PRESENT/);
-accepts('permits owner fresh SQL baseline development',{add:{'services/dsh/database/fresh-baseline.sql':'select 1;'}},/PROGRESSIVE_SOURCE_PRESENT/);
+accepts('permits WLT SQL migration development at the canonical path',{add:{'services/wlt/database/migrations/001_ledger_baseline.sql':'select 1;'}},/PROGRESSIVE_SOURCE_PRESENT/);
+rejects('rejects unnamed WLT migration files',{add:{'services/wlt/database/migrations/001.sql':'select 1;'}},/premature service source: services\/wlt\/database\/migrations\/001.sql/);
+accepts('permits owner migration development in the migration directory',{add:{'services/dsh/database/migrations/006_owner_policy.sql':'select 1;'}},/PROGRESSIVE_SOURCE_PRESENT/);
+rejects('rejects SQL outside owner migrations',{add:{'services/dsh/database/fresh-baseline.sql':'select 1;'}},/premature service source: services\/dsh\/database\/fresh-baseline.sql/);
+rejects('rejects WLT Dockerfile without a real Go entrypoint',{add:{'services/wlt/backend/Dockerfile':'FROM scratch'}},/premature service source: services\/wlt\/backend\/Dockerfile/);
+accepts('permits a complete WLT backend layout when it is first implemented',{add:{
+  'services/wlt/backend/go.mod':'module example.test/wlt\\n',
+  'services/wlt/backend/cmd/wlt/main.go':'package main',
+  'services/wlt/backend/internal/ledger/posting.go':'package ledger',
+  'services/wlt/backend/Dockerfile':'FROM scratch',
+  'services/wlt/backend/project.json':'{}'
+}},/PROGRESSIVE_SOURCE_PRESENT/);
 rejects('rejects untracked placeholders',{add:{'services/dsh/backend/.gitkeep':''}},/premature service source: services\/dsh\/backend\/\.gitkeep/);
 rejects('rejects unapproved nested service folder',{add:{'services/dsh/shared/unowned.txt':'wrong owner'}},/unadmitted service directory: services\/dsh\/shared/);
 rejects('rejects false service runtime readiness',{edit:{'services/wlt/README.md':s=>s.replace('EXECUTION: NOT_STARTED','EXECUTION: READY')}},/invalid service placement README: services\/wlt\/README.md/);
