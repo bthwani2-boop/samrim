@@ -1,8 +1,8 @@
 # BThwani refoundation — isolated development infrastructure
 
-Worktree: `D:\samrim-refoundation-clean-20261112`
-Compose project: `bthwani-refoundation` (never use `samrim-local` or old volumes).
-This environment is synthetic development only, not production deployment.
+Canonical checkout: `D:\samrim` (current development branch changes).
+Compose project: `bthwani-refoundation` is a stable runtime identity. Do not change it when switching Git branches or repurpose donor volumes.
+This environment is synthetic development only, not production deployment. Legacy `com.bthwani.worktree` labels are retained as compatibility identifiers for running containers; they do **not** describe the current checkout. Do not recreate existing services or rename their volumes as part of a Git branch change.
 
 ## Runnable now
 

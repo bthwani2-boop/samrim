@@ -7,6 +7,8 @@ SOURCE_BRANCH: refoundation/clean-house-20261112
 DONOR_REFERENCE: 41 (read only)
 STATUS: FOUNDATION_ONLY; NO_SECRETS_OR_RUNTIME_PROVISIONED
 
+**2026-11-16 current-source correction:** This document records the original 2026-11-13 Stage-4 inventory, not the current runtime state. The canonical checkout is now `D:\samrim`; the archived donor is `archive/legacy-pre-refoundation-20261114`, and the active development branch is temporary. `tools/mobile/define-bthwani-expo-app.cjs` no longer falls back to the deleted worktree's secrets directory: `BTHWANI_SECRETS_ROOT` must be explicitly set when a protected local key file is intended. Identity/DSH source and API operations now exist in progressive development, whereas WLT runtime remains incomplete. Historical statements below are retained as dated evidence, not current deployment instructions.
+
 This is a **source-derived inventory, not an environment file**, an approved deployment specification, a second configuration owner, or proof of runtime readiness. The current service clients contain no operations; service secrets and runtime endpoints are **deferred** until Identity, DSH and WLT contracts and the governance cutover are approved. Never copy the donor's environment wholesale.
 
 ## Current sources and owners

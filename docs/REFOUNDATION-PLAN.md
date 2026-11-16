@@ -7,10 +7,10 @@ IMPLEMENTATION_ADMISSION: PROGRESSIVE
 ALL_CAPABILITIES_DEVELOPMENT: ENABLED
 NEW_CAPABILITIES: ANALYZE_AND_IMPLEMENT_PROGRESSIVELY
 PRODUCTION_ACTIVATION: BLOCKED
-TARGET_WORKTREE: D:\samrim-refoundation-clean-20261112
+TARGET_WORKTREE: D:\samrim
 SOURCE_BRANCH_AT_START: 41
 SOURCE_SHA_AT_START: 426d67b47beb8c66b09acd8c7394086b53ac5aae
-WORKTREE_BRANCH: refoundation/clean-house-20261112
+WORKTREE_BRANCH: foundation (AS_OF_2026-11-16; CHECK_ACTIVE_GIT_BRANCH)
 DECISIONS_AUTHORITY: NONE
 RUNTIME_SUCCESS_AUTHORITY: NONE
 
@@ -1084,3 +1084,13 @@ This is a temporary execution checklist derived from the single Product capabili
 5. Each new capability requires approved API operations and schemas, real owner-backed positive/negative/concurrency readback, privacy/security checks, actual browser/Android journey when affected, migration/restore evidence if relevant, and required internal risk review. Record exact code/contract/DB SHA and the limitation of every skipped check; source inspection and green foundation CI remain only source evidence.
 
 **Bounded result:** all 19 DSH-owned capability IDs have a source locator and explicit later acceptance failure case. This is an execution route, not a new implementation, migration permission, proof of 19 working capabilities, approval of old SQL semantics or governance READY decision. All mentioned runtime/contract/financial/security scenarios remain NOT_RUN until separately authorized and executed.
+
+## 2026-11-16 - Worktree retirement and branch-independent CI routing
+
+Source checkout was consolidated to `D:\samrim`, with temporary branch `foundation` and default `main` at `ccce4247e3bffe1b603ae26f8dd176a80d123753`. The previous `D:\samrim-refoundation-clean-20261112` worktree was removed. Branch names are not permanent configuration values. Historical names and SHA references recorded in dated sections above remain evidence of what was inspected, not operational instructions.
+
+GitHub CI workflows `.github/workflows/{ci,dependency-nx-safety,go-quality}.yml` now include pushes to any present/future development branch except `archive/**` and `41`. Protected-main PR checks stay in place; `fast-guard` has no path filter, while Go/Nx keep their affected-file filters. Local source checks cannot prove remote execution until the revision is pushed and actually evaluated on GitHub.
+
+Docker project `bthwani-refoundation`, PostgreSQL/media volumes, container labels, active SSH tunnels and Lenovo runtime were not renamed/restarted. The old `com.bthwani.worktree` label remains a runtime compatibility identifier, not a source path. Mobile config no longer implicitly reads secrets from the removed worktree; environment and EAS secrets must be explicitly selected and authorized. The four Windows tunnel Scheduled Tasks have been redirected to a branch-independent launcher under the user LocalAppData BThwani Operations Tunnels directory, after parser and non-network configuration checks and with all original task XMLs archived there. Existing listening ports were not deliberately restarted; verify an actual restart in a separately authorized maintenance window.
+
+`GOVERNANCE_CUTOVER: NOT_READY` and `PRODUCTION_ACTIVATION: BLOCKED` remain. No new finance, Identity/DSH/WLT integration, SQL upgrade, real-device or protected-state acceptance is implied. Push, PR, merge, credential transfer and changes to running services remain separately authorized actions.

@@ -156,6 +156,7 @@ services:
     security_opt: ["no-new-privileges:true"]
     labels:
       com.bthwani.environment: refoundation
+      # Legacy runtime identifier, not the current Git checkout path.
       com.bthwani.worktree: samrim-refoundation-clean-20261112
       com.bthwani.capability: customer-store-catalog
     environment:

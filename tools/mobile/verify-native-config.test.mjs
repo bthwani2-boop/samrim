@@ -22,6 +22,7 @@ for (const [key, slug, packageName, easId] of apps) {
     assert.equal(value.android.package, packageName);
     assert.equal(value.ios.bundleIdentifier, packageName);
     assert.equal(value.extra.eas.projectId, easId);
+    assert.equal(value.extra.sourceRepo, "samrim");
     assert.deepEqual(value.platforms, ["ios", "android", "web"]);
     assert.equal(value.updates.url, `https://u.expo.dev/${easId}`);
     assert.equal(value.runtimeVersion.policy, "appVersion");
@@ -186,5 +187,45 @@ test("EAS Firebase validation cannot swap the verified file path before its read
       else process.env[name] = originals[name];
     }
     rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+
+test("Maps config requires explicit opt-in to mobile.env and rejects missing keys for native builds", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bthwani-maps-explicit-root-"));
+  const names = [
+    "BTHWANI_SECRETS_ROOT", "GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT",
+    "GOOGLE_MAPS_ANDROID_API_KEY", "GOOGLE_MAPS_IOS_API_KEY",
+    "EAS_BUILD", "BTHWANI_ENFORCE_NATIVE_KEYS",
+  ];
+  const originals = Object.fromEntries(names.map(name => [name, process.env[name]]));
+  try {
+    for (const name of names) delete process.env[name];
+    const absent = defineBthwaniExpoApp("app-client", { maps: true });
+    assert.ok(!absent.plugins.some(p => Array.isArray(p) && p[0] === "react-native-maps"));
+    process.env.BTHWANI_ENFORCE_NATIVE_KEYS = "1";
+    assert.throws(
+      () => defineBthwaniExpoApp("app-client", { maps: true }),
+      /Missing approved Google Maps API keys/
+    );
+    process.env.BTHWANI_ENFORCE_NATIVE_KEYS = "0";
+    mkdirSync(join(dir, "env"));
+    writeFileSync(
+      join(dir, "env", "mobile.env"),
+      "GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT=synthetic-android\nGOOGLE_MAPS_IOS_API_KEY=synthetic-ios\n",
+      "utf8"
+    );
+    process.env.BTHWANI_SECRETS_ROOT = dir;
+    const explicit = defineBthwaniExpoApp("app-client", { maps: true });
+    const maps = explicit.plugins.find(p => Array.isArray(p) && p[0] === "react-native-maps");
+    assert.ok(maps, "approved explicit root must activate the maps plugin");
+    assert.equal(maps[1].androidGoogleMapsApiKey, "synthetic-android");
+    assert.equal(maps[1].iosGoogleMapsApiKey, "synthetic-ios");
+  } finally {
+    for (const name of names) {
+      if (originals[name] === undefined) delete process.env[name];
+      else process.env[name] = originals[name];
+    }
+    rmSync(dir, { recursive: true, force: true });
   }
 });

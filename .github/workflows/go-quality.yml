@@ -2,19 +2,23 @@ name: Go Quality (source checks only)
 
 on:
   workflow_dispatch:
+  # Every current and future development branch is eligible.
+  # Archived donor refs stay read-only, outside development CI.
   push:
     branches:
-      - 'refoundation/clean-house-20261112'
+      - '**'
+      - '!archive/**'
+      - '!41'
     paths:
       - '.go-version'
       - '.github/workflows/go-quality.yml'
       - 'tools/dev/check-go.mjs'
       - 'tools/dev/check-go.test.mjs'
       - 'services/**/backend/**'
+  # Main is the protected integration target; branch names are never pinned.
   pull_request:
     branches:
       - main
-      - 'refoundation/clean-house-20261112'
     paths:
       - '.go-version'
       - '.github/workflows/go-quality.yml'

@@ -15,7 +15,7 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 ## What this directory means
 This is the **only intended durable governance home** for BThwani. Each subject has exactly one semantic owner; overlapping documents link to the owner rather than restating independently changeable law. Current domain documents remain subject to complete historical reconciliation, while journey-scoped Product/domain decisions may be resolved incrementally in their canonical owner and used to guide isolated SQL/service development. Their existence alone never proves runtime acceptance or authorizes production activation.
 
-Historic `docs/governance/` was removed from this candidate. Read older content and verified code from original branch `41`, ZIP archives, dated reports and external sources as **donor evidence only**, not another editable authority. Preserve any materially binding historical legal/financial records and original research links in a non-normative `docs/reference/` when later admitted; never reintroduce another governance root.
+Historic `docs/governance/` was removed from this candidate. Read older content and verified code from archived donor branch `archive/legacy-pre-refoundation-20261114`, ZIP archives, dated reports and external sources as **donor evidence only**, not another editable authority. Preserve any materially binding historical legal/financial records and original research links in a non-normative `docs/reference/` when later admitted; never reintroduce another governance root.
 
 ## The canonical owner index
 | Owner file | What its decisions control |

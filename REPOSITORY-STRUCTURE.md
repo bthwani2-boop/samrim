@@ -15,14 +15,14 @@ SEMANTIC_SCOPE: file placement and migration rules; not Product, agent authoriza
 | `governance/` | **future canonical** durable Product/System/Policy decisions; currently NOT_READY in its README |
 | `docs/REFOUNDATION-PLAN.md` | one temporary execution plan, conflicts, evidence and stage gates; never business policy |
 | `docs/reference/` | preserved, explicitly nonbinding research, OSS, competitors, donor evidence and links when migrated |
-| `.github/` | CI workflow wiring, PR and ownership routing, review-provider config |
+| `.github/` | Branch-independent development Push checks, protected `main` PR gates, ownership and review-provider configuration; archive refs excluded from routine Push |
 | `.specify/` | existing Spec Kit constitution/templates/scripts and workflow integration when verified and admitted; does not become another policy root |
 | `tools/governance/` | deterministic foundation/architecture checks and their tests, not another decision catalog |
 | `tools/security/` | shared security scanners when actually needed |
 | `tools/dev/` | genuinely repository-wide developer tooling |
-| `infra/` | Worktree-only Docker Compose definitions, synthetic test state, local ports and isolated developer runtime; never donor volumes or production deployment |
+| `infra/` | Environment-isolated Docker Compose definitions and synthetic test state independent of active Git branch; never donor volumes or production deployment |
 | `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `nx.json` | one pinned pnpm dependency graph and task configuration; Nx/Knip are supporting tools, not Product or runtime owners |
-| `.node-version`, `.nvmrc`, `.go-version` | original branch-41 toolchain version pins, never upgraded without separate authorization |
+| `.node-version`, `.nvmrc`, `.go-version` | archived donor toolchain version pins, never upgraded without separate authorization |
 | `tsconfig.base.json`, `biome.json`, `.editorconfig`, `.gitattributes`, `.gitignore` | shared foundational TypeScript, lint, UTF-8/LF and secret-exclusion rules; without copied legacy migrations |
 | `README.md` | stage-bounded local onboarding, not an additional policy authority |
 | `services/<owner>/` | only `identity`, `dsh`, `wlt`; owner-local Go implementation, executable OpenAPI, SQL migrations and contract-derived TypeScript clients may advance within an authorized progressive journey |
@@ -50,7 +50,7 @@ Each progressively developed client implementation is sourced from the service o
 During progressively authorized development, each owner's `backend/` holds the Go implementation when needed for the current journey; `contracts/openapi/` one API entrypoint with domain-grouped paths; and `database/` reviewed fresh installation plus protected upgrade migrations. Preserve applied migration history; examine actual embed/load paths before adopting a physical SQL layout. The bounded company/Merchant employee-administration engine belongs within DSH, **not** as a fourth deployable HR service or a separate Merchant employee engine; Identity and WLT retain their exclusive identity/money truths. See [architecture](governance/architecture.md) and [employee governance](governance/hr.md).
 
 ## Transitional rule for this worktree
-- The former `docs/governance/` directory is **absent from this candidate by explicit user decision**. Its content remains inspectable in original branch `41` and archived inputs; do not restore it to this worktree.
+- The former `docs/governance/` directory is **absent from this candidate by explicit user decision**. Its content remains inspectable in archived branch `archive/legacy-pre-refoundation-20261114` and archived inputs; do not restore it to this worktree.
 - `governance/` is the only **target** policy path. Its README advertises NOT_READY until all applicable decisions and 26 capability IDs are reconciled, rather than an unsafe partial authority switch.
 - The foundation guard rejects reintroduction of `docs/governance/`. Translate surviving references directly to the owning new files as each decision is adopted. Keep historical provenance external to the candidate, not another active governance directory.
 - Stage 4 introduced presentation shells and design packages. Later authorized service scaffolding adds private pinned client package manifests and empty typed entrypoints. Neither creates service behavior, live API clients, Go modules, SQL or Docker.
@@ -83,7 +83,7 @@ During progressively authorized development, each owner's `backend/` holds the G
 - **MARKETPLACE/DIRECT** is a Store relation; **COMMISSION/SUBSCRIPTION** is a WLT agreement model; **PLATFORM_MANAGED/STORE_MANAGED** is collection responsibility. These are independent dimensions, not parallel Store or Order implementations. Historical `BTHWANI_PARTNER/INDEPENDENT_STORE` values require an approved compatibility decision before mutation.
 - **Clients package** means public, contract-derived callers. An exported empty `clients/index.ts` only prepares the TypeScript workspace; it is neither a usable SDK nor a running Go **backend**. OpenAPI `paths: {}` fragments are reserved labels, not active operations.
 - **Fresh Baseline** installs a new isolated empty database; **migration** is an immutable applied upgrade history. They must not be conflated, renumbered or applied interchangeably. See `governance/safety.md`.
-- **Foundation PASS**, **required GitHub check PASS**, **governance READY**, **native runtime PASS** and **production release approved** are independent gates. Main is the protected branch, 41 is donor history, and the Worktree is a directory; no branch change implicitly migrates databases or authorizes deployment.
+- **Foundation PASS**, **required GitHub check PASS**, **governance READY**, **native runtime PASS** and **production release approved** are independent gates. Main is the protected branch, `archive/legacy-pre-refoundation-20261114` is read-only donor history, and the Worktree is a directory; no branch change implicitly migrates databases or authorizes deployment.
 
 ## Structural closure
 A slice is structurally accepted only when the winning path, every affected consumer, generated API, SQL/config reference and test is updated, the losing path is gone, and source/runtime proof is tied to the exact accepted revision. Otherwise report NOT_RUN, BLOCKED or REVIEW_BLOCKED; do not infer correctness from Git status alone.

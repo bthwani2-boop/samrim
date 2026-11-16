@@ -143,8 +143,8 @@ const ref=contents['docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md'];
 if(!/^BUSINESS_POLICY_AUTHORITY: NONE$/m.test(ref)||!ref.includes('1.27.1')||!ref.includes('1.27.3')||
  !ref.includes('24.0.1')||!ref.includes('58.0.19'))
  fail('non-governing donor toolchain provenance or mismatch disclosure missing');
-if(!contents['README.md'].includes('Stage 4')||!contents['tools/dev/verify-workspace.mjs'].includes('STAGE4_WORKSPACE_STRUCTURE_PASS'))
- fail('stage4 developer onboarding or workspace smoke verifier missing');
+if(!contents['README.md'].includes('Progressive refoundation')||!contents['tools/dev/verify-workspace.mjs'].includes('STAGE4_WORKSPACE_STRUCTURE_PASS'))
+ fail('current developer onboarding or workspace smoke verifier missing');
 for(const folder of ['contracts','go.work']){
  if(exists(folder))fail('stage 5+ service/DB/infra introduced prematurely: '+folder);
 }

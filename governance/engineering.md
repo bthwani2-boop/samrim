@@ -12,7 +12,7 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 ## Staged work and authority
 **Current program sequence — Close as We Go:** Select an existing or proposed new journey; deeply analyze its affected actors, surfaces, canonical owners, data, contracts, permissions, dependencies, negative cases and recovery; settle its material Product/domain decisions in the single canonical owner; implement connected vertical slices in isolated development; test and verify each affected surface and owner-backed readback; close only after every applicable criterion has evidence; then continue to the next journey while reconciling remaining historical governance independently. The previous Stage-4 scaffolding and global cutover sequencing is history, not a pre-development prohibition. Foundation/app placeholders and `paths: {}` still prove structure only, never service operation, security, financial or production readiness.
 
-An in-scope governance phase does **not** authorize touching protected DBs, Docker, branch 41, source production deployments, signing, remote pushes or deleting applied migrations. No PASS for code correctness follows from passing a governance syntax check. Plans and archived ZIP prompts are evidence, not policy sources.
+An in-scope governance phase does **not** authorize touching protected DBs, Docker, read-only archived donor branch, source production deployments, signing, remote pushes or deleting applied migrations. No PASS for code correctness follows from passing a governance syntax check. Plans and archived ZIP prompts are evidence, not policy sources.
 
 ## Capability-scoped implementation acceptance before global cutover
 

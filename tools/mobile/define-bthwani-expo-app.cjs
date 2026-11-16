@@ -24,9 +24,10 @@ function mobileMapsApiKey(appKey, platform) {
   const baseEnvName = `GOOGLE_MAPS_${platform.toUpperCase()}_API_KEY`;
   let value = process.env[specificEnvName]?.trim() || process.env[baseEnvName]?.trim() || "";
   if (!value) {
-    const secretsRoot = process.env.BTHWANI_SECRETS_ROOT || "C:\\BTHWANI-Secrets\\samrim-refoundation-clean-20261112";
-    const envPath = path.join(secretsRoot, "env", "mobile.env");
-    if (fs.existsSync(envPath)) {
+    // No implicit secrets from any deleted worktree or donor environment.
+    const secretsRoot = process.env.BTHWANI_SECRETS_ROOT?.trim();
+    const envPath = secretsRoot ? path.join(secretsRoot, "env", "mobile.env") : undefined;
+    if (envPath && fs.existsSync(envPath)) {
       for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
         const separator = line.indexOf("=");
         if (separator > 0) {
@@ -189,7 +190,7 @@ function defineBthwaniExpoApp(appKey, options = {}) {
   // Foundation previews do not use maps. Preserve the native map integration
   // when keys are supplied; demand both keys for any authorized native rebuild.
   if (options.maps && (!androidMapsApiKey || !iosMapsApiKey) && (process.env.BTHWANI_ENFORCE_NATIVE_KEYS === "1" || process.env.EAS_BUILD === "true")) {
-    throw new Error("Missing approved Google Maps API keys for " + appKey + " in the new Worktree secrets environment.");
+    throw new Error("Missing approved Google Maps API keys for " + appKey + " in the explicitly configured native build environment.");
   }
   const firebaseClientApps = ["app-client", "app-partner", "app-captain"];
   const easFirebaseFile = process.env.GOOGLE_SERVICES_JSON?.trim();
@@ -264,7 +265,7 @@ function defineBthwaniExpoApp(appKey, options = {}) {
     experiments: { typedRoutes: true },
     extra: {
       appKey,
-      sourceRepo: "samrim-refoundation-clean-20261112",
+      sourceRepo: "samrim",
       eas: { projectId: app.projectId },
     },
   };
