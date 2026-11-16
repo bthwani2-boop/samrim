@@ -42,6 +42,8 @@ secrets.local.*
 
 # Generated local tool state, not durable policy.
 .bthwani-local/
+# Graphify's branch-local generated graph must never be committed.
+graphify-out/
 .specify/feature.json
 # Per-worktree Spec Kit workflow state and transcripts are not shareable source.
 .specify/workflows/runs/
