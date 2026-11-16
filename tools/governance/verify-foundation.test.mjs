@@ -672,3 +672,15 @@ rejects('rejects loss of canonical StoreOffer visibility gate', {edit:{
 rejects('rejects unverified payout instruction release', {edit:{
  'governance/finance.md':s=>s.replace('Before **every not-yet-executed** manual official-wallet transfer','After the transfer')
 }},/source-grounded privacy\/commerce\/finance draft boundary missing: governance\/finance\.md/);
+
+test('progressive Product admission is distinct from environment and production gates', () => {
+  const placement = fs.readFileSync(path.join(root, 'REPOSITORY-STRUCTURE.md'), 'utf8');
+  const governance = fs.readFileSync(path.join(root, 'governance/README.md'), 'utf8');
+  const plan = fs.readFileSync(path.join(root, 'docs/REFOUNDATION-PLAN.md'), 'utf8');
+  assert.match(placement, /current canonical domain owner.*progressive journey-scoped decisions/);
+  assert.match(governance, /Current development governance: READY for Close as You Go/);
+  assert.match(governance, /GOVERNANCE_CUTOVER: NOT_READY/);
+  assert.match(plan, /ENVIRONMENT_BASELINE_ACCEPTED/);
+  assert.doesNotMatch(plan, /READY_FOR_PROGRESSIVE_DEVELOPMENT/);
+  assert.match(plan, /PRODUCTION_READY/);
+});

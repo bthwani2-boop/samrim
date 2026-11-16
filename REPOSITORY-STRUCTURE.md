@@ -12,7 +12,7 @@ SEMANTIC_SCOPE: file placement and migration rules; not Product, agent authoriza
 | --- | --- |
 | `AGENTS.md` | agent conduct, authorization and proof |
 | `REPOSITORY-STRUCTURE.md` | placement, naming and consumer-cutover law |
-| `governance/` | **future canonical** durable Product/System/Policy decisions; currently NOT_READY in its README |
+| `governance/` | **current canonical domain owner** for progressive journey-scoped decisions; whole-platform historical reconciliation remains `GOVERNANCE_CUTOVER: NOT_READY` |
 | `docs/REFOUNDATION-PLAN.md` | one temporary execution plan, conflicts, evidence and stage gates; never business policy |
 | `docs/reference/` | preserved, explicitly nonbinding research, OSS, competitors, donor evidence and links when migrated |
 | `.github/` | Branch-independent development Push checks, protected `main` PR gates, ownership and review-provider configuration; archive refs excluded from routine Push |
