@@ -102,8 +102,8 @@ for(const p of required){
 const stage3package=JSON.parse(contents['package.json']);
 const nodepin=contents['.node-version'].trim();
 const gopin=contents['.go-version'].trim();
-if(nodepin!=='24.22.1'||contents['.nvmrc'].trim()!==nodepin||gopin!=='1.27.3')
- fail('source-matching Node/Go pins missing or upgraded in stage 3');
+if(nodepin!=='24.22.1'||contents['.nvmrc'].trim()!==nodepin||gopin!=='1.27.4')
+ fail('approved Node/Go pins missing or unsupported');
 if(stage3package.packageManager!=='pnpm@12.15.0'||
  stage3package.engines.node!=='>=24.17.0 <25'||
  stage3package.engines.pnpm!=='12.15.0'||
