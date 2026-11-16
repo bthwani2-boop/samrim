@@ -6,7 +6,17 @@ Compiled brand roots and semantic light/dark roles belong only to `packages/desi
 
 ## Validations
 
-Run these commands from the repository root. Use the Node and Go versions in `.node-version` and `.go-version` and the pnpm version in `package.json`. On Windows, run `Get-Command node, go -All` in the shell that launches your checks if an older installation is selected. Apply the same toolchain selection in the IDE terminal or task runner.
+Run these commands from the repository root. Use the Node and Go versions in `.node-version` and `.go-version` and the pnpm version in `package.json`.
+
+**Windows / MA Commander runtime isolation:** MA Commander can prepend its own bundled Node to a newly launched command's `PATH`. On the audited Surface this selected `%LOCALAPPDATA%\Programs\MA Commander\runtime\node.exe` (24.19.0), although the repository pin is 24.22.1 and the separately installed `C:\Program Files\nodejs\node.exe` is correct. This is a **command-runner environment difference**, not permission to change the provider's Node binary or system/user `PATH`. For repository commands launched by that runner, use a *process-local* prefix and verify the executable that will actually run:
+
+```powershell
+$env:Path = 'C:\Program Files\nodejs;' + $env:Path
+node -p 'process.execPath + " " + process.version'
+node tools/dev/verify-workspace.mjs --require-exact-toolchain
+```
+
+The actual invoked Node, not a second installed copy, must match `.node-version`; confirm the same in each IDE terminal, CI runner and app launch session. The temporary prefix is only for that PowerShell process. Do not change global toolchains or provider internals to make an otherwise incorrect process appear compliant.
 
 ```powershell
 node tools/dev/verify-workspace.mjs --require-exact-toolchain
