@@ -84,10 +84,12 @@ jobs:
           pnpm install --frozen-lockfile --ignore-scripts
       - name: Validate owner OpenAPI 3.1 contracts and reject broken references
         run: |
-          node --test tools/dev/check-openapi.test.mjs infra/compose-policy.test.mjs
+          node --test tools/dev/check-openapi.test.mjs infra/compose-policy.test.mjs infra/verify-runtime-provenance.test.mjs
           pnpm --dir services/identity contract
           pnpm --dir services/dsh contract
           pnpm --dir services/wlt contract
+      - name: Run discovered Feature tests and collect measured coverage
+        run: pnpm check:coverage
       - name: Reject orphaned JavaScript and TypeScript files
         run: pnpm knip:files
       - name: Validate design, native config, source ownership, appearance races and all app types

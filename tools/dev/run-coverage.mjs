@@ -20,6 +20,7 @@ const baselineTests = [
   "packages/tamagui-config/tools/appearance.test.mjs",
   "tools/dev/verify-source-execution.test.mjs",
   "tools/dev/dsh-public-client.test.mjs",
+  "tools/dev/check-openapi.test.mjs",
   "tools/mobile/verify-native-config.test.mjs",
 ];
 

@@ -37,6 +37,13 @@ test("Go-only DSH source changes do not spuriously affect the customer", () => {
   assert.ok(!projects.has("@bthwani/customer"));
 });
 
+test("DSH SQL migrations invalidate their owner backend without affecting Identity", () => {
+  const projects = affected("services/dsh/database/migrations/005_store_operational_policy_commands.sql");
+  assert.ok(projects.has("@bthwani/dsh"));
+  assert.ok(projects.has("dsh-backend"));
+  assert.ok(!projects.has("identity-backend"));
+});
+
 test("Design source changes affect real renderer consumers", () => {
   const projects = affected("packages/design-system/src/brand/colors.ts");
   for (const name of ["@bthwani/design-system", "@bthwani/tamagui-config", "@bthwani/customer", "@bthwani/merchant", "@bthwani/captain", "@bthwani/control-panel"]) {

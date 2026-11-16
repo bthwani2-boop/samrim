@@ -52,3 +52,21 @@ test("fast-guard remains required on every eligible push and main PR", () => {
   assert.match(content, /^      - name: Refuse read-only archive as main PR source$/m);
   assert.match(content, /^            archive\/\*\|41\)$/m);
 });
+
+test("every supported development branch executes discovered Feature regression tests before fast-guard", () => {
+  const { content } = events(workflows[0]);
+  const install = content.indexOf("pnpm install --frozen-lockfile --ignore-scripts");
+  const coverage = content.indexOf("Run discovered Feature tests and collect measured coverage");
+  const fastGuard = content.indexOf("  fast_guard:");
+  assert.ok(install >= 0 && coverage > install && fastGuard > coverage,
+    "Feature test discovery must run after dependency install and before required fast-guard");
+  assert.match(content, /^      - name: Run discovered Feature tests and collect measured coverage\n        run: pnpm check:coverage$/m);
+});
+
+test("SQL migration changes trigger the existing Go quality and Nx dependency workflows", () => {
+  for (const file of [workflows[1], workflows[2]]) {
+    const { push, pr } = events(file);
+    assert.match(push, /^      - 'services\/\*\*\/database\/migrations\/\*\*'$/m, file + ": missing SQL push path");
+    assert.match(pr, /^      - 'services\/\*\*\/database\/migrations\/\*\*'$/m, file + ": missing SQL PR path");
+  }
+});
