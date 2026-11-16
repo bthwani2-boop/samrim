@@ -14,6 +14,95 @@ WORKTREE_BRANCH: foundation (AS_OF_2026-11-16; CHECK_ACTIVE_GIT_BRANCH)
 DECISIONS_AUTHORITY: NONE
 RUNTIME_SUCCESS_AUTHORITY: NONE
 
+## 2026-11-17 — Active execution snapshot and acceptance register (CURRENT)
+
+**This dated register is the active execution view.** Later snapshots replace it in this same plan; historical phase headings, older SHAs, donor instructions and dated passages below remain provenance, **not** permission to stop progressive implementation or evidence on the current candidate. Current execution law remains AGENTS.md, placement remains REPOSITORY-STRUCTURE.md, and business decisions remain in the 14 named governance owners. This plan never becomes another owner.
+
+- **Baseline inspected:** D:\samrim, foundation, ee833ff6ff3e43809155c75550ae2932e70fb70b, local branch one commit ahead of origin/foundation. Exactly one worktree was reported. Read the live HEAD and worktrees again before further changes.
+- **Concurrent writer boundary:** services/identity/clients/index.ts was already modified before this tools batch and is **not part of it**. Do not stage, overwrite, format or attribute it to environment work. A future uncommitted or changed diff invalidates older package/CI/test results.
+- **Source census:** Customer 50, Captain 31, Merchant 31, Operator 18 tracked files as inspected at baseline; Identity 41, DSH 64, WLT 23. These are NOT feature-completion ratios and will change with development.
+- **Tool source (2026-11-17 cross-channel evidence):** Remote Arc runs `pnpm check:toolchain` with Node 24.22.1 and Go 1.27.4 (PASS). MA Commander without a per-command PATH used its internal Node 24.19.0 (FAIL); MA with a process-only PATH pointing at `C:\Program Files\nodejs`, `C:\Program Files\Go\bin` and required Windows/npm/Git paths passed the exact guard (PASS). This is a proven per-command workaround, **not a durable MA setting fix**. Never accept Node 24.19.0 or claim P0-02 closed without default-runner/IDE/CI proof.
+- **Spec Kit:** CLI 1.3.0 invoked at this checkout and task-relevant .specify/ constitution and ignored specs/003-store-orderability/spec.md reviewed. All real repo engineering requires native CLI plus relevant task context; created specification files are optional derived artifacts, never business rules or branch authority.
+- **Graphify:** real task-related query completed for bthwani2-boop/samrim, but index ccce4247e3bffe1b603ae26f8dd176a80d123753 is stale versus current HEAD and dirty changes. Gate INVALIDATED until official indexing matches the accepted candidate; no parallel indexing engine or implied approval.
+- **Architecture decision:** One pnpm/Nx workspace; Customer, Captain, Merchant are Expo presentation hosts (Merchant includes Expo Web), and control-panel is the Next.js Operator host. Identity owns actors/session, DSH owns Store/catalog/order/fulfillment, WLT owns money/ledger. Use merchant for new features; partner is confined to proven historical compatibility IDs/links pending explicit migration. Store is not the Merchant actor.
+- **Stage separation:** READY_FOR_PROGRESSIVE_DEVELOPMENT requires its environment G01-G20 acceptance evidence; JOURNEY_CLOSED separately requires actual owner-backed end-to-end criteria; PRODUCTION_READY requires protected delivery/review/operational gates. GOVERNANCE_CUTOVER NOT_READY is not a prohibition on independent progressive development. No 100% correctness or product readiness claim from folders or local static tests.
+
+### P0 — One active register for the 27 environment requirements
+
+A partial local PASS means only that bounded check passed. Unless every acceptance criterion for the P0 row is evidenced on the final candidate, its **closure remains NOT_RUN or REVIEW_BLOCKED**.
+
+| ID | Current evidence / status (2026-11-17) | Remaining acceptance |
+| --- | --- | --- |
+| P0-01 | NOT_RUN final; baseline Git/worktree inspected, separate Identity writer | Recheck live concurrent writers, clean staged diff, owner and exact candidate SHA |
+| P0-02 | FAIL default MA runner 24.19.0; PASS per-process PATH override and Remote Arc Node 24.22.1 | Correct default MA runner/PATH through its owner; reverify IDE/Expo/CI and wrong-version rejection without a workaround |
+| P0-03 | PARTIAL: pinned versions exist but MA pnpm check:toolchain FAILED under Node 24.19.0 | Reverify exact versions per invocation and frozen CI bootstrap |
+| P0-04 | PARTIAL: TCP/22 PASS to verified Lenovo 192.168.0.101; session-03 reports SSH hostname + docker ps PASS using its authorized corrected HostName route. Remote Arc strict alias rejected unknown ED25519 host key and IP override denied auth; no Surface tunnel listeners observed | Reconcile channel-specific SSH identity/key configuration without bypass, verify four tunnel destinations/HTTP and reconnect recovery |
+| P0-05 | NOT_RUN | Isolated onboarding from fresh machine/session to genuine source smoke |
+| P0-06 | PASS local: Nx affected 10/10 incl new OpenAPI, SQL and Merchant Feature paths | Recheck CI/Linux and graph/cache on final SHA |
+| P0-07 | PARTIAL: Next typecheck output boundary fixture PASS | Cache inputs/outputs, real base, no false reuse on target change |
+| P0-08 | PASS local: discovery 4/4, new Node tests execute and unsupported TS/TSX tests fail closed | Prove CI fails on an injected unsupported or failing Feature test on candidate |
+| P0-09 | PARTIAL: existing structural OpenAPI checker | Negative security/ref/path/operation coverage and fresh owner contract integration |
+| P0-10 | NOT_RUN | Executable Go/HTTP TypeScript client parity, negative wire/headers/errors/auth |
+| P0-11 | PASS local: Nx invoked by process.execPath without shell, 10/10 affected/argument fixtures | Confirm CI/Linux on final revision |
+| P0-12 | PARTIAL: foundation/feature/SQL guards exist | Recheck negative fixtures and actual Linux admission on final SHA |
+| P0-13 | PARTIAL: static CI workflows exist | Verify triggers, required jobs and no masked skipped required checks on GitHub |
+| P0-14 | PARTIAL: earlier Next production build and loopback HTTP smoke | Browser hydration/RTL/CSP and real authz 401/403 beyond a skeleton |
+| P0-15 | PARTIAL: earlier Expo Android JS and Customer/Merchant Web exports | True native app/deep-link/RTL/device and recovery proof; iOS NOT_RUN |
+| P0-16 | NOT_RUN | SHA-to-image-digest-to-running-container proof on actual authorized host |
+| P0-17 | NOT_RUN | Isolated Compose build/rollback, safe provenance; protected runtime unchanged |
+| P0-18 | NOT_RUN | PostgreSQL role separation, least privilege and SQLSTATE 42501 rejection |
+| P0-19 | NOT_RUN | Fresh/upgrade/restore/checksum and durable isolated PostgreSQL proof |
+| P0-20 | NOT_RUN | Identity real session/revocation/role/IDOR/tenant failure and readback |
+| P0-21 | NOT_RUN | DSH owner mutation/version/audit/idempotency/concurrency/readback |
+| P0-22 | PARTIAL: existing secret guards | Secrets/provider credentials and safe logging, rotation and CI negative checks |
+| P0-23 | FAIL local full suite: concurrently modified Identity client contradicts its SCAFFOLD_ONLY README; this also masked governance fixture assertions | Resolve with Identity writer and rerun final suites on final SHA |
+| P0-24 | INVALIDATED: Graphify indexed SHA ccce4247 | Official matching-revision query and coverage verified |
+| P0-25 | REVIEW_BLOCKED: native Spec Kit checked; specs/ is Git-excluded | Review spec contents/secret exposure/branch paths and decide tracked durable evidence |
+| P0-26 | NOT_RUN | Actual GitHub required checks, Sonar/CodeQL and reviews on exact remote SHA when authorized |
+| P0-27 | REVIEW_BLOCKED | G01-G20 final documented acceptance before READY_FOR_PROGRESSIVE_DEVELOPMENT |
+
+### P1 — One active register for the 25 product journey transitions
+
+These are **not prerequisites for a clean directory layout**, but each becomes a required journey acceptance once that capability is implemented. Partial presentation routes and archived functionality are not accepted owner-backed operations.
+
+| ID | Legal owner and observed starting point | Journey acceptance |
+| --- | --- | --- |
+| P1-C01 | Identity; customer access route disabled | NOT_RUN authenticated account/session/recovery |
+| P1-C02 | DSH; public Store discovery partial | NOT_RUN publication/city/orderability owner readback |
+| P1-C03 | DSH; offer discovery partial | NOT_RUN full catalog, variants and price/stock proof |
+| P1-C04 | DSH + WLT; cart/checkout routes disabled | NOT_RUN quote/confirmation/payment and idempotency |
+| P1-C05 | DSH; orders route disabled | NOT_RUN lifecycle/tracking/cancel and durable proof |
+| P1-C06 | WLT; no executable WLT ledger backend | NOT_RUN wallet/refund/balanced ledger |
+| P1-C07 | Identity/DSH; notification/sharing routes disabled | NOT_RUN consent/token/privacy |
+| P1-M01 | Identity + DSH; Merchant Expo gate and tabs exist | NOT_RUN Merchant admission/Store-scope session and onboarding |
+| P1-M02 | DSH; product tab disabled | NOT_RUN Store-scoped catalog operations |
+| P1-M03 | DSH; order tab disabled | NOT_RUN Store order lifecycle integration |
+| P1-M04 | Identity + DSH; private gate only | NOT_RUN per-Store account/team notifications |
+| P1-M05 | WLT; wallet tab disabled | NOT_RUN financial readback, agreements and payouts |
+| P1-K01 | Identity + DSH; Captain routes exist | NOT_RUN readiness, presence, safe location and isolation |
+| P1-K02 | DSH; dispatch/delivery UI disabled | NOT_RUN assignment race, proof, privacy and delivery |
+| P1-K03 | WLT; wallet route disabled | NOT_RUN COD/custody/ledger settlement |
+| P1-K04 | Identity + DSH; notification route disabled | NOT_RUN token/dedupe/stale assignment |
+| P1-O01 | Identity; Operator workspace denies access | NOT_RUN real session, 401/403, role IDOR |
+| P1-O02 | Identity + DSH + WLT; Merchant management absent | NOT_RUN merchant/Store onboarding and scoped operations |
+| P1-O03 | DSH; catalog/content UI absent | NOT_RUN owner-authoritative content/counters |
+| P1-O04 | DSH; operations UI absent | NOT_RUN order/dispatch/city data/commands |
+| P1-O05 | DSH + WLT; policy UX absent | NOT_RUN versioned effective policy and audit |
+| P1-O06 | WLT; finance UI absent | NOT_RUN real ledger/settlement/authz |
+| P1-O07 | Identity + DSH; staff/marketing UI absent | NOT_RUN staff separation and campaign audit |
+| P1-O08 | Identity + DSH; customer/notification UI absent | NOT_RUN least privilege and privacy |
+| P1-O09 | Design owner + DSH; historical Studio donor evidence only | NOT_RUN single safe editor and consumer proof |
+
+### Next executable order and proof rule
+
+1. Finish P0-08/11/06 with a real Linux CI run; reject unsupported Feature test formats until a native React/Expo runner is configured. Do not make a custom parallel runner.
+2. Finish runtime consistency P0-02/03, Spec Kit artifact preservation P0-25 and matching Graphify P0-24 without altering protected infrastructure.
+3. Complete isolated DB, Docker, API parity and security proofs P0-09/10/16-22; assign distinct owners to shared infra/DB resources.
+4. Run G01-G20 against one candidate, then consider READY_FOR_PROGRESSIVE_DEVELOPMENT. Do not block independent feature slices by unrelated incomplete WLT/production work.
+5. Close individual P1 journeys using the service/actor/Store rules and genuine persistent owner readback. Production/Push/PR/Merge/Deploy remain separate human authorizations.
+
+---
+
 ## Purpose, limits and acceptance
 Refound the **architecture itself**, not a succession of local patches. Move correct business meaning, preserve supported capabilities and rights, rebuild SQL and services when admitted, remove redundant sources and routes after verified cutover, and make the result simpler, auditable and maintainable.
 
@@ -114,7 +203,7 @@ These are decisions on the *target behavior*, not a second normative owner or a 
 
 The latest user decision sets IMPLEMENTATION_ADMISSION: PROGRESSIVE and authorizes analysis and implementation of **existing and newly proposed capabilities** through Close as We Go while whole-platform GOVERNANCE_CUTOVER stays NOT_READY. Earlier passages imposing full cutover or a per-capability vote before development are superseded. New Product choices are analyzed and documented in their journeys, not blocked up front. **Only production activation remains the standing blocked stage**, while safety, protected-state actions and Git/external-authority boundaries continue to apply; journey closure needs verified evidence.
 
-For each journey, identify its existing or proposed Product capability and canonical domain/service owners. Reconcile only the decisions affecting its actors, surfaces, contracts, permissions, data, failure/recovery and dependencies; use the existing owner documents and executable tests as the source of acceptance. Spec Kit is optional for a sufficiently complex journey, not a separate approval gate or mandatory set of files. Implement the smallest coherent cross-surface slice, then test, verify and close all applicable acceptance criteria before claiming PASS; keep unrelated development moving. The progressive Foundation guard already admits owner-local Go, SQL and API source paths at a structural level, but this does not prove OpenAPI validity, service behavior, access control or integration; those require affected contract, runtime and negative tests. Use isolated synthetic state when the journey needs persistence, never donor/protected records. A local Commit requires a reviewed diff and coordination with other active writers of the shared Git index; Push requires separate explicit human authorization and remote SHA readback.
+For each journey, identify its existing or proposed Product capability and canonical domain/service owners. Reconcile only the decisions affecting its actors, surfaces, contracts, permissions, data, failure/recovery and dependencies; use the existing owner documents and executable tests as the source of acceptance. Current BThwani engineering instructions require native Spec Kit CLI and a task-scoped Graphify query for every repository engineering task; derived spec.md/plan.md/tasks.md files remain optional, non-authoritative working artifacts. Implement the smallest coherent cross-surface slice, then test, verify and close all applicable acceptance criteria before claiming PASS; keep unrelated development moving. The progressive Foundation guard already admits owner-local Go, SQL and API source paths at a structural level, but this does not prove OpenAPI validity, service behavior, access control or integration; those require affected contract, runtime and negative tests. Use isolated synthetic state when the journey needs persistence, never donor/protected records. A local Commit requires a reviewed diff and coordination with other active writers of the shared Git index; Push requires separate explicit human authorization and remote SHA readback.
 
 The full 14-owner semantic reconciliation continues independently toward GOVERNANCE_CUTOVER: READY; finance, security, migration, legal, native device, authenticated end-to-end and production activation are not automatically green from documentation or structural tests.
 
@@ -125,7 +214,7 @@ The full 14-owner semantic reconciliation continues independently toward GOVERNA
 - Record historical input versions and distinguish measured evidence from recommendation.
 - Proof: git worktree status and exact SHA. Re-run after intervening work.
 
-## Phase 1 — Foundation law and stage-aware CI (CURRENT)
+## Phase 1 — Foundation law and stage-aware CI (HISTORICAL; source guard implemented, final CI open)
 **Owns:** root `AGENTS.md`, root `REPOSITORY-STRUCTURE.md`, `governance/README.md` (staging index), this plan, `tools/governance/`, `.github/workflows/ci.yml`.
 
 - Reauthor agent execution safety, smallest coherent refoundation slice, owner/writer law, tested evidence, protected data and Git authorization. Do not transplant the oversized donor law verbatim.
@@ -167,14 +256,14 @@ The full 14-owner semantic reconciliation continues independently toward GOVERNA
 - **Acceptance:** stage guard verifies allowed files, exact package names, versions, empty client exports, configs and frozen lock importers; negative tests reject premature implementations and package drift. Run offline dependency installation only when supply-chain policies permit and independently check the three TypeScript projects; report cache/network blockers honestly.
 - **Status separation:** pnpm/workspace readiness and typecheck are structural proof only. `GOVERNANCE_CUTOVER: NOT_READY` and protected FIN/SEC/MIG/LEGAL signoffs remain pending, as do runtime/DB/client-contract tests.
 
-## Phase 4 — Clean technical foundation and SQL (NOT_STARTED)
+## Phase 4 — Clean technical foundation and SQL (IN_PROGRESS, NOT_CLOSED; historical steps)
 - Re-census all tracked files, source/contract/exported routes, dynamic consumers, migration history and current database state by Identity/DSH/WLT. Record KEEP/MOVE/MERGE/REFOUND/REPLACE/APPROVED_RETIRE and the proof for each materially affected responsibility.
 - Re-design schema per owner from first principles using validated business invariants, not copies of old migrations. Preserve protected applied history in source/backup and test a fresh baseline on isolated DB, protected upgrade, schema constraints/index/permission equivalence, restore and financial ledger conservation.
 - No second migration writer, no alternative financial truth, and no global schema flattening for fewer files. Include domain service code, OpenAPI and consumer cutover within each applicable SQL slice.
 - Rebuild only proven-needed Docker/Expo/Go/TypeScript tooling, preserving external app identities, media and secrets. No actual data/volume reset in this planning phase.
 - **Gate:** owner-backed persistent state, negative/concurrent tests and independent migration/finance/security review.
 
-## Phase 5 — Full platform refoundation (NOT_STARTED)
+## Phase 5 — Full platform refoundation (IN_PROGRESS, NOT_CLOSED; historical steps)
 - Identity, DSH, WLT, all admitted Store/Order/Payment/Captain flows and 26 Product capabilities; Customer/Merchant/Captain Expo, web storefront and Operator/Control Panel, design tokens, policies, integration APIs.
 - Each slice: accepted contract → authoritative writer/data → consumers → negative/positive tests → remove losing implementation → proof on verified source/runtime revision.
 - Test actor/Store/role/City isolation, IDOR, sessions and stale responses, price/stock at confirmation, wallet/COD/Mixed, ledger replay and concurrency, dispatch races, no premature customer address disclosure, real Web/Android UX and iOS only when tested.

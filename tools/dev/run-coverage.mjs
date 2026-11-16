@@ -3,9 +3,10 @@
 // Sonar owns the acceptance threshold; missing reports or failed tests fail closed.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { discoverNodeSourceTests } from "./source-test-discovery.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const report = resolve(root, "coverage/lcov.info");
@@ -21,32 +22,29 @@ const baselineTests = [
   "tools/dev/verify-source-execution.test.mjs",
   "tools/dev/dsh-public-client.test.mjs",
   "tools/dev/check-openapi.test.mjs",
+  "tools/dev/source-test-discovery.test.mjs",
   "tools/mobile/verify-native-config.test.mjs",
 ];
 
-// Feature and journey tests must enter coverage with the source they protect.
-// Discover only established Node test locations; do not run E2E/manual or
-// generated browser tests as a side effect of source-coverage collection.
-function discoverTests(folder) {
-  if (!existsSync(folder)) return [];
-  return readdirSync(folder, { withFileTypes: true })
-    .flatMap((entry) => {
-      const full = join(folder, entry.name);
-      if (entry.isDirectory()) return discoverTests(full);
-      if (entry.isFile() && entry.name.endsWith(".test.mjs")) {
-        return [relative(root, full).replaceAll("\\", "/")];
-      }
-      return [];
-    });
-}
+// Every test candidate in supported feature/journey paths is either run or rejected.
 const testFiles = [...new Set([
   ...baselineTests,
-  ...discoverTests(join(root, "tests")),
+  ...discoverNodeSourceTests(root, join(root, "tests")),
   ...["customer", "merchant", "captain", "control-panel"].flatMap((app) => [
-    ...discoverTests(join(root, "apps", app, "src", "features")),
-    ...discoverTests(join(root, "apps", app, "tests")),
+    ...discoverNodeSourceTests(root, join(root, "apps", app, "src", "features")),
+    ...discoverNodeSourceTests(root, join(root, "apps", app, "tests")),
   ]),
 ])].sort();
+for (const file of baselineTests) {
+  assert.ok(existsSync(join(root, file)), `Missing baseline test ${file}`);
+}
+if (process.argv.length > 3 || (process.argv[2] && process.argv[2] !== "--check-discovery")) {
+  throw new Error("Usage: node tools/dev/run-coverage.mjs [--check-discovery]");
+}
+if (process.argv[2] === "--check-discovery") {
+  console.log(`SOURCE_TEST_DISCOVERY_PASS count=${testFiles.length}`);
+  process.exit(0);
+}
 
 const command = [
   "--experimental-transform-types",
@@ -77,7 +75,7 @@ for (const source of [
   "tools/mobile/define-bthwani-expo-app.cjs",
   "packages/design-system/src/semantics/themes.ts",
 ]) {
-  assert.ok(sources.has(source), "Real test coverage missing required source: " + source);
+  assert.ok(sources.has(source), `Real test coverage missing required source: ${source}`);
 }
 assert.ok(linesFound > 0 && linesHit > 0 && linesHit <= linesFound, "Invalid actual coverage");
 writeFileSync(report, lcov, "utf8");
