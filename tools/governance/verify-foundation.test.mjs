@@ -28,6 +28,7 @@ const files=[...new Set([
  '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
  'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','nx.json','tsconfig.base.json','biome.json',
  'README.md','infra/README.md','infra/compose.yaml','infra/compose.apps.yaml','infra/compose.identity-verifier.yaml','infra/setup-env.mjs','services/identity/README.md','services/dsh/README.md','services/wlt/README.md',
+ 'services/wlt/backend/README.md','services/wlt/database/migrations/README.md',
  ...['identity','dsh','wlt'].flatMap(owner=>['package.json','tsconfig.json','clients/README.md','clients/index.ts','contracts/openapi/README.md','contracts/openapi/'+owner+'.openapi.yaml'].map(file=>'services/'+owner+'/'+file)),
  ...contractGroups,'docs/reference/OPENAPI-DONOR-CONTRACT-INVENTORY.md',
  'docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md','docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json','tools/dev/verify-workspace.mjs','tools/mobile/verify-app-foundations.mjs',
@@ -186,6 +187,11 @@ accepts('permits TypeScript client development with honest in-progress documenta
  add:{'services/identity/clients/generated/session.ts':'export type Session = { id: string };\n'}
 },/PROGRESSIVE_SOURCE_PRESENT/);
 rejects('rejects wrong TypeScript base',{edit:{'services/dsh/tsconfig.json':s=>s.replace('../../tsconfig.base.json','../old-tsconfig.json')}},/service TypeScript configuration drift/);
+rejects('rejects missing WLT backend placement guide',{del:['services/wlt/backend/README.md']},/required services\/wlt\/backend\/README.md/);
+rejects('rejects missing WLT migration placement guide',{del:['services/wlt/database/migrations/README.md']},/required services\/wlt\/database\/migrations\/README.md/);
+rejects('rejects WLT structure guide misrepresenting service as running',{
+ edit:{'services/wlt/backend/README.md':s=>s.replace('EXECUTION: NOT_STARTED','EXECUTION: RUNNING')}
+},/WLT placement guidance falsely claims a running service/);
 rejects('rejects missing client documentation',{del:['services/wlt/clients/README.md']},/required services\/wlt\/clients\/README.md/);
 rejects('rejects missing service workspace lock importer',{edit:{'pnpm-lock.yaml':s=>s.replace('  services/identity:', '  services/other:')}},/service missing exact frozen-lockfile importer/);
 rejects('rejects old Nx project configuration',{add:{'services/identity/project.json':'{}'}},/premature service source: services\/identity\/project.json/);

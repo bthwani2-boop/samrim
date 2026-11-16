@@ -70,6 +70,7 @@ const required=[
  '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
  'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','nx.json','tsconfig.base.json','biome.json',
  'README.md','services/identity/README.md','services/dsh/README.md','services/wlt/README.md',
+ 'services/wlt/backend/README.md','services/wlt/database/migrations/README.md',
  ...['identity','dsh','wlt'].flatMap(owner=>['package.json','tsconfig.json','clients/README.md','clients/index.ts','contracts/openapi/README.md','contracts/openapi/'+owner+'.openapi.yaml'].map(file=>'services/'+owner+'/'+file)),
  ...Object.entries(contractPathGroups).flatMap(([owner,groups])=>groups.map(name=>'services/'+owner+'/contracts/openapi/paths/'+name+'.yaml')),
  'docs/reference/OPENAPI-DONOR-CONTRACT-INVENTORY.md',
@@ -377,6 +378,17 @@ for(const owner of serviceOwners){
    '/contracts/openapi/'+owner+'.openapi.yaml'])allowedServiceFiles.add(prefix+suffix);
  for(const moduleName of contractPathGroups[owner])
   allowedServiceFiles.add(prefix+'/contracts/openapi/paths/'+moduleName+'.yaml');
+ if(owner==='wlt'){
+  // Tracked location guidance is not a Go module, schema, or financial runtime.
+  for(const file of ['/backend/README.md','/database/migrations/README.md']){
+   const location=prefix+file;
+   allowedServiceFiles.add(location);
+   const text=contents[location];
+   if(!text.includes('STATUS: STRUCTURE_ONLY')||!text.includes('OWNER: WLT')||
+      !text.includes('EXECUTION: NOT_STARTED'))
+    fail('WLT placement guidance falsely claims a running service: '+location);
+  }
+ }
  const readme=prefix+'/README.md';
  const doc=contents[readme];
  const contractFile=prefix+'/contracts/openapi/'+owner+'.openapi.yaml';
