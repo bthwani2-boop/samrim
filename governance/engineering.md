@@ -40,6 +40,12 @@ Do not let a configurable setting override security, customer consent, immutable
 - Preserve valid code/API contracts/tests/operations from donor through a source-driven slice census: KEEP / MOVE / MERGE / REFOUND / REPLACE / APPROVED_RETIRE / UNRESOLVED. Track material subfeatures (privacy-safe Captain opportunity map, storefront deep links, notifications, media, video, catalog imports, financial reports, conversations, promotions, multi-Store access, bounded support and recovery) as well as the 26 Product capability IDs.
 - No permanently parallel relation-specific Store, catalog, cart, Order, price, settlement, media or permission engines; temporary migration coexistence needs a documented, tested exit. Do not delete old functionality until consumers/readback are proven and old state is safely transitioned.
 
+## Lean feature organization - incremental acceptance
+
+Implement the repository's [feature-placement law](../REPOSITORY-STRUCTURE.md) per real feature, not as an advance creation of empty directory trees. A feature's source migration is accepted only when the existing route/deep link, UI states (including loading, error, empty, and retry), public owner-client contract, access boundaries and affected tests remain valid. Split oversized components or CSS by actual responsibilities, not a numeric lines-per-file quota; avoid feature-to-feature cycles and duplicate API proxy layers.
+
+Use the existing application-boundary guard and its negative fixtures, applicable Nx target/typecheck and Knip when checking imports or unused files. Extend a current check only for a demonstrated gap, with a failing regression fixture; do not create a second architecture linter, redundant package, state engine or workspace registry. A static guard, graph query or typecheck alone cannot prove Expo/Next navigation and service integration: report real runtime acceptance separately.
+
 ## Existing platform/design foundations
 - Keep and reconcile the existing Expo React Native / Tamagui design foundation for Customer, Merchant and Captain; a single semantic brand/token source shared only through proven multi-consumer packages. Root Arabic RTL, light/dark, accessible error recovery and low-click Store workflows. Rebuild visually and functionally when needed without duplicating theme/presentation state.
 - Operator Control Panel stays on its actual Next.js/Ant Design foundation unless separately approved; it consumes the same brand semantics through appropriate adapters. Do not migrate it to Tamagui only for uniform library names.

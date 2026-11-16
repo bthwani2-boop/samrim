@@ -16,6 +16,12 @@ The Operator Control Panel currently uses Next.js with Ant Design and its approv
 - Minimize taps and mandatory fields for first Store registration, catalogue entry, checkout, Captain assignment and support recovery. Progressive disclosure is preferable to forcing Operators/Merchants through every possible financial option at once.
 - Correctly scope mobile safe areas, keyboard behavior, gestures and deep links across Web/Android; iOS behavior needs actual iOS proof before a PASS.
 
+## Feature-local presentation without duplicate UI systems
+
+Expo routes use the existing router and Tamagui renderer; Next Operator routes use Next App Router and Ant Design. Keep substantial interaction and view state with the feature that owns the screen, while route files retain navigation, route parameters and framework metadata. Small route-specific UI can stay with its route when extraction would only add indirection. Reuse the approved renderer directly; add a shared visual abstraction only after a genuine repeated interaction requirement.
+
+Avoid one expanding global CSS file for independent Operator feature styling: reserve global styles for foundation, design semantics and application-wide layout, and scope feature-specific styling with the actual feature when justified. Do not duplicate semantic colors, CSS token authors, theme providers, authorization state or business rules. Preserve Arabic RTL, accessibility, error/empty/retry states and keyboard/focus semantics across any file move; the layout change itself is not runtime proof.
+
 ## Source-retained interaction, state and image-review boundaries
 
 A routine action is correct only when the surface exposes its applicable **loading, empty, no-results, forbidden, conflict, offline, error, unknown-outcome, busy, disabled, selected, validation and recovery** states. These are distinct when the owner can produce them; a convenient happy-path render cannot substitute for their treatment. A material mutation keeps the current input/context where safe, prevents duplicate submission, explains the next permitted action and reports **success only after canonical owner-backed readback**. UI text must not leak transport tokens, raw internal identifiers, backend enum names or concurrency versions as user-facing instructions.
