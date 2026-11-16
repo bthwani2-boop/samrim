@@ -72,6 +72,27 @@ function Write-TunnelLog([string]$message) {
   }
   Add-Content -LiteralPath $logPath -Value ((Get-Date -Format o) + ' ' + $message) -Encoding UTF8
 }
+# Task Scheduler can stop the PowerShell parent while its SSH child stays
+# alive. Reclaim only a matching loopback SSH listener with no live owner.
+$existing = Get-NetTCPConnection -State Listen -LocalPort $localPort -ErrorAction SilentlyContinue |
+  Where-Object { $_.LocalAddress -eq '127.0.0.1' } |
+  Select-Object -First 1
+if ($existing) {
+  $ownerProcess = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $existing.OwningProcess)
+  $expectedForward = '127.0.0.1:' + $localPort + ':127.0.0.1:' + $remotePort
+  if (-not $ownerProcess -or $ownerProcess.Name -ne 'ssh.exe' -or
+      -not $ownerProcess.CommandLine.Contains($expectedForward) -or
+      -not $ownerProcess.CommandLine.Contains($target)) {
+    throw 'APP_TUNNEL_PORT_OWNED_BY_OTHER_PROCESS'
+  }
+  $parentProcess = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $ownerProcess.ParentProcessId)
+  if ($parentProcess -and $parentProcess.Name -eq 'powershell.exe' -and
+      $parentProcess.CommandLine -match 'Start-AppTunnel\.ps1') {
+    throw 'APP_TUNNEL_DUPLICATE_OWNER'
+  }
+  Stop-Process -Id $ownerProcess.ProcessId -ErrorAction Stop
+  Write-TunnelLog ('CLEARED_STALE_SSH app=' + $App + ' port=' + $localPort)
+}
 Write-TunnelLog ('START app=' + $App + ' local=' + $localPort + ' remote=' + $remotePort)
 while ($true) {
   # Windows PowerShell 5.1 reports native SSH stderr as NativeCommandError.
