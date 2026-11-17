@@ -10,7 +10,7 @@ Surface DHCP 192.168.0.100; Lenovo DHCP 192.168.0.101; SSH target alias bthwani-
 - The configured target mirror in the Surface sync script is C:\Users\bthwa\BThwaniAppRunner\source-runtime. Its active use by Lenovo app tasks remains UNVERIFIED: the SSH task-inspection attempt returned exit 255 on 2026-11-17. Verify Lenovo task actions, source revision, and running process paths before claiming runtime cutover or retiring an older launcher. Do not create a second app source or delete rollback data without consumer verification.
 
 ## Guarantees and limits
-- Mirroring is strictly Surface-to-Lenovo for approved tracked and untracked *source* paths only. .git, node_modules, .env*, credentials, secrets, DB and cache directories are excluded.
+- Mirroring is strictly Surface-to-Lenovo for approved tracked and untracked source paths. Service workspaces include the package manifests, TypeScript configs, and clients consumed by the apps. Service backend, migrations, .git, node_modules, .env*, credentials, secrets, DB and cache directories are excluded.
 - SSH source/remote identities and SHA-256 file hashes are checked; files are staged before atomic replacement; deletions apply only to previously managed matching remote files.
 - pnpm-lock.yaml and .node-version changes block sync until deliberate offline dependency preparation and restart. Branch switch also blocks until reconciliation.
 - Manifest and bounded diagnostic log live outside the repo under %LOCALAPPDATA%\BThwani\Operations\SourceSync. Git commits and pushes are separate operations.

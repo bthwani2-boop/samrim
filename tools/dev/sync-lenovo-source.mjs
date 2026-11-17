@@ -15,6 +15,8 @@ const targetRoot = "C:\\Users\\bthwa\\BThwaniAppRunner\\source-runtime";
 const include = [
   "apps/customer", "apps/merchant", "apps/captain", "apps/control-panel",
   "packages/design-system", "packages/push-device", "packages/tamagui-config",
+  ...["identity", "dsh", "wlt"].flatMap(owner =>
+    ["package.json", "tsconfig.json", "clients"].map(entry => `services/${owner}/${entry}`)),
   "tools/mobile", "tools/dev", "patches", "infra/Start-RefoundationApp.ps1",
   "package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml", ".node-version",
   "tsconfig.base.json", "nx.json", "biome.json"
