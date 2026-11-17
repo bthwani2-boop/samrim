@@ -6,8 +6,8 @@ Surface DHCP 192.168.0.100; Lenovo DHCP 192.168.0.101; SSH target alias bthwani-
 ## Single existing owners
 - SSH tunnels: four existing Scheduled Tasks invoke tools/dev/Start-AppTunnel.ps1; Surface 18101->Lenovo28111, 18102->28112, 18103->28113, 13000->23010.
 - Source sync: the existing Scheduled Task BThwani Lenovo Source Sync directly runs pinned node.exe with tools/dev/sync-lenovo-source.mjs --watch. Its direct process ownership ensures stopping the task also stops its Node watcher, without orphan duplicates. Start-LenovoSourceSync.ps1 is the manual validation/one-shot helper.
-- Lenovo app tasks still invoke infra/Start-RefoundationApp.ps1. They are runtime launchers, not transport scripts, and belong in infra.
-- Physical mirror is C:\Users\bthwa\BThwaniAppRunner\staging-session04-d469b3ffe778 (prepared pinned baseline d469b3f). Until an authorized and successful runtime cutover, live source-runtime remains separate.
+- Lenovo app tasks are intended to invoke infra/Start-RefoundationApp.ps1, which is a runtime launcher rather than a transport script. Their live task actions could not be confirmed during the latest SSH inspection.
+- The configured target mirror in the Surface sync script is C:\Users\bthwa\BThwaniAppRunner\source-runtime. Its active use by Lenovo app tasks remains UNVERIFIED: the SSH task-inspection attempt returned exit 255 on 2026-11-17. Verify Lenovo task actions, source revision, and running process paths before claiming runtime cutover or retiring an older launcher. Do not create a second app source or delete rollback data without consumer verification.
 
 ## Guarantees and limits
 - Mirroring is strictly Surface-to-Lenovo for approved tracked and untracked *source* paths only. .git, node_modules, .env*, credentials, secrets, DB and cache directories are excluded.
@@ -19,7 +19,7 @@ Surface DHCP 192.168.0.100; Lenovo DHCP 192.168.0.101; SSH target alias bthwani-
 ## Commands
 - Validate launcher: powershell.exe -NoProfile -File D:\samrim\tools\dev\Start-LenovoSourceSync.ps1 -ValidateOnly
 - One pass: powershell.exe -NoProfile -File D:\samrim\tools\dev\Start-LenovoSourceSync.ps1 -Once
-- Normal automatic mode: existing scheduled task invokes same launcher without -Once; do not start duplicate watch processes.
+- Normal automatic mode: the existing Surface Scheduled Task invokes pinned node.exe with tools/dev/sync-lenovo-source.mjs --watch directly; do not start duplicate watch processes.
 - Test policy: node --test D:\samrim\tools\dev\sync-lenovo-source.test.mjs
 
 ## Cleanup rule
