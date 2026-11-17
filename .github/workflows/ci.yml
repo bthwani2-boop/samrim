@@ -112,7 +112,9 @@ jobs:
       - name: Build the pinned Next.js Operator presentation host
         run: pnpm --dir apps/control-panel build
       - name: Smoke-test production Operator SSR, RTL and headers on loopback
-        run: node tools/dev/verify-operator-http.mjs
+        run: |
+          node tools/dev/verify-operator-http.mjs
+          BTHWANI_OPERATOR_HTTP_TEST=1 node --test apps/control-panel/tests/operator-protected-routes.test.mjs
       - name: Record missing live platform proof
         run: |
           echo 'NOT_RUN: Android/iOS binary, actual browser hydration/CSP, owner APIs, finance and security'

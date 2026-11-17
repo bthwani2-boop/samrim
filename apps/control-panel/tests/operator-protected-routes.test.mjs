@@ -21,7 +21,10 @@ async function availablePort() {
   return port;
 }
 
-test("Operator routes and the browser session endpoint fail closed on the production host", { timeout: 60000 }, async () => {
+test("Operator routes and the browser session endpoint fail closed on the production host", {
+  timeout: 60000,
+  skip: process.env.BTHWANI_OPERATOR_HTTP_TEST === "1" ? false : "Run after the production Next build",
+}, async () => {
   assert.ok(existsSync(path.join(panel, ".next", "BUILD_ID")), "run the Next build before HTTP testing");
   assert.ok(existsSync(cli), "frozen local Next dependency is missing");
   const port = await availablePort();

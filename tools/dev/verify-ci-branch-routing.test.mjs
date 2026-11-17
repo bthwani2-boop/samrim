@@ -63,6 +63,13 @@ test("every supported development branch executes discovered Feature regression 
   assert.match(content, /^      - name: Run discovered Feature tests and collect measured coverage\n        run: pnpm check:coverage$/m);
 });
 
+test("Operator HTTP checks run after the production Next build, not as source coverage", () => {
+  const { content } = events(workflows[0]);
+  const build = content.indexOf("name: Build the pinned Next.js Operator presentation host");
+  const smoke = content.indexOf("BTHWANI_OPERATOR_HTTP_TEST=1 node --test apps/control-panel/tests/operator-protected-routes.test.mjs");
+  assert.ok(build >= 0 && smoke > build, "Operator auth/route HTTP checks must execute after the Next build");
+});
+
 test("CI must reject unadmitted new tests before coverage and fast-guard", () => {
   const { content } = events(workflows[0]);
   const install = content.indexOf("pnpm install --frozen-lockfile --ignore-scripts");
