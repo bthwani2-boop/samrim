@@ -402,6 +402,39 @@ rejects('rejects an unreferenced operation hidden in a DSH fragment',{
 rejects('rejects missing DSH path module',{del:['services/dsh/contracts/openapi/paths/stores.yaml']},/required services\/dsh\/contracts\/openapi\/paths\/stores.yaml/);
 rejects('rejects malformed DSH path fragment',{edit:{'services/dsh/contracts/openapi/paths/orders.yaml':s=>s.replace('paths: {}','paths: [')}},/OpenAPI path fragment is not an empty placeholder/);
 rejects('rejects nonempty DSH path fragment',{edit:{'services/dsh/contracts/openapi/paths/employees.yaml':s=>s.replace('paths: {}','paths:\n  /employees: {}')}},/OpenAPI path fragment is not an empty placeholder/);
+// A new group is not an API merely because its placeholder file exists.
+// Test real root-to-fragment linkage without adding a production endpoint.
+const proposedReturnsFragment=[
+ 'paths:',
+ '  /v1/returns:',
+ '    post:',
+ '      operationId: requestReturn',
+ '      security: []',
+ '      responses:',
+ "        '202':",
+ '          description: Proposed return request accepted',
+ ''
+].join('\n');
+const proposedReturnsRef="  /v1/returns:\n    $ref: './paths/returns.yaml#/paths/~1v1~1returns'\n";
+const proposedReturnsRoot=(source)=>source.replace('paths:\n','paths:\n'+proposedReturnsRef);
+const proposedReturnsModule='services/dsh/contracts/openapi/paths/returns.yaml';
+const proposedReturnsEntrypoint='services/dsh/contracts/openapi/dsh.openapi.yaml';
+accepts('accepts a new referenced DSH path group with a complete operation',{
+ add:{[proposedReturnsModule]:proposedReturnsFragment},
+ edit:{[proposedReturnsEntrypoint]:proposedReturnsRoot}
+},/FOUNDATION_STRUCTURE_PASS/);
+rejects('rejects a hidden operation in a new unreferenced DSH group',{
+ add:{[proposedReturnsModule]:proposedReturnsFragment}
+},/unreferenced OpenAPI Path Item/);
+rejects('rejects a wrong JSON pointer in a new DSH group',{
+ add:{[proposedReturnsModule]:proposedReturnsFragment},
+ edit:{[proposedReturnsEntrypoint]:s=>proposedReturnsRoot(s).replace('~1v1~1returns','~1v1~1missing')}
+},/OpenAPI scaffold mutated or contains unapproved operations\/refs/);
+rejects('rejects a missing security declaration in a new DSH group',{
+ add:{[proposedReturnsModule]:proposedReturnsFragment.replace('      security: []\n','')},
+ edit:{[proposedReturnsEntrypoint]:proposedReturnsRoot}
+},/OpenAPI path fragment is not an empty placeholder|OpenAPI scaffold mutated or contains unapproved operations\/refs/);
+
 accepts('permits a new DSH contract group for incremental investigation',{add:{'services/dsh/contracts/openapi/paths/wallet-provider.yaml':'paths: {}\n'}},/PROGRESSIVE_SOURCE_PRESENT/);
 accepts('permits Identity development contract group',{add:{'services/identity/contracts/openapi/paths/shadow-auth.yaml':'paths: {}\n'}},/PROGRESSIVE_SOURCE_PRESENT/);
 accepts('permits WLT development contract group',{add:{'services/wlt/contracts/openapi/paths/alternate-ledger.yaml':'paths: {}\n'}},/PROGRESSIVE_SOURCE_PRESENT/);

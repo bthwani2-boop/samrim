@@ -301,8 +301,11 @@ function validateOpenApiPath(body,begin,end,ids,reject,owner,apiPath,fromFragmen
   if(!match)reject();
   const [,group,pointer]=match;
   const expected=apiPath.replace(/~/g,'~0').replace(/\//g,'~1');
-  if(pointer!==expected||!contractPathGroups[owner].includes(group))reject();
+  // Reserved groups are a baseline, not a ceiling on new owner paths.
+  // A new group still needs a safe local file and an exact Path Item ref.
+  if(pointer!==expected||!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(group))reject();
   const filename='services/'+owner+'/contracts/openapi/paths/'+group+'.yaml';
+  if(!exists(filename))reject();
   const content=get(filename);
   checkProgressivePathFragment(content,filename);
   const moduleLines=content.split('\n');
@@ -415,9 +418,16 @@ for(const owner of serviceOwners){
     !contractReadme.includes('no server, no security scheme') ||
     !contractReadme.includes('not arbitrary OpenAPI validity'))
   fail('invalid contract scaffold documentation: '+owner);
- for(const moduleName of contractPathGroups[owner]){
-  const moduleFile=prefix+'/contracts/openapi/paths/'+moduleName+'.yaml';
-  const moduleContent=contents[moduleFile];
+ const fragmentDir=prefix+'/contracts/openapi/paths';
+ const fragmentEntries=fs.readdirSync(path.join(root,...fragmentDir.split('/')),{withFileTypes:true});
+ for(const entry of fragmentEntries){
+  if(!entry.isFile()||!/^[a-z0-9]+(?:-[a-z0-9]+)*\.yaml$/.test(entry.name))
+   fail('invalid OpenAPI path fragment: '+fragmentDir+'/'+entry.name);
+ }
+ // Check every new group, including hidden operations not in the historical list.
+ for(const moduleName of fragmentEntries.map(entry=>entry.name.slice(0,-5))){
+  const moduleFile=fragmentDir+'/'+moduleName+'.yaml';
+  const moduleContent=contents[moduleFile]??get(moduleFile);
   if(checkProgressivePathFragment(moduleContent,moduleFile)){
    // Populated fragments must be reachable through the sole canonical root.
    // A hidden, otherwise valid operation in an unreferenced fragment is not
@@ -435,8 +445,11 @@ for(const owner of serviceOwners){
    }
    if(seenFragmentPaths.size===0)
     fail('OpenAPI fragment contains no valid Path Items: '+moduleFile);
-   developmentSourceFiles++;
-   progressiveOpenApiFiles++;
+   // Extra groups are counted by the recursive inventory below.
+   if(contractPathGroups[owner].includes(moduleName)){
+    developmentSourceFiles++;
+    progressiveOpenApiFiles++;
+   }
   }
  }
  if(!doc.includes('OWNER: '+(owner==='identity'?'Identity':owner.toUpperCase())) ||
