@@ -1,9 +1,64 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { allowed, appendLogFile, failureDetail, isUnchanged, remoteConflict } from "./sync-lenovo-source.mjs";
+import { allowed, appendLogFile, failureDetail, hash, isUnchanged, persistAt, remoteConflict } from "./sync-lenovo-source.mjs";
+
+test("manifest persistence replaces atomically and never deletes another pending file", () => {
+  const folder = mkdtempSync(path.join(tmpdir(), "bthwani-source-manifest-"));
+  try {
+    const file = path.join(folder, "state", "manifest.json");
+    persistAt(file, { version: 1 });
+    assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { version: 1 });
+    persistAt(file, { version: 2 });
+    assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { version: 2 });
+
+    const pending = `${file}.${process.pid}.tmp`;
+    writeFileSync(pending, "pre-existing");
+    assert.throws(() => persistAt(file, { version: 3 }), { code: "EEXIST" });
+    assert.equal(readFileSync(pending, "utf8"), "pre-existing");
+    assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { version: 2 });
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("source digest reads a verified file descriptor and rejects non-files", () => {
+  const folder = mkdtempSync(path.join(tmpdir(), "bthwani-source-digest-"));
+  try {
+    const file = path.join(folder, "safe.txt");
+    writeFileSync(file, "verified", "utf8");
+    assert.equal(hash(file), createHash("sha256").update("verified").digest("hex").toUpperCase());
+    assert.throws(() => hash(path.join(folder, "missing.txt")), { code: "ENOENT" });
+    assert.throws(() => hash(folder));
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("source digest rejects symbolic links instead of following them", (t) => {
+  const folder = mkdtempSync(path.join(tmpdir(), "bthwani-source-symlink-"));
+  try {
+    const file = path.join(folder, "safe.txt");
+    const link = path.join(folder, "link.txt");
+    writeFileSync(file, "verified", "utf8");
+    try {
+      symlinkSync(file, link, "file");
+    } catch (error) {
+      if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) {
+        t.skip("symlink creation not permitted on this Windows account");
+        return;
+      }
+      throw error;
+    }
+    assert.throws(() => hash(link), (error) =>
+      error.code === "ELOOP" || error.message.includes("UNSAFE_SOURCE_FILE"));
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
 
 test("source-sync log writes through an open descriptor and rotates safely", () => {
   const folder = mkdtempSync(path.join(tmpdir(), "bthwani-source-sync-log-"));

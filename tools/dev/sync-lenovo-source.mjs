@@ -35,7 +35,30 @@ const stateFile = path.join(stateDir, "manifest.json");
 const logFile = path.join(stateDir, "sync.log");
 const quote = v => "'" + v.replaceAll("'", "''") + "'";
 const destination = rel => path.win32.join(targetRoot, ...rel.split("/"));
-const hash = f => crypto.createHash("sha256").update(fs.readFileSync(f)).digest("hex").toUpperCase();
+function hash(file) {
+  // Open before validation and read through that descriptor: a path swap
+  // cannot redirect the bytes we hash to a different file.
+  const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+  try {
+    const opened = fs.fstatSync(fd, { bigint: true });
+    let pathEntry;
+    try {
+      pathEntry = fs.lstatSync(file, { bigint: true });
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        throw new Error("UNSAFE_SOURCE_FILE " + path.relative(root, file));
+      }
+      throw error;
+    }
+    if (!opened.isFile() || !pathEntry.isFile() || pathEntry.isSymbolicLink() ||
+        opened.dev !== pathEntry.dev || opened.ino !== pathEntry.ino) {
+      throw new Error("UNSAFE_SOURCE_FILE " + path.relative(root, file));
+    }
+    return crypto.createHash("sha256").update(fs.readFileSync(fd)).digest("hex").toUpperCase();
+  } finally {
+    fs.closeSync(fd);
+  }
+}
 function allowed(rel) {
   if (typeof rel !== "string" || !rel || rel.includes("\\") ||
       rel.startsWith("/") || rel.includes("//") || rel.includes("\0")) return false;
@@ -101,16 +124,23 @@ function inventory() {
   const found = new Map();
   for (const rel of files) {
     const full = path.join(root, ...rel.split("/"));
-    if (!fs.existsSync(full)) continue;
-    const st = fs.lstatSync(full);
-    if (!st.isFile() || st.isSymbolicLink()) throw new Error("UNSAFE_SOURCE_FILE " + rel);
-    found.set(rel, hash(full));
+    try {
+      found.set(rel, hash(full));
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
   }
   return found;
 }
 function readState() {
-  if (!fs.existsSync(stateFile)) return null;
-  const state = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+  let rawState;
+  try {
+    rawState = fs.readFileSync(stateFile, "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+  const state = JSON.parse(rawState);
   if (state.version !== 1 || state.host !== targetIdentity ||
       state.target !== targetRoot || state.branch !== branch() ||
       !state.files || typeof state.files !== "object" || Array.isArray(state.files)) {
@@ -121,13 +151,24 @@ function readState() {
   }
   return state;
 }
-function persist(state) {
-  fs.mkdirSync(stateDir, { recursive: true });
-  const pending = stateFile + "." + process.pid + ".tmp";
+function persistAt(file, state) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const pending = file + "." + process.pid + ".tmp";
+  let created = false;
   try {
     fs.writeFileSync(pending, JSON.stringify(state), { flag: "wx" });
-    fs.renameSync(pending, stateFile);
-  } finally { if (fs.existsSync(pending)) fs.unlinkSync(pending); }
+    created = true;
+    fs.renameSync(pending, file);
+  } catch (error) {
+    // Never delete a temporary file that this invocation did not create.
+    if (created) {
+      try { fs.rmSync(pending, { force: true }); } catch {}
+    }
+    throw error;
+  }
+}
+function persist(state) {
+  persistAt(stateFile, state);
 }
 function remoteHash(rel) {
   const file = destination(rel);
@@ -150,7 +191,13 @@ function remoteConflict(actual, desired, previous) {
 }
 function publish(rel, expected, previous) {
   const full = path.join(root, ...rel.split("/"));
-  if (!fs.existsSync(full) || hash(full) !== expected) throw new Error("SOURCE_CHANGED_WHILE_READING " + rel);
+  let sourceDigest;
+  try {
+    sourceDigest = hash(full);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  if (sourceDigest !== expected) throw new Error("SOURCE_CHANGED_WHILE_READING " + rel);
   const actual = remoteHash(rel);
   if (actual === expected) return;
   if (remoteConflict(actual, expected, previous)) throw new Error("REMOTE_STALE_FILE_CONFLICT " + rel);
@@ -281,4 +328,4 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   try { main(); } catch (e) { console.error("SOURCE_SYNC_ERROR " + e.message); process.exitCode = 1; }
 }
 
-export { allowed, appendLogFile, failureDetail, isUnchanged, remoteConflict };
+export { allowed, appendLogFile, failureDetail, hash, isUnchanged, persistAt, remoteConflict };

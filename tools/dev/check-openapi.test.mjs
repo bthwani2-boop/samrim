@@ -80,6 +80,27 @@ test("reject a PathItem fragment that is not linked from the owner entrypoint", 
   assert.ok(result.errors.length > 0);
 });
 
+test("reject a newly added DSH OpenAPI path module that the entrypoint does not reference", () => {
+  const tmp = mkdtempSync(path.join(tmpdir(), "bthwani-unlinked-openapi-"));
+  try {
+    const contracts = path.join("services", "dsh", "contracts", "openapi");
+    cpSync(path.join(root, contracts), path.join(tmp, contracts), { recursive: true });
+    writeFileSync(path.join(tmp, contracts, "paths", "new-unlinked.yaml"),
+      "paths:\n  /v1/test/unlinked:\n    get:\n      operationId: unlinkedTest\n      security: []\n      responses:\n        '200':\n          description: Test\n");
+    const result = validate("dsh", tmp);
+    hasError(result, "Unlinked path in");
+    hasError(result, "Unreferenced path module");
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("reject external schema URI references instead of resolving arbitrary network locations", () => {
+  const result = mutate("dsh", "paths/stores.yaml", (source) =>
+    source.replace("../dsh.openapi.yaml#/components/schemas/StorePage",
+      "https://external.invalid/StorePage"));
+  hasError(result, "unsupported $ref");
+});
 
 test("reject an unknown PathItem field even alongside a valid operation", () => {
   const result = mutate("dsh", "paths/stores.yaml", (s) =>
