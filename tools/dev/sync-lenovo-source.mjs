@@ -87,25 +87,26 @@ function remote(code) {
 }
 function appendLogFile(file, message, limit = 1048576) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  // Use the same open descriptor for the size check and the normal append.
-  let fd = fs.openSync(file, "a", 0o600);
+  // Rotate by truncating the same descriptor. Never re-open a path after
+  // checking it: another process could swap the file in between.
+  const fd = fs.openSync(file, fs.constants.O_RDWR | fs.constants.O_CREAT, 0o600);
   try {
-    if (fs.fstatSync(fd).size <= limit) {
-      fs.writeSync(fd, message + "\n");
-      return;
+    const size = fs.fstatSync(fd).size;
+    if (size > limit) {
+      const count = Math.min(size, Math.max(limit, 65536));
+      const previous = Buffer.alloc(count);
+      let offset = 0;
+      while (offset < count) {
+        const bytes = fs.readSync(fd, previous, offset, count - offset, size - count + offset);
+        if (bytes === 0) throw new Error("SYNC_LOG_READ_SHORT");
+        offset += bytes;
+      }
+      const backup = file + ".previous";
+      fs.rmSync(backup, { force: true });
+      fs.writeFileSync(backup, previous, { flag: "wx", mode: 0o600 });
+      fs.ftruncateSync(fd, 0);
     }
-  } finally {
-    fs.closeSync(fd);
-  }
-  fs.rmSync(file + ".previous", { force: true });
-  try {
-    fs.renameSync(file, file + ".previous");
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
-  }
-  fd = fs.openSync(file, "a", 0o600);
-  try {
-    fs.writeSync(fd, message + "\n");
+    fs.writeSync(fd, message + "\n", fs.fstatSync(fd).size);
   } finally {
     fs.closeSync(fd);
   }

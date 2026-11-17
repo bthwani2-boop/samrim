@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -71,6 +71,19 @@ test("source-sync log writes through an open descriptor and rotates safely", () 
     assert.equal(readFileSync(log, "utf8"), "beta\n");
     appendLogFile(log, "gamma", 4096);
     assert.equal(readFileSync(log, "utf8"), "beta\ngamma\n");
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("failed backup rotation preserves the existing log", () => {
+  const folder = mkdtempSync(path.join(tmpdir(), "bthwani-source-sync-backup-"));
+  try {
+    const log = path.join(folder, "sync.log");
+    appendLogFile(log, "alpha", 4);
+    mkdirSync(log + ".previous");
+    assert.throws(() => appendLogFile(log, "beta", 4));
+    assert.equal(readFileSync(log, "utf8"), "alpha\n");
   } finally {
     rmSync(folder, { recursive: true, force: true });
   }
