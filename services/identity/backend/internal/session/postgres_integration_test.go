@@ -104,6 +104,13 @@ func TestPostgresIdentitySessionReadback(t *testing.T) {
 	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(verificationMigration), "__SCHEMA__", schema)); err != nil {
 		t.Fatal("isolated verified Customer migration failed:", err)
 	}
+	phoneMigration, err := os.ReadFile(filepath.Join(filepath.Dir(verificationPath), "004_customer_phone_verification.sql"))
+	if err != nil {
+		t.Fatal("isolated phone verification migration unavailable:", err)
+	}
+	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(phoneMigration), "__SCHEMA__", schema)); err != nil {
+		t.Fatal("isolated phone verification migration failed:", err)
+	}
 	// Keep test scope explicit. Only SQL identifiers derived from local random
 	// bytes are interpolated; all actor IDs, digests and values use binds.
 	exec := func(query string, args ...any) {
@@ -421,6 +428,7 @@ func TestPostgresIdentitySessionReadback(t *testing.T) {
 	}
 	checkPermission(opB, "marketing", "identity-operator-b", nil)
 	verifyMerchantAdmissionIntegration(t, ctx, db, independent, reader, schema, exec, issue)
+	verifyPhoneAdmissionIntegration(t, ctx, independent, reader, schema, exec)
 	verifyExpiredLogoutLockWait(t, ctx, db, independent, reader, schema, exec, issue)
 	verifyMerchantExpiredCustomerLockWait(t, ctx, db, independent, reader, schema, exec, issue)
 	fmt.Println("IDENTITY_SESSION_HTTP_LOGOUT_DURABLE_AND_RACE_PASS")

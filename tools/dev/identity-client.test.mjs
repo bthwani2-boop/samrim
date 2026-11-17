@@ -3,8 +3,11 @@ import { test } from "node:test";
 import {
   admitCurrentCustomerAsMerchant,
   IdentityClientError,
+  issueCustomerPhoneChallenge,
   readVerifiedIdentitySession,
   resumeCurrentCustomerMerchantSession,
+  revokeVerifiedIdentitySession,
+  verifyCustomerPhoneChallenge,
 } from "../../services/identity/clients/index.ts";
 
 const origin = "https://identity.bthwani.test";
@@ -91,6 +94,7 @@ test("session scope is parsed from exactly the three owner fields and never impl
     { ...valid, actorId: " actor-123 " },
     { ...valid, role: "admin" },
     { ...valid, role: null },
+    { ...valid, role: ["customer"] },
     { ...valid, storeId: "other-owner-store" },
     { ...valid, sessionExpiresAt: "not-a-date" },
     { ...valid, sessionExpiresAt: "2035-01-01" },
@@ -99,6 +103,35 @@ test("session scope is parsed from exactly the three owner fields and never impl
     await withFetch(async () => response(value),
       () => rejectsAs(() => readVerifiedIdentitySession(origin, bearer), 502, "OWNER_RESPONSE_INVALID"));
   }
+});
+
+test("phone proof carries exact JSON without credentials and logout requires a no-store 204", async () => {
+  const phone = "+12025550133";
+  const ticket = "a".repeat(48);
+  const code = "123456";
+  await withFetch(async (url, options) => {
+    assert.equal(new URL(url).pathname, "/v1/customer-auth/phone-challenges");
+    assert.equal(options.method, "POST");
+    assert.equal(options.headers.Authorization, undefined);
+    assert.equal(options.headers["Content-Type"], "application/json");
+    assert.deepEqual(JSON.parse(options.body), { phone });
+    return response({ ticket }, 201);
+  }, async () => assert.equal(await issueCustomerPhoneChallenge(origin, phone), ticket));
+  await withFetch(async (url, options) => {
+    assert.equal(new URL(url).pathname, "/v1/customer-auth/phone-verification");
+    assert.equal(options.method, "POST");
+    assert.equal(options.headers.Authorization, undefined);
+    assert.deepEqual(JSON.parse(options.body), { ticket, code });
+    return response(admission());
+  }, async () => assert.equal((await verifyCustomerPhoneChallenge(origin, ticket, code)).accessToken, rotatedBearer));
+  await withFetch(async (url, options) => {
+    assert.equal(new URL(url).pathname, "/v1/sessions/current");
+    assert.equal(options.method, "DELETE");
+    assert.equal(options.headers.Authorization, "Bearer " + bearer);
+    return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+  }, async () => revokeVerifiedIdentitySession(origin, bearer));
+  await withFetch(async () => new Response(null, { status: 204 }),
+    () => rejectsAs(() => revokeVerifiedIdentitySession(origin, bearer), 502, "OWNER_RESPONSE_INVALID"));
 });
 
 test("Merchant admission performs exact POST with verified Customer token and no implicit Store grant", async () => {

@@ -275,6 +275,8 @@ function validateOpenApiOperation(lines,ids,reject){
 // is populated. The pre-migration all-empty scaffold remains readable until
 // its sole Identity owner transfers the current approved operations atomically.
 const identityOwnedPathGroups=new Map([
+ ['/v1/customer-auth/phone-challenges','client-auth'],
+ ['/v1/customer-auth/phone-verification','client-auth'],
  ['/v1/sessions/current','session'],
  ['/v1/actors/me/merchant-role','managed-enrollment-auth'],
  ['/v1/actors/me/merchant-session','managed-enrollment-auth'],

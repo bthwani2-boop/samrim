@@ -23,8 +23,9 @@ test("Merchant private navigation stays closed until Identity and DSH are ready"
   assert.match(boundary, /<Stack.Screen name="\(tabs\)" \/>/);
   assert.match(read("app/index.tsx"), /MerchantIdentityGate/);
   const gate = read("src/features/access/identity-gate.tsx");
-  assert.match(gate, /لم يتم تفعيل تسجيل الدخول للتاجر/);
-  assert.doesNotMatch(gate, /setSession\(|fetch\(/);
+  assert.match(gate, /تسجيل دخول التاجر غير متاح في هذه البيئة/);
+  assert.match(gate, /تحتاج إدارة المتجر إلى صلاحية منفصلة من DSH/);
+  assert.doesNotMatch(gate, /fetch\(|router\.push\(/);
   for (const name of ["orders", "products", "wallet", "more"]) {
     const route = read(`app/(tabs)/${name}/index.tsx`);
     assert.match(route, /MerchantCapabilityScreen/);

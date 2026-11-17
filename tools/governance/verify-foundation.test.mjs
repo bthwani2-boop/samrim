@@ -443,7 +443,11 @@ rejects('rejects missing source-audited contract inventory',{del:['docs/referenc
 rejects('rejects missing Identity session fragment',{del:['services/identity/contracts/openapi/paths/session.yaml']},/required services\/identity\/contracts\/openapi\/paths\/session.yaml/);
 rejects('rejects missing WLT ledger fragment',{del:['services/wlt/contracts/openapi/paths/ledger.yaml']},/required services\/wlt\/contracts\/openapi\/paths\/ledger.yaml/);
 rejects('rejects nonempty WLT ledger fragment',{edit:{'services/wlt/contracts/openapi/paths/ledger.yaml':s=>s.replace('paths: {}','paths:\n  /wlt/credit: {}')}},/OpenAPI path fragment is not an empty placeholder/);
-rejects('rejects nonempty Identity authentication fragment',{edit:{'services/identity/contracts/openapi/paths/client-auth.yaml':s=>s.replace('paths: {}','paths:\n  /auth/override: {}')}},/OpenAPI path fragment is not an empty placeholder/);
+rejects('rejects an unreferenced Identity authentication operation',{edit:{
+ 'services/identity/contracts/openapi/paths/client-auth.yaml':s=>s.trimEnd()+
+  '\n  /v1/customer-auth/unreferenced:\n    post:\n      operationId: unreferencedAuth\n'+
+  '      security: []\n      responses:\n        \'400\':\n          description: Invalid\n',
+}},/unreferenced OpenAPI Path Item: .*client-auth.yaml/);
 rejects('rejects misplaced financial writer in DSH',{edit:{'services/dsh/contracts/openapi/paths/financial-views.yaml':s=>s.replace('paths: {}','paths:\n  /dsh/ledger/post: {}')}},/OpenAPI path fragment is not an empty placeholder/);
 accepts('permits WLT SQL migration development at the canonical path',{add:{'services/wlt/database/migrations/001_ledger_baseline.sql':'select 1;'}},/PROGRESSIVE_SOURCE_PRESENT/);
 rejects('rejects unnamed WLT migration files',{add:{'services/wlt/database/migrations/001.sql':'select 1;'}},/premature service source: services\/wlt\/database\/migrations\/001.sql/);

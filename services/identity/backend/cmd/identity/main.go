@@ -28,9 +28,8 @@ func allowedDevelopmentListen(address, isolatedMode, containerMode, schema strin
 }
 
 func main() {
-	// Isolated development only. Direct role-scoped Merchant issuance requires
-	// an already verified Customer session; there is no first-factor login,
-	// WebAuthn Operator admission or authenticated DSH gateway yet.
+	// Isolated development only. Direct Merchant admission still requires
+	// a verified Customer session.
 	schema := os.Getenv("IDENTITY_DB_SCHEMA")
 	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" ||
 		!session.IsIsolatedTestSchema(schema) {
@@ -68,10 +67,20 @@ func main() {
 	}
 	routes := http.NewServeMux()
 	routes.Handle("/health", isolatedHealthHandler(db))
+	if os.Getenv("IDENTITY_SYNTHETIC_PHONE_AUTH") == "true" {
+		phone, err := session.NewCustomerPhoneHandler(reader,
+			os.Getenv("IDENTITY_SYNTHETIC_PHONE_HMAC_KEY"), os.Getenv("IDENTITY_SYNTHETIC_PHONE_SMTP"),
+			os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true")
+		if err != nil {
+			log.Fatal("Identity synthetic phone verification misconfigured")
+		}
+		routes.Handle(session.PhoneChallengePath, phone)
+		routes.Handle(session.PhoneVerifyPath, phone)
+	}
 	routes.Handle("/", session.NewHandler(session.NewVerifier(reader)))
 	server := &http.Server{
 		Addr: address, Handler: routes,
-		ReadHeaderTimeout: 4 * time.Second, WriteTimeout: 6 * time.Second,
+		ReadHeaderTimeout: 4 * time.Second, ReadTimeout: 6 * time.Second, WriteTimeout: 6 * time.Second,
 		IdleTimeout: 20 * time.Second, MaxHeaderBytes: 8192,
 	}
 	log.Printf("Identity isolated session verifier listening (no production admission)")

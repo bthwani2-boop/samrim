@@ -18,10 +18,14 @@ func respond(w http.ResponseWriter, status int, value any) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
 }
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func noStore(w http.ResponseWriter) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
+}
+
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	noStore(w)
 	const permissionPath = "/v1/operators/me/permissions/"
 	isSession := r.URL.Path == "/v1/sessions/current"
 	isMerchantAdmission := r.URL.Path == "/v1/actors/me/merchant-role"

@@ -1,1 +1,65 @@
-paths: {}
+paths:
+  /v1/customer-auth/phone-challenges:
+    post:
+      operationId: issueCustomerPhoneChallenge
+      description: Optional isolated development operation. Sends the verification code through Mailpit for a reserved fictional phone and returns only the opaque ticket.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [phone]
+              properties:
+                phone: { type: string, pattern: '^\+120255501[0-9]{2}$' }
+      responses:
+        '201':
+          description: Code delivered to the isolated inbox. Response is no-store.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [ticket]
+                properties:
+                  ticket: { type: string, pattern: '^[a-f0-9]{48}$' }
+        '400':
+          description: Invalid payload or phone outside the synthetic range.
+          content: { application/json: { schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' } } }
+        '429':
+          description: Send cooldown or per-phone limit reached.
+          content: { application/json: { schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' } } }
+        '503':
+          description: Owner or delivery unavailable.
+          content: { application/json: { schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' } } }
+  /v1/customer-auth/phone-verification:
+    post:
+      operationId: verifyCustomerPhoneChallenge
+      description: Optional isolated development operation. Consumes the active proof once and returns a new Customer credential bound to the actor identified by that phone. Other account roles are never issued by this operation.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [ticket, code]
+              properties:
+                ticket: { type: string, pattern: '^[a-f0-9]{48}$' }
+                code: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '200':
+          description: Verified Customer session. Response is no-store.
+          content: { application/json: { schema: { $ref: '../identity.openapi.yaml#/components/schemas/IssuedRoleSession' } } }
+        '400':
+          description: Invalid payload.
+          content: { application/json: { schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' } } }
+        '401':
+          description: Proof unavailable, expired, incorrect, consumed, or Customer standing unavailable.
+          content: { application/json: { schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' } } }
+        '503':
+          description: Owner unavailable.
+          content: { application/json: { schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' } } }

@@ -36,6 +36,14 @@ As a protected BThwani service, I can authenticate a current Identity actor and 
 
 ## Outside this bounded implementation
 
-Operator original credential continuity, first-factor verified Customer login/Passkey enrollment, session refresh/family-wide rotation, existing Merchant role re-entry after lost response, Operator grant administration with audit, DSH protected merchant/operator consumer integration, native/Web real user journeys, and production activation remain **NOT_CLOSED** and require future implementation and critical-risk review.
+Operator original credential continuity and Passkey enrollment, live phone-provider verification, session refresh and family-wide rotation, Operator grant administration with audit, DSH protected workspace integration, and production activation remain **NOT_CLOSED** and require implementation and critical-risk review.
+
+## Synthetic Merchant entry extension
+
+- In an isolated Identity namespace, reserved test numbers receive proof through a disposable Mailpit inbox. Proof is single-use, attempt-limited and persisted. Concurrent completion issues a single Customer credential and repeat verified login reuses the same actor. A suspended actor or role cannot regain standing.
+- Merchant exercises the existing admission and re-entry commands using that verified Customer credential, then reads the resulting Merchant session from Identity. Web scopes the cookie to the local admission route. Native uses app-scoped SecureStore. The Merchant session provides no DSH Store grant.
+- Whole-journey acceptance still requires real phone-provider verification, DSH Captain standing and Identity admission, authorized Operator Passkey and recovery, independent security review and supported native-device proof.
+
+The isolated technical checks cover replay, concurrent proof consumption, actor reuse, suspension, wrong-role access and durable revocation. The Web check follows the form through Mailpit, the Identity APIs and PostgreSQL, then verifies reload, sign-out and the protected Store navigation boundary. A separate request to the real DSH process verifies that the newly admitted Merchant cannot access an unrelated Store, that a revoked Identity credential is rejected, and that the Store's owner is unchanged. Physical device execution and protected Identity data remain outside this evidence.
 
 Source authority: `governance/identity.md` and `governance/journeys.md`. Branch 41 read-only.
