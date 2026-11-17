@@ -1,6 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { allowed, isUnchanged } from "./sync-lenovo-source.mjs";
+import { allowed, failureDetail, isUnchanged, remoteConflict } from "./sync-lenovo-source.mjs";
+
+test("remote conflicts protect separately edited target files", () => {
+  assert.equal(remoteConflict("OLDER", "NEW", "OLDER"), false);
+  assert.equal(remoteConflict("NEW", "NEW", "OLDER"), false);
+  assert.equal(remoteConflict("MISSING", "NEW", "OLDER"), false);
+  assert.equal(remoteConflict("OTHER_WRITER", "NEW", "OLDER"), true);
+  assert.equal(remoteConflict("OTHER_WRITER", "NEW", undefined), true);
+});
+
+test("process failure diagnostics preserve numeric exit codes and transient error messages", () => {
+  assert.equal(failureDetail({ status: 255, stderr: "" }), "255");
+  assert.equal(failureDetail({ status: 1, stderr: "not ready" }), "not ready");
+  assert.equal(failureDetail({ status: null, error: { message: "ETIMEDOUT" } }), "ETIMEDOUT");
+});
 
 test("canonical source paths accepted without path injection", () => {
   for (const path of [

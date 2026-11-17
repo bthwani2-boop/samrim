@@ -11,8 +11,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const targetHost = "bthwani-docker";
 const targetIdentity = "BTHWANI-DOCKER";
-const targetRoot = "C:\\Users\\bthwa\\BThwaniAppRunner\\staging-session04-d469b3ffe778";
-const expectedBaseline = "d469b3ffe7788206a3a186e3d48aba8f4bc4b748";
+const targetRoot = "C:\\Users\\bthwa\\BThwaniAppRunner\\source-runtime";
 const include = [
   "apps/customer", "apps/merchant", "apps/captain", "apps/control-panel",
   "packages/design-system", "packages/push-device", "packages/tamagui-config",
@@ -46,12 +45,14 @@ function allowed(rel) {
       blockedDirs.has(x.toLowerCase()) || secret.test(x))) return false;
   return include.some(x => x === rel || rel.startsWith(x + "/"));
 }
+function failureDetail(result) {
+  return String(result.error?.message || result.stderr || result.status).slice(0, 250);
+}
 function run(which, args, timeout = 20000) {
   const result = spawnSync(exe[which], args, {
     cwd: root, encoding: "utf8", windowsHide: true, timeout, maxBuffer: 8 * 1024 * 1024
   });
-  if (result.error || result.status !== 0) throw new Error(which + " failure: " +
-    (result.error?.message || result.stderr || result.status).slice(0, 250));
+  if (result.error || result.status !== 0) throw new Error(which + " failure: " + failureDetail(result));
   return (result.stdout || "").trim();
 }
 function remote(code) {
@@ -123,10 +124,15 @@ function remoteReady() {
   if (remote("if(Test-Path -LiteralPath " + quote(path.win32.join(targetRoot, "node_modules", ".pnpm", "lock.yaml")) +
     "){'READY'}else{throw 'TARGET_DEPENDENCIES_MISSING'}") !== "READY") throw new Error("TARGET_NOT_READY");
 }
-function publish(rel, expected) {
+function remoteConflict(actual, desired, previous) {
+  return actual !== desired && actual !== "MISSING" && actual !== previous;
+}
+function publish(rel, expected, previous) {
   const full = path.join(root, ...rel.split("/"));
   if (!fs.existsSync(full) || hash(full) !== expected) throw new Error("SOURCE_CHANGED_WHILE_READING " + rel);
-  if (remoteHash(rel) === expected) return;
+  const actual = remoteHash(rel);
+  if (actual === expected) return;
+  if (remoteConflict(actual, expected, previous)) throw new Error("REMOTE_STALE_FILE_CONFLICT " + rel);
   const dest = destination(rel);
   const stage = dest + ".source-sync-" + process.pid + ".tmp";
   const backup = dest + ".source-sync-" + process.pid + ".bak";
@@ -153,16 +159,17 @@ function managedDelete(rel, expected) {
   remote("$f=" + quote(dest) + ";Remove-Item -LiteralPath $f -Force; if(Test-Path -LiteralPath $f){throw 'DELETE_FAILED'}");
 }
 function baseline(current) {
-  if (head() !== "d469b3ffe7788206a3a186e3d48aba8f4bc4b748") throw new Error("BASELINE_HEAD_CHANGED");
   const checks = ["package.json", "pnpm-lock.yaml", "apps/customer/package.json",
     "apps/merchant/package.json", "apps/captain/package.json", "apps/control-panel/package.json"];
   for (const rel of checks) {
     const full = path.join(root, ...rel.split("/"));
     if (remoteHash(rel) !== hash(full)) throw new Error("BASELINE_HASH_MISMATCH " + rel);
   }
-  const dirty = new Set(run("git", ["diff", "--name-only", "-z", "HEAD", "--", ...include]).split("\0").filter(Boolean));
-  const untracked = new Set(run("git", ["ls-files", "--others", "--exclude-standard", "-z", "--", ...include]).split("\0").filter(Boolean));
-  const files = Object.fromEntries([...current].filter(([rel]) => !dirty.has(rel) && !untracked.has(rel)));
+  // A missing manifest must not silently trust unverified remote files.
+  const files = {};
+  for (const [rel, digest] of current) {
+    if (remoteHash(rel) === digest) files[rel] = digest;
+  }
   logger("BASELINE_PASS pending=" + (current.size - Object.keys(files).length));
   return { version: 1, branch: branch(), host: targetIdentity, target: targetRoot, head: head(), files };
 }
@@ -197,7 +204,7 @@ function reconcile() {
   let changed = 0;
   for (const [rel, digest] of current) {
     if (state.files[rel] === digest) continue;
-    publish(rel, digest);
+    publish(rel, digest, state.files[rel]);
     files[rel] = digest;
     changed++;
     logger("SYNC " + rel);
@@ -229,12 +236,10 @@ function main() {
     if (branch() !== initialBranch) throw new Error("BRANCH_CHANGED_SYNC_STOP");
     reconcile();
   };
-  cycle();
   if (process.argv.includes("--watch")) {
-    logger("SOURCE_SYNC_WATCH_ACTIVE interval=3");
     let active = false;
     let lastError = "";
-    setInterval(() => {
+    const attempt = () => {
       if (active) return;
       active = true;
       try {
@@ -242,12 +247,17 @@ function main() {
         if (lastError) { logger("SYNC_RECOVERED after=" + lastError); lastError = ""; }
       } catch (e) {
         if (e.message !== lastError) { logger("SYNC_ERROR " + e.message); lastError = e.message; }
-      } finally {active = false;}
-    }, 3000);
+      } finally { active = false; }
+    };
+    attempt();
+    logger("SOURCE_SYNC_WATCH_ACTIVE interval=3");
+    setInterval(attempt, 3000);
+  } else {
+    cycle();
   }
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try { main(); } catch (e) { console.error("SOURCE_SYNC_ERROR " + e.message); process.exitCode = 1; }
 }
 
-export { allowed, isUnchanged };
+export { allowed, failureDetail, isUnchanged, remoteConflict };
