@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import YAML from "yaml";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -94,4 +96,30 @@ test("new Merchant Feature changes only its own app", () => {
 test("Windows command separators inside --files remain literal file data", () => {
   const projects = affected("apps/merchant/src/features/catalog/new-file & echo NX_INJECTION > bad.txt");
   assert.ok(projects.has("@bthwani/merchant"));
+});
+
+test("dependency security gate stays strict while independent Nx proof survives audit failure", () => {
+  const workflow = YAML.parse(readFileSync(path.join(root, ".github", "workflows",
+    "dependency-nx-safety.yml"), "utf8"));
+  const steps = workflow.jobs.dependency_and_boundaries.steps;
+  const findStep = (name) => steps.find((step) => step.name === name);
+  const install = findStep("Install pinned workspace without lifecycle scripts");
+  const audit = findStep("Audit all JavaScript dependencies (high and critical fail)");
+  assert.equal(install.id, "workspace");
+  assert.ok(steps.indexOf(install) < steps.indexOf(audit));
+  assert.equal(audit.run, "pnpm audit --audit-level high");
+  assert.equal(audit["continue-on-error"], undefined, "Audit failure must fail the job");
+
+  const afterAudit = "${{ !cancelled() && steps.workspace.outcome == 'success' }}";
+  for (const name of [
+    "Verify Nx dependency graph builds",
+    "Prove actual Nx contract, Go, design and renderer impact edges",
+    "Enforce existing application and service import boundaries",
+  ]) {
+    const step = findStep(name);
+    assert.ok(steps.indexOf(step) > steps.indexOf(audit), name);
+    assert.equal(step.if, afterAudit, name);
+  }
+  assert.equal(findStep("Report affected projects for pull requests").if,
+    "${{ !cancelled() && steps.workspace.outcome == 'success' && github.event_name == 'pull_request' }}");
 });
