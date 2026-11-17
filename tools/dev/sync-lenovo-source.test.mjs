@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { allowed } from "./sync-lenovo-source.mjs";
+import { allowed, isUnchanged } from "./sync-lenovo-source.mjs";
 
 test("canonical source paths accepted without path injection", () => {
   for (const path of [
@@ -29,4 +29,14 @@ test("credentials, generated state, services and unowned paths rejected", () => 
     "apps/customer/id_ed25519", "tools/dev/temp.key",
     "apps/customer/.ssh/config", "apps/customer/.cache/file"
   ]) assert.equal(allowed(path), false, path);
+});
+
+test("idle polls avoid SSH and changes re-enable reconciliation", () => {
+  const state = { head: "sha-a", files: { "apps/customer/index.tsx": "AAA", "package.json": "BBB" } };
+  const matching = new Map(Object.entries(state.files));
+  assert.equal(isUnchanged(state, matching, "sha-a"), true);
+  assert.equal(isUnchanged(state, matching, "sha-b"), false);
+  assert.equal(isUnchanged(state, new Map([["apps/customer/index.tsx", "CCC"], ["package.json", "BBB"]]), "sha-a"), false);
+  assert.equal(isUnchanged(state, new Map([["package.json", "BBB"]]), "sha-a"), false);
+  assert.equal(isUnchanged(null, matching, "sha-a"), false);
 });

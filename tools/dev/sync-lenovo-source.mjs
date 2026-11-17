@@ -166,10 +166,28 @@ function baseline(current) {
   logger("BASELINE_PASS pending=" + (current.size - Object.keys(files).length));
   return { version: 1, branch: branch(), host: targetIdentity, target: targetRoot, head: head(), files };
 }
+const remoteHeartbeatMs = 60_000;
+let nextRemoteHeartbeat = 0;
+function isUnchanged(state, current, currentHead) {
+  return Boolean(
+    state &&
+      state.head === currentHead &&
+      Object.keys(state.files).length === current.size &&
+      [...current].every(([rel, digest]) => state.files[rel] === digest),
+  );
+}
 function reconcile() {
-  remoteReady();
   const current = inventory();
-  const state = readState() || baseline(current);
+  const previous = readState();
+  const currentHead = head();
+  const unchanged = isUnchanged(previous, current, currentHead);
+  // Avoid four SSH handshakes per 3-second idle poll; still check remote health
+  // at least once per minute and immediately when source or HEAD changes.
+  if (unchanged && Date.now() < nextRemoteHeartbeat) return;
+  remoteReady();
+  nextRemoteHeartbeat = Date.now() + remoteHeartbeatMs;
+  if (unchanged) return;
+  const state = previous || baseline(current);
   for (const rel of ["pnpm-lock.yaml", ".node-version"]) {
     if (!current.has(rel) || remoteHash(rel) !== current.get(rel)) {
       throw new Error("DEPENDENCIES_CHANGED_REQUIRES_INSTALL " + rel);
@@ -191,7 +209,6 @@ function reconcile() {
     changed++;
     logger("MANAGED_DELETE " + rel);
   }
-  const currentHead = head();
   if (changed || state.head !== currentHead) persist({ ...state, files, head: currentHead });
   if (changed) logger("SYNC_PASS files=" + changed + " head=" + currentHead.slice(0, 12));
 }
@@ -233,4 +250,4 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   try { main(); } catch (e) { console.error("SOURCE_SYNC_ERROR " + e.message); process.exitCode = 1; }
 }
 
-export { allowed };
+export { allowed, isUnchanged };
