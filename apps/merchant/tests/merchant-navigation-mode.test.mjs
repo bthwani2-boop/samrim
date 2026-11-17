@@ -13,12 +13,12 @@ test("Merchant navigation adapts without a second Web application", () => {
   assert.equal(merchantNavigationMode("web", Number.NaN), "mobile");
 });
 
-test("Merchant mobile display name does not change the installed app identity", () => {
+test("Merchant uses the separately registered native application identity", () => {
   const manifest = JSON.parse(readFileSync(resolve(import.meta.dirname, "../mobile.config.json"), "utf8"));
   assert.equal(manifest.name, "بثواني التاجر");
-  assert.equal(manifest.slug, "app-partner");
-  assert.equal(manifest.scheme, "partner");
-  assert.equal(manifest.androidPackage, "com.bthwani.partner");
-  assert.equal(manifest.iosBundleIdentifier, "com.bthwani.partner");
-  assert.equal(manifest.projectId, "bcd22a76-d4b2-4de0-93b3-f6d13074a802");
+  assert.equal(manifest.slug, "merchant");
+  assert.equal(manifest.scheme, "merchant");
+  assert.equal(manifest.androidPackage, "com.bthwani.merchant");
+  assert.equal(manifest.iosBundleIdentifier, "com.bthwani.merchant");
+  assert.equal(manifest.projectId, "c56092bf-d41b-4944-a28c-de227b3d8e8a");
 });

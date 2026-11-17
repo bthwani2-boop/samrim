@@ -1,10 +1,12 @@
 {
   "name": "بثواني",
-  "slug": "app-client",
-  "scheme": "client",
+  "slug": "customer",
+  "scheme": "customer",
   "owner": "bthwani1",
   "version": "0.3.1",
-  "androidPackage": "com.bthwani.client",
-  "iosBundleIdentifier": "com.bthwani.client",
-  "projectId": "4adf3184-fc07-4186-b49e-0dc821a5ab73"
+  "androidPackage": "com.bthwani.customer",
+  "iosBundleIdentifier": "com.bthwani.customer",
+  "projectId": "9b97c906-0dfc-4cf7-8d2b-079593523dc7",
+  "firebaseProjectId": "bthwani-platform",
+  "firebaseProjectNumber": "663095381335"
 }

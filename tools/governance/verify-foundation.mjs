@@ -926,6 +926,8 @@ if(!surfaces.includes('## SURFACE-01 — Canonical internal app names versus imm
  fail('four app identity mapping is missing');
 for(const atom of ['apps/customer','apps/merchant','apps/captain','apps/control-panel',
  'com.bthwani.client','com.bthwani.partner','com.bthwani.captain',
+ 'com.bthwani.customer','com.bthwani.merchant',
+ '9b97c906-0dfc-4cf7-8d2b-079593523dc7','c56092bf-d41b-4944-a28c-de227b3d8e8a',
  '4adf3184-fc07-4186-b49e-0dc821a5ab73',
  'bcd22a76-d4b2-4de0-93b3-f6d13074a802',
  '7efa39e1-895f-44d7-a597-d613c79297b6']){
