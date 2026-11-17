@@ -159,6 +159,11 @@ export function stage4WorkspaceIssues(base = root) {
   ]) {
     for (const entry of readdirSync(join(base, group), { withFileTypes: true })) {
       if (entry.isDirectory() && !ignored.has(entry.name) && !allowed.includes(entry.name)) {
+        // Removed packages can leave an ignored node_modules directory behind.
+        // It is not authored source or a workspace owner. Still reject empty
+        // or source-bearing unknown owners, including ones with node_modules.
+        const contents = readdirSync(join(base, group, entry.name));
+        if (contents.length > 0 && contents.every(name => ignored.has(name))) continue;
         issues.push(group + "/" + entry.name + ": unapproved Stage-4 owner");
       }
     }
@@ -170,9 +175,91 @@ export function stage4WorkspaceIssues(base = root) {
   }
   return issues;
 }
+// Validate authored presentation directory ownership at every depth. The
+// path rule is independent of import scanning, so a newly created directory
+// containing no TS file still cannot bypass the repository placement contract.
+const featureName = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+const featureLayers = new Set(["screens", "components", "hooks", "queries", "mappers", "state", "tests"]);
+const operatorServerLayers = new Set(["auth", "clients", "transport"]);
+const ambiguousDirectories = new Set(["common", "shared", "misc", "legacy", "new", "v2"]);
+const historicalMerchantNames = new Set(["partner", "partners", "partner-onboarding"]);
+
+export function presentationDirectoryIssues(base = root) {
+  const issues = [];
+  for (const appName of appNames) {
+    const appBase = join(base, "apps", appName);
+    const roots = [join(appBase, "src"), join(appBase, "app")];
+    for (const treeRoot of roots) {
+      if (!existsSync(treeRoot)) continue;
+      const examine = (directory) => {
+        for (const entry of readdirSync(directory, { withFileTypes: true })) {
+          if (ignored.has(entry.name)) continue;
+          const absolute = join(directory, entry.name);
+          const label = relative(appBase, absolute).replaceAll("\\", "/");
+          if (entry.isSymbolicLink()) {
+            issues.push(label + ": presentation directory symlink is not approved");
+            continue;
+          }
+          if (entry.isFile()) {
+            const parts = relative(treeRoot, absolute).split(/[\\/]/);
+            if (treeRoot.endsWith("src") && extensions.has(extname(entry.name))) {
+              if (parts.length === 1 || (parts[0] === "features" && parts.length === 2)) {
+                issues.push(label + ": presentation source must belong to a named feature or justified app-local owner");
+              }
+            }
+            if (treeRoot.endsWith("src") && parts[0] === "features" &&
+                extensions.has(extname(entry.name)) &&
+                !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\.(?:native|web|android|ios))?(?:\.(?:test|spec))?\.(?:ts|tsx|js|jsx|mjs|cjs)$/.test(entry.name)) {
+              issues.push(label + ": feature source filename must be lowercase-kebab-case");
+            }
+            continue;
+          }
+          if (!entry.isDirectory()) continue;
+          const parts = relative(treeRoot, absolute).split(/[\\/]/);
+          const name = parts.at(-1);
+          if (historicalMerchantNames.has(name.toLowerCase())) {
+            issues.push(label + ": Use Merchant/merchants naming, not Partner");
+          }
+          if (treeRoot.endsWith("src")) {
+            if (parts.length === 1) {
+              const allowed = appName === "control-panel" ?
+                new Set(["features", "server", "components", "providers"]) :
+                new Set(["features", "components", "providers"]);
+              if (name !== "app" && !allowed.has(name)) {
+                issues.push(label + ": unapproved presentation root under src/");
+              }
+            } else if (parts[0] === "features") {
+              if (parts.length === 2 && (!featureName.test(name) ||
+                  ambiguousDirectories.has(name) || name === "features" ||
+                  historicalMerchantNames.has(name))) {
+                issues.push(label + ": feature name must be lowercase-kebab-case and owner-specific");
+              }
+              if (parts.length === 3 && !featureLayers.has(name)) {
+                issues.push(label + ": unapproved feature layer; use a named screen, component, hook, query, mapper, state or test");
+              }
+              if (parts.length > 3 && (!featureName.test(name) || ambiguousDirectories.has(name))) {
+                issues.push(label + ": nested feature directory must be lowercase-kebab-case and meaningful");
+              }
+            } else if (parts[0] === "server" && appName === "control-panel") {
+              if (parts.length === 2 && !operatorServerLayers.has(name)) {
+                issues.push(label + ": unapproved Operator server adapter category");
+              } else if (parts.length > 2 && (!featureName.test(name) || ambiguousDirectories.has(name))) {
+                issues.push(label + ": Operator server directory must be lowercase-kebab-case");
+              }
+            }
+          }
+          examine(absolute);
+        }
+      };
+      examine(treeRoot);
+    }
+  }
+  return issues;
+}
+
 // Test the same on-disk feature scanning in fixtures and in CI.
 export function scanPresentationBoundaries(base = root) {
-  const issues = stage4WorkspaceIssues(base);
+  const issues = [...stage4WorkspaceIssues(base), ...presentationDirectoryIssues(base)];
   const candidates = presentationCandidates(base);
   for (const file of candidates) {
     for (const issue of sourceBoundaryIssues(file, readFileSync(file, "utf8"), base)) {

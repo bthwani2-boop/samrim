@@ -1,10 +1,12 @@
 {
-  "name": "بثواني الشريك",
-  "slug": "app-partner",
-  "scheme": "partner",
+  "name": "بثواني التاجر",
+  "slug": "merchant",
+  "scheme": "merchant",
   "owner": "bthwani1",
   "version": "0.3.1",
-  "androidPackage": "com.bthwani.partner",
-  "iosBundleIdentifier": "com.bthwani.partner",
-  "projectId": "bcd22a76-d4b2-4de0-93b3-f6d13074a802"
+  "androidPackage": "com.bthwani.merchant",
+  "iosBundleIdentifier": "com.bthwani.merchant",
+  "projectId": "c56092bf-d41b-4944-a28c-de227b3d8e8a",
+  "firebaseProjectId": "bthwani-platform",
+  "firebaseProjectNumber": "663095381335"
 }

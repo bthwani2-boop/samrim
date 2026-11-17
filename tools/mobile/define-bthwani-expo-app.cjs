@@ -12,9 +12,9 @@ const PERMISSION_TEXT = {
 };
 
 const MAP_KEY_NAMES = {
-  "app-client": { android: "GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT", ios: "GOOGLE_MAPS_IOS_API_KEY" },
+  "customer": { android: "GOOGLE_MAPS_ANDROID_API_KEY_CUSTOMER", ios: "GOOGLE_MAPS_IOS_API_KEY_CUSTOMER" },
   "app-captain": { android: "GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN", ios: "GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN" },
-  "app-partner": { android: "GOOGLE_MAPS_ANDROID_API_KEY_APP_PARTNER", ios: "GOOGLE_MAPS_IOS_API_KEY" },
+  "merchant": { android: "GOOGLE_MAPS_ANDROID_API_KEY_MERCHANT", ios: "GOOGLE_MAPS_IOS_API_KEY_MERCHANT" },
 };
 
 function mobileMapsApiKey(appKey, platform) {
@@ -22,16 +22,18 @@ function mobileMapsApiKey(appKey, platform) {
   if (!envNames) return undefined;
   const specificEnvName = envNames[platform];
   const baseEnvName = `GOOGLE_MAPS_${platform.toUpperCase()}_API_KEY`;
-  let value = process.env[specificEnvName]?.trim() || process.env[baseEnvName]?.trim() || "";
+  const packageScoped = appKey === "customer" || appKey === "merchant";
+  let value = process.env[specificEnvName]?.trim() || (!packageScoped ? process.env[baseEnvName]?.trim() : "") || "";
   if (!value) {
-    const secretsRoot = process.env.BTHWANI_SECRETS_ROOT || "C:\\BTHWANI-Secrets\\samrim-refoundation-clean-20261112";
-    const envPath = path.join(secretsRoot, "env", "mobile.env");
-    if (fs.existsSync(envPath)) {
+    // No implicit secrets from any deleted worktree or donor environment.
+    const secretsRoot = process.env.BTHWANI_SECRETS_ROOT?.trim();
+    const envPath = secretsRoot ? path.join(secretsRoot, "env", "mobile.env") : undefined;
+    if (envPath && fs.existsSync(envPath)) {
       for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
         const separator = line.indexOf("=");
         if (separator > 0) {
           const name = line.slice(0, separator).trim();
-          if (name === specificEnvName || name === baseEnvName) {
+          if (name === specificEnvName || (!packageScoped && name === baseEnvName)) {
             const candidate = line.slice(separator + 1).trim().replace(/^(['"])(.*)\1$/, "$2");
             if (candidate) value = candidate;
             if (name === specificEnvName && value) break;
@@ -44,7 +46,7 @@ function mobileMapsApiKey(appKey, platform) {
 }
 
 function appRoot(appKey) {
-  const surfaces = { "app-client": "customer", "app-partner": "merchant", "app-captain": "captain" };
+  const surfaces = { "customer": "customer", "merchant": "merchant", "app-captain": "captain" };
   const folder = surfaces[appKey];
   if (!folder) throw new Error("UNKNOWN_EXPO_SURFACE " + appKey);
   return path.resolve(__dirname, "../..", "apps", folder);
@@ -81,7 +83,12 @@ function readDesignSystemSurfaceColors() {
 const designSystemSurfaceColors = readDesignSystemSurfaceColors();
 
 function buildPlugins(appKey, { cameraMode, locationMode }) {
-  const plugins = ["expo-router", "expo-updates", "expo-system-ui"];
+  const plugins = [
+    "expo-router", "expo-updates", "expo-system-ui",
+    "expo-asset", "expo-font", "expo-image", "expo-status-bar", "expo-video",
+  ];
+  if (appKey === "customer" || appKey === "merchant") plugins.push("expo-sharing");
+  if (appKey === "customer" || appKey === "app-captain") plugins.push("expo-web-browser");
 
   const splashIcon = appAsset(appKey, "splash-icon.png");
   plugins.push(
@@ -121,7 +128,7 @@ function buildPlugins(appKey, { cameraMode, locationMode }) {
     }]);
   }
 
-  if (["app-client", "app-partner", "app-captain"].includes(appKey)) {
+  if (["customer", "merchant", "app-captain"].includes(appKey)) {
     plugins.push(["expo-image-picker", {
       photosPermission: "نحتاج الوصول إلى الصور التي تختارها لمنتجاتك أو مرفقات طلباتك.",
       cameraPermission: "نحتاج الوصول إلى الكاميرا فقط عندما تختار التقاط صورة أو فيديو.",
@@ -129,7 +136,7 @@ function buildPlugins(appKey, { cameraMode, locationMode }) {
     }]);
   }
 
-  if (["app-client", "app-partner", "app-captain"].includes(appKey)) {
+  if (["customer", "merchant", "app-captain"].includes(appKey)) {
     plugins.push(["expo-audio", {
       microphonePermission: "نحتاج الوصول إلى الميكروفون فقط عند تسجيل رسالة صوتية.",
       recordAudioAndroid: true,
@@ -138,7 +145,7 @@ function buildPlugins(appKey, { cameraMode, locationMode }) {
     }]);
   }
 
-  if (["app-client", "app-partner", "app-captain"].includes(appKey)) {
+  if (["customer", "merchant", "app-captain"].includes(appKey)) {
     plugins.push(["expo-notifications", {
       defaultChannel: "order-classic-v1",
       sounds: ["./assets/sounds/order_classic.wav", "./assets/sounds/order_soft.wav", "./assets/sounds/order_urgent.wav"],
@@ -150,7 +157,7 @@ function buildPlugins(appKey, { cameraMode, locationMode }) {
     writeOnlyCalendarPermission: "إضافة موعد تختاره إلى التقويم دون قراءة مواعيدك.",
     writeOnlyAccess: true,
   }]);
-  if (appKey === "app-client" || appKey === "app-partner") {
+  if (appKey === "customer" || appKey === "merchant") {
     // Contact selection must be initiated by the user; never enumerate contacts.
     plugins.push(["expo-contacts", {
       contactsPermission: "اختيار رقم صديق أو موظف لمشاركته أو دعوته بناءً على طلبك فقط.",
@@ -186,18 +193,24 @@ function defineBthwaniExpoApp(appKey, options = {}) {
   const adaptiveIcon = appAsset(appKey, "adaptive-icon.png");
   const androidMapsApiKey = options.maps ? mobileMapsApiKey(appKey, "android") : undefined;
   const iosMapsApiKey = options.maps ? mobileMapsApiKey(appKey, "ios") : undefined;
-  // Foundation previews do not use maps. Preserve the native map integration
-  // when keys are supplied; demand both keys for any authorized native rebuild.
-  if (options.maps && (!androidMapsApiKey || !iosMapsApiKey) && (process.env.BTHWANI_ENFORCE_NATIVE_KEYS === "1" || process.env.EAS_BUILD === "true")) {
-    throw new Error("Missing approved Google Maps API keys for " + appKey + " in the new Worktree secrets environment.");
+  // Enforce the approved platform key independently. Android builds must not require
+  // an unrelated iOS credential, and no native platform may silently proceed without its key.
+  const nativeBuildPlatform = process.env.EAS_BUILD === "true" ? process.env.EAS_BUILD_PLATFORM : undefined;
+  const enforceBothPlatforms = process.env.BTHWANI_ENFORCE_NATIVE_KEYS === "1" ||
+    (process.env.EAS_BUILD === "true" && nativeBuildPlatform !== "android" && nativeBuildPlatform !== "ios");
+  const missingRequiredMapKey = (enforceBothPlatforms && (!androidMapsApiKey || !iosMapsApiKey)) ||
+    (nativeBuildPlatform === "android" && !androidMapsApiKey) ||
+    (nativeBuildPlatform === "ios" && !iosMapsApiKey);
+  if (options.maps && missingRequiredMapKey) {
+    throw new Error("Missing approved Google Maps API keys for " + appKey + " in the explicitly configured native build environment.");
   }
-  const firebaseClientApps = ["app-client", "app-partner", "app-captain"];
+  const firebaseClientApps = ["customer", "merchant", "app-captain"];
   const easFirebaseFile = process.env.GOOGLE_SERVICES_JSON?.trim();
   const localFirebaseFile = fs.existsSync(path.join(appRoot(appKey), "google-services.json"))
     ? "./google-services.json" : undefined;
   // EAS file secrets are runner-local paths; never embed this file in the git archive.
   // Do not attempt a native Android build with the wrong Firebase project/app.
-  if (process.env.EAS_BUILD === "true" && process.env.EAS_BUILD_PLATFORM === "android" && ["app-client", "app-partner"].includes(appKey)) {
+  if (process.env.EAS_BUILD === "true" && process.env.EAS_BUILD_PLATFORM === "android" && ["customer", "merchant"].includes(appKey)) {
     if (!easFirebaseFile) {
       throw new Error("Missing GOOGLE_SERVICES_JSON EAS file secret for " + appKey);
     }
@@ -227,11 +240,18 @@ function defineBthwaniExpoApp(appKey, options = {}) {
     )) {
       throw new Error("GOOGLE_SERVICES_JSON Android package mismatch for " + appKey);
     }
+    if (
+      !app.firebaseProjectId || !app.firebaseProjectNumber ||
+      firebase?.project_info?.project_id !== app.firebaseProjectId ||
+      String(firebase?.project_info?.project_number ?? "") !== String(app.firebaseProjectNumber)
+    ) {
+      throw new Error("GOOGLE_SERVICES_JSON Firebase project mismatch for " + appKey);
+    }
   }
   const android = {
     package: app.androidPackage,
     // Contact selection never writes back to the phone's address book.
-    ...(["app-client", "app-partner"].includes(appKey)
+    ...(["customer", "merchant"].includes(appKey)
       ? { blockedPermissions: ["android.permission.WRITE_CONTACTS"] } : {}),
     ...(firebaseClientApps.includes(appKey) && (easFirebaseFile || localFirebaseFile)
       ? { googleServicesFile: easFirebaseFile || localFirebaseFile } : {}),
@@ -259,12 +279,15 @@ function defineBthwaniExpoApp(appKey, options = {}) {
     ios: { bundleIdentifier: app.iosBundleIdentifier, supportsTablet: false },
     plugins: [
       ...buildPlugins(appKey, { cameraMode, locationMode }),
-      ...(options.maps && androidMapsApiKey && iosMapsApiKey ? [["react-native-maps", { androidGoogleMapsApiKey: androidMapsApiKey, iosGoogleMapsApiKey: iosMapsApiKey }]] : []),
+      ...(options.maps && (androidMapsApiKey || iosMapsApiKey) ? [["react-native-maps", {
+        ...(androidMapsApiKey ? { androidGoogleMapsApiKey: androidMapsApiKey } : {}),
+        ...(iosMapsApiKey ? { iosGoogleMapsApiKey: iosMapsApiKey } : {}),
+      }]] : []),
     ],
     experiments: { typedRoutes: true },
     extra: {
       appKey,
-      sourceRepo: "samrim-refoundation-clean-20261112",
+      sourceRepo: "samrim",
       eas: { projectId: app.projectId },
     },
   };

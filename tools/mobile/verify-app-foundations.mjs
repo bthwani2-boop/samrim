@@ -10,9 +10,14 @@ const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const read = (rel) => readFileSync(join(root, rel), "utf8");
 const json = (rel) => JSON.parse(read(rel));
 const donor = json("docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json");
+// Donor pins apply to unrelated libraries; Expo CLI now owns SDK 58 dependency compatibility.
+const sdkManaged = (name) => name === "expo" || name.startsWith("expo-") ||
+  name.startsWith("@expo/") || name === "react-native" ||
+  name === "react-native-safe-area-context" || name === "react-native-screens" ||
+  name === "@react-native/metro-config";
 const expectedIds = {
-  customer: ["app-client", "com.bthwani.client", "client", "4adf3184-fc07-4186-b49e-0dc821a5ab73"],
-  merchant: ["app-partner", "com.bthwani.partner", "partner", "bcd22a76-d4b2-4de0-93b3-f6d13074a802"],
+  customer: ["customer", "com.bthwani.customer", "customer", "9b97c906-0dfc-4cf7-8d2b-079593523dc7"],
+  merchant: ["merchant", "com.bthwani.merchant", "merchant", "c56092bf-d41b-4944-a28c-de227b3d8e8a"],
   captain: ["app-captain", "com.bthwani.captain", "captain", "7efa39e1-895f-44d7-a597-d613c79297b6"],
 };
 let external = 0;
@@ -26,10 +31,14 @@ for (const [name, [slug, packageId, scheme, projectId]] of Object.entries(expect
   for (const [kind, original] of Object.entries({dependencies: source.dependencies, devDependencies: source.devDependencies})) {
     for (const [dependency, version] of Object.entries(original ?? {})) {
       if (dependency.startsWith("@bthwani/")) continue; // Deferred owner clients, not false mocks.
+      if (sdkManaged(dependency)) continue; // Expo SDK validation replaces donor pin check.
       assert.equal(current[kind][dependency], version, `${name} drift in ${kind} ${dependency}`);
       external++;
     }
   }
+  assert.equal(current.dependencies["react-native"], "0.88.1", name + " React Native target drift");
+  assert.equal(current.dependencies.expo.replace(/^~/, ""), "58.0.25", name + " Expo patch target drift");
+  assert.equal(current.devDependencies["@react-native/metro-config"], "0.88.1", name + " Metro target drift");
   const manifest = json(`${rel}/mobile.config.json`);
   assert.deepEqual([manifest.slug,manifest.androidPackage,manifest.scheme,manifest.projectId],
     [slug,packageId,scheme,projectId], name + " app identity changed");
@@ -55,9 +64,15 @@ for (const [name, [slug, packageId, scheme, projectId]] of Object.entries(expect
   }
   assert.ok(read(`${rel}/metro.config.cjs`).includes("getDefaultConfig(__dirname)"));
   assert.ok(read(`${rel}/index.js`).includes("expo-router/entry"));
-  for (const path of ["app/_layout.tsx","app/index.tsx","assets/icon.png",
+  // Customer / lives under URL-invisible Tabs; Merchant/Captain keep public entry gates.
+  const routeEntry = name === "customer" ? "app/(tabs)/index.tsx" : "app/index.tsx";
+  for (const path of ["app/_layout.tsx",routeEntry,"assets/icon.png",
     "assets/adaptive-icon.png","assets/splash-icon.png","eas.json"]) {
-    assert.ok(existsSync(join(root,rel,path)), `Missing ${rel}/${path}`);
+    assert.ok(existsSync(join(root,rel,path)), "Missing " + rel + "/" + path);
+  }
+  if (name === "customer") {
+    assert.ok(!existsSync(join(root,rel,"app/index.tsx")), "Duplicated Customer / route");
+    assert.ok(existsSync(join(root,rel,"app/(tabs)/_layout.tsx")), "Customer Tabs missing");
   }
   // Native Expo store assets must remain valid, large, square PNG files.
   // Existence alone does not prove a usable CNG icon or splash asset.
@@ -86,13 +101,13 @@ const oldPanel=donor.apps["control-panel"]?.manifest;
 const newPanel=json("apps/control-panel/package.json");
 for(const kind of ["dependencies","devDependencies"]) {
   for(const [dep,version] of Object.entries(oldPanel?.[kind] ?? {})) {
-    if(dep.startsWith("@bthwani/")||dep==="xlsx")continue; // features deferred
+    if(dep.startsWith("@bthwani/")||dep==="xlsx"||dep==="next")continue; // features deferred; Next security upgrade is pinned and asserted below
     assert.equal(newPanel[kind][dep],version,"Operator dependency drift "+dep);
     external++;
   }
 }
 assert.equal(newPanel.dependencies.antd,"6.6.7");
-assert.equal(newPanel.dependencies.next,"16.4.3");
+assert.equal(newPanel.dependencies.next,"16.4.5");
 assert.equal(json("packages/tamagui-config/package.json").dependencies.tamagui,"3.3.1");
 assert.equal(json("packages/tamagui-config/package.json").dependencies["@tamagui/config"],"3.3.1");
 // Stage-4 renderer-boundary evidence: no second numeric token authority.

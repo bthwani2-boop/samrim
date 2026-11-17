@@ -132,3 +132,27 @@ test("owner request carries the caller AbortSignal instead of starting an unrela
     assert.equal(result.id, store.id);
   });
 });
+
+test("public successful reads require JSON media type and bounded response size", async () => {
+  for (const headers of [{ "Content-Type": "text/html" }, {}]) {
+    await withFetch(async () => new Response(JSON.stringify(store), { status: 200, headers }),
+      () => rejectsAs(() => getPublicStore(base, store.id), 502, "OWNER_RESPONSE_INVALID"));
+  }
+  await withFetch(async () => new Response(JSON.stringify(store) + " ".repeat(70000), {
+    status: 200, headers: { "Content-Type": "application/json" },
+  }), () => rejectsAs(() => getPublicStore(base, store.id), 502, "OWNER_RESPONSE_INVALID"));
+  await withFetch(async () => new Response(JSON.stringify(store), {
+    status: 200, headers: { "Content-Type": "application/json", "Content-Length": "70000" },
+  }), () => rejectsAs(() => getPublicStore(base, store.id), 502, "OWNER_RESPONSE_INVALID"));
+  await withFetch(async () => new Response(JSON.stringify(store), {
+    status: 200, headers: { "Content-Type": "application/json; charset=utf-8" },
+  }), async () => assert.equal((await getPublicStore(base, store.id)).id, store.id));
+});
+
+test("an owner response arriving after a context switch cannot revive a cancelled public read", async () => {
+  const controller = new AbortController();
+  await withFetch(async () => {
+    controller.abort();
+    return json(store);
+  }, () => rejectsAs(() => getPublicStore(base, store.id, controller.signal), 0, "OWNER_RESPONSE_STALE"));
+});

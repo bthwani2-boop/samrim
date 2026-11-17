@@ -14,7 +14,7 @@ test("Go CLI modes and service allowlist reject unknown arguments", () => {
 });
 
 test("Go pin requires exact stable patch, not a mismatched toolchain", () => {
-  assert.equal(parseVersion("go version go1.27.3 windows/amd64"), "1.27.3");
+  assert.equal(parseVersion("go version go1.27.4 windows/amd64"), "1.27.4");
   assert.equal(parseVersion("go version go1.27.1 linux/amd64"), "1.27.1");
   assert.equal(parseVersion("go version go1.28rc1 linux/amd64"), null);
 });

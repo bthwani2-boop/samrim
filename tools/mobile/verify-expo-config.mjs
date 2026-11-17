@@ -44,7 +44,7 @@ export function easBuildIssues(name, config) {
   const check = (ok, label) => { if (!ok) problems.push(name + ": " + label); };
   const cli = config.cli ?? {};
   const build = config.build ?? {};
-  const expectedNames = ["base", "development", "internal", "ios-simulator"];
+  const expectedNames = ["base", "development", "ios-simulator"];
   check(Object.keys(build).length === expectedNames.length &&
     expectedNames.every(profileName => Object.hasOwn(build, profileName)),
     "unapproved EAS build profile or missing stage-4 profile");
@@ -56,20 +56,17 @@ export function easBuildIssues(name, config) {
   const pnpmPin = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).packageManager.split("@")[1];
   check(base.node === nodePin && base.pnpm === pnpmPin, "EAS remote toolchain mismatch");
   check(base.env?.COREPACK_ENABLE_DOWNLOAD_PROMPT === "0", "Corepack cloud prompt must be disabled");
-  for (const profileName of ["development", "internal"]) {
-    const profile = build[profileName] ?? {};
-    check(profile.extends === "base", profileName + " must inherit the pinned base");
-    check(profile.credentialsSource === "remote",
-      profileName + " must use Expo-managed credentials, not missing local credentials.json");
-    check(profile.distribution === "internal" && profile.android?.buildType === "apk",
-      profileName + " must build an internal installable APK, not store distribution");
-    check(profile.environment === (profileName === "internal" ? "preview" : "development"),
-      profileName + " uses wrong EAS environment");
-    check(profile.channel === (profileName === "internal" ? "preview" : "development"),
-      profileName + " uses wrong EAS Update channel");
-    check(profile.developmentClient === (profileName === "development" ? true : undefined),
-      profileName + " development-client mode drift");
-  }
+  const profile = build.development ?? {};
+  check(profile.extends === "base", "development must inherit the pinned base");
+  const expectedCredentials = "remote";
+  check(profile.credentialsSource === expectedCredentials,
+    "development credential ownership differs from approved app configuration");
+  check(profile.distribution === "internal" && profile.android?.buildType === "apk",
+    "development must produce an internally installable APK, not store distribution");
+  check(profile.environment === "development" && profile.channel === "development",
+    "development must use the development EAS environment and update channel");
+  check(profile.developmentClient === true,
+    "development must enable the Expo development client");
   const simulator = build["ios-simulator"] ?? {};
   check(simulator.extends === "development" && simulator.ios?.simulator === true,
     "iOS simulator must inherit development and never require a physical-device profile");
@@ -103,11 +100,9 @@ export function verifyResolvedConfigs() {
     const manifest = JSON.parse(readFileSync(join(root, "apps", app, "mobile.config.json"), "utf8"));
     const problems = resolvedConfigIssues(app, manifest, evaluatedConfig(app));
     assert.deepEqual(problems, [], "Resolved Expo configuration is not safe: " + problems.join("; "));
-    if (app === "customer" || app === "merchant") {
-      const eas = JSON.parse(readFileSync(join(root, "apps", app, "eas.json"), "utf8"));
-      const issues = easBuildIssues(app, eas);
-      assert.deepEqual(issues, [], "Remote EAS profile configuration is not safe: " + issues.join("; "));
-    }
+    const eas = JSON.parse(readFileSync(join(root, "apps", app, "eas.json"), "utf8"));
+    const issues = easBuildIssues(app, eas);
+    assert.deepEqual(issues, [], "Remote EAS profile configuration is not safe: " + issues.join("; "));
     checked++;
   }
   return checked;

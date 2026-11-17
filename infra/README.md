@@ -1,8 +1,8 @@
 # BThwani refoundation — isolated development infrastructure
 
-Worktree: `D:\samrim-refoundation-clean-20261112`
-Compose project: `bthwani-refoundation` (never use `samrim-local` or old volumes).
-This environment is synthetic development only, not production deployment.
+Canonical checkout: `D:\samrim` (current development branch changes).
+Compose project: `bthwani-refoundation` is a stable runtime identity. Do not change it when switching Git branches or repurpose donor volumes.
+This environment is synthetic development only, not production deployment. Legacy `com.bthwani.worktree` labels are retained as compatibility identifiers for running containers; they do **not** describe the current checkout. Do not recreate existing services or rename their volumes as part of a Git branch change.
 
 ## Runnable now
 
@@ -23,26 +23,37 @@ secrets, applied migrations and media are never copied or changed.
 
 ## Optional owner service roles and DSH public discovery
 
-`compose.apps.yaml` contains eight historical opt-in `implementation` roles.
-Only `dsh` and `dsh-migrate` there have a runnable Go entrypoint, and **`dsh`
-serves public Store/Offer discovery only**. Its protected mutation and WLT/Order
-integrations are NOT_RUN. Do not activate that entire profile.
+`compose.apps.yaml` now contains **only** the two real DSH owner roles:
+`dsh` and opt-in `dsh-migrate`. Placeholder Identity/WLT services,
+nonexistent bootstrap commands and invalid old Dockerfiles are no longer
+advertised as runnable. Do not start the whole `implementation` profile.
+DSH public Store/Offer discovery is real; protected mutation and WLT/Order
+integration remain NOT_RUN.
 
-**NEW Identity source exists** at `services/identity/backend`: it is a
-synthetic, read-only PostgreSQL session/Operator-permission verifier. This is
-not the old donor Identity and not a full login/session issuer. The old
-`compose.apps.yaml` Identity entries still refer to nonexistent Dockerfiles,
-bootstrap commands and endpoints. They are not valid for the new verifier.
-WLT's genuine backend remains incomplete. Never substitute donor images,
-reuse `samrim-local` volumes or claim production authentication.
+Identity is a separate, synthetic Go session/Operator-permission verifier
+in `compose.identity-verifier.yaml`, not a first-factor login issuer.
+The two overlays may be combined with the same `compose.yaml` without
+competing service definitions. WLT has no runnable Go backend yet.
+
+The DSH migration command now uses its own `migration` Compose profile,
+separate from `implementation`. Normal `implementation` startup cannot start
+`dsh-migrate`; migration remains an explicit, separately reviewed operation.
+Validate this invariant with `node --test infra/compose-policy.test.mjs` and
+`docker compose ... --profile implementation config --services`. Never use
+`--profile '*'`, `--profile migration up` or automatic migrations in the normal
+service-start path. Existing running containers and persisted volumes are not
+recreated by this file change.
+Never reuse donor images, production data or `samrim-local` volumes.
 
 ### Build and run real public DSH inside the same Compose project
 
-Use the exact Go version in root `.go-version`, installed on the Windows build
-host. `infra/build-dsh-image.ps1` cross-compiles the DSH owner directly to Linux
-and builds the image from the digest-pinned isolated Alpine runtime base; no old binaries
-or secrets enter its build context; it packages the reviewed DSH SQL files
-without running any migration. Add the **verified existing isolated** schema
+`services/dsh/backend/Dockerfile` is the canonical multi-stage Go build. Its
+builder is pinned to the approved root `.go-version` and an immutable digest,
+and the runtime Alpine image is also digest-pinned. The context is only
+`services/dsh/` with an allowlisted `.dockerignore`; no local Go compiler or
+Windows cross-compilation is required. `infra/build-dsh-image.ps1` keeps
+committed-source SHA checks and creates a tagged image without starting it,
+modifying secrets, or executing SQL migrations. Add the **verified existing isolated** schema
 and exact permitted browser origins only to the ignored `infra/.env`:
 
 ```dotenv
@@ -50,7 +61,10 @@ REF_DSH_DISCOVERY_SCHEMA=dsh_test_REPLACE_WITH_VERIFIED_SCHEMA
 REF_DSH_PUBLIC_CORS_ORIGINS=http://127.0.0.1:3101,http://localhost:3101
 ```
 
-Run from the Worktree root (never plain `--profile implementation up`):
+Run from the checkout root (never start an entire profile). The default
+`:dev` image tag preserves the existing running service; set
+`REF_DSH_IMAGE_TAG` to an independently tested revision tag for controlled
+rollout. An image build by itself does not recreate an existing container:
 
 ```powershell
 powershell -NoProfile -File infra/build-dsh-image.ps1
@@ -64,23 +78,27 @@ routes; the Compose healthcheck confirms database reachability. The database
 schema must have the reviewed DSH SQL migrations applied separately in the
 isolated namespace before serving. The `dsh-migrate` service can explicitly run
 migration 001 only after reviewing the target schema; it does not silently
-seed or upgrade 002/003. Do not treat HTTP health as evidence of checkout,
+seed or upgrade 002/003/004/005. It is isolated under the `migration` profile,
+not included in routine `implementation` startup. Inspect the exact applied
+migration versions and target role before any separately authorized migration. Do not treat HTTP health as evidence of checkout,
 merchant permissions, identity authentication or finance correctness.
 
 
-### NEW Identity verifier in the SAME Compose project (prepared, NOT_STARTED)
+### Isolated Identity verifier in the SAME Compose project
 
 `compose.identity-verifier.yaml` is an opt-in overlay for the **new
-refoundation Go Identity source**, not `compose.apps.yaml`'s obsolete service.
-Pair it **only** with `compose.yaml`; the existing project name remains
+refoundation Go Identity source**. Pair it with `compose.yaml` and optionally
+`compose.apps.yaml` for the real DSH service; the existing project name remains
 `bthwani-refoundation`, and its published host port is loopback-only 3201.
 The service is `identity`, profile `identity-verifier`. It has no
 automatic bootstrap, issuer, migrations, donor volumes or other service restarts.
 
-`build-identity-verifier-image.ps1` uses the exact pinned host Go version,
-rejects uncommitted Identity Go/SQL source, cross-compiles the real Linux binary
-and labels the digest-pinned Alpine image with the source commit. SQL is only
-packaged for review; **the build never applies a migration**. The container
+`services/identity/backend/Dockerfile` now builds the real Go binary in a
+pinned multi-stage Linux builder. `build-identity-verifier-image.ps1` checks
+that the Docker builder matches `.go-version`, rejects uncommitted owner
+source, and records the exact source SHA on the resulting image. The Docker
+context is limited to `services/identity/`; SQL is packaged for review and
+**never executed by the image build**. The container
 uses non-root UID, read-only filesystem, dropped Linux capabilities and
 no-new-privileges.
 
@@ -97,25 +115,66 @@ Identity session/permission denial and revocation readback. The build script
 continues to reject uncommitted Identity Go/SQL source; no issuer, real user
 or production authentication is enabled by these settings.
 
-After those independent prerequisites are **proved**, load only the ignored
-`infra/.env` values `REF_IDENTITY_TEST_SCHEMA`,
-`REF_IDENTITY_TEST_DATABASE_URL` (pointing to isolated `postgres:5432`,
-never donor/production), and optionally `REF_IDENTITY_VERIFIER_PORT`.
-The explicit deployment sequence is:
+After those independent prerequisites are **proved**, set the Identity-only
+values `REF_IDENTITY_TEST_SCHEMA`, `REF_IDENTITY_TEST_DATABASE_URL` (pointing
+to isolated `postgres:5432` with a separately authorized limited database
+role, never admin/donor/production), and optionally `REF_IDENTITY_VERIFIER_PORT`
+in the ignored `infra/.env.identity-verifier.local`. Keep the shared
+`infra/.env` untouched. `REF_IDENTITY_IMAGE_TAG` may select a tested revision
+image; default `:dev` remains compatible with existing development commands.
+The opt-in deployment sequence is:
 
 ```powershell
 powershell -NoProfile -File infra/build-identity-verifier-image.ps1
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier config --quiet
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier up -d --no-deps identity
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier ps identity
+docker --context bthwani-docker compose --env-file infra/.env --env-file infra/.env.identity-verifier.local -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier config --quiet
+docker --context bthwani-docker compose --env-file infra/.env --env-file infra/.env.identity-verifier.local -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier up -d --no-deps identity
+docker --context bthwani-docker compose --env-file infra/.env --env-file infra/.env.identity-verifier.local -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier ps identity
 ```
 
-The service will not be declared healthy on a TCP listener, unauthenticated
-HTTP response or container exit code. Require an actual **Identity-owned**
-PostgreSQL session read and permission denial/revocation proof, and compare
-the running image ID and source SHA before changing DSH consumers. No
+The committed Identity verifier now exposes `GET /health` for isolated
+development only. It checks a bounded PostgreSQL Ping without exposing actor,
+session or credential details; its Docker healthcheck is **readiness only**.
+A successful health response does not prove login, permissions or session
+revocation. Require actual **Identity-owned** PostgreSQL session read,
+permission denial/revocation proof and running image ID/source SHA matching
+before changing DSH consumers. Existing containers must be rebuilt and
+separately tested before the new healthcheck can be claimed live. No
 real login, WebAuthn, Operator permission administration or production release
 is authorized by this isolated verifier.
+
+## Non-invasive runtime attestation and disposable PostgreSQL proof
+
+Before trusting a previously running Docker service after a source change, use:
+
+```powershell
+node infra/verify-runtime-provenance.mjs --context bthwani-docker
+pwsh -NoProfile -File infra/verify-isolated-postgres.ps1 -DockerContext bthwani-docker
+```
+
+The runtime check reads the actual Compose container image ID, non-secret source
+SHA labels, owner Git history/diff, health and owner worktree state. It fails on
+missing labels, changed owner source or an unproven container. It **does not**
+rebuild/restart a service, examine secrets, run SQL or prove login, session
+revocation, WLT, published client UX or production suitability. Building a
+new `sha-<commit>` image is a separate operation and does **not** update the
+container already running. Readiness always attaches to the *running* image ID.
+
+The SQL proof intentionally creates a **new disposable container** with a
+unique `bthwani-agent01-pgproof-*` name and the same pinned PostGIS image as
+the existing Compose stack. It has `--network none`, no published ports, no
+external volumes and tmpfs-only PostgreSQL storage. The script runs all five
+current DSH migrations in order, establishes a synthetic read-only role and
+asserts that its writes fail (SQLSTATE 42501), then makes a PostgreSQL backup,
+restores it into a second disposable database and compares schema/data counts.
+It stops only its own identity-verified scratch container at the end.
+
+**Scope boundary:** This proves an *empty isolated fresh installation*,
+synthetic least-privilege example and local restore, not migration of existing
+protected DSH data, privileges of the shared refoundation database, an
+already-running service version, service-to-service authentication, or any
+financial ledger. Do not take the successful scratch proof as authority to
+change shared database roles, alter protected volumes, restart active services
+or run real schema upgrades.
 
 ## Deployment boundary and security review
 
@@ -156,12 +215,12 @@ docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.y
 docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml ps
 ```
 
-Do not start the whole `implementation` profile. Launch only the proven DSH
-public service explicitly; the remaining future owner roles must first pass
-owner-backed persistence, security and financial acceptance.
+Do not start an entire Compose profile. Launch only services with proven
+source, isolated database permissions and authorization acceptance. WLT
+remains unbuilt and must not be represented by a placeholder container.
 Do not run `down -v`, `prune`, copy donor volume data or touch donor tasks.
 
-## Approved port map (only DSH and the listed dependencies are currently live)
+## Approved development port map (configured ports are not proof of current source or readiness)
 
 | Future native app | Port | Future service | Port |
 | --- | ---: | --- | ---: |

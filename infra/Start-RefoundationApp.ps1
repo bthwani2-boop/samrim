@@ -8,7 +8,7 @@ $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 
 $runner='C:\Users\bthwa\BThwaniAppRunner'
-$source=Join-Path $runner 'refoundation-runtime-3b2f744'
+$source=Join-Path $runner 'source-runtime'
 $nodeDir=Join-Path $runner 'tools\node-v24.22.1-refoundation'
 $node=Join-Path $nodeDir 'node.exe'
 $logs=Join-Path $runner 'logs'
@@ -22,7 +22,8 @@ New-Item -ItemType Directory -Path $logs -Force | Out-Null
 $env:PATH="$nodeDir;$env:PATH"
 $env:NODE_OPTIONS='--dns-result-order=ipv4first'
 $env:EXPO_NO_TELEMETRY='1'
-$env:BTHWANI_SECRETS_ROOT='C:\BTHWANI-Secrets\samrim-refoundation-clean-20261112'
+# Secrets root must be passed explicitly by the authorized launcher/environment.
+# Do not implicitly select the deleted worktree or donor keys.
 $dir=Join-Path $source ('apps\'+$App)
 Set-Location -LiteralPath $dir
 $log=Join-Path $logs ('refoundation-'+$App+'.out.log')

@@ -2,25 +2,41 @@ name: Go Quality (source checks only)
 
 on:
   workflow_dispatch:
+  # Every current and future development branch is eligible.
+  # Archived donor refs stay read-only, outside development CI.
   push:
     branches:
-      - 'refoundation/clean-house-20261112'
+      - '**'
+      - '!archive/**'
+      - '!41'
     paths:
       - '.go-version'
       - '.github/workflows/go-quality.yml'
       - 'tools/dev/check-go.mjs'
       - 'tools/dev/check-go.test.mjs'
       - 'services/**/backend/**'
+      - 'services/**/contracts/openapi/**'
+      - 'services/**/database/migrations/**'
+      - 'services/**/.dockerignore'
+      - 'infra/build-*image.ps1'
+      - 'infra/compose*.yaml'
+      - 'nx.json'
+  # Main is the protected integration target; branch names are never pinned.
   pull_request:
     branches:
       - main
-      - 'refoundation/clean-house-20261112'
     paths:
       - '.go-version'
       - '.github/workflows/go-quality.yml'
       - 'tools/dev/check-go.mjs'
       - 'tools/dev/check-go.test.mjs'
       - 'services/**/backend/**'
+      - 'services/**/contracts/openapi/**'
+      - 'services/**/database/migrations/**'
+      - 'services/**/.dockerignore'
+      - 'infra/build-*image.ps1'
+      - 'infra/compose*.yaml'
+      - 'nx.json'
 
 permissions:
   contents: read
@@ -37,6 +53,8 @@ jobs:
     env:
       GOTOOLCHAIN: local
       GOWORK: 'off'
+      CGO_ENABLED: '1'
+      CC: gcc
     steps:
       - name: Checkout source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -53,9 +71,43 @@ jobs:
           go-version-file: .go-version
           check-latest: false
           cache: false
+      - name: Verify Linux C toolchain for the race detector
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(go env CGO_ENABLED)" != '1' ]]; then
+            echo 'Race detector requires CGO_ENABLED=1' >&2
+            exit 1
+          fi
+          if ! command -v "$CC" >/dev/null 2>&1; then
+            echo "Race detector requires the configured C compiler: $CC" >&2
+            exit 1
+          fi
+          "$CC" --version
       - name: Test Go runner argument, pin and module safety
         run: node --test tools/dev/check-go.test.mjs
       - name: Verify real Go modules with race detector and measured coverage
         run: node tools/dev/check-go.mjs --ci
+      - name: Build and inspect isolated service images
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_go="$(cat .go-version)"
+          for service in identity dsh; do
+            image="bthwani-go-check-$service:$GITHUB_SHA"
+            docker build --file "services/$service/backend/Dockerfile" \
+              --build-arg "SAMRIM_SOURCE_REVISION=$GITHUB_SHA" \
+              --tag "$image" "services/$service"
+            user="$(docker image inspect --format '{{.Config.User}}' "$image")"
+            [[ "$user" == "65532:65532" ]] || { echo "Unsafe container user: $service" >&2; exit 1; }
+            revision="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")"
+            [[ "$revision" == "$GITHUB_SHA" ]] || { echo "Missing source provenance: $service" >&2; exit 1; }
+            binary="$(mktemp)"
+            container="$(docker create --network none "$image")"
+            docker cp "$container:/usr/local/bin/$service" "$binary"
+            docker rm "$container" >/dev/null
+            go version -m "$binary" | grep -F "go$expected_go"
+            rm -f "$binary"
+          done
       - name: State validation limits
         run: echo 'NOT_RUN - isolated PostgreSQL integration, govulncheck, golangci-lint, gosec and fuzz campaigns'

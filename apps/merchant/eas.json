@@ -20,15 +20,6 @@
       "distribution": "internal",
       "android": { "buildType": "apk" }
     },
-    "internal": {
-      "extends": "base",
-      "credentialsSource": "remote",
-      "environment": "preview",
-      "channel": "preview",
-      "distribution": "internal",
-      "ios": { "image": "latest" },
-      "android": { "image": "latest", "buildType": "apk" }
-    },
     "ios-simulator": {
       "extends": "development",
       "ios": {

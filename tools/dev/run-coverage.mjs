@@ -3,14 +3,15 @@
 // Sonar owns the acceptance threshold; missing reports or failed tests fail closed.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { discoverWorkspaceNodeTests } from "./source-test-discovery.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const report = resolve(root, "coverage/lcov.info");
 mkdirSync(dirname(report), { recursive: true });
-const testFiles = [
+const baselineTests = [
   "tools/governance/verify-foundation.test.mjs",
   "tools/governance/review-examples.test.mjs",
   "tools/security/verify-secrets.test.mjs",
@@ -20,12 +21,35 @@ const testFiles = [
   "packages/tamagui-config/tools/appearance.test.mjs",
   "tools/dev/verify-source-execution.test.mjs",
   "tools/dev/dsh-public-client.test.mjs",
+  "tools/dev/check-openapi.test.mjs",
+  "tools/dev/source-test-discovery.test.mjs",
   "tools/mobile/verify-native-config.test.mjs",
 ];
+
+// Every test candidate in supported feature/journey paths is either run or rejected.
+const testFiles = [...new Set([
+  ...baselineTests,
+  ...discoverWorkspaceNodeTests(root),
+])].sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
+for (const file of baselineTests) {
+  assert.ok(existsSync(join(root, file)), `Missing baseline test ${file}`);
+}
+if (process.argv.length > 3 || (process.argv[2] && process.argv[2] !== "--check-discovery")) {
+  throw new Error("Usage: node tools/dev/run-coverage.mjs [--check-discovery]");
+}
+if (process.argv[2] === "--check-discovery") {
+  console.log(`SOURCE_TEST_DISCOVERY_PASS count=${testFiles.length}`);
+  process.exit(0);
+}
+
 const command = [
   "--experimental-transform-types",
   "--loader", "./packages/design-system/tools/ts-resolver.mjs",
   "--experimental-test-coverage",
+  "--test-concurrency=4",
+  // Keep failures visible in CI while writing machine-readable LCOV.
+  "--test-reporter=spec",
+  "--test-reporter-destination=stdout",
   "--test-reporter=lcov",
   "--test-reporter-destination=coverage/lcov.info",
   "--test", ...testFiles,
@@ -51,7 +75,7 @@ for (const source of [
   "tools/mobile/define-bthwani-expo-app.cjs",
   "packages/design-system/src/semantics/themes.ts",
 ]) {
-  assert.ok(sources.has(source), "Real test coverage missing required source: " + source);
+  assert.ok(sources.has(source), `Real test coverage missing required source: ${source}`);
 }
 assert.ok(linesFound > 0 && linesHit > 0 && linesHit <= linesFound, "Invalid actual coverage");
 writeFileSync(report, lcov, "utf8");

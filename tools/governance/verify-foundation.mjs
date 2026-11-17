@@ -70,6 +70,7 @@ const required=[
  '.node-version','.nvmrc','.go-version','.editorconfig','.gitattributes','.gitignore',
  'package.json','pnpm-workspace.yaml','pnpm-lock.yaml','nx.json','tsconfig.base.json','biome.json',
  'README.md','services/identity/README.md','services/dsh/README.md','services/wlt/README.md',
+ 'services/wlt/backend/README.md','services/wlt/database/migrations/README.md',
  ...['identity','dsh','wlt'].flatMap(owner=>['package.json','tsconfig.json','clients/README.md','clients/index.ts','contracts/openapi/README.md','contracts/openapi/'+owner+'.openapi.yaml'].map(file=>'services/'+owner+'/'+file)),
  ...Object.entries(contractPathGroups).flatMap(([owner,groups])=>groups.map(name=>'services/'+owner+'/contracts/openapi/paths/'+name+'.yaml')),
  'docs/reference/OPENAPI-DONOR-CONTRACT-INVENTORY.md',
@@ -102,16 +103,16 @@ for(const p of required){
 const stage3package=JSON.parse(contents['package.json']);
 const nodepin=contents['.node-version'].trim();
 const gopin=contents['.go-version'].trim();
-if(nodepin!=='24.22.1'||contents['.nvmrc'].trim()!==nodepin||gopin!=='1.27.3')
- fail('source-matching Node/Go pins missing or upgraded in stage 3');
+if(nodepin!=='24.22.1'||contents['.nvmrc'].trim()!==nodepin||gopin!=='1.27.4')
+ fail('approved Node/Go pins missing or unsupported');
 if(stage3package.packageManager!=='pnpm@12.15.0'||
  stage3package.engines.node!=='>=24.17.0 <25'||
  stage3package.engines.pnpm!=='12.15.0'||
  stage3package.private!==true)
  fail('branch-41 pnpm/Node versions changed or workspace made publishable');
 if(JSON.stringify(Object.entries(stage3package.devDependencies??{}).sort(([a], [b]) => a.localeCompare(b, "en")))!==
- JSON.stringify([['@biomejs/biome','2.5.12'],['knip','6.34.0'],['nx','24.0.1'],['typescript','7.0.2']]))
- fail('root dependencies must match original exact Biome/Knip/Nx/TypeScript versions');
+ JSON.stringify([['@biomejs/biome','2.5.12'],['knip','6.34.0'],['nx','24.0.1'],['typescript','7.0.2'],['yaml','2.9.0']]))
+ fail('root dependencies must match original exact Biome/Knip/Nx/TypeScript/YAML versions');
 const nx=JSON.parse(contents['nx.json']);
 if(nx.defaultBase!=='main'||nx.targetDefaults?.typecheck?.cache!==true||
  !Array.isArray(nx.namedInputs?.nodeToolchain))
@@ -143,8 +144,8 @@ const ref=contents['docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md'];
 if(!/^BUSINESS_POLICY_AUTHORITY: NONE$/m.test(ref)||!ref.includes('1.27.1')||!ref.includes('1.27.3')||
  !ref.includes('24.0.1')||!ref.includes('58.0.19'))
  fail('non-governing donor toolchain provenance or mismatch disclosure missing');
-if(!contents['README.md'].includes('Stage 4')||!contents['tools/dev/verify-workspace.mjs'].includes('STAGE4_WORKSPACE_STRUCTURE_PASS'))
- fail('stage4 developer onboarding or workspace smoke verifier missing');
+if(!contents['README.md'].includes('Progressive refoundation')||!contents['tools/dev/verify-workspace.mjs'].includes('STAGE4_WORKSPACE_STRUCTURE_PASS'))
+ fail('current developer onboarding or workspace smoke verifier missing');
 for(const folder of ['contracts','go.work']){
  if(exists(folder))fail('stage 5+ service/DB/infra introduced prematurely: '+folder);
 }
@@ -152,10 +153,11 @@ for(const folder of ['contracts','go.work']){
 // Worktree-scoped Docker dependencies are admitted without claiming live services.
 // This is structural isolation only; Docker Compose and real owner data need runtime proof.
 if(exists('infra')){
- const assets=['infra/compose.yaml','infra/compose.apps.yaml','infra/README.md','infra/setup-env.mjs'];
+ const assets=['infra/compose.yaml','infra/compose.apps.yaml','infra/compose.identity-verifier.yaml','infra/README.md','infra/setup-env.mjs'];
  for(const f of assets)if(!exists(f))fail('incomplete isolated refoundation infra: '+f);
  const compose=get('infra/compose.yaml');
  const planned=get('infra/compose.apps.yaml');
+ const verifier=get('infra/compose.identity-verifier.yaml');
  const setup=get('infra/setup-env.mjs');
  const docs=get('infra/README.md');
  const services=(source)=>{
@@ -165,9 +167,9 @@ if(exists('infra')){
   return [...body.matchAll(/^  ([a-z][a-z0-9-]*):\s*$/gm)].map(x=>x[1]).sort((a,b)=>a.localeCompare(b,'en'));
  };
  const active=['postgres','media','mailpit','payment-mock'].sort((a,b)=>a.localeCompare(b,'en'));
- const future=['postgres-access','identity-migrate','identity-bootstrap','identity','dsh-migrate','dsh','wlt-migrate','wlt'].sort((a,b)=>a.localeCompare(b,'en'));
- if(services(compose).join()!==active.join()||services(planned).join()!==future.join())
-  fail('infra must contain exactly four independent dependencies and eight inactive owner roles');
+ const future=['dsh-migrate','dsh'].sort((a,b)=>a.localeCompare(b,'en'));
+ if(services(compose).join()!==active.join()||services(planned).join()!==future.join()||services(verifier).join()!=='identity')
+  fail('infra must contain exactly four dependencies, two runnable DSH roles and one isolated Identity verifier');
  if(!/^name: bthwani-refoundation$/m.test(compose)||
     !/^\s*internal: true$/m.test(compose)||
     !/^  loopback:\n    driver: bridge$/m.test(compose)||
@@ -176,12 +178,12 @@ if(exists('infra')){
     !compose.includes('refoundation-postgres-data:/var/lib/postgresql')||
     !compose.includes('refoundation-media-data:/data'))
   fail('refoundation Docker project, private network or own volumes missing');
- const yaml=[compose,planned].map(s=>s.split(/\r?\n/).filter(line=>!line.trimStart().startsWith('#')).join('\n')).join('\n');
+ const yaml=[compose,planned,verifier].map(s=>s.split(/\r?\n/).filter(line=>!line.trimStart().startsWith('#')).join('\n')).join('\n');
  if(/(?:samrim-local|samrim-remote-stage|external:\s*true|network_mode:\s*host|container_name:|privileged:\s*true|volumes_from:|docker\.sock)/i.test(yaml))
   fail('unsafe donor/shared Docker state or privileged host link');
  const exposed=[...yaml.matchAll(/^\s*-\s*"(.*?)"$/gm)]
   .map(m=>m[1]).filter(s=>/:\d+$/.test(s));
- if(exposed.length!==6||exposed.some(s=>!s.startsWith('127.0.0.1:')))
+ if(exposed.length!==5||exposed.some(s=>!s.startsWith('127.0.0.1:')))
   fail('infra exposes ports outside the remote host loopback or loses a scoped port');
  const postgres=compose.split(/^  postgres:\s*$/m)[1]?.split(/^  [a-z][a-z0-9-]*:\s*$/m)[0]??'';
  if(!postgres||/^\s*ports:/m.test(postgres)||
@@ -189,10 +191,11 @@ if(exists('infra')){
     !compose.includes('REF_MEDIA_SECRET_KEY:?')||
     !compose.includes('REF_MEDIA_ACCESS_KEY:?'))
   fail('infra secret isolation or internal PostgreSQL protection missing');
- if((planned.match(/^\s*profiles: \[implementation\]$/gm)||[]).length!==8||
-    !planned.includes('bthwani-refoundation-identity:dev')||
-    !planned.includes('bthwani-refoundation-dsh:dev')||
-    !planned.includes('bthwani-refoundation-wlt:dev')||
+ if((planned.match(/^\s*profiles: \[implementation\]$/gm)||[]).length!==1||
+    (planned.match(/^\s*profiles: \[migration\]$/gm)||[]).length!==1||
+    (verifier.match(/^\s*profiles: \[identity-verifier\]$/gm)||[]).length!==1||
+    !planned.includes('bthwani-refoundation-dsh:')||
+    !verifier.includes('bthwani-refoundation-identity-verifier:')||
     !setup.includes('randomBytes(32)')||
     !setup.includes("flag:'wx'")||
     !docs.includes('NOT_RUN'))
@@ -212,13 +215,26 @@ const allowedServiceFiles=new Set();
 let developmentSourceFiles=0;
 let progressiveOpenApiFiles=0;
 const legalDevelopmentFile=(relative)=>{
+ // Service-scoped Docker contexts are allowlisted, not arbitrary hidden files.
+ if(/^services\/(identity|dsh)\/\.dockerignore$/.test(relative))return true;
  const m=relative.match(/^services\/(identity|dsh|wlt)\/(backend|database|clients|contracts\/openapi\/paths)\/(.+)$/);
  if(!m)return false;
  const [,owner,area,name]=m;
  if(!owner||name.split('/').some(part=>!part||part==='.'||part==='..'||part.startsWith('.')))return false;
  if(/(?:secret|credential|private.key|\.env|dump|backup)/i.test(name))return false;
- if(area==='backend')return /(?:\.go|\.sql|\/go\.mod|\/go\.sum|^go\.mod$|^go\.sum$)$/i.test(name);
- if(area==='database')return /\.sql$/i.test(name);
+ if(area==='backend'){
+  if(name==='Dockerfile'||name==='project.json'){
+   // WLT configuration is executable only beside a real Go entrypoint.
+   return owner!=='wlt'||(exists('services/wlt/backend/go.mod')&&
+     exists('services/wlt/backend/cmd/wlt/main.go'));
+  }
+  if(name==='go.mod'||name==='go.sum')return true;
+  const commandPrefix='cmd/'+owner+'/';
+  return (name.startsWith(commandPrefix)&&
+    /^[a-z][a-z0-9_]*\.go$/.test(name.slice(commandPrefix.length)))||
+    /^internal\/(?:[a-z][a-z0-9]*\/)+[a-z][a-z0-9_]*\.go$/.test(name);
+ }
+ if(area==='database')return /^migrations\/\d{3,}_[a-z][a-z0-9_]*\.sql$/.test(name);
  if(area==='clients')return /\.(?:ts|tsx)$/i.test(name);
  if(area==='contracts/openapi/paths')return /^[a-z0-9-]+\.yaml$/i.test(name);
  return false;
@@ -287,8 +303,11 @@ function validateOpenApiPath(body,begin,end,ids,reject,owner,apiPath,fromFragmen
   if(!match)reject();
   const [,group,pointer]=match;
   const expected=apiPath.replace(/~/g,'~0').replace(/\//g,'~1');
-  if(pointer!==expected||!contractPathGroups[owner].includes(group))reject();
+  // Reserved groups are a baseline, not a ceiling on new owner paths.
+  // A new group still needs a safe local file and an exact Path Item ref.
+  if(pointer!==expected||!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(group))reject();
   const filename='services/'+owner+'/contracts/openapi/paths/'+group+'.yaml';
+  if(!exists(filename))reject();
   const content=get(filename);
   checkProgressivePathFragment(content,filename);
   const moduleLines=content.split('\n');
@@ -370,6 +389,17 @@ for(const owner of serviceOwners){
    '/contracts/openapi/'+owner+'.openapi.yaml'])allowedServiceFiles.add(prefix+suffix);
  for(const moduleName of contractPathGroups[owner])
   allowedServiceFiles.add(prefix+'/contracts/openapi/paths/'+moduleName+'.yaml');
+ if(owner==='wlt'){
+  // Tracked location guidance is not a Go module, schema, or financial runtime.
+  for(const file of ['/backend/README.md','/database/migrations/README.md']){
+   const location=prefix+file;
+   allowedServiceFiles.add(location);
+   const text=contents[location];
+   if(!text.includes('STATUS: STRUCTURE_ONLY')||!text.includes('OWNER: WLT')||
+      !text.includes('EXECUTION: NOT_STARTED'))
+    fail('WLT placement guidance falsely claims a running service: '+location);
+  }
+ }
  const readme=prefix+'/README.md';
  const doc=contents[readme];
  const contractFile=prefix+'/contracts/openapi/'+owner+'.openapi.yaml';
@@ -390,9 +420,16 @@ for(const owner of serviceOwners){
     !contractReadme.includes('no server, no security scheme') ||
     !contractReadme.includes('not arbitrary OpenAPI validity'))
   fail('invalid contract scaffold documentation: '+owner);
- for(const moduleName of contractPathGroups[owner]){
-  const moduleFile=prefix+'/contracts/openapi/paths/'+moduleName+'.yaml';
-  const moduleContent=contents[moduleFile];
+ const fragmentDir=prefix+'/contracts/openapi/paths';
+ const fragmentEntries=fs.readdirSync(path.join(root,...fragmentDir.split('/')),{withFileTypes:true});
+ for(const entry of fragmentEntries){
+  if(!entry.isFile()||!/^[a-z0-9]+(?:-[a-z0-9]+)*\.yaml$/.test(entry.name))
+   fail('invalid OpenAPI path fragment: '+fragmentDir+'/'+entry.name);
+ }
+ // Check every new group, including hidden operations not in the historical list.
+ for(const moduleName of fragmentEntries.map(entry=>entry.name.slice(0,-5))){
+  const moduleFile=fragmentDir+'/'+moduleName+'.yaml';
+  const moduleContent=contents[moduleFile]??get(moduleFile);
   if(checkProgressivePathFragment(moduleContent,moduleFile)){
    // Populated fragments must be reachable through the sole canonical root.
    // A hidden, otherwise valid operation in an unreferenced fragment is not
@@ -410,8 +447,11 @@ for(const owner of serviceOwners){
    }
    if(seenFragmentPaths.size===0)
     fail('OpenAPI fragment contains no valid Path Items: '+moduleFile);
-   developmentSourceFiles++;
-   progressiveOpenApiFiles++;
+   // Extra groups are counted by the recursive inventory below.
+   if(contractPathGroups[owner].includes(moduleName)){
+    developmentSourceFiles++;
+    progressiveOpenApiFiles++;
+   }
   }
  }
  if(!doc.includes('OWNER: '+(owner==='identity'?'Identity':owner.toUpperCase())) ||
@@ -425,7 +465,7 @@ for(const owner of serviceOwners){
    packageConfig.version!=='0.0.0' || packageConfig.private!==true ||
    packageConfig.type!=='module' || packageConfig.types!=='./clients/index.ts' ||
    JSON.stringify(packageConfig.exports)!==JSON.stringify({'.':{types:'./clients/index.ts',default:'./clients/index.ts'}}) ||
-   JSON.stringify(packageConfig.scripts)!==JSON.stringify({typecheck:'tsc --noEmit -p tsconfig.json'}) ||
+   JSON.stringify(packageConfig.scripts)!==JSON.stringify({typecheck:'tsc --noEmit -p tsconfig.json',contract:'node ../../tools/dev/check-openapi.mjs '+owner}) ||
    JSON.stringify(packageConfig.devDependencies)!==JSON.stringify({typescript:'7.0.2'}) ||
    ['dependencies','peerDependencies','optionalDependencies','bin','main'].some(key=>key in packageConfig)){
   fail('service package drift or premature runtime dependency: '+pkgPath);
@@ -466,7 +506,22 @@ function inspectServiceFolders(dir){
    continue;
   }
   if(stat.isDirectory()){
-   const ownerSourceFolder=/^services\/(identity|dsh|wlt)\/(backend|database|clients)\/[A-Za-z0-9_.\/-]+$/.test(relative);
+    const sourceDir=relative.match(/^services\/(identity|dsh|wlt)\/(backend|database|clients)\/(.+)$/);
+    let ownerSourceFolder=false;
+    if(sourceDir){
+     const [,owner,area,name]=sourceDir;
+     if(area==='backend'){
+      const domain=/^internal\/[a-z][a-z0-9]*(?:\/[a-z][a-z0-9]*)*$/.test(name);
+      const forbidden=new Set(['common','shared','misc','legacy','new','v2','partners','partner','partneronboarding']);
+      ownerSourceFolder=name==='cmd'||name==='internal'||name==='cmd/'+owner||
+       (domain&&!name.slice('internal/'.length).split('/').some(part=>forbidden.has(part)));
+     }else if(area==='database'){
+      ownerSourceFolder=name==='migrations';
+     }else if(area==='clients'){
+      ownerSourceFolder=name==='generated'||name==='go'||
+       /^generated\/[a-z][a-z0-9]*(?:\/[a-z][a-z0-9]*)*$/.test(name);
+     }
+    }
    if(!allowedServiceDirs.has(relative)&&!ownerSourceFolder)fail('unadmitted service directory: '+relative);
    inspectServiceFolders(absolute);
   }else{
@@ -575,11 +630,9 @@ if(!plan.includes('D01')||!plan.includes('Phase 2')||!plan.includes('NOT_RUN'))f
 
 // This crosswalk is a temporary documentary review ledger in the one execution plan,
 // NOT a second Product-admission source or confirmation of implemented features.
-const startMarker='### 2026-11-12 — Per-ID reconciliation of the 112 historical Control Panel requirements';
-const startAt=plan.indexOf(startMarker);
-if(startAt<0)fail('historical 112-row decision crosswalk missing from temporary plan');
-const reviewChunk=plan.slice(startAt);
-const parsedRows=[...reviewChunk.matchAll(/^\| (R\d{3}) \| `([A-Z_]+)` \| `([^\r\n|]+)` \| ([^\r\n|]{5,}) \|$/gm)];
+// Validate the actual documentary records, not a dated Markdown heading.
+// The temporary plan can be reorganized without changing the 112 archived decisions.
+const parsedRows=[...plan.matchAll(/^\| (R\d{3}) \| `([A-Z_]+)` \| `([^\r\n|]+)` \| ([^\r\n|]{5,}) \|$/gm)];
 const approvedLabels=new Set(['DRAFT_ALIGNED_OWNER','POLICY_REFRAMED','CONDITIONAL_CANDIDATE','HISTORICAL_ONLY','MIXED_REFRAME_RETIRE','INDEPENDENT_RISK_REVIEW']);
 const crosswalkIDs=parsedRows.map(x=>x[1]);
 if(parsedRows.length!==112||new Set(crosswalkIDs).size!==112||controlIDs.some(x=>!crosswalkIDs.includes(x)))
@@ -875,6 +928,8 @@ if(!surfaces.includes('## SURFACE-01 — Canonical internal app names versus imm
  fail('four app identity mapping is missing');
 for(const atom of ['apps/customer','apps/merchant','apps/captain','apps/control-panel',
  'com.bthwani.client','com.bthwani.partner','com.bthwani.captain',
+ 'com.bthwani.customer','com.bthwani.merchant',
+ '9b97c906-0dfc-4cf7-8d2b-079593523dc7','c56092bf-d41b-4944-a28c-de227b3d8e8a',
  '4adf3184-fc07-4186-b49e-0dc821a5ab73',
  'bcd22a76-d4b2-4de0-93b3-f6d13074a802',
  '7efa39e1-895f-44d7-a597-d613c79297b6']){
@@ -1043,4 +1098,5 @@ if(/continue-on-error:\s*true|\$\{\{(?:(?!\}\})[\s\S])*\bsecrets\./.test(ci))fai
 
 console.log('FOUNDATION_STRUCTURE_PASS domain_owners='+domainFiles.length+' capability_ids='+seen.size+' one_census=true service_scaffold_only='+(developmentSourceFiles===0)+' openapi_zero_operations='+(progressiveOpenApiFiles===0)+' openapi_reserved_groups='+openapiReservedGroups+' progressive_source_files='+developmentSourceFiles);
 if(developmentSourceFiles>0)console.log('PROGRESSIVE_SOURCE_PRESENT: scope/ownership structure checked; complete OpenAPI parsing, Go/SQL integration, owner-backed authorization and real journey acceptance NOT_RUN by this structural guard');
-console.log('GOVERNANCE_CUTOVER_NOT_READY: material donor reconciliation and internal risk-assurance/implementation proof not yet completed; human target policies approved, external reviewer not represented; software runtime gates separate');
+console.log('PROGRESSIVE_GOVERNANCE_READY: Close as You Go development and independently proven journey closure are authorized without whole-platform governance cutover; owner-backed acceptance is still required');
+console.log('GOVERNANCE_CUTOVER_NOT_READY: only whole-platform historical reconciliation remains pending; this does not block progressive development or individually accepted journey closure; production gates are separate');

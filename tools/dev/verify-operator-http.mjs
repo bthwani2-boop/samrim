@@ -101,7 +101,8 @@ try {
   assert.ok(ready, `Operator host readiness timed out: ${output}`);
 
   const routes = [
-    ["/", 200, "بثواني — لوحة المشغّل"],
+    ["/", 200, "لوحة تحكم بثواني"],
+    ["/workspace", 200, "الوصول إلى مساحة العمل غير متاح"],
     ["/health", 200, "الملاحة في لوحة التحكم تعمل"],
     ["/lab", 200, "مختبر مكونات Ant Design"],
     ["/nonexistent-stage4-operator-smoke", 404, "الصفحة غير موجودة"],
@@ -156,7 +157,7 @@ try {
   const forgedHtml = await forged.text();
   assert.ok(forgedHtml.includes(`nonce="${forgedNonce}"`),
     "the response nonce differs from the trusted server-rendered scripts");
-  console.log(`OPERATOR_${development ? "DEVELOPMENT" : "PRODUCTION"}_HTTP_SMOKE_PASS routes=4 nonce_unique=6 forged_header_rejected=true script_csp=enforced unsafe_eval=${development ? "development_only" : "disabled"} style_inline_exception=true browser_hydration=NOT_RUN`);
+  console.log(`OPERATOR_${development ? "DEVELOPMENT" : "PRODUCTION"}_HTTP_SMOKE_PASS routes=5 nonce_unique=7 forged_header_rejected=true script_csp=enforced unsafe_eval=${development ? "development_only" : "disabled"} style_inline_exception=true browser_hydration=NOT_RUN`);
 } finally {
   if (server.exitCode === null && !server.killed) {
     server.kill("SIGTERM");

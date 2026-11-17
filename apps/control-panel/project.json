@@ -1,0 +1,10 @@
+{
+  "name": "@bthwani/control-panel",
+  "root": "apps/control-panel",
+  "projectType": "application",
+  "targets": {
+    "typecheck": {
+      "outputs": ["{projectRoot}/.next/types"]
+    }
+  }
+}

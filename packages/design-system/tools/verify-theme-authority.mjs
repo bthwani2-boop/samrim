@@ -116,7 +116,9 @@ for (const app of ["customer", "merchant", "captain"]) {
     app + " must import its renderer");
   requireTrue(!pkg.dependencies["@bthwani/design-system"],
     app + " must not depend directly on the semantic owner");
-  for (const f of ["_layout.tsx", "index.tsx", "health.tsx"]) {
+  // Expo route groups do not alter URLs. Customer / is now a tab's index route.
+  const entry = app === "customer" ? "(tabs)/index.tsx" : "index.tsx";
+  for (const f of ["_layout.tsx", entry, "health.tsx"]) {
     const s = read("apps/" + app + "/app/" + f);
     requireTrue(!s.includes("@bthwani/design-system/native/appearance"),
       app + " references retired native appearance owner: " + f);
@@ -124,7 +126,7 @@ for (const app of ["customer", "merchant", "captain"]) {
 }
 if (violations.length) {
   console.error("THEME_AUTHORITY_VERIFICATION=FAIL");
-  violations.forEach(x => console.error(" - " + x));
+  for (const violation of violations) console.error(" - " + violation);
   process.exitCode = 1;
 } else {
   console.log("THEME_AUTHORITY_VERIFICATION=PASS");

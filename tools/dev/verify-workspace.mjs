@@ -2,8 +2,8 @@
 // Stage-4 workspace smoke: original source toolchain and minimal working app hosts.
 // Static verification only, not Android/iOS/live device or financial Product proof.
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -19,18 +19,23 @@ const pkg = JSON.parse(read('package.json'));
 const nodePin = read('.node-version').trim();
 const goPin = read('.go-version').trim();
 const nvmPin = read('.nvmrc').trim();
+const runningNode = process.version.replace(/^v/, '');
+if (runningNode !== nodePin) {
+  fail('Active Node runtime mismatch: expected ' + nodePin +
+    ', observed ' + runningNode + ' at ' + process.execPath);
+}
 const pnpmPin = '12.15.0';
 const tsPin = '7.0.2';
 const biomePin = '2.5.12';
 
 assert.equal(nodePin, '24.22.1', 'Node pin changed from original branch 41');
 assert.equal(nvmPin, nodePin, 'nvm and Node pins must agree');
-assert.equal(goPin, '1.27.3', 'Go pin changed from original branch 41');
+assert.equal(goPin, '1.27.4', 'Go must use the approved 2026-11-16 security patch');
 assert.equal(pkg.packageManager, 'pnpm@' + pnpmPin);
 assert.equal(pkg.private, true);
 assert.equal(pkg.engines.node, '>=24.17.0 <25');
 assert.equal(pkg.engines.pnpm, pnpmPin);
-assert.deepEqual(pkg.devDependencies, { '@biomejs/biome': biomePin, knip: '6.34.0', nx: '24.0.1', typescript: tsPin },
+assert.deepEqual(pkg.devDependencies, { '@biomejs/biome': biomePin, knip: '6.34.0', nx: '24.0.1', typescript: tsPin, yaml: '2.9.0' },
   'Workspace tooling must use exact donor-compatible package versions');
 if (pkg.dependencies?.nx) fail('Nx is development tooling, not a production dependency');
 

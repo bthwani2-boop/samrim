@@ -18,7 +18,7 @@
     "@date-fns/tz": "catalog:",
     "antd": "6.6.7",
     "date-fns": "catalog:",
-    "next": "16.4.3",
+    "next": "16.4.5",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "zod": "catalog:"

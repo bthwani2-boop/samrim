@@ -24,6 +24,12 @@
       {
         "runtime": "pnpm --version"
       }
+    ],
+    "goToolchain": [
+      "{workspaceRoot}/.go-version",
+      {
+        "runtime": "go version"
+      }
     ]
   },
   "targetDefaults": {
@@ -33,9 +39,6 @@
         "default",
         "^default",
         "nodeToolchain"
-      ],
-      "outputs": [
-        "{projectRoot}/.next/types"
       ]
     },
     "theme:check": {

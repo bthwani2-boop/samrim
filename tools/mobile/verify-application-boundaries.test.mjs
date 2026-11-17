@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { importSpecifiers, scanPresentationBoundaries, sourceBoundaryIssues, stage4WorkspaceIssues } from "./verify-application-boundaries.mjs";
 
 const root = resolve("C:/safe/bthwani");
@@ -122,11 +123,80 @@ test("Stage 4 rejects unapproved owner directories and any duplicate src/app rou
       mkdirSync(join(fixture, group), { recursive: true });
     }
     assert.deepEqual(stage4WorkspaceIssues(fixture), []);
+    const leftBehind = join(fixture, "packages", "retired-package");
+    mkdirSync(join(leftBehind, "node_modules"), { recursive: true });
+    assert.deepEqual(stage4WorkspaceIssues(fixture), [], "generated-only package directory is not source");
+    mkdirSync(join(leftBehind, "src"), { recursive: true });
+    assert.match(stage4WorkspaceIssues(fixture).join(" "), /retired-package: unapproved/);
+    rmSync(join(leftBehind, "src"), { recursive: true });
     mkdirSync(join(fixture, "apps", "customer", "src", "app"), { recursive: true });
     mkdirSync(join(fixture, "apps", "storefront"), { recursive: true });
     mkdirSync(join(fixture, "packages", "new-theme-engine"), { recursive: true });
     mkdirSync(join(fixture, "services", "shadow-wallet"), { recursive: true });
     assert.equal(stage4WorkspaceIssues(fixture).length, 4);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("deep feature placement is checked on disk, including untracked directories", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "bthwani-path-placement-"));
+  try {
+    for (const group of ["apps", "packages", "services"]) mkdirSync(join(fixture, group), { recursive: true });
+    const rootFeature = join(fixture, "apps", "customer", "src", "features", "orders");
+    const screen = join(rootFeature, "screens", "order-details", "order-details-screen.tsx");
+    mkdirSync(dirname(screen), { recursive: true });
+    writeFileSync(screen, "export const Screen = 1;\n");
+    assert.deepEqual(scanPresentationBoundaries(fixture).issues, []);
+
+    const orphan = join(fixture, "apps", "customer", "src", "features", "orphan.ts");
+    writeFileSync(orphan, "export const Orphan = 1;\n");
+    assert.match(scanPresentationBoundaries(fixture).issues.join(" "), /presentation source must belong/);
+    rmSync(orphan);
+
+    const unowned = join(fixture, "apps", "customer", "src", "orphan.ts");
+    writeFileSync(unowned, "export const Orphan = 1;\n");
+    assert.match(scanPresentationBoundaries(fixture).issues.join(" "), /presentation source must belong/);
+    rmSync(unowned);
+
+    const nestedDuplicate = join(rootFeature, "features", "wallet");
+    mkdirSync(nestedDuplicate, { recursive: true });
+    assert.match(scanPresentationBoundaries(fixture).issues.join(" "), /unapproved feature layer|duplicate features/);
+    rmSync(join(rootFeature, "features"), { recursive: true });
+
+    const generic = join(rootFeature, "misc", "helpers");
+    mkdirSync(generic, { recursive: true });
+    assert.match(scanPresentationBoundaries(fixture).issues.join(" "), /unapproved feature layer/);
+    rmSync(join(rootFeature, "misc"), { recursive: true });
+
+    const incorrectRoot = join(fixture, "apps", "merchant", "src", "feature", "orders");
+    mkdirSync(incorrectRoot, { recursive: true });
+    assert.match(scanPresentationBoundaries(fixture).issues.join(" "), /src\\feature|src\/feature|unapproved presentation root/);
+    rmSync(join(fixture, "apps", "merchant", "src", "feature"), { recursive: true });
+
+    const partnerRoute = join(fixture, "apps", "control-panel", "app", "(workspace)", "partners");
+    mkdirSync(partnerRoute, { recursive: true });
+    assert.match(scanPresentationBoundaries(fixture).issues.join(" "), /Use Merchant|merchants/);
+    rmSync(partnerRoute, { recursive: true });
+    const mixedCaseRoute = join(fixture, "apps", "merchant", "app", "Partner-Onboarding");
+    mkdirSync(mixedCaseRoute, { recursive: true });
+    assert.match(scanPresentationBoundaries(fixture).issues.join(" "), /Use Merchant/);
+    rmSync(mixedCaseRoute, { recursive: true });
+
+    const wrongCase = join(fixture, "apps", "captain", "src", "features", "OrderManagement");
+    mkdirSync(wrongCase, { recursive: true });
+    assert.match(scanPresentationBoundaries(fixture).issues.join(" "), /feature name must be lowercase-kebab-case/);
+    rmSync(wrongCase, { recursive: true });
+
+    const badFile = join(rootFeature, "screens", "order-details", "OrderDetails.tsx");
+    writeFileSync(badFile, "export const OrderDetails = 1;\n");
+    assert.match(scanPresentationBoundaries(fixture).issues.join(" "), /feature source filename must be lowercase-kebab-case/);
+    rmSync(badFile);
+
+    const shared = join(fixture, "apps", "merchant", "src", "components", "merchant-badge.tsx");
+    mkdirSync(dirname(shared), { recursive: true });
+    writeFileSync(shared, "export const MerchantBadge = 1;\n");
+    assert.deepEqual(scanPresentationBoundaries(fixture).issues, []);
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }
@@ -147,7 +217,7 @@ test("actual new feature folders pass owner boundaries and cross-owner imports f
     for (const group of ["apps", "packages", "services"]) {
       mkdirSync(join(fixture, group), { recursive: true });
     }
-    const feature = join(fixture, "apps", "customer", "src", "features", "stores", "StoreCard.tsx");
+    const feature = join(fixture, "apps", "customer", "src", "features", "stores", "store-card.tsx");
     mkdirSync(dirname(feature), { recursive: true });
     writeFileSync(feature, 'import { View } from "tamagui"; export const StoreCard = View;\n');
     const allowed = scanPresentationBoundaries(fixture);
@@ -159,5 +229,26 @@ test("actual new feature folders pass owner boundaries and cross-owner imports f
     assert.match(forbidden.issues.join(" "), /Cross-app package import/);
   } finally {
     rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("retained Merchant placeholder exemptions are explicit and cannot hide implemented features", () => {
+  const repo = fileURLToPath(new URL("../..", import.meta.url));
+  const config = readFileSync(join(repo, "knip.jsonc"), "utf8");
+  const start = config.indexOf("// BEGIN RETAINED MERCHANT PRESENTATION PLACEHOLDERS");
+  const end = config.indexOf("// END RETAINED MERCHANT PRESENTATION PLACEHOLDERS");
+  assert.ok(start >= 0 && end > start, "missing explicit preserved-placeholder Knip boundary");
+  const block = config.slice(start, end);
+  const retained = [...block.matchAll(/"([^"]+\.tsx)"/g)].map((match) => match[1]);
+  assert.equal(retained.length, 18, "the user explicitly preserves all 18 known Merchant placeholders");
+  assert.equal(new Set(retained).size, 18, "duplicate Knip exclusion");
+  for (const path of retained) {
+    assert.match(path, /^apps\/merchant\/src\/features\/[a-z-]+\/[a-z-]+\.tsx$/, "no broad directory wildcard exclusion");
+    const full = join(repo, ...path.split("/"));
+    assert.ok(existsSync(full), "retained placeholder must still exist: " + path);
+    const source = readFileSync(full, "utf8");
+    assert.match(source, /MerchantCapabilityScreen/, "only explicit presentation-only placeholder may be excluded: " + path);
+    assert.match(source, /Presentation only|Protected workspace presentation/, "remove exemption when a real feature is implemented: " + path);
+    assert.doesNotMatch(source, /\bfetch\s*\(|\buseMutation\s*\(|\bcreateOrder\s*\(|\bdeleteStore\s*\(/, "no owner mutation in an exempt file: " + path);
   }
 });

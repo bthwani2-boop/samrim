@@ -4,28 +4,40 @@ name: Dependency and Nx Safety
 # Scheduled checks begin only when this workflow exists on the default branch.
 on:
   workflow_dispatch:
+  # Every current and future development branch is eligible.
+  # Archived donor refs stay read-only, outside development CI.
   push:
     branches:
-      - 'refoundation/clean-house-20261112'
+      - '**'
+      - '!archive/**'
+      - '!41'
     paths:
       - '**/package.json'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
       - 'nx.json'
+      - '**/project.json'
+      - 'services/**/contracts/**'
+      - 'services/**/database/migrations/**'
+      - 'tools/dev/verify-nx-project-graph.test.mjs'
       - 'tools/mobile/verify-application-boundaries.mjs'
       - 'tools/mobile/verify-application-boundaries.test.mjs'
       - '.github/workflows/dependency-nx-safety.yml'
   schedule:
     - cron: '17 3 * * 1'
+  # Main is the protected integration target; branch names are never pinned.
   pull_request:
     branches:
       - main
-      - 'refoundation/clean-house-20261112'
     paths:
       - '**/package.json'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
       - 'nx.json'
+      - '**/project.json'
+      - 'services/**/contracts/**'
+      - 'services/**/database/migrations/**'
+      - 'tools/dev/verify-nx-project-graph.test.mjs'
       - 'tools/mobile/verify-application-boundaries.mjs'
       - 'tools/mobile/verify-application-boundaries.test.mjs'
       - '.github/workflows/dependency-nx-safety.yml'
@@ -58,22 +70,29 @@ jobs:
           node-version-file: .node-version
           package-manager-cache: false
       - name: Install pinned workspace without lifecycle scripts
+        id: workspace
         run: |
           corepack enable pnpm
           pnpm --version
           pnpm install --frozen-lockfile --ignore-scripts
       - name: Audit all JavaScript dependencies (high and critical fail)
         run: pnpm audit --audit-level high
+      # Audit remains fail-closed; unaffected graph checks still provide evidence.
       - name: Verify Nx dependency graph builds
+        if: ${{ !cancelled() && steps.workspace.outcome == 'success' }}
         run: |
           pnpm exec nx show projects
           pnpm exec nx graph --print > "$RUNNER_TEMP/nx-project-graph.json"
+      - name: Prove actual Nx contract, Go, design and renderer impact edges
+        if: ${{ !cancelled() && steps.workspace.outcome == 'success' }}
+        run: node --test tools/dev/verify-nx-project-graph.test.mjs
       - name: Enforce existing application and service import boundaries
+        if: ${{ !cancelled() && steps.workspace.outcome == 'success' }}
         run: |
           node --test tools/mobile/verify-application-boundaries.test.mjs
           node tools/mobile/verify-application-boundaries.mjs
       - name: Report affected projects for pull requests
-        if: ${{ github.event_name == 'pull_request' }}
+        if: ${{ !cancelled() && steps.workspace.outcome == 'success' && github.event_name == 'pull_request' }}
         env:
           NX_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: pnpm exec nx show projects --affected --base="$NX_BASE_SHA" --head=HEAD

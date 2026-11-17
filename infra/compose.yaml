@@ -1,4 +1,4 @@
-# This Compose project belongs exclusively to D:/samrim-refoundation-clean-20261112.
+# Isolated Compose environment for D:/samrim; Git branch changes do not rename its runtime identity.
 # No bind mounts, no external networks/volumes, no reuse of samrim-local state.
 name: bthwani-refoundation
 
@@ -10,6 +10,7 @@ x-logging: &logging
 
 x-labels: &labels
   com.bthwani.environment: refoundation
+  # Legacy runtime identifier retained for existing containers, not the active checkout path.
   com.bthwani.worktree: samrim-refoundation-clean-20261112
 
 services:

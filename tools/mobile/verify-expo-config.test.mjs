@@ -4,8 +4,8 @@ import test from "node:test";
 import { resolvedConfigIssues, easBuildIssues, verifyResolvedConfigs } from "./verify-expo-config.mjs";
 
 const manifest = {
-  slug: "app-client", owner: "bthwani1", scheme: "client",
-  androidPackage: "com.bthwani.client", iosBundleIdentifier: "com.bthwani.client", projectId: "project-1",
+  slug: "customer", owner: "bthwani1", scheme: "customer",
+  androidPackage: "com.bthwani.customer", iosBundleIdentifier: "com.bthwani.customer", projectId: "project-1",
 };
 const config = {
   slug: manifest.slug, owner: manifest.owner, scheme: manifest.scheme,
@@ -18,7 +18,7 @@ const config = {
     forcesRTL: true, allowDynamicLocaleChangesAndroid: false,
   }]],
 };
-test("accepts centrally owned RTL and preserved app IDs", () => {
+test("accepts centrally owned RTL and registered app IDs", () => {
   assert.deepEqual(resolvedConfigIssues("customer", manifest, config), []);
 });
 test("catches app identifier drift", () => {
@@ -35,7 +35,7 @@ test("catches duplicate localization and disabled RTL", () => {
   }]] };
   assert.match(resolvedConfigIssues("customer", manifest, disabled).join(" "), /native RTL/);
 });
-test("catches a client/merchant web SSR regression", () => {
+test("catches a customer/merchant web SSR regression", () => {
   const broken = { ...config, web: { output: "static", bundler: "metro" } };
   assert.match(resolvedConfigIssues("customer", manifest, broken).join(" "), /server renderer/);
 });
@@ -44,26 +44,29 @@ test("real Expo config from all three installed hosts retains app ownership", ()
   assert.equal(verifyResolvedConfigs(), 3);
 });
 
-test("EAS development/internal remote profiles preserve signing ownership and safe preview channels", () => {
-  for (const app of ["customer", "merchant"]) {
+test("EAS development-only profiles preserve existing credential ownership", () => {
+  for (const app of ["customer", "merchant", "captain"]) {
     const file = new URL("../../apps/" + app + "/eas.json", import.meta.url);
     const eas = JSON.parse(readFileSync(file, "utf8"));
     assert.deepEqual(easBuildIssues(app, eas), []);
   }
 });
 
-test("EAS cloud profiles reject missing remote signing, wrong channels and store release", () => {
+test("EAS cloud profiles reject invalid signing, preview channels and release builds", () => {
   const file = new URL("../../apps/customer/eas.json", import.meta.url);
   const valid = JSON.parse(readFileSync(file, "utf8"));
   const withDevLocal = structuredClone(valid);
   withDevLocal.build.development.credentialsSource = "local";
-  assert.match(easBuildIssues("customer", withDevLocal).join(" "), /missing local credentials/);
-  const withInternalLocal = structuredClone(valid);
-  withInternalLocal.build.internal.credentialsSource = "local";
-  assert.match(easBuildIssues("customer", withInternalLocal).join(" "), /missing local credentials/);
+  assert.match(easBuildIssues("customer", withDevLocal).join(" "), /development credential ownership/);
+  const withPreview = structuredClone(valid);
+  withPreview.build.internal = { environment: "preview", channel: "preview" };
+  assert.match(easBuildIssues("customer", withPreview).join(" "), /unapproved EAS build profile/);
   const wrongChannel = structuredClone(valid);
-  wrongChannel.build.internal.channel = "production";
-  assert.match(easBuildIssues("customer", wrongChannel).join(" "), /wrong EAS Update channel/);
+  wrongChannel.build.development.channel = "preview";
+  assert.match(easBuildIssues("customer", wrongChannel).join(" "), /development EAS environment and update channel/);
+  const wrongEnvironment = structuredClone(valid);
+  wrongEnvironment.build.development.environment = "preview";
+  assert.match(easBuildIssues("customer", wrongEnvironment).join(" "), /development EAS environment and update channel/);
   const unapprovedRelease = structuredClone(valid);
   unapprovedRelease.build.production = { distribution: "store" };
   assert.match(easBuildIssues("customer", unapprovedRelease).join(" "), /unapproved EAS build profile/);
@@ -73,4 +76,13 @@ test("EAS cloud profiles reject missing remote signing, wrong channels and store
   const reorderedProfiles = structuredClone(valid);
   reorderedProfiles.build = Object.fromEntries(Object.entries(valid.build).reverse());
   assert.deepEqual(easBuildIssues("customer", reorderedProfiles), []);
+});
+
+test("Captain development uses current EAS remote signing for its registered new package", () => {
+  const file = new URL("../../apps/captain/eas.json", import.meta.url);
+  const captain = JSON.parse(readFileSync(file, "utf8"));
+  assert.deepEqual(easBuildIssues("captain", captain), []);
+  const wrong = structuredClone(captain);
+  wrong.build.development.credentialsSource = "local";
+  assert.match(easBuildIssues("captain", wrong).join(" "), /development credential ownership/);
 });

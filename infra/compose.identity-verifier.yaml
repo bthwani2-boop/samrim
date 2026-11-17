@@ -1,6 +1,6 @@
 # Optional NEW Identity session-verifier development slice only.
-# Pair with infra/compose.yaml (NOT compose.apps.yaml); all services keep
-# the original bthwani-refoundation project name.
+# Pair with infra/compose.yaml; optionally include compose.apps.yaml for DSH.
+# The single project identity remains bthwani-refoundation.
 #
 # Do NOT start until the Identity owner has verified safe Docker-network
 # listening in explicit isolated mode and the identity_test_* PostgreSQL
@@ -9,13 +9,14 @@
 services:
   identity:
     profiles: [identity-verifier]
-    image: bthwani-refoundation-identity-verifier:dev
+    image: "bthwani-refoundation-identity-verifier:${REF_IDENTITY_IMAGE_TAG:-dev}"
     restart: "no"
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     labels:
       com.bthwani.environment: refoundation
+      # Preserve existing Compose runtime identity across Git branch switches.
       com.bthwani.worktree: samrim-refoundation-clean-20261112
       com.bthwani.capability: identity-synthetic-session-verifier
     environment:
@@ -30,3 +31,10 @@ services:
       postgres:
         condition: service_healthy
     networks: [isolated, loopback]
+    # Readiness is scoped to the synthetic database, not Identity authorization.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3302/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
