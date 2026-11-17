@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { importSpecifiers, scanPresentationBoundaries, sourceBoundaryIssues, stage4WorkspaceIssues } from "./verify-application-boundaries.mjs";
 
 const root = resolve("C:/safe/bthwani");
@@ -228,5 +229,26 @@ test("actual new feature folders pass owner boundaries and cross-owner imports f
     assert.match(forbidden.issues.join(" "), /Cross-app package import/);
   } finally {
     rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("retained Merchant placeholder exemptions are explicit and cannot hide implemented features", () => {
+  const repo = fileURLToPath(new URL("../..", import.meta.url));
+  const config = readFileSync(join(repo, "knip.jsonc"), "utf8");
+  const start = config.indexOf("// BEGIN RETAINED MERCHANT PRESENTATION PLACEHOLDERS");
+  const end = config.indexOf("// END RETAINED MERCHANT PRESENTATION PLACEHOLDERS");
+  assert.ok(start >= 0 && end > start, "missing explicit preserved-placeholder Knip boundary");
+  const block = config.slice(start, end);
+  const retained = [...block.matchAll(/"([^"]+\.tsx)"/g)].map((match) => match[1]);
+  assert.equal(retained.length, 18, "the user explicitly preserves all 18 known Merchant placeholders");
+  assert.equal(new Set(retained).size, 18, "duplicate Knip exclusion");
+  for (const path of retained) {
+    assert.match(path, /^apps\/merchant\/src\/features\/[a-z-]+\/[a-z-]+\.tsx$/, "no broad directory wildcard exclusion");
+    const full = join(repo, ...path.split("/"));
+    assert.ok(existsSync(full), "retained placeholder must still exist: " + path);
+    const source = readFileSync(full, "utf8");
+    assert.match(source, /MerchantCapabilityScreen/, "only explicit presentation-only placeholder may be excluded: " + path);
+    assert.match(source, /Presentation only|Protected workspace presentation/, "remove exemption when a real feature is implemented: " + path);
+    assert.doesNotMatch(source, /\bfetch\s*\(|\buseMutation\s*\(|\bcreateOrder\s*\(|\bdeleteStore\s*\(/, "no owner mutation in an exempt file: " + path);
   }
 });

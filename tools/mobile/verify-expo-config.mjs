@@ -58,7 +58,7 @@ export function easBuildIssues(name, config) {
   check(base.env?.COREPACK_ENABLE_DOWNLOAD_PROMPT === "0", "Corepack cloud prompt must be disabled");
   const profile = build.development ?? {};
   check(profile.extends === "base", "development must inherit the pinned base");
-  const expectedCredentials = name === "captain" ? "local" : "remote";
+  const expectedCredentials = "remote";
   check(profile.credentialsSource === expectedCredentials,
     "development credential ownership differs from approved app configuration");
   check(profile.distribution === "internal" && profile.android?.buildType === "apk",

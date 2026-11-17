@@ -78,11 +78,11 @@ test("EAS cloud profiles reject invalid signing, preview channels and release bu
   assert.deepEqual(easBuildIssues("customer", reorderedProfiles), []);
 });
 
-test("Captain development preserves its configured local credentials source", () => {
+test("Captain development uses current EAS remote signing for its registered new package", () => {
   const file = new URL("../../apps/captain/eas.json", import.meta.url);
   const captain = JSON.parse(readFileSync(file, "utf8"));
   assert.deepEqual(easBuildIssues("captain", captain), []);
   const wrong = structuredClone(captain);
-  wrong.build.development.credentialsSource = "remote";
+  wrong.build.development.credentialsSource = "local";
   assert.match(easBuildIssues("captain", wrong).join(" "), /development credential ownership/);
 });
