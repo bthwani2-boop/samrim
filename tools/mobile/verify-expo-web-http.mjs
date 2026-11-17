@@ -24,8 +24,8 @@ const hosts = [
     name: "merchant",
     routes: [
       ["/", 200, "لم يتم تفعيل تسجيل الدخول للتاجر بعد"],
-      ["/orders", 200, "لم يتم تفعيل تسجيل الدخول للتاجر بعد"],
     ],
+    protectedRoutes: ["/orders", "/orders/example", "/products", "/wallet", "/more", "/store/profile", "/notifications"],
   },
 ];
 
@@ -41,7 +41,7 @@ async function unusedPort() {
   return address.port;
 }
 
-async function verifyHost({ name, routes }) {
+async function verifyHost({ name, routes, protectedRoutes = [] }) {
   const app = path.join(root, "apps", name);
   const expoCli = path.join(app, "node_modules", "expo", "bin", "cli");
   assert.ok(existsSync(expoCli), "Install the exact frozen Expo dependencies: " + name);
@@ -114,8 +114,20 @@ async function verifyHost({ name, routes }) {
         assert.ok(html.includes(text), name + route + ": expected SSR text missing");
       }
     }
+    // On a direct HTTP entry, owner-unverified Merchant routes must redirect
+    // before Expo's server renderer can return blank but successful HTML.
+    for (const route of protectedRoutes) {
+      const response = await fetch(origin + route, {
+        signal: AbortSignal.timeout(7000),
+        redirect: "manual",
+      });
+      assert.equal(response.status, 302, name + route + ": protected route must redirect");
+      const location = response.headers.get("location");
+      assert.ok(location, name + route + ": redirect location missing");
+      assert.equal(new URL(location, origin).pathname, "/", name + route + ": only the public gate is allowed");
+    }
     console.log("EXPO_WEB_PRODUCTION_HTTP_PASS app=" + name +
-      " routes=" + checks.length + " rtl=true browser_hydration=NOT_RUN");
+      " routes=" + (checks.length + protectedRoutes.length) + " rtl=true browser_hydration=NOT_RUN");
   } finally {
     if (proc.exitCode === null && !proc.killed) proc.kill("SIGTERM");
     if (proc.exitCode === null) {

@@ -27,3 +27,26 @@ test("every Merchant private route is explicitly registered in the fail-closed r
   assert.equal(existsSync(join(app, "(workspace)")), false);
   assert.equal(existsSync(join(app, "(app)")), false);
 });
+test("Merchant SSR middleware redirects every protected entry route and rejects mutations", async () => {
+  const pathname = join(app, "+middleware.ts");
+  assert.ok(existsSync(pathname), "protected SSR deep links need a server-side deny gate");
+  const { default: middleware, unstable_settings } = await import("../app/+middleware.ts");
+  const patterns = unstable_settings.matcher.patterns;
+  const guardedPaths = [
+    "/orders", "/orders/example", "/products", "/products/import", "/wallet",
+    "/more", "/onboarding", "/promotions", "/store/profile", "/account",
+    "/activity", "/employees", "/insights", "/notifications",
+  ];
+  for (const route of guardedPaths) {
+    assert.ok(patterns.some(pattern => pattern.test(route)), "missing SSR protected route " + route);
+    const target = "https://merchant.example" + route;
+    const denied = middleware(new Request(target));
+    assert.equal(denied.status, 302, route + ": web navigation must redirect to the public entry");
+    assert.equal(denied.headers.get("location"), "https://merchant.example/");
+  }
+  for (const route of ["/", "/apply", "/activate", "/setup", "/health", "/not-a-stage4-route"]) {
+    assert.ok(patterns.every(pattern => !pattern.test(route)), route + ": public/unknown route must not be intercepted");
+  }
+  const mutation = middleware(new Request("https://merchant.example/orders", { method: "POST" }));
+  assert.equal(mutation.status, 403, "unauthenticated mutation must not be redirected or accepted");
+});
