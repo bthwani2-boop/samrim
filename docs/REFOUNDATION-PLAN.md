@@ -1243,3 +1243,48 @@ GitHub CI workflows `.github/workflows/{ci,dependency-nx-safety,go-quality}.yml`
 Docker project `bthwani-refoundation`, PostgreSQL/media volumes, container labels, active SSH tunnels and Lenovo runtime were not renamed/restarted. The old `com.bthwani.worktree` label remains a runtime compatibility identifier, not a source path. Mobile config no longer implicitly reads secrets from the removed worktree; environment and EAS secrets must be explicitly selected and authorized. The four Windows tunnel Scheduled Tasks have been redirected to a branch-independent launcher under the user LocalAppData BThwani Operations Tunnels directory, after parser and non-network configuration checks and with all original task XMLs archived there. Existing listening ports were not deliberately restarted; verify an actual restart in a separately authorized maintenance window.
 
 `GOVERNANCE_CUTOVER: NOT_READY` and `PRODUCTION_ACTIVATION: BLOCKED` remain. No new finance, Identity/DSH/WLT integration, SQL upgrade, real-device or protected-state acceptance is implied. Push, PR, merge, credential transfer and changes to running services remain separately authorized actions.
+
+
+## 2026-11-17 - Latest verified engineering checkpoint (supersedes earlier present-tense status claims)
+
+ARTIFACT_CLASS: DATED_LOCAL_EXECUTION_EVIDENCE
+SOURCE_CHECKOUT: D:\samrim
+SOURCE_BRANCH: foundation
+INSPECTED_HEAD: 0579379740e551e732e3c11ecc6dd953fbf925df
+ACCEPTANCE_SCOPE: BOUNDED_LOCAL_ONLY
+ENVIRONMENT_BASELINE_ACCEPTED: NOT_RUN
+ALL_JOURNEYS_CLOSED: NOT_RUN
+GOVERNANCE_CUTOVER: NOT_READY
+PRODUCTION_READY: BLOCKED
+
+This is the newest checkpoint of this same temporary plan. Earlier "CURRENT" and P0/P1 status entries describe historical source revisions, not today's immutable acceptance. All protected operations, Push, PR, merge, deploy and branch changes require their separate authorization.
+
+### Source-verified results and corrections
+
+- Spec Kit: native specify version 1.3.0 executed in the target checkout; reviewed .specify/memory/constitution.md and specs/002-stage5-admission/spec.md. CLI/context PASS only.
+- Graphify: the relevant bthwani2-boop/samrim query succeeded but promoted index ccce4247e3bffe1b603ae26f8dd176a80d123753 is older than inspected HEAD 057937974 and dirty files: INVALIDATED, not automatically reindexed.
+- Toolchain: pnpm check:toolchain PASS with Node 24.22.1, Go 1.27.4, pnpm 12.15.0; other source hosts and clean-install acceptance remain separate.
+- OpenAPI: structural checker PASS for Identity (6), DSH (8), WLT (0) operations. Generated client / real Go / HTTP / DB parity NOT_RUN. Previously committed 057937974 admits new root-linked owner path fragments while blocking orphan paths, wrong pointers and missing security declarations.
+- Foundation guard: the historical Control Panel R001-R112 documentary crosswalk used to depend on an exact dated Markdown heading. A new negative-to-positive regression verified the defect and its local correction: validate 112 unique archival classification records by content instead, preserving missing, duplicate and fabricated-implementation rejection cases. Full guard and exact-SHA CI still require final verification.
+- Concurrent source: one foundation worktree, with multiple staged Merchant and Operator edits by other sessions. This work owns only the foundation guard/test and this plan checkpoint; no other session's route, client or staged change is approved for inclusion.
+- P0-23 FAIL on this dirty candidate: pnpm run knip:files reports 18 unused Merchant sources; pnpm run check:apps reports 2 Merchant route-structure failures plus a boundary-scanner test failure during incomplete path-group migration. An earlier APP_OWNER_BOUNDARIES_PASS over 310 files was invalidated by subsequent writes. Finish the owned migration and preserve route/client compatibility before rerunning actual tests; do not blanket-exclude, delete peer work or mask this FAIL.
+- Not implemented/proven: Identity first-factor and DSH Store-scoped grants/IDOR with real UI and isolated persistent readback; WLT ledger, wallets, cash/COD/Mixed, agreements, payouts and settlements; owner-backed checkout/fulfillment/device E2E; final CI, clean bootstrap, current Docker source parity, protected upgrade/restore and production authorization. Their acceptance remains NOT_RUN, BLOCKED or REVIEW_BLOCKED rather than PASS.
+
+### Next execution boundary
+
+1. Merchant/Operator route owners finish and release their staged changes; rerun app boundaries, Knip, source-test inclusion, TypeScript and navigation/deep-link behavior on the stable candidate.
+2. Re-run all foundation positive/adversarial tests and OpenAPI checks. Only the shared Git coordinator selectively commits the guard/test/plan correction when the Git index is released. Do not stage others' changes.
+3. Obtain a matching official Graphify index, repeat reproducible clean pnpm/Nx plus final-SHA CI, and verify authorized isolated Docker/SQL source-to-runtime parity.
+4. Implement and test one fully connected Identity actor-to-DSH Store-scoped journey including two actors, two Stores, permission revocation, UI, real HTTP/Go and persisted owner readback. This has priority over finance UX placeholders.
+5. Complete DSH order/dispatch and WLT financial journeys progressively under sole owners with concurrency, idempotency, ledger conservation, failure recovery and isolated restore evidence. Close only the exact journeys whose complete criteria have passed.
+
+This checkpoint supersedes stale statuses, not the preserved 27 P0 and 25 P1 requirements. The project is not globally closed and production activation remains blocked.
+
+
+### Follow-up evidence for this same checkpoint (local, before any new SHA or peer-file change)
+
+- Foundation verifier and full governance regression tests: PASS, 226 total, 224 passed, 0 failed, 2 Unix-only skipped; guard executed on the amended governance/plan tree. Exact-SHA Linux CI remains NOT_RUN.
+- Go 1.27.4 (GOTOOLCHAIN=local): Identity's 2 packages and DSH's 3 packages passed go test -count=1 ./... and go vet ./...; no live owner/Android/financial E2E is inferred.
+- Node test discovery: six regression tests PASS and SOURCE_TEST_DISCOVERY_PASS count=63. Nx affected-graph regression: 10/10 PASS, including untracked DSH OpenAPI/SQL, Merchant source and Windows argument safety.
+- Local workspace, tracked-secret marker check (4/4), design tokens/generated CSS, independent OpenAPI checker and git diff --check PASS. Secret audit excluded Git history; native appearance/device usability NOT_RUN.
+- P0-23 continues FAIL on the concurrently moving Merchant tree; app tests/Knip are not overwritten by independent green source checks. The shared Git index holds peer-staged Merchant files, so no local commit/push of this checkpoint was attempted by this session.

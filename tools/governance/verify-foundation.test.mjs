@@ -577,6 +577,14 @@ rejects('rejects missing R112 archive requirement ID',{edit:{'docs/reference/HIS
 rejects('rejects a duplicated historical source requirement',{edit:{'docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md':s=>s.replace(/^(\| R008 \|[^\n]+)$/m,'$1\n$1')}},/retain 112 unique IDs/);
 rejects('rejects historical Control Panel source as authoritative policy',{edit:{'docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md':s=>s.replace('BUSINESS_POLICY_AUTHORITY: NONE','BUSINESS_POLICY_AUTHORITY: ACTIVE')}},/cannot become Product policy/);
 
+// The dated plan is an execution log, not an immutable heading registry.
+// Preserve the 112 documentary dispositions while allowing its prose to evolve.
+accepts('accepts renaming a historical plan heading when all 112 ID decisions remain',{
+ edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(
+  '### 2026-11-12 \u2014 Per-ID reconciliation of the 112 historical Control Panel requirements',
+  '### Archived Control Panel ID dispositions (dated source)'
+ )}
+},/FOUNDATION_STRUCTURE_PASS/);
 rejects('rejects incomplete historical per-ID classification',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^\| R112 \| `DRAFT_ALIGNED_OWNER` \|[^\n]+\n/m,'')}},/classify all 112 historical source IDs exactly once/);
 rejects('rejects duplicated historical per-ID classification',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^(\| R042 \| `DRAFT_ALIGNED_OWNER` \|[^\n]+)$/m,'$1\n$1')}},/classify all 112 historical source IDs exactly once/);
 rejects('rejects fabricated historical code PASS',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^(\| R041 \| `)DRAFT_ALIGNED_OWNER/m,'$1PASS_IMPLEMENTED')}},/unrecognized documentary classification/);

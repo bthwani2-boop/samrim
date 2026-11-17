@@ -628,11 +628,9 @@ if(!plan.includes('D01')||!plan.includes('Phase 2')||!plan.includes('NOT_RUN'))f
 
 // This crosswalk is a temporary documentary review ledger in the one execution plan,
 // NOT a second Product-admission source or confirmation of implemented features.
-const startMarker='### 2026-11-12 — Per-ID reconciliation of the 112 historical Control Panel requirements';
-const startAt=plan.indexOf(startMarker);
-if(startAt<0)fail('historical 112-row decision crosswalk missing from temporary plan');
-const reviewChunk=plan.slice(startAt);
-const parsedRows=[...reviewChunk.matchAll(/^\| (R\d{3}) \| `([A-Z_]+)` \| `([^\r\n|]+)` \| ([^\r\n|]{5,}) \|$/gm)];
+// Validate the actual documentary records, not a dated Markdown heading.
+// The temporary plan can be reorganized without changing the 112 archived decisions.
+const parsedRows=[...plan.matchAll(/^\| (R\d{3}) \| `([A-Z_]+)` \| `([^\r\n|]+)` \| ([^\r\n|]{5,}) \|$/gm)];
 const approvedLabels=new Set(['DRAFT_ALIGNED_OWNER','POLICY_REFRAMED','CONDITIONAL_CANDIDATE','HISTORICAL_ONLY','MIXED_REFRAME_RETIRE','INDEPENDENT_RISK_REVIEW']);
 const crosswalkIDs=parsedRows.map(x=>x[1]);
 if(parsedRows.length!==112||new Set(crosswalkIDs).size!==112||controlIDs.some(x=>!crosswalkIDs.includes(x)))
