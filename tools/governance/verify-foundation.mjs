@@ -229,8 +229,10 @@ const legalDevelopmentFile=(relative)=>{
      exists('services/wlt/backend/cmd/wlt/main.go'));
   }
   if(name==='go.mod'||name==='go.sum')return true;
-  const command=new RegExp('^cmd/'+owner+'/[a-z][a-z0-9_]*\\.go$');
-  return command.test(name)||/^internal\/(?:[a-z][a-z0-9]*\/)+[a-z][a-z0-9_]*\.go$/.test(name);
+  const commandPrefix='cmd/'+owner+'/';
+  return (name.startsWith(commandPrefix)&&
+    /^[a-z][a-z0-9_]*\.go$/.test(name.slice(commandPrefix.length)))||
+    /^internal\/(?:[a-z][a-z0-9]*\/)+[a-z][a-z0-9_]*\.go$/.test(name);
  }
  if(area==='database')return /^migrations\/\d{3,}_[a-z][a-z0-9_]*\.sql$/.test(name);
  if(area==='clients')return /\.(?:ts|tsx)$/i.test(name);
