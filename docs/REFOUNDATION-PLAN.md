@@ -1288,3 +1288,11 @@ This checkpoint supersedes stale statuses, not the preserved 27 P0 and 25 P1 req
 - Node test discovery: six regression tests PASS and SOURCE_TEST_DISCOVERY_PASS count=63. Nx affected-graph regression: 10/10 PASS, including untracked DSH OpenAPI/SQL, Merchant source and Windows argument safety.
 - Local workspace, tracked-secret marker check (4/4), design tokens/generated CSS, independent OpenAPI checker and git diff --check PASS. Secret audit excluded Git history; native appearance/device usability NOT_RUN.
 - P0-23 continues FAIL on the concurrently moving Merchant tree; app tests/Knip are not overwritten by independent green source checks. The shared Git index holds peer-staged Merchant files, so no local commit/push of this checkpoint was attempted by this session.
+
+
+### Same-day later revision: source test recovery and scope-limited update
+
+- The concurrent Merchant route migration advanced and was committed as a5d339077 before the checks below. After that change, pnpm check:apps PASS (66/66 tests, app boundaries 309 files, Expo/RTL configuration and workspace TypeScript typechecks). This supersedes the prior transitory check:apps FAIL and the old count of 310/319 files. It is not installed Android or authenticated E2E evidence.
+- pnpm check:coverage PASS on the resulting working tree: 463 tests, 460 PASS, 0 FAIL, 3 skipped; 41 measured source files, line coverage 3840/4392 = 87.4%. This percentage is for instrumented source, not the entire business product.
+- pnpm run knip:files remains FAIL on 18 Merchant TSX files without proven live consumers; their owning session must reconcile them. P0-23 and global pnpm check cannot close while this persists. No file was deleted/excluded merely to make Knip green.
+- The guard/plan correction was subsequently committed locally as c8c55b10de70014fe886e6252ba99b47de705a03 by the shared Git writer. This checkpoint distinguishes prior test working-tree content from final immutable CI; external GitHub required checks on c8c55b10d and Graphify matching that SHA are NOT_RUN/INVALIDATED respectively. Surface-to-Lenovo runtime cutover and production are still unauthorized.
