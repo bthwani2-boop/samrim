@@ -1,0 +1,51 @@
+diff --git a/lib/parse.js b/lib/parse.js
+index caa2b86..e27e958 100644
+--- a/lib/parse.js
++++ b/lib/parse.js
+@@ -280,6 +280,26 @@ const repeatedExtglobRecursion = pattern => {
+   return depth;
+ };
+-
++
++// Keep repeated extglobs from enclosing an unbounded regex repeat
++// (CVE-2026-112366). Inspect emitted regex so quoted and escaped text
++// and character-class contents cannot be mistaken for quantifiers.
++const hasUnboundedRepeat = source => {
++  let inClass = false;
++  for (let i = 0; i < source.length; i++) {
++    const ch = source[i];
++    if (ch === '\\') {
++      i++;
++    } else if (inClass) {
++      if (ch === ']') inClass = false;
++    } else if (ch === '[') {
++      inClass = true;
++    } else if (ch === '*' || ch === '+' || (ch === '{' && /^\{\d+,\}/.test(source.slice(i)))) {
++      return true;
++    }
++  }
++  return false;
++};
++
+ const analyzeRepeatedExtglob = (body, options) => {
+   if (options.maxExtglobRecursion === false) {
+     return { risky: false };
+@@ -510,9 +530,15 @@ const parse = (input, options) => {
+   const extglobClose = token => {
+     const literal = input.slice(token.startIndex, state.index + 1);
+     const body = input.slice(token.startIndex + 2, state.index);
+-    const analysis = analyzeRepeatedExtglob(body, opts);
++    const repeated = token.type === 'plus' || token.type === 'star';
++    let analysis = repeated && analyzeRepeatedExtglob(body, opts);
++    if (repeated && !analysis.risky) {
++      const expression = tokens.slice(token.tokensIndex + 2)
++        .map(part => (part.output ?? part.value) + (part.suffix || '')).join('');
++      if (hasUnboundedRepeat(expression)) analysis = { risky: true };
++    }
+-
++
+-    if ((token.type === 'plus' || token.type === 'star') && analysis.risky) {
++    if (repeated && analysis.risky) {
+       const safeOutput = analysis.safeOutput
+         ? (token.output ? '' : ONE_CHAR) + (opts.capture ? `(${analysis.safeOutput})` : analysis.safeOutput)
+         : undefined;

@@ -41,3 +41,5 @@ sharedWorkspaceLockfile: true
 strictPeerDependencies: true
 patchedDependencies:
   '@rc-component/util@1.14.0': patches/@rc-component__util@1.14.0.patch
+  picomatch@2.3.2: patches/picomatch@2.3.2.patch
+  picomatch@4.0.7: patches/picomatch@4.0.7.patch
