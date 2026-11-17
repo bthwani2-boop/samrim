@@ -101,13 +101,13 @@ const oldPanel=donor.apps["control-panel"]?.manifest;
 const newPanel=json("apps/control-panel/package.json");
 for(const kind of ["dependencies","devDependencies"]) {
   for(const [dep,version] of Object.entries(oldPanel?.[kind] ?? {})) {
-    if(dep.startsWith("@bthwani/")||dep==="xlsx")continue; // features deferred
+    if(dep.startsWith("@bthwani/")||dep==="xlsx"||dep==="next")continue; // features deferred; Next security upgrade is pinned and asserted below
     assert.equal(newPanel[kind][dep],version,"Operator dependency drift "+dep);
     external++;
   }
 }
 assert.equal(newPanel.dependencies.antd,"6.6.7");
-assert.equal(newPanel.dependencies.next,"16.4.3");
+assert.equal(newPanel.dependencies.next,"16.4.5");
 assert.equal(json("packages/tamagui-config/package.json").dependencies.tamagui,"3.3.1");
 assert.equal(json("packages/tamagui-config/package.json").dependencies["@tamagui/config"],"3.3.1");
 // Stage-4 renderer-boundary evidence: no second numeric token authority.
