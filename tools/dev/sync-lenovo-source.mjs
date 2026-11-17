@@ -62,21 +62,42 @@ function remote(code) {
     "-NonInteractive", "-EncodedCommand", Buffer.from(code, "utf16le").toString("base64")
   ], 30000);
 }
-function logger(line) {
-  fs.mkdirSync(stateDir, { recursive: true });
-  if (fs.existsSync(logFile) && fs.statSync(logFile).size > 1048576) {
-    fs.rmSync(logFile + ".previous", { force: true });
-    fs.renameSync(logFile, logFile + ".previous");
+function appendLogFile(file, message, limit = 1048576) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  // Use the same open descriptor for the size check and the normal append.
+  let fd = fs.openSync(file, "a", 0o600);
+  try {
+    if (fs.fstatSync(fd).size <= limit) {
+      fs.writeSync(fd, message + "\n");
+      return;
+    }
+  } finally {
+    fs.closeSync(fd);
   }
+  fs.rmSync(file + ".previous", { force: true });
+  try {
+    fs.renameSync(file, file + ".previous");
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  fd = fs.openSync(file, "a", 0o600);
+  try {
+    fs.writeSync(fd, message + "\n");
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+function logger(line) {
   const message = new Date().toISOString() + " " + line;
-  fs.appendFileSync(logFile, message + "\n");
+  appendLogFile(logFile, message);
   console.log(message);
 }
 function head() { return run("git", ["rev-parse", "HEAD"]); }
 function branch() { return run("git", ["branch", "--show-current"]); }
 function inventory() {
   const raw = run("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", ...include]);
-  const files = [...new Set(raw.split("\0").filter(allowed))].sort();
+  const files = [...new Set(raw.split("\0").filter(allowed))]
+    .sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
   const found = new Map();
   for (const rel of files) {
     const full = path.join(root, ...rel.split("/"));
@@ -260,4 +281,4 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   try { main(); } catch (e) { console.error("SOURCE_SYNC_ERROR " + e.message); process.exitCode = 1; }
 }
 
-export { allowed, failureDetail, isUnchanged, remoteConflict };
+export { allowed, appendLogFile, failureDetail, isUnchanged, remoteConflict };

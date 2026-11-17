@@ -1,6 +1,25 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
-import { allowed, failureDetail, isUnchanged, remoteConflict } from "./sync-lenovo-source.mjs";
+import { allowed, appendLogFile, failureDetail, isUnchanged, remoteConflict } from "./sync-lenovo-source.mjs";
+
+test("source-sync log writes through an open descriptor and rotates safely", () => {
+  const folder = mkdtempSync(path.join(tmpdir(), "bthwani-source-sync-log-"));
+  try {
+    const log = path.join(folder, "logs", "sync.log");
+    appendLogFile(log, "alpha", 4);
+    assert.equal(readFileSync(log, "utf8"), "alpha\n");
+    appendLogFile(log, "beta", 4);
+    assert.equal(readFileSync(log + ".previous", "utf8"), "alpha\n");
+    assert.equal(readFileSync(log, "utf8"), "beta\n");
+    appendLogFile(log, "gamma", 4096);
+    assert.equal(readFileSync(log, "utf8"), "beta\ngamma\n");
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
 
 test("remote conflicts protect separately edited target files", () => {
   assert.equal(remoteConflict("OLDER", "NEW", "OLDER"), false);
