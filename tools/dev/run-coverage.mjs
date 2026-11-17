@@ -30,7 +30,7 @@ const baselineTests = [
 const testFiles = [...new Set([
   ...baselineTests,
   ...discoverWorkspaceNodeTests(root),
-])].sort();
+])].sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
 for (const file of baselineTests) {
   assert.ok(existsSync(join(root, file)), `Missing baseline test ${file}`);
 }

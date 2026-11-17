@@ -33,7 +33,7 @@ export function discoverNodeSourceTests(root, folder) {
     }
   }
   walk(folder);
-  return files.sort();
+  return files.sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
 }
 
 
@@ -41,5 +41,5 @@ export function discoverNodeSourceTests(root, folder) {
 // infrastructure and future Feature/package tests. Other formats fail closed.
 export function discoverWorkspaceNodeTests(root) {
   return [...new Set(["apps", "services", "packages", "tests", "tools", "infra"]
-    .flatMap((dir) => discoverNodeSourceTests(root, join(root, dir))))].sort();
+    .flatMap((dir) => discoverNodeSourceTests(root, join(root, dir))))].sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
 }
