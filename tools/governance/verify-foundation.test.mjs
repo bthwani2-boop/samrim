@@ -178,11 +178,10 @@ rejects('rejects a fourth HR service',{add:{'services/hr/README.md':'not permitt
 rejects('rejects missing Identity package manifest',{del:['services/identity/package.json']},/required services\/identity\/package.json/);
 rejects('rejects wrong DSH package name',{edit:{'services/dsh/package.json':s=>s.replace('@bthwani/dsh','@bthwani/direct-dsh')}},/service package drift or premature runtime dependency/);
 rejects('rejects premature runtime dependencies',{edit:{'services/wlt/package.json':s=>s.replace('"devDependencies":', '"dependencies": {"some-financial-package":"1.0.0"}, "devDependencies":')}},/service package drift or premature runtime dependency/);
-rejects('rejects stale scaffold documentation for newly exported client',{edit:{'services/identity/clients/index.ts':s=>s+'export const simulatedLogin = true;\n'}},/client library falsely claims implementation/);
+rejects('rejects stale scaffold documentation for newly exported client',{edit:{'services/identity/clients/README.md':s=>s.replace('STATUS: IMPLEMENTATION_IN_PROGRESS','STATUS: SCAFFOLD_ONLY')}},/client library falsely claims implementation/);
 accepts('permits TypeScript client development with honest in-progress documentation',{
  edit:{
   'services/identity/clients/index.ts':s=>s+'export type { Session } from "./generated/session";\n',
-  'services/identity/clients/README.md':s=>s.replace('STATUS: SCAFFOLD_ONLY','STATUS: IMPLEMENTATION_IN_PROGRESS'),
  },
  add:{'services/identity/clients/generated/session.ts':'export type Session = { id: string };\n'}
 },/PROGRESSIVE_SOURCE_PRESENT/);
