@@ -6,13 +6,17 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
+// Do not resolve Git from a caller-controlled PATH when verifying provenance.
+const gitExecutable = process.platform === "win32"
+  ? "C:\\Program Files\\Git\\cmd\\git.exe"
+  : "/usr/bin/git";
 const ownerServices = {
   dsh: "bthwani-refoundation-dsh-1",
   identity: "bthwani-refoundation-identity-1",
 };
 
 function checked(command, args) {
-  const result = spawnSync(command, args, {
+  const result = spawnSync(command === "git" ? gitExecutable : command, args, {
     cwd: root,
     encoding: "utf8",
     windowsHide: true,
@@ -46,9 +50,17 @@ export function evaluateService(input) {
   return { revision, errors, passed: errors.length === 0 };
 }
 
-function readService(owner, dockerContext, head) {
+function gitAncestor(revision, head) {
+  const check = spawnSync(gitExecutable, ["merge-base", "--is-ancestor", revision, head], {
+    cwd: root, encoding: "utf8", windowsHide: true, timeout: 20000,
+  });
+  return check.status === 0;
+}
+
+// Only the side-effect runner is injectable for isolated negative-path tests.
+export function readService(owner, dockerContext, head, execute = checked, isAncestor = gitAncestor) {
   const name = ownerServices[owner];
-  const docker = (args) => checked("docker", ["--context", dockerContext, ...args]);
+  const docker = (args) => execute("docker", ["--context", dockerContext, ...args]);
   // Templates intentionally extract only non-secret metadata.
   const containerRecord = docker(["inspect", "--format",
     '{{.Image}}|{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{.State.Running}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}NOT_CONFIGURED{{end}}',
@@ -66,16 +78,13 @@ function readService(owner, dockerContext, head) {
   let committedAncestor = false;
   let ownerChanges = [];
   if (/^[0-9a-f]{40}$/.test(revision)) {
-    const check = spawnSync("git", ["merge-base", "--is-ancestor", revision, head], {
-      cwd: root, encoding: "utf8", windowsHide: true, timeout: 20000,
-    });
-    committedAncestor = check.status === 0;
+    committedAncestor = isAncestor(revision, head);
     if (committedAncestor) {
-      ownerChanges = checked("git", ["diff", "--name-only", revision, head,
+      ownerChanges = execute("git", ["diff", "--name-only", revision, head,
         "--", "services/" + owner]).split("\n").filter(Boolean);
     }
   }
-  const localOwnerChanges = checked("git", ["status", "--porcelain",
+  const localOwnerChanges = execute("git", ["status", "--porcelain",
     "--", "services/" + owner]).split("\n").filter(Boolean);
   return evaluateService({
     owner, project: containerRecord[1], service: containerRecord[2],
