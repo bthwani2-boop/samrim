@@ -3,6 +3,8 @@ import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { type Href, Link, useLocalSearchParams } from "expo-router";
 import * as React from "react";
 import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, Text, View } from "react-native";
+import StoreProducts from "../catalog/store-products";
+import { publicStorefrontPath } from "../sharing/store-share";
 import { describeStoreOrderability } from "./orderability";
 import { resolvePublicStoreDetail } from "./store-detail-loader";
 
@@ -66,7 +68,7 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
           {fullPage ? (
             <Text style={{ ...textStyle, color: theme.colorSecondary }}>موقع المتجر الكامل — العرض للقراءة فقط حتى اكتمال تفعيل الشراء.</Text>
           ) : (
-            <Link href={(`/storefront/${encodeURIComponent(id)}`) as Href} style={{ color: theme.interactiveText }}>
+            <Link href={publicStorefrontPath(id) as Href} style={{ color: theme.interactiveText }}>
               عرض موقع المتجر الكامل
             </Link>
           )}
@@ -88,11 +90,7 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
               <Text style={{ color: theme.interactiveText, textAlign: "center" }}>إعادة تحميل العروض</Text>
             </Pressable>
           </View> : null}
-          {visible.offers.map((offer) => <View key={offer.id} testID={`offer-${offer.id}`}
-            style={{ backgroundColor: theme.surface, padding: 16, borderWidth: 1, borderColor: theme.borderColor, borderRadius: 12, gap: 6 }}>
-            <Text style={{ ...textStyle, fontWeight: "600", fontSize: 17 }}>{offer.name}</Text>
-            <Text style={{ ...textStyle, color: theme.colorSecondary }}>{offer.priceYer.toLocaleString("ar-YE")} ريال يمني</Text>
-          </View>)}
+          <StoreProducts offers={visible.offers} />
           {visible.cursor && !visible.offersError ? <Pressable accessibilityRole="button" onPress={more} disabled={visible.more}
             style={{ padding: 14, borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10 }}>
             <Text style={{ color: theme.interactiveText, textAlign: "center" }}>{visible.more ? "جارٍ التحميل" : "عرض المزيد"}</Text>

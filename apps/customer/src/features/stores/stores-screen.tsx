@@ -2,7 +2,8 @@ import { listPublicStores, type PublicPage, type PublicStore } from "@bthwani/ds
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { type Href, Link, router } from "expo-router";
 import * as React from "react";
-import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, Text, View } from "react-native";
+import ServiceCityScope from "../location/service-city-scope";
 import { describeStoreOrderability } from "./orderability";
 
 const API = process.env.EXPO_PUBLIC_DSH_API_URL ?? "";
@@ -76,16 +77,7 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
           </View>
         ) : <Link href="/" style={{ color: theme.interactiveText }}>الرئيسية</Link>}
         <Text style={{ ...textStyle, color: theme.colorSecondary }}>البيانات المنشورة فقط من خدمة المتاجر. عرض المتجر لا يعني إمكانية إتمام الطلب.</Text>
-        <Text accessibilityRole="text" style={textStyle}>رمز مدينة الخدمة</Text>
-        <View style={{ flexDirection: "row", gap: 8 }}>
-          <TextInput testID="city-input" accessibilityLabel="رمز مدينة الخدمة" value={draftCity} onChangeText={setDraftCity}
-            autoCapitalize="none" returnKeyType="search" onSubmitEditing={() => setCityId(draftCity.trim().toLowerCase())}
-            style={{ ...textStyle, flex: 1, padding: 12, borderWidth: 1, borderRadius: 10, borderColor: theme.borderColor }} />
-          <Pressable accessibilityRole="button" accessibilityLabel="تغيير مدينة الخدمة"
-            style={{ ...buttonStyle, backgroundColor: theme.actionSoft }} onPress={() => setCityId(draftCity.trim().toLowerCase())}>
-            <Text style={{ color: theme.interactiveText }}>عرض</Text>
-          </Pressable>
-        </View>
+        <ServiceCityScope draftCity={draftCity} onDraftChange={setDraftCity} onApply={setCityId} />
         {visible.loading ? <ActivityIndicator accessibilityLabel="جارٍ تحميل المتاجر" color={theme.actionBackground} /> : null}
         {!visible.loading && visible.items.length === 0 && !visible.error
           ? <Text testID="stores-empty" style={textStyle}>لا توجد متاجر منشورة لهذه المدينة حاليًا.</Text> : null}

@@ -1,7 +1,7 @@
 import { type Href, Redirect, useLocalSearchParams } from "expo-router";
 import type { GenerateMetadataFunction } from "expo-router/server";
 import { Platform } from "react-native";
-import PublicStoreDetail from "../../src/features/stores/store-detail-screen";
+import StorefrontScreen from "../../src/features/stores/storefront-screen";
 
 // Public listing does not authorize search indexing of Store sites before release approval.
 export const generateMetadata: GenerateMetadataFunction = () => ({
@@ -18,5 +18,5 @@ export default function FullStorefrontRoute() {
   }
   // Same public DSH Store/Offer owner as the marketplace, with a wider Web presentation.
   // Never infer checkout eligibility from publication.
-  return <PublicStoreDetail storeID={storeId} fullPage />;
+  return <StorefrontScreen storeId={storeId} />;
 }
