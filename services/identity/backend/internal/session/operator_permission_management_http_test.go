@@ -5,10 +5,12 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 type operatorPermissionManagerSpy struct {
@@ -63,7 +65,7 @@ func TestOperatorPermissionManagementHTTPRejectsUnsafeRequestsBeforeOwnerRead(t 
 		{"two JSON objects", nil, path, validOperatorAdminBody() + " {}", 400},
 		{"insufficient reason", nil, path, `{"state":"ACTIVE","expectedVersion":0,"operationId":"synthetic-op-001","reason":"ok"}`, 400},
 		{"missing JSON content-type", func(r *http.Request) { r.Header.Del("Content-Type") }, path, validOperatorAdminBody(), 400},
-		{"body exceeds 2048", nil, path, validOperatorAdminBody() + strings.Repeat(" ", 2200), 400},
+		{"body exceeds 8192", nil, path, validOperatorAdminBody() + strings.Repeat(" ", 9000), 400},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			spy := &operatorPermissionManagerSpy{}
@@ -160,5 +162,20 @@ func TestOperatorPermissionManagementHTTPRejectsWrongMethodsAndUnavailableOwner(
 	NewOperatorPermissionManagementHandler(nil).ServeHTTP(rr, req)
 	if rr.Code != 503 || !strings.Contains(rr.Body.String(), "OWNER_UNAVAILABLE") {
 		t.Fatalf("missing Identity owner must fail closed, got %d", rr.Code)
+	}
+}
+
+func TestOperatorPermissionManagementHTTPAcceptsEscapedUnicodeReasonAtMaximum(t *testing.T) {
+	spy := &operatorPermissionManagerSpy{}
+	// JSON may encode a valid 500-code-point reason with 6,000 bytes of
+	// surrogate-pair escapes; transport limits must measure encoded bytes
+	// without rejecting valid decoded business input.
+	reason := strings.Repeat(`\ud83d\ude00`, 500)
+	body := fmt.Sprintf(`{"state":"ACTIVE","expectedVersion":0,"operationId":"escaped-unicode-operator-001","reason":"%s"}`, reason)
+	rr := httptest.NewRecorder()
+	request := operatorAdminTestRequest(t, "/v1/operators/synthetic-operator-b/permissions/operations", body)
+	NewOperatorPermissionManagementHandler(spy).ServeHTTP(rr, request)
+	if rr.Code != http.StatusOK || spy.called != 1 || utf8.RuneCountInString(spy.last.Reason) != 500 {
+		t.Fatalf("valid escaped Unicode reason rejected: status=%d calls=%d runes=%d", rr.Code, spy.called, utf8.RuneCountInString(spy.last.Reason))
 	}
 }

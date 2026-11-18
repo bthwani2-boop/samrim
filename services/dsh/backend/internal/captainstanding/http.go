@@ -61,7 +61,9 @@ func uniqueObjectMembers(raw []byte) bool {
 	for decoder.More() {
 		token, err := decoder.Token()
 		key, ok := token.(string)
-		if err != nil || !ok || seen[key] {
+		if err != nil || !ok || seen[key] ||
+			(key != "status" && key != "expectedVersion" &&
+				key != "operationId" && key != "reason") {
 			return false
 		}
 		seen[key] = true

@@ -63,3 +63,23 @@ func TestCaptainDSHOutageIsUnavailableRatherThanAStandingDenial(t *testing.T) {
 		t.Fatalf("DSH outage must be 503-like owner uncertainty, got %v", got)
 	}
 }
+
+func TestCaptainDSHTransportFailureIsOwnerUnavailable(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"actorId":"verified-id","status":"APPROVED","version":1}`))
+	}))
+	client, err := NewCaptainStandingHTTP(s.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	if got := client.Approved(context.Background(), "customer-bearer", "verified-id"); !errors.Is(got, ErrCaptainStandingOwnerUnavailable) {
+		t.Fatalf("transport outage incorrectly treated as an eligibility denial: %v", got)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if got := client.Approved(ctx, "customer-bearer", "verified-id"); !errors.Is(got, ErrCaptainStandingOwnerUnavailable) {
+		t.Fatalf("cancelled owner read incorrectly treated as an eligibility denial: %v", got)
+	}
+}

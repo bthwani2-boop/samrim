@@ -35,3 +35,24 @@ test("Aborted response cannot revive a previous account's standing",async t=>{
   t.mock.method(globalThis,"fetch",async()=>{controller.abort();return good(owner)});
   await assert.rejects(readMerchantDSHStanding("https://dsh.test",bearer,controller.signal),{code:"OWNER_RESPONSE_STALE"});
 });
+
+test("Merchant DSH standing accepts the largest valid Unicode store listing but rejects oversized bodies",async t=>{
+  const stores=Array.from({length:100},(_,i)=>({
+    id:"store-"+i,
+    name:"😀".repeat(120),
+    relation:"MARKETPLACE",
+    published:i%2===0,
+  }));
+  const payload={actorId:"x".repeat(128),stores};
+  const response=JSON.stringify(payload).replaceAll("😀",String.raw`\ud83d\ude00`);
+  assert.ok(response.length>32768,"regression must exceed old premature cap");
+  t.mock.method(globalThis,"fetch",async()=>new Response(response,{headers:{"Content-Type":"application/json","Cache-Control":"no-store"}}));
+  assert.equal((await readMerchantDSHStanding("https://dsh.test",bearer)).stores.length,100);
+});
+
+test("Merchant DSH response envelope stays bounded",async t=>{
+  t.mock.method(globalThis,"fetch",async()=>new Response(" ".repeat(262145),{
+    headers:{"Content-Type":"application/json","Cache-Control":"no-store"}
+  }));
+  await assert.rejects(readMerchantDSHStanding("https://dsh.test",bearer),{code:"OWNER_RESPONSE_INVALID"});
+});

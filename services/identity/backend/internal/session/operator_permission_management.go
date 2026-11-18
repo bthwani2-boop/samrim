@@ -6,6 +6,7 @@ import (
 	"errors"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/lib/pq"
 )
@@ -39,13 +40,15 @@ type OperatorPermissionResult struct {
 }
 
 func validateOperatorPermissionCommand(command OperatorPermissionCommand) error {
+	reasonLength := utf8.RuneCountInString(command.Reason)
 	if !operatorAdminID.MatchString(command.TargetActorID) ||
 		!isOperatorPermission(command.Permission) ||
 		(command.State != "ACTIVE" && command.State != "REVOKED") ||
 		command.ExpectedVersion < 0 ||
 		!operatorAdminOperationID.MatchString(command.OperationID) ||
 		command.Reason != strings.TrimSpace(command.Reason) ||
-		len(command.Reason) < 10 || len(command.Reason) > 500 ||
+		!utf8.ValidString(command.Reason) ||
+		reasonLength < 10 || reasonLength > 500 ||
 		strings.ContainsAny(command.Reason, "\r\n\x00") {
 		return ErrOperatorAdminInvalid
 	}
@@ -101,10 +104,11 @@ func (r *PostgresReader) ManageOperatorPermission(
 	// Serialize concurrent mutation of the same target before observing the
 	// operation ID, permission version and standing. No stale privileges.
 	var roleVersion int64
-	err = tx.QueryRowContext(ctx, `SELECT ar.version
+	var actorStatus, roleStatus string
+	err = tx.QueryRowContext(ctx, `SELECT ar.version,a.status,ar.status
         FROM actors a JOIN actor_roles ar ON ar.actor_id=a.id
-        WHERE a.id=$1 AND a.status='ACTIVE' AND ar.role='operator' AND ar.status='ACTIVE'
-        FOR UPDATE OF a,ar`, command.TargetActorID).Scan(&roleVersion)
+        WHERE a.id=$1 AND ar.role='operator'
+        FOR UPDATE OF a,ar`, command.TargetActorID).Scan(&roleVersion, &actorStatus, &roleStatus)
 	if errors.Is(err, sql.ErrNoRows) {
 		return OperatorPermissionResult{}, ErrOperatorAdminTargetNotFound
 	}
@@ -137,6 +141,11 @@ func (r *PostgresReader) ManageOperatorPermission(
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return OperatorPermissionResult{}, err
+	}
+	// Recorded exact retries stay observable after target suspension, but a
+	// new grant/revoke cannot act on an inactive actor or role.
+	if actorStatus != "ACTIVE" || roleStatus != "ACTIVE" {
+		return OperatorPermissionResult{}, ErrOperatorAdminTargetNotFound
 	}
 
 	var previousState string

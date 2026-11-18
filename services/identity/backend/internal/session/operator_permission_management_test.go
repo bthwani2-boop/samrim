@@ -2,6 +2,7 @@ package session
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -68,5 +69,24 @@ func TestOperatorPermissionCommandRequiresOwnerReadBeforeAccess(t *testing.T) {
 	_, err = reader.ManageOperatorPermission(t.Context(), "Bearer invalid", c)
 	if !errors.Is(err, ErrOperatorAdminInvalid) {
 		t.Fatalf("unknown scope should be rejected before any owner read: %v", err)
+	}
+}
+
+func TestOperatorPermissionReasonUsesUnicodeCodePoints(t *testing.T) {
+	for _, tc := range []struct {
+		count int
+		valid bool
+	}{{9, false}, {10, true}, {500, true}, {501, false}} {
+		c := validOperatorAdminCommand()
+		c.Reason = strings.Repeat("é", tc.count)
+		err := validateOperatorPermissionCommand(c)
+		if (err == nil) != tc.valid {
+			t.Fatalf("Unicode reason of %d code points: err=%v wantValid=%v", tc.count, err, tc.valid)
+		}
+	}
+	c := validOperatorAdminCommand()
+	c.Reason = strings.Repeat(string([]byte{0xff}), 20)
+	if err := validateOperatorPermissionCommand(c); !errors.Is(err, ErrOperatorAdminInvalid) {
+		t.Fatalf("invalid UTF-8 was accepted: %v", err)
 	}
 }

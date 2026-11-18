@@ -51,14 +51,14 @@ func (s *CaptainStandingHTTP) Approved(ctx context.Context, bearer, actorID stri
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.endpoint, nil)
 	if err != nil {
-		return ErrCaptainStandingNotApproved
+		return ErrCaptainStandingOwnerUnavailable
 	}
 	req.Header.Set("Authorization", "Bearer "+bearer)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Cache-Control", "no-store")
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return ErrCaptainStandingNotApproved
+		return ErrCaptainStandingOwnerUnavailable
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {

@@ -90,7 +90,10 @@ func decodeOperatorPermissionPayload(body io.Reader, target, permission string) 
 
 func (h *OperatorPermissionManagementHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	noStore(w)
-	const maxBody = 2048
+	// A valid 500-character Unicode reason can be JSON-escaped as 12 bytes
+	// per code point (surrogate pairs); the decoded 10–500-char limit remains
+	// enforced by the canonical command validator.
+	const maxBody = 8192
 	if r.Method != http.MethodPatch {
 		w.Header().Set("Allow", "PATCH")
 		respond(w, http.StatusMethodNotAllowed, map[string]string{"error": "METHOD_NOT_ALLOWED"})

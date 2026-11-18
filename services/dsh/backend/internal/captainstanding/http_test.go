@@ -90,6 +90,11 @@ func TestCaptainOperatorStandingPatchRejectsAmbiguousAndForgedInput(t *testing.T
 		`{"status":"APPROVED","status":"SUSPENDED","expectedVersion":1,"operationId":"approval-001","reason":"verified"}`,
 		`{"status":"APPROVED","expectedVersion":1,"operationId":"approval-001","reason":"verified","actingActorId":"forged"}`,
 		`{"status":"APPROVED","expectedVersion":0,"operationId":"approval-001","reason":"verified"}`,
+		`{"status":"APPROVED","Status":"REVOKED","expectedVersion":1,"operationId":"approval-001","reason":"verified"}`,
+		`{"Status":"APPROVED","expectedVersion":1,"operationId":"approval-001","reason":"verified"}`,
+		`{"status":"APPROVED","EXPECTEDVERSION":1,"operationId":"approval-001","reason":"verified"}`,
+		`{"status":"APPROVED","expectedVersion":1,"operationID":"approval-001","reason":"verified"}`,
+		`{"status":"APPROVED","expectedVersion":1,"operationId":"approval-001","Reason":"verified"}`,
 	}
 	for _, body := range bad {
 		if status := patch(body); status != http.StatusBadRequest || owner.changes != 0 {
@@ -99,5 +104,8 @@ func TestCaptainOperatorStandingPatchRejectsAmbiguousAndForgedInput(t *testing.T
 	good := `{"status":"APPROVED","expectedVersion":1,"operationId":"approval-001","reason":"verified"}`
 	if status := patch(good); status != http.StatusOK || owner.changes != 1 {
 		t.Fatalf("authorized patch failed status=%d changes=%d", status, owner.changes)
+	}
+	if owner.lastChange.ActorID != "captain-17" || owner.lastChange.ActingActorID != "operator-1" {
+		t.Fatalf("forged actor header influenced command owner binding: %+v", owner.lastChange)
 	}
 }

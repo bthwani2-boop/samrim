@@ -194,6 +194,23 @@ func TestOperatorPermissionManagementRealPostgresAndHTTP(t *testing.T) {
 	if repeat != result {
 		t.Fatal("idempotent replay changed result")
 	}
+	// An acknowledged grant remains replay-readable after the target later
+	// loses standing; new permission mutations must still fail closed.
+	if _, err = db.ExecContext(ctx, "UPDATE "+actors+" SET status='SUSPENDED' WHERE id=$1", target); err != nil {
+		t.Fatal(err)
+	}
+	suspendedRepeat := call(rootBearer, command, 200)
+	if suspendedRepeat != result {
+		t.Fatal("suspended target changed a recorded operation's historical reply")
+	}
+	blocked := command
+	blocked.OperationID = "operator-s02-blocked-suspended"
+	blocked.State = "REVOKED"
+	blocked.ExpectedVersion = 1
+	call(rootBearer, blocked, 404)
+	if _, err = db.ExecContext(ctx, "UPDATE "+actors+" SET status='ACTIVE' WHERE id=$1", target); err != nil {
+		t.Fatal(err)
+	}
 	conflicting := command
 	conflicting.State = "REVOKED"
 	call(rootBearer, conflicting, 409) // operationId reused with conflicting input

@@ -86,7 +86,9 @@ export async function readMerchantDSHStanding(origin: string, bearer: string, si
   let body: unknown;
   try {
     const text = await response.text();
-    if (text.length > 32768) throw new Error("oversized owner payload");
+    // Up to 100 stores with 120-character Unicode names and JSON escapes.
+    // Bound the serialized envelope without rejecting contract-valid data.
+    if (text.length > 262144) throw new Error("oversized owner payload");
     body = JSON.parse(text);
   } catch {
     throw new MerchantStandingError(502, "OWNER_RESPONSE_INVALID");

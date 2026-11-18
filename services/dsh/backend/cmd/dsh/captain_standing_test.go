@@ -7,6 +7,7 @@ import (
 )
 
 func TestCaptainStandingRoutesRemainOffUnlessIsolatedAndLoopback(t *testing.T) {
+	t.Setenv("DSH_ENABLE_ISOLATED_CAPTAIN_STANDING", "false")
 	public := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	routes, err := isolatedCaptainStandingHandler(nil, "dsh", public, nil)
 	if err != nil {

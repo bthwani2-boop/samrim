@@ -25,9 +25,10 @@ func (f *fakeIdentity) RequireOperations(context.Context, string, string) error 
 }
 
 type fakeStandingRepository struct {
-	standing Standing
-	err      error
-	changes  int
+	standing   Standing
+	err        error
+	changes    int
+	lastChange Change
 }
 
 func (f *fakeStandingRepository) Read(context.Context, string) (Standing, error) {
@@ -35,6 +36,7 @@ func (f *fakeStandingRepository) Read(context.Context, string) (Standing, error)
 }
 func (f *fakeStandingRepository) Change(_ context.Context, cmd Change) (Standing, error) {
 	f.changes++
+	f.lastChange = cmd
 	if f.err != nil {
 		return Standing{}, f.err
 	}
