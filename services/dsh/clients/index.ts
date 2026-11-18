@@ -133,6 +133,12 @@ function readPage<T>(value: unknown, validate: (v: unknown) => v is T): PublicPa
 export async function listPublicStores(
   baseUrl: string, cityId: string, options: { query?: string; cursor?: string; limit?: number; signal?: AbortSignal } = {},
 ): Promise<PublicPage<PublicStore>> {
+  // Check the wire value before URLSearchParams can replace lone surrogates.
+  // OpenAPI maxLength counts Unicode code points, including surrounding space.
+  if (options.query !== undefined && (Array.from(options.query).length > 80 ||
+    options.query.includes("\u0000") || /[\uD800-\uDFFF]/u.test(options.query))) {
+    throw new DshPublicError(400, "INVALID_SEARCH");
+  }
   const url = endpoint(baseUrl, "/v1/public/stores");
   url.searchParams.set("city_id", cityId);
   if (options.query !== undefined) url.searchParams.set("q", options.query);

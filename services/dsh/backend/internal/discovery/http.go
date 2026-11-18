@@ -253,10 +253,11 @@ func storeSearch(r *http.Request) (string, string, bool) {
 	if err != nil || len(values["q"]) > 1 {
 		return "", "", false
 	}
-	search := strings.TrimSpace(values.Get("q"))
-	if !utf8.ValidString(search) || utf8.RuneCountInString(search) > 80 || strings.ContainsRune(search, 0) {
+	raw := values.Get("q")
+	if !utf8.ValidString(raw) || utf8.RuneCountInString(raw) > 80 || strings.ContainsRune(raw, 0) {
 		return "", "", false
 	}
+	search := strings.TrimSpace(raw)
 	scope := values.Get("city_id")
 	if search != "" {
 		scope += fmt.Sprintf(":%x", sha256.Sum256([]byte(search)))

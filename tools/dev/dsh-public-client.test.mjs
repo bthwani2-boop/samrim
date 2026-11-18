@@ -66,6 +66,24 @@ test("Store search is encoded as owner query text and preserves page scope", asy
   });
 });
 
+test("Store search rejects invalid wire text before any network request", async () => {
+  let calls = 0;
+  await withFetch(async () => { calls++; return json({ items: [], revision: 1 }); }, async () => {
+    for (const query of ["a".repeat(81), " ".repeat(81), ` ${"a".repeat(80)}`, "a\u0000b", "\ud800"]) {
+      await rejectsAs(() => listPublicStores(base, "sanaa", { query }), 400, "INVALID_SEARCH");
+    }
+  });
+  assert.equal(calls, 0);
+});
+
+test("Store search accepts 80 Unicode code points without splitting surrogate pairs", async () => {
+  const query = "😀".repeat(80);
+  await withFetch(async (url) => {
+    assert.equal(new URL(url).searchParams.get("q"), query);
+    return json({ items: [], revision: 1 });
+  }, () => listPublicStores(base, "sanaa", { query }));
+});
+
 test("DIRECT linked detail is read without claiming marketplace listing", async () => {
   await withFetch(async (url) => {
     assert.equal(new URL(url).pathname, "/v1/public/stores/direct-sanaa");

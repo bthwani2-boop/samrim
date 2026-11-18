@@ -8,7 +8,7 @@ import (
 )
 
 func TestStoreSearchValidationAndCursorScope(t *testing.T) {
-	for _, q := range []string{"متجر", "%_", "' OR true --", strings.Repeat("😀", 80)} {
+	for _, q := range []string{"متجر", "%_", "' OR true --", strings.Repeat("😀", 76)} {
 		r := httptest.NewRequest("GET", "/v1/public/stores?city_id=sanaa&q="+url.QueryEscape("  "+q+"  "), nil)
 		got, scope, ok := storeSearch(r)
 		if !ok || got != q {
@@ -25,7 +25,7 @@ func TestStoreSearchValidationAndCursorScope(t *testing.T) {
 			t.Fatal("search cursor reused for another query")
 		}
 	}
-	for _, raw := range []string{"q=a&q=b", "q=" + strings.Repeat("a", 81), "q=%00", "q=%FF", "q=%ZZ"} {
+	for _, raw := range []string{"q=a&q=b", "q=" + strings.Repeat("a", 81), "q=+" + strings.Repeat("a", 80), "q=" + strings.Repeat("+", 81), "q=%00", "q=%FF", "q=%ZZ"} {
 		w := httptest.NewRecorder()
 		(&Server{}).ServeHTTP(w, httptest.NewRequest("GET", "/v1/public/stores?city_id=sanaa&"+raw, nil))
 		if w.Code != 400 || !strings.Contains(w.Body.String(), "INVALID_SEARCH") {

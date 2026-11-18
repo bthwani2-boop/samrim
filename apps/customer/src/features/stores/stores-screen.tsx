@@ -84,8 +84,9 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
         <ServiceCityScope draftCity={draftCity} onDraftChange={setDraftCity} onApply={setCityId} />
         <View style={{ gap: 8 }}>
           <TextInput testID="stores-search" accessibilityLabel="البحث باسم المتجر" placeholder="ابحث باسم المتجر"
-            placeholderTextColor={theme.colorSecondary} value={draftQuery} onChangeText={setDraftQuery}
-            maxLength={80} returnKeyType="search" onSubmitEditing={() => setQuery(draftQuery.trim())}
+            placeholderTextColor={theme.colorSecondary} value={draftQuery}
+            onChangeText={(value) => setDraftQuery(Array.from(value).slice(0, 80).join(""))}
+            returnKeyType="search" onSubmitEditing={() => setQuery(draftQuery.trim())}
             style={{ ...buttonStyle, color: theme.color, textAlign: "right", writingDirection: "rtl" }} />
           <Pressable accessibilityRole="button" onPress={() => setQuery(draftQuery.trim())} style={buttonStyle}>
             <Text style={{ color: theme.interactiveText, textAlign: "center" }}>بحث</Text>
