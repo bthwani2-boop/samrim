@@ -77,6 +77,15 @@ func main() {
 		routes.Handle(session.PhoneChallengePath, phone)
 		routes.Handle(session.PhoneVerifyPath, phone)
 	}
+	if os.Getenv("IDENTITY_ENABLE_ISOLATED_CAPTAIN_ADMISSION") == "true" {
+		standing, err := session.NewCaptainStandingHTTP(os.Getenv("IDENTITY_DSH_CAPTAIN_STANDING_URL"))
+		if err != nil {
+			log.Fatal("Captain role admission requires a verified DSH standing owner: ", err)
+		}
+		captain := session.NewCaptainHandler(session.NewCaptainAdmission(reader, standing))
+		routes.Handle(session.CaptainAdmitPath, captain)
+		routes.Handle(session.CaptainReentryPath, captain)
+	}
 	routes.Handle("/", session.NewHandler(session.NewVerifier(reader)))
 	server := &http.Server{
 		Addr: address, Handler: routes,

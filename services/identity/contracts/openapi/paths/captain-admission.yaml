@@ -1,0 +1,78 @@
+paths:
+  /v1/actors/me/captain-role:
+    post:
+      operationId: admitVerifiedCustomerAsApprovedCaptain
+      summary: Admit current verified Customer to Captain only after current approved DSH standing
+      description: Identity alone issues the Captain platform role and opaque role-scoped session. The canonical DSH owner must independently approve operational standing for precisely the same authenticated Customer actor. Existing suspended, revoked, or already provisioned Captain roles never self-reactivate. Isolated synthetic development only.
+      security:
+        - OpaqueSession: []
+      responses:
+        '201':
+          description: Newly admitted active Captain role with one fresh Identity opaque session
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/IssuedRoleSession' }
+        '400':
+          description: Unexpected body or query
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '401':
+          description: Current Customer session missing, invalid, stale, expired or wrong role
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '403':
+          description: Customer not verified or DSH standing not approved
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '409':
+          description: Previously provisioned role; never automatically reactivates it
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '503':
+          description: Identity/DSH owner unavailable or result uncertain; no successful role claim
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+  /v1/actors/me/captain-session:
+    post:
+      operationId: resumeApprovedCaptainRoleSession
+      summary: Rotate current Captain credential only after DSH standing remains approved
+      description: Requires the same verified Customer actor and existing active Identity Captain role. Requires a fresh DSH-approved standing check before any new session, and atomically revokes prior Captain sessions. Other actor roles are untouched.
+      security:
+        - OpaqueSession: []
+      responses:
+        '200':
+          description: Fresh Captain session for already active approved actor
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/IssuedRoleSession' }
+        '400':
+          description: Unexpected body or query
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '401':
+          description: Current Customer bearer invalid or wrong role
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '403':
+          description: Missing verification, missing active Captain role or denied DSH standing
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '503':
+          description: Identity or DSH owner unavailable; no credential returned
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }

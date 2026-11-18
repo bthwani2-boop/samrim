@@ -27,7 +27,7 @@ const allowedErrors = new Set([
   "INVALID_REQUEST", "UNAUTHORIZED", "FORBIDDEN", "VERIFICATION_REQUIRED",
   "ALREADY_PROVISIONED", "MERCHANT_NOT_ACTIVE", "OWNER_UNAVAILABLE",
   "NOT_FOUND", "METHOD_NOT_ALLOWED",
-  "PHONE_CHALLENGE_LIMIT",
+  "PHONE_CHALLENGE_LIMIT", "CAPTAIN_NOT_APPROVED", "CAPTAIN_NOT_ACTIVE",
 ]);
 const phoneTicket = /^[a-f0-9]{48}$/;
 function originFor(baseUrl: string): URL {
@@ -182,5 +182,19 @@ export async function resumeCurrentCustomerMerchantSession(
   baseUrl: string, customerBearer: string, signal?: AbortSignal,
 ): Promise<MerchantAdmission> {
   return issuedSessionFrom(await ownerRequest(baseUrl, "/v1/actors/me/merchant-session",
+    customerBearer, "POST", 200, signal));
+}
+/** The DSH-approved Captain standing is checked again by Identity at issue time. */
+export async function admitCurrentCustomerAsCaptain(
+  baseUrl: string, customerBearer: string, signal?: AbortSignal,
+): Promise<IssuedRoleSession> {
+  return issuedSessionFrom(await ownerRequest(baseUrl, "/v1/actors/me/captain-role",
+    customerBearer, "POST", 201, signal));
+}
+/** Re-entry rotates the existing Captain bearer without reactivating a role. */
+export async function resumeCurrentCustomerCaptainSession(
+  baseUrl: string, customerBearer: string, signal?: AbortSignal,
+): Promise<IssuedRoleSession> {
+  return issuedSessionFrom(await ownerRequest(baseUrl, "/v1/actors/me/captain-session",
     customerBearer, "POST", 200, signal));
 }

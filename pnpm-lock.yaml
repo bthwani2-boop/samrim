@@ -227,6 +227,9 @@ importers:
 
   apps/captain:
     dependencies:
+      '@bthwani/identity':
+        specifier: workspace:*
+        version: link:../../services/identity
       '@bthwani/tamagui-config':
         specifier: workspace:*
         version: link:../../packages/tamagui-config

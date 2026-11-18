@@ -18,11 +18,17 @@ test("approved Captain routes use one Expo Router root", () => {
   assert.equal(existsSync(resolve(captain, "src/app")), false);
 });
 
-test("entry uses the Identity gate and cannot pretend a login succeeded", () => {
+test("Captain entry is gated by current Identity role and DSH approval", () => {
   assert.ok(read("index.tsx").includes("identity-gate"));
   const gate = source("src/features/access/identity-gate.tsx");
-  assert.ok(gate.includes("لم يتم تفعيل تسجيل الدخول للكابتن"));
-  assert.ok(!gate.includes("setSession("));
+  const admission = source("src/features/access/admission-transport.ts");
+  assert.ok(gate.includes("verifyCaptainCode"));
+  assert.ok(gate.includes("hasActiveCaptainSession"));
+  assert.ok(gate.includes("captain-admission-pending"));
+  assert.ok(gate.includes("captain-admission-verified"));
+  assert.ok(admission.includes("readApprovedCaptainStanding"));
+  assert.ok(admission.includes("resumeCurrentCustomerCaptainSession"));
+  assert.ok(!admission.includes("setRole("));
 });
 
 test("four primary Captain destinations and one home map", () => {

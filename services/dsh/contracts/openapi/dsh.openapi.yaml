@@ -16,6 +16,14 @@ paths:
     $ref: './paths/store-access.yaml#/paths/~1v1~1stores~1mine'
   /v1/stores/{storeID}/availability:
     $ref: './paths/store-access.yaml#/paths/~1v1~1stores~1{storeID}~1availability'
+  /v1/captains/me/standing:
+    $ref: './paths/captain-standing.yaml#/paths/~1v1~1captains~1me~1standing'
+  /v1/actors/me/captain-eligibility:
+    $ref: './paths/captain-standing.yaml#/paths/~1v1~1actors~1me~1captain-eligibility'
+  /v1/actors/me/captain-application:
+    $ref: './paths/captain-standing.yaml#/paths/~1v1~1actors~1me~1captain-application'
+  /v1/operators/captains/{actorId}/standing:
+    $ref: './paths/captain-standing.yaml#/paths/~1v1~1operators~1captains~1{actorId}~1standing'
   /v1/operators/cities/{cityID}/store-availability-policy:
     $ref: './paths/operational-policies.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-availability-policy'
 components:
