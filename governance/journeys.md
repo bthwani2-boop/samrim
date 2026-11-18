@@ -23,6 +23,8 @@ ENTRY: Verified eligible human account or authorized managed-role admission.
 EXIT: The admitted person signs into the correct role-scoped app and the current standing is readable from Identity/DSH.
 READBACK: Identity actor, verified authentication, role, session and relevant DSH standing.
 
+**Admission boundary:** Customer first-factor verification is an Identity prerequisite, not a fourth managed-admission surface. Assisted Merchant onboarding and managed Captain cases do not authorize identity impersonation or role approval by the UI. The original protected Root Operator remains the same canonical actor; a replacement Root account cannot be created to restore access.
+
 A Merchant self-registers directly through Identity after required verification; **no preapproval, onboarding intermediary or parallel enrollment record** is required for ordinary Merchant admission. Captain admission retains current role/standing gates. Operator role admission is protected by its separate high-security Identity rules. Existing verified actors are reused, not duplicated because a Store invitation or HR access request exists. A Store-affiliated Captain membership remains a DSH resource relationship, not a platform-role shortcut.
 
 **Fail/recover:** duplicate phone/actor, unauthorized operator, suspended role, wrong-role session, stale invitation, cross-account cache or interrupted admit → read original Owner facts; never fabricate activated roles, duplicate users or auto-revive disabled access.

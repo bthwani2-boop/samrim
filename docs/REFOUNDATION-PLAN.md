@@ -10,13 +10,44 @@ PRODUCTION_ACTIVATION: BLOCKED
 TARGET_WORKTREE: D:\samrim
 SOURCE_BRANCH_AT_START: 41
 SOURCE_SHA_AT_START: 426d67b47beb8c66b09acd8c7394086b53ac5aae
-WORKTREE_BRANCH: foundation (AS_OF_2026-11-16; CHECK_ACTIVE_GIT_BRANCH)
+WORKTREE_BRANCH: codex/managed-participant-admission (AS_OF_2026-11-18; CHECK_ACTIVE_GIT_BRANCH)
 DECISIONS_AUTHORITY: NONE
 RUNTIME_SUCCESS_AUTHORITY: NONE
 
-## 2026-11-17 — Active execution snapshot and acceptance register (CURRENT)
+## 2026-11-18 — Active first-journey execution and closure register (CURRENT)
 
-**This dated register is the active execution view.** Later snapshots replace it in this same plan; historical phase headings, older SHAs, donor instructions and dated passages below remain provenance, **not** permission to stop progressive implementation or evidence on the current candidate. Current execution law remains AGENTS.md, placement remains REPOSITORY-STRUCTURE.md, and business decisions remain in the 14 named governance owners. This plan never becomes another owner.
+JOURNEY_ID: MANAGED_PARTICIPANT_ADMISSION
+SOURCE_BRANCH_AT_AUDIT: codex/managed-participant-admission
+SOURCE_HEAD_AT_AUDIT: 0561fea58fba3531c03039690769c86417a1eefd
+JOURNEY_STATUS: IN_PROGRESS
+JOURNEY_CLOSED: NO
+GOVERNANCE_CUTOVER: NOT_READY
+PRODUCTION_ACTIVATION: BLOCKED
+
+**Detailed acceptance and evidence file:** `docs/journeys/MANAGED_PARTICIPANT_ADMISSION.md`. It tracks **AC-01 through AC-34**, current code/UI gaps, Root Owner recovery, real owner-backed positive/negative/parallel/retry tests, Web/Android proof and delivery criteria. It is an engineering document **not a business decision owner**. Authoritative rules live only in [governance/journeys.md](../governance/journeys.md), [identity.md](../governance/identity.md), [stores.md](../governance/stores.md), [fulfillment.md](../governance/fulfillment.md) and [hr.md](../governance/hr.md).
+
+**Acceptance boundary:** Operator, Merchant and Captain are the original managed-admission surfaces. Verified Customer authentication is a necessary Identity dependency, not a fourth admitted surface. A Merchant role is not Store ownership or Store publication. Captain eligibility is DSH-owned, role/session Identity-owned. The original Root Operator remains one protected canonical actor; no alternative root, password bypass or unverified recovery.
+
+| Packet | Actual gap observed at this snapshot | Executable next action and proof | State |
+| --- | --- | --- | --- |
+| J1-01 Customer Identity prerequisite | Customer identity-gate unavailable, synthetic phone proof only | Authorized real first-factor/account reuse/return/logout on Web/Android plus Identity SQL and negative replay | NOT_RUN |
+| J1-02 Owner API consistency | Merchant/Captain role/session owners and tests partly implemented | Check Identity/DSH OpenAPI, migrations, clients, versions, current owner writes; no duplicate actor | PARTIAL |
+| J1-03 Original Root continuity | Actual original-actor credentials and recovery not proven | Protected authorized identity/credential proof; UV Passkey enrollment on same actor, audited break-glass and session revocation | BLOCKED |
+| J1-04 Operator + administrative entry | Control Panel entry/session fail closed; local WebAuthn WIP uncommitted | Signed WebAuthn + BFF protected cookie + real browser FIDO2; HR-to-Root invitation/approval; seven scoped permissions | NOT_RUN |
+| J1-05 Merchant direct and assisted | Merchant synthetic admission partly wired; Operator merchant-new screen unavailable | One actor via either self-register or partners-scoped assisted invite; no Store grant; Web/Android and DSH IDOR | PARTIAL |
+| J1-06 Captain application and approval | DSH standing exists; Operator captain management screen not complete | operations-authorized standing audit/CAS; Identity role after current approval; Android sign-in/return/suspension/revoke | PARTIAL |
+| J1-07 Real E2E and data integrity | Isolated unit/SQL tests not full joined users/devices | Two independent actors/Stores and servers; replay/race/timeout/IDOR; negative DSH/WLT checks; durable SQL readback | NOT_RUN |
+| J1-08 Candidate quality and safety | At audited HEAD GitHub dependency audit, CodeQL and Sonar fail; Identity Passkey/Lenovo WIP dirty | Candidate freeze, current Graphify/spec, owner contract/Go/TS/SQL, Web/Android, matching service/app SHA, security review and required CI | FAIL / REVIEW_BLOCKED |
+
+**Execution order:** (1) recheck exact HEAD/status/exclusive file owners; (2) complete Customer verified-account dependency without duplicate accounts; (3) preserve and verify Root original actor using explicit protected authorization, complete Operator Passkey/recovery/permissions; (4) connect Operator BFF and protected administrative screens; (5) direct and assisted Merchant admission; (6) DSH-approved Captain and native sign-in; (7) independent current-owner SQL, concurrency, failure, privacy and Web/Android E2E; (8) review on one final SHA. Parallelize only independent owned files; use one Git coordinator and a serialized Git index. Do not modify protected Root real data in synthetic testing.
+
+**Evidence limits:** Spec Kit CLI 1.3.0 and local Graphify 0.9.73+samrim.3 were run on the audited branch; Graphify index matches tracked HEAD 0561fea58 but **does not cover uncommitted Passkey files**. GitHub Go/Fast Guard/Foundation/Presentation checks were successful on that published SHA, while dependency audit, CodeQL and SonarQube failed. Local Foundation guard also rejected dirty Identity migration 006 before other writer repairs; its current post-repair state requires fresh testing, not an assumed PASS. A prior cryptographic synthetic WebAuthn/SQL PASS is not protected Root proof nor current production/device acceptance.
+
+**Closure:** All applicable AC-01..AC-34 require evidence on one unchanged candidate SHA: role/standing/permission owner readback, denied paths, recovery/concurrency, all affected Web/Android real application journeys, safe original Root recovery, critical security review, required CI, and matching binary/container/migration source. No governance cutover, main merge, production activation or GitHub publication is implied by a green document or an isolated unit test. Current **JOURNEY_CLOSED = NO**.
+
+## 2026-11-17 — Historical execution snapshot and acceptance register (SUPERSEDED_ON_2026-11-18)
+
+**Historical register superseded by the 2026-11-18 active journey section above.** Older counts, SHAs, donor instructions and earlier evidence remain provenance only, never proof on a newly changed HEAD or permission to block unrelated safe development. Current execution law remains AGENTS.md, placement remains REPOSITORY-STRUCTURE.md, and business decisions remain in the 14 named governance owners. This plan never becomes another owner.
 
 - **Baseline inspected:** D:\samrim, foundation, ee833ff6ff3e43809155c75550ae2932e70fb70b, local branch one commit ahead of origin/foundation. Exactly one worktree was reported. Read the live HEAD and worktrees again before further changes.
 - **Concurrent writer boundary:** services/identity/clients/index.ts was already modified before this tools batch and is **not part of it**. Do not stage, overwrite, format or attribute it to environment work. A future uncommitted or changed diff invalidates older package/CI/test results.

@@ -22,6 +22,8 @@ CAPABILITY_ID: CAPTAIN_DISPATCH
 
 An eligible ready Store Order may receive at most the **effective DSH policy maximum for concurrent platform dispatch offers** (historical initial setting: three) when `BTHWANI_CAPTAIN` is selected, with at most **one active winning assignment**. DSH verifies the Captain's availability, standing, serviceability and version at transactional acceptance; later concurrent accepts lose safely. Failed dispatch and reconnection do not duplicate assignments or create false delivery success.
 
+**Captain role and operational standing handoff:** whether a candidate applies from the Captain app or starts as a managed Operations candidate, a PENDING record grants no delivery permission. DSH alone owns the approved/suspended/revoked platform Captain standing, with a currently authorized `operations` Operator decision and durable audit; Identity alone issues the Captain role/session for that same verified actor after reading DSH's current approval. One Store-specific membership cannot self-approve global Captain eligibility. Mission assignment, Store-affiliated Captain membership and physical custody remain separate DSH-owned authorizations.
+
 WLT owns the Captain's verified COD exposure/hold, not DSH. Assignment may not reveal the customer's private address to a non-winning Captain. Location opportunities remain bounded, current and privacy-safe, not open tracking data. Operator visibility/reassignment invokes DSH controls rather than updating another assignment table.
 
 ## STORE_CAPTAIN_HANDOFF — Valid Store-to-Captain transfer
