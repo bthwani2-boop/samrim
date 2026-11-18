@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
@@ -59,5 +60,34 @@ for (const [consumer, version] of consumers) {
     assert.equal(picomatch(repeatedWildcard)("view-index.tsx"), false);
     assert.equal(picomatch(repeatedWildcard)(repeatedWildcard), true);
     assert.equal(picomatch(repeatedWildcard, { maxExtglobRecursion: false })("view-index.tsx"), false);
+  });
+}
+
+for (const [consumer, version] of [["micromatch", "2.3.2"], ["@expo/cli", "4.0.7"]]) {
+  test(`patched picomatch ${version} bounds crafted repeated extglobs in an isolated child`, { timeout: 7000 }, () => {
+    const parent = realpathSync(join(hoisted, consumer));
+    // Never evaluate adversarial patterns on the main test event loop.
+    // A vulnerable compiler must not be able to hang tests or CI.
+    const probe = [
+      'const assert = require("node:assert/strict");',
+      'const { createRequire } = require("node:module");',
+      'const picomatch = createRequire(process.argv[1])("picomatch");',
+      'for (const pattern of ["+(*)", "+(*a)"]) {',
+      '  const match = picomatch(pattern);',
+      '  for (const candidate of ["a".repeat(18) + "!", "a".repeat(32) + "!"]) {',
+      '    assert.equal(typeof match(candidate), "boolean");',
+      '  }',
+      '}',
+      'process.stdout.write("BOUND_PROBE_PASS");',
+    ].join("\n");
+    const child = spawnSync(process.execPath, ["--max-old-space-size=128", "-e", probe, join(parent, "package.json")], {
+      encoding: "utf8",
+      timeout: 2500,
+      maxBuffer: 4096,
+      windowsHide: true,
+    });
+    assert.equal(child.error, undefined, `bounded child failed: ${child.error?.code}`);
+    assert.equal(child.status, 0, `patched compiler failed: ${child.stderr}`);
+    assert.equal(child.stdout, "BOUND_PROBE_PASS");
   });
 }
