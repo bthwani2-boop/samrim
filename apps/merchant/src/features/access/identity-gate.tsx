@@ -4,10 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Pressable, SafeAreaView, ScrollView, Text, TextInput, View } from "react-native";
 import {
   readAdmission,
+  readMerchantStanding,
   requestAdmissionCode,
   signOutOfAdmission,
   submitAdmissionCode,
 } from "./admission-transport";
+import { type MerchantDSHStanding, MerchantStandingError } from "./dsh-standing";
 
 function errorMessage(error: unknown) {
   if (error instanceof IdentityClientError) {
@@ -25,6 +27,9 @@ export default function MerchantIdentityGate() {
   const { theme } = useMobileAppearance();
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [session, setSession] = useState<VerifiedIdentitySession | null>(null);
+  const [standing, setStanding] = useState<MerchantDSHStanding | null>(null);
+  const [standingError, setStandingError] = useState("");
+  const [standingLoading, setStandingLoading] = useState(false);
   const [phone, setPhone] = useState("");
   const [ticket, setTicket] = useState("");
   const [code, setCode] = useState("");
@@ -73,6 +78,29 @@ export default function MerchantIdentityGate() {
       action.current = null;
     };
   }, [refresh]);
+
+  useEffect(() => {
+    setStanding(null);
+    setStandingError("");
+    if (!session) {
+      setStandingLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setStandingLoading(true);
+    void readMerchantStanding(controller.signal).then(current => {
+      if (controller.signal.aborted) return;
+      if (current.actorId !== session.actorId) {
+        throw new MerchantStandingError(502, "OWNER_RESPONSE_INVALID");
+      }
+      setStanding(current);
+    }).catch(() => {
+      if (!controller.signal.aborted) setStandingError("تعذّر تأكيد صلاحيات المتاجر لدى DSH. حاول مرة أخرى.");
+    }).finally(() => {
+      if (!controller.signal.aborted) setStandingLoading(false);
+    });
+    return () => controller.abort();
+  }, [session]);
 
   useEffect(() => {
     if (!session) return;
@@ -141,8 +169,23 @@ export default function MerchantIdentityGate() {
           {enabled && session ? (
             <>
               {!busy ? <Text testID="merchant-admission-verified" style={{ color: theme.color }}>
-                تم التحقق من جلسة التاجر. تحتاج إدارة المتجر إلى صلاحية منفصلة من DSH.
+                تم التحقق من جلسة التاجر عبر Identity. تحتاج إدارة المتجر إلى صلاحية منفصلة من DSH.
               </Text> : null}
+              {standingLoading ? <Text style={{ color: theme.colorSecondary }}>جارٍ قراءة متاجرك من DSH…</Text> : null}
+              {standingError ? <>
+                <Text accessibilityRole="alert" style={{ color: theme.warningText }}>{standingError}</Text>
+                {button("إعادة التحقق من المتاجر", refresh)}
+              </> : null}
+              {standing && standing.stores.length === 0 ?
+                <Text style={{ color: theme.colorSecondary }}>لا يوجد متجر مملوك لهذا الحساب في DSH بعد.</Text> : null}
+              {standing?.stores.map(store => (
+                <View key={store.id} style={{ padding: 12, borderWidth: 1, borderColor: theme.borderColor, borderRadius: 8 }}>
+                  <Text style={{ color: theme.color, fontWeight: "700" }}>{store.name}</Text>
+                  <Text style={{ color: theme.colorSecondary }}>
+                    {store.published ? "متجر منشور" : "متجر غير منشور"} — {store.relation}
+                  </Text>
+                </View>
+              ))}
               {button("تسجيل الخروج", signOut)}
             </>
           ) : null}

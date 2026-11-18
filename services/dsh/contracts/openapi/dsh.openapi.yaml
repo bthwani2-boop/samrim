@@ -12,6 +12,8 @@ paths:
     $ref: './paths/stores.yaml#/paths/~1v1~1public~1stores~1{id}'
   /v1/public/stores/{id}/offers:
     $ref: './paths/offers.yaml#/paths/~1v1~1public~1stores~1{id}~1offers'
+  /v1/stores/mine:
+    $ref: './paths/store-access.yaml#/paths/~1v1~1stores~1mine'
   /v1/stores/{storeID}/availability:
     $ref: './paths/store-access.yaml#/paths/~1v1~1stores~1{storeID}~1availability'
   /v1/operators/cities/{cityID}/store-availability-policy:
@@ -45,6 +47,25 @@ components:
         verticalId: { $ref: '#/components/schemas/PublicId' }
         orderabilityStatus: { type: string, enum: [OPEN_FOR_ORDERS, CLOSED_BY_SCHEDULE, PAUSED, OPERATIONALLY_UNAVAILABLE] }
         orderingAvailable: { type: boolean, const: false, description: "The checkout/fulfillment journey is not activated" }
+    MerchantOwnedStore:
+      type: object
+      additionalProperties: false
+      required: [id, name, relation, published]
+      properties:
+        id: { $ref: '#/components/schemas/PublicId' }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        relation: { type: string, enum: [MARKETPLACE, DIRECT] }
+        published: { type: boolean }
+    MerchantStoreStanding:
+      type: object
+      additionalProperties: false
+      required: [actorId, stores]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        stores:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/MerchantOwnedStore' }
     PublicOffer:
       type: object
       additionalProperties: false

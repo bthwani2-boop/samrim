@@ -1,4 +1,26 @@
 paths:
+  /v1/stores/mine:
+    get:
+      operationId: listCurrentMerchantStores
+      summary: Read Stores currently owned by the verified Merchant from DSH
+      description: Requires a live Identity Merchant session. Returns only canonical DSH rows whose owner_actor_id equals the verified actor. A Merchant session alone never provisions a Store or a delegated Store permission. Bounded to at most 100 owned Stores; a larger result fails closed.
+      security:
+        - OpaqueSession: []
+      responses:
+        '200':
+          description: Current Merchant Store ownership and publication state
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/MerchantStoreStanding' }
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
   /v1/stores/{storeID}/availability:
     get:
       operationId: getStoreOperationalAvailability

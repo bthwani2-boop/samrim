@@ -8,14 +8,16 @@ import {
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 import { revokeUndeliveredAdmissionSession, verifyMerchantAdmission } from "./admission";
+import { MerchantStandingError, readMerchantDSHStanding, standingFrom } from "./dsh-standing";
 
 const storageKey = "bthwani.merchant.synthetic-admission.v1";
 const nativeOrigin = process.env.EXPO_PUBLIC_MERCHANT_SYNTHETIC_IDENTITY_ORIGIN;
+const nativeDSHOrigin = process.env.EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN;
 const nativeOptions = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY };
 type EntryState = { enabled: boolean; session: VerifiedIdentitySession | null };
 
-async function webRequest<T>(method: string, signal: AbortSignal, data?: object): Promise<T> {
-  const result = await fetch("/api/admission", {
+async function webRequest<T>(method: string, signal: AbortSignal, data?: object, stores = false): Promise<T> {
+  const result = await fetch(stores ? "/api/admission?stores=mine" : "/api/admission", {
     method,
     signal,
     credentials: "same-origin",
@@ -50,6 +52,18 @@ export async function readAdmission(signal: AbortSignal): Promise<EntryState> {
     if (!signal.aborted) await SecureStore.deleteItemAsync(storageKey, nativeOptions);
   }
   return { enabled: true, session: null };
+}
+
+/** DSH Store standing is requested separately from session issuance. It never
+ * grants entry to an unverified Store or mutates the business owner. */
+export async function readMerchantStanding(signal: AbortSignal) {
+  if (Platform.OS === "web") {
+    const result = await webRequest<{ standing: unknown }>("GET", signal, undefined, true);
+    return standingFrom(result.standing);
+  }
+  const bearer = await SecureStore.getItemAsync(storageKey, nativeOptions);
+  if (!bearer) throw new MerchantStandingError(401, "UNAUTHENTICATED");
+  return readMerchantDSHStanding(nativeDSHOrigin ?? "", bearer, signal);
 }
 
 export async function requestAdmissionCode(phone: string, signal: AbortSignal): Promise<string> {
