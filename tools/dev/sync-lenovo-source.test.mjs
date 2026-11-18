@@ -183,7 +183,7 @@ test("incremental remote audits check inspected paths, not uninspected files", (
   assert.equal(needsReconcile(state, current, "sha-x", new Map([["tools/dev/old.txt", "C".repeat(64)]])), true);
 });
 
-test("source branch transitions remain automatic only with identical pinned dependencies", () => {
+test("source branch transitions do not block mirroring when dependencies change", () => {
   assert.deepEqual(branchTransitionPins, [
     ".node-version", "pnpm-lock.yaml", "package.json",
     "apps/customer/package.json", "apps/merchant/package.json",
@@ -201,14 +201,17 @@ test("source branch transitions remain automatic only with identical pinned depe
   for (const rel of branchTransitionPins) {
     const changed = new Map(current);
     changed.set(rel, "A".repeat(64));
-    assert.throws(
-      () => assertCompatibleBranchTransition(before, changed, "codex/after"),
-      /BRANCH_DEPENDENCIES_CHANGED_REQUIRES_INSTALL/,
-      rel,
-    );
+    assert.equal(assertCompatibleBranchTransition(before, changed, "codex/after"), true, rel);
   }
   assert.throws(() => assertCompatibleBranchTransition(before, current, ""), /SOURCE_SYNC_BRANCH_UNAUTHORIZED/);
   assert.throws(() => assertCompatibleBranchTransition(before, current, "archive/legacy"), /SOURCE_SYNC_BRANCH_UNAUTHORIZED/);
+});
+
+test("mirroring source does not depend on installed node_modules or an internal pnpm lock", () => {
+  const source = readFileSync(new URL("./sync-lenovo-source.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /TARGET_DEPENDENCIES_MISSING|DEPENDENCIES_CHANGED_REQUIRES_INSTALL/);
+  assert.match(source, /DEPENDENCY_INSTALL_REQUIRED/);
+  assert.equal(allowed("apps/customer/node_modules/metro/index.js"), false);
 });
 
 test("compatible new branch at the same HEAD still must reconcile manifest branch", () => {

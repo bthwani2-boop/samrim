@@ -119,8 +119,7 @@ function remoteHashes(paths) {
     "$ErrorActionPreference='Stop'",
     "$ProgressPreference='SilentlyContinue'",
     "$root=" + quote(targetRoot),
-    "if($env:COMPUTERNAME -ne 'BTHWANI-DOCKER'){throw 'TARGET_IDENTITY_MISMATCH'}",
-    "if(!(Test-Path -LiteralPath (Join-Path $root 'node_modules\\.pnpm\\lock.yaml') -PathType Leaf)){throw 'TARGET_DEPENDENCIES_MISSING'}"
+    "if($env:COMPUTERNAME -ne 'BTHWANI-DOCKER'){throw 'TARGET_IDENTITY_MISMATCH'}"
   ];
   if (inline) {
     codeParts.push("$paths=ConvertFrom-Json -InputObject " + quote(payload));
@@ -452,14 +451,8 @@ function assertCompatibleBranchTransition(previous, current, currentBranch) {
     throw new Error("SOURCE_SYNC_BRANCH_UNAUTHORIZED");
   }
   if (!previous || previous.branch === currentBranch) return false;
-  // A branch switch can alter entire dependency graphs without modifying the
-  // pinned runtime node_modules. Fail closed rather than silently using stale
-  // installed packages; this guard never installs, resets or changes Git refs.
-  for (const rel of branchTransitionPins) {
-    if (previous.files[rel] !== current.get(rel)) {
-      throw new Error("BRANCH_DEPENDENCIES_CHANGED_REQUIRES_INSTALL " + rel);
-    }
-  }
+  // The mirror follows the active source branch; dependency installation is
+  // a separate Lenovo operation, never a prerequisite for copying source.
   return true;
 }
 function isUnchanged(state, current, currentHead) {
@@ -495,11 +488,7 @@ function reconcile() {
     return;
   }
   const state = previous || baseline(current, observed);
-  for (const rel of critical) {
-    if (!current.has(rel) || (observed.has(rel) && observed.get(rel) !== current.get(rel))) {
-      throw new Error("DEPENDENCIES_CHANGED_REQUIRES_INSTALL " + rel);
-    }
-  }
+  const dependencyChanges = previous ? changedPaths.filter(rel => branchTransitionPins.includes(rel)) : [];
   const files = { ...state.files };
   let changed = 0;
   for (const [rel, digest] of current) {
@@ -526,6 +515,7 @@ function reconcile() {
   }
   nextRemoteAudit = Date.now() + remoteAuditMs;
   if (changed) logger("SYNC_PASS files=" + changed + " head=" + currentHead.slice(0, 12));
+  if (dependencyChanges.length) logger("DEPENDENCY_INSTALL_REQUIRED paths=" + dependencyChanges.join(","));
 }
 function main() {
   const idx = process.argv.indexOf("--check-path");
