@@ -8,7 +8,7 @@ No shell window is required, and no port is exposed beyond loopback.
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet('customer', 'merchant', 'app-client', 'app-partner', 'app-captain', 'control-panel')]
+  [ValidateSet('customer', 'merchant', 'app-captain', 'control-panel')]
   [string]$App,
   [switch]$ValidateOnly
 )
@@ -19,24 +19,17 @@ Set-StrictMode -Version Latest
 $root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if ($env:COMPUTERNAME -ne 'BTHWANI') { throw 'APP_TUNNEL_SOURCE_HOST_REQUIRED' }
 
-# The current Windows Scheduled Tasks still invoke two historical app tokens.
-# Accept them as inputs only; retain one canonical port definition per app.
-$canonical = switch ($App) {
-  'app-client' { 'customer' }
-  'app-partner' { 'merchant' }
-  default { $App }
-}
 $ports = @{
-  'customer' = @{ EnvKey = 'SAMRIM_APP_CLIENT_METRO_PORT'; Remote = 28111 }
-  'merchant' = @{ EnvKey = 'SAMRIM_APP_PARTNER_METRO_PORT'; Remote = 28112 }
-  'app-captain' = @{ EnvKey = 'SAMRIM_APP_CAPTAIN_METRO_PORT'; Remote = 28113 }
-  'control-panel' = @{ EnvKey = 'SAMRIM_CONTROL_PORT'; Remote = 23010 }
+  'customer' = @{ EnvKey = 'SAMRIM_APP_CUSTOMER_METRO_PORT'; Local = 18101; Remote = 28111 }
+  'merchant' = @{ EnvKey = 'SAMRIM_APP_MERCHANT_METRO_PORT'; Local = 18102; Remote = 28112 }
+  'app-captain' = @{ EnvKey = 'SAMRIM_APP_CAPTAIN_METRO_PORT'; Local = $null; Remote = 28113 }
+  'control-panel' = @{ EnvKey = 'SAMRIM_CONTROL_PORT'; Local = $null; Remote = 23010 }
 }
-$spec = $ports[$canonical]
+$spec = $ports[$App]
 $envPath = Join-Path $root 'infra\local\.env'
 if (-not (Test-Path -LiteralPath $envPath)) { throw 'APP_TUNNEL_LOCAL_ENV_MISSING' }
 
-$localPort = $null
+$localPort = $spec.Local
 foreach ($line in [System.IO.File]::ReadLines($envPath)) {
   if ($line -match ('^' + [regex]::Escape($spec.EnvKey) + '=(\d+)\s*$')) {
     $localPort = [int]$Matches[1]

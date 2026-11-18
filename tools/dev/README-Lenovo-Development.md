@@ -4,10 +4,9 @@ One canonical source: Surface D:\samrim; Lenovo BTHWANI-DOCKER runs the apps.
 Surface DHCP 192.168.0.100; Lenovo DHCP 192.168.0.101; SSH target alias bthwani-docker with strict host-key checks.
 
 ## Single existing owners
-- SSH tunnels: four existing Scheduled Tasks invoke tools/dev/Start-AppTunnel.ps1; Surface 18101->Lenovo28111, 18102->28112, 18103->28113, 13000->23010.
+- SSH tunnels: four Scheduled Tasks invoke `tools/dev/Start-AppTunnel.ps1`. Customer uses Surface 18101 → Lenovo 28111 and Merchant uses 18102 → 28112. Optional local overrides use `SAMRIM_APP_CUSTOMER_METRO_PORT` and `SAMRIM_APP_MERCHANT_METRO_PORT`. Captain uses 18103 → 28113 and Control Panel uses 13000 → 23010.
 - Source sync: the existing Scheduled Task BThwani Lenovo Source Sync directly runs pinned node.exe with tools/dev/sync-lenovo-source.mjs --watch. Its direct process ownership ensures stopping the task also stops its Node watcher, without orphan duplicates. Start-LenovoSourceSync.ps1 is the manual validation/one-shot helper.
-- Lenovo app tasks are intended to invoke infra/Start-RefoundationApp.ps1, which is a runtime launcher rather than a transport script. Their live task actions could not be confirmed during the latest SSH inspection.
-- The configured target mirror in the Surface sync script is C:\Users\bthwa\BThwaniAppRunner\source-runtime. Its active use by Lenovo app tasks remains UNVERIFIED: the SSH task-inspection attempt returned exit 255 on 2026-11-17. Verify Lenovo task actions, source revision, and running process paths before claiming runtime cutover or retiring an older launcher. Do not create a second app source or delete rollback data without consumer verification.
+- The Surface sync target is `C:\Users\bthwa\BThwaniAppRunner\source-runtime`. The Lenovo app tasks invoke `infra\Start-RefoundationApp.ps1` in that mirror with `-App customer`, `-App merchant`, `-App captain`, or `-App control-panel`. Verify the task action, synced source revision, and listener owner when diagnosing a runtime issue.
 
 ## Guarantees and limits
 - Mirroring is strictly Surface-to-Lenovo for approved tracked and untracked source paths. Service workspaces include the package manifests, TypeScript configs, and clients consumed by the apps. Service backend, migrations, .git, node_modules, .env*, credentials, secrets, DB and cache directories are excluded.
