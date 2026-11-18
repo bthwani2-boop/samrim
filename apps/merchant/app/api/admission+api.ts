@@ -70,6 +70,12 @@ export async function GET(request: Request) {
       return response({ standing });
     }
   } catch (error) {
+    // Owner-denied Merchant access expires its browser cookie. A transient
+    // upstream outage must not discard an otherwise valid session.
+    if ((error instanceof MerchantStandingError || error instanceof IdentityClientError) &&
+      (error.status === 403 || (error instanceof MerchantStandingError && error.status === 401))) {
+      return response({ code: error.code }, error.status, sessionCookie(request, "", 0));
+    }
     if (!(error instanceof IdentityClientError && error.status === 401)) return ownerError(error);
   }
   return stores ? response({ code: "UNAUTHENTICATED" }, 401, sessionCookie(request, "", 0)) :

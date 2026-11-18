@@ -72,3 +72,40 @@ test("Unauthenticated browser cannot query DSH",async t=>{
   const result=await GET(request("?stores=mine",""));
   assert.equal(result.status,401);
 });
+
+for (const deniedStatus of [401, 403]) {
+  test(`DSH ${deniedStatus} owner denial expires the stale Merchant Web cookie`, async t => {
+    mockOwners(t, { dshStatus: deniedStatus });
+    process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN = identity;
+    process.env.MERCHANT_SYNTHETIC_DSH_ORIGIN = dsh;
+    const result = await GET(request());
+    assert.equal(result.status, deniedStatus);
+    assert.equal(result.headers.get("Cache-Control"), "no-store");
+    assert.match(result.headers.get("Set-Cookie") ?? "", /^bthwani_merchant_admission=; Path=\/api\/admission; HttpOnly; SameSite=Strict; Max-Age=0$/);
+    assert.deepEqual(await result.json(), { code: "STORE_ACCESS_DENIED" });
+  });
+}
+
+test("DSH 503 outage retains Merchant cookie for a safe retry", async t => {
+  mockOwners(t, { dshStatus: 503 });
+  process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN = identity;
+  process.env.MERCHANT_SYNTHETIC_DSH_ORIGIN = dsh;
+  const result = await GET(request());
+  assert.equal(result.status, 503);
+  assert.equal(result.headers.get("Set-Cookie"), null);
+  assert.deepEqual(await result.json(), { code: "OWNER_UNAVAILABLE" });
+});
+
+test("Identity 403 invalidation also expires the stale Merchant Web cookie", async t => {
+  t.mock.method(globalThis, "fetch", async url => {
+    assert.equal(new URL(url).origin, identity);
+    return Response.json({ code: "MERCHANT_NOT_ACTIVE" }, {
+      status: 403,
+      headers: { "Cache-Control": "no-store" },
+    });
+  });
+  process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN = identity;
+  const result = await GET(request());
+  assert.equal(result.status, 403);
+  assert.match(result.headers.get("Set-Cookie") ?? "", /Max-Age=0/);
+});

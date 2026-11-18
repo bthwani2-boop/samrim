@@ -94,8 +94,15 @@ export default function MerchantIdentityGate() {
         throw new MerchantStandingError(502, "OWNER_RESPONSE_INVALID");
       }
       setStanding(current);
-    }).catch(() => {
-      if (!controller.signal.aborted) setStandingError("تعذّر تأكيد صلاحيات المتاجر لدى DSH. حاول مرة أخرى.");
+    }).catch(error => {
+      if (controller.signal.aborted) return;
+      if ((error instanceof IdentityClientError || error instanceof MerchantStandingError) &&
+        (error.status === 401 || error.status === 403)) {
+        setSession(null);
+        setMessage("انتهت صلاحية جلسة التاجر. يرجى تسجيل الدخول مجددًا.");
+        return;
+      }
+      setStandingError("تعذّر تأكيد صلاحيات المتاجر لدى DSH. حاول مرة أخرى.");
     }).finally(() => {
       if (!controller.signal.aborted) setStandingLoading(false);
     });
