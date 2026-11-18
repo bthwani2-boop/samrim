@@ -92,6 +92,22 @@ func TestOnlyCurrentOperatorWithOperationsCanApproveStanding(t *testing.T) {
 	}
 }
 
+func TestOperatorCannotApproveOwnCaptainStanding(t *testing.T) {
+	id := &fakeIdentity{actor: Actor{ID: "operator-self", Role: "operator"}, allow: true}
+	repo := &fakeStandingRepository{}
+	svc := NewService(id, repo)
+	cmd := Change{
+		ActorID: "operator-self", Status: Approved, ExpectedVersion: 1,
+		OperationID: "self-approval-0001", Reason: "only separate actor may approve",
+	}
+	if _, err := svc.Change(context.Background(), "operator-token", cmd); !errors.Is(err, ErrForbidden) || repo.changes != 0 {
+		t.Fatalf("Operator approved own Captain standing: %v, writes=%d", err, repo.changes)
+	}
+	if id.permissions != 1 {
+		t.Fatalf("must evaluate real operations permission before denying self-grant, checks=%d", id.permissions)
+	}
+}
+
 func (f *fakeStandingRepository) Apply(_ context.Context, actorID string) (Standing, error) {
 	if f.err != nil {
 		return Standing{}, f.err

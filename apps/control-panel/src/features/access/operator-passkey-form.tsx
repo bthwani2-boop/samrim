@@ -21,8 +21,8 @@ type PasskeyOptions = {
 
 function decodeBase64Url(value: string): Uint8Array<ArrayBuffer> {
   const suffix = "=".repeat((4 - value.length % 4) % 4);
-  const bytes = atob(value.replace(/-/g, "+").replace(/_/g, "/") + suffix);
-  return Uint8Array.from(bytes, (value) => value.charCodeAt(0));
+  const bytes = atob(value.replaceAll("-", "+").replaceAll("_", "/") + suffix);
+  return Uint8Array.from(bytes, (value) => value.codePointAt(0) ?? 0);
 }
 
 export default function OperatorPasskeyForm() {
@@ -62,7 +62,7 @@ export default function OperatorPasskeyForm() {
       const result = await navigator.credentials.get({ publicKey });
       if (!(result instanceof PublicKeyCredential) ||
           typeof result.toJSON !== "function") {
-        throw new Error("المصادِق لا يدعم إرسال إثبات WebAuthn المعتمد.");
+        throw new TypeError("المصادِق لا يدعم إرسال إثبات WebAuthn المعتمد.");
       }
       const proof = result.toJSON();
       const resultResponse = await fetch("/api/auth/passkey/authentication", {
@@ -118,7 +118,7 @@ export default function OperatorPasskeyForm() {
       {authenticated
         ? <button type="button" disabled={busy} onClick={signOut}>تسجيل الخروج</button>
         : <button type="button" disabled={busy} onClick={signIn}>التحقق بمفتاح المرور</button>}
-      {message && <p role="status">{message}</p>}
+      {message && <output>{message}</output>}
     </section>
   );
 }

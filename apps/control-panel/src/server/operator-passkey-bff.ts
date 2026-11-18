@@ -206,3 +206,21 @@ export async function boundedRequestBody(request: Request): Promise<string | nul
     return null;
   }
 }
+
+export function validAssertion(value: unknown): value is { ceremonyId: string; credential: Record<string, unknown> } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const body = value as Record<string, unknown>;
+  if (Object.keys(body).length !== 2 ||
+    !Object.hasOwn(body, "ceremonyId") ||
+    !Object.hasOwn(body, "credential")) return false;
+  if (typeof body.ceremonyId !== "string" ||
+      !/^[A-Za-z0-9_-]{43}$/.test(body.ceremonyId)) return false;
+  if (!body.credential || typeof body.credential !== "object" || Array.isArray(body.credential)) return false;
+  const credential = body.credential as Record<string, unknown>;
+  return credential.type === "public-key" &&
+    typeof credential.id === "string" && credential.id.length > 0 && credential.id.length <= 2048 &&
+    typeof credential.rawId === "string" && credential.rawId.length > 0 &&
+    credential.rawId.length <= 2048 &&
+    !!credential.response && typeof credential.response === "object" &&
+    !Array.isArray(credential.response);
+}

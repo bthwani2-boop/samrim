@@ -8,6 +8,7 @@ import {
   parsePasskeyOptions,
   parseVerifiedOperatorPrincipal,
   resolveIsolatedOperatorConfig,
+  validAssertion,
 } from "../src/server/operator-passkey-bff.ts";
 
 const goodEnv = {
@@ -76,4 +77,16 @@ test("a canonical session is required before cookie issuance; forgery cannot sel
   assert.equal(parseIssuedOperatorToken({ ...issued, sessionExpiresAt: "2026-11-20T12:00:00Z" }, now), null);
   assert.equal(cookieLifetimeSeconds(issued.sessionExpiresAt, now), 1800);
   assert.equal(cookieLifetimeSeconds("2026-11-18T12:00:00Z", now), 0);
+});
+
+
+test("Operator assertion rejects additional keys and validates exact two-key shape without sorting", () => {
+  const credential = { type: "public-key", id: "abc", rawId: "abc", response: {} };
+  const ceremonyId = "B".repeat(43);
+  assert.equal(validAssertion({ ceremonyId, credential }), true);
+  assert.equal(validAssertion({ credential, ceremonyId }), true);
+  assert.equal(validAssertion({ ceremonyId, credential, role: "operator" }), false);
+  assert.equal(validAssertion({ ceremonyId, credential, __proto__: null, actorId: "root" }), false);
+  assert.equal(validAssertion({ ceremonyId: "short", credential }), false);
+  assert.equal(validAssertion({ ceremonyId, credential: { ...credential, type: "password" } }), false);
 });

@@ -21,6 +21,30 @@ import (
 	_ "github.com/lib/pq"
 )
 
+// Regression for relative owner source: these tests execute from the package directory.
+func TestCaptainJoinedOwnerMigrationSourcePaths(t *testing.T) {
+	for _, entry := range []struct {
+		owner, name string
+	}{
+		{"identity", "001_session_verification.sql"},
+		{"dsh", "006_captain_standing.sql"},
+	} {
+		file := filepath.Join(captainJoinedMigrationDir(entry.owner), entry.name)
+		if _, err := os.Stat(file); err != nil {
+			t.Fatalf("missing %s migration via actual joined-test source path %s: %v", entry.owner, file, err)
+		}
+	}
+}
+
+// captainJoinedMigrationDir resolves each canonical owner's migration source
+// relative to this package, not relative to the DSH service root.
+func captainJoinedMigrationDir(owner string) string {
+	if owner == "identity" {
+		return filepath.Join("..", "..", "..", "..", "identity", "database", "migrations")
+	}
+	return filepath.Join("..", "..", "..", "database", "migrations")
+}
+
 // The opt-in joined acceptance test starts TWO real Go owner servers against
 // ONE disposable PostgreSQL. It never connects to BThwani's retained runtime.
 func TestCaptainJoinedRealHTTPAndPostgres(t *testing.T) {
@@ -77,12 +101,7 @@ func TestCaptainJoinedRealHTTPAndPostgres(t *testing.T) {
 			"003_service_city_timezone.sql", "004_store_availability_city_limits.sql",
 			"005_store_operational_policy_commands.sql", "006_captain_standing.sql"}},
 	} {
-		var ownerDir string
-		if entry.root == "identity" {
-			ownerDir = filepath.Join("..", "..", "..", "identity", "database", "migrations")
-		} else {
-			ownerDir = filepath.Join("..", "..", "..", "database", "migrations")
-		}
+		ownerDir := captainJoinedMigrationDir(entry.root)
 		for _, file := range entry.files {
 			sqlBytes, e := os.ReadFile(filepath.Join(ownerDir, file))
 			if e != nil {

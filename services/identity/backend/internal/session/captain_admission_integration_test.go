@@ -23,9 +23,23 @@ type captainStandingFixture struct {
 	actor    string
 	token    string
 	approved bool
+	ownerDB  *sql.DB
 }
 
-func (f *captainStandingFixture) Approved(_ context.Context, bearer, actorID string) error {
+func (f *captainStandingFixture) Approved(ctx context.Context, bearer, actorID string) error {
+	if f.ownerDB != nil {
+		// The real DSH owner may require a second DB connection. Holding the
+		// Identity write transaction open can deadlock when the pool is size one.
+		probeCtx, cancel := context.WithTimeout(ctx, 400*time.Millisecond)
+		defer cancel()
+		var probe int
+		if err := f.ownerDB.QueryRowContext(probeCtx, "SELECT 1").Scan(&probe); err != nil {
+			return err
+		}
+		if probe != 1 {
+			return errors.New("unexpected owner database probe result")
+		}
+	}
 	if f.approved && actorID == f.actor && bearer == f.token {
 		return nil
 	}
@@ -63,6 +77,7 @@ func TestCaptainIdentityVerifiedAdmissionRealPostgres(t *testing.T) {
 	if err = db.PingContext(ctx); err != nil {
 		t.Fatal(err)
 	}
+	db.SetMaxOpenConns(1)
 	var databaseName string
 	if err = db.QueryRowContext(ctx, "SELECT current_database()").Scan(&databaseName); err != nil || databaseName != "refoundation_captain_agent02" {
 		t.Fatal("not isolated DB")
@@ -112,7 +127,7 @@ func TestCaptainIdentityVerifiedAdmissionRealPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	standing := &captainStandingFixture{actor: actor, token: customerBearer}
+	standing := &captainStandingFixture{actor: actor, token: customerBearer, ownerDB: db}
 	service := NewCaptainAdmission(reader, standing)
 	if _, err = service.Admit(ctx, "Bearer "+customerBearer); !errors.Is(err, ErrCaptainStandingNotApproved) {
 		t.Fatalf("unapproved DSH standing granted Captain role: %v", err)

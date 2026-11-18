@@ -281,24 +281,10 @@ function remoteReady() {
 function remoteConflict(actual, desired, previous) {
   return actual !== desired && actual !== "MISSING" && actual !== previous;
 }
-function publish(rel, expected, previous, observed) {
-  const full = path.join(root, ...rel.split("/"));
-  if (hash(full) !== expected) throw new Error("SOURCE_CHANGED_WHILE_READING " + rel);
-  const actual = observed ?? remoteHash(rel);
-  if (actual === expected) return;
-  // The Windows SSH stdin pipe can stall on binary payloads. SFTP-backed scp
-  // transports bytes; one SSH invocation verifies and commits the staged copy.
-  const dest = destination(rel);
-  const stage = path.win32.join(targetRoot, ".source-sync-" + crypto.randomUUID() + ".tmp");
-  const backup = dest + ".source-sync-" + process.pid + ".bak";
-  const conflict = remoteConflict(actual, expected, previous);
-  const archiveRoot = path.win32.join("C:\\Users\\bthwa\\AppData\\Local",
-    "BThwani", "Operations", "SourceSync", "conflicts");
-  const archive = path.win32.join(archiveRoot,
-    new Date().toISOString().replaceAll(":", "-") + "-" + process.pid, ...rel.split("/"));
+function buildPublishCode({dest, stage, backup, archive, actual, expected, conflict, root = targetRoot}) {
   const code = [
     "$ErrorActionPreference='Stop'",
-    "$root=" + quote(targetRoot),
+    "$root=" + quote(root),
     "$dest=" + quote(dest),
     "$stage=" + quote(stage),
     "$backup=" + quote(backup),
@@ -328,12 +314,39 @@ function publish(rel, expected, previous, observed) {
     "if((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $expectedOld){throw 'TARGET_ARCHIVE_VERIFY_FAILED'}",
     "}",
     "if($current -eq 'MISSING'){[IO.File]::Move($stage,$dest)}else{",
-    "[IO.File]::Replace($stage,$dest,$backup)}",
+    "[IO.File]::Replace($stage,$dest,$backup);",
+    "$displaced=(Get-FileHash -LiteralPath $backup -Algorithm SHA256).Hash;",
+    "$displacedConflict=$displaced -ne $expectedOld;",
+    "if($displacedConflict){",
+    "$preserved=$archive+'.replaced-'+[Guid]::NewGuid().ToString('N');",
+    "New-Item -ItemType Directory -Force -Path (Split-Path -Parent $preserved)|Out-Null;",
+    "[IO.File]::Move($backup,$preserved);",
+    "if((Get-FileHash -LiteralPath $preserved -Algorithm SHA256).Hash -ne $displaced){throw 'TARGET_DISPLACED_ARCHIVE_VERIFY_FAILED'}",
+    "}",
+    "}",
     "if((Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash -ne $expectedNew){throw 'PUBLISHED_HASH_MISMATCH'}",
     "if(Test-Path -LiteralPath $backup){Remove-Item -LiteralPath $backup -Force}",
-    "Write-Output 'PUBLISHED'",
+    "Write-Output $(if($displacedConflict){'PUBLISHED_PRESERVED'}else{'PUBLISHED'})",
     "}finally{if(Test-Path -LiteralPath $stage){Remove-Item -LiteralPath $stage -Force}}"
   ].join(";");
+  return code;
+}
+function publish(rel, expected, previous, observed) {
+  const full = path.join(root, ...rel.split("/"));
+  if (hash(full) !== expected) throw new Error("SOURCE_CHANGED_WHILE_READING " + rel);
+  const actual = observed ?? remoteHash(rel);
+  if (actual === expected) return;
+  // The Windows SSH stdin pipe can stall on binary payloads. SFTP-backed scp
+  // transports bytes; one SSH invocation verifies and commits the staged copy.
+  const dest = destination(rel);
+  const stage = path.win32.join(targetRoot, ".source-sync-" + crypto.randomUUID() + ".tmp");
+  const backup = dest + ".source-sync-" + crypto.randomUUID() + ".bak";
+  const conflict = remoteConflict(actual, expected, previous);
+  const archiveRoot = path.win32.join("C:\\Users\\bthwa\\AppData\\Local",
+    "BThwani", "Operations", "SourceSync", "conflicts");
+  const archive = path.win32.join(archiveRoot,
+    new Date().toISOString().replaceAll(":", "-") + "-" + crypto.randomUUID(), ...rel.split("/"));
+  const code = buildPublishCode({dest, stage, backup, archive, actual, expected, conflict});
   let committed = false;
   try {
     run("scp", [
@@ -341,8 +354,12 @@ function publish(rel, expected, previous, observed) {
       "-o", "ConnectTimeout=6", full, targetHost + ":" + stage.replaceAll("\\", "/")
     ], 45000);
     if (hash(full) !== expected) throw new Error("SOURCE_CHANGED_WHILE_COPYING " + rel);
-    if (remote(code) !== "PUBLISHED") throw new Error("REMOTE_PUBLISH_RESPONSE_INVALID " + rel);
+    const result = remote(code);
+    if (result !== "PUBLISHED" && result !== "PUBLISHED_PRESERVED") {
+      throw new Error("REMOTE_PUBLISH_RESPONSE_INVALID " + rel);
+    }
     committed = true;
+    if (result === "PUBLISHED_PRESERVED") logger("REMOTE_CONCURRENT_EDIT_ARCHIVED " + rel);
   } catch (error) {
     throw new Error("REMOTE_PUBLISH_FAILED " + rel + ": " + error.message);
   } finally {
@@ -356,6 +373,40 @@ function publish(rel, expected, previous, observed) {
   }
   if (conflict) logger("REMOTE_DRIFT_ARCHIVED " + rel);
 }
+function buildManagedDeleteCode({dest, actual, archive, conflict, quarantine}) {
+  const code = [
+    "$ErrorActionPreference='Stop'",
+    "$p=" + quote(dest),
+    "$quarantine=" + quote(quarantine),
+    "$expected=" + quote(actual),
+    "$archive=" + quote(archive),
+    "$archiveConflict=" + (conflict ? "$true" : "$false"),
+    "if(!(Test-Path -LiteralPath $p -PathType Leaf)){throw 'TARGET_CHANGED_DURING_DELETE'}",
+    "$item=Get-Item -LiteralPath $p -Force",
+    "if($item.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'UNSAFE_TARGET_FILE'}",
+    "[IO.File]::Move($p,$quarantine)",
+    "try{",
+    "$movedItem=Get-Item -LiteralPath $quarantine -Force",
+    "if($movedItem.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'UNSAFE_QUARANTINED_FILE'}",
+    "$movedHash=(Get-FileHash -LiteralPath $quarantine -Algorithm SHA256).Hash",
+    "$preserve=$archiveConflict -or ($movedHash -ne $expected)",
+    "if($preserve){",
+    "New-Item -ItemType Directory -Force -Path (Split-Path -Parent $archive)|Out-Null",
+    "Copy-Item -LiteralPath $quarantine -Destination $archive -ErrorAction Stop",
+    "if((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $movedHash){throw 'TARGET_ARCHIVE_VERIFY_FAILED'}",
+    "}",
+    "if(Test-Path -LiteralPath $p){throw 'TARGET_REPLACED_DURING_DELETE'}",
+    "Remove-Item -LiteralPath $quarantine -Force",
+    "Write-Output $(if($preserve){'DELETED_PRESERVED'}else{'DELETED'})",
+    "}catch{",
+    "if(Test-Path -LiteralPath $quarantine){",
+    "if(!(Test-Path -LiteralPath $p)){[IO.File]::Move($quarantine,$p)}",
+    "else{Write-Error ('QUARANTINE_RETAINED '+$quarantine) -ErrorAction Continue}",
+    "};throw",
+    "}"
+  ].join(";");
+  return code;
+}
 function managedDelete(rel, expected, observed) {
   const actual = observed ?? remoteHash(rel);
   if (actual === "MISSING") return;
@@ -363,29 +414,17 @@ function managedDelete(rel, expected, observed) {
   const conflict = actual !== expected;
   const archive = path.win32.join("C:\\Users\\bthwa\\AppData\\Local", "BThwani",
     "Operations", "SourceSync", "conflicts",
-    new Date().toISOString().replaceAll(":", "-") + "-" + process.pid,
+    new Date().toISOString().replaceAll(":", "-") + "-" + crypto.randomUUID(),
     ...rel.split("/"));
-  const code = [
-    "$ErrorActionPreference='Stop'",
-    "$p=" + quote(dest),
-    "$expected=" + quote(actual),
-    "$archive=" + quote(archive),
-    "$archiveConflict=" + (conflict ? "$true" : "$false"),
-    "if(!(Test-Path -LiteralPath $p -PathType Leaf)){throw 'TARGET_CHANGED_DURING_DELETE'}",
-    "$item=Get-Item -LiteralPath $p -Force",
-    "if($item.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'UNSAFE_TARGET_FILE'}",
-    "if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash -ne $expected){throw 'TARGET_CHANGED_DURING_DELETE'}",
-    "if($archiveConflict){",
-    "New-Item -ItemType Directory -Force -Path (Split-Path -Parent $archive)|Out-Null",
-    "Copy-Item -LiteralPath $p -Destination $archive -ErrorAction Stop",
-    "if((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $expected){throw 'TARGET_ARCHIVE_VERIFY_FAILED'}",
-    "}",
-    "Remove-Item -LiteralPath $p -Force",
-    "if(Test-Path -LiteralPath $p){throw 'DELETE_FAILED'}",
-    "Write-Output 'DELETED'"
-  ].join(";");
-  if (remote(code) !== "DELETED") throw new Error("REMOTE_DELETE_RESPONSE_INVALID " + rel);
-  if (conflict) logger("REMOTE_DRIFT_ARCHIVED " + rel);
+  // Rename within the same directory before checking or removing bytes:
+  // an editor's save after the initial hash must not be deleted unarchived.
+  const quarantine = dest + ".source-sync-" + crypto.randomUUID() + ".quarantine";
+  const code = buildManagedDeleteCode({dest, actual, archive, conflict, quarantine});
+  const result = remote(code);
+  if (result !== "DELETED" && result !== "DELETED_PRESERVED") {
+    throw new Error("REMOTE_DELETE_RESPONSE_INVALID " + rel);
+  }
+  if (result === "DELETED_PRESERVED") logger("REMOTE_DRIFT_ARCHIVED " + rel);
 }
 function baseline(current, observed) {
   const checks = ["package.json", "pnpm-lock.yaml", "apps/customer/package.json",
@@ -525,4 +564,4 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   try { main(); } catch (e) { console.error("SOURCE_SYNC_ERROR " + e.message); process.exitCode = 1; }
 }
 
-export { allowed, appendLogFile, assertCompatibleBranchTransition, branchTransitionPins, failureDetail, hash, isUnchanged, needsReconcile, parseRemoteHashes, persistAt, publish, remoteConflict, remoteHashes };
+export { buildManagedDeleteCode, buildPublishCode, allowed, appendLogFile, assertCompatibleBranchTransition, branchTransitionPins, failureDetail, hash, isUnchanged, needsReconcile, parseRemoteHashes, persistAt, publish, remoteConflict, remoteHashes };

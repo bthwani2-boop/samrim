@@ -31,6 +31,28 @@ func (a *CaptainAdmission) enter(ctx context.Context, bearer string, resume bool
 	if a == nil || a.owner == nil || a.standing == nil {
 		return MerchantAdmission{}, errors.New("Captain Identity and DSH owners required")
 	}
+	// Identify the currently verified Customer in a short owner transaction.
+	// Never hold this connection or any actor/session FOR UPDATE locks while
+	// contacting DSH: its independent check may need a second connection.
+	preflight, err := a.owner.begin(ctx, false)
+	if err != nil {
+		return MerchantAdmission{}, err
+	}
+	checkedActorID, _, verifyErr := lockVerifiedCustomer(ctx, preflight, digest)
+	rollbackErr := preflight.Rollback()
+	if verifyErr != nil {
+		return MerchantAdmission{}, verifyErr
+	}
+	if rollbackErr != nil {
+		return MerchantAdmission{}, rollbackErr
+	}
+	// DSH checks the same actor and current operational standing, not a caller
+	// claim. No Identity write transaction is open during this owner call.
+	if err = a.standing.Approved(ctx, bearer[len("Bearer "):], checkedActorID); err != nil {
+		return MerchantAdmission{}, err
+	}
+	// Re-lock and revalidate the credential after the external owner call.
+	// A revoked, expired, cross-actor or suspended source cannot mint a role.
 	tx, err := a.owner.begin(ctx, false)
 	if err != nil {
 		return MerchantAdmission{}, err
@@ -40,10 +62,8 @@ func (a *CaptainAdmission) enter(ctx context.Context, bearer string, resume bool
 	if err != nil {
 		return MerchantAdmission{}, err
 	}
-	// The DSH owner resolves this very same current Customer credential and
-	// must return matching actorId and APPROVED standing, never a client claim.
-	if err = a.standing.Approved(ctx, bearer[len("Bearer "):], actorID); err != nil {
-		return MerchantAdmission{}, err
+	if actorID != checkedActorID {
+		return MerchantAdmission{}, ErrUnauthorized
 	}
 	var roleVersion int64
 	if resume {

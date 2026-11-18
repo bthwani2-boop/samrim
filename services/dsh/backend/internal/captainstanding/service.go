@@ -176,6 +176,11 @@ func (s *Service) Change(ctx context.Context, bearer string, cmd Change) (Standi
 		}
 		return Standing{}, ErrOwnerUnavailable
 	}
+	// The same canonical actor may hold both Operator and Customer roles.
+	// Operations permission never authorizes approval of one's own standing.
+	if cmd.Status == Approved && cmd.ActorID == actor.ID {
+		return Standing{}, ErrForbidden
+	}
 	cmd.ActingActorID = actor.ID
 	standing, err := s.repo.Change(ctx, cmd)
 	if err != nil {

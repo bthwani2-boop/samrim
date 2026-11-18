@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { allowed, appendLogFile, assertCompatibleBranchTransition, branchTransitionPins, failureDetail, hash, isUnchanged, needsReconcile, parseRemoteHashes, persistAt, remoteConflict } from "./sync-lenovo-source.mjs";
+import { allowed, appendLogFile, assertCompatibleBranchTransition, branchTransitionPins, buildManagedDeleteCode, buildPublishCode, failureDetail, hash, isUnchanged, needsReconcile, parseRemoteHashes, persistAt, remoteConflict } from "./sync-lenovo-source.mjs";
 
 test("manifest persistence replaces atomically and never deletes another pending file", () => {
   const folder = mkdtempSync(path.join(tmpdir(), "bthwani-source-manifest-"));
@@ -219,4 +220,118 @@ test("compatible new branch at the same HEAD still must reconcile manifest branc
   const files = new Map(Object.entries(state.files));
   assert.equal(needsReconcile(state, files, "sha-1", new Map(files), "codex/before"), false);
   assert.equal(needsReconcile(state, files, "sha-1", new Map(files), "codex/after"), true);
+});
+
+
+function isolatedPowerShell(code) {
+  // Run only command builders against disposable local files. Never invoke SSH,
+  // the Lenovo watcher, or source reconciliation during this regression.
+  return spawnSync("powershell.exe", [
+    "-NoProfile", "-NonInteractive", "-EncodedCommand",
+    Buffer.from(code, "utf16le").toString("base64"),
+  ], { encoding: "utf8", windowsHide: true, timeout: 15000 });
+}
+
+test("replacement archives bytes written after the initial digest check", { skip: process.platform !== "win32" }, () => {
+  const folder = mkdtempSync(path.join(tmpdir(), "bthwani-atomic-replace-"));
+  try {
+    const dest = path.join(folder, "destination.txt");
+    const stage = path.join(folder, "staged.txt");
+    const backup = path.join(folder, "original.bak");
+    const archive = path.join(folder, "conflicts", "displaced.txt");
+    writeFileSync(dest, "observed");
+    writeFileSync(stage, "replacement");
+    const code = buildPublishCode({
+      dest, stage, backup, archive,
+      actual: createHash("sha256").update("observed").digest("hex").toUpperCase(),
+      expected: createHash("sha256").update("replacement").digest("hex").toUpperCase(),
+      conflict: false,
+      root: folder,
+    });
+    const replacement = "[IO.File]::Replace($stage,$dest,$backup);";
+    assert.ok(code.includes(replacement), "expected atomic File.Replace");
+    const withConcurrentWrite = code.replace(replacement,
+      "[IO.File]::WriteAllText($dest,'unexpected-edit');" + replacement);
+    const result = isolatedPowerShell(withConcurrentWrite);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.match(result.stdout, /PUBLISHED/);
+    assert.equal(readFileSync(dest, "utf8"), "replacement");
+    assert.equal(existsSync(backup), false);
+    const archives = readdirSync(path.dirname(archive));
+    const kept = archives.filter(name => name.startsWith("displaced.txt.replaced-"));
+    assert.equal(kept.length, 1, "must retain the actual displaced version");
+    assert.equal(readFileSync(path.join(path.dirname(archive), kept[0]), "utf8"), "unexpected-edit");
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("managed deletion archives a concurrent edit before removing its quarantine", { skip: process.platform !== "win32" }, () => {
+  const folder = mkdtempSync(path.join(tmpdir(), "bthwani-atomic-delete-"));
+  try {
+    const dest = path.join(folder, "managed.txt");
+    const quarantine = dest + ".quarantine";
+    const archive = path.join(folder, "conflicts", "managed.txt");
+    writeFileSync(dest, "observed");
+    const code = buildManagedDeleteCode({
+      dest, quarantine, archive,
+      actual: createHash("sha256").update("observed").digest("hex").toUpperCase(),
+      conflict: false,
+    });
+    assert.ok(code.includes("[IO.File]::Move($p,$quarantine)"));
+    const changed = code.replace("[IO.File]::Move($p,$quarantine)",
+      "[IO.File]::WriteAllText($p,'unexpected-edit');[IO.File]::Move($p,$quarantine)");
+    const result = isolatedPowerShell(changed);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.match(result.stdout, /DELETED_PRESERVED/);
+    assert.equal(existsSync(dest), false);
+    assert.equal(existsSync(quarantine), false);
+    assert.equal(readFileSync(archive, "utf8"), "unexpected-edit");
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("failed archive restores a quarantined file without losing bytes", { skip: process.platform !== "win32" }, () => {
+  const folder = mkdtempSync(path.join(tmpdir(), "bthwani-delete-restore-"));
+  try {
+    const dest = path.join(folder, "managed.txt");
+    const quarantine = dest + ".quarantine";
+    const notDirectory = path.join(folder, "not-a-directory");
+    writeFileSync(dest, "observed");
+    writeFileSync(notDirectory, "existing");
+    const code = buildManagedDeleteCode({
+      dest, quarantine, archive: path.join(notDirectory, "unwritable.txt"),
+      actual: createHash("sha256").update("observed").digest("hex").toUpperCase(),
+      conflict: true,
+    });
+    const result = isolatedPowerShell(code);
+    assert.notEqual(result.status, 0, "a failed archive must fail closed");
+    assert.equal(readFileSync(dest, "utf8"), "observed");
+    assert.equal(existsSync(quarantine), false);
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("a replacement created during deletion is never overwritten or removed", { skip: process.platform !== "win32" }, () => {
+  const folder = mkdtempSync(path.join(tmpdir(), "bthwani-delete-replacement-"));
+  try {
+    const dest = path.join(folder, "managed.txt");
+    const quarantine = dest + ".quarantine";
+    writeFileSync(dest, "observed");
+    const code = buildManagedDeleteCode({
+      dest, quarantine, archive: path.join(folder, "conflicts", "managed.txt"),
+      actual: createHash("sha256").update("observed").digest("hex").toUpperCase(),
+      conflict: false,
+    });
+    const updated = code.replace("[IO.File]::Move($p,$quarantine)",
+      "[IO.File]::Move($p,$quarantine);[IO.File]::WriteAllText($p,'replacement-edit')");
+    const result = isolatedPowerShell(updated);
+    assert.notEqual(result.status, 0, "a concurrent replacement must fail closed");
+    assert.equal(readFileSync(dest, "utf8"), "replacement-edit");
+    assert.equal(readFileSync(quarantine, "utf8"), "observed");
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
 });
