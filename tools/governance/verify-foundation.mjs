@@ -221,7 +221,10 @@ const legalDevelopmentFile=(relative)=>{
  if(!m)return false;
  const [,owner,area,name]=m;
  if(!owner||name.split('/').some(part=>!part||part==='.'||part==='..'||part.startsWith('.')))return false;
- if(/(?:secret|credential|private.key|\.env|dump|backup)/i.test(name))return false;
+ // Credential models are legitimate Go/SQL source names, not credential files.
+ // The extension/location allowlist below and the dedicated secret scanner
+ // still reject credential JSON, key material and embedded secrets.
+ if(/(?:secret|private.key|\.env|dump|backup)/i.test(name))return false;
  if(area==='backend'){
   if(name==='Dockerfile'||name==='project.json'){
    // WLT configuration is executable only beside a real Go entrypoint.

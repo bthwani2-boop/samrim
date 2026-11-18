@@ -25,8 +25,15 @@ const additionalCaptainGroups=[
 const historicalReferenceFiles=fs.readdirSync(path.join(root,'docs/reference'),{recursive:true})
  .filter(file=>/\.(?:md|csv)$/.test(file))
  .map(file=>'docs/reference/'+file.replaceAll('\\','/'));
+// Mirror current governance Markdown (including journey-specific drafts) so
+// link checks in isolated fixtures do not fail on omitted source documents.
+// This is test fixture discovery, not another business-policy owner index.
+const governanceMarkdownFiles=fs.readdirSync(path.join(root,'governance'),{withFileTypes:true})
+ .filter(entry=>entry.isFile()&&entry.name.endsWith('.md'))
+ .map(entry=>'governance/'+entry.name);
 const files=[...new Set([
  'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',
+ ...governanceMarkdownFiles,
  ...owners.map(owner=>'governance/'+owner+'.md'),'docs/REFOUNDATION-PLAN.md','docs/reference/README.md',...historicalReferenceFiles,'docs/reference/HISTORICAL-SOURCE-INVENTORY.md','docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md',
  'docs/reference/environment-config-inventory.md','docs/reference/DONOR-GOVERNANCE-SECTION-CENSUS.md',
  '.github/workflows/ci.yml','.github/workflows/sonar-quality.yml','sonar-project.properties','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs',
@@ -461,6 +468,12 @@ rejects('rejects misplaced financial writer in DSH',{edit:{'services/dsh/contrac
 accepts('permits WLT SQL migration development at the canonical path',{add:{'services/wlt/database/migrations/001_ledger_baseline.sql':'select 1;'}},/PROGRESSIVE_SOURCE_PRESENT/);
 rejects('rejects unnamed WLT migration files',{add:{'services/wlt/database/migrations/001.sql':'select 1;'}},/premature service source: services\/wlt\/database\/migrations\/001.sql/);
 accepts('permits owner migration development in the migration directory',{add:{'services/dsh/database/migrations/006_owner_policy.sql':'select 1;'}},/PROGRESSIVE_SOURCE_PRESENT/);
+accepts('permits an Identity credential-schema migration at the legal owner path',{
+ add:{'services/identity/database/migrations/006_operator_passkey_credentials.sql':'select 1;'}
+},/PROGRESSIVE_SOURCE_PRESENT/);
+rejects('continues to reject secret-named migrations',{
+ add:{'services/identity/database/migrations/006_embedded_secret.sql':'select 1;'}
+},/premature service source: services\/identity\/database\/migrations\/006_embedded_secret\.sql/);
 rejects('rejects SQL outside owner migrations',{add:{'services/dsh/database/fresh-baseline.sql':'select 1;'}},/premature service source: services\/dsh\/database\/fresh-baseline.sql/);
 rejects('rejects WLT Dockerfile without a real Go entrypoint',{add:{'services/wlt/backend/Dockerfile':'FROM scratch'}},/premature service source: services\/wlt\/backend\/Dockerfile/);
 accepts('permits a complete WLT backend layout when it is first implemented',{add:{
