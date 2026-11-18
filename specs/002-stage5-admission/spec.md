@@ -4,7 +4,7 @@
 **Spec Kit CLI:** pinned local `specify 1.3.0`, agent-neutral `none` integration.
 **Status:** DRAFT — DEVELOPMENT OPEN FOR EXISTING AND PROPOSED CAPABILITIES; journey/runtime acceptance remains NOT_RUN.
 **Semantic owners:** `governance/README.md` and its 14 listed owner documents; this specification is a derived acceptance workflow, not another policy writer.
-**User goal:** Enable Close as We Go now: progressively analyze and build existing and new proposed capabilities as deep, multi-surface, owner-backed journeys; close their acceptance with evidence while reconciling whole-platform policy separately. Preserve donor branch `41` as read-only.
+**User goal:** Enable capability-first progressive development: accept independently ready owner-backed increments, reuse verified donor behavior, and close complete cross-owner business journeys only with separate integration proof. Keep policy reconciliation and production activation separate. Preserve donor branch `41` as read-only.
 
 ## User scenarios and independently testable acceptance
 

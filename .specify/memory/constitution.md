@@ -4,7 +4,6 @@ ARTIFACT_CLASS: DERIVED_SPEC_KIT_ROUTER
 SEMANTIC_AUTHORITY: NONE
 EXECUTION_AUTHORITY: NONE
 IMPLEMENTATION_STATE_AUTHORITY: NONE
-GOVERNANCE_CUTOVER: NOT_READY
 
 Spec Kit is the workflow/scaffolding tool for bounded specifications. **This file is not another constitution, Product authority, business policy, or authorization to execute code.** It points Spec Kit to the actual BThwani owners and prevents the deleted legacy governance root from returning.
 
@@ -14,10 +13,10 @@ Spec Kit is the workflow/scaffolding tool for bounded specifications. **This fil
 The root `AGENTS.md` alone defines scope, human authorization, Git permissions, single-writer concurrency, protected data, testing, review and evidence. A Spec Kit command never authorizes Branch, Worktree, Push, PR, Merge, deployment, destructive SQL, payment, or Codex CLI.
 
 ### 2. Placement and ownership
-The root `REPOSITORY-STRUCTURE.md` alone owns placement. Specs, plans and tasks are change-scoped working artifacts; never a second source for Store, Order, Wallet, owner-written contracts, policy values or deployment state.
+The root `REPOSITORY-STRUCTURE.md` alone owns placement. Specs, plans and tasks are change-scoped working artifacts; never a second source for Store, Order, Wallet, owner-written contracts, policy values or deployment state. Capability increments are implementation units; named journeys supply cross-owner end-to-end proof, not a mandatory serial implementation backlog.
 
 ### 3. Durable policy and single-engine design
-The single intended policy root is `governance/README.md` and the **domain owner file it names**. Current cutover is `NOT_READY` until historical decisions and mandated critical-risk reviews complete. Do not treat a draft domain decision as approved or a mock/foundation CI pass as implementation. No `docs/governance/` folder is permitted in this candidate. A single DSH Store/Order engine serves both Store relations. Identity owns actors/permissions, DSH owns Stores/catalog/orders/fulfillment and WLT owns money/ledger/agreements/settlement.
+The single canonical policy root is `governance/README.md` and the **domain owner file it names**. Its approved current decisions direct progressive development; unfinished historical source reconciliation is tracked only in that index and cannot veto unrelated development. Do not treat a proposed new decision or a mock/static CI pass as implementation. No `docs/governance/` folder is permitted in this candidate. A single DSH Store/Order engine serves both Store relations. Identity owns actors/permissions, DSH owns Stores/catalog/orders/fulfillment and WLT owns money/ledger/agreements/settlement.
 
 ### 4. Policy-driven operation and non-negotiable invariants
 Commercial and operational **supported** mutable values (distance, fee bands, timeout, cancellation, refund entitlement, relation eligibility, dispatch modes, subscriptions, collection responsibility) are managed from the one Operator Policies experience through their actual DSH/WLT owner. No new generic rules engine, parallel policy database or hardcoded changeable business default in clients. Security, permission, privacy, ledger balance and integrity are never bypassable settings. A configured option is not proof its full financial/dispatch workflow has been implemented and safely admitted.

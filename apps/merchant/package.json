@@ -15,6 +15,7 @@
     "typescript": "7.0.2"
   },
   "dependencies": {
+    "@bthwani/identity": "workspace:*",
     "@bthwani/tamagui-config": "workspace:*",
     "@date-fns/tz": "catalog:",
     "@expo/metro-runtime": "58.0.17",

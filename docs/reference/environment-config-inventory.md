@@ -61,7 +61,7 @@ The `GOOGLE_SERVICES_JSON` path is different from a Google Maps key. Expo config
 - Isolated Compose instance, backup/restore and service credential provisioning: **NOT_RUN**.
 - Critical security, finance, SQL and legal approvals: **REVIEW_BLOCKED**.
 
-For accepted work and phase evidence use only the active execution plan in `docs/REFOUNDATION-PLAN.md`; this file is a non-normative configuration inventory.
+For current implementation acceptance use affected owner contracts and tests; this file remains non-normative historical configuration evidence.
 
 ## 2026-11-13 — Customer/Merchant EAS remote-build configuration preflight (non-secret evidence)
 

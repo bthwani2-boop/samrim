@@ -1,5 +1,2 @@
-import CapabilityUnavailableScreen from "../../components/capability-unavailable-screen";
-
-export default function VerificationScreen() {
-  return <CapabilityUnavailableScreen title="التحقق من الهوية" message="رموز التحقق لا تُقبل محليًا؛ يجب التحقق منها لدى Identity قبل إنشاء جلسة أو استعادة حساب." />;
-}
+/** Phone-code verification is a stage of the same canonical Customer Identity flow. */
+export { default } from "./identity-gate";

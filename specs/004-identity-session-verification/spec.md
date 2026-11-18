@@ -16,7 +16,7 @@ As a protected BThwani service, I can authenticate a current Identity actor and 
 - FR-004: Only `operations`, `partners`, `catalog`, `marketing`, `finance`, `hr`, `platform_policies` are in scope. Unlisted, forged or malformed scope requests fail without an owner read.
 - FR-005: A role by itself cannot grant any permission. Different Operators have independent grants; revocation and account/role suspension are observed on every request.
 - FR-006: Both reads are no-store, no credential echo, no browser cross-origin bearer access. Caller actor/role headers and query/body cannot change principal or grant decisions.
-- FR-007: The isolated Identity owner is restricted to explicit synthetic PostgreSQL data and loopback host publication (or explicitly isolated Docker networking); it never exposes initial-factor credential issuance, Operator bootstrap or Operator grant mutation. The separate FR-010 permits only proof-bound Merchant role-scoped issuance from an already verified Customer session.
+- FR-007: The isolated Identity owner is restricted to synthetic test actors and an explicitly isolated local environment. It may issue a short-lived Customer credential only after a single-use proof for an approved synthetic test phone number; that exception must not be reachable with real identities or in protected/production environments. Operator bootstrap and Operator grant mutation remain excluded from this isolated entry workflow. The separate FR-010 permits proof-bound Merchant role-scoped issuance from an already verified Customer session.
 - FR-008: DSH Store authorization remains a separate mandatory check at the actual mutation boundary. A Finance workspace grant alone does not authorize wallet/ledger execution.
 - FR-009: An authenticated DELETE /v1/sessions/current atomically sets revoked_at for only the presented bearer digest when the Identity owner confirms its current actor, role and version. First successful request returns 204 without a body; revoked replay, stale or suspended principal returns 401 without mutation; owner outage returns 503.
 - FR-010: POST /v1/actors/me/merchant-role admits a never-provisioned Merchant role only for the same actor as a currently active Customer bearer with separately verified Identity actor proof. One canonical PostgreSQL transaction both creates the role and stores only the digest of a cryptographically random new Merchant session; no Store ownership or Operator permission can follow from Identity alone.
@@ -36,6 +36,14 @@ As a protected BThwani service, I can authenticate a current Identity actor and 
 
 ## Outside this bounded implementation
 
-Operator original credential continuity, first-factor verified Customer login/Passkey enrollment, session refresh/family-wide rotation, existing Merchant role re-entry after lost response, Operator grant administration with audit, DSH protected merchant/operator consumer integration, native/Web real user journeys, and production activation remain **NOT_CLOSED** and require future implementation and critical-risk review.
+Operator original credential continuity and Passkey enrollment, live phone-provider verification, session refresh and family-wide rotation, Operator grant administration with audit, DSH protected workspace integration, and production activation remain **NOT_CLOSED** and require implementation and critical-risk review.
+
+## Synthetic Merchant entry extension
+
+- In an isolated test environment, reserved synthetic phone numbers receive a single-use, attempt-limited verification proof. Concurrent completion cannot create duplicate Customer identities or credentials. Repeated verified entry resolves to the same actor, and suspended actors or roles cannot regain access.
+- A verified Customer may enter and re-enter the Merchant role only through the Identity owner. Merchant sessions stay isolated from other roles and application surfaces; entry alone provides no DSH Store grant.
+- Whole-journey acceptance still requires real phone-provider verification, DSH Captain standing and Identity admission, authorized Operator Passkey and recovery, independent security review and supported native-device proof.
+
+Acceptance requires observable replay protection, concurrent proof consumption, actor reuse, suspension, wrong-role denial, durable revocation, reload, sign-out and protected Store navigation. Independent Identity and DSH owner readback must show that an admitted Merchant cannot access an unrelated Store or use a revoked credential and that Store ownership is unchanged. A locally simulated device or test account does not substitute for physical-device or protected-environment evidence.
 
 Source authority: `governance/identity.md` and `governance/journeys.md`. Branch 41 read-only.

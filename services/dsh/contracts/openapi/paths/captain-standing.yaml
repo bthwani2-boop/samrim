@@ -1,0 +1,82 @@
+paths:
+  /v1/captains/me/standing:
+    get:
+      operationId: getCurrentCaptainStanding
+      summary: Current Identity Captain's approved operational standing
+      description: DSH independently verifies the current Identity Captain bearer and reads its own current standing. Missing, suspended, or revoked operational eligibility never appears as approved.
+      security:
+        - OpaqueSession: []
+      responses:
+        '200':
+          description: Current approved DSH Captain standing
+          headers: { Cache-Control: { schema: { type: string, const: no-store } } }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/ApprovedStanding' }
+        '401': { $ref: '../dsh.openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../dsh.openapi.yaml#/components/responses/Forbidden' }
+        '503': { $ref: '../dsh.openapi.yaml#/components/responses/Unavailable' }
+  /v1/actors/me/captain-eligibility:
+    get:
+      operationId: getCurrentCustomerCaptainEligibility
+      summary: Read own DSH-approved standing before requesting Identity Captain role
+      description: Requires current Identity Customer bearer; returns APPROVED only for matching DSH actor standing, and never issues a role or token.
+      security:
+        - OpaqueSession: []
+      responses:
+        '200':
+          description: Approved DSH standing for the same verified Customer
+          headers: { Cache-Control: { schema: { type: string, const: no-store } } }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/ApprovedStanding' }
+        '401': { $ref: '../dsh.openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../dsh.openapi.yaml#/components/responses/Forbidden' }
+        '503': { $ref: '../dsh.openapi.yaml#/components/responses/Unavailable' }
+  /v1/actors/me/captain-application:
+    post:
+      operationId: applyCurrentCustomerForCaptainStanding
+      summary: Register or recover pending DSH standing without granting Captain privileges
+      description: Requires current Identity Customer bearer. Concurrent retries recover one DSH-owned PENDING record. Existing APPROVED, SUSPENDED or REVOKED status is never silently reactivated.
+      security:
+        - OpaqueSession: []
+      responses:
+        '200':
+          description: Current DSH Captain standing; applicant is not automatically approved
+          headers: { Cache-Control: { schema: { type: string, const: no-store } } }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/Standing' }
+        '400': { $ref: '../dsh.openapi.yaml#/components/responses/Invalid' }
+        '401': { $ref: '../dsh.openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../dsh.openapi.yaml#/components/responses/Forbidden' }
+        '503': { $ref: '../dsh.openapi.yaml#/components/responses/Unavailable' }
+  /v1/operators/captains/{actorId}/standing:
+    patch:
+      operationId: changeCaptainStandingByAuthorizedOperator
+      summary: Versioned, audited Operator approval, suspension or revocation
+      description: Requires live Identity Operator session with effective operations permission. The DSH owner locks and versions the Captain standing, records stable operation IDs and immutable review audit, and forbids self-grant, stale updates, or resurrection of revoked standing.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: actorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../dsh.openapi.yaml#/components/schemas/StandingChange' }
+      responses:
+        '200':
+          description: Committed DSH standing or original idempotent result
+          headers: { Cache-Control: { schema: { type: string, const: no-store } } }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/Standing' }
+        '400': { $ref: '../dsh.openapi.yaml#/components/responses/Invalid' }
+        '401': { $ref: '../dsh.openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../dsh.openapi.yaml#/components/responses/Forbidden' }
+        '409': { $ref: '../dsh.openapi.yaml#/components/responses/Conflict' }
+        '503': { $ref: '../dsh.openapi.yaml#/components/responses/Unavailable' }

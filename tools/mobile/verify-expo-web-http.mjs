@@ -23,7 +23,7 @@ const hosts = [
   {
     name: "merchant",
     routes: [
-      ["/", 200, "لم يتم تفعيل تسجيل الدخول للتاجر بعد"],
+      ["/", 200, "بثواني — التاجر"],
     ],
     protectedRoutes: ["/orders", "/orders/example", "/products", "/wallet", "/more", "/store/profile", "/notifications"],
   },

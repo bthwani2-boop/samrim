@@ -324,3 +324,13 @@ test("public DSH Store and Offer client validators track declared OpenAPI field 
     globalThis.fetch = originalFetch;
   }
 });
+
+test("DSH Store owner unavailability error is admitted by its documented response schema", async () => {
+  const YAML = (await import("yaml")).default;
+  const source = readFileSync(path.join(root, "services/dsh/contracts/openapi/dsh.openapi.yaml"), "utf8");
+  const schema = YAML.parse(source).components.schemas.StoreOperationalError;
+  assert.equal(schema.additionalProperties, false);
+  assert.deepEqual(schema.required, ["code"]);
+  assert.ok(schema.properties.code.enum.includes("STORE_OWNER_UNAVAILABLE"),
+    "the 503 emitted by the Store listing handler must be contract-valid");
+});

@@ -6,7 +6,7 @@ BUSINESS_POLICY_AUTHORITY: NONE
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 STATUS: CURATION_IN_PROGRESS
 
-This is **not** a second Product roadmap, governance directory, design system, CI authority, or record that an external product is safe or suitable. New durable decisions belong only in `governance/`, execution behavior belongs in `AGENTS.md`, and the temporary program audit belongs in `docs/REFOUNDATION-PLAN.md`.
+This is **not** a second Product roadmap, governance directory, design system, CI authority, or record that an external product is safe or suitable. New durable decisions belong only in `governance/`, execution behavior belongs in `AGENTS.md`, and dated historical evidence remains in `docs/reference/`; current implementation truth comes from the owner contracts, tests and runtime.
 
 ## Donor governance section provenance (not approval)
 
@@ -22,15 +22,15 @@ The [source-derived configuration inventory](environment-config-inventory.md) ma
 
 ## Original service OpenAPI source inventory
 
-[The pinned Identity/DSH/WLT OpenAPI census](OPENAPI-DONOR-CONTRACT-INVENTORY.md) records actual donor Path Items, module counts, the proposed reserved domain groupings and owner-boundary risks. It is historical implementation evidence, **not** a replacement contract, permission matrix or approved Product policy. Every new OpenAPI fragment remains zero-operation until implementation approval.
+[The pinned Identity/DSH/WLT OpenAPI census](OPENAPI-DONOR-CONTRACT-INVENTORY.md) records actual donor Path Items, module counts, the proposed reserved domain groupings and owner-boundary risks. It is historical implementation evidence, **not** a replacement contract, permission matrix or approved Product policy. The reserved donor groupings began as zero-operation scaffolds; current progressive development permits owner-scoped executable OpenAPI operations for an authorized capability increment. The live `services/<owner>/contracts/openapi/` entrypoint and validated implementation, not this historical census, determine current contract and runtime status.
 
 ## Archived Control Panel requirement IDs
 
-[`HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md`](HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md) retains all **112 original ID-to-wording traces** and original owner hints from the October 2026 Master Pack. Each source row was marked `UNVERIFIED_ON_HEAD_16`; its current Product admission and actual implementation remain independent matters. This is a **non-governing source index**, not a new Product or policy register. The approved technical and business meaning lives in the domain owner at root `governance/`, and the temporary closure ledger lives in `docs/REFOUNDATION-PLAN.md`.
+[`HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md`](HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md) retains all **112 original ID-to-wording traces** and original owner hints from the October 2026 Master Pack. Each source row was marked `UNVERIFIED_ON_HEAD_16`; its current Product admission and actual implementation remain independent matters. This is a **non-governing source index**, not a new Product or policy register. The approved technical and business meaning lives in the domain owner at root `governance/`, and the preserved 112-ID dispositions and technical-risk evidence are in the [non-governing execution history](REFOUNDATION-EXECUTION-HISTORY-20261118.md).
 
 ## Source provenance, retained without copying historical policy trees
 
-The original source tree remains at `D:\samrim`, branch `41`, SHA `426d67b47beb8c66b09acd8c7394086b53ac5aae`. The historical `docs/reference/` donor includes an OSS candidate catalog, Yemen-market black-box competitor observations, and dated Elleen operator/report/design studies from October–November 2026. Some screenshot evidence is **locally ignored and not committed**; never claim it exists in the clean Git tree. Audit archives exist in the consolidated ZIP at `%USERPROFILE%\Downloads\BTHWANI-REFOUNDATION-COMPLETE-PACKAGE-20261112.zip`.
+The original donor source was recorded at `D:\samrim`, branch `41`, SHA `426d67b47beb8c66b09acd8c7394086b53ac5aae`. The historical `docs/reference/` donor includes an OSS candidate catalog, Yemen-market black-box competitor observations, and dated Elleen operator/report/design studies from October–November 2026. Some screenshot evidence is **locally ignored and not committed**; never claim it exists in the clean Git tree. Audit archives exist in the consolidated ZIP at `%USERPROFILE%\Downloads\BTHWANI-REFOUNDATION-COMPLETE-PACKAGE-20261112.zip`.
 
 To retain selected references across future Git-branch cleanup, preserve them in a **separately verified remote immutable archive/tag/bundle before deletion**, under explicit human authorization. The existing sparse candidate is not the historical backup and must not be merged as a complete application. Do not transform old screenshots, source paths, branch numbers, benchmark UI or a provider label into an approved capability.
 

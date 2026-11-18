@@ -178,6 +178,10 @@ func main() {
 		if err != nil {
 			log.Fatal("DSH protected Store availability cannot start: ", err)
 		}
+		handler, err = isolatedCaptainStandingHandler(db, schema, handler, origins)
+		if err != nil {
+			log.Fatal("DSH protected Captain standing cannot start: ", err)
+		}
 		server := &http.Server{
 			Addr:              addr,
 			Handler:           handler,

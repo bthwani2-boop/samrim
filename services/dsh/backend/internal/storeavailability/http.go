@@ -18,6 +18,20 @@ func NewHandler(service *Service) (http.Handler, error) {
 		return nil, ErrUnauthorized
 	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/stores/mine", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		token, ok := bearerToken(r)
+		if !ok {
+			writeFailure(w, ErrUnauthorized)
+			return
+		}
+		standing, err := service.ListMerchantStores(r.Context(), token)
+		if err != nil {
+			writeFailure(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, standing)
+	})
 	mux.HandleFunc("GET /v1/stores/{storeID}/availability", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		token, ok := bearerToken(r)

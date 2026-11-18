@@ -11,7 +11,7 @@ Use the installed Spec Kit tooling as the workflow for a **bounded, executable r
 
 - **Pinned host:** Windows 11; Node 24.22.1, pnpm 12.15.0, Go 1.27.3, Spec Kit 1.3.0, TypeScript 7.0.2, Biome 2.5.12.
 - **Existing workspace:** Next.js Operator and Expo Customer/Merchant/Captain presentation hosts; shared semantic colors and Tamagui adapter; three private service-client placeholders.
-- **Sources of authority:** `AGENTS.md`, `REPOSITORY-STRUCTURE.md`, `governance/README.md`, the 14 owner docs. The temporary `docs/REFOUNDATION-PLAN.md` is a work plan only; `docs/reference/` historical provenance only.
+- **Sources of authority:** `AGENTS.md`, `REPOSITORY-STRUCTURE.md`, `governance/README.md`, the 14 owner docs. The canonical domain owners govern meaning; `docs/journeys/` holds bounded integration evidence, and `docs/reference/` is historical provenance only.
 - **No database changes:** the currently running `samrim-local` Docker containers belong to another runtime; do not reuse, restart, drop or migrate. First new SQL tests require separately scoped isolated PostgreSQL with roles, schema ownership and restore.
 - **No web/business operations:** identity/auth, finance, Order/COD and data migration remain gated until approved contracts and internal adverse tests.
 - **Test entrypoints:** `specify --version`, `specify check`, `specify workflow list`, bundled PowerShell prerequisite scripts; `pnpm check` and targeted owner tests after corresponding changes.

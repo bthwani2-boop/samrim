@@ -51,8 +51,6 @@ test("web storefront keeps its no-index policy and reuses the DSH reader", () =>
 
 test("protected feature routes delegate to feature-owned screens and fail closed", () => {
   const routes = {
-    "login.tsx": "access/identity-gate.tsx",
-    "verification.tsx": "access/verification-screen.tsx",
     "(tabs)/account/index.tsx": "account/account-screen.tsx",
     "addresses/index.tsx": "addresses/addresses-screen.tsx",
     "addresses/[id].tsx": "addresses/address-editor.tsx",
@@ -72,6 +70,11 @@ test("protected feature routes delegate to feature-owned screens and fail closed
     assert.match(source, /CapabilityUnavailableScreen/, screen);
     assert.doesNotMatch(source, /fetch\(|checkout\(|confirm\(|credit\(/, screen);
   }
+  assert.ok(read("login.tsx").includes('export { default } from'));
+  assert.ok(read("verification.tsx").includes('export { default } from'));
+  assert.ok(readFeature("access/identity-gate.tsx").includes("readCustomerAdmission"));
+  assert.ok(readFeature("access/verification-screen.tsx").includes('from "./identity-gate"'));
+  assert.ok(readFeature("account/account-screen.tsx").includes('href="/login"'));
   const unavailable = readFileSync(resolve(customer, "src/components/capability-unavailable-screen.tsx"), "utf8");
   assert.match(unavailable, /هذه الخدمة غير مفعّلة حاليًا/);
   assert.match(unavailable, /لن يُرسل هذا القسم طلبًا/);

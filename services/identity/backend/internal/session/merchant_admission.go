@@ -182,6 +182,10 @@ func validateVerifiedCustomerAt(verification sql.NullTime, issuedAt, expiresAt, 
 // The caller owns the transaction and actor/role locks. This routine commits
 // only after the digest is persisted, and returns raw credentials only once.
 func issueMerchantSessionTx(ctx context.Context, tx *sql.Tx, actorID string, actorVersion, merchantRoleVersion int64) (MerchantAdmission, error) {
+	return issueRoleSessionTx(ctx, tx, actorID, "merchant", actorVersion, merchantRoleVersion)
+}
+
+func issueRoleSessionTx(ctx context.Context, tx *sql.Tx, actorID, role string, actorVersion, roleVersion int64) (MerchantAdmission, error) {
 	var secret [32]byte
 	if _, err := rand.Read(secret[:]); err != nil {
 		return MerchantAdmission{}, err
@@ -190,8 +194,8 @@ func issueMerchantSessionTx(ctx context.Context, tx *sql.Tx, actorID string, act
 	var expiry time.Time
 	err := tx.QueryRowContext(ctx, `INSERT INTO auth_sessions
         (token_digest,actor_id,role,actor_version,role_version,issued_at,expires_at)
-        VALUES ($1,$2,'merchant',$3,$4,clock_timestamp(),clock_timestamp()+interval '30 minutes')
-        RETURNING expires_at`, digest[:], actorID, actorVersion, merchantRoleVersion).
+        VALUES ($1,$2,$3,$4,$5,clock_timestamp(),clock_timestamp()+interval '30 minutes')
+        RETURNING expires_at`, digest[:], actorID, role, actorVersion, roleVersion).
 		Scan(&expiry)
 	if err != nil {
 		return MerchantAdmission{}, err

@@ -2,12 +2,12 @@
 
 ARTIFACT_CLASS: DOMAIN_GOVERNANCE_DRAFT
 SEMANTIC_OWNER: governance/journeys.md
-STATUS: DRAFT_PENDING_FULL_GOVERNANCE_CUTOVER
+STATUS: ACTIVE_FOR_PROGRESSIVE_DEVELOPMENT
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 ## Purpose and authority
 
-These **16** named business journeys are the canonical *cross-surface proof lenses*, not another capability admission census, Order/finance writer, screen registry, implementation plan or claim that a workflow is live. `governance/product.md` owns the **26 capability** admission IDs; Identity, DSH, WLT and relevant HR logical ownership retain their own domain facts and policy decisions. The `JOURNEY_ID` identifiers below preserve historic acceptance traceability on branch `41`. Historic `PARTNER` in identifiers means the **Merchant** actor, not an additional actor or engine. In current content: Customer, Merchant, Captain and Operator are the four actor-facing surfaces. No extra enrollment app or independent Direct Commerce engine follows from an older identifier.
+These **16** named business journeys are the canonical *cross-surface proof lenses*, not another capability admission census, Order/finance writer, screen registry, implementation plan or claim that a workflow is live. They are **not a sequential implementation backlog**: implementation proceeds through the smallest ready capability increments under `governance/engineering.md`, while each relevant journey supplies integration acceptance for shared handoffs and owner-backed outcomes. Verified capability increments need not wait for an unrelated journey; journey closure still requires all applicable real end-to-end criteria. `governance/product.md` owns the **26 capability** admission IDs; Identity, DSH, WLT and relevant HR logical ownership retain their own domain facts and policy decisions. The `JOURNEY_ID` identifiers below preserve historic acceptance traceability on branch `41`. Historic `PARTNER` in identifiers means the **Merchant** actor, not an additional actor or engine. In current content: Customer, Merchant, Captain and Operator are the four actor-facing surfaces. No extra enrollment app or independent Direct Commerce engine follows from an older identifier.
 
 A Journey crosses materially participating surfaces and ends with actual owner-backed readback on each. Every mutable operational quantity below (contact count, claim expiry, stage attention, dispatch timeout, commercial price, promotion limit) is an initial donor policy candidate/default, **editable through the single Operator Policies workspace via its canonical owner** once implemented and authorized. A configurable value never disables permissions, safety, immutable transaction history or ledger conservation. Historic durations are not contractual SLA promises.
 
@@ -22,6 +22,8 @@ OWNERS: Identity, DSH
 ENTRY: Verified eligible human account or authorized managed-role admission.
 EXIT: The admitted person signs into the correct role-scoped app and the current standing is readable from Identity/DSH.
 READBACK: Identity actor, verified authentication, role, session and relevant DSH standing.
+
+**Admission boundary:** Customer first-factor verification is an Identity prerequisite, not a fourth managed-admission surface. Assisted Merchant onboarding and managed Captain cases do not authorize identity impersonation or role approval by the UI. The original protected Root Operator remains the same canonical actor; a replacement Root account cannot be created to restore access.
 
 A Merchant self-registers directly through Identity after required verification; **no preapproval, onboarding intermediary or parallel enrollment record** is required for ordinary Merchant admission. Captain admission retains current role/standing gates. Operator role admission is protected by its separate high-security Identity rules. Existing verified actors are reused, not duplicated because a Store invitation or HR access request exists. A Store-affiliated Captain membership remains a DSH resource relationship, not a platform-role shortcut.
 

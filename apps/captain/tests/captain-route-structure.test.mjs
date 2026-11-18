@@ -18,11 +18,17 @@ test("approved Captain routes use one Expo Router root", () => {
   assert.equal(existsSync(resolve(captain, "src/app")), false);
 });
 
-test("entry uses the Identity gate and cannot pretend a login succeeded", () => {
+test("Captain entry is gated by current Identity role and DSH approval", () => {
   assert.ok(read("index.tsx").includes("identity-gate"));
   const gate = source("src/features/access/identity-gate.tsx");
-  assert.ok(gate.includes("لم يتم تفعيل تسجيل الدخول للكابتن"));
-  assert.ok(!gate.includes("setSession("));
+  const admission = source("src/features/access/admission-transport.ts");
+  assert.ok(gate.includes("verifyCaptainCode"));
+  assert.ok(gate.includes("hasActiveCaptainSession"));
+  assert.ok(gate.includes("captain-admission-pending"));
+  assert.ok(gate.includes("captain-admission-verified"));
+  assert.ok(admission.includes("readApprovedCaptainStanding"));
+  assert.ok(admission.includes("resumeCurrentCustomerCaptainSession"));
+  assert.ok(!admission.includes("setRole("));
 });
 
 test("four primary Captain destinations and one home map", () => {
@@ -56,5 +62,18 @@ test("Captain has one tab route for each primary URL", () => {
   for (const name of ["home", "deliveries", "wallet", "account"]) {
     assert.ok(tabs.includes('name="' + name + '"'));
     assert.equal(existsSync(resolve(app, name + ".tsx")), false);
+  }
+});
+
+test("direct links and nested Captain routes cannot render before live owner verification", () => {
+  const guard = source("src/features/access/protected-route.tsx");
+  assert.ok(guard.includes("readCaptainAdmission("));
+  assert.ok(guard.includes("hasActiveCaptainSession("));
+  assert.ok(guard.includes("useFocusEffect("));
+  assert.ok(guard.includes('href="/"'));
+  for (const path of ["(tabs)/_layout.tsx", "offers.tsx", "notifications.tsx", "delivery/[id].tsx"]) {
+    const route = read(path);
+    assert.ok(route.includes("CaptainProtectedRoute"), path);
+    assert.ok(route.includes("<CaptainProtectedRoute"), path);
   }
 });

@@ -2,11 +2,13 @@
 
 ARTIFACT_CLASS: DOMAIN_GOVERNANCE_DRAFT
 SEMANTIC_OWNER: governance/stores.md
-STATUS: DRAFT_PENDING_FULL_GOVERNANCE_CUTOVER
+STATUS: ACTIVE_FOR_PROGRESSIVE_DEVELOPMENT
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 ## Merchant and Store are different truths
 Identity owns Merchant actor and session. DSH owns Store ID, actual Store owner, service city, Store relation, authorized membership/grants, publication and operational availability. One Merchant may create/manage multiple Stores through one authorized create operation; no separate Partner identity or relation-specific Store table.
+
+**Merchant admission from Operator UI:** an Operator with verified `partners` authority may initiate an invitation or assisted onboarding request, but may not verify the human's phone, issue the Identity Merchant role, or silently create/assign a Store in that person's name. The Merchant must establish their own Identity session and reuse the existing actor before any separate DSH Store creation or ownership command. Direct self-registration of Merchant actor requires no administrative preapproval or pre-existing Store. Actual Store creation and publication remain a separate DSH-owned operation, subject to the Store-admission and publication policy defined here.
 
 DSH's one bounded `employees` engine may record Merchant employees against their actual Merchant organization and, where approved, one or multiple Stores. Employment records, invitations, Store-scoped grants and Identity accounts are separate facts. A Store employee may exist without a login; an employee with a login receives only independently accepted DSH Store grants consistent with their Identity eligibility. No Merchant can inspect company HR or another Merchant's employee records merely through Store membership.
 

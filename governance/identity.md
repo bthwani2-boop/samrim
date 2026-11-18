@@ -2,7 +2,7 @@
 
 ARTIFACT_CLASS: DOMAIN_GOVERNANCE_DRAFT
 SEMANTIC_OWNER: governance/identity.md
-STATUS: DRAFT_PENDING_FULL_GOVERNANCE_CUTOVER
+STATUS: ACTIVE_FOR_PROGRESSIVE_DEVELOPMENT
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 ## IDENTITY_ACTIVATION_SESSIONS — Identity activation and authorized sessions
@@ -33,6 +33,8 @@ For the present approved Operator security model, **normal Operator login requir
 A phone number is a **mutable verified attribute**, never the canonical cross-service actor ID. A verified official Identity name is not interchangeable with a temporary merchant display label or beneficiary name supplied in a form. Identity handles host/domain-scoped session issuance, renewal, logout and revocation for Customer public Store Web versus marketplace surfaces; one human identity does not imply browser cookies can be shared freely across public hosts. An approved cross-domain sign-in handoff must be owned by Identity and must never place access/refresh credentials in Store URLs, cross-origin storage, merchant-authored scripts or untrusted redirects. Public permitted Store/Offer browsing may be guest-accessible, but protected ordering, history and payment require current appropriate authorization. A Merchant or delegated Store worker may access only the Order/customer data justified by the currently authorized Store assignment, never unrelated Store orders or Customer balance/session records.
 
 New actor provisioning must not create duplicate identities when a verified phone already belongs to an eligible actor; the original owner is authoritative. This governs Merchant member invitations and Store-Captain invitations without allowing the owner to impersonate a member or approve their identity proof.
+
+**Assisted versus direct admission:** A currently authorized Operator with the relevant partners or operations scope may initiate a Merchant invitation/application or a Captain candidate, but that request is not identity verification, a high-level role grant or Store ownership. The invited human proves their own existing/new Identity actor. Merchant direct self-registration remains available without Store or prior Operator enrollment; administrative assistance must converge on the exact same verified Merchant actor. A Captain application may remain PENDING, including when started by the candidate, but only DSH's authorized Operations approval establishes the standing required by Identity for a Captain role. If Product later restricts where a PENDING case may originate, reconcile the entry surfaces without weakening this approval rule.
 
 ## Finite Operator workspace permissions and session hardening
 

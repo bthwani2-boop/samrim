@@ -1,16 +1,27 @@
 import Link from "next/link";
+import { resolveIsolatedOperatorConfig } from "../../server/operator-passkey-bff";
+import OperatorPasskeyForm from "./operator-passkey-form";
 
-// This is an honest entry gate, not a local or browser-side Operator login.
+// No login is available outside explicitly isolated local test mode.
+// Even a verified Operator session does not unlock the workspace before its
+// resource-scoped permissions and the protected original Owner are verified.
 export default function OperatorEntryScreen() {
+  const isolated = resolveIsolatedOperatorConfig(process.env);
   return (
-    <main style={{ maxWidth: 760, margin: "5rem auto", padding: 24 }}>
-      <h1>لوحة تحكم بثواني</h1>
-      <p role="alert">لم يتم تفعيل تسجيل دخول المشغّل في النسخة الجديدة.</p>
+    <main style={{ maxWidth: 760, margin: "5rem auto", padding: 24 }} dir="rtl">
+      <h1>دخول لوحة تحكم بثواني</h1>
+      {isolated ? (
+        <OperatorPasskeyForm />
+      ) : (
+        <p role="alert">
+          تسجيل دخول المشغّلين غير متاح حاليًا، حتى اعتماد التحقق الآمن من Identity.
+        </p>
+      )}
       <p>
-        تتطلب مساحة المشغّل جلسة Operator معتمدة وصلاحيات محددة من Identity.
-        ولا تسمح شاشة الدخول هذه بالاطلاع على طلبات أو متاجر أو بيانات مالية.
+        صلاحيات المشغّل وإدارة الحساب الأساسي محمية في Identity.
+        لا تُعرض صفحات العمل أو بياناتها دون التحقق من الجلسة والصلاحيات الفعلية.
       </p>
-      <Link href="/health">حالة التطبيق التقنية</Link>
+      <Link href="/health">التحقق من حالة الخدمة</Link>
     </main>
   );
 }

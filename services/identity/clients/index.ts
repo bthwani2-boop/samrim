@@ -1,7 +1,5 @@
 /**
- * Canonical Identity HTTP transport for existing verified sessions and direct
- * Customer-to-Merchant admission. No first-factor implementation, credentials
- * store, Store grant, or additional role/policy engine lives here.
+ * Canonical Identity HTTP transport for sessions and direct Merchant admission.
  */
 export type IdentityRole = "customer" | "merchant" | "captain" | "operator";
 export interface VerifiedIdentitySession {
@@ -9,10 +7,11 @@ export interface VerifiedIdentitySession {
   role: IdentityRole;
   sessionExpiresAt: string;
 }
-export interface MerchantAdmission {
+export interface IssuedRoleSession {
   accessToken: string;
   sessionExpiresAt: string;
 }
+export type MerchantAdmission = IssuedRoleSession;
 export class IdentityClientError extends Error {
   readonly status: number;
   readonly code: string;
@@ -28,7 +27,9 @@ const allowedErrors = new Set([
   "INVALID_REQUEST", "UNAUTHORIZED", "FORBIDDEN", "VERIFICATION_REQUIRED",
   "ALREADY_PROVISIONED", "MERCHANT_NOT_ACTIVE", "OWNER_UNAVAILABLE",
   "NOT_FOUND", "METHOD_NOT_ALLOWED",
+  "PHONE_CHALLENGE_LIMIT", "CAPTAIN_NOT_APPROVED", "CAPTAIN_NOT_ACTIVE",
 ]);
+const phoneTicket = /^[a-f0-9]{48}$/;
 function originFor(baseUrl: string): URL {
   let root: URL;
   try { root = new URL(baseUrl); }
@@ -62,13 +63,13 @@ function sessionFrom(value: unknown): VerifiedIdentitySession {
   if (!exactKeys(v, ["actorId", "role", "sessionExpiresAt"]) ||
     typeof v.actorId !== "string" || v.actorId.length < 1 || v.actorId.length > 128 ||
     v.actorId.trim() !== v.actorId || /[\r\n\t]/.test(v.actorId) ||
-    !["customer", "merchant", "captain", "operator"].includes(String(v.role)) ||
+    typeof v.role !== "string" || !["customer", "merchant", "captain", "operator"].includes(v.role) ||
     !validDate(v.sessionExpiresAt)) {
     throw new IdentityClientError(502, "OWNER_RESPONSE_INVALID");
   }
   return v as unknown as VerifiedIdentitySession;
 }
-function admissionFrom(value: unknown): MerchantAdmission {
+function issuedSessionFrom(value: unknown): IssuedRoleSession {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new IdentityClientError(502, "OWNER_RESPONSE_INVALID");
   }
@@ -78,13 +79,14 @@ function admissionFrom(value: unknown): MerchantAdmission {
     !validDate(v.sessionExpiresAt)) {
     throw new IdentityClientError(502, "OWNER_RESPONSE_INVALID");
   }
-  return v as unknown as MerchantAdmission;
+  return v as unknown as IssuedRoleSession;
 }
 async function ownerRequest(
-  baseUrl: string, path: string, bearer: string,
-  method: "GET" | "POST", expectedStatus: number, signal?: AbortSignal,
+  baseUrl: string, path: string, bearer: string | null,
+  method: "GET" | "POST" | "DELETE", expectedStatus: number, signal?: AbortSignal,
+  payload?: Record<string, string>,
 ): Promise<unknown> {
-  assertBearer(bearer);
+  if (bearer !== null) assertBearer(bearer);
   const root = originFor(baseUrl);
   const url = new URL(path, root);
   let response: Response;
@@ -92,7 +94,12 @@ async function ownerRequest(
     response = await fetch(url.toString(), {
       method, redirect: "error", credentials: "omit", cache: "no-store",
       signal: signal ?? null,
-      headers: { Authorization: "Bearer " + bearer, Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        ...(bearer === null ? {} : { Authorization: "Bearer " + bearer }),
+        ...(payload === undefined ? {} : { "Content-Type": "application/json" }),
+      },
+      ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
     });
   } catch {
     throw new IdentityClientError(0, method === "POST" ? "OPERATION_RESULT_UNKNOWN" :
@@ -116,6 +123,7 @@ async function ownerRequest(
   }
   const cacheDirectives = response.headers.get("Cache-Control")
     ?.split(",").map(part => part.trim().toLowerCase()) ?? [];
+  if (expectedStatus === 204 && cacheDirectives.includes("no-store")) return undefined;
   const contentLength = response.headers.get("Content-Length");
   const boundedLength = contentLength === null ||
     (/^\d+$/.test(contentLength) && Number(contentLength) <= 16384);
@@ -133,6 +141,30 @@ async function ownerRequest(
     throw new IdentityClientError(502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
   }
 }
+export async function issueCustomerPhoneChallenge(
+  baseUrl: string, phone: string, signal?: AbortSignal,
+): Promise<string> {
+  const result = await ownerRequest(baseUrl, "/v1/customer-auth/phone-challenges", null,
+    "POST", 201, signal, { phone });
+  if (!result || typeof result !== "object" || !("ticket" in result) ||
+    Object.keys(result).length !== 1 || typeof result.ticket !== "string" || !phoneTicket.test(result.ticket)) {
+    throw new IdentityClientError(502, "OWNER_RESPONSE_INVALID");
+  }
+  return result.ticket;
+}
+
+export async function verifyCustomerPhoneChallenge(
+  baseUrl: string, ticket: string, code: string, signal?: AbortSignal,
+): Promise<IssuedRoleSession> {
+  return issuedSessionFrom(await ownerRequest(baseUrl, "/v1/customer-auth/phone-verification", null,
+    "POST", 200, signal, { ticket, code }));
+}
+
+export async function revokeVerifiedIdentitySession(
+  baseUrl: string, bearer: string, signal?: AbortSignal,
+): Promise<void> {
+  await ownerRequest(baseUrl, "/v1/sessions/current", bearer, "DELETE", 204, signal);
+}
 export async function readVerifiedIdentitySession(
   baseUrl: string, bearer: string, signal?: AbortSignal,
 ): Promise<VerifiedIdentitySession> {
@@ -142,13 +174,27 @@ export async function readVerifiedIdentitySession(
 export async function admitCurrentCustomerAsMerchant(
   baseUrl: string, customerBearer: string, signal?: AbortSignal,
 ): Promise<MerchantAdmission> {
-  return admissionFrom(await ownerRequest(baseUrl, "/v1/actors/me/merchant-role",
+  return issuedSessionFrom(await ownerRequest(baseUrl, "/v1/actors/me/merchant-role",
     customerBearer, "POST", 201, signal));
 }
 /** Revokes previous Merchant sessions at Identity before issuing a new one. */
 export async function resumeCurrentCustomerMerchantSession(
   baseUrl: string, customerBearer: string, signal?: AbortSignal,
 ): Promise<MerchantAdmission> {
-  return admissionFrom(await ownerRequest(baseUrl, "/v1/actors/me/merchant-session",
+  return issuedSessionFrom(await ownerRequest(baseUrl, "/v1/actors/me/merchant-session",
+    customerBearer, "POST", 200, signal));
+}
+/** The DSH-approved Captain standing is checked again by Identity at issue time. */
+export async function admitCurrentCustomerAsCaptain(
+  baseUrl: string, customerBearer: string, signal?: AbortSignal,
+): Promise<IssuedRoleSession> {
+  return issuedSessionFrom(await ownerRequest(baseUrl, "/v1/actors/me/captain-role",
+    customerBearer, "POST", 201, signal));
+}
+/** Re-entry rotates the existing Captain bearer without reactivating a role. */
+export async function resumeCurrentCustomerCaptainSession(
+  baseUrl: string, customerBearer: string, signal?: AbortSignal,
+): Promise<IssuedRoleSession> {
+  return issuedSessionFrom(await ownerRequest(baseUrl, "/v1/actors/me/captain-session",
     customerBearer, "POST", 200, signal));
 }
