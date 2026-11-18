@@ -9,10 +9,16 @@ Docker volume deletion, branch changes, Git commits/pushes, or credential modifi
 [CmdletBinding()]
 param(
   [Parameter(Position=0)]
-  [ValidateSet('Install','Up','Warm','Status','Down','Verify','Migrations')]
+  [ValidateSet('Install','Up','Warm','Status','Down','Verify','Migrations','Docker')]
   [string]$Action = 'Up',
   [switch]$Apply,
-  [switch]$DeepSql
+  [switch]$DeepSql,
+  [Parameter(Position=1)]
+  [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify')]
+  [string]$DockerAction = 'help',
+  [Parameter(Position=2)]
+  [ValidateSet('dsh','identity','postgres','media','mailpit','payment-mock')]
+  [string]$DockerService = 'dsh'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -34,12 +40,6 @@ $ownerTasks = @(
   @{Name='BThwani Merchant Lenovo SSH Tunnel'; Pattern='Start-AppTunnel\.ps1'},
   @{Name='BThwani Captain Lenovo SSH Tunnel'; Pattern='Start-AppTunnel\.ps1'},
   @{Name='BThwani Control Lenovo SSH Tunnel'; Pattern='Start-AppTunnel\.ps1'}
-)
-$lenovoTasks = @(
-  @{Name='BThwani Client Metro Native'; App='customer'; Port=28111},
-  @{Name='BThwani Partner Metro Native'; App='merchant'; Port=28112},
-  @{Name='BThwani Captain Metro Native'; App='captain'; Port=28113},
-  @{Name='BThwani Control Next Native'; App='control-panel'; Port=23010}
 )
 $localPorts = @(18101,18102,18103,13000)
 $logRoot = Join-Path $env:LOCALAPPDATA 'BThwani\Operations\UnifiedDev'
@@ -143,6 +143,8 @@ function Stop-LocalTasks {
   }
   Say 'NOTICE' 'Task Scheduler stop may leave children; inspect any remaining owned listener, never kill an unknown PID.'
 }
+# Legacy Windows task keys are used only to find existing Task Scheduler owners.
+# Canonical app names are customer, merchant, captain, control-panel.
 $remoteTasksScript = @'
 $specs=@(
  @{N='BThwani Client Metro Native';A='customer';P=28111},
@@ -155,7 +157,7 @@ foreach($s in $specs){
   $actions=($task.Actions | ForEach-Object { [string]$_.Execute+' '+[string]$_.Arguments }) -join ' '
   if($actions -notmatch 'Start-RefoundationApp\.ps1' -or $actions -notmatch [regex]::Escape($s.A)) {throw ('TASK_OWNER_CHANGED '+$s.N)}
   $port=@(Get-NetTCPConnection -State Listen -LocalPort $s.P -ErrorAction SilentlyContinue).Count -gt 0
-  Write-Output ('LENOVO_APP name='+$s.N+' task='+$task.State+' port='+$s.P+' listen='+$port)
+  Write-Output ('LENOVO_APP app='+$s.A+' task='+$task.State+' port='+$s.P+' listen='+$port)
 }
 '@
 function Show-LenovoTasks { Invoke-Lenovo $remoteTasksScript }
@@ -167,7 +169,7 @@ foreach($s in $specs){
   if([string]$task.State -eq 'Running') {continue}
   if($port){throw ('APP_PORT_OCCUPIED '+$s.N+' '+$s.P)}
   Start-ScheduledTask -TaskName $s.N -ErrorAction Stop
-  Write-Output ('LENOVO_APP_START_REQUESTED '+$s.N)
+  Write-Output ('LENOVO_APP_START_REQUESTED '+$s.A)
 }
 '@
   Invoke-Lenovo $start
@@ -178,7 +180,7 @@ foreach($s in $specs){
   $task=Get-ScheduledTask -TaskName $s.N -ErrorAction Stop
   if([string]$task.State -eq 'Running') {
     Stop-ScheduledTask -TaskName $s.N -ErrorAction Stop
-    Write-Output ('LENOVO_APP_STOP_REQUESTED '+$s.N)
+    Write-Output ('LENOVO_APP_STOP_REQUESTED '+$s.A)
   }
 }
 '@
@@ -195,6 +197,61 @@ function Show-Docker {
     if ($code -ne 0) { Say 'NOTE' 'runtime provenance incomplete; Identity may be intentionally stopped. Never re-label a stopped container as PASS.' }
   }
   Say 'WLT' 'NOT_IMPLEMENTED (no runnable new backend)'
+}
+function Show-DockerCommands {
+  Write-Output 'DOCKER_COMMANDS=READ_ONLY (Surface -> bthwani-docker SSH context)'
+  Write-Output 'pnpm dev docker help           # command reference, no Docker changes'
+  Write-Output 'pnpm dev docker status         # project containers and provenance summary'
+  Write-Output 'pnpm dev docker ps             # project containers'
+  Write-Output 'pnpm dev docker logs dsh       # last 50 DSH log lines'
+  Write-Output 'pnpm dev docker logs identity  # last 50 Identity log lines'
+  Write-Output 'pnpm dev docker images         # refoundation image tags'
+  Write-Output 'pnpm dev docker volumes        # project-scoped volumes'
+  Write-Output 'pnpm dev docker networks       # project-scoped networks'
+  Write-Output 'pnpm dev docker config         # validate base and DSH Compose safely'
+  Write-Output 'pnpm dev docker verify         # strict DSH + Identity live image provenance'
+  Write-Output 'pnpm dev | pnpm dev warm | pnpm dev status | pnpm dev down'
+  Write-Output 'pnpm dev migrations            # migration inventory only; NO SQL execution'
+  Write-Output 'BUILD=use infra/build-dsh-image.ps1 or infra/build-identity-verifier-image.ps1 explicitly'
+  Write-Output 'UNSUPPORTED=prune, down -v, SQL migration execution, bootstrap, protected state operations'
+}
+function Invoke-ScopedDocker {
+  if ($DockerAction -eq 'help') { Show-DockerCommands; return }
+  Check-Ssh
+  Check-DockerContext
+  switch ($DockerAction.ToLowerInvariant()) {
+    'status' { Show-Docker }
+    'ps' {
+      Invoke-DockerCli -argsList @('ps','-a','--filter',('label=com.docker.compose.project='+$project),'--format','{{.Names}} | {{.Status}} | {{.Image}}') | ForEach-Object { Write-Output $_ }
+    }
+    'logs' {
+      $name = 'bthwani-refoundation-'+$DockerService+'-1'
+      $record=@(& docker --context $dockerContext inspect $name '--format' '{{json .Config.Labels}}' 2>&1)
+      Assert-Ok ($LASTEXITCODE -eq 0) ('container not found: '+$name)
+      $labels = (($record | Select-Object -First 1).ToString() | ConvertFrom-Json)
+      Assert-Ok ($labels.'com.docker.compose.project' -eq $project) ('container ownership mismatch: '+$name)
+      Invoke-DockerCli -argsList @('logs','--tail','50',$name) | ForEach-Object { Write-Output $_ }
+    }
+    'images' {
+      Invoke-DockerCli -argsList @('image','ls','--filter','reference=bthwani-refoundation-*','--format','{{.Repository}}:{{.Tag}} | {{.ID}}') | ForEach-Object { Write-Output $_ }
+    }
+    'volumes' {
+      Invoke-DockerCli -argsList @('volume','ls','--filter',('label=com.docker.compose.project='+$project),'--format','{{.Name}}') | ForEach-Object { Write-Output $_ }
+    }
+    'networks' {
+      Invoke-DockerCli -argsList @('network','ls','--filter',('label=com.docker.compose.project='+$project),'--format','{{.Name}}') | ForEach-Object { Write-Output $_ }
+    }
+    'config' {
+      Assert-Compose
+      $null=Invoke-DockerCli -argsList @('compose','--env-file',$baseEnv,'-f',$baseCompose,'-f',$appCompose,'--profile','implementation','config','--quiet')
+      Say 'COMPOSE_CONFIG' 'PASS base and DSH overlay; no SQL execution or secret output'
+    }
+    'verify' {
+      & node (Join-Path $repo 'infra\verify-runtime-provenance.mjs') '--context' $dockerContext
+      Assert-Ok ($LASTEXITCODE -eq 0) 'Docker owner provenance incomplete; inspect pnpm dev docker status'
+      Say 'DOCKER_PROVENANCE' 'PASS'
+    }
+  }
 }
 function Wait-AppStatus {
   foreach ($url in @('http://127.0.0.1:18101/','http://127.0.0.1:18101/stores','http://127.0.0.1:18102/','http://127.0.0.1:13000/')) {
@@ -352,6 +409,7 @@ try {
   Check-LocalIdentity
   switch ($Action.ToLowerInvariant()) {
     'install' { Install-CLI; break }
+    'docker' { Invoke-ScopedDocker; break }
     'status' {
       Check-Ssh
       Show-LocalTasks
