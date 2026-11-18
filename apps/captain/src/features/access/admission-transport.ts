@@ -24,7 +24,16 @@ function requireSyntheticOwner(): void {
 }
 
 async function revokeUndelivered(bearer: string): Promise<void> {
-  await revokeVerifiedIdentitySession(identityOrigin, bearer).catch(() => undefined);
+  // Cleanup uses a fresh bounded deadline; the caller's aborted admission
+  // signal cannot leave the UI busy indefinitely or skip revocation.
+  const cleanup = new AbortController();
+  const timeout = setTimeout(() => cleanup.abort(), 2000);
+  try {
+    await revokeVerifiedIdentitySession(identityOrigin, bearer, cleanup.signal)
+      .catch(() => undefined);
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export type CaptainAdmissionState = Readonly<{

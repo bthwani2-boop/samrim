@@ -113,9 +113,31 @@ export async function submitAdmissionCode(
   const { session, bearer } = await verifyMerchantAdmission(origin, ticket, code, signal);
   try {
     if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
-    await mutateNativeStorage(() => SecureStore.setItemAsync(storageKey, bearer, nativeOptions));
+    await mutateNativeStorage(async () => {
+      if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
+      await SecureStore.setItemAsync(storageKey, bearer, nativeOptions);
+      if (signal.aborted) {
+        // The device write may finish after the request was cancelled. A
+        // cancelled credential must never be restored by the next app refresh.
+        deniedNativeBearer = bearer;
+        if (await SecureStore.getItemAsync(storageKey, nativeOptions) === bearer) {
+          await SecureStore.deleteItemAsync(storageKey, nativeOptions);
+        }
+        throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
+      }
+    });
+    if (signal.aborted) {
+      deniedNativeBearer = bearer;
+      await mutateNativeStorage(async () => {
+        if (await SecureStore.getItemAsync(storageKey, nativeOptions) === bearer) {
+          await SecureStore.deleteItemAsync(storageKey, nativeOptions);
+        }
+      }).catch(() => undefined);
+      throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
+    }
     return session;
   } catch (error) {
+    if (signal.aborted) deniedNativeBearer = bearer;
     await revokeUndeliveredAdmissionSession(origin, bearer);
     throw error;
   }

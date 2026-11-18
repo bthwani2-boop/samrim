@@ -27,6 +27,7 @@ export default function MerchantIdentityGate() {
   const { theme } = useMobileAppearance();
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [session, setSession] = useState<VerifiedIdentitySession | null>(null);
+  const [entryUncertain, setEntryUncertain] = useState(false);
   const [standing, setStanding] = useState<MerchantDSHStanding | null>(null);
   const [standingError, setStandingError] = useState("");
   const [standingLoading, setStandingLoading] = useState(false);
@@ -60,10 +61,16 @@ export default function MerchantIdentityGate() {
   const refresh = useCallback(() => {
     void run(async signal => {
       setSession(null);
-      const state = await readAdmission(signal);
-      if (signal.aborted) return;
-      setEnabled(state.enabled);
-      setSession(state.session);
+      try {
+        const state = await readAdmission(signal);
+        if (signal.aborted) return;
+        setEntryUncertain(false);
+        setEnabled(state.enabled);
+        setSession(state.session);
+      } catch (error) {
+        if (!signal.aborted) setEntryUncertain(true);
+        throw error;
+      }
     });
   }, [run]);
 
@@ -141,7 +148,10 @@ export default function MerchantIdentityGate() {
   function signOut() {
     void run(async signal => {
       await signOutOfAdmission(signal);
-      if (!signal.aborted) setSession(null);
+      if (!signal.aborted) {
+        setSession(null);
+        setEntryUncertain(false);
+      }
     });
   }
 
@@ -196,7 +206,16 @@ export default function MerchantIdentityGate() {
               {button("تسجيل الخروج", signOut)}
             </>
           ) : null}
-          {enabled && !session && !ticket ? (
+          {enabled && !session && entryUncertain ? (
+            <>
+              <Text accessibilityRole="alert" style={{ color: theme.warningText }}>
+                تعذّر تأكيد حالة الجلسة الحالية. لن يبدأ دخول جديد قبل إعادة التحقق أو إغلاق الجلسة.
+              </Text>
+              {button("إعادة التحقق من الجلسة", refresh)}
+              {button("إغلاق الجلسة الحالية", signOut)}
+            </>
+          ) : null}
+          {enabled && !session && !entryUncertain && !ticket ? (
             <>
               <Text style={{ color: theme.colorSecondary }}>استخدم رقم الاختبار المخصص لك في هذه البيئة المعزولة.</Text>
               <TextInput accessibilityLabel="رقم هاتف الاختبار" value={phone} onChangeText={setPhone}
@@ -204,7 +223,7 @@ export default function MerchantIdentityGate() {
               {button("إرسال رمز التحقق", requestCode, busy || !/^\+120255501[0-9]{2}$/.test(phone.trim()))}
             </>
           ) : null}
-          {enabled && !session && ticket ? (
+          {enabled && !session && !entryUncertain && ticket ? (
             <>
               <Text style={{ color: theme.color }}>أدخل الرمز المكوّن من ستة أرقام.</Text>
               <TextInput accessibilityLabel="رمز التحقق" value={code} onChangeText={setCode}

@@ -24,11 +24,12 @@ class OwnerError extends Error {
 
 function nativeHarness({ storageDeletionFails = false } = {}) {
   let stored = oldBearer;
+  let onStorageWrite = null;
   let ownerRead = async () => { throw new OwnerError(401); };
   const secureStore = {
     WHEN_UNLOCKED_THIS_DEVICE_ONLY: "device-only",
     async getItemAsync() { return stored; },
-    async setItemAsync(_key, value) { stored = value; },
+    async setItemAsync(_key, value) { stored = value; onStorageWrite?.(); },
     async deleteItemAsync() { if (storageDeletionFails) throw new Error("device storage temporarily unavailable"); stored = null; },
   };
   const dependencies = {
@@ -69,6 +70,7 @@ function nativeHarness({ storageDeletionFails = false } = {}) {
   return {
     transport: module.exports,
     setOwnerRead(fn) { ownerRead = fn; },
+    onStorageWrite(fn) { onStorageWrite = fn; },
     current() { return stored; },
   };
 }
@@ -122,4 +124,17 @@ test("native owner denial stays fail-closed when SecureStore deletion fails", as
   await assert.rejects(h.transport.readMerchantStanding(signal), { status: 403 });
   const entry = await h.transport.readAdmission(signal);
   assert.equal(entry.session, null);
+});
+
+test("cancelled native SecureStore write never restores a Merchant credential",async()=>{
+  const h=nativeHarness();
+  const controller=new AbortController();
+  h.onStorageWrite(()=>controller.abort());
+  await assert.rejects(
+    h.transport.submitAdmissionCode("ticket","123456",controller.signal),
+    {code:"OPERATION_RESULT_UNKNOWN"},
+  );
+  assert.equal(h.current(),null,"cancelled bearer must be removed from device storage");
+  const refresh=await h.transport.readAdmission(new AbortController().signal);
+  assert.equal(refresh.session,null);
 });
