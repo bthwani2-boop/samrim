@@ -46,6 +46,8 @@ for (const [consumer, version] of consumers) {
     const picomatch = require("picomatch");
     const source = readFileSync(require.resolve("picomatch/lib/parse.js"), "utf8");
     assert.match(source, /CVE-2026-112366/);
+    assert.match(source, /maxExtglobRecursion === undefined/,
+      "installed patched parser must preserve an explicit recursion setting");
     assert.equal(require("picomatch/package.json").version, version);
 
     assert.equal(picomatch("**/*.tsx")("app/routes/index.tsx"), true);
@@ -59,7 +61,11 @@ for (const [consumer, version] of consumers) {
     const repeatedWildcard = "+(view-*.tsx)";
     assert.equal(picomatch(repeatedWildcard)("view-index.tsx"), false);
     assert.equal(picomatch(repeatedWildcard)(repeatedWildcard), true);
-    assert.equal(picomatch(repeatedWildcard, { maxExtglobRecursion: false })("view-index.tsx"), false);
+    // An explicit opt-out and explicitly permitted numeric nesting preserve
+    // the public API; the secure default still rejects unsafe repetition.
+    assert.equal(picomatch(repeatedWildcard, { maxExtglobRecursion: false })("view-index.tsx"), true);
+    assert.equal(picomatch("+(+(a))", { maxExtglobRecursion: 1 })("aaa"), true);
+    assert.equal(picomatch("+(+(a))", { maxExtglobRecursion: 1 })("bbb"), false);
   });
 }
 

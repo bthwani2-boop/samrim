@@ -27,14 +27,8 @@ func TestCaptainStandingRealPostgresOwnerLifecycle(t *testing.T) {
 	if dsn == "" {
 		t.Skip("NOT_RUN: dedicated isolated Captain PostgreSQL URL not configured")
 	}
-	uri, err := url.Parse(dsn)
-	windowsOnly := uri.Host == "127.0.0.1:35327" && os.Getenv("BTHWANI_CAPTAIN_TEST_CONTAINER") == ""
-	insideOwnContainer := uri.Host == "127.0.0.1:5432" &&
-		os.Getenv("BTHWANI_CAPTAIN_TEST_CONTAINER") == "bthwani-session02-captain-pg"
-	if err != nil || (!windowsOnly && !insideOwnContainer) ||
-		uri.User == nil || uri.User.Username() != "bt_cap_s02" ||
-		uri.Path != "/refoundation_captain_agent02" || uri.Scheme != "postgres" ||
-		uri.Query().Get("sslmode") != "disable" {
+	if !isolatedCaptainTestDSN(dsn, os.Getenv("BTHWANI_CAPTAIN_TEST_CONTAINER"),
+		os.Getenv("PGHOSTADDR")) {
 		t.Fatal("refusing any database other than dedicated ephemeral session-02 PostgreSQL")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
@@ -186,5 +180,60 @@ func TestCaptainStandingRealPostgresOwnerLifecycle(t *testing.T) {
 	var raceAudit int
 	if err = db.QueryRowContext(ctx, "SELECT count(*) FROM "+queryBase+"captain_standing_audit WHERE actor_id=$1", racer.ActorID).Scan(&raceAudit); err != nil || raceAudit != 1 {
 		t.Fatalf("concurrent audit count=%d err=%v", raceAudit, err)
+	}
+}
+
+// isolatedCaptainTestDSN validates the actual endpoint selected by lib/pq.
+// A URL's host alone is insufficient: lib/pq also accepts PGHOSTADDR and
+// hostaddr, which may override its network destination. Reject all ambient
+// address overrides and unexpected connection options before any SQL executes.
+func isolatedCaptainTestDSN(raw, testContainer, pgHostAddr string) bool {
+	if pgHostAddr != "" {
+		return false
+	}
+	uri, err := url.Parse(raw)
+	if err != nil || uri == nil || uri.Scheme != "postgres" ||
+		uri.User == nil || uri.User.Username() != "bt_cap_s02" ||
+		uri.Path != "/refoundation_captain_agent02" ||
+		uri.Fragment != "" || uri.Opaque != "" {
+		return false
+	}
+	windowsOnly := uri.Host == "127.0.0.1:35327" && testContainer == ""
+	insideOwnContainer := uri.Host == "127.0.0.1:5432" &&
+		testContainer == "bthwani-session02-captain-pg"
+	if !windowsOnly && !insideOwnContainer {
+		return false
+	}
+	params := uri.Query()
+	// Refuse hostaddr (including duplicate or encoded forms), service and
+	// options so a validated URI cannot secretly switch host or search path.
+	return len(params) == 1 && len(params["sslmode"]) == 1 &&
+		params.Get("sslmode") == "disable"
+}
+
+func TestCaptainIsolatedPostgresRejectsRedirectedConnection(t *testing.T) {
+	base := "postgres://bt_cap_s02:synthetic-only@127.0.0.1:5432/refoundation_captain_agent02?sslmode=disable"
+	for _, tc := range []struct {
+		name, dsn, container, hostaddr string
+		ok                             bool
+	}{
+		{"isolated loopback", base, "bthwani-session02-captain-pg", "", true},
+		{"ambient remote PGHOSTADDR", base, "bthwani-session02-captain-pg", "198.51.100.25", false},
+		{"ambient local PGHOSTADDR also refused", base, "bthwani-session02-captain-pg", "127.0.0.1", false},
+		{"DSN remote hostaddr", base + "&hostaddr=198.51.100.25", "bthwani-session02-captain-pg", "", false},
+		{"DSN encoded hostaddr", base + "&host%61ddr=198.51.100.25", "bthwani-session02-captain-pg", "", false},
+		{"DSN local hostaddr also refused", base + "&hostaddr=127.0.0.1", "bthwani-session02-captain-pg", "", false},
+		{"DSN service override", base + "&service=external", "bthwani-session02-captain-pg", "", false},
+		{"DSN unexpected options", base + "&options=-csearch_path%3Dpublic", "bthwani-session02-captain-pg", "", false},
+		{"host changed", "postgres://bt_cap_s02:synthetic-only@192.0.2.9:5432/refoundation_captain_agent02?sslmode=disable", "bthwani-session02-captain-pg", "", false},
+		{"container identity wrong", base, "another-container", "", false},
+		{"bad parse", "%zz", "bthwani-session02-captain-pg", "", false},
+		{"duplicate sslmode", base + "&sslmode=disable", "bthwani-session02-captain-pg", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isolatedCaptainTestDSN(tc.dsn, tc.container, tc.hostaddr); got != tc.ok {
+				t.Fatalf("safe isolated connection=%t; want %t", got, tc.ok)
+			}
+		})
 	}
 }

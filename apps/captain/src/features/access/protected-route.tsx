@@ -15,6 +15,7 @@ type RouteAccess = "checking" | "allowed" | "denied" | "unavailable";
 export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
   const { theme } = useMobileAppearance();
   const [access, setAccess] = useState<RouteAccess>("checking");
+  const [previouslyAllowed, setPreviouslyAllowed] = useState(false);
   const retryCheck = useRef<() => void>(() => undefined);
 
   useFocusEffect(useCallback(() => {
@@ -41,6 +42,7 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
             setAccess("denied");
             return;
           }
+          setPreviouslyAllowed(true);
           setAccess("allowed");
           expiry = setTimeout(() => {
             current?.abort();
@@ -79,21 +81,34 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
   }, []));
 
   if (access === "denied") return <Redirect href="/" />;
-  if (access === "allowed") return <>{children}</>;
 
-  return <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
-    <View style={{ flex: 1, justifyContent: "center", padding: 24, gap: 16 }}>
-      <Text accessibilityLiveRegion="polite" style={{ color: theme.color }}>
-        {access === "checking"
-          ? "جارٍ التحقق من جلسة الكابتن وأهليته..."
-          : "تعذر الوصول إلى Identity أو DSH. الوصول محجوب حتى التحقق."}
-      </Text>
-      {access === "unavailable" ? (
-        <Pressable accessibilityRole="button" onPress={() => retryCheck.current()}
-          style={{ borderColor: theme.borderColor, borderWidth: 1, borderRadius: 10, padding: 12 }}>
-          <Text style={{ color: theme.interactiveText }}>إعادة التحقق</Text>
-        </Pressable>
-      ) : null}
-    </View>
-  </SafeAreaView>;
+  const visible = access === "allowed";
+  // After the first successful owner check, keep the navigator and its
+  // component state mounted across periodic checks. While the owner result
+  // is unknown, hide it from display, touch and accessibility. A new route
+  // still mounts no protected content until Identity and DSH both approve.
+  return <View style={{ flex: 1, backgroundColor: theme.background }}>
+    {previouslyAllowed ? (
+      <View style={visible ? { flex: 1 } : { display: "none" }}
+        pointerEvents={visible ? "auto" : "none"}
+        importantForAccessibility={visible ? "auto" : "no-hide-descendants"}>
+        {children}
+      </View>
+    ) : null}
+    {!visible ? <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
+      <View style={{ flex: 1, justifyContent: "center", padding: 24, gap: 16 }}>
+        <Text accessibilityLiveRegion="polite" style={{ color: theme.color }}>
+          {access === "checking"
+            ? "جارٍ التحقق من جلسة الكابتن وأهليته..."
+            : "تعذر الوصول إلى Identity أو DSH. الوصول محجوب حتى التحقق."}
+        </Text>
+        {access === "unavailable" ? (
+          <Pressable accessibilityRole="button" onPress={() => retryCheck.current()}
+            style={{ borderColor: theme.borderColor, borderWidth: 1, borderRadius: 10, padding: 12 }}>
+            <Text style={{ color: theme.interactiveText }}>إعادة التحقق</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    </SafeAreaView> : null}
+  </View>;
 }

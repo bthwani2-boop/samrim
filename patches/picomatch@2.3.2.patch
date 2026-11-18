@@ -37,7 +37,7 @@ index caa2b86..e27e958 100644
 -    const analysis = analyzeRepeatedExtglob(body, opts);
 +    const repeated = token.type === 'plus' || token.type === 'star';
 +    let analysis = repeated && analyzeRepeatedExtglob(body, opts);
-+    if (repeated && !analysis.risky) {
++    if (repeated && !analysis.risky && opts.maxExtglobRecursion === undefined) {
 +      const expression = tokens.slice(token.tokensIndex + 2)
 +        .map(part => (part.output ?? part.value) + (part.suffix || '')).join('');
 +      if (hasUnboundedRepeat(expression)) analysis = { risky: true };
