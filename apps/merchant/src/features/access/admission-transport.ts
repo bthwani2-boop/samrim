@@ -7,7 +7,7 @@ import {
 } from "@bthwani/identity";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
-import { verifyMerchantAdmission } from "./admission";
+import { revokeUndeliveredAdmissionSession, verifyMerchantAdmission } from "./admission";
 
 const storageKey = "bthwani.merchant.synthetic-admission.v1";
 const nativeOrigin = process.env.EXPO_PUBLIC_MERCHANT_SYNTHETIC_IDENTITY_ORIGIN;
@@ -70,7 +70,7 @@ export async function submitAdmissionCode(
     await SecureStore.setItemAsync(storageKey, bearer, nativeOptions);
     return session;
   } catch (error) {
-    await revokeVerifiedIdentitySession(origin, bearer).catch(() => undefined);
+    await revokeUndeliveredAdmissionSession(origin, bearer);
     throw error;
   }
 }
