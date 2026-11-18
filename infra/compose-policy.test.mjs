@@ -50,6 +50,9 @@ test("Identity verifier is synthetic only and has no privileged host exposure", 
   assert.ok(id.cap_drop.includes("ALL"));
   assert.equal(id.environment.BTHWANI_ISOLATED_TEST_MODE, "true");
   assert.equal(id.environment.BTHWANI_ISOLATED_CONTAINER_MODE, "true");
+  assert.equal(id.environment.IDENTITY_SYNTHETIC_PHONE_AUTH, "${REF_IDENTITY_SYNTHETIC_PHONE_AUTH:-false}");
+  assert.equal(id.environment.IDENTITY_SYNTHETIC_PHONE_HMAC_KEY, "${REF_IDENTITY_SYNTHETIC_PHONE_HMAC_KEY:-}");
+  assert.equal(id.environment.IDENTITY_SYNTHETIC_PHONE_SMTP, "mailpit:1025");
   assert.ok(id.ports.every((v) => v.startsWith("127.0.0.1:")));
   assert.equal(id.depends_on.postgres.condition, "service_healthy");
   assert.ok(id.healthcheck.test.includes("wget -q -O /dev/null http://127.0.0.1:3302/health || exit 1"));

@@ -122,6 +122,14 @@ role, never admin/donor/production), and optionally `REF_IDENTITY_VERIFIER_PORT`
 in the ignored `infra/.env.identity-verifier.local`. Keep the shared
 `infra/.env` untouched. `REF_IDENTITY_IMAGE_TAG` may select a tested revision
 image; default `:dev` remains compatible with existing development commands.
+Set `REF_IDENTITY_SYNTHETIC_PHONE_AUTH=true` only after applying the Identity
+phone migration in the synthetic schema and verifying the runtime role's scoped
+write privileges. Supply a fresh 32-byte hex `REF_IDENTITY_SYNTHETIC_PHONE_HMAC_KEY`
+through the Identity-only local settings. Delivery stays on the project's
+`mailpit:1025` network endpoint and accepts only the reserved test phone range.
+The Lenovo Merchant launcher enables local Web admission on startup when the
+synthetic phone endpoint is present at `127.0.0.1:3201`. A different loopback
+port requires an explicit `MERCHANT_SYNTHETIC_IDENTITY_ORIGIN` setting.
 The opt-in deployment sequence is:
 
 ```powershell

@@ -25,6 +25,9 @@ services:
       IDENTITY_DB_SCHEMA: "${REF_IDENTITY_TEST_SCHEMA:?verified identity_test_* schema required}"
       IDENTITY_TEST_DATABASE_URL: "${REF_IDENTITY_TEST_DATABASE_URL:?isolated identity owner-scoped database URL required}"
       IDENTITY_DEV_LISTEN_ADDR: "0.0.0.0:3302"
+      IDENTITY_SYNTHETIC_PHONE_AUTH: "${REF_IDENTITY_SYNTHETIC_PHONE_AUTH:-false}"
+      IDENTITY_SYNTHETIC_PHONE_HMAC_KEY: "${REF_IDENTITY_SYNTHETIC_PHONE_HMAC_KEY:-}"
+      IDENTITY_SYNTHETIC_PHONE_SMTP: "mailpit:1025"
     ports:
       - "127.0.0.1:${REF_IDENTITY_VERIFIER_PORT:-3201}:3302"
     depends_on:
