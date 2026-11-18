@@ -14,6 +14,12 @@ const contractGroups=['identity','dsh','wlt'].flatMap(owner=>
  fs.readdirSync(path.join(root,'services',owner,'contracts','openapi','paths'))
   .filter(name=>name.endsWith('.yaml'))
   .map(name=>'services/'+owner+'/contracts/openapi/paths/'+name));
+// These two owner-backed Captain Path Items were added after the 42 historic reserved
+// groups. Count them explicitly without relaxing the exact reserved-group inventory.
+const additionalCaptainGroups=[
+ 'services/identity/contracts/openapi/paths/captain-admission.yaml',
+ 'services/dsh/contracts/openapi/paths/captain-standing.yaml',
+];
 // Copy local historical-reference Markdown/CSV alongside its index in test fixtures.
 // Derive paths from the checkout instead of maintaining a second reference catalog.
 const historicalReferenceFiles=fs.readdirSync(path.join(root,'docs/reference'),{recursive:true})
@@ -104,9 +110,12 @@ test('progressive journey governance is ready while historical cutover remains p
  assert.match(r.text,/GOVERNANCE_CUTOVER_NOT_READY/);
  assert.match(r.text,/openapi_zero_operations=false/);
  assert.match(r.text,/openapi_reserved_groups=42/);
- assert.equal(contractGroups.length,42);
+ assert.equal(contractGroups.length,42+additionalCaptainGroups.length);
+ for(const file of additionalCaptainGroups)assert.ok(contractGroups.includes(file),file);
+ const reservedGroups=contractGroups.filter(file=>!additionalCaptainGroups.includes(file));
+ assert.equal(reservedGroups.length,42);
  assert.deepEqual(['identity','dsh','wlt'].map(owner=>
-  contractGroups.filter(file=>file.startsWith('services/'+owner+'/')).length),[7,21,14]);
+  reservedGroups.filter(file=>file.startsWith('services/'+owner+'/')).length),[7,21,14]);
 });
 rejects('rejects shared donor Docker Compose project',{edit:{
  'infra/compose.yaml':s=>s.replace('name: bthwani-refoundation','name: samrim-local'),
