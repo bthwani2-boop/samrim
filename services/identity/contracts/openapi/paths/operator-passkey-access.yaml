@@ -1,1 +1,119 @@
-paths: {}
+paths:
+  /v1/operators/passkey/authentication/options:
+    post:
+      operationId: beginOperatorPasskeyAuthentication
+      summary: Begin an isolated user-verified Operator WebAuthn assertion
+      security: []
+      description: >
+        Only the explicitly opted-in synthetic Identity owner exposes this
+        route. It creates a four-minute, one-time PostgreSQL ceremony nonce
+        using the signed WebAuthn library. No Operator role, credential,
+        permission or session is created by requesting options.
+      responses:
+        '200':
+          description: Session-bound WebAuthn request options and opaque ceremony ID
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [ceremonyId, options]
+                properties:
+                  ceremonyId:
+                    type: string
+                    pattern: '^[A-Za-z0-9_-]{43}$'
+                  options:
+                    type: object
+                    additionalProperties: true
+                    required: [publicKey]
+                    properties:
+                      publicKey:
+                        type: object
+                        required: [challenge, rpId, userVerification]
+                        properties:
+                          challenge: { type: string }
+                          rpId: { type: string }
+                          userVerification: { type: string, const: required }
+        '400':
+          description: Unsupported request body, authentication headers or query
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '405':
+          description: POST only
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '503':
+          description: Isolated Identity or WebAuthn owner unavailable
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+
+  /v1/operators/passkey/authentication:
+    post:
+      operationId: finishOperatorPasskeyAuthentication
+      summary: Verify one-use FIDO2 assertion and issue a scoped Identity Operator session
+      security: []
+      description: >
+        Verifies a real authenticator signature, exact challenge, RP ID,
+        origin, required user verification and existing active role. Owner SQL
+        atomically consumes the one-use ceremony, advances authenticator
+        counters, writes append-only audit and issues a 30-minute opaque
+        Identity Operator session. Reused, forged, counter-cloned, suspended
+        and cross-actor assertions never issue a bearer. This endpoint does
+        not register passkeys, initialize the Root Owner or recover accounts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [ceremonyId, credential]
+              properties:
+                ceremonyId:
+                  type: string
+                  pattern: '^[A-Za-z0-9_-]{43}$'
+                credential:
+                  type: object
+                  description: Browser PublicKeyCredential.toJSON assertion (never an actor or role claim)
+                  additionalProperties: true
+                  required: [id, rawId, response, type]
+                  properties:
+                    id: { type: string }
+                    rawId: { type: string }
+                    type: { type: string, const: public-key }
+                    response: { type: object }
+      responses:
+        '200':
+          description: Verified current Operator role and one-use session issued
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/IssuedRoleSession' }
+        '400':
+          description: Malformed or ambiguous ceremony/credential request
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '401':
+          description: Invalid signature, challenge, user verification, role or replay
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '405':
+          description: POST only
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '503':
+          description: Identity cryptographic or persistent owner unavailable
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }

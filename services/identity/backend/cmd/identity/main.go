@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/session"
@@ -92,6 +93,22 @@ func main() {
 	if os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_PERMISSION_ADMIN") == "true" {
 		routes.Handle("PATCH /v1/operators/{actorId}/permissions/{permission}",
 			session.NewOperatorPermissionManagementHandler(reader))
+	}
+	// Anonymous WebAuthn ceremony endpoints are deliberately unavailable unless
+	// the isolated Identity owner opts in. No Operator account is provisioned,
+	// and no protected original-owner credential can be enrolled through them.
+	if os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_AUTH") == "true" {
+		policy := session.OperatorPasskeyOriginPolicy{
+			RPID:    os.Getenv("IDENTITY_OPERATOR_PASSKEY_RPID"),
+			Origins: strings.Split(os.Getenv("IDENTITY_OPERATOR_PASSKEY_ORIGINS"), ","),
+		}
+		auth, err := session.NewOperatorPasskeyAuth(reader, policy, true)
+		if err != nil {
+			log.Fatal("Operator WebAuthn isolated relying-party configuration rejected")
+		}
+		handler := session.NewOperatorPasskeyHandler(auth)
+		routes.Handle(session.OperatorPasskeyOptionsPath, handler)
+		routes.Handle(session.OperatorPasskeyFinishPath, handler)
 	}
 	routes.Handle("/", session.NewHandler(session.NewVerifier(reader)))
 	server := &http.Server{
