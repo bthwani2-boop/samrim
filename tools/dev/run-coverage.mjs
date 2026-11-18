@@ -12,7 +12,6 @@ const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const report = resolve(root, "coverage/lcov.info");
 mkdirSync(dirname(report), { recursive: true });
 const baselineTests = [
-  "tools/governance/verify-foundation.test.mjs",
   "tools/governance/review-examples.test.mjs",
   "tools/security/verify-secrets.test.mjs",
   "tools/mobile/verify-rtl.test.mjs",
@@ -70,7 +69,6 @@ for (const line of lcov.split("\n")) {
   if (line.startsWith("LF:")) linesFound += Number(line.slice(3));
 }
 for (const source of [
-  "tools/governance/verify-foundation.mjs",
   "tools/mobile/verify-app-foundations.mjs",
   "tools/mobile/define-bthwani-expo-app.cjs",
   "packages/design-system/src/semantics/themes.ts",

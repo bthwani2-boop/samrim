@@ -1,7 +1,6 @@
 # MANAGED_PARTICIPANT_ADMISSION — ملف الرحلة الأولى من البداية إلى قبول الإغلاق
 
 ARTIFACT_CLASS: JOURNEY_AUDIT_AND_ACCEPTANCE_DOSSIER
-PLAN_OWNER: docs/REFOUNDATION-PLAN.md
 JOURNEY_ID: MANAGED_PARTICIPANT_ADMISSION
 CAPABILITIES: IDENTITY_ACTIVATION_SESSIONS
 SEMANTIC_OWNER: governance/journeys.md
@@ -9,8 +8,6 @@ AUTHENTICATION_OWNER: governance/identity.md
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 JOURNEY_STATUS: IN_PROGRESS
 JOURNEY_CLOSED: NO
-GOVERNANCE_CUTOVER: NOT_READY
-PRODUCTION_ACTIVATION: BLOCKED
 AUDITED_AT: 2026-11-18 (Asia/Aden)
 AUDITED_BRANCH: codex/managed-participant-admission
 AUDITED_HEAD: 0561fea58fba3531c03039690769c86417a1eefd
@@ -254,7 +251,7 @@ AUDITED_HEAD: 0561fea58fba3531c03039690769c86417a1eefd
 
 **F — مرشح التكامل النهائي:** حصر الملفات وWorktree، إغلاق تغيرات المستهلكين وOpenAPI وSQL، تنفيذ real synthetic two-server HTTP/SQL ثم UX على الأجهزة، negative/retry/concurrent/IDOR، تحقق من runtime source/image SHA، مراجعة أمنية مستقلة، نجاح CI required على **المرشح النهائي**.
 
-**G — مراجعة الإغلاق:** لا تغيير `JOURNEY_CLOSED` إلى YES إلا بعد إثبات كل AC على نفس المرشح، قبول صحة المنتج وأمانه وتوافقه، والتأكد من عدم فشل Gate إلزامي. افصل الإغلاق عن `GOVERNANCE_CUTOVER` و`PRODUCTION_ACTIVATION`.
+**G — مراجعة الإغلاق:** لا تغيير `JOURNEY_CLOSED` إلى YES إلا بعد إثبات كل AC على نفس المرشح، قبول صحة المنتج وأمانه وتوافقه، والتأكد من عدم فشل Gate إلزامي. افصل إثبات إغلاق الرحلة عن اعتماد الحوكمة التاريخية وأي إجراء خارجي محمي.
 
 ## 11. نموذج دفتر الأدلة قبل أي PASS
 
@@ -281,8 +278,8 @@ AUDITED_HEAD: 0561fea58fba3531c03039690769c86417a1eefd
 - [ ] فحص الاعتماديات وCodeQL/Sonar وrequired checks ومراجعة الأمن الحرجة على SHA النهائي PASS بلا إسكات تحذيرات.
 - [ ] Spec Kit وGraphify المحلي صالحان للمرشح، وملفات WIP أو فهرس قديم لا تُستعمل كإثبات نهائي.
 - [ ] مراجعة صحة المنتج وأمنه وجودة التنفيذ موثقة دون ادعاء مراجعة مستقلة غير منفذة.
-- [ ] بعد ذلك فقط يسجل `governance/journeys.md` إغلاق هذه الرحلة. يظل `PRODUCTION_ACTIVATION` مستقلًا، ولا يترتب Merge أو تفعيل محمي أو تغيير `GOVERNANCE_CUTOVER` تلقائيًا.
+- [ ] بعد ذلك فقط يسجل `governance/journeys.md` إغلاق هذه الرحلة. ولا يترتب Merge أو إجراء خارجي محمي أو تغيير اعتماد الحوكمة تلقائيًا.
 
-**حكم التدقيق:** `JOURNEY_STATUS: IN_PROGRESS` — `JOURNEY_CLOSED: NO` — `ROOT_PROTECTED_CONTINUITY: BLOCKED/NOT_PROVEN` — `CI_REQUIRED: FAIL` — `FULL_WEB_ANDROID_E2E: NOT_RUN` — `GOVERNANCE_CUTOVER: NOT_READY` — `PRODUCTION_ACTIVATION: BLOCKED`.
+**حكم التدقيق:** `JOURNEY_STATUS: IN_PROGRESS` — `JOURNEY_CLOSED: NO` — `ROOT_PROTECTED_CONTINUITY: BLOCKED/NOT_PROVEN` — `CI_REQUIRED: FAIL` — `FULL_WEB_ANDROID_E2E: NOT_RUN`.
 
 > **قاعدة الـ100%:** نسبة الإنجاز لا تُستنتج من عدد الملفات أو الاختبارات الخضراء. معيار الإغلاق الوحيد هو اكتمال **كل** شرط قبول قابل للتطبيق، بأدلة حديثة من المالك الحقيقي والتطبيق والجهاز وCI على مرشح واحد.

@@ -2,7 +2,7 @@
 
 ARTIFACT_CLASS: DOMAIN_GOVERNANCE_DRAFT
 SEMANTIC_OWNER: governance/experience.md
-STATUS: DRAFT_PENDING_FULL_GOVERNANCE_CUTOVER
+STATUS: ACTIVE_FOR_PROGRESSIVE_DEVELOPMENT
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 ## Surface and design foundation
@@ -114,4 +114,4 @@ Only bounded, schema-validated tokens/layouts/asset references are publishable; 
 
 **Operator security and CSS.** Keep one AntdRegistry, one ConfigProvider and one semantic brand projection. Before enforcing or declaring strict CSP, prove dynamic per-request nonce propagation into SSR/portal/CSS-in-JS behavior, with the pinned Ant Design patch retained until an actual removal test succeeds. Confirm keyboard, focus trap/return, contrast, hydration, initial theme and failure states. Static security headers or HTTP 200 are not CSP evidence.
 
-**Foundation gate.** On one exact candidate revision run source/version/dependency checks, generated CSS parity, RTL negative guards, resolved Expo config for all three apps, appearance race/failure tests and typechecks; then separately prove Expo Web hydration, real Android, Next production SSR/CSP and accessible interaction on representative devices. CI installs the pinned lockfile and reports failures rather than claiming product readiness. iOS or a new native binary without actual proof is NOT_RUN. Identity-scoped preferences and business/Studio publishing remain future owner-backed work, not foundation-only inventions. Track pending evidence in the single temporary docs/REFOUNDATION-PLAN.md and leave governance NOT_READY until its independent gates are met.
+**Foundation gate.** On one exact candidate revision run source/version/dependency checks, generated CSS parity, RTL negative guards, resolved Expo config for all three apps, appearance race/failure tests and typechecks; then separately prove Expo Web hydration, real Android, Next production SSR/CSP and accessible interaction on representative devices. CI installs the pinned lockfile and reports failures rather than claiming product readiness. iOS or a new native binary without actual proof is NOT_RUN. Identity-scoped preferences and business/Studio publishing remain future owner-backed work, not foundation-only inventions. Track pending evidence only in the affected owner tests and end-to-end scenario evidence; do not impose a standing execution-plan ledger or call static checks complete runtime acceptance.

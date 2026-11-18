@@ -2,7 +2,6 @@
 
 STATUS: IMPLEMENTATION_IN_PROGRESS
 EXECUTION: IN_PROGRESS
-PRODUCTION_ACTIVATION: BLOCKED
 OWNER: Identity
 
 Identity alone owns actor identity, authentication, active sessions and platform permissions. DSH owns Stores, Store-granted actions and availability; WLT owns money. An Identity Operator permission is not a Store grant or WLT ledger-execution right.
@@ -33,4 +32,4 @@ Real isolated PostgreSQL transaction tests exercise phone proof contention, stab
 
 **NOT_CLOSED:** real phone-provider verification, Captain admission and DSH standing, Operator Passkey and original Root Operator continuity, Operator permission administration/audit, session-family recovery and rotation, DSH Store-grant authentication and independent critical security review.
 
-**PRODUCTION_ACTIVATION: BLOCKED.** No protected account, finance balance, real session or production migration is authorized by this isolated reader. Governance: `governance/identity.md`.
+**Isolated synthetic scope only:** this document grants no authority to alter protected accounts, balances, real sessions or applied migrations. Governance: `governance/identity.md`.

@@ -88,3 +88,18 @@ test("SQL migration changes trigger the existing Go quality and Nx dependency wo
     assert.match(pr, /^      - 'services\/\*\*\/database\/migrations\/\*\*'$/m, file + ": missing SQL PR path");
   }
 });
+
+test("CI retains real security and contract checks without the retired scaffold guard", () => {
+  const { content } = events(workflows[0]);
+  assert.doesNotMatch(content, /tools\/governance\/verify-foundation(?:\.test)?\.mjs/);
+  assert.match(content, /node --test tools\/security\/verify-secrets\.test\.mjs/);
+  assert.match(content, /node tools\/security\/verify-secrets\.mjs/);
+  assert.match(content, /node --test tools\/dev\/check-openapi\.test\.mjs/);
+  assert.match(content, /run: pnpm check:coverage/);
+  const coverage = readFileSync(new URL("tools/dev/run-coverage.mjs", root), "utf8");
+  assert.doesNotMatch(coverage, /verify-foundation/);
+  const pkg = JSON.parse(readFileSync(new URL("package.json", root), "utf8"));
+  assert.equal(pkg.scripts["check:foundation"], undefined);
+  assert.match(pkg.scripts.check, /check:security/);
+  assert.match(pkg.scripts.check, /check:apps/);
+});

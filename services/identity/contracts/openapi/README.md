@@ -2,7 +2,6 @@
 
 STATUS: CONTRACT_IN_PROGRESS
 EXECUTION: IN_PROGRESS
-PRODUCTION_ACTIVATION: BLOCKED
 
 The canonical `identity.openapi.yaml` entrypoint links the health probe, two optional synthetic phone-proof operations, and five operations protected by Identity opaque bearers. Direct Merchant admission and re-entry require verified Customer proof and issue a short-lived Merchant bearer for that same actor.
 

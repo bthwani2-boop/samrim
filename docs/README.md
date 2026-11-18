@@ -6,7 +6,7 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 ## Read this first
 
-- **Current, temporary execution plan:** [REFOUNDATION-PLAN.md](REFOUNDATION-PLAN.md). It names the active work, scope, unresolved dependencies, proof gates and final delivery checks. Dated SHAs and test statuses are snapshots, not perpetual evidence.
+- **Current implementation and acceptance:** follow [engineering governance](../governance/engineering.md) and the tests/contracts of the affected owner; current Git and runtime are the truth, not a standing plan.
 - **Managed-identity integration acceptance:** [MANAGED_PARTICIPANT_ADMISSION](journeys/MANAGED_PARTICIPANT_ADMISSION.md) retains 34 dated acceptance checks, Root continuity constraints and observed gaps. Its recorded SHA and status are historical snapshots, not live current-state claims or a mandatory first item in a serial queue.
 - **Preserved historical execution and decision evidence:** [REFOUNDATION-EXECUTION-HISTORY-20261118.md](reference/REFOUNDATION-EXECUTION-HISTORY-20261118.md). It retains dated history plus the migrated 112-ID dispositions and financial/security/migration decision ledgers. This is reference evidence, not current implementation or Product authority.
 - **Historical/research index:** [reference/README.md](reference/README.md). It preserves comparisons, donor source inventories, reports, approved-source provenance and citations, not a second Product strategy.

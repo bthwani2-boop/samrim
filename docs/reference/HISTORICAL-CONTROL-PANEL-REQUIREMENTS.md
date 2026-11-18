@@ -157,7 +157,7 @@ The **only canonical decisions** are the reviewed owners under root `governance/
 ## Reconciliation gates
 
 1. Check each historical source requirement against the **latest explicit Product decision**, the correct `governance/` owner, the current branch-41 source truth and any protected legal/financial obligations.
-2. Mark material items as `ADOPTED_IN_OWNER`, `REFRAMED_BY_POLICY`, `CONDITIONAL_CANDIDATE`, `SUPERSEDED_WITH_REASON` or `UNRESOLVED` only when the source/decision evidence is actually reviewed; do **not** infer them from this tentative group routing. Those conclusions belong in the single temporary `docs/REFOUNDATION-PLAN.md`, not an endlessly maintained second catalog.
+2. Mark material items as `ADOPTED_IN_OWNER`, `REFRAMED_BY_POLICY`, `CONDITIONAL_CANDIDATE`, `SUPERSEDED_WITH_REASON` or `UNRESOLVED` only when the source/decision evidence is actually reviewed; do **not** infer them from this tentative group routing. Adopted meaning belongs only in the corresponding `governance/` domain owner; unresolved source evidence remains archived here, not another live decision register.
 3. Later proof for current UI, SQL or apps must use its own exact HEAD and real owner readback. An old archived `UNVERIFIED` status cannot be silently upgraded to PASS.
 4. A Control Panel UX detail does not automatically authorize a new infrastructure service, new search engine, generalized analytics/AI, financial rule or previously retired workflow.
 

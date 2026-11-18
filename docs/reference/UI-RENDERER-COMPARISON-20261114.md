@@ -43,7 +43,7 @@ Prerequisite acceptance failures (RTL, user-visible duplicate data, inaccessible
 
 ## Related governance and execution boundaries
 
-`governance/experience.md` owns design policy and its currently described renderer is a draft; only the Product owner may ratify a final renderer once comparative evidence exists. `docs/REFOUNDATION-PLAN.md` is temporary sequencing; this document preserves **evidence only**, never a second mutable design-system/architecture authority. `governance/README.md` remains `GOVERNANCE_CUTOVER: NOT_READY` until its own acceptance conditions pass. No new service, SQL, Go, fee, privilege, EAS/OTA build, deployment, Push or PR follows from this spike.
+`governance/experience.md` owns design policy and its currently described renderer is a draft; only the Product owner may ratify a final renderer once comparative evidence exists. This dated comparison preserves **evidence only**, never a second mutable design-system or architecture authority. `governance/README.md` remains `GOVERNANCE_CUTOVER: NOT_READY` until its own acceptance conditions pass. No new service, SQL, Go, fee, privilege, EAS/OTA build, deployment, Push or PR follows from this spike.
 
 ## Post-build final checks on this local candidate
 

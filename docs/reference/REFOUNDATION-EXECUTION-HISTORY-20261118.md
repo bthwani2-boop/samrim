@@ -7,7 +7,7 @@ ORIGINAL_PLAN_PATH: docs/REFOUNDATION-PLAN.md
 ORIGINAL_COMMIT: df93324ee4669869beec1c0ee3f91924662011d6
 ARCHIVED_ON: 2026-11-18
 
-This file preserves the exact date-scoped checkpoint narratives moved out of the active plan. Original claims and SHAs below are **historical**, not the current branch, current environment, current protected state, an authorization to operate or a claim of implemented functionality. The only active execution plan remains at [docs/REFOUNDATION-PLAN.md](../REFOUNDATION-PLAN.md); approved Product/domain decisions live only in the 14 canonical owners in [governance](../../governance/README.md). The complete pre-cleanup plan is preserved immutably in Git at the ORIGINAL_COMMIT above.
+This file preserves the exact date-scoped checkpoint narratives moved out of the active plan. Original claims and SHAs below are **historical**, not the current branch, current environment, current protected state, an authorization to operate or a claim of implemented functionality. The retired execution plan is preserved in Git at its recorded historical revision; current implementation and verification use the owner source/contracts/tests and the 14 canonical [governance owners](../../governance/README.md), with dated cross-owner evidence in [journeys](../journeys/MANAGED_PARTICIPANT_ADMISSION.md) when relevant. The complete pre-cleanup plan is preserved immutably in Git at the ORIGINAL_COMMIT above.
 
 The four preserved groups below are ordered according to their former position in the plan, not their event dates. They have not been revised as new decisions or endorsed as present-tense evidence.
 

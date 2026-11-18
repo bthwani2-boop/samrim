@@ -3,7 +3,6 @@
 STATUS: CONTRACT_IN_PROGRESS
 SEMANTIC_OWNER: DSH
 EXECUTION: IN_PROGRESS
-PRODUCTION_ACTIVATION: BLOCKED
 
 The **sole canonical entrypoint** is `dsh.openapi.yaml` (OpenAPI 3.1.0).
 Its four public read-only operations are defined exactly once in three

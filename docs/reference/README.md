@@ -6,7 +6,7 @@ BUSINESS_POLICY_AUTHORITY: NONE
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 STATUS: CURATION_IN_PROGRESS
 
-This is **not** a second Product roadmap, governance directory, design system, CI authority, or record that an external product is safe or suitable. New durable decisions belong only in `governance/`, execution behavior belongs in `AGENTS.md`, and the temporary program audit belongs in `docs/REFOUNDATION-PLAN.md`.
+This is **not** a second Product roadmap, governance directory, design system, CI authority, or record that an external product is safe or suitable. New durable decisions belong only in `governance/`, execution behavior belongs in `AGENTS.md`, and dated historical evidence remains in `docs/reference/`; current implementation truth comes from the owner contracts, tests and runtime.
 
 ## Donor governance section provenance (not approval)
 
