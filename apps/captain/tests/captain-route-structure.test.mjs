@@ -64,3 +64,16 @@ test("Captain has one tab route for each primary URL", () => {
     assert.equal(existsSync(resolve(app, name + ".tsx")), false);
   }
 });
+
+test("direct links and nested Captain routes cannot render before live owner verification", () => {
+  const guard = source("src/features/access/protected-route.tsx");
+  assert.ok(guard.includes("readCaptainAdmission("));
+  assert.ok(guard.includes("hasActiveCaptainSession("));
+  assert.ok(guard.includes("useFocusEffect("));
+  assert.ok(guard.includes('href="/"'));
+  for (const path of ["(tabs)/_layout.tsx", "offers.tsx", "notifications.tsx", "delivery/[id].tsx"]) {
+    const route = read(path);
+    assert.ok(route.includes("CaptainProtectedRoute"), path);
+    assert.ok(route.includes("<CaptainProtectedRoute"), path);
+  }
+});
