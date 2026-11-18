@@ -9,16 +9,18 @@ Docker volume deletion, branch changes, Git commits/pushes, or credential modifi
 [CmdletBinding()]
 param(
   [Parameter(Position=0)]
-  [ValidateSet('Install','Up','Warm','Status','Down','Verify','Migrations','Docker')]
+  [ValidateSet('Install','Up','Warm','Status','Down','Verify','Migrations','Docker','Apps')]
   [string]$Action = 'Up',
   [switch]$Apply,
   [switch]$DeepSql,
   [Parameter(Position=1)]
-  [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify')]
+  [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify','start','restart','android')]
   [string]$DockerAction = 'help',
   [Parameter(Position=2)]
   [ValidateSet('dsh','identity','postgres','media','mailpit','payment-mock')]
-  [string]$DockerService = 'dsh'
+  [string]$DockerService = 'dsh',
+  [ValidateSet('customer','merchant','captain','control-panel')]
+  [string]$App = ''
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -81,7 +83,17 @@ function Check-Ssh {
 function Invoke-Lenovo([string]$body) {
   $scriptText = '$ErrorActionPreference="Stop"; if($env:COMPUTERNAME -ine "BTHWANI-DOCKER"){throw "WRONG_REMOTE_HOST"}; ' + $body
   $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($scriptText))
-  $rows = @(& $ssh '-T' '-o' 'BatchMode=yes' '-o' 'StrictHostKeyChecking=yes' '-o' 'ConnectTimeout=8' 'bthwani-docker' 'powershell.exe' '-NoLogo' '-NoProfile' '-NonInteractive' '-EncodedCommand' $encoded 2>&1)
+  if ($encoded.Length -gt 4500) {
+    # Windows command line length is bounded. Stream one base64 line through
+    # the existing authenticated SSH session; no extra remote launcher/files.
+    # ReadLine terminates on the transmitted newline (ReadToEnd can stall).
+    $bootstrap = '$data=[Console]::In.ReadLine(); if(!$data){throw "SSH_STDIN_EMPTY"}; $cmd=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($data)); & ([ScriptBlock]::Create($cmd))'
+    $bootEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($bootstrap))
+    $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($scriptText))
+    $rows = @($payload | & $ssh '-T' '-o' 'BatchMode=yes' '-o' 'StrictHostKeyChecking=yes' '-o' 'ConnectTimeout=8' 'bthwani-docker' 'powershell.exe' '-NoLogo' '-NoProfile' '-NonInteractive' '-EncodedCommand' $bootEncoded 2>&1)
+  } else {
+    $rows = @(& $ssh '-T' '-o' 'BatchMode=yes' '-o' 'StrictHostKeyChecking=yes' '-o' 'ConnectTimeout=8' 'bthwani-docker' 'powershell.exe' '-NoLogo' '-NoProfile' '-NonInteractive' '-EncodedCommand' $encoded 2>&1)
+  }
   if ($LASTEXITCODE -ne 0) { throw ('LENOVO_SCRIPT_FAILED '+(($rows | ForEach-Object {$_.ToString()}) -join ' | ')) }
   foreach ($row in $rows) {
     $text = $row.ToString().Trim()
@@ -186,6 +198,227 @@ foreach($s in $specs){
 '@
   Invoke-Lenovo $stop
 }
+
+function Show-AppsHelp {
+  Write-Output 'APPS=canonical customer / merchant / captain / control-panel; no duplicate launchers'
+  Write-Output 'pnpm dev apps status                   # read-only task, listener, process owner and mirror check'
+  Write-Output 'pnpm dev apps verify                   # above plus Web and Metro HTTP, not visual Fast Refresh'
+  Write-Output 'pnpm dev apps android                  # inspect ADB device and reverse mappings, no changes'
+  Write-Output 'pnpm dev apps logs -App customer       # last 20 log lines, redacted'
+  Write-Output 'pnpm dev apps start -App merchant      # preflight/dry run only'
+  Write-Output 'pnpm dev apps start -App merchant -Apply # start only stopped and port-free task'
+  Write-Output 'pnpm dev apps restart -App captain     # preflight/dry run only'
+  Write-Output 'pnpm dev apps restart -App captain -Apply # only if unhealthy, scoped, fail-closed'
+  Write-Output 'APPS_GUARDS=never force-stop unknown PID, healthy app, Docker, SSH tunnels, cache or source watcher'
+}
+function Inspect-AppOwners([switch]$StrictCheck) {
+  $lock=(Get-FileHash -LiteralPath (Join-Path $repo 'pnpm-lock.yaml') -Algorithm SHA256).Hash
+  $mode=if($StrictCheck){'$true'}else{'$false'}
+  $script=@'
+$specs=@(
+ @{A='customer';N='BThwani Client Metro Native';P=28111;Cli='expo'}
+ @{A='merchant';N='BThwani Partner Metro Native';P=28112;Cli='expo'}
+ @{A='captain';N='BThwani Captain Metro Native';P=28113;Cli='expo'}
+ @{A='control-panel';N='BThwani Control Next Native';P=23010;Cli='next'}
+)
+$root='C:\Users\bthwa\BThwaniAppRunner\source-runtime'
+$node='C:\Users\bthwa\BThwaniAppRunner\tools\node-v24.22.1-refoundation\node.exe'
+$strict=__STRICT__
+$expectedLock='__LOCK__'
+if(!(Test-Path -LiteralPath $root -PathType Container)){throw 'APP_MIRROR_MISSING'}
+$version=(Get-Content -LiteralPath (Join-Path $root '.node-version') -Raw).Trim()
+$actualNode=if(Test-Path -LiteralPath $node -PathType Leaf){(& $node --version).Trim().TrimStart('v')}else{'MISSING'}
+$lock=(Get-FileHash -LiteralPath (Join-Path $root 'pnpm-lock.yaml') -Algorithm SHA256).Hash
+Write-Output ('APP_MIRROR nodePin='+$version+' nodeActual='+$actualNode+' lockMatch='+($lock -eq $expectedLock))
+if($strict -and ($version -ne '24.22.1' -or $actualNode -ne $version -or $lock -ne $expectedLock)){throw 'APP_MIRROR_TOOLCHAIN_OR_LOCK_MISMATCH'}
+foreach($s in $specs){
+  $task=Get-ScheduledTask -TaskName $s.N -ErrorAction Stop
+  $actions=@($task.Actions)
+  $action=($actions | ForEach-Object {[string]$_.Execute+' '+[string]$_.Arguments}) -join ' '
+  if($actions.Count -ne 1 -or $action -notmatch 'Start-RefoundationApp\.ps1' -or
+    $action -notmatch ('(?i)-App\s+'+[regex]::Escape($s.A)+'(?:\s|$)')){throw ('TASK_OWNER_CHANGED '+$s.A)}
+  $listeners=@(Get-NetTCPConnection -State Listen -LocalPort $s.P -ErrorAction SilentlyContinue)
+  $pidValue=if($listeners.Count -eq 1){[int]$listeners[0].OwningProcess}else{0}
+  $owner=if($pidValue){Get-CimInstance Win32_Process -Filter ('ProcessId='+$pidValue)}else{$null}
+  $owned=$false
+  if($owner -and $owner.Name -eq 'node.exe' -and $owner.CommandLine -match $s.Cli){
+    $cursor=$owner
+    for($i=0;$i -lt 6 -and $cursor;$i++){
+      if($cursor.Name -eq 'powershell.exe' -and $cursor.CommandLine -match 'Start-RefoundationApp\.ps1' -and
+        $cursor.CommandLine -match ('(?i)-App\s+'+[regex]::Escape($s.A)+'(?:\s|$)')){$owned=$true;break}
+      if(!$cursor.ParentProcessId -or $cursor.ParentProcessId -eq $cursor.ProcessId){break}
+      $cursor=Get-CimInstance Win32_Process -Filter ('ProcessId='+$cursor.ParentProcessId)
+    }
+  }
+  $cli=if($s.Cli -eq 'expo'){Join-Path $root ('apps\'+$s.A+'\node_modules\expo\bin\cli')}else{Join-Path $root 'apps\control-panel\node_modules\next\dist\bin\next'}
+  $present=Test-Path -LiteralPath $cli -PathType Leaf
+  Write-Output ('APP_OWNER app='+$s.A+' task='+$task.State+' port='+$s.P+' listeners='+$listeners.Count+' pid='+$pidValue+' owned='+$owned+' cli='+$present)
+  if($strict -and ($task.State -ne 'Running' -or $listeners.Count -ne 1 -or -not $owned -or -not $present)){
+    throw ('APP_RUNTIME_INCOMPLETE '+$s.A)
+  }
+}
+'@
+  $script=$script.Replace('__STRICT__',$mode).Replace('__LOCK__',$lock)
+  Invoke-Lenovo $script
+}
+function Verify-AppWeb {
+  $targets=@(
+    @{A='customer';U='http://127.0.0.1:18101/'},
+    @{A='customer';U='http://127.0.0.1:18101/stores'},
+    @{A='merchant';U='http://127.0.0.1:18102/'},
+    @{A='captain-metro';U='http://127.0.0.1:18103/status'},
+    @{A='control-panel';U='http://127.0.0.1:13000/'}
+  )
+  $failures=0
+  foreach($target in $targets){
+    try {
+      $result=Invoke-WebRequest -UseBasicParsing -Uri $target.U -TimeoutSec 8 -ErrorAction Stop
+      if($result.StatusCode -ne 200){throw ('HTTP_'+$result.StatusCode)}
+      Say 'APP_HTTP' ($target.A+' PASS status=200')
+    } catch {
+      $failures++
+      Say 'APP_HTTP' ($target.A+' FAIL path='+$target.U)
+    }
+  }
+  Say 'FAST_REFRESH_VISUAL' 'NOT_RUN (requires two observed Web and Android UI edits and restoration)'
+  Assert-Ok ($failures -eq 0) ('Web/Metro readiness failed on '+$failures+' checks')
+}
+function Inspect-AppAndroid {
+  $adb=Get-Command 'adb.exe' -ErrorAction SilentlyContinue
+  if(-not $adb){ Say 'ANDROID_ADB' 'NOT_FOUND'; return }
+  $devices=@(& $adb.Source 'devices' '-l' 2>&1)
+  Assert-Ok ($LASTEXITCODE -eq 0) 'adb devices failed'
+  $lines=@($devices | ForEach-Object {$_.ToString()})
+  $devicePresent=@($lines | Where-Object {$_ -match '^R5CX14S4PZW\s+device\b'}).Count -eq 1
+  Say 'ANDROID_ADB' ('SAMSUNG_DEVICE='+$devicePresent)
+  $reverses=@(& $adb.Source 'reverse' '--list' 2>&1)
+  Assert-Ok ($LASTEXITCODE -eq 0) 'adb reverse list failed'
+  foreach($port in @(18101,18102,18103)){
+    $mapped=@($reverses | Where-Object {$_.ToString() -match ('tcp:'+$port+'\s+tcp:'+$port+'\b')}).Count -gt 0
+    Say 'ANDROID_REVERSE' ('port='+$port+' configured='+$mapped)
+  }
+  Say 'ANDROID_VISUAL' 'NOT_RUN (device presence and reverse list do not prove UI Fast Refresh)'
+}
+function Show-AppLogs {
+  Assert-Ok (-not [string]::IsNullOrWhiteSpace($App)) 'specify -App customer|merchant|captain|control-panel'
+  $body=@'
+$app='__APP__'
+$base='C:\Users\bthwa\BThwaniAppRunner\logs'
+foreach($kind in @('out','err')){
+  $path=Join-Path $base ('refoundation-'+$app+'.'+$kind+'.log')
+  if(!(Test-Path -LiteralPath $path -PathType Leaf)){Write-Output ('APP_LOG_MISSING '+$app+' '+$kind);continue}
+  Write-Output ('APP_LOG app='+$app+' stream='+$kind)
+  Get-Content -LiteralPath $path -Tail 20 -ErrorAction Stop | ForEach-Object {
+    $line=$_.ToString()
+    $line=$line -replace '(?i)(Bearer\s+)[A-Za-z0-9._~-]+','$1[REDACTED]'
+    $line=$line -replace '(?i)(password|secret|token|api[_-]?key)\s*[=:]\s*[^,;\s]+','$1=[REDACTED]'
+    if($line.Length -gt 300){$line=$line.Substring(0,300)}
+    Write-Output $line
+  }
+}
+'@
+  Invoke-Lenovo $body.Replace('__APP__',$App)
+}
+function Control-SingleApp([string]$operation) {
+  Assert-Ok (-not [string]::IsNullOrWhiteSpace($App)) 'specify exactly one -App'
+  if (-not $Apply) {
+    Say 'APP_CONTROL' ('DRY_RUN operation='+$operation+' app='+$App+'; use -Apply after inspecting status')
+    Inspect-AppOwners
+    return
+  }
+  $body=@'
+$app='__APP__'
+$mode='__MODE__'
+$specs=@{
+ 'customer'=@{N='BThwani Client Metro Native';P=28111;Cli='expo'}
+ 'merchant'=@{N='BThwani Partner Metro Native';P=28112;Cli='expo'}
+ 'captain'=@{N='BThwani Captain Metro Native';P=28113;Cli='expo'}
+ 'control-panel'=@{N='BThwani Control Next Native';P=23010;Cli='next'}
+}
+$s=$specs[$app]
+if(!$s){throw 'APP_NOT_ALLOWED'}
+$t=Get-ScheduledTask -TaskName $s.N -ErrorAction Stop
+$actions=@($t.Actions)
+$action=($actions | ForEach-Object {[string]$_.Execute+' '+[string]$_.Arguments}) -join ' '
+if($actions.Count -ne 1 -or $action -notmatch 'Start-RefoundationApp\.ps1' -or
+  $action -notmatch ('(?i)-App\s+'+[regex]::Escape($app)+'(?:\s|$)')){throw ('TASK_OWNER_CHANGED '+$app)}
+$source='C:\Users\bthwa\BThwaniAppRunner\source-runtime'
+$node='C:\Users\bthwa\BThwaniAppRunner\tools\node-v24.22.1-refoundation\node.exe'
+if((Get-FileHash -LiteralPath (Join-Path $source 'pnpm-lock.yaml') -Algorithm SHA256).Hash -ne '__LOCK__') {throw ('APP_LOCK_MIRROR_MISMATCH '+$app)}
+if(!(Test-Path -LiteralPath $node -PathType Leaf) -or
+  !(Test-Path -LiteralPath (Join-Path $source 'pnpm-lock.yaml') -PathType Leaf) -or
+  (Get-Content -LiteralPath (Join-Path $source '.node-version') -Raw).Trim() -ne '24.22.1') {throw ('APP_RUNTIME_SOURCE_MISSING '+$app)}
+$cli=if($s.Cli -eq 'expo'){Join-Path $source ('apps\'+$app+'\node_modules\expo\bin\cli')}else{Join-Path $source 'apps\control-panel\node_modules\next\dist\bin\next'}
+if(!(Test-Path -LiteralPath $cli -PathType Leaf)){throw ('APP_CLI_MISSING '+$app)}
+$listeners=@(Get-NetTCPConnection -State Listen -LocalPort $s.P -ErrorAction SilentlyContinue)
+if($listeners.Count -gt 1){throw ('APP_PORT_AMBIGUOUS '+$app)}
+if($listeners.Count -eq 1){
+  $pidValue=[int]$listeners[0].OwningProcess
+  $owner=Get-CimInstance Win32_Process -Filter ('ProcessId='+$pidValue)
+  if(!$owner -or $owner.Name -ne 'node.exe' -or $owner.CommandLine -notmatch $s.Cli){throw ('APP_PORT_FOREIGN '+$app)}
+  $owned=$false;$cursor=$owner
+  for($i=0;$i -lt 6 -and $cursor;$i++){
+    if($cursor.Name -eq 'powershell.exe' -and $cursor.CommandLine -match 'Start-RefoundationApp\.ps1' -and
+      $cursor.CommandLine -match ('(?i)-App\s+'+[regex]::Escape($app)+'(?:\s|$)')){$owned=$true;break}
+    if(!$cursor.ParentProcessId -or $cursor.ParentProcessId -eq $cursor.ProcessId){break}
+    $cursor=Get-CimInstance Win32_Process -Filter ('ProcessId='+$cursor.ParentProcessId)
+  }
+  if(!$owned){throw ('APP_PROCESS_OWNER_UNPROVEN '+$app)}
+}
+if($mode -eq 'start'){
+  if($t.State -eq 'Running' -and $listeners.Count -eq 1){Write-Output ('APP_START_ALREADY_RUNNING '+$app);return}
+  if($t.State -eq 'Running' -or $listeners.Count -ne 0){throw ('APP_START_BLOCKED_NOT_STOPPED '+$app)}
+}else{
+  if($listeners.Count -eq 1){
+    $route=if($app -eq 'captain'){'/status'}else{'/'}
+    try{
+      $uri='http://127.0.0.1:'+$s.P+$route
+      $resp=Invoke-WebRequest -Uri $uri -UseBasicParsing -TimeoutSec 4 -ErrorAction Stop
+      if($resp.StatusCode -eq 200){Write-Output ('APP_RESTART_SKIPPED_HEALTHY '+$app);return}
+    }catch{}
+  }
+  if($t.State -eq 'Running'){
+    Stop-ScheduledTask -TaskName $s.N -ErrorAction Stop
+    Write-Output ('APP_STOP_TASK_REQUESTED '+$app)
+    for($i=0;$i -lt 10;$i++){Start-Sleep -Milliseconds 500;if((Get-ScheduledTask -TaskName $s.N).State -ne 'Running'){break}}
+  }
+}
+for($i=0;$i -lt 12;$i++){
+  $busy=@(Get-NetTCPConnection -State Listen -LocalPort $s.P -ErrorAction SilentlyContinue)
+  if($busy.Count -eq 0){break}
+  Start-Sleep -Milliseconds 500
+}
+if(@(Get-NetTCPConnection -State Listen -LocalPort $s.P -ErrorAction SilentlyContinue).Count -ne 0){
+  throw ('APP_PORT_STILL_OCCUPIED_NO_PROCESS_KILL '+$app)
+}
+if((Get-ScheduledTask -TaskName $s.N).State -eq 'Running'){throw ('APP_TASK_STILL_RUNNING '+$app)}
+Start-ScheduledTask -TaskName $s.N -ErrorAction Stop
+Write-Output ('APP_START_TASK_REQUESTED '+$app)
+for($i=0;$i -lt 40;$i++){
+  $listener=@(Get-NetTCPConnection -State Listen -LocalPort $s.P -ErrorAction SilentlyContinue)
+  if($listener.Count -eq 1){Write-Output ('APP_LISTENER_STARTED '+$app+' port='+$s.P);return}
+  Start-Sleep -Seconds 1
+}
+throw ('APP_LISTENER_NOT_READY '+$app)
+'@
+  $lockHash=(Get-FileHash -LiteralPath (Join-Path $repo 'pnpm-lock.yaml') -Algorithm SHA256).Hash
+  $body=$body.Replace('__APP__',$App).Replace('__MODE__',$operation).Replace('__LOCK__',$lockHash)
+  Invoke-Lenovo $body
+}
+function Invoke-AppAction {
+  if($DockerAction -eq 'help'){Show-AppsHelp;return}
+  if($DockerAction -eq 'android'){Inspect-AppAndroid;return}
+  Check-Ssh
+  switch($DockerAction.ToLowerInvariant()){
+    'status' {Inspect-AppOwners}
+    'verify' {Inspect-AppOwners -StrictCheck;Verify-AppWeb}
+    'logs' {Show-AppLogs}
+    'start' {Control-SingleApp 'start'}
+    'restart' {Control-SingleApp 'restart'}
+    default {throw ('UNSUPPORTED_APP_ACTION '+$DockerAction)}
+  }
+}
+
 function Show-Docker {
   Banner 'DOCKER CONTAINERS'
   Invoke-DockerCli -argsList @('ps','-a','--filter','label=com.docker.compose.project=bthwani-refoundation','--format','{{.Names}} | {{.Status}} | {{.Image}}') | ForEach-Object { Write-Output $_ }
@@ -318,6 +551,7 @@ function Verify-Checks {
     'infra/compose-policy.test.mjs',
     'infra/verify-runtime-provenance.test.mjs',
     'tools/dev/sync-lenovo-source.test.mjs',
+    'tools/dev/dev-powershell.test.mjs',
     'tools/dev/verify-nx-project-graph.test.mjs'
   )
   $testArgs=@('--test') + @($tests | ForEach-Object { Join-Path $repo $_ })
@@ -410,6 +644,7 @@ try {
   switch ($Action.ToLowerInvariant()) {
     'install' { Install-CLI; break }
     'docker' { Invoke-ScopedDocker; break }
+    'apps' { Invoke-AppAction; break }
     'status' {
       Check-Ssh
       Show-LocalTasks

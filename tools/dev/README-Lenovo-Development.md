@@ -23,6 +23,27 @@ Surface DHCP 192.168.0.100; Lenovo DHCP 192.168.0.101; SSH target alias bthwani-
 - Normal automatic mode: the existing Surface Scheduled Task invokes pinned node.exe with tools/dev/sync-lenovo-source.mjs --watch directly; do not start duplicate watch processes.
 - Test policy: node --test D:\samrim\tools\dev\sync-lenovo-source.test.mjs
 
+## Scoped app checks and recovery
+
+From Surface run the existing central CLI (it uses the same Lenovo Scheduled Tasks, SSH and source-sync watcher):
+
+    Set-Location D:\samrim
+    pnpm dev apps help
+    pnpm dev apps status
+    pnpm dev apps verify
+    pnpm dev apps android
+    pnpm dev apps logs -App merchant
+    pnpm dev apps start -App captain
+    pnpm dev apps restart -App captain
+
+The apps status command verifies the single Lenovo listener and its Node/launcher ancestry, application CLI, pinned Node and mirrored dependency-lock SHA. Apps verify also probes the customer/merchant/control Web endpoints and Captain Metro /status. Web HTTP/Metro success does not close Fast Refresh, browser journeys or Android UI tests. Apps android only reports connected ADB devices and existing reverse mappings; it never changes mappings, installs APKs or clears sessions.
+
+Long bounded PowerShell diagnostics use a single base64 input line over the existing strict SSH connection to avoid Windows command-line limits; no remote helper, watcher or permanent file is created.
+
+Start and restart are dry run by default. Explicit -App customer|merchant|captain|control-panel -Apply applies to one app only. Start is idempotent for a running owned application. Restart declines a healthy endpoint. On an unhealthy target, it verifies task action, mirror lock hash, runtime CLI and ownership of any listener, then stops only the selected task, waits for its port to become free, and requests the existing task to start. If an orphan listener persists, it fails closed and does not kill unknown or surviving processes, clear Metro cache, reinstall dependencies, manipulate Docker or stop tunnels. Actual restart remains untested until a safely isolated failed-app case exists; dry-run does not prove recovery.
+
+Historical Windows registration keys for Customer/Merchant tasks may still contain Client/Partner; these are not active application names. Canonical running app identities are customer, merchant, captain, control-panel. Do not rename active Scheduled Tasks unless all their consumers are migrated and proven. Native EAS/Android/iOS published IDs are separate contractual identities.
+
 ## Cleanup rule
 Keep currently used app tasks, tunnel tasks, active SSH sessions and guarded rollback data. Disabled tasks pointing to deleted scripts may be exported and retired only after proving no user or service depends on them; no blanket deletion of backups, mirror directories, Android packages or private keys.
 
