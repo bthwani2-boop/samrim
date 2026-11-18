@@ -23,7 +23,7 @@ paths:
   /v1/operators/me/permissions/{permission}:
     $ref: './paths/internal-actor-administration.yaml#/paths/~1v1~1operators~1me~1permissions~1{permission}'
   /v1/operators/{actorId}/permissions/{permission}:
-    $ref: './paths/operator-passkey-access.yaml#/paths/~1v1~1operators~1{actorId}~1permissions~1{permission}'
+    $ref: './paths/internal-actor-administration.yaml#/paths/~1v1~1operators~1{actorId}~1permissions~1{permission}'
 components:
   securitySchemes:
     OpaqueSession:
