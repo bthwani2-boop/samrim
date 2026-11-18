@@ -190,6 +190,40 @@ components:
       required: [error]
       properties:
         error: { type: string }
+    ApprovedStanding:
+      type: object
+      additionalProperties: false
+      required: [actorId, status, version]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        status: { type: string, const: APPROVED }
+        version: { type: integer, minimum: 1 }
+    Standing:
+      type: object
+      additionalProperties: false
+      required: [actorId, status, version]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        status: { type: string, enum: [PENDING, APPROVED, SUSPENDED, REVOKED] }
+        version: { type: integer, minimum: 1 }
+    StandingChange:
+      type: object
+      additionalProperties: false
+      required: [status, expectedVersion, operationId, reason]
+      properties:
+        status: { type: string, enum: [APPROVED, SUSPENDED, REVOKED] }
+        expectedVersion: { type: integer, minimum: 1 }
+        operationId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+        reason: { type: string, minLength: 1, maxLength: 300 }
+    CaptainError:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+          enum: [UNAUTHORIZED, FORBIDDEN, NOT_FOUND, METHOD_NOT_ALLOWED, INVALID_REQUEST, CAPTAIN_NOT_ELIGIBLE, CAPTAIN_STANDING_VERSION_CONFLICT, OWNER_UNAVAILABLE, OPERATION_RESULT_UNKNOWN]
+
   responses:
     BadRequest:
       description: Invalid city, page, path or cursor
@@ -247,3 +281,18 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/StoreOperationalError' }
+    Unauthorized:
+      description: Current Identity bearer invalid or expired
+      content: { application/json: { schema: { $ref: '#/components/schemas/CaptainError' } } }
+    Forbidden:
+      description: No current effective role/permission or DSH Captain standing
+      content: { application/json: { schema: { $ref: '#/components/schemas/CaptainError' } } }
+    Invalid:
+      description: Unexpected or invalid input rejected
+      content: { application/json: { schema: { $ref: '#/components/schemas/CaptainError' } } }
+    Conflict:
+      description: Stale expected version or conflicting operation replay
+      content: { application/json: { schema: { $ref: '#/components/schemas/CaptainError' } } }
+    Unavailable:
+      description: Identity/DSH owner unavailable or uncertain mutation outcome
+      content: { application/json: { schema: { $ref: '#/components/schemas/CaptainError' } } }

@@ -74,30 +74,30 @@ func TestCustomerCaptainApplicationHTTPIsPendingAndNotSelfApproved(t *testing.T)
 }
 
 func TestCaptainOperatorStandingPatchRejectsAmbiguousAndForgedInput(t *testing.T) {
-	owner:=&fakeStandingRepository{standing:Standing{ActorID:"captain-17",Status:Pending,Version:1}}
-	identity:=&fakeIdentity{actor:Actor{ID:"operator-1",Role:"operator"},allow:true}
-	handler:=NewHTTPHandler(NewService(identity,owner))
-	patch:=func(body string) int {
-		r:=httptest.NewRequest(http.MethodPatch,"/v1/operators/captains/captain-17/standing",strings.NewReader(body))
-		r.Header.Set("Authorization","Bearer operator-credential")
-		r.Header.Set("Content-Type","application/json")
-		r.Header.Set("X-Actor-ID","captain-18")
-		w:=httptest.NewRecorder()
-		handler.ServeHTTP(w,r)
+	owner := &fakeStandingRepository{standing: Standing{ActorID: "captain-17", Status: Pending, Version: 1}}
+	identity := &fakeIdentity{actor: Actor{ID: "operator-1", Role: "operator"}, allow: true}
+	handler := NewHTTPHandler(NewService(identity, owner))
+	patch := func(body string) int {
+		r := httptest.NewRequest(http.MethodPatch, "/v1/operators/captains/captain-17/standing", strings.NewReader(body))
+		r.Header.Set("Authorization", "Bearer operator-credential")
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("X-Actor-ID", "captain-18")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
 		return w.Code
 	}
-	bad:=[]string{
+	bad := []string{
 		`{"status":"APPROVED","status":"SUSPENDED","expectedVersion":1,"operationId":"approval-001","reason":"verified"}`,
 		`{"status":"APPROVED","expectedVersion":1,"operationId":"approval-001","reason":"verified","actingActorId":"forged"}`,
 		`{"status":"APPROVED","expectedVersion":0,"operationId":"approval-001","reason":"verified"}`,
 	}
-	for _,body:=range bad {
-		if status:=patch(body);status!=http.StatusBadRequest || owner.changes!=0 {
-			t.Fatalf("unsafe patch accepted: status=%d changes=%d",status,owner.changes)
+	for _, body := range bad {
+		if status := patch(body); status != http.StatusBadRequest || owner.changes != 0 {
+			t.Fatalf("unsafe patch accepted: status=%d changes=%d", status, owner.changes)
 		}
 	}
-	good:=`{"status":"APPROVED","expectedVersion":1,"operationId":"approval-001","reason":"verified"}`
-	if status:=patch(good);status!=http.StatusOK || owner.changes!=1 {
-		t.Fatalf("authorized patch failed status=%d changes=%d",status,owner.changes)
+	good := `{"status":"APPROVED","expectedVersion":1,"operationId":"approval-001","reason":"verified"}`
+	if status := patch(good); status != http.StatusOK || owner.changes != 1 {
+		t.Fatalf("authorized patch failed status=%d changes=%d", status, owner.changes)
 	}
 }
