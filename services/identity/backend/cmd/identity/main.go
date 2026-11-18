@@ -86,6 +86,13 @@ func main() {
 		routes.Handle(session.CaptainAdmitPath, captain)
 		routes.Handle(session.CaptainReentryPath, captain)
 	}
+	// Operator administration is an opt-in synthetic Identity owner endpoint.
+	// A PATCH-specific mux pattern preserves the existing GET /operators/me permission read.
+	// No original Operator is created or reactivated by enabling this route.
+	if os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_PERMISSION_ADMIN") == "true" {
+		routes.Handle("PATCH /v1/operators/{actorId}/permissions/{permission}",
+			session.NewOperatorPermissionManagementHandler(reader))
+	}
 	routes.Handle("/", session.NewHandler(session.NewVerifier(reader)))
 	server := &http.Server{
 		Addr: address, Handler: routes,

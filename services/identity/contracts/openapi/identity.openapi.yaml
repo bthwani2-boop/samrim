@@ -22,6 +22,8 @@ paths:
     $ref: './paths/captain-admission.yaml#/paths/~1v1~1actors~1me~1captain-session'
   /v1/operators/me/permissions/{permission}:
     $ref: './paths/internal-actor-administration.yaml#/paths/~1v1~1operators~1me~1permissions~1{permission}'
+  /v1/operators/{actorId}/permissions/{permission}:
+    $ref: './paths/operator-passkey-access.yaml#/paths/~1v1~1operators~1{actorId}~1permissions~1{permission}'
 components:
   securitySchemes:
     OpaqueSession:
@@ -51,4 +53,4 @@ components:
       additionalProperties: false
       required: [error]
       properties:
-        error: { type: string, enum: [INVALID_REQUEST, UNAUTHORIZED, FORBIDDEN, VERIFICATION_REQUIRED, ALREADY_PROVISIONED, MERCHANT_NOT_ACTIVE, OWNER_UNAVAILABLE, NOT_FOUND, METHOD_NOT_ALLOWED, PHONE_CHALLENGE_LIMIT, CAPTAIN_NOT_APPROVED, CAPTAIN_NOT_ACTIVE] }
+        error: { type: string, enum: [INVALID_REQUEST, UNAUTHORIZED, FORBIDDEN, VERIFICATION_REQUIRED, ALREADY_PROVISIONED, MERCHANT_NOT_ACTIVE, CONFLICT, OWNER_UNAVAILABLE, NOT_FOUND, METHOD_NOT_ALLOWED, PHONE_CHALLENGE_LIMIT, CAPTAIN_NOT_APPROVED, CAPTAIN_NOT_ACTIVE] }
