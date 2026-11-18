@@ -30,8 +30,6 @@ $dir=Join-Path $source ('apps\'+$App)
 Set-Location -LiteralPath $dir
 $log=Join-Path $logs ('refoundation-'+$App+'.out.log')
 $err=Join-Path $logs ('refoundation-'+$App+'.err.log')
-"START refoundation app=$App source=$source node=24.22.1" | Out-File -FilePath $log -Append -Encoding utf8
-
 switch($App){
   'customer' {
     $cli=Join-Path $dir 'node_modules\expo\bin\cli'
@@ -62,31 +60,17 @@ switch($App){
     $args=@('dev','-H','127.0.0.1','-p','23010')
   }
 }
-if(!(Test-Path -LiteralPath $cli)){throw ('REFOUNDATION_APP_CLI_MISSING '+$cli)}
-# Task Scheduler can stop the PowerShell launcher while leaving its Expo
-# child alive. Reclaim ONLY a verified orphan from this exact application;
-# never kill an unrelated listener or another active launcher.
-if ($App -in @('customer','merchant')) {
-  $port = if ($App -eq 'customer') { 28111 } else { 28112 }
-  $listenerPids = @(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue |
-    Select-Object -ExpandProperty OwningProcess -Unique)
-  foreach ($listenerPid in $listenerPids) {
-    $old = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $listenerPid)
-    if (-not $old -or $old.Name -ne 'node.exe' -or
-        $old.ExecutablePath -ine $node -or
-        -not $old.CommandLine -or
-        -not $old.CommandLine.Contains($cli)) {
-      throw ('REFOUNDATION_PORT_OWNED_BY_OTHER_PROCESS app=' + $App + ' port=' + $port)
-    }
-    $parent = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $old.ParentProcessId)
-    if ($parent) {
-      throw ('REFOUNDATION_APP_ALREADY_RUNNING app=' + $App + ' port=' + $port)
-    }
-    Stop-Process -Id $old.ProcessId -Force -ErrorAction Stop
-    "RECLAIMED_ORPHAN app=$App pid=$($old.ProcessId) port=$port" |
-      Out-File -FilePath $err -Append -Encoding utf8
-  }
+# A scheduled task may exit without stopping its Node child. Never
+# terminate or overwrite a listener while starting an app; the current
+# process may still be serving users or belong to another launcher.
+$ports = @{ customer=28111; merchant=28112; captain=28113; 'control-panel'=23010 }
+$port = $ports[$App]
+if (Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue |
+    Select-Object -First 1) {
+  throw ('REFOUNDATION_APP_PORT_IN_USE app=' + $App + ' port=' + $port)
 }
+if(!(Test-Path -LiteralPath $cli)){throw ('REFOUNDATION_APP_CLI_MISSING '+$cli)}
+"START refoundation app=$App source=$source node=24.22.1" | Out-File -FilePath $log -Append -Encoding utf8
 # PowerShell 5.1 wraps native stderr warnings as NativeCommandError when
 # ErrorActionPreference=Stop. Keep stderr logged, but judge failure by exit code.
 $ErrorActionPreference='Continue'

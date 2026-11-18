@@ -399,10 +399,7 @@ function baseline(current, observed) {
   logger("BASELINE_PASS pending=" + (current.size - Object.keys(files).length));
   return { version: 1, branch: branch(), host: targetIdentity, target: targetRoot, head: head(), files };
 }
-// Watch source changes promptly, but do not repeatedly hash the entire Lenovo
-// runtime every 30 seconds while Expo/Metro is compiling. Drift still recovers.
-const remoteAuditMs = 120_000;
-const watchPollMs = 3_000;
+const remoteAuditMs = 30_000;
 let nextRemoteAudit = 0;
 function isUnchanged(state, current, currentHead) {
   return Boolean(
@@ -491,8 +488,8 @@ function main() {
       } finally { active = false; }
     };
     attempt();
-    logger("SOURCE_SYNC_WATCH_ACTIVE interval=3 remoteAuditSeconds=120");
-    setInterval(attempt, watchPollMs);
+    logger("SOURCE_SYNC_WATCH_ACTIVE interval=1 remoteAuditSeconds=30");
+    setInterval(attempt, 1000);
   } else {
     cycle();
   }
