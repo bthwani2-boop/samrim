@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { allowed, appendLogFile, failureDetail, hash, isUnchanged, persistAt, remoteConflict } from "./sync-lenovo-source.mjs";
+import { allowed, appendLogFile, failureDetail, hash, isUnchanged, needsReconcile, parseRemoteHashes, persistAt, remoteConflict } from "./sync-lenovo-source.mjs";
 
 test("manifest persistence replaces atomically and never deletes another pending file", () => {
   const folder = mkdtempSync(path.join(tmpdir(), "bthwani-source-manifest-"));
@@ -146,4 +146,38 @@ test("idle polls avoid SSH and changes re-enable reconciliation", () => {
   assert.equal(isUnchanged(state, new Map([["apps/customer/index.tsx", "CCC"], ["package.json", "BBB"]]), "sha-a"), false);
   assert.equal(isUnchanged(state, new Map([["package.json", "BBB"]]), "sha-a"), false);
   assert.equal(isUnchanged(null, matching, "sha-a"), false);
+});
+
+test("remote SHA batch parser requires all exact paths and authoritative digests", () => {
+  const paths = ["apps/customer/app/index.tsx", "apps/merchant/app/index.tsx"];
+  const a = "A".repeat(64);
+  const valid = parseRemoteHashes(paths.map((p, i) => `${p}|${i ? "MISSING" : a}`).join("\n"), paths);
+  assert.equal(valid.get(paths[0]), a);
+  assert.equal(valid.get(paths[1]), "MISSING");
+  assert.throws(() => parseRemoteHashes(`${paths[0]}|${a}`, paths), /REMOTE_HASH_RESPONSE_INCOMPLETE/);
+  assert.throws(() => parseRemoteHashes(`${paths[0]}|B\n${paths[1]}|${a}`, paths), /REMOTE_HASH_RESPONSE_INVALID/);
+  assert.throws(() => parseRemoteHashes(`${paths[0]}|${a}\n${paths[0]}|${a}`, paths), /REMOTE_HASH_RESPONSE_INVALID/);
+  assert.throws(() => parseRemoteHashes(`../../unsafe|${a}\n${paths[1]}|${a}`, paths), /REMOTE_HASH_RESPONSE_INVALID/);
+});
+
+test("an unchanged manifest still requires recovery if Lenovo drifted", () => {
+  const rel = "apps/captain/app/index.tsx";
+  const current = new Map([[rel, "A".repeat(64)]]);
+  const state = { head: "sha-a", files: Object.fromEntries(current) };
+  assert.equal(needsReconcile(state, current, "sha-a", new Map(current)), false);
+  assert.equal(needsReconcile(state, current, "sha-a", new Map([[rel, "B".repeat(64)]])), true);
+  assert.equal(needsReconcile(state, current, "sha-a", new Map([[rel, "MISSING"]])), true);
+  assert.equal(needsReconcile(state, current, "sha-b", new Map(current)), true);
+});
+
+test("incremental remote audits check inspected paths, not uninspected files", () => {
+  const a = "apps/customer/app/index.tsx";
+  const b = "apps/captain/app/index.tsx";
+  const current = new Map([[a, "A".repeat(64)], [b, "B".repeat(64)]]);
+  const state = { head: "sha-x", files: Object.fromEntries(current) };
+  assert.equal(needsReconcile(state, current, "sha-x", new Map([[a, "A".repeat(64)]])), false);
+  assert.equal(needsReconcile(state, current, "sha-x", new Map([[a, "C".repeat(64)]])), true);
+  assert.equal(needsReconcile(state, current, "sha-x", new Map([[a, "MISSING"]])), true);
+  assert.equal(needsReconcile(state, current, "sha-x", new Map([["tools/dev/old.txt", "MISSING"]])), false);
+  assert.equal(needsReconcile(state, current, "sha-x", new Map([["tools/dev/old.txt", "C".repeat(64)]])), true);
 });

@@ -10,10 +10,11 @@ Surface DHCP 192.168.0.100; Lenovo DHCP 192.168.0.101; SSH target alias bthwani-
 
 ## Guarantees and limits
 - Mirroring is strictly Surface-to-Lenovo for approved tracked and untracked source paths. Service workspaces include the package manifests, TypeScript configs, and clients consumed by the apps. Service backend, migrations, .git, node_modules, .env*, credentials, secrets, DB and cache directories are excluded.
-- SSH source/remote identities and SHA-256 file hashes are checked; files are staged before atomic replacement; deletions apply only to previously managed matching remote files.
-- pnpm-lock.yaml and .node-version changes block sync until deliberate offline dependency preparation and restart. Branch switch also blocks until reconciliation.
+- Strict SSH host verification and SHA-256 validation remain enabled. Source bytes are copied by SCP to unique staging files and atomically published after checking the expected remote version. Unexpected mirror edits are archived with verified hashes before restoring the Surface copy; deletions affect only previously managed paths.
+- Dependency pin changes require an exact Lenovo runtime install with the pinned Node/pnpm versions; file mirroring alone does not install node_modules. A mismatch in mirrored pnpm-lock.yaml or .node-version blocks reconciliation. After a reviewed local dependency install, the existing watch task continues; changing branches stops the watcher until the new source is reconciled.
 - Manifest and bounded diagnostic log live outside the repo under %LOCALAPPDATA%\BThwani\Operations\SourceSync. Git commits and pushes are separate operations.
-- A successful file mirror does not prove that running app processes are using it; validate source version, HTTP/UI and ADB after runtime cutover.
+- The existing watcher checks Surface changes each second and audits Lenovo hashes periodically. Small lists use one SSH command; larger audits use a temporary SCP-transferred manifest. No binary SSH stdin transport, parallel source writer, new daemon, or separate Docker engine is introduced.
+- A successful file mirror does not prove that running app processes are using it; validate source version, real Web/Android UI and Metro Fast Refresh. Go containers are source-SHA-built images, not hot-reloaded filesystem mirrors; use the existing infra runtime provenance check before any owner-approved rebuild.
 
 ## Commands
 - Validate launcher: powershell.exe -NoProfile -File D:\samrim\tools\dev\Start-LenovoSourceSync.ps1 -ValidateOnly
