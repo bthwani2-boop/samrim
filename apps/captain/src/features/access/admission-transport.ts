@@ -110,7 +110,11 @@ export async function verifyCaptainCode(
     return { state: "approved", session: captain };
   } catch (error) {
     if (captainBearer !== null) await revokeUndelivered(captainBearer);
-    throw error;
+    // The temporary Customer proof was consumed before this downstream
+    // failure. A retry with the same ticket can never work. Preserve the
+    // distinction from an incorrect code (which fails before issuance).
+    if (signal.aborted) throw error;
+    throw new IdentityClientError(0, "PHONE_CHALLENGE_CONSUMED");
   } finally {
     // A temporary Customer token is never held in Captain application storage.
     await revokeUndelivered(customerIssued.accessToken);

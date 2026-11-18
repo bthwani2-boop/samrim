@@ -17,6 +17,7 @@ function admissionError(error: unknown) {
       case "VERIFICATION_REQUIRED": return "يلزم التحقق من الهوية أولًا.";
       case "PHONE_CHALLENGE_LIMIT": return "تجاوزت محاولات التحقق المسموح بها.";
       case "OPERATION_RESULT_UNKNOWN": return "نتيجة العملية غير مؤكدة. تحقق من حالة الحساب قبل إعادة المحاولة.";
+      case "PHONE_CHALLENGE_CONSUMED": return "استخدمت خدمة الهوية الرمز بالفعل، لكن تعذّر إكمال دخول الكابتن. اطلب رمزًا جديدًا.";
       case "UNAUTHORIZED": return "انتهت الجلسة أو لم يتم التحقق منها.";
     }
   }
@@ -111,17 +112,26 @@ export default function CaptainIdentityGate() {
 
   function verify() {
     void run(async signal => {
-      const result = await verifyCaptainCode(ticket, code, signal);
-      if (signal.aborted) return;
-      setTicket("");
-      setCode("");
-      setPhone("");
-      if (result.state === "pending") {
-        setPending(true);
-        setSession(null);
-      } else {
-        setPending(false);
-        setSession(result.session);
+      try {
+        const result = await verifyCaptainCode(ticket, code, signal);
+        if (signal.aborted) return;
+        setTicket("");
+        setCode("");
+        setPhone("");
+        if (result.state === "pending") {
+          setPending(true);
+          setSession(null);
+        } else {
+          setPending(false);
+          setSession(result.session);
+        }
+      } catch (error) {
+        if (!signal.aborted && error instanceof IdentityClientError &&
+            error.code === "PHONE_CHALLENGE_CONSUMED") {
+          setTicket("");
+          setCode("");
+        }
+        throw error;
       }
     });
   }
