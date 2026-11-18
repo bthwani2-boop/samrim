@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { allowed, appendLogFile, assertCompatibleBranchTransition, branchTransitionPins, buildManagedDeleteCode, buildPublishCode, failureDetail, hash, isUnchanged, needsReconcile, parseRemoteHashes, persistAt, remoteConflict } from "./sync-lenovo-source.mjs";
+import { allowed, appendLogFile, assertCompatibleBranchTransition, branchTransitionPins, buildManagedDeleteCode, buildPublishCode, failureDetail, hash, isUnchanged, needsReconcile, parseRemoteHashes, persistAt, remoteAuditDue, remoteConflict } from "./sync-lenovo-source.mjs";
 
 test("manifest persistence replaces atomically and never deletes another pending file", () => {
   const folder = mkdtempSync(path.join(tmpdir(), "bthwani-source-manifest-"));
@@ -334,6 +334,49 @@ test("a replacement created during deletion is never overwritten or removed", { 
     assert.notEqual(result.status, 0, "a concurrent replacement must fail closed");
     assert.equal(readFileSync(dest, "utf8"), "replacement-edit");
     assert.equal(readFileSync(quarantine, "utf8"), "observed");
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+
+test("full remote audit deadline is not postponed by continuing source edits", () => {
+  const state = { branch: "codex/managed-participant-admission", files: {} };
+  assert.equal(remoteAuditDue(null, 999999, 1), true);
+  assert.equal(remoteAuditDue(state, 30000, 29999), false);
+  assert.equal(remoteAuditDue(state, 30000, 30000), true);
+  assert.equal(remoteAuditDue(state, 30000, 30500), true);
+});
+
+test("managed deletion refuses an ancestor junction outside the source mirror", { skip: process.platform !== "win32" }, (t) => {
+  const folder = mkdtempSync(path.join(tmpdir(), "bthwani-delete-junction-"));
+  try {
+    const root = path.join(folder, "mirror");
+    const external = path.join(folder, "external");
+    mkdirSync(root);
+    mkdirSync(external);
+    const junction = path.join(root, "app");
+    try {
+      symlinkSync(external, junction, "junction");
+    } catch (error) {
+      if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) {
+        t.skip("junction creation unavailable on this test host");
+        return;
+      }
+      throw error;
+    }
+    writeFileSync(path.join(external, "protected.txt"), "protected");
+    const dest = path.join(junction, "protected.txt");
+    const quarantine = dest + ".quarantine";
+    const code = buildManagedDeleteCode({
+      dest, root, quarantine, archive: path.join(folder, "conflicts", "protected.txt"),
+      actual: createHash("sha256").update("protected").digest("hex").toUpperCase(),
+      conflict: false,
+    });
+    const result = isolatedPowerShell(code);
+    assert.notEqual(result.status, 0, "ancestor junction must block managed removal");
+    assert.equal(readFileSync(path.join(external, "protected.txt"), "utf8"), "protected");
+    assert.equal(existsSync(quarantine), false);
   } finally {
     rmSync(folder, { recursive: true, force: true });
   }

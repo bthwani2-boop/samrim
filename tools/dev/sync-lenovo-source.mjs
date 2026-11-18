@@ -372,10 +372,18 @@ function publish(rel, expected, previous, observed) {
   }
   if (conflict) logger("REMOTE_DRIFT_ARCHIVED " + rel);
 }
-function buildManagedDeleteCode({dest, actual, archive, conflict, quarantine}) {
+function buildManagedDeleteCode({dest, actual, archive, conflict, quarantine, root = targetRoot}) {
   const code = [
     "$ErrorActionPreference='Stop'",
     "$p=" + quote(dest),
+    "$root=" + quote(root),
+    "$part=Split-Path -Parent $p",
+    "while($part -and $part.Length -ge $root.Length){",
+    "if(Test-Path -LiteralPath $part){",
+    "$parent=Get-Item -LiteralPath $part -Force",
+    "if($parent.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'UNSAFE_TARGET_DIRECTORY'}",
+    "};if($part -ieq $root){break};$part=Split-Path -Parent $part",
+    "}",
     "$quarantine=" + quote(quarantine),
     "$expected=" + quote(actual),
     "$archive=" + quote(archive),
@@ -439,6 +447,10 @@ function baseline(current, observed) {
   return { version: 1, branch: branch(), host: targetIdentity, target: targetRoot, head: head(), files };
 }
 const remoteAuditMs = 30_000;
+function remoteAuditDue(previous, deadline, now = Date.now()) {
+  // An active editing session must not indefinitely postpone full drift checks.
+  return !previous || now >= deadline;
+}
 const branchTransitionPins = Object.freeze([
   ".node-version", "pnpm-lock.yaml", "package.json",
   "apps/customer/package.json", "apps/merchant/package.json",
@@ -470,7 +482,7 @@ function reconcile() {
   const previous = readState();
   const branchTransition = assertCompatibleBranchTransition(previous, current, currentBranch);
   const sourceChanged = branchTransition || !isUnchanged(previous, current, currentHead);
-  const auditDue = !previous || (!sourceChanged && Date.now() >= nextRemoteAudit);
+  const auditDue = remoteAuditDue(previous, nextRemoteAudit);
   if (!sourceChanged && !auditDue) return;
   remoteReady();
   const remaining = new Set(current.keys());
@@ -484,7 +496,7 @@ function reconcile() {
     [...new Set([...changedPaths, ...removedPaths, ...critical])];
   const observed = remoteHashes(inspected);
   if (!needsReconcile(previous, current, currentHead, observed, currentBranch)) {
-    nextRemoteAudit = Date.now() + remoteAuditMs;
+    if (auditDue) nextRemoteAudit = Date.now() + remoteAuditMs;
     return;
   }
   const state = previous || baseline(current, observed);
@@ -513,7 +525,7 @@ function reconcile() {
   if (changed || state.head !== currentHead || state.branch !== currentBranch) {
     persist({ ...state, branch: currentBranch, files, head: currentHead });
   }
-  nextRemoteAudit = Date.now() + remoteAuditMs;
+  if (auditDue) nextRemoteAudit = Date.now() + remoteAuditMs;
   if (changed) logger("SYNC_PASS files=" + changed + " head=" + currentHead.slice(0, 12));
   if (dependencyChanges.length) logger("DEPENDENCY_INSTALL_REQUIRED paths=" + dependencyChanges.join(","));
 }
@@ -554,4 +566,4 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   try { main(); } catch (e) { console.error("SOURCE_SYNC_ERROR " + e.message); process.exitCode = 1; }
 }
 
-export { buildManagedDeleteCode, buildPublishCode, allowed, appendLogFile, assertCompatibleBranchTransition, branchTransitionPins, failureDetail, hash, isUnchanged, needsReconcile, parseRemoteHashes, persistAt, publish, remoteConflict, remoteHashes };
+export { buildManagedDeleteCode, buildPublishCode, remoteAuditDue, allowed, appendLogFile, assertCompatibleBranchTransition, branchTransitionPins, failureDetail, hash, isUnchanged, needsReconcile, parseRemoteHashes, persistAt, publish, remoteConflict, remoteHashes };
