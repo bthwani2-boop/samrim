@@ -1,4 +1,4 @@
-import { getPublicStore, listPublicOffers, type PublicOffer, type PublicStore } from "@bthwani/dsh";
+import { getPublicStore, listPublicOffers } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { type Href, Link, useLocalSearchParams } from "expo-router";
 import * as React from "react";
@@ -6,10 +6,9 @@ import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, Text, View } fr
 import StoreProducts from "../catalog/store-products";
 import { publicStorefrontPath } from "../sharing/store-share";
 import { describeStoreOrderability } from "./orderability";
-import { resolvePublicStoreDetail } from "./store-detail-loader";
+import { type PublicStoreDetailState, recoverPublicStoreDetail, resolvePublicStoreDetail } from "./store-detail-loader";
 
 const API = process.env.EXPO_PUBLIC_DSH_API_URL ?? "";
-type StoreResult = { scope: string; loading: boolean; store?: PublicStore; offers: PublicOffer[]; cursor?: string | undefined; more?: boolean; error?: string | undefined; offersError?: string | undefined };
 type Props = Readonly<{ storeID?: string; fullPage?: boolean }>;
 
 export default function PublicStoreDetail({ storeID, fullPage = false }: Props) {
@@ -17,7 +16,7 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
   const id = storeID ?? (typeof idParam === "string" ? idParam : "");
   const { theme } = useMobileAppearance();
   const [retry, setRetry] = React.useState(0);
-  const [state, setState] = React.useState<StoreResult>({ scope: "", loading: true, offers: [] });
+  const [state, setState] = React.useState<PublicStoreDetailState>({ scope: "", loading: true, offers: [] });
   const revision = React.useRef(0);
   const pending = React.useRef<AbortController | null>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: A retry intentionally reloads this Store from DSH.
@@ -39,7 +38,7 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
       });
     return () => { abort.abort(); revision.current++; };
   }, [id, retry]);
-  const visible: StoreResult = state.scope === id ? state : { scope: id, loading: true, offers: [] };
+  const visible: PublicStoreDetailState = state.scope === id ? state : { scope: id, loading: true, offers: [] };
   const textStyle = { color: theme.color };
   const availability = visible.store ? describeStoreOrderability(visible.store) : undefined;
   const more = async () => {
@@ -55,7 +54,7 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
         setState((v) => v.scope !== id ? v : { ...v, more: false, offers: [...v.offers, ...page.items], cursor: page.nextCursor, offersError: undefined });
     } catch (error) {
       if (!abort.signal.aborted && revision.current === current)
-        setState((v) => v.scope !== id ? v : { ...v, more: false, offersError: error instanceof Error ? error.message : "UNKNOWN" });
+        setState((v) => v.scope !== id ? v : recoverPublicStoreDetail(v, error));
     }
   };
   return (

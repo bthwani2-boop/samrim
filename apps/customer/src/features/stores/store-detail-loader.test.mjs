@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { resolvePublicStoreDetail } from "./store-detail-loader.ts";
+import { recoverPublicStoreDetail, resolvePublicStoreDetail } from "./store-detail-loader.ts";
 
 const store = Object.freeze({
   id: "store-1", name: "متجر", cityId: "sanaa", verticalId: "grocery",
@@ -11,6 +11,34 @@ const offer = Object.freeze({
   priceYer: 1500, available: true,
 });
 const page = Object.freeze({ items: [offer], nextCursor: "opaque-cursor", revision: 3 });
+
+test("a later publication denial removes the cached Store, Offers and pagination cursor", () => {
+  const cached = { scope: store.id, loading: false, store, offers: [offer], cursor: "page-2", more: true };
+  const recovered = recoverPublicStoreDetail(cached, new Error("NOT_FOUND"));
+  assert.deepEqual(recovered, { scope: store.id, loading: false, offers: [], error: "NOT_FOUND" });
+  assert.equal(cached.store, store, "recovery must not mutate a previous render snapshot");
+});
+
+test("stale or invalid pagination discards old prices and restarts at the first page", () => {
+  for (const code of ["STALE_CURSOR", "INVALID_CURSOR"]) {
+    const recovered = recoverPublicStoreDetail({ scope: store.id, loading: false, store, offers: [offer], cursor: "page-2", more: true }, new Error(code));
+    assert.equal(recovered.store, store);
+    assert.deepEqual(recovered.offers, []);
+    assert.equal(recovered.cursor, undefined);
+    assert.equal(recovered.more, false);
+    assert.equal(recovered.offersError, code);
+  }
+});
+
+test("a transient pagination outage retains verified Store and Offers for retrying the same cursor", () => {
+  const offers = [offer];
+  const recovered = recoverPublicStoreDetail({ scope: store.id, loading: false, store, offers, cursor: "page-2", more: true }, new Error("OWNER_NETWORK_UNAVAILABLE"));
+  assert.equal(recovered.store, store);
+  assert.equal(recovered.offers, offers);
+  assert.equal(recovered.cursor, "page-2");
+  assert.equal(recovered.more, false);
+  assert.equal(recovered.offersError, "OWNER_NETWORK_UNAVAILABLE");
+});
 
 test("a verified Store and its Offers are both shown when owner reads succeed", async () => {
   const result = await resolvePublicStoreDetail(Promise.resolve(store), Promise.resolve(page));
@@ -55,6 +83,27 @@ test("a hidden Store is rejected immediately even if its Offers request never re
       ]),
       (error) => error === denied,
     );
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
+test("publication revoked between Store and Offers reads invalidates the previously verified Store", async () => {
+  const denied = new Error("NOT_FOUND");
+  await assert.rejects(
+    resolvePublicStoreDetail(Promise.resolve(store), Promise.reject(denied)),
+    error => error === denied,
+  );
+});
+
+test("an Offers publication denial fails immediately even when the Store read never responds", async () => {
+  const denied = new Error("NOT_FOUND");
+  let timer;
+  try {
+    await assert.rejects(Promise.race([
+      resolvePublicStoreDetail(new Promise(() => {}), Promise.reject(denied)),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("waited for Store")), 100); }),
+    ]), error => error === denied);
   } finally {
     clearTimeout(timer);
   }
