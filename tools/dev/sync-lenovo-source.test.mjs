@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { allowed, appendLogFile, failureDetail, hash, isUnchanged, needsReconcile, parseRemoteHashes, persistAt, remoteConflict } from "./sync-lenovo-source.mjs";
+import { allowed, appendLogFile, assertCompatibleBranchTransition, branchTransitionPins, failureDetail, hash, isUnchanged, needsReconcile, parseRemoteHashes, persistAt, remoteConflict } from "./sync-lenovo-source.mjs";
 
 test("manifest persistence replaces atomically and never deletes another pending file", () => {
   const folder = mkdtempSync(path.join(tmpdir(), "bthwani-source-manifest-"));
@@ -180,4 +180,43 @@ test("incremental remote audits check inspected paths, not uninspected files", (
   assert.equal(needsReconcile(state, current, "sha-x", new Map([[a, "MISSING"]])), true);
   assert.equal(needsReconcile(state, current, "sha-x", new Map([["tools/dev/old.txt", "MISSING"]])), false);
   assert.equal(needsReconcile(state, current, "sha-x", new Map([["tools/dev/old.txt", "C".repeat(64)]])), true);
+});
+
+test("source branch transitions remain automatic only with identical pinned dependencies", () => {
+  assert.deepEqual(branchTransitionPins, [
+    ".node-version", "pnpm-lock.yaml", "package.json",
+    "apps/customer/package.json", "apps/merchant/package.json",
+    "apps/captain/package.json", "apps/control-panel/package.json",
+    "services/identity/package.json", "services/dsh/package.json", "services/wlt/package.json",
+  ]);
+  const current = new Map(branchTransitionPins.map((rel, i) => [
+    rel, String(i % 10).repeat(64),
+  ]));
+  current.set("apps/customer/app/health.tsx", "B".repeat(64));
+  const before = { branch: "codex/before", head: "sha-1", files: Object.fromEntries(current) };
+  assert.equal(assertCompatibleBranchTransition(before, current, "codex/after"), true);
+  assert.equal(assertCompatibleBranchTransition(before, current, "codex/before"), false);
+  assert.equal(assertCompatibleBranchTransition(null, current, "codex/after"), false);
+  for (const rel of branchTransitionPins) {
+    const changed = new Map(current);
+    changed.set(rel, "A".repeat(64));
+    assert.throws(
+      () => assertCompatibleBranchTransition(before, changed, "codex/after"),
+      /BRANCH_DEPENDENCIES_CHANGED_REQUIRES_INSTALL/,
+      rel,
+    );
+  }
+  assert.throws(() => assertCompatibleBranchTransition(before, current, ""), /SOURCE_SYNC_BRANCH_UNAUTHORIZED/);
+  assert.throws(() => assertCompatibleBranchTransition(before, current, "archive/legacy"), /SOURCE_SYNC_BRANCH_UNAUTHORIZED/);
+});
+
+test("compatible new branch at the same HEAD still must reconcile manifest branch", () => {
+  const state = {
+    branch: "codex/before",
+    head: "sha-1",
+    files: { "apps/customer/app/health.tsx": "A".repeat(64) },
+  };
+  const files = new Map(Object.entries(state.files));
+  assert.equal(needsReconcile(state, files, "sha-1", new Map(files), "codex/before"), false);
+  assert.equal(needsReconcile(state, files, "sha-1", new Map(files), "codex/after"), true);
 });

@@ -175,7 +175,8 @@ function remoteHashes(paths) {
     }
   }
 }
-function needsReconcile(state, current, currentHead, remoteFiles) {
+function needsReconcile(state, current, currentHead, remoteFiles, currentBranch = state?.branch) {
+  if (state && state.branch !== currentBranch) return true;
   if (!isUnchanged(state, current, currentHead)) return true;
   return [...remoteFiles].some(([rel, digest]) =>
     current.has(rel) ? current.get(rel) !== digest : digest !== "MISSING");
@@ -238,7 +239,7 @@ function readState() {
   }
   const state = JSON.parse(rawState);
   if (state.version !== 1 || state.host !== targetIdentity ||
-      state.target !== targetRoot || state.branch !== branch() ||
+      state.target !== targetRoot || typeof state.branch !== "string" || !state.branch ||
       !state.files || typeof state.files !== "object" || Array.isArray(state.files)) {
     throw new Error("SOURCE_SYNC_STATE_INVALID");
   }
@@ -400,7 +401,28 @@ function baseline(current, observed) {
   return { version: 1, branch: branch(), host: targetIdentity, target: targetRoot, head: head(), files };
 }
 const remoteAuditMs = 30_000;
+const branchTransitionPins = Object.freeze([
+  ".node-version", "pnpm-lock.yaml", "package.json",
+  "apps/customer/package.json", "apps/merchant/package.json",
+  "apps/captain/package.json", "apps/control-panel/package.json",
+  "services/identity/package.json", "services/dsh/package.json", "services/wlt/package.json",
+]);
 let nextRemoteAudit = 0;
+function assertCompatibleBranchTransition(previous, current, currentBranch) {
+  if (!currentBranch || currentBranch.startsWith("archive/")) {
+    throw new Error("SOURCE_SYNC_BRANCH_UNAUTHORIZED");
+  }
+  if (!previous || previous.branch === currentBranch) return false;
+  // A branch switch can alter entire dependency graphs without modifying the
+  // pinned runtime node_modules. Fail closed rather than silently using stale
+  // installed packages; this guard never installs, resets or changes Git refs.
+  for (const rel of branchTransitionPins) {
+    if (previous.files[rel] !== current.get(rel)) {
+      throw new Error("BRANCH_DEPENDENCIES_CHANGED_REQUIRES_INSTALL " + rel);
+    }
+  }
+  return true;
+}
 function isUnchanged(state, current, currentHead) {
   return Boolean(
     state &&
@@ -410,10 +432,12 @@ function isUnchanged(state, current, currentHead) {
   );
 }
 function reconcile() {
+  const currentBranch = branch();
+  const currentHead = head();
   const current = inventory();
   const previous = readState();
-  const currentHead = head();
-  const sourceChanged = !isUnchanged(previous, current, currentHead);
+  const branchTransition = assertCompatibleBranchTransition(previous, current, currentBranch);
+  const sourceChanged = branchTransition || !isUnchanged(previous, current, currentHead);
   const auditDue = !previous || (!sourceChanged && Date.now() >= nextRemoteAudit);
   if (!sourceChanged && !auditDue) return;
   remoteReady();
@@ -427,7 +451,7 @@ function reconcile() {
     [...new Set([...current.keys(), ...removedPaths])] :
     [...new Set([...changedPaths, ...removedPaths, ...critical])];
   const observed = remoteHashes(inspected);
-  if (!needsReconcile(previous, current, currentHead, observed)) {
+  if (!needsReconcile(previous, current, currentHead, observed, currentBranch)) {
     nextRemoteAudit = Date.now() + remoteAuditMs;
     return;
   }
@@ -453,7 +477,14 @@ function reconcile() {
     changed++;
     logger("MANAGED_DELETE " + rel);
   }
-  if (changed || state.head !== currentHead) persist({ ...state, files, head: currentHead });
+  // A checkout can change while the SCP/SSH operations are in progress.
+  // Never certify a mixed branch revision in the persisted manifest.
+  if (branch() !== currentBranch || head() !== currentHead) {
+    throw new Error("SOURCE_REVISION_CHANGED_DURING_SYNC");
+  }
+  if (changed || state.head !== currentHead || state.branch !== currentBranch) {
+    persist({ ...state, branch: currentBranch, files, head: currentHead });
+  }
   nextRemoteAudit = Date.now() + remoteAuditMs;
   if (changed) logger("SYNC_PASS files=" + changed + " head=" + currentHead.slice(0, 12));
 }
@@ -469,11 +500,7 @@ function main() {
     throw new Error("USAGE --once | --watch | --check-path <path>");
   }
   if (!fs.existsSync(path.join(root, "AGENTS.md"))) throw new Error("CANONICAL_SOURCE_MISSING");
-  const initialBranch = branch();
-  const cycle = () => {
-    if (branch() !== initialBranch) throw new Error("BRANCH_CHANGED_SYNC_STOP");
-    reconcile();
-  };
+  const cycle = () => reconcile();
   if (process.argv.includes("--watch")) {
     let active = false;
     let lastError = "";
@@ -498,4 +525,4 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   try { main(); } catch (e) { console.error("SOURCE_SYNC_ERROR " + e.message); process.exitCode = 1; }
 }
 
-export { allowed, appendLogFile, failureDetail, hash, isUnchanged, needsReconcile, parseRemoteHashes, persistAt, publish, remoteConflict, remoteHashes };
+export { allowed, appendLogFile, assertCompatibleBranchTransition, branchTransitionPins, failureDetail, hash, isUnchanged, needsReconcile, parseRemoteHashes, persistAt, publish, remoteConflict, remoteHashes };
