@@ -22,6 +22,8 @@ New-Item -ItemType Directory -Path $logs -Force | Out-Null
 $env:PATH="$nodeDir;$env:PATH"
 $env:NODE_OPTIONS='--dns-result-order=ipv4first'
 $env:EXPO_NO_TELEMETRY='1'
+# Preserve Metro's incremental cache across routine starts. Use an explicitly
+# requested one-off cache reset only when diagnosing a verified stale bundle.
 # Secrets root must be passed explicitly by the authorized launcher/environment.
 # Do not implicitly select the deleted worktree or donor keys.
 $dir=Join-Path $source ('apps\'+$App)
@@ -33,7 +35,7 @@ $err=Join-Path $logs ('refoundation-'+$App+'.err.log')
 switch($App){
   'customer' {
     $cli=Join-Path $dir 'node_modules\expo\bin\cli'
-    $args=@('start','--web','--dev-client','--localhost','--port','28111','--clear')
+    $args=@('start','--web','--dev-client','--localhost','--port','28111')
   }
   'merchant' {
     if (-not $env:MERCHANT_SYNTHETIC_IDENTITY_ORIGIN) {
@@ -49,7 +51,7 @@ switch($App){
       }
     }
     $cli=Join-Path $dir 'node_modules\expo\bin\cli'
-    $args=@('start','--web','--dev-client','--localhost','--port','28112','--clear')
+    $args=@('start','--web','--dev-client','--localhost','--port','28112')
   }
   'captain' {
     $cli=Join-Path $dir 'node_modules\expo\bin\cli'
@@ -61,6 +63,30 @@ switch($App){
   }
 }
 if(!(Test-Path -LiteralPath $cli)){throw ('REFOUNDATION_APP_CLI_MISSING '+$cli)}
+# Task Scheduler can stop the PowerShell launcher while leaving its Expo
+# child alive. Reclaim ONLY a verified orphan from this exact application;
+# never kill an unrelated listener or another active launcher.
+if ($App -in @('customer','merchant')) {
+  $port = if ($App -eq 'customer') { 28111 } else { 28112 }
+  $listenerPids = @(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue |
+    Select-Object -ExpandProperty OwningProcess -Unique)
+  foreach ($listenerPid in $listenerPids) {
+    $old = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $listenerPid)
+    if (-not $old -or $old.Name -ne 'node.exe' -or
+        $old.ExecutablePath -ine $node -or
+        -not $old.CommandLine -or
+        -not $old.CommandLine.Contains($cli)) {
+      throw ('REFOUNDATION_PORT_OWNED_BY_OTHER_PROCESS app=' + $App + ' port=' + $port)
+    }
+    $parent = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $old.ParentProcessId)
+    if ($parent) {
+      throw ('REFOUNDATION_APP_ALREADY_RUNNING app=' + $App + ' port=' + $port)
+    }
+    Stop-Process -Id $old.ProcessId -Force -ErrorAction Stop
+    "RECLAIMED_ORPHAN app=$App pid=$($old.ProcessId) port=$port" |
+      Out-File -FilePath $err -Append -Encoding utf8
+  }
+}
 # PowerShell 5.1 wraps native stderr warnings as NativeCommandError when
 # ErrorActionPreference=Stop. Keep stderr logged, but judge failure by exit code.
 $ErrorActionPreference='Continue'
