@@ -7,9 +7,13 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 ## Read this first
 
 - **Current, temporary execution plan:** [REFOUNDATION-PLAN.md](REFOUNDATION-PLAN.md). It names the active work, scope, unresolved dependencies, proof gates and final delivery checks. Dated SHAs and test statuses are snapshots, not perpetual evidence.
-- **First managed-identity journey:** [MANAGED_PARTICIPANT_ADMISSION](journeys/MANAGED_PARTICIPANT_ADMISSION.md) tracks the 34 admission/authentication acceptance checks, Original Root Owner continuity, current missing UI work and evidence ledger. It is not a second governance owner.
-- **Preserved historical execution narrative:** [REFOUNDATION-EXECUTION-HISTORY-20261118.md](reference/REFOUNDATION-EXECUTION-HISTORY-20261118.md). It records old dates, source decisions and prior acceptance attempts without describing the current state.
+- **Managed-identity integration acceptance:** [MANAGED_PARTICIPANT_ADMISSION](journeys/MANAGED_PARTICIPANT_ADMISSION.md) retains 34 dated acceptance checks, Root continuity constraints and observed gaps. Its recorded SHA and status are historical snapshots, not live current-state claims or a mandatory first item in a serial queue.
+- **Preserved historical execution and decision evidence:** [REFOUNDATION-EXECUTION-HISTORY-20261118.md](reference/REFOUNDATION-EXECUTION-HISTORY-20261118.md). It retains dated history plus the migrated 112-ID dispositions and financial/security/migration decision ledgers. This is reference evidence, not current implementation or Product authority.
 - **Historical/research index:** [reference/README.md](reference/README.md). It preserves comparisons, donor source inventories, reports, approved-source provenance and citations, not a second Product strategy.
+
+## Delivery navigation — capabilities first, journeys for integration
+
+Implement ready capability increments using the single owner and delivery rules in [engineering governance](../governance/engineering.md) and [Product admission](../governance/product.md). Use [named journeys](../governance/journeys.md) to verify cross-owner end-to-end outcomes, not as a serial task backlog. The archived branch is read-only source evidence; current code, contracts, database owners and tests determine implementation state. Keep capability evidence in existing owner tests/specs and active scenario evidence in `docs/journeys/` only when needed; no second policy or status registry.
 
 ## Authority: do not substitute one document for another
 

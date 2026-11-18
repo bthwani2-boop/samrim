@@ -63,7 +63,7 @@ const contractPathGroups={
  ]
 };
 const required=[
- 'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',...domainFiles,'docs/REFOUNDATION-PLAN.md','docs/reference/README.md','docs/reference/HISTORICAL-SOURCE-INVENTORY.md','docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md','docs/reference/DONOR-GOVERNANCE-SECTION-CENSUS.md',
+ 'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',...domainFiles,'docs/REFOUNDATION-PLAN.md','docs/reference/REFOUNDATION-EXECUTION-HISTORY-20261118.md','docs/reference/README.md','docs/reference/HISTORICAL-SOURCE-INVENTORY.md','docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md','docs/reference/DONOR-GOVERNANCE-SECTION-CENSUS.md',
  '.specify/init-options.json','.specify/integration.json','.specify/integrations/speckit.manifest.json','.specify/memory/constitution.md',
  '.github/workflows/ci.yml','.github/workflows/sonar-quality.yml','sonar-project.properties','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs',
  'tools/governance/review-examples.test.mjs','tools/mobile/verify-expo-web-http.mjs',
@@ -598,7 +598,7 @@ for(const [asset,expectedHash] of Object.entries(manifest.files)){
 
 const rabbit=contents['.coderabbit.yaml'];
 if(!/^inheritance: true$/m.test(rabbit)||!/^\s*auto_review:\s*$/m.test(rabbit)||!/\s*enabled: true\s*$/m.test(rabbit))fail('CodeRabbit local review configuration must not be silently disabled');
-const gov=contents['governance/README.md'],plan=contents['docs/REFOUNDATION-PLAN.md'];
+const gov=contents['governance/README.md'],plan=contents['docs/REFOUNDATION-PLAN.md'],historicalPlan=contents['docs/reference/REFOUNDATION-EXECUTION-HISTORY-20261118.md'];
 if(!/^BUSINESS_POLICY_AUTHORITY: NONE$/m.test(contents['docs/reference/README.md']))fail('external research index cannot become policy authority');
 if(!/^BUSINESS_POLICY_AUTHORITY: NONE$/m.test(contents['docs/reference/HISTORICAL-SOURCE-INVENTORY.md']) || !/^VERIFICATION: URL extraction only; live link, license and content checks NOT_RUN$/m.test(contents['docs/reference/HISTORICAL-SOURCE-INVENTORY.md']))fail('historical link extraction cannot claim live verification or policy authority');
 
@@ -615,7 +615,7 @@ if(!/^STATUS: ACTIVE_FOR_PROGRESSIVE_DEVELOPMENT$/m.test(agent))fail('agent must
 if(!/^STATUS: ACTIVE_FOR_PROGRESSIVE_DEVELOPMENT$/m.test(repo))fail('placement law must declare progressive development scope');
 if(!/^GOVERNANCE_CUTOVER: NOT_READY$/m.test(gov))fail('do not mark governance ready without verified donor reconciliation, internal risk assurance and stage checks');
 if(!gov.includes('## Cutover readiness is a policy decision, not a claim of implemented software'))fail('governance policy readiness must stay separate from later runtime implementation tests');
-if(!/^BUSINESS_DECISION_AUTHORITY: JOURNEY_SCOPED_CANONICAL_OWNERS$/m.test(gov))fail('incremental decisions must remain with the canonical governance owner');
+if(!/^BUSINESS_DECISION_AUTHORITY: CANONICAL_DOMAIN_OWNERS$/m.test(gov))fail('incremental decisions must remain with the canonical governance owner');
 // Development includes newly proposed capabilities. Production remains separately gated.
 for(const [filename,source] of [['AGENTS.md',agent],['REPOSITORY-STRUCTURE.md',repo],['governance/README.md',gov],['governance/engineering.md',contents['governance/engineering.md']]]){
  if(!/^ALL_CAPABILITIES_DEVELOPMENT: ENABLED$/m.test(source)||
@@ -625,23 +625,22 @@ for(const [filename,source] of [['AGENTS.md',agent],['REPOSITORY-STRUCTURE.md',r
   fail('production activation must remain blocked: '+filename);
 }
 
-if(!/^HUMAN_TARGET_POLICY_DECISION: APPROVED_2026-11-13$/m.test(gov) || !plan.includes('## 2026-11-13 — Explicit human policy decision and no-external-review process'))
+if(!/^HUMAN_TARGET_POLICY_DECISION: APPROVED_2026-11-13$/m.test(gov) || !historicalPlan.includes('## 2026-11-13 — Explicit human policy decision and no-external-review process'))
  fail('explicit human-approved target policy and internal assurance record missing');
 if(!/^STATUS: IN_PROGRESS_FOUNDATION$/m.test(plan))fail('temporary plan must remain in progress');
 if(!agent.includes('governance/README.md')||!agent.includes('REPOSITORY-STRUCTURE.md')||!agent.includes('NOT_READY'))fail('agent must know the unfinished governance target');
 if(!agent.includes('Policy-first')&&!agent.includes('Policy-first for legitimate'))fail('agent must require owner-backed configurable business rules');
 if(!repo.includes('docs/governance/')||!repo.includes('governance/'))fail('placement must explain clean policy root');
-if(!plan.includes('D01')||!plan.includes('Phase 2')||!plan.includes('NOT_RUN'))fail('plan must expose reconciliation and unexecuted scope');
+if(!plan.includes('reference/REFOUNDATION-EXECUTION-HISTORY-20261118.md')||!historicalPlan.includes('D01')||!historicalPlan.includes('Phase 2')||!historicalPlan.includes('NOT_RUN'))fail('current plan must link preserved historical reconciliation and unexecuted scope');
 
-// This crosswalk is a temporary documentary review ledger in the one execution plan,
-// NOT a second Product-admission source or confirmation of implemented features.
-// Validate the actual documentary records, not a dated Markdown heading.
-// The temporary plan can be reorganized without changing the 112 archived decisions.
-const parsedRows=[...plan.matchAll(/^\| (R\d{3}) \| `([A-Z_]+)` \| `([^\r\n|]+)` \| ([^\r\n|]{5,}) \|$/gm)];
+// Historical crosswalk is checked in non-authoritative dated execution history,
+// not kept in the active plan or treated as another Product-policy owner.
+// Validate documentary rows, not the original Markdown heading.
+const parsedRows=[...historicalPlan.matchAll(/^\| (R\d{3}) \| `([A-Z_]+)` \| `([^\r\n|]+)` \| ([^\r\n|]{5,}) \|$/gm)];
 const approvedLabels=new Set(['DRAFT_ALIGNED_OWNER','POLICY_REFRAMED','CONDITIONAL_CANDIDATE','HISTORICAL_ONLY','MIXED_REFRAME_RETIRE','INDEPENDENT_RISK_REVIEW']);
 const crosswalkIDs=parsedRows.map(x=>x[1]);
 if(parsedRows.length!==112||new Set(crosswalkIDs).size!==112||controlIDs.some(x=>!crosswalkIDs.includes(x)))
- fail('temporary plan must classify all 112 historical source IDs exactly once');
+ fail('archived evidence must classify all 112 historical source IDs exactly once');
 for(const row of parsedRows){
  if(!approvedLabels.has(row[2]))fail('unrecognized documentary classification for '+row[1]);
  if(/PASS|PROVEN|IMPLEMENTED/.test(row[2]))fail('historical document disposition must not claim implementation '+row[1]);
@@ -762,20 +761,20 @@ for (const anchor of [
 
 
 // Latest human target-adoption decisions are separate from actual external signoff and runtime proof.
-const newestRiskStart=plan.indexOf('### 2026-11-13 — Internal policy-risk adjudication on the seven approved target decisions');
-const finalDecisionStart=plan.indexOf('### 2026-11-13 — Final Product/architecture disposition for prior D01–D12 decision questions');
-const phase0Start=plan.indexOf('## Phase 0 — Safe baseline');
+const newestRiskStart=historicalPlan.indexOf('### 2026-11-13 — Internal policy-risk adjudication on the seven approved target decisions');
+const finalDecisionStart=historicalPlan.indexOf('### 2026-11-13 — Final Product/architecture disposition for prior D01–D12 decision questions');
+const phase0Start=historicalPlan.indexOf('## Phase 0 — Safe baseline');
 if(newestRiskStart<0||finalDecisionStart<newestRiskStart||phase0Start<finalDecisionStart) fail('latest human risk decision chronology missing');
-const newRisk=plan.slice(newestRiskStart,finalDecisionStart);
+const newRisk=historicalPlan.slice(newestRiskStart,finalDecisionStart);
 for(const gate of ['FIN-01','FIN-02','FIN-03','SEC-01','SEC-02','MIG-01','LEGAL-01']) {
  if([...newRisk.matchAll(new RegExp('^\\| '+gate+' \\|','gm'))].length!==1) fail('seven approved human policy risk cases missing or duplicated: '+gate);
 }
-const finalChoices=plan.slice(finalDecisionStart,phase0Start);
+const finalChoices=historicalPlan.slice(finalDecisionStart,phase0Start);
 for(let i=1;i<=12;i++) {
  const id='D'+String(i).padStart(2,'0');
  if([...finalChoices.matchAll(new RegExp('^\\| '+id+' \\| APPROVED:','gm'))].length!==1) fail('old strategy decision not resolved: '+id);
 }
-if(!plan.includes('CodeQL Go cannot process a deliberately Go-empty tree') || !plan.includes('CodeQL\'s **Go** analysis is **FAIL**'))
+if(!historicalPlan.includes('CodeQL Go cannot process a deliberately Go-empty tree') || !historicalPlan.includes('CodeQL\'s **Go** analysis is **FAIL**'))
  fail('stage-specific CodeQL source-sparse scan failure must not be mislabeled success');
 const census=contents['docs/reference/DONOR-GOVERNANCE-SECTION-CENSUS.md'];
 const dispositionStart=census.indexOf('## 2026-11-14 — Source H2-group dispositions');
@@ -950,7 +949,7 @@ for(const preservation of ['182 DSH + 30 Identity + 63 WLT = 275','go:embed migr
  if(!engineering.includes(preservation) && !contents['governance/architecture.md'].includes(preservation))
  fail('migration/configurable policy preservation constraint missing: '+preservation);
 }
-const concordance=plan.slice(plan.indexOf('## 2026-11-12 — Design refoundation plan: 24-section decision concordance'));
+const concordance=historicalPlan.slice(historicalPlan.indexOf('## 2026-11-12 — Design refoundation plan: 24-section decision concordance'));
 const sourceSections=[...concordance.matchAll(/^\| (0[1-9]|1[0-9]|2[0-4]) [^|\r\n]+ \| (ADOPT_BOUNDED|REFRAME_APPROVED|REFRAME_APPROVED_WITH_CAPABILITY_GATE|SUPERSEDE_INTERNAL_NAME|IMPLEMENTATION_DEFERRED|PARTIAL_DECISION|ADOPT_APPROVED|ADOPT_WITH_INDEPENDENT_RISK_GATE|ADOPT_APPROVED_INTERNAL_NAME) \|/gm)].map(m=>m[1]);
 if(sourceSections.length!==24||new Set(sourceSections).size!==24 ||
  Array.from({length:24},(_,i)=>String(i+1).padStart(2,'0')).some(x=>!sourceSections.includes(x)))
@@ -959,13 +958,13 @@ if(!concordance.includes('REVIEW_BLOCKED')||!concordance.includes('GOVERNANCE_CU
  fail('design-plan concordance cannot claim unreviewed cutover success');
 
 const riskMarker='## 2026-11-12 — Critical-risk review evidence matrix and executable illustrative checks';
-const riskStart=plan.indexOf(riskMarker);
+const riskStart=historicalPlan.indexOf(riskMarker);
 if(riskStart<0)fail('independent risk review evidence packet missing');
-const reviewStart=plan.indexOf('### Independent review sign-off register — no invented approvals',riskStart);
+const reviewStart=historicalPlan.indexOf('### Independent review sign-off register — no invented approvals',riskStart);
 const donorMarker='### Two additional historical execution/audit sources — explicit section-level decision reconciliation';
-const donorStart=plan.indexOf(donorMarker,riskStart);
+const donorStart=historicalPlan.indexOf(donorMarker,riskStart);
 if(reviewStart<0||donorStart<reviewStart)fail('review packet/sign-off/source order corrupted');
-const reviewText=plan.slice(reviewStart,donorStart);
+const reviewText=historicalPlan.slice(reviewStart,donorStart);
 const gates=['FIN-01','FIN-02','FIN-03','SEC-01','SEC-02','MIG-01','LEGAL-01'];
 const rows=[...reviewText.matchAll(/^\| (FIN-0[123]|SEC-0[12]|MIG-01|LEGAL-01) \| ([^|\r\n]+) \| ([^|\r\n]+) \| ([^|\r\n]+) \| ([^|\r\n]+) \|$/gm)];
 if(rows.length!==gates.length || new Set(rows.map(m=>m[1])).size!==gates.length ||
@@ -986,7 +985,7 @@ for(const row of rows){
    fail('do not fabricate independent reviewer approval in candidate risk packet: '+gate);
  }else fail('unknown independent reviewer status: '+gate);
 }
-const riskBody=plan.slice(riskStart,reviewStart);
+const riskBody=historicalPlan.slice(riskStart,reviewStart);
 for(const expected of ['FIN-01-WALLET','FIN-01-COD','FIN-01-MIXED','FIN-01-CANCEL',
  'FIN-01-UNKNOWN','FIN-02-AGREEMENT','FIN-02-REMIT','FIN-02-BENEFICIARY',
  'FIN-03-CASHIN','FIN-03-MARKUP','SEC-01-ROOT','SEC-01-SESSION',
@@ -996,7 +995,7 @@ for(const expected of ['FIN-01-WALLET','FIN-01-COD','FIN-01-MIXED','FIN-01-CANCE
  const count=[...riskBody.matchAll(new RegExp('^\\| '+expected+' \\|','gm'))].length;
  if(count!==1)fail('risk review scenario missing/duplicated: '+expected);
 }
-const donorText=plan.slice(donorStart);
+const donorText=historicalPlan.slice(donorStart);
 const donorA=donorText.slice(donorText.indexOf('**Donor A:**'),donorText.indexOf('**Donor B:**'));
 const donorB=donorText.slice(donorText.indexOf('**Donor B:**'));
 const donorAIDs=[...donorA.matchAll(/^\| (0[1-9]|1[0-5]) \|/gm)].map(m=>m[1]);
@@ -1103,5 +1102,5 @@ if(/continue-on-error:\s*true|\$\{\{(?:(?!\}\})[\s\S])*\bsecrets\./.test(ci))fai
 
 console.log('FOUNDATION_STRUCTURE_PASS domain_owners='+domainFiles.length+' capability_ids='+seen.size+' one_census=true service_scaffold_only='+(developmentSourceFiles===0)+' openapi_zero_operations='+(progressiveOpenApiFiles===0)+' openapi_reserved_groups='+openapiReservedGroups+' progressive_source_files='+developmentSourceFiles);
 if(developmentSourceFiles>0)console.log('PROGRESSIVE_SOURCE_PRESENT: scope/ownership structure checked; complete OpenAPI parsing, Go/SQL integration, owner-backed authorization and real journey acceptance NOT_RUN by this structural guard');
-console.log('PROGRESSIVE_GOVERNANCE_READY: Close as You Go development and independently proven journey closure are authorized without whole-platform governance cutover; owner-backed acceptance is still required');
+console.log('PROGRESSIVE_GOVERNANCE_READY: capability-first development and independently proven journey integration closure are authorized without whole-platform governance cutover; owner-backed acceptance is still required');
 console.log('GOVERNANCE_CUTOVER_NOT_READY: only whole-platform historical reconciliation remains pending; this does not block progressive development or individually accepted journey closure; production gates are separate');

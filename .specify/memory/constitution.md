@@ -14,7 +14,7 @@ Spec Kit is the workflow/scaffolding tool for bounded specifications. **This fil
 The root `AGENTS.md` alone defines scope, human authorization, Git permissions, single-writer concurrency, protected data, testing, review and evidence. A Spec Kit command never authorizes Branch, Worktree, Push, PR, Merge, deployment, destructive SQL, payment, or Codex CLI.
 
 ### 2. Placement and ownership
-The root `REPOSITORY-STRUCTURE.md` alone owns placement. Specs, plans and tasks are change-scoped working artifacts; never a second source for Store, Order, Wallet, owner-written contracts, policy values or deployment state.
+The root `REPOSITORY-STRUCTURE.md` alone owns placement. Specs, plans and tasks are change-scoped working artifacts; never a second source for Store, Order, Wallet, owner-written contracts, policy values or deployment state. Capability increments are implementation units; named journeys supply cross-owner end-to-end proof, not a mandatory serial implementation backlog.
 
 ### 3. Durable policy and single-engine design
 The single intended policy root is `governance/README.md` and the **domain owner file it names**. Current cutover is `NOT_READY` until historical decisions and mandated critical-risk reviews complete. Do not treat a draft domain decision as approved or a mock/foundation CI pass as implementation. No `docs/governance/` folder is permitted in this candidate. A single DSH Store/Order engine serves both Store relations. Identity owns actors/permissions, DSH owns Stores/catalog/orders/fulfillment and WLT owns money/ledger/agreements/settlement.

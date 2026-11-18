@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const checker=path.join(root,'tools/governance/verify-foundation.mjs');
@@ -31,9 +32,14 @@ const historicalReferenceFiles=fs.readdirSync(path.join(root,'docs/reference'),{
 const governanceMarkdownFiles=fs.readdirSync(path.join(root,'governance'),{withFileTypes:true})
  .filter(entry=>entry.isFile()&&entry.name.endsWith('.md'))
  .map(entry=>'governance/'+entry.name);
+// Current plans may link to active acceptance dossiers; fixtures must include
+// those referenced evidence files without inventing an alternate journey list.
+const journeyEvidenceFiles=fs.readdirSync(path.join(root,'docs/journeys'),{recursive:true})
+ .filter(file=>file.endsWith('.md'))
+ .map(file=>'docs/journeys/'+file.replaceAll('\\','/'));
 const files=[...new Set([
  'AGENTS.md','REPOSITORY-STRUCTURE.md','.coderabbit.yaml','governance/README.md',
- ...governanceMarkdownFiles,
+ ...governanceMarkdownFiles,...journeyEvidenceFiles,
  ...owners.map(owner=>'governance/'+owner+'.md'),'docs/REFOUNDATION-PLAN.md','docs/reference/README.md',...historicalReferenceFiles,'docs/reference/HISTORICAL-SOURCE-INVENTORY.md','docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md',
  'docs/reference/environment-config-inventory.md','docs/reference/DONOR-GOVERNANCE-SECTION-CENSUS.md',
  '.github/workflows/ci.yml','.github/workflows/sonar-quality.yml','sonar-project.properties','tools/governance/verify-foundation.mjs','tools/governance/verify-foundation.test.mjs',
@@ -499,7 +505,7 @@ test('rejects a required governance symlink without opening its target on Unix C
 rejects('rejects absent AGENTS law',{del:['AGENTS.md']},/required AGENTS\.md/);
 rejects('rejects premature READY',{edit:{'governance/README.md':s=>s.replace('GOVERNANCE_CUTOVER: NOT_READY','GOVERNANCE_CUTOVER: READY')}},/do not mark governance ready/);
 rejects('rejects removal of explicit human-approved target policy',{edit:{'governance/README.md':s=>s.replace('HUMAN_TARGET_POLICY_DECISION: APPROVED_2026-11-13','HUMAN_TARGET_POLICY_DECISION: UNDECIDED')}},/explicit human-approved target policy and internal assurance record missing/);
-rejects('rejects removal of later human no-external process decision',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace('## 2026-11-13 — Explicit human policy decision and no-external-review process','## No user approved policy decision')}},/explicit human-approved target policy and internal assurance record missing/);
+rejects('rejects removal of later human no-external process decision',{edit:{'docs/reference/REFOUNDATION-EXECUTION-HISTORY-20261118.md':s=>s.replace('## 2026-11-13 — Explicit human policy decision and no-external-review process','## No user approved policy decision')}},/explicit human-approved target policy and internal assurance record missing/);
 rejects('rejects duplicate old policy directory',{add:{'docs/governance/README.md':'legacy duplicate'}},/forbidden duplicate governance/);
 rejects('rejects unnecessary CODEOWNERS',{add:{'.github/CODEOWNERS':'* @fake'}},/unneeded CODEOWNERS/);
 rejects('rejects code-dependent Fast Guard inherited prematurely',{add:{'.github/workflows/fast-guard.yml':'name: Fast Guard'}},/source-dependent inherited CI/);
@@ -603,22 +609,22 @@ rejects('rejects missing R112 archive requirement ID',{edit:{'docs/reference/HIS
 rejects('rejects a duplicated historical source requirement',{edit:{'docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md':s=>s.replace(/^(\| R008 \|[^\n]+)$/m,'$1\n$1')}},/retain 112 unique IDs/);
 rejects('rejects historical Control Panel source as authoritative policy',{edit:{'docs/reference/HISTORICAL-CONTROL-PANEL-REQUIREMENTS.md':s=>s.replace('BUSINESS_POLICY_AUTHORITY: NONE','BUSINESS_POLICY_AUTHORITY: ACTIVE')}},/cannot become Product policy/);
 
-// The dated plan is an execution log, not an immutable heading registry.
-// Preserve the 112 documentary dispositions while allowing its prose to evolve.
+// The reference archive preserves documentary dispositions without forcing
+// historical tables or fixed headings into the active execution plan.
 accepts('accepts renaming a historical plan heading when all 112 ID decisions remain',{
- edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(
+ edit:{'docs/reference/REFOUNDATION-EXECUTION-HISTORY-20261118.md':s=>s.replace(
   '### 2026-11-12 \u2014 Per-ID reconciliation of the 112 historical Control Panel requirements',
   '### Archived Control Panel ID dispositions (dated source)'
  )}
 },/FOUNDATION_STRUCTURE_PASS/);
-rejects('rejects incomplete historical per-ID classification',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^\| R112 \| `DRAFT_ALIGNED_OWNER` \|[^\n]+\n/m,'')}},/classify all 112 historical source IDs exactly once/);
-rejects('rejects duplicated historical per-ID classification',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^(\| R042 \| `DRAFT_ALIGNED_OWNER` \|[^\n]+)$/m,'$1\n$1')}},/classify all 112 historical source IDs exactly once/);
-rejects('rejects fabricated historical code PASS',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^(\| R041 \| `)DRAFT_ALIGNED_OWNER/m,'$1PASS_IMPLEMENTED')}},/unrecognized documentary classification/);
+rejects('rejects incomplete historical per-ID classification',{edit:{'docs/reference/REFOUNDATION-EXECUTION-HISTORY-20261118.md':s=>s.replace(/^\| R112 \| `DRAFT_ALIGNED_OWNER` \|[^\n]+\n/m,'')}},/archived evidence must classify all 112 historical source IDs exactly once/);
+rejects('rejects duplicated historical per-ID classification',{edit:{'docs/reference/REFOUNDATION-EXECUTION-HISTORY-20261118.md':s=>s.replace(/^(\| R042 \| `DRAFT_ALIGNED_OWNER` \|[^\n]+)$/m,'$1\n$1')}},/archived evidence must classify all 112 historical source IDs exactly once/);
+rejects('rejects fabricated historical code PASS',{edit:{'docs/reference/REFOUNDATION-EXECUTION-HISTORY-20261118.md':s=>s.replace(/^(\| R041 \| `)DRAFT_ALIGNED_OWNER/m,'$1PASS_IMPLEMENTED')}},/unrecognized documentary classification/);
 
 rejects('rejects collapsing Store relation and business activity', {edit:{'governance/stores.md':s=>s.replace('`commercialStoreTypeId`','`relationModel`')}},/approved Store relation\/business classification distinction missing/);
 rejects('rejects losing business-type label in Store onboarding', {edit:{'governance/experience.md':s=>s.replace('«نوع النشاط»','«طريقة عمل المتجر»')}},/Merchant onboarding must keep channel\/business-type\/vertical labels distinct/);
-rejects('rejects removing an approved human finance policy risk case',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^\| FIN-02 \| Treat Direct[^\n]+\n/m,'')}},/seven approved human policy risk cases missing or duplicated: FIN-02/);
-rejects('rejects unresolved old strategic choice D12',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^\| D12 \| APPROVED:/m,'| D12 | UNDECIDED:')}},/old strategy decision not resolved: D12/);
+rejects('rejects removing an approved human finance policy risk case',{edit:{'docs/reference/REFOUNDATION-EXECUTION-HISTORY-20261118.md':s=>s.replace(/^\| FIN-02 \| Treat Direct[^\n]+\n/m,'')}},/seven approved human policy risk cases missing or duplicated: FIN-02/);
+rejects('rejects unresolved old strategic choice D12',{edit:{'docs/reference/REFOUNDATION-EXECUTION-HISTORY-20261118.md':s=>s.replace(/^\| D12 \| APPROVED:/m,'| D12 | UNDECIDED:')}},/old strategy decision not resolved: D12/);
 rejects('rejects loss of closed-by-schedule Store meaning',{edit:{'governance/stores.md':s=>s.replace('CLOSED_BY_SCHEDULE','STORE_UNKNOWN')}},/DSH Store orderability distinction missing/);
 rejects('rejects lost historic payout-recipient state',{edit:{'governance/finance.md':s=>s.replaceAll('RECIPIENT_REVIEW_REQUIRED','REVIEW_OPTIONAL')}},/historic WLT money\/recipient preservation missing/);
 rejects('rejects lost protected legacy COD state',{edit:{'governance/finance.md':s=>s.replaceAll('REMITTED','NEW_MONEY')}},/historic WLT money\/recipient preservation missing/);
@@ -687,19 +693,19 @@ rejects('rejects removal of Studio boundary',{edit:{'governance/experience.md':s
 rejects('rejects removal of old Merchant published app identifier',{edit:{'governance/platform.md':s=>s.replace('com.bthwani.partner','com.bthwani.merchant')}},/original external identity\/internal naming missing/);
 rejects('rejects a lost source-of-truth OpenAPI decision',{edit:{'governance/engineering.md':s=>s.replace('## API-01 — OpenAPI organization and semantic-equivalence gate','## Two incompatible OpenAPI generators')}},/approved API\/SQL\/policy governance decision missing/);
 rejects('rejects unprotected historic migrations',{edit:{'governance/engineering.md':s=>s.replace('182 DSH + 30 Identity + 63 WLT = 275','migrations discarded')}},/migration\/configurable policy preservation constraint missing/);
-rejects('rejects missing historical design section 24',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^\| 24 [^\n]+\n/m,'')}},/design source 24-section decision concordance incomplete/);
-rejects('rejects duplicated historical design decision',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^(\| 07 [^\n]+)$/m,'$1\n$1')}},/design source 24-section decision concordance incomplete/);
-rejects('rejects fabricated approval of critical-risk review',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replaceAll('GOVERNANCE_CUTOVER stays NOT_READY','GOVERNANCE_CUTOVER declared READY')}},/design-plan concordance cannot claim unreviewed cutover success/);
+rejects('rejects missing historical design section 24',{edit:{'docs/reference/REFOUNDATION-EXECUTION-HISTORY-20261118.md':s=>s.replace(/^\| 24 [^\n]+\n/m,'')}},/design source 24-section decision concordance incomplete/);
+rejects('rejects duplicated historical design decision',{edit:{'docs/reference/REFOUNDATION-EXECUTION-HISTORY-20261118.md':s=>s.replace(/^(\| 07 [^\n]+)$/m,'$1\n$1')}},/design source 24-section decision concordance incomplete/);
+rejects('rejects fabricated approval of critical-risk review',{edit:{'docs/reference/REFOUNDATION-EXECUTION-HISTORY-20261118.md':s=>s.replaceAll('GOVERNANCE_CUTOVER stays NOT_READY','GOVERNANCE_CUTOVER declared READY')}},/design-plan concordance cannot claim unreviewed cutover success/);
 
 rejects('rejects governance cutover claiming real app/SQL implementation without evidence',{edit:{'governance/README.md':s=>s.replace('## Cutover readiness is a policy decision, not a claim of implemented software','## False software production readiness')}},/governance policy readiness must stay separate from later runtime implementation tests/);
 
 rejects('rejects missing illustrative risk-review arithmetic tests',{del:['tools/governance/review-examples.test.mjs']},/required tools\/governance\/review-examples.test.mjs/);
-rejects('rejects dropped COD financial review case',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^\| FIN-01-COD \|[^\n]*\n/m,'')}},/risk review scenario missing\/duplicated: FIN-01-COD/);
-rejects('rejects duplicated Store cash commission review case',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^(\| FIN-02-REMIT \|[^\n]+)$/m,'$1\n$1')}},/risk review scenario missing\/duplicated: FIN-02-REMIT/);
-rejects('rejects fake financial signoff',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace('| FIN-01 | NOT_ASSIGNED | NOT_RUN | NOT_PROVIDED | REVIEW_BLOCKED |','| FIN-01 | SELF_APPROVED | TODAY | NO_EVIDENCE | PASS |')}},/do not fabricate independent reviewer approval/);
-rejects('rejects lost migration restore review gate',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^\| MIG-01-RESTORE \|[^\n]*\n/m,'')}},/risk review scenario missing\/duplicated: MIG-01-RESTORE/);
-rejects('rejects missing full-system historic source section',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^\| 15 \| `SOURCE_BOUND_PROOF` \|[^\n]*\n/m,'')}},/historic full-system 15-section evidence mapping incomplete/);
-rejects('rejects missing historic design audit followup',{edit:{'docs/REFOUNDATION-PLAN.md':s=>s.replace(/^\| FOLLOWUP \|[^\n]*\n/m,'')}},/historic design-audit 16\+followup mapping incomplete/);
+rejects('rejects dropped COD financial review case',{edit:{'docs/reference/REFOUNDATION-EXECUTION-HISTORY-20261118.md':s=>s.replace(/^\| FIN-01-COD \|[^\n]*\n/m,'')}},/risk review scenario missing\/duplicated: FIN-01-COD/);
+rejects('rejects duplicated Store cash commission review case',{edit:{'docs/reference/REFOUNDATION-EXECUTION-HISTORY-20261118.md':s=>s.replace(/^(\| FIN-02-REMIT \|[^\n]+)$/m,'$1\n$1')}},/risk review scenario missing\/duplicated: FIN-02-REMIT/);
+rejects('rejects fake financial signoff',{edit:{'docs/reference/REFOUNDATION-EXECUTION-HISTORY-20261118.md':s=>s.replace('| FIN-01 | NOT_ASSIGNED | NOT_RUN | NOT_PROVIDED | REVIEW_BLOCKED |','| FIN-01 | SELF_APPROVED | TODAY | NO_EVIDENCE | PASS |')}},/do not fabricate independent reviewer approval/);
+rejects('rejects lost migration restore review gate',{edit:{'docs/reference/REFOUNDATION-EXECUTION-HISTORY-20261118.md':s=>s.replace(/^\| MIG-01-RESTORE \|[^\n]*\n/m,'')}},/risk review scenario missing\/duplicated: MIG-01-RESTORE/);
+rejects('rejects missing full-system historic source section',{edit:{'docs/reference/REFOUNDATION-EXECUTION-HISTORY-20261118.md':s=>s.replace(/^\| 15 \| `SOURCE_BOUND_PROOF` \|[^\n]*\n/m,'')}},/historic full-system 15-section evidence mapping incomplete/);
+rejects('rejects missing historic design audit followup',{edit:{'docs/reference/REFOUNDATION-EXECUTION-HISTORY-20261118.md':s=>s.replace(/^\| FOLLOWUP \|[^\n]*\n/m,'')}},/historic design-audit 16\+followup mapping incomplete/);
 rejects('rejects omitted production Expo Web SSR smoke in CI',
  {edit:{'.github/workflows/ci.yml':s=>s.replace('node tools/mobile/verify-expo-web-http.mjs','echo no real Expo SSR smoke')}},
  /approved Expo Web SSR exports must have production HTTP smoke/);
@@ -739,11 +745,24 @@ rejects('rejects unverified payout instruction release', {edit:{
  'governance/finance.md':s=>s.replace('Before **every not-yet-executed** manual official-wallet transfer','After the transfer')
 }},/source-grounded privacy\/commerce\/finance draft boundary missing: governance\/finance\.md/);
 
+test('current execution plan is lean while archival evidence remains verified',()=>{
+ const active=fs.readFileSync(path.join(root,'docs/REFOUNDATION-PLAN.md'),'utf8');
+ const historical=fs.readFileSync(path.join(root,'docs/reference/REFOUNDATION-EXECUTION-HISTORY-20261118.md'),'utf8');
+ assert.match(active,/DOCUMENT_CLASS: EXECUTION_PLAN/);
+ assert.match(active,/reference\/REFOUNDATION-EXECUTION-HISTORY-20261118\.md/);
+ assert.doesNotMatch(active,/^\| R112 \|/m);
+ const expectedDigest=historical.match(/^ORIGIN_SHA256: ([a-f0-9]{64})$/m)?.[1];
+ const historicStart=historical.indexOf('## Historical program purpose and source-review evidence (NOT CURRENT)');
+ assert.ok(expectedDigest&&historicStart>=0,'historical evidence source and hash must be retained');
+ assert.equal(createHash('sha256').update(historical.slice(historicStart)).digest('hex'),expectedDigest,'relocated historical plan evidence changed');
+ assert.match(historical,/^\| R112 \|/m);
+ assert.match(historical,/FIN-01-COD/);
+});
 test('progressive Product admission is distinct from environment and production gates', () => {
   const placement = fs.readFileSync(path.join(root, 'REPOSITORY-STRUCTURE.md'), 'utf8');
   const governance = fs.readFileSync(path.join(root, 'governance/README.md'), 'utf8');
   const plan = fs.readFileSync(path.join(root, 'docs/REFOUNDATION-PLAN.md'), 'utf8');
-  assert.match(placement, /current canonical domain owner.*progressive journey-scoped decisions/);
+  assert.match(placement, /current canonical domain owner.*progressive capability-scoped decisions/);
   assert.match(governance, /Current development governance: READY for Close as You Go/);
   assert.match(governance, /GOVERNANCE_CUTOVER: NOT_READY/);
   assert.match(plan, /ENVIRONMENT_BASELINE_ACCEPTED/);
