@@ -2,14 +2,18 @@ package discovery
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
 )
@@ -169,6 +173,11 @@ func cursorError(w http.ResponseWriter, err error) {
 	errorJSON(w, 400, "INVALID_CURSOR")
 }
 func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	search, scope, valid := storeSearch(r)
+	if !valid {
+		errorJSON(w, 400, "INVALID_SEARCH")
+		return
+	}
 	city := r.URL.Query().Get("city_id")
 	if !validID(city) {
 		errorJSON(w, 400, "INVALID_CITY")
@@ -190,7 +199,7 @@ func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.
 		errorJSON(w, 503, "OWNER_UNAVAILABLE")
 		return
 	}
-	after, err := parseCursor(r.URL.Query().Get("cursor"), "stores", city, rev)
+	after, err := parseCursor(r.URL.Query().Get("cursor"), "stores", scope, rev)
 	if err != nil {
 		cursorError(w, err)
 		return
@@ -199,8 +208,8 @@ func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.
 		JOIN service_cities c ON c.id=s.city_id
 		JOIN verticals v ON v.id=s.vertical_id
 		WHERE c.active AND v.active AND s.published AND s.relation='MARKETPLACE'
-			AND s.city_id=$1 AND s.id>$2 ORDER BY s.id LIMIT $3`
-	rows, err := tx.QueryContext(ctx, q, city, after, limit+1)
+			AND s.city_id=$1 AND s.id>$2 AND strpos(lower(s.name),lower($4))>0 ORDER BY s.id LIMIT $3`
+	rows, err := tx.QueryContext(ctx, q, city, after, limit+1, search)
 	if err != nil {
 		errorJSON(w, 503, "OWNER_UNAVAILABLE")
 		return
@@ -232,9 +241,27 @@ func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.
 	result := page[publicStore]{Items: items, Revision: rev}
 	if len(items) > limit {
 		result.Items = items[:limit]
-		result.NextCursor = makeCursor(pageCursor{Kind: "stores", Scope: city, After: items[limit-1].ID, Revision: rev})
+		result.NextCursor = makeCursor(pageCursor{Kind: "stores", Scope: scope, After: items[limit-1].ID, Revision: rev})
 	}
 	jsonResponse(w, 200, result)
+}
+
+// Search is a literal substring, never a SQL LIKE pattern. Hashing its scope
+// keeps even multi-byte search text within the existing bounded cursor format.
+func storeSearch(r *http.Request) (string, string, bool) {
+	values, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil || len(values["q"]) > 1 {
+		return "", "", false
+	}
+	search := strings.TrimSpace(values.Get("q"))
+	if !utf8.ValidString(search) || utf8.RuneCountInString(search) > 80 || strings.ContainsRune(search, 0) {
+		return "", "", false
+	}
+	scope := values.Get("city_id")
+	if search != "" {
+		scope += fmt.Sprintf(":%x", sha256.Sum256([]byte(search)))
+	}
+	return search, scope, true
 }
 func (s *Server) visibleStore(ctx context.Context, tx *sql.Tx, id string) (publicStore, error) {
 	var st publicStore

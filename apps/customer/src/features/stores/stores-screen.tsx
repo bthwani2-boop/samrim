@@ -2,7 +2,7 @@ import { listPublicStores, type PublicPage, type PublicStore } from "@bthwani/ds
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { type Href, Link, router } from "expo-router";
 import * as React from "react";
-import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, Text, TextInput, View } from "react-native";
 import ServiceCityScope from "../location/service-city-scope";
 import { describeStoreOrderability } from "./orderability";
 
@@ -12,6 +12,7 @@ type PageState = { scope: string; loading: boolean; loadingMore: boolean; items:
 function message(code?: string) {
   if (code === "STALE_CURSOR") return "تغيّرت البيانات. أعد تحميل المتاجر.";
   if (code === "DSH_ENDPOINT_NOT_CONFIGURED") return "لم يُضبط عنوان خدمة المتاجر.";
+  if (code === "INVALID_SEARCH") return "عبارة البحث غير صالحة. استخدم ٨٠ حرفًا أو أقل.";
   return "تعذّر تحميل المتاجر. تحقّق من الاتصال وحاول مجددًا.";
 }
 type Props = Readonly<{ variant?: "home" | "directory" }>;
@@ -20,6 +21,9 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
   const { theme } = useMobileAppearance();
   const [draftCity, setDraftCity] = React.useState(INITIAL_CITY);
   const [cityId, setCityId] = React.useState(INITIAL_CITY);
+  const [draftQuery, setDraftQuery] = React.useState("");
+  const [query, setQuery] = React.useState("");
+  const scope = JSON.stringify([cityId, query]);
   const [retry, setRetry] = React.useState(0);
   const [state, setState] = React.useState<PageState>({ scope: "", loading: true, loadingMore: false, items: [] });
   const generation = React.useRef(0);
@@ -30,19 +34,19 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
     const abort = new AbortController();
     pageAbort.current?.abort();
     pageAbort.current = abort;
-    setState({ scope: cityId, loading: true, loadingMore: false, items: [] });
-    listPublicStores(API, cityId, { limit: 20, signal: abort.signal })
+    setState({ scope, loading: true, loadingMore: false, items: [] });
+    listPublicStores(API, cityId, { query, limit: 20, signal: abort.signal })
       .then((page) => {
         if (!abort.signal.aborted && generation.current === current)
-          setState({ scope: cityId, loading: false, loadingMore: false, items: page.items, cursor: page.nextCursor });
+          setState({ scope, loading: false, loadingMore: false, items: page.items, cursor: page.nextCursor });
       })
       .catch((error: unknown) => {
         if (!abort.signal.aborted && generation.current === current)
-          setState({ scope: cityId, loading: false, loadingMore: false, items: [], error: error instanceof Error ? error.message : "UNKNOWN" });
+          setState({ scope, loading: false, loadingMore: false, items: [], error: error instanceof Error ? error.message : "UNKNOWN" });
       });
     return () => { abort.abort(); generation.current++; };
-  }, [cityId, retry]);
-  const visible: PageState = state.scope === cityId ? state : { scope: cityId, loading: true, loadingMore: false, items: [] };
+  }, [cityId, query, scope, retry]);
+  const visible: PageState = state.scope === scope ? state : { scope, loading: true, loadingMore: false, items: [] };
   const loadMore = async () => {
     if (!visible.cursor || visible.loadingMore || visible.loading) return;
     const scopedCity = cityId;
@@ -52,14 +56,14 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
     pageAbort.current = abort;
     setState((old) => ({ ...old, loadingMore: true, error: undefined }));
     try {
-      const page: PublicPage<PublicStore> = await listPublicStores(API, scopedCity, { cursor: visible.cursor, limit: 20, signal: abort.signal });
+      const page: PublicPage<PublicStore> = await listPublicStores(API, scopedCity, { query, cursor: visible.cursor, limit: 20, signal: abort.signal });
       if (generation.current !== current || abort.signal.aborted) return;
-      setState((old) => old.scope !== scopedCity ? old : {
+      setState((old) => old.scope !== scope ? old : {
         ...old, loadingMore: false, items: [...old.items, ...page.items], cursor: page.nextCursor,
       });
     } catch (error) {
       if (generation.current === current && !abort.signal.aborted)
-        setState((old) => old.scope !== scopedCity ? old : { ...old, loadingMore: false, error: error instanceof Error ? error.message : "UNKNOWN" });
+        setState((old) => old.scope !== scope ? old : { ...old, loadingMore: false, error: error instanceof Error ? error.message : "UNKNOWN" });
     }
   };
   const textStyle = { color: theme.color };
@@ -78,9 +82,21 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
         ) : <Link href="/" style={{ color: theme.interactiveText }}>الرئيسية</Link>}
         <Text style={{ ...textStyle, color: theme.colorSecondary }}>البيانات المنشورة فقط من خدمة المتاجر. عرض المتجر لا يعني إمكانية إتمام الطلب.</Text>
         <ServiceCityScope draftCity={draftCity} onDraftChange={setDraftCity} onApply={setCityId} />
+        <View style={{ gap: 8 }}>
+          <TextInput testID="stores-search" accessibilityLabel="البحث باسم المتجر" placeholder="ابحث باسم المتجر"
+            placeholderTextColor={theme.colorSecondary} value={draftQuery} onChangeText={setDraftQuery}
+            maxLength={80} returnKeyType="search" onSubmitEditing={() => setQuery(draftQuery.trim())}
+            style={{ ...buttonStyle, color: theme.color, textAlign: "right", writingDirection: "rtl" }} />
+          <Pressable accessibilityRole="button" onPress={() => setQuery(draftQuery.trim())} style={buttonStyle}>
+            <Text style={{ color: theme.interactiveText, textAlign: "center" }}>بحث</Text>
+          </Pressable>
+          {query ? <Pressable accessibilityRole="button" onPress={() => { setDraftQuery(""); setQuery(""); }}>
+            <Text style={{ color: theme.interactiveText }}>مسح البحث</Text>
+          </Pressable> : null}
+        </View>
         {visible.loading ? <ActivityIndicator accessibilityLabel="جارٍ تحميل المتاجر" color={theme.actionBackground} /> : null}
         {!visible.loading && visible.items.length === 0 && !visible.error
-          ? <Text testID="stores-empty" style={textStyle}>لا توجد متاجر منشورة لهذه المدينة حاليًا.</Text> : null}
+          ? <Text testID="stores-empty" style={textStyle}>{query ? "لا توجد متاجر مطابقة للبحث في هذه المدينة." : "لا توجد متاجر منشورة لهذه المدينة حاليًا."}</Text> : null}
         {visible.items.map((store) => {
           const availability = describeStoreOrderability(store);
           return (

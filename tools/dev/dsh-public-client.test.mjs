@@ -53,6 +53,19 @@ test("published marketplace pages preserve scoped city, cursor, limit and allowl
   assert.equal(requested.options.headers.Accept, "application/json");
 });
 
+test("Store search is encoded as owner query text and preserves page scope", async () => {
+  const query = "متجر & %_";
+  await withFetch(async (url) => {
+    const parsed = new URL(url);
+    assert.equal(parsed.searchParams.get("q"), query);
+    assert.equal(parsed.searchParams.get("city_id"), "sanaa");
+    assert.equal(parsed.searchParams.get("cursor"), "search-page");
+    return json({ items: [store], revision: 7 });
+  }, async () => {
+    assert.deepEqual((await listPublicStores(base, "sanaa", { query, cursor: "search-page" })).items, [store]);
+  });
+});
+
 test("DIRECT linked detail is read without claiming marketplace listing", async () => {
   await withFetch(async (url) => {
     assert.equal(new URL(url).pathname, "/v1/public/stores/direct-sanaa");

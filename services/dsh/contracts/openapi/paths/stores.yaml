@@ -6,6 +6,11 @@ paths:
       description: DIRECT or unpublished Stores never appear. Visibility never indicates checkout readiness.
       security: []
       parameters:
+        - name: q
+          in: query
+          required: false
+          description: Optional literal case-insensitive Store name substring, trimmed before matching. Empty means all Stores. Cursors are bound to city and trimmed search; changing either requires a fresh page.
+          schema: { type: string, maxLength: 80 }
         - name: city_id
           in: query
           required: true

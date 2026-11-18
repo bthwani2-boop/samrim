@@ -131,10 +131,11 @@ function readPage<T>(value: unknown, validate: (v: unknown) => v is T): PublicPa
   return { items: v.items, revision: v.revision as number, ...(typeof v.nextCursor === "string" ? { nextCursor: v.nextCursor } : {}) };
 }
 export async function listPublicStores(
-  baseUrl: string, cityId: string, options: { cursor?: string; limit?: number; signal?: AbortSignal } = {},
+  baseUrl: string, cityId: string, options: { query?: string; cursor?: string; limit?: number; signal?: AbortSignal } = {},
 ): Promise<PublicPage<PublicStore>> {
   const url = endpoint(baseUrl, "/v1/public/stores");
   url.searchParams.set("city_id", cityId);
+  if (options.query !== undefined) url.searchParams.set("q", options.query);
   if (options.cursor) url.searchParams.set("cursor", options.cursor);
   if (options.limit) url.searchParams.set("limit", String(options.limit));
   const page = readPage(await ownerRead(url, options.signal), isStore);
