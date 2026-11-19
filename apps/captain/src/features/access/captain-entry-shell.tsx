@@ -20,7 +20,7 @@ export default function CaptainEntryShell({ color, borderColor, backgroundColor 
       <Text style={{ color, textAlign: "center", fontSize: 12 }}>
         الأقسام الرئيسية — تتاح بعد التحقق من الهوية وأهلية الكابتن
       </Text>
-      <View style={{ flexDirection: "row", direction: "rtl", gap: 6 }}>
+      <View style={{ flexDirection: "row", gap: 6 }}>
         {primaryTabs.map(tab => (
           <View key={tab.name} testID={`captain-guest-tab-${tab.name}`}
             accessible accessibilityRole="tab" accessibilityState={{ disabled: true }}

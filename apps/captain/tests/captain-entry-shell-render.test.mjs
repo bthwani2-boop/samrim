@@ -36,15 +36,16 @@ function nodes(tree) {
   if (Array.isArray(tree)) return tree.flatMap(nodes);
   return [tree, ...nodes(tree.props?.children)];
 }
-test("Captain real compiled guest shell exposes four disabled RTL tabs without navigation", () => {
+test("Captain compiled guest shell inherits direction and exposes four disabled tabs without navigation", () => {
   const rendered = module.exports.default({
     color: "secondary-token", borderColor: "border-token", backgroundColor: "surface-token",
   });
   const all = nodes(rendered);
   assert.equal(rendered.props.testID, "captain-guest-shell");
   assert.equal(rendered.props.style.backgroundColor, "surface-token");
-  const row = all.find(n => n.props?.style?.direction === "rtl");
-  assert.ok(row, "guest preview must have explicit RTL tab order");
+  const row = all.find(n => n.props?.style?.flexDirection === "row");
+  assert.ok(row, "guest preview uses one row in the application direction");
+  assert.equal(Object.hasOwn(row.props.style, "direction"), false);
   const tabs = all.filter(node => node.props?.testID?.startsWith("captain-guest-tab-"));
   assert.deepEqual(tabs.map(node => node.props.testID), [
     "captain-guest-tab-home", "captain-guest-tab-deliveries",
