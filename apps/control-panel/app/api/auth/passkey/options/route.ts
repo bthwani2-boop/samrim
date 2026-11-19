@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   boundedResponseJSON,
+  isEmptyRequestBody,
   isTrustedOperatorRequest,
   operatorIdentityRequest,
   parsePasskeyOptions,
@@ -21,10 +22,7 @@ const privateHeaders = {
 export async function POST(request: Request) {
   const config = resolveIsolatedOperatorConfig(process.env);
   if (!config) return unavailableSessionResponse();
-  if (!isTrustedOperatorRequest(request, config) ||
-      (request.headers.has("content-length") &&
-       request.headers.get("content-length") !== "0") ||
-      request.body !== null) {
+  if (!isTrustedOperatorRequest(request, config) || !(await isEmptyRequestBody(request))) {
     return NextResponse.json({ code: "INVALID_REQUEST" }, { status: 400, headers: privateHeaders });
   }
   try {

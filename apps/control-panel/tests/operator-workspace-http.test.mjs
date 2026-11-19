@@ -52,6 +52,19 @@ test("production Operator UI rechecks isolated Identity grants on every document
         options: { publicKey: { challenge: "C".repeat(43), rpId: "localhost", userVerification: "required" } },
       });
     }
+    if (route === "/v1/operators/passkey/authentication" && request.method === "POST") {
+      authenticationCalls++;
+      void (async () => {
+        let raw = "";
+        for await (const chunk of request) raw += chunk.toString();
+        const supplied = JSON.parse(raw);
+        if (supplied.ceremonyId !== "B".repeat(43) || supplied.credential?.type !== "public-key") {
+          return send(401, { error: "UNAUTHORIZED" });
+        }
+        return send(200, { accessToken: token, sessionExpiresAt: expiry });
+      })().catch(() => send(400, { error: "INVALID_REQUEST" }));
+      return;
+    }
     if (request.headers.authorization !== `Bearer ${token}`) {
       return send(401, { error: "UNAUTHORIZED" });
     }
@@ -128,6 +141,42 @@ test("production Operator UI rechecks isolated Identity grants on every document
       assert.equal(denied.status, 400, "forged or non-empty options POST must be rejected");
     }
     assert.equal(optionsCalls, 1, "invalid browser requests must not begin extra ceremonies");
+
+    // Only the synthetic Identity test owner accepts this non-hardware proof.
+    // Exercise the real Next BFF flow, not WebAuthn authenticator security.
+    const assertion = {
+      ceremonyId: "B".repeat(43),
+      credential: { type: "public-key", id: "synthetic-credential", rawId: "synthetic-credential", response: {} },
+    };
+    const forbiddenAssertion = await fetch(`${base}/api/auth/passkey/authentication`, {
+      method: "POST",
+      headers: { origin: base, "content-type": "application/json" },
+      body: JSON.stringify({ ...assertion, actorId: "other-operator" }),
+      signal: AbortSignal.timeout(7000),
+    });
+    assert.equal(forbiddenAssertion.status, 400, "caller cannot choose the authenticated actor");
+    assert.equal(authenticationCalls, 0, "forged proof must not contact Identity");
+    const authentication = await fetch(`${base}/api/auth/passkey/authentication`, {
+      method: "POST",
+      headers: { origin: base, "content-type": "application/json" },
+      body: JSON.stringify(assertion),
+      signal: AbortSignal.timeout(7000),
+    });
+    assert.equal(authentication.status, 200, "valid synthetic proof must complete BFF admission");
+    assert.equal(authenticationCalls, 1);
+    const cookie = authentication.headers.get("set-cookie") ?? "";
+    assert.match(cookie, /bthwani_operator_session=/);
+    assert.match(cookie, /httponly/i, "Identity bearer must remain server-managed");
+    assert.match(cookie, /samesite=strict/i);
+    const sessionReadback = await fetch(`${base}/api/auth/session`, {
+      headers: { cookie: `bthwani_operator_session=${token}` }, signal: AbortSignal.timeout(7000),
+    });
+    assert.equal(sessionReadback.status, 200);
+    const verifiedSession = await sessionReadback.json();
+    assert.equal(verifiedSession.authenticated, true);
+    assert.equal(verifiedSession.actorId, "operator-synthetic");
+    assert.equal(verifiedSession.role, "operator");
+    assert.doesNotMatch(JSON.stringify(verifiedSession), new RegExp(token));
 
     async function read(route, extra = {}) {
       const response = await fetch(base + route, {
