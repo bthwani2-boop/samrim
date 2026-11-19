@@ -26,8 +26,13 @@ function harness() {
   const hooks = [];
   const effects = [];
   const requests = [];
+  const timeouts = new Map();
+  const intervals = new Map();
+  let now = Date.now();
+  let timerID = 0;
   let index = 0;
   let onAppState;
+  const sameDeps = (a, b) => a && b && a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
   const jsx = (type, props) => ({ type, props: props ?? {} });
   const react = {
     useState(initial) {
@@ -40,8 +45,19 @@ function harness() {
       if (!(at in hooks)) hooks[at] = { current: initial };
       return hooks[at];
     },
-    useCallback(fn) { index++; return fn; },
-    useEffect(fn) { index++; effects.push(fn); },
+    useCallback(fn, deps) {
+      const at = index++;
+      if (!sameDeps(hooks[at]?.deps, deps)) hooks[at] = { deps, fn };
+      return hooks[at].fn;
+    },
+    useEffect(fn, deps) {
+      const at = index++;
+      if (sameDeps(hooks[at]?.deps, deps)) return;
+      effects.push(() => {
+        hooks[at]?.cleanup?.();
+        hooks[at] = { deps, cleanup: fn() };
+      });
+    },
   };
   const theme = {
     color: "#fff", colorSecondary: "#ccc", background: "#000",
@@ -55,6 +71,7 @@ function harness() {
     "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
     "react-native": {
       AppState: {
+        currentState: "active",
         addEventListener(_event, handler) {
           onAppState = handler;
           return { remove() {} };
@@ -73,28 +90,51 @@ function harness() {
     },
   };
   const mod = { exports: {} };
-  new Function("require", "module", "exports", "setTimeout", "clearTimeout", compiled)(
+  new Function("require", "module", "exports", "setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date", compiled)(
     name => {
       assert.ok(Object.hasOwn(fake, name), `unexpected module ${name}`);
       return fake[name];
-    }, mod, mod.exports, () => 1, () => undefined,
+    }, mod, mod.exports,
+    (fn, delay) => { const id = ++timerID; timeouts.set(id, { fn, at: now + delay }); return id; },
+    id => timeouts.delete(id),
+    (fn, delay) => { const id = ++timerID; intervals.set(id, { fn, delay }); return id; },
+    id => intervals.delete(id),
+    class extends Date { static now() { return now; } },
   );
   const render = () => {
     index = 0;
     effects.length = 0;
-    return mod.exports.default();
+    const view = mod.exports.default();
+    for (const effect of effects) effect();
+    return view;
   };
   return {
     render,
     mount() {
       render();
-      assert.equal(effects.length, 1);
-      effects[0]();
     },
     emit(state) {
       assert.equal(typeof onAppState, "function");
+      fake["react-native"].AppState.currentState = state;
       onAppState(state);
     },
+    session(ttl = 120000) {
+      return { ...approved, sessionExpiresAt: new Date(now + ttl).toISOString() };
+    },
+    advance(ms) {
+      now += ms;
+      for (const [id, timer] of timeouts) {
+        if (timer.at <= now) { timeouts.delete(id); timer.fn(); }
+      }
+    },
+    poll() {
+      assert.equal(intervals.size, 1, "a verified session must periodically revalidate with Identity");
+      const timer = [...intervals.values()][0];
+      assert.ok(timer.delay > 0 && timer.delay <= 30000);
+      timer.fn();
+    },
+    unmount() { for (const hook of hooks) hook?.cleanup?.(); },
+    timerCount: () => timeouts.size + intervals.size,
     read() {
       assert.ok(requests.length, "fresh owner session read should have started");
       return requests.shift();
@@ -144,4 +184,57 @@ test("Customer background aborts stale Identity request and foreground starts fr
   fresh.resolve({ enabled: true, session: null });
   await settle();
   assert.equal(containsTestId(h.render(), "customer-identity-verified"), false);
+});
+
+test("Customer verified status expires while continuously in the foreground", async () => {
+  const h = harness();
+  h.mount();
+  h.read().resolve({ enabled: true, session: h.session(1000) });
+  await settle();
+  assert.equal(containsTestId(h.render(), "customer-identity-verified"), true);
+  h.advance(1000);
+  assert.equal(containsTestId(h.render(), "customer-identity-verified"), false);
+});
+
+test("Customer foreground polling hides stale status and fails closed on owner outage", async () => {
+  const h = harness();
+  h.mount();
+  h.read().resolve({ enabled: true, session: h.session() });
+  await settle();
+  h.render();
+  h.poll();
+  const fresh = h.read();
+  assert.equal(containsTestId(h.render(), "customer-identity-verified"), false);
+  fresh.reject(new Error("Identity unavailable"));
+  await settle();
+  assert.equal(containsTestId(h.render(), "customer-identity-verified"), false);
+});
+
+test("Customer foreground polling observes session revocation", async () => {
+  const h = harness();
+  h.mount();
+  h.read().resolve({ enabled: true, session: h.session() });
+  await settle();
+  h.render();
+  h.poll();
+  h.read().resolve({ enabled: true, session: null });
+  await settle();
+  assert.equal(containsTestId(h.render(), "customer-identity-verified"), false);
+});
+
+test("Customer refresh replaces old expiry timers and unmount releases all timers", async () => {
+  const h = harness();
+  h.mount();
+  h.read().resolve({ enabled: true, session: h.session(1000) });
+  await settle();
+  h.render();
+  h.poll();
+  h.read().resolve({ enabled: true, session: h.session(120000) });
+  await settle();
+  h.render();
+  h.advance(1000);
+  assert.equal(containsTestId(h.render(), "customer-identity-verified"), true,
+    "the earlier session's deadline must not expire a freshly owner-verified session");
+  h.unmount();
+  assert.equal(h.timerCount(), 0);
 });
