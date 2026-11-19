@@ -47,6 +47,7 @@ test("Identity verifier is synthetic only and has no privileged host exposure", 
   const id = overlay.services.identity;
   assert.ok(!overlay.services.wlt);
   assert.deepEqual(id.profiles, ["identity-verifier"]);
+  assert.equal(id.restart, "unless-stopped", "Identity must recover after Docker engine restart");
   assert.equal(id.read_only, true);
   assert.ok(id.cap_drop.includes("ALL"));
   assert.equal(id.environment.BTHWANI_ISOLATED_TEST_MODE, "true");

@@ -10,7 +10,8 @@ services:
   identity:
     profiles: [identity-verifier]
     image: "bthwani-refoundation-identity-verifier:${REF_IDENTITY_IMAGE_TAG:-dev}"
-    restart: "no"
+    # Recover after Docker Desktop/Lenovo restarts; explicit stop stays stopped.
+    restart: unless-stopped
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
