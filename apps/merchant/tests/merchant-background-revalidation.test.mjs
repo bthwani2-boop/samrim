@@ -65,6 +65,7 @@ function harness() {
       TextInput: "TextInput", View: "View",
     },
     "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
+    "../navigation/merchant-entry-shell": { __esModule: true, default: "MerchantEntryShell" },
     "../navigation/merchant-workspace": { __esModule: true, default: "MerchantWorkspace" },
     "./admission-transport": {
       readAdmission(signal) {

@@ -2,7 +2,7 @@ import { IdentityClientError, type VerifiedIdentitySession } from "@bthwani/iden
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Pressable, ScrollView, Text, TextInput, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import MerchantEntryShell from "../navigation/merchant-entry-shell";
 import MerchantWorkspace from "../navigation/merchant-workspace";
 import {
   readAdmission,
@@ -192,7 +192,7 @@ export default function MerchantIdentityGate() {
   );
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
+    <MerchantEntryShell>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{
         flexGrow: 1, padding: 24, justifyContent: "center", width: "100%", maxWidth: 500, alignSelf: "center",
       }}>
@@ -252,6 +252,6 @@ export default function MerchantIdentityGate() {
           ) : null}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </MerchantEntryShell>
   );
 }

@@ -84,7 +84,8 @@ test("tabs keep their URLs and no route duplicates their roots", () => {
   const tabs = read("(tabs)/_layout.tsx");
   assert.match(tabs, /<Tabs/);
   for (const name of ["index", "orders/index", "account/index"]) assert.ok(tabs.includes(`name: "${name}"`));
-  assert.match(tabs, /tabBarPosition: "top"/);
+  assert.match(tabs, /tabBarPosition: "left"/);
+  assert.match(tabs, /href="\/stores"/, "public Store discovery remains reachable in the desktop shell");
   for (const duplicate of ["index.tsx", "orders/index.tsx", "account/index.tsx"]) {
     assert.equal(existsSync(resolve(app, duplicate)), false);
   }
