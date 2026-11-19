@@ -16,6 +16,7 @@ const (
 	CaptainStandingPath    = "/v1/captains/me/standing"
 	CaptainEligibilityPath = "/v1/actors/me/captain-eligibility"
 	CaptainApplicationPath = "/v1/actors/me/captain-application"
+	OperatorCaptainsPath   = "/v1/operators/captains"
 	operatorCaptainPrefix  = "/v1/operators/captains/"
 )
 
@@ -39,6 +40,8 @@ func errorReply(w http.ResponseWriter, err error) {
 		code, status = "FORBIDDEN", http.StatusForbidden
 	case errors.Is(err, ErrNotEligible):
 		code, status = "CAPTAIN_NOT_ELIGIBLE", http.StatusForbidden
+	case errors.Is(err, ErrNotFound):
+		code, status = "NOT_FOUND", http.StatusNotFound
 	case errors.Is(err, ErrInvalidChange):
 		code, status = "INVALID_REQUEST", http.StatusBadRequest
 	case errors.Is(err, ErrUnknownResult):
@@ -89,6 +92,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	var role, expectedMethod string
 	operatorID := ""
+	operatorList := false
 	switch r.URL.Path {
 	case CaptainStandingPath:
 		expectedMethod, role = http.MethodGet, "captain"
@@ -96,6 +100,8 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		expectedMethod, role = http.MethodGet, "customer"
 	case CaptainApplicationPath:
 		expectedMethod, role = http.MethodPost, "customer"
+	case OperatorCaptainsPath:
+		expectedMethod, operatorList = http.MethodGet, true
 	default:
 		if strings.HasPrefix(r.URL.Path, operatorCaptainPrefix) &&
 			strings.HasSuffix(r.URL.Path, "/standing") {
@@ -105,17 +111,27 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			expectedMethod = http.MethodPatch
+			if r.Method == http.MethodGet {
+				if !reviewActorID(operatorID) {
+					reply(w, http.StatusNotFound, map[string]string{"error": "NOT_FOUND"})
+					return
+				}
+				expectedMethod = http.MethodGet
+			}
 		} else {
 			reply(w, http.StatusNotFound, map[string]string{"error": "NOT_FOUND"})
 			return
 		}
 	}
 	w.Header().Set("Allow", expectedMethod)
+	if operatorID != "" {
+		w.Header().Set("Allow", "GET, PATCH")
+	}
 	if r.Method != expectedMethod {
 		reply(w, http.StatusMethodNotAllowed, map[string]string{"error": "METHOD_NOT_ALLOWED"})
 		return
 	}
-	if r.URL.RawQuery != "" || (r.Method != http.MethodPatch && (r.ContentLength != 0 || len(r.TransferEncoding) > 0)) {
+	if (!operatorList && r.URL.RawQuery != "") || (r.Method != http.MethodPatch && (r.ContentLength != 0 || len(r.TransferEncoding) > 0)) {
 		errorReply(w, ErrInvalidChange)
 		return
 	}
@@ -127,11 +143,29 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	bearer := strings.TrimPrefix(headers[0], "Bearer ")
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
+	if operatorList {
+		status, limit, cursor, err := parseReviewQuery(r.URL.RawQuery)
+		if err != nil {
+			errorReply(w, err)
+			return
+		}
+		page, err := h.service.ListForOperator(ctx, bearer, status, limit, cursor)
+		if err != nil {
+			errorReply(w, err)
+			return
+		}
+		reply(w, http.StatusOK, page)
+		return
+	}
 	var standing Standing
 	var err error
 	switch expectedMethod {
 	case http.MethodGet:
-		standing, err = h.service.ReadSelf(ctx, bearer, role)
+		if operatorID != "" {
+			standing, err = h.service.ReadForOperator(ctx, bearer, operatorID)
+		} else {
+			standing, err = h.service.ReadSelf(ctx, bearer, role)
+		}
 	case http.MethodPost:
 		standing, err = h.service.Apply(ctx, bearer)
 	case http.MethodPatch:

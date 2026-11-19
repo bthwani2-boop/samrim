@@ -17,6 +17,7 @@ var (
 	ErrInvalidChange    = errors.New("INVALID_REQUEST")
 	ErrVersionConflict  = errors.New("CAPTAIN_STANDING_VERSION_CONFLICT")
 	ErrUnknownResult    = errors.New("OPERATION_RESULT_UNKNOWN")
+	ErrNotFound         = errors.New("NOT_FOUND")
 )
 
 type Status string
@@ -55,6 +56,7 @@ type Identity interface {
 
 type Repository interface {
 	Read(context.Context, string) (Standing, error)
+	List(context.Context, Status, string, int) ([]Standing, error)
 	Apply(context.Context, string) (Standing, error)
 	Change(context.Context, Change) (Standing, error)
 }

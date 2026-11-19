@@ -51,7 +51,59 @@ paths:
         '401': { $ref: '../dsh.openapi.yaml#/components/responses/Unauthorized' }
         '403': { $ref: '../dsh.openapi.yaml#/components/responses/Forbidden' }
         '503': { $ref: '../dsh.openapi.yaml#/components/responses/Unavailable' }
+  /v1/operators/captains:
+    get:
+      operationId: listOperatorCaptainStandings
+      summary: Read a bounded current-status Captain review queue
+      description: Requires a current Identity Operator and effective operations permission on every page. DSH returns only actorId, status and version, never phone, credentials, audit reasons or delivery data. The opaque keyset cursor is bound to the selected status; each page is a current read, not a frozen export. Unknown or duplicate query fields, invalid Unicode and noncanonical integer limits are rejected.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [PENDING, APPROVED, SUSPENDED, REVOKED], default: PENDING }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: cursor
+          in: query
+          schema: { type: string, minLength: 1, maxLength: 512, pattern: '^[A-Za-z0-9_-]+$' }
+      responses:
+        '200':
+          description: Current review page with optional status-bound next cursor
+          headers: { Cache-Control: { schema: { type: string, const: no-store } } }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/OperatorCaptainStandingPage' }
+        '400': { $ref: '../dsh.openapi.yaml#/components/responses/Invalid' }
+        '401': { $ref: '../dsh.openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../dsh.openapi.yaml#/components/responses/Forbidden' }
+        '503': { $ref: '../dsh.openapi.yaml#/components/responses/Unavailable' }
   /v1/operators/captains/{actorId}/standing:
+    get:
+      operationId: getOperatorCaptainStanding
+      summary: Read current Captain review status and version
+      description: Requires a current Identity Operator and effective operations permission. Actor IDs are opaque valid UTF-8, bounded to 128 bytes, trimmed, without slash, backslash, NUL, CR, LF or tab and cannot be dot path segments. Reading never approves a Captain, creates an Identity role or changes DSH standing.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: actorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: Current DSH Captain review projection
+          headers: { Cache-Control: { schema: { type: string, const: no-store } } }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/Standing' }
+        '401': { $ref: '../dsh.openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../dsh.openapi.yaml#/components/responses/Forbidden' }
+        '404':
+          description: No DSH Captain application for the selected actor
+          content: { application/json: { schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CaptainError' } } }
+        '503': { $ref: '../dsh.openapi.yaml#/components/responses/Unavailable' }
     patch:
       operationId: changeCaptainStandingByAuthorizedOperator
       summary: Versioned, audited Operator approval, suspension or revocation

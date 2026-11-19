@@ -34,6 +34,9 @@ type fakeStandingRepository struct {
 func (f *fakeStandingRepository) Read(context.Context, string) (Standing, error) {
 	return f.standing, f.err
 }
+func (f *fakeStandingRepository) List(context.Context, Status, string, int) ([]Standing, error) {
+	return nil, f.err
+}
 func (f *fakeStandingRepository) Change(_ context.Context, cmd Change) (Standing, error) {
 	f.changes++
 	f.lastChange = cmd

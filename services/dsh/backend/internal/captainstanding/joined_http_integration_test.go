@@ -57,7 +57,7 @@ func TestCaptainJoinedRealHTTPAndPostgres(t *testing.T) {
 	}
 	dsn := os.Getenv("BTHWANI_CAPTAIN_TEST_DATABASE_URL")
 	u, err := url.Parse(dsn)
-	if err != nil || u.Scheme != "postgres" || u.Host != "127.0.0.1:5432" ||
+	if err != nil || !isolatedCaptainTestDSN(dsn, os.Getenv("BTHWANI_CAPTAIN_TEST_CONTAINER"), os.Getenv("PGHOSTADDR")) || u.Scheme != "postgres" || u.Host != "127.0.0.1:5432" ||
 		u.Path != "/refoundation_captain_agent02" || u.User == nil ||
 		u.User.Username() != "bt_cap_s02" || u.Query().Get("sslmode") != "disable" {
 		t.Fatal("joined Captain test must not access any retained or networked database")
@@ -274,12 +274,56 @@ func TestCaptainJoinedRealHTTPAndPostgres(t *testing.T) {
 	application := dshURL + "/v1/actors/me/captain-application"
 	eligibility := dshURL + "/v1/actors/me/captain-eligibility"
 	operatorStanding := dshURL + "/v1/operators/captains/" + customer + "/standing"
+	queue := func(query, bearer string, expect int) StandingPage {
+		t.Helper()
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, dshURL+"/v1/operators/captains"+query, nil)
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		req.Header.Set("X-Actor-ID", operator)
+		req.Header.Set("X-Role", "operator")
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != expect || resp.Header.Get("Cache-Control") != "no-store" {
+			t.Fatalf("Operator queue status=%d expected=%d", resp.StatusCode, expect)
+		}
+		var page StandingPage
+		if expect == 200 {
+			raw, err := io.ReadAll(io.LimitReader(resp.Body, 16384))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if json.Unmarshal(raw, &page) != nil {
+				t.Fatal("invalid Operator queue")
+			}
+			var projection struct {
+				Items []map[string]any `json:"items"`
+			}
+			if json.Unmarshal(raw, &projection) != nil {
+				t.Fatal("invalid review projection")
+			}
+			for _, item := range projection.Items {
+				if len(item) != 3 || item["actorId"] == nil || item["status"] == nil || item["version"] == nil {
+					t.Fatal("private Identity/audit facts leaked into review queue")
+				}
+			}
+		}
+		return page
+	}
 	admit := identityURL + "/v1/actors/me/captain-role"
 	resume := identityURL + "/v1/actors/me/captain-session"
 	applied := send("POST", application, customerBearer, "", 200)
 	if applied.ActorID != customer || applied.Status != "PENDING" || applied.Version != 1 {
 		t.Fatalf("pending application incorrect: %+v", applied)
 	}
+	queue("", "", 401)
+	queue("", customerBearer, 403)
+	queue("", operatorBearer, 403)
+	send("GET", operatorStanding, customerBearer, "", 403)
+	send("GET", operatorStanding, operatorBearer, "", 403)
 	send("GET", eligibility, customerBearer, "", 403)
 	send("POST", admit, customerBearer, "", 403)
 	send("GET", eligibility, anotherBearer, "", 403)
@@ -297,9 +341,38 @@ func TestCaptainJoinedRealHTTPAndPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Both applications enter through DSH's actual owner HTTP writer, never SQL.
+	secondPending := send("POST", application, anotherBearer, "", 200)
+	if secondPending.Status != "PENDING" || secondPending.Version != 1 {
+		t.Fatal("second application not owner-created")
+	}
+	firstReview := queue("?status=PENDING&limit=1", operatorBearer, 200)
+	if len(firstReview.Items) != 1 || firstReview.Items[0].ActorID != customer || firstReview.NextCursor == "" {
+		t.Fatalf("pending queue missing first applicant: %+v", firstReview)
+	}
+	secondReview := queue("?status=PENDING&limit=1&cursor="+firstReview.NextCursor, operatorBearer, 200)
+	if len(secondReview.Items) != 1 || secondReview.Items[0].ActorID != secondCustomer || secondReview.NextCursor != "" {
+		t.Fatalf("pending keyset lost second applicant: %+v", secondReview)
+	}
+	queue("?status=APPROVED&cursor="+firstReview.NextCursor, operatorBearer, 400)
+	currentPending := send("GET", operatorStanding, operatorBearer, "", 200)
+	if currentPending.Status != "PENDING" || currentPending.Version != 1 {
+		t.Fatal("Operator detail did not reflect pending durable version")
+	}
 	accepted := send("PATCH", operatorStanding, operatorBearer, approval, 200)
 	if accepted.ActorID != customer || accepted.Status != "APPROVED" || accepted.Version != 2 {
 		t.Fatalf("actual Operator approval not persisted: %+v", accepted)
+	}
+	approvedReview := queue("?status=APPROVED", operatorBearer, 200)
+	if len(approvedReview.Items) != 1 || approvedReview.Items[0].ActorID != customer || approvedReview.Items[0].Version != 2 {
+		t.Fatalf("approved queue stale after existing PATCH: %+v", approvedReview)
+	}
+	remainingReview := queue("", operatorBearer, 200)
+	if len(remainingReview.Items) != 1 || remainingReview.Items[0].ActorID != secondCustomer {
+		t.Fatal("approved applicant remained in pending queue")
+	}
+	if current := send("GET", operatorStanding, operatorBearer, "", 200); current.Version != 2 || current.Status != "APPROVED" {
+		t.Fatal("approved detail not current")
 	}
 	allowed := send("GET", eligibility, customerBearer, "", 200)
 	if allowed.ActorID != customer || allowed.Status != "APPROVED" {
@@ -339,6 +412,27 @@ func TestCaptainJoinedRealHTTPAndPostgres(t *testing.T) {
 	if oldReplay.Status != "APPROVED" || oldReplay.Version != 2 {
 		t.Fatalf("old operation replay returned newer result: %+v", oldReplay)
 	}
+	if current := send("GET", operatorStanding, operatorBearer, "", 200); current.Version != 3 || current.Status != "SUSPENDED" {
+		t.Fatal("historical PATCH replay changed current review detail")
+	}
+	if suspended := queue("?status=SUSPENDED", operatorBearer, 200); len(suspended.Items) != 1 || suspended.Items[0].Version != 3 {
+		t.Fatal("suspended review queue not current")
+	}
+	if approved := queue("?status=APPROVED", operatorBearer, 200); len(approved.Items) != 0 {
+		t.Fatal("suspended applicant remained approved in review queue")
+	}
+	// Existing synthetic permission/session fixtures are revoked independently.
+	// Every queue/detail read must consult the current Identity owner again.
+	if _, err = db.ExecContext(ctx, "UPDATE "+permissions+" SET state='REVOKED' WHERE actor_id=$1 AND permission='operations'", operator); err != nil {
+		t.Fatal(err)
+	}
+	queue("", operatorBearer, 403)
+	send("GET", operatorStanding, operatorBearer, "", 403)
+	if _, err = db.ExecContext(ctx, "UPDATE "+sessions+" SET revoked_at=clock_timestamp() WHERE actor_id=$1 AND role='operator'", operator); err != nil {
+		t.Fatal(err)
+	}
+	queue("", operatorBearer, 401)
+	send("GET", operatorStanding, operatorBearer, "", 401)
 	independent, err := sql.Open("postgres", dsn)
 	if err != nil {
 		t.Fatal(err)
@@ -360,6 +454,13 @@ func TestCaptainJoinedRealHTTPAndPostgres(t *testing.T) {
 	var sessionsCount int
 	if err = independent.QueryRowContext(ctx, "SELECT count(*) FROM "+sessions+" WHERE actor_id=$1 AND role='captain'", customer).Scan(&sessionsCount); err != nil || sessionsCount != 2 {
 		t.Fatalf("durable Identity Captain credentials count=%d err=%v", sessionsCount, err)
+	}
+	var revokedPermissions, revokedSessions int
+	if err = independent.QueryRowContext(ctx, "SELECT count(*) FROM "+permissions+" WHERE actor_id=$1 AND permission='operations' AND state='REVOKED'", operator).Scan(&revokedPermissions); err != nil || revokedPermissions != 1 {
+		t.Fatal("revoked Operator permission not durable")
+	}
+	if err = independent.QueryRowContext(ctx, "SELECT count(*) FROM "+sessions+" WHERE actor_id=$1 AND role='operator' AND revoked_at IS NOT NULL", operator).Scan(&revokedSessions); err != nil || revokedSessions != 1 {
+		t.Fatal("revoked Operator session not durable")
 	}
 	t.Logf("PASS real Identity HTTP + real DSH HTTP + PostgreSQL owner readback: Captain actor=%s, current DSH standing=%s version=%d, audit=%d, Identity role=%d sessions=%d; synthetic only", customer, finalStatus, finalVersion, auditCount, roleCount, sessionsCount)
 }
