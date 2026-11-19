@@ -75,7 +75,7 @@ test("Operator routes and the browser session endpoint fail closed on the produc
     for (const { href } of workspaceRegistry) {
       assert.ok(!entryHtml.includes(`href="${href}"`), `guest entry exposed ${href}`);
     }
-    for (const route of ["/operations", "/merchants/stores/synthetic", "/finance", "/access", "/policies/stage-sla"]) {
+    for (const route of ["/operations", "/merchants/stores/synthetic", "/merchants/public-stores?city=sanaa", "/finance", "/access", "/policies/stage-sla"]) {
       const response = await fetch(base + route, {
         headers: { "x-operator-role": "operator", "x-actor-id": "forged-actor", Cookie: "operator=forged" },
         signal: AbortSignal.timeout(10000),
