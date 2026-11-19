@@ -24,7 +24,7 @@ function fixture() {
   writeFileSync(join(root, "governance/platform.md"),
     "# CUSTOMER_MERCHANT_CANONICAL_TERMS\nLegacy partner examples must remain\n");
   writeFileSync(join(root, "apps/merchant/src/orders.ts"),
-    'const partnerOrders = 1;\nconst PartnerProfile = "merchant";\nconst legacy = "app-partner";\n');
+    'const partnerOrders = 1;\nconst PartnerProfile = "merchant";\nconst partners = 2;\nconst PartnersList = 3;\nconst PARTNERS_COUNT = 4;\nconst partnerId = "id";\nconst PartnerId = "id";\nconst PARTNER_ID = "id";\nconst partnership = "unchanged";\nconst legacy = "app-partner";\n');
   writeFileSync(join(root, "apps/merchant/src/dirty.ts"), 'const partnerOrder = true;\n');
   writeFileSync(join(root, "services/identity/database/migrations/002_test.sql"),
     "CREATE TABLE partner_legacy_test(id bigint);\n");
@@ -53,7 +53,7 @@ test("plan never writes source, and excludes policy, dirty code, SQL, and extern
     const p = run(["plan", "--root", f.root, "--out", f.manifest]);
     assert.equal(p.status, 0, p.stderr);
     const data = JSON.parse(readFileSync(f.manifest, "utf8"));
-    assert.equal(data.entries.length, 2);
+    assert.equal(data.entries.length, 8);
     assert.ok(data.entries.every((x) => x.approved === false));
     assert.ok(data.skipped.some((x) => x.reason === "DIRTY_FILE_SKIP"));
     assert.ok(data.skipped.some((x) => x.reason === "SQL_CONTRACT_OR_GENERATED_MANUAL"));
@@ -122,6 +122,39 @@ test("apply rejects a manifest entry that targets AGENTS.md", () => {
     const result = run(["apply", "--root", f.root, "--manifest", f.manifest]);
     assert.notEqual(result.status, 0);
     assert.match(readFileSync(f.agent, "utf8"), /NEVER rename partner words here/);
+  } finally {
+    rmSync(f.dir, { recursive: true, force: true });
+  }
+});
+
+test("approved domain rename preserves singular, plural, casing and unrelated English words", () => {
+  const f = fixture();
+  try {
+    const p = run(["plan", "--root", f.root, "--out", f.manifest]);
+    assert.equal(p.status, 0, p.stderr);
+    const data = JSON.parse(readFileSync(f.manifest, "utf8"));
+    assert.equal(data.entries.length, 8);
+    assert.ok(data.entries.every((entry) => entry.approved === false));
+    const changes = new Map(data.entries.map((item) => [item.before.trim(), item.after.trim()]));
+    assert.equal(changes.get("const partners = 2;"), "const merchants = 2;");
+    assert.equal(changes.get("const PartnersList = 3;"), "const MerchantsList = 3;");
+    assert.equal(changes.get("const PARTNERS_COUNT = 4;"), "const MERCHANTS_COUNT = 4;");
+    assert.equal(changes.get('const partnerId = "id";'), 'const merchantId = "id";');
+    assert.equal(changes.get('const PartnerId = "id";'), 'const MerchantId = "id";');
+    assert.equal(changes.get('const PARTNER_ID = "id";'), 'const MERCHANT_ID = "id";');
+    for (const entry of data.entries) entry.approved = true;
+    writeFileSync(f.manifest, JSON.stringify(data, null, 2));
+    const apply = run(["apply", "--root", f.root, "--manifest", f.manifest]);
+    assert.equal(apply.status, 0, apply.stderr);
+    const result = readFileSync(f.orders, "utf8");
+    assert.match(result, /const merchants = 2;/);
+    assert.match(result, /const MerchantsList = 3;/);
+    assert.match(result, /const MERCHANTS_COUNT = 4;/);
+    assert.match(result, /const merchantId = "id";/);
+    assert.match(result, /const MerchantId = "id";/);
+    assert.match(result, /const MERCHANT_ID = "id";/);
+    assert.match(result, /const partnership = "unchanged";/);
+    assert.match(result, /const legacy = "app-partner";/);
   } finally {
     rmSync(f.dir, { recursive: true, force: true });
   }
