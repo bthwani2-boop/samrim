@@ -7,3 +7,6 @@ RUN go mod download && go mod verify
 COPY backend/cmd/ ./cmd/
 COPY backend/internal/ ./internal/
 COPY database/migrations/ /database/migrations/
+# Keep the test runner unprivileged and its Go build cache writable.
+ENV HOME=/tmp GOCACHE=/tmp/go-build
+USER 65532:65532

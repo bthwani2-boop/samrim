@@ -16,6 +16,10 @@ import {
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 
 const VERSION = 1;
+// Never discover Git from an untrusted caller PATH when applying source changes.
+const gitExecutable = process.platform === "win32"
+  ? "C:\\Program Files\\Git\\cmd\\git.exe"
+  : "/usr/bin/git";
 const args = process.argv.slice(2);
 const command = args[0] ?? "plan";
 
@@ -30,7 +34,7 @@ function option(name) {
 }
 
 function git(root, ...arguments_) {
-  return execFileSync("git", arguments_, {
+  return execFileSync(gitExecutable, arguments_, {
     cwd: root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
   }).trimEnd();
 }
@@ -72,7 +76,7 @@ function propose(source) {
   // Respect common camelCase, PascalCase, lowercase, UPPERCASE.
   // Avoid English words such as partnership/partnered.
   return source.replace(
-    /(?<![A-Za-z])(?:partners|partner|Partners|Partner|PARTNERS|PARTNER)(?![a-z])|(?<=[a-z])(?:Partners|Partner|PARTNERS|PARTNER)(?![a-z])/g,
+    /(?:(?<![A-Za-z])(?:partners|partner|Partners|Partner|PARTNERS|PARTNER)(?![a-z])|(?<=[a-z])(?:Partners|Partner|PARTNERS|PARTNER)(?![a-z]))/g,
     (match) => {
       const plural = /s$/i.test(match);
       const base = plural ? "merchants" : "merchant";

@@ -9,8 +9,8 @@ import test from "node:test";
 
 const script = resolve("tools/dev/prepare-merchant-rename.mjs");
 
-function run(args) {
-  return spawnSync(process.execPath, [script, ...args], { encoding: "utf8" });
+function run(args, options = {}) {
+  return spawnSync(process.execPath, [script, ...args], { encoding: "utf8", ...options });
 }
 
 function fixture() {
@@ -43,6 +43,20 @@ function fixture() {
     policy: join(root, "governance/platform.md"),
   };
 }
+
+test("rename planning uses trusted Git when the caller PATH cannot resolve git", () => {
+  const f = fixture();
+  try {
+    const env = Object.fromEntries(Object.entries(process.env)
+      .filter(([key]) => key.toLowerCase() !== "path"));
+    env.PATH = f.dir;
+    const result = run(["plan", "--root", f.root, "--out", f.manifest], { env });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(readFileSync(f.manifest, "utf8")).entries.length, 8);
+  } finally {
+    rmSync(f.dir, { recursive: true, force: true });
+  }
+});
 
 test("plan never writes source, and excludes policy, dirty code, SQL, and external IDs", () => {
   const f = fixture();
