@@ -29,7 +29,7 @@ test("Captain post-verification cleanup revokes using a fresh bounded signal", a
         await new Promise(resolve => signal.addEventListener("abort",resolve,{once:true}));
       },
     },
-    "expo-secure-store": { WHEN_UNLOCKED_THIS_DEVICE_ONLY:"device" },
+    "expo-secure-store": { WHEN_UNLOCKED_THIS_DEVICE_ONLY:"device", getItemAsync: async () => null },
     "react-native": { Platform: {OS:"android"} },
     "./captain-standing": {
       CaptainStandingError: OwnerError,
@@ -40,7 +40,7 @@ test("Captain post-verification cleanup revokes using a fresh bounded signal", a
   const mod = { exports:{} };
   new Function("require","module","exports","process","setTimeout","clearTimeout",compiled)(
     key => {
-      assert.ok(Object.hasOwn(mocks,key),"unexpected dependency "+key);
+      assert.ok(Object.hasOwn(mocks,key),`unexpected dependency ${key}`);
       return mocks[key];
     },mod,mod.exports,{
       env:{
@@ -82,7 +82,7 @@ test("consumed Captain phone proof requires a fresh ticket while incorrect code 
         },
         async revokeVerifiedIdentitySession(){},
       },
-      "expo-secure-store":{ WHEN_UNLOCKED_THIS_DEVICE_ONLY:"device" },
+      "expo-secure-store":{ WHEN_UNLOCKED_THIS_DEVICE_ONLY:"device", getItemAsync: async () => null },
       "react-native":{ Platform:{OS:"android"} },
       "./captain-standing":{
         CaptainStandingError:OwnerError,
@@ -124,7 +124,7 @@ test("definitive DSH suspension is reported as ineligible, not an incorrect phon
       async readVerifiedIdentitySession() { return { actorId: "captain-one", role: "customer" }; },
       async revokeVerifiedIdentitySession(_origin, bearer) { revoked.push(bearer); },
     },
-    "expo-secure-store": { WHEN_UNLOCKED_THIS_DEVICE_ONLY: "device" },
+    "expo-secure-store": { WHEN_UNLOCKED_THIS_DEVICE_ONLY: "device", getItemAsync: async () => null },
     "react-native": { Platform: { OS: "android" } },
     "./captain-standing": {
       CaptainStandingError: StandingError,

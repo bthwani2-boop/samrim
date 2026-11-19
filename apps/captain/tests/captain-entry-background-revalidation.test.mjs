@@ -70,11 +70,12 @@ function harness() {
       hasActiveCaptainSession(session) { return session?.role === "captain"; },
     },
     "./captain-standing": { CaptainStandingError: class extends Error {} },
+    "./captain-entry-shell": { __esModule: true, default: "CaptainEntryShell" },
   };
   const module = { exports: {} };
   new Function("require", "module", "exports", "__DEV__", "setTimeout", "clearTimeout", compiled)(
     name => {
-      assert.ok(Object.hasOwn(mocks, name), "unexpected dependency " + name);
+      assert.ok(Object.hasOwn(mocks, name), `unexpected dependency ${name}`);
       return mocks[name];
     }, module, module.exports, false, () => 1, () => undefined
   );
@@ -110,6 +111,9 @@ function nodes(tree) {
 function verifiedUI(tree) {
   return nodes(tree).some(node => node.props?.testID === "captain-admission-verified");
 }
+function guestNavigation(tree) {
+  return nodes(tree).some(node => node.type === "CaptainEntryShell");
+}
 async function settle() {
   await Promise.resolve();
   await Promise.resolve();
@@ -127,6 +131,7 @@ test("background aborts in-flight Captain admission and foreground forces fresh 
   h.next().resolve(approved());
   await settle();
   assert.equal(verifiedUI(h.render()), true, "initial owner-approved Captain should appear");
+  assert.equal(guestNavigation(h.render()), false, "approved Captain uses protected real tabs instead of preview");
 
   h.emit("active");
   const stale = h.next();
@@ -144,4 +149,5 @@ test("background aborts in-flight Captain admission and foreground forces fresh 
   fresh.resolve({ enabled: true, session: null });
   await settle();
   assert.equal(verifiedUI(h.render()), false, "fresh denied owner session stays denied");
+  assert.equal(guestNavigation(h.render()), true, "denied Captain sees disabled public navigation preview");
 });

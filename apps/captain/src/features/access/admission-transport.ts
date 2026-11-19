@@ -14,6 +14,16 @@ import { CaptainStandingError, readApprovedCaptainStanding, requestCaptainApplic
 
 const nativeOptions = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY };
 const key = "bthwani.captain.synthetic-admission.v1";
+// A persisted bearer with uncertain delivery must stay quarantined after a
+// JavaScript process restart, even when owner revocation and deletion fail.
+const pendingKey = `${key}.pending.v1`;
+let nativeAdmissionInFlight = false;
+let storageMutation: Promise<void> = Promise.resolve();
+function mutateNativeStorage<T>(operation: () => Promise<T>): Promise<T> {
+  const result = storageMutation.then(operation);
+  storageMutation = result.then(() => undefined, () => undefined);
+  return result;
+}
 const identityOrigin = process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN ?? "";
 const dshOrigin = process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN ?? "";
 
@@ -36,6 +46,49 @@ async function revokeUndelivered(bearer: string): Promise<void> {
   }
 }
 
+async function reconcileCaptainAdmission(
+  signal: AbortSignal, signOut = false,
+): Promise<boolean> {
+  return mutateNativeStorage(async () => {
+    const pending = await SecureStore.getItemAsync(pendingKey, nativeOptions);
+    if (!pending && !signOut) return false;
+    const bearer = await SecureStore.getItemAsync(key, nativeOptions);
+    if (!pending) {
+      if (!bearer) return false;
+      // Quarantine the bearer until Identity confirms revocation. Deleting it
+      // earlier would prevent recovery from an interrupted owner request.
+      await SecureStore.setItemAsync(pendingKey, "sign-out", nativeOptions);
+    }
+    if (signal.aborted) {
+      if (signOut) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
+      return true;
+    }
+    if (bearer && pending !== "owner-denied") {
+      try {
+        // Retry owner revocation after network recovery instead of merely
+        // forgetting a sign-out or undelivered server-side credential.
+        await revokeVerifiedIdentitySession(identityOrigin, bearer, signal);
+      } catch (error) {
+        if (!(error instanceof IdentityClientError && error.status === 401 && error.code === "UNAUTHORIZED")) {
+          if (signOut) throw error;
+          return true; // Keep durable quarantine for another retry.
+        }
+      }
+    }
+    if (bearer) {
+      try {
+        await SecureStore.deleteItemAsync(key, nativeOptions);
+      } catch (error) {
+        // Never remove the marker while bearer deletion is unconfirmed.
+        if (signOut) throw error;
+        return true;
+      }
+    }
+    await SecureStore.deleteItemAsync(pendingKey, nativeOptions).catch(() => undefined);
+    return true;
+  });
+}
+
 export type CaptainAdmissionState = Readonly<{
   enabled: boolean;
   session: VerifiedIdentitySession | null;
@@ -45,19 +98,41 @@ export async function readCaptainAdmission(signal: AbortSignal): Promise<Captain
   if (Platform.OS === "web" || !identityOrigin || !dshOrigin) {
     return { enabled: false, session: null };
   }
+  if (nativeAdmissionInFlight || await reconcileCaptainAdmission(signal)) {
+    return { enabled: true, session: null };
+  }
   const bearer = await SecureStore.getItemAsync(key, nativeOptions);
   if (!bearer) return { enabled: true, session: null };
   try {
     const session = await readVerifiedIdentitySession(identityOrigin, bearer, signal);
     if (session.role !== "captain") throw new IdentityClientError(401, "UNAUTHORIZED");
     await readApprovedCaptainStanding(dshOrigin, bearer, "captain", session.actorId, signal);
-    return { enabled: true, session };
+    // Both owner replies may finish AFTER a concurrent sign-out or actor
+    // switch. Only the credential still owned by this device can be rendered.
+    const stillCurrent = await mutateNativeStorage(async () =>
+      !signal.aborted &&
+      !await SecureStore.getItemAsync(pendingKey, nativeOptions) &&
+      await SecureStore.getItemAsync(key, nativeOptions) === bearer
+    );
+    return { enabled: true, session: stillCurrent ? session : null };
   } catch (error) {
     // Network uncertainty must not be represented as a signed-out or approved actor.
     const invalid = (error instanceof IdentityClientError && error.status === 401) ||
       (error instanceof CaptainStandingError && [401, 403].includes(error.status));
     if (invalid && !signal.aborted) {
-      await SecureStore.deleteItemAsync(key, nativeOptions);
+      await mutateNativeStorage(async () => {
+        // An old actor's 401 must never quarantine a newer bearer installed
+        // while its owner request was in flight.
+        if (await SecureStore.getItemAsync(key, nativeOptions) !== bearer) return;
+        // A revoked bearer cannot reappear after a failed device deletion.
+        await SecureStore.setItemAsync(pendingKey, "owner-denied", nativeOptions);
+        if (await SecureStore.getItemAsync(key, nativeOptions) === bearer) {
+          await SecureStore.deleteItemAsync(key, nativeOptions).catch(() => undefined);
+        }
+        if (!await SecureStore.getItemAsync(key, nativeOptions)) {
+          await SecureStore.deleteItemAsync(pendingKey, nativeOptions).catch(() => undefined);
+        }
+      });
       return { enabled: true, session: null };
     }
     throw error;
@@ -78,8 +153,18 @@ export async function verifyCaptainCode(
   ticket: string, code: string, signal: AbortSignal,
 ): Promise<CaptainVerifiedResult> {
   requireSyntheticOwner();
-  const customerIssued = await verifyCustomerPhoneChallenge(identityOrigin, ticket, code, signal);
-  let captainBearer: string | null = null;
+  if (nativeAdmissionInFlight) throw new IdentityClientError(409, "SIGN_OUT_REQUIRED");
+  nativeAdmissionInFlight = true;
+  try {
+    // A previous issued bearer or an unresolved device write must never be
+    // replaced by another phone proof. Check before consuming that proof.
+    if (await reconcileCaptainAdmission(signal) ||
+        await SecureStore.getItemAsync(key, nativeOptions)) {
+      throw new IdentityClientError(409, "SIGN_OUT_REQUIRED");
+    }
+    if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
+    const customerIssued = await verifyCustomerPhoneChallenge(identityOrigin, ticket, code, signal);
+    let captainBearer: string | null = null;
   try {
     const customer = await readVerifiedIdentitySession(identityOrigin, customerIssued.accessToken, signal);
     if (customer.role !== "customer") throw new IdentityClientError(502, "OWNER_RESPONSE_INVALID");
@@ -105,11 +190,33 @@ export async function verifyCaptainCode(
     }
     await readApprovedCaptainStanding(dshOrigin, captainBearer, "captain", captain.actorId, signal);
     if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
-    await SecureStore.setItemAsync(key, captainBearer, nativeOptions);
+    const issuedBearer = captainBearer;
+    await mutateNativeStorage(async () => {
+      if (signal.aborted || await SecureStore.getItemAsync(key, nativeOptions)) {
+        throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
+      }
+      // The marker is committed BEFORE the token. Failed acknowledgments or
+      // failed revocation leave it readable after process restart.
+      await SecureStore.setItemAsync(pendingKey, "in-flight", nativeOptions);
+      await SecureStore.setItemAsync(key, issuedBearer, nativeOptions);
+      if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
+      // A successful token write is the admission commit point. If marker
+      // deletion succeeds on-device but throws, returning failure would leave
+      // an undelivered live token with no marker. Treat cleanup as uncertain.
+      await SecureStore.deleteItemAsync(pendingKey, nativeOptions).catch(() => undefined);
+    });
     captainBearer = null;
     return { state: "approved", session: captain };
   } catch (error) {
-    if (captainBearer !== null) await revokeUndelivered(captainBearer);
+    if (captainBearer !== null) {
+      const undelivered = captainBearer;
+      await mutateNativeStorage(async () => {
+        if (await SecureStore.getItemAsync(key, nativeOptions) === undelivered) {
+          await SecureStore.deleteItemAsync(key, nativeOptions);
+        }
+      }).catch(() => undefined);
+      await revokeUndelivered(undelivered);
+    }
     // The temporary Customer proof was consumed before this downstream
     // failure. A retry with the same ticket can never work. Preserve the
     // distinction from an incorrect code (which fails before issuance).
@@ -125,17 +232,13 @@ export async function verifyCaptainCode(
     // A temporary Customer token is never held in Captain application storage.
     await revokeUndelivered(customerIssued.accessToken);
   }
+  } finally {
+    nativeAdmissionInFlight = false;
+  }
 }
 
 export async function leaveCaptainAdmission(signal: AbortSignal): Promise<void> {
   requireSyntheticOwner();
-  const bearer = await SecureStore.getItemAsync(key, nativeOptions);
-  if (!bearer) return;
-  try {
-    await revokeVerifiedIdentitySession(identityOrigin, bearer, signal);
-  } finally {
-    // The device does not retain the bearer after logout, including if remote
-    // revocation has an unknown outcome; the caller must report that error.
-    await SecureStore.deleteItemAsync(key, nativeOptions);
-  }
+  if (nativeAdmissionInFlight) throw new IdentityClientError(409, "SIGN_OUT_REQUIRED");
+  await reconcileCaptainAdmission(signal, true);
 }

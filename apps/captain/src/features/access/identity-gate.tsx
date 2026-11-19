@@ -6,6 +6,7 @@ import { AppState, Pressable, SafeAreaView, ScrollView, Text, TextInput, View } 
 import {
   leaveCaptainAdmission, readCaptainAdmission, requestCaptainPhoneCode, verifyCaptainCode,
 } from "./admission-transport";
+import CaptainEntryShell from "./captain-entry-shell";
 import { hasActiveCaptainSession } from "./captain-session";
 import { CaptainStandingError } from "./captain-standing";
 
@@ -18,6 +19,7 @@ function admissionError(error: unknown) {
       case "PHONE_CHALLENGE_LIMIT": return "تجاوزت محاولات التحقق المسموح بها.";
       case "OPERATION_RESULT_UNKNOWN": return "نتيجة العملية غير مؤكدة. تحقق من حالة الحساب قبل إعادة المحاولة.";
       case "PHONE_CHALLENGE_CONSUMED": return "استخدمت خدمة الهوية الرمز بالفعل، لكن تعذّر إكمال دخول الكابتن. اطلب رمزًا جديدًا.";
+      case "SIGN_OUT_REQUIRED": return "توجد جلسة سابقة أو تحقق غير مكتمل. سجّل الخروج أو أعد التحقق من حالة الحساب قبل طلب رمز آخر.";
       case "UNAUTHORIZED": return "انتهت الجلسة أو لم يتم التحقق منها.";
     }
   }
@@ -212,6 +214,10 @@ export default function CaptainIdentityGate() {
           {__DEV__ ? <Link href="/health" style={{ color: theme.interactiveText }}>فحص التطوير</Link> : null}
         </View>
       </ScrollView>
+      {!verified ? (
+        <CaptainEntryShell color={theme.colorSecondary} borderColor={theme.borderColor}
+          backgroundColor={theme.surface} />
+      ) : null}
     </SafeAreaView>
   );
 }
