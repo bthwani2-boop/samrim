@@ -2,14 +2,9 @@
 
 import { usePathname } from "next/navigation";
 import { type ReactNode, useState } from "react";
-import { findWorkspaceEntry, type WorkspaceGroup, workspaceRegistry } from "../navigation/workspace-registry";
-import { canShowNavigation, type OperatorPermission } from "../session/operator-permissions";
+import { findWorkspaceEntry, type WorkspaceGroup } from "../navigation/workspace-registry";
+import { type OperatorPermission, visibleWorkspaceEntries } from "../session/operator-permissions";
 import styles from "./operator-shell.module.css";
-
-const publicLinks = [
-  { href: "/", label: "تسجيل الدخول" },
-  { href: "/health", label: "حالة الخدمة" },
-];
 
 const workspaceGroups: Readonly<Record<WorkspaceGroup, string>> = {
   home: "الرئيسية",
@@ -25,14 +20,15 @@ const workspaceGroups: Readonly<Record<WorkspaceGroup, string>> = {
 export default function OperatorShell({ children, verifiedGrants }: Readonly<{
   children: ReactNode;
   // This is a display input for verified grants supplied by a server access boundary.
-  verifiedGrants?: readonly OperatorPermission[];
+  verifiedGrants: readonly OperatorPermission[] | null;
 }>) {
   const pathname = usePathname();
   const [signOutState, setSignOutState] = useState<"idle" | "pending" | "unconfirmed">("idle");
-  const permitted = verifiedGrants?.length
-    ? workspaceRegistry.filter(({ href, permission }) => href === "/workspace" ||
-        canShowNavigation(true, verifiedGrants, permission))
-    : [];
+  const permitted = visibleWorkspaceEntries(verifiedGrants ?? []);
+  const publicLinks = [
+    { href: "/", label: verifiedGrants === null ? "دخول المشغّل" : "الوصول إلى اللوحة" },
+    { href: "/health", label: "حالة الواجهة" },
+  ];
   const activeHref = pathname && findWorkspaceEntry(pathname)?.href;
 
   async function signOut() {
@@ -81,7 +77,7 @@ export default function OperatorShell({ children, verifiedGrants }: Readonly<{
             );
           }) : <ul>{publicLinks.map(entry => navigationLink(entry, pathname))}</ul>}
         </nav>
-        {permitted.length > 0 && (
+        {verifiedGrants !== null && (
           <button type="button" className={styles.logout} onClick={signOut}>
             تسجيل الخروج
           </button>

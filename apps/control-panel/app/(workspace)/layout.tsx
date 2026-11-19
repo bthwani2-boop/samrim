@@ -13,6 +13,6 @@ export default async function OperatorWorkspaceLayout({ children }: Readonly<{ c
   const allowed = access !== null && canEnterOperatorWorkspace(
     access.grants, requestHeaders.get("x-bthwani-route") ?? "",
   );
-  if (!allowed) return <OperatorWorkspaceGate />;
+  if (!allowed) return <OperatorWorkspaceGate hasWorkspace={Boolean(access?.grants.length)} />;
   return <>{children}</>;
 }

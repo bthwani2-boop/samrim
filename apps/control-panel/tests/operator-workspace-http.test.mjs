@@ -178,6 +178,13 @@ test("production Operator UI rechecks isolated Identity grants on every document
     assert.equal(verifiedSession.role, "operator");
     assert.doesNotMatch(JSON.stringify(verifiedSession), new RegExp(token));
 
+    const signedInRoot = await fetch(base + "/", {
+      headers: { cookie: `bthwani_operator_session=${token}` },
+      redirect: "manual", signal: AbortSignal.timeout(7000),
+    });
+    assert.equal(signedInRoot.status, 307);
+    assert.equal(signedInRoot.headers.get("location"), "/workspace");
+
     async function read(route, extra = {}) {
       const response = await fetch(base + route, {
         headers: { cookie: `bthwani_operator_session=${token}`, ...extra },
@@ -194,6 +201,12 @@ test("production Operator UI rechecks isolated Identity grants on every document
     assert.match(html, /تسجيل الخروج/, "authenticated workspace must offer a visible sign-out action");
     assert.doesNotMatch(html, /href="\/finance"/);
     assert.ok(calls.includes("/v1/operators/me/permissions/operations"));
+    html = await read("/workspace");
+    assert.match(html, /مساحة عمل المشغّل/);
+    assert.match(html, /أقسام بانتظار ربط الخدمة/);
+    assert.match(html, /href="\/operations"/);
+    assert.match(html, /href="\/captains"/);
+    assert.doesNotMatch(html, /href="\/(?:finance|access|policies)"/);
 
     html = await read("/finance", { "x-bthwani-route": "/operations" });
     assert.match(html, /الوصول إلى هذه المساحة غير متاح/);
@@ -202,6 +215,10 @@ test("production Operator UI rechecks isolated Identity grants on every document
     allowed.delete("operations");
     html = await read("/operations");
     assert.match(html, /الوصول إلى هذه المساحة غير متاح/, "grant revocation takes effect on next request");
+    html = await read("/");
+    assert.match(html, /تم التحقق من حسابك/);
+    assert.match(html, /تسجيل الخروج/);
+    assert.doesNotMatch(html, /href="\/(?:workspace|operations|captains)"/);
     allowed.add("operations");
 
     role = "merchant";

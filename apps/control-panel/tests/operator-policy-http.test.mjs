@@ -163,6 +163,13 @@ test("Operator city policy flows through real Next BFF, Identity grant and DSH v
     }
     assert.ok(ready, `Isolated production Next failed: ${output}`);
 
+    const dashboard = await call(`${base}/workspace`);
+    assert.equal(dashboard.status, 200);
+    const dashboardHtml = await dashboard.text();
+    assert.match(dashboardHtml, /مساحة عمل المشغّل/);
+    assert.match(dashboardHtml, /href="\/policies"[^>]*><strong>سياسات إتاحة المتاجر<\/strong>/);
+    assert.doesNotMatch(dashboardHtml, /href="\/(?:finance|operations)"|أقسام بانتظار ربط الخدمة/);
+
     const home = await call(`${base}/policies`);
     assert.equal(home.status, 200);
     const html = await home.text();

@@ -21,7 +21,7 @@ test("Operator workspace only renders protected children after owner-verified ac
   const layout = read("app/(workspace)/layout.tsx");
   assert.match(layout, /currentOperatorAccess/);
   assert.match(layout, /canEnterOperatorWorkspace/);
-  assert.match(layout, /if \(!allowed\) return <OperatorWorkspaceGate \/>/);
+  assert.match(layout, /if \(!allowed\) return <OperatorWorkspaceGate hasWorkspace=/);
   assert.match(layout, /return <>{children}<\/>/);
   const proxy = read("proxy.ts");
   assert.match(proxy, /requestHeaders\.set\("x-bthwani-route", request\.nextUrl\.pathname\)/);
@@ -39,8 +39,11 @@ test("Operator workspace only renders protected children after owner-verified ac
 test("Operator links perform a new document request, not a cached layout-only transition", () => {
   const shell = read("src/features/operator-shell/operator-shell.tsx");
   const login = read("src/features/access/operator-passkey-form.tsx");
+  const home = read("src/features/workspace/home-dashboard.tsx");
   assert.match(shell, /<a href={href}/);
-  assert.match(login, /<a href="\/workspace"/);
+  assert.match(login, /window\.location\.replace\("\/"\)/);
+  assert.match(home, /<a className={styles\.sectionCard} href={entry\.href}/);
   assert.doesNotMatch(shell, /next\/link/);
   assert.doesNotMatch(login, /next\/link/);
+  assert.doesNotMatch(home, /next\/link/);
 });

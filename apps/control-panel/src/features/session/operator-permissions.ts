@@ -1,4 +1,6 @@
-import { findWorkspaceEntry } from "../navigation/workspace-registry.ts";
+import {
+  findWorkspaceEntry, type WorkspaceEntry, workspaceRegistry,
+} from "../navigation/workspace-registry.ts";
 
 export const operatorPermissions = [
   "operations", "partners", "catalog", "marketing", "finance", "hr", "platform_policies",
@@ -22,11 +24,18 @@ export function canEnterOperatorWorkspace(
   verifiedGrants: readonly OperatorPermission[],
   pathname: string,
 ): boolean {
-  if (verifiedGrants.length === 0) return false;
   const entry = findWorkspaceEntry(pathname);
-  if (!entry) return false;
+  return entry !== null && canOpenWorkspaceEntry(verifiedGrants, entry);
+}
+
+function canOpenWorkspaceEntry(grants: readonly OperatorPermission[], entry: WorkspaceEntry): boolean {
+  if (grants.length === 0) return false;
   // Read-only landing without private metrics is available to any operator
   // holding at least one current Identity-owned permission.
   if (entry.href === "/workspace") return true;
-  return canShowNavigation(true, verifiedGrants, entry.permission);
+  return canShowNavigation(true, grants, entry.permission);
+}
+
+export function visibleWorkspaceEntries(grants: readonly OperatorPermission[]): WorkspaceEntry[] {
+  return workspaceRegistry.filter(entry => canOpenWorkspaceEntry(grants, entry));
 }

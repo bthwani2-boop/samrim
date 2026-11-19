@@ -49,6 +49,14 @@ test("Operator routes and the browser session endpoint fail closed on the produc
       await delay(250);
     }
     assert.ok(ready, `isolated Operator host did not start: ${output}`);
+    const health = await fetch(`${base}/health`, { signal: AbortSignal.timeout(10000) });
+    assert.equal(health.status, 200);
+    assert.match(await health.text(), /href="\/"[^>]*>فتح لوحة تحكم بثواني<\/a>/);
+    const entry = await fetch(`${base}/`, { signal: AbortSignal.timeout(10000) });
+    assert.equal(entry.status, 200);
+    const entryHtml = await entry.text();
+    assert.match(entryHtml, /تسجيل دخول المشغّلين غير متاح على هذه النسخة/);
+    assert.doesNotMatch(entryHtml, /href="\/(?:workspace|operations|finance|policies)"|تسجيل الدخول بمفتاح المرور/);
     for (const route of ["/operations", "/merchants/stores/synthetic", "/finance", "/access", "/policies/stage-sla"]) {
       const response = await fetch(base + route, {
         headers: { "x-operator-role": "operator", "x-actor-id": "forged-actor", Cookie: "operator=forged" },
@@ -58,6 +66,7 @@ test("Operator routes and the browser session endpoint fail closed on the produc
       assert.match(response.headers.get("cache-control") ?? "", /no-store/, route);
       const html = await response.text();
       assert.match(html, /الوصول إلى هذه المساحة غير متاح/, route);
+      assert.match(html, /href="\/"[^>]*>فتح صفحة دخول المشغّل<\/a>/, route);
       assert.match(html, /aria-label="التنقل الرئيسي"/, route);
       assert.match(html, /href="\/health"/, route);
       assert.doesNotMatch(html, /href="\/(?:workspace|operations|catalog|finance|access|policies)"/, route);

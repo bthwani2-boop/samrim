@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Button } from "antd";
+import { useState } from "react";
 
 type PasskeyOptions = {
   ceremonyId: string;
@@ -28,33 +29,9 @@ function decodeBase64Url(value: string): Uint8Array<ArrayBuffer> {
 export default function OperatorPasskeyForm() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const [authenticated, setAuthenticated] = useState(false);
-  const verificationEpoch = useRef(0);
-
-  // Recover only a current server-confirmed cookie session after a reload.
-  // A slow initial read must never overwrite a later login or logout.
-  useEffect(() => {
-    const epoch = ++verificationEpoch.current;
-    const controller = new AbortController();
-    void (async () => {
-      try {
-        const response = await fetch("/api/auth/session", {
-          method: "GET", credentials: "same-origin", cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!response.ok) return;
-        const session = await response.json() as { authenticated?: boolean; role?: string };
-        if (verificationEpoch.current === epoch && session.authenticated === true && session.role === "operator") {
-          setAuthenticated(true);
-        }
-      } catch { /* Invalid/absent session stays signed out. */ }
-    })();
-    return () => controller.abort();
-  }, []);
 
   async function signIn() {
     if (busy) return;
-    verificationEpoch.current++;
     setBusy(true);
     setMessage("");
     try {
@@ -106,44 +83,24 @@ export default function OperatorPasskeyForm() {
       if (session.authenticated !== true || session.role !== "operator") {
         throw new Error("الجلسة غير مخوّلة لدور المشغّل.");
       }
-      setAuthenticated(true);
-      setMessage("تم التحقق من الجلسة. يُسمح فقط بالمساحات التي تؤكد Identity صلاحيتها الحالية.");
+      // A new document request resolves the current server-side workspace grants.
+      window.location.replace("/");
     } catch (error) {
-      setAuthenticated(false);
-      setMessage(error instanceof Error ? error.message : "تعذر إتمام التحقق.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function signOut() {
-    if (busy) return;
-    verificationEpoch.current++;
-    setBusy(true);
-    try {
-      const response = await fetch("/api/auth/session", {
-        method: "POST",
-        credentials: "same-origin",
-        cache: "no-store",
-      });
-      setAuthenticated(false);
-      setMessage(response.ok ? "تم إنهاء الجلسة." : "تم حذف جلسة المتصفح، لكن لم يثبت إبطالها لدى Identity.");
-    } catch {
-      setAuthenticated(false);
-      setMessage("تعذر إثبات إبطال الجلسة لدى Identity.");
+      setMessage(error instanceof DOMException && error.name === "NotAllowedError"
+        ? "لم يكتمل التحقق بمفتاح المرور. حاول مرة أخرى باستخدام مفتاحك المسجّل."
+        : error instanceof Error ? error.message : "تعذر إتمام التحقق.");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <section aria-label="دخول مشغّل اختباري">
-      <p>تسجيل دخول المشغّل بمفتاح المرور — بيئة محلية معزولة فقط.</p>
-      {authenticated
-        ? <button type="button" disabled={busy} onClick={signOut}>تسجيل الخروج</button>
-        : <button type="button" disabled={busy} onClick={signIn}>التحقق بمفتاح المرور</button>}
-      {authenticated && <p><a href="/workspace">فتح مساحة العمل المصرّح بها</a></p>}
-      {message && <output>{message}</output>}
+    <section aria-label="دخول المشغّل">
+      <p>استخدم مفتاح المرور المسجّل لحسابك. تظهر مساحات العمل التي مُنحت صلاحية الوصول إليها.</p>
+      <Button type="primary" htmlType="button" loading={busy} disabled={busy} onClick={signIn}>
+        تسجيل الدخول بمفتاح المرور
+      </Button>
+      {message && <p role="alert">{message}</p>}
     </section>
   );
 }

@@ -99,6 +99,91 @@
   padding-inline: clamp(0.75rem, 2vw, 2rem);
 }
 
+.landing,
+.workspace {
+  margin-inline: auto;
+  padding-block: clamp(1.5rem, 5vw, 4rem);
+}
+
+.landing {
+  max-inline-size: 42rem;
+}
+
+.workspace {
+  max-inline-size: 66rem;
+}
+
+.landing h1,
+.workspace h1 {
+  color: var(--color-primary);
+  font-size: clamp(1.375rem, 4vw, 2rem);
+  margin-block-end: 1rem;
+}
+
+.landing p {
+  color: var(--color-secondary);
+  line-height: 1.7;
+}
+
+.primaryLink,
+.sectionCard {
+  border-radius: 0.625rem;
+  min-block-size: 2.75rem;
+  text-decoration: none;
+}
+
+.primaryLink {
+  align-items: center;
+  background: var(--action-bg);
+  color: var(--color-on-action);
+  display: inline-flex;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+}
+
+.primaryLink:hover {
+  background: var(--action-hover);
+  color: var(--color-on-action);
+}
+
+.sectionGrid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.workspace h2 {
+  font-size: 1.125rem;
+  margin-block: 1.75rem 0.75rem;
+}
+
+.sectionCard {
+  background: var(--surface-base);
+  border: 1px solid var(--border-subtle);
+  color: var(--color-primary);
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem 1rem;
+}
+
+.sectionCard span {
+  color: var(--color-secondary);
+}
+
+.sectionCard:hover {
+  background: var(--brand-structure-soft);
+  color: var(--interactive-text);
+}
+
+.primaryLink:focus-visible,
+.sectionCard:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 @media (width < 64rem) {
   .shell {
     grid-template-columns: minmax(0, 1fr);
@@ -116,5 +201,9 @@
   .navigation ul {
     display: flex;
     flex-wrap: wrap;
+  }
+
+  .logout {
+    inline-size: auto;
   }
 }

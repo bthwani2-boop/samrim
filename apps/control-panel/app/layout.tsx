@@ -7,7 +7,7 @@ import OperatorShell from "../src/features/operator-shell/operator-shell";
 import { currentOperatorAccess } from "../src/server/current-operator-access";
 import { Providers } from "./providers";
 
-export const metadata = { title: "بثواني — تهيئة لوحة التحكم", robots: { index: false, follow: false } };
+export const metadata = { title: "بثواني — لوحة التحكم", robots: { index: false, follow: false } };
 
 export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   // Header access keeps the Operator HTML request-rendered, so the CSP nonce is never cached.
@@ -18,7 +18,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
       <body style={{ margin: 0 }}>
         <AntdRegistry>
           <Providers cspNonce={nonce}>
-            <OperatorShell verifiedGrants={verifiedOperator?.grants ?? []}>{children}</OperatorShell>
+            <OperatorShell verifiedGrants={verifiedOperator?.grants ?? null}>{children}</OperatorShell>
           </Providers>
         </AntdRegistry>
       </body>
