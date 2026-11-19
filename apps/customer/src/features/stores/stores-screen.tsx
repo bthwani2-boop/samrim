@@ -34,6 +34,16 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
   const [showSearch, setShowSearch] = React.useState(variant === "directory" || Boolean(initial.q));
   const [draftQuery, setDraftQuery] = React.useState(initial.q);
   const [query, setQuery] = React.useState(initial.q);
+  const routeScope = JSON.stringify([initial.city, initial.q]);
+  const [appliedRouteScope, setAppliedRouteScope] = React.useState(routeScope);
+  React.useEffect(() => {
+    if (appliedRouteScope === routeScope) return;
+    setDraftCity(initial.city);
+    setCityId(initial.city);
+    setDraftQuery(initial.q);
+    setQuery(initial.q);
+    setAppliedRouteScope(routeScope);
+  }, [appliedRouteScope, routeScope, initial.city, initial.q]);
   const scope = JSON.stringify([cityId, query]);
   const [retry, setRetry] = React.useState(0);
   const [state, setState] = React.useState<PageState>({ scope: "", loading: true, loadingMore: false, items: [] });
@@ -57,7 +67,8 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
       });
     return () => { abort.abort(); generation.current++; };
   }, [api, cityId, query, scope, retry]);
-  const visible: PageState = state.scope === scope ? state : { scope, loading: true, loadingMore: false, items: [] };
+  const visible: PageState = appliedRouteScope === routeScope && state.scope === scope
+    ? state : { scope, loading: true, loadingMore: false, items: [] };
   const loadMore = async () => {
     if (!visible.cursor || visible.loadingMore || visible.loading) return;
     const scopedCity = cityId;

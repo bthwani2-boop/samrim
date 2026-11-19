@@ -28,9 +28,9 @@ function harness({ variant = "directory", params = {} } = {}) {
   const hooks = [];
   const requests = [];
   let index = 0;
-  let effect;
-  let deps;
-  let cleanup;
+  const effects = new Map();
+  const effectDeps = new Map();
+  const cleanups = new Map();
   const jsx = (type, props) => ({ type, props: props ?? {} });
   const imports = {
     "@bthwani/dsh": {
@@ -53,9 +53,11 @@ function harness({ variant = "directory", params = {} } = {}) {
         return hooks[at];
       },
       useEffect(next, nextDeps) {
-        if (!deps || nextDeps.some((value, at) => value !== deps[at])) {
-          deps = nextDeps;
-          effect = next;
+        const at = index++;
+        const previous = effectDeps.get(at);
+        if (!previous || nextDeps.some((value, at) => value !== previous[at])) {
+          effectDeps.set(at, nextDeps);
+          effects.set(at, next);
         }
       },
     },
@@ -81,13 +83,14 @@ function harness({ variant = "directory", params = {} } = {}) {
     render() {
       index = 0;
       const view = mod.exports.default({ variant });
-      if (effect) {
-        cleanup?.();
-        cleanup = effect();
-        effect = undefined;
+      for (const [at, effect] of effects) {
+        cleanups.get(at)?.();
+        cleanups.set(at, effect());
       }
+      effects.clear();
       return view;
     },
+    setParams(next) { Object.assign(params, next); },
     read() {
       assert.ok(requests.length, "expected a Store list request");
       return requests.shift();
@@ -185,4 +188,44 @@ test("a temporary continuation outage preserves the already read Store cards", a
   const failed = app.render();
   assert.ok(byId(failed, "store-first"));
   assert.ok(byId(failed, "stores-error"));
+});
+
+test("route navigation changes the DSH Store query without exposing old-city results", async () => {
+  const app = harness({ params: { city: "sanaa", q: "old" } });
+  app.render();
+  const first = app.read();
+  first.resolve({ items: [store("previous")], revision: 1 });
+  await settle();
+  assert.ok(byId(app.render(), "store-previous"));
+
+  app.setParams({ city: "aden", q: "new" });
+  const navigating = app.render();
+  assert.equal(byId(navigating, "store-previous"), undefined);
+  app.render();
+  const next = app.read();
+  assert.equal(next.cityId, "aden");
+  assert.equal(next.query, "new");
+  next.resolve({ items: [{ ...store("current"), cityId: "aden" }], revision: 2 });
+  await settle();
+  const current = app.render();
+  assert.ok(byId(current, "store-current"));
+  assert.equal(byId(current, "store-previous"), undefined);
+});
+
+test("route change aborts an in-flight DSH read and discards its late response", async () => {
+  const app = harness({ params: { city: "sanaa" } });
+  app.render();
+  const old = app.read();
+  app.setParams({ city: "aden" });
+  assert.equal(byId(app.render(), "store-stale"), undefined);
+  app.render();
+  assert.equal(old.signal.aborted, true);
+  const next = app.read();
+  assert.equal(next.cityId, "aden");
+  old.resolve({ items: [store("stale")], revision: 1 });
+  await settle();
+  assert.equal(byId(app.render(), "store-stale"), undefined);
+  next.resolve({ items: [{ ...store("fresh"), cityId: "aden" }], revision: 2 });
+  await settle();
+  assert.ok(byId(app.render(), "store-fresh"));
 });
