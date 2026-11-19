@@ -29,10 +29,11 @@ $android=@(
 
 function Report([string]$key,[string]$value) { Write-Output ($key+'='+$value) }
 function Require([bool]$valid,[string]$why){if(-not $valid){throw ('BLOCKED '+$why)}}
-function Probe([string]$url,[string]$accept='text/html') {
+function Probe([string]$url,[string]$accept='text/html',[string]$platform='') {
   $curl=Join-Path $env:WINDIR 'System32\curl.exe'
   Require (Test-Path -LiteralPath $curl -PathType Leaf) 'WINDOWS_CURL_MISSING'
-  $response=@(& $curl '--silent' '--max-time' '7' '--output' 'NUL' '--write-out' '%{http_code}|%{content_type}' '--header' ('Accept: '+$accept) $url 2>$null)
+  $platformHeader=if($platform){@('--header',('Expo-Platform: '+$platform))}else{@()}
+  $response=@(& $curl '--silent' '--max-time' '7' '--output' 'NUL' '--write-out' '%{http_code}|%{content_type}' '--header' ('Accept: '+$accept) @platformHeader $url 2>$null)
   $exitCode=$LASTEXITCODE
   $parts=($response -join '').Trim().Split('|')
   return @{ Code=$(if($parts.Count){$parts[0]}else{'000'}); Mime=$(if($parts.Count -gt 1){$parts[1]}else{''}); Exit=$exitCode }
@@ -136,7 +137,7 @@ function Open-Android {
     $name=[string]$entry.Name
     $port=[int]$entry.Port
     # Native development builds need Expo's manifest, not merely web HTML or /status.
-    $manifest=Probe ('http://127.0.0.1:'+$port+'/') 'application/expo+json'
+    $manifest=Probe ('http://127.0.0.1:'+$port+'/') 'application/expo+json' 'android'
     if($manifest.Exit -ne 0 -or $manifest.Code -ne '200' -or $manifest.Mime -notmatch '^application/expo\+json'){
       $blocked++
       Report 'ANDROID_APP' ($name+' BLOCKED native_manifest status='+$manifest.Code+' content_type='+$manifest.Mime)

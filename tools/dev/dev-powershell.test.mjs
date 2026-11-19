@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const scriptPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "dev.ps1");
+
+test("the Android Expo manifest check identifies the native platform", () => {
+  const opener = readFileSync(new URL("./open-dev-apps.ps1", import.meta.url), "utf8");
+  assert.match(opener, /'Expo-Platform: '\s*\+\s*\$platform/);
+  assert.match(opener, /\$manifest=Probe[^\r\n]*'application\/expo\+json'\s+'android'/);
+});
 
 test("the unified dev launcher and each embedded PowerShell block parse on Windows", {
   skip: process.platform !== "win32",
