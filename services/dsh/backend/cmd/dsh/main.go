@@ -182,6 +182,10 @@ func main() {
 		if err != nil {
 			log.Fatal("DSH protected Captain standing cannot start: ", err)
 		}
+		handler, err = isolatedMerchantStandingHandler(db, schema, addr, handler)
+		if err != nil {
+			log.Fatal("DSH protected Merchant standing cannot start: ", err)
+		}
 		server := &http.Server{
 			Addr:              addr,
 			Handler:           handler,

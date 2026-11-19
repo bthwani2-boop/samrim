@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"database/sql"
+	"errors"
 	"log"
 	"net"
 	"net/http"
@@ -28,6 +30,21 @@ func allowedDevelopmentListen(address, isolatedMode, containerMode, schema strin
 		(host == "0.0.0.0" && port == "3302" && containerMode == "true")
 }
 
+func isolatedVerifierTLS(isolated, container, schema, certPath, keyPath string) (*tls.Config, error) {
+	if certPath == "" && keyPath == "" {
+		return nil, nil
+	}
+	if isolated != "true" || container != "true" || !session.IsIsolatedTestSchema(schema) ||
+		certPath == "" || keyPath == "" {
+		return nil, errors.New("Identity verifier TLS requires isolated Docker and both certificate files")
+	}
+	pair, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		return nil, errors.New("Identity verifier TLS certificate or key is invalid")
+	}
+	return &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{pair}}, nil
+}
+
 func main() {
 	// Isolated development only. Direct Merchant admission still requires
 	// a verified Customer session.
@@ -48,6 +65,13 @@ func main() {
 		os.Getenv("BTHWANI_ISOLATED_TEST_MODE"),
 		os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE"), schema) {
 		log.Fatal("Identity development listener requires loopback or explicitly isolated Docker")
+	}
+	tlsConfig, err := isolatedVerifierTLS(
+		os.Getenv("BTHWANI_ISOLATED_TEST_MODE"), os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE"), schema,
+		os.Getenv("IDENTITY_ISOLATED_VERIFIER_TLS_CERT"), os.Getenv("IDENTITY_ISOLATED_VERIFIER_TLS_KEY"),
+	)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	db, err := sql.Open("postgres", databaseURL)
@@ -110,7 +134,25 @@ func main() {
 		routes.Handle(session.OperatorPasskeyOptionsPath, handler)
 		routes.Handle(session.OperatorPasskeyFinishPath, handler)
 	}
-	routes.Handle("/", session.NewHandler(session.NewVerifier(reader)))
+	verifier := session.NewHandler(session.NewVerifier(reader))
+	routes.Handle("/", verifier)
+	if tlsConfig != nil {
+		// Only the owner-to-owner session read is needed on the private TLS port.
+		secureRoutes := http.NewServeMux()
+		secureRoutes.Handle("GET /v1/sessions/current", verifier)
+		secureServer := &http.Server{
+			Handler: secureRoutes, TLSConfig: tlsConfig,
+			ReadHeaderTimeout: 4 * time.Second, ReadTimeout: 6 * time.Second, WriteTimeout: 6 * time.Second,
+			IdleTimeout: 20 * time.Second, MaxHeaderBytes: 8192,
+		}
+		listener, err := net.Listen("tcp", "0.0.0.0:3343")
+		if err != nil {
+			log.Fatal("Identity isolated TLS listener unavailable")
+		}
+		go func() {
+			log.Fatal(secureServer.ServeTLS(listener, "", ""))
+		}()
+	}
 	server := &http.Server{
 		Addr: address, Handler: routes,
 		ReadHeaderTimeout: 4 * time.Second, ReadTimeout: 6 * time.Second, WriteTimeout: 6 * time.Second,

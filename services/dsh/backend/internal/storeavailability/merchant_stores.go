@@ -27,10 +27,18 @@ type MerchantStoreLister interface {
 }
 
 func (s *Service) ListMerchantStores(ctx context.Context, token string) (MerchantStoreStanding, error) {
-	if s == nil || s.identity == nil || token == "" || strings.TrimSpace(token) != token {
+	if s == nil {
 		return MerchantStoreStanding{}, ErrUnauthorized
 	}
-	actor, err := s.identity.ResolveCurrentSession(ctx, token)
+	reader, _ := s.grants.(MerchantStoreLister)
+	return listMerchantStores(ctx, token, s.identity, reader)
+}
+
+func listMerchantStores(ctx context.Context, token string, identity IdentitySessions, reader MerchantStoreLister) (MerchantStoreStanding, error) {
+	if identity == nil || token == "" || strings.TrimSpace(token) != token {
+		return MerchantStoreStanding{}, ErrUnauthorized
+	}
+	actor, err := identity.ResolveCurrentSession(ctx, token)
 	if errors.Is(err, ErrIdentityUnavailable) {
 		return MerchantStoreStanding{}, ErrIdentityUnavailable
 	}
@@ -40,8 +48,7 @@ func (s *Service) ListMerchantStores(ctx context.Context, token string) (Merchan
 	if actor.Role != MerchantRole {
 		return MerchantStoreStanding{}, ErrForbidden
 	}
-	reader, ok := s.grants.(MerchantStoreLister)
-	if !ok {
+	if reader == nil {
 		return MerchantStoreStanding{}, ErrStoreOwnerUnavailable
 	}
 	stores, err := reader.ListOwnedMerchantStores(ctx, actor.Subject)

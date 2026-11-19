@@ -58,3 +58,17 @@ test("Identity verifier is synthetic only and has no privileged host exposure", 
   assert.equal(id.depends_on.postgres.condition, "service_healthy");
   assert.ok(id.healthcheck.test.includes("wget -q -O /dev/null http://127.0.0.1:3302/health || exit 1"));
 });
+
+test("Merchant development overlay adds only private TLS and read-side standing", () => {
+  const overlay = compose("compose.merchant-development.yaml");
+  assert.deepEqual(Object.keys(overlay.services).sort(), ["dsh", "identity"]);
+  const { dsh, identity } = overlay.services;
+  assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_MERCHANT_STANDING, "true");
+  assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_STORE_AVAILABILITY, undefined);
+  assert.equal(dsh.environment.DSH_IDENTITY_VERIFIER_URL, "https://identity:3343");
+  assert.equal(dsh.environment.SSL_CERT_FILE, "/run/identity-ca/ca.pem");
+  assert.deepEqual(dsh.volumes, ["merchant-identity-ca:/run/identity-ca:ro"]);
+  assert.deepEqual(identity.volumes, ["merchant-identity-tls:/run/identity-tls:ro"]);
+  assert.equal(identity.ports, undefined);
+  assert.equal(dsh.ports, undefined);
+});

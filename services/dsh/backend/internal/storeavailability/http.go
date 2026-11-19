@@ -18,20 +18,8 @@ func NewHandler(service *Service) (http.Handler, error) {
 		return nil, ErrUnauthorized
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/stores/mine", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
-		token, ok := bearerToken(r)
-		if !ok {
-			writeFailure(w, ErrUnauthorized)
-			return
-		}
-		standing, err := service.ListMerchantStores(r.Context(), token)
-		if err != nil {
-			writeFailure(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, standing)
-	})
+	reader, _ := service.grants.(MerchantStoreLister)
+	mux.Handle("GET /v1/stores/mine", NewMerchantStandingHandler(service.identity, reader))
 	mux.HandleFunc("GET /v1/stores/{storeID}/availability", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		token, ok := bearerToken(r)
@@ -103,6 +91,24 @@ func NewHandler(service *Service) (http.Handler, error) {
 		}{Availability: snapshot, Replay: replay})
 	})
 	return mux, nil
+}
+
+// NewMerchantStandingHandler exposes only the current Merchant's owned Store read.
+func NewMerchantStandingHandler(identity IdentitySessions, reader MerchantStoreLister) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		token, ok := bearerToken(r)
+		if !ok {
+			writeFailure(w, ErrUnauthorized)
+			return
+		}
+		standing, err := listMerchantStores(r.Context(), token, identity, reader)
+		if err != nil {
+			writeFailure(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, standing)
+	})
 }
 
 func bearerToken(r *http.Request) (string, bool) {

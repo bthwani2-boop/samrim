@@ -134,6 +134,14 @@ The default local DSH origin is `127.0.0.1:3202`. Its standing endpoint must
 independently verify the Merchant session with Identity. For a containerized
 DSH verifier connection, set `REF_DSH_IDENTITY_VERIFIER_URL` to the authorized
 HTTPS Identity origin. Leaving it unset keeps protected DSH operations unavailable.
+
+For the isolated Docker Merchant read path, add `compose.merchant-development.yaml`
+to the base, Identity and DSH Compose files. It requires two dedicated volumes.
+The Identity TLS volume contains `server.pem` and `server-key.pem`, with the key
+readable only by Identity's UID 65532. The separate DSH trust volume contains
+`ca.pem`. Issue the leaf for DNS name `identity`, keep the CA signing key off the
+containers, and never publish port 3343. The overlay enables only the authenticated
+owned-Store read and does not enable Store availability mutations.
 The opt-in deployment sequence is:
 
 ```powershell
