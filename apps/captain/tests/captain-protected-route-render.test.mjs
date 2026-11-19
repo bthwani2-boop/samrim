@@ -47,7 +47,7 @@ function harness() {
     useRef(initial) { return hook(() => ({ current: initial })).value; },
     useCallback(fn) { index++; return fn; },
   };
-  const jsx = (type, props) => ({ type, props: props ?? {} });
+  const jsx = (type, props, key) => ({ type, props: props ?? {}, key });
   const mocks = {
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({theme: {
       background: "black", color: "white", interactiveText: "white", borderColor: "gray",
@@ -203,4 +203,55 @@ test("Captain denial after a previously approved session removes protected UI", 
   const tree = h.render();
   assert.equal(tree.type, "Redirect");
   assert.ok(!nodes(tree).includes(h.child));
+});
+
+test("revalidation never reuses protected component state across Captain actors or renewed expiries", async () => {
+  const h = harness();
+  h.render();
+  h.startFocus();
+  const first = approved();
+  first.session.actorId = "captain-first";
+  h.next().resolve(first);
+  await settle();
+  const firstHolder = nodes(h.render()).find(x => x.props?.children === h.child);
+  assert.ok(firstHolder, "first verified Captain mounts protected subtree");
+
+  h.periodic();
+  const second = approved();
+  second.session.actorId = "captain-second";
+  h.next().resolve(second);
+  await settle();
+  const secondHolder = nodes(h.render()).find(x => x.props?.children === h.child);
+  assert.ok(secondHolder, "second verified Captain mounts protected subtree");
+  assert.notEqual(secondHolder.key, firstHolder.key,
+    "different Captain actor must remount instead of retaining another actor's private UI state");
+
+  h.periodic();
+  const rotated = approved();
+  rotated.session.actorId = "captain-second";
+  rotated.session.sessionExpiresAt = new Date(Date.now() + 120_000).toISOString();
+  h.next().resolve(rotated);
+  await settle();
+  const rotatedHolder = nodes(h.render()).find(x => x.props?.children === h.child);
+  assert.notEqual(rotatedHolder.key, secondHolder.key,
+    "a renewed Captain session expiry must not inherit the prior protected UI state");
+});
+
+test("the same approved Captain session preserves component state across owner revalidation", async () => {
+  const h = harness();
+  h.render();
+  h.startFocus();
+  const stableSession = approved();
+  h.next().resolve(stableSession);
+  await settle();
+  const firstHolder = nodes(h.render()).find(x => x.props?.children === h.child);
+  assert.ok(firstHolder);
+  assert.equal(typeof firstHolder.key, "string");
+
+  h.periodic();
+  h.next().resolve(stableSession);
+  await settle();
+  const checkedHolder = nodes(h.render()).find(x => x.props?.children === h.child);
+  assert.equal(checkedHolder.key, firstHolder.key,
+    "re-reading the same verified session must preserve its protected component state");
 });

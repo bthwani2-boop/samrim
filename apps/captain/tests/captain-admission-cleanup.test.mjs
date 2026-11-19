@@ -108,3 +108,47 @@ test("consumed Captain phone proof requires a fresh ticket while incorrect code 
     assert.equal(challenges,1);
   }
 });
+
+test("definitive DSH suspension is reported as ineligible, not an incorrect phone proof", async () => {
+  class IdentityError extends Error {
+    constructor(status, code) { super(code); this.status = status; this.code = code; }
+  }
+  class StandingError extends Error {
+    constructor(status, code) { super(code); this.status = status; this.code = code; }
+  }
+  const revoked = [];
+  const mocks = {
+    "@bthwani/identity": {
+      IdentityClientError: IdentityError,
+      async verifyCustomerPhoneChallenge() { return { accessToken: "temporary-customer" }; },
+      async readVerifiedIdentitySession() { return { actorId: "captain-one", role: "customer" }; },
+      async revokeVerifiedIdentitySession(_origin, bearer) { revoked.push(bearer); },
+    },
+    "expo-secure-store": { WHEN_UNLOCKED_THIS_DEVICE_ONLY: "device" },
+    "react-native": { Platform: { OS: "android" } },
+    "./captain-standing": {
+      CaptainStandingError: StandingError,
+      async readApprovedCaptainStanding() { throw new StandingError(403, "CAPTAIN_NOT_ELIGIBLE"); },
+      async requestCaptainApplication() { throw new StandingError(403, "CAPTAIN_NOT_ELIGIBLE"); },
+    },
+  };
+  const mod = { exports: {} };
+  new Function("require", "module", "exports", "process", "setTimeout", "clearTimeout", compiled)(
+    name => {
+      assert.ok(Object.hasOwn(mocks, name));
+      return mocks[name];
+    },
+    mod, mod.exports,
+    { env: {
+      EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:3201",
+      EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN: "http://127.0.0.1:3202",
+    } },
+    setTimeout, clearTimeout,
+  );
+  await assert.rejects(
+    mod.exports.verifyCaptainCode("synthetic-ticket", "123456", new AbortController().signal),
+    error => error instanceof StandingError && error.status === 403 && error.code === "CAPTAIN_NOT_ELIGIBLE",
+    "owner-confirmed suspension must be reported distinctly from a consumed phone challenge",
+  );
+  assert.deepEqual(revoked, ["temporary-customer"], "temporary Customer proof is revoked even after DSH refusal");
+});

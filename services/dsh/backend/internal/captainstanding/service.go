@@ -112,8 +112,12 @@ func (s *Service) Apply(ctx context.Context, bearer string) (Standing, error) {
 		return Standing{}, ErrOwnerUnavailable
 	}
 	switch standing.Status {
-	case Pending, Approved, Suspended, Revoked:
+	case Pending, Approved:
 		return standing, nil
+	case Suspended, Revoked:
+		// A current Customer may recover a pending/approved application only.
+		// Never turn an inactive DSH standing into a successful admission result.
+		return Standing{}, ErrNotEligible
 	default:
 		return Standing{}, ErrOwnerUnavailable
 	}

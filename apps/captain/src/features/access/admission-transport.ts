@@ -114,6 +114,12 @@ export async function verifyCaptainCode(
     // failure. A retry with the same ticket can never work. Preserve the
     // distinction from an incorrect code (which fails before issuance).
     if (signal.aborted) throw error;
+    // A DSH owner-confirmed suspension is not a phone-code error. The temporary
+    // Customer session is still revoked below; never suggest retrying admission
+    // as if a fresh proof could override suspended or revoked Captain standing.
+    if (error instanceof CaptainStandingError && error.code === "CAPTAIN_NOT_ELIGIBLE") {
+      throw error;
+    }
     throw new IdentityClientError(0, "PHONE_CHALLENGE_CONSUMED");
   } finally {
     // A temporary Customer token is never held in Captain application storage.

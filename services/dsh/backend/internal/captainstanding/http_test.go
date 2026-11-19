@@ -109,3 +109,25 @@ func TestCaptainOperatorStandingPatchRejectsAmbiguousAndForgedInput(t *testing.T
 		t.Fatalf("forged actor header influenced command owner binding: %+v", owner.lastChange)
 	}
 }
+
+func TestInactiveCaptainApplicationHTTPReturnsForbiddenInsteadOfInactiveStanding(t *testing.T) {
+	for _, status := range []Status{Suspended, Revoked} {
+		t.Run(string(status), func(t *testing.T) {
+			owner := &fakeStandingRepository{standing: Standing{ActorID: "captain-17", Status: status, Version: 3}}
+			identity := &fakeIdentity{actor: Actor{ID: "captain-17", Role: "customer"}}
+			handler := NewHTTPHandler(NewService(identity, owner))
+			request := httptest.NewRequest(http.MethodPost, "/v1/actors/me/captain-application", nil)
+			request.Header.Set("Authorization", "Bearer verified-customer")
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusForbidden ||
+				!strings.Contains(response.Body.String(), "CAPTAIN_NOT_ELIGIBLE") ||
+				strings.Contains(response.Body.String(), string(status)) {
+				t.Fatalf("inactive applicant leaked status as success: code=%d body=%s", response.Code, response.Body.String())
+			}
+			if owner.standing.Status != status || owner.standing.Version != 3 {
+				t.Fatalf("inactive standing changed during denied application: %+v", owner.standing)
+			}
+		})
+	}
+}

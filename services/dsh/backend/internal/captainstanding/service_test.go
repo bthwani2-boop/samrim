@@ -151,3 +151,19 @@ func TestVerifiedCustomerApplicationNeverSelfApprovesCaptainRole(t *testing.T) {
 		t.Fatalf("approved applicant not readable at owner: %+v %v", read, err)
 	}
 }
+
+func TestSuspendedAndRevokedApplicantCannotRecoverAnApprovedCaptainStanding(t *testing.T) {
+	for _, status := range []Status{Suspended, Revoked} {
+		t.Run(string(status), func(t *testing.T) {
+			existing := Standing{ActorID: "captain-17", Status: status, Version: 3}
+			repo := &fakeStandingRepository{standing: existing}
+			svc := NewService(&fakeIdentity{actor: Actor{ID: "captain-17", Role: "customer"}}, repo)
+			if _, err := svc.Apply(context.Background(), "verified-customer"); !errors.Is(err, ErrNotEligible) {
+				t.Fatalf("inactive applicant should be denied, got %v", err)
+			}
+			if repo.standing != existing || repo.changes != 0 {
+				t.Fatalf("application changed previously inactive standing: %+v", repo.standing)
+			}
+		})
+	}
+}
