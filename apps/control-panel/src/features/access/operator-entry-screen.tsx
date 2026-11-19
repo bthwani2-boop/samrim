@@ -1,8 +1,9 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import styles from "../operator-shell/operator-shell.module.css";
 import { currentOperatorAccess } from "../../server/current-operator-access";
 import { resolveIsolatedOperatorConfig } from "../../server/operator-passkey-bff";
+import { workspaceRegistry } from "../navigation/workspace-registry";
+import styles from "../operator-shell/operator-shell.module.css";
 import OperatorPasskeyForm from "./operator-passkey-form";
 
 export default async function OperatorEntryScreen() {
@@ -32,6 +33,15 @@ export default async function OperatorEntryScreen() {
           <p>للوصول إلى أقسام العمل، استخدم بيئة دخول معتمدة ومفتاح مرور مسجّل لحسابك.</p>
         </>
       )}
+      <section className={styles.overview} aria-labelledby="operator-sections-title">
+        <h2 id="operator-sections-title">أقسام لوحة التحكم</h2>
+        <p>تظهر روابط الأقسام بعد التحقق من صلاحيات حسابك. بعض الأقسام بانتظار ربط خدماتها.</p>
+        <ul>
+          {workspaceRegistry.filter(entry => entry.permission !== null).map(entry => (
+            <li key={entry.href}>{entry.label}</li>
+          ))}
+        </ul>
+      </section>
     </main>
   );
 }

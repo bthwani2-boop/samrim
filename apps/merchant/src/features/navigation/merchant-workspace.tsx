@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { MerchantDSHStanding } from "../access/dsh-standing";
+import MerchantStoreDirectory from "./merchant-store-directory";
 import {
   type MerchantSection,
   merchantMobileSections,
@@ -52,22 +53,6 @@ export default function MerchantWorkspace({ stores, onRefresh, onSignOut }: Read
     );
   };
 
-  const storeCard = (store: MerchantDSHStanding["stores"][number]) => (
-    <View key={store.id} style={{
-      padding: 16, gap: 6, borderRadius: 14, borderWidth: 1,
-      borderColor: theme.borderColor, backgroundColor: theme.surface,
-    }}>
-      <Text style={{ color: theme.color, fontSize: 18, fontWeight: "700", textAlign: "auto" }}>
-        {store.name}
-      </Text>
-      <Text style={{ color: theme.colorSecondary, textAlign: "auto" }}>
-        {store.relation === "MARKETPLACE" ? "ضمن سوق بثواني" : "متجر مباشر"}
-        {" · "}
-        {store.published ? "منشور" : "غير منشور"}
-      </Text>
-    </View>
-  );
-
   const metric = (title: string, value: number) => (
     <View key={title} style={{
       flexGrow: 1, flexBasis: 120, minWidth: 110, padding: 16, gap: 8,
@@ -79,20 +64,12 @@ export default function MerchantWorkspace({ stores, onRefresh, onSignOut }: Read
     </View>
   );
 
-  const storeList = (
-    <View style={{ gap: 10 }}>
-      {stores.length === 0 ? (
-        <View style={{ backgroundColor: theme.surface, borderRadius: 14, padding: 18,
-          borderWidth: 1, borderColor: theme.borderColor }}>
-          <Text style={{ color: theme.color, textAlign: "auto", fontWeight: "600" }}>
-            يمكنك دخول مساحة التاجر حتى لو لم يُربط بك أي متجر بعد.
-          </Text>
-          <Text style={{ color: theme.colorSecondary, textAlign: "auto", marginTop: 8 }}>
-            إضافة المتجر ونشره وإسناد عضوياته إجراءات مستقلة يملكها DSH.
-          </Text>
-        </View>
-      ) : stores.map(storeCard)}
-    </View>
+  const showStores = (
+    <Pressable accessibilityRole="button" onPress={() => setSection("stores")}
+      style={{ alignSelf: "flex-start", minHeight: 44, justifyContent: "center",
+        borderRadius: 10, paddingHorizontal: 16, backgroundColor: theme.actionBackground }}>
+      <Text style={{ color: theme.onAction, fontWeight: "700" }}>عرض متاجري</Text>
+    </Pressable>
   );
 
   return (
@@ -100,7 +77,7 @@ export default function MerchantWorkspace({ stores, onRefresh, onSignOut }: Read
       <View style={{ flex: 1, flexDirection: desktop ? "row" : "column" }}>
         {desktop ? (
           <View style={{
-            width: 240, backgroundColor: theme.surface, borderColor: theme.borderColor,
+            width: 240, flexShrink: 0, backgroundColor: theme.surface, borderColor: theme.borderColor,
             borderLeftWidth: 1, padding: 16, gap: 12,
           }}>
             <Text style={{ color: theme.color, fontSize: 23, fontWeight: "700", textAlign: "auto" }}>
@@ -112,13 +89,13 @@ export default function MerchantWorkspace({ stores, onRefresh, onSignOut }: Read
             </View>
           </View>
         ) : null}
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{
+        <ScrollView style={{ flex: 1, minWidth: 0 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{
           width: "100%", maxWidth: 1080, alignSelf: "center",
           padding: desktop ? 30 : 16, gap: 20, paddingBottom: 32,
         }}>
           <View style={{ gap: 14 }}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              <View style={{ flexGrow: 1, alignItems: "flex-end", gap: 6 }}>
+              <View style={{ flexGrow: 1, flexShrink: 1, gap: 6 }}>
                 <Text accessibilityRole="header" style={{
                   color: theme.color, fontSize: desktop ? 28 : 24, fontWeight: "700", textAlign: "auto",
                 }}>{selected.label}</Text>
@@ -148,30 +125,19 @@ export default function MerchantWorkspace({ stores, onRefresh, onSignOut }: Read
                 {metric("المتاجر المنشورة", summary.published)}
                 {metric("غير المنشورة", summary.unpublished)}
               </View>
-              <View style={{ gap: 10 }}>
-                <Text style={{ color: theme.color, fontSize: 20, fontWeight: "700", textAlign: "auto" }}>متاجرك</Text>
-                {storeList}
-              </View>
+              {showStores}
             </>
-          ) : section === "stores" ? storeList : section === "more" ? (
+          ) : section === "stores" ? <MerchantStoreDirectory stores={stores} /> : section === "more" ? (
             <View style={{ gap: 10 }}>
               {merchantNavigation.filter(item => item.id !== "more" && item.id !== "home")
                 .map(item => navigationButton(item))}
-              <Text style={{ color: theme.colorSecondary, textAlign: "auto" }}>
-                ترتبط إدارة الموظفين والملف الشخصي والاتفاقيات بسلطات ملاكها، ولا تُفتح من هذه القائمة وحدها.
-              </Text>
             </View>
           ) : (
             <View style={{
               padding: 24, borderWidth: 1, borderColor: theme.borderColor,
               borderRadius: 14, gap: 10, backgroundColor: theme.surface,
             }}>
-              <Text style={{ color: theme.color, fontSize: 19, fontWeight: "700", textAlign: "auto" }}>
-                {selected.label}
-              </Text>
-              <Text accessibilityRole="alert" style={{ color: theme.colorSecondary, textAlign: "auto" }}>
-                لم تُفعّل هذه الوظيفة بعد. لن تُعرض بيانات أو إجراءات غير مخولة حتى يكتمل ربطها واختبارها لدى مالكها.
-              </Text>
+              {showStores}
             </View>
           )}
         </ScrollView>

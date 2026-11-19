@@ -68,6 +68,7 @@ function harness({ variant = "directory", params = {} } = {}) {
     "../location/service-city-scope": { default: "ServiceCityScope" },
     "../location/serviceability": serviceability,
     "./orderability": { describeStoreOrderability: () => ({}) },
+    "./public-store-origin": { resolvePublicStoreOrigin: () => "" },
   };
   const mod = { exports: {} };
   new Function("require", "module", "exports", "process", compiled)(

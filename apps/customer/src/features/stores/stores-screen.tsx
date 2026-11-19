@@ -5,10 +5,10 @@ import * as React from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import ServiceCityScope from "../location/service-city-scope";
-import { readStoreBrowseScope, serviceCityLabel, STORE_SEARCH_LIMIT } from "../location/serviceability";
+import { readStoreBrowseScope, STORE_SEARCH_LIMIT, serviceCityLabel } from "../location/serviceability";
 import { describeStoreOrderability } from "./orderability";
+import { resolvePublicStoreOrigin } from "./public-store-origin";
 
-const API = process.env.EXPO_PUBLIC_DSH_API_URL ?? "";
 const INITIAL_CITY = process.env.EXPO_PUBLIC_DSH_CITY_ID ?? "sanaa";
 type PageState = { scope: string; loading: boolean; loadingMore: boolean; items: PublicStore[]; cursor?: string | undefined; error?: string | undefined };
 function requiresFreshPage(code?: string) {
@@ -25,6 +25,7 @@ type Props = Readonly<{ variant?: "home" | "directory" }>;
 
 export default function PublicStoresScreen({ variant = "directory" }: Props) {
   const { theme } = useMobileAppearance();
+  const api = resolvePublicStoreOrigin();
   const params = useLocalSearchParams<{ city?: string | string[]; q?: string | string[] }>();
   const initial = readStoreBrowseScope(params, INITIAL_CITY);
   const [draftCity, setDraftCity] = React.useState(initial.city);
@@ -45,7 +46,7 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
     pageAbort.current?.abort();
     pageAbort.current = abort;
     setState({ scope, loading: true, loadingMore: false, items: [] });
-    listPublicStores(API, cityId, { query, limit: 20, signal: abort.signal })
+    listPublicStores(api, cityId, { query, limit: 20, signal: abort.signal })
       .then((page) => {
         if (!abort.signal.aborted && generation.current === current)
           setState({ scope, loading: false, loadingMore: false, items: page.items, cursor: page.nextCursor });
@@ -55,7 +56,7 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
           setState({ scope, loading: false, loadingMore: false, items: [], error: error instanceof Error ? error.message : "UNKNOWN" });
       });
     return () => { abort.abort(); generation.current++; };
-  }, [cityId, query, scope, retry]);
+  }, [api, cityId, query, scope, retry]);
   const visible: PageState = state.scope === scope ? state : { scope, loading: true, loadingMore: false, items: [] };
   const loadMore = async () => {
     if (!visible.cursor || visible.loadingMore || visible.loading) return;
@@ -66,7 +67,7 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
     pageAbort.current = abort;
     setState((old) => ({ ...old, loadingMore: true, error: undefined }));
     try {
-      const page: PublicPage<PublicStore> = await listPublicStores(API, scopedCity, { query, cursor: visible.cursor, limit: 20, signal: abort.signal });
+      const page: PublicPage<PublicStore> = await listPublicStores(api, scopedCity, { query, cursor: visible.cursor, limit: 20, signal: abort.signal });
       if (generation.current !== current || abort.signal.aborted) return;
       setState((old) => old.scope !== scope ? old : {
         ...old, loadingMore: false, items: [...old.items, ...page.items], cursor: page.nextCursor,

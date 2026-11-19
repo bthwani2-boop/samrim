@@ -183,11 +183,12 @@ export default function MerchantIdentityGate() {
     color: theme.color, borderColor: theme.borderColor, borderWidth: 1,
     borderRadius: 10, padding: 12, minHeight: 48, fontSize: 17,
   } as const;
-  const button = (label: string, onPress: () => void, disabled = busy) => (
+  const button = (label: string, onPress: () => void, disabled = busy, primary = false) => (
     <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress}
       style={{ borderColor: theme.borderColor, borderWidth: 1, borderRadius: 10,
-        padding: 12, minHeight: 48, opacity: disabled ? 0.55 : 1 }}>
-      <Text style={{ color: theme.interactiveText, fontWeight: "700", textAlign: "center" }}>{label}</Text>
+        padding: 12, minHeight: 48, opacity: disabled ? 0.55 : 1,
+        backgroundColor: primary ? theme.actionBackground : theme.surface }}>
+      <Text style={{ color: primary ? theme.onAction : theme.interactiveText, fontWeight: "700", textAlign: "center" }}>{label}</Text>
     </Pressable>
   );
 
@@ -199,7 +200,7 @@ export default function MerchantIdentityGate() {
         <View style={{ backgroundColor: theme.surface, padding: 22, gap: 14, borderRadius: 16,
           borderColor: theme.borderColor, borderWidth: 1 }}>
           <Text accessibilityRole="header" style={{ color: theme.color, fontSize: 27, fontWeight: "700" }}>
-            بثواني — التاجر
+            تسجيل دخول التاجر
           </Text>
           {busy ? <Text accessibilityLiveRegion="polite" style={{ color: theme.colorSecondary }}>جارٍ التحقق…</Text> : null}
           {message ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>{message}</Text> : null}
@@ -237,7 +238,7 @@ export default function MerchantIdentityGate() {
               <Text style={{ color: theme.colorSecondary }}>استخدم رقم الاختبار المخصص لك في هذه البيئة المعزولة.</Text>
               <TextInput accessibilityLabel="رقم هاتف الاختبار" value={phone} onChangeText={setPhone}
                 keyboardType="phone-pad" autoComplete="tel" editable={!busy} maxLength={12} style={fieldStyle} />
-              {button("إرسال رمز التحقق", requestCode, busy || !/^\+120255501[0-9]{2}$/.test(phone.trim()))}
+              {button("إرسال رمز التحقق", requestCode, busy || !/^\+120255501[0-9]{2}$/.test(phone.trim()), true)}
             </>
           ) : null}
           {enabled && !session && !entryUncertain && ticket ? (
@@ -245,7 +246,7 @@ export default function MerchantIdentityGate() {
               <Text style={{ color: theme.color }}>أدخل الرمز المكوّن من ستة أرقام.</Text>
               <TextInput accessibilityLabel="رمز التحقق" value={code} onChangeText={setCode}
                 keyboardType="number-pad" autoComplete="one-time-code" editable={!busy} maxLength={6} style={fieldStyle} />
-              {button("دخول مساحة التاجر", signIn, busy || !/^\d{6}$/.test(code))}
+              {button("دخول مساحة التاجر", signIn, busy || !/^\d{6}$/.test(code), true)}
               {button("طلب رمز جديد", requestCode)}
               {button("تغيير الرقم", () => { setTicket(""); setCode(""); setMessage(""); })}
             </>

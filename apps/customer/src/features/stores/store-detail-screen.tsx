@@ -7,9 +7,9 @@ import StoreProducts from "../catalog/store-products";
 import { readStoreBrowseScope, serviceCityLabel } from "../location/serviceability";
 import { publicStorefrontPath } from "../sharing/store-share";
 import { describeStoreOrderability } from "./orderability";
+import { resolvePublicStoreOrigin } from "./public-store-origin";
 import { type PublicStoreDetailState, recoverPublicStoreDetail, resolvePublicStoreDetail } from "./store-detail-loader";
 
-const API = process.env.EXPO_PUBLIC_DSH_API_URL ?? "";
 type Props = Readonly<{ storeID?: string; fullPage?: boolean }>;
 
 export default function PublicStoreDetail({ storeID, fullPage = false }: Props) {
@@ -17,6 +17,7 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
   const id = storeID ?? (typeof params.id === "string" ? params.id : "");
   const browse = readStoreBrowseScope(params, "");
   const { theme } = useMobileAppearance();
+  const api = resolvePublicStoreOrigin();
   const [retry, setRetry] = React.useState(0);
   const [state, setState] = React.useState<PublicStoreDetailState>({ scope: "", loading: true, offers: [] });
   const revision = React.useRef(0);
@@ -29,8 +30,8 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
     pending.current = abort;
     setState({ scope: id, loading: true, offers: [] });
     resolvePublicStoreDetail(
-      getPublicStore(API, id, abort.signal),
-      listPublicOffers(API, id, { signal: abort.signal, limit: 20 }),
+      getPublicStore(api, id, abort.signal),
+      listPublicOffers(api, id, { signal: abort.signal, limit: 20 }),
     ).then(({ store, offers, nextCursor, offersError }) => {
       if (!abort.signal.aborted && revision.current === current)
         setState({ scope: id, loading: false, store, offers, cursor: nextCursor, offersError });
@@ -39,7 +40,7 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
           setState({ scope: id, loading: false, offers: [], error: error instanceof Error ? error.message : "UNKNOWN" });
       });
     return () => { abort.abort(); revision.current++; };
-  }, [id, retry]);
+  }, [api, id, retry]);
   const visible: PublicStoreDetailState = state.scope === id ? state : { scope: id, loading: true, offers: [] };
   const textStyle = { color: theme.color };
   const availability = visible.store ? describeStoreOrderability(visible.store) : undefined;
@@ -51,7 +52,7 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
     pending.current = abort;
     setState((v) => ({ ...v, more: true, offersError: undefined }));
     try {
-      const page = await listPublicOffers(API, id, { cursor: visible.cursor, limit: 20, signal: abort.signal });
+      const page = await listPublicOffers(api, id, { cursor: visible.cursor, limit: 20, signal: abort.signal });
       if (!abort.signal.aborted && revision.current === current)
         setState((v) => v.scope !== id ? v : { ...v, more: false, offers: [...v.offers, ...page.items], cursor: page.nextCursor, offersError: undefined });
     } catch (error) {

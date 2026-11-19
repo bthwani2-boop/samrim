@@ -6,6 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { workspaceRegistry } from "../src/features/navigation/workspace-registry.ts";
 
 const panel = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cli = path.join(panel, "node_modules", "next", "dist", "bin", "next");
@@ -56,7 +57,18 @@ test("Operator routes and the browser session endpoint fail closed on the produc
     assert.equal(entry.status, 200);
     const entryHtml = await entry.text();
     assert.match(entryHtml, /تسجيل دخول المشغّلين غير متاح على هذه النسخة/);
-    assert.doesNotMatch(entryHtml, /href="\/(?:workspace|operations|finance|policies)"|تسجيل الدخول بمفتاح المرور/);
+    assert.doesNotMatch(entryHtml, /تسجيل الدخول بمفتاح المرور/);
+    const overview = entryHtml.match(/<section\b[^>]*aria-labelledby="operator-sections-title"[^>]*>(.*?)<\/section>/s)?.[1];
+    assert.ok(overview, "the guest landing must show the public section overview");
+    assert.match(overview, /تظهر روابط الأقسام بعد التحقق من صلاحيات حسابك/);
+    assert.doesNotMatch(overview, /<(?:a|button)\b/);
+    assert.deepEqual(
+      Array.from(overview.matchAll(/<li>([^<]+)<\/li>/g), item => item[1]),
+      workspaceRegistry.filter(item => item.permission !== null).map(item => item.label),
+    );
+    for (const { href } of workspaceRegistry) {
+      assert.ok(!entryHtml.includes(`href="${href}"`), `guest entry exposed ${href}`);
+    }
     for (const route of ["/operations", "/merchants/stores/synthetic", "/finance", "/access", "/policies/stage-sla"]) {
       const response = await fetch(base + route, {
         headers: { "x-operator-role": "operator", "x-actor-id": "forged-actor", Cookie: "operator=forged" },

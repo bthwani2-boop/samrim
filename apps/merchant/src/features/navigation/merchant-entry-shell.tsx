@@ -36,7 +36,7 @@ export default function MerchantEntryShell({ children }: Readonly<{ children: Re
       <View style={{ flex: 1, flexDirection: desktop ? "row" : "column" }}>
         {desktop ? (
           <View testID="merchant-guest-sidebar" style={{
-            width: 240, backgroundColor: theme.surface,
+            width: 240, flexShrink: 0, backgroundColor: theme.surface,
             borderColor: theme.borderColor, borderLeftWidth: 1,
             padding: 16, gap: 12,
           }}>
@@ -58,7 +58,7 @@ export default function MerchantEntryShell({ children }: Readonly<{ children: Re
             paddingHorizontal: 16, paddingTop: 12, alignItems: "center",
           }}>
             <Text style={{ color: theme.colorSecondary, textAlign: "center" }}>
-              الأقسام ظاهرة للتعريف فقط. يتطلب الدخول إلى بيانات المتاجر التحقق من Identity وDSH.
+              سجّل الدخول لعرض المتاجر المرتبطة بحسابك.
             </Text>
           </View>
           {children}

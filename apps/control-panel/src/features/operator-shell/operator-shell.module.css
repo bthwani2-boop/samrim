@@ -125,6 +125,25 @@
   line-height: 1.7;
 }
 
+.overview {
+  border-block-start: 1px solid var(--border-subtle);
+  margin-block-start: 1.5rem;
+  padding-block-start: 1.25rem;
+}
+
+.overview h2 {
+  font-size: 1.125rem;
+  margin-block: 0 0.5rem;
+}
+
+.overview ul {
+  display: grid;
+  gap: 0.5rem 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  margin-block: 0;
+  padding-inline-start: 1.125rem;
+}
+
 .primaryLink,
 .sectionCard {
   border-radius: 0.625rem;
