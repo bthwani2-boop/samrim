@@ -35,3 +35,12 @@ test("the unified dev launcher and each embedded PowerShell block parse on Windo
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /EMBEDDED_PARSE_PASS blocks=\d+/);
 });
+
+
+test("the Merchant launcher preserves existing Windows task identities", () => {
+  const launcher = readFileSync(scriptPath, "utf8");
+  assert.match(launcher, /N='BThwani Partner Metro Native';A='merchant'/);
+  assert.match(launcher, /A='merchant';N='BThwani Partner Metro Native'/);
+  assert.match(launcher, /'merchant'=@\{N='BThwani Partner Metro Native'/);
+  assert.doesNotMatch(launcher, /BThwani Merchant Metro Native/);
+});
