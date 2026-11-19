@@ -3,7 +3,7 @@ import {
 } from "../navigation/workspace-registry.ts";
 
 export const operatorPermissions = [
-  "operations", "partners", "catalog", "marketing", "finance", "hr", "platform_policies",
+  "operations", "merchant", "catalog", "marketing", "finance", "hr", "platform_policies",
 ] as const;
 export type OperatorPermission = (typeof operatorPermissions)[number];
 

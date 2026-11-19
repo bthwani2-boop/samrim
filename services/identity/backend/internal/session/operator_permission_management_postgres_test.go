@@ -60,7 +60,7 @@ func TestOperatorPermissionManagementRealPostgresAndHTTP(t *testing.T) {
 	schema := fmt.Sprintf("identity_test_operator_admin_%x", nonce)
 	for _, file := range []string{"001_session_verification.sql", "002_operator_permission_read.sql",
 		"003_verified_customer_merchant_admission.sql", "004_customer_phone_verification.sql",
-		"005_operator_permission_management.sql"} {
+		"005_operator_permission_management.sql", "007_operator_merchant_permission_cutover.sql"} {
 		raw, e := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", file))
 		if e != nil {
 			t.Fatalf("missing owner migration %s: %v", file, e)

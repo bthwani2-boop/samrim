@@ -180,13 +180,13 @@ test("Operator workspace grants require fresh Identity session and seven owner p
       return Response.json({ actorId: "operator-one", role: "operator", sessionExpiresAt: expiry });
     }
     const permission = path.split("/").at(-1);
-    if (permission === "operations" || permission === "partners") {
+    if (permission === "operations" || permission === "merchant") {
       return Response.json({ actorId: "operator-one", permission });
     }
     return Response.json({ error: "FORBIDDEN" }, { status: 403 });
   });
   assert.deepEqual(await readVerifiedOperatorAccess(config, token), {
-    actorId: "operator-one", grants: ["operations", "partners"],
+    actorId: "operator-one", grants: ["operations", "merchant"],
   });
   assert.equal(queried.length, 8, "session and all seven finite permissions must be read");
 });

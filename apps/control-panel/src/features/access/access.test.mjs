@@ -34,7 +34,7 @@ test("operator section tabs use only verified grants and one canonical target pe
   assert.deepEqual(operatorSectionTabs([]), []);
   assert.deepEqual(operatorSectionTabs(["operations"]).map(item => item.href), ["/workspace", "/operations"]);
   assert.deepEqual(operatorSectionTabs(["marketing"]).map(item => item.href), ["/workspace", "/marketing"]);
-  const grants = ["operations", "partners", "catalog", "marketing", "finance", "hr", "platform_policies"];
+  const grants = ["operations", "merchant", "catalog", "marketing", "finance", "hr", "platform_policies"];
   const entries = operatorSectionTabs(grants);
   assert.deepEqual(entries.map(item => item.group), [
     "home", "operations", "stores", "catalog", "marketing", "finance", "administration", "policies",

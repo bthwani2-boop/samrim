@@ -5,11 +5,11 @@ import { canShowNavigation } from "../session/operator-permissions.ts";
 
 test("stores: routes have the expected navigation permission boundary", () => {
   for (const path of ["/merchants","/merchants/stores/abc"]) {
-    assert.equal(findWorkspaceEntry(path)?.permission ?? null, "partners");
+    assert.equal(findWorkspaceEntry(path)?.permission ?? null, "merchant");
   }
 });
 
 test("stores: unauthenticated or unmapped sessions never expose navigation", () => {
-  assert.equal(canShowNavigation(false, ["operations", "finance", "platform_policies"], "partners"), false);
-  assert.equal(canShowNavigation(true, [], "partners"), false);
+  assert.equal(canShowNavigation(false, ["operations", "finance", "platform_policies"], "merchant"), false);
+  assert.equal(canShowNavigation(true, [], "merchant"), false);
 });

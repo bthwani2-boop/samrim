@@ -113,7 +113,7 @@ func (v *Verifier) Revoke(ctx context.Context, authorization string) error {
 
 func isOperatorPermission(permission string) bool {
 	switch permission {
-	case "operations", "partners", "catalog", "marketing", "finance", "hr", "platform_policies":
+	case "operations", "merchant", "catalog", "marketing", "finance", "hr", "platform_policies":
 		return true
 	default:
 		return false

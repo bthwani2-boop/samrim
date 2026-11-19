@@ -69,6 +69,7 @@ func TestOperatorPasskeyRealWebAuthnSignatureSQL(t *testing.T) {
 		"001_session_verification.sql", "002_operator_permission_read.sql",
 		"003_verified_customer_merchant_admission.sql", "004_customer_phone_verification.sql",
 		"005_operator_permission_management.sql", "006_operator_passkey_credentials.sql",
+		"007_operator_merchant_permission_cutover.sql",
 	} {
 		raw, e := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", name))
 		if e != nil {

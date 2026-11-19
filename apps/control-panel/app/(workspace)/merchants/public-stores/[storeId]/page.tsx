@@ -24,7 +24,7 @@ export default async function PublicStoreOffers({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }>) {
   const access = await currentOperatorAccess();
-  if (!access?.grants.includes("partners")) {
+  if (!access?.grants.includes("merchant")) {
     return <WorkspaceUnavailable title="العروض العامة" description="تتطلب هذه القراءة صلاحية الشركاء الحالية من Identity." owner="Identity" />;
   }
 

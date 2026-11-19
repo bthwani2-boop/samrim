@@ -12,7 +12,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [operations, partners, catalog, marketing, finance, hr, platform_policies]
+            enum: [operations, merchant, catalog, marketing, finance, hr, platform_policies]
       responses:
         '200':
           description: The verified Operator currently holds this explicit permission
@@ -29,7 +29,7 @@ paths:
                   actorId: { type: string, minLength: 1, maxLength: 128 }
                   permission:
                     type: string
-                    enum: [operations, partners, catalog, marketing, finance, hr, platform_policies]
+                    enum: [operations, merchant, catalog, marketing, finance, hr, platform_policies]
         '400':
           description: Invalid query or body
           content:
@@ -85,7 +85,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [operations, partners, catalog, marketing, finance, hr, platform_policies]
+            enum: [operations, merchant, catalog, marketing, finance, hr, platform_policies]
       requestBody:
         required: true
         content:
@@ -119,7 +119,7 @@ paths:
                   targetActorId: { type: string, minLength: 1, maxLength: 128 }
                   permission:
                     type: string
-                    enum: [operations, partners, catalog, marketing, finance, hr, platform_policies]
+                    enum: [operations, merchant, catalog, marketing, finance, hr, platform_policies]
                   state: { type: string, enum: [ACTIVE, REVOKED] }
                   version: { type: integer, format: int64, minimum: 1 }
         '400':

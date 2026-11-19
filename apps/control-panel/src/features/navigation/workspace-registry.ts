@@ -26,7 +26,7 @@ export const workspaceRegistry: readonly WorkspaceEntry[] = [
   { href: "/workspace", label: "الرئيسية", group: "home", permission: null, owner: "multiple" },
   { href: "/operations", label: "العمليات والطلبات", group: "operations", permission: "operations", owner: "DSH" },
   { href: "/captains", label: "الكباتن", group: "operations", permission: "operations", owner: "DSH" },
-  { href: "/merchants", label: "الشركاء والمتاجر", group: "stores", permission: "partners", owner: "DSH" },
+  { href: "/merchants", label: "الشركاء والمتاجر", group: "stores", permission: "merchant", owner: "DSH" },
   { href: "/catalog", label: "الكتالوج", group: "catalog", permission: "catalog", owner: "DSH" },
   { href: "/marketing", label: "التسويق", group: "marketing", permission: "marketing", owner: "DSH" },
   { href: "/studio", label: "استوديو التصميم", group: "marketing", permission: "marketing", owner: "DSH" },

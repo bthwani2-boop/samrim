@@ -136,13 +136,13 @@ func TestOperatorPermissionRejectsStreamingBody(t *testing.T) {
 }
 
 func TestOnlyFiniteOwnerPermissions(t *testing.T) {
-	want := []string{"operations", "partners", "catalog", "marketing", "finance", "hr", "platform_policies"}
+	want := []string{"operations", "merchant", "catalog", "marketing", "finance", "hr", "platform_policies"}
 	for _, s := range want {
 		if !isOperatorPermission(s) {
 			t.Fatalf("approved scope rejected: %s", s)
 		}
 	}
-	for _, s := range []string{"", "all", "admin", "root", "SUPERUSER", "permission:finance", "operations/other", " finance", "financial_execution"} {
+	for _, s := range []string{"", "partners", "all", "admin", "root", "SUPERUSER", "permission:finance", "operations/other", " finance", "financial_execution"} {
 		if isOperatorPermission(s) {
 			t.Fatalf("unapproved permission accepted: %s", s)
 		}

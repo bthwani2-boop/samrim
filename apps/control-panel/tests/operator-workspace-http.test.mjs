@@ -211,12 +211,12 @@ test("production Operator UI rechecks isolated Identity grants on every document
     assert.match(html, /href="\/captains"/);
     assert.doesNotMatch(html, /href="\/(?:finance|access|policies)"/);
 
-    allowed.add("partners");
+    allowed.add("merchant");
     const merchantHtml = await read("/merchants");
     assert.match(merchantHtml, /aria-label="تبويبات الوظائف"/);
     assert.ok(merchantHtml.includes('href="/merchants/public-stores"'));
     assert.ok(!merchantHtml.includes('href="/finance"'));
-    allowed.delete("partners");
+    allowed.delete("merchant");
 
     html = await read("/finance", { "x-bthwani-route": "/operations" });
     assert.match(html, /الوصول إلى هذه المساحة غير متاح/);
