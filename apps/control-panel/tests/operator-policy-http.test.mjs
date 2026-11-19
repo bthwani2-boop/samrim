@@ -177,6 +177,10 @@ test("Operator city policy flows through real Next BFF, Identity grant and DSH v
     assert.doesNotMatch(html, /البيانات والإجراءات غير مفعّلة/);
     assert.match(html, /href="\/policies"/);
 
+    assert.match(html, /aria-label="تبويبات الوظائف"/);
+    assert.ok(html.includes('href="/policies/stage-sla"'));
+    assert.ok(!html.includes('href="/finance"'));
+
     let res = await call(api);
     assert.equal(res.status, 200);
     assert.match(res.headers.get("cache-control") ?? "", /no-store/);

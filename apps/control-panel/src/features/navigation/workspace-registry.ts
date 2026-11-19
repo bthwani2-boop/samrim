@@ -46,6 +46,7 @@ export const workspaceSubsections: readonly WorkspaceSubsection[] = [
   { parent: "/merchants", href: "/merchants/joining", label: "طلبات انضمام الشركاء" },
   { parent: "/merchants", href: "/merchants/new", label: "إضافة شريك" },
   { parent: "/merchants", href: "/merchants/store-access", label: "صلاحيات المتاجر" },
+  { parent: "/merchants", href: "/merchants/public-stores", label: "متاجر السوق" },
   { parent: "/catalog", href: "/catalog/products", label: "المنتجات" },
   { parent: "/catalog", href: "/catalog/categories", label: "الفئات" },
   { parent: "/catalog", href: "/catalog/proposals", label: "المقترحات" },
