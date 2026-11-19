@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isolatedPublicDshOrigin, parsePublicStoreBrowse, publicStorePageHref } from "./public-store-query.ts";
+import { isolatedPublicDshOrigin, parsePublicStoreBrowse, publicStorePageHref, resolvePublicDshOrigin } from "./public-store-query.ts";
 
 test("operator public Store query accepts bounded city/search and preserves safe paging", () => {
   assert.deepEqual(parsePublicStoreBrowse({ city: "sanaa", q: "  مخبز  ", cursor: "Ab_12" }), {
@@ -30,4 +30,11 @@ test("DSH public-read origin is restricted to an explicitly configured local hos
     "http://127.0.0.1:3202/sub", "http://user@127.0.0.1:3202", "http://127.0.0.1:3202?x=1"]) {
     assert.equal(isolatedPublicDshOrigin(value), null);
   }
+});
+
+test("only development may use the fixed isolated DSH loopback fallback", () => {
+  assert.equal(resolvePublicDshOrigin(undefined, "development"), "http://127.0.0.1:3202");
+  assert.equal(resolvePublicDshOrigin(undefined, "production"), null);
+  assert.equal(resolvePublicDshOrigin("http://evil.example:3202", "development"), null);
+  assert.equal(resolvePublicDshOrigin("http://127.0.0.1:3202", "production"), "http://127.0.0.1:3202");
 });

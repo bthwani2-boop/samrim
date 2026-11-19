@@ -2,7 +2,7 @@ import { listPublicStores, type PublicPage, type PublicStore } from "@bthwani/ds
 import styles from "../../../../src/features/operator-shell/operator-shell.module.css";
 import WorkspaceUnavailable from "../../../../src/features/operator-shell/workspace-unavailable";
 import {
-  isolatedPublicDshOrigin, parsePublicStoreBrowse, publicStorePageHref,
+  parsePublicStoreBrowse, publicStoreDetailHref, publicStorePageHref, resolvePublicDshOrigin,
 } from "../../../../src/features/stores/public-store-query";
 import { currentOperatorAccess } from "../../../../src/server/current-operator-access";
 
@@ -25,8 +25,7 @@ export default async function PublicStoresMonitor({
   }
 
   const scope = parsePublicStoreBrowse(await searchParams);
-  const owner = isolatedPublicDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN ??
-    (process.env.NODE_ENV === "development" ? "http://127.0.0.1:3202" : undefined));
+  const owner = resolvePublicDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN, process.env.NODE_ENV);
   let page: PublicPage<PublicStore> | null = null;
   let error = "";
   if (!scope) {
@@ -82,6 +81,9 @@ export default async function PublicStoresMonitor({
               {page.items.map(store => (
                 <li key={store.id} className={styles.sectionCard}>
                   <strong>{store.name}</strong>
+                  <a href={publicStoreDetailHref(store.id, { city: scope.city, query: scope.query })}>
+                    عرض التفاصيل والعروض المنشورة
+                  </a>
                   <span>المدينة: {store.cityId} — القطاع: {store.verticalId}</span>
                   <span>معرّف المتجر: <code dir="ltr">{store.id}</code></span>
                   <span>{orderabilityLabels[store.orderabilityStatus]}</span>

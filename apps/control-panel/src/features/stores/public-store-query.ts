@@ -49,3 +49,25 @@ export function isolatedPublicDshOrigin(raw: string | undefined): string | null 
     return null;
   }
 }
+
+export type PublicStoreDetailBrowse = PublicStoreBrowse & Readonly<{ storeId: string }>;
+
+export function parsePublicStoreDetail(
+  storeId: string,
+  params: Record<string, string | string[] | undefined>,
+): PublicStoreDetailBrowse | null {
+  const browse = parsePublicStoreBrowse(params);
+  return publicId.test(storeId) && browse?.city ? { storeId, ...browse } : null;
+}
+
+export function publicStoreDetailHref(storeId: string, scope: PublicStoreBrowse): string {
+  const suffix = publicStorePageHref(scope).slice("/merchants/public-stores".length);
+  return `/merchants/public-stores/${encodeURIComponent(storeId)}${suffix}`;
+}
+
+export function resolvePublicDshOrigin(configured: string | undefined, runtime: string | undefined): string | null {
+  // The fixed local port is a development-only fallback. Production must supply
+  // an explicit, validated owner origin through the existing Operator configuration.
+  return isolatedPublicDshOrigin(configured ??
+    (runtime === "development" ? "http://127.0.0.1:3202" : undefined));
+}
