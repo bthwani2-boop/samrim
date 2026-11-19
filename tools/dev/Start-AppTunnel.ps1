@@ -86,7 +86,7 @@ if ($existing) {
     throw 'APP_TUNNEL_PORT_OWNED_BY_OTHER_PROCESS'
   }
   $parentProcess = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $ownerProcess.ParentProcessId)
-  if ($parentProcess -and $parentProcess.Name -eq 'powershell.exe' -and
+  if ($parentProcess -and $parentProcess.Name -in @('powershell.exe','pwsh.exe') -and
       $parentProcess.CommandLine -match 'Start-AppTunnel\.ps1') {
     throw 'APP_TUNNEL_DUPLICATE_OWNER'
   }

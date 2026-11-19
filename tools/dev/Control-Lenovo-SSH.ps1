@@ -35,7 +35,7 @@ if ($null -ne $global:LASTEXITCODE -and $global:LASTEXITCODE -ne 0) {
 '@
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($wrapped))
     if ($encoded.Length -gt 14000) { throw 'Command too long; transfer a script to Lenovo as an explicit runtime artifact.' }
-    & ssh.exe -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=8 -o ConnectionAttempts=1 $SshHost powershell.exe -NoProfile -NonInteractive -EncodedCommand $encoded
+    & ssh.exe -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=8 -o ConnectionAttempts=1 $SshHost pwsh.exe -NoProfile -NonInteractive -EncodedCommand $encoded
     if ($LASTEXITCODE -ne 0) { throw ('SSH or remote command failed: exit=' + $LASTEXITCODE) }
 }
 function Assert-RemotePath([string]$p) {

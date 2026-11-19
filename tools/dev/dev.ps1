@@ -90,9 +90,9 @@ function Invoke-Lenovo([string]$body) {
     $bootstrap = '$data=[Console]::In.ReadLine(); if(!$data){throw "SSH_STDIN_EMPTY"}; $cmd=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($data)); & ([ScriptBlock]::Create($cmd))'
     $bootEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($bootstrap))
     $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($scriptText))
-    $rows = @($payload | & $ssh '-T' '-o' 'BatchMode=yes' '-o' 'StrictHostKeyChecking=yes' '-o' 'ConnectTimeout=8' 'bthwani-docker' 'powershell.exe' '-NoLogo' '-NoProfile' '-NonInteractive' '-EncodedCommand' $bootEncoded 2>&1)
+    $rows = @($payload | & $ssh '-T' '-o' 'BatchMode=yes' '-o' 'StrictHostKeyChecking=yes' '-o' 'ConnectTimeout=8' 'bthwani-docker' 'pwsh.exe' '-NoLogo' '-NoProfile' '-NonInteractive' '-EncodedCommand' $bootEncoded 2>&1)
   } else {
-    $rows = @(& $ssh '-T' '-o' 'BatchMode=yes' '-o' 'StrictHostKeyChecking=yes' '-o' 'ConnectTimeout=8' 'bthwani-docker' 'powershell.exe' '-NoLogo' '-NoProfile' '-NonInteractive' '-EncodedCommand' $encoded 2>&1)
+    $rows = @(& $ssh '-T' '-o' 'BatchMode=yes' '-o' 'StrictHostKeyChecking=yes' '-o' 'ConnectTimeout=8' 'bthwani-docker' 'pwsh.exe' '-NoLogo' '-NoProfile' '-NonInteractive' '-EncodedCommand' $encoded 2>&1)
   }
   if ($LASTEXITCODE -ne 0) { throw ('LENOVO_SCRIPT_FAILED '+(($rows | ForEach-Object {$_.ToString()}) -join ' | ')) }
   foreach ($row in $rows) {
@@ -244,7 +244,7 @@ foreach($s in $specs){
   if($owner -and $owner.Name -eq 'node.exe' -and $owner.CommandLine -match $s.Cli){
     $cursor=$owner
     for($i=0;$i -lt 6 -and $cursor;$i++){
-      if($cursor.Name -eq 'powershell.exe' -and $cursor.CommandLine -match 'Start-RefoundationApp\.ps1' -and
+      if($cursor.Name -in @('powershell.exe','pwsh.exe') -and $cursor.CommandLine -match 'Start-RefoundationApp\.ps1' -and
         $cursor.CommandLine -match ('(?i)-App\s+'+[regex]::Escape($s.A)+'(?:\s|$)')){$owned=$true;break}
       if(!$cursor.ParentProcessId -or $cursor.ParentProcessId -eq $cursor.ProcessId){break}
       $cursor=Get-CimInstance Win32_Process -Filter ('ProcessId='+$cursor.ParentProcessId)
@@ -358,7 +358,7 @@ if($listeners.Count -eq 1){
   if(!$owner -or $owner.Name -ne 'node.exe' -or $owner.CommandLine -notmatch $s.Cli){throw ('APP_PORT_FOREIGN '+$app)}
   $owned=$false;$cursor=$owner
   for($i=0;$i -lt 6 -and $cursor;$i++){
-    if($cursor.Name -eq 'powershell.exe' -and $cursor.CommandLine -match 'Start-RefoundationApp\.ps1' -and
+    if($cursor.Name -in @('powershell.exe','pwsh.exe') -and $cursor.CommandLine -match 'Start-RefoundationApp\.ps1' -and
       $cursor.CommandLine -match ('(?i)-App\s+'+[regex]::Escape($app)+'(?:\s|$)')){$owned=$true;break}
     if(!$cursor.ParentProcessId -or $cursor.ParentProcessId -eq $cursor.ProcessId){break}
     $cursor=Get-CimInstance Win32_Process -Filter ('ProcessId='+$cursor.ParentProcessId)
