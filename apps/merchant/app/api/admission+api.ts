@@ -8,16 +8,37 @@ import { verifyMerchantAdmission } from "../../src/features/access/admission.ts"
 import { MerchantStandingError, readMerchantDSHStanding } from "../../src/features/access/dsh-standing.ts";
 
 const cookieName = "bthwani_merchant_admission";
+const localIdentity = "http://127.0.0.1:3201";
+const localDSH = "http://127.0.0.1:3202";
 const noStoreHeaders = {
   "Cache-Control": "no-store",
   "Referrer-Policy": "no-referrer",
   "X-Content-Type-Options": "nosniff",
 };
 
-function configuredOrigin(request: Request) {
+async function configuredOrigin(request: Request) {
   const url = new URL(request.url);
   if (!["127.0.0.1", "localhost"].includes(url.hostname)) return undefined;
-  return process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN;
+  const configured = process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN;
+  if (configured || process.env.NODE_ENV !== "development") return configured;
+  try {
+    // The isolated phone handler returns 405 for a GET only while enabled.
+    // This is a read-only readiness check, independent of Metro startup.
+    const readiness = await fetch(localIdentity + "/v1/customer-auth/phone-challenges", {
+      redirect: "error",
+      cache: "no-store",
+      signal: AbortSignal.timeout(1500),
+    });
+    await readiness.body?.cancel();
+    if (readiness.status === 405 && readiness.headers.get("Allow") === "POST") return localIdentity;
+  } catch {
+    // Keep local admission unavailable until the owner responds.
+  }
+}
+
+function standingOrigin(identity: string) {
+  return process.env.MERCHANT_SYNTHETIC_DSH_ORIGIN ??
+    (process.env.NODE_ENV === "development" && identity === localIdentity ? localDSH : "");
 }
 
 function response(value: unknown, status = 200, cookie?: string) {
@@ -49,7 +70,7 @@ function ownerError(error: unknown) {
 }
 
 export async function GET(request: Request) {
-  const origin = configuredOrigin(request);
+  const origin = await configuredOrigin(request);
   if (!origin) return response({ enabled: false, session: null });
   const query = new URL(request.url).searchParams;
   const stores = query.size === 1 && query.get("stores") === "mine";
@@ -63,7 +84,7 @@ export async function GET(request: Request) {
     if (session.role === "merchant") {
       if (!stores) return response({ enabled: true, session });
       const standing = await readMerchantDSHStanding(
-        process.env.MERCHANT_SYNTHETIC_DSH_ORIGIN ?? "", bearer, signal);
+        standingOrigin(origin), bearer, signal);
       if (standing.actorId !== session.actorId) {
         return response({ code: "OWNER_UNAVAILABLE" }, 503);
       }
@@ -83,7 +104,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const origin = configuredOrigin(request);
+  const origin = await configuredOrigin(request);
   if (!origin) return response({ code: "OWNER_UNAVAILABLE" }, 503);
   if (!isLocalMutation(request)) return response({ code: "FORBIDDEN" }, 403);
   if (request.headers.get("Content-Type")?.split(";")[0] !== "application/json") {
@@ -140,7 +161,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const origin = configuredOrigin(request);
+  const origin = await configuredOrigin(request);
   if (!origin) return response({ code: "OWNER_UNAVAILABLE" }, 503);
   if (!isLocalMutation(request)) return response({ code: "FORBIDDEN" }, 403);
   const bearer = bearerFrom(request);

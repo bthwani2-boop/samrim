@@ -127,9 +127,13 @@ phone migration in the synthetic schema and verifying the runtime role's scoped
 write privileges. Supply a fresh 32-byte hex `REF_IDENTITY_SYNTHETIC_PHONE_HMAC_KEY`
 through the Identity-only local settings. Delivery stays on the project's
 `mailpit:1025` network endpoint and accepts only the reserved test phone range.
-The Lenovo Merchant launcher enables local Web admission on startup when the
-synthetic phone endpoint is present at `127.0.0.1:3201`. A different loopback
-port requires an explicit `MERCHANT_SYNTHETIC_IDENTITY_ORIGIN` setting.
+The local Merchant development Web endpoint checks synthetic phone availability
+at `127.0.0.1:3201` on each admission retry. For alternate isolated hosts, set
+`MERCHANT_SYNTHETIC_IDENTITY_ORIGIN` and `MERCHANT_SYNTHETIC_DSH_ORIGIN` explicitly.
+The default local DSH origin is `127.0.0.1:3202`. Its standing endpoint must
+independently verify the Merchant session with Identity. For a containerized
+DSH verifier connection, set `REF_DSH_IDENTITY_VERIFIER_URL` to the authorized
+HTTPS Identity origin. Leaving it unset keeps protected DSH operations unavailable.
 The opt-in deployment sequence is:
 
 ```powershell

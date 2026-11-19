@@ -29,7 +29,6 @@
     "apps/merchant/src/features/marketing/store-banners.tsx",
     "apps/merchant/src/features/marketing/store-design.tsx",
     "apps/merchant/src/features/marketing/store-reels.tsx",
-    "apps/merchant/src/features/navigation/merchant-workspace.tsx",
     "apps/merchant/src/features/notifications/order-alert-monitor.tsx",
     "apps/merchant/src/features/orders/order-conversation.tsx",
     "apps/merchant/src/features/orders/order-preparation.tsx",

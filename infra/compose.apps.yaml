@@ -37,6 +37,7 @@ services:
       DSH_DB_HOST: postgres
       DSH_DB_SCHEMA: "${REF_DSH_DISCOVERY_SCHEMA:?choose verified isolated dsh_test_* schema}"
       DSH_PUBLIC_CORS_ORIGINS: "${REF_DSH_PUBLIC_CORS_ORIGINS:?configure development browser origins}"
+      DSH_IDENTITY_VERIFIER_URL: "${REF_DSH_IDENTITY_VERIFIER_URL:-}"
     ports:
       - "127.0.0.1:${REF_DSH_PORT:-3202}:8080"
     depends_on:

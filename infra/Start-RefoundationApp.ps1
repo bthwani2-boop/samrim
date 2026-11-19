@@ -36,18 +36,6 @@ switch($App){
     $args=@('start','--web','--dev-client','--localhost','--port','28111')
   }
   'merchant' {
-    if (-not $env:MERCHANT_SYNTHETIC_IDENTITY_ORIGIN) {
-      $identityOrigin = 'http://127.0.0.1:3201'
-      $curl = Join-Path $env:WINDIR 'System32\curl.exe'
-      if (Test-Path -LiteralPath $curl -PathType Leaf) {
-        # The optional phone endpoint allows POST only when synthetic admission is enabled.
-        $status = & $curl --silent --noproxy '127.0.0.1' --max-time 2 --output NUL --write-out '%{http_code}' `
-          "$identityOrigin/v1/customer-auth/phone-challenges"
-        if ($LASTEXITCODE -eq 0 -and $status -eq '405') {
-          $env:MERCHANT_SYNTHETIC_IDENTITY_ORIGIN = $identityOrigin
-        }
-      }
-    }
     $cli=Join-Path $dir 'node_modules\expo\bin\cli'
     $args=@('start','--web','--dev-client','--localhost','--port','28112')
   }

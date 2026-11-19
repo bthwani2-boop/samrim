@@ -109,3 +109,61 @@ test("Identity 403 invalidation also expires the stale Merchant Web cookie", asy
   assert.equal(result.status, 403);
   assert.match(result.headers.get("Set-Cookie") ?? "", /Max-Age=0/);
 });
+
+function developmentWithoutConfiguredOwners(t, mode) {
+  for (const [name, value] of Object.entries({
+    NODE_ENV: mode,
+    MERCHANT_SYNTHETIC_IDENTITY_ORIGIN: undefined,
+    MERCHANT_SYNTHETIC_DSH_ORIGIN: undefined,
+  })) {
+    const previous = process.env[name];
+    t.after(() => {
+      if (previous === undefined) delete process.env[name];
+      else process.env[name] = previous;
+    });
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+}
+
+test("local Merchant admission recovers when the isolated phone owner becomes available after startup", async t => {
+  developmentWithoutConfiguredOwners(t, "development");
+  let healthy = false;
+  let readinessReads = 0;
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    const target = new URL(url);
+    if (target.pathname === "/v1/customer-auth/phone-challenges") {
+      readinessReads++;
+      assert.equal(target.origin, "http://127.0.0.1:3201");
+      assert.equal(options.redirect, "error");
+      assert.ok(!options.headers);
+      return new Response(null, { status: healthy ? 405 : 404, headers: { Allow: "POST" } });
+    }
+    assert.equal(options.headers.Authorization, "Bearer " + bearer);
+    if (target.href === "http://127.0.0.1:3201/v1/sessions/current") {
+      return json({ actorId: "owner-a", role: "merchant", sessionExpiresAt: expires });
+    }
+    assert.equal(target.href, "http://127.0.0.1:3202/v1/stores/mine");
+    return json({ actorId: "owner-a", stores: [] });
+  });
+  const initial = await GET(request("", ""));
+  assert.deepEqual(await initial.json(), { enabled: false, session: null });
+  healthy = true;
+  const afterRecovery = await GET(request("", ""));
+  assert.deepEqual(await afterRecovery.json(), { enabled: true, session: null });
+  const stores = await GET(request());
+  assert.deepEqual(await stores.json(), { standing: { actorId: "owner-a", stores: [] } });
+  const external = await GET(new Request("https://merchant.example/api/admission"));
+  assert.deepEqual(await external.json(), { enabled: false, session: null });
+  assert.equal(readinessReads, 3);
+});
+
+test("unconfigured production Merchant does not look up a development identity owner", async t => {
+  developmentWithoutConfiguredOwners(t, "production");
+  const fetch = t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("unexpected owner connection");
+  });
+  const response = await GET(request("", ""));
+  assert.deepEqual(await response.json(), { enabled: false, session: null });
+  assert.equal(fetch.mock.callCount(), 0);
+});

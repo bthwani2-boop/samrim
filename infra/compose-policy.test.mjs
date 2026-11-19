@@ -39,6 +39,7 @@ test("a normal implementation profile can never implicitly run SQL migrations", 
   assert.ok(service.cap_drop.includes("ALL"));
   assert.ok(service.ports.every((v) => v.startsWith("127.0.0.1:")));
   assert.equal(service.depends_on.postgres.condition, "service_healthy");
+  assert.equal(service.environment.DSH_IDENTITY_VERIFIER_URL, "${REF_DSH_IDENTITY_VERIFIER_URL:-}");
 });
 
 test("Identity verifier is synthetic only and has no privileged host exposure", () => {

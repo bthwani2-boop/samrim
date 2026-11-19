@@ -1,7 +1,9 @@
 import { IdentityClientError, type VerifiedIdentitySession } from "@bthwani/identity";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, Pressable, SafeAreaView, ScrollView, Text, TextInput, View } from "react-native";
+import { AppState, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import MerchantWorkspace from "../navigation/merchant-workspace";
 import {
   readAdmission,
   readMerchantStanding,
@@ -28,7 +30,7 @@ export default function MerchantIdentityGate() {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [session, setSession] = useState<VerifiedIdentitySession | null>(null);
   const [entryUncertain, setEntryUncertain] = useState(false);
-  const [standing, setStanding] = useState<MerchantDSHStanding | null>(null);
+  const [standing, setStanding] = useState<{ session: VerifiedIdentitySession; value: MerchantDSHStanding } | null>(null);
   const [standingError, setStandingError] = useState("");
   const [standingLoading, setStandingLoading] = useState(false);
   const [phone, setPhone] = useState("");
@@ -100,7 +102,7 @@ export default function MerchantIdentityGate() {
       if (current.actorId !== session.actorId) {
         throw new MerchantStandingError(502, "OWNER_RESPONSE_INVALID");
       }
-      setStanding(current);
+      setStanding({ session, value: current });
     }).catch(error => {
       if (controller.signal.aborted) return;
       if ((error instanceof IdentityClientError || error instanceof MerchantStandingError) &&
@@ -120,8 +122,14 @@ export default function MerchantIdentityGate() {
     if (!session) return;
     const timeout = setTimeout(() => setSession(null),
       Math.max(0, Date.parse(session.sessionExpiresAt) - Date.now()));
-    return () => clearTimeout(timeout);
-  }, [session]);
+    const refreshTimer = setInterval(() => {
+      if (AppState.currentState === "active") refresh();
+    }, 30_000);
+    return () => {
+      clearTimeout(timeout);
+      clearInterval(refreshTimer);
+    };
+  }, [refresh, session]);
 
   function requestCode() {
     void run(async signal => {
@@ -147,12 +155,17 @@ export default function MerchantIdentityGate() {
 
   function signOut() {
     void run(async signal => {
+      setSession(null);
+      setEntryUncertain(true);
       await signOutOfAdmission(signal);
       if (!signal.aborted) {
-        setSession(null);
         setEntryUncertain(false);
       }
     });
+  }
+
+  if (enabled && !busy && session && standing?.session === session) {
+    return <MerchantWorkspace stores={standing.value.stores} onRefresh={refresh} onSignOut={signOut} />;
   }
 
   const fieldStyle = {
@@ -181,7 +194,10 @@ export default function MerchantIdentityGate() {
           {message ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>{message}</Text> : null}
           {enabled === null && !busy ? button("إعادة المحاولة", refresh) : null}
           {enabled === false ? (
-            <Text accessibilityRole="alert" style={{ color: theme.warningText }}>تسجيل دخول التاجر غير متاح في هذه البيئة.</Text>
+            <>
+              <Text accessibilityRole="alert" style={{ color: theme.warningText }}>تسجيل دخول التاجر غير متاح في هذه البيئة.</Text>
+              {button("إعادة التحقق من تسجيل الدخول", refresh)}
+            </>
           ) : null}
           {enabled && session ? (
             <>
@@ -193,16 +209,6 @@ export default function MerchantIdentityGate() {
                 <Text accessibilityRole="alert" style={{ color: theme.warningText }}>{standingError}</Text>
                 {button("إعادة التحقق من المتاجر", refresh)}
               </> : null}
-              {standing && standing.stores.length === 0 ?
-                <Text style={{ color: theme.colorSecondary }}>لا يوجد متجر مملوك لهذا الحساب في DSH بعد.</Text> : null}
-              {standing?.stores.map(store => (
-                <View key={store.id} style={{ padding: 12, borderWidth: 1, borderColor: theme.borderColor, borderRadius: 8 }}>
-                  <Text style={{ color: theme.color, fontWeight: "700" }}>{store.name}</Text>
-                  <Text style={{ color: theme.colorSecondary }}>
-                    {store.published ? "متجر منشور" : "متجر غير منشور"} — {store.relation}
-                  </Text>
-                </View>
-              ))}
               {button("تسجيل الخروج", signOut)}
             </>
           ) : null}
