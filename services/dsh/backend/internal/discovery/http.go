@@ -61,7 +61,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
-		if err := s.Owner.DB.PingContext(ctx); err != nil {
+		tx, err := s.Owner.viewTx(ctx)
+		if err == nil {
+			defer tx.Rollback()
+			// The revision row is initialized by the baseline discovery migration.
+			_, err = s.Owner.revision(ctx, tx)
+		}
+		if err != nil {
 			errorJSON(w, 503, "OWNER_UNAVAILABLE")
 			return
 		}
