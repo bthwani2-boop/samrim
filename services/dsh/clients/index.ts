@@ -225,7 +225,7 @@ function isStoreAvailability(value: unknown, storeId: string): value is StoreOpe
     typeof item.actingActorId === "string" && typeof item.reason === "string";
 }
 async function privateOwnerRequest(
-  baseUrl: string, path: string, bearer: string, method: "GET" | "PATCH", change?: StoreOperationalChange | CityStoreOperationalPolicyChange, signal?: AbortSignal,
+  baseUrl: string, path: string, bearer: string, method: "GET" | "PATCH", change?: StoreOperationalChange | CityStoreOperationalPolicyChange | OperatorCaptainStandingChange, signal?: AbortSignal,
 ): Promise<unknown> {
   // Only fixed owner-authored paths assembled by the public functions below
   // reach this uncached transport. A user cannot supply an arbitrary URL.
@@ -449,6 +449,35 @@ export async function listOperatorCaptainStandings(
   if (options.signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
   return page as unknown as OperatorCaptainStandingPage;
 }
+export interface OperatorCaptainStandingChange {
+  status: "APPROVED" | "SUSPENDED" | "REVOKED";
+  expectedVersion: number;
+  operationId: string;
+  reason: string;
+}
+
+export async function changeOperatorCaptainStanding(
+  baseUrl: string, actorId: string, bearer: string,
+  change: OperatorCaptainStandingChange, signal?: AbortSignal,
+): Promise<OperatorCaptainStanding> {
+  if (!isCaptainStandingActorId(actorId) ||
+    !["APPROVED", "SUSPENDED", "REVOKED"].includes(change.status) ||
+    !Number.isSafeInteger(change.expectedVersion) || change.expectedVersion < 1 ||
+    !/^[A-Za-z0-9._-]{8,128}$/.test(change.operationId) ||
+    typeof change.reason !== "string" || change.reason.trim() !== change.reason ||
+    Array.from(change.reason).length < 1 || Array.from(change.reason).length > 300) {
+    throw new DshPublicError(400, "INVALID_REQUEST");
+  }
+  const result = await privateOwnerRequest(baseUrl,
+    `/v1/operators/captains/${encodeURIComponent(actorId)}/standing`, bearer, "PATCH", change, signal);
+  if (!isCaptainStanding(result) || result.actorId !== actorId ||
+    result.status !== change.status || result.version < change.expectedVersion) {
+    throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
+  }
+  if (signal?.aborted) throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN");
+  return result;
+}
+
 export async function getOperatorCaptainStanding(
   baseUrl: string, actorId: string, bearer: string, signal?: AbortSignal,
 ): Promise<OperatorCaptainStanding> {

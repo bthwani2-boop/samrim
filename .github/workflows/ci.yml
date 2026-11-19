@@ -117,7 +117,8 @@ jobs:
           node --test --test-concurrency=1 \
             apps/control-panel/tests/operator-protected-routes.test.mjs \
             apps/control-panel/tests/operator-workspace-http.test.mjs \
-            apps/control-panel/tests/operator-policy-http.test.mjs
+            apps/control-panel/tests/operator-policy-http.test.mjs \
+            apps/control-panel/tests/operator-captain-review-http.test.mjs
       - name: Record missing live platform proof
         run: |
           echo 'NOT_RUN: Android/iOS binary, actual browser hydration/CSP, owner APIs, finance and security'

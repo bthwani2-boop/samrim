@@ -1,6 +1,6 @@
 import "server-only";
 import {type CaptainStandingStatus,
-  captainStandingStatuses, DshPublicError, getOperatorCaptainStanding, isCaptainStandingActorId,
+  captainStandingStatuses, changeOperatorCaptainStanding, DshPublicError, getOperatorCaptainStanding, isCaptainStandingActorId,
   listOperatorCaptainStandings,
 } from "@bthwani/dsh";
 import { cookies } from "next/headers";
@@ -26,7 +26,12 @@ export async function readCaptainReview(request: Request, actorId?: string) {
   const origin = request.headers.get("origin");
   const site = request.headers.get("sec-fetch-site");
   const allowed = actorId === undefined ? ["status", "limit", "cursor"] : [];
-  if (request.method !== "GET") return error("METHOD_NOT_ALLOWED", 405);
+  const changing = request.method === "PATCH" && actorId !== undefined;
+  if (request.method !== "GET" && !changing) return error("METHOD_NOT_ALLOWED", 405);
+  if (changing && (origin !== config.browserOrigin ||
+    request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "application/json")) {
+    return error("FORBIDDEN", 403);
+  }
   if (url.origin !== config.browserOrigin || request.headers.get("host") !== url.host ||
     (origin !== null && origin !== config.browserOrigin) ||
     (site !== null && site !== "same-origin" && site !== "none") ||
@@ -52,12 +57,48 @@ export async function readCaptainReview(request: Request, actorId?: string) {
   if (!access.grants.includes("operations")) return error("FORBIDDEN", 403);
   const signal = AbortSignal.any([request.signal, AbortSignal.timeout(5000)]);
   try {
-    const result = actorId === undefined
-      ? await listOperatorCaptainStandings(owner, bearer, {
-        status: status as CaptainStandingStatus, ...(limit === null ? {} : { limit: Number(limit) }),
-        ...(cursor === null ? {} : { cursor }), signal,
-      })
-      : await getOperatorCaptainStanding(owner, actorId, bearer, signal);
+    let result: unknown;
+    if (changing && actorId !== undefined) {
+      const len = request.headers.get("content-length");
+      if (len !== null && (!/^\d+$/.test(len) || Number(len) > 2048)) return error("INVALID_REQUEST", 400);
+      const reader = request.body?.getReader();
+      if (!reader) return error("INVALID_REQUEST", 400);
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      try {
+        while (true) {
+          const part = await reader.read();
+          if (part.done) break;
+          size += part.value.byteLength;
+          if (size > 2048) return error("INVALID_REQUEST", 400);
+          chunks.push(part.value);
+        }
+      } finally { reader.releaseLock(); }
+      let change: unknown;
+      try {
+        change = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(
+          Uint8Array.from(chunks.flatMap(chunk => Array.from(chunk))))) as unknown;
+      } catch { return error("INVALID_REQUEST", 400); }
+      if (!change || typeof change !== "object" || Array.isArray(change)) return error("INVALID_REQUEST", 400);
+      const item = change as Record<string, unknown>;
+      if (Object.keys(item).length !== 4 ||
+        !["status", "expectedVersion", "operationId", "reason"].every(key => Object.hasOwn(item, key))) {
+        return error("INVALID_REQUEST", 400);
+      }
+      result = await changeOperatorCaptainStanding(owner, actorId, bearer, {
+        status: item.status as "APPROVED" | "SUSPENDED" | "REVOKED",
+        expectedVersion: item.expectedVersion as number,
+        operationId: item.operationId as string,
+        reason: item.reason as string,
+      }, signal);
+    } else {
+      result = actorId === undefined
+        ? await listOperatorCaptainStandings(owner, bearer, {
+          status: status as CaptainStandingStatus, ...(limit === null ? {} : { limit: Number(limit) }),
+          ...(cursor === null ? {} : { cursor }), signal,
+        })
+        : await getOperatorCaptainStanding(owner, actorId, bearer, signal);
+    }
     return NextResponse.json(result, { status: 200, headers: {
       ...privateHeaders, "X-BThwani-Operator": encodeURIComponent(access.actorId),
     } });
@@ -68,6 +109,8 @@ export async function readCaptainReview(request: Request, actorId?: string) {
       if (status === 401) return error("UNAUTHORIZED", 401);
       if (status === 403) return error("FORBIDDEN", 403);
       if (status === 404 && actorId !== undefined) return error("NOT_FOUND", 404);
+      if (status === 409 && changing) return error("CONFLICT", 409);
+      if (changing && reason.code === "OPERATION_RESULT_UNKNOWN") return error("OPERATION_RESULT_UNKNOWN", 503);
     }
     return error("OWNER_UNAVAILABLE", 503);
   }

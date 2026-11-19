@@ -7,3 +7,8 @@ export async function GET(request: Request, context: Readonly<{ params: Promise<
   const { actorId } = await context.params;
   return readCaptainReview(request, actorId);
 }
+
+export async function PATCH(request: Request, context: Readonly<{ params: Promise<{ actorId: string }> }>) {
+  const { actorId } = await context.params;
+  return readCaptainReview(request, actorId);
+}
