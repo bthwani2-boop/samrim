@@ -1,3 +1,6 @@
-import CaptainsWorkspace from "../../../../src/features/captains/captains-workspace";
+import CaptainStandingDetail from "../../../../src/features/captains/captain-standing-detail";
 
-export default function Page() { return <CaptainsWorkspace title="ملف الكابتن" />; }
+export default async function Page({ params }: Readonly<{ params: Promise<{ actorId: string }> }>) {
+  const { actorId } = await params;
+  return <CaptainStandingDetail actorId={actorId} />;
+}

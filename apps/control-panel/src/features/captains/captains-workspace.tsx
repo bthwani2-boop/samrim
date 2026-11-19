@@ -3,33 +3,11 @@
 import { Alert, Button, Card, Select, Space, Table, Tag, Typography } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-type Status = "PENDING" | "APPROVED" | "SUSPENDED" | "REVOKED";
-type Standing = { actorId: string; status: Status; version: number };
-type Page = { items: Standing[]; nextCursor?: string };
-
-const statuses: ReadonlyArray<{ value: Status; label: string }> = [
-  { value: "PENDING", label: "بانتظار المراجعة" },
-  { value: "APPROVED", label: "معتمد" },
-  { value: "SUSPENDED", label: "موقوف" },
-  { value: "REVOKED", label: "ملغى" },
-];
-const labels: Record<Status, string> = Object.fromEntries(statuses.map(({ value, label }) => [value, label])) as Record<Status, string>;
-const valid = (value: unknown): value is Standing =>
-  typeof value === "object" && value !== null &&
-  typeof (value as Standing).actorId === "string" &&
-  (value as Standing).actorId.length > 0 &&
-  statuses.some(({ value: status }) => status === (value as Standing).status) &&
-  Number.isSafeInteger((value as Standing).version) && (value as Standing).version > 0;
-
-async function readJson(url: string, signal: AbortSignal): Promise<unknown> {
-  const response = await fetch(url, { credentials: "same-origin", cache: "no-store", signal });
-  if (!response.ok) {
-    if (response.status === 401) throw new Error("انتهت جلسة المشغّل. سجّل الدخول مجددًا.");
-    if (response.status === 403) throw new Error("لا تملك صلاحية العمليات المطلوبة.");
-    throw new Error("تعذّر قراءة بيانات الكباتن من DSH. حاول مجددًا.");
-  }
-  return response.json();
-}
+import {
+  captainStatusLabels as labels, type CaptainPage as Page,
+  readCaptainJson as readJson,
+  type CaptainStanding as Standing, type CaptainStatus as Status,captainStatuses as statuses, isCaptainStanding as valid,
+} from "./captains-read-client";
 
 export default function CaptainsWorkspace({ title = "الكباتن" }: Readonly<{ title?: string }>) {
   const [status, setStatus] = useState<Status>("PENDING");
@@ -108,7 +86,10 @@ export default function CaptainsWorkspace({ title = "الكباتن" }: Readonly
               render: (value: Status) => <Tag>{labels[value]}</Tag> },
             { title: "الإصدار", dataIndex: "version", key: "version" },
             { title: "التفاصيل", key: "action", render: (_, record) =>
-              <Button onClick={() => { void showDetail(record.actorId); }}>عرض</Button> },
+              <Space>
+                <Button onClick={() => { void showDetail(record.actorId); }}>عرض سريع</Button>
+                <a href={`/captains/${encodeURIComponent(record.actorId)}`}>فتح الملف</a>
+              </Space> },
           ]} />
         {page?.nextCursor && <Button style={{ marginTop: 16 }} disabled={loading}
           onClick={() => setCursor(page.nextCursor ?? "")}>الصفحة التالية</Button>}
