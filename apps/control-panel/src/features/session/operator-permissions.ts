@@ -39,3 +39,13 @@ function canOpenWorkspaceEntry(grants: readonly OperatorPermission[], entry: Wor
 export function visibleWorkspaceEntries(grants: readonly OperatorPermission[]): WorkspaceEntry[] {
   return workspaceRegistry.filter(entry => canOpenWorkspaceEntry(grants, entry));
 }
+
+/** One tab per permitted section, derived from the same permission-filtered route registry. */
+export function operatorSectionTabs(grants: readonly OperatorPermission[]): WorkspaceEntry[] {
+  const seen = new Set<WorkspaceEntry["group"]>();
+  return visibleWorkspaceEntries(grants).filter((entry) => {
+    if (seen.has(entry.group)) return false;
+    seen.add(entry.group);
+    return true;
+  });
+}

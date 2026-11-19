@@ -9,6 +9,17 @@ export type WorkspaceEntry = Readonly<{
   owner: "Identity" | "DSH" | "WLT" | "multiple";
 }>;
 
+export const workspaceGroupLabels: Readonly<Record<WorkspaceGroup, string>> = {
+  home: "الرئيسية",
+  operations: "العمليات",
+  stores: "المتاجر",
+  catalog: "الكتالوج",
+  marketing: "التسويق والتصميم",
+  finance: "المالية",
+  administration: "الإدارة والموظفون",
+  policies: "السياسات",
+};
+
 // Null requires a separate verified access rule; it NEVER means a public route.
 // Navigation metadata is not service authorization.
 export const workspaceRegistry: readonly WorkspaceEntry[] = [

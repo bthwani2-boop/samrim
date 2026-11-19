@@ -58,6 +58,12 @@ test("Operator routes and the browser session endpoint fail closed on the produc
     const entryHtml = await entry.text();
     assert.match(entryHtml, /تسجيل دخول المشغّلين غير متاح على هذه النسخة/);
     assert.doesNotMatch(entryHtml, /تسجيل الدخول بمفتاح المرور/);
+    const lockedSections = entryHtml.match(/<section\b[^>]*aria-label="الأقسام الرئيسية \(تتطلب تسجيل الدخول\)"[^>]*>(.*?)<\/section>/s)?.[1];
+    assert.ok(lockedSections, "guest must see a read-only section map in the sidebar");
+    assert.match(lockedSections, /العمليات/);
+    assert.match(lockedSections, /المالية/);
+    assert.doesNotMatch(lockedSections, /<(?:a|button)\\b/, "no disabled section may become a protected action");
+    assert.doesNotMatch(entryHtml, /aria-label="تبويبات الأقسام"/, "tabs require verified grants");
     const overview = entryHtml.match(/<section\b[^>]*aria-labelledby="operator-sections-title"[^>]*>(.*?)<\/section>/s)?.[1];
     assert.ok(overview, "the guest landing must show the public section overview");
     assert.match(overview, /تظهر روابط الأقسام بعد التحقق من صلاحيات حسابك/);

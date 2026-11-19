@@ -2,20 +2,9 @@
 
 import { usePathname } from "next/navigation";
 import { type ReactNode, useState } from "react";
-import { findWorkspaceEntry, type WorkspaceGroup } from "../navigation/workspace-registry";
-import { type OperatorPermission, visibleWorkspaceEntries } from "../session/operator-permissions";
+import { findWorkspaceEntry, workspaceGroupLabels } from "../navigation/workspace-registry";
+import { type OperatorPermission, operatorSectionTabs, visibleWorkspaceEntries } from "../session/operator-permissions";
 import styles from "./operator-shell.module.css";
-
-const workspaceGroups: Readonly<Record<WorkspaceGroup, string>> = {
-  home: "الرئيسية",
-  operations: "العمليات",
-  stores: "المتاجر",
-  catalog: "الكتالوج",
-  marketing: "التسويق والتصميم",
-  finance: "المالية",
-  administration: "الإدارة والموظفون",
-  policies: "السياسات",
-};
 
 export default function OperatorShell({ children, verifiedGrants }: Readonly<{
   children: ReactNode;
@@ -25,11 +14,13 @@ export default function OperatorShell({ children, verifiedGrants }: Readonly<{
   const pathname = usePathname();
   const [signOutState, setSignOutState] = useState<"idle" | "pending" | "unconfirmed">("idle");
   const permitted = visibleWorkspaceEntries(verifiedGrants ?? []);
+  const sectionTabs = operatorSectionTabs(verifiedGrants ?? []);
   const publicLinks = [
     { href: "/", label: verifiedGrants === null ? "دخول المشغّل" : "الوصول إلى اللوحة" },
     { href: "/health", label: "حالة الواجهة" },
   ];
-  const activeHref = pathname && findWorkspaceEntry(pathname)?.href;
+  const activeEntry = pathname ? findWorkspaceEntry(pathname) : null;
+  const activeHref = activeEntry?.href;
 
   async function signOut() {
     if (signOutState !== "idle") return;
@@ -66,7 +57,7 @@ export default function OperatorShell({ children, verifiedGrants }: Readonly<{
       ) : <><aside className={styles.sidebar}>
         <header className={styles.brand}>لوحة تحكم بثواني</header>
         <nav aria-label="التنقل الرئيسي" className={styles.navigation}>
-          {permitted.length > 0 ? Object.entries(workspaceGroups).map(([group, label]) => {
+          {permitted.length > 0 ? Object.entries(workspaceGroupLabels).map(([group, label]) => {
             const entries = permitted.filter(entry => entry.group === group);
             if (entries.length === 0) return null;
             return (
@@ -75,7 +66,18 @@ export default function OperatorShell({ children, verifiedGrants }: Readonly<{
                 <ul>{entries.map(entry => navigationLink(entry, activeHref))}</ul>
               </div>
             );
-          }) : <ul>{publicLinks.map(entry => navigationLink(entry, pathname))}</ul>}
+          }) : <>
+            <ul>{publicLinks.map(entry => navigationLink(entry, pathname))}</ul>
+            <section className={styles.lockedSections} aria-label="الأقسام الرئيسية (تتطلب تسجيل الدخول)">
+              <h2>الأقسام الرئيسية</h2>
+              <ul>
+                {Object.entries(workspaceGroupLabels).filter(([group]) => group !== "home").map(([group, label]) => (
+                  <li key={group}>{label}</li>
+                ))}
+              </ul>
+              <p>روابط الأقسام تظهر بعد التحقق من جلسة المشغّل وصلاحياته.</p>
+            </section>
+          </>}
         </nav>
         {verifiedGrants !== null && (
           <button type="button" className={styles.logout} onClick={signOut}>
@@ -83,7 +85,23 @@ export default function OperatorShell({ children, verifiedGrants }: Readonly<{
           </button>
         )}
       </aside>
-      <div className={styles.content}>{children}</div></>}
+      <div className={styles.content}>
+        {sectionTabs.length > 0 && (
+          <header className={styles.workspaceBar}>
+            <span className={styles.currentSection}>{activeEntry?.label ?? "لوحة تحكم بثواني"}</span>
+            <nav aria-label="تبويبات الأقسام" className={styles.sectionTabs}>
+              <ul>{sectionTabs.map((tab) => (
+                <li key={tab.group}>
+                  <a href={tab.href} aria-current={activeEntry?.group === tab.group ? "page" : undefined}>
+                    {workspaceGroupLabels[tab.group]}
+                  </a>
+                </li>
+              ))}</ul>
+            </nav>
+          </header>
+        )}
+        {children}
+      </div></>}
     </div>
   );
 }
