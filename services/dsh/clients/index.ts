@@ -133,12 +133,7 @@ function readPage<T>(value: unknown, validate: (v: unknown) => v is T): PublicPa
 export async function listPublicStores(
   baseUrl: string, cityId: string, options: { query?: string; cursor?: string; limit?: number; signal?: AbortSignal } = {},
 ): Promise<PublicPage<PublicStore>> {
-  // Check the wire value before URLSearchParams can replace lone surrogates.
-  // OpenAPI maxLength counts Unicode code points, including surrounding space.
-  if (options.query !== undefined && (Array.from(options.query).length > 80 ||
-    options.query.includes("\u0000") || /[\uD800-\uDFFF]/u.test(options.query))) {
-    throw new DshPublicError(400, "INVALID_SEARCH");
-  }
+  validatePublicSearch(options.query);
   const url = endpoint(baseUrl, "/v1/public/stores");
   url.searchParams.set("city_id", cityId);
   if (options.query !== undefined) url.searchParams.set("q", options.query);
@@ -157,9 +152,11 @@ export async function getPublicStore(baseUrl: string, storeId: string, signal?: 
   return value;
 }
 export async function listPublicOffers(
-  baseUrl: string, storeId: string, options: { cursor?: string; limit?: number; signal?: AbortSignal } = {},
+  baseUrl: string, storeId: string, options: { query?: string; cursor?: string; limit?: number; signal?: AbortSignal } = {},
 ): Promise<PublicPage<PublicOffer>> {
+  validatePublicSearch(options.query);
   const url = endpoint(baseUrl, "/v1/public/stores/" + encodeURIComponent(storeId) + "/offers");
+  if (options.query !== undefined) url.searchParams.set("q", options.query);
   if (options.cursor) url.searchParams.set("cursor", options.cursor);
   if (options.limit) url.searchParams.set("limit", String(options.limit));
   const page = readPage(await ownerRead(url, options.signal), isOffer);
@@ -167,6 +164,15 @@ export async function listPublicOffers(
     throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   }
   return page;
+}
+
+function validatePublicSearch(query: string | undefined): void {
+  // Check the wire value before URLSearchParams can replace lone surrogates.
+  // OpenAPI maxLength counts Unicode code points, including surrounding space.
+  if (query !== undefined && (Array.from(query).length > 80 ||
+    query.includes("\u0000") || /[\uD800-\uDFFF]/u.test(query))) {
+    throw new DshPublicError(400, "INVALID_SEARCH");
+  }
 }
 
 

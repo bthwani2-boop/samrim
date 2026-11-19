@@ -7,6 +7,11 @@ paths:
       security: []
       parameters:
         - $ref: '../dsh.openapi.yaml#/components/parameters/StoreId'
+        - name: q
+          in: query
+          required: false
+          description: Optional literal case-insensitive Offer display-name substring. The wire value is limited to 80 Unicode code points including surrounding whitespace, then trimmed before matching. Empty means all eligible Offers. Cursors are bound to Store, trimmed search and catalog revision; changing search requires a fresh page. Percent and underscore are literal characters, never wildcards.
+          schema: { type: string, maxLength: 80 }
         - name: limit
           in: query
           schema: { type: integer, minimum: 1, maximum: 50, default: 20 }

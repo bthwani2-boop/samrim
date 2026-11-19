@@ -43,7 +43,7 @@ export async function GET(request: Request) {
   const path = discoveryPath.exec(url.pathname);
   if (!path) return fail(404, "NOT_FOUND");
   const [, id, offers] = path;
-  const allowedKeys = id ? (offers ? ["limit", "cursor"] : []) : ["city_id", "q", "limit", "cursor"];
+  const allowedKeys = id ? (offers ? ["q", "limit", "cursor"] : []) : ["city_id", "q", "limit", "cursor"];
   const params = url.searchParams;
   if (url.search.length > 4097 ||
       [...params.keys()].some(key => !allowedKeys.includes(key) || params.getAll(key).length > 1)) {
@@ -66,11 +66,12 @@ export async function GET(request: Request) {
   if (!id && (city === null || !publicId.test(city))) return fail(400, "INVALID_CITY");
 
   const signal = AbortSignal.any([request.signal, AbortSignal.timeout(5000)]);
-  const page = { signal, ...(limit === undefined ? {} : { limit }), ...(cursor === null ? {} : { cursor }) };
+  const query = params.get("q");
+  const page = { signal, ...(limit === undefined ? {} : { limit }), ...(cursor === null ? {} : { cursor }),
+    ...(query === null ? {} : { query }) };
   try {
     if (id) return json(offers ? await listPublicOffers(owner, id, page) : await getPublicStore(owner, id, signal));
-    const query = params.get("q");
-    return json(await listPublicStores(owner, city as string, { ...page, ...(query === null ? {} : { query }) }));
+    return json(await listPublicStores(owner, city as string, page));
   } catch (error) {
     return ownerFailure(error);
   }

@@ -84,6 +84,35 @@ test("Store search accepts 80 Unicode code points without splitting surrogate pa
   }, () => listPublicStores(base, "sanaa", { query }));
 });
 
+test("Offer text search preserves Store, query and pagination in the owner request", async () => {
+  const query = "دقيق & %_";
+  await withFetch(async (url) => {
+    const parsed = new URL(url);
+    assert.equal(parsed.pathname, `/v1/public/stores/${store.id}/offers`);
+    assert.equal(parsed.searchParams.get("q"), query);
+    assert.equal(parsed.searchParams.get("cursor"), "offer-next");
+    assert.equal(parsed.searchParams.get("limit"), "2");
+    return json({ items: [offer], revision: 7 });
+  }, async () => {
+    assert.deepEqual((await listPublicOffers(base, store.id, { query, cursor: "offer-next", limit: 2 })).items, [offer]);
+  });
+});
+
+test("Offer search uses the same 80-code-point wire validation as Store search", async () => {
+  let calls = 0;
+  await withFetch(async (url) => {
+    calls++;
+    assert.equal(new URL(url).searchParams.get("q"), "😀".repeat(80));
+    return json({ items: [], revision: 1 });
+  }, async () => {
+    for (const query of ["a".repeat(81), " ".repeat(81), ` ${"a".repeat(80)}`, "a\u0000b", "\ud800", "\udfff"]) {
+      await rejectsAs(() => listPublicOffers(base, store.id, { query }), 400, "INVALID_SEARCH");
+    }
+    await listPublicOffers(base, store.id, { query: "😀".repeat(80) });
+  });
+  assert.equal(calls, 1, "invalid wire text must fail before network access");
+});
+
 test("DIRECT linked detail is read without claiming marketplace listing", async () => {
   await withFetch(async (url) => {
     assert.equal(new URL(url).pathname, "/v1/public/stores/direct-sanaa");

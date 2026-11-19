@@ -179,7 +179,7 @@ func cursorError(w http.ResponseWriter, err error) {
 	errorJSON(w, 400, "INVALID_CURSOR")
 }
 func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-	search, scope, valid := storeSearch(r)
+	search, scope, valid := publicSearch(r, r.URL.Query().Get("city_id"))
 	if !valid {
 		errorJSON(w, 400, "INVALID_SEARCH")
 		return
@@ -254,7 +254,7 @@ func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.
 
 // Search is a literal substring, never a SQL LIKE pattern. Hashing its scope
 // keeps even multi-byte search text within the existing bounded cursor format.
-func storeSearch(r *http.Request) (string, string, bool) {
+func publicSearch(r *http.Request, scope string) (string, string, bool) {
 	values, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil || len(values["q"]) > 1 {
 		return "", "", false
@@ -264,7 +264,6 @@ func storeSearch(r *http.Request) (string, string, bool) {
 		return "", "", false
 	}
 	search := strings.TrimSpace(raw)
-	scope := values.Get("city_id")
 	if search != "" {
 		scope += fmt.Sprintf(":%x", sha256.Sum256([]byte(search)))
 	}
@@ -304,6 +303,11 @@ func (s *Server) storeDetail(ctx context.Context, w http.ResponseWriter, id stri
 	jsonResponse(w, 200, st)
 }
 func (s *Server) listOffers(ctx context.Context, w http.ResponseWriter, r *http.Request, id string) {
+	search, scope, valid := publicSearch(r, id)
+	if !valid {
+		errorJSON(w, 400, "INVALID_SEARCH")
+		return
+	}
 	limit, ok := limitParam(r)
 	if !ok {
 		errorJSON(w, 400, "INVALID_LIMIT")
@@ -329,7 +333,7 @@ func (s *Server) listOffers(ctx context.Context, w http.ResponseWriter, r *http.
 		errorJSON(w, 503, "OWNER_UNAVAILABLE")
 		return
 	}
-	after, err := parseCursor(r.URL.Query().Get("cursor"), "offers", id, rev)
+	after, err := parseCursor(r.URL.Query().Get("cursor"), "offers", scope, rev)
 	if err != nil {
 		cursorError(w, err)
 		return
@@ -339,8 +343,9 @@ func (s *Server) listOffers(ctx context.Context, w http.ResponseWriter, r *http.
 		JOIN variants v ON v.id=o.variant_id AND v.product_id=o.product_id
 		WHERE o.store_id=$1 AND o.id>$2 AND p.active AND v.sellable
 			AND v.required_attributes_valid AND o.published AND o.available
-			AND o.price_yer>0 AND o.stock_units>0 ORDER BY o.id LIMIT $3`
-	rows, err := tx.QueryContext(ctx, q, id, after, limit+1)
+			AND o.price_yer>0 AND o.stock_units>0
+			AND strpos(lower(p.name),lower($4))>0 ORDER BY o.id LIMIT $3`
+	rows, err := tx.QueryContext(ctx, q, id, after, limit+1, search)
 	if err != nil {
 		errorJSON(w, 503, "OWNER_UNAVAILABLE")
 		return
@@ -370,7 +375,7 @@ func (s *Server) listOffers(ctx context.Context, w http.ResponseWriter, r *http.
 	result := page[publicOffer]{Items: items, Revision: rev}
 	if len(items) > limit {
 		result.Items = items[:limit]
-		result.NextCursor = makeCursor(pageCursor{Kind: "offers", Scope: id, After: items[limit-1].ID, Revision: rev})
+		result.NextCursor = makeCursor(pageCursor{Kind: "offers", Scope: scope, After: items[limit-1].ID, Revision: rev})
 	}
 	jsonResponse(w, 200, result)
 }
