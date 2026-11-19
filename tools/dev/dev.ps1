@@ -232,6 +232,15 @@ $lock=(Get-FileHash -LiteralPath (Join-Path $root 'pnpm-lock.yaml') -Algorithm S
 Write-Output ('APP_MIRROR nodePin='+$version+' nodeActual='+$actualNode+' lockMatch='+($lock -eq $expectedLock))
 if($strict -and ($version -ne '24.22.1' -or $actualNode -ne $version -or $lock -ne $expectedLock)){throw 'APP_MIRROR_TOOLCHAIN_OR_LOCK_MISMATCH'}
 foreach($s in $specs){
+  $manifest=Get-Content -LiteralPath (Join-Path $root ('apps\'+$s.A+'\package.json')) -Raw | ConvertFrom-Json
+  foreach($dep in $manifest.dependencies.PSObject.Properties){
+    if([string]$dep.Value -notlike 'workspace:*'){continue}
+    $dependencyPackage=Join-Path $root ('apps\'+$s.A+'\node_modules\'+$dep.Name+'\package.json')
+    if(!(Test-Path -LiteralPath $dependencyPackage -PathType Leaf)){
+      Write-Output ('APP_WORKSPACE_LINK_MISSING app='+$s.A+' package='+$dep.Name)
+      if($strict){throw ('APP_WORKSPACE_DEPENDENCY_MISSING '+$s.A+' '+$dep.Name)}
+    }
+  }
   $task=Get-ScheduledTask -TaskName $s.N -ErrorAction Stop
   $actions=@($task.Actions)
   $action=($actions | ForEach-Object {[string]$_.Execute+' '+[string]$_.Arguments}) -join ' '

@@ -37,6 +37,13 @@ test("the unified dev launcher and each embedded PowerShell block parse on Windo
 });
 
 
+test("the app verifier detects missing workspace dependency links", () => {
+  const launcher = readFileSync(scriptPath, "utf8");
+  assert.match(launcher, /APP_WORKSPACE_LINK_MISSING/);
+  assert.ok(launcher.includes("workspace:*"));
+  assert.ok(launcher.includes("Test-Path -LiteralPath $dependencyPackage -PathType Leaf"));
+});
+
 test("the Merchant launcher preserves existing Windows task identities", () => {
   const launcher = readFileSync(scriptPath, "utf8");
   assert.match(launcher, /N='BThwani Partner Metro Native';A='merchant'/);
