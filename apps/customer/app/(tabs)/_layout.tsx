@@ -27,7 +27,7 @@ function StorefrontNavigation({ active }: { active: string | undefined }) {
 
   return (
     <View style={{
-      width: 228, flex: 1, minHeight: "100%",
+      width: 228, flexShrink: 0, minHeight: "100%",
       backgroundColor: theme.surface, borderLeftWidth: 1,
       borderLeftColor: theme.borderColor, paddingHorizontal: 12, paddingVertical: 20, gap: 20,
     }}>

@@ -10,8 +10,12 @@ import { describeStoreOrderability } from "./orderability";
 const API = process.env.EXPO_PUBLIC_DSH_API_URL ?? "";
 const INITIAL_CITY = process.env.EXPO_PUBLIC_DSH_CITY_ID ?? "sanaa";
 type PageState = { scope: string; loading: boolean; loadingMore: boolean; items: PublicStore[]; cursor?: string | undefined; error?: string | undefined };
+function requiresFreshPage(code?: string) {
+  return code === "STALE_CURSOR" || code === "INVALID_CURSOR";
+}
+
 function message(code?: string) {
-  if (code === "STALE_CURSOR") return "تغيّرت البيانات. أعد تحميل المتاجر.";
+  if (requiresFreshPage(code)) return "تغيّرت البيانات. أعد تحميل المتاجر.";
   if (code === "DSH_ENDPOINT_NOT_CONFIGURED") return "خدمة المتاجر غير متاحة حاليًا.";
   if (code === "INVALID_SEARCH") return "عبارة البحث غير صالحة. استخدم ٨٠ حرفًا أو أقل.";
   return "تعذّر تحميل المتاجر. تحقّق من الاتصال وحاول مجددًا.";
@@ -64,8 +68,14 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
         ...old, loadingMore: false, items: [...old.items, ...page.items], cursor: page.nextCursor,
       });
     } catch (error) {
-      if (generation.current === current && !abort.signal.aborted)
-        setState((old) => old.scope !== scope ? old : { ...old, loadingMore: false, error: error instanceof Error ? error.message : "UNKNOWN" });
+      if (generation.current !== current || abort.signal.aborted) return;
+      const code = error instanceof Error ? error.message : "UNKNOWN";
+      setState((old) => {
+        if (old.scope !== scope) return old;
+        // DSH has rejected the list snapshot. Reload before showing its cards again.
+        if (requiresFreshPage(code)) return { scope, loading: false, loadingMore: false, items: [], error: code };
+        return { ...old, loadingMore: false, error: code };
+      });
     }
   };
   const textStyle = { color: theme.color };

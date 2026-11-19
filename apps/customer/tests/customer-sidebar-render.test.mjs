@@ -64,6 +64,10 @@ test("wide Customer Web renders a right-side public sidebar without inventing au
   assert.equal(typeof layout.props.tabBar, "function");
   const preview = layout.props.tabBar({ state: { index: 0, routes: [{ name: "index" }] } });
   const sidebar = preview.type(preview.props);
+  assert.equal(sidebar.props.style.width, 228);
+  assert.equal(sidebar.props.style.flexShrink, 0);
+  assert.ok(!sidebar.props.style.flex && !sidebar.props.style.flexGrow,
+    "desktop rail must not take available width from the Store screen");
   const links = [];
   let nav;
   walk(sidebar, node => {
