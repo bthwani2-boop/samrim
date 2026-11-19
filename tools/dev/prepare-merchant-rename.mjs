@@ -141,7 +141,7 @@ function safePath(root, path) {
 }
 
 function linesOf(value) {
-  return value.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+  return value.match(/(?:[^\n]*\n|[^\n]+$)/g) ?? [];
 }
 
 function plan(root, head) {
