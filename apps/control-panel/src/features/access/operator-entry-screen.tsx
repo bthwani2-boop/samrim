@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { resolveIsolatedOperatorConfig } from "../../server/operator-passkey-bff";
 import OperatorPasskeyForm from "./operator-passkey-form";
 
@@ -21,7 +20,6 @@ export default function OperatorEntryScreen() {
         صلاحيات المشغّل وإدارة الحساب الأساسي محمية في Identity.
         لا تُعرض صفحات العمل أو بياناتها دون التحقق من الجلسة والصلاحيات الفعلية.
       </p>
-      <Link href="/health">التحقق من حالة الخدمة</Link>
     </main>
   );
 }

@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./appearance": "./src/appearance.tsx",
+    "./navigation": "./src/navigation.tsx",
     "./preview": "./src/preview.tsx"
   },
   "dependencies": {

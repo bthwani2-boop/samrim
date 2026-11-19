@@ -74,11 +74,7 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
         {__DEV__ ? <Link href={"/foundation" as Href} style={{ color: theme.interactiveText }}>مختبر الواجهة</Link> : null}
         <Text accessibilityRole="header" style={{ ...textStyle, fontSize: 26, fontWeight: "700" }}>{variant === "home" ? "بثواني — الرئيسية" : "متاجر بثواني"}</Text>
         {variant === "home" ? (
-          <View style={{ flexDirection: "row", gap: 18, flexWrap: "wrap" }}>
-            <Link href="/stores" style={{ color: theme.interactiveText }}>جميع المتاجر</Link>
-            <Link href="/orders" style={{ color: theme.interactiveText }}>طلباتي</Link>
-            <Link href="/account" style={{ color: theme.interactiveText }}>حسابي</Link>
-          </View>
+          <Link href="/stores" style={{ color: theme.interactiveText }}>جميع المتاجر</Link>
         ) : <Link href="/" style={{ color: theme.interactiveText }}>الرئيسية</Link>}
         <Text style={{ ...textStyle, color: theme.colorSecondary }}>البيانات المنشورة فقط من خدمة المتاجر. عرض المتجر لا يعني إمكانية إتمام الطلب.</Text>
         <ServiceCityScope draftCity={draftCity} onDraftChange={setDraftCity} onApply={setCityId} />
@@ -87,7 +83,7 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
             placeholderTextColor={theme.colorSecondary} value={draftQuery}
             onChangeText={(value) => setDraftQuery(Array.from(value).slice(0, 80).join(""))}
             returnKeyType="search" onSubmitEditing={() => setQuery(draftQuery.trim())}
-            style={{ ...buttonStyle, color: theme.color, textAlign: "right", writingDirection: "rtl" }} />
+            style={{ ...buttonStyle, color: theme.color }} />
           <Pressable accessibilityRole="button" onPress={() => setQuery(draftQuery.trim())} style={buttonStyle}>
             <Text style={{ color: theme.interactiveText, textAlign: "center" }}>بحث</Text>
           </Pressable>

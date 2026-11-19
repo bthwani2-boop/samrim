@@ -83,7 +83,7 @@ test("protected feature routes delegate to feature-owned screens and fail closed
 test("tabs keep their URLs and no route duplicates their roots", () => {
   const tabs = read("(tabs)/_layout.tsx");
   assert.match(tabs, /<Tabs/);
-  for (const name of ["index", "orders", "account"]) assert.ok(tabs.includes(`name="${name}"`));
+  for (const name of ["index", "orders/index", "account/index"]) assert.ok(tabs.includes(`name="${name}"`));
   for (const duplicate of ["index.tsx", "orders/index.tsx", "account/index.tsx"]) {
     assert.equal(existsSync(resolve(app, duplicate)), false);
   }

@@ -1,19 +1,14 @@
-import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
+import { usePrimaryNavigation } from "@bthwani/tamagui-config/navigation";
 import { Tabs } from "expo-router";
 
 // /, /orders and /account retain their URLs. Private features still fail closed.
 export default function CustomerTabsLayout() {
-  const { theme } = useMobileAppearance();
+  const { screenOptions } = usePrimaryNavigation();
   return (
-    <Tabs screenOptions={{
-      headerShown: false,
-      tabBarActiveTintColor: theme.interactiveText,
-      tabBarInactiveTintColor: theme.colorSecondary,
-      tabBarStyle: { backgroundColor: theme.surface, borderTopColor: theme.borderColor },
-    }}>
+    <Tabs screenOptions={screenOptions} backBehavior="history">
       <Tabs.Screen name="index" options={{ title: "الرئيسية" }} />
-      <Tabs.Screen name="orders" options={{ title: "طلباتي" }} />
-      <Tabs.Screen name="account" options={{ title: "حسابي" }} />
+      <Tabs.Screen name="orders/index" options={{ title: "طلباتي" }} />
+      <Tabs.Screen name="account/index" options={{ title: "حسابي" }} />
     </Tabs>
   );
 }

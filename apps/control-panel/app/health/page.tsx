@@ -1,8 +1,6 @@
-import Link from "next/link";
 export default function HealthPage() {
   return <main style={{ maxWidth: 720, margin: "40px auto" }}>
-    <h1>الملاحة في لوحة التحكم تعمل</h1>
-    <p>فحص بنية العرض فقط؛ لا توجد معلومات تجارية أو جلسات مستخدمين.</p>
-    <Link href="/">العودة للرئيسية</Link>
+    <h1>حالة واجهة لوحة التحكم</h1>
+    <p>واجهة لوحة التحكم متاحة. هذه الصفحة تفحص الواجهة فقط.</p>
   </main>;
 }
