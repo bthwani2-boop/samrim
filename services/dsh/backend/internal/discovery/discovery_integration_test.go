@@ -108,6 +108,47 @@ func TestOwnerBackedMarketplaceVisibility(t *testing.T) {
 		t.Fatal("paused store status lost")
 	}
 }
+
+func TestOwnerBackedSyntheticImportDeniesAlternateDatabase(t *testing.T) {
+	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" || os.Getenv("DSH_TEST_SEED_BOUNDARY") != "true" {
+		t.Skip("requires a disposable PostgreSQL runner with a cloned DSH fixture database")
+	}
+	const database = "bthwani_dsh_boundary_fixture"
+	t.Setenv("REF_POSTGRES_DB", database)
+	db, err := OpenFromEnvironment()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	owner, err := New(db, "dsh_test_seed_boundary")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	readRevision := func() int64 {
+		t.Helper()
+		tx, err := owner.viewTx(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback()
+		rev, err := owner.revision(ctx, tx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rev
+	}
+
+	before := readRevision()
+	importErr := owner.ImportSynthetic(ctx)
+	if after := readRevision(); after != before {
+		t.Errorf("synthetic import modified the alternate database: revision %d -> %d", before, after)
+	}
+	if importErr == nil || !strings.Contains(importErr.Error(), "outside the isolated refoundation database") {
+		t.Fatalf("expected synthetic import to deny the alternate database, got %v", importErr)
+	}
+}
+
 func decode(t *testing.T, raw []byte) map[string]any {
 	t.Helper()
 	var b map[string]any

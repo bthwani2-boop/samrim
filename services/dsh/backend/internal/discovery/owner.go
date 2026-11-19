@@ -22,10 +22,27 @@ type Owner struct {
 
 var identifier = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 
-// Migration is an isolated developer-only operation. Do not accept a similarly
+// Migration and synthetic import are isolated developer-only operations. Do not accept a similarly
 // named production/donor database even when it contains a dsh_test_* schema.
-func isRefoundationMigrationDatabase(name string) bool {
+func isRefoundationDatabase(name string) bool {
 	return name == "bthwani_refoundation"
+}
+
+func (o *Owner) isIsolatedTestOwner() bool {
+	return o != nil && o.DB != nil && identifier.MatchString(o.Schema) &&
+		strings.HasPrefix(o.Schema, "dsh_test_") && len(o.Schema) > len("dsh_test_") &&
+		os.Getenv("BTHWANI_ISOLATED_TEST_MODE") == "true"
+}
+
+func requireRefoundationDatabase(ctx context.Context, tx *sql.Tx) error {
+	var name string
+	if err := tx.QueryRowContext(ctx, "SELECT pg_catalog.current_database()").Scan(&name); err != nil {
+		return fmt.Errorf("DSH database identity unavailable: %w", err)
+	}
+	if !isRefoundationDatabase(name) {
+		return errors.New("outside the isolated refoundation database")
+	}
+	return nil
 }
 
 func New(db *sql.DB, schema string) (*Owner, error) {
@@ -69,8 +86,7 @@ func isReviewedMigrationSource(source []byte) bool {
 }
 
 func (o *Owner) Migrate(ctx context.Context, source []byte) error {
-	if o == nil || o.DB == nil || !identifier.MatchString(o.Schema) ||
-		os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" || !strings.HasPrefix(o.Schema, "dsh_test_") {
+	if !o.isIsolatedTestOwner() {
 		return errors.New("isolated DSH migration required")
 	}
 	// Every reviewed owner migration must explicitly identify its own test schema.
@@ -93,12 +109,8 @@ func (o *Owner) Migrate(ctx context.Context, source []byte) error {
 	defer tx.Rollback()
 	// An environment toggle and dsh_test_* identifier alone do not prove the
 	// target database is this Worktree's isolated PostgreSQL instance.
-	var databaseName string
-	if err = tx.QueryRowContext(ctx, "SELECT current_database()").Scan(&databaseName); err != nil {
-		return fmt.Errorf("DSH migration database identity unavailable: %w", err)
-	}
-	if !isRefoundationMigrationDatabase(databaseName) {
-		return errors.New("DSH migration denied outside the isolated refoundation database")
+	if err = requireRefoundationDatabase(ctx, tx); err != nil {
+		return fmt.Errorf("DSH migration denied: %w", err)
 	}
 	if _, err = tx.ExecContext(ctx, sqlText); err != nil {
 		return fmt.Errorf("dsh public migration: %w", err)
@@ -133,10 +145,10 @@ func (o *Owner) revision(ctx context.Context, tx *sql.Tx) (int64, error) {
 }
 
 // ImportSynthetic is an explicit DSH-owner-only isolated verification operation.
-// It has no public HTTP route, cannot run outside an opt-in dsh_test_* schema,
+// It has no public HTTP route, requires an opt-in dsh_test_* schema in the isolated database,
 // and never claims a Merchant/Identity enrollment or signed WLT agreement.
 func (o *Owner) ImportSynthetic(ctx context.Context) error {
-	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" || !strings.HasPrefix(o.Schema, "dsh_test_") {
+	if !o.isIsolatedTestOwner() {
 		return errors.New("synthetic import disabled outside isolated DSH test schema")
 	}
 	tx, err := o.beginScopedTx(ctx, nil)
@@ -144,6 +156,9 @@ func (o *Owner) ImportSynthetic(ctx context.Context) error {
 		return err
 	}
 	defer tx.Rollback()
+	if err = requireRefoundationDatabase(ctx, tx); err != nil {
+		return fmt.Errorf("DSH synthetic import denied: %w", err)
+	}
 	queries := []string{
 		"INSERT INTO service_cities(id,active) VALUES ('sanaa',true),('aden',true) ON CONFLICT (id) DO UPDATE SET active=excluded.active",
 		"INSERT INTO verticals VALUES ('grocery',true),('disabled-vertical',false) ON CONFLICT (id) DO UPDATE SET active=excluded.active",
