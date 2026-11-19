@@ -73,8 +73,9 @@ docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.y
 docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.apps.yaml --profile implementation ps dsh
 ```
 
-The public DSH image uses only the real `/health` and `/v1/public/stores`
-routes; the Compose healthcheck confirms database reachability. The database
+The public DSH image serves `/health` and the public Store discovery routes.
+The Compose healthcheck requires the configured DSH discovery revision row to
+be readable. A migrated schema with an empty catalog is ready. The database
 schema must have the reviewed DSH SQL migrations applied separately in the
 isolated namespace before serving. The `dsh-migrate` service can explicitly run
 migration 001 only after reviewing the target schema; it does not silently
