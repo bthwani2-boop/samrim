@@ -3,7 +3,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const services = ["identity", "dsh", "wlt"];
@@ -26,6 +26,29 @@ export function parseArgs(argv) {
 
 export function parseVersion(output) {
   return /^go version go(\d+\.\d+\.\d+)\b/m.exec(output)?.[1] ?? null;
+}
+
+// An inherited shell PATH may prefer an older Go. Select an already-installed
+// exact pin without downloading, upgrading, or changing machine-wide PATH.
+export function resolvePinnedGo(expected, env = process.env, spawn = spawnSync, platform = process.platform) {
+  const windows = platform === "win32";
+  const lookup = spawn(windows ? "where.exe" : "which", windows ? ["go"] : ["-a", "go"], {
+    encoding: "utf8", windowsHide: true, env,
+  });
+  const candidates = lookup.status === 0
+    ? [...new Set(lookup.stdout.split(/\r?\n/).map(value => value.trim()).filter(Boolean))]
+    : ["go"];
+  const observed = [];
+  for (const executable of candidates) {
+    const result = spawn(executable, ["version"], {
+      encoding: "utf8", windowsHide: true,
+      env: { ...env, GOTOOLCHAIN: "local", GOPROXY: "off" },
+    });
+    const version = result.status === 0 ? parseVersion(result.stdout ?? "") : null;
+    if (version === expected) return executable;
+    observed.push(version ?? "unavailable");
+  }
+  throw new Error("Go version mismatch: expected " + expected + ", found " + observed.join(", "));
 }
 
 export function discoverModules(root, moduleName) {
@@ -72,7 +95,8 @@ export function main(argv = process.argv.slice(2), root = resolve(fileURLToPath(
   ]) delete env[key];
 
   const expected = readFileSync(join(root, ".go-version"), "utf8").trim();
-  const actual = parseVersion(run("go", ["version"], root, env, 20000));
+  const goExecutable = resolvePinnedGo(expected, env);
+  const actual = parseVersion(run(goExecutable, ["version"], root, env, 20000));
   if (actual !== expected) throw new Error("Go version mismatch: expected " + expected + ", got " + actual);
   const modules = discoverModules(root, moduleName);
   for (const name of modules) {
@@ -80,21 +104,22 @@ export function main(argv = process.argv.slice(2), root = resolve(fileURLToPath(
     process.stdout.write("\nGO_SERVICE=" + name + " MODE=" + mode + "\n");
     const goFiles = listGoFiles(directory);
     if (!goFiles.length) throw new Error("No Go source files in " + name);
-    const unformatted = run("gofmt", ["-l", ...goFiles], directory, env, 30000).trim();
+    const formatter = join(dirname(goExecutable), process.platform === "win32" ? "gofmt.exe" : "gofmt");
+    const unformatted = run(formatter, ["-l", ...goFiles], directory, env, 30000).trim();
     if (unformatted) throw new Error("gofmt failed for " + name + ": " + unformatted);
-    run("go", ["mod", "verify"], directory, env);
-    run("go", ["vet", "./..."], directory, env);
+    run(goExecutable, ["mod", "verify"], directory, env);
+    run(goExecutable, ["vet", "./..."], directory, env);
     if (mode === "ci" || mode === "coverage") {
       const scratch = mkdtempSync(join(tmpdir(), "bthwani-go-"));
       try {
         const profile = join(scratch, "coverage.out");
-        run("go", ["test", ...(mode === "ci" ? ["-race"] : []), "-count=1", "-coverprofile=" + profile, "./..."], directory, env, 600000);
-        run("go", ["tool", "cover", "-func=" + profile], directory, env);
+        run(goExecutable, ["test", ...(mode === "ci" ? ["-race"] : []), "-count=1", "-coverprofile=" + profile, "./..."], directory, env, 600000);
+        run(goExecutable, ["tool", "cover", "-func=" + profile], directory, env);
       } finally {
         rmSync(scratch, { recursive: true, force: true });
       }
     } else {
-      run("go", ["test", "-count=1", "./..."], directory, env, 300000);
+      run(goExecutable, ["test", "-count=1", "./..."], directory, env, 300000);
     }
     process.stdout.write("GO_CHECK_PASS service=" + name + " mode=" + mode + " database_integration=NOT_RUN\n");
   }

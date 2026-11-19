@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolvePinnedGo } from './check-go.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const strict = process.argv.includes('--require-exact-toolchain');
@@ -152,13 +153,20 @@ if (strict) {
   const installedNode = nodePin;
   // Verify the installed Go binary, not an automatically downloaded toolchain.
   // GOTOOLCHAIN=local prevents Go's user cache from masking a global mismatch.
-  const go = spawnSync(process.platform === 'win32' ? 'go.exe' : 'go', ['version'], {
+  let goExecutable;
+  try {
+    goExecutable = resolvePinnedGo(goPin);
+  } catch (error) {
+    fail(error.message);
+  }
+  const go = spawnSync(goExecutable, ['version'], {
     encoding: 'utf8', windowsHide: true,
-    env: { ...process.env, GOTOOLCHAIN: 'local', GOPROXY: 'off' }
+    env: { ...process.env, GOTOOLCHAIN: 'local', GOPROXY: 'off' },
   });
   if (go.status !== 0) fail('Cannot execute locally installed Go binary: ' + (go.error?.message ?? go.stderr?.trim() ?? 'unknown'));
   const actual = /^go version go([0-9.]+) /m.exec(go.stdout)?.[1];
-  if (actual !== goPin) fail('Global Go toolchain mismatch: expected ' + goPin +
+  if (actual !== goPin) fail('Go toolchain mismatch: expected ' + goPin +
     ', observed ' + (actual ?? 'unknown'));
-  console.log('STAGE3_EXACT_LOCAL_TOOLCHAIN_PASS node=' + installedNode + ' go=' + actual + ' global_go=true');
+  console.log('STAGE3_EXACT_LOCAL_TOOLCHAIN_PASS node=' + installedNode + ' go=' + actual +
+    ' exact_go_installed=true');
 }
