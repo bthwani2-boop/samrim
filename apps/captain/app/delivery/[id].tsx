@@ -2,5 +2,5 @@ import CaptainCapabilityScreen from "../../src/components/captain-capability-scr
 import CaptainProtectedRoute from "../../src/features/access/protected-route";
 
 export default function CaptainDeliveryDetailRoute() {
-  return <CaptainProtectedRoute><CaptainCapabilityScreen title="تفاصيل التوصيل" message="لا يُكشف عنوان العميل ولا تفاصيل المهمة إلا للكابتن المكلّف بعد تحقق DSH من الجلسة والإسناد. إثبات الاستلام والتسليم يحتاج تأكيد الخدمة المالكة ولا يعتمد على زر محلي." /></CaptainProtectedRoute>;
+  return <CaptainProtectedRoute><CaptainCapabilityScreen title="تفاصيل التوصيل" message="تظهر تفاصيل المهمة وعنوان التسليم للكابتن المكلّف عند تفعيل الخدمة." returnTo="/home" /></CaptainProtectedRoute>;
 }

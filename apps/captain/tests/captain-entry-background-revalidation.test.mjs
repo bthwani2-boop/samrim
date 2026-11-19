@@ -48,7 +48,7 @@ function harness() {
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {
       background: "black", surface: "black", color: "white",
       colorSecondary: "white", interactiveText: "white", warningText: "red",
-      borderColor: "gray",
+      borderColor: "gray", actionBackground: "primary", onAction: "white", successText: "green",
     } }) },
     "expo-router": { Link: "Link" },
     react,
@@ -114,6 +114,9 @@ function verifiedUI(tree) {
 function guestNavigation(tree) {
   return nodes(tree).some(node => node.type === "CaptainEntryShell");
 }
+function homeLink(tree) {
+  return nodes(tree).find(node => node.type === "Link" && node.props?.href === "/home");
+}
 async function settle() {
   await Promise.resolve();
   await Promise.resolve();
@@ -132,6 +135,7 @@ test("background aborts in-flight Captain admission and foreground forces fresh 
   await settle();
   assert.equal(verifiedUI(h.render()), true, "initial owner-approved Captain should appear");
   assert.equal(guestNavigation(h.render()), false, "approved Captain uses protected real tabs instead of preview");
+  assert.equal(homeLink(h.render())?.props.children.props.style.backgroundColor, "primary");
 
   h.emit("active");
   const stale = h.next();
@@ -150,4 +154,28 @@ test("background aborts in-flight Captain admission and foreground forces fresh 
   await settle();
   assert.equal(verifiedUI(h.render()), false, "fresh denied owner session stays denied");
   assert.equal(guestNavigation(h.render()), true, "denied Captain sees disabled public navigation preview");
+  assert.equal(homeLink(h.render()), undefined);
+  const phone = nodes(h.render()).find(node => node.type === "TextInput");
+  assert.equal(phone?.props.accessibilityLabel, "رقم الهاتف التجريبي");
+  const sendButton = nodes(h.render()).find(node => node.type === "Pressable" &&
+    node.props.children.props.children === "إرسال رمز التحقق");
+  assert.equal(sendButton?.props.accessibilityState.disabled, true);
+});
+
+test("Captain admission offers an accessible retry after an owner outage", async () => {
+  const h = harness();
+  h.mount();
+  h.next().reject(new Error("owner unreachable"));
+  await settle();
+  const tree = h.render();
+  assert.equal(homeLink(tree), undefined);
+  assert.ok(nodes(tree).some(node => node.props?.accessibilityRole === "alert"));
+  const retry = nodes(tree).find(node => node.type === "Pressable" &&
+    node.props.children.props.children === "إعادة التحقق");
+  assert.equal(retry?.props.accessibilityState.disabled, false);
+  retry.props.onPress();
+  h.next().resolve(approved());
+  await settle();
+  assert.equal(verifiedUI(h.render()), true);
+  assert.ok(homeLink(h.render()));
 });

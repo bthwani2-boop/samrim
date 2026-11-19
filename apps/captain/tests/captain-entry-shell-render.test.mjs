@@ -7,37 +7,46 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-const source = fileURLToPath(new URL("../src/features/access/captain-entry-shell.tsx", import.meta.url));
+const captain = path.join(root, "apps/captain");
+const sources = ["src/features/access/captain-entry-shell", "src/components/captain-capability-screen",
+  "src/features/dispatch/captain-home-screen", "app/(tabs)/account", "app/offers"];
 const temporary = mkdtempSync(path.join(tmpdir(), "bthwani-captain-guest-navigation-"));
-let compiled;
+const compiled = new Map();
 try {
   const result = spawnSync(process.execPath, [
-    path.join(root, "node_modules/typescript/bin/tsc"), source,
+    path.join(root, "node_modules/typescript/bin/tsc"), ...sources.map(source => path.join(captain, `${source}.tsx`)),
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
-    "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temporary,
+    "--module", "commonjs", "--jsx", "react-jsx", "--rootDir", captain, "--outDir", temporary,
   ], { cwd: root, timeout: 20_000, encoding: "utf8", windowsHide: true });
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  compiled = readFileSync(path.join(temporary, "captain-entry-shell.js"), "utf8");
+  for (const source of sources) compiled.set(source, readFileSync(path.join(temporary, `${source}.js`), "utf8"));
 } finally {
   rmSync(temporary, { recursive: true, force: true });
 }
 
 const jsx = (type, props, key) => ({ type, props: props ?? {}, key });
-const module = { exports: {} };
-new Function("require", "module", "exports", compiled)(
-  dependency => {
-    if (dependency === "react/jsx-runtime") return { jsx, jsxs: jsx };
-    if (dependency === "react-native") return { Text: "Text", View: "View" };
-    throw new Error(`unexpected dependency ${dependency}`);
-  }, module, module.exports,
-);
+function renderable(source, dependencies = {}) {
+  const module = { exports: {} };
+  const mocks = {
+    "react/jsx-runtime": { jsx, jsxs: jsx },
+    "react-native": { Text: "Text", View: "View", SafeAreaView: "SafeAreaView", ScrollView: "ScrollView", Pressable: "Pressable" },
+    "expo-router": { Link: "Link" },
+    "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
+    ...dependencies,
+  };
+  new Function("require", "module", "exports", compiled.get(source))(name => {
+    assert.ok(Object.hasOwn(mocks, name), `unexpected dependency ${name}`);
+    return mocks[name];
+  }, module, module.exports);
+  return module.exports.default;
+}
 function nodes(tree) {
   if (tree === null || tree === undefined || typeof tree !== "object") return [];
   if (Array.isArray(tree)) return tree.flatMap(nodes);
   return [tree, ...nodes(tree.props?.children)];
 }
 test("Captain compiled guest shell inherits direction and exposes four disabled tabs without navigation", () => {
-  const rendered = module.exports.default({
+  const rendered = renderable("src/features/access/captain-entry-shell")({
     color: "secondary-token", borderColor: "border-token", backgroundColor: "surface-token",
   });
   const all = nodes(rendered);
@@ -64,4 +73,33 @@ test("Captain compiled guest shell inherits direction and exposes four disabled 
   }
   assert.equal(all.some(node => typeof node.props?.onPress === "function"), false);
   assert.equal(all.some(node => node.props?.href), false);
+});
+
+test("Captain workspace separates verified access from unavailable data and keeps real return links", () => {
+  const screen = renderable("src/components/captain-capability-screen");
+  const screenModule = { __esModule: true, default: screen };
+  const home = renderable("src/features/dispatch/captain-home-screen", {
+    "../../components/captain-capability-screen": screenModule,
+  });
+  const account = renderable("app/(tabs)/account", {
+    "../../src/components/captain-capability-screen": screenModule,
+  });
+  const offers = renderable("app/offers", {
+    "../src/components/captain-capability-screen": screenModule,
+    "../src/features/access/protected-route": { __esModule: true, default: "CaptainProtectedRoute" },
+  });
+  const dashboard = nodes(screen(home().props));
+  assert.equal(dashboard.find(node => node.props.testID === "captain-workspace-status")?.props.children,
+    "حساب الكابتن معتمد");
+  assert.ok(dashboard.some(node => node.props.testID === "captain-capability-unavailable"));
+  assert.deepEqual(dashboard.filter(node => node.type === "Link"), []);
+
+  const accountLinks = nodes(screen(account().props)).filter(node => node.type === "Link");
+  assert.deepEqual(accountLinks.map(node => node.props.href), ["/"]);
+  assert.equal(accountLinks[0].props.children.props.children.props.children, "إدارة تسجيل الدخول");
+
+  const guardedOffers = offers();
+  assert.equal(guardedOffers.type, "CaptainProtectedRoute");
+  const offerLinks = nodes(screen(guardedOffers.props.children.props)).filter(node => node.type === "Link");
+  assert.deepEqual(offerLinks.map(node => node.props.href), ["/home"]);
 });
