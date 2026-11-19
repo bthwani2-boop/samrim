@@ -240,8 +240,10 @@ test("retained Merchant placeholder exemptions are explicit and cannot hide impl
   assert.ok(start >= 0 && end > start, "missing explicit preserved-placeholder Knip boundary");
   const block = config.slice(start, end);
   const retained = [...block.matchAll(/"([^"]+\.tsx)"/g)].map((match) => match[1]);
-  assert.equal(retained.length, 18, "the user explicitly preserves all 18 known Merchant placeholders");
-  assert.equal(new Set(retained).size, 18, "duplicate Knip exclusion");
+  assert.equal(retained.length, 17, "preserve the remaining unconnected Merchant placeholders");
+  assert.equal(new Set(retained).size, retained.length, "duplicate Knip exclusion");
+  assert.ok(!retained.includes("apps/merchant/src/features/navigation/merchant-workspace.tsx"),
+    "the owner-backed Merchant workspace must be checked as live source");
   for (const path of retained) {
     assert.match(path, /^apps\/merchant\/src\/features\/[a-z-]+\/[a-z-]+\.tsx$/, "no broad directory wildcard exclusion");
     const full = join(repo, ...path.split("/"));
