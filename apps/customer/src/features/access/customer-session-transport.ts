@@ -114,10 +114,20 @@ export async function verifyCustomerCode(ticket: string, code: string, signal: A
       const current = await SecureStore.getItemAsync(storageKey, nativeOptions);
       if (current && current !== previousBearer) throw new IdentityClientError(409, "SIGN_OUT_REQUIRED");
       await SecureStore.setItemAsync(storageKey, issued.accessToken, nativeOptions);
+      if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
       invalidNativeBearer = null;
     });
+    if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
     return session;
   } catch (error) {
+    // The device may have written the bearer before reporting cancellation or
+    // a storage error. Never let that undelivered credential reappear on resume.
+    invalidNativeBearer = issued.accessToken;
+    await mutateNativeStorage(async () => {
+      if (await SecureStore.getItemAsync(storageKey, nativeOptions) === issued.accessToken) {
+        await SecureStore.deleteItemAsync(storageKey, nativeOptions);
+      }
+    }).catch(() => {});
     await revokeUnusableCustomerBearer(origin, issued.accessToken);
     throw error;
   }

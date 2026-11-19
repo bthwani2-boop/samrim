@@ -30,11 +30,12 @@ function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", o
   let read = async value => ({ ...customer(value), role: ownerRole });
   let codeVerification = async () => ({ accessToken: next, sessionExpiresAt: expiry });
   let revoke = async value => { revoked.push(value); };
+  let onStorageWrite = () => {};
   const revoked = [];
   const secure = {
     WHEN_UNLOCKED_THIS_DEVICE_ONLY: "this-device",
     async getItemAsync() { return bearer; },
-    async setItemAsync(_key, value) { bearer = value; },
+    async setItemAsync(_key, value) { bearer = value; onStorageWrite(); },
     async deleteItemAsync() { bearer = null; },
   };
   const fake = {
@@ -60,6 +61,7 @@ function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", o
     setRead(fn) { read = fn; },
     setVerification(fn) { codeVerification = fn; },
     setRevoke(fn) { revoke = fn; },
+    setOnStorageWrite(fn) { onStorageWrite = fn; },
   };
 }
 
@@ -130,6 +132,27 @@ test("concurrent new native session cannot be overwritten by an older proof resp
   complete({ accessToken: next, sessionExpiresAt: expiry });
   await assert.rejects(pending, { status: 409, code: "SIGN_OUT_REQUIRED" });
   assert.equal(h.current(), original);
+  assert.deepEqual(h.revoked, [next]);
+});
+
+test("cancelled native Customer SecureStore write never restores an issued credential", async () => {
+  const h = harness({ stored: null });
+  const controller = new AbortController();
+  h.setOnStorageWrite(() => controller.abort());
+  await assert.rejects(h.transport.verifyCustomerCode("ticket", "123456", controller.signal),
+    { code: "OPERATION_RESULT_UNKNOWN" });
+  assert.equal(h.current(), null);
+  assert.deepEqual(h.revoked, [next]);
+  const session = await h.transport.readCustomerAdmission(new AbortController().signal);
+  assert.deepEqual(session, { enabled: true, session: null });
+});
+
+test("Customer SecureStore error after write does not retain an undelivered credential", async () => {
+  const h = harness({ stored: null });
+  h.setOnStorageWrite(() => { throw new Error("device storage acknowledgement failed"); });
+  await assert.rejects(h.transport.verifyCustomerCode("ticket", "123456", new AbortController().signal),
+    /device storage acknowledgement failed/);
+  assert.equal(h.current(), null);
   assert.deepEqual(h.revoked, [next]);
 });
 

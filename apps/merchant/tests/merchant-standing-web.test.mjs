@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { GET } from "../app/api/admission+api.ts";
+import { DELETE, GET } from "../app/api/admission+api.ts";
 
 const bearer=Buffer.alloc(32,8).toString("base64url");
 const expires=new Date(Date.now()+120000).toISOString();
@@ -166,4 +166,46 @@ test("unconfigured production Merchant does not look up a development identity o
   const response = await GET(request("", ""));
   assert.deepEqual(await response.json(), { enabled: false, session: null });
   assert.equal(fetch.mock.callCount(), 0);
+});
+
+test("Merchant Web logout expires rejected Identity session cookie on 403", async t => {
+  process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN = identity;
+  t.mock.method(globalThis, "fetch", async (_url, options) => {
+    assert.equal(options.method, "DELETE");
+    assert.equal(options.headers.Authorization, `Bearer ${bearer}`);
+    return Response.json({ error: "FORBIDDEN" }, {
+      status: 403,
+      headers: { "Cache-Control": "no-store" },
+    });
+  });
+  const result = await DELETE(new Request("http://localhost:18102/api/admission", {
+    method: "DELETE",
+    headers: {
+      Origin: "http://localhost:18102",
+      Cookie: `bthwani_merchant_admission=${bearer}`,
+    },
+  }));
+  assert.equal(result.status, 204);
+  assert.match(result.headers.get("Set-Cookie") ?? "", /Max-Age=0/);
+  assert.equal(result.headers.get("Cache-Control"), "no-store");
+});
+
+test("Merchant Web logout does not discard cookie on Identity outage", async t => {
+  process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN = identity;
+  t.mock.method(globalThis, "fetch", async (_url, options) => {
+    assert.equal(options.method, "DELETE");
+    return Response.json({ error: "OWNER_UNAVAILABLE" }, {
+      status: 503,
+      headers: { "Cache-Control": "no-store" },
+    });
+  });
+  const result = await DELETE(new Request("http://localhost:18102/api/admission", {
+    method: "DELETE",
+    headers: {
+      Origin: "http://localhost:18102",
+      Cookie: `bthwani_merchant_admission=${bearer}`,
+    },
+  }));
+  assert.equal(result.status, 503);
+  assert.equal(result.headers.get("Set-Cookie"), null);
 });

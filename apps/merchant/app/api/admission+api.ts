@@ -169,7 +169,9 @@ export async function DELETE(request: Request) {
     try {
       await revokeVerifiedIdentitySession(origin, bearer, AbortSignal.timeout(5000));
     } catch (error) {
-      if (!(error instanceof IdentityClientError && error.status === 401)) return ownerError(error);
+      if (!(error instanceof IdentityClientError && (error.status === 401 || error.status === 403))) {
+        return ownerError(error);
+      }
     }
   }
   return new Response(null, {

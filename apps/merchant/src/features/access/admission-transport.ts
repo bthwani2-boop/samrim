@@ -68,9 +68,14 @@ export async function readAdmission(signal: AbortSignal): Promise<EntryState> {
       const session = await readVerifiedIdentitySession(nativeOrigin, bearer, signal);
       if (session.role === "merchant") return { enabled: true, session };
     } catch (error) {
-      if (!(error instanceof IdentityClientError && error.status === 401)) throw error;
+      if (!(error instanceof IdentityClientError && (error.status === 401 || error.status === 403))) throw error;
     }
-    await clearNativeBearerIfCurrent(bearer, signal);
+    if (!signal.aborted) {
+      // Identity denial (or a non-Merchant role) is authoritative even when
+      // SecureStore is temporarily unable to delete the old credential.
+      deniedNativeBearer = bearer;
+      await clearNativeBearerIfCurrent(bearer, signal).catch(() => {});
+    }
   }
   return { enabled: true, session: null };
 }
@@ -150,7 +155,7 @@ export async function signOutOfAdmission(signal: AbortSignal): Promise<void> {
   try {
     await revokeVerifiedIdentitySession(requireNativeOrigin(), bearer, signal);
   } catch (error) {
-    if (!(error instanceof IdentityClientError && error.status === 401)) throw error;
+    if (!(error instanceof IdentityClientError && (error.status === 401 || error.status === 403))) throw error;
   }
   await clearNativeBearerIfCurrent(bearer, signal);
 }
