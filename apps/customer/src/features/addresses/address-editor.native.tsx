@@ -22,34 +22,45 @@ export default function AddressEditor() {
   const { theme } = useMobileAppearance();
   const map = React.useRef<MapView>(null);
   const mounted = React.useRef(true);
+  const request = React.useRef(0);
+  const locating = React.useRef(false);
   const [pin, setPin] = React.useState<Coordinate | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; };
+    return () => { mounted.current = false; request.current++; locating.current = false; };
   }, []);
 
   const chooseOnMap = (event: MapPressEvent) => {
     const coordinate = event.nativeEvent.coordinate;
     if (validCoordinate(coordinate)) {
+      // A manual choice supersedes an outstanding device-location request.
+      request.current++;
+      locating.current = false;
+      setBusy(false);
       setPin({ latitude: coordinate.latitude, longitude: coordinate.longitude });
       setError(null);
     }
   };
 
   const locate = async () => {
-    if (busy) return;
+    if (locating.current || !mounted.current) return;
+    locating.current = true;
+    const current = ++request.current;
+    const isCurrent = () => mounted.current && request.current === current;
     setError(null);
     setBusy(true);
     try {
       const serviceEnabled = await Location.hasServicesEnabledAsync();
+      if (!isCurrent()) return;
       if (!serviceEnabled) {
         setError("خدمات الموقع متوقفة على الجهاز. فعّلها ثم حاول مجددًا.");
         return;
       }
       const permission = await Location.requestForegroundPermissionsAsync();
+      if (!isCurrent()) return;
       if (permission.status !== "granted") {
         setError("لم يتم منح إذن الموقع. يمكنك اختيار النقطة يدويًا على الخريطة.");
         return;
@@ -61,7 +72,7 @@ export default function AddressEditor() {
         latitude: result.coords.latitude,
         longitude: result.coords.longitude,
       };
-      if (!mounted.current) return;
+      if (!isCurrent()) return;
       if (!validCoordinate(coordinate)) {
         setError("تعذر تحديد موقع صالح. اختر النقطة يدويًا.");
         return;
@@ -69,9 +80,9 @@ export default function AddressEditor() {
       setPin(coordinate);
       map.current?.animateToRegion({ ...coordinate, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 300);
     } catch {
-      if (mounted.current) setError("تعذر قراءة GPS حاليًا. تحقق من الإذن وإشارة الموقع أو اختر النقطة يدويًا.");
+      if (isCurrent()) setError("تعذر قراءة GPS حاليًا. تحقق من الإذن وإشارة الموقع أو اختر النقطة يدويًا.");
     } finally {
-      if (mounted.current) setBusy(false);
+      if (isCurrent()) { locating.current = false; setBusy(false); }
     }
   };
 
