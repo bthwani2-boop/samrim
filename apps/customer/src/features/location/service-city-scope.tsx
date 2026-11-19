@@ -1,4 +1,5 @@
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
+import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 import { normalizeServiceCityId } from "./serviceability";
 
@@ -10,15 +11,25 @@ type Props = Readonly<{
 
 export default function ServiceCityScope({ draftCity, onDraftChange, onApply }: Props) {
   const { theme } = useMobileAppearance();
-  const apply = () => onApply(normalizeServiceCityId(draftCity));
+  const [invalid, setInvalid] = useState(false);
+  const apply = () => {
+    const city = normalizeServiceCityId(draftCity);
+    if (!city) {
+      setInvalid(true);
+      return;
+    }
+    setInvalid(false);
+    onApply(city);
+  };
   return <>
-    <Text accessibilityRole="text" style={{ color: theme.color }}>رمز مدينة الخدمة</Text>
     <View style={{ flexDirection: "row", gap: 8 }}>
       <TextInput testID="city-input" accessibilityLabel="رمز مدينة الخدمة" value={draftCity}
-        onChangeText={onDraftChange} autoCapitalize="none" returnKeyType="search"
+        onChangeText={value => { setInvalid(false); onDraftChange(value); }}
+        placeholder="رمز المدينة، مثل sanaa" placeholderTextColor={theme.colorSecondary}
+        autoCapitalize="none" autoCorrect={false} returnKeyType="search"
         onSubmitEditing={apply} style={{
-          color: theme.color, flex: 1, padding: 12, borderWidth: 1,
-          borderRadius: 10, borderColor: theme.borderColor,
+          color: theme.color, flex: 1, minWidth: 0, minHeight: 44, padding: 10, borderWidth: 1,
+          borderRadius: 10, borderColor: invalid ? theme.dangerText : theme.borderColor,
         }} />
       <Pressable accessibilityRole="button" accessibilityLabel="تغيير مدينة الخدمة" onPress={apply}
         style={{
@@ -28,5 +39,8 @@ export default function ServiceCityScope({ draftCity, onDraftChange, onApply }: 
         <Text style={{ color: theme.interactiveText }}>عرض</Text>
       </Pressable>
     </View>
+    {invalid ? <Text accessibilityRole="alert" style={{ color: theme.dangerText }}>
+      أدخل رمز المدينة بالأحرف اللاتينية، مثل sanaa.
+    </Text> : null}
   </>;
 }

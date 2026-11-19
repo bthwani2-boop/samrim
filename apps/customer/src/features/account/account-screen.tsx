@@ -1,8 +1,35 @@
+import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { Link } from "expo-router";
-import CapabilityUnavailableScreen from "../../components/capability-unavailable-screen";
+import { Pressable, ScrollView, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import AccountPreferences from "./account-preferences";
 import StoreInvitations from "./store-invitations";
 
 export default function AccountScreen() {
-  return <><AccountPreferences /><StoreInvitations /><Link href="/login">تسجيل الدخول أو التحقق من حساب العميل</Link><CapabilityUnavailableScreen title="حسابي" message="عرض بيانات الحساب والطلبات يتطلب تكاملًا مستقلًا مع صلاحيات Identity والمالكين." /></>;
+  const { theme } = useMobileAppearance();
+  return (
+    <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: theme.background }}>
+      <ScrollView contentContainerStyle={{
+        width: "100%", maxWidth: 720, alignSelf: "center", padding: 16, gap: 16,
+      }}>
+        <Text accessibilityRole="header" style={{ color: theme.color, fontSize: 26, fontWeight: "700" }}>حسابي</Text>
+        <View style={{ backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.borderColor,
+          borderRadius: 12, padding: 16, gap: 10 }}>
+          <Text accessibilityRole="header" style={{ color: theme.color, fontSize: 18, fontWeight: "700" }}>
+            تسجيل الدخول
+          </Text>
+          <Link href="/login" asChild>
+            <Pressable accessibilityRole="link" style={{
+              backgroundColor: theme.actionBackground, borderRadius: 10,
+              minHeight: 44, paddingHorizontal: 14, justifyContent: "center",
+            }}>
+              <Text style={{ color: theme.onAction, fontWeight: "700", textAlign: "center" }}>التحقق من الحساب</Text>
+            </Pressable>
+          </Link>
+        </View>
+        <AccountPreferences />
+        <StoreInvitations />
+      </ScrollView>
+    </SafeAreaView>
+  );
 }

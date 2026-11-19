@@ -6,6 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { DshPublicError } from "@bthwani/dsh";
+import * as serviceability from "../src/features/location/serviceability.ts";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const entry = fileURLToPath(new URL("../src/features/stores/stores-screen.tsx", import.meta.url));
@@ -23,7 +24,7 @@ try {
   rmSync(temp, { recursive: true, force: true });
 }
 
-function harness() {
+function harness({ variant = "directory", params = {} } = {}) {
   const hooks = [];
   const requests = [];
   let index = 0;
@@ -39,7 +40,7 @@ function harness() {
       },
     },
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
-    "expo-router": { Link: "Link", router: {} },
+    "expo-router": { Link: "Link", useLocalSearchParams: () => params },
     react: {
       useState(initial) {
         const at = index++;
@@ -65,6 +66,7 @@ function harness() {
     },
     "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
     "../location/service-city-scope": { default: "ServiceCityScope" },
+    "../location/serviceability": serviceability,
     "./orderability": { describeStoreOrderability: () => ({}) },
   };
   const mod = { exports: {} };
@@ -77,7 +79,7 @@ function harness() {
   return {
     render() {
       index = 0;
-      const view = mod.exports.default({});
+      const view = mod.exports.default({ variant });
       if (effect) {
         cleanup?.();
         cleanup = effect();
@@ -106,6 +108,31 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
 const store = (id) => ({
   id, name: "متجر", cityId: "sanaa", verticalId: "restaurant",
   orderabilityStatus: "OPERATIONALLY_UNAVAILABLE", orderingAvailable: false,
+});
+
+test("home opens search on demand and links to the actual Notifications route", () => {
+  const app = harness({ variant: "home" });
+  const home = app.render();
+  assert.equal(byId(home, "stores-search"), undefined);
+  assert.ok(find(home, node => node.type === "Link" && node.props.href === "/notifications"));
+  button(home, "بحث").props.onPress();
+  assert.ok(byId(app.render(), "stores-search"));
+});
+
+test("submitted browsing context flows to the directory and owner-verified Store links", async () => {
+  const app = harness({ variant: "home", params: { city: "aden", q: "مخبز" } });
+  app.render();
+  const request = app.read();
+  assert.equal(request.cityId, "aden");
+  assert.equal(request.query, "مخبز");
+  request.resolve({ items: [{ ...store("bakery"), cityId: "aden" }], revision: 1 });
+  await settle();
+  const browse = app.render();
+  const hrefFor = pathname => find(browse, node => node.type === "Link" && node.props.href?.pathname === pathname).props.href;
+  assert.deepEqual(hrefFor("/stores"), { pathname: "/stores", params: { city: "aden", q: "مخبز" } });
+  assert.deepEqual(hrefFor("/store/[id]"), {
+    pathname: "/store/[id]", params: { city: "aden", q: "مخبز", id: "bakery" },
+  });
 });
 
 for (const [status, code] of [[409, "STALE_CURSOR"], [400, "INVALID_CURSOR"]]) {

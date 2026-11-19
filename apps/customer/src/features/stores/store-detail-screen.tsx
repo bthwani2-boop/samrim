@@ -4,6 +4,7 @@ import { type Href, Link, useLocalSearchParams } from "expo-router";
 import * as React from "react";
 import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, Text, View } from "react-native";
 import StoreProducts from "../catalog/store-products";
+import { readStoreBrowseScope, serviceCityLabel } from "../location/serviceability";
 import { publicStorefrontPath } from "../sharing/store-share";
 import { describeStoreOrderability } from "./orderability";
 import { type PublicStoreDetailState, recoverPublicStoreDetail, resolvePublicStoreDetail } from "./store-detail-loader";
@@ -12,8 +13,9 @@ const API = process.env.EXPO_PUBLIC_DSH_API_URL ?? "";
 type Props = Readonly<{ storeID?: string; fullPage?: boolean }>;
 
 export default function PublicStoreDetail({ storeID, fullPage = false }: Props) {
-  const { id: idParam } = useLocalSearchParams<{ id?: string | string[] }>();
-  const id = storeID ?? (typeof idParam === "string" ? idParam : "");
+  const params = useLocalSearchParams<{ id?: string | string[]; city?: string | string[]; q?: string | string[] }>();
+  const id = storeID ?? (typeof params.id === "string" ? params.id : "");
+  const browse = readStoreBrowseScope(params, "");
   const { theme } = useMobileAppearance();
   const [retry, setRetry] = React.useState(0);
   const [state, setState] = React.useState<PublicStoreDetailState>({ scope: "", loading: true, offers: [] });
@@ -60,18 +62,17 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
       <ScrollView contentContainerStyle={{ padding: 18, maxWidth: fullPage ? 1200 : 800, width: "100%", alignSelf: "center", gap: 14 }}>
-        <Link href={"/stores" as Href} style={{ color: theme.interactiveText }}>العودة للمتاجر</Link>
+        <Link href={browse.city ? { pathname: "/stores", params: browse } : "/stores"}
+          style={{ color: theme.interactiveText }}>العودة للمتاجر</Link>
         {visible.loading ? <ActivityIndicator accessibilityLabel="جارٍ تحميل المتجر" color={theme.actionBackground} /> : null}
         {visible.store ? <>
           <Text accessibilityRole="header" testID="store-title" style={{ ...textStyle, fontSize: 26, fontWeight: "700" }}>{visible.store.name}</Text>
-          {fullPage ? (
-            <Text style={{ ...textStyle, color: theme.colorSecondary }}>موقع المتجر الكامل — العرض للقراءة فقط حتى اكتمال تفعيل الشراء.</Text>
-          ) : (
+          {!fullPage ? (
             <Link href={publicStorefrontPath(id) as Href} style={{ color: theme.interactiveText }}>
               عرض موقع المتجر الكامل
             </Link>
-          )}
-          <Text style={{ ...textStyle, color: theme.colorSecondary }}>المدينة: {visible.store.cityId}</Text>
+          ) : null}
+          <Text style={{ ...textStyle, color: theme.colorSecondary }}>المدينة: {serviceCityLabel(visible.store.cityId)}</Text>
           <Text testID="store-orderability-status" style={{ ...textStyle, color: theme.warningText }}>{availability?.headline}</Text>
           <Text style={{ ...textStyle, color: theme.colorSecondary }}>{availability?.detail}</Text>
           <Text accessibilityRole="header" style={{ ...textStyle, fontSize: 21, fontWeight: "600" }}>العروض المتاحة</Text>
