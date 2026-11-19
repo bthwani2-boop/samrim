@@ -574,5 +574,8 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 		Scan(&updatedAudits); err != nil || updatedAudits != 7 {
 		t.Fatalf("invalid timezone changed durable Store audit: count=%d err=%v", updatedAudits, err)
 	}
+	t.Run("HTTP historical replay survives elapsed pause and owner policy drift", func(t *testing.T) {
+		assertHistoricalHTTPReplay(t, ctx, db, schema, repo, grants, policy)
+	})
 	t.Logf("PASS real DSH PostgreSQL: store=%s finalVersion=%d audits=%d, policy versions 1->2 frozen; concurrent identical key exactly once, denied calls preserved state", id, updated.Version, updatedAudits)
 }

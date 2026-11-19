@@ -83,6 +83,9 @@ type AuthorizedChange struct {
 type Repository interface {
 	Read(context.Context, string) (Snapshot, error)
 	ReadAuthorized(context.Context, string, string, string) (Snapshot, error)
+	// ReplayAuthorized rechecks current Store scope and compares the exact
+	// original request against immutable command/audit metadata, without writes.
+	ReplayAuthorized(context.Context, AuthorizedChange) (Snapshot, bool, error)
 	Apply(context.Context, AuthorizedChange) (Snapshot, bool, error)
 }
 
@@ -154,6 +157,14 @@ func (s *Service) Change(ctx context.Context, token string, change Change) (Snap
 		len([]rune(change.Reason)) > 300 || change.PreparationMinutes < 0 {
 		return Snapshot{}, false, ErrInvalidChange
 	}
+	change.Reason = strings.TrimSpace(change.Reason)
+	// A committed command is historical fact. Reconcile it before re-evaluating
+	// a now-expired pause or newer policy/timezone, but only after current auth.
+	if previous, found, replayErr := s.repo.ReplayAuthorized(ctx, AuthorizedChange{
+		Change: change, ActorID: actor.Subject, AuthoritySource: authority,
+	}); replayErr != nil || found {
+		return previous, found, replayErr
+	}
 	approvedTimezone, lookupErr := s.grants.StoreTimezone(ctx, change.StoreID)
 	if lookupErr != nil {
 		return Snapshot{}, false, ErrPolicyUnavailable
@@ -187,7 +198,6 @@ func (s *Service) Change(ctx context.Context, token string, change Change) (Snap
 			return Snapshot{}, false, ErrInvalidChange
 		}
 	}
-	change.Reason = strings.TrimSpace(change.Reason)
 	return s.repo.Apply(ctx, AuthorizedChange{
 		Change: change, ActorID: actor.Subject, AuthoritySource: authority, PolicyVersion: limits.Version,
 	})
