@@ -1,3 +1,4 @@
+import { DshPublicError, getStoreOperationalAvailability } from "@bthwani/dsh";
 import {
   IdentityClientError,
   issueCustomerPhoneChallenge,
@@ -62,7 +63,7 @@ function isLocalMutation(request: Request) {
 }
 
 function ownerError(error: unknown) {
-  if ((error instanceof IdentityClientError || error instanceof MerchantStandingError) &&
+  if ((error instanceof IdentityClientError || error instanceof MerchantStandingError || error instanceof DshPublicError) &&
       error.status >= 400 && error.status < 500) {
     return response({ code: error.code }, error.status);
   }
@@ -70,18 +71,25 @@ function ownerError(error: unknown) {
 }
 
 export async function GET(request: Request) {
-  const origin = await configuredOrigin(request);
-  if (!origin) return response({ enabled: false, session: null });
   const query = new URL(request.url).searchParams;
   const stores = query.size === 1 && query.get("stores") === "mine";
-  if (query.size > 0 && !stores) return response({ code: "INVALID_REQUEST" }, 400);
+  const storeId = query.size === 1 ? query.get("availability") : null;
+  const availability = storeId !== null && /^[a-z0-9-]{1,64}$/.test(storeId);
+  if (query.size > 0 && !stores && !availability) return response({ code: "INVALID_REQUEST" }, 400);
+  const origin = await configuredOrigin(request);
+  if (!origin) return stores || availability ? response({ code: "OWNER_UNAVAILABLE" }, 503) :
+    response({ enabled: false, session: null });
   const bearer = bearerFrom(request);
-  if (!bearer) return stores ? response({ code: "UNAUTHENTICATED" }, 401) :
+  if (!bearer) return stores || availability ? response({ code: "UNAUTHENTICATED" }, 401) :
     response({ enabled: true, session: null });
   try {
-    const signal = AbortSignal.timeout(5000);
+    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(5000)]);
     const session = await readVerifiedIdentitySession(origin, bearer, signal);
     if (session.role === "merchant") {
+      if (availability) {
+        return response({ availability: await getStoreOperationalAvailability(
+          standingOrigin(origin), storeId, bearer, signal) });
+      }
       if (!stores) return response({ enabled: true, session });
       const standing = await readMerchantDSHStanding(
         standingOrigin(origin), bearer, signal);
@@ -93,13 +101,17 @@ export async function GET(request: Request) {
   } catch (error) {
     // Owner-denied Merchant access expires its browser cookie. A transient
     // upstream outage must not discard an otherwise valid session.
+    if (error instanceof DshPublicError) {
+      // Store-scope denial must not sign the Merchant out of other valid Stores.
+      return error.status === 401 ? response({ code: error.code }, 401, sessionCookie(request, "", 0)) : ownerError(error);
+    }
     if ((error instanceof MerchantStandingError || error instanceof IdentityClientError) &&
       (error.status === 403 || (error instanceof MerchantStandingError && error.status === 401))) {
       return response({ code: error.code }, error.status, sessionCookie(request, "", 0));
     }
     if (!(error instanceof IdentityClientError && error.status === 401)) return ownerError(error);
   }
-  return stores ? response({ code: "UNAUTHENTICATED" }, 401, sessionCookie(request, "", 0)) :
+  return stores || availability ? response({ code: "UNAUTHENTICATED" }, 401, sessionCookie(request, "", 0)) :
     response({ enabled: true, session: null }, 200, sessionCookie(request, "", 0));
 }
 

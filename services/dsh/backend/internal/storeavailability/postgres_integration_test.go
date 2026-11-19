@@ -248,7 +248,7 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 		t.Fatalf("canonical city timezone %q: %v", zone, err)
 	}
 	first, err := repo.Read(ctx, id)
-	if err != nil || first.Version != 1 || first.Timezone != "" {
+	if err != nil || first.Version != 1 || first.Timezone != "Asia/Aden" || first.Weekly != nil {
 		t.Fatalf("unexpected empty Store availability %+v %v", first, err)
 	}
 	command := AuthorizedChange{

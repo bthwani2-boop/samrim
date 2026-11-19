@@ -131,6 +131,7 @@ components:
         timezone: { type: string, minLength: 3, maxLength: 64, description: Canonical DSH city IANA timezone; never client-chosen }
         weekly:
           type: [array, 'null']
+          description: Null when no operational schedule has been configured; an empty array explicitly closes the whole week. Both remain closed for ordering.
           items: { $ref: '#/components/schemas/OperationalWeeklyWindow' }
         pausedUntil: { type: string, format: date-time, description: Omitted when the Store has no explicit pause }
         preparationMinutes: { type: integer, minimum: 0 }

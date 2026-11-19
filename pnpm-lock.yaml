@@ -620,6 +620,9 @@ importers:
 
   apps/merchant:
     dependencies:
+      '@bthwani/dsh':
+        specifier: workspace:*
+        version: link:../../services/dsh
       '@bthwani/identity':
         specifier: workspace:*
         version: link:../../services/identity

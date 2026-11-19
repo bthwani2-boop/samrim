@@ -54,6 +54,7 @@ function nativeHarness({ storageDeletionFails = false, postDeleteMarkerThrows = 
     },
   };
   const dependencies = {
+    "@bthwani/dsh": { DshPublicError: OwnerError },
     "@bthwani/identity": {
       IdentityClientError: OwnerError,
       async readVerifiedIdentitySession(_origin, bearer) { return identityRead(bearer); },

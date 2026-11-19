@@ -154,7 +154,13 @@ func (r *PostgresRepository) readSnapshot(ctx context.Context, tx *sql.Tx, id st
 		&snapshot.Version, &snapshot.ActingActorID, &snapshot.Reason)
 	if errors.Is(err, sql.ErrNoRows) {
 		// A real Store with no explicit schedule remains closed; there is
-		// deliberately no invented 24-hour open default.
+		// deliberately no invented 24-hour open default. Preserve the distinction
+		// between an unconfigured schedule (null) and an explicit closure ([]).
+		snapshot.Timezone, err = readStoreTimezone(ctx, tx, id)
+		if err != nil {
+			return Snapshot{}, err
+		}
+		snapshot.Weekly = nil
 		snapshot.Version = 1
 		return snapshot, nil
 	}

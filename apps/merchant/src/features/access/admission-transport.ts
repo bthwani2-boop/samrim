@@ -1,3 +1,4 @@
+import { DshPublicError, getStoreOperationalAvailability, type StoreOperationalAvailability } from "@bthwani/dsh";
 import {
   IdentityClientError,
   issueCustomerPhoneChallenge,
@@ -129,6 +130,49 @@ export async function readMerchantStanding(signal: AbortSignal) {
     }
     throw error;
   }
+}
+
+/** Read-only Store projection. Identity proves the role; DSH authorizes the Store. */
+export async function readMerchantAvailability(storeId: string, signal: AbortSignal): Promise<StoreOperationalAvailability> {
+  if (!/^[a-z0-9-]{1,64}$/.test(storeId)) throw new DshPublicError(400, "STORE_ID_INVALID");
+  if (signal.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
+  if (Platform.OS === "web") {
+    const result = await fetch(`/api/admission?availability=${encodeURIComponent(storeId)}`, {
+      method: "GET", signal, credentials: "same-origin", cache: "no-store", redirect: "error",
+    });
+    const body = await result.json();
+    if (signal.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
+    if (!result.ok) throw new DshPublicError(result.status, body.code);
+    if (!body?.availability || body.availability.storeId !== storeId) {
+      throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+    }
+    return body.availability as StoreOperationalAvailability;
+  }
+  if (await clearPendingNativeAdmission(signal)) throw new IdentityClientError(401, "UNAUTHORIZED");
+  const bearer = await SecureStore.getItemAsync(storageKey, nativeOptions);
+  if (!bearer || bearer === deniedNativeBearer) throw new IdentityClientError(401, "UNAUTHORIZED");
+  try {
+    const session = await readVerifiedIdentitySession(requireNativeOrigin(), bearer, signal);
+    if (session.role !== "merchant") throw new IdentityClientError(403, "FORBIDDEN");
+  } catch (error) {
+    if (!signal.aborted && error instanceof IdentityClientError && (error.status === 401 || error.status === 403)) {
+      deniedNativeBearer = bearer;
+      await clearNativeBearerIfCurrent(bearer, signal).catch(() => {});
+    }
+    throw error;
+  }
+  const afterIdentity = await SecureStore.getItemAsync(storageKey, nativeOptions);
+  if (signal.aborted || bearer === deniedNativeBearer || afterIdentity !== bearer) {
+    throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
+  }
+  // A scoped 403 does not invalidate the Merchant's unrelated Store grants.
+  const availability = await getStoreOperationalAvailability(nativeDSHOrigin ?? "", storeId, bearer, signal);
+  const afterOwner = await SecureStore.getItemAsync(storageKey, nativeOptions);
+  if (signal.aborted || bearer === deniedNativeBearer ||
+      afterOwner !== bearer) {
+    throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
+  }
+  return availability;
 }
 
 export async function requestAdmissionCode(phone: string, signal: AbortSignal): Promise<string> {
