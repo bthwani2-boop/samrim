@@ -185,15 +185,32 @@ export async function boundedRequestBody(request: Request): Promise<string | nul
   const reader = request.body.getReader();
   let size = 0;
   const chunks: Uint8Array[] = [];
-  try {
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  // The whole JSON assertion body, not each individual chunk, has a bounded
+  // read deadline. A slow sender cannot keep the Passkey endpoint occupied.
+  const consume = async (): Promise<boolean> => {
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) return true;
       size += value.byteLength;
-      if (size > 65536) return null;
+      if (size > 65536) return false;
       chunks.push(value);
     }
+  };
+  try {
+    const complete = await Promise.race([
+      consume(),
+      new Promise<boolean>((resolve) => {
+        deadline = setTimeout(() => resolve(false), 2000);
+      }),
+    ]);
+    if (!complete) return null;
+  } catch {
+    return null;
   } finally {
+    if (deadline) clearTimeout(deadline);
+    // A stalled stream's cancellation may itself wait on a broken source.
+    void reader.cancel().catch(() => {});
     reader.releaseLock();
   }
   if (size === 0) return null;
@@ -207,6 +224,37 @@ export async function boundedRequestBody(request: Request): Promise<string | nul
     return new TextDecoder("utf-8", { fatal: true }).decode(combined);
   } catch {
     return null;
+  }
+}
+
+// Next.js can expose a zero-byte POST as a readable stream. Reject actual
+// payload bytes instead of equating a non-null stream with a request body.
+export async function isEmptyRequestBody(request: Request): Promise<boolean> {
+  const length = request.headers.get("content-length");
+  if ((length !== null && length !== "0") || request.headers.has("transfer-encoding")) return false;
+  if (!request.body) return true;
+  let reader: ReadableStreamDefaultReader<Uint8Array>;
+  try { reader = request.body.getReader(); } catch { return false; }
+  let ended = false;
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  try {
+    // Header spoofing must never allow a client to hold this endpoint open
+    // indefinitely with a readable stream that neither sends nor closes.
+    const first = await Promise.race([
+      reader.read(),
+      new Promise<null>((resolve) => {
+        deadline = setTimeout(() => resolve(null), 1000);
+      }),
+    ]);
+    ended = first?.done === true;
+    return ended;
+  } catch {
+    return false;
+  } finally {
+    if (deadline) clearTimeout(deadline);
+    // Cancel without waiting for a potentially uncooperative stream source.
+    if (!ended) void reader.cancel().catch(() => {});
+    reader.releaseLock();
   }
 }
 

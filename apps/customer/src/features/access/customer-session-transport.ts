@@ -11,16 +11,37 @@ import { Platform } from "react-native";
 
 const nativeOrigin = process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN;
 const storageKey = "bthwani.customer.synthetic-identity.v1";
+// Survives a process restart when a device write cannot be confirmed or undone.
+const pendingStorageKey = `${storageKey}.pending.v1`;
 const nativeOptions = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY };
 type State = { enabled: boolean; session: VerifiedIdentitySession | null };
 
 let nativeMutation: Promise<void> = Promise.resolve();
 let invalidNativeBearer: string | null = null;
+let nativeVerificationInFlight = false;
 function mutateNativeStorage<T>(operation: () => Promise<T>): Promise<T> {
   const outcome = nativeMutation.then(operation);
   nativeMutation = outcome.then(() => undefined, () => undefined);
   return outcome;
 }
+async function clearPendingCustomerAdmission(signal: AbortSignal): Promise<boolean> {
+  return mutateNativeStorage(async () => {
+    if (!await SecureStore.getItemAsync(pendingStorageKey, nativeOptions)) return false;
+    if (signal.aborted) return true;
+    const bearer = await SecureStore.getItemAsync(storageKey, nativeOptions);
+    if (bearer) {
+      invalidNativeBearer = bearer;
+      try {
+        await SecureStore.deleteItemAsync(storageKey, nativeOptions);
+      } catch {
+        return true;
+      }
+    }
+    await SecureStore.deleteItemAsync(pendingStorageKey, nativeOptions).catch(() => {});
+    return true;
+  });
+}
+
 async function clearStoredBearerIfCurrent(bearer: string, signal: AbortSignal) {
   await mutateNativeStorage(async () => {
     if (signal.aborted) return;
@@ -57,6 +78,7 @@ export async function readCustomerAdmission(signal: AbortSignal): Promise<State>
     }
   }
   if (!nativeOrigin) return { enabled: false, session: null };
+  if (await clearPendingCustomerAdmission(signal)) return { enabled: true, session: null };
   const bearer = await SecureStore.getItemAsync(storageKey, nativeOptions);
   if (!bearer) return { enabled: true, session: null };
   if (bearer === invalidNativeBearer) {
@@ -89,47 +111,63 @@ export async function verifyCustomerCode(ticket: string, code: string, signal: A
   if (Platform.OS === "web") {
     return (await webRequest<{session: VerifiedIdentitySession}>("POST", signal, { ticket, code })).session;
   }
-  const origin = requiredNativeOrigin();
-  const previousBearer = await SecureStore.getItemAsync(storageKey, nativeOptions);
-  if (previousBearer && previousBearer !== invalidNativeBearer) {
-    try {
-      const active = await readVerifiedIdentitySession(origin, previousBearer, signal);
-      if (active.role === "customer") throw new IdentityClientError(409, "SIGN_OUT_REQUIRED");
-      invalidNativeBearer = previousBearer;
-      await clearStoredBearerIfCurrent(previousBearer, signal).catch(() => {});
-    } catch (error) {
-      if (!(error instanceof IdentityClientError && (error.status === 401 || error.status === 403))) {
-        throw error;
-      }
-      invalidNativeBearer = previousBearer;
-      await clearStoredBearerIfCurrent(previousBearer, signal).catch(() => {});
-    }
-  }
-  const issued = await verifyCustomerPhoneChallenge(origin, ticket, code, signal);
+  if (nativeVerificationInFlight) throw new IdentityClientError(409, "SIGN_OUT_REQUIRED");
+  nativeVerificationInFlight = true;
   try {
-    const session = await readVerifiedIdentitySession(origin, issued.accessToken, signal);
-    if (signal.aborted || session.role !== "customer") throw new IdentityClientError(502, "OWNER_RESPONSE_INVALID");
-    await mutateNativeStorage(async () => {
-      if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
-      const current = await SecureStore.getItemAsync(storageKey, nativeOptions);
-      if (current && current !== previousBearer) throw new IdentityClientError(409, "SIGN_OUT_REQUIRED");
-      await SecureStore.setItemAsync(storageKey, issued.accessToken, nativeOptions);
-      if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
-      invalidNativeBearer = null;
-    });
-    if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
-    return session;
-  } catch (error) {
-    // The device may have written the bearer before reporting cancellation or
-    // a storage error. Never let that undelivered credential reappear on resume.
-    invalidNativeBearer = issued.accessToken;
-    await mutateNativeStorage(async () => {
-      if (await SecureStore.getItemAsync(storageKey, nativeOptions) === issued.accessToken) {
-        await SecureStore.deleteItemAsync(storageKey, nativeOptions);
+    const origin = requiredNativeOrigin();
+    if (await clearPendingCustomerAdmission(signal) &&
+        await SecureStore.getItemAsync(pendingStorageKey, nativeOptions)) {
+      throw new IdentityClientError(409, "SIGN_OUT_REQUIRED");
+    }
+    const previousBearer = await SecureStore.getItemAsync(storageKey, nativeOptions);
+    if (previousBearer && previousBearer !== invalidNativeBearer) {
+      try {
+        const active = await readVerifiedIdentitySession(origin, previousBearer, signal);
+        if (active.role === "customer") throw new IdentityClientError(409, "SIGN_OUT_REQUIRED");
+        invalidNativeBearer = previousBearer;
+        await clearStoredBearerIfCurrent(previousBearer, signal).catch(() => {});
+      } catch (error) {
+        if (!(error instanceof IdentityClientError && (error.status === 401 || error.status === 403))) {
+          throw error;
+        }
+        invalidNativeBearer = previousBearer;
+        await clearStoredBearerIfCurrent(previousBearer, signal).catch(() => {});
       }
-    }).catch(() => {});
-    await revokeUnusableCustomerBearer(origin, issued.accessToken);
-    throw error;
+    }
+    if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
+    const issued = await verifyCustomerPhoneChallenge(origin, ticket, code, signal);
+    try {
+      const session = await readVerifiedIdentitySession(origin, issued.accessToken, signal);
+      if (signal.aborted || session.role !== "customer") throw new IdentityClientError(502, "OWNER_RESPONSE_INVALID");
+      await mutateNativeStorage(async () => {
+        if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
+        const current = await SecureStore.getItemAsync(storageKey, nativeOptions);
+        if (current && current !== previousBearer) throw new IdentityClientError(409, "SIGN_OUT_REQUIRED");
+        await SecureStore.setItemAsync(pendingStorageKey, "in-flight", nativeOptions);
+        await SecureStore.setItemAsync(storageKey, issued.accessToken, nativeOptions);
+        if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
+        // Native commit point: the issued credential write was acknowledged.
+        // After an acknowledged bearer write, uncertain marker deletion cannot
+        // turn a committed token into an undelivered error. If it remains, the
+        // next cold-start read will still reject the bearer until cleanup.
+        await SecureStore.deleteItemAsync(pendingStorageKey, nativeOptions).catch(() => {});
+        invalidNativeBearer = null;
+      });
+      return session;
+    } catch (error) {
+      // The device may have written the bearer before reporting cancellation or
+      // a storage error. Never let that undelivered credential reappear on resume.
+      invalidNativeBearer = issued.accessToken;
+      await mutateNativeStorage(async () => {
+        if (await SecureStore.getItemAsync(storageKey, nativeOptions) === issued.accessToken) {
+          await SecureStore.deleteItemAsync(storageKey, nativeOptions);
+        }
+      }).catch(() => {});
+      await revokeUnusableCustomerBearer(origin, issued.accessToken);
+      throw error;
+    }
+  } finally {
+    nativeVerificationInFlight = false;
   }
 }
 

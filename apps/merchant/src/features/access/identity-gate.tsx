@@ -79,7 +79,18 @@ export default function MerchantIdentityGate() {
   useEffect(() => {
     refresh();
     const listener = AppState.addEventListener("change", state => {
-      if (state === "active") refresh();
+      if (state !== "active") {
+        // Revoke visibility of private Store data while backgrounded. A pending
+        // owner response cannot reauthorize a session after this transition.
+        action.current?.abort();
+        action.current = null;
+        setBusy(false);
+        setSession(null);
+        setStanding(null);
+        setEntryUncertain(true);
+        return;
+      }
+      refresh();
     });
     return () => {
       listener.remove();

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  boundedRequestBody,
   cookieLifetimeSeconds,
+  isEmptyRequestBody,
   isTrustedOperatorRequest,
   OPERATOR_COOKIE,
   parseIssuedOperatorToken,
@@ -50,6 +52,79 @@ test("browser mutations require exact same-origin Host and Origin, never client 
   assert.equal(check({ origin: "null", host: "localhost:13000" }), false);
   assert.equal(check({ origin: "http://localhost:13000", host: "localhost:13000", "x-forwarded-host": "evil.example" }), false);
   assert.equal(check({ origin: "http://localhost:13000", host: "localhost:13000" }, "GET"), false);
+});
+
+test("empty POST streams are valid logout requests, but bytes and transfer streams are rejected", async () => {
+  const url = "http://localhost:13000/api/auth/session";
+  const emptyStream = new Request(url, {
+    method: "POST",
+    body: new ReadableStream({ start(controller) { controller.close(); } }),
+    duplex: "half",
+  });
+  assert.equal(await isEmptyRequestBody(emptyStream), true, "Next may expose zero-byte POST streams");
+  assert.equal(await isEmptyRequestBody(new Request(url, { method: "POST" })), true);
+  assert.equal(await isEmptyRequestBody(new Request(url, { method: "POST", body: "forged" })), false);
+  const streamed = new Request(url, {
+    method: "POST",
+    body: new ReadableStream({ start(controller) {
+      controller.enqueue(new Uint8Array(0));
+      controller.enqueue(new TextEncoder().encode("unexpected"));
+      controller.close();
+    } }),
+    duplex: "half",
+  });
+  assert.equal(await isEmptyRequestBody(streamed), false, "an empty first chunk is not an empty request");
+  const declared = new Request(url, { method: "POST", headers: { "content-length": "3" } });
+  assert.equal(await isEmptyRequestBody(declared), false);
+});
+
+test("stalled empty-body stream cannot hold the Operator logout endpoint indefinitely", { timeout: 3000 }, async () => {
+  const stalled = new Request("http://localhost:13000/api/auth/session", {
+    method: "POST",
+    body: new ReadableStream({ start() { /* Deliberately never completes. */ } }),
+    duplex: "half",
+  });
+  let deadline;
+  try {
+    const verdict = await Promise.race([
+      isEmptyRequestBody(stalled),
+      new Promise((_, reject) => {
+        deadline = setTimeout(() => reject(new Error("Unbounded empty-body stream")), 1700);
+      }),
+    ]);
+    assert.equal(verdict, false, "timeout must fail closed without contacting Identity");
+  } finally {
+    clearTimeout(deadline);
+  }
+});
+
+test("stalled JSON assertion streams are rejected within a bounded deadline", { timeout: 4000 }, async () => {
+  const request = new Request("http://localhost:13000/api/auth/passkey/authentication", {
+    method: "POST",
+    body: new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"ceremonyId":'));
+        // A malicious stream can stop transmitting without closing.
+      },
+    }),
+    duplex: "half",
+  });
+  let deadline;
+  try {
+    const response = await Promise.race([
+      boundedRequestBody(request),
+      new Promise((_, reject) => {
+        deadline = setTimeout(() => reject(new Error("Unbounded JSON assertion stream")), 2900);
+      }),
+    ]);
+    assert.equal(response, null, "incomplete assertion must never be sent to Identity");
+  } finally {
+    clearTimeout(deadline);
+  }
+  const valid = '{"ceremonyId":"test"}';
+  assert.equal(await boundedRequestBody(new Request("http://localhost:13000/api/auth/passkey/authentication", {
+    method: "POST", body: valid,
+  })), valid);
 });
 
 test("only strict WebAuthn required-UV options may reach browser", () => {

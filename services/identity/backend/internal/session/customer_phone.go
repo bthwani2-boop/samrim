@@ -69,6 +69,26 @@ func (r *PostgresReader) issuePhoneChallenge(ctx context.Context, key []byte, ph
 	return ticket, code, nil
 }
 
+// A delivery failure occurs after the durable challenge insert but before the
+// caller receives the ticket. Invalidate that orphaned proof, permitting a
+// prompt retry without refunding the send count or weakening rate limits.
+// The ticket predicate prevents a delayed cleanup from cancelling a resend.
+func (r *PostgresReader) cancelUndeliveredPhoneChallenge(ctx context.Context, ticket string) error {
+	tx, err := r.begin(ctx, false)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.ExecContext(ctx, `UPDATE customer_phone_challenges
+		SET consumed=true, issued_at=clock_timestamp()-interval '2 minutes',
+		    expires_at=clock_timestamp()
+		WHERE ticket=$1 AND NOT consumed`, ticket)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (r *PostgresReader) verifyPhoneChallenge(ctx context.Context, key []byte, ticket, code string) (MerchantAdmission, error) {
 	tx, err := r.begin(ctx, false)
 	if err != nil {

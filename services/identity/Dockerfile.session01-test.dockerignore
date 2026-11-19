@@ -1,0 +1,11 @@
+**
+!backend/
+!backend/go.mod
+!backend/go.sum
+!backend/cmd/
+!backend/cmd/**
+!backend/internal/
+!backend/internal/**
+!database/
+!database/migrations/
+!database/migrations/*.sql

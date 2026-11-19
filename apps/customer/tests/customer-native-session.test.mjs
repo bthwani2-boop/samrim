@@ -25,8 +25,9 @@ class IdentityError extends Error {
 const customer = bearer => ({ actorId: bearer === original ? "actor-old" : "actor-new",
   role: "customer", sessionExpiresAt: expiry });
 
-function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", ownerRole = "customer" } = {}) {
+function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", ownerRole = "customer", storageDeletionFails = false, postDeleteMarkerThrows = false } = {}) {
   let bearer = stored;
+  let pendingMarker = null;
   let read = async value => ({ ...customer(value), role: ownerRole });
   let codeVerification = async () => ({ accessToken: next, sessionExpiresAt: expiry });
   let revoke = async value => { revoked.push(value); };
@@ -34,9 +35,21 @@ function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", o
   const revoked = [];
   const secure = {
     WHEN_UNLOCKED_THIS_DEVICE_ONLY: "this-device",
-    async getItemAsync() { return bearer; },
-    async setItemAsync(_key, value) { bearer = value; onStorageWrite(); },
-    async deleteItemAsync() { bearer = null; },
+    async getItemAsync(key) { return key.endsWith(".pending.v1") ? pendingMarker : bearer; },
+    async setItemAsync(key, value) {
+      if (key.endsWith(".pending.v1")) { pendingMarker = value; return; }
+      bearer = value;
+      onStorageWrite();
+    },
+    async deleteItemAsync(key) {
+      if (key.endsWith(".pending.v1") && postDeleteMarkerThrows) {
+        pendingMarker = null;
+        throw new Error("pending marker deletion acknowledgement failed");
+      }
+      if (storageDeletionFails) throw new Error("device storage deletion temporarily unavailable");
+      if (key.endsWith(".pending.v1")) pendingMarker = null;
+      else bearer = null;
+    },
   };
   const fake = {
     "@bthwani/identity": {
@@ -49,13 +62,16 @@ function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", o
     "expo-secure-store": secure,
     "react-native": { Platform: { OS: "android" } },
   };
-  const module = { exports: {} };
-  new Function("require", "module", "exports", "process", compiled)(
-    key => { assert.ok(Object.hasOwn(fake, key)); return fake[key]; },
-    module, module.exports, { env: { EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN: nativeOrigin } },
-  );
+  const mount = () => {
+    const module = { exports: {} };
+    new Function("require", "module", "exports", "process", compiled)(
+      key => { assert.ok(Object.hasOwn(fake, key)); return fake[key]; },
+      module, module.exports, { env: { EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN: nativeOrigin } },
+    );
+    return module.exports;
+  };
   return {
-    transport: module.exports, revoked,
+    transport: mount(), reload: mount, revoked, pending: () => pendingMarker,
     current: () => bearer,
     setCurrent(value) { bearer = value; },
     setRead(fn) { read = fn; },
@@ -125,9 +141,11 @@ test("native actor switch requires logout before another phone credential issuan
 test("concurrent new native session cannot be overwritten by an older proof response", async () => {
   const h = harness({ stored: null });
   let complete;
-  h.setVerification(() => new Promise(resolve => { complete = resolve; }));
+  let onOwnerRead;
+  const atOwner = new Promise(resolve => { onOwnerRead = resolve; });
+  h.setVerification(() => new Promise(resolve => { complete = resolve; onOwnerRead(); }));
   const pending = h.transport.verifyCustomerCode("ticket", "123456", new AbortController().signal);
-  await Promise.resolve();
+  await atOwner;
   h.setCurrent(original);
   complete({ accessToken: next, sessionExpiresAt: expiry });
   await assert.rejects(pending, { status: 409, code: "SIGN_OUT_REQUIRED" });
@@ -174,4 +192,114 @@ test("Customer disabled environment offers no synthetic native session", async (
   const h = harness({ nativeOrigin: "", stored: null });
   assert.deepEqual(await h.transport.readCustomerAdmission(new AbortController().signal),
     { enabled: false, session: null });
+});
+
+test("overlapping Customer native phone proofs issue only one Identity credential", async () => {
+  const h = harness({ stored: null });
+  let started;
+  const issued = new Promise(resolve => { started = resolve; });
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  let verificationCount = 0;
+  h.setVerification(async () => {
+    verificationCount++;
+    started();
+    await gate;
+    return { accessToken: next, sessionExpiresAt: expiry };
+  });
+  const signal = new AbortController().signal;
+  const first = h.transport.verifyCustomerCode("ticket-a", "111111", signal);
+  await issued;
+  const second = h.transport.verifyCustomerCode("ticket-b", "222222", signal);
+  await Promise.resolve();
+  await Promise.resolve();
+  release();
+  const outcomes = await Promise.allSettled([first, second]);
+  assert.equal(verificationCount, 1, "a second native proof must not consume another owner challenge");
+  assert.equal(outcomes.filter(outcome => outcome.status === "fulfilled").length, 1);
+  const rejected = outcomes.filter(outcome => outcome.status === "rejected");
+  assert.equal(rejected.length, 1);
+  assert.equal(rejected[0].reason.code, "SIGN_OUT_REQUIRED");
+  assert.equal(h.current(), next);
+  assert.deepEqual(h.revoked, [], "a losing proof must not revoke the winning credential");
+});
+
+test("failed Customer native owner proof unlocks the next authorized attempt", async () => {
+  const h = harness({ stored: null });
+  h.setVerification(async () => { throw new IdentityError(503, "OWNER_UNAVAILABLE"); });
+  const signal = new AbortController().signal;
+  await assert.rejects(h.transport.verifyCustomerCode("ticket-a", "111111", signal), { status: 503 });
+  h.setVerification(async () => ({ accessToken: next, sessionExpiresAt: expiry }));
+  assert.deepEqual(await h.transport.verifyCustomerCode("ticket-b", "222222", signal), customer(next));
+  assert.equal(h.current(), next);
+});
+
+test("aborted native Customer verification cannot consume another phone proof", async () => {
+  const h = harness({ stored: null });
+  const controller = new AbortController();
+  let consumed = 0;
+  h.setVerification(async () => {
+    consumed++;
+    return { accessToken: next, sessionExpiresAt: expiry };
+  });
+  controller.abort();
+  await assert.rejects(h.transport.verifyCustomerCode("ticket", "123456", controller.signal),
+    { code: "OPERATION_RESULT_UNKNOWN" });
+  assert.equal(consumed, 0);
+  assert.equal(h.current(), null);
+  assert.deepEqual(h.revoked, []);
+});
+
+test("Customer undelivered bearer never resurrects after reload when device deletion and owner revocation fail", async () => {
+  const h = harness({ stored: null, storageDeletionFails: true });
+  h.setOnStorageWrite(() => { throw new Error("device storage acknowledgement failed"); });
+  await assert.rejects(h.transport.verifyCustomerCode("ticket", "123456", new AbortController().signal),
+    /device storage acknowledgement failed/);
+  assert.equal(h.current(), next);
+  assert.ok(h.pending(), "a durable write-intent marker must be written before the bearer");
+  const restarted = h.reload();
+  assert.deepEqual(await restarted.readCustomerAdmission(new AbortController().signal),
+    { enabled: true, session: null }, "restart must not recover an undelivered credential");
+  assert.equal(h.current(), next);
+  assert.ok(h.pending(), "failed deletion cannot remove the durable quarantine marker");
+  await assert.rejects(restarted.verifyCustomerCode("another-ticket", "111111", new AbortController().signal),
+    { status: 409, code: "SIGN_OUT_REQUIRED" }, "a stuck marker must block another proof");
+  assert.deepEqual(h.revoked, [next], "owner revoke attempted but assumed unavailable");
+});
+
+test("Customer successful native proof removes durable pending marker before accepting a session", async () => {
+  const h = harness({ stored: null });
+  assert.equal((await h.transport.verifyCustomerCode("ticket", "123456", new AbortController().signal)).role,
+    "customer");
+  assert.equal(h.pending(), null);
+  assert.equal((await h.reload().readCustomerAdmission(new AbortController().signal)).session.role, "customer");
+});
+
+test("Customer cancelled native device write cannot authorize a bearer after module restart", async () => {
+  const h = harness({ stored: null, storageDeletionFails: true });
+  const controller = new AbortController();
+  h.setOnStorageWrite(() => controller.abort());
+  await assert.rejects(h.transport.verifyCustomerCode("ticket", "123456", controller.signal),
+    { code: "OPERATION_RESULT_UNKNOWN" });
+  assert.deepEqual(await h.reload().readCustomerAdmission(new AbortController().signal),
+    { enabled: true, session: null });
+});
+
+test("Customer marker-deletion post-effect error cannot reject a committed bearer", async () => {
+  const h = harness({ stored: null, storageDeletionFails: true, postDeleteMarkerThrows: true });
+  const session = await h.transport.verifyCustomerCode("ticket", "123456", new AbortController().signal);
+  assert.equal(session.actorId, "actor-new");
+  assert.equal(h.current(), next);
+  assert.equal(h.pending(), null);
+  assert.equal((await h.reload().readCustomerAdmission(new AbortController().signal)).session.role, "customer");
+  assert.deepEqual(h.revoked, [], "committed bearer cannot be treated as an undelivered failure");
+});
+
+test("Customer marker deletion pre-effect failure leaves cold start quarantined", async () => {
+  const h = harness({ stored: null, storageDeletionFails: true });
+  const session = await h.transport.verifyCustomerCode("ticket", "123456", new AbortController().signal);
+  assert.equal(session.role, "customer");
+  assert.ok(h.pending());
+  assert.deepEqual(await h.reload().readCustomerAdmission(new AbortController().signal),
+    { enabled: true, session: null });
 });

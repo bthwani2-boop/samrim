@@ -74,7 +74,16 @@ export default function CaptainIdentityGate() {
   useEffect(() => {
     refresh();
     const app = AppState.addEventListener("change", state => {
-      if (state === "active") refresh();
+      if (state === "active") {
+        refresh();
+      } else {
+        // A result from before backgrounding cannot re-authorize the entry UI.
+        controller.current?.abort();
+        controller.current = null;
+        setSession(null);
+        setEnabled(null);
+        setBusy(false);
+      }
     });
     return () => {
       app.remove();

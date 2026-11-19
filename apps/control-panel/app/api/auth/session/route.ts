@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import {
   boundedResponseJSON,
   cookieLifetimeSeconds,
+  isEmptyRequestBody,
   isTrustedOperatorRequest,
   OPERATOR_COOKIE,
   operatorIdentityRequest,
@@ -97,7 +98,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const config = resolveIsolatedOperatorConfig(process.env);
   if (!config) return unavailableSessionResponse();
-  if (!isTrustedOperatorRequest(request, config) || request.body !== null) {
+  if (!isTrustedOperatorRequest(request, config) || !(await isEmptyRequestBody(request))) {
     return NextResponse.json({ code: "INVALID_REQUEST" }, { status: 400, headers: privateHeaders });
   }
   const accessToken = request.cookies.get(OPERATOR_COOKIE)?.value;

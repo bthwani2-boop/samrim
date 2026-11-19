@@ -33,6 +33,10 @@ test("production Operator UI rechecks isolated Identity grants on every document
   let role = "operator";
   let ownerAvailable = true;
   let actorMismatch = false;
+  let revoked = false;
+  let revokeCalls = 0;
+  let optionsCalls = 0;
+  let authenticationCalls = 0;
   const calls = [];
   const owner = createServer((request, response) => {
     const route = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
@@ -41,10 +45,24 @@ test("production Operator UI rechecks isolated Identity grants on every document
     response.setHeader("Cache-Control", "no-store");
     const send = (status, data) => { response.writeHead(status); response.end(JSON.stringify(data)); };
     if (!ownerAvailable) return send(503, { error: "OWNER_UNAVAILABLE" });
+    if (route === "/v1/operators/passkey/authentication/options" && request.method === "POST") {
+      optionsCalls++;
+      return send(200, {
+        ceremonyId: "B".repeat(43),
+        options: { publicKey: { challenge: "C".repeat(43), rpId: "localhost", userVerification: "required" } },
+      });
+    }
     if (request.headers.authorization !== `Bearer ${token}`) {
       return send(401, { error: "UNAUTHORIZED" });
     }
     if (route === "/v1/sessions/current") {
+      if (request.method === "DELETE") {
+        revokeCalls++;
+        revoked = true;
+        response.writeHead(204);
+        return response.end();
+      }
+      if (revoked) return send(401, { error: "UNAUTHORIZED" });
       return send(200, { actorId: "operator-synthetic", role, sessionExpiresAt: expiry });
     }
     const prefix = "/v1/operators/me/permissions/";
@@ -91,6 +109,26 @@ test("production Operator UI rechecks isolated Identity grants on every document
     }
     assert.ok(ready, `Isolated Next never started: ${output}`);
 
+    // This is a real empty browser-style POST: Next materializes its body as a
+    // readable stream even when no bytes were sent. It must reach Identity.
+    const passkeyOptions = await fetch(`${base}/api/auth/passkey/options`, {
+      method: "POST", headers: { origin: base }, signal: AbortSignal.timeout(7000),
+    });
+    assert.equal(passkeyOptions.status, 200, "empty Passkey options POST must not be rejected as a body");
+    const beginOptions = await passkeyOptions.json();
+    assert.equal(beginOptions.options.publicKey.rpId, "localhost");
+    assert.equal(optionsCalls, 1, "exactly one Identity ceremony should be requested");
+    for (const mutation of [
+      { headers: { origin: "http://attacker.invalid" } },
+      { headers: { origin: base }, body: "forged" },
+    ]) {
+      const denied = await fetch(`${base}/api/auth/passkey/options`, {
+        method: "POST", ...mutation, signal: AbortSignal.timeout(7000),
+      });
+      assert.equal(denied.status, 400, "forged or non-empty options POST must be rejected");
+    }
+    assert.equal(optionsCalls, 1, "invalid browser requests must not begin extra ceremonies");
+
     async function read(route, extra = {}) {
       const response = await fetch(base + route, {
         headers: { cookie: `bthwani_operator_session=${token}`, ...extra },
@@ -104,6 +142,7 @@ test("production Operator UI rechecks isolated Identity grants on every document
     let html = await read("/operations");
     assert.doesNotMatch(html, /الوصول إلى هذه المساحة غير متاح/);
     assert.match(html, /href="\/operations"/);
+    assert.match(html, /تسجيل الخروج/, "authenticated workspace must offer a visible sign-out action");
     assert.doesNotMatch(html, /href="\/finance"/);
     assert.ok(calls.includes("/v1/operators/me/permissions/operations"));
 
@@ -129,6 +168,41 @@ test("production Operator UI rechecks isolated Identity grants on every document
     ownerAvailable = false;
     html = await read("/operations");
     assert.match(html, /الوصول إلى هذه المساحة غير متاح/, "owner outage cannot grant permission");
+    ownerAvailable = true;
+
+    const rejected = await fetch(`${base}/api/auth/session`, {
+      method: "POST",
+      headers: { origin: "http://attacker.invalid", cookie: `bthwani_operator_session=${token}` },
+    });
+    assert.equal(rejected.status, 400, "cross-origin logout must not revoke a session");
+    assert.equal(revokeCalls, 0);
+
+    const withBody = await fetch(`${base}/api/auth/session`, {
+      method: "POST",
+      headers: { origin: base, cookie: `bthwani_operator_session=${token}` },
+      body: "unexpected payload",
+    });
+    assert.equal(withBody.status, 400, "logout must reject a non-empty body");
+    assert.equal(revokeCalls, 0);
+
+    ownerAvailable = false;
+    const unconfirmed = await fetch(`${base}/api/auth/session`, {
+      method: "POST",
+      headers: { origin: base, cookie: `bthwani_operator_session=${token}` },
+    });
+    assert.equal(unconfirmed.status, 503, "Identity outage must not be reported as a successful logout");
+    assert.equal(revokeCalls, 0);
+    ownerAvailable = true;
+
+    const logout = await fetch(`${base}/api/auth/session`, {
+      method: "POST",
+      headers: { origin: base, cookie: `bthwani_operator_session=${token}` },
+    });
+    assert.equal(logout.status, 204, "browser logout must invoke Identity revocation");
+    assert.match(logout.headers.get("set-cookie") ?? "", /bthwani_operator_session=;/);
+    assert.equal(revokeCalls, 1, "logout must send a single DELETE to Identity");
+    html = await read("/operations");
+    assert.match(html, /الوصول إلى هذه المساحة غير متاح/, "revoked cookie cannot reopen workspace");
   } finally {
     if (child.exitCode === null) child.kill("SIGTERM");
     if (child.exitCode === null) {

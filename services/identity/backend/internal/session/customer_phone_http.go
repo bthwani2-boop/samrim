@@ -73,6 +73,14 @@ func (h *customerPhoneHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		}
 		if err == nil {
 			err = deliverPhoneCode(ctx, h.smtp, input.Phone, code)
+			if err != nil {
+				// SMTP acceptance may be unknown after a timeout. The client never
+				// received this ticket, so invalidate it even if the request was
+				// cancelled. Preserve the durable send counter for abuse limits.
+				cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 2*time.Second)
+				_ = h.owner.cancelUndeliveredPhoneChallenge(cleanupCtx, ticket)
+				cleanupCancel()
+			}
 		}
 		if err == nil {
 			respond(w, http.StatusCreated, map[string]string{"ticket": ticket})

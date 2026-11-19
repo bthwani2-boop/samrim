@@ -4,7 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -90,6 +95,75 @@ func verifyPhoneAdmissionIntegration(t *testing.T, ctx context.Context, independ
 	}
 	if _, err = owner.verifyPhoneChallenge(ctx, key, suspended, suspendedCode); !errors.Is(err, ErrUnauthorized) {
 		t.Fatal("suspended Customer regained a session:", err)
+	}
+	// An SMTP error occurs after the challenge was committed but before its
+	// ticket was returned. The unknown-delivery ticket must be unusable, and
+	// the caller must be able to retry promptly without evading send limits.
+	const undeliveredPhone = "+12025550133"
+	failedTicket, failedCode, err := owner.issuePhoneChallenge(ctx, key, undeliveredPhone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = owner.cancelUndeliveredPhoneChallenge(ctx, failedTicket); err != nil {
+		t.Fatal("failed SMTP delivery could not invalidate its ticket:", err)
+	}
+	if _, err = owner.verifyPhoneChallenge(ctx, key, failedTicket, failedCode); !errors.Is(err, ErrUnauthorized) {
+		t.Fatal("undelivered challenge was still usable:", err)
+	}
+	retryTicket, retryCode, err := owner.issuePhoneChallenge(ctx, key, undeliveredPhone)
+	if err != nil {
+		t.Fatal("failed delivery unnecessarily blocks a prompt bounded retry:", err)
+	}
+	if retryTicket == failedTicket {
+		t.Fatal("retry unexpectedly reused an invalidated ticket")
+	}
+	// A delayed cleanup from the failed send must not cancel the newer ticket.
+	if err = owner.cancelUndeliveredPhoneChallenge(ctx, failedTicket); err != nil {
+		t.Fatal("late cleanup of old ticket failed:", err)
+	}
+	var sends int
+	if err = independent.QueryRowContext(ctx, "SELECT sends FROM "+schema+".customer_phone_challenges WHERE phone=$1", undeliveredPhone).Scan(&sends); err != nil || sends != 2 {
+		t.Fatalf("send-rate bound bypassed on delivery failure: sends=%d err=%v", sends, err)
+	}
+	if _, err = owner.verifyPhoneChallenge(ctx, key, retryTicket, retryCode); err != nil {
+		t.Fatal("fresh delivered proof failed:", err)
+	}
+
+	// Exercise the HTTP transport as well, not just the SQL compensation
+	// command. Delivery is forced to fail on an unused loopback SMTP port.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deliveryTarget := listener.Addr().String()
+	_ = listener.Close()
+	handler, err := NewCustomerPhoneHandler(owner, hex.EncodeToString(key), deliveryTarget, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const unavailablePhone = "+12025550134"
+	req := httptest.NewRequest(http.MethodPost, PhoneChallengePath,
+		strings.NewReader(`{"phone":"`+unavailablePhone+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusServiceUnavailable ||
+		strings.Contains(recorder.Body.String(), "ticket") ||
+		strings.Contains(recorder.Body.String(), "accessToken") {
+		t.Fatalf("SMTP delivery error revealed a usable proof or wrong status: %d %s", recorder.Code, recorder.Body.String())
+	}
+	var abandonedTicket string
+	var abandonedConsumed bool
+	var abandonedSends int
+	if err = independent.QueryRowContext(ctx, "SELECT ticket,consumed,sends FROM "+schema+
+		".customer_phone_challenges WHERE phone=$1", unavailablePhone).
+		Scan(&abandonedTicket, &abandonedConsumed, &abandonedSends); err != nil ||
+		!abandonedConsumed || abandonedSends != 1 {
+		t.Fatalf("HTTP SMTP failure did not persist invalidation or bounded send: consumed=%t sends=%d err=%v",
+			abandonedConsumed, abandonedSends, err)
+	}
+	if _, _, err = owner.issuePhoneChallenge(ctx, key, unavailablePhone); err != nil {
+		t.Fatal("failed HTTP delivery prevented prompt retry:", err)
 	}
 	t.Log("IDENTITY_PHONE_ADMISSION_DURABLE_RACE_PASS")
 }

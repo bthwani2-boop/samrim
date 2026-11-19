@@ -66,7 +66,16 @@ export default function CustomerIdentityGate() {
   useEffect(() => {
     refresh();
     const listener = AppState.addEventListener("change", next => {
-      if (next === "active") refresh();
+      if (next !== "active") {
+        // Any owner read from before backgrounding is no longer authoritative.
+        active.current?.abort();
+        active.current = null;
+        setBusy(false);
+        setSession(null);
+        setEnabled(null);
+        return;
+      }
+      refresh();
     });
     return () => {
       listener.remove();

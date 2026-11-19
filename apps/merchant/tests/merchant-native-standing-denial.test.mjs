@@ -22,18 +22,36 @@ class OwnerError extends Error {
   }
 }
 
-function nativeHarness({ storageDeletionFails = false } = {}) {
-  let stored = oldBearer;
+function nativeHarness({ storageDeletionFails = false, postDeleteMarkerThrows = false, initialBearer = oldBearer } = {}) {
+  let stored = initialBearer;
+  let pendingMarker = null;
   let onStorageWrite = null;
   let ownerRead = async () => { throw new OwnerError(401); };
   let ownerRevoke = async () => {};
+  let admissionCalls = 0;
+  const cleanupRevocations = [];
+  let merchantAdmission = async () => ({ bearer: newBearer, session: { actorId: "new-actor", role: "merchant" } });
   let identityRead = async bearer => ({ actorId: bearer === oldBearer ? "old-actor" : "new-actor",
     role: "merchant", sessionExpiresAt: new Date(Date.now() + 60000).toISOString() });
   const secureStore = {
     WHEN_UNLOCKED_THIS_DEVICE_ONLY: "device-only",
-    async getItemAsync() { return stored; },
-    async setItemAsync(_key, value) { stored = value; onStorageWrite?.(); },
-    async deleteItemAsync() { if (storageDeletionFails) throw new Error("device storage temporarily unavailable"); stored = null; },
+    async getItemAsync(key) {
+      return key.endsWith(".pending.v1") ? pendingMarker : stored;
+    },
+    async setItemAsync(key, value) {
+      if (key.endsWith(".pending.v1")) { pendingMarker = value; return; }
+      stored = value;
+      onStorageWrite?.();
+    },
+    async deleteItemAsync(key) {
+      if (key.endsWith(".pending.v1") && postDeleteMarkerThrows) {
+        pendingMarker = null;
+        throw new Error("pending marker deletion acknowledgement failed");
+      }
+      if (storageDeletionFails) throw new Error("device storage temporarily unavailable");
+      if (key.endsWith(".pending.v1")) pendingMarker = null;
+      else stored = null;
+    },
   };
   const dependencies = {
     "@bthwani/identity": {
@@ -45,10 +63,8 @@ function nativeHarness({ storageDeletionFails = false } = {}) {
     "expo-secure-store": secureStore,
     "react-native": { Platform: { OS: "android" } },
     "./admission": {
-      async verifyMerchantAdmission() {
-        return { bearer: newBearer, session: { actorId: "new-actor", role: "merchant" } };
-      },
-      async revokeUndeliveredAdmissionSession() {},
+      async verifyMerchantAdmission() { admissionCalls++; return merchantAdmission(); },
+      async revokeUndeliveredAdmissionSession(_origin, bearer) { cleanupRevocations.push(bearer); },
     },
     "./dsh-standing": {
       MerchantStandingError: OwnerError,
@@ -56,22 +72,30 @@ function nativeHarness({ storageDeletionFails = false } = {}) {
       standingFrom(value) { return value; },
     },
   };
-  const module = { exports: {} };
-  new Function("require", "module", "exports", "process", compiled)(
-    key => {
-      assert.ok(Object.hasOwn(dependencies, key), `unexpected module ${key}`);
-      return dependencies[key];
-    },
-    module, module.exports, { env: {
-      EXPO_PUBLIC_MERCHANT_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:33221",
-      EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN: "http://127.0.0.1:33222",
-    } },
-  );
+  const mount = () => {
+    const module = { exports: {} };
+    new Function("require", "module", "exports", "process", compiled)(
+      key => {
+        assert.ok(Object.hasOwn(dependencies, key), `unexpected module ${key}`);
+        return dependencies[key];
+      },
+      module, module.exports, { env: {
+        EXPO_PUBLIC_MERCHANT_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:33221",
+        EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN: "http://127.0.0.1:33222",
+      } },
+    );
+    return module.exports;
+  };
   return {
-    transport: module.exports,
+    transport: mount(),
+    reload: mount,
+    pending: () => pendingMarker,
     setOwnerRead(fn) { ownerRead = fn; },
     setIdentityRead(fn) { identityRead = fn; },
     setOwnerRevoke(fn) { ownerRevoke = fn; },
+    setAdmission(fn) { merchantAdmission = fn; },
+    admissionCalls() { return admissionCalls; },
+    cleanupRevocations,
     onStorageWrite(fn) { onStorageWrite = fn; },
     current() { return stored; },
   };
@@ -123,6 +147,75 @@ test("native Merchant sign-out preserves bearer on owner outage for safe retry",
   assert.equal(h.current(), oldBearer);
 });
 
+test("native Merchant re-entry requires logout from an active verified role", async () => {
+  const h = nativeHarness();
+  await assert.rejects(h.transport.submitAdmissionCode("ticket", "123456", new AbortController().signal),
+    { status: 409, code: "SIGN_OUT_REQUIRED" });
+  assert.equal(h.current(), oldBearer);
+  assert.equal(h.admissionCalls(), 0, "must not consume a new phone proof for another actor");
+});
+
+test("native Merchant must not issue a new credential when existing owner is unavailable", async () => {
+  const h = nativeHarness();
+  h.setIdentityRead(async () => { throw new OwnerError(503, "OWNER_UNAVAILABLE"); });
+  await assert.rejects(h.transport.submitAdmissionCode("ticket", "123456", new AbortController().signal),
+    { status: 503 });
+  assert.equal(h.current(), oldBearer);
+  assert.equal(h.admissionCalls(), 0);
+});
+
+for (const status of [401, 403]) {
+  test(`native Merchant recovers from a terminated existing bearer (Identity ${status})`, async () => {
+    const h = nativeHarness();
+    h.setIdentityRead(async () => { throw new OwnerError(status, "UNAUTHORIZED"); });
+    const session = await h.transport.submitAdmissionCode("ticket", "123456", new AbortController().signal);
+    assert.equal(session.actorId, "new-actor");
+    assert.equal(h.current(), newBearer);
+    assert.equal(h.admissionCalls(), 1);
+  });
+}
+
+test("parallel native Merchant proofs never issue two owner sessions", async () => {
+  const h = nativeHarness({ initialBearer: null });
+  let notifyStarted;
+  const started = new Promise(resolve => { notifyStarted = resolve; });
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  h.setAdmission(async () => {
+    notifyStarted();
+    await gate;
+    return { bearer: newBearer, session: { actorId: "first-actor", role: "merchant" } };
+  });
+  const signal = new AbortController().signal;
+  const first = h.transport.submitAdmissionCode("ticket-a", "111111", signal);
+  await started;
+  const second = h.transport.submitAdmissionCode("ticket-b", "222222", signal);
+  await Promise.resolve();
+  await Promise.resolve();
+  release();
+  const results = await Promise.allSettled([first, second]);
+  assert.equal(h.admissionCalls(), 1, "second proof must not reach Identity while first is pending");
+  assert.equal(results.filter(result => result.status === "fulfilled").length, 1);
+  const denied = results.filter(result => result.status === "rejected");
+  assert.equal(denied.length, 1);
+  assert.equal(denied[0].reason.code, "SIGN_OUT_REQUIRED");
+  assert.equal(h.current(), newBearer);
+  assert.deepEqual(h.cleanupRevocations, []);
+});
+
+test("failed native Merchant admission releases concurrency guard for owner recovery", async () => {
+  const h = nativeHarness({ initialBearer: null });
+  h.setAdmission(async () => { throw new OwnerError(503, "OWNER_UNAVAILABLE"); });
+  const signal = new AbortController().signal;
+  await assert.rejects(h.transport.submitAdmissionCode("ticket-a", "111111", signal), { status: 503 });
+  assert.equal(h.current(), null);
+  h.setAdmission(async () => ({ bearer: newBearer, session: { actorId: "new-actor", role: "merchant" } }));
+  const session = await h.transport.submitAdmissionCode("ticket-b", "222222", signal);
+  assert.equal(session.actorId, "new-actor");
+  assert.equal(h.current(), newBearer);
+  assert.equal(h.admissionCalls(), 2);
+});
+
 test("native DSH outage keeps bearer for legitimate retry", async () => {
   const h = nativeHarness();
   h.setOwnerRead(async () => { throw new OwnerError(503, "OWNER_UNAVAILABLE"); });
@@ -146,6 +239,10 @@ test("late denial from old actor preserves a new concurrent native admission", a
   const signal = new AbortController().signal;
   const oldStanding = h.transport.readMerchantStanding(signal);
   await Promise.resolve();
+  h.setIdentityRead(async bearer => {
+    if (bearer === oldBearer) throw new OwnerError(401, "UNAUTHORIZED");
+    return { actorId: "new-actor", role: "merchant", sessionExpiresAt: new Date(Date.now() + 60000).toISOString() };
+  });
   await h.transport.submitAdmissionCode("ticket", "123456", signal);
   decline();
   await assert.rejects(oldStanding, { status: 403 });
@@ -163,8 +260,24 @@ test("native owner denial stays fail-closed when SecureStore deletion fails", as
   assert.equal(entry.session, null);
 });
 
+for (const storageDeletionFails of [false, true]) {
+  test(`Merchant post-write storage error cannot restore undelivered bearer (delete fails=${storageDeletionFails})`, async () => {
+    const h = nativeHarness({ initialBearer: null, storageDeletionFails });
+    h.onStorageWrite(() => { throw new Error("device write acknowledgement failed"); });
+    await assert.rejects(
+      h.transport.submitAdmissionCode("ticket", "123456", new AbortController().signal),
+      /device write acknowledgement failed/,
+    );
+    assert.equal(h.current(), storageDeletionFails ? newBearer : null);
+    assert.deepEqual(h.cleanupRevocations, [newBearer]);
+    assert.deepEqual(await h.transport.readAdmission(new AbortController().signal),
+      { enabled: true, session: null },
+      "an undelivered Merchant bearer must never authenticate after a storage error");
+  });
+}
+
 test("cancelled native SecureStore write never restores a Merchant credential",async()=>{
-  const h=nativeHarness();
+  const h=nativeHarness({ initialBearer: null });
   const controller=new AbortController();
   h.onStorageWrite(()=>controller.abort());
   await assert.rejects(
@@ -174,4 +287,64 @@ test("cancelled native SecureStore write never restores a Merchant credential",a
   assert.equal(h.current(),null,"cancelled bearer must be removed from device storage");
   const refresh=await h.transport.readAdmission(new AbortController().signal);
   assert.equal(refresh.session,null);
+});
+
+test("Merchant undelivered token remains quarantined across process restart when deletion and revoke fail", async () => {
+  const h = nativeHarness({ initialBearer: null, storageDeletionFails: true });
+  h.onStorageWrite(() => { throw new Error("device write acknowledgement failed"); });
+  await assert.rejects(h.transport.submitAdmissionCode("ticket", "123456", new AbortController().signal),
+    /device write acknowledgement failed/);
+  assert.equal(h.current(), newBearer);
+  assert.ok(h.pending(), "quarantine must be stored durably before bearer write");
+  const restarted = h.reload();
+  assert.deepEqual(await restarted.readAdmission(new AbortController().signal),
+    { enabled: true, session: null }, "reloaded module must never read undelivered bearer");
+  await assert.rejects(restarted.readMerchantStanding(new AbortController().signal),
+    { status: 401, code: "UNAUTHENTICATED" }, "Store-scoped reads must also reject quarantined bearer");
+  assert.equal(h.current(), newBearer);
+  assert.ok(h.pending());
+  await assert.rejects(restarted.submitAdmissionCode("another-ticket", "111111", new AbortController().signal),
+    { status: 409, code: "SIGN_OUT_REQUIRED" },
+    "a stuck pending credential must block a second Identity issuance");
+  assert.equal(h.admissionCalls(), 1);
+  assert.deepEqual(h.cleanupRevocations, [newBearer], "remote revoke was attempted but not confirmed");
+});
+
+test("Merchant successful login clears durable pending write marker before returning session", async () => {
+  const h = nativeHarness({ initialBearer: null });
+  const session = await h.transport.submitAdmissionCode("ticket", "123456", new AbortController().signal);
+  assert.equal(session.role, "merchant");
+  assert.equal(h.pending(), null);
+  const restarted = h.reload();
+  assert.equal((await restarted.readAdmission(new AbortController().signal)).session.role, "merchant");
+});
+
+test("Merchant aborted incomplete login does not store an accepted bearer after reload", async () => {
+  const h = nativeHarness({ initialBearer: null, storageDeletionFails: true });
+  const controller = new AbortController();
+  h.onStorageWrite(() => controller.abort());
+  await assert.rejects(h.transport.submitAdmissionCode("ticket", "123456", controller.signal),
+    { code: "OPERATION_RESULT_UNKNOWN" });
+  const restarted = h.reload();
+  assert.deepEqual(await restarted.readAdmission(new AbortController().signal),
+    { enabled: true, session: null });
+});
+
+test("Merchant marker-deletion post-effect error cannot reject an already committed bearer", async () => {
+  const h = nativeHarness({ initialBearer: null, storageDeletionFails: true, postDeleteMarkerThrows: true });
+  const session = await h.transport.submitAdmissionCode("ticket", "123456", new AbortController().signal);
+  assert.equal(session.actorId, "new-actor");
+  assert.equal(h.current(), newBearer);
+  assert.equal(h.pending(), null, "the marker deletion persisted even though acknowledgement failed");
+  assert.equal((await h.reload().readAdmission(new AbortController().signal)).session.role, "merchant");
+  assert.deepEqual(h.cleanupRevocations, [], "a successful device commit must not revoke active bearer");
+});
+
+test("Merchant marker-delete pre-effect failure keeps bearer quarantined on cold start", async () => {
+  const h = nativeHarness({ initialBearer: null, storageDeletionFails: true });
+  const session = await h.transport.submitAdmissionCode("ticket", "123456", new AbortController().signal);
+  assert.equal(session.role, "merchant", "owner-verified bearer write already succeeded");
+  assert.ok(h.pending(), "failed marker deletion remains a durable quarantine");
+  assert.deepEqual(await h.reload().readAdmission(new AbortController().signal),
+    { enabled: true, session: null }, "restarted app cannot promote an uncertain marker");
 });
