@@ -2,8 +2,8 @@
 
 import { usePathname } from "next/navigation";
 import { type ReactNode, useState } from "react";
-import { findWorkspaceEntry, workspaceGroupLabels } from "../navigation/workspace-registry";
-import { type OperatorPermission, operatorSectionTabs, visibleWorkspaceEntries } from "../session/operator-permissions";
+import { findWorkspaceEntry, workspaceGroupLabels, workspaceSubsections } from "../navigation/workspace-registry";
+import { canEnterOperatorWorkspace, type OperatorPermission, operatorSectionTabs, visibleWorkspaceEntries } from "../session/operator-permissions";
 import styles from "./operator-shell.module.css";
 
 export default function OperatorShell({ children, verifiedGrants }: Readonly<{
@@ -21,6 +21,7 @@ export default function OperatorShell({ children, verifiedGrants }: Readonly<{
   ];
   const activeEntry = pathname ? findWorkspaceEntry(pathname) : null;
   const activeHref = activeEntry?.href;
+  const subsectionLinks = workspaceSubsections.filter(item => activeHref === item.parent && canEnterOperatorWorkspace(verifiedGrants ?? [], item.href));
 
   async function signOut() {
     if (signOutState !== "idle") return;
@@ -98,6 +99,20 @@ export default function OperatorShell({ children, verifiedGrants }: Readonly<{
                 </li>
               ))}</ul>
             </nav>
+            {subsectionLinks.length > 0 && activeEntry && (
+              <nav aria-label="تبويبات الوظائف" className={styles.subsectionTabs}>
+                <ul>
+                  <li><a href={activeEntry.href} aria-current={pathname === activeEntry.href ? "page" : undefined}>نظرة عامة</a></li>
+                  {subsectionLinks.map(item => (
+                    <li key={item.href}>
+                      <a href={item.href} aria-current={pathname === item.href || pathname?.startsWith(`${item.href}/`) ? "page" : undefined}>
+                        {item.label}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            )}
           </header>
         )}
         {children}
