@@ -1,3 +1,6 @@
-import Receivables from "../../../../src/features/finance/receivables";
+import { redirect } from "next/navigation";
 
-export default function Page() { return <Receivables title="ذمم عمولات الشركاء" />; }
+// Compatibility redirect for previously issued Operator finance URLs.
+export default function LegacyFinanceRoute() {
+  redirect("/finance/merchant-commission-receivables");
+}

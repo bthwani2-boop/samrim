@@ -1,3 +1,6 @@
-import Settlements from "../../../../src/features/finance/settlements";
+import { redirect } from "next/navigation";
 
-export default function Page() { return <Settlements title="عمولات متاجر الشركاء" />; }
+// Compatibility redirect for previously issued Operator finance URLs.
+export default function LegacyFinanceRoute() {
+  redirect("/finance/merchant-store-commissions");
+}

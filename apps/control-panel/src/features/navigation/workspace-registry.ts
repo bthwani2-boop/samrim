@@ -57,8 +57,8 @@ export const workspaceSubsections: readonly WorkspaceSubsection[] = [
   { parent: "/marketing", href: "/marketing/customers", label: "جمهور العملاء" },
   { parent: "/finance", href: "/finance/cash-custody", label: "العهد النقدية" },
   { parent: "/finance", href: "/finance/customer-withdrawals", label: "سحوبات العملاء" },
-  { parent: "/finance", href: "/finance/partner-store-commissions", label: "عمولات المتاجر" },
-  { parent: "/finance", href: "/finance/partner-commission-receivables", label: "مستحقات العمولات" },
+  { parent: "/finance", href: "/finance/merchant-store-commissions", label: "عمولات المتاجر" },
+  { parent: "/finance", href: "/finance/merchant-commission-receivables", label: "مستحقات العمولات" },
   { parent: "/hr", href: "/hr/employees", label: "الموظفون" },
   { parent: "/policies", href: "/policies/stage-sla", label: "أزمنة المراحل" },
 ];
