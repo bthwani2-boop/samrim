@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { findWorkspaceEntry, type WorkspaceGroup, workspaceRegistry } from "../navigation/workspace-registry";
@@ -29,13 +28,15 @@ export default function OperatorShell({ children, verifiedGrants }: Readonly<{
   verifiedGrants?: readonly OperatorPermission[];
 }>) {
   const pathname = usePathname();
-  const permitted = verifiedGrants
-    ? workspaceRegistry.filter(({ permission }) => canShowNavigation(true, verifiedGrants, permission))
+  const permitted = verifiedGrants?.length
+    ? workspaceRegistry.filter(({ href, permission }) => href === "/workspace" ||
+        canShowNavigation(true, verifiedGrants, permission))
     : [];
   const activeHref = pathname && findWorkspaceEntry(pathname)?.href;
   const navigationLink = ({ href, label }: { href: string; label: string }, selectedHref: string | null | undefined) => (
     <li key={href}>
-      <Link href={href} aria-current={selectedHref === href ? "page" : undefined}>{label}</Link>
+      {/* Full document requests re-verify Identity when switching protected areas. */}
+      <a href={href} aria-current={selectedHref === href ? "page" : undefined}>{label}</a>
     </li>
   );
 

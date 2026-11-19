@@ -90,3 +90,55 @@ test("Operator assertion rejects additional keys and validates exact two-key sha
   assert.equal(validAssertion({ ceremonyId: "short", credential }), false);
   assert.equal(validAssertion({ ceremonyId, credential: { ...credential, type: "password" } }), false);
 });
+
+test("Operator workspace grants require fresh Identity session and seven owner permission decisions", async t => {
+  const { readVerifiedOperatorAccess } = await import("../src/server/operator-passkey-bff.ts");
+  const config = resolveIsolatedOperatorConfig(goodEnv);
+  assert.ok(config);
+  const expiry = new Date(Date.now() + 15 * 60_000).toISOString();
+  const queried = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    const path = new URL(url).pathname;
+    queried.push(path);
+    assert.equal(init.headers.Authorization, `Bearer ${token}`);
+    if (path === "/v1/sessions/current") {
+      return Response.json({ actorId: "operator-one", role: "operator", sessionExpiresAt: expiry });
+    }
+    const permission = path.split("/").at(-1);
+    if (permission === "operations" || permission === "partners") {
+      return Response.json({ actorId: "operator-one", permission });
+    }
+    return Response.json({ error: "FORBIDDEN" }, { status: 403 });
+  });
+  assert.deepEqual(await readVerifiedOperatorAccess(config, token), {
+    actorId: "operator-one", grants: ["operations", "partners"],
+  });
+  assert.equal(queried.length, 8, "session and all seven finite permissions must be read");
+});
+
+test("Operator workspace owner mismatch, role spoof, revoked session and outage all fail closed", async t => {
+  const { readVerifiedOperatorAccess } = await import("../src/server/operator-passkey-bff.ts");
+  const config = resolveIsolatedOperatorConfig(goodEnv);
+  assert.ok(config);
+  const expiry = new Date(Date.now() + 15 * 60_000).toISOString();
+  let mode = "different-actor";
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async url => {
+    calls++;
+    const path = new URL(url).pathname;
+    if (path === "/v1/sessions/current") {
+      if (mode === "revoked") return Response.json({ error: "UNAUTHORIZED" }, { status: 401 });
+      if (mode === "role-spoof") return Response.json({ actorId: "operator-one", role: "merchant", sessionExpiresAt: expiry });
+      if (mode === "outage") return Response.json({ error: "OWNER_UNAVAILABLE" }, { status: 503 });
+      return Response.json({ actorId: "operator-one", role: "operator", sessionExpiresAt: expiry });
+    }
+    const permission = path.split("/").at(-1);
+    return Response.json({ actorId: mode === "different-actor" ? "operator-two" : "operator-one", permission });
+  });
+  for (mode of ["different-actor", "role-spoof", "revoked", "outage"]) {
+    assert.equal(await readVerifiedOperatorAccess(config, token), null, mode);
+  }
+  const before = calls;
+  assert.equal(await readVerifiedOperatorAccess(config, "forged"), null);
+  assert.equal(calls, before, "malformed cookie cannot trigger Identity calls");
+});

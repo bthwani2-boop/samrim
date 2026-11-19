@@ -1,0 +1,139 @@
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { createServer } from "node:http";
+import { createServer as createSocket } from "node:net";
+import path from "node:path";
+import { test } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
+
+const panel = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const cli = path.join(panel, "node_modules", "next", "dist", "bin", "next");
+const token = Buffer.alloc(32, 7).toString("base64url");
+
+async function unusedPort() {
+  const socket = createSocket();
+  await new Promise((resolve, reject) => {
+    socket.once("error", reject);
+    socket.listen(0, "127.0.0.1", resolve);
+  });
+  const port = socket.address().port;
+  await new Promise(resolve => socket.close(resolve));
+  return port;
+}
+
+test("production Operator UI rechecks isolated Identity grants on every document request", {
+  timeout: 60000,
+  skip: process.env.BTHWANI_OPERATOR_HTTP_TEST === "1" ? false : "Run after production Next build",
+}, async () => {
+  assert.ok(existsSync(path.join(panel, ".next", "BUILD_ID")), "Build Operator host before HTTP test");
+  const allowed = new Set(["operations"]);
+  const expiry = new Date(Date.now() + 15 * 60_000).toISOString();
+  let role = "operator";
+  let ownerAvailable = true;
+  let actorMismatch = false;
+  const calls = [];
+  const owner = createServer((request, response) => {
+    const route = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    calls.push(route);
+    response.setHeader("Content-Type", "application/json");
+    response.setHeader("Cache-Control", "no-store");
+    const send = (status, data) => { response.writeHead(status); response.end(JSON.stringify(data)); };
+    if (!ownerAvailable) return send(503, { error: "OWNER_UNAVAILABLE" });
+    if (request.headers.authorization !== `Bearer ${token}`) {
+      return send(401, { error: "UNAUTHORIZED" });
+    }
+    if (route === "/v1/sessions/current") {
+      return send(200, { actorId: "operator-synthetic", role, sessionExpiresAt: expiry });
+    }
+    const prefix = "/v1/operators/me/permissions/";
+    if (route.startsWith(prefix)) {
+      const permission = route.slice(prefix.length);
+      return allowed.has(permission)
+        ? send(200, { actorId: actorMismatch ? "other-actor" : "operator-synthetic", permission })
+        : send(403, { error: "FORBIDDEN" });
+    }
+    return send(404, { error: "NOT_FOUND" });
+  });
+  await new Promise((resolve, reject) => {
+    owner.once("error", reject);
+    owner.listen(0, "127.0.0.1", resolve);
+  });
+  const ownerPort = owner.address().port;
+  const port = await unusedPort();
+  const base = `http://localhost:${port}`;
+  const child = spawn(process.execPath, [cli, "start", "-H", "localhost", "-p", String(port)], {
+    cwd: panel, windowsHide: true,
+    env: {
+      ...process.env, NEXT_TELEMETRY_DISABLED: "1", NODE_ENV: "production",
+      BTHWANI_ISOLATED_TEST_MODE: "true",
+      OPERATOR_ENABLE_ISOLATED_PASSKEY_BFF: "true",
+      OPERATOR_PASSKEY_BROWSER_ORIGIN: base,
+      OPERATOR_PASSKEY_IDENTITY_ORIGIN: `http://127.0.0.1:${ownerPort}`,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let output = "";
+  child.stdout.on("data", chunk => { output = (output + chunk).slice(-2000); });
+  child.stderr.on("data", chunk => { output = (output + chunk).slice(-2000); });
+
+  try {
+    let ready = false;
+    for (let attempt = 0; attempt < 120; attempt++) {
+      if (child.exitCode !== null) throw new Error(`Next exited: ${output}`);
+      try {
+        const response = await fetch(`${base}/health`, { signal: AbortSignal.timeout(1500) });
+        await response.arrayBuffer();
+        if (response.status === 200) { ready = true; break; }
+      } catch { /* Waiting for isolated Next. */ }
+      await delay(250);
+    }
+    assert.ok(ready, `Isolated Next never started: ${output}`);
+
+    async function read(route, extra = {}) {
+      const response = await fetch(base + route, {
+        headers: { cookie: `bthwani_operator_session=${token}`, ...extra },
+        cache: "no-store", signal: AbortSignal.timeout(7000),
+      });
+      const html = await response.text();
+      assert.equal(response.status, 200, `${route}: ${output.slice(-1400)} ${html.slice(0, 350)}`);
+      assert.match(response.headers.get("cache-control") ?? "", /no-store/);
+      return html;
+    }
+    let html = await read("/operations");
+    assert.doesNotMatch(html, /الوصول إلى هذه المساحة غير متاح/);
+    assert.match(html, /href="\/operations"/);
+    assert.doesNotMatch(html, /href="\/finance"/);
+    assert.ok(calls.includes("/v1/operators/me/permissions/operations"));
+
+    html = await read("/finance", { "x-bthwani-route": "/operations" });
+    assert.match(html, /الوصول إلى هذه المساحة غير متاح/);
+    assert.doesNotMatch(html, /href="\/finance"/);
+
+    allowed.delete("operations");
+    html = await read("/operations");
+    assert.match(html, /الوصول إلى هذه المساحة غير متاح/, "grant revocation takes effect on next request");
+    allowed.add("operations");
+
+    role = "merchant";
+    html = await read("/operations");
+    assert.match(html, /الوصول إلى هذه المساحة غير متاح/, "wrong Identity role");
+    role = "operator";
+
+    actorMismatch = true;
+    html = await read("/operations");
+    assert.match(html, /الوصول إلى هذه المساحة غير متاح/, "cross-actor grant spoof");
+    actorMismatch = false;
+
+    ownerAvailable = false;
+    html = await read("/operations");
+    assert.match(html, /الوصول إلى هذه المساحة غير متاح/, "owner outage cannot grant permission");
+  } finally {
+    if (child.exitCode === null) child.kill("SIGTERM");
+    if (child.exitCode === null) {
+      await Promise.race([new Promise(resolve => child.once("exit", resolve)), delay(3000)]);
+    }
+    await new Promise(resolve => owner.close(resolve));
+  }
+});

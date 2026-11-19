@@ -57,7 +57,7 @@ test("Operator routes and the browser session endpoint fail closed on the produc
       assert.equal(response.status, 200, route);
       assert.match(response.headers.get("cache-control") ?? "", /no-store/, route);
       const html = await response.text();
-      assert.match(html, /الوصول إلى مساحة العمل غير متاح/, route);
+      assert.match(html, /الوصول إلى هذه المساحة غير متاح/, route);
       assert.match(html, /aria-label="التنقل الرئيسي"/, route);
       assert.match(html, /href="\/health"/, route);
       assert.doesNotMatch(html, /href="\/(?:workspace|operations|catalog|finance|access|policies)"/, route);

@@ -2,8 +2,8 @@ import { resolveIsolatedOperatorConfig } from "../../server/operator-passkey-bff
 import OperatorPasskeyForm from "./operator-passkey-form";
 
 // No login is available outside explicitly isolated local test mode.
-// Even a verified Operator session does not unlock the workspace before its
-// resource-scoped permissions and the protected original Owner are verified.
+// Isolated sign-in alone never admits private workspace content: Identity
+// still verifies current explicit scope at the server render boundary.
 export default function OperatorEntryScreen() {
   const isolated = resolveIsolatedOperatorConfig(process.env);
   return (

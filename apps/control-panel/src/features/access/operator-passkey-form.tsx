@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type PasskeyOptions = {
   ceremonyId: string;
@@ -29,9 +29,32 @@ export default function OperatorPasskeyForm() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [authenticated, setAuthenticated] = useState(false);
+  const verificationEpoch = useRef(0);
+
+  // Recover only a current server-confirmed cookie session after a reload.
+  // A slow initial read must never overwrite a later login or logout.
+  useEffect(() => {
+    const epoch = ++verificationEpoch.current;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch("/api/auth/session", {
+          method: "GET", credentials: "same-origin", cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!response.ok) return;
+        const session = await response.json() as { authenticated?: boolean; role?: string };
+        if (verificationEpoch.current === epoch && session.authenticated === true && session.role === "operator") {
+          setAuthenticated(true);
+        }
+      } catch { /* Invalid/absent session stays signed out. */ }
+    })();
+    return () => controller.abort();
+  }, []);
 
   async function signIn() {
     if (busy) return;
+    verificationEpoch.current++;
     setBusy(true);
     setMessage("");
     try {
@@ -84,7 +107,7 @@ export default function OperatorPasskeyForm() {
         throw new Error("الجلسة غير مخوّلة لدور المشغّل.");
       }
       setAuthenticated(true);
-      setMessage("تم التحقق من جلسة المشغّل في بيئة الاختبار. صلاحيات لوحة التحكم لم تُفعّل بعد.");
+      setMessage("تم التحقق من الجلسة. يُسمح فقط بالمساحات التي تؤكد Identity صلاحيتها الحالية.");
     } catch (error) {
       setAuthenticated(false);
       setMessage(error instanceof Error ? error.message : "تعذر إتمام التحقق.");
@@ -95,6 +118,7 @@ export default function OperatorPasskeyForm() {
 
   async function signOut() {
     if (busy) return;
+    verificationEpoch.current++;
     setBusy(true);
     try {
       const response = await fetch("/api/auth/session", {
@@ -118,6 +142,7 @@ export default function OperatorPasskeyForm() {
       {authenticated
         ? <button type="button" disabled={busy} onClick={signOut}>تسجيل الخروج</button>
         : <button type="button" disabled={busy} onClick={signIn}>التحقق بمفتاح المرور</button>}
+      {authenticated && <p><a href="/workspace">فتح مساحة العمل المصرّح بها</a></p>}
       {message && <output>{message}</output>}
     </section>
   );

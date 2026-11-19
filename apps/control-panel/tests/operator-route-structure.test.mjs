@@ -17,14 +17,30 @@ test("Operator workspace keeps control-panel identity and uses a real Next route
   assert.equal(existsSync(file("src/app")), false);
 });
 
-test("Operator workspace fails closed without Identity; no public dashboard data", () => {
+test("Operator workspace only renders protected children after owner-verified active session and scope", () => {
   const layout = read("app/(workspace)/layout.tsx");
-  assert.match(layout, /OperatorWorkspaceGate/);
-  assert.doesNotMatch(layout, /\{children\}|<\w+\s+children=/);
+  assert.match(layout, /currentOperatorAccess/);
+  assert.match(layout, /canEnterOperatorWorkspace/);
+  assert.match(layout, /if \(!allowed\) return <OperatorWorkspaceGate \/>/);
+  assert.match(layout, /return <>{children}<\/>/);
+  const proxy = read("proxy.ts");
+  assert.match(proxy, /requestHeaders\.set\("x-bthwani-route", request\.nextUrl\.pathname\)/);
+  const server = read("src/server/current-operator-access.ts");
+  assert.match(server, /cache\(async/);
+  assert.match(server, /readVerifiedOperatorAccess/);
   const gate = read("src/features/access/operator-workspace-gate.tsx");
   assert.match(gate, /غير متاح/);
   assert.doesNotMatch(gate, /fetch\(|getOrder\(|useSession\(/);
   const entry = read("src/features/access/operator-entry-screen.tsx");
   assert.match(entry, /لوحة تحكم بثواني/);
   assert.doesNotMatch(entry, /setSession\(|localStorage|mock/i);
+});
+
+test("Operator links perform a new document request, not a cached layout-only transition", () => {
+  const shell = read("src/features/operator-shell/operator-shell.tsx");
+  const login = read("src/features/access/operator-passkey-form.tsx");
+  assert.match(shell, /<a href={href}/);
+  assert.match(login, /<a href="\/workspace"/);
+  assert.doesNotMatch(shell, /next\/link/);
+  assert.doesNotMatch(login, /next\/link/);
 });
