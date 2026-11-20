@@ -87,13 +87,15 @@ try {
   Assert-ReaderAccess $restoreDb
   $fingerprintSql = @"
 SELECT jsonb_build_object(
-  'columns', (SELECT jsonb_agg(to_jsonb(c) - ARRAY['table_catalog','domain_catalog','udt_catalog','scope_catalog']
-                              ORDER BY table_name, ordinal_position)
+  'columns', (SELECT jsonb_agg(jsonb_build_array(table_name, column_name, ordinal_position, column_default,
+                  is_nullable, udt_schema, udt_name, character_maximum_length, numeric_precision, numeric_scale,
+                  datetime_precision, is_identity, identity_generation, generation_expression)
+                  ORDER BY table_name, ordinal_position)
               FROM information_schema.columns c WHERE table_schema = '$schema'),
-  'constraints', (SELECT jsonb_agg(jsonb_build_array(cl.relname, c.conname, pg_get_constraintdef(c.oid))
+  'constraints', (SELECT jsonb_agg(jsonb_build_array(cl.relname, c.conname, c.convalidated, pg_get_constraintdef(c.oid))
                                   ORDER BY cl.relname, c.conname)
                   FROM pg_constraint c JOIN pg_class cl ON cl.oid = c.conrelid
-                  WHERE c.connamespace = '$schema'::regnamespace),
+                  WHERE c.connamespace = '$schema'::regnamespace AND c.contype <> 'n'),
   'indexes', (SELECT jsonb_agg(indexdef ORDER BY tablename, indexname)
               FROM pg_indexes WHERE schemaname = '$schema'),
   'triggers', (SELECT jsonb_agg(pg_get_triggerdef(t.oid) ORDER BY cl.relname, t.tgname)
@@ -105,12 +107,16 @@ SELECT jsonb_build_object(
   function Read-Fingerprint([string]$Database) {
     $snapshot = & docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U $user -d $Database -c $fingerprintSql
     if ($LASTEXITCODE -ne 0 -or !$snapshot) { throw "Cannot inspect synthetic schema in $Database" }
-    return $snapshot
+    return ConvertFrom-Json -AsHashtable -InputObject $snapshot
   }
   $before = Read-Fingerprint $db
   $after = Read-Fingerprint $restoreDb
-  if ($before -cne $after) {
-    throw 'Synthetic backup/restore schema or revision mismatch'
+  # Column nullability is compared directly. PostgreSQL 18 can generate new
+  # internal constraint names for inline NOT NULL while recreating a table.
+  foreach ($property in @('columns', 'constraints', 'indexes', 'triggers', 'revision')) {
+    $original = ConvertTo-Json -Depth 12 -Compress -InputObject $before[$property]
+    $restored = ConvertTo-Json -Depth 12 -Compress -InputObject $after[$property]
+    if ($original -cne $restored) { throw "Synthetic backup/restore mismatch in $property" }
   }
   Write-Output 'PG_RESTORE_READBACK=PASS columns,keys,indexes,triggers,revision,reader-grants'
   Write-Output 'PG_ISOLATION=PASS network=none no-host-ports tmpfs-only'
