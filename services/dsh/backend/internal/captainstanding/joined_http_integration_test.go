@@ -325,6 +325,25 @@ func TestCaptainJoinedRealHTTPAndPostgres(t *testing.T) {
 	if pendingReadback.ActorID != customer || pendingReadback.Status != "PENDING" || pendingReadback.Version != 1 {
 		t.Fatalf("DSH owner readback after POST differs from durable pending fact: %+v", pendingReadback)
 	}
+	// A second device can recover an uncertain first POST with the same
+	// verified Customer actor, not create a second application or Captain role.
+	secondDeviceBearer := createBearer(customer, "customer")
+	recovered := send("POST", application, secondDeviceBearer, "", 200)
+	if recovered.ActorID != pendingReadback.ActorID || recovered.Status != "PENDING" ||
+		recovered.Version != pendingReadback.Version {
+		t.Fatalf("same actor on a second device duplicated application: %+v", recovered)
+	}
+	secondDeviceRead := send("GET", application, secondDeviceBearer, "", 200)
+	if secondDeviceRead.ActorID != customer || secondDeviceRead.Status != "PENDING" ||
+		secondDeviceRead.Version != 1 {
+		t.Fatalf("second device cannot read recovered owner record: %+v", secondDeviceRead)
+	}
+	var applicationRows int
+	if err = db.QueryRowContext(ctx,
+		"SELECT count(*) FROM "+dshSchema+".captain_standing WHERE actor_id=$1", customer).
+		Scan(&applicationRows); err != nil || applicationRows != 1 {
+		t.Fatalf("second device must retain exactly one durable application: count=%d err=%v", applicationRows, err)
+	}
 	send("GET", application, anotherBearer, "", 404)
 	send("GET", application, operatorBearer, "", 403)
 	send("GET", application+"?actorId="+secondCustomer, customerBearer, "", 400)

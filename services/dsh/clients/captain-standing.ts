@@ -69,16 +69,60 @@ async function currentStanding(
     !res.headers.get("Cache-Control")?.toLowerCase().split(",").map(s => s.trim()).includes("no-store")) {
     throw new CaptainStandingError(502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
   }
+  const invalidCode = method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID";
+  const maxReplyBytes = 4096;
+  if (Number(res.headers.get("Content-Length")) > maxReplyBytes) {
+    void res.body?.cancel?.().catch(() => {});
+    throw new CaptainStandingError(502, invalidCode);
+  }
   let raw: string;
-  try { raw = await res.text(); }
-  catch { throw new CaptainStandingError(502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID"); }
+  try {
+    // A streaming fetch can refuse an oversized reply before consuming it.
+    // React Native may expose text() without a readable body; retain that
+    // fallback but bound its declared length above and decoded size below.
+    if (res.body?.getReader && typeof TextDecoder === "function") {
+      const reader = res.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          size += value.byteLength;
+          if (size > maxReplyBytes) throw new Error("Oversized DSH Captain reply");
+          chunks.push(value);
+        }
+      } catch (error) {
+        await reader.cancel().catch(() => {});
+        throw error;
+      } finally {
+        reader.releaseLock();
+      }
+      const bytes = new Uint8Array(size);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      raw = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } else {
+      raw = await res.text();
+    }
+  } catch {
+    throw new CaptainStandingError(502, invalidCode);
+  }
   // The caller may have left this session while the response body was arriving.
   // A late reply cannot authorize access or confirm a mutation in stale UI state.
   if (signal?.aborted) throw new CaptainStandingError(0,
     method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
-  if (raw.length > 4096) throw new CaptainStandingError(502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
+  // Hermes/text-only fetch may not expose TextEncoder; the fallback still
+  // enforces a bounded decoded string, while available encoders enforce bytes.
+  if (raw.length > maxReplyBytes ||
+    (typeof TextEncoder === "function" && new TextEncoder().encode(raw).byteLength > maxReplyBytes)) {
+    throw new CaptainStandingError(502, invalidCode);
+  }
   try { return JSON.parse(raw) as unknown; }
-  catch { throw new CaptainStandingError(502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID"); }
+  catch { throw new CaptainStandingError(502, invalidCode); }
 }
 export async function readApprovedCaptainStanding(
   origin: string, bearer: string, role: "customer" | "captain",

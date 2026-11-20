@@ -12,4 +12,16 @@ The public Store/Vertical/Offer discovery transport and response validators live
 
 Merchant Store standing (`GET /v1/stores/mine`) is owned by `clients/merchant-standing.ts` and exported from `@bthwani/dsh`. The Merchant `src/features/access/dsh-standing.ts` file is a compatibility re-export only; it must not perform fetch or maintain separate Store DTO parsing. The caller supplies the current Identity bearer and abort signal for each read. Owner denial, stale responses and malformed payloads remain fail-closed. These transport tests do not alone prove complete Merchant Web/Android admission or SQL behavior.
 
+The Captain standing/application client in `clients/captain-standing.ts` is the only
+DSH transport for the Captain app's private GET and application POST. Owner
+responses on streaming fetches are capped at 4096 bytes during consumption
+(and rejected immediately when the advertised length exceeds the cap).
+Text-only React Native responses retain a guarded fallback; no dependency on
+a global `TextEncoder` is required. Oversized, invalid UTF-8 or malformed
+successful POST replies are classified `OPERATION_RESULT_UNKNOWN`, never
+as a confirmed non-write; invalid GET replies fail closed as
+`OWNER_RESPONSE_INVALID`. This does not change DSH's canonical single
+application per verified actor, nor grant Captain Identity privileges. The
+isolated owner-backed admission and Android device proof remain separate.
+
 Do not fork transport DTOs elsewhere, add another Store writer, copy the donor implementation wholesale, or introduce a client-side business policy interpreter. Generate contract-derived client code at the owner when source implementation is accepted.

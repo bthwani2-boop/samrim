@@ -159,3 +159,60 @@ test("Captain cancellation during GET body yields a stale read, never approved a
   await expectCode(() => readApprovedCaptainStanding(base, bearer, "captain", actor, controller.signal),
     "OWNER_RESPONSE_STALE", 0);
 });
+
+test("Captain POST rejects a streamed oversized owner reply without consuming the entire body", async t => {
+  let pulls = 0;
+  let cancelled = false;
+  t.mock.method(globalThis, "fetch", async () => new Response(new ReadableStream({
+    pull(controller) {
+      pulls++;
+      if (pulls <= 30) controller.enqueue(new Uint8Array(2048).fill(65));
+      else controller.close();
+    },
+    cancel() { cancelled = true; },
+  }), { status: 200,
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }));
+  await expectCode(() => requestCaptainApplication(base, bearer, actor),
+    "OPERATION_RESULT_UNKNOWN", 502);
+  assert.ok(pulls <= 5, `owner body must stop near 4096 bytes rather than consuming ${pulls} chunks`);
+  assert.equal(cancelled, true, "oversized owner reply must cancel its stream");
+});
+
+test("Captain GET refuses advertised oversized owner response before reading private data", async t => {
+  let textCalled = false;
+  t.mock.method(globalThis, "fetch", async () => ({
+    status: 200, ok: true,
+    headers: new Headers({ "Content-Type": "application/json", "Cache-Control": "no-store",
+      "Content-Length": "999999" }),
+    body: { cancel: async () => {} },
+    text: async () => { textCalled = true; return JSON.stringify(standing); },
+  }));
+  await expectCode(() => readCaptainApplication(base, bearer, actor),
+    "OWNER_RESPONSE_INVALID", 502);
+  assert.equal(textCalled, false, "declared oversize must be rejected before body read");
+});
+
+test("Captain Native text-only transport remains available without a global TextEncoder", async t => {
+  const headers = new Headers({ "Content-Type": "application/json", "Cache-Control": "no-store" });
+  t.mock.method(globalThis, "fetch", async () => ({
+    status: 200, ok: true, headers, text: async () => JSON.stringify(standing),
+  }));
+  const saved = globalThis.TextEncoder;
+  try {
+    globalThis.TextEncoder = undefined;
+    assert.equal(await requestCaptainApplication(base, bearer, actor), "PENDING");
+  } finally {
+    globalThis.TextEncoder = saved;
+  }
+});
+
+test("Captain POST treats invalid streamed UTF-8 as unknown while GET refuses the read", async t => {
+  t.mock.method(globalThis, "fetch", async () => new Response(new Uint8Array([0xff, 0xfe]), {
+    status: 200,
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+  }));
+  await expectCode(() => requestCaptainApplication(base, bearer, actor),
+    "OPERATION_RESULT_UNKNOWN", 502);
+  await expectCode(() => readCaptainApplication(base, bearer, actor),
+    "OWNER_RESPONSE_INVALID", 502);
+});
