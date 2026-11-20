@@ -58,7 +58,7 @@ components:
         orderabilityStatus:
           type: string
           enum: [OPEN_FOR_ORDERS, CLOSED_BY_SCHEDULE, PAUSED, OPERATIONALLY_UNAVAILABLE]
-          description: An active DSH Store pause can be shown as PAUSED even while checkout remains unavailable. The public response omits pause timestamps, reason and actor details.
+          description: DSH can show PAUSED or CLOSED_BY_SCHEDULE while checkout remains unavailable. The public response omits the schedule, pause timestamps, reason and actor details.
         orderingAvailable: { type: boolean, const: false, description: "The checkout/fulfillment journey is not activated" }
     MerchantOwnedStore:
       type: object

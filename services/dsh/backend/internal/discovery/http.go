@@ -21,7 +21,7 @@ import (
 type Server struct {
 	Owner          *Owner
 	AllowedOrigins map[string]bool
-	// The isolated Store availability capability requires migration 002.
+	// The isolated Store availability capability requires migrations 002–003.
 	// Discovery deployments with the public baseline alone can still serve.
 	StoreAvailabilityEnabled bool
 }
@@ -34,25 +34,47 @@ type publicStore struct {
 	OrderingAvailable  bool   `json:"orderingAvailable"`
 }
 
-func (s *Server) publicPauseSQL() string {
+func (s *Server) publicHoursSQL() string {
 	if !s.StoreAvailabilityEnabled {
-		return "FALSE"
+		return "NULL::jsonb, transaction_timestamp()"
 	}
-	return `EXISTS (SELECT 1 FROM store_operational_availability a
-		WHERE a.store_id=s.id AND a.paused_until > transaction_timestamp())`
+	return `(SELECT CASE
+		WHEN a.paused_until > transaction_timestamp() THEN jsonb_build_object('paused', true)
+		WHEN a.preparation_minutes IS NOT NULL AND a.store_timezone=c.timezone_name THEN
+			jsonb_build_object('timezone', a.store_timezone, 'weekly', COALESCE(
+				(SELECT jsonb_agg(jsonb_build_object('weekday', h.weekday,
+					'opens', h.opens_minute, 'closes', h.closes_minute))
+				 FROM store_operational_weekly_hours h WHERE h.store_id=a.store_id),
+				'[]'::jsonb))
+		END FROM store_operational_availability a WHERE a.store_id=s.id),
+	transaction_timestamp()`
 }
 
 func scanPublicStore(scan func(...any) error) (publicStore, error) {
 	var st publicStore
-	var paused bool
-	if err := scan(&st.ID, &st.Name, &st.CityID, &st.VerticalID, &paused); err != nil {
+	var hoursJSON []byte
+	var now time.Time
+	if err := scan(&st.ID, &st.Name, &st.CityID, &st.VerticalID, &hoursJSON, &now); err != nil {
 		return publicStore{}, err
 	}
-	// An active pause is public browse information. A checkout decision
+	// An active pause and a closed schedule are public browse information. A checkout decision
 	// still requires the currently unavailable fulfillment and WLT flow.
 	st.OrderabilityStatus = string(storeavailability.OperationallyUnavail)
-	if paused {
+	if len(hoursJSON) == 0 {
+		return st, nil
+	}
+	var hours struct {
+		Paused   bool                             `json:"paused"`
+		Timezone string                           `json:"timezone"`
+		Weekly   []storeavailability.WeeklyWindow `json:"weekly"`
+	}
+	if err := json.Unmarshal(hoursJSON, &hours); err != nil {
+		return st, nil
+	}
+	if hours.Paused {
 		st.OrderabilityStatus = string(storeavailability.Paused)
+	} else if open, err := storeavailability.WithinWeeklyHours(now, hours.Timezone, hours.Weekly); err == nil && !open {
+		st.OrderabilityStatus = string(storeavailability.ClosedBySchedule)
 	}
 	return st, nil
 }
@@ -237,7 +259,7 @@ func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.
 		cursorError(w, err)
 		return
 	}
-	q := `SELECT s.id,s.name,s.city_id,s.vertical_id,` + s.publicPauseSQL() + ` FROM stores s
+	q := `SELECT s.id,s.name,s.city_id,s.vertical_id,` + s.publicHoursSQL() + ` FROM stores s
 		JOIN service_cities c ON c.id=s.city_id
 		JOIN verticals v ON v.id=s.vertical_id
 		WHERE c.active AND v.active AND s.published AND s.relation='MARKETPLACE'
@@ -294,7 +316,7 @@ func publicSearch(r *http.Request, scope string) (string, string, bool) {
 	return search, scope, true
 }
 func (s *Server) visibleStore(ctx context.Context, tx *sql.Tx, id string) (publicStore, error) {
-	q := `SELECT s.id,s.name,s.city_id,s.vertical_id,` + s.publicPauseSQL() + ` FROM stores s
+	q := `SELECT s.id,s.name,s.city_id,s.vertical_id,` + s.publicHoursSQL() + ` FROM stores s
 		JOIN service_cities c ON c.id=s.city_id
 		JOIN verticals v ON v.id=s.vertical_id
 		WHERE s.id=$1 AND s.published AND c.active AND v.active`
