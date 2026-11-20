@@ -188,4 +188,12 @@ run_test "$current" /agent02/services/identity/backend/internal/session \
   -e BTHWANI_OPERATOR_PASSKEY_DATABASE_URL='postgres://bthwani_fido_s02:synthetic-only@127.0.0.1:5432/refoundation_webauthn_s02?sslmode=disable'
 finish_stage
 
+start_stage bthwani-session01-merchant-pg bthwani_session01 merchant_agent01
+run_test "$current" /agent02/services/dsh/backend/internal/storeavailability \
+  /agent02/bin/dsh-storeavailability.test '^TestMerchantOwnedStoresRealPostgresAndHTTPReadback$' \
+  -e BTHWANI_ISOLATED_TEST_MODE=true \
+  -e BTHWANI_MERCHANT_TEST_CONTAINER=bthwani-session01-merchant-pg \
+  -e BTHWANI_MERCHANT_TEST_DATABASE_URL='postgres://bthwani_session01:synthetic-only@127.0.0.1:5432/merchant_agent01?sslmode=disable'
+finish_stage
+
 echo 'OWNER_POSTGRES_INTEGRATION_PASS network=none ephemeral_tmpfs=true durable_owner_readback=verified no_production_data=true'

@@ -16,6 +16,34 @@ import (
 	"time"
 )
 
+// The URL authority is not sufficient isolation: lib/pq also accepts query
+// overrides and ambient PGHOSTADDR. Require the exact synthetic identity and
+// a supported local endpoint; port 5432 is admitted only inside the separately
+// named disposable CI container with explicit isolation enabled.
+func isolatedMerchantTestDSN(rawDSN, container, hostAddr, isolatedMode string) bool {
+	uri, err := url.Parse(rawDSN)
+	if err != nil || uri.Scheme != "postgres" || uri.User == nil ||
+		uri.User.Username() != "bthwani_session01" ||
+		uri.Path != "/merchant_agent01" ||
+		container != "bthwani-session01-merchant-pg" || hostAddr != "" {
+		return false
+	}
+	if uri.Host != "127.0.0.1:35328" &&
+		!(uri.Host == "127.0.0.1:5432" && isolatedMode == "true") {
+		return false
+	}
+	params := uri.Query()
+	if params.Get("sslmode") != "disable" {
+		return false
+	}
+	for key := range params {
+		if key != "sslmode" && key != "connect_timeout" {
+			return false
+		}
+	}
+	return true
+}
+
 // This test is intentionally opt-in and rejects every target except the
 // session-01 disposable, loopback-only PostgreSQL database. No shared volumes.
 func TestMerchantOwnedStoresRealPostgresAndHTTPReadback(t *testing.T) {
@@ -23,11 +51,8 @@ func TestMerchantOwnedStoresRealPostgresAndHTTPReadback(t *testing.T) {
 	if dsn == "" {
 		t.Skip("NOT_RUN: session-01 disposable Merchant PostgreSQL not configured")
 	}
-	uri, err := url.Parse(dsn)
-	if err != nil || uri.Scheme != "postgres" || uri.Host != "127.0.0.1:35328" ||
-		uri.User == nil || uri.User.Username() != "bthwani_session01" ||
-		uri.Path != "/merchant_agent01" ||
-		os.Getenv("BTHWANI_MERCHANT_TEST_CONTAINER") != "bthwani-session01-merchant-pg" {
+	if !isolatedMerchantTestDSN(dsn, os.Getenv("BTHWANI_MERCHANT_TEST_CONTAINER"),
+		os.Getenv("PGHOSTADDR"), os.Getenv("BTHWANI_ISOLATED_TEST_MODE")) {
 		t.Fatal("refusing any database other than session-01 disposable Merchant PostgreSQL")
 	}
 
@@ -170,5 +195,35 @@ func TestMerchantOwnedStoresRealPostgresAndHTTPReadback(t *testing.T) {
 	}
 	if _, err = service.ListMerchantStores(ctx, "synthetic-session-01"); !errors.Is(err, ErrStoreOwnerUnavailable) {
 		t.Fatalf("over-limit canonical Store authority must fail closed: %v", err)
+	}
+}
+
+func TestMerchantIsolatedPostgresDSNGuard(t *testing.T) {
+	const ci = "postgres://bthwani_session01:synthetic-only@127.0.0.1:5432/merchant_agent01?sslmode=disable"
+	const windows = "postgres://bthwani_session01:synthetic-only@127.0.0.1:35328/merchant_agent01?sslmode=disable"
+	const expectedContainer = "bthwani-session01-merchant-pg"
+	for _, tc := range []struct {
+		name, dsn, container, hostAddr, isolatedMode string
+		allowed                                      bool
+	}{
+		{"container loopback", ci, expectedContainer, "", "true", true},
+		{"legacy Windows loopback", windows, expectedContainer, "", "", true},
+		{"wrong user", "postgres://other:synthetic-only@127.0.0.1:5432/merchant_agent01?sslmode=disable", expectedContainer, "", "true", false},
+		{"wrong database", "postgres://bthwani_session01:synthetic-only@127.0.0.1:5432/production?sslmode=disable", expectedContainer, "", "true", false},
+		{"remote host", "postgres://bthwani_session01:synthetic-only@198.51.100.25:5432/merchant_agent01?sslmode=disable", expectedContainer, "", "true", false},
+		{"wrong container name", ci, "different-postgres", "", "true", false},
+		{"missing container name", ci, "", "", "true", false},
+		{"no explicit container mode", ci, expectedContainer, "", "", false},
+		{"ambient PGHOSTADDR bypass", ci, expectedContainer, "198.51.100.25", "true", false},
+		{"localhost PGHOSTADDR bypass", ci, expectedContainer, "127.0.0.1", "true", false},
+		{"DSN hostaddr bypass", ci + "&hostaddr=198.51.100.25", expectedContainer, "", "true", false},
+		{"unexpected local port", "postgres://bthwani_session01:synthetic-only@127.0.0.1:5433/merchant_agent01?sslmode=disable", expectedContainer, "", "true", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isolatedMerchantTestDSN(tc.dsn, tc.container, tc.hostAddr, tc.isolatedMode)
+			if got != tc.allowed {
+				t.Fatalf("isolated merchant test DSN allowed=%v, wanted %v", got, tc.allowed)
+			}
+		})
 	}
 }
