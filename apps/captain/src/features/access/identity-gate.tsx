@@ -2,7 +2,8 @@ import { IdentityClientError, type VerifiedIdentitySession } from "@bthwani/iden
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { Link } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, Pressable, SafeAreaView, ScrollView, Text, TextInput, View } from "react-native";
+import { AppState, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
   leaveCaptainAdmission, readCaptainAdmission, requestCaptainPhoneCode, verifyCaptainCode,
 } from "./admission-transport";

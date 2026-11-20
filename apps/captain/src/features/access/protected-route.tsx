@@ -1,7 +1,8 @@
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { Redirect, useFocusEffect } from "expo-router";
 import { createContext, type PropsWithChildren, useCallback, useContext, useRef, useState } from "react";
-import { AppState, Pressable, SafeAreaView, Text, View } from "react-native";
+import { AppState, Pressable, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { leaveCaptainAdmission, readCaptainAdmission } from "./admission-transport";
 import { type CaptainSessionView, hasActiveCaptainSession } from "./captain-session";
 

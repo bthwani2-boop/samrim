@@ -69,10 +69,10 @@ function harness() {
         },
       },
       Pressable: "Pressable",
-      SafeAreaView: "SafeAreaView",
       Text: "Text",
       View: "View",
     },
+    "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
     "./admission-transport": {
       readCaptainAdmission(signal) {
         return new Promise((resolve, reject) => {

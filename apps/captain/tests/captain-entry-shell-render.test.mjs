@@ -29,7 +29,8 @@ function renderable(source, dependencies = {}) {
   const module = { exports: {} };
   const mocks = {
     "react/jsx-runtime": { jsx, jsxs: jsx },
-    "react-native": { Text: "Text", View: "View", SafeAreaView: "SafeAreaView", ScrollView: "ScrollView", Pressable: "Pressable" },
+    "react-native": { Text: "Text", View: "View", ScrollView: "ScrollView", Pressable: "Pressable" },
+    "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
     "expo-router": { Link: "Link" },
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
     ...dependencies,

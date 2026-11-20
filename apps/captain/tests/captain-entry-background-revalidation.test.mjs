@@ -58,9 +58,10 @@ function harness() {
         appChanged = cb;
         return { remove() {} };
       } },
-      Pressable: "Pressable", SafeAreaView: "SafeAreaView",
+      Pressable: "Pressable",
       ScrollView: "ScrollView", Text: "Text", TextInput: "TextInput", View: "View",
     },
+    "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
     "./admission-transport": {
       readCaptainAdmission(signal) {
         return new Promise((resolve, reject) => pending.push({ signal, resolve, reject }));
