@@ -6,13 +6,15 @@ export function normalizeServiceCityId(value: string): string {
 
 export const STORE_SEARCH_LIMIT = 80;
 
-type BrowseParams = { city?: string | string[]; q?: string | string[] };
+type BrowseParams = { city?: string | string[]; q?: string | string[]; vertical?: string | string[] };
 
 export function readStoreBrowseScope(params: BrowseParams, defaultCity: string) {
   const city = typeof params.city === "string" ? normalizeServiceCityId(params.city) : "";
   const q = typeof params.q === "string" ? params.q.trim() : "";
+  const vertical = typeof params.vertical === "string" ? normalizeServiceCityId(params.vertical) : "";
   return {
     city: city || defaultCity,
+    ...(vertical ? { vertical } : {}),
     q: Array.from(q).length <= STORE_SEARCH_LIMIT && !q.includes("\u0000") && !/[\uD800-\uDFFF]/u.test(q) ? q : "",
   };
 }

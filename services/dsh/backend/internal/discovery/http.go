@@ -233,6 +233,12 @@ func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.
 		errorJSON(w, 400, "INVALID_SEARCH")
 		return
 	}
+	vertical, verticalValid := publicVertical(r)
+	if !verticalValid {
+		errorJSON(w, 400, "INVALID_VERTICAL")
+		return
+	}
+	scope = scopedStoreCursor(scope, vertical)
 	city := r.URL.Query().Get("city_id")
 	if !validID(city) {
 		errorJSON(w, 400, "INVALID_CITY")
@@ -263,8 +269,9 @@ func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.
 		JOIN service_cities c ON c.id=s.city_id
 		JOIN verticals v ON v.id=s.vertical_id
 		WHERE c.active AND v.active AND s.published AND s.relation='MARKETPLACE'
-			AND s.city_id=$1 AND s.id>$2 AND strpos(lower(s.name),lower($4))>0 ORDER BY s.id LIMIT $3`
-	rows, err := tx.QueryContext(ctx, q, city, after, limit+1, search)
+			AND s.city_id=$1 AND s.id>$2 AND strpos(lower(s.name),lower($4))>0
+			AND ($5='' OR s.vertical_id=$5) ORDER BY s.id LIMIT $3`
+	rows, err := tx.QueryContext(ctx, q, city, after, limit+1, search, vertical)
 	if err != nil {
 		errorJSON(w, 503, "OWNER_UNAVAILABLE")
 		return
@@ -315,6 +322,31 @@ func publicSearch(r *http.Request, scope string) (string, string, bool) {
 	}
 	return search, scope, true
 }
+
+// An optional vertical is an exact DSH-owned classification, not a client-side
+// Store permission or evidence that this activity is currently available.
+func publicVertical(r *http.Request) (string, bool) {
+	values, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		return "", false
+	}
+	provided := values["vertical_id"]
+	if len(provided) == 0 {
+		return "", true
+	}
+	if len(provided) != 1 || !validID(provided[0]) {
+		return "", false
+	}
+	return provided[0], true
+}
+
+func scopedStoreCursor(scope, vertical string) string {
+	if vertical == "" {
+		return scope // Preserve existing unfiltered page cursors.
+	}
+	return scope + ":vertical:" + vertical
+}
+
 func (s *Server) visibleStore(ctx context.Context, tx *sql.Tx, id string) (publicStore, error) {
 	q := `SELECT s.id,s.name,s.city_id,s.vertical_id,` + s.publicHoursSQL() + ` FROM stores s
 		JOIN service_cities c ON c.id=s.city_id

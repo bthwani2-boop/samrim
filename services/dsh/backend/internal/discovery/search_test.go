@@ -39,6 +39,81 @@ func TestStoreSearchValidationAndCursorScope(t *testing.T) {
 	}
 }
 
+func TestVerticalFilterValidationAndCursorScope(t *testing.T) {
+	for _, raw := range []string{"vertical_id=", "vertical_id=a&vertical_id=b", "vertical_id=../grocery", "vertical_id=%00", "vertical_id=FOOD", "vertical_id=" + strings.Repeat("x", 65)} {
+		r := httptest.NewRequest("GET", "/v1/public/stores?city_id=sanaa&"+raw, nil)
+		if _, valid := publicVertical(r); valid {
+			t.Fatalf("unsafe vertical accepted: %q", raw)
+		}
+		w := httptest.NewRecorder()
+		(&Server{}).ServeHTTP(w, r)
+		if w.Code != 400 || !strings.Contains(w.Body.String(), "INVALID_VERTICAL") {
+			t.Fatalf("invalid vertical reached owner: %q %d %s", raw, w.Code, w.Body.String())
+		}
+	}
+	for _, raw := range []string{"", "vertical_id=grocery"} {
+		r := httptest.NewRequest("GET", "/v1/public/stores?city_id=sanaa&"+raw, nil)
+		vertical, valid := publicVertical(r)
+		if !valid {
+			t.Fatalf("valid vertical rejected: %q", raw)
+		}
+		scope := scopedStoreCursor("sanaa", vertical)
+		cursor := makeCursor(pageCursor{Kind: "stores", Scope: scope, After: "store-a", Revision: 1})
+		if _, err := parseCursor(cursor, "stores", scope, 1); err != nil {
+			t.Fatal(err)
+		}
+		if vertical != "" {
+			if _, err := parseCursor(cursor, "stores", "sanaa", 1); err == nil {
+				t.Fatal("filtered cursor crossed into unfiltered catalog")
+			}
+		} else if scope != "sanaa" {
+			t.Fatal("unfiltered cursor compatibility changed")
+		}
+	}
+}
+
+func TestOwnerBackedVerticalFilter(t *testing.T) {
+	_, s := setupIntegratedOwner(t)
+	for _, tc := range []struct {
+		filter string
+		want   int
+	}{
+		{"", 2},
+		{"grocery", 2},
+		{"pharmacy", 0},
+		{"disabled-vertical", 0},
+	} {
+		path := "/v1/public/stores?city_id=sanaa"
+		if tc.filter != "" {
+			path += "&vertical_id=" + tc.filter
+		}
+		w, body := request(s, path)
+		if w.Code != 200 || len(results(t, body)) != tc.want {
+			t.Fatalf("filter %q: status=%d body=%s", tc.filter, w.Code, w.Body.String())
+		}
+		for _, item := range results(t, body) {
+			if tc.filter != "" && item.(map[string]any)["verticalId"] != tc.filter {
+				t.Fatal("DSH returned a Store outside its requested vertical")
+			}
+		}
+	}
+	unfiltered := "/v1/public/stores?city_id=sanaa&limit=1"
+	_, first := request(s, unfiltered)
+	cursor := first["nextCursor"].(string)
+	if w, _ := request(s, unfiltered+"&vertical_id=grocery&cursor="+url.QueryEscape(cursor)); w.Code != 400 {
+		t.Fatalf("unfiltered cursor accepted after category switch: %d", w.Code)
+	}
+	filtered := unfiltered + "&vertical_id=grocery"
+	_, page := request(s, filtered)
+	categoryCursor := page["nextCursor"].(string)
+	if w, _ := request(s, unfiltered+"&cursor="+url.QueryEscape(categoryCursor)); w.Code != 400 {
+		t.Fatalf("filtered cursor accepted for unfiltered catalog: %d", w.Code)
+	}
+	if w, _ := request(s, filtered+"&cursor="+url.QueryEscape(categoryCursor)); w.Code != 200 {
+		t.Fatalf("valid filtered continuation denied: %d", w.Code)
+	}
+}
+
 func TestOwnerBackedStoreSearch(t *testing.T) {
 	_, s := setupIntegratedOwner(t)
 	for _, tc := range []struct {

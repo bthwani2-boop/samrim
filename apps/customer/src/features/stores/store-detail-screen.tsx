@@ -14,7 +14,7 @@ import { type PublicStoreDetailState, recoverPublicStoreDetail, resolvePublicSto
 type Props = Readonly<{ storeID?: string; fullPage?: boolean }>;
 
 export default function PublicStoreDetail({ storeID, fullPage = false }: Props) {
-  const params = useLocalSearchParams<{ id?: string | string[]; city?: string | string[]; q?: string | string[] }>();
+  const params = useLocalSearchParams<{ id?: string | string[]; city?: string | string[]; q?: string | string[]; vertical?: string | string[] }>();
   const id = storeID ?? (typeof params.id === "string" ? params.id : "");
   const browse = readStoreBrowseScope(params, "");
   const { theme } = useMobileAppearance();

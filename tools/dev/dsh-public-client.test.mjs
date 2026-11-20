@@ -66,6 +66,27 @@ test("Store search is encoded as owner query text and preserves page scope", asy
   });
 });
 
+test("Store vertical filtering is validated, forwarded and checked at the DSH trust boundary", async () => {
+  let calls = 0;
+  await withFetch(async (url) => {
+    calls++;
+    const parsed = new URL(url);
+    assert.equal(parsed.searchParams.get("city_id"), "sanaa");
+    assert.equal(parsed.searchParams.get("vertical_id"), "grocery");
+    assert.equal(parsed.searchParams.get("cursor"), "scoped-page");
+    return json({ items: [store], revision: 11 });
+  }, async () => {
+    const response = await listPublicStores(base, "sanaa", { verticalId: "grocery", cursor: "scoped-page" });
+    assert.deepEqual(response.items, [store]);
+    for (const verticalId of ["../other", "PHARMACY", "a".repeat(65), ""]) {
+      await rejectsAs(() => listPublicStores(base, "sanaa", { verticalId }), 400, "INVALID_VERTICAL");
+    }
+  });
+  assert.equal(calls, 1, "invalid verticals cannot trigger owner reads");
+  await withFetch(async () => json({ items: [{ ...store, verticalId: "pharmacy" }], revision: 11 }),
+    () => rejectsAs(() => listPublicStores(base, "sanaa", { verticalId: "grocery" }), 502, "OWNER_RESPONSE_INVALID"));
+});
+
 test("Store search rejects invalid wire text before any network request", async () => {
   let calls = 0;
   await withFetch(async () => { calls++; return json({ items: [], revision: 1 }); }, async () => {

@@ -190,6 +190,49 @@ test("a temporary continuation outage preserves the already read Store cards", a
   assert.ok(byId(failed, "stores-error"));
 });
 
+test("changing the Store vertical requests a fresh DSH page and never shows old classification results", async () => {
+  const app = harness({ params: { city: "sanaa", vertical: "grocery" } });
+  app.render();
+  const initial = app.read();
+  assert.equal(initial.cityId, "sanaa");
+  assert.equal(initial.verticalId, "grocery");
+  initial.resolve({ items: [store("grocery-store")], nextCursor: "grocery-cursor", revision: 1 });
+  await settle();
+  const prior = app.render();
+  assert.ok(byId(prior, "store-grocery-store"));
+  const detailLink = find(prior, node => node.type === "Link" && node.props.href?.pathname === "/store/[id]");
+  assert.equal(detailLink.props.href.params.vertical, "grocery");
+
+  byId(prior, "vertical-filter-input").props.onChangeText("pharmacy");
+  byId(app.render(), "vertical-filter-apply").props.onPress();
+  const changing = app.render();
+  assert.equal(byId(changing, "store-grocery-store"), undefined);
+  assert.equal(initial.signal.aborted, true);
+  const current = app.read();
+  assert.equal(current.verticalId, "pharmacy");
+  assert.equal(current.cursor, undefined);
+  current.resolve({ items: [{ ...store("pharmacy-store"), verticalId: "pharmacy" }], revision: 2 });
+  await settle();
+  const filtered = app.render();
+  assert.ok(byId(filtered, "store-pharmacy-store"));
+  assert.equal(byId(filtered, "store-grocery-store"), undefined);
+
+  byId(filtered, "vertical-filter-clear").props.onPress();
+  app.render();
+  assert.equal(app.read().verticalId, undefined);
+});
+
+test("an invalid Store vertical is not submitted to DSH", () => {
+  const app = harness();
+  app.render();
+  app.read();
+  byId(app.render(), "vertical-filter-input").props.onChangeText("../private");
+  byId(app.render(), "vertical-filter-apply").props.onPress();
+  const invalid = app.render();
+  assert.ok(find(invalid, node => node.props.accessibilityRole === "alert"));
+  assert.equal(byId(invalid, "vertical-filter-clear"), undefined);
+});
+
 test("route navigation changes the DSH Store query without exposing old-city results", async () => {
   const app = harness({ params: { city: "sanaa", q: "old" } });
   app.render();

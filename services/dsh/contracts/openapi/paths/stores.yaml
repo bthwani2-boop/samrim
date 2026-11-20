@@ -15,6 +15,11 @@ paths:
           in: query
           required: true
           schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+        - name: vertical_id
+          in: query
+          required: false
+          description: Optional exact active DSH Store vertical. Omit to browse all verticals; a continuation cursor is bound to this filter.
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
         - name: limit
           in: query
           required: false
