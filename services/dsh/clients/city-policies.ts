@@ -1,4 +1,4 @@
-import { DshPublicError } from "./client-core.ts";
+import { DshPublicError, isDateTime, onlyKeys } from "./client-core.ts";
 import { dshOperations } from "./generated/dsh-operations.ts";
 import { privateOwnerRequest } from "./private-owner-request.ts";
 
@@ -28,10 +28,10 @@ function isCityStoreOperationalPolicy(value: unknown, cityID: string): value is 
     Number.isSafeInteger(v.maxPreparationMinutes) && Number(v.maxPreparationMinutes) >= 0 &&
     Number(v.maxPreparationMinutes) <= 1440 &&
     typeof v.changedByActor === "string" && v.changedByActor.trim().length > 0 &&
-    v.changedByActor.length <= 128 &&
+    Array.from(v.changedByActor).length <= 128 &&
     typeof v.changeReason === "string" && v.changeReason.trim().length > 0 &&
-    v.changeReason.length <= 300 &&
-    typeof v.updatedAt === "string" && Number.isFinite(Date.parse(v.updatedAt));
+    Array.from(v.changeReason).length <= 300 &&
+    isDateTime(v.updatedAt);
 }
 export async function getCityStoreOperationalPolicy(
   baseUrl: string, cityID: string, bearer: string, signal?: AbortSignal,
@@ -63,7 +63,10 @@ export async function replaceCityStoreOperationalPolicy(
   change: CityStoreOperationalPolicyChange, signal?: AbortSignal,
 ): Promise<CityStoreOperationalPolicyResult> {
   if (!/^[a-z0-9-]{1,64}$/.test(cityID)) throw new DshPublicError(0, "CITY_ID_INVALID");
-  if (!/^[A-Za-z0-9._-]{8,128}$/.test(change.operationId) ||
+  if (!change || typeof change !== "object" || Array.isArray(change) ||
+    !onlyKeys(change as unknown as Record<string, unknown>, [
+      "operationId", "expectedVersion", "maxPauseSeconds", "maxPreparationMinutes", "reason",
+    ]) || typeof change.operationId !== "string" || !/^[A-Za-z0-9._-]{8,128}$/.test(change.operationId) ||
     !Number.isSafeInteger(change.expectedVersion) || change.expectedVersion < 0 ||
     !Number.isSafeInteger(change.maxPauseSeconds) || change.maxPauseSeconds < 0 ||
     change.maxPauseSeconds > 31536000 ||

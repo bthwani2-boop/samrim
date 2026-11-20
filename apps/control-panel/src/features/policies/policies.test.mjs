@@ -16,6 +16,7 @@ test("policies: unauthenticated or unmapped sessions never expose navigation", (
 });
 
 const endpoint = "/api/policies/cities/sanaa";
+const actorId = "operator-1";
 const change = {
   operationId: "city-policy-001",
   expectedVersion: 1,
@@ -32,6 +33,7 @@ test("a lost PATCH reply keeps the command uncertain and reconciles the exact pa
   const superseding = { ...committed, version: 3, maxPauseSeconds: 1200, changedByActor: "operator-2" };
   const fetch = t.mock.method(globalThis, "fetch", async (url, init) => {
     assert.equal(url, endpoint);
+    assert.equal(init.headers["X-BThwani-Operator"], actorId);
     if (init.method === "GET") return Response.json(superseding);
     assert.equal(init.method, "PATCH");
     assert.deepEqual(JSON.parse(init.body), change);
@@ -39,8 +41,8 @@ test("a lost PATCH reply keeps the command uncertain and reconciles the exact pa
     return Response.json({ replay: true, policy: committed });
   });
 
-  assert.deepEqual(await reconcileCityPolicy(endpoint, "sanaa", change), { status: "unknown" });
-  assert.deepEqual(await reconcileCityPolicy(endpoint, "sanaa", change), {
+  assert.deepEqual(await reconcileCityPolicy(endpoint, "sanaa", actorId, change), { status: "unknown" });
+  assert.deepEqual(await reconcileCityPolicy(endpoint, "sanaa", actorId, change), {
     status: "confirmed", current: superseding, replay: true, superseded: true,
   });
   assert.equal(fetch.mock.callCount(), 3);
@@ -51,7 +53,7 @@ test("a successful PATCH still requires a matching or newer independent owner re
   const result = { replay: false, policy: committed };
   const fetch = t.mock.method(globalThis, "fetch", async (_url, init) =>
     Response.json(init.method === "PATCH" ? result : stale));
-  assert.deepEqual(await reconcileCityPolicy(endpoint, "sanaa", change), { status: "unknown" });
+  assert.deepEqual(await reconcileCityPolicy(endpoint, "sanaa", actorId, change), { status: "unknown" });
   assert.equal(fetch.mock.callCount(), 2);
 });
 
@@ -59,11 +61,12 @@ test("a PATCH result for another version, city or command cannot be reported as 
   for (const conflictingPolicy of [
     { ...committed, version: 3 },
     { ...committed, cityId: "aden" },
+    { ...committed, changedByActor: "operator-2" },
     { ...committed, maxPauseSeconds: 601 },
   ]) {
     const fetch = t.mock.method(globalThis, "fetch", async () =>
       Response.json({ replay: true, policy: conflictingPolicy }));
-    assert.deepEqual(await reconcileCityPolicy(endpoint, "sanaa", change), { status: "unknown" });
+    assert.deepEqual(await reconcileCityPolicy(endpoint, "sanaa", actorId, change), { status: "unknown" });
     assert.equal(fetch.mock.callCount(), 1);
     fetch.mock.restore();
   }

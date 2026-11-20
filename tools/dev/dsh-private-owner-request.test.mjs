@@ -79,13 +79,41 @@ test("cancelled PATCH after the owner sends 409 must not update a newer Store co
   const controller = new AbortController();
   t.mock.method(globalThis, "fetch", async () => ({
     ok: false, status: 409,
-    json: async () => {
+    headers: new Headers(),
+    text: async () => {
       controller.abort();
-      return { code: "VERSION_CONFLICT" };
+      return '{"code":"VERSION_CONFLICT"}';
     },
   }));
   await errorCode(() => privateOwnerRequest(origin, path, bearer, "PATCH", change, controller.signal),
     0, "OPERATION_RESULT_UNKNOWN");
+});
+
+test("oversized chunked owner replies are stopped before reading the rest", { timeout: 1000 }, async t => {
+  let cancelled = false;
+  t.mock.method(globalThis, "fetch", async () => new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(new Uint8Array(96 * 1024 + 1));
+    },
+    cancel() { cancelled = true; },
+  }), {
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+  }));
+  await errorCode(() => privateOwnerRequest(origin, path, bearer, "PATCH", change),
+    502, "OPERATION_RESULT_UNKNOWN");
+  assert.equal(cancelled, true);
+});
+
+test("multibyte owner text within the existing text limit remains readable", async t => {
+  const result = { value: "ش".repeat(20000) };
+  t.mock.method(globalThis, "fetch", async () => json(result));
+  assert.deepEqual(await privateOwnerRequest(origin, path, bearer, "GET"), result);
+});
+
+test("a body on an undeclared successful HTTP status cannot confirm a write", async t => {
+  t.mock.method(globalThis, "fetch", async () => json({ replay: false }, 201));
+  await errorCode(() => privateOwnerRequest(origin, path, bearer, "PATCH", change),
+    502, "OPERATION_RESULT_UNKNOWN");
 });
 
 test("owner can never authorize a private response missing no-store", async t => {

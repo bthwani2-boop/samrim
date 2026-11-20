@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 const panel = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cli = path.join(panel, "node_modules", "next", "dist", "bin", "next");
 const token = Buffer.alloc(32, 9).toString("base64url");
+const otherToken = Buffer.alloc(32, 10).toString("base64url");
 const city = "sanaa";
 
 async function unusedPort() {
@@ -58,16 +59,19 @@ test("Operator city policy flows through real Next BFF, Identity grant and DSH v
     response.setHeader("Content-Type", "application/json");
     const send = (status, body) => { response.writeHead(status); response.end(JSON.stringify(body)); };
     if (!identityAvailable) return send(503, { error: "OWNER_UNAVAILABLE" });
-    if (request.headers.authorization !== `Bearer ${token}`) {
+    const actorId = request.headers.authorization === `Bearer ${token}`
+      ? "operator-original"
+      : request.headers.authorization === `Bearer ${otherToken}` ? "operator-other" : null;
+    if (!actorId) {
       return send(401, { error: "UNAUTHORIZED" });
     }
     if (route === "/v1/sessions/current") {
-      return send(200, { actorId: "operator-original", role: "operator", sessionExpiresAt: expiry });
+      return send(200, { actorId, role: "operator", sessionExpiresAt: expiry });
     }
     if (route.startsWith("/v1/operators/me/permissions/")) {
       const permission = route.split("/").at(-1);
       return allowed.has(permission)
-        ? send(200, { actorId: "operator-original", permission })
+        ? send(200, { actorId, permission })
         : send(403, { error: "FORBIDDEN" });
     }
     return send(404, { error: "NOT_FOUND" });
@@ -143,7 +147,7 @@ test("Operator city policy flows through real Next BFF, Identity grant and DSH v
 
   async function call(url, init = {}) {
     return fetch(url, {
-      ...init, headers: { cookie, ...(init.headers ?? {}) },
+      ...init, headers: { cookie, "X-BThwani-Operator": "operator-original", ...(init.headers ?? {}) },
       cache: "no-store", signal: AbortSignal.timeout(7000),
     });
   }
@@ -215,6 +219,17 @@ test("Operator city policy flows through real Next BFF, Identity grant and DSH v
       maxPauseSeconds: 900, maxPreparationMinutes: 25,
       reason: "Synthetic operational review of city limits",
     };
+    const beforeSwitch = dshCalls.length;
+    const switchedCookie = `bthwani_operator_session=${otherToken}`;
+    res = await call(api, { headers: { cookie: switchedCookie } });
+    assert.equal(res.status, 403, "account switch must fail closed for a pending read");
+    res = await patch(change, {
+      cookie: switchedCookie, origin: base, "content-type": "application/json",
+    });
+    assert.equal(res.status, 403, "a valid grant in another account must not authorize an old tab");
+    assert.equal(dshCalls.length, beforeSwitch, "stale tabs must never reach the DSH owner");
+    assert.equal(audit.size, 0);
+
     res = await patch(change);
     assert.equal(res.status, 200, `expected owner mutation: ${output}`);
     let result = await res.json();

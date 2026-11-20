@@ -8,7 +8,7 @@ import {
 
 const validCity = /^[a-z0-9-]{1,64}$/;
 
-export default function PoliciesWorkspace({ title = "السياسات" }: Readonly<{ title?: string }>) {
+export default function PoliciesWorkspace({ actorId }: Readonly<{ actorId: string }>) {
   const [city, setCity] = useState("");
   const [policy, setPolicy] = useState<CityPolicy | null>(null);
   const [maxPause, setMaxPause] = useState<number | null>(null);
@@ -44,6 +44,7 @@ export default function PoliciesWorkspace({ title = "السياسات" }: Readon
     try {
       const response = await fetch(endpoint, {
         method: "GET", credentials: "same-origin", cache: "no-store",
+        headers: { "X-BThwani-Operator": encodeURIComponent(actorId) },
       });
       if (!response.ok) {
         throw new Error(response.status === 403 || response.status === 401
@@ -86,7 +87,7 @@ export default function PoliciesWorkspace({ title = "السياسات" }: Readon
     setBusy(true);
     setMessage("");
     setErrorMessage("");
-    const result = await reconcileCityPolicy(endpoint, city, change);
+    const result = await reconcileCityPolicy(endpoint, city, actorId, change);
     setBusy(false);
 
     if (result.status === "confirmed") {
@@ -133,7 +134,7 @@ export default function PoliciesWorkspace({ title = "السياسات" }: Readon
 
   return (
     <main style={{ maxWidth: 900, marginInline: "auto", paddingBlock: 24 }}>
-      <Typography.Title level={2}>{title}</Typography.Title>
+      <Typography.Title level={2}>السياسات</Typography.Title>
       <Typography.Paragraph>
         إدارة حدود إتاحة المتاجر لكل مدينة عبر DSH. تتطلب جلسة Operator وصلاحية
         <code> platform_policies </code> مؤكَّدتين من Identity؛ ولا تغيّر الطلبات أو الاتفاقيات المالية.

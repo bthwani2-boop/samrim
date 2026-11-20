@@ -1,20 +1,9 @@
-export type CityPolicy = {
-  cityId: string;
-  version: number;
-  maxPauseSeconds: number;
-  maxPreparationMinutes: number;
-  changedByActor: string;
-  changeReason: string;
-  updatedAt: string;
-};
-
-export type CityPolicyChange = {
-  operationId: string;
-  expectedVersion: number;
-  maxPauseSeconds: number;
-  maxPreparationMinutes: number;
-  reason: string;
-};
+export type {
+  CityStoreOperationalPolicy as CityPolicy, CityStoreOperationalPolicyChange as CityPolicyChange,
+} from "@bthwani/dsh";
+import type {
+  CityStoreOperationalPolicy as CityPolicy, CityStoreOperationalPolicyChange as CityPolicyChange,
+} from "@bthwani/dsh";
 
 export function parseCityPolicy(value: unknown, cityId: string): CityPolicy | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -33,12 +22,13 @@ type CommandResult =
   | { status: "conflict" | "denied" | "rejected" | "unknown" };
 
 export async function reconcileCityPolicy(
-  endpoint: string, city: string, change: CityPolicyChange,
+  endpoint: string, city: string, actorId: string, change: CityPolicyChange,
 ): Promise<CommandResult> {
   try {
+    const binding = { "X-BThwani-Operator": encodeURIComponent(actorId) };
     const response = await fetch(endpoint, {
       method: "PATCH", credentials: "same-origin", cache: "no-store",
-      headers: { "Content-Type": "application/json" },
+      headers: { ...binding, "Content-Type": "application/json" },
       body: JSON.stringify(change),
     });
     if (response.status === 409) return { status: "conflict" };
@@ -48,7 +38,7 @@ export async function reconcileCityPolicy(
 
     const result = await response.json() as { policy?: unknown; replay?: unknown } | null;
     const committed = parseCityPolicy(result?.policy, city);
-    if (!committed || typeof result?.replay !== "boolean" ||
+    if (!committed || committed.changedByActor !== actorId || typeof result?.replay !== "boolean" ||
         committed.version !== change.expectedVersion + 1 ||
         committed.maxPauseSeconds !== change.maxPauseSeconds ||
         committed.maxPreparationMinutes !== change.maxPreparationMinutes) {
@@ -57,6 +47,7 @@ export async function reconcileCityPolicy(
 
     const verify = await fetch(endpoint, {
       method: "GET", credentials: "same-origin", cache: "no-store",
+      headers: binding,
     });
     const current = verify.ok ? parseCityPolicy(await verify.json(), city) : null;
     if (!current || current.version < committed.version ||

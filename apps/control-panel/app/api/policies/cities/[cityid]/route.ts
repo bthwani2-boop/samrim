@@ -1,8 +1,12 @@
+import {
+  type CityStoreOperationalPolicyChange, DshPublicError, getCityStoreOperationalPolicy,
+  replaceCityStoreOperationalPolicy,
+} from "@bthwani/dsh";
 import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { currentOperatorAccess } from "../../../../../src/server/current-operator-access";
 import {
-  boundedRequestBody, boundedResponseJSON, OPERATOR_COOKIE, resolveIsolatedOperatorConfig,
+  boundedRequestBody, OPERATOR_COOKIE, resolveIsolatedOperatorConfig,
 } from "../../../../../src/server/operator-passkey-bff";
 import { unavailableSessionResponse } from "../../../../../src/server/request-security";
 
@@ -17,18 +21,7 @@ const privateHeaders = {
 };
 
 type Context = Readonly<{ params: Promise<{ cityid: string }> }>;
-type CityPolicy = Readonly<{
-  cityId: string;
-  version: number;
-  maxPauseSeconds: number;
-  maxPreparationMinutes: number;
-  changedByActor: string;
-  changeReason: string;
-  updatedAt: string;
-}>;
-
 const cityIdRule = /^[a-z0-9-]{1,64}$/;
-const operationIdRule = /^[A-Za-z0-9._-]{8,128}$/;
 
 function error(code: string, status: number) {
   return NextResponse.json({ code }, { status, headers: privateHeaders });
@@ -61,58 +54,12 @@ function trustedRequest(request: NextRequest, browserOrigin: string, mutation: b
   );
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown> : null;
-}
-
-function boundedInteger(value: unknown, min: number, max: number): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= min && value <= max;
-}
-
-function parsePolicy(value: unknown, requestedCity: string): CityPolicy | null {
-  const policy = asRecord(value);
-  if (!policy || policy.cityId !== requestedCity ||
-      !boundedInteger(policy.version, 1, Number.MAX_SAFE_INTEGER) ||
-      !boundedInteger(policy.maxPauseSeconds, 0, 31536000) ||
-      !boundedInteger(policy.maxPreparationMinutes, 0, 1440) ||
-      typeof policy.changedByActor !== "string" || !policy.changedByActor.trim() ||
-      policy.changedByActor.length > 128 ||
-      typeof policy.changeReason !== "string" || !policy.changeReason.trim() ||
-      [...policy.changeReason].length > 300 ||
-      typeof policy.updatedAt !== "string" ||
-      !Number.isFinite(Date.parse(policy.updatedAt))) return null;
-  return {
-    cityId: requestedCity,
-    version: policy.version,
-    maxPauseSeconds: policy.maxPauseSeconds,
-    maxPreparationMinutes: policy.maxPreparationMinutes,
-    changedByActor: policy.changedByActor,
-    changeReason: policy.changeReason,
-    updatedAt: policy.updatedAt,
-  };
-}
-
-function parseChange(raw: string): Record<string, unknown> | null {
+function parseChange(raw: string | null): CityStoreOperationalPolicyChange | null {
+  if (!raw || Buffer.byteLength(raw, "utf8") > 8192) return null;
   try {
-    const change = asRecord(JSON.parse(raw) as unknown);
-    if (!change || Object.keys(change).length !== 5 ||
-        !["operationId", "expectedVersion", "maxPauseSeconds", "maxPreparationMinutes", "reason"]
-          .every(key => Object.hasOwn(change, key)) ||
-        typeof change.operationId !== "string" ||
-        !operationIdRule.test(change.operationId) ||
-        !boundedInteger(change.expectedVersion, 0, Number.MAX_SAFE_INTEGER) ||
-        !boundedInteger(change.maxPauseSeconds, 0, 31536000) ||
-        !boundedInteger(change.maxPreparationMinutes, 0, 1440) ||
-        typeof change.reason !== "string" || !change.reason.trim() ||
-        [...change.reason].length > 300) return null;
-    return {
-      operationId: change.operationId,
-      expectedVersion: change.expectedVersion,
-      maxPauseSeconds: change.maxPauseSeconds,
-      maxPreparationMinutes: change.maxPreparationMinutes,
-      reason: change.reason,
-    };
+    const value: unknown = JSON.parse(raw);
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? value as CityStoreOperationalPolicyChange : null;
   } catch {
     return null;
   }
@@ -131,58 +78,38 @@ async function forward(
   }
   const access = await currentOperatorAccess();
   if (!access) return error("UNAUTHORIZED", 401);
-  if (!access.grants.includes("platform_policies")) return error("FORBIDDEN", 403);
+  if (!access.grants.includes("platform_policies") ||
+      request.headers.get("X-BThwani-Operator") !== encodeURIComponent(access.actorId)) {
+    return error("FORBIDDEN", 403);
+  }
   const bearer = (await cookies()).get(OPERATOR_COOKIE)?.value;
   if (!bearer || !/^[A-Za-z0-9_-]{43}$/.test(bearer)) return error("UNAUTHORIZED", 401);
 
-  let body = "";
+  let change: CityStoreOperationalPolicyChange | null = null;
   if (mutation) {
     if (request.headers.get("content-type")?.split(";")[0]?.trim() !== "application/json") {
       return error("INVALID_REQUEST", 400);
     }
-    const raw = await boundedRequestBody(request);
-    if (!raw || raw.length > 8192) return error("INVALID_REQUEST", 400);
-    const change = parseChange(raw);
+    change = parseChange(await boundedRequestBody(request));
     if (!change) return error("INVALID_REQUEST", 400);
-    // Canonical serialization forwards exactly the validated command, never
-    // actor/role claims, unknown members or an ambiguous raw JSON envelope.
-    body = JSON.stringify(change);
   }
 
   try {
-    const upstream = await fetch(
-      `${dshOrigin}/v1/operators/cities/${cityId}/store-availability-policy`, {
-        method: mutation ? "PATCH" : "GET",
-        headers: {
-          Authorization: `Bearer ${bearer}`,
-          ...(mutation ? { "Content-Type": "application/json" } : {}),
-        },
-        ...(mutation ? { body } : {}),
-        redirect: "error",
-        cache: "no-store",
-        signal: AbortSignal.timeout(5000),
-      },
-    );
-    if (upstream.status !== 200) {
-      return error(
-        upstream.status === 400 ? "INVALID_REQUEST" :
-        upstream.status === 401 ? "UNAUTHORIZED" :
-        upstream.status === 403 ? "FORBIDDEN" :
-        upstream.status === 409 ? "VERSION_CONFLICT" : "DSH_OWNER_UNAVAILABLE",
-        [400, 401, 403, 409].includes(upstream.status) ? upstream.status : 503,
-      );
-    }
-    const value = await boundedResponseJSON(upstream);
-    const result = mutation ? asRecord(value) : null;
-    const policy = parsePolicy(mutation ? result?.policy : value, cityId);
-    if (!policy || (mutation && typeof result?.replay !== "boolean")) {
+    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(5000)]);
+    const result = change
+      ? await replaceCityStoreOperationalPolicy(dshOrigin, cityId, bearer, change, signal)
+      : await getCityStoreOperationalPolicy(dshOrigin, cityId, bearer, signal);
+    if ("policy" in result && result.policy.changedByActor !== access.actorId) {
       return error("DSH_OWNER_UNAVAILABLE", 503);
     }
-    return NextResponse.json(
-      mutation ? { policy, replay: result?.replay } : policy,
-      { status: 200, headers: privateHeaders },
-    );
-  } catch {
+    return NextResponse.json(result, { status: 200, headers: privateHeaders });
+  } catch (cause) {
+    if (cause instanceof DshPublicError) {
+      if (cause.status === 400) return error("INVALID_REQUEST", 400);
+      if (cause.status === 401) return error("UNAUTHORIZED", 401);
+      if (cause.status === 403) return error("FORBIDDEN", 403);
+      if (cause.status === 409) return error("VERSION_CONFLICT", 409);
+    }
     // On a mutation, 503 can mean COMMITTED with a lost reply. The browser
     // preserves its operationId and payload for reconciliation, not a new key.
     return error("DSH_OWNER_UNAVAILABLE", 503);

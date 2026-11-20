@@ -1,4 +1,4 @@
-import { DshPublicError, onlyKeys } from "./client-core.ts";
+import { DshPublicError, isDateTime, onlyKeys } from "./client-core.ts";
 import { dshOperations } from "./generated/dsh-operations.ts";
 import { privateOwnerRequest } from "./private-owner-request.ts";
 
@@ -32,11 +32,6 @@ export interface StoreOperationalChange {
 export interface StoreOperationalResult {
   availability: StoreOperationalAvailability;
   replay: boolean;
-}
-function isDateTime(value: unknown): value is string {
-  return typeof value === "string" &&
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
-    Number.isFinite(Date.parse(value));
 }
 function isStoreWeeklyWindow(value: unknown): value is StoreWeeklyWindow {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
