@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -132,6 +132,45 @@ test("semantic design source cannot depend on presentation or native renderers",
     assert.match(sourceBoundaryIssues(design, 'import X from "' + spec + '";', root).join(" "), /Semantic design source/);
   }
   assert.deepEqual(sourceBoundaryIssues(design, 'import { brandRoots } from "../brand/colors";', root), []);
+});
+
+test("new TypeScript module variants are scanned and reject private imports", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "bthwani-module-boundary-"));
+  try {
+    for (const group of ["apps", "packages", "services"]) mkdirSync(join(fixture, group), { recursive: true });
+    const feature = join(fixture, "apps", "customer", "src", "features", "stores");
+    mkdirSync(feature, { recursive: true });
+    const esm = join(feature, "store-api.mts");
+    const cjs = join(feature, "store-fallback.cts");
+    writeFileSync(esm, 'import { X } from "@bthwani/merchant";\n');
+    writeFileSync(cjs, 'const X = require("@bthwani/identity/clients/private");\n');
+    const invalid = scanPresentationBoundaries(fixture);
+    assert.equal(invalid.scanned, 2, "both TypeScript module variants must be included");
+    assert.equal(invalid.issues.length, 2);
+    writeFileSync(esm, 'export const safe = true;\n');
+    writeFileSync(cjs, 'module.exports = { safe: true };\n');
+    assert.deepEqual(scanPresentationBoundaries(fixture).issues, [], "legal module variants stay allowed");
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("a workspace owner junction cannot bypass the boundary scanner", t => {
+  const fixture = mkdtempSync(join(tmpdir(), "bthwani-owner-link-"));
+  try {
+    for (const group of ["apps", "packages", "services"]) mkdirSync(join(fixture, group), { recursive: true });
+    const realOwner = join(fixture, "apps", "customer");
+    mkdirSync(realOwner);
+    try {
+      symlinkSync(realOwner, join(fixture, "apps", "captain"), "junction");
+    } catch (error) {
+      if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) return t.skip("junction creation not permitted");
+      throw error;
+    }
+    assert.match(stage4WorkspaceIssues(fixture).join("\n"), /apps\/captain: workspace owner symlink/);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
 });
 
 test("Stage 4 rejects unapproved owner directories and any duplicate src/app route tree", () => {

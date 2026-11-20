@@ -9,7 +9,7 @@ import { createScanner, SyntaxKind } from "typescript/unstable/ast";
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const appNames = ["customer", "merchant", "captain", "control-panel"];
 const ownerRoots = ["apps", "packages", "services"];
-const extensions = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
+const extensions = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"]);
 const ignored = new Set(["node_modules", ".next", ".expo", "dist", "out", "build", "coverage"]);
 
 function within(base, target) {
@@ -164,6 +164,10 @@ export function stage4WorkspaceIssues(base = root) {
     ["services", ["identity", "dsh", "wlt"]],
   ]) {
     for (const entry of readdirSync(join(base, group), { withFileTypes: true })) {
+      if (entry.isSymbolicLink()) {
+        issues.push(group + "/" + entry.name + ": workspace owner symlink is not approved");
+        continue;
+      }
       if (entry.isDirectory() && !ignored.has(entry.name) && !allowed.includes(entry.name)) {
         // Removed packages can leave an ignored node_modules directory behind.
         // It is not authored source or a workspace owner. Still reject empty
@@ -215,7 +219,7 @@ export function presentationDirectoryIssues(base = root) {
             }
             if (treeRoot.endsWith("src") && parts[0] === "features" &&
                 extensions.has(extname(entry.name)) &&
-                !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\.(?:native|web|android|ios))?(?:\.(?:test|spec))?\.(?:ts|tsx|js|jsx|mjs|cjs)$/.test(entry.name)) {
+                !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\.(?:native|web|android|ios))?(?:\.(?:test|spec))?\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs)$/.test(entry.name)) {
               issues.push(label + ": feature source filename must be lowercase-kebab-case");
             }
             continue;
