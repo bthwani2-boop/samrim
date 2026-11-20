@@ -47,6 +47,24 @@ test("package aliases cannot bypass service client exports", () => {
     "import { X } from '@bthwani/identity/clients/session';", root);
   assert.match(problems.join(" "), /Private workspace path/);
 });
+test("service owner packages expose only their declared root SDK export", () => {
+  for (const owner of ["identity", "dsh", "wlt"]) {
+    const privateImports = [
+      `@bthwani/${owner}/internal/order-writer`,
+      `@bthwani/${owner}/private-transport`,
+      `@bthwani/${owner}/fake-sdk`,
+    ];
+    for (const spec of privateImports) {
+      const problems = sourceBoundaryIssues(customer,
+        `import { Writer } from "${spec}";`, root);
+      assert.match(problems.join(" "), /Private service package subpath/, spec);
+    }
+    assert.deepEqual(sourceBoundaryIssues(customer,
+      `import { Public } from "@bthwani/${owner}";`, root), [],
+    "declared public owner SDK remains legal");
+  }
+});
+
 test("bare internal source aliases are rejected", () => {
   const problems = sourceBoundaryIssues(customer,
     "import { X } from 'apps/merchant/src/index';", root);

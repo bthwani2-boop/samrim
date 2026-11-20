@@ -117,6 +117,12 @@ export function sourceBoundaryIssues(file, source, base = root) {
       issues.push("Private workspace path is not an approved package export: " + spec);
       continue;
     }
+    // Identity, DSH and WLT currently publish only "." in package.json.
+    // Reject unexported subpaths without blocking their public SDK roots.
+    if (/^@bthwani\/(?:identity|dsh|wlt)\//.test(spec)) {
+      issues.push("Private service package subpath is not a declared export: " + spec);
+      continue;
+    }
     if (!spec.startsWith(".")) continue;
     const destination = ownerOf(resolve(dirname(file), spec), base);
     if (destination && destination !== current) {
