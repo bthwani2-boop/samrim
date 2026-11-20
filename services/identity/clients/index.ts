@@ -71,13 +71,13 @@ function sessionFrom(value: unknown): VerifiedIdentitySession {
 }
 function issuedSessionFrom(value: unknown): IssuedRoleSession {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new IdentityClientError(502, "OWNER_RESPONSE_INVALID");
+    throw new IdentityClientError(502, "OPERATION_RESULT_UNKNOWN");
   }
   const v = value as Record<string, unknown>;
   if (!exactKeys(v, ["accessToken", "sessionExpiresAt"]) ||
     typeof v.accessToken !== "string" || !credential.test(v.accessToken) ||
     !validDate(v.sessionExpiresAt)) {
-    throw new IdentityClientError(502, "OWNER_RESPONSE_INVALID");
+    throw new IdentityClientError(502, "OPERATION_RESULT_UNKNOWN");
   }
   return v as unknown as IssuedRoleSession;
 }
@@ -151,7 +151,7 @@ export async function issueCustomerPhoneChallenge(
     "POST", 201, signal, { phone });
   if (!result || typeof result !== "object" || !("ticket" in result) ||
     Object.keys(result).length !== 1 || typeof result.ticket !== "string" || !phoneTicket.test(result.ticket)) {
-    throw new IdentityClientError(502, "OWNER_RESPONSE_INVALID");
+    throw new IdentityClientError(502, "OPERATION_RESULT_UNKNOWN");
   }
   return result.ticket;
 }

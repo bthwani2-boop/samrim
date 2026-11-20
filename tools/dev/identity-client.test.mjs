@@ -175,7 +175,8 @@ test("Merchant response rejects malformed tokens, expired credentials, extra fie
     { ...admission(), storeAccess: "superuser" },
   ]) {
     await withFetch(async () => response(value, 201),
-      () => rejectsAs(() => admitCurrentCustomerAsMerchant(origin, bearer), 502, "OWNER_RESPONSE_INVALID"));
+      // Even malformed issued credentials may indicate a committed owner role/session mutation.
+      () => rejectsAs(() => admitCurrentCustomerAsMerchant(origin, bearer), 502, "OPERATION_RESULT_UNKNOWN"));
   }
   await withFetch(async () => response(admission(), 200),
     () => rejectsAs(() => admitCurrentCustomerAsMerchant(origin, bearer), 502, "OPERATION_RESULT_UNKNOWN"));
@@ -282,4 +283,27 @@ test("late Identity denial must not sign out a replacement account or confirm a 
   await withFetch(async () => failed,
     () => rejectsAs(() => admitCurrentCustomerAsMerchant(origin, bearer, cancelledPost.signal),
       0, "OPERATION_RESULT_UNKNOWN"));
+});
+
+test("malformed successful Identity POST responses never certify that a mutation did not commit", async () => {
+  let requests = 0;
+  await withFetch(async (_url, options) => {
+    requests++;
+    assert.equal(options.method, "POST");
+    return response({ ticket: "malformed-proof-ticket" }, 201);
+  }, async () => {
+    await rejectsAs(() => issueCustomerPhoneChallenge(origin, "+12025550133"),
+      502, "OPERATION_RESULT_UNKNOWN");
+  });
+  assert.equal(requests, 1, "the client must not silently send the SMS challenge twice");
+
+  await withFetch(async (_url, options) => {
+    requests++;
+    assert.equal(options.method, "POST");
+    return response({ ...admission(), accessToken: "invalid-issued-token" });
+  }, async () => {
+    await rejectsAs(() => verifyCustomerPhoneChallenge(origin, "a".repeat(48), "123456"),
+      502, "OPERATION_RESULT_UNKNOWN");
+  });
+  assert.equal(requests, 2, "a consumed proof must not be replayed after an invalid owner reply");
 });
