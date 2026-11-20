@@ -75,6 +75,18 @@ try {
   Assert-ReaderAccess $db
   Write-Output 'PG_READER_ACCESS=PASS select=allowed update=denied(sqlstate42501)'
 
+  function Assert-CityConstraint([string]$Database) {
+    $writeCity = "INSERT INTO $schema.service_cities(id,active,timezone_name) VALUES ('restore-check',true,"
+    $null = & docker --context $DockerContext exec $containerId psql -X -q -v ON_ERROR_STOP=1 -U $user -d $Database -c "BEGIN; $writeCity 'Asia/Aden'); ROLLBACK;" 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "Valid synthetic timezone was refused in $Database" }
+    $invalid = & docker --context $DockerContext exec $containerId psql -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -U $user -d $Database -c "BEGIN; $writeCity '@invalid@'); ROLLBACK;" 2>&1
+    $details = $invalid | Out-String
+    if ($LASTEXITCODE -eq 0 -or $details -notmatch '23514' -or $details -notmatch 'service_cities_timezone_name_valid') {
+      throw "Named timezone constraint did not reject invalid input in $Database"
+    }
+  }
+  Assert-CityConstraint $db
+
   $dump = '/tmp/agent01-dsh.dump'
   $null = & docker --context $DockerContext exec $containerId pg_dump -Fc --no-owner --schema=$schema -U $user -d $db -f $dump 2>&1
   if ($LASTEXITCODE -ne 0) { throw 'Synthetic backup failed' }
@@ -85,6 +97,10 @@ try {
   $null = & docker --context $DockerContext exec $containerId pg_restore --no-owner --exit-on-error --single-transaction -U $user -d $restoreDb $dump 2>&1
   if ($LASTEXITCODE -ne 0) { throw 'Synthetic restore failed' }
   Assert-ReaderAccess $restoreDb
+  Assert-CityConstraint $restoreDb
+
+  # Both snapshots run on the same PostgreSQL version. Its precedence-aware
+  # deparser removes redundant grouping introduced by dump/restore.
   $fingerprintSql = @"
 SELECT jsonb_build_object(
   'columns', (SELECT jsonb_agg(jsonb_build_array(table_name, column_name, ordinal_position, column_default,
@@ -92,7 +108,7 @@ SELECT jsonb_build_object(
                   datetime_precision, is_identity, identity_generation, generation_expression)
                   ORDER BY table_name, ordinal_position)
               FROM information_schema.columns c WHERE table_schema = '$schema'),
-  'constraints', (SELECT jsonb_agg(jsonb_build_array(cl.relname, c.conname, c.convalidated, pg_get_constraintdef(c.oid))
+  'constraints', (SELECT jsonb_agg(jsonb_build_array(cl.relname, c.conname, c.convalidated, pg_get_constraintdef(c.oid, true))
                                   ORDER BY cl.relname, c.conname)
                   FROM pg_constraint c JOIN pg_class cl ON cl.oid = c.conrelid
                   WHERE c.connamespace = '$schema'::regnamespace AND c.contype <> 'n'),
@@ -126,7 +142,7 @@ SELECT jsonb_build_object(
       throw "Synthetic backup/restore mismatch in $property"
     }
   }
-  Write-Output 'PG_RESTORE_READBACK=PASS columns,keys,indexes,triggers,revision,reader-grants'
+  Write-Output 'PG_RESTORE_READBACK=PASS columns,keys,indexes,triggers,revision,reader-grants,city-timezone-constraint'
   Write-Output 'PG_ISOLATION=PASS network=none no-host-ports tmpfs-only'
 } finally {
   if ($containerId -match '^[a-f0-9]{64}$') {
