@@ -106,6 +106,22 @@ export function validate(owner, base = root) {
     validateObjectKeys(parameter, allowedParameterKeys, "components.parameters." + name);
   }
 
+  // Public admission is a security-sensitive boundary, not a substitute for
+  // each owner's declared permissions. Unknown/new routes remain protected
+  // until their owner contract and tests explicitly admit them.
+  function isOwnerPublicOperation(urlPath, method) {
+    if (urlPath === "/health" && method === "get") return true;
+    if (owner === "dsh") return method === "get" && urlPath.startsWith("/v1/public/");
+    if (owner === "identity") {
+      return (method === "post" && urlPath.startsWith("/v1/customer-auth/")) ||
+        (method === "post" && [
+          "/v1/operators/passkey/authentication",
+          "/v1/operators/passkey/authentication/options",
+        ].includes(urlPath));
+    }
+    return false;
+  }
+
   const supportedMethods = new Set(["get", "post", "put", "patch", "delete", "head", "options", "trace"]);
   const allowedPathItemKeys = new Set([...supportedMethods, "$ref", "summary", "description", "servers", "parameters"]);
   const schemeNames = new Set(Object.keys(entrypoint.components?.securitySchemes ?? {}));
@@ -159,11 +175,23 @@ export function validate(owner, base = root) {
       if (!operation.responses || Object.keys(operation.responses).length === 0) {
         errors.push("Missing responses: " + method + " " + urlPath);
       }
+      if (!Object.keys(operation.responses ?? {}).some((status) => /^2(?:[0-9]{2}|XX)$/.test(status))) {
+        errors.push("No successful response: " + method + " " + urlPath);
+      }
+      if (!isOwnerPublicOperation(urlPath, method) && !Object.hasOwn(operation.responses ?? {}, "401")) {
+        errors.push("Protected operation missing 401 response: " + method + " " + urlPath);
+      }
       for (const [status, response] of Object.entries(operation.responses ?? {})) {
         if (!/^(?:default|[1-5][0-9]{2}|[1-5]XX)$/.test(status)) {
           errors.push("Invalid HTTP response status " + status + " on " + method + " " + urlPath);
         }
         validateObjectKeys(response, allowedResponseKeys, method + " " + urlPath + " responses." + status);
+        if (/^2[0-9]{2}$/.test(status) && status !== "204" && !(owner === "identity" && urlPath === "/health")) {
+          const resolved = response?.$ref ? resolveRef(sourceFile, response.$ref) : response;
+          if (!resolved?.content?.["application/json"]?.schema) {
+            errors.push("Missing successful JSON response schema: " + method + " " + urlPath + " " + status);
+          }
+        }
       }
       for (const [index, parameter] of (item.parameters ?? []).entries()) {
         validateObjectKeys(parameter, allowedParameterKeys, method + " " + urlPath + " pathParameters." + index);
@@ -187,6 +215,18 @@ export function validate(owner, base = root) {
       } else if (!Array.isArray(operation.security)) {
         errors.push("Invalid operation security: " + method + " " + urlPath);
       } else {
+        const publiclyAdmitted = isOwnerPublicOperation(urlPath, method);
+        if (publiclyAdmitted && operation.security.length !== 0) {
+          errors.push("Public operation must not require OpaqueSession: " + method + " " + urlPath);
+        }
+        if (!publiclyAdmitted && !(
+          operation.security.length === 1 &&
+          Object.keys(operation.security[0] ?? {}).length === 1 &&
+          Array.isArray(operation.security[0]?.OpaqueSession) &&
+          operation.security[0].OpaqueSession.length === 0
+        )) {
+          errors.push("Protected operation must require OpaqueSession: " + method + " " + urlPath);
+        }
         for (const security of operation.security) {
           if (!security || typeof security !== "object" || Array.isArray(security) || Object.keys(security).length === 0) {
             errors.push("Invalid operation security: " + method + " " + urlPath);

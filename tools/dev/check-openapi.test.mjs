@@ -502,3 +502,47 @@ test("remaining DSH authenticated client requests match owner OpenAPI operations
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("owner contract cannot anonymously downgrade protected routes", () => {
+  for (const [owner, fragment] of [
+    ["identity", "paths/session.yaml"],
+    ["dsh", "paths/store-access.yaml"],
+  ]) {
+    const result = mutate(owner, fragment, source =>
+      source.replace("security:\n        - OpaqueSession: []", "security: []"));
+    hasError(result, "Protected operation must require OpaqueSession");
+  }
+});
+
+test("owner contract cannot unexpectedly require credentials for public discovery", () => {
+  const result = mutate("dsh", "paths/stores.yaml", source =>
+    source.replace("security: []", "security:\n        - OpaqueSession: []"));
+  hasError(result, "Public operation must not require OpaqueSession");
+});
+
+test("owner contract refuses operations without successful responses", () => {
+  const result = mutate("dsh", "paths/stores.yaml", source =>
+    source.replace("'200':\n          description: Bounded public vertical identity",
+      "'418':\n          description: Bounded public vertical identity"));
+  hasError(result, "No successful response");
+});
+
+test("owner contract refuses a successful JSON response with no schema", () => {
+  const result = mutate("dsh", "paths/stores.yaml", source =>
+    source.replace("schema: { $ref: '../dsh.openapi.yaml#/components/schemas/StorePage' }",
+      "example: { items: [] }"));
+  hasError(result, "Missing successful JSON response schema");
+});
+
+
+test("owner contract cannot drop explicit 401 denial for protected reads", () => {
+  for (const [owner, fragment] of [
+    ["identity", "paths/session.yaml"],
+    ["dsh", "paths/store-access.yaml"],
+  ]) {
+    const result = mutate(owner, fragment, source =>
+      source.replace("        '401':", "        '402':"));
+    hasError(result, "Protected operation missing 401 response");
+  }
+});
