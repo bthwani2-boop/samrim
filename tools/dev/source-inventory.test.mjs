@@ -179,3 +179,22 @@ test("Go integration test files are fixtures, not oversized production sources",
   assert.equal(rows[0].kind, "test-fixture");
   assert.deepEqual(reviewCandidates(rows), []);
 });
+
+test("resolves literal require.resolve and import.meta.resolve consumers during move audits", t => {
+  const x = fixture(t);
+  x.file("apps/customer/src/features/stores/merchant.ts", "export const store = 1;\n");
+  x.file("apps/customer/src/features/stores/captain.ts", "export const captain = 1;\n");
+  x.file("apps/customer/src/features/stores/consumer.ts",
+    "const merchant = import.meta.resolve('./merchant.ts');\n" +
+    "const captain = require.resolve('./captain.ts');\n");
+  const rows = inventory(x.root);
+  const lookup = new Map(rows.map(row => [row.path, row]));
+  const consumer = "apps/customer/src/features/stores/consumer.ts";
+  assert.deepEqual(lookup.get(consumer).imports, ["./captain.ts", "./merchant.ts"]);
+  for (const target of ["captain.ts", "merchant.ts"]) {
+    assert.deepEqual(
+      lookup.get(`apps/customer/src/features/stores/${target}`).importedBy,
+      [consumer],
+    );
+  }
+});

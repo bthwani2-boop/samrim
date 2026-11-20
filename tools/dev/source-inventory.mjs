@@ -78,6 +78,7 @@ function imports(pathname, source) {
     const cleaned = source.replace(/^\s*\/\/[^\n]*$/gm, "")
       .replace(/\/\*[\s\S]*?\*\//g, "");
     const patterns = [
+      /\b(?:require|import\.meta)\.resolve\s*\(\s*["']([^"']+)["']\s*\)/g,
       /\b(?:import|export)\s+(?:type\s+)?[^;"']{0,800}?\s+from\s+["']([^"']+)["']/g,
       /\bimport\s+["']([^"']+)["']/g,
       /\b(?:import|require)\s*\(\s*["']([^"']+)["']\s*\)/g,
