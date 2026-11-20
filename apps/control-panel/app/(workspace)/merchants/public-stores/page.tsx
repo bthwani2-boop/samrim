@@ -1,4 +1,4 @@
-import { listPublicStores, type PublicPage, type PublicStore } from "@bthwani/dsh";
+import { listPublicStores, listPublicVerticals, type PublicPage, type PublicStore, type PublicVertical } from "@bthwani/dsh";
 import styles from "../../../../src/features/operator-shell/operator-shell.module.css";
 import WorkspaceUnavailable from "../../../../src/features/operator-shell/workspace-unavailable";
 import {
@@ -27,23 +27,29 @@ export default async function PublicStoresMonitor({
   const scope = parsePublicStoreBrowse(await searchParams);
   const owner = resolvePublicDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN, process.env.NODE_ENV);
   let page: PublicPage<PublicStore> | null = null;
+  let verticals: PublicPage<PublicVertical> | null = null;
   let error = "";
+  let verticalsError = "";
   if (!scope) {
     error = "معاملات المدينة أو البحث أو الصفحة غير صالحة. أعد البحث من البداية.";
   } else if (scope.city && !owner) {
     error = "اتصال DSH المعزول غير مُهيأ للوحة التحكم. لا توجد بيانات مؤكدة.";
   } else if (scope.city && owner) {
-    try {
-      page = await listPublicStores(owner, scope.city, {
+    // Both reads come from DSH. A category outage must not suppress valid Store results.
+    const [storesResult, verticalsResult] = await Promise.allSettled([
+      listPublicStores(owner, scope.city, {
         ...(scope.query ? { query: scope.query } : {}),
         ...(scope.vertical ? { verticalId: scope.vertical } : {}),
         ...(scope.cursor ? { cursor: scope.cursor } : {}),
         limit: 20,
         signal: AbortSignal.timeout(5000),
-      });
-    } catch {
-      error = "تعذّر التحقق من المتاجر لدى DSH أو تغيرت الصفحة. أعد البحث من البداية.";
-    }
+      }),
+      listPublicVerticals(owner, scope.city, { limit: 50, signal: AbortSignal.timeout(5000) }),
+    ]);
+    if (storesResult.status === "fulfilled") page = storesResult.value;
+    else error = "تعذّر التحقق من المتاجر لدى DSH أو تغيرت الصفحة. أعد البحث من البداية.";
+    if (verticalsResult.status === "fulfilled") verticals = verticalsResult.value;
+    else verticalsError = "تعذّر تحميل خيارات أنواع النشاط؛ يمكن إدخال الرمز يدويًا.";
   }
 
   return (
@@ -71,14 +77,19 @@ export default async function PublicStoresMonitor({
         <label style={{ display: "grid", gap: "0.25rem" }}>
           نوع النشاط لدى DSH
           <input name="vertical" aria-label="رمز نوع النشاط" maxLength={64}
-            defaultValue={scope?.vertical ?? ""} placeholder="grocery"
-            pattern="[a-z0-9-]{1,64}" style={{ minHeight: 44 }} />
+            list="operator-public-vertical-options" defaultValue={scope?.vertical ?? ""}
+            placeholder="grocery" pattern="[a-z0-9-]{1,64}" style={{ minHeight: 44 }} />
+          {verticals ? <datalist id="operator-public-vertical-options">
+            {verticals.items.map(item => <option key={item.id} value={item.id}
+              label={`${item.id} (${item.storeCount})`} />)}
+          </datalist> : null}
         </label>
         <button type="submit" style={{ minHeight: 44, paddingInline: "1rem", cursor: "pointer" }}>
           عرض المتاجر
         </button>
       </form>
       {!scope?.city && !error ? <p role="status">حدد مدينة لقراءة متاجرها من DSH.</p> : null}
+      {verticalsError ? <p role="status">{verticalsError}</p> : null}
       {error ? <p role="alert">{error}</p> : null}
       {page && scope ? (
         <section aria-label="نتائج المتاجر المنشورة">
