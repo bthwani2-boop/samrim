@@ -1,4 +1,4 @@
-import { DshPublicError } from "./client-core.ts";
+import { DshPublicError, onlyKeys } from "./client-core.ts";
 import { privateOwnerRequest } from "./private-owner-request.ts";
 
 /** Private Store availability from DSH's executable store-access contract.
@@ -33,16 +33,18 @@ export interface StoreOperationalResult {
   replay: boolean;
 }
 function isStoreWeeklyWindow(value: unknown): value is StoreWeeklyWindow {
-  if (!value || typeof value !== "object") return false;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const item = value as Record<string, unknown>;
-  return Number.isSafeInteger(item.weekday) && Number(item.weekday) >= 0 && Number(item.weekday) <= 6 &&
+  return onlyKeys(item, ["weekday", "opens", "closes"]) &&
+    Number.isSafeInteger(item.weekday) && Number(item.weekday) >= 0 && Number(item.weekday) <= 6 &&
     Number.isSafeInteger(item.opens) && Number(item.opens) >= 0 && Number(item.opens) < 1440 &&
     Number.isSafeInteger(item.closes) && Number(item.closes) >= 0 && Number(item.closes) <= 1440;
 }
 function isStoreAvailability(value: unknown, storeId: string): value is StoreOperationalAvailability {
-  if (!value || typeof value !== "object") return false;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const item = value as Record<string, unknown>;
-  return item.storeId === storeId && typeof item.timezone === "string" && item.timezone !== "" &&
+  return onlyKeys(item, ["storeId", "timezone", "weekly", "pausedUntil", "preparationMinutes",
+    "version", "actingActorId", "reason"]) && item.storeId === storeId && typeof item.timezone === "string" && item.timezone !== "" &&
     item.timezone !== "Local" && (item.weekly === null || (Array.isArray(item.weekly) && item.weekly.every(isStoreWeeklyWindow))) &&
     (item.pausedUntil === undefined || typeof item.pausedUntil === "string") &&
     Number.isSafeInteger(item.preparationMinutes) && Number(item.preparationMinutes) >= 0 &&
@@ -64,7 +66,10 @@ export async function getStoreOperationalAvailability(
 export async function updateStoreOperationalAvailability(
   baseUrl: string, storeId: string, bearer: string, change: StoreOperationalChange, signal?: AbortSignal,
 ): Promise<StoreOperationalResult> {
-  if (!/^[A-Za-z0-9._-]{8,128}$/.test(change.operationId) ||
+  if (!change || typeof change !== "object" || Array.isArray(change) ||
+    !onlyKeys(change as unknown as Record<string, unknown>, ["operationId", "expectedVersion",
+      "weekly", "pausedUntil", "preparationMinutes", "reason"]) ||
+    !/^[A-Za-z0-9._-]{8,128}$/.test(change.operationId) ||
     !Number.isSafeInteger(change.expectedVersion) || change.expectedVersion < 1 ||
     !Number.isSafeInteger(change.preparationMinutes) || change.preparationMinutes < 0 ||
     typeof change.reason !== "string" || change.reason.trim().length < 1 || change.reason.length > 300 ||
@@ -73,9 +78,11 @@ export async function updateStoreOperationalAvailability(
   }
   if (!/^[a-z0-9-]{1,64}$/.test(storeId)) throw new DshPublicError(0, "STORE_ID_INVALID");
   const body = await privateOwnerRequest(baseUrl, "/v1/stores/" + encodeURIComponent(storeId) + "/availability", bearer, "PATCH", change, signal);
-  if (!body || typeof body !== "object") throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
+  }
   const result = body as Record<string, unknown>;
-  if (typeof result.replay !== "boolean" || !isStoreAvailability(result.availability, storeId)) {
+  if (!onlyKeys(result, ["availability", "replay"]) || typeof result.replay !== "boolean" || !isStoreAvailability(result.availability, storeId)) {
     throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
   }
   // A caller switching Store/account must not display this in-flight write as
