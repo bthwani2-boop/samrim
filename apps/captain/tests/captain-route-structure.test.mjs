@@ -40,7 +40,7 @@ test("Captain Home shows the verified status and defers the map until fulfillmen
 });
 
 test("protected and financial routes fail closed without owners", () => {
-  for (const file of ["(tabs)/deliveries.tsx", "(tabs)/wallet.tsx", "(tabs)/account.tsx",
+  for (const file of ["(tabs)/deliveries.tsx", "(tabs)/wallet.tsx",
     "offers.tsx", "notifications.tsx", "delivery/[id].tsx"]) {
     const route = read(file);
     assert.ok(route.includes("CaptainCapabilityScreen"), file);
@@ -52,10 +52,17 @@ test("protected and financial routes fail closed without owners", () => {
   assert.ok(screen.includes("captain-capability-unavailable"));
   assert.doesNotMatch(screen, /href="\/(?:home|deliveries|wallet|account)"/,
     "section bodies must not duplicate primary tab destinations");
-  assert.match(read("(tabs)/account.tsx"), /returnTo="\/"/);
   for (const route of ["offers.tsx", "notifications.tsx", "delivery/[id].tsx"]) {
     assert.match(read(route), /returnTo="\/home"/, route);
   }
+});
+
+test("Captain account uses only the verified workspace session and owner logout", () => {
+  const page = read("(tabs)/account.tsx");
+  assert.match(page, /useCaptainWorkspace\(\)/);
+  assert.match(page, /workspace\.session\.sessionExpiresAt/);
+  assert.match(page, /onPress=\{workspace\.signOut\}/);
+  assert.doesNotMatch(page, /SecureStore|fetch\(|CaptainCapabilityScreen/);
 });
 
 test("Captain has one tab route for each primary URL", () => {

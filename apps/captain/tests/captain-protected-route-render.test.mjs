@@ -32,6 +32,7 @@ function harness() {
   let interval;
   let appChanged;
   let pending = [];
+  const logouts = [];
   let tick = 0;
   const protectedChild = { type: "ProtectedScreen", props: { testID: "captain-sensitive-screen" } };
   function hook(create) {
@@ -40,6 +41,7 @@ function harness() {
     return { at, value: hooks[at] };
   }
   const react = {
+    createContext() { return { Provider: "CaptainWorkspaceProvider" }; },
     useState(initial) {
       const { at, value } = hook(() => initial);
       return [value, next => { hooks[at] = typeof next === "function" ? next(hooks[at]) : next; }];
@@ -77,6 +79,9 @@ function harness() {
           pending.push({ signal, resolve, reject });
         });
       },
+      leaveCaptainAdmission(signal, actorId) {
+        return new Promise((resolve, reject) => logouts.push({ signal, actorId, resolve, reject }));
+      },
     },
     "./captain-session": { hasActiveCaptainSession: session => session.role === "captain" },
   };
@@ -103,7 +108,8 @@ function harness() {
     return pending.shift();
   };
   return {
-    render, next, child: protectedChild,
+    render, next, child: protectedChild, logouts,
+    reads: () => pending.length,
     startFocus: () => focus(),
     periodic: () => interval(),
     appChanged: state => appChanged(state),
@@ -254,4 +260,31 @@ test("the same approved Captain session preserves component state across owner r
   const checkedHolder = nodes(h.render()).find(x => x.props?.children === h.child);
   assert.equal(checkedHolder.key, firstHolder.key,
     "re-reading the same verified session must preserve its protected component state");
+});
+
+test("Captain logout conceals private screens immediately and retries the same actor after uncertainty", async () => {
+  const h = harness();
+  h.render();
+  h.startFocus();
+  const decision = approved();
+  h.next().resolve(decision);
+  await settle();
+  const provider = nodes(h.render()).find(item => item.type === "CaptainWorkspaceProvider");
+  assert.equal(provider.props.value.session.actorId, decision.session.actorId);
+  provider.props.value.signOut();
+  provider.props.value.signOut();
+  assert.equal(h.logouts.length, 1);
+  assert.ok(!nodes(h.render()).includes(h.child));
+  const attempt = h.logouts.shift();
+  assert.equal(attempt.actorId, decision.session.actorId);
+  h.periodic();
+  assert.equal(h.reads(), 0, "periodic owner reads cannot reopen a signing-out workspace");
+  attempt.reject(new Error("Identity unavailable"));
+  await settle();
+  nodes(h.render()).find(item => item.type === "Pressable").props.onPress();
+  const retry = h.logouts.shift();
+  assert.equal(retry.actorId, decision.session.actorId);
+  retry.resolve();
+  await settle();
+  assert.equal(h.render().type, "Redirect");
 });

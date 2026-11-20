@@ -115,6 +115,21 @@ function harness() {
   };
 }
 
+test("Captain account logout cannot revoke a newer or different actor", async () => {
+  const h = harness();
+  const controller = new AbortController();
+  h.stored.set("bthwani.captain.synthetic-admission.v1", h.tokens.captain);
+  await assert.rejects(h.reload().leaveCaptainAdmission(controller.signal, "earlier-captain"),
+    { status: 409, code: "CAPTAIN_CONTEXT_CHANGED" });
+  assert.equal(h.pending(), null);
+  assert.equal(h.captainRevocationAttempts, 0);
+  assert.equal(h.readToken(), h.tokens.captain);
+  h.setRevokeCaptainFails(false);
+  await h.reload().leaveCaptainAdmission(controller.signal, "captain-owner-one");
+  assert.equal(h.captainRevocationAttempts, 1);
+  assert.equal(h.readToken(), null);
+});
+
 test("Captain undelivered bearer must not resurrect after restart, even when storage and revoke fail", async () => {
   const h = harness();
   h.setWriteFailure("after");

@@ -81,9 +81,6 @@ test("Captain workspace separates verified access from unavailable data and keep
   const home = renderable("src/features/dispatch/captain-home-screen", {
     "../../components/captain-capability-screen": screenModule,
   });
-  const account = renderable("app/(tabs)/account", {
-    "../../src/components/captain-capability-screen": screenModule,
-  });
   const offers = renderable("app/offers", {
     "../src/components/captain-capability-screen": screenModule,
     "../src/features/access/protected-route": { __esModule: true, default: "CaptainProtectedRoute" },
@@ -94,12 +91,26 @@ test("Captain workspace separates verified access from unavailable data and keep
   assert.ok(dashboard.some(node => node.props.testID === "captain-capability-unavailable"));
   assert.deepEqual(dashboard.filter(node => node.type === "Link"), []);
 
-  const accountLinks = nodes(screen(account().props)).filter(node => node.type === "Link");
-  assert.deepEqual(accountLinks.map(node => node.props.href), ["/"]);
-  assert.equal(accountLinks[0].props.children.props.children.props.children, "إدارة تسجيل الدخول");
-
   const guardedOffers = offers();
   assert.equal(guardedOffers.type, "CaptainProtectedRoute");
   const offerLinks = nodes(screen(guardedOffers.props.children.props)).filter(node => node.type === "Link");
   assert.deepEqual(offerLinks.map(node => node.props.href), ["/home"]);
+});
+
+test("Captain account renders verified session and can request owner logout", () => {
+  let workspace = null;
+  let requested = false;
+  const account = renderable("app/(tabs)/account", {
+    "../../src/features/access/protected-route": { useCaptainWorkspace: () => workspace },
+  });
+  assert.equal(account(), null);
+  workspace = {
+    session: { actorId: "synthetic-captain", role: "captain", sessionExpiresAt: "2026-11-21T12:00:00Z" },
+    signOut() { requested = true; },
+  };
+  const content = nodes(account());
+  assert.ok(content.some(node => node.props.children === "حساب الكابتن معتمد"));
+  assert.equal(content.some(node => node.props.testID === "captain-capability-unavailable"), false);
+  content.find(node => node.type === "Pressable").props.onPress();
+  assert.equal(requested, true);
 });

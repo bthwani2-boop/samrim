@@ -47,7 +47,7 @@ async function revokeUndelivered(bearer: string): Promise<void> {
 }
 
 async function reconcileCaptainAdmission(
-  signal: AbortSignal, signOut = false,
+  signal: AbortSignal, signOut = false, expectedActorId?: string,
 ): Promise<boolean> {
   return mutateNativeStorage(async () => {
     const pending = await SecureStore.getItemAsync(pendingKey, nativeOptions);
@@ -55,6 +55,17 @@ async function reconcileCaptainAdmission(
     const bearer = await SecureStore.getItemAsync(key, nativeOptions);
     if (!pending) {
       if (!bearer) return false;
+      if (expectedActorId !== undefined) {
+        try {
+          const current = await readVerifiedIdentitySession(identityOrigin, bearer, signal);
+          if (current.role !== "captain" || current.actorId !== expectedActorId) {
+            throw new IdentityClientError(409, "CAPTAIN_CONTEXT_CHANGED");
+          }
+        } catch (error) {
+          // An already-revoked bearer can still be cleared from this device.
+          if (!(error instanceof IdentityClientError && error.status === 401 && error.code === "UNAUTHORIZED")) throw error;
+        }
+      }
       // Quarantine the bearer until Identity confirms revocation. Deleting it
       // earlier would prevent recovery from an interrupted owner request.
       await SecureStore.setItemAsync(pendingKey, "sign-out", nativeOptions);
@@ -237,8 +248,8 @@ export async function verifyCaptainCode(
   }
 }
 
-export async function leaveCaptainAdmission(signal: AbortSignal): Promise<void> {
+export async function leaveCaptainAdmission(signal: AbortSignal, expectedActorId?: string): Promise<void> {
   requireSyntheticOwner();
   if (nativeAdmissionInFlight) throw new IdentityClientError(409, "SIGN_OUT_REQUIRED");
-  await reconcileCaptainAdmission(signal, true);
+  await reconcileCaptainAdmission(signal, true, expectedActorId);
 }
