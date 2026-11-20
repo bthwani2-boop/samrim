@@ -13,7 +13,8 @@ import { Platform } from "react-native";
 import { CaptainStandingError, readApprovedCaptainStanding, requestCaptainApplication } from "./captain-standing";
 
 const nativeOptions = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY };
-const key = "bthwani.captain.synthetic-admission.v1";
+const key = process.env.EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW === "1"
+  ? "bthwani.captain.synthetic-admission.surface.v1" : "bthwani.captain.synthetic-admission.v1";
 // A persisted bearer with uncertain delivery must stay quarantined after a
 // JavaScript process restart, even when owner revocation and deletion fail.
 const pendingKey = `${key}.pending.v1`;

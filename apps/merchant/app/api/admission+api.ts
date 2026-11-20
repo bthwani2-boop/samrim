@@ -8,7 +8,8 @@ import {
 import { verifyMerchantAdmission } from "../../src/features/access/admission.ts";
 import { MerchantStandingError, readMerchantDSHStanding } from "../../src/features/access/dsh-standing.ts";
 
-const cookieName = "bthwani_merchant_admission";
+const cookieName = process.env.BTHWANI_SURFACE_PREVIEW === "1"
+  ? "bthwani_surface_merchant_admission" : "bthwani_merchant_admission";
 const localIdentity = "http://127.0.0.1:3201";
 const localDSH = "http://127.0.0.1:3202";
 const noStoreHeaders = {

@@ -83,7 +83,7 @@ function harness() {
       async requestCaptainApplication() { return "PENDING"; },
     },
   };
-  const reload = () => {
+  const reload = ({ preview = false } = {}) => {
     const module = { exports: {} };
     new Function("require", "module", "exports", "process", "setTimeout", "clearTimeout", compiled)(
       name => {
@@ -92,6 +92,7 @@ function harness() {
       }, module, module.exports, { env: {
         EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:3201",
         EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN: "http://127.0.0.1:3202",
+        EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW: preview ? "1" : "0",
       } }, setTimeout, clearTimeout,
     );
     return module.exports;
@@ -114,6 +115,19 @@ function harness() {
     pending() { return [...stored].find(([key]) => key.endsWith(".pending.v1"))?.[1] ?? null; },
   };
 }
+
+test("Surface preview never reads or revokes the installed app session", async () => {
+  const h = harness();
+  const legacyKey = "bthwani.captain.synthetic-admission.v1";
+  h.stored.set(legacyKey, h.tokens.captain);
+  const preview = h.reload({ preview: true });
+  const signal = new AbortController().signal;
+  assert.deepEqual(await preview.readCaptainAdmission(signal), { enabled: true, session: null });
+  await preview.leaveCaptainAdmission(signal);
+  assert.equal(h.ownerReads, 0);
+  assert.equal(h.captainRevocationAttempts, 0);
+  assert.equal(h.stored.get(legacyKey), h.tokens.captain);
+});
 
 test("Captain account logout cannot revoke a newer or different actor", async () => {
   const h = harness();

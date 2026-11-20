@@ -10,7 +10,8 @@ import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 
 const nativeOrigin = process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN;
-const storageKey = "bthwani.customer.synthetic-identity.v1";
+const storageKey = process.env.EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW === "1"
+  ? "bthwani.customer.synthetic-identity.surface.v1" : "bthwani.customer.synthetic-identity.v1";
 // Survives a process restart when a device write cannot be confirmed or undone.
 const pendingStorageKey = `${storageKey}.pending.v1`;
 const nativeOptions = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY };

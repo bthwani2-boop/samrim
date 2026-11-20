@@ -8,7 +8,8 @@ import {
 } from "@bthwani/identity";
 
 /** Customer's test-only, same-origin BFF. Only Identity issues and revokes sessions. */
-const cookieName = "bthwani_customer_auth";
+const cookieName = process.env.BTHWANI_SURFACE_PREVIEW === "1"
+  ? "bthwani_surface_customer_auth" : "bthwani_customer_auth";
 const noStore = {
   "Cache-Control": "no-store",
   "Referrer-Policy": "no-referrer",

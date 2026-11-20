@@ -11,7 +11,8 @@ import { Platform } from "react-native";
 import { revokeUndeliveredAdmissionSession, verifyMerchantAdmission } from "./admission";
 import { MerchantStandingError, readMerchantDSHStanding, standingFrom } from "./dsh-standing";
 
-const storageKey = "bthwani.merchant.synthetic-admission.v1";
+const storageKey = process.env.EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW === "1"
+  ? "bthwani.merchant.synthetic-admission.surface.v1" : "bthwani.merchant.synthetic-admission.v1";
 // Persist before writing an issued bearer. An interrupted write must remain
 // quarantined even after the JavaScript process loses its in-memory state.
 const pendingStorageKey = `${storageKey}.pending.v1`;

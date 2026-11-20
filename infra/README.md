@@ -163,6 +163,24 @@ separately tested before the new healthcheck can be claimed live. No
 real login, WebAuthn, Operator permission administration or production release
 is authorized by this isolated verifier.
 
+## Isolated Surface app preview
+
+`infra/Start-RefoundationApp.ps1 -Surface -App <app>` runs the named app from
+the current checkout. It uses separate loopback ports for Control Panel
+(`localhost:23100`), Customer (`127.0.0.1:23101`), Merchant
+(`127.0.0.1:23102`) and Captain Metro (`127.0.0.1:23103`).
+The default Identity and DSH preview ports are `23201` and `23202`.
+
+Use locally running owners with fresh synthetic schemas and the relevant
+phone, Passkey and DSH standing capabilities enabled. Configure DSH to allow
+the Customer preview origin and Identity to accept the Operator's exact
+`http://localhost:23100` WebAuthn origin. Only synthetic test phones and
+enrolled synthetic Operator credentials belong in this preview.
+
+For Android development clients, add ADB reverse mappings for the selected app's
+Metro port and the two owner ports. Keep any existing mappings. The preview
+uses separate names for browser cookies and native session storage.
+
 ## Non-invasive runtime attestation and disposable PostgreSQL proof
 
 Before trusting a previously running Docker service after a source change, use:
