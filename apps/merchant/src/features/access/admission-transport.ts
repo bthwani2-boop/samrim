@@ -114,23 +114,30 @@ export async function readMerchantStanding(signal: AbortSignal) {
     const result = await webRequest<{ standing: unknown }>("GET", signal, undefined, true);
     return standingFrom(result.standing);
   }
+  // Preserve the standing API's unauthenticated result for a missing or
+  // quarantined bearer; the shared session guard below additionally verifies
+  // the active Identity role and rejects stale Store readback.
   if (await clearPendingNativeAdmission(signal)) {
     throw new MerchantStandingError(401, "UNAUTHENTICATED");
   }
-  const bearer = await SecureStore.getItemAsync(storageKey, nativeOptions);
-  if (!bearer) throw new MerchantStandingError(401, "UNAUTHENTICATED");
-  try {
-    return await readMerchantDSHStanding(nativeDSHOrigin ?? "", bearer, signal);
-  } catch (error) {
-    if (!signal.aborted &&
-      (error instanceof MerchantStandingError || error instanceof IdentityClientError) &&
-      (error.status === 401 || error.status === 403)) {
-      deniedNativeBearer = bearer;
-      // Owner denial remains authoritative if device storage is temporarily unavailable.
-      await clearNativeBearerIfCurrent(bearer, signal).catch(() => {});
-    }
-    throw error;
+  const initialBearer = await SecureStore.getItemAsync(storageKey, nativeOptions);
+  if (!initialBearer || initialBearer === deniedNativeBearer) {
+    throw new MerchantStandingError(401, "UNAUTHENTICATED");
   }
+  return withNativeMerchantSession(signal, async bearer => {
+    try {
+      return await readMerchantDSHStanding(nativeDSHOrigin ?? "", bearer, signal);
+    } catch (error) {
+      if (!signal.aborted && error instanceof MerchantStandingError &&
+          (error.status === 401 || error.status === 403)) {
+        // Deny only the bearer used by this request. A concurrent account
+        // switch must never invalidate the replacement session.
+        deniedNativeBearer = bearer;
+        await clearNativeBearerIfCurrent(bearer, signal).catch(() => {});
+      }
+      throw error;
+    }
+  });
 }
 
 /** Read-only Store projection. Identity proves the role; DSH authorizes the Store. */

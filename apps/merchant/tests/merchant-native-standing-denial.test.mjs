@@ -236,10 +236,14 @@ test("late denial from old actor preserves a new concurrent native admission", a
   const h = nativeHarness();
   let decline;
   const checked = new Promise((_resolve, reject) => { decline = () => reject(new OwnerError(403)); });
-  h.setOwnerRead(() => checked);
+  // Synchronize on actual owner read, not a single microtask: the guarded
+  // transport now verifies Identity before starting DSH's in-flight read.
+  let ownerReadStarted;
+  const started = new Promise(resolve => { ownerReadStarted = resolve; });
+  h.setOwnerRead(() => { ownerReadStarted(); return checked; });
   const signal = new AbortController().signal;
   const oldStanding = h.transport.readMerchantStanding(signal);
-  await Promise.resolve();
+  await started;
   h.setIdentityRead(async bearer => {
     if (bearer === oldBearer) throw new OwnerError(401, "UNAUTHORIZED");
     return { actorId: "new-actor", role: "merchant", sessionExpiresAt: new Date(Date.now() + 60000).toISOString() };

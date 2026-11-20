@@ -12,7 +12,7 @@ const compiled = stripTypeScriptTypes(source, { mode: "transform" })
   .replace(/import\s+\*\s+as\s+(\w+)\s+from\s+["']([^"']+)["'];/g,
     (_match, name, moduleName) => `const ${name} = require("${moduleName}");`)
   .replace(/export async function (\w+)\(/g, "async function $1(") +
-  "\nmodule.exports = {readAdmission, readMerchantAvailability, saveMerchantAvailability};";
+  "\nmodule.exports = {readAdmission, readMerchantStanding, readMerchantAvailability, saveMerchantAvailability};";
 const bearer = Buffer.alloc(32, 8).toString("base64url");
 const identity = "http://127.0.0.1:13009";
 const dsh = "http://127.0.0.1:13010";
@@ -42,6 +42,12 @@ function harness(t, { role = "merchant", initialBearer = bearer, marker = null, 
       return identityStatus === 200 ? json({ actorId: "owner-a", role,
         sessionExpiresAt: new Date(Date.now() + 120000).toISOString() }) : json({ error: "FORBIDDEN" }, identityStatus);
     }
+    if (target.pathname === "/v1/stores/mine") {
+      assert.equal(options.method, "GET");
+      onDSH();
+      return dshStatus === 200 ? json({ actorId: "owner-a", stores: [] }) :
+        json({ code: "STORE_ACCESS_DENIED" }, dshStatus);
+    }
     assert.equal(target.href, `${dsh}/v1/stores/store-a/availability`);
     assert.equal(options.method, change ? "PATCH" : "GET");
     if (change) assert.deepEqual(JSON.parse(options.body), change);
@@ -62,7 +68,7 @@ function harness(t, { role = "merchant", initialBearer = bearer, marker = null, 
       },
     },
     "react-native": { Platform: { OS: platform } },
-    "./admission": {}, "./dsh-standing": {},
+    "./admission": {}, "./dsh-standing": dshClient,
   };
   const module = { exports: {} };
   new Function("require", "module", "exports", "process", compiled)(
@@ -179,4 +185,38 @@ test("Native PATCH for an earlier actor does not contact DSH or discard the newe
     { code: "MERCHANT_CONTEXT_CHANGED" });
   assert.equal(h.calls.length, 1);
   assert.equal(h.current(), bearer);
+});
+
+test("Native Merchant standing validates the live Identity session before returning DSH stores", async t => {
+  const h = harness(t);
+  assert.deepEqual(await h.transport.readMerchantStanding(signal()), { actorId: "owner-a", stores: [] });
+  assert.deepEqual(h.calls.map(call => new URL(call.url).pathname),
+    ["/v1/sessions/current", "/v1/stores/mine"]);
+});
+
+test("Native Merchant standing rejects a Customer identity before contacting DSH", async t => {
+  const h = harness(t, { role: "customer" });
+  await assert.rejects(h.transport.readMerchantStanding(signal()), { status: 403 });
+  assert.equal(h.calls.length, 1);
+});
+
+for (const stage of ["identity", "dsh"]) {
+  test(`Native Merchant standing never exposes previous account after ${stage} switch`, async t => {
+    let h;
+    h = harness(t, { [stage === "identity" ? "onIdentity" : "onDSH"]: () => h.switchBearer() });
+    await assert.rejects(h.transport.readMerchantStanding(signal()), { code: "OWNER_RESPONSE_STALE" });
+    assert.notEqual(h.current(), bearer);
+    assert.equal(h.calls.length, stage === "identity" ? 1 : 2);
+  });
+}
+
+test("Native Merchant standing revokes the denied current bearer without invalidating a newer account", async t => {
+  const same = harness(t, { dshStatus: 403 });
+  await assert.rejects(same.transport.readMerchantStanding(signal()), { code: "STORE_ACCESS_DENIED" });
+  assert.equal(same.current(), null, "current denied credential must be removed");
+
+  let switched;
+  switched = harness(t, { dshStatus: 403, onDSH: () => switched.switchBearer() });
+  await assert.rejects(switched.transport.readMerchantStanding(signal()), { code: "STORE_ACCESS_DENIED" });
+  assert.notEqual(switched.current(), bearer, "late rejection may not delete replacement credential");
 });
