@@ -68,7 +68,14 @@ export default function MerchantIdentityGate() {
         if (signal.aborted) return;
         setEntryUncertain(false);
         setEnabled(state.enabled);
-        setSession(state.session);
+        const verified = state.enabled ? state.session : null;
+        setStanding(previous => {
+          if (previous?.session.actorId === verified?.actorId &&
+              previous?.session.sessionExpiresAt === verified?.sessionExpiresAt) return previous;
+          return null;
+        });
+        // A fresh Identity decision always requires a fresh DSH scope read.
+        setSession(verified ? { ...verified } : null);
       } catch (error) {
         if (!signal.aborted) setEntryUncertain(true);
         throw error;
@@ -86,7 +93,6 @@ export default function MerchantIdentityGate() {
         action.current = null;
         setBusy(false);
         setSession(null);
-        setStanding(null);
         setEntryUncertain(true);
         return;
       }
@@ -100,7 +106,6 @@ export default function MerchantIdentityGate() {
   }, [refresh]);
 
   useEffect(() => {
-    setStanding(null);
     setStandingError("");
     if (!session) {
       setStandingLoading(false);
@@ -119,6 +124,7 @@ export default function MerchantIdentityGate() {
       if ((error instanceof IdentityClientError || error instanceof MerchantStandingError) &&
         (error.status === 401 || error.status === 403)) {
         setSession(null);
+        setStanding(null);
         setMessage("انتهت صلاحية جلسة التاجر. يرجى تسجيل الدخول مجددًا.");
         return;
       }
@@ -131,8 +137,10 @@ export default function MerchantIdentityGate() {
 
   useEffect(() => {
     if (!session) return;
-    const timeout = setTimeout(() => setSession(null),
-      Math.max(0, Date.parse(session.sessionExpiresAt) - Date.now()));
+    const timeout = setTimeout(() => {
+      setSession(null);
+      setStanding(null);
+    }, Math.max(0, Date.parse(session.sessionExpiresAt) - Date.now()));
     const refreshTimer = setInterval(() => {
       if (AppState.currentState === "active") refresh();
     }, 30_000);
@@ -167,6 +175,7 @@ export default function MerchantIdentityGate() {
   function signOut() {
     void run(async signal => {
       setSession(null);
+      setStanding(null);
       setEntryUncertain(true);
       await signOutOfAdmission(signal);
       if (!signal.aborted) {
@@ -175,9 +184,7 @@ export default function MerchantIdentityGate() {
     });
   }
 
-  if (enabled && !busy && session && standing?.session === session) {
-    return <MerchantWorkspace key={session.actorId} actorId={session.actorId} stores={standing.value.stores} onRefresh={refresh} onSignOut={signOut} />;
-  }
+  const workspaceVisible = Boolean(enabled && !busy && session && standing?.session === session);
 
   const fieldStyle = {
     color: theme.color, borderColor: theme.borderColor, borderWidth: 1,
@@ -192,7 +199,7 @@ export default function MerchantIdentityGate() {
     </Pressable>
   );
 
-  return (
+  const entry = workspaceVisible ? null : (
     <MerchantEntryShell>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{
         flexGrow: 1, padding: 24, justifyContent: "center", width: "100%", maxWidth: 500, alignSelf: "center",
@@ -254,5 +261,22 @@ export default function MerchantIdentityGate() {
         </View>
       </ScrollView>
     </MerchantEntryShell>
+  );
+
+  return (
+    <>
+      {standing ? (
+        <View key={JSON.stringify([standing.session.actorId, standing.session.sessionExpiresAt])}
+          testID="merchant-verified-workspace"
+          style={workspaceVisible ? { flex: 1 } : { display: "none" }}
+          pointerEvents={workspaceVisible ? "auto" : "none"}
+          accessibilityElementsHidden={!workspaceVisible}
+          importantForAccessibility={workspaceVisible ? "auto" : "no-hide-descendants"}>
+          <MerchantWorkspace actorId={standing.session.actorId} stores={standing.value.stores}
+            onRefresh={refresh} onSignOut={signOut} />
+        </View>
+      ) : null}
+      {entry}
+    </>
   );
 }

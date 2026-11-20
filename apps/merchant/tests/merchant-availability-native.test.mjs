@@ -12,7 +12,7 @@ const compiled = stripTypeScriptTypes(source, { mode: "transform" })
   .replace(/import\s+\*\s+as\s+(\w+)\s+from\s+["']([^"']+)["'];/g,
     (_match, name, moduleName) => `const ${name} = require("${moduleName}");`)
   .replace(/export async function (\w+)\(/g, "async function $1(") +
-  "\nmodule.exports = {readAdmission, readMerchantAvailability};";
+  "\nmodule.exports = {readAdmission, readMerchantAvailability, saveMerchantAvailability};";
 const bearer = Buffer.alloc(32, 8).toString("base64url");
 const identity = "http://127.0.0.1:13009";
 const dsh = "http://127.0.0.1:13010";
@@ -21,7 +21,8 @@ const availability = { storeId: "store-a", timezone: "Asia/Aden", weekly: null,
 const json = (value, status = 200) => Response.json(value, { status, headers: { "Cache-Control": "no-store" } });
 
 function harness(t, { role = "merchant", initialBearer = bearer, marker = null, deletionFails = false,
-  identityStatus = 200, dshStatus = 200, platform = "android", onDSH = () => {}, onIdentity = () => {} } = {}) {
+  identityStatus = 200, dshStatus = 200, platform = "android", change,
+  onDSH = () => {}, onIdentity = () => {} } = {}) {
   let stored = initialBearer;
   let pending = marker;
   const calls = [];
@@ -33,17 +34,20 @@ function harness(t, { role = "merchant", initialBearer = bearer, marker = null, 
       onDSH();
       return json({ availability });
     }
-    assert.equal(options.method, "GET");
     assert.equal(options.headers.Authorization, `Bearer ${bearer}`);
     const target = new URL(url);
     if (target.origin === identity) {
+      assert.equal(options.method, "GET");
       onIdentity();
       return identityStatus === 200 ? json({ actorId: "owner-a", role,
         sessionExpiresAt: new Date(Date.now() + 120000).toISOString() }) : json({ error: "FORBIDDEN" }, identityStatus);
     }
     assert.equal(target.href, `${dsh}/v1/stores/store-a/availability`);
+    assert.equal(options.method, change ? "PATCH" : "GET");
+    if (change) assert.deepEqual(JSON.parse(options.body), change);
     onDSH();
-    return dshStatus === 200 ? json(availability) : json({ code: "STORE_OPERATION_FORBIDDEN" }, dshStatus);
+    const result = change ? { availability: { ...availability, weekly: [], version: 4 }, replay: false } : availability;
+    return dshStatus === 200 ? json(result) : json({ code: "STORE_OPERATION_FORBIDDEN" }, dshStatus);
   });
   const dependencies = {
     "@bthwani/dsh": dshClient,
@@ -157,4 +161,22 @@ test("Web availability transport uses only the fixed same-origin BFF and rejects
   const h = harness(t, { platform: "web", onDSH: () => controller.abort() });
   await assert.rejects(h.transport.readMerchantAvailability("store-a", controller.signal), { code: "OWNER_RESPONSE_STALE" });
   assert.equal(h.calls.length, 1);
+});
+
+const change = {
+  operationId: "native-save-pause", expectedVersion: 3, weekly: [], pausedUntil: null,
+  preparationMinutes: 12, reason: "انتهاء الإيقاف",
+};
+test("Native PATCH verifies the current actor and sends the exact command to DSH", async t => {
+  const h = harness(t, { change });
+  await h.transport.saveMerchantAvailability("store-a", "owner-a", change, signal());
+  assert.deepEqual(h.calls.map(call => call.options.method), ["GET", "PATCH"]);
+});
+
+test("Native PATCH for an earlier actor does not contact DSH or discard the newer session", async t => {
+  const h = harness(t, { change });
+  await assert.rejects(h.transport.saveMerchantAvailability("store-a", "old-owner", change, signal()),
+    { code: "MERCHANT_CONTEXT_CHANGED" });
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.current(), bearer);
 });
