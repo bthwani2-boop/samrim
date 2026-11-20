@@ -415,3 +415,88 @@ test("Captain DSH owner SDK exports match four authenticated OpenAPI operations 
   assert.match(appBridge, /from "@bthwani\/dsh"/, "Captain must consume public DSH owner export");
   assert.doesNotMatch(appBridge, /\bfetch\s*\(/, "Captain must not maintain an independent owner transport");
 });
+
+
+test("remaining DSH authenticated client requests match owner OpenAPI operations", async () => {
+  const YAML = (await import("yaml")).default;
+  const contractDir = path.join(root, "services", "dsh", "contracts", "openapi");
+  const entry = YAML.parse(readFileSync(path.join(contractDir, "dsh.openapi.yaml"), "utf8"));
+  const client = await import("../../services/dsh/clients/index.ts");
+  const base = "http://127.0.0.1:3202";
+  const bearer = "A".repeat(43);
+  const storeID = "market-sanaa";
+  const cityID = "sanaa";
+  const actorID = "captain-review";
+  const availabilityChange = {
+    operationId: "store-availability-001", expectedVersion: 1,
+    weekly: [], preparationMinutes: 5, reason: "owner-review",
+  };
+  const cityChange = {
+    operationId: "city-policy-001", expectedVersion: 1,
+    maxPauseSeconds: 600, maxPreparationMinutes: 60, reason: "owner-review",
+  };
+  const captainChange = {
+    operationId: "captain-review-001", expectedVersion: 1,
+    status: "APPROVED", reason: "owner-review",
+  };
+  const cases = [
+    ["listCurrentMerchantStores", "GET", "/v1/stores/mine",
+      () => client.readMerchantDSHStanding(base, bearer)],
+    ["getStoreOperationalAvailability", "GET", "/v1/stores/{storeID}/availability",
+      () => client.getStoreOperationalAvailability(base, storeID, bearer)],
+    ["updateStoreOperationalAvailability", "PATCH", "/v1/stores/{storeID}/availability",
+      () => client.updateStoreOperationalAvailability(base, storeID, bearer, availabilityChange), availabilityChange],
+    ["getCityStoreOperationalPolicy", "GET", "/v1/operators/cities/{cityID}/store-availability-policy",
+      () => client.getCityStoreOperationalPolicy(base, cityID, bearer)],
+    ["replaceCityStoreOperationalPolicy", "PATCH", "/v1/operators/cities/{cityID}/store-availability-policy",
+      () => client.replaceCityStoreOperationalPolicy(base, cityID, bearer, cityChange), cityChange],
+    ["listOperatorCaptainStandings", "GET", "/v1/operators/captains",
+      () => client.listOperatorCaptainStandings(base, bearer)],
+    ["getOperatorCaptainStanding", "GET", "/v1/operators/captains/{actorId}/standing",
+      () => client.getOperatorCaptainStanding(base, actorID, bearer)],
+    ["changeCaptainStandingByAuthorizedOperator", "PATCH", "/v1/operators/captains/{actorId}/standing",
+      () => client.changeOperatorCaptainStanding(base, actorID, bearer, captainChange), captainChange],
+  ];
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const [operationId, method, template, invoke, change] of cases) {
+      const ref = entry.paths[template]?.$ref;
+      assert.equal(typeof ref, "string", operationId + " must be linked by the owner entrypoint");
+      const [fragmentPath, pointer] = ref.split("#");
+      const fragment = YAML.parse(readFileSync(path.resolve(contractDir, fragmentPath), "utf8"));
+      const operation = pointer.slice(1).split("/").filter(Boolean).reduce((node, key) =>
+        node[key.replaceAll("~1", "/").replaceAll("~0", "~")], fragment)[method.toLowerCase()];
+      assert.equal(operation.operationId, operationId);
+      assert.deepEqual(operation.security, [{ OpaqueSession: [] }]);
+      assert.ok(operation.responses["200"], operationId + " needs an owner readback response");
+      if (change) assert.equal(operation.requestBody?.required, true, operationId + " needs a body");
+      let captured;
+      globalThis.fetch = async (url, options) => {
+        captured = { url: new URL(url), options };
+        return new Response(JSON.stringify({ code: "CONFLICT" }), {
+          status: 409,
+          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+        });
+      };
+      await assert.rejects(invoke, operationId + " must reject a controlled 409");
+      assert.ok(captured, operationId + " must actually use owner HTTP");
+      const expectedPath = template
+        .replace("{storeID}", storeID).replace("{cityID}", cityID).replace("{actorId}", actorID);
+      assert.equal(captured.url.pathname, expectedPath);
+      assert.equal(captured.options.method, method);
+      assert.equal(captured.options.headers.Authorization, "Bearer " + bearer);
+      assert.equal(captured.options.headers.Accept, "application/json");
+      assert.equal(captured.options.redirect, "error");
+      assert.equal(captured.options.credentials, "omit");
+      assert.equal(captured.options.cache, "no-store");
+      if (change) {
+        assert.deepEqual(JSON.parse(captured.options.body), change);
+        assert.equal(captured.options.headers["Content-Type"], "application/json");
+      } else {
+        assert.equal(captured.options.body, undefined);
+      }
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
