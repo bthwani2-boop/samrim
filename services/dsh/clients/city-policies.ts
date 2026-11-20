@@ -85,7 +85,8 @@ export async function replaceCityStoreOperationalPolicy(
   const result = body as Record<string, unknown>;
   if (Object.keys(result).length !== 2 || !Object.hasOwn(result, "policy") ||
     !Object.hasOwn(result, "replay") ||
-    typeof result.replay !== "boolean" || !isCityStoreOperationalPolicy(result.policy, cityID)) {
+    typeof result.replay !== "boolean" || !isCityStoreOperationalPolicy(result.policy, cityID) ||
+    result.policy.version !== change.expectedVersion + 1) {
     throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
   }
   if (signal?.aborted) throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN");

@@ -86,7 +86,9 @@ export async function updateStoreOperationalAvailability(
     throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
   }
   const result = body as Record<string, unknown>;
-  if (!onlyKeys(result, ["availability", "replay"]) || typeof result.replay !== "boolean" || !isStoreAvailability(result.availability, storeId)) {
+  if (!onlyKeys(result, ["availability", "replay"]) || typeof result.replay !== "boolean" ||
+    !isStoreAvailability(result.availability, storeId) ||
+    result.availability.version !== change.expectedVersion + 1) {
     throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
   }
   // A caller switching Store/account must not display this in-flight write as

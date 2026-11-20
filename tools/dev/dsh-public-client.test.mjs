@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   changeOperatorCaptainStanding, DshPublicError, getPublicStore, listPublicOffers, listPublicStores, listPublicVerticals,
+  replaceCityStoreOperationalPolicy,
 } from "../../services/dsh/clients/index.ts";
 
 const base = "http://127.0.0.1:3202";
@@ -381,4 +382,38 @@ test("Captain standing owner PATCH must return exactly the next version, includi
     });
   }
   assert.equal(posts, 3, "the owner client must not retry an uncertain write automatically");
+});
+
+test("City operational policy PATCH confirms only the exact owner version increment", async () => {
+  const cityID = "sanaa";
+  const change = {
+    operationId: "city-policy-test-001", expectedVersion: 1,
+    maxPauseSeconds: 1800, maxPreparationMinutes: 25, reason: "reviewed",
+  };
+  const call = () => replaceCityStoreOperationalPolicy(base, cityID, "isolated-bearer", change);
+  let requests = 0;
+  for (const version of [1, 3, 2]) {
+    await withFetch(async (url, options) => {
+      requests++;
+      assert.equal(options.method, "PATCH");
+      assert.equal(new URL(url).pathname, `/v1/operators/cities/${cityID}/store-availability-policy`);
+      assert.deepEqual(JSON.parse(options.body), change);
+      return new Response(JSON.stringify({ policy: {
+        cityId: cityID, version, maxPauseSeconds: change.maxPauseSeconds,
+        maxPreparationMinutes: change.maxPreparationMinutes, changedByActor: "operator-a",
+        changeReason: change.reason, updatedAt: "2026-11-20T00:00:00Z",
+      }, replay: true }), {
+        status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      });
+    }, async () => {
+      if (version !== change.expectedVersion + 1) {
+        await rejectsAs(call, 502, "OPERATION_RESULT_UNKNOWN");
+      } else {
+        const result = await call();
+        assert.equal(result.policy.version, change.expectedVersion + 1);
+        assert.equal(result.replay, true);
+      }
+    });
+  }
+  assert.equal(requests, 3, "an uncertain write must not trigger an automatic second PATCH");
 });

@@ -12,6 +12,7 @@ const availability = {
   weekly: [{ weekday: 0, opens: 480, closes: 1020 }],
   preparationMinutes: 10, version: 1, actingActorId: "merchant-a", reason: "updated",
 };
+const updatedAvailability = { ...availability, version: 2 };
 const change = {
   operationId: "stable-operation-001", expectedVersion: 1,
   weekly: [{ weekday: 0, opens: 480, closes: 1020 }],
@@ -41,11 +42,11 @@ test("valid owner Store availability readback and PATCH remain supported", async
     if (init.method === "GET") return ownerJson(availability);
     assert.equal(init.method, "PATCH");
     assert.deepEqual(JSON.parse(init.body), change);
-    return ownerJson({ availability, replay: false });
+    return ownerJson({ availability: updatedAvailability, replay: false });
   }, async () => {
     assert.deepEqual(await getStoreOperationalAvailability(base, storeId, bearer), availability);
     assert.deepEqual(await updateStoreOperationalAvailability(base, storeId, bearer, change),
-      { availability, replay: false });
+      { availability: updatedAvailability, replay: false });
   });
   assert.equal(requests, 2);
 });
@@ -62,9 +63,9 @@ test("owner GET rejects undeclared private fields in Store availability and wind
 
 test("owner PATCH rejects undeclared success fields and private nested Store availability", async () => {
   for (const invalid of [
-    { availability, replay: false, internalOwnerAudit: { actorToken: "private" } },
-    { availability: { ...availability, internalStoreGrant: "private" }, replay: false },
-    { availability: { ...availability, weekly: [{ ...availability.weekly[0], internalPolicy: true }] }, replay: false },
+    { availability: updatedAvailability, replay: false, internalOwnerAudit: { actorToken: "private" } },
+    { availability: { ...updatedAvailability, internalStoreGrant: "private" }, replay: false },
+    { availability: { ...updatedAvailability, weekly: [{ ...availability.weekly[0], internalPolicy: true }] }, replay: false },
   ]) {
     await withFetch(async () => ownerJson(invalid), () =>
       rejectsAs(() => updateStoreOperationalAvailability(base, storeId, bearer, change),
@@ -76,7 +77,7 @@ test("client rejects unauthorized keys in outbound Store mutation before contact
   let networkCalls = 0;
   await withFetch(async () => {
     networkCalls++;
-    return ownerJson({ availability, replay: false });
+    return ownerJson({ availability: updatedAvailability, replay: false });
   }, async () => {
     for (const invalid of [
       { ...change, overrideStoreGrant: true },
@@ -99,7 +100,7 @@ test("Store availability wire limits match owner OpenAPI Unicode length and time
   await withFetch(async (_url, options) => {
     requests++;
     assert.equal(JSON.parse(options.body).reason, unicodeReason);
-    return ownerJson({ availability: validUnicode, replay: false });
+    return ownerJson({ availability: { ...validUnicode, version: 2 }, replay: false });
   }, async () => {
     const result = await updateStoreOperationalAvailability(
       base, storeId, bearer, { ...change, reason: unicodeReason },
@@ -124,7 +125,7 @@ test("Store PATCH rejects date-time and reason violations before request", async
   let requests = 0;
   await withFetch(async () => {
     requests++;
-    return ownerJson({ availability, replay: false });
+    return ownerJson({ availability: updatedAvailability, replay: false });
   }, async () => {
     for (const invalid of [
       { ...change, pausedUntil: 123 },
@@ -140,4 +141,24 @@ test("Store PATCH rejects date-time and reason violations before request", async
     });
   });
   assert.equal(requests, 1, "only the valid null-pause command may reach the owner");
+});
+
+test("Store PATCH cannot confirm an unchanged or unexpected owner version", async () => {
+  let calls = 0;
+  for (const version of [1, 3]) {
+    await withFetch(async () => {
+      calls++;
+      return ownerJson({ availability: { ...updatedAvailability, version }, replay: true });
+    }, () => rejectsAs(() => updateStoreOperationalAvailability(base, storeId, bearer, change),
+      "OPERATION_RESULT_UNKNOWN"));
+  }
+  await withFetch(async () => {
+    calls++;
+    return ownerJson({ availability: updatedAvailability, replay: true });
+  }, async () => {
+    const result = await updateStoreOperationalAvailability(base, storeId, bearer, change);
+    assert.equal(result.availability.version, change.expectedVersion + 1);
+    assert.equal(result.replay, true);
+  });
+  assert.equal(calls, 3, "an ambiguous write result must not trigger an automatic duplicate PATCH");
 });
