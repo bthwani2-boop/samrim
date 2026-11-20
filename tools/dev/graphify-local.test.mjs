@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { evaluateIndex } from "./graphify-local.mjs";
+import { evaluateIndex, rejectUntrackedFiles } from "./graphify-local.mjs";
 
 const current = {
   repository: "d:/samrim",
@@ -36,4 +36,10 @@ for (const [field, different] of [
 
 test("reject a graph changed independently of the verified local refresh", () => {
   assert.match(evaluateIndex(indexed, current, "different-graph"), /INVALIDATED/);
+});
+
+test("fail closed on any untracked file rather than inspecting a potentially swapped symlink", () => {
+  assert.doesNotThrow(() => rejectUntrackedFiles([]));
+  assert.throws(() => rejectUntrackedFiles(["user-supplied.ts"]), /BLOCKED: untracked/);
+  assert.throws(() => rejectUntrackedFiles(["link-to-outside"]), /BLOCKED: untracked/);
 });

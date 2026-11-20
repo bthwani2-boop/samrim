@@ -2,7 +2,7 @@
 // Refresh is explicit: repository governance prohibits automatic reindexing.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, lstatSync, openSync, readFileSync, readlinkSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -58,21 +58,22 @@ export function evaluateIndex(stored, current, graphHash) {
   return null;
 }
 
+export function rejectUntrackedFiles(names) {
+  // Never open untracked paths: a symlink swap between lstat and read is unsafe.
+  // Staged files are already covered by the Git diff fingerprint below.
+  if (names.length > 0) {
+    throw new Error("BLOCKED: untracked files must be staged or committed before querying Graphify");
+  }
+}
+
 function currentState() {
   const beginning = branchAndHead();
   const status = git("status", "--porcelain=v1", "-z", "--untracked-files=all");
   const diff = git("diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD", "--");
   const untracked = git("ls-files", "--others", "--exclude-standard", "-z").toString("utf8")
-    .split("\0").filter(Boolean).sort();
+    .split("\0").filter(Boolean);
+  rejectUntrackedFiles(untracked);
   const hash = createHash("sha256").update(status).update(diff);
-  for (const name of untracked) {
-    const file = join(root, name);
-    const info = lstatSync(file);
-    hash.update("\0" + name + "\0");
-    if (info.isSymbolicLink()) hash.update(readlinkSync(file));
-    else if (info.isFile()) hash.update(readFileSync(file));
-    else throw new Error("BLOCKED: unsupported untracked file: " + name);
-  }
   const ending = branchAndHead();
   if (beginning.branch !== ending.branch || beginning.head !== ending.head) {
     throw new Error("INVALIDATED: checkout changed during fingerprinting");
