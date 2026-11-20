@@ -306,6 +306,11 @@ func TestPostgresIdentitySessionReadback(t *testing.T) {
 	if _, err = independentlyScoped.LookupPermission(ctx, digestOpA, "operations"); !errors.Is(err, ErrForbidden) {
 		t.Fatal("revoked permission not visible to independent Identity owner connection")
 	}
+	if os.Getenv("IDENTITY_RESTORE_CI_TEST") == "true" {
+		t.Run("restored owner authorization", func(t *testing.T) {
+			verifyIdentityRestore(t, ctx, connectionURL, schema, tokenA, opA, opB)
+		})
+	}
 	exec("UPDATE "+permissions+" SET state='ACTIVE',updated_at=now() WHERE actor_id=$1 AND permission='operations'", "identity-operator-a")
 	checkPermission(opA, "operations", "identity-operator-a", nil)
 	// A stale Operator role grant or actor security version fails closed.

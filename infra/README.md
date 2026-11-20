@@ -218,6 +218,12 @@ financial ledger. Do not take the successful scratch proof as authority to
 change shared database roles, alter protected volumes, restart active services
 or run real schema upgrades.
 
+The [owner integration script](verify-owner-postgres-ci.sh) also restores an
+isolated Identity schema and checks active sessions, revoked sessions and
+Operator permissions through the Identity HTTP handler. The WLT stage restores
+the Customer balance projection and verifies that its reader still cannot
+access the funding journal.
+
 ## Deployment boundary and security review
 
 The DSH container is a **local public-read-only** service: non-root runtime,

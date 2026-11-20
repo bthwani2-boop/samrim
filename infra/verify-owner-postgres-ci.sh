@@ -150,13 +150,19 @@ run_test() {
 
 start_stage bthwani-ci-discovery-pg bthwani_ci bthwani_refoundation
 docker exec "$current" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
-  -c "CREATE DATABASE bthwani_dsh_boundary_fixture OWNER bthwani_ci;"
+  -c "CREATE DATABASE bthwani_dsh_boundary_fixture OWNER bthwani_ci;" \
+  -c "CREATE DATABASE bthwani_refoundation_identity_restore OWNER bthwani_ci;"
 docker exec "$current" sh -c \
   "sed 's/__SCHEMA__/dsh_test_seed_boundary/g' /agent02/services/dsh/database/migrations/001_public_discovery.sql | psql -X -q -v ON_ERROR_STOP=1 -U bthwani_ci -d bthwani_dsh_boundary_fixture"
 run_test "$current" /agent02/services/identity/backend/internal/session \
   /agent02/bin/identity-session.test '^TestPostgresIdentitySessionReadback$' 'TestPostgresIdentitySessionReadback' \
-  -e BTHWANI_ISOLATED_TEST_MODE=true \
+  -e BTHWANI_ISOLATED_TEST_MODE=true -e IDENTITY_RESTORE_CI_TEST=true \
   -e IDENTITY_TEST_DATABASE_URL='postgres://bthwani_ci:synthetic-only@127.0.0.1:5432/bthwani_refoundation?sslmode=disable'
+restored_identity="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_ci \
+  -d bthwani_refoundation_identity_restore \
+  -c "SELECT count(*) FROM pg_namespace WHERE nspname ~ '^identity_test_agent03_[a-f0-9]{16}$';")"
+[[ "$restored_identity" == '1' ]] || { echo "Identity restore must produce one isolated schema" >&2; exit 1; }
+echo 'IDENTITY_DISPOSABLE_RESTORE_PASS real_postgresql=true active_and_revoked_authorizations=true'
 run_test "$current" /agent02/services/dsh/backend/internal/discovery \
   /agent02/bin/dsh-discovery.test '^(TestOwnerBacked|TestOwnerScoped)' 'TestOwnerBackedMarketplaceVisibility,TestOwnerBackedPublicStoreOperationalStatus,TestOwnerBackedSyntheticImportDeniesAlternateDatabase,TestOwnerBackedOfferVisibilityAndCursorRecovery,TestOwnerBackedUnpublishedStoreRejectsOfferContinuation,TestOwnerBackedConcurrentReadsAndSafeFailures,TestOwnerScopedTransactionSearchPathResetsOnPooledConnection,TestOwnerBackedDiscoveryHealthRequiresInitializedSchema,TestOwnerBackedCaptainStandingMigration,TestOwnerBackedActiveCityDirectory,TestOwnerBackedPublicVerticalDirectory,TestOwnerBackedVerticalFilter,TestOwnerBackedStoreSearch,TestOwnerBackedOfferSearch' \
   -e BTHWANI_ISOLATED_TEST_MODE=true -e DSH_TEST_SEED_BOUNDARY=true \
