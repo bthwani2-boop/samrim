@@ -202,17 +202,36 @@ export async function saveMerchantAvailability(
       updateStoreOperationalAvailability(nativeDSHOrigin ?? "", storeId, bearer, change, signal), actorId);
     return;
   }
-  const result = await fetch(`/api/admission?availability=${encodeURIComponent(storeId)}`, {
-    method: "PATCH", signal, credentials: "same-origin", cache: "no-store", redirect: "error",
-    headers: { "Content-Type": "application/json", "X-Merchant-Context": actorId },
-    body: JSON.stringify(change),
-  });
-  const body = await result.json();
-  signal.throwIfAborted();
-  if (!result.ok) throw new DshPublicError(result.status, body.code);
-  if (typeof body?.replay !== "boolean" || body.availability?.storeId !== storeId ||
-    !Number.isSafeInteger(body.availability.version) ||
-    body.availability.version !== change.expectedVersion + 1) {
+  let result: Response;
+  try {
+    result = await fetch(`/api/admission?availability=${encodeURIComponent(storeId)}`, {
+      method: "PATCH", signal, credentials: "same-origin", cache: "no-store", redirect: "error",
+      headers: { "Content-Type": "application/json", "X-Merchant-Context": actorId },
+      body: JSON.stringify(change),
+    });
+  } catch {
+    // Dispatch may have committed before the connection failed.
+    throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN");
+  }
+  let body: unknown;
+  try {
+    body = await result.json();
+  } catch {
+    throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
+  }
+  if (signal.aborted) throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN");
+  if (!result.ok) {
+    const code = body && typeof body === "object" && !Array.isArray(body) &&
+      "code" in body && typeof body.code === "string" ? body.code : "OPERATION_RESULT_UNKNOWN";
+    throw new DshPublicError(result.status, result.status >= 500 ? "OPERATION_RESULT_UNKNOWN" : code);
+  }
+  const availability = body && typeof body === "object" && !Array.isArray(body) &&
+    "availability" in body && body.availability && typeof body.availability === "object" &&
+    !Array.isArray(body.availability) ? body.availability as Record<string, unknown> : null;
+  if (!body || typeof body !== "object" || Array.isArray(body) ||
+    !("replay" in body) || typeof body.replay !== "boolean" ||
+    availability?.storeId !== storeId || !Number.isSafeInteger(availability.version) ||
+    availability.version !== change.expectedVersion + 1) {
     throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
   }
 }

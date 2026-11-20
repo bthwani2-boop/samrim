@@ -21,7 +21,7 @@ const availability = { storeId: "store-a", timezone: "Asia/Aden", weekly: null,
 const json = (value, status = 200) => Response.json(value, { status, headers: { "Cache-Control": "no-store" } });
 
 function harness(t, { role = "merchant", initialBearer = bearer, marker = null, deletionFails = false,
-  identityStatus = 200, dshStatus = 200, platform = "android", change, webReply,
+  identityStatus = 200, dshStatus = 200, platform = "android", change, webReply, webMalformed = false,
   onDSH = () => {}, onIdentity = () => {} } = {}) {
   let stored = initialBearer;
   let pending = marker;
@@ -32,9 +32,10 @@ function harness(t, { role = "merchant", initialBearer = bearer, marker = null, 
       assert.equal(url, "/api/admission?availability=store-a");
       assert.equal(options.credentials, "same-origin");
       onDSH();
+      if (webMalformed) return new Response("{", { status: 200, headers: { "Cache-Control": "no-store" } });
       return json(webReply ?? (change
         ? { availability: { ...availability, version: change.expectedVersion + 1 }, replay: false }
-        : { availability }));
+        : { availability }), dshStatus);
     }
     assert.equal(options.headers.Authorization, `Bearer ${bearer}`);
     const target = new URL(url);
@@ -241,4 +242,43 @@ test("Web Merchant PATCH accepts only the next owner version for its original op
   assert.equal(h.calls.length, 1);
   assert.equal(h.calls[0].options.method, "PATCH");
   assert.deepEqual(JSON.parse(h.calls[0].options.body), change);
+});
+
+test("Web Merchant PATCH network ambiguity remains unknown rather than a transport exception", async t => {
+  const h = harness(t, { platform: "web", change, onDSH: () => {
+    throw new TypeError("network disconnected after dispatch");
+  } });
+  await assert.rejects(
+    h.transport.saveMerchantAvailability("store-a", "owner-a", change, signal()),
+    { code: "OPERATION_RESULT_UNKNOWN", status: 0 },
+  );
+  assert.equal(h.calls.length, 1);
+});
+
+test("Web Merchant PATCH aborted after dispatch cannot confirm a possibly committed write", async t => {
+  const controller = new AbortController();
+  const h = harness(t, { platform: "web", change, onDSH: () => controller.abort() });
+  await assert.rejects(
+    h.transport.saveMerchantAvailability("store-a", "owner-a", change, controller.signal),
+    { code: "OPERATION_RESULT_UNKNOWN", status: 0 },
+  );
+  assert.equal(h.calls.length, 1);
+});
+
+test("Web Merchant PATCH malformed acknowledged body remains an unknown write", async t => {
+  const h = harness(t, { platform: "web", change, webMalformed: true });
+  await assert.rejects(
+    h.transport.saveMerchantAvailability("store-a", "owner-a", change, signal()),
+    { code: "OPERATION_RESULT_UNKNOWN", status: 502 },
+  );
+  assert.equal(h.calls.length, 1);
+});
+
+test("Web Merchant PATCH owner 5xx preserves the original operation as uncertain", async t => {
+  const h = harness(t, { platform: "web", change, dshStatus: 503, webReply: { code: "OWNER_UNAVAILABLE" } });
+  await assert.rejects(
+    h.transport.saveMerchantAvailability("store-a", "owner-a", change, signal()),
+    { code: "OPERATION_RESULT_UNKNOWN", status: 503 },
+  );
+  assert.equal(h.calls.length, 1);
 });
