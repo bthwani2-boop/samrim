@@ -340,3 +340,17 @@ test("Store and Offer pages accept the documented 50-item maximum", async () => 
     });
   }
 });
+
+test("a late owner denial after Store/account switch is stale, never an error for the new context", async () => {
+  const controller = new AbortController();
+  await withFetch(async () => {
+    controller.abort();
+    return json({ error: "FORBIDDEN" }, 403);
+  }, () => rejectsAs(() => getPublicStore(base, store.id, controller.signal), 0, "OWNER_RESPONSE_STALE"));
+
+  const bodyAbort = new AbortController();
+  await withFetch(async () => ({
+    ok: false, status: 403,
+    json: async () => { bodyAbort.abort(); return { error: "FORBIDDEN" }; },
+  }), () => rejectsAs(() => getPublicStore(base, store.id, bodyAbort.signal), 0, "OWNER_RESPONSE_STALE"));
+});

@@ -2,6 +2,8 @@
 
 STATUS: IMPLEMENTATION_IN_PROGRESS
 
+The owner-derived `clients/generated/identity-operations.ts` supplies typed operation method/path constants used by the active session and admission transports. `pnpm check:contracts` regenerates no source; it refuses any stale or manually edited manifest. To update this file after reviewing a canonical OpenAPI change, run `node tools/dev/generate-openapi-operations.mjs identity`. This is operation-index parity only, not generated request/response schema or live Go runtime equivalence.
+
 The `@bthwani/identity` workspace package exports these HTTP operations from `clients/index.ts`:
 - `issueCustomerPhoneChallenge` and `verifyCustomerPhoneChallenge`: request and consume isolated phone proof using the two `/v1/customer-auth` endpoints.
 - `readVerifiedIdentitySession`: read only the actor, active Identity role and session expiry from `GET /v1/sessions/current`.

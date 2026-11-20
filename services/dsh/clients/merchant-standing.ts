@@ -1,4 +1,5 @@
 /** Verified Merchant Store standing from DSH. No client-owned grants or Store writes. */
+import { dshOperations } from "./generated/dsh-operations.ts";
 export interface MerchantOwnedStore {
   id: string;
   name: string;
@@ -55,7 +56,7 @@ function ownerEndpoint(baseUrl: string): string {
       (url.protocol === "http:" && ["localhost", "127.0.0.1", "10.0.2.2"].includes(url.hostname)))) {
     throw new MerchantStandingError(503, "OWNER_UNAVAILABLE");
   }
-  return new URL("/v1/stores/mine", url).toString();
+  return new URL(dshOperations.listCurrentMerchantStores.path, url).toString();
 }
 export async function readMerchantDSHStanding(origin: string, bearer: string, signal?: AbortSignal) {
   if (!opaqueBearer.test(bearer)) throw new MerchantStandingError(401, "UNAUTHENTICATED");

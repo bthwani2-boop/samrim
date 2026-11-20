@@ -1,6 +1,9 @@
 /**
  * Canonical Identity HTTP transport for sessions and direct Merchant admission.
  */
+import { identityOperations } from "./generated/identity-operations.ts";
+
+export { identityOperations } from "./generated/identity-operations.ts";
 export type IdentityRole = "customer" | "merchant" | "captain" | "operator";
 export interface VerifiedIdentitySession {
   actorId: string;
@@ -147,7 +150,7 @@ async function ownerRequest(
 export async function issueCustomerPhoneChallenge(
   baseUrl: string, phone: string, signal?: AbortSignal,
 ): Promise<string> {
-  const result = await ownerRequest(baseUrl, "/v1/customer-auth/phone-challenges", null,
+  const result = await ownerRequest(baseUrl, identityOperations.issueCustomerPhoneChallenge.path, null,
     "POST", 201, signal, { phone });
   if (!result || typeof result !== "object" || !("ticket" in result) ||
     Object.keys(result).length !== 1 || typeof result.ticket !== "string" || !phoneTicket.test(result.ticket)) {
@@ -159,45 +162,45 @@ export async function issueCustomerPhoneChallenge(
 export async function verifyCustomerPhoneChallenge(
   baseUrl: string, ticket: string, code: string, signal?: AbortSignal,
 ): Promise<IssuedRoleSession> {
-  return issuedSessionFrom(await ownerRequest(baseUrl, "/v1/customer-auth/phone-verification", null,
+  return issuedSessionFrom(await ownerRequest(baseUrl, identityOperations.verifyCustomerPhoneChallenge.path, null,
     "POST", 200, signal, { ticket, code }));
 }
 
 export async function revokeVerifiedIdentitySession(
   baseUrl: string, bearer: string, signal?: AbortSignal,
 ): Promise<void> {
-  await ownerRequest(baseUrl, "/v1/sessions/current", bearer, "DELETE", 204, signal);
+  await ownerRequest(baseUrl, identityOperations.revokeCurrentIdentitySession.path, bearer, "DELETE", 204, signal);
 }
 export async function readVerifiedIdentitySession(
   baseUrl: string, bearer: string, signal?: AbortSignal,
 ): Promise<VerifiedIdentitySession> {
-  return sessionFrom(await ownerRequest(baseUrl, "/v1/sessions/current", bearer, "GET", 200, signal));
+  return sessionFrom(await ownerRequest(baseUrl, identityOperations.getVerifiedIdentitySession.path, bearer, "GET", 200, signal));
 }
 /** Requires a verified Customer session. Never implies a DSH Store grant. */
 export async function admitCurrentCustomerAsMerchant(
   baseUrl: string, customerBearer: string, signal?: AbortSignal,
 ): Promise<MerchantAdmission> {
-  return issuedSessionFrom(await ownerRequest(baseUrl, "/v1/actors/me/merchant-role",
+  return issuedSessionFrom(await ownerRequest(baseUrl, identityOperations.admitVerifiedCurrentCustomerAsMerchant.path,
     customerBearer, "POST", 201, signal));
 }
 /** Revokes previous Merchant sessions at Identity before issuing a new one. */
 export async function resumeCurrentCustomerMerchantSession(
   baseUrl: string, customerBearer: string, signal?: AbortSignal,
 ): Promise<MerchantAdmission> {
-  return issuedSessionFrom(await ownerRequest(baseUrl, "/v1/actors/me/merchant-session",
+  return issuedSessionFrom(await ownerRequest(baseUrl, identityOperations.resumeVerifiedCurrentCustomerMerchantSession.path,
     customerBearer, "POST", 200, signal));
 }
 /** The DSH-approved Captain standing is checked again by Identity at issue time. */
 export async function admitCurrentCustomerAsCaptain(
   baseUrl: string, customerBearer: string, signal?: AbortSignal,
 ): Promise<IssuedRoleSession> {
-  return issuedSessionFrom(await ownerRequest(baseUrl, "/v1/actors/me/captain-role",
+  return issuedSessionFrom(await ownerRequest(baseUrl, identityOperations.admitVerifiedCustomerAsApprovedCaptain.path,
     customerBearer, "POST", 201, signal));
 }
 /** Re-entry rotates the existing Captain bearer without reactivating a role. */
 export async function resumeCurrentCustomerCaptainSession(
   baseUrl: string, customerBearer: string, signal?: AbortSignal,
 ): Promise<IssuedRoleSession> {
-  return issuedSessionFrom(await ownerRequest(baseUrl, "/v1/actors/me/captain-session",
+  return issuedSessionFrom(await ownerRequest(baseUrl, identityOperations.resumeApprovedCaptainRoleSession.path,
     customerBearer, "POST", 200, signal));
 }

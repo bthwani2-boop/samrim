@@ -1,4 +1,5 @@
 import { DshPublicError } from "./client-core.ts";
+import { dshOperations } from "./generated/dsh-operations.ts";
 import { privateOwnerRequest } from "./private-owner-request.ts";
 
 /** DSH-owned read-only city Store availability policy; this is not an
@@ -37,7 +38,7 @@ export async function getCityStoreOperationalPolicy(
 ): Promise<CityStoreOperationalPolicy> {
   if (!/^[a-z0-9-]{1,64}$/.test(cityID)) throw new DshPublicError(0, "CITY_ID_INVALID");
   const body = await privateOwnerRequest(baseUrl,
-    "/v1/operators/cities/" + encodeURIComponent(cityID) + "/store-availability-policy",
+    dshOperations.getCityStoreOperationalPolicy.path.replace("{cityID}", encodeURIComponent(cityID)),
     bearer, "GET", undefined, signal);
   if (!isCityStoreOperationalPolicy(body, cityID)) throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
@@ -73,7 +74,7 @@ export async function replaceCityStoreOperationalPolicy(
     throw new DshPublicError(400, "INVALID_OPERATIONAL_CHANGE");
   }
   const body = await privateOwnerRequest(baseUrl,
-    "/v1/operators/cities/" + encodeURIComponent(cityID) + "/store-availability-policy",
+    dshOperations.replaceCityStoreOperationalPolicy.path.replace("{cityID}", encodeURIComponent(cityID)),
     bearer, "PATCH", change, signal);
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");

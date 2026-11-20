@@ -1,4 +1,5 @@
 import { DshPublicError, onlyKeys } from "./client-core.ts";
+import { dshOperations } from "./generated/dsh-operations.ts";
 import { privateOwnerRequest } from "./private-owner-request.ts";
 
 /** Private Store availability from DSH's executable store-access contract.
@@ -62,7 +63,7 @@ export async function getStoreOperationalAvailability(
   baseUrl: string, storeId: string, bearer: string, signal?: AbortSignal,
 ): Promise<StoreOperationalAvailability> {
   if (!/^[a-z0-9-]{1,64}$/.test(storeId)) throw new DshPublicError(0, "STORE_ID_INVALID");
-  const body = await privateOwnerRequest(baseUrl, "/v1/stores/" + encodeURIComponent(storeId) + "/availability", bearer, "GET", undefined, signal);
+  const body = await privateOwnerRequest(baseUrl, dshOperations.getStoreOperationalAvailability.path.replace("{storeID}", encodeURIComponent(storeId)), bearer, "GET", undefined, signal);
   if (!isStoreAvailability(body, storeId)) throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   // A completed HTTP response must not revive an earlier Store/account view
   // after the caller has invalidated that view's AbortSignal.
@@ -85,7 +86,7 @@ export async function updateStoreOperationalAvailability(
     throw new DshPublicError(400, "INVALID_OPERATIONAL_CHANGE");
   }
   if (!/^[a-z0-9-]{1,64}$/.test(storeId)) throw new DshPublicError(0, "STORE_ID_INVALID");
-  const body = await privateOwnerRequest(baseUrl, "/v1/stores/" + encodeURIComponent(storeId) + "/availability", bearer, "PATCH", change, signal);
+  const body = await privateOwnerRequest(baseUrl, dshOperations.updateStoreOperationalAvailability.path.replace("{storeID}", encodeURIComponent(storeId)), bearer, "PATCH", change, signal);
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
   }

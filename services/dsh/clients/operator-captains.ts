@@ -1,4 +1,5 @@
 import { DshPublicError, onlyKeys } from "./client-core.ts";
+import { dshOperations } from "./generated/dsh-operations.ts";
 import { privateOwnerRequest } from "./private-owner-request.ts";
 
 /** Private Operator review reads. DSH owns Captain standing; these do not admit
@@ -41,7 +42,7 @@ export async function listOperatorCaptainStandings(
   const params = new URLSearchParams({ status });
   if (options.limit !== undefined) params.set("limit", String(limit));
   if (options.cursor !== undefined) params.set("cursor", options.cursor);
-  const body = await privateOwnerRequest(baseUrl, `/v1/operators/captains?${params}`, bearer, "GET", undefined, options.signal);
+  const body = await privateOwnerRequest(baseUrl, `${dshOperations.listOperatorCaptainStandings.path}?${params}`, bearer, "GET", undefined, options.signal);
   const page = body && typeof body === "object" && !Array.isArray(body) ? body as Record<string, unknown> : null;
   if (!page || !onlyKeys(page, ["items", "nextCursor"]) || !Array.isArray(page.items) ||
     page.items.length > limit || !page.items.every(item => isCaptainStanding(item) && item.status === status) ||
@@ -72,7 +73,7 @@ export async function changeOperatorCaptainStanding(
     throw new DshPublicError(400, "INVALID_REQUEST");
   }
   const result = await privateOwnerRequest(baseUrl,
-    `/v1/operators/captains/${encodeURIComponent(actorId)}/standing`, bearer, "PATCH", change, signal);
+    dshOperations.changeCaptainStandingByAuthorizedOperator.path.replace("{actorId}", encodeURIComponent(actorId)), bearer, "PATCH", change, signal);
   if (!isCaptainStanding(result) || result.actorId !== actorId ||
     result.status !== change.status || result.version < change.expectedVersion) {
     throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
@@ -87,7 +88,7 @@ export async function getOperatorCaptainStanding(
   if (!isCaptainStandingActorId(actorId)) throw new DshPublicError(400, "INVALID_REQUEST");
   if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
   const body = await privateOwnerRequest(baseUrl,
-    `/v1/operators/captains/${encodeURIComponent(actorId)}/standing`, bearer, "GET", undefined, signal);
+    dshOperations.getOperatorCaptainStanding.path.replace("{actorId}", encodeURIComponent(actorId)), bearer, "GET", undefined, signal);
   if (!isCaptainStanding(body) || body.actorId !== actorId) throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
   return body;

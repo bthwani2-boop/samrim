@@ -3,6 +3,7 @@
  * Public wire format: paths/stores.yaml and paths/offers.yaml in the DSH OpenAPI owner.
  */
 import { DshPublicError, endpoint, onlyKeys } from "./client-core.ts";
+import { dshOperations } from "./generated/dsh-operations.ts";
 
 export { DshPublicError } from "./client-core.ts";
 export interface PublicVertical {
@@ -41,12 +42,14 @@ async function ownerRead(url: URL, signal?: AbortSignal): Promise<unknown> {
     if (signal?.aborted) throw error;
     throw new DshPublicError(0, "OWNER_NETWORK_UNAVAILABLE");
   }
+  if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
   if (!response.ok) {
     let code = "OWNER_READ_FAILED";
     try {
       const data: unknown = await response.json();
       if (data && typeof data === "object" && "error" in data && typeof data.error === "string") code = data.error;
     } catch { /* keep the safe generic error */ }
+    if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
     throw new DshPublicError(response.status, code);
   }
   // A successful public owner read must obey the DSH JSON wire contract.
@@ -134,7 +137,7 @@ export async function listPublicVerticals(
 ): Promise<PublicPage<PublicVertical>> {
   if (!isPublicId(cityId)) throw new DshPublicError(400, "INVALID_CITY");
   validatePublicPaging(options);
-  const url = endpoint(baseUrl, "/v1/public/verticals");
+  const url = endpoint(baseUrl, dshOperations.listPublicVerticals.path);
   url.searchParams.set("city_id", cityId);
   if (options.cursor) url.searchParams.set("cursor", options.cursor);
   if (options.limit !== undefined) url.searchParams.set("limit", String(options.limit));
@@ -152,7 +155,7 @@ export async function listPublicStores(
   if (options.verticalId !== undefined && !isPublicId(options.verticalId)) {
     throw new DshPublicError(400, "INVALID_VERTICAL");
   }
-  const url = endpoint(baseUrl, "/v1/public/stores");
+  const url = endpoint(baseUrl, dshOperations.listPublicStores.path);
   url.searchParams.set("city_id", cityId);
   if (options.query !== undefined) url.searchParams.set("q", options.query);
   if (options.verticalId !== undefined) url.searchParams.set("vertical_id", options.verticalId);
@@ -168,7 +171,7 @@ export async function listPublicStores(
 }
 export async function getPublicStore(baseUrl: string, storeId: string, signal?: AbortSignal): Promise<PublicStore> {
   validateStoreId(storeId);
-  const url = endpoint(baseUrl, "/v1/public/stores/" + encodeURIComponent(storeId));
+  const url = endpoint(baseUrl, dshOperations.getPublicStore.path.replace("{id}", encodeURIComponent(storeId)));
   const value = await ownerRead(url, signal);
   if (!isStore(value) || value.id !== storeId) throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   return value;
@@ -179,7 +182,7 @@ export async function listPublicOffers(
   validateStoreId(storeId);
   validatePublicPaging(options);
   validatePublicSearch(options.query);
-  const url = endpoint(baseUrl, "/v1/public/stores/" + encodeURIComponent(storeId) + "/offers");
+  const url = endpoint(baseUrl, dshOperations.listPublicOffers.path.replace("{id}", encodeURIComponent(storeId)));
   if (options.query !== undefined) url.searchParams.set("q", options.query);
   if (options.cursor) url.searchParams.set("cursor", options.cursor);
   if (options.limit) url.searchParams.set("limit", String(options.limit));

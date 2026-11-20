@@ -1,4 +1,5 @@
 /** DSH current standing is separate from the Identity Captain role. */
+import { dshOperations } from "./generated/dsh-operations.ts";
 export interface CaptainStanding {
   actorId: string;
   status: "APPROVED";
@@ -84,7 +85,7 @@ export async function readApprovedCaptainStanding(
   actorId: string, signal?: AbortSignal,
 ): Promise<CaptainStanding> {
   return captainStandingFrom(await currentStanding(origin, bearer,
-    role === "customer" ? "/v1/actors/me/captain-eligibility" : "/v1/captains/me/standing",
+    role === "customer" ? dshOperations.getCurrentCustomerCaptainEligibility.path : dshOperations.getCurrentCaptainStanding.path,
     "GET", signal), actorId);
 }
 export type CaptainApplicationStatus = "PENDING" | "APPROVED";
@@ -111,11 +112,11 @@ export async function readCaptainApplication(
   origin: string, customerBearer: string, actorId: string, signal?: AbortSignal,
 ): Promise<CaptainApplicationStatus> {
   return currentApplicationFrom(await currentStanding(origin, customerBearer,
-    "/v1/actors/me/captain-application", "GET", signal), actorId, "GET");
+    dshOperations.getCurrentCustomerCaptainApplication.path, "GET", signal), actorId, "GET");
 }
 export async function requestCaptainApplication(
   origin: string, customerBearer: string, actorId: string, signal?: AbortSignal,
 ): Promise<CaptainApplicationStatus> {
   return currentApplicationFrom(await currentStanding(origin, customerBearer,
-    "/v1/actors/me/captain-application", "POST", signal), actorId, "POST");
+    dshOperations.applyCurrentCustomerForCaptainStanding.path, "POST", signal), actorId, "POST");
 }
