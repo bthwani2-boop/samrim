@@ -108,6 +108,47 @@ func TestOwnerBackedMarketplaceVisibility(t *testing.T) {
 		t.Fatal("paused store status lost")
 	}
 }
+
+func TestOwnerBackedSyntheticImportDeniesAlternateDatabase(t *testing.T) {
+	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" || os.Getenv("DSH_TEST_SEED_BOUNDARY") != "true" {
+		t.Skip("requires a disposable PostgreSQL runner with a cloned DSH fixture database")
+	}
+	const database = "bthwani_dsh_boundary_fixture"
+	t.Setenv("REF_POSTGRES_DB", database)
+	db, err := OpenFromEnvironment()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	owner, err := New(db, "dsh_test_seed_boundary")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	readRevision := func() int64 {
+		t.Helper()
+		tx, err := owner.viewTx(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback()
+		rev, err := owner.revision(ctx, tx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rev
+	}
+
+	before := readRevision()
+	importErr := owner.ImportSynthetic(ctx)
+	if after := readRevision(); after != before {
+		t.Errorf("synthetic import modified the alternate database: revision %d -> %d", before, after)
+	}
+	if importErr == nil || !strings.Contains(importErr.Error(), "outside the isolated refoundation database") {
+		t.Fatalf("expected synthetic import to deny the alternate database, got %v", importErr)
+	}
+}
+
 func decode(t *testing.T, raw []byte) map[string]any {
 	t.Helper()
 	var b map[string]any
@@ -165,6 +206,51 @@ func TestOwnerBackedOfferVisibilityAndCursorRecovery(t *testing.T) {
 		t.Fatalf("stale cursor accepted: %d", w.Code)
 	}
 }
+func TestOwnerBackedUnpublishedStoreRejectsOfferContinuation(t *testing.T) {
+	owner, server := setupIntegratedOwner(t)
+	w, firstPage := request(server, "/v1/public/stores/market-sanaa/offers?limit=1")
+	if w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	cursor, ok := firstPage["nextCursor"].(string)
+	if !ok || cursor == "" {
+		t.Fatal("expected a continuation cursor from the published Store")
+	}
+	// Explicit DSH-owner test-state transition on the isolated synthetic Store.
+	// This proves public-read revocation, not an implemented Merchant publication API.
+	t.Cleanup(func() {
+		if err := owner.ImportSynthetic(context.Background()); err != nil {
+			t.Error(err)
+		}
+	})
+	tx, err := owner.beginScopedTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec("UPDATE stores SET published=false WHERE id='market-sanaa'"); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	readback, err := owner.viewTx(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer readback.Rollback()
+	var published bool
+	if err = readback.QueryRow("SELECT published FROM stores WHERE id='market-sanaa'").Scan(&published); err != nil || published {
+		t.Fatalf("durable publication denial not established: published=%v error=%v", published, err)
+	}
+	for _, path := range []string{"/v1/public/stores/market-sanaa", "/v1/public/stores/market-sanaa/offers?limit=1&cursor=" + cursor} {
+		w, body := request(server, path)
+		if w.Code != 404 || body["error"] != "NOT_FOUND" {
+			t.Fatalf("unpublished Store read did not fail closed: %d %s", w.Code, w.Body.String())
+		}
+	}
+}
+
 func TestOwnerBackedConcurrentReadsAndSafeFailures(t *testing.T) {
 	owner, s := setupIntegratedOwner(t)
 	var wg sync.WaitGroup

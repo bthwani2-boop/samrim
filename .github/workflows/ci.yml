@@ -110,7 +110,15 @@ jobs:
       - name: Smoke-test production Operator SSR, RTL and headers on loopback
         run: |
           node tools/dev/verify-operator-http.mjs
-          BTHWANI_OPERATOR_HTTP_TEST=1 node --test apps/control-panel/tests/operator-protected-routes.test.mjs
+      - name: Exercise production Operator session and policy routes
+        env:
+          BTHWANI_OPERATOR_HTTP_TEST: '1'
+        run: |
+          node --test --test-concurrency=1 \
+            apps/control-panel/tests/operator-protected-routes.test.mjs \
+            apps/control-panel/tests/operator-workspace-http.test.mjs \
+            apps/control-panel/tests/operator-policy-http.test.mjs \
+            apps/control-panel/tests/operator-captain-review-http.test.mjs
       - name: Record missing live platform proof
         run: |
           echo 'NOT_RUN: Android/iOS binary, actual browser hydration/CSP, owner APIs, finance and security'

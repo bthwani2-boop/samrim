@@ -1,6 +1,7 @@
 package storeavailability
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -154,7 +155,13 @@ func (r *PostgresRepository) readSnapshot(ctx context.Context, tx *sql.Tx, id st
 		&snapshot.Version, &snapshot.ActingActorID, &snapshot.Reason)
 	if errors.Is(err, sql.ErrNoRows) {
 		// A real Store with no explicit schedule remains closed; there is
-		// deliberately no invented 24-hour open default.
+		// deliberately no invented 24-hour open default. Preserve the distinction
+		// between an unconfigured schedule (null) and an explicit closure ([]).
+		snapshot.Timezone, err = readStoreTimezone(ctx, tx, id)
+		if err != nil {
+			return Snapshot{}, err
+		}
+		snapshot.Weekly = nil
 		snapshot.Version = 1
 		return snapshot, nil
 	}
@@ -197,6 +204,71 @@ func commandHash(c AuthorizedChange) (string, error) {
 	return hex.EncodeToString(hash[:]), nil
 }
 
+// ReplayAuthorized preserves the existing persisted hash format. Historical
+// policy/timezone bindings come from the immutable audit and result, never from
+// today's mutable settings or caller claims. A missing/corrupt audit fails closed.
+func (r *PostgresRepository) ReplayAuthorized(ctx context.Context, c AuthorizedChange) (Snapshot, bool, error) {
+	if c.StoreID == "" || c.ActorID == "" || !operationIDRule.MatchString(c.OperationID) ||
+		(c.AuthoritySource != "MERCHANT_STORE_GRANT" && c.AuthoritySource != "OPERATOR_OPERATIONS") {
+		return Snapshot{}, false, ErrForbidden
+	}
+	tx, err := beginScopedStoreTx(ctx, r.db, r.schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return Snapshot{}, false, err
+	}
+	defer tx.Rollback()
+	var owner string
+	err = tx.QueryRowContext(ctx, `SELECT owner_actor_id FROM stores WHERE id=$1 FOR SHARE`, c.StoreID).Scan(&owner)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Snapshot{}, false, ErrStoreMissing
+	}
+	if err != nil {
+		return Snapshot{}, false, normalizePgError(err)
+	}
+	if c.AuthoritySource == "MERCHANT_STORE_GRANT" && owner != c.ActorID {
+		return Snapshot{}, false, ErrForbidden
+	}
+	var hash string
+	var encoded, audited []byte
+	var policyVersion sql.NullInt64
+	var auditActor, auditAuthority sql.NullString
+	err = tx.QueryRowContext(ctx, `SELECT c.request_hash,c.result_snapshot,a.after_snapshot,
+		a.policy_version,a.acting_actor_id,a.authority_source
+		FROM store_operational_commands c LEFT JOIN store_operational_audit a
+		ON a.store_id=c.store_id AND a.operation_id=c.operation_id
+		WHERE c.store_id=$1 AND c.operation_id=$2`, c.StoreID, c.OperationID).
+		Scan(&hash, &encoded, &audited, &policyVersion, &auditActor, &auditAuthority)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Snapshot{}, false, nil
+	}
+	if err != nil {
+		return Snapshot{}, false, normalizePgError(err)
+	}
+	var historical Snapshot
+	if json.Unmarshal(encoded, &historical) != nil || !bytes.Equal(encoded, audited) ||
+		historical.StoreID != c.StoreID || historical.Version < 2 || historical.Timezone == "" ||
+		!policyVersion.Valid || policyVersion.Int64 < 1 || !auditActor.Valid || !auditAuthority.Valid ||
+		historical.ActingActorID != auditActor.String {
+		return Snapshot{}, false, ErrUnknownResult
+	}
+	if auditActor.String != c.ActorID || auditAuthority.String != c.AuthoritySource ||
+		(c.Timezone != "" && c.Timezone != historical.Timezone) {
+		return Snapshot{}, false, ErrOperationConflict
+	}
+	c.Timezone, c.PolicyVersion = historical.Timezone, policyVersion.Int64
+	wantHash, err := commandHash(c)
+	if err != nil {
+		return Snapshot{}, false, err
+	}
+	if wantHash != hash {
+		return Snapshot{}, false, ErrOperationConflict
+	}
+	if err = tx.Commit(); err != nil {
+		return Snapshot{}, false, ErrUnknownResult
+	}
+	return historical, true, nil
+}
+
 // Apply reconciles a PostgreSQL serialization race or uncertain commit without
 // reapplying effects. Only an identically-bound durable operation is replayed;
 // a truly stale expected version remains a conflict.
@@ -212,9 +284,11 @@ func (r *PostgresRepository) Apply(ctx context.Context, c AuthorizedChange) (Sna
 	if !errors.Is(err, ErrVersionConflict) && !errors.Is(err, ErrUnknownResult) {
 		return Snapshot{}, false, err
 	}
-	committed, found, lookupErr := r.committedOperation(ctx, c.StoreID, c.OperationID, hash)
-	if errors.Is(lookupErr, ErrOperationConflict) {
-		return Snapshot{}, false, ErrOperationConflict
+	// Reconciliation is another private owner read: a concurrent ownership
+	// transfer between rollback and recovery must not expose historical state.
+	committed, found, lookupErr := r.ReplayAuthorized(ctx, c)
+	if errors.Is(lookupErr, ErrOperationConflict) || errors.Is(lookupErr, ErrForbidden) || errors.Is(lookupErr, ErrStoreMissing) {
+		return Snapshot{}, false, lookupErr
 	}
 	if lookupErr != nil {
 		return Snapshot{}, false, ErrUnknownResult
@@ -223,38 +297,6 @@ func (r *PostgresRepository) Apply(ctx context.Context, c AuthorizedChange) (Sna
 		return committed, true, nil
 	}
 	return Snapshot{}, false, err
-}
-
-// committedOperation is a fresh durable read, after the failed transaction
-// rolled back. It verifies both operation key and immutable payload/actor hash.
-func (r *PostgresRepository) committedOperation(ctx context.Context, storeID, operationID, hash string) (Snapshot, bool, error) {
-	tx, err := beginScopedStoreTx(ctx, r.db, r.schema, &sql.TxOptions{ReadOnly: true})
-	if err != nil {
-		return Snapshot{}, false, err
-	}
-	defer tx.Rollback()
-	var storedHash string
-	var encoded []byte
-	err = tx.QueryRowContext(ctx, `SELECT request_hash,result_snapshot
-		FROM store_operational_commands WHERE store_id=$1 AND operation_id=$2`,
-		storeID, operationID).Scan(&storedHash, &encoded)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Snapshot{}, false, nil
-	}
-	if err != nil {
-		return Snapshot{}, false, err
-	}
-	if storedHash != hash {
-		return Snapshot{}, false, ErrOperationConflict
-	}
-	var snapshot Snapshot
-	if err = json.Unmarshal(encoded, &snapshot); err != nil {
-		return Snapshot{}, false, err
-	}
-	if err = tx.Commit(); err != nil {
-		return Snapshot{}, false, err
-	}
-	return snapshot, true, nil
 }
 
 // requireCurrentStoreAuthority locks both Store and City in the mutation

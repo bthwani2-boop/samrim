@@ -15,7 +15,7 @@
     // Metro/Web resolve these platform variants from "./animations".
     "packages/tamagui-config/src/animations.{native,web}.ts",
     // BEGIN RETAINED MERCHANT PRESENTATION PLACEHOLDERS
-    // Explicit user decision: preserve these 18 unconnected, presentation-only modules.
+    // Explicit user decision: preserve the remaining unconnected presentation modules.
     // Scoped exceptions, NOT runtime routes or implemented capabilities.
     // Checked by verify-application-boundaries.test.mjs. Remove each exemption
     // when its module gains a real consumer or owner-backed implementation.
@@ -29,7 +29,6 @@
     "apps/merchant/src/features/marketing/store-banners.tsx",
     "apps/merchant/src/features/marketing/store-design.tsx",
     "apps/merchant/src/features/marketing/store-reels.tsx",
-    "apps/merchant/src/features/navigation/merchant-workspace.tsx",
     "apps/merchant/src/features/notifications/order-alert-monitor.tsx",
     "apps/merchant/src/features/orders/order-conversation.tsx",
     "apps/merchant/src/features/orders/order-preparation.tsx",

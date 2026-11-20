@@ -275,6 +275,18 @@ func TestIsolatedRealIdentityAndDshAvailability(t *testing.T) {
 		}
 		return res.StatusCode, body.Bytes()
 	}
+	// An untouched Store is readable through the actual owner contract. It is
+	// unconfigured, not a fabricated all-day schedule or an invalid timezone.
+	initialStatus, initialBody := request(http.MethodGet, tokenA, nil)
+	var initial Snapshot
+	if err := json.Unmarshal(initialBody, &initial); err != nil || initialStatus != http.StatusOK ||
+		initial.Timezone != "Asia/Aden" || initial.Weekly != nil || initial.Version != 1 {
+		t.Fatalf("untouched Store owner read does not match the client contract: %d %s, %v", initialStatus, initialBody, err)
+	}
+	var implicitWrites int
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM "+dshSchema+".store_operational_availability WHERE store_id=$1", store).Scan(&implicitWrites); err != nil || implicitWrites != 0 {
+		t.Fatalf("initial read fabricated a persisted availability row: %d, %v", implicitWrites, err)
+	}
 	for _, tc := range []struct {
 		name, token string
 		status      int

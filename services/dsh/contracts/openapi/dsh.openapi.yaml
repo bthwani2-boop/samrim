@@ -24,6 +24,8 @@ paths:
     $ref: './paths/captain-standing.yaml#/paths/~1v1~1actors~1me~1captain-application'
   /v1/operators/captains/{actorId}/standing:
     $ref: './paths/captain-standing.yaml#/paths/~1v1~1operators~1captains~1{actorId}~1standing'
+  /v1/operators/captains:
+    $ref: './paths/captain-standing.yaml#/paths/~1v1~1operators~1captains'
   /v1/operators/cities/{cityID}/store-availability-policy:
     $ref: './paths/operational-policies.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-availability-policy'
 components:
@@ -131,6 +133,7 @@ components:
         timezone: { type: string, minLength: 3, maxLength: 64, description: Canonical DSH city IANA timezone; never client-chosen }
         weekly:
           type: [array, 'null']
+          description: Null when no operational schedule has been configured; an empty array explicitly closes the whole week. Both remain closed for ordering.
           items: { $ref: '#/components/schemas/OperationalWeeklyWindow' }
         pausedUntil: { type: string, format: date-time, description: Omitted when the Store has no explicit pause }
         preparationMinutes: { type: integer, minimum: 0 }
@@ -206,6 +209,16 @@ components:
         actorId: { type: string, minLength: 1, maxLength: 128 }
         status: { type: string, enum: [PENDING, APPROVED, SUSPENDED, REVOKED] }
         version: { type: integer, minimum: 1 }
+    OperatorCaptainStandingPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/Standing' }
+        nextCursor: { type: string, minLength: 1, maxLength: 512, pattern: '^[A-Za-z0-9_-]+$' }
     StandingChange:
       type: object
       additionalProperties: false

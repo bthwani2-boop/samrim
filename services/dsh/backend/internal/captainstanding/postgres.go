@@ -53,6 +53,33 @@ func (r *PostgresRepository) Read(ctx context.Context, actorID string) (Standing
 	return standing, nil
 }
 
+// List reads only the review projection. Actor identity is an opaque DSH key;
+// no phone, Identity factor, audit reason or delivery data leaves this query.
+// Seek and order use the same database collation on the existing actor key.
+func (r *PostgresRepository) List(ctx context.Context, status Status, after string, limit int) ([]Standing, error) {
+	if r == nil || r.db == nil || !reviewStatus(status) || limit < 1 || limit > 51 || (after != "" && !reviewActorID(after)) {
+		return nil, ErrInvalidChange
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT actor_id,status,version FROM `+r.table+`
+		WHERE status=$1 AND ($2='' OR actor_id>$2) ORDER BY actor_id LIMIT $3`, status, after, limit)
+	if err != nil {
+		return nil, ErrOwnerUnavailable
+	}
+	defer rows.Close()
+	items := []Standing{}
+	for rows.Next() {
+		var item Standing
+		if err := rows.Scan(&item.ActorID, &item.Status, &item.Version); err != nil {
+			return nil, ErrOwnerUnavailable
+		}
+		items = append(items, item)
+	}
+	if rows.Err() != nil {
+		return nil, ErrOwnerUnavailable
+	}
+	return items, nil
+}
+
 // Apply inserts one immutable pending application. ON CONFLICT does not update
 // an old APPROVED, SUSPENDED or REVOKED record, even under concurrent retries.
 func (r *PostgresRepository) Apply(ctx context.Context, actorID string) (Standing, error) {

@@ -18,10 +18,98 @@ Surface DHCP 192.168.0.100; Lenovo DHCP 192.168.0.101; SSH target alias bthwani-
 - A successful file mirror does not prove that running app processes are using it; validate source version, real Web/Android UI and Metro Fast Refresh. Go containers are source-SHA-built images, not hot-reloaded filesystem mirrors; use the existing infra runtime provenance check before any owner-approved rebuild.
 
 ## Commands
-- Validate launcher: powershell.exe -NoProfile -File D:\samrim\tools\dev\Start-LenovoSourceSync.ps1 -ValidateOnly
-- One pass: powershell.exe -NoProfile -File D:\samrim\tools\dev\Start-LenovoSourceSync.ps1 -Once
+- Validate launcher: pwsh.exe -NoProfile -File D:\samrim\tools\dev\Start-LenovoSourceSync.ps1 -ValidateOnly
+- One pass: pwsh.exe -NoProfile -File D:\samrim\tools\dev\Start-LenovoSourceSync.ps1 -Once
 - Normal automatic mode: the existing Surface Scheduled Task invokes pinned node.exe with tools/dev/sync-lenovo-source.mjs --watch directly; do not start duplicate watch processes.
 - Test policy: node --test D:\samrim\tools\dev\sync-lenovo-source.test.mjs
 
+## Scoped app checks and recovery
+
+From Surface run the existing central CLI (it uses the same Lenovo Scheduled Tasks, SSH and source-sync watcher):
+
+    Set-Location D:\samrim
+    pnpm dev apps help
+    pnpm dev apps status
+    pnpm dev apps verify
+    pnpm dev apps android
+    pnpm dev apps logs -App merchant
+    pnpm dev apps start -App captain
+    pnpm dev apps restart -App captain
+
+The apps status command verifies the single Lenovo listener and its Node/launcher ancestry, application CLI, pinned Node and mirrored dependency-lock SHA. Apps verify also probes the customer/merchant/control Web endpoints and Captain Metro /status. Web HTTP/Metro success does not close Fast Refresh, browser journeys or Android UI tests. Apps android only reports connected ADB devices and existing reverse mappings; it never changes mappings, installs APKs or clears sessions.
+
+Long bounded PowerShell diagnostics use a single base64 input line over the existing strict SSH connection to avoid Windows command-line limits; no remote helper, watcher or permanent file is created.
+
+Start and restart are dry run by default. Explicit -App customer|merchant|captain|control-panel -Apply applies to one app only. Start is idempotent for a running owned application. Restart declines a healthy endpoint. On an unhealthy target, it verifies task action, mirror lock hash, runtime CLI and ownership of any listener, then stops only the selected task, waits for its port to become free, and requests the existing task to start. If an orphan listener persists, it fails closed and does not kill unknown or surviving processes, clear Metro cache, reinstall dependencies, manipulate Docker or stop tunnels. Actual restart remains untested until a safely isolated failed-app case exists; dry-run does not prove recovery.
+
+Historical Windows registration keys for Customer/Merchant tasks may still contain Client/Partner; these are not active application names. Canonical running app identities are customer, merchant, captain, control-panel. Do not rename active Scheduled Tasks unless all their consumers are migrated and proven. Native EAS/Android/iOS published IDs are separate contractual identities.
+
 ## Cleanup rule
 Keep currently used app tasks, tunnel tasks, active SSH sessions and guarded rollback data. Disabled tasks pointing to deleted scripts may be exported and retired only after proving no user or service depends on them; no blanket deletion of backups, mirror directories, Android packages or private keys.
+
+## Lenovo SSH CLI control (manual, not a new watcher)
+
+Use `tools/dev/Control-Lenovo-SSH.ps1` from PowerShell on **Surface**. This is a manually invoked SSH/SCP helper; it does not replace the existing tunnel or source-sync task, expose the Docker daemon to TCP, or change Lenovo configuration by itself. SSH host alias defaults to `bthwani-docker`. The helper requires strict host-key checking and checks the remote host identity.
+
+```powershell
+Set-Location D:\samrim
+# Check both hosts, SSH command availability, sync task, and local forward listeners:
+.\tools\dev\Control-Lenovo-SSH.ps1 -Action Check
+# Execute a read-only PowerShell/Docker command on Lenovo:
+.\tools\dev\Control-Lenovo-SSH.ps1 -Action Run -Command 'docker ps'
+.\tools\dev\Control-Lenovo-SSH.ps1 -Action Run -Command 'hostname'
+.\tools\dev\Control-Lenovo-SSH.ps1 -Action Run -Command 'whoami'
+.\tools\dev\Control-Lenovo-SSH.ps1 -Action Run -Command 'Get-Service'
+.\tools\dev\Control-Lenovo-SSH.ps1 -Action Run -Command 'Get-Process'
+.\tools\dev\Control-Lenovo-SSH.ps1 -Action Run -Command 'Get-ChildItem C:\Users\bthwa\BThwaniAppRunner'
+.\tools\dev\Control-Lenovo-SSH.ps1 -Action Run -Command 'node --version'
+.\tools\dev\Control-Lenovo-SSH.ps1 -Action Run -Command 'Get-PSDrive -PSProvider FileSystem'
+# Preview installation (does not install):
+.\tools\dev\Control-Lenovo-SSH.ps1 -Action Install -PackageId Git.Git -WhatIf
+# Installation only when explicitly authorized:
+# .\tools\dev\Control-Lenovo-SSH.ps1 -Action Install -PackageId Git.Git
+# Transfer an EXISTING local file into an EXISTING remote directory:
+# .\tools\dev\Control-Lenovo-SSH.ps1 -Action Upload -LocalPath 'D:\samrim\artifact.zip' -RemotePath 'C:\Users\bthwa\BThwaniAppRunner\incoming'
+# Transfer a folder; -Recursive is required:
+# .\tools\dev\Control-Lenovo-SSH.ps1 -Action Upload -LocalPath 'D:\samrim\dist' -RemotePath 'C:\Users\bthwa\BThwaniAppRunner\incoming' -Recursive
+# Download into an EXISTING local directory:
+# .\tools\dev\Control-Lenovo-SSH.ps1 -Action Download -RemotePath 'C:\Users\bthwa\BThwaniAppRunner\logs\app.log' -LocalPath 'C:\Users\bassa\Downloads'
+```
+
+Available parameters: `-Action Check|Run|Upload|Download|Install`, `-Command`, `-LocalPath`, `-RemotePath`, `-PackageId`, `-Recursive`, `-SshHost`, `-WhatIf`. `Upload -WhatIf` still requires an existing source path, and `Download` requires an existing Surface destination directory. Single-file uploads verify SHA-256; recursive uploads and downloads do not verify each transferred file's checksum.
+
+### Docker CLI directly from Surface (runs on Lenovo)
+
+```powershell
+ssh bthwani-docker docker version
+ssh bthwani-docker docker info
+ssh bthwani-docker docker ps
+ssh bthwani-docker docker ps -a
+ssh bthwani-docker docker stats --no-stream
+ssh bthwani-docker docker system df
+ssh bthwani-docker docker images
+ssh bthwani-docker docker network ls
+ssh bthwani-docker docker volume ls
+ssh bthwani-docker docker inspect bthwani-refoundation-dsh-1
+ssh bthwani-docker docker logs --tail 100 bthwani-refoundation-dsh-1
+ssh bthwani-docker docker top bthwani-refoundation-dsh-1
+ssh bthwani-docker docker events --since 1h --until 0s
+ssh bthwani-docker docker compose version
+ssh bthwani-docker docker compose ls
+ssh bthwani-docker docker compose ls -a
+ssh bthwani-docker docker --help
+ssh bthwani-docker docker container --help
+ssh bthwani-docker docker image --help
+ssh bthwani-docker docker compose --help
+Get-Command .\tools\dev\Control-Lenovo-SSH.ps1 -Syntax
+```
+
+**State-changing Docker commands (reference only, do not run on live services without authorization):**
+`ssh bthwani-docker docker start NAME`,
+`ssh bthwani-docker docker stop NAME`,
+`ssh bthwani-docker docker restart NAME`,
+`ssh bthwani-docker docker pause NAME`,
+`ssh bthwani-docker docker unpause NAME`,
+`ssh bthwani-docker docker rm NAME`,
+`ssh bthwani-docker docker rmi IMAGE`.
+`docker build`, `docker compose up` and `docker compose down` additionally require the correct remote project context. Never remove protected volumes or restart shared services as a diagnostic step.

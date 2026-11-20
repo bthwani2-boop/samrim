@@ -12,7 +12,7 @@ test("Merchant has one app root, four tabs and no historical Store-owner naming"
     "app/(tabs)/_layout.tsx"]) assert.ok(existsSync(path(file)), file);
   for (const name of ["orders", "products", "wallet", "more"]) {
     assert.ok(existsSync(path(`app/(tabs)/${name}/index.tsx`)));
-    assert.ok(read("app/(tabs)/_layout.tsx").includes(`name="${name}"`));
+    assert.ok(read("app/(tabs)/_layout.tsx").includes(`name="${name}/index"`));
   }
   assert.equal(existsSync(path("src/app")), false);
 });

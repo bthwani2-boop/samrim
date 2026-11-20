@@ -83,7 +83,7 @@ function run(which, args, timeout = 20000) {
 function remote(code) {
   return run("ssh", [
     "-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
-    "-o", "ConnectTimeout=6", targetHost, "powershell.exe", "-NoProfile",
+    "-o", "ConnectTimeout=6", targetHost, "pwsh.exe", "-NoProfile",
     "-NonInteractive", "-EncodedCommand", Buffer.from(code, "utf16le").toString("base64")
   ], 30000);
 }

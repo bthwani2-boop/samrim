@@ -1,3 +1,4 @@
+import { DshPublicError, getStoreOperationalAvailability } from "@bthwani/dsh";
 import {
   IdentityClientError,
   issueCustomerPhoneChallenge,
@@ -8,16 +9,37 @@ import { verifyMerchantAdmission } from "../../src/features/access/admission.ts"
 import { MerchantStandingError, readMerchantDSHStanding } from "../../src/features/access/dsh-standing.ts";
 
 const cookieName = "bthwani_merchant_admission";
+const localIdentity = "http://127.0.0.1:3201";
+const localDSH = "http://127.0.0.1:3202";
 const noStoreHeaders = {
   "Cache-Control": "no-store",
   "Referrer-Policy": "no-referrer",
   "X-Content-Type-Options": "nosniff",
 };
 
-function configuredOrigin(request: Request) {
+async function configuredOrigin(request: Request) {
   const url = new URL(request.url);
   if (!["127.0.0.1", "localhost"].includes(url.hostname)) return undefined;
-  return process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN;
+  const configured = process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN;
+  if (configured || process.env.NODE_ENV !== "development") return configured;
+  try {
+    // The isolated phone handler returns 405 for a GET only while enabled.
+    // This is a read-only readiness check, independent of Metro startup.
+    const readiness = await fetch(localIdentity + "/v1/customer-auth/phone-challenges", {
+      redirect: "error",
+      cache: "no-store",
+      signal: AbortSignal.timeout(1500),
+    });
+    await readiness.body?.cancel();
+    if (readiness.status === 405 && readiness.headers.get("Allow") === "POST") return localIdentity;
+  } catch {
+    // Keep local admission unavailable until the owner responds.
+  }
+}
+
+function standingOrigin(identity: string) {
+  return process.env.MERCHANT_SYNTHETIC_DSH_ORIGIN ??
+    (process.env.NODE_ENV === "development" && identity === localIdentity ? localDSH : "");
 }
 
 function response(value: unknown, status = 200, cookie?: string) {
@@ -41,7 +63,7 @@ function isLocalMutation(request: Request) {
 }
 
 function ownerError(error: unknown) {
-  if ((error instanceof IdentityClientError || error instanceof MerchantStandingError) &&
+  if ((error instanceof IdentityClientError || error instanceof MerchantStandingError || error instanceof DshPublicError) &&
       error.status >= 400 && error.status < 500) {
     return response({ code: error.code }, error.status);
   }
@@ -49,21 +71,28 @@ function ownerError(error: unknown) {
 }
 
 export async function GET(request: Request) {
-  const origin = configuredOrigin(request);
-  if (!origin) return response({ enabled: false, session: null });
   const query = new URL(request.url).searchParams;
   const stores = query.size === 1 && query.get("stores") === "mine";
-  if (query.size > 0 && !stores) return response({ code: "INVALID_REQUEST" }, 400);
+  const storeId = query.size === 1 ? query.get("availability") : null;
+  const availability = storeId !== null && /^[a-z0-9-]{1,64}$/.test(storeId);
+  if (query.size > 0 && !stores && !availability) return response({ code: "INVALID_REQUEST" }, 400);
+  const origin = await configuredOrigin(request);
+  if (!origin) return stores || availability ? response({ code: "OWNER_UNAVAILABLE" }, 503) :
+    response({ enabled: false, session: null });
   const bearer = bearerFrom(request);
-  if (!bearer) return stores ? response({ code: "UNAUTHENTICATED" }, 401) :
+  if (!bearer) return stores || availability ? response({ code: "UNAUTHENTICATED" }, 401) :
     response({ enabled: true, session: null });
   try {
-    const signal = AbortSignal.timeout(5000);
+    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(5000)]);
     const session = await readVerifiedIdentitySession(origin, bearer, signal);
     if (session.role === "merchant") {
+      if (availability) {
+        return response({ availability: await getStoreOperationalAvailability(
+          standingOrigin(origin), storeId, bearer, signal) });
+      }
       if (!stores) return response({ enabled: true, session });
       const standing = await readMerchantDSHStanding(
-        process.env.MERCHANT_SYNTHETIC_DSH_ORIGIN ?? "", bearer, signal);
+        standingOrigin(origin), bearer, signal);
       if (standing.actorId !== session.actorId) {
         return response({ code: "OWNER_UNAVAILABLE" }, 503);
       }
@@ -72,18 +101,22 @@ export async function GET(request: Request) {
   } catch (error) {
     // Owner-denied Merchant access expires its browser cookie. A transient
     // upstream outage must not discard an otherwise valid session.
+    if (error instanceof DshPublicError) {
+      // Store-scope denial must not sign the Merchant out of other valid Stores.
+      return error.status === 401 ? response({ code: error.code }, 401, sessionCookie(request, "", 0)) : ownerError(error);
+    }
     if ((error instanceof MerchantStandingError || error instanceof IdentityClientError) &&
       (error.status === 403 || (error instanceof MerchantStandingError && error.status === 401))) {
       return response({ code: error.code }, error.status, sessionCookie(request, "", 0));
     }
     if (!(error instanceof IdentityClientError && error.status === 401)) return ownerError(error);
   }
-  return stores ? response({ code: "UNAUTHENTICATED" }, 401, sessionCookie(request, "", 0)) :
+  return stores || availability ? response({ code: "UNAUTHENTICATED" }, 401, sessionCookie(request, "", 0)) :
     response({ enabled: true, session: null }, 200, sessionCookie(request, "", 0));
 }
 
 export async function POST(request: Request) {
-  const origin = configuredOrigin(request);
+  const origin = await configuredOrigin(request);
   if (!origin) return response({ code: "OWNER_UNAVAILABLE" }, 503);
   if (!isLocalMutation(request)) return response({ code: "FORBIDDEN" }, 403);
   if (request.headers.get("Content-Type")?.split(";")[0] !== "application/json") {
@@ -140,7 +173,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const origin = configuredOrigin(request);
+  const origin = await configuredOrigin(request);
   if (!origin) return response({ code: "OWNER_UNAVAILABLE" }, 503);
   if (!isLocalMutation(request)) return response({ code: "FORBIDDEN" }, 403);
   const bearer = bearerFrom(request);
@@ -148,7 +181,9 @@ export async function DELETE(request: Request) {
     try {
       await revokeVerifiedIdentitySession(origin, bearer, AbortSignal.timeout(5000));
     } catch (error) {
-      if (!(error instanceof IdentityClientError && error.status === 401)) return ownerError(error);
+      if (!(error instanceof IdentityClientError && (error.status === 401 || error.status === 403))) {
+        return ownerError(error);
+      }
     }
   }
   return new Response(null, {

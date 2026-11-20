@@ -1,8 +1,11 @@
-import Link from "next/link";
+import styles from "../../src/features/operator-shell/operator-shell.module.css";
+
 export default function HealthPage() {
-  return <main style={{ maxWidth: 720, margin: "40px auto" }}>
-    <h1>الملاحة في لوحة التحكم تعمل</h1>
-    <p>فحص بنية العرض فقط؛ لا توجد معلومات تجارية أو جلسات مستخدمين.</p>
-    <Link href="/">العودة للرئيسية</Link>
-  </main>;
+  return (
+    <main className={styles.landing} aria-labelledby="operator-health-title">
+      <h1 id="operator-health-title">حالة واجهة لوحة التحكم</h1>
+      <p>واجهة لوحة التحكم متاحة. هذه الصفحة تفحص الواجهة فقط.</p>
+      <a className={styles.primaryLink} href="/">فتح لوحة تحكم بثواني</a>
+    </main>
+  );
 }

@@ -6,6 +6,7 @@ import { AppState, Pressable, SafeAreaView, ScrollView, Text, TextInput, View } 
 import {
   leaveCaptainAdmission, readCaptainAdmission, requestCaptainPhoneCode, verifyCaptainCode,
 } from "./admission-transport";
+import CaptainEntryShell from "./captain-entry-shell";
 import { hasActiveCaptainSession } from "./captain-session";
 import { CaptainStandingError } from "./captain-standing";
 
@@ -18,13 +19,14 @@ function admissionError(error: unknown) {
       case "PHONE_CHALLENGE_LIMIT": return "تجاوزت محاولات التحقق المسموح بها.";
       case "OPERATION_RESULT_UNKNOWN": return "نتيجة العملية غير مؤكدة. تحقق من حالة الحساب قبل إعادة المحاولة.";
       case "PHONE_CHALLENGE_CONSUMED": return "استخدمت خدمة الهوية الرمز بالفعل، لكن تعذّر إكمال دخول الكابتن. اطلب رمزًا جديدًا.";
+      case "SIGN_OUT_REQUIRED": return "توجد جلسة سابقة أو تحقق غير مكتمل. سجّل الخروج أو أعد التحقق من حالة الحساب قبل طلب رمز آخر.";
       case "UNAUTHORIZED": return "انتهت الجلسة أو لم يتم التحقق منها.";
     }
   }
   if (error instanceof CaptainStandingError) {
     if (error.code === "CAPTAIN_NOT_ELIGIBLE") return "طلب الكابتن غير معتمد أو تم تعليق الأهلية.";
   }
-  return "تعذر التحقق من المالك الحالي. أعد المحاولة عند استقرار الاتصال.";
+  return "تعذّر التحقق من حساب الكابتن. أعد المحاولة عند استقرار الاتصال.";
 }
 
 export default function CaptainIdentityGate() {
@@ -74,7 +76,16 @@ export default function CaptainIdentityGate() {
   useEffect(() => {
     refresh();
     const app = AppState.addEventListener("change", state => {
-      if (state === "active") refresh();
+      if (state === "active") {
+        refresh();
+      } else {
+        // A result from before backgrounding cannot re-authorize the entry UI.
+        controller.current?.abort();
+        controller.current = null;
+        setSession(null);
+        setEnabled(null);
+        setBusy(false);
+      }
     });
     return () => {
       app.remove();
@@ -95,11 +106,13 @@ export default function CaptainIdentityGate() {
     color: theme.color, borderColor: theme.borderColor, borderWidth: 1,
     borderRadius: 10, padding: 12, minHeight: 48, fontSize: 17,
   } as const;
-  const button = (title: string, onPress: () => void, disabled = busy) => (
-    <Pressable accessibilityRole="button" onPress={onPress} disabled={disabled}
-      style={{ padding: 13, borderWidth: 1, borderColor: theme.borderColor,
-        borderRadius: 10, opacity: disabled ? 0.5 : 1 }}>
-      <Text style={{ color: theme.interactiveText, textAlign: "center", fontWeight: "700" }}>{title}</Text>
+  const actionStyle = { minHeight: 48, justifyContent: "center", paddingHorizontal: 14,
+    borderRadius: 10, borderWidth: 1, borderColor: theme.borderColor } as const;
+  const primaryAction = { ...actionStyle, backgroundColor: theme.actionBackground, borderColor: theme.actionBackground };
+  const button = (title: string, onPress: () => void, disabled = busy, primary = false) => (
+    <Pressable accessibilityRole="button" accessibilityState={{ disabled }} onPress={onPress} disabled={disabled}
+      style={{ ...(primary ? primaryAction : actionStyle), opacity: disabled ? 0.5 : 1 }}>
+      <Text style={{ color: primary ? theme.onAction : theme.interactiveText, textAlign: "center", fontWeight: "700" }}>{title}</Text>
     </Pressable>
   );
 
@@ -150,59 +163,69 @@ export default function CaptainIdentityGate() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
       <ScrollView keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 24,
+        contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 24, gap: 16,
           maxWidth: 540, alignSelf: "center", width: "100%" }}>
+        <Text accessibilityRole="header" style={{ color: theme.color, fontWeight: "700", fontSize: 30 }}>بثواني الكابتن</Text>
         <View style={{ backgroundColor: theme.surface, borderColor: theme.borderColor,
-          borderWidth: 1, borderRadius: 16, padding: 22, gap: 15 }}>
-          <Text accessibilityRole="header"
-            style={{ color: theme.color, fontWeight: "700", fontSize: 26 }}>بثواني — الكابتن</Text>
+          borderWidth: 1, borderRadius: 16, padding: 20, gap: 14 }}>
           {busy ? <Text accessibilityLiveRegion="polite" style={{ color: theme.colorSecondary }}>
-            يجري التحقق من الهوية والأهلية...
+            جارٍ التحقق…
           </Text> : null}
           {message ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>{message}</Text> : null}
-          {enabled === null && !busy ? button("إعادة التحقق", refresh) : null}
+          {!busy && (enabled === null || (enabled && !verified && message && !ticket))
+            ? button("إعادة التحقق", refresh) : null}
           {enabled === false ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>
-            قبول الكباتن غير متاح على هذه البيئة. يلزم اتصال Identity وDSH المعتمد.
+            دخول الكابتن غير متاح في هذه النسخة.
           </Text> : null}
           {enabled && verified ? (
             <>
-              <Text testID="captain-admission-verified" style={{ color: theme.color }}>
-                تم التحقق من دور الكابتن في Identity والأهلية المعتمدة لدى DSH.
+              <Text testID="captain-admission-verified" style={{ color: theme.successText, fontWeight: "700" }}>
+                حساب الكابتن معتمد
               </Text>
-              <Link href="/home" style={{ color: theme.interactiveText }}>الانتقال إلى شاشة الكابتن</Link>
+              <Link href="/home" asChild>
+                <Pressable accessibilityRole="link" style={primaryAction}>
+                  <Text style={{ color: theme.onAction, textAlign: "center", fontWeight: "700" }}>فتح مساحة الكابتن</Text>
+                </Pressable>
+              </Link>
               {button("تسجيل الخروج", signOut)}
             </>
           ) : null}
           {enabled && !verified && pending ? (
             <Text testID="captain-admission-pending" style={{ color: theme.color }}>
-              تم تسجيل الطلب لدى DSH وهو بانتظار الموافقة. لا تمنح هذه الحالة صلاحية الكابتن.
+              طلبك بانتظار الموافقة. يمكنك التحقق من حالته برقم هاتفك.
             </Text>
           ) : null}
           {enabled && !verified && !ticket ? (
             <>
-              <Text style={{ color: theme.colorSecondary }}>
-                التحقق برقم الهاتف التجريبي ثم قراءة موافقة الكابتن من DSH قبل إصدار الدور.
-              </Text>
-              <TextInput accessibilityLabel="رقم الهاتف" keyboardType="phone-pad"
-                autoComplete="tel" value={phone} editable={!busy} onChangeText={setPhone}
-                maxLength={12} style={input} />
+              <View style={{ gap: 6 }}>
+                <Text style={{ color: theme.color, fontWeight: "600" }}>رقم الهاتف التجريبي</Text>
+                <TextInput accessibilityLabel="رقم الهاتف التجريبي" keyboardType="phone-pad"
+                  autoComplete="tel" value={phone} editable={!busy} onChangeText={setPhone}
+                  maxLength={12} style={input} />
+              </View>
               {button(pending ? "التحقق مجددًا من الموافقة" : "إرسال رمز التحقق",
-                requestCode, busy || !/^\+120255501[0-9]{2}$/.test(phone.trim()))}
+                requestCode, busy || !/^\+120255501[0-9]{2}$/.test(phone.trim()), true)}
             </>
           ) : null}
           {enabled && !verified && ticket ? (
             <>
-              <Text style={{ color: theme.color }}>أدخل رمز التحقق المرسل إلى بيئة الاختبار.</Text>
-              <TextInput accessibilityLabel="رمز التحقق" keyboardType="number-pad"
-                autoComplete="one-time-code" value={code} editable={!busy}
-                onChangeText={setCode} maxLength={6} style={input} />
-              {button("التحقق من حساب الكابتن", verify, busy || !/^\d{6}$/.test(code))}
+              <View style={{ gap: 6 }}>
+                <Text style={{ color: theme.color, fontWeight: "600" }}>رمز التحقق</Text>
+                <TextInput accessibilityLabel="رمز التحقق" keyboardType="number-pad"
+                  autoComplete="one-time-code" value={code} editable={!busy}
+                  onChangeText={setCode} maxLength={6} style={input} />
+              </View>
+              {button("التحقق من حساب الكابتن", verify, busy || !/^\d{6}$/.test(code), true)}
               {button("تعديل رقم الهاتف", () => { setTicket(""); setCode(""); })}
             </>
           ) : null}
           {__DEV__ ? <Link href="/health" style={{ color: theme.interactiveText }}>فحص التطوير</Link> : null}
         </View>
       </ScrollView>
+      {!verified ? (
+        <CaptainEntryShell color={theme.colorSecondary} borderColor={theme.borderColor}
+          backgroundColor={theme.surface} />
+      ) : null}
     </SafeAreaView>
   );
 }

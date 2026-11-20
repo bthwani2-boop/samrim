@@ -396,6 +396,9 @@ importers:
       '@bthwani/design-system':
         specifier: workspace:*
         version: link:../../packages/design-system
+      '@bthwani/dsh':
+        specifier: workspace:*
+        version: link:../../services/dsh
       '@date-fns/tz':
         specifier: 'catalog:'
         version: 1.5.0
@@ -617,6 +620,9 @@ importers:
 
   apps/merchant:
     dependencies:
+      '@bthwani/dsh':
+        specifier: workspace:*
+        version: link:../../services/dsh
       '@bthwani/identity':
         specifier: workspace:*
         version: link:../../services/identity

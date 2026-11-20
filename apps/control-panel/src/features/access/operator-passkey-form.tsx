@@ -1,5 +1,6 @@
 "use client";
 
+import { Button } from "antd";
 import { useState } from "react";
 
 type PasskeyOptions = {
@@ -28,7 +29,6 @@ function decodeBase64Url(value: string): Uint8Array<ArrayBuffer> {
 export default function OperatorPasskeyForm() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const [authenticated, setAuthenticated] = useState(false);
 
   async function signIn() {
     if (busy) return;
@@ -83,42 +83,24 @@ export default function OperatorPasskeyForm() {
       if (session.authenticated !== true || session.role !== "operator") {
         throw new Error("الجلسة غير مخوّلة لدور المشغّل.");
       }
-      setAuthenticated(true);
-      setMessage("تم التحقق من جلسة المشغّل في بيئة الاختبار. صلاحيات لوحة التحكم لم تُفعّل بعد.");
+      // A new document request resolves the current server-side workspace grants.
+      window.location.replace("/");
     } catch (error) {
-      setAuthenticated(false);
-      setMessage(error instanceof Error ? error.message : "تعذر إتمام التحقق.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function signOut() {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const response = await fetch("/api/auth/session", {
-        method: "POST",
-        credentials: "same-origin",
-        cache: "no-store",
-      });
-      setAuthenticated(false);
-      setMessage(response.ok ? "تم إنهاء الجلسة." : "تم حذف جلسة المتصفح، لكن لم يثبت إبطالها لدى Identity.");
-    } catch {
-      setAuthenticated(false);
-      setMessage("تعذر إثبات إبطال الجلسة لدى Identity.");
+      setMessage(error instanceof DOMException && error.name === "NotAllowedError"
+        ? "لم يكتمل التحقق بمفتاح المرور. حاول مرة أخرى باستخدام مفتاحك المسجّل."
+        : error instanceof Error ? error.message : "تعذر إتمام التحقق.");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <section aria-label="دخول مشغّل اختباري">
-      <p>تسجيل دخول المشغّل بمفتاح المرور — بيئة محلية معزولة فقط.</p>
-      {authenticated
-        ? <button type="button" disabled={busy} onClick={signOut}>تسجيل الخروج</button>
-        : <button type="button" disabled={busy} onClick={signIn}>التحقق بمفتاح المرور</button>}
-      {message && <output>{message}</output>}
+    <section aria-label="دخول المشغّل">
+      <p>استخدم مفتاح المرور المسجّل لحسابك. تظهر مساحات العمل التي مُنحت صلاحية الوصول إليها.</p>
+      <Button type="primary" htmlType="button" loading={busy} disabled={busy} onClick={signIn}>
+        تسجيل الدخول بمفتاح المرور
+      </Button>
+      {message && <p role="alert">{message}</p>}
     </section>
   );
 }

@@ -69,6 +69,10 @@ func (x fakePolicy) CurrentLimits(context.Context, string) (Limits, error) {
 
 type fakeRepo struct{ applies *int }
 
+func (x fakeRepo) ReplayAuthorized(context.Context, AuthorizedChange) (Snapshot, bool, error) {
+	return Snapshot{}, false, nil
+}
+
 func (x fakeRepo) Read(context.Context, string) (Snapshot, error) { return Snapshot{Version: 1}, nil }
 func (x fakeRepo) ReadAuthorized(_ context.Context, storeID, actorID, authority string) (Snapshot, error) {
 	if storeID == "" || actorID == "" || authority == "" {
@@ -179,6 +183,9 @@ func (r *readAuthorizationRecorder) ReadAuthorized(_ context.Context, storeID, a
 }
 func (r *readAuthorizationRecorder) Apply(context.Context, AuthorizedChange) (Snapshot, bool, error) {
 	panic("read test must not write")
+}
+func (r *readAuthorizationRecorder) ReplayAuthorized(context.Context, AuthorizedChange) (Snapshot, bool, error) {
+	panic("read test must not reconcile a write")
 }
 
 func TestReadForActorPassesVerifiedIdentityIntoOwnerLockedRead(t *testing.T) {

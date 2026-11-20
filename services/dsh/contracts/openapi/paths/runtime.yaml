@@ -2,11 +2,12 @@ paths:
   /health:
     get:
       operationId: dshHealth
-      summary: Check the owner database is reachable
+      summary: Check that the configured DSH discovery schema is readable
+      description: Requires the discovery baseline revision row. A newly migrated schema may have an empty catalog.
       security: []
       responses:
         '200':
-          description: DSH available
+          description: The DSH public discovery baseline is ready
           content:
             application/json:
               schema:

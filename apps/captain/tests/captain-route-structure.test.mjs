@@ -31,15 +31,12 @@ test("Captain entry is gated by current Identity role and DSH approval", () => {
   assert.ok(!admission.includes("setRole("));
 });
 
-test("four primary Captain destinations and one home map", () => {
-  const screen = source("src/components/captain-capability-screen.tsx");
-  for (const path of ["/home", "/deliveries", "/wallet", "/account"])
-    assert.ok(screen.includes(`href="${path}"`), path);
+test("Captain Home shows the verified status and defers the map until fulfillment is available", () => {
   assert.ok(read("(tabs)/home.tsx").includes("captain-home-screen"));
   const home = source("src/features/dispatch/captain-home-screen.tsx");
   assert.ok(home.includes("الخريطة"));
-  assert.ok(home.includes("غير مفعّلة"));
-  assert.ok(!home.includes("watchPosition"));
+  assert.ok(home.includes('status="حساب الكابتن معتمد"'));
+  assert.doesNotMatch(home, /watchPosition|requestForegroundPermissions/);
 });
 
 test("protected and financial routes fail closed without owners", () => {
@@ -52,16 +49,21 @@ test("protected and financial routes fail closed without owners", () => {
     assert.ok(!route.includes("completeDelivery("), file);
   }
   const screen = source("src/components/captain-capability-screen.tsx");
-  assert.ok(screen.includes("غير مفعّلة"));
-  assert.ok(screen.includes("دون تأكيد"));
+  assert.ok(screen.includes("captain-capability-unavailable"));
+  assert.doesNotMatch(screen, /href="\/(?:home|deliveries|wallet|account)"/,
+    "section bodies must not duplicate primary tab destinations");
+  assert.match(read("(tabs)/account.tsx"), /returnTo="\/"/);
+  for (const route of ["offers.tsx", "notifications.tsx", "delivery/[id].tsx"]) {
+    assert.match(read(route), /returnTo="\/home"/, route);
+  }
 });
 
 test("Captain has one tab route for each primary URL", () => {
   const tabs = read("(tabs)/_layout.tsx");
   assert.match(tabs, /<Tabs/);
   for (const name of ["home", "deliveries", "wallet", "account"]) {
-    assert.ok(tabs.includes('name="' + name + '"'));
-    assert.equal(existsSync(resolve(app, name + ".tsx")), false);
+    assert.ok(tabs.includes(`name="${name}"`));
+    assert.equal(existsSync(resolve(app, `${name}.tsx`)), false);
   }
 });
 

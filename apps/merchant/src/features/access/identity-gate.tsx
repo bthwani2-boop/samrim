@@ -1,7 +1,9 @@
 import { IdentityClientError, type VerifiedIdentitySession } from "@bthwani/identity";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, Pressable, SafeAreaView, ScrollView, Text, TextInput, View } from "react-native";
+import { AppState, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import MerchantEntryShell from "../navigation/merchant-entry-shell";
+import MerchantWorkspace from "../navigation/merchant-workspace";
 import {
   readAdmission,
   readMerchantStanding,
@@ -28,7 +30,7 @@ export default function MerchantIdentityGate() {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [session, setSession] = useState<VerifiedIdentitySession | null>(null);
   const [entryUncertain, setEntryUncertain] = useState(false);
-  const [standing, setStanding] = useState<MerchantDSHStanding | null>(null);
+  const [standing, setStanding] = useState<{ session: VerifiedIdentitySession; value: MerchantDSHStanding } | null>(null);
   const [standingError, setStandingError] = useState("");
   const [standingLoading, setStandingLoading] = useState(false);
   const [phone, setPhone] = useState("");
@@ -77,7 +79,18 @@ export default function MerchantIdentityGate() {
   useEffect(() => {
     refresh();
     const listener = AppState.addEventListener("change", state => {
-      if (state === "active") refresh();
+      if (state !== "active") {
+        // Revoke visibility of private Store data while backgrounded. A pending
+        // owner response cannot reauthorize a session after this transition.
+        action.current?.abort();
+        action.current = null;
+        setBusy(false);
+        setSession(null);
+        setStanding(null);
+        setEntryUncertain(true);
+        return;
+      }
+      refresh();
     });
     return () => {
       listener.remove();
@@ -100,7 +113,7 @@ export default function MerchantIdentityGate() {
       if (current.actorId !== session.actorId) {
         throw new MerchantStandingError(502, "OWNER_RESPONSE_INVALID");
       }
-      setStanding(current);
+      setStanding({ session, value: current });
     }).catch(error => {
       if (controller.signal.aborted) return;
       if ((error instanceof IdentityClientError || error instanceof MerchantStandingError) &&
@@ -120,8 +133,14 @@ export default function MerchantIdentityGate() {
     if (!session) return;
     const timeout = setTimeout(() => setSession(null),
       Math.max(0, Date.parse(session.sessionExpiresAt) - Date.now()));
-    return () => clearTimeout(timeout);
-  }, [session]);
+    const refreshTimer = setInterval(() => {
+      if (AppState.currentState === "active") refresh();
+    }, 30_000);
+    return () => {
+      clearTimeout(timeout);
+      clearInterval(refreshTimer);
+    };
+  }, [refresh, session]);
 
   function requestCode() {
     void run(async signal => {
@@ -147,41 +166,50 @@ export default function MerchantIdentityGate() {
 
   function signOut() {
     void run(async signal => {
+      setSession(null);
+      setEntryUncertain(true);
       await signOutOfAdmission(signal);
       if (!signal.aborted) {
-        setSession(null);
         setEntryUncertain(false);
       }
     });
+  }
+
+  if (enabled && !busy && session && standing?.session === session) {
+    return <MerchantWorkspace stores={standing.value.stores} onRefresh={refresh} onSignOut={signOut} />;
   }
 
   const fieldStyle = {
     color: theme.color, borderColor: theme.borderColor, borderWidth: 1,
     borderRadius: 10, padding: 12, minHeight: 48, fontSize: 17,
   } as const;
-  const button = (label: string, onPress: () => void, disabled = busy) => (
+  const button = (label: string, onPress: () => void, disabled = busy, primary = false) => (
     <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress}
       style={{ borderColor: theme.borderColor, borderWidth: 1, borderRadius: 10,
-        padding: 12, minHeight: 48, opacity: disabled ? 0.55 : 1 }}>
-      <Text style={{ color: theme.interactiveText, fontWeight: "700", textAlign: "center" }}>{label}</Text>
+        padding: 12, minHeight: 48, opacity: disabled ? 0.55 : 1,
+        backgroundColor: primary ? theme.actionBackground : theme.surface }}>
+      <Text style={{ color: primary ? theme.onAction : theme.interactiveText, fontWeight: "700", textAlign: "center" }}>{label}</Text>
     </Pressable>
   );
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
+    <MerchantEntryShell>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{
         flexGrow: 1, padding: 24, justifyContent: "center", width: "100%", maxWidth: 500, alignSelf: "center",
       }}>
         <View style={{ backgroundColor: theme.surface, padding: 22, gap: 14, borderRadius: 16,
           borderColor: theme.borderColor, borderWidth: 1 }}>
           <Text accessibilityRole="header" style={{ color: theme.color, fontSize: 27, fontWeight: "700" }}>
-            بثواني — التاجر
+            تسجيل دخول التاجر
           </Text>
           {busy ? <Text accessibilityLiveRegion="polite" style={{ color: theme.colorSecondary }}>جارٍ التحقق…</Text> : null}
           {message ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>{message}</Text> : null}
           {enabled === null && !busy ? button("إعادة المحاولة", refresh) : null}
           {enabled === false ? (
-            <Text accessibilityRole="alert" style={{ color: theme.warningText }}>تسجيل دخول التاجر غير متاح في هذه البيئة.</Text>
+            <>
+              <Text accessibilityRole="alert" style={{ color: theme.warningText }}>تسجيل دخول التاجر غير متاح في هذه البيئة.</Text>
+              {button("إعادة التحقق من تسجيل الدخول", refresh)}
+            </>
           ) : null}
           {enabled && session ? (
             <>
@@ -193,16 +221,6 @@ export default function MerchantIdentityGate() {
                 <Text accessibilityRole="alert" style={{ color: theme.warningText }}>{standingError}</Text>
                 {button("إعادة التحقق من المتاجر", refresh)}
               </> : null}
-              {standing && standing.stores.length === 0 ?
-                <Text style={{ color: theme.colorSecondary }}>لا يوجد متجر مملوك لهذا الحساب في DSH بعد.</Text> : null}
-              {standing?.stores.map(store => (
-                <View key={store.id} style={{ padding: 12, borderWidth: 1, borderColor: theme.borderColor, borderRadius: 8 }}>
-                  <Text style={{ color: theme.color, fontWeight: "700" }}>{store.name}</Text>
-                  <Text style={{ color: theme.colorSecondary }}>
-                    {store.published ? "متجر منشور" : "متجر غير منشور"} — {store.relation}
-                  </Text>
-                </View>
-              ))}
               {button("تسجيل الخروج", signOut)}
             </>
           ) : null}
@@ -220,7 +238,7 @@ export default function MerchantIdentityGate() {
               <Text style={{ color: theme.colorSecondary }}>استخدم رقم الاختبار المخصص لك في هذه البيئة المعزولة.</Text>
               <TextInput accessibilityLabel="رقم هاتف الاختبار" value={phone} onChangeText={setPhone}
                 keyboardType="phone-pad" autoComplete="tel" editable={!busy} maxLength={12} style={fieldStyle} />
-              {button("إرسال رمز التحقق", requestCode, busy || !/^\+120255501[0-9]{2}$/.test(phone.trim()))}
+              {button("إرسال رمز التحقق", requestCode, busy || !/^\+120255501[0-9]{2}$/.test(phone.trim()), true)}
             </>
           ) : null}
           {enabled && !session && !entryUncertain && ticket ? (
@@ -228,13 +246,13 @@ export default function MerchantIdentityGate() {
               <Text style={{ color: theme.color }}>أدخل الرمز المكوّن من ستة أرقام.</Text>
               <TextInput accessibilityLabel="رمز التحقق" value={code} onChangeText={setCode}
                 keyboardType="number-pad" autoComplete="one-time-code" editable={!busy} maxLength={6} style={fieldStyle} />
-              {button("دخول مساحة التاجر", signIn, busy || !/^\d{6}$/.test(code))}
+              {button("دخول مساحة التاجر", signIn, busy || !/^\d{6}$/.test(code), true)}
               {button("طلب رمز جديد", requestCode)}
               {button("تغيير الرقم", () => { setTicket(""); setCode(""); setMessage(""); })}
             </>
           ) : null}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </MerchantEntryShell>
   );
 }

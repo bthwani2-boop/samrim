@@ -2,6 +2,24 @@ package main
 
 import "testing"
 
+func TestIsolatedVerifierTLSRequiresExplicitFilesAndScope(t *testing.T) {
+	if cfg, err := isolatedVerifierTLS("", "", "", "", ""); err != nil || cfg != nil {
+		t.Fatal("omitting both files must leave the private listener disabled")
+	}
+	for _, tc := range [][5]string{
+		{"true", "true", "identity_test_local", "cert-only", ""},
+		{"true", "", "identity_test_local", "cert", "key"},
+		{"", "true", "identity_test_local", "cert", "key"},
+		{"true", "true", "identity", "cert", "key"},
+		{"true", "true", "identity_test_local", "missing-cert", "missing-key"},
+	} {
+		cfg, err := isolatedVerifierTLS(tc[0], tc[1], tc[2], tc[3], tc[4])
+		if err == nil || cfg != nil {
+			t.Fatalf("accepted invalid TLS scope or material: %v", tc)
+		}
+	}
+}
+
 func TestIsolatedDevelopmentListenerGate(t *testing.T) {
 	for _, tc := range []struct {
 		name, address, isolated, container, schema string

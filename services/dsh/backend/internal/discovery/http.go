@@ -2,14 +2,18 @@ package discovery
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
 )
@@ -57,7 +61,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
-		if err := s.Owner.DB.PingContext(ctx); err != nil {
+		tx, err := s.Owner.viewTx(ctx)
+		if err == nil {
+			defer tx.Rollback()
+			// The revision row is initialized by the baseline discovery migration.
+			_, err = s.Owner.revision(ctx, tx)
+		}
+		if err != nil {
 			errorJSON(w, 503, "OWNER_UNAVAILABLE")
 			return
 		}
@@ -169,6 +179,11 @@ func cursorError(w http.ResponseWriter, err error) {
 	errorJSON(w, 400, "INVALID_CURSOR")
 }
 func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	search, scope, valid := publicSearch(r, r.URL.Query().Get("city_id"))
+	if !valid {
+		errorJSON(w, 400, "INVALID_SEARCH")
+		return
+	}
 	city := r.URL.Query().Get("city_id")
 	if !validID(city) {
 		errorJSON(w, 400, "INVALID_CITY")
@@ -190,7 +205,7 @@ func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.
 		errorJSON(w, 503, "OWNER_UNAVAILABLE")
 		return
 	}
-	after, err := parseCursor(r.URL.Query().Get("cursor"), "stores", city, rev)
+	after, err := parseCursor(r.URL.Query().Get("cursor"), "stores", scope, rev)
 	if err != nil {
 		cursorError(w, err)
 		return
@@ -199,8 +214,8 @@ func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.
 		JOIN service_cities c ON c.id=s.city_id
 		JOIN verticals v ON v.id=s.vertical_id
 		WHERE c.active AND v.active AND s.published AND s.relation='MARKETPLACE'
-			AND s.city_id=$1 AND s.id>$2 ORDER BY s.id LIMIT $3`
-	rows, err := tx.QueryContext(ctx, q, city, after, limit+1)
+			AND s.city_id=$1 AND s.id>$2 AND strpos(lower(s.name),lower($4))>0 ORDER BY s.id LIMIT $3`
+	rows, err := tx.QueryContext(ctx, q, city, after, limit+1, search)
 	if err != nil {
 		errorJSON(w, 503, "OWNER_UNAVAILABLE")
 		return
@@ -232,9 +247,27 @@ func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.
 	result := page[publicStore]{Items: items, Revision: rev}
 	if len(items) > limit {
 		result.Items = items[:limit]
-		result.NextCursor = makeCursor(pageCursor{Kind: "stores", Scope: city, After: items[limit-1].ID, Revision: rev})
+		result.NextCursor = makeCursor(pageCursor{Kind: "stores", Scope: scope, After: items[limit-1].ID, Revision: rev})
 	}
 	jsonResponse(w, 200, result)
+}
+
+// Search is a literal substring, never a SQL LIKE pattern. Hashing its scope
+// keeps even multi-byte search text within the existing bounded cursor format.
+func publicSearch(r *http.Request, scope string) (string, string, bool) {
+	values, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil || len(values["q"]) > 1 {
+		return "", "", false
+	}
+	raw := values.Get("q")
+	if !utf8.ValidString(raw) || utf8.RuneCountInString(raw) > 80 || strings.ContainsRune(raw, 0) {
+		return "", "", false
+	}
+	search := strings.TrimSpace(raw)
+	if search != "" {
+		scope += fmt.Sprintf(":%x", sha256.Sum256([]byte(search)))
+	}
+	return search, scope, true
 }
 func (s *Server) visibleStore(ctx context.Context, tx *sql.Tx, id string) (publicStore, error) {
 	var st publicStore
@@ -270,6 +303,11 @@ func (s *Server) storeDetail(ctx context.Context, w http.ResponseWriter, id stri
 	jsonResponse(w, 200, st)
 }
 func (s *Server) listOffers(ctx context.Context, w http.ResponseWriter, r *http.Request, id string) {
+	search, scope, valid := publicSearch(r, id)
+	if !valid {
+		errorJSON(w, 400, "INVALID_SEARCH")
+		return
+	}
 	limit, ok := limitParam(r)
 	if !ok {
 		errorJSON(w, 400, "INVALID_LIMIT")
@@ -295,7 +333,7 @@ func (s *Server) listOffers(ctx context.Context, w http.ResponseWriter, r *http.
 		errorJSON(w, 503, "OWNER_UNAVAILABLE")
 		return
 	}
-	after, err := parseCursor(r.URL.Query().Get("cursor"), "offers", id, rev)
+	after, err := parseCursor(r.URL.Query().Get("cursor"), "offers", scope, rev)
 	if err != nil {
 		cursorError(w, err)
 		return
@@ -305,8 +343,9 @@ func (s *Server) listOffers(ctx context.Context, w http.ResponseWriter, r *http.
 		JOIN variants v ON v.id=o.variant_id AND v.product_id=o.product_id
 		WHERE o.store_id=$1 AND o.id>$2 AND p.active AND v.sellable
 			AND v.required_attributes_valid AND o.published AND o.available
-			AND o.price_yer>0 AND o.stock_units>0 ORDER BY o.id LIMIT $3`
-	rows, err := tx.QueryContext(ctx, q, id, after, limit+1)
+			AND o.price_yer>0 AND o.stock_units>0
+			AND strpos(lower(p.name),lower($4))>0 ORDER BY o.id LIMIT $3`
+	rows, err := tx.QueryContext(ctx, q, id, after, limit+1, search)
 	if err != nil {
 		errorJSON(w, 503, "OWNER_UNAVAILABLE")
 		return
@@ -336,7 +375,7 @@ func (s *Server) listOffers(ctx context.Context, w http.ResponseWriter, r *http.
 	result := page[publicOffer]{Items: items, Revision: rev}
 	if len(items) > limit {
 		result.Items = items[:limit]
-		result.NextCursor = makeCursor(pageCursor{Kind: "offers", Scope: id, After: items[limit-1].ID, Revision: rev})
+		result.NextCursor = makeCursor(pageCursor{Kind: "offers", Scope: scope, After: items[limit-1].ID, Revision: rev})
 	}
 	jsonResponse(w, 200, result)
 }

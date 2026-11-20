@@ -35,6 +35,7 @@ func isolatedCaptainStandingHandler(db *sql.DB, schema string, next http.Handler
 	mux.Handle(captainstanding.CaptainStandingPath, private)
 	mux.Handle(captainstanding.CaptainEligibilityPath, private)
 	mux.Handle(captainstanding.CaptainApplicationPath, private)
+	mux.Handle(captainstanding.OperatorCaptainsPath, private)
 	mux.Handle("/v1/operators/captains/", private)
 	mux.Handle("/", next)
 	return mux, nil

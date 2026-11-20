@@ -16,6 +16,7 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
   const { theme } = useMobileAppearance();
   const [access, setAccess] = useState<RouteAccess>("checking");
   const [previouslyAllowed, setPreviouslyAllowed] = useState(false);
+  const [verifiedSessionKey, setVerifiedSessionKey] = useState<string | null>(null);
   const retryCheck = useRef<() => void>(() => undefined);
 
   useFocusEffect(useCallback(() => {
@@ -42,6 +43,9 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
             setAccess("denied");
             return;
           }
+          // A different actor or renewed session expiry must not inherit the prior
+          // Captain component tree (including private in-memory screen state).
+          setVerifiedSessionKey(JSON.stringify([session.actorId, session.sessionExpiresAt]));
           setPreviouslyAllowed(true);
           setAccess("allowed");
           expiry = setTimeout(() => {
@@ -89,7 +93,7 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
   // still mounts no protected content until Identity and DSH both approve.
   return <View style={{ flex: 1, backgroundColor: theme.background }}>
     {previouslyAllowed ? (
-      <View style={visible ? { flex: 1 } : { display: "none" }}
+      <View key={verifiedSessionKey} style={visible ? { flex: 1 } : { display: "none" }}
         pointerEvents={visible ? "auto" : "none"}
         importantForAccessibility={visible ? "auto" : "no-hide-descendants"}>
         {children}

@@ -56,11 +56,23 @@ func (g *PostgresStoreGrants) StoreTimezone(ctx context.Context, storeID string)
 		return "", err
 	}
 	defer tx.Rollback()
+	timezone, err := readStoreTimezone(ctx, tx, storeID)
+	if err != nil {
+		return "", err
+	}
+	if err = tx.Commit(); err != nil {
+		return "", err
+	}
+	return timezone, nil
+}
+
+// Read the canonical city zone in the caller's existing Store transaction.
+func readStoreTimezone(ctx context.Context, tx *sql.Tx, storeID string) (string, error) {
 	var timezone sql.NullString
 	query := `SELECT c.timezone_name
 		FROM stores AS s JOIN service_cities AS c ON c.id=s.city_id
 		WHERE s.id=$1`
-	err = tx.QueryRowContext(ctx, query, storeID).Scan(&timezone)
+	err := tx.QueryRowContext(ctx, query, storeID).Scan(&timezone)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", ErrStoreMissing
 	}
@@ -72,9 +84,6 @@ func (g *PostgresStoreGrants) StoreTimezone(ctx context.Context, storeID string)
 	}
 	if _, err = loadStoreTimezone(timezone.String); err != nil {
 		return "", ErrInvalidTimezone
-	}
-	if err = tx.Commit(); err != nil {
-		return "", err
 	}
 	return timezone.String, nil
 }

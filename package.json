@@ -9,6 +9,8 @@
     "pnpm": "12.15.0"
   },
   "scripts": {
+    "dev": "pwsh -NoProfile -File tools/dev/dev.ps1",
+    "rename:merchant:plan": "node tools/dev/prepare-merchant-rename.mjs plan",
     "check:workspace": "node tools/dev/verify-workspace.mjs",
      "check:coverage": "node tools/dev/run-coverage.mjs",
     "check:test-inclusion": "node --test tools/dev/source-test-discovery.test.mjs && node tools/dev/run-coverage.mjs --check-discovery",

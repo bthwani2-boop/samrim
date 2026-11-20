@@ -17,6 +17,7 @@ var (
 	ErrInvalidChange    = errors.New("INVALID_REQUEST")
 	ErrVersionConflict  = errors.New("CAPTAIN_STANDING_VERSION_CONFLICT")
 	ErrUnknownResult    = errors.New("OPERATION_RESULT_UNKNOWN")
+	ErrNotFound         = errors.New("NOT_FOUND")
 )
 
 type Status string
@@ -55,6 +56,7 @@ type Identity interface {
 
 type Repository interface {
 	Read(context.Context, string) (Standing, error)
+	List(context.Context, Status, string, int) ([]Standing, error)
 	Apply(context.Context, string) (Standing, error)
 	Change(context.Context, Change) (Standing, error)
 }
@@ -112,8 +114,12 @@ func (s *Service) Apply(ctx context.Context, bearer string) (Standing, error) {
 		return Standing{}, ErrOwnerUnavailable
 	}
 	switch standing.Status {
-	case Pending, Approved, Suspended, Revoked:
+	case Pending, Approved:
 		return standing, nil
+	case Suspended, Revoked:
+		// A current Customer may recover a pending/approved application only.
+		// Never turn an inactive DSH standing into a successful admission result.
+		return Standing{}, ErrNotEligible
 	default:
 		return Standing{}, ErrOwnerUnavailable
 	}

@@ -248,7 +248,7 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 		t.Fatalf("canonical city timezone %q: %v", zone, err)
 	}
 	first, err := repo.Read(ctx, id)
-	if err != nil || first.Version != 1 || first.Timezone != "" {
+	if err != nil || first.Version != 1 || first.Timezone != "Asia/Aden" || first.Weekly != nil {
 		t.Fatalf("unexpected empty Store availability %+v %v", first, err)
 	}
 	command := AuthorizedChange{
@@ -574,5 +574,8 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 		Scan(&updatedAudits); err != nil || updatedAudits != 7 {
 		t.Fatalf("invalid timezone changed durable Store audit: count=%d err=%v", updatedAudits, err)
 	}
+	t.Run("HTTP historical replay survives elapsed pause and owner policy drift", func(t *testing.T) {
+		assertHistoricalHTTPReplay(t, ctx, db, schema, repo, grants, policy)
+	})
 	t.Logf("PASS real DSH PostgreSQL: store=%s finalVersion=%d audits=%d, policy versions 1->2 frozen; concurrent identical key exactly once, denied calls preserved state", id, updated.Version, updatedAudits)
 }

@@ -34,6 +34,9 @@ type fakeStandingRepository struct {
 func (f *fakeStandingRepository) Read(context.Context, string) (Standing, error) {
 	return f.standing, f.err
 }
+func (f *fakeStandingRepository) List(context.Context, Status, string, int) ([]Standing, error) {
+	return nil, f.err
+}
 func (f *fakeStandingRepository) Change(_ context.Context, cmd Change) (Standing, error) {
 	f.changes++
 	f.lastChange = cmd
@@ -149,5 +152,21 @@ func TestVerifiedCustomerApplicationNeverSelfApprovesCaptainRole(t *testing.T) {
 	id.actor = Actor{ID: "captain-17", Role: "customer"}
 	if read, err := svc.ReadSelf(context.Background(), "customer-token", "customer"); err != nil || read.Status != Approved {
 		t.Fatalf("approved applicant not readable at owner: %+v %v", read, err)
+	}
+}
+
+func TestSuspendedAndRevokedApplicantCannotRecoverAnApprovedCaptainStanding(t *testing.T) {
+	for _, status := range []Status{Suspended, Revoked} {
+		t.Run(string(status), func(t *testing.T) {
+			existing := Standing{ActorID: "captain-17", Status: status, Version: 3}
+			repo := &fakeStandingRepository{standing: existing}
+			svc := NewService(&fakeIdentity{actor: Actor{ID: "captain-17", Role: "customer"}}, repo)
+			if _, err := svc.Apply(context.Background(), "verified-customer"); !errors.Is(err, ErrNotEligible) {
+				t.Fatalf("inactive applicant should be denied, got %v", err)
+			}
+			if repo.standing != existing || repo.changes != 0 {
+				t.Fatalf("application changed previously inactive standing: %+v", repo.standing)
+			}
+		})
 	}
 }

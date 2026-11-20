@@ -49,7 +49,7 @@ func TestOperatorPermissionCommandRejectsMalformedScopeAndUnsafeMutation(t *test
 			}
 		})
 	}
-	for _, scope := range []string{"operations", "partners", "catalog", "marketing", "finance", "hr", "platform_policies"} {
+	for _, scope := range []string{"operations", "merchant", "catalog", "marketing", "finance", "hr", "platform_policies"} {
 		c := validOperatorAdminCommand()
 		c.Permission = scope
 		if err := validateOperatorPermissionCommand(c); err != nil {

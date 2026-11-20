@@ -1,0 +1,317 @@
+.shell {
+  display: grid;
+  grid-template-columns: 14rem minmax(0, 1fr);
+  min-block-size: calc(100dvh - 5rem);
+  margin-block-start: 1rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 1rem;
+}
+
+.sidebar {
+  background: var(--surface-base);
+  border-inline-end: 1px solid var(--border-subtle);
+  border-start-start-radius: inherit;
+  border-end-start-radius: inherit;
+  padding: 1rem;
+}
+
+.brand {
+  border-inline-start: 0.25rem solid var(--brand-action);
+  color: var(--color-primary);
+  font-size: 1rem;
+  font-weight: 700;
+  margin-block-end: 1rem;
+  padding-block: 0.25rem;
+  padding-inline-start: 0.625rem;
+}
+
+.navigation,
+.navigation ul {
+  display: grid;
+  gap: 0.375rem;
+}
+
+.navigation ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.navigation a {
+  align-items: center;
+  border-radius: 0.5rem;
+  color: var(--color-secondary);
+  display: flex;
+  font-weight: 600;
+  min-block-size: 2.75rem;
+  padding: 0.375rem 0.75rem;
+  text-decoration: none;
+}
+
+.navigation a:hover {
+  background: var(--brand-structure-soft);
+}
+
+.navigation a[aria-current="page"] {
+  background: var(--action-soft);
+  box-shadow: inset 0 -2px var(--interactive-text);
+  color: var(--interactive-text);
+}
+
+.navigation a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.groupLabel {
+  color: var(--color-secondary);
+  display: block;
+  font-size: 0.8125rem;
+  padding: 0.5rem 0.75rem 0.25rem;
+}
+
+.logout {
+  background: var(--surface-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.5rem;
+  color: var(--color-primary);
+  cursor: pointer;
+  font: inherit;
+  margin-block-start: 1rem;
+  min-block-size: 2.75rem;
+  padding: 0.375rem 0.75rem;
+  text-align: start;
+  width: 100%;
+}
+
+.logout:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.signOutStatus {
+  grid-column: 1 / -1;
+  padding: clamp(1rem, 3vw, 2rem);
+}
+
+.content {
+  min-inline-size: 0;
+  padding-inline: clamp(0.75rem, 2vw, 2rem);
+}
+
+.landing,
+.workspace {
+  margin-inline: auto;
+  padding-block: clamp(1.5rem, 5vw, 4rem);
+}
+
+.landing {
+  max-inline-size: 42rem;
+}
+
+.workspace {
+  max-inline-size: 66rem;
+}
+
+.landing h1,
+.workspace h1 {
+  color: var(--color-primary);
+  font-size: clamp(1.375rem, 4vw, 2rem);
+  margin-block-end: 1rem;
+}
+
+.landing p {
+  color: var(--color-secondary);
+  line-height: 1.7;
+}
+
+.overview {
+  border-block-start: 1px solid var(--border-subtle);
+  margin-block-start: 1.5rem;
+  padding-block-start: 1.25rem;
+}
+
+.overview h2 {
+  font-size: 1.125rem;
+  margin-block: 0 0.5rem;
+}
+
+.overview ul {
+  display: grid;
+  gap: 0.5rem 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  margin-block: 0;
+  padding-inline-start: 1.125rem;
+}
+
+.primaryLink,
+.sectionCard {
+  border-radius: 0.625rem;
+  min-block-size: 2.75rem;
+  text-decoration: none;
+}
+
+.primaryLink {
+  align-items: center;
+  background: var(--action-bg);
+  color: var(--color-on-action);
+  display: inline-flex;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+}
+
+.primaryLink:hover {
+  background: var(--action-hover);
+  color: var(--color-on-action);
+}
+
+.sectionGrid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.workspace h2 {
+  font-size: 1.125rem;
+  margin-block: 1.75rem 0.75rem;
+}
+
+.sectionCard {
+  background: var(--surface-base);
+  border: 1px solid var(--border-subtle);
+  color: var(--color-primary);
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem 1rem;
+}
+
+.sectionCard span {
+  color: var(--color-secondary);
+}
+
+.sectionCard:hover {
+  background: var(--brand-structure-soft);
+  color: var(--interactive-text);
+}
+
+.primaryLink:focus-visible,
+.sectionCard:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (width < 64rem) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+  }
+
+  .sidebar {
+    border-inline-end: 0;
+    border-block-end: 1px solid var(--border-subtle);
+    border-start-end-radius: inherit;
+    border-end-start-radius: 0;
+  }
+
+  .navigation,
+  .navigation ul {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .logout {
+    inline-size: auto;
+  }
+}
+
+.lockedSections {
+  border-block-start: 1px solid var(--border-subtle);
+  margin-block-start: 1.25rem;
+  padding-block-start: 0.75rem;
+}
+
+.lockedSections h2 {
+  color: var(--color-primary);
+  font-size: 0.875rem;
+  margin: 0.5rem 0;
+}
+
+.lockedSections li {
+  color: var(--color-secondary);
+  font-size: 0.875rem;
+  padding: 0.375rem 0.75rem;
+}
+
+.lockedSections p {
+  color: var(--color-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.workspaceBar {
+  border-block-end: 1px solid var(--border-subtle);
+  padding-block: 0.75rem;
+}
+
+.currentSection {
+  color: var(--color-primary);
+  display: block;
+  font-weight: 700;
+  margin-block-end: 0.75rem;
+}
+
+.sectionTabs,
+.subsectionTabs {
+  max-inline-size: 100%;
+  overflow-x: auto;
+}
+
+.sectionTabs ul,
+.subsectionTabs ul {
+  display: flex;
+  gap: 0.375rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sectionTabs a,
+.subsectionTabs a {
+  border-radius: 0.5rem;
+  color: var(--color-secondary);
+  display: inline-flex;
+  font-weight: 600;
+  min-block-size: 2.5rem;
+  padding: 0.5rem 0.75rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.sectionTabs a:hover,
+.subsectionTabs a:hover {
+  background: var(--brand-structure-soft);
+}
+
+.sectionTabs a[aria-current="page"],
+.subsectionTabs a[aria-current="page"] {
+  background: var(--action-soft);
+  color: var(--interactive-text);
+}
+
+.sectionTabs a:focus-visible,
+.subsectionTabs a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.subsectionTabs {
+  margin-block-start: 0.5rem;
+}
+
+.subsectionTabs a {
+  font-size: 0.875rem;
+  min-block-size: 2.25rem;
+}

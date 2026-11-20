@@ -66,8 +66,14 @@ test("every supported development branch executes discovered Feature regression 
 test("Operator HTTP checks run after the production Next build, not as source coverage", () => {
   const { content } = events(workflows[0]);
   const build = content.indexOf("name: Build the pinned Next.js Operator presentation host");
-  const smoke = content.indexOf("BTHWANI_OPERATOR_HTTP_TEST=1 node --test apps/control-panel/tests/operator-protected-routes.test.mjs");
+  const smoke = content.indexOf("name: Exercise production Operator session and policy routes");
   assert.ok(build >= 0 && smoke > build, "Operator auth/route HTTP checks must execute after the Next build");
+  const step = content.slice(smoke, content.indexOf("\n  fast_guard:", smoke));
+  assert.match(step, /BTHWANI_OPERATOR_HTTP_TEST: '1'/);
+  assert.match(step, /node --test --test-concurrency=1/);
+  for (const name of ["protected-routes", "workspace-http", "policy-http"]) {
+    assert.ok(step.includes(`apps/control-panel/tests/operator-${name}.test.mjs`));
+  }
 });
 
 test("CI must reject unadmitted new tests before coverage and fast-guard", () => {

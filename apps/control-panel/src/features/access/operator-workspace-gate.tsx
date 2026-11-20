@@ -1,11 +1,16 @@
-// Identity does not yet issue a complete authenticated Operator browser session.
-// Render no workspace children, navigation, metrics or private data in its absence.
-export default function OperatorWorkspaceGate() {
+import styles from "../operator-shell/operator-shell.module.css";
+
+export default function OperatorWorkspaceGate({ hasWorkspace }: Readonly<{ hasWorkspace: boolean }>) {
   return (
-    <main style={{ maxWidth: 760, margin: "5rem auto", padding: 24 }}>
-      <h1>لوحة تحكم بثواني</h1>
-      <p role="alert">الوصول إلى مساحة العمل غير متاح حتى توثيق جلسة المشغّل لدى Identity.</p>
-      <p>لا تكفي عضوية Operator وحدها لمنح صلاحية إدارة العمليات أو المالية أو السياسات.</p>
+    <main className={styles.landing} aria-labelledby="workspace-denied-title">
+      <h1 id="workspace-denied-title">لوحة تحكم بثواني</h1>
+      <p role="alert">الوصول إلى هذه المساحة غير متاح.</p>
+      <p>{hasWorkspace
+        ? "حسابك لا يملك الصلاحية الحالية لهذا القسم."
+        : "تتطلب مساحة العمل جلسة مشغّل وصلاحية سارية."}</p>
+      <a className={styles.primaryLink} href={hasWorkspace ? "/workspace" : "/"}>
+        {hasWorkspace ? "العودة إلى مساحة العمل" : "فتح صفحة دخول المشغّل"}
+      </a>
     </main>
   );
 }

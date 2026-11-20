@@ -229,7 +229,7 @@ test("compatible new branch at the same HEAD still must reconcile manifest branc
 function isolatedPowerShell(code) {
   // Run only command builders against disposable local files. Never invoke SSH,
   // the Lenovo watcher, or source reconciliation during this regression.
-  return spawnSync("powershell.exe", [
+  return spawnSync("pwsh.exe", [
     "-NoProfile", "-NonInteractive", "-EncodedCommand",
     Buffer.from(code, "utf16le").toString("base64"),
   ], { encoding: "utf8", windowsHide: true, timeout: 15000 });

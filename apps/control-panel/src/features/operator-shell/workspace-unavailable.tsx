@@ -1,3 +1,5 @@
+"use client";
+
 import { Alert, Typography } from "antd";
 
 export default function WorkspaceUnavailable({ title, description, owner }: Readonly<{

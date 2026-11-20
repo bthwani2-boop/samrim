@@ -43,6 +43,7 @@ func TestMigrationDeniedOutsideIsolatedDSHOwner(t *testing.T) {
 		{"public", "true"},
 		{"dsh", "true"},
 		{"identity_test_fixture", "true"},
+		{"dsh_test_", "true"},
 		{"dsh_test_fixture", "false"},
 	} {
 		t.Run(tc.schema+"_"+tc.enabled, func(t *testing.T) {
@@ -53,6 +54,9 @@ func TestMigrationDeniedOutsideIsolatedDSHOwner(t *testing.T) {
 			}
 			if err := owner.Migrate(context.Background(), []byte("CREATE TABLE __SCHEMA__.synthetic(id int)")); err == nil || !strings.Contains(err.Error(), "isolated DSH migration") {
 				t.Fatalf("unauthorized migration must fail before SQL execution, got %v", err)
+			}
+			if err := owner.ImportSynthetic(context.Background()); err == nil || !strings.Contains(err.Error(), "isolated DSH test schema") {
+				t.Fatalf("unauthorized synthetic import must fail before SQL execution, got %v", err)
 			}
 		})
 	}
@@ -99,17 +103,17 @@ func TestPublicCursorPreventsCrossStoreReuseAndStalePages(t *testing.T) {
 	}
 }
 
-func TestMigrationDatabaseNameRequiresExactIsolatedRefoundation(t *testing.T) {
+func TestDatabaseNameRequiresExactIsolatedRefoundation(t *testing.T) {
 	for _, name := range []string{
 		"", "postgres", "bthwani", "samrim", "production", "bthwani_production",
 		"refoundation", "bthwani_refoundation_backup", "bthwani_refoundation_prod",
 		"bthwani_refoundation;DROP SCHEMA public", "BTHWANI_REFOUNDATION",
 	} {
-		if isRefoundationMigrationDatabase(name) {
-			t.Errorf("unsafe migration database %q accepted", name)
+		if isRefoundationDatabase(name) {
+			t.Errorf("unsafe development write database %q accepted", name)
 		}
 	}
-	if !isRefoundationMigrationDatabase("bthwani_refoundation") {
+	if !isRefoundationDatabase("bthwani_refoundation") {
 		t.Fatal("dedicated isolated refoundation database should be accepted")
 	}
 }

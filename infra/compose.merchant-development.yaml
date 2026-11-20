@@ -1,0 +1,25 @@
+# Explicitly isolated activation of the read-only Merchant standing endpoint.
+services:
+  identity:
+    environment:
+      IDENTITY_ISOLATED_VERIFIER_TLS_CERT: /run/identity-tls/server.pem
+      IDENTITY_ISOLATED_VERIFIER_TLS_KEY: /run/identity-tls/server-key.pem
+    volumes:
+      - merchant-identity-tls:/run/identity-tls:ro
+  dsh:
+    environment:
+      BTHWANI_ISOLATED_TEST_MODE: "true"
+      BTHWANI_ISOLATED_CONTAINER_MODE: "true"
+      DSH_ENABLE_ISOLATED_MERCHANT_STANDING: "true"
+      DSH_LISTEN_ADDR: "0.0.0.0:8080"
+      DSH_IDENTITY_VERIFIER_URL: "https://identity:3343"
+      SSL_CERT_FILE: /run/identity-ca/ca.pem
+    volumes:
+      - merchant-identity-ca:/run/identity-ca:ro
+volumes:
+  merchant-identity-tls:
+    name: bthwani-refoundation-merchant-identity-tls
+    external: true
+  merchant-identity-ca:
+    name: bthwani-refoundation-merchant-identity-ca
+    external: true

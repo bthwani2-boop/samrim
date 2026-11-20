@@ -2,15 +2,15 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "node:test";
-import { merchantNavigationMode } from "../src/features/navigation/merchant-navigation-mode.ts";
+import { usesDesktopNavigation } from "../../../packages/tamagui-config/src/navigation-mode.ts";
 
-test("Merchant navigation adapts without a second Web application", () => {
-  assert.equal(merchantNavigationMode("web", 1024), "desktop");
-  assert.equal(merchantNavigationMode("web", 1440), "desktop");
-  assert.equal(merchantNavigationMode("web", 1023), "mobile");
-  assert.equal(merchantNavigationMode("android", 1920), "mobile");
-  assert.equal(merchantNavigationMode("ios", 1290), "mobile");
-  assert.equal(merchantNavigationMode("web", Number.NaN), "mobile");
+test("Expo navigation uses a desktop sidebar only on wide web", () => {
+  assert.equal(usesDesktopNavigation("web", 1024), true);
+  assert.equal(usesDesktopNavigation("web", 1440), true);
+  assert.equal(usesDesktopNavigation("web", 1023), false);
+  assert.equal(usesDesktopNavigation("android", 1920), false);
+  assert.equal(usesDesktopNavigation("ios", 1290), false);
+  assert.equal(usesDesktopNavigation("web", Number.NaN), false);
 });
 
 test("Merchant uses the separately registered native application identity", () => {

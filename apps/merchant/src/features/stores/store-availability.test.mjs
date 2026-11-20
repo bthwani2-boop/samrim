@@ -1,0 +1,152 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { test } from "node:test";
+
+const root = path.resolve(import.meta.dirname, "../../../../..");
+const temp = mkdtempSync(path.join(tmpdir(), "bthwani-merchant-availability-"));
+let compiled;
+try {
+  const task = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"),
+    path.join(import.meta.dirname, "store-availability.tsx"), "--ignoreConfig", "--noResolve", "--noCheck",
+    "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temp],
+  { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
+  assert.equal(task.status, 0, task.stderr || task.stdout);
+  compiled = readFileSync(path.join(temp, "store-availability.js"), "utf8");
+} finally { rmSync(temp, { recursive: true, force: true }); }
+
+function harness() {
+  const hooks = [];
+  const effects = [];
+  const reads = [];
+  let index = 0;
+  const jsx = (type, props) => ({ type, props });
+  const modules = {
+    react: {
+      useState(initial) {
+        const at = index++;
+        if (!(at in hooks)) hooks[at] = initial;
+        return [hooks[at], next => { hooks[at] = typeof next === "function" ? next(hooks[at]) : next; }];
+      },
+      useEffect(fn, deps) {
+        const at = index++;
+        if (hooks[at]?.deps.every((value, i) => Object.is(value, deps[i]))) return;
+        effects.push(() => { hooks[at]?.cleanup?.(); hooks[at] = { deps, cleanup: fn() }; });
+      },
+    },
+    "react/jsx-runtime": { jsx, jsxs: jsx },
+    "react-native": { ActivityIndicator: "Loading", Pressable: "Button", Text: "Text", View: "View" },
+    "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
+    "../access/admission-transport": {
+      readMerchantAvailability(storeId, signal) {
+        return new Promise((resolve, reject) => reads.push({ storeId, signal, resolve, reject }));
+      },
+    },
+  };
+  const mod = { exports: {} };
+  new Function("require", "module", "exports", compiled)(name => {
+    assert.ok(Object.hasOwn(modules, name), `unexpected import ${name}`);
+    return modules[name];
+  }, mod, mod.exports);
+  return {
+    render(storeId) {
+      index = 0;
+      effects.length = 0;
+      const view = mod.exports.default({ storeId });
+      effects.forEach(fn => { fn(); });
+      return view;
+    },
+    read() { assert.ok(reads.length, "a selected Store must trigger a fresh read"); return reads.shift(); },
+    count: () => reads.length,
+    unmount() { hooks.forEach(hook => { hook?.cleanup?.(); }); },
+  };
+}
+function find(node, predicate) {
+  if (Array.isArray(node)) return node.map(child => find(child, predicate)).find(Boolean);
+  if (!node || typeof node !== "object") return undefined;
+  return predicate(node) ? node : find(node.props?.children, predicate);
+}
+const byID = (node, id) => find(node, item => item.props?.testID === id);
+function content(node) {
+  if (Array.isArray(node)) return node.map(content).join("");
+  if (node === null || node === undefined || typeof node === "boolean") return "";
+  return typeof node === "object" ? content(node.props?.children) : String(node);
+}
+const snapshot = {
+  storeId: "store-a", timezone: "Asia/Aden", weekly: [{ weekday: 1, opens: 1320, closes: 120 }],
+  preparationMinutes: 15, version: 3, actingActorId: "merchant-a", reason: "جدول معتمد",
+};
+const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
+
+test("no Store context triggers no private read", () => {
+  const h = harness();
+  assert.match(content(h.render()), /اختر متجرًا/);
+  assert.equal(h.count(), 0);
+});
+
+test("Merchant reads actual Store hours, overnight time, timezone and version", async () => {
+  const h = harness();
+  assert.equal(byID(h.render("store-a"), "merchant-availability-snapshot"), undefined);
+  h.read().resolve(snapshot);
+  await settle();
+  const view = h.render("store-a");
+  assert.ok(byID(view, "merchant-availability-snapshot"));
+  for (const expected of ["Asia/Aden", "22:00", "02:00", "اليوم التالي", "15", "3", "جدول معتمد"]) {
+    assert.ok(content(view).includes(expected), expected);
+  }
+});
+
+for (const [weekly, expected] of [[null, "لم يُحدد جدول أسبوعي"], [[], "مغلق طوال الأسبوع"]]) {
+  test(`Store schedule distinguishes ${expected}`, async () => {
+    const h = harness(); h.render("store-a"); h.read().resolve({ ...snapshot, weekly }); await settle();
+    assert.ok(content(h.render("store-a")).includes(expected));
+  });
+}
+
+test("switching Store conceals prior data and aborts late responses", async () => {
+  const h = harness(); h.render("store-a");
+  const old = h.read();
+  const changed = h.render("store-b");
+  assert.equal(old.signal.aborted, true);
+  assert.equal(byID(changed, "merchant-availability-snapshot"), undefined);
+  old.resolve(snapshot); await settle();
+  assert.equal(byID(h.render("store-b"), "merchant-availability-snapshot"), undefined);
+  h.read().resolve({ ...snapshot, storeId: "store-b", reason: "متجر ب" }); await settle();
+  const view = h.render("store-b");
+  assert.ok(content(view).includes("متجر ب"));
+  assert.equal(content(view).includes(snapshot.reason), false);
+});
+
+test("temporary pause uses the Store timezone rather than the device's timezone or raw UTC", async () => {
+  const h = harness(); h.render("store-a");
+  h.read().resolve({ ...snapshot, pausedUntil: "2026-11-19T12:00:00Z" }); await settle();
+  const text = content(h.render("store-a"));
+  assert.ok(text.includes("15:00"), "Asia/Aden is three hours ahead of UTC");
+  assert.equal(text.includes("12:00:00Z"), false);
+});
+
+for (const status of [401, 403, 503]) {
+  test(`Store ${status} clears the snapshot and allows explicit retry`, async () => {
+    const h = harness(); h.render("store-a");
+    h.read().resolve(snapshot); await settle();
+    let view = h.render("store-a");
+    const refresh = () => find(view, node => node.props?.accessibilityLabel === "تحديث إتاحة المتجر").props.onPress();
+    refresh(); h.render("store-a");
+    h.read().reject({ status }); await settle();
+    view = h.render("store-a");
+    assert.equal(byID(view, "merchant-availability-snapshot"), undefined);
+    assert.ok(byID(view, "merchant-availability-error"));
+    assert.ok(content(view).includes(status === 503 ? "تعذّر تأكيد" : "لا تتوفر صلاحية"));
+    refresh(); h.render("store-a"); h.read().resolve(snapshot); await settle();
+    view = h.render("store-a");
+    assert.ok(byID(view, "merchant-availability-snapshot"));
+    assert.equal(byID(view, "merchant-availability-error"), undefined);
+  });
+}
+
+test("unmount cancels a private Store read", () => {
+  const h = harness(); h.render("store-a"); const read = h.read();
+  h.unmount(); assert.equal(read.signal.aborted, true);
+});
