@@ -19,7 +19,8 @@ function relationLabel(store: MerchantOwnedStore) {
   return store.relation === "MARKETPLACE" ? "ضمن سوق بثواني" : "متجر مباشر";
 }
 
-export default function MerchantStoreDirectory({ stores }: Readonly<{
+export default function MerchantStoreDirectory({ actorId, stores }: Readonly<{
+  actorId: string;
   stores: readonly MerchantOwnedStore[];
 }>) {
   const { theme } = useMobileAppearance();
@@ -54,7 +55,7 @@ export default function MerchantStoreDirectory({ stores }: Readonly<{
           <Text style={secondary}>{relationLabel(selected)}</Text>
           <Text selectable accessibilityLabel={`معرّف المتجر ${selected.id}`} style={secondary}>{selected.id}</Text>
         </View>
-        <StoreAvailability key={selected.id} storeId={selected.id} />
+        <StoreAvailability key={selected.id} storeId={selected.id} actorId={actorId} />
       </View>
     );
   }

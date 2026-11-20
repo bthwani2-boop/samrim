@@ -21,6 +21,7 @@ function harness() {
   const hooks = [];
   const effects = [];
   const reads = [];
+  const writes = [];
   let index = 0;
   const jsx = (type, props) => ({ type, props });
   const modules = {
@@ -35,13 +36,21 @@ function harness() {
         if (hooks[at]?.deps.every((value, i) => Object.is(value, deps[i]))) return;
         effects.push(() => { hooks[at]?.cleanup?.(); hooks[at] = { deps, cleanup: fn() }; });
       },
+      useRef(initial) {
+        const at = index++;
+        return hooks[at] ??= { current: initial };
+      },
     },
     "react/jsx-runtime": { jsx, jsxs: jsx },
-    "react-native": { ActivityIndicator: "Loading", Pressable: "Button", Text: "Text", View: "View" },
+    "react-native": { ActivityIndicator: "Loading", Pressable: "Button", Text: "Text", TextInput: "Input", View: "View" },
+    "expo-crypto": { randomUUID: () => "synthetic-operation-id" },
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
     "../access/admission-transport": {
       readMerchantAvailability(storeId, signal) {
         return new Promise((resolve, reject) => reads.push({ storeId, signal, resolve, reject }));
+      },
+      saveMerchantAvailability(storeId, actorId, change, signal) {
+        return new Promise((resolve, reject) => writes.push({ storeId, actorId, change, signal, resolve, reject }));
       },
     },
   };
@@ -51,14 +60,15 @@ function harness() {
     return modules[name];
   }, mod, mod.exports);
   return {
-    render(storeId) {
+    render(storeId, actorId) {
       index = 0;
       effects.length = 0;
-      const view = mod.exports.default({ storeId });
+      const view = mod.exports.default({ storeId, actorId });
       effects.forEach(fn => { fn(); });
       return view;
     },
     read() { assert.ok(reads.length, "a selected Store must trigger a fresh read"); return reads.shift(); },
+    writes,
     count: () => reads.length,
     unmount() { hooks.forEach(hook => { hook?.cleanup?.(); }); },
   };
@@ -149,4 +159,50 @@ for (const status of [401, 403, 503]) {
 test("unmount cancels a private Store read", () => {
   const h = harness(); h.render("store-a"); const read = h.read();
   h.unmount(); assert.equal(read.signal.aborted, true);
+});
+
+test("pausing preserves the owner schedule and reconciles an ambiguous write using the same command", async () => {
+  const h = harness();
+  const render = () => h.render("store-a", "merchant-a");
+  const button = view => find(view, item => item.type === "Button" && item.props.accessibilityState);
+  render(); h.read().resolve(snapshot); await settle();
+  let view = render();
+  find(view, item => item.props?.accessibilityLabel === "مدة الإيقاف بالدقائق").props.onChangeText("٣٠");
+  find(view, item => item.props?.accessibilityLabel === "سبب التغيير").props.onChangeText("ازدحام مؤقت");
+  view = render();
+  assert.equal(button(view).props.disabled, false);
+  const first = button(view).props.onPress();
+  await button(view).props.onPress();
+  assert.equal(h.writes.length, 1);
+  const attempt = h.writes.shift();
+  assert.equal(attempt.actorId, "merchant-a");
+  assert.equal(attempt.change.expectedVersion, snapshot.version);
+  assert.deepEqual(attempt.change.weekly, snapshot.weekly);
+  assert.equal(attempt.change.preparationMinutes, snapshot.preparationMinutes);
+  assert.equal(attempt.change.reason, "ازدحام مؤقت");
+  assert.ok(Date.parse(attempt.change.pausedUntil) > Date.now());
+  attempt.reject({ status: 503 });
+  await first;
+  assert.match(content(render()), /إعادة التحقق من الحفظ/);
+  const recovery = button(render()).props.onPress();
+  const replay = h.writes.shift();
+  assert.deepEqual(replay.change, attempt.change);
+  replay.resolve();
+  await recovery;
+  assert.equal(byID(render(), "merchant-availability-snapshot"), undefined);
+  h.read().resolve({ ...snapshot, version: 4, pausedUntil: attempt.change.pausedUntil });
+  await settle();
+  view = render();
+  assert.match(content(view), /إنهاء الإيقاف المؤقت/);
+  find(view, item => item.props?.accessibilityLabel === "سبب التغيير").props.onChangeText("عاد التشغيل");
+  const resume = button(render()).props.onPress();
+  const resumeAttempt = h.writes.shift();
+  assert.equal(resumeAttempt.change.expectedVersion, 4);
+  assert.equal(resumeAttempt.change.pausedUntil, null);
+  render();
+  h.unmount();
+  assert.equal(resumeAttempt.signal.aborted, true);
+  resumeAttempt.resolve();
+  await resume;
+  assert.equal(h.count(), 0);
 });

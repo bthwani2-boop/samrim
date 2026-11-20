@@ -12,7 +12,8 @@ import {
   merchantStoreSummary,
 } from "./merchant-workspace-model";
 
-export default function MerchantWorkspace({ stores, onRefresh, onSignOut }: Readonly<{
+export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOut }: Readonly<{
+  actorId: string;
   stores: MerchantDSHStanding["stores"];
   onRefresh: () => void;
   onSignOut: () => void;
@@ -127,7 +128,7 @@ export default function MerchantWorkspace({ stores, onRefresh, onSignOut }: Read
               </View>
               {showStores}
             </>
-          ) : section === "stores" ? <MerchantStoreDirectory stores={stores} /> : section === "more" ? (
+          ) : section === "stores" ? <MerchantStoreDirectory actorId={actorId} stores={stores} /> : section === "more" ? (
             <View style={{ gap: 10 }}>
               {merchantNavigation.filter(item => item.id !== "more" && item.id !== "home")
                 .map(item => navigationButton(item))}

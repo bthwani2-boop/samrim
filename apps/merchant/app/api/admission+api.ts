@@ -1,4 +1,4 @@
-import { DshPublicError, getStoreOperationalAvailability } from "@bthwani/dsh";
+import { DshPublicError, getStoreOperationalAvailability, type StoreOperationalChange, updateStoreOperationalAvailability } from "@bthwani/dsh";
 import {
   IdentityClientError,
   issueCustomerPhoneChallenge,
@@ -87,6 +87,10 @@ export async function GET(request: Request) {
     const session = await readVerifiedIdentitySession(origin, bearer, signal);
     if (session.role === "merchant") {
       if (availability) {
+        const actorId = request.headers.get("X-Merchant-Context");
+        if (actorId !== null && actorId !== session.actorId) {
+          return response({ code: "MERCHANT_CONTEXT_CHANGED" }, 403);
+        }
         return response({ availability: await getStoreOperationalAvailability(
           standingOrigin(origin), storeId, bearer, signal) });
       }
@@ -115,33 +119,69 @@ export async function GET(request: Request) {
     response({ enabled: true, session: null }, 200, sessionCookie(request, "", 0));
 }
 
-export async function POST(request: Request) {
-  const origin = await configuredOrigin(request);
-  if (!origin) return response({ code: "OWNER_UNAVAILABLE" }, 503);
-  if (!isLocalMutation(request)) return response({ code: "FORBIDDEN" }, 403);
+async function readMutationBody(request: Request, limit: number): Promise<unknown> {
   if (request.headers.get("Content-Type")?.split(";")[0] !== "application/json") {
-    return response({ code: "INVALID_REQUEST" }, 400);
+    return null;
   }
   const reader = request.body?.getReader();
-  const bytes = new Uint8Array(512);
+  if (!reader) return null;
+  const bytes = new Uint8Array(limit);
   let length = 0;
-  let input: unknown;
   try {
-    if (!reader) return response({ code: "INVALID_REQUEST" }, 400);
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       if (value.length + length > bytes.length) {
         await reader.cancel();
-        return response({ code: "INVALID_REQUEST" }, 400);
+        return null;
       }
       bytes.set(value, length);
       length += value.length;
     }
-    input = JSON.parse(new TextDecoder().decode(bytes.subarray(0, length)));
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, length)));
   } catch {
+    return null;
+  }
+}
+
+export async function PATCH(request: Request) {
+  if (!isLocalMutation(request)) return response({ code: "FORBIDDEN" }, 403);
+  const query = new URL(request.url).searchParams;
+  const storeId = query.size === 1 ? query.get("availability") : null;
+  const actorId = request.headers.get("X-Merchant-Context");
+  if (!storeId || !/^[a-z0-9-]{1,64}$/.test(storeId) || !actorId) {
     return response({ code: "INVALID_REQUEST" }, 400);
   }
+  const bearer = bearerFrom(request);
+  if (!bearer) return response({ code: "UNAUTHENTICATED" }, 401);
+  const input = await readMutationBody(request, 16 * 1024);
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return response({ code: "INVALID_REQUEST" }, 400);
+  }
+  const origin = await configuredOrigin(request);
+  if (!origin) return response({ code: "OWNER_UNAVAILABLE" }, 503);
+  try {
+    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(5000)]);
+    const session = await readVerifiedIdentitySession(origin, bearer, signal);
+    if (session.role !== "merchant" || session.actorId !== actorId) {
+      return response({ code: "MERCHANT_CONTEXT_CHANGED" }, 403);
+    }
+    return response(await updateStoreOperationalAvailability(
+      standingOrigin(origin), storeId, bearer, input as StoreOperationalChange, signal,
+    ));
+  } catch (error) {
+    if (error instanceof DshPublicError && error.code === "OPERATION_RESULT_UNKNOWN") {
+      return response({ code: error.code }, 503);
+    }
+    return ownerError(error);
+  }
+}
+
+export async function POST(request: Request) {
+  const origin = await configuredOrigin(request);
+  if (!origin) return response({ code: "OWNER_UNAVAILABLE" }, 503);
+  if (!isLocalMutation(request)) return response({ code: "FORBIDDEN" }, 403);
+  const input = await readMutationBody(request, 512);
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return response({ code: "INVALID_REQUEST" }, 400);
   }

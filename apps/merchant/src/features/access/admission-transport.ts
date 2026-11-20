@@ -1,4 +1,4 @@
-import { DshPublicError, getStoreOperationalAvailability, type StoreOperationalAvailability } from "@bthwani/dsh";
+import { DshPublicError, getStoreOperationalAvailability, type StoreOperationalAvailability, type StoreOperationalChange, updateStoreOperationalAvailability } from "@bthwani/dsh";
 import {
   IdentityClientError,
   issueCustomerPhoneChallenge,
@@ -133,12 +133,13 @@ export async function readMerchantStanding(signal: AbortSignal) {
 }
 
 /** Read-only Store projection. Identity proves the role; DSH authorizes the Store. */
-export async function readMerchantAvailability(storeId: string, signal: AbortSignal): Promise<StoreOperationalAvailability> {
+export async function readMerchantAvailability(storeId: string, signal: AbortSignal, actorId?: string): Promise<StoreOperationalAvailability> {
   if (!/^[a-z0-9-]{1,64}$/.test(storeId)) throw new DshPublicError(400, "STORE_ID_INVALID");
   if (signal.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
   if (Platform.OS === "web") {
     const result = await fetch(`/api/admission?availability=${encodeURIComponent(storeId)}`, {
       method: "GET", signal, credentials: "same-origin", cache: "no-store", redirect: "error",
+      ...(actorId ? { headers: { "X-Merchant-Context": actorId } } : {}),
     });
     const body = await result.json();
     if (signal.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
@@ -148,12 +149,20 @@ export async function readMerchantAvailability(storeId: string, signal: AbortSig
     }
     return body.availability as StoreOperationalAvailability;
   }
+  return withNativeMerchantSession(signal, bearer =>
+    getStoreOperationalAvailability(nativeDSHOrigin ?? "", storeId, bearer, signal), actorId);
+}
+
+async function withNativeMerchantSession<T>(signal: AbortSignal, run: (bearer: string) => Promise<T>, actorId?: string): Promise<T> {
   if (await clearPendingNativeAdmission(signal)) throw new IdentityClientError(401, "UNAUTHORIZED");
   const bearer = await SecureStore.getItemAsync(storageKey, nativeOptions);
   if (!bearer || bearer === deniedNativeBearer) throw new IdentityClientError(401, "UNAUTHORIZED");
   try {
     const session = await readVerifiedIdentitySession(requireNativeOrigin(), bearer, signal);
     if (session.role !== "merchant") throw new IdentityClientError(403, "FORBIDDEN");
+    if (actorId !== undefined && session.actorId !== actorId) {
+      throw new DshPublicError(403, "MERCHANT_CONTEXT_CHANGED");
+    }
   } catch (error) {
     if (!signal.aborted && error instanceof IdentityClientError && (error.status === 401 || error.status === 403)) {
       deniedNativeBearer = bearer;
@@ -166,13 +175,36 @@ export async function readMerchantAvailability(storeId: string, signal: AbortSig
     throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
   }
   // A scoped 403 does not invalidate the Merchant's unrelated Store grants.
-  const availability = await getStoreOperationalAvailability(nativeDSHOrigin ?? "", storeId, bearer, signal);
+  const result = await run(bearer);
   const afterOwner = await SecureStore.getItemAsync(storageKey, nativeOptions);
   if (signal.aborted || bearer === deniedNativeBearer ||
       afterOwner !== bearer) {
     throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
   }
-  return availability;
+  return result;
+}
+
+export async function saveMerchantAvailability(
+  storeId: string, actorId: string, change: StoreOperationalChange, signal: AbortSignal,
+): Promise<void> {
+  if (!/^[a-z0-9-]{1,64}$/.test(storeId) || !actorId) throw new DshPublicError(400, "INVALID_OPERATIONAL_CHANGE");
+  signal.throwIfAborted();
+  if (Platform.OS !== "web") {
+    await withNativeMerchantSession(signal, bearer =>
+      updateStoreOperationalAvailability(nativeDSHOrigin ?? "", storeId, bearer, change, signal), actorId);
+    return;
+  }
+  const result = await fetch(`/api/admission?availability=${encodeURIComponent(storeId)}`, {
+    method: "PATCH", signal, credentials: "same-origin", cache: "no-store", redirect: "error",
+    headers: { "Content-Type": "application/json", "X-Merchant-Context": actorId },
+    body: JSON.stringify(change),
+  });
+  const body = await result.json();
+  signal.throwIfAborted();
+  if (!result.ok) throw new DshPublicError(result.status, body.code);
+  if (typeof body?.replay !== "boolean" || body.availability?.storeId !== storeId) {
+    throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
+  }
 }
 
 export async function requestAdmissionCode(phone: string, signal: AbortSignal): Promise<string> {

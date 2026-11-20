@@ -176,7 +176,7 @@ export default function MerchantIdentityGate() {
   }
 
   if (enabled && !busy && session && standing?.session === session) {
-    return <MerchantWorkspace stores={standing.value.stores} onRefresh={refresh} onSignOut={signOut} />;
+    return <MerchantWorkspace key={session.actorId} actorId={session.actorId} stores={standing.value.stores} onRefresh={refresh} onSignOut={signOut} />;
   }
 
   const fieldStyle = {
