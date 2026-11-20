@@ -1,6 +1,7 @@
 import { getStoreOperationalAvailability, type StoreOperationalAvailability } from "@bthwani/dsh";
 import { cookies } from "next/headers";
 import { parseStoreAvailabilityQuery } from "../../../../src/features/operations/store-availability-query";
+import StorePauseForm from "../../../../src/features/operations/store-pause-form";
 import styles from "../../../../src/features/operator-shell/operator-shell.module.css";
 import WorkspaceUnavailable from "../../../../src/features/operator-shell/workspace-unavailable";
 import { resolvePublicDshOrigin } from "../../../../src/features/stores/public-store-query";
@@ -47,8 +48,7 @@ export default async function StoreOperationalInspector({
   return (
     <main className={styles.workspace} aria-labelledby="availability-inspector-heading">
       <h1 id="availability-inspector-heading">إتاحة المتجر التشغيلية</h1>
-      <p>قراءة خاصة للمشغّل من DSH بعد التحقق من جلسة Identity وصلاحية operations.
-        المتجر يظل المالك الوحيد لسجله التشغيلي في DSH؛ لا تغييرات من هذه الصفحة.</p>
+      <p>راجع جدول تشغيل المتجر وأوقف استقبال الطلبات مؤقتًا عند الحاجة.</p>
       <form action="/operations/store-availability" method="get" style={{
         display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "end", marginBlock: "1rem",
       }}>
@@ -86,6 +86,10 @@ export default async function StoreOperationalInspector({
             )}
           <p>سبب التعديل المسجل: {snapshot.reason}</p>
           <p>آخر تعديل بواسطة صاحب الصلاحية لدى المالك: <code dir="ltr">{snapshot.actingActorId}</code></p>
+          {snapshot.weekly !== null ? (
+            <StorePauseForm key={JSON.stringify([access.actorId, snapshot.storeId, snapshot.version])}
+              snapshot={snapshot} actorId={access.actorId} />
+          ) : null}
         </section>
       )}
     </main>

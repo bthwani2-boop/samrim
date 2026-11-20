@@ -49,8 +49,10 @@ export function resolveIsolatedOperatorConfig(env: Settings): OperatorPasskeyCon
   return browserOrigin && identityOrigin ? { browserOrigin, identityOrigin } : null;
 }
 
-export function isTrustedOperatorRequest(request: Request, config: OperatorPasskeyConfig): boolean {
-  if (request.method !== "POST" || request.headers.get("origin") !== config.browserOrigin) return false;
+export function isTrustedOperatorRequest(
+  request: Request, config: OperatorPasskeyConfig, method: "POST" | "PATCH" = "POST",
+): boolean {
+  if (request.method !== method || request.headers.get("origin") !== config.browserOrigin) return false;
   const target = new URL(request.url);
   if (target.origin !== config.browserOrigin || target.search !== "" ||
       request.headers.get("host") !== target.host) return false;

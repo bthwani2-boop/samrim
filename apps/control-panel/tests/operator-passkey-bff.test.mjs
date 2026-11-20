@@ -52,6 +52,13 @@ test("browser mutations require exact same-origin Host and Origin, never client 
   assert.equal(check({ origin: "null", host: "localhost:13000" }), false);
   assert.equal(check({ origin: "http://localhost:13000", host: "localhost:13000", "x-forwarded-host": "evil.example" }), false);
   assert.equal(check({ origin: "http://localhost:13000", host: "localhost:13000" }, "GET"), false);
+  const patch = new Request("http://localhost:13000/api/operations/stores/store-a/availability", {
+    method: "PATCH", headers: { origin: "http://localhost:13000", host: "localhost:13000" },
+  });
+  assert.equal(isTrustedOperatorRequest(patch, config, "PATCH"), true);
+  assert.equal(isTrustedOperatorRequest(patch, config), false);
+  patch.headers.set("origin", "http://127.0.0.1:13000");
+  assert.equal(isTrustedOperatorRequest(patch, config, "PATCH"), false);
 });
 
 test("empty POST streams are valid logout requests, but bytes and transfer streams are rejected", async () => {
