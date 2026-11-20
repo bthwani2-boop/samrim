@@ -36,10 +36,28 @@ func validPort(port string) bool {
 func checkDatabase(ctx context.Context, db *sql.DB) error {
 	var safe bool
 	err := db.QueryRowContext(ctx, `SELECT current_database() = 'bthwani_wlt_test'
-		AND current_user = 'bthwani_wlt_reader'
-		AND NOT has_table_privilege('wlt.customer_funding_journal', 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE')
-		AND has_table_privilege('wlt.customer_wallet_balances', 'SELECT')
-        AND has_table_privilege('wlt.customer_funding_history', 'SELECT')`).Scan(&safe)
+		AND NOT (rolsuper OR rolcreaterole OR rolcreatedb OR rolreplication OR rolbypassrls)
+		AND NOT EXISTS (SELECT 1 FROM pg_auth_members WHERE member = reader.oid)
+		AND NOT has_database_privilege(current_database(), 'CREATE')
+		AND has_schema_privilege('wlt', 'USAGE')
+		AND NOT has_schema_privilege('wlt', 'CREATE,USAGE WITH GRANT OPTION')
+		AND NOT EXISTS (
+			SELECT 1
+			FROM (VALUES
+				('wlt.customer_funding_journal'::regclass, false),
+				('wlt.customer_funding_entries'::regclass, false),
+				('wlt.customer_wallet_balances'::regclass, true),
+				('wlt.customer_funding_history'::regclass, true)
+			) AS relation(id, readable)
+			JOIN pg_class ON pg_class.oid = relation.id
+			WHERE relowner = reader.oid
+				OR has_table_privilege(id, 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN,SELECT WITH GRANT OPTION')
+				OR has_any_column_privilege(id, 'INSERT,UPDATE,REFERENCES,SELECT WITH GRANT OPTION')
+				OR (readable AND NOT has_table_privilege(id, 'SELECT'))
+				OR (NOT readable AND has_any_column_privilege(id, 'SELECT'))
+		)
+		FROM pg_roles AS reader
+		WHERE rolname = current_user AND rolname = 'bthwani_wlt_reader'`).Scan(&safe)
 	if err != nil || !safe {
 		return errors.New("WLT requires the isolated read-only role and applied journal migration")
 	}

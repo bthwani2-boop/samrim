@@ -57,6 +57,30 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	if err := checkDatabase(ctx, owner); err == nil {
 		t.Fatal("runtime accepted the migration identity")
 	}
+	for _, privilege := range []struct {
+		name, grant, revoke string
+	}{
+		{"private journal column read",
+			"GRANT SELECT (provider_reference) ON wlt.customer_funding_journal TO bthwani_wlt_reader",
+			"REVOKE SELECT (provider_reference) ON wlt.customer_funding_journal FROM bthwani_wlt_reader"},
+		{"funding history write",
+			"GRANT INSERT (amount_yer) ON wlt.customer_funding_history TO bthwani_wlt_reader",
+			"REVOKE INSERT (amount_yer) ON wlt.customer_funding_history FROM bthwani_wlt_reader"},
+		{"WLT schema creation",
+			"GRANT CREATE ON SCHEMA wlt TO bthwani_wlt_reader",
+			"REVOKE CREATE ON SCHEMA wlt FROM bthwani_wlt_reader"},
+	} {
+		t.Run(privilege.name, func(t *testing.T) {
+			executeFixture(t, ctx, owner, privilege.grant)
+			defer executeFixture(t, ctx, owner, privilege.revoke)
+			if err := checkDatabase(ctx, reader); err == nil {
+				t.Fatal("runtime accepted a reader with excess privileges")
+			}
+		})
+	}
+	if err := checkDatabase(ctx, reader); err != nil {
+		t.Fatal(err)
+	}
 
 	const identitySchema = "identity_test_wlt"
 	identityMigration, err := os.ReadFile("/agent02/services/identity/database/migrations/001_session_verification.sql")
