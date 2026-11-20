@@ -10,7 +10,7 @@ import {
 } from "@bthwani/identity";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
-import { CaptainStandingError, readApprovedCaptainStanding, requestCaptainApplication } from "./captain-standing";
+import { CaptainStandingError, readApprovedCaptainStanding, readCaptainApplication, requestCaptainApplication } from "./captain-standing";
 
 const nativeOptions = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY };
 const key = process.env.EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW === "1"
@@ -184,7 +184,23 @@ export async function verifyCaptainCode(
       await readApprovedCaptainStanding(dshOrigin, customerIssued.accessToken, "customer", customer.actorId, signal);
     } catch (error) {
       if (!(error instanceof CaptainStandingError && error.code === "CAPTAIN_NOT_ELIGIBLE")) throw error;
-      const standing = await requestCaptainApplication(dshOrigin, customerIssued.accessToken, customer.actorId, signal);
+      let standing: "PENDING" | "APPROVED";
+      try {
+        standing = await requestCaptainApplication(dshOrigin, customerIssued.accessToken, customer.actorId, signal);
+      } catch (applicationError) {
+        if (!(applicationError instanceof CaptainStandingError) ||
+          applicationError.code !== "OPERATION_RESULT_UNKNOWN" || signal.aborted) throw applicationError;
+        // Do not retry a possibly committed POST. Read DSH's current record
+        // for the *verified Customer actor* once through the same bearer.
+        try {
+          standing = await readCaptainApplication(dshOrigin, customerIssued.accessToken, customer.actorId, signal);
+        } catch (readError) {
+          // A current owner-confirmed suspension takes precedence over an
+          // uncertain POST. Anything else remains an unresolved write outcome.
+          if (readError instanceof CaptainStandingError && readError.code === "CAPTAIN_NOT_ELIGIBLE") throw readError;
+          throw applicationError;
+        }
+      }
       if (standing === "PENDING") return { state: "pending" };
     }
     const issued = await admitCurrentCustomerAsCaptain(identityOrigin, customerIssued.accessToken, signal)
@@ -233,10 +249,12 @@ export async function verifyCaptainCode(
     // failure. A retry with the same ticket can never work. Preserve the
     // distinction from an incorrect code (which fails before issuance).
     if (signal.aborted) throw error;
-    // A DSH owner-confirmed suspension is not a phone-code error. The temporary
-    // Customer session is still revoked below; never suggest retrying admission
-    // as if a fresh proof could override suspended or revoked Captain standing.
-    if (error instanceof CaptainStandingError && error.code === "CAPTAIN_NOT_ELIGIBLE") {
+    // DSH may have committed a pending application before the POST reply was
+    // lost. Keep that unknown result distinct from a consumed phone challenge;
+    // the ephemeral Customer bearer is revoked below and there is no blind retry.
+    // A confirmed suspension likewise cannot be overridden by a new phone proof.
+    if (error instanceof CaptainStandingError &&
+      ["CAPTAIN_NOT_ELIGIBLE", "OPERATION_RESULT_UNKNOWN"].includes(error.code)) {
       throw error;
     }
     throw new IdentityClientError(0, "PHONE_CHALLENGE_CONSUMED");

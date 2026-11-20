@@ -152,3 +152,107 @@ test("definitive DSH suspension is reported as ineligible, not an incorrect phon
   );
   assert.deepEqual(revoked, ["temporary-customer"], "temporary Customer proof is revoked even after DSH refusal");
 });
+
+test("Captain admission preserves uncertain DSH POST result after consumed phone proof", async () => {
+  class IdentityError extends Error {
+    constructor(status, code) { super(code); this.status = status; this.code = code; }
+  }
+  class StandingError extends Error {
+    constructor(status, code) { super(code); this.status = status; this.code = code; }
+  }
+  let applications = 0;
+  const revoked = [];
+  const deps = {
+    "@bthwani/identity": {
+      IdentityClientError: IdentityError,
+      async verifyCustomerPhoneChallenge() { return { accessToken: "temporary-customer" }; },
+      async readVerifiedIdentitySession() { return { actorId: "captain-one", role: "customer" }; },
+      async revokeVerifiedIdentitySession(_origin, bearer) { revoked.push(bearer); },
+    },
+    "expo-secure-store": { WHEN_UNLOCKED_THIS_DEVICE_ONLY: "device", getItemAsync: async () => null },
+    "react-native": { Platform: { OS: "android" } },
+    "./captain-standing": {
+      CaptainStandingError: StandingError,
+      async readApprovedCaptainStanding() { throw new StandingError(403, "CAPTAIN_NOT_ELIGIBLE"); },
+      async requestCaptainApplication() {
+        applications++;
+        // DSH may already have committed one PENDING application.
+        throw new StandingError(503, "OPERATION_RESULT_UNKNOWN");
+      },
+      async readCaptainApplication() {
+        throw new StandingError(503, "OWNER_UNAVAILABLE");
+      },
+    },
+  };
+  const mod = { exports: {} };
+  new Function("require", "module", "exports", "process", compiled)(
+    name => {
+      assert.ok(Object.hasOwn(deps, name), `unexpected import: ${name}`);
+      return deps[name];
+    }, mod, mod.exports,
+    { env: {
+      EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:3201",
+      EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN: "http://127.0.0.1:3202",
+    } },
+  );
+  await assert.rejects(
+    mod.exports.verifyCaptainCode("synthetic-ticket", "123456", new AbortController().signal),
+    error => error instanceof StandingError && error.code === "OPERATION_RESULT_UNKNOWN" && error.status === 503,
+    "uncertain DSH commit cannot be disguised as a definitely consumed phone-only failure",
+  );
+  assert.equal(applications, 1, "unknown outcome never triggers blind re-application");
+  assert.deepEqual(revoked, ["temporary-customer"], "temporary Identity credential must be revoked");
+});
+
+test("Captain admission uses one DSH owner GET to recover a committed pending application", async () => {
+  class IdentityError extends Error {
+    constructor(status, code) { super(code); this.status = status; this.code = code; }
+  }
+  class StandingError extends Error {
+    constructor(status, code) { super(code); this.status = status; this.code = code; }
+  }
+  let posts = 0;
+  let readbacks = 0;
+  const revoked = [];
+  const deps = {
+    "@bthwani/identity": {
+      IdentityClientError: IdentityError,
+      async verifyCustomerPhoneChallenge() { return { accessToken: "temporary-customer" }; },
+      async readVerifiedIdentitySession() { return { actorId: "captain-one", role: "customer" }; },
+      async revokeVerifiedIdentitySession(_origin, bearer) { revoked.push(bearer); },
+    },
+    "expo-secure-store": { WHEN_UNLOCKED_THIS_DEVICE_ONLY: "device", getItemAsync: async () => null },
+    "react-native": { Platform: { OS: "android" } },
+    "./captain-standing": {
+      CaptainStandingError: StandingError,
+      async readApprovedCaptainStanding() { throw new StandingError(403, "CAPTAIN_NOT_ELIGIBLE"); },
+      async requestCaptainApplication() {
+        posts++;
+        throw new StandingError(503, "OPERATION_RESULT_UNKNOWN");
+      },
+      async readCaptainApplication(_origin, bearer, actorId, signal) {
+        readbacks++;
+        assert.equal(bearer, "temporary-customer");
+        assert.equal(actorId, "captain-one");
+        assert.equal(signal.aborted, false);
+        return "PENDING";
+      },
+    },
+  };
+  const mod = { exports: {} };
+  new Function("require", "module", "exports", "process", compiled)(
+    name => {
+      assert.ok(Object.hasOwn(deps, name), `unexpected import ${name}`);
+      return deps[name];
+    }, mod, mod.exports,
+    { env: {
+      EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:3201",
+      EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN: "http://127.0.0.1:3202",
+    } },
+  );
+  const outcome = await mod.exports.verifyCaptainCode("ticket", "123456", new AbortController().signal);
+  assert.deepEqual(outcome, { state: "pending" });
+  assert.equal(posts, 1, "no blind repeat of a possibly committed POST");
+  assert.equal(readbacks, 1, "single owner GET reconciles the uncertain outcome");
+  assert.deepEqual(revoked, ["temporary-customer"], "no temporary Identity token retained");
+});

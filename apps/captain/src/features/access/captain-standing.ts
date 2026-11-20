@@ -55,21 +55,25 @@ async function currentStanding(
   } catch {
     throw new CaptainStandingError(0, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_NETWORK_UNAVAILABLE");
   }
-  if (signal?.aborted) throw new CaptainStandingError(0, "OWNER_RESPONSE_STALE");
+  if (signal?.aborted) throw new CaptainStandingError(0,
+    method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
   if (!res.ok) {
     throw new CaptainStandingError(res.status,
       res.status === 403 ? "CAPTAIN_NOT_ELIGIBLE" :
-      res.status === 401 ? "UNAUTHORIZED" : res.status >= 500 ? "OWNER_UNAVAILABLE" : "OWNER_REQUEST_FAILED");
+      res.status === 401 ? "UNAUTHORIZED" : res.status >= 500 ?
+        (method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_UNAVAILABLE") : "OWNER_REQUEST_FAILED");
   }
   if (res.status !== 200 ||
     res.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json" ||
     !res.headers.get("Cache-Control")?.toLowerCase().split(",").map(s => s.trim()).includes("no-store")) {
-    throw new CaptainStandingError(502, "OWNER_RESPONSE_INVALID");
+    throw new CaptainStandingError(502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
   }
-  const raw = await res.text();
-  if (raw.length > 4096) throw new CaptainStandingError(502, "OWNER_RESPONSE_INVALID");
+  let raw: string;
+  try { raw = await res.text(); }
+  catch { throw new CaptainStandingError(502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID"); }
+  if (raw.length > 4096) throw new CaptainStandingError(502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
   try { return JSON.parse(raw) as unknown; }
-  catch { throw new CaptainStandingError(502, "OWNER_RESPONSE_INVALID"); }
+  catch { throw new CaptainStandingError(502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID"); }
 }
 export async function readApprovedCaptainStanding(
   origin: string, bearer: string, role: "customer" | "captain",
@@ -79,19 +83,35 @@ export async function readApprovedCaptainStanding(
     role === "customer" ? "/v1/actors/me/captain-eligibility" : "/v1/captains/me/standing",
     "GET", signal), actorId);
 }
-export async function requestCaptainApplication(
-  origin: string, customerBearer: string, actorId: string, signal?: AbortSignal,
-): Promise<"PENDING" | "APPROVED"> {
-  const data = await currentStanding(origin, customerBearer,
-    "/v1/actors/me/captain-application", "POST", signal);
+export type CaptainApplicationStatus = "PENDING" | "APPROVED";
+
+function currentApplicationFrom(
+  data: unknown, actorId: string, method: "GET" | "POST",
+): CaptainApplicationStatus {
+  const invalidCode = method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID";
   if (!data || typeof data !== "object" || Array.isArray(data)) {
-    throw new CaptainStandingError(502, "OWNER_RESPONSE_INVALID");
+    throw new CaptainStandingError(502, invalidCode);
   }
   const v = data as Record<string, unknown>;
   if (Object.keys(v).length !== 3 || v.actorId !== actorId ||
     !["PENDING", "APPROVED"].includes(v.status as string) ||
     !Number.isSafeInteger(v.version) || (v.version as number) < 1) {
-    throw new CaptainStandingError(502, "OWNER_RESPONSE_INVALID");
+    throw new CaptainStandingError(502, invalidCode);
   }
-  return v.status as "PENDING" | "APPROVED";
+  return v.status as CaptainApplicationStatus;
+}
+
+// Owner-backed read after an uncertain POST: never repeats the mutation or
+// trusts a caller-provided actor ID without matching DSH's verified reply.
+export async function readCaptainApplication(
+  origin: string, customerBearer: string, actorId: string, signal?: AbortSignal,
+): Promise<CaptainApplicationStatus> {
+  return currentApplicationFrom(await currentStanding(origin, customerBearer,
+    "/v1/actors/me/captain-application", "GET", signal), actorId, "GET");
+}
+export async function requestCaptainApplication(
+  origin: string, customerBearer: string, actorId: string, signal?: AbortSignal,
+): Promise<CaptainApplicationStatus> {
+  return currentApplicationFrom(await currentStanding(origin, customerBearer,
+    "/v1/actors/me/captain-application", "POST", signal), actorId, "POST");
 }

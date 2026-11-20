@@ -319,6 +319,15 @@ func TestCaptainJoinedRealHTTPAndPostgres(t *testing.T) {
 	if applied.ActorID != customer || applied.Status != "PENDING" || applied.Version != 1 {
 		t.Fatalf("pending application incorrect: %+v", applied)
 	}
+	// The same Identity bearer can read its own committed DSH application
+	// after a lost POST response without issuing another mutation.
+	pendingReadback := send("GET", application, customerBearer, "", 200)
+	if pendingReadback.ActorID != customer || pendingReadback.Status != "PENDING" || pendingReadback.Version != 1 {
+		t.Fatalf("DSH owner readback after POST differs from durable pending fact: %+v", pendingReadback)
+	}
+	send("GET", application, anotherBearer, "", 404)
+	send("GET", application, operatorBearer, "", 403)
+	send("GET", application+"?actorId="+secondCustomer, customerBearer, "", 400)
 	queue("", "", 401)
 	queue("", customerBearer, 403)
 	queue("", operatorBearer, 403)
@@ -363,6 +372,10 @@ func TestCaptainJoinedRealHTTPAndPostgres(t *testing.T) {
 	if accepted.ActorID != customer || accepted.Status != "APPROVED" || accepted.Version != 2 {
 		t.Fatalf("actual Operator approval not persisted: %+v", accepted)
 	}
+	if approvedReadback := send("GET", application, customerBearer, "", 200); approvedReadback.ActorID != customer ||
+		approvedReadback.Status != "APPROVED" || approvedReadback.Version != 2 {
+		t.Fatalf("DSH Customer readback did not reflect Operator-approved standing: %+v", approvedReadback)
+	}
 	approvedReview := queue("?status=APPROVED", operatorBearer, 200)
 	if len(approvedReview.Items) != 1 || approvedReview.Items[0].ActorID != customer || approvedReview.Items[0].Version != 2 {
 		t.Fatalf("approved queue stale after existing PATCH: %+v", approvedReview)
@@ -406,6 +419,7 @@ func TestCaptainJoinedRealHTTPAndPostgres(t *testing.T) {
 	}
 	send("GET", dshURL+"/v1/captains/me/standing", refreshed.AccessToken, "", 403)
 	send("GET", eligibility, customerBearer, "", 403)
+	send("GET", application, customerBearer, "", 403)
 	send("POST", resume, customerBearer, "", 403)
 	send("POST", admit, anotherBearer, "", 403)
 	oldReplay := send("PATCH", operatorStanding, operatorBearer, approval, 200)

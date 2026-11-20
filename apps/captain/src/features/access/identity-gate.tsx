@@ -25,6 +25,7 @@ function admissionError(error: unknown) {
     }
   }
   if (error instanceof CaptainStandingError) {
+    if (error.code === "OPERATION_RESULT_UNKNOWN") return "نتيجة تسجيل طلب الكابتن غير مؤكدة؛ قد يكون DSH حفظه. تحقق من حالة الطلب لدى المشغّل قبل إعادة التقديم.";
     if (error.code === "CAPTAIN_NOT_ELIGIBLE") return "طلب الكابتن غير معتمد أو تم تعليق الأهلية.";
   }
   return "تعذّر التحقق من حساب الكابتن. أعد المحاولة عند استقرار الاتصال.";

@@ -125,6 +125,40 @@ func (s *Service) Apply(ctx context.Context, bearer string) (Standing, error) {
 	}
 }
 
+// ReadSelfApplication reconciles a possibly committed Customer POST by reading
+// the current DSH record for the authenticated actor. A pending application
+// never grants Captain privileges. Suspended/revoked details stay private.
+func (s *Service) ReadSelfApplication(ctx context.Context, bearer string) (Standing, error) {
+	actor, err := s.resolve(ctx, bearer)
+	if err != nil {
+		return Standing{}, err
+	}
+	if actor.Role != "customer" {
+		return Standing{}, ErrForbidden
+	}
+	standing, err := s.repo.Read(ctx, actor.ID)
+	if errors.Is(err, ErrNotEligible) || errors.Is(err, ErrNotFound) {
+		return Standing{}, ErrNotFound
+	}
+	if err != nil {
+		return Standing{}, ErrOwnerUnavailable
+	}
+	if standing.ActorID == "" {
+		return Standing{}, ErrNotFound
+	}
+	if standing.ActorID != actor.ID || standing.Version < 1 {
+		return Standing{}, ErrOwnerUnavailable
+	}
+	switch standing.Status {
+	case Pending, Approved:
+		return standing, nil
+	case Suspended, Revoked:
+		return Standing{}, ErrNotEligible
+	default:
+		return Standing{}, ErrOwnerUnavailable
+	}
+}
+
 // ReadSelf uses current Identity authentication, then current DSH standing.
 // Only APPROVED is suitable for a Captain role request or Captain app access.
 func (s *Service) ReadSelf(ctx context.Context, bearer, requiredRole string) (Standing, error) {

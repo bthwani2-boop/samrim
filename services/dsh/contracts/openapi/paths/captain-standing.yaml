@@ -34,6 +34,27 @@ paths:
         '403': { $ref: '../dsh.openapi.yaml#/components/responses/Forbidden' }
         '503': { $ref: '../dsh.openapi.yaml#/components/responses/Unavailable' }
   /v1/actors/me/captain-application:
+    get:
+      operationId: getCurrentCustomerCaptainApplication
+      summary: Read own current DSH Captain application after an uncertain POST
+      description: Requires the current Identity Customer bearer; only PENDING or APPROVED for the verified actor is returned. A missing application is 404. Suspended/revoked standing is denied. Reading never creates an application or grants Captain role.
+      security:
+        - OpaqueSession: []
+      responses:
+        '200':
+          description: Current DSH-owned application state, not Identity Captain role admission
+          headers: { Cache-Control: { schema: { type: string, const: no-store } } }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/Standing' }
+        '401': { $ref: '../dsh.openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../dsh.openapi.yaml#/components/responses/Forbidden' }
+        '404':
+          description: No existing application for the verified Customer actor
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CaptainError' }
+        '503': { $ref: '../dsh.openapi.yaml#/components/responses/Unavailable' }
     post:
       operationId: applyCurrentCustomerForCaptainStanding
       summary: Register or recover pending DSH standing without granting Captain privileges
