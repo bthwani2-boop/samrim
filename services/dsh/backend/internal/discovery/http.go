@@ -21,6 +21,9 @@ import (
 type Server struct {
 	Owner          *Owner
 	AllowedOrigins map[string]bool
+	// The isolated Store availability capability requires migration 002.
+	// Discovery deployments with the public baseline alone can still serve.
+	StoreAvailabilityEnabled bool
 }
 type publicStore struct {
 	ID                 string `json:"id"`
@@ -30,6 +33,30 @@ type publicStore struct {
 	OrderabilityStatus string `json:"orderabilityStatus"`
 	OrderingAvailable  bool   `json:"orderingAvailable"`
 }
+
+func (s *Server) publicPauseSQL() string {
+	if !s.StoreAvailabilityEnabled {
+		return "FALSE"
+	}
+	return `EXISTS (SELECT 1 FROM store_operational_availability a
+		WHERE a.store_id=s.id AND a.paused_until > transaction_timestamp())`
+}
+
+func scanPublicStore(scan func(...any) error) (publicStore, error) {
+	var st publicStore
+	var paused bool
+	if err := scan(&st.ID, &st.Name, &st.CityID, &st.VerticalID, &paused); err != nil {
+		return publicStore{}, err
+	}
+	// An active pause is public browse information. A checkout decision
+	// still requires the currently unavailable fulfillment and WLT flow.
+	st.OrderabilityStatus = string(storeavailability.OperationallyUnavail)
+	if paused {
+		st.OrderabilityStatus = string(storeavailability.Paused)
+	}
+	return st, nil
+}
+
 type publicOffer struct {
 	ID        string `json:"id"`
 	StoreID   string `json:"storeId"`
@@ -210,7 +237,7 @@ func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.
 		cursorError(w, err)
 		return
 	}
-	q := `SELECT s.id,s.name,s.city_id,s.vertical_id FROM stores s
+	q := `SELECT s.id,s.name,s.city_id,s.vertical_id,` + s.publicPauseSQL() + ` FROM stores s
 		JOIN service_cities c ON c.id=s.city_id
 		JOIN verticals v ON v.id=s.vertical_id
 		WHERE c.active AND v.active AND s.published AND s.relation='MARKETPLACE'
@@ -222,14 +249,11 @@ func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.
 	}
 	items := make([]publicStore, 0, limit+1)
 	for rows.Next() {
-		var st publicStore
-		if e := rows.Scan(&st.ID, &st.Name, &st.CityID, &st.VerticalID); e != nil {
+		st, e := scanPublicStore(rows.Scan)
+		if e != nil {
 			err = e
 			break
 		}
-		// Discovery does not create checkout or bypass fulfillment/WLT activation.
-		st.OrderabilityStatus = string(storeavailability.OperationallyUnavail)
-		st.OrderingAvailable = false
 		items = append(items, st)
 	}
 	if err == nil {
@@ -270,15 +294,11 @@ func publicSearch(r *http.Request, scope string) (string, string, bool) {
 	return search, scope, true
 }
 func (s *Server) visibleStore(ctx context.Context, tx *sql.Tx, id string) (publicStore, error) {
-	var st publicStore
-	q := `SELECT s.id,s.name,s.city_id,s.vertical_id FROM stores s
+	q := `SELECT s.id,s.name,s.city_id,s.vertical_id,` + s.publicPauseSQL() + ` FROM stores s
 		JOIN service_cities c ON c.id=s.city_id
 		JOIN verticals v ON v.id=s.vertical_id
 		WHERE s.id=$1 AND s.published AND c.active AND v.active`
-	e := tx.QueryRowContext(ctx, q, id).Scan(&st.ID, &st.Name, &st.CityID, &st.VerticalID)
-	st.OrderabilityStatus = string(storeavailability.OperationallyUnavail)
-	st.OrderingAvailable = false
-	return st, e
+	return scanPublicStore(tx.QueryRowContext(ctx, q, id).Scan)
 }
 func (s *Server) storeDetail(ctx context.Context, w http.ResponseWriter, id string) {
 	tx, e := s.Owner.viewTx(ctx)

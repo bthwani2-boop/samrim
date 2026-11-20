@@ -173,7 +173,11 @@ func main() {
 		if addr == "" {
 			addr = ":8080"
 		}
-		public := &discovery.Server{Owner: owner, AllowedOrigins: origins}
+		public := &discovery.Server{
+			Owner:                    owner,
+			AllowedOrigins:           origins,
+			StoreAvailabilityEnabled: os.Getenv("DSH_ENABLE_ISOLATED_STORE_AVAILABILITY") == "true",
+		}
 		handler, err := isolatedStoreAvailabilityHandler(db, schema, public, origins)
 		if err != nil {
 			log.Fatal("DSH protected Store availability cannot start: ", err)

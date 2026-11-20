@@ -55,7 +55,10 @@ components:
         name: { type: string, minLength: 1, maxLength: 120 }
         cityId: { $ref: '#/components/schemas/PublicId' }
         verticalId: { $ref: '#/components/schemas/PublicId' }
-        orderabilityStatus: { type: string, enum: [OPEN_FOR_ORDERS, CLOSED_BY_SCHEDULE, PAUSED, OPERATIONALLY_UNAVAILABLE] }
+        orderabilityStatus:
+          type: string
+          enum: [OPEN_FOR_ORDERS, CLOSED_BY_SCHEDULE, PAUSED, OPERATIONALLY_UNAVAILABLE]
+          description: An active DSH Store pause can be shown as PAUSED even while checkout remains unavailable. The public response omits pause timestamps, reason and actor details.
         orderingAvailable: { type: boolean, const: false, description: "The checkout/fulfillment journey is not activated" }
     MerchantOwnedStore:
       type: object

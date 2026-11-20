@@ -109,6 +109,59 @@ func TestOwnerBackedMarketplaceVisibility(t *testing.T) {
 	}
 }
 
+func TestOwnerBackedPublicStoreShowsOnlyAnActivePause(t *testing.T) {
+	owner, server := setupIntegratedOwner(t)
+	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", "002_store_orderability.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err = owner.Migrate(ctx, migration); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := owner.beginScopedTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	// These isolated rows exercise public projection at an active and an expired
+	// boundary. Store mutation authorization and durable commands have their own tests.
+	if _, err = tx.ExecContext(ctx, `INSERT INTO store_operational_availability
+		(store_id,store_timezone,paused_until,changed_by_actor,change_reason)
+		VALUES ('market-sanaa','Asia/Aden',now()+interval '30 minutes','private-actor','private-reason'),
+		('direct-sanaa','Asia/Aden',now()-interval '1 minute','private-actor','private-reason'),
+		('draft-sanaa','Asia/Aden',now()+interval '30 minutes','private-actor','private-reason')
+		ON CONFLICT (store_id) DO UPDATE SET paused_until=EXCLUDED.paused_until`); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	server.StoreAvailabilityEnabled = true
+	w, active := request(server, "/v1/public/stores/market-sanaa")
+	if w.Code != 200 || active["orderabilityStatus"] != "PAUSED" ||
+		active["orderingAvailable"] != false || len(active) != 6 {
+		t.Fatalf("unexpected public paused Store response: %d %s", w.Code, w.Body.String())
+	}
+	w, page := request(server, "/v1/public/stores?city_id=sanaa&limit=1")
+	if w.Code != 200 {
+		t.Fatalf("listing failed: %d %s", w.Code, w.Body.String())
+	}
+	items := results(t, page)
+	if len(items) != 1 || items[0].(map[string]any)["orderabilityStatus"] != "PAUSED" ||
+		items[0].(map[string]any)["orderingAvailable"] != false {
+		t.Fatalf("listing lost active pause: %s", w.Body.String())
+	}
+	w, expired := request(server, "/v1/public/stores/direct-sanaa")
+	if w.Code != 200 || expired["orderabilityStatus"] != "OPERATIONALLY_UNAVAILABLE" ||
+		expired["orderingAvailable"] != false {
+		t.Fatalf("expired pause was published: %d %s", w.Code, w.Body.String())
+	}
+	if w, _ = request(server, "/v1/public/stores/draft-sanaa"); w.Code != 404 {
+		t.Fatalf("draft Store leaked: %d %s", w.Code, w.Body.String())
+	}
+}
+
 func TestOwnerBackedSyntheticImportDeniesAlternateDatabase(t *testing.T) {
 	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" || os.Getenv("DSH_TEST_SEED_BOUNDARY") != "true" {
 		t.Skip("requires a disposable PostgreSQL runner with a cloned DSH fixture database")
