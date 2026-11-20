@@ -154,22 +154,25 @@ test("reject malformed PathItem reference without throwing", () => {
 
 // These tests exercise the hand-written public client against the *owner's*
 // OpenAPI 3.1 contract, not a generated-client file that does not exist.
-test("DSH public Store/Offer client requests match owner OpenAPI operation paths and methods", async () => {
+test("DSH public Store/Vertical/Offer client requests match owner OpenAPI operation paths and methods", async () => {
   const contractDir = path.join(root, "services", "dsh", "contracts", "openapi");
   const entrypoint = (await import("yaml")).default.parse(
     readFileSync(path.join(contractDir, "dsh.openapi.yaml"), "utf8"),
   );
-  const { listPublicStores, getPublicStore, listPublicOffers } =
+  const { listPublicStores, listPublicVerticals, getPublicStore, listPublicOffers } =
     await import("../../services/dsh/clients/index.ts");
   const responseStore = {
     id: "market-sanaa", name: "سوق", cityId: "sanaa", verticalId: "grocery",
     orderabilityStatus: "OPERATIONALLY_UNAVAILABLE", orderingAvailable: false,
   };
+  const responseVertical = { id: "grocery", storeCount: 2 };
   const responseOffer = {
     id: "offer-one", storeId: "market-sanaa", name: "دقيق",
     variantId: "variant-one", priceYer: 1200, available: true,
   };
   const cases = [
+    ["listPublicVerticals", "/v1/public/verticals", () => listPublicVerticals("http://127.0.0.1:3202", "sanaa"),
+      { items: [responseVertical], revision: 1 }],
     ["listPublicStores", "/v1/public/stores", () => listPublicStores("http://127.0.0.1:3202", "sanaa"),
       { items: [responseStore], revision: 1 }],
     ["getPublicStore", "/v1/public/stores/{id}", () => getPublicStore("http://127.0.0.1:3202", "market-sanaa"),
@@ -198,14 +201,16 @@ test("DSH public Store/Offer client requests match owner OpenAPI operation paths
       await call();
       assert.equal(captured.url.pathname, publicPath.replace("{id}", "market-sanaa"));
       assert.equal(captured.options.method ?? "GET", "GET");
+      assert.equal(captured.options.credentials, "omit");
+      assert.equal(captured.options.redirect, "error");
     }
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test("DSH public client rejects Store, Offer and page shapes forbidden by OpenAPI", async () => {
-  const { listPublicStores, listPublicOffers, DshPublicError } =
+test("DSH public client rejects Store, Vertical, Offer and page shapes forbidden by OpenAPI", async () => {
+  const { listPublicStores, listPublicVerticals, listPublicOffers, DshPublicError } =
     await import("../../services/dsh/clients/index.ts");
   const sourceStore = {
     id: "market-sanaa", name: "متجر", cityId: "sanaa", verticalId: "grocery",
@@ -221,6 +226,14 @@ test("DSH public client rejects Store, Offer and page shapes forbidden by OpenAP
     { ...sourceStore, name: "x".repeat(121) },
     { ...sourceStore, verticalId: "private store" },
     { ...sourceStore, privateMerchantEmail: "do-not-expose@example.invalid" },
+  ];
+  const badVerticals = [
+    { id: "UPPER", storeCount: 1 },
+    { id: "grocery", storeCount: 0 },
+    { id: "grocery", storeCount: -1 },
+    { id: "grocery", storeCount: 1.5 },
+    { id: "grocery", storeCount: Number.MAX_SAFE_INTEGER + 1 },
+    { id: "grocery", storeCount: 2, ownerActorId: "private" },
   ];
   const badOffers = [
     { ...sourceOffer, id: "BAD_UPPERCASE" },
@@ -239,6 +252,10 @@ test("DSH public client rejects Store, Offer and page shapes forbidden by OpenAP
     for (const store of badStores) {
       await expectRejected(() => listPublicStores("http://127.0.0.1:3202", "sanaa"),
         { items: [store], revision: 1 });
+    }
+    for (const vertical of badVerticals) {
+      await expectRejected(() => listPublicVerticals("http://127.0.0.1:3202", "sanaa"),
+        { items: [vertical], revision: 1 });
     }
     for (const offer of badOffers) {
       await expectRejected(() => listPublicOffers("http://127.0.0.1:3202", "market-sanaa"),
@@ -279,13 +296,18 @@ test("public DSH discovery uses an uncredentialed no-redirect GET at the owner b
   }
 });
 
-test("public DSH Store and Offer client validators track declared OpenAPI field bounds", async () => {
+test("public DSH Store, Vertical and Offer client validators track declared OpenAPI field bounds", async () => {
   const contractDir = path.join(root, "services", "dsh", "contracts", "openapi");
   const YAML = (await import("yaml")).default;
   const schema = YAML.parse(readFileSync(path.join(contractDir, "dsh.openapi.yaml"), "utf8")).components.schemas;
   const { listPublicStores, listPublicOffers, DshPublicError } =
     await import("../../services/dsh/clients/index.ts");
   assert.equal(schema.PublicStore.additionalProperties, false);
+  assert.equal(schema.PublicVertical.additionalProperties, false);
+  assert.equal(schema.VerticalPage.additionalProperties, false);
+  assert.equal(schema.PublicVertical.properties.storeCount.minimum, 1);
+  assert.equal(schema.PublicVertical.properties.storeCount.maximum, Number.MAX_SAFE_INTEGER);
+  assert.equal(schema.VerticalPage.properties.items.maxItems, 50);
   assert.equal(schema.PublicOffer.additionalProperties, false);
   assert.equal(schema.PublicId.pattern, "^[a-z0-9-]{1,64}$");
   assert.equal(schema.PublicStore.properties.name.maxLength, 120);
