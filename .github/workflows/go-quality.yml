@@ -1,4 +1,4 @@
-name: Go Quality (source checks only)
+name: Go Quality and Isolated Owner PostgreSQL
 
 on:
   workflow_dispatch:
@@ -20,6 +20,7 @@ on:
       - 'services/**/.dockerignore'
       - 'infra/build-*image.ps1'
       - 'infra/compose*.yaml'
+      - 'infra/verify-owner-postgres-ci.sh'
       - 'nx.json'
   # Main is the protected integration target; branch names are never pinned.
   pull_request:
@@ -36,6 +37,7 @@ on:
       - 'services/**/.dockerignore'
       - 'infra/build-*image.ps1'
       - 'infra/compose*.yaml'
+      - 'infra/verify-owner-postgres-ci.sh'
       - 'nx.json'
 
 permissions:
@@ -110,4 +112,29 @@ jobs:
             rm -f "$binary"
           done
       - name: State validation limits
-        run: echo 'NOT_RUN - isolated PostgreSQL integration, govulncheck, golangci-lint, gosec and fuzz campaigns'
+        run: echo 'This Go source job does not prove PostgreSQL integration; see the separate disposable owner-postgres-integration job. NOT_RUN - govulncheck, golangci-lint, gosec and fuzz campaigns'
+
+
+  owner-postgres-integration:
+    name: Disposable PostgreSQL owner authorization, concurrency and readback
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      GOTOOLCHAIN: local
+      GOWORK: 'off'
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Use pinned Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: .go-version
+          check-latest: false
+          cache: false
+      - name: Run isolated, network-disabled owner PostgreSQL tests
+        shell: bash
+        run: bash infra/verify-owner-postgres-ci.sh
