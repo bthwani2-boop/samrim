@@ -438,7 +438,7 @@ function Show-Docker {
     Say 'PROVENANCE_EXIT' $code
     if ($code -ne 0) { Say 'NOTE' 'runtime provenance incomplete; Identity may be intentionally stopped. Never re-label a stopped container as PASS.' }
   }
-  Say 'WLT' 'NOT_IMPLEMENTED (no runnable new backend)'
+  Say 'WLT' 'NOT_RUN (the isolated loopback reader is outside this Docker project)'
 }
 function Show-DockerCommands {
   Write-Output 'DOCKER_COMMANDS=READ_ONLY (Surface -> bthwani-docker SSH context)'
@@ -714,7 +714,7 @@ try {
       Say 'MIGRATIONS' 'NOT_EXECUTED; owner approval and database role/schema/version verification required'
       Say 'DSH_SQL' 'services/dsh/database/migrations (read/review only)'
       Say 'IDENTITY_SQL' 'services/identity/database/migrations (read/review only)'
-      Say 'WLT_SQL' 'NOT_IMPLEMENTED'
+      Say 'WLT_SQL' 'services/wlt/database/migrations (isolated development only, read/review)'
       break
     }
   }
