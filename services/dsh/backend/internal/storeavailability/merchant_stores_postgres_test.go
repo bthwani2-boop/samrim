@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -23,21 +24,38 @@ import (
 func isolatedMerchantTestDSN(rawDSN, container, hostAddr, isolatedMode string) bool {
 	uri, err := url.Parse(rawDSN)
 	if err != nil || uri.Scheme != "postgres" || uri.User == nil ||
+		uri.Opaque != "" || uri.Fragment != "" || uri.RawFragment != "" ||
+		uri.RawPath != "" || uri.ForceQuery ||
 		uri.User.Username() != "bthwani_session01" ||
 		uri.Path != "/merchant_agent01" ||
 		container != "bthwani-session01-merchant-pg" || hostAddr != "" {
+		return false
+	}
+	password, hasPassword := uri.User.Password()
+	if !hasPassword || password == "" {
 		return false
 	}
 	if uri.Host != "127.0.0.1:35328" &&
 		!(uri.Host == "127.0.0.1:5432" && isolatedMode == "true") {
 		return false
 	}
-	params := uri.Query()
-	if params.Get("sslmode") != "disable" {
+	params, err := url.ParseQuery(uri.RawQuery)
+	if err != nil || len(params["sslmode"]) != 1 || params["sslmode"][0] != "disable" {
 		return false
 	}
-	for key := range params {
-		if key != "sslmode" && key != "connect_timeout" {
+	for key, values := range params {
+		switch key {
+		case "sslmode":
+			// Already checked for exactly one required value.
+		case "connect_timeout":
+			if len(values) != 1 {
+				return false
+			}
+			seconds, parseErr := strconv.Atoi(values[0])
+			if parseErr != nil || seconds < 1 || seconds > 15 {
+				return false
+			}
+		default:
 			return false
 		}
 	}
@@ -218,6 +236,19 @@ func TestMerchantIsolatedPostgresDSNGuard(t *testing.T) {
 		{"localhost PGHOSTADDR bypass", ci, expectedContainer, "127.0.0.1", "true", false},
 		{"DSN hostaddr bypass", ci + "&hostaddr=198.51.100.25", expectedContainer, "", "true", false},
 		{"unexpected local port", "postgres://bthwani_session01:synthetic-only@127.0.0.1:5433/merchant_agent01?sslmode=disable", expectedContainer, "", "true", false},
+		{"duplicate conflicting sslmode", ci + "&sslmode=require", expectedContainer, "", "true", false},
+		{"duplicate identical sslmode", ci + "&sslmode=disable", expectedContainer, "", "true", false},
+		{"valid bounded timeout", ci + "&connect_timeout=5", expectedContainer, "", "true", true},
+		{"duplicate timeout", ci + "&connect_timeout=3&connect_timeout=4", expectedContainer, "", "true", false},
+		{"unbounded timeout", ci + "&connect_timeout=99999", expectedContainer, "", "true", false},
+		{"zero timeout", ci + "&connect_timeout=0", expectedContainer, "", "true", false},
+		{"nonnumeric timeout", ci + "&connect_timeout=oops", expectedContainer, "", "true", false},
+		{"query host override", ci + "&host=198.51.100.25", expectedContainer, "", "true", false},
+		{"query dbname override", ci + "&dbname=production", expectedContainer, "", "true", false},
+		{"malformed query encoding", ci + "&bad%ZZ=value", expectedContainer, "", "true", false},
+		{"URL fragment", ci + "#host=198.51.100.25", expectedContainer, "", "true", false},
+		{"URL opaque", "postgres:merchant_agent01?sslmode=disable", expectedContainer, "", "true", false},
+		{"missing password", "postgres://bthwani_session01@127.0.0.1:5432/merchant_agent01?sslmode=disable", expectedContainer, "", "true", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := isolatedMerchantTestDSN(tc.dsn, tc.container, tc.hostAddr, tc.isolatedMode)
