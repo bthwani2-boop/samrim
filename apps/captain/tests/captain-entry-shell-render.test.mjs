@@ -109,7 +109,10 @@ test("Captain account renders verified session and can request owner logout", ()
     session: { actorId: "synthetic-captain", role: "captain", sessionExpiresAt: "2026-11-21T12:00:00Z" },
     signOut() { requested = true; },
   };
-  const content = nodes(account());
+  const view = account();
+  assert.equal(view.type, "SafeAreaView");
+  assert.deepEqual(view.props.edges, ["top", "left", "right"]);
+  const content = nodes(view);
   assert.ok(content.some(node => node.props.children === "حساب الكابتن معتمد"));
   assert.equal(content.some(node => node.props.testID === "captain-capability-unavailable"), false);
   content.find(node => node.type === "Pressable").props.onPress();
