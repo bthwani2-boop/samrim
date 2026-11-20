@@ -102,6 +102,15 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	assertSQLState(t, err, "23505")
 	_, err = owner.ExecContext(ctx, post, "funding-0004", "wallet-two", "synthetic-d", int64(99), "USD")
 	assertSQLState(t, err, "23514")
+	// A different actor cannot reuse a posted provider reference or funding ID.
+	_, err = owner.ExecContext(ctx, post, "funding-0001", "wallet-two", "synthetic-d", int64(99), "YER")
+	assertSQLState(t, err, "23505")
+	for _, amount := range []int64{0, -1} {
+		_, err = owner.ExecContext(ctx, post, "funding-0004", "wallet-two", "synthetic-d", amount, "YER")
+		assertSQLState(t, err, "23514")
+	}
+	_, err = owner.ExecContext(ctx, "DELETE FROM wlt.customer_funding_journal WHERE funding_id = 'funding-0001'")
+	assertSQLState(t, err, "23514")
 	_, err = owner.ExecContext(ctx, "UPDATE wlt.customer_funding_journal SET amount_yer = 1")
 	assertSQLState(t, err, "23514")
 	_, err = owner.ExecContext(ctx, "TRUNCATE wlt.customer_funding_journal")
