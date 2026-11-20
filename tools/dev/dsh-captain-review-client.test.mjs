@@ -5,7 +5,9 @@ import * as sdk from "../../services/dsh/clients/index.ts";
 const base = "http://127.0.0.1:3202";
 const bearer = "A".repeat(43);
 const standing = { actorId: "captain-a", status: "PENDING", version: 2 };
-const json = (body, status = 200) => Response.json(body, { status });
+const json = (body, status = 200) => Response.json(body, {
+  status, headers: { "Cache-Control": "no-store" },
+});
 const rejects = (operation, status, code) => assert.rejects(operation,
   error => error instanceof sdk.DshPublicError && error.status === status && error.code === code);
 async function withFetch(callback, run) {
