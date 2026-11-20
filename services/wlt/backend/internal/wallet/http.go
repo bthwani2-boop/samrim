@@ -32,7 +32,7 @@ type identityReader struct {
 }
 
 type balanceReader func(context.Context, string) (string, error)
-type historyReader func(context.Context, string) (fundingHistory, error)
+type historyReader func(context.Context, string, *historyCursor) (fundingHistory, error)
 
 type fundingTransaction struct {
 	FundingID string    `json:"fundingId"`
@@ -41,14 +41,57 @@ type fundingTransaction struct {
 }
 
 type fundingHistory struct {
-	ActorID  string               `json:"actorId"`
-	Currency string               `json:"currency"`
-	Items    []fundingTransaction `json:"items"`
-	HasMore  bool                 `json:"hasMore"`
+	ActorID    string               `json:"actorId"`
+	Currency   string               `json:"currency"`
+	Items      []fundingTransaction `json:"items"`
+	HasMore    bool                 `json:"hasMore"`
+	NextCursor *string              `json:"nextCursor"`
+}
+
+type historyCursor struct {
+	postedAt  time.Time
+	fundingID string
+}
+
+var fundingIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{8,128}$`)
+
+// The cursor is a bounded canonical keyset position, never an actor selector.
+// Every query still uses the current verified Identity actor as its first predicate.
+func parseHistoryCursor(raw string) (*historyCursor, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	query, err := url.ParseQuery(raw)
+	if err != nil || len(query) != 1 || len(query["cursor"]) != 1 {
+		return nil, errors.New("invalid history query")
+	}
+	encoded := query.Get("cursor")
+	if len(encoded) < 20 || len(encoded) > 240 {
+		return nil, errors.New("invalid cursor length")
+	}
+	decoded, err := base64.RawURLEncoding.Strict().DecodeString(encoded)
+	if err != nil || base64.RawURLEncoding.EncodeToString(decoded) != encoded {
+		return nil, errors.New("invalid cursor encoding")
+	}
+	stamp, id, ok := strings.Cut(string(decoded), "|")
+	if !ok || !fundingIDPattern.MatchString(id) || !strings.HasSuffix(stamp, "Z") {
+		return nil, errors.New("invalid cursor data")
+	}
+	posted, err := time.Parse(time.RFC3339Nano, stamp)
+	if err != nil || posted.UTC().Format(time.RFC3339Nano) != stamp {
+		return nil, errors.New("invalid cursor timestamp")
+	}
+	return &historyCursor{postedAt: posted, fundingID: id}, nil
+}
+
+func makeHistoryCursor(entry fundingTransaction) string {
+	text := entry.PostedAt.UTC().Format(time.RFC3339Nano) + "|" + entry.FundingID
+	return base64.RawURLEncoding.EncodeToString([]byte(text))
 }
 
 const historySQL = `SELECT funding_id, amount_yer::text, posted_at
-    FROM wlt.customer_funding_history WHERE actor_id = $1
+    FROM wlt.customer_funding_history
+    WHERE actor_id = $1 AND ($2::timestamptz IS NULL OR (posted_at, funding_id) < ($2::timestamptz, $3))
     ORDER BY posted_at DESC, funding_id DESC LIMIT 11`
 
 const balanceSQL = `SELECT COALESCE(
@@ -62,9 +105,15 @@ func NewHandler(db *sql.DB, identityOrigin string) (http.Handler, error) {
 		var balance string
 		err := db.QueryRowContext(ctx, balanceSQL, actorID).Scan(&balance)
 		return balance, err
-	}, func(ctx context.Context, actorID string) (fundingHistory, error) {
+	}, func(ctx context.Context, actorID string, cursor *historyCursor) (fundingHistory, error) {
 		result := fundingHistory{ActorID: actorID, Currency: "YER", Items: []fundingTransaction{}}
-		rows, err := db.QueryContext(ctx, historySQL, actorID)
+		var dateArg any
+		var idArg string
+		if cursor != nil {
+			dateArg = cursor.postedAt
+			idArg = cursor.fundingID
+		}
+		rows, err := db.QueryContext(ctx, historySQL, actorID, dateArg, idArg)
 		if err != nil {
 			return result, err
 		}
@@ -79,6 +128,8 @@ func NewHandler(db *sql.DB, identityOrigin string) (http.Handler, error) {
 			}
 			if len(result.Items) == 10 {
 				result.HasMore = true
+				next := makeHistoryCursor(result.Items[len(result.Items)-1])
+				result.NextCursor = &next
 				break
 			}
 			entry.PostedAt = entry.PostedAt.UTC()
@@ -126,15 +177,28 @@ func newHandlerWithHistory(origin string, balance balanceReader, history history
 				Currency   string `json:"currency"`
 				BalanceYER string `json:"balanceYer"`
 			}{actorID, "YER", value}, nil
-		})
+		}, false)
 	})
 	mux.HandleFunc("/v1/wallets/me/transactions", func(w http.ResponseWriter, r *http.Request) {
-		serveAuthorizedRead(w, r, identity, func(ctx context.Context, actorID string) (any, error) {
-			if history == nil {
-				return nil, errors.New("funding history unavailable")
+		if r.Method == http.MethodGet {
+			if r.URL.ForceQuery {
+				failure(w, http.StatusBadRequest, "INVALID_REQUEST")
+				return
 			}
-			return history(ctx, actorID)
-		})
+			cursor, err := parseHistoryCursor(r.URL.RawQuery)
+			if err != nil {
+				failure(w, http.StatusBadRequest, "INVALID_REQUEST")
+				return
+			}
+			serveAuthorizedRead(w, r, identity, func(ctx context.Context, actorID string) (any, error) {
+				if history == nil {
+					return nil, errors.New("funding history unavailable")
+				}
+				return history(ctx, actorID, cursor)
+			}, true)
+			return
+		}
+		serveAuthorizedRead(w, r, identity, nil, false)
 	})
 	return mux, nil
 }
@@ -142,14 +206,14 @@ func newHandlerWithHistory(origin string, balance balanceReader, history history
 // The same Identity bearer is verified before and after the PostgreSQL read.
 // No caller-supplied actor, role or other query input can choose the ledger scope.
 func serveAuthorizedRead(w http.ResponseWriter, r *http.Request, identity identityReader,
-	read func(context.Context, string) (any, error),
+	read func(context.Context, string) (any, error), allowCursor bool,
 ) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
 		failure(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED")
 		return
 	}
-	if r.URL.ForceQuery || r.URL.RawQuery != "" || r.ContentLength != 0 || len(r.TransferEncoding) > 0 {
+	if r.URL.ForceQuery || (!allowCursor && r.URL.RawQuery != "") || r.ContentLength != 0 || len(r.TransferEncoding) > 0 {
 		failure(w, http.StatusBadRequest, "INVALID_REQUEST")
 		return
 	}

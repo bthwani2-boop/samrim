@@ -144,7 +144,7 @@ func TestFundingHistoryRequiresCurrentCustomerAndNeverLeaksOnChange(t *testing.T
 			reads := 0
 			handler, err := newHandlerWithHistory(owner.URL,
 				func(context.Context, string) (string, error) { return "0", nil },
-				func(_ context.Context, actor string) (fundingHistory, error) {
+				func(_ context.Context, actor string, _ *historyCursor) (fundingHistory, error) {
 					reads++
 					if actor != "wallet-one" {
 						t.Errorf("wrong actor: %s", actor)
@@ -184,7 +184,7 @@ func TestFundingHistoryRejectsActorSelectionAndWrites(t *testing.T) {
 	defer identity.Close()
 	handler, err := newHandlerWithHistory(identity.URL,
 		func(context.Context, string) (string, error) { return "0", nil },
-		func(context.Context, string) (fundingHistory, error) {
+		func(context.Context, string, *historyCursor) (fundingHistory, error) {
 			t.Fatal("untrusted history input reached the owner")
 			return fundingHistory{}, nil
 		})
@@ -203,6 +203,35 @@ func TestFundingHistoryRejectsActorSelectionAndWrites(t *testing.T) {
 		handler.ServeHTTP(response, httptest.NewRequest(tc.method, tc.path, nil))
 		if response.Code != tc.want {
 			t.Errorf("%s %s: %d", tc.method, tc.path, response.Code)
+		}
+	}
+}
+
+func TestFundingHistoryCursorIsCanonicalAndCannotSelectAnActor(t *testing.T) {
+	item := fundingTransaction{FundingID: "funding-0001", AmountYER: "9",
+		PostedAt: time.Date(2026, 11, 20, 1, 2, 3, 123456000, time.UTC)}
+	encoded := makeHistoryCursor(item)
+	cursor, err := parseHistoryCursor("cursor=" + encoded)
+	if err != nil || cursor == nil || cursor.fundingID != item.FundingID ||
+		!cursor.postedAt.Equal(item.PostedAt) {
+		t.Fatalf("canonical cursor failed roundtrip: %+v %v", cursor, err)
+	}
+	empty, err := parseHistoryCursor("")
+	if err != nil || empty != nil {
+		t.Fatalf("first page must not require a cursor: %+v %v", empty, err)
+	}
+	malformed := []string{
+		"actorId=wallet-two", "cursor=", "cursor=!",
+		"cursor=" + encoded + "&actorId=wallet-two",
+		"cursor=" + encoded + "&cursor=" + encoded,
+		"cursor=" + strings.Repeat("x", 241),
+		"cursor=" + base64.RawURLEncoding.EncodeToString([]byte("2026-11-20T01:02:03+03:00|funding-0001")),
+		"cursor=" + base64.RawURLEncoding.EncodeToString([]byte("2026-11-20T01:02:03Z|short")),
+		"cursor=" + base64.RawURLEncoding.EncodeToString([]byte("not-a-time|funding-0001")),
+	}
+	for _, raw := range malformed {
+		if parsed, err := parseHistoryCursor(raw); err == nil || parsed != nil {
+			t.Errorf("noncanonical actor/page selector admitted: %q: %+v %v", raw, parsed, err)
 		}
 	}
 }

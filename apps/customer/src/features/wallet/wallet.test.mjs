@@ -115,7 +115,7 @@ test("the Web wallet route uses only the isolated loopback owner and the existin
 });
 
 const history = {
-  actorId: "actor-a", currency: "YER", hasMore: false,
+  actorId: "actor-a", currency: "YER", hasMore: false, nextCursor: null,
   items: [{ fundingId: "funding-0001", amountYer: amount, postedAt: "2026-11-20T00:00:00Z" }],
 };
 
@@ -202,5 +202,103 @@ test("Customer wallet history BFF denies cross-site and arbitrary actor queries"
   const result = await GET(new Request(path, { headers }));
   assert.equal(result.headers.get("Cache-Control"), "no-store");
   assert.deepEqual(await result.json(), history);
+  assert.equal(globalThis.fetch.mock.callCount(), 1);
+});
+
+const nextCursor = Buffer.from("2026-11-20T00:00:00Z|funding-0001").toString("base64url");
+const tenFunding = Array.from({ length: 10 }, (_, index) => ({
+  fundingId: `funding-page-${index.toString().padStart(2, "0")}`,
+  amountYer: "1", postedAt: "2026-11-20T00:00:00Z",
+}));
+const pageOne = {
+  actorId: "actor-a", currency: "YER", items: tenFunding, hasMore: true,
+  nextCursor,
+};
+
+test("WLT funding page envelopes require matching nextCursor and hasMore with a bounded page", () => {
+  assert.deepEqual(parseCustomerFundingHistory(pageOne), pageOne);
+  for (const invalid of [
+    { ...pageOne, hasMore: false },
+    { ...pageOne, nextCursor: null },
+    { ...pageOne, nextCursor: "?" },
+    { ...pageOne, nextCursor: nextCursor + "@" },
+    { ...pageOne, items: tenFunding.slice(0, 9) },
+    { ...history, hasMore: true },
+    { ...history, nextCursor },
+    { ...history, nextCursor: "x".repeat(241) },
+  ]) {
+    assert.throws(() => parseCustomerFundingHistory(invalid), WltReadError);
+  }
+});
+
+test("a verified Customer can request an older bounded WLT history page", async (t) => {
+  let admissionReads = 0;
+  t.mock.method(globalThis, "fetch", async (path, options) => {
+    assert.equal(path, `/api/customer-auth/wallet-transactions?cursor=${nextCursor}`);
+    assert.equal(options.credentials, "same-origin");
+    return Response.json(pageOne, { headers: { "Cache-Control": "no-store" } });
+  });
+  const result = await readVerifiedWalletTransactions(async () => {
+    admissionReads++;
+    return live("actor-a");
+  }, new AbortController().signal, nextCursor);
+  assert.equal(admissionReads, 2);
+  assert.equal(result.kind, "ready");
+  assert.equal(result.history.nextCursor, nextCursor);
+});
+
+test("a changed Customer cannot inherit an older wallet history page", async (t) => {
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json(pageOne, { headers: { "Cache-Control": "no-store" } }));
+  const sessions = [live("actor-a"), live("actor-b")];
+  const result = await readVerifiedWalletTransactions(
+    async () => sessions.shift(), new AbortController().signal, nextCursor,
+  );
+  assert.deepEqual(result, { kind: "signed-out" });
+});
+
+test("WLT SDK forwards only a canonical cursor to its isolated owner", async (t) => {
+  const bearer = Buffer.alloc(32, 17).toString("base64url");
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    assert.equal(url.href, `http://127.0.0.1:23203/v1/wallets/me/transactions?cursor=${nextCursor}`);
+    assert.equal(options.method, "GET");
+    assert.equal(options.headers.Authorization, `Bearer ${bearer}`);
+    return Response.json(pageOne, { headers: { "Cache-Control": "no-store" } });
+  });
+  assert.deepEqual(await readCurrentCustomerWalletTransactions(
+    "http://127.0.0.1:23203", bearer, new AbortController().signal, nextCursor,
+  ), pageOne);
+  await assert.rejects(() => readCurrentCustomerWalletTransactions(
+    "http://127.0.0.1:23203", bearer, new AbortController().signal, "invalid",
+  ), { status: 400 });
+  assert.equal(globalThis.fetch.mock.callCount(), 1);
+});
+
+test("Customer history BFF forwards a valid cursor only and refuses all other selectors", async (t) => {
+  const names = ["BTHWANI_SURFACE_PREVIEW", "CUSTOMER_SYNTHETIC_WLT_ORIGIN"];
+  const old = names.map(name => process.env[name]);
+  t.after(() => names.forEach((name, index) => {
+    if (old[index] === undefined) delete process.env[name];
+    else process.env[name] = old[index];
+  }));
+  process.env.BTHWANI_SURFACE_PREVIEW = "1";
+  process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN = "http://127.0.0.1:23203";
+  const { GET } = await import("../../../app/api/customer-auth/wallet-transactions+api.ts");
+  const base = "http://127.0.0.1:23101/api/customer-auth/wallet-transactions";
+  const headers = {
+    Cookie: `bthwani_surface_customer_auth=${Buffer.alloc(32, 17).toString("base64url")}`,
+  };
+  t.mock.method(globalThis, "fetch", async (url) => {
+    assert.equal(url.search, `?cursor=${nextCursor}`);
+    return Response.json(pageOne, { headers: { "Cache-Control": "no-store" } });
+  });
+  for (const suffix of ["?actorId=actor-b", "?cursor=bad", `?cursor=${nextCursor}&actorId=actor-b`,
+    `?cursor=${nextCursor}&cursor=${nextCursor}`, "?limit=1000"]) {
+    assert.equal((await GET(new Request(base + suffix, { headers }))).status, 400, suffix);
+  }
+  assert.equal(globalThis.fetch.mock.callCount(), 0);
+  const result = await GET(new Request(`${base}?cursor=${nextCursor}`, { headers }));
+  assert.equal(result.status, 200);
+  assert.deepEqual(await result.json(), pageOne);
   assert.equal(globalThis.fetch.mock.callCount(), 1);
 });

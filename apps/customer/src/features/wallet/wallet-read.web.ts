@@ -53,9 +53,14 @@ export async function readVerifiedWallet(
 }
 
 export async function readVerifiedWalletTransactions(
-  readCustomerAdmission: AdmissionReader, signal: AbortSignal,
+  readCustomerAdmission: AdmissionReader, signal: AbortSignal, cursor?: string,
 ): Promise<WalletTransactionsReadState> {
-  const result = await readVerifiedFinance("/api/customer-auth/wallet-transactions",
+  if (cursor !== undefined && !/^[A-Za-z0-9_-]{20,240}$/.test(cursor)) {
+    return { kind: "unavailable" };
+  }
+  const path = "/api/customer-auth/wallet-transactions" +
+    (cursor === undefined ? "" : `?cursor=${encodeURIComponent(cursor)}`);
+  const result = await readVerifiedFinance(path,
     parseCustomerFundingHistory, readCustomerAdmission, signal);
   return result.kind === "ready"
     ? { kind: "ready", history: result.value, expiresAt: result.expiresAt } : result;

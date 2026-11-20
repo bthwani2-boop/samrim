@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -45,6 +46,11 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	executeFixture(t, ctx, owner, string(historyMigration))
+	pageMigration, err := os.ReadFile("/agent02/services/wlt/database/migrations/003_customer_funding_history_paging.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	executeFixture(t, ctx, owner, string(pageMigration))
 	if err := checkDatabase(ctx, reader); err != nil {
 		t.Fatal(err)
 	}
@@ -181,6 +187,61 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 			}
 		}
 	}
+
+	// Twelve additional immutable postings prove keyset paging over ten rows.
+	// They are inserted after the initial balance assertion, only in the disposable database.
+	for i := range 12 {
+		executeFixture(t, ctx, owner, post, fmt.Sprintf("funding-page-%02d", i),
+			"wallet-one", fmt.Sprintf("page-%02d", i), int64(1), "YER")
+	}
+	type historyPage struct {
+		ActorID    string  `json:"actorId"`
+		HasMore    bool    `json:"hasMore"`
+		NextCursor *string `json:"nextCursor"`
+		Items      []struct {
+			FundingID string `json:"fundingId"`
+		} `json:"items"`
+	}
+	firstPath := "/v1/wallets/me/transactions"
+	var firstPage historyPage
+	body := readWallet(t, ctx, server.URL, one, firstPath, http.StatusOK)
+	if err := json.Unmarshal(body, &firstPage); err != nil ||
+		firstPage.ActorID != "wallet-one" || !firstPage.HasMore ||
+		firstPage.NextCursor == nil || len(firstPage.Items) != 10 {
+		t.Fatalf("first durable funding page invalid: %s %v", body, err)
+	}
+	secondPath := firstPath + "?cursor=" + *firstPage.NextCursor
+	var secondPage historyPage
+	body = readWallet(t, ctx, server.URL, one, secondPath, http.StatusOK)
+	if err := json.Unmarshal(body, &secondPage); err != nil ||
+		secondPage.ActorID != "wallet-one" || secondPage.HasMore ||
+		secondPage.NextCursor != nil || len(secondPage.Items) != 4 {
+		t.Fatalf("second durable funding page invalid: %s %v", body, err)
+	}
+	seen := make(map[string]bool)
+	for _, item := range append(firstPage.Items, secondPage.Items...) {
+		if seen[item.FundingID] {
+			t.Fatalf("duplicate funding across pages: %s", item.FundingID)
+		}
+		seen[item.FundingID] = true
+	}
+	if len(seen) != 14 {
+		t.Fatalf("missing posted funding after paging: %d", len(seen))
+	}
+	var otherPage historyPage
+	body = readWallet(t, ctx, server.URL, two, secondPath, http.StatusOK)
+	if err := json.Unmarshal(body, &otherPage); err != nil ||
+		otherPage.ActorID != "wallet-two" || len(otherPage.Items) > 1 {
+		t.Fatalf("a cursor may not select another actor: %s %v", body, err)
+	}
+	for _, bad := range []string{
+		"?cursor=invalid", "?cursor=" + *firstPage.NextCursor + "&actorId=wallet-two",
+		"?cursor=" + *firstPage.NextCursor + "&cursor=" + *firstPage.NextCursor,
+		"?limit=100000", "?",
+	} {
+		readWallet(t, ctx, server.URL, one, firstPath+bad, http.StatusBadRequest)
+	}
+
 	readWallet(t, ctx, server.URL, merchant, "/v1/wallets/me/transactions", 403)
 	readWallet(t, ctx, server.URL, one, "/v1/wallets/me/transactions?actorId=wallet-two", 400)
 	readWallet(t, ctx, server.URL, merchant, "/v1/wallets/me", 403)

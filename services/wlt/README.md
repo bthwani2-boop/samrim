@@ -10,14 +10,17 @@ Orders.
 
 The isolated Customer wallet slice exposes `GET /v1/wallets/me` and
 `GET /v1/wallets/me/transactions`. WLT verifies the current opaque session
-with Identity, reads only that actor's posted YER balance and most recent ten
-funding entries, and rechecks Identity before returning either response. The Customer Web preview uses a same-origin route with the existing
+with Identity, reads only that actor's posted YER balance and bounded pages of
+funding entries, and rechecks Identity before returning either response. The
+Customer Web preview uses a same-origin route with the existing
 HttpOnly session. The API serializes whole YER as decimal text to retain exact
 values above JavaScript's safe integer range.
 
 The first migration stores one immutable funding journal per funding identity
 and per provider reference. Debit and credit legs derive from the same stored
-amount. A least-privilege runtime role can read the balance and bounded funding-history projections; it cannot read raw provider references. The CI suite
+amount. A least-privilege runtime role can read the balance and bounded funding-history
+projections; it cannot read raw provider references. Older entries are retrieved
+with a canonical keyset cursor instead of unsafe unbounded reads. The CI suite
 uses a separate Identity fixture role and a disposable PostgreSQL container.
 
 Provider verification, funding commands, checkout, withdrawals, reconciliation

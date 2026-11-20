@@ -11,14 +11,32 @@ export default function WalletScreen() {
   const { theme } = useMobileAppearance();
   const [state, setState] = useState<WalletReadState | null>(null);
   const [history, setHistory] = useState<WalletTransactionsReadState | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState(false);
+  const loadMoreController = useRef<AbortController | null>(null);
+  const scheduleExpiry = useRef<((at: number) => void) | null>(null);
   const refreshBalance = useRef<(() => void) | null>(null);
 
   useFocusEffect(useCallback(() => {
     let pending: AbortController | undefined;
     let expiry: ReturnType<typeof setTimeout> | undefined;
+    function expire() {
+      loadMoreController.current?.abort();
+      setState({ kind: "signed-out" });
+      setHistory(null);
+    }
+    function schedule(at: number) {
+      clearTimeout(expiry);
+      expiry = setTimeout(expire, Math.max(0, at - Date.now()));
+    }
+    scheduleExpiry.current = schedule;
     function hide() {
       pending?.abort();
+      loadMoreController.current?.abort();
+      loadMoreController.current = null;
       clearTimeout(expiry);
+      setLoadingMore(false);
+      setMoreError(false);
       setState(null);
       setHistory(null);
     }
@@ -36,25 +54,16 @@ export default function WalletScreen() {
         }
         setState(result);
         if (result.kind === "ready") {
-          expiry = setTimeout(() => {
-            setState({ kind: "signed-out" });
-            setHistory(null);
-          }, Math.max(0, result.expiresAt - Date.now()));
+          schedule(result.expiresAt);
           void readVerifiedWalletTransactions(readCustomerAdmission, deadline).then(historyResult => {
             if (controller.signal.aborted || deadline.aborted) return;
             if (historyResult.kind === "signed-out") {
-              clearTimeout(expiry);
-              setState({ kind: "signed-out" });
-              setHistory(null);
+              expire();
               return;
             }
             setHistory(historyResult);
             if (historyResult.kind === "ready") {
-              clearTimeout(expiry);
-              expiry = setTimeout(() => {
-                setState({ kind: "signed-out" });
-                setHistory(null);
-              }, Math.max(0, Math.min(result.expiresAt, historyResult.expiresAt) - Date.now()));
+              schedule(Math.min(result.expiresAt, historyResult.expiresAt));
             }
           }).catch(() => {
             if (!controller.signal.aborted) setHistory({ kind: "unavailable" });
@@ -72,6 +81,8 @@ export default function WalletScreen() {
     window.addEventListener("blur", hide);
     return () => {
       refreshBalance.current = null;
+      scheduleExpiry.current = null;
+      loadMoreController.current?.abort();
       pending?.abort();
       clearTimeout(expiry);
       clearInterval(interval);
@@ -80,6 +91,58 @@ export default function WalletScreen() {
       window.removeEventListener("blur", hide);
     };
   }, []));
+
+  async function loadMore() {
+    if (state?.kind !== "ready" || history?.kind !== "ready" ||
+      loadMoreController.current) return;
+    const cursor = history.history.nextCursor;
+    if (!cursor) return;
+    const previous = history.history;
+    const controller = new AbortController();
+    loadMoreController.current = controller;
+    setLoadingMore(true);
+    setMoreError(false);
+    try {
+      const deadline = AbortSignal.any([controller.signal, AbortSignal.timeout(12000)]);
+      const next = await readVerifiedWalletTransactions(readCustomerAdmission, deadline, cursor);
+      if (controller.signal.aborted) return;
+      if (next.kind === "signed-out") {
+        setState({ kind: "signed-out" });
+        setHistory(null);
+        return;
+      }
+      if (next.kind !== "ready" || next.history.actorId !== previous.actorId) {
+        setMoreError(true);
+        return;
+      }
+      const ids = new Set(previous.items.map(item => item.fundingId));
+      if (next.history.items.some(item => ids.has(item.fundingId))) {
+        setMoreError(true);
+        return;
+      }
+      setHistory(current => {
+        if (current?.kind !== "ready" || current.history.actorId !== previous.actorId ||
+          current.history.nextCursor !== cursor) return current;
+        return {
+          kind: "ready",
+          history: {
+            ...next.history,
+            items: [...current.history.items, ...next.history.items],
+          },
+          expiresAt: Math.min(current.expiresAt, next.expiresAt),
+        };
+      });
+      scheduleExpiry.current?.(Math.min(history.expiresAt, next.expiresAt));
+    } catch {
+      if (!controller.signal.aborted) setMoreError(true);
+    } finally {
+      if (loadMoreController.current === controller) {
+        loadMoreController.current = null;
+        setLoadingMore(false);
+      }
+    }
+  }
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
       <ScrollView contentContainerStyle={{ padding: 24, gap: 16, maxWidth: 720, width: "100%", alignSelf: "center" }}>
@@ -116,7 +179,18 @@ export default function WalletScreen() {
                   </View>
                 ))}
                 {history.history.hasMore ? (
-                  <Text style={{ color: theme.colorSecondary }}>توجد عمليات أقدم غير معروضة.</Text>
+                  <>
+                    <Pressable accessibilityRole="button" disabled={loadingMore} onPress={() => void loadMore()}>
+                      <Text style={{ color: theme.interactiveText }}>
+                        {loadingMore ? "جارٍ تحميل العمليات الأقدم…" : "عرض المزيد من العمليات"}
+                      </Text>
+                    </Pressable>
+                    {moreError ? (
+                      <Text accessibilityLiveRegion="polite" style={{ color: theme.colorSecondary }}>
+                        تعذر تحميل المزيد من العمليات. يمكنك إعادة المحاولة.
+                      </Text>
+                    ) : null}
+                  </>
                 ) : null}
               </>
             ) : (

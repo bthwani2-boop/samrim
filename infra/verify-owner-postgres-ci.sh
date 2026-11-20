@@ -240,12 +240,16 @@ docker exec "$current" pg_restore --no-owner --exit-on-error --single-transactio
 for db in bthwani_wlt_test bthwani_wlt_restore; do
   totals="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
     -c "SELECT string_agg(actor_id || ':' || balance_yer, ',' ORDER BY actor_id) FROM wlt.customer_wallet_balances;")"
-  [[ "$totals" == 'wallet-one:9007199254741050,wallet-two:41' ]] || { echo "WLT restored balances differ" >&2; exit 1; }
+  [[ "$totals" == 'wallet-one:9007199254741062,wallet-two:41' ]] || { echo "WLT restored balances differ" >&2; exit 1; }
   recent="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
     -c "SELECT string_agg(funding_id || ':' || amount_yer, ',' ORDER BY funding_id)
-        FROM wlt.customer_funding_history WHERE actor_id = 'wallet-one';")"
+        FROM wlt.customer_funding_history WHERE actor_id = 'wallet-one'
+          AND funding_id IN ('funding-0001', 'funding-0003');")"
   [[ "$recent" == 'funding-0001:9007199254740993,funding-0003:57' ]] ||
     { echo "WLT restored funding history differs" >&2; exit 1; }
+  history_count="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
+    -c "SELECT count(*) FROM wlt.customer_funding_history WHERE actor_id='wallet-one';")"
+  [[ "$history_count" == '14' ]] || { echo "WLT restored paging journal differs" >&2; exit 1; }
   if docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -U bthwani_wlt_reader -d "$db" \
     -c 'SELECT provider_reference FROM wlt.customer_funding_journal;' >/dev/null 2>"$scratch/wlt-reader-denial"; then
     echo "WLT restore exposed the private funding journal" >&2

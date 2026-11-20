@@ -40,7 +40,7 @@ components:
     CustomerFundingHistory:
       type: object
       additionalProperties: false
-      required: [actorId, currency, items, hasMore]
+      required: [actorId, currency, items, hasMore, nextCursor]
       properties:
         actorId: { type: string, minLength: 1, maxLength: 128 }
         currency: { type: string, const: YER }
@@ -49,6 +49,11 @@ components:
           maxItems: 10
           items: { $ref: '#/components/schemas/CustomerFundingTransaction' }
         hasMore: { type: boolean }
+        nextCursor:
+          description: Canonical keyset cursor for older posted transactions; null at the end.
+          type: [string, 'null']
+          minLength: 20
+          maxLength: 240
     Error:
       type: object
       additionalProperties: false

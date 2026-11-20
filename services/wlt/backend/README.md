@@ -1,7 +1,7 @@
 # WLT Go owner
 
-`cmd/wlt` serves the Customer's posted balance and last ten posted funding
-transactions in isolated development. No funding write endpoint is exposed.
+`cmd/wlt` serves the Customer's posted balance and successive bounded pages of
+posted funding transactions (up to ten entries per page) in isolated development. No funding write endpoint is exposed.
 Use the pinned Go toolchain and a fresh `bthwani_wlt_test` PostgreSQL database.
 The runtime requires all of these settings.
 
@@ -16,6 +16,7 @@ and the app confirms the current actor on both sides of the wallet request.
 
 The HTTP owner verifies the Customer with Identity before querying PostgreSQL,
 then checks the same binding again before releasing the balance or transaction
-history. `hasMore` indicates that the bounded read omits older entries. The [migration](../database/migrations/README.md)
+history. `hasMore` and an optional `nextCursor` indicate older pages without
+an actor selector. The [migration](../database/migrations/README.md)
 defines journal records and the reader's grant. Funding and provider operations
 require their own verified implementation.

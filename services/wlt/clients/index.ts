@@ -16,6 +16,7 @@ export interface CustomerFundingHistory {
   currency: "YER";
   items: CustomerFundingTransaction[];
   hasMore: boolean;
+  nextCursor: string | null;
 }
 
 export class WltReadError extends Error {
@@ -43,9 +44,13 @@ export function parseCustomerWalletBalance(value: unknown): CustomerWalletBalanc
 export function parseCustomerFundingHistory(value: unknown): CustomerFundingHistory {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new WltReadError(502);
   const fields = value as Record<string, unknown>;
-  if (Object.keys(fields).length !== 4 || !actorValid(fields.actorId) ||
+  if (Object.keys(fields).length !== 5 || !actorValid(fields.actorId) ||
     fields.currency !== "YER" || typeof fields.hasMore !== "boolean" ||
-    !Array.isArray(fields.items) || fields.items.length > 10) throw new WltReadError(502);
+    !Array.isArray(fields.items) || fields.items.length > 10 ||
+    (fields.nextCursor !== null && (typeof fields.nextCursor !== "string" ||
+      !/^[A-Za-z0-9_-]{20,240}$/.test(fields.nextCursor))) ||
+    fields.hasMore !== (fields.nextCursor !== null) ||
+    (fields.hasMore && fields.items.length !== 10)) throw new WltReadError(502);
   const items: CustomerFundingTransaction[] = [];
   for (const raw of fields.items) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new WltReadError(502);
@@ -57,14 +62,24 @@ export function parseCustomerFundingHistory(value: unknown): CustomerFundingHist
       !Number.isFinite(Date.parse(entry.postedAt))) throw new WltReadError(502);
     items.push({ fundingId: entry.fundingId, amountYer: entry.amountYer, postedAt: entry.postedAt });
   }
-  return { actorId: fields.actorId, currency: "YER", items, hasMore: fields.hasMore };
+  return {
+    actorId: fields.actorId, currency: "YER", items, hasMore: fields.hasMore,
+    nextCursor: fields.nextCursor as string | null,
+  };
 }
 
 async function readOwner(origin: string, bearer: string, method: "GET", path: string,
-  signal: AbortSignal): Promise<unknown> {
+  signal: AbortSignal, cursor?: string): Promise<unknown> {
   if (!/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/.test(origin)) throw new WltReadError(503);
   if (!/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/.test(bearer)) throw new WltReadError(401);
-  const response = await fetch(new URL(path, origin), {
+  const requestURL = new URL(path, origin);
+  if (cursor !== undefined) {
+    if (typeof cursor !== "string" || !/^[A-Za-z0-9_-]{20,240}$/.test(cursor)) {
+      throw new WltReadError(400);
+    }
+    requestURL.searchParams.set("cursor", cursor);
+  }
+  const response = await fetch(requestURL, {
     method, signal, redirect: "error", credentials: "omit", cache: "no-store",
     headers: { Accept: "application/json", Authorization: "Bearer " + bearer },
   });
@@ -104,8 +119,8 @@ export async function readCurrentCustomerWallet(
 }
 
 export async function readCurrentCustomerWalletTransactions(
-  origin: string, bearer: string, signal: AbortSignal,
+  origin: string, bearer: string, signal: AbortSignal, cursor?: string,
 ): Promise<CustomerFundingHistory> {
   const operation = wltOperations.listCurrentCustomerWalletTransactions;
-  return parseCustomerFundingHistory(await readOwner(origin, bearer, operation.method, operation.path, signal));
+  return parseCustomerFundingHistory(await readOwner(origin, bearer, operation.method, operation.path, signal, cursor));
 }
