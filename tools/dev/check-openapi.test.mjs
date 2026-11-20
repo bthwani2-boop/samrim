@@ -131,6 +131,37 @@ test("reject missing required URI path parameter", () => {
   hasError(result, "Missing required path parameter");
 });
 
+test("reject equivalent URI templates before choosing either operation", () => {
+  const result = mutateOwnerFiles("dsh", {
+    "dsh.openapi.yaml": (source) => source.replace("  /v1/public/stores/{id}:",
+      "  /v1/public/stores/{storeId}:\n    $ref: './paths/stores.yaml#/paths/~1v1~1public~1stores~1{storeId}'\n  /v1/public/stores/{id}:"),
+    "paths/stores.yaml": (source) => source.replace("  /v1/public/stores/{id}:",
+      "  /v1/public/stores/{storeId}:\n    get:\n      operationId: readOtherStore\n      security: [{ OpaqueSession: [] }]\n      parameters: [{ name: storeId, in: path, required: true, schema: { type: string } }]\n      responses: { '204': { description: No body }, '401': { description: Denied } }\n  /v1/public/stores/{id}:"),
+  });
+  hasError(result, "Equivalent OpenAPI path templates");
+});
+
+test("reject response references that do not resolve to a Response Object", () => {
+  const result = mutate("dsh", "paths/store-access.yaml", (source) =>
+    source.replace(/('401':\n\s+\$ref: ).*/, "$1'../dsh.openapi.yaml#/components/schemas/StorePage'"));
+  hasError(result, "Missing response description");
+});
+
+test("reject malformed parameter lists and undeclared path parameters without throwing", () => {
+  const malformed = mutate("dsh", "paths/stores.yaml", (source) =>
+    source.replace("parameters:\n", "parameters:\n        - null\n"));
+  hasError(malformed, "Invalid OpenAPI object");
+  const unused = mutate("dsh", "paths/stores.yaml", (source) =>
+    source.replace("parameters:\n", "parameters:\n        - { name: extra, in: path, required: true, schema: { type: string } }\n"));
+  hasError(unused, "Undeclared path parameter");
+});
+
+test("reject empty HTTP response headers instead of validating only the status code", () => {
+  const result = mutate("dsh", "paths/store-access.yaml", (source) =>
+    source.replace(/Cache-Control:\n\s+schema:.*/, "Cache-Control: {}"));
+  hasError(result, "Missing response header schema or content");
+});
+
 test("reject a PathItem fragment that is not linked from the owner entrypoint", () => {
   const result = mutate("dsh", "paths/stores.yaml", (s) =>
     s.replace("  /v1/public/stores:\n", "  /v1/test/unlinked:\n"));

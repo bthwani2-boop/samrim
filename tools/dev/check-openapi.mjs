@@ -6,6 +6,7 @@ import { generatedOperationSource } from "./generate-openapi-operations.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const allowed = new Set(["identity", "dsh", "wlt"]);
+const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 function readFiles(folder) {
   return readdirSync(folder, { withFileTypes: true }).flatMap((entry) => {
     const absolute = path.join(folder, entry.name);
@@ -76,7 +77,7 @@ export function validate(owner, base = root) {
       for (const child of value) visit(child, file);
       return;
     }
-    if (typeof value.$ref === "string") {
+    if (Object.hasOwn(value, "$ref")) {
       references++;
       resolveRef(file, value.$ref);
     }
@@ -89,16 +90,89 @@ export function validate(owner, base = root) {
     "name", "in", "description", "required", "deprecated", "allowEmptyValue", "style",
     "explode", "allowReserved", "schema", "example", "examples", "content", "$ref", "summary",
   ]);
+  const allowedHeaderKeys = new Set([
+    "description", "required", "deprecated", "style", "explode", "schema", "example",
+    "examples", "content", "$ref", "summary",
+  ]);
   function validateObjectKeys(object, allowed, location) {
-    if (!object || typeof object !== "object" || Array.isArray(object)) {
+    if (!isObject(object)) {
       errors.push("Invalid OpenAPI object: " + location);
-      return;
+      return false;
     }
     for (const key of Object.keys(object)) {
       if (!allowed.has(key) && !key.startsWith("x-")) {
         errors.push("Unknown OpenAPI field " + key + " on " + location);
       }
     }
+    return true;
+  }
+  function dereference(value, file, location) {
+    const visited = new Set();
+    while (isObject(value) && Object.hasOwn(value, "$ref")) {
+      if (visited.has(value)) {
+        errors.push("Cyclic OpenAPI object reference: " + location);
+        return {};
+      }
+      visited.add(value);
+      const reference = value.$ref;
+      value = resolveRef(file, reference);
+      if (typeof reference !== "string") break;
+      const relative = reference.split("#")[0];
+      if (relative) file = path.resolve(path.dirname(file), relative);
+    }
+    return { value, file };
+  }
+  function validateParameters(parameters, file, names, location) {
+    const declared = new Set();
+    const keys = new Set();
+    if (parameters === undefined) return declared;
+    if (!Array.isArray(parameters)) {
+      errors.push("Invalid parameter list: " + location);
+      return declared;
+    }
+    for (const [index, parameter] of parameters.entries()) {
+      const label = location + "." + index;
+      if (!validateObjectKeys(parameter, allowedParameterKeys, label)) continue;
+      const { value } = dereference(parameter, file, label);
+      if (typeof value?.name !== "string" || !value.name ||
+          !["path", "query", "header", "cookie"].includes(value.in)) {
+        errors.push("Invalid parameter name or location: " + label);
+        continue;
+      }
+      const key = value.in + ":" + value.name;
+      if (keys.has(key)) errors.push("Duplicate parameter " + key + ": " + location);
+      keys.add(key);
+      if (value.in !== "path") continue;
+      if (!names.includes(value.name)) errors.push("Undeclared path parameter {" + value.name + "}: " + location);
+      if (value.required !== true) errors.push("Path parameter must be required: " + label);
+      else declared.add(value.name);
+    }
+    return declared;
+  }
+  function validateResponse(response, file, location) {
+    if (!validateObjectKeys(response, allowedResponseKeys, location)) return undefined;
+    const { value, file: responseFile } = dereference(response, file, location);
+    if (typeof value?.description !== "string" || !value.description.trim()) {
+      errors.push("Missing response description: " + location);
+    }
+    if (value?.headers !== undefined && !isObject(value.headers)) {
+      errors.push("Invalid response headers: " + location);
+      return value;
+    }
+    const headerNames = new Set();
+    for (const [name, header] of Object.entries(value?.headers ?? {})) {
+      const label = location + ".headers." + name;
+      const normalized = name.toLowerCase();
+      if (headerNames.has(normalized)) errors.push("Duplicate response header: " + label);
+      headerNames.add(normalized);
+      if (!validateObjectKeys(header, allowedHeaderKeys, label)) continue;
+      const { value: resolvedHeader } = dereference(header, responseFile, label);
+      if (!isObject(resolvedHeader) ||
+          Object.hasOwn(resolvedHeader, "schema") === Object.hasOwn(resolvedHeader, "content")) {
+        errors.push("Missing response header schema or content (exactly one required): " + label);
+      }
+    }
+    return value;
   }
   for (const [name, response] of Object.entries(entrypoint.components?.responses ?? {})) {
     validateObjectKeys(response, allowedResponseKeys, "components.responses." + name);
@@ -149,12 +223,21 @@ export function validate(owner, base = root) {
     errors.push("OpaqueSession must be HTTP bearer in " + owner);
   }
   const operations = new Map();
+  const templates = new Set();
   const usedModules = new Set();
   let pathCount = 0;
+  if (!isObject(entrypoint.paths)) {
+    errors.push("Invalid OpenAPI paths map: " + owner);
+    return { owner, errors };
+  }
 
-  for (const [urlPath, rawItem] of Object.entries(entrypoint.paths ?? {})) {
+  for (const [urlPath, rawItem] of Object.entries(entrypoint.paths)) {
     pathCount++;
     if (!urlPath.startsWith("/")) errors.push("Invalid path: " + urlPath);
+    const names = [...urlPath.matchAll(/\{([^{}]+)\}/g)].map((match) => match[1]);
+    const template = urlPath.replace(/\{[^{}]+\}/g, "{}");
+    if (templates.has(template)) errors.push("Equivalent OpenAPI path templates: " + urlPath);
+    templates.add(template);
     if (!rawItem || typeof rawItem !== "object" || Array.isArray(rawItem) ||
         !Object.hasOwn(rawItem, "$ref")) {
       errors.push("Owner PathItem must reference path module: " + urlPath);
@@ -189,11 +272,12 @@ export function validate(owner, base = root) {
         errors.push("Unknown PathItem field " + key + " on " + urlPath);
       }
     }
+    const inherited = validateParameters(item.parameters, sourceFile, names, urlPath + " parameters");
     let methods = 0;
     for (const [method, operation] of Object.entries(item)) {
       if (!supportedMethods.has(method)) continue;
       methods++;
-      if (!operation || typeof operation !== "object") {
+      if (!isObject(operation)) {
         errors.push("Invalid operation " + method + " " + urlPath);
         continue;
       }
@@ -205,41 +289,32 @@ export function validate(owner, base = root) {
       } else {
         operations.set(id, { method: method.toUpperCase(), path: urlPath });
       }
-      if (!operation.responses || Object.keys(operation.responses).length === 0) {
+      const responses = isObject(operation.responses) ? operation.responses : {};
+      if (Object.keys(responses).length === 0) {
         errors.push("Missing responses: " + method + " " + urlPath);
       }
-      if (!Object.keys(operation.responses ?? {}).some((status) => /^2(?:[0-9]{2}|XX)$/.test(status))) {
+      if (!Object.keys(responses).some((status) => /^2(?:[0-9]{2}|XX)$/.test(status))) {
         errors.push("No successful response: " + method + " " + urlPath);
       }
-      if (!isOwnerPublicOperation(urlPath, method, id) && !Object.hasOwn(operation.responses ?? {}, "401")) {
+      if (!isOwnerPublicOperation(urlPath, method, id) && !Object.hasOwn(responses, "401")) {
         errors.push("Protected operation missing 401 response: " + method + " " + urlPath);
       }
-      for (const [status, response] of Object.entries(operation.responses ?? {})) {
+      for (const [status, response] of Object.entries(responses)) {
         if (!/^(?:default|[1-5][0-9]{2}|[1-5]XX)$/.test(status)) {
           errors.push("Invalid HTTP response status " + status + " on " + method + " " + urlPath);
         }
-        validateObjectKeys(response, allowedResponseKeys, method + " " + urlPath + " responses." + status);
-        if (/^2[0-9]{2}$/.test(status) && status !== "204" && !(owner === "identity" && urlPath === "/health")) {
-          const resolved = response?.$ref ? resolveRef(sourceFile, response.$ref) : response;
-          if (!resolved?.content?.["application/json"]?.schema) {
+        const resolved = validateResponse(response, sourceFile, method + " " + urlPath + " responses." + status);
+        if (/^2(?:[0-9]{2}|XX)$/.test(status) && status !== "204" &&
+            !(owner === "identity" && urlPath === "/health")) {
+          const schema = resolved?.content?.["application/json"]?.schema;
+          if (!isObject(schema) && typeof schema !== "boolean") {
             errors.push("Missing successful JSON response schema: " + method + " " + urlPath + " " + status);
           }
         }
       }
-      for (const [index, parameter] of (item.parameters ?? []).entries()) {
-        validateObjectKeys(parameter, allowedParameterKeys, method + " " + urlPath + " pathParameters." + index);
-      }
-      for (const [index, parameter] of (operation.parameters ?? []).entries()) {
-        validateObjectKeys(parameter, allowedParameterKeys, method + " " + urlPath + " parameters." + index);
-      }
-      const declaredParameters = [...(item.parameters ?? []), ...(operation.parameters ?? [])].map((parameter) => (
-        parameter.$ref ? resolveRef(sourceFile, parameter.$ref) : parameter
-      ));
-      for (const match of urlPath.matchAll(/\{([^}]+)\}/g)) {
-        const name = match[1];
-        if (!declaredParameters.some((parameter) => (
-          parameter?.name === name && parameter.in === "path" && parameter.required === true
-        ))) {
+      const declared = validateParameters(operation.parameters, sourceFile, names, method + " " + urlPath + " parameters");
+      for (const name of names) {
+        if (!inherited.has(name) && !declared.has(name)) {
           errors.push("Missing required path parameter {" + name + "} in " + method + " " + urlPath);
         }
       }
@@ -273,7 +348,7 @@ export function validate(owner, base = root) {
           }
         }
       }
-      if (operation.deprecated && method !== "get" && !Object.keys(operation.responses ?? {}).some((code) => /^4\d\d$/.test(code))) {
+      if (operation.deprecated && method !== "get" && !Object.keys(responses).some((code) => /^4\d\d$/.test(code))) {
         errors.push("Retired mutation has no explicit refusal response: " + method + " " + urlPath);
       }
     }
