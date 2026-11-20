@@ -86,6 +86,27 @@ test("OpenAPI 3.0 downgrade is rejected instead of silently accepted as 3.1", ()
   hasError(result, "OpenAPI 3.1");
 });
 
+test("owner OpenAPI entrypoints cannot inline a PathItem outside a fragment", () => {
+  const result = mutate("identity", "identity.openapi.yaml", (source) =>
+    source.replace("$ref: './paths/runtime.yaml#/paths/~1health'",
+      "get:\n      operationId: inlineHealth\n      security: []\n      responses:\n        '204':\n          description: Inline"));
+  hasError(result, "Owner PathItem must reference path module");
+});
+
+test("owner OpenAPI entrypoints cannot hide a sibling operation beside a PathItem reference", () => {
+  const result = mutate("dsh", "dsh.openapi.yaml", (source) =>
+    source.replace("$ref: './paths/runtime.yaml#/paths/~1health'",
+      "$ref: './paths/runtime.yaml#/paths/~1health'\n    post: {}"));
+  hasError(result, "Unsupported PathItem reference sibling");
+});
+
+test("owner PathItem references permit OpenAPI 3.1 summary and description metadata", () => {
+  const result = mutate("dsh", "dsh.openapi.yaml", (source) =>
+    source.replace("$ref: './paths/runtime.yaml#/paths/~1health'",
+      "$ref: './paths/runtime.yaml#/paths/~1health'\n    summary: Health endpoint\n    description: No business operation"));
+  assert.deepEqual(result.errors, [], "PathItem reference metadata must not be rejected");
+});
+
 test("reject missing required URI path parameter", () => {
   const result = mutate("dsh", "dsh.openapi.yaml", (s) =>
     s.replace("name: id", "name: mismatch"));

@@ -139,6 +139,16 @@ export function validate(owner, base = root) {
   for (const [urlPath, rawItem] of Object.entries(entrypoint.paths ?? {})) {
     pathCount++;
     if (!urlPath.startsWith("/")) errors.push("Invalid path: " + urlPath);
+    if (!rawItem || typeof rawItem !== "object" || Array.isArray(rawItem) ||
+        !Object.hasOwn(rawItem, "$ref")) {
+      errors.push("Owner PathItem must reference path module: " + urlPath);
+      continue;
+    }
+    for (const key of Object.keys(rawItem)) {
+      if (key !== "$ref" && key !== "summary" && key !== "description") {
+        errors.push("Unsupported PathItem reference sibling " + key + " on " + urlPath);
+      }
+    }
     let item = rawItem;
     let sourceFile = mainFile;
     if (rawItem?.$ref !== undefined) {
