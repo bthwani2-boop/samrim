@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Structural checks for literal imports; not an authorization or runtime boundary.
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createScanner, SyntaxKind } from "typescript/unstable/ast";
@@ -131,27 +131,53 @@ export function sourceBoundaryIssues(file, source, base = root) {
   }
   return issues;
 }
-function filesIn(folder) {
-  if (!existsSync(folder)) return [];
+function filesIn(folder, issues, base) {
+  let metadata;
+  try { metadata = lstatSync(folder); }
+  catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+  if (metadata.isSymbolicLink()) {
+    issues.push(relative(base, folder) + ": source symlink is not approved");
+    return [];
+  }
   const result = [];
   for (const entry of readdirSync(folder, { withFileTypes: true })) {
-    if (entry.isDirectory() && !ignored.has(entry.name)) result.push(...filesIn(join(folder, entry.name)));
-    else if (entry.isFile() && extensions.has(extname(entry.name))) result.push(join(folder, entry.name));
+    if (ignored.has(entry.name)) continue;
+    const file = join(folder, entry.name);
+    if (entry.isSymbolicLink()) {
+      issues.push(relative(base, file) + ": source symlink is not approved");
+    } else if (entry.isDirectory()) {
+      result.push(...filesIn(file, issues, base));
+    } else if (entry.isFile() && extensions.has(extname(entry.name))) {
+      result.push(file);
+    }
   }
   return result;
 }
-function presentationCandidates(base) {
+function presentationCandidates(base, issues) {
   return [
     ...appNames.flatMap(name => {
       const app = join(base, "apps", name);
       return [
-        ...filesIn(join(app, "app")),
-        ...filesIn(join(app, "src")),
-        ...(existsSync(app) ? readdirSync(app).filter(name => extensions.has(extname(name))).map(name => join(app, name)) : []),
+        ...filesIn(join(app, "app"), issues, base),
+        ...filesIn(join(app, "src"), issues, base),
+        ...(existsSync(app) ? readdirSync(app, { withFileTypes: true }).flatMap(entry => {
+          if (!extensions.has(extname(entry.name))) return [];
+          const file = join(app, entry.name);
+          if (entry.isSymbolicLink()) {
+            issues.push(relative(base, file) + ": source symlink is not approved");
+            return [];
+          }
+          return entry.isFile() ? [file] : [];
+        }) : []),
       ];
     }),
-    ...["design-system", "tamagui-config"].flatMap(name => filesIn(join(base, "packages", name, "src"))),
-    ...["identity", "dsh", "wlt"].flatMap(name => filesIn(join(base, "services", name, "clients"))),
+    ...["design-system", "tamagui-config"].flatMap(name =>
+      filesIn(join(base, "packages", name, "src"), issues, base)),
+    ...["identity", "dsh", "wlt"].flatMap(name =>
+      filesIn(join(base, "services", name, "clients"), issues, base)),
   ];
 }
 // The Stage-4 workspace admits exactly four app hosts, two presentation
@@ -270,7 +296,7 @@ export function presentationDirectoryIssues(base = root) {
 // Test the same on-disk feature scanning in fixtures and in CI.
 export function scanPresentationBoundaries(base = root) {
   const issues = [...stage4WorkspaceIssues(base), ...presentationDirectoryIssues(base)];
-  const candidates = presentationCandidates(base);
+  const candidates = presentationCandidates(base, issues);
   for (const file of candidates) {
     for (const issue of sourceBoundaryIssues(file, readFileSync(file, "utf8"), base)) {
       issues.push(relative(base, file) + ": " + issue);

@@ -173,6 +173,51 @@ test("a workspace owner junction cannot bypass the boundary scanner", t => {
   }
 });
 
+test("service clients and shared package sources reject symlinked private trees", t => {
+  const fixture = mkdtempSync(join(tmpdir(), "bthwani-linked-client-"));
+  try {
+    for (const group of ["apps", "packages", "services"]) mkdirSync(join(fixture, group), { recursive: true });
+    const identity = join(fixture, "services", "identity", "clients");
+    const dsh = join(fixture, "services", "dsh", "clients");
+    const shared = join(fixture, "packages", "design-system", "src");
+    const customer = join(fixture, "apps", "customer");
+    for (const folder of [identity, dsh, shared, customer]) mkdirSync(folder, { recursive: true });
+    writeFileSync(join(identity, "private.ts"), "export const privateValue = true;\n");
+    try {
+      symlinkSync(identity, join(dsh, "shadow"), "junction");
+      symlinkSync(identity, join(shared, "shadow"), "junction");
+      symlinkSync(identity, join(customer, "app"), "junction");
+    } catch (error) {
+      if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) return t.skip("junction creation not permitted");
+      throw error;
+    }
+    const invalid = scanPresentationBoundaries(fixture);
+    assert.equal(invalid.scanned, 1, "the canonical identity file is still scanned");
+    assert.equal(invalid.issues.filter(issue => issue.includes("source symlink is not approved")).length, 3);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("a dangling route-root junction cannot conceal an invalid app tree", t => {
+  const fixture = mkdtempSync(join(tmpdir(), "bthwani-dangling-route-"));
+  try {
+    for (const group of ["apps", "packages", "services"]) mkdirSync(join(fixture, group), { recursive: true });
+    const captain = join(fixture, "apps", "captain");
+    mkdirSync(captain);
+    try {
+      symlinkSync(join(fixture, "missing-private-route"), join(captain, "app"), "junction");
+    } catch (error) {
+      if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) return t.skip("junction creation not permitted");
+      throw error;
+    }
+    assert.match(scanPresentationBoundaries(fixture).issues.join("\n"),
+      /apps[\\/]captain[\\/]app: source symlink is not approved/);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
 test("Stage 4 rejects unapproved owner directories and any duplicate src/app route tree", () => {
   const fixture = mkdtempSync(join(tmpdir(), "bthwani-boundary-"));
   try {
