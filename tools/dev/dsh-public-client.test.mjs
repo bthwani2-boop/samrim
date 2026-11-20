@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  DshPublicError, getPublicStore, listPublicOffers, listPublicStores, listPublicVerticals,
+  changeOperatorCaptainStanding, DshPublicError, getPublicStore, listPublicOffers, listPublicStores, listPublicVerticals,
 } from "../../services/dsh/clients/index.ts";
 
 const base = "http://127.0.0.1:3202";
@@ -353,4 +353,32 @@ test("a late owner denial after Store/account switch is stale, never an error fo
     ok: false, status: 403,
     json: async () => { bodyAbort.abort(); return { error: "FORBIDDEN" }; },
   }), () => rejectsAs(() => getPublicStore(base, store.id, bodyAbort.signal), 0, "OWNER_RESPONSE_STALE"));
+});
+
+test("Captain standing owner PATCH must return exactly the next version, including replay", async () => {
+  const actor = "captain-synthetic";
+  const change = {
+    status: "APPROVED", expectedVersion: 1, operationId: "captain-op-001", reason: "verified",
+  };
+  let posts = 0;
+  const call = () => changeOperatorCaptainStanding(base, actor, "isolated-bearer", change);
+  for (const [version, expected] of [
+    [1, "OPERATION_RESULT_UNKNOWN"], [3, "OPERATION_RESULT_UNKNOWN"],
+    [2, null],
+  ]) {
+    await withFetch(async (url, options) => {
+      posts++;
+      assert.equal(options.method, "PATCH");
+      assert.equal(new URL(url).pathname, `/v1/operators/captains/${actor}/standing`);
+      assert.equal(JSON.parse(options.body).operationId, change.operationId);
+      return new Response(JSON.stringify({ actorId: actor, status: change.status, version }), {
+        status: 200,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      });
+    }, async () => {
+      if (expected) await rejectsAs(call, 502, expected);
+      else assert.deepEqual(await call(), { actorId: actor, status: "APPROVED", version: 2 });
+    });
+  }
+  assert.equal(posts, 3, "the owner client must not retry an uncertain write automatically");
 });

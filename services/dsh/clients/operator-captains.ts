@@ -75,7 +75,7 @@ export async function changeOperatorCaptainStanding(
   const result = await privateOwnerRequest(baseUrl,
     dshOperations.changeCaptainStandingByAuthorizedOperator.path.replace("{actorId}", encodeURIComponent(actorId)), bearer, "PATCH", change, signal);
   if (!isCaptainStanding(result) || result.actorId !== actorId ||
-    result.status !== change.status || result.version < change.expectedVersion) {
+    result.status !== change.status || result.version !== change.expectedVersion + 1) {
     throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
   }
   if (signal?.aborted) throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN");
