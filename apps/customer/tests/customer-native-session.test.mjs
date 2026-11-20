@@ -10,7 +10,7 @@ const compiled = stripTypeScriptTypes(source, { mode: "transform" })
   .replace(/import\s+\*\s+as\s+(\w+)\s+from\s+["']([^"']+)["'];/g,
     (_match, name, moduleName) => `const ${name} = require("${moduleName}");`)
   .replace(/export async function (\w+)\(/g, "async function $1(") +
-  "\nmodule.exports = {readCustomerAdmission, requestCustomerCode, verifyCustomerCode, signOutCustomer};";
+  "\nmodule.exports = {readCustomerAdmission, requestCustomerCode, verifyCustomerCode, signOutCustomer, withVerifiedNativeCustomerRead};";
 
 const original = Buffer.alloc(32, 1).toString("base64url");
 const next = Buffer.alloc(32, 2).toString("base64url");
@@ -345,4 +345,63 @@ test("uncertain Customer owner revocation with failed device deletion stays quar
   assert.equal(h.pending(), "sign-out", "a durable logout marker must block recovery");
   assert.deepEqual(await h.reload().readCustomerAdmission(new AbortController().signal),
     { enabled: true, session: null }, "a crash must not resurrect a bearer retained by device failure");
+});
+
+test("native financial reader uses one verified bearer and enforces the same actor after WLT readback", async () => {
+  const h = harness();
+  let sends = 0;
+  const result = await h.transport.withVerifiedNativeCustomerRead(new AbortController().signal,
+    async bearer => {
+      sends++;
+      assert.equal(bearer, original);
+      return { actorId: "actor-old", balanceYer: "2400" };
+    });
+  assert.equal(sends, 1);
+  assert.equal(result.kind, "ready");
+  assert.equal(result.value.balanceYer, "2400");
+  assert.ok(result.expiresAt > Date.now());
+});
+
+test("native financial reader cannot send an unverified token changed between admission and transport", async () => {
+  const h = harness();
+  let reads = 0;
+  h.setRead(async bearer => {
+    reads++;
+    if (reads === 2) h.setCurrent(next);
+    return customer(bearer);
+  });
+  let sends = 0;
+  const result = await h.transport.withVerifiedNativeCustomerRead(new AbortController().signal,
+    async () => { sends++; return { actorId: "actor-old" }; });
+  assert.equal(sends, 0);
+  assert.equal(result.kind, "signed-out");
+});
+
+test("native financial reader rejects a token rotated during an owner read, even to the same actor", async () => {
+  const h = harness();
+  let calls = 0;
+  const result = await h.transport.withVerifiedNativeCustomerRead(new AbortController().signal,
+    async bearer => {
+      calls++;
+      assert.equal(bearer, original);
+      h.setCurrent(next);
+      h.setRead(async () => ({ ...customer(original), actorId: "actor-old" }));
+      return { actorId: "actor-old", balanceYer: "2500" };
+    });
+  assert.equal(calls, 1);
+  assert.equal(result.kind, "signed-out");
+});
+
+test("native financial reader suppresses a revoked or expired Customer without calling WLT", async () => {
+  for (const revoked of [true, false]) {
+    const h = harness();
+    h.setRead(async bearer => revoked
+      ? Promise.reject(new IdentityError(401))
+      : { ...customer(bearer), sessionExpiresAt: new Date(Date.now() - 1000).toISOString() });
+    let calls = 0;
+    const result = await h.transport.withVerifiedNativeCustomerRead(
+      new AbortController().signal, async () => { calls++; return { actorId: "actor-old" }; });
+    assert.equal(result.kind, "signed-out");
+    assert.equal(calls, 0);
+  }
 });

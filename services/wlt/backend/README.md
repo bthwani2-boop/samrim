@@ -10,6 +10,13 @@ The runtime requires all of these settings.
 - `WLT_TEST_DATABASE_URL` as a local PostgreSQL URL for the `bthwani_wlt_reader` role and `bthwani_wlt_test` database, with `sslmode=disable`
 - `WLT_TEST_IDENTITY_ORIGIN` as the isolated Identity HTTP origin on `127.0.0.1`
 
+For opt-in Customer **Android emulator** preview, the same WLT process must
+remain bound only to the isolated host loopback. The emulator reaches that
+host via `10.0.2.2:<port>`, only after the launcher confirms that WLT
+rejects an unauthenticated balance read. WLT never binds to a LAN address
+for this preview. Physical device, real credentials and production financial
+activation are not approved by this development transport.
+
 For Customer Web, set `CUSTOMER_SYNTHETIC_WLT_ORIGIN` to the same WLT loopback
 origin in the Surface preview. The route reads the existing preview cookie
 and the app confirms the current actor on both sides of the wallet request.

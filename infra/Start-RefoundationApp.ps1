@@ -7,10 +7,16 @@ param(
   [ValidateRange(1024,65535)]
   [int]$IdentityPort=23201,
   [ValidateRange(1024,65535)]
-  [int]$DshPort=23202
+  [int]$DshPort=23202,
+  [switch]$EnableAndroidWalletPreview,
+  [ValidateRange(1024,65535)]
+  [int]$WltPort=23203
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
+if ($EnableAndroidWalletPreview -and (!$Surface -or $App -ne 'customer')) {
+  throw 'NATIVE_WALLET_PREVIEW_REQUIRES_SURFACE_CUSTOMER'
+}
 
 function Assert-SurfaceCapability([string]$Uri, [int]$ExpectedStatus) {
   try {
@@ -65,6 +71,16 @@ if ($Surface) {
   }
   $identity="http://127.0.0.1:$IdentityPort"
   $dsh="http://127.0.0.1:$DshPort"
+  if ($EnableAndroidWalletPreview) {
+    if ($WltPort -eq $IdentityPort -or $WltPort -eq $DshPort -or
+        $ports.Values -contains $WltPort) { throw 'SURFACE_PREVIEW_WLT_PORT_COLLISION' }
+    $wltListener=Get-NetTCPConnection -State Listen -LocalPort $WltPort -LocalAddress '127.0.0.1' -ErrorAction SilentlyContinue |
+      Select-Object -First 1
+    if (!$wltListener -or (Get-Process -Id $wltListener.OwningProcess).ProcessName -match '^(ssh|plink)$') {
+      throw 'SURFACE_PREVIEW_WLT_OWNER_NOT_LOCAL'
+    }
+    Assert-SurfaceCapability "http://127.0.0.1:$WltPort/v1/wallets/me" 401
+  }
   if ($App -eq 'control-panel') {
     Assert-SurfaceCapability "$identity/v1/operators/passkey/authentication/options" 405
   } else {
@@ -79,6 +95,13 @@ if ($Surface) {
       $env:CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN=$identity
       $env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN=$identity
       $env:EXPO_PUBLIC_DSH_API_URL=$dsh
+      if ($EnableAndroidWalletPreview) {
+        # 10.0.2.2 maps from Android emulator back to Surface loopback.
+        # The Web BFF retains 127.0.0.1 and an unrelated HttpOnly cookie.
+        $env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN="http://10.0.2.2:$IdentityPort"
+        $env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_WLT_ORIGIN="http://10.0.2.2:$WltPort"
+        $env:CUSTOMER_SYNTHETIC_WLT_ORIGIN="http://127.0.0.1:$WltPort"
+      }
     }
     'merchant' {
       $env:MERCHANT_SYNTHETIC_IDENTITY_ORIGIN=$identity

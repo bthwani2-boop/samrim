@@ -4,12 +4,14 @@ import { test } from "node:test";
 import { parseCustomerFundingHistory, readCurrentCustomerWalletTransactions, WltReadError } from "@bthwani/wlt";
 import { readVerifiedWallet, readVerifiedWalletTransactions } from "./wallet-read.web.ts";
 
-test("native wallet and cash-in continue to fail closed", () => {
-  for (const file of ["wallet-screen.tsx", "cash-in-panel.tsx"]) {
-    const source = readFileSync(new URL(file, import.meta.url), "utf8");
-    assert.match(source, /CapabilityUnavailableScreen/);
-    assert.doesNotMatch(source, /fetch\(|credit\(|debit\(/);
-  }
+test("Native wallet shows only verified WLT reads; Cash-In remains unavailable", () => {
+  const native = readFileSync(new URL("wallet-screen.tsx", import.meta.url), "utf8");
+  assert.match(native, /readNativeWallet\(/);
+  assert.match(native, /readNativeWalletTransactions\(/);
+  assert.doesNotMatch(native, /fetch\(|credit\(|debit\(/);
+  const funding = readFileSync(new URL("cash-in-panel.tsx", import.meta.url), "utf8");
+  assert.match(funding, /CapabilityUnavailableScreen/);
+  assert.doesNotMatch(funding, /fetch\(|credit\(|debit\(/);
 });
 
 const amount = "9007199254741050";
@@ -301,4 +303,60 @@ test("Customer history BFF forwards a valid cursor only and refuses all other se
   assert.equal(result.status, 200);
   assert.deepEqual(await result.json(), pageOne);
   assert.equal(globalThis.fetch.mock.callCount(), 1);
+});
+
+test("WLT read-only SDK admits only the Android emulator's isolated host bridge", async (t) => {
+  const { readCurrentCustomerWallet } = await import("@bthwani/wlt");
+  const token = Buffer.alloc(32, 9).toString("base64url");
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    assert.equal(url.href, "http://10.0.2.2:23203/v1/wallets/me");
+    assert.equal(options.headers.Authorization, "Bearer " + token);
+    assert.equal(options.redirect, "error");
+    assert.equal(options.credentials, "omit");
+    return Response.json({ actorId: "actor-a", currency: "YER", balanceYer: "2500" },
+      { headers: { "Cache-Control": "no-store" } });
+  });
+  assert.equal((await readCurrentCustomerWallet("http://10.0.2.2:23203", token,
+    new AbortController().signal)).balanceYer, "2500");
+  for (const unsafe of ["http://10.0.2.3:23203", "http://user:pass@10.0.2.2:23203",
+    "https://10.0.2.2:23203", "http://10.0.2.2:23203/other",
+    "http://10.0.2.2:23203/?actorId=other", "http://10.0.2.2:99999",
+    "http://192.168.1.1:23203"]) {
+    await assert.rejects(() => readCurrentCustomerWallet(unsafe, token,
+      new AbortController().signal), { status: 503 }, unsafe);
+  }
+  assert.equal(globalThis.fetch.mock.callCount(), 1);
+});
+
+test("WLT SDK reads bounded text-only Native replies without depending on TextDecoder or streaming", async (t) => {
+  const { readCurrentCustomerWallet } = await import("@bthwani/wlt");
+  const token = Buffer.alloc(32, 12).toString("base64url");
+  const response = (value, headers = new Headers({
+    "Cache-Control": "no-store", "Content-Type": "application/json",
+  })) => ({
+    status: 200, ok: true, headers,
+    text: async () => value, body: null,
+  });
+  const saved = globalThis.TextDecoder;
+  try {
+    globalThis.TextDecoder = undefined;
+    t.mock.method(globalThis, "fetch", async () =>
+      response('{"actorId":"actor-a","currency":"YER","balanceYer":"2500"}'));
+    const balance = await readCurrentCustomerWallet("http://10.0.2.2:23203",
+      token, new AbortController().signal);
+    assert.equal(balance.balanceYer, "2500");
+    globalThis.fetch.mock.mockImplementation(async () =>
+      response(JSON.stringify({ actorId: "actor-a", currency: "YER",
+        balanceYer: "9".repeat(4200) })));
+    await assert.rejects(() => readCurrentCustomerWallet("http://10.0.2.2:23203",
+      token, new AbortController().signal), { status: 502 });
+    globalThis.fetch.mock.mockImplementation(async () =>
+      response('{"actorId":"actor-a","currency":"YER","balanceYer":"2500"}',
+        new Headers({ "Cache-Control": "no-store", "Content-Type": "application/json",
+          "Content-Length": "900000" })));
+    await assert.rejects(() => readCurrentCustomerWallet("http://10.0.2.2:23203",
+      token, new AbortController().signal), { status: 502 });
+  } finally {
+    globalThis.TextDecoder = saved;
+  }
 });

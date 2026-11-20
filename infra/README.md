@@ -178,6 +178,20 @@ the Customer preview origin and Identity to accept the Operator's exact
 `http://localhost:23100` WebAuthn origin. Only synthetic test phones and
 enrolled synthetic Operator credentials belong in this preview.
 
+For a **synthetic Android emulator only**, the Customer can opt into WLT's
+read-only wallet and posted-funding history once **Identity, DSH and WLT** are
+running locally with isolated synthetic data. Start the Surface Customer
+presentation using
+`pwsh -NoProfile -File infra/Start-RefoundationApp.ps1 -Surface -App customer -EnableAndroidWalletPreview -WltPort 23203`.
+The launcher checks the WLT loopback listener and its unauthenticated read
+must return HTTP 401. Android receives the emulator-to-host `10.0.2.2` origins
+for both Identity and WLT; the Web BFF continues using `127.0.0.1`.
+Absent owner, revoked session, wrong role and physical-device/private-LAN
+origins keep the Native finance display closed. No Cash-In, payment, protected
+database migration or real-user finance access is activated by this flag.
+Neither an Expo Android JS export nor source tests prove actual emulator/device
+execution; test its complete network and session behavior separately.
+
 For Android development clients, add ADB reverse mappings for the selected app's
 Metro port and the two owner ports. Keep any existing mappings. The preview
 uses separate names for browser cookies and native session storage.

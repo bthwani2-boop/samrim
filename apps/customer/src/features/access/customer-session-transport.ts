@@ -108,6 +108,51 @@ export async function readCustomerAdmission(signal: AbortSignal): Promise<State>
   return { enabled: true, session: null };
 }
 
+// Run a Native read with the currently verified Customer's bearer without
+// exposing the session token as UI state or creating another credential store.
+// Identity and SecureStore must still match after the owner result arrives.
+export async function withVerifiedNativeCustomerRead<T extends { actorId: string }>(
+  signal: AbortSignal, ownerRead: (bearer: string) => Promise<T>,
+): Promise<{ kind: "ready"; value: T; expiresAt: number } | { kind: "signed-out" | "unavailable" }> {
+  if (Platform.OS !== "android" || !nativeOrigin) return { kind: "unavailable" };
+  const before = await readCustomerAdmission(signal);
+  if (!before.enabled) return { kind: "unavailable" };
+  if (before.session?.role !== "customer" ||
+    Date.parse(before.session.sessionExpiresAt) <= Date.now()) return { kind: "signed-out" };
+  const bearer = await mutateNativeStorage(async () => {
+    if (signal.aborted || await SecureStore.getItemAsync(pendingStorageKey, nativeOptions)) return null;
+    const token = await SecureStore.getItemAsync(storageKey, nativeOptions);
+    return token && token !== invalidNativeBearer ? token : null;
+  });
+  if (!bearer) return { kind: "signed-out" };
+  // Reading the token after the first admission can race an account switch.
+  // Reverify that exact credential before transmitting it to the finance owner.
+  const confirmed = await readVerifiedIdentitySession(nativeOrigin, bearer, signal);
+  signal.throwIfAborted();
+  if (confirmed.role !== "customer" || confirmed.actorId !== before.session.actorId ||
+    Date.parse(confirmed.sessionExpiresAt) <= Date.now()) return { kind: "signed-out" };
+  const beforeDispatch = await mutateNativeStorage(async () =>
+    !signal.aborted && bearer !== invalidNativeBearer &&
+    !await SecureStore.getItemAsync(pendingStorageKey, nativeOptions) &&
+    await SecureStore.getItemAsync(storageKey, nativeOptions) === bearer);
+  if (!beforeDispatch) return { kind: "signed-out" };
+  const value = await ownerRead(bearer);
+  const after = await readCustomerAdmission(signal);
+  const stillCurrent = await mutateNativeStorage(async () =>
+    !signal.aborted && bearer !== invalidNativeBearer &&
+    !await SecureStore.getItemAsync(pendingStorageKey, nativeOptions) &&
+    await SecureStore.getItemAsync(storageKey, nativeOptions) === bearer);
+  signal.throwIfAborted();
+  if (!stillCurrent || after.session?.role !== "customer" ||
+    after.session.actorId !== before.session.actorId ||
+    after.session.actorId !== value.actorId) return { kind: "signed-out" };
+  const expiresAt = Math.min(
+    Date.parse(before.session.sessionExpiresAt), Date.parse(confirmed.sessionExpiresAt),
+    Date.parse(after.session.sessionExpiresAt),
+  );
+  return expiresAt > Date.now() ? { kind: "ready", value, expiresAt } : { kind: "signed-out" };
+}
+
 export async function requestCustomerCode(phone: string, signal: AbortSignal) {
   if (Platform.OS === "web") return (await webRequest<{ticket: string}>("POST", signal, { phone })).ticket;
   return issueCustomerPhoneChallenge(requiredNativeOrigin(), phone, signal);

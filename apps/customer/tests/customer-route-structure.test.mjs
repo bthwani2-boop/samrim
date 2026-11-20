@@ -59,7 +59,6 @@ test("protected feature routes delegate to feature-owned screens and fail closed
     "(tabs)/orders/index.tsx": "orders/orders-screen.tsx",
     "orders/[id].tsx": "orders/order-detail-screen.tsx",
     "notifications/index.tsx": "notifications/notifications-inbox.tsx",
-    "wallet/index.tsx": "wallet/wallet-screen.tsx",
     "wallet-cash-in.tsx": "wallet/cash-in-panel.tsx",
     "discovery-content/[contentId].tsx": "discovery/discovery-content-screen.tsx",
   };
@@ -69,6 +68,11 @@ test("protected feature routes delegate to feature-owned screens and fail closed
     assert.match(source, /CapabilityUnavailableScreen/, screen);
     assert.doesNotMatch(source, /fetch\(|checkout\(|confirm\(|credit\(/, screen);
   }
+  const nativeWallet = readFeature("wallet/wallet-screen.tsx");
+  assert.match(read("wallet/index.tsx"), /export \{ default \} from/);
+  assert.match(nativeWallet, /readNativeWallet\(/);
+  assert.match(nativeWallet, /readNativeWalletTransactions\(/);
+  assert.doesNotMatch(nativeWallet, /fetch\(|credit\(|debit\(/);
   assert.ok(read("login.tsx").includes('export { default } from'));
   assert.ok(read("verification.tsx").includes('export { default } from'));
   assert.ok(readFeature("access/identity-gate.tsx").includes("readCustomerAdmission"));
