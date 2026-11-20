@@ -140,17 +140,25 @@ function readPage<T>(value: unknown, validate: (v: unknown) => v is T): PublicPa
   }
   return { items: v.items, revision: v.revision as number, ...(typeof v.nextCursor === "string" ? { nextCursor: v.nextCursor } : {}) };
 }
-export async function listPublicVerticals(
-  baseUrl: string, cityId: string,
-  options: { cursor?: string; limit?: number; signal?: AbortSignal } = {},
-): Promise<PublicPage<PublicVertical>> {
-  if (!isPublicId(cityId)) throw new DshPublicError(400, "INVALID_CITY");
+function validatePublicPaging(options: { cursor?: string; limit?: number }): void {
   if (options.limit !== undefined && (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 50)) {
     throw new DshPublicError(400, "INVALID_LIMIT");
   }
   if (options.cursor !== undefined && !/^[A-Za-z0-9_-]{1,512}$/.test(options.cursor)) {
     throw new DshPublicError(400, "INVALID_CURSOR");
   }
+}
+
+function validateStoreId(storeId: string): void {
+  if (!isPublicId(storeId)) throw new DshPublicError(400, "INVALID_STORE");
+}
+
+export async function listPublicVerticals(
+  baseUrl: string, cityId: string,
+  options: { cursor?: string; limit?: number; signal?: AbortSignal } = {},
+): Promise<PublicPage<PublicVertical>> {
+  if (!isPublicId(cityId)) throw new DshPublicError(400, "INVALID_CITY");
+  validatePublicPaging(options);
   const url = endpoint(baseUrl, "/v1/public/verticals");
   url.searchParams.set("city_id", cityId);
   if (options.cursor) url.searchParams.set("cursor", options.cursor);
@@ -163,6 +171,8 @@ export async function listPublicVerticals(
 export async function listPublicStores(
   baseUrl: string, cityId: string, options: { query?: string; verticalId?: string; cursor?: string; limit?: number; signal?: AbortSignal } = {},
 ): Promise<PublicPage<PublicStore>> {
+  if (!isPublicId(cityId)) throw new DshPublicError(400, "INVALID_CITY");
+  validatePublicPaging(options);
   validatePublicSearch(options.query);
   if (options.verticalId !== undefined && !isPublicId(options.verticalId)) {
     throw new DshPublicError(400, "INVALID_VERTICAL");
@@ -174,13 +184,15 @@ export async function listPublicStores(
   if (options.cursor) url.searchParams.set("cursor", options.cursor);
   if (options.limit) url.searchParams.set("limit", String(options.limit));
   const page = readPage(await ownerRead(url, options.signal), isStore);
-  if (page.items.some((store) => store.cityId !== cityId ||
+  if (page.items.length > (options.limit ?? 20) ||
+    page.items.some((store) => store.cityId !== cityId ||
     (options.verticalId !== undefined && store.verticalId !== options.verticalId))) {
     throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   }
   return page;
 }
 export async function getPublicStore(baseUrl: string, storeId: string, signal?: AbortSignal): Promise<PublicStore> {
+  validateStoreId(storeId);
   const url = endpoint(baseUrl, "/v1/public/stores/" + encodeURIComponent(storeId));
   const value = await ownerRead(url, signal);
   if (!isStore(value) || value.id !== storeId) throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
@@ -189,13 +201,16 @@ export async function getPublicStore(baseUrl: string, storeId: string, signal?: 
 export async function listPublicOffers(
   baseUrl: string, storeId: string, options: { query?: string; cursor?: string; limit?: number; signal?: AbortSignal } = {},
 ): Promise<PublicPage<PublicOffer>> {
+  validateStoreId(storeId);
+  validatePublicPaging(options);
   validatePublicSearch(options.query);
   const url = endpoint(baseUrl, "/v1/public/stores/" + encodeURIComponent(storeId) + "/offers");
   if (options.query !== undefined) url.searchParams.set("q", options.query);
   if (options.cursor) url.searchParams.set("cursor", options.cursor);
   if (options.limit) url.searchParams.set("limit", String(options.limit));
   const page = readPage(await ownerRead(url, options.signal), isOffer);
-  if (page.items.some((offer) => offer.storeId !== storeId)) {
+  if (page.items.length > (options.limit ?? 20) ||
+    page.items.some((offer) => offer.storeId !== storeId)) {
     throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   }
   return page;

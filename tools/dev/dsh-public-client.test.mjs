@@ -286,3 +286,57 @@ test("owner SDK keeps helper functions private and shares one public error class
     assert.equal(Object.hasOwn(sdk, name), false, name + " must not become a public SDK export");
   }
 });
+
+test("Store and Offer caller inputs reject invalid identifiers and pagination without owner access", async () => {
+  let calls = 0;
+  await withFetch(async () => { calls++; return json({ items: [], revision: 1 }); }, async () => {
+    for (const city of ["", "SANAA", "../sanaa", "a".repeat(65), "\ud800"]) {
+      await rejectsAs(() => listPublicStores(base, city), 400, "INVALID_CITY");
+    }
+    for (const id of ["", "Invalid", "../market", "a".repeat(65), "\ud800"]) {
+      await rejectsAs(() => getPublicStore(base, id), 400, "INVALID_STORE");
+      await rejectsAs(() => listPublicOffers(base, id), 400, "INVALID_STORE");
+    }
+    for (const options of [{ limit: 0 }, { limit: 51 }, { limit: 1.5 }, { limit: NaN }]) {
+      await rejectsAs(() => listPublicStores(base, "sanaa", options), 400, "INVALID_LIMIT");
+      await rejectsAs(() => listPublicOffers(base, store.id, options), 400, "INVALID_LIMIT");
+    }
+    for (const options of [{ cursor: "../other" }, { cursor: "a".repeat(513) }]) {
+      await rejectsAs(() => listPublicStores(base, "sanaa", options), 400, "INVALID_CURSOR");
+      await rejectsAs(() => listPublicOffers(base, store.id, options), 400, "INVALID_CURSOR");
+    }
+  });
+  assert.equal(calls, 0);
+});
+
+test("Store and Offer owner pages cannot exceed the requested or default limit", async () => {
+  const stores = Array.from({ length: 21 }, (_, i) => ({ ...store, id: `store-${i}` }));
+  const offers = Array.from({ length: 21 }, (_, i) => ({ ...offer, id: `offer-${i}` }));
+  for (const [items, call] of [
+    [stores, () => listPublicStores(base, "sanaa")],
+    [offers, () => listPublicOffers(base, store.id)],
+  ]) {
+    await withFetch(async () => json({ items, revision: 1 }),
+      () => rejectsAs(call, 502, "OWNER_RESPONSE_INVALID"));
+  }
+  for (const [items, call] of [
+    [stores.slice(0, 2), () => listPublicStores(base, "sanaa", { limit: 1 })],
+    [offers.slice(0, 2), () => listPublicOffers(base, store.id, { limit: 1 })],
+  ]) {
+    await withFetch(async () => json({ items, revision: 1 }),
+      () => rejectsAs(call, 502, "OWNER_RESPONSE_INVALID"));
+  }
+});
+
+test("Store and Offer pages accept the documented 50-item maximum", async () => {
+  const stores = Array.from({ length: 50 }, (_, i) => ({ ...store, id: `store-${i}` }));
+  const offers = Array.from({ length: 50 }, (_, i) => ({ ...offer, id: `offer-${i}` }));
+  for (const [items, call] of [
+    [stores, () => listPublicStores(base, "sanaa", { limit: 50 })],
+    [offers, () => listPublicOffers(base, store.id, { limit: 50 })],
+  ]) {
+    await withFetch(async () => json({ items, revision: 1 }), async () => {
+      assert.deepEqual((await call()).items, items);
+    });
+  }
+});

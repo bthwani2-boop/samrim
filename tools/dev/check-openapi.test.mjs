@@ -308,6 +308,8 @@ test("public DSH Store, Vertical and Offer client validators track declared Open
   assert.equal(schema.PublicVertical.properties.storeCount.minimum, 1);
   assert.equal(schema.PublicVertical.properties.storeCount.maximum, Number.MAX_SAFE_INTEGER);
   assert.equal(schema.VerticalPage.properties.items.maxItems, 50);
+  assert.equal(schema.StorePage.properties.items.maxItems, 50);
+  assert.equal(schema.OfferPage.properties.items.maxItems, 50);
   assert.equal(schema.PublicOffer.additionalProperties, false);
   assert.equal(schema.PublicId.pattern, "^[a-z0-9-]{1,64}$");
   assert.equal(schema.PublicStore.properties.name.maxLength, 120);
