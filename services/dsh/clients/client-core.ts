@@ -50,8 +50,10 @@ export function isDateTime(value: unknown): value is string {
 // One bounded JSON transport parser for DSH public and private owner replies.
 // A successful decode does not grant authority: domain clients still validate
 // every schema field and actor/Store binding after parsing.
-export async function readBoundedOwnerJSON(response: Response, maxTextLength: number): Promise<unknown> {
-  const maxBytes = 3 * maxTextLength; // UTF-8 bytes per UTF-16 code unit are at most 3.
+export async function readBoundedOwnerJSON(
+  response: Response, maxTextLength: number, strictByteLimit?: number,
+): Promise<unknown> {
+  const maxBytes = strictByteLimit ?? 3 * maxTextLength; // UTF-8 bytes per UTF-16 code unit are at most 3.
   if (Number(response.headers.get("Content-Length")) > maxBytes) {
     void response.body?.cancel().catch(() => {});
     throw new Error("Oversized DSH owner reply");
@@ -60,6 +62,16 @@ export async function readBoundedOwnerJSON(response: Response, maxTextLength: nu
   if (!response.body?.getReader || typeof TextDecoder !== "function") {
     const text = await response.text();
     if (text.length > maxTextLength) throw new Error("Oversized DSH owner reply");
+    if (strictByteLimit !== undefined) {
+      // React Native/Hermes may not provide TextEncoder. Count UTF-8 bytes
+      // without platform globals; lone surrogates encode as U+FFFD (3 bytes).
+      let byteCount = 0;
+      for (const character of text) {
+        const codePoint = character.codePointAt(0) ?? 0xfffd;
+        byteCount += codePoint < 0x80 ? 1 : codePoint < 0x800 ? 2 : codePoint < 0x10000 ? 3 : 4;
+        if (byteCount > maxBytes) throw new Error("Oversized DSH owner reply");
+      }
+    }
     return JSON.parse(text) as unknown;
   }
   const reader = response.body.getReader();

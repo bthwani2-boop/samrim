@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readBoundedOwnerJSON } from "../../services/dsh/clients/client-core.ts";
 import {
   changeOperatorCaptainStanding, DshPublicError, getPublicStore, listPublicOffers, listPublicStores, listPublicVerticals,
   replaceCityStoreOperationalPolicy,
@@ -466,4 +467,23 @@ test("Public DSH owner error body is size-bounded and falls back to safe error c
   }), { status: 503, headers: { "Content-Type": "application/json" } }),
   async () => rejectsAs(() => getPublicStore(base, store.id), 503, "OWNER_READ_FAILED"));
   assert.ok(pulls <= 5, `error body must be capped at 12 KB, got ${pulls} chunks`);
+});
+
+test("Shared DSH parser respects strict Unicode byte caps in text-only Native fetch without TextEncoder", async () => {
+  const payload = JSON.stringify({ name: "ي".repeat(2200) });
+  assert.ok(payload.length < 4096 && Buffer.byteLength(payload, "utf8") > 4096);
+  const fakeReply = {
+    headers: new Headers({ "Content-Type": "application/json" }),
+    text: async () => payload,
+  };
+  const saved = globalThis.TextEncoder;
+  try {
+    globalThis.TextEncoder = undefined;
+    await assert.rejects(() => readBoundedOwnerJSON(fakeReply, 4096, 4096), /Oversized/);
+    assert.deepEqual(await readBoundedOwnerJSON({
+      headers: fakeReply.headers, text: async () => '{"name":"بثواني"}',
+    }, 4096, 4096), { name: "بثواني" });
+  } finally {
+    globalThis.TextEncoder = saved;
+  }
 });
