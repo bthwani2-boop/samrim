@@ -114,19 +114,34 @@ finish_stage() {
   current=""
 }
 run_test() {
-  local name="$1" dir="$2" binary="$3" pattern="$4" output
-  shift 4
+  local name="$1" dir="$2" binary="$3" pattern="$4" expected="$5" output
+  shift 5
   if ! output="$(docker exec -w "$dir" "$@" "$name" "$binary" \
     -test.v -test.run "$pattern" -test.timeout 180s 2>&1)"; then
     printf '%s\n' "$output"
     echo "Owner-backed integration failed; do not claim PASS" >&2
     return 1
   fi
-  if [[ "$output" == *"--- SKIP:"* || "$output" != *"--- PASS:"* ]]; then
+  local -a expected_names=() passed_names=()
+  IFS=',' read -r -a expected_names <<< "$expected"
+  mapfile -t passed_names < <(printf '%s\n' "$output" | awk '/^--- PASS: Test[^ ]+ \(/ {print $3}')
+  # A single PASS must not satisfy a pattern selecting multiple tests.
+  # Reject missing, repeated, extra, skipped or renamed owner-backed tests.
+  if [[ "$output" == *"--- SKIP:"* || "$output" == *"--- FAIL:"* ]] ||
+     ! grep -Fxq 'PASS' <<< "$output" ||
+     (( ${#expected_names[@]} == 0 || ${#passed_names[@]} != ${#expected_names[@]} )); then
     printf '%s\n' "$output"
-    echo "An expected owner-backed test was skipped or missing" >&2
+    echo "Selected owner-backed tests missing, skipped or unexpectedly changed" >&2
     return 1
   fi
+  local test_name
+  for test_name in "${expected_names[@]}"; do
+    if ! printf '%s\n' "${passed_names[@]}" | grep -Fxq -- "$test_name"; then
+      printf '%s\n' "$output"
+      echo "Selected owner-backed test absent: $test_name" >&2
+      return 1
+    fi
+  done
   printf '%s\n' "$output" | grep -E '^--- (PASS|FAIL|SKIP):|^PASS$|^FAIL$' || true
 }
 
@@ -136,11 +151,11 @@ docker exec "$current" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
 docker exec "$current" sh -c \
   "sed 's/__SCHEMA__/dsh_test_seed_boundary/g' /agent02/services/dsh/database/migrations/001_public_discovery.sql | psql -X -q -v ON_ERROR_STOP=1 -U bthwani_ci -d bthwani_dsh_boundary_fixture"
 run_test "$current" /agent02/services/identity/backend/internal/session \
-  /agent02/bin/identity-session.test '^TestPostgresIdentitySessionReadback$' \
+  /agent02/bin/identity-session.test '^TestPostgresIdentitySessionReadback$' 'TestPostgresIdentitySessionReadback' \
   -e BTHWANI_ISOLATED_TEST_MODE=true \
   -e IDENTITY_TEST_DATABASE_URL='postgres://bthwani_ci:synthetic-only@127.0.0.1:5432/bthwani_refoundation?sslmode=disable'
 run_test "$current" /agent02/services/dsh/backend/internal/discovery \
-  /agent02/bin/dsh-discovery.test '^(TestOwnerBacked|TestOwnerScoped)' \
+  /agent02/bin/dsh-discovery.test '^(TestOwnerBacked|TestOwnerScoped)' 'TestOwnerBackedMarketplaceVisibility,TestOwnerBackedPublicStoreOperationalStatus,TestOwnerBackedSyntheticImportDeniesAlternateDatabase,TestOwnerBackedOfferVisibilityAndCursorRecovery,TestOwnerBackedUnpublishedStoreRejectsOfferContinuation,TestOwnerBackedConcurrentReadsAndSafeFailures,TestOwnerScopedTransactionSearchPathResetsOnPooledConnection,TestOwnerBackedDiscoveryHealthRequiresInitializedSchema,TestOwnerBackedPublicVerticalDirectory,TestOwnerBackedVerticalFilter,TestOwnerBackedStoreSearch,TestOwnerBackedOfferSearch' \
   -e BTHWANI_ISOLATED_TEST_MODE=true -e DSH_TEST_SEED_BOUNDARY=true \
   -e REF_POSTGRES_USER=bthwani_ci -e REF_POSTGRES_PASSWORD=synthetic-only \
   -e REF_POSTGRES_DB=bthwani_refoundation \
@@ -150,7 +165,7 @@ finish_stage
 start_stage bthwani-session02-orderability-pg bthwani_agent02 orderability_agent02
 run_test "$current" /agent02/services/dsh/backend/internal/storeavailability \
   /agent02/bin/dsh-storeavailability.test \
-  '^(TestRealPostgresVersionIdempotencyAuditAndReadback|TestRealPostgresVersionedCityPolicyWriterAndConcurrency|TestIsolatedRealIdentityAndDshAvailability)$' \
+  '^(TestRealPostgresVersionIdempotencyAuditAndReadback|TestRealPostgresVersionedCityPolicyWriterAndConcurrency|TestIsolatedRealIdentityAndDshAvailability)$' 'TestRealPostgresVersionIdempotencyAuditAndReadback,TestRealPostgresVersionedCityPolicyWriterAndConcurrency,TestIsolatedRealIdentityAndDshAvailability' \
   -e BTHWANI_ISOLATED_TEST_MODE=true \
   -e BTHWANI_DSH_TEST_CONTAINER=bthwani-session02-orderability-pg \
   -e BTHWANI_DSH_TEST_DATABASE_URL='postgres://bthwani_agent02:synthetic-only@127.0.0.1:5432/orderability_agent02?sslmode=disable' \
@@ -160,13 +175,13 @@ finish_stage
 
 start_stage bthwani-session02-captain-pg bt_cap_s02 refoundation_captain_agent02
 run_test "$current" /agent02/services/identity/backend/internal/session \
-  /agent02/bin/identity-session.test '^TestCaptainIdentityVerifiedAdmissionRealPostgres$' \
+  /agent02/bin/identity-session.test '^TestCaptainIdentityVerifiedAdmissionRealPostgres$' 'TestCaptainIdentityVerifiedAdmissionRealPostgres' \
   -e BTHWANI_ISOLATED_TEST_MODE=true \
   -e BTHWANI_CAPTAIN_TEST_CONTAINER=bthwani-session02-captain-pg \
   -e BTHWANI_CAPTAIN_TEST_DATABASE_URL='postgres://bt_cap_s02:synthetic-only@127.0.0.1:5432/refoundation_captain_agent02?sslmode=disable'
 run_test "$current" /agent02/services/dsh/backend/internal/captainstanding \
   /agent02/bin/dsh-captainstanding.test \
-  '^(TestCaptainStandingRealPostgresOwnerLifecycle|TestCaptainJoinedRealHTTPAndPostgres)$' \
+  '^(TestCaptainStandingRealPostgresOwnerLifecycle|TestCaptainJoinedRealHTTPAndPostgres)$' 'TestCaptainStandingRealPostgresOwnerLifecycle,TestCaptainJoinedRealHTTPAndPostgres' \
   -e BTHWANI_ISOLATED_TEST_MODE=true -e BTHWANI_CAPTAIN_JOINED_HTTP_TEST=true \
   -e BTHWANI_CAPTAIN_TEST_CONTAINER=bthwani-session02-captain-pg \
   -e BTHWANI_CAPTAIN_TEST_DATABASE_URL='postgres://bt_cap_s02:synthetic-only@127.0.0.1:5432/refoundation_captain_agent02?sslmode=disable'
@@ -174,7 +189,7 @@ finish_stage
 
 start_stage bthwani-session02-operator-pg bt_op_s02 refoundation_operator_agent02
 run_test "$current" /agent02/services/identity/backend/internal/session \
-  /agent02/bin/identity-session.test '^TestOperatorPermissionManagementRealPostgresAndHTTP$' \
+  /agent02/bin/identity-session.test '^TestOperatorPermissionManagementRealPostgresAndHTTP$' 'TestOperatorPermissionManagementRealPostgresAndHTTP' \
   -e BTHWANI_ISOLATED_TEST_MODE=true -e BTHWANI_OPERATOR_ADMIN_TEST=true \
   -e BTHWANI_OPERATOR_TEST_CONTAINER=bthwani-session02-operator-pg \
   -e BTHWANI_OPERATOR_TEST_DATABASE_URL='postgres://bt_op_s02:synthetic-only@127.0.0.1:5432/refoundation_operator_agent02?sslmode=disable'
@@ -182,7 +197,7 @@ finish_stage
 
 start_stage bthwani-session02-webauthn-pg bthwani_fido_s02 refoundation_webauthn_s02
 run_test "$current" /agent02/services/identity/backend/internal/session \
-  /agent02/bin/identity-session.test '^TestOperatorPasskeyRealWebAuthnSignatureSQL$' \
+  /agent02/bin/identity-session.test '^TestOperatorPasskeyRealWebAuthnSignatureSQL$' 'TestOperatorPasskeyRealWebAuthnSignatureSQL' \
   -e BTHWANI_ISOLATED_TEST_MODE=true -e BTHWANI_OPERATOR_PASSKEY_INTEGRATION=true \
   -e BTHWANI_OPERATOR_PASSKEY_CONTAINER=bthwani-session02-webauthn-pg \
   -e BTHWANI_OPERATOR_PASSKEY_DATABASE_URL='postgres://bthwani_fido_s02:synthetic-only@127.0.0.1:5432/refoundation_webauthn_s02?sslmode=disable'
@@ -190,7 +205,7 @@ finish_stage
 
 start_stage bthwani-session01-merchant-pg bthwani_session01 merchant_agent01
 run_test "$current" /agent02/services/dsh/backend/internal/storeavailability \
-  /agent02/bin/dsh-storeavailability.test '^TestMerchantOwnedStoresRealPostgresAndHTTPReadback$' \
+  /agent02/bin/dsh-storeavailability.test '^TestMerchantOwnedStoresRealPostgresAndHTTPReadback$' 'TestMerchantOwnedStoresRealPostgresAndHTTPReadback' \
   -e BTHWANI_ISOLATED_TEST_MODE=true \
   -e BTHWANI_MERCHANT_TEST_CONTAINER=bthwani-session01-merchant-pg \
   -e BTHWANI_MERCHANT_TEST_DATABASE_URL='postgres://bthwani_session01:synthetic-only@127.0.0.1:5432/merchant_agent01?sslmode=disable'

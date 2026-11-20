@@ -21,6 +21,7 @@ on:
       - 'infra/build-*image.ps1'
       - 'infra/compose*.yaml'
       - 'infra/verify-owner-postgres-ci.sh'
+      - 'infra/test-owner-postgres-output.sh'
       - 'nx.json'
   # Main is the protected integration target; branch names are never pinned.
   pull_request:
@@ -38,6 +39,7 @@ on:
       - 'infra/build-*image.ps1'
       - 'infra/compose*.yaml'
       - 'infra/verify-owner-postgres-ci.sh'
+      - 'infra/test-owner-postgres-output.sh'
       - 'nx.json'
 
 permissions:
@@ -135,6 +137,9 @@ jobs:
           go-version-file: .go-version
           check-latest: false
           cache: false
+      - name: Validate expected owner test names and reject incomplete passing output
+        shell: bash
+        run: bash infra/test-owner-postgres-output.sh
       - name: Run isolated, network-disabled owner PostgreSQL tests
         shell: bash
         run: bash infra/verify-owner-postgres-ci.sh
