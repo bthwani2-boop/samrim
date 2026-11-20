@@ -76,6 +76,21 @@ start_stage() {
     -c "CREATE ROLE $role LOGIN PASSWORD 'synthetic-only';"
   docker exec "$name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
     -c "CREATE DATABASE $db OWNER $role;"
+  # The image's temporary init server accepts local Unix sockets before the
+  # final TCP listener is ready. Prove the *target database and test role* over
+  # the same loopback protocol that real owner binaries use; pg_isready alone
+  # can report a bootstrap process that is about to restart.
+  local tcp_ready=no
+  for attempt in $(seq 1 45); do
+    if [[ "$(docker exec -e PGPASSWORD=synthetic-only "$name" psql -X -A -t \
+      -h 127.0.0.1 -p 5432 -U "$role" -d "$db" -v ON_ERROR_STOP=1 \
+      -c 'SELECT 1' 2>/dev/null || true)" == "1" ]]; then
+      tcp_ready=yes
+      break
+    fi
+    sleep 1
+  done
+  [[ "$tcp_ready" == yes ]] || { echo "Final disposable PostgreSQL TCP database not ready" >&2; exit 1; }
   docker exec "$name" mkdir -p /agent02/bin \
     /agent02/services/identity/database \
     /agent02/services/identity/backend/internal/session \
