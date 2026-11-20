@@ -16,14 +16,16 @@ function fixture(t, owner) {
   return { base, contract: path.join(base, dir) };
 }
 
-for (const owner of ["identity", "dsh"]) {
+const counts = { identity: 13, dsh: 17, wlt: 1 };
+const samplePaths = { identity: "/v1/sessions/current:", dsh: "/v1/stores/mine:", wlt: "/v1/wallets/me:" };
+for (const owner of Object.keys(counts)) {
   test(owner + " operations are exactly reproducible and match owner OpenAPI", () => {
     const first = generatedOperationSource(owner);
     const second = generatedOperationSource(owner);
     assert.equal(first, second);
     assert.equal(first, readFileSync(generatedOperationsPath(owner), "utf8"));
     const rows = operationRows(owner);
-    assert.equal(rows.length, owner === "identity" ? 13 : 17);
+    assert.equal(rows.length, counts[owner]);
     assert.equal(new Set(rows.map(row => row.id)).size, rows.length);
     assert.ok(rows.every(row => row.path.startsWith("/")));
   });
@@ -33,7 +35,7 @@ for (const owner of ["identity", "dsh"]) {
     const entryFile = path.join(contract, owner + ".openapi.yaml");
     const initial = generatedOperationSource(owner, base);
     const entry = readFileSync(entryFile, "utf8");
-    const oldPath = owner === "identity" ? "/v1/sessions/current:" : "/v1/stores/mine:";
+    const oldPath = samplePaths[owner];
     assert.ok(entry.includes(oldPath), "mutation must target current contract");
     writeFileSync(entryFile, entry.replace(oldPath, oldPath.replace(":", "-drift:")));
     assert.notEqual(generatedOperationSource(owner, base), initial,
@@ -57,8 +59,4 @@ test("generator rejects operation IDs that collide across path fragments", t => 
   assert.ok(source.includes("operationId: listPublicStores"));
   writeFileSync(file, source.replace("operationId: listPublicStores", "operationId: listPublicVerticals"));
   assert.throws(() => operationRows("dsh", base), /duplicate or unsafe operationId/);
-});
-
-test("WLT remains an intentionally empty contract, not an invented generated client", () => {
-  assert.throws(() => operationRows("wlt"), /Unsupported executable owner/);
 });

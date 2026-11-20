@@ -1,1 +1,37 @@
-paths: {}
+paths:
+  /v1/wallets/me:
+    get:
+      operationId: getCurrentCustomerWalletBalance
+      summary: Read the verified Customer's posted balance
+      description: The isolated WLT owner resolves the active Identity Customer, then reads that actor's durable posted funding journal. Reject query parameters and request bodies.
+      security:
+        - OpaqueSession: []
+      responses:
+        '200':
+          description: Posted balance with the verified actor binding
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/CustomerWalletBalance' }
+        '400':
+          description: Request contained a body or query
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '401':
+          description: A current verified Identity session is required
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '403':
+          description: The session does not carry the Customer role
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '503':
+          description: Identity or WLT could not verify the current balance
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }

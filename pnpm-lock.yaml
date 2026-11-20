@@ -448,6 +448,9 @@ importers:
       '@bthwani/tamagui-config':
         specifier: workspace:*
         version: link:../../packages/tamagui-config
+      '@bthwani/wlt':
+        specifier: workspace:*
+        version: link:../../services/wlt
       '@date-fns/tz':
         specifier: 'catalog:'
         version: 1.5.0

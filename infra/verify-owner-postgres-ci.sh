@@ -47,6 +47,9 @@ trap cleanup EXIT
   CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -o "$scratch/dsh-storeavailability.test" ./internal/storeavailability && \
   CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -o "$scratch/dsh-captainstanding.test" ./internal/captainstanding && \
   CGO_ENABLED=0 GOTOOLCHAIN=local go build -o "$scratch/dsh" ./cmd/dsh)
+(cd services/wlt/backend && \
+  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -o "$scratch/wlt-wallet.test" ./cmd/wlt)
+[[ -s "$scratch/wlt-wallet.test" ]] || { echo "Missing compiled WLT owner test" >&2; exit 1; }
 for executable in identity-session.test identity dsh-discovery.test dsh-storeavailability.test dsh-captainstanding.test dsh; do
   [[ -s "$scratch/$executable" ]] || { echo "Missing compiled owner: $executable" >&2; exit 1; }
 done
@@ -209,6 +212,37 @@ run_test "$current" /agent02/services/dsh/backend/internal/storeavailability \
   -e BTHWANI_ISOLATED_TEST_MODE=true \
   -e BTHWANI_MERCHANT_TEST_CONTAINER=bthwani-session01-merchant-pg \
   -e BTHWANI_MERCHANT_TEST_DATABASE_URL='postgres://bthwani_session01:synthetic-only@127.0.0.1:5432/merchant_agent01?sslmode=disable'
+finish_stage
+
+start_stage bthwani-ci-wlt-pg bthwani_wlt_owner bthwani_wlt_test
+docker exec "$current" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d bthwani_wlt_test \
+  -c "CREATE ROLE bthwani_wlt_reader LOGIN PASSWORD 'synthetic-only';" \
+  -c "CREATE ROLE bthwani_identity_fixture LOGIN PASSWORD 'synthetic-only';" \
+  -c "GRANT CREATE ON DATABASE bthwani_wlt_test TO bthwani_identity_fixture;"
+docker exec "$current" mkdir -p /agent02/services/wlt/database
+docker cp services/wlt/database/migrations "$current:/agent02/services/wlt/database/migrations"
+docker cp "$scratch/wlt-wallet.test" "$current:/agent02/bin/wlt-wallet.test"
+run_test "$current" /agent02/bin /agent02/bin/wlt-wallet.test \
+  '^TestWalletOwnerPostgresAndIdentity$' 'TestWalletOwnerPostgresAndIdentity' \
+  -e BTHWANI_ISOLATED_TEST_MODE=true -e WLT_OWNER_CI_TEST=true
+docker exec "$current" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+  -c "CREATE DATABASE bthwani_wlt_restore OWNER bthwani_wlt_owner;"
+docker exec "$current" pg_dump --format=custom --schema=wlt --no-owner \
+  -U bthwani_wlt_owner -d bthwani_wlt_test --file=/tmp/wlt-owner.dump
+docker exec "$current" pg_restore --no-owner --exit-on-error --single-transaction \
+  -U bthwani_wlt_owner -d bthwani_wlt_restore /tmp/wlt-owner.dump
+for db in bthwani_wlt_test bthwani_wlt_restore; do
+  totals="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
+    -c "SELECT string_agg(actor_id || ':' || balance_yer, ',' ORDER BY actor_id) FROM wlt.customer_wallet_balances;")"
+  [[ "$totals" == 'wallet-one:9007199254741050,wallet-two:41' ]] || { echo "WLT restored balances differ" >&2; exit 1; }
+  if docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -U bthwani_wlt_reader -d "$db" \
+    -c 'SELECT provider_reference FROM wlt.customer_funding_journal;' >/dev/null 2>"$scratch/wlt-reader-denial"; then
+    echo "WLT restore exposed the private funding journal" >&2
+    exit 1
+  fi
+  grep -q '42501' "$scratch/wlt-reader-denial" || exit 1
+done
+echo 'WLT_DISPOSABLE_RESTORE_PASS real_postgresql=true restored_balance=true reader_scope=true'
 finish_stage
 
 echo 'OWNER_POSTGRES_INTEGRATION_PASS network=none ephemeral_tmpfs=true durable_owner_readback=verified no_production_data=true'

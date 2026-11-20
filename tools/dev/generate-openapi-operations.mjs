@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import YAML from "yaml";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const owners = new Set(["identity", "dsh"]);
+const owners = new Set(["identity", "dsh", "wlt"]);
 const methods = new Set(["get", "post", "put", "patch", "delete", "head", "options", "trace"]);
 
 export function operationRows(owner, base = root) {
@@ -72,7 +72,7 @@ function run() {
   const check = args[0] === "--check";
   const selected = check ? args.slice(1) : args;
   if (selected.length && selected.some(owner => !owners.has(owner))) {
-    throw new Error("Usage: node tools/dev/generate-openapi-operations.mjs [--check] [identity|dsh ...]");
+    throw new Error("Usage: node tools/dev/generate-openapi-operations.mjs [--check] [identity|dsh|wlt ...]");
   }
   for (const owner of selected.length ? selected : owners) {
     const expected = generatedOperationSource(owner);

@@ -33,7 +33,8 @@ integration remain NOT_RUN.
 Identity is a separate, synthetic Go session/Operator-permission verifier
 in `compose.identity-verifier.yaml`, not a first-factor login issuer.
 The two overlays may be combined with the same `compose.yaml` without
-competing service definitions. WLT has no runnable Go backend yet.
+competing service definitions. The [WLT Customer balance reader](../services/wlt/backend/README.md)
+runs only as an isolated loopback process with its read-only database role.
 
 The DSH migration command now uses its own `migration` Compose profile,
 separate from `implementation`. Normal `implementation` startup cannot start

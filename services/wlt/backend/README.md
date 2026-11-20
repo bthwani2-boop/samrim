@@ -1,20 +1,18 @@
-# WLT Backend Placement
+# WLT Go owner
 
-STATUS: STRUCTURE_ONLY
-OWNER: WLT
-EXECUTION: NOT_STARTED
+`cmd/wlt` serves the Customer's posted balance in isolated development.
+Use the pinned Go toolchain and a fresh `bthwani_wlt_test` PostgreSQL database.
+The runtime requires all of these settings.
 
-This tracked directory reserves the **legal location** for the first real WLT Go capability. It contains no Go module, binary, HTTP routes, financial posting logic, Docker image, migration runner, or running service.
+- `BTHWANI_ISOLATED_TEST_MODE=true`
+- `WLT_DEV_LISTEN_ADDR` as an explicit `127.0.0.1` address with a port
+- `WLT_TEST_DATABASE_URL` as a local PostgreSQL URL for the `bthwani_wlt_reader` role and `bthwani_wlt_test` database, with `sslmode=disable`
+- `WLT_TEST_IDENTITY_ORIGIN` as the isolated Identity HTTP origin on `127.0.0.1`
 
-When a concrete approved financial journey needs it, add only the required source:
+For Customer Web, set `CUSTOMER_SYNTHETIC_WLT_ORIGIN` to the same WLT loopback
+origin in the Surface preview. The route reads the existing preview cookie
+and the app confirms the current actor on both sides of the wallet request.
 
-- `cmd/wlt/` — executable entrypoint and explicit health/readiness behavior.
-- `internal/<financial-domain>/` — owner-local implementation and focused tests for that domain, introduced only when needed.
-- `go.mod` / `go.sum` — pinned real module dependencies, created with the first executable code; never a fake module to satisfy Nx.
-- `Dockerfile` and an owner-specific Nx project/targets — only when there is a real runnable/testable backend. Do not change existing Docker services merely to create a directory.
-
-The owner API contract is `../contracts/openapi/wlt.openapi.yaml` and executable client exports belong to `../clients/index.ts`. PostgreSQL migrations belong to `../database/migrations/`. No separate wallet, ledger, Store pricing or authentication engine may be placed here. Identity owns actor/session authority; DSH owns Orders and price/fulfillment facts; WLT alone owns posted financial facts.
-
-For the first actual operation: prove access control and IDOR negatives, integer YER amounts, balanced immutable postings, idempotent replay/concurrency, durable PostgreSQL readback, failure recovery and correct cross-owner contracts. No finance readiness may be claimed from this directory alone.
-
-Owner policy: `../../../governance/finance.md`. Data/security policy: `../../../governance/safety.md`. Placement law: `../../../REPOSITORY-STRUCTURE.md`.
+The HTTP owner offers balance reads. The [migration](../database/migrations/README.md)
+defines journal records and the reader's grant. Funding and provider operations
+require their own verified implementation.

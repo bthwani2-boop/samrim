@@ -218,8 +218,7 @@ export function validate(owner, base = root) {
   const opaqueSession = entrypoint.components?.securitySchemes?.OpaqueSession;
   // A declared name alone cannot prove that clients use Identity's bearer
   // credential; an API key or Basic scheme would silently change auth behavior.
-  if ((owner !== "wlt" || opaqueSession !== undefined) &&
-      (opaqueSession?.type !== "http" || opaqueSession?.scheme !== "bearer")) {
+  if (opaqueSession?.type !== "http" || opaqueSession?.scheme !== "bearer") {
     errors.push("OpaqueSession must be HTTP bearer in " + owner);
   }
   const operations = new Map();
@@ -370,7 +369,7 @@ export function validate(owner, base = root) {
     }
   }
 
-  if (owner !== "wlt" && existsSync(path.join(base, "services", owner, "clients", "generated", owner + "-operations.ts"))) {
+  if (existsSync(path.join(base, "services", owner, "clients", "generated", owner + "-operations.ts"))) {
     const generatedPath = path.join(base, "services", owner, "clients", "generated", owner + "-operations.ts");
     const generated = readFileSync(generatedPath, "utf8");
     if (path.resolve(base) === root && generated !== generatedOperationSource(owner, base)) {
@@ -391,7 +390,7 @@ export function validate(owner, base = root) {
     for (const id of generatedIds.keys()) {
       if (!operations.has(id)) errors.push("Generated operation not in OpenAPI: " + id);
     }
-  } else if (owner !== "wlt" && path.resolve(base) === root) {
+  } else if (path.resolve(base) === root) {
     errors.push("Generated operation manifest missing for active owner: " + owner);
   }
 
@@ -411,7 +410,7 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
       console.log("OPENAPI_" + owner.toUpperCase() + "=" + (result.errors.length ? "FAIL" : "PASS") +
         " files=" + result.files + " paths=" + result.paths + " operations=" + result.operations +
         " refs=" + result.references + " errors=" + result.errors.length +
-        " generatedOperationParity=" + (owner === "wlt" ? "NOT_RUN" :
+        " generatedOperationParity=" + (
           existsSync(path.join(root, "services", owner, "clients", "generated", owner + "-operations.ts")) ? "CHECKED" : "NOT_RUN") +
         " fullGeneratedClientParity=NOT_RUN");
       for (const error of result.errors.slice(0, 40)) console.error("  " + error);

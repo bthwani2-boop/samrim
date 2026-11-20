@@ -1,18 +1,28 @@
-# WLT — Service Placement
+# WLT — Wallet and financial owner
 
-STATUS: SCAFFOLD_ONLY
+STATUS: IMPLEMENTATION_IN_PROGRESS
 OWNER: WLT
-EXECUTION: NOT_STARTED
+EXECUTION: IN_PROGRESS
 
-WLT is the sole owner and writer of money: wallets, immutable ledger entries, fees, financial agreements, cash custody, payouts and settlements. DSH Order facts and Identity actor facts remain with their own owners. Never duplicate the ledger or infer payment success from an HTTP response.
+WLT owns wallets, ledger entries, fees, commercial agreements, cash custody,
+payouts and settlements. Identity verifies the actor and DSH owns Stores and
+Orders.
 
-STRUCTURE_READINESS: TRACKED_OWNER_PATHS_ONLY
+The isolated Customer wallet slice exposes `GET /v1/wallets/me`. WLT verifies
+the current opaque session with Identity and reads the posted YER balance for
+that actor. The Customer Web preview uses a same-origin route with the existing
+HttpOnly session. The API serializes whole YER as decimal text to retain exact
+values above JavaScript's safe integer range.
 
-Current scaffold and tracked owner-local placement guidance. Progressive development of real WLT capabilities is permitted within the current authorization, but financial activation still requires owner-backed security, ledger, persistence and risk evidence:
-- `clients/` — private TypeScript workspace package with a nonfunctional `index.ts` entrypoint; future TypeScript/Go clients come only from validated contracts and real consumer needs.
-- `package.json` and `tsconfig.json` — exact-pinned TypeScript client tooling using the existing pnpm workspace; no runtime dependencies or implemented exports yet.
-- `backend/README.md` — Tracked placement guidance; real Go cmd/wlt and internal domain modules are added with the first financial capability, not as placeholders.
-- `contracts/openapi/` — one zero-operation OpenAPI 3.1 WLT entrypoint plus **14 reserved, nonfunctional `paths/*.yaml` domain groups**, each containing only `paths: {}` and unreferenced by the entrypoint. No financial endpoint, ledger authority, schema or permission is active. See the [source-pinned contract census](../../docs/reference/OPENAPI-DONOR-CONTRACT-INVENTORY.md).
-- `database/migrations/README.md` — Tracked migration placement guidance; real reviewed fresh-install and protected upgrade SQL are added with a WLT data model.
+The first migration stores one immutable funding journal per funding identity
+and per provider reference. Debit and credit legs derive from the same stored
+amount. A least-privilege runtime role can read the balance view. The CI suite
+uses a separate Identity fixture role and a disposable PostgreSQL container.
 
-See [finance governance](../../governance/finance.md) and [safety governance](../../governance/safety.md). Fresh baselines must not replace protected applied history; this README is **not** an executable service, financial schema or accounting proof.
+Provider verification, funding commands, checkout, withdrawals, reconciliation
+and production runtime remain pending. The suite's synthetic journal fixtures
+exercise the PostgreSQL constraints and balance read. They confer no authority
+to post money.
+
+See the [API](contracts/openapi/wlt.openapi.yaml), [runtime](backend/README.md),
+[migration](database/migrations/README.md) and [finance policy](../../governance/finance.md).

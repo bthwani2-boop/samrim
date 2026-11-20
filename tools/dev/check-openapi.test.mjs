@@ -53,12 +53,12 @@ function jsonResponse(value) {
   });
 }
 
-test("all current owner OpenAPI 3.1 documents parse; unimplemented WLT stays explicitly empty", () => {
+test("all current owner OpenAPI 3.1 documents parse with their admitted operations", () => {
   for (const owner of ["identity", "dsh", "wlt"]) {
     const result = validate(owner);
     assert.deepEqual(result.errors, [], `${owner} has invalid OpenAPI`);
   }
-  assert.equal(validate("wlt").operations, 0);
+  assert.equal(validate("wlt").operations, 1);
   assert.ok(validate("identity").operations > 0);
   assert.ok(validate("dsh").operations > 0);
 });

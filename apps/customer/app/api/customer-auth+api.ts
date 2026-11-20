@@ -6,10 +6,9 @@ import {
   type VerifiedIdentitySession,
   verifyCustomerPhoneChallenge,
 } from "@bthwani/identity";
+import { bearerForCustomerRequest as bearerFor, customerCookieName as cookieName } from "../../src/features/access/customer-session-cookie";
 
 /** Customer's test-only, same-origin BFF. Only Identity issues and revokes sessions. */
-const cookieName = process.env.BTHWANI_SURFACE_PREVIEW === "1"
-  ? "bthwani_surface_customer_auth" : "bthwani_customer_auth";
 const noStore = {
   "Cache-Control": "no-store",
   "Referrer-Policy": "no-referrer",
@@ -31,11 +30,6 @@ function json(value: unknown, status = 200, cookie?: string) {
 function cookieFor(request: Request, bearer: string, seconds: number) {
   const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
   return `${cookieName}=${bearer}; Path=/api/customer-auth; HttpOnly; SameSite=Strict; Max-Age=${seconds}${secure}`;
-}
-
-function bearerFor(request: Request) {
-  return request.headers.get("Cookie")?.split(";").map(part => part.trim())
-    .find(part => part.startsWith(cookieName + "="))?.slice(cookieName.length + 1) ?? null;
 }
 
 function isSameOrigin(request: Request) {
