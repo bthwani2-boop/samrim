@@ -561,6 +561,24 @@ test("remaining DSH authenticated client requests match owner OpenAPI operations
 });
 
 
+test("a repurposed public health operation cannot inherit anonymous access", () => {
+  const result = mutate("dsh", "paths/runtime.yaml", source =>
+    source.replace("operationId: dshHealth", "operationId: readPrivateOwnerState"));
+  hasError(result, "Protected operation must require OpaqueSession");
+});
+
+test("repurposing an existing public DSH path requires explicit operation identity admission", () => {
+  const result = mutate("dsh", "paths/stores.yaml", source =>
+    source.replace("operationId: listPublicStores", "operationId: listPrivateAccountBalances"));
+  hasError(result, "Protected operation must require OpaqueSession");
+});
+
+test("repurposing an existing public Identity path cannot inherit anonymous permission", () => {
+  const result = mutate("identity", "paths/client-auth.yaml", source =>
+    source.replace("operationId: issueCustomerPhoneChallenge", "operationId: issueOperatorRootSession"));
+  hasError(result, "Protected operation must require OpaqueSession");
+});
+
 test("new DSH public-prefixed endpoint is protected until explicitly admitted", () => {
   const result = mutateOwnerFiles("dsh", {
     "dsh.openapi.yaml": source => source.replace(

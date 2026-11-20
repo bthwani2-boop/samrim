@@ -109,25 +109,30 @@ export function validate(owner, base = root) {
   // Public admission is a security-sensitive boundary, not a substitute for
   // each owner's declared permissions. Unknown/new routes remain protected
   // until their owner contract and tests explicitly admit them.
-  function isOwnerPublicOperation(urlPath, method) {
-    if (urlPath === "/health" && method === "get") return true;
-    // A route prefix is not permission to publish new unauthenticated APIs.
-    // Explicit admissions must be reviewed together with the owner's contract.
+  function isOwnerPublicOperation(urlPath, method, operationId) {
+    // Explicit owner admission matches the entire operation identity, not a
+    // pathname prefix or a recycled public route with a different handler.
+    if (urlPath === "/health" && method === "get") {
+      return (owner === "identity" && operationId === "getIdentityDevelopmentHealth") ||
+        (owner === "dsh" && operationId === "dshHealth");
+    }
     if (owner === "dsh" && method === "get") {
-      return [
-        "/v1/public/verticals",
-        "/v1/public/stores",
-        "/v1/public/stores/{id}",
-        "/v1/public/stores/{id}/offers",
-      ].includes(urlPath);
+      const admitted = {
+        "/v1/public/verticals": "listPublicVerticals",
+        "/v1/public/stores": "listPublicStores",
+        "/v1/public/stores/{id}": "getPublicStore",
+        "/v1/public/stores/{id}/offers": "listPublicOffers",
+      };
+      return Object.hasOwn(admitted, urlPath) && admitted[urlPath] === operationId;
     }
     if (owner === "identity" && method === "post") {
-      return [
-        "/v1/customer-auth/phone-challenges",
-        "/v1/customer-auth/phone-verification",
-        "/v1/operators/passkey/authentication",
-        "/v1/operators/passkey/authentication/options",
-      ].includes(urlPath);
+      const admitted = {
+        "/v1/customer-auth/phone-challenges": "issueCustomerPhoneChallenge",
+        "/v1/customer-auth/phone-verification": "verifyCustomerPhoneChallenge",
+        "/v1/operators/passkey/authentication": "finishOperatorPasskeyAuthentication",
+        "/v1/operators/passkey/authentication/options": "beginOperatorPasskeyAuthentication",
+      };
+      return Object.hasOwn(admitted, urlPath) && admitted[urlPath] === operationId;
     }
     return false;
   }
@@ -205,7 +210,7 @@ export function validate(owner, base = root) {
       if (!Object.keys(operation.responses ?? {}).some((status) => /^2(?:[0-9]{2}|XX)$/.test(status))) {
         errors.push("No successful response: " + method + " " + urlPath);
       }
-      if (!isOwnerPublicOperation(urlPath, method) && !Object.hasOwn(operation.responses ?? {}, "401")) {
+      if (!isOwnerPublicOperation(urlPath, method, id) && !Object.hasOwn(operation.responses ?? {}, "401")) {
         errors.push("Protected operation missing 401 response: " + method + " " + urlPath);
       }
       for (const [status, response] of Object.entries(operation.responses ?? {})) {
@@ -242,7 +247,7 @@ export function validate(owner, base = root) {
       } else if (!Array.isArray(operation.security)) {
         errors.push("Invalid operation security: " + method + " " + urlPath);
       } else {
-        const publiclyAdmitted = isOwnerPublicOperation(urlPath, method);
+        const publiclyAdmitted = isOwnerPublicOperation(urlPath, method, id);
         if (publiclyAdmitted && operation.security.length !== 0) {
           errors.push("Public operation must not require OpaqueSession: " + method + " " + urlPath);
         }
